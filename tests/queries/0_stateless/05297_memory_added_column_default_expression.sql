@@ -221,3 +221,18 @@ ALTER TABLE t_memory_add_default_context ADD COLUMN u String DEFAULT currentUser
 ALTER TABLE t_memory_add_default_context ADD COLUMN b UInt64 DEFAULT getSetting('max_block_size');
 SELECT k, db = currentDatabase(), u = currentUser(), b FROM t_memory_add_default_context ORDER BY k SETTINGS max_block_size = 1234;
 DROP TABLE t_memory_add_default_context;
+
+SELECT 'a read resolves only the defaults it evaluates';
+DROP TABLE IF EXISTS t_memory_add_default_unread;
+SET allow_introspection_functions = 1;
+CREATE TABLE t_memory_add_default_unread (k UInt64, s String DEFAULT demangle('_Z3foov')) ENGINE = Memory;
+INSERT INTO t_memory_add_default_unread (k) VALUES (1), (2);
+ALTER TABLE t_memory_add_default_unread ADD COLUMN c UInt64 DEFAULT k + 1;
+ALTER TABLE t_memory_add_default_unread ADD COLUMN c2 String DEFAULT s || '!';
+ALTER TABLE t_memory_add_default_unread ADD COLUMN d String DEFAULT demangle('_Z3barv');
+SET allow_introspection_functions = 0;
+SELECT k, c, c2 FROM t_memory_add_default_unread ORDER BY k;
+SELECT k, c, c2 FROM t_memory_add_default_unread PREWHERE k >= 1 ORDER BY k;
+SELECT k, d FROM t_memory_add_default_unread ORDER BY k; -- { serverError FUNCTION_NOT_ALLOWED }
+SET allow_introspection_functions = 1;
+DROP TABLE t_memory_add_default_unread;

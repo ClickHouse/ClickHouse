@@ -88,3 +88,8 @@ a default is checked against the settings of the ALTER that adds it, not of the 
 a default is evaluated in the context of the read
 1	1	1	1234
 2	1	1	1234
+a read resolves only the defaults it evaluates
+1	2	foo()!
+2	3	foo()!
+1	2	foo()!
+2	3	foo()!

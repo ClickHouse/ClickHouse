@@ -176,17 +176,26 @@ struct MemorySourceDefaults
         bool has_default = false;
     };
 
+    struct DefaultDependencies
+    {
+        /// The columns with a default that the expression names.
+        Names columns_with_default;
+        /// Whether it depends on the set of rows it is evaluated over (e.g. `rowNumberInBlock()`).
+        bool depends_on_row_set = false;
+    };
+
     mutable std::mutex mutex;
     /// Built on the first block that lacks a requested column with a default.
     mutable ContextPtr context TSA_GUARDED_BY(mutex);
     mutable std::optional<std::vector<StoredInput>> stored_inputs TSA_GUARDED_BY(mutex);
-    /// Whether a default of the table depends on the set of rows it is evaluated over (e.g. `rowNumberInBlock()`).
-    mutable bool has_row_set_dependent_default TSA_GUARDED_BY(mutex) = false;
     /// Keyed by the column list and the names of the header columns the actions are built for. Shared by all sources of
     /// the step, so that a stateless default (e.g. `now()`) is analyzed once and has one value per header.
     mutable std::map<std::pair<MemorySourceColumnListId, Names>, Evaluation> evaluations TSA_GUARDED_BY(mutex);
 
     void initialize() const TSA_REQUIRES(mutex);
+
+    /// Resolves the functions of the default of `column_name`, which checks the reader's access to them.
+    DefaultDependencies analyzeDefault(const String & column_name, const ContextPtr & default_context) const;
 };
 
 void MemorySourceDefaults::initialize() const
@@ -199,18 +208,12 @@ void MemorySourceDefaults::initialize() const
     enableAllExperimentalSettings(default_context);
 
     std::vector<StoredInput> inputs;
-    bool row_set_dependent = false;
     const auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
     NameSet stored_input_names;
-    const TablesWithColumns no_tables;
     for (const auto & column : storage_snapshot->metadata->getColumns())
     {
         if (!column.default_desc.expression)
             continue;
-
-        ExpressionInfoVisitor::Data expression_info{WithContext{default_context}, no_tables};
-        ExpressionInfoVisitor(expression_info).visit(column.default_desc.expression);
-        row_set_dependent = row_set_dependent || expression_info.is_stateful_function || !expression_info.is_deterministic_function;
 
         IdentifierNameSet identifiers;
         column.default_desc.expression->collectIdentifierNames(identifiers);
@@ -227,8 +230,30 @@ void MemorySourceDefaults::initialize() const
     }
 
     context = std::move(default_context);
-    has_row_set_dependent_default = row_set_dependent;
     stored_inputs = std::move(inputs);
+}
+
+MemorySourceDefaults::DefaultDependencies
+MemorySourceDefaults::analyzeDefault(const String & column_name, const ContextPtr & default_context) const
+{
+    const auto & columns = storage_snapshot->metadata->getColumns();
+    const auto column_default = columns.getDefault(column_name);
+    chassert(column_default);
+
+    DefaultDependencies dependencies;
+    const TablesWithColumns no_tables;
+    ExpressionInfoVisitor::Data expression_info{WithContext{default_context}, no_tables};
+    ExpressionInfoVisitor(expression_info).visit(column_default->expression);
+    dependencies.depends_on_row_set = expression_info.is_stateful_function || !expression_info.is_deterministic_function;
+
+    /// The inputs that `evaluateMissingDefaults` follows.
+    RequiredSourceColumnsVisitor::Data required_columns;
+    RequiredSourceColumnsVisitor(required_columns).visit(column_default->expression);
+    for (const auto & name : required_columns.requiredColumns())
+        if (columns.hasDefault(name))
+            dependencies.columns_with_default.push_back(name);
+
+    return dependencies;
 }
 
 using MemorySourceDefaultsPtr = std::shared_ptr<const MemorySourceDefaults>;
@@ -527,15 +552,46 @@ private:
 
     /// Whether reading `src` may evaluate a default that depends on the set of rows it is evaluated over: the top-K
     /// threshold and the query condition cache must not skip rows of such a block, the default sees only the others.
-    bool evaluatesRowSetDependentDefault(const Block & src) const
+    bool evaluatesRowSetDependentDefault(const Block & src)
     {
         if (!lacksColumnWithDefault(src, physical_columns))
             return false;
 
-        const auto & cache = *defaults;
-        std::lock_guard lock(cache.mutex);
-        cache.initialize();
-        return cache.has_row_set_dependent_default;
+        if (!defaults_context)
+        {
+            std::lock_guard lock(defaults->mutex);
+            defaults->initialize();
+            defaults_context = defaults->context;
+        }
+
+        /// The defaults evaluated for `src`: those of the requested columns it lacks and of the columns they name that it lacks.
+        NameSet visited;
+        Names to_visit;
+        const auto & columns = defaults->storage_snapshot->metadata->getColumns();
+        for (const auto & column : physical_columns)
+        {
+            auto name = column.getNameInStorage();
+            if (!src.has(name) && columns.hasDefault(name) && visited.insert(name).second)
+                to_visit.push_back(std::move(name));
+        }
+
+        while (!to_visit.empty())
+        {
+            const String name = std::move(to_visit.back());
+            to_visit.pop_back();
+
+            auto it = analyzed_defaults.find(name);
+            if (it == analyzed_defaults.end())
+                it = analyzed_defaults.emplace(name, defaults->analyzeDefault(name, defaults_context)).first;
+
+            if (it->second.depends_on_row_set)
+                return true;
+
+            for (const auto & input : it->second.columns_with_default)
+                if (!src.has(input) && visited.insert(input).second)
+                    to_visit.push_back(input);
+        }
+        return false;
     }
 
     /// Whether `src` lacks one of `columns` that has a default, so that reading it evaluates the default.
@@ -1035,6 +1091,9 @@ private:
     /// The arrays of the table that are members of the `Nested` of a requested member; see `findSizesSource`.
     const Names nested_arrays;
     MemorySourceDefaultsPtr defaults;
+    /// Built when first needed, by each source for itself, so that reading a block does not lock `defaults`.
+    ContextPtr defaults_context;
+    std::unordered_map<String, MemorySourceDefaults::DefaultDependencies> analyzed_defaults;
 };
 
 /// The rows of one block of the snapshot to read in the lazy branch of lazy materialization.
