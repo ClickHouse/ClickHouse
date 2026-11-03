@@ -2679,12 +2679,18 @@ void StorageFileSource::onFinish() { parser_shared_resources->finishStream(); }
 
 void StorageFileSource::addNumRowsToCache(const String & path, size_t num_rows) const
 {
+    if (!canUseNumRowsFromSchemaCache(storage->format_settings, getContext()))
+        return;
+
     auto key = getKeyForSchemaCache(path, storage->format_name, storage->format_settings, getContext());
     StorageFile::getSchemaCache(getContext()).addNumRows(key, num_rows);
 }
 
 std::optional<size_t> StorageFileSource::tryGetNumRowsFromCache(const String & path, time_t last_mod_time) const
 {
+    if (!canUseNumRowsFromSchemaCache(storage->format_settings, getContext()))
+        return std::nullopt;
+
     auto & schema_cache = StorageFile::getSchemaCache(getContext());
     auto key = getKeyForSchemaCache(path, storage->format_name, storage->format_settings, getContext());
     auto get_last_mod_time = [&]() -> std::optional<time_t>
