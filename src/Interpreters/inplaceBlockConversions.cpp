@@ -1,5 +1,6 @@
 #include <Interpreters/inplaceBlockConversions.h>
 
+#include <mutex>
 #include <utility>
 
 #include <Core/Block.h>
@@ -7,6 +8,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/PreparedSets.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -42,6 +44,7 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageDummy.h>
 #include <Common/checkStackSize.h>
+#include <base/defines.h>
 #include <Common/quoteString.h>
 
 #include <Planner/CollectTableExpressionData.h>
@@ -257,6 +260,59 @@ ResolvedExpressionList resolveExpressionList(const Block & header, const ASTPtr 
     return {std::move(expression), std::move(execution_context), std::move(fake_table_expression)};
 }
 
+}
+
+class DefaultExpressionsSets
+{
+public:
+    /// Make `collectSets` find the sets built before instead of registering new ones.
+    void registerIn(PreparedSets & prepared_sets)
+    {
+        std::lock_guard lock(mutex);
+        for (const auto & subquery : sets.getSubqueries())
+            prepared_sets.addOrReplaceSubquery(subquery);
+    }
+
+    /// Build the sets of `planner_context` that are not built yet, and remember them.
+    /// Return false if another thread has built one of them meanwhile, after `registerIn`: the actions refer to the
+    /// set of this thread, so they have to be built again to use that set, rather than to build the same set twice.
+    bool build(const PlannerContextPtr & planner_context, const ContextPtr & context)
+    {
+        PreparedSets::Subqueries unbuilt;
+        for (const auto & subquery : planner_context->getPreparedSets().getSubqueries())
+            if (!subquery->get())
+                unbuilt.push_back(subquery);
+
+        if (unbuilt.empty())
+            return true;
+
+        /// The lock is held while the sets are built, so that the threads that need the same set wait for it
+        /// instead of building it as well.
+        std::lock_guard lock(mutex);
+        for (const auto & subquery : unbuilt)
+            if (sets.findSubquery(subquery->getHash()))
+                return false;
+
+        buildPreparedSetsInplace(planner_context, context);
+
+        for (const auto & subquery : unbuilt)
+            sets.addOrReplaceSubquery(subquery);
+        return true;
+    }
+
+private:
+    std::mutex mutex;
+    PreparedSets sets TSA_GUARDED_BY(mutex);
+};
+
+DefaultExpressionsSetsPtr createDefaultExpressionsSets()
+{
+    return std::make_shared<DefaultExpressionsSets>();
+}
+
+namespace
+{
+
 /// What to do with the tables that the expressions read (`x IN table`).
 enum class TablesReading : uint8_t
 {
@@ -274,7 +330,8 @@ std::optional<ActionsDAG> createExpressionsAnalyzer(
     bool save_unneeded_columns,
     ContextPtr context,
     TablesReading tables_reading,
-    bool * has_unbuilt_sets = nullptr)
+    bool * has_unbuilt_sets = nullptr,
+    DefaultExpressionsSets * reused_sets = nullptr)
 {
     if (!expr_list)
         return {};
@@ -285,6 +342,9 @@ std::optional<ActionsDAG> createExpressionsAnalyzer(
 
     GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
     auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
+
+    if (reused_sets)
+        reused_sets->registerIn(planner_context->getPreparedSets());
 
     collectSetsAndSourceColumns(expression, planner_context, true /*keep_alias_columns*/);
 
@@ -312,6 +372,12 @@ std::optional<ActionsDAG> createExpressionsAnalyzer(
     {
         if (has_unbuilt_sets)
             *has_unbuilt_sets = prepared_sets.hasSubqueries();
+    }
+    else if (reused_sets)
+    {
+        if (!reused_sets->build(planner_context, execution_context))
+            return createExpressionsAnalyzer(
+                header, expr_list, save_unneeded_columns, context, tables_reading, has_unbuilt_sets, reused_sets);
     }
     else
         buildPreparedSetsInplace(planner_context, execution_context);
@@ -343,14 +409,16 @@ void performRequiredConversions(
     ContextPtr context,
     const ColumnDefaults & column_defaults,
     bool forbid_default_defaults,
-    bool allow_reading_tables)
+    bool allow_reading_tables,
+    DefaultExpressionsSets * reused_sets)
 {
     ASTPtr conversion_expr_list = convertRequiredExpressions(block, required_columns, column_defaults, forbid_default_defaults);
     if (conversion_expr_list->children.empty())
         return;
 
     std::optional<ActionsDAG> dag = createExpressionsAnalyzer(
-        block, conversion_expr_list, true, context, allow_reading_tables ? TablesReading::Read : TablesReading::Forbid);
+        block, conversion_expr_list, true, context, allow_reading_tables ? TablesReading::Read : TablesReading::Forbid,
+        /*has_unbuilt_sets=*/ nullptr, reused_sets);
 
     if (dag)
     {
@@ -415,14 +483,16 @@ std::optional<ActionsDAG> evaluateMissingDefaults(
     ContextPtr context,
     bool save_unneeded_columns,
     bool null_as_default,
-    bool allow_reading_tables)
+    bool allow_reading_tables,
+    DefaultExpressionsSets * reused_sets)
 {
     if (!columns.hasDefaults() && (!null_as_default || !needConvertAnyNullToDefault(header, required_columns, columns)))
         return {};
 
     ASTPtr expr_list = defaultRequiredExpressions(header, required_columns, columns, null_as_default);
     return createExpressionsAnalyzer(
-        header, expr_list, save_unneeded_columns, context, allow_reading_tables ? TablesReading::Read : TablesReading::Forbid);
+        header, expr_list, save_unneeded_columns, context, allow_reading_tables ? TablesReading::Read : TablesReading::Forbid,
+        /*has_unbuilt_sets=*/ nullptr, reused_sets);
 }
 
 /// Checks that a type-directed `enumerateStreams` walk over `column` cannot meet a column class

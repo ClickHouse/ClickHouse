@@ -461,7 +461,8 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
             context_copy,
             /*save_unneeded_columns=*/ true,
             /*null_as_default=*/ false,
-            /*allow_reading_tables=*/ settings.read_context != nullptr);
+            /*allow_reading_tables=*/ settings.read_context != nullptr,
+            settings.default_expressions_sets.get());
 
         if (dag)
         {
@@ -949,7 +950,8 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
             createContextForDefaultExpressions(),
             storage_snapshot->metadata->getColumns().getDefaults(),
             /*forbid_default_defaults=*/ false,
-            /*allow_reading_tables=*/ settings.read_context != nullptr);
+            /*allow_reading_tables=*/ settings.read_context != nullptr,
+            settings.default_expressions_sets.get());
 
         /// Move columns from block.
         name_and_type = getColumns().begin();

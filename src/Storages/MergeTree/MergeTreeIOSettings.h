@@ -27,6 +27,9 @@ struct SelectQueryInfo;
 
 class PackedFilesWriter;
 
+class DefaultExpressionsSets;
+using DefaultExpressionsSetsPtr = std::shared_ptr<DefaultExpressionsSets>;
+
 enum class CompactPartsReadMethod : uint8_t
 {
     SingleBuffer,
@@ -141,6 +144,8 @@ struct MergeTreeReaderSettings
     /// evaluated on its behalf, see `IMergeTreeReader::createContextForDefaultExpressions`. Unset for
     /// merges and mutations, which have no reading query.
     ContextPtr read_context;
+    /// The sets of the defaults that read a table (`x IN table`), built once for all the readers created from these settings.
+    DefaultExpressionsSetsPtr default_expressions_sets;
 
     static MergeTreeReaderSettings createFromContext(const ContextPtr & context);
     /// Note storage_settings used only in private, do not remove

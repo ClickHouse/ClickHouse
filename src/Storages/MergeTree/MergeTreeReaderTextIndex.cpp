@@ -193,7 +193,8 @@ void MergeTreeReaderTextIndex::initializeFallbackReader(const IMergeTreeReader *
         auto dag = DB::evaluateMissingDefaults(
             physical_header, need_col, combined_columns, context_copy,
             /*save_unneeded_columns=*/ true, /*null_as_default=*/ false,
-            /*allow_reading_tables=*/ settings.read_context != nullptr);
+            /*allow_reading_tables=*/ settings.read_context != nullptr,
+            settings.default_expressions_sets.get());
         if (!dag)
             continue;
 
