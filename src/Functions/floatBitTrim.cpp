@@ -10,7 +10,6 @@
 #include <base/DecomposedFloat.h>
 #include <base/bit_cast.h>
 #include <base/defines.h>
-#include <Common/TargetSpecific.h>
 
 namespace DB
 {
@@ -48,22 +47,11 @@ inline Float processOne(Float v, typename TrimTraits<Float>::UInt mask)
     return bit_cast<Float>(bits & (mask | is_nan));
 }
 
-MULTITARGET_FUNCTION_X86_V4(
-    MULTITARGET_FUNCTION_HEADER(template <typename Float> void NO_INLINE),
-    processRangeImpl,
-    MULTITARGET_FUNCTION_BODY((const Float * __restrict src, Float * __restrict dst, typename TrimTraits<Float>::UInt mask, size_t n) {
-        for (size_t i = 0; i < n; ++i)
-            dst[i] = processOne(src[i], mask);
-    }))
-
 template <typename Float>
-void processRange(const Float * src, Float * dst, typename TrimTraits<Float>::UInt mask, size_t n)
+void processRange(const Float * __restrict src, Float * __restrict dst, typename TrimTraits<Float>::UInt mask, size_t n)
 {
-#if ENABLE_MULTITARGET_CODE
-    if (isArchSupported(TargetArch::x86_64_v4))
-        return processRangeImpl_x86_64_v4<Float>(src, dst, mask, n);
-#endif
-    processRangeImpl<Float>(src, dst, mask, n);
+    for (size_t i = 0; i < n; ++i)
+        dst[i] = processOne(src[i], mask);
 }
 
 class FunctionFloatBitTrim : public IFunction
