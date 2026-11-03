@@ -11,6 +11,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <IO/WriteHelpers.h>
+#include <Common/checkStackSize.h>
 
 #include <algorithm>
 
@@ -34,6 +35,20 @@ void collectNames(const IAST & ast, NameSet & names)
 
     for (const auto & child : ast.children)
         collectNames(*child, names);
+}
+
+/// Adds the aliases declared in @ast outside nested lambdas to @aliases, and the new ones to @added.
+void addScopeAliases(const IAST & ast, NameSet & aliases, Names & added)
+{
+    if (auto alias = ast.tryGetAlias(); !alias.empty() && aliases.insert(alias).second)
+        added.push_back(std::move(alias));
+
+    /// A nested lambda has its own scope.
+    if (const auto * function = ast.as<ASTFunction>(); function && function->name == "lambda")
+        return;
+
+    for (const auto & child : ast.children)
+        addScopeAliases(*child, aliases, added);
 }
 
 /// The names @ast reads from its enclosing scope; names bound to its own lambda parameters are left out.
@@ -81,9 +96,20 @@ ASTPtr expandedDefinition(const ColumnDescription & column, const ColumnAliasesM
 }
 
 /// The free names the ALIAS definitions reachable from @ast bring along when expanded.
-/// An identifier bound to a lambda parameter is not an ALIAS reference (a field of a parameter only forces the rename).
-void collectReachableAliasNames(const IAST & ast, const ColumnAliasesMatcher::Data & data, NameSet & bound, NameSet & names, NameSet & visited)
+/// An identifier bound to a lambda parameter or to an alias of an enclosing lambda body is not an ALIAS reference
+/// (a field of a parameter only forces the rename).
+void collectReachableAliasNames(
+    const IAST & ast, const ColumnAliasesMatcher::Data & data, NameSet & bound, NameSet & aliases, NameSet & names, NameSet & visited)
 {
+    /// Inside the expression of `expr AS a` the name `a` is the column.
+    if (auto alias = ast.tryGetAlias(); !alias.empty() && aliases.contains(alias))
+    {
+        aliases.erase(alias);
+        collectReachableAliasNames(ast, data, bound, aliases, names, visited);
+        aliases.insert(alias);
+        return;
+    }
+
     if (const auto * function = ast.as<ASTFunction>(); function && function->name == "lambda")
     {
         Names added;
@@ -91,17 +117,22 @@ void collectReachableAliasNames(const IAST & ast, const ColumnAliasesMatcher::Da
             if (bound.insert(name).second)
                 added.push_back(std::move(name));
 
-        collectReachableAliasNames(*function->arguments->children[1], data, bound, names, visited);
+        Names added_aliases;
+        addScopeAliases(*function->arguments->children[1], aliases, added_aliases);
+
+        collectReachableAliasNames(*function->arguments->children[1], data, bound, aliases, names, visited);
 
         for (const auto & name : added)
             bound.erase(name);
+        for (const auto & name : added_aliases)
+            aliases.erase(name);
         return;
     }
 
     if (const auto * identifier = ast.as<ASTIdentifier>())
     {
         const auto & name = identifier->name();
-        if (bound.contains(name) || !data.columns.has(name))
+        if (bound.contains(name) || aliases.contains(name) || !data.columns.has(name))
             return;
 
         const auto & column = data.columns.get(name);
@@ -123,13 +154,14 @@ void collectReachableAliasNames(const IAST & ast, const ColumnAliasesMatcher::Da
         /// The expanded copy: inlining a SQL UDF while analysing it can add names the stored definition lacks.
         auto definition = expandedDefinition(column, data);
         NameSet table_scope;
+        NameSet table_aliases;
         collectFreeNames(*definition, data.columns, table_scope, names);
-        collectReachableAliasNames(*definition, data, table_scope, names, visited);
+        collectReachableAliasNames(*definition, data, table_scope, table_aliases, names, visited);
         return;
     }
 
     for (const auto & child : ast.children)
-        collectReachableAliasNames(*child, data, bound, names, visited);
+        collectReachableAliasNames(*child, data, bound, aliases, names, visited);
 }
 
 void renameBoundIdentifiers(ASTPtr & ast, const String & from, const String & to)
@@ -171,11 +203,10 @@ void renameCapturingParameters(ASTFunction & lambda, ColumnAliasesMatcher::Data 
     auto & body = lambda.arguments->children[1];
 
     NameSet bound = data.private_aliases;
-    bound.insert(parameters.begin(), parameters.end());
-
+    NameSet aliases = data.lambda_aliases;
     NameSet capturable;
     NameSet visited;
-    collectReachableAliasNames(*body, data, bound, capturable, visited);
+    collectReachableAliasNames(lambda, data, bound, aliases, capturable, visited);
 
     if (std::ranges::none_of(parameters, [&](const auto & parameter) { return capturable.contains(parameter); }))
         return;
@@ -202,6 +233,32 @@ void renameCapturingParameters(ASTFunction & lambda, ColumnAliasesMatcher::Data 
         renameBoundIdentifiers(body, name, fresh);
         identifier.setShortName(fresh);
     }
+}
+
+/// Visits @ast in the order of `ColumnAliasesMatcher::Visitor`, but lifts an alias of `lambda_aliases`
+/// while visiting its own `expr AS a`: there the name is the column.
+void visitLambdaScope(ASTPtr & ast, ColumnAliasesMatcher::Data & data)
+{
+    checkStackSize();
+
+    auto alias = ast->tryGetAlias();
+    const bool own_alias = !alias.empty() && data.lambda_aliases.erase(alias);
+
+    for (auto & child : ast->children)
+    {
+        if (!ColumnAliasesMatcher::needChildVisit(ast, child, data))
+            continue;
+
+        IAST * old_child = child.get();
+        visitLambdaScope(child, data);
+        if (child.get() != old_child)
+            ast->updatePointerToChild(old_child, child);
+    }
+
+    ColumnAliasesMatcher::visit(ast, data);
+
+    if (own_alias)
+        data.lambda_aliases.insert(std::move(alias));
 }
 
 }
@@ -249,9 +306,20 @@ void ColumnAliasesMatcher::visit(ASTFunction & node, ASTPtr & /*ast*/, Data & da
             }
         }
         /// visit child with masked local aliases
-        Visitor(data).visit(node.arguments->children[1]);
+        Names body_aliases;
+        if (data.rename_lambda_parameters)
+        {
+            addScopeAliases(*node.arguments->children[1], data.lambda_aliases, body_aliases);
+            visitLambdaScope(node.arguments->children[1], data);
+        }
+        else
+        {
+            Visitor(data).visit(node.arguments->children[1]);
+        }
         for (const auto & name : local_aliases)
             data.private_aliases.erase(name);
+        for (const auto & name : body_aliases)
+            data.lambda_aliases.erase(name);
     }
 }
 
@@ -260,7 +328,8 @@ void ColumnAliasesMatcher::visit(ASTIdentifier & node, ASTPtr & ast, Data & data
     if (auto column_name = IdentifierSemantic::getColumnName(node))
     {
         if (data.array_join_result_columns.contains(*column_name) || data.array_join_source_columns.contains(*column_name)
-            || data.private_aliases.contains(*column_name) || !data.columns.has(*column_name))
+            || data.private_aliases.contains(*column_name) || data.lambda_aliases.contains(*column_name)
+            || !data.columns.has(*column_name))
             return;
 
         const auto & col = data.columns.get(*column_name);
@@ -280,7 +349,10 @@ void ColumnAliasesMatcher::visit(ASTIdentifier & node, ASTPtr & ast, Data & data
 
             data.changed = true;
             // revisit ast to track recursive alias columns
+            /// The definition is written at table scope, where the aliases of the lambda bodies around it are not visible.
+            auto enclosing_aliases = std::exchange(data.lambda_aliases, {});
             Visitor(data).visit(ast);
+            data.lambda_aliases = std::move(enclosing_aliases);
         }
     }
 }

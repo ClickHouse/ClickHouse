@@ -304,3 +304,171 @@ SELECT 'alias names on fly', m_root, m_dotted, arrayMap(x -> tupleNames(tuple(x,
 FROM t_alias_capture_alias_names SETTINGS apply_mutations_on_fly = 1;
 SYSTEM START MERGES t_alias_capture_alias_names;
 DROP TABLE t_alias_capture_alias_names SYNC;
+
+-- An alias declared in a lambda body hides the ALIAS column of the same name inside that lambda.
+DROP TABLE IF EXISTS t_alias_capture_local_alias SYNC;
+CREATE TABLE t_alias_capture_local_alias
+(
+    q String,
+    w String,
+    a String ALIAS concat(q, 'x'),
+    m String MATERIALIZED arrayMap(z -> concat((z AS a), '-', (a AS r), '-', w), ['Z'])[1]
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO t_alias_capture_local_alias (q, w) VALUES ('q', 'w');
+ALTER TABLE t_alias_capture_local_alias UPDATE w = 'U' WHERE 1;
+SELECT 'local alias update w', m, arrayMap(z -> concat((z AS a), '-', (a AS r), '-', w), ['Z'])[1] FROM t_alias_capture_local_alias;
+-- `m` does not read `q`.
+ALTER TABLE t_alias_capture_local_alias UPDATE q = 'Q' WHERE 1;
+SELECT 'local alias update q', m, arrayMap(z -> concat((z AS a), '-', (a AS r), '-', w), ['Z'])[1] FROM t_alias_capture_local_alias;
+SYSTEM STOP MERGES t_alias_capture_local_alias;
+ALTER TABLE t_alias_capture_local_alias UPDATE w = 'F' WHERE 1 SETTINGS alter_sync = 0, mutations_sync = 0;
+SELECT 'local alias on fly', m, arrayMap(z -> concat((z AS a), '-', (a AS r), '-', w), ['Z'])[1]
+FROM t_alias_capture_local_alias SETTINGS apply_mutations_on_fly = 1;
+SYSTEM START MERGES t_alias_capture_local_alias;
+DROP TABLE t_alias_capture_local_alias SYNC;
+
+DROP TABLE IF EXISTS t_alias_capture_local_alias_ttl;
+CREATE TABLE t_alias_capture_local_alias_ttl
+(
+    t DateTime,
+    q String,
+    w String TTL t + INTERVAL 1 SECOND,
+    a String ALIAS concat(q, 'x'),
+    m String MATERIALIZED arrayMap(z -> concat((z AS a), '-', (a AS r), '-', w), ['Z'])[1]
+)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0;
+
+INSERT INTO t_alias_capture_local_alias_ttl (t, q, w) VALUES ('2000-01-01 00:00:00', 'q', 'w');
+OPTIMIZE TABLE t_alias_capture_local_alias_ttl FINAL;
+SELECT 'local alias merge ttl', w, m, arrayMap(z -> concat((z AS a), '-', (a AS r), '-', w), ['Z'])[1] FROM t_alias_capture_local_alias_ttl;
+DROP TABLE t_alias_capture_local_alias_ttl;
+
+-- The alias is declared in the same lambda, in an enclosing one, or read from a nested one.
+DROP TABLE IF EXISTS t_alias_capture_local_alias_scopes;
+CREATE TABLE t_alias_capture_local_alias_scopes
+(
+    q String,
+    w String,
+    a String ALIAS concat(q, 'x'),
+    m_same String MATERIALIZED arrayMap(z -> concat((z AS a), '-', a, '-', w), ['Z'])[1],
+    m_nested String MATERIALIZED arrayMap(z -> concat((z AS a), '-', arrayMap(y -> concat(y, a), ['Y'])[1], '-', w), ['Z'])[1],
+    m_outer String MATERIALIZED arrayMap(y -> arrayMap(z -> concat(z, '-', a, '-', w), [(y AS a)])[1], ['Y'])[1]
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO t_alias_capture_local_alias_scopes (q, w) VALUES ('q', 'w');
+ALTER TABLE t_alias_capture_local_alias_scopes UPDATE w = 'U' WHERE 1;
+SELECT 'local alias scopes', m_same, m_nested, m_outer,
+    arrayMap(z -> concat((z AS a), '-', a, '-', w), ['Z'])[1],
+    arrayMap(z -> concat((z AS a), '-', arrayMap(y -> concat(y, a), ['Y'])[1], '-', w), ['Z'])[1],
+    arrayMap(y -> arrayMap(z -> concat(z, '-', a, '-', w), [(y AS a)])[1], ['Y'])[1]
+FROM t_alias_capture_local_alias_scopes;
+DROP TABLE t_alias_capture_local_alias_scopes;
+
+-- An alias declared in a nested lambda does not hide the ALIAS column outside it.
+DROP TABLE IF EXISTS t_alias_capture_local_alias_inner;
+CREATE TABLE t_alias_capture_local_alias_inner
+(
+    q String,
+    w String,
+    a String ALIAS concat(q, 'x'),
+    m String MATERIALIZED arrayMap(z -> concat(arrayMap(y -> (y AS a), ['Y'])[1], '-', (a AS r), '-', w), ['Z'])[1]
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO t_alias_capture_local_alias_inner (q, w) VALUES ('q', 'w');
+ALTER TABLE t_alias_capture_local_alias_inner UPDATE q = 'Q' WHERE 1;
+SELECT 'local alias inner', m, arrayMap(z -> concat(arrayMap(y -> (y AS a), ['Y'])[1], '-', (a AS r), '-', w), ['Z'])[1]
+FROM t_alias_capture_local_alias_inner;
+DROP TABLE t_alias_capture_local_alias_inner;
+
+-- A parameter is not renamed for a name its lambda body, a nested one, or an enclosing one declares.
+DROP TABLE IF EXISTS t_alias_capture_local_alias_names SYNC;
+CREATE TABLE t_alias_capture_local_alias_names
+(
+    q String,
+    arr Array(String),
+    a String ALIAS concat(q, 'x'),
+    m_direct Array(Array(String)) MATERIALIZED arrayMap(q -> arrayConcat(tupleNames(tuple(q, a)), [(q AS a)]), arr),
+    m_nested Array(Array(String)) MATERIALIZED arrayMap(q -> arrayMap(y -> arrayConcat(tupleNames(tuple(q, a)), [(y AS a)]), ['Y'])[1], arr),
+    m_outer Array(Array(String)) MATERIALIZED arrayMap(y -> arrayMap(q -> tupleNames(tuple(q, a)), [(y AS a)])[1], arr)
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO t_alias_capture_local_alias_names (q, arr) VALUES ('q', ['A']);
+SYSTEM STOP MERGES t_alias_capture_local_alias_names;
+ALTER TABLE t_alias_capture_local_alias_names UPDATE arr = ['B'] WHERE 1 SETTINGS alter_sync = 0, mutations_sync = 0;
+SELECT 'local alias names on fly', m_direct, m_nested, m_outer,
+    arrayMap(q -> arrayConcat(tupleNames(tuple(q, a)), [(q AS a)]), arr),
+    arrayMap(q -> arrayMap(y -> arrayConcat(tupleNames(tuple(q, a)), [(y AS a)]), ['Y'])[1], arr),
+    arrayMap(y -> arrayMap(q -> tupleNames(tuple(q, a)), [(y AS a)])[1], arr)
+FROM t_alias_capture_local_alias_names SETTINGS apply_mutations_on_fly = 1;
+SYSTEM START MERGES t_alias_capture_local_alias_names;
+DROP TABLE t_alias_capture_local_alias_names SYNC;
+
+-- An alias named like the root of a column `n.x` does not change what `n.x` reads.
+DROP TABLE IF EXISTS t_alias_capture_local_alias_nested;
+CREATE TABLE t_alias_capture_local_alias_nested
+(
+    w String,
+    n Nested(x UInt32),
+    b UInt64 ALIAS length(n.x),
+    m_alias String MATERIALIZED arrayMap(z -> concat((z AS n), '-', toString(b), '-', w), ['Z'])[1],
+    m_direct String MATERIALIZED arrayMap(z -> concat((z AS n), '-', toString(length(n.x)), '-', w), ['Z'])[1]
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO t_alias_capture_local_alias_nested (w, `n.x`) VALUES ('w', [1, 2, 3]);
+ALTER TABLE t_alias_capture_local_alias_nested UPDATE w = 'U' WHERE 1;
+SELECT 'local alias nested', m_alias, m_direct,
+    arrayMap(z -> concat((z AS n), '-', toString(b), '-', w), ['Z'])[1],
+    arrayMap(z -> concat((z AS n), '-', toString(length(n.x)), '-', w), ['Z'])[1]
+FROM t_alias_capture_local_alias_nested;
+DROP TABLE t_alias_capture_local_alias_nested;
+
+-- An ALIAS definition is read at table scope, also when the lambda body declares an alias it reads.
+DROP TABLE IF EXISTS t_alias_capture_local_alias_definition;
+CREATE TABLE t_alias_capture_local_alias_definition
+(
+    q String,
+    w String,
+    arr Array(String),
+    a String ALIAS concat(q, 'x'),
+    b String ALIAS concat((a AS t), 'y'),
+    m String MATERIALIZED arrayMap(z -> concat((z AS a), '-', b, '-', w), ['Z'])[1],
+    m_param Array(String) MATERIALIZED arrayMap(q -> concat((q AS a), '-', b), arr)
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO t_alias_capture_local_alias_definition (q, w, arr) VALUES ('q', 'w', ['A']);
+ALTER TABLE t_alias_capture_local_alias_definition UPDATE q = 'Q' WHERE 1;
+SELECT 'local alias definition', m, m_param,
+    arrayMap(z -> concat((z AS a), '-', b, '-', w), ['Z'])[1],
+    arrayMap(q -> concat((q AS a), '-', b), arr)
+FROM t_alias_capture_local_alias_definition;
+DROP TABLE t_alias_capture_local_alias_definition;
+
+-- Inside `expr AS a` the name `a` is the ALIAS column, elsewhere in the lambda it is the alias.
+DROP TABLE IF EXISTS t_alias_capture_local_alias_self;
+CREATE TABLE t_alias_capture_local_alias_self
+(
+    q String,
+    w String,
+    arr Array(String),
+    a String ALIAS concat(q, 'x'),
+    m_same String MATERIALIZED arrayMap(z -> concat(z, '-', (a AS a), '-', w), ['Z'])[1],
+    m_read String MATERIALIZED arrayMap(z -> concat((concat((a AS r), z) AS a), '-', (a AS s), '-', w), ['Z'])[1],
+    m_param Array(String) MATERIALIZED arrayMap(q -> concat((concat((a AS r), q) AS a), '-', (a AS s)), arr)
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO t_alias_capture_local_alias_self (q, w, arr) VALUES ('q', 'w', ['A']);
+ALTER TABLE t_alias_capture_local_alias_self UPDATE q = 'Q' WHERE 1;
+SELECT 'local alias self', m_same, m_read, m_param,
+    arrayMap(z -> concat(z, '-', (a AS a), '-', w), ['Z'])[1],
+    arrayMap(z -> concat((concat((a AS r), z) AS a), '-', (a AS s), '-', w), ['Z'])[1],
+    arrayMap(q -> concat((concat((a AS r), q) AS a), '-', (a AS s)), arr)
+FROM t_alias_capture_local_alias_self;
+DROP TABLE t_alias_capture_local_alias_self;

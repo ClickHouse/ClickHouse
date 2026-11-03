@@ -21,3 +21,13 @@ alias field update arr_t	[200]	[201]	[200]	[201]
 shadowed alias	1	4	[201]	[200]	[201]	[200]
 named tuple on fly	[(2,[3])]	[['x','d2']]	[(2,[3])]	[['x','d2']]
 alias names on fly	[['x','d']]	[['p','e']]	[['x','d']]	[['p','e']]
+local alias update w	Z-Z-U	Z-Z-U
+local alias update q	Z-Z-U	Z-Z-U
+local alias on fly	Z-Z-F	Z-Z-F
+local alias merge ttl		Z-Z-	Z-Z-
+local alias scopes	Z-Z-U	Z-YZ-U	Y-Y-U	Z-Z-U	Z-YZ-U	Y-Y-U
+local alias inner	Y-Qx-w	Y-Qx-w
+local alias names on fly	[['q','a','B']]	[['q','a','Y']]	[['q','a']]	[['q','a','B']]	[['q','a','Y']]	[['q','a']]
+local alias nested	Z-3-U	Z-3-U	Z-3-U	Z-3-U
+local alias definition	Z-Qxy-w	['A-Qxy']	Z-Qxy-w	['A-Qxy']
+local alias self	Z-Qx-w	QxZ-QxZ-w	['QxA-QxA']	Z-Qx-w	QxZ-QxZ-w	['QxA-QxA']
