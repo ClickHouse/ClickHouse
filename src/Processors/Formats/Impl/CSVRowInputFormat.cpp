@@ -368,7 +368,7 @@ bool CSVFormatReader::readField(
     IColumn & column,
     const DataTypePtr & type,
     const SerializationPtr & serialization,
-    bool is_last_file_column,
+    bool /*is_last_file_column*/,
     const String & /*column_name*/,
     size_t column_index)
 {
@@ -376,12 +376,14 @@ bool CSVFormatReader::readField(
     if (skip_whitespaces_before_field[column_index]) [[likely]]
         skipWhitespacesAndTabs(*buf, format_settings.csv.allow_whitespace_or_tab_as_delimiter);
 
-    const bool at_delimiter = !buf->eof() && *buf->position() == format_settings.csv.delimiter;
-    const bool at_last_column_line_end = is_last_file_column && (buf->eof() || *buf->position() == '\n' || *buf->position() == '\r');
+    /// A field is empty if it is followed by the field delimiter or the end of the row.
+    /// The row can end before the last file column with `input_format_csv_allow_variable_number_of_columns`.
+    const bool is_empty_field = buf->eof() || *buf->position() == format_settings.csv.delimiter
+        || *buf->position() == '\n' || *buf->position() == '\r';
 
     /// Note: Tuples are serialized in CSV as separate columns, but with empty_as_default or null_as_default
     /// only one empty or NULL column will be expected
-    if (format_settings.csv.empty_as_default && (at_delimiter || at_last_column_line_end))
+    if (format_settings.csv.empty_as_default && is_empty_field)
     {
         /// Treat empty unquoted column value as default value, if
         /// specified in the settings. Tuple columns might seem

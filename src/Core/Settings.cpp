@@ -330,8 +330,9 @@ The `max_joined_block_size_bytes` combined with this setting is helpful to avoid
         {"25.10", false, false, "New setting"}) \
     DECLARE(Bool, parallel_non_joined_rows_processing, true, R"(
 Allow multiple threads to process non-joined rows from the right table in parallel during RIGHT and FULL JOINs.
-This can speed up the non-joined phase when using the `parallel_hash` join algorithm with large tables.
-When disabled, non-joined rows are processed by a single thread.
+This can speed up the non-joined phase of hash joins with large right tables that build the hash table on several threads (see `parallel_hash_join_threshold`).
+When disabled, or when the hash table is built on one thread, non-joined rows are processed by a single thread.
+In every case the non-joined rows come out in no fixed order. Use `ORDER BY` when the query needs a stable order.
 )", 0, \
         {"26.2", true, true, "New setting to enable parallel processing of non-joined rows in RIGHT/FULL parallel_hash joins."}) \
     DECLARE(MaxThreads, max_insert_threads, 0, R"(
@@ -612,9 +613,9 @@ Multiply s3_min_upload_part_size by this factor each time s3_multiply_parts_coun
 Each time this number of parts was uploaded to S3, s3_min_upload_part_size is multiplied by s3_upload_part_size_multiply_factor.
 )", 0) \
     DECLARE(UInt64, s3_max_part_number, S3::DEFAULT_MAX_PART_NUMBER, R"(
-Maximum part number number for s3 upload part.
+Maximum part number for s3 upload part.
 )", 0, \
-        {"24.6", 10000, 10000, "Maximum part number number for s3 upload part"}) \
+        {"24.6", 10000, 10000, "Maximum part number for s3 upload part"}) \
     DECLARE(Bool, s3_allow_multipart_copy, true, R"(
 Allow multipart copy in S3.
 )", 0, \
@@ -1718,6 +1719,10 @@ Possible values:
 Since v25.4, `INSERT ... SELECT` from a `ReplicatedMergeTree` or `SharedMergeTree` source can also be parallelized across replicas. To enable it:
 - `parallel_distributed_insert_select = 2`
 - `enable_parallel_replicas = 1`
+
+:::note
+The rewritten query, including every expression of the `SELECT` (subqueries, UDFs, and so on), is executed on the shards under the credentials of the cluster configuration — the same trust model as other shard-side processing, such as the subqueries of a non-`GLOBAL` `IN`. Configure an interserver secret (the `secret` element of the cluster configuration) if shard-side reads must be authorized as the calling user.
+:::
 )", 0, \
         {"25.7", 0, 2, "Enable parallel distributed insert select by default"}) \
     DECLARE(UInt64, distributed_group_by_no_merge, 0, R"(
@@ -4433,7 +4438,7 @@ See also:
 - [Join table engine](/reference/engines/table-engines/special/join)
 - [join_default_strictness](#join_default_strictness)
 )", IMPORTANT) \
-    DECLARE(JoinAlgorithm, join_algorithm, "direct,parallel_hash,hash,ie_join", R"(
+    DECLARE(JoinAlgorithm, join_algorithm, "direct,hash,ie_join", R"(
 Specifies which [JOIN](/reference/statements/select/join) algorithm is used.
 
 Several algorithms can be specified, and an available one would be chosen for a particular query based on kind/strictness and table engine.
@@ -4468,7 +4473,7 @@ Selecting `grace_hash` explicitly is intended primarily for diagnostic use. To e
 
 - parallel_hash
 
- A variation of `hash` join that splits the data into buckets and builds several hashtables instead of one concurrently to speed up this process.
+ The same as `hash`, kept for compatibility. `INNER`, `LEFT`, `RIGHT` and `FULL` hash joins can build the hash table on up to `max_threads` threads, and `parallel_hash_join_threshold` decides when they do. To build it on several threads whenever the join kind allows it, set `parallel_hash_join_threshold` to `0`.
 
  When using the `parallel_hash` algorithm, the right part of `JOIN` is uploaded into RAM.
 
@@ -4527,6 +4532,7 @@ Selecting `grace_hash` explicitly is intended primarily for diagnostic use. To e
  Same as `direct,hash`, i.e. try to use direct join and hash join (in this order).
 
 )", 0, \
+        {"26.11", "direct,parallel_hash,hash,ie_join", "direct,hash,ie_join", "`parallel_hash` is an obsolete alias of `hash` and was dropped from the default list; it is still accepted. Listing `hash` or `parallel_hash` does not control how parallel the join is."}, \
         {"26.8", "direct,parallel_hash,hash", "direct,parallel_hash,hash,ie_join", "Appended `ie_join` to the default list, so a join whose `ON` section has only inequality conditions is executed with IEJoin instead of a `CROSS JOIN` with a filter. Being last, it is used only when the other algorithms do not apply."}, \
         {"24.12", "default", "direct,parallel_hash,hash", "'default' was deprecated in favor of explicitly specified join algorithms, also parallel_hash is now preferred over hash"}) \
     DECLARE(Bool, allow_block_nested_loop_join, true, R"(
@@ -5085,7 +5091,7 @@ Allow push predicate to final subquery.
 Allows push predicate when subquery contains WITH clause
 )", 0) \
     DECLARE(Bool, allow_push_predicate_ast_for_distributed_subqueries, true, R"(
-Allows push predicate on AST level for distributed subqueries with enabled anlyzer
+Allows push predicate on AST level for distributed subqueries with enabled analyzer
 )", 0, \
         {"25.1", false, true, "A new setting"}) \
     \
@@ -5374,7 +5380,7 @@ Disabled by default.
 )", 0, \
         {"26.10", false, false, "New setting to make the `JSONExtract` family fill named tuples from JSON objects only, instead of the historical positional fill from arrays. Unnamed tuples always fill positionally, and extraction from a column of the `JSON` data type is unaffected."}) \
     DECLARE(Bool, json_extract_use_cast_string_to_date_time_mode, true, R"(
-Controls which setting the `JSONExtract` family of functions follows when parsing a JSON string value into `DateTime` or `DateTime64`. When enabled, the parsing mode is taken from [cast_string_to_date_time_mode](#cast_string_to_date_time_mode), consistently with `CAST`. When disabled, it is taken from [date_time_input_format](/reference/settings/formats/input-format#date_time_input_format), as before version 26.8.
+Controls which setting the `JSONExtract` family of functions follows when parsing a JSON string value into `DateTime` or `DateTime64`. When enabled, the parsing mode is taken from [cast_string_to_date_time_mode](#cast_string_to_date_time_mode), consistently with `CAST`. When disabled, it is taken from [date_time_input_format](/reference/settings/formats/date-time#date_time_input_format), as before version 26.8.
 
 When the chosen parser cannot read the value, the function returns the default value of the type (`1970-01-01 00:00:00`) without an error, so a mismatch between the two settings silently changes the extracted values.
 )", 0, \
@@ -6034,7 +6040,7 @@ Possible values:
 )", 0, \
         {"23.8", false, false, "New setting to rewrite countDistinctIf with count_distinct_implementation configuration. It is disabled by default"}) \
     DECLARE(Bool, convert_query_to_cnf, false, R"(
-When set to `true`, a `SELECT` query will be converted to conjuctive normal form (CNF). There are scenarios where rewriting a query in CNF may execute faster (view this [Github issue](https://github.com/ClickHouse/ClickHouse/issues/11749) for an explanation).
+When set to `true`, a `SELECT` query will be converted to conjunctive normal form (CNF). There are scenarios where rewriting a query in CNF may execute faster (view this [Github issue](https://github.com/ClickHouse/ClickHouse/issues/11749) for an explanation).
 
 For example, notice how the following `SELECT` query is not modified (the default behavior):
 
@@ -6608,7 +6614,7 @@ When enabled, the analyzer substitutes ordinary (non-materialized, non-parameter
 )", EXPERIMENTAL, \
         {"26.4", false, false, "New setting"}) \
     DECLARE(Bool, enable_scopes_for_with_statement, true, R"(
-If disabled, declarations in parent WITH cluases will behave the same scope as they declared in the current scope.
+If disabled, declarations in parent WITH clauses will behave the same scope as they declared in the current scope.
 
 Note that this is a compatibility setting for the analyzer to allow running some invalid queries that old analyzer could execute.
 )", 0, \
@@ -7269,7 +7275,7 @@ Possible values:
 - 1 - Enabled
 )", 0) \
     DECLARE(Bool, query_cache_squash_partial_results, true, R"(
-Squash partial result blocks to blocks of size [max_block_size](#max_block_size). Reduces performance of inserts into the [query cache](/concepts/features/performance/caches/query-cache) but improves the compressability of cache entries (see [query_cache_compress-entries](#query_cache_compress_entries)).
+Squash partial result blocks to blocks of size [max_block_size](#max_block_size). Reduces performance of inserts into the [query cache](/concepts/features/performance/caches/query-cache) but improves the compressibility of cache entries (see [query_cache_compress-entries](#query_cache_compress_entries)).
 
 Possible values:
 
@@ -7785,9 +7791,10 @@ Allow to execute correlated subqueries.
         {"25.8", false, true, "Mark correlated subqueries support as Beta. At the time the setting was named `allow_experimental_correlated_subqueries`, which is now an alias of it."}, \
         {"25.4", false, false, "Added new setting to allow correlated subqueries execution. At the time the setting was named `allow_experimental_correlated_subqueries`, which is now an alias of it."}) \
     \
-    DECLARE(Bool, allow_experimental_lateral_join, false, R"(
+    DECLARE_WITH_ALIAS(Bool, enable_lateral_join, false, R"(
 Allow LATERAL JOIN syntax. When enabled, subqueries in the right side of a JOIN can reference columns from the left side, enabling correlated subqueries in the FROM clause (SQL standard LATERAL JOIN).
-)", EXPERIMENTAL, \
+)", EXPERIMENTAL, allow_experimental_lateral_join, \
+        {"26.11", false, false, "Added an alias for setting `allow_experimental_lateral_join`."}, \
         {"26.10", false, false, "New setting to allow `LATERAL JOIN` syntax."}) \
     \
     DECLARE(SetOperationMode, union_default_mode, SetOperationMode::Unspecified, R"(
@@ -7841,6 +7848,10 @@ Example: `LIMIT 5 BY toString(x)` becomes `LIMIT 5 BY x`.
 Optimize GROUP BY when all keys in block are constant
 )", 0, \
         {"23.9", false, true, "Optimize group by constant keys by default"}) \
+    DECLARE(Bool, optimize_constant_columns_after_filter, true, R"(
+Replace filtered columns with `ColumnConst` when an equality predicate proves that all passed values are equal to a constant.
+)", 0, \
+        {"26.11", false, true, "New setting to replace filtered columns with `ColumnConst` when an equality predicate proves that all passed values are equal to a constant."}) \
     DECLARE(Bool, legacy_column_name_of_tuple_literal, false, R"(
 List all names of element of large tuple literals in their column names instead of hash. This settings exists only for compatibility reasons. It makes sense to set to 'true', while doing rolling update of cluster from version lower than 21.7 to higher.
 )", 0, \
@@ -8443,20 +8454,20 @@ Overrides the output format of the query. Wins over the format specified in the 
 )", 0, \
         {"26.8", "", "", "New setting to override the output format of the query."}) \
     DECLARE(String, compression, "", R"(
-Applies a generic compression to the response body, e.g., `compression=gz`. Note this is independent of `Content-Encoding` (HTTP compression) and the legacy `compress` parameter (ClickHouse-native compression). Specifying a compressed file extension in the URL path is equivalent.
+Applies a generic compression to the response body, e.g., `compression=gz`. Note this is independent of `Content-Encoding` (HTTP compression) and the legacy `compress` parameter (ClickHouse-native compression). For response-producing path requests, specifying a compressed file extension in the URL path is equivalent. For a path-based HTTP `PUT` upload, the compression suffix describes the request body instead, which is decompressed before insertion.
 
 This is an HTTP-interface response-shaping setting: it is consumed before the query is executed (the response buffers are set up up-front), so it must be supplied via the HTTP URL parameter, the URL path file extension, or a user profile, not via an in-query `SETTINGS` clause (where it has no effect and is rejected).
 )", 0, \
         {"26.8", "", "", "New setting to apply generic compression to the response body."}) \
     DECLARE(Bool, http_allow_database_as_path, true, R"(
-If enabled, the HTTP interface recognizes a `/database/` component in the URL path and uses it as the current database.
+If enabled, the HTTP interface recognizes a `/database/` component in the URL path and uses it as the current database. It also enables database-prefixed path-based `PUT` uploads such as `/database/table.CSV`.
 
 This is a per-user setting that controls whether a routed path-style request is interpreted. Routing itself is gated globally by the server-level `http_allow_path_requests` configuration setting (on by default), which must be enabled for the HTTP interface to route a path-style request (such as `/my_db/my_table.csv`) to the query handler at all — that routing decision is made before the request is authenticated, so it cannot depend on a per-user setting. When `http_allow_path_requests` is off, unknown paths return a plain `404`. After routing, this setting is re-checked against the authenticated user's effective settings, so it can be disabled selectively per user, role, or profile.
 )", 0, \
         {"26.10", false, true, "Enabled by default: the HTTP interface interprets a `/database/` component of the URL path as the current database."}, \
         {"26.8", false, false, "New setting to recognize a database name in the URL path of HTTP requests."}) \
     DECLARE(Bool, http_allow_table_as_file, true, R"(
-If enabled, the HTTP interface recognizes the last URL path component as a table name in the form `table`, `table.format`, or `table.format.compression`. The path is interpreted as `SELECT * FROM table`.
+If enabled, the HTTP interface recognizes the last URL path component as a table name in the form `table`, `table.format`, or `table.format.compression`. For `GET` and `HEAD`, the path is interpreted as `SELECT * FROM table`; for a path-based `PUT`, it identifies the existing destination table and input format for the upload.
 
 Like [`http_allow_database_as_path`](#http_allow_database_as_path), this is a per-user setting; routing of path-style requests is gated globally by the server-level `http_allow_path_requests` configuration setting (routing happens before authentication).
 )", 0, \
@@ -9177,7 +9188,7 @@ Only has an effect in ClickHouse Cloud. Timeout for receiving data from distribu
 )", 0, \
         {"25.10", 3000, 3000, "New setting"}) \
     DECLARE(UInt64, distributed_cache_send_timeout_ms, default_distributed_cache_send_timeout_ms, R"(
-Only has an effect in ClickHouse Cloud. Timeout for sending data to istributed cache server, in milliseconds. If a client needs to send some data but is not able to send any bytes in this interval, the exception is thrown.
+Only has an effect in ClickHouse Cloud. Timeout for sending data to distributed cache server, in milliseconds. If a client needs to send some data but is not able to send any bytes in this interval, the exception is thrown.
 )", 0, \
         {"25.10", 3000, 3000, "New setting"}) \
     DECLARE(UInt64, distributed_cache_tcp_keep_alive_timeout_ms, default_distributed_cache_tcp_keep_alive_timeout_ms, R"(
@@ -9739,9 +9750,9 @@ Skip whole Iceberg manifest files whose partition summaries in the manifest list
 )", 0, \
         {"26.9", false, true, "New setting to skip Iceberg manifest files whose manifest-list partition summaries cannot match the query filter, without reading them."}) \
     DECLARE(Bool, use_iceberg_manifest_statistics, false, R"(
-Estimate the rows of an Iceberg read for join reordering from the `record_count` of the data files in its manifest files, after partition and min-max pruning by the query filter, without reading data. The estimate is exact without a filter and without delete files. As for MergeTree tables without column statistics, a filter that prunes no file gives no estimate. Pruning by the filter requires [use_iceberg_partition_pruning](#use_iceberg_partition_pruning) to be enabled.
+With [`use_statistics`](#use_statistics) enabled, estimate an Iceberg read for join reordering from the manifest files of its data files left after partition and min-max pruning by the query filter, without reading data: the rows from their `record_count`, and the number of distinct values, min/max and NULL fraction of the columns it returns from their identity partition values, value bounds and NULL counts. The filter, `PREWHERE` and row policy of the read are estimated on these statistics, as for MergeTree tables with column statistics; if no requested column has statistics, a filter that prunes no file gives no estimate, as for MergeTree tables without them. The row estimate is exact without a filter and without delete files. Pruning by the filter requires [use_iceberg_partition_pruning](#use_iceberg_partition_pruning) to be enabled.
 )", 0, \
-        {"26.11", false, false, "New setting to estimate the rows of Iceberg reads for join reordering from manifest files."}) \
+        {"26.11", false, false, "New setting to estimate the rows and column statistics of Iceberg reads for join reordering from manifest files."}) \
     DECLARE(Bool, iceberg_tolerate_conflicting_manifest_schemas, true, R"(
 If enabled and the schema-id of an Iceberg manifest file is already registered from metadata.json, the metadata.json schema is used and the copy in the `schema` key of the manifest file header is ignored without being compared. If disabled, the manifest header copy is compared with the metadata.json schema, and a conflict fails the query with an ICEBERG_SPECIFICATION_VIOLATION error.
 
@@ -10320,12 +10331,37 @@ Throw an exception instead of logging a warning when Hive-style partitioning det
 )", 0, \
         {"26.8", false, true, "New setting to fail the query when Hive-style partitioning detection for an object storage table cannot list the storage, instead of running without the Hive partition columns."}) \
     DECLARE(UInt64, parallel_hash_join_threshold, 100'000, R"(
-When hash-based join algorithm is applied, this threshold helps to decide between using `hash` and `parallel_hash` (only if estimation of the right table size is available).
-The former is used when we know that the right table size is below the threshold.
+For an `INNER`, `LEFT`, `RIGHT` or `FULL` hash join, this threshold decides how the hash table is built.
+If the estimated number of rows in the right table is below the threshold, the join builds the hash table as one part, on one thread.
+At or above the threshold, and also when there is no estimate, the join splits the hash table into parts that up to `max_threads` threads fill at the same time (one thread with `max_threads = 1`).
+The largest value, `18446744073709551615`, always builds one part, also when there is no estimate. `0` always splits the hash table.
+With `hash_join_layout` set to `serial` or `parallel`, this threshold is not used: the join builds one part or splits the hash table, whatever the estimate.
+The estimate comes from the query plan, or from the statistics of earlier runs of the same join (see `collect_hash_table_stats_during_joins`).
+The query plan estimates 0 rows for a right table known to be empty, such as a `MergeTree` table without data parts.
+`ASOF` joins never get an estimate, and with `query_plan_optimize_join_order_limit = 0` no join gets one.
 )", 0, \
         {"25.5", 0, 100'000, "New setting"}, \
         {"25.4", 0, 0, "New setting"}, \
         {"25.3", 0, 0, "New setting"}) \
+    DECLARE(HashJoinLayout, hash_join_layout, HashJoinLayout::AUTO, R"(
+How an `INNER`, `LEFT`, `RIGHT` or `FULL` hash join builds its hash table.
+The setting is meant for testing and debugging. Leave it at `auto` to let the planner choose the layout with `parallel_hash_join_threshold`.
+
+Possible values:
+
+- `auto` — `parallel_hash_join_threshold` decides, from the estimated number of rows in the right table. See that setting for a join without an estimate.
+- `serial` — the hash table is one part, filled by one thread, whatever the estimate.
+- `parallel` — the hash table is split into parts that up to `max_threads` threads fill at the same time (one thread with `max_threads = 1`), whatever the estimate.
+
+Some joins always build one part, whatever the value:
+
+- joins of other kinds, such as `CROSS`;
+- a join with a `Join` table or a key-value storage on the right;
+- each bucket of a grace hash join;
+- the hash join that `join_algorithm = 'auto'` starts with when the join cannot spill to disk (for example with `max_bytes_before_external_join` and `max_bytes_ratio_before_external_join` both `0`) and can switch to a partial merge join instead;
+- each per-shard join of `query_plan_join_shard_by_pk_ranges`.
+)", 0, \
+        {"26.11", "auto", "auto", "New setting to force the layout of a hash join for testing and debugging. `auto` keeps choosing it with `parallel_hash_join_threshold`."}) \
     DECLARE(Bool, apply_settings_from_server, true, R"(
 Whether the client should accept settings from server.
 
@@ -10604,11 +10640,11 @@ Max retries for parts update when using `select_sequential_consistency` with `Sh
 )", 0, \
         {"26.5", 10, 10, "New setting to reduce sporadic UNFINISHED errors in queries with sequential consistency for SharedMergeTree."}) \
     DECLARE(UInt64, max_bytes_before_external_join, 0, R"(
-If set to a non-zero value and `join_algorithm` is `hash`, `parallel_hash`, `default`, or `auto`, the hash join will automatically be converted to grace hash join to enable spilling to disk when the right-side data exceeds this many bytes. Together with `max_bytes_ratio_before_external_join`, this is the threshold-based spill trigger for every hash-based `join_algorithm`, including `grace_hash`, which requires one of the two to be non-zero. Once a non-zero threshold makes a join spill-capable, `enable_adaptive_memory_spill_scheduler` can force it to spill under memory pressure before the threshold is reached. When set to `0` (default), this absolute byte threshold is disabled, but automatic spilling may still occur via `max_bytes_ratio_before_external_join` (which defaults to `0.5`). With both settings at `0`, the join never spills, so the scheduler has nothing to trigger. The exception is `legacy_join_size_limits_trigger_spilling`: with it on, standalone `grace_hash` ignores both settings and spills on `max_rows_in_join` / `max_bytes_in_join` instead. It prevents read in order through join optimization. The threshold also bounds the right side materialized by the [block nested loop join](/reference/statements/select/join#join-with-an-arbitrary-on-condition), whatever `join_algorithm` is set to.
+If set to a non-zero value and `join_algorithm` is `hash`, `parallel_hash`, `default`, or `auto`, a hash join spills the right-side data to disk once it exceeds this many bytes. That happens only when `GraceHashJoin` can run the join (one equality disjunct, supported kind and strictness). Multi-disjunct `ON` conditions (`OR`) stay on `hash` and can hit the memory limit with no spill. After the spill, the join continues as a grace hash join, or as a partial merge join when the query plan needs the left stream's row order (read in order through join), so the threshold does not prevent that optimization. Read in order passes through such a join only for `INNER` and `LEFT` joins with `ALL` or `ANY` strictness, with no mixed `ON` condition, without `join_any_take_last_row` for `ANY`, and with keys that are not floating-point, `JSON` or `Dynamic`, also when nested. Together with `max_bytes_ratio_before_external_join`, this is the threshold-based spill trigger for every hash-based `join_algorithm`, including `grace_hash`, which requires one of the two to be non-zero. Once a non-zero threshold makes a join spill-capable, `enable_adaptive_memory_spill_scheduler` can force it to spill under memory pressure before the threshold is reached. When set to `0` (default), this absolute byte threshold is disabled, but automatic spilling may still occur via `max_bytes_ratio_before_external_join` (which defaults to `0.5`). With both settings at `0`, the join never spills, so the scheduler has nothing to trigger. The exception is `legacy_join_size_limits_trigger_spilling`: with it on, standalone `grace_hash` ignores both settings and spills on `max_rows_in_join` / `max_bytes_in_join` instead. The threshold also bounds the right side materialized by the [block nested loop join](/reference/statements/select/join#join-with-an-arbitrary-on-condition), whatever `join_algorithm` is set to.
 )", 0, \
         {"26.4", 0, 0, "New setting to control automatic spilling of hash joins to disk. Non-zero value enables spilling and sets the byte threshold."}) \
     DECLARE(Double, max_bytes_ratio_before_external_join, 0.5, R"(
-The ratio of available memory that is allowed for `JOIN`. Once reached, the hash join will be converted to grace hash join to spill the right-side data to disk.
+The ratio of available memory that is allowed for `JOIN`. Once reached, a hash join spills the right-side data to disk. That happens only when `GraceHashJoin` can run the join (one equality disjunct, supported kind and strictness). Multi-disjunct `ON` conditions (`OR`) stay on `hash` and can hit the memory limit with no spill. After the spill, the join continues as a grace hash join, or as a partial merge join when the query plan needs the left stream's row order (see `max_bytes_before_external_join`).
 
 For example, if set to `0.6`, `JOIN` will allow using `60%` of the available memory (to server/user/merges) for the right-side hash table at the beginning of the execution; after that, it starts spilling to disk.
 
@@ -11146,7 +11182,7 @@ Allow to execute experimental Iceberg command `ALTER TABLE ... EXECUTE expire_sn
 )", EXPERIMENTAL, \
         {"26.3", false, false, "New setting."}) \
     DECLARE(Bool, write_full_path_in_iceberg_metadata, false, R"(
-Write full paths (including s3://) into iceberg metadata files.
+Write full paths (including s3://) into iceberg metadata files. Tables created in a `DataLakeCatalog` database always get full paths.
 )", EXPERIMENTAL, \
         {"25.8", false, false, "New setting."}) \
     DECLARE(String, iceberg_metadata_compression_method, "", R"(
@@ -11391,6 +11427,10 @@ Sets the evaluation time to be used with promql dialect, as a Unix timestamp in 
         {"25.9", Field{"auto"}, Field{"auto"}, "The setting was renamed. The previous name is `evaluation_time`."}, \
         {"25.8", Field{"auto"}, Field{"auto"}, "New experimental setting. At the time the setting was named `evaluation_time`, which is now an alias of it."}) \
     \
+    DECLARE(UInt64, promql_max_points_per_series, 11000, R"(
+Maximum resolution of a range query in the Prometheus HTTP API (`/api/v1/query_range`). As in Prometheus, the query is rejected if `(end - start) / step` is greater than this value. 0 means no limit. The [prometheusQueryRange](/reference/functions/table-functions/prometheusQueryRange) table function is not limited.
+)", PRIVATE_PREVIEW, \
+        {"26.11", 0, 11000, "New setting to limit the resolution of a range query in the Prometheus HTTP API, as in Prometheus."}) \
     DECLARE(Bool, promql_push_down_label_matchers, true, R"(
 Copies the label matchers of one side of a PromQL binary operator to the selectors of the other side for the labels the operator matches series by, so `b / on(job) a{job="x"}` reads only the series of `b` with `job="x"`.
 A matcher is not copied where the series it filters out could make Prometheus report duplicate series: into the "one" side of the operator unless it is an aggregation by the matched labels, into an operator between two vectors other than `and` and `unless`, and through a function over a range or an operator with a scalar unless its input is one metric selected by name.

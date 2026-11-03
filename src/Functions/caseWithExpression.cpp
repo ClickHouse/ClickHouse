@@ -18,6 +18,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool cast_fixed_string_to_string_strip_trailing_zeros;
+    extern const SettingsBool use_variant_as_common_type;
 }
 
 namespace ErrorCodes
@@ -50,6 +51,7 @@ public:
         , fun_transform(FunctionFactory::instance().get("transform", context_))
         , fun_multi_if(FunctionFactory::instance().get("multiIf", context_))
         , cast_fixed_string_to_string_strip_trailing_zeros(context_->getSettingsRef()[Setting::cast_fixed_string_to_string_strip_trailing_zeros])
+        , use_variant_as_common_type(context_->getSettingsRef()[Setting::use_variant_as_common_type])
     {
     }
     bool isVariadic() const override { return true; }
@@ -70,6 +72,9 @@ public:
         /// The fixed group matches (expr, when1, then1), the ellipsis repeats (when, then),
         /// and the trailing E is the else branch. The when-positions are matched as Any
         /// since CASE WHEN equality semantics handles arbitrary types.
+        /// A Variant result means the values have no supertype, so it is built by the `multiIf` fallback, not `transform`.
+        if (use_variant_as_common_type)
+            return "(Any, Any, V1, ..., E) -> leastSupertypeOrVariant(V1, ..., E)";
         return "(Any, Any, V1, ..., E) -> leastSupertype(V1, ..., E)";
     }
 
@@ -305,6 +310,7 @@ private:
     FunctionOverloadResolverPtr fun_transform;
     FunctionOverloadResolverPtr fun_multi_if;
     bool cast_fixed_string_to_string_strip_trailing_zeros = false;
+    bool use_variant_as_common_type;
 };
 
 }
