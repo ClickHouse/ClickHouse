@@ -1,5 +1,6 @@
 #include <Storages/TimeSeries/createTimeSeriesInnerTable.h>
 
+#include <Common/FailPoint.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -10,6 +11,16 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    extern const char time_series_inner_table_fail_after_create[];
+}
 
 namespace
 {
@@ -64,6 +75,12 @@ void createTimeSeriesInnerTable(
     InterpreterCreateQuery create_interpreter(manual_create_query, create_context);
     create_interpreter.setInternal(true);
     create_interpreter.execute();
+
+    /// Simulates an error after the inner table is published, such as one from its `startup`.
+    fiu_do_on(FailPoints::time_series_inner_table_fail_after_create,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Failpoint time_series_inner_table_fail_after_create");
+    });
 }
 
 
