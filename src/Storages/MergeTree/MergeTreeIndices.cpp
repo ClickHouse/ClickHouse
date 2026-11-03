@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
-#include <Storages/MergeTree/MergeTreeIndexLegacyHypothesis.h>
 
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeArray.h>
@@ -635,14 +634,11 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
         .related = {"tokenbf_v1"}});
     registerValidator("text", textIndexValidator);
 
-    /// Index type 'hypothesis' is no longer supported.
-    /// To allow loading tables with old indexes, register a dummy index which allows attach but
-    /// throws an exception when the user attempts to create or use it.
-    registerCreator("hypothesis", legacyHypothesisIndexCreator, Documentation{
-        .description = "Deprecated and no longer supported. It is retained only so that tables which still reference it can be attached.",
+    registerCreator("hypothesis", hypothesisIndexCreator, Documentation{
+        .description = "Stores whether a boolean expression (a comparison of two columns, for example `a < b`) holds for every row of the granule. A granule is skipped when the query's comparisons cannot hold together with that expression and the table constraints.",
         .syntax = "INDEX name expr TYPE hypothesis GRANULARITY g",
-        .related = {}});
-    registerValidator("hypothesis", legacyHypothesisIndexValidator);
+        .related = {"minmax"}});
+    registerValidator("hypothesis", hypothesisIndexValidator);
 }
 
 MergeTreeIndexFactory & MergeTreeIndexFactory::instance()

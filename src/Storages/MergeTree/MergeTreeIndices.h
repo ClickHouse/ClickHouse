@@ -359,11 +359,6 @@ struct IMergeTreeIndex
     virtual bool isVectorSimilarityIndex() const { return false; }
     virtual bool isTextIndex() const { return false; }
 
-    /// An inert index holds no on-disk data and cannot be (re)computed. It exists only so old
-    /// tables that still reference a removed index type stay attachable. Merge and mutation must
-    /// never schedule it for recalculation, otherwise those operations get wedged.
-    virtual bool isInert() const { return false; }
-
     /// False when the index data usually does not compress (e.g. bloom filter bits), so a generic codec only
     /// slows down reading it. The blocks of such an index that the part's codec does not compress well
     /// are written with codec `NONE`.
@@ -461,6 +456,9 @@ void ginIndexValidator(const IndexDescription & index, bool attach, const MergeT
 
 MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
 void textIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
+
+MergeTreeIndexPtr hypothesisIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
+void hypothesisIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
 
 String getIndexFileName(const String & index_name, bool escape_filename);
 

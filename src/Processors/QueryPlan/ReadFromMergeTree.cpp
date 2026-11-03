@@ -3356,11 +3356,6 @@ void ReadFromMergeTree::buildIndexes(
 
         auto index_helper = MergeTreeIndexFactory::instance().get(metadata_snapshot, index, *data.getSettings());
 
-        /// Inert indices (a removed index type kept only for attach compatibility) hold no data and
-        /// cannot answer queries. Skip them so a filtered query does not throw building the condition.
-        if (index_helper->isInert())
-            continue;
-
         ConditionTemplate<MergeTreeIndexConditionPtr>::Factory factory;
         if (index_helper->isVectorSimilarityIndex())
         {

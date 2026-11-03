@@ -3684,12 +3684,6 @@ private:
 
             auto index_ptr = MergeTreeIndexFactory::instance().get(ctx->metadata_snapshot, idx, *ctx->data->getSettings());
 
-            /// Inert indices (a removed index type kept only for attach compatibility) have no data
-            /// on disk and cannot be recomputed: skip them entirely so the rewrite does not try to
-            /// aggregate them and there is nothing to hardlink.
-            if (index_ptr->isInert())
-                continue;
-
             /// Nothing resolvable to preserve: force a recalculate so the writer rebuilds the
             /// index from column data, rather than dropping the orphan files and leaving it absent.
             bool index_present_on_disk = hasAnyIndexFileOnDisk(
@@ -4814,12 +4808,6 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
             bool inserted = false;
             auto index_ptr = index_factory.get(metadata_snapshot, index, *ctx->data->getSettings());
 
-            /// Inert indices (a removed index type kept only for attach compatibility) have no data
-            /// and cannot be recomputed. Carry them forward untouched instead of aggregating them,
-            /// otherwise the mutation loops forever failing to build the index.
-            if (index_ptr->isInert())
-                continue;
-
             if (dynamic_cast<const MergeTreeIndexText *>(index_ptr.get()))
                 inserted = ctx->text_indices_to_recalc.insert(index_ptr).second;
             else
@@ -4843,9 +4831,6 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
         for (const auto & index : indices)
         {
             auto index_ptr = index_factory.get(metadata_snapshot, index, *ctx->data->getSettings());
-            if (index_ptr->isInert())
-                continue;
-
             const bool present_on_disk = hasAnyIndexFileOnDisk(
                 *index_ptr, source_part, ctx->metadata_snapshot, index.name, ctx->mrk_extension);
             if (!present_on_disk)
@@ -5492,8 +5477,6 @@ bool MutateTask::prepare()
                 if (rewritten_index_names.contains(index.name))
                     continue;
                 auto index_ptr = index_factory.get(ctx->metadata_snapshot, index, *ctx->data->getSettings());
-                if (index_ptr->isInert())
-                    continue;
                 MutationHelpers::registerCarriedSkipIndexBases(ctx->stream_base_manifest, index_ptr, ctx->source_part);
             }
         }
