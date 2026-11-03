@@ -306,7 +306,8 @@ DiskFromAST::CustomDiskNames DiskFromAST::resolveCustomDiskNames(const ASTPtr & 
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a disk function");
 
     /// Only the arguments that give the names are resolved, so that the restrictions on the other arguments
-    /// (credentials and so on) are applied once, when the disk is created.
+    /// (credentials and so on) are applied once, when the disk is created. An `include` may supply the names
+    /// as well, so it is resolved too.
     const auto & function = disk_function_ast->as<const ASTFunction &>();
     ASTs name_args;
     if (function.arguments)
@@ -317,7 +318,7 @@ DiskFromAST::CustomDiskNames DiskFromAST::resolveCustomDiskNames(const ASTPtr & 
             if (!equals || equals->name != "equals" || !equals->arguments || equals->arguments->children.empty())
                 continue;
             const auto * key = equals->arguments->children[0]->as<ASTIdentifier>();
-            if (key && (key->name() == "name" || key->name() == "disk"))
+            if (key && (key->name() == "name" || key->name() == "disk" || key->name() == "include"))
                 name_args.push_back(argument);
         }
     }
