@@ -8,23 +8,29 @@
 namespace DB
 {
 
-/// Enforces `GRANT FUNCTION ON <name>` for the functions listed in
-/// `access_control_improvements.functions_requiring_grant`. No-op when that list is empty,
-/// which is the default, so the ordinary resolution path pays a single relaxed atomic load.
-/// The result of a query that calls such a function is not written to the query result cache.
+/// `GRANT FUNCTION ON <name>` for the functions listed in `access_control_improvements.functions_requiring_grant`.
+/// No-op when that list is empty, which is the default, so the ordinary resolution path pays a single relaxed
+/// atomic load. Only ordinary and user defined functions are covered: aggregate names are rejected when the
+/// configuration is loaded, so they never reach the check.
 ///
-/// Call these ONLY where an identifier is already committed to a real function call.
-/// They must never be called from `tryGet`-style helpers: analyzer code uses those as
-/// non-throwing capability probes while column and lambda aliases still take priority over
-/// function names, so throwing there breaks queries that never invoke the function at all.
+/// A call is checked on two levels:
+/// - As written, before anything can rename or replace it: `QueryAnalyzer::resolveFunction` and the identifiers it
+///   resolves as functions without parentheses; on the legacy path `TreeRewriter::normalize` and `ActionsVisitor`.
+///   Where a written name disappears before the analysis, it is checked there: in `normalizeDivision` and in
+///   `UserDefinedSQLFunctionVisitor`, which inlines SQL UDFs.
+/// - As executed, by the name of the implementation which runs: `QueryAnalyzer::resolveFunction` before the constant
+///   folding, `CheckFunctionAccessPass` after the optimizations of the query tree; on the legacy path `ActionsVisitor`.
 ///
-/// Only ordinary and user defined functions are covered: aggregate names are rejected when the
-/// configuration is loaded, so they never reach this check.
+/// Call these ONLY where an identifier is already committed to a real function call. They must never be called from
+/// `tryGet`-style helpers: analyzer code uses those as non-throwing capability probes while column and lambda aliases
+/// still take priority over function names, so throwing there breaks queries that never invoke the function at all.
+///
+/// The result of a query that calls such a function is not written to the query result cache: a hit is served before
+/// the query is analyzed, so it would skip the check after the grant is revoked.
 void checkFunctionAccess(const ContextPtr & context, const String & function_name);
 
-/// The same for every function call in the expression `ast`, as written. For an expression analyzed by the legacy
-/// `ExpressionAnalyzer`: its `TreeRewriter` renames some calls (`in` to `nullIn` under `transform_null_in`, ...)
-/// before `ActionsVisitor` checks them. Only for a standalone expression, not for a query with table functions.
-void checkFunctionAccessInExpression(const ContextPtr & context, const ASTPtr & ast);
+/// The same for every call in `ast`, as written. The name of a table function and the parameter list of a lambda,
+/// `tuple(x)`, are not calls.
+void checkFunctionAccessInAST(const ContextPtr & context, const ASTPtr & ast);
 
 }

@@ -37,6 +37,7 @@
 #include <Interpreters/ExpressionContainsArrayJoin.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
+#include <Interpreters/checkFunctionAccess.h>
 
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTExpressionList.h>
@@ -1692,6 +1693,10 @@ void TreeRewriter::normalize(
 {
     if (!UserDefinedSQLFunctionFactory::instance().empty())
         UserDefinedSQLFunctionVisitor::visit(query, context_);
+
+    /// The visitors below rename calls (`in` to `nullIn` under `transform_null_in`, `exists` to `in`, ...)
+    /// before `ActionsVisitor` checks them, so check the calls as written, with the inlined SQL UDF bodies.
+    checkFunctionAccessInAST(context_, query);
 
     CustomizeCountDistinctVisitor::Data data_count_distinct{settings[Setting::count_distinct_implementation]};
     CustomizeCountDistinctVisitor(data_count_distinct).visit(query);
