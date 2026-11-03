@@ -484,32 +484,29 @@ DataTypes AggregateFunctionFactory::getVariantArgumentsConversion(
     String name = getAliasToOrName(name_param);
     String lower_case_name;
     bool is_case_insensitive = false;
-    Value found;
+    const Value * found = nullptr;
 
     /// Find by exact match.
     if (auto it = aggregate_functions.find(name); it != aggregate_functions.end())
-    {
-        found = it->second;
-    }
+        found = &it->second;
 
-    if (!found.creator)
+    if (!found)
     {
         lower_case_name = Poco::toLower(name);
         if (auto jt = case_insensitive_aggregate_functions.find(lower_case_name); jt != case_insensitive_aggregate_functions.end())
         {
             is_case_insensitive = true;
-            found = jt->second;
+            found = &jt->second;
         }
     }
 
-    if (found.creator)
+    if (found)
     {
-        auto opt = getAssociatedFunctionByNullsAction(is_case_insensitive ? lower_case_name : name, action);
-        if (opt)
-            found = *opt;
+        if (const auto * associated = getAssociatedFunctionByNullsAction(is_case_insensitive ? lower_case_name : name, action))
+            found = associated;
 
         size_t first_converted_argument = 0;
-        switch (found.properties.variant_arguments_conversion)
+        switch (found->properties.variant_arguments_conversion)
         {
             case VariantArgumentsConversion::None:
                 return {};
