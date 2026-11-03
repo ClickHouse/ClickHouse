@@ -45,11 +45,14 @@ void StreamInQueryResultCacheTransform::cancel(CancelReason reason) noexcept
 
 void StreamInQueryResultCacheTransform::finalizeWriteInQueryResultCache()
 {
-    if (!isCancelled())
+    const bool cancelled = isCancelled();
+    if (!cancelled)
         query_result_cache_writer->finalizeWrite();
 
+    /// Tell the waiters whether they can expect the result in the cache (or, if it could not be stored there, should run
+    /// independently), or whether one of them should take over the execution.
     if (herd_token_holder)
-        herd_token_holder->release();
+        herd_token_holder->release(/*succeeded=*/ !cancelled);
 }
 
 };

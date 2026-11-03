@@ -4,27 +4,32 @@
 
 #include <gtest/gtest.h>
 
+#include <thread>
+
 using namespace DB;
 
-/// A query that finished waiting for the herd executor and still found the cache empty (the executor died, was
-/// cancelled, or the entry was cleared) executes the result itself. It then has to take over as the executor via
-/// `tryBecomeHerdExecutor`, otherwise it would own no token and a query arriving in the meantime would install a
-/// token of its own, whose waiters block on it even though the takeover execution repopulates the cache first.
+/// The herd token protocol of the query result cache: a query whose result is not in the cache either becomes the
+/// "executor" of a group of concurrent, identical queries, or waits while the executor computes the result.
 
 namespace
 {
 
 const IASTHash ast_hash{123456789, 987654321};
+const IASTHash other_ast_hash{111111111, 222222222};
 const UUID user = UUID(UInt128(1));
+
+using Outcome = QueryResultCache::HerdWaitOutcome;
+
+constexpr auto long_timeout = std::chrono::milliseconds(60000);
 
 auto neverCancelled()
 {
     return []() { return false; };
 }
 
-QueryResultCache::CoalescingKey makeKey()
+QueryResultCache::CoalescingKey makeKey(const IASTHash & hash = ast_hash, bool is_subquery = false)
 {
-    return QueryResultCache::CoalescingKey{ast_hash, user, {}, /*share_between_users=*/ false};
+    return QueryResultCache::CoalescingKey{hash, user, {}, /*share_between_users=*/ false, is_subquery};
 }
 
 QueryResultCache makeCache()
@@ -34,58 +39,90 @@ QueryResultCache makeCache()
 
 }
 
-TEST(QueryResultCacheHerdTakeover, FailsWhileAnExecutorOwnsTheKey)
+TEST(QueryResultCacheHerdTakeover, WaiterLearnsThatTheExecutorSucceeded)
 {
     QueryResultCache cache = makeCache();
     const auto key = makeKey();
 
-    auto executor_token = cache.tryBecomeHerdExecutor(key, "executor");
-    ASSERT_TRUE(executor_token);
+    auto executor = cache.acquireOrWaitHerdToken(key, long_timeout, "executor", neverCancelled());
+    ASSERT_EQ(executor.outcome, Outcome::Acquired);
+    ASSERT_TRUE(executor.token);
 
-    /// Somebody else is the executor and wakes its own waiters - no takeover.
-    EXPECT_FALSE(cache.tryBecomeHerdExecutor(key, "other"));
+    /// The token is completed on a thread different from the one which acquired it, like a pipeline thread does.
+    std::thread releaser([&] { cache.releaseHerdToken(key, executor.token, /*succeeded=*/ true); });
 
-    cache.releaseHerdToken(key, executor_token);
+    auto waiter = cache.acquireOrWaitHerdToken(key, long_timeout, "waiter", neverCancelled());
+    releaser.join();
 
-    /// The key is free again.
-    auto takeover_token = cache.tryBecomeHerdExecutor(key, "other");
-    ASSERT_TRUE(takeover_token);
-    EXPECT_NE(takeover_token, executor_token);
-    cache.releaseHerdToken(key, takeover_token);
+    /// Either the waiter saw the finished execution, or it came after the release and became the executor itself.
+    if (waiter.outcome == Outcome::Acquired)
+        cache.releaseHerdToken(key, waiter.token, /*succeeded=*/ true);
+    else
+        EXPECT_EQ(waiter.outcome, Outcome::OwnerSucceeded);
 }
 
-TEST(QueryResultCacheHerdTakeover, SucceedsAfterATimedOutWaiterDroppedTheStaleToken)
+TEST(QueryResultCacheHerdTakeover, WaiterTakesOverAfterTheExecutorFailed)
 {
     QueryResultCache cache = makeCache();
     const auto key = makeKey();
 
-    /// The executor is presumed dead: it never calls `releaseHerdToken`.
-    ASSERT_TRUE(cache.acquireOrWaitHerdToken(key, std::chrono::milliseconds(10000), "dead_executor", neverCancelled()));
+    auto executor = cache.acquireOrWaitHerdToken(key, long_timeout, "executor", neverCancelled());
+    ASSERT_EQ(executor.outcome, Outcome::Acquired);
 
-    /// The waiter times out and drops the stale token.
-    EXPECT_FALSE(cache.acquireOrWaitHerdToken(key, std::chrono::milliseconds(1), "waiter", neverCancelled()));
+    std::thread waiter_thread([&]
+    {
+        auto waiter = cache.acquireOrWaitHerdToken(key, long_timeout, "waiter", neverCancelled());
+        /// Either the waiter saw the failed execution, or it came after the release and became the executor itself.
+        if (waiter.outcome == Outcome::Acquired)
+            cache.releaseHerdToken(key, waiter.token, /*succeeded=*/ false);
+        else
+            EXPECT_EQ(waiter.outcome, Outcome::OwnerFailed);
+    });
 
-    /// That waiter now executes the query itself, so it must become the new executor.
-    auto takeover_token = cache.tryBecomeHerdExecutor(key, "waiter");
-    ASSERT_TRUE(takeover_token);
-    cache.releaseHerdToken(key, takeover_token);
+    cache.releaseHerdToken(key, executor.token, /*succeeded=*/ false);
+    waiter_thread.join();
+
+    /// The key is free again, the waiter can take over.
+    auto takeover = cache.acquireOrWaitHerdToken(key, long_timeout, "waiter", neverCancelled());
+    ASSERT_EQ(takeover.outcome, Outcome::Acquired);
+    EXPECT_NE(takeover.token, executor.token);
+    cache.releaseHerdToken(key, takeover.token, /*succeeded=*/ true);
 }
 
-TEST(QueryResultCacheHerdTakeover, LaterQueriesCoalesceOnTheTakeoverToken)
+TEST(QueryResultCacheHerdTakeover, TimedOutWaiterDropsTheStaleToken)
 {
     QueryResultCache cache = makeCache();
     const auto key = makeKey();
 
-    auto takeover_token = cache.tryBecomeHerdExecutor(key, "taker");
-    ASSERT_TRUE(takeover_token);
+    /// The executor is presumed dead: it does not release its token in time.
+    auto executor = cache.acquireOrWaitHerdToken(key, long_timeout, "dead_executor", neverCancelled());
+    ASSERT_EQ(executor.outcome, Outcome::Acquired);
 
-    /// A query arriving while the takeover execution runs must coalesce on it instead of becoming an executor of its
-    /// own: `acquireOrWaitHerdToken` returns nullptr (it waited - here with a minimal timeout to keep the test instant)
-    /// and a competing takeover attempt fails, i.e. the key is owned.
-    EXPECT_FALSE(cache.tryBecomeHerdExecutor(key, "later"));
-    EXPECT_FALSE(cache.acquireOrWaitHerdToken(key, std::chrono::milliseconds(1), "later", neverCancelled()));
+    /// The waiter times out, drops the stale token and runs independently.
+    EXPECT_EQ(cache.acquireOrWaitHerdToken(key, std::chrono::milliseconds(1), "waiter", neverCancelled()).outcome, Outcome::Independent);
 
-    cache.releaseHerdToken(key, takeover_token);
+    /// A later query becomes the new executor.
+    auto later = cache.acquireOrWaitHerdToken(key, long_timeout, "later", neverCancelled());
+    ASSERT_EQ(later.outcome, Outcome::Acquired);
+    cache.releaseHerdToken(key, later.token, /*succeeded=*/ true);
+
+    /// Releasing the stale token does not affect the map anymore.
+    cache.releaseHerdToken(key, executor.token, /*succeeded=*/ true);
+}
+
+TEST(QueryResultCacheHerdTakeover, CancelledWaiterReturnsImmediately)
+{
+    QueryResultCache cache = makeCache();
+    const auto key = makeKey();
+
+    auto executor = cache.acquireOrWaitHerdToken(key, long_timeout, "executor", neverCancelled());
+    ASSERT_EQ(executor.outcome, Outcome::Acquired);
+
+    const auto before = std::chrono::steady_clock::now();
+    EXPECT_EQ(cache.acquireOrWaitHerdToken(key, long_timeout, "waiter", []() { return true; }).outcome, Outcome::Independent);
+    EXPECT_LT(std::chrono::steady_clock::now() - before, std::chrono::seconds(30));
+
+    cache.releaseHerdToken(key, executor.token, /*succeeded=*/ true);
 }
 
 TEST(QueryResultCacheHerdTakeover, AQueryNeverWaitsForItsOwnToken)
@@ -94,24 +131,59 @@ TEST(QueryResultCacheHerdTakeover, AQueryNeverWaitsForItsOwnToken)
     /// query containing the same subquery twice reaches `acquireOrWaitHerdToken` for the second occurrence while still
     /// owning the token of the first one. Waiting would block the query on its own unfinished computation until the timeout.
     QueryResultCache cache = makeCache();
-    const auto key = makeKey();
+    const auto key = makeKey(ast_hash, /*is_subquery=*/ true);
 
-    auto own_token = cache.acquireOrWaitHerdToken(key, std::chrono::milliseconds(10000), "query_1", neverCancelled());
-    ASSERT_TRUE(own_token);
+    auto own = cache.acquireOrWaitHerdToken(key, long_timeout, "query_1", neverCancelled());
+    ASSERT_EQ(own.outcome, Outcome::Acquired);
 
-    /// Same query id: returns immediately instead of waiting for the (long) timeout.
     const auto before = std::chrono::steady_clock::now();
-    EXPECT_FALSE(cache.acquireOrWaitHerdToken(key, std::chrono::milliseconds(10000), "query_1", neverCancelled()));
-    EXPECT_LT(std::chrono::steady_clock::now() - before, std::chrono::seconds(5));
+    EXPECT_EQ(cache.acquireOrWaitHerdToken(key, long_timeout, "query_1", neverCancelled()).outcome, Outcome::Independent);
+    EXPECT_LT(std::chrono::steady_clock::now() - before, std::chrono::seconds(30));
 
-    /// Retrying can never succeed while the query owns the token, so retry loops must detect this and stop.
-    EXPECT_FALSE(cache.tryBecomeHerdExecutor(key, "query_1"));
-    EXPECT_TRUE(cache.isHerdExecutor(key, "query_1"));
-    EXPECT_FALSE(cache.isHerdExecutor(key, "query_2"));
+    cache.releaseHerdToken(key, own.token, /*succeeded=*/ true);
+}
 
-    /// Another query is still a regular waiter and does not steal the key.
-    EXPECT_FALSE(cache.tryBecomeHerdExecutor(key, "query_2"));
+TEST(QueryResultCacheHerdTakeover, AQueryOwningASubqueryTokenDoesNotWaitForAnotherOne)
+{
+    /// Query 1 plans subqueries A then B, query 2 plans B then A. If both waited, neither could ever run.
+    QueryResultCache cache = makeCache();
+    const auto key_a = makeKey(ast_hash, /*is_subquery=*/ true);
+    const auto key_b = makeKey(other_ast_hash, /*is_subquery=*/ true);
 
-    cache.releaseHerdToken(key, own_token);
-    EXPECT_FALSE(cache.isHerdExecutor(key, "query_1"));
+    auto token_a = cache.acquireOrWaitHerdToken(key_a, long_timeout, "query_1", neverCancelled());
+    ASSERT_EQ(token_a.outcome, Outcome::Acquired);
+    auto token_b = cache.acquireOrWaitHerdToken(key_b, long_timeout, "query_2", neverCancelled());
+    ASSERT_EQ(token_b.outcome, Outcome::Acquired);
+
+    const auto before = std::chrono::steady_clock::now();
+    EXPECT_EQ(cache.acquireOrWaitHerdToken(key_b, long_timeout, "query_1", neverCancelled()).outcome, Outcome::Independent);
+    EXPECT_EQ(cache.acquireOrWaitHerdToken(key_a, long_timeout, "query_2", neverCancelled()).outcome, Outcome::Independent);
+    EXPECT_LT(std::chrono::steady_clock::now() - before, std::chrono::seconds(30));
+
+    cache.releaseHerdToken(key_a, token_a.token, /*succeeded=*/ true);
+    cache.releaseHerdToken(key_b, token_b.token, /*succeeded=*/ true);
+}
+
+TEST(QueryResultCacheHerdTakeover, AQueryOwningOnlyItsTopLevelTokenWaitsForASubquery)
+{
+    /// A top-level token is only waited for by queries owning no token, so owning one does not prevent waiting.
+    QueryResultCache cache = makeCache();
+    const auto top_level_key = makeKey(ast_hash, /*is_subquery=*/ false);
+    const auto subquery_key = makeKey(other_ast_hash, /*is_subquery=*/ true);
+
+    auto top_level = cache.acquireOrWaitHerdToken(top_level_key, long_timeout, "query_1", neverCancelled());
+    ASSERT_EQ(top_level.outcome, Outcome::Acquired);
+    auto subquery = cache.acquireOrWaitHerdToken(subquery_key, long_timeout, "query_2", neverCancelled());
+    ASSERT_EQ(subquery.outcome, Outcome::Acquired);
+
+    std::thread releaser([&] { cache.releaseHerdToken(subquery_key, subquery.token, /*succeeded=*/ true); });
+    auto waiter = cache.acquireOrWaitHerdToken(subquery_key, long_timeout, "query_1", neverCancelled());
+    releaser.join();
+
+    if (waiter.outcome == Outcome::Acquired)
+        cache.releaseHerdToken(subquery_key, waiter.token, /*succeeded=*/ true);
+    else
+        EXPECT_EQ(waiter.outcome, Outcome::OwnerSucceeded);
+
+    cache.releaseHerdToken(top_level_key, top_level.token, /*succeeded=*/ true);
 }

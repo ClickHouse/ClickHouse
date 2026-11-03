@@ -12,8 +12,9 @@ public:
     /// `herd_token_holder_`, if non-null, is released in finalizeWriteInQueryResultCache() (the normal
     /// completion path) or, failing that, whenever this transform is eventually destroyed (e.g. the pipeline was
     /// torn down due to an exception or cancellation before finalizeWriteInQueryResultCache() was ever called) -
-    /// see QueryResultCacheHerdTokenHolder's destructor. Multiple transforms (Main/Totals/Extremes) may share the
-    /// same holder, exactly as they already share the same query_result_cache_writer; release() is idempotent.
+    /// see QueryResultCacheHerdTokenHolder's destructor, which tells the waiters that the execution failed. Multiple
+    /// transforms (Main/Totals/Extremes) may share the same holder, exactly as they already share the same
+    /// query_result_cache_writer; release() is idempotent.
     StreamInQueryResultCacheTransform(
         const Block & header_,
         std::shared_ptr<QueryResultCacheWriter> query_result_cache_writer,

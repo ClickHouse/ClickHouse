@@ -9,8 +9,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # Verifies that when the herd "executor" is killed mid-flight while the overall
 # query_cache_herd_wait_timeout budget still has plenty of time left, the waiters that lose the
 # takeover race rejoin the wait on the new executor's token instead of falling through to
-# independent, uncoalesced execution ("mini thundering herd"). See acquireOrWaitHerdToken() /
-# tryBecomeHerdExecutor() in QueryResultCache.cpp and their callers in executeQuery.cpp.
+# independent, uncoalesced execution ("mini thundering herd"). See `acquireOrWaitHerdToken` and
+# `coalesceQueryResultCacheHerd` in QueryResultCache.cpp.
 #
 # The overall timeout (20s) is deliberately much larger than the time the kill+takeover round
 # actually takes (a couple of seconds), so there is ample budget left for the retry loop to matter.

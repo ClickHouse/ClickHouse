@@ -58,7 +58,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/convertColumnToType.h>
 #include <Interpreters/HashTablesStatistics.h>
-#include <Interpreters/ProcessList.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/Cache/QueryResultCacheOnDisk.h>
@@ -213,6 +212,7 @@ namespace ErrorCodes
     extern const int INVALID_LIMIT_EXPRESSION;
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
     extern const int INVALID_WITH_FILL_EXPRESSION;
+    extern const int QUERY_CACHE_USED_WITH_NON_THROW_OVERFLOW_MODE;
 }
 
 namespace
@@ -2947,13 +2947,6 @@ void Planner::buildPlanForQueryNode()
     if (should_cache && !query_result_cache)
         should_cache = false;
 
-    /// Explicit per-subquery opt-in (SETTINGS use_query_cache = 1 on the subquery) can enable the Planner-level cache
-    /// even when the outer query runs with use_query_cache = 0, in which case the equivalent check in executeQuery()
-    /// never fired. Without it, a non-THROW overflow mode could store a truncated subquery result which later cache
-    /// hits would reuse as if it were complete.
-    if (should_cache)
-        throwIfQueryResultCacheUsedWithNonThrowOverflowMode(settings);
-
     /// For explicit per-subquery opt-in, we track cache eligibility locally
     /// without mutating the shared query context (which would leak to the outer query).
     bool local_can_use_cache = can_use_query_result_cache || should_cache;
@@ -2972,6 +2965,32 @@ void Planner::buildPlanForQueryNode()
     if (should_cache)
         query_result_cache_on_disk = QueryResultCacheOnDisk::getFromSettings(settings);
 
+    /// Explicit per-subquery opt-in (SETTINGS use_query_cache = 1 on the subquery) can enable the Planner-level cache
+    /// even when the outer query runs with use_query_cache = 0, in which case the equivalent check in `executeQuery`
+    /// never fired. Without it, a non-THROW overflow mode could store a truncated subquery result which later cache
+    /// hits would reuse as if it were complete. As in `executeQuery`, this is only needed if some backend can actually
+    /// store the result.
+    if (should_cache && hasQueryResultCacheWriteBackend(query_context, query_result_cache_on_disk))
+    {
+        throwIfQueryResultCacheUsedWithNonThrowOverflowMode(settings);
+
+        /// The sources of the subquery also enforce the storage limits inherited from the outer query (see `addStorageLimits`).
+        /// A non-THROW limit stops the sources early while the rest of the subquery pipeline finishes normally, so a truncated
+        /// result would be stored. The inherited limits are not part of the cache key (the subquery may override them), so a
+        /// later query without these limits would reuse the truncated result.
+        for (const auto & inherited_limits : storage_limits)
+        {
+            const auto & local_limits = inherited_limits.local_limits;
+            const bool has_timeout = local_limits.speed_limits.max_execution_time != 0
+                || local_limits.speed_limits.max_estimated_execution_time != 0;
+            if ((local_limits.size_limits.hasLimits() && local_limits.size_limits.overflow_mode != OverflowMode::THROW)
+                || (inherited_limits.leaf_limits.hasLimits() && inherited_limits.leaf_limits.overflow_mode != OverflowMode::THROW)
+                || (has_timeout && local_limits.timeout_overflow_mode != OverflowMode::THROW))
+                throw Exception(ErrorCodes::QUERY_CACHE_USED_WITH_NON_THROW_OVERFLOW_MODE,
+                    "use_query_cache for a subquery cannot be used together with limits of the outer query with overflow_mode != 'throw'");
+        }
+    }
+
     /// If it is a non-internal SELECT, and passive (read) use of the query cache is enabled, and the cache knows the query, then add a ReadFromQueryResultCacheStep instead of building the rest of the plan.
     if (should_cache
         && tryAddReadFromQueryResultCacheStep(query_plan, ast, query_context, settings, *settings_copy, query_result_cache, query_result_cache_on_disk))
@@ -2988,6 +3007,8 @@ void Planner::buildPlanForQueryNode()
     {
         const auto herd_wait_timeout = std::chrono::milliseconds(settings[Setting::query_cache_herd_wait_timeout].totalMilliseconds());
         if (herd_wait_timeout.count() > 0
+            /// The query id tells the herd tokens of this query apart, e.g. not to wait for its own token.
+            && !query_context->getCurrentQueryId().empty()
             && settings[Setting::enable_reads_from_query_cache]
             /// Coalescing is tied to the in-memory query result cache (the herd tokens live in it, and the waiters re-probe it
             /// once the executor is done), so the executor must be able to write to it, same as in `executeQuery`.
@@ -3007,51 +3028,15 @@ void Planner::buildPlanForQueryNode()
                 .share_between_users = settings[Setting::query_cache_share_between_users],
                 .is_subquery = true};
 
-            QueryStatusPtr herd_wait_process_list_elem = query_context->getProcessListElement();
-            auto herd_is_cancelled = [herd_wait_process_list_elem]()
+            auto try_read_from_query_result_cache = [&]
             {
-                return herd_wait_process_list_elem && herd_wait_process_list_elem->isKilled();
+                return tryAddReadFromQueryResultCacheStep(
+                    query_plan, ast, query_context, settings, *settings_copy, query_result_cache, query_result_cache_on_disk);
             };
 
-            /// Retry loop, bounded by the overall herd_wait_timeout budget
-            const auto herd_wait_deadline = std::chrono::steady_clock::now() + herd_wait_timeout;
-            QueryResultCache::HerdTokenPtr herd_token;
-            while (true)
-            {
-                const auto herd_wait_remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
-                    herd_wait_deadline - std::chrono::steady_clock::now());
-                if (herd_wait_remaining.count() <= 0)
-                    break;
-
-                herd_token = query_result_cache->acquireOrWaitHerdToken(
-                    herd_key, herd_wait_remaining, query_context->getCurrentQueryId(), herd_is_cancelled);
-                if (herd_token)
-                    break;
-
-                /// Distinguish "waited and gave up/got woken" from "was cancelled while waiting" exactly as the
-                /// query would be without coalescing.
-                if (herd_wait_process_list_elem)
-                    herd_wait_process_list_elem->throwIfKilled();
-
-                if (query_result_cache->isHerdExecutor(herd_key, query_context->getCurrentQueryId()))
-                    break;
-
-                if (tryAddReadFromQueryResultCacheStep(
-                        query_plan, ast, query_context, settings, *settings_copy, query_result_cache, query_result_cache_on_disk))
-                    return;
-
-                /// Still a miss: the previous executor may have thrown, been cancelled, timed out, or the cache
-                /// may have been cleared in the meantime. Try to take over as executor.
-                herd_token = query_result_cache->tryBecomeHerdExecutor(herd_key, query_context->getCurrentQueryId());
-                if (herd_token)
-                    break;
-
-                /// Lost the takeover race to yet another concurrent query: loop back and wait on its new token
-                /// instead of planning this subquery independently, as long as the overall budget allows.
-            }
-
-            if (herd_token)
-                herd_token_holder = QueryResultCacheHerdTokenHolder(query_result_cache, herd_key, herd_token);
+            if (coalesceQueryResultCacheHerd(
+                    query_result_cache, herd_key, query_context, herd_wait_timeout, try_read_from_query_result_cache, herd_token_holder))
+                return;
         }
     }
 

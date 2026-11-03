@@ -3293,44 +3293,8 @@ static BlockIO executeQueryImpl(
                         .share_between_users = settings[Setting::query_cache_share_between_users],
                         .is_subquery = false};
 
-                    QueryStatusPtr herd_wait_process_list_elem = context->getProcessListElement();
-                    auto herd_is_cancelled = [herd_wait_process_list_elem]()
-                    {
-                        return herd_wait_process_list_elem && herd_wait_process_list_elem->isKilled();
-                    };
-
-                    /// Bound by `herd_wait_timeout`, this loop forces queries that lose the race to become
-                    /// executor (`tryBecomeHerdExecutor() == nullptr`) to rejoin the herd rather than fall through.Prevents a mini thundering herd
-                    const auto herd_wait_deadline = std::chrono::steady_clock::now() + herd_wait_timeout;
-                    QueryResultCache::HerdTokenPtr herd_token;
-                    while (true)
-                    {
-                        const auto herd_wait_remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
-                            herd_wait_deadline - std::chrono::steady_clock::now());
-                        if (herd_wait_remaining.count() <= 0)
-                            break;
-
-                        herd_token = query_result_cache->acquireOrWaitHerdToken(
-                            herd_key, herd_wait_remaining, context->getCurrentQueryId(), herd_is_cancelled);
-                        if (herd_token)
-                            break;
-
-                        /// Wait rather than became the executor.
-                        if (herd_wait_process_list_elem)
-                            herd_wait_process_list_elem->throwIfKilled();
-
-                        served_from_query_result_cache = get_result_from_query_result_cache();
-                        if (served_from_query_result_cache)
-                            break;
-
-                        /// Still a miss. Try to take over as executor.
-                        herd_token = query_result_cache->tryBecomeHerdExecutor(herd_key, context->getCurrentQueryId());
-                        if (herd_token)
-                            break;
-                    }
-
-                    if (herd_token)
-                        herd_token_holder = QueryResultCacheHerdTokenHolder(query_result_cache, herd_key, herd_token);
+                    served_from_query_result_cache = coalesceQueryResultCacheHerd(
+                        query_result_cache, herd_key, context, herd_wait_timeout, get_result_from_query_result_cache, herd_token_holder);
                 }
             }
 
@@ -3616,7 +3580,7 @@ static BlockIO executeQueryImpl(
                                     pulling_pipeline = pipeline.pulling(),
                                     query_span](const QueryPipelineFinalizedInfo & query_pipeline_finalized_info, std::chrono::system_clock::time_point finish_time) mutable
             {
-                shared_herd_token_holder->release();
+                shared_herd_token_holder->release(/*succeeded=*/ true);
 
                 logQueryFinishImpl(elem, context, out_ast, query_pipeline_finalized_info, pulling_pipeline, query_span, query_result_cache_usage, internal, log_as_internal, finish_time);
 
@@ -3628,9 +3592,8 @@ static BlockIO executeQueryImpl(
 
             auto exception_callback =
                 [start_watch, elem, context, out_ast, internal, log_as_internal, my_quota(quota), normalized_query_hash, implicit_tcl_executor, query_span, shared_herd_token_holder](bool log_error, const QueryPipeline & query_pipeline) mutable
-
             {
-                shared_herd_token_holder->release();
+                shared_herd_token_holder->release(/*succeeded=*/ false);
 
                 if (implicit_tcl_executor->transactionRunning())
                 {
