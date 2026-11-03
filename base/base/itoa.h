@@ -250,14 +250,21 @@ ALWAYS_INLINE inline char * writeUInt32Text(UInt32 value, char * p)
     /// The low halves of the 64-bit lanes of both vectors, one shuffle on x86 and ARM. The fourth lane gets `n`, which is
     /// never written out.
     UInt32x4 terms;
+    UInt32x2 swapped_quotients;
     if constexpr (little_endian)
+    {
         terms = __builtin_shufflevector(quotients, std::bit_cast<UInt32x4>(wide), 0, 2, 4, 6);
+        swapped_quotients = __builtin_shufflevector(quotients, quotients, 2, 0);
+    }
     else
+    {
         terms = __builtin_shufflevector(quotients, std::bit_cast<UInt32x4>(wide), 1, 3, 5, 7);
-    /// 10^4 * (n / 10^6) and 10^2 * (n / 100) in the swapped 64-bit lanes: both fit in 32 bits, so this is one 32 x 32 to
-    /// 64-bit multiplication (`vpmuludq`, `umull`), and the high halves are 0. A 32-bit multiplication (`vpmulld`) is
-    /// two micro-ops with a latency of 10 cycles on Intel.
-    UInt32x4 subtracted = std::bit_cast<UInt32x4>(__builtin_shufflevector(wide_quotients, wide_quotients, 1, 0) * UInt64x2{10000, 100});
+        swapped_quotients = __builtin_shufflevector(quotients, quotients, 3, 1);
+    }
+    /// 10^4 * (n / 10^6) and 10^2 * (n / 100), each in a 64-bit lane with its high half 0. The quotients are widened
+    /// from 32-bit lanes, so that this is one 32 x 32 to 64-bit multiplication (`vpmuludq`, `umull`): a 32-bit one
+    /// (`vpmulld`) is two micro-ops with a latency of 10 cycles on Intel, and NEON has no 64-bit one.
+    UInt32x4 subtracted = std::bit_cast<UInt32x4>(__builtin_convertvector(swapped_quotients, UInt64x2) * UInt64x2{10000, 100});
     if constexpr (!little_endian)
         subtracted = __builtin_shufflevector(subtracted, subtracted, 1, 0, 3, 2);
     UInt32x4 groups = terms - subtracted;
