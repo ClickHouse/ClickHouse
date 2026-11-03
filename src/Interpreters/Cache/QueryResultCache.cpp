@@ -1216,6 +1216,7 @@ QueryResultCacheReader::QueryResultCacheReader(
     Source source_,
     SharedHeader header,
     QueryResultCache::Entry && entry,
+    ResultColumnOrigins && result_column_origins_,
     std::chrono::time_point<std::chrono::system_clock> created_at_,
     std::chrono::time_point<std::chrono::system_clock> expires_at_)
     : source(source_)
@@ -1224,6 +1225,7 @@ QueryResultCacheReader::QueryResultCacheReader(
 
     created_at = created_at_;
     expires_at = expires_at_;
+    result_column_origins = std::move(result_column_origins_);
 }
 
 QueryResultCacheReader::QueryResultCacheReader(Cache & cache_, const Cache::Key & key, const std::lock_guard<std::mutex> &)
@@ -1289,6 +1291,7 @@ QueryResultCacheReader::QueryResultCacheReader(Cache & cache_, const Cache::Key 
 
     created_at = entry_key.created_at;
     expires_at = entry_key.expires_at;
+    result_column_origins = entry_key.result_column_origins;
 
     LOG_TRACE(logger, "Query result found for query {}", doubleQuoteString(key.query_string));
 }
@@ -1332,6 +1335,12 @@ std::chrono::time_point<std::chrono::system_clock> QueryResultCacheReader::entry
 {
     chassert(hasCacheEntryForKey(false));
     return expires_at;
+}
+
+const ResultColumnOrigins & QueryResultCacheReader::entryResultColumnOrigins() const
+{
+    chassert(hasCacheEntryForKey(false));
+    return result_column_origins;
 }
 
 std::unique_ptr<SourceFromChunks> QueryResultCacheReader::getSource()
