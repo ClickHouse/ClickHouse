@@ -4,10 +4,17 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnConst.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool use_variant_as_common_type;
+}
 
 namespace ErrorCodes
 {
@@ -38,6 +45,7 @@ public:
         , fun_array(FunctionFactory::instance().get("array", context_))
         , fun_transform(FunctionFactory::instance().get("transform", context_))
         , fun_multi_if(FunctionFactory::instance().get("multiIf", context_))
+        , use_variant_as_common_type(context_->getSettingsRef()[Setting::use_variant_as_common_type])
     {
     }
     bool isVariadic() const override { return true; }
@@ -53,6 +61,9 @@ public:
         /// The fixed group matches (expr, when1, then1), the ellipsis repeats (when, then),
         /// and the trailing E is the else branch. The when-positions are matched as Any
         /// since CASE WHEN equality semantics handles arbitrary types.
+        /// A Variant result means the values have no supertype, so it is built by the `multiIf` fallback, not `transform`.
+        if (use_variant_as_common_type)
+            return "(Any, Any, V1, ..., E) -> leastSupertypeOrVariant(V1, ..., E)";
         return "(Any, Any, V1, ..., E) -> leastSupertype(V1, ..., E)";
     }
 
@@ -262,6 +273,7 @@ private:
     FunctionOverloadResolverPtr fun_array;
     FunctionOverloadResolverPtr fun_transform;
     FunctionOverloadResolverPtr fun_multi_if;
+    bool use_variant_as_common_type;
 };
 
 }
