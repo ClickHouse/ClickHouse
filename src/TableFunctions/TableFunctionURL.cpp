@@ -373,7 +373,7 @@ StoragePtr TableFunctionURL::getStorage(
         && !is_insert_query
         && !use_web_wildcard;
 
-    if (can_use_parallel_replicas)
+    if (can_use_parallel_replicas && !context->isSQLSecurityOverriddenBody())
     {
         const bool cluster_has_secret = clusterHasSecret(context, parallel_replicas_cluster_name);
         return std::make_shared<StorageURLCluster>(
