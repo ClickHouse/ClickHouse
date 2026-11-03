@@ -565,9 +565,14 @@ possible_properties = {
     "s3queue_disable_streaming": true_false_lambda,
     "show_addresses_in_stack_traces": true_false_lambda,
     "show_license_expiration_warnings": true_false_lambda,  # Cloud setting
-    "shutdown_wait_backups_and_restores": true_false_lambda,
+    # Not randomized: with 1 (the default) the server waits for running backups and restores
+    # on shutdown without any time limit, by design, so any long backup would be reported as
+    # a shutdown failure. It is always set to 0 below.
+    "shutdown_wait_backups_and_restores": lambda: 0,
+    # A shutdown can spend `shutdown_wait_unfinished` twice: once cancelling backups and
+    # restores, and once more waiting for the connections that ran them to finish.
     "shutdown_wait_unfinished": threshold_generator(
-        0.2, 0.2, 0, SERVER_STOP_WAIT_SECONDS - 10, allow_unlimited=False
+        0.2, 0.2, 0, (SERVER_STOP_WAIT_SECONDS - 10) // 2, allow_unlimited=False
     ),
     "shutdown_wait_unfinished_queries": true_false_lambda,
     "skip_check_for_incorrect_settings": true_false_lambda,
@@ -1273,11 +1278,17 @@ def add_single_disk(
     elif disk_type in ("cache", "encrypted"):
         disk_xml = ET.SubElement(next_disk, "disk")
         disk_xml.text = f"disk{prev_disk}"
-        if disk_type == "cache" or random.randint(1, 2) == 1:
+        if disk_type == "cache":
             path_xml = ET.SubElement(next_disk, "path")
             path_xml.text = f"/var/lib/clickhouse/disk{i}/"
             allowed_path_xml = ET.SubElement(backups_element, "allowed_path")
             allowed_path_xml.text = f"/var/lib/clickhouse/disk{i}/"
+        elif random.randint(1, 2) == 1:
+            # The path of an encrypted disk is relative to the disk it wraps (`DiskEncrypted` uses
+            # `wrapped_disk->getPath() + path`). An absolute path is rejected by object storage disks
+            # with `PATH_ACCESS_DENIED`, and the server refuses to start.
+            path_xml = ET.SubElement(next_disk, "path")
+            path_xml.text = f"disk{i}/"
 
         if disk_type == "cache":
             max_size_xml = ET.SubElement(next_disk, "max_size")
@@ -1943,6 +1954,10 @@ def modify_server_settings(
     if root.find("shutdown_wait_unfinished") is None:
         selected_properties["shutdown_wait_unfinished"] = possible_properties[
             "shutdown_wait_unfinished"
+        ]
+    if root.find("shutdown_wait_backups_and_restores") is None:
+        selected_properties["shutdown_wait_backups_and_restores"] = possible_properties[
+            "shutdown_wait_backups_and_restores"
         ]
 
     # Add remote server configurations
