@@ -1640,7 +1640,6 @@ void registerStorageEmbeddedRocksDB(StorageFactory & factory)
         .supports_settings = true,
         .supports_sort_order = true,
         .supports_ttl = true,
-        .supports_parallel_insert = true,
         .has_builtin_setting_fn = RocksDBSettings::hasBuiltin,
     };
 

@@ -342,6 +342,10 @@ This applies both to `INSERT SELECT` and to a plain `INSERT` whose data is sent 
 (squashing the blocks and writing them to the destination table) is parallelized
 across up to this many threads.
 
+Destinations whose results depend on insertion order keep a single write stream regardless of this setting:
+`CollapsingMergeTree`, `CoalescingMergeTree`, `GraphiteMergeTree`, `ReplacingMergeTree` without a version column
+(including their replicated variants), `EmbeddedRocksDB`, and `KeeperMap`.
+
 Possible values:
 
 - 0 — Auto. Uses the number of CPU cores available to the server (the same auto value as [`max_threads`](#max_threads)), reduced under memory pressure by [`max_insert_threads_min_free_memory_per_thread`](#max_insert_threads_min_free_memory_per_thread).
