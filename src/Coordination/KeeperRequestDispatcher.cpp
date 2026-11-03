@@ -348,7 +348,13 @@ bool KeeperRequestDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr
             std::chrono::milliseconds operation_timeout = saturatedWaitMilliseconds(
                 keeper_context->getCoordinationSettings()[CoordinationSetting::operation_timeout_ms].totalMilliseconds());
             if (std::chrono::steady_clock::now() - start_time > operation_timeout)
-                throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Cannot push request to queue within operation timeout");
+                throw Exception(
+                    ErrorCodes::TIMEOUT_EXCEEDED,
+                    "Cannot push request to queue within operation timeout ({} ms). "
+                    "The request queue may be full or keeper is overloaded: "
+                    "consider increasing operation_timeout_ms in keeper_server.coordination_settings "
+                    "or checking keeper load",
+                    operation_timeout.count());
         }
     }
 
