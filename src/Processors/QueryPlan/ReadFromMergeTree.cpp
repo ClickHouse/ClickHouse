@@ -2460,8 +2460,13 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         /// following real chunk behind a virtual row before that virtual row is emitted,
         /// reintroducing read-past-boundary behavior. When per-block virtual rows are
         /// active we therefore fall back to the non-prefetching path.
+        ///
+        /// It is also not used with `SAMPLE`: the sampling filter is added by `initializePipeline`
+        /// after the streams are built, so it would run on one stream per part after the
+        /// concatenation, serializing an arbitrarily expensive sampling-key expression.
         const bool can_use_per_part_prefetching =
             !per_part_prefetching_disabled
+            && !getAnalysisResult().sampling.use_sampling
             && !output_each_partition_through_separate_port
             && input_order_info->limit == 0
             && !has_outer_limit
