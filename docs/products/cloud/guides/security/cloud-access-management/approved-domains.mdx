@@ -62,9 +62,11 @@ If multiple organizations approve the same domain, each applies its own enrollme
   <Step title="Configure enrollment and default roles" id="configure-enrollment-and-default-roles">
     For the domain, select an **Auto-enrollment** method and **Default role**.
 
-    New domains default to **Send an invite** and the **Member** role. Enrollment starts after verification succeeds.
+    New domains default to Send an invite and the Member role. Enrollment starts after verification succeeds.
 
-    The role selector offers **Member**, **Service Admin**, and **Service Reader**. Organizations using the earlier role system display **Service Read-Only** instead of **Service Reader**. Where supported, you can select multiple roles. The **Admin** option is disabled.
+    You can select one or more roles, **including custom roles**. The list shows only roles you are allowed to assign. Roles that can manage the organization, such as **Admin**, cannot be selected.
+
+    If a selected role is deleted or can no longer be assigned, it is removed from the domain. If no selected roles remain, new users get the Member role.
   </Step>
   <Step title="Add the DNS record" id="add-the-dns-record">
     Create a TXT record with your DNS provider using the values shown in the console:
