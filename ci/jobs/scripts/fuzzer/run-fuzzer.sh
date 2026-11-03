@@ -365,10 +365,12 @@ function fuzz
         echo "Fuzzer pid is $fuzzer_pid"
 
         # We need to give timeout some time to execute the underlying command with that many arguments
+        # The fuzzer_pid belongs to the timeout process.
+        actual_fuzzer_pid=''
         elapsed=0
         maximum=50
         while [[ $elapsed -lt $maximum ]]; do
-            if ps -o pid= --ppid "$fuzzer_pid"; then
+            if actual_fuzzer_pid=$(ps -o pid= --ppid "$fuzzer_pid"); then
                 echo "Found underlying PID!"
                 break;
             else
@@ -378,12 +380,12 @@ function fuzz
             elapsed=$((elapsed+1))
         done
 
-        # The fuzzer_pid belongs to the timeout process.
-        actual_fuzzer_pid=$(ps -o pid= --ppid "$fuzzer_pid")
-
         if [[ "$IS_ASAN" = "1" ]];
         then
             echo "ASAN build detected. Not using gdb since it disables LeakSanitizer detections"
+        elif [[ -z "$actual_fuzzer_pid" ]];
+        then
+            echo "The fuzzer exited before its PID was found, not attaching gdb"
         else
             echo "Attaching gdb to the fuzzer itself"
             gdb -batch -command script.gdb -p $actual_fuzzer_pid &
