@@ -132,7 +132,7 @@ std::optional<std::string> AsynchronousMetrics::openCgroupv2MetricFile(const std
     auto path = getCgroupsV2PathContainingFile(filename);
     if (path)
         openFileIfExists((path.value() + "/" + filename).c_str(), out);
-    return path;
+    return out ? path : std::nullopt;
 };
 
 #endif

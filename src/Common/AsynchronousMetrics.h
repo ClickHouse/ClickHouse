@@ -316,7 +316,7 @@ private:
 
     std::unique_ptr<ReadBufferFromFilePRead> openFileIfExists(const std::string & filename);
     void openFileIfExists(const char * filename, std::optional<ReadBufferFromFilePRead> & out);
-    /// Returns the cgroup directory where the file was found.
+    /// Returns the cgroup directory of the opened file, or nullopt if it was not opened.
     std::optional<std::string> openCgroupv2MetricFile(const std::string & filename, std::optional<ReadBufferFromFilePRead> & out);
 
     void applyCgroupCPUMetricsUpdate(AsynchronousMetricValues & new_values, const ProcStatValuesCPU & delta_values, double multiplier);
