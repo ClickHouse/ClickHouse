@@ -21,6 +21,9 @@ node5 = cluster.add_instance(
     user_configs=["configs/allow_server_credentials.xml"],
 )
 node6 = cluster.add_instance("node6", main_configs=["configs/config_for_remote.xml"])
+node8 = cluster.add_instance(
+    "node8", main_configs=["configs/config_with_pinned_port.xml"]
+)  # Allows only 127.0.0.1:3306 (port-pinned entry).
 
 if not is_arm():
     node7 = cluster.add_instance(
@@ -145,6 +148,43 @@ def test_azure_host_filter_before_client_creation(start_cluster, query):
     assert "UNACCEPTABLE_URL" in error
     # The host check must run before even a container existence probe.
     assert node5.query(container_requests) == before
+
+
+def test_object_storage_queue_move_destination_host_filter(start_cluster):
+    # The source is on an allowed host (`host:80`), so only the move destination can be rejected. `node1` has no
+    # Keeper, so a rejection with "not allowed" must come from the settings validation, which runs before any
+    # Keeper access.
+    s3_queue = (
+        "CREATE TABLE s3queue_move_host (x UInt8) "
+        "ENGINE = S3Queue('http://host:80/bucket/data/', 'key', 'secret', 'CSV') "
+        "SETTINGS mode = 'unordered', after_processing = 'move', "
+        "after_processing_move_uri = '{}', "
+        "after_processing_move_access_key_id = 'key', after_processing_move_secret_access_key = 'secret'"
+    )
+    azure_queue = (
+        "CREATE TABLE azurequeue_move_host (x UInt8) "
+        "ENGINE = AzureQueue('http://host:80', 'container', '*', 'account', 'YQ==', 'CSV') "
+        "SETTINGS mode = 'unordered', after_processing = 'move', "
+        "after_processing_move_connection_string = "
+        "'DefaultEndpointsProtocol=http;AccountName=account;AccountKey=YQ==;BlobEndpoint=http://host:123/account;', "
+        "after_processing_move_container = 'dst'"
+    )
+
+    try:
+        error = node1.query_and_get_error(s3_queue.format("http://host:123/bucket/"))
+        assert "not allowed" in error, error
+
+        error = node1.query_and_get_error(
+            azure_queue, settings={"azure_sdk_max_retries": 0}
+        )
+        assert "not allowed" in error, error
+
+        # Control: an allowed destination passes the host check and only fails later, on the missing Keeper.
+        error = node1.query_and_get_error(s3_queue.format("http://host:80/bucket/"))
+        assert "not allowed" not in error, error
+    finally:
+        node1.query("DROP TABLE IF EXISTS s3queue_move_host SYNC")
+        node1.query("DROP TABLE IF EXISTS azurequeue_move_host SYNC")
 
 
 def test_config_with_only_primary_hosts(start_cluster):
@@ -313,6 +353,57 @@ def test_mysql_dictionary_replica_host_filter(start_cluster):
     )
     assert "not allowed" in error, f"Expected host filter error, got: {error}"
     node5.query("DROP DICTIONARY IF EXISTS default.test_mysql_replica_filter")
+
+
+def test_mysql_dictionary_replica_inherited_port_host_filter(start_cluster):
+    """A REPLICA(...) without its own PORT connects to the top-level PORT (mysqlxx::Pool
+    falls back to the parent prefix), so the host filter must validate that effective
+    port, not the 3306 default."""
+    # node8 allows only 127.0.0.1:3306 and 127.0.0.1:3308. 127.0.0.1 (instead of the
+    # unroutable 10.0.0.1 used above) makes any dial that passes the filter fail
+    # instantly with connection-refused instead of hanging until the connect timeout.
+    node8.query("DROP DICTIONARY IF EXISTS default.test_mysql_inherited_port")
+    node8.query(
+        """
+        CREATE DICTIONARY default.test_mysql_inherited_port (id UInt64, val String)
+        PRIMARY KEY id
+        SOURCE(MYSQL(
+            PORT 3307 USER 'root' PASSWORD 'pass' DB 'test' TABLE 'tbl'
+            REPLICA(PRIORITY 1 HOST '127.0.0.1')
+        ))
+        LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 1)
+        """
+    )
+    # The replica inherits the denied top-level port 3307; before the fix the filter
+    # checked the 3306 default, passed, and dialed 127.0.0.1:3307 anyway.
+    error = node8.query_and_get_error(
+        "SELECT dictGet('default.test_mysql_inherited_port', 'val', toUInt64(1))"
+    )
+    assert "not allowed" in error, f"Expected host filter error, got: {error}"
+    node8.query("DROP DICTIONARY IF EXISTS default.test_mysql_inherited_port")
+
+    # A replica's own PORT takes precedence over the top-level PORT: 127.0.0.1:3308 is
+    # allowed, so the filter must pass and the failure is a plain connection error.
+    # 3308 differs from both the denied parent port 3307 and the 3306 default, so a
+    # regression that validated either of those instead of the replica's own port
+    # would fail this case.
+    node8.query("DROP DICTIONARY IF EXISTS default.test_mysql_own_port")
+    node8.query(
+        """
+        CREATE DICTIONARY default.test_mysql_own_port (id UInt64, val String)
+        PRIMARY KEY id
+        SOURCE(MYSQL(
+            PORT 3307 USER 'root' PASSWORD 'pass' DB 'test' TABLE 'tbl'
+            REPLICA(PRIORITY 1 HOST '127.0.0.1' PORT 3308)
+        ))
+        LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 1)
+        """
+    )
+    error = node8.query_and_get_error(
+        "SELECT dictGet('default.test_mysql_own_port', 'val', toUInt64(1))"
+    )
+    assert "not allowed" not in error, f"Filter rejected an allowed replica: {error}"
+    node8.query("DROP DICTIONARY IF EXISTS default.test_mysql_own_port")
 
 
 def test_table_function_remote(start_cluster):

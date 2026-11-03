@@ -3,6 +3,7 @@
 #include <boost/noncopyable.hpp>
 #include <fmt/format.h>
 
+#include <Common/SettingsChanges.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Types.h>
 #include <Databases/DataLake/ICatalog.h>
@@ -49,16 +50,20 @@ using PartitionCommands = std::vector<PartitionCommand>;
 
 struct FormatParserSharedResources;
 using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResources>;
+class ConditionSelectivityEstimator;
 
-/// Rows of a read, estimated from the data lake metadata without reading data (see `IDataLakeMetadata::estimateRead`).
+/// A read estimated from the data lake metadata without reading data (see `IDataLakeMetadata::estimateRead`).
 struct DataLakeReadEstimate
 {
-    /// Rows of the live data files left after pruning, deleted rows included; std::nullopt if the metadata is malformed.
-    std::optional<UInt64> rows;
     /// Pruning by the filter dropped at least one live data file or a whole data manifest.
     bool pruned_data_files = false;
     /// The snapshot has live delete files.
     bool has_delete_files = false;
+    /// The rows of the live data files left after pruning, deleted rows included; std::nullopt if the metadata is malformed.
+    std::optional<UInt64> rows;
+    /// The statistics of the requested columns over these files, with their numbers of distinct values, and the estimate of
+    /// conditions on them; nullptr if no requested column has statistics.
+    std::shared_ptr<const ConditionSelectivityEstimator> estimator;
 };
 
 class IDataLakeMetadata : boost::noncopyable
@@ -90,6 +95,9 @@ public:
     /// given pinned state. Only called when schema reload for consistency is enabled.
     virtual std::unique_ptr<StorageInMemoryMetadata> buildStorageMetadataFromState(
         const DataLakeTableStateSnapshot &, ContextPtr) const { return nullptr; }
+
+    /// Table settings with which another server resolves exactly `state` instead of the latest table version.
+    virtual SettingsChanges getSettingsToResolveState(const DataLakeTableStateSnapshot &) const { return {}; }
 
     /// Whether to reload the schema (columns) from metadata before each query in order
     /// to keep the columns stored in the in-memory metadata in sync with the datalake.
@@ -143,8 +151,10 @@ public:
     virtual bool supportsLazyMaterialization(StorageMetadataPtr, ContextPtr) const { return false; }
 
     /// Estimates from the metadata only the rows a read of the pinned data snapshot returns, with the data files
-    /// pruned by `filter` as the read prunes them. std::nullopt if this data lake gives no estimate.
-    virtual std::optional<DataLakeReadEstimate> estimateRead(StorageMetadataPtr, const ActionsDAG * /*filter*/, ContextPtr) const
+    /// pruned by `filter` as the read prunes them, and the statistics of `column_names`. std::nullopt if this data lake
+    /// gives no estimate.
+    virtual std::optional<DataLakeReadEstimate>
+    estimateRead(StorageMetadataPtr, const ActionsDAG * /*filter*/, const Names & /*column_names*/, ContextPtr) const
     {
         return std::nullopt;
     }
@@ -153,6 +163,11 @@ public:
     /// For example, Iceberg has Parquet schema field ids in its metadata for reading files.
     virtual ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr /**/) const { return nullptr; }
     virtual ColumnMapperPtr getColumnMapperForCurrentSchema(StorageMetadataPtr, ContextPtr) const { return nullptr; }
+    /// The mapper of the current schema regardless of the table's write format, unlike
+    /// `getColumnMapperForCurrentSchema`, which is only given to the readers of that format.
+    /// The filters of a query use the current column names, and a reader with a per-file mapper
+    /// (see `getColumnMapperForObject`) needs it to translate them to the names of the file.
+    virtual ColumnMapperPtr getCurrentSchemaColumnMapperForFilters(StorageMetadataPtr, ContextPtr) const { return nullptr; }
 
     virtual SinkToStoragePtr write(
         SharedHeader /*sample_block*/,
