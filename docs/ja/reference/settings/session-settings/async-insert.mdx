@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で利用でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-<div id="async_insert">
-  ## async_insert
-</div>
+## async_insert {#async_insert}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -23,9 +21,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 true の場合、INSERT クエリのデータはキューに格納され、後でバックグラウンドでテーブルにフラッシュされます。wait&#95;for&#95;async&#95;insert が false の場合、INSERT クエリはほぼ即座に処理されます。そうでない場合、クライアントはデータがテーブルにフラッシュされるまで待機します
 
-<div id="async_insert_busy_timeout_decrease_rate">
-  ## async_insert_busy_timeout_decrease_rate
-</div>
+## async_insert_busy_timeout_decrease_rate {#async_insert_busy_timeout_decrease_rate}
 
 <SettingsInfoBlock type="Double" default_value="0.2" />
 
@@ -33,9 +29,7 @@ true の場合、INSERT クエリのデータはキューに格納され、後�
 
 適応型非同期挿入タイムアウトが短くなる際の指数的な増加率
 
-<div id="async_insert_busy_timeout_increase_rate">
-  ## async_insert_busy_timeout_increase_rate
-</div>
+## async_insert_busy_timeout_increase_rate {#async_insert_busy_timeout_increase_rate}
 
 <SettingsInfoBlock type="Double" default_value="0.2" />
 
@@ -43,9 +37,7 @@ true の場合、INSERT クエリのデータはキューに格納され、後�
 
 適応型非同期挿入タイムアウトが増加する際の指数的な増加率
 
-<div id="async_insert_busy_timeout_max_ms">
-  ## async_insert_busy_timeout_max_ms
-</div>
+## async_insert_busy_timeout_max_ms {#async_insert_busy_timeout_max_ms}
 
 **別名**: `async_insert_busy_timeout_ms`
 
@@ -57,9 +49,7 @@ true の場合、INSERT クエリのデータはキューに格納され、後�
 
 Cloud でのデフォルト値: `1000` (1s).
 
-<div id="async_insert_busy_timeout_min_ms">
-  ## async_insert_busy_timeout_min_ms
-</div>
+## async_insert_busy_timeout_min_ms {#async_insert_busy_timeout_min_ms}
 
 <SettingsInfoBlock type="Milliseconds" default_value="50" />
 
@@ -67,9 +57,7 @@ Cloud でのデフォルト値: `1000` (1s).
 
 async&#95;insert&#95;use&#95;adaptive&#95;busy&#95;timeout による自動調整が有効な場合、最初のデータが到着してから、クエリごとに収集されたデータを書き出すまでの最小待機時間です。これは適応アルゴリズムの初期値としても使用されます
 
-<div id="async_insert_deduplicate">
-  ## async_insert_deduplicate
-</div>
+## async_insert_deduplicate {#async_insert_deduplicate}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -77,9 +65,7 @@ async&#95;insert&#95;use&#95;adaptive&#95;busy&#95;timeout による自動調整
 
 この設定は、[`deduplicate_insert`](/ja/reference/settings/session-settings/deduplicate-insert#deduplicate_insert) が `backward_compatible_choice` に設定されている場合にのみ有効です。
 
-<div id="async_insert_max_data_size">
-  ## async_insert_max_data_size
-</div>
+## async_insert_max_data_size {#async_insert_max_data_size}
 
 <SettingsInfoBlock type="UInt64" default_value="10485760" />
 
@@ -89,18 +75,14 @@ async&#95;insert&#95;use&#95;adaptive&#95;busy&#95;timeout による自動調整
 
 Cloud でのデフォルト値: `104857600` (100 MiB).
 
-<div id="async_insert_max_query_number">
-  ## async_insert_max_query_number
-</div>
+## async_insert_max_query_number {#async_insert_max_query_number}
 
 <SettingsInfoBlock type="UInt64" default_value="450" />
 
 挿入が実行されるまでに保持できる insert クエリの最大数。
 設定 [`async_insert_deduplicate`](/ja/reference/settings/session-settings/async-insert#async_insert_deduplicate) が 1 の場合にのみ有効です。
 
-<div id="async_insert_poll_timeout_ms">
-  ## async_insert_poll_timeout_ms
-</div>
+## async_insert_poll_timeout_ms {#async_insert_poll_timeout_ms}
 
 <SettingsInfoBlock type="Milliseconds" default_value="10" />
 
@@ -108,9 +90,15 @@ Cloud でのデフォルト値: `104857600` (100 MiB).
 
 非同期挿入キューからデータをポーリングする際のタイムアウト時間
 
-<div id="async_insert_use_adaptive_busy_timeout">
-  ## async_insert_use_adaptive_busy_timeout
-</div>
+## async_insert_select_as_async_insert {#async_insert_select_as_async_insert}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "`INSERT ... SELECT` クエリで非同期 INSERT をデフォルトで有効化。"}]}]} />
+
+`async_insert` が有効で、かつクエリが条件を満たす場合 (依存ビューのない `MergeTree` ファミリーの宛先テーブルへ単一の小さなブロックを挿入する場合) に、ユーザーが実行した `INSERT ... SELECT` で非同期挿入キューを使用できるかどうかを指定します。無効にすると、`INSERT ... SELECT` は `async_insert` の値にかかわらず常に同期的に実行されます。内部的な挿入 (リフレッシャブルmaterialized view、`POPULATE`、`CREATE TABLE ... AS SELECT`) は常に同期的に実行され、この設定の影響を受けません。
+
+## async_insert_use_adaptive_busy_timeout {#async_insert_use_adaptive_busy_timeout}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

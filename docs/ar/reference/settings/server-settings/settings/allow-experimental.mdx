@@ -12,21 +12,19 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 تُستخدَم هذه الإعدادات لتهيئة خادم ClickHouse، وهي مُولَّدة تلقائيًا من الشيفرة المصدرية لـ ClickHouse.
 
-<div id="allow_experimental_executable_udf_drivers">
-  ## allow_experimental_executable_udf_drivers
-</div>
+## allow_experimental_cluster_discovery {#allow_experimental_cluster_discovery}
+
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />لم تَعُد ميزة Cluster discovery تجريبية، وأصبحت مُفعَّلة دائمًا للعناقيد التي تحتوي على القسم `discovery` ضمن `remote_servers`. تم إهمال هذا الإعداد ولم يَعُد له أي تأثير، لكن يُحتفَظ به من النوع `String` لضمان استمرار قبول أي قيمة كانت مقبولة سابقًا، بما في ذلك الوسم الفارغ.
+
+## allow_experimental_executable_udf_drivers {#allow_experimental_executable_udf_drivers}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />يفعّل الدعم التجريبي لمشغّلات الدوال القابلة للتنفيذ المعرّفة من المستخدم، والمُعلنة عبر `user_defined_executable_function_drivers_config`. ويحوّل المشغّل مقتطف شيفرة يوفّره المستخدم في `CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'` إلى UDF قابلة للتنفيذ يمكن تشغيلها.
 
-<div id="allow_experimental_webassembly_udf">
-  ## allow_experimental_webassembly_udf
-</div>
+## allow_experimental_webassembly_udf {#allow_experimental_webassembly_udf}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />تفعيل الدعم التجريبي لـ WebAssembly UDF
 
-<div id="allow_experimental_webterminal">
-  ## allow_experimental_webterminal
-</div>
+## allow_experimental_webterminal {#allow_experimental_webterminal}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />الاسم السابق (التجريبي) لـ `enable_webterminal`. ولا يزال معمولًا به حفاظًا على التوافق مع الإصدارات السابقة عندما لا يكون `enable_webterminal` معيّنًا. هذا الإعداد لم يعد موصىً باستخدامه.
 

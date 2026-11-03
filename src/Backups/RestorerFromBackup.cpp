@@ -26,8 +26,8 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/IStorage.h>
-#include <base/insertAtEnd.h>
 #include <Common/FailPoint.h>
+#include <Common/NamedCollections/NamedCollectionsBackup.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
@@ -84,6 +84,12 @@ namespace
         if (table_name.database != DatabaseCatalog::SYSTEM_DATABASE)
             return false;
 
+#if CLICKHOUSE_CLOUD
+        /// `system.masking_policies` backs an access entity, so it belongs to this list.
+        if (table_name.table == "masking_policies")
+            return true;
+#endif
+
         return (table_name.table == "users") || (table_name.table == "roles") || (table_name.table == "settings_profiles")
             || (table_name.table == "row_policies") || (table_name.table == "quotas");
     }
@@ -92,6 +98,12 @@ namespace
     bool isSystemFunctionsTableName(const QualifiedTableName & table_name)
     {
         return (table_name.database == DatabaseCatalog::SYSTEM_DATABASE) && (table_name.table == "functions");
+    }
+
+    /// Whether a specified name corresponds to the table backuping named collections.
+    bool isSystemNamedCollectionsTableName(const QualifiedTableName & table_name)
+    {
+        return (table_name.database == DatabaseCatalog::SYSTEM_DATABASE) && (table_name.table == "named_collections");
     }
 
     /// Whether a specified name corresponds to the system table backing WORKLOAD entities.
@@ -105,6 +117,7 @@ namespace
     {
         return (table_name.database == DatabaseCatalog::SYSTEM_DATABASE) && (table_name.table == "resources");
     }
+
  }
 
 
@@ -163,6 +176,13 @@ void RestorerFromBackup::run(Mode mode_)
     findDatabasesAndTablesInBackup();
     logNumberOfDatabasesAndTablesToRestore();
 
+    /// While still in the FINDING_TABLES_IN_BACKUP stage, tell the other hosts which directory of
+    /// the backup this host would restore the named collections from: with a shared (replicated)
+    /// named-collections storage the one host restoring it processes the directories of all the
+    /// hosts sharing it (see restoreNamedCollections below), and the stage barrier below makes
+    /// every registration visible to it before it reads them.
+    registerNamedCollectionsForRestore();
+
     /// Check access rights.
     setStage(Stage::CHECKING_ACCESS_RIGHTS);
     loadSystemAccessTables();
@@ -171,8 +191,27 @@ void RestorerFromBackup::run(Mode mode_)
     if (mode == Mode::CHECK_ACCESS_ONLY)
         return;
 
+    context->onQueryExecutionStarted();
+
+    /// Restore named collections before any database or table is created: database engines (e.g.
+    /// `Remote(collection)`, or `Replicated` with the `collection_name` setting) and table engines
+    /// resolve named collections inside CREATE. This runs at the end of the CHECKING_ACCESS_RIGHTS
+    /// stage rather than in a stage of its own, because stage names are synchronised across hosts
+    /// through the coordination, and a new stage would require every host to be on a version that
+    /// knows it.
+    restoreNamedCollections();
+
     /// Create databases using the create queries read from the backup.
     setStage(Stage::CREATING_DATABASES);
+
+    /// With a replicated named-collections storage only one host has written the restored
+    /// collections (see restoreNamedCollections above); the other hosts observe the write through
+    /// an asynchronous Keeper watch. The stage barrier above guarantees the writer has finished,
+    /// so make the collections visible on this host synchronously before a database or table
+    /// CREATE resolves one of them.
+    if (named_collections_restored)
+        reloadNamedCollectionsAfterRestore();
+
     createAndCheckDatabases();
 
     /// Create tables using the create queries read from the backup.
@@ -297,6 +336,7 @@ void RestorerFromBackup::loadSystemAccessTables()
 void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
 {
     AccessRightsElements required_access;
+    AccessRights required_access_rights;
 
     {
         std::lock_guard lock{mutex};
@@ -343,6 +383,16 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
                     /// CREATE_FUNCTION privilege is required to restore the "system.functions" table.
                     if (table_info.has_data && restore_settings.shouldRestoreFunctions())
                         required_access.emplace_back(AccessType::CREATE_FUNCTION);
+                }
+                else if (isSystemNamedCollectionsTableName(table_name))
+                {
+                    /// CREATE_NAMED_COLLECTION privilege is required to restore the "system.named_collections" table.
+                    if (table_info.has_data && restore_settings.shouldRestoreNamedCollections())
+                    {
+                        required_access.emplace_back(AccessType::CREATE_NAMED_COLLECTION);
+                        if (restore_settings.create_named_collection == RestoreNamedCollectionCreationMode::kReplace)
+                            required_access.emplace_back(AccessType::DROP_NAMED_COLLECTION);
+                    }
                 }
                 else if (isSystemWorkloadsTableName(table_name))
                 {
@@ -413,15 +463,12 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
             required_access.emplace_back(flags, table_name.database, table_name.table);
         }
 
+        required_access_rights = AccessRights{required_access};
+        /// Partial revokes in restored grants must not remove the rights required to restore other objects.
         if (access_restorer)
-            insertAtEnd(required_access, access_restorer->getRequiredAccess());
+            required_access_rights.makeUnion(access_restorer->getRequiredAccess());
     }
 
-    /// We convert to AccessRights to check if we have the rights contained in our current access.
-    /// This handles the situation when restoring partial revoked grants:
-    /// GRANT SELECT ON *.*
-    /// REVOKE SELECT FROM systems.*
-    const auto & required_access_rights = AccessRights{required_access};
     const auto & current_user_access_rights = context->getAccess()->getAccessRightsWithImplicit();
     if (current_user_access_rights->contains(required_access_rights))
         return;
@@ -698,6 +745,51 @@ void RestorerFromBackup::checkDatabase(const String & database_name)
     }
 }
 
+String RestorerFromBackup::findNamedCollectionsDataPathInBackup() const
+{
+    std::lock_guard lock{mutex};
+    for (const auto & [table_name, table_info] : table_infos)
+    {
+        if (isSystemNamedCollectionsTableName(table_name) && table_info.has_data)
+        {
+            if (table_info.partitions)
+                throw Exception(
+                    ErrorCodes::CANNOT_RESTORE_TABLE,
+                    "Cannot restore the `system.named_collections` table with a PARTITIONS clause: "
+                    "it doesn't support partitions");
+
+            return table_info.data_path_in_backup;
+        }
+    }
+    return {};
+}
+
+void RestorerFromBackup::registerNamedCollectionsForRestore()
+{
+    /// The initiating host of a RESTORE ON CLUSTER query checks access rights through a restorer
+    /// without a coordination (see BackupsWorker) and restores nothing, so it registers nothing.
+    if (!restore_coordination || !restore_settings.shouldRestoreNamedCollections())
+        return;
+
+    String data_path_in_backup = findNamedCollectionsDataPathInBackup();
+    if (data_path_in_backup.empty())
+        return;
+
+    DB::registerNamedCollectionsDirForRestore(*this, data_path_in_backup);
+}
+
+void RestorerFromBackup::restoreNamedCollections()
+{
+    if (!restore_settings.shouldRestoreNamedCollections())
+        return;
+
+    /// The data path is empty when this host's part of the backup holds no named collections, but
+    /// a host sharing a replicated storage with this one may still restore the collections of its
+    /// own part, and then this host has to reload them after the stage barrier; the return value
+    /// covers both.
+    named_collections_restored = DB::restoreNamedCollections(*this, findNamedCollectionsDataPathInBackup());
+}
+
 void RestorerFromBackup::applyCustomStoragePolicy(ASTPtr query_ptr)
 {
     constexpr auto setting_name = "storage_policy";
@@ -865,9 +957,32 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
                 "as a mount, or restore the selected partitions without mount_readonly_parts_from_snapshot.");
 #endif
 
-        /// Generate a new UUID for a table (the same table on different hosts must use the same UUID, `restore_coordination` will make it so).
-        /// The generated UUID will be ignored if the database does not support UUIDs.
-        restore_coordination->generateUUIDForTable(*create_table_query);
+        /// Without the data the table has nothing to find on the storage, so it is restored as an ordinary empty table,
+        /// with a new UUID: keeping the UUID would show all the data of the storage in a `structure_only` restore.
+        if (create_table_query->uuid != UUIDHelpers::Nil && restore_settings.shouldRestoreTableData()
+            && BackupUtils::isCreatedOnBackupMetadataOnlyStoragePolicy(*create_table_query, context))
+        {
+            /// The table finds its data on the storage under a path derived from its UUID, so it keeps its UUID from the backup.
+            /// The other table can be in any database, so its name is not shown: the user may not be allowed to see it.
+            auto existing_table = DatabaseCatalog::instance().tryGetByUUID(create_table_query->uuid).second;
+            if (existing_table)
+            {
+                auto existing_table_id = existing_table->getStorageID();
+                if (existing_table_id.database_name != table_name.database || existing_table_id.table_name != table_name.table)
+                    throw Exception(
+                        ErrorCodes::CANNOT_RESTORE_TABLE,
+                        "Cannot restore {}: it is on a storage policy marked backup_metadata_only, so it keeps its UUID {} from "
+                        "the backup to find its data on the storage, but another table already has this UUID",
+                        tableNameWithTypeToString(table_name.database, table_name.table, false),
+                        toString(create_table_query->uuid));
+            }
+        }
+        else
+        {
+            /// Generate a new UUID for a table (the same table on different hosts must use the same UUID, `restore_coordination` will make it so).
+            /// The generated UUID will be ignored if the database does not support UUIDs.
+            restore_coordination->generateUUIDForTable(*create_table_query);
+        }
 
         /// Add the clause `IF NOT EXISTS` if that is specified in the restore settings.
         create_table_query->if_not_exists = (restore_settings.create_table == RestoreTableCreationMode::kCreateIfNotExists);
@@ -1028,6 +1143,12 @@ void RestorerFromBackup::insertDataToTable(const QualifiedTableName & table_name
         if (!restore_settings.shouldRestoreFunctions())
             return;
     }
+    else if (isSystemNamedCollectionsTableName(table_name))
+    {
+        /// Named collections were already restored before the databases and tables were created
+        /// (see restoreNamedCollections), don't restore them twice.
+        return;
+    }
     else if (!restore_settings.shouldRestoreTableData())
     {
         return;
@@ -1042,17 +1163,65 @@ void RestorerFromBackup::insertDataToTable(const QualifiedTableName & table_name
     StoragePtr storage;
     String data_path_in_backup;
     std::optional<ASTs> partitions;
+    ASTPtr create_table_query_from_backup;
     {
         std::lock_guard lock{mutex};
         auto & table_info = table_infos.at(table_name);
         storage = table_info.storage;
         data_path_in_backup = table_info.data_path_in_backup;
         partitions = table_info.partitions;
+        create_table_query_from_backup = table_info.create_table_query;
+    }
+
+    if (BackupUtils::isDataOnBackupMetadataOnlyStoragePolicy(storage, context))
+    {
+        skipTableDataOnBackupMetadataOnlyStoragePolicy(table_name, storage, partitions, create_table_query_from_backup);
+        return;
     }
 
     schedule(
         [this, table_name, storage, data_path_in_backup, partitions]() { insertDataToTableImpl(table_name, storage, data_path_in_backup, partitions); },
         ThreadName::RESTORE_TABLE_DATA);
+}
+
+void RestorerFromBackup::skipTableDataOnBackupMetadataOnlyStoragePolicy(
+    const QualifiedTableName & table_name, const StoragePtr & storage, const std::optional<ASTs> & partitions, const ASTPtr & create_table_query_from_backup) const
+{
+    if (partitions)
+        throw Exception(
+            ErrorCodes::CANNOT_RESTORE_TABLE,
+            "Cannot restore specific partitions of {}: it is on a storage policy marked backup_metadata_only, so it shows "
+            "all the data of its storage and the partition filter cannot be applied",
+            tableNameWithTypeToString(table_name.database, table_name.table, false));
+
+    /// The table must have its UUID from the backup, under which the storage keeps the data. This catches what `createTable`
+    /// doesn't, e.g. an existing table with `create_table = 'must-exist'`, or a database without UUIDs.
+    const auto * create_query = create_table_query_from_backup ? create_table_query_from_backup->as<ASTCreateQuery>() : nullptr;
+    if (!create_query)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup has no definition of {}", tableNameWithTypeToString(table_name.database, table_name.table, false));
+
+    const UUID uuid = storage->getStorageID().uuid;
+    const UUID uuid_in_backup = create_query->uuid;
+    if (uuid == UUIDHelpers::Nil || uuid_in_backup == UUIDHelpers::Nil)
+        throw Exception(
+            ErrorCodes::CANNOT_RESTORE_TABLE,
+            "Cannot restore {}: it is on a storage policy marked backup_metadata_only, so its data is not restored and it "
+            "must have its UUID from the backup to find the data on the storage, but {}",
+            tableNameWithTypeToString(table_name.database, table_name.table, false),
+            uuid == UUIDHelpers::Nil ? "its database doesn't give tables UUIDs" : "the backup records no UUID for it");
+
+    if (uuid != uuid_in_backup)
+        throw Exception(
+            ErrorCodes::CANNOT_RESTORE_TABLE,
+            "Cannot restore {}: it is on a storage policy marked backup_metadata_only, so its data is not restored and it "
+            "must have its UUID from the backup to find the data on the storage, but the table with UUID {} in the backup "
+            "has UUID {}",
+            tableNameWithTypeToString(table_name.database, table_name.table, false),
+            toString(uuid_in_backup),
+            toString(uuid));
+
+    LOG_INFO(log, "Not restoring the data of {}: it is on a storage policy marked backup_metadata_only",
+        tableNameWithTypeToString(table_name.database, table_name.table, false));
 }
 
 void RestorerFromBackup::insertDataToTableImpl(const QualifiedTableName & table_name, StoragePtr storage, const String & data_path_in_backup, const std::optional<ASTs> & partitions)

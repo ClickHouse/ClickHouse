@@ -1,0 +1,12 @@
+toDate(ts) = toDate('2026-03-31')	4	4	5	Condition: and(and((toDate(ts) in (-Inf, 20543]), and((toYYYYMM(ts) in (-Inf, 202603]), (ts in (-Inf, 1775001599]))), and((toDate(ts) in [20543, +Inf)), and((toYYYYMM(ts) in [202603, +Inf)), (ts in [1774915200, +Inf)))))
+toYYYYMM(ts) = 202604	16	16	17
+toDate(ts) IN (toDate('2026-03-31'), toDate('2026-04-02'))	8	8	10
+ts > toDateTime('2026-03-04 06:00:00', 'UTC')	10	10	13
+s = 'b'	1	1	2
+s != 'b'	3	3	4	Condition: (concat(s, '_x') not in ['b_x', 'b_x'])
+x IN (3, 7, 11)	3	3	6
+has([3, 7, 11], x)	3	3	6
+isNull(ts)	2	2	2
+isNotNull(ts)	8	8	8
+empty(s)	1	1	1
+notEmpty(s)	3	3	4

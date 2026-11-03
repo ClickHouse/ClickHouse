@@ -1,0 +1,5 @@
+--- without SHOW CONNECTIONS: only the connections of this user
+0
+1	0
+--- with SHOW CONNECTIONS: connections of all users
+default

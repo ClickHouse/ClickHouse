@@ -77,6 +77,13 @@ void ReplacingSortedAlgorithm::initialize(Inputs inputs)
     /// that block holds no runs of equal keys, the detection is disabled and the merge has to
     /// cost exactly what it costs with the plain heap.
     skip_runs_of_equal_keys = can_skip_to_run_end && batch_detection_enabled;
+    source_key_runs.assign(sources.size(), {});
+}
+
+void ReplacingSortedAlgorithm::consume(Input & input, size_t source_num)
+{
+    source_key_runs[source_num].end = 0;
+    IMergingAlgorithmWithSharedChunks::consume(input, source_num);
 }
 
 /// True when the group's winning row must not reach the output: a `CLEANUP` tombstone, or a row
@@ -318,7 +325,13 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
 
             if (run_begin + 1 < run_bound)
             {
-                size_t run_end = getEqualRangeEndAssumeSorted(current->sort_columns, current->desc, run_begin, run_bound);
+                auto & key_runs = source_key_runs[current->order];
+                if (key_runs.end != run_bound)
+                {
+                    key_runs.runs.reset(current->desc.size());
+                    key_runs.end = run_bound;
+                }
+                size_t run_end = getEqualRangeEndAssumeSorted(key_runs.runs, current->sort_columns, current->desc, run_begin, run_bound);
                 if (run_end > run_begin + 1)
                 {
                     /// Jump to the last row of the run; the loop processes it as usual.

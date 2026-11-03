@@ -1,0 +1,274 @@
+---
+slug: /cloud/managed-postgres/guides/laravel
+sidebarTitle: 'Laravel'
+title: '将 Laravel 与 ClickHouse Managed Postgres 搭配使用'
+description: '通过 PgBouncer 将 Laravel 应用连接到 ClickHouse Managed Postgres，运行迁移，并在经过验证的 TLS 连接上使用 Eloquent 执行查询'
+keywords: ['managed postgres', 'laravel', 'php', 'eloquent', 'artisan', 'pdo', 'pdo_pgsql', 'pgbouncer', 'migrations']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-laravel-beta" />
+
+[Laravel](https://laravel.com/) 是一个 PHP Web 框架，内置 ORM (Eloquent) 、迁移系统和 `artisan` 命令行工具。在本指南中，您将新建一个 Laravel 应用并将其连接到 ClickHouse Managed Postgres，通过迁移创建 `tasks` 表，再通过路由返回表中的行。所有连接均使用 TLS，并启用完整的证书验证。
+
+## 前置条件 {#prerequisites}
+
+* PHP 8.3 或更高版本 (Laravel 13 的要求) ，并已安装 `pdo_pgsql` 扩展。运行 `php -m`，确认列表中包含 `pdo_pgsql`。
+* [Composer](https://getcomposer.org/)
+* 一个 ClickHouse Cloud 账户
+* [`psql`](https://www.postgresql.org/download/)，用于创建数据库。也可以在 [SQL 控制台](/zh/integrations/connectors/sql-clients/sql-console)中运行 `CREATE DATABASE` 语句。
+
+## 创建 ClickHouse Managed Postgres 服务 {#create-service}
+
+在 ClickHouse Cloud 控制台中，点击 **New service**，然后选择 **Postgres**。实例会在几分钟内准备就绪。完整操作步骤请参阅[快速入门](/zh/products/managed-postgres/quickstart)。
+
+## 获取连接详细信息 {#connection-details}
+
+在服务的左侧边栏中点击 **Connect**。弹出的对话框会显示用户名、密码、服务器和端口，并提供 **Directly** / **via PgBouncer** 切换开关。
+
+PHP 应用不会在请求之间保留连接池。默认情况下，每个请求都会新建一个 Postgres 连接，并在请求结束时将其关闭。本指南让应用通过内置的 [PgBouncer](/zh/products/managed-postgres/connection#pgbouncer) (端口 `6432`) 进行连接，从而让这些短生命周期的连接共享少量 Postgres 后端连接。迁移则通过端口 `5432` 直连 Postgres，因为迁移需要执行 DDL，并且可能长时间持有事务。
+
+选择 **via PgBouncer** 即可查看经连接池的连接详细信息。此时端口会变为 `6432`，连接字符串中也会包含 `sslmode=verify-full`。
+
+在同一对话框中，点击 **Download CA certificate**。也可以在 **Settings → CA Certificate** 中下载。该证书为你的实例所独有，驱动程序可借此验证所连接的确实是你的服务器。
+
+## 搭建项目 {#project-setup}
+
+创建一个 Laravel 项目：
+
+```bash
+composer create-project laravel/laravel laravel-managed-postgres
+cd laravel-managed-postgres
+```
+
+<Tip>
+  **要添加到现有应用中？**
+
+  跳过 `composer create-project`。在您的项目中，确认 `php -m` 的输出中包含 `pdo_pgsql`，然后按照本节其余步骤操作，再继续阅读[配置连接](#configure)，该部分会将应用从 SQLite 切换到 Postgres。之后运行 `php artisan migrate` 会在 Postgres 中创建您现有的表，但不会从 SQLite 迁移数据。
+</Tip>
+
+将下载的 CA 证书移动到项目目录中，并将其重命名为 `ca-certificate.pem`。
+
+为应用创建数据库。将 `<PASSWORD>` 和主机替换为 **Connect** 弹窗中的对应值：
+
+```bash
+psql "postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/postgres?sslmode=verify-full&sslrootcert=ca-certificate.pem" -c "CREATE DATABASE guide_laravel;"
+```
+
+```text
+CREATE DATABASE
+```
+
+## 配置连接 {#configure}
+
+Laravel 默认使用 SQLite。打开 `.env` 文件，将 `DB_CONNECTION=sqlite` 这一行及其下方已被注释掉的各 `DB_` 行替换为以下内容：
+
+```bash title=".env"
+DB_CONNECTION=pgsql
+DB_HOST=your-instance.pg.clickhouse.cloud
+DB_PORT=6432
+DB_DATABASE=guide_laravel
+DB_USERNAME=postgres
+DB_PASSWORD=<PASSWORD>
+DB_SSLMODE=verify-full
+DB_SSLROOTCERT=/absolute/path/to/your-project/ca-certificate.pem
+```
+
+请使用 `ca-certificate.pem` 的绝对路径。`libpq` 会基于 PHP 进程的工作目录来解析相对路径，而该工作目录取决于 PHP 运行应用的方式。如果密码中包含空格或 `#`，请用双引号将其括起来。请勿将 `.env` 提交到版本控制中。
+
+`config/database.php` 中默认的 `pgsql` 连接会读取 `DB_SSLMODE`，但不会读取 CA 证书路径。打开 `config/database.php`，在 `pgsql` 连接中添加 `sslrootcert` 和 `options` 配置项：
+
+```php title="config/database.php"
+        'pgsql' => [
+            'driver' => 'pgsql',
+            'url' => env('DB_URL'),
+            'host' => env('DB_HOST', '127.0.0.1'),
+            'port' => env('DB_PORT', '5432'),
+            'database' => env('DB_DATABASE', 'laravel'),
+            'username' => env('DB_USERNAME', 'root'),
+            'password' => env('DB_PASSWORD', ''),
+            'charset' => env('DB_CHARSET', 'utf8'),
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'search_path' => 'public',
+            'sslmode' => env('DB_SSLMODE', 'prefer'),
+            'sslrootcert' => env('DB_SSLROOTCERT'),
+            'options' => [
+                PDO::ATTR_EMULATE_PREPARES => true,
+            ],
+        ],
+```
+
+Laravel 会将 `sslmode` 和 `sslrootcert` 追加到 PDO DSN 中，`pdo_pgsql` 扩展再将它们传递给 `libpq`，由后者校验证书链和主机名。
+
+`PDO::ATTR_EMULATE_PREPARES` 会让 PDO 在发送每个查询前先绑定好参数值，而不是在服务器端创建预处理语句。通过 PgBouncer 连接时，请设置此选项。如果 `pdo_pgsql` 基于 `libpq` 16 或更早版本构建 (例如 Debian 12) ，PHP 会使用 SQL `DEALLOCATE` 语句释放每个预处理语句。由于 PgBouncer 会在服务器上重命名预处理语句，`DEALLOCATE` 会执行失败。若此时处于事务中，该事务会被中止，后续查询将失败并报错 `current transaction is aborted`。如果使用 `libpq` 17 或更高版本，保持默认设置也能正常工作。运行 `php -i | grep libpq` 即可查看您的版本。
+
+检查连接：
+
+```bash
+php artisan db:show
+```
+
+```text
+  PostgreSQL ................................ 18.6 (Ubuntu 18.6-1.pgdg22.04+2)  
+  Connection ........................................................... pgsql  
+  Database ..................................................... guide_laravel  
+  Host ..................................... your-instance.pg.clickhouse.cloud  
+  Port .................................................................. 6432  
+  Username .......................................................... postgres  
+  URL ........................................................................  
+  Open Connections ........................................................ 44  
+  Tables ................................................................... 0  
+```
+
+<Note>
+  如果缺少 `sslrootcert` 这一行，`verify-full` 会失败并报错 `root certificate file ".../.postgresql/root.crt" does not exist`，这是因为 `libpq` 会回退到其默认的 CA 路径。如果 CA 不正确，连接会失败并报错 `SSL error: certificate verify failed`。
+</Note>
+
+## 创建模型和迁移 {#migrations}
+
+为 `tasks` 表生成 Eloquent 模型和迁移文件：
+
+```bash
+php artisan make:model Task -m
+```
+
+打开 `database/migrations/` 目录下新生成的迁移文件 (文件名以 `_create_tasks_table.php` 结尾) ，在 `up` 方法中添加 `title` 和 `done` 列：
+
+```php title="database/migrations/xxxx_xx_xx_xxxxxx_create_tasks_table.php"
+    public function up(): void
+    {
+        Schema::create('tasks', function (Blueprint $table) {
+            $table->id();
+            $table->string('title');
+            $table->boolean('done')->default(false);
+            $table->timestamps();
+        });
+    }
+```
+
+替换 `app/Models/Task.php` 的内容，使这些列支持批量赋值，并让 `done` 以布尔值形式返回：
+
+```php title="app/Models/Task.php"
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Model;
+
+#[Fillable(['title', 'done'])]
+class Task extends Model
+{
+    protected function casts(): array
+    {
+        return [
+            'done' => 'boolean',
+        ];
+    }
+}
+```
+
+通过直连运行迁移。环境变量会覆盖 `.env` 中的值，因此只需修改端口即可：
+
+```bash
+DB_PORT=5432 php artisan migrate
+```
+
+```text
+   INFO  Preparing database.  
+
+  Creating migration table ..................................... 289.95ms DONE
+
+   INFO  Running migrations.  
+
+  0001_01_01_000000_create_users_table ............................... 1s DONE
+  0001_01_01_000001_create_cache_table ......................... 949.69ms DONE
+  0001_01_01_000002_create_jobs_table ................................ 1s DONE
+  2026_09_30_165735_create_tasks_table ......................... 240.59ms DONE
+```
+
+除 `tasks` 之外，该命令还会创建新 Laravel 应用默认使用的 `users`、`sessions`、`cache` 和 `jobs` 表。Laravel 会在 `migrations` 表中记录已应用的迁移，后续再次执行时只会运行新增的迁移。
+
+## 查询数据库 {#query}
+
+在 `artisan tinker` 中使用 Eloquent 插入几行数据：
+
+```bash
+php artisan tinker --execute="App\Models\Task::create(['title' => 'Create a Managed Postgres service', 'done' => true]); App\Models\Task::create(['title' => 'Connect Laravel with verify-full TLS', 'done' => true]); App\Models\Task::create(['title' => 'Ship the app']); echo App\Models\Task::count();"
+```
+
+```text
+3
+```
+
+在 `routes/web.php` 末尾添加一个路由，以 JSON 格式返回所有任务：
+
+```php title="routes/web.php"
+Route::get('/tasks', function () {
+    return App\Models\Task::orderBy('id')->get();
+});
+```
+
+<Note>
+  Laravel 在建立连接时，会通过会话级 `SET` 语句应用 `search_path`、`timezone` 和 `isolation_level` 连接选项，但经由 PgBouncer 连接时，这些设置不会在事务之间保留。请将这些选项保留为默认值；如确需使用，请直接通过端口 `5432` 连接。此外，`LISTEN` 和会话级咨询锁等会话级功能同样无法通过 PgBouncer 使用。详见 [FAQ](/zh/products/managed-postgres/faq#prepared-statement-errors)。
+</Note>
+
+## 运行与验证 {#verify}
+
+启动开发服务器：
+
+```bash
+php artisan serve --port=3104
+```
+
+```text
+   INFO  Server running on [http://127.0.0.1:3104].  
+
+  Press Ctrl+C to stop the server
+```
+
+在浏览器中打开 `http://localhost:3104/tasks`，返回的响应类似如下：
+
+```json
+[
+  {
+    "id": 1,
+    "title": "Create a Managed Postgres service",
+    "done": true,
+    "created_at": "2026-09-30T17:10:28.000000Z",
+    "updated_at": "2026-09-30T17:10:28.000000Z"
+  },
+  {
+    "id": 2,
+    "title": "Connect Laravel with verify-full TLS",
+    "done": true,
+    "created_at": "2026-09-30T17:10:29.000000Z",
+    "updated_at": "2026-09-30T17:10:29.000000Z"
+  },
+  {
+    "id": 3,
+    "title": "Ship the app",
+    "done": false,
+    "created_at": "2026-09-30T17:10:29.000000Z",
+    "updated_at": "2026-09-30T17:10:29.000000Z"
+  }
+]
+```
+
+要在控制台中查看数据，请在服务的左侧边栏中打开 **SQL 控制台**，依次展开 `guide_laravel` 和 `public`，然后点击 `tasks` 表。`public` schema 下还会列出 Laravel 的默认表，例如 `users`、`sessions` 和 `migrations`：
+
+| id | title                                | done  | created&#95;at      | updated&#95;at      |
+| -- | ------------------------------------ | ----- | ------------------- | ------------------- |
+| 1  | Create a Managed Postgres service    | true  | 2026-09-30 17:10:28 | 2026-09-30 17:10:28 |
+| 2  | Connect Laravel with verify-full TLS | true  | 2026-09-30 17:10:29 | 2026-09-30 17:10:29 |
+| 3  | Ship the app                         | false | 2026-09-30 17:10:29 | 2026-09-30 17:10:29 |
+
+## 后续步骤 {#next-steps}
+
+* [连接](/zh/products/managed-postgres/connection)：连接字符串、PgBouncer 和 TLS
+* [设置](/zh/products/managed-postgres/settings)：Postgres 和 PgBouncer 参数，例如 `max_connections`
+* [只读副本](/zh/products/managed-postgres/read-replicas)：借助 Laravel 的[读写连接](https://laravel.com/docs/database#read-and-write-connections)将读请求路由到副本
+* [安全](/zh/products/managed-postgres/security)：IP 访问列表和私网连接
