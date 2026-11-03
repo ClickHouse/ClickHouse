@@ -28,6 +28,7 @@
 #include <Processors/QueryPlan/Optimizations/joinOrderAlgorithms.h>
 #include <Processors/QueryPlan/Optimizations/optimizeReadInOrder.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/PartsSplitter.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Storages/SelectQueryInfo.h>
@@ -1051,13 +1052,13 @@ constexpr bool isSwapOnlyJoinStrictness(JoinStrictness strictness)
 }
 
 /// For each input, the longest sequence of its `candidates` columns that `optimizeReadInOrder` could read it in order of.
-static std::vector<Names> findReadInOrderPrefixes(
+static std::vector<QueryGraph::ReadInOrder> findReadInOrderPrefixes(
     const std::vector<QueryPlan::Node *> & inputs, const SortingStep::Settings & sorting_settings, const std::vector<NameSet> & candidates)
 {
     /// A longer sequence only matters for a join on all of its columns, and joins on more keys are rare.
     constexpr size_t max_prefix_size = 8;
 
-    std::vector<Names> prefixes(inputs.size());
+    std::vector<QueryGraph::ReadInOrder> prefixes(inputs.size());
     for (size_t i = 0; i < inputs.size() && i < candidates.size(); ++i)
     {
         const auto & header = inputs[i]->step->getOutputHeader();
@@ -1072,24 +1073,34 @@ static std::vector<Names> findReadInOrderPrefixes(
         if (!reading || reading->isParallelReadingFromReplicas())
             continue;
 
-        /// Whether the input can be read in order of all of `names`: storage key columns fixed by a filter do not count.
-        auto is_read_in_order = [&](const Names & names)
+        /// The order the input can be read in for all of `names`: storage key columns fixed by a filter do not count.
+        auto read_order = [&](const Names & names) -> InputOrderInfoPtr
         {
             SortDescription sort_description;
             for (const auto & name : names)
                 sort_description.emplace_back(name);
             SortingStep sorting(header, std::move(sort_description), 0, sorting_settings);
             auto order = getInputOrderIfReadInOrderIsUseful(sorting, reading->getStorageMetadata()->getSortingKey(), *inputs[i]);
-            return order && order->direction == 1 && order->sort_description_for_merging.size() >= names.size();
+            if (order && order->direction == 1 && order->sort_description_for_merging.size() >= names.size())
+                return order;
+            return nullptr;
         };
+        auto is_read_in_order = [&](const Names & names) { return read_order(names) != nullptr; };
+
+        /// The range split needs the first primary key column, and it skips no column fixed by a filter.
+        const auto & primary_key = reading->getStorageMetadata()->getPrimaryKey();
+        const bool primary_key_splits = !reading->isQueryWithFinal() && !primary_key.column_names.empty()
+            && isSafePrimaryDataKeyType(*primary_key.data_types.front());
 
         std::ranges::sort(columns);
-        auto & prefix = prefixes[i];
+        auto & prefix = prefixes[i].prefix;
         for (const auto & first : columns)
         {
-            if (!is_read_in_order({first}))
+            auto order = read_order({first});
+            if (!order)
                 continue;
             prefix = {first};
+            prefixes[i].splits_by_primary_key = primary_key_splits && order->used_prefix_of_sorting_key_size == 1;
             /// Extend by the next column of the storage order among the candidates.
             for (bool extended = true; extended && prefix.size() < max_prefix_size;)
             {

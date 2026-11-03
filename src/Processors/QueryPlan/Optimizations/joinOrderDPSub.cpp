@@ -7,7 +7,6 @@
 
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/JoinOperator.h>
-#include <Processors/QueryPlan/PartsSplitter.h>
 #include <Common/Exception.h>
 
 #include <algorithm>
@@ -251,7 +250,7 @@ private:
         std::vector<std::vector<Int32>> rel_prefix_classes; /// per relation: the classes it can be read in order of, in order
         std::vector<Int32> edge_class;          /// per edge: the class of an equality of two columns, or -1
         TUInt prepared_storage_mask = 0;
-        /// Relations read in order by a key whose type the primary-key range split supports (`isSafePrimaryDataKeyType`).
+        /// Relations a sharded merge can split by primary key ranges on the class they are read in order of.
         TUInt shardable_relations = 0;
 
         /// Per relation and class (`relation * num_classes + class`): the value range of its column of the class, if known.
@@ -440,6 +439,7 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
     dpsub_data.rel_prefix_classes.assign(num_relations, {});
     dpsub_data.edge_class.assign(n, -1);
     dpsub_data.prepared_storage_mask = toMask(query_graph.prepared_storage_relations);
+    dpsub_data.shardable_relations = 0;
     dpsub_data.key_ranges.assign(dpsub_data.interesting_orders ? num_relations * num_classes : 0, {});
     if (dpsub_data.interesting_orders)
     {
@@ -483,8 +483,12 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
         {
             const auto prefixes = query_graph.find_read_in_order_prefixes(candidates);
             for (size_t relation = 0; relation < num_relations && relation < prefixes.size(); ++relation)
-                for (const auto & name : prefixes[relation])
+            {
+                for (const auto & name : prefixes[relation].prefix)
                     dpsub_data.rel_prefix_classes[relation].push_back(column_class.at({relation, name}));
+                if (prefixes[relation].splits_by_primary_key)
+                    dpsub_data.shardable_relations |= static_cast<UInt32>(1) << relation;
+            }
         }
 
         for (size_t i = 0; i < n; ++i)
@@ -500,17 +504,6 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
                 continue;
             if (auto it = class_index.find(lhs_class.get()); it != class_index.end())
                 dpsub_data.edge_class[i] = static_cast<Int32>(it->second);
-        }
-
-        dpsub_data.shardable_relations = 0;
-        for (size_t relation = 0; relation < num_relations; ++relation)
-        {
-            const auto & prefix = dpsub_data.rel_prefix_classes[relation];
-            if (prefix.empty())
-                continue;
-            for (const auto & column : dpsub_data.class_members[prefix.front()])
-                if (*column.getSourceRelations().getSingleBit() == relation && isSafePrimaryDataKeyType(*column.getType()))
-                    dpsub_data.shardable_relations |= static_cast<UInt32>(1) << relation;
         }
 
         /// Without an input sorted by a join key no merge join beats a hash join, so costs stay as they are.

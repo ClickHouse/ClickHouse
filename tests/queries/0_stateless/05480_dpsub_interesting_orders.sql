@@ -34,6 +34,8 @@ DROP TABLE IF EXISTS float_a;
 DROP TABLE IF EXISTS float_b;
 DROP TABLE IF EXISTS nullable_a;
 DROP TABLE IF EXISTS nullable_b;
+DROP TABLE IF EXISTS no_pk_a;
+DROP TABLE IF EXISTS no_pk_b;
 DROP TABLE IF EXISTS two_keys_a;
 DROP TABLE IF EXISTS two_keys_b;
 DROP TABLE IF EXISTS two_sorted_a;
@@ -56,6 +58,8 @@ CREATE TABLE float_a (k Float64, v UInt64) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE float_b (k Float64, v UInt64) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE nullable_a (k Nullable(UInt64), v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS allow_nullable_key = 1;
 CREATE TABLE nullable_b (k Nullable(UInt64), v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS allow_nullable_key = 1;
+CREATE TABLE no_pk_a (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k PRIMARY KEY tuple();
+CREATE TABLE no_pk_b (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k PRIMARY KEY tuple();
 CREATE TABLE two_keys_a (k UInt64, s UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE two_keys_b (k UInt64, s UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE two_sorted_a (k UInt64, s UInt64, v UInt64) ENGINE = MergeTree ORDER BY (k, s);
@@ -78,6 +82,8 @@ INSERT INTO float_a SELECT toFloat64(number), number FROM numbers(1000);
 INSERT INTO float_b SELECT toFloat64(number), number FROM numbers(1000);
 INSERT INTO nullable_a SELECT number, number FROM numbers(1000);
 INSERT INTO nullable_b SELECT number, number FROM numbers(1000);
+INSERT INTO no_pk_a SELECT number, number FROM numbers(1000);
+INSERT INTO no_pk_b SELECT number, number FROM numbers(1000);
 INSERT INTO two_keys_a SELECT number % 2, intHash64(number), number FROM numbers(1000);
 INSERT INTO two_keys_b SELECT number % 2, intHash64(number), number FROM numbers(1000);
 INSERT INTO two_sorted_a SELECT number % 2, intHash64(number), number FROM numbers(1000);
@@ -103,6 +109,8 @@ SET param__internal_join_table_stat_hints = '{
     "float_b": { "cardinality": 50000000, "distinct_keys": { "k": 50000000 } },
     "nullable_a": { "cardinality": 50000000, "distinct_keys": { "k": 50000000 } },
     "nullable_b": { "cardinality": 50000000, "distinct_keys": { "k": 50000000 } },
+    "no_pk_a": { "cardinality": 50000000, "distinct_keys": { "k": 50000000 } },
+    "no_pk_b": { "cardinality": 50000000, "distinct_keys": { "k": 50000000 } },
     "two_keys_a": { "cardinality": 50000000, "distinct_keys": { "k": 2, "s": 50000000 } },
     "two_keys_b": { "cardinality": 50000000, "distinct_keys": { "k": 2, "s": 50000000 } },
     "two_sorted_a": { "cardinality": 50000000, "distinct_keys": { "k": 2, "s": 50000000 } },
@@ -167,6 +175,15 @@ SELECT '-- Nullable keys: the merge cannot be sharded by key ranges, one stream 
 SELECT if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join') FROM (EXPLAIN PLAN SELECT count() FROM nullable_a JOIN nullable_b ON nullable_a.k = nullable_b.k)
 WHERE explain LIKE '%Algorithm:%';
 
+SELECT '-- sorted by the key, but an empty primary key: the merge cannot be sharded, one stream loses to a hash join';
+SELECT if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join') FROM (EXPLAIN PLAN SELECT sum(no_pk_a.v + no_pk_b.v) FROM no_pk_a JOIN no_pk_b ON no_pk_a.k = no_pk_b.k)
+WHERE explain LIKE '%Algorithm:%';
+
+SELECT '-- read in order by the key after a filter fixes the first primary key column, which the range split needs: a hash join';
+SELECT if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join') FROM (EXPLAIN PLAN
+    SELECT count() FROM (SELECT * FROM tenant_a WHERE tenant = 1) AS a JOIN (SELECT * FROM tenant_b WHERE tenant = 1) AS b ON a.k = b.k)
+WHERE explain LIKE '%Algorithm:%';
+
 SELECT '-- sharding by primary key ranges disabled: one stream loses to a hash join';
 SELECT if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join') FROM (EXPLAIN PLAN SELECT sum(sorted1.v + sorted2.v) FROM sorted1 JOIN sorted2 ON sorted1.k = sorted2.k)
 WHERE explain LIKE '%Algorithm:%'
@@ -222,6 +239,7 @@ SELECT count(), sum(probe.v + build_wide.v) FROM probe JOIN build_wide ON probe.
 SELECT count(), sum(probe.v + build_small.v) FROM probe JOIN build_small ON probe.k = build_small.k;
 SELECT count() FROM float_a JOIN float_b ON float_a.k = float_b.k;
 SELECT count(), sum(nullable_a.v + nullable_b.v) FROM nullable_a JOIN nullable_b ON nullable_a.k = nullable_b.k;
+SELECT count(), sum(no_pk_a.v + no_pk_b.v) FROM no_pk_a JOIN no_pk_b ON no_pk_a.k = no_pk_b.k;
 SELECT count(), sum(two_keys_a.v + two_keys_b.v) FROM two_keys_a JOIN two_keys_b ON two_keys_a.k = two_keys_b.k AND two_keys_a.s = two_keys_b.s;
 SELECT count(), sum(two_sorted_a.v + two_sorted_b.v) FROM two_sorted_a JOIN two_sorted_b ON two_sorted_a.s = two_sorted_b.s AND two_sorted_a.k = two_sorted_b.k;
 SELECT count(), sum(sorted1.v + sorted2.v + sorted3.v + sorted4.v) FROM sorted1 JOIN sorted2 ON sorted1.k = sorted2.k
@@ -245,6 +263,8 @@ DROP TABLE float_a;
 DROP TABLE float_b;
 DROP TABLE nullable_a;
 DROP TABLE nullable_b;
+DROP TABLE no_pk_a;
+DROP TABLE no_pk_b;
 DROP TABLE two_keys_a;
 DROP TABLE two_keys_b;
 DROP TABLE two_sorted_a;

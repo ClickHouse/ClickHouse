@@ -32,6 +32,10 @@ hash join
 hash join
 -- Nullable keys: the merge cannot be sharded by key ranges, one stream loses to a hash join
 hash join
+-- sorted by the key, but an empty primary key: the merge cannot be sharded, one stream loses to a hash join
+hash join
+-- read in order by the key after a filter fixes the first primary key column, which the range split needs: a hash join
+hash join
 -- sharding by primary key ranges disabled: one stream loses to a hash join
 hash join
 -- two keys, sorted by a low-cardinality first key only: a hash join
@@ -60,6 +64,7 @@ hash join
 100	54450
 20	9690
 1000
+1000	999000
 1000	999000
 1000	999000
 1000	999000

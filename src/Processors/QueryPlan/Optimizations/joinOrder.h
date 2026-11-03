@@ -175,9 +175,15 @@ struct QueryGraph
     /// A sort-merge join of inputs read in order by their primary key runs sharded by key ranges (`query_plan_join_shard_by_pk_ranges`).
     bool shard_merge_by_pk_ranges = false;
 
-    /// Per relation: the longest sequence of its `candidates` it can be read in order of. Called by DPsub only when it
-    /// uses interesting orders, since it probes the storage order of every input.
-    std::function<std::vector<Names>(const std::vector<NameSet> & candidates)> find_read_in_order_prefixes;
+    /// How a relation can be read in order: the longest sequence of its `candidates`, and whether a sharded merge can split
+    /// it by primary key ranges on the first of them, as `optimizeJoinByShards` does.
+    struct ReadInOrder
+    {
+        Names prefix;
+        bool splits_by_primary_key = false;
+    };
+    /// Per relation. Called by DPsub only when it uses interesting orders, since it probes the storage order of every input.
+    std::function<std::vector<ReadInOrder>(const std::vector<NameSet> & candidates)> find_read_in_order_prefixes;
 
     /// Build equivalence classes from existing edges. Call after all edges are populated.
     void buildColumnEquivalences();
