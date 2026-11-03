@@ -1018,10 +1018,15 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
     if (scope.context->getSettingsRef()[Setting::analyzer_compatibility_prefer_alias_over_subcolumn]
         && identifier.getPartsSize() > 1)
     {
-        const size_t table_name_parts_compat = table_expression_data.matchTableName(identifier, scope.context);
-        const bool prefix_matches_table_name = table_name_parts_compat > 0 && table_name_parts_compat < identifier.getPartsSize();
+        size_t table_name_parts_compat = table_expression_data.matchTableName(identifier, scope.context);
         const bool prefix_matches_alias
             = table_expression_node->hasAlias() && path_start == table_expression_node->getAlias();
+        /// A table name of several parts gives way to the qualifiers of the other table expressions, like below.
+        if (!prefix_matches_alias && table_name_parts_compat > 1
+            && isQualifiedByOtherTableExpression(
+                identifier, table_name_parts_compat, true /*check_alias*/, table_expression_node, scope))
+            table_name_parts_compat = 0;
+        const bool prefix_matches_table_name = table_name_parts_compat > 0 && table_name_parts_compat < identifier.getPartsSize();
         /** A materialized CTE is stored under an internal temporary table name, so its `table_name` never
           * matches the qualifier the user wrote. Its visible CTE name is a qualifier carrier just like a
           * table name or an alias, and it has to take part in this compatibility path as well, otherwise
