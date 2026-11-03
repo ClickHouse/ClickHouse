@@ -277,7 +277,8 @@ private:
         std::unique_lock<std::mutex> & lock,
         const MergeTreeTransactionPtr & txn,
         bool optimize_skip_merged_partitions = false,
-        const std::function<void()> & on_wait_for_running_merges = {});
+        const std::function<void()> & on_wait_for_running_merges = {},
+        bool merge_forced_horizontal = false);
 
     MergeMutateSelectedEntryPtr selectPartsToMutate(
         const StorageMetadataPtr & metadata_snapshot, PreformattedMessage & disable_reason,
@@ -494,7 +495,7 @@ private:
 
         MutationCommands getOnFlyMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const override;
         std::shared_ptr<MergeTreeData::IMutationsSnapshot> cloneEmpty() const override { return std::make_shared<MutationsSnapshot>(); }
-        NameSet getAllUpdatedColumns() const override;
+        NameSet getColumnsChangedOnFly() const override;
     };
 
     class PartMutationBackoffPolicy

@@ -76,8 +76,9 @@ struct AggregateFunctionFlameGraphTree
         for (size_t i = 0; i < stack_size; ++i)
         {
             UInt64 ptr = stack[i];
+            /// A frame that is not published (outside the main executable). 0 is the root's id, so skip it.
             if (ptr == 0)
-                break;
+                continue;
 
             if (!node->children)
             {
@@ -244,7 +245,7 @@ static void dumpFlameGraphImpl(
 
             if (id_to_string)
             {
-                /// trace.frames[i] is a 1-based id into id_to_string (0 is reserved as a stack terminator).
+                /// trace.frames[i] is a 1-based id into id_to_string (0 is reserved for the root).
                 writeString((*id_to_string)[trace.frames[i] - 1], out);
                 continue;
             }
@@ -253,7 +254,12 @@ static void dumpFlameGraphImpl(
 
 #if defined(__ELF__) && !defined(OS_FREEBSD)
             if (const auto * symbol = symbol_index.findSymbol(ptr))
-                writeString(demangle(symbol->name), out);
+            {
+                if (const char * symbol_name = symbol_index.getSymbolNameCString(*symbol); *symbol_name)
+                    writeString(demangle(symbol_name), out);
+                else
+                    writePointerHex(ptr, out);
+            }
             else
                 writePointerHex(ptr, out);
 #else
@@ -290,8 +296,8 @@ struct AggregateFunctionFlameGraphData
 
     /// String interning support for Array(String) traces.
     /// When a trace is provided as Array(String), each unique symbol is interned to a 1-based id and
-    /// the id (rather than a pointer) is stored in TreeNode::ptr. The id 0 stays reserved as a stack
-    /// terminator inside `tree.find`, and `dumpFlameGraphImpl` looks up the original string from
+    /// the id (rather than a pointer) is stored in TreeNode::ptr. The id 0 stays reserved for the root,
+    /// so `tree.find` skips it, and `dumpFlameGraphImpl` looks up the original string from
     /// `id_to_string` instead of running symbol resolution.
     bool is_string_mode = false;
     UnorderedMapWithMemoryTracking<std::string_view, UInt64> string_pool;

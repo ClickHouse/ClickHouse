@@ -941,11 +941,15 @@ fi
             except Exception as ex:
                 print(f"WARNING: Failed to chmod {file}: {ex}")
 
-    def prepare_logs(self, info, all=False):
+    def prepare_logs(self, info, all=False, job_failed=None):
+        # `all` attaches the full debug bundle; `job_failed` decides whether the jemalloc
+        # profiles are rendered. Callers that attach the bundle exactly on failure can omit it.
+        if job_failed is None:
+            job_failed = all
         res = []
         try:
             res = self._get_logs_archives_server()
-            res += self._get_jemalloc_profiles()
+            res += self._get_jemalloc_profiles(job_failed=job_failed)
             if all:
                 res += self.debug_artifacts
                 res += self.dump_system_tables()
@@ -1048,7 +1052,15 @@ fi
             print("WARNING: Coordination logs not found")
             return []
 
-    def _get_jemalloc_profiles(self):
+    def _total_memory_limit_exceeded(self):
+        # Written by `MemoryTracker` when the server-wide limit is hit: it flushes a jemalloc
+        # profile and logs this line, or the query fails with the `(total)` exception text.
+        return Shell.check(
+            f"cd {self.log_dir} && grep -a -q -F -e 'after total memory exceeded' -e '(total) memory limit exceeded' clickhouse-server*.log",
+            verbose=True,
+        )
+
+    def _get_jemalloc_profiles(self, job_failed):
         profiles = Shell.get_output(f"ls {temp_dir}/jemalloc_profiles")
         if not profiles:
             return []
@@ -1076,11 +1088,18 @@ fi
             file_with_max_third_number = max(files_in_group, key=lambda x: x[0])[1]
             latest_profiles[pid] = file_with_max_third_number
 
+        # Rendering is skipped, not the archiving below, so the raw .heap profiles still ship
+        # and can be rendered offline with `jeprof` and the build's binary. Symbolizing costs
+        # about two minutes per job on a debug build even when nobody looks at the result, so
+        # it is done only when the profiles are likely to be needed: the job failed, or the
+        # server hit its total memory limit (the reason the profiles are collected at all).
         if self.is_llvm_coverage:
-            # Rendering is skipped, not the archiving below, so the raw .heap
-            # profiles still ship and can be rendered offline.
             print(
                 f"NOTE: skipping jeprof rendering of {len(latest_profiles)} jemalloc profile(s) on an LLVM-coverage build"
+            )
+        elif not job_failed and not self._total_memory_limit_exceeded():
+            print(
+                f"NOTE: skipping jeprof rendering of {len(latest_profiles)} jemalloc profile(s): the job did not fail and the server did not exceed its total memory limit"
             )
         else:
             # Symbolizing a heap profile is unbounded work: it scales with the number of distinct
