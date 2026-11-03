@@ -142,6 +142,11 @@ static ColumnStats makeColumnStats(UInt64 num_distinct_values, const ColumnStati
         result.range_provenance.origin = ColumnStatsOrigin::MeasuredStatistics;
     if (estimate.estimated_null_count && estimate.rows_count)
         result.null_fraction = std::min(1.0, static_cast<Float64>(*estimate.estimated_null_count) / static_cast<Float64>(estimate.rows_count));
+    /// Bounds merged with a summary that has none (e.g. of a data lake file) miss the values of its rows. The distinct
+    /// count of such statistics is set from data lake metadata, possibly from the bounds (see `ManifestColumnStatistics`),
+    /// so it is marked as well.
+    if (!estimate.min_max_covers_all_values)
+        result.addTransformation(PartialStatisticsCoverage);
 
     if (stats->getNumRows() < total_rows)
         result.addTransformation(PartialStatisticsCoverage);

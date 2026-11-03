@@ -8,7 +8,8 @@
 # applies, clamped to the non-NULL rows; and that the min/max reach an optimizer decision.
 # - T1: `ie_join` picks its two key conditions by the min/max (port of `05023` to Iceberg).
 # - T2: the `Estimated statistics` trace line: rows, then NDV [NULL fraction] per column.
-# - T3: files without values of a column count as NULLs, and a range above the non-NULL rows counts nothing.
+# - T3: files without values of a column count as NULLs, and a range above the non-NULL rows counts nothing; such files
+#   have no bounds, but no values outside the bounds of the others either, so the range still describes every row.
 # - T4: range conditions estimated on the bounds of each type, since the trace line prints no min/max.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -92,6 +93,11 @@ echo '--- T3: a file before ADD COLUMN and an all-NULL file, then values'
 echo 'Expect added 400, null 0.5: 2000 of the 4000 rows count as NULLs; the range 3999 is above the 2000 others: 10% of rows.'
 relation ice_added_column "SELECT ice_added_column.added FROM ice_added_column
     JOIN dim10 ON ice_added_column.id = dim10.id"
+echo 'Expect range measured-statistics, without partial-statistics-coverage: the files without bounds hold only NULLs.'
+${CLICKHOUSE_CLIENT_TRACE} ${PINS} ${REORDER} --query "
+    EXPLAIN SELECT ice_added_column.added FROM ice_added_column JOIN dim10 ON ice_added_column.id = dim10.id" 2>&1 >/dev/null \
+    | grep -oE "Estimated statistics for [A-Za-z]+ ice_added_column: .*" | head -n 1 \
+    | grep -oE '__table1\.added: [^(]*\(ndv: [^,]*, range: [^)]*\)' | grep -oE 'range: [^)]*'
 
 # The trace line prints no min/max: they can be values of rows hidden by a row policy.
 echo '--- T4: rows of a range condition over half of each range'

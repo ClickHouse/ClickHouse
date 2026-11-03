@@ -57,7 +57,8 @@ enum ColumnStatsTransformation : UInt16
     /// The column is a function of the measured one that cannot increase the distinct count but can change values
     /// (e.g. `roundToExp2(k)` or a `CAST`), so the measured range and NULL fraction do not describe it.
     NDVBoundExpression = 1 << 2,
-    /// The statistics cover only some of the rows they describe, e.g. when some parts lack the statistic.
+    /// The statistics cover only some of the rows they describe, e.g. when some parts lack the statistic, or when the
+    /// bounds miss the values of some rows (data lake files with a NULL count but without bounds).
     PartialStatisticsCoverage = 1 << 3,
     /// A step whose effect on the column is not modeled, such as `FINAL` or a join.
     Unmodeled = 1 << 4,

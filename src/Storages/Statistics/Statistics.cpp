@@ -541,6 +541,7 @@ Estimate ColumnStatistics::getEstimate() const
                 info.estimated_min = basic_stats.getMin();
             if (!basic_stats.getMax().isNull())
                 info.estimated_max = basic_stats.getMax();
+            info.min_max_covers_all_values = basic_stats.minMaxCoversAllValues();
         }
         if (basic_stats.hasNullCount())
             info.estimated_null_count = basic_stats.getNullCount();

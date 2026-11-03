@@ -368,6 +368,71 @@ TEST(Statistics, ColumnStatsOriginsTransformationsAndPartialCoverage)
     EXPECT_TRUE(filtered.ndv_provenance.has(EstimatedRowCountClamp));
 }
 
+TEST(Statistics, SummaryWithoutBoundsMakesRangePartial)
+{
+    /// Data lake files summarized by their rows, bounds and NULL counts, as Iceberg manifests give them. A file with a
+    /// NULL count but without bounds has non-NULL values outside the bounds merged with it, unless all its rows are NULL.
+    const auto nullable_int64 = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>());
+    const auto int64 = std::make_shared<DataTypeInt64>();
+
+    /// Values 0..99, with bounds.
+    auto bounded = [](const DataTypePtr & type)
+    { return ColumnStatistics::createBasicFromSummary(type, 100, Field(Int64(0)), Field(Int64(99)), 0); };
+    /// E.g. values 1000..1099, without bounds.
+    auto unbounded = [](const DataTypePtr & type, UInt64 nulls)
+    { return ColumnStatistics::createBasicFromSummary(type, 100, Field{}, Field{}, nulls); };
+
+    auto merge_files = [](const std::vector<ColumnStatisticsPtr> & files)
+    {
+        ConditionSelectivityEstimatorBuilder builder(getContext().context);
+        for (const auto & file : files)
+        {
+            builder.addStatistics("k", file);
+            builder.incrementRowCount(file->getNumRows());
+        }
+        return builder.getEstimator()->estimateRelationProfile(/*metadata=*/nullptr).column_stats.at("k");
+    };
+
+    auto expect_partial_range = [](const ColumnStats & k)
+    {
+        /// The range is kept as measured, for diagnostics, but gives no guarantee.
+        ASSERT_TRUE(k.min_value && k.max_value);
+        EXPECT_EQ(k.min_value->safeGet<Int64>(), 0);
+        EXPECT_EQ(k.max_value->safeGet<Int64>(), 99);
+        EXPECT_EQ(k.range_provenance.origin, ColumnStatsOrigin::MeasuredStatistics);
+        EXPECT_TRUE(k.range_provenance.has(PartialStatisticsCoverage));
+        EXPECT_FALSE(k.valueRange(ValueRangeGuarantee::Exact));
+        EXPECT_FALSE(k.valueRange(ValueRangeGuarantee::Superset));
+        EXPECT_FALSE(k.valueRange(ValueRangeGuarantee::Representative));
+        /// A data lake can derive the distinct count from the bounds, so it gives no guarantee either.
+        EXPECT_TRUE(k.ndv_provenance.has(PartialStatisticsCoverage));
+    };
+
+    /// Both files have all their rows counted, so only the bounds tell that the second file's values are missing.
+    expect_partial_range(merge_files({bounded(nullable_int64), unbounded(nullable_int64, /*nulls=*/0)}));
+    expect_partial_range(merge_files({unbounded(nullable_int64, /*nulls=*/0), bounded(nullable_int64)}));
+    expect_partial_range(merge_files({bounded(nullable_int64), unbounded(nullable_int64, /*nulls=*/99)}));
+    /// A non-Nullable column has a value in every row, whatever the NULL count says.
+    expect_partial_range(merge_files({bounded(int64), unbounded(int64, /*nulls=*/100)}));
+
+    /// An all-NULL file has no values to miss, so the range stays exact.
+    const auto with_all_null_file = merge_files({bounded(nullable_int64), unbounded(nullable_int64, /*nulls=*/100)});
+    EXPECT_FALSE(with_all_null_file.range_provenance.has(PartialStatisticsCoverage));
+    EXPECT_FALSE(with_all_null_file.ndv_provenance.has(PartialStatisticsCoverage));
+    const auto exact = with_all_null_file.valueRange(ValueRangeGuarantee::Exact);
+    ASSERT_TRUE(exact);
+    EXPECT_EQ(exact->min.safeGet<Int64>(), 0);
+    EXPECT_EQ(exact->max.safeGet<Int64>(), 99);
+    ASSERT_TRUE(exact->null_fraction);
+    EXPECT_DOUBLE_EQ(*exact->null_fraction, 0.5);
+    EXPECT_TRUE(with_all_null_file.valueRange(ValueRangeGuarantee::Representative));
+
+    /// Files with bounds cover all values, and so do statistics built from a column.
+    EXPECT_TRUE(merge_files({bounded(nullable_int64), bounded(nullable_int64)}).valueRange(ValueRangeGuarantee::Exact));
+    const auto built = buildNullableInt32Stats({StatisticsType::Basic}, /*total=*/100, /*null_every=*/1);
+    EXPECT_TRUE(built->getEstimate().min_max_covers_all_values);
+}
+
 TEST(Statistics, NullableEstimatorWithBasic)
 {
     /// Two Nullable(Int32) columns with three-valued logic exercised across ranges and IS [NOT] NULL.

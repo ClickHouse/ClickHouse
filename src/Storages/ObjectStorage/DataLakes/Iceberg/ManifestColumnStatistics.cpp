@@ -229,7 +229,9 @@ void ManifestColumnStatistics::addFile(const ProcessedManifestFileEntry & entry,
         const auto & metrics = file_metrics[i];
         addToDistinctValuesInputs(distinct_values_inputs[i], metrics);
         /// A file without the NULL count and the bounds adds nothing, as a MergeTree part without the statistic; with the
-        /// bounds alone its NULL count is taken as 0.
+        /// bounds alone its NULL count is taken as 0. With the NULL count alone, the merged bounds miss its non-NULL values,
+        /// which the statistics record (see `StatisticsBasic::minMaxCoversAllValues`), so that neither the bounds nor a
+        /// number of distinct values derived from them give a guarantee.
         if (!metrics.nulls && metrics.min_value.isNull())
             continue;
         statistics_builder.addStatistics(

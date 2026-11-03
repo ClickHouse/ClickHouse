@@ -21,6 +21,8 @@ Expect added 400, null 0.5: 2000 of the 4000 rows count as NULLs; the range 3999
 ice_added_column: 4000 rows
 __table1.added: 400 [null 0.5]
 __table1.id: 4000
+Expect range measured-statistics, without partial-statistics-coverage: the files without bounds hold only NULLs.
+range: measured-statistics
 --- T4: rows of a range condition over half of each range
 Expect about 500 of the 1000 rows: Decimal, DateTime64 in s, Date32 in days, Int64; nullable_int 3/4 non-NULL.
 decimal_value < 125: ice_types: 500 rows
