@@ -293,12 +293,13 @@ def test_text_index_lookahead(started_cluster):
 
     # 40 tokens, 8 of them (searched below) with much larger cardinalities than the 32 filler tokens.
     # A hash shuffle interleaves every token's rows, so its own postings cannot compress into one short run.
+    # Uncompressed postings (`posting_list_codec = 'none'`) keep enough pages for the miss counts below.
     node.query(
         """
         create table t_text_index_lookahead
         (
             s String,
-            index idx s type text(tokenizer = 'splitByNonAlpha', dictionary_block_size = 4, posting_list_block_size = 256)
+            index idx s type text(tokenizer = 'splitByNonAlpha', dictionary_block_size = 4, posting_list_block_size = 256, posting_list_codec = 'none')
         )
         engine = MergeTree order by tuple()
         settings storage_policy = 's3', min_bytes_for_wide_part = 0,
