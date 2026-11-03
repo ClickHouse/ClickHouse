@@ -7122,8 +7122,14 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         {
             Strings disk_names;
             for (const auto & disk : new_storage_policy->getDisks())
-                if (!supportWritingWithAppend(disk))
+            {
+                /// `supportWritingWithAppend` looks through one wrapper only, and an encrypted disk can wrap another one.
+                auto innermost_disk = disk;
+                while (auto delegate_disk = innermost_disk->getDelegateDiskIfExists())
+                    innermost_disk = delegate_disk;
+                if (!supportWritingWithAppend(innermost_disk))
                     disk_names.push_back(disk->getName());
+            }
             if (!disk_names.empty())
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "UNIQUE KEY is not supported for table {}: disk {} does not support writing with append",
