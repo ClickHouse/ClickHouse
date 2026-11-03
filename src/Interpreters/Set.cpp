@@ -155,12 +155,10 @@ public:
         {
             if constexpr (std::is_same_v<Key, UInt32> || std::is_same_v<Key, UInt64> || std::is_same_v<Key, UInt128>)
             {
-                if (attemptPeakBytes(num_keys, sizeof(Key), minBits(num_keys), 0) > memory_budget)
+                if (attemptPeakBytes(num_keys + 1, sizeof(Key), minBits(num_keys), 0) > memory_budget)
                     return nullptr;
-                std::vector<Key> keys;
-                keys.reserve(num_keys);
-                for (auto it = method.data.begin(); it != method.data.end(); ++it)
-                    keys.push_back(it->getKey());
+                PODArray<Key> keys;
+                copyKeys(method.data, keys);
                 if (lookup->tryBuildTable(keys, memory_budget, attempts))
                     return lookup;
             }
@@ -169,8 +167,8 @@ public:
         {
             if (attemptPeakBytes(num_keys, sizeof(UInt128), minBits(num_keys), 0) > memory_budget)
                 return nullptr;
-            std::vector<UInt128> keys;
-            keys.reserve(num_keys);
+            PODArray<UInt128> keys;
+            keys.reserve_exact(num_keys);
             for (auto it = method.data.begin(); it != method.data.end(); ++it)
             {
                 const std::string_view key = it->getKey();
@@ -384,18 +382,43 @@ private:
         return bits;
     }
 
-    /// The peak memory of a placement into `1 << bits` slots: the keys, the slots and their occupancy bytes, or, while
+    /// The peak memory of a placement into `1 << bits` slots: the keys, the slots and their occupancy bits, or, while
     /// the slots of the previous placement (none if `previous_bits` is 0) are reallocated, both blocks of slots.
     static size_t attemptPeakBytes(size_t num_keys, size_t key_size, size_t bits, size_t previous_bits)
     {
         const size_t slot_bytes = (1ULL << bits) * key_size;
         const size_t previous_slot_bytes = previous_bits ? (1ULL << previous_bits) * key_size : 0;
-        const size_t occupancy_bytes = 1ULL << bits;
+        const size_t occupancy_bytes = occupancyWords(bits) * sizeof(UInt64);
         return num_keys * key_size + std::max(previous_slot_bytes + slot_bytes, slot_bytes + occupancy_bytes);
     }
 
+    static size_t occupancyWords(size_t bits) { return ((1ULL << bits) + 63) / 64; }
+
+    /// Reads every cell without branches: an empty cell holds the zero key, which the hash table stores apart.
+    template <typename Table, typename Key>
+    static void copyKeys(const Table & table, PODArray<Key> & keys)
+    {
+        /// One more, since every cell writes the next key.
+        keys.resize_exact(table.size() + 1);
+        size_t size = 0;
+        if (table.hasZero())
+            keys[size++] = Key{};
+        if (const auto * cells_end = table.end().getPtr())
+        {
+            const size_t num_cells = table.getBufferSizeInCells();
+            const auto * cells = cells_end - num_cells;
+            for (size_t i = 0; i < num_cells; ++i)
+            {
+                const Key key = cells[i].getKey();
+                keys[size] = key;
+                size += key != Key{};
+            }
+        }
+        keys.resize(size);
+    }
+
     template <typename Key>
-    bool tryBuildTable(const std::vector<Key> & keys, size_t memory_budget, size_t & attempts)
+    bool tryBuildTable(const PODArray<Key> & keys, size_t memory_budget, size_t & attempts)
     {
         if (keys.empty())
             return false;
@@ -409,7 +432,7 @@ private:
                 ++bits;
             /// A retry of the same size reuses the slots in place.
             const size_t reallocated_bits = bits > previous_bits ? previous_bits : 0;
-            if ((1ULL << bits) * sizeof(Key) > max_bytes || attemptPeakBytes(keys.size(), sizeof(Key), bits, reallocated_bits) > memory_budget)
+            if ((1ULL << bits) * sizeof(Key) > max_bytes || attemptPeakBytes(keys.capacity(), sizeof(Key), bits, reallocated_bits) > memory_budget)
                 break;
             for (size_t i = 0; i < std::size(multipliers1); ++i)
             {
@@ -427,7 +450,7 @@ private:
     }
 
     template <bool mixed, typename Key>
-    bool tryPlaceKeys(const std::vector<Key> & keys, size_t bits)
+    bool tryPlaceKeys(const PODArray<Key> & keys, size_t bits)
     {
         shift = 64 - bits;
         mask = (1ULL << bits) - 1;
@@ -435,7 +458,7 @@ private:
         auto & slots = getSlots<Key>();
         /// The slots that get no key keep this copy of a key of the set.
         slots.assign(num_slots, keys[0]);
-        PODArray<UInt8> occupied(num_slots, 0);
+        PODArray<UInt64> occupied(occupancyWords(bits), 0);
 
         /// The moves would never end if more than two keys had the same two slots.
         static constexpr size_t max_moves = 100;
@@ -444,19 +467,17 @@ private:
         for (size_t i = 0; i < num_keys; ++i)
         {
             if (i + prefetch_distance < num_keys)
-            {
-                const size_t ahead = places<mixed>(keys[i + prefetch_distance]).first;
-                __builtin_prefetch(&occupied[ahead], 1);
-                __builtin_prefetch(&slots[ahead], 1);
-            }
+                __builtin_prefetch(&slots[places<mixed>(keys[i + prefetch_distance]).first], 1);
 
             Key key = keys[i];
             size_t current = places<mixed>(key).first;
             for (size_t moves = 0;; ++moves)
             {
-                if (!occupied[current])
+                UInt64 & word = occupied[current / 64];
+                const UInt64 bit = 1ULL << (current % 64);
+                if (!(word & bit))
                 {
-                    occupied[current] = 1;
+                    word |= bit;
                     slots[current] = key;
                     break;
                 }
@@ -1417,21 +1438,20 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
     const size_t num_null_rows = null_map && may_use_cuckoo_lookup ? countBytesInFilter(*null_map) : 0;
     /// The hash table answers a key equal to the previous row's from its cache, without a lookup.
     const bool keys_sorted = may_use_cuckoo_lookup && data->type != SetVariants::Type::key_string && keysAreSorted(key_columns, vec_res.size());
-    const bool used_cuckoo_lookup = !keys_sorted && cuckoo_lookup && num_null_rows * 2 <= vec_res.size() && data->callOnMethod([&](const auto & method)
-        { return cuckoo_lookup->execute(method, key_columns, key_sizes, vec_res, negative, null_map); });
-    if (!used_cuckoo_lookup)
+    /// The keys do not change while the shared lock is held, so the table is built here, looks up this block, and is
+    /// installed below.
+    const Int64 rows = static_cast<Int64>(vec_res.size() - num_null_rows);
+    if (!keys_sorted && rows > 0 && !cuckoo_lookup && rows_before_cuckoo_lookup.load(std::memory_order_relaxed) > 0)
     {
-        data->callOnMethod([&](auto & method) { executeImpl(method, key_columns, vec_res, negative, vec_res.size(), null_map); });
-
-        /// The keys do not change while the shared lock is held, so the table is built here and installed below.
-        const Int64 rows = static_cast<Int64>(vec_res.size() - num_null_rows);
-        if (!keys_sorted && rows > 0 && !cuckoo_lookup && rows_before_cuckoo_lookup.load(std::memory_order_relaxed) > 0)
-        {
-            const Int64 rows_before = rows_before_cuckoo_lookup.fetch_sub(rows, std::memory_order_relaxed);
-            if (rows_before > 0 && rows_before <= rows)
-                new_cuckoo_lookup = createCuckooLookup();
-        }
+        const Int64 rows_before = rows_before_cuckoo_lookup.fetch_sub(rows, std::memory_order_relaxed);
+        if (rows_before > 0 && rows_before <= rows)
+            new_cuckoo_lookup = createCuckooLookup();
     }
+    const CuckooLookup * lookup_table = cuckoo_lookup ? cuckoo_lookup.get() : new_cuckoo_lookup.get();
+    const bool used_cuckoo_lookup = !keys_sorted && lookup_table && num_null_rows * 2 <= vec_res.size() && data->callOnMethod([&](const auto & method)
+        { return lookup_table->execute(method, key_columns, key_sizes, vec_res, negative, null_map); });
+    if (!used_cuckoo_lookup)
+        data->callOnMethod([&](auto & method) { executeImpl(method, key_columns, vec_res, negative, vec_res.size(), null_map); });
 
     /// The set is usually built before the rest of the query takes its memory, so it also spills while it is
     /// used. Spilling takes the lock exclusively, so this lookup releases its shared lock first.
