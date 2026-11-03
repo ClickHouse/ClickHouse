@@ -872,7 +872,7 @@ QueryResultCache::HerdWaitResult QueryResultCache::acquireOrWaitHerdToken(
 
         const std::chrono::steady_clock::duration wait_for = std::min<std::chrono::steady_clock::duration>(poll_interval, deadline - now);
 
-        HerdToken::State state;
+        HerdToken::State state = HerdToken::State::Running;
         {
             std::unique_lock token_lock(existing_token->mutex);
             existing_token->completed.wait_for(token_lock, wait_for, [&]
