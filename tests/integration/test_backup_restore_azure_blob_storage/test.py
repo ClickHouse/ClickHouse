@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
 
+import datetime
 import io
 import os
 import time
 
 import pytest
-from azure.storage.blob import BlobServiceClient
+from azure.storage.blob import (
+    AccountSasPermissions,
+    BlobServiceClient,
+    ResourceTypes,
+    generate_account_sas,
+)
 
 from helpers.cluster import ClickHouseCluster
 
@@ -939,6 +945,65 @@ def test_backup_legacy_disk_endpoint_settings_loaded(cluster):
 
     azure_query(node, "DROP TABLE test_legacy_native_copy")
     azure_query(node, "DROP TABLE test_legacy_native_copy_restored")
+
+
+def test_connection_string_secrets_not_logged(cluster):
+    # The disk is configured by an account key connection string, which is also its description. The
+    # backup uses a SAS connection string, which the SDK appends to the blob service url as its query.
+    node = cluster.instances["node_legacy_native_copy"]
+    sas = generate_account_sas(
+        "devstoreaccount1",
+        "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==",
+        resource_types=ResourceTypes(service=True, container=True, object=True),
+        permission=AccountSasPermissions(
+            read=True, write=True, delete=True, list=True, add=True, create=True
+        ),
+        expiry=datetime.datetime.now(datetime.timezone.utc)
+        + datetime.timedelta(hours=1),
+    )
+    # URL-encoded, so it has no grep metacharacters.
+    sig = sas.split("sig=")[1].split("&")[0]
+    connection_string = f"BlobEndpoint={cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']};SharedAccessSignature={sas}"
+
+    azure_query(node, "DROP TABLE IF EXISTS test_secrets_not_logged SYNC")
+    azure_query(
+        node,
+        "CREATE TABLE test_secrets_not_logged(key UInt64, data String) Engine = MergeTree() ORDER BY tuple() SETTINGS storage_policy='blob_storage_policy_legacy_native_copy'",
+    )
+    azure_query(node, "INSERT INTO test_secrets_not_logged VALUES (1, 'a')")
+
+    backup_destination = (
+        f"AzureBlobStorage('{connection_string}', 'cont', '{new_backup_name()}')"
+    )
+    azure_query(node, f"BACKUP TABLE test_secrets_not_logged TO {backup_destination}")
+    azure_query(node, "DROP TABLE IF EXISTS test_secrets_not_logged_restored")
+    azure_query(
+        node,
+        f"RESTORE TABLE test_secrets_not_logged AS test_secrets_not_logged_restored FROM {backup_destination}",
+    )
+    assert (
+        azure_query(node, "SELECT * from test_secrets_not_logged_restored") == "1\ta\n"
+    )
+
+    function = f"azureBlobStorage('{connection_string}', 'cont', 'test_secrets_not_logged.csv'"
+    azure_query(
+        node,
+        f"INSERT INTO TABLE FUNCTION {function}, 'CSV', 'auto', 'x UInt64') SELECT 42 SETTINGS azure_truncate_on_insert = 1",
+    )
+    assert azure_query(node, f"SELECT * FROM {function})") == "42\n"
+    sources = azure_query(
+        node,
+        "SELECT source FROM system.schema_inference_cache WHERE source LIKE '%test_secrets_not_logged.csv'",
+    )
+    assert sources != "" and sig not in sources
+
+    assert node.contains_in_log("BackupWriterAzureBlobStorage: Source description")
+    assert node.contains_in_log("BackupReaderAzureBlobStorage: Source description")
+    assert not node.contains_in_log("Source description.*Eby8vdM02xNO")
+    assert not node.contains_in_log(f"Source description.*{sig}")
+
+    azure_query(node, "DROP TABLE test_secrets_not_logged")
+    azure_query(node, "DROP TABLE test_secrets_not_logged_restored")
 
 
 def test_reload_config_keeps_azure_endpoint_settings(cluster):
