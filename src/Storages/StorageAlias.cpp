@@ -279,7 +279,10 @@ void StorageAlias::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    auto target_storage = getTargetTable();
+    /// Any grant on the target implies `SHOW_TABLES` on it, so this denies a user with no access to the target before
+    /// the lookup, which could otherwise tell them whether the target exists or fail to load its metadata.
+    /// The column-level check below needs the target's metadata, so it is done once the target is known.
+    auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::SHOW_TABLES});
     auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
 
     /// Resolve subcolumns against the same target metadata snapshot the read below uses, so the

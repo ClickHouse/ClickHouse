@@ -54,6 +54,21 @@ private:
         return "";
     }
 
+    struct ResolvedSource
+    {
+        StoragePtr table;
+        /// The metadata the result structure is built from.
+        StorageMetadataPtr metadata;
+    };
+
+    /// Resolves the source table and checks that the user may see it.
+    ResolvedSource resolveSource(ContextPtr context) const;
+
+    /// The result structure for the given source. The structure and the storage are built from the same metadata
+    /// snapshot, so the access check in `StorageMergeTreeIndex::readImpl` resolves the requested names against the schema
+    /// they were exposed from, even if the table is altered concurrently.
+    ColumnsDescription getColumns(const ResolvedSource & source) const;
+
     StorageID source_table_id{StorageID::createEmpty()};
     bool with_marks = false;
     bool with_minmax = false;
@@ -155,12 +170,25 @@ static NameSet getAllPossibleStreamNames(
     return all_streams;
 }
 
-ColumnsDescription TableFunctionMergeTreeIndex::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
+TableFunctionMergeTreeIndex::ResolvedSource TableFunctionMergeTreeIndex::resolveSource(ContextPtr context) const
 {
     /// Otherwise `DESCRIBE` and the errors below would reveal the existence, the engine and the key of a table the user cannot see.
     context->checkAccess(AccessType::SHOW_TABLES, source_table_id);
     auto source_table = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(source_table_id, context));
-    auto metadata_snapshot = source_table->getInMemoryMetadataPtr(context, false);
+    const auto metadata_handle = source_table->getInMemoryMetadataPtr(context, false);
+    StorageMetadataPtr metadata_snapshot = metadata_handle;
+    return {std::move(source_table), std::move(metadata_snapshot)};
+}
+
+ColumnsDescription TableFunctionMergeTreeIndex::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
+{
+    return getColumns(resolveSource(context));
+}
+
+ColumnsDescription TableFunctionMergeTreeIndex::getColumns(const ResolvedSource & source) const
+{
+    const auto & source_table = source.table;
+    const auto & metadata_snapshot = source.metadata;
 
     const auto * merge_tree = castStorage<MergeTreeData>(source_table, DeferredTable::Load).get();
     if (!merge_tree)
@@ -211,14 +239,14 @@ StoragePtr TableFunctionMergeTreeIndex::executeImpl(
     ContextPtr context,
     const std::string & table_name,
     ColumnsDescription /*cached_columns*/,
-    bool is_insert_query) const
+    bool /*is_insert_query*/) const
 {
-    auto columns = getActualTableStructure(context, is_insert_query);
-    auto source_table = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(source_table_id, context));
+    auto source = resolveSource(context);
+    auto columns = getColumns(source);
 
     StorageID storage_id(getDatabaseName(), table_name);
     auto res = std::make_shared<StorageMergeTreeIndex>(
-        std::move(storage_id), std::move(source_table), std::move(columns), with_marks, with_minmax);
+        std::move(storage_id), std::move(source.table), std::move(source.metadata), std::move(columns), with_marks, with_minmax);
 
     res->startup();
     return res;

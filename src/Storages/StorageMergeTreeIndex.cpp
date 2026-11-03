@@ -19,7 +19,6 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Access/Common/AccessFlags.h>
 #include <Storages/getEffectiveRowPolicyFilter.h>
-#include <Common/CurrentThread.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
@@ -299,6 +298,7 @@ const Block StorageMergeTreeIndex::virtuals_sample_block{part_name_column, mark_
 StorageMergeTreeIndex::StorageMergeTreeIndex(
     const StorageID & table_id_,
     const StoragePtr & source_table_,
+    const StorageMetadataPtr & source_metadata_snapshot_,
     const ColumnsDescription & columns,
     bool with_marks_,
     bool with_minmax_)
@@ -306,6 +306,7 @@ StorageMergeTreeIndex::StorageMergeTreeIndex(
     , source_table(source_table_)
     , with_marks(with_marks_)
     , with_minmax(with_minmax_)
+    , source_metadata_snapshot(source_metadata_snapshot_)
 {
     const auto * merge_tree = castStorage<MergeTreeData>(source_table, DeferredTable::Load).get();
     if (!merge_tree)
@@ -314,8 +315,6 @@ StorageMergeTreeIndex::StorageMergeTreeIndex(
     data_parts = merge_tree->getDataPartsVectorForInternalUsage();
     std::erase_if(data_parts, [](const MergeTreeData::DataPartPtr & part) { return part->isEmpty(); });
 
-    const auto source_metadata_handle = merge_tree->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
-    source_metadata_snapshot = source_metadata_handle;
     key_sample_block = std::make_shared<const Block>(source_metadata_snapshot->getPrimaryKey().sample_block);
 
     if (with_minmax)
