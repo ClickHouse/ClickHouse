@@ -3265,18 +3265,11 @@ struct ToDateTimeComponentsImpl
             --components.whole;
         }
 
-        // Normalize the dividers between microseconds and nanoseconds w.r.t. the scale.
-        Int64 microsecond_divider = (millisecond_multiplier * scale_multiplier) / microsecond_multiplier;
-        Int64 nanosecond_divider = scale_multiplier / microsecond_multiplier;
-
-        // Protect against division by zero for smaller scale multipliers.
-        microsecond_divider = (microsecond_divider ? microsecond_divider : 1);
-        nanosecond_divider = (nanosecond_divider ? nanosecond_divider : 1);
-
-        const Int64 & fractional = components.fractional;
-        UInt16 millisecond = static_cast<UInt16>(fractional / microsecond_divider);
-        UInt16 microsecond = static_cast<UInt16>((fractional % microsecond_divider) / nanosecond_divider);
-        UInt16 nanosecond = static_cast<UInt16>(fractional % nanosecond_divider);
+        /// In nanoseconds, so that the components of values with different scales can be compared.
+        const Int64 fractional = components.fractional * (nanosecond_multiplier / scale_multiplier);
+        UInt16 millisecond = static_cast<UInt16>(fractional / 1'000'000);
+        UInt16 microsecond = static_cast<UInt16>(fractional / 1000 % 1000);
+        UInt16 nanosecond = static_cast<UInt16>(fractional % 1000);
 
         return DateTimeComponentsWithFractionalPart{time_zone.toDateTimeComponents(components.whole), millisecond, microsecond, nanosecond};
     }
