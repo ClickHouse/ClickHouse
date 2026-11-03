@@ -29,7 +29,7 @@ storage_configuration:
             path: '${WORK_DIR}/caches/blob_cache/'
             max_size: '1Gi'
             max_file_segment_size: '1Mi'
-            boundary_alignment: '1Mi'
+            boundary_alignment: '256Ki'
             cache_on_write_operations: 0
             load_metadata_asynchronously: 0
 filesystem_caches:
@@ -47,6 +47,7 @@ function run_local()
 }
 
 # Disk read: the cache is empty and the granule is near the end of a ~3 MB column file.
+# The cache's own alignment (256Ki) is below the segment size, so a 1 MiB grid means the override was capped, not ignored.
 run_local "
 CREATE TABLE t (a Int32, b String) ENGINE = MergeTree ORDER BY a SETTINGS disk = 'blob_cache';
 INSERT INTO t SELECT number, randomString(100) FROM numbers(30000);
@@ -64,7 +65,8 @@ run_local "INSERT INTO FUNCTION s3('http://localhost:11111/test/${FILE}', 'test'
 run_local "
 SELECT length(raw_blob) FROM s3('http://localhost:11111/test/${FILE}', 'test', 'testtest', 'RawBLOB')
 SETTINGS filesystem_cache_name = 'tiny_cache', enable_filesystem_cache = 1,
-    filesystem_cache_segments_batch_size = 1, filesystem_cache_boundary_alignment = 1048576
+    filesystem_cache_segments_batch_size = 1, filesystem_cache_boundary_alignment = 1048576;
+SELECT value > 0 FROM system.events WHERE event = 'CachedReadBufferReadFromCacheMisses';
 "
 
 rm -rf "${WORK_DIR}"
