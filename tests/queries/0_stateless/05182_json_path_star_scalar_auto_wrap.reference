@@ -1,3 +1,6 @@
+-- Tests for RFC 9535 lax-mode auto-wrapping of non-array values under the JSONPath wildcard `[*]`.
+-- https://github.com/ClickHouse/ClickHouse/issues/118755
+
 -- { echo }
 SELECT JSON_QUERY('{"p":3}', '$.p[*]');
 [3]
