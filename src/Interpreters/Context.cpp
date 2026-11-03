@@ -3843,6 +3843,10 @@ StoragePtr Context::buildParameterizedViewStorage(const String & database_name, 
     if (!storage_view || !storage_view->isParameterizedView())
         return nullptr;
 
+    /// Substituting the parameters and analyzing the body report parts of the definition in their errors.
+    if (!getAccess()->getAccessRightsWithImplicit()->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
+        checkAccess(AccessType::SELECT, original_view->getStorageID());
+
     auto original_view_metadata = original_view->getInMemoryMetadataPtr(getQueryContext(), false);
     auto query = original_view_metadata->getSelectQuery().inner_query->clone();
     StorageView::replaceQueryParametersIfParameterizedView(query, param_values);

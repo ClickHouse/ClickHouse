@@ -407,24 +407,23 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
 /// check the planner performs later for the columns the query actually reads, and a query that
 /// can be executed can always be analyzed. Table expressions constructed programmatically
 /// (e.g. by `MutationsInterpreter`) do not pass through here and keep their own access semantics.
-static void checkAccessToTableMetadata(const TableNode & table_node, const ContextPtr & context)
+void IdentifierResolver::checkAccessToTableMetadata(
+    const StoragePtr & storage,
+    const StorageID & storage_id,
+    const StorageSnapshotPtr & storage_snapshot,
+    const ContextPtr & context)
 {
-    /// Temporary tables of the current session are always accessible.
-    if (!table_node.getTemporaryTableName().empty())
-        return;
-
-    const auto & storage_id = table_node.getStorageID();
     if (!storage_id.hasDatabase())
         return;
 
-    if (isInsertedDataOfTableFunction(table_node.getStorage(), storage_id, context))
+    if (isInsertedDataOfTableFunction(storage, storage_id, context))
         return;
 
     /// Probe the raw rights so that probing does not pollute `used_privileges` of the query log.
     /// `SELECT` is checked in addition to `SHOW_COLUMNS` because the implicit `SELECT` on the
     /// `system` and `information_schema` databases is granted after implications are derived.
     const auto access_rights = context->getAccess()->getAccessRightsWithImplicit();
-    for (const auto & column : table_node.getStorageSnapshot()->metadata->getColumns())
+    for (const auto & column : storage_snapshot->metadata->getColumns())
     {
         if (access_rights->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name)
             || access_rights->isGranted(AccessType::SHOW_COLUMNS, storage_id.database_name, storage_id.table_name, column.name))
@@ -441,7 +440,9 @@ IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabas
 {
     if (auto result = tryResolveTableIdentifier(table_identifier, context))
     {
-        checkAccessToTableMetadata(*result, context);
+        /// Temporary tables of the current session are always accessible.
+        if (result->getTemporaryTableName().empty())
+            checkAccessToTableMetadata(result->getStorage(), result->getStorageID(), result->getStorageSnapshot(), context);
         return { .resolved_identifier = std::move(result), .resolve_place = IdentifierResolvePlace::DATABASE_CATALOG };
     }
 
