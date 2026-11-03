@@ -11,12 +11,12 @@ using namespace DB;
 TEST(Throttler, GetAvailableWithHugeBurst)
 {
     constexpr auto max_value = std::numeric_limits<UInt64>::max();
-    Throttler throttler(max_value, max_value, /* parent_= */ nullptr);
+    Throttler throttler(max_value, max_value, /* parent_= */ ThrottlerPtr{});
     EXPECT_EQ(throttler.getAvailable(), std::numeric_limits<Int64>::max());
 }
 
 TEST(Throttler, GetAvailable)
 {
-    Throttler throttler(/* max_speed_= */ 1000, /* max_burst_= */ 100, /* parent_= */ nullptr);
+    Throttler throttler(/* max_speed_= */ 1000, /* max_burst_= */ 100, /* parent_= */ ThrottlerPtr{});
     EXPECT_EQ(throttler.getAvailable(), 100);
 }
