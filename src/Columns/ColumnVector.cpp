@@ -730,7 +730,7 @@ bool ColumnVector<T>::tryInsert(const DB::Field & x)
         /// This corrupts data for narrow-integer Variant/Dynamic subcolumns: ColumnDynamic::insert
         /// treats a successful tryInsert as "the value fit an existing variant" and never widens
         /// it. Reject overflowing values so the caller can extend the Variant to a wider type.
-        T result;
+        T result{};
         if (!accurate::convertNumeric<NearestFieldType<T>, T, /*strict=*/false>(value, result))
             return false;
         data.push_back(result);
