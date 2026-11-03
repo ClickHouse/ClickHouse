@@ -209,8 +209,10 @@ Pipe StorageMongoDB::read(
     size_t max_block_size,
     size_t /*num_streams*/)
 {
-    /// Checked for every query, like the S3 and Azure storages do: the definition may have been created by a session
-    /// that is allowed to use credentials of the server process, or loaded from stored metadata without the check.
+    /// Checked for every query with its settings, like the S3 and Azure storages do, before anything connects. This is
+    /// the only check for the `mongodb` table function (see `TableFunctionMongoDB::executeImpl`), and a `MongoDB` table
+    /// may have been created by a session that is allowed to use credentials of the server process, or loaded from
+    /// stored metadata without the check.
     configuration.checkServerCredentials(context);
 
     storage_snapshot->check(column_names);

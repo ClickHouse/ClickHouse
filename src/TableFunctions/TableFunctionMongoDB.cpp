@@ -56,6 +56,9 @@ private:
 StoragePtr TableFunctionMongoDB::executeImpl(const ASTPtr & /*ast_function*/,
         ContextPtr context, const String & table_name, ColumnsDescription /*cached_columns*/, bool is_insert_query) const
 {
+    /// The connection string is not checked against `s3_allow_server_credentials_in_user_queries` here: for a
+    /// `CREATE TABLE ... AS mongodb(...)` table this runs with the global context, whose settings are not those of the
+    /// session that uses the table. `StorageMongoDB::read` checks it with the settings of the query that reads.
     auto columns = getActualTableStructure(context, is_insert_query);
     auto storage = std::make_shared<StorageMongoDB>(
         StorageID(getDatabaseName(), table_name),
@@ -69,9 +72,6 @@ StoragePtr TableFunctionMongoDB::executeImpl(const ASTPtr & /*ast_function*/,
 
 ColumnsDescription TableFunctionMongoDB::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
-    /// Here and not in `parseArguments`, which also runs when the server loads a stored `CREATE TABLE ... AS mongodb(...)`
-    /// definition: that must not fail, and such a table is checked when it is used. `executeImpl` calls this as well.
-    configuration->checkServerCredentials(context);
     return parseColumnsListFromString(structure, context);
 }
 
