@@ -26,6 +26,7 @@ FAULTS = {
 # - `superseded_`: like `lostresp_`, and another writer commits on top, recording the request's pointer as
 #   `previous_metadata_location`;
 # - `unknown_`: like `superseded_`, but the other writer does not record `previous_metadata_location`;
+# - `staleprev_`: like `superseded_`, but the other writer keeps the `previous_metadata_location` the request set;
 # - `readbackfail_`: like `lostresp_`, and the first `GetTable` after the refusal fails with a non-retryable error;
 # - `lostfinal_`: like `lostresp_`, but the next `UpdateTable` (the SDK retry) is refused with `AccessDeniedException`
 #   without being checked or applied;
@@ -42,6 +43,7 @@ UPDATE_FAULTS = (
     "lostresp_",
     "superseded_",
     "unknown_",
+    "staleprev_",
     "readbackfail_",
     "lostfinal_",
     "lostnoretry_",
@@ -259,13 +261,13 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
                 self.reply(status, content, headers)
                 return
 
-            if fault in ("superseded_", "unknown_"):
+            if fault in ("superseded_", "unknown_", "staleprev_"):
                 table = self.get_table(database, name)
                 ours = table["Parameters"]["metadata_location"]
                 table["Parameters"]["metadata_location"] = ours + "-superseded"
                 if fault == "superseded_":
                     table["Parameters"]["previous_metadata_location"] = ours
-                else:
+                elif fault == "unknown_":
                     table["Parameters"].pop("previous_metadata_location", None)
                 self.put_table(database, table)
             elif fault == "lostfinal_":

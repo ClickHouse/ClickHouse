@@ -156,8 +156,9 @@ std::optional<String> findTableParameter(const Aws::Glue::Model::Table & table, 
     return it->second;
 }
 
-/// The Glue column type that Iceberg writers register for an Iceberg type.
-String getGlueColumnType(const Poco::Dynamic::Var & type)
+/// The Glue column type that Iceberg writers register for an Iceberg type, or nothing if a struct field name has
+/// a character that `getType` parses as type syntax, so the Glue database could not read the type back.
+std::optional<String> getGlueColumnType(const Poco::Dynamic::Var & type)
 {
     checkStackSize();
 
@@ -172,16 +173,31 @@ String getGlueColumnType(const Poco::Dynamic::Var & type)
             for (UInt32 i = 0; i < fields->size(); ++i)
             {
                 const auto field = fields->getObject(i);
+                const auto field_name = field->getValue<String>(DB::Iceberg::f_name);
+                const auto field_type = getGlueColumnType(field->get(DB::Iceberg::f_type));
+                if (!field_type || field_name.find_first_of(":,<>()") != String::npos)
+                    return std::nullopt;
                 if (i > 0)
                     result += ',';
-                result += field->getValue<String>(DB::Iceberg::f_name) + ':' + getGlueColumnType(field->get(DB::Iceberg::f_type));
+                result += field_name + ':' + *field_type;
             }
             return result + '>';
         }
         if (name == DB::Iceberg::f_list)
-            return "array<" + getGlueColumnType(object->get(DB::Iceberg::f_element)) + '>';
+        {
+            const auto element = getGlueColumnType(object->get(DB::Iceberg::f_element));
+            if (!element)
+                return std::nullopt;
+            return "array<" + *element + '>';
+        }
         if (name == DB::Iceberg::f_map)
-            return "map<" + getGlueColumnType(object->get(DB::Iceberg::f_key)) + ',' + getGlueColumnType(object->get(DB::Iceberg::f_value)) + '>';
+        {
+            const auto key = getGlueColumnType(object->get(DB::Iceberg::f_key));
+            const auto value = getGlueColumnType(object->get(DB::Iceberg::f_value));
+            if (!key || !value)
+                return std::nullopt;
+            return "map<" + *key + ',' + *value + '>';
+        }
         return name;
     }
 
@@ -234,7 +250,7 @@ bool isValidGlueColumnText(const String & text, size_t max_length = 255)
     return utf16_length <= max_length;
 }
 
-/// Glue columns for an Iceberg schema, or the existing ones if Glue would refuse a column name or type. Existing columns,
+/// Glue columns for an Iceberg schema, or the existing ones if a column name or type cannot be registered. Existing columns,
 /// matched by field id (else by name), keep their parameters, and their comment unless the field has a `doc` Glue
 /// accepts; existing columns the schema no longer has follow as non-current, each name once.
 Aws::Vector<Aws::Glue::Model::Column> getGlueColumns(
@@ -260,7 +276,7 @@ Aws::Vector<Aws::Glue::Model::Column> getGlueColumns(
         const auto field = fields->getObject(i);
         const auto name = field->getValue<String>(DB::Iceberg::f_name);
         auto type = getGlueColumnType(field->get(DB::Iceberg::f_type));
-        if (!isValidGlueColumnText(name) || !isValidGlueColumnText(type, 131072))
+        if (!type || !isValidGlueColumnText(name) || !isValidGlueColumnText(*type, 131072))
             return existing_columns;
         const auto id = std::to_string(field->getValue<Int32>(DB::Iceberg::f_id));
         current_names.insert(name);
@@ -273,7 +289,7 @@ Aws::Vector<Aws::Glue::Model::Column> getGlueColumns(
 
         Aws::Glue::Model::Column column;
         column.SetName(name);
-        column.SetType(std::move(type));
+        column.SetType(std::move(*type));
         if (field->has("doc") && !field->isNull("doc") && isValidGlueColumnText(field->getValue<String>("doc")))
             column.SetComment(field->getValue<String>("doc"));
         else if (existing && !existing->GetComment().empty())
@@ -1100,9 +1116,9 @@ bool GlueCatalog::commitTableUpdate(
                 namespace_name + "." + table_name, new_metadata_path, error_message);
             return true;
         }
-        /// After another error, a request carrying the still current `VersionId` may still be applied later.
-        if (concurrent_modification
-            && (current_metadata_location == base_metadata_location || previous_metadata_location == base_metadata_location))
+        /// After another error, a request carrying the still current `VersionId` may still be applied later, and a moved
+        /// pointer does not show that ours was refused: the next writer may keep the `previous_metadata_location` we set.
+        if (concurrent_modification && current_metadata_location == base_metadata_location)
             continue;
         throw DB::Exception(
             DB::ErrorCodes::UNKNOWN_STATUS_OF_TRANSACTION,

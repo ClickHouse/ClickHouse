@@ -2543,6 +2543,7 @@ def test_glue_expire_snapshots_retries_after_concurrent_commit(started_cluster):
         "lost_response",
         "superseded",
         "superseded_unknown",
+        "superseded_stale_previous",
         "readback_fails",
         "lost_final_error",
         "lost_no_retry",
@@ -2562,6 +2563,7 @@ def test_glue_update_conditional_on_version_id(started_cluster, mode):
         "lost_response": "lostresp_",
         "superseded": "superseded_",
         "superseded_unknown": "unknown_",
+        "superseded_stale_previous": "staleprev_",
         "readback_fails": "readbackfail_",
         "lost_final_error": "lostfinal_",
         "lost_no_retry": "lostnoretry_",
@@ -2595,8 +2597,10 @@ def test_glue_update_conditional_on_version_id(started_cluster, mode):
         assert len(ours) == 1, ours
         ours = ours.pop()
         assert read_ids(started_cluster, ours) == [1, 2]
-        if mode in ("superseded", "superseded_unknown"):
+        if mode in ("superseded", "superseded_unknown", "superseded_stale_previous"):
             assert parameters["metadata_location"] == ours + "-superseded", parameters
+            if mode == "superseded_stale_previous":
+                assert parameters["previous_metadata_location"] == table.metadata_location, parameters
         elif mode not in ("failed_no_retry", "failed_timeout"):
             assert parameters["metadata_location"] == ours, parameters
     if mode == "touch":
@@ -2609,6 +2613,37 @@ def test_glue_update_conditional_on_version_id(started_cluster, mode):
         node.query(insert, settings=GLUE_WRITE_SETTINGS)
         assert node.query(f"SELECT id FROM {db_name}.`{namespace}.{table_name}` ORDER BY id") == "1\n2\n"
         assert get_glue_table(started_cluster, namespace, table_name)["Parameters"]["metadata_location"] != table.metadata_location
+
+    node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+@pytest.mark.parametrize("operation", ["delete", "optimize_manifest"])
+def test_glue_unknown_commit_keeps_files_of_mutation_and_compaction(started_cluster, operation):
+    # Like `superseded_unknown` of test_glue_update_conditional_on_version_id, for the other writers that clean up
+    # after a failed commit: a mutation and a manifest compaction.
+    node = started_cluster.instances["node1"]
+    test_ref = uuid.uuid4().hex[:12]
+    namespace = f"unknown_{test_ref}"
+    table_name = "t"
+    db_name = f"glue_unknown_{test_ref}"
+    table_ref = f"{db_name}.`{namespace}.{table_name}`"
+
+    _, table = create_pyiceberg_table(started_cluster, namespace, table_name, [[{"id": 1}], [{"id": 2}]])
+    create_clickhouse_glue_database(started_cluster, node, db_name, url=GLUE_FAULT_PROXY_URL)
+    statement, settings, ids = {
+        "delete": (f"ALTER TABLE {table_ref} DELETE WHERE id = 1", {}, [2]),
+        "optimize_manifest": (
+            f"OPTIMIZE TABLE {table_ref} MANIFEST",
+            {"allow_experimental_iceberg_compaction": 1, "iceberg_manifest_min_count_to_compact": 1},
+            [1, 2],
+        ),
+    }[operation]
+    error = node.query_and_get_error(statement, settings={**GLUE_WRITE_SETTINGS, **settings})
+    assert "UNKNOWN_STATUS_OF_TRANSACTION" in error, error
+
+    ours = list_metadata_files(started_cluster, table.location()) - pyiceberg_metadata_files(table)
+    assert len(ours) == 1, ours
+    assert read_ids(started_cluster, ours.pop()) == ids
 
     node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
 
@@ -2741,11 +2776,12 @@ def test_glue_create_registers_columns(started_cluster):
     node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
 
 
-@pytest.mark.parametrize("case", ["comments", "long_name", "nested_name"])
+@pytest.mark.parametrize("case", ["comments", "long_name", "nested_name", "nested_delimiter"])
 def test_glue_update_skips_column_text_glue_refuses(started_cluster, case):
     # Glue refuses a column name, comment or type longer than its limit or with a control character other than tab,
     # which an Iceberg field can have, and the proxy refuses such an `UpdateTable` like Glue does. A commit keeps
-    # the existing Glue comment instead of such a `doc`, and the existing columns instead of such a name or type.
+    # the existing Glue comment instead of such a `doc`, and the existing columns instead of such a name or type,
+    # or of a type the Glue database cannot parse back (a nested field name with a colon).
     node = started_cluster.instances["node1"]
     test_ref = uuid.uuid4().hex[:12]
     namespace = f"text_{test_ref}"
@@ -2763,7 +2799,8 @@ def test_glue_update_skips_column_text_glue_refuses(started_cluster, case):
         fields = [NestedField(field_id=2, name="c" * 256, field_type=LongType(), required=False)]
         arrow_fields = [pa.field("c" * 256, pa.int64())]
     else:
-        nested = NestedField(field_id=3, name="line one\nline two", field_type=LongType(), required=False)
+        nested_name = "line one\nline two" if case == "nested_name" else "a:b"
+        nested = NestedField(field_id=3, name=nested_name, field_type=LongType(), required=False)
         fields = [NestedField(field_id=2, name="st", field_type=StructType(nested), required=False)]
         arrow_fields = [pa.field("st", pa.struct([pa.field(nested.name, pa.int64())]))]
     if case != "comments":
@@ -2786,6 +2823,7 @@ def test_glue_update_skips_column_text_glue_refuses(started_cluster, case):
 
     create_clickhouse_glue_database(started_cluster, node, db_name, url=GLUE_FAULT_PROXY_URL)
     node.query(f"INSERT INTO {table_ref} (id) VALUES (2)", settings=GLUE_WRITE_SETTINGS)
+    assert node.query(f"SELECT count() FROM {table_ref}") == "2\n"
 
     columns = get_glue_table(started_cluster, namespace, table_name)["StorageDescriptor"].get("Columns", [])
     if case == "comments":
@@ -2796,6 +2834,5 @@ def test_glue_update_skips_column_text_glue_refuses(started_cluster, case):
     table = catalog.load_table(f"{namespace}.{table_name}")
     assert table.schema().fields == schema.fields
     assert table.scan().to_arrow().num_rows == 2
-    assert node.query(f"SELECT count() FROM {table_ref}") == "2\n"
 
     node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
