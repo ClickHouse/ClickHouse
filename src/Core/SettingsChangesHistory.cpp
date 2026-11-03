@@ -47,6 +47,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         });
         addSettingsChanges(settings_changes_history, "26.8",
         {
+            {"json_extract_use_cast_string_to_date_time_mode", false, true, "`JSONExtract` parses `DateTime` values according to `cast_string_to_date_time_mode` instead of `date_time_input_format`. `compatibility` with versions before 26.8 restores the previous behavior."},
             {"backup_s3_expired_token_retry_timeout_ms", 0, 120000, "Retry S3 backup and restore requests after an expired token; 0 restores the previous behavior."},
             {"allow_named_collection_override_by_default", true, true, "Obsolete. Overriding named collection keys requires `SHOW NAMED COLLECTIONS SECRETS`."},
             {"use_aggregation_memory_tracker", false, false, "New setting. In this release it is disabled by default, which restores the two-level conversion of `GROUP BY` from before 26.7 (https://github.com/ClickHouse/ClickHouse/pull/107490)."},
