@@ -460,7 +460,7 @@ std::optional<std::unordered_set<UInt64>> Reader::selectRowGroups(
         const bool written_by_old_duckdb = footer.metadata.created_by == "DuckDB";
         for (auto & column : parsed[0].chunks)
             fixUpColumnChunk(column, written_by_old_duckdb);
-        first_column = &parsed[0];
+        first_column = parsed.data();
     }
 
     const auto [range_begin, range_size] = *row_group_selection.byte_range;
