@@ -71,7 +71,11 @@ public:
     void getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t index, const Options & options) const override;
 
     std::string_view getDataAt(size_t index) const override;
-    bool supportsGetDataAt() const override { return data->isFixedAndContiguous(); }
+    /// The elements of a row are contiguous if they have fixed size, also when they are rows of a nested `ColumnFixedArray`.
+    bool supportsGetDataAt() const override
+    {
+        return data->isFixedAndContiguous() || (typeid_cast<const ColumnFixedArray *>(data.get()) && data->supportsGetDataAt());
+    }
     bool isDefaultAt(size_t index) const override;
     bool hasOnlyTypeDefaults() const override { return data->hasOnlyTypeDefaults(); }
 
@@ -146,12 +150,11 @@ public:
     void updateCheckpoint(ColumnCheckpoint & checkpoint) const override;
     void rollback(const ColumnCheckpoint & checkpoint) override;
 
-    /// A row is a contiguous range of `n` values in the nested column, so if the values have fixed size,
-    /// the rows have fixed size as well.
-    bool isFixedAndContiguous() const override { return data->isFixedAndContiguous(); }
+    /// A row is a contiguous range of `n` values in the nested column, but this column is not reported as fixed
+    /// and contiguous: the consumers of this property (the packing of fixed keys for hash tables, the in-place
+    /// application of patch parts and so on) assume the physical layout of `ColumnFixedSizeHelper`.
+    bool isFixedAndContiguous() const override { return false; }
     size_t sizeOfValueIfFixed() const override { return n * data->sizeOfValueIfFixed(); }
-    std::string_view getRawData() const override { return data->getRawData(); }
-    std::span<char> insertRawUninitialized(size_t count) override { return data->insertRawUninitialized(n * count); }
 
     void forEachMutableSubcolumn(MutableColumnCallback callback) override { callback(data); }
 
@@ -215,7 +218,7 @@ private:
 };
 
 /// Replaces `ColumnFixedArray` with `ColumnArray` of the same elements in the column and in its nested columns
-/// (inside `ColumnConst`, `ColumnArray`, `ColumnTuple`, `ColumnMap` and `ColumnNullable`), in agreement with
+/// (inside `ColumnConst`, `ColumnArray`, `ColumnTuple`, `ColumnMap`, `ColumnNullable` and `ColumnReplicated`), in agreement with
 /// `recursiveRemoveFixedArray` for types. The elements are not copied. Returns the same pointer if there is no `ColumnFixedArray`.
 ColumnPtr recursiveRemoveFixedArray(const ColumnPtr & column);
 
