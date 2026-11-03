@@ -52,23 +52,7 @@ def start_cluster():
         cluster.shutdown(ignore_fatal=True)
 
 
-@pytest.mark.parametrize(
-    "call, output_compression_type",
-    [
-        ("ExecuteQueryWithStreamOutput", ""),
-        ("ExecuteQuery", ""),
-        ("ExecuteQueryWithStreamOutput", "lz4"),
-    ],
-)
-def test_fatal_error_in_pipeline_thread(call, output_compression_type):
-    query_id = f"grpc_fatal_error_{uuid.uuid4().hex}"
-    query_info = clickhouse_grpc_pb2.QueryInfo(
-        query="SELECT number, sleepEachRow(0.1) FROM numbers(1200) SETTINGS max_block_size = 1, max_threads = 1",
-        query_id=query_id,
-        settings={"send_logs_level": "debug"},
-        output_format="TabSeparated",
-        output_compression_type=output_compression_type,
-    )
+def start_call(call, query_info):
     results = []
     errors = []
 
@@ -84,40 +68,46 @@ def test_fatal_error_in_pipeline_thread(call, output_compression_type):
                 results.extend(stub.ExecuteQueryWithStreamOutput(query_info))
         except Exception as e:
             errors.append(e)
+        finally:
+            channel.close()
 
     client_thread = threading.Thread(target=run_query)
     client_thread.start()
+    return client_thread, results, errors
 
-    # A thread of the query's pipeline, not the call thread.
+
+def wait_for_progress(
+    query_id, thread_condition, progress_column, client_thread, errors
+):
+    """Returns a thread of the query once the query has processed 20 rows."""
     tid = ""
     for _ in range(300):
         tid = node.query(
             f"SELECT thread_id FROM system.stack_trace WHERE query_id = '{query_id}' "
-            "AND thread_name != 'gRPCServerCall' LIMIT 1"
+            f"AND {thread_condition} LIMIT 1"
         ).strip()
         if tid or not client_thread.is_alive():
             break
         time.sleep(0.1)
-    assert tid, f"no pipeline thread found, client errors: {errors}"
+    assert tid, f"no thread of the query found, client errors: {errors}"
 
-    # The pipeline can run only a few rows ahead of the call thread, so once 20 rows are read the call thread has
-    # pulled some of them and moved the query's first log lines out of the logs queue.
-    read_rows = 0
+    rows = 0
     for _ in range(300):
-        read_rows = int(
+        rows = int(
             node.query(
-                f"SELECT read_rows FROM system.processes WHERE query_id = '{query_id}'"
+                f"SELECT {progress_column} FROM system.processes WHERE query_id = '{query_id}'"
             ).strip()
             or 0
         )
-        if read_rows >= 20 or not client_thread.is_alive():
+        if rows >= 20 or not client_thread.is_alive():
             break
         time.sleep(0.1)
-    assert read_rows >= 20, f"the query makes no progress, client errors: {errors}"
-    node.exec_in_container(["python3", "-c", TGKILL, tid], user="root")
+    assert rows >= 20, f"the query makes no progress, client errors: {errors}"
+    return tid
 
+
+def check_fatal_error(query_id, client_thread, results, errors):
     client_thread.join(timeout=120)
-    channel.close()
     assert not client_thread.is_alive()
     assert not errors
 
@@ -146,3 +136,62 @@ def test_fatal_error_in_pipeline_thread(call, output_compression_type):
     assert not node.contains_in_log(
         SANITIZER_SIGN, from_host=True, filename="stderr.log"
     )
+
+
+@pytest.mark.parametrize(
+    "call, output_compression_type",
+    [
+        ("ExecuteQueryWithStreamOutput", ""),
+        ("ExecuteQuery", ""),
+        ("ExecuteQueryWithStreamOutput", "lz4"),
+    ],
+)
+def test_fatal_error_in_pipeline_thread(call, output_compression_type):
+    query_id = f"grpc_fatal_error_{uuid.uuid4().hex}"
+    query_info = clickhouse_grpc_pb2.QueryInfo(
+        query="SELECT number, sleepEachRow(0.1) FROM numbers(1200) SETTINGS max_block_size = 1, max_threads = 1",
+        query_id=query_id,
+        settings={"send_logs_level": "debug"},
+        output_format="TabSeparated",
+        output_compression_type=output_compression_type,
+    )
+    client_thread, results, errors = start_call(call, query_info)
+
+    # A thread of the query's pipeline, not the call thread. The pipeline can run only a few rows ahead of the call
+    # thread, so once 20 rows are read the call thread has pulled some of them and moved the query's first log lines
+    # out of the logs queue.
+    tid = wait_for_progress(
+        query_id, "thread_name != 'gRPCServerCall'", "read_rows", client_thread, errors
+    )
+    node.exec_in_container(["python3", "-c", TGKILL, tid], user="root")
+
+    check_fatal_error(query_id, client_thread, results, errors)
+
+
+def test_fatal_error_during_insert():
+    node.query("DROP TABLE IF EXISTS fatal_insert")
+    node.query(
+        "CREATE TABLE fatal_insert (x UInt64, y UInt8 DEFAULT sleepEachRow(0.1)) ENGINE = Null"
+    )
+
+    query_id = f"grpc_fatal_error_insert_{uuid.uuid4().hex}"
+    query_info = clickhouse_grpc_pb2.QueryInfo(
+        query="INSERT INTO fatal_insert (x) FORMAT TabSeparated",
+        query_id=query_id,
+        input_data="".join(f"{i}\n" for i in range(1200)).encode(),
+        settings={
+            "send_logs_level": "debug",
+            "max_insert_block_size": "1",
+            "min_insert_block_size_rows": "1",
+            "input_format_parallel_parsing": "0",
+        },
+    )
+    client_thread, results, errors = start_call("ExecuteQuery", query_info)
+
+    # The call thread is the only thread of the query: it parses and inserts the rows, 0.1 s each for the default of `y`.
+    tid = wait_for_progress(query_id, "1", "written_rows", client_thread, errors)
+    node.exec_in_container(["python3", "-c", TGKILL, tid], user="root")
+
+    check_fatal_error(query_id, client_thread, results, errors)
+
+    node.query("DROP TABLE fatal_insert")

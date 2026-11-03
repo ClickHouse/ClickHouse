@@ -769,6 +769,11 @@ namespace
         void read(GRPCQueryInfo & query_info, const CompletionCallback & callback)
         {
             std::lock_guard lock{mutex};
+            if (!responder || finished)
+            {
+                callback(false);
+                return;
+            }
             responder->read(query_info, callback);
         }
 
@@ -779,16 +784,7 @@ namespace
             std::lock_guard lock{mutex};
             if (!responder || finished)
                 return false;
-            result.mutable_logs()->Swap(unsent_logs.mutable_logs());
-            sending.set(true);
-            auto callback = [this](bool ok) { onWritten(ok); };
-            if (final)
-            {
-                finished = true;
-                responder->writeAndFinish(result, {}, callback);
-            }
-            else
-                responder->write(result, callback);
+            startWriteLocked(result, final);
             return true;
         }
 
@@ -811,10 +807,16 @@ namespace
                 responder->cancel();
         }
 
-        /// No read or write may be in progress: their completion tags are owned by the responder.
+        /// No read may be in progress: its completion tag is owned by the responder. A pending write is canceled.
         void close()
         {
             std::lock_guard lock{mutex};
+            if (responder && sending.get())
+            {
+                /// The pending write completes with `ok = false`.
+                responder->cancel();
+                sending.wait(false);
+            }
             responder.reset();
         }
 
@@ -827,16 +829,13 @@ namespace
                 return;
             try
             {
+                if (logs_queue)
+                    addLogsToResult(*logs_queue, unsent_logs);
                 GRPCResult result;
                 result.mutable_exception()->set_name("FatalError");
-                result.mutable_logs()->Swap(unsent_logs.mutable_logs());
-                if (logs_queue)
-                    addLogsToResult(*logs_queue, result);
-                finished = true;
                 sending.wait(false);
-                sending.set(true);
-                responder->writeAndFinish(result, {}, [this](bool ok) { onWritten(ok); });
-                /// `close` must not destroy the responder before this write is completed.
+                startWriteLocked(result, /* final= */ true);
+                /// A fatal signal terminates the process when this returns.
                 sending.wait(false);
             }
             catch (const std::exception &) // NOLINT(bugprone-empty-catch)
@@ -846,6 +845,29 @@ namespace
 
     private:
         static void addLogsToResult(InternalTextLogsQueue & logs_queue, GRPCResult & result);
+
+        /// `mutex` must be locked. If starting the write throws, nothing is changed.
+        void startWriteLocked(GRPCResult & result, bool final)
+        {
+            result.mutable_logs()->Swap(unsent_logs.mutable_logs());
+            sending.set(true);
+            try
+            {
+                auto callback = [this](bool ok) { onWritten(ok); };
+                if (final)
+                    responder->writeAndFinish(result, {}, callback);
+                else
+                    responder->write(result, callback);
+            }
+            catch (...)
+            {
+                sending.set(false);
+                result.mutable_logs()->Swap(unsent_logs.mutable_logs());
+                throw;
+            }
+            if (final)
+                finished = true;
+        }
 
         void onWritten(bool ok)
         {
@@ -1283,7 +1305,7 @@ namespace
         executor.start();
 
         Block block;
-        while (pipeline_executor->pull(block))
+        while (!isQueryCancelled() && pipeline_executor->pull(block))
         {
             if (!block.empty())
                 executor.push(block);
