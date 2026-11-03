@@ -22,6 +22,7 @@
 #include <base/DayNum.h>
 #include <Common/Exception.h>
 #include <Common/FieldAccurateComparison.h>
+#include <Common/NaNUtils.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
@@ -50,7 +51,17 @@ template <typename To>
 ColumnPtr convertNumberColumnTo(const IColumn & value, const WhichDataType & which_from, const DataTypePtr & to)
 {
     To result{};
-    const auto convert = [&]<typename From>(From source) { return accurate::convertNumeric<From, To, true>(source, result); };
+    const auto convert = [&]<typename From>(From source)
+    {
+        /// A `NaN` or infinity is not representable in an integer type, and `accurate::convertNumeric` would cast a
+        /// `NaN` before noticing (undefined behavior). The same guard as in the accurate `CAST` (`convertNumericGeneral`).
+        if constexpr (is_floating_point<From> && !is_floating_point<To>)
+        {
+            if (!isFinite(source))
+                return false;
+        }
+        return accurate::convertNumeric<From, To, true>(source, result);
+    };
 
     bool converted = false;
     if (which_from.isNativeUInt())
