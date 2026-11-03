@@ -193,6 +193,10 @@ public:
     /// Get location for logging
     virtual String describeFilePath() const = 0;
 
+    /// The disk of the file, or null for a file in a cache. Returned by reference, because a copy for
+    /// every append would contend on the reference count, which all the files on the disk share.
+    virtual const DiskPtr & getDisk() const;
+
     virtual ~TemporaryFileHolder() = default;
 
 private:
@@ -247,6 +251,9 @@ public:
 
     String describeFilePath() const;
 
+    /// See `TemporaryFileHolder::getDisk`.
+    const DiskPtr & getDisk() const;
+
 private:
     void updateAllocAndCheck();
     void freeAlloc();
@@ -260,6 +267,24 @@ private:
     TemporaryDataMetrics metrics;
 
     bool reported_spilled_to_disk = false;
+};
+
+/// Checks free space for the appends to existing temporary files, as the creation of a file checks its
+/// reserve size. A writer that keeps appending to its files uses one object for each batch of appends,
+/// and passes with every append the room that the rest of the batch needs: each disk is checked only at
+/// the first append of the batch to a file on it, because a check costs a `statfs`. A file in a cache is
+/// not checked, because the cache makes room for every write.
+class TemporaryAppendSpaceCheck
+{
+public:
+    /// Throws `NOT_ENOUGH_SPACE` unless the disk of `buffer` has room for `reserve_size` bytes, if the
+    /// batch has not checked that disk yet. The space is reserved only for the duration of the check, as
+    /// at the creation of a file.
+    void beforeAppend(const TemporaryDataBuffer & buffer, size_t reserve_size);
+
+private:
+    /// The few disks of a temporary volume.
+    std::vector<DiskPtr> checked_disks;
 };
 
 

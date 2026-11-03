@@ -224,6 +224,10 @@ public:
 
     bool isAbleToParallelizeMerge() const override { return nested_func->isAbleToParallelizeMerge(); }
     bool isParallelizeMergePrepareNeeded() const override { return nested_func->isParallelizeMergePrepareNeeded(); }
+    size_t getEstimatedMergeWork(ConstAggregateDataPtr place) const override { return nested_func->getEstimatedMergeWork(place); }
+    /// The adaptive sampler hashes the condition together with the nested arguments, so distinct
+    /// argument tuples bound the distinct admitted inputs from above.
+    size_t getStateBytesPerDistinctInput() const override { return nested_func->getStateBytesPerDistinctInput(); }
 
     bool isLargeMergePair(ConstAggregateDataPtr __restrict place, ConstAggregateDataPtr __restrict rhs) const override
     {
