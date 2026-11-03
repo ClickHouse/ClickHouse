@@ -63,7 +63,8 @@ SELECT count(), uniqExact(id), countIf(s != toString(id)) FROM (SELECT id, s FRO
 SELECT count(), uniqExact(id), countIf(s != toString(id)) FROM (SELECT id, s FROM t_shuffle WHERE id % 2 = 0 SHUFFLE LIMIT 100);
 
 SELECT 'Plan';
-SELECT trimLeft(explain) FROM (EXPLAIN SELECT id FROM t_shuffle SHUFFLE) WHERE explain ILIKE '%shuffle%';
+-- The plan differs with parallel replicas (the local and the remote streams are merged), so check the plain one.
+SELECT trimLeft(explain) FROM (EXPLAIN SELECT id FROM t_shuffle SHUFFLE SETTINGS enable_parallel_replicas = 0) WHERE explain ILIKE '%shuffle%';
 -- The rest of the columns is read only for the selected rows.
 SELECT count() > 0 FROM (EXPLAIN SELECT id, s FROM t_shuffle SHUFFLE LIMIT 10 SETTINGS query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10000) WHERE explain LIKE '%LazilyRead%';
 DROP TABLE t_shuffle;
