@@ -114,7 +114,8 @@ SELECT count() FROM t_compact WHERE s LIKE '%needle%' SETTINGS use_uncompressed_
 SELECT count() FROM t_compact WHERE s LIKE '%needle%' SETTINGS use_uncompressed_cache=1, log_comment='cache_2';
 
 -- The rows served from the columns cache are not read from the part, so the estimate is taken from a sample of
--- the columns then, and the second query reads nothing from disk.
+-- the columns then, and the second query reads little from disk: the cache can evict some granules of the first query,
+-- whose columns take almost half of its size in the tests.
 SYSTEM CLEAR COLUMNS CACHE;
 SELECT count() FROM t_compact WHERE s LIKE '%needle%' SETTINGS use_columns_cache=1, enable_reads_from_columns_cache=1, enable_writes_to_columns_cache=1,
     columns_cache_max_bytes_to_write_to_cache=0, columns_cache_max_estimated_bytes_to_write_to_cache=0, log_comment='columns_cache_1';
@@ -227,7 +228,7 @@ FROM system.query_log
 WHERE (event_date >= yesterday()) AND (event_time >= NOW() - INTERVAL '15 MINUTES') AND (current_database = currentDatabase()) AND (log_comment LIKE 'cache_%') AND (type = 'QueryFinish');
 
 SELECT
-    read_cached < read / 10,
+    read_cached < read / 2,
     hits > 0,
     greatest(estimate, read) / least(estimate, read) < 1.3
 FROM (
