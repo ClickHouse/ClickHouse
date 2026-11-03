@@ -26,6 +26,29 @@ SELECT toUnixTimestamp(CAST(map('d', toDateTime('2026-01-01 00:00:00', 'UTC')), 
 1767225600
 SELECT toUnixTimestamp(CAST(CAST('{"d":"2026-01-01 00:00:00"}'::JSON(d DateTime('UTC')), 'Dynamic'), 'JSON(d DateTime64(0, ''Asia/Tokyo''))').d);
 1767225600
+SELECT toUnixTimestamp(tupleElement(CAST('{"t":{"d":"2026-01-01 00:00:00"}}'::JSON(t Tuple(d DateTime('UTC'))), 'JSON(t Tuple(d DateTime64(0, ''Asia/Tokyo'')))').t, 'd'));
+1767225600
+SELECT arrayMap(x -> toUnixTimestamp(x.ts), CAST('{"e":[{"ts":1793514600,"n":"a"}],"x":1}'::JSON(e Array(Tuple(ts DateTime('America/New_York'), n String)), x Int32), 'JSON(e Array(Tuple(ts DateTime(''America/New_York''), n String)), x Int64)').e);
+[1793514600]
+SELECT toUnixTimestamp(CAST('{"m":{"k":"2026-01-01 00:00:00"}}'::JSON(m Map(String, DateTime('UTC'))), 'JSON(m Map(String, DateTime64(0, ''Asia/Tokyo'')))').m['k']);
+1767225600
+SELECT toUnixTimestamp(CAST(CAST(tuple(tuple(toDateTime('2026-01-01 00:00:00', 'UTC'))), 'Tuple(a Nullable(Tuple(b DateTime(''UTC''))))'), 'JSON(a.b DateTime64(0, ''Asia/Tokyo''))').a.b);
+1767225600
+SELECT toUnixTimestamp(CAST(map('a', CAST(tuple(toDateTime('2026-01-01 00:00:00', 'UTC')), 'Tuple(b DateTime(''UTC''))')), 'JSON(a.b DateTime64(0, ''Asia/Tokyo''))').a.b);
+1767225600
+SELECT toUnixTimestamp(CAST(CAST(tuple(toDateTime('2026-01-01 00:00:00', 'UTC')), 'Tuple(`a.b` DateTime(''UTC''))'), 'JSON(`a%2Eb` DateTime64(0, ''Asia/Tokyo''))').`a%2Eb`) SETTINGS json_type_escape_dots_in_keys = 1;
+1767225600
+SELECT toUnixTimestamp(accurateCastOrNull('{"d":"2026-01-01 00:00:00"}'::JSON(d DateTime('UTC')), 'JSON(d DateTime64(0, ''Asia/Tokyo''))').d);
+1767225600
+SELECT toUnixTimestamp(CAST('{"d":"2026-01-01 00:00:00"}'::JSON(d LowCardinality(Nullable(DateTime('UTC')))), 'JSON(d Nullable(DateTime64(0, ''Asia/Tokyo'')))').d) SETTINGS allow_suspicious_low_cardinality_types = 1;
+1767225600
+SELECT toUnixTimestamp(CAST(CAST(map('d', toDateTime('2026-01-01 00:00:00', 'UTC')), 'Dynamic'), 'JSON(d DateTime64(0, ''Asia/Tokyo''))').d);
+1767225600
+-- Values that do not feed a `DateTime` keep their text.
+SELECT CAST('{"d":"2026-01-01 00:00:00"}'::JSON(d DateTime('Asia/Tokyo')), 'JSON(d String)').d;
+2026-01-01 00:00:00
+SELECT toUnixTimestamp(CAST(CAST(tuple('2026-01-01 00:00:00'), 'Tuple(d String)'), 'JSON(d DateTime(''Asia/Tokyo''))').d);
+1767193200
 DROP TABLE IF EXISTS t_json_datetime_alter;
 CREATE TABLE t_json_datetime_alter (id UInt8, j JSON(d DateTime('UTC'))) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t_json_datetime_alter VALUES (1, '{"d":"2026-01-01 00:00:00"}');
