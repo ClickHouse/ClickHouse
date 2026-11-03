@@ -437,12 +437,12 @@ If the `schema_inference_hints` is not formatted properly, or if there is a typo
 </Note>
 )", 0) \
     DECLARE(SchemaInferenceMode, schema_inference_mode, "default", R"(
-Mode of schema inference. 'default' - assume that all files have the same schema and schema can be inferred from any file, 'union' - files can have different schemas and the resulting schema should be the a union of schemas of all files
+Mode of schema inference. 'default' - assume that all files have the same schema and schema can be inferred from any file, 'union' - files can have different schemas and the resulting schema should be a union of schemas of all files
 )", 0) \
     DECLARE(UInt64Auto, schema_inference_make_columns_nullable, 3, R"(
 Controls making inferred types `Nullable` in schema inference.
 Possible values:
- * 0 - the inferred type will never be `Nullable` (use input_format_null_as_default to control what do do with null values in this case),
+ * 0 - the inferred type will never be `Nullable` (use input_format_null_as_default to control what to do with null values in this case),
  * 1 - all inferred types will be `Nullable`,
  * 2 or `auto` - the inferred type will be `Nullable` only if the column contains `NULL` in a sample that is parsed during schema inference or file metadata contains information about column nullability,
  * 3 - the inferred type nullability will match file metadata if the format has it (e.g. Parquet), always Nullable otherwise (e.g. CSV).
@@ -775,7 +775,7 @@ If it is set true, file function will read TSV format with \\r\\n instead of \\n
     DECLARE(Bool, input_format_native_allow_types_conversion, true, R"(
 Allow data types conversion in Native input format
 )", 0, \
-        {"23.3", false, true, "Allow types conversion in Native input forma"}) \
+        {"23.3", false, true, "Allow types conversion in Native input format"}) \
     DECLARE(Bool, input_format_native_decode_types_in_binary_format, false, R"(
 Read data types in binary format instead of type names in Native input format
 )", 0, \
@@ -1749,6 +1749,14 @@ Buffering blocks can increase memory use and delay the first record batch until 
 `0` (the default) disables the byte target. Try `1048576` (1 MiB) as a starting value.
 )", 0, \
         {"26.9", 0, 0, "New setting to combine small blocks in `Arrow` and `ArrowStream` output using a target size in bytes of accumulated data. The default `0` preserves one record batch per block."}) \
+    DECLARE(UInt64, output_format_arrow_max_record_batch_size_bytes, 2147483646, R"(
+Upper bound on the `Utf8`, `Binary` and `List` buffers of a single record batch in the `Arrow` and `ArrowStream` output formats, and in the Arrow record batches the `Vortex` output format is written from. A block whose strings, binary values or list elements exceed this is written as several record batches.
+
+Unlike [output_format_arrow_record_batch_size_bytes](#output_format_arrow_record_batch_size_bytes), which is a target that combines small blocks, this is a limit that splits large ones. The default is the largest value Arrow can address, because it offsets those buffers with 32-bit integers; a larger value has no effect.
+
+Only the buffers named above are bounded: a column of a fixed-width type has no offsets to overflow and stays in one batch. A single row never splits either, so a row above the limit still produces a batch that exceeds it.
+)", 0, \
+        {"26.11", 2147483646, 2147483646, "New setting bounding the size of one record batch in `Arrow` and `ArrowStream` output. The default is Arrow's own addressing limit, so it does not change behavior."}) \
     \
     DECLARE(Bool, output_format_orc_string_as_string, true, R"(
 Use ORC String type instead of Binary for String columns

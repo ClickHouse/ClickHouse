@@ -21,6 +21,7 @@
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
+#include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/SaveSubqueryResultToBufferStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/StreamInQueryResultCacheStep.h>
@@ -682,6 +683,10 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
         /// system.one always produces exactly one row - used to implement constant SELECTs like `SELECT 1`.
         return RelationStats{.estimated_rows = 1, .table_name = "system.one", .rows_exact = true};
     }
+
+    /// Reads no rows, e.g. a `MergeTree` table without parts.
+    if (typeid_cast<const ReadNothingStep *>(step))
+        return RelationStats{.estimated_rows = 0, .table_name = {}, .rows_exact = true, .source = RowEstimateSource::Statistics};
 
     /// A join that has already been optimized enters its parent's join graph as a single relation,
     /// and the row count it settled on is the only estimate that relation has.

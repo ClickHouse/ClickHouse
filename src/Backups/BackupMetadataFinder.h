@@ -42,6 +42,9 @@ public:
     ///         - For regular tables: "table `<database>`.`<table_name>`" (or "Table ..." if first_upper)
     static String tableNameWithTypeToString(const String & database_name, const String & table_name, bool first_upper);
 
+    /// Throws an exception if the query was cancelled.
+    void checkIsQueryCancelled() const;
+
 protected:
     BackupMetadataFinder(
         const RestoreSettings & restore_settings_,
@@ -78,9 +81,6 @@ protected:
     /// Waits until all tasks are processed (including the tasks scheduled while we're waiting).
     /// Throws an exception if any of the tasks throws an exception.
     void waitFutures(bool throw_if_error = true);
-
-    /// Throws an exception if the query was cancelled.
-    void checkIsQueryCancelled() const;
 
     /// Apply custom storage policy to a CREATE query (can be overridden by derived classes).
     virtual void applyCustomStoragePolicy(ASTPtr query_ptr);
