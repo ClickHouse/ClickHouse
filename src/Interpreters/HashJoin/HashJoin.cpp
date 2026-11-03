@@ -540,9 +540,10 @@ HashJoin::HashJoin(
         dataMapInit(maps);
 
     /// A 256-bucket map is sized from the estimate, or every bucket rehashes its way up from 256 cells. A serial map
-    /// is not: sized from the estimate, it lands on a worse load factor than the grower picks.
+    /// is not: sized from the estimate, it lands on a worse load factor than the grower picks. The cached size counts
+    /// the keys of all maps, while each map reserves the whole hint, so a join with several disjuncts does not use it.
     size_t size_hint = reserve_num;
-    if (!size_hint && build_layout.two_level)
+    if (!size_hint && build_layout.two_level && data->maps.size() == 1)
         if (const auto hint = getSizeHint(stats_collecting_params.build))
             size_hint = hint->ht_size;
     data->slots.setReserve(

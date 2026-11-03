@@ -10344,7 +10344,7 @@ Some joins always build one part, whatever the value:
 - joins of other kinds, such as `CROSS`;
 - a join with a `Join` table or a key-value storage on the right;
 - each bucket of a grace hash join;
-- the hash join that `join_algorithm = 'auto'` starts with, before it can switch to a merge join;
+- the hash join that `join_algorithm = 'auto'` starts with when the join cannot spill to disk (for example with `max_bytes_before_external_join` and `max_bytes_ratio_before_external_join` both `0`) and can switch to a partial merge join instead;
 - each per-shard join of `query_plan_join_shard_by_pk_ranges`.
 )", 0, \
         {"26.11", "auto", "auto", "New setting to force the layout of a hash join for testing and debugging. `auto` keeps choosing it with `parallel_hash_join_threshold`."}) \
