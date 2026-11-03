@@ -474,16 +474,23 @@ def test_sql_hdfs_disk_remote_host_filter(cluster):
     with ConfigManager() as cm:
         cm.add_main_config(node, "configs/remote_url_allow_hosts.xml")
 
-        error = node.query_and_get_error(
-            "CREATE TABLE t_blocked_hdfs_disk (x UInt32) ENGINE = MergeTree ORDER BY x "
-            f"SETTINGS disk = {hdfs_disk('filter_blocked')}"
-        )
-        assert "UNACCEPTABLE_URL" in error, error
+        def assert_rejected(table, path):
+            error = node.query_and_get_error(
+                f"CREATE TABLE {table} (x UInt32) ENGINE = MergeTree ORDER BY x "
+                f"SETTINGS disk = {hdfs_disk(path)}"
+            )
+            assert "UNACCEPTABLE_URL" in error, error
+
+        assert_rejected("t_blocked_hdfs_disk", "filter_blocked")
         # Rejected before HDFSObjectStorage connects, so the access check wrote nothing.
         assert not fs.exists("/sql_disk_filter/filter_blocked")
+        # The identical definition reuses the disk created before the list was tightened.
+        assert_rejected("t_reused_hdfs_disk", "filter_existing")
 
         node.restart_clickhouse()
         assert node.query("SELECT x FROM t_existing_hdfs_disk") == "1\n"
         assert node.contains_in_log("is not allowed by `remote_url_allow_hosts`")
+        # The identical definition reuses the disk loaded from metadata with only a warning.
+        assert_rejected("t_reused_hdfs_disk", "filter_existing")
 
     node.query("DROP TABLE t_existing_hdfs_disk SYNC")

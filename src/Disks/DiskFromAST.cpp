@@ -3,6 +3,8 @@
 #include <Disks/DiskSelector.h>
 #include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
+#include <Common/Macros.h>
+#include <Common/RemoteHostFilter.h>
 #include <Common/SipHash.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Parsers/ASTExpressionList.h>
@@ -15,6 +17,8 @@
 #include <Parsers/IAST.h>
 #include <Common/NamedCollections/NamedCollectionConfiguration.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
+
+#include <Poco/URI.h>
 
 #include <algorithm>
 #include <memory>
@@ -105,7 +109,9 @@ static std::string getOrCreateCustomDisk(
     if (!attach && (disk_name.empty() || disk_name == "." || disk_name == ".." || disk_name.contains('/')))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk name cannot be empty, `.`, `..` or contain `/` ({})", disk_name);
 
+    bool created = false;
     auto disk = context->getOrCreateDisk(disk_name, [&](const DisksMap & disks_map) -> DiskPtr {
+        created = true;
         auto result = DiskFactory::instance().create(
             disk_name, *config, /* config_path */"", context, disks_map, /* attach */attach, /* custom_disk */true);
         /// Mark that disk can be used without storage policy.
@@ -124,6 +130,11 @@ static std::string getOrCreateCustomDisk(
                 ErrorCodes::BAD_ARGUMENTS,
                 "The disk `{}` is already configured as a custom disk in another table. It can't be redefined with different settings.",
                 disk_name);
+
+    /// A reused disk was checked against an older `remote_url_allow_hosts` or only warned about on load.
+    if (!created && !attach && config->getString("object_storage_type", config->getString("type", "")) == "hdfs")
+        context->getGlobalContext()->getRemoteHostFilter().checkURL(
+            Poco::URI(context->getMacros()->expand(config->getString("endpoint"))));
 
     return disk_name;
 }
