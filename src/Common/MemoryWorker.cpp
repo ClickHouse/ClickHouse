@@ -345,7 +345,7 @@ std::string_view sourceToString(MemoryWorker::MemoryUsageSource source)
 /// Supported sources in order of priority
 /// - reading from cgroups' pseudo-files (fastest and most accurate)
 /// - reading jemalloc's resident stat (doesn't take into account allocations that didn't use jemalloc)
-/// - reading process RSS on illumos when jemalloc is unavailable
+/// - reading process RSS when cgroups and jemalloc are unavailable
 /// Also, different tick rates are used because not all options are equally fast
 MemoryWorker::MemoryWorker(
     MemoryWorkerConfig config,
@@ -494,9 +494,7 @@ MemoryWorker::MemoryWorker(
     source = MemoryUsageSource::Jemalloc;
     if (rss_update_period_ms == 0)
         rss_update_period_ms = jemalloc_memory_usage_tick_ms;
-#endif
-
-#if defined(OS_SUNOS) && !USE_JEMALLOC
+#elif HAS_MEMORY_STATISTICS_OS
     static constexpr uint64_t os_memory_usage_tick_ms{100};
 
     os_memory_statistics = std::make_unique<MemoryStatisticsOS>();
@@ -595,7 +593,7 @@ MemoryWorker::MemoryUsage MemoryWorker::getMemoryUsage(bool log_error)
             [[fallthrough]];
 #endif
         case MemoryUsageSource::OS:
-#if defined(OS_SUNOS)
+#if HAS_MEMORY_STATISTICS_OS
             if (os_memory_statistics != nullptr)
             {
                 usage.resident = os_memory_statistics->get().resident;

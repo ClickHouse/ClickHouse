@@ -254,7 +254,7 @@ private:
 
     std::shared_ptr<ICgroupsReader> cgroups_reader;
 
-#if defined(OS_SUNOS)
+#if HAS_MEMORY_STATISTICS_OS
     std::unique_ptr<MemoryStatisticsOS> os_memory_statistics;
 #endif
 

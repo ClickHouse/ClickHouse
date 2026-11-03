@@ -1358,7 +1358,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         "The difference in time the thread for calculation of the asynchronous metrics was scheduled to wake up and the time it was in fact, woken up."
         " A proxy-indicator of overall system latency and responsiveness." };
 
-#if defined(OS_LINUX) || defined(OS_FREEBSD) || defined(OS_SUNOS)
+#if HAS_MEMORY_STATISTICS_OS
     MemoryStatisticsOS::Data memory_statistics_data = memory_stat.get();
 #endif
 
@@ -1554,7 +1554,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 #endif
 
     /// Process process memory usage according to OS
-#if defined(OS_LINUX) || defined(OS_FREEBSD) || defined(OS_SUNOS)
+#if HAS_MEMORY_STATISTICS_OS
     {
         MemoryStatisticsOS::Data & data = memory_statistics_data;
 

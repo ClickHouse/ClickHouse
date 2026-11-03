@@ -1,4 +1,6 @@
-#if defined(OS_LINUX) || defined(OS_FREEBSD) || defined(OS_SUNOS)
+#include <Common/MemoryStatisticsOS.h>
+
+#if HAS_MEMORY_STATISTICS_OS
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -11,8 +13,6 @@
 #endif
 #include <fcntl.h>
 #include <unistd.h>
-
-#include <Common/MemoryStatisticsOS.h>
 
 #include <Common/logger_useful.h>
 #include <base/getPageSize.h>
