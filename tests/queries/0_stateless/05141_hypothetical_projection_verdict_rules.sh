@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-msan
 # what EXPLAIN WHATIF refuses to estimate, and which settings it follows; the mark counts live in 05076
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
