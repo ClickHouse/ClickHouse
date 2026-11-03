@@ -950,10 +950,10 @@ struct SampledPart
 };
 
 /// scenario 0 has every part in its likeliest layout, the next scenarios have every part in one layout each
-/// a part has at most three layouts for each part format, and a merged part can have both formats
+/// a part has at most three layouts for each part format, both formats, and the layout of `MATERIALIZE PROJECTION`
 struct Scenarios
 {
-    std::array<HypotheticalProjectionPtr, 7> scenarios;
+    std::array<HypotheticalProjectionPtr, 1 + 3 * 2 + 1> scenarios;
     bool layouts_differ = false;
     /// the most layouts of a part
     size_t layouts = 1;
