@@ -79,7 +79,7 @@ public:
 
     void createNamespaceIfNotExists(const String & namespace_name) const override;
 
-    bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const override;
+    bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot, Poco::JSON::Object::Ptr new_metadata) const override;
 
     bool updateSchema(
         const String & namespace_name,
@@ -129,12 +129,14 @@ private:
         size_t operator()(const CachedSchema & schema) const;
     };
 
-    /// Updates `metadata_location` and optional columns while preserving the rest of the Glue `TableInput`.
+    /// Updates `metadata_location` and columns while preserving the rest of the Glue `TableInput`.
+    /// Columns are replaced from `new_schema` if given, otherwise filled from `new_metadata` only when Glue has none.
     Aws::Glue::Model::TableInput buildUpdatedTableInput(
         const String & namespace_name,
         const String & table_name,
         const String & new_metadata_path,
-        const std::optional<Aws::Vector<Aws::Glue::Model::Column>> & columns) const;
+        const Poco::JSON::Object::Ptr & new_schema,
+        const Poco::JSON::Object::Ptr & new_metadata) const;
 
     std::unique_ptr<Aws::Glue::GlueClient> glue_client;
     const LoggerPtr log;

@@ -506,12 +506,13 @@ bool UnityV2Catalog::updateMetadata(
     const String & namespace_name,
     const String & table_name,
     const String & new_metadata_path,
-    Poco::JSON::Object::Ptr new_snapshot) const
+    Poco::JSON::Object::Ptr new_snapshot,
+    Poco::JSON::Object::Ptr new_metadata) const
 {
     /// `false` means a commit conflict (HTTP 409) and the caller retries, so the result is passed through unchanged.
     return requestWithRetry([&](bool force_refresh)
     {
-        return getIcebergRestCatalog(force_refresh)->updateMetadata(namespace_name, table_name, new_metadata_path, new_snapshot);
+        return getIcebergRestCatalog(force_refresh)->updateMetadata(namespace_name, table_name, new_metadata_path, new_snapshot, new_metadata);
     });
 }
 

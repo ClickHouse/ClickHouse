@@ -850,7 +850,8 @@ Aws::Glue::Model::TableInput GlueCatalog::buildUpdatedTableInput(
     const String & namespace_name,
     const String & table_name,
     const String & new_metadata_path,
-    const std::optional<Aws::Vector<Aws::Glue::Model::Column>> & columns) const
+    const Poco::JSON::Object::Ptr & new_schema,
+    const Poco::JSON::Object::Ptr & new_metadata) const
 {
     Aws::Glue::Model::TableInput table_input;
     table_input.SetName(table_name);
@@ -895,12 +896,12 @@ Aws::Glue::Model::TableInput GlueCatalog::buildUpdatedTableInput(
         table_input.SetTableType("ICEBERG");
 
     sd.SetLocation(tableLocationFromMetadataPath(new_metadata_path));
-    if (columns)
-        sd.SetColumns(*columns);
+    if (new_schema)
+        sd.SetColumns(glueColumnsFromIcebergSchema(new_schema));
     else if (get_outcome.IsSuccess() && sd.GetColumns().empty())
     {
         /// Restore missing Glue columns from the committed Iceberg schema.
-        auto schema = getCurrentSchema(loadMetadataObject(new_metadata_path, TableMetadata{}));
+        auto schema = getCurrentSchema(new_metadata);
         if (!schema || !schema->has(DB::Iceberg::f_fields))
             throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "No current Iceberg schema in {}", new_metadata_path);
         sd.SetColumns(glueColumnsFromIcebergSchema(schema));
@@ -914,11 +915,16 @@ Aws::Glue::Model::TableInput GlueCatalog::buildUpdatedTableInput(
     return table_input;
 }
 
-bool GlueCatalog::updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr /*new_snapshot*/) const
+bool GlueCatalog::updateMetadata(
+    const String & namespace_name,
+    const String & table_name,
+    const String & new_metadata_path,
+    Poco::JSON::Object::Ptr /*new_snapshot*/,
+    Poco::JSON::Object::Ptr new_metadata) const
 {
     Aws::Glue::Model::UpdateTableRequest request;
     request.SetDatabaseName(namespace_name);
-    request.SetTableInput(buildUpdatedTableInput(namespace_name, table_name, new_metadata_path, std::nullopt));
+    request.SetTableInput(buildUpdatedTableInput(namespace_name, table_name, new_metadata_path, nullptr, new_metadata));
 
     auto response = glue_client->UpdateTable(request);
 
@@ -937,7 +943,7 @@ bool GlueCatalog::updateSchema(
 {
     Aws::Glue::Model::UpdateTableRequest request;
     request.SetDatabaseName(namespace_name);
-    request.SetTableInput(buildUpdatedTableInput(namespace_name, table_name, new_metadata_path, glueColumnsFromIcebergSchema(new_schema)));
+    request.SetTableInput(buildUpdatedTableInput(namespace_name, table_name, new_metadata_path, new_schema, nullptr));
 
     auto response = glue_client->UpdateTable(request);
 

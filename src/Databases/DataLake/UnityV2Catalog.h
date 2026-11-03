@@ -92,7 +92,8 @@ public:
         const String & namespace_name,
         const String & table_name,
         const String & new_metadata_path,
-        Poco::JSON::Object::Ptr new_snapshot) const override;
+        Poco::JSON::Object::Ptr new_snapshot,
+        Poco::JSON::Object::Ptr new_metadata) const override;
 
     bool updateSchema(
         const String & namespace_name,

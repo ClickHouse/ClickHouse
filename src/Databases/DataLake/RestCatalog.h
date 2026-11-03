@@ -76,7 +76,7 @@ public:
 
     void createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const override;
 
-    bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const override;
+    bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot, Poco::JSON::Object::Ptr new_metadata) const override;
 
     bool updateSchema(
         const String & namespace_name,

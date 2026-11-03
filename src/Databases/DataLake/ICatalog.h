@@ -285,7 +285,12 @@ public:
     virtual bool writesInitialMetadata() const { return false; }
 
     /// Updates metadata in catalog.
-    virtual bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const;
+    virtual bool updateMetadata(
+        const String & namespace_name,
+        const String & table_name,
+        const String & new_metadata_path,
+        Poco::JSON::Object::Ptr new_snapshot,
+        Poco::JSON::Object::Ptr new_metadata) const;
 
     /// Commit a schema evolution (ADD/DROP/MODIFY/RENAME COLUMN) to the catalog.
     /// `new_metadata_path` is the path of the freshly written `vN.metadata.json`; it is used by

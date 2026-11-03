@@ -639,7 +639,7 @@ bool AlterDropPartitionExecutor::commitMetadataJSON(
     {
         auto catalog_filename = components.path_resolver.resolveForCatalog(metadata_info.path);
         const auto & [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
-        if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, new_snapshot))
+        if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, new_snapshot, state.metadata_object))
             return false;
     }
 
