@@ -3,6 +3,7 @@
 -- table of every database. Every check below compares a condition the storage pushes down against
 -- the same condition applied afterwards inside an aggregate, which it cannot push down: the two
 -- must agree, whatever the storage decided to skip.
+-- Outdated parts can go away during the test (for example, with `SharedMergeTree` in ClickHouse Cloud), so the checks of parts count only the active ones.
 
 DROP TABLE IF EXISTS t_a;
 DROP TABLE IF EXISTS t_b;
@@ -70,20 +71,20 @@ SELECT
 WITH ['t_a', 't_c'] AS wanted
 SELECT
     'parts',
-    (SELECT count() FROM system.parts WHERE database = currentDatabase() AND table IN ('t_a', 't_c'))
-        = (SELECT countIf(has(wanted, table)) FROM system.parts WHERE database = currentDatabase());
+    (SELECT count() FROM system.parts WHERE database = currentDatabase() AND table IN ('t_a', 't_c') AND active)
+        = (SELECT countIf(has(wanted, table)) FROM system.parts WHERE database = currentDatabase() AND active);
 
 WITH ['t_a', 't_c'] AS wanted
 SELECT
     'parts_columns',
-    (SELECT count() FROM system.parts_columns WHERE database = currentDatabase() AND table IN ('t_a', 't_c'))
-        = (SELECT countIf(has(wanted, table)) FROM system.parts_columns WHERE database = currentDatabase());
+    (SELECT count() FROM system.parts_columns WHERE database = currentDatabase() AND table IN ('t_a', 't_c') AND active)
+        = (SELECT countIf(has(wanted, table)) FROM system.parts_columns WHERE database = currentDatabase() AND active);
 
 WITH ['t_a', 't_c'] AS wanted
 SELECT
     'projection_parts',
-    (SELECT count() FROM system.projection_parts WHERE database = currentDatabase() AND table IN ('t_a', 't_c'))
-        = (SELECT countIf(has(wanted, table)) FROM system.projection_parts WHERE database = currentDatabase());
+    (SELECT count() FROM system.projection_parts WHERE database = currentDatabase() AND table IN ('t_a', 't_c') AND active)
+        = (SELECT countIf(has(wanted, table)) FROM system.projection_parts WHERE database = currentDatabase() AND active);
 
 WITH ['t_a', 't_c'] AS wanted
 SELECT
