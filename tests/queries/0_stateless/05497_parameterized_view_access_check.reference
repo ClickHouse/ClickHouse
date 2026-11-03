@@ -7,6 +7,9 @@ denied
 denied
 denied
 denied
+-- INSERT SELECT into a Distributed table resolves the view before the analyzer
+denied
+denied
 -- SELECT on the table behind the view, no grant on the view
 denied
 -- SHOW TABLES on the view does not make its columns visible

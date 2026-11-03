@@ -14,12 +14,16 @@ ${CLICKHOUSE_CLIENT} -m --query "
     DROP VIEW IF EXISTS pv_definer;
     DROP VIEW IF EXISTS pv_invoker;
     DROP TABLE IF EXISTS secret_base;
+    DROP TABLE IF EXISTS sink_dist;
+    DROP TABLE IF EXISTS sink_local;
 
     CREATE TABLE secret_base (x UInt32, s String) ENGINE = MergeTree ORDER BY x;
     INSERT INTO secret_base VALUES (1, 'a'), (2, 'b'), (5, 'c');
     CREATE VIEW pv_definer SQL SECURITY DEFINER AS SELECT x AS secret_column_1, s AS secret_column_2 FROM secret_base WHERE x < {secret_param:UInt32};
     CREATE VIEW pv_invoker SQL SECURITY INVOKER AS SELECT x AS secret_column_1, s AS secret_column_2 FROM secret_base WHERE x < {secret_param:UInt32};
     CREATE VIEW v_over_pv SQL SECURITY DEFINER AS SELECT * FROM pv_definer(secret_param = 3);
+    CREATE TABLE sink_local (a UInt32, b String) ENGINE = MergeTree ORDER BY a;
+    CREATE TABLE sink_dist AS sink_local ENGINE = Distributed(test_shard_localhost, currentDatabase(), sink_local);
 
     CREATE USER ${username} NOT IDENTIFIED;
 "
@@ -70,6 +74,12 @@ expect_denied "SELECT no_such_column FROM pv_definer(secret_param = 3)"
 expect_denied "SELECT * FROM pv_definer()"
 expect_denied "SELECT * FROM pv_invoker(secret_param = 3)"
 
+echo "-- INSERT SELECT into a Distributed table resolves the view before the analyzer"
+${CLICKHOUSE_CLIENT} --query "GRANT INSERT ON ${CLICKHOUSE_DATABASE}.sink_dist TO ${username}"
+expect_denied "INSERT INTO sink_dist SETTINGS parallel_distributed_insert_select = 2 SELECT * FROM pv_definer()"
+expect_denied "INSERT INTO sink_dist SETTINGS parallel_distributed_insert_select = 2 SELECT * FROM pv_invoker(secret_param = 3)"
+${CLICKHOUSE_CLIENT} --query "REVOKE INSERT ON ${CLICKHOUSE_DATABASE}.sink_dist FROM ${username}"
+
 echo "-- SELECT on the table behind the view, no grant on the view"
 ${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.secret_base TO ${username}"
 expect_denied "EXPLAIN QUERY TREE SELECT * FROM pv_invoker(secret_param = 3)"
@@ -109,4 +119,6 @@ ${CLICKHOUSE_CLIENT} -m --query "
     DROP VIEW IF EXISTS pv_definer;
     DROP VIEW IF EXISTS pv_invoker;
     DROP TABLE IF EXISTS secret_base;
+    DROP TABLE IF EXISTS sink_dist;
+    DROP TABLE IF EXISTS sink_local;
 "
