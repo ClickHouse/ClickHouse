@@ -59,8 +59,8 @@ private:
 
     void fillWordsFromBlock(const Block & block);
 
-    /// Words are fetched asynchronously. `clickhouse-local` runs the whole suggestion query in this thread, which
-    /// needs more than the 512 KiB stack a `std::thread` gets on macOS (see `ThreadStackSize.h`).
+    /// Words are fetched asynchronously.
+    /// `clickhouse-local` runs the suggestion query in this thread, which needs more than macOS' 512 KiB `std::thread` stack.
 #if defined(OS_DARWIN)
     using LoadingThread = ThreadWithStackSize;
 #else
