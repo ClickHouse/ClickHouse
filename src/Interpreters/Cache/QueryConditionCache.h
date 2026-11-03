@@ -6,6 +6,9 @@
 #include <Storages/MergeTree/MarkRange.h>
 #include <Common/SharedMutex.h>
 
+#include <limits>
+#include <mutex>
+
 namespace DB
 {
 
@@ -44,6 +47,16 @@ public:
     /// False means none of the rows in the mark match the predicate. We can skip such marks.
     /// True means at least one row in the mark matches the predicate. We need to read such marks.
     using MatchingMarks = std::vector<bool>;
+
+    /// The exact number of rows of each mark that match the predicate, or `UNKNOWN_MATCH_COUNT`.
+    /// Unlike `MatchingMarks`, these are exact, so a `count()` filtered by the predicate can add them up instead of
+    /// reading the marks again (see `optimizeUseAggregateProjections`). Only reads that need them record them.
+    /// Two bytes per mark: a mark with `UNKNOWN_MATCH_COUNT` or more matching rows is not counted (a granule has
+    /// at most `index_granularity` rows, 8192 by default). They are kept apart from the `MatchingMarks`, see `counts_cache`.
+    using MatchCounts = std::vector<UInt16>;
+    static constexpr UInt16 UNKNOWN_MATCH_COUNT = std::numeric_limits<UInt16>::max();
+    /// Pairs of (mark, number of rows of the mark that match the predicate).
+    using MarkMatchCounts = std::vector<std::pair<size_t, UInt32>>;
 
 private:
     /// A hash of the table id, part name and condition id.
@@ -86,6 +99,20 @@ private:
         size_t operator()(const Entry & entry) const;
     };
 
+    struct CountsEntry
+    {
+        MatchCounts match_counts;
+        SharedMutex mutex;
+
+        explicit CountsEntry(size_t mark_count) : match_counts(mark_count, UNKNOWN_MATCH_COUNT) {}
+    };
+
+    struct CountsEntryWeight
+    {
+        size_t operator()(const CountsEntry & entry) const;
+    };
+
+    using CountsCache = CacheBase<Key, CountsEntry, UInt128TrivialHash, CountsEntryWeight>;
 
 public:
     using Cache = CacheBase<Key, Entry, UInt128TrivialHash, EntryWeight>;
@@ -139,6 +166,18 @@ public:
     /// QueryConditionCacheHits/Misses events count consultations, not internal key lookups.
     std::optional<MatchingMarks> read(const UUID & table_id, const String & part_name, UInt64 condition_hash, bool increment_profile_events = true);
 
+    /// Record the exact number of rows matching the predicate in the given marks of the part. Only a read that evaluates
+    /// exactly the predicate of `condition_hash` on every row of these marks may call this: no filter that the hash does
+    /// not cover may run before it, and the predicate must not be rounded (time conditions) or salted (TopK). See
+    /// `MergeTreeSelectProcessor`.
+    void writeMatchCounts(
+        const UUID & table_id, const String & part_name, UInt64 condition_hash, const String & condition,
+        const MarkMatchCounts & mark_match_counts, size_t marks_count, bool has_final_mark);
+
+    /// The exact number of rows matching the predicate per mark of the part, if any were recorded (`UNKNOWN_MATCH_COUNT`
+    /// for the marks that were not counted).
+    std::optional<MatchCounts> readMatchCounts(const UUID & table_id, const String & part_name, UInt64 condition_hash);
+
     /// For debugging and system tables
     std::vector<QueryConditionCache::Cache::KeyMapped> dump() const;
 
@@ -149,6 +188,19 @@ public:
 
 private:
     Cache cache;
+    /// The match counts take 16 times the memory of the `MatchingMarks` of the same marks, and they only save reading the
+    /// marks that match, while the `MatchingMarks` save reading all the others. So the match counts only use the space the
+    /// `MatchingMarks` leave free: `cache` keeps the whole size, and a new `MatchingMarks` entry evicts the least recently
+    /// used match counts if both do not fit together. Caching match counts never evicts `MatchingMarks`.
+    CountsCache counts_cache;
+
+    /// Serializes the changes of the size of `counts_cache`.
+    std::mutex counts_size_mutex;
+
+    /// Limits `counts_cache` to the space `cache` leaves free (evicting the least recently used match counts if they do not
+    /// fit) and returns that space.
+    size_t fitMatchCountsIntoFreeSpace() TSA_REQUIRES(counts_size_mutex);
+
     LoggerPtr logger = getLogger("QueryConditionCache");
 
     friend class StorageSystemQueryConditionCache;

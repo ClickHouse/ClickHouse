@@ -1,0 +1,20 @@
+-- without a row policy (the second count is answered from the cache)
+33334
+33334
+-- a row policy that hides half of the rows
+16667
+16667
+-- a row policy that hides nothing
+33334
+33334
+-- without a row policy again: the counts recorded before are still right
+33334
+33334
+-- counted from the cache
+qcc_count_1	read
+qcc_count_2	counted
+qcc_count_3	read
+qcc_count_4	read
+qcc_count_5	counted
+qcc_count_6	counted
+qcc_count_7	counted

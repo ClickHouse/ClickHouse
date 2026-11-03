@@ -1,0 +1,88 @@
+-- the second count() is answered from the counts recorded by the first
+7143
+7143
+7143	69841
+3572
+7143
+-- other constants
+1587
+1587
+70346
+40198
+80396
+70346
+70346
+-- non-deterministic filters are neither counted nor answered from counts
+1
+1
+1
+1
+-- a read stopped early records counts only for the read tasks it finished
+33334
+33334
+-- granules of different sizes
+20001
+20001
+-- inserts, merges and mutations
+10000
+10000
+10000
+10000
+4999
+4999
+2499
+2499
+4999
+2499
+4999
+3333
+3333
+3333
+-- FINAL
+25001
+25001
+16667
+16667
+25001
+-- SAMPLE
+33334
+33334
+16700
+16700
+33334
+-- counted from the cache
+qcc_count_01	read
+qcc_count_02	counted
+qcc_count_03	read
+qcc_count_04	read
+qcc_count_05	read
+qcc_count_06	counted
+qcc_count_07	read
+qcc_count_08	read
+qcc_count_09	read
+qcc_count_10	counted
+qcc_count_11	read
+qcc_count_12	read
+qcc_count_13	read
+qcc_count_14	read
+qcc_count_16	partly counted
+qcc_count_17	counted
+qcc_count_18	read
+qcc_count_19	counted
+qcc_count_20	partly counted
+qcc_count_21	counted
+qcc_count_22	read
+qcc_count_23	counted
+qcc_count_24	read
+qcc_count_25	counted
+qcc_count_26	read
+qcc_count_27	read
+qcc_count_28	counted
+qcc_count_29	read
+qcc_count_30	read
+qcc_count_31	read
+qcc_count_32	counted
+qcc_count_33	counted
+qcc_count_34	read
+qcc_count_35	counted
+qcc_count_36	counted

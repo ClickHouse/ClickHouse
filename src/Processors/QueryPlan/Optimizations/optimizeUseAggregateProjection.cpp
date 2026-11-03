@@ -41,6 +41,7 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/Cache/QueryConditionCache.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/ProjectionsDescription.h>
@@ -1206,6 +1207,77 @@ static Block makeBlockWithMinMaxFromStatistics(
     return block;
 }
 
+/// Whether there is a `FilterStep` between the aggregation and the read (`node` is the child of the aggregation).
+static bool hasFilterStepAboveReading(QueryPlan::Node & node)
+{
+    IQueryPlanStep * step = node.step.get();
+    if (typeid_cast<ReadFromMergeTree *>(step))
+        return false;
+    if (typeid_cast<FilterStep *>(step) || node.children.size() != 1)
+        return true;
+    return hasFilterStepAboveReading(*node.children.front());
+}
+
+/// Removes the marks for which the query condition cache knows the exact number of rows matching the PREWHERE of the
+/// read from `select_result` and returns the sum of these numbers.
+static size_t countRowsFromQueryConditionCache(
+    const ReadFromMergeTree & reading,
+    ReadFromMergeTree::AnalysisResult & select_result,
+    UInt64 condition_hash,
+    const ContextPtr & context,
+    size_t & counted_parts,
+    size_t & counted_marks)
+{
+    auto query_condition_cache = context->getQueryConditionCache();
+    if (!query_condition_cache)
+        return 0;
+
+    size_t count = 0;
+    for (auto & part_with_ranges : select_result.parts_with_ranges)
+    {
+        const auto & part = part_with_ranges.data_part;
+        String part_name = part->isProjectionPart() ? fmt::format("{}:{}", part->getParentPartName(), part->name) : part->name;
+        auto match_counts = query_condition_cache->readMatchCounts(part->storage.getStorageID().uuid, part_name, condition_hash);
+        if (!match_counts || !reading.canUseQueryConditionCacheMatchCountsOfPart(*part))
+            continue;
+
+        MarkRanges new_ranges;
+        size_t part_counted_marks = 0;
+        for (const auto & range : part_with_ranges.ranges)
+        {
+            size_t begin = range.begin;
+            for (size_t mark = range.begin; mark < range.end; ++mark)
+            {
+                UInt16 mark_count = mark < match_counts->size() ? (*match_counts)[mark] : QueryConditionCache::UNKNOWN_MATCH_COUNT;
+                if (mark_count == QueryConditionCache::UNKNOWN_MATCH_COUNT)
+                    continue;
+
+                if (begin < mark)
+                    new_ranges.emplace_back(begin, mark);
+                begin = mark + 1;
+
+                count += mark_count;
+                ++part_counted_marks;
+                select_result.selected_rows -= part->index_granularity->getMarkRows(mark);
+            }
+            if (begin < range.end)
+                new_ranges.emplace_back(begin, range.end);
+        }
+
+        if (part_counted_marks == 0)
+            continue;
+
+        ++counted_parts;
+        counted_marks += part_counted_marks;
+        select_result.selected_marks -= part_counted_marks;
+        select_result.selected_ranges += new_ranges.size();
+        select_result.selected_ranges -= part_with_ranges.ranges.size();
+        part_with_ranges.ranges = std::move(new_ranges);
+    }
+
+    return count;
+}
+
 static QueryPlan::Node * findReadingStep(QueryPlan::Node & node)
 {
     IQueryPlanStep * step = node.step.get();
@@ -1397,6 +1469,25 @@ UseProjectionsResult optimizeUseAggregateProjections(
                 part_with_ranges.ranges = std::move(new_ranges);
             }
 
+            /// The query condition cache may know the exact number of rows matching the PREWHERE in the remaining
+            /// marks, if the PREWHERE is the whole filter of the count. Otherwise make the read record them for the
+            /// next time.
+            size_t query_condition_cache_count = 0;
+            size_t query_condition_cache_parts = 0;
+            size_t query_condition_cache_marks = 0;
+            if (!hasFilterStepAboveReading(*node.children.front()))
+            {
+                if (auto match_counts_key = reading->getQueryConditionCacheKeyForMatchCounts())
+                {
+                    reading->enableQueryConditionCacheMatchCounts();
+                    query_condition_cache_count = countRowsFromQueryConditionCache(
+                        *reading, *inexact_ranges_select_result, *match_counts_key, context, query_condition_cache_parts,
+                        query_condition_cache_marks);
+                    exact_count += query_condition_cache_count;
+                    exact_ranges_marks += query_condition_cache_marks;
+                }
+            }
+
             auto & stat = inexact_ranges_select_result->projection_stats.emplace_back();
             stat.name = EXACT_COUNT_PROJECTION_NAME;
             for (const auto & index_stat : inexact_ranges_select_result->index_stats)
@@ -1420,6 +1511,12 @@ UseProjectionsResult optimizeUseAggregateProjections(
                 stat.selected_ranges,
                 stat.selected_rows,
                 stat.filtered_parts);
+            if (query_condition_cache_marks)
+                stat.description += fmt::format(
+                    ". Counted by the query condition cache: {} rows in {} marks of {} parts",
+                    query_condition_cache_count,
+                    query_condition_cache_marks,
+                    query_condition_cache_parts);
 
             LOG_DEBUG(logger, "{}", stat.description);
 

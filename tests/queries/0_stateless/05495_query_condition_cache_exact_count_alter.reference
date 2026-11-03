@@ -1,0 +1,80 @@
+-- the DEFAULT of a column that the first part does not store changes
+105000
+105000
+5000
+5000
+5000
+5000
+-- a DEFAULT computed from another column: a positive count becomes smaller
+60000
+60000
+30000
+30000
+-- the time zone of a column that a DEFAULT depends on changes, without a mutation: a positive count becomes zero
+120000
+120000
+0
+0
+-- a non-deterministic DEFAULT
+1
+1
+-- a pending type change
+12000
+12000
+12000
+12000
+12000
+12000
+12000
+-- a pending RENAME COLUMN
+43334
+43334
+43334
+43334
+43334
+43334
+43334
+-- a pending DROP COLUMN, the same column added again, then KILL MUTATION
+120000
+120000
+120000
+43334
+43334
+43334
+-- a materialized column is counted again, and later DEFAULT changes do not affect it
+5000
+5000
+5000
+5000
+-- counted from the cache
+qcc_alter_01	read
+qcc_alter_02	partly counted
+qcc_alter_03	partly counted
+qcc_alter_04	counted
+qcc_alter_05	read
+qcc_alter_06	read
+qcc_alter_07	read
+qcc_alter_08	read
+qcc_alter_09	read
+qcc_alter_10	read
+qcc_alter_11	read
+qcc_alter_12	read
+qcc_alter_13	read
+qcc_alter_14	counted
+qcc_alter_15	read
+qcc_alter_16	read
+qcc_alter_17	read
+qcc_alter_18	counted
+qcc_alter_19	read
+qcc_alter_20	counted
+qcc_alter_21	read
+qcc_alter_22	read
+qcc_alter_23	read
+qcc_alter_24	counted
+qcc_alter_25	read
+qcc_alter_26	read
+qcc_alter_27	counted
+qcc_alter_28	counted
+qcc_alter_29	read
+qcc_alter_30	counted
+qcc_alter_31	counted

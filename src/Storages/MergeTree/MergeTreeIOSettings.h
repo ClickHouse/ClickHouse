@@ -72,6 +72,9 @@ struct MergeTreeReaderSettings
     bool is_compressed = true;
     /// If we should write/read to/from the query condition cache.
     bool use_query_condition_cache = false;
+    /// If the read should also record the exact number of rows matching its PREWHERE in each mark in the query
+    /// condition cache, so that a `count()` can add them up later (see `ReadFromMergeTree::getQueryConditionCacheKeyForMatchCounts`).
+    bool query_condition_cache_write_match_counts = false;
     /// If the query condition cache should serve conditions involving the current time by deriving
     /// deterministic conditions from them (rounding time constants onto a grid).
     bool use_query_condition_cache_for_time_conditions = false;

@@ -640,6 +640,17 @@ public:
     bool isTopKPrewhereQueryConditionCacheAllowed() const { return allow_top_k_prewhere_query_condition_cache; }
     bool isQueryConditionCacheAllowed() const { return allow_query_condition_cache; }
 
+    /// The query condition cache key under which the exact number of rows matching the PREWHERE of this read is
+    /// recorded per mark, if the read qualifies: the PREWHERE is deterministic and is the only filter of the read,
+    /// and nothing else (row policy, FINAL, SAMPLE, pending mutations, TopK, parallel replicas) changes which rows
+    /// it returns. Used by `optimizeUseAggregateProjections` to answer a `count()` with this filter.
+    std::optional<UInt64> getQueryConditionCacheKeyForMatchCounts() const;
+    /// Whether match counts may be used for (and are recorded for) this part: the PREWHERE reads only what the part
+    /// stores, see `MergeTreeSelectProcessor::partStoresColumnsAsRead`.
+    bool canUseQueryConditionCacheMatchCountsOfPart(const IMergeTreeDataPart & part) const;
+    /// Makes the read record the exact number of rows matching its PREWHERE per mark in the query condition cache.
+    void enableQueryConditionCacheMatchCounts() { write_query_condition_cache_match_counts = true; }
+
     bool hasPendingTopKDynamicFilter() const
     {
         return top_k_filter_info.has_value() && top_k_filter_info->dynamic_filter_pending;
@@ -951,6 +962,7 @@ private:
     bool allow_query_condition_cache = true;
     bool allow_top_k_prewhere_query_condition_cache = true;
     bool allow_spreading_small_read = true;
+    bool write_query_condition_cache_match_counts = false;
 
     LazyMaterializingRowsPtr lazy_materializing_rows;
     bool has_lazily_read_columns = false;
