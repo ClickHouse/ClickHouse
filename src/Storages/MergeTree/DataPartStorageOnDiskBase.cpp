@@ -271,6 +271,7 @@ void DataPartStorageOnDiskBase::setRelativePath(const std::string & path)
         std::lock_guard lock(skip_indices_packed_mutex);
         skip_indices_packed_probed = false;
         skip_indices_packed_reader.reset();
+        skip_indices_packed_unsupported = false;
     }
 }
 
@@ -1238,7 +1239,9 @@ std::shared_ptr<const PackedFilesReader> DataPartStorageOnDiskBase::getSkipIndic
         try
         {
             auto buf = disk->readFile(packed_path, ReadSettings{}.adjustBufferSize(4096));
-            skip_indices_packed_reader = std::make_shared<PackedFilesReader>(readSkipIndicesPackedIndex(*buf, packed_path));
+            auto index = readSkipIndicesPackedIndex(*buf, packed_path);
+            skip_indices_packed_unsupported = !index;
+            skip_indices_packed_reader = std::make_shared<PackedFilesReader>(index ? std::move(*index) : PackedFilesIO::Index{});
         }
         catch (const Exception &)
         {
@@ -1252,7 +1255,7 @@ std::shared_ptr<const PackedFilesReader> DataPartStorageOnDiskBase::getSkipIndic
     return skip_indices_packed_reader;
 }
 
-PackedFilesIO::Index DataPartStorageOnDiskBase::readSkipIndicesPackedIndex(ReadBuffer & in, const String & archive_path)
+std::optional<PackedFilesIO::Index> DataPartStorageOnDiskBase::readSkipIndicesPackedIndex(ReadBuffer & in, const String & archive_path)
 {
     /// An empty buffer is left to readIndex, which reports the truncated archive.
     if (!in.eof())
@@ -1263,7 +1266,7 @@ PackedFilesIO::Index DataPartStorageOnDiskBase::readSkipIndicesPackedIndex(ReadB
             LOG_DEBUG(getLogger("DataPartStorageOnDiskBase"),
                 "Skip indices archive {} has format version {}, newer than the supported {}. Skip indices stored in it will not be used",
                 archive_path, static_cast<UInt32>(version), static_cast<UInt32>(PackedFilesIO::MAX_VERSION));
-            return {};
+            return std::nullopt;
         }
     }
     return PackedFilesReader::readIndex(in);
@@ -1300,6 +1303,14 @@ bool DataPartStorageOnDiskBase::isFileInPackedSkipIndicesArchive(const std::stri
 bool DataPartStorageOnDiskBase::hasSkipIndicesPackedArchive() const
 {
     return getSkipIndicesPackedReader() != nullptr;
+}
+
+bool DataPartStorageOnDiskBase::hasUnsupportedSkipIndicesPackedArchive() const
+{
+    if (!getSkipIndicesPackedReader())
+        return false;
+    std::lock_guard lock(skip_indices_packed_mutex);
+    return skip_indices_packed_unsupported;
 }
 
 void DataPartStorageOnDiskBase::copyArchiveEntryTo(
