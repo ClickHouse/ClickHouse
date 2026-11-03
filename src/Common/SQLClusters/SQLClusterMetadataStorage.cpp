@@ -166,15 +166,33 @@ public:
 
         auto tmp_path = getPath(file_name + ".tmp");
         auto write_data = writeHook(data);
-        WriteBufferFromFile out(tmp_path, write_data.size(), O_WRONLY | O_CREAT | O_EXCL);
-        writeString(write_data, out);
+        auto out = std::make_unique<WriteBufferFromFile>(tmp_path, write_data.size(), O_WRONLY | O_CREAT | O_EXCL);
 
-        out.next();
-        if (getContext()->getSettingsRef()[Setting::fsync_metadata])
-            out.sync();
-        out.close();
+        /// The temporary file is created exclusively, so a leftover of a failed write would make every retry
+        /// fail until the server restarts. Remove it if anything below throws.
+        try
+        {
+            writeString(write_data, *out);
 
-        fs::rename(tmp_path, getPath(file_name));
+            out->next();
+            if (getContext()->getSettingsRef()[Setting::fsync_metadata])
+                out->sync();
+            out->close();
+            out.reset();
+
+            fs::rename(tmp_path, getPath(file_name));
+        }
+        catch (...)
+        {
+            if (out)
+                out->cancel();
+            out.reset();
+            std::error_code ec;
+            fs::remove(tmp_path, ec);
+            if (ec)
+                LOG_WARNING(getLogger("SQLClusterLocalStorage"), "Cannot remove temporary file {}: {}", tmp_path, ec.message());
+            throw;
+        }
     }
 
     virtual std::string writeHook(const std::string & data) const
