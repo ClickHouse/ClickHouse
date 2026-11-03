@@ -69,6 +69,9 @@ StoragePtr TableFunctionMongoDB::executeImpl(const ASTPtr & /*ast_function*/,
 
 ColumnsDescription TableFunctionMongoDB::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
+    /// Here and not in `parseArguments`, which also runs when the server loads a stored `CREATE TABLE ... AS mongodb(...)`
+    /// definition: that must not fail, and such a table is checked when it is used. `executeImpl` calls this as well.
+    configuration->checkServerCredentials(context);
     return parseColumnsListFromString(structure, context);
 }
 

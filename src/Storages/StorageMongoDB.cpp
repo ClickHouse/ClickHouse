@@ -44,6 +44,7 @@
 #include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/split.hpp>
 
+#include <algorithm>
 #include <memory>
 
 using bsoncxx::builder::basic::document;
@@ -103,6 +104,7 @@ void MongoDBLogger::operator()(
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int NOT_IMPLEMENTED;
@@ -129,6 +131,47 @@ void MongoDBConfiguration::checkCollection() const
     /// effectively empty collection name, which aborts the process inside the driver.
     if (collection.empty() || collection.contains('\0'))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "MongoDB collection name must be non-empty and must not contain NUL characters");
+}
+
+void MongoDBConfiguration::checkServerCredentials(const ContextPtr & context) const
+{
+    if (!context->shouldRestrictUserQueryS3Credentials())
+        return;
+
+    /// These mechanisms take the credentials from the connection string only: a username and a password, or for
+    /// `MONGODB-X509` the client certificate, whose file is checked below. The others take them from the environment
+    /// of the server process: `MONGODB-OIDC` uses the identity the server runs under (a Kubernetes service account
+    /// token, or a token from the Azure or GCP instance metadata service), `MONGODB-AWS` the AWS credentials of the
+    /// server, and `GSSAPI` its Kerberos credentials. Without a mechanism the driver uses SCRAM with the username from
+    /// the connection string, or does not authenticate. The driver compares mechanism names case-insensitively.
+    static constexpr std::string_view allowed_mechanisms[] = {"SCRAM-SHA-1", "SCRAM-SHA-256", "PLAIN", "MONGODB-X509"};
+
+    const String mechanism = uri->auth_mechanism();
+    const bool is_allowed_mechanism = mechanism.empty()
+        || std::ranges::any_of(allowed_mechanisms, [&](std::string_view allowed) { return equalsCaseInsensitive(mechanism, allowed); });
+
+    if (!is_allowed_mechanism)
+        throw Exception(
+            ErrorCodes::ACCESS_DENIED,
+            "MongoDB authentication mechanism '{}' is not allowed in user queries, because it authenticates with "
+            "credentials of the server process. Use SCRAM-SHA-1, SCRAM-SHA-256 or PLAIN with a username and a password "
+            "in the connection string"
+#if !CLICKHOUSE_CLOUD
+            ", or enable the setting `s3_allow_server_credentials_in_user_queries`"
+#endif
+            ".",
+            mechanism);
+
+    /// The driver stores the deprecated `sslClientCertificateKeyFile` under the canonical name, so this covers both.
+    if (uri->tls_certificate_key_file())
+        throw Exception(
+            ErrorCodes::ACCESS_DENIED,
+            "MongoDB connection option `tlsCertificateKeyFile` is not allowed in user queries, because it makes the "
+            "server present a client certificate from its own filesystem"
+#if !CLICKHOUSE_CLOUD
+            ". Enable the setting `s3_allow_server_credentials_in_user_queries` to permit it"
+#endif
+            ".");
 }
 
 StorageMongoDB::StorageMongoDB(
@@ -166,6 +209,10 @@ Pipe StorageMongoDB::read(
     size_t max_block_size,
     size_t /*num_streams*/)
 {
+    /// Checked for every query, like the S3 and Azure storages do: the definition may have been created by a session
+    /// that is allowed to use credentials of the server process, or loaded from stored metadata without the check.
+    configuration.checkServerCredentials(context);
+
     storage_snapshot->check(column_names);
 
     Block sample_block;
@@ -887,9 +934,15 @@ void registerStorageMongoDB(StorageFactory & factory)
         /// (that used the previous Poco-based MongoDB implementation which allowed it).
         /// TODO: we can remove it after ClickHouse 27.5, it should be enough time for users to migrate.
         bool allow_excessive_path_in_host = args.mode > LoadingStrictnessLevel::CREATE;
+        auto configuration = getConfigurationImpl(&args.table_id, args.engine_args, args.getLocalContext(), allow_excessive_path_in_host);
+
+        /// Skipped for a stored definition so that it does not block server startup; reads still check it.
+        if (!isReplayedTableDefinition(args.mode, args.query, args.getLocalContext()))
+            configuration.checkServerCredentials(args.getLocalContext());
+
         return std::make_shared<StorageMongoDB>(
             args.table_id,
-            getConfigurationImpl(&args.table_id, args.engine_args, args.getLocalContext(), allow_excessive_path_in_host),
+            std::move(configuration),
             args.columns,
             args.constraints,
             args.comment);

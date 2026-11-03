@@ -86,6 +86,11 @@ struct MongoDBConfiguration
     void checkHosts(const ContextPtr & context) const;
     void checkCollection() const;
 
+    /// Throws `ACCESS_DENIED` if the connection string makes the driver authenticate with credentials of the server
+    /// process (an authentication mechanism that takes them from its environment, or a client certificate file from
+    /// its filesystem) while `context` restricts server credentials (see `Context::shouldRestrictUserQueryS3Credentials`).
+    void checkServerCredentials(const ContextPtr & context) const;
+
     bool isOidColumn(const std::string & name) const
     {
         return oid_fields.contains(name);
