@@ -254,6 +254,8 @@ public:
 
     /// `after_processing` as it was when the batch started, used for every file of the batch.
     ObjectStorageQueueAction getAfterProcessing() const { return after_processing; }
+    /// The settings the action of this batch was captured with.
+    const AfterProcessingSettings & getAfterProcessingSettings() const { return after_processing_settings; }
 
     void invalidateFileIterator() { file_iterator->invalidate(); }
 

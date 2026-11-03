@@ -1255,22 +1255,14 @@ void StorageObjectStorageQueue::postProcess(
     const StoredObjects & successful_objects,
     UnorderedSetWithMemoryTracking<String> & post_processing_failed_paths,
     const ObjectStorageQueueMetadata & metadata,
-    ObjectStorageQueueAction after_processing) const
+    ObjectStorageQueueAction after_processing,
+    const AfterProcessingSettings & after_processing_settings_) const
 {
-    std::optional<ObjectStorageQueuePostProcessor> post_processor;
-
     LOG_TEST(log, "Executing post process for {} objects", successful_objects.size());
-    {
-        std::lock_guard lock(mutex);
-        post_processor.emplace(
-            getContext(), type, object_storage, after_processing, after_processing_settings,
-            metadata.getKeeperIdentity());
-    }
-
-    if (post_processor)
-    {
-        post_processor->process(successful_objects, post_processing_failed_paths);
-    }
+    ObjectStorageQueuePostProcessor post_processor(
+        getContext(), type, object_storage, after_processing, after_processing_settings_,
+        metadata.getKeeperIdentity());
+    post_processor.process(successful_objects, post_processing_failed_paths);
 }
 
 void StorageObjectStorageQueue::commit(
@@ -1328,7 +1320,8 @@ void StorageObjectStorageQueue::commit(
     {
         try
         {
-            postProcess(successful_objects, post_processing_failed_paths, metadata, after_processing);
+            /// The settings captured with the action by the sources, as a concurrent `ALTER` may have changed them since.
+            postProcess(successful_objects, post_processing_failed_paths, metadata, after_processing, sources.front()->getAfterProcessingSettings());
         }
         catch (...)
         {

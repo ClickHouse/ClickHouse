@@ -1361,7 +1361,6 @@ def test_ordered_parallel_inserts_keep_the_pointer_below_a_rewritten_file(starte
             "processing_threads_num": 2,
             "parallel_inserts": 1,
             "buckets": 1,
-            "max_processed_files_before_commit": 1,
         },
     )
 
@@ -1398,8 +1397,8 @@ def test_ordered_rewrite_during_reader_construction_is_ingested(started_cluster)
     table_name = f"ordered_construct_rewrite_{token}"
     files_path = f"{table_name}_data"
     processed_prefix = f"{token}_moved"
-    put_s3_file_content(started_cluster, f"{files_path}/a.json", b'{"a":1,"b":2,"c":3}\n')
-    put_s3_file_content(started_cluster, f"{files_path}/b.json", b'{"a":4,"b":5,"c":6}\n')
+    put_s3_file_content(started_cluster, f"{files_path}/a.json", b'{"column1":1,"column2":2,"column3":3}\n')
+    put_s3_file_content(started_cluster, f"{files_path}/b.json", b'{"column1":4,"column2":5,"column3":6}\n')
 
     create_table(
         started_cluster,
@@ -1408,7 +1407,6 @@ def test_ordered_rewrite_during_reader_construction_is_ingested(started_cluster)
         "ordered",
         files_path,
         file_format="JSONEachRow",
-        format="a UInt32, b UInt32, c UInt32",
         after_processing="move",
         move_to_prefix=processed_prefix,
         additional_settings={
@@ -1422,12 +1420,12 @@ def test_ordered_rewrite_during_reader_construction_is_ingested(started_cluster)
         create_mv(node, table_name, f"{table_name}_dst")
         wait_failpoint_paused(node, PAUSE_AFTER_LISTING_FAILPOINT)
         # Both keys are listed; the first read of a.json, made while its reader is constructed, now fails.
-        put_s3_file_content(started_cluster, f"{files_path}/a.json", b'{"a":7,"b":8,"c":9}\n')
+        put_s3_file_content(started_cluster, f"{files_path}/a.json", b'{"column1":7,"column2":8,"column3":9}\n')
     finally:
         node.query(f"SYSTEM DISABLE FAILPOINT {PAUSE_AFTER_LISTING_FAILPOINT}")
 
     wait_until(
-        lambda: node.query(f"SELECT a, b, c FROM {table_name}_dst ORDER BY ALL")
+        lambda: node.query(f"SELECT column1, column2, column3 FROM {table_name}_dst ORDER BY ALL")
         == "4\t5\t6\n7\t8\t9\n",
         timeout=90,
     )
@@ -1591,6 +1589,51 @@ def test_after_processing_change_does_not_reach_a_batch_in_flight(started_cluste
     assert (
         node.query(f"SELECT column1, column2, column3 FROM {table_name}_dst ORDER BY ALL")
         == "1\t2\t3\n4\t5\t6\n"
+    )
+
+
+def test_after_processing_change_keeps_the_move_destination_of_a_batch_in_flight(started_cluster):
+    """A batch that read its file for `move` also keeps the destination settings it was started with, so an
+    ALTER that switches to `keep` and clears the destination does not break its post-processing."""
+    node = started_cluster.instances["instance"]
+    token = generate_random_string().lower()
+    table_name = f"hot_move_destination_{token}"
+    files_path = f"{table_name}_data"
+    processed_prefix = f"{token}_moved"
+    put_s3_file_content(started_cluster, f"{files_path}/part.csv", b"1,2,3\n")
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        after_processing="move",
+        move_to_prefix=processed_prefix,
+        additional_settings={"processing_threads_num": 1},
+    )
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {PAUSE_BEFORE_POST_PROCESS_FAILPOINT}")
+    try:
+        create_mv(node, table_name, f"{table_name}_dst")
+        wait_failpoint_paused(node, PAUSE_BEFORE_POST_PROCESS_FAILPOINT)
+        node.query(
+            f"ALTER TABLE {table_name} MODIFY SETTING after_processing = 'keep', after_processing_move_prefix = ''"
+        )
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {PAUSE_BEFORE_POST_PROCESS_FAILPOINT}")
+
+    # The file was read for `move`, so its batch still moves it to the original prefix and ingests it once.
+    wait_until(
+        lambda: move_counts(
+            started_cluster, "S3Queue", None, files_path, processed_prefix
+        )
+        == (1, 0),
+        timeout=90,
+    )
+    assert (
+        node.query(f"SELECT column1, column2, column3 FROM {table_name}_dst ORDER BY ALL")
+        == "1\t2\t3\n"
     )
 
 
