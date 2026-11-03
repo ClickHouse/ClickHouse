@@ -18,10 +18,12 @@
 
     A read from a temporary table is shipped, and the replica cannot access it (DATABASE_ACCESS_DENIED)
 00542_access_to_temporary_table_in_readonly_mode
+02525_different_engines_in_temporary_tables
 02766_prql
 02995_bad_formatting_union_intersect
 03045_unknown_identifier_alias_substitution
 03143_cte_scope
+03156_nullable_number_tips
 
     A query that is not distributed keeps a split aggregation and a `ParallelReplicasSplit` step
     https://github.com/ClickHouse/ClickHouse/issues/128539
@@ -128,8 +130,10 @@
 
     The test asserts read counters, ProfileEvents or query_log, which differ when the work is split differently
 01045_order_by_pk_special_storages
+01283_max_threads_simple_query_optimization
 01508_partition_pruning_long_1
 01508_partition_pruning_long_2
+01913_exact_rows_before_limit
 02151_hash_table_sizes_stats
 02465_limit_trivial_max_rows_to_read
 02784_parallel_replicas_automatic_decision_join
