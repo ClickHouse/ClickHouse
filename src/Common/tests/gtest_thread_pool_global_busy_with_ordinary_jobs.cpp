@@ -486,6 +486,95 @@ TEST(ThreadPool, SlotOfEvictedIdleWorkerIsVisibleAtOnce)
     EXPECT_EQ(jobs_ran, num_other_pools - rejected);
 }
 
+/// An idle worker that is woken for a job of its own pool gives its slot back. That must be consistent with a
+/// concurrent scheduling call that finds no slot and tries to take one back from an idle worker: if the worker
+/// is no longer in the list of idle workers, its slot must already be visible. Otherwise the scheduling call
+/// is rejected, which is fatal for the mandatory spawn of an `AsyncLoader` worker, although the woken worker is
+/// about to free its thread of the global pool. The race window is small, so it is tried many times.
+TEST(ThreadPool, WokenIdleWorkerGivesBackItsSlotBeforeLeavingTheList)
+{
+    GlobalThreadPool & global_pool = GlobalThreadPool::instance();
+
+    static constexpr size_t capacity = 2;
+    static constexpr size_t iterations = 300;
+
+    SCOPE_EXIT({
+        global_pool.setMaxThreads(10000);
+        global_pool.setMaxFreeThreads(1000);
+        global_pool.setQueueSize(10000);
+    });
+
+    global_pool.setMaxThreads(capacity);
+    global_pool.setMaxFreeThreads(0);
+    global_pool.setQueueSize(1000);
+    global_pool.wait();
+
+    size_t rejected = 0;
+    size_t jobs_ran = 0;
+    for (size_t iteration = 0; iteration < iterations; ++iteration)
+    {
+        /// The threads of the previous iteration give their slots back.
+        global_pool.wait();
+
+        /// Its worker runs a finite job, then stays idle and takes one of the two slots.
+        ThreadPool pool_with_free_threads(
+            CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled,
+            /* max_threads = */ 1, /* max_free_threads = */ 1, /* queue_size = */ 0);
+        pool_with_free_threads.scheduleOrThrowOnError([] {});
+        pool_with_free_threads.wait();
+
+        /// Takes the other thread of the global pool and the last slot.
+        std::atomic<bool> long_lived_started = false;
+        std::atomic<bool> release_long_lived = false;
+        ThreadFromGlobalPool long_lived_thread(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [&]
+        {
+            long_lived_started = true;
+            while (!release_long_lived.load())
+            {
+            }
+        });
+        while (!long_lived_started)
+            ;
+
+        /// One thread wakes the idle worker with a job of its pool, while this thread schedules a worker that
+        /// takes no slot into another pool.
+        std::atomic<bool> go = false;
+        std::thread waker([&]
+        {
+            while (!go.load())
+            {
+            }
+            pool_with_free_threads.scheduleOrThrowOnError([] {});
+        });
+
+        std::atomic<size_t> other_job_ran = 0;
+        ThreadPool other_pool(
+            CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled,
+            /* max_threads = */ 1, /* max_free_threads = */ 0, /* queue_size = */ 0);
+        go = true;
+        try
+        {
+            other_pool.scheduleOrThrowOnError([&] { ++other_job_ran; });
+        }
+        catch (const DB::Exception &)
+        {
+            ++rejected;
+        }
+
+        waker.join();
+        pool_with_free_threads.wait();
+        const bool finished_in_time = other_pool.waitUntil(std::chrono::steady_clock::now() + std::chrono::seconds(60));
+        release_long_lived = true;
+        long_lived_thread.join();
+        other_pool.wait();
+        EXPECT_TRUE(finished_in_time);
+        jobs_ran += other_job_ran;
+    }
+
+    EXPECT_EQ(rejected, 0) << "a worker that takes no slot must not be rejected while an idle worker gives its slot back";
+    EXPECT_EQ(jobs_ran, iterations - rejected);
+}
+
 /// A worker of a local pool that finishes its job while a job waits in the queue of the global pool must not
 /// go idle and keep its thread of the global pool: the queued job may be needed by the thread that scheduled
 /// it, which counted on a thread that holds no slot to free up. Here the outer thread schedules the worker of

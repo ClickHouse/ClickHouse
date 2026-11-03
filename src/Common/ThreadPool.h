@@ -49,10 +49,11 @@ using GlobalThreadType = std::thread;
 
 /// An idle worker of a local pool that holds a slot of the global pool while it is idle (see
 /// `ThreadFromThreadPool::global_slots_for_idle`). While it waits, it is linked into a process-wide list,
-/// so that the global pool can take the slot back when a thread needs it: the worker is woken, gives the
-/// slot back (or it is handed over to the new thread), and leaves its pool, which frees
-/// its thread of the global pool. The slot is given back to the counter by the code that evicts the worker,
-/// right when it does so, so that the next scheduling call sees it even before the worker wakes up.
+/// so that the global pool can take the slot back when a thread needs it: the worker is woken and leaves
+/// its pool, which frees its thread of the global pool. The slot is given back to the counter by the code
+/// that evicts the worker, right when it does so, so that the next scheduling call sees it even before the
+/// worker wakes up. A worker that is woken for a job of its pool gives its slot back itself, before it
+/// unlocks the mutex of the list.
 /// All the fields are protected by the mutex of that list.
 struct IdleGlobalSlotHolder
 {
