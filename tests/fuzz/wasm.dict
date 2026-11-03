@@ -1,0 +1,122 @@
+# WASM magic number and version
+# magic
+"\x00asm"
+# version 1
+"\x01\x00\x00\x00"
+
+# Section IDs
+# type section
+"\x01"
+# import section
+"\x02"
+# function section
+"\x03"
+# table section
+"\x04"
+# memory section
+"\x05"
+# global section
+"\x06"
+# export section
+"\x07"
+# start section
+"\x08"
+# element section
+"\x09"
+# code section
+"\x0A"
+# data section
+"\x0B"
+# data count section
+"\x0C"
+
+# Common opcodes
+# unreachable
+"\x00"
+# nop
+"\x01"
+# block
+"\x02"
+# loop
+"\x03"
+# if
+"\x04"
+# else
+"\x05"
+# end
+"\x0B"
+# br
+"\x0C"
+# br_if
+"\x0D"
+# return
+"\x0F"
+# call
+"\x10"
+# call_indirect
+"\x11"
+# drop
+"\x1A"
+# select
+"\x1B"
+# local.get
+"\x20"
+# local.set
+"\x21"
+# local.tee
+"\x22"
+# global.get
+"\x23"
+# global.set
+"\x24"
+# i32.load
+"\x28"
+# i64.load
+"\x29"
+# i32.store
+"\x36"
+# i64.store
+"\x37"
+# memory.size
+"\x3F"
+# memory.grow
+"\x40"
+# i32.const
+"\x41"
+# i64.const
+"\x42"
+# f32.const
+"\x43"
+# f64.const
+"\x44"
+# i32.eqz
+"\x45"
+# i32.eq
+"\x46"
+# i32.add
+"\x6A"
+# i32.sub
+"\x6B"
+# i32.mul
+"\x6C"
+# i32.div_s
+"\x6D"
+
+# Value types
+# i32
+"\x7F"
+# i64
+"\x7E"
+# f32
+"\x7D"
+# f64
+"\x7C"
+# funcref
+"\x70"
+
+# LEB128 small integers
+"\x00"
+"\x01"
+"\x02"
+# -1 as signed LEB128
+"\x7F"

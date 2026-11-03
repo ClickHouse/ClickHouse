@@ -77,7 +77,7 @@ struct PartProperties
     /// source parts, so merging existing `Wide` parts keeps the result `Wide`. Unknown when not filled.
     const MergeTreeDataPartType part_type = {};
 
-    /// How old this data part in seconds.
+    /// How old this data part in seconds. Negative if the part was modified after the time it is measured against.
     const time_t age = 0;
 
     /// Number of rows in part.

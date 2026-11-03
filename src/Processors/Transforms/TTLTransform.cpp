@@ -209,12 +209,13 @@ TTLTransform::TTLTransform(
         algorithms.emplace_back(std::move(algorithm));
     }
 
+    /// `consume` adds the expired columns to the block before the algorithms run.
     for (const auto & group_by_ttl : metadata_snapshot_->getGroupByTTLs())
     {
         auto algorithm = std::make_unique<TTLAggregationAlgorithm>(
             getExpressions(group_by_ttl, subqueries_for_sets, context), group_by_ttl,
             old_ttl_infos.group_by_ttl[group_by_ttl.result_column], current_time_, force_,
-            getInputPort().getHeader(), storage_, metadata_snapshot_);
+            getOutputPort().getHeader(), storage_, metadata_snapshot_);
 
         /// The rows-TTL bounds are collected before GROUP BY TTL rewrites the block. Once the
         /// aggregation can run, they no longer necessarily describe the rows written to the part.
