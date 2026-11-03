@@ -171,3 +171,22 @@ SELECT centroidCartesian(CAST([(3., 7.)], 'MultiPoint'));
 SELECT 'centroidCartesian empty MultiPoint (degenerate)';
 SELECT centroidCartesian(CAST([], 'MultiPoint'));
 
+SELECT 'centroidCartesian Polygon with off-center hole of the same winding as the outer ring';
+SELECT centroidCartesian([[(0., 0.), (0., 10.), (10., 10.), (10., 0.), (0., 0.)], [(1., 1.), (1., 3.), (3., 3.), (3., 1.), (1., 1.)]]);
+SELECT centroidCartesian(readWKT('POLYGON((0 0, 0 10, 10 10, 10 0, 0 0), (1 1, 1 3, 3 3, 3 1, 1 1))'));
+
+SELECT 'centroidCartesian Polygon with unclosed hole';
+SELECT centroidCartesian([[(0., 0.), (0., 10.), (10., 10.), (10., 0.), (0., 0.)], [(1., 1.), (3., 1.), (3., 3.), (1., 3.)]]);
+
+SELECT 'centroidCartesian MultiPolygon with mixed winding';
+SELECT centroidCartesian([[[(0., 0.), (0., 2.), (2., 2.), (2., 0.), (0., 0.)]], [[(4., 4.), (6., 4.), (6., 6.), (4., 6.), (4., 4.)]]]);
+SELECT centroidCartesian(readWKT('MULTIPOLYGON(((0 0, 0 2, 2 2, 2 0, 0 0)), ((4 4, 6 4, 6 6, 4 6, 4 4)))'));
+
+-- A block with more rows than member geometries: an empty row must not shift or drop the following rows.
+SELECT 'MultiLineString empty row followed by nonempty rows';
+SELECT g, centroidCartesian(g), boundingBoxCartesian(g), boundingBoxSpherical(g)
+FROM (SELECT CAST(arrayJoin([[], [[(10., 10.), (12., 12.)]]]), 'MultiLineString') AS g);
+
+SELECT 'MultiPolygon empty row followed by nonempty rows';
+SELECT g, centroidCartesian(g), boundingBoxCartesian(g), boundingBoxSpherical(g), polygonAreaCartesian(g)
+FROM (SELECT CAST(arrayJoin([[], [[[(0., 0.), (0., 4.), (4., 4.), (4., 0.), (0., 0.)]]]]), 'MultiPolygon') AS g);

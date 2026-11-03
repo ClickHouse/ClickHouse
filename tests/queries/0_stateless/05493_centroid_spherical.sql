@@ -52,3 +52,20 @@ SELECT round(centroidSpherical(CAST([(0., 10.), (0., 20.), (0., 30.)], 'MultiPoi
 
 SELECT 'centroidSpherical empty MultiPoint (degenerate)';
 SELECT round(centroidSpherical(CAST([], 'MultiPoint')).1, 6), round(centroidSpherical(CAST([], 'MultiPoint')).2, 6);
+
+SELECT 'centroidSpherical Polygon with off-center hole, hole wound like the outer ring and reversed, and unclosed';
+SELECT round(c.1, 6), round(c.2, 6) FROM (SELECT centroidSpherical([[(0., 0.), (0., 10.), (10., 10.), (10., 0.), (0., 0.)], [(1., 1.), (1., 3.), (3., 3.), (3., 1.), (1., 1.)]]) AS c);
+SELECT round(c.1, 6), round(c.2, 6) FROM (SELECT centroidSpherical([[(0., 0.), (0., 10.), (10., 10.), (10., 0.), (0., 0.)], [(1., 1.), (3., 1.), (3., 3.), (1., 3.), (1., 1.)]]) AS c);
+SELECT round(c.1, 6), round(c.2, 6) FROM (SELECT centroidSpherical([[(0., 0.), (0., 10.), (10., 10.), (10., 0.), (0., 0.)], [(1., 1.), (3., 1.), (3., 3.), (1., 3.)]]) AS c);
+
+SELECT 'centroidSpherical MultiPolygon with mixed winding';
+SELECT round(c.1, 6), round(c.2, 6) FROM (SELECT centroidSpherical([[[(0., 0.), (0., 2.), (2., 2.), (2., 0.), (0., 0.)]], [[(4., 4.), (6., 4.), (6., 6.), (4., 6.), (4., 4.)]]]) AS c);
+
+-- A block with more rows than member geometries: an empty row must not shift or drop the following rows.
+SELECT 'centroidSpherical MultiLineString empty row followed by nonempty rows';
+SELECT g, round(c.1, 6), round(c.2, 6)
+FROM (SELECT g, centroidSpherical(g) AS c FROM (SELECT CAST(arrayJoin([[], [[(10., 10.), (12., 12.)]]]), 'MultiLineString') AS g));
+
+SELECT 'centroidSpherical MultiPolygon empty row followed by nonempty rows';
+SELECT g, round(c.1, 6), round(c.2, 6)
+FROM (SELECT g, centroidSpherical(g) AS c FROM (SELECT CAST(arrayJoin([[], [[[(0., 0.), (0., 4.), (4., 4.), (4., 0.), (0., 0.)]]]]), 'MultiPolygon') AS g));

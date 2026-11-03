@@ -315,9 +315,13 @@ public:
 private:
     /// Compute Cartesian centroid with fallback for degenerate geometries
     /// (empty, zero-area) where boost::geometry::centroid throws centroid_exception.
+    /// `boost::geometry::centroid` adds up signed ring areas, while `Polygon` tells holes apart only by their
+    /// position, so the winding and closure of areal geometries are normalized with `boost::geometry::correct` first
+    /// (it does nothing for points and linestrings).
     template <typename Geom>
-    static Point computeCartesianCentroid(const Geom & geom)
+    static Point computeCartesianCentroid(Geom & geom)
     {
+        boost::geometry::correct(geom);
         Point centroid{};
         try
         {
