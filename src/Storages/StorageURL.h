@@ -115,6 +115,8 @@ protected:
     String http_method; /// For insert can choose Put instead of default Post.
     ASTPtr partition_by;
     bool distributed_processing;
+    /// The `url` table function checks `READ ON URL` for the requested URL only, so its reads check every redirect target too.
+    bool check_redirect_access = false;
     bool supports_prewhere = false;
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
     NamesAndTypesList file_columns;
@@ -241,7 +243,8 @@ public:
         const URIParams & params = {},
         bool glob_url = false,
         bool need_only_count_ = false,
-        StorageID storage_id_ = StorageID::createEmpty());
+        StorageID storage_id_ = StorageID::createEmpty(),
+        ReadWriteBufferFromHTTP::RedirectCallback redirect_callback_ = nullptr);
 
     ~StorageURLSource() override;
 
@@ -271,6 +274,7 @@ public:
         const HTTPHeaderEntries & headers,
         bool glob_url,
         bool delay_initialization,
+        ReadWriteBufferFromHTTP::RedirectCallback redirect_callback,
         ReadWriteBufferFromHTTP::CancellationPtr cancellation = nullptr);
 
 private:
@@ -394,7 +398,8 @@ public:
         const String & method_ = "",
         ASTPtr partition_by_ = nullptr,
         bool distributed_processing_ = false,
-        bool is_replayed_definition_ = false);
+        bool is_replayed_definition_ = false,
+        bool check_redirect_access_ = false);
 
     String getName() const override
     {

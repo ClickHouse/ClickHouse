@@ -424,7 +424,9 @@ StoragePtr TableFunctionURL::getStorage(
         configuration.headers,
         configuration.http_method,
         nullptr,
-        /*distributed_processing=*/false);
+        /*distributed_processing=*/ false,
+        /*is_replayed_definition=*/ false,
+        /*check_redirect_access=*/ true);
 }
 
 ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context, bool is_insert_query) const

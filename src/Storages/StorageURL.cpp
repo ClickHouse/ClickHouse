@@ -16,6 +16,7 @@
 #include <Interpreters/Context.h>
 #include <Access/Common/AccessType.h>
 #include <Access/Common/AccessFlags.h>
+#include <Access/ContextAccess.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -158,6 +159,17 @@ static const std::unordered_set<std::string_view> optional_configuration_keys = 
 
 namespace
 {
+    /// `READ ON URL` is checked for the requested URL, and a redirect must not lead outside of the grant.
+    ReadWriteBufferFromHTTP::RedirectCallback makeRedirectAccessCheck(const ContextPtr & context)
+    {
+        return [access = context->getAccess()](const Poco::URI &, const Poco::URI & redirect_uri)
+        {
+            Poco::URI normalized_uri = redirect_uri;
+            normalized_uri.normalize();
+            access->checkAccessWithFilter(AccessType::READ, toStringSource(AccessTypeObjects::Source::URL), normalized_uri.toString());
+        };
+    }
+
     void checkExperimentalURLWildcardFromIndexPages(const ContextPtr & context)
     {
         if (context->getSettingsRef()[Setting::allow_url_wildcard_from_index_pages])
@@ -605,7 +617,8 @@ StorageURLSource::StorageURLSource(
     const URIParams & params,
     bool glob_url,
     bool need_only_count_,
-    StorageID storage_id_)
+    StorageID storage_id_,
+    ReadWriteBufferFromHTTP::RedirectCallback redirect_callback_)
     : ISource(std::make_shared<const Block>(info.source_header), false)
     , WithContext(context_)
     , name(std::move(name_))
@@ -671,6 +684,7 @@ StorageURLSource::StorageURLSource(
                     headers,
                     glob_url,
                     current_uri_options.size() == 1,
+                    redirect_callback_,
                     cancellation);
 
                 /// A hard teardown of the pipeline noticed between the failover options returns no
@@ -1194,6 +1208,7 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
     const HTTPHeaderEntries & headers,
     bool glob_url,
     bool delay_initialization,
+    ReadWriteBufferFromHTTP::RedirectCallback redirect_callback,
     ReadWriteBufferFromHTTP::CancellationPtr cancellation)
 {
     String first_exception_message;
@@ -1279,6 +1294,7 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
                            .withHostFilter(&context_->getRemoteHostFilter())
                            .withBufSize(settings[Setting::max_read_buffer_size])
                            .withRedirects(settings[Setting::max_http_get_redirects])
+                           .withRedirectCallback(redirect_callback)
                            .withEnableUrlEncoding(settings[Setting::enable_url_encoding])
                            .withOutCallback(callback)
                            .withSkipNotFound(skip_url_not_found_error)
@@ -1655,7 +1671,8 @@ namespace
                     credentials,
                     headers,
                     false,
-                    false);
+                    false,
+                    makeRedirectAccessCheck(getContext()));
 
                 ++current_index;
             } while (getContext()->getSettingsRef()[Setting::engine_url_skip_empty_files] && uri_and_buf.second->eof());
@@ -1717,7 +1734,8 @@ namespace
                 credentials,
                 headers,
                 false,
-                false);
+                false,
+                makeRedirectAccessCheck(getContext()));
 
             return wrapReadBufferWithCompressionMethod(
                 std::move(uri_and_buf.second), compression_method, static_cast<int>(getContext()->getSettingsRef()[Setting::zstd_window_log_max]),
@@ -2216,7 +2234,8 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
             read_uri_params,
             is_url_with_globs,
             need_only_count,
-            storage->getStorageID());
+            storage->getStorageID(),
+            storage->check_redirect_access ? makeRedirectAccessCheck(context) : nullptr);
 
         pipes.emplace_back(std::move(source));
     }
@@ -2368,6 +2387,7 @@ std::optional<time_t> IStorageURLBase::tryGetLastModificationTime(
                    .withHostFilter(&context->getRemoteHostFilter())
                    .withBufSize(settings[Setting::max_read_buffer_size])
                    .withRedirects(settings[Setting::max_http_get_redirects])
+                   .withRedirectCallback(makeRedirectAccessCheck(context))
                    .withHeaders(headers)
                    .create(credentials);
 
@@ -2388,7 +2408,8 @@ StorageURL::StorageURL(
     const String & http_method_,
     ASTPtr partition_by_,
     bool distributed_processing_,
-    bool is_replayed_definition_)
+    bool is_replayed_definition_,
+    bool check_redirect_access_)
     : IStorageURLBase(
         uri_,
         context_,
@@ -2405,6 +2426,7 @@ StorageURL::StorageURL(
         distributed_processing_)
     , is_replayed_definition(is_replayed_definition_)
 {
+    check_redirect_access = check_redirect_access_;
     context_->getRemoteHostFilter().checkURL(Poco::URI(uri));
     context_->getHTTPHeaderFilter().checkHeaders(headers);
 }
