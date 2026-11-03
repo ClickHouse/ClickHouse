@@ -245,9 +245,11 @@ private:
         /// new election, all between the read above and the removal. So when Keeper supports it, the removal is
         /// fenced atomically on the creation zxid and the owner session of the node, which identify the election
         /// term. Without `CHECK_STAT` (plain ZooKeeper) only the version check remains.
-        Coordination::Error code;
-        if (zookeeper->isFeatureEnabled(KeeperFeatureFlag::CHECK_STAT))
+        const auto code = [&]
         {
+            if (!zookeeper->isFeatureEnabled(KeeperFeatureFlag::CHECK_STAT))
+                return zookeeper->tryRemove(entry.path, stat.version);
+
             Coordination::Stat stat_to_check{-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1};
             stat_to_check.czxid = entry.czxid;
             stat_to_check.ephemeralOwner = entry.session_id;
@@ -258,12 +260,8 @@ private:
             Coordination::Responses responses;
             /// A failed check (`ZBADVERSION`) leaves the entry pending: the next attempt reads the node again and
             /// sees that it belongs to another election.
-            code = zookeeper->tryMulti(ops, responses);
-        }
-        else
-        {
-            code = zookeeper->tryRemove(entry.path, stat.version);
-        }
+            return zookeeper->tryMulti(ops, responses);
+        }();
 
         if (code == Coordination::Error::ZOK || code == Coordination::Error::ZNONODE)
         {
