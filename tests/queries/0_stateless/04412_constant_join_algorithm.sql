@@ -1,4 +1,3 @@
-SET enable_analyzer = 1; -- 1 = 1 join condition causes troubles for old analyzer
 
 DROP TABLE IF EXISTS constant_join_algorithm_t1;
 DROP TABLE IF EXISTS constant_join_algorithm_t2;

@@ -15,25 +15,49 @@ doc_type: 'مرجع'
 | ------- | ------- | -------------- |
 | ✗       | ✔       |                |
 
-<div id="description">
-  ## الوصف
-</div>
+## الوصف {#description}
 
-يختلف عن [`JSONEachRow`](/ar/reference/formats/JSON/JSONEachRow)/[`JSONStringsEachRow`](/ar/reference/formats/JSON/JSONStringsEachRow) في أن ClickHouse يُخرج أيضًا معلومات التقدّم على شكل قيم JSON.
+يختلف عن [`JSONEachRow`](/ar/reference/formats/JSON/JSONEachRow)/[`JSONStringsEachRow`](/ar/reference/formats/JSON/JSONStringsEachRow) في أن ClickHouse يبثّ كل حدث على شكل كائن JSON منفصل، ويُخرج أيضًا معلومات التقدّم.
 
-<div id="example-usage">
-  ## مثال على الاستخدام
-</div>
+تستخدم الصيغة المرتبطة `JSONStringsEachRowWithProgress` أنواع الكائنات نفسها في المستوى الأعلى، غير أن قيم الحقول تُسلسَل فيها على شكل string.
+
+تشترك الصيغتان المضغوطتان المناظرتان `JSONCompactEachRowWithProgress` و`JSONCompactStringsEachRowWithProgress` في أنواع كائنات الدفق نفسها، وفي التنبيهات نفسها المتعلقة بالتقدّم و`LIMIT` والاستثناءات، إلا أن حمولات `row` / `totals` / `min` / `max` فيهما تكون مصفوفات من القيم بدلًا من كائنات ذات حقول مسمّاة.
+
+## كائنات الدفق {#stream-objects}
+
+كل سطر في الاستجابة هو كائن JSON مستقل. وينبغي للعملاء توجيه المعالجة بحسب المفتاح في المستوى الأعلى:
+
+| المفتاح في المستوى الأعلى    | متى يظهر                                                                          | الشكل                                                                                                                |
+| ---------------------------- | --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `meta`                       | مرة واحدة، قبل أول `row` (قد يُرسَل كائن `progress` قبله)                         | `{"meta":[{"name":...,"type":...}, ...]}` — أسماء الأعمدة وأنواعها                                                   |
+| `row`                        | مرة واحدة لكل صف في النتيجة                                                       | `{"row":{...}}` — قيم الأعمدة في ذلك الصف                                                                            |
+| `progress`                   | دوريًا أثناء تنفيذ الاستعلام                                                      | `{"progress":{...}}` — عدّادات مثل `read_rows` و`read_bytes` و`total_rows_to_read`                                   |
+| `totals`                     | عند وجود إجماليات                                                                 | `{"totals":{...}}` — قيم صف الإجماليات                                                                               |
+| `min` / `max`                | عند وجود قيم قصوى                                                                 | `{"min":{...}}` / `{"max":{...}}` — قيم صفَّي القيم القصوى                                                           |
+| `rows_before_limit_at_least` | عندما يحتوي الاستعلام على `LIMIT`                                                 | `{"rows_before_limit_at_least":N}` — تقدير أدنى لعدد الصفوف التي كانت ستُعاد لولا `LIMIT` (وليس دليلًا على حذف صفوف) |
+| `rows_before_aggregation`    | عندما يُجري الاستعلام عملية تجميع ويكون العدّاد `rows_before_aggregation` مفعّلًا | `{"rows_before_aggregation":N}`                                                                                      |
+| `exception`                  | عند فشل الاستعلام، على مسار HTTP مع `http_write_exception_in_output_format=1`     | `{"exception":"..."}` — نص الخطأ بوصفه **string في المستوى الأعلى**، وليس متداخلًا ضمن `row`                         |
+
+يُرسَل الكائن `rows_before_limit_at_least` متى احتوى الاستعلام على `LIMIT`، حتى لو لم يؤدِّ الحد إلى حذف أي صفوف. فهو تقدير أدنى لعدد الصفوف التي كانت ستُعاد لولا `LIMIT` (بالمعنى نفسه المعتمد في `JSON`)؛ لذا يجب ألا يعامله العملاء على أنه دليل على حذف صفوف.
+
+يُرسَل `meta` مرة واحدة قبل أول `row`، غير أن كائن `progress` قد يصل قبل `meta`. ولا يُرسَل الكائن `exception` في المستوى الأعلى على مسار HTTP إلا عند ضبط `http_write_exception_in_output_format=1`؛ وإلا فيظهر الخطأ عبر طبقة النقل. وعند إرساله، يكون كائنًا مستقلًا في المستوى الأعلى، لا متداخلًا ضمن `row`.
+
+## مثال على الاستخدام {#example-usage}
 
 ```json
+{"meta":[{"name":"num","type":"UInt8"},{"name":"str","type":"String"},{"name":"arr","type":"Array(UInt8)"}]}
 {"row":{"num":42,"str":"hello","arr":[0,1]}}
 {"row":{"num":43,"str":"hello","arr":[0,1,2]}}
 {"row":{"num":44,"str":"hello","arr":[0,1,2,3]}}
 {"progress":{"read_rows":"3","read_bytes":"24","written_rows":"0","written_bytes":"0","total_rows_to_read":"3"}}
 ```
 
-<div id="format-settings">
-  ## إعدادات التنسيق
-</div>
+قد يُرسَل كائن `progress` مع ذلك قبل `meta`. وعلى مسار HTTP، عند ضبط `http_write_exception_in_output_format=1`، ينتهي الاستعلام الفاشل بكائن مستقل في المستوى الأعلى (غير متداخل ضمن `row`):
+
+```json
+{"exception":"Code: 62. DB::Exception: Syntax error: failed at position 1 (SELECT) (line 1, col 1): ..."}
+```
+
+## إعدادات التنسيق {#format-settings}
 
 {/*AUTOGENERATED_END*/}

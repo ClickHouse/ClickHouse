@@ -1,5 +1,3 @@
--- Tags: no-parallel-replicas
--- Tag no-parallel-replicas: the replicas resolve the unqualified dictionary of `assignCentroid` in `default`, https://github.com/ClickHouse/ClickHouse/issues/123993
 -- Tests for `assignCentroid`, which routes a vector to its nearest (L2) centroid for a SQL-side IVF index.
 
 

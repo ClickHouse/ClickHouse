@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t_dot_col_leak;
 CREATE TABLE t_dot_col_leak (id Int) ENGINE = Memory;
