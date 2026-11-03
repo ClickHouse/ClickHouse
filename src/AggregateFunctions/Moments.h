@@ -12,6 +12,7 @@
 #include <Common/TargetSpecific.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <base/sanitizer_defs.h>
+#include <Common/NaNUtils.h>
 
 namespace DB
 {
@@ -187,16 +188,18 @@ struct VarMoments
             return std::numeric_limits<T>::quiet_NaN();
 
         /// Due to numerical errors, the result can be slightly less than zero,
-        /// but it should be impossible. Trim to zero.
-
-        return std::max(T{}, (m[2] - m[1] * m[1] / m[0]) / m[0]);
+        /// but it should be impossible. Trim to zero. A NaN (from a NaN or an infinity in the data) is kept:
+        /// `std::max` would turn it into zero.
+        T result = (m[2] - m[1] * m[1] / m[0]) / m[0];
+        return isNaN(result) ? result : std::max(T{}, result);
     }
 
     T getSample() const
     {
         if (m[0] <= 1)
             return std::numeric_limits<T>::quiet_NaN();
-        return std::max(T{}, (m[2] - m[1] * m[1] / m[0]) / (m[0] - 1));
+        T result = (m[2] - m[1] * m[1] / m[0]) / (m[0] - 1);
+        return isNaN(result) ? result : std::max(T{}, result);
     }
 
     T getMoment3() const
