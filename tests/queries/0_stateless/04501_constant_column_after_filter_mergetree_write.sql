@@ -64,3 +64,8 @@ WHERE database = currentDatabase()
 
 DROP TABLE constant_column_after_filter_write;
 DROP TABLE constant_column_after_filter_projection_write;
+
+DROP TABLE IF EXISTS t_proj_const_tuple;
+CREATE TABLE t_proj_const_tuple (k UInt64, t Tuple(a UInt64, b UInt64), PROJECTION p (SELECT t ORDER BY k)) ENGINE = MergeTree ORDER BY k;
+INSERT INTO t_proj_const_tuple SELECT number, (1, 2) FROM numbers(5) WHERE t = (1, 2);
+DROP TABLE t_proj_const_tuple;
