@@ -46,7 +46,7 @@ pq.write_table(table, sys.argv[1] + "_pa.parquet", column_encoding={c: e for c, 
                use_dictionary=False, write_page_index=False, data_page_version="1.0", compression="none")
 PYEOF
 
-S="SETTINGS input_format_parquet_max_block_size = 100, input_format_parquet_prefer_block_bytes = 0, use_query_condition_cache = 0"
+S="SETTINGS input_format_parquet_max_block_size = 100, input_format_parquet_prefer_block_bytes = 0, use_query_condition_cache = 0, use_columns_cache = 0"
 STRUCTURE="x UInt8, b Bool, dbp64 Int64, dbp32 Int32, dbp16 Int16, dbaf FixedString(8), bssf Float64, bssi Int32, ps String, dlba String, dba String, g_plain Point, g_dlba Point, g_dba Point"
 
 for c in b dbp64 dbp32 dbp16 dbaf bssf bssi ps dlba dba g_plain g_dlba g_dba; do
