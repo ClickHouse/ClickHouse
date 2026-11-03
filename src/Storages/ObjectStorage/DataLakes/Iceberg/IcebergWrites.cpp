@@ -737,6 +737,9 @@ void generateManifestFile(
                         break;
                 }
 
+                if (isBool(removeNullable(partition_types[i])))
+                    return avro::GenericDatum(applyVisitor(FieldVisitorConvertToNumber<UInt64>(), partition_values[i]) != 0);
+
                 switch (partition_values[i].getType())
                 {
                     case Field::Types::Int64:
