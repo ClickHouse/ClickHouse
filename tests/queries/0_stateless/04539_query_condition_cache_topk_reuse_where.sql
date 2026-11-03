@@ -14,7 +14,6 @@
 -- genuine read-side reuse from a query that simply fails to write a new entry, so it stays
 -- green even if the `topk_reuse_predicate_only_hash` lookup is removed.
 
-SET allow_experimental_analyzer = 1;
 SET use_query_condition_cache = 1;
 SET use_top_k_dynamic_filtering = 1;
 SET use_skip_indexes_for_top_k = 1;

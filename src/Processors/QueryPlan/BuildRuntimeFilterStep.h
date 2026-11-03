@@ -74,6 +74,11 @@ public:
 
     void describeActions(FormatSettings & settings) const override;
 
+    /// The step passes its input through and reads its key, which it finds by name, so the name has to be there once.
+    bool canRemoveUnusedColumns() const override;
+    UnneededInputPositions getUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const override;
+    RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & unneeded_output_positions, const std::vector<PrunedInput> & inputs) override;
+
 private:
     void updateOutputHeader() override;
     void transformPipelineForTransport(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings);
