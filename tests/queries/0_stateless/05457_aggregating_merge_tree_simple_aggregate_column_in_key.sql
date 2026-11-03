@@ -13,6 +13,9 @@ DROP TABLE IF EXISTS t_plain;
 DROP TABLE IF EXISTS t_tuple_other_element;
 DROP TABLE IF EXISTS t_tuple_alter;
 DROP TABLE IF EXISTS t_tuple_default;
+DROP TABLE IF EXISTS t_in_sorting_key_subcolumn;
+DROP TABLE IF EXISTS t_in_sorting_key_element;
+DROP TABLE IF EXISTS t_in_sorting_key_element_subcolumn;
 
 CREATE TABLE t_sorting (c0 SimpleAggregateFunction(sum, Int64)) ENGINE = AggregatingMergeTree ORDER BY intDiv(c0, 55); -- { serverError BAD_ARGUMENTS }
 CREATE TABLE t_partition (k UInt8, c0 SimpleAggregateFunction(sum, Int64)) ENGINE = AggregatingMergeTree PARTITION BY c0 % 2 ORDER BY k; -- { serverError BAD_ARGUMENTS }
@@ -73,6 +76,24 @@ INSERT INTO t_in_sorting_key VALUES (1, 1), (1, 1), (1, 2);
 OPTIMIZE TABLE t_in_sorting_key FINAL;
 SELECT 'in sorting key', k, c0 FROM t_in_sorting_key ORDER BY ALL;
 
+-- So is a subcolumn of such a column, and with `allow_tuple_element_aggregation` an element of a tuple that is a column of the
+-- sorting key, read by name, by position or through a subcolumn of it. Another element of the tuple is still aggregated.
+SET allow_suspicious_primary_key = 1;
+CREATE TABLE t_in_sorting_key_subcolumn (a SimpleAggregateFunction(groupArrayArray, Array(UInt64))) ENGINE = AggregatingMergeTree
+PARTITION BY a.size0 ORDER BY a;
+CREATE TABLE t_in_sorting_key_element (x Tuple(a SimpleAggregateFunction(sum, UInt64), b SimpleAggregateFunction(sum, UInt64)))
+ENGINE = AggregatingMergeTree PARTITION BY (tupleElement(x, 'a') % 2, tupleElement(x, 1) % 3) ORDER BY x.a
+SETTINGS allow_tuple_element_aggregation = 1;
+INSERT INTO t_in_sorting_key_element VALUES ((1, 10));
+INSERT INTO t_in_sorting_key_element VALUES ((1, 20));
+OPTIMIZE TABLE t_in_sorting_key_element FINAL;
+SELECT 'in sorting key element', _partition_id, x FROM t_in_sorting_key_element;
+CREATE TABLE t_in_sorting_key_element_subcolumn (x Tuple(a SimpleAggregateFunction(groupArrayArray, Array(UInt64)), b SimpleAggregateFunction(sum, UInt64)))
+ENGINE = AggregatingMergeTree PARTITION BY x.a.size0 ORDER BY x.a SETTINGS allow_tuple_element_aggregation = 1;
+CREATE TABLE t_other_element (x Tuple(a SimpleAggregateFunction(sum, UInt64), b UInt64)) ENGINE = AggregatingMergeTree
+PARTITION BY tupleElement(x, 'a') % 2 ORDER BY x.b SETTINGS allow_tuple_element_aggregation = 1; -- { serverError BAD_ARGUMENTS }
+SET allow_suspicious_primary_key = 0;
+
 -- A plain MergeTree does not aggregate the column, so the key is fine there.
 CREATE TABLE t_plain (c0 SimpleAggregateFunction(sum, Int64)) ENGINE = MergeTree ORDER BY intDiv(c0, 55);
 SELECT 'plain created';
@@ -85,3 +106,6 @@ DROP TABLE t_plain;
 DROP TABLE t_tuple_other_element;
 DROP TABLE t_tuple_alter;
 DROP TABLE t_tuple_default;
+DROP TABLE t_in_sorting_key_subcolumn;
+DROP TABLE t_in_sorting_key_element;
+DROP TABLE t_in_sorting_key_element_subcolumn;

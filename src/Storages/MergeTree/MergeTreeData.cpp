@@ -2479,12 +2479,37 @@ static bool isAggregatedType(const DataTypePtr & type, bool allow_tuple_element_
 
 using ActionsDAGParents = std::unordered_map<const ActionsDAG::Node *, std::vector<const ActionsDAG::Node *>>;
 
+/// The name of the element of `tuple` that the second argument `element` of `tupleElement` names, by name or by position, or
+/// std::nullopt if it is not known.
+static std::optional<String> tryGetTupleElementName(const DataTypeTuple & tuple, const ActionsDAG::Node & element)
+{
+    const auto * column = typeid_cast<const ColumnConst *>(element.column.get());
+    if (!column)
+        return std::nullopt;
+    const Field field = column->getField();
+    if (field.getType() == Field::Types::String)
+        return field.safeGet<String>();
+    if (field.getType() == Field::Types::UInt64)
+    {
+        const UInt64 position = field.safeGet<UInt64>();
+        if (position >= 1 && position <= tuple.getElements().size())
+            return tuple.getNameByPosition(position);
+    }
+    return std::nullopt;
+}
+
 /// Whether the key reads aggregated values of the node `node` of a tuple type with an aggregated element. A key can read only its
 /// other elements, such as `metrics.1` (`tupleElement(metrics, 1)`, also with a default value as the third argument), which merges do
-/// not aggregate.
-static bool keyReadsAggregatedTupleElements(const KeyDescription & key, const ActionsDAGParents & parents, const ActionsDAG::Node & node)
+/// not aggregate. Merges flatten the tuple and do not aggregate an element whose flattened name `path`, such as `x.a`, is a column of
+/// the sorting key either.
+static bool keyReadsAggregatedTupleElements(
+    const KeyDescription & key, const ActionsDAGParents & parents, const ActionsDAG::Node & node, const String & path,
+    const NameSet & sorting_key_columns)
 {
-    if (!typeid_cast<const DataTypeTuple *>(node.result_type.get()))
+    if (sorting_key_columns.contains(path))
+        return false;
+    const auto * tuple = typeid_cast<const DataTypeTuple *>(node.result_type.get());
+    if (!tuple)
         return isAggregatedType(node.result_type, true);
     if (!isAggregatedType(node.result_type, true))
         return false;
@@ -2504,7 +2529,16 @@ static bool keyReadsAggregatedTupleElements(const KeyDescription & key, const Ac
         const bool is_alias = parent->type == ActionsDAG::ActionType::ALIAS;
         if (!is_element && !is_alias)
             return true;
-        if (keyReadsAggregatedTupleElements(key, parents, *parent))
+
+        String parent_path = path;
+        if (is_element)
+        {
+            const auto element_name = tryGetTupleElementName(*tuple, *parent->children[1]);
+            if (!element_name)
+                return true;
+            parent_path = Nested::concatenateName(path, *element_name);
+        }
+        if (keyReadsAggregatedTupleElements(key, parents, *parent, parent_path, sorting_key_columns))
             return true;
     }
     return false;
@@ -2512,10 +2546,10 @@ static bool keyReadsAggregatedTupleElements(const KeyDescription & key, const Ac
 
 /// Whether a key that reads the column or subcolumn `column` (the input `input` of its expression) reads aggregated values: the
 /// column, a subcolumn of an aggregated value such as `a.size0`, or with `allow_tuple_element_aggregation` an aggregated element of
-/// a tuple such as `x.v` or `x.1`, or a subcolumn of it such as `x.v.size0`.
+/// a tuple such as `x.v` or `x.1`, or a subcolumn of it such as `x.v.size0`, unless that element is a column of the sorting key.
 static bool keyReadsAggregatedValues(
     const KeyDescription & key, const ActionsDAGParents & parents, const ActionsDAG::Node & input, const NameAndTypePair & column,
-    bool allow_tuple_element_aggregation)
+    bool allow_tuple_element_aggregation, const NameSet & sorting_key_columns)
 {
     if (column.isSubcolumn())
     {
@@ -2527,12 +2561,15 @@ static bool keyReadsAggregatedValues(
 
         const String subcolumn_name = column.getSubcolumnName();
         for (size_t pos = subcolumn_name.find('.'); pos != String::npos; pos = subcolumn_name.find('.', pos + 1))
-            if (auto type = type_in_storage->tryGetSubcolumnType(std::string_view(subcolumn_name).substr(0, pos)); type && isAggregatedType(type, false))
-                return true;
+        {
+            const auto element_name = std::string_view(subcolumn_name).substr(0, pos);
+            if (auto type = type_in_storage->tryGetSubcolumnType(element_name); type && isAggregatedType(type, false))
+                return !sorting_key_columns.contains(Nested::concatenateName(column.getNameInStorage(), String(element_name)));
+        }
     }
 
     if (allow_tuple_element_aggregation && typeid_cast<const DataTypeTuple *>(column.type.get()))
-        return keyReadsAggregatedTupleElements(key, parents, input);
+        return keyReadsAggregatedTupleElements(key, parents, input, column.name, sorting_key_columns);
     return isAggregatedType(column.type, false);
 }
 
@@ -2563,7 +2600,10 @@ static Names getAggregatedColumnsInKeys(const StorageInMemoryMetadata & metadata
             if (sorting_key_columns.contains(name))
                 continue;
             const auto column = metadata.getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::All, name);
-            if (column && keyReadsAggregatedValues(key, parents, *input, *column, allow_tuple_element_aggregation))
+            /// A subcolumn of a column of the sorting key, such as `a.size0` of `a`, is not aggregated either.
+            if (column && sorting_key_columns.contains(column->getNameInStorage()))
+                continue;
+            if (column && keyReadsAggregatedValues(key, parents, *input, *column, allow_tuple_element_aggregation, sorting_key_columns))
                 result.push_back(fmt::format("{} ({} key)", backQuoteIfNeed(name), key_name));
         }
     };
