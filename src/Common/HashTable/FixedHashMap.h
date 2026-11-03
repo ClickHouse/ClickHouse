@@ -228,3 +228,13 @@ using FixedHashMapWithSizeBits = FixedHashMap<
     FixedHashTableStoredSize<FixedHashMapCell<Key, Mapped>>,
     HashTableAllocator,
     size_bits>;
+
+/// Keeps no element counter, so `size` walks all cells. Cheaper for a table that several threads fill at once.
+template <typename Key, typename Mapped, size_t size_bits, typename Cell = FixedHashMapCell<Key, Mapped>>
+using FixedHashMapWithSizeBitsAndCalculatedSize = FixedHashMap<
+    Key,
+    Mapped,
+    Cell,
+    FixedHashTableCalculatedSize<Cell>,
+    HashTableAllocator,
+    size_bits>;

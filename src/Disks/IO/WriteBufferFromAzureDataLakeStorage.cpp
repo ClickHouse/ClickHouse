@@ -4,11 +4,14 @@
 
 #include <base/sleep.h>
 
+#include <Poco/URI.h>
+
 #include <Disks/IO/WriteBufferFromAzureDataLakeStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <IO/AzureBlobStorage/isRetryableAzureException.h>
 #include <Common/logger_useful.h>
 #include <Common/Stopwatch.h>
+#include <Common/HTTPConnectionInfo.h>
 
 #include <azure/core/io/body_stream.hpp>
 #include <azure/storage/files/datalake/datalake_options.hpp>
@@ -48,9 +51,20 @@ String prefixedBlobPath(const AzureBlobStorage::Endpoint & endpoint, const Strin
     return full;
 }
 
+}
+
 String buildAdlsGen2FileUrl(const AzureBlobStorage::Endpoint & endpoint, const String & blob_path_)
 {
     Poco::URI uri(endpoint.getContainerEndpoint());
+
+    /// OneLake serves reads from the Blob host but writes only from the DFS host,
+    /// so retarget the Fabric Blob host to DFS for the write client.
+    const String blob_suffix = ".blob.fabric.microsoft.com";
+    const String dfs_suffix = ".dfs.fabric.microsoft.com";
+    String host = uri.getHost();
+    if (host.ends_with(blob_suffix))
+        uri.setHost(host.substr(0, host.size() - blob_suffix.size()) + dfs_suffix);
+
     String path = uri.getPath();
     if (!path.empty() && path.back() != '/')
         path += '/';
@@ -59,26 +73,26 @@ String buildAdlsGen2FileUrl(const AzureBlobStorage::Endpoint & endpoint, const S
     return uri.toString();
 }
 
-}
-
 constexpr size_t ADLFS_MAX_RETRIES = 10;
 
 bool isAdlsGen2Endpoint(const AzureBlobStorage::Endpoint & endpoint)
 {
-    return endpoint.storage_account_url.contains("dfs.fabric.microsoft.com")
-        || endpoint.storage_account_url.contains("blob.fabric.microsoft.com");
+    /// Only real Microsoft Fabric / OneLake hosts, matched at a label boundary.
+    const String host = Poco::URI(endpoint.storage_account_url).getHost();
+    return host.ends_with(".dfs.fabric.microsoft.com") || host.ends_with(".blob.fabric.microsoft.com");
 }
 
 Azure::Storage::Files::DataLake::DataLakeFileClient makeAdlsGen2FileClient(
     const AzureBlobStorage::Endpoint & endpoint,
     const AzureBlobStorage::AuthMethod & auth_method,
+    bool drop_credentials,
     const Azure::Storage::Blobs::BlobClientOptions & blob_client_options,
     const String & blob_path)
 {
     using namespace Azure::Storage::Files::DataLake;
     auto datalake_options = toDataLakeOptions(blob_client_options);
 
-    if (!endpoint.sas_auth.empty() || !endpoint.additional_params.empty())
+    if (!endpoint.sas_auth.empty() || !endpoint.additional_params.empty() || drop_credentials)
         return DataLakeFileClient(buildAdlsGen2FileUrl(endpoint, blob_path), datalake_options);
 
     return std::visit(
@@ -103,6 +117,7 @@ Azure::Storage::Files::DataLake::DataLakeFileClient makeAdlsGen2FileClient(
 WriteBufferFromAzureDataLakeStorage::WriteBufferFromAzureDataLakeStorage(
     const AzureBlobStorage::Endpoint & endpoint_,
     const AzureBlobStorage::AuthMethod & auth_method_,
+    bool drop_credentials_,
     const Azure::Storage::Blobs::BlobClientOptions & blob_client_options_,
     const String & blob_path_,
     size_t buf_size_,
@@ -112,7 +127,7 @@ WriteBufferFromAzureDataLakeStorage::WriteBufferFromAzureDataLakeStorage(
     BlobStorageLogWriterPtr blob_log_)
     : WriteBufferFromFileBase(buf_size_, nullptr, 0)
     , log(getLogger("WriteBufferFromAzureDataLakeStorage"))
-    , file_client(makeAdlsGen2FileClient(endpoint_, auth_method_, blob_client_options_, blob_path_))
+    , file_client(makeAdlsGen2FileClient(endpoint_, auth_method_, drop_credentials_, blob_client_options_, blob_path_))
     , blob_path(blob_path_)
     , write_settings(write_settings_)
     , max_unexpected_write_error_retries(settings_->max_unexpected_write_error_retries)
@@ -153,6 +168,10 @@ void WriteBufferFromAzureDataLakeStorage::runWithRetries(
                 error_message);
     };
 
+    /// One row is written for the whole retry sequence, so when the operation is retried the
+    /// connection columns of that row report zeroes: its elapsed time covers every attempt, and no
+    /// single socket describes it.
+    HTTPConnectionInfoScope connection_info_scope(blob_log != nullptr);
     Stopwatch watch;
     size_t backoff_ms = 100;
     for (size_t attempt = 1; attempt < ADLFS_MAX_RETRIES; ++attempt)
@@ -167,7 +186,7 @@ void WriteBufferFromAzureDataLakeStorage::runWithRetries(
         }
         catch (const Azure::Core::RequestFailedException & e)
         {
-            const bool retryable = isRetryableAzureException(e, write_settings.is_initial_access_check);
+            const bool retryable = isRetryableAzureException(e);
             if (!retryable || attempt >= max_unexpected_write_error_retries)
             {
                 log_event(static_cast<Int32>(e.StatusCode), e.Message, watch.elapsedMicroseconds());

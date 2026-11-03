@@ -5,8 +5,7 @@
 --   rows 50000-99999:   {'service': 'backend'}
 --   rows 100000-149999: {'service': 'frontend', 'env': 'prod'}
 --   rows 150000-199999: {'service': 'worker',   'env': 'staging'}
-
-SET enable_analyzer = 1;
+SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS tab;
 

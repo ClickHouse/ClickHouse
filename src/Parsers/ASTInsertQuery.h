@@ -6,6 +6,8 @@
 
 class SipHash;
 
+namespace Poco::JSON { class Object; }
+
 namespace DB
 {
 
@@ -27,6 +29,8 @@ public:
     ASTPtr settings_ast;
 
     ASTPtr select;
+    /// INSERT ... RETURNING (SELECT ...): a query to run on top of the inserted blocks.
+    ASTPtr returning;
     ASTPtr infile;
     ASTPtr compression;
 
@@ -53,6 +57,9 @@ public:
     /** Get the text that identifies this element. */
     String getID(char delim) const override { return "InsertQuery" + (delim + table_id.database_name) + delim + table_id.table_name; }
 
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
+
     ASTPtr clone() const override
     {
         auto res = make_intrusive<ASTInsertQuery>(*this);
@@ -65,6 +72,7 @@ public:
         if (partition_by) { res->partition_by = partition_by->clone(); res->children.push_back(res->partition_by); }
         if (settings_ast) { res->settings_ast = settings_ast->clone(); res->children.push_back(res->settings_ast); }
         if (select) { res->select = select->clone(); res->children.push_back(res->select); }
+        if (returning) { res->returning = returning->clone(); res->children.push_back(res->returning); }
         if (infile) { res->infile = infile->clone(); res->children.push_back(res->infile); }
         if (compression) { res->compression = compression->clone(); res->children.push_back(res->compression); }
 

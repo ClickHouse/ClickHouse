@@ -1,0 +1,76 @@
+---
+title: "DB::Exception : la partie XXXXX chevauche la partie précédente YYYYY. Il s'agit d'un bug ou du résultat d'une intervention manuelle dans les données de ZooKeeper."
+date: 2023-05-02
+description: "Cet article explique comment résoudre l'erreur DB::Exception liée à des parties qui se chevauchent dans ClickHouse, souvent causée par une condition de concurrence ou une intervention manuelle dans les données de ZooKeeper."
+tags: ['Erreurs et exceptions', 'Tables système']
+keywords: ['Chevauchement de parties', 'system.replicas']
+---
+
+<div id="why-it-occurs">
+  ## Pourquoi cela se produit
+</div>
+
+Lorsque cette erreur se produit, une table apparaît en lecture seule et le message d&#39;erreur indique des parties intersectantes.
+
+Vous pouvez voir l&#39;erreur dans les logs ou en
+
+```sql
+SELECT *
+FROM system.replicas
+WHERE is_readonly = 1
+```
+
+Le message d’erreur ressemble à ceci :
+
+```
+Code: 49. DB::Exception: Part XXXXX intersects previous part YYYYY. It is a bug or a result of manual intervention in the ZooKeeper data. (LOGICAL_ERROR) (version 21.12.4.1 (official build))
+```
+
+<div id="cause-of-the-error">
+  ## Cause de l’erreur
+</div>
+
+Cette erreur peut être causée par une condition de concurrence entre `mergeSelectingTask` et la réinitialisation de la file d’attente.
+
+<div id="solution">
+  ## Solution
+</div>
+
+Exécutez les requêtes suivantes sur toutes les répliques :
+
+```sql
+DETACH TABLE table_name;  -- Required for DROP REPLICA
+
+SYSTEM DROP REPLICA 'replica_name' FROM ZKPATH '/table_path_in_zk/'; -- It will remove everything from /table_path_in_zk
+
+ATTACH TABLE table_name;  -- Table will be in readonly mode, because there is no metadata in ZK
+```
+
+Exécutez ensuite la commande suivante sur toutes les répliques :
+
+```sql
+SYSTEM RESTORE REPLICA table_name;  -- It will detach all partitions, re-create metadata in ZK (like it's new empty table), and then attach all partitions back
+
+SYSTEM SYNC REPLICA table_name; -- Wait for replicas to synchronize parts. Also it's recommended to check `system.detached_parts` on all replicas after recovery is finished.
+```
+
+<Tip>
+  Vous devriez passer à la dernière version de ClickHouse
+</Tip>
+
+<div id="additional-resources">
+  ## Ressources supplémentaires
+</div>
+
+PR et issues GitHub associées :
+
+* [ClickHouse/ClickHouse#34096](https://github.com/ClickHouse/ClickHouse/pull/34096)
+* [ClickHouse/ClickHouse#30651](https://github.com/ClickHouse/ClickHouse/pull/30651)
+* [ClickHouse/ClickHouse#31060](https://github.com/ClickHouse/ClickHouse/pull/31060)
+* [ClickHouse/ClickHouse#35863](https://github.com/ClickHouse/ClickHouse/issues/35863)
+
+<div id="versions-affected">
+  ## Versions affectées :
+</div>
+
+ClickHouse v 22.12 et versions antérieures

@@ -1,0 +1,26 @@
+<test>
+    <query>SELECT varSampIf(number, rand32() % 2 = 0) FROM numbers(100000000)</query>
+    <query>SELECT stddevPopIf(number, rand32() % 2 = 0) FROM numbers(100000000)</query>
+    <query>SELECT skewSampIf(number, rand32() % 2 = 0) FROM numbers(100000000)</query>
+    <query>SELECT kurtSampIf(number, rand32() % 2 = 0) FROM numbers(100000000)</query>
+    <query>SELECT covarSampIf(number, number + 1, rand32() % 2 = 0) FROM numbers(100000000)</query>
+    <query>SELECT corrIf(number, number + 1, rand32() % 2 = 0) FROM numbers(100000000)</query>
+
+    <query>SELECT varSampIf(toFloat64(number), rand32() % 2 = 0) FROM numbers(100000000)</query>
+    <query>SELECT varSampIf(toFloat32(number), rand32() % 2 = 0) FROM numbers(100000000)</query>
+
+    <query>SELECT varSamp(number) FROM numbers(100000000)</query>
+    <query>SELECT kurtSamp(number) FROM numbers(100000000)</query>
+    <query>SELECT corr(number, number + 1) FROM numbers(100000000)</query>
+
+    <!-- ~20% NULL values, random so the branch predictor doesn't do all the work -->
+    <create_query>CREATE TABLE nullfloat64_stats (x Nullable(Float64)) ENGINE = Memory</create_query>
+    <fill_query>INSERT INTO nullfloat64_stats
+                SELECT IF(rand() % 5 == 0, NULL::Nullable(Float64), toFloat64(cityHash64(number) % 1000000)) AS x
+                FROM numbers_mt(200000000)
+                SETTINGS max_threads = 8
+    </fill_query>
+    <query>SELECT varSamp(x) FROM nullfloat64_stats</query>
+    <query>SELECT varSampIf(x, rand32() % 2 = 0) FROM nullfloat64_stats</query>
+    <drop_query>DROP TABLE IF EXISTS nullfloat64_stats</drop_query>
+</test>

@@ -46,8 +46,8 @@ void NegativeLimitByStep::transformPipeline(QueryPipelineBuilder & pipeline, con
         if (stream_type != QueryPipelineBuilder::StreamType::Main)
             return nullptr;
 
-        if (in_order)
-            return std::make_shared<NegativeLimitBySortedStreamTransform>(header, group_length, group_offset, columns);
+        if (!sorted_columns_descr.empty())
+            return std::make_shared<NegativeLimitBySortedStreamTransform>(header, group_length, group_offset, sorted_columns_descr);
 
         return std::make_shared<NegativeLimitByTransform>(header, group_length, group_offset, columns);
     });
@@ -90,6 +90,11 @@ void NegativeLimitByStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Negative Offset", group_offset);
 }
 
+QueryPlanStepPtr NegativeLimitByStep::clone() const
+{
+    return std::make_unique<NegativeLimitByStep>(*this);
+}
+
 void NegativeLimitByStep::serialize(Serialization & ctx) const
 {
     writeVarUInt(group_length, ctx.out);
@@ -97,7 +102,7 @@ void NegativeLimitByStep::serialize(Serialization & ctx) const
 
     writeVarUInt(columns.size(), ctx.out);
     for (const auto & column : columns)
-        writeStringBinary(column, ctx.out);
+        ctx.writeColumnName(column);
 }
 
 QueryPlanStepPtr NegativeLimitByStep::deserialize(Deserialization & ctx)
@@ -117,9 +122,9 @@ QueryPlanStepPtr NegativeLimitByStep::deserialize(Deserialization & ctx)
     return std::make_unique<NegativeLimitByStep>(ctx.input_headers.front(), group_length, group_offset, std::move(columns));
 }
 
-void NegativeLimitByStep::applyOrder()
+void NegativeLimitByStep::applyOrder(const SortDescription & sort_description)
 {
-    in_order = true;
+    sorted_columns_descr = sort_description;
 }
 
 void registerNegativeLimitByStep(QueryPlanStepRegistry & registry);

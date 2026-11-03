@@ -56,8 +56,8 @@ TEST(UniqueKeyIndexCache, InsertLookupAndHitMissCounters)
     UniqueKeyIndexCache cache = makeCache(1 << 20);
 
     auto & counters = CurrentThread::getProfileEvents();
-    const auto hits_before = counters[ProfileEvents::UniqueKeyIndexCacheHits].load();
-    const auto misses_before = counters[ProfileEvents::UniqueKeyIndexCacheMisses].load();
+    const auto hits_before = counters[ProfileEvents::UniqueKeyIndexCacheHits];
+    const auto misses_before = counters[ProfileEvents::UniqueKeyIndexCacheMisses];
 
     auto * obj = new FakeObject{nullptr, 42};
     rocksdb::Slice key("key-1");
@@ -76,8 +76,8 @@ TEST(UniqueKeyIndexCache, InsertLookupAndHitMissCounters)
                                rocksdb::Cache::Priority::LOW, nullptr);
     EXPECT_EQ(miss, nullptr);
 
-    EXPECT_EQ(counters[ProfileEvents::UniqueKeyIndexCacheHits].load() - hits_before, 1u);
-    EXPECT_EQ(counters[ProfileEvents::UniqueKeyIndexCacheMisses].load() - misses_before, 1u);
+    EXPECT_EQ(counters[ProfileEvents::UniqueKeyIndexCacheHits] - hits_before, 1u);
+    EXPECT_EQ(counters[ProfileEvents::UniqueKeyIndexCacheMisses] - misses_before, 1u);
 
     cache.Release(lh, /*erase_if_last_ref=*/false);
     cache.Release(ih, /*erase_if_last_ref=*/false);

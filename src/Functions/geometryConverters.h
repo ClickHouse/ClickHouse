@@ -9,6 +9,7 @@
 
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/NaNUtils.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -32,6 +33,9 @@ namespace ErrorCodes
 /// throwing path. Otherwise a declared-but-absent element count drives a large `reserve` that
 /// `max_memory_usage` does not bound (the default container tracking is non-throwing).
 template <typename Point>
+using MultiPoint = boost::geometry::model::multi_point<Point, std::vector, AllocatorWithMemoryTracking>;
+
+template <typename Point>
 using LineString = boost::geometry::model::linestring<Point, std::vector, AllocatorWithMemoryTracking>;
 
 template <typename Point>
@@ -47,6 +51,7 @@ template <typename Point>
 using MultiPolygon = boost::geometry::model::multi_polygon<Polygon<Point>, std::vector, AllocatorWithMemoryTracking>;
 
 using CartesianPoint = boost::geometry::model::d2::point_xy<Float64>;
+using CartesianMultiPoint = MultiPoint<CartesianPoint>;
 using CartesianLineString = LineString<CartesianPoint>;
 using CartesianMultiLineString = MultiLineString<CartesianPoint>;
 using CartesianRing = Ring<CartesianPoint>;
@@ -55,6 +60,7 @@ using CartesianMultiPolygon = MultiPolygon<CartesianPoint>;
 
 using SphericalPoint = boost::geometry::model::point<Float64, 2, boost::geometry::cs::spherical_equatorial<boost::geometry::degree>>;
 using SphericalPointInRadians = boost::geometry::model::point<Float64, 2, boost::geometry::cs::spherical_equatorial<boost::geometry::radian>>;
+using SphericalMultiPoint = MultiPoint<SphericalPoint>;
 using SphericalLineString = LineString<SphericalPoint>;
 using SphericalMultiLineString = MultiLineString<SphericalPoint>;
 using SphericalRing = Ring<SphericalPoint>;
@@ -99,6 +105,28 @@ struct ColumnToPointsConverter
     }
 };
 
+
+/**
+ * Class which converts Column with type Array(Tuple(Float64, Float64)) to a vector of boost multi_point type.
+*/
+template <typename Point>
+struct ColumnToMultiPointsConverter
+{
+    static VectorWithMemoryTracking<MultiPoint<Point>> convert(ColumnPtr col)
+    {
+        const IColumn::Offsets & offsets = typeid_cast<const ColumnArray &>(*col).getOffsets();
+        size_t prev_offset = 0;
+        VectorWithMemoryTracking<MultiPoint<Point>> answer;
+        answer.reserve(offsets.size());
+        auto tmp = ColumnToPointsConverter<Point>::convert(typeid_cast<const ColumnArray &>(*col).getDataPtr());
+        for (size_t offset : offsets)
+        {
+            answer.emplace_back(tmp.begin() + prev_offset, tmp.begin() + offset);
+            prev_offset = offset;
+        }
+        return answer;
+    }
+};
 
 /**
  * Class which converts Column with type Array(Tuple(Float64, Float64)) to a vector of boost linestring type.
@@ -224,6 +252,41 @@ struct ColumnToMultiPolygonsConverter
     }
 };
 
+/// The geometries of one argument of a function of two geometries, corrected with `boost::geometry::correct` (oriented
+/// and closed) before they are used. A constant argument is converted and corrected once instead of once per row:
+/// a large constant polygon compared with many rows would otherwise be copied, converted and corrected for every row.
+template <typename Converter>
+class CorrectedGeometries
+{
+public:
+    explicit CorrectedGeometries(const ColumnPtr & column)
+    {
+        const auto * column_const = typeid_cast<const ColumnConst *>(column.get());
+        /// Without rows, the constant is not converted, as before, so an invalid value (such as a NaN coordinate) does not throw.
+        is_const = column_const && !column_const->empty();
+        if (is_const)
+        {
+            geometries = Converter::convert(column_const->getDataColumnPtr());
+            boost::geometry::correct(geometries[0]);
+        }
+        else
+            geometries = Converter::convert(column->convertToFullColumnIfConst());
+    }
+
+    /// The corrected geometry of `row`.
+    auto & get(size_t row)
+    {
+        if (is_const)
+            return geometries[0];
+        boost::geometry::correct(geometries[row]);
+        return geometries[row];
+    }
+
+private:
+    decltype(Converter::convert(std::declval<ColumnPtr>())) geometries;
+    bool is_const = false;
+};
+
 
 /// To serialize Spherical or Cartesian point (a pair of numbers in both cases).
 template <typename Point>
@@ -265,6 +328,38 @@ private:
 
     ColumnFloat64::Container & first_container;
     ColumnFloat64::Container & second_container;
+};
+
+/// Serialize Point, MultiPoint as MultiPoint
+template <typename Point>
+class MultiPointSerializer
+{
+public:
+    MultiPointSerializer()
+        : offsets(ColumnUInt64::create())
+    {}
+
+    explicit MultiPointSerializer(size_t n)
+        : offsets(ColumnUInt64::create(n))
+    {}
+
+    void add(const MultiPoint<Point> & multipoint)
+    {
+        size += multipoint.size();
+        offsets->insertValue(size);
+        for (const auto & point : multipoint)
+            point_serializer.add(point);
+    }
+
+    ColumnPtr finalize()
+    {
+        return ColumnArray::create(point_serializer.finalize(), std::move(offsets));
+    }
+
+private:
+    size_t size = 0;
+    PointSerializer<Point> point_serializer;
+    ColumnUInt64::MutablePtr offsets;
 };
 
 /// Serialize Point, LineString as LineString
@@ -468,6 +563,11 @@ static void callOnGeometryDataType(DataTypePtr type, F && f)
     /// There is no Point type, because for most of geometry functions it is useless.
     if (factory.get("Point")->equals(*type))
         return f(ConverterType<ColumnToPointsConverter<Point>>());
+
+    /// We should take the name into consideration to avoid ambiguity.
+    /// Because for example both MultiPoint and Ring are resolved to Array(Tuple(Point)).
+    if (factory.get("MultiPoint")->equals(*type) && type->getCustomName() && type->getCustomName()->getName() == "MultiPoint")
+        return f(ConverterType<ColumnToMultiPointsConverter<Point>>());
 
     /// We should take the name into consideration to avoid ambiguity.
     /// Because for example both Ring and LineString are resolved to Array(Tuple(Point)).

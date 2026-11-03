@@ -23,13 +23,14 @@ SETTINGS max_insert_threads = 1;
 
 OPTIMIZE TABLE bool_set_idx FINAL;
 
-SELECT 'count'          AS predicate, count() FROM bool_set_idx                              SETTINGS enable_parallel_replicas = 0;
-SELECT 'IS TRUE'        AS predicate, count() FROM bool_set_idx WHERE b IS TRUE              SETTINGS enable_parallel_replicas = 0, log_comment = '04290 IS TRUE';
-SELECT 'IS FALSE'       AS predicate, count() FROM bool_set_idx WHERE b IS FALSE             SETTINGS enable_parallel_replicas = 0, log_comment = '04290 IS FALSE';
-SELECT 'IS UNKNOWN'     AS predicate, count() FROM bool_set_idx WHERE b IS UNKNOWN           SETTINGS enable_parallel_replicas = 0, log_comment = '04290 IS UNKNOWN';
-SELECT 'IS NOT TRUE'    AS predicate, count() FROM bool_set_idx WHERE b IS NOT TRUE          SETTINGS enable_parallel_replicas = 0, log_comment = '04290 IS NOT TRUE';
-SELECT 'IS NOT FALSE'   AS predicate, count() FROM bool_set_idx WHERE b IS NOT FALSE         SETTINGS enable_parallel_replicas = 0, log_comment = '04290 IS NOT FALSE';
-SELECT 'IS NOT UNKNOWN' AS predicate, count() FROM bool_set_idx WHERE b IS NOT UNKNOWN       SETTINGS enable_parallel_replicas = 0, log_comment = '04290 IS NOT UNKNOWN';
+-- Disable the sparsity trivial-count rewrite so `SelectedMarks` reflects the set skip index, not a bypass of the read.
+SELECT 'count'          AS predicate, count() FROM bool_set_idx                              SETTINGS enable_parallel_replicas = 0, optimize_trivial_count_with_sparsity_filter = 0;
+SELECT 'IS TRUE'        AS predicate, count() FROM bool_set_idx WHERE b IS TRUE              SETTINGS enable_parallel_replicas = 0, log_comment = '04290 IS TRUE',        optimize_trivial_count_with_sparsity_filter = 0;
+SELECT 'IS FALSE'       AS predicate, count() FROM bool_set_idx WHERE b IS FALSE             SETTINGS enable_parallel_replicas = 0, log_comment = '04290 IS FALSE',       optimize_trivial_count_with_sparsity_filter = 0;
+SELECT 'IS UNKNOWN'     AS predicate, count() FROM bool_set_idx WHERE b IS UNKNOWN           SETTINGS enable_parallel_replicas = 0, log_comment = '04290 IS UNKNOWN',     optimize_trivial_count_with_sparsity_filter = 0;
+SELECT 'IS NOT TRUE'    AS predicate, count() FROM bool_set_idx WHERE b IS NOT TRUE          SETTINGS enable_parallel_replicas = 0, log_comment = '04290 IS NOT TRUE',    optimize_trivial_count_with_sparsity_filter = 0;
+SELECT 'IS NOT FALSE'   AS predicate, count() FROM bool_set_idx WHERE b IS NOT FALSE         SETTINGS enable_parallel_replicas = 0, log_comment = '04290 IS NOT FALSE',   optimize_trivial_count_with_sparsity_filter = 0;
+SELECT 'IS NOT UNKNOWN' AS predicate, count() FROM bool_set_idx WHERE b IS NOT UNKNOWN       SETTINGS enable_parallel_replicas = 0, log_comment = '04290 IS NOT UNKNOWN', optimize_trivial_count_with_sparsity_filter = 0;
 
 SYSTEM FLUSH LOGS query_log;
 

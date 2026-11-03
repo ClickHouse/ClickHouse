@@ -1,6 +1,8 @@
 -- Tags: no-random-settings, no-random-merge-tree-settings
 -- no-random-settings, no-random-merge-tree-settings: EXPLAIN output may differ
 
+SET explain_query_plan_default = 'legacy';
+
 -- { echo }
 
 -- The boolean-position `ifNull(X, 0)` / `coalesce(X, 0)` -> `X` index rewrite (see
@@ -8,7 +10,6 @@
 -- MergeTree primary-key path. This test covers the other index entry points: `numbers()`/`primes()`
 -- range extraction, partition pruning, and the minmax skip index.
 
-SET enable_analyzer = 1;
 SET allow_key_condition_coalesce_rewrite = 1;
 
 -- numbers(): wrapped predicate prunes identically to the bare one.

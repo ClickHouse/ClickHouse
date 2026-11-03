@@ -1,0 +1,17 @@
+---
+title: '¿Admite ClickHouse los lagos de datos?'
+toc_hidden: true
+toc_priority: 10
+slug: /faq/general/datalake
+description: 'ClickHouse admite lagos de datos, incluidos Iceberg, Delta Lake, Apache Hudi, Apache Paimon, Hive'
+doc_type: 'reference'
+keywords: ['lago de datos', 'lakehouse']
+---
+
+ClickHouse admite lagos de datos, incluidos Iceberg, Delta Lake, Apache Hudi, Apache Paimon y Hive.
+
+Admite la **lectura** y la **escritura**, con compatibilidad total con la poda de particiones, la poda basada en estadísticas, la evolución del esquema, las eliminaciones posicionales, las eliminaciones por igualdad, el viaje en el tiempo y la introspección.
+
+Los lagos de datos en ClickHouse son compatibles con los catálogos **Unity**, **AWS Glue**, **Rest**, **Polaris** y **Hive Metastore**, así como con tablas individuales.
+
+El rendimiento de las consultas en lagos de datos es de primer nivel gracias al procesamiento distribuido, al eficiente lector nativo de Parquet y a la caché de archivos de datos.

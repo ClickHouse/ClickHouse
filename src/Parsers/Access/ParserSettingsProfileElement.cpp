@@ -1,3 +1,4 @@
+#include <Common/StringUtils.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/Access/ASTSettingsProfileElement.h>
@@ -6,7 +7,6 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
-#include <boost/algorithm/string/predicate.hpp>
 #include <base/insertAtEnd.h>
 
 
@@ -146,7 +146,7 @@ namespace
             if (!has_value_or_constraint)
                 return false;
 
-            if (boost::iequals(res_setting_name, toStringView(Keyword::PROFILE)) && !res_value && !res_min_value && !res_max_value
+            if (equalsCaseInsensitive(res_setting_name, toStringView(Keyword::PROFILE)) && !res_value && !res_min_value && !res_max_value
                 && res_writability == SettingConstraintWritability::CONST)
             {
                 /// Ambiguity: "profile readonly" can be treated either as a profile named "readonly" or
@@ -329,6 +329,12 @@ bool ParserAlterSettingsProfileElements::parseImpl(Pos & pos, ASTPtr & node, Exp
             {
                 action = "MODIFY";
                 target = "";
+            }
+            else if (ParserKeyword{Keyword::SET}.ignore(pos, expected))
+            {
+                /// `SET` is an alias for `MODIFY SETTING`: it modifies individual settings in place.
+                action = "MODIFY";
+                target = "SETTINGS";
             }
 
             if (!action.empty())

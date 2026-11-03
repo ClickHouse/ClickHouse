@@ -1,3 +1,4 @@
+#include <Common/StackWithMemoryTracking.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 
 #include <stack>
@@ -10,11 +11,13 @@
 #include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTCreateSQLFunctionQuery.h>
+#include <Parsers/ASTCreateFunctionWithDriverQuery.h>
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
+#include <Parsers/ASTTTLElement.h>
 #include <Core/Settings.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Interpreters/Context.h>
@@ -55,6 +58,15 @@ void UserDefinedSQLFunctionVisitor::visit(ASTPtr & ast, ContextPtr context_)
             ast->updatePointerToChild(old_ptr, new_ptr);
     }
 
+    /// `GROUP BY` keys and `SET` assignments of a `TTL` rule are not among its children.
+    if (auto * ttl_element = ast->template as<ASTTTLElement>())
+    {
+        for (auto & key : ttl_element->group_by_key)
+            visit(key, context_);
+        for (auto & assignment : ttl_element->group_by_assignments)
+            visit(assignment, context_);
+    }
+
     if (const auto * function = ast->template as<ASTFunction>())
     {
         UnorderedSetWithMemoryTracking<std::string> udf_in_replace_process;
@@ -92,9 +104,13 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
     if (!create_function_query && user_defined_function->as<ASTCreateWasmFunctionQuery>())
         return nullptr;
 
+    /// Driver-created executable functions are resolved through `UserDefinedExecutableFunctionFactory`.
+    if (!create_function_query && user_defined_function->as<ASTCreateFunctionWithDriverQuery>())
+        return nullptr;
+
     if (!create_function_query)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-            "The function '{}' is not a SQL defined function and is not supported when 'enable_analyzer' is set to false", function.formatForErrorMessage());
+            "The function '{}' is not a SQL defined function", function.formatForErrorMessage());
 
     auto & function_core_expression = create_function_query->function_core->children.at(0);
 
@@ -160,7 +176,7 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
     auto expression_list = make_intrusive<ASTExpressionList>();
     expression_list->children.emplace_back(std::move(function_body_to_update));
 
-    std::stack<ASTPtr> ast_nodes_to_update;
+    StackWithMemoryTracking<ASTPtr> ast_nodes_to_update;
     ast_nodes_to_update.push(expression_list);
 
     while (!ast_nodes_to_update.empty())

@@ -704,7 +704,7 @@ def test_ttl_compatibility(started_cluster, node_left, node_right, num_run):
 def test_ttl_drop_parts_limit(started_cluster):
     table = f"test_merges_mutations_limit_{uuid.uuid4().hex}"
 
-    max_parts_to_merge_at_once = 20
+    max_parts_to_merge_at_once = 5
     node1.query(
         f"""
         CREATE TABLE {table} (
@@ -727,7 +727,7 @@ def test_ttl_drop_parts_limit(started_cluster):
     node1.query(f"SYSTEM STOP MERGES {table}")
 
     # More parts than max_parts_to_merge_at_once so the TTL drop runs in several rounds; keep it small.
-    parts_count = 50
+    parts_count = 8
     old_date = "toDateTime('2000-01-01 00:00:00')"
 
     for i in range(parts_count):

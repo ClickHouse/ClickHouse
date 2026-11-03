@@ -21,11 +21,7 @@ namespace DB
 class ISchedulerConstraint : public ITimeSharedNode
 {
 public:
-    explicit ISchedulerConstraint(EventQueue & event_queue_, const Poco::Util::AbstractConfiguration & config = emptyConfig(), const String & config_prefix = {})
-        : ITimeSharedNode(event_queue_, config, config_prefix)
-    {}
-
-    ISchedulerConstraint(EventQueue & event_queue_, const SchedulerNodeInfo & info_)
+    explicit ISchedulerConstraint(EventQueue & event_queue_, const SchedulerNodeInfo & info_ = {})
         : ITimeSharedNode(event_queue_, info_)
     {}
 

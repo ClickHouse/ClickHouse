@@ -37,7 +37,7 @@ ALWAYS_INLINE bool tryConvertColumnToBool(const IColumn & column, IColumnFilter 
     chassert(res.size() == column.size());
 
     auto & data = column_typed->getData();
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v4))
     {
         convertColumnToBoolImpl_x86_64_v4<T>(data, res);
@@ -105,7 +105,7 @@ static std::optional<IColumnFilter> unpackOrConvertFilter(ColumnPtr & column)
 
 ColumnPtr FilterDescription::preprocessFilterColumn(ColumnPtr column)
 {
-    column = column->convertToFullIfNeeded();
+    column = column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
 
     ColumnPtr null_map_column;
     if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(column.get()))

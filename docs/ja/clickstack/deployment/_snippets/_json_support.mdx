@@ -1,0 +1,11 @@
+---
+title: JSONサポート
+---
+
+<div id="schema-choice-map-vs-json">
+  ## スキーマの選択: Map と JSON
+</div>
+
+ClickStack では、デフォルトで属性を `Map(LowCardinality(String), String)` カラムとして保存します。これはオブザーバビリティのワークロードに推奨されるスキーマです。[バケット化された Map のシリアライゼーション](/ja/reference/data-types/map#bucketed-map-serialization) と、Map のキーおよび値に対するテキスト索引を組み合わせることで、動的な JSON サブカラムでキーごとに発生する取り込み時のオーバーヘッドなしに、必要なルックアップだけを選択的に実行できます。
+
+属性キーの集合が小さく安定しているワークロードで評価できるよう、`JSON` 型のスキーマもベータ版として利用できます。ただし、これをデフォルトとすることは **推奨されません**。詳しい比較と、JSON サポートを有効にするために必要な環境変数については、[Map vs JSON type](/ja/clickstack/ingesting-data/schema/map-vs-json) を参照してください。

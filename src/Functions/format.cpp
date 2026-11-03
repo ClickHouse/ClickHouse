@@ -18,7 +18,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace
@@ -42,16 +41,9 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (arguments.size() < 2)
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be at least 2",
-                getName(),
-                arguments.size());
-
-        return std::make_shared<DataTypeString>();
+        return "(const String, Any, ...) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -101,11 +93,7 @@ public:
             else
             {
                 /// A non-String/non-FixedString-type argument: use the default serialization to convert it to String.
-                /// Only strip top-level wrappers (Const, Sparse, LowCardinality) without recursing into subcolumns.
-                /// Using the recursive convertToFullIfNeeded would strip LowCardinality from inside
-                /// compound types like Variant while the type is not updated, creating a type/column mismatch.
-                auto full_column
-                    = column->convertToFullColumnIfConst()->convertToFullColumnIfSparse()->convertToFullColumnIfLowCardinality();
+                auto full_column = column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
                 auto serialization = arguments[i].type->getDefaultSerialization();
                 auto converted_col_str = ColumnString::create();
                 ColumnStringHelpers::WriteHelper<ColumnString> write_helper(*converted_col_str, column->size());

@@ -87,7 +87,7 @@ namespace CurrentMetrics
             : Increment(&values[metric], amount_)
         {
             // in src/Core/tests/gtest_BackgroundSchedulePool.cpp we create pool as
-            // auto pool = BackgroundSchedulePool::create(4, 0, CurrentMetrics::end(), CurrentMetrics::end(), "tests");
+            // auto pool = BackgroundSchedulePool::create(4, 4, 0, CurrentMetrics::end(), CurrentMetrics::end(), "tests");
             // which leads as to creation of Increment with metric == CurrentMetrics::end()
             // actually this is not a real metric, however it is presented in CurrentMetrics::values array
             // so we are able to increment it and we should not assert here when metric == CurrentMetrics::end()
@@ -107,6 +107,11 @@ namespace CurrentMetrics
 
         Increment & operator=(Increment && old) noexcept
         {
+            if (this == &old)
+                return *this;
+            /// Release what this object holds, otherwise the amount is never subtracted.
+            if (what)
+                what->fetch_sub(amount, std::memory_order_relaxed);
             what = old.what;
             amount = old.amount;
             old.what = nullptr;

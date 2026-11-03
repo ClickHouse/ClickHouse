@@ -53,12 +53,14 @@ private:
 class AvroDeserializer
 {
 public:
-    AvroDeserializer(const Block & header, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_);
+    /// `absent_columns` are known to be missing from the file and get defaults even if `allow_missing_fields` is false.
+    AvroDeserializer(const Block & header, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_, const NameSet & absent_columns = {});
     AvroDeserializer(DataTypePtr data_type, const std::string & column_name, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_);
 
+    /// Not movable: stored closures capture `this` and references into `symbolic_skip_fn_map`.
     AvroDeserializer(const AvroDeserializer &) = delete;
     AvroDeserializer & operator=(const AvroDeserializer &) = delete;
-    AvroDeserializer(AvroDeserializer &&) = default;
+    AvroDeserializer(AvroDeserializer &&) = delete;
     AvroDeserializer & operator=(AvroDeserializer &&) = delete;
 
     void deserializeRow(MutableColumns & columns, avro::Decoder & decoder, RowReadExtension & ext) const;
@@ -175,16 +177,19 @@ public:
 
     String getName() const override { return "AvroRowInputFormat"; }
 
+    void setColumnMapper(const ColumnMapperPtr & column_mapper_) override { column_mapper = column_mapper_; }
+
 private:
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
     void readPrefix() override;
 
-    bool supportsCountRows() const override { return true; }
+    bool supportsCountRows() const override;
     size_t countRows(size_t max_block_size) override;
 
     std::unique_ptr<avro::DataFileReaderBase> file_reader_ptr;
     std::unique_ptr<AvroDeserializer> deserializer_ptr;
     FormatSettings format_settings;
+    ColumnMapperPtr column_mapper;
 };
 
 /// Confluent framing + Avro binary datum encoding. Mainly used for Kafka.
@@ -223,9 +228,13 @@ public:
 
     NamesAndTypesList readSchema() override;
 
-    static DataTypePtr avroNodeToDataType(avro::NodePtr node);
+    /// If `allow_nullable_tuple_type` is false, a union [null, record] is converted to a plain
+    /// Tuple instead of Nullable(Tuple). Schema inference passes
+    /// schema_inference_allow_nullable_tuple_type here, because otherwise it would return a type
+    /// that CREATE TABLE rejects.
+    static DataTypePtr avroNodeToDataType(avro::NodePtr node, bool allow_nullable_tuple_type = true);
 private:
-    static DataTypePtr avroNodeToDataTypeImpl(const avro::NodePtr & node, std::unordered_set<std::string> & seen_names);
+    static DataTypePtr avroNodeToDataTypeImpl(const avro::NodePtr & node, std::unordered_set<std::string> & seen_names, bool allow_nullable_tuple_type);
 
     bool confluent;
     const FormatSettings format_settings;

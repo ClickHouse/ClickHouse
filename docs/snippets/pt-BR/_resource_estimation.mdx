@@ -1,0 +1,45 @@
+---
+title: Estimativa de Recursos
+---
+
+O conteúdo a seguir apresenta um modelo para estimar os recursos de computação e armazenamento necessários para uma implantação do ClickStack com base no volume de ingestão esperado. Os valores obtidos são **apenas estimativas** e devem ser usados como uma **linha de base inicial** — não são uma resposta prescritiva. Os requisitos reais dependem da complexidade das consultas, da concorrência, das políticas de retenção e da variação na vazão de ingestão. Sempre monitore o uso de recursos e escale conforme necessário.
+
+<Warning>
+  **Todos os valores são baseados em ingestão bruta não comprimida**
+
+  Todos os números nesta página — throughput (MB/s, TB/mês), dimensionamento de CPU e armazenamento — são expressos em termos de **volume bruto de ingestão não comprimido**, ou seja, o tamanho dos dados conforme são produzidos pelas suas aplicações e enviados ao OpenTelemetry Collector antes da aplicação de qualquer compressão.
+
+  Esse é o valor que você deve estimar com base nos pipelines existentes de logs, traces e métricas. Os valores de armazenamento na tabela abaixo já consideram uma **taxa de compressão de 10x** aplicada a esse volume bruto.
+</Warning>
+
+Ao implantar o ClickStack, provisione capacidade computacional para cobrir duas cargas de trabalho independentes: **ingestão** e **consulta**.
+
+| Carga de trabalho | Recursos estimados                                                  |
+| ----------------- | ------------------------------------------------------------------- |
+| **Ingestão**      | 1 vCPU por 10 MB/s de throughput de ingestão sustentado             |
+| **Consulta**      | 1 vCPU por 1 QPS e por 10 MB/s de throughput de ingestão sustentado |
+
+<Info>
+  **Isolamento de Consultas vs. Ingestão**
+
+  Na maioria das implantações autogerenciadas, a ingestão e a consulta compartilham os mesmos nós. Nesse caso, use o **Total de CPUs** como linha de base. O escalonamento isolado — em que a computação de ingestão e a de consulta são provisionadas de forma independente — é compatível com o ClickHouse Cloud por meio de [pools de computação separados, também conhecidos como Warehouses](/pt-BR/products/cloud/features/infrastructure/warehouses).
+</Info>
+
+<Accordion title="Premissas">
+  * Uma **taxa de compressão de 10x** para armazenamento — normalmente conservadora para logs e traces.
+  * SLAs de consulta com P50 de 1,5 segundo e P99 de 5 segundos.
+  * Assumimos que a maioria das consultas ocorre sobre dados recentes, seguindo uma distribuição log-normal que atinge o pico em cerca de uma hora e se estende até cerca de seis horas. Os usuários podem querer provisionar computação dedicada para consultar dados mais antigos. No ClickHouse Cloud, ela pode ficar ociosa (e, portanto, sem gerar custos) quando não estiver em uso.
+  * Embora a computação de consulta possa ser escalada de forma independente da computação de ingestão, ela continua intrinsicamente vinculada ao volume de ingestão. Assumimos que, à medida que a ingestão aumenta, a densidade dos dados cresce, resultando em volumes de varredura maiores no momento da consulta e, consequentemente, em maiores requisitos de computação para consulta.
+</Accordion>
+
+A tabela a seguir apresenta exemplos de dimensionamento com base no aumento do throughput de ingestão em megabytes por segundo, juntamente com os volumes de dados correspondentes em terabytes por mês. Isso pressupõe uma média sustentada de **1 QPS** do ClickStack em todos os tipos de consulta (pesquisa, dashboards, alertas).
+
+| MB/s | TB/mês | CPUs de ingestão | CPUs de consulta | CPUs totais | Armazenamento total (por mês) (GB) |
+| ---: | -----: | ---------------: | ---------------: | ----------: | ---------------------------------: |
+|   10 |  25.92 |                1 |                3 |           4 |                              2,592 |
+|   20 |  51.84 |                2 |                6 |           8 |                              5,184 |
+|   50 |  129.6 |                5 |               15 |          20 |                             12,960 |
+|  100 |  259.2 |               10 |               30 |          40 |                             25,920 |
+|  200 |  518.4 |               20 |               60 |          80 |                             51,840 |
+|  500 |  1,296 |               50 |              150 |         200 |                            129,600 |
+| 1000 |  2,592 |              100 |              300 |         400 |                            259,200 |

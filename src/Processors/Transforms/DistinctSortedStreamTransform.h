@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/SortDescription.h>
 #include <Interpreters/SetVariants.h>
@@ -49,9 +50,6 @@ private:
     size_t ordinaryDistinctOnRange(IColumnFilter & filter, size_t range_begin, size_t range_end);
     inline void saveLatestKey(size_t row_pos);
     inline bool isLatestKeyFromPrevChunk(size_t row_pos) const;
-    inline bool isKey(size_t key_pos, size_t row_pos) const;
-    template<typename Predicate>
-    inline size_t getRangeEnd(size_t range_begin, size_t range_end, Predicate pred) const;
 
     template <typename Method>
     size_t buildFilterForRange(Method & method, IColumnFilter & filter, size_t range_begin, size_t range_end);
@@ -67,6 +65,7 @@ private:
     const SortDescription sorted_columns_descr;
     ColumnNumbers sorted_columns_pos;
     ColumnRawPtrs sorted_columns; // used during processing
+    SortedKeyRuns key_runs; // runs of the sorting prefix in the current chunk
 
     ColumnNumbers other_columns_pos;
     Sizes other_columns_sizes;

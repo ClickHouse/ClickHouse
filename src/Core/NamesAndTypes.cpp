@@ -189,9 +189,9 @@ NameSet NamesAndTypesList::getNameSet() const
     return res;
 }
 
-std::unordered_map<std::string, DataTypePtr> NamesAndTypesList::getNameToTypeMap() const
+UnorderedMapWithMemoryTracking<std::string, DataTypePtr> NamesAndTypesList::getNameToTypeMap() const
 {
-    std::unordered_map<std::string, DataTypePtr> res;
+    UnorderedMapWithMemoryTracking<std::string, DataTypePtr> res;
     res.reserve(size());
     for (const NameAndTypePair & column : *this)
         res.emplace(column.name, column.type);

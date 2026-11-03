@@ -5,14 +5,21 @@
 #include <Core/SortCursor.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
 #include <Common/MemoryTracker.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/sortBlock.h>
 #include <base/range.h>
 
 namespace DB
 {
+
+namespace FailPoints
+{
+extern const char aggregating_in_order_transform_cancel_mid_loop[];
+}
 
 AggregatingInOrderTransform::AggregatingInOrderTransform(
     SharedHeader header,
@@ -20,11 +27,15 @@ AggregatingInOrderTransform::AggregatingInOrderTransform(
     const SortDescription & sort_description_for_merging,
     const SortDescription & group_by_description_,
     size_t max_block_size_, size_t max_block_bytes_,
+    size_t limit_hint_,
+    size_t limit_prefix_columns_,
     RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater_)
     : AggregatingInOrderTransform(std::move(header), std::move(params_),
         sort_description_for_merging, group_by_description_,
         max_block_size_, max_block_bytes_,
         std::make_unique<ManyAggregatedData>(1), 0,
+        limit_hint_,
+        limit_prefix_columns_,
         std::move(dataflow_cache_updater_))
 {
 }
@@ -35,6 +46,8 @@ AggregatingInOrderTransform::AggregatingInOrderTransform(
     const SortDescription & group_by_description_,
     size_t max_block_size_, size_t max_block_bytes_,
     ManyAggregatedDataPtr many_data_, size_t current_variant,
+    size_t limit_hint_,
+    size_t limit_prefix_columns_,
     RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater_)
     : IProcessor({std::move(header)}, {params_->getCustomHeader(false)})
     , max_block_size(max_block_size_)
@@ -45,6 +58,7 @@ AggregatingInOrderTransform::AggregatingInOrderTransform(
     , aggregate_columns(params->params.aggregates_size)
     , many_data(std::move(many_data_))
     , variants(*many_data->variants[current_variant])
+    , limit_hint(limit_hint_)
     , dataflow_cache_updater(std::move(dataflow_cache_updater_))
 {
     /// We won't finalize states in order to merge same states (generated due to multi-thread execution) in AggregatingSortedTransform
@@ -62,6 +76,22 @@ AggregatingInOrderTransform::AggregatingInOrderTransform(
         /// group_by_description may contains duplicates, so we use keys_size from Aggregator::params
         key_columns_raw.resize(params->params.keys_size);
     }
+
+    /// The `ORDER BY` may extend past the columns the input is sorted by; a boundary of the
+    /// sorted columns alone is then a boundary of the `ORDER BY` prefix as well.
+    limit_prefix_columns = std::min(limit_prefix_columns_, group_by_description.size());
+}
+
+bool AggregatingInOrderTransform::isLimitPrefixBoundary(const Columns & key_columns, size_t row) const
+{
+    for (size_t i = 0; i < limit_prefix_columns; ++i)
+    {
+        const auto & elem = group_by_description[i];
+        size_t ind = elem.column_number;
+        if (res_key_columns[ind]->compareAt(cur_block_size - 1, row, *key_columns[ind], elem.base.nulls_direction) != 0)
+            return true;
+    }
+    return false;
 }
 
 AggregatingInOrderTransform::~AggregatingInOrderTransform() = default;
@@ -121,7 +151,10 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
         for (size_t i = 0; i < params->params.keys_size; ++i)
             res_key_columns[i] = res_header.safeGetByPosition(i).type->createColumn();
 
-        params->aggregator.createStatesAndFillKeyColumnsWithSingleKey(variants, key_columns, key_begin, res_key_columns);
+        if (group_by_key)
+            params->aggregator.fillKeyColumnsWithSingleKey(key_columns, key_begin, res_key_columns);
+        else
+            params->aggregator.createStatesAndFillKeyColumnsWithSingleKey(variants, key_columns, key_begin, res_key_columns);
 
         if (!group_by_key)
         {
@@ -147,9 +180,31 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
         }
     }
 
+    size_t interval_index = 0;
+
     /// Will split block into segments with the same key
     while (key_end != rows)
     {
+        /// Cancellation is only checked between work() calls, but one consume() over a chunk with many
+        /// keys can run for a long time; check per key interval so a cancelled query stops promptly.
+        if (isCancelled())
+        {
+            LOG_TEST(log, "Cancelled between key intervals");
+            return;
+        }
+
+        if (interval_index == 5)
+        {
+            /// This runs inside `IProcessor::work()`, which must only use CPU and never wait, so the
+            /// hook cancels the query the same way `KILL QUERY` does instead of blocking: the
+            /// check above then observes the cancellation on the next interval.
+            fiu_do_on(FailPoints::aggregating_in_order_transform_cancel_mid_loop, {
+                if (auto query_context = CurrentThread::tryGetQueryContext())
+                    query_context->killCurrentQuery();
+            });
+        }
+        ++interval_index;
+
         /// Find the first position of new (not current) key in current chunk
         auto indices = collections::range(key_begin, rows);
         auto it = std::upper_bound(indices.begin(), indices.end(), cur_block_size - 1,
@@ -187,21 +242,46 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
             if (!group_by_key)
                 params->aggregator.addSingleKeyToAggregateColumns(variants, res_aggregate_columns);
 
-            /// If max_block_size is reached we have to stop consuming and generate the block. Save the extra rows into new chunk.
-            if (cur_block_size >= max_block_size || cur_block_bytes + current_memory_usage >= max_block_bytes)
+            /// Enough groups have been emitted and the new key starts a new value of the
+            /// `ORDER BY` prefix, so the rest of the input cannot be needed (see `limit_prefix_columns`).
+            /// With `group_by_key`, `cur_block_size` counts runs of the sorted key columns rather than
+            /// groups; the groups accumulated for the current block are the entries of the hash table.
+            size_t cur_block_groups = group_by_key ? variants.size() : cur_block_size;
+            if (limit_hint && cur_block_groups + res_rows >= limit_hint && isLimitPrefixBoundary(key_columns, key_end))
+                limit_reached = true;
+
+            /// If max_block_size or limit_hint is reached we have to stop consuming and generate the block. Save the extra rows into new chunk.
+            if (cur_block_size >= max_block_size || cur_block_bytes + current_memory_usage >= max_block_bytes || limit_reached)
             {
                 if (group_by_key)
                     group_by_chunk
                         = params->aggregator.prepareChunkAndFillSingleLevel</* return_single_block */ true>(variants, /* final= */ false).chunk;
                 cur_block_bytes += current_memory_usage;
-                finalizeCurrentChunk(std::move(chunk), key_end);
+
+                /// When limit is reached, don't save leftover rows — we're done.
+                /// Set block_end_reached + need_generate to trigger generate(),
+                /// which will produce the output and then set is_consume_finished.
+                if (limit_reached)
+                {
+                    block_end_reached = true;
+                    need_generate = true;
+                    variants.invalidate();
+                }
+                else
+                {
+                    finalizeCurrentChunk(std::move(chunk), key_end);
+                }
+
                 if (rows_before_aggregation)
                     rows_before_aggregation->add(key_end);
                 return;
             }
 
-            /// We create a new state for the new key and update res_key_columns
-            params->aggregator.createStatesAndFillKeyColumnsWithSingleKey(variants, key_columns, key_end, res_key_columns);
+            /// Record the new key in res_key_columns; only full-key mode also creates its state
+            if (group_by_key)
+                params->aggregator.fillKeyColumnsWithSingleKey(key_columns, key_end, res_key_columns);
+            else
+                params->aggregator.createStatesAndFillKeyColumnsWithSingleKey(variants, key_columns, key_end, res_key_columns);
             ++cur_block_size;
         }
 
@@ -270,6 +350,17 @@ IProcessor::Status AggregatingInOrderTransform::prepare()
         }
 
         output.push(std::move(to_push_chunk));
+
+        /// When limit is reached, we set is_consume_finished in generate()
+        /// and don't save leftover rows. Finish immediately after pushing.
+        if (is_consume_finished)
+        {
+            output.finish();
+            input.close();
+            LOG_DEBUG(log, "Aggregated. {} to {} rows (from {})", src_rows, res_rows, formatReadableSizeWithBinarySuffix(src_bytes));
+            return Status::Finished;
+        }
+
         return Status::Ready;
     }
 
@@ -358,6 +449,10 @@ void AggregatingInOrderTransform::generate()
 
     res_rows += to_push_chunk.getNumRows();
     need_generate = false;
+
+    /// If we have emitted enough groups up to a boundary of the `ORDER BY` prefix, stop consuming more input.
+    if (limit_reached)
+        is_consume_finished = true;
 }
 
 FinalizeAggregatedTransform::FinalizeAggregatedTransform(SharedHeader header, const AggregatingTransformParamsPtr & params_)

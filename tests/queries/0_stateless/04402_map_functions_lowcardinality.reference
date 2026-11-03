@@ -1,0 +1,44 @@
+-- mapFilter preserves LowCardinality of key and value
+Map(LowCardinality(String), String)
+Map(String, LowCardinality(String))
+{'b':'y'}
+-- mapSort and variants preserve LowCardinality
+Map(LowCardinality(String), String)
+{'a':'x','b':'y'}
+Map(LowCardinality(String), String)
+Map(LowCardinality(String), String)
+-- mapConcat preserves LowCardinality when all inputs agree, otherwise falls back
+Map(LowCardinality(String), String)
+{'a':'x','b':'y'}
+Map(String, String)
+-- mapApply follows the lambda (just like arrayMap)
+Map(String, String)
+Map(LowCardinality(String), String)
+-- subcolumn/scalar functions keep their existing behavior
+Array(String)
+Array(String)
+UInt8
+UInt8
+-- plain Map (no LowCardinality) is unaffected
+Map(String, String)
+-- issue #108439: functions returning a Map must rebuild a nested Map value type
+Map(LowCardinality(String), Map(LowCardinality(String), String))
+{'a':{'x':'y'}}
+Map(LowCardinality(String), Map(LowCardinality(String), String))
+{'a':{'z':'w'},'b':{'x':'y'}}
+Map(LowCardinality(String), Map(LowCardinality(String), String))
+Map(LowCardinality(String), Map(LowCardinality(String), String))
+Map(LowCardinality(String), Map(LowCardinality(String), String))
+{'a':{'x':'y'}}
+-- nested Map inside Array / Tuple value
+Map(LowCardinality(String), Array(Map(LowCardinality(String), String)))
+{'a':[{'x':'y'}]}
+Map(LowCardinality(String), Tuple(Map(LowCardinality(String), String)))
+{'a':({'x':'y'})}
+-- nested Map with LowCardinality only in the inner value
+Map(String, Map(String, LowCardinality(String)))
+-- the reproducer from the issue: CREATE TABLE AS keeps the column type and passes CHECK
+attributes_map	Map(LowCardinality(String), String)
+key	String
+key_1	{'attr_2':'value_2','attr_3':'value_3'}
+1

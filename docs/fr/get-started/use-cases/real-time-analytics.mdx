@@ -1,0 +1,71 @@
+---
+slug: /cloud/get-started/cloud/use-cases/real-time-analytics
+title: 'Analytique en temps réel'
+description: 'Découvrez comment créer des applications d’analytique en temps réel avec ClickHouse Cloud pour obtenir des informations instantanées et prendre des décisions fondées sur les données'
+keywords: ['cas d’utilisation', 'analytique en temps réel']
+sidebarTitle: 'Analytique en temps réel'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+export const ExclusiveGroup = ({ name, children }) => {
+  useEffect(() => {
+    document.querySelectorAll(`[data-eg="${name}"] details`).forEach(d =>
+      d.setAttribute('name', name)
+    );
+  });
+  return <div data-eg={name}>{children}</div>;
+};
+
+Dans les analytics, &quot;en temps réel&quot; signifie généralement que l’expérience utilisateur elle-même paraît en direct.
+Un client actualise un tableau de bord, ouvre un classement ou examine un incident, et s’attend à ce que les données reflètent ce qui vient de se passer.
+Techniquement, cela signifie non seulement fournir des requêtes analytiques à faible latence, mais aussi y parvenir alors que les données sont insérées en continu à fort volume.
+
+<div id="system-properties">
+  ## Propriétés d’un système d’analytique en temps réel
+</div>
+
+Lorsque les clients évaluent une plateforme d’analytique en temps réel, ils se concentrent souvent uniquement sur la latence des requêtes. « Peut-elle renvoyer une réponse en moins de 50 ms ? » est une question raisonnable, à laquelle la plupart des moteurs analytiques peuvent répondre de manière convaincante si vous leur consacrez suffisamment de ressources de calcul sur un jeu de données statique.
+
+La question qui détermine ce que les utilisateurs vivent réellement est plus complexe. Elle consiste à savoir si le système peut renvoyer une réponse en 50 ms **sur des données arrivées il y a une seconde**, alors que l’ingestion est toujours en cours et que d’autres utilisateurs exécutent eux aussi des requêtes.
+
+Pour raisonner sur la disponibilité des données, il faut considérer le délai de bout en bout jusqu’à l’obtention d’un résultat exploitable, qui comporte trois composantes.
+
+* **Temps d’ingestion** : Combien de temps faut-il pour que des données nouvellement générées arrivent sur la plateforme et y soient stockées de manière durable ?
+* **Temps de transformation et de préparation** : Combien de temps faut-il pour nettoyer, enrichir, effectuer des jointures, pré-agréger ou mettre à jour les structures utilisées pour servir les requêtes (vues matérialisées, rollups, index) ?
+* **Temps de requête** : Combien de temps faut-il pour planifier et exécuter la lecture une fois les données disponibles ?
+
+<Image img="/images/use-cases/rta-considerations.webp" alt="Analytique en temps réel : temps d’ingestion, de transformation et de requête" />
+
+<div id="clickhouse-rta">
+  ## Comment ClickHouse propulse l’analytique en temps réel
+</div>
+
+<Columns cols={2}>
+  <div>
+    <Image img="/images/use-cases/real-time-analytics-architecture.webp" alt="Comment ClickHouse propulse l’analytique en temps réel" />
+  </div>
+
+  <ExclusiveGroup name="rta-arch">
+    <AccordionGroup>
+      <Accordion title="Ingestion des données" defaultOpen>
+        Avec [ClickPipes](/fr/integrations/clickpipes/home), disponible exclusivement dans ClickHouse Cloud, vous bénéficiez d’un moteur d’intégration clé en main qui facilite l’ingestion de gros volumes de données. Sélectionnez une source de données et un format, ajustez votre schéma, puis laissez votre pipeline s’exécuter.
+
+        La vaste bibliothèque de [moteurs de table](/fr/reference/engines/table-engines) de ClickHouse prend en charge l’ingestion de données depuis des topics Kafka, des buckets S3, des bases de données OLTP, et bien plus encore. Contrairement à d’autres bases de données OLAP qui vous obligent à regrouper les insertions par lots pour obtenir un débit élevé, ClickHouse gère tout aussi bien les charges plus modestes — les [insertions asynchrones](/fr/concepts/features/operations/insert/asyncinserts) les regroupent automatiquement par lots pour des performances d’écriture optimales.
+      </Accordion>
+
+      <Accordion title="Transformations des données et requêtes">
+        Les [vues matérialisées](/fr/concepts/features/materialized-views) rendent les transformations fluides — déclenchées automatiquement à l’insertion de nouvelles données, elles extraient, agrègent et modifient les données à mesure qu’elles arrivent, sans nécessiter de pipelines sur mesure. Les chaîner apporte une flexibilité modulaire.
+
+        Les requêtes sur les vues matérialisées sont exceptionnellement rapides, puisque les résultats sont stockés dans des tables dédiées. ClickHouse Cloud inclut le [cache de requêtes](/fr/concepts/features/performance/caches/query-cache), les [index clairsemés](/fr/concepts/features/performance/skip-indexes/skipping-indexes) et les [projections](/fr/concepts/features/projections/projections) sans nécessiter d’offre supérieure.
+      </Accordion>
+
+      <Accordion title="Applications et tableaux de bord">
+        ClickHouse propulse l’analytique orientée utilisateur dans les services financiers, les jeux vidéo, l’e-commerce, et bien plus encore. Il prend en charge une interface REST afin que les développeurs web puissent créer des applications légères sans protocoles binaires complexes.
+
+        Des connecteurs natifs existent pour des outils BI comme [Grafana](/fr/integrations/connectors/data-visualization/grafana), [Tableau](/fr/integrations/connectors/data-visualization/tableau/tableau-and-clickhouse) et [Looker](/fr/integrations/connectors/data-visualization/looker-and-clickhouse), ainsi que des bibliothèques clientes pour différents langages, des clients SQL et le [MySQL wire protocol](/fr/concepts/features/interfaces/mysql) pour les outils sans connecteur natif.
+      </Accordion>
+    </AccordionGroup>
+  </ExclusiveGroup>
+</Columns>

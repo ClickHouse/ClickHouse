@@ -1,0 +1,14 @@
+---
+slug: /faq/operations/deploy-separate-storage-and-compute
+title: 'Is it possible to deploy ClickHouse with separate storage and compute?'
+sidebarTitle: 'Is it possible to deploy ClickHouse with separate storage and compute?'
+toc_hidden: true
+toc_priority: 20
+description: 'This page provides an answer as to whether it is possible to deploy ClickHouse with separate storage and compute'
+doc_type: 'guide'
+keywords: ['storage', 'disk configuration', 'data organization', 'volume management', 'storage tiers']
+---
+
+The short answer is "yes".
+
+Object storage (S3, GCS) can be used as the elastic primary storage backend for data in ClickHouse tables. [S3-backed MergeTree](/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse) and [GCS-backed MergeTree](/reference/functions/table-functions/gcs) guides are published. Only metadata is stored locally on compute nodes in this configuration. You can easily upscale and downscale compute resources in this setup as additional nodes only need to replicate metadata.

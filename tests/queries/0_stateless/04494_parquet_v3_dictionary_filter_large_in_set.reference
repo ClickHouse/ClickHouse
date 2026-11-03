@@ -1,0 +1,8 @@
+150-element IN, all values in row group 0, filter off: all 20000 rows are read
+{"result":[{"count()":10000}],"rows_read":20000}
+150-element IN, all values in row group 0, filter on: only row group 0 (10000 rows) is read
+{"result":[{"count()":10000}],"rows_read":10000}
+150-element IN, no value present in any row group, filter on: all row groups are skipped
+{"result":[{"count()":0}],"rows_read":0}
+the 150-element IN produces the same result with and without the filter
+OK

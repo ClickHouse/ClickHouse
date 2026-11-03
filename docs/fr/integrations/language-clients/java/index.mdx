@@ -1,0 +1,204 @@
+---
+title: 'Présentation des clients Java'
+keywords: ['clickhouse', 'java', 'jdbc', 'client', 'integrate', 'r2dbc']
+description: 'Options de connexion à ClickHouse depuis Java'
+slug: /integrations/java
+doc_type: 'reference'
+integration:
+  - support_level: 'core'
+  - category: 'language_client'
+---
+
+* [Client 0.8+](/fr/integrations/language-clients/java/client)
+* [JDBC 0.8+](/fr/integrations/language-clients/java/jdbc)
+* [R2DBC Driver](/fr/integrations/language-clients/java/r2dbc)
+
+<div id="clickhouse-client">
+  ## ClickHouse client
+</div>
+
+Le client Java est une bibliothèque qui implémente une API propre et masque les détails des communications réseau avec le serveur ClickHouse. À ce jour, seule l’interface HTTP est prise en charge. La bibliothèque fournit des utilitaires pour manipuler différents formats ClickHouse ainsi que d’autres fonctions associées.
+
+Le client Java a été développé dès 2015. Sa base de code est devenue très difficile à maintenir, son API est déroutante, et il est difficile de l’optimiser davantage. Nous l’avons donc remanié en 2024 sous la forme d’un nouveau composant, `client-v2`. Il offre une API claire, une base de code plus légère, de meilleures performances et une meilleure prise en charge des formats ClickHouse (principalement RowBinary et Native). JDBC utilisera ce client dans un avenir proche.
+
+<div id="supported-data-types">
+  ### Types de données pris en charge
+</div>
+
+| **Type de données**     | **Prise en charge par Client V2** | **Prise en charge par Client V1** |
+| ----------------------- | --------------------------------- | --------------------------------- |
+| Int8                    | ✔                                 | ✔                                 |
+| Int16                   | ✔                                 | ✔                                 |
+| Int32                   | ✔                                 | ✔                                 |
+| Int64                   | ✔                                 | ✔                                 |
+| Int128                  | ✔                                 | ✔                                 |
+| Int256                  | ✔                                 | ✔                                 |
+| UInt8                   | ✔                                 | ✔                                 |
+| UInt16                  | ✔                                 | ✔                                 |
+| UInt32                  | ✔                                 | ✔                                 |
+| UInt64                  | ✔                                 | ✔                                 |
+| UInt128                 | ✔                                 | ✔                                 |
+| UInt256                 | ✔                                 | ✔                                 |
+| Float32                 | ✔                                 | ✔                                 |
+| Float64                 | ✔                                 | ✔                                 |
+| Decimal                 | ✔                                 | ✔                                 |
+| Decimal32               | ✔                                 | ✔                                 |
+| Decimal64               | ✔                                 | ✔                                 |
+| Decimal128              | ✔                                 | ✔                                 |
+| Decimal256              | ✔                                 | ✔                                 |
+| Bool                    | ✔                                 | ✔                                 |
+| String                  | ✔                                 | ✔                                 |
+| FixedString             | ✔                                 | ✔                                 |
+| Nullable                | ✔                                 | ✔                                 |
+| Date                    | ✔                                 | ✔                                 |
+| Date32                  | ✔                                 | ✔                                 |
+| DateTime                | ✔                                 | ✔                                 |
+| DateTime32              | ✔                                 | ✔                                 |
+| DateTime64              | ✔                                 | ✔                                 |
+| Interval                | ✗                                 | ✗                                 |
+| Enum                    | ✔                                 | ✔                                 |
+| Enum8                   | ✔                                 | ✔                                 |
+| Enum16                  | ✔                                 | ✔                                 |
+| Array                   | ✔                                 | ✔                                 |
+| Map                     | ✔                                 | ✔                                 |
+| Nested                  | ✔                                 | ✔                                 |
+| Tuple                   | ✔                                 | ✔                                 |
+| UUID                    | ✔                                 | ✔                                 |
+| IPv4                    | ✔                                 | ✔                                 |
+| IPv6                    | ✔                                 | ✔                                 |
+| Object                  | ✗                                 | ✔                                 |
+| Point                   | ✔                                 | ✔                                 |
+| Nothing                 | ✔                                 | ✔                                 |
+| MultiPolygon            | ✔                                 | ✔                                 |
+| Ring                    | ✔                                 | ✔                                 |
+| Polygon                 | ✔                                 | ✔                                 |
+| SimpleAggregateFunction | ✔                                 | ✔                                 |
+| AggregateFunction*      | ✔                                 | ✔                                 |
+| Variant                 | ✔                                 | ✗                                 |
+| Dynamic                 | ✔                                 | ✗                                 |
+| JSON                    | ✔                                 | ✗                                 |
+
+[Types de données ClickHouse](/fr/reference/data-types/index)
+
+<Info>
+  **Prise en charge partielle**
+
+  * **AggregateFunction** — Seul `groupBitmap` est pris en charge pour les lectures binaires directes. Pour les autres fonctions d’agrégation (`min`, `max`, `avg`, etc.), utilisez les combinateurs `-Merge` dans votre requête (par exemple, `minMerge()`, `avgMerge()`) pour finaliser l’état côté serveur. `SELECT * FROM table ...` n’est pas pris en charge pour les colonnes de type `AggregateFunction`.
+</Info>
+
+<Info>
+  **Remarques sur les types de données**
+
+  * **Decimal** — `SET output_format_decimal_trailing_zeros=1` à partir de la version 21.9+ pour plus de cohérence.
+  * **Enum** — peut être traité à la fois comme une chaîne et comme un entier.
+  * **UInt64** — mappé sur `long` dans client-v1.
+</Info>
+
+<div id="features">
+  ### Fonctionnalités
+</div>
+
+Tableau des fonctionnalités des clients :
+
+| Name                                      | Client V2 | Client V1 |                  Comments                 |
+| ----------------------------------------- | :-------: | :-------: | :---------------------------------------: |
+| Connexion HTTP                            |     ✔     |     ✔     |                                           |
+| Compression HTTP (LZ4)                    |     ✔     |     ✔     |                                           |
+| Compression gérée par l&#39;application   |     ✔     |     ✗     |                                           |
+| Compression des réponses du serveur - LZ4 |     ✔     |     ✔     |                                           |
+| Compression des requêtes du client - LZ4  |     ✔     |     ✔     |                                           |
+| HTTPS                                     |     ✔     |     ✔     |                                           |
+| Certificat SSL client (mTLS)              |     ✔     |     ✔     |                                           |
+| Proxy HTTP                                |     ✔     |     ✔     |                                           |
+| SerDe POJO                                |     ✔     |     ✗     |                                           |
+| Pool de connexions                        |     ✔     |     ✔     | Lorsque le client Apache HTTP est utilisé |
+| Paramètres nommés                         |     ✔     |     ✔     |                                           |
+| Nouvelle tentative en cas d&#39;échec     |     ✔     |     ✔     |                                           |
+| Basculement                               |     ✗     |     ✔     |                                           |
+| Équilibrage de charge                     |     ✗     |     ✔     |                                           |
+| Découverte automatique du serveur         |     ✗     |     ✔     |                                           |
+| Commentaire de log                        |     ✔     |     ✔     |                                           |
+| Rôles de session                          |     ✔     |     ✔     |                                           |
+| Authentification SSL du client            |     ✔     |     ✔     |                                           |
+| Configuration SNI                         |     ✔     |     ✗     |                                           |
+| Fuseau horaire de la session              |     ✔     |     ✔     |                                           |
+
+Le pilote JDBC hérite des mêmes fonctionnalités que l&#39;implémentation client sous-jacente. Les autres fonctionnalités de JDBC sont listées sur sa [page](/fr/integrations/language-clients/java/jdbc).
+
+<div id="compatibility">
+  ### Compatibilité
+</div>
+
+* Tous les projets de ce dépôt sont testés avec toutes les [versions LTS actives](https://github.com/ClickHouse/ClickHouse/pulls?q=is%3Aopen+is%3Apr+label%3Arelease) de ClickHouse.
+* [Politique de prise en charge](https://github.com/ClickHouse/ClickHouse/blob/master/SECURITY.md#security-change-log-and-support)
+* Nous recommandons de mettre régulièrement à jour le client afin de ne pas manquer les correctifs de sécurité et les nouvelles améliorations.
+* Si vous rencontrez un problème lors de la migration vers l’API v2, [créez une issue](https://github.com/ClickHouse/clickhouse-java/issues/new?assignees=\&labels=v2-feedback\&projects=\&template=v2-feedback.md\&title=) et nous vous répondrons !
+
+<div id="logging">
+  ### Journalisation
+</div>
+
+Notre client Java utilise [SLF4J](https://www.slf4j.org/) pour la journalisation. Vous pouvez utiliser n’importe quel framework de journalisation compatible avec SLF4J, comme `Logback` ou `Log4j`.
+Par exemple, si vous utilisez Maven, vous pouvez ajouter la dépendance suivante à votre fichier `pom.xml` :
+
+```xml title="pom.xml"
+<dependencies>
+    <!-- SLF4J API -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version> <!-- Use the latest version -->
+    </dependency>
+
+    <!-- Logback Core -->
+    <dependency>
+        <groupId>ch.qos.logback</groupId>
+        <artifactId>logback-core</artifactId>
+        <version>1.5.16</version> <!-- Use the latest version -->
+    </dependency>
+
+    <!-- Logback Classic (bridges SLF4J to Logback) -->
+    <dependency>
+        <groupId>ch.qos.logback</groupId>
+        <artifactId>logback-classic</artifactId>
+        <version>1.5.16</version> <!-- Use the latest version -->
+    </dependency>
+</dependencies>
+```
+
+<div id="configuring-logging">
+  #### Configurer la journalisation
+</div>
+
+Cela dépend du framework de journalisation que vous utilisez. Par exemple, si vous utilisez `Logback`, vous pouvez configurer la journalisation dans un fichier nommé `logback.xml` :
+
+```xml title="logback.xml"
+<configuration>
+    <!-- Console Appender -->
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>[%d{yyyy-MM-dd HH:mm:ss}] [%level] [%thread] %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- File Appender -->
+    <appender name="FILE" class="ch.qos.logback.core.FileAppender">
+        <file>logs/app.log</file>
+        <append>true</append>
+        <encoder>
+            <pattern>[%d{yyyy-MM-dd HH:mm:ss}] [%level] [%thread] %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Root Logger -->
+    <root level="info">
+        <appender-ref ref="STDOUT" />
+        <appender-ref ref="FILE" />
+    </root>
+
+    <!-- Custom Log Levels for Specific Packages -->
+    <logger name="com.clickhouse" level="info" />
+</configuration>
+```
+
+[Journal des modifications](https://github.com/ClickHouse/clickhouse-java/blob/main/CHANGELOG.md)

@@ -20,15 +20,11 @@ class ThrottlerConstraint final : public ISchedulerConstraint
 public:
     static constexpr double default_burst_seconds = 1.0;
 
-    explicit ThrottlerConstraint(EventQueue & event_queue_, const Poco::Util::AbstractConfiguration & config = emptyConfig(), const String & config_prefix = {})
-        : ISchedulerConstraint(event_queue_, config, config_prefix)
-        , max_speed(config.getDouble(config_prefix + ".max_speed", 0))
-        , max_burst(config.getDouble(config_prefix + ".max_burst", default_burst_seconds * max_speed))
-        , last_update(event_queue_.now())
-        , tokens(max_burst)
-    {}
+    /// Postponing a request for longer than this is meaningless, and the bound keeps the delay
+    /// arithmetic in `updateBucket` inside the `Int64` nanosecond range.
+    static constexpr auto max_delay = std::chrono::nanoseconds(std::chrono::hours(24 * 365));
 
-    ThrottlerConstraint(EventQueue & event_queue_, const SchedulerNodeInfo & info_, double max_speed_, double max_burst_)
+    explicit ThrottlerConstraint(EventQueue & event_queue_, const SchedulerNodeInfo & info_ = {}, double max_speed_ = 0.0, double max_burst_ = 0.0)
         : ISchedulerConstraint(event_queue_, info_)
         , max_speed(max_speed_)
         , max_burst(max_burst_)
@@ -48,15 +44,6 @@ public:
 
     std::string_view getTypeName() const override { return "bandwidth_limit"; }
 
-    bool equals(ISchedulerNode * other) override
-    {
-        if (!ISchedulerNode::equals(other))
-            return false;
-        if (auto * o = dynamic_cast<ThrottlerConstraint *>(other))
-            return max_speed == o->max_speed && max_burst == o->max_burst;
-        return false;
-    }
-
     void attachChild(const std::shared_ptr<ISchedulerNode> & child_) override
     {
         // Take ownership
@@ -73,6 +60,7 @@ public:
         if (child.get() == child_)
         {
             child_active = false; // deactivate
+            flushThroughputOnDeactivation();
             child->setParentNode(nullptr); // detach
             child.reset();
         }
@@ -102,9 +90,10 @@ public:
             updateBucket(cost);
             SCHED_DBG("{} -- dequeue(cost={}, tokens={:.2f}, max_speed={:.2f})",
                 getPath(), cost, tokens, max_speed);
-            incrementDequeued(cost);
+            incrementDequeued(cost, active());
             return {request, active()};
         }
+        flushThroughputOnDeactivation();
         return {nullptr, false};
     }
 
@@ -168,6 +157,15 @@ public:
     }
 
 private:
+    /// The bound has to be applied before the narrowing: casting an out-of-range `Float64` to
+    /// `Int64` is itself the undefined behavior.
+    static std::chrono::nanoseconds saturatingDelay(double delay_ns)
+    {
+        if (delay_ns < static_cast<double>(max_delay.count()))
+            return std::chrono::nanoseconds(static_cast<Int64>(delay_ns));
+        return max_delay;
+    }
+
     void onPostponed()
     {
         postponed = EventQueue::not_postponed;
@@ -189,12 +187,14 @@ private:
             // Postpone activation until there is positive amount of tokens
             if (!do_not_postpone && tokens < 0.0)
             {
-                auto delay_ns = std::chrono::nanoseconds(static_cast<Int64>(-tokens / max_speed * 1e9));
+                auto delay_ns = saturatingDelay(-tokens / max_speed * 1e9);
                 if (postponed == EventQueue::not_postponed)
                 {
                     postponed = event_queue.postpone(std::chrono::time_point_cast<EventQueue::Duration>(now + delay_ns),
                         [this] { onPostponed(); });
-                    throttling_duration += delay_ns;
+                    /// The total accumulates for the node's lifetime, so bounding a single delay
+                    /// cannot keep the sum in range.
+                    throttling_duration += std::min(delay_ns, std::chrono::nanoseconds::max() - throttling_duration);
                 }
             }
         }

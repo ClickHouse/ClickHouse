@@ -1,5 +1,8 @@
 #pragma once
 
+#include <algorithm>
+#include <condition_variable>
+#include <optional>
 #include <boost/noncopyable.hpp>
 #include <Interpreters/FileCache/FileCacheKey.h>
 #include <Interpreters/FileCache/Guards.h>
@@ -10,6 +13,7 @@
 #include <IO/Operators.h>
 #include <IO/OpenedFileCache.h>
 #include <base/getThreadId.h>
+#include <Common/Scheduler/ResourceLink.h>
 #include <Interpreters/FileCache/IFileCachePriority.h>
 #include <Interpreters/FileCache/FileSegmentInfo.h>
 #include <Interpreters/FileCache/FileCache_fwd_internal.h>
@@ -17,16 +21,29 @@
 
 namespace Poco { class Logger; }
 
-namespace CurrentMetrics
-{
-extern const Metric CacheFileSegments;
-}
-
 namespace DB
 {
 
 class ReadBufferFromFileBase;
 struct FileCacheReserveStat;
+
+/// Reserve-ahead state of one reader/writer: the first reservation is exact, then the reserve-ahead
+/// doubles up to `max_reserve_granularity` (the cache's `reserve_granularity`). Reset on a failed reservation.
+struct FileCacheReserveAhead
+{
+    /// Returns the size to reserve, at least `size_to_reserve`, and grows the reserve-ahead.
+    /// `segment_reserve_limit` is the room left in the segment, capped by the end of the read if known.
+    size_t getReserveSize(size_t size_to_reserve, size_t segment_reserve_limit, size_t max_reserve_granularity)
+    {
+        const size_t result = std::max(size_to_reserve, std::min({granularity, max_reserve_granularity, segment_reserve_limit}));
+        granularity = std::min(max_reserve_granularity, std::max(granularity, size_to_reserve) * 2);
+        return result;
+    }
+
+    void reset() { granularity = 0; }
+
+    size_t granularity = 0;
+};
 
 
 struct CreateFileSegmentSettings
@@ -66,7 +83,8 @@ public:
         bool background_download_enabled_ = false,
         FileCache * cache_ = nullptr,
         std::weak_ptr<KeyMetadata> key_metadata_ = std::weak_ptr<KeyMetadata>(),
-        Priority::IteratorPtr queue_iterator_ = nullptr);
+        Priority::IteratorPtr queue_iterator_ = nullptr,
+        bool size_in_filename_ = false);
 
     ~FileSegment();
 
@@ -113,6 +131,11 @@ public:
 
     bool isUnbound() const { return is_unbound; }
 
+    /// Whether the segment's file on disk currently has its size encoded in the name
+    /// (`<offset>_<size>`). True once a regular segment is fully downloaded (or was loaded
+    /// from such a file on startup); false while still downloading or for legacy files.
+    bool hasSizeInFileName() const { return size_in_filename; }
+
     String getPath() const;
 
     int getFlagsForLocalRead() const { return O_RDONLY | O_CLOEXEC; }
@@ -121,14 +144,14 @@ public:
      * ========== Methods for _any_ file segment's owner ========================
      */
 
-    String getOrSetDownloader();
+    /// When the caller is elected, the remote reader is switched to `io_scheduling` (the caller's links).
+    String getOrSetDownloader(const IOSchedulingSettings & io_scheduling = {});
 
     bool isDownloader() const;
 
     DownloaderId getDownloader() const;
 
-    /// Wait for the change of state from DOWNLOADING to any other.
-    State wait(size_t offset);
+    State wait(size_t offset, size_t timeout_ms);
 
     bool isDownloaded() const;
 
@@ -136,13 +159,21 @@ public:
 
     size_t getHitsCount() const { return hits_count; }
 
-    size_t getRefCount() const { return ref_count; }
-
     size_t getCurrentWriteOffset() const;
 
     size_t getDownloadedSize() const;
 
     size_t getReservedSize() const;
+
+    /// Returns the size as it is accounted for in the priority queue and cache state.
+    /// When `use_real_disk_size` is enabled for the cache, this is aligned to the filesystem
+    /// block size; otherwise it equals the reserved size.
+    size_t getDiskAccountedSize() const;
+
+    /// Computes how many bytes the priority queue accounting changes when `raw_delta` extra
+    /// bytes are reserved on top of the current reserved size. Equals `raw_delta` for caches
+    /// without `use_real_disk_size`; otherwise it is the difference between aligned sizes.
+    size_t computeDiskAccountedDelta(size_t raw_delta) const;
 
     /// Now detached status can be used in the following cases:
     /// 1. there is only 1 remaining file segment holder
@@ -198,9 +229,17 @@ public:
      * ========== Methods that must do cv.notify() ==================
      */
 
-    static void complete(FileSegmentPtr && file_segment, bool allow_background_download, bool force_shrink_to_downloaded_size);
+    static void complete(
+        FileSegmentPtr && file_segment,
+        bool allow_background_download,
+        bool force_shrink_to_downloaded_size,
+        const IOSchedulingSettings & holder_io_scheduling = {});
 
     void completePartAndResetDownloader();
+
+    /// Wake the `wait`ers after the downloader moves the write offset forward. Keep the downloader role
+    /// and the state unchanged. Example waiter: a reader that streams a partially-downloaded prefix.
+    void notifyDownloadProgress();
 
     void resetDownloader();
 
@@ -208,13 +247,15 @@ public:
      * ========== Methods for _only_ file segment's `downloader` ==================
      */
 
-    /// Try to reserve exactly `size` bytes (in addition to the getDownloadedSize() bytes already downloaded).
-    /// Returns true if reservation was successful, false otherwise.
+    /// Try to reserve `size` bytes on top of getDownloadedSize(). Reserves ahead if `reserve_ahead` is
+    /// set, but not past `reserve_hint` bytes from the current download offset.
     bool reserve(
         size_t size_to_reserve,
         size_t lock_wait_timeout_milliseconds,
         std::string & failure_reason,
-        FileCacheReserveStat * reserve_stat = nullptr);
+        FileCacheReserveStat * reserve_stat = nullptr,
+        std::optional<size_t> reserve_hint = std::nullopt,
+        FileCacheReserveAhead * reserve_ahead = nullptr);
 
     /// Write data into reserved space.
     void write(char * from, size_t size, size_t offset_in_file);
@@ -227,7 +268,7 @@ public:
     RemoteFileReaderPtr getRemoteFileReader();
     LocalCacheWriterPtr getLocalCacheWriter();
 
-    RemoteFileReaderPtr extractRemoteFileReader();
+    RemoteFileReaderPtr extractRemoteFileReader(const IOSchedulingSettings & io_scheduling = {});
 
     void resetRemoteFileReader();
 
@@ -243,7 +284,14 @@ public:
     bool isBackgroundDownloadEnabled() const { return background_download_enabled; }
 
 private:
+    struct DownloadState;
+
     String getDownloaderUnlocked(const FileSegmentGuard::Lock &) const;
+    DownloadState & getOrCreateDownloadDataUnlocked(const FileSegmentGuard::Lock &);
+    void resetDownloadDataUnlocked(const FileSegmentGuard::Lock &);
+
+    /// In release builds returns a single shared logger; in debug builds a per-segment one.
+    const LoggerPtr & getLog() const;
     bool isDownloaderUnlocked(const FileSegmentGuard::Lock & segment_lock) const;
     void resetDownloaderUnlocked(const FileSegmentGuard::Lock &);
     size_t getSizeForBackgroundDownloadUnlocked(const FileSegmentGuard::Lock &) const;
@@ -256,6 +304,11 @@ private:
 
     void setDownloadedUnlocked(const FileSegmentGuard::Lock &);
     void setDownloadFailedUnlocked(const FileSegmentGuard::Lock &);
+
+    /// Rename a fully downloaded regular segment's file from `<offset>` to `<offset>_<size>`,
+    /// so that startup metadata loading can read the size from the name instead of `stat`-ing
+    /// each file. No-op for ephemeral segments or if the size is already encoded.
+    void renameToIncludeSizeInNameUnlocked(const FileSegmentGuard::Lock &);
     void shrinkFileSegmentToDownloadedSize(const LockedKey &, const FileSegmentGuard::Lock &, bool force_shrink_to_downloaded_size);
 
     void assertNotDetached() const;
@@ -267,7 +320,14 @@ private:
 
     String tryGetPath() const;
 
-    void complete(const LockedKeyPtr & locked_key, bool allow_background_download, bool force_shrink_to_downloaded_size);
+    void complete(
+        const LockedKeyPtr & locked_key,
+        bool allow_background_download,
+        bool force_shrink_to_downloaded_size,
+        const IOSchedulingSettings & holder_io_scheduling);
+
+    /// The only writer of `DownloadState::reader_io_scheduling`; switches the reader to the new links.
+    static void setReaderIOSchedulingUnlocked(DownloadState & download, const IOSchedulingSettings & io_scheduling);
 
     const Key file_key;
     Range segment_range;
@@ -278,34 +338,54 @@ private:
     const bool is_unbound;
     const bool background_download_enabled;
 
-    std::atomic<State> download_state;
-    DownloaderId downloader_id; /// The one who prepares the download
-    time_t download_finished_time = 0;
+    /// Whether the on-disk file is named `<offset>_<size>` (size encoded) rather than `<offset>`.
+    /// Only ever transitions false -> true, under `segment_guard`, when the segment becomes
+    /// fully downloaded; reads in `getPath` are lock-free and safe because of this.
+    std::atomic<bool> size_in_filename;
 
-    RemoteFileReaderPtr remote_file_reader;
-    LocalCacheWriterPtr cache_writer;
+    std::atomic<State> download_state;
+    time_t download_finished_time = 0;
 
     /// downloaded_size should always be less or equal to reserved_size
     std::atomic<size_t> downloaded_size = 0;
     std::atomic<size_t> reserved_size = 0;
-    mutable std::mutex write_mutex;
+
+    /// State needed only while a segment is being downloaded. Created lazily when a downloader
+    /// is assigned and freed once the segment reaches a terminal state (DOWNLOADED/DETACHED),
+    /// so an already-cached file segment (the common case) does not pay for it.
+    /// Created/reset under `segment_guard`.
+    struct DownloadState
+    {
+        ~DownloadState();
+
+        DownloaderId downloader_id; /// The one who prepares the download.
+        RemoteFileReaderPtr remote_file_reader;
+        /// The links `remote_file_reader` carries: empty, or those of a holder that has not finished `complete`.
+        IOSchedulingSettings reader_io_scheduling;
+        LocalCacheWriterPtr cache_writer;
+        /// Only used for an assertion in assertCorrectnessUnlocked() in debug/sanitizer builds.
+        mutable std::mutex write_mutex;
+    };
+    std::unique_ptr<DownloadState> download_data;
 
     mutable FileSegmentGuard segment_guard;
     std::weak_ptr<KeyMetadata> key_metadata;
     mutable Priority::IteratorPtr queue_iterator; /// Iterator is put here on first reservation attempt, if successful.
     FileCache * cache;
     std::condition_variable cv;
-    std::mutex increase_priority_mutex;
+    /// Dedups concurrent increasePriority() calls; a pure try-lock, so an atomic flag is enough.
+    std::atomic_flag increasing_priority;
 
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    /// Per-segment logger with a unique name; only in debug/sanitizer builds.
+    /// In release all segments share one logger (see getLog()), so it is not stored per segment.
     LoggerPtr log;
+#endif
 
     std::atomic<size_t> hits_count = 0; /// cache hits.
-    std::atomic<size_t> ref_count = 0; /// Used for getting snapshot state
 
     /// Guarded by `segment_guard`. Set while dynamic-resize eviction is pending.
     bool on_delayed_removal = false;
-
-    CurrentMetrics::Increment metric_increment{CurrentMetrics::CacheFileSegments};
 };
 
 
@@ -342,13 +422,23 @@ struct FileSegmentsHolder final : private boost::noncopyable
 
     void reset();
 
+    /// Move the first segment into its own new holder and return it, leaving the rest in this one.
+    /// The hold gauge is unchanged (ownership transfers); the returned holder completes its segment
+    /// on destruction. Used by the ReaderExecutor cache to hand one segment to each reader/writer.
+    std::shared_ptr<FileSegmentsHolder> popHolder();
+
+    void setIOSchedulingSettings(const IOSchedulingSettings & io_scheduling_) { io_scheduling = io_scheduling_; }
+
 private:
     FileSegments file_segments{};
+    /// The links of the reads done through these segments, passed to `FileSegment::complete`.
+    IOSchedulingSettings io_scheduling;
 
     FileSegments::iterator completeAndPopFrontImpl(bool allow_background_download, bool force_shrink_to_downloaded_size);
 };
 
 using FileSegmentsHolderPtr = std::unique_ptr<FileSegmentsHolder>;
+using FileSegmentsHolderSharedPtr = std::shared_ptr<FileSegmentsHolder>;
 
 String toString(const FileSegments & file_segments, bool with_state = false);
 

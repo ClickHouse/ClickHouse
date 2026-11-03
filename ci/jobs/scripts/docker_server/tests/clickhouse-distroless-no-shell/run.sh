@@ -15,3 +15,8 @@ if docker run --rm --entrypoint /bin/bash "$image" -c "echo bad" 2>/dev/null; th
     echo "FAIL: /bin/bash should not exist in the distroless image" >&2
     exit 1
 fi
+
+if docker run --rm --entrypoint /busybox/sh "$image" -c "echo bad" 2>/dev/null; then
+    echo "FAIL: /busybox/sh should not exist in the distroless image" >&2
+    exit 1
+fi

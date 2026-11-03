@@ -16,7 +16,7 @@ struct Exception : public Poco::Exception
     const char * className() const noexcept override { return "mysqlxx::Exception"; }
 
     Exception * clone() const override { return new Exception(*this); }
-    void rethrow() const override { throw *this; } /// NOLINT(cert-err60-cpp)
+    void rethrow() const override { throw *this; } /// NOLINT(bugprone-exception-copy-constructor-throws,cert-err60-cpp)
 };
 
 
@@ -28,7 +28,7 @@ struct ConnectionFailed : public Exception
     const char * className() const noexcept override { return "mysqlxx::ConnectionFailed"; }
 
     ConnectionFailed * clone() const override { return new ConnectionFailed(*this); }
-    void rethrow() const override { throw *this; } /// NOLINT(cert-err60-cpp)
+    void rethrow() const override { throw *this; } /// NOLINT(bugprone-exception-copy-constructor-throws,cert-err60-cpp)
 };
 
 
@@ -40,7 +40,7 @@ struct ConnectionLost : public Exception
     const char * className() const noexcept override { return "mysqlxx::ConnectionLost"; }
 
     ConnectionLost * clone() const override { return new ConnectionLost(*this); }
-    void rethrow() const override { throw *this; } /// NOLINT(cert-err60-cpp)
+    void rethrow() const override { throw *this; } /// NOLINT(bugprone-exception-copy-constructor-throws,cert-err60-cpp)
 };
 
 
@@ -52,7 +52,7 @@ struct BadQuery : public Exception
     const char * className() const noexcept override { return "mysqlxx::BadQuery"; }
 
     BadQuery * clone() const override { return new BadQuery(*this); }
-    void rethrow() const override { throw *this; } /// NOLINT(cert-err60-cpp)
+    void rethrow() const override { throw *this; } /// NOLINT(bugprone-exception-copy-constructor-throws,cert-err60-cpp)
 };
 
 
@@ -64,7 +64,7 @@ struct CannotParseValue : public Exception
     const char * className() const noexcept override { return "mysqlxx::CannotParseValue"; }
 
     CannotParseValue * clone() const override { return new CannotParseValue(*this); }
-    void rethrow() const override { throw *this; } /// NOLINT(cert-err60-cpp)
+    void rethrow() const override { throw *this; } /// NOLINT(bugprone-exception-copy-constructor-throws,cert-err60-cpp)
 };
 
 

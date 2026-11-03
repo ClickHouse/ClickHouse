@@ -2,7 +2,8 @@
 
 -- Tests 2nd skip index and use_skip_indexes_on_data_read=1/0
 
-SET enable_analyzer = 1;
+SET explain_query_plan_default = 'legacy';
+
 SET parallel_replicas_local_plan = 1; -- this setting is randomized, set it explicitly to have local plan for parallel replicas
 
 DROP TABLE IF EXISTS tab;

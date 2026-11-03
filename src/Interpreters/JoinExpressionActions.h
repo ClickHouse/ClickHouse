@@ -15,6 +15,7 @@ enum class JoinConditionOperator : UInt8
     And,
     Or,
     Equals,
+    NotEquals,
     NullSafeEquals,
     Less,
     LessOrEquals,
@@ -25,6 +26,9 @@ enum class JoinConditionOperator : UInt8
 
 std::string_view toString(JoinConditionOperator op);
 
+/// The operator for the same inequality with the operands exchanged: `a < b` <=> `b > a`.
+JoinConditionOperator reverseInequalityOperator(JoinConditionOperator op);
+
 /// BitSet is wrapper on top of boost::dynamic_bitset
 /// which allows operations on bitsets of different sizes
 class BitSet
@@ -34,6 +38,15 @@ private:
 
 public:
     BitSet() = default;
+
+    BitSet(size_t num_bits, UInt64 value) : bitset(num_bits, value) {}
+
+    static BitSet fromUInt(std::unsigned_integral auto value)
+    {
+        using T = decltype(value);
+        constexpr size_t num_bits = sizeof(T) * 8;
+        return BitSet(num_bits, static_cast<UInt64>(value));
+    }
 
     static BitSet allSet(size_t size)
     {
@@ -166,6 +179,7 @@ inline bool areIntersecting(const BitSet & lhs, const BitSet & rhs)
     return false;
 }
 
+
 class JoinActionRef;
 
 class JoinExpressionActions
@@ -204,6 +218,8 @@ public:
 
     JoinExpressionActions(JoinExpressionActions &&) = default;
     JoinExpressionActions & operator=(JoinExpressionActions &&) = default;
+
+    void swapExpressionSources();
 
 private:
     friend class JoinActionRef;

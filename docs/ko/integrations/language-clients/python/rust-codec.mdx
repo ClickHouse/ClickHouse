@@ -1,0 +1,117 @@
+---
+sidebarTitle: 'Rust codec'
+keywords: ['clickhouse', 'python', 'rust', 'native', 'codec', 'performance']
+description: 'ClickHouse Connect용 선택적 컴파일 Rust 코덱'
+slug: /integrations/language-clients/python/rust-codec
+title: 'Rust 네이티브 코덱'
+doc_type: 'reference'
+---
+
+ClickHouse Connect는 기본 Python 및 Cython 구현 대신 컴파일된 Rust 코덱으로 쿼리 결과를 디코딩하고 삽입 데이터를 인코딩할 수 있습니다. Rust 코덱은 클라이언트가 관리하는 `FORMAT Native` 트래픽에만 적용되며, `query`, `query_np`, `query_df`와 이들의 블록 및 행 스트리밍 변형, 그리고 `insert_df`를 포함한 삽입이 여기에 해당합니다. Arrow 메서드는 `FORMAT Arrow`를 사용하므로 영향을 받지 않으며, raw 쿼리, raw 삽입, Native 이외의 포맷도 마찬가지입니다.
+
+이 코덱은 실험적 기능이며 선택적으로 사용할 수 있습니다. 기본값은 여전히 Python 코덱입니다.
+
+## 설치 {#installation}
+
+컴파일된 코덱은 `clickhouse-connect-core`라는 별도의 휠로 배포되며, 이 휠에는 `_ch_core` 확장 모듈이 포함되어 있습니다. 애플리케이션에서 사용하는 통합 기능에 맞춰 코덱을 설치하십시오.
+
+```bash
+pip install "clickhouse-connect[rust]"         # Python rows and Native inserts
+pip install "clickhouse-connect[rust,numpy]"   # NumPy results
+pip install "clickhouse-connect[rust,pandas]"  # Pandas results and inserts
+```
+
+코어 휠은 Linux, macOS, Windows에서 CPython 3.10~3.14 및 free-threaded CPython 3.14t용으로 배포됩니다. free-threaded Python에서는 코어 확장 모듈을 가져와도 GIL이 다시 활성화되지 않습니다.
+
+일반적인 Rust 기반 NumPy 및 Pandas 출력에는 PyArrow나 기타 Arrow 패키지가 필요하지 않습니다. 여기에는 `query_np`, `query_df`, 이들의 스트리밍 변형, 그리고 `query(..., use_numpy=True)`가 포함됩니다. NumPy 쿼리에는 Pandas도 필요하지 않습니다. 비동기 클라이언트를 사용하려면 `async` 엑스트라를 추가하십시오.
+
+단, Arrow 메서드와 Arrow 기반 Pandas 저장소를 사용하려면 PyArrow가 필요합니다. 이러한 기능을 사용하려면 `arrow` 엑스트라를 설치하십시오.
+
+```bash
+pip install "clickhouse-connect[rust,pandas,arrow]"
+```
+
+확장 Pandas 문자열 출력은 Pandas의 `mode.string_storage` 옵션을 따릅니다. PyArrow가 설치되어 있으면 어느 저장소 백엔드에서든 문자열은 전체 UTF-8 유효성 검사를 포함한 기존 Arrow 변환을 사용합니다. PyArrow가 없으면 드라이버는 Rust 객체 변환을 사용하며, Pandas의 기본 저장소는 Python 문자열을 사용합니다. PyArrow 없이 Arrow 문자열 저장소를 명시적으로 요청하면 의존성 오류가 발생합니다. 유효하지 않은 UTF-8은 어느 저장소 백엔드에서든 기존과 같이 16진수로 표현됩니다.
+
+이 코덱과 패키징, 의존성 구성은 실험적 기능입니다. 이제 직접 버퍼 변환은 널을 허용하지 않는 8~64비트 정수, Float32/64, Boolean, BFloat16, Interval, Date, Date32, DateTime, DateTime64 컬럼을 처리합니다. 널 허용 값을 포함한 스칼라 Time 및 Time64 컬럼도 직접 버퍼를 사용하며, 널 허용 BFloat16과 확장 Pandas 널 허용 정수, 부동소수점, Interval 출력도 마찬가지입니다. BFloat16은 float32 출력과 기존 Pandas Float32 결측값 정책을 그대로 유지합니다. Interval 값은 선언된 단위 기준의 부호 있는 개수로 유지됩니다. 시간 관련 변환은 선언된 단위와 기존 시간대 규칙을 유지합니다. Time64의 널 허용 SimpleAggregateFunction 별칭은 이제 올바른 기간 값을 반환하며, NULL 값에 대해서는 NaT를 반환합니다. 널 허용 스칼라 DateTime64(9) 컬럼도 버퍼를 사용하므로 NumPy 및 Pandas 출력에서 나노초가 보존됩니다. 그 밖의 널 허용 날짜 및 타임스탬프는 기존 객체 변환 경로를 유지합니다.
+
+중첩 배열과 널 허용 리프를 포함한 Time/Time64 배열, 그리고 널 허용 값을 포함한 LowCardinality(Time)도 직접 버퍼를 사용합니다. 중첩 구조, 기간 단위, 널 표현은 그대로 유지됩니다. LowCardinality(Time64)는 여전히 Rust 코어에서 지원되지 않습니다.
+
+널 허용 스칼라 DateTime64(9)에서 `query_df`와 `query_df_stream`은 SimpleAggregateFunction 별칭을 거치는 경우를 포함하여 소수점 이하 9자리를 모두 보존합니다. Pandas 3에서는 이제 기본 출력의 datetime 컬럼이 마이크로초 대신 나노초 단위를 사용합니다. 모든 값이 NULL인 블록에 대한 기존 object dtype 추론은 변경되지 않습니다. 명명된 시간대로 인해 값이 Pandas의 나노초 범위를 벗어나게 되면, 해당 컬럼은 이전의 객체 변환 및 범위 동작을 유지합니다.
+
+이러한 컬럼에서 `query_np`와 `query_np_stream`의 object 필드에는 이제 Python `datetime` 셀 대신 `numpy.datetime64` 셀이 담기며, SQL NULL은 `None`으로 표시됩니다. 명명된 시간대 값은 Python 코덱과 마찬가지로 시간대 메타데이터 없이 UTC 틱을 사용합니다. 따라서 Pandas 없이도 나노초를 보존할 수 있습니다. 시간대 정보가 포함된 타임스탬프가 필요하면 `query_df`를 사용하세요. 그 밖의 널 허용 시간 관련 NumPy 셀 유형은 변경되지 않습니다.
+
+스칼라 DateTime64 NumPy 및 Pandas 쿼리는 널 허용 컬럼과 SimpleAggregateFunction 별칭을 포함하여 정밀도가 0, 3, 6, 9가 아니면 `ProgrammingError`를 발생시킵니다.
+
+Rust 코덱을 선택했지만 컴파일된 모듈이 설치되어 있지 않으면, 클라이언트 생성 시 이 설치 명령을 안내하는 `NotSupportedError`가 발생합니다.
+
+## 코덱 활성화 {#enabling-the-codec}
+
+`native_codec` 클라이언트 옵션으로 코덱을 선택합니다:
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client(host="localhost", native_codec="rust")
+```
+
+허용되는 값:
+
+| Value         | 동작                                                                          |
+| ------------- | --------------------------------------------------------------------------- |
+| `python`      | 기본값. 기존 Python 및 Cython 코덱입니다.                                              |
+| `rust`        | Rust 코덱을 우선 사용합니다. 지원되지 않는 옵션을 사용하는 쿼리와 지원되지 않는 타입의 삽입은 Python 코덱으로 라우팅됩니다. |
+| `rust_strict` | Rust 코덱을 반드시 사용합니다. 지원되지 않는 옵션과 타입은 라우팅되지 않고 예외를 발생시킵니다.                    |
+
+기본값은 `native_codec` 공통 설정이나 `CLICKHOUSE_CONNECT_NATIVE_CODEC` 환경 변수로도 지정할 수 있습니다. 우선순위는 클라이언트 keyword argument, 공통 설정, 환경 변수 순입니다.
+
+이 옵션은 `interface="chdb"` 클라이언트에서는 무시되며, 해당 클라이언트는 항상 Python 코덱을 사용합니다.
+
+## Rust 코덱을 사용해야 하는 경우 {#when-to-use-the-rust-codec}
+
+Rust 코덱은 `String`, `LowCardinality`, `Map`, `Array`, `JSON`, `Decimal`, `UUID`와 같은 텍스트, 컨테이너, 복합 타입이 포함된 대용량 DataFrame 결과에서 가장 유용합니다. 또한 대규모 행 및 컬럼 블록 스트림, 동시 실행 쿼리 워크로드, 대량 삽입에도 도움이 될 수 있습니다.
+
+결과가 작거나 네트워크에 성능이 좌우되는 쿼리에서는 차이가 거의 없을 수 있습니다. 단순 숫자형 결과는 Python 코덱에서도 이미 효율적인 대량 처리 경로를 사용하므로 이점이 크지 않을 수 있습니다.
+
+직접 버퍼는 지원되는 타입에 대해 중간 Arrow 배열을 생성하지 않습니다. 다만 최종 NumPy 및 Pandas 결과를 조립하는 과정에서는 여전히 메모리 할당과 복사가 발생할 수 있으므로, 모든 쿼리 결과가 zero-copy가 되는 것은 아닙니다.
+
+PyArrow가 없으면 Rust 문자열 변환은 디코딩된 각 블록에서 Python 문자열 객체를 생성합니다. 기본 블록 크기에서는 대용량 String 결과의 최대 메모리 사용량이 Python 코덱과 비슷합니다. 단일 블록에 100만 개의 행이 담기는 경우처럼 블록이 매우 크면, 문자열을 생성하는 동안 디코딩된 블록 전체가 메모리에 유지되므로 Python 코덱보다 최대 메모리 사용량이 더 클 수 있습니다. 대용량 Pandas `StringDtype` 결과에는 `arrow` 엑스트라를 설치하고 Arrow 문자열 저장소를 사용하십시오. Pandas 3는 PyArrow가 설치되어 있으면 기본적으로 Arrow 저장소를 사용합니다. Pandas 2에서는 `pd.options.mode.string_storage = "pyarrow"`를 설정해야 합니다.
+
+컬럼 수가 매우 많거나 전부 숫자형인 결과에 대한 버퍼링된 `query()` 호출은 현재 Rust 코덱에서 오히려 더 느리고 최대 메모리 사용량도 더 클 수 있습니다. 이러한 워크로드에는 `query_df`, `query_row_block_stream`, `query_column_block_stream`을 사용하십시오. NumPy와 Pandas에서는 `query_np_stream`과 `query_df_stream`을 사용해도 최대 메모리 사용량을 줄일 수 있습니다. 스트림 전체를 한꺼번에 모으지 말고 각 블록을 처리한 뒤 해제하십시오. 메모리 사용량은 여전히 각 블록의 크기에 좌우되므로, 큰 블록 하나를 스트리밍하는 방식으로는 같은 이점을 얻을 수 없습니다.
+
+코덱을 도입하기 전에 실제 워크로드로 벤치마크를 수행하십시오. 측정 중에는 `native_codec="rust_strict"`를 사용하여, 지원되지 않는 옵션이나 누락된 의존성이 있을 때 쿼리가 조용히 Python으로 라우팅되지 않고 예외가 발생하도록 하십시오.
+
+## 폴백 규칙 {#fallback-rules}
+
+폴백 결정은 바이트를 읽거나 전송하기 전에 이루어지므로 스트림 도중에 코덱이 전환되는 일은 없습니다. 쿼리에서는 응답 본문(response body)을 소비하기 전에 선택이 이루어집니다. 삽입에서는 모든 컬럼 타입이 지원되는 경우에만 Rust 인코더가 선택되며, 그렇지 않으면 삽입 전체가 Python 코덱에서 실행됩니다.
+
+`naive_datetime_insert="server"`가 활성화되어 있으면 `rust`는 `DateTime` 또는 `DateTime64` 컬럼이 포함된 삽입을 Python 코덱으로 라우팅하여, 선언된 컬럼 시간대 또는 서버 시간대가 적용되도록 합니다. `rust_strict`는 이 조합을 거부합니다. 기본값인 `naive_datetime_insert="local"` 모드에서는 계속 Rust 인코더를 사용합니다.
+
+SQLAlchemy 방언 리플렉션 SQL 문을 비롯한 드라이버 내부 메타데이터 쿼리는 모든 모드에서 항상 별도의 알림 없이 Python 코덱을 사용합니다.
+
+Rust 코덱이 감지한 잘못된 형식의 Native 페이로드는 `DataError`를 발생시킵니다.
+
+## 버전 관리 {#versioning}
+
+`clickhouse-connect-core`는 `clickhouse-connect`와 별개로 버전이 관리됩니다. `rust` 엑스트라에는 `clickhouse-connect-core>=0.2.1,<0.3`이 필요합니다. 드라이버는 Rust 코덱이 선택되면 바인딩 API 버전과 컬럼 버퍼 기능 지원 여부를 모두 확인합니다. 배포된 core 0.2.0 휠에는 컬럼 버퍼 기능이 없습니다. 설치된 휠이 호환되지 않으면 `rust`와 `rust_strict` 모두에서 클라이언트 생성 시 다음 업그레이드 명령을 안내하는 `NotSupportedError`가 발생합니다:
+
+```bash
+pip install --upgrade clickhouse-connect-core
+```
+
+컴파일된 코덱의 수정 및 성능 개선 사항은 `clickhouse-connect-core` 릴리스로 제공되며, 호환되는 core 휠(wheel)로 업그레이드하여 적용할 수 있습니다. 드라이버의 Rust 통합과 관련된 변경 사항을 적용하려면 `clickhouse-connect`를 업그레이드해야 합니다.
+
+## 알려진 동작 차이 {#known-behavior-differences}
+
+Rust 코덱은 Python 코덱과 셀 단위로 동일한 결과를 내는 것을 목표로 합니다. 현재 알려진 차이는 다음과 같습니다.
+
+* `Variant` 컬럼의 `query_np` 및 `query_df` 결과에는 numpy 스칼라 값이 아닌 일반 Python 객체가 담깁니다. 값은 동일하지만 셀 타입이 다릅니다.
+* `Time64`를 포함하는 `Dynamic` 값은 Rust의 `query_np` 및 `query_df` 결과에서 `datetime.timedelta`로 구체화됩니다. scale이 0, 3, 6, 9일 때는 값이 Python 코덱의 `numpy.timedelta64` 셀과 동일하지만 셀 타입이 다릅니다. 그 외의 scale에서는 Rust 코덱이 `datetime.timedelta`를 반환하는 반면, Python 코덱은 NumPy에 대응하는 단위가 없어 `ProgrammingError`를 발생시킵니다. Rust로 디코딩한 뒤에는 Dynamic 멤버 메타데이터가 드라이버에 노출되지 않으므로, NumPy 셀 타입이나 지원되지 않는 scale에 대한 유효성 검사가 필요하다면 `native_codec="python"`을 사용하십시오.
+* `query_df`에서 Python 코덱은 JSON shared data에 저장된 Compound 값을 문자열로 변환할 수 있습니다. Rust 코덱은 디코딩된 객체를 반환하며, 이는 두 코덱의 `query_np` 결과와 일치합니다.
+* `Array(Variant(...))`처럼 셀 단위로 구체화되는 컨테이너 내부의 `LowCardinality` 대안은 값이 동일한 셀을 생성하지만, Python 코덱에서 나타나는 딕셔너리 슬롯 단위의 객체 아이덴티티는 공유하지 않습니다.
+* 원소가 하나 이상인 `Nullable(Tuple(...))` 컬럼은 Rust 코덱에서 올바르게 디코딩됩니다. Python 코덱은 이 layout을 잘못 읽으며, Rust 결과가 기준 동작입니다. 두 코덱 모두 `Nullable(Tuple())`을 지원합니다.
+* `rust_strict`는 쿼리별 사용자 정의 `query_formats`처럼 Rust 경로가 구현하지 않은 쿼리 옵션을, 동작을 조용히 바꾸는 대신 거부합니다.
+* Rust의 삽입 변환 및 유효성 검사 오류는 Python 코덱이 `ValueError`를 발생시키는 상황에서 `DataError`를 발생시킬 수 있으며, 메시지 문구도 다를 수 있습니다. 유효하지 않은 `Time` 및 `Time64` 값, IPv6 주소, QBit 차원, `FixedString` length, `Float64` 문자열, `Tuple()` 컬럼에 원소를 삽입하려는 시도 등이 이에 해당합니다.
+* Rust 인코더는 `FixedString(N)`에 대한 `b""`와 정수 컬럼에 대한 `"2"` 같은 숫자 문자열을 거부합니다. 반면 Python 코덱은 비어 있는 `FixedString` 값을 0으로 채우고 숫자 문자열을 변환합니다.
+* Python 코덱이 raw bytes 상태로 남겨두는 일부 `Dynamic` shared-variant 값을 Rust 코덱은 해당 Python 타입으로 디코딩합니다. 예를 들어 저장된 `Decimal`은 Rust에서는 `decimal.Decimal`로, Python에서는 이진 값으로 반환될 수 있습니다.
+* `Dynamic` 공유 스토리지에 저장된 `Date` 값에 대해 `query_np` 및 `query_df`는 Rust 코덱에서는 `datetime.date` 셀을, Python 코덱에서는 `numpy.datetime64` 셀을 반환합니다. `query`에서는 두 코덱 모두 `datetime.date`를 반환합니다.

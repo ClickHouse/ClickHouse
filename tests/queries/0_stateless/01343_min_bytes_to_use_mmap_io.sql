@@ -1,6 +1,9 @@
 -- Tags: no-object-storage
 DROP TABLE IF EXISTS test_01343;
-CREATE TABLE test_01343 (x String) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0, prewarm_mark_cache = 0, serialization_info_version = 'basic';
+-- min_bytes_for_full_part_storage = 0 forces full (non-packed) storage: a packed part keeps all
+-- columns in a single `data.packed` archive read through one buffer, so it creates no per-file mmap
+-- buffers and `CreatedReadBufferMMap` would be 0 instead of 2 when the setting is randomized large.
+CREATE TABLE test_01343 (x String) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, prewarm_mark_cache = 0, serialization_info_version = 'basic';
 INSERT INTO test_01343 VALUES ('Hello, world');
 
 SET local_filesystem_read_method = 'mmap', min_bytes_to_use_mmap_io = 1;

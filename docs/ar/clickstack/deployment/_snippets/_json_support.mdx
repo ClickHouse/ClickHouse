@@ -1,0 +1,11 @@
+---
+title: دعم JSON
+---
+
+<div id="schema-choice-map-vs-json">
+  ## اختيار المخطط: Map مقابل JSON
+</div>
+
+يخزّن ClickStack السمات في أعمدة `Map(LowCardinality(String), String)` افتراضيًا. وهذا هو المخطط الموصى به لأحمال عمل observability. وعند دمجه مع [bucketed map serialization](/ar/reference/data-types/map#bucketed-map-serialization) والفهارس النصية على مفاتيح map وقيمه، فإنه يوفّر عمليات بحث انتقائية من دون عبء الإدخال لكل مفتاح إلى الأعمدة الفرعية الديناميكية في JSON.
+
+يتوفر مخطط من النوع `JSON` في مرحلة البيتا للتقييم على أحمال العمل ذات مجموعة مفاتيح السمات الصغيرة والمستقرة. وهو **غير موصى به** كمخطط افتراضي. راجع [Map vs JSON type](/ar/clickstack/ingesting-data/schema/map-vs-json) للاطلاع على المقارنة الكاملة ومتغيرات البيئة المطلوبة لتمكين دعم JSON.

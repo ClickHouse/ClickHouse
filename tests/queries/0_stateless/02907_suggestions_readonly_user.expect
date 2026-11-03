@@ -27,9 +27,13 @@ expect ":) "
 
 send -- "DROP USER IF EXISTS $user\r"
 expect "Ok."
+# Wait for the prompt to be redrawn before sending the next command, otherwise
+# the input can race the readline redraw and get lost.
+expect ":) "
 
 send -- "CREATE USER $user\r"
 expect "Ok."
+expect ":) "
 
 send -- "exit\r"
 expect eof
@@ -56,6 +60,7 @@ expect ":) "
 
 send -- "DROP USER $user\r"
 expect "Ok."
+expect ":) "
 
 send -- "exit\r"
 expect eof

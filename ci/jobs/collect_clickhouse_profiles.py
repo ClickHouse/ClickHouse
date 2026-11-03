@@ -20,8 +20,15 @@ import platform
 import shutil
 import subprocess
 import time
+from shlex import quote
 
 from ci.defs.defs import ToolSet
+from ci.jobs.scripts.dataset_download import (
+    download_and_extract_datasets,
+    iceberg_database_queries,
+)
+from ci.jobs.scripts.perf import test_discovery
+from ci.jobs.scripts.server_cleanup import kill_leftover_server_processes
 from ci.praktika.result import Result
 from ci.praktika.utils import MetaClasses, Shell, Utils
 
@@ -92,7 +99,7 @@ SERVER_READINESS_POLL_S = 2
 # is honoured and the job fails fast (dumping the server log) instead.
 SERVER_READINESS_PROBE_TIMEOUT_S = 15
 
-LLVM_VERSION = "21"
+LLVM_VERSION = "22"
 
 
 class JobStages(metaclass=MetaClasses.WithIter):
@@ -213,16 +220,15 @@ def download_datasets():
         "hits1": "https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_v1.tar",
         "values": "https://clickhouse-datasets.s3.amazonaws.com/values_with_expressions/partitions/test_values.tar",
         "tpch10": "https://clickhouse-datasets.s3.amazonaws.com/h/10/tpch.tar",
+        "tpch_ice10": "https://clickhouse-datasets.s3.amazonaws.com/h-ice/10/tpch_ice_sf10.tar",
     }
-    cmds = []
-    for dataset_path in dataset_paths.values():
-        cmds.append(
-            f'wget -nv -nd -c "{dataset_path}" -O- | tar --extract --verbose -C {PERF_DB_PATH}'
-        )
-    res = Shell.check_parallel(cmds, verbose=True)
-    if res:
-        Shell.check(f"touch {PERF_DB_PATH}/.done")
-    return res
+    errors = download_and_extract_datasets(dataset_paths.values(), PERF_DB_PATH)
+    for error in errors:
+        print(f"ERROR: {error}")
+    if errors:
+        return False
+    Shell.check(f"touch {PERF_DB_PATH}/.done")
+    return True
 
 
 def dump_log_tail(log_path, lines=200):
@@ -304,7 +310,10 @@ def start_server(server_dir, port=9000, keeper_port=9181, raft_port=9234):
     )
 
     if wait_for_server_ready(proc, server_dir, port, log_file):
-        return proc, log_fd
+        # Create the Iceberg datasets as databases, so the Iceberg performance tests exercise their read paths here instead of failing on a missing database.
+        client = f"{server_dir}/clickhouse-client --port {port}"
+        if all(Shell.check(f"{client} --query {quote(query)}", verbose=True) for query in iceberg_database_queries(server_dir)):
+            return proc, log_fd
 
     # `shell=True` means `proc` is the wrapper shell, not `clickhouse-server`.
     # Tear down the whole process group via `stop_server` so the server itself
@@ -360,9 +369,7 @@ def run_performance_tests(server_dir, port, runs, max_queries, time_budget_s):
       * small `--max-query-seconds` / `--prewarm-max-query-seconds` passed to
                               `perf.py`, so individual queries return quickly.
     """
-    test_files = sorted(
-        f for f in os.listdir(f"{repo_path}/tests/performance/") if f.endswith(".xml")
-    )
+    test_files = test_discovery.list_test_files(f"{repo_path}/tests/performance/")
     print(
         f"Running up to {len(test_files)} performance tests "
         f"(runs={runs}, max_queries={max_queries}, budget={time_budget_s:.0f}s, "
@@ -374,6 +381,22 @@ def run_performance_tests(server_dir, port, runs, max_queries, time_budget_s):
     # For profile collection we run against a single server (left=right on same port)
     for i, test_file in enumerate(test_files):
         test_name = test_file.removesuffix(".xml")
+        # Shell-script queries need the instrumented `--binary` and an HTTP port,
+        # neither of which profile collection passes; they exercise startup / HTTP
+        # timing rather than query code paths, so they are useless for PGO/BOLT
+        # profiles. Skip them here (logged, never silently dropped).
+        if test_discovery.test_has_shell_query(f"{repo_path}/tests/performance/{test_file}"):
+            print(f"  Skipping {test_name}: shell-script query test, not used for profile collection")
+            continue
+        # This job provisions no S3 endpoint, so suites requiring it cannot work here.
+        # TODO: opt into S3 coverage by provisioning the endpoint via s3_service.ensure and dropping this skip.
+        if test_discovery.test_requires_s3(f"{repo_path}/tests/performance/{test_file}"):
+            print(f"  Skipping {test_name}: uses the job-local S3 endpoint, which profile collection does not provision")
+            continue
+        # SIGKILL bypasses failpoint cleanup, and later tests reuse this server.
+        if test_discovery.test_has_failpoint(f"{repo_path}/tests/performance/{test_file}"):
+            print(f"  Skipping {test_name}: server-wide failpoints cannot be cleaned up after a hard timeout")
+            continue
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             print(
@@ -397,7 +420,12 @@ def run_performance_tests(server_dir, port, runs, max_queries, time_budget_s):
             f"{repo_path}/tests/performance/scripts/perf.py "
             f"--host localhost localhost "
             f"--port {port} {port} "
-            f"--runs {runs} --max-queries {max_queries} "
+            # Exactly `runs` runs: profile collection wants quick coverage,
+            # not measurement precision, so pin the minimum and both caps
+            # instead of the legacy --runs ("at least N"), which would widen
+            # the adaptive policy to its default minimum of 5.
+            f"--min-runs {runs} --cap {runs} --cap-fast {runs} "
+            f"--max-queries {max_queries} "
             f"--max-query-seconds 15 --prewarm-max-query-seconds 15 "
             f"--profile-seconds 0 "
             f"{repo_path}/tests/performance/{test_file}",
@@ -502,6 +530,14 @@ def main():
     args = parse_args()
     os.makedirs(temp_dir, exist_ok=True)
 
+    # This job starts its own servers below (the temporary dataset server in
+    # configure_datasets and the profiled server in start_server, once per PGO
+    # and BOLT pass) on fixed shared ports. Before the first of them, clear any
+    # clickhouse-server leaked by a previous CI job on this reused runner;
+    # otherwise its held ports make those starts fail
+    # (see kill_leftover_server_processes).
+    kill_leftover_server_processes()
+
     stages = list(JobStages)
     if args.param:
         assert args.param in JobStages, f"--param must be one of {list(JobStages)}"
@@ -520,8 +556,8 @@ def main():
     # --- Stage: Checkout submodules ---
     if res and JobStages.CHECKOUT_SUBMODULES in stages:
         def do_checkout():
-            r = Shell.check(f"mkdir -p {PGO_BUILD_DIR} && git submodule sync && git submodule init")
-            r = r and Shell.check("contrib/update-submodules.sh --max-procs 10", retries=3)
+            r = Shell.check(f"mkdir -p {PGO_BUILD_DIR} && git submodule sync && git submodule init", strict=True)
+            r = r and Shell.check("contrib/update-submodules.sh --max-procs 10", retries=3, strict=True)
             return r
 
         results.append(
@@ -568,6 +604,7 @@ def main():
                     name="Build (PGO instrumented)",
                     command="command time -v ninja clickhouse",
                     workdir=PGO_BUILD_DIR,
+                    info_extractor=Result.cpp_build_info_extractor,
                 )
             )
             res = results[-1].is_ok()

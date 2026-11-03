@@ -5,13 +5,12 @@
 -- See PR https://github.com/ClickHouse/ClickHouse/pull/100035 thread r3221074323.
 
 SET enable_full_text_index = 1;
-SET allow_experimental_text_index_lazy_apply = 1;
 
 DROP TABLE IF EXISTS tab_dup;
 
--- `posting_list_codec = 'bitpacking'` is required to keep lazy mode active. Without it
--- the codec defaults to None and `setIndexGranule` silently falls back to materialize,
--- which would mask the regression.
+-- `posting_list_codec = 'bitpacking'` is required to keep lazy mode active. With the
+-- `none` codec `setIndexGranule` silently falls back to materialize, which would mask
+-- the regression.
 CREATE TABLE tab_dup(k UInt64, s String, INDEX idx s TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking'))
     ENGINE = MergeTree() ORDER BY k
     SETTINGS index_granularity = 8192;

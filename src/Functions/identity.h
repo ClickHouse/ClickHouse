@@ -36,6 +36,22 @@ public:
     size_t getNumberOfArguments() const override { return 1; }
     bool isSuitableForConstantFolding() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    /// The argument is returned as it is.
+    std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    String getSignatureString() const override { return "(T) -> T"; }
+
+    /// `executeImpl` returns the argument column verbatim, so the result type must be exactly the
+    /// argument type. The default `LowCardinality` implementation strips (nested) `LowCardinality` from
+    /// the declared result type while the passthrough column keeps it, yielding a type/column mismatch
+    /// that later aborts during serialization (e.g. `WITH TOTALS` const key). Keep the type identical
+    /// to the column; this override stays authoritative on the type path, so the signature above is
+    /// documentation-only.
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+
+    /// Same reasoning for `Variant`: the adaptor reassembles a bare `Variant` and drops a custom name
+    /// such as `Geometry`, which would no longer match the passed-through column.
+    bool useDefaultImplementationForVariant() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -74,6 +90,11 @@ class FunctionIdentity final : public FunctionIdentityBase
 public:
     FunctionIdentity() : FunctionIdentityBase("identity", true) {}
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIdentity>(); }
+
+    /// Used as the internal impl of passthrough map functions (FunctionMapToArrayAdapter), whose
+    /// array-returning convention deliberately strips nested LowCardinality. Restore the default
+    /// behavior so the base-class override applies only to user-facing identity()/__scalarSubqueryResult.
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return true; }
 };
 
 
@@ -90,6 +111,14 @@ public:
     bool useDefaultImplementationForNothing() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
+    /// Override the inherited signature: `__actionName` takes two String
+    /// arguments, not one. The base `(T) -> T` is wrong here (wrong arity),
+    /// and existing tests annotate non-String rejection as `BAD_ARGUMENTS`,
+    /// which the legacy `getReturnTypeImpl` below preserves. Returning an
+    /// empty string disables the declarative-signature framework, so the
+    /// manual override is fully authoritative.
+    String getSignatureString() const override { return ""; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         for (const auto & arg : arguments)
@@ -99,7 +128,7 @@ public:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function __actionName is internal nad should not be used directly");
         }
 
-        return FunctionIdentityBase::getReturnTypeImpl(arguments);
+        return arguments.front();
     }
 };
 

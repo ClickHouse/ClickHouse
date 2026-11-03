@@ -1,0 +1,85 @@
+---
+sidebarTitle: 'Postgres ClickPipe의 수명 주기'
+description: '다양한 파이프 상태와 그 의미'
+slug: /integrations/clickpipes/postgres/lifecycle
+title: 'Postgres ClickPipe의 수명 주기'
+doc_type: 'guide'
+keywords: ['clickpipes', 'postgresql', 'cdc', '데이터 수집', '실시간 동기화']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+이 문서에서는 Postgres ClickPipe의 여러 단계와 상태, 그리고 각 상태가 의미하는 바를 설명합니다.
+
+<div id="provisioning">
+  ## Provisioning
+</div>
+
+Create ClickPipe 버튼을 클릭하면 ClickPipe가 `Provisioning` 상태로 생성됩니다. Provisioning 과정에서는 서비스에서 ClickPipes를 실행하는 데 필요한 기반 인프라를 준비하고, 파이프의 초기 메타데이터 일부를 등록합니다. 서비스 내 ClickPipes의 컴퓨트는 공유되므로 두 번째 ClickPipe는 첫 번째보다 훨씬 빠르게 생성됩니다. 이는 인프라가 이미 준비되어 있기 때문입니다.
+
+<div id="setup">
+  ## Setup
+</div>
+
+파이프가 프로비저닝되면 `Setup` 상태로 들어갑니다. 이 상태에서 대상 ClickHouse 테이블을 생성합니다. 또한 이 단계에서 원본 테이블의 정의를 가져와 기록합니다.
+
+<div id="snapshot">
+  ## 스냅샷
+</div>
+
+설정이 완료되면 `Snapshot` 상태로 진입합니다(CDC 전용 파이프는 `Running` 상태로 전환됩니다). `Snapshot`, `Initial Snapshot`, `Initial Load`(가장 일반적인 표현)는 같은 의미로 사용됩니다. 이 상태에서는 원본 데이터베이스 테이블의 스냅샷을 생성한 뒤 ClickHouse에 적재합니다. 이 과정에서는 논리적 복제를 사용하지 않지만, 이 단계에서 replication slot이 생성되므로 `max_slot_wal_keep_size` 및 스토리지 매개변수는 초기 적재 중 slot 증가를 고려해 설정해야 합니다. 초기 적재에 대한 자세한 내용은 [병렬 초기 적재 문서](/ko/integrations/clickpipes/postgres/parallel-initial-load)를 참조하십시오. 또한 resync가 트리거되거나 기존 파이프에 새 테이블이 추가되면 파이프는 `Snapshot` 상태로 진입합니다.
+
+<div id="running">
+  ## Running
+</div>
+
+초기 적재가 완료되면 파이프는 `Running` 상태로 전환됩니다(`snapshot-only` 파이프가 아니라면 `Completed` 상태로 전환됩니다). 이 단계에서 파이프는 CDC(Change Data Capture)를 시작합니다. 이 상태에서는 원본 데이터베이스에서 ClickHouse로 논리적 복제가 시작됩니다. CDC를 제어하는 방법에 대한 자세한 내용은 [CDC 제어 문서](/ko/integrations/clickpipes/postgres/controlling-sync)를 참조하십시오.
+
+<div id="paused">
+  ## 일시 중지됨
+</div>
+
+파이프가 `Running` 상태가 되면 일시 중지할 수 있습니다. 그러면 CDC 프로세스가 중지되고 파이프는 `Paused` 상태가 됩니다. 이 상태에서는 원본 데이터베이스에서 새 데이터가 가져와지지 않지만, ClickHouse에 있는 기존 데이터는 그대로 유지됩니다. 이 상태에서 파이프를 재개할 수 있습니다.
+
+<div id="pausing">
+  ## Pausing
+</div>
+
+<Note>
+  이 상태는 곧 제공될 예정입니다. [OpenAPI](/ko/products/cloud/features/admin-features/api/openapi)를 사용 중이라면, 출시 후에도 통합이 계속 정상적으로 작동할 수 있도록 지금부터 이 상태에 대한 지원을 추가하는 것을 고려하십시오.
+</Note>
+
+Pause 버튼을 클릭하면 파이프가 `Pausing` 상태로 전환됩니다. 이는 CDC 프로세스를 중지하는 과정에 있는 일시적인 상태입니다. CDC 프로세스가 완전히 중지되면 파이프는 `일시 중지됨` 상태로 전환됩니다.
+
+<div id="modifying">
+  ## 수정 중
+</div>
+
+<Note>
+  이 상태는 곧 추가될 예정입니다. [OpenAPI](/ko/products/cloud/features/admin-features/api/openapi)를 사용 중이라면, 이 상태가 출시된 후에도 통합이 계속 정상적으로 작동하도록 지금부터 지원을 추가하는 것을 고려하십시오.
+</Note>
+
+현재는 해당 파이프가 테이블을 제거하는 중임을 나타냅니다.
+
+<div id="resync">
+  ## Resync
+</div>
+
+<Note>
+  이 상태는 곧 제공될 예정입니다. [OpenAPI](/ko/products/cloud/features/admin-features/api/openapi)를 사용 중이라면, 릴리스 후에도 통합이 계속 정상적으로 작동할 수 있도록 지금부터 이 상태에 대한 지원을 추가하는 것을 고려하십시오.
+</Note>
+
+이 상태는 파이프가 resync 단계에서 `_resync` 테이블과 원본 테이블을 원자적으로 스왑하는 중임을 나타냅니다. resync에 대한 자세한 내용은 [resync 문서](/ko/integrations/clickpipes/postgres/resync)에서 확인할 수 있습니다.
+
+<div id="completed">
+  ## Completed
+</div>
+
+이 상태는 스냅샷 전용 파이프에 적용되며, 스냅샷이 완료되어 더 이상 처리할 작업이 없음을 의미합니다.
+
+<div id="failed">
+  ## Failed
+</div>
+
+파이프에 복구할 수 없는 오류가 발생하면 `Failed` 상태가 됩니다. 이 상태에서 벗어나려면 지원팀에 문의하거나 파이프를 [resync](/ko/integrations/clickpipes/postgres/resync)하십시오.

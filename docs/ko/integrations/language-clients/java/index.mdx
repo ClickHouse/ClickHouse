@@ -1,0 +1,204 @@
+---
+title: Java 클라이언트 개요
+keywords: ['clickhouse', 'java', 'jdbc', 'client', 'integrate', 'r2dbc']
+description: 'Java에서 ClickHouse에 연결하는 방법'
+slug: /integrations/java
+doc_type: 'reference'
+integration:
+  - support_level: 'core'
+  - category: 'language_client'
+---
+
+* [Client 0.8+](/ko/integrations/language-clients/java/client)
+* [JDBC 0.8+](/ko/integrations/language-clients/java/jdbc)
+* [R2DBC Driver](/ko/integrations/language-clients/java/r2dbc)
+
+<div id="clickhouse-client">
+  ## ClickHouse client
+</div>
+
+Java 클라이언트는 ClickHouse 서버와의 네트워크 통신 세부 사항을 추상화하는 자체 API를 구현한 라이브러리입니다. 현재는 HTTP 인터페이스만 지원합니다. 이 라이브러리는 다양한 ClickHouse 포맷과 기타 관련 기능을 처리할 수 있는 유틸리티를 제공합니다.
+
+Java Client는 2015년에 개발되었습니다. 현재 코드베이스는 유지보수가 매우 어려워졌고, API도 혼란스러우며, 추가 최적화도 쉽지 않습니다. 이에 따라 2024년에 이를 `client-v2`라는 새로운 구성 요소로 리팩터링했습니다. 이 구성 요소는 더 명확한 API, 더 가벼운 코드베이스, 더 뛰어난 성능, 그리고 ClickHouse 포맷(RowBinary 및 Native 중심)에 대한 더 나은 지원을 제공합니다. JDBC도 가까운 시일 내에 이 클라이언트를 사용할 예정입니다.
+
+<div id="supported-data-types">
+  ### 지원되는 데이터 타입
+</div>
+
+| **데이터 타입**              | **클라이언트 V2 지원** | **클라이언트 V1 지원** |
+| ----------------------- | --------------- | --------------- |
+| Int8                    | ✔               | ✔               |
+| Int16                   | ✔               | ✔               |
+| Int32                   | ✔               | ✔               |
+| Int64                   | ✔               | ✔               |
+| Int128                  | ✔               | ✔               |
+| Int256                  | ✔               | ✔               |
+| UInt8                   | ✔               | ✔               |
+| UInt16                  | ✔               | ✔               |
+| UInt32                  | ✔               | ✔               |
+| UInt64                  | ✔               | ✔               |
+| UInt128                 | ✔               | ✔               |
+| UInt256                 | ✔               | ✔               |
+| Float32                 | ✔               | ✔               |
+| Float64                 | ✔               | ✔               |
+| Decimal                 | ✔               | ✔               |
+| Decimal32               | ✔               | ✔               |
+| Decimal64               | ✔               | ✔               |
+| Decimal128              | ✔               | ✔               |
+| Decimal256              | ✔               | ✔               |
+| Bool                    | ✔               | ✔               |
+| String                  | ✔               | ✔               |
+| FixedString             | ✔               | ✔               |
+| Nullable                | ✔               | ✔               |
+| Date                    | ✔               | ✔               |
+| Date32                  | ✔               | ✔               |
+| DateTime                | ✔               | ✔               |
+| DateTime32              | ✔               | ✔               |
+| DateTime64              | ✔               | ✔               |
+| Interval                | ✗               | ✗               |
+| Enum                    | ✔               | ✔               |
+| Enum8                   | ✔               | ✔               |
+| Enum16                  | ✔               | ✔               |
+| Array                   | ✔               | ✔               |
+| Map                     | ✔               | ✔               |
+| Nested                  | ✔               | ✔               |
+| Tuple                   | ✔               | ✔               |
+| UUID                    | ✔               | ✔               |
+| IPv4                    | ✔               | ✔               |
+| IPv6                    | ✔               | ✔               |
+| Object                  | ✗               | ✔               |
+| Point                   | ✔               | ✔               |
+| Nothing                 | ✔               | ✔               |
+| MultiPolygon            | ✔               | ✔               |
+| Ring                    | ✔               | ✔               |
+| Polygon                 | ✔               | ✔               |
+| SimpleAggregateFunction | ✔               | ✔               |
+| AggregateFunction*      | ✔               | ✔               |
+| Variant                 | ✔               | ✗               |
+| Dynamic                 | ✔               | ✗               |
+| JSON                    | ✔               | ✗               |
+
+[ClickHouse 데이터 타입](/ko/reference/data-types/index)
+
+<Info>
+  **부분 지원**
+
+  * **AggregateFunction** — 직접 바이너리 읽기에는 `groupBitmap`만 지원됩니다. 다른 집계 함수(`min`, `max`, `avg` 등)의 경우 쿼리에서 `-Merge` combinator(예: `minMerge()`, `avgMerge()`)를 사용해 서버 측에서 상태를 해소해야 합니다. `AggregateFunction` 타입 컬럼에는 `SELECT * FROM table ...`를 지원하지 않습니다.
+</Info>
+
+<Info>
+  **데이터 타입 참고 사항**
+
+  * **Decimal** — 일관성을 위해 21.9+에서는 `SET output_format_decimal_trailing_zeros=1`을 사용합니다.
+  * **Enum** — 문자열과 정수로 모두 처리할 수 있습니다.
+  * **UInt64** — client-v1에서는 `long`에 매핑됩니다.
+</Info>
+
+<div id="features">
+  ### 기능
+</div>
+
+클라이언트의 기능 표:
+
+| 이름                   | 클라이언트 V2 | 클라이언트 V1 |              비고             |
+| -------------------- | :-------: | :-------: | :-------------------------: |
+| HTTP 연결              |     ✔     |     ✔     |                             |
+| HTTP 압축 (LZ4)        |     ✔     |     ✔     |                             |
+| 애플리케이션 제어 압축         |     ✔     |     ✗     |                             |
+| 서버 응답 압축 - LZ4       |     ✔     |     ✔     |                             |
+| 클라이언트 요청 압축 - LZ4    |     ✔     |     ✔     |                             |
+| HTTPS                |     ✔     |     ✔     |                             |
+| 클라이언트 SSL 인증서 (mTLS) |     ✔     |     ✔     |                             |
+| HTTP 프록시             |     ✔     |     ✔     |                             |
+| POJO SerDe           |     ✔     |     ✗     |                             |
+| 연결 풀                 |     ✔     |     ✔     | Apache HTTP Client를 사용하는 경우 |
+| 이름 지정 매개변수           |     ✔     |     ✔     |                             |
+| 실패 시 재시도             |     ✔     |     ✔     |                             |
+| 장애 조치                |     ✗     |     ✔     |                             |
+| 로드 밸런싱               |     ✗     |     ✔     |                             |
+| 서버 자동 디스커버리          |     ✗     |     ✔     |                             |
+| 로그 코멘트               |     ✔     |     ✔     |                             |
+| 세션 역할                |     ✔     |     ✔     |                             |
+| SSL 클라이언트 인증         |     ✔     |     ✔     |                             |
+| SNI 구성               |     ✔     |     ✗     |                             |
+| 세션 시간대               |     ✔     |     ✔     |                             |
+
+JDBC 드라이버는 기반 클라이언트 구현과 동일한 기능을 지원합니다. 다른 JDBC 기능은 해당 [페이지](/ko/integrations/language-clients/java/jdbc)에 나와 있습니다.
+
+<div id="compatibility">
+  ### 호환성
+</div>
+
+* 이 리포지토리의 모든 프로젝트는 ClickHouse의 모든 [현재 활성 LTS 버전](https://github.com/ClickHouse/ClickHouse/pulls?q=is%3Aopen+is%3Apr+label%3Arelease)에서 테스트됩니다.
+* [지원 정책](https://github.com/ClickHouse/ClickHouse/blob/master/SECURITY.md#security-change-log-and-support)
+* 보안 수정과 새로운 개선 사항을 놓치지 않도록 클라이언트를 지속적으로 업그레이드할 것을 권장합니다.
+* v2 API로 마이그레이션하는 과정에서 문제가 발생하면 [이슈를 생성하세요](https://github.com/ClickHouse/clickhouse-java/issues/new?assignees=\&labels=v2-feedback\&projects=\&template=v2-feedback.md\&title=). 응답해 드리겠습니다.
+
+<div id="logging">
+  ### 로깅
+</div>
+
+Java 언어 클라이언트는 로깅에 [SLF4J](https://www.slf4j.org/)를 사용합니다. `Logback`이나 `Log4j`와 같은 SLF4J 호환 로깅 프레임워크는 모두 사용할 수 있습니다.
+예를 들어 Maven을 사용하는 경우 `pom.xml` 파일에 다음 의존성을 추가할 수 있습니다:
+
+```xml title="pom.xml"
+<dependencies>
+    <!-- SLF4J API -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version> <!-- 최신 버전을 사용하세요 -->
+    </dependency>
+
+    <!-- Logback Core -->
+    <dependency>
+        <groupId>ch.qos.logback</groupId>
+        <artifactId>logback-core</artifactId>
+        <version>1.5.16</version> <!-- 최신 버전을 사용하세요 -->
+    </dependency>
+
+    <!-- Logback Classic (SLF4J를 Logback에 연결) -->
+    <dependency>
+        <groupId>ch.qos.logback</groupId>
+        <artifactId>logback-classic</artifactId>
+        <version>1.5.16</version> <!-- 최신 버전을 사용하세요 -->
+    </dependency>
+</dependencies>
+```
+
+<div id="configuring-logging">
+  #### 로깅 구성
+</div>
+
+이는 사용하는 로깅 프레임워크에 따라 달라집니다. 예를 들어 `Logback`을 사용한다면 `logback.xml`이라는 파일에서 로깅을 구성할 수 있습니다:
+
+```xml title="logback.xml"
+<configuration>
+    <!-- 콘솔 Appender -->
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>[%d{yyyy-MM-dd HH:mm:ss}] [%level] [%thread] %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- 파일 Appender -->
+    <appender name="FILE" class="ch.qos.logback.core.FileAppender">
+        <file>logs/app.log</file>
+        <append>true</append>
+        <encoder>
+            <pattern>[%d{yyyy-MM-dd HH:mm:ss}] [%level] [%thread] %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- 루트 로거 -->
+    <root level="info">
+        <appender-ref ref="STDOUT" />
+        <appender-ref ref="FILE" />
+    </root>
+
+    <!-- 특정 패키지에 대한 사용자 정의 로그 레벨 -->
+    <logger name="com.clickhouse" level="info" />
+</configuration>
+```
+
+[변경 로그](https://github.com/ClickHouse/clickhouse-java/blob/main/CHANGELOG.md)

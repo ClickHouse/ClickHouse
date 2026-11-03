@@ -6,6 +6,12 @@
       "repo": "ClickHouse/clickhouse-connect",
       "url": "https://github.com/ClickHouse/clickhouse-connect",
       "subdir": "docs"
+    },
+    {
+      "path": "docs/products/language-clients/python",
+      "repo": "ClickHouse/clickhouse-connect",
+      "url": "https://github.com/ClickHouse/clickhouse-connect",
+      "subdir": "docs"
     }
   ]
 }

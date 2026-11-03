@@ -1,10 +1,8 @@
 #include "config.h"
-#include <Common/CurrentThread.h>
 #if USE_AVRO
 
 #include <cstddef>
 #include <memory>
-#include <optional>
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
@@ -12,7 +10,6 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <Common/Exception.h>
-#include <Common/ThreadPool.h>
 
 
 #include <Core/NamesAndTypes.h>
@@ -33,6 +30,7 @@
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#include <Storages/VirtualColumnUtils.h>
 
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/DataLakes/Common/AvroForIcebergDeserializer.h>
@@ -49,6 +47,7 @@
 
 #include <Common/ProfileEvents.h>
 #include <Common/SharedLockGuard.h>
+#include <Common/UniqueLock.h>
 #include <Common/logger_useful.h>
 
 #include <Interpreters/IcebergMetadataLog.h>
@@ -58,10 +57,13 @@
 
 namespace ProfileEvents
 {
+extern const Event IcebergIteratorInitializationMicroseconds;
 extern const Event IcebergMetadataReadWaitTimeMicroseconds;
 extern const Event IcebergMetadataReturnedObjectInfos;
 extern const Event IcebergMinMaxNonPrunedDeleteFiles;
 extern const Event IcebergMinMaxPrunedDeleteFiles;
+extern const Event IcebergPartitionPrunedFiles;
+extern const Event IcebergPartitionPrunedManifestFiles;
 };
 
 
@@ -75,6 +77,7 @@ extern const int LOGICAL_ERROR;
 namespace Setting
 {
 extern const SettingsBool use_iceberg_partition_pruning;
+extern const SettingsBool use_iceberg_manifest_list_partition_pruning;
 };
 
 
@@ -82,6 +85,24 @@ using namespace Iceberg;
 
 namespace
 {
+
+/// decode path agrees on whether pruning applies.
+std::shared_ptr<const ActionsDAG> makeManifestFilterDag(const ActionsDAG * filter_dag, const ContextPtr & context)
+{
+    if (!filter_dag)
+        return nullptr;
+    if (!context)
+    {
+        throw DB::Exception(
+            DB::ErrorCodes::LOGICAL_ERROR,
+            "Context is required with non-empty filter_dag to implement "
+            "partition pruning for Iceberg table");
+    }
+    if (!context->getSettingsRef()[Setting::use_iceberg_partition_pruning].value)
+        return nullptr;
+    return std::make_shared<ActionsDAG>(filter_dag->clone());
+}
+
 std::span<const ProcessedManifestFileEntryPtr> defineDeletesSpan(
     ProcessedManifestFileEntryPtr data_object_,
     const std::vector<ProcessedManifestFileEntryPtr> & deletes_objects,
@@ -92,7 +113,7 @@ std::span<const ProcessedManifestFileEntryPtr> defineDeletesSpan(
     {
         return {};
     }
-    ///Object in deletes_objects are sorted by common_partition_specification, partition_key_value and added_sequence_number.
+    /// Objects in deletes_objects are sorted by common_partition_specification, partition_key_value and added_sequence_number.
     /// It is done to have an invariant that position deletes objects which corresponds
     /// to the data object form a subsegment in a deletes_objects vector.
     /// We need to take all position deletes objects which has the same partition schema and value and has added_sequence_number
@@ -107,8 +128,8 @@ std::span<const ProcessedManifestFileEntryPtr> defineDeletesSpan(
         data_object_,
         [](const ProcessedManifestFileEntryPtr & lhs, const ProcessedManifestFileEntryPtr & rhs)
         {
-            return std::tie(*lhs->common_partition_specification, lhs->parsed_entry->partition_key_value)
-                < std::tie(*rhs->common_partition_specification, rhs->parsed_entry->partition_key_value);
+            return std::tie(*lhs->common_partition_specification, lhs->normalized_partition_key_value)
+                < std::tie(*rhs->common_partition_specification, rhs->normalized_partition_key_value);
         });
     if (beg_it - deletes_objects.begin() > end_it - deletes_objects.begin())
     {
@@ -152,93 +173,6 @@ std::span<const ProcessedManifestFileEntryPtr> defineDeletesSpan(
 
 }
 
-std::optional<ProcessedManifestFileEntryPtr> SingleThreadIcebergKeysIterator::next()
-{
-    if (!data_snapshot)
-    {
-        return std::nullopt;
-    }
-
-    while (true)
-    {
-        /// Try to get the next entry from the current manifest file iterator.
-        if (current_manifest_file_iterator)
-        {
-            auto entry = current_manifest_file_iterator->next();
-            if (entry)
-                return entry;
-
-            /// next() returned nullptr, meaning the manifest file is fully exhausted.
-            current_manifest_file_iterator = nullptr;
-        }
-
-        /// Find the next manifest file with matching content type.
-        while (manifest_file_index < data_snapshot->manifest_list_entries.size())
-        {
-            const auto & manifest_list_entry = data_snapshot->manifest_list_entries[manifest_file_index++];
-            if (manifest_list_entry.content_type != manifest_file_content_type)
-                continue;
-
-            auto manifest_file_cacheable_part = Iceberg::getManifestFile(
-                object_storage,
-                persistent_components,
-                local_context,
-                log,
-                manifest_list_entry.manifest_file_path,
-                manifest_list_entry.manifest_file_byte_size);
-
-            current_manifest_file_iterator = Iceberg::ManifestFileIterator::create(
-                manifest_file_cacheable_part.deserializer,
-                manifest_list_entry.manifest_file_path,
-                persistent_components.path_resolver,
-                *persistent_components.schema_processor,
-                manifest_list_entry.added_sequence_number,
-                manifest_list_entry.added_snapshot_id,
-                local_context,
-                filter_dag,
-                table_snapshot->schema_id);
-            break;
-        }
-
-        if (!current_manifest_file_iterator)
-            return std::nullopt;
-    }
-}
-
-SingleThreadIcebergKeysIterator::SingleThreadIcebergKeysIterator(
-    ObjectStoragePtr object_storage_,
-    ContextPtr local_context_,
-    Iceberg::ManifestFileContentType manifest_file_content_type_,
-    const ActionsDAG * filter_dag_,
-    Iceberg::TableStateSnapshotPtr table_snapshot_,
-    Iceberg::IcebergDataSnapshotPtr data_snapshot_,
-    PersistentTableComponents persistent_components_)
-    : object_storage(object_storage_)
-    , filter_dag(
-          [&]() -> std::shared_ptr<const ActionsDAG>
-          {
-              if (!filter_dag_)
-                  return nullptr;
-              if (!local_context_)
-              {
-                  throw DB::Exception(
-                      DB::ErrorCodes::LOGICAL_ERROR,
-                      "Context is required with non-empty filter_dag to implement "
-                      "partition pruning for Iceberg table");
-              }
-              if (!local_context_->getSettingsRef()[Setting::use_iceberg_partition_pruning].value)
-                  return nullptr;
-              return std::make_shared<ActionsDAG>(filter_dag_->clone());
-          }())
-    , local_context(local_context_)
-    , table_snapshot(table_snapshot_)
-    , data_snapshot(data_snapshot_)
-    , persistent_components(persistent_components_)
-    , log(getLogger("IcebergIterator"))
-    , manifest_file_content_type(manifest_file_content_type_)
-{
-}
-
 IcebergIterator::IcebergIterator(
     ObjectStoragePtr object_storage_,
     ContextPtr local_context_,
@@ -248,91 +182,287 @@ IcebergIterator::IcebergIterator(
     Iceberg::IcebergDataSnapshotPtr data_snapshot_,
     PersistentTableComponents persistent_components_)
     : logger(getLogger("IcebergIterator"))
-    , filter_dag(filter_dag_ ? std::make_shared<ActionsDAG>(filter_dag_->clone()) : nullptr)
     , object_storage(std::move(object_storage_))
+    , local_context(local_context_)
     , table_state_snapshot(table_snapshot_)
+    , data_snapshot(data_snapshot_)
     , persistent_components(persistent_components_)
-    , data_files_iterator(
-          object_storage,
-          local_context_,
-          Iceberg::ManifestFileContentType::DATA,
-          filter_dag.get(),
-          table_snapshot_,
-          data_snapshot_,
-          persistent_components_)
-    , deletes_iterator(
-          object_storage,
-          local_context_,
-          Iceberg::ManifestFileContentType::DELETE,
-          filter_dag.get(),
-          table_snapshot_,
-          data_snapshot_,
-          persistent_components_)
-    , blocking_queue(100)
+    , manifest_filter_dag(makeManifestFilterDag(filter_dag_, local_context_))
     , callback(std::move(callback_))
 {
-    auto delete_file = deletes_iterator.next();
-    while (delete_file.has_value())
+    chassert(local_context);
+
+    /// Every manifest entry is logged when the trace is requested, so the manifests cannot be skipped then.
+    const bool per_entry_trace_requested
+        = getIcebergMetadataLogLevel(local_context) >= DB::IcebergMetadataLogLevel::ManifestFileEntry;
+    const bool manifest_list_pruning_enabled = manifest_filter_dag && data_snapshot && table_state_snapshot
+        && data_snapshot->partition_specs && !per_entry_trace_requested
+        && local_context->getSettingsRef()[Setting::use_iceberg_partition_pruning]
+        && local_context->getSettingsRef()[Setting::use_iceberg_manifest_list_partition_pruning];
+
+    /// The filter sets are shared with the reader of this table, which prepares them on its own
+    /// thread, so they must be ready before any manifest is pruned.
+    if (data_snapshot && manifest_filter_dag)
+        VirtualColumnUtils::buildOrderedSetsForDAG(*manifest_filter_dag, local_context);
+
+    /// The key conditions of the pruner are built over the filter DAG, so they need its ordered sets
+    /// to be ready.
+    std::unique_ptr<Iceberg::ManifestListPruner> manifest_list_pruner;
+    if (manifest_list_pruning_enabled)
+        manifest_list_pruner = std::make_unique<Iceberg::ManifestListPruner>(
+            *persistent_components.schema_processor,
+            table_state_snapshot->schema_id,
+            data_snapshot->schema_id_on_snapshot_commit,
+            data_snapshot->partition_specs,
+            manifest_filter_dag.get(),
+            local_context);
+
+    ManifestFileCacheKeys delete_manifest_keys;
+    ManifestFileCacheKeys data_manifest_keys;
+    if (data_snapshot)
     {
-        if (delete_file.value()->parsed_entry->equality_ids.has_value())
+        for (const auto & manifest_list_entry : data_snapshot->manifest_list_entries)
         {
-            equality_deletes_files.emplace_back(std::move(delete_file.value()));
+            if (manifest_list_entry.content_type == Iceberg::ManifestFileContentType::DELETE)
+            {
+                delete_manifest_keys.push_back(manifest_list_entry);
+                continue;
+            }
+            if (manifest_list_pruner
+                && manifest_list_pruner->canBePruned(manifest_list_entry.partition_spec_id, manifest_list_entry.partition_summaries))
+            {
+                ProfileEvents::increment(ProfileEvents::IcebergPartitionPrunedManifestFiles);
+                /// The data files of a skipped manifest are skipped by partition pruning just as the ones
+                /// rejected entry by entry, so they are counted the same way; without this the counter
+                /// silently drops to zero exactly when pruning got better.
+                ProfileEvents::increment(ProfileEvents::IcebergPartitionPrunedFiles, manifest_list_entry.live_files_count);
+                continue;
+            }
+            data_manifest_keys.push_back(manifest_list_entry);
+        }
+    }
+
+    delete_manifests_left = delete_manifest_keys.size();
+    ManifestFileCacheKeys manifest_keys = std::move(delete_manifest_keys);
+    manifest_keys.insert(
+        manifest_keys.end(), std::make_move_iterator(data_manifest_keys.begin()), std::make_move_iterator(data_manifest_keys.end()));
+    manifests = std::make_unique<Iceberg::ManifestFilesPrefetcher>(
+        object_storage, persistent_components, local_context, logger, std::move(manifest_keys));
+}
+
+void IcebergIterator::ensureDeletesReady()
+{
+    /// Threads arriving before the deletes are ready share the delete manifests; the last one to finish sorts.
+    UniqueLock lock(deletes_mutex);
+    while (!deletes_ready)
+    {
+        /// Stored rather than rethrown from a fresh parse, so that every `next` thread sees one error.
+        if (deletes_exception)
+            std::rethrow_exception(copyMutableException(deletes_exception));
+
+        if (delete_manifests_left == 0)
+        {
+            if (delete_manifests_in_progress != 0)
+            {
+                delete_manifest_parsed.wait(lock.getUnderlyingLock());
+                continue;
+            }
+
+            ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergIteratorInitializationMicroseconds);
+            /// Sort objects by common_partition_specification, partition_key_value and added_sequence_number.
+            /// This is needed to efficiently match delete and data manifests in defineDeletesSpan().
+            LOG_DEBUG(logger, "Taken {} position deletes file and {} equality deletes files in iceberg iterator", position_deletes_files.size(), equality_deletes_files.size());
+            std::sort(equality_deletes_files.begin(), equality_deletes_files.end());
+            std::sort(position_deletes_files.begin(), position_deletes_files.end());
+            deletes_ready = true;
+            delete_manifest_parsed.notify_all();
+            break;
+        }
+
+        Iceberg::ManifestFilesPrefetcher::FetchPtr fetch;
+        try
+        {
+            /// Lock order: `deletes_mutex`, then `data_files_mutex`.
+            std::lock_guard data_lock(data_files_mutex);
+            fetch = manifests->take();
+        }
+        catch (...)
+        {
+            deletes_exception = std::current_exception();
+            delete_manifest_parsed.notify_all();
+            throw;
+        }
+
+        if (!fetch)
+        {
+            /// Every slot is held by a delete manifest another thread is parsing.
+            if (delete_manifests_in_progress == 0)
+            {
+                deletes_exception = std::make_exception_ptr(Exception(
+                    ErrorCodes::LOGICAL_ERROR, "No read-ahead slot is free while no Iceberg delete manifest is being parsed"));
+                delete_manifest_parsed.notify_all();
+                continue;
+            }
+            delete_manifest_parsed.wait(lock.getUnderlyingLock());
+            continue;
+        }
+        chassert(fetch->key().content_type == Iceberg::ManifestFileContentType::DELETE);
+        --delete_manifests_left;
+        ++delete_manifests_in_progress;
+        lock.unlock();
+
+        std::vector<Iceberg::ProcessedManifestFileEntryPtr> delete_files;
+        std::exception_ptr error;
+        try
+        {
+            ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergIteratorInitializationMicroseconds);
+            auto manifest_file_iterator = createManifestIterator(fetch->key(), fetch->get());
+            fetch.reset();
+            while (auto entry = manifest_file_iterator->next())
+                delete_files.push_back(std::move(entry));
+        }
+        catch (...)
+        {
+            error = std::current_exception();
+        }
+        fetch.reset();
+
+        lock.lock();
+        --delete_manifests_in_progress;
+        if (!error)
+        {
+            try
+            {
+                for (auto & delete_file : delete_files)
+                {
+                    if (delete_file->parsed_entry->equality_ids.has_value())
+                        equality_deletes_files.emplace_back(std::move(delete_file));
+                    else
+                        position_deletes_files.emplace_back(std::move(delete_file));
+                }
+            }
+            catch (...)
+            {
+                error = std::current_exception();
+            }
+        }
+        if (error && !deletes_exception)
+            deletes_exception = error;
+        delete_manifest_parsed.notify_all();
+    }
+}
+
+Iceberg::ManifestIteratorPtr IcebergIterator::createManifestIterator(
+    const ManifestFileCacheKey & manifest_list_entry, const Iceberg::ManifestFileCacheableInfo & manifest_file) const
+{
+    return Iceberg::ManifestFileIterator::create(
+        manifest_file.getDeserializer(),
+        manifest_list_entry.manifest_file_path,
+        persistent_components.path_resolver,
+        *persistent_components.schema_processor,
+        manifest_list_entry.added_sequence_number,
+        manifest_list_entry.added_snapshot_id,
+        manifest_list_entry.first_row_id,
+        local_context,
+        manifest_filter_dag,
+        table_state_snapshot->schema_id);
+}
+
+Iceberg::ProcessedManifestFileEntryPtr IcebergIterator::nextDataFileEntry()
+{
+    /// The threads calling `next` share the data manifests: each one continues an idle partially read
+    /// manifest, or else parses the next one, so with one thread the files come in the manifests' order.
+    UniqueLock lock(data_files_mutex);
+    while (true)
+    {
+        if (data_files_exception)
+            std::rethrow_exception(copyMutableException(data_files_exception));
+
+        Iceberg::ManifestIteratorPtr manifest;
+        Iceberg::ManifestFilesPrefetcher::FetchPtr fetch;
+        if (!idle_data_manifests.empty())
+        {
+            manifest = std::move(idle_data_manifests.back());
+            idle_data_manifests.pop_back();
         }
         else
         {
-            position_deletes_files.emplace_back(std::move(delete_file.value()));
-        }
-        delete_file = deletes_iterator.next();
-    }
-    LOG_DEBUG(logger, "Taken {} position deletes file and {} equality deletes files in iceberg iterator", position_deletes_files.size(), equality_deletes_files.size());
-    std::sort(equality_deletes_files.begin(), equality_deletes_files.end());
-    std::sort(position_deletes_files.begin(), position_deletes_files.end());
-    producer_task = std::make_unique<ThreadFromGlobalPool>(
-        [this, thread_group = CurrentThread::getGroup()]()
-        {
-            DB::ThreadGroupSwitcher switcher(thread_group, DB::ThreadName::ICEBERG_ITERATOR);
-            while (!blocking_queue.isFinished())
+            try
             {
-                std::optional<ProcessedManifestFileEntryPtr> entry;
-                try
-                {
-                    entry = data_files_iterator.next();
-                }
-                catch (...)
-                {
-                    std::lock_guard lock(exception_mutex);
-                    if (!exception)
-                    {
-                        exception = std::current_exception();
-                    }
-                    blocking_queue.finish();
-                    break;
-                }
-                if (!entry.has_value())
-                    break;
-                while (!blocking_queue.push(std::move(entry.value())))
-                {
-                    if (blocking_queue.isFinished())
-                    {
-                        break;
-                    }
-                }
+                fetch = manifests->take();
             }
-            blocking_queue.finish();
-        });
+            catch (...)
+            {
+                data_files_exception = std::current_exception();
+                data_manifest_released.notify_all();
+                throw;
+            }
+
+            if (!fetch)
+            {
+                if (data_manifests_in_use == 0)
+                    return nullptr;
+                data_manifest_released.wait(lock.getUnderlyingLock());
+                continue;
+            }
+        }
+
+        ++data_manifests_in_use;
+        lock.unlock();
+
+        Iceberg::ProcessedManifestFileEntryPtr entry;
+        std::exception_ptr error;
+        try
+        {
+            if (fetch)
+            {
+                manifest = createManifestIterator(fetch->key(), fetch->get());
+                fetch.reset();
+            }
+            entry = manifest->next();
+        }
+        catch (...)
+        {
+            error = std::current_exception();
+        }
+        fetch.reset();
+        if (!entry)
+            manifest.reset();
+
+        lock.lock();
+        --data_manifests_in_use;
+        if (!error && entry)
+        {
+            try
+            {
+                idle_data_manifests.push_back(std::move(manifest));
+            }
+            catch (...)
+            {
+                error = std::current_exception();
+            }
+        }
+        if (error && !data_files_exception)
+            data_files_exception = error;
+        data_manifest_released.notify_all();
+
+        if (!error && entry)
+            return entry;
+    }
 }
 
 ObjectInfoPtr IcebergIterator::next(size_t)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergMetadataReadWaitTimeMicroseconds);
-    Iceberg::ProcessedManifestFileEntryPtr manifest_file_entry;
-    if (blocking_queue.pop(manifest_file_entry))
+    ensureDeletesReady();
+    if (auto manifest_file_entry = nextDataFileEntry())
     {
         IcebergDataObjectInfoPtr object_info
             = std::make_shared<IcebergDataObjectInfo>(
                 manifest_file_entry,
                 persistent_components.path_resolver.resolve(manifest_file_entry->parsed_entry->file_path_key),
-                table_state_snapshot->schema_id);
+                table_state_snapshot->schema_id,
+                Iceberg::getIdentityPartitionColumnValues(*manifest_file_entry, *persistent_components.schema_processor));
         for (const auto & position_delete :
              defineDeletesSpan(manifest_file_entry, position_deletes_files, /* is_equality_delete */ false, logger))
         {
@@ -367,12 +497,15 @@ ObjectInfoPtr IcebergIterator::next(size_t)
                     data_file_path,
                     lower.has_value() ? lower->serialize() : "[no lower bound]",
                     upper.has_value() ? upper->serialize() : "[no upper bound]");
-                object_info->addPositionDeleteObject(
-                    position_delete, persistent_components.path_resolver.resolve(position_delete->parsed_entry->file_path_key));
+                const auto resolved_delete_path = persistent_components.path_resolver.resolve(position_delete->parsed_entry->file_path_key);
+                if (position_delete->parsed_entry->isDeletionVector())
+                    object_info->addDeletionVector(position_delete, resolved_delete_path);
+                else
+                    object_info->addPositionDeleteFile(position_delete, resolved_delete_path);
             }
         }
 
-        if (!object_info->info.position_deletes_objects.empty())
+        if (object_info->info.hasPositionDeletes())
         {
             LOG_DEBUG(
                 logger,
@@ -404,32 +537,28 @@ ObjectInfoPtr IcebergIterator::next(size_t)
 
         return object_info;
     }
-    {
-        std::lock_guard lock(exception_mutex);
-        if (exception)
-        {
-            auto exception_message = getExceptionMessage(exception, true, true);
-            auto exception_code = getExceptionErrorCode(exception);
-            throw DB::Exception(exception_code, "Iceberg iterator is failed with exception: {}", exception_message);
-        }
-    }
 
     return nullptr;
 }
 
 size_t IcebergIterator::estimatedKeysCount()
 {
-    return std::numeric_limits<size_t>::max();
+    if (!data_snapshot)
+        return 0;
+
+    size_t data_files_count = 0;
+    for (const auto & manifest_list_entry : data_snapshot->manifest_list_entries)
+    {
+        if (manifest_list_entry.content_type != Iceberg::ManifestFileContentType::DATA)
+            continue;
+        if (manifest_list_entry.live_files_count <= 0)
+            return std::numeric_limits<size_t>::max();
+        data_files_count += static_cast<size_t>(manifest_list_entry.live_files_count);
+    }
+    return data_files_count;
 }
 
-IcebergIterator::~IcebergIterator()
-{
-    blocking_queue.finish();
-    if (producer_task)
-    {
-        producer_task->join();
-    }
-}
+IcebergIterator::~IcebergIterator() = default;
 }
 
 #endif

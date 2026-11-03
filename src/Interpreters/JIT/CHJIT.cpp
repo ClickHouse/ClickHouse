@@ -3,6 +3,10 @@
 #if USE_EMBEDDED_COMPILER
 
 #include <sys/mman.h>
+#include <cstring>
+#if defined(OS_DARWIN)
+#include <strings.h>
+#endif
 #include <boost/noncopyable.hpp>
 
 #include <llvm/Analysis/CGSCCPassManager.h>
@@ -444,7 +448,19 @@ CHJIT::CHJIT()
     symbol_resolver->registerSymbol("memcmp", reinterpret_cast<void *>(&memcmp));
     symbol_resolver->registerSymbol("memcmpSmallCharsAllowOverflow15", reinterpret_cast<void *>(&memcmpSmallCharsAllowOverflow15));
 
-    symbol_resolver->registerSymbol("fmod", reinterpret_cast<void *>(static_cast<double (*)(double, double)>(&fmod)));
+#if defined(OS_DARWIN)
+    /// On Apple targets LLVM lowers constant-pattern memsets and zeroing to these libc helpers,
+    /// so the JIT must be able to resolve them.
+    symbol_resolver->registerSymbol("memset_pattern4", reinterpret_cast<void *>(&memset_pattern4));
+    symbol_resolver->registerSymbol("memset_pattern8", reinterpret_cast<void *>(&memset_pattern8));
+    symbol_resolver->registerSymbol("memset_pattern16", reinterpret_cast<void *>(&memset_pattern16));
+    symbol_resolver->registerSymbol("bzero", reinterpret_cast<void *>(&bzero));
+#endif
+
+    /// Initialization (not a cast) picks the right overload where libc++ declares an
+    /// overload set for fmod, and stays tidy-clean where musl declares a single C function.
+    double (*fmod_double)(double, double) = &fmod;
+    symbol_resolver->registerSymbol("fmod", reinterpret_cast<void *>(fmod_double));
     /// Signed and unsigned variants must be kept together: see the comment above the extern declarations.
     symbol_resolver->registerSymbol("__divti3", reinterpret_cast<void *>(&__divti3));
     symbol_resolver->registerSymbol("__modti3", reinterpret_cast<void *>(&__modti3));

@@ -1,5 +1,6 @@
 -- Tags: no-parallel-replicas
 -- Test that virtual columns are available when reading from normal projections.
+SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS test_proj_virtuals;
 
@@ -18,7 +19,6 @@ INSERT INTO test_proj_virtuals SELECT number, number FROM numbers(100);
 
 SET force_optimize_projection = 1;
 SET optimize_use_projections = 1;
-SET enable_analyzer = 1;
 
 EXPLAIN indexes = 1, projections = 1
 SELECT

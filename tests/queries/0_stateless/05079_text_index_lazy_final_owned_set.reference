@@ -1,0 +1,5 @@
+-- correctness does not depend on lazy FINAL
+100	100
+100	100
+-- the text index is consulted for the set the query owns
+yes

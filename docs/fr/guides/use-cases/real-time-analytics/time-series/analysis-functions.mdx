@@ -1,0 +1,195 @@
+---
+title: 'Fonctions d’analyse - séries temporelles'
+sidebarTitle: 'Fonctions d’analyse'
+description: 'Fonctions d’analyse des données de séries temporelles dans ClickHouse.'
+slug: /use-cases/time-series/analysis-functions
+keywords: ['time-series', 'fonctions d’analyse', 'fonctions de fenêtre', 'fonctions d’agrégation', 'moyennes mobiles', 'analyse des tendances']
+show_related_blogs: true
+doc_type: 'reference'
+---
+
+L’analyse des séries temporelles dans ClickHouse peut être effectuée à l’aide de fonctions SQL standard d’agrégation et de fenêtre.
+Lorsque vous travaillez avec des données de séries temporelles, vous rencontrez généralement trois grands types de métriques :
+
+* Des métriques de type Counter qui augmentent de manière monotone au fil du temps (comme les vues de page ou le nombre total d’événements)
+* Des métriques de type Gauge qui représentent des mesures à un instant donné et peuvent augmenter ou diminuer (comme l’utilisation du CPU ou la température)
+* Des histogrammes qui échantillonnent les observations et les répartissent dans des buckets (comme les durées de requête ou les tailles de réponse)
+
+Les schémas d’analyse courants pour ces métriques incluent la comparaison des valeurs entre différentes périodes, le calcul des totaux cumulés, la détermination des taux de variation et l’analyse des distributions.
+Tout cela peut être réalisé grâce à des combinaisons d’agrégations, de fonctions de fenêtre comme `sum() OVER` et de fonctions spécialisées comme `histogram()`.
+
+<div id="time-series-period-over-period-changes">
+  ## Variations d’une période à l’autre
+</div>
+
+Lors de l’analyse de données de séries temporelles, il est souvent nécessaire de comprendre comment les valeurs évoluent d’une période à l’autre.
+C’est essentiel aussi bien pour les métriques de type Gauge que Counter.
+La fonction de fenêtre [`lagInFrame`](/fr/reference/functions/window-functions/lagInFrame) permet d’accéder à la valeur de la période précédente afin de calculer ces variations.
+
+La requête suivante l’illustre en calculant les variations d’un jour sur l’autre du nombre de vues de la page Wikipedia de &quot;Weird Al&quot; Yankovic.
+La colonne de tendance indique si le trafic a augmenté (valeurs positives) ou diminué (valeurs négatives) par rapport au jour précédent, ce qui aide à repérer des pics ou des baisses d’activité inhabituels.
+
+```sql
+SELECT
+    toDate(time) AS day,
+    sum(hits) AS h,
+    lagInFrame(h) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS p,
+    h - p AS trend
+FROM wikistat
+WHERE path = '"Weird_Al"_Yankovic'
+GROUP BY ALL
+LIMIT 10;
+```
+
+```text
+┌────────day─┬────h─┬────p─┬─trend─┐
+│ 2015-05-01 │ 3934 │    0 │  3934 │
+│ 2015-05-02 │ 3411 │ 3934 │  -523 │
+│ 2015-05-03 │ 3195 │ 3411 │  -216 │
+│ 2015-05-04 │ 3076 │ 3195 │  -119 │
+│ 2015-05-05 │ 3450 │ 3076 │   374 │
+│ 2015-05-06 │ 3053 │ 3450 │  -397 │
+│ 2015-05-07 │ 2890 │ 3053 │  -163 │
+│ 2015-05-08 │ 3898 │ 2890 │  1008 │
+│ 2015-05-09 │ 3092 │ 3898 │  -806 │
+│ 2015-05-10 │ 3508 │ 3092 │   416 │
+└────────────┴──────┴──────┴───────┘
+```
+
+<div id="time-series-cumulative-values">
+  ## Valeurs cumulées
+</div>
+
+Les métriques de type Counter s&#39;accumulent naturellement au fil du temps.
+Pour analyser cette croissance cumulée, nous pouvons calculer des totaux cumulés à l&#39;aide de fonctions de fenêtre.
+
+La requête suivante l&#39;illustre en utilisant la clause `sum() OVER`, qui crée un total cumulé. La fonction `bar()` fournit une représentation visuelle de cette croissance.
+
+```sql
+SELECT
+    toDate(time) AS day,
+    sum(hits) AS h,
+    sum(h) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND 0 FOLLOWING) AS c,
+    bar(c, 0, 50000, 25) AS b
+FROM wikistat
+WHERE path = '"Weird_Al"_Yankovic'
+GROUP BY ALL
+ORDER BY day
+LIMIT 10;
+```
+
+```text
+┌────────day─┬────h─┬─────c─┬─b─────────────────┐
+│ 2015-05-01 │ 3934 │  3934 │ █▉                │
+│ 2015-05-02 │ 3411 │  7345 │ ███▋              │
+│ 2015-05-03 │ 3195 │ 10540 │ █████▎            │
+│ 2015-05-04 │ 3076 │ 13616 │ ██████▊           │
+│ 2015-05-05 │ 3450 │ 17066 │ ████████▌         │
+│ 2015-05-06 │ 3053 │ 20119 │ ██████████        │
+│ 2015-05-07 │ 2890 │ 23009 │ ███████████▌      │
+│ 2015-05-08 │ 3898 │ 26907 │ █████████████▍    │
+│ 2015-05-09 │ 3092 │ 29999 │ ██████████████▉   │
+│ 2015-05-10 │ 3508 │ 33507 │ ████████████████▊ │
+└────────────┴──────┴───────┴───────────────────┘
+```
+
+<div id="time-series-rate-calculations">
+  ## Calculs de taux
+</div>
+
+Lors de l’analyse de séries temporelles, il est souvent utile d’évaluer le taux d’événements par unité de temps.
+Cette requête calcule le taux de consultations de pages par seconde en divisant les totaux horaires par le nombre de secondes que compte une heure (3600).
+Le graphique en barres permet d’identifier les heures de plus forte activité.
+
+```sql
+SELECT
+    toStartOfHour(time) AS time,
+    sum(hits) AS hits,
+    round(hits / (60 * 60), 2) AS rate,
+    bar(rate * 10, 0, max(rate * 10) OVER (), 25) AS b
+FROM wikistat
+WHERE path = '"Weird_Al"_Yankovic'
+GROUP BY time
+LIMIT 10;
+```
+
+```text
+┌────────────────time─┬───h─┬─rate─┬─b─────┐
+│ 2015-07-01 01:00:00 │ 143 │ 0.04 │ █▊    │
+│ 2015-07-01 02:00:00 │ 170 │ 0.05 │ ██▏   │
+│ 2015-07-01 03:00:00 │ 148 │ 0.04 │ █▊    │
+│ 2015-07-01 04:00:00 │ 190 │ 0.05 │ ██▏   │
+│ 2015-07-01 05:00:00 │ 253 │ 0.07 │ ███▏  │
+│ 2015-07-01 06:00:00 │ 233 │ 0.06 │ ██▋   │
+│ 2015-07-01 07:00:00 │ 359 │  0.1 │ ████▍ │
+│ 2015-07-01 08:00:00 │ 190 │ 0.05 │ ██▏   │
+│ 2015-07-01 09:00:00 │ 121 │ 0.03 │ █▎    │
+│ 2015-07-01 10:00:00 │  70 │ 0.02 │ ▉     │
+└─────────────────────┴─────┴──────┴───────┘
+```
+
+<div id="time-series-histograms">
+  ## Histogrammes
+</div>
+
+Un cas d&#39;utilisation courant des séries temporelles consiste à créer des histogrammes à partir d&#39;événements observés.
+Supposons que nous voulions comprendre la répartition des pages selon leur nombre total de consultations, en ne prenant en compte que les pages comptant plus de 10 000 consultations.
+Nous pouvons utiliser la fonction `histogram()` pour générer automatiquement un histogramme adaptatif en fonction du nombre de classes :
+
+```sql
+SELECT
+    histogram(10)(hits) AS hist
+FROM
+(
+    SELECT
+        path,
+        sum(hits) AS hits
+    FROM wikistat
+    WHERE date(time) = '2015-06-15'
+    GROUP BY path
+    HAVING hits > 10000
+)
+FORMAT Vertical;
+```
+
+```text
+Row 1:
+──────
+hist: [(10033,23224.55065359477,60.625),(23224.55065359477,37855.38888888889,15.625),(37855.38888888889,52913.5,3.5),(52913.5,69438,1.25),(69438,83102.16666666666,1.25),(83102.16666666666,94267.66666666666,2.5),(94267.66666666666,116778,1.25),(116778,186175.75,1.125),(186175.75,946963.25,1.75),(946963.25,1655250,1.125)]
+```
+
+Nous pouvons ensuite utiliser [`arrayJoin()`](/fr/reference/functions/regular-functions/array-join) pour préparer les données et `bar()` pour les visualiser :
+
+```sql
+WITH histogram(10)(hits) AS hist
+SELECT
+    round(arrayJoin(hist).1) AS lowerBound,
+    round(arrayJoin(hist).2) AS upperBound,
+    arrayJoin(hist).3 AS count,
+    bar(count, 0, max(count) OVER (), 20) AS b
+FROM
+(
+    SELECT
+        path,
+        sum(hits) AS hits
+    FROM wikistat
+    WHERE date(time) = '2015-06-15'
+    GROUP BY path
+    HAVING hits > 10000
+);
+```
+
+```text
+┌─lowerBound─┬─upperBound─┬──count─┬─b────────────────────┐
+│      10033 │      19886 │ 53.375 │ ████████████████████ │
+│      19886 │      31515 │ 18.625 │ ██████▉              │
+│      31515 │      43518 │  6.375 │ ██▍                  │
+│      43518 │      55647 │  1.625 │ ▌                    │
+│      55647 │      73602 │  1.375 │ ▌                    │
+│      73602 │      92880 │   3.25 │ █▏                   │
+│      92880 │     116778 │  1.375 │ ▌                    │
+│     116778 │     186176 │  1.125 │ ▍                    │
+│     186176 │     946963 │   1.75 │ ▋                    │
+│     946963 │    1655250 │  1.125 │ ▍                    │
+└────────────┴────────────┴────────┴──────────────────────┘
+```

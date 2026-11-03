@@ -1,0 +1,50 @@
+UInt8	1	1	1	1	1	1	1	1	1	1	1	1
+UInt8 identity	1	1	1
+UInt8 empty	1	1	1
+UInt8 allnull	1	1	1
+UInt16	1	1	1	1	1	1	1	1	1	1	1	1
+UInt16 identity	1	1	1
+UInt16 empty	1	1	1
+UInt16 allnull	1	1	1
+UInt32	1	1	1	1	1	1	1	1	1	1	1	1
+UInt32 identity	1	1	1
+UInt32 empty	1	1	1
+UInt32 allnull	1	1	1
+UInt64	1	1	1	1	1	1	1	1	1	1	1	1
+UInt64 identity	1	1	1
+UInt64 empty	1	1	1
+UInt64 allnull	1	1	1
+UInt128	1	1	1	1	1	1	1	1	1	1	1	1
+UInt128 identity	1	1	1
+UInt128 empty	1	1	1
+UInt128 allnull	1	1	1
+UInt256	1	1	1	1	1	1	1	1	1	1	1	1
+UInt256 identity	1	1	1
+UInt256 empty	1	1	1
+UInt256 allnull	1	1	1
+Int8	1	1	1	1	1	1	1	1	1	1	1	1
+Int8 identity	1	1	1
+Int8 empty	1	1	1
+Int8 allnull	1	1	1
+Int16	1	1	1	1	1	1	1	1	1	1	1	1
+Int16 identity	1	1	1
+Int16 empty	1	1	1
+Int16 allnull	1	1	1
+Int32	1	1	1	1	1	1	1	1	1	1	1	1
+Int32 identity	1	1	1
+Int32 empty	1	1	1
+Int32 allnull	1	1	1
+Int64	1	1	1	1	1	1	1	1	1	1	1	1
+Int64 identity	1	1	1
+Int64 empty	1	1	1
+Int64 allnull	1	1	1
+Int128	1	1	1	1	1	1	1	1	1	1	1	1
+Int128 identity	1	1	1
+Int128 empty	1	1	1
+Int128 allnull	1	1	1
+Int256	1	1	1	1	1	1	1	1	1	1	1	1
+Int256 identity	1	1	1
+Int256 empty	1	1	1
+Int256 allnull	1	1	1
+UInt8 masked	1	1	1	1	1	1	1	1
+UInt256 masked	1	1	1	1	1	1	1	1

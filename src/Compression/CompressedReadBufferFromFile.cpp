@@ -12,6 +12,13 @@ namespace ErrorCodes
     extern const int SEEK_POSITION_OUT_OF_BOUND;
 }
 
+/// Cached: `getLogger` takes a process-global mutex, and these buffers are created per column stream
+/// of every read task.
+static LoggerPtr getCompressedReadBufferFromFileLogger()
+{
+    static LoggerPtr log = getLogger("CompressedReadBufferFromFile");
+    return log;
+}
 
 bool CompressedReadBufferFromFile::nextImpl()
 {
@@ -22,8 +29,6 @@ bool CompressedReadBufferFromFile::nextImpl()
         size_compressed = readCompressedData(size_decompressed, size_compressed_without_checksum, false);
         if (!size_compressed)
             return false;
-
-        LOG_TEST(log, "Decompressing {} bytes from {} to {} bytes", size_compressed, file_in.getFileName(), size_decompressed);
 
         auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
 
@@ -55,7 +60,7 @@ CompressedReadBufferFromFile::CompressedReadBufferFromFile(std::unique_ptr<ReadB
     : BufferWithOwnMemory<ReadBuffer>(0)
     , p_file_in(std::move(buf))
     , file_in(*p_file_in)
-    , log(getLogger("CompressedReadBufferFromFile"), /* allowed_count */ 1, /* interval */ 1)
+    , log(getCompressedReadBufferFromFileLogger(), /* allowed_count */ 1, /* interval */ 1)
 {
     compressed_in = &file_in;
     allow_different_codecs = allow_different_codecs_;
@@ -126,8 +131,6 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
 
             if (!new_size_compressed)
                 return bytes_read;
-
-            LOG_TEST(log, "Decompressing {} bytes from {} to {} bytes", new_size_compressed, file_in.getFileName(), size_decompressed);
 
             auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
 

@@ -12,13 +12,13 @@
 -- this split by following hyperedge connectivity during CSG enumeration; DPsize
 -- finds it by exhaustive search.  Both must produce identical results.
 
-SET allow_experimental_analyzer = 1;
 SET query_plan_optimize_join_order_limit = 10;
 SET use_statistics = 1;
 SET query_plan_join_swap_table = 'auto';
 SET enable_join_runtime_filters = 0;
 SET query_plan_merge_filter_into_join_condition = 1;
 SET query_plan_optimize_join_order_randomize = 0;
+SET explain_query_plan_default = 'legacy';
 
 CREATE TABLE he_t1 (id UInt32, a UInt32) ENGINE = MergeTree() PRIMARY KEY id SETTINGS auto_statistics_types = 'uniq';
 CREATE TABLE he_t2 (id UInt32, t1_id UInt32, b UInt32) ENGINE = MergeTree() PRIMARY KEY id SETTINGS auto_statistics_types = 'uniq';

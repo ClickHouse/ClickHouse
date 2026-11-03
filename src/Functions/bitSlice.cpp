@@ -38,24 +38,12 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"s", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String"},
-            {"offset", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeNumber), nullptr, "(U)Int8/16/32/64 or Float"},
-        };
-
-        FunctionArgumentDescriptors optional_args{
-            {"length", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeNumber), nullptr, "(U)Int8/16/32/64 or Float"},
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
-
-        const auto & type = arguments[0].type;
-        if (type->onlyNull())
-            return type;
-
-        return std::make_shared<DataTypeString>();
+        /// When arg 0 is only-null (Nullable(Nothing)), legacy returns the same Nullable(Nothing).
+        return
+            "(T : NULL, NativeNumber, [NativeNumber]) -> T"
+            " OR (StringOrFixedString, NativeNumber, [NativeNumber]) -> String";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -416,15 +404,14 @@ REGISTER_FUNCTION(BitSlice)
 Returns the starting bit position (1-based indexing).
 - Positive values: count from the beginning of the string.
 - Negative values: count from the end of the string.
-
-        )", {"(U)Int8/16/32/64", "Float*"}},
+)", {"(U)Int8/16/32/64", "Float*"}},
         {"length", R"(
 Optional. The number of bits to extract.
 - Positive values: extract `length` bits.
 - Negative values: extract from the offset to `(string_length - |length|)`.
 - Omitted: extract from offset to end of string.
 - If length is not a multiple of 8, the result is padded with zeros on the right.
-        )", {"(U)Int8/16/32/64", "Float*"}}
+)", {"(U)Int8/16/32/64", "Float*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a string containing the extracted bits, represented as a binary sequence. The result is always padded to byte boundaries (multiples of 8 bits)", {"String"}};
     FunctionDocumentation::Examples examples = {{"Usage example",

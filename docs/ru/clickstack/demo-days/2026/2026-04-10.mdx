@@ -1,0 +1,84 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-04-10
+title: 'Демо-дни — 2026-04-10'
+sidebarTitle: '2026-04-10'
+description: 'Демо-дни ClickStack от 2026-04-10'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Демо-дни']
+---
+
+<div id="pinnable-datasource-filters">
+  ## Закрепляемые фильтры источника данных
+</div>
+
+*Демонстрация от [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/j-b1ztSl8IQ" title="Видеоплеер YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Теперь команды могут закреплять фильтры источника данных и делиться ими со всей командой. Если нажать значок закрепления на любом фильтре, можно выбрать: закрепить его только для себя или сделать доступным для всех. Общие фильтры отображаются в отдельном разделе в верхней части списка фильтров, поэтому любому участнику команды легко найти и применить их без необходимости знать точное название фильтра.
+
+Это была одна из самых востребованных возможностей среди сообщества. Теперь командам больше не нужно передавать конфигурации фильтров по сторонним каналам. Общие фильтры становятся видны всем пользователям сразу после закрепления, и можно делиться не только ключами фильтров, но и конкретными значениями, так что вместе с фильтром передаётся и весь контекст.
+
+**Связанные PR:** [#2047](https://github.com/hyperdxio/hyperdx/pull/2047) [HDX-2300] introduce Shared Filters for team-wide filter visibility and discoverability
+
+<div id="waking-service-from-clickstack-cloud">
+  ## Вывод сервиса из спящего режима в ClickStack Cloud
+</div>
+
+*Демонстрация от [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Od7X0NOCqY0" title="Видеоплеер YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Пользователи ClickStack Cloud теперь могут выводить спящий сервис из спящего режима прямо в приложении. Раньше, если сервис переходил в спящий режим, приложение показывало кнопку «повторить попытку», но само не выводило сервис из него. Приходилось переходить в ClickStack Cloud, вручную выводить сервис из спящего режима, затем возвращаться обратно и снова нажимать «повторить попытку».
+
+Теперь приложение берет весь процесс на себя. Когда сервис находится в спящем режиме, отображается кнопка «вывести сервис из спящего режима», и все выполняется без необходимости покидать текущий экран. Это небольшое, но полезное улучшение убирает раздражающее многошаговое прерывание из рабочего процесса, особенно если вы открываете ClickStack после периода бездействия и хотите сразу перейти к данным.
+
+<div id="consistent-enabling-of-ai-features">
+  ## Согласованное включение возможностей ИИ
+</div>
+
+*Демонстрация от [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/zS5OekPCzC0" title="Проигрыватель видео YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Возможности ИИ в ClickStack теперь включаются и отключаются только через control plane ClickHouse Cloud, который стал единым источником истины. Раньше было два несвязанных флажка: один в control plane ClickStack, второй — в самом приложении. Если включить один из них, это не гарантировало, что второй тоже включён, из-за чего было непонятно, активен ли ИИ на самом деле.
+
+Теперь флажок в ClickStack просто ведёт в ClickHouse Cloud и сам по себе недоступен. Если включить переключатель в ClickHouse Cloud, возможность автоматически станет доступна в ClickStack. Благодаря этому включение ИИ стало согласованным и предсказуемым, без путаницы с тем, какая именно настройка действительно управляет его работой.
+
+<div id="raw-sql-alerting">
+  ## Оповещения для Raw SQL
+</div>
+
+*Демо от [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/bYYcYHkyy2E" title="Видеоплеер YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Оповещения теперь доступны для линейных диаграмм на основе Raw SQL, расширяя существующие возможности визуализации Raw SQL поддержкой уведомлений на основе пороговых значений. Если у вас есть линейная диаграмма, построенная на пользовательском SQL-запросе, вы можете привязать к ней оповещение и настроить его так же, как и любое другое оповещение диаграммы. Сейчас это доступно для линейных и столбчатых диаграмм, поскольку для работы сравнения с пороговым значением необходимы параметры интервала и диапазона дат.
+
+Это открывает действительно мощные сценарии использования. В демо показан запрос, который подсчитывает ошибки в текущем интервале и сравнивает их с 30 предыдущими интервалами, отмечая случаи, когда значение более чем на два стандартных отклонения превышает историческую норму. Такой статистический поиск аномалий теперь сводится лишь к написанию правильного SQL-запроса и настройке порогового значения. Настройка оповещения находится в редакторе диаграмм в сворачиваемом разделе, благодаря чему интерфейс остается чистым, пока эта функция вам действительно не понадобится.
+
+**Связанные PR:** [#2073](https://github.com/hyperdxio/hyperdx/pull/2073) feat: Реализовать оповещения для плиток панели мониторинга на основе Raw SQL, [#2085](https://github.com/hyperdxio/hyperdx/pull/2085) refactor: Создать компонент TileAlertEditor
+
+<div id="hyperdx-tui-improvements">
+  ## Улучшения HyperDX TUI
+</div>
+
+*Демонстрация от [@wrn14897](https://github.com/wrn14897)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/cIigBpcrYlw" title="Видеоплеер YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Начать работу с терминальным интерфейсом HyperDX становится всё проще. Теперь его можно установить глобально с помощью `npm install -g @hyperdx/cli`, а затем запустить командой `hdx`. Используйте флаг `--tui`, чтобы сразу открыть интерактивный интерфейс в терминале. Бинарный файл также доступен через `npm` как `hdx`, поэтому после установки пакета отдельный шаг установки не требуется.
+
+На этой неделе вместе с улучшениями установки появились две заметные возможности. Сообщения об ошибках теперь отображаются в терминале с корректной подсветкой и в структурированном виде, повторяя шаблоны форматирования веб-интерфейса, так что вы получаете одинаковый уровень детализации и в браузере, и в TUI. Кроме того, появился новый предварительный просмотр SQL, чтобы вы могли видеть, какой именно запрос выполняется. Вдобавок из средства просмотра событий по `Shift+A` теперь доступна новая страница оповещений, которая дает обзор всех настроенных оповещений и историю их недавних срабатываний, не выходя из терминала.
+
+**Связанные PR:** [#2095](https://github.com/hyperdxio/hyperdx/pull/2095) [HDX-3966] Улучшить отображение сообщений об ошибках в TUI и добавить предварительный просмотр SQL, [#2093](https://github.com/hyperdxio/hyperdx/pull/2093) [HDX-3969] Добавить страницу оповещений (Shift+A) с обзором и недавней историей, [#2043](https://github.com/hyperdxio/hyperdx/pull/2043) [HDX-3919] Добавить пакет @hyperdx/cli, [#2101](https://github.com/hyperdxio/hyperdx/pull/2101) [HDX-3976] CLI: перейти с apiUrl на appUrl с интерактивным процессом входа

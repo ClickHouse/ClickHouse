@@ -6,6 +6,8 @@
 namespace DB
 {
 
+thread_local EventQueue * EventQueue::current_thread_queue = nullptr;
+
 EventId EventQueue::postpone(TimePoint until, Task && task)
 {
     std::unique_lock lock{mutex};
@@ -134,7 +136,7 @@ EventQueue::TimePoint EventQueue::now()
 {
     auto result = manual_time.load();
     if (likely(result == TimePoint()))
-        return std::chrono::system_clock::now();
+        return Clock::now();
     return result;
 }
 

@@ -1,0 +1,120 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-04-03
+title: '데모 데이 - 2026-04-03'
+sidebarTitle: '2026-04-03'
+description: 'ClickStack 데모 데이 - 2026-04-03'
+doc_type: 'guide'
+keywords: ['ClickStack', '데모 데이']
+---
+
+<div id="new-dashboard-and-saved-search-listing-pages">
+  ## 새로운 대시보드 및 저장된 검색 목록 페이지
+</div>
+
+*[@pulpdrew](https://github.com/pulpdrew)의 데모*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/dQCkNZElwcg" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+대시보드와 저장된 검색이 사이드바에서 분리되어 전용 목록 페이지로 이동했습니다. 팀에 대시보드가 어느 정도 쌓이면 기존 사이드바 방식은 금방 불편해졌습니다. 새 페이지에서는 태그별로 정리된 카드 보기로 모든 항목을 표시하며, 이름 검색과 태그 필터링도 기본 제공됩니다. 더 촘촘한 목록 보기를 선호한다면 해당 보기로 전환할 수도 있습니다.
+
+이제 즐겨찾기도 지원합니다. 대시보드나 저장된 검색에 별표를 추가하면 목록 페이지 상단에 고정되고, 빠른 접근을 위해 사이드바에도 다시 표시됩니다. 이전과 비슷한 사용성을 제공하면서도 다른 사용자의 탐색 메뉴를 복잡하게 만들지 않습니다. 또한 목록 페이지의 각 카드에는 알림 상태 아이콘과 &quot;created by / updated by&quot; 메타데이터가 표시되므로, 누가 무엇을 관리하는지와 현재 어떤 알림이 발생 중인지 한눈에 확인할 수 있습니다.
+
+여기에 새 템플릿 갤러리도 추가되었습니다. Node.js, Python, Go, Java의 OTel 런타임 메트릭을 다루는 4개의 사전 구축된 대시보드를 몇 번의 클릭만으로 가져올 수 있습니다. 가져오는 동안 태그와 대상 메트릭 소스를 편집할 수 있으므로 기존 태깅 구조에 바로 맞춰 적용할 수 있습니다.
+
+**관련 PR:** [#1971](https://github.com/hyperdxio/hyperdx/pull/1971) 대시보드 목록 페이지 추가, [#2012](https://github.com/hyperdxio/hyperdx/pull/2012) 저장된 검색 목록 페이지 추가, [#2021](https://github.com/hyperdxio/hyperdx/pull/2021) 대시보드와 저장된 검색에 즐겨찾기 추가, [#2033](https://github.com/hyperdxio/hyperdx/pull/2033) 태그별로 대시보드와 검색 그룹화, [#2031](https://github.com/hyperdxio/hyperdx/pull/2031) 생성/업데이트 메타데이터 표시, [#2053](https://github.com/hyperdxio/hyperdx/pull/2053) 대시보드 목록 페이지에 알림 아이콘 추가, [#2010](https://github.com/hyperdxio/hyperdx/pull/2010) 대시보드 템플릿 갤러리 추가
+
+<div id="filters-for-filters">
+  ## 필터를 위한 필터
+</div>
+
+*시연: [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Tfe9kJygoEg" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+이제 대시보드 변수 필터에서도 자체 필터 조건을 지원합니다. 대표적인 사용 사례는 간단합니다. Node.js 대시보드에 &quot;service name&quot; 드롭다운이 있다면, 해당 드롭다운에는 환경의 모든 서비스가 아니라 Node.js 서비스만 표시되기를 원할 것입니다. 이제 대시보드 변수에 필터 조건을 직접 설정해 표시되는 항목의 범위를 제한할 수 있습니다.
+
+필터 셀렉터도 다중 선택을 지원하도록 업데이트되었습니다. 서비스를 기준으로 그룹화된 대시보드에서는 드롭다운에서 여러 값을 한 번에 선택할 수 있어 비교가 훨씬 수월해집니다.
+
+**관련 PR:** [#1969](https://github.com/hyperdxio/hyperdx/pull/1969) Dashboard 필터에 조건 추가; 필터 다중 선택 지원
+
+<div id="rbac-for-predefined-dashboards">
+  ## 사전 정의된 대시보드용 RBAC
+</div>
+
+*[@pulpdrew](https://github.com/pulpdrew)의 시연*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/AZ94-quHEuw" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+이제 ClickStack의 사전 설정 대시보드에도 역할 기반 접근 제어가 적용됩니다. 이전에는 이러한 기본 제공 대시보드가 RBAC를 완전히 무시했기 때문에 할당된 역할과 관계없이 모든 사용자가 접근할 수 있었습니다. 이제 이 허점은 해소되었습니다.
+
+세분화된 읽기 권한도 기대한 대로 동작합니다. 특정 서비스에 대한 읽기 전용 접근 권한으로 구성된 역할은 사용자가 해당 서비스와 관련된 사전 설정 대시보드만 볼 수 있도록 제한합니다. 해당 역할의 사용자는 대시보드와 필터를 볼 수 있지만, 필터 컨트롤은 편집할 수 없도록 잠겨 있습니다. 이 시연에서는 이름이 지정된 서비스 범위로 제한된 &quot;services&quot; 읽기 권한을 가진 사용자 지정 역할과, 그 역할로 로그인한 사용자가 자신에게 허용된 대시보드와 필터 상태만 정확히 확인하는 모습을 보여줍니다.
+
+<div id="optimizations-for-searching">
+  ## 검색을 위한 최적화
+</div>
+
+*[@knudtty](https://github.com/knudtty)의 Demo*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/uVD2FKzoHjM" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+ClickHouse의 &quot;Read in Order&quot; 최적화는 ORDER BY가 테이블의 기본 키(primary key)와 일치할 때 데이터를 순차적으로 읽고, LIMIT에 도달하는 즉시 중단하여 검색 쿼리를 빠르게 처리합니다. 벤치마크 결과, 그럼에도 더 큰 데이터셋에서는 검색이 여전히 필요 이상으로 많은 데이터를 읽고 있었습니다. 문제의 원인은 순회하는 파트 수에 있습니다. 즉, 이 최적화가 활성화되어 있어도 테이블이 충분히 크면 파트 수가 많아져 ClickHouse가 여전히 필요 이상의 데이터를 읽게 됩니다.
+
+해결 방법은 검색 쿼리에서 사용하는 윈도우 쿼리 배열의 맨 앞에 1분 시간 윈도우를 추가하는 것입니다. 대부분의 검색은 어차피 최근 1분 안에 필요한 데이터를 포함하고 있으므로, 이 윈도우를 먼저 조회하면 거의 즉시 결과를 반환합니다. 여기에서 아무것도 찾지 못하면 쿼리는 기존처럼 점차 더 넓은 윈도우로 폴백합니다. 이와 별개로, `otel_traces` 스키마(schema)에서는 타임스탬프 컬럼이 `toDateTime(Timestamp)` 표현식을 사용하고 있었지만 이 표현식이 인식되지 않아 ORDER BY 최적화가 올바르게 적용되지 않고 있었습니다. 이 문제도 함께 수정되었습니다.
+
+**관련 PR:** [#2019](https://github.com/hyperdxio/hyperdx/pull/2019) 검색에 1분 윈도우 사용, [#2014](https://github.com/hyperdxio/hyperdx/pull/2014) otel&#95;traces에 대한 ORDER BY 최적화 문제 수정
+
+<div id="copy-row-and-configurable-filter-sizes">
+  ## 행 복사와 구성 가능한 필터 수
+</div>
+
+*시연: [@knudtty](https://github.com/knudtty)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/e_IIKG3f6SE" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+이제 행 뷰어에서 &quot;JSON으로 복사&quot; 버튼을 사용할 수 있어, 클릭 한 번으로 전체 로그 행을 복사할 수 있습니다. 이 버튼은 전체 사이드바 보기에도 표시됩니다. 이 기능은 코드의 어느 부분에서 이 로그가 나타나는지 확인하기 위해 행을 LLM 프롬프트에 붙여 넣거나, 모든 텍스트를 일일이 선택하지 않고 인시던트 보고서용 전체 이벤트를 캡처할 때 유용합니다.
+
+이제 사이드바에서 가져오는 필터 키 수는 &quot;쿼리 설정&quot; 아래에서 구성할 수 있는 팀 설정이 되었습니다. 이전의 고정 제한으로 인해 더 큰 데이터셋에서는 사용 가능한 필터 속성 중 일부만 볼 수 있었습니다. 이제 팀은 이 제한을 높여 더 많은 리소스 및 로그 속성이 표시되도록 할 수 있습니다. 또한 많은 수의 필터 그룹이 표시되더라도 필터 패널이 빠르게 렌더링되도록 가상화도 개선되었습니다.
+
+**관련 PR:** [#2035](https://github.com/hyperdxio/hyperdx/pull/2035) 행을 JSON으로 복사하는 버튼 추가, [#2020](https://github.com/hyperdxio/hyperdx/pull/2020) 가져올 필터 수를 위한 새 팀 설정, [#1979](https://github.com/hyperdxio/hyperdx/pull/1979) 중첩된 필터 그룹 가상화
+
+<div id="tabs-and-groups-in-dashboards">
+  ## 대시보드의 탭과 그룹
+</div>
+
+*[@alex-fedotyev](https://github.com/alex-fedotyev)의 데모*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/tyumDlJuDTg" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+이제 대시보드 타일을 그룹으로 구성할 수 있습니다. 이는 이전 모델을 대체합니다. 기존에는 서로 다른 두 가지 컨테이너 유형(&quot;sections&quot; 및 &quot;groups&quot;)이 있어, 어떤 컨테이너 유형을 사용할지 처음부터 결정해야 했습니다. 새로운 단일 그룹 개념은 이를 더 단순하게 만듭니다. 그룹은 기본적으로 접을 수 있으며, 필요에 따라 테두리를 표시할 수 있고 탭도 추가할 수 있습니다. 각 탭은 자체 타일 집합을 가지며, 타일은 드래그 핸들을 사용해 그룹 간에 이동할 수 있습니다.
+
+이 데모에서는 몇 가지 사용자 지정 옵션을 전환한 그룹을 보여줍니다. 예를 들어, 접기 가능 여부, 테두리 표시 여부, 탭 활성화 여부 등이 있습니다. 데모 시점에는 해당 PR이 아직 리뷰 중이었고 디자인 피드백도 수집 중이었습니다. 이 변경이 반영되면, 기존의 두 컨테이너 유형 모델보다 대시보드 작성자에게 더 유연하고 덜 혼란스러운 구성 요소를 제공하게 될 것입니다.
+
+**관련 PR:** [#1972](https://github.com/hyperdxio/hyperdx/pull/1972) 탭 및 접기 가능/테두리 옵션이 있는 대시보드 그룹, [#2015](https://github.com/hyperdxio/hyperdx/pull/2015) section/group을 단일 그룹으로 통합
+
+<div id="clickstack-cli">
+  ## ClickStack CLI
+</div>
+
+*시연: [@wrn14897](https://github.com/wrn14897)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/9XqJNhstabw" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+ClickStack CLI(`hdx`)는 터미널을 벗어나지 않고 로그와 트레이스를 검색하고, 실시간으로 추적하고, 검사할 수 있는 새로운 터미널 TUI입니다. 브라우저와 동일한 웹 세션 메커니즘을 사용해 HyperDX 인스턴스에 연결하므로 별도로 관리할 API Key는 없습니다. 인스턴스 URL과 이메일로 `hdx auth login`을 한 번 실행하면 이후에는 인증 상태가 유지됩니다.
+
+이 TUI는 웹 앱에서 사용하는 검색 인터페이스와 동일한 화면을 제공합니다. 즉, 같은 쿼리 구문, 같은 소스 선택 방식, 개별 로그 항목을 자세히 확인하는 기능을 그대로 사용할 수 있습니다. 주요 특징 중 하나는 트레이스 워터폴 뷰로, 로그 항목을 클릭하면 전체 분산 트레이스가 터미널에 직접 렌더링되어 표시됩니다. 데모에서는 에이전트 기반 활용 방식의 초기 실험도 미리 보여줍니다. AI 에이전트에 CLI의 스키마 내부 검사 출력과 ClickHouse 프록시를 통한 쿼리 실행 기능을 함께 제공하면, 에이전트가 문제를 자율적으로 조사할 수 있습니다. 또한 데모에서는 에이전트가 웹 세션을 사용해 Playwright로 HyperDX UI를 탐색하고, 렌더링된 차트에서 메트릭을 가져와 로그에서 확인한 내용과 교차 검증하는 모습까지 보여줍니다.
+
+**관련 PR:** [#2043](https://github.com/hyperdxio/hyperdx/pull/2043) 이벤트 검색 및 실시간 추적을 위한 터미널 TUI, @hyperdx/cli 패키지 추가

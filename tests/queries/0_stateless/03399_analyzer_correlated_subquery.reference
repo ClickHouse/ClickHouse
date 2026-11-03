@@ -1,6 +1,6 @@
 -- { echoOn }
 
-SET allow_experimental_correlated_subqueries = 1;
+SET allow_correlated_subqueries = 1;
 SELECT * FROM users u1
 WHERE EXISTS (
   SELECT * FROM users2 u2
@@ -15,7 +15,7 @@ WHERE (age = 50) OR exists((
     WHERE u1.age = u2.age
 ))
 ORDER BY ALL
-SETTINGS allow_experimental_correlated_subqueries = 1;
+SETTINGS allow_correlated_subqueries = 1;
 1231	John	33
 8888	Alice	50
 SELECT *
@@ -31,4 +31,4 @@ WHERE (age = 50) OR exists((
 ))
 ORDER BY ALL
 FORMAT Null
-SETTINGS allow_experimental_correlated_subqueries = 1;
+SETTINGS allow_correlated_subqueries = 1;

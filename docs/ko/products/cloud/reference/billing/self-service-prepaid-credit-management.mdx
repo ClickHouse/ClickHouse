@@ -1,0 +1,110 @@
+---
+description: '선불 크레딧 잔액을 확인하고 ClickHouse 조직 간에 약정형 계약 크레딧을 이전합니다.'
+sidebarTitle: '셀프 서비스 선불 크레딧 관리'
+slug: /cloud/manage/billing/self-service-prepaid-credit-management
+title: '셀프 서비스 선불 크레딧 관리'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+약정형 계약을 통해 선불 크레딧을 구매한 경우, 해당 크레딧을 여러 ClickHouse 조직에 어떻게 배분할지 관리할 수 있습니다.
+**Prepaid credits** 페이지에서 잔액을 확인하고 조직 간에 크레딧을 이전할 수 있습니다.
+
+## 선불 크레딧 확인 {#access-prepaid-credits}
+
+ClickHouse Cloud 콘솔에서 **Settings**를 연 다음 **Account** 아래의 **Prepaid credits**를 선택하십시오.
+
+<Image img="/images/cloud/reference/billing/prepaid-credits-navigation.png" alt="Settings 사이드바의 Account 아래에 있는 Prepaid credits" size="sm" />
+
+선불 크레딧 잔액을 조회하려면 약정형 계약 크레딧이 할당된 조직에서 다음 역할 중 하나 이상을 보유해야 합니다.
+
+* [관리자](/ko/products/cloud/reference/security/console-roles#organization-roles)
+* [Billing](/ko/products/cloud/reference/security/console-roles#organization-roles)
+* [청구 세부 정보를 조회하거나 관리](/ko/products/cloud/reference/security/console-roles#console-permissions)할 수 있는 권한이 부여된 [custom 역할](/ko/products/cloud/guides/security/cloud-access-management/manage-custom-roles#create-custom-role)
+
+이 페이지에는 위 역할 또는 권한을 보유한 모든 조직이 표시되며, 선불 크레딧이 없는 조직도 함께 나타납니다.
+
+<Note>
+  선불 크레딧이 있는 조직이 하나도 없으면 해당 tab은 빈 화면으로 표시되며, 요금 계산기 링크와 영업팀 문의 form 링크가 함께 제공됩니다.
+</Note>
+
+## 크레딧 잔액 보기 {#view-credit-balances}
+
+이 요약에는 위에서 설명한 액세스 권한을 보유한 조직 전체의 선불 크레딧 합계가 표시됩니다.
+
+| 메트릭            | 설명                                             |
+| -------------- | ---------------------------------------------- |
+| **부여된 총 크레딧**  | 활성 크레딧과 만료된 크레딧을 포함하여 해당 조직에 할당된 모든 선불 크레딧입니다. |
+| **만료된 크레딧**    | 해당 조직 전체에서 만료된 모든 선불 크레딧입니다.                   |
+| **사용된 크레딧**    | 해당 조직이 사용한 모든 선불 크레딧입니다.                       |
+| **사용 가능한 크레딧** | 해당 조직이 아직 사용하지 않은 모든 활성 선불 크레딧입니다.             |
+
+<Note>
+  선불 계약으로 크레딧이 할당된 모든 조직에 액세스 권한이 없다면, 합계가 계약의 전체 크레딧 풀보다 적게 표시될 수 있습니다.
+</Note>
+
+모든 금액은 ClickHouse Credits(CHC) 단위로 표시되며, 1 CHC는 사용량 $1에 해당합니다. 할인된 가격으로 크레딧을 구매한 경우 지불한 금액보다 많은 CHC를 받을 수 있습니다.
+
+### 조직 잔액 {#organization-balances}
+
+요약 아래 표의 각 행은 하나의 조직을 나타내며, 해당 조직의 모든 선불 잔액을 반영한 데이터를 보여줍니다.
+
+* **Organization**에는 조직 이름, 일부가 마스킹된 조직 ID, 그리고 크레딧 잔액 상세 내역을 확인할 수 있는 청구 페이지 링크가 표시됩니다.
+* **Credits granted**, **만료된 크레딧**, **사용된 크레딧**, **사용 가능한 크레딧**는 요약과 동일한 정의를 따르지만, 해당 조직의 선불 크레딧에 적용됩니다.
+* **Credit status**는 아래에 설명된 조직의 선불 잔액 상태를 표시합니다.
+* **Expiration Date**는 선불 잔액의 만료일을 표시합니다. 잔액이 여러 개인 경우 가장 늦은 만료일이 표시됩니다.
+
+| 상태                     | 설명                                                                |
+| ---------------------- | ----------------------------------------------------------------- |
+| **Active**             | 조직에 만료되지 않은 선불 크레딧 잔액이 하나 이상 있습니다.                                |
+| **Expires soon**       | 조직에 활성 선불 잔액이 하나만 있으며, 60일 이내에 만료됩니다. 이 상태는 해당 잔액이 만료될 때까지 유지됩니다. |
+| **Expired**            | 조직의 모든 선불 잔액의 종료일이 이미 지났습니다.                                      |
+| **Spent**              | 조직의 모든 선불 잔액이 소진되었으나 만료되지는 않았습니다. 이 상태는 **Active**보다 우선합니다.       |
+| **No Prepaid Credits** | 조직에 선불 크레딧이 없습니다.                                                 |
+
+<Image img="/images/cloud/reference/billing/prepaid-credits-balances.png" alt="조직별 선불 크레딧 요약 메트릭 및 잔액" size="lg" />
+
+## 크레딧 이전 {#transfer-credits}
+
+크레딧 이전은 split이라고도 하며, 선불 크레딧을 소스 조직에서 대상 조직으로 이동하는 작업입니다.
+
+크레딧을 이전하려면 [Manage billing details](/ko/products/cloud/reference/security/console-roles#console-permissions) 권한이 필요합니다. View billing details 권한으로는 잔액만 조회할 수 있으며 이전은 수행할 수 없습니다.
+
+1. 소스 조직의 행에서 **Transfer**를 클릭합니다.
+2. 활성 크레딧 그랜트를 선택합니다. 패널에는 소스 조직의 활성 그랜트와 해당 만료일이 표시됩니다.
+3. 액세스 권한이 있는 조직 중에서 대상 조직을 선택합니다.
+4. 이전할 금액을 입력합니다.
+5. 이전 후 잔액을 확인한 다음 **Transfer credits**를 클릭합니다.
+
+<Image img="/images/cloud/reference/billing/prepaid-credits-transfer.png" alt="소스 그랜트, 대상 조직, 이전 금액 및 이전 후 잔액이 표시된 크레딧 이전 패널" size="md" />
+
+### 이전 규칙 {#transfer-rules}
+
+* **활성 상태의 선불 크레딧**만 이전할 수 있으며, 체험판 크레딧은 이전할 수 없습니다.
+* 크레딧 이전은 소스 조직과 대상 조직에서 사용 가능한 선불 크레딧을 변경할 뿐, 약정형 계약에 따라 부여된 전체 활성 크레딧은 변경하지 않습니다.
+* 체험판 상태이거나 미납으로 인한 유예 기간에 있는 조직으로 선불 크레딧을 이전하면 해당 조직은 선불 조직으로 전환되며, 해당 크레딧을 소비하기 시작합니다.
+* 소스 조직에 [백업 결제 수단](/ko/products/cloud/reference/billing/managing-payment-methods#add-backup-cc-to-marketplace-org)이 있거나 서비스가 없는 경우에만 남아 있는 선불 크레딧 전체를 해당 조직에서 이전할 수 있습니다. 그 외에는 최대 이전 가능 금액이 소스 조직 크레딧 잔액의 75%로 제한됩니다.
+* ClickHouse Cloud 조직과 [Bring Your Own Cloud(BYOC)](/ko/products/cloud/guides/infrastructure/deployment-options/byoc/overview) 조직 간에는 크레딧을 이전할 수 없습니다.
+* AWS Marketplace와 Google Cloud Marketplace처럼 서로 다른 클라우드 마켓플레이스를 통해 청구되는 조직 간에는 크레딧을 이전할 수 없습니다.
+
+### 이전 후 마켓플레이스 청구 {#marketplace-billing-after-a-transfer}
+
+소스 조직이 활성 상태인 AWS, Google Cloud 또는 Azure Marketplace 계약을 통해 청구되는 경우, 대상 조직의 청구 설정에 따라 결과가 달라집니다:
+
+| 대상 조직의 청구 설정                    | 결과                                                                                       |
+| ------------------------------- | ---------------------------------------------------------------------------------------- |
+| **마켓플레이스 subscription 없음**      | 대상 조직이 소스 조직의 subscription에 자동으로 연결됩니다. 모든 크레딧이 소진되거나 만료되면 초과 사용량은 해당 마켓플레이스 계정으로 청구됩니다. |
+| **동일한 마켓플레이스의 subscription 보유** | 이전이 완료되며, 대상 조직은 초과 사용량에 대해 기존 subscription을 계속 사용합니다. 소스 조직의 subscription은 복사되지 않습니다.   |
+| **다른 마켓플레이스의 subscription 보유**  | 이전이 차단됩니다.                                                                               |
+
+두 조직의 초과 사용량을 동일한 마켓플레이스 subscription으로 청구하려면 [다른 조직의 마켓플레이스 subscription 사용 방법](/ko/products/cloud/reference/billing/managing-payment-methods#steps-switch-org-different-org)을 참조하십시오.
+
+## 이전 이력 및 알림 검토 {#review-transfer-history-and-notifications}
+
+이전이 완료되면 다음과 같이 처리됩니다.
+
+* 조직 테이블 아래의 **이전 이력** 테이블에 새 엔트리가 추가됩니다.
+* 소스 조직과 대상 조직 모두 UI, 이메일, Slack으로 알림을 받습니다. [청구 알림 액세스 권한](/ko/products/cloud/features/monitoring/notifications#customizing-notifications)이 있는 사용자만 이러한 알림을 받을 수 있습니다.
+
+이전 과정 중 일부라도 실패하면 전체 트랜잭션이 차단되고 오류가 표시됩니다. 변경 사항이 부분적으로 적용되는 일은 없습니다.

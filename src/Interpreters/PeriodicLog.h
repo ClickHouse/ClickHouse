@@ -12,6 +12,7 @@
     M(ErrorLogElement) \
     M(MetricLogElement) \
     M(TransposedMetricLogElement) \
+    M(BucketedMetricLogElement) \
     M(AggregatedZooKeeperLogElement) \
 
 namespace DB

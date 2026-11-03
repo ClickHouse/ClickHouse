@@ -12,7 +12,7 @@
 #include <Common/LoggingFormatStringHelpers.h>
 #include <Common/LoggingHelpers.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
-#include <Common/ProfileEvents.h>
+#include <Common/ProfileEventsLogger.h>
 #include <Common/Stopwatch.h>
 
 
@@ -68,7 +68,7 @@ namespace impl
 
 constexpr bool constexprContains(std::string_view haystack, std::string_view needle)
 {
-    return haystack.find(needle) != std::string_view::npos;
+    return haystack.contains(needle);
 }
 
 #define LOG_IMPL(logger, priority, PRIORITY, ...) do                                                                \
@@ -124,8 +124,8 @@ constexpr bool constexprContains(std::string_view haystack, std::string_view nee
     catch (const std::bad_alloc & logger_exception)                                                                 \
     {                                                                                                               \
         (void)::write(STDERR_FILENO, static_cast<const void *>(MESSAGE_FOR_EXCEPTION_ON_LOGGING), sizeof(MESSAGE_FOR_EXCEPTION_ON_LOGGING)); \
-        const char * logger_exception_message = logger_exception.what();                                            \
-        (void)::write(STDERR_FILENO, static_cast<const void *>(logger_exception_message), strlen(logger_exception_message)); \
+        std::string_view logger_exception_message = logger_exception.what();                                        \
+        (void)::write(STDERR_FILENO, static_cast<const void *>(logger_exception_message.data()), logger_exception_message.size()); \
     }                                                                                                               \
                                                                                                                     \
     try                                                                                                             \
@@ -145,8 +145,8 @@ constexpr bool constexprContains(std::string_view haystack, std::string_view nee
     catch (const std::exception & logger_exception)                                                                 \
     {                                                                                                               \
         (void)::write(STDERR_FILENO, static_cast<const void *>(MESSAGE_FOR_EXCEPTION_ON_LOGGING), sizeof(MESSAGE_FOR_EXCEPTION_ON_LOGGING)); \
-        const char * logger_exception_message = logger_exception.what();                                            \
-        (void)::write(STDERR_FILENO, static_cast<const void *>(logger_exception_message), strlen(logger_exception_message)); \
+        std::string_view logger_exception_message = logger_exception.what();                                        \
+        (void)::write(STDERR_FILENO, static_cast<const void *>(logger_exception_message.data()), logger_exception_message.size()); \
     }                                                                                                               \
     catch (...)                                                                                                     \
     {                                                                                                               \

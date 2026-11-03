@@ -1,0 +1,22 @@
+---
+title: Rassemblez vos informations de connexion Native
+---
+
+Pour vous connecter à ClickHouse via native TCP, vous avez besoin des informations suivantes :
+
+| Parameter(s)              | Description                                                                                                                               |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `HOST` and `PORT`         | En général, le port utilisé est 9440 avec TLS, ou 9000 sans TLS.                                                                          |
+| `DATABASE NAME`           | Par défaut, une base de données nommée `default` existe ; utilisez le nom de la base de données à laquelle vous souhaitez vous connecter. |
+| `USERNAME` and `PASSWORD` | Par défaut, le nom d’utilisateur est `default`. Utilisez le nom d’utilisateur adapté à votre cas d’usage.                                 |
+
+Les détails de votre service ClickHouse Cloud sont disponibles dans la console ClickHouse Cloud.
+Sélectionnez le service auquel vous souhaitez vous connecter, puis cliquez sur **Connect** :
+
+<img src="/images/_snippets/cloud-connect-button.webp" alt="Bouton de connexion du service ClickHouse Cloud" width="500px" />
+
+Choisissez **Native** ; les détails sont disponibles dans un exemple de commande `clickhouse-client`.
+
+<img src="/images/_snippets/connection-details-native.webp" alt="Détails de la connexion Native TCP de ClickHouse Cloud" width="500px" />
+
+Si vous utilisez ClickHouse autogéré, les informations de connexion sont définies par votre administrateur ClickHouse.

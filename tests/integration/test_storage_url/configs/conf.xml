@@ -2,6 +2,9 @@
     <access_control_improvements>
         <enable_read_write_grants>1</enable_read_write_grants>
     </access_control_improvements>
+    <http_forbid_headers>
+        <header>X-Forbidden-Url-Wildcard</header>
+    </http_forbid_headers>
     <remote_servers>
         <test_cluster_one_shard_three_replicas_localhost>
             <shard>

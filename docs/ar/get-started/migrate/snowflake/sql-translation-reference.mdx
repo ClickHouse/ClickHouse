@@ -1,0 +1,122 @@
+---
+sidebarTitle: 'مرجع ترجمة SQL'
+slug: /migrations/snowflake-translation-reference
+description: 'مرجع ترجمة SQL'
+keywords: ['Snowflake']
+title: 'الترحيل من Snowflake إلى ClickHouse'
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+<div id="data-types">
+  ## أنواع البيانات
+</div>
+
+<div id="numerics">
+  ### القيم العددية
+</div>
+
+سيلاحظ المستخدمون الذين ينقلون البيانات بين ClickHouse وSnowflake فورًا أن
+ClickHouse يوفّر دقة أكثر تفصيلًا عند تعريف القيم العددية. على سبيل المثال،
+يوفّر Snowflake النوع Number للقيم العددية. وهذا يتطلب من المستخدم تحديد
+`precision` (إجمالي عدد الأرقام) و`scale` (عدد الأرقام إلى يمين الفاصلة العشرية)
+بحد أقصى إجمالي يبلغ 38. كما أن تعريفات الأعداد الصحيحة تُعد مرادفةً للنوع Number، وهي ببساطة
+تحدّد `precision` و`scale` ثابتين مع بقاء النطاق نفسه. وتعود هذه السهولة إلى
+أن تعديل `precision` (حيث تكون قيمة `scale` مساوية لـ 0 في الأعداد الصحيحة) لا يؤثر في
+حجم البيانات على القرص في Snowflake، إذ يُستخدم الحد الأدنى المطلوب من البايتات
+للنطاق العددي عند الكتابة على مستوى micro partition. أما `scale`،
+فهو يؤثر في مساحة التخزين، ويُعوَّض ذلك عبر الضغط. ويوفّر النوع `Float64`
+نطاقًا أوسع من القيم مقابل بعض الفقد في الدقة.
+
+في المقابل، يوفّر ClickHouse درجات دقة متعددة، موقّعة وغير موقّعة،
+للأعداد العائمة والأعداد الصحيحة. وباستخدام هذه الأنواع، يمكنك تحديد
+مقدار الدقة المطلوبة للأعداد الصحيحة بدقة لتحسين استهلاك التخزين والذاكرة. كما أن النوع
+Decimal، وهو المكافئ للنوع Number في Snowflake، يوفّر أيضًا ضعف
+`precision` و`scale` ليصل إلى 76 رقمًا. وإضافةً إلى النوع `Float64` المماثل،
+يوفّر ClickHouse أيضًا النوع `Float32` للحالات التي تكون فيها الدقة أقل أهمية ويكون
+الضغط فيها أولوية قصوى.
+
+<div id="strings">
+  ### السلاسل النصية
+</div>
+
+يتبع ClickHouse وSnowflake نهجين مختلفين في تخزين بيانات السلاسل النصية. يحتفظ
+`VARCHAR` في Snowflake بمحارف Unicode بترميز UTF-8، ما يتيح للمستخدم
+تحديد حد أقصى للطول. ولا يؤثر هذا الطول في التخزين أو
+الأداء، إذ يُستخدم دائمًا الحد الأدنى من البايتات لتخزين السلسلة النصية، وهو
+يفرض فقط قيودًا تفيد الأدوات اللاحقة. أما الأنواع الأخرى، مثل
+`Text` و`NChar`، فهي مجرد أسماء بديلة لهذا النوع. وعلى النقيض من ذلك، يخزّن ClickHouse
+كل [بيانات السلاسل النصية كبايتات خام](/ar/reference/data-types/string) باستخدام النوع `String`
+(من دون الحاجة إلى تحديد الطول)، ويترك مسألة الترميز للمستخدم، مع
+توفّر [دوال وقت الاستعلام](/ar/reference/functions/regular-functions/string-functions#lengthUTF8)
+للتعامل مع الترميزات المختلفة. ونحيل القارئ إلى [&quot;Opaque data argument&quot;](https://utf8everywhere.org/#cookie)
+للاطلاع على الدافع وراء ذلك. لذلك، فإن `String` في ClickHouse أقرب من حيث التنفيذ
+إلى النوع Binary في Snowflake. ويدعم كل من [Snowflake](https://docs.snowflake.com/en/sql-reference/collation)
+و[ClickHouse](/ar/reference/statements/select/order-by#collation-support)
+ميزة “collation”، بما يتيح للمستخدمين تخصيص كيفية فرز السلاسل النصية ومقارنتها.
+
+<div id="semi-structured-data">
+  ### الأنواع شبه المهيكلة
+</div>
+
+تدعم Snowflake الأنواع `VARIANT` و`OBJECT` و`ARRAY` للبيانات شبه المهيكلة.
+
+توفّر ClickHouse الأنواع المكافئة [`Variant`](/ar/reference/data-types/variant)،
+و`Object` (وهو الآن مهمل لصالح النوع `JSON` الأصلي) و[`Array`](/ar/reference/data-types/array).
+بالإضافة إلى ذلك، توفّر ClickHouse النوع [`JSON`](/ar/reference/data-types/newjson)
+الذي يحل محل النوع `Object('json')` المهمل حاليًا، ويتميّز
+بأداء عالٍ وكفاءة في التخزين عند [مقارنته بأنواع JSON الأصلية الأخرى](https://jsonbench.com/).
+
+تدعم ClickHouse أيضًا [`Tuple`s](/ar/reference/data-types/tuple) المسمّاة ومصفوفات من Tuples
+من خلال النوع [`Nested`](/ar/reference/data-types/nested-data-structures/index)،
+مما يتيح للمستخدمين تمثيل البُنى المتداخلة بشكل صريح. ويتيح ذلك تطبيق codecs وتحسينات
+الأنواع عبر كامل البنية الهرمية، بخلاف Snowflake التي
+تتطلب من المستخدم استخدام الأنواع `OBJECT` و`VARIANT` و`ARRAY` للكائن
+الخارجي، ولا تسمح [بالتحديد الصريح للأنواع الداخلية](https://docs.snowflake.com/en/sql-reference/data-types-semistructured#characteristics-of-an-object).
+كما أن هذا التحديد الداخلي للأنواع يبسّط أيضًا الاستعلامات على القيم العددية المتداخلة في ClickHouse،
+إذ لا تحتاج إلى تحويل نوع ويمكن استخدامها في تعريفات الفهارس.
+
+في ClickHouse، يمكن أيضًا تطبيق codecs والأنواع المُحسّنة على البُنى الفرعية.
+وهذا يوفّر ميزة إضافية تتمثل في أن الضغط مع البُنى المتداخلة تظل
+ممتازة ومقاربة لما هي عليه في البيانات المسطّحة. وعلى النقيض، ونتيجة
+عدم القدرة على تطبيق أنواع محددة على البُنى الفرعية، توصي Snowflake [بتسطيح
+البيانات لتحقيق ضغط أمثل](https://docs.snowflake.com/en/user-guide/semistructured-considerations#storing-semi-structured-data-in-a-variant-column-vs-flattening-the-nested-structure).
+كما تفرض Snowflake أيضًا [قيودًا على الحجم](https://docs.snowflake.com/en/user-guide/semistructured-considerations#data-size-limitations)
+على هذه الأنواع من البيانات.
+
+<div id="type-reference">
+  ### مرجع الأنواع
+</div>
+
+| Snowflake                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | ClickHouse                                                                                                                                             | ملاحظة                                                                                                                                                                                                                                                                                                                                                                   |   |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | - |
+| [`NUMBER`](https://docs.snowflake.com/en/sql-reference/data-types-numeric)                                                                                                                                                                                                                                                                                                                                                                                                      | [`Decimal`](/ar/reference/data-types/decimal)                                                                                                             | يدعم ClickHouse دقةً وعددَ منازل عشرية يساويان ضعف ما يتيحه Snowflake — 76 رقمًا مقابل 38.                                                                                                                                                                                                                                                                               |   |
+| [`FLOAT`, `FLOAT4`, `FLOAT8`](https://docs.snowflake.com/en/sql-reference/data-types-numeric#data-types-for-floating-point-numbers)                                                                                                                                                                                                                                                                                                                                             | [`Float32`, `Float64`](/ar/reference/data-types/float)                                                                                                    | جميع الأعداد ذات الفاصلة العائمة في Snowflake هي من نوع 64 بت.                                                                                                                                                                                                                                                                                                           |   |
+| [`VARCHAR`](https://docs.snowflake.com/en/sql-reference/data-types-text#varchar)                                                                                                                                                                                                                                                                                                                                                                                                | [`String`](/ar/reference/data-types/string)                                                                                                               |                                                                                                                                                                                                                                                                                                                                                                          |   |
+| [`BINARY`](https://docs.snowflake.com/en/sql-reference/data-types-text#binary)                                                                                                                                                                                                                                                                                                                                                                                                  | [`String`](/ar/reference/data-types/string)                                                                                                               |                                                                                                                                                                                                                                                                                                                                                                          |   |
+| [`BOOLEAN`](https://docs.snowflake.com/en/sql-reference/data-types-logical)                                                                                                                                                                                                                                                                                                                                                                                                     | [`Bool`](/ar/reference/data-types/boolean)                                                                                                                |                                                                                                                                                                                                                                                                                                                                                                          |   |
+| [`DATE`](https://docs.snowflake.com/en/sql-reference/data-types-datetime#date)                                                                                                                                                                                                                                                                                                                                                                                                  | [`Date`](/ar/reference/data-types/date), [`Date32`](/ar/reference/data-types/date32)                                                                         | يوفّر `DATE` في Snowflake نطاقًا أوسع للتواريخ من ClickHouse. فعلى سبيل المثال، الحد الأدنى لـ `Date32` هو `1900-01-01`، ولـ `Date` هو `1970-01-01`. كما يوفّر `Date` في ClickHouse تخزينًا أوفر من حيث التكلفة، إذ يشغل بايتين فقط.                                                                                                                                     |   |
+| [`TIME(N)`](https://docs.snowflake.com/en/sql-reference/data-types-datetime#time)                                                                                                                                                                                                                                                                                                                                                                                               | لا يوجد ما يعادله مباشرةً، لكن يمكن تمثيله باستخدام [`DateTime`](/ar/reference/data-types/datetime) و[`DateTime64(N)`](/ar/reference/data-types/datetime64). | `DateTime64` يستخدم مفهوم الدقة نفسه.                                                                                                                                                                                                                                                                                                                                    |   |
+| [`TIMESTAMP`](https://docs.snowflake.com/en/sql-reference/data-types-datetime#timestamp) - [`TIMESTAMP_LTZ`](https://docs.snowflake.com/en/sql-reference/data-types-datetime#timestamp-ltz-timestamp-ntz-timestamp-tz), [`TIMESTAMP_NTZ`](https://docs.snowflake.com/en/sql-reference/data-types-datetime#timestamp-ltz-timestamp-ntz-timestamp-tz), [`TIMESTAMP_TZ`](https://docs.snowflake.com/en/sql-reference/data-types-datetime#timestamp-ltz-timestamp-ntz-timestamp-tz) | [`DateTime`](/ar/reference/data-types/datetime) و[`DateTime64`](/ar/reference/data-types/datetime64)                                                         | يمكن تحديد معلمة TZ اختياريًا للعمود في `DateTime` و`DateTime64`. وإذا لم تكن موجودة، تُستخدم المنطقة الزمنية الخاصة بالخادم. بالإضافة إلى ذلك، تتوفر للعميل معلمة `--use_client_time_zone`.                                                                                                                                                                             |   |
+| [`VARIANT`](https://docs.snowflake.com/en/sql-reference/data-types-semistructured#variant)                                                                                                                                                                                                                                                                                                                                                                                      | [`JSON`, `Tuple`, `Nested`](/ar/reference/formats/index)                                                                                                  | النوع `JSON` لا يزال تجريبيًا في ClickHouse. ويستنتج هذا النوع أنواع الأعمدة عند الإدراج. ويمكن أيضًا استخدام `Tuple` و`Nested` و`Array` كبديل لبناء هياكل ذات أنواع محددة صراحةً.                                                                                                                                                                                       |   |
+| [`OBJECT`](https://docs.snowflake.com/en/sql-reference/data-types-semistructured#object)                                                                                                                                                                                                                                                                                                                                                                                        | [`Tuple`, `Map`, `JSON`](/ar/reference/formats/index)                                                                                                     | يُماثل كلٌّ من `OBJECT` و`Map` النوع `JSON` في ClickHouse، حيث تكون المفاتيح من النوع `String`. ويتطلب ClickHouse أن تكون القيم متسقة ومحددة النوع بشكل صارم، بينما تستخدم Snowflake `VARIANT`. وهذا يعني أن قيم المفاتيح المختلفة قد تكون من أنواع مختلفة. وإذا كان ذلك مطلوبًا في ClickHouse، فحدِّد البنية الهرمية صراحةً باستخدام `Tuple` أو اعتمد على النوع `JSON`. |   |
+| [`ARRAY`](https://docs.snowflake.com/en/sql-reference/data-types-semistructured#array)                                                                                                                                                                                                                                                                                                                                                                                          | [`Array`](/ar/reference/data-types/array), [`Nested`](/ar/reference/data-types/nested-data-structures/index)                                                 | يستخدم `ARRAY` في Snowflake النوع `VARIANT` لعناصره، وهو نوع عام. وفي المقابل، تكون هذه العناصر محددة النوع بدقة في ClickHouse.                                                                                                                                                                                                                                          |   |
+| [`GEOGRAPHY`](https://docs.snowflake.com/en/sql-reference/data-types-geospatial#geography-data-type)                                                                                                                                                                                                                                                                                                                                                                            | [`Point`, `Ring`, `Polygon`, `MultiPolygon`](/ar/reference/data-types/geo)                                                                                | يفرض Snowflake نظام إحداثيات (WGS 84)، بينما يطبّقه ClickHouse عند تنفيذ الاستعلام.                                                                                                                                                                                                                                                                                      |   |
+| [`GEOMETRY`](https://docs.snowflake.com/en/sql-reference/data-types-geospatial#geometry-data-type)                                                                                                                                                                                                                                                                                                                                                                              | [`Point`, `Ring`, `Polygon`, `MultiPolygon`](/ar/reference/data-types/geo)                                                                                |                                                                                                                                                                                                                                                                                                                                                                          |   |
+
+| نوع ClickHouse    | الوصف                                                                                          |
+| ----------------- | ---------------------------------------------------------------------------------------------- |
+| `IPv4` and `IPv6` | أنواع مخصّصة لعناوين IP، وقد تتيح تخزينًا أكثر كفاءة من Snowflake.                             |
+| `FixedString`     | يتيح استخدام طول ثابت من البايتات، وهو مفيد لقيم hash.                                         |
+| `LowCardinality`  | يتيح ترميز أي نوع بترميز القاموس. وهو مفيد عندما يُتوقَّع أن يكون عدد القيم الفريدة &lt; 100k. |
+| `Enum`            | يتيح ترميزًا فعّالًا للقيم المسمّاة ضمن نطاقات 8 أو 16 بت.                                     |
+| `UUID`            | لتخزين معرّفات UUID بكفاءة.                                                                    |
+| `Array(Float32)`  | يمكن تمثيل المتجهات على شكل Array من Float32 مع دوال المسافة المدعومة.                         |
+
+وأخيرًا، يوفّر ClickHouse قدرة فريدة على تخزين
+[حالة الدوال التجميعية](/ar/reference/data-types/aggregatefunction). وهذه
+الحالة خاصة بالتنفيذ، لكنها تتيح تخزين نتيجة التجميع ثم
+الاستعلام عنها لاحقًا (باستخدام دوال الدمج المقابلة). وعادةً ما
+تُستخدم هذه الميزة عبر عرض مادي، وكما هو موضح أدناه، فهي تتيح
+إمكانية تحسين أداء استعلامات محددة بأقل تكلفة تخزين ممكنة من خلال
+تخزين النتيجة التزايدية للاستعلامات على البيانات المُدرجة (مزيد من التفاصيل هنا).

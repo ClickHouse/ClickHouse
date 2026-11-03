@@ -1,11 +1,13 @@
 #pragma once
 
 #include <Core/MergeTreeSerializationEnums.h>
+#include <Core/NamesAndTypes.h>
 #include <Core/Types_fwd.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationInfoSettings.h>
 
 #include <map>
+#include <vector>
 
 namespace Poco::JSON
 {
@@ -40,7 +42,15 @@ public:
         size_t num_rows = 0;
         size_t num_defaults = 0;
 
-        void add(const IColumn & column);
+        /// True when `num_defaults` was counted exactly rather than sampled. Consumers
+        /// that would produce wrong results from a sampled estimate (trivial count
+        /// rewrite, sparsity pruning) must require this flag.
+        bool exact_num_defaults = false;
+
+        /// `exact` controls whether `num_defaults` is computed precisely (O(rows)
+        /// per column, sets `exact_num_defaults`) or sampled (cheap, leaves the flag
+        /// at its current value).
+        void add(const IColumn & column, bool exact);
         void add(const Data & other);
         void remove(const Data & other);
         void addDefaults(size_t length);
@@ -68,7 +78,9 @@ public:
         const SerializationInfoSettings & new_settings) const;
 
     virtual void serialializeKindStackBinary(WriteBuffer & out) const;
-    virtual void deserializeFromKindsBinary(ReadBuffer & in);
+
+    /// Rejects a kind outside of `allowed_kinds` as invalid data.
+    virtual void deserializeFromKindsBinary(ReadBuffer & in, ISerialization::KindSet allowed_kinds);
 
     virtual void writeJSON(WriteBuffer & out, const String * name) const;
     virtual void toJSON(Poco::JSON::Object & object) const;
@@ -84,6 +96,9 @@ public:
 
 protected:
     virtual void writeJSONFields(WriteBuffer & out, const String * name) const;
+
+    /// Rejects a kind stack that no writer can produce, or that selects a kind the reader does not accept.
+    void checkKindStack(ISerialization::KindSet allowed_kinds) const;
 
     const SerializationInfoSettings settings;
 
@@ -132,6 +147,24 @@ public:
 
     bool needsPersistence() const;
 
+    /// Describes a column that is absent from the part's data files and whose
+    /// values are the recorded type's default.
+    struct MissingColumnInfo
+    {
+        String name;
+        String type_name; /// type whose default was frozen when the part was written
+
+        bool operator<(const MissingColumnInfo & rhs) const { return name < rhs.name; }
+        bool operator==(const MissingColumnInfo & rhs) const { return name == rhs.name && type_name == rhs.type_name; }
+    };
+    using MissingColumns = std::vector<MissingColumnInfo>;
+
+    const MissingColumns & getMissingColumns() const { return missing_columns; }
+    void setMissingColumns(MissingColumns columns);
+
+    bool isMissingColumn(const String & name) const;
+    const MissingColumnInfo * getMissingColumnInfo(const String & name) const;
+
     static SerializationInfoByName readJSON(const NamesAndTypesList & columns, ReadBuffer & in);
 
     static SerializationInfoByName readJSONFromString(const NamesAndTypesList & columns, const std::string & str);
@@ -157,6 +190,7 @@ private:
     ///   or other engines, the correct settings must always be provided for
     ///   consistent serialization behavior.
     Settings settings;
+    MissingColumns missing_columns; /// sorted by name for deterministic serialization
 };
 
 }

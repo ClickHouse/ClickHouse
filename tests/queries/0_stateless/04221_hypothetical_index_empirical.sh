@@ -6,6 +6,12 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# materialize_statistics_on_insert is randomized in CI. When on, the auto-statistics (minmax)
+# of the indexed columns are materialized on INSERT and prune the baseline, so the hypothetical
+# index reports 0% additional benefit (source: applicability_only) instead of the empirical
+# estimate this test asserts. Pin it off so the hypothetical-index logic is measured in isolation.
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --materialize_statistics_on_insert=0"
+
 $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS t_hypo_emp;
     CREATE TABLE t_hypo_emp (a UInt64, b UInt64, c String)

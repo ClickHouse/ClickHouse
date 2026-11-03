@@ -1,0 +1,270 @@
+---
+slug: /use-cases/data-lake/seaweedfs-catalog
+sidebarTitle: 'catalogue SeaweedFS'
+title: 'catalogue SeaweedFS'
+description: 'Dans ce guide, nous vous expliquons comment interroger vos données à l’aide de ClickHouse et du catalogue Iceberg de SeaweedFS.'
+keywords: ['SeaweedFS', 'Table Buckets', 'REST', 'lac de données', 'Iceberg']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { ExperimentalBadge } from "/snippets/fr/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<ExperimentalBadge />
+
+<Note>
+  L’intégration au catalogue SeaweedFS fonctionne uniquement avec les tables Iceberg.
+</Note>
+
+ClickHouse prend en charge l’intégration à plusieurs catalogues (Unity, Glue, REST, Polaris, etc.). Ce guide explique comment interroger vos données à l’aide de ClickHouse et du catalogue [SeaweedFS](https://github.com/seaweedfs/seaweedfs).
+
+SeaweedFS est un stockage distribué open source de fichiers et d’objets doté d’une passerelle compatible S3. Ses S3 Table Buckets fournissent les deux composants d’un déploiement Iceberg : le catalogue Iceberg REST intégré sert les métadonnées des tables, tandis que le bucket de tables stocke les données sous forme de fichiers Parquet via le même endpoint S3 :
+
+* **Service unique** - les métadonnées du catalogue et les données Parquet sont fournies par un seul processus, sans base de données de métadonnées distincte
+* Conformité de l’**API REST** à la spécification du catalogue REST Iceberg
+* **Maintenance côté serveur** - compaction automatique des fichiers Parquet et expiration des snapshots, sans service de maintenance externe
+
+<Note>
+  Cette fonctionnalité étant expérimentale, vous devez l’activer à l’aide de :
+  `SET allow_experimental_database_iceberg = 1;`
+</Note>
+
+<div id="local-development-setup">
+  ## Configuration de développement local
+</div>
+
+Pour le développement et les tests en local, vous pouvez exécuter SeaweedFS et ClickHouse avec Docker Compose. Cette approche est idéale pour l’apprentissage, le prototypage et les environnements de développement.
+
+<div id="local-prerequisites">
+  ### Prérequis
+</div>
+
+1. **Docker et Docker Compose** : assurez-vous que Docker est installé et en cours d’exécution
+2. **Versions** : SeaweedFS 4.42 ou version ultérieure ; ClickHouse 26.8 ou version ultérieure (les versions remontant à 25.8 peuvent lire et insérer, mais la création de tables via le catalogue nécessite la version 26.8)
+3. **Python avec PyIceberg** (facultatif) : utilisé ci-dessous pour générer des données d’exemple
+
+<div id="setting-up-local-seaweedfs-catalog">
+  ### Configuration du catalogue SeaweedFS local
+</div>
+
+**Étape 1 :** Créez un dossier dans lequel exécuter l’exemple, puis créez un fichier `s3config.json` contenant les identifiants de la passerelle S3 et du catalogue :
+
+```json
+{
+  "identities": [
+    {
+      "name": "analyst",
+      "credentials": [
+        {
+          "accessKey": "tutorialkey",
+          "secretKey": "tutorialsecret"
+        }
+      ],
+      "actions": ["Admin", "Read", "Write", "List", "Tagging"]
+    }
+  ]
+}
+```
+
+**Étape 2 :** Créez un fichier `docker-compose.yml` avec la configuration suivante :
+
+```yaml
+services:
+  seaweedfs:
+    image: chrislusf/seaweedfs:latest
+    command: mini -dir=/data -s3.config=/etc/seaweedfs/s3config.json -tableBucket=analytics -admin.port=12646
+    ports:
+      - "8333:8333"   # S3 endpoint
+      - "8181:8181"   # Iceberg REST catalog
+    volumes:
+      - ./s3config.json:/etc/seaweedfs/s3config.json
+      - seaweedfs_data:/data
+    networks:
+      - iceberg_net
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    container_name: seaweedfs-clickhouse
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    depends_on:
+      - seaweedfs
+    networks:
+      - iceberg_net
+
+volumes:
+  seaweedfs_data:
+
+networks:
+  iceberg_net:
+    driver: bridge
+```
+
+La commande `mini` démarre l’ensemble de la stack SeaweedFS dans un seul conteneur. L’option `-tableBucket=analytics` crée à l’avance un bucket S3 Tables nommé `analytics`, qui sert de warehouse Iceberg. `-admin.port=12646` maintient le port gRPC d’administration que SeaweedFS en dérive en dessous de la plage des ports éphémères Linux, afin qu’une connexion au démarrage ne puisse pas le réclamer avant lui.
+
+**Étape 3 :** Exécutez la commande suivante pour démarrer les services :
+
+```bash
+docker compose up -d
+```
+
+<div id="seeding-sample-data">
+  ### Ajout de données d’exemple
+</div>
+
+Le catalogue est initialement vide. Créez une table et ajoutez-y quelques lignes avec PyIceberg (`pip install pyiceberg pyarrow`) :
+
+```python
+import pyarrow as pa
+from pyiceberg.catalog.rest import RestCatalog
+
+catalog = RestCatalog(
+    "seaweedfs",
+    uri="http://localhost:8181",
+    warehouse="s3://analytics",
+    credential="tutorialkey:tutorialsecret",
+    **{
+        "s3.endpoint": "http://localhost:8333",
+        "s3.access-key-id": "tutorialkey",
+        "s3.secret-access-key": "tutorialsecret",
+        "s3.region": "us-east-1",
+        "s3.path-style-access": "true",
+    },
+)
+
+rows = pa.table({
+    "id": pa.array([1, 2, 3, 4, 5, 6], pa.int64()),
+    "region": ["NA", "EU", "EU", "APAC", "NA", "EU"],
+    "amount": pa.array([12.5, 40.0, 7.25, 99.9, 3.5, 61.0], pa.float64()),
+})
+
+catalog.create_namespace("sales")
+table = catalog.create_table("sales.orders", schema=rows.schema)
+table.append(rows)
+```
+
+<div id="connecting-to-local-seaweedfs-catalog">
+  ### Connexion au catalogue SeaweedFS local
+</div>
+
+Connectez-vous à votre conteneur ClickHouse :
+
+```bash
+docker exec -it seaweedfs-clickhouse clickhouse-client
+```
+
+Créez ensuite la connexion à la base de données avec le catalogue SeaweedFS :
+
+```sql
+SET allow_experimental_database_iceberg = 1;
+
+CREATE DATABASE lake
+ENGINE = DataLakeCatalog('http://seaweedfs:8181/v1', 'tutorialkey', 'tutorialsecret')
+SETTINGS catalog_type = 'rest',
+    warehouse = 's3://analytics',
+    storage_endpoint = 'http://seaweedfs:8333/analytics',
+    catalog_credential = 'tutorialkey:tutorialsecret',
+    oauth_server_uri = 'http://seaweedfs:8181/v1/oauth/tokens'
+```
+
+Les arguments de l&#39;engine contiennent les identifiants S3 que ClickHouse utilise pour lire les données de la table, tandis que `catalog_credential` et `oauth_server_uri` permettent de s&#39;authentifier auprès du catalogue via le flux client credentials OAuth2. SeaweedFS accepte la même clé d&#39;accès et la même clé secrète pour les deux.
+
+<div id="querying-seaweedfs-catalog-tables-using-clickhouse">
+  ## Interroger les tables du catalogue SeaweedFS à l’aide de ClickHouse
+</div>
+
+Maintenant que la connexion est établie, vous pouvez commencer à effectuer des requêtes via le catalogue SeaweedFS. Par exemple :
+
+```sql
+USE lake;
+
+SHOW TABLES;
+```
+
+```response
+┌─name─────────┐
+│ sales.orders │
+└──────────────┘
+```
+
+<Info>
+  **Backticks obligatoires**
+
+  Les backticks sont obligatoires, car ClickHouse ne prend pas en charge plusieurs espaces de noms.
+</Info>
+
+Pour interroger une table :
+
+```sql
+SELECT region, sum(amount) AS total
+FROM `sales.orders`
+GROUP BY region
+ORDER BY total DESC;
+```
+
+```response
+┌─region─┬──total─┐
+│ EU     │ 108.25 │
+│ APAC   │   99.9 │
+│ NA     │     16 │
+└────────┴────────┘
+```
+
+<div id="creating-tables-and-writing-data-from-clickhouse">
+  ## Création de tables et écriture de données depuis ClickHouse
+</div>
+
+Vous pouvez également créer des tables dans le catalogue SeaweedFS et y écrire directement depuis ClickHouse :
+
+```sql
+SET allow_experimental_database_iceberg = 1;
+SET allow_experimental_insert_into_iceberg = 1;
+SET write_full_path_in_iceberg_metadata = 1;
+
+CREATE TABLE lake.`sales.returns` (id Int64, reason String)
+ENGINE = IcebergS3('http://seaweedfs:8333/analytics/sales/returns/', 'tutorialkey', 'tutorialsecret');
+
+INSERT INTO lake.`sales.returns` VALUES (1, 'damaged'), (2, 'wrong size');
+
+SELECT * FROM lake.`sales.returns` ORDER BY id;
+```
+
+```response
+┌─id─┬─reason─────┐
+│  1 │ damaged    │
+│  2 │ wrong size │
+└────┴────────────┘
+```
+
+La clause du moteur `IcebergS3` indique le chemin de stockage de la nouvelle table, et `write_full_path_in_iceberg_metadata` permet à ClickHouse d’enregistrer l’emplacement complet de la table dans le catalogue.
+
+<Note>
+  La création de tables via un catalogue nécessite ClickHouse 26.8 ou une version ultérieure. Les versions 26.4 à 26.7 écrivent les fichiers de la table avant d’enregistrer l’espace de noms, ce que SeaweedFS rejette à moins que cet espace de noms n’existe déjà dans le catalogue ; les versions antérieures à 26.4 semblent aboutir, mais les fichiers de la table sont écrits dans le stockage d’objets sans être enregistrés dans le catalogue.
+</Note>
+
+Lorsque ClickHouse valide une insertion, le catalogue SeaweedFS corrige les métadonnées que le writer expérimental ne génère pas encore : il renseigne les ID de champ manquants dans les manifestes, réécrit les chemins de fichiers relatifs au bucket en emplacements absolus et attribue à la table un mappage de noms par défaut. Les lecteurs stricts tels que PyIceberg et Spark peuvent alors lire les lignes écrites par ClickHouse. Cela nécessite SeaweedFS 4.42 ou une version ultérieure.
+
+<div id="loading-data-from-your-data-lake-into-clickhouse">
+  ## Chargement des données de votre lac de données dans ClickHouse
+</div>
+
+Si vous devez charger des données du catalogue SeaweedFS dans ClickHouse, commencez par créer une table ClickHouse locale :
+
+```sql
+CREATE TABLE default.orders
+(
+    `id` Int64,
+    `region` String,
+    `amount` Float64
+)
+ENGINE = MergeTree()
+ORDER BY (region, id);
+```
+
+Chargez ensuite les données depuis votre table de catalogue SeaweedFS à l’aide d’un `INSERT INTO SELECT` :
+
+```sql
+INSERT INTO default.orders
+SELECT * FROM lake.`sales.orders`;
+```

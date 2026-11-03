@@ -1,0 +1,2 @@
+SELECT count() FROM ta AS a LOCAL INNER JOIN tb AS b ON a.k = b.k
+SELECT count() FROM ta AS a GLOBAL ANY LEFT JOIN tb AS b ON a.k = b.k

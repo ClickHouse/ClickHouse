@@ -1,0 +1,70 @@
+---
+title: Verificar Keeper con Mntr
+---
+
+El comando `mntr` también se usa habitualmente para verificar que ClickHouse Keeper
+está en ejecución y para obtener información sobre el estado de la relación entre los tres nodos de Keeper.
+En la configuración utilizada en este ejemplo, hay tres nodos que trabajan juntos.
+Los nodos elegirán un líder y los nodos restantes serán followers.
+
+El comando `mntr` proporciona información relacionada con el rendimiento y con si un nodo
+determinado es follower o leader.
+
+<Tip>
+  Es posible que necesite instalar `netcat` para enviar el comando `mntr` a Keeper.
+  Consulte la página de [nmap.org](https://nmap.org/ncat/) para obtener información sobre la descarga.
+</Tip>
+
+Ejecute el siguiente comando desde un shell en `clickhouse-keeper-01`, `clickhouse-keeper-02` y
+`clickhouse-keeper-03` para comprobar el estado de cada nodo de Keeper. El comando
+para `clickhouse-keeper-01` se muestra a continuación:
+
+```bash
+docker exec -it clickhouse-keeper-01  /bin/sh -c 'echo mntr | nc 127.0.0.1 9181'
+```
+
+A continuación se muestra un ejemplo de respuesta de un nodo seguidor:
+
+```response title="Response" highlight={9}
+zk_version      v23.3.1.2823-testing-46e85357ce2da2a99f56ee83a079e892d7ec3726
+zk_avg_latency  0
+zk_max_latency  0
+zk_min_latency  0
+zk_packets_received     0
+zk_packets_sent 0
+zk_num_alive_connections        0
+zk_outstanding_requests 0
+zk_server_state follower
+zk_znode_count  6
+zk_watch_count  0
+zk_ephemerals_count     0
+zk_approximate_data_size        1271
+zk_key_arena_size       4096
+zk_latest_snapshot_size 0
+zk_open_file_descriptor_count   46
+zk_max_file_descriptor_count    18446744073709551615
+```
+
+A continuación se muestra un ejemplo de respuesta de un nodo líder:
+
+```response title="Response" highlight={9,18-19}
+zk_version      v23.3.1.2823-testing-46e85357ce2da2a99f56ee83a079e892d7ec3726
+zk_avg_latency  0
+zk_max_latency  0
+zk_min_latency  0
+zk_packets_received     0
+zk_packets_sent 0
+zk_num_alive_connections        0
+zk_outstanding_requests 0
+zk_server_state leader
+zk_znode_count  6
+zk_watch_count  0
+zk_ephemerals_count     0
+zk_approximate_data_size        1271
+zk_key_arena_size       4096
+zk_latest_snapshot_size 0
+zk_open_file_descriptor_count   48
+zk_max_file_descriptor_count    18446744073709551615
+zk_followers    2
+zk_synced_followers     2
+```

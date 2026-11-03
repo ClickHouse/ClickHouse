@@ -6,6 +6,7 @@
 #include <DataTypes/Serializations/SerializationString.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ThreadStatus.h>
 
@@ -17,6 +18,7 @@ namespace DB
     {
         extern const int MEMORY_LIMIT_EXCEEDED;
         extern const int CANNOT_READ_ALL_DATA;
+        extern const int INCORRECT_DATA;
     }
 }
 
@@ -66,7 +68,7 @@ TEST(StringSerialization, IncorrectStateAfterMemoryLimitExceeded)
     size_t non_empty_result = 0;
     while (memory_limit_exceeded_errors < 10 || non_empty_result < 10)
     {
-        ColumnPtr result_column = type_string->createColumn();
+        auto result_column = type_string->createColumn();
         ReadBufferFromOwnString in(out.str());
 
         auto serialization = type_string->getDefaultSerialization();
@@ -75,9 +77,9 @@ TEST(StringSerialization, IncorrectStateAfterMemoryLimitExceeded)
         settings.position_independent_encoding = false;
         settings.getter = [&in](const auto &) { return &in; };
 
-        run_with_memory_failures([&]() { serialization->deserializeBinaryBulkWithMultipleStreams(result_column, 0, src_column->size(), settings, state, nullptr); });
+        run_with_memory_failures([&]() { serialization->deserializeBinaryBulkWithMultipleStreams(*result_column, src_column->size(), settings, state, nullptr); });
 
-        auto & result = assert_cast<ColumnString &>(*result_column->assumeMutable());
+        auto & result = assert_cast<ColumnString &>(*result_column);
         if (!result.empty())
         {
             ++non_empty_result;
@@ -116,9 +118,9 @@ auto makeSizeStreamGetter(SizesBuf & sizes_buffer, DataBuf & data_buffer)
 
 }
 
-/// A faithful WITH_SIZE_STREAM round-trip (including a seeked read with rows_offset > 0) must keep the
-/// reconstructed column internally consistent: offsets.back() == chars.size(). This establishes that the
-/// inconsistency in the test below is caused by the streams disagreeing, not by normal operation.
+/// A faithful WITH_SIZE_STREAM round-trip must keep the reconstructed column internally consistent:
+/// offsets.back() == chars.size(). This establishes that the inconsistency in the test below is caused
+/// by the streams disagreeing, not by normal operation.
 TEST(StringSerialization, WithSizeStreamFaithfulRoundTripIsConsistent)
 {
     MainThreadStatus::getInstance();
@@ -137,26 +139,22 @@ TEST(StringSerialization, WithSizeStreamFaithfulRoundTripIsConsistent)
         serialization->serializeBinaryBulkWithMultipleStreams(*src, 0, src->size(), settings, state);
     }
 
-    /// Read the whole column back, then a seeked subrange, and verify both are consistent.
-    for (size_t rows_offset : {size_t{0}, size_t{123}})
-    {
-        ReadBufferFromString sizes_in(sizes_out.str());
-        ReadBufferFromString data_in(data_out.str());
+    ReadBufferFromString sizes_in(sizes_out.str());
+    ReadBufferFromString data_in(data_out.str());
 
-        ISerialization::DeserializeBinaryBulkSettings settings;
-        ISerialization::DeserializeBinaryBulkStatePtr state;
-        settings.position_independent_encoding = false;
-        settings.getter = makeSizeStreamGetter<ReadBuffer *>(sizes_in, data_in);
-        serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
+    ISerialization::DeserializeBinaryBulkSettings settings;
+    ISerialization::DeserializeBinaryBulkStatePtr state;
+    settings.position_independent_encoding = false;
+    settings.getter = makeSizeStreamGetter<ReadBuffer *>(sizes_in, data_in);
+    serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
 
-        ColumnPtr result = ColumnString::create();
-        serialization->deserializeBinaryBulkWithMultipleStreams(result, rows_offset, rows - rows_offset, settings, state, nullptr);
+    auto result = ColumnString::create();
+    serialization->deserializeBinaryBulkWithMultipleStreams(*result, rows, settings, state, nullptr);
 
-        const auto & result_string = assert_cast<const ColumnString &>(*result);
-        ASSERT_EQ(result_string.getOffsets().back(), result_string.getChars().size());
-        ASSERT_EQ(result_string.size(), rows - rows_offset);
-        ASSERT_EQ(result_string.getDataAt(0), src->getDataAt(rows_offset));
-    }
+    const auto & result_string = assert_cast<const ColumnString &>(*result);
+    ASSERT_EQ(result_string.getOffsets().back(), result_string.getChars().size());
+    ASSERT_EQ(result_string.size(), rows);
+    ASSERT_EQ(result_string.getDataAt(0), src->getDataAt(0));
 }
 
 /// The producer of the corrupted column. When the data stream delivers fewer bytes than the sizes stream
@@ -198,16 +196,116 @@ TEST(StringSerialization, WithSizeStreamShortDataStreamThrows)
     settings.getter = makeSizeStreamGetter<ReadBuffer *>(sizes_in, data_in);
     serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
 
-    ColumnPtr result = ColumnString::create();
+    auto result = ColumnString::create();
     try
     {
-        serialization->deserializeBinaryBulkWithMultipleStreams(result, 0, rows, settings, state, nullptr);
+        serialization->deserializeBinaryBulkWithMultipleStreams(*result, rows, settings, state, nullptr);
         FAIL() << "deserialize accepted a short data stream and produced offsets.back()="
-               << assert_cast<const ColumnString &>(*result).getOffsets().back()
-               << " vs chars.size()=" << assert_cast<const ColumnString &>(*result).getChars().size();
+               << result->getOffsets().back()
+               << " vs chars.size()=" << result->getChars().size();
     }
     catch (const DB::Exception & e)
     {
         ASSERT_EQ(e.code(), DB::ErrorCodes::CANNOT_READ_ALL_DATA);
     }
+}
+
+namespace
+{
+
+/// A deserialization attempt over a hand-crafted (corrupted) sizes stream. The values in the sizes stream
+/// come straight from the data, so nothing bounds them implicitly; the deserialization has to reject the
+/// ones that would overflow the offsets instead of wrapping around.
+void expectSizesStreamRejected(const std::vector<UInt64> & sizes_values, size_t limit)
+{
+    WriteBufferFromOwnString sizes_out;
+    for (UInt64 size : sizes_values)
+        writeBinaryLittleEndian(size, sizes_out);
+
+    /// The corrupted size must be rejected before any data is read, so the content of the data stream is irrelevant.
+    ReadBufferFromString sizes_in(sizes_out.str());
+    ReadBufferFromString data_in(std::string(64, 'x'));
+
+    auto serialization = SerializationString::create(MergeTreeStringSerializationVersion::WITH_SIZE_STREAM);
+
+    ISerialization::DeserializeBinaryBulkSettings settings;
+    ISerialization::DeserializeBinaryBulkStatePtr state;
+    settings.position_independent_encoding = true;
+    settings.getter = makeSizeStreamGetter<ReadBuffer *>(sizes_in, data_in);
+    serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
+
+    auto result = ColumnString::create();
+    try
+    {
+        serialization->deserializeBinaryBulkWithMultipleStreams(*result, limit, settings, state, nullptr);
+        FAIL() << "deserialize accepted a corrupted sizes stream";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(e.code(), DB::ErrorCodes::INCORRECT_DATA);
+    }
+}
+
+}
+
+/// The sizes in the sizes stream come straight from the data, and accumulating them into the offsets
+/// of the column can overflow: sizes close to 2^64 wrap the offsets around and the spans computed from
+/// them then point outside the data.
+TEST(StringSerialization, WithSizeStreamHugeSizeIsRejected)
+{
+    MainThreadStatus::getInstance();
+    expectSizesStreamRejected({10, std::numeric_limits<UInt64>::max(), 5}, 3);
+    /// A sum that is exactly 2^65 and therefore wraps to zero when accumulated in 64 bits.
+    expectSizesStreamRejected({std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), 2}, 3);
+    expectSizesStreamRejected({(1ULL << 48) + 1}, 1);
+}
+
+namespace
+{
+
+/// A deserialization attempt over a hand-crafted (corrupted) stream of cumulative offsets, which is what
+/// the size stream carries over the network (`position_independent_encoding = false`) instead of the
+/// per-row sizes. The offsets come straight from the data as well.
+void expectOffsetsStreamRejected(const std::vector<UInt64> & offset_values, size_t limit, int expected_error_code)
+{
+    WriteBufferFromOwnString offsets_out;
+    for (UInt64 offset : offset_values)
+        writeBinaryLittleEndian(offset, offsets_out);
+
+    /// The corrupted offset must be rejected before any data is read, so the content of the data stream is irrelevant.
+    ReadBufferFromString offsets_in(offsets_out.str());
+    ReadBufferFromString data_in(std::string(64, 'x'));
+
+    auto serialization = SerializationString::create(MergeTreeStringSerializationVersion::WITH_SIZE_STREAM);
+
+    ISerialization::DeserializeBinaryBulkSettings settings;
+    ISerialization::DeserializeBinaryBulkStatePtr state;
+    settings.position_independent_encoding = false;
+    settings.getter = makeSizeStreamGetter<ReadBuffer *>(offsets_in, data_in);
+    serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
+
+    auto result = ColumnString::create();
+    try
+    {
+        serialization->deserializeBinaryBulkWithMultipleStreams(*result, limit, settings, state, nullptr);
+        FAIL() << "deserialize accepted a corrupted stream of offsets";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(e.code(), expected_error_code);
+    }
+}
+
+}
+
+/// The stream of cumulative offsets is the `Native` carrier of the string sizes. The offsets address the
+/// characters of the column, so they have to increase monotonically and to stay within the limit on the
+/// size of the whole column.
+TEST(StringSerialization, OffsetsStreamHugeSizeIsRejected)
+{
+    MainThreadStatus::getInstance();
+
+    expectOffsetsStreamRejected({10, 5}, 2, ErrorCodes::INCORRECT_DATA);
+    expectOffsetsStreamRejected({std::numeric_limits<UInt64>::max()}, 1, ErrorCodes::INCORRECT_DATA);
+    expectOffsetsStreamRejected({10, (1ULL << 48) + 11}, 2, ErrorCodes::INCORRECT_DATA);
 }

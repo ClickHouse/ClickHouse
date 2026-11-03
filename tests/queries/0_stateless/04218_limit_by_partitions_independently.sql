@@ -2,7 +2,7 @@
 -- no-tsan, no-asan, no-msan, no-s3-storage: ~30 scenarios with INSERT + EXPLAIN; the slowdown blows past the test timeout
 -- no-random-settings, no-random-merge-tree-settings: Explain output may differ
 
-
+SET explain_query_plan_default='legacy';
 SET max_threads = 16;
 
 -- { echo }
@@ -25,6 +25,15 @@ INSERT INTO test_partition_func_of_key SELECT toDate('2024-01-01') + (number % 2
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT d FROM test_partition_func_of_key LIMIT 3 BY d SETTINGS allow_limit_by_partitions_independently = 1) WHERE explain LIKE '%Skip stream merging%' OR explain LIKE '%Read each partition through separate port%';
 SELECT (SELECT count() FROM (SELECT d FROM test_partition_func_of_key LIMIT 3 BY d SETTINGS allow_limit_by_partitions_independently = 0)) = (SELECT count() FROM (SELECT d FROM test_partition_func_of_key LIMIT 3 BY d SETTINGS allow_limit_by_partitions_independently = 1));
 DROP TABLE test_partition_func_of_key;
+
+DROP TABLE IF EXISTS test_array_join;
+CREATE TABLE test_array_join (a UInt32, arr Array(UInt32)) ENGINE = MergeTree ORDER BY tuple() PARTITION BY a % 8;
+SYSTEM STOP MERGES test_array_join;
+INSERT INTO test_array_join SELECT number, range(number % 5) FROM numbers_mt(1e3);
+INSERT INTO test_array_join SELECT number, range(number % 5) FROM numbers_mt(1e3);
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT a FROM test_array_join ARRAY JOIN arr LIMIT 2 BY a SETTINGS allow_limit_by_partitions_independently = 1) WHERE explain LIKE '%Skip stream merging%' OR explain LIKE '%Read each partition through separate port%';
+SELECT (SELECT count() FROM (SELECT a FROM test_array_join ARRAY JOIN arr LIMIT 2 BY a SETTINGS allow_limit_by_partitions_independently = 0)) = (SELECT count() FROM (SELECT a FROM test_array_join ARRAY JOIN arr LIMIT 2 BY a SETTINGS allow_limit_by_partitions_independently = 1));
+DROP TABLE test_array_join;
 
 DROP TABLE IF EXISTS test_complex_expr_both_sides;
 CREATE TABLE test_complex_expr_both_sides (a UInt32) ENGINE = MergeTree ORDER BY a PARTITION BY intDiv(a, 2) * 2 + 1;

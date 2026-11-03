@@ -9,6 +9,8 @@ from pathlib import Path
 from praktika.result import Result
 from praktika.utils import Shell, Utils
 
+from ci.jobs.scripts.server_cleanup import kill_leftover_server_processes
+
 temp_dir = f"{Utils.cwd()}/ci/tmp/"
 
 MIN_TOTAL_TESTS = 5_939_581
@@ -50,6 +52,7 @@ class ClickHouseBinary:
 
         print("Starting ClickHouse server")
         print("Command: ", self.start_cmd)
+        kill_leftover_server_processes()
         self.log_fd = open(self.log_file, "w")
         self.proc = subprocess.Popen(
             self.start_cmd, stderr=subprocess.STDOUT, stdout=self.log_fd, shell=True
@@ -89,6 +92,20 @@ class ClickHouseBinary:
             )
             return False
         return True
+
+    def died_result(self):
+        retcode = self.proc.poll()
+        if retcode is None:
+            return None
+        with open(self.log_file, "rb") as f:
+            f.seek(max(0, os.path.getsize(self.log_file) - 64 * 1024 * 1024))
+            lines = f.read().decode(errors="replace").splitlines()
+        fatal = [line for line in lines if "<Fatal>" in line]
+        return Result(
+            name="Server died",
+            status=Result.Status.FAIL,
+            info="\n".join([f"Server exited with code {retcode}", *(fatal or lines)[-200:]]),
+        )
 
 
 def load_stage_reports(out_dir, mode_name):
@@ -690,6 +707,12 @@ def main():
                 command=report_and_thresholds,
             )
         )
+
+    # A server that died mid-run otherwise shows only as a short test count.
+    if results[0].is_ok():
+        died = ch.died_result()
+        if died:
+            results.append(died)
 
     report_files = []
     if os.path.isfile(report_html_path):

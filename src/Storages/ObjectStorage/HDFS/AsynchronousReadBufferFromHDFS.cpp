@@ -4,6 +4,7 @@
 #include <Storages/ObjectStorage/HDFS/ReadBufferFromHDFS.h>
 #include <mutex>
 #include <Common/logger_useful.h>
+#include <Common/ProfileEvents.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <IO/AsynchronousReader.h>
 #include <IO/ReadSettings.h>
@@ -228,8 +229,7 @@ AsynchronousReadBufferFromHDFS::~AsynchronousReadBufferFromHDFS()
 {
     LOG_TEST(
         log,
-        "object:{} next_times:{} seek_times:{} interval:{}|{} duration:{}|{} wait:{}|{}",
-        reinterpret_cast<std::uintptr_t>(this),
+        "next_times:{} seek_times:{} interval:{}|{} duration:{}|{} wait:{}|{}",
         next_times,
         seek_times,
         sum_interval,

@@ -1,5 +1,7 @@
 #include <Processors/Transforms/DistinctSortedStreamTransform.h>
 
+#include <Core/SortCursor.h>
+
 namespace DB
 {
 
@@ -64,30 +66,21 @@ void DistinctSortedStreamTransform::initChunkProcessing(const Columns & input_co
 template <bool clear_data>
 size_t DistinctSortedStreamTransform::ordinaryDistinctOnRange(IColumnFilter & filter, const size_t range_begin, const size_t range_end)
 {
-    size_t count = 0;
-    switch (data.type)
+    return data.callOnMethod([&](auto & method)
     {
-        case ClearableSetVariants::Type::EMPTY:
-            break;
-            // clang-format off
-#define M(NAME) \
-        case ClearableSetVariants::Type::NAME: \
-            if constexpr (clear_data) data.NAME->data.clear(); \
-            count = buildFilterForRange(*data.NAME, filter, range_begin, range_end); \
-            break;
-
-        APPLY_FOR_SET_VARIANTS(M)
-#undef M
-            // clang-format on
-    }
-    return count;
+        if constexpr (clear_data)
+            method.data.clear();
+        return buildFilterForRange(method, filter, range_begin, range_end);
+    });
 }
 
 template <typename Method>
 size_t DistinctSortedStreamTransform::buildFilterForRange(
     Method & method, IColumnFilter & filter, const size_t range_begin, const size_t range_end)
 {
-    typename Method::State state(other_columns, other_columns_sizes, nullptr);
+    /// The state is built per equal-range of the sorted prefix but the columns span the whole chunk,
+    /// so the range it will be asked about has to be passed explicitly.
+    ColumnsHashing::SubRangeState<typename Method::State> state(other_columns, other_columns_sizes, nullptr, {range_begin, range_end});
 
     size_t count = 0;
     for (size_t i = range_begin; i < range_end; ++i)
@@ -112,17 +105,6 @@ void DistinctSortedStreamTransform::saveLatestKey(const size_t row_pos)
     }
 }
 
-bool DistinctSortedStreamTransform::isKey(const size_t key_pos, const size_t row_pos) const
-{
-    for (size_t i = 0; i < sorted_columns.size(); ++i)
-    {
-        const int res = sorted_columns[i]->compareAt(key_pos, row_pos, *sorted_columns[i], sorted_columns_descr[i].nulls_direction);
-        if (res != 0)
-            return false;
-    }
-    return true;
-}
-
 bool DistinctSortedStreamTransform::isLatestKeyFromPrevChunk(const size_t row_pos) const
 {
     for (size_t i = 0, s = sorted_columns.size(); i < s; ++i)
@@ -145,37 +127,6 @@ bool DistinctSortedStreamTransform::isLatestKeyFromPrevChunk(const size_t row_po
     return true;
 }
 
-template<typename Predicate>
-size_t DistinctSortedStreamTransform::getRangeEnd(size_t begin, size_t end, Predicate pred) const
-{
-    chassert(begin < end);
-
-    const size_t linear_probe_threadhold = 16;
-    size_t linear_probe_end = begin + linear_probe_threadhold;
-    linear_probe_end = std::min(linear_probe_end, end);
-
-    for (size_t pos = begin; pos < linear_probe_end; ++pos)
-    {
-        if (!pred(begin, pos))
-            return pos;
-    }
-
-    size_t low = linear_probe_end;
-    size_t high = end - 1;
-    while (low <= high)
-    {
-        size_t mid = low + (high - low) / 2;
-        if (pred(begin, mid))
-            low = mid + 1;
-        else
-        {
-            high = mid - 1;
-            end = mid;
-        }
-    }
-    return end;
-}
-
 std::pair<size_t, size_t> DistinctSortedStreamTransform::continueWithPrevRange(const size_t chunk_rows, IColumnFilter & filter)
 {
     /// prev_chunk_latest_key is empty on very first transform() call
@@ -184,7 +135,7 @@ std::pair<size_t, size_t> DistinctSortedStreamTransform::continueWithPrevRange(c
         return {0, 0};
 
     size_t output_rows = 0;
-    const size_t range_end = getRangeEnd(0, chunk_rows, [&](size_t, size_t row_pos) { return isLatestKeyFromPrevChunk(row_pos); });
+    const size_t range_end = getEqualRangeEndAssumeSorted(key_runs, sorted_columns, sorted_columns_descr, 0, chunk_rows);
     if (other_columns.empty())
         std::fill(filter.begin(), filter.begin() + range_end, 0); /// skip rows already included in distinct on previous transform()
     else
@@ -208,6 +159,7 @@ void DistinctSortedStreamTransform::transform(Chunk & chunk)
     Columns input_columns = chunk.detachColumns();
     /// split input columns into sorted and other("non-sorted") columns
     initChunkProcessing(input_columns);
+    key_runs.reset(sorted_columns.size());
 
     /// build filter:
     /// (1) find range with the same values in sorted columns -> [range_begin, range_end)
@@ -221,7 +173,7 @@ void DistinctSortedStreamTransform::transform(Chunk & chunk)
     while (range_end != chunk_rows)
     {
         // find new range [range_begin, range_end)
-        range_end = getRangeEnd(range_begin, chunk_rows, [&](size_t key_pos, size_t row_pos) { return isKey(key_pos, row_pos); });
+        range_end = getEqualRangeEndAssumeSorted(key_runs, sorted_columns, sorted_columns_descr, range_begin, chunk_rows);
 
         // update filter for range
         if (other_columns.empty())
@@ -249,16 +201,26 @@ void DistinctSortedStreamTransform::transform(Chunk & chunk)
 
     saveLatestKey(chunk_rows - 1);
 
-    /// apply the built filter
-    for (auto & input_column : input_columns)
-        input_column = input_column->filter(filter, output_rows);
+    if (output_rows == chunk_rows)
+    {
+        /// Every row is a new distinct value: keep the chunk unchanged, without copying it.
+        chunk.setColumns(std::move(input_columns), chunk_rows);
+    }
+    else
+    {
+        /// apply the built filter
+        for (auto & input_column : input_columns)
+            input_column = input_column->filter(filter, output_rows);
 
-    chunk.setColumns(std::move(input_columns), output_rows);
+        chunk.setColumns(std::move(input_columns), output_rows);
+    }
 
-    /// Update total output rows and check limits
+    /// Update total output rows and check limits. The size limits are checked before the limit
+    /// hint, matching DistinctTransform: in the `throw` overflow mode `check` throws, and a limit
+    /// hint reached by the same chunk must not turn that exception into a silent stop.
     total_output_rows += output_rows;
-    if ((limit_hint && total_output_rows >= limit_hint)
-        || !output_size_limits.check(total_output_rows, data.getTotalByteCount(), "DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
+    if (!output_size_limits.check(total_output_rows, data.getTotalByteCount(), "DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED)
+        || (limit_hint && total_output_rows >= limit_hint))
     {
         stopReading();
     }

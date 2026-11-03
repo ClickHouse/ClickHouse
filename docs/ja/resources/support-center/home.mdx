@@ -1,0 +1,32 @@
+---
+slug: support
+title: サポートセンター
+description: 'ClickHouse ナレッジベースを閲覧・検索'
+keywords: ['サポート', 'ナレッジベース', 'kb', '記事', 'よくある質問']
+mode: 'custom'
+hideNext: true
+---
+
+import { KBExplorer } from '/snippets/ja/components/KBExplorer/KBExplorer.jsx'
+import { kbIndex } from '/snippets/ja/components/KBExplorer/kb-data.jsx'
+
+{/* 注目記事 - 各記事には記事 ID（knowledge-base 配下の相対パス、拡張子なし）と
+    バナー画像（記事タイトルは画像に埋め込まれています）があります */}
+
+export const featuredArticles = [
+  { id: 'cloud-services/aws-privatelink-setup-for-clickpipes' },
+  { id: 'tables-schema/schema-migration-tools' },
+  { id: 'data-management/read-consistency' }
+];
+
+<div className="relative overflow-hidden">
+  <div className="absolute top-0 left-0 right-0 opacity-80">
+    <img src="/images/background-light.svg" className="block dark:hidden pointer-events-none w-full h-auto" alt="装飾用の背景画像。" />
+
+    <img src="/images/background-dark.svg" className="hidden dark:block pointer-events-none w-full h-auto" alt="装飾用の背景画像。" />
+  </div>
+
+  {/* kbIndex は生成された kb-data.jsx からインポートされ、featuredArticles は手動で保守されています */}
+
+  <KBExplorer index={kbIndex} featured={featuredArticles} />
+</div>

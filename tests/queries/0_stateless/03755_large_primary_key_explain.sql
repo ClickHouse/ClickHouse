@@ -1,5 +1,7 @@
--- Tags: no-replicated-database, no-parallel-replicas, no-random-settings, no-random-merge-tree-settings
+-- Tags: no-replicated-database, no-parallel-replicas, no-random-settings, no-random-merge-tree-settings, no-msan
 -- EXPLAIN output may differ
+
+SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS test_pk_long;
 DROP TABLE IF EXISTS test_pk_long_back;

@@ -1,8 +1,8 @@
 -- Tags: long, no-tsan, no-asan, no-ubsan, no-msan, no-debug
-
 -- Randomized max_insert_threads can create multiple parts, causing
 -- the row count to slightly exceed max_rows_to_read due to granule-level
 -- counting overhead across parts. Pin to 1 for deterministic data layout.
+SET explain_query_plan_default = 'legacy';
 SET max_insert_threads = 1;
 
 CREATE TABLE window_function_threading

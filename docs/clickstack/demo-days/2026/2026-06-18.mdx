@@ -1,0 +1,80 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-06-18
+title: 'Demo days - 2026-06-18'
+sidebarTitle: '2026-06-18'
+sidebar_label: '2026-06-18'
+sidebar_position: 618
+description: 'ClickStack demo days for 2026-06-18'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## Source filters, now everywhere {#source-filters-now-everywhere}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/Zl5ymdzoM6U" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+Source filters are now available across the Services dashboard. Select a trace or log source with a service name filter and the dashboard waits for you to choose a value before running queries. That filter is then applied consistently across every chart, query, and side panel. The trace waterfall follows the same behavior, inheriting any source filters from the Search page when you open a span, while still allowing you to add additional filters. The Sessions page has also been updated so source filters flow through the sidebar, trace panel, and nested views.
+
+Autocomplete for source filters has also been expanded. Previously it was only available on the Search page, but it now works everywhere source filters are supported, including dashboards. Under the hood, autocomplete now resolves keys and values across multiple sources, even when each source has its own set of filters. The same improvements are available in both the raw SQL editor and every source filter input in the query builder.
+
+**Related PRs:** [#2331](https://github.com/hyperdxio/hyperdx/pull/2331) Add source scoping to dashboard filters, [#2459](https://github.com/hyperdxio/hyperdx/pull/2459) Show icon on tiles with excluded source-scoped filters
+
+## Better AI-generated dashboards for custom schemas {#better-ai-generated-dashboards-for-custom-schemas}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/LUi5047F3fs" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+A user building dashboards with AI against a custom schema ran into some serious performance issues. The root cause was that the generated raw SQL tiles hardcoded a time range instead of using the dashboard time filter macros, so changing the dashboard time range had no effect. One tile also filtered against an integer timestamp column in a way that bypassed the primary key, forcing a full table scan.
+
+To address this, the MCP schema for raw SQL dashboard tiles now makes it explicit that agents should use the dashboard time filter macros. The ClickStack UI also warns when a generated SQL tile is missing those macros, making it easier to catch before a dashboard is saved. After deploying the changes, rerunning the customer's original prompt produced SQL that used the correct macros, resulting in a much faster dashboard.
+
+**Related PRs:** [#2473](https://github.com/hyperdxio/hyperdx/pull/2473) Nudge agents towards macros in raw SQL tiles
+
+## Simpler hashing for OTel metrics, and a primary key idea {#simpler-hashing-for-otel-metrics-and-a-primary-key-idea}
+
+*Demo by [@dhable](https://github.com/dhable)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/MjAUdJJbC8M" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+A community contribution fixed attribute hashing for metrics with JSON attribute columns, but it introduced two different code paths. JSON schemas used the variadic form of `cityHash64`, while Map-based schemas first concatenated three maps before hashing. It turns out that extra work wasn't needed. Both schema types now use the same `cityHash64` implementation, simplifying the code and avoiding unnecessary map allocations during hashing.
+
+The work also highlighted a potential optimization for the OpenTelemetry metrics schema. Today, the primary key stores the full attributes map, which increases memory usage because ClickHouse keeps the map in memory as part of the index. One idea is to materialize an attribute hash at insert time and use that in the primary key instead. Nothing has changed yet, but with OpenTelemetry schema updates now back on the table, it's an optimization worth revisiting.
+
+**Related PRs:** [#2475](https://github.com/hyperdxio/hyperdx/pull/2475) Unify AttributesHash to variadic cityHash64
+
+## Filter pill and data source polish {#filter-pill-and-data-source-polish}
+
+*Demo by [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/Zi6HPj5_JQg" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+Two small but useful quality of life improvements landed this week. Excluded filter pills are now much easier to read after customer feedback highlighted that the previous styling made the remove button difficult to see. They now use a softer red treatment that improves contrast in both light and dark mode.
+
+Managing large numbers of data sources also got easier. Sources can now be assigned an optional section, allowing them to be grouped in the source picker. Sources without a section continue to appear under "Other", so existing setups are unaffected. Search has also been updated to match section names, making it easier to find related sources even when you only remember the group they belong to. The feature is currently being used internally while the team evaluates how people naturally organize their sources before rolling it out more widely.
+
+**Related PRs:** [#2478](https://github.com/hyperdxio/hyperdx/pull/2478) Make excluded filter pills readable in the light theme, [#2432](https://github.com/hyperdxio/hyperdx/pull/2432) Add an optional Section field to data sources, [#2476](https://github.com/hyperdxio/hyperdx/pull/2476) Group the data source selector by section with tag-style search, [#2477](https://github.com/hyperdxio/hyperdx/pull/2477) Suggest existing section names in the source form
+
+## Per-chart series limits for high-cardinality charts {#per-chart-series-limits-for-high-cardinality-charts}
+
+*Demo by [@wrn14897](https://github.com/wrn14897)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/xKpHvhbo-PI" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+Charts can now limit the number of series they return, helping avoid performance issues when grouping by high-cardinality fields such as HTTP route or span ID. Previously, these queries could produce hundreds of thousands of series, causing dashboards to become slow or unresponsive. You can now cap a chart to the top N series, reducing both rendering time and the amount of data transferred.
+
+Selecting the top series efficiently is more involved for chunked queries. The current implementation determines the top N from the most recent chunk, then applies that same set of series across the full query, with the work performed in ClickHouse rather than the browser. This approach is still being evaluated and may evolve as additional query optimizations are introduced.
+
+**Related PRs:** [#2449](https://github.com/hyperdxio/hyperdx/pull/2449) Make the series limit opt-in and consistent across chunks, [#2429](https://github.com/hyperdxio/hyperdx/pull/2429) Cap group-by time-series to top-N series to prevent OOM

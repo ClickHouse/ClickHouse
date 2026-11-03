@@ -53,20 +53,17 @@ public:
     String getName() const override { return function_name; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
+    /// row references it, so a function that throws on the default value must not be executed on the
+    /// whole dictionary - it would fail on entirely valid data.
+    bool canBeExecutedOnDefaultArguments() const override { return error_handling != ErrorHandling::Exception; }
     size_t getNumberOfArguments() const override { return 1; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors args
-        {
-            {"readable_size", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
-        };
-        validateFunctionArguments(*this, arguments, args);
-        DataTypePtr return_type = std::make_shared<DataTypeUInt64>();
-        if (error_handling == ErrorHandling::Null)
-            return std::make_shared<DataTypeNullable>(return_type);
-        else
-            return return_type;
+        return error_handling == ErrorHandling::Null
+            ? "(String) -> Nullable(UInt64)"
+            : "(String) -> UInt64";
     }
 
 
@@ -145,7 +142,7 @@ private:
         };
         ReadBufferFromString buf(value);
 
-        // tryReadFloatText does seem to not raise any error when there is leading whitespace so we check it explicitly
+        // The float parser does not raise an error on leading whitespace, so we check it explicitly
         skipWhitespaceIfAny(buf);
         if (buf.getPosition() > 0)
         {
@@ -158,7 +155,7 @@ private:
         }
 
         Float64 base = 0;
-        if (!tryReadFloatTextPrecise(base, buf))    // If we use the default (fast) tryReadFloatText this returns True on garbage input so we use the Precise version
+        if (!tryReadFloatTextPrecise(base, buf))    // Precise rejects garbage input; the fast parser would accept it
         {
             throw Exception(
                 ErrorCodes::CANNOT_PARSE_NUMBER,

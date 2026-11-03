@@ -200,6 +200,9 @@ class QuantileTDigest
     }
 
 public:
+    /// The memory allocated for the centroids. It counts the memory inside the object when there are few centroids.
+    size_t allocatedBytes() const { return centroids.allocated_bytes(); }
+
     /** Performs compression of accumulated centroids
       * When merging, the invariant is retained to the maximum size of each
       * centroid that does not exceed `4 q (1 - q) \ delta N`.
@@ -295,11 +298,28 @@ public:
             addCentroid(c);
     }
 
-    void serialize(WriteBuffer & buf)
+    void serialize(WriteBuffer & buf) const
     {
-        compress();
-        writeVarUInt(centroids.size(), buf);
-        buf.write(reinterpret_cast<const char *>(centroids.data()), centroids.size() * sizeof(centroids[0]));
+        /// serialize() must not mutate the state: IAggregateFunction::serialize takes a
+        /// ConstAggregateDataPtr, and the same state can be shared between rows (e.g. a
+        /// replicated/const aggregate-state column used as a GROUP BY key) and serialized
+        /// concurrently by several pipeline threads. compress() sorts centroids in place,
+        /// so compressing the shared buffer directly is a data race (heap-buffer-overflow
+        /// in RadixSort). If already compacted, write as is; otherwise compress a local copy.
+        if (unmerged == 0 && centroids.size() <= params.max_centroids)
+        {
+            writeVarUInt(centroids.size(), buf);
+            buf.write(reinterpret_cast<const char *>(centroids.data()), centroids.size() * sizeof(centroids[0]));
+            return;
+        }
+
+        QuantileTDigest tmp;
+        tmp.centroids.assign(centroids);
+        tmp.count = count;
+        tmp.unmerged = unmerged;
+        tmp.compress();
+        writeVarUInt(tmp.centroids.size(), buf);
+        buf.write(reinterpret_cast<const char *>(tmp.centroids.data()), tmp.centroids.size() * sizeof(tmp.centroids[0]));
     }
 
     void deserialize(ReadBuffer & buf)

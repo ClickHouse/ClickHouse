@@ -1,6 +1,7 @@
 -- Tags: no-random-settings
 
-SET enable_analyzer = 1;
+SET explain_query_plan_default = 'legacy';
+
 DROP TABLE IF EXISTS t_prewhere_pushdown;
 
 CREATE TABLE t_prewhere_pushdown

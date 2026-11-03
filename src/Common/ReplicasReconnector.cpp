@@ -8,6 +8,8 @@
 namespace DB
 {
 
+ReplicasReconnector * ReplicasReconnector::instance_ptr = nullptr;
+
 namespace ErrorCodes
 {
     extern const int NOT_INITIALIZED;
@@ -20,7 +22,7 @@ namespace ServerSetting
 }
 
 ReplicasReconnector::ReplicasReconnector(ContextPtr context)
-    : task_handle(context->getSchedulePool().createTask(StorageID::createEmpty(), "ReplicasReconnector", [this]{ run(); }))
+    : task_handle(context->getSchedulePool()->createTask(StorageID::createEmpty(), "ReplicasReconnector", [this]{ run(); }))
     , log(getLogger("ReplicasReconnector"))
 {
     instance_ptr = this;

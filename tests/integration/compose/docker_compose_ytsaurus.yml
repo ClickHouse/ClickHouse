@@ -1,6 +1,8 @@
 services:
     ytsaurus_backend1:
-        image: ghcr.io/ytsaurus/local:stable-24.2
+        # Mirror of ghcr.io/ytsaurus/local:stable-24.2 (see compose/mirror-images.sh).
+        # Pulled via the dockerhub-proxy cache; ghcr.io is not behind the proxy.
+        image: clickhouse/ytsaurus-local:stable-24.2
         restart: always
         environment:
             YT_FORCE_IPV4: 1

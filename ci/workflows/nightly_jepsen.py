@@ -20,9 +20,15 @@ workflow = Workflow.Config(
     name="NightlyJepsen",
     event=Workflow.Event.SCHEDULE,
     branches=[BASE_BRANCH],
+    engine=Workflow.Engine.GH_ACTIONS,
     jobs=[
         binary_build_job,
         JobConfigs.jepsen_keeper,
+        # Serialize server Jepsen after keeper: both use the single shared
+        # jepsen_group autoscaling group and must not run concurrently. This is
+        # an ordering dependency only (not an artifact requirement), so express
+        # it here with run_after rather than in the job's `requires`.
+        JobConfigs.jepsen_server.set_run_after(JobConfigs.jepsen_keeper.name),
     ],
     artifacts=[
         *ArtifactConfigs.clickhouse_binaries,

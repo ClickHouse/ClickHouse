@@ -1,0 +1,265 @@
+---
+title: Exemplo em Terraform de como usar a API do Cloud
+description: "Este exemplo mostra como usar o Terraform para criar/excluir clusters usando a API"
+Date: 2023-09-02
+tags: ['Clientes nativos e interfaces']
+keywords: ['Terraform']
+---
+
+<div id="question">
+  ## Pergunta
+</div>
+
+Como posso usar a API para gerenciar clusters no ClickHouse Cloud?
+
+<div id="answer">
+  ## Resposta
+</div>
+
+Usaremos o Terraform para configurar nossa infraestrutura e o [ClickHouse Provider](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs)
+
+Etapas:
+
+1). Crie uma API key no Cloud.
+Siga a documentação aqui - [https://clickhouse.com/docs/cloud/manage/openapi](https://clickhouse.com/docs/cloud/manage/openapi)
+
+Salve as credenciais localmente.
+
+2). Instale o Terraform usando - [https://developer.hashicorp.com/terraform/tutorials/aws-get-started/install-cli](https://developer.hashicorp.com/terraform/tutorials/aws-get-started/install-cli)
+
+Se você estiver no Mac, pode usar o gerenciador de pacotes Homebrew.
+
+3). Crie um diretório em qualquer lugar que preferir:
+
+```
+mkdir test
+➜  test pwd
+/Users/jaijhala/Desktop/terraform/test
+```
+
+4). Crie 2 arquivos: `main.tf` e `secret.tfvars`
+
+Copie o seguinte:
+
+O arquivo `main.tf` será:
+
+```
+terraform {
+ required_providers {
+   clickhouse = {
+     source = "ClickHouse/clickhouse"
+     version = "0.0.2"
+   }
+ }
+}
+
+variable "organization_id" {
+  type = string
+}
+
+variable "token_key" {
+  type = string
+}
+
+variable "token_secret" {
+  type = string
+}
+
+provider clickhouse {
+  environment 	= "production"
+  organization_id = var.organization_id
+  token_key   	= var.token_key
+  token_secret	= var.token_secret
+}
+
+variable "service_password" {
+  type = string
+  sensitive   = true
+}
+
+resource "clickhouse_service" "service123" {
+  name       	= "jai-terraform"
+  cloud_provider = "aws"
+  region     	= "us-east-2"
+  tier       	= "development"
+  idle_scaling   = true
+  password  = var.service_password
+  ip_access = [
+	{
+    	source  	= "0.0.0.0/0"
+    	description = "Anywhere"
+	}
+  ]
+}
+
+output "CLICKHOUSE_HOST" {
+  value = clickhouse_service.service123.endpoints.0.host
+}
+```
+
+Você pode substituir pelos seus próprios parâmetros, como nome do serviço, região etc., na seção de recursos acima.
+
+`secret.tfvars` é onde você colocará todas as informações relacionadas à API key que baixou anteriormente. A proposta desse arquivo é manter todas as suas credenciais secretas ocultas do arquivo de configuração principal.
+
+Seria algo assim (substitua estes parâmetros):
+
+```
+organization_id = "e957a5f7-4qe3-4b05-ad5a-d02b2dcd0593"
+token_key = "QWhhkMeytqQruTeKg"
+token_secret = "4b1dNmjWdLUno9lXxmKvSUcPP62jvn7irkuZPbY"
+service_password = "password123!"
+```
+
+5).  Execute `terraform init` neste diretório
+
+Saída esperada:
+
+```
+Inicializando o backend...
+
+Inicializando plugins de provider...
+- Localizando versões de clickhouse/clickhouse compatíveis com "0.0.2"...
+- Instalando clickhouse/clickhouse v0.0.2...
+- Instalado clickhouse/clickhouse v0.0.2 (autoassinado, ID de chave D7089EE5C6A92ED1)
+
+Providers de parceiros e da comunidade são assinados por seus desenvolvedores.
+Se quiser saber mais sobre assinatura de providers, leia sobre o assunto aqui:
+https://www.terraform.io/docs/cli/plugins/signing.html
+
+O Terraform criou um arquivo de lock .terraform.lock.hcl para registrar as
+seleções de provider feitas acima. Inclua este arquivo no seu repositório de controle de versão
+para que o Terraform possa garantir as mesmas seleções por padrão quando
+você executar "terraform init" no futuro.
+
+O Terraform foi inicializado com sucesso!
+
+Agora você pode começar a trabalhar com o Terraform. Tente executar "terraform plan" para ver
+quaisquer alterações necessárias na sua infraestrutura. Todos os comandos do Terraform
+devem funcionar agora.
+
+Se você definir ou alterar módulos ou a configuração de backend do Terraform,
+execute este comando novamente para reinicializar seu diretório de trabalho. Caso se esqueça, outros
+comandos detectarão isso e lembrarão você de fazê-lo, se necessário.
+```
+
+6). Execute o comando `terraform apply -var-file=secret.tfvars`.
+
+Algo assim: 
+
+```
+➜  test terraform apply -var-file=secret.tfvars
+
+Terraform used the selected providers to generate the following execution plan. Resource actions are indicated with
+the following symbols:
+  + create
+
+Terraform will perform the following actions:
+
+  # clickhouse_service.service123 will be created
+  + resource "clickhouse_service" "service123" {
+      + cloud_provider = "aws"
+      + endpoints      = (known after apply)
+      + id             = (known after apply)
+      + idle_scaling   = true
+      + ip_access      = [
+          + {
+              + description = "Anywhere"
+              + source      = "0.0.0.0/0"
+            },
+        ]
+      + last_updated   = (known after apply)
+      + name           = "jai-terraform"
+      + password       = (sensitive value)
+      + region         = "us-east-2"
+      + tier           = "development"
+    }
+
+Plan: 1 to add, 0 to change, 0 to destroy.
+
+Changes to Outputs:
+  + CLICKHOUSE_HOST = (known after apply)
+
+Do you want to perform these actions?
+  Terraform will perform the actions described above.
+  Only 'yes' will be accepted to approve.
+
+  Enter a value: yes
+```
+
+Digite `yes` e pressione Enter
+
+Observação: Note que aparece `password       = (sensitive value)` acima.
+Isso acontece porque definimos `sensitive   = true` para a senha no arquivo main.tf.
+
+7). Levará alguns minutos para criar o serviço, mas, no fim, ele deverá ficar assim:
+
+```
+  Enter a value: yes
+
+clickhouse_service.service123: Creating...
+clickhouse_service.service123: Still creating... [10s elapsed]
+clickhouse_service.service123: Still creating... [20s elapsed]
+clickhouse_service.service123: Still creating... [30s elapsed]
+clickhouse_service.service123: Still creating... [40s elapsed]
+clickhouse_service.service123: Still creating... [50s elapsed]
+clickhouse_service.service123: Still creating... [1m0s elapsed]
+clickhouse_service.service123: Still creating... [1m10s elapsed]
+clickhouse_service.service123: Still creating... [1m20s elapsed]
+clickhouse_service.service123: Still creating... [1m30s elapsed]
+clickhouse_service.service123: Still creating... [1m40s elapsed]
+clickhouse_service.service123: Creation complete after 1m41s [id=aa8d8d63-1878-4600-8470-630715af38ed]
+
+Apply complete! Resources: 1 added, 0 changed, 0 destroyed.
+
+Outputs:
+
+CLICKHOUSE_HOST = "h3ljlaqez6.us-east-2.aws.clickhouse.cloud"
+➜  test
+```
+
+8). Verifique o Cloud Console; você deverá conseguir ver o serviço criado.
+
+9). Para remover/destruir o serviço novamente, execute `terraform destroy -var-file=secret.tfvars`
+
+Algo assim:
+
+```
+Terraform used the selected providers to generate the following execution plan. Resource actions are indicated with
+the following symbols:
+  - destroy
+
+Terraform will perform the following actions:
+
+  # clickhouse_service.service123 will be destroyed
+  - resource "clickhouse_service" "service123" {
+      - cloud_provider = "aws" -> null
+      - ............
+
+Plan: 0 to add, 0 to change, 1 to destroy.
+
+Changes to Outputs:
+  - CLICKHOUSE_HOST = "h3ljlaqez6.us-east-2.aws.clickhouse.cloud" -> null
+
+Do you really want to destroy all resources?
+  Terraform will destroy all your managed infrastructure, as shown above.
+  There is no undo. Only 'yes' will be accepted to confirm.
+
+  Enter a value:
+```
+
+Digite yes e pressione Enter
+
+10).
+
+```
+clickhouse_service.service123: Destroying... [id=aa8d8d63-1878-4600-8470-630715af38ed]
+clickhouse_service.service123: Still destroying... [id=aa8d8d63-1878-4600-8470-630715af38ed, 10s elapsed]
+clickhouse_service.service123: Still destroying... [id=aa8d8d63-1878-4600-8470-630715af38ed, 20s elapsed]
+clickhouse_service.service123: Destruction complete after 27s
+
+Destroy complete! Resources: 1 destroyed.
+```
+
+E ele deve desaparecer do Cloud Console.
+
+Mais detalhes sobre a API do Cloud podem ser encontrados aqui - [https://clickhouse.com/docs/cloud/manage/api/api-overview](https://clickhouse.com/docs/cloud/manage/api/api-overview)

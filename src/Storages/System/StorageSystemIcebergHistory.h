@@ -29,7 +29,13 @@ public:
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
 
-    void fillData([[maybe_unused]] MutableColumns & res_columns, [[maybe_unused]] ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const override;
+    void fillData(
+        [[maybe_unused]] MutableColumns & res_columns,
+        [[maybe_unused]] ContextPtr context,
+        [[maybe_unused]] const ActionsDAG::Node * predicate,
+        std::vector<UInt8>) const override;
+
+    Block getFilterSampleBlock() const override;
 };
 
 }

@@ -1,4 +1,5 @@
 #include <chrono>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Storages/System/StorageSystemZooKeeperWatches.h>
 
 #include <DataTypes/DataTypeDateTime.h>
@@ -48,6 +49,7 @@ static Int8 watchTypeFromOpNum(Coordination::OpNum op_num)
         case Coordination::OpNum::SimpleList:
         case Coordination::OpNum::FilteredList:
         case Coordination::OpNum::FilteredListWithStatsAndData:
+        case Coordination::OpNum::ListWithOptions:
             return 1; /// Children
         case Coordination::OpNum::Exists:
             return 2; /// Exists
@@ -98,3 +100,6 @@ void StorageSystemZooKeeperWatches::fillData(
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemZooKeeperWatches) }

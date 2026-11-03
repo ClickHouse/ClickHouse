@@ -1,0 +1,12 @@
+projections_off
+Sorting (Sorting for GROUP BY top-K)
+Top-K: limit=10, columns=1, directions=[1]
+full_projection
+full_projection_order_by
+Sorting (Sorting for ORDER BY)
+results_match
+0	0	10	10
+mixed_parts
+AggregatingProjection
+mixed_results_match
+0	0	10	10

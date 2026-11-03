@@ -1,0 +1,231 @@
+---
+title: 'MergeTree로 분석 가속화'
+sidebarTitle: '쿼리 가속화'
+slug: /use-cases/data-lake/getting-started/accelerating-analytics
+toc_max_heading_level: 3
+description: '오픈 테이블 포맷의 데이터를 ClickHouse MergeTree 테이블로 로드해 분석 쿼리 성능을 획기적으로 높입니다.'
+keywords: ['데이터 레이크', 'lakehouse', 'MergeTree', '가속', '분석', 'inverted index', 'full-text index', 'INSERT INTO SELECT']
+doc_type: 'guide'
+---
+
+[이전 섹션](/ko/guides/use-cases/data-warehousing/getting-started/connecting-catalogs)에서는 ClickHouse를 데이터 카탈로그에 연결하고 오픈 테이블 포맷을 직접 쿼리했습니다. 데이터를 원본 위치에서 직접 쿼리하는 방식은 편리하지만, 오픈 테이블 포맷은 대시보드와 운영 보고를 뒷받침하는 낮은 지연 시간, 높은 동시성 워크로드에 맞게 최적화되어 있지 않습니다. 이러한 사용 사례에서는 데이터를 ClickHouse의 [MergeTree](/ko/reference/engines/table-engines/mergetree-family/mergetree) 엔진에 로드하면 훨씬 뛰어난 성능을 얻을 수 있습니다.
+
+MergeTree는 오픈 테이블 포맷을 직접 읽는 방식보다 다음과 같은 여러 장점을 제공합니다:
+
+* **[희소 프라이머리 인덱스](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes)** - 선택한 키를 기준으로 디스크에 데이터를 정렬하므로, ClickHouse가 쿼리 중 관련 없는 대규모 행 범위를 건너뛸 수 있습니다.
+* **향상된 데이터 타입** - [JSON](/ko/concepts/best-practices/json-type), [LowCardinality](/ko/reference/data-types/lowcardinality), [Enum](/ko/reference/data-types/enum)과 같은 타입을 네이티브로 지원하여 더 압축된 저장과 더 빠른 처리를 가능하게 합니다.
+* **[Skip indices](/ko/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes)** 및 **[full-text indices](/ko/reference/engines/table-engines/mergetree-family/textindexes)** - 쿼리의 필터 프레디케이트와 일치하지 않는 그래뉼을 ClickHouse가 건너뛸 수 있게 해 주는 세컨더리 인덱스 구조로, 특히 텍스트 검색 워크로드에서 효과적입니다.
+* **자동 compaction을 지원하는 빠른 삽입** - ClickHouse는 높은 처리량의 삽입을 위해 설계되었으며, 오픈 테이블 포맷의 compaction과 유사하게 백그라운드에서 데이터 파트를 자동으로 머지합니다.
+* **동시 읽기에 최적화** - MergeTree의 열 지향 저장 레이아웃은 [여러 캐싱 계층](/ko/concepts/features/performance/caches/caches)과 결합되어 높은 동시성의 실시간 분석 워크로드를 지원합니다. 이는 오픈 테이블 포맷이 본래 고려한 설계 목적이 아닙니다.
+
+이 가이드에서는 더 빠른 분석을 위해 `INSERT INTO SELECT`를 사용해 카탈로그의 데이터를 MergeTree 테이블로 로드하는 방법을 설명합니다.
+
+<div id="connect-catalog">
+  ## 카탈로그에 연결하기
+</div>
+
+이전 [가이드](/ko/guides/use-cases/data-warehousing/getting-started/connecting-catalogs)에서 사용한 것과 동일한 Unity Catalog 연결을 사용하여 Iceberg REST 엔드포인트를 통해 연결합니다:
+
+```sql
+SET allow_database_iceberg = 1;
+
+CREATE DATABASE unity
+ENGINE = DataLakeCatalog('https://<workspace-id>.cloud.databricks.com/api/2.1/unity-catalog/iceberg-rest')
+SETTINGS catalog_type = 'rest', catalog_credential = '<client-id>:<client-secret>', warehouse = 'workspace',
+oauth_server_uri = 'https://<workspace-id>.cloud.databricks.com/oidc/v1/token', auth_scope = 'all-apis,sql';
+```
+
+<div id="list-tables">
+  ### 테이블 목록 확인
+</div>
+
+```sql
+SHOW TABLES FROM unity
+```
+
+```response
+┌─name───────────────────────────────────────────────┐
+│ unity.logs                                         │
+│ unity.single_day_log                               │
+└────────────────────────────────────────────────────┘
+```
+
+<div id="explore-schema">
+  ### 스키마 탐색
+</div>
+
+```sql
+SHOW CREATE TABLE unity.`icebench.single_day_log`
+
+CREATE TABLE unity.`icebench.single_day_log`
+(
+    `pull_request_number` Nullable(Int64),
+    `commit_sha` Nullable(String),
+    `check_start_time` Nullable(DateTime64(6, 'UTC')),
+    `check_name` Nullable(String),
+    `instance_type` Nullable(String),
+    `instance_id` Nullable(String),
+    `event_date` Nullable(Date32),
+    `event_time` Nullable(DateTime64(6, 'UTC')),
+    `event_time_microseconds` Nullable(DateTime64(6, 'UTC')),
+    `thread_name` Nullable(String),
+    `thread_id` Nullable(Decimal(20, 0)),
+    `level` Nullable(String),
+    `query_id` Nullable(String),
+    `logger_name` Nullable(String),
+    `message` Nullable(String),
+    `revision` Nullable(Int64),
+    `source_file` Nullable(String),
+    `source_line` Nullable(Decimal(20, 0)),
+    `message_format_string` Nullable(String)
+)
+ENGINE = Iceberg('s3://...')
+```
+
+이 테이블에는 ClickHouse CI 테스트 실행에서 생성된 약 2억 8,300만 개의 로그 행이 들어 있으며, 분석 성능을 살펴보기에 적합한 현실적인 데이터셋입니다.
+
+```sql
+SELECT count()
+FROM unity.`icebench.single_day_log`
+```
+
+```response
+┌───count()─┐
+│ 282634391 │ -- 2억 8263만
+└───────────┘
+
+1 row in set. Elapsed: 1.265 sec.
+```
+
+<div id="query-lakehouse">
+  ## 데이터 레이크 테이블 쿌리하기
+</div>
+
+스레드 이름과 인스턴스 유형으로 logs를 필터링하고, 메시지 텍스트에서 오류를 검색한 뒤, 로거별로 결과를 그룹화하는 쿼리를 실행해 보겠습니다:
+
+```sql
+SELECT
+    logger_name,
+    count() AS c
+FROM icebench.`icebench.single_day_log`
+WHERE (thread_name = 'TCPHandler')
+    AND (instance_type = 'm6i.4xlarge')
+    AND hasToken(message, 'error')
+GROUP BY logger_name
+ORDER BY c DESC
+LIMIT 5
+```
+
+```response
+┌─logger_name──────────────┬────c─┐
+│ executeQuery             │ 6907 │
+│ TCPHandler               │ 4145 │
+│ TCP-Session              │  790 │
+│ PostgreSQLConnectionPool │  530 │
+│ ContextAccess (default)  │  392 │
+└──────────────────────────┴──────┘
+
+5 rows in set. Elapsed: 8.921 sec. Processed 282.63 million rows, 5.42 GB (31.68 million rows/s., 607.26 MB/s.)
+Peak memory usage: 4.35 GiB.
+```
+
+이 쿼리는 ClickHouse가 객체 스토리지의 모든 Parquet 파일을 대상으로 전체 테이블 스캔을 수행해야 하므로 거의 **9초**가 소요됩니다. 파티셔닝으로 성능을 개선할 수는 있지만, `logger_name` 같은 컬럼은 카디널리티가 너무 높아 효과적인 파티셔닝이 어려울 수 있습니다. 또한 데이터를 더 줄여서 읽기 위해 [텍스트 인덱스](/ko/reference/engines/table-engines/mergetree-family/mergetree#text) 같은 인덱스도 없습니다. 바로 이런 경우에 MergeTree가 강점을 발휘합니다.
+
+<div id="load-data">
+  ## MergeTree에 데이터 적재
+</div>
+
+<div id="create-table">
+  ### 최적화된 테이블 만들기
+</div>
+
+스키마를 최적화하는 몇 가지 방법을 적용하여 MergeTree 테이블을 생성합니다. Iceberg 스키마와 비교하면 몇 가지 주요 차이점이 있습니다.
+
+* **`Nullable` 래퍼를 사용하지 않음** - `Nullable`을 제거하면 저장 효율성과 쿼리 성능이 향상됩니다.
+* **`level`, `instance_type`, `thread_name`, `check_name` 컬럼의 `LowCardinality(String)`** - 고유값이 적은 컬럼을 딕셔너리 인코딩하여 압축 효율을 높이고 필터링을 더 빠르게 수행합니다.
+* **`message` 컬럼의 [전문 검색 인덱스](/ko/reference/engines/table-engines/mergetree-family/textindexes)** - `hasToken(message, 'error')`와 같은 토큰 기반 텍스트 검색을 가속화합니다.
+* **`(instance_type, thread_name, toStartOfMinute(event_time))`로 지정한 `ORDER BY` 키** - 자주 사용하는 필터 패턴에 맞춰 디스크에 데이터를 정렬하므로 [희소 프라이머리 인덱스](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes)가 관련 없는 그래뉼을 건너뛸 수 있습니다.
+
+```sql
+SET enable_full_text_index = 1;
+
+CREATE TABLE single_day_log
+(
+    `pull_request_number` Int64,
+    `commit_sha` String,
+    `check_start_time` DateTime64(6, 'UTC'),
+    `check_name` LowCardinality(String),
+    `instance_type` LowCardinality(String),
+    `instance_id` String,
+    `event_date` Date32,
+    `event_time` DateTime64(6, 'UTC'),
+    `event_time_microseconds` DateTime64(6, 'UTC'),
+    `thread_name` LowCardinality(String),
+    `thread_id` Decimal(20, 0),
+    `level` LowCardinality(String),
+    `query_id` String,
+    `logger_name` String,
+    `message` String,
+    `revision` Int64,
+    `source_file` String,
+    `source_line` Decimal(20, 0),
+    `message_format_string` String,
+    INDEX text_idx(message) TYPE text(tokenizer = splitByNonAlpha)
+)
+ENGINE = MergeTree
+ORDER BY (instance_type, thread_name, toStartOfMinute(event_time))
+```
+
+<div id="insert-data">
+  ### 카탈로그에서 데이터 삽입
+</div>
+
+`INSERT INTO SELECT`를 사용하여 데이터 레이크 테이블에 있는 약 3억 건의 데이터를 ClickHouse 테이블에 적재합니다:
+
+```sql
+INSERT INTO single_day_log SELECT * FROM icebench.`icebench.single_day_log`
+```
+
+```response
+282634391 rows in set. Elapsed: 237.680 sec. Processed 282.63 million rows, 5.42 GB (1.19 million rows/s., 22.79 MB/s.)
+Peak memory usage: 18.62 GiB.
+```
+
+<div id="reexecute-query">
+  ## 쿼리 다시 실행하기
+</div>
+
+이제 동일한 쿼리를 MergeTree 테이블에서 다시 실행하면 성능이 크게 향상되는 것을 확인할 수 있습니다:
+
+```sql
+SELECT
+    logger_name,
+    count() AS c
+FROM single_day_log
+WHERE (thread_name = 'TCPHandler')
+    AND (instance_type = 'm6i.4xlarge')
+    AND hasToken(message, 'error')
+GROUP BY logger_name
+ORDER BY c DESC
+LIMIT 5
+```
+
+```response
+┌─logger_name──────────────┬────c─┐
+│ executeQuery             │ 6907 │
+│ TCPHandler               │ 4145 │
+│ TCP-Session              │  790 │
+│ PostgreSQLConnectionPool │  530 │
+│ ContextAccess (default)  │  392 │
+└──────────────────────────┴──────┘
+
+5 rows in set. Elapsed: 0.220 sec. Processed 13.84 million rows, 2.85 GB (62.97 million rows/s., 12.94 GB/s.)
+Peak memory usage: 1.12 GiB.
+```
+
+이제 동일한 쿼리가 **0.22초** 만에 완료되며, **약 40배 빨라졌습니다**. 이러한 개선은 두 가지 핵심 최적화에서 비롯됩니다.
+
+* **희소 프라이머리 인덱스** - `ORDER BY (instance_type, thread_name, ...)` 키 덕분에 ClickHouse는 `instance_type = 'm6i.4xlarge'` 및 `thread_name = 'TCPHandler'`와 일치하는 그래뉼로 바로 건너뛸 수 있어, 처리해야 하는 행 수를 2억 8,300만 개에서 1,400만 개로 줄일 수 있습니다.
+* **전문 검색 인덱스** - `message` 컬럼의 `text_idx` 인덱스를 사용하면 `hasToken(message, 'error')`를 모든 메시지 문자열을 스캔하지 않고 인덱스를 통해 처리할 수 있으므로, ClickHouse가 읽어야 하는 데이터가 더욱 줄어듭니다.
+
+그 결과, 이 쿼리는 실시간 대시보드를 충분히 구동할 수 있는 성능을 제공합니다. 이는 객체 스토리지의 Parquet 파일을 쿼리하는 방식으로는 따라올 수 없는 규모와 지연 시간입니다.

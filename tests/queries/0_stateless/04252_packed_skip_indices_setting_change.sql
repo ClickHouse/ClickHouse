@@ -13,6 +13,8 @@
 --
 -- Test both Compact and Wide part layouts.
 
+SET explain_query_plan_default = 'legacy';
+
 -- ------------------------------------------------------------------
 -- Wide: threshold raised from 0 (packing disabled) to 1 MiB.
 -- ------------------------------------------------------------------
@@ -52,7 +54,7 @@ SELECT 'wide_off2on_index_filters_after_merge', countIf(
     splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[1]::UInt64
     < splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[2]::UInt64)
 FROM (EXPLAIN indexes = 1 SELECT * FROM t_wide_off_to_on WHERE v = 700) AS s
-WHERE explain LIKE '%Granules:%' AND explain NOT LIKE '%PrimaryKey%' SETTINGS allow_experimental_analyzer = 1;
+WHERE explain LIKE '%Granules:%' AND explain NOT LIKE '%PrimaryKey%';
 CHECK TABLE t_wide_off_to_on SETTINGS check_query_single_value_result = 1;
 
 DROP TABLE t_wide_off_to_on;
@@ -93,7 +95,7 @@ SELECT 'wide_on2off_index_filters_after_merge', countIf(
     splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[1]::UInt64
     < splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[2]::UInt64)
 FROM (EXPLAIN indexes = 1 SELECT * FROM t_wide_on_to_off WHERE v = 700) AS s
-WHERE explain LIKE '%Granules:%' AND explain NOT LIKE '%PrimaryKey%' SETTINGS allow_experimental_analyzer = 1;
+WHERE explain LIKE '%Granules:%' AND explain NOT LIKE '%PrimaryKey%';
 CHECK TABLE t_wide_on_to_off SETTINGS check_query_single_value_result = 1;
 
 DROP TABLE t_wide_on_to_off;
@@ -139,7 +141,7 @@ SELECT 'compact_off2on_index_filters_after_merge', countIf(
     splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[1]::UInt64
     < splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[2]::UInt64)
 FROM (EXPLAIN indexes = 1 SELECT * FROM t_compact_off_to_on WHERE v = 700) AS s
-WHERE explain LIKE '%Granules:%' AND explain NOT LIKE '%PrimaryKey%' SETTINGS allow_experimental_analyzer = 1;
+WHERE explain LIKE '%Granules:%' AND explain NOT LIKE '%PrimaryKey%';
 CHECK TABLE t_compact_off_to_on SETTINGS check_query_single_value_result = 1;
 
 DROP TABLE t_compact_off_to_on;
@@ -184,7 +186,7 @@ SELECT 'compact_on2off_index_filters_after_merge', countIf(
     splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[1]::UInt64
     < splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[2]::UInt64)
 FROM (EXPLAIN indexes = 1 SELECT * FROM t_compact_on_to_off WHERE v = 700) AS s
-WHERE explain LIKE '%Granules:%' AND explain NOT LIKE '%PrimaryKey%' SETTINGS allow_experimental_analyzer = 1;
+WHERE explain LIKE '%Granules:%' AND explain NOT LIKE '%PrimaryKey%';
 CHECK TABLE t_compact_on_to_off SETTINGS check_query_single_value_result = 1;
 
 DROP TABLE t_compact_on_to_off;
@@ -212,7 +214,7 @@ SELECT 'wide_flip_off2on_index_filters', countIf(
     splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[1]::UInt64
     < splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[2]::UInt64)
 FROM (EXPLAIN indexes = 1 SELECT * FROM t_wide_flip_mutate_off2on WHERE v = 700) AS s
-WHERE explain LIKE '%Granules:%' AND explain NOT LIKE '%PrimaryKey%' SETTINGS allow_experimental_analyzer = 1;
+WHERE explain LIKE '%Granules:%' AND explain NOT LIKE '%PrimaryKey%';
 CHECK TABLE t_wide_flip_mutate_off2on SETTINGS check_query_single_value_result = 1;
 DROP TABLE t_wide_flip_mutate_off2on;
 
@@ -232,6 +234,6 @@ SELECT 'wide_flip_on2off_index_filters', countIf(
     splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[1]::UInt64
     < splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[2]::UInt64)
 FROM (EXPLAIN indexes = 1 SELECT * FROM t_wide_flip_mutate_on2off WHERE v = 700) AS s
-WHERE explain LIKE '%Granules:%' AND explain NOT LIKE '%PrimaryKey%' SETTINGS allow_experimental_analyzer = 1;
+WHERE explain LIKE '%Granules:%' AND explain NOT LIKE '%PrimaryKey%';
 CHECK TABLE t_wide_flip_mutate_on2off SETTINGS check_query_single_value_result = 1;
 DROP TABLE t_wide_flip_mutate_on2off;

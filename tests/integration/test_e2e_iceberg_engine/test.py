@@ -1,6 +1,6 @@
 """End-to-end tests for the Iceberg Table Engine (IcebergS3 / IcebergAzure).
 
-The Iceberg Table Engine provides a read-only integration with existing
+The Iceberg Table Engine provides an integration with existing
 Apache Iceberg tables.  Unlike the table functions, the engine requires a
 persistent `CREATE TABLE` statement and exposes engine-level SETTINGS for
 metadata resolution, schema evolution, and data caching.
@@ -384,7 +384,7 @@ def test_engine_primitive_types(node, manager, types_table):
 
 
 # ===================================================================
-# Read-only nature of the engine
+# Writing through the engine
 # ===================================================================
 
 

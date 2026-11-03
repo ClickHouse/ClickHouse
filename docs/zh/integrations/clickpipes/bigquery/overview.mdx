@@ -1,0 +1,110 @@
+---
+sidebarTitle: '概览'
+description: '如何使用 ClickPipes 将数据从 BigQuery 导出到 ClickHouse Cloud。'
+slug: /integrations/clickpipes/bigquery/overview
+title: 'BigQuery 与 ClickHouse Cloud 集成'
+doc_type: 'guide'
+---
+
+import IntroClickPipe from '/snippets/zh/_intro.mdx';
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<IntroClickPipe />
+
+<div id="features">
+  ## 功能
+</div>
+
+<div id="initial-load">
+  ### 初始加载
+</div>
+
+BigQuery ClickPipe 会通过一次批量操作，将 BigQuery [数据集](https://docs.cloud.google.com/bigquery/docs/datasets-intro) 中选定的表加载到 ClickHouse 目标表中。摄取任务完成后，ClickPipe 会自动停止。初始加载的摄取过程需要用户提供一个 Google Cloud Storage (GCS) 存储桶作为暂存空间。未来，这个中间存储桶将由 ClickPipes 提供并管理。
+
+<Note>
+  ClickPipes 依赖批量提取作业将数据从 BigQuery 拉取到用于暂存的 GCS 存储桶中。此操作在 BigQuery 中**不会产生处理费用**。
+</Note>
+
+<div id="cdc">
+  ### CDC (变更数据捕获)
+</div>
+
+CDC 在私有预览阶段**暂不支持**，但未来会提供支持。在此期间，我们建议在完成初始加载后，使用 [Google Cloud Storage ClickPipe](/zh/integrations/clickpipes/object-storage/google-cloud-storage/overview) 持续将 BigQuery 导出的数据同步到 ClickHouse Cloud。
+
+<div id="data-type-mapping">
+  ## 数据类型映射
+</div>
+
+[BigQuery 数据类型](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/data-types)。
+
+| BigQuery 数据类型     | ClickHouse 数据类型 | 详情                             |
+| ----------------- | --------------- | ------------------------------ |
+| `BOOL`            | `Bool`          |                                |
+| `INT64`           | `Int64`         |                                |
+| `FLOAT64`         | `Float64`       |                                |
+| `NUMERIC`         | `Decimal(P, S)` | 精度最高可达 38，标度最高可达 9。精度/标度将被保留。  |
+| `BIGNUMERIC`      | `Decimal(P, S)` | 精度最高可达 76，标度最高可达 38。精度/标度将被保留。 |
+| `STRING`          | `String`        |                                |
+| `BYTES`           | `String`        |                                |
+| `JSON`            | `String` (JSON) |                                |
+| `DATE`            | `Date`          |                                |
+| `TIME`            | `String`        | 微秒级精度。                         |
+| `DATETIME`        | `DateTime`      | 微秒级精度。                         |
+| `TIMESTAMP`       | `DateTime64(6)` | 微秒级精度。                         |
+| `GEOGRAPHY`       | `String`        |                                |
+| `GEOMETRY`        | `String`        |                                |
+| `UUID`            | `String`        |                                |
+| `ARRAY<T>`        | `Array(T)`      |                                |
+| `ARRAY<DATE>`     | `Array(Date)`   |                                |
+| `STRUCT` (RECORD) | `String`        |                                |
+
+<div id="access-control">
+  ## 访问控制
+</div>
+
+<div id="authentication">
+  ### 身份验证
+</div>
+
+<div id="service-account-credentials">
+  #### 服务账号凭证
+</div>
+
+ClickPipes 使用[服务账号密钥](https://docs.cloud.google.com/iam/docs/keys-create-delete)对你的 Google Cloud 项目进行身份验证。我们建议创建一个专用的服务账号，并仅授予满足要求的最小[权限](#permissions)，以便 ClickPipes 能够从 BigQuery 导出数据、将其加载到暂存 GCS 存储桶中，并将其读入 ClickHouse。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_iam.webp" alt="创建具有 BigQuery 和云存储权限的服务账号密钥" size="lg" border />
+
+<div id="permissions">
+  ### 权限
+</div>
+
+<div id="bigquery">
+  #### BigQuery
+</div>
+
+服务账号必须具备以下 BigQuery 角色：
+
+* [`roles/bigquery.dataViewer`](https://docs.cloud.google.com/bigquery/docs/access-control#bigquery.dataViewer)
+* [`roles/bigquery.jobUser`](https://docs.cloud.google.com/bigquery/docs/access-control#bigquery.jobUser)
+
+为进一步缩小访问范围，我们建议使用 [IAM 条件](https://docs.cloud.google.com/bigquery/docs/conditions) 来限制该角色可访问的资源。例如，你可以将 `dataViewer` 角色限制为仅可访问包含待同步表的特定数据集：
+
+```bash
+resource.name.startsWith("projects/<PROJECT_ID>/datasets/<DATASET_NAME>")
+```
+
+<div id="cloud-storage">
+  #### 云存储
+</div>
+
+服务账号必须具备以下 Cloud Storage 角色：
+
+* [`roles/storage.objectAdmin`](https://docs.cloud.google.com/storage/docs/access-control/iam-roles#storage.objectAdmin)
+* [`roles/storage.bucketViewer`](https://docs.cloud.google.com/storage/docs/access-control/iam-roles#storage.bucketViewer)
+
+为进一步收窄访问范围，我们建议使用 [IAM 条件](https://docs.cloud.google.com/bigquery/docs/conditions) 来限制角色可访问的资源。例如，你可以将 `objectAdmin` 和 `bucketViewer` 角色限制为只能访问专门为 ClickPipes 同步创建的存储桶。
+
+```bash
+resource.name.startsWith("projects/_/buckets/<BUCKET_NAME>")
+```

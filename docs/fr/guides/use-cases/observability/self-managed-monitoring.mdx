@@ -1,0 +1,47 @@
+---
+slug: /use-cases/observability/oss-monitoring
+title: 'Monitoring autogéré'
+sidebarTitle: 'Monitoring autogéré'
+description: 'Guide du monitoring autogéré'
+doc_type: 'guide'
+keywords: ['observabilité', 'monitoring', 'autogéré', 'métriques', 'santé du système']
+---
+
+import ObservabilityIntegrations from '/snippets/fr/_observability_integration_options.mdx';
+import DirectIntegrations from '/snippets/fr/_direct_observability_integration_options.mdx';
+import CommunityMonitoring from '/snippets/fr/_community_monitoring.mdx';
+
+Ce guide fournit aux équipes d’entreprise qui évaluent la version open-source de ClickHouse des informations détaillées sur les capacités de monitoring et d’observabilité pour les déploiements de production. Les clients Enterprise demandent fréquemment quelles fonctionnalités de monitoring sont disponibles prêtes à l’emploi, quelles sont les possibilités d’intégration avec les stacks d’observabilité existantes, notamment avec des outils comme Datadog et AWS CloudWatch, et comment le monitoring de ClickHouse se compare à celui des déploiements auto-hébergés.
+
+<div id="prometheus">
+  ### Architecture d’intégration basée sur Prometheus
+</div>
+
+ClickHouse expose des métriques compatibles Prometheus via différents endpoints selon votre modèle de déploiement, chacun présentant des caractéristiques opérationnelles distinctes :
+
+**ClickHouse auto-géré/OSS**
+
+Endpoint Prometheus direct du serveur, accessible via l’endpoint standard `/metrics` sur votre serveur ClickHouse. Cette approche offre :
+
+* Exposition complète des métriques : ensemble complet des métriques ClickHouse disponibles, sans filtrage intégré
+* Métriques en temps réel : générées directement à partir des tables système lors du scrape
+
+**Accès direct au système**
+
+Interroge les tables système de production, ce qui ajoute une charge de monitoring et empêche les états d’inactivité permettant de réduire les coûts
+
+<ObservabilityIntegrations />
+
+<div id="clickstack-deployment">
+  ### Options de déploiement de ClickStack
+</div>
+
+* [Helm](/fr/clickstack/deployment/helm) : recommandé pour les environnements de débogage basés sur Kubernetes. Permet une configuration propre à l’environnement, des limites de ressources et la mise à l’échelle via `values.yaml`.
+* [Docker Compose](/fr/clickstack/deployment/docker-compose) : déploie chaque composant (ClickHouse, HyperDX, OTel collector, MongoDB) individuellement.
+* [HyperDX uniquement](/fr/clickstack/deployment/hyperdx-only) : conteneur HyperDX autonome.
+
+Pour consulter l’ensemble des options de déploiement et les détails de l’architecture, reportez-vous à la [documentation ClickStack](/fr/clickstack/overview) et au [guide d’ingestion des données](/fr/clickstack/ingesting-data/overview).
+
+<DirectIntegrations />
+
+<CommunityMonitoring />

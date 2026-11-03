@@ -1,0 +1,34 @@
+---
+title: 'أنواع البيانات المدعومة'
+slug: /integrations/clickpipes/mongodb/datatypes
+description: 'صفحة تصف تعيين أنواع البيانات في MongoDB ClickPipe من MongoDB إلى ClickHouse'
+doc_type: 'reference'
+keywords: ['clickpipes', 'mongodb', 'cdc', 'إدخال البيانات', 'مزامنة في الوقت الفعلي']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+يخزّن MongoDB سجلات البيانات على هيئة مستندات BSON. في ClickPipes، يمكنك تهيئة إدخال مستندات BSON إلى ClickHouse إما كـ JSON أو JSON String. يوضّح الجدول التالي تعيين أنواع حقول BSON إلى JSON المدعومة:
+
+| نوع BSON في MongoDB | نوع JSON في ClickHouse                       | ملاحظات                                                                                                                                                                                                                |
+| ------------------- | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ObjectId            | String                                       |                                                                                                                                                                                                                        |
+| String              | String                                       |                                                                                                                                                                                                                        |
+| عدد صحيح 32-بت      | Int64                                        |                                                                                                                                                                                                                        |
+| عدد صحيح 64-بت      | Int64                                        |                                                                                                                                                                                                                        |
+| Double              | Float64                                      |                                                                                                                                                                                                                        |
+| Boolean             | Bool                                         |                                                                                                                                                                                                                        |
+| Date                | String                                       | بتنسيق ISO 8601                                                                                                                                                                                                        |
+| Regular Expression  | &#123;Options: String, Pattern: String&#125; | تعبير نمطي في MongoDB بحقول ثابتة: Options (علامات regex) وPattern (نمط regex)                                                                                                                                         |
+| Timestamp           | &#123;T: Int64, I: Int64&#125;               | تنسيق الطابع الزمني الداخلي في MongoDB مع حقول ثابتة: T (الطابع الزمني) وI (الزيادة)                                                                                                                                   |
+| Decimal128          | String                                       |                                                                                                                                                                                                                        |
+| Binary data         | &#123;Data: String, Subtype: Int64&#125;     | بيانات ثنائية في MongoDB بحقول ثابتة: Data (مرمّزة بتنسيق base64) وSubtype ([نوع البيانات الثنائية](https://www.mongodb.com/docs/manual/reference/bson-types/#binary-data))                                            |
+| JavaScript          | String                                       |                                                                                                                                                                                                                        |
+| Null                | Null                                         |                                                                                                                                                                                                                        |
+| Array               | Dynamic                                      | تتحول المصفوفات ذات الأنواع المتجانسة إلى Array(Nullable(T))؛ وتُرقّى المصفوفات ذات الأنواع البدائية المختلطة إلى النوع العام المشترك الأكثر شمولًا؛ أما المصفوفات ذات الأنواع المعقدة غير المتوافقة فتتحول إلى Tuples |
+| Object              | Dynamic                                      | يُعيَّن كل حقل متداخل بشكل تكراري                                                                                                                                                                                      |
+
+<Info>
+  لمعرفة المزيد عن نوع بيانات JSON في ClickHouse، راجع [وثائقنا](/ar/reference/data-types/newjson).
+</Info>

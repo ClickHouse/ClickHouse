@@ -1,0 +1,520 @@
+---
+title: 'Compatibilidad de DataStore con Pandas'
+sidebarTitle: 'Compatibilidad con Pandas'
+slug: /chdb/datastore/pandas-compat
+description: 'Lista completa de métodos compatibles con pandas en DataStore (209 métodos de pandas DataFrame)'
+keywords: ['chdb', 'datastore', 'pandas', 'compatibility', 'dataframe', 'methods']
+doc_type: 'reference'
+---
+
+DataStore implementa **209 métodos de pandas DataFrame** para ofrecer compatibilidad total con la API. Su código actual de pandas funciona con cambios mínimos.
+
+<div id="approach">
+  ## Enfoque de compatibilidad
+</div>
+
+```python
+# Typical migration - just change the import
+- import pandas as pd
++ from chdb import datastore as pd
+
+# Your code works unchanged
+df = pd.read_csv("data.csv")
+result = df[df['age'] > 25].groupby('city')['salary'].mean()
+```
+
+**Principios clave:**
+
+* Implementación de los 209 métodos de pandas DataFrame
+* Evaluación diferida para optimizar SQL
+* Encapsulación automática de tipos (DataFrame → DataStore, Series → ColumnExpr)
+* Operaciones inmutables (sin `inplace=True`)
+
+***
+
+<div id="attributes">
+  ## Atributos y propiedades
+</div>
+
+| Propiedad | Descripción                    | Desencadena la ejecución |
+| --------- | ------------------------------ | ------------------------ |
+| `shape`   | tupla (filas, columnas)        | Sí                       |
+| `columns` | Nombres de columnas (Index)    | Sí                       |
+| `dtypes`  | Tipos de datos de las columnas | Sí                       |
+| `values`  | array de NumPy                 | Sí                       |
+| `index`   | Índice de fila                 | Sí                       |
+| `size`    | Número de elementos            | Sí                       |
+| `ndim`    | Número de dimensiones          | No                       |
+| `empty`   | Si el DataFrame está vacío     | Sí                       |
+| `T`       | Transposición                  | Sí                       |
+| `axes`    | Lista de ejes                  | Sí                       |
+
+**Ejemplos:**
+
+```python
+from chdb import datastore as pd
+
+ds = pd.read_csv("data.csv")
+
+print(ds.shape)      # (1000, 5)
+print(ds.columns)    # Index(['name', 'age', 'city', 'salary', 'dept'])
+print(ds.dtypes)     # name: object, age: int64, ...
+print(ds.empty)      # False
+```
+
+***
+
+<div id="indexing">
+  ## Indexación y Selección
+</div>
+
+| Método                 | Descripción                 | Ejemplo                              |
+| ---------------------- | --------------------------- | ------------------------------------ |
+| `df['col']`            | Seleccionar una columna     | `ds['age']`                          |
+| `df[['col1', 'col2']]` | Seleccionar columnas        | `ds[['name', 'age']]`                |
+| `df[condition]`        | Indexación booleana         | `ds[ds['age'] > 25]`                 |
+| `df.loc[...]`          | Acceso por etiquetas        | `ds.loc[0:10, 'name']`               |
+| `df.iloc[...]`         | Acceso por enteros          | `ds.iloc[0:10, 0:3]`                 |
+| `df.at[...]`           | Un solo valor por etiqueta  | `ds.at[0, 'name']`                   |
+| `df.iat[...]`          | Un solo valor por posición  | `ds.iat[0, 0]`                       |
+| `df.head(n)`           | Primeras n filas            | `ds.head(10)`                        |
+| `df.tail(n)`           | Últimas n filas             | `ds.tail(10)`                        |
+| `df.sample(n)`         | Muestra aleatoria           | `ds.sample(100)`                     |
+| `df.select_dtypes()`   | Seleccionar por Dtype       | `ds.select_dtypes(include='number')` |
+| `df.query()`           | Expresión de consulta       | `ds.query('age > 25')`               |
+| `df.where()`           | Reemplazo condicional       | `ds.where(ds['age'] > 0, 0)`         |
+| `df.mask()`            | `where` inverso             | `ds.mask(ds['age'] < 0, 0)`          |
+| `df.isin()`            | Pertenencia a valores       | `ds['city'].isin(['NYC', 'LA'])`     |
+| `df.get()`             | Acceso seguro a una columna | `ds.get('col', default=None)`        |
+| `df.xs()`              | Sección transversal         | `ds.xs('key')`                       |
+| `df.pop()`             | Eliminar una columna        | `ds.pop('col')`                      |
+
+***
+
+<div id="statistical">
+  ## Métodos estadísticos
+</div>
+
+| Método           | Descripción                 | Equivalente en SQL |
+| ---------------- | --------------------------- | ------------------ |
+| `mean()`         | Media                       | `AVG()`            |
+| `median()`       | Mediana                     | `MEDIAN()`         |
+| `mode()`         | Moda                        | -                  |
+| `std()`          | Desviación estándar         | `STDDEV()`         |
+| `var()`          | Varianza                    | `VAR()`            |
+| `min()`          | Mínimo                      | `MIN()`            |
+| `max()`          | Máximo                      | `MAX()`            |
+| `sum()`          | Suma                        | `SUM()`            |
+| `prod()`         | Producto                    | -                  |
+| `count()`        | Recuento de valores no NULL | `COUNT()`          |
+| `nunique()`      | Recuento de valores únicos  | `UNIQ()`           |
+| `value_counts()` | Frecuencia de valores       | `GROUP BY`         |
+| `quantile()`     | Cuantil                     | `QUANTILE()`       |
+| `describe()`     | Estadísticas resumidas      | -                  |
+| `corr()`         | Matriz de correlación       | `CORR()`           |
+| `cov()`          | Matriz de covarianza        | `COV()`            |
+| `corrwith()`     | Correlación por pares       | -                  |
+| `rank()`         | Ranking de valores          | `RANK()`           |
+| `abs()`          | Valores absolutos           | `ABS()`            |
+| `round()`        | Redondear valores           | `ROUND()`          |
+| `clip()`         | Limitar valores             | -                  |
+| `cumsum()`       | Suma acumulada              | función de ventana |
+| `cumprod()`      | Producto acumulado          | función de ventana |
+| `cummin()`       | Mínimo acumulado            | función de ventana |
+| `cummax()`       | Máximo acumulado            | función de ventana |
+| `diff()`         | Diferencia                  | función de ventana |
+| `pct_change()`   | Cambio porcentual           | función de ventana |
+| `skew()`         | Asimetría                   | `SKEW()`           |
+| `kurt()`         | Curtosis                    | `KURT()`           |
+| `sem()`          | Error estándar              | -                  |
+| `all()`          | Todos true                  | -                  |
+| `any()`          | Alguno true                 | -                  |
+| `idxmin()`       | Índice del mínimo           | -                  |
+| `idxmax()`       | Índice del máximo           | -                  |
+
+**Ejemplos:**
+
+```python
+ds = pd.read_csv("data.csv")
+
+# Basic statistics
+print(ds['salary'].mean())
+print(ds['age'].std())
+print(ds.describe())
+
+# Group statistics
+print(ds.groupby('department')['salary'].mean())
+print(ds.groupby('city').agg({'salary': ['mean', 'std'], 'age': 'count'}))
+```
+
+***
+
+<div id="manipulation">
+  ## Manipulación de datos
+</div>
+
+| Método              | Descripción                |
+| ------------------- | -------------------------- |
+| `drop()`            | Eliminar filas/columnas    |
+| `drop_duplicates()` | Eliminar duplicados        |
+| `duplicated()`      | Marcar duplicados          |
+| `dropna()`          | Eliminar valores faltantes |
+| `fillna()`          | Rellenar valores faltantes |
+| `ffill()`           | Relleno hacia adelante     |
+| `bfill()`           | Relleno hacia atrás        |
+| `interpolate()`     | Interpolar valores         |
+| `replace()`         | Reemplazar valores         |
+| `rename()`          | Renombrar columnas/índice  |
+| `rename_axis()`     | Renombrar eje              |
+| `assign()`          | Añadir columnas nuevas     |
+| `astype()`          | Convertir tipos            |
+| `convert_dtypes()`  | Inferir tipos              |
+| `copy()`            | Copiar DataFrame           |
+
+**Ejemplos:**
+
+```python
+ds = pd.read_csv("data.csv")
+
+# Drop operations
+result = ds.drop(columns=['unused_col'])
+result = ds.drop_duplicates(subset=['user_id'])
+result = ds.dropna(subset=['email'])
+
+# Fill operations
+result = ds.fillna(0)
+result = ds.fillna({'age': 0, 'name': 'Unknown'})
+
+# Transform operations
+result = ds.rename(columns={'old_name': 'new_name'})
+result = ds.assign(
+    full_name=lambda x: x['first_name'] + ' ' + x['last_name'],
+    age_group=lambda x: pd.cut(x['age'], bins=[0, 25, 50, 100])
+)
+```
+
+***
+
+<div id="sorting">
+  ## Ordenación y clasificación
+</div>
+
+| Método          | Descripción             |
+| --------------- | ----------------------- |
+| `sort_values()` | Ordenar por valores     |
+| `sort_index()`  | Ordenar por índice      |
+| `nlargest()`    | Los N valores más altos |
+| `nsmallest()`   | Los N valores más bajos |
+
+**Ejemplos:**
+
+```python
+# Sort by single column
+result = ds.sort_values('salary', ascending=False)
+
+# Sort by multiple columns
+result = ds.sort_values(['department', 'salary'], ascending=[True, False])
+
+# Get top/bottom N
+result = ds.nlargest(10, 'salary')
+result = ds.nsmallest(5, 'age')
+```
+
+***
+
+<div id="reshaping">
+  ## Reestructuración
+</div>
+
+| Method              | Description                     |
+| ------------------- | ------------------------------- |
+| `pivot()`           | Tabla dinámica                  |
+| `pivot_table()`     | Tabla dinámica con agregación   |
+| `melt()`            | Deshacer tabla dinámica         |
+| `stack()`           | Apilar columnas en el índice    |
+| `unstack()`         | Desapilar el índice en columnas |
+| `transpose()` / `T` | Transposición                   |
+| `explode()`         | Expandir listas en filas        |
+| `squeeze()`         | Reducir dimensiones             |
+| `droplevel()`       | Eliminar nivel del índice       |
+| `swaplevel()`       | Intercambiar niveles del índice |
+| `reorder_levels()`  | Reordenar niveles               |
+
+**Ejemplos:**
+
+```python
+# Pivot table
+result = ds.pivot_table(
+    values='amount',
+    index='region',
+    columns='product',
+    aggfunc='sum'
+)
+
+# Melt (unpivot)
+result = ds.melt(
+    id_vars=['name'],
+    value_vars=['score1', 'score2', 'score3'],
+    var_name='test',
+    value_name='score'
+)
+
+# Explode arrays
+result = ds.explode('tags')
+```
+
+***
+
+<div id="combining">
+  ## Combinación / Join
+</div>
+
+| Método            | Descripción            |
+| ----------------- | ---------------------- |
+| `merge()`         | Fusión al estilo SQL   |
+| `join()`          | Join por índice        |
+| `concat()`        | Concatenar             |
+| `append()`        | Añadir filas al final  |
+| `combine()`       | Combinar con función   |
+| `combine_first()` | Combinar con prioridad |
+| `update()`        | Actualizar valores     |
+| `compare()`       | Mostrar diferencias    |
+
+**Ejemplos:**
+
+```python
+# Merge (join)
+result = pd.merge(df1, df2, on='id', how='left')
+result = df1.join(df2, on='id')
+
+# Concatenate
+result = pd.concat([df1, df2, df3])
+result = pd.concat([df1, df2], axis=1)
+```
+
+***
+
+<div id="binary">
+  ## Operaciones binarias
+</div>
+
+| Método                       | Descripción              |
+| ---------------------------- | ------------------------ |
+| `add()` / `radd()`           | Suma                     |
+| `sub()` / `rsub()`           | Resta                    |
+| `mul()` / `rmul()`           | Multiplicación           |
+| `div()` / `rdiv()`           | División                 |
+| `truediv()` / `rtruediv()`   | División real            |
+| `floordiv()` / `rfloordiv()` | División entera          |
+| `mod()` / `rmod()`           | Módulo                   |
+| `pow()` / `rpow()`           | Potencia                 |
+| `dot()`                      | Multiplicación matricial |
+
+**Ejemplos:**
+
+```python
+# Arithmetic operations
+result = ds['col1'].add(ds['col2'])
+result = ds['price'].mul(ds['quantity'])
+
+# With fill_value for missing data
+result = ds['col1'].add(ds['col2'], fill_value=0)
+```
+
+***
+
+<div id="comparison">
+  ## Operaciones de comparación
+</div>
+
+| Método      | Descripción           |
+| ----------- | --------------------- |
+| `eq()`      | Igual                 |
+| `ne()`      | Distinto              |
+| `lt()`      | Menor que             |
+| `le()`      | Menor o igual que     |
+| `gt()`      | Mayor que             |
+| `ge()`      | Mayor o igual que     |
+| `equals()`  | Comprobar la igualdad |
+| `compare()` | Mostrar diferencias   |
+
+***
+
+<div id="application">
+  ## Aplicación de funciones
+</div>
+
+| Método                  | Descripción                 |
+| ----------------------- | --------------------------- |
+| `apply()`               | Aplicar una función         |
+| `applymap()`            | Aplicar elemento a elemento |
+| `map()`                 | Asignar valores             |
+| `agg()` / `aggregate()` | Agregación                  |
+| `transform()`           | Transformar                 |
+| `pipe()`                | Encadenar funciones         |
+| `groupby()`             | Agrupar por                 |
+
+**Ejemplos:**
+
+```python
+# Apply function
+result = ds['name'].apply(lambda x: x.upper())
+result = ds.apply(lambda row: row['a'] + row['b'], axis=1)
+
+# Aggregate
+result = ds.agg({'col1': 'sum', 'col2': 'mean'})
+result = ds.agg(['sum', 'mean', 'std'])
+
+# Pipe
+result = (ds
+    .pipe(filter_active)
+    .pipe(calculate_metrics)
+    .pipe(format_output)
+)
+```
+
+***
+
+<div id="timeseries">
+  ## Series temporales
+</div>
+
+| Método               | Descripción                     |
+| -------------------- | ------------------------------- |
+| `rolling()`          | Ventana móvil                   |
+| `expanding()`        | Ventana expansiva               |
+| `ewm()`              | Ponderación exponencial         |
+| `resample()`         | Remuestrear series temporales   |
+| `shift()`            | Desplazar valores               |
+| `asfreq()`           | Convertir frecuencia            |
+| `asof()`             | Último valor hasta ese momento  |
+| `at_time()`          | Seleccionar por hora            |
+| `between_time()`     | Seleccionar intervalo de tiempo |
+| `first()` / `last()` | Primeros/últimos períodos       |
+| `to_period()`        | Convertir a período             |
+| `to_timestamp()`     | Convertir a timestamp           |
+| `tz_convert()`       | Convertir zona horaria          |
+| `tz_localize()`      | Localizar zona horaria          |
+
+**Ejemplos:**
+
+```python
+# Rolling window
+result = ds['value'].rolling(window=7).mean()
+
+# Expanding window
+result = ds['value'].expanding().sum()
+
+# Shift
+result = ds['value'].shift(1)  # Lag
+result = ds['value'].shift(-1)  # Lead
+```
+
+***
+
+<div id="missing">
+  ## Datos faltantes
+</div>
+
+| Método                  | Descripción                   |
+| ----------------------- | ----------------------------- |
+| `isna()` / `isnull()`   | Detectar valores faltantes    |
+| `notna()` / `notnull()` | Detectar valores no faltantes |
+| `dropna()`              | Eliminar valores faltantes    |
+| `fillna()`              | Rellenar valores faltantes    |
+| `ffill()`               | Relleno hacia adelante        |
+| `bfill()`               | Relleno hacia atrás           |
+| `interpolate()`         | Interpolar                    |
+| `replace()`             | Reemplazar valores            |
+
+***
+
+<div id="io">
+  ## Métodos de E/S
+</div>
+
+| Método           | Descripción                      |
+| ---------------- | -------------------------------- |
+| `to_csv()`       | Exportar a CSV                   |
+| `to_json()`      | Exportar a JSON                  |
+| `to_excel()`     | Exportar a Excel                 |
+| `to_parquet()`   | Exportar a Parquet               |
+| `to_feather()`   | Exportar a Feather               |
+| `to_sql()`       | Exportar a una base de datos SQL |
+| `to_pickle()`    | Pickle                           |
+| `to_html()`      | Tabla HTML                       |
+| `to_latex()`     | Tabla LaTeX                      |
+| `to_markdown()`  | Tabla Markdown                   |
+| `to_string()`    | Representación como cadena       |
+| `to_dict()`      | Diccionario                      |
+| `to_records()`   | Registros                        |
+| `to_numpy()`     | array de NumPy                   |
+| `to_clipboard()` | Portapapeles                     |
+
+Consulta [Operaciones de E/S](/es/chdb/datastore/io) para obtener documentación detallada.
+
+***
+
+<div id="iteration">
+  ## Iteración
+</div>
+
+| Método         | Descripción                   |
+| -------------- | ----------------------------- |
+| `items()`      | Itera sobre (columna, Series) |
+| `iterrows()`   | Itera sobre (índice, Series)  |
+| `itertuples()` | Itera como tuplas nombradas   |
+
+***
+
+<div id="differences">
+  ## Diferencias clave frente a Pandas
+</div>
+
+<div id="return-types">
+  ### 1. Tipos de retorno
+</div>
+
+```python
+# Pandas returns Series
+pdf['col']  # → pd.Series
+
+# DataStore returns ColumnExpr (lazy)
+ds['col']   # → ColumnExpr
+```
+
+<div id="lazy-execution">
+  ### 2. Ejecución diferida
+</div>
+
+```python
+# DataStore operations are lazy
+result = ds.filter(ds['age'] > 25)  # Not executed yet
+df = result.to_df()  # Executed here
+```
+
+<div id="no-inplace-parameter">
+  ### 3. No hay parámetro `inplace`
+</div>
+
+```python
+# Pandas
+df.drop(columns=['col'], inplace=True)
+
+# DataStore (always returns new object)
+ds = ds.drop(columns=['col'])
+```
+
+<div id="comparing-results">
+  ### 4. Comparación de resultados
+</div>
+
+```python
+# Use to_pandas() for comparison
+pd.testing.assert_frame_equal(
+    ds.to_pandas(),
+    expected_df
+)
+```
+
+Consulta [Diferencias clave](/es/chdb/guides/pandas-differences) para conocer todos los detalles.

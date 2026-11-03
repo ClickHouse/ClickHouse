@@ -2,6 +2,7 @@
 
 #include <DataTypes/IDataType.h>
 #include <Common/DateLUTImpl.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <IO/ReadBuffer.h>
 
 #include <vector>
@@ -12,7 +13,7 @@ namespace DB
 class Block;
 struct FormatSettings;
 class NamesAndTypesList;
-using NamesAndTypesLists = std::vector<NamesAndTypesList>;
+using NamesAndTypesLists = VectorWithMemoryTracking<NamesAndTypesList>;
 
 /// Struct with some additional information about inferred types for JSON formats.
 struct JSONInferenceInfo

@@ -1,0 +1,181 @@
+---
+slug: /use-cases/observability/clickstack/ingesting-data/opentelemetry
+toc_max_heading_level: 2
+description: 'ClickStack のための OpenTelemetry によるデータインジェスト - The ClickHouse Observability Stack'
+title: 'OpenTelemetry によるデータインジェスト'
+doc_type: 'guide'
+keywords: ['clickstack', 'opentelemetry', 'トレース', 'オブザーバビリティ', 'テレメトリー']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+すべてのデータは **OpenTelemetry (OTel) collector** インスタンス経由で ClickStack に取り込まれます。このインスタンスは、ログ、メトリクス、トレース、セッションデータの主要なエントリポイントとして機能します。このインスタンスには、collector の公式 [ClickStack distribution](#installing-otel-collector) を使用することを推奨します。
+
+<Tip>
+  ClickStack のマネージド版も利用できます。詳しくは [Managed ClickStack](/ja/clickstack/getting-started/managed) を参照してください。
+</Tip>
+
+ユーザーは、[language SDKs](/ja/clickstack/ingesting-data/sdks/index) から、またはインフラストラクチャのメトリクスやログを収集するデータ収集エージェント ([agent](/ja/clickstack/ingesting-data/collector#collector-roles) ロールの OTel collectors や、[Fluentd](https://www.fluentd.org/) や [Vector](https://vector.dev/) などのその他の技術) を通じて、この collector にデータを送信します。OpenTelemetry パイプラインのマネージド運用を求めるチーム向けに、[Bindplane](/ja/clickstack/integration-partners/bindplane) は、ClickStack へのネイティブな宛先を備えた OpenTelemetry ネイティブのソリューションを提供しており、テレメトリーの収集、処理、ルーティングを簡素化します。
+
+<div id="sending-otel-data">
+  ## OpenTelemetry データの送信
+</div>
+
+<Tabs>
+  <Tab title="Managed ClickStack">
+    ### ClickStack OpenTelemetry collector のインストール
+
+    Managed ClickStack にデータを送信するには、OTel collector を[ゲートウェイ ロール](/ja/clickstack/ingesting-data/collector#collector-roles)でデプロイする必要があります。OTel 互換のインストルメンテーションは、HTTP または gRPC 経由の OTLP でこの collector にイベントを送信します。
+
+    <Info>
+      **ClickStack OpenTelemetry collector の使用を推奨します**
+
+      これにより、標準化されたインジェスト、強制されたスキーマ、そして ClickStack UI (HyperDX) とのそのまま使える互換性のメリットを得られます。デフォルトのスキーマを使用すると、ログソースの自動検出と事前設定済みのカラムマッピングが有効になります。
+    </Info>
+
+    詳細は[&quot;collector のデプロイ&quot;](/ja/clickstack/ingesting-data/collector)を参照してください。
+
+    ### collector へのデータ送信
+
+    Managed ClickStack にデータを送信するには、OpenTelemetry インストルメンテーションの送信先を、OpenTelemetry collector が提供する次のエンドポイントに設定してください。
+
+    * **HTTP (OTLP):** `http://localhost:4318`
+    * **gRPC (OTLP):** `localhost:4317`
+
+    OpenTelemetry をサポートする[language SDKs](/ja/clickstack/ingesting-data/sdks/index)やテレメトリーライブラリでは、アプリケーションで `OTEL_EXPORTER_OTLP_ENDPOINT` 環境変数を設定するだけで済みます。
+
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+    ```
+
+    agent ロールで [OTel collector の contrib ディストリビューション](https://github.com/open-telemetry/opentelemetry-collector-contrib) をデプロイする場合は、OTLP エクスポーターを使用して ClickStack collector に送信できます。この[構造化ログファイル](https://datasets-documentation.s3.eu-west-3.amazonaws.com/http_logs/access-structured.log.gz)を取り込む agent の設定例を以下に示します。
+
+    ```yaml
+    # clickhouse-agent-config.yaml
+    receivers:
+      filelog:
+        include:
+          - /opt/data/logs/access-structured.log
+        start_at: beginning
+        operators:
+          - type: json_parser
+            timestamp:
+              parse_from: attributes.time_local
+              layout: '%Y-%m-%d %H:%M:%S'
+    exporters:
+      # HTTP setup
+      otlphttp/hdx:
+        endpoint: 'http://localhost:4318'
+        compression: gzip
+     
+      # gRPC setup (alternative)
+      otlp/hdx:
+        endpoint: 'localhost:4317'
+        compression: gzip
+    processors:
+      batch:
+        timeout: 5s
+        send_batch_size: 10000
+    service:
+      telemetry:
+        metrics:
+          address: 0.0.0.0:9888 # Modified as 2 collectors running on same host
+      pipelines:
+        logs:
+          receivers: [filelog]
+          processors: [batch]
+          exporters: [otlphttp/hdx]
+    ```
+  </Tab>
+
+  <Tab title="オープンソース版 ClickStack">
+    ClickStack OpenTelemetry collector は、以下を含むほとんどの ClickStack ディストリビューションに含まれています。
+
+    * [All-in-One](/ja/clickstack/deployment/all-in-one)
+    * [Docker Compose](/ja/clickstack/deployment/docker-compose)
+    * [Helm](/ja/clickstack/deployment/helm)
+
+    ### ClickStack OpenTelemetry collector のインストール
+
+    ClickStack OTel collector は、スタック内の他のコンポーネントとは独立したスタンドアロン構成でデプロイすることもできます。
+
+    [HyperDX-only](/ja/clickstack/deployment/hyperdx-only) ディストリビューションを使用している場合は、データを ClickHouse に取り込む仕組みを自分で用意する必要があります。これには、次の方法があります。
+
+    * 独自の OpenTelemetry collector を実行し、送信先として ClickHouse を設定する - 詳細は以下を参照してください。
+    * [Vector](https://vector.dev/)、[Fluentd](https://www.fluentd.org/) などの代替ツール、またはデフォルトの [OTel contrib collector distribution](https://github.com/open-telemetry/opentelemetry-collector-contrib) を使って、ClickHouse に直接送信する。
+
+    <Info>
+      **ClickStack OpenTelemetry collector の使用を推奨します**
+
+      これにより、標準化されたインジェスト、スキーマの適用、そして HyperDX UI との即時互換性のメリットを得られます。デフォルトのスキーマを使用すると、ログソースの自動検出と事前設定済みのカラムマッピングが有効になります。
+    </Info>
+
+    詳細については、[&quot;collector のデプロイ&quot;](/ja/clickstack/ingesting-data/collector) を参照してください。
+
+    ### collector にデータを送信する
+
+    ClickStack にデータを送信するには、OpenTelemetry インストルメンテーションの送信先を、OpenTelemetry Collector が提供する次のエンドポイントに設定します。
+
+    * **HTTP (OTLP):** `http://localhost:4318`
+    * **gRPC (OTLP):** `localhost:4317`
+
+    OpenTelemetry をサポートする [language SDKs](/ja/clickstack/ingesting-data/sdks/index) やテレメトリーライブラリでは、アプリケーションで `OTEL_EXPORTER_OTLP_ENDPOINT` 環境変数を設定するだけで利用できます。
+
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+    ```
+
+    さらに、APIインジェストキーを含む Authorization ヘッダーが必要です。このキーは、HyperDX アプリの `Team Settings → API Keys` で確認できます。
+
+    <Image img="/images/use-cases/observability/ingestion-keys.webp" alt="インジェストキー" size="lg" />
+
+    言語 SDK では、これは `init` 関数で設定することも、`OTEL_EXPORTER_OTLP_HEADERS` 環境変数で設定することもできます。例:
+
+    ```shell
+    OTEL_EXPORTER_OTLP_HEADERS='authorization=<YOUR_INGESTION_API_KEY>'
+    ```
+
+    エージェントでも同様に、あらゆる OTLP 通信にこの Authorization ヘッダーを含める必要があります。たとえば、エージェントの役割で [OTel collector の contrib ディストリビューション](https://github.com/open-telemetry/opentelemetry-collector-contrib) をデプロイする場合は、OTLP エクスポーターを使用できます。この[構造化ログファイル](https://datasets-documentation.s3.eu-west-3.amazonaws.com/http_logs/access-structured.log.gz)を取り込むエージェント設定の例を以下に示します。認可用のキーを指定する必要がある点に注意してください。`<YOUR_API_INGESTION_KEY>` を参照してください。
+
+    ```yaml
+    # clickhouse-agent-config.yaml
+    receivers:
+      filelog:
+        include:
+          - /opt/data/logs/access-structured.log
+        start_at: beginning
+        operators:
+          - type: json_parser
+            timestamp:
+              parse_from: attributes.time_local
+              layout: '%Y-%m-%d %H:%M:%S'
+    exporters:
+      # HTTP setup
+      otlphttp/hdx:
+        endpoint: 'http://localhost:4318'
+        headers:
+          authorization: <YOUR_API_INGESTION_KEY>
+        compression: gzip
+     
+      # gRPC setup (alternative)
+      otlp/hdx:
+        endpoint: 'localhost:4317'
+        headers:
+          authorization: <YOUR_API_INGESTION_KEY>
+        compression: gzip
+    processors:
+      batch:
+        timeout: 5s
+        send_batch_size: 10000
+    service:
+      telemetry:
+        metrics:
+          address: 0.0.0.0:9888 # Modified as 2 collectors running on same host
+      pipelines:
+        logs:
+          receivers: [filelog]
+          processors: [batch]
+          exporters: [otlphttp/hdx]
+    ```
+  </Tab>
+</Tabs>

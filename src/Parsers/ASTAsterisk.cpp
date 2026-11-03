@@ -1,9 +1,39 @@
 #include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTColumnsTransformers.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 #include <IO/WriteBuffer.h>
 #include <IO/Operators.h>
 
 namespace DB
 {
+
+void ASTAsterisk::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "Asterisk");
+    w.writeChild("expression", expression);
+    w.writeChild("transformers", transformers);
+}
+
+void ASTAsterisk::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    auto child = r.readChild("expression");
+    if (child)
+    {
+        this->expression = child;
+        this->children.push_back(this->expression);
+    }
+    /// The parser only attaches an `ASTColumnsTransformerList` here; analyzer paths call
+    /// `buildColumnTransformers(asterisk->transformers, ...)` and treat it as the transformer-list
+    /// container, so reject any other node type from malformed `clickhouse_json`.
+    child = r.readChildOfType<ASTColumnsTransformerList>("transformers");
+    if (child)
+    {
+        this->transformers = child;
+        this->children.push_back(this->transformers);
+    }
+}
 
 ASTPtr ASTAsterisk::clone() const
 {
