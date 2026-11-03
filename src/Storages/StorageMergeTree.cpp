@@ -4938,11 +4938,11 @@ void StorageMergeTree::removeCommittingBlock(CommittingBlock block)
         committing_blocks_cv.notify_all();
     }
 
-    /// `selectPartsToMutate` leaves a part alone while a lightweight update with a lower block number is
-    /// uncommitted, and the scheduler backs off when nothing is selected. The block is released on every
-    /// exit of the update, including the ones that write no patch part, so this is the one place where the
-    /// postponed mutation can be woken up as soon as it is allowed to run.
-    if (block.op == CommittingBlock::Op::Update)
+    /// Merge and mutation selection leave parts alone while an update or a mutation holds a lower block
+    /// number that is not visible yet, and the scheduler backs off when nothing is selected. The block is
+    /// released on every exit of its holder, including the ones that commit nothing (a cancelled update, a
+    /// failed mutation start), so this is the one place where the postponed work can be woken up at once.
+    if (block.op == CommittingBlock::Op::Update || block.op == CommittingBlock::Op::Mutation)
         background_operations_assignee.trigger();
 }
 

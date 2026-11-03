@@ -32,7 +32,7 @@ function fresh_table()
     $CLICKHOUSE_CLIENT --query "
         DROP TABLE IF EXISTS $TABLE SYNC;
         CREATE TABLE $TABLE (id UInt64, v UInt64, d1 UInt64, d2 UInt64) ENGINE = MergeTree ORDER BY id
-        SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, min_bytes_for_wide_part = 0, $1;
+        SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, min_bytes_for_wide_part = 0, max_bytes_to_merge_at_max_space_in_pool = 1, $1;
         INSERT INTO $TABLE SELECT number, 1, 7, 7 FROM numbers(1000);
         INSERT INTO $TABLE SELECT number + 1000, 1, 7, 7 FROM numbers(1000);
     "
