@@ -235,7 +235,6 @@ void AsynchronousMetrics::openCgroupv2MemoryFiles(const std::optional<std::strin
         cgroupmem_failed_dir = dir;
     }
 
-    /// A failed open is retried on the next update.
     if (cgroupmem_limit_in_bytes && cgroupmem_reader)
     {
         cgroupmem_dir = dir;
@@ -1974,8 +1973,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         }
     }
 
-    /// `memory.max` and `memory.stat` exist only while the `memory` controller is enabled in the parent cgroup, so the
-    /// nearest ones can move at runtime, and descriptors to removed ones fail with ENODEV.
+    /// The nearest `memory.max` and `memory.stat` move when the parent toggles the `memory` controller; removed ones give ENODEV.
     if (auto dir = getCgroupsV2PathContainingFile("memory.current"); dir != cgroupmem_dir)
         openCgroupv2MemoryFiles(dir);
     if (cgroupmem_limit_in_bytes && cgroupmem_reader)

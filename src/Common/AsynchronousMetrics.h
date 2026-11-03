@@ -195,7 +195,7 @@ private:
     std::optional<ReadBufferFromFilePRead> cgroupmem_limit_in_bytes TSA_GUARDED_BY(data_mutex);
     std::shared_ptr<ICgroupsReader> cgroupmem_reader;
     std::optional<std::string> cgroupmem_dir TSA_GUARDED_BY(data_mutex);
-    /// Where the last reader open failed, so that the retry on every update logs the failure once.
+    /// Where the last reader open failed: the open is retried on every update, the failure is logged once.
     std::optional<std::string> cgroupmem_failed_dir TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> cgroupcpu_cfs_period TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> cgroupcpu_cfs_quota TSA_GUARDED_BY(data_mutex);

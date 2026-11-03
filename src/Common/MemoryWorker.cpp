@@ -619,7 +619,6 @@ bool MemoryWorker::lookUpCgroupsV2MemoryFiles()
     if (dir == cgroups_v2_lookup->dir && !cgroups_v2_lookup->reopen)
         return false;
 
-    /// If an open throws, the tick fails and the current state is kept until the next attempt.
     std::shared_ptr<ICgroupsReader> reader;
     std::vector<CgroupMemoryLevel> levels;
     if (dir)
@@ -1340,7 +1339,6 @@ void MemoryWorker::updateResidentMemoryThread()
         {
             tryLogCurrentException(log, "Failed to update resident memory");
 #if defined(OS_LINUX)
-            /// The cgroup files may have been removed (and created again), which kills the descriptors.
             if (cgroups_v2_lookup)
                 cgroups_v2_lookup->reopen = true;
 #endif

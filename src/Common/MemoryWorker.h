@@ -269,7 +269,7 @@ private:
         /// Where `cgroups_reader` and `cgroup_memory_levels` were opened; empty if no cgroup has `memory.current`.
         std::optional<std::string> dir;
         std::chrono::milliseconds time{0};
-        /// A tick failed, so reopen even if `dir` did not change.
+        /// A tick failed: reopen even if `dir` did not change, its files may have been removed and created again.
         bool reopen = false;
     };
     std::optional<CgroupsV2Lookup> cgroups_v2_lookup;
