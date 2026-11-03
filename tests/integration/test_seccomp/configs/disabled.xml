@@ -1,3 +1,0 @@
-<clickhouse>
-    <seccomp>disabled</seccomp>
-</clickhouse>

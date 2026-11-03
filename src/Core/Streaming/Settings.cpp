@@ -17,7 +17,7 @@ WatermarkSettingsPtr WatermarkSettings::clone() const
 
 bool WatermarkSettings::operator==(const WatermarkSettings & rhs) const
 {
-    if (time_attribute_column != rhs.time_attribute_column)
+    if (column != rhs.column)
         return false;
 
     if (idle_timeout != rhs.idle_timeout)

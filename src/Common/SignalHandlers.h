@@ -126,9 +126,6 @@ private:
     BaseDaemon * daemon;
     LoggerPtr log;
     std::function<String()> build_id;
-    /// The build id only if it is already known, without building the symbol index to learn it.
-    /// Used for the lines that are printed before the bare stack trace: see `SignalListener::run`.
-    std::function<String()> build_id_if_already_known;
     TerminateRequestCallback terminate_request_callback;
 
     std::mutex terminate_request_mutex;

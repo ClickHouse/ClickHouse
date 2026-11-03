@@ -19,6 +19,7 @@ set (SRCS
     getPageSize.cpp
     getThreadId.cpp
     int8_to_string.cpp
+    IPv4andIPv6.cpp
     itoa.cpp
     JSON.cpp
     mremap.cpp
@@ -52,6 +53,10 @@ endif ()
 
 if (TARGET ch_contrib::crc32_s390x)
     target_link_libraries(common PUBLIC ch_contrib::crc32_s390x)
+endif()
+
+if (TARGET ch_contrib::numactl)
+    target_link_libraries(common PUBLIC ch_contrib::numactl)
 endif()
 
 target_include_directories(common PUBLIC .. "${CMAKE_CURRENT_BINARY_DIR}/..")
