@@ -35,6 +35,13 @@ inline size_t decodeBlocks(const uint8_t * in, size_t count, Delta mode, T * out
     return detail::bulkDecode<T>(in, count, mode, out, end);
 }
 
+/// Skips without decoding bytes `decodeBlocks` would consume for `count` values. Has the same `end` contract.
+template <typename T>
+inline size_t skipBlocks(const uint8_t * in, size_t count, const uint8_t * end = nullptr) noexcept
+{
+    return detail::bulkSkip<T>(in, count, end);
+}
+
 /// Computes an upper bound on the bytes that `encodeBlocks` writes for a stream of values in `mode`, while
 /// the stream grows one value at a time. A caller uses it to fill a buffer of a given size without encoding
 /// the values. The bound holds because the encoder writes each block in its cheapest layout, and no layout
