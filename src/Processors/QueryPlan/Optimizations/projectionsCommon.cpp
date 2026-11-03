@@ -6,7 +6,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/Optimizations/projectionsCommon.h>
-#include <Storages/MergeTree/HypotheticalProjection.h>
+#include <Storages/MergeTree/WhatIf/HypotheticalProjection.h>
 
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>

@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/WhatIfSampling.h>
+#include <Storages/MergeTree/WhatIf/WhatIfSampling.h>
 
 #include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>

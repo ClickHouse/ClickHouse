@@ -28,7 +28,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/IAST.h>
-#include <Storages/MergeTree/HypotheticalProjection.h>
+#include <Storages/MergeTree/WhatIf/HypotheticalProjection.h>
 
 
 namespace DB

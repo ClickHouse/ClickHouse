@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/WhatIfSettings.h>
+#include <Storages/MergeTree/WhatIf/WhatIfSettings.h>
 
 #include <Core/Field.h>
 #include <Parsers/ASTSetQuery.h>

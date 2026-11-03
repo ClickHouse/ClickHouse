@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/WhatIfEstimator.h>
+#include <Storages/MergeTree/WhatIf/WhatIfEstimator.h>
 
 #include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
@@ -20,12 +20,12 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/ProjectionsDescription.h>
-#include <Storages/MergeTree/WhatIfEmpiricalEstimator.h>
-#include <Storages/MergeTree/WhatIfFilterAnalysis.h>
-#include <Storages/MergeTree/HypotheticalProjection.h>
-#include <Storages/MergeTree/WhatIfProjectionEstimator.h>
-#include <Storages/MergeTree/WhatIfSettings.h>
-#include <Storages/MergeTree/WhatIfStatisticalEstimator.h>
+#include <Storages/MergeTree/WhatIf/WhatIfEmpiricalEstimator.h>
+#include <Storages/MergeTree/WhatIf/WhatIfFilterAnalysis.h>
+#include <Storages/MergeTree/WhatIf/HypotheticalProjection.h>
+#include <Storages/MergeTree/WhatIf/WhatIfProjectionEstimator.h>
+#include <Storages/MergeTree/WhatIf/WhatIfSettings.h>
+#include <Storages/MergeTree/WhatIf/WhatIfStatisticalEstimator.h>
 
 #include <Common/Exception.h>
 #include <Common/quoteString.h>

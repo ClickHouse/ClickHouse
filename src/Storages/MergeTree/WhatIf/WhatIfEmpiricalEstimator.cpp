@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/WhatIfEmpiricalEstimator.h>
+#include <Storages/MergeTree/WhatIf/WhatIfEmpiricalEstimator.h>
 
 #include <Access/ContextAccess.h>
 #include <Interpreters/Context.h>
@@ -10,7 +10,7 @@
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
-#include <Storages/MergeTree/WhatIfSampling.h>
+#include <Storages/MergeTree/WhatIf/WhatIfSampling.h>
 
 #include <Columns/ColumnSparse.h>
 #include <Common/Stopwatch.h>
