@@ -40,7 +40,8 @@ INSERT INTO g_real SELECT number, number FROM numbers(300);
 OPTIMIZE TABLE g_est FINAL;
 OPTIMIZE TABLE g_real FINAL;
 CREATE HYPOTHETICAL PROJECTION p_a ON g_est (SELECT b, groupArray(v) GROUP BY b);
-SELECT replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
+-- the high end of marks_span comes from the memory of the states, and a debug build uses more memory for a state
+SELECT replaceRegexpOne(replaceRegexpAll(trim(explain), '\\s+', ' '), '^(marks_span: \\d+ to )\\d+$', '\\1N') AS line
 FROM (EXPLAIN WHATIF SELECT b, groupArray(v) FROM g_est GROUP BY b)
 WHERE match(line, '^(Baseline|With |marks:|marks_span:|verdict:)');
 SELECT 'real projection part: ' || toString(marks - 1) || ' marks' FROM system.projection_parts
