@@ -79,6 +79,7 @@ namespace ErrorCodes
     extern const int CANNOT_SELECT;
     extern const int QUERY_NOT_ALLOWED;
     extern const int CANNOT_COMPILE_REGEXP;
+    extern const int DATABASE_ACCESS_DENIED;
 }
 
 namespace
@@ -1549,9 +1550,15 @@ void StorageFileLog::resetReadPosition(const std::optional<String> & file_name, 
             auto it = file_infos.context_by_name.find(*file_name);
             if (it == file_infos.context_by_name.end())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table {} does not read a file named '{}'", getStorageID().getNameForLogs(), *file_name);
-            auto size = tryGetSizeFromFilePath(getFullDataPath(*file_name));
+            const auto full_data_path = getFullDataPath(*file_name);
+            /// The file may have become a symlink to a target outside the user files directory since it was
+            /// found. Check it before deriving its size, so that the size of an outside file is not revealed.
+            if (!isDataFileAllowed(full_data_path, /*log_if_denied=*/ false))
+                throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
+                    "File {} resolves outside `user_files_path` after symlink resolution", full_data_path);
+            auto size = tryGetSizeFromFilePath(full_data_path);
             if (!size)
-                throw Exception(ErrorCodes::CANNOT_STAT, "Cannot get the size of file {}", getFullDataPath(*file_name));
+                throw Exception(ErrorCodes::CANNOT_STAT, "Cannot get the size of file {}", full_data_path);
             if (offset && *offset > *size)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Offset {} is beyond the end of file {} ({} bytes)", *offset, *file_name, *size);
             add_target(*file_name, it->second, offset.value_or(*size));
