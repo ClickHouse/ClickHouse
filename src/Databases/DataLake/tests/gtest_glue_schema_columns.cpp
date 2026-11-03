@@ -6,6 +6,7 @@
 
 #include <Databases/DataLake/Common.h>
 #include <Databases/DataLake/GlueCatalog.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Poco/JSON/Parser.h>
 
 using namespace DataLake;
@@ -117,6 +118,17 @@ TEST(GlueSchemaColumns, CurrentSchemaSelection)
     ASSERT_EQ(v1_columns.size(), 1u);
     EXPECT_EQ(v1_columns[0].GetName(), "x");
     EXPECT_EQ(v1_columns[0].GetType(), "double");
+
+    /// An ID-less v1 `schema` defers to the `schemas` entry, as `IcebergMetadata::parseTableSchema` does.
+    auto v1_no_id_metadata = parseObject(R"json({"format-version": 1, "schema": {"fields": [{"id": 1, "name": "stale", "required": false, "type": "int"}]},
+        "current-schema-id": 3, "schemas": [{"schema-id": 3, "fields": [{"id": 1, "name": "x", "required": false, "type": "long"}]}]})json");
+    auto v1_no_id_schema = GlueCatalog::getCurrentSchema(v1_no_id_metadata);
+    DB::Iceberg::IcebergSchemaProcessor processor(/*allow_geo_parser=*/false);
+    processor.addIcebergTableSchema(v1_no_id_schema);
+    auto v1_no_id_columns = processor.getClickHouseTableSchemaById(3);
+    ASSERT_EQ(v1_no_id_columns->size(), 1u);
+    EXPECT_EQ(v1_no_id_columns->front().name, "x");
+    EXPECT_EQ(v1_no_id_columns->front().type->getName(), "Nullable(Int64)");
 
     EXPECT_TRUE(GlueCatalog::glueColumnsFromIcebergSchema(nullptr).empty());
     EXPECT_TRUE(GlueCatalog::getCurrentSchema(nullptr).isNull());

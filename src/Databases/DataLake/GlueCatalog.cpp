@@ -770,11 +770,15 @@ Poco::JSON::Object::Ptr GlueCatalog::getCurrentSchema(const Poco::JSON::Object::
     if (!metadata_object)
         return nullptr;
 
-    /// For v1, the top-level `schema` is authoritative.
+    /// Same order as `IcebergMetadata::parseTableSchema`: an ID-less v1 `schema` defers to `schemas`.
     if (metadata_object->has(DB::Iceberg::f_schema)
         && (!metadata_object->has(DB::Iceberg::f_format_version)
             || metadata_object->getValue<Int32>(DB::Iceberg::f_format_version) == 1))
-        return metadata_object->getObject(DB::Iceberg::f_schema);
+    {
+        auto schema = metadata_object->getObject(DB::Iceberg::f_schema);
+        if (schema->has(DB::Iceberg::f_schema_id))
+            return schema;
+    }
 
     if (metadata_object->has(DB::Iceberg::f_schemas) && metadata_object->has(DB::Iceberg::f_current_schema_id))
     {
