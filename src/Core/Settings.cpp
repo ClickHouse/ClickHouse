@@ -330,8 +330,9 @@ The `max_joined_block_size_bytes` combined with this setting is helpful to avoid
         {"25.10", false, false, "New setting"}) \
     DECLARE(Bool, parallel_non_joined_rows_processing, true, R"(
 Allow multiple threads to process non-joined rows from the right table in parallel during RIGHT and FULL JOINs.
-This can speed up the non-joined phase when using the `parallel_hash` join algorithm with large tables.
-When disabled, non-joined rows are processed by a single thread.
+This can speed up the non-joined phase of hash joins with large right tables that build the hash table on several threads (see `parallel_hash_join_threshold`).
+When disabled, or when the hash table is built on one thread, non-joined rows are processed by a single thread.
+In every case the non-joined rows come out in no fixed order. Use `ORDER BY` when the query needs a stable order.
 )", 0, \
         {"26.2", true, true, "New setting to enable parallel processing of non-joined rows in RIGHT/FULL parallel_hash joins."}) \
     DECLARE(MaxThreads, max_insert_threads, 0, R"(
@@ -4437,7 +4438,7 @@ See also:
 - [Join table engine](/reference/engines/table-engines/special/join)
 - [join_default_strictness](#join_default_strictness)
 )", IMPORTANT) \
-    DECLARE(JoinAlgorithm, join_algorithm, "direct,parallel_hash,hash,ie_join", R"(
+    DECLARE(JoinAlgorithm, join_algorithm, "direct,hash,ie_join", R"(
 Specifies which [JOIN](/reference/statements/select/join) algorithm is used.
 
 Several algorithms can be specified, and an available one would be chosen for a particular query based on kind/strictness and table engine.
@@ -4472,7 +4473,7 @@ Selecting `grace_hash` explicitly is intended primarily for diagnostic use. To e
 
 - parallel_hash
 
- A variation of `hash` join that splits the data into buckets and builds several hashtables instead of one concurrently to speed up this process.
+ The same as `hash`, kept for compatibility. `INNER`, `LEFT`, `RIGHT` and `FULL` hash joins can build the hash table on up to `max_threads` threads, and `parallel_hash_join_threshold` decides when they do. To build it on several threads whenever the join kind allows it, set `parallel_hash_join_threshold` to `0`.
 
  When using the `parallel_hash` algorithm, the right part of `JOIN` is uploaded into RAM.
 
@@ -4531,6 +4532,7 @@ Selecting `grace_hash` explicitly is intended primarily for diagnostic use. To e
  Same as `direct,hash`, i.e. try to use direct join and hash join (in this order).
 
 )", 0, \
+        {"26.11", "direct,parallel_hash,hash,ie_join", "direct,hash,ie_join", "`parallel_hash` is an obsolete alias of `hash` and was dropped from the default list; it is still accepted. Listing `hash` or `parallel_hash` does not control how parallel the join is."}, \
         {"26.8", "direct,parallel_hash,hash", "direct,parallel_hash,hash,ie_join", "Appended `ie_join` to the default list, so a join whose `ON` section has only inequality conditions is executed with IEJoin instead of a `CROSS JOIN` with a filter. Being last, it is used only when the other algorithms do not apply."}, \
         {"24.12", "default", "direct,parallel_hash,hash", "'default' was deprecated in favor of explicitly specified join algorithms, also parallel_hash is now preferred over hash"}) \
     DECLARE(Bool, allow_block_nested_loop_join, true, R"(
@@ -10320,12 +10322,37 @@ Throw an exception instead of logging a warning when Hive-style partitioning det
 )", 0, \
         {"26.8", false, true, "New setting to fail the query when Hive-style partitioning detection for an object storage table cannot list the storage, instead of running without the Hive partition columns."}) \
     DECLARE(UInt64, parallel_hash_join_threshold, 100'000, R"(
-When hash-based join algorithm is applied, this threshold helps to decide between using `hash` and `parallel_hash` (only if estimation of the right table size is available).
-The former is used when we know that the right table size is below the threshold.
+For an `INNER`, `LEFT`, `RIGHT` or `FULL` hash join, this threshold decides how the hash table is built.
+If the estimated number of rows in the right table is below the threshold, the join builds the hash table as one part, on one thread.
+At or above the threshold, and also when there is no estimate, the join splits the hash table into parts that up to `max_threads` threads fill at the same time (one thread with `max_threads = 1`).
+The largest value, `18446744073709551615`, always builds one part, also when there is no estimate. `0` always splits the hash table.
+With `hash_join_layout` set to `serial` or `parallel`, this threshold is not used: the join builds one part or splits the hash table, whatever the estimate.
+The estimate comes from the query plan, or from the statistics of earlier runs of the same join (see `collect_hash_table_stats_during_joins`).
+The query plan estimates 0 rows for a right table known to be empty, such as a `MergeTree` table without data parts.
+`ASOF` joins never get an estimate, and with `query_plan_optimize_join_order_limit = 0` no join gets one.
 )", 0, \
         {"25.5", 0, 100'000, "New setting"}, \
         {"25.4", 0, 0, "New setting"}, \
         {"25.3", 0, 0, "New setting"}) \
+    DECLARE(HashJoinLayout, hash_join_layout, HashJoinLayout::AUTO, R"(
+How an `INNER`, `LEFT`, `RIGHT` or `FULL` hash join builds its hash table.
+The setting is meant for testing and debugging. Leave it at `auto` to let the planner choose the layout with `parallel_hash_join_threshold`.
+
+Possible values:
+
+- `auto` — `parallel_hash_join_threshold` decides, from the estimated number of rows in the right table. See that setting for a join without an estimate.
+- `serial` — the hash table is one part, filled by one thread, whatever the estimate.
+- `parallel` — the hash table is split into parts that up to `max_threads` threads fill at the same time (one thread with `max_threads = 1`), whatever the estimate.
+
+Some joins always build one part, whatever the value:
+
+- joins of other kinds, such as `CROSS`;
+- a join with a `Join` table or a key-value storage on the right;
+- each bucket of a grace hash join;
+- the hash join that `join_algorithm = 'auto'` starts with when the join cannot spill to disk (for example with `max_bytes_before_external_join` and `max_bytes_ratio_before_external_join` both `0`) and can switch to a partial merge join instead;
+- each per-shard join of `query_plan_join_shard_by_pk_ranges`.
+)", 0, \
+        {"26.11", "auto", "auto", "New setting to force the layout of a hash join for testing and debugging. `auto` keeps choosing it with `parallel_hash_join_threshold`."}) \
     DECLARE(Bool, apply_settings_from_server, true, R"(
 Whether the client should accept settings from server.
 
@@ -10604,11 +10631,11 @@ Max retries for parts update when using `select_sequential_consistency` with `Sh
 )", 0, \
         {"26.5", 10, 10, "New setting to reduce sporadic UNFINISHED errors in queries with sequential consistency for SharedMergeTree."}) \
     DECLARE(UInt64, max_bytes_before_external_join, 0, R"(
-If set to a non-zero value and `join_algorithm` is `hash`, `parallel_hash`, `default`, or `auto`, the hash join will automatically be converted to a spilling join when the right-side data exceeds this many bytes: the collected data moves to disk and the join continues as a grace hash join, or as a partial merge join when the query plan needs the left stream's row order (read in order through join), so the threshold does not prevent that optimization. Together with `max_bytes_ratio_before_external_join`, this is the threshold-based spill trigger for every hash-based `join_algorithm`, including `grace_hash`, which requires one of the two to be non-zero. Once a non-zero threshold makes a join spill-capable, `enable_adaptive_memory_spill_scheduler` can force it to spill under memory pressure before the threshold is reached. When set to `0` (default), this absolute byte threshold is disabled, but automatic spilling may still occur via `max_bytes_ratio_before_external_join` (which defaults to `0.5`). With both settings at `0`, the join never spills, so the scheduler has nothing to trigger. The exception is `legacy_join_size_limits_trigger_spilling`: with it on, standalone `grace_hash` ignores both settings and spills on `max_rows_in_join` / `max_bytes_in_join` instead. The threshold also bounds the right side materialized by the [block nested loop join](/reference/statements/select/join#join-with-an-arbitrary-on-condition), whatever `join_algorithm` is set to.
+If set to a non-zero value and `join_algorithm` is `hash`, `parallel_hash`, `default`, or `auto`, a hash join spills the right-side data to disk once it exceeds this many bytes. That happens only when `GraceHashJoin` can run the join (one equality disjunct, supported kind and strictness). Multi-disjunct `ON` conditions (`OR`) stay on `hash` and can hit the memory limit with no spill. After the spill, the join continues as a grace hash join, or as a partial merge join when the query plan needs the left stream's row order (read in order through join), so the threshold does not prevent that optimization. Read in order passes through such a join only for `INNER` and `LEFT` joins with `ALL` or `ANY` strictness, with no mixed `ON` condition, without `join_any_take_last_row` for `ANY`, and with keys that are not floating-point, `JSON` or `Dynamic`, also when nested. Together with `max_bytes_ratio_before_external_join`, this is the threshold-based spill trigger for every hash-based `join_algorithm`, including `grace_hash`, which requires one of the two to be non-zero. Once a non-zero threshold makes a join spill-capable, `enable_adaptive_memory_spill_scheduler` can force it to spill under memory pressure before the threshold is reached. When set to `0` (default), this absolute byte threshold is disabled, but automatic spilling may still occur via `max_bytes_ratio_before_external_join` (which defaults to `0.5`). With both settings at `0`, the join never spills, so the scheduler has nothing to trigger. The exception is `legacy_join_size_limits_trigger_spilling`: with it on, standalone `grace_hash` ignores both settings and spills on `max_rows_in_join` / `max_bytes_in_join` instead. The threshold also bounds the right side materialized by the [block nested loop join](/reference/statements/select/join#join-with-an-arbitrary-on-condition), whatever `join_algorithm` is set to.
 )", 0, \
         {"26.4", 0, 0, "New setting to control automatic spilling of hash joins to disk. Non-zero value enables spilling and sets the byte threshold."}) \
     DECLARE(Double, max_bytes_ratio_before_external_join, 0.5, R"(
-The ratio of available memory that is allowed for `JOIN`. Once reached, the hash join will be converted to a spilling join that moves the right-side data to disk (a grace hash join, or a partial merge join when the query plan needs the left stream's row order).
+The ratio of available memory that is allowed for `JOIN`. Once reached, a hash join spills the right-side data to disk. That happens only when `GraceHashJoin` can run the join (one equality disjunct, supported kind and strictness). Multi-disjunct `ON` conditions (`OR`) stay on `hash` and can hit the memory limit with no spill. After the spill, the join continues as a grace hash join, or as a partial merge join when the query plan needs the left stream's row order (see `max_bytes_before_external_join`).
 
 For example, if set to `0.6`, `JOIN` will allow using `60%` of the available memory (to server/user/merges) for the right-side hash table at the beginning of the execution; after that, it starts spilling to disk.
 
