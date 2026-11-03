@@ -34,7 +34,7 @@ Refer to the [Docker networking documentation](https://docs.docker.com/network/)
 
 ## Session secret configuration {#session-secret}
 
-In production, you must set a strong, random value for the `EXPRESS_SESSION_SECRET` environment variable for ClickStack UI (HyperDX) - to protect session data and prevent tampering.
+In production, you must set a strong, random value for the `EXPRESS_SESSION_SECRET` environment variable for ClickStack UI - to protect session data and prevent tampering.
 
 Here's how to add it to your `docker-compose.yml` file for the app service:
 
@@ -74,7 +74,7 @@ Avoid committing secrets to source control. In production, consider using enviro
 
 ## Secure ingestion {#secure-ingestion}
 
-All ingestion should occur via the OTLP ports exposed by ClickStack distribution of the OpenTelemetry (OTel) collector. By default, this requires a secure ingestion API key generated at startup. This key is required when sending data to the OTel ports, and can be found in the HyperDX UI under `Team Settings → API Keys`.
+All ingestion should occur via the OTLP ports exposed by ClickStack distribution of the OpenTelemetry (OTel) collector. By default, this requires a secure ingestion API key generated at startup. This key is required when sending data to the OTel ports, and can be found in the ClickStack UI under `Team Settings → API Keys`.
 
 <Image img="/images/use-cases/observability/ingestion-keys.webp" alt="Ingestion keys" size="lg"/>
 

@@ -47,7 +47,7 @@ Unlike file-based log integrations (nginx, Redis), CloudWatch requires running a
 
 The OpenTelemetry Collector sends data to ClickStack's OTLP endpoint, which requires authentication.
 
-1. Open HyperDX at your ClickStack URL (e.g., http://localhost:8080)
+1. Open ClickStack UI at your ClickStack URL (e.g., http://localhost:8080)
 2. Create an account or log in if needed
 3. Navigate to **Team Settings → API Keys**
 4. Copy your **Ingestion API Key**
@@ -271,11 +271,11 @@ View collector logs:
 docker compose logs -f otel-collector
 ```
 </Step>
-<Step title="Verify logs in HyperDX" id="verify-logs">
+<Step title="Verify logs in ClickStack UI" id="verify-logs">
 
 Once the collector is running:
 
-1. Open HyperDX at http://localhost:8080 (or your ClickStack URL)
+1. Open ClickStack UI at http://localhost:8080 (or your ClickStack URL)
 2. Navigate to the **Logs** view
 3. Wait 1-2 minutes for logs to appear (based on your poll interval)
 4. Search for logs from your CloudWatch log groups
@@ -334,7 +334,7 @@ This imports the logs directly into ClickStack's logs table.
 
 Once imported:
 
-1. Open HyperDX at http://localhost:8080 and log in (create an account if needed)
+1. Open ClickStack UI at http://localhost:8080 and log in (create an account if needed)
 2. Navigate to the **Logs** view
 3. Set the time range to **2025-12-07 00:00:00 - 2025-12-08 00:00:00 (UTC)**
 4. Search for `cloudwatch-demo` or filter by `LogAttributes['source'] = 'cloudwatch-demo'`
@@ -346,7 +346,7 @@ You should see logs from multiple CloudWatch log groups.
 <Info>
 **Timezone Display**
 
-HyperDX displays timestamps in your browser's local timezone. The demo data spans **2025-12-07 00:00:00 - 2025-12-08 00:00:00 (UTC)**. Set your time range to **2025-12-06 00:00:00 - 2025-12-09 00:00:00** to ensure you see the demo logs regardless of your location. Once you see the logs, you can narrow the range to a 24-hour period for clearer visualizations.
+ClickStack UI displays timestamps in your browser's local timezone. The demo data spans **2025-12-07 00:00:00 - 2025-12-08 00:00:00 (UTC)**. Set your time range to **2025-12-06 00:00:00 - 2025-12-09 00:00:00** to ensure you see the demo logs regardless of your location. Once you see the logs, you can narrow the range to a 24-hour period for clearer visualizations.
 </Info>
 </Step>
 </Steps>
@@ -362,7 +362,7 @@ To help you monitor CloudWatch logs with ClickStack, we provide a pre-built dash
 </Step>
 <Step title="Import the dashboard" id="import-dashboard">
 
-1. Open HyperDX and navigate to the Dashboards section
+1. Open ClickStack UI and navigate to the Dashboards section
 2. Click **Import Dashboard** in the upper right corner under the ellipses
 
 <Image img="/images/clickstack/import-dashboard.webp" alt="Import dashboard button"/>
@@ -385,7 +385,7 @@ For the demo dataset, set the time range to **2025-12-07 00:00:00 - 2025-12-08 0
 
 ## Troubleshooting {#troubleshooting}
 
-### No logs appearing in HyperDX {#no-logs}
+### No logs appearing in ClickStack UI {#no-logs}
 
 **Verify AWS credentials are configured:**
 

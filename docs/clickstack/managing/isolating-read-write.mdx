@@ -40,7 +40,7 @@ The recommended topology is a warehouse containing one read-write service for in
 | Service | Type | Responsibilities | Clients |
 |---|---|---|---|
 | Primary | Read-write | Ingestion, background merges, DDL (table creation, TTL, materialized views) | OpenTelemetry collector, ClickPipes, Vector, SQL console / client for administration |
-| Secondary | Read-only | Search, dashboards, notebooks, alert evaluation | ClickStack UI (HyperDX) |
+| Secondary | Read-only | Search, dashboards, notebooks, alert evaluation | ClickStack UI |
 
 Keep in mind when planning the topology:
 

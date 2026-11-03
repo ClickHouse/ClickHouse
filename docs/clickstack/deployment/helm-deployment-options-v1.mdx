@@ -20,7 +20,7 @@ ClickStack's Helm chart supports multiple deployment configurations:
 - **Full stack** (default) - All components included
 - **External ClickHouse** - Use existing ClickHouse cluster
 - **External OTEL Collector** - Use existing OTEL infrastructure
-- **Minimal deployment** - Only HyperDX, external dependencies
+- **Minimal deployment** - Only ClickStack UI, external dependencies
 
 ## External ClickHouse {#external-clickhouse}
 
@@ -186,7 +186,7 @@ For instructions on exposing OTEL collector endpoints via ingress, see [Ingress 
 
 ## Minimal deployment {#minimal-deployment}
 
-For organizations with existing infrastructure, deploy only HyperDX:
+For organizations with existing infrastructure, deploy only ClickStack UI:
 ```yaml
 # values-minimal.yaml
 clickhouse:

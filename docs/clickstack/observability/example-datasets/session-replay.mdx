@@ -226,7 +226,7 @@ docker-compose up -d clickstack
 </Step>
 <Step title="Get your API key" id="get-api-key-self-configured">
 
-1. Open HyperDX at [http://localhost:8080](http://localhost:8080)
+1. Open ClickStack UI at [http://localhost:8080](http://localhost:8080)
 2. Create an account or log in if needed
 3. Navigate to **Team Settings → API Keys**
 4. Copy your **Ingestion API Key**
@@ -257,7 +257,7 @@ All interactions are automatically captured by the ClickStack Browser SDK.
 </Step>
 <Step title="View your session replay" id="view-session-replay-self-configured">
 
-Return to HyperDX at [http://localhost:8080](http://localhost:8080) and navigate to **Client Sessions** from the left sidebar.
+Return to ClickStack UI at [http://localhost:8080](http://localhost:8080) and navigate to **Client Sessions** from the left sidebar.
 
 <Image img="/images/clickstack/session-replay/replay-search-view.webp" alt="Session replay search"/>
 
@@ -305,7 +305,7 @@ This branch contains the same application without any ClickStack instrumentation
 
 ## Troubleshooting {#troubleshooting-self-configured}
 
-### Sessions not appearing in HyperDX {#sessions-not-appearing-self-configured}
+### Sessions not appearing in ClickStack UI {#sessions-not-appearing-self-configured}
 
 1. Check the browser console for errors
 2. Verify ClickStack is running: `docker-compose ps`
@@ -319,7 +319,7 @@ The API key isn't set correctly. Make sure you:
 
 1. Exported it in your terminal: `export CLICKSTACK_API_KEY='your-key'`
 2. Started the demo app in the **same terminal** where you exported it
-3. Got the key from the HyperDX UI (not a randomly generated string)
+3. Got the key from the ClickStack UI (not a randomly generated string)
 
 ## Cleanup {#cleanup-self-configured}
 

@@ -11,9 +11,9 @@ import { Image } from "/snippets/components/Image.jsx";
 
 All data is ingested into ClickStack Open Source via an **OpenTelemetry (OTel) collector**. This acts as the primary entry point for logs, metrics, traces, and session data.
 
-You run an OpenTelemetry Collector to receive telemetry data from your applications. With ClickStack Open Source, you also manage and host both ClickHouse and the ClickStack UI (HyperDX) yourself.
+You run an OpenTelemetry Collector to receive telemetry data from your applications. With ClickStack Open Source, you also manage and host both ClickHouse and the ClickStack UI yourself.
 
-<Image img="/images/use-cases/observability/clickstack-oss-architecture-with-flow.webp" alt="Simple architecture with flow" size="md" />
+<Image img="/images/use-cases/observability/clickstack-oss-ingestion.svg" alt="Simple architecture with flow" size="md" />
 
 The collector exposes two OTLP endpoints:
 

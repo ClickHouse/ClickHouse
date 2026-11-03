@@ -4,7 +4,7 @@ description: 'Architecture of ClickHouse Observability — Self-managed'
 title: 'Architecture'
 toc_max_heading_level: 2
 doc_type: 'reference'
-keywords: ['ClickStack architecture', 'observability architecture', 'HyperDX', 'OpenTelemetry collector', 'MongoDB', 'system design']
+keywords: ['ClickStack architecture', 'observability architecture', 'ClickStack UI', 'OpenTelemetry collector', 'MongoDB', 'system design']
 sidebarTitle: 'Architecture'
 ---
 
@@ -16,9 +16,9 @@ This page covers **self-managed ClickHouse Observability**. For the recommended 
 
 ClickHouse Observability — Self-managed runs entirely within **ClickHouse Cloud**, providing a fully managed observability backend while preserving the same ClickStack data model and user experience.
 
-In this model, **ClickHouse and the ClickStack UI (HyperDX)** are hosted, operated, and secured by ClickHouse Cloud. Users are responsible only for running an **OpenTelemetry (OTel) collector** to send telemetry data into the managed service.
+In this model, **ClickHouse and the ClickStack UI** are hosted, operated, and secured by ClickHouse Cloud. Users are responsible only for running an **OpenTelemetry (OTel) collector** to send telemetry data into the managed service.
 
-<Image img="/images/use-cases/observability/clickstack-managed-architecture.webp" alt="Managed Architecture" size="lg"/>
+<Image img="/images/use-cases/observability/clickstack-self-managed-architecture.svg" alt="Self-managed OpenTelemetry collector sending telemetry to ClickHouse and ClickStack UI hosted in ClickHouse Cloud" size="lg"/>
 
 ### ClickHouse Cloud: the engine {#clickhouse-cloud}
 
@@ -53,9 +53,9 @@ The collector exports telemetry to ClickHouse Cloud in efficient batches. It sup
 
 **This component of the architecture is managed by the user**
 
-### ClickStack UI (HyperDX): the interface {#hyperdx}
+### ClickStack UI: the interface {#hyperdx}
 
-ClickStack UI (HyperDX) is the user interface for ClickStack. It offers:
+ClickStack UI is the user interface for ClickStack. It offers:
 
 - Natural language and Lucene-style search
 - Live tailing for real-time debugging
@@ -64,6 +64,6 @@ ClickStack UI (HyperDX) is the user interface for ClickStack. It offers:
 - Dashboard creation and alert configuration
 - SQL query interface for advanced analysis
 
-Designed specifically for ClickHouse, HyperDX combines powerful search with intuitive workflows, enabling you to spot anomalies, investigate issues, and gain insights fast. 
+Designed specifically for ClickHouse, ClickStack UI combines powerful search with intuitive workflows, enabling you to spot anomalies, investigate issues, and gain insights fast.
 
 In ClickHouse Observability — Self-managed, the UI is integrated into the ClickHouse Cloud console authentication system.

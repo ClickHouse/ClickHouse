@@ -44,11 +44,11 @@ The stack includes several key features designed for debugging and root cause an
 
 The platform consists of three core components:
 
-1. **UI (HyperDX)** – a purpose-built frontend for exploring and visualizing observability data
+1. **UI (ClickStack UI)** – a purpose-built frontend for exploring and visualizing observability data
 2. **OpenTelemetry collector** – a custom-built, preconfigured collector with an opinionated schema for logs, traces, and metrics
 3. **ClickHouse** – the high-performance analytical database at the heart of the stack
 
-In **Self-managed ClickHouse Observability**, ClickHouse and the HyperDX UI are hosted and operated in [ClickHouse Cloud](/products/cloud/getting-started/cloud-get-started), while you configure and run the OpenTelemetry collector.
+In **Self-managed ClickHouse Observability**, ClickHouse and the ClickStack UI are hosted and operated in [ClickHouse Cloud](/products/cloud/getting-started/cloud-get-started), while you configure and run the OpenTelemetry collector.
 
 To get started, visit the [Getting started guide](/clickstack/self-configured/getting-started/managed) before loading a [sample dataset](/clickstack/observability/example-datasets/index). You can also explore the [Self-managed deployment guide](/clickstack/self-configured/deployment/managed) and [production best practices](/clickstack/self-configured/managing/production).
 
@@ -62,7 +62,7 @@ Whether you're starting fresh or integrating with an existing setup, you can be 
 
 ### User-friendly and purpose-built {#user-friendly-purpose-built}
 
-The HyperDX UI supports both SQL and Lucene-style syntax, allowing users to choose the query interface that fits their workflow. Purpose-built for observability, the UI is optimized to help teams identify root causes quickly and navigate complex data without friction.
+The ClickStack UI supports both SQL and Lucene-style syntax, allowing users to choose the query interface that fits their workflow. Purpose-built for observability, the UI is optimized to help teams identify root causes quickly and navigate complex data without friction.
 
 ### End-to-end observability {#end-to-end-observability}
 
@@ -82,14 +82,14 @@ The schema is flexible and user-modifiable, and the UI is designed to be configu
 
 ## Architectural overview {#architectural-overview}
 
-<Image img="/images/use-cases/observability/clickstack-simple-managed-architecture.webp" alt="Self-managed architecture" size="md" />
+<Image img="/images/use-cases/observability/clickstack-self-managed-architecture.svg" alt="Self-managed OpenTelemetry collector sending telemetry to ClickHouse and ClickStack UI hosted in ClickHouse Cloud" size="md" />
 
-In this model, **ClickHouse and the UI (HyperDX)** are hosted, operated, and secured by ClickHouse Cloud. Users are responsible only for running an OpenTelemetry Collector to send telemetry data into the managed service.
+In this model, **ClickHouse and the UI (ClickStack UI)** are hosted, operated, and secured by ClickHouse Cloud. Users are responsible only for running an OpenTelemetry Collector to send telemetry data into the managed service.
 
 Self-managed ClickHouse Observability consists of the following components:
 
-1. **UI (HyperDX)**
-   The HyperDX UI is fully integrated into ClickHouse Cloud and managed as part of the service. It provides log search, trace exploration, dashboards, alerting, and correlation across telemetry types, with integrated authentication and access control.
+1. **UI (ClickStack UI)**
+   The ClickStack UI is fully integrated into ClickHouse Cloud and managed as part of the service. It provides log search, trace exploration, dashboards, alerting, and correlation across telemetry types, with integrated authentication and access control.
 
 2. **OpenTelemetry collector (self-managed)**
    Users run an OpenTelemetry Collector that receives telemetry data from their applications and infrastructure. This collector forwards data via OTLP to ClickHouse Cloud. While any standards-compliant OpenTelemetry Collector can be used, we strongly recommend the **ClickStack distribution**, which is preconfigured and optimized for ClickHouse ingestion and works out of the box with ClickStack schemas.

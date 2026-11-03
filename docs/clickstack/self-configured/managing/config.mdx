@@ -2,7 +2,7 @@
 slug: /clickstack/self-configured/managing/config
 title: 'Configuration options'
 description: 'Configuration options for Self-managed ClickHouse Observability'
-keywords: ['ClickStack configuration', 'observability configuration', 'HyperDX settings', 'collector configuration', 'environment variables']
+keywords: ['ClickStack configuration', 'observability configuration', 'ClickStack UI settings', 'collector configuration', 'environment variables']
 doc_type: 'reference'
 sidebarTitle: 'Configuration options'
 ---
@@ -28,7 +28,7 @@ The UI relies on the user defining a source for each of the Observability data t
 
 This configuration can be performed inside the application from `Team Settings -> Sources`, as shown below for logs:
 
-<Image img="/images/use-cases/observability/hyperdx-25.webp" alt="HyperDX Source configuration" size="md"/>
+<Image img="/images/use-cases/observability/hyperdx-25.webp" alt="ClickStack UI Source configuration" size="md"/>
 
 Each of these sources require at least one table specified on creation and a set of columns which allow the UI to query the data.
 
@@ -60,8 +60,8 @@ The following settings are available for each source:
 | `Log Attributes Expression`   | Expression or column for custom log attributes.                                                                        | Yes       | Yes                         | `LogAttributes`                                       |
 | `Resource Attributes Expression` | Expression or column for resource-level attributes.                                                                  | Yes       | Yes                         | `ResourceAttributes`                                  |
 | `Displayed Timestamp Column`  | Optional, higher-precision timestamp column used in UI display. Defaults to Timestamp Column when not provided.        | No       | Yes                         | `Timestamp`                                           |
-| `Correlated Metric Source`    | Linked metric source (e.g. HyperDX metrics).                                                                           | No       | No                          | –                                                   |
-| `Correlated Trace Source`     | Linked trace source (e.g. HyperDX traces).                                                                             | No       | No                          | –                                                   |
+| `Correlated Metric Source`    | Linked metric source (e.g. ClickStack UI metrics).                                                                           | No       | No                          | –                                                   |
+| `Correlated Trace Source`     | Linked trace source (e.g. ClickStack UI traces).                                                                             | No       | No                          | –                                                   |
 | `Trace Id Expression`         | Expression or column used to extract trace ID.                                                                         | Yes       | Yes                         | `TraceId`                                             |
 | `Span Id Expression`          | Expression or column used to extract span ID.                                                                          | Yes       | Yes                         | `SpanId`                                              |
 | `Implicit Column Expression`  | Column used for full-text search if no field is specified (Lucene-style). Typically the log body.                      | Yes       | Yes                         | `Body`                                                |
@@ -93,9 +93,9 @@ The following settings are available for each source:
 | `Parent Span Id Expression`     | Expression or column for parent span IDs.                                                                              | Yes      | Yes                         | `ParentSpanId`           |
 | `Span Name Expression`          | Expression or column for span names.                                                                                   | Yes      | Yes                         | `SpanName`               |
 | `Span Kind Expression`          | Expression or column for span kind (e.g. client, server).                                                              | Yes      | Yes                         | `SpanKind`               |
-| `Correlated Log Source`         | Optional. Linked log source (e.g. HyperDX logs).                                                                       | No       | No                          | –                      |
+| `Correlated Log Source`         | Optional. Linked log source (e.g. ClickStack UI logs).                                                                       | No       | No                          | –                      |
 | `Correlated Session Source`     | Optional. Linked session source.                                                                                       | No       | No                          | –                      |
-| `Correlated Metric Source`      | Optional. Linked metric source (e.g. HyperDX metrics).                                                                  | No       | No                          | –                      |
+| `Correlated Metric Source`      | Optional. Linked metric source (e.g. ClickStack UI metrics).                                                                  | No       | No                          | –                      |
 | `Status Code Expression`        | Expression for the span status code.                                                                                   | Yes      | Yes                         | `StatusCode`             |
 | `Status Message Expression`     | Expression for the span status message.                                                                                | Yes      | Yes                         | `StatusMessage`          |
 | `Service Name Expression`       | Expression or column for the service name.                                                                             | Yes      | Yes                         | `ServiceName`            |
@@ -129,7 +129,7 @@ The following settings are available for each source:
 | `Histogram Table`      | Table storing histogram-type metrics.                                                          | No       | Yes                         | `otel_metrics_histogram`    |
 | `Sum Table`            | Table storing sum-type (counter) metrics.                                                      | No       | Yes                         | `otel_metrics_sum`          |
 | `Exponential Histogram Table` | Table storing exponential histogram-type metrics.                                       | No | Yes                     | `otel_metrics_exponential_histogram` |
-| `Correlated Log Source`| Optional. Linked log source (e.g. HyperDX logs).                                               | No       | No                          | –                           |
+| `Correlated Log Source`| Optional. Linked log source (e.g. ClickStack UI logs).                                               | No       | No                          | –                           |
 
 #### Sessions {#settings}
 
@@ -216,7 +216,7 @@ Setting these correlations enables several features. For example, the UI can ren
 
 For example, below is the Logs source configured with correlated sources:
 
-<Image img="/images/use-cases/observability/hyperdx-26.webp" alt="HyperDX Source correlated" size="md"/>
+<Image img="/images/use-cases/observability/hyperdx-26.webp" alt="ClickStack UI Source correlated" size="md"/>
 
 ## OpenTelemetry collector {#otel-collector}
 

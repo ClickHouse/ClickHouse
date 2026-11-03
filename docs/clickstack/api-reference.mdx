@@ -4,7 +4,7 @@ title: 'API reference'
 sidebarTitle: 'API reference'
 description: 'ClickStack API reference for managing dashboards, alerts, and sources programmatically'
 doc_type: 'guide'
-keywords: ['ClickStack', 'observability', 'API', 'REST API', 'dashboards', 'alerts', 'HyperDX']
+keywords: ['ClickStack', 'observability', 'API', 'REST API', 'dashboards', 'alerts', 'ClickStack UI']
 ---
 
 import { Image } from "/snippets/components/Image.jsx";
@@ -13,7 +13,7 @@ ClickStack exposes a REST API for programmatically managing dashboards, alerts, 
 
 ## API reference documentation {#api-docs}
 
-For ClickStack Open Source, the full API specification is maintained in the [HyperDX repository](https://github.com/hyperdxio/hyperdx) and can be viewed interactively or downloaded as an OpenAPI spec:
+For ClickStack Open Source, the full API specification is maintained in the [ClickStack UI repository](https://github.com/hyperdxio/hyperdx) and can be viewed interactively or downloaded as an OpenAPI spec:
 
 - [Interactive API reference](https://www.clickhouse.com/docs/clickstack/api-reference)
 - [Download OpenAPI spec (JSON)](https://raw.githubusercontent.com/hyperdxio/hyperdx/refs/heads/main/packages/api/openapi.json)
@@ -34,7 +34,7 @@ ClickStack Open Source uses a **Bearer token** for authentication via a **Person
 
 To obtain an API key:
 
-1. Open HyperDX at your ClickStack URL (e.g., http://localhost:8080)
+1. Open ClickStack UI at your ClickStack URL (e.g., http://localhost:8080)
 2. Create an account or log in if needed
 3. Navigate to **Team Settings → API Keys**
 4. Copy your **Personal API Access Key**
@@ -60,7 +60,7 @@ curl -H "Authorization: Bearer <YOUR_API_KEY>" \
 
 ## Base URL and request format {#base-url}
 
-All Open Source ClickStack API requests are sent to the HyperDX API server on port `8000`:
+All Open Source ClickStack API requests are sent to the ClickStack UI API server on port `8000`:
 
 ```bash
 http://<YOUR_HYPERDX_HOST>:8000/api/v2/<resource>

@@ -27,7 +27,7 @@ This guide requires you to have:
 
 ## Deployment {#deployment}
 
-Deploy OpenTelemetry Collectors in your Kubernetes cluster to collect logs and metrics and forward them to your managed telemetry endpoint. ClickHouse Observability manages data ingestion, storage, and the UI, so you do not need to deploy ClickHouse, HyperDX, or MongoDB in your cluster.
+Deploy OpenTelemetry Collectors in your Kubernetes cluster to collect logs and metrics and forward them to your managed telemetry endpoint. ClickHouse Observability manages data ingestion, storage, and the UI, so you do not need to deploy ClickHouse, ClickStack UI, or MongoDB in your cluster.
 
 <Steps>
 <Step title="Copy your connection details" id="copy-connection-details">
@@ -302,7 +302,7 @@ This guide requires you to have:
 
 ## Deployment options {#deployment-options-self-configured}
 
-This guide uses ClickHouse Observability — Self-managed, with ClickHouse and the observability UI managed in ClickHouse Cloud. The Helm deployment below also runs a local HyperDX instance to provide the collector ingestion key.
+This guide uses ClickHouse Observability — Self-managed, with ClickHouse and the observability UI managed in ClickHouse Cloud. The Helm deployment below also runs a local ClickStack UI instance to provide the collector ingestion key.
 
 To simulate application traffic, you can optionally deploy the ClickStack fork of the [**OpenTelemetry Demo Application**](https://github.com/ClickHouse/opentelemetry-demo). This generates telemetry data including logs, metrics, and traces. If you already have workloads running in your cluster, you can skip this step and monitor existing pods, nodes, and containers.
 
@@ -388,7 +388,7 @@ With the Helm chart installed, deploy the collector and its supporting component
 Deploy the chart and [disable the included ClickHouse](/clickstack/deployment/helm#using-clickhouse-cloud).
 
 <Note>
-The chart currently always deploys both HyperDX and MongoDB. While these components offer an alternative access path, they're not integrated with ClickHouse Cloud authentication. These components are intended for administrators in this deployment model, [providing access to the secure ingestion key](#retrieve-ingestion-api-key-self-configured) needed to ingest through the deployed OTel collector, but shouldn't be exposed to end users.
+The chart currently always deploys both ClickStack UI and MongoDB. While these components offer an alternative access path, they're not integrated with ClickHouse Cloud authentication. These components are intended for administrators in this deployment model, [providing access to the secure ingestion key](#retrieve-ingestion-api-key-self-configured) needed to ingest through the deployed OTel collector, but shouldn't be exposed to end users.
 </Note>
 
 ```shell
@@ -411,15 +411,15 @@ my-hyperdx-hdx-oss-v2-mongodb-984845f96-czb6m           1/1     Running   0     
 my-hyperdx-hdx-oss-v2-otel-collector-64cf698f5c-8s7qj   1/1     Running   0          14m
 ```
 </Step>
-<Step title="Access the HyperDX UI" id="access-the-hyperdx-ui-self-configured">
+<Step title="Access the ClickStack UI" id="access-the-hyperdx-ui-self-configured">
 
 <Note>
-Even when using ClickHouse Observability — Self-managed, the local HyperDX instance deployed in the Kubernetes cluster is still required. It provides an ingestion key managed by the OpAMP server bundled with HyperDX, with secures ingestion through the deployed OTel collector - a capability not currently available in ClickHouse Observability — Self-managed.
+Even when using ClickHouse Observability — Self-managed, the local ClickStack UI instance deployed in the Kubernetes cluster is still required. It provides an ingestion key managed by the OpAMP server bundled with ClickStack UI, with secures ingestion through the deployed OTel collector - a capability not currently available in ClickHouse Observability — Self-managed.
 </Note>
 
 For security, the service uses `ClusterIP` and isn't exposed externally by default.
 
-To access the HyperDX UI, port forward from 3000 to the local port 8080.
+To access the ClickStack UI, port forward from 3000 to the local port 8080.
 
 ```shell
 kubectl port-forward \
@@ -428,11 +428,11 @@ kubectl port-forward \
  -n otel-demo
 ```
 
-Navigate [http://localhost:8080](http://localhost:8080) to access the HyperDX UI.
+Navigate [http://localhost:8080](http://localhost:8080) to access the ClickStack UI.
 
 Create a user, providing a username and password that meets the complexity requirements.
 
-<Image img="/images/use-cases/observability/hyperdx-login.webp" alt="HyperDX UI" size="lg"/>
+<Image img="/images/use-cases/observability/hyperdx-login.webp" alt="ClickStack UI" size="lg"/>
 </Step>
 <Step title="Retrieve ingestion API key" id="retrieve-ingestion-api-key-self-configured">
 
@@ -483,7 +483,7 @@ To collect logs and metrics from both the cluster itself and each node, we'll ne
 
 - `k8s_deployment.yaml` deploys a **single OpenTelemetry Collector instance** responsible for collecting **cluster-wide events and metadata**. It gathers Kubernetes events, cluster metrics, and enriches telemetry data with pod labels and annotations. This collector runs as a standalone deployment with a single replica to avoid duplicate data.
 
-- `k8s_daemonset.yaml` deploys a **DaemonSet-based collector** that runs on every node in your cluster. It collects **node-level and pod-level metrics**, as well as container logs, using components like `kubeletstats`, `hostmetrics`, and Kubernetes attribute processors. These collectors enrich logs with metadata and send them to HyperDX using the OTLP exporter.
+- `k8s_daemonset.yaml` deploys a **DaemonSet-based collector** that runs on every node in your cluster. It collects **node-level and pod-level metrics**, as well as container logs, using components like `kubeletstats`, `hostmetrics`, and Kubernetes attribute processors. These collectors enrich logs with metadata and send them to ClickStack using the OTLP exporter.
 
 Together, these manifests enable full-stack observability across the cluster, from infrastructure to application-level telemetry, and send the enriched data to your service for centralized analysis.
 

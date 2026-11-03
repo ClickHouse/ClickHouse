@@ -76,7 +76,7 @@ This is recommended if your site isn't currently built using a bundler.
 ### Options {#options}
 
 - `apiKey` - Your ClickStack Ingestion API Key.
-- `service` - The service name events will show up as in HyperDX UI.
+- `service` - The service name events will show up as in ClickStack UI.
 - `tracePropagationTargets` - A list of regex patterns to match against HTTP
   requests to link frontend and backend traces, it will add an additional
   `traceparent` header to all requests matching any of the patterns. This should
@@ -98,7 +98,7 @@ This is recommended if your site isn't currently built using a bundler.
 ### Attach user information or metadata {#attach-user-information-or-metadata}
 
 Attaching user information will allow you to search/filter sessions and events
-in the HyperDX UI. This can be called at any point during the client session. The
+in the ClickStack UI. This can be called at any point during the client session. The
 current client session and all events sent after the call will be associated
 with the user information.
 

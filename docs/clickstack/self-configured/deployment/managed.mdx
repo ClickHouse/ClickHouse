@@ -25,7 +25,7 @@ This page covers **self-managed ClickHouse Observability**. For the recommended 
 
 This **guide is for existing users of ClickHouse Cloud**. If you're new to ClickHouse Cloud, we recommend our [Getting Started](/clickstack/self-configured/getting-started/managed) guide for Self-managed ClickHouse Observability.
 
-In this deployment pattern, both ClickHouse and the ClickStack UI (HyperDX) are hosted in ClickHouse Cloud, minimizing the number of components the user needs to self-host.
+In this deployment pattern, both ClickHouse and the ClickStack UI are hosted in ClickHouse Cloud, minimizing the number of components the user needs to self-host.
 
 As well as reducing infrastructure management, this deployment pattern ensures authentication is integrated with ClickHouse Cloud SSO/SAML. Unlike self-hosted deployments, there is also no need to provision a MongoDB instance to store application state — such as dashboards, saved searches, user settings, and alerts. Users also benefit from:
 
@@ -302,14 +302,14 @@ Once the source is configured, click "Save" and begin exploring your data.
 3. Set the appropriate permission level for each user:
    - **Service Admin → Full Access** - Required for enabling alerts
    - **Service Read Only → Read Only** - Can view observability data and create dashboards
-   - **No access** - Can't access HyperDX
+   - **No access** - Can't access ClickStack UI
 
 <Image img="/images/clickstack/read-only-access.webp" alt="ClickHouse Cloud Read Only" size="md"/>
 
 <Warning>
 **Alerts require admin access**
 
-To enable alerts, at least one user with **Service Admin** permissions (mapped to **Full Access** in the SQL Console Access dropdown) must log into HyperDX at least once. This provisions a dedicated user in the database that runs alert queries.
+To enable alerts, at least one user with **Service Admin** permissions (mapped to **Full Access** in the SQL Console Access dropdown) must log into ClickStack UI at least once. This provisions a dedicated user in the database that runs alert queries.
 </Warning>
 
 ### Using ClickStack with read-only compute {#clickstack-read-only-compute}
@@ -351,7 +351,7 @@ The following describes how users can add additional data sources beyond those t
 
 If you're using an OTel collector to create the database and tables within ClickHouse, retain all default values within the create source model, completing the `Table` field with the value `otel_logs` - to create a logs source. All other settings should be auto-detected, allowing you to click `Save New Source`.
 
-<Image img="/images/use-cases/observability/hyperdx_cloud_datasource.webp" alt="ClickHouse Cloud HyperDX Datasource" size="lg"/>
+<Image img="/images/use-cases/observability/hyperdx_cloud_datasource.webp" alt="ClickHouse Cloud ClickStack UI Datasource" size="lg"/>
 
 To create sources for traces and OTel metrics, you can select `Create New Source` from the top menu.
 

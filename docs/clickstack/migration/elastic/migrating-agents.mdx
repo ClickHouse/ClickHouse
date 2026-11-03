@@ -54,7 +54,7 @@ Alternatively, Vector also supports receiving events over the Lumberjack protoco
 
 We illustrate both of these architectures below.
 
-<Image img="/images/use-cases/observability/clickstack-migrating-agents.webp" alt="Migrating agents" size="lg" background/>
+<Image img="/images/use-cases/observability/clickstack-migrating-agents-ui.png" alt="Migrating agents" size="lg" background/>
 
 In the following example, we provide the initial steps to configure Vector to receive log events from Filebeat via the Lumberjack protocol. We provide VRL for mapping the inbound ECS events to OTel specification, before sending these to the ClickStack OpenTelemetry collector via OTLP. Users consuming events from Kafka can replace the Vector Logstash source with the [Kafka source](https://vector.dev/docs/reference/configuration/sources/kafka/) - all other steps remain the same.
 
@@ -242,7 +242,7 @@ sinks:
         authorization: ${YOUR_INGESTION_API_KEY}
 ```
 
-The `YOUR_INGESTION_API_KEY` here is produced by ClickStack. You can find the key in the ClickStack UI (HyperDX) under `Team Settings → API Keys`.
+The `YOUR_INGESTION_API_KEY` here is produced by ClickStack. You can find the key in the ClickStack UI under `Team Settings → API Keys`.
 
 <Image img="/images/use-cases/observability/ingestion-keys.webp" alt="Ingestion keys" size="lg"/>
 

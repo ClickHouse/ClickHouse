@@ -30,7 +30,7 @@ The ClickStack OpenTelemetry collector is included in most ClickStack distributi
 
 The ClickStack OTel collector can also be deployed standalone, independent of other components of the stack.
 
-If you're using the [HyperDX-only](/clickstack/deployment/hyperdx-only) distribution, you're responsible for delivering data into ClickHouse yourself. This can be done by:
+If you're using the [ClickStack UI only](/clickstack/deployment/hyperdx-only) distribution, you're responsible for delivering data into ClickHouse yourself. This can be done by:
 
 - Running your own OpenTelemetry collector and pointing it at ClickHouse - see below.
 - Sending directly to ClickHouse using alternative tooling, such as [Vector](https://vector.dev/), [Fluentd](https://www.fluentd.org/) etc, or even the default [OTel contrib collector distribution](https://github.com/open-telemetry/opentelemetry-collector-contrib).
@@ -38,7 +38,7 @@ If you're using the [HyperDX-only](/clickstack/deployment/hyperdx-only) distribu
 <Info>
 **We recommend using the ClickStack OpenTelemetry collector**
 
-This allows you to benefit from standardized ingestion, enforced schemas, and out-of-the-box compatibility with the HyperDX UI. Using the default schema enables automatic source detection and preconfigured column mappings.
+This allows you to benefit from standardized ingestion, enforced schemas, and out-of-the-box compatibility with the ClickStack UI. Using the default schema enables automatic source detection and preconfigured column mappings.
 </Info>
 
 For further details see ["Deploying the collector"](/clickstack/ingesting-data/collector).
@@ -56,7 +56,7 @@ For [language SDKs](/clickstack/ingesting-data/sdks/index) and telemetry librari
 export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
 ```
 
-In addition, an authorization header containing the API ingestion key is required. You can find the key in the HyperDX app under `Team Settings → API Keys`.
+In addition, an authorization header containing the API ingestion key is required. You can find the key in the ClickStack UI under `Team Settings → API Keys`.
 
 <Image img="/images/use-cases/observability/ingestion-keys.webp" alt="Ingestion keys" size="lg"/>
 

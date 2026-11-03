@@ -44,13 +44,13 @@ The stack includes several key features designed for debugging and root cause an
 
 ClickStack consists of three core components:
 
-1. **ClickStack UI (HyperDX)** – a purpose-built frontend for exploring and visualizing observability data
+1. **ClickStack UI** – a purpose-built frontend for exploring and visualizing observability data
 2. **OpenTelemetry collector** – a custom-built, preconfigured collector with an opinionated schema for logs, traces, and metrics
 3. **ClickHouse** – the high-performance analytical database at the heart of the stack
 
 These components can be deployed together in a fully **self-managed ClickStack Open Source** setup.
 
-A browser-hosted version of the HyperDX UI is also available, allowing users to connect directly to existing ClickHouse deployments without deploying additional UI infrastructure.
+A browser-hosted version of the ClickStack UI is also available, allowing users to connect directly to existing ClickHouse deployments without deploying additional UI infrastructure.
 
 To get started, visit the [Getting started guide](/clickstack/getting-started/index) before loading a [sample dataset](/clickstack/example-datasets/index). You can also explore documentation on [deployment options](/clickstack/deployment/oss) and [production best practices](/clickstack/managing/production).
 
@@ -64,7 +64,7 @@ ClickStack works out of the box with any ClickHouse instance and schema, requiri
 
 ### User-friendly and purpose-built {#user-friendly-purpose-built}
 
-The HyperDX UI supports both SQL and Lucene-style syntax, allowing users to choose the query interface that fits their workflow. Purpose-built for observability, the UI is optimized to help teams identify root causes quickly and navigate complex data without friction.
+The ClickStack UI supports both SQL and Lucene-style syntax, allowing users to choose the query interface that fits their workflow. Purpose-built for observability, the UI is optimized to help teams identify root causes quickly and navigate complex data without friction.
 
 ### End-to-end observability {#end-to-end-observability}
 
@@ -84,11 +84,11 @@ ClickStack is fully open source and can be deployed anywhere. The schema is flex
 
 ## Architectural overview {#architectural-overview}
 
-<Image img="/images/use-cases/observability/clickstack-simple-oss-architecture.webp" alt="OSS Simple architecture" size="md" />
+<Image img="/images/use-cases/observability/clickstack-oss-ingestion.svg" alt="OSS Simple architecture" size="md" />
 
 Open Source ClickStack consists of three core components:
 
-1. **ClickStack UI (HyperDX)**  
+1. **ClickStack UI**
    A user-friendly interface built for observability. It supports both Lucene-style and SQL queries, interactive dashboards, alerting, trace exploration, and more—all optimized for ClickHouse as the backend.
 
 2. **OpenTelemetry collector**  

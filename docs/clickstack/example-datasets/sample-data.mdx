@@ -14,7 +14,7 @@ This guide demonstrates ClickStack Open Source using a sample data set.
 The following example assumes you have started ClickStack Open Source using the [all-in-one image](/clickstack/getting-started/oss) and copied the [ingestion API key](/clickstack/getting-started/oss#copy-ingestion-api-key).
 
 <Steps>
-<Step title="Navigate to the ClickStack UI (HyperDX)" id="navigate-to-the-hyperdx-ui">
+<Step title="Navigate to the ClickStack UI" id="navigate-to-the-hyperdx-ui">
 
 Visit [http://localhost:8080](http://localhost:8080) to access the ClickStack UI. 
 
@@ -71,13 +71,13 @@ This simulates OTLP log, trace, and metric sources sending data to the OTel coll
 
 Returning to the `Search` view, you should see that data has started to load (adjust the time frame to the `Last 1 hour` if the data doesn't render):
 
-<Image img="/images/use-cases/observability/hyperdx-10.webp" alt="HyperDX search" size="lg" />
+<Image img="/images/use-cases/observability/hyperdx-10.webp" alt="ClickStack UI search" size="lg" />
 
 Data loading will take a few minutes. Allow for the load to be completed before progressing to the next steps.
 </Step>
 <Step title="Explore sessions" id="explore-sessions">
 
-Suppose we have reports that our users are experiencing issues paying for goods. We can view their experience using HyperDX's session replay capabilities. 
+Suppose we have reports that our users are experiencing issues paying for goods. We can view their experience using ClickStack UI's session replay capabilities.
 
 Select [`Client Sessions`](http://localhost:8080/sessions?from=1747312320000&to=1747312920000&sessionSource=l1324572572) from the left menu.
 

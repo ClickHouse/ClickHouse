@@ -4,14 +4,14 @@ description: 'Architecture of ClickStack - The ClickHouse Observability Stack'
 title: 'Architecture'
 toc_max_heading_level: 2
 doc_type: 'reference'
-keywords: ['ClickStack architecture', 'observability architecture', 'HyperDX', 'OpenTelemetry collector', 'MongoDB', 'system design']
+keywords: ['ClickStack architecture', 'observability architecture', 'ClickStack UI', 'OpenTelemetry collector', 'MongoDB', 'system design']
 ---
 
 import { Image } from "/snippets/components/Image.jsx";
 
-The ClickStack Open Source architecture is built around three core components: **ClickHouse**, **HyperDX**, and a **OpenTelemetry (OTel) collector**. A **MongoDB** instance provides storage for the application state. Together, they provide a high-performance, open-source observability stack optimized for logs, metrics, and traces.
+The ClickStack Open Source architecture is built around three core components: **ClickHouse**, **ClickStack UI**, and a **OpenTelemetry (OTel) collector**. A **MongoDB** instance provides storage for the application state. Together, they provide a high-performance, open-source observability stack optimized for logs, metrics, and traces.
 
-<Image img="/images/use-cases/observability/clickstack-oss-architecture.webp" alt="Architecture" size="lg"/>
+<Image img="/images/use-cases/observability/clickstack-oss-architecture.svg" alt="Architecture" size="lg"/>
 
 ### ClickHouse: the database engine {#clickhouse}
 
@@ -34,9 +34,9 @@ ClickStack includes a pre-configured OpenTelemetry (OTel) collector to ingest te
 
 The collector exports telemetry to ClickHouse in efficient batches. It supports optimized table schemas per data source, ensuring scalable performance across all signal types.
 
-### ClickStack UI (HyperDX): the interface {#hyperdx-ui}
+### ClickStack UI: the interface {#hyperdx-ui}
 
-ClickStack UI (HyperDX) is the user interface for ClickStack. It offers:
+ClickStack UI is the user interface for ClickStack. It offers:
 
 - Natural language and Lucene-style search
 - Live tailing for real-time debugging
@@ -45,7 +45,7 @@ ClickStack UI (HyperDX) is the user interface for ClickStack. It offers:
 - Dashboard creation and alert configuration
 - SQL query interface for advanced analysis
 
-Designed specifically for ClickHouse, HyperDX combines powerful search with intuitive workflows, enabling you to spot anomalies, investigate issues, and gain insights fast. 
+Designed specifically for ClickHouse, ClickStack UI combines powerful search with intuitive workflows, enabling you to spot anomalies, investigate issues, and gain insights fast.
 
 ### MongoDB: application state {#mongo}
 
