@@ -898,7 +898,7 @@ Possible values:
 - `v2_with_positions` — Persists token positions for indexes with `support_phrase_search`.
 - `v3_with_tokenizer_config` — Persists tokenizer configuration required to read `jsonPathValues` indexes.
 )", 0, \
-        {"26.10", "v2_with_positions", "v2_with_positions", "Allow the `v3_with_tokenizer_config` text index format required by `jsonPathValues` indexes. The default remains `v2_with_positions`; indexes that require v3 choose it automatically."}, \
+        {"26.11", "v2_with_positions", "v2_with_positions", "Allow the `v3_with_tokenizer_config` text index format required by `jsonPathValues` indexes. The default remains `v2_with_positions`; indexes that require v3 choose it automatically."}, \
         {"26.8", "v1_with_codec", "v2_with_positions", "Allow the 'v2_with_positions' text index format that persists token positions for phrase search. Reverts to 'v1_with_codec' under older compatibility so that newer servers keep writing the format that older servers can read during a rolling upgrade."}, \
         {"26.6", "v0_initial", "v1_with_codec", "New setting. Controls the on-disk format version of text indexes. Reverts to 'v0_initial' under older compatibility so that newer servers keep writing the previous format that older servers can read during a rolling upgrade."}) \
     DECLARE(UInt64, merge_selecting_sleep_ms, 5000, R"(
