@@ -520,13 +520,7 @@ public:
         /// A failed table lookup goes to the outer handler, which keeps its HTTP status (e.g. 404 for an unknown table).
         StoragePtr table;
         if (!Poco::URI(uri).getPath().ends_with("/format_query"))
-        {
-            /// Check the grant before the lookup, so a missing table gives the same error as an existing one.
-            if (Poco::URI(uri).getPath().ends_with("/federate"))
-                context->checkAccess(AccessType::SELECT, getTimeSeriesTableID());
-
             table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context);
-        }
 
         try
         {

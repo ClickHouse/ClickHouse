@@ -30,8 +30,8 @@
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
 #include <Storages/TimeSeries/checkTimeSeriesVersion.h>
 #include <Storages/TimeSeries/getPromQLResultTimestampType.h>
+#include <Storages/TimeSeries/makeASTSelectLatestSamples.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
-#include <Storages/getEffectiveRowPolicyFilter.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
@@ -55,7 +55,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
@@ -1094,45 +1093,18 @@ void PrometheusHTTPProtocolAPI::getLabelsOrLabelValues(
 
 void PrometheusHTTPProtocolAPI::federate(WriteBuffer & response, const Strings & match_params, QueryFinishCallback query_finish_callback)
 {
-    const auto storage_id = time_series_storage->getStorageID();
-
-    /// `timeSeriesSelector` reads the samples and the tags from the target tables, so a row policy of the `TimeSeries` table
-    /// itself is not applied there. Federation is refused instead of exporting the rows such a policy hides.
-    if (getEffectiveRowPolicyFilter(*time_series_storage, getContext()))
-        throw Exception(ErrorCodes::ACCESS_DENIED,
-            "Cannot federate the table {} because a row policy is applied on it. "
-            "The /federate endpoint reads the samples from its target tables, so it cannot apply the row policy",
-            storage_id.getNameForLogs());
-
     /// Like Prometheus, no `match[]` selectors means an empty response.
     if (match_params.empty())
         return;
 
     /// Prometheus reads the samples in [now - 5m, now] (its default lookback delta).
-    const Int64 max_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-    const Int64 min_time_ms = max_time_ms - 5 * 60 * 1000;
-
-    String selects;
-    for (const auto & match_param : match_params)
-    {
-        if (!selects.empty())
-            selects += " UNION ALL ";
-        selects += fmt::format(
-            "SELECT id, timestamp, value FROM timeSeriesSelector({}, {}, {}, fromUnixTimestamp64Milli({}), fromUnixTimestamp64Milli({}), "
-            "'timestamp_and_value')",
-            quoteString(storage_id.getDatabaseName()), quoteString(storage_id.getTableName()), quoteString(match_param),
-            min_time_ms, max_time_ms);
-    }
+    constexpr UInt32 time_scale = 3;
+    const DateTime64 now{std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count()};
+    const Decimal64 lookback_delta{5 * 60 * 1000};
 
     /// The newest sample of each series, skipping the series whose newest sample is a stale marker, sorted by metric name.
-    /// Samples at the same timestamp follow the rule of the instant query: a real value beats a NaN, then the greatest wins.
-    /// Like the instant query, the samples are grouped by `timeSeriesIdToGroup`, because different identifiers can have
-    /// the same tags (after a change of `id_generator` the old rows keep their identifiers), and they are one series.
-    String sql_query = fmt::format(
-        "SELECT timeSeriesGroupToTags(group) AS tags, argMax(value, (timestamp, NOT isNaN(value), value)) AS last_value, "
-        "toUnixTimestamp64Milli(toDateTime64(max(timestamp), 3)) AS last_timestamp FROM ({}) GROUP BY timeSeriesIdToGroup(id) AS group "
-        "HAVING reinterpretAsUInt64(toFloat64(last_value)) != 0x7FF0000000000002 ORDER BY arrayFirst(tag -> tag.1 = '__name__', tags).2, tags",
-        selects);
+    auto sql_query = makeASTSelectLatestSamples(time_series_storage->getStorageID(), match_params, now, lookback_delta, time_scale)
+                         ->formatWithSecretsOneLine();
 
     LOG_TRACE(log, "SQL query to execute:\n{}", sql_query);
 
