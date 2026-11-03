@@ -16,11 +16,13 @@ namespace DB
 class DiskSelector;
 using DiskSelectorPtr = std::shared_ptr<const DiskSelector>;
 
-/// Whether two disks read and write the same files, by endpoint, bucket and path.
+/// Whether two disks read and write the same files, by endpoint, bucket and path, or list the same
+/// local directory.
 bool haveSameStorageNamespace(const DiskPtr & lhs, const DiskPtr & rhs);
 
-/// Whether two disks are two writable ways into the same files, so that a storage policy holding both
-/// loads every part twice and removes one copy as a duplicate. `StoragePolicy` rejects such a pair.
+/// Whether two disks are two ways into the same files, so that a storage policy holding both loads
+/// every part twice and removes one copy as a duplicate. `StoragePolicy` rejects such a pair, whether
+/// the disks are writable or read-only, and whether or not one of them is a layer over the other.
 ///
 /// Registering both is allowed: two disks over one storage are only a danger to the table that reads
 /// through both of them, and a disk is registered long before it is known which policy will hold it.

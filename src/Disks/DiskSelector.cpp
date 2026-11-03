@@ -9,10 +9,8 @@
 #include <Common/logger_useful.h>
 #include <Interpreters/Context.h>
 
-#include <algorithm>
 #include <filesystem>
 #include <optional>
-#include <vector>
 
 
 namespace DB
@@ -44,76 +42,6 @@ MetadataStoragePtr unwrapEncryptedAndCacheLayers(DiskPtr disk)
     return metadata_storage;
 }
 
-/// The trail of layers a disk stands on, from the disk itself down to the storage it reads and writes.
-///
-/// A disk that delegates to another one - an `encrypted` disk or a read-only wrapper - contributes its own
-/// identity and continues with its delegate. Once object storage is reached, the trail continues through the
-/// metadata storages instead of the disks, because a `cache` disk is a separate `DiskObjectStorage` that puts
-/// a metadata storage over the metadata storage of the disk it caches and never points at that disk.
-/// A disk not backed by object storage, a `local` disk for example, ends the trail with its own identity.
-std::vector<const void *> unwrapLayerTrail(DiskPtr disk)
-{
-    std::vector<const void *> trail;
-
-    DiskObjectStoragePtr object_storage_disk;
-    while (disk)
-    {
-        object_storage_disk = std::dynamic_pointer_cast<DiskObjectStorage>(disk);
-        if (object_storage_disk)
-            break;
-
-        trail.push_back(disk.get());
-
-        DiskPtr delegate = disk->getDelegateDiskIfExists();
-        if (!delegate)
-            return trail;
-
-        disk = std::move(delegate);
-    }
-
-    if (!object_storage_disk)
-        return trail;
-
-    MetadataStoragePtr metadata_storage = object_storage_disk->getMetadataStorage();
-    while (true)
-    {
-        chassert(metadata_storage);
-        trail.push_back(metadata_storage.get());
-
-        auto * cache_metadata = dynamic_cast<MetadataStorageFromCacheObjectStorage *>(metadata_storage.get());
-        if (!cache_metadata)
-            return trail;
-
-        metadata_storage = cache_metadata->getUnderlying();
-    }
-}
-
-/// Whether the trail of the outer disk ends with the whole trail of the inner one, so that unwrapping the
-/// outer disk reaches the inner disk and goes on to the same storage behind it.
-bool isTrailBelow(const std::vector<const void *> & outer, const std::vector<const void *> & inner)
-{
-    if (inner.empty() || inner.size() >= outer.size())
-        return false;
-
-    return std::equal(inner.rbegin(), inner.rend(), outer.rbegin());
-}
-
-/// Whether one of the two disks is a layer over the other, as a `cache` or `encrypted` disk is over the
-/// disk it wraps. Such a pair reports one storage namespace by design and is not a duplicate registration.
-///
-/// This asks for real ancestry rather than for either disk having removed a layer. Two separately configured
-/// `encrypted` or `cache` disks over one storage both remove a layer and are handed the same metadata storage,
-/// but neither stands on the other: they are two writable ways into the same files, which is the duplicate
-/// registration this rejects. Ancestry also settles the pairs whose storage is not object storage, where there
-/// is no metadata storage to compare at all - an `encrypted` disk over a `local` disk, for one.
-bool isOneDiskALayerOverTheOther(const DiskPtr & lhs, const DiskPtr & rhs)
-{
-    const auto lhs_trail = unwrapLayerTrail(lhs);
-    const auto rhs_trail = unwrapLayerTrail(rhs);
-
-    return isTrailBelow(lhs_trail, rhs_trail) || isTrailBelow(rhs_trail, lhs_trail);
-}
-
 /// Identity of the storage that a disk reads and writes.
 struct StorageNamespace
 {
@@ -127,6 +55,21 @@ struct StorageNamespace
     bool operator==(const StorageNamespace &) const = default;
 };
 
+/// Normalizes a disk path. A local directory is canonicalized before its `..` components are collapsed,
+/// because a `..` after a symlink leaves the directory the symlink points to, not the one that holds it.
+/// A trailing separator is dropped, so that a root with and without one compare equal.
+std::filesystem::path normalizeDiskPath(const String & path, bool is_local)
+{
+    auto normalized = is_local
+        ? std::filesystem::weakly_canonical(std::filesystem::path(path)).lexically_normal()
+        : std::filesystem::path(path).lexically_normal();
+
+    if (!normalized.has_filename() && normalized.has_relative_path())
+        normalized = normalized.parent_path();
+
+    return normalized;
+}
+
 /// Returns the storage namespace of a disk, or nothing when the disk has no persistent one.
 std::optional<StorageNamespace> getStorageNamespace(const DiskPtr & disk)
 {
@@ -136,10 +79,7 @@ std::optional<StorageNamespace> getStorageNamespace(const DiskPtr & disk)
     if (data_source.type == DataSourceType::RAM)
         return {};
 
-    /// Resolve symlinks of a local directory so that two aliases of one directory match.
-    auto path = std::filesystem::path(disk->getPath()).lexically_normal();
-    if (data_source.isPathLocal())
-        path = std::filesystem::weakly_canonical(path);
+    const auto path = normalizeDiskPath(disk->getPath(), data_source.isPathLocal());
 
     /// `DiskBackup` reports `ObjectStorage` with `ObjectStorageType::None` and has no object storage behind it,
     /// so its identity is its description and its path.
@@ -157,10 +97,33 @@ std::optional<StorageNamespace> getStorageNamespace(const DiskPtr & disk)
     };
 }
 
+/// Returns the local directory that a disk lists its files from, or nothing when the listing does not come
+/// from the local filesystem.
+///
+/// For a `local` disk it is the disk's directory. For an object storage disk with `metadata_type = local`,
+/// `DiskObjectStorage::iterateDirectory` lists the local metadata directory, whatever the object storage
+/// behind it is. For a `local` object storage with plain metadata, it is the directory of the objects.
+std::optional<String> getLocalListingDirectory(const DiskPtr & disk)
+{
+    const auto data_source = disk->getDataSourceDescription();
+    if (data_source.type == DataSourceType::RAM || !data_source.isPathLocal())
+        return {};
+
+    return normalizeDiskPath(disk->getPath(), /*is_local=*/ true).string();
+}
+
 }
 
 bool haveSameStorageNamespace(const DiskPtr & lhs, const DiskPtr & rhs)
 {
+    /// Two disks that list one local directory see the same parts, even when the objects behind them are in
+    /// different buckets.
+    if (const auto lhs_directory = getLocalListingDirectory(lhs))
+    {
+        if (lhs_directory == getLocalListingDirectory(rhs))
+            return true;
+    }
+
     const auto lhs_namespace = getStorageNamespace(lhs);
     if (!lhs_namespace)
         return false;
@@ -170,17 +133,10 @@ bool haveSameStorageNamespace(const DiskPtr & lhs, const DiskPtr & rhs)
 
 bool areDisksDuplicateStorage(const DiskPtr & lhs, const DiskPtr & rhs)
 {
-    /// Only two writable disks load a part twice and then remove one copy, which is what deletes the data.
-    /// Reading one storage through a second disk is a supported setup - a reader disk beside a writer disk,
-    /// or a cache layer over a read-only copy.
-    if (lhs->isReadOnly() || lhs->isWriteOnce() || rhs->isReadOnly() || rhs->isWriteOnce())
-        return false;
-
-    /// A `cache` or `encrypted` disk stands on the disk it wraps and reports that disk's namespace. The two
-    /// are one storage behind one metadata storage, not two ways into the same files.
-    if (isOneDiskALayerOverTheOther(lhs, rhs))
-        return false;
-
+    /// Every pair of disks over one storage in one policy makes the table enumerate the same parts twice. This
+    /// holds for a read-only disk beside a writable one too: if the reader's copy of a part wins, the writer's
+    /// copy is loaded as outdated and removed through the writable disk, which deletes the files the reader
+    /// uses. And it holds for a `cache` or `encrypted` disk beside the disk it wraps, which list the same files.
     return haveSameStorageNamespace(lhs, rhs);
 }
 

@@ -11,8 +11,8 @@
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
             </s3>
-            <!-- Writable, because only two writable disks on one storage lose data: the duplicate part is
-                 removed. Reading one storage through a read-only or write-once second disk is supported. -->
+            <!-- Two disks over different buckets and with different metadata paths are different storages,
+                 so a policy may hold both. -->
             <s3_bucket_root>
                 <type>s3</type>
                 <endpoint>http://minio1:9001/root/data/disks/shared/</endpoint>

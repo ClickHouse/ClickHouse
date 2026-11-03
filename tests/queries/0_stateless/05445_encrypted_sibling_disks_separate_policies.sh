@@ -22,7 +22,7 @@ objects_path="${CLICKHOUSE_DISKS_FILES}/05445_objects/${CLICKHOUSE_DATABASE}/"
 metadata_path="${CLICKHOUSE_DISKS_FILES}/05445_metadata/${CLICKHOUSE_DATABASE}/"
 
 # An `encrypted` disk over a writable object storage disk, with no `path` of its own, so it reports the
-# path of the disk it wraps. Both disks are registered, and the layer and the disk below it are not a pair.
+# path of the disk it wraps. Both disks are registered; the policy of the table holds only the encrypted one.
 ${CLICKHOUSE_CLIENT} --query "
 CREATE TABLE sibling_first (s String) ORDER BY ()
 SETTINGS disk = disk(
