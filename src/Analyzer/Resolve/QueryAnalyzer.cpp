@@ -1494,6 +1494,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
     if (node_type == QueryTreeNodeType::IDENTIFIER)
     {
         scope_to_resolve_alias_expression->pushExpressionNode(alias_node);
+        SCOPE_EXIT(scope_to_resolve_alias_expression->popExpressionNode());
 
         auto & alias_identifier_node = alias_node->as<IdentifierNode &>();
         auto identifier = alias_identifier_node.getIdentifier();
@@ -1501,8 +1502,6 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
         if (alias_node->hasOriginalAST())
             alias_identifier_lookup.original_ast_node = alias_node->getOriginalAST();
         auto lookup_result = tryResolveIdentifier(alias_identifier_lookup, *scope_to_resolve_alias_expression, identifier_resolve_context);
-
-        scope_to_resolve_alias_expression->popExpressionNode();
 
         /** The niladic-function fallback of `tryResolveIdentifier` is gated on the initial context, so that
           * it stays the last resort of the whole scope walk instead of firing at every parent scope. Here the
@@ -3200,8 +3199,8 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                     /// resolveLambda resolves the body via resolveExpressionNode, which itself
                     /// pushes the aggregate function before resolving its arguments.
                     scope.pushExpressionNode(function_to_resolve_untyped);
+                    SCOPE_EXIT(scope.popExpressionNode());
                     node_projection_names = resolveFunction(function_to_resolve_untyped, scope);
-                    scope.popExpressionNode();
                     node = function_to_resolve_untyped;
                 }
                 else
@@ -3631,6 +3630,11 @@ ProjectionName QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierR
 
     ProjectionName result_projection_name;
     QueryTreeNodePtr parent_window_node;
+    bool parent_window_inserted = false;
+    SCOPE_EXIT({
+        if (parent_window_inserted)
+            windows_in_resolve_process.erase(parent_window_node.get());
+    });
 
     if (identifier_node)
         parent_window_name = identifier_node->getIdentifier().getFullName();
@@ -3661,6 +3665,7 @@ ProjectionName QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierR
                 "Recursive window {}. In scope {}",
                 node->formatASTForErrorMessage(),
                 scope.scope_node->formatASTForErrorMessage());
+        parent_window_inserted = true;
 
         if (identifier_node)
         {
@@ -3749,7 +3754,6 @@ ProjectionName QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierR
             frame_end_offset_projection_names.empty() ? "" : frame_end_offset_projection_names.front());
     }
 
-    windows_in_resolve_process.erase(parent_window_node.get());
     return result_projection_name;
 }
 
@@ -3798,6 +3802,7 @@ ProjectionNames QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_nod
             lambda_node->formatASTForErrorMessage(),
             scope.scope_node->formatASTForErrorMessage());
     lambdas_in_resolve_process.insert(lambda_with_hash);
+    SCOPE_EXIT(lambdas_in_resolve_process.erase(lambda_with_hash));
 
     size_t arguments_size = lambda_arguments.size();
     if (lambda_arguments_nodes_size != arguments_size)
@@ -3837,8 +3842,6 @@ ProjectionNames QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_nod
 
     /// Lambda body expression is resolved as standard query expression node.
     auto result_projection_names = resolveExpressionNode(lambda_to_resolve.getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-
-    lambdas_in_resolve_process.erase(lambda_with_hash);
 
     return result_projection_names;
 }
@@ -3931,6 +3934,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
     }
 
     scope.pushExpressionNode(node);
+    SCOPE_EXIT(scope.popExpressionNode());
 
     auto node_type = node->getNodeType();
 
@@ -4012,14 +4016,15 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                         /// `test1` is resolved to CTE (not to the table) in `initializeQueryJoinTreeNode` function.
                         ctes_in_resolve_process.insert(original_cte_node);
                         cte_definitions_in_resolve_process.insert(original_cte_node.get());
+                        SCOPE_EXIT({
+                            ctes_in_resolve_process.erase(original_cte_node);
+                            cte_definitions_in_resolve_process.erase(original_cte_node.get());
+                        });
 
                         if (subquery_node)
                             resolveQuery(resolved_identifier_node, subquery_scope);
                         else
                             resolveUnion(resolved_identifier_node, subquery_scope);
-
-                        ctes_in_resolve_process.erase(original_cte_node);
-                        cte_definitions_in_resolve_process.erase(original_cte_node.get());
                     }
                     else if (table_node != nullptr && table_node->isMaterializedCTE())
                     {
@@ -4037,6 +4042,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                         if (!mat_subquery_is_resolved)
                         {
                             ctes_in_resolve_process.insert(resolved_identifier_node);
+                            SCOPE_EXIT(ctes_in_resolve_process.erase(resolved_identifier_node));
 
                             IdentifierResolveScope & mat_subquery_scope = createIdentifierResolveScope(mat_subquery, &scope);
                             mat_subquery_scope.subquery_depth = scope.subquery_depth + 1;
@@ -4045,8 +4051,6 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                                 resolveQuery(mat_subquery, mat_subquery_scope);
                             else
                                 resolveUnion(mat_subquery, mat_subquery_scope);
-
-                            ctes_in_resolve_process.erase(resolved_identifier_node);
 
                             checkMaterializedCTESubqueryIsNotCorrelated(mat_subquery, materialized_cte_ptr->cte_name, scope.scope_node);
                         }
@@ -4463,8 +4467,6 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
     }
 
     resolved_expressions.emplace(node, result_projection_names);
-
-    scope.popExpressionNode();
 
     return result_projection_names;
 }
@@ -5130,10 +5132,9 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
                 resolve_settings.allow_to_resolve_subquery_during_identifier_resolution = false;
 
                 scope.pushExpressionNode(current_join_tree_node);
+                SCOPE_EXIT(scope.popExpressionNode());
 
                 auto table_identifier_resolve_result = tryResolveIdentifier(table_identifier_lookup, scope, resolve_settings);
-
-                scope.popExpressionNode();
 
                 auto resolved_identifier = table_identifier_resolve_result.resolved_identifier;
 
