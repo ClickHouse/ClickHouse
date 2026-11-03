@@ -10,6 +10,7 @@
 # - T4: equality deletes are not subtracted, nor a removed delete entry (Spark fixture, see data_minio/deletes_db/README.md).
 # - T5: a key whose range fits the rows but not the rows left after the deletes gets no counted NDV.
 # - T6: a filter is estimated on the rows left after the deletes.
+# - T7: deletes that leave 0 rows keep the estimate imprecise.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -58,6 +59,7 @@ skipped()
 # g: the same layout, the DELETE touches both files, so its delete file covers both.
 # p: 1 data file per partition (us: odd k, eu: even k), the DELETE touches only the us file.
 # del: 2 data files of 1000 rows, v has 5 values, the DELETE touches only the first, so its delete file is scoped to it.
+# emptied: 1 data file of 50 rows, all deleted by a delete file scoped to it.
 ${CLICKHOUSE_CLIENT} ${PINS} --query "
     CREATE TABLE u (k Int32, v Int64) ENGINE = IcebergLocal('${LAKE}/u') SETTINGS iceberg_format_version = 2;
     INSERT INTO u SELECT number, number FROM numbers(100);
@@ -74,6 +76,9 @@ ${CLICKHOUSE_CLIENT} ${PINS} --query "
     INSERT INTO del SELECT number, number % 5 FROM numbers(1000);
     INSERT INTO del SELECT number, number % 5 FROM numbers(1000, 1000);
     DELETE FROM del WHERE k < 500;
+    CREATE TABLE emptied (k Int32, v Int64) ENGINE = IcebergLocal('${LAKE}/emptied') SETTINGS iceberg_format_version = 2;
+    INSERT INTO emptied SELECT number, number FROM numbers(50);
+    DELETE FROM emptied WHERE k < 50;
     CREATE TABLE mt (k Int32, x Int64) ENGINE = MergeTree ORDER BY k
         SETTINGS index_granularity = 8192, auto_statistics_types = 'uniq';
     INSERT INTO mt SELECT number, number FROM numbers(1000);
@@ -99,5 +104,8 @@ ${CLICKHOUSE_CLIENT_TRACE} ${PINS} --query "EXPLAIN SELECT count() FROM mt AS m 
 echo '--- T6: WHERE v = 1, 500 of 2000 rows deleted'
 echo 'Expect ~300: the deletes leave 1500 rows, and v = 1 is 1 of its 5 values, so 1500 / 5.'
 labels del "t.v = 1"
+echo '--- T7: all 50 rows of a one-file table deleted'
+echo 'Expect ~0: the subtraction leaves 0 rows, which stay an estimate.'
+labels emptied
 
 rm -rf "${LAKE}"

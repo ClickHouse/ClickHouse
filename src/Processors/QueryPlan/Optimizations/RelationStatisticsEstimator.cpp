@@ -325,8 +325,8 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
                     floorReadWithRows(profile);
                 stats.column_stats = std::move(profile.column_stats);
             }
-            /// Without conditions, the rows of the remaining files, imprecise with delete files.
-            stats.imprecise_estimate = rows != 0 && estimate->has_delete_files;
+            /// Without conditions, the rows of the remaining files, imprecise with delete files, also when they leave 0 rows.
+            stats.imprecise_estimate = estimate->has_delete_files;
             return stats;
         }
 

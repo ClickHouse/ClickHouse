@@ -25,3 +25,7 @@ __table2.k: 20
 Expect ~300: the deletes leave 1500 rows, and v = 1 is 1 of its 5 values, so 1500 / 5.
 Join: m[1000] ⋈ t[no_stats~300]
 live rows: 300
+--- T7: all 50 rows of a one-file table deleted
+Expect ~0: the subtraction leaves 0 rows, which stay an estimate.
+Join: m[1000] ⋈ t[no_stats~0]
+live rows: 0
