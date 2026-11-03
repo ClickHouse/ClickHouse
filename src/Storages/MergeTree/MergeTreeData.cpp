@@ -15552,6 +15552,13 @@ std::optional<UInt128> MergeTreeData::getModificationHash(const StorageSnapshotP
     if (mayReadThroughRemoteParallelReplicas(query_context))
         return {};
 
+    /// Masking policies (Cloud only) rewrite values at read time for the current user without changing the
+    /// parts, checksums, metadata or pending mutations hashed below, so a policy created or changed for the
+    /// same user would leave the hash unchanged while the values read differ. Fail closed while any is
+    /// enabled for this table, like a row policy in `computeTableModificationHashForConsistency`.
+    if (hasEnabledMaskingPolicies(query_context))
+        return {};
+
     SipHash hash;
 
     /// Table identity: the UUID distinguishes different incarnations of a table with the same name.
