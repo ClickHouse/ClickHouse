@@ -1242,6 +1242,7 @@ static size_t countRowsFromQueryConditionCache(
             continue;
 
         MarkRanges new_ranges;
+        MarkRanges counted_ranges;
         size_t part_counted_marks = 0;
         for (const auto & range : part_with_ranges.ranges)
         {
@@ -1255,6 +1256,11 @@ static size_t countRowsFromQueryConditionCache(
                 if (begin < mark)
                     new_ranges.emplace_back(begin, mark);
                 begin = mark + 1;
+
+                if (!counted_ranges.empty() && counted_ranges.back().end == mark)
+                    ++counted_ranges.back().end;
+                else
+                    counted_ranges.emplace_back(mark, mark + 1);
 
                 count += mark_count;
                 ++part_counted_marks;
@@ -1273,6 +1279,13 @@ static size_t countRowsFromQueryConditionCache(
         select_result.selected_ranges += new_ranges.size();
         select_result.selected_ranges -= part_with_ranges.ranges.size();
         part_with_ranges.ranges = std::move(new_ranges);
+
+        /// The counted marks are not read either, like the primary key exact ranges (see `exact_ranges_excluded`).
+        MarkRanges exact_ranges;
+        std::merge(
+            part_with_ranges.exact_ranges.begin(), part_with_ranges.exact_ranges.end(),
+            counted_ranges.begin(), counted_ranges.end(), std::back_inserter(exact_ranges));
+        part_with_ranges.exact_ranges = std::move(exact_ranges);
     }
 
     return count;

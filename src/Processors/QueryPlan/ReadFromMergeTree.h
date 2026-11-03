@@ -217,7 +217,8 @@ public:
         UInt64 total_marks_pk = 0;
         UInt64 selected_rows = 0;
         bool has_exact_ranges = false;
-        /// `ranges` exclude `exact_ranges`: their rows are counted from the primary key without being read.
+        /// `ranges` exclude `exact_ranges`: their rows are counted from the primary key or the query condition cache
+        /// without being read.
         bool exact_ranges_excluded = false;
         /// Set only on a parallel replicas follower: it kept every part, and the coordinator chooses its ranges
         /// from the analysis done on the initiator.
