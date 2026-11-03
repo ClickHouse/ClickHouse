@@ -198,3 +198,20 @@ TEST(QueryConditionCacheMatchCounts, ResizeAndClear)
         EXPECT_FALSE(cache.readMatchCounts(table_id, partName(0), 102).has_value());
     }
 }
+
+/// Only a count below `UNKNOWN_MATCH_COUNT` is cached, however large the count is.
+TEST(QueryConditionCacheMatchCounts, CountsAtOrAboveTheLimitAreNotCached)
+{
+    QueryConditionCache cache("LRU", CACHE_SIZE, 0.5);
+    const UUID table_id = UUIDHelpers::generateV4();
+
+    QueryConditionCache::MarkMatchCounts counts{{0, 65534}, {1, 65535}, {2, (1ULL << 32) + 7}};
+    cache.writeMatchCounts(table_id, partName(0), /*condition_hash=*/ 1, "", counts, /*marks_count=*/ 4, /*has_final_mark=*/ false);
+
+    auto cached = cache.readMatchCounts(table_id, partName(0), 1);
+    ASSERT_TRUE(cached.has_value());
+    EXPECT_EQ((*cached)[0], 65534);
+    EXPECT_EQ((*cached)[1], QueryConditionCache::UNKNOWN_MATCH_COUNT);
+    EXPECT_EQ((*cached)[2], QueryConditionCache::UNKNOWN_MATCH_COUNT);
+    EXPECT_EQ((*cached)[3], QueryConditionCache::UNKNOWN_MATCH_COUNT);
+}

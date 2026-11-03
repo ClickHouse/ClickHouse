@@ -322,7 +322,7 @@ public:
         /// filtering steps so far. Like `computeUnmatchedMarkRanges`, safe to call only when
         /// use_query_condition_cache is enabled (complete-granule reads), and only if no reader of the
         /// chain skipped marks. Returns nothing if any mark was skipped.
-        std::vector<std::pair<size_t, UInt32>> computeMarkMatchCounts(const MergeTreeIndexGranularity & part_index_granularity) const;
+        std::vector<std::pair<size_t, size_t>> computeMarkMatchCounts(const MergeTreeIndexGranularity & part_index_granularity) const;
 
     private:
         friend class MergeTreeRangeReader;

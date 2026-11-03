@@ -583,7 +583,7 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
         .mark_match_counts = readers.main->getMergeTreeReaderSettings().use_query_condition_cache
                 && readers.main->getMergeTreeReaderSettings().query_condition_cache_write_match_counts
             ? read_result.computeMarkMatchCounts(info->data_part_info->getIndexGranularity())
-            : std::vector<std::pair<size_t, UInt32>>{},
+            : std::vector<std::pair<size_t, size_t>>{},
         .row_count = read_result.num_rows,
         .num_read_rows = num_read_rows,
         .num_read_bytes = num_read_bytes };
@@ -596,7 +596,7 @@ void MergeTreeReadTask::addPrewhereUnmatchedMarks(const MarkRanges & mark_ranges
     prewhere_unmatched_marks.insert(prewhere_unmatched_marks.end(), mark_ranges_.begin(), mark_ranges_.end());
 }
 
-void MergeTreeReadTask::addPrewhereMarkMatchCounts(const std::vector<std::pair<size_t, UInt32>> & mark_match_counts_)
+void MergeTreeReadTask::addPrewhereMarkMatchCounts(const std::vector<std::pair<size_t, size_t>> & mark_match_counts_)
 {
     prewhere_mark_match_counts.insert(prewhere_mark_match_counts.end(), mark_match_counts_.begin(), mark_match_counts_.end());
 }

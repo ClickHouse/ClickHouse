@@ -510,9 +510,9 @@ void MergeTreeRangeReader::ReadResult::checkInternalConsistency() const
     }
 }
 
-std::vector<std::pair<size_t, UInt32>> MergeTreeRangeReader::ReadResult::computeMarkMatchCounts(const MergeTreeIndexGranularity & part_index_granularity) const
+std::vector<std::pair<size_t, size_t>> MergeTreeRangeReader::ReadResult::computeMarkMatchCounts(const MergeTreeIndexGranularity & part_index_granularity) const
 {
-    std::vector<std::pair<size_t, UInt32>> result;
+    std::vector<std::pair<size_t, size_t>> result;
 
     /// A skipped mark has an entry in `rows_per_granule` without a granule offset of its own.
     if (rows_per_granule.empty() || debug_skipped_marks != 0 || granule_offsets.size() != rows_per_granule.size())
@@ -569,7 +569,7 @@ std::vector<std::pair<size_t, UInt32>> MergeTreeRangeReader::ReadResult::compute
             || count > part_index_granularity.getMarkRows(mark))
             continue;
 
-        result.emplace_back(mark, static_cast<UInt32>(count));
+        result.emplace_back(mark, count);
     }
 
     return result;

@@ -56,7 +56,7 @@ public:
     using MatchCounts = std::vector<UInt16>;
     static constexpr UInt16 UNKNOWN_MATCH_COUNT = std::numeric_limits<UInt16>::max();
     /// Pairs of (mark, number of rows of the mark that match the predicate).
-    using MarkMatchCounts = std::vector<std::pair<size_t, UInt32>>;
+    using MarkMatchCounts = std::vector<std::pair<size_t, size_t>>;
 
 private:
     /// A hash of the table id, part name and condition id.
