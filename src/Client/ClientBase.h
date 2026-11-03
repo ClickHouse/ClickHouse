@@ -808,6 +808,10 @@ protected:
     /// what tells the epilogue that an output sink may be stuck and its writes must be bounded.
     bool query_received_interrupt = false;
 
+    /// The output of the current query result failed (`LocalFormatError`): the query is cancelled,
+    /// and the rest of its result is only drained.
+    bool local_format_error_happened = false;
+
     std::function<void(bool)> on_waiting_for_query_input;
 
     /// Unpacked descriptors and streams for the ease of use.

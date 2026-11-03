@@ -51,7 +51,7 @@ ColumnsDescription StorageSystemQuotas::getColumnsDescription()
             "['user_name'] — Connections with the same user name share the same quota, "
             "['ip_address'] — Connections from the same IP share the same quota. "
             "['client_key'] — Connections with the same key share the same quota. A key must be explicitly provided by a client. "
-            "When using clickhouse-client, pass a key value in the --quota_key parameter, "
+            "When using clickhouse-client, pass a key value in the `--quota_key` parameter, "
             "or use the quota_key parameter in the client configuration file. "
             "When using HTTP interface, use the X-ClickHouse-Quota header, "
             "['user_name', 'client_key'] — Connections with the same client_key share the same quota. If a key isn't provided by a client, the quota is tracked for `user_name`, "
