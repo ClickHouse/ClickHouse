@@ -468,6 +468,8 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 stream_kafka_locks_refresh_polls;
     extern const ServerSettingsBool enable_read_through_distributed_cache;
     extern const ServerSettingsBool enable_write_through_distributed_cache;
+    extern const ServerSettingsDistributedCachePoolBehaviourOnLimit distributed_cache_temporary_data_pool_behaviour_on_limit;
+    extern const ServerSettingsUInt64 distributed_cache_temporary_data_max_connections_bypassing_pool;
     extern const ServerSettingsUInt64 tables_loader_background_pool_size;
     extern const ServerSettingsUInt64 tables_loader_foreground_pool_size;
     extern const ServerSettingsNonZeroUInt64 prefetch_threadpool_pool_size;
@@ -7854,6 +7856,31 @@ void Context::setWriteThroughDistributedCache(bool write_through_distributed_cac
 {
     std::lock_guard lock(shared->mutex);
     shared->server_settings.set("enable_write_through_distributed_cache", write_through_distributed_cache);
+}
+
+DistributedCachePoolBehaviourOnLimit Context::getDistributedCacheTemporaryDataPoolBehaviourOnLimit() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->server_settings[ServerSetting::distributed_cache_temporary_data_pool_behaviour_on_limit];
+}
+
+void Context::setDistributedCacheTemporaryDataPoolBehaviourOnLimit(DistributedCachePoolBehaviourOnLimit value) const
+{
+    std::lock_guard lock(shared->mutex);
+    shared->server_settings.set(
+        "distributed_cache_temporary_data_pool_behaviour_on_limit", SettingFieldDistributedCachePoolBehaviourOnLimit(value).toString());
+}
+
+UInt64 Context::getDistributedCacheTemporaryDataMaxConnectionsBypassingPool() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->server_settings[ServerSetting::distributed_cache_temporary_data_max_connections_bypassing_pool];
+}
+
+void Context::setDistributedCacheTemporaryDataMaxConnectionsBypassingPool(UInt64 value) const
+{
+    std::lock_guard lock(shared->mutex);
+    shared->server_settings.set("distributed_cache_temporary_data_max_connections_bypassing_pool", value);
 }
 
 bool Context::resolveReadThroughDistributedCache() const
