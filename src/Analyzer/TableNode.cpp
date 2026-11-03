@@ -216,10 +216,14 @@ bool TableNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
 
 void TableNode::updateTreeHashImpl(HashState & state, CompareOptions) const
 {
+    /// `IN` set names derive from this hash and must match on servers of other versions, so a name without a dot
+    /// hashes as before. Otherwise the length of the database name in it is hashed too (0 for a temporary table).
     if (!temporary_table_name.empty())
     {
         state.update(temporary_table_name.size());
         state.update(temporary_table_name);
+        if (temporary_table_name.contains('.'))
+            state.update(size_t{0});
     }
     else
     {
@@ -229,6 +233,8 @@ void TableNode::updateTreeHashImpl(HashState & state, CompareOptions) const
         auto full_name = storage_id.hasDatabase() ? storage_id.getFullNameNotQuoted() : storage_id.getTableName();
         state.update(full_name.size());
         state.update(full_name);
+        if (storage_id.hasDatabase() && storage_id.database_name.contains('.'))
+            state.update(storage_id.database_name.size());
     }
 
     if (table_expression_modifiers)
