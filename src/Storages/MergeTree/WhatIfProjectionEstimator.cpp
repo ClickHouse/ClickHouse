@@ -13,7 +13,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterHypotheticalObjectQuery.h>
-#include <Interpreters/capInsertBlockSizeBytesToMemoryLimit.h>
 #include <IO/NullWriteBuffer.h>
 #include <Interpreters/sortBlock.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -553,11 +552,9 @@ String buildProjectionPart(
         else
         {
             /// a mutation calculates the projection in batches of the parent rows and merges the parts of more batches, see `PartMergerWriter`
-            /// it can also rebuild every projection of the table at once, then each batch is smaller
             const auto & background = read_step->getMergeTreeData().getContext()->getBackgroundContext()->getSettingsRef();
             const size_t mutation_rows = background[Setting::min_insert_block_size_rows];
-            const size_t mutation_bytes = capInsertBlockSizeBytesToMemoryLimit(
-                background[Setting::min_insert_block_size_bytes], read_step->getStorageSnapshot()->metadata->getProjections().size() + 2);
+            const size_t mutation_bytes = background[Setting::min_insert_block_size_bytes];
             out.merge_history_unknown |= (mutation_rows == 0 && mutation_bytes == 0) || (mutation_rows != 0 && out.read_rows > mutation_rows)
                 || (mutation_bytes != 0 && read_bytes > mutation_bytes);
             /// `MATERIALIZE PROJECTION` merges the block that it calculates, see `writeTempProjectionPart`
