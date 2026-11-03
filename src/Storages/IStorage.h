@@ -719,8 +719,8 @@ public:
     /** Hand over rows that are still buffered in memory, before any database is shut down.
       *
       * A `Buffer` table writes into another table, which may live in another database or be another
-      * `Buffer`. Databases shut down one at a time in name order, so by the time a `Buffer` prepares
-      * for shutdown its destination can already be gone, and one pass moves rows at most one link
+      * `Buffer`. Tables are prepared for shutdown one at a time, so by the time a `Buffer` prepares
+      * its destination can already be prepared, and one pass moves rows at most one link
       * down a chain. `DatabaseCatalog` therefore calls this for every table first, repeating while
       * rows keep moving; the return value is the number of buffers this call actually flushed.
       */
