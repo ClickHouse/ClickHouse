@@ -181,7 +181,12 @@ UInt64 calculateHashFromStep(const ITransformingStep & transform)
     /// or widens columns DOES change the output bytes - a plain read and a wide projection must not
     /// share a key and reuse the wrong output-byte estimate. Such a step gets a distinct key from its
     /// serialized form below; a rename-only step keeps the same byte layout and stays transparent.
-    if (isByteTransparentTransform(transform))
+    /// An expression that computes its outputs instead of forwarding its inputs is not transparent, even
+    /// when the byte layout stays the same: `key + 1` and `key + 2` read the same bytes but give a join above
+    /// different keys to match. It gets a key from its serialized form below.
+    const auto * expression = typeid_cast<const ExpressionStep *>(&transform);
+    const auto permutation = expression ? pureColumnPermutation(expression->getExpression()) : std::nullopt;
+    if (isByteTransparentTransform(transform) && (!expression || permutation))
     {
         /// A rename-only step is transparent, but a step that REORDERS same-typed columns is not: it
         /// changes which column each position holds, and a position is how the payloads above identify
@@ -189,22 +194,19 @@ UInt64 calculateHashFromStep(const ITransformingStep & transform)
         /// permutation of same-typed columns has the same layout - so two mirror queries whose only
         /// difference is which join input a column comes from would otherwise share a key. Hash the
         /// permutation, which is structural and so equal in both plan builds.
-        if (const auto * expression = typeid_cast<const ExpressionStep *>(&transform))
+        if (permutation)
         {
-            if (auto permutation = pureColumnPermutation(expression->getExpression()))
-            {
-                bool is_identity = true;
-                for (size_t i = 0; i < permutation->size(); ++i)
-                    is_identity &= (*permutation)[i] == i;
+            bool is_identity = true;
+            for (size_t i = 0; i < permutation->size(); ++i)
+                is_identity &= (*permutation)[i] == i;
 
-                if (!is_identity)
-                {
-                    SipHash permutation_hash;
-                    permutation_hash.update("column permutation");
-                    for (auto index : *permutation)
-                        permutation_hash.update(index);
-                    return permutation_hash.get64();
-                }
+            if (!is_identity)
+            {
+                SipHash permutation_hash;
+                permutation_hash.update("column permutation");
+                for (auto index : *permutation)
+                    permutation_hash.update(index);
+                return permutation_hash.get64();
             }
         }
         return 0;
