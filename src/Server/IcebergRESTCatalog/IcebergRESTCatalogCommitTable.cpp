@@ -365,7 +365,7 @@ void setOnce(Poco::JSON::Object::Ptr & target, Poco::JSON::Object::Ptr value, co
 {
     if (target)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "A create commit with more than one '{}' is not supported", action);
-    target = std::move(value);
+    target = value;
 }
 
 }
