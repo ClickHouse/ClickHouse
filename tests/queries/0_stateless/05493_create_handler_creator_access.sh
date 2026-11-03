@@ -36,6 +36,11 @@ run() {
 as_user() { run $CLICKHOUSE_CLIENT --user "$1" -q "$2"; }
 as_default() { run $CLICKHOUSE_CLIENT -q "$1"; }
 handlers() { $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.handlers WHERE name = '$1'"; }
+# Prints why a handler is refused to the user.
+reason() {
+    $CLICKHOUSE_CLIENT --user "$1" -q "$2" 2>&1 \
+        | grep -o -m1 -E 'runs a query of type [A-Z ]+|with query parameters|with a SETTINGS clause|Not enough privileges' || echo OK
+}
 handler_query() { $CLICKHOUSE_CLIENT -q "SELECT replaceAll($2, '${DB}', 'DB') FROM system.handlers WHERE name = '$1'"; }
 
 $CLICKHOUSE_CLIENT -q "
@@ -47,7 +52,7 @@ CREATE USER ${U} NOT IDENTIFIED;
 GRANT CREATE HANDLER, ALTER HANDLER, DROP HANDLER ON *.* TO ${U};"
 
 echo "--- 1. a query over a table the creator cannot read"
-as_user "$U" "CREATE HANDLER h1_${DB} URL '/${DB}/h1' AS SELECT * FROM ${DB}.t"
+reason "$U" "CREATE HANDLER h1_${DB} URL '/${DB}/h1' AS SELECT * FROM ${DB}.t"
 handlers "h1_${DB}"
 
 echo "--- 2. with the grant; the handler keeps serving after a revoke"
@@ -69,8 +74,8 @@ as_user "$U" "CREATE HANDLER h4b_${DB} URL '/${DB}/h4b' AS SELECT * FROM ${DB}.t
 
 echo "--- 5. INSERT needs DEFINER = CURRENT_USER, and then runs with the privileges of the creator"
 $CLICKHOUSE_CLIENT -q "GRANT INSERT ON ${DB}.t TO ${U}"
-as_user "$U" "CREATE HANDLER h5a_${DB} URL '/${DB}/h5a' METHODS (POST) AS INSERT INTO ${DB}.t FORMAT TSV"
-as_user "$U" "CREATE HANDLER h5b_${DB} URL '/${DB}/h5b' METHODS (POST) AS INSERT INTO ${DB}.t SELECT * FROM ${DB}.t"
+reason "$U" "CREATE HANDLER h5a_${DB} URL '/${DB}/h5a' METHODS (POST) AS INSERT INTO ${DB}.t FORMAT TSV"
+reason "$U" "CREATE HANDLER h5b_${DB} URL '/${DB}/h5b' METHODS (POST) AS INSERT INTO ${DB}.t SELECT * FROM ${DB}.t"
 as_user "$U" "CREATE HANDLER h5a_${DB} URL '/${DB}/h5a' METHODS (POST) DEFINER = CURRENT_USER SQL SECURITY DEFINER AS INSERT INTO ${DB}.t FORMAT TSV"
 as_user "$U" "CREATE HANDLER h5b_${DB} URL '/${DB}/h5b' METHODS (POST) DEFINER = CURRENT_USER SQL SECURITY DEFINER AS INSERT INTO ${DB}.t SELECT id + 10, v FROM ${DB}.t WHERE id = 1"
 printf '2\tb\n' | ${CLICKHOUSE_CURL} -sS -X POST --data-binary @- "${BASE}/${DB}/h5a"
@@ -81,20 +86,19 @@ printf '3\tc\n' | ${CLICKHOUSE_CURL} -sS -X POST --data-binary @- "${BASE}/${DB}
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM ${DB}.t"
 
 echo "--- 6. statements that are not SELECT"
-$CLICKHOUSE_CLIENT --user "$U" -q "CREATE HANDLER h6_${DB} URL '/${DB}/h6' METHODS (POST) AS GRANT SELECT ON ${DB}.t TO ${U}" 2>&1 \
-    | grep -c -m1 "runs a GRANT query"
-$CLICKHOUSE_CLIENT --user "$U" -q "CREATE HANDLER h6b_${DB} URL '/${DB}/h6b' METHODS (POST) AS SYSTEM FLUSH LOGS" 2>&1 \
-    | grep -c -m1 "runs a SYSTEM query"
-handlers "h6b_${DB}"
+reason "$U" "CREATE HANDLER h6a_${DB} URL '/${DB}/h6a' METHODS (POST) AS GRANT SELECT ON ${DB}.t TO ${U}"
+reason "$U" "CREATE HANDLER h6b_${DB} URL '/${DB}/h6b' METHODS (POST) AS SYSTEM FLUSH LOGS"
+reason "$U" "CREATE HANDLER h6c_${DB} URL '/${DB}/h6c' METHODS (POST) AS EXECUTE AS ${U} SELECT 1"
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.handlers WHERE name LIKE 'h6%' AND endsWith(name, '_${DB}')"
 
 echo "--- 7. PARALLEL WITH"
 as_user "$U" "CREATE HANDLER h7_${DB} URL '/${DB}/h7' AS SELECT 1 PARALLEL WITH SELECT * FROM ${DB}.t2"
 
 echo "--- 8. query parameters"
-as_user "$U" "CREATE HANDLER h8a_${DB} URL '/${DB}/h8a' AS SELECT * FROM ${DB}.t WHERE id = {id:UInt32}"
-as_user "$U" "CREATE HANDLER h8b_${DB} URL '/${DB}/h8b' AS SELECT * FROM {tbl:Identifier}"
-as_user "$U" "CREATE HANDLER h8c_${DB} URL '/${DB}/h8c' AS SELECT * FROM merge('${DB}', if(empty({r:String}), '^t\$', {r:String}))"
-as_user "$U" "CREATE HANDLER h8d_${DB} URL REGEXP '/${DB}/h8d/(?P<id>\\\\d+)' AS SELECT * FROM ${DB}.t WHERE id = {id:UInt32}"
+reason "$U" "CREATE HANDLER h8a_${DB} URL '/${DB}/h8a' AS SELECT * FROM ${DB}.t WHERE id = {id:UInt32}"
+reason "$U" "CREATE HANDLER h8b_${DB} URL '/${DB}/h8b' AS SELECT * FROM {tbl:Identifier}"
+reason "$U" "CREATE HANDLER h8c_${DB} URL '/${DB}/h8c' AS SELECT * FROM merge('${DB}', if(empty({r:String}), '^t\$', {r:String}))"
+reason "$U" "CREATE HANDLER h8d_${DB} URL REGEXP '/${DB}/h8d/(?P<id>\\\\d+)' AS SELECT * FROM ${DB}.t WHERE id = {id:UInt32}"
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.handlers WHERE name LIKE 'h8%' AND endsWith(name, '_${DB}')"
 as_default "CREATE HANDLER h8a_${DB} URL '/${DB}/h8a' AS SELECT * FROM ${DB}.t WHERE id = {id:UInt32}"
 as_default "CREATE HANDLER h8b_${DB} URL '/${DB}/h8b' AS SELECT * FROM {tbl:Identifier}"
@@ -136,8 +140,8 @@ handler_query "h12b_${DB}" query
 ${CLICKHOUSE_CURL} -sS "${BASE}/${DB}/h12b?database=${DB_B}"
 
 echo "--- 13. SETTINGS clause"
-as_user "$U" "CREATE HANDLER h13a_${DB} URL '/${DB}/h13a' AS SELECT * FROM ${DB}.t SETTINGS max_threads = 1"
-as_user "$U" "CREATE HANDLER h13b_${DB} URL '/${DB}/h13b' AS SELECT 1 SETTINGS additional_result_filter = '1 IN (SELECT id FROM ${DB}.t2)'"
+reason "$U" "CREATE HANDLER h13a_${DB} URL '/${DB}/h13a' AS SELECT * FROM ${DB}.t SETTINGS max_threads = 1"
+reason "$U" "CREATE HANDLER h13b_${DB} URL '/${DB}/h13b' AS SELECT 1 SETTINGS additional_result_filter = '1 IN (SELECT id FROM ${DB}.t2)'"
 as_default "CREATE HANDLER h13a_${DB} URL '/${DB}/h13a' AS SELECT * FROM ${DB}.t SETTINGS max_threads = 1"
 as_default "CREATE HANDLER h13b_${DB} URL '/${DB}/h13b' AS SELECT 1 SETTINGS additional_result_filter = '1 IN (SELECT id FROM ${DB}.t2)'"
 

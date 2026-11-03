@@ -211,7 +211,7 @@ void validateHandlerQuery(ASTCreateHandlerQuery & handler, const ContextPtr & co
         /// reaches must not depend on the request.
         if (runs_as_definer && !is_select && !isInsertIntoTableStatement(*statement))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "Handler `{}` with SQL SECURITY {} runs a {} query. Only SELECT queries and INSERT queries into a table "
+                "Handler `{}` with SQL SECURITY {} runs a query of type {}. Only SELECT queries and INSERT queries into a table "
                 "are supported for handlers with SQL SECURITY DEFINER or NONE",
                 handler.handler_name, magic_enum::enum_name(type), describeStatementKind(*statement));
 
@@ -232,7 +232,7 @@ void validateHandlerQuery(ASTCreateHandlerQuery & handler, const ContextPtr & co
 
         if (!is_select)
             throw Exception(ErrorCodes::ACCESS_DENIED,
-                "Handler `{}` runs a {} query, but only a SELECT query can be checked against the privileges of the user `{}` "
+                "Handler `{}` runs a query of type {}, but only a SELECT query can be checked against the privileges of the user `{}` "
                 "who stores the handler. {}",
                 handler.handler_name, describeStatementKind(*statement), context->getUserName(), way_out);
 
