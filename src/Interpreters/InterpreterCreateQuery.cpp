@@ -1007,6 +1007,32 @@ void throwIfTableFunctionCannotBeUsedToCreateTable(const ASTPtr & table_function
     throwIfNestedTableFunctionDependsOnCurrentUserGrants(table_function_ast, context);
 }
 
+/// A table created by `CREATE TABLE ... AS f(...)` reads and writes the source of `f` under the global context:
+/// neither a `SELECT` from the table nor an `INSERT` into it checks the source grants of the user who runs it. So
+/// creating the table requires both `READ` and `WRITE` on the source, as the implicit `TABLE ENGINE` grant for the
+/// matching engine (e.g. `File`) does. Both are checked under the user who issued the query, before the query is
+/// sent anywhere else: the hosts of an `ON CLUSTER` query and the replicas of a `Replicated` database may create
+/// the table without that user, and a definition with an explicit column list does not even read the source to
+/// infer the structure.
+void checkSourceAccessToCreateTableFromTableFunction(const ITableFunction & table_function, const ContextPtr & context)
+{
+    table_function.checkSourceAccess(context, /*is_insert_query=*/ false);
+    table_function.checkSourceAccess(context, /*is_insert_query=*/ true);
+}
+
+/// The checks of `CREATE TABLE ... AS f(...)` for a query that does not infer the structure of the table from `f`
+/// under the user who issued it, so that nothing else resolves `f` under that user before the table is created.
+void checkCreateTableAsTableFunction(const IAST & table_function_ast, const ContextPtr & context)
+{
+    /// Resolved on a copy, because `parseArguments` may rewrite the arguments in place (e.g. evaluate constant
+    /// expressions), which must not change the query sent to the hosts of an `ON CLUSTER` query or to the replicas
+    /// of a `Replicated` database.
+    const ASTPtr table_function_ast_copy = table_function_ast.clone();
+    const auto table_function = TableFunctionFactory::instance().get(table_function_ast_copy, context);
+    throwIfTableFunctionCannotBeUsedToCreateTable(table_function_ast_copy, *table_function, context);
+    checkSourceAccessToCreateTableFromTableFunction(*table_function, context);
+}
+
 /// Whether `database_replicated_allow_only_replicated_engine` restricts the tables that `create` may define.
 bool isOnlyReplicatedEngineAllowed(const ASTCreateQuery & create, const DatabasePtr & database, const ContextPtr & context)
 {
@@ -1080,6 +1106,10 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         if (create.as_table_function && (create.columns_list->indices || create.columns_list->constraints))
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Indexes and constraints are not supported for table functions");
 
+        /// The structure is given explicitly, so the table function is not resolved to infer it below.
+        if (create.as_table_function)
+            checkCreateTableAsTableFunction(*create.as_table_function, getContext());
+
         /// Dictionaries have dictionary_attributes_list instead of columns_list
         chassert(!create.is_dictionary);
 
@@ -1129,6 +1159,12 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     {
         String as_database_name = getContext()->resolveDatabase(create.as_database);
         getContext()->checkAccess(AccessType::SHOW_COLUMNS, as_database_name, create.as_table);
+
+        /// `setEngine` gives this table the table function of the source table, if that one was created from a
+        /// table function, and the structure is copied from the source table instead of being inferred from it.
+        if (create.as_table_function)
+            checkCreateTableAsTableFunction(*create.as_table_function, getContext());
+
         /// A lazily loaded source reports only its columns, so the indices, projections, constraints
         /// and comment copied below would silently come out empty.
         StoragePtr as_storage = resolveStorageProxyLoading(
@@ -1343,6 +1379,9 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             && isOnlyReplicatedEngineAllowed(create, DatabaseCatalog::instance().tryGetDatabase(create.getDatabase()), getContext())
             && table_function->hasUnreplicatedTableDataOnDisk())
             throwUnreplicatedTableDataNotAllowed();
+
+        /// The inference below checks only `READ` on the source, see `checkSourceAccessToCreateTableFromTableFunction`.
+        checkSourceAccessToCreateTableFromTableFunction(*table_function, getContext());
 
         properties.columns = table_function->getActualTableStructureWithAccess(getContext(), /*is_insert_query*/ true);
     }
@@ -2932,9 +2971,8 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         auto table_function_ast = create.as_table_function->ptr();
         auto table_function = TableFunctionFactory::instance().get(table_function_ast, getContext());
 
-        /// Already checked in `getTablePropertiesAndNormalizeCreateQuery` when the structure was inferred
-        /// from the function; a definition with an explicit column list skips that inference and is
-        /// checked here.
+        /// Already checked in `getTablePropertiesAndNormalizeCreateQuery`, together with the source access,
+        /// and checked again for the table function that is executed here.
         throwIfTableFunctionCannotBeUsedToCreateTable(table_function_ast, *table_function, getContext());
 
         /// Classify the table function before executing it: with a static structure it returns the final storage
@@ -4086,6 +4124,11 @@ BlockIO InterpreterCreateQuery::execute()
                 && create.storage->engine->name == "Backup" && create.storage->engine->arguments)
                 DatabaseBackup::parseAndAuthorizeLocator(create.storage->engine->arguments->children, getContext());
 
+            /// the worker creates a table from a table function with no user as well, and nothing
+            /// resolves the table function here
+            if (create.as_table_function)
+                checkCreateTableAsTableFunction(*create.as_table_function, getContext());
+
             /// this branch returns before setEngine, and the worker builds AS src with no user, so
             /// check the inherited definition here, on a copy of the query
             if (!create.as_table.empty())
@@ -4110,6 +4153,10 @@ BlockIO InterpreterCreateQuery::execute()
                 /// getRequiredAccess sees no engine, because this query holds none of its own
                 if (inherited.storage && inherited.storage->engine)
                     getContext()->checkAccess(AccessType::TABLE_ENGINE, inherited.storage->engine->name);
+
+                /// and no table function either, which the source gives to this table if it was created from one
+                if (inherited.as_table_function)
+                    checkCreateTableAsTableFunction(*inherited.as_table_function, getContext());
 
                 /// setEngine copies only the outer engine of a `TimeSeries` source, and the worker copies
                 /// its inner engines while normalizing, so add the ones this query does not give itself
