@@ -7,10 +7,10 @@ namespace DB
 namespace
 {
 
-template <typename T, typename Allocator>
-void applyPermutation(std::vector<T, Allocator> & data, const VectorWithMemoryTracking<size_t> & permutation) // STYLE_CHECK_ALLOW_STD_CONTAINERS -- generic over the allocator, so it takes tracked vectors too
+template <typename Container>
+void applyPermutation(Container & data, const VectorWithMemoryTracking<size_t> & permutation)
 {
-    std::vector<T, Allocator> res; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- the caller's own vector type, moved back into `data`
+    Container res;
     res.reserve(permutation.size());
     for (size_t i : permutation)
         res.push_back(data[i]);
