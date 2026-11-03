@@ -2888,18 +2888,28 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 
         if (res == KERN_SUCCESS)
         {
-            /// Speculative pages are file-backed readahead, i.e. a part of the page cache, but the kernel counts them inside free_count
-            /// (the `vm_stat` utility subtracts them from "Pages free" in the same way).
-            UInt64 free_without_cached_bytes = static_cast<UInt64>(vm_stats.free_count - vm_stats.speculative_count) * page_size;
             /// External pages are file-backed, i.e. the equivalent of the Linux page cache.
             UInt64 cached_bytes = static_cast<UInt64>(vm_stats.external_page_count) * page_size;
-            /// Purgeable pages are not file-backed, but the kernel is also free to reclaim them at any moment.
-            UInt64 available_bytes = free_without_cached_bytes + cached_bytes + static_cast<UInt64>(vm_stats.purgeable_count) * page_size;
-
-            new_values["OSMemoryFreeWithoutCached"] = { free_without_cached_bytes, OS_MEMORY_FREE_WITHOUT_CACHED_DOCUMENTATION };
             new_values["OSMemoryCached"] = { cached_bytes, OS_MEMORY_CACHED_DOCUMENTATION };
-            new_values["OSMemoryFreePlusCached"] = { free_without_cached_bytes + cached_bytes, OS_MEMORY_FREE_PLUS_CACHED_DOCUMENTATION };
-            new_values["OSMemoryAvailable"] = { available_bytes, OS_MEMORY_AVAILABLE_DOCUMENTATION };
+
+            /// Speculative pages are file-backed readahead, i.e. a part of the page cache, but the kernel counts them inside
+            /// `free_count` (the `vm_stat` utility subtracts them from "Pages free" in the same way). `free_count` and
+            /// `speculative_count` are filled from two separate unlocked reads of the same kernel counter, so a concurrently
+            /// growing speculative list can make the latter the bigger one. Both are 32 bit, so the subtraction would not go
+            /// negative but wrap around into tens of terabytes.
+            if (vm_stats.speculative_count <= vm_stats.free_count)
+            {
+                UInt64 free_without_cached_bytes = static_cast<UInt64>(vm_stats.free_count - vm_stats.speculative_count) * page_size;
+                /// Purgeable pages are not file-backed, but the kernel is also free to reclaim them at any moment.
+                UInt64 available_bytes = free_without_cached_bytes + cached_bytes + static_cast<UInt64>(vm_stats.purgeable_count) * page_size;
+
+                new_values["OSMemoryFreeWithoutCached"] = { free_without_cached_bytes, OS_MEMORY_FREE_WITHOUT_CACHED_DOCUMENTATION };
+                new_values["OSMemoryFreePlusCached"] = { free_without_cached_bytes + cached_bytes, OS_MEMORY_FREE_PLUS_CACHED_DOCUMENTATION };
+                new_values["OSMemoryAvailable"] = { available_bytes, OS_MEMORY_AVAILABLE_DOCUMENTATION };
+            }
+            else
+                LOG_WARNING(log, "Inconsistent snapshot from host_statistics64: {} speculative pages for {} free pages",
+                    vm_stats.speculative_count, vm_stats.free_count);
         }
         else
             LOG_ERROR(log, "Cannot obtain memory statistics via host_statistics64: {}", mach_error_string(res));
