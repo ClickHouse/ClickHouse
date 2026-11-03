@@ -273,7 +273,9 @@ namespace
             is_week_year = is_week_year_;
             if (is_week_year_)
             {
-                if (has_week || has_day_of_week || (select_week_date_ && !has_day_of_year && !has_month && !has_day_of_month))
+                if ((has_week && has_day_of_week)
+                    || ((has_week || has_day_of_week) && (!has_month || !has_day_of_month))
+                    || (select_week_date_ && !has_day_of_year && !has_month && !has_day_of_month))
                 {
                     week_date_format = true;
                     day_of_year_format = false;

@@ -183,3 +183,7 @@ SELECT parseDateTimeInJodaSyntax('2026-10 43 25', 'xxxx-MM ww dd', 'UTC');
 SELECT parseDateTimeOrNull('2026', '%G', 'UTC');
 SELECT parseDateTimeOrNull('1970', '%G', 'UTC');
 SELECT parseDateTimeOrNull('26', '%g', 'UTC');
+SELECT parseDateTime('10 43 25 2026', '%m %V %d %G', 'UTC');
+SELECT parseDateTimeInJodaSyntax('10 43 25 2026', 'MM ww dd xxxx', 'UTC');
+SELECT parseDateTime('10 Sun 25 2026', '%m %a %d %G', 'UTC');
+SELECT parseDateTimeInJodaSyntax('10 Sun 25 2026', 'MM EEE dd xxxx', 'UTC');
