@@ -22,6 +22,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 
@@ -116,8 +117,8 @@ void clearColumnValueRanges(std::unordered_map<String, ColumnStats> & column_sta
 }
 
 /// A runtime filter prunes nothing at plan time, so it must not count as a filter when estimating.
-/// True for a `__applyFilter` call, an `and` of such predicates, or an `or` with at least one such
-/// operand. Aliases are looked through.
+/// True for a `__applyFilter` call or an always-true `x = x`, an `and` of such predicates, or an `or`
+/// with at least one such operand. Aliases are looked through.
 bool prunesNothingAtPlanTime(const ActionsDAG::Node * node)
 {
     if (!node)
@@ -130,7 +131,7 @@ bool prunesNothingAtPlanTime(const ActionsDAG::Node * node)
         return false;
 
     const auto & function_name = node->function_base->getName();
-    if (function_name == "__applyFilter")
+    if (function_name == "__applyFilter" || isAlwaysTrueEquality(*node))
         return true;
 
     if (node->children.empty())
