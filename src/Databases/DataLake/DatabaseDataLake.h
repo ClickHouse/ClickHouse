@@ -35,6 +35,9 @@ public:
     bool shouldBeEmptyOnDetach() const override { return false; }
     bool isDatalakeCatalog() const override { return true; }
 
+    /// validates the table path before CREATE performs any side effect
+    void checkMetadataFilenameAvailability(const String & table_name) const override;
+
     bool empty() const override;
 
     bool isTableExist(const String & name, ContextPtr context) const override;

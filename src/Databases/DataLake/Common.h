@@ -3,6 +3,8 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/Types.h>
 
+#include <optional>
+
 namespace DataLake
 {
 
@@ -17,5 +19,7 @@ DB::DataTypePtr getType(const String & type_name, bool nullable, const String & 
 /// `A.B.C.D` is a table "namespace".
 /// `E` is a table name.
 std::pair<std::string, std::string> parseTableName(const std::string & name);
+
+std::optional<std::pair<std::string, std::string>> tryParseTableName(const std::string & name);
 
 }

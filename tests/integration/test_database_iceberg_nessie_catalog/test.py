@@ -73,7 +73,7 @@ def create_clickhouse_iceberg_database(
 ):
     settings = {
         "catalog_type": "rest",
-        "warehouse": "warehouse", 
+        "warehouse": "warehouse",
         "storage_endpoint": "http://minio1:9001/warehouse-rest",
     }
 
@@ -200,7 +200,7 @@ def test_select(started_cluster):
 
     test_ref = f"test_select_{uuid.uuid4().hex[:8]}"
     test_namespace = (f"{test_ref}_namespace",)
-    
+
     catalog.create_namespace(test_namespace)
 
     test_table_name = f"{test_ref}_table"
@@ -259,7 +259,7 @@ def test_select(started_cluster):
 5	test
 """)
     assert csv_compare(result, expected), f"got\n{result}\nwant\n{expected}"
-    
+
 
 def test_hide_sensitive_info(started_cluster):
     node = started_cluster.instances["node1"]
@@ -375,7 +375,7 @@ def test_timestamps(started_cluster):
     table_name = f"{test_ref}_table"
     test_namespace = (f"{test_ref}_namespace",)
     test_table_identifier = (test_namespace[0], table_name)
-    
+
     catalog = load_catalog_impl(started_cluster)
     catalog.create_namespace(test_namespace)
 
@@ -387,7 +387,7 @@ def test_timestamps(started_cluster):
             field_id=2, name="timestamptz", field_type=TimestampType(), required=False
         ),
     )
-    
+
     table = catalog.create_table(
         test_table_identifier,
         schema=simple_schema,
@@ -406,11 +406,11 @@ def test_timestamps(started_cluster):
     table.append(df)
 
     # Extract the table path from S3 location for ClickHouse Iceberg ENGINE configuration
-    # 
+    #
     # The table metadata contains the full S3 URI which needs to be processed:
     # table.metadata.location:  s3://warehouse-rest/<test_namespace>/<test_table_uuid>
     # extracted_table_path: <test_namespace>/<test_table_uuid>
-    
+
     table_metadata = table.metadata
     table_location = table_metadata.location
     if "warehouse-rest/" in table_location:
@@ -515,6 +515,59 @@ def test_drop_table(started_cluster):
 
     result = node.query(f"SHOW TABLES FROM {CATALOG_NAME}")
     assert test_table_name not in result
+
+
+def test_three_part_identifiers(started_cluster):
+    """Test 3-part identifiers (catalog.namespace.table) for DataLakeCatalog databases
+
+    verifies that queries like SELECT FROM catalog.namespace.table work without
+    needing to quote the table name as `namespace.table`
+    """
+    node = started_cluster.instances["node1"]
+
+    catalog = load_catalog_impl(started_cluster)
+
+    test_ref = f"test_3part_{uuid.uuid4().hex[:8]}"
+    test_namespace = f"{test_ref}_ns"
+
+    catalog.create_namespace((test_namespace,))
+
+    test_table_name = f"{test_ref}_tbl"
+    test_table_identifier = (test_namespace, test_table_name)
+
+    schema = Schema(
+        NestedField(field_id=1, name="id", field_type=DoubleType(), required=False),
+        NestedField(field_id=2, name="data", field_type=StringType(), required=False),
+    )
+
+    table = catalog.create_table(
+        test_table_identifier,
+        schema=schema,
+        properties={"write.metadata.compression-codec": "none"},
+    )
+
+    data = [{"id": float(i), "data": f"row_{i}"} for i in range(5)]
+    df = pa.Table.from_pylist(data)
+    table.append(df)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    ns_settings = {"allow_experimental_table_namespaces": 1}
+    result = node.query(
+        f"SELECT id, data FROM {CATALOG_NAME}.{test_namespace}.{test_table_name} ORDER BY id",
+        settings=ns_settings,
+    )
+    expected = "\n".join([f"{i}\trow_{i}" for i in range(5)])
+    assert result.strip() == expected, f"SELECT failed: got {result}, expected {expected}"
+
+    result = node.query(f"EXISTS TABLE {CATALOG_NAME}.{test_namespace}.{test_table_name}", settings=ns_settings)
+    assert result.strip() == "1", f"EXISTS TABLE failed: got {result}"
+
+    result = node.query(f"DESCRIBE TABLE {CATALOG_NAME}.{test_namespace}.{test_table_name}", settings=ns_settings)
+    assert "id" in result and "data" in result, f"DESCRIBE failed: got {result}"
+
+    result = node.query(f"SHOW CREATE TABLE {CATALOG_NAME}.{test_namespace}.{test_table_name}", settings=ns_settings)
+    assert f"`{test_namespace}.{test_table_name}`" in result, f"SHOW CREATE TABLE failed: got {result}"
 
 
 def test_invalid_auth_header_format(started_cluster):
