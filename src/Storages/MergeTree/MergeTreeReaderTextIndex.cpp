@@ -1,4 +1,5 @@
 #include <Columns/ColumnsCommon.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/TextIndexAnalyzer.h>
@@ -1011,6 +1012,15 @@ namespace
 TextIndexBlockedPositionsCodec::Directory readPositionsDirectory(
     MergeTreeReaderStream & stream, const TokenPostingsInfo & token_info, UInt64 expected_num_docs)
 {
+    if (token_info.header & PostingsSerialization::Flags::EmbeddedPositions)
+    {
+        ReadBufferFromMemory in(token_info.embedded_positions.data(), token_info.position_bytes);
+        auto directory = TextIndexBlockedPositionsCodec::readDirectory(in, 0, expected_num_docs, token_info.position_bytes);
+        directory.embedded = token_info.embedded_positions;
+        directory.embedded_size = token_info.position_bytes;
+        return directory;
+    }
+
     /// Checked before seeking: an offset outside the stream would leave the buffer out of range.
     validateTokenPositions(token_info, stream.getFileSize());
     stream.seekToMark({token_info.position_offset, 0});
@@ -1115,13 +1125,22 @@ private:
 
             if (block_idx != parsed_blocks[u])
             {
-                if (previous_read == std::numeric_limits<size_t>::max() || block_idx != previous_read + 1)
-                    stream.seekToMark({dir.block_offsets[block_idx], 0});
-                TextIndexBlockedPositionsCodec::readBlock(data_buffer, dir, block_idx, scratches[u]);
+                const UInt64 block_bytes = dir.block_offsets[block_idx + 1] - dir.block_offsets[block_idx];
+                if (dir.embedded_size != 0)
+                {
+                    ReadBufferFromMemory in(dir.embedded.data() + dir.block_offsets[block_idx], block_bytes);
+                    TextIndexBlockedPositionsCodec::readBlock(in, dir, block_idx, scratches[u]);
+                }
+                else
+                {
+                    if (previous_read == std::numeric_limits<size_t>::max() || block_idx != previous_read + 1)
+                        stream.seekToMark({dir.block_offsets[block_idx], 0});
+                    TextIndexBlockedPositionsCodec::readBlock(data_buffer, dir, block_idx, scratches[u]);
+                    previous_read = block_idx;
+                    stats.bytes_read += block_bytes;
+                }
                 parsed_blocks[u] = block_idx;
-                previous_read = block_idx;
                 ++stats.blocks_read;
-                stats.bytes_read += dir.block_offsets[block_idx + 1] - dir.block_offsets[block_idx];
             }
             TextIndexBlockedPositionsCodec::emitRanks(scratches[u], local_ranks, token_offsets, token_positions);
         }
