@@ -301,22 +301,11 @@ static Plan getPlan(
                 const auto & data_file_path = data_file->parsed_entry->file_path_key;
                 if (!plan.path_to_data_file.contains(data_file_path))
                 {
-                    const auto raw_metadata_path = data_file_path.serialize();
-                    auto [resolved_storage, resolved_key] = resolveObjectStorageForPath(
-                        persistent_table_components.table_location,
-                        raw_metadata_path, object_storage, external_storages, context,
-                        persistent_table_components.path_resolver);
-                    if (!isObjectInTableDirectory(
-                            resolved_storage, resolved_key, object_storage, persistent_table_components.table_path))
-                        plan.external_files.push_back(data_file_path);
-
                     IcebergDataObjectInfoPtr data_object_info = std::make_shared<IcebergDataObjectInfo>(
                         data_file,
-                        raw_metadata_path,
+                        data_file_path.serialize(),
                         0,
-                        Iceberg::getIdentityPartitionColumnValues(*data_file, *persistent_table_components.schema_processor),
-                        resolved_storage,
-                        resolved_key);
+                        Iceberg::getIdentityPartitionColumnValues(*data_file, *persistent_table_components.schema_processor));
                     data_file_ptr = std::make_shared<DataFilePlan>(DataFilePlan{
                         .data_object_info = data_object_info,
                         .manifest_files = {manifest_file_plan},
@@ -373,6 +362,31 @@ static Plan getPlan(
         }
     }
 
+    plan.history = std::move(snapshots_info);
+    plan.need_optimize = !all_positional_delete_files.empty();
+
+    /// Without position deletes nothing is rewritten or deleted, so the files are neither opened nor checked for being external.
+    if (!plan.need_optimize)
+        return plan;
+
+    for (const auto & [data_file_path, data_file] : plan.path_to_data_file)
+    {
+        auto [resolved_storage, resolved_key] = resolveObjectStorageForPath(
+            persistent_table_components.table_location,
+            data_file_path.serialize(),
+            object_storage,
+            external_storages,
+            context,
+            persistent_table_components.path_resolver);
+
+        if (!isObjectInTableDirectory(
+                resolved_storage, resolved_key, object_storage, persistent_table_components.table_path))
+            plan.external_files.push_back(data_file_path);
+
+        data_file->data_object_info->setResolvedStorage(std::move(resolved_storage));
+        data_file->data_object_info->relative_path_with_metadata.relative_path = std::move(resolved_key);
+    }
+
     for (const auto & raw_path : referenced_file_paths)
     {
         auto [storage_to_use, key_in_storage] = resolveObjectStorageForPath(
@@ -388,8 +402,6 @@ static Plan getPlan(
             plan.external_files.push_back(raw_path);
     }
 
-    plan.history = std::move(snapshots_info);
-    plan.need_optimize = !all_positional_delete_files.empty();
     return plan;
 }
 
