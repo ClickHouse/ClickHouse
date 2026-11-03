@@ -132,10 +132,13 @@ public:
 
     IcebergPathFromMetadata reverseResolve(const String & storage_path) const
     {
-        if (storage_path.size() > table_root.size()
-            && storage_path.starts_with(table_root))
-            return IcebergPathFromMetadata::deserialize(table_location + storage_path.substr(table_root.size()));
-        return IcebergPathFromMetadata::deserialize(table_location + storage_path);
+        std::string_view relative = storage_path;
+        if (relative.size() > table_root.size() && relative.starts_with(table_root))
+            relative.remove_prefix(table_root.size());
+        /// An empty `table_root` (a table at a bucket root) leaves no separator in front of `relative`.
+        if (!table_location.empty() && !relative.starts_with('/'))
+            return IcebergPathFromMetadata::deserialize(fmt::format("{}/{}", table_location, relative));
+        return IcebergPathFromMetadata::deserialize(fmt::format("{}{}", table_location, relative));
     }
 
     /// Convert a metadata path to a catalog-compatible path.
