@@ -1629,7 +1629,15 @@ std::optional<UInt64> countDeletedRows(
         {
             const auto & entry = *position_delete->parsed_entry;
             if (entry.record_count < 0)
+            {
+                LOG_WARNING(
+                    log,
+                    "Position delete file '{}' has a negative record count {}, so the read gets no row estimate",
+                    entry.file_path_key.serialize(),
+                    entry.record_count);
                 return std::nullopt;
+            }
+            /// A data file has at most one deletion vector, which holds all its deleted positions, so it is not summed.
             if (entry.isDeletionVector())
                 deletion_vector_rows = entry.record_count;
             else
