@@ -162,12 +162,14 @@ void LimitByStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
 
     /// The hash-based transforms below keep a count per group, which can spill to disk once query memory reaches
     /// the threshold or when a memory scheduler asks. The sorted-stream transform keeps one group at a time and
-    /// never needs to.
+    /// never needs to. A step from a release that predates the input-order flag may need its input order,
+    /// which that release keeps by in-memory execution. Such a step stays in memory, since a spill could
+    /// lose the order.
     const UInt64 group_limit_end = computeGroupLimitEnd(group_length, group_offset);
     const size_t external_threshold = getMaxBytesBeforeExternalProcessing(
         settings.max_bytes_before_external_limit_by, settings.max_bytes_ratio_before_external_limit_by,
         "max_bytes_ratio_before_external_limit_by");
-    const bool external = external_threshold || build_settings.isSchedulerSpillingEnabled();
+    const bool external = !input_order_unknown && (external_threshold || build_settings.isSchedulerSpillingEnabled());
 
     TemporaryDataOnDiskScopePtr tmp_data_on_disk;
     auto create_hash_transform = [&](const SharedHeader & header) -> ProcessorPtr
@@ -382,6 +384,7 @@ QueryPlanStepPtr LimitByStep::deserialize(Deserialization & ctx)
 
     auto step = std::make_unique<LimitByStep>(
         ctx.input_headers.front(), Settings(ctx.settings), group_length, group_offset, std::move(columns), always_read_till_end);
+    step->input_order_unknown = ctx.step_version < 1;
     if (preserve_input_order)
     {
         SortDescription input_order;

@@ -1,11 +1,16 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
+
 #include <Core/Block.h>
 #include <Core/ProtocolDefines.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Disks/DiskLocal.h>
+#include <Disks/SingleDiskVolume.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/SetSerialization.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
@@ -15,6 +20,8 @@
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/tests/gtest_global_context.h>
+
+#include <Poco/TemporaryFile.h>
 
 namespace DB
 {
@@ -67,13 +74,15 @@ LimitByStep makeStep(const SharedHeader & header, bool preserve_input_order, boo
     return step;
 }
 
-/// Reads the bytes of a step through the registry, the way a peer at the given version reads them.
-std::unique_ptr<LimitByStep> deserializeStep(const String & bytes, const SharedHeader & header, UInt64 version, UInt64 step_version)
+/// Reads the bytes of a step through the registry, the way a peer at the given version reads them, with the
+/// plan settings that the step takes its own settings from.
+std::unique_ptr<LimitByStep> deserializeStep(
+    const String & bytes, const SharedHeader & header, UInt64 version, UInt64 step_version,
+    const QueryPlanSerializationSettings & settings = {})
 {
     ReadBufferFromString in(bytes);
     DeserializedSetsRegistry deserialized_sets;
     const SharedHeaders input_headers{header};
-    const QueryPlanSerializationSettings settings;
     IQueryPlanStep::Deserialization deserialization{
         in, deserialized_sets, {}, getContext().context, input_headers, header, settings,
         /*max_type_complexity=*/ 0, version, step_version, /*skipping=*/ false};
@@ -193,5 +202,41 @@ TEST(ExternalLimitByPlanSetting, SortedInputDoesNotRequireTemporaryStorage)
             step.skipStreamMerging();
 
         EXPECT_NO_THROW(step.transformPipeline(pipeline, build_settings));
+    }
+}
+
+TEST(ExternalLimitByPlanSetting, StepWithoutInputOrderFlagKeepsInMemoryExecution)
+{
+    /// A release that predates the input-order flag writes the step at step version 0 and keeps its
+    /// input order by in-memory execution. The reader cannot tell whether the order matters, so it
+    /// executes the step in memory as well. Such a plan carries no spill thresholds, and only a memory
+    /// scheduler could make the step spill; the scheduler needs a running query, so a spill threshold
+    /// stands in for it here. The same step at step version 1 spills.
+    const auto header = makeHeader();
+    Poco::TemporaryFile directory;
+    directory.createDirectories();
+    auto disk = std::make_shared<DiskLocal>("external_limit_by_plan_setting_tmp", directory.path() + "/");
+    BuildQueryPipelineSettings build_settings(getContext().context);
+    build_settings.temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(
+        TemporaryDataOnDiskSettings{}, std::make_shared<SingleDiskVolume>("external_limit_by_plan_setting_tmp", disk, 0));
+
+    LimitByStep::Settings spill_settings;
+    spill_settings.max_bytes_before_external_limit_by = 1;
+    QueryPlanSerializationSettings plan_settings;
+    LimitByStep(header, spill_settings, 2, 1, Names{"k"}).serializeSettings(plan_settings, current_version);
+
+    for (const UInt64 step_version : {0, 1})
+    {
+        SCOPED_TRACE(step_version);
+        const UInt64 version = step_version == 0 ? pre_setting_version : current_version;
+        const auto bytes = serializeStep(makeStep(header, /*preserve_input_order=*/ false), version, step_version, /*for_cache_key=*/ false);
+        const auto step = deserializeStep(bytes, header, version, step_version, plan_settings);
+
+        QueryPipelineBuilder pipeline;
+        pipeline.init(Pipe(std::make_shared<NullSource>(header)));
+        step->transformPipeline(pipeline, build_settings);
+        const bool spills = std::ranges::any_of(
+            pipeline.getProcessors(), [](const ProcessorPtr & processor) { return processor->getName() == "ExternalLimitByTransform"; });
+        EXPECT_EQ(spills, step_version == 1);
     }
 }

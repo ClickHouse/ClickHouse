@@ -107,6 +107,9 @@ private:
     bool skip_stream_merging = false;
     /// The order that the output must keep; empty when the order has no meaning.
     SortDescription input_order;
+    /// The step was read at step version 0, which predates `input_order`, so its empty order does not show
+    /// that the order has no meaning. See `transformPipeline`.
+    bool input_order_unknown = false;
     UInt64 limit_hint = 0;
 };
 
