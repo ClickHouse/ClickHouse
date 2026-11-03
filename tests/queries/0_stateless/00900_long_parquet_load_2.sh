@@ -106,6 +106,8 @@ EXCLUDE=(
     05443_int96_out_of_range.parquet
     # `INT96` timestamp on the lower boundary day of the `DateTime64(9)` range, tested by 05444.
     05444_int96_lower_boundary.parquet
+    # Hand-crafted `DELTA_BINARY_PACKED` file for the 05479 filter-in-decoder test.
+    05479_delta_binary_packed_filter_int8.parquet
 )
 
 for NAME in $(find "$DATA_DIR" -type f \( -iname '*.parquet' -o -iname '*.parquet.gz' \) -print0 | xargs -0 -n 1 basename | LC_ALL=C sort | grep -vFf <(printf '%s\n' "${EXCLUDE[@]}")); do

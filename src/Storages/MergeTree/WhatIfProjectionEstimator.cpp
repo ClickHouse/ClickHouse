@@ -4,8 +4,6 @@
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnSparse.h>
 #include <Common/FailPoint.h>
-#include <Common/HashTable/Hash.h>
-#include <Common/SipHash.h>
 #include <Common/Stopwatch.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
@@ -30,6 +28,7 @@
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/MergeTree/WhatIfSampling.h>
 #include <Storages/MergeTree/PartDirIntent.h>
 #include <Storages/MergeTree/WhatIfSettings.h>
 #include <Storages/ColumnsDescription.h>
@@ -120,20 +119,15 @@ void appendRowSizes(PaddedPODArray<UInt32> & row_bytes, bool & variable_width, c
 }
 
 
-/// the whole part, or one granule from every run of `sample_step` at a hashed position,
-/// so data that repeats with the step can't line up with the sample
+/// the whole part, or a sample of its granules
 MarkRanges marksToScan(const DataPartPtr & part, size_t sample_step)
 {
     const size_t marks = part->index_granularity->getMarksCountWithoutFinal();
     if (sample_step <= 1)
         return {{0, marks}};
-    const UInt64 seed = sipHash64(part->name);
     MarkRanges ranges;
-    for (size_t first = 0; first < marks; first += sample_step)
-    {
-        const size_t mark = first + intHash64(seed ^ first) % std::min(sample_step, marks - first);
+    for (size_t mark : sampleUnits(marks, sample_step, part->name))
         ranges.emplace_back(mark, mark + 1);
-    }
     return ranges;
 }
 
@@ -516,9 +510,6 @@ std::pair<std::vector<MergeTreeDataPartPtr>, size_t> buildSyntheticProjectionPar
     return {std::move(built), primary};
 }
 
-/// fewer sampled granules can't give an error estimate
-constexpr size_t min_sampled_granules = 30;
-
 /// the granules to read from each part: all, or a sample past the budget
 struct ScanPlan
 {
@@ -543,14 +534,8 @@ bool planScan(
         rows_to_scan += part_with_ranges.data_part->rows_count;
         plan.marks_to_scan += part_with_ranges.data_part->index_granularity->getMarksCountWithoutFinal();
     }
-    UInt64 budget = projection_scan_budget_rows;
-    if (const UInt64 read_limit = query_settings[Setting::max_rows_to_read]; read_limit != 0)
-        budget = budget == 0 ? read_limit : std::min(budget, read_limit);
-    plan.sample_step = budget != 0 && rows_to_scan > budget ? (rows_to_scan + budget - 1) / budget : 1;
-    /// the largest step that still samples `min_sampled_granules`
-    if (plan.sample_step > 1)
-        plan.sample_step
-            = std::min<size_t>(plan.sample_step, std::max<size_t>(1, (plan.marks_to_scan - 1) / (min_sampled_granules - 1)));
+    plan.sample_step
+        = samplingStep(rows_to_scan, plan.marks_to_scan, projection_scan_budget_rows, query_settings[Setting::max_rows_to_read]);
 
     /// a sample's row offsets are not the part's, so an offset filter can't be applied to it
     if (plan.sample_step > 1 && filters_on_offsets)
@@ -575,7 +560,7 @@ bool planScan(
             "The estimate would read {} rows, over max_rows_to_read = {} (a sample keeps at least ~{} granules and one per part)",
             rows_planned,
             read_limit,
-            min_sampled_granules);
+            min_sampled_units);
         return false;
     }
     return true;
@@ -767,14 +752,7 @@ void widenForSamples(
 
     /// widen by two standard errors of the selected share (successive differences, fits a systematic sample)
     if (granule_shares.size() > 1)
-    {
-        double sum_of_squares = 0;
-        for (size_t i = 1; i < granule_shares.size(); ++i)
-            sum_of_squares += (granule_shares[i] - granule_shares[i - 1]) * (granule_shares[i] - granule_shares[i - 1]);
-        const double count = static_cast<double>(granule_shares.size());
-        const double standard_error = std::sqrt(sum_of_squares / (2.0 * count * (count - 1.0)));
-        widen(marks_low, marks_high, 2.0 * standard_error * static_cast<double>(layout_marks));
-    }
+        widen(marks_low, marks_high, 2.0 * standardErrorOfSample(granule_shares) * static_cast<double>(layout_marks));
 
 }
 

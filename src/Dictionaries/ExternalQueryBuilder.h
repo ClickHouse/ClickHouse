@@ -45,6 +45,9 @@ struct ExternalQueryBuilder
     /** Generate a query to load data after certain time point */
     [[nodiscard]] std::string composeUpdateQuery(const std::string & update_field, const std::string & time_point) const;
 
+    /** Same, but `bound` is an SQL expression instead of a time point to quote */
+    std::string composeUpdateQueryWithBound(const std::string & update_field, const std::string & bound) const;
+
     /** Generate a query to load data by set of UInt64 keys. */
     [[nodiscard]] std::string composeLoadIdsQuery(const VectorWithMemoryTracking<UInt64> & ids) const;
 
@@ -84,7 +87,7 @@ protected:
     void composeKeyTuple(const Columns & key_columns, size_t row, WriteBuffer & out, size_t beg, size_t end) const;
 
     /// Compose update condition
-    static void composeUpdateCondition(const std::string & update_field, const std::string & time_point, WriteBuffer & out);
+    static void composeUpdateCondition(const std::string & update_field, const std::string & bound, WriteBuffer & out);
 
     /// Compose ids condition
     void composeIdsCondition(const VectorWithMemoryTracking<UInt64> & ids, WriteBuffer & out) const;

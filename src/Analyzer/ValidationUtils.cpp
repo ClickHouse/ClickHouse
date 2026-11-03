@@ -821,7 +821,7 @@ void validateFromClause(const QueryTreeNodePtr & node)
                         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                             "Correlated column '{}' is found in the FROM clause. "
                             "Correlated table expressions in the FROM clause are only supported as a subquery "
-                            "on the right side of JOIN LATERAL (experimental, requires setting allow_experimental_lateral_join = 1). In query {}",
+                            "on the right side of JOIN LATERAL (experimental, requires setting enable_lateral_join = 1). In query {}",
                             column->formatASTForErrorMessage(),
                             node->formatASTForErrorMessage());
                 }

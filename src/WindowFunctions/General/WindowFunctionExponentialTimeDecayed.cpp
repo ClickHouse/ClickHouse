@@ -103,7 +103,7 @@ public:
     {
         DecayedSumState & state = *reinterpret_cast<DecayedSumState *>(place);
         auto & data = assert_cast<ColumnFloat64 &>(result).getData();
-        for (size_t i = 0; i < bounds.rows; ++i)
+        for (Int64 i = 0; i < bounds.rows; ++i)
         {
             const Int64 start = bounds.frame_start[i];
             const Int64 end = bounds.frame_end[i];
@@ -155,7 +155,7 @@ public:
     void evaluate(char *, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
     {
         auto & data = assert_cast<ColumnFloat64 &>(result).getData();
-        for (size_t i = 0; i < bounds.rows; ++i)
+        for (Int64 i = 0; i < bounds.rows; ++i)
         {
             const Int64 start = bounds.frame_start[i];
             const Int64 end = bounds.frame_end[i];
@@ -207,7 +207,7 @@ public:
     {
         DecayedSumState & state = *reinterpret_cast<DecayedSumState *>(place);
         auto & data = assert_cast<ColumnFloat64 &>(result).getData();
-        for (size_t i = 0; i < bounds.rows; ++i)
+        for (Int64 i = 0; i < bounds.rows; ++i)
         {
             const Int64 start = bounds.frame_start[i];
             const Int64 end = bounds.frame_end[i];
@@ -265,7 +265,7 @@ public:
     {
         DecayedAvgState & state = *reinterpret_cast<DecayedAvgState *>(place);
         auto & data = assert_cast<ColumnFloat64 &>(result).getData();
-        for (size_t i = 0; i < bounds.rows; ++i)
+        for (Int64 i = 0; i < bounds.rows; ++i)
         {
             const Int64 start = bounds.frame_start[i];
             const Int64 end = bounds.frame_end[i];

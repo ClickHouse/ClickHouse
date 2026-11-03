@@ -203,9 +203,10 @@ protected:
         FormatParserSharedResourcesPtr parser_shared_resources,
         FormatFilterInfoPtr format_filter_info,
         bool need_only_count,
-        ObjectStorageTopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key = nullptr);
+        ObjectStorageTopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key = nullptr,
+        bool prefetch_input_format = false);
 
-    ReaderHolder createReader();
+    ReaderHolder createReader(bool prefetch_input_format = false);
 
     /// Writes `pending_top_k_query_condition_cache_entries` to the query condition cache.
     void writePendingTopKQueryConditionCacheEntries();

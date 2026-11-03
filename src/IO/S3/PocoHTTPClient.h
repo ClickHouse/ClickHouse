@@ -102,6 +102,12 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     UInt64 http_max_field_name_size = 128 * 1024;
     UInt64 http_max_field_value_size = 128 * 1024;
 
+    /// Whether the requests sent by this client are the ones `system.blob_storage_log` logs, so they
+    /// may publish their connection to it. Set only for the client of the object storage itself, not
+    /// for the clients of its credentials providers, whose requests can share a scope with a logged
+    /// one; see `HTTPConnectionInfoHelperRequests`.
+    bool publish_connection_info = false;
+
     std::function<void(const ProxyConfiguration &)> error_report;
 
     void updateSchemeAndRegion();
@@ -261,6 +267,7 @@ protected:
     const UInt64 http_max_field_value_size = 128 * 1024;
     bool enable_s3_requests_logging = false;
     bool for_disk_s3 = false;
+    bool publish_connection_info = false;
 
     HTTPRequestThrottler request_throttler;
 

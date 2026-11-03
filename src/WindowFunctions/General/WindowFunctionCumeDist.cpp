@@ -54,7 +54,7 @@ public:
     void evaluate(char *, const WindowBounds & bounds, const WindowArguments &, IColumn & result) const override
     {
         auto & data = assert_cast<ColumnFloat64 &>(result).getData();
-        for (size_t i = 0; i < bounds.rows; ++i)
+        for (Int64 i = 0; i < bounds.rows; ++i)
             data.push_back(static_cast<Float64>(bounds.peers_end[i]) / static_cast<Float64>(bounds.partition_end[i]));
     }
 };
