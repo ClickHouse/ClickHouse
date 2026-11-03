@@ -1,3 +1,5 @@
+send 5: ok
+receive 5: ok
 send 1000: ok
 receive 1000: ok
 send 2000: ok

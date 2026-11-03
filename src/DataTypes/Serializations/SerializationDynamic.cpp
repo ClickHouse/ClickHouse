@@ -717,7 +717,7 @@ void SerializationDynamic::deserializeBinaryBulkWithMultipleStreams(
 
 void SerializationDynamic::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    /// See the comment in deserializeBinary: the nesting depth comes from the data.
+    /// See the comment in `deserializeBinary`: the nesting depth comes from the data.
     checkStackSize();
 
     /// Serialize NULL as Nothing type with no value.
@@ -757,7 +757,7 @@ void SerializationDynamic::serializeBinary(const IColumn & column, size_t row_nu
 
 void SerializationDynamic::serializeBinary(const ColumnDynamic & dynamic_column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    /// See the comment in deserializeBinary: the nesting depth comes from the data.
+    /// See the comment in `deserializeBinary`: the nesting depth comes from the data.
     checkStackSize();
 
     const auto & variant_info = dynamic_column.getVariantInfo();
@@ -787,7 +787,7 @@ void SerializationDynamic::serializeBinary(const ColumnDynamic & dynamic_column,
 
 void SerializationDynamic::serializeForHashCalculation(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-    /// See the comment in deserializeBinary: the nesting depth comes from the data.
+    /// See the comment in `deserializeBinary`: the nesting depth comes from the data.
     checkStackSize();
 
     const auto & dynamic_column = assert_cast<const ColumnDynamic &>(column);
@@ -982,7 +982,7 @@ static void serializeTextImpl(
     NestedSerialize nested_serialize,
     SerializeNull serialize_null)
 {
-    /// See the comment in deserializeBinary: the same data-driven nesting is walked here, one level per nested value.
+    /// See the comment in `deserializeBinary`: the same data-driven nesting is walked here, one level per nested value.
     checkStackSize();
 
     const auto & dynamic_column = assert_cast<const ColumnDynamic &>(column);
