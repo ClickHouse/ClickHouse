@@ -1,5 +1,4 @@
 #include <memory>
-#include <utility>
 
 #include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
@@ -74,25 +73,10 @@ void CurrentThread::updateProgressOut(const Progress & value)
     current_thread->progress_out.incrementPiecewiseAtomically(value);
 }
 
-namespace
-{
-    thread_local bool skip_sending_logs_to_client = false;
-}
-
-CurrentThread::SkipSendingLogsToClient::SkipSendingLogsToClient()
-    : previous(std::exchange(skip_sending_logs_to_client, true))
-{
-}
-
-CurrentThread::SkipSendingLogsToClient::~SkipSendingLogsToClient()
-{
-    skip_sending_logs_to_client = previous;
-}
-
 std::shared_ptr<InternalTextLogsQueue> CurrentThread::getInternalTextLogsQueue()
 {
     /// NOTE: this method could be called at early server startup stage
-    if (unlikely(!current_thread || skip_sending_logs_to_client))
+    if (unlikely(!current_thread))
         return nullptr;
 
     return current_thread->getInternalTextLogsQueue();
@@ -112,6 +96,24 @@ void CurrentThread::attachInternalTextLogsQueue(const std::shared_ptr<InternalTe
     if (unlikely(!current_thread))
         return;
     current_thread->attachInternalTextLogsQueue(logs_queue, client_logs_level);
+}
+
+CurrentThread::HideLogsFromClientScope::HideLogsFromClientScope()
+{
+    if (unlikely(!current_thread))
+        return;
+    logs_queue_to_restore = current_thread->getInternalTextLogsQueue();
+    if (!logs_queue_to_restore)
+        return;
+    client_logs_level_to_restore = current_thread->getClientLogsLevel();
+    current_thread->attachInternalTextLogsQueue(nullptr, LogsLevel::none);
+    restore = true;
+}
+
+CurrentThread::HideLogsFromClientScope::~HideLogsFromClientScope()
+{
+    if (restore)
+        CurrentThread::attachInternalTextLogsQueue(logs_queue_to_restore, client_logs_level_to_restore);
 }
 
 
