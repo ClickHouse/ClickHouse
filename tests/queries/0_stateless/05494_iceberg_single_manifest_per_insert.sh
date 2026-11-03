@@ -127,7 +127,8 @@ ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE ${PARALLEL_TABLE} (p Int64, n Int64)
     ENGINE = IcebergLocal('${PARALLEL_TABLE_PATH}', 'Parquet')
     PARTITION BY p"
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "
+# The streams race to commit the next metadata version; the loser logs the conflict as an error and retries.
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --send_logs_level=fatal --query "
     INSERT INTO ${PARALLEL_TABLE} SELECT number % 3, number FROM numbers_mt(300000)
     SETTINGS max_insert_threads = 4, max_threads = 4, max_block_size = 1000"
 SNAPSHOTS=$(${CLICKHOUSE_CLIENT} --query "
