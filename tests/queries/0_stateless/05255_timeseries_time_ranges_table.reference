@@ -1,0 +1,36 @@
+-- a table has an inner time ranges table
+1
+-- an insert writes the time range of each inserted time series with samples
+1970-01-01 00:16:40.000	1970-01-01 00:17:40.000
+1970-01-01 00:33:20.000	1970-01-01 00:33:20.000
+-- a second insert extends the time range
+-- a selector returns the samples of the matching time series in the time range, the ranges of a time series are not merged yet
+5
+4
+4
+-- the ranges of a time series are merged into one
+1970-01-01 00:08:20.000	1970-01-01 00:25:00.000
+1970-01-01 00:33:20.000	1970-01-01 00:33:20.000
+-- store_time_ranges = 0 disables the time ranges table
+1
+5
+4
+4
+-- a TIME RANGES clause requires store_time_ranges to be enabled and is rejected for version 7 or earlier
+-- a table of version 7 keeps min_time and max_time in the tags table
+1970-01-01 00:08:20.000	1970-01-01 00:25:00.000
+1970-01-01 00:33:20.000	1970-01-01 00:33:20.000
+\N	\N
+5
+4
+4
+-- the selector reads the time ranges table only if the table has one
+ts_m	1
+ts_m_h1	1
+ts_m_h1_1500	1
+ts_no_ranges_m	0
+ts_no_ranges_m_h1	0
+ts_no_ranges_m_h1_1500	0
+ts_v7_m	0
+ts_v7_m_h1	0
+ts_v7_m_h1_1500	0

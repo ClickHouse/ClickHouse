@@ -227,5 +227,7 @@ $CLICKHOUSE_LOCAL $PARQUET_SETTINGS -q \
 # cases must each be followed by their IMPORTED line, proving the batch does
 # detect an accepted value.
 echo "-- rejected"
+# The rejections are reported on stderr, which is discarded: the oracle is stdout, where a
+# rejected value leaves no 'bad_N IMPORTED' line.
 $CLICKHOUSE_LOCAL $PARQUET_SETTINGS --ignore-error \
-    --queries-file "$TMP_DIR/rejected.sql"
+    --queries-file "$TMP_DIR/rejected.sql" 2>/dev/null

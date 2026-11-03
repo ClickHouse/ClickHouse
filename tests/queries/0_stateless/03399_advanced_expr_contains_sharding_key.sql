@@ -7,7 +7,6 @@ set optimize_skip_unused_shards = true;
 SET optimize_skip_unused_shards_rewrite_in = 1;
 SET optimize_distributed_group_by_sharding_key = 1;
 set prefer_localhost_replica=0;
-SET allow_experimental_analyzer = 1;
 
 create table local_table(id UInt64) engine MergeTree order by id;
 create table distributed_table as local_table engine Distributed(test_cluster_two_shard_three_replicas_localhost, currentDatabase(), local_table, id);

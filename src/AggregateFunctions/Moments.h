@@ -100,7 +100,7 @@ struct VarMoments
     template <typename Value>
     void addMany(const Value * __restrict ptr, size_t row_begin, size_t row_end)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             addManyImpl_x86_64_v4(ptr, row_begin, row_end);
@@ -144,7 +144,7 @@ struct VarMoments
     template <typename Value, bool add_if_zero>
     void addManyConditional(const Value * __restrict ptr, const UInt8 * __restrict condition_map, size_t row_begin, size_t row_end)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             addManyConditionalImpl_x86_64_v4<Value, add_if_zero>(ptr, condition_map, row_begin, row_end);
@@ -306,7 +306,7 @@ struct CovarMoments
     template <typename Value1, typename Value2>
     void addMany(const Value1 * __restrict x_ptr, const Value2 * __restrict y_ptr, size_t row_begin, size_t row_end)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             addManyImpl_x86_64_v4(x_ptr, y_ptr, row_begin, row_end);
@@ -357,7 +357,7 @@ struct CovarMoments
     template <typename Value1, typename Value2, bool add_if_zero>
     void addManyConditional(const Value1 * __restrict x_ptr, const Value2 * __restrict y_ptr, const UInt8 * __restrict condition_map, size_t row_begin, size_t row_end)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             addManyConditionalImpl_x86_64_v4<Value1, Value2, add_if_zero>(x_ptr, y_ptr, condition_map, row_begin, row_end);
@@ -478,7 +478,7 @@ struct CorrMoments
     template <typename Value1, typename Value2>
     void addMany(const Value1 * __restrict x_ptr, const Value2 * __restrict y_ptr, size_t row_begin, size_t row_end)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             addManyImpl_x86_64_v4(x_ptr, y_ptr, row_begin, row_end);
@@ -535,7 +535,7 @@ struct CorrMoments
     template <typename Value1, typename Value2, bool add_if_zero>
     void addManyConditional(const Value1 * __restrict x_ptr, const Value2 * __restrict y_ptr, const UInt8 * __restrict condition_map, size_t row_begin, size_t row_end)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             addManyConditionalImpl_x86_64_v4<Value1, Value2, add_if_zero>(x_ptr, y_ptr, condition_map, row_begin, row_end);

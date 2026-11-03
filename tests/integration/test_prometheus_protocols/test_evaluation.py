@@ -1,3 +1,4 @@
+import json
 import struct
 
 import pytest
@@ -69,18 +70,16 @@ def execute_query_in_prometheus_receiver(query, timestamp, expect_error=False):
 
 
 # Executes a query in both prometheus services - results should be the same.
-# `eps` allows tiny float differences: the "reader" service aggregates series in the order
-# they come from ClickHouse via the RemoteRead protocol, which can differ from the TSDB order
-# the "receiver" service uses.
-def execute_query_in_prometheus(query, timestamp, expect_error=False, eps=0):
-    r1 = execute_query_in_prometheus_reader(query, timestamp, expect_error=expect_error)
-    r2 = execute_query_in_prometheus_receiver(
-        query, timestamp, expect_error=expect_error
-    )
+# `eps` allows tiny float differences and `ordered=False` allows any order of the series of an instant vector:
+# the "reader" service gets series in the order they come from ClickHouse via the RemoteRead protocol,
+# which can differ from the TSDB order the "receiver" service uses. So the "receiver" result is returned.
+def execute_query_in_prometheus(query, timestamp, eps=0):
+    r1 = execute_query_in_prometheus_reader(query, timestamp)
+    r2 = execute_query_in_prometheus_receiver(query, timestamp)
     assert http_api_response_close_to(
-        r1, r2, eps=eps
+        r1, r2, eps=eps, ordered=False
     ), f"reader result: {r1}, receiver result: {r2}"
-    return r1
+    return r2
 
 
 # Executes a prometheus query in ClickHouse via HTTP API
@@ -355,6 +354,44 @@ def send_test_data():
         ]
     )
 
+    # Groups with a NaN or an infinite sample for `stddev` and `stdvar`: such a group is NaN, even with one sample.
+    send_data(
+        [
+            (
+                {"__name__": "nan_group", "label": "a"},
+                {120: 1},
+            ),
+            (
+                {"__name__": "nan_group", "label": "b"},
+                {120: 2},
+            ),
+            (
+                {"__name__": "nan_group", "label": "c"},
+                {120: float("nan")},
+            ),
+            (
+                {"__name__": "inf_group", "label": "a"},
+                {120: 1},
+            ),
+            (
+                {"__name__": "inf_group", "label": "b"},
+                {120: 2},
+            ),
+            (
+                {"__name__": "inf_group", "label": "c"},
+                {120: float("inf")},
+            ),
+            (
+                {"__name__": "nan_single"},
+                {120: float("nan")},
+            ),
+            (
+                {"__name__": "inf_single"},
+                {120: float("inf")},
+            ),
+        ]
+    )
+
     # Classic Prometheus histogram buckets for `histogram_quantile` testing.
     # At t=300 the cumulative counts are: le=0.1 -> 10, le=0.5 -> 30, le=1.0 -> 50, le=+Inf -> 60.
     # That describes 10 observations <= 0.1s, 20 in (0.1, 0.5], 20 in (0.5, 1.0], and 10 in (1.0, +Inf).
@@ -547,8 +584,11 @@ def do_query_test(
     chresult,
     clickhouse_http_api_result_is_same_as_prometheus=True,
     eps=0,
+    prometheus_query=None,
 ):
-    actual_result = execute_query_in_prometheus(query, timestamp, eps=eps)
+    actual_result = execute_query_in_prometheus(
+        prometheus_query or query, timestamp, eps=eps
+    )
     assert http_api_response_close_to(
         actual_result, result, eps=eps
     ), f"actual result from prometheus: {actual_result}, expected: {result}"
@@ -595,9 +635,10 @@ def do_range_query_test(
     chresult,
     clickhouse_http_api_result_is_same_as_prometheus=True,
     eps=0,
+    prometheus_query=None,
 ):
     actual_result = execute_range_query_in_prometheus(
-        query, start_time, end_time, step, eps=eps
+        prometheus_query or query, start_time, end_time, step, eps=eps
     )
     assert http_api_response_close_to(
         actual_result, result, eps=eps
@@ -1733,6 +1774,216 @@ def test_empty_aggregation_setting_does_not_change_promql(query, expected):
         params={"empty_result_for_aggregation_by_empty_set": 1},
     )
     assert http_api_response_close_to(actual, expected)
+
+
+def test_function_timestamp():
+    # `test` has samples at 110, 120, 130, 140, ... At time 135 the sample selected by the instant selector
+    # (within the default 5m lookback) is the one at 130 - timestamp() must report *that* sample's own
+    # timestamp (130), not the query's evaluation time (135) and not the sample's value (3).
+
+    # Plain vector selector: returns the sample's own timestamp (130).
+    do_query_test(
+        "timestamp(test)",
+        135,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [135, "130"]}]}',
+        [["[]", "1970-01-01 00:02:15.000", 130]],
+    )
+
+    # Selector wrapped in an offset modifier: returns the selected sample's own timestamp (130).
+    do_query_test(
+        "timestamp(test offset 1m)",
+        195,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [195, "130"]}]}',
+        [["[]", "1970-01-01 00:03:15.000", 130]],
+    )
+
+    # Selector wrapped in an @ modifier: returns the selected sample's own timestamp (120).
+    do_query_test(
+        "timestamp(test @ 120)",
+        135,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [135, "120"]}]}',
+        [["[]", "1970-01-01 00:02:15.000", 120]],
+    )
+
+    # Combined modifiers evaluate at @ minus offset (90), before `test` has samples.
+    do_query_test(
+        "timestamp(test @ 120 offset 30s)",
+        135,
+        '{"resultType": "vector", "result": []}',
+        [],
+    )
+
+    # A stale marker hides the series from timestamp() as it does from the selector itself.
+    do_query_test(
+        "timestamp(stale_marker_metric)",
+        125,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [125, "120"]}]}',
+        [["[]", "1970-01-01 00:02:05.000", 120]],
+    )
+
+    do_query_test(
+        "timestamp(stale_marker_metric)",
+        145,
+        '{"resultType": "vector", "result": []}',
+        [],
+    )
+
+    # The stale series doesn't collide with the live one after timestamp() drops the metric name.
+    do_query_test(
+        'timestamp({__name__=~"stale_collision_a|stale_collision_b", job="x"})',
+        145,
+        '{"resultType": "vector", "result": [{"metric": {"job": "x"}, "value": [145, "140"]}]}',
+        [["[('job','x')]", "1970-01-01 00:02:25.000", 140]],
+    )
+
+    # Range query regression for offset-modified selector (/api/v1/query_range):
+    # Verifies applyOffset realigns/duplicates selector results across multiple grid steps.
+    do_range_query_test(
+        "timestamp(test offset 1m)",
+        190,
+        210,
+        10,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[190, "130"], [200, "140"], [210, "140"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:03:10.000',130),('1970-01-01 00:03:20.000',140),('1970-01-01 00:03:30.000',140)]",
+            ]
+        ],
+    )
+
+    # Range query regression for @-modified selector (/api/v1/query_range):
+    # Verifies fixed @ evaluation time realignment across multiple grid steps.
+    do_range_query_test(
+        "timestamp(test @ 120)",
+        135,
+        155,
+        10,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[135, "120"], [145, "120"], [155, "120"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:15.000',120),('1970-01-01 00:02:25.000',120),('1970-01-01 00:02:35.000',120)]",
+            ]
+        ],
+    )
+
+    # Range query regression for a combined @ and offset-modified selector (/api/v1/query_range):
+    # It evaluates at 90 and is empty for every output grid point.
+    do_range_query_test(
+        "timestamp(test @ 120 offset 30s)",
+        135,
+        155,
+        10,
+        '{"resultType": "matrix", "result": []}',
+        [],
+    )
+
+    # General instant vector expressions (binary math, unary operators, comparisons, nested timestamp() calls):
+    # In Prometheus 3.5.0, non-selector expressions are materialized at each query step evaluation timestamp T_eval,
+    # returning T_eval (135) for each present sample.
+    do_query_test(
+        "timestamp(test * 1)",
+        135,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [135, "135"]}]}',
+        [["[]", "1970-01-01 00:02:15.000", 135]],
+    )
+
+    do_query_test(
+        "timestamp(-test)",
+        135,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [135, "135"]}]}',
+        [["[]", "1970-01-01 00:02:15.000", 135]],
+    )
+
+    do_query_test(
+        "timestamp(timestamp(test))",
+        135,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [135, "135"]}]}',
+        [["[]", "1970-01-01 00:02:15.000", 135]],
+    )
+
+    do_query_test(
+        "timestamp(test > bool 10)",
+        135,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [135, "135"]}]}',
+        [["[]", "1970-01-01 00:02:15.000", 135]],
+    )
+
+    # A comparison without `bool` filters out non-matching samples (at t=135 test is 3, so test > 10 drops the sample),
+    # producing an empty result.
+    do_query_test(
+        "timestamp(test > 10)",
+        135,
+        '{"resultType": "vector", "result": []}',
+        [],
+    )
+
+    # Scalar-backed instant vectors (e.g. vector(1)) retain INSTANT_VECTOR type contract when wrapped in timestamp(),
+    # allowing vector-only operators like abs() and scalar() to consume the result without type errors.
+    do_query_test(
+        "abs(timestamp(vector(1)))",
+        135,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [135, "135"]}]}',
+        [["[]", "1970-01-01 00:02:15.000", 135]],
+    )
+
+    do_query_test(
+        "scalar(timestamp(vector(1)))",
+        135,
+        '{"resultType": "scalar", "result": [135, "135"]}',
+        [["1970-01-01 00:02:15.000", 135]],
+    )
+
+    # Non-instant-vector arguments (bare scalar literals, range vectors) must be rejected up front with user-facing type errors.
+    do_query_test_expect_error(
+        "timestamp(1)",
+        135,
+        "expected type instant vector",
+        "Function 'timestamp' expects an argument of type",
+    )
+
+    do_query_test_expect_error(
+        "timestamp(test[5m])",
+        135,
+        "expected type instant vector",
+        "Function 'timestamp' expects an argument of type",
+    )
+
+    # Genuinely nested offset/@ modifiers - an inner selector with its own modifier, wrapped in an outer
+    # timestamp() call that itself has a modifier - are not valid PromQL syntax: the offset/@ modifier may only
+    # attach directly to a selector or a subquery, never to a function call's result. Real Prometheus rejects
+    # these with a parse error rather than evaluating them, so ClickHouse must reject them the same way (as a
+    # CANNOT_PARSE_PROMQL_QUERY parse error, "mismatched input ... while parsing PromQL query" from the ANTLR
+    # grammar) instead of falling through to NOT_IMPLEMENTED. Combining both modifiers on a *single* selector
+    # (e.g. `test @ 120 offset 30s`) is the only supported form and is already covered above.
+    do_query_test_expect_error(
+        "timestamp(timestamp(test offset 1m) @ 195)",
+        195,
+        "@ modifier must be preceded by an instant vector selector or range vector selector or a subquery",
+        "mismatched input '@'",
+    )
+
+    do_query_test_expect_error(
+        "timestamp(timestamp(test offset 1m) offset 30s)",
+        195,
+        "offset modifier must be preceded by an instant vector selector or range vector selector or a subquery",
+        "mismatched input 'offset'",
+    )
+
+    do_query_test_expect_error(
+        "timestamp(timestamp(test @ 100) @ 195)",
+        195,
+        "@ modifier must be preceded by an instant vector selector or range vector selector or a subquery",
+        "mismatched input '@'",
+    )
+
+    do_query_test_expect_error(
+        "timestamp(timestamp(test @ 100) offset 30s)",
+        195,
+        "offset modifier must be preceded by an instant vector selector or range vector selector or a subquery",
+        "mismatched input 'offset'",
+    )
 
 
 def test_literals():
@@ -4932,6 +5183,39 @@ def test_aggregation_operators():
         [["[]", "1970-01-01 00:02:00.000", 0]],
     )
 
+    # A NaN or an infinite sample makes its group NaN. A group with one finite sample is 0.
+    for metric in ["nan_group", "inf_group"]:
+        for operator in ["stddev", "stdvar"]:
+            do_query_test(
+                f"{operator}({metric})",
+                120,
+                '{"resultType": "vector", "result": [{"metric": {}, "value": [120, "NaN"]}]}',
+                [["[]", "1970-01-01 00:02:00.000", "nan"]],
+            )
+
+            # A range query, so both sides sort the groups by labels.
+            do_range_query_test(
+                f"{operator} by (label) ({metric})",
+                120,
+                120,
+                10,
+                '{"resultType": "matrix", "result": [{"metric": {"label": "a"}, "values": [[120, "0"]]}, {"metric": {"label": "b"}, "values": [[120, "0"]]}, {"metric": {"label": "c"}, "values": [[120, "NaN"]]}]}',
+                [
+                    ["[('label','a')]", "[('1970-01-01 00:02:00.000',0)]"],
+                    ["[('label','b')]", "[('1970-01-01 00:02:00.000',0)]"],
+                    ["[('label','c')]", "[('1970-01-01 00:02:00.000',nan)]"],
+                ],
+            )
+
+    for metric in ["nan_single", "inf_single"]:
+        for operator in ["stddev", "stdvar"]:
+            do_query_test(
+                f"{operator}({metric})",
+                120,
+                '{"resultType": "vector", "result": [{"metric": {}, "value": [120, "NaN"]}]}',
+                [["[]", "1970-01-01 00:02:00.000", "nan"]],
+            )
+
     # FIXME: Not deterministic without sort_by_label(), and function sort_by_label() is not implemented yet.
     # group replaces all values with 1.
     # {shape="circle", size="l"} and {shape="rectangle", size="l"} are merged to one group.
@@ -5770,4 +6054,83 @@ def test_label_manipulation_functions():
         1753176757.89,
         'expected at least 3 argument(s) in call to "label_join", got 2',
         "Function 'label_join' expects 3 or more arguments, but was called with 2 arguments",
+    )
+
+
+def test_standalone_step_range_instant():
+    # Prometheus 3.7.3 does not support these functions, so compare with constant equivalents.
+    do_query_test(
+        "step() + range()",
+        1000.125,
+        '{"resultType": "scalar", "result": [1000.125, "0"]}',
+        [["1970-01-01 00:16:40.125", 0]],
+        prometheus_query="0",
+    )
+
+    # Subquery steps and offsets must not change the outer query's step.
+    do_query_test(
+        "last_over_time(last_over_time(vector(step())[10s:2s])[20s:5s] offset 7s)",
+        1000.125,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [1000.125, "0"]}]}',
+        [["[]", "1970-01-01 00:16:40.125", 0]],
+        prometheus_query="last_over_time(last_over_time(vector(0)[10s:2s])[20s:5s] offset 7s)",
+    )
+
+    # An explicit subquery timestamp must not change the outer query's range.
+    do_query_test(
+        "last_over_time(vector(range())[20s:5s] @ 1005)",
+        1750000000.125,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [1750000000.125, "0"]}]}',
+        [["[]", "2025-06-15 15:06:40.125", 0]],
+        prometheus_query="last_over_time(vector(0)[20s:5s] @ 1005)",
+    )
+
+    data = json.loads(execute_query_in_clickhouse_http_api("step() + range()", None))
+    assert data["resultType"] == "scalar"
+    assert float(data["result"][1]) == 0
+
+
+def test_standalone_step_range_range():
+    # An off-grid end must not truncate the total requested range.
+    do_range_query_test(
+        "vector(step() * 10 + range())",
+        1000.125,
+        1002.375,
+        0.5,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[1000.125, "7.25"], [1000.625, "7.25"], [1001.125, "7.25"], [1001.625, "7.25"], [1002.125, "7.25"]]}]}',
+        [["[]", "[('1970-01-01 00:16:40.125',7.25),('1970-01-01 00:16:40.625',7.25),('1970-01-01 00:16:41.125',7.25),('1970-01-01 00:16:41.625',7.25),('1970-01-01 00:16:42.125',7.25)]"]],
+        prometheus_query="vector(7.25)",
+    )
+
+    # One-point range queries still have a nonzero requested step.
+    do_range_query_test(
+        "vector(step() + range())",
+        1000.125,
+        1000.125,
+        7.5,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[1000.125, "7.5"]]}]}',
+        [["[]", "[('1970-01-01 00:16:40.125',7.5)]"]],
+        prometheus_query="vector(7.5)",
+    )
+
+    # Subqueries and offsets must not replace the outer step.
+    do_range_query_test(
+        "last_over_time(vector(step())[20s:5s] offset 7s)",
+        1000.125,
+        1002.375,
+        0.5,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[1000.125, "0.5"], [1000.625, "0.5"], [1001.125, "0.5"], [1001.625, "0.5"], [1002.125, "0.5"]]}]}',
+        [["[]", "[('1970-01-01 00:16:40.125',0.5),('1970-01-01 00:16:40.625',0.5),('1970-01-01 00:16:41.125',0.5),('1970-01-01 00:16:41.625',0.5),('1970-01-01 00:16:42.125',0.5)]"]],
+        prometheus_query="last_over_time(vector(0.5)[20s:5s] offset 7s)",
+    )
+
+    # Subtract integer timestamp ticks before converting to seconds.
+    do_range_query_test(
+        "vector(range())",
+        "1750000000.001",
+        "1750000000.003",
+        "0.001",
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[1750000000.001, "0.002"], [1750000000.002, "0.002"], [1750000000.003, "0.002"]]}]}',
+        [["[]", "[('2025-06-15 15:06:40.001',0.002),('2025-06-15 15:06:40.002',0.002),('2025-06-15 15:06:40.003',0.002)]"]],
+        prometheus_query="vector(0.002)",
     )

@@ -1,3 +1,4 @@
+#include <Common/StackWithMemoryTracking.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
@@ -483,7 +484,7 @@ protected:
 
         /// an iterator to action plus an iterator to row in events list plus timestamp at the start of sequence
         using backtrack_info = std::tuple<decltype(action_it), EventEntry, EventEntry>;
-        std::stack<backtrack_info> back_stack;
+        StackWithMemoryTracking<backtrack_info> back_stack;
 
         VectorWithMemoryTracking<typename Data::Timestamp> current_matched_events;
         VectorWithMemoryTracking<decltype(action_it)> current_matched_actions;
