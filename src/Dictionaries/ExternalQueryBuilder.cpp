@@ -2,6 +2,8 @@
 
 #include <boost/range/join.hpp>
 
+#include <Columns/IColumn.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -427,7 +429,7 @@ std::string ExternalQueryBuilder::composeLoadKeysQuery(
 }
 
 
-void ExternalQueryBuilder::composeKeyCondition(const Columns & key_columns, size_t row, WriteBuffer & out,
+void ExternalQueryBuilder::composeKeyCondition(const Columns & key_columns, size_t row, LoadKeysMethod method, WriteBuffer & out,
                                                size_t beg, size_t end) const
 {
     auto first = true;
@@ -443,13 +445,13 @@ void ExternalQueryBuilder::composeKeyCondition(const Columns & key_columns, size
         /// key_i=value_i
         writeQuoted(key_description.name, out);
         writeString("=", out);
-        key_description.type_serialization->serializeTextQuoted(*key_columns[i], row, out, format_settings);
+        writeKeyValue(i, *key_columns[i], row, method, out);
     }
 }
 
 
 void ExternalQueryBuilder::composeInWithTuples(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows,
-                                               WriteBuffer & out, size_t beg, size_t end) const
+                                               LoadKeysMethod method, WriteBuffer & out, size_t beg, size_t end) const
 {
     composeKeyTupleDefinition(out, beg, end);
     writeString(" IN (", out);
@@ -461,7 +463,7 @@ void ExternalQueryBuilder::composeInWithTuples(const Columns & key_columns, cons
             writeString(", ", out);
 
         first = false;
-        composeKeyTuple(key_columns, row, out, beg, end);
+        composeKeyTuple(key_columns, row, method, out, beg, end);
     }
 
     writeString(")", out);
@@ -489,7 +491,7 @@ void ExternalQueryBuilder::composeKeyTupleDefinition(WriteBuffer & out, size_t b
 }
 
 
-void ExternalQueryBuilder::composeKeyTuple(const Columns & key_columns, size_t row, WriteBuffer & out, size_t beg, size_t end) const
+void ExternalQueryBuilder::composeKeyTuple(const Columns & key_columns, size_t row, LoadKeysMethod method, WriteBuffer & out, size_t beg, size_t end) const
 {
     writeString("(", out);
 
@@ -500,11 +502,21 @@ void ExternalQueryBuilder::composeKeyTuple(const Columns & key_columns, size_t r
             writeString(", ", out);
 
         first = false;
-        auto serialization = (*dict_struct.key)[i].type_serialization;
-        serialization->serializeTextQuoted(*key_columns[i], row, out, format_settings);
+        writeKeyValue(i, *key_columns[i], row, method, out);
     }
 
     writeString(")", out);
+}
+
+void ExternalQueryBuilder::writeKeyValue(size_t key_index, const IColumn & column, size_t row, LoadKeysMethod method, WriteBuffer & out) const
+{
+    const auto & key_description = (*dict_struct.key)[key_index];
+
+    /// CQL has unquoted UUID constants and does not accept a string constant for `uuid` and `timeuuid` columns.
+    if (method == CASSANDRA_SEPARATE_PARTITION_KEY && isUUID(removeNullable(key_description.type)) && !column.isNullAt(row))
+        key_description.type_serialization->serializeText(column, row, out, format_settings);
+    else
+        key_description.type_serialization->serializeTextQuoted(column, row, out, format_settings);
 }
 
 void ExternalQueryBuilder::composeUpdateCondition(const std::string & update_field, const std::string & bound, WriteBuffer & out)
@@ -547,13 +559,13 @@ void ExternalQueryBuilder::composeKeysCondition(const Columns & key_columns, con
             first = false;
 
             writeString("(", out);
-            composeKeyCondition(key_columns, row, out, 0, key_columns.size());
+            composeKeyCondition(key_columns, row, method, out, 0, key_columns.size());
             writeString(")", out);
         }
     }
     else if (method == IN_WITH_TUPLES)
     {
-        composeInWithTuples(key_columns, requested_rows, out, 0, key_columns.size());
+        composeInWithTuples(key_columns, requested_rows, method, out, 0, key_columns.size());
     }
     else /* if (method == CASSANDRA_SEPARATE_PARTITION_KEY) */
     {
@@ -564,11 +576,11 @@ void ExternalQueryBuilder::composeKeysCondition(const Columns & key_columns, con
         /// for each partition key.
         /// `partition_key_prefix` is a number of columns from partition key.
         /// All `requested_rows` must have the same values of partition key.
-        composeKeyCondition(key_columns, requested_rows.at(0), out, 0, partition_key_prefix);
+        composeKeyCondition(key_columns, requested_rows.at(0), method, out, 0, partition_key_prefix);
         if (partition_key_prefix && partition_key_prefix < key_columns.size())
             writeString(" AND ", out);
         if (partition_key_prefix < key_columns.size())
-            composeInWithTuples(key_columns, requested_rows, out, partition_key_prefix, key_columns.size());
+            composeInWithTuples(key_columns, requested_rows, method, out, partition_key_prefix, key_columns.size());
     }
 
     if (!where.empty() && method != CASSANDRA_SEPARATE_PARTITION_KEY)
