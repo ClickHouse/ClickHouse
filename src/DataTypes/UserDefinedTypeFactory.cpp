@@ -343,16 +343,32 @@ std::vector<DependentUse> findDependentUses(const IUserDefinedSQLObjectsStorage 
 }
 
 /// Whether the type expression `node` uses any of `parameter_names`, so it can only be instantiated with actual arguments.
+/// A parameter can stand not only for a type, but also for a value, including the ones `forEachTypeReference` skips,
+/// like the parameter of the aggregate function in `AggregateFunction(quantiles(Q), UInt8)`. So every identifier
+/// is checked, wherever it is: `substituteTypeParameters` replaces them all the same way.
 bool dependsOnParameters(const ASTPtr & node, const std::unordered_set<String> & parameter_names)
 {
-    bool result = false;
-    forEachTypeReference(node, [&](const TypeReference & ref) -> bool
+    if (!node)
+        return false;
+
+    if (const auto * identifier = node->as<ASTIdentifier>())
     {
-        if (ref.num_arguments == 0 && parameter_names.contains(ref.name))
-            result = true;
-        return !result;
-    });
-    return result;
+        if (parameter_names.contains(identifier->name()))
+            return true;
+    }
+    else if (const auto * data_type = node->as<ASTDataType>())
+    {
+        auto arguments = data_type->getArguments();
+        if ((!arguments || arguments->children.empty()) && parameter_names.contains(data_type->name))
+            return true;
+    }
+
+    for (const auto & child : node->children)
+    {
+        if (dependsOnParameters(child, parameter_names))
+            return true;
+    }
+    return false;
 }
 
 /// Throws if replacing `type_name` with `new_definition` makes the definition of another user-defined type invalid.

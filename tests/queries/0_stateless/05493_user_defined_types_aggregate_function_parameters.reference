@@ -1,0 +1,2 @@
+Tuple(AggregateFunction(quantiles(0.5), UInt8))
+Tuple(UInt32, UInt8)
