@@ -10327,7 +10327,7 @@ Throw an exception instead of logging a warning when Hive-style partitioning det
 For an `INNER`, `LEFT`, `RIGHT` or `FULL` hash join, this threshold decides how the hash table is built.
 If the estimated number of rows in the right table is below the threshold, the join builds the hash table as one part, on one thread.
 At or above the threshold, and also when there is no estimate, the join splits the hash table into parts that up to `max_threads` threads fill at the same time (one thread with `max_threads = 1`).
-The largest value, `18446744073709551615`, always builds one part, also when there is no estimate. `0` always splits the hash table.
+`0` always splits the hash table.
 With `hash_join_layout` set to `serial` or `parallel`, this threshold is not used: the join builds one part or splits the hash table, whatever the estimate.
 The estimate comes from the query plan, or from the statistics of earlier runs of the same join (see `collect_hash_table_stats_during_joins`).
 The query plan estimates 0 rows for a right table known to be empty, such as a `MergeTree` table without data parts.
@@ -10338,7 +10338,7 @@ The query plan estimates 0 rows for a right table known to be empty, such as a `
         {"25.3", 0, 0, "New setting"}) \
     DECLARE(HashJoinLayout, hash_join_layout, HashJoinLayout::AUTO, R"(
 How an `INNER`, `LEFT`, `RIGHT` or `FULL` hash join builds its hash table.
-The setting is meant for testing and debugging. Leave it at `auto` to let the planner choose the layout with `parallel_hash_join_threshold`.
+`auto`, the default, lets the planner choose the layout with `parallel_hash_join_threshold`; set `serial` or `parallel` to force one.
 
 Possible values:
 
@@ -10354,7 +10354,7 @@ Some joins always build one part, whatever the value:
 - the hash join that `join_algorithm = 'auto'` starts with when the join cannot spill to disk (for example with `max_bytes_before_external_join` and `max_bytes_ratio_before_external_join` both `0`) and can switch to a partial merge join instead;
 - each per-shard join of `query_plan_join_shard_by_pk_ranges`.
 )", 0, \
-        {"26.11", "auto", "auto", "New setting to force the layout of a hash join for testing and debugging. `auto` keeps choosing it with `parallel_hash_join_threshold`."}) \
+        {"26.11", "auto", "auto", "New setting to force the layout of a hash join. `auto` keeps choosing it with `parallel_hash_join_threshold`."}) \
     DECLARE(Bool, apply_settings_from_server, true, R"(
 Whether the client should accept settings from server.
 
