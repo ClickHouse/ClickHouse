@@ -457,14 +457,14 @@ std::vector<std::pair<size_t, Field>> ParquetV3BlockInputFormat::getTopKBestValu
     {
         if (!row_group.need_to_process)
             continue;
-        if (row_group.top_k_best_value)
-            res.emplace_back(row_group.row_group_idx, (*row_group.top_k_best_value)[0]);
-        else if (row_group.skipped_by_top_k.load() && row_group.top_k_sort_column_range)
+        if (row_group.skipped_by_top_k.load() && row_group.top_k_sort_column_range)
         {
             const Range & range = *row_group.top_k_sort_column_range;
             const bool ascending = format_filter_info->top_k_filter->threshold_tracker->getDirection() == 1;
             res.emplace_back(row_group.row_group_idx, ascending ? range.left : range.right);
         }
+        else if (row_group.top_k_best_value)
+            res.emplace_back(row_group.row_group_idx, (*row_group.top_k_best_value)[0]);
     }
     return res;
 }
