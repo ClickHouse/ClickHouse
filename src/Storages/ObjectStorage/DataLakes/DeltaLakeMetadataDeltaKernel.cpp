@@ -759,7 +759,8 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
     StorageObjectStorageConfigurationPtr configuration,
     const std::optional<FormatSettings> & format_settings,
     ContextPtr context,
-    std::shared_ptr<DataLake::ICatalog> catalog)
+    std::shared_ptr<DataLake::ICatalog> catalog,
+    const ParallelInsertStatePtr & /*parallel_insert_state*/)
 {
     if (!context->getSettingsRef()[Setting::allow_delta_lake_writes])
     {

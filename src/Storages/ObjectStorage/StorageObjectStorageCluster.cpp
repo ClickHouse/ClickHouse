@@ -308,7 +308,7 @@ SinkToStoragePtr StorageObjectStorageCluster::write(
         configuration->update(object_storage, local_context);
 
     return StorageObjectStorage::createSink(
-        configuration, object_storage, getStorageID(), format_settings, catalog, metadata_snapshot, local_context);
+        configuration, object_storage, getStorageID(), format_settings, catalog, metadata_snapshot, local_context, /*parallel_insert_state=*/nullptr);
 }
 
 bool StorageObjectStorageCluster::supportsParallelInsert() const

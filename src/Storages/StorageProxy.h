@@ -107,6 +107,21 @@ public:
         return getNested()->write(query, metadata_snapshot, context, async_insert);
     }
 
+    ParallelInsertStatePtr createParallelInsertState(const StorageMetadataPtr & metadata_snapshot, ContextPtr context) override
+    {
+        return getNested()->createParallelInsertState(metadata_snapshot, context);
+    }
+
+    SinkToStoragePtr writeParallelInsertStream(
+        const ASTPtr & query,
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr context,
+        bool async_insert,
+        const ParallelInsertStatePtr & parallel_insert_state) override
+    {
+        return getNested()->writeParallelInsertStream(query, metadata_snapshot, context, async_insert, parallel_insert_state);
+    }
+
     void checkInsertIsAllowed(ContextPtr context) const override { getNested()->checkInsertIsAllowed(context); }
 
     void drop() override { getNested()->drop(); }

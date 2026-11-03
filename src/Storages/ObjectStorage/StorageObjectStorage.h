@@ -91,6 +91,15 @@ public:
         ContextPtr context,
         bool async_insert) override;
 
+    ParallelInsertStatePtr createParallelInsertState(const StorageMetadataPtr & metadata_snapshot, ContextPtr context) override;
+
+    SinkToStoragePtr writeParallelInsertStream(
+        const ASTPtr & query,
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr context,
+        bool async_insert,
+        const ParallelInsertStatePtr & parallel_insert_state) override;
+
     static SinkToStoragePtr createSink(
         const StorageObjectStorageConfigurationPtr & configuration,
         const ObjectStoragePtr & object_storage,
@@ -98,7 +107,8 @@ public:
         const std::optional<FormatSettings> & format_settings,
         const std::shared_ptr<DataLake::ICatalog> & catalog,
         const StorageMetadataPtr & metadata_snapshot,
-        const ContextPtr & context);
+        const ContextPtr & context,
+        const ParallelInsertStatePtr & parallel_insert_state);
 
     void truncate(
         const ASTPtr & query,

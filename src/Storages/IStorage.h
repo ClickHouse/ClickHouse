@@ -10,6 +10,7 @@
 #include <Storages/CheckResults.h>
 #include <Storages/ColumnDependency.h>
 #include <Storages/ColumnSize.h>
+#include <Storages/IParallelInsertState.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/VirtualColumnsDescription.h>
@@ -541,6 +542,26 @@ public:
         const StorageMetadataPtr & /*metadata_snapshot*/,
         ContextPtr /*context*/,
         bool /*async_insert*/);
+
+    /** Called once per `INSERT` with several insert streams (see `supportsParallelInsert`), before the sink of
+      * every stream is created with `writeParallelInsertStream`. The sinks of all streams get the returned state,
+      * so they can, for example, commit their data together.
+      */
+    virtual ParallelInsertStatePtr createParallelInsertState(const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/)
+    {
+        return nullptr;
+    }
+
+    /// Like `write`, for one insert stream of an `INSERT` whose streams share `parallel_insert_state`, which may be null.
+    virtual SinkToStoragePtr writeParallelInsertStream(
+        const ASTPtr & query,
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr context,
+        bool async_insert,
+        const ParallelInsertStatePtr & /*parallel_insert_state*/)
+    {
+        return write(query, metadata_snapshot, context, async_insert);
+    }
 
     /** Checks on the initiator that the current user is allowed to insert into this table, in
       * addition to the `INSERT` privilege on the table name checked by the interpreter.

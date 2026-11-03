@@ -2020,6 +2020,20 @@ void IcebergMetadata::addDeleteTransformers(
     }
 }
 
+ParallelInsertStatePtr IcebergMetadata::createParallelInsertState(
+    SharedHeader sample_block,
+    const StorageID & table_id,
+    ObjectStoragePtr /*object_storage*/,
+    StorageObjectStorageConfigurationPtr configuration,
+    ContextPtr context,
+    std::shared_ptr<DataLake::ICatalog> catalog)
+{
+    if (!context->getSettingsRef()[Setting::allow_insert_into_iceberg])
+        return nullptr;
+    checkTableRootIsQueriedPath("INSERT");
+    return std::make_shared<IcebergInsertTransaction>(object_storage, configuration, sample_block, context, catalog, persistent_components, table_id);
+}
+
 SinkToStoragePtr IcebergMetadata::write(
     SharedHeader sample_block,
     const StorageID & table_id,
@@ -2027,12 +2041,22 @@ SinkToStoragePtr IcebergMetadata::write(
     StorageObjectStorageConfigurationPtr configuration,
     const std::optional<FormatSettings> & format_settings,
     ContextPtr context,
-    std::shared_ptr<DataLake::ICatalog> catalog)
+    std::shared_ptr<DataLake::ICatalog> catalog,
+    const ParallelInsertStatePtr & parallel_insert_state)
 {
     if (context->getSettingsRef()[Setting::allow_insert_into_iceberg])
     {
         checkTableRootIsQueriedPath("INSERT");
-        return std::make_shared<IcebergStorageSink>(object_storage, configuration, format_settings, sample_block, context, catalog, persistent_components, table_id);
+
+        auto transaction = std::dynamic_pointer_cast<IcebergInsertTransaction>(parallel_insert_state);
+        if (parallel_insert_state && !transaction)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected parallel insert state for an Iceberg table");
+        if (!transaction)
+            transaction = std::make_shared<IcebergInsertTransaction>(
+                object_storage, configuration, sample_block, context, catalog, persistent_components, table_id);
+
+        return std::make_shared<IcebergStorageSink>(
+            object_storage, configuration, format_settings, sample_block, context, persistent_components, std::move(transaction));
     }
     else
     {

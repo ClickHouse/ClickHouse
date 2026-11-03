@@ -1143,6 +1143,8 @@ struct SquashingTransformContext
 
 VectorWithMemoryTracking<Chain> InsertDependenciesBuilder::createChainWithDependenciesForAllStreams(ProcessorPtr * returning_output) const
 {
+    SCOPE_EXIT(parallel_insert_states.clear());
+
     InputPorts::iterator returning_input_it;
     if (returning_output)
     {
@@ -1870,7 +1872,17 @@ Chain InsertDependenciesBuilder::createSinkImpl(StorageIDMaybeEmpty view_id) con
     }
     else
     {
-        auto sink = inner_storage->write(select_queries.at(view_id), metadata_snapshots.at(inner_table_id), insert_context, async_insert);
+        ParallelInsertStatePtr parallel_insert_state;
+        if (sink_stream_size > 1)
+        {
+            auto [it, inserted] = parallel_insert_states.try_emplace(view_id);
+            if (inserted)
+                it->second = inner_storage->createParallelInsertState(inner_metadata, insert_context);
+            parallel_insert_state = it->second;
+        }
+
+        auto sink = inner_storage->writeParallelInsertStream(
+            select_queries.at(view_id), metadata_snapshots.at(inner_table_id), insert_context, async_insert, parallel_insert_state);
         sink->setRuntimeData(thread_groups.at(view_id));
         sink->setHasDependentMaterializedViews(has_dependent_materialized_views);
         result.addSink(std::move(sink));

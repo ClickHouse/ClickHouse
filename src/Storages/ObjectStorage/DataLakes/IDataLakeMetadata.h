@@ -5,6 +5,7 @@
 
 #include <Common/SettingsChanges.h>
 #include <Core/NamesAndTypes.h>
+#include <Storages/IParallelInsertState.h>
 #include <Core/Types.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Formats/FormatFilterInfo.h>
@@ -169,6 +170,17 @@ public:
     /// (see `getColumnMapperForObject`) needs it to translate them to the names of the file.
     virtual ColumnMapperPtr getCurrentSchemaColumnMapperForFilters(StorageMetadataPtr, ContextPtr) const { return nullptr; }
 
+    virtual ParallelInsertStatePtr createParallelInsertState(
+        SharedHeader /*sample_block*/,
+        const StorageID & /*table_id*/,
+        ObjectStoragePtr /*object_storage*/,
+        StorageObjectStorageConfigurationPtr /*configuration*/,
+        ContextPtr /*context*/,
+        std::shared_ptr<DataLake::ICatalog> /*catalog*/)
+    {
+        return nullptr;
+    }
+
     virtual SinkToStoragePtr write(
         SharedHeader /*sample_block*/,
         const StorageID & /*table_id*/,
@@ -176,7 +188,8 @@ public:
         StorageObjectStorageConfigurationPtr /*configuration*/,
         const std::optional<FormatSettings> & /*format_settings*/,
         ContextPtr /*context*/,
-        std::shared_ptr<DataLake::ICatalog> /*catalog*/)
+        std::shared_ptr<DataLake::ICatalog> /*catalog*/,
+        const ParallelInsertStatePtr & /*parallel_insert_state*/)
     {
         throwNotImplemented("write");
     }

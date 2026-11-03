@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Storages/IParallelInsertState.h>
 #include <Storages/IPartitionStrategy.h>
 #include <Formats/FormatSettings.h>
 #include <Storages/prepareReadingFromFormat.h>
@@ -238,13 +239,24 @@ public:
         std::shared_ptr<DataLake::ICatalog> catalog,
         const StorageID & table_id_);
 
+    virtual ParallelInsertStatePtr createParallelInsertState(
+        SharedHeader /* sample_block */,
+        const StorageID & /* table_id */,
+        ObjectStoragePtr /* object_storage */,
+        ContextPtr /* context */,
+        std::shared_ptr<DataLake::ICatalog> /* catalog */)
+    {
+        return nullptr;
+    }
+
     virtual SinkToStoragePtr write(
         SharedHeader /* sample_block */,
         const StorageID & /* table_id */,
         ObjectStoragePtr /* object_storage */,
         const std::optional<FormatSettings> & /* format_settings */,
         ContextPtr /* context */,
-        std::shared_ptr<DataLake::ICatalog> /* catalog */)
+        std::shared_ptr<DataLake::ICatalog> /* catalog */,
+        const ParallelInsertStatePtr & /* parallel_insert_state */)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method write() is not implemented for configuration type {}", getTypeName());
     }

@@ -6,6 +6,7 @@
 #include <Interpreters/StorageID.h>
 #include <Interpreters/StorageIDMaybeEmpty.h>
 #include <QueryPipeline/Chain.h>
+#include <Storages/IParallelInsertState.h>
 #include <Storages/StorageSnapshot.h>
 
 #include <Common/Logger.h>
@@ -80,6 +81,11 @@ private:
         = std::unordered_map<StorageIDMaybeEmpty, ContextPtr, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
     using MapIdBlock
         = std::unordered_map<StorageIDMaybeEmpty, SharedHeader, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
+    using MapIdParallelInsertState = std::unordered_map<
+        StorageIDMaybeEmpty,
+        ParallelInsertStatePtr,
+        StorageID::DatabaseAndTableNameHash,
+        StorageID::DatabaseAndTableNameEqual>;
     using MapIdThreadGroup = std::
         unordered_map<StorageIDMaybeEmpty, ThreadGroupPtr, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
     using MapIdViewType = std::unordered_map<
@@ -279,6 +285,9 @@ private:
         StorageID::DatabaseAndTableNameEqual>;
 
     mutable SquashingProcessorsMap squashing_processors;
+
+    /// Filled while the chains of all insert streams are created, so that the sinks of one table share the state.
+    mutable MapIdParallelInsertState parallel_insert_states;
 
     ViewErrorsRegistryPtr views_error_registry;
 
