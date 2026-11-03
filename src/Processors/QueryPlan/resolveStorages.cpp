@@ -130,7 +130,8 @@ static QueryPlanResourceHolder replaceReadingFromTable(
     QueryPlan::Node & node,
     QueryPlan::Nodes & nodes,
     const ContextPtr & context,
-    const QueryPlan::ExpectedStorageIdentities * expected_identities)
+    const QueryPlan::ExpectedStorageIdentities * expected_identities,
+    const StorageLimitsList * enclosing_storage_limits)
 {
     const auto * reading_from_table = typeid_cast<const ReadFromTableStep *>(node.step.get());
     const auto * reading_from_table_function = typeid_cast<const ReadFromTableFunctionStep *>(node.step.get());
@@ -307,6 +308,8 @@ static QueryPlanResourceHolder replaceReadingFromTable(
         SelectQueryOptions options(QueryProcessingStage::FetchColumns);
         options.ignore_rename_columns = true;
         InterpreterSelectQueryAnalyzer interpreter(wrapWithUnion(std::move(query)), context, options);
+        if (enclosing_storage_limits)
+            interpreter.addStorageLimits(*enclosing_storage_limits);
         reading_plan = std::move(interpreter).extractQueryPlan();
         reading_plan.addInterpreterContext(context);
 
@@ -325,7 +328,8 @@ static QueryPlanResourceHolder replaceReadingFromTable(
     else
     {
         SelectQueryOptions options(QueryProcessingStage::FetchColumns);
-        auto storage_limits = std::make_shared<StorageLimitsList>();
+        auto storage_limits = enclosing_storage_limits ? std::make_shared<StorageLimitsList>(*enclosing_storage_limits)
+                                                       : std::make_shared<StorageLimitsList>();
         storage_limits->emplace_back(buildStorageLimits(*context, options));
         select_query_info.storage_limits = std::move(storage_limits);
         select_query_info.query = std::move(query);
@@ -392,7 +396,8 @@ static QueryPlanResourceHolder replaceReadingFromTable(
     return std::move(nodes_and_resource.second);
 }
 
-void QueryPlan::resolveStorages(const ContextPtr & context, const ExpectedStorageIdentities * expected_identities)
+void QueryPlan::resolveStorages(
+    const ContextPtr & context, const ExpectedStorageIdentities * expected_identities, const StorageLimitsList * enclosing_storage_limits)
 {
     std::stack<QueryPlan::Node *> stack;
     stack.push(getRootNode());
@@ -406,7 +411,7 @@ void QueryPlan::resolveStorages(const ContextPtr & context, const ExpectedStorag
             for (const auto & set : delayed_creating_sets->getSets())
             {
                 auto * set_plan = set->getQueryPlan();
-                set_plan->resolveStorages(context, expected_identities);
+                set_plan->resolveStorages(context, expected_identities, enclosing_storage_limits);
                 /// The set-source plan is kept aside, so the contexts its resolved reads captured must be handed to
                 /// this plan for a fallback to reach them, as the planner does for the set sources it builds.
                 takeContextsFrom(*set_plan);
@@ -417,7 +422,7 @@ void QueryPlan::resolveStorages(const ContextPtr & context, const ExpectedStorag
             stack.push(child);
 
         if (node->children.empty())
-            addResources(replaceReadingFromTable(*node, nodes, context, expected_identities));
+            addResources(replaceReadingFromTable(*node, nodes, context, expected_identities, enclosing_storage_limits));
     }
 }
 

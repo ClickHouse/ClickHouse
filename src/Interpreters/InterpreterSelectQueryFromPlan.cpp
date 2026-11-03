@@ -17,10 +17,12 @@ namespace Setting
 InterpreterSelectQueryFromPlan::InterpreterSelectQueryFromPlan(
     QueryPlan && query_plan_,
     const ContextPtr & context_,
-    const SelectQueryOptions & select_query_options_)
+    const SelectQueryOptions & select_query_options_,
+    ResultColumnOrigins result_column_origins_)
     : query_plan(std::move(query_plan_))
     , context(Context::createCopy(context_))
     , select_query_options(select_query_options_)
+    , result_column_origins(std::move(result_column_origins_))
 {
 }
 

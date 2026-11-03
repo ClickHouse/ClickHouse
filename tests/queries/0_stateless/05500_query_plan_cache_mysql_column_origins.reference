@@ -1,0 +1,17 @@
+--- off
+Field 1: `x`
+Database: `<db>`
+Table: `t_origins`
+Org_table: `t_origins`
+--- miss
+Field 1: `x`
+Database: `<db>`
+Table: `t_origins`
+Org_table: `t_origins`
+--- hit
+Field 1: `x`
+Database: `<db>`
+Table: `t_origins`
+Org_table: `t_origins`
+05500_miss	0
+05500_hit	1

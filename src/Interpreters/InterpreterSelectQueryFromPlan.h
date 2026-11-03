@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/ResultColumnOrigin.h>
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/Context_fwd.h>
@@ -16,7 +17,8 @@ public:
     InterpreterSelectQueryFromPlan(
         QueryPlan && query_plan_,
         const ContextPtr & context_,
-        const SelectQueryOptions & select_query_options_);
+        const SelectQueryOptions & select_query_options_,
+        ResultColumnOrigins result_column_origins_ = {});
 
     BlockIO execute() override;
 
@@ -24,10 +26,14 @@ public:
     bool ignoreLimits() const override { return select_query_options.ignore_limits; }
     bool ignoreQuota() const override { return select_query_options.ignore_quota; }
 
+    /// Where the result columns come from, as collected by the analyzer that built the plan.
+    const ResultColumnOrigins & getResultColumnOrigins() const { return result_column_origins; }
+
 private:
     QueryPlan query_plan;
     ContextMutablePtr context;
     SelectQueryOptions select_query_options;
+    ResultColumnOrigins result_column_origins;
 };
 
 }

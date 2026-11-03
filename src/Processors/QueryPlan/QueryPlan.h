@@ -29,6 +29,9 @@
 namespace DB
 {
 
+struct StorageLimits;
+using StorageLimitsList = std::list<StorageLimits>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+
 class AnalyzeStepsStats;
 
 struct PrettyNames;
@@ -179,7 +182,15 @@ public:
     };
     using ExpectedStorageIdentities = std::map<std::pair<String, String>, ExpectedStorageIdentity>;
 
-    void resolveStorages(const ContextPtr & context, const ExpectedStorageIdentities * expected_identities = nullptr);
+    /// `enclosing_storage_limits` are the limits of the query that executes the plan, added in front
+    /// of the limits of each resolved read, like the planner does for the reads of a subquery. The
+    /// reads are resolved at `QueryProcessingStage::FetchColumns`, which does not carry the limits
+    /// checked only by the initiator of a query (`min_execution_speed`, `min_execution_speed_bytes`),
+    /// so a caller that executes the plan as the complete query must pass them here.
+    void resolveStorages(
+        const ContextPtr & context,
+        const ExpectedStorageIdentities * expected_identities = nullptr,
+        const StorageLimitsList * enclosing_storage_limits = nullptr);
 
     /// Optimizes the query. With `make_distributed_plan` set, the plan must have been accepted by
     /// `applyDistributedPlanFallbackToLocal` first (`buildQueryPipeline` does it), because set and CTE

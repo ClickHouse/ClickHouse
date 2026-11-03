@@ -34,6 +34,8 @@
 
 #include <Processors/ProcessorsProfileLogInfo.h>
 #include <QueryPipeline/BlockIO.h>
+#include <QueryPipeline/StreamLocalLimits.h>
+#include <Planner/Utils.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <Processors/Formats/Impl/NullFormat.h>
 
@@ -1387,7 +1389,14 @@ static std::unique_ptr<IInterpreter> tryInterpretWithQueryPlanCache(
                 /// `04869_query_plan_cache_table_altered_while_materializing`.
                 FailPointInjection::pauseFailPoint(FailPoints::query_plan_cache_pause_after_validation);
 
-                auto plan = materializeCachedQueryPlan(cached_entry->serialized_plan, context, validated_identities);
+                SelectQueryOptions hit_options = select_query_options;
+                hit_options.ignore_quota = cached_entry->ignore_quota;
+                hit_options.ignore_limits = cached_entry->ignore_limits;
+
+                /// The limits of this query, which the planner would attach to every read of a miss.
+                const StorageLimitsList enclosing_storage_limits{buildStorageLimits(*context, hit_options)};
+                auto plan = materializeCachedQueryPlan(
+                    cached_entry->serialized_plan, context, validated_identities, enclosing_storage_limits);
 
                 /// `resolveStorages` pins all runtime leaves to the storages validated above,
                 /// but expanded views and folded scalar subqueries have no such leaf. Revalidate
@@ -1410,10 +1419,8 @@ static std::unique_ptr<IInterpreter> tryInterpretWithQueryPlanCache(
                 plan.addDistributedPlanDecisionContext(context);
 
                 ProfileEvents::increment(ProfileEvents::QueryPlanCacheHits);
-                SelectQueryOptions hit_options = select_query_options;
-                hit_options.ignore_quota = cached_entry->ignore_quota;
-                hit_options.ignore_limits = cached_entry->ignore_limits;
-                return std::make_unique<InterpreterSelectQueryFromPlan>(std::move(plan), context, hit_options);
+                return std::make_unique<InterpreterSelectQueryFromPlan>(
+                    std::move(plan), context, hit_options, cached_entry->result_column_origins);
             }
 
             ProfileEvents::increment(ProfileEvents::QueryPlanCacheValidationMisses);
@@ -1596,6 +1603,10 @@ static std::unique_ptr<IInterpreter> tryInterpretWithQueryPlanCache(
         return nullptr;
     }
 
+    /// Where the result columns come from, for clients that request it (see `QueryFlags::collect_result_column_origins`).
+    /// Kept with the entry, because a hit does not analyze the query.
+    ResultColumnOrigins result_column_origins = analyzer_interpreter->getResultColumnOrigins();
+
     QueryPlanCacheEntry entry;
     try
     {
@@ -1604,6 +1615,7 @@ static std::unique_ptr<IInterpreter> tryInterpretWithQueryPlanCache(
         entry.used_row_policies = analyzer_interpreter->getPlanner().getUsedRowPolicies();
         entry.ignore_quota = planner_ignore_quota;
         entry.ignore_limits = planner_ignore_limits;
+        entry.result_column_origins = result_column_origins;
     }
     catch (const Exception & e)
     {
@@ -1635,13 +1647,19 @@ static std::unique_ptr<IInterpreter> tryInterpretWithQueryPlanCache(
     /// the analyzed identities, so a table replaced since analysis cannot be executed with this
     /// plan's baked semantics; that is reported as `INCORRECT_DATA` and handled by falling back to
     /// the normal interpreter, exactly like a stale cache entry is.
+    SelectQueryOptions miss_options = select_query_options;
+    miss_options.ignore_quota = planner_ignore_quota;
+    miss_options.ignore_limits = planner_ignore_limits;
+    /// The limits of this query, which the planner attaches to every read of ordinary execution.
+    const StorageLimitsList enclosing_storage_limits{buildStorageLimits(*context, miss_options)};
+
     auto plan = std::move(*analyzer_interpreter).extractQueryPlan();
     QueryPlan::ExpectedStorageIdentities expected_identities;
     for (const auto & [name, identity] : analyzed_identities)
         expected_identities.emplace(name, QueryPlan::ExpectedStorageIdentity{identity.uuid, identity.semantics_fingerprint});
     try
     {
-        plan.resolveStorages(context, &expected_identities);
+        plan.resolveStorages(context, &expected_identities, &enclosing_storage_limits);
     }
     catch (const Exception & e)
     {
@@ -1684,10 +1702,7 @@ static std::unique_ptr<IInterpreter> tryInterpretWithQueryPlanCache(
             "falling back to normal planning");
         return nullptr;
     }
-    SelectQueryOptions miss_options = select_query_options;
-    miss_options.ignore_quota = planner_ignore_quota;
-    miss_options.ignore_limits = planner_ignore_limits;
-    return std::make_unique<InterpreterSelectQueryFromPlan>(std::move(plan), context, miss_options);
+    return std::make_unique<InterpreterSelectQueryFromPlan>(std::move(plan), context, miss_options, std::move(result_column_origins));
 }
 
 /// The introspection port is open while the shared state is either not fully constructed or is being
@@ -3768,6 +3783,14 @@ static BlockIO executeQueryImpl(
                     interpreter_with_analyzer->getQueryPlan();
 
                     result_column_origins = interpreter_with_analyzer->getResultColumnOrigins();
+                    if (flags.collect_result_column_origins)
+                        result_details.result_column_origins = result_column_origins;
+                }
+                else if (const auto * interpreter_from_plan = dynamic_cast<const InterpreterSelectQueryFromPlan *>(interpreter.get()))
+                {
+                    /// A query executed through the plan cache: the origins were collected by the analyzer
+                    /// that built the plan and are kept with the cache entry.
+                    result_column_origins = interpreter_from_plan->getResultColumnOrigins();
                     if (flags.collect_result_column_origins)
                         result_details.result_column_origins = result_column_origins;
                 }

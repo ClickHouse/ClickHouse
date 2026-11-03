@@ -2,6 +2,7 @@
 
 #include <Common/CacheBase.h>
 #include <Core/Names.h>
+#include <Core/ResultColumnOrigin.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <Parsers/IASTHash.h>
@@ -121,6 +122,10 @@ struct QueryPlanCacheEntry
     bool ignore_quota = false;
     bool ignore_limits = false;
 
+    /// Where the result columns come from, collected by the analyzer that built the plan. A hit does not
+    /// analyze the query, so they are kept here for the clients that request them (the MySQL protocol).
+    ResultColumnOrigins result_column_origins;
+
     /// User who inserted this entry. Stamped by `QueryPlanCache::set` so that the
     /// eviction callback can decrement the right per-user accounting bucket.
     std::optional<UUID> inserter_user_id;
@@ -154,6 +159,8 @@ struct QueryPlanCacheEntryWeight
         }
         for (const auto & policy : entry.used_row_policies)
             weight += policy.size();
+        for (const auto & origin : entry.result_column_origins)
+            weight += origin.database.size() + origin.table.size() + origin.org_table.size() + origin.column.size();
         return weight;
     }
 };

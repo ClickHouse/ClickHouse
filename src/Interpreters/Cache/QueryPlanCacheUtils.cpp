@@ -1,4 +1,5 @@
 #include <Interpreters/Cache/QueryPlanCacheUtils.h>
+#include <Interpreters/getEffectiveMaxThreads.h>
 
 #include <Access/Common/AccessType.h>
 #include <Access/Common/RowPolicyDefs.h>
@@ -201,6 +202,8 @@ enum class FunctionPassedByName : uint8_t
     /// A built-in function that checks access rights when it is created (see
     /// `isFunctionCheckingAccessOnCreate`).
     FunctionCheckingAccessOnCreate,
+    /// A non-deterministic built-in function (e.g. `randConstant`, `now`).
+    NonDeterministicFunction,
     /// A SQL UDF (`CREATE FUNCTION`).
     SQLUserDefinedFunction,
     /// An executable or WebAssembly UDF (see `isFunctionResolvedOutsideFunctionFactory`).
@@ -212,9 +215,11 @@ enum class FunctionPassedByName : uint8_t
 /// of a SQL UDF with its own lookup, so an AST walk that looks only at `ASTFunction` nodes never
 /// sees the call. The same holds for a built-in function that checks access rights when it is
 /// created, e.g. `arrayMap(demangle, ['_Z3foov'])`: the call is folded into a constant, and a hit
-/// would not repeat the check. Returns what the arguments of `function` passed by name like that
-/// refer to (an executable or WebAssembly UDF takes precedence over a SQL UDF, which takes precedence
-/// over a built-in function checking access). An argument that is a column of the same name is
+/// would not repeat the check; and for a non-deterministic built-in function, e.g.
+/// `arrayMap(randConstant, [1])`, whose folded value a hit would reuse. Returns what the arguments
+/// of `function` passed by name like that refer to (an executable or WebAssembly UDF takes
+/// precedence over a SQL UDF, which takes precedence over a built-in function checking access or a
+/// non-deterministic one). An argument that is a column of the same name is
 /// classified the same way, which only makes the plan uncacheable. The right side of `IN` names a
 /// table, not a function, so it is skipped.
 FunctionPassedByName getFunctionPassedByName(const ASTFunction & function, const ContextPtr & context)
@@ -237,9 +242,20 @@ FunctionPassedByName getFunctionPassedByName(const ASTFunction & function, const
         /// `isFunctionCheckingAccessOnCreate` matches name prefixes such as `dict` and `ai`, so make
         /// sure the identifier names a function at all: an ordinary column such as `aid` must not
         /// make every query that passes it to a function uncacheable.
-        else if (result == FunctionPassedByName::None && isFunctionCheckingAccessOnCreate(name)
-            && FunctionFactory::instance().hasNameOrAlias(name))
-            result = FunctionPassedByName::FunctionCheckingAccessOnCreate;
+        else if (result == FunctionPassedByName::None && FunctionFactory::instance().hasNameOrAlias(name))
+        {
+            if (isFunctionCheckingAccessOnCreate(name))
+                result = FunctionPassedByName::FunctionCheckingAccessOnCreate;
+            /// The analyzer turns the identifier into a lambda calling the function, and a function that
+            /// is deterministic within a query (e.g. `randConstant`) lets the call be folded into a
+            /// constant, which a hit would keep serving. `arrayJoin` is pure (see
+            /// `isFunctionUnsafeForPlanCache`).
+            else if (getFunctionCanonicalNameIfAny(name) != "arrayJoin")
+            {
+                if (const auto func = FunctionFactory::instance().tryGet(name, context); func && !func->isDeterministic())
+                    result = FunctionPassedByName::NonDeterministicFunction;
+            }
+        }
     }
     return result;
 }
@@ -295,6 +311,9 @@ void collectRowPolicyFilterContents(const IAST & ast, const ContextPtr & context
                 break;
             case FunctionPassedByName::FunctionCheckingAccessOnCreate:
                 contents.has_function_checking_access = true;
+                break;
+            case FunctionPassedByName::NonDeterministicFunction:
+                contents.has_non_deterministic_function = true;
                 break;
             case FunctionPassedByName::SQLUserDefinedFunction:
                 contents.has_sql_udf = true;
@@ -614,8 +633,8 @@ bool fillDependency(QueryPlanCacheDependency & dep, const StoragePtr & storage, 
 /// pure (same argument - same set of rows), so it is safe for the plan cache.
 bool isFunctionUnsafeForPlanCache(const ASTFunction & function, const ContextPtr & context)
 {
-    /// A user-defined function, or a built-in function checking access rights, passed by name to a
-    /// higher-order function, see `getFunctionPassedByName`.
+    /// A user-defined function, a built-in function checking access rights, or a non-deterministic
+    /// built-in function, passed by name to a higher-order function, see `getFunctionPassedByName`.
     if (getFunctionPassedByName(function, context) != FunctionPassedByName::None)
         return true;
 
@@ -1453,18 +1472,22 @@ void addQueryAccessInfoForQueryPlanCacheHit(const QueryPlanCacheEntry & entry, c
     }
 }
 
-/// Drops the `max_threads` cap stored with a cached plan from the plan itself and from the source
-/// plan of every `IN`-subquery set reachable from it (sets nest: a set source may contain further
-/// sets), so the thread fan-out of a hit is decided by the current query, as on a miss.
-static void resetStoredMaxThreads(QueryPlan & plan)
+/// Replaces the `max_threads` cap stored with a cached plan by the cap of the current query, in the
+/// plan itself and in the source plan of every `IN`-subquery set reachable from it (sets nest: a set
+/// source may contain further sets), so the thread fan-out of a hit is decided by the current query,
+/// as on a miss. The cap must be replaced rather than cleared: a plan without a cap is not limited by
+/// `limitMaxThreads` at all, and `QueryPipelineBuilder::unitePipelines` limits the united pipeline only
+/// when every child has a cap, so e.g. a `UNION ALL` of two reads would run on two threads with
+/// `max_threads = 1`.
+static void replaceStoredMaxThreads(QueryPlan & plan, size_t max_threads)
 {
-    plan.setMaxThreads(0);
+    plan.setMaxThreads(max_threads);
     forEachSubquerySet(
         &plan,
-        [](FutureSetFromSubquery & set)
+        [max_threads](FutureSetFromSubquery & set)
         {
             if (auto * source = set.getQueryPlan())
-                source->setMaxThreads(0);
+                source->setMaxThreads(max_threads);
             /// Descend into the source plan: the sets nested in it are live and rebuilt too.
             return true;
         });
@@ -1473,7 +1496,8 @@ static void resetStoredMaxThreads(QueryPlan & plan)
 QueryPlan materializeCachedQueryPlan(
     std::string_view serialized_plan,
     const ContextPtr & context,
-    const QueryPlan::ExpectedStorageIdentities & validated_identities)
+    const QueryPlan::ExpectedStorageIdentities & validated_identities,
+    const StorageLimitsList & enclosing_storage_limits)
 {
     ReadBufferFromMemory in(serialized_plan.data(), serialized_plan.size());
 
@@ -1494,11 +1518,13 @@ QueryPlan materializeCachedQueryPlan(
     /// builds for a table expression (`PlannerJoinTree`), and an `IN (SELECT ...)` set source is a
     /// plan of its own that `QueryPlan::makeSets` has just rebuilt with its stored value and that
     /// `FutureSetFromSubquery::build` turns into a pipeline on its own, so clearing the outer plan
-    /// alone would leave the set-building sub-pipelines pinned. The other limit,
+    /// alone would leave the set-building sub-pipelines pinned. The current value is computed by
+    /// `getEffectiveMaxThreads`, like the planner does, so `max_threads_min_free_memory_per_thread`
+    /// applies to a hit too. The other limit,
     /// `concurrency_control`, is derived from `use_concurrency_control`, which is part of the key,
     /// so the stored value always equals the current one (and the outer plan's copy is re-derived
     /// anyway by `InterpreterSelectQueryFromPlan::execute`).
-    resetStoredMaxThreads(plan);
+    replaceStoredMaxThreads(plan, getEffectiveMaxThreads(context->getSettingsRef()));
 
     /// Replace `ReadFromTable` placeholders with storage-specific reads against the current data
     /// snapshots, requiring every leaf to resolve to a storage that `validateQueryPlanCacheEntry`
@@ -1506,7 +1532,7 @@ QueryPlan materializeCachedQueryPlan(
     /// `DROP`/`CREATE` in an `Atomic` database can no longer make the plan run against a storage
     /// (engine, schema, view security) that was never validated - resolution throws
     /// `INCORRECT_DATA` instead, and the caller falls back to normal planning.
-    plan.resolveStorages(context, &validated_identities);
+    plan.resolveStorages(context, &validated_identities, &enclosing_storage_limits);
 
     return plan;
 }

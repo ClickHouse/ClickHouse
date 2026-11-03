@@ -103,10 +103,14 @@ void addQueryAccessInfoForQueryPlanCacheHit(const QueryPlanCacheEntry & entry, c
 ///
 /// `validated_identities` comes from `validateQueryPlanCacheEntry` and pins resolution to the
 /// storages that validation proved; a leaf that resolves to anything else throws `INCORRECT_DATA`.
+///
+/// `enclosing_storage_limits` are the limits of the query executing the plan, see
+/// `QueryPlan::resolveStorages`.
 QueryPlan materializeCachedQueryPlan(
     std::string_view serialized_plan,
     const ContextPtr & context,
-    const QueryPlan::ExpectedStorageIdentities & validated_identities);
+    const QueryPlan::ExpectedStorageIdentities & validated_identities,
+    const StorageLimitsList & enclosing_storage_limits);
 
 /// Serializes a logical plan (as produced by the planner's `build_logical_plan` mode) into
 /// cacheable bytes.
