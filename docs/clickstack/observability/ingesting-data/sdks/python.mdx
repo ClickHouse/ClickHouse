@@ -9,15 +9,20 @@ sidebarTitle: 'Python'
 
 import { ClickStackIntegrates } from '/snippets/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
 
-Use the OpenTelemetry Python SDK to send logs, metrics, and traces to ClickHouse Observability. The setup below uses automatic instrumentation for supported Python libraries and frameworks.
+Use the ClickStack Python SDK to send logs and traces to ClickHouse Observability. The SDK is an OpenTelemetry distribution published as `hyperdx-opentelemetry` and automatically instruments supported Python libraries and frameworks.
 
-<ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
+<ClickStackIntegrates signals={['logs', 'traces']} />
 
-## Set up OpenTelemetry {#set-up-opentelemetry}
+## Install the SDK {#install-the-sdk}
 
-Follow the official [OpenTelemetry Python setup instructions](https://opentelemetry.io/docs/zero-code/python/) to install instrumentation and configure your application. For manual instrumentation, use the [Python SDK documentation](https://opentelemetry.io/docs/languages/python/instrumentation/).
+Install the [ClickStack Python SDK](https://github.com/hyperdxio/hyperdx-py) in your application's Python environment:
 
-Configure [OTLP export](https://opentelemetry.io/docs/languages/python/exporters/) for the signals you want to send, using the connection settings below. Replace any example destinations from the upstream instructions, including signal-specific endpoint overrides.
+```shell
+pip install hyperdx-opentelemetry
+opentelemetry-bootstrap -a install
+```
+
+The bootstrap command installs instrumentation for your application's installed dependencies. Run it after installing those dependencies.
 
 ## Configure your destination {#configure-destination}
 
@@ -28,8 +33,9 @@ Open **Team Settings → Data → Managed Telemetry** in your service and copy t
 
 ```shell
 export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
-export OTEL_EXPORTER_OTLP_HEADERS='authorization=Bearer%20YOUR_INGESTION_API_KEY'
+export HYPERDX_API_KEY='Bearer YOUR_INGESTION_API_KEY'
 export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+export OTEL_SERVICE_NAME='my-python-app'
 ```
 
 </Tab>
@@ -39,15 +45,40 @@ Use your collector's OTLP HTTP endpoint and ingestion key. Use `http://` instead
 
 ```shell
 export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_COLLECTOR_HOST:4318'
-export OTEL_EXPORTER_OTLP_HEADERS='authorization=YOUR_INGESTION_API_KEY'
+export HYPERDX_API_KEY='YOUR_INGESTION_API_KEY'
 export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+export OTEL_SERVICE_NAME='my-python-app'
 ```
 
 </Tab>
 </Tabs>
 
+## Start your application {#start-your-application}
+
+Run your application with automatic instrumentation:
+
+```shell
+opentelemetry-instrument python app.py
+```
+
+Replace `app.py` with your application's entry file.
+
 ## Verify ingestion {#verify-ingestion}
 
-Start your instrumented application and generate activity. In ClickHouse Observability, select a recent time range and find your application's service name in Logs or Traces. If your application emits metrics, check Metrics after allowing time for export.
+Make requests to your application and emit a Python log message at `WARNING` level or above. In ClickHouse Observability, select a recent time range and search Logs or Traces for `my-python-app` (or the service name you configured).
+
+## Optional configuration {#optional-configuration}
+
+To capture HTTP request headers and bodies, enable advanced network capture before starting your application:
+
+```shell
+export HYPERDX_ENABLE_ADVANCED_NETWORK_CAPTURE=1
+```
+
+Request headers and bodies can contain sensitive data. Enable capture only for data you intend to collect.
+
+## Troubleshooting {#troubleshooting}
+
+If logs are missing, check your application's logging level. Python's default threshold is `WARNING`; set your logger's level to capture lower-severity messages.
 
 For instrumentation and exporter troubleshooting, see the [OpenTelemetry Python troubleshooting guide](https://opentelemetry.io/docs/zero-code/python/troubleshooting/).
