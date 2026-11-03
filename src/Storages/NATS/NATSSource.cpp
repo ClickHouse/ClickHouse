@@ -190,7 +190,6 @@ Chunk NATSSource::generateImpl()
 
     StreamingFormatExecutor executor(non_virtual_header, input_format, on_error);
 
-    /// Once per block: `getStorageID` locks the table's `id_mutex`.
     const Field table_name = storage.getStorageID().getTableName();
 
     while (true)
