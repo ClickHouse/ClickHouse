@@ -1222,6 +1222,10 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
     initializeFromParsedArguments(std::move(parsed_arguments));
     keys = {url.key};
     chassert(s3_settings != nullptr);
+    /// The Google credential of a BigLake catalog replaces any Google credential merged from the server `<s3>` and
+    /// endpoint config: keeping an inherited one would leave two credential types, which the client refuses.
+    if (!biglake_adc_client_id.empty() || !biglake_service_account_key.empty())
+        s3_settings->auth_settings.clearServerManagedGcpOAuth();
     if (!biglake_adc_client_id.empty())
     {
         s3_settings->auth_settings[S3AuthSetting::http_client] = "gcp_oauth";

@@ -213,6 +213,33 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
     /// server credentials. Server disks may; user dynamic S3 disks are handled earlier in getDiskConfigurationFromAST.
     credentials_configuration.forbid_implicit_credentials = !for_disk_s3 && context->shouldRestrictUserQueryS3Credentials();
 
+    /// A Google credential counts as explicit below only when the query or a named collection supplied it. The stored
+    /// settings of a table cannot tell where a value came from: a credential of the server `<s3>` or endpoint config is
+    /// kept when a session with `s3_allow_server_credentials_in_user_queries = 1` creates the table, and is merged in
+    /// again when the client is rebuilt. So a credential equal to the one the server configures for this URL is the
+    /// server's: drop it, so that the `gcp_oauth` client is refused below as one asking for the server's credentials.
+    if (credentials_configuration.forbid_implicit_credentials)
+    {
+        const S3AuthSettings server_auth_settings(context->getConfigRef(), local_settings, "s3");
+        const auto endpoint_settings = context->getStorageS3Settings().getSettings(url.uri.toString(), context->getUserName());
+        auto is_server_credential = [&](const S3AuthSettingsString & setting, const String & value)
+        {
+            if (value.empty())
+                return false;
+            if (server_auth_settings[setting].value == value)
+                return true;
+            return endpoint_settings && endpoint_settings->auth_settings[setting].value == value;
+        };
+        if (is_server_credential(S3AuthSetting::google_service_account_key, client_configuration.google_service_account_key)
+            || is_server_credential(S3AuthSetting::google_adc_refresh_token, client_configuration.google_adc_refresh_token))
+        {
+            client_configuration.google_adc_client_id.clear();
+            client_configuration.google_adc_client_secret.clear();
+            client_configuration.google_adc_refresh_token.clear();
+            client_configuration.google_service_account_key.clear();
+        }
+    }
+
     /// On metadata load, downgrade a now-restricted definition to anonymous (if allowed by the server setting)
     /// so the server starts with the table inaccessible instead of aborting. Also drop a `gcp_oauth` http client
     /// without an explicit ADC triple, else the downgrade would still mint a token with the server's GCP identity.

@@ -15,6 +15,8 @@ node = cluster.add_instance("node")
 restricted_node = cluster.add_instance(
     "restricted_node", main_configs=["configs/remote_url_allow_hosts.xml"]
 )
+# Gets a service account key in its server `<s3>` endpoint config at test time.
+server_key_node = cluster.add_instance("server_key_node")
 
 MOCK_PORT = 8939
 SA_CLIENT_EMAIL = "tester@example-project.iam.gserviceaccount.com"
@@ -154,3 +156,76 @@ def test_token_endpoint_must_be_allowed():
     )
     assert "UNACCEPTABLE_URL" in error
     assert "forbidden.example.com" in error
+
+
+def test_server_key_not_used_by_restricted_session():
+    """A service account key of the server `<s3>` config stays the server's after an opt-in session creates a table."""
+    data_url = f"http://node:{MOCK_PORT}/data"
+    server_key = service_account_key(token_host="node")
+    user_key = service_account_key(
+        client_email="user@example-project.iam.gserviceaccount.com", token_host="node"
+    )
+    server_key_node.replace_config(
+        "/etc/clickhouse-server/config.d/server_s3_service_account.xml",
+        f"""<clickhouse>
+    <s3>
+        <gcs_with_server_key>
+            <endpoint>{data_url}/</endpoint>
+            <http_client>gcp_oauth</http_client>
+            <google_service_account_key>{server_key}</google_service_account_key>
+        </gcs_with_server_key>
+    </s3>
+    <named_collections>
+        <user_key_collection>
+            <url>{data_url}/user.tsv</url>
+            <http_client>gcp_oauth</http_client>
+            <google_service_account_key>{user_key}</google_service_account_key>
+        </user_key_collection>
+    </named_collections>
+</clickhouse>""",
+    )
+    server_key_node.query("SYSTEM RELOAD CONFIG")
+    assert (
+        server_key_node.query(
+            "SELECT count() FROM system.named_collections WHERE name = 'user_key_collection'"
+        )
+        == "1\n"
+    )
+
+    def issuers_of_new_assertions(query, allow_server_credentials):
+        mock_ctl("/__reset__")
+        _, error = server_key_node.query_and_get_answer_with_error(
+            query,
+            settings={
+                "s3_allow_server_credentials_in_user_queries": allow_server_credentials
+            },
+        )
+        assertions = json.loads(mock_ctl("/__stats__"))["assertions"]
+        return [
+            json.loads(b64url_decode(a.split(".")[1]))["iss"] for a in assertions
+        ], error
+
+    server_key_node.query("DROP TABLE IF EXISTS t_server_key")
+    server_key_node.query(
+        f"CREATE TABLE t_server_key (x UInt8) ENGINE = S3('{data_url}/server.tsv', 'TSV')",
+        settings={"s3_allow_server_credentials_in_user_queries": 1},
+    )
+
+    # The opt-in session uses the server key.
+    issuers, _ = issuers_of_new_assertions("SELECT * FROM t_server_key", 1)
+    assert SA_CLIENT_EMAIL in issuers
+
+    # A restricted session is refused and never mints a token with the server key.
+    issuers, error = issuers_of_new_assertions("SELECT * FROM t_server_key", 0)
+    assert issuers == []
+    assert "ACCESS_DENIED" in error
+
+    # A key supplied by a named collection is still used by a restricted session.
+    issuers, error = issuers_of_new_assertions(
+        "SELECT * FROM s3(user_key_collection, format = 'TSV', structure = 'x UInt8')",
+        0,
+    )
+    assert "ACCESS_DENIED" not in error
+    assert issuers and set(issuers) == {"user@example-project.iam.gserviceaccount.com"}
+
+    server_key_node.query("DROP TABLE t_server_key")
