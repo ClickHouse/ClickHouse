@@ -1122,6 +1122,8 @@ whole, across all attempts. The candidate tables are the chosen table and the co
 - Each attempt gets an equal share of the read limits: the limit divided by the number of candidate tables. It is checked
   against the data it read itself, so a failed attempt does not reduce the share of the next one. For example, to allow each
   attempt to read up to 1 million rows with three candidate tables, set `max_rows_to_read = 3000000`.
+- The estimate of the rows an attempt plans to read is only checked against the share of that attempt. Outside the attempt,
+  including on the initiator of a distributed query, only the rows actually read count against the limits.
 
 **Limitations**
 
