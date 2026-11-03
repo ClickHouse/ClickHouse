@@ -57,8 +57,6 @@ $CLICKHOUSE_CLIENT -q "
     SETTINGS parallel_distributed_insert_select = 2"
 check "fileCluster, non-replicated destination"
 
-$CLICKHOUSE_CLIENT -q "DROP TABLE t_05481"
-
 # The nodes must not receive the inferred values of the keys of a named collection that are \`NOT OVERRIDABLE\`.
 NC="nc_${CLICKHOUSE_DATABASE}_05481"
 $CLICKHOUSE_CLIENT -q "
@@ -73,7 +71,19 @@ $CLICKHOUSE_CLIENT -q "SELECT * FROM urlCluster('${CLUSTER}', ${NC}_structure) O
 echo "--- urlCluster, format not overridable ---"
 $CLICKHOUSE_CLIENT -q "SELECT * FROM urlCluster('${CLUSTER}', ${NC}_format) ORDER BY id"
 
+# The nodes infer the structure themselves, so the initiator must not take it from the destination either.
+echo "--- urlCluster, structure not overridable, INSERT ---"
+$CLICKHOUSE_CLIENT -q "
+    INSERT INTO t_05481 SELECT * FROM urlCluster('${CLUSTER}', ${NC}_structure)
+    SETTINGS parallel_distributed_insert_select = 0" 2>&1 | grep -o -m1 "NUMBER_OF_COLUMNS_DOESNT_MATCH"
+echo "--- url converted to urlCluster, structure not overridable, INSERT ---"
+$CLICKHOUSE_CLIENT -q "
+    INSERT INTO t_05481 SELECT * FROM url(${NC}_structure)
+    SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = '${CLUSTER}',
+        parallel_replicas_for_cluster_engines = 1, parallel_distributed_insert_select = 0" 2>&1 | grep -o -m1 "NUMBER_OF_COLUMNS_DOESNT_MATCH"
+
 $CLICKHOUSE_CLIENT -q "
     DROP NAMED COLLECTION ${NC}_structure;
     DROP NAMED COLLECTION ${NC}_format;
+    DROP TABLE t_05481;
 "
