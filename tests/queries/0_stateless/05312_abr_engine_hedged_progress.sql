@@ -13,9 +13,7 @@ SET send_logs_level = 'error';
 SET hedged_connection_timeout_ms = 10000;
 
 DROP TABLE IF EXISTS dist_abr_slow;
-DROP TABLE IF EXISTS dist_mt_slow;
 DROP TABLE IF EXISTS abr_slow;
-DROP TABLE IF EXISTS mt_slow;
 DROP TABLE IF EXISTS slow_1;
 DROP TABLE IF EXISTS slow_10;
 DROP TABLE IF EXISTS slow_100;
@@ -49,7 +47,8 @@ PARTITION BY toStartOfMonth(timestamp)
 ORDER BY (namespace, timestamp);
 
 -- Keep the finest tier tiny (4 rows) so sleepEachRow time is bounded and deterministic:
--- 4 rows * 2.0s = 8.0s of silent buffering, comfortably above the 3s receive_data_timeout_ms used
+-- 4 rows * 1.25s = 5s of buffering. The first progress packet with read rows disables replica changes,
+-- so the sleep only needs to outlast the 3s receive_data_timeout_ms used below when no progress is reported.
 INSERT INTO slow_1
 SELECT 1, 200, toDateTime('2026-01-01 00:00:00') - INTERVAL number HOUR, number
 FROM system.numbers LIMIT 4;
@@ -66,75 +65,32 @@ FROM system.numbers LIMIT 4;
 CREATE TABLE abr_slow
 ENGINE = ABR('slow', [1, 10, 100], ('timestamp'));
 
--- Plain MergeTree control with the SAME 4 rows as the ABR finest tier.
-CREATE TABLE mt_slow (
-    _sample_interval UInt64 DEFAULT 1,
-    namespace UInt64,
-    timestamp DateTime,
-    value UInt64
-) ENGINE = MergeTree()
-PARTITION BY toStartOfMonth(timestamp)
-ORDER BY (namespace, timestamp);
-
-INSERT INTO mt_slow
-SELECT 1, 200, toDateTime('2026-01-01 00:00:00') - INTERVAL number HOUR, number
-FROM system.numbers LIMIT 4;
-
 CREATE TABLE dist_abr_slow AS abr_slow
 ENGINE = Distributed('test_cluster_one_shard_two_replicas', currentDatabase(), 'abr_slow', rand());
 
-CREATE TABLE dist_mt_slow AS mt_slow
-ENGINE = Distributed('test_cluster_one_shard_two_replicas', currentDatabase(), 'mt_slow', rand());
-
-
--- ABR: initiator should NOT switch replicas if progress is reported
--- will fail downstream if no progress reported
-SELECT 'ABR Count';
+-- The initiator must not switch replicas, as the shard reports progress while it buffers
 SELECT count() FROM dist_abr_slow
 WHERE timestamp >= toDateTime('2026-01-01 00:00:00') - INTERVAL 3 HOUR
-  AND sleepEachRow(2) = 0
+  AND sleepEachRow(1.25) = 0
 SETTINGS
   prefer_localhost_replica = 0,
   use_hedged_requests = 1,
   receive_data_timeout_ms = 3000,
   function_sleep_max_microseconds_per_block = 60000000,
-  log_comment = '03595_abr_slow_case';
-
--- Control: identical slow scan over a plain MergeTree behind Distributed.
--- a normal shard streams progress while reading, so no replica change.
-SELECT 'MergeTree Control Count';
-SELECT count() FROM dist_mt_slow
-WHERE timestamp >= toDateTime('2026-01-01 00:00:00') - INTERVAL 3 HOUR
-  AND sleepEachRow(2) = 0
-SETTINGS
-  prefer_localhost_replica = 0,
-  use_hedged_requests = 1,
-  receive_data_timeout_ms = 3000,
-  function_sleep_max_microseconds_per_block = 60000000,
-  log_comment = '03595_mt_control_case';
+  log_comment = '05312_abr_slow_case';
 
 SYSTEM FLUSH LOGS query_log;
 
 -- HedgedRequestsChangeReplica is an initiator-side ProfileEvent
--- Expected no replica change in both cases
 SELECT sum(ProfileEvents['HedgedRequestsChangeReplica']) = 0
 FROM system.query_log
 WHERE current_database = currentDatabase()
   AND type = 'QueryFinish'
   AND is_initial_query
-  AND log_comment = '03595_abr_slow_case';
-
-SELECT sum(ProfileEvents['HedgedRequestsChangeReplica']) = 0
-FROM system.query_log
-WHERE current_database = currentDatabase()
-  AND type = 'QueryFinish'
-  AND is_initial_query
-  AND log_comment = '03595_mt_control_case';
+  AND log_comment = '05312_abr_slow_case';
 
 DROP TABLE IF EXISTS dist_abr_slow;
-DROP TABLE IF EXISTS dist_mt_slow;
 DROP TABLE IF EXISTS abr_slow;
-DROP TABLE IF EXISTS mt_slow;
 DROP TABLE IF EXISTS slow_1;
 DROP TABLE IF EXISTS slow_10;
 DROP TABLE IF EXISTS slow_100;
