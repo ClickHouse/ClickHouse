@@ -1,5 +1,6 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-fasttest
 -- no-parallel: enables a failpoint, which affects merges and inserts of other tables.
+-- no-fasttest: tests that enable a failpoint must run alone, so they are kept out of the fast test.
 
 -- An exception in the thread that builds skip indexes fails the merge, the source parts stay,
 -- and the next merge succeeds.
