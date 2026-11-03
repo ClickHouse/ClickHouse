@@ -8,5 +8,11 @@ WITH alias, enable_global_with_statement = 0
 0
 alias of the subquery itself
 0
+constant alias without the element
+1	2
+2	1
+2
+2
+2
 disabled
 (10)	0

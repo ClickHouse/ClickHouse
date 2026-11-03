@@ -668,6 +668,36 @@ bool tableExpressionDataCanReadIdentifier(const AnalysisTableExpressionData & ta
 
 }
 
+/// Returns true if a visible expression argument of `scope` (a lambda argument) can provide `identifier`,
+/// matched the same way `tryResolveIdentifierFromExpressionArguments` binds it.
+static bool expressionArgumentCanReadIdentifier(const Identifier & identifier, const IdentifierResolveScope & scope)
+{
+    if (scope.expression_argument_name_to_node.empty())
+        return false;
+
+    auto it = scope.expression_argument_name_to_node.find(identifier.getFullName());
+    bool full_identifier = it != scope.expression_argument_name_to_node.end();
+    if (!full_identifier)
+    {
+        it = scope.expression_argument_name_to_node.find(identifier.front());
+        if (it == scope.expression_argument_name_to_node.end())
+            return false;
+    }
+
+    if (scope.hidden_expression_arguments.contains(it->first))
+        return false;
+
+    if (!isExpressionNodeType(it->second->getNodeType()))
+        return false;
+
+    if (full_identifier || !identifier.isCompound())
+        return true;
+
+    IdentifierView rest(identifier);
+    rest.popFirst();
+    return it->second->getResultType()->hasSubcolumn(rest.getFullName());
+}
+
 /// Returns true if `target` is `root` itself or is nested below `root` in a join tree.
 static bool joinSubtreeContains(const IQueryTreeNode * root, const IQueryTreeNode * target)
 {
@@ -744,9 +774,10 @@ static const JoinNode * findLateralJoinWithRightSideContaining(const IQueryTreeN
   *
   * Either way the name is only hidden when an enclosing scope carries it: a qualifier that means nothing
   * outside the subquery keeps resolving to the aliased table expression. Besides a table name, the enclosing
-  * scope can carry it as an `ARRAY JOIN` output, an expression alias or a column the identifier can be read from, and a qualifier
-  * that looks like `database.table` here can be `table.column` there. Only a reading that resolves the
-  * identifier counts: an `ARRAY JOIN` output or a column without the named subcolumn does not hide the name.
+  * scope can carry it as an `ARRAY JOIN` output, an expression alias, a lambda argument or a column the identifier
+  * can be read from, and a qualifier that looks like `database.table` here can be `table.column` there. Only a
+  * reading that resolves the identifier counts: an `ARRAY JOIN` output, a lambda argument, a constant alias or a
+  * column without the named subcolumn does not hide the name.
   *
   * The rule is about the qualifier, not about the shape of the lookup, so it applies to the qualifier of a
   * matcher (`t.*`, `t.COLUMNS(...)`, `db.t.*`) as well. That qualifier is resolved as an expression first
@@ -814,19 +845,41 @@ bool IdentifierResolver::tableNameIsHiddenByAlias(
           * and it rejects an alias whose expression is being resolved right now, such as the subquery
           * itself in `(SELECT ...) AS t`, to break the alias cycle.
           *
-          * The type of an alias is not known before its expression is resolved, so an alias that names the
-          * first part counts regardless of whether it has the rest of the identifier: an alias that cannot
-          * provide it makes the identifier fail to resolve instead of silently reading the aliased table
-          * expression, and the result does not depend on the order in which the enclosing query resolves
-          * its expressions.
+          * Only an alias that can provide the rest of the identifier counts, as `tryResolveIdentifierFromCompoundExpression`
+          * requires there. The alias table keeps the expressions as they were written - lookups resolve a clone - so
+          * the type is known regardless of the order in which the enclosing query resolves its expressions only for a
+          * constant, such as `1 AS t` or `WITH (1, 2) AS t`. A constant without the rest of the identifier gives it no
+          * reading. Any other alias counts regardless of whether it has the rest: if it cannot provide it, the
+          * identifier fails to resolve instead of silently reading the aliased table expression, and the result
+          * still does not depend on the resolution order.
           */
         if (inner_scope->scope_node->getNodeType() == QueryTreeNodeType::QUERY
             && !inner_scope->context->getSettingsRef()[Setting::enable_global_with_statement])
             outer_aliases_are_visible = false;
 
         if (outer_aliases_are_visible && identifier_lookup.isExpressionLookup()
-            && outer_scope->aliases.alias_name_to_expression_node.contains(identifier.front())
             && !outer_scope->expressions_in_resolve_process_stack.getExpressionWithAlias(identifier.front()))
+        {
+            auto alias_it = outer_scope->aliases.alias_name_to_expression_node.find(identifier.front());
+            if (alias_it != outer_scope->aliases.alias_name_to_expression_node.end())
+            {
+                const auto * constant_node = alias_it->second->as<ConstantNode>();
+                if (!constant_node)
+                    return true;
+
+                IdentifierView rest(identifier);
+                rest.popFirst();
+                if (constant_node->getResultType()->hasSubcolumn(rest.getFullName()))
+                    return true;
+            }
+        }
+
+        /** A lambda argument of an enclosing lambda gives the identifier a reading as well, by the rules of
+          * `tryResolveIdentifierFromExpressionArguments`: the full name or the first part names a visible argument,
+          * and the rest of the identifier is a subcolumn of it. Arguments are resolved before the lambda body, so
+          * their type is known. They are visible regardless of `enable_global_with_statement`.
+          */
+        if (identifier_lookup.isExpressionLookup() && expressionArgumentCanReadIdentifier(identifier, *outer_scope))
             return true;
 
         /** The join tree of this query is still being resolved, so we are inside one of its table

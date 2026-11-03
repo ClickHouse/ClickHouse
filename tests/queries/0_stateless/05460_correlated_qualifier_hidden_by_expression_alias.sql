@@ -26,6 +26,15 @@ SELECT 'alias of the subquery itself';
 -- The alias of the expression being resolved does not count, so `t.val` keeps addressing `t AS c`.
 SELECT (SELECT count() FROM t AS c WHERE c.val > t.val) AS t FROM numbers(1);
 
+SELECT 'constant alias without the element';
+-- A constant alias has a known type; when it has no element `val`, it gives `t.val` no reading, so `t.val`
+-- keeps addressing `t AS c`, whichever order the projection is resolved in.
+SELECT 1 AS t, (SELECT count() FROM t AS c WHERE t.val > 15) AS n;
+SELECT (SELECT count() FROM t AS c WHERE t.val > 15) AS n, 1 AS t;
+WITH 1 AS t SELECT (SELECT count() FROM t AS c WHERE t.val > 15);
+WITH (1, 2) AS t SELECT (SELECT count() FROM t AS c WHERE t.val > 15);
+WITH [1] AS t SELECT (SELECT count() FROM t AS c WHERE t.val > 15);
+
 SELECT 'disabled';
 SELECT CAST(tuple(number + 10), 'Tuple(val UInt64)') AS t, (SELECT count() FROM t AS c WHERE c.val > t.val) AS n FROM numbers(1) SETTINGS analyzer_alias_hides_table_name = 0;
 
