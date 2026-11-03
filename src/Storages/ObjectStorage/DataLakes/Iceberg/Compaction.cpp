@@ -821,8 +821,8 @@ static bool writeConsolidatedManifestFile(
     std::vector<ManifestListEntryCounts> existing_entry_counts;
     /// Parallel to consolidated_manifest_paths: each manifest's partition spec-id.
     std::vector<Int64> entry_partition_spec_ids;
-    /// Parallel to consolidated_manifest_paths: each manifest's partition fields (value + type), used to recompute the manifest-list `partitions` summary.
-    std::vector<std::vector<std::pair<Field, DataTypePtr>>> entry_partition_summaries;
+    /// Parallel to consolidated_manifest_paths: each manifest's partition field summary, used to recompute the manifest-list `partitions` summary.
+    std::vector<ManifestPartitionSummary> entry_partition_summaries;
 
     /// Cleanup for both commit conflict and exceptions; paths are tracked before writeObject so partially-created objects are removed (removeObjectIfExists tolerates missing objects).
     auto cleanup = [&]()
@@ -905,11 +905,7 @@ static bool writeConsolidatedManifestFile(
                     resolved_spec.partition_columns.size());
 
             /// All files in this manifest share one partition value, so the summary's lower/upper bounds are exactly that value.
-            std::vector<std::pair<Field, DataTypePtr>> partition_summary;
-            partition_summary.reserve(resolved_spec.partition_types.size());
-            for (size_t i = 0; i < resolved_spec.partition_types.size(); ++i)
-                partition_summary.emplace_back(pd.partition_values[i], resolved_spec.partition_types[i]);
-            entry_partition_summaries.push_back(std::move(partition_summary));
+            entry_partition_summaries.push_back(makeManifestPartitionSummary(pd.partition_values, resolved_spec.partition_types));
 
             generateManifestFile(
                 metadata_object,

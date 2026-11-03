@@ -1,0 +1,54 @@
+--- one INSERT, three partitions: manifests written
+1
+--- manifest-list entry: files, rows, partition bounds
+6	0	12	0	[(false,10,12)]
+--- manifest entries: own partition value, status ADDED, inherited sequence number
+(10)	1	\N	2
+(10)	1	\N	2
+(11)	1	\N	2
+(11)	1	\N	2
+(12)	1	\N	2
+(12)	1	\N	2
+--- rows read back
+10	4	18
+11	4	22
+12	4	26
+--- partition pruning on the shared manifest
+4
+0
+4
+6
+--- second INSERT: manifests written
+2
+2	0	2	0	[(false,10,12)]
+6	0	12	0	[(false,10,12)]
+--- DROP PARTITION 11: the manifest shared with partitions 10 and 12 is rewritten, the other one is carried forward
+10	5	118
+12	5	146
+0	4	0	8	[(false,10,12)]
+2	0	2	0	[(false,10,12)]
+--- rewritten manifest keeps the files as EXISTING with their original sequence number
+(10)	1	\N	1
+(12)	1	\N	1
+(10)	0	1	2
+(10)	0	1	2
+(12)	0	1	2
+(12)	0	1	2
+--- time travel to before the DROP still sees partition 11
+10	5
+11	4
+12	5
+--- DELETE in partition 10 then DROP PARTITION 10 (data manifest shared with 12, delete manifest fully matched)
+10	4	118
+12	5	146
+12	5	146
+--- all partitions dropped
+0
+--- NULL and non-NULL partition values in one INSERT
+1
+3	0	4	0	[(true,-7,5)]
+\N	4
+-7	4
+5	2
+4
+4

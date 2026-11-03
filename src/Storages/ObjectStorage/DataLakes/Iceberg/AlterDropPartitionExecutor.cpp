@@ -438,7 +438,7 @@ AlterDropPartitionExecutor::buildDropPlan(const SnapshotState & state, const Tar
         }
     };
 
-    auto process_entries = [&](const auto & entries, size_t & entries_to_keep, size_t & entries_to_remove)
+    auto process_entries = [&](const auto & entries, std::vector<ProcessedManifestFileEntryPtr> & entries_to_keep, size_t & entries_to_remove)
     {
         for (const auto & entry : entries)
         {
@@ -449,7 +449,7 @@ AlterDropPartitionExecutor::buildDropPlan(const SnapshotState & state, const Tar
             const String storage_path = components.path_resolver.resolve(parsed_entry.file_path_key);
             if (!targets.contains(storage_path))
             {
-                ++entries_to_keep;
+                entries_to_keep.push_back(entry);
                 continue;
             }
 
@@ -480,7 +480,7 @@ AlterDropPartitionExecutor::buildDropPlan(const SnapshotState & state, const Tar
     {
         auto handle = getManifestFileEntriesHandle(object_storage, components, context, log, manifest_key, state.schema_id);
 
-        size_t entries_to_keep = 0;
+        std::vector<ProcessedManifestFileEntryPtr> entries_to_keep;
         size_t entries_to_remove = 0;
 
         process_entries(handle.getFilesWithoutDeleted(FileContentType::DATA), entries_to_keep, entries_to_remove);
@@ -496,11 +496,23 @@ AlterDropPartitionExecutor::buildDropPlan(const SnapshotState & state, const Tar
                 "DROP PARTITION is not supported on Iceberg tables where an affected manifest '{}' contains equality deletes",
                 manifest_key.manifest_file_path);
 
-        TargetManifest target_manifest{.manifest_key = manifest_key};
-        if (entries_to_keep == 0)
-            result.target_manifests.fully_matched.emplace_back(std::move(target_manifest));
-        else
-            result.target_manifests.partially_matched.emplace_back(std::move(target_manifest));
+        if (entries_to_keep.empty())
+        {
+            result.target_manifests.fully_matched.emplace_back(TargetManifest{.manifest_key = manifest_key, .surviving_entries = {}});
+            continue;
+        }
+
+        /// A data manifest shared with other partitions (one INSERT writes a single manifest for all its partitions)
+        /// is rewritten without the dropped files. Position-delete entries carry fields the rewrite does not round-trip
+        /// (referenced data file, bounds on the file-path column), so such a delete manifest stays unsupported.
+        if (manifest_key.content_type == ManifestFileContentType::DELETE)
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "DROP PARTITION would require rewriting the delete manifest '{}' that also contains delete files of other partitions",
+                manifest_key.manifest_file_path);
+
+        result.target_manifests.partially_matched.emplace_back(
+            TargetManifest{.manifest_key = manifest_key, .surviving_entries = std::move(entries_to_keep)});
     }
 
     if (!unprocessed_target_file_paths.empty())
@@ -569,16 +581,37 @@ AlterDropPartitionExecutor::ManifestListWriteResult AlterDropPartitionExecutor::
     const String storage_manifest_list_path = components.path_resolver.resolve(manifest_list_path);
     files_for_cleanup.push_back(storage_manifest_list_path);
 
-    std::unordered_set<String> removed_manifest_paths;
+    /// A fully matched manifest is left out of the new list; a partially matched one is replaced by its rewrite.
+    std::unordered_set<String> replaced_manifest_paths;
     for (const auto & tm : plan.target_manifests.fully_matched)
-        removed_manifest_paths.insert(tm.manifest_key.manifest_file_path.serialize());
+        replaced_manifest_paths.insert(tm.manifest_key.manifest_file_path.serialize());
+    for (const auto & tm : plan.target_manifests.partially_matched)
+        replaced_manifest_paths.insert(tm.manifest_key.manifest_file_path.serialize());
 
     std::unordered_set<String> carry_forward_manifest_paths;
     for (const auto & manifest_key : state.snapshot->manifest_list_entries)
     {
         const auto path = manifest_key.manifest_file_path.serialize();
-        if (!removed_manifest_paths.contains(path))
+        if (!replaced_manifest_paths.contains(path))
             carry_forward_manifest_paths.insert(path);
+    }
+
+    /// Parallel vectors describing the rewritten manifests for `generateManifestList`.
+    std::vector<IcebergPathFromMetadata> rewritten_manifest_paths;
+    std::vector<Int64> rewritten_manifest_sizes;
+    std::vector<FileContentType> rewritten_content_types;
+    std::vector<ManifestListEntryCounts> rewritten_counts;
+    std::vector<Int64> rewritten_partition_spec_ids;
+    std::vector<ManifestPartitionSummary> rewritten_partition_summaries;
+    for (const auto & target : plan.target_manifests.partially_matched)
+    {
+        auto rewritten = rewriteManifestWithoutDroppedFiles(state, target, new_snapshot, filename_generator, files_for_cleanup);
+        rewritten_manifest_paths.push_back(std::move(rewritten.path));
+        rewritten_manifest_sizes.push_back(rewritten.size);
+        rewritten_content_types.push_back(FileContentType::DATA);
+        rewritten_counts.push_back(rewritten.counts);
+        rewritten_partition_spec_ids.push_back(state.partition_spec_id);
+        rewritten_partition_summaries.push_back(std::move(rewritten.partition_summary));
     }
 
     LOG_TRACE(log, "ALTER DROP PARTITION writing new manifest list {}", storage_manifest_list_path);
@@ -595,19 +628,200 @@ AlterDropPartitionExecutor::ManifestListWriteResult AlterDropPartitionExecutor::
         state.metadata_object,
         object_storage,
         context,
-        /*manifest_entry_names=*/{},
+        rewritten_manifest_paths,
         new_snapshot,
-        /*manifest_entry_sizes=*/{},
+        rewritten_manifest_sizes,
         *buf,
         FileContentType::DATA,
         /*use_previous_snapshots=*/false,
-        /*per_entry_content_types=*/{},
-        /*entry_counts=*/{},
-        carry_forward_manifest_paths);
+        rewritten_content_types,
+        rewritten_counts,
+        carry_forward_manifest_paths,
+        rewritten_partition_spec_ids,
+        rewritten_partition_summaries);
 
     buf->finalize();
 
     return ManifestListWriteResult{.metadata_info = metadata_info, .new_snapshot = new_snapshot};
+}
+
+AlterDropPartitionExecutor::RewrittenManifest AlterDropPartitionExecutor::rewriteManifestWithoutDroppedFiles(
+    const SnapshotState & state,
+    const TargetManifest & target,
+    const Poco::JSON::Object::Ptr & new_snapshot,
+    FileNamesGenerator & filename_generator,
+    std::vector<String> & files_for_cleanup)
+{
+    const auto & manifest_key = target.manifest_key;
+    if (target.surviving_entries.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Manifest '{}' has no surviving entries to rewrite", manifest_key.manifest_file_path);
+
+    /// Everything below is parallel to `file_paths`; it is what `generateManifestFile` needs to re-emit each
+    /// surviving entry as EXISTING with the statistics, format and lineage it had in the source manifest.
+    std::vector<IcebergPathFromMetadata> file_paths;
+    std::vector<UInt64> file_row_counts;
+    std::vector<UInt64> file_byte_counts;
+    std::vector<String> file_formats;
+    std::vector<DataFileColumnStatistics> file_statistics;
+    std::vector<std::optional<Int32>> file_sort_order_ids;
+    std::vector<DataFileEntryLineage> file_entry_lineage;
+    std::vector<Row> file_partition_values;
+
+    RewrittenManifest result;
+    result.counts.counts_are_added = false;
+    result.counts.added_snapshot_id = manifest_key.added_snapshot_id;
+    result.counts.added_sequence_number = manifest_key.added_sequence_number;
+    result.counts.min_sequence_number = std::numeric_limits<Int64>::max();
+    result.partition_summary.reserve(state.partition_types.size());
+    for (const auto & type : state.partition_types)
+    {
+        ManifestPartitionFieldSummary field_summary;
+        field_summary.type = type;
+        result.partition_summary.push_back(std::move(field_summary));
+    }
+
+    /// A manifest has one `schema` header, so every entry must resolve to the same schema.
+    std::optional<Int32> schema_id;
+
+    for (const auto & entry : target.surviving_entries)
+    {
+        if (!entry->parsed_entry)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Manifest file entry is not parsed");
+        const auto & parsed = *entry->parsed_entry;
+
+        if (parsed.content_type != FileContentType::DATA)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Rewriting manifest '{}': expected only data files, got a {} entry",
+                manifest_key.manifest_file_path,
+                FileContentTypeToString(parsed.content_type));
+
+        if (schema_id && *schema_id != entry->resolved_schema_id)
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "DROP PARTITION cannot rewrite manifest '{}' whose entries were written under different schemas ({} and {})",
+                manifest_key.manifest_file_path,
+                *schema_id,
+                entry->resolved_schema_id);
+        schema_id = entry->resolved_schema_id;
+
+        if (entry->normalized_partition_key_value.size() != state.partition_types.size())
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Manifest '{}' entry has {} partition values but the partition spec defines {} fields",
+                manifest_key.manifest_file_path,
+                entry->normalized_partition_key_value.size(),
+                state.partition_types.size());
+
+        file_paths.push_back(parsed.file_path_key);
+        file_row_counts.push_back(static_cast<UInt64>(parsed.record_count));
+        file_byte_counts.push_back(static_cast<UInt64>(parsed.file_size_in_bytes));
+        file_formats.push_back(parsed.file_format);
+        file_sort_order_ids.push_back(parsed.sort_order_id);
+        file_partition_values.push_back(entry->normalized_partition_key_value);
+        mergePartitionValuesIntoSummary(result.partition_summary, entry->normalized_partition_key_value);
+
+        /// An inherited (null) snapshot-id or sequence number resolves to the manifest's, since EXISTING entries must spell them out.
+        DataFileEntryLineage lineage;
+        lineage.added_snapshot_id = parsed.parsed_snapshot_id.value_or(manifest_key.added_snapshot_id);
+        lineage.sequence_number = parsed.parsed_sequence_number.value_or(manifest_key.added_sequence_number);
+        lineage.file_sequence_number = parsed.parsed_file_sequence_number.value_or(manifest_key.added_sequence_number);
+        result.counts.min_sequence_number = std::min(result.counts.min_sequence_number, *lineage.sequence_number);
+        file_entry_lineage.push_back(lineage);
+
+        /// Column statistics are carried over verbatim; the bounds stay the raw serialized bytes so they round-trip.
+        DataFileColumnStatistics stats;
+        for (const auto & [field_id, col_info] : parsed.columns_infos)
+        {
+            if (col_info.bytes_size.has_value())
+                stats.column_sizes.emplace_back(field_id, *col_info.bytes_size);
+            if (col_info.rows_count.has_value())
+                stats.value_counts.emplace_back(field_id, *col_info.rows_count);
+            if (col_info.nulls_count.has_value())
+                stats.null_value_counts.emplace_back(field_id, *col_info.nulls_count);
+        }
+        for (const auto & [field_id, bounds] : parsed.value_bounds)
+        {
+            if (!bounds.first.isNull())
+                stats.lower_bounds.emplace_back(field_id, bounds.first.safeGet<String>());
+            if (!bounds.second.isNull())
+                stats.upper_bounds.emplace_back(field_id, bounds.second.safeGet<String>());
+        }
+        file_statistics.push_back(std::move(stats));
+
+        result.counts.files_count += 1;
+        result.counts.rows_count += parsed.record_count;
+    }
+
+    Poco::JSON::Object::Ptr schema_to_serialize;
+    auto schemas = state.metadata_object->getArray(f_schemas);
+    for (size_t i = 0; schemas && i < schemas->size(); ++i)
+    {
+        auto schema = schemas->getObject(static_cast<UInt32>(i));
+        if (schema && schema->getValue<Int32>(f_schema_id) == *schema_id)
+        {
+            schema_to_serialize = schema;
+            break;
+        }
+    }
+    if (!schema_to_serialize)
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Iceberg metadata does not contain a schema entry matching schema-id {} of manifest '{}'",
+            *schema_id,
+            manifest_key.manifest_file_path);
+
+    result.path = filename_generator.generateManifestEntryName();
+    const String storage_manifest_path = components.path_resolver.resolve(result.path);
+    files_for_cleanup.push_back(storage_manifest_path);
+
+    LOG_TRACE(
+        log,
+        "ALTER DROP PARTITION rewriting manifest {} as {} with {} of its entries",
+        manifest_key.manifest_file_path,
+        storage_manifest_path,
+        file_paths.size());
+
+    auto buf = object_storage->writeObject(
+        StoredObject(storage_manifest_path),
+        WriteMode::Rewrite,
+        /*attributes=*/std::nullopt,
+        DBMS_DEFAULT_BUFFER_SIZE,
+        context->getWriteSettings());
+
+    /// The sample block only feeds freshly computed statistics, which a metadata-only rewrite never produces.
+    generateManifestFile(
+        state.metadata_object,
+        state.partition_columns,
+        /*partition_values=*/{},
+        state.partition_types,
+        file_paths,
+        file_row_counts,
+        file_byte_counts,
+        /*data_file_statistics=*/std::nullopt,
+        std::make_shared<const Block>(),
+        new_snapshot,
+        write_format,
+        state.partition_spec,
+        state.partition_spec_id,
+        *buf,
+        FileContentType::DATA,
+        /*user_defined_sequence_number=*/std::nullopt,
+        /*user_defined_snapshot_id=*/std::nullopt,
+        file_formats,
+        file_statistics,
+        file_sort_order_ids,
+        file_entry_lineage,
+        schema_to_serialize,
+        /*per_file_fresh_statistics=*/nullptr,
+        &file_partition_values);
+    buf->finalize();
+
+    result.size = static_cast<Int64>(buf->count());
+    if (result.size == 0)
+        result.size = static_cast<Int64>(object_storage->getObjectMetadata(storage_manifest_path, /*with_tags=*/false).size_bytes);
+
+    return result;
 }
 
 bool AlterDropPartitionExecutor::commitMetadataJSON(
@@ -739,11 +953,6 @@ void AlterDropPartitionExecutor::run()
         }
 
         auto plan = buildDropPlan(state, targets, target_partition);
-        if (!plan.target_manifests.partially_matched.empty())
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "DROP PARTITION would require rewriting a manifest that also contains files from other partitions");
-
         if (tryCommit(state, plan))
             return;
     }

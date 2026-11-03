@@ -428,7 +428,7 @@ static bool writeMetadataFiles(
     std::vector<Int64> manifest_entry_row_counts;
     std::vector<Int64> manifest_entry_file_counts;
     std::vector<Iceberg::FileContentType> per_entry_content_types;
-    std::vector<std::vector<std::pair<Field, DataTypePtr>>> entry_partition_summaries;
+    std::vector<ManifestPartitionSummary> entry_partition_summaries;
 
     auto hint_path = filename_generator.generateVersionHint();
     const bool use_version_hint = data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint];
@@ -467,14 +467,7 @@ static bool writeMetadataFiles(
 
             /// The manifest holds a single partition tuple, which becomes its manifest-list field summary.
             if (chunk_partitioner)
-            {
-                const auto & partition_types = chunk_partitioner->getResultTypes();
-                std::vector<std::pair<Field, DataTypePtr>> partition_summary;
-                partition_summary.reserve(partition_key.size());
-                for (size_t i = 0; i < partition_key.size(); ++i)
-                    partition_summary.emplace_back(partition_key[i], partition_types[i]);
-                entry_partition_summaries.push_back(std::move(partition_summary));
-            }
+                entry_partition_summaries.push_back(makeManifestPartitionSummary(partition_key, chunk_partitioner->getResultTypes()));
 
             auto buffer_manifest_entry = object_storage->writeObject(
                 StoredObject(path_resolver.resolve(manifest_entry_path)),

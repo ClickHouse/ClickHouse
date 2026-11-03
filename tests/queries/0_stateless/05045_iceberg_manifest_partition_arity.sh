@@ -87,15 +87,20 @@ SPEC_UNMODELLED_LEAD='[{"field-id":1001,"name":"q","source-id":9999,"transform":
 SPEC_NOKEY='[{"field-id":1001,"name":"p","source-id":9999,"transform":"void"}]'
 SPEC_NOKEY_OK='[{"field-id":1001,"name":"p","source-id":9999,"transform":"void"},{"field-id":1002,"name":"q","source-id":9998,"transform":"void"}]'
 
-# One partition value group per file, so each table has three data files. Background Iceberg
-# compaction, which the cloud build runs off a member flag rather than a query setting, would
-# rewrite the very manifests this test patches, so it is pinned off per table.
+# One partition value group per file, so each table has three data files. One INSERT per partition
+# value, so each table also has three manifests of one partition tuple each: an INSERT writes a
+# single manifest for all the partitions it touches, and A9 needs manifests the manifest-list
+# summaries can tell apart. Background Iceberg compaction, which the cloud build runs off a member
+# flag rather than a query setting, would rewrite the very manifests this test patches, so it is
+# pinned off per table.
 mk() { # mk <table> <partition-by>
     cat <<SQL
 CREATE TABLE $1 (p Int32, q Int32, v Int32)
 ENGINE = IcebergLocal('${ROOT}/$1/', 'Parquet') PARTITION BY ($2)
 SETTINGS allow_experimental_iceberg_compaction = 0;
-INSERT INTO $1 VALUES (1,10,100),(1,10,101),(2,20,200),(2,20,201),(3,30,300);
+INSERT INTO $1 VALUES (1,10,100),(1,10,101);
+INSERT INTO $1 VALUES (2,20,200),(2,20,201);
+INSERT INTO $1 VALUES (3,30,300);
 SQL
 }
 

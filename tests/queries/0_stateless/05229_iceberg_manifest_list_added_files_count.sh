@@ -73,7 +73,7 @@ done
 ${CLICKHOUSE_CLIENT} --send_logs_level=fatal --allow_insert_into_iceberg=1 --query "INSERT INTO ${TABLE_V1} SELECT 10"
 check "v1 second insert" "${PATH_V1}"
 
-# One manifest per partition key, each with its own number of data files.
+# One manifest for the whole INSERT, covering both partition keys and all their data files.
 ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE ${TABLE_PARTITIONED} (n Int64, p Int64)
     ENGINE = IcebergLocal('${PATH_PARTITIONED}') PARTITION BY (p)"
