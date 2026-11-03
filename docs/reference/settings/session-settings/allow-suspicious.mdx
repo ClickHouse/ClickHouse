@@ -27,13 +27,11 @@ If it is set to true, allow to specify meaningless compression codecs.
 
 In CREATE TABLE statement allows creating columns of type FixedString(n) with n > 256. FixedString with length >= 256 is suspicious and most likely indicates a misuse
 
-## allow_suspicious_indexes {#allow_suspicious_indexes}
-
-**Aliases**: `allow_suspicious_indices`
+## allow_suspicious_indices {#allow_suspicious_indices}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Added an alias for setting `allow_suspicious_indices`."}]}, {"id": "row-2","items": [{"label": "23.4"},{"label": "0"},{"label": "If true, index can defined with identical expressions"}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.4"},{"label": "0"},{"label": "If true, index can defined with identical expressions"}]}]}/>
 
 Reject primary/secondary indexes and sorting keys with identical expressions
 

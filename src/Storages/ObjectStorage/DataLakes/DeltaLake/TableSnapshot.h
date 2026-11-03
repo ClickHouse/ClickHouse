@@ -13,8 +13,6 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelPointerWrapper.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
 #include <boost/noncopyable.hpp>
-#include <Poco/JSON/Array.h>
-#include <unordered_set>
 #include "delta_kernel_ffi.hpp"
 
 namespace DeltaLake
@@ -50,9 +48,6 @@ public:
 
     /// Get schema from DeltaLake table metadata.
     const DB::NamesAndTypesList & getTableSchema() const;
-    /// Raw Delta `StructType.fields` JSON of this snapshot, preserving exact Delta types (`binary`,
-    /// `timestamp_ntz`, ...) that `getTableSchema` collapses. Used for catalog registration.
-    Poco::JSON::Array::Ptr getRawDeltaSchemaFields() const;
     /// Get read schema derived from data files.
     /// (In most cases it would be the same as table schema).
     const DB::NamesAndTypesList & getReadSchema() const;
@@ -62,7 +57,6 @@ public:
     /// but "read schema" would not.
     const DB::Names & getPartitionColumns() const;
     const DB::NameToNameMap & getPhysicalNamesMap() const;
-    const std::unordered_set<String> & getTimestampNtzPaths() const;
 
     DB::ObjectStoragePtr getObjectStorage() const { return object_storage; }
 private:
@@ -109,7 +103,6 @@ private:
         DB::NameToNameMap physical_names_map;
         /// Partition columns list (not stored in read schema)
         DB::Names partition_columns;
-        std::unordered_set<String> timestamp_ntz_paths;
     };
     mutable std::optional<SchemaInfo> schema;
 

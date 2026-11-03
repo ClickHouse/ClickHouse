@@ -95,15 +95,11 @@ struct AIResponse
     /// The generated text content from the model.
     String result;
 
-    /// Total input tokens, including cache reads and writes. Used for quota tracking.
+    /// Number of tokens in the input (prompt + system prompt), as reported by the provider. Used for quota tracking.
     UInt64 input_tokens = 0;
 
     /// Number of tokens in the generated output, as reported by the provider. Used for quota tracking.
     UInt64 output_tokens = 0;
-
-    /// Input tokens read from or written to the provider's prompt cache. Subsets of `input_tokens`.
-    UInt64 cache_read_tokens = 0;
-    UInt64 cache_write_tokens = 0;
 
     /// Canonical reason the model stopped generating, normalized from the provider's native value.
     FinishReason finish_reason = FinishReason::Complete;
@@ -154,9 +150,8 @@ class IAIProvider
 public:
     virtual ~IAIProvider() = default;
 
-    /// Send a chat completion request. Replaces the contents of `response`, filling the token counts
-    /// before the payload is validated: so a failed request can still update token counts.
-    virtual void call(const AIChatRequest & ai_request, const ConnectionTimeouts & timeouts, AIResponse & response) = 0;
+    /// Send a chat completion request and return the parsed response.
+    virtual AIResponse call(const AIChatRequest & ai_request, const ConnectionTimeouts & timeouts) = 0;
 
     /// Provider-specific headers (credentials, API version) sent with every request.
     virtual HTTPHeaderEntries getHeaders() const = 0;
@@ -164,10 +159,8 @@ public:
     /// Whether this provider exposes an embeddings endpoint.
     virtual bool supportsEmbeddings() const { return false; }
 
-    /// Send an embedding request. Only valid when `supportsEmbeddings()` is true. Replaces the contents of
-    /// `response`, filling `input_tokens` before the payload is validated: so a failed request can still update token counts
-    virtual void embed(
-        const AIEmbeddingRequest & ai_embedding_request, const ConnectionTimeouts & timeouts, AIEmbeddingResponse & response);
+    /// Send an embedding request. Only valid when `supportsEmbeddings()` is true.
+    virtual AIEmbeddingResponse embed(const AIEmbeddingRequest & ai_embedding_request, const ConnectionTimeouts & timeouts);
 };
 
 using AIProviderPtr = std::unique_ptr<IAIProvider>;
