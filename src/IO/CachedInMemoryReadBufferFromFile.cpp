@@ -30,6 +30,9 @@ CachedInMemoryReadBufferFromFile::CachedInMemoryReadBufferFromFile(
     , in(std::move(in_)), read_until_position(file_size.value())
     , inner_read_until_position(read_until_position)
 {
+    /// The working buffer points into the cells of the page cache, which have no padding after the data,
+    /// so a reader must not read past the end of the buffer (`ReadBuffer::isPadded`).
+    padded = false;
 }
 
 bool CachedInMemoryReadBufferFromFile::innerSupportsReadAt() const
