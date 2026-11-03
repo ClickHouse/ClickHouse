@@ -17,6 +17,7 @@ S3_DIR="http://localhost:11111/test/${CLICKHOUSE_DATABASE}/05493"
 SECRET="test_cluster_interserver_secret"
 PLAIN="test_cluster_one_shard_three_replicas_localhost"
 NC="nc_${CLICKHOUSE_DATABASE}_05493"
+QID="${CLICKHOUSE_DATABASE}_05493"
 COLLECTIONS="url_structure url_structure_rev url_format s3_structure s3_format s3_structure_json s3_write url_late s3_late"
 
 function cleanup()
@@ -104,14 +105,14 @@ check "urlCluster, locked structure, first file without the defaulted fields" \
 check "url with parallel replicas, locked structure" \
     "url(${NC}_url_structure) SETTINGS parallel_distributed_insert_select = 0, $(parallel_replicas "${SECRET}" 2)"
 echo "--- urlCluster, locked format ---"
-query -q "SELECT id FROM urlCluster('${SECRET}', ${NC}_url_format) ORDER BY id"
+query --query_id "${QID}_url_format" -q "SELECT id FROM urlCluster('${SECRET}', ${NC}_url_format) ORDER BY id"
 check "s3Cluster, locked structure" "s3Cluster('${SECRET}', ${NC}_s3_structure) SETTINGS parallel_distributed_insert_select = 0"
 check "s3 with parallel replicas, locked structure" \
     "s3(${NC}_s3_structure) SETTINGS parallel_distributed_insert_select = 0, $(parallel_replicas "${SECRET}" 2)"
 echo "--- s3Cluster, locked format ---"
-query -q "SELECT id FROM s3Cluster('${SECRET}', ${NC}_s3_format) ORDER BY id"
+query --query_id "${QID}_s3_format" -q "SELECT id FROM s3Cluster('${SECRET}', ${NC}_s3_format) ORDER BY id"
 echo "--- s3 with parallel replicas, locked format ---"
-query -q "SELECT id FROM s3(${NC}_s3_format) ORDER BY id SETTINGS $(parallel_replicas "${SECRET}" 2)"
+query --query_id "${QID}_s3_format_pr" -q "SELECT id FROM s3(${NC}_s3_format) ORDER BY id SETTINGS $(parallel_replicas "${SECRET}" 2)"
 echo "--- parallel replicas read from the cluster ---"
 # The rows above are the same if the cluster path is not taken.
 for args in "url(${NC}_url_structure)" "s3(${NC}_s3_structure)" "s3(${NC}_s3_format)"; do
@@ -121,7 +122,7 @@ done
 echo "=== cluster without a secret ==="
 for key in format structure; do
     echo "--- s3Cluster, locked ${key} ---"
-    query -q "SELECT id FROM s3Cluster('${PLAIN}', ${NC}_s3_${key}) ORDER BY id"
+    query --query_id "${QID}_plain_${key}" -q "SELECT id FROM s3Cluster('${PLAIN}', ${NC}_s3_${key}) ORDER BY id"
 done
 # The nodes infer `Nullable` fields, so `insert_null_as_default` applies the `DEFAULT`s.
 check "s3Cluster, locked structure, JSONEachRow" \
@@ -134,6 +135,17 @@ echo "--- INSERT INTO FUNCTION s3Cluster, locked structure ---"
 query -q "INSERT INTO FUNCTION s3Cluster('${PLAIN}', ${NC}_s3_write) SELECT number AS id, number * 2 AS v FROM numbers(3)
     SETTINGS s3_truncate_on_insert = 1"
 query -q "SELECT * FROM s3('${S3_DIR}/w/out.parquet') ORDER BY id"
+echo "--- the inferred format is sent to the nodes through the secret only ---"
+# The rows of the locked format cases are the same if the nodes infer the format from the file extension.
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
+for id in url_format s3_format s3_format_pr plain_format; do
+    $CLICKHOUSE_CLIENT -q "
+        SELECT countIf(query LIKE '%format = _Parquet_%') > 0, count() > 0 FROM system.query_log
+        WHERE event_date >= yesterday() AND type = 'QueryStart' AND NOT is_initial_query
+            AND initial_query_id IN (
+                SELECT query_id FROM system.query_log
+                WHERE event_date >= yesterday() AND current_database = currentDatabase() AND query_id = '${QID}_${id}')"
+done
 
 echo "=== the lock binds a written value ==="
 expect_locked structure -q "SELECT * FROM urlCluster('${SECRET}', ${NC}_url_structure, structure = 'id UInt32')"
