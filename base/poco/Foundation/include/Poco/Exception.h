@@ -78,8 +78,6 @@ public:
     int code() const;
     /// Returns the exception code if defined.
 
-    void resetCode(int code);
-
     virtual std::string displayText() const;
     /// Returns a string consisting of the
     /// message name and the message text.
@@ -140,11 +138,6 @@ inline int Exception::code() const
     return _code;
 }
 
-
-inline void Exception::resetCode(int code)
-{
-    _code = code;
-}
 
 //
 // Macros for quickly declaring and implementing exception classes.

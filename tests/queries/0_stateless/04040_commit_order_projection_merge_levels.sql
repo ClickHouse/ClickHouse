@@ -2,11 +2,6 @@
 
 set enable_analyzer = 1;
 
--- Bound the wait, so that a scheduled merge that never runs fails this test with
--- `TIMEOUT_EXCEEDED` instead of polling until the harness kills it: `SYSTEM SYNC MERGES` treats
--- `max_execution_time = 0`, the default of a stateless test, as "wait forever".
-set max_execution_time = 120;
-
 drop table if exists mt_merge_levels sync;
 
 CREATE TABLE mt_merge_levels(
@@ -34,14 +29,6 @@ SYSTEM SYNC MERGES mt_merge_levels;
 SYSTEM SCHEDULE MERGE mt_merge_levels PARTS 'all_1_2_1', 'all_3_4_1';
 SYSTEM SYNC MERGES mt_merge_levels;
 
--- `SYSTEM SYNC MERGES` returns as soon as the merged part is among the active parts, which
--- `MergePlainMergeTreeTask::finish` makes true in `transaction.commit()` - before it pushes the
--- `MergeParts` row of that merge with `write_part_log`. Flushing `part_log` right after
--- `SYSTEM SYNC MERGES` can therefore miss the row of the last merge. Dropping the table first
--- closes that window: the drop waits for the merge task to run to completion, and `part_log`
--- keeps the database and table names as strings, so the queries below still find the rows.
-drop table mt_merge_levels sync;
-
 -- Check part_log ProfileEvents to verify rebuild vs merge behavior
 system flush logs part_log;
 
@@ -56,3 +43,5 @@ select part_name, ProfileEvents['RebuiltProjections'] as rebuilt, ProfileEvents[
 from system.part_log
 where database = currentDatabase() and table = 'mt_merge_levels' and event_type = 'MergeParts' and part_name = 'all_1_4_2'
 order by part_name;
+
+drop table mt_merge_levels sync;

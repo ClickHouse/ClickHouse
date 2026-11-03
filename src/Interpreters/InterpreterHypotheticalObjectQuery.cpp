@@ -45,7 +45,7 @@ namespace MergeTreeSetting
 
 namespace Setting
 {
-    extern const SettingsBool allow_suspicious_indexes;
+    extern const SettingsBool allow_suspicious_indices;
 }
 
 namespace
@@ -167,7 +167,7 @@ BlockIO createHypotheticalIndex(
                 table_id.getTableName());
     }
 
-    if (!context->getSettingsRef()[Setting::allow_suspicious_indexes])
+    if (!context->getSettingsRef()[Setting::allow_suspicious_indices])
     {
         ASTPtr index_expression = index_ast.getExpression();
         if (const auto * index_function = index_expression ? index_expression->as<ASTFunction>() : nullptr)

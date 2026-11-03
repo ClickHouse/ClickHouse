@@ -117,6 +117,7 @@ tokens:
   -'less'
   -'atan'
   -'multiSearchAllPositionsCaseInsensitiveUTF8'
+  -'detectTonality'
   -'bitXor'
   -'round'
   -'hasTokenCaseInsensitiveOrNull'

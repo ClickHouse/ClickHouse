@@ -261,10 +261,6 @@ Peak memory usage: 248.84 MiB.
 
 In the above example, we used a dictionary at query time to remove a join. Dictionaries can also be used to enrich rows at insert time. This is typically appropriate if the enrichment value doesn't change and exists in an external source which can be used to populate the dictionary. In this case, enriching the row at insert time avoids the query time lookup to the dictionary.
 
-<Note>
-Avoid cache-based dictionary layouts for insert-time enrichment when predictable latency and source availability matter. Every server maintains an independent local cache, and a restart or replacement leaves it empty, making inserts depend on cold-cache lookups to the dictionary source. ClickHouse Cloud autoscaling and managed node replacement make this condition more likely. Choose a layout that loads the complete dictionary on each server. See [Cache dictionaries in ingestion paths](/concepts/features/dictionaries/best-practices#cache-dictionaries-in-ingestion-path).
-</Note>
-
 Let's suppose that the `Location` of a user in Stack Overflow never changes (in reality they do) - specifically the `Location` column of the `users` table. Suppose we want to do an analytics query on the posts table by location. This contains a `UserId`.
 
 A dictionary provides a mapping from user id to location, backed by the `users` table:

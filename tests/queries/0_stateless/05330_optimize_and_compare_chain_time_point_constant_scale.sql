@@ -84,12 +84,12 @@ SELECT 'overflowing constant stays unchained',
 SELECT 'implied condition is not duplicated',
     (SELECT count() FROM (EXPLAIN QUERY TREE
         SELECT * FROM values('a DateTime64(6, \'UTC\'), b DateTime64(6, \'UTC\')', ('2020-01-01 00:00:00', '2020-01-01 00:00:01'))
-        WHERE a < b AND b < toDateTime('2020-01-01 00:00:02', 'UTC') AND a < toDateTime('2020-01-01 00:00:02', 'UTC')
+        WHERE a < b AND b < toDateTime('2020-01-01 00:00:02', 'UTC') AND a < toDateTime64('2020-01-01 00:00:02', 6, 'UTC')
         SETTINGS optimize_and_compare_chain = 1) WHERE explain LIKE '%function_name: less,%')
     =
     (SELECT count() FROM (EXPLAIN QUERY TREE
         SELECT * FROM values('a DateTime64(6, \'UTC\'), b DateTime64(6, \'UTC\')', ('2020-01-01 00:00:00', '2020-01-01 00:00:01'))
-        WHERE a < b AND b < toDateTime('2020-01-01 00:00:02', 'UTC') AND a < toDateTime('2020-01-01 00:00:02', 'UTC')
+        WHERE a < b AND b < toDateTime('2020-01-01 00:00:02', 'UTC') AND a < toDateTime64('2020-01-01 00:00:02', 6, 'UTC')
         SETTINGS optimize_and_compare_chain = 0) WHERE explain LIKE '%function_name: less,%');
 
 -- The derived condition carries a typed constant, which is sent to the shards as is.

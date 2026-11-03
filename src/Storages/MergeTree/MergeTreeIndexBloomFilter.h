@@ -4,7 +4,6 @@
 #include <Common/HashTable/HashSet.h>
 #include <Interpreters/BloomFilter.h>
 #include <Storages/MergeTree/KeyCondition.h>
-#include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 
 namespace DB
@@ -78,8 +77,7 @@ public:
         ContextPtr context_,
         const Block & header_,
         size_t hash_functions_,
-        NameSet columns_shadowing_map_subcolumns_,
-        JSONIndexArgumentTypes json_argument_types_);
+        NameSet columns_shadowing_map_subcolumns_);
 
     bool alwaysUnknownOrTrue() const override;
 
@@ -97,8 +95,6 @@ private:
     const Block & header;
     const size_t hash_functions;
     const NameSet columns_shadowing_map_subcolumns;
-    /// Argument types of the JSON index functions of this index, by position in `header`.
-    const JSONIndexArgumentTypes json_argument_types;
     const bool validate_enum_literals_in_operators;
     std::vector<RPNElement> rpn;
 

@@ -26,7 +26,7 @@
     <!-- 20000 series of one metric, one sample every 15s over [1000000, 1003840): 256 samples per
          series, so a series spans 4 granules and the 5m instant lookback selects about one granule
          per series - index analysis dominates the query. -->
-    <fill_query>
+    <fill_query do_not_check_in_pr="119225">
         INSERT INTO promql_pk_range_ts (metric_name, tags, samples)
         SELECT
             'pkr_metric',

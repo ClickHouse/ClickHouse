@@ -61,66 +61,6 @@ def test_config_with_hosts(start_cluster):
 
 
 @pytest.mark.parametrize(
-    "query, secret, masked_url",
-    [
-        (
-            "SELECT * FROM url('http://leakuser:pw_userinfo_canary@host:123/', CSV, 'x UInt8')",
-            "pw_userinfo_canary",
-            "http://[HIDDEN]@host:123/",
-        ),
-        (
-            "SELECT * FROM url('http://host:123/f.csv?X-Amz-Signature=pw_presigned_canary', CSV, 'x UInt8')",
-            "pw_presigned_canary",
-            "http://host:123/f.csv?X-Amz-Signature=[HIDDEN]",
-        ),
-        (
-            "SELECT * FROM format(AvroConfluent, 'a UInt8', '\\x00\\x00\\x00\\x00\\x01') "
-            "SETTINGS format_avro_schema_registry_url = 'http://leakuser:pw_registry_canary@host:123/'",
-            "pw_registry_canary",
-            "http://[HIDDEN]@host:123/",
-        ),
-        (
-            "SELECT * FROM s3('http://host:123/bucket/k.csv?X-Amz-Signature=pw_s3_folded_canary', NOSIGN, CSV, 'x UInt8') "
-            "SETTINGS compatibility_s3_presigned_url_query_in_path = 1",
-            "pw_s3_folded_canary",
-            "http://host:123/bucket/k.csv?X-Amz-Signature=[HIDDEN]",
-        ),
-        (
-            "SELECT * FROM azureBlobStorage('BlobEndpoint=https://host:123/;"
-            "SharedAccessSignature=sv=2022-11-02&sr=c&sp=r&sig=pw_azure_sas_canary', 'cont', 'data.csv', 'CSV', 'x UInt8')",
-            "pw_azure_sas_canary",
-            "https://host:123",
-        ),
-        (
-            "SELECT * FROM azureBlobStorage('https://host:123/?sv=2022-11-02&sr=c&sp=r&sig=pw_azure_url_sas_canary', "
-            "'cont', 'data.csv', 'account', 'key', 'CSV', 'auto', 'x UInt8')",
-            "pw_azure_url_sas_canary",
-            "https://host:123/",
-        ),
-    ],
-    ids=[
-        "userinfo",
-        "presigned",
-        "avro_schema_registry",
-        "s3_presigned_in_path",
-        "azure_connection_string_sas",
-        "azure_url_sas_with_account_key",
-    ],
-)
-def test_rejected_url_credentials_masked(start_cluster, query, secret, masked_url):
-    error = node1.query_and_get_error(query)
-    # The client echoes the submitted query after the exception, so only the exception line is checked.
-    rejections = [
-        line
-        for line in error.splitlines()
-        if "is not allowed in configuration file" in line
-    ]
-    assert len(rejections) == 1, error
-    assert f'URL "{masked_url}"' in rejections[0], error
-    assert secret not in rejections[0], error
-
-
-@pytest.mark.parametrize(
     "query",
     [
         "CREATE TABLE azure_blocked_host (x UInt8) ENGINE = AzureBlobStorage("

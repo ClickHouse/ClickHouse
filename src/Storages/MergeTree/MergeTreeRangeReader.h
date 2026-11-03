@@ -51,9 +51,6 @@ struct PrewhereExprStep
 
     /// Version of mutation if step is a part of on-fly mutation.
     std::optional<UInt64> mutation_version;
-
-    /// The last step of the PREWHERE part covered by `PrewhereInfo::query_condition_cache_attribution`.
-    bool query_condition_cache_attribution_boundary = false;
 };
 
 using PrewhereExprStepPtr = std::shared_ptr<PrewhereExprStep>;
@@ -203,7 +200,7 @@ private:
     {
     public:
         DelayedStream() = default;
-        DelayedStream(size_t from_mark, size_t current_range_last_mark_, IMergeTreeReader * merge_tree_reader);
+        DelayedStream(size_t from_mark, IMergeTreeReader * merge_tree_reader);
 
         /// Read @num_rows rows from @from_mark starting from @offset row
         /// Returns the number of rows added to block.
@@ -224,9 +221,6 @@ private:
         size_t current_offset = 0;
         /// Num of rows we have to read
         size_t num_delayed_rows = 0;
-        /// End mark of the contiguous mark range being read. Bounds caching of
-        /// deserialized columns in the reader (see IMergeTreeReader::readRows).
-        size_t current_range_last_mark = 0;
 
         /// Actual reader of data from disk
         IMergeTreeReader * merge_tree_reader = nullptr;
@@ -297,9 +291,6 @@ public:
 
         /// All read marks.
         MarkRanges read_mark_ranges;
-
-        /// Marks emptied by the steps up to the query condition cache attribution boundary.
-        MarkRanges query_condition_cache_attributable_marks;
 
         /// The number of rows were added to block as a result of reading chain.
         size_t numReadRows() const { return num_read_rows; }
@@ -490,13 +481,6 @@ private:
     Stream stream;
 
     Block read_sample_block;    /// Block with columns that are actually read from disk + non-const virtual columns that are filled at this step.
-
-    /// Positions in `read_sample_block` of the virtual columns that may be filled by this reader.
-    /// They are found once, so that a lookup by name is not needed for every block.
-    std::optional<size_t> part_offset_position;
-    std::optional<size_t> block_offset_position;
-    std::optional<size_t> part_granule_offset_position;
-    std::optional<size_t> distance_position;
     Block result_sample_block;  /// Block with columns that are returned by this step.
 
     FilterWithCachedCount part_offsets_filter_for_vector_search;
