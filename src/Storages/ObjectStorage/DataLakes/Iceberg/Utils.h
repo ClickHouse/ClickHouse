@@ -51,9 +51,25 @@ void writeMessageToFile(
     const std::string & write_if_match = "",
     DB::CompressionMethod compression_method = DB::CompressionMethod::None);
 
-/// Tries to write metadata file and version hint file. Uses If-None-Match header to avoid overwriting existing files.
-/// Maybe return false if failed to write metadata.json
-/// Will try to write hint multiple times, but will not report failure to write hint.
+/// Writes the metadata file with If-None-Match; false means the write was not confirmed or the path already exists.
+bool writeMetadataFile(
+    const IcebergPathResolver & resolver,
+    const DB::GeneratedMetadataFileWithInfo & metadata_file_info,
+    const std::string & metadata_file_content,
+    DB::ObjectStoragePtr object_storage,
+    DB::ContextPtr context);
+
+/// Advances the hint, creating it when requested; exact mode confirms that it resolves to this metadata file.
+bool tryWriteVersionHintFile(
+    const IcebergPathResolver & resolver,
+    const DB::GeneratedMetadataFileWithInfo & metadata_file_info,
+    const IcebergPathFromMetadata & version_hint_path,
+    DB::ObjectStoragePtr object_storage,
+    DB::ContextPtr context,
+    bool create,
+    bool assert_version_exactly);
+
+/// Existing callers keep the opportunistic hint update, including updates of an already-existing hint.
 bool writeMetadataFileAndVersionHint(
     const IcebergPathResolver & resolver,
     const DB::GeneratedMetadataFileWithInfo & metadata_file_info,
@@ -85,6 +101,18 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
     CompressionMethod compression_method,
     const std::optional<String> & table_uuid);
 
+String readMetadataJSONString(
+    const String & metadata_file_path,
+    ObjectStoragePtr object_storage,
+    bool use_metadata_cache,
+    const ContextPtr & local_context,
+    LoggerPtr log,
+    CompressionMethod compression_method);
+
+Poco::JSON::Object::Ptr parseMetadataJSONString(const String & metadata_json_str);
+
+Poco::JSON::Object::Ptr deepCopy(const Poco::JSON::Object::Ptr & object);
+
 
 std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & iter);
 Poco::Dynamic::Var getAvroType(DataTypePtr type, Int32 field_id);
@@ -97,6 +125,12 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     ASTPtr order_by,
     ContextPtr context,
     UInt64 format_version = 2);
+
+/// Format version 1 requires `schema` (the current schema) and `partition-spec` (the default spec's fields) next to `schemas` and `partition-specs`.
+void setFormatVersion1SchemaAndPartitionSpec(Poco::JSON::Object::Ptr metadata);
+
+/// Parses the version out of a metadata file name: `v<N>.metadata.json`, `v<N>-<uuid>.metadata.json` or `<N>-<uuid>.metadata.json`.
+MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path);
 
 /// `ignore_metadata_pointer_overrides` distrusts the version a configured pointer names
 /// (`iceberg_metadata_file_path`, `version-hint.text`) and resolves by listing; the scheme that name
@@ -160,8 +194,8 @@ void forEachAvroEntry(
 
 /// Iceberg stores some partition values in a form that does not directly correspond to the ClickHouse
 /// type of the partition column: a decimal is an Avro `fixed` holding the two's-complement big-endian
-/// unscaled value, and older ClickHouse versions wrote a `DateTime64` partition value as a plain `long`.
-/// Bring such a value to the column type; any other value is returned unchanged.
+/// unscaled value, and older ClickHouse versions wrote a `DateTime64` partition value as a plain `long`
+/// and a `Bool` one as an `int`. Bring such a value to the column type; any other value is returned unchanged.
 /// The result of a decimal always uses `Decimal256` as its carrier, independently of the width of the
 /// ClickHouse type, because `DB::Field` compares and orders on its variant tag first and Iceberg allows
 /// widening `decimal(P, S)` to `decimal(P', S)` between schemas of the same table.

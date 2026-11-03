@@ -78,7 +78,7 @@ public:
         ContextPtr context_,
         const Block & header_,
         size_t hash_functions_,
-        NameSet columns_shadowing_map_subcolumns_,
+        IsShadowingColumn is_column_shadowing_map_subcolumn_,
         JSONIndexArgumentTypes json_argument_types_);
 
     bool alwaysUnknownOrTrue() const override;
@@ -96,7 +96,7 @@ public:
 private:
     const Block & header;
     const size_t hash_functions;
-    const NameSet columns_shadowing_map_subcolumns;
+    const IsShadowingColumn is_column_shadowing_map_subcolumn;
     /// Argument types of the JSON index functions of this index, by position in `header`.
     const JSONIndexArgumentTypes json_argument_types;
     const bool validate_enum_literals_in_operators;
@@ -160,6 +160,11 @@ public:
     MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
 
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const override;
+
+    /// The filter is sized by the number of distinct values, so about half of its bits are set.
+    /// It still compresses when adjacent granules have the same values, or, with several columns,
+    /// when the filters of columns with fewer distinct values are mostly zeros, so the codec is chosen per block.
+    bool isCompressible() const override { return false; }
 
 private:
     size_t bits_per_row;

@@ -12,7 +12,6 @@
 -- the old query-scoped name lookup were restored), the later executions would reuse the stale
 -- granule skips from the first and return 0 rows.
 
-SET enable_analyzer = 1;
 SET enable_join_runtime_filters = 1;
 -- The probe side is tiny (40 rows), so the randomized `join_runtime_filter_min_probe_rows` would skip
 -- building the runtime filter and the regression this test guards would not be exercised at all.

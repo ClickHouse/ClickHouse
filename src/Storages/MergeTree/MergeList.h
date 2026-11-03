@@ -97,6 +97,10 @@ struct MergeListElement : boost::noncopyable
     std::atomic<Float64> progress{};
     std::atomic<bool> is_cancelled{};
 
+    /// Set once `MergeTask::prepare` has settled it: a regular merge that removes expired values is
+    /// cancellable by `SYSTEM STOP TTL MERGES`, one that had removal disabled up front is not.
+    std::atomic<bool> is_removing_expired_values{};
+
     UInt64 total_size_bytes_compressed{};
     UInt64 total_size_bytes_uncompressed{};
     UInt64 total_size_marks{};
@@ -181,14 +185,20 @@ public:
         }
     }
 
-    /// Cancel all current merges and mutations, and also all inserted later.
+    /// Cancel all current and future merges and mutations.
     /// Used on server shutdown, when their results would be discarded anyway.
     void cancelAll()
     {
-        /// The flag is set before iterating the list, and `insert` checks it after linking
-        /// the new entry into the list under the mutex, so an entry is either cancelled by
-        /// the loop below or observes the flag in `insert` - none can escape.
+        /// The flag is set before cancelCurrent(); insert checks it after linking
+        /// a new entry, so none can escape.
         all_cancelled = true;
+        cancelCurrent();
+    }
+
+    /// Cancel all current merges and mutations.
+    /// Used by the OOM canary to free resources (does not reject future merges).
+    void cancelCurrent()
+    {
         std::lock_guard lock{mutex};
         for (auto & merge_element : entries)
             merge_element.is_cancelled = true;

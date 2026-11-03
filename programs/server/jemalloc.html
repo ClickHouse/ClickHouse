@@ -2707,7 +2707,7 @@ SETTINGS jemalloc_enable_profiler = 1,
 
         /// Estimated live sampled allocations per (arena, size class, stack), unbiased by `weight`.
         function fragmentationPinnersSubquery(minAgeNs) {
-            return `SELECT arena, size_class, sum(weight) AS est_old_objects, arrayStringConcat(arrayMap(a -> demangle(addressToSymbol(a)), arrayReverse(trace)), ';') AS stack FROM system.jemalloc_sampled_allocations WHERE age_ns > ${minAgeNs} GROUP BY arena, size_class, trace`;
+            return `SELECT arena, size_class, sum(weight) AS est_old_objects, if(empty(trace), '[unknown]', arrayStringConcat(arrayMap(a -> demangle(addressToSymbol(a)), arrayReverse(trace)), ';')) AS stack FROM system.jemalloc_sampled_allocations WHERE age_ns > ${minAgeNs} GROUP BY arena, size_class, trace`;
         }
 
         /// (arena, size class) cells that have at least one old-enough sample; waste in other

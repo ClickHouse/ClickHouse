@@ -71,6 +71,7 @@ public:
     bool isVersioned() const override;
     size_t getDefaultVersion() const override;
     size_t getVersionFromRevision(size_t revision) const override;
+    DataTypePtr getStateType() const override;
 
     size_t sizeOfData() const override { return total_state_size; }
     size_t alignOfData() const override { return max_state_align; }
@@ -116,6 +117,9 @@ public:
 
     bool isParallelizeMergePrepareNeeded() const override;
     bool isAbleToParallelizeMerge() const override;
+    size_t getEstimatedMergeWork(ConstAggregateDataPtr place) const override;
+    size_t getStateBytesPerDistinctInput() const override;
+    bool isLargeMergePair(ConstAggregateDataPtr __restrict place, ConstAggregateDataPtr __restrict rhs) const override;
     bool canOptimizeEqualKeysRanges() const override;
     void parallelizeMergePrepare(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled) const override;
     void mergeImpl(
@@ -157,7 +161,6 @@ public:
     bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override;
     DataTypePtr getNormalizedStateType() const override;
 
-    bool shouldPrintParametersWithTypes() const override;
     bool isOnlyWindowFunction() const override;
 
     AggregateFunctionStateVariant getStateVariant() const override;
