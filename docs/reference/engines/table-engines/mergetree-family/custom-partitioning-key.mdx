@@ -42,6 +42,16 @@ In this example, we set partitioning by the event types that occurred during the
 
 By default, the floating-point partition key is not supported. To use it enable the setting [allow_floating_point_partition_key](/reference/settings/merge-tree-settings/allow#allow_floating_point_partition_key).
 
+## Removing a partition key {#remove-partition-key}
+
+For a `MergeTree` family table created with a custom `PARTITION BY` expression, you can remove the partition key without rewriting existing data parts:
+
+```sql
+ALTER TABLE table_name [ON CLUSTER cluster] DROP PARTITION KEY
+```
+
+The operation changes table metadata only. Existing data parts keep their current partition IDs, while new parts are written without a custom partition key. The command is not supported for tables that already have no partition key or for old-style MergeTree tables with default partitioning.
+
 When inserting new data to a table, this data is stored as a separate part (chunk) sorted by the primary key. In 10-15 minutes after inserting, the parts of the same partition are merged into the entire part.
 
 <Info>
