@@ -81,3 +81,6 @@ neither the top-K threshold nor the query condition cache skips rows before a de
 a default is checked against the settings of the ALTER that adds it, not of the read
 1	11
 2	12
+a default is evaluated in the context of the read
+1	1	1	1234
+2	1	1	1234

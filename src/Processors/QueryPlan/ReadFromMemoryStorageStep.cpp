@@ -157,7 +157,7 @@ static Names getArraysOfRequestedNested(const NamesAndTypesList & physical_colum
 struct MemorySourceDefaults
 {
     StorageSnapshotPtr storage_snapshot;
-    ContextPtr global_context;
+    ContextPtr query_context;
 
     struct Evaluation
     {
@@ -194,7 +194,7 @@ void MemorySourceDefaults::initialize() const
     if (stored_inputs)
         return;
 
-    auto default_context = Context::createCopy(global_context);
+    auto default_context = Context::createCopy(query_context);
     /// A default was checked against the settings of the query that defined it, which the reader may not have.
     enableAllExperimentalSettings(default_context);
 
@@ -1711,7 +1711,7 @@ MemorySourceDefaultsPtr ReadFromMemoryStorageStep::makeSourceDefaults(const Name
 
     auto result = std::make_shared<MemorySourceDefaults>();
     result->storage_snapshot = storage_snapshot;
-    result->global_context = context->getGlobalContext();
+    result->query_context = context;
 
     return result;
 }

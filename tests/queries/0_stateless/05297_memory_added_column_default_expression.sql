@@ -203,3 +203,13 @@ ALTER TABLE t_memory_add_default_gated ADD COLUMN c UInt64 DEFAULT toUInt64(CAST
 SET allow_suspicious_low_cardinality_types = 0;
 SELECT k, c FROM t_memory_add_default_gated ORDER BY k;
 DROP TABLE t_memory_add_default_gated;
+
+SELECT 'a default is evaluated in the context of the read';
+DROP TABLE IF EXISTS t_memory_add_default_context;
+CREATE TABLE t_memory_add_default_context (k UInt64) ENGINE = Memory;
+INSERT INTO t_memory_add_default_context VALUES (1), (2);
+ALTER TABLE t_memory_add_default_context ADD COLUMN db String DEFAULT currentDatabase();
+ALTER TABLE t_memory_add_default_context ADD COLUMN u String DEFAULT currentUser();
+ALTER TABLE t_memory_add_default_context ADD COLUMN b UInt64 DEFAULT getSetting('max_block_size');
+SELECT k, db = currentDatabase(), u = currentUser(), b FROM t_memory_add_default_context ORDER BY k SETTINGS max_block_size = 1234;
+DROP TABLE t_memory_add_default_context;
