@@ -2,7 +2,7 @@
 -- The checks depend on the statistics of the tables and on the join order, which randomized settings change.
 
 -- When the right input of a join is another join, its distinct counts are estimates, not `uniq` statistics, so that
--- build defers. Here the tiny `t_s` joins `t_b` into the right input of the join with `t_c`. The nested join reads
+-- build defers. Here the tiny `t_s` joins `t_b` in a subquery on the right of the join with `t_c`. The nested join reads
 -- tables with statistics on both sides and reserves.
 
 SET use_statistics = 1;
@@ -14,8 +14,9 @@ SET collect_hash_table_stats_during_joins = 0;
 -- is far above what these builds take.
 SET max_bytes_before_external_join = 10737418240;
 SET max_bytes_ratio_before_external_join = 0;
+-- The join order optimization gives the joins their statistics, so it must run. A swap would move the subquery to the left.
 SET query_plan_optimize_join_order_limit = 10;
-SET query_plan_join_swap_table = 'true';
+SET query_plan_join_swap_table = 'false';
 SET max_threads = 4;
 SET enable_parallel_replicas = 0;
 
@@ -27,11 +28,11 @@ INSERT INTO t_s SELECT number % 10, number * 3 FROM numbers(1000);
 INSERT INTO t_b SELECT number % 30000, number * 5 FROM numbers(300000);
 INSERT INTO t_c SELECT number % 30000, number * 7 FROM numbers(300000);
 
-SELECT 'multijoin', count(), sum(cityHash64(s.k, s.v, b.v, c.v))
-FROM t_s s INNER JOIN t_b b ON s.k = b.k INNER JOIN t_c c ON b.k = c.k
+SELECT 'multijoin', count(), sum(cityHash64(sb.sk, sb.sv, sb.bv, c.v))
+FROM t_c c INNER JOIN (SELECT s.k AS sk, s.v AS sv, b.v AS bv FROM t_s s INNER JOIN t_b b ON s.k = b.k) AS sb ON c.k = sb.sk
 SETTINGS enable_hash_join_deferred_build = 0;
-SELECT 'multijoin', count(), sum(cityHash64(s.k, s.v, b.v, c.v))
-FROM t_s s INNER JOIN t_b b ON s.k = b.k INNER JOIN t_c c ON b.k = c.k
+SELECT 'multijoin', count(), sum(cityHash64(sb.sk, sb.sv, sb.bv, c.v))
+FROM t_c c INNER JOIN (SELECT s.k AS sk, s.v AS sv, b.v AS bv FROM t_s s INNER JOIN t_b b ON s.k = b.k) AS sb ON c.k = sb.sk
 SETTINGS enable_hash_join_deferred_build = 1, log_comment = '04412 multijoin';
 
 SYSTEM FLUSH LOGS query_log;
