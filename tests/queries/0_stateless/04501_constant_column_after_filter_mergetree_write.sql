@@ -78,6 +78,7 @@ SETTINGS ratio_of_defaults_for_sparse_serialization = 0.9375;
 
 INSERT INTO t_proj_tuple_eq VALUES (1, (1, 2)), (2, (3, 4)), (3, (1, 2));
 
+ALTER TABLE t_proj_tuple_eq CLEAR PROJECTION p SETTINGS mutations_sync = 1;
 ALTER TABLE t_proj_tuple_eq MATERIALIZE PROJECTION p SETTINGS mutations_sync = 1;
 
 SELECT sum(rows) FROM system.projection_parts
