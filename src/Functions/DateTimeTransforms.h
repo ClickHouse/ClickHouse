@@ -3115,7 +3115,15 @@ struct ToRelativeSubsecondNumImpl
         if (scale == scale_multiplier)
             return t.value;
         if (scale > scale_multiplier)
-            return t.value / (scale / scale_multiplier);
+        {
+            /// Round towards negative infinity, same as `TransformDateTime64` does for whole seconds,
+            /// so that a value before the epoch with a fractional part is not moved to the next unit.
+            const Int64 divisor = scale / scale_multiplier;
+            Int64 result = t.value / divisor;
+            if (t.value % divisor < 0)
+                --result;
+            return result;
+        }
         return common::mulIgnoreOverflow(t.value, scale_multiplier / scale);
     }
     static Int64 execute(const Time64 &, const Time64::NativeType, const DateLUTImpl &)
