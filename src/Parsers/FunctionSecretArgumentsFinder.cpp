@@ -1,6 +1,7 @@
 #include <Parsers/FunctionSecretArgumentsFinder.h>
 
 #include <algorithm>
+#include <unordered_set>
 
 #include <Common/KnownObjectNames.h>
 #include <Common/StringUtils.h>
@@ -70,6 +71,16 @@ namespace
         if (authority_end == authority_begin || value.find('@', authority_begin) < authority_end)
             return AzureConnectionValue::Unmaskable;
         return AzureConnectionValue::PlainStorageAccountURL;
+    }
+
+    /// The keys an Azure named collection accepts (`StorageAzureConfiguration`). An override with any
+    /// other key, which can name any credential, is rejected only after the statement is logged.
+    bool isAzureCollectionKey(std::string_view key)
+    {
+        static const std::unordered_set<std::string_view> keys = {"blob_path", "container", "format", "compression", "structure",
+            "compression_method", "account_name", "account_key", "connection_string", "storage_account_url", "partition_strategy",
+            "partition_columns_in_data_file", "client_id", "tenant_id"};
+        return keys.contains(key);
     }
 
     /// The backup engines whose locator names a destination with no credential in it, each with the
@@ -607,48 +618,147 @@ void FunctionSecretArgumentsFinder::findAzureBlobStorageFunctionSecretArguments(
     /// azureBlobStorageCluster('cluster_name', 'conn_string/storage_account_url', ...) has 'conn_string/storage_account_url' as its second argument.
     size_t url_arg_idx = is_cluster_function ? 1 : 0;
 
+    /// The query is formatted for logging before validation rejects a positional argument after a
+    /// `key = value` one, and the slot it was meant for is unknowable: hide every such positional.
+    classifyPositionalArguments();
+
+    maskAzureExtraCredentials();
+
+    /// The other values are hidden before a connection string is: hiding that replaces its whole argument.
     if (!is_cluster_function && isNamedCollectionName(0))
     {
         /// azureBlobStorage(named_collection, ..., account_key = 'account_key', ...)
+        maskPositionalsAfterAzureCollection(1);
+        maskUnreadAzureCollectionOverrides(1);
+        findSecretNamedArgument("account_key", 1);
         if (maskAzureConnectionString(-1, true, 1))
             return;
         maskUnshowableAzureConnectionOverrides(1);
-        findSecretNamedArgument("account_key", 1);
         return;
     }
     if (is_cluster_function && isNamedCollectionName(1))
     {
         /// azureBlobStorageCluster(cluster, named_collection, ..., account_key = 'account_key', ...)
+        maskPositionalsAfterAzureCollection(2);
+        maskUnreadAzureCollectionOverrides(2);
+        findSecretNamedArgument("account_key", 2);
         if (maskAzureConnectionString(-1, true, 2))
             return;
         maskUnshowableAzureConnectionOverrides(2);
-        findSecretNamedArgument("account_key", 2);
         return;
     }
 
-    if (maskAzureConnectionString(url_arg_idx))
+    /// Slot `n` is the raw argument `arg(n)`; past the end it is an index no argument has.
+    const auto slot_arguments = azureSlotArguments(url_arg_idx);
+    auto arg = [&](size_t slot) { return slot < slot_arguments.size() ? slot_arguments[slot] : function->arguments->size(); };
+
+    if (const auto credential_arg_idx = azureCredentialArgument(slot_arguments, url_arg_idx))
+        markSecretArgument(*credential_arg_idx);
+
+    if (maskAzureConnectionString(arg(url_arg_idx)))
         return;
 
-    if (url_arg_idx < function->arguments->size())
-        maskUnshowableAzureConnectionValue(url_arg_idx, *function->arguments->at(url_arg_idx), /* argument_is_named= */ false);
+    if (arg(url_arg_idx) < function->arguments->size())
+        maskUnshowableAzureConnectionValue(arg(url_arg_idx), *function->arguments->at(arg(url_arg_idx)), /* argument_is_named= */ false);
+}
 
-    /// We should check other arguments first because we don't need to do any replacement in case of
-    /// azureBlobStorage(connection_string|storage_account_url, container_name, blobpath, format) -- in this case there is no account_key argument
-    /// azureBlobStorageCluster(cluster, connection_string|storage_account_url, container_name, blobpath, format) -- in this case there is no account_key argument
-    size_t count = function->arguments->size();
-    if ((url_arg_idx + 4 <= count) && (count <= url_arg_idx + 7))
+void FunctionSecretArgumentsFinder::maskAzureExtraCredentials()
+{
+    for (size_t i = 0, size = function->arguments->size(); i < size; ++i)
     {
-        String fourth_arg;
-        if (tryGetStringFromArgument(url_arg_idx + 3, &fourth_arg))
-        {
-            if (fourth_arg == "auto" || KnownFormatNames::instance().exists(fourth_arg))
-                return;
-        }
+        if (const auto f = function->arguments->at(i)->getFunction(); f && f->name() == "extra_credentials")
+            markSecretArgument(i);
+    }
+}
+
+std::optional<String> FunctionSecretArgumentsFinder::tryGetAzureKey(const AbstractFunction & equals)
+{
+    String key;
+    if (equals.arguments && equals.arguments->size() == 2 && tryGetStringFromArgument(*equals.arguments->at(0), &key)
+        && isAzureCollectionKey(key))
+        return key;
+    return {};
+}
+
+void FunctionSecretArgumentsFinder::maskUnreadAzureCollectionOverrides(size_t start)
+{
+    std::vector<size_t> connection_overrides;
+    for (size_t i = start, size = function->arguments->size(); i < size; ++i)
+    {
+        const auto f = function->arguments->at(i)->getFunction();
+        if (!f || f->name() != "equals")
+            continue;
+        const auto key = tryGetAzureKey(*f);
+        if (!key)
+            markSecretArgument(i);
+        else if (!(tryGetStringFromArgument(*f->arguments->at(1), nullptr) || f->arguments->at(1)->tryGetLiteralText(nullptr)))
+            markSecretArgument(i, /* argument_is_named= */ true);
+        if (key == "connection_string" || key == "storage_account_url")
+            connection_overrides.push_back(i);
     }
 
-    /// We're going to replace 'account_key' with '[HIDDEN]' if account_key is used in the signature
-    if (url_arg_idx + 4 < count)
-        markSecretArgument(url_arg_idx + 4);
+    if (connection_overrides.size() > 1)
+        for (const size_t i : connection_overrides)
+            markSecretArgument(i, /* argument_is_named= */ true);
+}
+
+std::vector<size_t> FunctionSecretArgumentsFinder::azureSlotArguments(size_t start)
+{
+    std::vector<size_t> slots;
+    size_t extra_credentials = 0;
+    for (size_t i = 0, size = function->arguments->size(); i < size; ++i)
+    {
+        const auto argument = function->arguments->at(i);
+        if (argument->isSettings())
+            continue;
+        const auto f = i < start ? nullptr : argument->getFunction();
+        if (f && f->name() == "extra_credentials")
+        {
+            ++extra_credentials;
+            continue;
+        }
+        if (f && f->name() == "equals" && f->arguments && f->arguments->size() == 2)
+        {
+            const auto key = tryGetAzureKey(*f);
+            if (!key)
+                markSecretArgument(i);
+            else if ((key != "partition_strategy" && key != "partition_columns_in_data_file") || !f->arguments->at(1)->tryGetLiteralText(nullptr))
+                markSecretArgument(i, /* argument_is_named= */ true);
+            continue;
+        }
+        slots.push_back(i);
+    }
+
+    if (extra_credentials > 1)
+    {
+        maskEveryArgument();
+        return {};
+    }
+    return slots;
+}
+
+std::optional<size_t> FunctionSecretArgumentsFinder::azureCredentialArgument(const std::vector<size_t> & slot_arguments, size_t url_arg_idx) const
+{
+    const size_t count = slot_arguments.size();
+    if (count == url_arg_idx + 2)
+        return slot_arguments[url_arg_idx + 1];
+    if (count <= url_arg_idx + 4)
+        return {};
+    String fourth_arg;
+    if (count <= url_arg_idx + 7 && tryGetStringFromArgument(slot_arguments[url_arg_idx + 3], &fourth_arg)
+        && (fourth_arg == "auto" || KnownFormatNames::instance().exists(fourth_arg)))
+        return {};
+    return slot_arguments[url_arg_idx + 4];
+}
+
+void FunctionSecretArgumentsFinder::maskPositionalsAfterAzureCollection(size_t start)
+{
+    for (size_t i = start, size = function->arguments->size(); i < size; ++i)
+    {
+        const auto f = function->arguments->at(i)->getFunction();
+        if (!f || (f->name() != "equals" && f->name() != "extra_credentials"))
+            markSecretArgument(i);
+    }
 }
 
 bool FunctionSecretArgumentsFinder::maskAzureConnectionString(ssize_t url_arg_idx, bool argument_is_named, size_t start)
@@ -668,29 +778,14 @@ bool FunctionSecretArgumentsFinder::maskAzureConnectionString(ssize_t url_arg_id
             return false;
     }
 
-    if (!url_arg.starts_with("http"))
+    if (!url_arg.starts_with("http") && maskAzureConnectionStringSecrets(url_arg))
     {
-        static re2::RE2 account_key_pattern = "AccountKey=.*?(;|$)";
-        if (RE2::Replace(&url_arg, account_key_pattern, "AccountKey=[HIDDEN]\\1"))
-        {
-            chassert(result.count == 0); /// We shouldn't use replacement with masking other arguments
-            result.start = url_arg_idx;
-            result.are_named = argument_is_named;
-            result.count = 1;
-            result.replacement = url_arg;
-            return true;
-        }
-
-        static re2::RE2 sas_signature_pattern = "SharedAccessSignature=.*?(;|$)";
-        if (RE2::Replace(&url_arg, sas_signature_pattern, "SharedAccessSignature=[HIDDEN]\\1"))
-        {
-            chassert(result.count == 0); /// We shouldn't use replacement with masking other arguments
-            result.start = url_arg_idx;
-            result.are_named = argument_is_named;
-            result.count = 1;
-            result.replacement = url_arg;
-            return true;
-        }
+        chassert(result.count == 0); /// We shouldn't use replacement with masking other arguments
+        result.start = url_arg_idx;
+        result.are_named = argument_is_named;
+        result.count = 1;
+        result.replacement = url_arg;
+        return true;
     }
 
     return false;
@@ -727,8 +822,10 @@ bool FunctionSecretArgumentsFinder::azureCollectionArgumentsAreShowable(size_t s
         {
             /// A key this rule cannot read hides which credential the override carries; a value that is
             /// no plain literal or identifier can nest one (`headers('Authorization' = '...')`).
+            String key;
             if (argument_function->arguments && argument_function->arguments->size() == 2
-                && tryGetStringFromArgument(*argument_function->arguments->at(0), nullptr)
+                && tryGetStringFromArgument(*argument_function->arguments->at(0), &key)
+                && isAzureCollectionKey(key)
                 && (tryGetStringFromArgument(*argument_function->arguments->at(1), nullptr)
                     || argument_function->arguments->at(1)->tryGetLiteralText(nullptr)))
                 continue;
@@ -1069,6 +1166,12 @@ void FunctionSecretArgumentsFinder::findAzureBlobStorageTableEngineSecretArgumen
    /// AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, format, [account_name, account_key, ...])
     size_t url_arg_idx = 0;
 
+    /// The query is formatted for logging before validation rejects a positional argument after a
+    /// `key = value` one, and the slot it was meant for is unknowable: hide every such positional.
+    classifyPositionalArguments();
+
+    maskAzureExtraCredentials();
+
     if (isNamedCollectionName(url_arg_idx))
     {
         /// AzureBlobStorage(named_collection, ..., account_key = 'account_key', ...)
@@ -1083,28 +1186,15 @@ void FunctionSecretArgumentsFinder::findAzureBlobStorageTableEngineSecretArgumen
         return;
     }
 
-    /// We should check other arguments first because we don't need to do any replacement in case of
-    /// AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, format) -- in this case there is no account_key argument
-    size_t count = function->arguments->size();
-    bool fourth_argument_is_format = false;
-    if ((url_arg_idx + 4 <= count) && (count <= url_arg_idx + 7))
-    {
-        String fourth_arg;
-        if (tryGetStringFromArgument(url_arg_idx + 3, &fourth_arg))
-            fourth_argument_is_format = fourth_arg == "auto" || KnownFormatNames::instance().exists(fourth_arg);
-    }
-    /// Which argument holds a credential: the two-argument shape takes a shared access signature beside
-    /// the url (`endpoint.sas_auth`), the longer ones an `account_key` - unless the fourth names a format.
-    std::optional<size_t> credential_arg_idx;
-    if (count == url_arg_idx + 2)
-        credential_arg_idx = url_arg_idx + 1;
-    else if (!fourth_argument_is_format && (url_arg_idx + 4 < count))
-        credential_arg_idx = url_arg_idx + 4;
+    /// Slot `n` is the raw argument `arg(n)`; past the end it is an index no argument has.
+    const auto slot_arguments = azureSlotArguments(url_arg_idx);
+    auto arg = [&](size_t slot) { return slot < slot_arguments.size() ? slot_arguments[slot] : function->arguments->size(); };
+    const auto credential_arg_idx = azureCredentialArgument(slot_arguments, url_arg_idx);
 
     /// The engine reads this argument as a connection string or as a plain account url; a value of
     /// another shape is read by neither rule below, and a hidden connection string replaces it whole.
     String connection_value;
-    const auto shape = tryGetStringFromArgument(url_arg_idx, &connection_value)
+    const auto shape = tryGetStringFromArgument(arg(url_arg_idx), &connection_value)
         ? classifyAzureConnectionValue(connection_value)
         : AzureConnectionValue::Unmaskable;
     if (shape == AzureConnectionValue::Unmaskable || (shape == AzureConnectionValue::ConnectionString && credential_arg_idx))
@@ -1113,7 +1203,7 @@ void FunctionSecretArgumentsFinder::findAzureBlobStorageTableEngineSecretArgumen
         return;
     }
 
-    if (maskAzureConnectionString(url_arg_idx))
+    if (maskAzureConnectionString(arg(url_arg_idx)))
         return;
 
     if (credential_arg_idx)
