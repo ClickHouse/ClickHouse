@@ -1170,11 +1170,12 @@ void splitMapToBucketsDispatch(
 template <typename Callback>
 void callForLowCardinalityIndexType(size_t dictionary_size, Callback && callback)
 {
-    if (dictionary_size <= std::numeric_limits<UInt8>::max())
+    /// The largest position is `dictionary_size - 1`, the same thresholds as in `getSmallestIndexesType`.
+    if (dictionary_size <= std::numeric_limits<UInt8>::max() + 1ull)
         callback.template operator()<UInt8>();
-    else if (dictionary_size <= std::numeric_limits<UInt16>::max())
+    else if (dictionary_size <= std::numeric_limits<UInt16>::max() + 1ull)
         callback.template operator()<UInt16>();
-    else if (dictionary_size <= std::numeric_limits<UInt32>::max())
+    else if (dictionary_size <= std::numeric_limits<UInt32>::max() + 1ull)
         callback.template operator()<UInt32>();
     else
         callback.template operator()<UInt64>();
