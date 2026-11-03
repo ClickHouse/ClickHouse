@@ -343,7 +343,7 @@ static void apply(struct JoinsAndSourcesWithCommonPrimaryKeyPrefix & data)
 
     /// Do not break shards after full_sorting_merge JOIN. For hash join it is automatically true.
     for (const auto & join_step : data.joins_to_keep_in_order)
-        join_step->keepLeftPipelineInOrder();
+        join_step->keepLeftPipelineLayout();
 }
 
 /// Join can be executed by independent shards if the same sharding can apply for the keft and right part,

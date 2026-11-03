@@ -1302,11 +1302,11 @@ The following table shows how Iceberg data types are mapped to ClickHouse data t
 
 The data type mappings above apply to reads. The following limitations apply when ClickHouse creates or evolves Iceberg schemas and writes data:
 
-- ClickHouse cannot create an Iceberg schema containing `Bool`, `FixedString`, `Int8`, `UInt8`, `Int16`, `UInt16`, `Time`, or `Time64`, or add or modify a column to one of these types. The operation fails with an unsupported-type exception. This does not prevent inserting `Bool` values into existing Iceberg columns.
+- ClickHouse cannot create an Iceberg schema containing `FixedString`, `Time`, or `Time64`, or add or modify a column to one of these types. The operation fails with an unsupported-type exception. `Bool` is stored as Iceberg `boolean`. Iceberg has no 8-bit or 16-bit integer types, so `Int8`, `UInt8`, `Int16`, and `UInt16` columns are widened to Iceberg `int` and are therefore read back as `Int32`.
 - ClickHouse cannot create an Iceberg schema containing `UInt64` either: the widest Iceberg integer type is the signed 64-bit `long`, which cannot represent every `UInt64` value. Use `Int64` or `Decimal(20, 0)`. Creating a table with a `UInt64` column, including a nested one such as `Array(UInt64)`, fails with an exception even if the Iceberg table already exists at the path. A `UInt32` column is widened to Iceberg `long` for the same reason, and is therefore read back as `Int64`.
 - When ClickHouse creates or evolves an Iceberg schema, it maps every `DateTime` and `DateTime64` column to Iceberg `timestamp`, which has microsecond precision and no timezone. ClickHouse cannot generate `timestamptz`, `timestamp_ns`, or `timestamptz_ns` schema types, so higher precision and timezone semantics are not represented in the Iceberg schema.
 - ClickHouse cannot write to an Iceberg table that uses a `decimal`, `fixed`, `timestamp_ns`, or `timestamptz_ns` column as a direct partition field. The operation fails with an unsupported-type exception.
-- For data files containing types whose bounds ClickHouse cannot serialize, including `Bool` and `Decimal`, ClickHouse omits all lower and upper column bounds from the Iceberg manifest entry. Column sizes and null counts are still included, and the data remains correct, but readers cannot use manifest-level min-max pruning for those files.
+- For data files containing types whose bounds ClickHouse cannot serialize, such as `Float32`, `Float64`, and `UUID`, ClickHouse omits the lower and upper bounds of those columns from the Iceberg manifest entry. Column sizes and null counts are still included, and the data remains correct, but readers cannot use manifest-level min-max pruning for those files.
 
 ## Schema evolution {#schema-evolution}
 ClickHouse supports reading Iceberg tables whose schema has evolved over time. This includes tables where columns have been added, removed, or reordered, as well as columns changed from required to nullable. Additionally, the following type casts are supported:
@@ -1954,6 +1954,7 @@ This engine uses the same settings as the corresponding object storage engines a
 - `allow_experimental_paimon_storage_engine` — enables creation of `Paimon`, `PaimonS3`, `PaimonAzure`, `PaimonHDFS`, and `PaimonLocal` table engines. Default: `0` (disabled).
 - `use_paimon_metadata_files_cache` — enables the Paimon metadata files cache (caches deserialized manifest lists and manifests). Set to `1` to enable, `0` to disable. Default: `0`. How this setting takes effect differs between table functions and persistent table engines — see the note below.
 - `paimon_incremental_read` — enable incremental read mode.
+- `paimon_incremental_read_append_overwrite` — the incremental read also delivers the rows that `OVERWRITE` snapshots write, like Paimon's `streaming-read-append-overwrite`. Default: `0`.
 - `paimon_metadata_refresh_interval_sec` — background metadata refresh interval in seconds. When set to a value greater than 0, a background task periodically pulls the latest snapshot and schema from object storage. Default: 30.
 - `paimon_keeper_path` — Keeper path for incremental read state. Must be set and unique per table; supports macros such as `{database}`, `{table}`, `{uuid}`.
 - `paimon_replica_name` — Replica name for incremental read state. Must be set and unique per replica; supports macros such as `{replica}`.
@@ -2137,7 +2138,10 @@ Stop the MV before dropping it to prevent background refresh from blocking DDL o
 - Incremental read uses at-most-once delivery: the committed snapshot is advanced when data files are collected, before the data is actually consumed. If the query fails after file collection, the skipped snapshots will not be re-read on retry.
 - The table engine is read-only; data modification is not supported.
 - Incremental read does not handle historical data deletions from the Paimon source. If upstream Paimon data is deleted or updated, the corresponding rows already written to a ClickHouse MergeTree destination table will not be automatically removed. You must manually issue `ALTER TABLE ... DELETE` on the MergeTree table to clean up stale data.
+- The first incremental read returns every row of the current snapshot. After that, an incremental read delivers the rows of `APPEND` snapshots only, like Paimon's streaming read of an append table: `COMPACT`, `OVERWRITE` and `ANALYZE` snapshots are skipped. Paimon commits every write that deletes or rewrites data files as `OVERWRITE` (`INSERT OVERWRITE`, `TRUNCATE`, and the copy-on-write rewrites of `DELETE`, `UPDATE` and of a `MERGE INTO` that updates or deletes rows), so the rows such a commit writes, such as the new versions of updated rows, are not delivered, and a warning is logged for every skipped `OVERWRITE` snapshot. With `paimon_incremental_read_append_overwrite = 1` they are delivered, like with Paimon's `streaming-read-append-overwrite`, together with the unchanged rows of every data file the commit rewrote, except for the data files that a later snapshot read by the same query removes. `COMPACT` snapshots are not read, so a query that reads an `APPEND` snapshot, a `COMPACT` that merges the file it added and an `OVERWRITE` that rewrites the merged file returns the rows of both the original and the rewritten file: the unchanged rows appear twice in its result, and the changed ones in their old and new versions. `paimon_target_snapshot_id` still returns the delta of any snapshot.
+- After the first incremental read, a snapshot with a commit kind that ClickHouse does not know fails the incremental read, and every later one fails too until ClickHouse is upgraded or the cursor is moved past the snapshot in Keeper, as the error message describes.
 - If the underlying Paimon table is dropped and recreated at the same object-storage path (e.g. via Flink or Spark), you must `DROP` and re-`CREATE` the corresponding ClickHouse table. ClickHouse detects the recreation by comparing the schema-0 creation timestamp and raises an error; the stale ClickHouse table cannot be used until it is recreated.
+- Columns are matched to data files by name, not by Paimon field id. Reading a data file written before a column was renamed, or before a column was dropped and another one with the same name (compared case-insensitively) was added, therefore throws: the result would contain `NULL` for the renamed column and the dropped column's values for the re-added one. Adding and dropping columns is supported. Rewriting the table with the current schema in Paimon, for example with `INSERT OVERWRITE <table> SELECT * FROM <table>`, makes the snapshots created after it readable. An incremental read that reaches such a data file throws without advancing its cursor. To move on, wait until Paimon expires the snapshots committed before the change, or abandon them by moving the cursor to the last of them, which drops every snapshot not yet consumed up to it (see [When a snapshot cannot be read](#when-a-snapshot-cannot-be-read)).
 
 ## Aliases {#aliases}
 
@@ -2163,7 +2167,7 @@ The `Paimon` table engine auto-detects the storage backend from the `disk` setti
 |FLOAT     |Float32      |
 |DOUBLE     |Float64      |
 |STRING,VARCHAR,BYTES,VARBINARY     |String      |
-|DATE     |Date      |
+|DATE     |Date32      |
 |TIME(p),TIME     |Time('UTC')      |
 |TIMESTAMP(p) WITH LOCAL TIME ZONE     |DateTime64      |
 |TIMESTAMP(p)     |DateTime64('UTC')      |
@@ -2172,6 +2176,7 @@ The `Paimon` table engine auto-detects the storage backend from the `disk` setti
 |DECIMAL(P,S)     |Decimal(P,S)      |
 |ARRAY     |Array      |
 |MAP     |Map    |
+|ROW     |Tuple      |
 
 ## Partition supported {#partition-supported}
 
