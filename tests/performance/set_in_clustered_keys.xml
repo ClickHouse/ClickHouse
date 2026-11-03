@@ -65,6 +65,10 @@
     <query>SELECT count() FROM t_in_clustered WHERE (k, u) IN (SELECT DISTINCT k, u FROM t_in_clustered)</query>
     <query>SELECT count() FROM t_in_unclustered WHERE (k, u) IN (SELECT DISTINCT k, u FROM t_in_unclustered)</query>
 
+    <!-- One numeric key: the clustered query must stay neutral, the unclustered one is looked up in the lookup table. -->
+    <query>SELECT count() FROM t_in_clustered WHERE k IN (SELECT DISTINCT k FROM t_in_clustered)</query>
+    <query>SELECT count() FROM t_in_unclustered WHERE k IN (SELECT DISTINCT k FROM t_in_unclustered)</query>
+
     <drop_query>DROP TABLE IF EXISTS t_in_clustered</drop_query>
     <drop_query>DROP TABLE IF EXISTS t_in_unclustered</drop_query>
 </test>
