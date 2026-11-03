@@ -15,6 +15,8 @@ SET query_plan_max_limit_for_top_k_optimization = 1000;
 SET optimize_move_to_prewhere = 1;
 SET query_plan_optimize_lazy_materialization = 0;
 SET enable_parallel_replicas = 0;
+-- The stateless-test profile sets `max_rows_to_read`, and a throwing row limit turns off the skip indexes on data read.
+SET max_rows_to_read = 0, max_rows_to_read_leaf = 0;
 -- One stream reading one granule per block, so the threshold is set after the first granule.
 SET max_threads = 1;
 SET max_block_size = 1000;
