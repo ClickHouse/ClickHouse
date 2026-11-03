@@ -161,6 +161,12 @@ std::unordered_set<String> reverseResolveImpl(const Poco::Net::IPAddress & addre
     {
         return ptr_resolver->resolve(address.toString());
     }
+    if (address.isIPv4Mapped())
+    {
+        /// An IPv4-mapped address is an IPv4 peer of a dual-stack socket, so its PTR record is the IPv4 one.
+        Poco::Net::IPAddress ipv4(reinterpret_cast<const char *>(address.addr()) + 12, 4);
+        return ptr_resolver->resolve(ipv4.toString());
+    }
     return ptr_resolver->resolve_v6(address.toString());
 }
 
