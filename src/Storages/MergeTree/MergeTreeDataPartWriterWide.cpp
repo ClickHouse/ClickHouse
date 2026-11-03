@@ -21,7 +21,6 @@
 #include <Common/FailPoint.h>
 #include <Storages/MergeTree/MergeHelperThreads.h>
 #include <Common/ThreadPool.h>
-#include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/scope_guard_safe.h>
@@ -432,8 +431,10 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumnPermut
 
     /// Skip indices only read the block and write their own streams, so they can be built in another thread
     /// while the columns are serialized. The slot is released after the thread is joined.
+    /// A packed part storage writes all files through one `PackedFilesWriter`, which does not support
+    /// concurrent writes, so the skip indices of a packed part are built in the thread of the merge.
     MergeHelperThreads::SlotPtr skip_indices_slot;
-    if (settings.build_skip_indexes_in_separate_thread && !skip_indices.empty())
+    if (settings.build_skip_indexes_in_separate_thread && !skip_indices.empty() && !isPackedPartStorage(getDataPartStorage()))
         skip_indices_slot = MergeHelperThreads::tryAcquire();
     std::optional<ThreadFromGlobalPool> skip_indices_thread;
     std::exception_ptr skip_indices_exception;
