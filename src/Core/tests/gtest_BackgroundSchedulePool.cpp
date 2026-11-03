@@ -403,3 +403,206 @@ TEST(BackgroundSchedulePool, ScheduleAfterHugeDelayDoesNotFire)
     ASSERT_EQ(task->deactivate(), true);
     pool->join();
 }
+
+/// Raising the pool size at runtime (config reload) must also raise the number of tasks of one
+/// type that may run at once, including for a group already paused at the old limit.
+TEST(BackgroundSchedulePool, IncreaseThreadsCountRaisesSameTypeLimit)
+{
+    constexpr size_t initial_threads = 2;
+    constexpr size_t increased_threads = 4;
+    constexpr size_t num_tasks = increased_threads;
+
+    auto pool = BackgroundSchedulePool::create(initial_threads, initial_threads, 0, CurrentMetrics::end(), CurrentMetrics::end(), ThreadName::TEST_SCHEDULER);
+
+    std::mutex mutex;
+    std::condition_variable running_changed;
+    std::condition_variable release_tasks;
+    size_t running = 0;
+    bool release = false;
+
+    /// A single lambda expression ⇒ one closure type ⇒ all tasks share one task group.
+    auto task_body = [&]
+    {
+        std::unique_lock lock(mutex);
+        ++running;
+        running_changed.notify_all();
+        release_tasks.wait(lock, [&] { return release; });
+    };
+
+    std::vector<BackgroundSchedulePoolTaskHolder> tasks;
+    tasks.reserve(num_tasks);
+    for (size_t i = 0; i < num_tasks; ++i)
+        tasks.emplace_back(pool->createTask(StorageID::createEmpty(), "increase_same_type", task_body));
+
+    for (auto & task : tasks)
+        EXPECT_TRUE(task->activateAndSchedule());
+
+    bool initial_ran = false;
+    bool all_ran = false;
+    size_t running_before_increase = 0;
+    size_t running_after_increase = 0;
+    {
+        std::unique_lock lock(mutex);
+        initial_ran = running_changed.wait_for(lock, std::chrono::seconds(60), [&] { return running >= initial_threads; });
+        running_before_increase = running;
+        if (initial_ran)
+        {
+            lock.unlock();
+            pool->increaseThreadsCount(increased_threads);
+            lock.lock();
+            all_ran = running_changed.wait_for(lock, std::chrono::seconds(60), [&] { return running >= num_tasks; });
+        }
+        running_after_increase = running;
+        release = true;
+        release_tasks.notify_all();
+    }
+
+    /// The pool's destructor requires join(), so a fatal assertion must not precede it.
+    pool->join();
+
+    EXPECT_TRUE(initial_ran);
+    EXPECT_EQ(running_before_increase, initial_threads);
+    EXPECT_TRUE(all_ran) << "only " << running_after_increase << " of " << num_tasks << " tasks of one type run after raising the pool size";
+    EXPECT_EQ(running_after_increase, num_tasks);
+}
+
+/// With a ratio, the raised limit is the new size times the ratio, exactly as at startup.
+TEST(BackgroundSchedulePool, IncreaseThreadsCountKeepsPerTypeRatio)
+{
+    constexpr size_t initial_threads = 4;
+    constexpr size_t increased_threads = 8;
+    constexpr double ratio = 0.5;
+    constexpr size_t initial_limit = 2;
+    constexpr size_t increased_limit = 4;
+    constexpr size_t num_tasks = 6;
+
+    auto pool = BackgroundSchedulePool::create(initial_threads, initial_threads, ratio, CurrentMetrics::end(), CurrentMetrics::end(), ThreadName::TEST_SCHEDULER);
+
+    std::mutex mutex;
+    std::condition_variable running_changed;
+    std::condition_variable release_tasks;
+    size_t running = 0;
+    bool release = false;
+
+    /// A single lambda expression ⇒ one closure type ⇒ all tasks share one task group.
+    auto task_body = [&]
+    {
+        std::unique_lock lock(mutex);
+        ++running;
+        running_changed.notify_all();
+        release_tasks.wait(lock, [&] { return release; });
+    };
+
+    std::vector<BackgroundSchedulePoolTaskHolder> tasks;
+    tasks.reserve(num_tasks);
+    for (size_t i = 0; i < num_tasks; ++i)
+        tasks.emplace_back(pool->createTask(StorageID::createEmpty(), "increase_keeps_ratio", task_body));
+
+    for (auto & task : tasks)
+        EXPECT_TRUE(task->activateAndSchedule());
+
+    bool initial_ran = false;
+    bool increased_ran = false;
+    size_t running_before_increase = 0;
+    size_t running_after_increase = 0;
+    size_t running_later = 0;
+    {
+        std::unique_lock lock(mutex);
+        initial_ran = running_changed.wait_for(lock, std::chrono::seconds(60), [&] { return running >= initial_limit; });
+        running_before_increase = running;
+        if (initial_ran)
+        {
+            lock.unlock();
+            pool->increaseThreadsCount(increased_threads);
+            lock.lock();
+            /// The pool still has idle workers here, so they must be woken to take the extra tasks.
+            increased_ran = running_changed.wait_for(lock, std::chrono::seconds(60), [&] { return running >= increased_limit; });
+            running_after_increase = running;
+            if (increased_ran)
+            {
+                lock.unlock();
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+                lock.lock();
+                running_later = running;
+            }
+        }
+        release = true;
+        release_tasks.notify_all();
+    }
+
+    /// The pool's destructor requires join(), so a fatal assertion must not precede it.
+    pool->join();
+
+    EXPECT_TRUE(initial_ran);
+    EXPECT_EQ(running_before_increase, initial_limit);
+    EXPECT_TRUE(increased_ran) << "only " << running_after_increase << " of " << increased_limit << " tasks of one type run after raising the pool size";
+    EXPECT_EQ(running_after_increase, increased_limit);
+    EXPECT_EQ(running_later, increased_limit) << "the per-type ratio is not kept after raising the pool size";
+}
+
+/// The recomputed limit can be lower than the current one (0.4 * 2 truncates to 0, which means the
+/// pool size 2, while 0.4 * 3 gives 1). It must be ignored, because two tasks of the type already run.
+TEST(BackgroundSchedulePool, IncreaseThreadsCountNeverLowersPerTypeLimit)
+{
+    constexpr size_t initial_threads = 2;
+    constexpr size_t increased_threads = 3;
+    constexpr double ratio = 0.4;
+    constexpr size_t limit = 2;
+    constexpr size_t num_tasks = 3;
+
+    auto pool = BackgroundSchedulePool::create(initial_threads, initial_threads, ratio, CurrentMetrics::end(), CurrentMetrics::end(), ThreadName::TEST_SCHEDULER);
+
+    std::mutex mutex;
+    std::condition_variable state_changed;
+    std::condition_variable release_tasks;
+    size_t running = 0;
+    size_t finished = 0;
+    bool release = false;
+
+    /// A single lambda expression ⇒ one closure type ⇒ all tasks share one task group.
+    auto task_body = [&]
+    {
+        std::unique_lock lock(mutex);
+        ++running;
+        state_changed.notify_all();
+        release_tasks.wait(lock, [&] { return release; });
+        ++finished;
+        state_changed.notify_all();
+    };
+
+    std::vector<BackgroundSchedulePoolTaskHolder> tasks;
+    tasks.reserve(num_tasks);
+    for (size_t i = 0; i < num_tasks; ++i)
+        tasks.emplace_back(pool->createTask(StorageID::createEmpty(), "increase_never_lowers", task_body));
+
+    for (auto & task : tasks)
+        EXPECT_TRUE(task->activateAndSchedule());
+
+    bool initial_ran = false;
+    bool all_finished = false;
+    size_t running_before_increase = 0;
+    size_t finished_at_end = 0;
+    {
+        std::unique_lock lock(mutex);
+        initial_ran = state_changed.wait_for(lock, std::chrono::seconds(60), [&] { return running >= limit; });
+        running_before_increase = running;
+        if (initial_ran)
+        {
+            lock.unlock();
+            pool->increaseThreadsCount(increased_threads);
+            lock.lock();
+        }
+        release = true;
+        release_tasks.notify_all();
+        all_finished = state_changed.wait_for(lock, std::chrono::seconds(60), [&] { return finished >= num_tasks; });
+        finished_at_end = finished;
+    }
+
+    /// The pool's destructor requires join(), so a fatal assertion must not precede it.
+    pool->join();
+
+    EXPECT_TRUE(initial_ran);
+    EXPECT_EQ(running_before_increase, limit);
+    EXPECT_TRUE(all_finished) << "only " << finished_at_end << " of " << num_tasks << " tasks finished";
+    EXPECT_EQ(finished_at_end, num_tasks);
+}
