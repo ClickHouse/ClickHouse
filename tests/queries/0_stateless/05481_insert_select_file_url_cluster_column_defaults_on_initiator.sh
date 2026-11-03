@@ -46,11 +46,26 @@ $CLICKHOUSE_CLIENT -q "
     SETTINGS parallel_distributed_insert_select = 0"
 check "urlCluster"
 
+# The same query with a `headers` argument, whose value does not matter: with it, the arguments for the nodes are
+# edited by another branch of `TableFunctionURL::updateStructureAndFormatArgumentsIfNeeded`, which takes `headers` out,
+# adds the format and structure, and puts `headers` back.
+$CLICKHOUSE_CLIENT -q "
+    INSERT INTO t_05481 SELECT * FROM urlCluster('${CLUSTER}', '${S3_DIR}/part_{1,2}.jsonl', 'JSONEachRow', headers('X-ClickHouse-Test' = '1'))
+    SETTINGS parallel_distributed_insert_select = 0"
+check "urlCluster with headers"
+
 $CLICKHOUSE_CLIENT -q "
     INSERT INTO t_05481 SELECT * FROM url('${S3_DIR}/part_{1,2}.jsonl', 'JSONEachRow')
     SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = '${CLUSTER}',
         parallel_replicas_for_cluster_engines = 1, parallel_distributed_insert_select = 0"
 check "url converted to urlCluster"
+
+# The conversion has to happen, otherwise the case above reads on the initiator only and proves nothing.
+echo "--- url converted to urlCluster reads from the cluster ---"
+$CLICKHOUSE_CLIENT -q "
+    EXPLAIN SELECT * FROM url('${S3_DIR}/part_{1,2}.jsonl', 'JSONEachRow')
+    SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = '${CLUSTER}',
+        parallel_replicas_for_cluster_engines = 1" | grep -c ReadFromCluster
 
 $CLICKHOUSE_CLIENT -q "
     INSERT INTO t_05481 SELECT * FROM fileCluster('${CLUSTER}', '${FILE_DIR}/part_{1,2}.jsonl', 'JSONEachRow')
