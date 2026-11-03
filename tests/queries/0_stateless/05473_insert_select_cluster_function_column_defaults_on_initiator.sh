@@ -88,17 +88,20 @@ $CLICKHOUSE_CLIENT -q "OPTIMIZE TABLE events_local_05473 FINAL"
 echo "--- DEFAULT reading a column of the files, with TTL ---"
 $CLICKHOUSE_CLIENT -q "SELECT count(), min(event_date) > '2020-01-01' FROM events_local_05473"
 
-# A `DEFAULT` reading a column the nodes do not have, or one whose `DEFAULT` they do not get, is not sent.
+# A `DEFAULT` with a secret argument, or reading a column the nodes do not have, is not sent, but a `DEFAULT` reading such a
+# column is, and reads the value stored for it: the one in the file, or the default value of its type.
+write_file mat.jsonl "id UInt32, x UInt32, h String" "(2, 5, 'hh')"
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS mat_05473;
-    CREATE TABLE mat_05473 (id UInt32, m UInt32 MATERIALIZED id + 100, x UInt32 DEFAULT m + 1, b UInt32 DEFAULT x + 1, q UInt32 DEFAULT 7)
+    CREATE TABLE mat_05473 (id UInt32, m UInt32 MATERIALIZED id + 100, x UInt32 DEFAULT m + 1, b UInt32 DEFAULT x + 1, q UInt32 DEFAULT 7,
+        h String DEFAULT HMAC('sha256', toString(id), 'k'), l UInt64 DEFAULT length(h))
     ENGINE = MergeTree ORDER BY id;
 "
 $CLICKHOUSE_CLIENT -q "
-    INSERT INTO mat_05473 SELECT * FROM s3Cluster('${CLUSTER}', '${S3_DIR}/part_1.jsonl', 'JSONEachRow')
+    INSERT INTO mat_05473 SELECT * FROM s3Cluster('${CLUSTER}', '${S3_DIR}/{part_1,mat}.jsonl', 'JSONEachRow')
     SETTINGS parallel_distributed_insert_select = 0"
-echo "--- DEFAULT reading a MATERIALIZED column ---"
-$CLICKHOUSE_CLIENT -q "SELECT id, q, b != 1 FROM mat_05473 ORDER BY id"
+echo "--- DEFAULT reading a column whose DEFAULT is not sent ---"
+$CLICKHOUSE_CLIENT -q "SELECT id, x, b, q, h, l FROM mat_05473 ORDER BY id"
 
 # A name the analyzer resolves as a function is not a column the nodes lack.
 $CLICKHOUSE_CLIENT -q "
