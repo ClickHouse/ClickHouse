@@ -12776,7 +12776,8 @@ MergeTreeData::PartCompressionCodec MergeTreeData::getCompressionCodecForPart(
     const StorageMetadataPtr & metadata_snapshot,
     size_t part_size_compressed,
     const IMergeTreeDataPart::TTLInfos & ttl_infos,
-    time_t current_time) const
+    time_t current_time,
+    const MergeTreeSettings * settings) const
 {
     const auto & recompression_ttl_entries = metadata_snapshot->getRecompressionTTLs();
     auto best_ttl_entry = selectTTLDescriptionForTTLInfos(recompression_ttl_entries, ttl_infos.recompression_ttl, current_time, true);
@@ -12786,7 +12787,13 @@ MergeTreeData::PartCompressionCodec MergeTreeData::getCompressionCodecForPart(
             .codec = CompressionCodecFactory::instance().get(best_ttl_entry->recompression_codec, {}),
             .is_explicit_recompression = !CompressionCodecFactory::isDefaultCodec(best_ttl_entry->recompression_codec)};
 
-    auto codec_setting = (*getSettings())[MergeTreeSetting::default_compression_codec].value;
+    MergeTreeSettingsPtr live_settings;
+    if (!settings)
+    {
+        live_settings = getSettings();
+        settings = live_settings.get();
+    }
+    auto codec_setting = (*settings)[MergeTreeSetting::default_compression_codec].value;
     if (!codec_setting.empty())
         return {.codec = CompressionCodecFactory::instance().get(codec_setting)};
 

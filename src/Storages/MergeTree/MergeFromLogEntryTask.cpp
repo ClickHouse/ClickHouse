@@ -409,6 +409,10 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     /// The merge below runs with entry.create_time as its time_of_merge, so the TTL trigger of
     /// merge_may_reduce_rows is priced against that same clock - never against a fresher one that could
     /// disagree with the merge about whether a TTL boundary has passed.
+    /// The codec of the result part is resolved once here, from the same frozen settings and clock the
+    /// estimate uses, and the merge compresses with exactly it (see FutureMergedMutatedPart::merged_part_codec).
+    future_merged_part->merged_part_codec = CompactionStatistics::resolveMergedPartCodec(
+        *future_merged_part, metadata_snapshot, *merge_data_settings, entry.create_time);
     memory_reservation = MergeMemoryReservation::reserve(
         CompactionStatistics::estimateNeededMemoryForMerge(
             *future_merged_part, metadata_snapshot, task_context, *merge_data_settings, mutations_snapshot, entry.create_time,

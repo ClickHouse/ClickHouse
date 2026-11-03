@@ -90,6 +90,18 @@ UInt64 estimateNeededDiskSpace(
   * A merge reserves this amount up front (see MergeMemoryReservation) so that many merges starting
   * at once - for example right after a mutation - do not all grow their buffers and oversubscribe memory.
   */
+/** The default codec of the result part of a merge, resolved like `MergeTask` resolves it
+  * (`MergeTreeData::getCompressionCodecForPart`) from the union of the source parts' TTL infos, their
+  * total compressed size, the frozen settings snapshot `settings` and `time_of_merge`. Stored in
+  * `FutureMergedMutatedPart::merged_part_codec` before the memory of the merge is estimated, it is the
+  * codec both the estimate and the merge use.
+  */
+MergeTreeData::PartCompressionCodec resolveMergedPartCodec(
+    const FutureMergedMutatedPart & future_part,
+    const StorageMetadataPtr & metadata_snapshot,
+    const MergeTreeSettings & settings,
+    time_t time_of_merge);
+
 UInt64 estimateNeededMemoryForMerge(
     const FutureMergedMutatedPart & future_part,
     const StorageMetadataPtr & metadata_snapshot,

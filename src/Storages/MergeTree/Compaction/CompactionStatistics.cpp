@@ -2132,9 +2132,9 @@ static UInt64 estimateNeededMemoryForMergeImpl(
     const UInt64 base_max_compress_block_size = base_compress_block_sizes.max;
     const UInt64 base_min_compress_block_size = base_compress_block_sizes.min;
 
-    /// The default codec of the result part, resolved like MergeTask resolves it (MergeTreeData::getCompressionCodecForPart):
-    /// the compact writer keys its compressors by the resolved codecs. The TTL infos of the result part are not known
-    /// before the merge; the union of the source parts' ones is what the merge starts from.
+    /// The default codec of the result part, the one MergeTask compresses with: the compact writer keys its
+    /// compressors by the resolved codecs. The selection resolves it once (resolveMergedPartCodec) and carries it
+    /// on the future part, so the merge uses exactly the codec priced here.
     /// A nested merge of existing projection parts does not resolve its own codec: MergeTask inherits the
     /// codec of the parent part being merged, including whether it came from an explicit RECOMPRESS TTL
     /// (the projection's metadata carries no such TTL), so the recursion passes the parent's resolved one.
@@ -2142,17 +2142,9 @@ static UInt64 estimateNeededMemoryForMergeImpl(
     {
         if (part_codec_override)
             return *part_codec_override;
-        if (future_part.parts.empty())
-            return MergeTreeData::PartCompressionCodec{.codec = CompressionCodecFactory::instance().getDefaultCodec()};
-        IMergeTreeDataPart::TTLInfos merged_ttl_infos;
-        UInt64 total_size_compressed = 0;
-        for (const auto & part : future_part.parts)
-        {
-            merged_ttl_infos.update(part->ttl_infos);
-            total_size_compressed += part->getBytesOnDisk();
-        }
-        return future_part.parts.front()->storage.getCompressionCodecForPart(
-            metadata_snapshot, total_size_compressed, merged_ttl_infos, time_of_merge);
+        if (future_part.merged_part_codec)
+            return *future_part.merged_part_codec;
+        return resolveMergedPartCodec(future_part, metadata_snapshot, settings, time_of_merge);
     }();
 
     /// The multipart writers receive the ENCODED stream, not the uncompressed values: every compressed block
@@ -3441,6 +3433,25 @@ static UInt64 estimateNeededMemoryForMergeImpl(
     }
 
     return input_memory + output_memory + projection_memory;
+}
+
+MergeTreeData::PartCompressionCodec resolveMergedPartCodec(
+    const FutureMergedMutatedPart & future_part,
+    const StorageMetadataPtr & metadata_snapshot,
+    const MergeTreeSettings & settings,
+    time_t time_of_merge)
+{
+    if (future_part.parts.empty())
+        return MergeTreeData::PartCompressionCodec{.codec = CompressionCodecFactory::instance().getDefaultCodec()};
+    IMergeTreeDataPart::TTLInfos merged_ttl_infos;
+    UInt64 total_size_compressed = 0;
+    for (const auto & part : future_part.parts)
+    {
+        merged_ttl_infos.update(part->ttl_infos);
+        total_size_compressed += part->getBytesOnDisk();
+    }
+    return future_part.parts.front()->storage.getCompressionCodecForPart(
+        metadata_snapshot, total_size_compressed, merged_ttl_infos, time_of_merge, &settings);
 }
 
 UInt64 estimateNeededMemoryForMerge(

@@ -1624,11 +1624,14 @@ public:
 
     /// Get compression codec for part according to `RECOMPRESS` TTL rules from `metadata_snapshot`,
     /// the `default_compression_codec` setting, or the <compression> section from config.xml, in that order.
+    /// `settings`, when set, replaces the live table settings as the source of `default_compression_codec`:
+    /// a merge resolves its codec from the settings snapshot it froze at selection time.
     PartCompressionCodec getCompressionCodecForPart(
         const StorageMetadataPtr & metadata_snapshot,
         size_t part_size_compressed,
         const IMergeTreeDataPart::TTLInfos & ttl_infos,
-        time_t current_time) const;
+        time_t current_time,
+        const MergeTreeSettings * settings = nullptr) const;
 
     std::shared_ptr<QueryIdHolder> getQueryIdHolder(const String & query_id, UInt64 max_concurrent_queries) const;
 

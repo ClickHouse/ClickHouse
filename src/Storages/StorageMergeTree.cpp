@@ -2285,6 +2285,9 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
         /// the eagerly allocated file buffer of a stream at DBMS_DEFAULT_BUFFER_SIZE, while a local disk
         /// opens it at the stream's full max_compress_block_size. So when the reachable destinations mix
         /// local and remote disks, take the maximum of both estimates.
+        /// The codec of the result part is resolved once here, from the same frozen settings and clock the
+        /// estimate uses, and the merge compresses with exactly it (see FutureMergedMutatedPart::merged_part_codec).
+        future_part->merged_part_codec = CompactionStatistics::resolveMergedPartCodec(*future_part, metadata_snapshot, *data_settings, time_of_merge);
         UInt64 needed_memory = CompactionStatistics::estimateNeededMemoryForMerge(
             *future_part, metadata_snapshot, merge_context, *data_settings, mutations_snapshot, time_of_merge,
             output_may_be_on_remote_disk, admission_write_buffer_memories, deduplicate, merge_with_cleanup);

@@ -1197,11 +1197,18 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     }
     else
     {
-        auto part_compression_codec = global_ctx->data->getCompressionCodecForPart(
-            global_ctx->metadata_snapshot,
-            global_ctx->merge_list_element_ptr->total_size_bytes_compressed,
-            global_ctx->new_data_part->ttl_infos,
-            global_ctx->time_of_merge);
+        /// A merge whose memory reservation was priced resolved its codec at that point, from the frozen
+        /// settings: use exactly that one, so a change of `default_compression_codec` or of the
+        /// `<compression>` configuration after admission cannot switch the merge to a codec the reservation
+        /// did not price (for example to one with a larger compression scratch buffer).
+        auto part_compression_codec = global_ctx->future_part->merged_part_codec
+            ? *global_ctx->future_part->merged_part_codec
+            : global_ctx->data->getCompressionCodecForPart(
+                global_ctx->metadata_snapshot,
+                global_ctx->merge_list_element_ptr->total_size_bytes_compressed,
+                global_ctx->new_data_part->ttl_infos,
+                global_ctx->time_of_merge,
+                global_ctx->data_settings.get());
         global_ctx->compression_codec = std::move(part_compression_codec.codec);
         global_ctx->is_explicit_recompression = part_compression_codec.is_explicit_recompression;
     }
