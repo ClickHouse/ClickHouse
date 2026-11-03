@@ -414,6 +414,8 @@ namespace
         AccessRightsElements elements_to_grant;
         AccessRightsElements elements_to_revoke;
         collectAccessRightsElementsToGrantOrRevoke(query, elements_to_grant, elements_to_revoke);
+        /// This is the path of `ATTACH GRANT` when an entity is loaded from a storage or restored from a backup,
+        /// which may have been written by another server. A `GRANT` statement resolves the names in `execute`.
         AccessControl::canonicalizeFunctionNames(elements_to_grant);
         AccessControl::canonicalizeFunctionNames(elements_to_revoke);
 
