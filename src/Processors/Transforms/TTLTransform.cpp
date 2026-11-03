@@ -68,6 +68,7 @@ static bool hasFreeIdentifierRootIn(const IAST & ast, NameSet bound)
     return false;
 }
 
+/// Whether expanding an ALIAS column referenced in `ast` would bring in a name bound by an enclosing lambda parameter.
 static bool isAliasExpansionCapturedByLambda(const IAST & ast, const ColumnsDescription & columns, const NameSet & bound)
 {
     checkStackSize();
@@ -163,7 +164,6 @@ std::vector<std::vector<TTLTransform::DependentMaterializedColumn>> TTLTransform
         if (!dependents.contains(column.name) || unrecomputable_columns.contains(column.name))
             continue;
 
-        /// An enclosing lambda parameter would bind a name the alias expansion brings in; such a column keeps its value.
         if (isAliasExpansionCapturedByLambda(*column.default_desc.expression, storage_columns, {}))
             continue;
 
@@ -271,7 +271,6 @@ TTLTransform::TTLTransform(
             return Result{};
         const auto & column = storage_columns.get(name);
         auto default_ast = it->second.expression->clone();
-        /// An enclosing lambda parameter would bind a name the expansion brings in; such a default stays as written.
         if (!isAliasExpansionCapturedByLambda(*default_ast, columns_to_expand, {}))
             replaceAliasColumnsInQuery(default_ast, columns_to_expand, {}, storage_.getContext());
         default_ast = addTypeConversionToAST(std::move(default_ast), column.type->getName());
