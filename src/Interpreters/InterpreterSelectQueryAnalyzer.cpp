@@ -417,24 +417,27 @@ static QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     addQueryTreePasses(
         query_tree_pass_manager, select_query_options.only_analyze, select_query_options.positional_arguments_already_resolved);
 
+    /// The origins are collected before any pass that can rewrite an expression into a column
+    /// (e.g. `length(arr)` into the subcolumn `arr.size0` by `PushSubcolumnsIntoSubqueriesPass` or
+    /// `FunctionToSubcolumnsPass`), because the result of an expression has no origin.
+    const size_t origins_passes_count = query_tree_pass_manager.getPassesCountBeforeExpressionRewrites();
+    query_tree_pass_manager.run(query_tree, origins_passes_count);
+    result_column_origins = getResultColumnOrigins(query_tree);
+
     /// We should not apply any query tree level optimizations on shards
     /// because it can lead to a changed header.
     if (select_query_options.ignore_ast_optimizations
         || select_query_options.is_create_view
         || context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
     {
-        query_tree_pass_manager.runOnlyResolve(query_tree);
-        result_column_origins = getResultColumnOrigins(query_tree);
+        /// The rest of the passes run by `runOnlyResolve`.
+        query_tree_pass_manager.run(query_tree, origins_passes_count, query_tree_pass_manager.getResolvePassesCount());
         /// Not an optimization: a shard plans view bodies the initiator never analyzed, so this pass has not run on them.
         DisableParallelReplicasPass{}.run(query_tree, context);
     }
     else
     {
-        /// The origins are collected before the optimizations: they can rewrite an expression into a column
-        /// (e.g. `length(arr)` into the subcolumn `arr.size0`), but the result of an expression has no origin.
-        query_tree_pass_manager.runOnlyResolve(query_tree);
-        result_column_origins = getResultColumnOrigins(query_tree);
-        query_tree_pass_manager.runFrom(query_tree, query_tree_pass_manager.getResolvePassesCount());
+        query_tree_pass_manager.runFrom(query_tree, origins_passes_count);
     }
 
     if (storage)

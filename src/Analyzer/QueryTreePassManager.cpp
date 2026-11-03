@@ -194,6 +194,8 @@ void QueryTreePassManager::addPass(QueryTreePassPtr pass)
     /// on every call nor relies on a hardcoded index that silently drifts when a pass is added before it.
     if (resolve_passes_count == 0 && pass->getName() == "RemoveUnusedProjectionColumnsPass")
         resolve_passes_count = passes.size() + 1;
+    if (!push_subcolumns_pass_index && dynamic_cast<const PushSubcolumnsIntoSubqueriesPass *>(pass.get()))
+        push_subcolumns_pass_index = passes.size();
 
     passes.push_back(std::move(pass));
 }
@@ -221,6 +223,34 @@ void QueryTreePassManager::runOnlyResolve(QueryTreeNodePtr & query_tree_node)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "RemoveUnusedProjectionColumnsPass is not registered in the query tree pass manager");
 
     run(query_tree_node, resolve_passes_count);
+}
+
+size_t QueryTreePassManager::getPassesCountBeforeExpressionRewrites() const
+{
+    if (!push_subcolumns_pass_index)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "PushSubcolumnsIntoSubqueriesPass is not registered in the query tree pass manager");
+
+    return *push_subcolumns_pass_index;
+}
+
+void QueryTreePassManager::run(QueryTreeNodePtr & query_tree_node, size_t from_pass_index, size_t up_to_pass_index)
+{
+    size_t passes_size = passes.size();
+    if (from_pass_index > up_to_pass_index || up_to_pass_index > passes_size)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Requested to run passes from {} up to {} pass. There are only {} passes",
+            from_pass_index,
+            up_to_pass_index,
+            passes_size);
+
+    auto current_context = getContext();
+    for (size_t i = from_pass_index; i < up_to_pass_index; ++i)
+    {
+        passes[i]->run(query_tree_node, current_context);
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+        ValidationChecker(passes[i]->getName()).visit(query_tree_node);
+#endif
+    }
 }
 
 void QueryTreePassManager::runFrom(QueryTreeNodePtr & query_tree_node, size_t from_pass_index)

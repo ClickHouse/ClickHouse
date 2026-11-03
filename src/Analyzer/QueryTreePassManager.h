@@ -1,5 +1,7 @@
 #pragma once
 
+#include <optional>
+
 #include <Analyzer/IQueryTreePass.h>
 
 #include <Interpreters/Context_fwd.h>
@@ -31,6 +33,12 @@ public:
     /// `RemoveUnusedProjectionColumnsPass`, zero if it is not registered.
     size_t getResolvePassesCount() const { return resolve_passes_count; }
 
+    /// The number of the first passes that only resolve the query tree and do not rewrite expressions:
+    /// the passes before `PushSubcolumnsIntoSubqueriesPass`, which can rewrite an expression into a column
+    /// (e.g. `length(arr)` into the subcolumn `arr.size0`). Result column origins must be collected after
+    /// these passes and before the following ones. Throws if `PushSubcolumnsIntoSubqueriesPass` is not registered.
+    size_t getPassesCountBeforeExpressionRewrites() const;
+
     /// Run only query tree passes responsible to name resolution.
     void runOnlyResolve(QueryTreeNodePtr & query_tree_node);
 
@@ -41,6 +49,11 @@ public:
       * Throws exception if up_to_pass_index is greater than passes size.
       */
     void run(QueryTreeNodePtr & query_tree_node, size_t up_to_pass_index);
+
+    /** Run query tree passes on query tree from from_pass_index (inclusive) up to up_to_pass_index (exclusive).
+      * Throws exception if the range is invalid.
+      */
+    void run(QueryTreeNodePtr & query_tree_node, size_t from_pass_index, size_t up_to_pass_index);
 
     /// Dump query tree passes
     void dump(WriteBuffer & buffer);
@@ -56,6 +69,9 @@ private:
     /// Number of passes run by `runOnlyResolve`: the passes up to and including
     /// `RemoveUnusedProjectionColumnsPass`, zero if it is not registered.
     size_t resolve_passes_count = 0;
+
+    /// Index of `PushSubcolumnsIntoSubqueriesPass`, `std::nullopt` if it is not registered.
+    std::optional<size_t> push_subcolumns_pass_index;
 };
 
 void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze = false, bool positional_arguments_already_resolved = false);

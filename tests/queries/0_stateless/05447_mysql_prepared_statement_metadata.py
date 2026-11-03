@@ -263,6 +263,12 @@ def main():
         statement_id, columns = prepare(sock, optimized)
         execute(sock, statement_id, columns)
         close(sock, statement_id)
+        # The same through a subquery, where `optimize_push_subcolumns_into_subqueries` reads the subcolumn `a.size0` in it.
+        optimized_subquery = "SELECT length(a) AS len, a FROM (SELECT a FROM arrays)"
+        query_metadata(sock, optimized_subquery)
+        statement_id, columns = prepare(sock, optimized_subquery)
+        execute(sock, statement_id, columns)
+        close(sock, statement_id)
         query(sock, "DROP TABLE arrays")
 
         for text in [
