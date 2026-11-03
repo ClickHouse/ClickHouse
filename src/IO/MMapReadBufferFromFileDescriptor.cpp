@@ -27,7 +27,10 @@ void MMapReadBufferFromFileDescriptor::init()
     size_t length = mapped.getLength();
     size_t page_size = static_cast<size_t>(::getPageSize());
     bool has_padding = (length % page_size) > 0 && (length % page_size) <= (page_size - (PADDING_FOR_SIMD - 1));
-    BufferBase::set(mapped.getData(), length, 0, has_padding ? BufferPadding::Padded : BufferPadding::Unpadded);
+    if (has_padding)
+        setAssumePadded(mapped.getData(), length, 0);
+    else
+        BufferBase::set(mapped.getData(), length, 0);
 }
 
 

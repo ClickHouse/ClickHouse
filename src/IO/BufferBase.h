@@ -1,12 +1,25 @@
 #pragma once
 
 #include <algorithm>
-#include <cstdint>
+#include <concepts>
+#include <type_traits>
 #include <Core/Defines.h>
 
 
 namespace DB
 {
+
+class MMapReadBufferFromFileDescriptor;
+class MMapReadBufferFromFileWithCache;
+
+template <typename Storage>
+concept PaddedBufferStorage = requires(const Storage & storage) {
+    { storage.data() };
+    { storage.size() } -> std::convertible_to<size_t>;
+    requires std::is_pointer_v<decltype(storage.data())>;
+    requires sizeof(std::remove_pointer_t<decltype(storage.data())>) == 1;
+    requires std::remove_cvref_t<Storage>::pad_right >= PADDING_FOR_SIMD - 1;
+};
 
 
 /** Base class for ReadBuffer and WriteBuffer.
@@ -54,27 +67,19 @@ public:
         Position end_pos;        /// 1 byte after the end of the buffer
     };
 
-    enum class BufferPadding : uint8_t
-    {
-        Unpadded,
-        Padded,
-    };
-
     /** A working range together with the promise that SIMD readers may access the padding after it.
       * Constructing or assigning from a raw `Buffer` clears the promise. Copying another
       * `WorkingBuffer` preserves it.
       */
     struct WorkingBuffer : Buffer
     {
-        WorkingBuffer(Position begin_pos_, Position end_pos_, BufferPadding padding_ = BufferPadding::Unpadded)
+        WorkingBuffer(Position begin_pos_, Position end_pos_)
             : Buffer(begin_pos_, end_pos_)
-            , padding(padding_)
         {
         }
 
-        WorkingBuffer(const Buffer & buffer_, BufferPadding padding_ = BufferPadding::Unpadded)
+        WorkingBuffer(const Buffer & buffer_)
             : Buffer(buffer_)
-            , padding(padding_)
         {
         }
 
@@ -84,47 +89,100 @@ public:
         WorkingBuffer & operator=(const Buffer & other)
         {
             Buffer::operator=(other);
-            padding = BufferPadding::Unpadded;
+            padded_end = nullptr;
             return *this;
+        }
+
+        void resize(size_t size)
+        {
+            if (padded_end && size > static_cast<size_t>(padded_end - begin()))
+                padded_end = nullptr;
+            Buffer::resize(size);
+        }
+
+        /** Construct a padded range only from storage whose type guarantees enough right padding.
+          * The logical range must be contained in the storage's logical size; its allocation
+          * supplies the padding after that size.
+          */
+        template <PaddedBufferStorage Storage>
+        static WorkingBuffer fromPaddedStorage(const Storage & storage, size_t storage_offset, size_t size)
+        {
+            chassert(storage_offset <= storage.size());
+            chassert(size <= storage.size() - storage_offset);
+
+            auto * storage_begin = const_cast<Position>(reinterpret_cast<const char *>(storage.data()));
+            if (!storage_begin)
+            {
+                chassert(storage.size() == 0);
+                return WorkingBuffer(nullptr, nullptr);
+            }
+
+            return WorkingBuffer(
+                storage_begin + storage_offset, storage_begin + storage_offset + size, storage_begin + storage.size(), PaddedTag{});
+        }
+
+        WorkingBuffer subrange(Position begin_pos_, Position end_pos_) const
+        {
+            chassert(begin_pos_ >= begin());
+            chassert(end_pos_ >= begin_pos_);
+            chassert(end_pos_ <= end());
+
+            WorkingBuffer result(begin_pos_, end_pos_);
+            result.padded_end = padded_end;
+            return result;
         }
 
         void swap(WorkingBuffer & other) noexcept
         {
             Buffer::swap(other);
-            std::swap(padding, other.padding);
+            std::swap(padded_end, other.padded_end);
         }
 
-        bool isPadded() const { return padding == BufferPadding::Padded; }
-        void setPadding(BufferPadding padding_) { padding = padding_; }
+        bool isPadded() const { return padded_end != nullptr; }
 
     private:
-        BufferPadding padding;
+        struct PaddedTag
+        {
+        };
+
+        WorkingBuffer(Position begin_pos_, Position end_pos_, Position padded_end_, PaddedTag)
+            : Buffer(begin_pos_, end_pos_)
+            , padded_end(padded_end_)
+        {
+        }
+
+        static WorkingBuffer assumePadded(Position begin_pos_, Position end_pos_)
+        {
+            return WorkingBuffer(begin_pos_, end_pos_, end_pos_, PaddedTag{});
+        }
+
+        Position padded_end = nullptr;
+
+        friend class BufferBase;
     };
 
     /** The constructor takes a range of memory to use for the buffer.
       * offset - the starting point of the cursor. ReadBuffer must set it to the end of the range, and WriteBuffer - to the beginning.
       */
-    BufferBase(Position ptr, size_t size, size_t offset, BufferPadding padding = BufferPadding::Unpadded)
+    BufferBase(Position ptr, size_t size, size_t offset)
         : pos(ptr + offset)
-        , working_buffer(ptr, ptr + size, padding)
+        , working_buffer(ptr, ptr + size)
         , internal_buffer(ptr, ptr + size)
-        , internal_buffer_padding(padding)
     {
     }
 
     /// Assign the buffers and pos.
     /// Be careful when calling this from ReadBuffer::nextImpl() implementations: `offset` is
     /// effectively ignored because ReadBuffer::next() reassigns `pos`.
-    void set(Position ptr, size_t size, size_t offset, BufferPadding padding = BufferPadding::Unpadded)
+    void set(Position ptr, size_t size, size_t offset)
     {
         internal_buffer = Buffer(ptr, ptr + size);
-        internal_buffer_padding = padding;
-        working_buffer = WorkingBuffer(ptr, ptr + size, padding);
+        working_buffer = WorkingBuffer(ptr, ptr + size);
         pos = ptr + offset;
     }
 
     /// get buffer
-    Buffer & internalBuffer() { return internal_buffer; }
+    const Buffer & internalBuffer() const { return internal_buffer; }
 
     /// get the part of the buffer from which you can read / write data
     WorkingBuffer & buffer() { return working_buffer; }
@@ -141,7 +199,6 @@ public:
     void swap(BufferBase & other) noexcept
     {
         internal_buffer.swap(other.internal_buffer);
-        std::swap(internal_buffer_padding, other.internal_buffer_padding);
         working_buffer.swap(other.working_buffer);
         std::swap(pos, other.pos);
     }
@@ -155,18 +212,36 @@ public:
     bool isPadded() const { return working_buffer.isPadded(); }
 
 protected:
-    void setInternalBuffer(Buffer buffer, BufferPadding padding = BufferPadding::Unpadded)
+    template <PaddedBufferStorage Storage>
+    void setPaddedStorage(const Storage & storage, size_t storage_offset, size_t size, size_t offset)
     {
-        internal_buffer = buffer;
-        internal_buffer_padding = padding;
+        working_buffer = WorkingBuffer::fromPaddedStorage(storage, storage_offset, size);
+        internal_buffer = working_buffer;
+        pos = working_buffer.begin() + offset;
     }
 
-    void setWorkingBufferFromInternal() { working_buffer = WorkingBuffer(internal_buffer, internal_buffer_padding); }
-
-    void setBufferPadding(BufferPadding padding)
+    void setWorkingBuffer(WorkingBuffer buffer, size_t offset)
     {
-        internal_buffer_padding = padding;
-        working_buffer.setPadding(padding);
+        working_buffer = buffer;
+        internal_buffer = buffer;
+        pos = working_buffer.begin() + offset;
+    }
+
+    void setInternalBuffer(Buffer buffer) { internal_buffer = buffer; }
+
+    template <PaddedBufferStorage Storage>
+    void setPaddedInternalBuffer(const Storage & storage, size_t storage_offset, size_t size)
+    {
+        auto padded_buffer = WorkingBuffer::fromPaddedStorage(storage, storage_offset, size);
+        internal_buffer = padded_buffer;
+    }
+
+    void setWorkingBufferFromInternal() { working_buffer = internal_buffer; }
+
+    void clearBufferPadding()
+    {
+        internal_buffer.padded_end = nullptr;
+        working_buffer.padded_end = nullptr;
     }
 
     void resetWorkingBuffer()
@@ -194,11 +269,20 @@ protected:
     WorkingBuffer working_buffer;
 
     /// A reference to a piece of memory for the buffer.
-    Buffer internal_buffer;
-
-    /// Whether `internal_buffer` has 15 readable bytes after its end.
-    BufferPadding internal_buffer_padding{BufferPadding::Unpadded};
+    WorkingBuffer internal_buffer;
     bool canceled{false};
+
+private:
+    /// The mmap readers establish padding from page boundaries, which no storage type can express.
+    void setAssumePadded(Position ptr, size_t size, size_t offset)
+    {
+        working_buffer = WorkingBuffer::assumePadded(ptr, ptr + size);
+        internal_buffer = working_buffer;
+        pos = ptr + offset;
+    }
+
+    friend class MMapReadBufferFromFileDescriptor;
+    friend class MMapReadBufferFromFileWithCache;
 };
 
 

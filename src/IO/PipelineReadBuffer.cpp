@@ -17,7 +17,7 @@ PipelineReadBuffer::PipelineReadBuffer(std::unique_ptr<ReaderExecutor> executor_
     , executor(std::move(executor_))
     , read_position(executor->getPosition())
 {
-    setBufferPadding(BufferPadding::Unpadded);
+    clearBufferPadding();
     LOG_DEBUG(log, "Created, total_size={}, read_position={}", executor->totalSize(), read_position);
 }
 

@@ -403,11 +403,7 @@ TemporaryDataReadBuffer::TemporaryDataReadBuffer(std::unique_ptr<ReadBuffer> in_
     : ReadBuffer(nullptr, 0)
     , compressed_buf(std::move(in_))
 {
-    BufferBase::set(
-        compressed_buf->buffer().begin(),
-        compressed_buf->buffer().size(),
-        compressed_buf->offset(),
-        compressed_buf->isPadded() ? BufferPadding::Padded : BufferPadding::Unpadded);
+    setWorkingBuffer(compressed_buf->buffer(), compressed_buf->offset());
 }
 
 bool TemporaryDataReadBuffer::nextImpl()
@@ -418,11 +414,7 @@ bool TemporaryDataReadBuffer::nextImpl()
         set(compressed_buf->position(), 0);
         return false;
     }
-    BufferBase::set(
-        compressed_buf->buffer().begin(),
-        compressed_buf->buffer().size(),
-        compressed_buf->offset(),
-        compressed_buf->isPadded() ? BufferPadding::Padded : BufferPadding::Unpadded);
+    setWorkingBuffer(compressed_buf->buffer(), compressed_buf->offset());
     return true;
 }
 

@@ -44,9 +44,9 @@ public:
     ReadBuffer(const ReadBuffer &) = delete;
 
     // FIXME: behavior differs greately from `BufferBase::set()` and it's very confusing.
-    void set(Position ptr, size_t size, BufferPadding padding = BufferPadding::Unpadded)
+    void set(Position ptr, size_t size)
     {
-        BufferBase::set(ptr, size, 0, padding);
+        BufferBase::set(ptr, size, 0);
         working_buffer.resize(0);
     }
 
@@ -245,6 +245,13 @@ public:
     virtual void setRequestMap(ByteRangeSet /* ranges */) {}
 
 protected:
+    template <PaddedBufferStorage Storage>
+    void setPaddedStorage(const Storage & storage, size_t storage_offset, size_t size)
+    {
+        BufferBase::setPaddedStorage(storage, storage_offset, size, 0);
+        working_buffer.resize(0);
+    }
+
     /// The number of bytes to ignore from the initial position of `working_buffer`
     /// buffer. Apparently this is an additional out-parameter for nextImpl(),
     /// not a real field.

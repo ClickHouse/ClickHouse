@@ -31,7 +31,7 @@ public:
 
     using BufferBase::set;
     using BufferBase::position;
-    void set(Position ptr, size_t size, BufferPadding padding = BufferPadding::Unpadded) { BufferBase::set(ptr, size, 0, padding); }
+    void set(Position ptr, size_t size) { BufferBase::set(ptr, size, 0); }
 
     /** write the data in the buffer (from the beginning of the buffer to the current position);
       * set the position to the beginning; throw an exception, if something is wrong.
@@ -154,6 +154,12 @@ public:
 
 protected:
     WriteBuffer(Position ptr, size_t size) : BufferBase(ptr, size, 0) {}
+
+    template <PaddedBufferStorage Storage>
+    void setPaddedStorage(const Storage & storage, size_t storage_offset, size_t size)
+    {
+        BufferBase::setPaddedStorage(storage, storage_offset, size, 0);
+    }
 
     virtual void finalizeImpl() { next(); }
     virtual void cancelImpl() noexcept { }

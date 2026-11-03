@@ -78,8 +78,7 @@ bool HTTPChunkedReadBuffer::nextImpl()
     if (in->available() >= chunk_size)
     {
         /// Zero-copy read from input.
-        working_buffer
-            = WorkingBuffer(in->position(), in->position() + chunk_size, in->isPadded() ? BufferPadding::Padded : BufferPadding::Unpadded);
+        working_buffer = in->buffer().subrange(in->position(), in->position() + chunk_size);
         in->position() += chunk_size;
     }
     else
@@ -87,7 +86,7 @@ bool HTTPChunkedReadBuffer::nextImpl()
         /// Chunk is not completely in buffer, copy it to scratch space.
         memory.resize(chunk_size);
         in->readStrict(memory.data(), chunk_size);
-        working_buffer = WorkingBuffer(memory.data(), memory.data() + chunk_size, BufferPadding::Padded);
+        working_buffer = WorkingBuffer::fromPaddedStorage(memory, 0, chunk_size);
     }
 
     /// Avoid leaving only the current chunk footer buffered. Otherwise a readiness check would see the footer

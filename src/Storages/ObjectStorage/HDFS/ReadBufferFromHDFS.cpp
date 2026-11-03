@@ -272,11 +272,7 @@ bool ReadBufferFromHDFS::nextImpl()
 
         if (result)
         {
-            BufferBase::set(
-                impl->buffer().begin(),
-                impl->buffer().size(),
-                impl->offset(),
-                impl->isPadded() ? BufferPadding::Padded : BufferPadding::Unpadded); /// use the buffer returned by `impl`
+            setWorkingBuffer(impl->buffer(), impl->offset()); /// use the buffer returned by `impl`
             total_bytes_read.fetch_add(working_buffer.size(), std::memory_order_relaxed);
         }
 

@@ -187,7 +187,7 @@ bool SnappyFramedReadBuffer::nextImpl()
             if (uncompressed_length == 0)
                 continue;
 
-            working_buffer = WorkingBuffer(decompress_buffer.data(), decompress_buffer.data() + uncompressed_length, BufferPadding::Padded);
+            working_buffer = WorkingBuffer::fromPaddedStorage(decompress_buffer, 0, uncompressed_length);
             return true;
         }
 
@@ -225,7 +225,7 @@ bool SnappyFramedReadBuffer::nextImpl()
             if (payload_size == 0)
                 continue;
 
-            working_buffer = WorkingBuffer(decompress_buffer.data(), decompress_buffer.data() + payload_size, BufferPadding::Padded);
+            working_buffer = WorkingBuffer::fromPaddedStorage(decompress_buffer, 0, payload_size);
             return true;
         }
 
