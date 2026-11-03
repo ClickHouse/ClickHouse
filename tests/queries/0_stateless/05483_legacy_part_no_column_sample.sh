@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
-# no-fasttest: builds two wide parts and runs four `clickhouse local` instances over them.
+# no-fasttest: builds 120-column wide parts and runs eight `clickhouse local` instances over them.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -8,81 +8,85 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -eu
 
-# A part written before `columns_substreams.txt` existed has to have its streams enumerated per
-# column, and that enumeration excludes the dynamic streams. Taking a column sample for it is work
-# whose result is dropped, and only a type with dynamic subcolumns pays it - `Map` always does,
-# `String` never - so the two arms below differ in exactly that and in nothing else.
+# A part written before `columns_substreams.txt` existed has its streams enumerated per column, and
+# that enumeration excludes the dynamic streams. Taking a column sample for it is work whose result
+# is dropped, and only a type with dynamic subcolumns pays it - `Map` always does, `String` never -
+# so the two arms differ in exactly that and in nothing else.
 #
-# Asserted by counting opened files rather than by succeeding: the check passes either way, so a
+# Asserted by counting opened files, not by succeeding: the check passes either way, so a
 # success-only test cannot tell the sample from its absence. The part is made legacy by removing
-# that one file, which is not in `checksums.txt` and so leaves the part valid.
+# that one file, which carries no checksum and so leaves the part valid.
+#
+# `CHECK TABLE` and `BACKUP` get a directory each. A backup leaves system tables behind in the one
+# it runs in, which moves the counts of anything measured there afterwards.
 
-workdir="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
-rm -rf "${workdir}"
-mkdir -p "${workdir}/db" "${workdir}/backups"
-
-cat > "${workdir}/config.xml" <<EOF
-<clickhouse>
-    <backups>
-        <allowed_path>${workdir}/backups</allowed_path>
-    </backups>
-</clickhouse>
-EOF
-
-local_query() {
-    ${CLICKHOUSE_LOCAL} --path "${workdir}/db" --config-file "${workdir}/config.xml" \
-        --print-profile-events --query "$1" 2>&1
-}
-
-# Counts the files opened by one query. A sample is taken per column, so the arms are compared by
-# their difference, not against a constant.
-opened_files() {
-    local_query "$1" | sed -n 's/.*\] FileOpen: \([0-9]*\) .*/\1/p' | tail -1
-}
+root="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
+rm -rf "${root}"
 
 columns_map=""; columns_str=""; values_map=""; values_str=""
-for i in $(seq 0 39); do
+for i in $(seq 0 119); do
     columns_map="${columns_map:+${columns_map}, }c${i} Map(String, String)"
     columns_str="${columns_str:+${columns_str}, }c${i} String"
     values_map="${values_map:+${values_map}, }map('k', toString(number))"
     values_str="${values_str:+${values_str}, }toString(number)"
 done
 
-local_query "
-    CREATE TABLE t_map (id UInt64, ${columns_map}) ENGINE = MergeTree ORDER BY id
-        SETTINGS min_bytes_for_wide_part = 0, index_granularity = 64;
-    CREATE TABLE t_str (id UInt64, ${columns_str}) ENGINE = MergeTree ORDER BY id
-        SETTINGS min_bytes_for_wide_part = 0, index_granularity = 64;
-    INSERT INTO t_map SELECT number, ${values_map} FROM numbers(20000);
-    INSERT INTO t_str SELECT number, ${values_str} FROM numbers(20000);
-" > /dev/null
+# Files opened by one query, bracketed inside the process that runs it: `FileOpen` counts the whole
+# process, and what a `clickhouse local` opens to start differs between runs by enough to swamp this.
+opened_files() {
+    local dir=$1 query=$2 out
+    out=$(${CLICKHOUSE_LOCAL} --path "${dir}/db" --config-file "${dir}/config.xml" --multiquery --query "
+        SELECT value FROM system.events WHERE event = 'FileOpen';
+        ${query} FORMAT Null;
+        SELECT value FROM system.events WHERE event = 'FileOpen';" 2>/dev/null)
+    echo $(( $(echo "${out}" | sed -n 2p) - $(echo "${out}" | sed -n 1p) ))
+}
 
-check_map_before=$(opened_files "CHECK TABLE t_map SETTINGS check_query_single_value_result = 1")
-check_str_before=$(opened_files "CHECK TABLE t_str SETTINGS check_query_single_value_result = 1")
-backup_map_before=$(opened_files "BACKUP TABLE t_map TO File('m_before') SETTINGS check_parts = 1")
-backup_str_before=$(opened_files "BACKUP TABLE t_str TO File('s_before') SETTINGS check_parts = 1")
+setup() {
+    local dir=$1
+    mkdir -p "${dir}/db" "${dir}/backups"
+    cat > "${dir}/config.xml" <<EOF
+<clickhouse>
+    <backups>
+        <allowed_path>${dir}/backups</allowed_path>
+    </backups>
+</clickhouse>
+EOF
+    ${CLICKHOUSE_LOCAL} --path "${dir}/db" --config-file "${dir}/config.xml" --multiquery --query "
+        CREATE TABLE t_map (id UInt64, ${columns_map}) ENGINE = MergeTree ORDER BY id
+            SETTINGS min_bytes_for_wide_part = 0, index_granularity = 64;
+        CREATE TABLE t_str (id UInt64, ${columns_str}) ENGINE = MergeTree ORDER BY id
+            SETTINGS min_bytes_for_wide_part = 0, index_granularity = 64;
+        INSERT INTO t_map SELECT number, ${values_map} FROM numbers(8000);
+        INSERT INTO t_str SELECT number, ${values_str} FROM numbers(8000);" > /dev/null
+}
 
-# Make both parts legacy. `columns_substreams.txt` carries no checksum, so the part stays valid.
-find "${workdir}/db/store" -name 'columns_substreams.txt' -delete
-
-check_map_after=$(opened_files "CHECK TABLE t_map SETTINGS check_query_single_value_result = 1")
-check_str_after=$(opened_files "CHECK TABLE t_str SETTINGS check_query_single_value_result = 1")
-backup_map_after=$(opened_files "BACKUP TABLE t_map TO File('m_after') SETTINGS check_parts = 1")
-backup_str_after=$(opened_files "BACKUP TABLE t_str TO File('s_after') SETTINGS check_parts = 1")
-
-# What the fallback costs each arm. Without the fix the `Map` arm opens about five files per column
-# more than it did, and the `String` arm opens none: the bound is one per column, well inside that.
-report() {
-    local name=$1 map_before=$2 map_after=$3 str_before=$4 str_after=$5
-    local excess=$(( (map_after - map_before) - (str_after - str_before) ))
-    if [[ "${excess}" -lt 40 ]]; then
+# Without the fix the `Map` arm opens five files per column more than it did and the `String` arm
+# opens none more, so the two differ by 600 of them here; with it they differ by none. The bound is
+# set well above zero rather than near it: the counts come from four processes, and one of them
+# occasionally reads a couple of hundred files fewer than its fellows.
+measure() {
+    local name=$1 dir=$2 query_map=$3 query_str=$4 query_map2=$5 query_str2=$6
+    setup "${dir}"
+    local mb sb ma sa
+    mb=$(opened_files "${dir}" "${query_map}")
+    sb=$(opened_files "${dir}" "${query_str}")
+    # `columns_substreams.txt` carries no checksum, so the part stays valid without it.
+    find "${dir}/db/store" -name 'columns_substreams.txt' -delete
+    ma=$(opened_files "${dir}" "${query_map2}")
+    sa=$(opened_files "${dir}" "${query_str2}")
+    local excess=$(( (ma - mb) - (sa - sb) ))
+    if [[ "${excess}" -lt 300 ]]; then
         echo -e "${name}\t1"
     else
-        echo -e "${name}\t0 (opened ${excess} files for 40 Map columns)"
+        echo -e "${name}\t0 (opened ${excess} files for 120 Map columns)"
     fi
 }
 
-report "check table opens no sample" "${check_map_before}" "${check_map_after}" "${check_str_before}" "${check_str_after}"
-report "backup opens no sample" "${backup_map_before}" "${backup_map_after}" "${backup_str_before}" "${backup_str_after}"
+measure "check table opens no sample" "${root}/check" \
+    "CHECK TABLE t_map" "CHECK TABLE t_str" "CHECK TABLE t_map" "CHECK TABLE t_str"
+measure "backup opens no sample" "${root}/backup" \
+    "BACKUP TABLE t_map TO File('mb')" "BACKUP TABLE t_str TO File('sb')" \
+    "BACKUP TABLE t_map TO File('ma')" "BACKUP TABLE t_str TO File('sa')"
 
-rm -rf "${workdir}"
+rm -rf "${root}"
