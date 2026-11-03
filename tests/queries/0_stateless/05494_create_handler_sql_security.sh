@@ -214,7 +214,14 @@ handler_query "h16_${DB}" url
 echo "--- 17. a Distributed table"
 as_default "CREATE HANDLER h17_${DB} URL '/${DB}/h17' DEFINER = ${U_DEF} SQL SECURITY DEFINER AS SELECT * FROM ${DB}.dist ORDER BY id SETTINGS prefer_localhost_replica = 0"
 request -u "${U_CALLER}:" "${BASE}/${DB}/h17?query_id=q17_${DB}"
-$CLICKHOUSE_CLIENT -q "
-SYSTEM FLUSH LOGS query_log;
-SELECT count() > 0, replaceAll(any(initial_user), '${DB}', 'DB') FROM system.query_log
-WHERE initial_query_id = 'q17_${DB}' AND NOT is_initial_query AND type = 'QueryFinish' AND event_date >= yesterday()"
+# The query log entry can be written after the HTTP response is sent.
+for _ in {1..60}; do
+    res=$($CLICKHOUSE_CLIENT -q "
+    SYSTEM FLUSH LOGS query_log;
+    SELECT count() > 0, replaceAll(any(initial_user), '${DB}', 'DB') FROM system.query_log
+    WHERE initial_query_id = 'q17_${DB}' AND NOT is_initial_query AND type = 'QueryFinish' AND event_date >= yesterday()
+        AND has(databases, currentDatabase())")
+    [[ "$res" == 1* ]] && break
+    sleep 0.5
+done
+echo "$res"

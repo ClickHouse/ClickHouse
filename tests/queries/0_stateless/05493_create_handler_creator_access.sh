@@ -90,7 +90,7 @@ $CLICKHOUSE_CLIENT -q "SELECT count() FROM ${DB}.t"
 
 echo "--- 6. statements that are not SELECT"
 reason "$U" "CREATE HANDLER h6a_${DB} URL '/${DB}/h6a' METHODS (POST) AS GRANT SELECT ON ${DB}.t TO ${U}"
-reason "$U" "CREATE HANDLER h6b_${DB} URL '/${DB}/h6b' METHODS (POST) AS SYSTEM FLUSH LOGS"
+reason "$U" "CREATE HANDLER h6b_${DB} URL '/${DB}/h6b' METHODS (POST) AS SYSTEM FLUSH LOGS query_log"
 reason "$U" "CREATE HANDLER h6c_${DB} URL '/${DB}/h6c' METHODS (POST) AS EXECUTE AS ${U} SELECT 1"
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.handlers WHERE name LIKE 'h6%' AND endsWith(name, '_${DB}')"
 
@@ -121,12 +121,12 @@ handler_query "h10_${DB}" url
 
 echo "--- 11. a user with full access is not restricted, and the query is stored as is"
 as_default "CREATE HANDLER h11a_${DB} URL '/${DB}/h11a' METHODS (POST) AS GRANT SELECT ON ${DB}.t TO ${U}"
-as_default "CREATE HANDLER h11b_${DB} URL '/${DB}/h11b' METHODS (POST) AS SYSTEM FLUSH LOGS"
+as_default "CREATE HANDLER h11b_${DB} URL '/${DB}/h11b' METHODS (POST) AS SYSTEM FLUSH LOGS query_log"
 as_default "CREATE HANDLER h11c_${DB} URL '/${DB}/h11c' AS SELECT * FROM t2"
 handler_query "h11c_${DB}" create_query
 $CLICKHOUSE_CLIENT -q "CREATE USER ${U_ALL} NOT IDENTIFIED; GRANT ALL ON *.* TO ${U_ALL}"
 echo "ALL without GRANT OPTION:"
-as_user "$U_ALL" "CREATE HANDLER h11d_${DB} URL '/${DB}/h11d' METHODS (POST) AS SYSTEM FLUSH LOGS"
+as_user "$U_ALL" "CREATE HANDLER h11d_${DB} URL '/${DB}/h11d' METHODS (POST) AS SYSTEM FLUSH LOGS query_log"
 as_user "$U_ALL" "CREATE HANDLER h11e_${DB} URL '/${DB}/h11e' AS SELECT * FROM ${DB}.t2"
 
 echo "--- 12. the names are qualified with the database of the creator"
