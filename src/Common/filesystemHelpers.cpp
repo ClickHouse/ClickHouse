@@ -360,6 +360,23 @@ Int64 getINodeNumberFromPath(const String & path)
     return file_stat.st_ino;
 }
 
+String computeFileCacheVersionToken(const PlatformFileVersion & version)
+{
+    return fmt::format(
+        "{}.{:09}_{}_{}_{}",
+        version.mtime_sec,
+        version.mtime_nsec,
+        version.device_id,
+        version.file_id,
+        version.size);
+}
+
+bool isFileCacheVersionTokenSettled(Int64 mtime_sec)
+{
+    static constexpr Int64 file_version_settle_seconds = 3;
+    return mtime_sec + file_version_settle_seconds <= static_cast<Int64>(time(nullptr));
+}
+
 std::optional<size_t> tryGetSizeFromFilePath(const String & path)
 {
     std::error_code ec;

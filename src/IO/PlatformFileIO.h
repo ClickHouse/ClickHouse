@@ -110,6 +110,7 @@ struct PlatformFileVersion
     UInt64 device_id = 0; /// `st_dev`; the volume serial number on Windows
     UInt64 file_id = 0; /// `st_ino`; the NTFS file index on Windows
     UInt64 size = 0;
+    bool is_regular_file = false; /// `S_ISREG(st_mode)`; not a directory on Windows
 };
 
 /// Fills `out` for the file at a UTF-8 `path` (following symlinks, as `stat` does). Reports

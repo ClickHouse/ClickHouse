@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <sys/stat.h>
 #if defined(OS_WINDOWS)
 /// Windows has no `statvfs`. Only these six fields are read anywhere in the codebase, and
 /// `GetDiskFreeSpaceEx` supplies the ones that describe blocks; see `getStatVFS`.
@@ -109,6 +110,18 @@ catch (const fs::filesystem_error & e)
 /// Get inode number for a file path.
 /// Will not work correctly if filesystem does not support inodes.
 Int64 getINodeNumberFromPath(const String & path);
+
+struct PlatformFileVersion;
+
+/// Version token of a local file: modification time with nanoseconds, device, file identity and size.
+/// Built from `PlatformFileVersion` rather than `stat`, because on Windows the CRT's `stat` carries
+/// whole seconds and reports `st_ino` as zero - which would collapse the token for exactly the
+/// same-size in-place rewrite it exists to distinguish.
+String computeFileCacheVersionToken(const PlatformFileVersion & version);
+
+/// Whether the last modification (`mtime_sec`, in whole seconds) is far enough in the past that any
+/// later write changes the token.
+bool isFileCacheVersionTokenSettled(Int64 mtime_sec);
 
 }
 

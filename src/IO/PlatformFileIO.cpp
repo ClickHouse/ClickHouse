@@ -360,6 +360,7 @@ int fileVersionFromHandle(HANDLE handle, PlatformFileVersion & out)
     out.device_id = info.dwVolumeSerialNumber;
     out.file_id = (static_cast<UInt64>(info.nFileIndexHigh) << 32) | info.nFileIndexLow;
     out.size = (static_cast<UInt64>(info.nFileSizeHigh) << 32) | info.nFileSizeLow;
+    out.is_regular_file = !(info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY);
     return 0;
 }
 
@@ -536,6 +537,7 @@ void fileVersionFromStat(const struct stat & st, PlatformFileVersion & out)
     out.device_id = st.st_dev;
     out.file_id = st.st_ino;
     out.size = st.st_size;
+    out.is_regular_file = S_ISREG(st.st_mode);
 }
 
 }
