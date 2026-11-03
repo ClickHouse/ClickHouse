@@ -248,7 +248,7 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
 /// Push LIMIT into GROUP BY via bounded heap when GROUP BY matches or is a prefix of ORDER BY keys
 size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
 
-/// In a secondary query, the heap of `distributed_group_by_top_k` on the partial aggregation.
+/// On a parallel replicas follower, the heap of `distributed_group_by_top_k` on the partial aggregation.
 void applyGroupByTopKOfInitiator(
     QueryPlan::Node & root, QueryPlan::Nodes & nodes, size_t limit, const Optimization::ExtraSettings & settings);
 

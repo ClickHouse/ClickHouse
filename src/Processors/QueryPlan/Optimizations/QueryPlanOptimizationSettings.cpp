@@ -506,7 +506,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)
             && from->getSettingsRef()[Setting::parallel_replicas_support_projection])
 {
     skip_forced_projection_check = from->skipsForcedProjectionCheck();
-    if (from->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+    if (from->canUseParallelReplicasOnFollower())
         distributed_group_by_top_k = from->getSettingsRef()[Setting::distributed_group_by_top_k];
     distributed_plan_local_object = from->getDistributedPlanLocalObject();
     max_parallel_replicas = from->getSettingsRef()[Setting::max_parallel_replicas];
