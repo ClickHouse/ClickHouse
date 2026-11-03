@@ -954,6 +954,7 @@ void StorageObjectStorageSource::lazyInitialize()
     if (reader)
     {
         ++total_files_read;
+        addTotalRowsApproxFromMetadata(*reader.getObjectInfo());
         reader_future = createReaderAsync();
     }
     initialized = true;
@@ -1234,9 +1235,10 @@ Chunk StorageObjectStorageSource::generate()
         /// A file the filter was not applied to (see `createReader`; the reader also declines it for a
         /// file that does not store the sort column) writes them as without TopN - unless the entries of the
         /// TopK key made it skip row groups that the predicate alone would not, or
-        /// `use_query_condition_cache_for_top_k` is off, which makes a TopN read not populate the cache at all.
+        /// `use_query_condition_cache_for_top_k` is off, which makes a TopN read (unless statistics-only) not populate the cache at all.
         else if (format_filter_info->condition_hash && !reader.skipped_row_groups_by_top_k_entry
-            && !(format_filter_info->top_k_filter && !read_context->getSettingsRef()[Setting::use_query_condition_cache_for_top_k])
+            && !(format_filter_info->top_k_filter && format_filter_info->top_k_filter->filter_rows
+                && !read_context->getSettingsRef()[Setting::use_query_condition_cache_for_top_k])
             && !(reader.getInputFormat() && reader.getInputFormat()->isTopKFilterApplied()))
         {
             const auto & object_info = reader.getObjectInfo();
@@ -1342,6 +1344,7 @@ Chunk StorageObjectStorageSource::generate()
             break;
 
         ++total_files_read;
+        addTotalRowsApproxFromMetadata(*reader.getObjectInfo());
 
         /// Even if task is finished the thread may be not freed in pool.
         /// So wait until it will be freed before scheduling a new task.
@@ -1352,12 +1355,30 @@ Chunk StorageObjectStorageSource::generate()
     return {};
 }
 
+void StorageObjectStorageSource::addTotalRowsApproxFromMetadata(const ObjectInfo & object_info)
+{
+    /// A file split into buckets is read by several readers, so its number of rows would be counted
+    /// once per bucket. Buckets which only leave out the row groups the query condition cache proved
+    /// to have no match are read by a single reader. A lazily materialized read only reads the rows
+    /// already counted by the main read.
+    if (object_info.file_bucket_info && !object_info.file_bucket_info_from_query_condition_cache)
+        return;
+    if (object_info.rows_to_read)
+        return;
+
+    if (auto num_rows = object_info.getNumRowsHint())
+        addTotalRowsApprox(*num_rows);
+}
+
 void StorageObjectStorageSource::addNumRowsToCache(const ObjectInfo & object_info, size_t num_rows)
 {
     /// The cache key does not include the compression method. Under an explicit `compression_method` the
     /// same object can decode differently (or fail) through another definition with a different codec,
     /// so only row counts read with the codec derived from the path are cached.
     if (!isCompressionMethodHintAuto(configuration->compression_method))
+        return;
+
+    if (!canUseNumRowsFromSchemaCache(format_settings, read_context))
         return;
 
     const auto cache_key = getKeyForSchemaCache(
@@ -1368,7 +1389,7 @@ void StorageObjectStorageSource::addNumRowsToCache(const ObjectInfo & object_inf
     schema_cache.addNumRows(cache_key, num_rows);
 }
 
-StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReader()
+StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReader(bool prefetch_input_format)
 {
     return createReader(
         0,
@@ -1387,7 +1408,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         parser_shared_resources,
         format_filter_info,
         need_only_count,
-        top_k_query_condition_cache_key);
+        top_k_query_condition_cache_key,
+        prefetch_input_format);
 }
 
 StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReader(
@@ -1407,7 +1429,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     FormatParserSharedResourcesPtr parser_shared_resources,
     FormatFilterInfoPtr format_filter_info,
     bool need_only_count,
-    ObjectStorageTopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key)
+    ObjectStorageTopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key,
+    bool prefetch_input_format)
 {
     ObjectInfoPtr object_info;
     bool use_top_k_query_condition_cache_key = false;
@@ -1455,6 +1478,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     /// setting is on), a file also consults the entries a previous run of the same TopN over the same
     /// snapshot has written. They tell which row groups hold no row of the result, which holds whether
     /// or not this file applies the filter. A row group may be skipped iff either verdict excludes it.
+    /// A statistics-only TopN read (`filter_rows = false`) is a plain read for the cache.
     const bool use_query_condition_cache_for_top_k = context_->getSettingsRef()[Setting::use_query_condition_cache_for_top_k];
     QueryConditionCachePtr query_condition_cache;
     if ((format_filter_info && format_filter_info->condition_hash) || top_k_query_condition_cache_key)
@@ -1515,7 +1539,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         skipped_row_groups_by_top_k_entry = false;
 
         const bool consult_plain_condition = format_filter_info && format_filter_info->condition_hash
-            && (use_query_condition_cache_for_top_k || !format_filter_info->top_k_filter);
+            && (use_query_condition_cache_for_top_k || !format_filter_info->top_k_filter
+                || !format_filter_info->top_k_filter->filter_rows);
 
         if (query_condition_cache && !object_info->file_bucket_info && (consult_plain_condition || use_top_k_query_condition_cache_key))
         {
@@ -1617,6 +1642,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         /// explicit `compression_method` (including a misspelled one on a table loaded by `ATTACH`, where it is
         /// not rejected) always reads the object as the actual read would.
         if (!isCompressionMethodHintAuto(configuration->compression_method))
+            return std::nullopt;
+
+        if (!canUseNumRowsFromSchemaCache(format_settings, context_))
             return std::nullopt;
 
         const auto cache_key = getKeyForSchemaCache(
@@ -2063,6 +2091,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         if (effective_need_only_count)
             input_format->needOnlyCount();
 
+        if (prefetch_input_format)
+            input_format->prefetch();
+
         builder.init(Pipe(input_format));
 
         /// Restore the planned header: extract the directly read subcolumns from the storage columns
@@ -2333,7 +2364,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
 std::future<StorageObjectStorageSource::ReaderHolder> StorageObjectStorageSource::createReaderAsync()
 {
-    return create_reader_scheduler([=, this] { return createReader(); }, Priority{});
+    return create_reader_scheduler([=, this] { return createReader(/* prefetch_input_format */ true); }, Priority{});
 }
 
 ObjectMetadata getObjectMetadataForRead(const IObjectStorage & object_storage, const RelativePathWithMetadata & object, bool with_tags)
