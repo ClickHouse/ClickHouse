@@ -258,14 +258,25 @@ namespace
 
         /// Normalize the effective path before checking that it stays under the delegate's root. When the delegate's
         /// path is a local directory, including object storage with local metadata or local objects, canonicalize the
-        /// paths to resolve existing symlink components too. `weakly_canonical` also works when the encrypted disk's
-        /// trailing directories do not exist yet.
-        fs::path delegate_root = fs::path(out_disk->getPath()).lexically_normal();
-        fs::path effective_path = fs::path(out_disk->getPath() + out_path).lexically_normal();
+        /// paths to resolve existing symlink components too. This happens before the lexical normalization, because a
+        /// `..` after a symlink leaves the directory the symlink points to, not the one that holds the symlink.
+        /// `weakly_canonical` also works when the encrypted disk's trailing directories do not exist yet.
+        ///
+        /// The delegate's root is joined with the path as a filesystem path, because the root does not have to end
+        /// with a separator: `metadata_path` of an object storage disk is taken as is.
+        const fs::path raw_delegate_root = fs::path(out_disk->getPath());
+        const fs::path raw_effective_path = raw_delegate_root / out_path;
+        fs::path delegate_root;
+        fs::path effective_path;
         if (out_disk->getDataSourceDescription().isPathLocal())
         {
-            delegate_root = fs::weakly_canonical(delegate_root);
-            effective_path = fs::weakly_canonical(effective_path);
+            delegate_root = fs::weakly_canonical(raw_delegate_root).lexically_normal();
+            effective_path = fs::weakly_canonical(raw_effective_path).lexically_normal();
+        }
+        else
+        {
+            delegate_root = raw_delegate_root.lexically_normal();
+            effective_path = raw_effective_path.lexically_normal();
         }
 
         if (const auto relative_to_root = effective_path.lexically_relative(delegate_root);
@@ -428,7 +439,7 @@ DiskEncrypted::DiskEncrypted(const String & name_, std::unique_ptr<const DiskEnc
     , delegate(settings_->wrapped_disk)
     , encrypted_name(name_)
     , disk_path(settings_->disk_path)
-    , disk_absolute_path(settings_->wrapped_disk->getPath() + settings_->disk_path)
+    , disk_absolute_path((fs::path(settings_->wrapped_disk->getPath()) / settings_->disk_path).string())
     , current_settings(std::move(settings_))
 {
     delegate->createDirectories(disk_path);
@@ -439,7 +450,7 @@ DiskEncrypted::DiskEncrypted(const String & name_, std::unique_ptr<const DiskEnc
     , delegate(settings_->wrapped_disk)
     , encrypted_name(name_)
     , disk_path(settings_->disk_path)
-    , disk_absolute_path(settings_->wrapped_disk->getPath() + settings_->disk_path)
+    , disk_absolute_path((fs::path(settings_->wrapped_disk->getPath()) / settings_->disk_path).string())
     , current_settings(std::move(settings_))
 {
     delegate->createDirectories(disk_path);
@@ -654,7 +665,7 @@ void registerDiskEncrypted(DiskFactory & factory, bool global_skip_access_check)
 
             checkCustomDiskPathIsInsideWrappedDisk(path);
             if (!wrapped_disk->isRemote())
-                checkCustomLocalDiskPath(wrapped_disk->getPath() + path, context);
+                checkCustomLocalDiskPath((fs::path(wrapped_disk->getPath()) / path).string(), context);
         }
 
         DiskPtr disk = std::make_shared<DiskEncrypted>(name, config, config_prefix, map);
