@@ -25,6 +25,7 @@ namespace DataLake
 DB::HTTPHeaderEntry parseAuthHeader(const std::string & auth_header);
 
 /// Percent-encodes every byte of a level outside the RFC 3986 unreserved set and joins the levels with `%1F`.
+/// Throws if the namespace contains the byte 0x1F, whose encoding would be indistinguishable from the separator.
 String encodeNamespaceForURI(const String & namespace_name);
 
 /// Request paths carry the table name verbatim, so it must be spelled as `getTables` lists it:

@@ -2547,7 +2547,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                         "Column '{}': {} is not yet supported by DataLakeCatalog table creation",
                         column.name, toString(column.default_desc.kind));
 
-                if (!column.comment.empty() || column.codec || column.ttl
+                if (!column.comment.empty() || column.codec || !column.subcolumn_codecs.empty() || column.ttl
                     || !column.settings.empty() || column.statistics.hasExplicitStatistics())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Column '{}': COMMENT, CODEC, TTL, STATISTICS, SETTINGS, and PRIMARY KEY "

@@ -36,6 +36,7 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/ProcessList.h>
@@ -131,6 +132,11 @@ extern const int S3_ERROR;
 extern const int TABLE_ALREADY_EXISTS;
 extern const int SUPPORT_IS_DISABLED;
 extern const int FILE_ALREADY_EXISTS;
+}
+
+namespace FailPoints
+{
+extern const char iceberg_create_fail_after_version_hint_write[];
 }
 
 namespace Setting
@@ -1151,6 +1157,13 @@ void IcebergMetadata::createInitial(
         catalog->createNamespaceIfNotExists(namespace_name);
     }
 
+    /// The writes use `If-None-Match: *`, so S3 answers `PreconditionFailed` when the file is already there.
+    auto is_precondition_failed = [](const Exception & e)
+    {
+        return (e.code() == ErrorCodes::S3_ERROR && e.message().contains("PreconditionFailed"))
+            || e.code() == ErrorCodes::FILE_ALREADY_EXISTS;
+    };
+
     if (!catalog_writes_metadata)
     {
         try
@@ -1159,12 +1172,8 @@ void IcebergMetadata::createInitial(
         }
         catch (const Exception & e)
         {
-            /// The write uses `If-None-Match: *`, so S3 answers `PreconditionFailed` when the metadata
-            /// file is already there: leftovers from an earlier drop, or a concurrent creation.
-            const bool precondition_failed
-                = (e.code() == ErrorCodes::S3_ERROR && e.message().contains("PreconditionFailed"))
-                || e.code() == ErrorCodes::FILE_ALREADY_EXISTS;
-            if (if_not_exists && precondition_failed)
+            /// The metadata file is already there: leftovers from an earlier drop, or a concurrent creation.
+            if (if_not_exists && is_precondition_failed(e))
             {
                 if (!catalog)
                     return;
@@ -1175,26 +1184,39 @@ void IcebergMetadata::createInitial(
     }
 
     String filename_version_hint;
-    try
+    if (!catalog_writes_metadata
+        && (*configuration_ptr->getDataLakeSettings())[DataLakeStorageSetting::iceberg_use_version_hint].value)
     {
-        if (!catalog_writes_metadata
-            && (*configuration_ptr->getDataLakeSettings())[DataLakeStorageSetting::iceberg_use_version_hint].value)
-        {
-            auto version_hint_path = configuration_ptr->getRawPath().path + "metadata/version-hint.text";
-            writeMessageToFile("1", version_hint_path, object_storage, local_context, "*", "");
-            filename_version_hint = version_hint_path;
-        }
-    }
-    catch (...)
-    {
-        if (!catalog_writes_metadata)
+        filename_version_hint = configuration_ptr->getRawPath().path + "metadata/version-hint.text";
+
+        auto remove_created_files = [&](bool remove_version_hint)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__, "Removing the files of the Iceberg table that failed to be created");
             object_storage->removeObjectIfExists(StoredObject(filename));
-            if (!filename_version_hint.empty())
+            if (remove_version_hint)
                 object_storage->removeObjectIfExists(StoredObject(filename_version_hint));
+        };
+
+        try
+        {
+            writeMessageToFile("1", filename_version_hint, object_storage, local_context, "*", "");
+            fiu_do_on(FailPoints::iceberg_create_fail_after_version_hint_write,
+            {
+                throw Exception(ErrorCodes::S3_ERROR, "Failpoint: the check after the upload of the version hint failed");
+            });
         }
-        throw;
+        catch (const Exception & e)
+        {
+            /// A rejected `If-None-Match: *` leaves the hint of another writer in place. Any other failure
+            /// may come after the hint was stored, e.g. from the checks of `s3_check_objects_after_upload`.
+            remove_created_files(!is_precondition_failed(e));
+            throw;
+        }
+        catch (...)
+        {
+            remove_created_files(true);
+            throw;
+        }
     }
 
     if (catalog)

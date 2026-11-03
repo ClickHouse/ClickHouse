@@ -1900,6 +1900,33 @@ def test_drop_table_rejects_non_canonical_name(started_cluster):
         node.query(f"DROP USER IF EXISTS {user}")
 
 
+def test_drop_table_rejects_unit_separator_in_namespace(started_cluster):
+    # A literal 0x1F encodes like the level separator, so a grant on `a<0x1F>b.<table>` must not drop `a.b.<table>`.
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_drop_unit_separator_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    namespace = f"{test_ref}_namespace.sub"
+    user = f"user_{uuid.uuid4().hex}"
+
+    catalog = load_catalog_impl(started_cluster)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_table(started_cluster, node, namespace, table_name, "(x String)")
+
+    node.query(f"CREATE USER {user}")
+    try:
+        alias = namespace.replace(".", "\\x1F")
+        name = f"{CATALOG_NAME}.`{alias}.{table_name}`"
+        node.query(f"GRANT DROP TABLE ON {name} TO {user}")
+        for if_exists in ["", "IF EXISTS "]:
+            error = node.query_and_get_error(f"DROP TABLE {if_exists}{name}", user=user)
+            assert "BAD_ARGUMENTS" in error, error
+        assert catalog.table_exists(f"{namespace}.{table_name}")
+    finally:
+        node.query(f"DROP USER IF EXISTS {user}")
+
+
 def test_drop_table_purge(started_cluster):
     # DROP asks the catalog to purge the table's files only with `iceberg_delete_data_on_drop`,
     # which node2's default profile enables.
@@ -2915,6 +2942,12 @@ def test_create_table_unsupported_clauses(started_cluster):
             settings={"allow_database_iceberg": 1},
         )
         assert "COMMENT, CODEC, TTL, STATISTICS, SETTINGS, and PRIMARY KEY are not supported" in err
+
+    err = node.query_and_get_error(
+        f"CREATE TABLE {CATALOG_NAME}.`ns.unsupp_col` (id Int64, p Tuple(a Int64), CODEC p.a (ZSTD(3))) ORDER BY id",
+        settings={"allow_database_iceberg": 1, "enable_subcolumn_codecs": 1},
+    )
+    assert "COMMENT, CODEC, TTL, STATISTICS, SETTINGS, and PRIMARY KEY are not supported" in err
 
     for col_clause in [
         "(id Int64, d Int64 DEFAULT 1)",

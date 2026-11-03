@@ -121,6 +121,12 @@ DB::HTTPHeaderEntry parseAuthHeader(const std::string & auth_header)
 
 String encodeNamespaceForURI(const String & namespace_name)
 {
+    if (namespace_name.contains('\x1F'))
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS,
+            "Namespace `{}` contains the byte 0x1F, which the catalog uses to separate namespace levels",
+            namespace_name);
+
     String encoded;
     for (const auto & ch : namespace_name)
     {
