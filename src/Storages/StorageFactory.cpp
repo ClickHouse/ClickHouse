@@ -1,5 +1,7 @@
 #include <Storages/StorageFactory.h>
+#include <Access/Common/AccessRightsElement.h>
 #include <Storages/ConstraintsDescription.h>
+#include <Storages/IStorage.h>
 #include <Storages/KeyDescription.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -10,6 +12,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Common/Exception.h>
+#include <Common/SettingsChanges.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocMergeTreeArena.h>
 #include <Common/StringUtils.h>
@@ -34,6 +37,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_STORAGE;
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
+    extern const int NOT_IMPLEMENTED;
     extern const int ENGINE_REQUIRED;
     extern const int FUNCTION_CANNOT_HAVE_PARAMETERS;
     extern const int BAD_ARGUMENTS;
@@ -310,6 +314,13 @@ StoragePtr StorageFactory::get(
         ScopedJemallocThreadArena table_metadata_arena_scope(JemallocMergeTreeArena::getArenaIndex());
         res = storages.at(name).creator_fn(arguments);
     }
+
+    /// A replayed definition was checked when the table was created.
+    if (!isReplayedTableDefinition(mode, query, local_context))
+        for (const auto & column : columns)
+            if (!column.subcolumn_codecs.empty() && !res->supportsSubcolumnCodecs())
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Engine {} doesn't support codecs for subcolumns", res->getName());
+
     if (!empty_engine_args.empty())
     {
         /// Storage creator modified empty arguments list, so we should modify the query
@@ -349,6 +360,39 @@ const StorageFactory::StorageFeatures & StorageFactory::getStorageFeatures(const
     if (it == storages.end())
         throw Exception(ErrorCodes::UNKNOWN_STORAGE, "Unknown table engine {}", storage_name);
     return it->second.features;
+}
+
+AccessRightsElements StorageFactory::getExportAccess(const ASTCreateQuery & create) const
+{
+    AccessRightsElements res;
+    auto add = [&](const ASTStorage & storage)
+    {
+        if (!storage.engine || !storage.settings)
+            return;
+        auto it = storages.find(storage.engine->name);
+        if (it != storages.end() && it->second.features.get_export_access_fn)
+            res.append_range(it->second.features.get_export_access_fn(storage.settings->changes));
+    };
+
+    if (create.storage)
+        add(*create.storage);
+    if (create.targets)
+    {
+        for (const ASTStorage * inner_engine : create.targets->getInnerEngines())
+            add(*inner_engine);
+    }
+    return res;
+}
+
+AccessRightsElements StorageFactory::getExportAccessOfAnyEngine(const SettingsChanges & changes) const
+{
+    AccessRightsElements res;
+    for (const auto & [_, creator] : storages)
+    {
+        if (creator.features.get_export_access_fn)
+            res.append_range(creator.features.get_export_access_fn(changes));
+    }
+    return res;
 }
 
 void throwIfUnreplicatedTableDataNotAllowed(const StorageFactory::Arguments & args)

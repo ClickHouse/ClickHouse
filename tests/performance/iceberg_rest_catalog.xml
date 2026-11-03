@@ -1,0 +1,37 @@
+<!--
+    Iceberg REST catalog path (`DataLakeCatalog`) against the job-local SeaweedFS catalog (`weed server`, port 8181): one statement
+    lists the namespace, resolves each of 200 tables through the catalog (`loadTable`) and reads its one row. Every run sends the
+    `loadTable` requests again (2000 per run, 10 per table; the setup checks at least 200 on a repeated run by the server's HTTP
+    request count); the Iceberg metadata files and the Parquet footers come from the server caches after the first run.
+    The harness seeds the immutable table bucket `perf-catalog` (namespace `many`, tables `t1`..`t200`, one row each, `id = n`;
+    3.3 MB in 1000 objects), because both servers share one catalog and their parallel setups cannot create the same tables.
+    Dropping the database object leaves the catalog tables in place.
+    Per server and invocation: read-only, nothing written to local disk or to the job-local S3.
+-->
+<test requires_s3="1" requires_s3_catalog="1" run_all_queries="1" max_query_seconds="60">
+<tags><tag>long</tag></tags>
+
+<settings>
+    <max_execution_time>0</max_execution_time>
+    <allow_database_iceberg>1</allow_database_iceberg>
+    <show_data_lake_catalogs_in_system_tables>1</show_data_lake_catalogs_in_system_tables>
+    <iceberg_metadata_log_level>none</iceberg_metadata_log_level>
+</settings>
+
+<create_query>
+    CREATE DATABASE perf_catalog ENGINE = DataLakeCatalog('http://localhost:8181/v1', 'clickhouse', 'clickhouse')
+    SETTINGS catalog_type = 'rest', warehouse = 's3://perf-catalog', storage_endpoint = 'http://localhost:11111/perf-catalog',
+             catalog_credential = 'clickhouse:clickhouse', oauth_server_uri = 'http://localhost:8181/v1/oauth/tokens'
+</create_query>
+<create_query>CREATE TABLE iceberg_rest_catalog_mark (http UInt64) ENGINE = Memory</create_query>
+<fill_query>SELECT throwIf(count() != 200) FROM system.tables WHERE database = 'perf_catalog'</fill_query>
+<fill_query>SELECT throwIf(sum(id) != 20100) FROM merge('perf_catalog', '^many\\.t')</fill_query>
+<fill_query>INSERT INTO iceberg_rest_catalog_mark SELECT sum(value) FROM system.events WHERE event IN ('HTTPConnectionsCreated', 'HTTPConnectionsReused')</fill_query>
+<fill_query>SELECT throwIf(sum(id) != 20100) FROM merge('perf_catalog', '^many\\.t')</fill_query>
+<fill_query>SELECT throwIf(sum(value) - (SELECT http FROM iceberg_rest_catalog_mark) &lt; 200) FROM system.events WHERE event IN ('HTTPConnectionsCreated', 'HTTPConnectionsReused')</fill_query>
+
+<query>SELECT sum(id) FROM merge('perf_catalog', '^many\\.t')</query>
+
+<drop_query>DROP DATABASE IF EXISTS perf_catalog SYNC</drop_query>
+<drop_query>DROP TABLE IF EXISTS iceberg_rest_catalog_mark SYNC</drop_query>
+</test>

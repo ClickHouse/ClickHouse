@@ -11,8 +11,9 @@ class SerializationJSON final : public SerializationObject
 {
 private:
     SerializationJSON(
-        const std::unordered_map<String, DataTypePtr> & typed_paths_types_,
+        const DataTypeObject::TypedPathsMap & typed_paths_types_,
         const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_,
+        const std::unordered_set<String> & shared_typed_paths_,
         const std::unordered_set<String> & paths_to_skip_,
         const std::vector<String> & path_regexps_to_skip_,
         const DataTypePtr & dynamic_type_,
@@ -23,8 +24,9 @@ public:
     bool supportsPooling() const override { return supports_pooling; }
 
     static SerializationPtr create(
-        const std::unordered_map<String, DataTypePtr> & typed_paths_types_,
+        const DataTypeObject::TypedPathsMap & typed_paths_types_,
         const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_,
+        const std::unordered_set<String> & shared_typed_paths_,
         const std::unordered_set<String> & paths_to_skip_,
         const std::vector<String> & path_regexps_to_skip_,
         const DataTypePtr & dynamic_type_,

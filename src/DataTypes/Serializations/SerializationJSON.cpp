@@ -26,14 +26,15 @@ namespace ErrorCodes
 }
 
 SerializationJSON::SerializationJSON(
-    const std::unordered_map<String, DataTypePtr> & typed_paths_types_,
+    const DataTypeObject::TypedPathsMap & typed_paths_types_,
     const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_,
+    const std::unordered_set<String> & shared_typed_paths_,
     const std::unordered_set<String> & paths_to_skip_,
     const std::vector<String> & path_regexps_to_skip_,
     const DataTypePtr & dynamic_type_,
     const SerializationPtr & dynamic_serialization_,
     size_t max_dynamic_paths_)
-    : SerializationObject(typed_paths_types_, typed_paths_serializations_, paths_to_skip_, path_regexps_to_skip_, dynamic_type_, dynamic_serialization_)
+    : SerializationObject(typed_paths_types_, typed_paths_serializations_, shared_typed_paths_, paths_to_skip_, path_regexps_to_skip_, dynamic_type_, dynamic_serialization_)
     , max_dynamic_paths(max_dynamic_paths_)
     , supports_pooling(dynamic_serialization_->supportsPooling()
         && std::ranges::all_of(typed_paths_serializations_, [](const auto & path) { return path.second->supportsPooling(); }))
@@ -41,8 +42,9 @@ SerializationJSON::SerializationJSON(
 }
 
 SerializationPtr SerializationJSON::create(
-    const std::unordered_map<String, DataTypePtr> & typed_paths_types_,
+    const DataTypeObject::TypedPathsMap & typed_paths_types_,
     const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_,
+    const std::unordered_set<String> & shared_typed_paths_,
     const std::unordered_set<String> & paths_to_skip_,
     const std::vector<String> & path_regexps_to_skip_,
     const DataTypePtr & dynamic_type_,
@@ -52,7 +54,7 @@ SerializationPtr SerializationJSON::create(
 {
     auto creator = [&]
     {
-        return new SerializationJSON(typed_paths_types_, typed_paths_serializations_, paths_to_skip_,
+        return new SerializationJSON(typed_paths_types_, typed_paths_serializations_, shared_typed_paths_, paths_to_skip_,
             path_regexps_to_skip_, dynamic_type_, dynamic_serialization_, max_dynamic_paths_);
     };
     if (!dynamic_serialization_->supportsPooling()
@@ -82,6 +84,11 @@ SerializationPtr SerializationJSON::create(
         hash_string(typed_paths_types_.at(path)->getName());
         hash.update(typed_paths_serializations_.at(path)->getHash());
     }
+    sorted_paths.assign(shared_typed_paths_.begin(), shared_typed_paths_.end());
+    std::ranges::sort(sorted_paths);
+    hash.update(sorted_paths.size());
+    for (const auto & path : sorted_paths)
+        hash_string(path);
     sorted_paths.assign(paths_to_skip_.begin(), paths_to_skip_.end());
     std::ranges::sort(sorted_paths);
     hash.update(sorted_paths.size());

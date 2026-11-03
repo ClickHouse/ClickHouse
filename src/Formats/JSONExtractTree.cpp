@@ -763,7 +763,7 @@ public:
     bool insertResultToColumn(
         IColumn & column,
         const typename JSONParser::Element & element,
-        const JSONExtractInsertSettings &,
+        const JSONExtractInsertSettings & insert_settings,
         const FormatSettings & format_settings,
         String & error) const override
     {
@@ -782,7 +782,8 @@ public:
         auto data = element.getString();
         ReadBufferFromMemory buf(data);
         DateType date;
-        if (!tryReadDateText(date, buf, DateLUT::instance(), nullptr, !format_settings.throwOnDateTimeOverflow()) || !buf.eof())
+        const bool saturate = insert_settings.saturate_on_overflow && !format_settings.throwOnDateTimeOverflow();
+        if (!tryReadDateText(date, buf, DateLUT::instance(), nullptr, saturate) || !buf.eof())
         {
             error = fmt::format("cannot parse Date value here: {}", data);
             return false;
@@ -816,12 +817,15 @@ public:
             return true;
         }
 
+        const bool saturate = insert_settings.saturate_on_overflow && !format_settings.throwOnDateTimeOverflow();
         time_t value = 0;
         if (element.isString())
         {
-            if (!tryParse(value, element.getString(), format_settings.date_time_input_format, !format_settings.throwOnDateTimeOverflow()))
+            auto data = element.getString();
+            if (!tryParse(value, data, format_settings.date_time_input_format, saturate)
+                || (!insert_settings.truncate_fractional_seconds && !isWholeSeconds(data, format_settings.date_time_input_format)))
             {
-                error = fmt::format("cannot parse DateTime value here: {}", element.getString());
+                error = fmt::format("cannot parse DateTime value here: {}", data);
                 return false;
             }
         }
@@ -838,7 +842,7 @@ public:
                     return false;
                 }
                 value = element.getInt64();
-                if (format_settings.throwOnDateTimeOverflow() && (value < 0 || value > 0xFFFFFFFF))
+                if (!saturate && (value < 0 || value > 0xFFFFFFFF))
                 {
                     error = fmt::format("value {} is out of bounds of type DateTime", value);
                     return false;
@@ -849,7 +853,7 @@ public:
                 /// Clamp in the unsigned domain before narrowing to time_t,
                 /// because values above INT64_MAX would wrap to negative on cast.
                 UInt64 raw = element.getUInt64();
-                if (format_settings.throwOnDateTimeOverflow() && raw > 0xFFFFFFFF)
+                if (!saturate && raw > 0xFFFFFFFF)
                 {
                     error = fmt::format("value {} is out of bounds of type DateTime", raw);
                     return false;
@@ -866,7 +870,7 @@ public:
             /// exactly can cross the second boundary (`1703363853.9999999` arrives here as `1703363854.0`).
             String str_value = jsonElementToString<JSONParser>(element, format_settings);
             ReadBufferFromMemory buf(str_value);
-            if (!tryReadDateTimeAsNumber(value, buf, !format_settings.throwOnDateTimeOverflow()) || !buf.eof())
+            if (!tryReadDateTimeAsNumber(value, buf, saturate) || !buf.eof())
             {
                 error = fmt::format("cannot read DateTime value from JSON element: {}", str_value);
                 return false;
@@ -903,6 +907,30 @@ public:
         }
 
         return false;
+    }
+
+    /// The DateTime parsers drop fractional seconds, so the text is read again with the maximum precision.
+    bool isWholeSeconds(std::string_view data, FormatSettings::DateTimeInputFormat date_time_input_format) const
+    {
+        constexpr UInt32 max_scale = 9;
+        constexpr Int64 max_scale_multiplier = 1'000'000'000;
+        DateTime64 value;
+        ReadBufferFromMemory buf(data);
+        bool parsed = false;
+        switch (date_time_input_format)
+        {
+            case FormatSettings::DateTimeInputFormat::Basic:
+                parsed = tryReadDateTime64Text(value, max_scale, buf, time_zone);
+                break;
+            case FormatSettings::DateTimeInputFormat::BestEffort:
+                parsed = tryParseDateTime64BestEffort(value, max_scale, buf, time_zone, utc_time_zone);
+                break;
+            case FormatSettings::DateTimeInputFormat::BestEffortUS:
+                parsed = tryParseDateTime64BestEffortUS(value, max_scale, buf, time_zone, utc_time_zone);
+                break;
+        }
+
+        return parsed && buf.eof() && value.value % max_scale_multiplier == 0;
     }
 
     /// Needed for the `best_effort` date/time input formats. Not in `TimezoneMixin`, so that merely naming a
@@ -1901,6 +1929,10 @@ public:
             auto shared_variant_discr = column_dynamic.getSharedVariantDiscriminator();
             auto insert_settings_with_no_type_conversion = insert_settings;
             insert_settings_with_no_type_conversion.allow_type_conversion = false;
+            /// A value that does not fit a variant as is gets its own type instead of being changed to fit.
+            insert_settings_with_no_type_conversion.insert_default_on_invalid_elements_in_complex_types = false;
+            insert_settings_with_no_type_conversion.saturate_on_overflow = false;
+            insert_settings_with_no_type_conversion.truncate_fractional_seconds = false;
 
             /// Check if we already have variants order for this Variant type in cache.
             auto variants_order_it = variants_order_cache.find(variant_info.variant_name);
@@ -2092,7 +2124,7 @@ class ObjectJSONNode : public JSONExtractTreeNode<JSONParser>
 {
 public:
     ObjectJSONNode(
-        const std::unordered_map<String, DataTypePtr> & typed_paths_types_,
+        const DataTypeObject::TypedPathsMap & typed_paths_types_,
         std::unordered_map<String, std::unique_ptr<JSONExtractTreeNode<JSONParser>>> typed_path_nodes_,
         const std::unordered_set<String> & paths_to_skip_,
         const std::vector<String> & path_regexps_to_skip_,
@@ -2265,21 +2297,21 @@ private:
             ///  - throw errors immediately for invalid duplicates (before any data is inserted),
             ///  - handle both orderings of literal+object duplicates in the main loop
             ///    (e.g. {"a":42,"a":{"b":42}} and {"a":{"b":42},"a":42} are both valid).
-            std::unordered_map<std::string_view, std::unordered_set<JSONElementType>> key_element_types;
+            std::unordered_map<std::string_view, KeyTypes> key_element_types;
             for (auto [key, value] : element.getObject())
             {
                 auto value_element_type = getJSONElementType(value);
                 auto & types = key_element_types[key];
 
-                if (types.empty())
+                if (types.acceptedEmpty())
                 {
                     /// First occurrence of this key — just record its type.
-                    types.insert(value_element_type);
+                    types.accept(value_element_type);
                     continue;
                 }
 
                 /// Duplicate key detected. Decide whether to allow or reject.
-                if (types.contains(value_element_type))
+                if (types.accepted(value_element_type))
                 {
                     /// Same-type duplicate (e.g. two literals or two objects for the same key).
                     /// This is never allowed by type_json_allow_duplicated_key_with_literal_and_nested_object
@@ -2297,7 +2329,7 @@ private:
                 if (format_settings.json.type_json_allow_duplicated_key_with_literal_and_nested_object)
                 {
                     /// Setting enabled — record the second type so the main loop processes both.
-                    types.insert(value_element_type);
+                    types.accept(value_element_type);
                 }
                 else
                 {
@@ -2318,13 +2350,12 @@ private:
             /// Second pass: process each key-value pair in original order.
             /// All invalid duplicates have already been rejected in the first pass,
             /// so here we only need to skip already-processed (key, type) combinations.
-            std::unordered_map<std::string_view, std::unordered_set<JSONElementType>> visited_keys;
             for (auto [key, value] : element.getObject())
             {
                 String path = buildChildPath(current_path, key, insert_settings, is_root);
                 auto value_element_type = getJSONElementType(value);
-                auto it = visited_keys.find(key);
-                if (it != visited_keys.end())
+                auto & types = key_element_types[key];
+                if (!types.emittedEmpty())
                 {
                     /// We have seen this key before. Skip if:
                     ///  - we already processed a value with this element type for this key
@@ -2332,13 +2363,13 @@ private:
                     ///  - the first pass rejected this type for this key (different-type duplicate
                     ///    that was skipped because type_json_allow_duplicated_key_with_literal_and_nested_object
                     ///    is disabled but type_json_skip_duplicated_paths is enabled).
-                    if (it->second.contains(value_element_type) || !key_element_types[key].contains(value_element_type))
+                    if (types.emitted(value_element_type) || !types.accepted(value_element_type))
                         continue;
-                    it->second.insert(value_element_type);
+                    types.emit(value_element_type);
                 }
                 else
                 {
-                    visited_keys[key].insert(value_element_type);
+                    types.emit(value_element_type);
                 }
 
                 /// When a key has both literal and object values (key_element_types has 2 types),
@@ -2347,7 +2378,7 @@ private:
                 /// inserted into the typed path. Instead, pass skip_typed_path_check=true so the
                 /// recursive call enters object traversal and sends the object's children to
                 /// dynamic/shared data. The literal value will fill the typed path via normal recursion.
-                bool skip_typed = key_element_types[key].size() > 1
+                bool skip_typed = types.acceptedMoreThanOne()
                     && value_element_type == JSONElementType::OBJECT
                     && typed_path_nodes.contains(path)
                     && !canParseObjectValue(typed_paths_types.at(path));
@@ -2726,7 +2757,7 @@ private:
         return false;
     }
 
-    std::unordered_map<String, DataTypePtr> typed_paths_types;
+    DataTypeObject::TypedPathsMap typed_paths_types;
     std::unordered_map<String, std::unique_ptr<JSONExtractTreeNode<JSONParser>>> typed_path_nodes;
     bool all_typed_paths_have_trivial_defaults = true;
     std::unordered_set<String> paths_to_skip;
@@ -2741,6 +2772,28 @@ private:
     {
         LITERAL = 0,
         OBJECT = 1,
+    };
+
+    /// Per-key state of the two object traversal passes, one entry per key of the object being
+    /// traversed. `accepted` is the set of element types the first pass admitted for the key,
+    /// `emitted` the set the second pass has already sent down the recursion. Both sets range over
+    /// `JSONElementType`, which has two enumerators, so each is a two-bit mask.
+    struct KeyTypes
+    {
+        static unsigned bit(JSONElementType type) { return 1U << static_cast<unsigned>(type); }
+
+        bool acceptedEmpty() const { return accepted_mask == 0; }
+        bool accepted(JSONElementType type) const { return accepted_mask & bit(type); }
+        bool acceptedMoreThanOne() const { return std::popcount(accepted_mask) > 1; }
+        void accept(JSONElementType type) { accepted_mask |= bit(type); }
+
+        bool emittedEmpty() const { return emitted_mask == 0; }
+        bool emitted(JSONElementType type) const { return emitted_mask & bit(type); }
+        void emit(JSONElementType type) { emitted_mask |= bit(type); }
+
+    private:
+        unsigned accepted_mask = 0;
+        unsigned emitted_mask = 0;
     };
 
     JSONElementType getJSONElementType(const typename JSONParser::Element & element) const

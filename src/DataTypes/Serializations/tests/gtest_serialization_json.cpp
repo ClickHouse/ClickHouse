@@ -56,7 +56,7 @@ TEST(SerializationJSON, WarmConstructionAndBoundedLifetime)
 {
     auto child = std::make_shared<CountingType>();
     auto type = std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON,
-        std::unordered_map<String, DataTypePtr>{{"x", child}});
+        DataTypeObject::TypedPathsMap{{"x", child}});
     auto first = type->getDefaultSerialization();
     EXPECT_EQ(child->constructions, 1);
     EXPECT_EQ(first, type->getDefaultSerialization());
@@ -97,7 +97,7 @@ TEST(SerializationJSON, EquivalentSchemasShareAndCustomChildrenDoNotPool)
     auto custom = std::make_shared<CountingType>();
     custom->setCustomization(std::make_unique<DataTypeCustomDesc>(DataTypeCustomNamePtr{}, std::make_shared<NonPoolableSerialization>()));
     auto type = std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON,
-        std::unordered_map<String, DataTypePtr>{{"x", custom}});
+        DataTypeObject::TypedPathsMap{{"x", custom}});
     auto serialization = type->getDefaultSerialization();
     EXPECT_FALSE(serialization->supportsPooling());
     EXPECT_NE(serialization, type->getDefaultSerialization());
@@ -185,7 +185,7 @@ TEST(SerializationJSON, ParserCacheEvictsAfterMaximumSchemas)
         {
             auto type = std::make_shared<DataTypeObject>(
                 DataTypeObject::SchemaFormat::JSON,
-                std::unordered_map<String, DataTypePtr>{{"cache_limit_" + std::to_string(schema), child_type}});
+                DataTypeObject::TypedPathsMap{{"cache_limit_" + std::to_string(schema), child_type}});
             auto serialization = type->getDefaultSerialization();
             if (schema == 0)
                 first_serialization = serialization;

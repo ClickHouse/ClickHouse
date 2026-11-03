@@ -426,6 +426,13 @@ so actual chunk sizes range from `target/2` to `1.5 * target`.
 Smaller values reduce peak memory during merges of JSON columns with many unique paths at the cost of more chunks.
 )", 0, \
         {"26.9", 8192, 8192, "New setting"}) \
+    DECLARE(MergeTreeObjectTypedSharedDataSerializationVersion, object_typed_shared_data_serialization_version, "v1", R"(
+Serialization version of the typed shared data inside JSON data type: the structure that stores the typed paths declared `SHARED` in a part together, in a constant number of files, instead of a separate set of files per path.
+
+Possible values:
+- `v1` - for each granule the data of every `SHARED` path in path order, with the start of every path's data recorded in a marks stream, so that a read of some paths decodes only them.
+)", 0, \
+        {"26.11", "v1", "v1", "New setting"}) \
     DECLARE(MergeTreeDynamicSerializationVersion, dynamic_serialization_version, "v3", R"(
 Serialization version for Dynamic data type. Required for compatibility.
 
@@ -860,10 +867,11 @@ Maximum number of processed tokens accumulated by a text index builder before fl
 Maximum estimated memory retained by a text index builder before flushing a temporary segment.
 )", 0, \
         {"26.8", std::numeric_limits<UInt64>::max(), 1073741824, "New setting. The previous value disables memory-based flushing to preserve pre-26.8 behavior"}) \
-    DECLARE(TextIndexPostingListCodec, text_index_posting_list_codec, TextIndexPostingListCodec::None, R"(
+    DECLARE(TextIndexPostingListCodec, text_index_posting_list_codec, TextIndexPostingListCodec::PFor, R"(
 Default posting list codec for text indexes. One of `none`, `bitpacking`, `pfor`.
 Can be overridden by explicit `posting_list_codec` index argument.
 )", 0, \
+        {"26.11", "none", "pfor", "Use the `pfor` posting list codec for text indexes by default"}, \
         {"26.6", "none", "none", "New setting"}) \
     DECLARE(Bool, allow_experimental_text_index_phrase_search, false, R"(
 Allow creating text indexes with the experimental `support_phrase_search` argument
@@ -1393,7 +1401,7 @@ For testing. Do not change it.
 )", 0) \
     DECLARE(Bool, optimize_row_order, false, R"(
 Controls if the row order should be optimized during inserts to improve the
-compressability of the newly inserted table part.
+compressibility of the newly inserted table part.
 
 Only has an effect for ordinary MergeTree-engine tables. Does nothing for
 specialized MergeTree engine tables (e.g. CollapsingMergeTree).
@@ -1623,7 +1631,7 @@ default; this setting will be removed in a future release.
 )", 0) \
     DECLARE(NonZeroUInt64, max_replicated_logs_to_keep, 1000, R"(
 How many records may be in the ClickHouse Keeper log if there is inactive
-replica. An inactive replica becomes lost when when this number exceed.
+replica. An inactive replica becomes lost when this number exceed.
 
 Possible values:
 - Any positive integer.
@@ -2367,8 +2375,8 @@ not be less than the value of the
 / 1024. Otherwise, ClickHouse throws an exception.
 )", 0) \
     DECLARE(Bool, check_sample_column_is_correct, true, R"(
-Enables the check at table creation, that the data type of a column for s
-ampling or sampling expression is correct. The data type must be one of unsigned
+Enables the check at table creation, that the data type of a column for
+sampling or sampling expression is correct. The data type must be one of unsigned
 [integer types](/reference/data-types/int-uint): `UInt8`, `UInt16`,
 `UInt32`, `UInt64`.
 
@@ -2680,9 +2688,10 @@ Per-block codecs are reported by the [`mergeTreeCodecBlockCounts`](/reference/fu
 Notify newest block number to SharedJoin or SharedSet. Only in ClickHouse Cloud.
 )", EXPERIMENTAL, \
         {"25.1", false, false, "Cloud sync"}) \
-    DECLARE(UInt64, shared_merge_tree_virtual_parts_discovery_batch, 1, R"(
+    DECLARE(UInt64, shared_merge_tree_virtual_parts_discovery_batch, 16, R"(
 How many partition discoveries should be packed into batch
 )", 0, \
+        {"26.11", 1, 16, "Increase the default", CompatibilitySetting::Ignore}, \
         {"25.8", 1, 1, "New setting"}) \
     DECLARE(Bool, shared_merge_tree_enable_automatic_empty_partitions_cleanup, true, R"(
 Enabled cleanup of Keeper entries of empty partition.
