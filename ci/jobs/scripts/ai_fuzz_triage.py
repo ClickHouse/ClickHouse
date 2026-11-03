@@ -214,8 +214,6 @@ MACHINE_LINE_RE = re.compile(
     rf"|Found by [^\n]*? in CI|{OBSERVED_ON_FIELD} [^\n:]*|Caused by|Related):[^\n]*\n?",
     re.MULTILINE | re.IGNORECASE,
 )
-# Frames in the stack digest: the STID keeps 5 (`FuzzerLogParser.get_stack_trace_id`).
-STACK_DIGEST_MAX_FRAMES = 16
 
 # Values that differ between two runs of the same crash and so must not reach the
 # fingerprint. Order matters: addresses and UUIDs before the bare-number rule.
@@ -253,19 +251,9 @@ def _stable_signature(name):
     return _normalize_failure_name(name)
 
 
-def _qualified_frames(failure_info):
-    """The frames of the parser's `Stack trace:` section, like the STID's but deeper and with template arguments."""
-    _, sep, stack = (failure_info or "").rpartition("Stack trace:\n")
-    if not sep:
-        return []
-    return FuzzerLogParser.stack_trace_functions(
-        stack, STACK_DIGEST_MAX_FRAMES, keep_templates=True
-    )
-
-
 def stack_digest(group):
     """Digest of the qualified stacks of a group of failures, or "" when one has no stack."""
-    stacks = {tuple(_qualified_frames(info)) for _, info in group}
+    stacks = {FuzzerLogParser.qualified_stack(info) for _, info in group}
     if not stacks or () in stacks:
         return ""
     text = "\n\n".join("\n".join(stack) for stack in sorted(stacks))

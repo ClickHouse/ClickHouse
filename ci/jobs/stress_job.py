@@ -305,9 +305,9 @@ def select_replica_failures(
     triage) still accounts for them.
     """
     specific_results: List[Tuple[str, str, List[str]]] = []
-    seen_specific_names = set()
+    seen_specific = set()
     generic_fatal_results: List[Tuple[str, str, List[str]]] = []
-    seen_generic_names = set()
+    seen_generic = set()
     fallback_result = None
 
     for replica_name, server_log_file, stderr_log in replica_log_pairs:
@@ -322,17 +322,20 @@ def select_replica_failures(
             if stderr_log.exists():
                 file_pair_info += f", {stderr_log.name}"
             description = f"{file_pair_info}\n{description}"
+            # The name keeps only the STID's frames, so two bugs can share one: the
+            # qualified stack tells them apart, and the AI triage must see both.
+            key = (name, FuzzerLogParser.qualified_stack(description))
             if name == FuzzerLogParser.UNKNOWN_ERROR:
                 if fallback_result is None:
                     fallback_result = (name, description, files)
             elif log_parser.is_generic_fatal:
-                if name not in seen_generic_names:
-                    seen_generic_names.add(name)
+                if key not in seen_generic:
+                    seen_generic.add(key)
                     generic_fatal_results.append((name, description, files))
-            elif name not in seen_specific_names:
+            elif key not in seen_specific:
                 # The same failure often surfaces on several replicas (shared
-                # storage / replication); report each distinct classification once.
-                seen_specific_names.add(name)
+                # storage / replication); report each distinct one once.
+                seen_specific.add(key)
                 specific_results.append((name, description, files))
         except Exception as e:
             print(

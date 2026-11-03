@@ -9,6 +9,8 @@ from ci.praktika.utils import Shell
 
 class FuzzerLogParser:
     UNKNOWN_ERROR = "Unknown error"
+    # Frames of `qualified_stack`: the STID keeps 5 (`get_stack_trace_id`).
+    QUALIFIED_STACK_MAX_FRAMES = 16
     # Exception messages carry the trailing ", Stack trace (when copying this message,
     # always include the lines below):" marker, but the frames it promises are on the
     # following log lines. The failure name is built from the first line only, so the
@@ -830,6 +832,19 @@ class FuzzerLogParser:
 
         lines = [line.strip().replace("\n", "") for line in lines]
         return "\n".join(lines) if lines else None
+
+    @staticmethod
+    def qualified_stack(info):
+        """The frames of the `Stack trace:` section of a failure's `info`, like the STID's but deeper
+        and with template arguments, so two failures sharing a name can still be told apart."""
+        _, sep, stack = (info or "").rpartition("Stack trace:\n")
+        if not sep:
+            return ()
+        return tuple(
+            FuzzerLogParser.stack_trace_functions(
+                stack, FuzzerLogParser.QUALIFIED_STACK_MAX_FRAMES, keep_templates=True
+            )
+        )
 
     @staticmethod
     def stack_trace_functions(stack_trace, max_depth, keep_templates=False):

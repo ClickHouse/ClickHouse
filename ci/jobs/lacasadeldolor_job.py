@@ -392,13 +392,15 @@ def _classify_dolor_failure(
 def _with_keeper_failure(
     failures: list[Result | None], workspace_path: Path, fuzzer_out: Path
 ) -> list[Result]:
-    """`failures` and the one of the Keepers, whose logs nothing else reads, each name once.
-    The triage may pass a run on a known issue, so it must see every failure of the run."""
-    by_name: dict[str, Result] = {}
+    """`failures` and the one of the Keepers, whose logs nothing else reads, each name and stack once.
+    The triage may pass a run on a known issue, so it must see every failure of the run, also two
+    sharing a name (it keeps only the STID's frames) but not the qualified stack."""
+    distinct: dict[tuple, Result] = {}
     for failure in [*failures, _keeper_failure(workspace_path, fuzzer_out)]:
         if failure is not None:
-            by_name.setdefault(failure.name, failure)
-    return list(by_name.values())
+            key = (failure.name, FuzzerLogParser.qualified_stack(failure.info))
+            distinct.setdefault(key, failure)
+    return list(distinct.values())
 
 
 def _complete_with_artifacts(
