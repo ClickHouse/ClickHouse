@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: zookeeper
+# Tags: zookeeper, no-fasttest
 # Tag zookeeper: the disk type is read with `from_zk`.
+# Tag no-fasttest: needs the `encrypted` disk, which requires SSL.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
