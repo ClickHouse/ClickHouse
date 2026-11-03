@@ -1,7 +1,9 @@
 #include <Processors/Formats/Impl/Parquet/Write.h>
 #include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
+#include <Processors/Formats/Impl/Parquet/ALPEncoding.h>
 #include <arrow/util/key_value_metadata.h>
 #include <parquet/encoding.h>
+#include <parquet/geospatial/statistics.h>
 #include <parquet/schema.h>
 #include <arrow/util/rle_encoding_internal.h>
 #include <arrow/util/crc32.h>
@@ -323,6 +325,65 @@ struct StatisticsStringCopy
     }
 };
 
+/// For WKB values of a `GEOMETRY` column: the sort order of this logical type is undefined, so no
+/// min/max are produced. Instead, the bounding box and the set of geometry types are accumulated
+/// for `GeospatialStatistics` of the column chunk.
+struct StatisticsGeometry
+{
+    /// Held by pointer, because `GeoStatistics` is not movable. The methods below modify the
+    /// pointee, so they are not const, although clang-tidy suggests it.
+    std::unique_ptr<parquet::geospatial::GeoStatistics> geo = std::make_unique<parquet::geospatial::GeoStatistics>();
+
+    void add(parquet::ByteArray x) // NOLINT(readability-make-member-function-const)
+    {
+        geo->Update(&x, 1);
+    }
+
+    void merge(const StatisticsGeometry & s) // NOLINT(readability-make-member-function-const)
+    {
+        geo->Merge(*s.geo);
+    }
+
+    void clear() { geo->Reset(); } // NOLINT(readability-make-member-function-const)
+
+    parq::Statistics get(const WriteOptions &) const
+    {
+        return {};
+    }
+
+    /// Returns nullopt if a value could not be parsed as WKB, then no statistics are written.
+    std::optional<parq::GeospatialStatistics> getGeospatial() const
+    {
+        auto encoded = geo->Encode();
+        if (!encoded)
+            return std::nullopt;
+
+        parq::GeospatialStatistics res;
+        /// An empty list means that the types are unknown, this is the case only if all values are NULL.
+        res.__set_geospatial_types(encoded->geospatial_types);
+        if (encoded->xy_bounds_present)
+        {
+            parq::BoundingBox bbox;
+            bbox.__set_xmin(encoded->xmin);
+            bbox.__set_xmax(encoded->xmax);
+            bbox.__set_ymin(encoded->ymin);
+            bbox.__set_ymax(encoded->ymax);
+            if (encoded->z_bounds_present)
+            {
+                bbox.__set_zmin(encoded->zmin);
+                bbox.__set_zmax(encoded->zmax);
+            }
+            if (encoded->m_bounds_present)
+            {
+                bbox.__set_mmin(encoded->mmin);
+                bbox.__set_mmax(encoded->mmax);
+            }
+            res.__set_bbox(bbox);
+        }
+        return res;
+    }
+};
+
 /// The column usually needs to be converted to one of Parquet physical types, e.g. UInt16 -> Int32
 /// or [element of ColumnString] -> std::string_view.
 /// We do this conversion in small batches rather than all at once, just before encoding the batch,
@@ -423,6 +484,14 @@ struct ConverterString
         }
         return buf.data();
     }
+};
+
+/// WKB values of a `GEOMETRY` column.
+struct ConverterGeometry : ConverterString
+{
+    using Statistics = StatisticsGeometry;
+
+    using ConverterString::ConverterString;
 };
 
 template <typename T>
@@ -1011,6 +1080,30 @@ void writeColumnImpl(
 
     bool use_dictionary = options.use_dictionary_encoding && !s.is_bool;
 
+    /// `ALP` is used without a dictionary. Other writers (Arrow, parquet-java, arrow-rs) treat `ALP`
+    /// like any other non-dictionary encoding: as the fallback when the dictionary gets too big. But
+    /// here the dictionary is abandoned only when it exceeds `max_dictionary_size` (1 MiB by
+    /// default, i.e. 131072 distinct `DOUBLE` values), so most column chunks would never get to
+    /// `ALP`, even those where it is a lot better:
+    /// for decimal-like values `ALP` bit-packs the differences from the vector minimum, so it needs
+    /// fewer bits per value than the dictionary indexes once the values are not very repetitive,
+    /// and it doesn't store the dictionary itself. The user opts into `ALP` explicitly, so it is
+    /// what they get. The values that `ALP` can't encode don't make the page bigger than `PLAIN`:
+    /// such pages are written as `PLAIN` (see `makeALPFloatEncoder`).
+    static constexpr bool is_floating_point
+        = std::is_same_v<ParquetDType, parquet::FloatType> || std::is_same_v<ParquetDType, parquet::DoubleType>;
+    if constexpr (is_floating_point)
+    {
+        if (options.use_alp_encoding)
+        {
+            encoding = parq::Encoding::ALP;
+            use_dictionary = false;
+        }
+    }
+
+    /// Encodings of the written data pages, for `ColumnMetaData.encodings`.
+    std::vector<parq::Encoding::type> data_page_encodings;
+
     /// For some readers filter pushdown implementations it's inconvenient if a row straddles pages,
     /// so let's be nice to them and avoid that. This matches arrow's logic.
     /// If we ever use DataPageV2, enable this flag in that case too:
@@ -1048,10 +1141,24 @@ void writeColumnImpl(
     /// ColumnLowCardinality instead. It would work basically the same way as what this function
     /// currently does: add values to the ColumnRowCardinality (instead of `encoder`) in batches,
     /// checking dictionary size after each batch. That might be faster.
-    auto encoder = parquet::MakeTypedEncoder<ParquetDType>(
-        // ignored if using dictionary
-        static_cast<parquet::Encoding::type>(encoding),
-        use_dictionary, fixed_string_descr ? &*fixed_string_descr : nullptr);
+    auto make_encoder = [&](bool dictionary) -> std::unique_ptr<parquet::TypedEncoder<ParquetDType>>
+    {
+        if constexpr (std::is_same_v<ParquetDType, parquet::FloatType>)
+        {
+            if (encoding == parq::Encoding::ALP && !dictionary)
+                return makeALPFloatEncoder();
+        }
+        if constexpr (std::is_same_v<ParquetDType, parquet::DoubleType>)
+        {
+            if (encoding == parq::Encoding::ALP && !dictionary)
+                return makeALPDoubleEncoder();
+        }
+        return parquet::MakeTypedEncoder<ParquetDType>(
+            // ignored if using dictionary
+            static_cast<parquet::Encoding::type>(encoding),
+            dictionary, fixed_string_descr ? &*fixed_string_descr : nullptr);
+    };
+    auto encoder = make_encoder(use_dictionary);
 
     struct PageData
     {
@@ -1158,6 +1265,13 @@ void writeColumnImpl(
 
         std::shared_ptr<parquet::Buffer> values = encoder->FlushValues(); // resets it for next page
 
+        /// The `ALP` encoder writes the pages it can't compress as `PLAIN`.
+        parq::Encoding::type page_encoding = use_dictionary ? parq::Encoding::RLE_DICTIONARY : encoding;
+        if (page_encoding == parq::Encoding::ALP)
+            page_encoding = static_cast<parq::Encoding::type>(encoder->encoding());
+        if (!use_dictionary && !std::count(data_page_encodings.begin(), data_page_encodings.end(), page_encoding))
+            data_page_encodings.push_back(page_encoding);
+
         encoded.resize(encoded.size() + values->size());
         memcpy(encoded.data() + encoded.size() - values->size(), values->data(), values->size());
         values.reset();
@@ -1178,7 +1292,7 @@ void writeColumnImpl(
         header.__isset.data_page_header = true;
         auto & d = header.data_page_header;
         d.__set_num_values(static_cast<Int32>(def_count));
-        d.__set_encoding(use_dictionary ? parq::Encoding::RLE_DICTIONARY : encoding);
+        d.__set_encoding(page_encoding);
         d.__set_definition_level_encoding(parq::Encoding::RLE);
         d.__set_repetition_level_encoding(parq::Encoding::RLE);
 
@@ -1322,9 +1436,7 @@ void writeColumnImpl(
         encoder->FlushValues();
 #endif
 
-        encoder = parquet::MakeTypedEncoder<ParquetDType>(
-            static_cast<parquet::Encoding::type>(encoding), /* use_dictionary */ false,
-            fixed_string_descr ? &*fixed_string_descr : nullptr);
+        encoder = make_encoder(/* dictionary */ false);
     };
 
     /// A batch is bounded by bytes as well as by rows. `write_batch_size` values of a wide column
@@ -1609,6 +1721,12 @@ void writeColumnImpl(
 
         if (s.max_def == 1 && s.max_rep == 0)
             s.column_chunk.meta_data.statistics.__set_null_count(static_cast<Int64>(def_offset - data_offset));
+
+        if constexpr (std::is_same_v<typename Converter::Statistics, StatisticsGeometry>)
+        {
+            if (auto geospatial_statistics = total_statistics.getGeospatial())
+                s.column_chunk.meta_data.__set_geospatial_statistics(*std::move(geospatial_statistics));
+        }
     }
 
     /// Report which encodings we've used.
@@ -1619,9 +1737,14 @@ void writeColumnImpl(
         addToEncodingsUsed(s, parq::Encoding::PLAIN); // dictionary itself
         addToEncodingsUsed(s, parq::Encoding::RLE_DICTIONARY); // ids
     }
-    else
+    else if (data_page_encodings.empty())
     {
         addToEncodingsUsed(s, encoding);
+    }
+    else
+    {
+        for (auto e : data_page_encodings)
+            addToEncodingsUsed(s, e);
     }
 
     if (bloom_data.has_value())
@@ -1726,8 +1849,12 @@ void writeColumnChunkBody(
             break;
 
         case TypeIndex::String:
-            writeColumnImpl<parquet::ByteArrayType>(
-                s, options, out, ConverterString(s.primitive_column));
+            if (s.is_geometry)
+                writeColumnImpl<parquet::ByteArrayType>(
+                    s, options, out, ConverterGeometry(s.primitive_column));
+            else
+                writeColumnImpl<parquet::ByteArrayType>(
+                    s, options, out, ConverterString(s.primitive_column));
             break;
 
         case TypeIndex::FixedString:
@@ -1971,16 +2098,29 @@ void writeFileFooter(FileWriteState & file,
                 Poco::JSON::Array::Ptr geom_types = new Poco::JSON::Array;
                 geom_types->add(type->getCustomName()->getName());
                 geom_meta->set("geometry_types", geom_types);
-                geom_meta->set("crs", "EPSG:4326");
-
-                geo_columns_metadata.push_back({column_name, geom_meta});
+                /// With the `GEOMETRY` logical type, the column has the default CRS of the logical
+                /// type (`OGC:CRS84`). Omit `crs` here, which means the same default in GeoParquet,
+                /// so that both kinds of metadata describe the same CRS.
+                if (!options.write_geometry_logical_type)
+                    geom_meta->set("crs", "EPSG:4326");
 
                 if (type->getCustomName()->getName() == WKBPolygonTransform::name ||
                     type->getCustomName()->getName() == WKBMultiPolygonTransform::name)
                 {
                     geom_meta->set("edges", "planar");
-                    geom_meta->set("orientation", "counterclockwise");
                 }
+                geo_columns_metadata.push_back({column_name, geom_meta});
+            }
+            else if (options.write_geometry_logical_type && type->getCustomName() && type->getCustomName()->getName() == "Geometry")
+            {
+                /// An empty list of geometry types means that any type can be present. Without the
+                /// metadata, readers (including older versions of ClickHouse) that rely only on the
+                /// GeoParquet metadata would read the WKB column as a plain binary one, and readers
+                /// that use `GeospatialStatistics` of the `GEOMETRY` logical type could narrow the
+                /// type to the one that happens to be present in the data.
+                Poco::JSON::Object::Ptr geom_meta = new Poco::JSON::Object;
+                geom_meta->set("encoding", "WKB");
+                geom_meta->set("geometry_types", Poco::JSON::Array::Ptr(new Poco::JSON::Array));
                 geo_columns_metadata.push_back({column_name, geom_meta});
             }
         }

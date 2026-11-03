@@ -531,6 +531,17 @@ void ReadBufferFromS3::setReadUntilPosition(size_t position)
     }
 }
 
+void ReadBufferFromS3::setIOSchedulingSettings(const IOSchedulingSettings & io_scheduling)
+{
+    if (impl)
+    {
+        impl->detachSession();
+        resetWorkingBuffer();
+        impl.reset();
+    }
+    read_settings.io_scheduling = io_scheduling;
+}
+
 void ReadBufferFromS3::setReadUntilEnd()
 {
     if (read_until_position)

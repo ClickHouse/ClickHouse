@@ -116,23 +116,6 @@ public:
         bool is_join_get = false);
 
 private:
-    template <typename KeyGetter, bool is_asof_join>
-    static KeyGetter createKeyGetter(const ColumnRawPtrs & key_columns, const Sizes & key_sizes, HashJoin::RightTableData::KeyRange key_range = {});
-
-    template <typename KeyGetter, typename HashMap, typename Selector>
-    static void insertFromBlockImplTypeCase(
-        HashJoin & join,
-        HashMap & map,
-        const ColumnRawPtrs & key_columns,
-        const Sizes & key_sizes,
-        UInt32 stored_block_no,
-        const Selector & selector,
-        ConstNullMapPtr null_map,
-        const JoinCommon::JoinMask & join_mask,
-        Arena & pool,
-        bool & is_inserted,
-        bool & all_values_unique);
-
     template <typename AddedColumns>
     static size_t switchJoinRightColumns(
         const std::vector<const MapsTemplate *> & mapv,

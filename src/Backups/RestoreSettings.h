@@ -28,7 +28,7 @@ enum class RestoreTableCreationMode : uint8_t
 
 using RestoreDatabaseCreationMode = RestoreTableCreationMode;
 
-/// How the RESTORE command will handle if an user (or role or profile) which it's going to restore already exists.
+/// How the RESTORE command will handle if a user (or role or profile) which it's going to restore already exists.
 enum class RestoreAccessCreationMode : uint8_t
 {
     /// RESTORE will throw an exception if some user already exists.
@@ -122,7 +122,7 @@ struct RestoreSettings
     /// Setting "allow_non_empty_tables=true" thus can cause data duplication in the table, use with caution.
     bool allow_non_empty_tables = false;
 
-    /// How the RESTORE command will handle if an user (or role or profile) which it's going to restore already exists.
+    /// How the RESTORE command will handle if a user (or role or profile) which it's going to restore already exists.
     RestoreAccessCreationMode create_access = RestoreAccessCreationMode::kCreateIfNotExists;
 
     /// Ignore dependencies or dependents (with update_access_entities_dependents=true) of access entities in the case if they can't be resolved.

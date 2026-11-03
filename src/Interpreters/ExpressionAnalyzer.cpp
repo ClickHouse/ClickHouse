@@ -2,7 +2,7 @@
 #include <Interpreters/ExpressionContainsArrayJoin.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <WindowFunctions/IWindowFunction.h>
+#include <WindowFunctions/IGeneralWindowFunction.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/IColumn.h>
@@ -718,7 +718,7 @@ void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
     desc.full_sort_description.insert(desc.full_sort_description.end(),
         desc.order_by.begin(), desc.order_by.end());
 
-    const auto * window_function = aggregate_function ? dynamic_cast<const IWindowFunction *>(aggregate_function.get()) : nullptr;
+    const auto window_function = aggregate_function ? asGeneralWindowFunction(aggregate_function) : nullptr;
     desc.frame.is_default = definition.frame_is_default;
     if (desc.frame.is_default && window_function)
     {
@@ -879,6 +879,7 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAG & actions)
 
     for (auto & [_, window_description] : window_descriptions)
     {
+        validateWindowFunctions(window_description);
         window_description.full_sort_description.compile_sort_description = compile_sort_description;
         window_description.full_sort_description.min_count_to_compile_sort_description = min_count_to_compile_sort_description;
 

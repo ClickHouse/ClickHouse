@@ -480,7 +480,8 @@ ASTPtr tryBuildAdditionalFilterAST(
                         /// This should happen because filter expression on initiator needs the set as well,
                         /// and it should be built before sending the external tables.
 
-                        auto header = InterpreterSelectQueryAnalyzer::getSampleBlock(source_ast, context);
+                        auto header = InterpreterSelectQueryAnalyzer::getSampleBlock(
+                            source_ast, context, SelectQueryOptions().positionalArgumentsAlreadyResolved());
                         /// The subquery may produce columns with duplicate names
                         /// (e.g. `(x, y) GLOBAL IN (SELECT number, number FROM ...)`).
                         /// `ColumnsDescription` prohibits duplicate column names, so deduplicate
@@ -679,8 +680,6 @@ void ReadFromRemote::addLazyPipe(
         add_extremes = context->getSettingsRef()[Setting::extremes];
     }
 
-    std::shared_ptr<const ActionsDAG> pushed_down_filters = filter_actions_dag;
-
     /// Override cluster_for_parallel_replicas to match the distributed table's cluster,
     /// same as addPipe() does. Without this, the _shard_num scalar from the distributed
     /// execution can mismatch the parallel replicas cluster shard count, causing a crash
@@ -716,17 +715,25 @@ void ReadFromRemote::addLazyPipe(
             throw Exception(ErrorCodes::UNKNOWN_TABLE, "Storage with id {} not found", resolved_id);
     }
 
+    /// The temporary table of a GLOBAL IN must be attached to its set before the set is built, which happens
+    /// before the lambda runs. So splice the filter now, as addPipe does; the local fallback keeps shard.query.
+    ASTPtr remote_query = shard.query;
+    if (filter_actions_dag)
+    {
+        remote_query = shard.query->clone();
+        addFilters(&external_tables, context, context, remote_query, shard.query_tree, shard.planner_context, *filter_actions_dag);
+    }
+
     auto lazily_create_stream = [
             my_shard = shard, my_shard_count = shard_count, my_distributed_fanout = shards.size(),
             my_unavailable_shard_tracker = tracker, my_cluster_name = cluster_name,
-            query = shard.query, header = shard.header,
+            query = shard.query, remote_query, header = shard.header,
             my_context = context, my_throttler = throttler, my_log = log,
             my_main_table = main_table, my_table_func_ptr = table_func_ptr,
             my_scalars = scalars, my_external_tables = external_tables,
             my_stage = stage, my_storage = storage, my_shard_scope_identity = shard_scope_identity,
             add_agg_info, add_totals, add_extremes, async_read, async_query_sending,
-            query_tree = shard.query_tree, planner_context = shard.planner_context,
-            pushed_down_filters, parallel_marshalling_threads]() mutable
+            parallel_marshalling_threads]() mutable
         -> QueryPipelineBuilder
     {
         auto current_settings = my_context->getSettingsRef();
@@ -818,13 +825,7 @@ void ReadFromRemote::addLazyPipe(
         for (auto & try_result : try_results)
             connections.emplace_back(std::move(try_result.entry));
 
-        /// For the lazy case we are ignoring external tables.
-        /// This is because the set could be build before the lambda call,
-        /// and the temporary table which we are about to send would be empty.
-        /// So that GLOBAL IN would work as local IN in the pushed-down predicate.
-        if (pushed_down_filters)
-            addFilters(nullptr, my_context, my_context, query, query_tree, planner_context, *pushed_down_filters);
-        String query_string = formattedAST(query);
+        String query_string = formattedAST(remote_query);
         auto stage_to_use = my_shard.query_plan ? QueryProcessingStage::QueryPlan : my_stage;
 
         my_scalars["_shard_num"] = ClusterProxy::makeShardNumScalar(my_shard.shard_info.shard_num, my_shard_scope_identity);

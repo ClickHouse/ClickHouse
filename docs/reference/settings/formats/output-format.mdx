@@ -195,7 +195,7 @@ Use BSON String type instead of Binary for String columns.
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.1"},{"label": "3"},{"label": "Allow to change compression level in the query output"}]}]}/>
 
-Default compression level if query output is compressed. The setting is applied when `SELECT` query has `INTO OUTFILE` or when writing to table functions `file`, `url`, `hdfs`, `s3`, or `azureBlobStorage`.
+Default compression level if query output is compressed. The setting is applied when `SELECT` query has `INTO OUTFILE` or when writing to table functions `file`, `url`, `hdfs`, `s3`, or `azureBlobStorage`. It is also applied to the compressed response to an HTTP request with a method other than `gzip` and `deflate`, for which [http_zlib_compression_level](/reference/settings/session-settings/http#http_zlib_compression_level) is used.
 
 Possible values: from `1` to `22`
 
@@ -785,6 +785,14 @@ Use Parquet FIXED_LEN_BYTE_ARRAY type instead of Binary for FixedString columns.
 
 Allow to write information about geo columns in parquet metadata and encode columns in WKB format.
 
+## output_format_parquet_geometry_logical_type {#output_format_parquet_geometry_logical_type}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "New setting"}]}]}/>
+
+Annotate geo columns written as WKB (see `output_format_parquet_geometadata`) with the Parquet `GEOMETRY` logical type, and write `GeospatialStatistics` (bounding box and geometry types) for them instead of min/max statistics. Readers that support the logical type recognize such columns as geometries even without the GeoParquet `geo` metadata. Has no effect if `output_format_parquet_geometadata` is disabled. A `Geometry` column is also described in the GeoParquet `geo` metadata, with an empty list of geometry types. If disabled, these columns are written as `BYTE_ARRAY` without a geospatial annotation and with min/max statistics, and a `Geometry` column is not described in the `geo` metadata. Disabled by default because readers that do not know this logical type (e.g. Arrow C++ and `pyarrow` before version 20) cannot open the whole file.
+
 ## output_format_parquet_max_dictionary_size {#output_format_parquet_max_dictionary_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1048576" />
@@ -818,6 +826,14 @@ Target row group size in bytes, before compression.
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "1"},{"label": "ClickHouse allows arbitrary binary data in the String data type, which is typically UTF-8. Parquet\/ORC\/Arrow Strings only support UTF-8. That's why you can choose which Arrow's data type to use for the ClickHouse String data type - String or Binary. While Binary would be more correct and compatible, using String by default will correspond to user expectations in most cases."}]}]}/>
 
 Use Parquet String type instead of Binary for String columns.
+
+## output_format_parquet_use_alp_encoding {#output_format_parquet_use_alp_encoding}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "New setting."}]}]}/>
+
+Encode `Float32` and `Float64` columns (Parquet `FLOAT` and `DOUBLE`) with the `ALP` (Adaptive Lossless floating-Point) encoding. `ALP` is lossless and compresses decimal-like floating-point data (prices, measurements, coordinates) much better than `PLAIN`. Such columns are written without a dictionary, and a page for which `ALP` would be bigger than `PLAIN` is written with `PLAIN`. The encoding was added to the Parquet format recently, so not every Parquet reader supports it yet: enable it only if the files are read by readers that do.
 
 ## output_format_parquet_wide_integer_as_decimal {#output_format_parquet_wide_integer_as_decimal}
 
