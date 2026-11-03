@@ -35,6 +35,7 @@ static struct InitFiu
     ONCE(replicated_merge_tree_commit_zk_fail_after_op) \
     ONCE(replicated_queue_fail_next_entry) \
     ONCE(nats_fail_resubscribe_within_query) \
+    ONCE(reverse_index_build_index_throw) \
     REGULAR(replicated_queue_unfail_entries) \
     REGULAR(executing_graph_add_node_fail) \
     REGULAR(executing_graph_build_fail) \
@@ -131,6 +132,8 @@ static struct InitFiu
     PAUSEABLE(file_segment_pause_before_write) \
     PAUSEABLE(remote_fs_gather_pause_in_read) \
     PAUSEABLE(plain_object_storage_pause_on_file_copy) \
+    PAUSEABLE(named_collections_replicated_update_pause) \
+    PAUSEABLE(named_collections_restore_pause_after_write) \
     REGULAR(file_cache_simulate_evicting_segment) \
     REGULAR(cache_filesystem_failure) \
     REGULAR(cache_filesystem_failure_non_errno) \
@@ -504,7 +507,8 @@ static struct InitFiu
     REGULAR(aggregate_function_state_transfer_throw) \
     REGULAR(aggregate_function_state_transfer_throw_after_child) \
     REGULAR(marks_loader_hold_task_until_canceled) \
-    REGULAR(whatif_projection_scan_cut_short)
+    REGULAR(whatif_projection_scan_cut_short) \
+    REGULAR(http_connection_socket_inode_unavailable)
 
 namespace FailPoints
 {
