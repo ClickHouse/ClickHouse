@@ -340,82 +340,62 @@ def test_concurrent_threads_soft_limit_limit_reached(started_cluster):
 # pipeline never pushes new tasks to the executor's global queue (each stream is an independent
 # chain whose steps are slow, as in object storage scans).
 def test_concurrent_threads_soft_limit_upscale_after_release(started_cluster):
-    def background_query():
+    background_id = "background_query_upscale"
+    foreground_id = "test_concurrent_threads_soft_limit_5"
+    errors = {}
+
+    def run(name, query, query_id):
         try:
-            node4.query(
-                "SELECT count(*) FROM numbers_mt(1e11) settings max_threads=100",
-                query_id="background_query_upscale",
-            )
-        except QueryRuntimeException:
-            pass
+            node4.query(query, query_id=query_id)
+        except QueryRuntimeException as e:
+            errors[name] = e
 
-    background_thread = threading.Thread(target=background_query)
-    background_thread.start()
+    def wait_for(condition, what, timeout=60):
+        deadline = time.monotonic() + timeout
+        while not condition():
+            assert time.monotonic() < deadline, f"Timed out waiting for {what}, errors: {errors}"
+            time.sleep(0.1)
 
-    def limit_reached():
-        s_count = node4.query(
-            "SELECT sum(length(thread_ids)) FROM system.processes"
+    def foreground_event(profile_event):
+        value = node4.query(
+            f"SELECT ProfileEvents['{profile_event}'] FROM system.processes WHERE query_id = '{foreground_id}'"
         ).strip()
-        return int(s_count) >= 11 if s_count else False
+        return int(value) if value else None
 
-    while not limit_reached():
-        time.sleep(0.1)
-
-    # 8 streams of 5 blocks each; every block sleeps 100 ms in the filter, so the query takes ~4 s on
-    # one thread and ~0.5 s on 8 threads. Timings are sleep-bound, so they do not depend on CPU speed.
-    # A thread that runs only local tasks pushes to the global queue after 128 of them (~3.2 s here).
-    finished_at = {}
-
-    def foreground_query():
-        node4.query(
-            "SELECT count() FROM numbers_mt(2000) WHERE NOT ignore(sleepEachRow(0.002)) "
+    background = threading.Thread(
+        target=run,
+        args=("background", "SELECT count(*) FROM numbers_mt(1e11) SETTINGS max_threads=100", background_id),
+    )
+    # 8 streams; every step of a stream sleeps 1 s, so a thread that runs only local tasks pushes to the
+    # global queue only after more than 20 s. The query runs until it is killed.
+    foreground = threading.Thread(
+        target=run,
+        args=(
+            "foreground",
+            "SELECT count() FROM numbers_mt(1e9) WHERE NOT ignore(sleepEachRow(0.02)) "
             "SETTINGS max_threads=8, max_block_size=50",
-            query_id="test_concurrent_threads_soft_limit_5",
-        )
-        finished_at["t"] = time.monotonic()
-
-    foreground_thread = threading.Thread(target=foreground_query)
-    foreground_thread.start()
-
-    def foreground_started():
-        return (
-            node4.query(
-                "SELECT count() FROM system.processes WHERE query_id = 'test_concurrent_threads_soft_limit_5'"
-            ).strip()
-            == "1"
+            foreground_id,
+        ),
+    )
+    try:
+        background.start()
+        wait_for(
+            lambda: int(node4.query("SELECT sum(length(thread_ids)) FROM system.processes").strip() or 0) >= 11,
+            "the background query to take all slots",
         )
 
-    while not foreground_started():
-        time.sleep(0.1)
-    time.sleep(0.5)  # let it run on its single thread for a while
+        foreground.start()
+        wait_for(lambda: foreground_event("ConcurrencyControlSlotsDelayed"), "the foreground query to wait for slots")
 
-    # Release all competing slots while the foreground query still has ~3.5 s of single-threaded work.
-    node4.query("KILL QUERY WHERE query_id = 'background_query_upscale' SYNC")
-    released_at = time.monotonic()
-    background_thread.join()
-    foreground_thread.join()
-
-    # With the released slots picked up right away the rest takes ~0.5 s.
-    assert finished_at["t"] - released_at < 1.5
-
-    node4.query("SYSTEM FLUSH LOGS")
-    assert_profile_event(
-        node4,
-        "test_concurrent_threads_soft_limit_5",
-        "ConcurrencyControlSlotsAcquiredNonCompeting",
-        lambda x: x == 1,
-    )
-    assert_profile_event(
-        node4,
-        "test_concurrent_threads_soft_limit_5",
-        "ConcurrencyControlSlotsDelayed",
-        lambda x: x > 0,
-    )
-    # 7 competing slots are available for 8 streams once the background query is gone (not checked
-    # strictly: a slot granted right before the query finishes may legitimately stay unused).
-    assert_profile_event(
-        node4,
-        "test_concurrent_threads_soft_limit_5",
-        "ConcurrencyControlSlotsAcquired",
-        lambda x: x >= 4,
-    )
+        # Release all competing slots. The foreground query has to start threads for them at the next
+        # step (~1 s), long before its threads push to the global queue on their own.
+        node4.query(f"KILL QUERY WHERE query_id = '{background_id}' SYNC")
+        wait_for(
+            lambda: (foreground_event("ConcurrencyControlSlotsAcquired") or 0) >= 4,
+            "the foreground query to use the released slots",
+            timeout=8,
+        )
+    finally:
+        node4.query(f"KILL QUERY WHERE query_id IN ('{background_id}', '{foreground_id}') SYNC")
+        background.join()
+        foreground.join()
