@@ -254,7 +254,7 @@ void LimitByTransform::transform(Chunk & chunk)
         /// `push_back` threw between `emplaceKey` and `setMapped`, the key would stay in the hash table without a group
         /// index. This is done here rather than in `consumeImpl` to keep its row loop as it is.
         if (group_counts.capacity() - group_counts.size() < row_count)
-            group_counts.reserve(std::max(group_counts.size() + row_count, group_counts.capacity() * 2));
+            group_counts.reserve(std::max<size_t>(group_counts.size() + row_count, group_counts.capacity() * 2));
 
         /// `consumeImpl` maps rows to groups and splits the chunk into runs.
         switch (data.type)
