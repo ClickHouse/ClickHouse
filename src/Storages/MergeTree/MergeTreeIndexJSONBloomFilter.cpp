@@ -2077,10 +2077,12 @@ std::optional<String> tryMatchJSONPresencePath(
             || function.getArgumentAt(0).isFunction())
             return std::nullopt;
         /// A missing `Dynamic` path casts to NULL or the type's default, but a NULL of another type makes a cast to a
-        /// non-`Nullable` type throw, and skipping the granule would hide that exception.
+        /// non-`Nullable` type throw, and skipping the granule would hide that exception. A missing non-`Nullable`
+        /// typed path reads as its default, which is not indexed and stays a value after a cast to a `Nullable` type.
         const auto * argument = function.getArgumentAt(0).getDAGNode();
         if (!node.getDAGNode() || !argument
-            || (!isDynamic(removeJSONBloomWrappers(argument->result_type)) && !canContainNull(*node.getDAGNode()->result_type)))
+            || (!isDynamic(removeJSONBloomWrappers(argument->result_type))
+                && (!canContainNull(*argument->result_type) || !canContainNull(*node.getDAGNode()->result_type))))
             return std::nullopt;
         column_name = function.getArgumentAt(0).getColumnName();
     }
