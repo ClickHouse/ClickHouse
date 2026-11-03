@@ -16,6 +16,12 @@ the tests from the tested commit: a pinned test absent there is only listed in t
 test is red, so extra jobs belong on validation branches.
 `partial`: failed on the (older) reference only, measured on the tested side only.
 
+Also the Iceberg configuration (`perf.py --table-engine`, see the "Iceberg configuration" section of
+`tests/performance/README.md`): the jobs `arm_release, master_head, nightly, iceberg_local|iceberg_s3, N/2`, with the same
+binaries and reference, run every query of the tests with a MergeTree or `Memory` table, minus the `long` ones and
+`tests/performance/iceberg_skip_list.txt`. Their rows have `arch = 'arm_iceberg_local'` or `'arm_iceberg_s3'`: filter on
+`arch = 'arm'` for the MergeTree tests in the queries below.
+
 Red: any tested-side error (query, setup, missing binary, dataset or reference, test wall clock, required report or
 upload), a tested-side timeout, or a non-timeout error in a measured run on either server. Not red: reference-only
 errors in settings, setup or prewarm, reference-only timeouts (censored rows).
@@ -58,7 +64,7 @@ workflow = Workflow.Config(
     name="NightlyExtendedPerformance",
     event=Workflow.Event.SCHEDULE,
     branches=[BASE_BRANCH],
-    jobs=JobConfigs.nightly_extended_performance_jobs,
+    jobs=JobConfigs.nightly_extended_performance_jobs + JobConfigs.nightly_iceberg_performance_jobs,
     dockers=DOCKERS,
     disable_dockers_build=True,
     enable_cache=False,
