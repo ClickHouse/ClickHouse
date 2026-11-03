@@ -3,6 +3,9 @@
 #if USE_AWS_S3
 
 #include <algorithm>
+#include <cctype>
+#include <ctime>
+#include <sstream>
 #include <aws/core/utils/crypto/Hash.h>
 #include <Poco/MD5Engine.h>
 #include <Common/CurrentThread.h>
@@ -36,6 +39,12 @@
 
 #include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
+#include <Common/OpenSSLHelpers.h>
+#include <IO/S3Common.h>
+
+#include <aws/core/http/HttpClient.h>
+#include <aws/core/http/HttpRequest.h>
+#include <aws/core/utils/memory/stl/AWSStringStream.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
 
@@ -1471,6 +1480,154 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
     config.scheme = Aws::Http::SchemeMapper::FromString(protocol.c_str());
 
     return config;
+}
+
+namespace
+{
+
+String hexEncode(const uint8_t * data, size_t size)
+{
+    static constexpr char hex[] = "0123456789abcdef";
+    String out(size * 2, '\0');
+    for (size_t i = 0; i < size; ++i)
+    {
+        out[2 * i] = hex[data[i] >> 4];
+        out[2 * i + 1] = hex[data[i] & 0x0f];
+    }
+    return out;
+}
+
+String hexEncode(std::string_view raw)
+{
+    return hexEncode(reinterpret_cast<const uint8_t *>(raw.data()), raw.size());
+}
+
+/// Encode a path the way `PocoHTTPClient` re-encodes it before sending. `/` stays so the
+/// signed canonical URI matches the request line.
+String encodePathForGCS(std::string_view path)
+{
+    static constexpr std::string_view reserved = "?#:;+@&=%";
+    String out;
+    out.reserve(path.size());
+    for (unsigned char c : path)
+    {
+        const bool unreserved = std::isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~' || c == '/';
+        const bool must_encode = c <= 0x20 || c >= 0x7F || reserved.find(static_cast<char>(c)) != std::string_view::npos;
+        if (unreserved || !must_encode)
+            out.push_back(static_cast<char>(c));
+        else
+            out += fmt::format("%{:02X}", c);
+    }
+    return out;
+}
+
+std::vector<uint8_t> bytesOf(std::string_view value)
+{
+    return {value.begin(), value.end()};
+}
+
+}
+
+bool Client::tryGCSCreateIfAbsent(const String & bucket, const String & key, std::string_view body) const
+{
+    const auto credentials = getCredentials();
+    const auto & secret = credentials.GetAWSSecretKey();
+    const auto & access_key = credentials.GetAWSAccessKeyId();
+    if (secret.empty() || access_key.empty())
+        return false;
+
+    std::time_t now = std::time(nullptr);
+    struct tm tm_buf{};
+    if (!gmtime_r(&now, &tm_buf))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "gmtime_r failed while signing a GCS create");
+
+    char amz_date[32];
+    if (strftime(amz_date, sizeof(amz_date), "%Y%m%dT%H%M%SZ", &tm_buf) == 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "strftime failed while signing a GCS create");
+    const String datestamp(amz_date, 8);
+
+    const char * payload_ptr = body.empty() ? "" : body.data();
+    const String payload_hash = hexEncode(encodeSHA256(payload_ptr, body.size()));
+    const String canonical_uri = encodePathForGCS("/" + bucket + "/" + key);
+
+    const String canonical_headers = fmt::format(
+        "host:storage.googleapis.com\n"
+        "x-goog-content-sha256:{}\n"
+        "x-goog-date:{}\n"
+        "x-goog-if-generation-match:0\n",
+        payload_hash,
+        amz_date);
+    static constexpr std::string_view signed_headers = "host;x-goog-content-sha256;x-goog-date;x-goog-if-generation-match";
+    const String canonical_request = fmt::format(
+        "PUT\n{}\n\n{}\n{}\n{}",
+        canonical_uri,
+        canonical_headers,
+        signed_headers,
+        payload_hash);
+
+    /// `auto` / `s3` / `goog4_request` is the scope GCS accepts for an HMAC key on storage.googleapis.com.
+    const String scope = fmt::format("{}/auto/s3/goog4_request", datestamp);
+    const String string_to_sign = fmt::format(
+        "GOOG4-HMAC-SHA256\n{}\n{}\n{}",
+        amz_date,
+        scope,
+        hexEncode(encodeSHA256(canonical_request)));
+
+    std::string key_secret = "GOOG4";
+    key_secret.append(secret.data(), secret.size());
+    const auto date_key = hmacSHA256(bytesOf(key_secret), datestamp);
+    const auto region_key = hmacSHA256(date_key, "auto");
+    const auto service_key = hmacSHA256(region_key, "s3");
+    const auto signing_key = hmacSHA256(service_key, "goog4_request");
+    const auto signature_bytes = hmacSHA256(signing_key, string_to_sign);
+    const String signature_hex = hexEncode(signature_bytes.data(), signature_bytes.size());
+
+    const String authorization = fmt::format(
+        "GOOG4-HMAC-SHA256 Credential={}/{}, SignedHeaders={}, Signature={}",
+        access_key,
+        scope,
+        signed_headers,
+        signature_hex);
+
+    const String url = "https://storage.googleapis.com" + String("/") + bucket + "/" + key;
+    auto request = Aws::Http::CreateHttpRequest(
+        Aws::String(url),
+        Aws::Http::HttpMethod::HTTP_PUT,
+        Aws::Utils::Stream::DefaultResponseStreamFactoryMethod);
+
+    auto payload = Aws::MakeShared<Aws::StringStream>("GCSCreateIfAbsent");
+    if (!body.empty())
+        payload->write(body.data(), static_cast<std::streamsize>(body.size()));
+    payload->seekg(0);
+    request->AddContentBody(payload);
+    request->SetContentLength(std::to_string(body.size()));
+    request->SetHeaderValue("x-goog-content-sha256", payload_hash);
+    request->SetHeaderValue("x-goog-date", amz_date);
+    request->SetHeaderValue("x-goog-if-generation-match", "0");
+    request->SetHeaderValue("Authorization", authorization);
+
+    auto response = GetHttpClient()->MakeRequest(request);
+    if (!response)
+        throw S3Exception(Aws::S3::S3Errors::NETWORK_CONNECTION, "GCS create of {} returned no response", key);
+
+    const auto status = static_cast<int>(response->GetResponseCode());
+    if (status == 200)
+        return true;
+
+    String error_body;
+    if (response->GetResponseBody().good())
+    {
+        std::ostringstream captured;
+        captured << response->GetResponseBody().rdbuf();
+        error_body = captured.str();
+        if (error_body.size() > 400)
+            error_body.resize(400);
+    }
+
+    if (status == 412)
+        throw S3Exception(Aws::S3::S3Errors::UNKNOWN, "PreconditionFailed: GCS object {} already exists. {}", key, error_body);
+
+    throw S3Exception(Aws::S3::S3Errors::UNKNOWN, "GCS create of {} failed with status {}. {}", key, status, error_body);
 }
 
 bool isS3ExpressEndpoint(const std::string & endpoint)

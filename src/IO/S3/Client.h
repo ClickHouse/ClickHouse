@@ -242,6 +242,13 @@ public:
 
     bool isClientForGCS() const { return provider_type == ProviderType::GCS; }
 
+    /// GCS ignores `If-None-Match` on PUT, and an AWS4-signed request cannot also carry
+    /// `x-goog-if-generation-match` (GCS rejects the mix). HMAC creates use a GOOG4 signature
+    /// and generation 0, which succeeds only when the object does not exist.
+    /// Returns false when this client has no HMAC secret, so the caller can use another path.
+    /// Throws on 412 and on any other failed response.
+    bool tryGCSCreateIfAbsent(const String & bucket, const String & key, std::string_view body) const;
+
     std::string getGCSOAuthToken() const;
 
     ThrottlerPtr getPutRequestThrottler() const { return client_configuration.request_throttler.put_throttler; }
