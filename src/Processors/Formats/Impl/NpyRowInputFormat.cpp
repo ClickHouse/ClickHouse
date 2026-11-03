@@ -399,6 +399,13 @@ size_t NpyRowInputFormat::countRows(size_t max_block_size)
     return count;
 }
 
+void NpyRowInputFormat::resetParser()
+{
+    IRowInputFormat::resetParser();
+    read_rows = 0;
+    counted_rows = 0;
+}
+
 template <typename ColumnValue, typename DataValue>
 void NpyRowInputFormat::readBinaryValueAndInsert(MutableColumnPtr column, NumpyDataType::Endianness endianness)
 {

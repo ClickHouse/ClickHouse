@@ -26,6 +26,7 @@ public:
     NpyRowInputFormat(ReadBuffer & in_, SharedHeader header_, Params params_);
 
     String getName() const override { return "NpyRowInputFormat"; }
+    void resetParser() override;
 
 private:
     bool supportsCountRows() const override { return true; }
