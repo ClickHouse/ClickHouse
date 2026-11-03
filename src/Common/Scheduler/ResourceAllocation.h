@@ -44,6 +44,10 @@ public:
     /// just triggering procedure, not doing the kill itself.
     virtual void killAllocation(const std::exception_ptr & reason) = 0;
 
+    /// Scheduler asks this allocation to reclaim at least `additional_bytes` of its size soon
+    /// IMPORTANT: it is called from the scheduler thread and must be fast - just record the request
+    virtual void spillAllocation(ResourceCost additional_bytes) = 0;
+
     IAllocationQueue & queue; /// Queue that manages this allocation.
     String const id; /// ID of this allocation for introspection purposes.
 
@@ -52,6 +56,9 @@ private:
 
     ResourceCost allocated = 0; /// Currently allocated.
     bool admitted = false; /// True once `apply(IncreaseRequest)` has incremented `allocations` in the hierarchy for this allocation.
+    ResourceCost reclaiming = 0; /// Bytes requested for spilling but not yet settled, including requests not yet executing.
+    /// Last absolute estimate, including outstanding requests; retained even when larger than `allocated`.
+    ResourceCost reclaimable = 0;
 
     IncreaseRequest increase;
     DecreaseRequest decrease;
@@ -71,7 +78,7 @@ private:
     /// Keys for intrusive sets
     /// NOTE: Can only be accessed under queue.mutex as it is used in ordering, allocation.mutex is not needed.
     size_t unique_id = 0; /// Unique id for tie breaking in ordering.
-    ResourceCost fair_key = 0; /// Currently allocated plus pending increase (key for max-min fair ordering).
+    ResourceCost fair_key = 0; /// Currently allocated plus pending increase minus outstanding spill requests.
 
     /// Ordering by size and unique id for tie breaking
     /// Used for both running and increasing allocations for consistent ordering
