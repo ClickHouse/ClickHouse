@@ -534,7 +534,7 @@ std::optional<String> getColumnToReadInsteadOfSubcolumn(
     for (auto [name_in_storage, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(column_name))
     {
         auto merge_column = merge_columns.tryGetColumn(GetColumnsOptions::All, String(name_in_storage));
-        if (merge_column && merge_column->type->tryGetSubcolumnType(String(subcolumn_name)) && child_columns.has(String(name_in_storage)))
+        if (merge_column && merge_column->type->tryGetSubcolumnType(subcolumn_name) && child_columns.has(String(name_in_storage)))
             return String(name_in_storage);
     }
 
