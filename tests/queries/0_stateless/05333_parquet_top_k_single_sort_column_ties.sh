@@ -54,6 +54,9 @@ compare() {
 echo "-- one sort column: once the threshold reaches the shared minimum (maximum), the other row groups are skipped"
 run_json "SELECT k FROM file('${DIR}/t.parquet') ORDER BY k LIMIT 3"
 run_json "SELECT k FROM file('${DIR}/t.parquet') ORDER BY k DESC LIMIT 3"
+# The same with a Nullable key.
+run_json "SELECT k FROM file('${DIR}/t.parquet', Parquet, 'k Nullable(UInt64)') ORDER BY k LIMIT 3"
+run_json "SELECT k FROM file('${DIR}/t.parquet', Parquet, 'k Nullable(UInt64)') ORDER BY k DESC LIMIT 3"
 
 echo "-- two sort columns: a row equal to the threshold can still win on v, so every row group is read"
 run_json "SELECT k, v FROM file('${DIR}/t.parquet') ORDER BY k, v DESC LIMIT 3"
