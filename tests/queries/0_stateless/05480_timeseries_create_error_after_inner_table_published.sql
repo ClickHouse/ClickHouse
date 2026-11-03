@@ -1,5 +1,6 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-fasttest
 -- Tag no-parallel: the failpoint is global and would fail the `CREATE` of a `TimeSeries` table in another test.
+-- Tag no-fasttest: tests that enable a failpoint run alone, and they are kept out of the fast test.
 
 -- An inner table of a `TimeSeries` table whose `CREATE` fails after the table is published, such as from its `startup`, is dropped
 -- with the others when the `CREATE` of the `TimeSeries` table fails.
