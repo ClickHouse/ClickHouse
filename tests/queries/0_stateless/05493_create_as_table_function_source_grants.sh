@@ -6,7 +6,9 @@
 # A table created by `CREATE TABLE ... AS file(...)` reads the file without checking the grants of the user
 # who reads the table. So creating it requires `READ ON FILE` as well as `WRITE ON FILE`, however the
 # structure of the table is obtained, and also when the table is created by the hosts of an `ON CLUSTER`
-# query, which execute it without the user.
+# query, which execute it without the user. A short `ATTACH` replays the stored definition, which was checked
+# when the table was created, so it does not require `READ ON FILE` again, but `RESTORE` brings a definition
+# from the backup and requires it.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -20,6 +22,7 @@ chmod 666 "${data_file}"
 db="${CLICKHOUSE_DATABASE}"
 user="user_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 file_function="file('${data_file}', 'LineAsString')"
+backup="Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}')"
 
 ${CLICKHOUSE_CLIENT} -q "
 DROP USER IF EXISTS ${user};
@@ -75,6 +78,19 @@ ${CLICKHOUSE_CLIENT} --user "${user}" -q "SELECT * FROM ${db}.t_columns"
 ${CLICKHOUSE_CLIENT} --user "${user}" --distributed_ddl_output_mode throw \
     -q "CREATE TABLE ${db}.t_cluster ON CLUSTER test_shard_localhost (line String) AS ${file_function}" > /dev/null
 ${CLICKHOUSE_CLIENT} --user "${user}" -q "SELECT * FROM ${db}.t_cluster"
+
+echo '--- without READ ON FILE, the table is attached back from its stored definition'
+${CLICKHOUSE_CLIENT} -q "
+REVOKE READ ON FILE FROM ${user};
+DETACH TABLE ${db}.t_columns;
+"
+${CLICKHOUSE_CLIENT} --user "${user}" -q "ATTACH TABLE ${db}.t_columns"
+${CLICKHOUSE_CLIENT} -q "SELECT name FROM system.tables WHERE database = '${db}' AND name = 't_columns'"
+
+echo '--- but not restored from a backup'
+${CLICKHOUSE_CLIENT} -q "BACKUP TABLE ${db}.t_columns TO ${backup} FORMAT Null"
+${CLICKHOUSE_CLIENT} -q "GRANT READ ON DISK TO ${user}"
+missing_grant -q "RESTORE TABLE ${db}.t_columns AS ${db}.t_restored FROM ${backup} FORMAT Null"
 
 ${CLICKHOUSE_CLIENT} -q "
 DROP TABLE ${db}.t_columns;

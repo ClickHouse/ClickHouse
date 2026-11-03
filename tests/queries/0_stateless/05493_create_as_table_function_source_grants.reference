@@ -18,3 +18,7 @@ grant WRITE ON FILE
 --- with both, the table is created and reads the file
 canary
 canary
+--- without READ ON FILE, the table is attached back from its stored definition
+t_columns
+--- but not restored from a backup
+grant READ ON FILE
