@@ -6,7 +6,19 @@
 1	7	10
 2	5	6
 3	7	30
+--- url converted to urlCluster ---
+1	7	10
+2	5	6
+3	7	30
 --- fileCluster, non-replicated destination ---
 1	7	10
 2	5	6
 3	7	30
+--- urlCluster, structure not overridable ---
+1
+2
+3
+--- urlCluster, format not overridable ---
+1
+2
+3

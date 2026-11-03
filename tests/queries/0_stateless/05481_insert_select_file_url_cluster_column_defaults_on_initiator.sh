@@ -47,8 +47,33 @@ $CLICKHOUSE_CLIENT -q "
 check "urlCluster"
 
 $CLICKHOUSE_CLIENT -q "
+    INSERT INTO t_05481 SELECT * FROM url('${S3_DIR}/part_{1,2}.jsonl', 'JSONEachRow')
+    SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = '${CLUSTER}',
+        parallel_replicas_for_cluster_engines = 1, parallel_distributed_insert_select = 0"
+check "url converted to urlCluster"
+
+$CLICKHOUSE_CLIENT -q "
     INSERT INTO t_05481 SELECT * FROM fileCluster('${CLUSTER}', '${FILE_DIR}/part_{1,2}.jsonl', 'JSONEachRow')
     SETTINGS parallel_distributed_insert_select = 2"
 check "fileCluster, non-replicated destination"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_05481"
+
+# The nodes must not receive the inferred values of the keys of a named collection that are \`NOT OVERRIDABLE\`.
+NC="nc_${CLICKHOUSE_DATABASE}_05481"
+$CLICKHOUSE_CLIENT -q "
+    DROP NAMED COLLECTION IF EXISTS ${NC}_structure;
+    DROP NAMED COLLECTION IF EXISTS ${NC}_format;
+    CREATE NAMED COLLECTION ${NC}_structure AS url = '${S3_DIR}/part_{1,2}.jsonl', format = 'JSONEachRow', structure = 'auto' NOT OVERRIDABLE;
+    CREATE NAMED COLLECTION ${NC}_format AS url = '${S3_DIR}/part_{1,2}.jsonl', format = 'auto' NOT OVERRIDABLE, structure = 'id UInt32';
+"
+
+echo "--- urlCluster, structure not overridable ---"
+$CLICKHOUSE_CLIENT -q "SELECT * FROM urlCluster('${CLUSTER}', ${NC}_structure) ORDER BY id"
+echo "--- urlCluster, format not overridable ---"
+$CLICKHOUSE_CLIENT -q "SELECT * FROM urlCluster('${CLUSTER}', ${NC}_format) ORDER BY id"
+
+$CLICKHOUSE_CLIENT -q "
+    DROP NAMED COLLECTION ${NC}_structure;
+    DROP NAMED COLLECTION ${NC}_format;
+"
