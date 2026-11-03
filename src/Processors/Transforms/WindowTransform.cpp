@@ -315,8 +315,6 @@ void WindowTransform::startNextPartition()
     chassert(peers.current().location == partition_start);
 
     partition.beginAt(blocks, partition_start);
-    partition.advance(blocks);
-
     peers.enterPartition(partition_start);
     frame.enterPartition(partition_start);
     prev_frame = FrameBounds{.start = {.location = partition_start}, .end = {.location = partition_start}, .fully_visible = true};
