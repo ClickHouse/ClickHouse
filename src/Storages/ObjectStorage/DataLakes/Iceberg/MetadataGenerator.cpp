@@ -124,6 +124,16 @@ bool checkValidSchemaEvolution(Poco::Dynamic::Var old_type, Poco::Dynamic::Var n
     return false;
 }
 
+/// `last-column-id` written by some writers does not count nested field ids, so the ids of all schemas are taken into account too.
+Int32 getLastAssignedFieldId(const Poco::JSON::Object::Ptr & metadata_object)
+{
+    Int64 result = metadata_object->getValue<Int32>(Iceberg::f_last_column_id);
+    auto schemas = metadata_object->getArray(Iceberg::f_schemas);
+    for (UInt32 i = 0; i < schemas->size(); ++i)
+        result = std::max(result, Iceberg::IcebergSchemaProcessor::getMaxFieldId(schemas->getObject(i)->getArray(Iceberg::f_fields)));
+    return static_cast<Int32>(result);
+}
+
 }
 
 MetadataGenerator::MetadataGenerator(Poco::JSON::Object::Ptr metadata_object_)
@@ -475,12 +485,11 @@ void MetadataGenerator::generateAddColumnMetadata(const String & column_name, Da
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Column {} already exists", column_name);
     }
 
-    auto last_column_id = metadata_object->getValue<Int32>(Iceberg::f_last_column_id);
     /// The new top-level field takes the next id; nested tuple/array/map
     /// children (when `type` is complex) take the ids after it via the shared
     /// `iter`. After getIcebergType `iter` is the max assigned id, which is what
     /// last-column-id must record so every added child gets a globally unique id.
-    Int32 new_field_id = last_column_id + 1;
+    Int32 new_field_id = getLastAssignedFieldId(metadata_object) + 1;
     Int32 iter = new_field_id;
     auto new_type = Iceberg::getIcebergType(type, iter);
     metadata_object->set(Iceberg::f_last_column_id, iter);
