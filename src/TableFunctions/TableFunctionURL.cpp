@@ -375,7 +375,7 @@ StoragePtr TableFunctionURL::getStorage(
 
     if (can_use_parallel_replicas && !context->isSQLSecurityOverriddenBody())
     {
-        const bool cluster_has_secret = clusterHasSecret(context, parallel_replicas_cluster_name);
+        const bool send_not_overridable = sendNotOverridableAutoToCluster(context, parallel_replicas_cluster_name);
         return std::make_shared<StorageURLCluster>(
             context,
             parallel_replicas_cluster_name,
@@ -383,12 +383,12 @@ StoragePtr TableFunctionURL::getStorage(
             format_,
             compression_method_,
             StorageID(getDatabaseName(), table_name),
-            columns.empty() || (structure_not_overridable && !cluster_has_secret)
+            columns.empty() || (structure_not_overridable && !send_not_overridable)
                 ? getActualTableStructure(context, true)
                 : columns,
             ConstraintsDescription{},
             configuration,
-            cluster_has_secret);
+            send_not_overridable);
     }
 
     if (use_web_wildcard)

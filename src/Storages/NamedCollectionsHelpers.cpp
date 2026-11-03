@@ -2,6 +2,7 @@
 #include <Interpreters/FunctionSecretArgumentsFinder.h>
 #include <Access/ContextAccess.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Core/Settings.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
@@ -19,6 +20,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool cluster_function_send_not_overridable_auto;
+}
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -239,8 +245,10 @@ bool isSecondaryQueryAuthenticatedByClusterSecret(const ContextPtr & context)
     return client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY && client_info.is_interserver_authenticated;
 }
 
-bool clusterHasSecret(const ContextPtr & context, const String & cluster_name)
+bool sendNotOverridableAutoToCluster(const ContextPtr & context, const String & cluster_name)
 {
+    if (!context->getSettingsRef()[Setting::cluster_function_send_not_overridable_auto])
+        return false;
     const auto cluster = context->tryGetCluster(cluster_name);
     return cluster && !cluster->getSecret().empty();
 }

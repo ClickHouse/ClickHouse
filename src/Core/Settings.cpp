@@ -8661,6 +8661,10 @@ Max attempts to read with backoff
 If set to `true`, increases performance of processing archives in cluster functions. Should be set to `false` for compatibility and to avoid errors during upgrade to 25.7+ if using cluster functions with archives on earlier versions.
 )", 0, \
         {"25.7", false, true, "New setting"}) \
+    DECLARE(Bool, cluster_function_send_not_overridable_auto, true, R"(
+If set to `true`, a `*Cluster` table function, or a table function converted to one by `parallel_replicas_for_cluster_engines`, sends the format and structure it inferred for a named collection key set to `'auto' NOT OVERRIDABLE` to the nodes of a cluster with an interserver `secret`. If set to `false`, the nodes infer such a key themselves, as for a cluster without a secret. During an upgrade from a version before 26.11, whose nodes refuse the inferred value with `Override not allowed`, set it to `false` in the profiles of the upgraded servers, or use `compatibility`. A server does not forward its value to the others, except in a `SETTINGS` clause of an `ON CLUSTER` query.
+)", 0, \
+        {"26.11", false, true, "New setting. `compatibility` before 26.11 does not send the inferred value of a `NOT OVERRIDABLE` `'auto'` key, which older nodes refuse."}) \
     DECLARE(UInt64, max_streams_for_files_processing_in_cluster_functions, 0, R"(
 If is not zero, limit the number of threads reading data from files in *Cluster table functions.
 )", 0, \

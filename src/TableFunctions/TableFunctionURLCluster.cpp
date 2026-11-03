@@ -52,7 +52,7 @@ StoragePtr TableFunctionURLCluster::getStorage(
             /*distributed_processing=*/ true);
     }
 
-    const bool cluster_has_secret = clusterHasSecret(context, cluster_name);
+    const bool send_not_overridable = sendNotOverridableAutoToCluster(context, cluster_name);
     return std::make_shared<StorageURLCluster>(
         context,
         cluster_name,
@@ -60,12 +60,12 @@ StoragePtr TableFunctionURLCluster::getStorage(
         format,
         compression_method,
         StorageID(getDatabaseName(), table_name),
-        columns.empty() || (structure_not_overridable && !cluster_has_secret)
+        columns.empty() || (structure_not_overridable && !send_not_overridable)
             ? getActualTableStructure(context, true)
             : columns,
         ConstraintsDescription{},
         configuration,
-        cluster_has_secret);
+        send_not_overridable);
 }
 
 void registerTableFunctionURLCluster(TableFunctionFactory & factory)

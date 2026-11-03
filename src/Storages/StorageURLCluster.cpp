@@ -51,9 +51,9 @@ StorageURLCluster::StorageURLCluster(
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const StorageURL::Configuration & configuration_,
-    bool cluster_has_secret_)
+    bool send_not_overridable_)
     : IStorageCluster(cluster_name_, table_id_, getLogger("StorageURLCluster (" + table_id_.getFullTableName() + ")"))
-    , uri(uri_), format_name(format_), cluster_has_secret(cluster_has_secret_)
+    , uri(uri_), format_name(format_), send_not_overridable(send_not_overridable_)
 {
     auto headers = configuration_.headers;
     context->getRemoteHostFilter().checkURL(Poco::URI(uri));
@@ -135,7 +135,7 @@ void StorageURLCluster::updateQueryToSendIfNeeded(
             format_name,
             context,
             /* is_replayed_definition= */ false,
-            /* skip_not_overridable= */ !cluster_has_secret
+            /* skip_not_overridable= */ !send_not_overridable
         );
 
     /// When a non-cluster table function (`url`) was auto-converted to cluster mode

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, zookeeper, no-replicated-database
 # Tag no-fasttest: needs MinIO, and the interserver secret needs the SSL library
+# Tag no-replicated-database: ON CLUSTER is not allowed
 
 # Cluster table functions over a named collection with `format` or `structure` = 'auto' NOT OVERRIDABLE.
 # The nodes of a cluster with a secret accept the inferred values from the initiator, so an INSERT gets the `DEFAULT`s
@@ -22,7 +23,8 @@ COLLECTIONS="url_structure url_structure_rev url_format s3_structure s3_format s
 
 function cleanup()
 {
-    $CLICKHOUSE_CLIENT -q "DROP VIEW IF EXISTS v_url_05493; DROP VIEW IF EXISTS v_s3_05493; DROP TABLE IF EXISTS dst_05493"
+    $CLICKHOUSE_CLIENT -q "DROP VIEW IF EXISTS v_url_05493; DROP VIEW IF EXISTS v_s3_05493; DROP VIEW IF EXISTS v_off_05493"
+    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS dst_05493"
     for nc in $COLLECTIONS; do
         $CLICKHOUSE_CLIENT -q "DROP NAMED COLLECTION IF EXISTS ${NC}_${nc}"
     done
@@ -113,6 +115,28 @@ echo "--- s3Cluster, locked format ---"
 query --query_id "${QID}_s3_format" -q "SELECT id FROM s3Cluster('${SECRET}', ${NC}_s3_format) ORDER BY id"
 echo "--- s3 with parallel replicas, locked format ---"
 query --query_id "${QID}_s3_format_pr" -q "SELECT id FROM s3(${NC}_s3_format) ORDER BY id SETTINGS $(parallel_replicas "${SECRET}" 2)"
+echo "--- locked format, cluster_function_send_not_overridable_auto = 0 ---"
+query --query_id "${QID}_url_format_off" -q "SELECT id FROM urlCluster('${SECRET}', ${NC}_url_format) ORDER BY id
+    SETTINGS cluster_function_send_not_overridable_auto = 0"
+query --query_id "${QID}_s3_format_off" -q "SELECT id FROM s3Cluster('${SECRET}', ${NC}_s3_format) ORDER BY id
+    SETTINGS cluster_function_send_not_overridable_auto = 0"
+check "url with parallel replicas, locked structure, cluster_function_send_not_overridable_auto = 0" \
+    "url(${NC}_url_structure) SETTINGS parallel_distributed_insert_select = 0, cluster_function_send_not_overridable_auto = 0,
+        $(parallel_replicas "${SECRET}" 2)"
+check "s3 with parallel replicas, locked structure, cluster_function_send_not_overridable_auto = 0" \
+    "s3(${NC}_s3_structure) SETTINGS parallel_distributed_insert_select = 0, cluster_function_send_not_overridable_auto = 0,
+        $(parallel_replicas "${SECRET}" 2)"
+echo "--- a view created ON CLUSTER keeps cluster_function_send_not_overridable_auto in its body ---"
+$CLICKHOUSE_CLIENT --cluster_function_send_not_overridable_auto 0 -q "
+    CREATE VIEW v_off_05493 ON CLUSTER test_shard_localhost AS SELECT id FROM urlCluster('${SECRET}', ${NC}_url_format)
+    SETTINGS cluster_function_send_not_overridable_auto = 0" > /dev/null
+$CLICKHOUSE_CLIENT -q "SELECT create_table_query LIKE '%cluster_function_send_not_overridable_auto = 0%' FROM system.tables
+    WHERE database = currentDatabase() AND name = 'v_off_05493'"
+query --query_id "${QID}_view_off" -q "SELECT id FROM v_off_05493 ORDER BY id"
+# The DDL entry does not carry the session value to the hosts: an older one rejects it.
+$CLICKHOUSE_CLIENT -q "
+    SELECT count() > 0, countIf(mapContains(settings, 'cluster_function_send_not_overridable_auto')) FROM system.distributed_ddl_queue
+    WHERE query LIKE '%v_off_05493%' AND query LIKE '%' || currentDatabase() || '%'"
 echo "--- parallel replicas read from the cluster ---"
 # The rows above are the same if the cluster path is not taken.
 for args in "url(${NC}_url_structure)" "s3(${NC}_s3_structure)" "s3(${NC}_s3_format)"; do
@@ -138,7 +162,7 @@ query -q "SELECT * FROM s3('${S3_DIR}/w/out.parquet') ORDER BY id"
 echo "--- the inferred format is sent to the nodes through the secret only ---"
 # The rows of the locked format cases are the same if the nodes infer the format from the file extension.
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
-for id in url_format s3_format s3_format_pr plain_format; do
+for id in url_format s3_format s3_format_pr plain_format url_format_off s3_format_off view_off; do
     $CLICKHOUSE_CLIENT -q "
         SELECT countIf(query LIKE '%format = _Parquet_%') > 0, count() > 0 FROM system.query_log
         WHERE event_date >= yesterday() AND type = 'QueryStart' AND NOT is_initial_query
@@ -146,6 +170,17 @@ for id in url_format s3_format s3_format_pr plain_format; do
                 SELECT query_id FROM system.query_log
                 WHERE event_date >= yesterday() AND current_database = currentDatabase() AND query_id = '${QID}_${id}')"
 done
+echo "--- cluster_function_send_not_overridable_auto is not forwarded to the nodes ---"
+# A node of an older version rejects it.
+$CLICKHOUSE_CLIENT -q "
+    SELECT countIf(query LIKE '%cluster_function_send_not_overridable_auto%' OR Settings['cluster_function_send_not_overridable_auto'] != ''),
+        count() > 0
+    FROM system.query_log
+    WHERE event_date >= yesterday() AND type = 'QueryStart' AND NOT is_initial_query
+        AND initial_query_id IN (
+            SELECT query_id FROM system.query_log
+            WHERE event_date >= yesterday() AND current_database = currentDatabase()
+                AND query_id IN ('${QID}_url_format_off', '${QID}_s3_format_off', '${QID}_view_off'))"
 
 echo "=== the lock binds a written value ==="
 expect_locked structure -q "SELECT * FROM urlCluster('${SECRET}', ${NC}_url_structure, structure = 'id UInt32')"

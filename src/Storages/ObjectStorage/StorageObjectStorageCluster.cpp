@@ -142,14 +142,14 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     bool is_table_function,
     std::optional<FormatSettings> format_settings_,
     std::shared_ptr<DataLake::ICatalog> catalog_,
-    bool cluster_has_secret_)
+    bool send_not_overridable_)
     : IStorageCluster(
         cluster_name_, table_id_, getLogger(fmt::format("{}({})", configuration_->getEngineName(), table_id_.table_name)))
     , configuration{configuration_}
     , object_storage(object_storage_)
     , format_settings(std::move(format_settings_))
     , catalog(std::move(catalog_))
-    , cluster_has_secret(cluster_has_secret_)
+    , send_not_overridable(send_not_overridable_)
 {
     configuration->initPartitionStrategy(partition_by, columns_in_table_or_function_definition, context_);
     configuration->check(context_);
@@ -457,7 +457,7 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
         if (add_structure_and_format)
             configuration->addStructureAndFormatToArgsIfNeeded(
                 args, structure, configuration->format, context, /*with_structure=*/true,
-                /*skip_not_overridable=*/!cluster_has_secret);
+                /*skip_not_overridable=*/!send_not_overridable);
 
         /// When a non-cluster table function (e.g. `s3`) was auto-converted to cluster mode
         /// by the `parallel_replicas_for_cluster_engines` setting, rename it to the Cluster variant
@@ -486,7 +486,7 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
         if (add_structure_and_format)
             configuration->addStructureAndFormatToArgsIfNeeded(
                 args, structure, configuration->format, context, /*with_structure=*/true,
-                /*skip_not_overridable=*/!cluster_has_secret);
+                /*skip_not_overridable=*/!send_not_overridable);
         if (!target_cluster_name.empty())
             cluster_name_arg = make_intrusive<ASTLiteral>(target_cluster_name);
         args.insert(args.begin(), std::move(cluster_name_arg));

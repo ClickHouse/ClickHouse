@@ -35,9 +35,10 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
     const auto & client_info = context->getClientInfo();
 
     const bool is_secondary_query = client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
-    const bool cluster_has_secret = !is_secondary_query && clusterHasSecret(context, ITableFunctionCluster<Base>::cluster_name);
+    const bool send_not_overridable
+        = !is_secondary_query && sendNotOverridableAutoToCluster(context, ITableFunctionCluster<Base>::cluster_name);
     const bool infer_locked_structure = !is_secondary_query && !is_insert_query && configuration->structure_not_overridable
-        && !cluster_has_secret;
+        && !send_not_overridable;
 
     ColumnsDescription columns;
     if (configuration->structure != "auto")
@@ -90,7 +91,7 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
             /* is_table_function */true,
             /* format_settings_ */ std::nullopt,
             /* catalog_ */ nullptr,
-            /* cluster_has_secret_ */ cluster_has_secret);
+            /* send_not_overridable_ */ send_not_overridable);
     }
 
     storage->startup();

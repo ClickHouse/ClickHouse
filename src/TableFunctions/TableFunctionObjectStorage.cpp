@@ -248,8 +248,8 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
     const auto is_secondary_query = context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
     const bool use_parallel_replicas
         = can_use_parallel_replicas && !is_secondary_query && !is_insert_query && !context->isSQLSecurityOverriddenBody();
-    const bool cluster_has_secret = use_parallel_replicas && clusterHasSecret(context, parallel_replicas_cluster_name);
-    const bool infer_locked_structure = use_parallel_replicas && configuration->structure_not_overridable && !cluster_has_secret;
+    const bool send_not_overridable = use_parallel_replicas && sendNotOverridableAutoToCluster(context, parallel_replicas_cluster_name);
+    const bool infer_locked_structure = use_parallel_replicas && configuration->structure_not_overridable && !send_not_overridable;
 
     ColumnsDescription columns;
     if (configuration->structure != "auto")
@@ -273,7 +273,7 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
             /* is_table_function */true,
             /* format_settings_ */ std::nullopt,
             /* catalog_ */ nullptr,
-            /* cluster_has_secret_ */ cluster_has_secret);
+            /* send_not_overridable_ */ send_not_overridable);
 
         storage->startup();
         return storage;
