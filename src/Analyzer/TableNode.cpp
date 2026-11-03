@@ -216,8 +216,8 @@ bool TableNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
 
 void TableNode::updateTreeHashImpl(HashState & state, CompareOptions) const
 {
-    /// `IN` set names derive from this hash and must match on servers of other versions, so a name without a dot
-    /// hashes as before. Otherwise the length of the database name in it is hashed too (0 for a temporary table).
+    /// `IN` set names derive from this hash and must agree across server versions,
+    /// so only a database or temporary table name that contains a dot mixes in extra bytes.
     if (!temporary_table_name.empty())
     {
         state.update(temporary_table_name.size());
