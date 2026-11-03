@@ -11589,14 +11589,10 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
     }
     else
     {
-        execution_context = Context::createCopy(query_context);
         /// The analysis below resolves the predicate against a `TableNode`, which takes a storage
-        /// snapshot. With `enable_shared_storage_snapshot_in_query` it would be cached for the whole
-        /// query, and a lightweight update reads with the cached one - but it runs this analysis to
-        /// allocate its block numbers, i.e. before `update_sequential_consistency` waits for
-        /// committing inserts and pulls the replication queue. Parts arriving during that wait would
-        /// then be invisible to the update, which would leave their rows unchanged.
-        execution_context->setSetting("enable_shared_storage_snapshot_in_query", false);
+        /// snapshot and may cache it for the whole query. The lightweight update discards it with
+        /// `discardSharedStorageSnapshot` before reading, see `StorageReplicatedMergeTree::updateLightweight`.
+        execution_context = Context::createCopy(query_context);
     }
 
     /// The predicate comes from a serialized mutation command that was re-parsed, so its set
@@ -15475,6 +15471,16 @@ StorageSnapshotPtr MergeTreeData::getStorageSnapshot(const StorageMetadataPtr & 
     if (it != cache->end())
         return it->second;
     return cache->emplace(this, createStorageSnapshot(metadata_snapshot, query_context, false)).first->second;
+}
+
+void MergeTreeData::discardSharedStorageSnapshot(const ContextPtr & query_context) const
+{
+    auto query_metadata_cache = query_context->getQueryMetadataCache();
+    if (!query_metadata_cache)
+        return;
+
+    auto [cache, lock] = query_metadata_cache->getStorageSnapshotCache();
+    cache->erase(this);
 }
 
 StorageSnapshotPtr
