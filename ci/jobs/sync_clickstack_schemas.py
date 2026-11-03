@@ -120,19 +120,34 @@ def bot_branch_matches_generated_snippets() -> bool:
     )
 
 
-def bot_branch_merges_cleanly() -> bool:
-    """Check whether the bot branch still merges into the checked-out base tip."""
+def bot_branch_merge_matches_generated_snippets() -> bool:
+    """Check whether merging the bot branch would preserve the generated snippets."""
     return_code, stdout, stderr = Shell.get_res_stdout_stderr(
-        "git merge-tree --write-tree --quiet FETCH_HEAD HEAD", verbose=True
+        "git merge-tree --write-tree FETCH_HEAD HEAD", verbose=True
+    )
+    if return_code == 1:
+        print("The existing ClickStack schema bot branch conflicts with the base branch.")
+        return False
+    if return_code != 0:
+        raise RuntimeError(
+            "Failed to merge the ClickStack schema bot branch into the base branch: "
+            f"{stderr or stdout}"
+        )
+
+    merge_tree = stdout.strip()
+    if not merge_tree:
+        raise RuntimeError("Merge-tree did not return a tree for the bot branch merge")
+    return_code, stdout, stderr = Shell.get_res_stdout_stderr(
+        f"git diff --quiet {shlex.quote(merge_tree)} -- {SNIPPETS_PATH}", verbose=False
     )
     if return_code == 0:
         return True
     if return_code == 1:
-        print("The existing ClickStack schema bot branch conflicts with the base branch.")
+        print("The bot branch merge does not contain the generated schema snippets.")
         return False
     raise RuntimeError(
-        "Failed to check whether the ClickStack schema bot branch merges into "
-        f"the base branch: {stderr or stdout}"
+        "Failed to compare the bot branch merge with the generated snippets: "
+        f"{stderr or stdout}"
     )
 
 
@@ -194,7 +209,7 @@ def publish_if_needed():
     if (
         existing_pr
         and bot_branch_matches_generated_snippets()
-        and bot_branch_merges_cleanly()
+        and bot_branch_merge_matches_generated_snippets()
     ):
         print(f"PR #{existing_pr} already contains the generated schema changes.")
         return True

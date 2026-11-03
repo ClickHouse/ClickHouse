@@ -131,35 +131,36 @@ after
 """,
             )
 
-    def test_bot_branch_merges_cleanly_after_shallow_checkout_is_deepened(self):
+    def test_bot_branch_merge_refreshes_nonconflicting_base_schema_change(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             remote = root / "remote.git"
             source = root / "source"
             checkout = root / "checkout"
-            snippet = "docs/snippets/clickstack/_schema_otel_logs.mdx"
+            logs_snippet = "docs/snippets/clickstack/_schema_otel_logs.mdx"
+            traces_snippet = "docs/snippets/clickstack/_schema_otel_traces.mdx"
 
             self.run_git("init", "--bare", remote, cwd=root)
             self.run_git("init", "--initial-branch=master", source, cwd=root)
             self.run_git("config", "user.name", "Test User", cwd=source)
             self.run_git("config", "user.email", "test@example.com", cwd=source)
-            (source / snippet).parent.mkdir(parents=True)
-            (source / snippet).write_text("schema A\n", encoding="utf-8")
-            (source / "unrelated").write_text("before\n", encoding="utf-8")
-            self.run_git("add", snippet, "unrelated", cwd=source)
+            (source / logs_snippet).parent.mkdir(parents=True)
+            (source / logs_snippet).write_text("logs A\n", encoding="utf-8")
+            (source / traces_snippet).write_text("traces B\n", encoding="utf-8")
+            self.run_git("add", logs_snippet, traces_snippet, cwd=source)
             self.run_git("commit", "-m", "base", cwd=source)
             self.run_git("remote", "add", "origin", remote, cwd=source)
             self.run_git("push", "origin", "master", cwd=source)
 
             self.run_git("checkout", "-b", job.BOT_BRANCH, cwd=source)
-            (source / snippet).write_text("schema B\n", encoding="utf-8")
-            self.run_git("add", snippet, cwd=source)
+            (source / logs_snippet).write_text("logs B\n", encoding="utf-8")
+            self.run_git("add", logs_snippet, cwd=source)
             self.run_git("commit", "-m", "generated schema", cwd=source)
             self.run_git("push", "origin", job.BOT_BRANCH, cwd=source)
 
             self.run_git("checkout", "master", cwd=source)
-            (source / "unrelated").write_text("after\n", encoding="utf-8")
-            self.run_git("add", "unrelated", cwd=source)
+            (source / traces_snippet).write_text("traces C\n", encoding="utf-8")
+            self.run_git("add", traces_snippet, cwd=source)
             self.run_git("commit", "-m", "advance master", cwd=source)
             self.run_git("push", "origin", "master", cwd=source)
 
@@ -176,9 +177,10 @@ after
                 with mock.patch.object(job, "Info") as info:
                     info.return_value.git_branch = job.BASE_BRANCH
                     self.assertTrue(job.checkout_current_base_branch())
-                (checkout / snippet).write_text("schema B\n", encoding="utf-8")
+                (checkout / logs_snippet).write_text("logs B\n", encoding="utf-8")
+                (checkout / traces_snippet).write_text("traces B\n", encoding="utf-8")
                 self.assertTrue(job.bot_branch_matches_generated_snippets())
-                self.assertTrue(job.bot_branch_merges_cleanly())
+                self.assertFalse(job.bot_branch_merge_matches_generated_snippets())
             finally:
                 os.chdir(original_directory)
 
@@ -240,19 +242,19 @@ after
 
     @mock.patch.object(job, "Info")
     @mock.patch.object(job, "publish_sync", return_value=True)
-    @mock.patch.object(job, "bot_branch_merges_cleanly", return_value=False)
+    @mock.patch.object(job, "bot_branch_merge_matches_generated_snippets", return_value=False)
     @mock.patch.object(job, "bot_branch_matches_generated_snippets", return_value=True)
     @mock.patch.object(job, "open_bot_pull_request", return_value="42")
     @mock.patch.object(job, "has_changes", return_value=True)
-    def test_publish_if_needed_refreshes_conflicting_bot_branch(
-        self, has_changes, open_pr, snippets_match, merges_cleanly, publish, info
+    def test_publish_if_needed_refreshes_bot_branch_when_merge_differs(
+        self, has_changes, open_pr, snippets_match, merge_matches, publish, info
     ):
         info.return_value.repo_name = job.REPOSITORY
 
         self.assertTrue(job.publish_if_needed())
 
         snippets_match.assert_called_once_with()
-        merges_cleanly.assert_called_once_with()
+        merge_matches.assert_called_once_with()
         publish.assert_called_once_with("42")
 
 
