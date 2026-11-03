@@ -1,0 +1,22 @@
+-- the generated TTL of the inner samples table
+AggregatingMergeTree PARTITION BY toYYYYMM(toDateTime(bucket, \'UTC\')) ORDER BY (id, bucket) TTL toDateTime(bucket) + toIntervalSecond(180) GROUP BY id, bucket SET samples = arrayFilter((s, i) -> ((i = length(timeSeriesGroupArray(samples))) OR (toStartOfInterval((timeSeriesGroupArray(samples)[i + 1]).1, toIntervalSecond(20)) != toStartOfInterval(s.1, toIntervalSecond(20)))), timeSeriesGroupArray(samples), arrayEnumerate(timeSeriesGroupArray(samples))), min_time = min(min_time), max_time = max(max_time), toDateTime(bucket) + toIntervalSecond(3660) GROUP BY id, bucket SET samples = arrayFilter((s, i) -> ((i = length(timeSeriesGroupArray(samples))) OR (toStartOfInterval((timeSeriesGroupArray(samples)[i + 1]).1, toIntervalSecond(60)) != toStartOfInterval(s.1, toIntervalSecond(60)))), timeSeriesGroupArray(samples), arrayEnumerate(timeSeriesGroupArray(samples))), min_time = min(min_time), max_time = max(max_time) SETTINGS index_granularity = 256, index_granularity_bytes = 524288
+-- the stored definition is read back, a copy of the table generates the same TTL
+2
+-- the rows past both offsets keep the last sample of each 60 second interval
+1970-01-01 00:00:00.000	[('1970-01-01 00:00:59.000',6)]
+1970-01-01 00:01:00.000	[('1970-01-01 00:01:30.000',8)]
+1970-01-01 00:02:00.000	[('1970-01-01 00:02:11.000',10)]
+-- a late sample in a reduced interval is reduced by the next merge
+1970-01-01 00:00:00.000	[('1970-01-01 00:00:59.000',6)]
+1970-01-01 00:01:00.000	[('1970-01-01 00:01:40.000',0)]
+1970-01-01 00:02:00.000	[('1970-01-01 00:02:11.000',10)]
+-- a merge of a reduced row keeps it
+1970-01-01 00:00:00.000	[('1970-01-01 00:00:59.000',6)]
+1970-01-01 00:01:00.000	[('1970-01-01 00:01:40.000',0)]
+1970-01-01 00:02:00.000	[('1970-01-01 00:02:11.000',10)]
+-- the rows past the first offset only keep the last sample of each 20 second interval
+[(19,19),(20,20),(59,59)]
+-- the recent samples table keeps every sample
+0
+5
+-- invalid values
