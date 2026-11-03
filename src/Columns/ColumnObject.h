@@ -291,6 +291,7 @@ public:
 
     static void serializePathAndValueIntoSharedData(ColumnString * shared_data_paths, ColumnString * shared_data_values, std::string_view path, const ColumnDynamic & column, size_t n);
     static void deserializeValueFromSharedData(const ColumnString * shared_data_values, size_t n, IColumn & column);
+    static void deserializeValueFromSharedData(std::string_view value, IColumn & column);
 
     /// Paths in shared data are sorted in each row. Use this method to find the lower bound for specific path in the row.
     static size_t findPathLowerBoundInSharedData(std::string_view path, const ColumnString & shared_data_paths, size_t start, size_t end);
@@ -325,12 +326,39 @@ public:
             SHARED_DATA,
         };
 
-        struct PathInfo
+        /// Information about a path and its value.
+        /// The value of a typed or dynamic path lives in a column of the object, the value of a path
+        /// in shared data is stored serialized in the Dynamic binary format. Callers that can work
+        /// with the serialized value take it with getSharedDataValue, callers that need a column use
+        /// getColumnAndRow, which deserializes a shared data value on demand.
+        class PathInfo
         {
-            PathType type{};
+        public:
+            /// Value of a typed or dynamic path.
+            PathInfo(PathType type_, std::string_view path_, ColumnPtr column_, size_t row_);
+            /// Value of a path in shared data.
+            PathInfo(std::string_view path_, std::string_view shared_data_value_);
+
+            PathType getType() const { return type; }
+            std::string_view getPath() const { return path; }
+
+            /// Serialized value of the path in the Dynamic binary format.
+            /// Valid only for a path in shared data.
+            std::string_view getSharedDataValue() const;
+
+            /// Column and row holding the value of the path.
+            /// The returned reference is valid as long as this PathInfo is alive.
+            std::pair<const IColumn &, size_t> getColumnAndRow();
+
+        private:
+            PathType type;
             std::string_view path;
+            /// Column with the value of a typed or dynamic path, or the temporary column with
+            /// a deserialized shared data value.
             ColumnPtr column;
-            size_t row{};
+            size_t row = 0;
+            /// Set only for a path in shared data.
+            std::string_view shared_data_value;
         };
 
         SortedPathsIterator(const ColumnObject & column_object_, size_t row_, bool skip_typed_nulls_ = false);
@@ -344,14 +372,8 @@ public:
 
         PathInfo getCurrentPathInfo() const;
 
-        PathType getCurrentPathType() const { return current_path_type; }
-
         /// Path string of the current entry.
         std::string_view getCurrentPath() const;
-
-        /// Raw serialized value of the current path when it is stored in shared data.
-        /// Only valid when current_path_type == PathType::SHARED_DATA.
-        std::string_view getCurrentSharedDataValue() const;
 
         /// Serialize the current path's value into `buf`.
         ///
@@ -367,7 +389,6 @@ public:
 
     private:
         void setCurrentPath();
-        std::pair<ColumnPtr, size_t> getCurrentPathColumnAndRow() const;
 
         const ColumnObject & column_object;
         VectorWithMemoryTracking<std::string_view>::const_iterator typed_paths_it;

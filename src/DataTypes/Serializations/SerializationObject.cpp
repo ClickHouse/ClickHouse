@@ -1257,21 +1257,33 @@ void SerializationObject::serializeBinary(const IColumn & col, size_t row_num, W
 
     /// Write paths in sorted order, so equal objects are serialized equally regardless of
     /// the order of paths in the hash maps of the column (it can differ, for example, after filter).
+    using PathType = ColumnObject::SortedPathsIterator::PathType;
     for (auto it = ColumnObject::SortedPathsIterator(column_object, row_num); !it.end(); it.next())
     {
-        writeStringBinary(it.getCurrentPath(), ostr);
-        if (it.getCurrentPathType() == ColumnObject::SortedPathsIterator::PathType::SHARED_DATA)
-        {
-            auto value = it.getCurrentSharedDataValue();
-            ostr.write(value.data(), value.size());
-            continue;
-        }
-
         auto path_info = it.getCurrentPathInfo();
-        if (path_info.type == ColumnObject::SortedPathsIterator::PathType::TYPED)
-            typed_paths_serializations.at(String(path_info.path))->serializeBinary(*path_info.column, path_info.row, ostr, settings);
-        else
-            dynamic_serialization->serializeBinary(*path_info.column, path_info.row, ostr, settings);
+        writeStringBinary(path_info.getPath(), ostr);
+        switch (path_info.getType())
+        {
+            case PathType::SHARED_DATA:
+            {
+                /// The value is already serialized in the Dynamic binary format, write it as is.
+                auto value = path_info.getSharedDataValue();
+                ostr.write(value.data(), value.size());
+                break;
+            }
+            case PathType::TYPED:
+            {
+                auto [column, row] = path_info.getColumnAndRow();
+                typed_paths_serializations.at(String(path_info.getPath()))->serializeBinary(column, row, ostr, settings);
+                break;
+            }
+            case PathType::DYNAMIC:
+            {
+                auto [column, row] = path_info.getColumnAndRow();
+                dynamic_serialization->serializeBinary(column, row, ostr, settings);
+                break;
+            }
+        }
     }
 }
 
@@ -1318,29 +1330,30 @@ void SerializationObject::serializeForHashCalculation(const IColumn & column, si
     for (auto it = ColumnObject::SortedPathsIterator(column_object, row_num); !it.end(); it.next())
     {
         auto path_info = it.getCurrentPathInfo();
-        writeStringBinary(path_info.path, ostr);
-        if (path_info.type == ColumnObject::SortedPathsIterator::PathType::TYPED)
+        writeStringBinary(path_info.getPath(), ostr);
+        auto [value_column, value_row] = path_info.getColumnAndRow();
+        if (path_info.getType() == ColumnObject::SortedPathsIterator::PathType::TYPED)
         {
-            String path = String(path_info.path);
+            String path = String(path_info.getPath());
             /// We want to write values of typed paths the same as dynamic paths,
             /// so hash doesn't depend on the typed paths, only on the actual values.
             if (isDynamic(typed_paths_types.at(path)))
             {
-                typed_paths_serializations.at(path)->serializeForHashCalculation(*path_info.column, path_info.row, ostr);
+                typed_paths_serializations.at(path)->serializeForHashCalculation(value_column, value_row, ostr);
             }
             else
             {
                 SerializationDynamic::serializeVariantForHashCalculation(
-                    *path_info.column,
+                    value_column,
                     typed_paths_serializations.at(path),
                     typed_paths_types.at(path),
-                    path_info.row,
+                    value_row,
                     ostr);
             }
         }
         else
         {
-            dynamic_serialization->serializeForHashCalculation(*path_info.column, path_info.row, ostr);
+            dynamic_serialization->serializeForHashCalculation(value_column, value_row, ostr);
         }
     }
 }
