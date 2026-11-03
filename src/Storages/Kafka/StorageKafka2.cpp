@@ -1096,7 +1096,7 @@ std::optional<StorageKafka2::BlocksAndGuard> StorageKafka2::pollConsumer(
 
     StreamingFormatExecutor executor(non_virtual_header, input_format, std::move(on_error));
 
-    /// Once per block: getStorageID() locks the table's id_mutex.
+    /// Once per block: `getStorageID` locks the table's `id_mutex`.
     const auto storage_id = getStorageID();
     const Field table_name = storage_id.getTableName();
 

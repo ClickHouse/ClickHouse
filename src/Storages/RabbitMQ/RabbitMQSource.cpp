@@ -279,7 +279,7 @@ Chunk RabbitMQSource::generateImpl()
 
     StreamingFormatExecutor executor(non_virtual_header, input_format, on_error);
 
-    /// Once per block: getStorageID() locks the table's id_mutex.
+    /// Once per block: `getStorageID` locks the table's `id_mutex`.
     const auto storage_id = storage.getStorageID();
     const Field table_name = storage_id.getTableName();
 
