@@ -336,10 +336,11 @@ def _classify_dolor_failure(
     server_log: Path,
     stderr_log: Path,
     fuzzer_out: Path,
+    server_failure_named: bool = False,
 ):
-    """Name why `dolor.py` failed a run that the log analysis passed, or return None when
-    the analysis already explains it (an OOM it passed the run for, with no teardown
-    failure the OOM does not account for)."""
+    """Name why `dolor.py` failed the run, or return None when the log analysis already
+    explains it: an OOM it passed the run for, with no teardown failure the OOM does not
+    account for, or a server failure it named (`server_failure_named`)."""
     if watchdog_expired:
         return Result(
             name="Watchdog timeout",
@@ -354,6 +355,9 @@ def _classify_dolor_failure(
             return Result(
                 name=name, info="\n".join(matching[:20]), status=Result.Status.FAIL
             )
+    if server_failure_named:
+        # The server-log reports and the non-zero exit below are that failure's.
+        return None
     found_in_server_logs = [
         r
         for r in records
@@ -385,12 +389,30 @@ def _classify_dolor_failure(
     )
 
 
+def _with_keeper_failure(
+    failures: list[Result | None], workspace_path: Path, fuzzer_out: Path
+) -> list[Result]:
+    """`failures` and the one of the Keepers, whose logs nothing else reads, each name once.
+    The triage may pass a run on a known issue, so it must see every failure of the run."""
+    by_name: dict[str, Result] = {}
+    for failure in [*failures, _keeper_failure(workspace_path, fuzzer_out)]:
+        if failure is not None:
+            by_name.setdefault(failure.name, failure)
+    return list(by_name.values())
+
+
 def _complete_with_artifacts(
-    failure: Result, sw: Utils.Stopwatch, workspace_path: Path, paths: list[Path]
+    failures: list[Result],
+    sw: Utils.Stopwatch,
+    workspace_path: Path,
+    paths: list[Path],
+    info: str = "",
 ) -> None:
-    """Report a failure this wrapper found itself, with the artifacts `analyze_job_logs`
+    """Report the failures this wrapper collected, with the artifacts `analyze_job_logs`
     attaches to the failures it reports."""
-    result = Result.create_from(results=[failure], info=failure.name, stopwatch=sw)
+    result = Result.create_from(
+        results=failures, info=info or failures[0].name, stopwatch=sw
+    )
     result.set_files(ClickHouseService.collect_cores(workspace_path))
     for file in paths:
         if file.exists() and file.stat().st_size > 0:
@@ -703,7 +725,12 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
             # A server that aborted (e.g. on a sanitizer report during startup) makes `dolor.py`
             # raise too: name the server's failure rather than the exception it caused.
             if (failure := _parse_logs(server_log, stderr_log, buzz_out)) is not None:
-                _complete_with_artifacts(failure, sw, workspace_path, paths)
+                _complete_with_artifacts(
+                    _with_keeper_failure([failure], workspace_path, buzz_out),
+                    sw,
+                    workspace_path,
+                    paths,
+                )
             tb_start = tail.rfind("Traceback (most recent call last):")
             tb_snippet = tail[tb_start:].strip()
             Result.create_from(
@@ -764,19 +791,19 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
         buzz_out,
         server_fuzzer=True,
     )
-    if server_died and not result.is_ok() and not result.results:
+    failures: list[Result | None] = [r for r in result.results if not r.is_ok()]
+    if server_died and not result.is_ok() and not failures:
         # The analysis failed the run without naming it from the current logs.
-        failure = _rotated_node_failure(workspace_path, stderr_log, buzz_out)
-        if failure is not None:
-            _complete_with_artifacts(failure, sw, workspace_path, paths)
-    if result.is_ok():
-        # Nothing above reads the Keeper logs, and `dolor.py` can exit 0 with one of them
-        # holding a report.
-        failure = _keeper_failure(workspace_path, buzz_out)
-        if failure is None and not cmd_ok:
-            # The analysis reads no log when the generator ended normally and the server
-            # survived, so whatever `dolor.py` failed the run on is named here.
-            failure = _classify_dolor_failure(
+        failures.append(_rotated_node_failure(workspace_path, stderr_log, buzz_out))
+    server_failure_named = any(failures)
+    # An error the analysis names nothing for stays one: the triage never passes it.
+    collect = server_failure_named or not result.is_error()
+    if collect and not cmd_ok:
+        # The analysis reads no log when the generator ended normally and the server
+        # survived, and a failure it names may hide another, so whatever `dolor.py` failed
+        # the run on is named here.
+        failures.append(
+            _classify_dolor_failure(
                 dolor_log,
                 "test considered passed" in result.info
                 or "stayed alive" in result.info,
@@ -784,9 +811,20 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
                 server_log,
                 stderr_log,
                 buzz_out,
+                server_failure_named,
             )
-        if failure is not None:
-            _complete_with_artifacts(failure, sw, workspace_path, paths)
+        )
+    # `dolor.py` can exit 0 with a Keeper log holding a report.
+    if collect and (
+        failures := _with_keeper_failure(failures, workspace_path, buzz_out)
+    ):
+        _complete_with_artifacts(
+            failures,
+            sw,
+            workspace_path,
+            paths,
+            info=result.info if not result.is_ok() else "",
+        )
 
     triage_failure(result, "La Casa del Dolor", paths, TRIAGE_REPRO_HINT)
     result.complete_job()
