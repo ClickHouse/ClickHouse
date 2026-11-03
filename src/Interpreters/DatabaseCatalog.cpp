@@ -342,31 +342,32 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
       * `Buffer` whose destination is itself would otherwise keep the loop alive forever.
       */
     {
-        size_t total_tables = 0;
-        std::vector<StoragePtr> user_tables;
-        for (const auto & database : current_databases)
+        auto list_user_tables = [&]
         {
-            /// Only user databases: enumerating a predefined one can materialize a lazily created
-            /// system table during shutdown, and none of them holds a `Buffer` table anyway.
-            if (isPredefinedDatabase(database.first))
-                continue;
-
-            try
+            std::vector<StoragePtr> tables;
+            for (const auto & database : current_databases)
             {
-                for (auto it = database.second->getTablesIterator(getContext(), {}, /*skip_not_loaded=*/ true); it->isValid(); it->next())
+                /// Only user databases: enumerating a predefined one can materialize a lazily created
+                /// system table during shutdown, and none of them holds a `Buffer` table anyway.
+                if (isPredefinedDatabase(database.first))
+                    continue;
+
+                try
                 {
-                    ++total_tables;
-                    user_tables.push_back(it->table());
+                    for (auto it = database.second->getTablesIterator(getContext(), {}, /*skip_not_loaded=*/ true); it->isValid(); it->next())
+                        tables.push_back(it->table());
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(
+                        log, fmt::format("Failed to list tables of database {} before shutdown", backQuoteIfNeed(database.first)));
                 }
             }
-            catch (...)
-            {
-                tryLogCurrentException(
-                    log, fmt::format("Failed to list tables of database {} before shutdown", backQuoteIfNeed(database.first)));
-            }
-        }
+            return tables;
+        };
 
-        for (size_t pass = 0; pass <= total_tables; ++pass)
+        auto user_tables = list_user_tables();
+        for (size_t pass = 0; pass <= user_tables.size(); ++pass)
         {
             size_t flushed = 0;
             for (const auto & table : user_tables)
@@ -407,7 +408,8 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
             }
         }
 
-        /// Prepare every user table before any of them shuts down.
+        /// Prepare every user table before any of them shuts down. List again to include the tables that finished loading meanwhile.
+        user_tables = list_user_tables();
         for (const auto & table : user_tables)
         {
             if (!table)
