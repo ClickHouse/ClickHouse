@@ -18,6 +18,7 @@ bool tryEstimateEmpirical(
     const ReadFromMergeTree::AnalysisResult & analysis,
     const RangesInDataParts & saved_parts,
     std::vector<UInt8> * surviving_marks,
+    UInt64 index_scan_budget_rows,
     ContextPtr context);
 
 }

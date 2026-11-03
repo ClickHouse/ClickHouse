@@ -1,3 +1,5 @@
+-- Tags: no-distributed-cache
+-- - no-distributed-cache - the temporary data in the distributed cache takes more memory than the limit leaves
 -- With many streams, each one keeps a small set of distinct keys before it starts writing them to disk. Together these sets
 -- exceed the memory limit, so they must spill with `max_bytes_before_external_group_by` too.
 
