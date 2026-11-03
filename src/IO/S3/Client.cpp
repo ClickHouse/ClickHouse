@@ -3,7 +3,6 @@
 #if USE_AWS_S3
 
 #include <algorithm>
-#include <cctype>
 #include <ctime>
 #include <iterator>
 #include <aws/core/utils/crypto/Hash.h>
@@ -1483,30 +1482,6 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
     return config;
 }
 
-namespace
-{
-
-/// Encode a path the way `PocoHTTPClient` re-encodes it before sending. `/` stays so the
-/// signed canonical URI matches the request line.
-String encodePathForGCS(std::string_view path)
-{
-    static constexpr std::string_view reserved = "?#:;+@&=%";
-    String out;
-    out.reserve(path.size());
-    for (unsigned char c : path)
-    {
-        const bool unreserved = std::isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~' || c == '/';
-        const bool must_encode = c <= 0x20 || c >= 0x7F || reserved.contains(static_cast<char>(c));
-        if (unreserved || !must_encode)
-            out.push_back(static_cast<char>(c));
-        else
-            out += fmt::format("%{:02X}", c);
-    }
-    return out;
-}
-
-}
-
 bool Client::tryGCSCreateIfAbsent(const String & bucket, const String & key, std::string_view body) const
 {
     const auto credentials = getCredentials();
@@ -1528,7 +1503,7 @@ bool Client::tryGCSCreateIfAbsent(const String & bucket, const String & key, std
     const char * payload_ptr = body.empty() ? "" : body.data();
     const String payload_sha256 = encodeSHA256(payload_ptr, body.size());
     const String payload_hash = hexString(payload_sha256.data(), payload_sha256.size());
-    const String canonical_uri = encodePathForGCS("/" + bucket + "/" + key);
+    const String canonical_uri = S3::encodeRequestPath("/" + bucket + "/" + key);
 
     const String canonical_headers = fmt::format(
         "host:storage.googleapis.com\n"
