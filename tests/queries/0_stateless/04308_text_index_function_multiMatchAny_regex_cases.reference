@@ -40,3 +40,6 @@ Granules: 14/14
 Granules: 14/14
 -- force_data_skipping_indices accepts literal needles but rejects a catch-all
 2
+-- vectorscan-only syntax (comments and extended mode) disables pruning and stays correct
+[13]	1
+[7]	1

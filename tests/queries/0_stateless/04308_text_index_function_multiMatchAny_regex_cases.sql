@@ -162,4 +162,13 @@ SELECT '-- force_data_skipping_indices accepts literal needles but rejects a cat
 SELECT count() FROM tab WHERE multiMatchAny(str, ['lpc', 'google']) SETTINGS force_data_skipping_indices = 'inv_idx';
 SELECT count() FROM tab WHERE multiMatchAny(str, ['lpc', '.*']) SETTINGS force_data_skipping_indices = 'inv_idx'; -- { serverError INDEX_NOT_USED }
 
+SELECT '-- vectorscan-only syntax (comments and extended mode) disables pruning and stays correct';
+WITH ['vladizlvav (?#some comment)dabe'] AS needles
+SELECT (SELECT arraySort(groupArray(id)) FROM tab WHERE multiMatchAny(str, needles) SETTINGS use_skip_indexes = 1) AS ids,
+       ids = (SELECT arraySort(groupArray(id)) FROM tab WHERE multiMatchAny(str, needles) SETTINGS use_skip_indexes = 0);
+
+WITH ['abc(?x: d e f)'] AS needles
+SELECT (SELECT arraySort(groupArray(id)) FROM tab WHERE multiMatchAny(str, needles) SETTINGS use_skip_indexes = 1) AS ids,
+       ids = (SELECT arraySort(groupArray(id)) FROM tab WHERE multiMatchAny(str, needles) SETTINGS use_skip_indexes = 0);
+
 DROP TABLE tab;
