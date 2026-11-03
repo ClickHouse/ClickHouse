@@ -15,8 +15,8 @@
             "clickstack/observability/getting-started/index",
             {
               "group": "Sample datasets",
+              "root": "clickstack/observability/example-datasets/index",
               "pages": [
-                "clickstack/observability/example-datasets/index",
                 "clickstack/observability/example-datasets/sample-data",
                 "clickstack/observability/example-datasets/kubernetes",
                 "clickstack/observability/example-datasets/local-data",
