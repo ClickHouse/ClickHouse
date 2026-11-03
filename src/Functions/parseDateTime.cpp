@@ -998,7 +998,7 @@ namespace
             }
 
             [[nodiscard]]
-            static VoidOrError checkSpace(Pos cur, Pos end, size_t len, const String & msg, const String & fragment)
+            static VoidOrError checkSpace(Pos cur, Pos end, size_t len, std::string_view msg, const String & fragment)
             {
                 if (cur > end || cur + len > end) [[unlikely]]
                     RETURN_ERROR(
@@ -1105,7 +1105,13 @@ namespace
                 cur += 3;
 
                 size_t expected_remaining_size = it->second.first.size();
-                RETURN_ERROR_IF_FAILED(checkSpace(cur, end, expected_remaining_size, "mysqlMonthOfYearTextLong requires the second parg size >= " + std::to_string(expected_remaining_size), fragment))
+                if (cur > end || cur + expected_remaining_size > end) [[unlikely]]
+                    RETURN_ERROR(
+                        ErrorCodes::CANNOT_PARSE_DATETIME,
+                        "Unable to parse fragment {} from {} because mysqlMonthOfYearTextLong requires the second parg size >= {}",
+                        fragment,
+                        std::string_view(cur, end - cur),
+                        expected_remaining_size)
                 String text2(cur, expected_remaining_size);
                 boost::to_lower(text2);
                 if (text2 != it->second.first)
@@ -1304,7 +1310,13 @@ namespace
                 cur += 3;
 
                 size_t expected_remaining_size = it->second.first.size();
-                RETURN_ERROR_IF_FAILED(checkSpace(cur, end, expected_remaining_size, "mysqlDayOfWeekTextLong requires the second parg size >= " + std::to_string(expected_remaining_size), fragment))
+                if (cur > end || cur + expected_remaining_size > end) [[unlikely]]
+                    RETURN_ERROR(
+                        ErrorCodes::CANNOT_PARSE_DATETIME,
+                        "Unable to parse fragment {} from {} because mysqlDayOfWeekTextLong requires the second parg size >= {}",
+                        fragment,
+                        std::string_view(cur, end - cur),
+                        expected_remaining_size)
                 String text2(cur, expected_remaining_size);
                 boost::to_lower(text2);
                 if (text2 != it->second.first)
