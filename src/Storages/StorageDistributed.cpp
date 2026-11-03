@@ -218,6 +218,7 @@ namespace DistributedSetting
     extern const DistributedSettingsBool flush_on_detach;
     extern const DistributedSettingsBool fsync_directories;
     extern const DistributedSettingsUInt64 max_delay_to_insert;
+    extern const DistributedSettingsBool skip_unavailable_shards;
 }
 
 namespace ErrorCodes
@@ -2414,6 +2415,14 @@ std::optional<UInt128> StorageDistributed::getModificationHash(const StorageSnap
     /// what a read returns only when `optimize_skip_unused_shards` is allowed to use it, so fail closed then.
     if (hasShardingKeyForReads() && !sharding_key_is_deterministic
         && settings[Setting::optimize_skip_unused_shards] && settings[Setting::allow_nondeterministic_optimize_skip_unused_shards])
+        return {};
+
+    /// With `skip_unavailable_shards` a read can silently drop a shard that became unavailable only during
+    /// the read, while the probes before and after it reach every shard and combine to the same hash: no
+    /// table changed, but the result is partial. Nothing propagates the skipped shard into the consistency
+    /// check, so fail closed whenever skipping is enabled, either by the query setting or by the table
+    /// setting (`executeQuery` applies the latter when the former is not changed).
+    if (settings[Setting::skip_unavailable_shards] || (*distributed_settings)[DistributedSetting::skip_unavailable_shards])
         return {};
 
     /// A row policy on the underlying table in this server's context filters what the current user reads

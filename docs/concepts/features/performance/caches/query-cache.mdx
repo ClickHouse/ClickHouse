@@ -46,7 +46,9 @@ The same applies when a referenced table has an `ALIAS` column whose expression 
 cache inside a query that uses it. For `URL` and object-storage tables this report is based on the resource's strong `ETag` and is
 best-effort: a result could in rare cases be reused if the content is rewritten back to a byte-identical state during the read. `Merge` and
 `Distributed` are likewise best-effort if the set of underlying tables changes during a query, and row policies that exist only on remote shard
-servers of a `Distributed` table are not seen by the check. This covers a table's regular columns and data
+servers of a `Distributed` table are not seen by the check. A query that reads a `Distributed` table with `skip_unavailable_shards`
+enabled (as a query setting or a table setting) does not use the query cache, because a shard skipped during the read does not change any
+table. This covers a table's regular columns and data
 only, not query-visible virtual columns that expose placement or external metadata (for example `_disk_name`, `_tags`, `_headers`): a query
 selecting such a column may reuse a cached result after only that column changed (e.g. a part moved between disks, or object tags or response
 headers changed). Note that checking the referenced tables on each lookup may be expensive for some engines (e.g. `Merge`, `Distributed`, `URL`).
