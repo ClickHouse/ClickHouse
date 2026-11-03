@@ -4,6 +4,7 @@
 
 #include <google/cloud/common_options.h>
 #include <google/cloud/credentials.h>
+#include <google/cloud/internal/compute_engine_util.h>
 #include <google/cloud/internal/curl_options.h>
 #include <google/cloud/internal/oauth2_credential_constants.h>
 #include <google/cloud/internal/oauth2_service_account_credentials.h>
@@ -30,6 +31,7 @@
 #include <Common/ProxyConfigurationResolverProvider.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/proxyConfigurationToPocoProxyConfig.h>
+#include <Common/re2.h>
 #include <Common/Throttler.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -286,6 +288,24 @@ std::function<Poco::Net::HTTPClientSession::ProxyConfig()> makeGCSProxyConfigPro
         return {};
 
     return [resolver] { return proxyConfigurationToPocoProxyConfig(resolver->resolve()); };
+}
+
+std::function<Poco::Net::HTTPClientSession::ProxyConfig()> makeGCSApplicationDefaultProxyConfigProvider(
+    const std::shared_ptr<ProxyConfigurationResolver> & resolver, const String & metadata_host)
+{
+    if (!resolver)
+        return {};
+
+    /// The transport matches the pattern anchored at the start of the host; anchor the end as well, so
+    /// that only the metadata host itself is exempted, not every host it is a prefix of.
+    const String metadata_host_pattern = RE2::QuoteMeta(metadata_host) + "$";
+    return [resolver, metadata_host_pattern]
+    {
+        auto proxy = proxyConfigurationToPocoProxyConfig(resolver->resolve());
+        if (!proxy.host.empty())
+            proxy.nonProxyHosts = proxy.nonProxyHosts.empty() ? metadata_host_pattern : proxy.nonProxyHosts + "|" + metadata_host_pattern;
+        return proxy;
+    };
 }
 
 /// The other half of the proxy plumbing: a request that failed is reported back to the resolver that
@@ -785,6 +805,22 @@ std::unique_ptr<gcs::Client> getGCSClient(const GCSObjectStorageSettings & setti
             token_request_options.set<::ClickHouse::PocoRestProxyConfigProviderOption>(makeGCSProxyConfigProvider(token_proxy_resolver));
             token_request_options.set<::ClickHouse::PocoRestProxyErrorReportOption>(makeGCSProxyErrorReporter(token_proxy_resolver));
         }
+    }
+    else if (credential_source == GCSCredentialSource::ApplicationDefault)
+    {
+        /// The SDK builds the token REST client of an ADC file (`authorized_user`, `service_account`,
+        /// `external_account`, ...) from these options, so without a proxy here a deployment whose
+        /// external connections must go through the proxy could not obtain a token at all. The token
+        /// endpoints of Google are HTTPS, and `google_adc_token_uri` cannot be set without the
+        /// refresh-token triple, so this is the resolver of the `https` scheme. The metadata server of
+        /// the Compute Engine credentials is exempted from the proxy and stays reached directly.
+        auto token_proxy_resolver = settings.token_proxy_resolver;
+        if (!token_proxy_resolver)
+            token_proxy_resolver = ProxyConfigurationResolverProvider::get(
+                gcsProxyProtocol(settings.google_adc_token_uri), context->getConfigRef());
+        token_request_options.set<::ClickHouse::PocoRestProxyConfigProviderOption>(
+            makeGCSApplicationDefaultProxyConfigProvider(token_proxy_resolver, gc::internal::GceMetadataHostname()));
+        token_request_options.set<::ClickHouse::PocoRestProxyErrorReportOption>(makeGCSProxyErrorReporter(token_proxy_resolver));
     }
 
     options.set<gc::UnifiedCredentialsOption>(makeGCSCredentials(settings, service_account_key, std::move(token_request_options)));

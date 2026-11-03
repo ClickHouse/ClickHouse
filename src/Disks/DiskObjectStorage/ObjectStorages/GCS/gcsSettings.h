@@ -246,6 +246,14 @@ void validateGCSRefreshTokenTriple(const GCSObjectStorageSettings & settings);
 std::function<Poco::Net::HTTPClientSession::ProxyConfig()> makeGCSProxyConfigProvider(
     const std::shared_ptr<ProxyConfigurationResolver> & resolver);
 
+/// The same for the token requests of Application Default Credentials, which go to two kinds of
+/// destinations: the token endpoints of an ADC file (e.g. the `token_uri` of an `authorized_user` file),
+/// which have to go through the configured proxy like every other external request, and the GCE/GKE
+/// metadata server, which is link-local and must keep being reached directly. So the host of the
+/// metadata server (`metadata_host`) is added to the no-proxy pattern of every resolved proxy.
+std::function<Poco::Net::HTTPClientSession::ProxyConfig()> makeGCSApplicationDefaultProxyConfigProvider(
+    const std::shared_ptr<ProxyConfigurationResolver> & resolver, const String & metadata_host);
+
 /// The other half of that plumbing (`ClickHouse::PocoRestProxyErrorReportOption`): a failed request is
 /// reported back to the resolver that handed the proxy out, which is what makes
 /// `RemoteProxyConfigurationResolver` drop the proxy it cached instead of keeping it until the TTL of

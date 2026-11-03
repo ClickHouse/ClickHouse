@@ -4,6 +4,7 @@
 
 #include <Disks/DiskObjectStorage/ObjectStorages/GCS/gcsSettings.h>
 #include <Common/ProxyListConfigurationResolver.h>
+#include <Poco/RegularExpression.h>
 #include <gtest/gtest.h>
 
 using namespace DB;
@@ -62,6 +63,41 @@ TEST(GCSProxy, EmptyListMeansDirectConnection)
 
     /// An empty host is what the transport reads as "no proxy for this request".
     EXPECT_TRUE(provider().host.empty());
+}
+
+/// The token requests of Application Default Credentials go through the proxy, except those to the
+/// GCE/GKE metadata server, which has to be reached directly.
+TEST(GCSProxy, ApplicationDefaultExemptsTheMetadataServer)
+{
+    EXPECT_FALSE(static_cast<bool>(makeGCSApplicationDefaultProxyConfigProvider(nullptr, "metadata.google.internal")));
+
+    auto resolver = std::make_shared<ProxyListConfigurationResolver>(
+        std::vector<Poco::URI>{Poco::URI("http://proxy1:3128")},
+        ProxyConfiguration::Protocol::HTTPS,
+        R"(localhost)");
+
+    auto provider = makeGCSApplicationDefaultProxyConfigProvider(resolver, "metadata.google.internal");
+    ASSERT_TRUE(static_cast<bool>(provider));
+
+    const auto proxy = provider();
+    EXPECT_EQ(proxy.host, "proxy1");
+    EXPECT_EQ(proxy.nonProxyHosts, R"(localhost|metadata\.google\.internal$)");
+
+    const auto match = [&](const std::string & host)
+    {
+        return Poco::RegularExpression::match(
+            host, proxy.nonProxyHosts, Poco::RegularExpression::RE_CASELESS | Poco::RegularExpression::RE_ANCHORED);
+    };
+    EXPECT_TRUE(match("metadata.google.internal"));
+    EXPECT_TRUE(match("localhost"));
+    EXPECT_FALSE(match("oauth2.googleapis.com"));
+    EXPECT_FALSE(match("metadata.google.internal.example.com"));
+
+    /// No proxy configured: nothing to exempt from, the request goes out directly anyway.
+    auto direct = makeGCSApplicationDefaultProxyConfigProvider(
+        std::make_shared<ProxyListConfigurationResolver>(std::vector<Poco::URI>{}, ProxyConfiguration::Protocol::HTTPS, ""),
+        "metadata.google.internal");
+    EXPECT_TRUE(direct().host.empty());
 }
 
 /// Two storages that resolve their proxy differently must not share one client: the transport
