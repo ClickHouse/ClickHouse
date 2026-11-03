@@ -44,6 +44,8 @@ SELECT toUnixTimestamp(CAST('{"d":"2026-01-01 00:00:00"}'::JSON(d LowCardinality
 1767225600
 SELECT toUnixTimestamp(CAST(CAST(map('d', toDateTime('2026-01-01 00:00:00', 'UTC')), 'Dynamic'), 'JSON(d DateTime64(0, ''Asia/Tokyo''))').d);
 1767225600
+SELECT toUnixTimestamp(CAST(CAST(CAST(tuple(toDateTime('2026-01-01 00:00:00', 'UTC')), 'Tuple(d DateTime(''UTC''))'), 'Dynamic'), 'JSON(d DateTime64(0, ''Asia/Tokyo''))').d);
+1767225600
 SELECT toUnixTimestamp(CAST('{"t":{"d":"2026-01-01 00:00:00"}}'::JSON(t Tuple(d DateTime('UTC'))), 'JSON(t Map(String, DateTime64(0, ''Asia/Tokyo'')))').t['d']);
 1767225600
 SELECT toUnixTimestamp(tupleElement(CAST('{"m":{"d":"2026-01-01 00:00:00"}}'::JSON(m Map(String, DateTime('UTC'))), 'JSON(m Tuple(d DateTime64(0, ''Asia/Tokyo'')))').m, 'd'));
@@ -69,6 +71,10 @@ SELECT CAST('{"d":"2026-01-01 00:00:00"}'::JSON(d DateTime('Asia/Tokyo')), 'JSON
 2026-01-01 00:00:00
 SELECT toUnixTimestamp(CAST(CAST(tuple('2026-01-01 00:00:00'), 'Tuple(d String)'), 'JSON(d DateTime(''Asia/Tokyo''))').d);
 1767193200
+SELECT CAST('{"d":"2026-01-01 00:00:00","x":"2026-01-01 00:00:00"}'::JSON(d DateTime('Asia/Tokyo'), x DateTime('UTC')), 'JSON(x DateTime64(0, ''Asia/Tokyo''))').d;
+2026-01-01 00:00:00
+SELECT CAST('{"d":"2026-01-01 00:00:00","x":"2026-01-01 00:00:00"}'::JSON(x DateTime('UTC')), 'JSON(x DateTime64(0, ''Asia/Tokyo''))').d;
+2026-01-01 00:00:00
 SELECT tupleElement(CAST(CAST(tuple(tuple(NULL, toDateTime('2026-01-01 00:00:00', 'Asia/Tokyo'))), 'Tuple(t Tuple(a Nullable(String), b DateTime(''Asia/Tokyo'')))'), 'JSON(t Tuple(String, DateTime64(0, ''Asia/Tokyo'')))').t, 1) SETTINGS output_format_json_skip_null_value_in_named_tuples = 1;
 2026-01-01 00:00:00
 DROP TABLE IF EXISTS t_json_datetime_alter;
