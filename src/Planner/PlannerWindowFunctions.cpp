@@ -1,7 +1,6 @@
 #include <optional>
 #include <Planner/PlannerWindowFunctions.h>
 
-#include <WindowFunctions/IWindowFunction.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/WindowNode.h>
@@ -131,7 +130,10 @@ extractWindowDescriptions(const QueryTreeNodes & window_function_nodes, const Pl
     result.reserve(window_name_to_description.size());
 
     for (auto && [_, window_description] : window_name_to_description)
+    {
+        validateWindowFunctions(window_description);
         result.push_back(std::move(window_description));
+    }
 
     return result;
 }

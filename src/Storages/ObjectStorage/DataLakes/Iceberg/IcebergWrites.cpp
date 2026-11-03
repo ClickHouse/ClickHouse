@@ -796,6 +796,9 @@ void generateManifestFile(
                         break;
                 }
 
+                if (isBool(removeNullable(partition_types[i])))
+                    return avro::GenericDatum(applyVisitor(FieldVisitorConvertToNumber<UInt64>(), partition_values[i]) != 0);
+
                 switch (partition_values[i].getType())
                 {
                     case Field::Types::Int64:
@@ -1329,6 +1332,9 @@ IcebergStorageSink::IcebergStorageSink(
 IcebergStorageSink::~IcebergStorageSink()
 {
     cancelBuffers();
+    /// Covers every way an insert can stop without committing, including cancellation, which skips `onException`.
+    if (!committed)
+        removeDataFilesAndManifests();
 }
 
 void IcebergStorageSink::consume(Chunk & chunk)
@@ -1470,6 +1476,7 @@ void IcebergStorageSink::finalizeBuffers()
         if (initializeMetadata())
         {
             successed_write = true;
+            committed = true;
             break;
         }
         ++i;
@@ -1788,6 +1795,7 @@ bool IcebergStorageSink::initializeMetadata()
     }
     catch (...)
     {
+        /// TODO: keep the files when the catalog reports an unknown commit outcome (`CommitStateUnknownException` or a 5xx), because the snapshot may already reference them.
         cleanup(false);
         throw;
     }

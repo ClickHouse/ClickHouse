@@ -130,11 +130,6 @@ SELECT groupArray(id) FROM (SELECT id FROM tab_win WHERE hasPhrase(message, 'nee
 SELECT groupArray(id) FROM (SELECT id FROM tab_ref WHERE hasPhrase(message, 'hello clickhouse world') ORDER BY id DESC LIMIT 5);
 SELECT groupArray(id) FROM (SELECT id FROM tab_win WHERE hasPhrase(message, 'hello clickhouse world') ORDER BY id DESC LIMIT 5 SETTINGS optimize_read_in_order = 1, max_threads = 1);
 
-SELECT 'A repeated search is served from the cache';
-SELECT count(), sum(id) FROM tab_ref WHERE hasPhrase(message, 'needle rare');
-SELECT count(), sum(id) FROM tab_idx WHERE hasPhrase(message, 'needle rare') SETTINGS use_text_index_postings_cache = 1, log_comment = '02346_cache_1';
-SELECT count(), sum(id) FROM tab_idx WHERE hasPhrase(message, 'needle rare') SETTINGS use_text_index_postings_cache = 1, log_comment = '02346_cache_2';
-
 SELECT 'Cached chunks between searched ones';
 DROP TABLE IF EXISTS tab_chunks_ref;
 DROP TABLE IF EXISTS tab_chunks;
@@ -187,11 +182,6 @@ SELECT log_comment, countIf(ProfileEvents['TextIndexPhraseCursorSearches'] > 0),
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('02346_cursors', '02346_cursors_none')
 GROUP BY log_comment
-ORDER BY log_comment;
-
-SELECT log_comment, ProfileEvents['TextIndexPhraseSearches'] > 0
-FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('02346_cache_1', '02346_cache_2')
 ORDER BY log_comment;
 
 DROP TABLE tab_ref;

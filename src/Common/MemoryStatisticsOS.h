@@ -1,5 +1,12 @@
 #pragma once
+
 #if defined(OS_LINUX) || defined(OS_FREEBSD) || defined(OS_SUNOS)
+#    define HAS_MEMORY_STATISTICS_OS 1
+#else
+#    define HAS_MEMORY_STATISTICS_OS 0
+#endif
+
+#if HAS_MEMORY_STATISTICS_OS
 #include <cstdint>
 #if defined(OS_FREEBSD)
 #include <unistd.h>
