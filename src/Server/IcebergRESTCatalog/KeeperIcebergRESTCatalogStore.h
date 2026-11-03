@@ -40,12 +40,15 @@ struct UpdateNamespacePropertiesResult
 /// Work in progress, not ready for production use.
 /// Layout under `root_path` (one root per warehouse):
 ///   <root>                                 data: format marker
-///   <root>/namespaces/<level>              data: JSON object of namespace properties
+///   <root>/namespaces/<level>              data: namespace uuid, written once at create
+///   <root>/namespaces/<level>/<uuid>       data: JSON object of namespace properties, the node a property update sets
 ///   <root>/namespaces/<level>/namespaces   child namespaces, same shape recursively
 ///   <root>/namespaces/<level>/tables       one child per table
 ///   <root>/namespaces/<level>/tables/<t>        data: table uuid, written once at create
 ///   <root>/namespaces/<level>/tables/<t>/<uuid> data: metadata location, the node a commit updates
 /// A table commit replaces the uuid node data with a version check, so concurrent commits are serialized by Keeper.
+/// The uuid nodes pin the identity of a namespace or a table. A name that is dropped and re-created gets another uuid,
+/// so a stale write misses it.
 /// Namespace levels and table names are encoded with `escapeForFileName`.
 class KeeperIcebergRESTCatalogStore
 {
@@ -116,6 +119,7 @@ private:
     void initRoot(const zkutil::ZooKeeperPtr & zookeeper) const;
 
     String namespacePath(const IcebergNamespaceName & name) const;
+    String namespaceUuidPath(const IcebergNamespaceName & name, const String & uuid) const;
     /// Node that holds the direct children of `name`. Empty `name` means the root list.
     String childNamespacesPath(const IcebergNamespaceName & name) const;
     String tablesPath(const IcebergNamespaceName & name) const;
