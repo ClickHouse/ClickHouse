@@ -32,8 +32,22 @@ void checkFunctionAccessInExpression(const ContextPtr & context, const ASTPtr & 
     if (!AccessControl::hasFunctionsRequiringGrant() || !context || !ast)
         return;
 
-    if (const auto * function = ast->as<ASTFunction>(); function && function->name != "lambda")
+    if (const auto * function = ast->as<ASTFunction>())
+    {
+        if (function->name == "lambda")
+        {
+            /// `lambda(tuple(x, y), body)`: the parameter list is not a call of `tuple`, check only the body.
+            if (function->arguments)
+            {
+                const auto & lambda_arguments = function->arguments->children;
+                for (size_t i = 1; i < lambda_arguments.size(); ++i)
+                    checkFunctionAccessInExpression(context, lambda_arguments[i]);
+            }
+            return;
+        }
+
         checkFunctionAccess(context, function->name);
+    }
 
     for (const auto & child : ast->children)
         checkFunctionAccessInExpression(context, child);

@@ -70,6 +70,7 @@ def cleanup_after_test():
         instance.query("DROP FUNCTION IF EXISTS wrap_hex")
         instance.query("DROP FUNCTION IF EXISTS listed_udf")
         instance.query("DROP FUNCTION IF EXISTS wrap_in")
+        instance.query("DROP FUNCTION IF EXISTS inc")
 
 
 def test_unlisted_function_does_not_need_grant():
@@ -253,6 +254,25 @@ def test_values_expression_with_sql_udf_requires_grant():
     instance.query("GRANT FUNCTION ON in TO A")
     instance.http_query(query, method="POST", user="A")
     assert instance.query("SELECT x FROM t") == "[1]\n"
+
+
+def test_lambda_parameters_are_not_a_call():
+    """A lambda keeps its parameters in `tuple(...)`, which is not a call, so inlining an
+    unrestricted SQL UDF does not need the grant for `tuple`. Without
+    `input_format_values_interpret_expressions` the `VALUES` expression can be evaluated only by
+    the legacy template, which inlines the UDF."""
+    instance.query("CREATE TABLE t (x UInt8) ENGINE = Memory")
+    instance.query("CREATE FUNCTION inc AS x -> x + 1")
+    instance.query("CREATE USER A")
+    instance.query("GRANT INSERT ON t TO A")
+
+    instance.http_query(
+        "INSERT INTO t SETTINGS input_format_values_interpret_expressions = 0 "
+        "VALUES (inc(1))",
+        method="POST",
+        user="A",
+    )
+    assert instance.query("SELECT x FROM t") == "2\n"
 
 
 def test_rewrite_target_requires_grant():
