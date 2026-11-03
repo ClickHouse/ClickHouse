@@ -82,7 +82,8 @@ private:
         MergeTreeRangeReader & reader,
         ReadResult & result,
         const Block & previous_header,
-        bool is_last_reader);
+        bool is_last_reader,
+        bool keep_additional_columns);
 
     void readPatches(const Block & result_header, std::vector<MarkRanges> & patch_ranges, ReadResult & read_result);
 
@@ -147,6 +148,10 @@ private:
     /// For every reader, the names of the columns produced by the previous steps of the chain.
     /// They don't change between blocks, so they are collected once.
     std::vector<NameSet> previous_steps_columns;
+
+    /// The last reader that may evaluate defaults of columns missing in the part, 0 if none.
+    /// Only the steps before it keep the columns they project out.
+    size_t last_reader_evaluating_defaults = 0;
 
     /// Storage names of overwritten columns that an on-fly MUTATION step genuinely consumes
     /// as a function input before any step overwrites them. They must still be converted to
