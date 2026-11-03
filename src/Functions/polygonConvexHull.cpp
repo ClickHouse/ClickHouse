@@ -68,12 +68,13 @@ int exponentOf(Float64 value)
 /// but they are moved, if possible, so that no coordinate becomes subnormal, where it would be rounded.
 /// If that is not possible together with the bound for underflow, which is for the smallest differences on both axes at once,
 /// the bound is dropped: a rounded coordinate is a sure error, and a product that underflows rarely decides a side.
+/// An axis that spans more than `Float64` can hold after scaling keeps only the bound for overflow, and its smallest values round.
 std::pair<int, int> hullScales(Float64 min_x, Float64 max_x, Float64 min_y, Float64 max_y)
 {
-    const int x_low = -1022 - exponentOf(min_x);
     const int x_high = 1020 - exponentOf(max_x);
-    const int y_low = -1022 - exponentOf(min_y);
     const int y_high = 1020 - exponentOf(max_y);
+    const int x_low = std::min(-1022 - exponentOf(min_x), x_high);
+    const int y_low = std::min(-1022 - exponentOf(min_y), y_high);
     const int sum_high = std::min(1000 - exponentOf(max_x) - exponentOf(max_y), x_high + y_high);
     int sum_low = std::max(-800 - exponentOf(min_x) - exponentOf(min_y), x_low + y_low);
     if (sum_low > sum_high)
@@ -125,8 +126,9 @@ private:
 
 /// The rotating calipers of `convexHullToMinimumRotatedRectangle`, on a clockwise convex ring.
 /// With `Float64`, the largest absolute value of a coordinate must be around 2^400.
+/// `max_coordinate` is the largest absolute value of a corner that stays finite when the ring is scaled back.
 template <typename Point, typename Number, typename Ring>
-void replaceWithMinimumRotatedRectangle(Ring & points)
+void replaceWithMinimumRotatedRectangle(Ring & points, Float64 max_coordinate)
 {
     using boost::geometry::get;
     auto equals = [](const Point & a, const Point & b) { return get<0>(a) == get<0>(b) && get<1>(a) == get<1>(b); };
@@ -161,6 +163,9 @@ void replaceWithMinimumRotatedRectangle(Ring & points)
 
     Number min_area = zero;
     std::array<Point, 4> corners{};
+    bool corners_are_finite = false;
+    /// Of the rectangles with the same area up to rounding, one whose corners fit in `Float64` is taken.
+    const Number almost_one(1 + 0x1p-40);
     size_t right = 0; /// The farthest vertex along the edge.
     size_t top = 0; /// The farthest vertex across the edge.
     size_t left = 0; /// The farthest vertex back along the edge.
@@ -208,7 +213,7 @@ void replaceWithMinimumRotatedRectangle(Ring & points)
             left = next(left);
 
         const Number area = (along_from_edge(right) - along_from_edge(left)) / squared_length * across_from_edge(top);
-        if (i == 0 || area < min_area)
+        if (i == 0 || area < min_area || (!corners_are_finite && !(min_area * almost_one < area)))
         {
             min_area = area;
             const Number min_along = along_from_edge(left) / squared_length;
@@ -227,6 +232,10 @@ void replaceWithMinimumRotatedRectangle(Ring & points)
             /// Clockwise, as the rings made by `boost::geometry::convex_hull`.
             corners = {corner(left, min_along, i, zero), corner(left, min_along, top, height),
                 corner(right, max_along, top, height), corner(right, max_along, i, zero)};
+            corners_are_finite = std::ranges::all_of(corners, [&](const Point & p)
+            {
+                return std::abs(get<0>(p)) <= max_coordinate && std::abs(get<1>(p)) <= max_coordinate;
+            });
         }
     }
 
@@ -263,14 +272,14 @@ void convexHullToMinimumRotatedRectangle(Polygon<Point> & polygon)
     /// Scaling down would round the coordinates that become subnormal, so then it computes with separate exponents.
     if (scale > 0 && exponentOf(min_abs) - scale < -1022)
     {
-        replaceWithMinimumRotatedRectangle<Point, FloatWithExponent>(polygon.outer());
+        replaceWithMinimumRotatedRectangle<Point, FloatWithExponent>(polygon.outer(), std::numeric_limits<Float64>::max());
         return;
     }
 
     if (scale != 0)
         scaleByPowersOfTwo<Point>(polygon, -scale, -scale);
 
-    replaceWithMinimumRotatedRectangle<Point, Float64>(polygon.outer());
+    replaceWithMinimumRotatedRectangle<Point, Float64>(polygon.outer(), std::ldexp(std::numeric_limits<Float64>::max(), -scale));
 
     if (scale != 0)
         scaleByPowersOfTwo<Point>(polygon, scale, scale);
@@ -351,7 +360,9 @@ public:
                             min_y = std::min(min_y, abs_y);
                     });
                     /// A nonzero difference of coordinates is at least 2^-52 of the smaller of them, or of the nonzero one.
-                    const bool scaled = exponentOf(max_x) + exponentOf(max_y) > 1000 || exponentOf(min_x) + exponentOf(min_y) < -800;
+                    /// A difference of coordinates near the largest `Float64` overflows by itself.
+                    const bool scaled = exponentOf(max_x) + exponentOf(max_y) > 1000 || exponentOf(min_x) + exponentOf(min_y) < -800
+                        || std::max(exponentOf(max_x), exponentOf(max_y)) > 1020;
                     const auto [x_scale, y_scale] = scaled ? hullScales(min_x, max_x, min_y, max_y) : std::pair(0, 0);
                     if (scaled)
                         scaleByPowersOfTwo<Point>(geometries[i], x_scale, y_scale);

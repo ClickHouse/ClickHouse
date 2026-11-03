@@ -50,6 +50,12 @@ FROM (SELECT arrayJoin([
     ([(0., 0.), (pow(2., -700), 0.), (pow(2., -700), pow(2., 700))], (pow(2., -700), pow(2., 700)))]) AS t, t.1 AS points, t.2 AS scale);
 -- Tiny points next to a far one, where the products of their differences would underflow: (3e-201, 5e-201) is inside.
 SELECT polygonConvexHullCartesian([(1., 1.), (-9e-201, 2e-201), (-3e-201, -4e-201), (3e-201, 5e-201)]::MultiPoint);
+-- Differences of coordinates near the largest `Float64` overflow by themselves.
+SELECT polygonConvexHullCartesian([(1.5e308, 1e-200), (-1.5e308, -1e-180), (1e200, 0.)]::MultiPoint);
+-- An axis from 2e-310 to 1.5e308 spans more than `Float64` can hold after scaling: the subnormal coordinate rounds, but nothing overflows.
+SELECT length(h[1]), arrayAll(p -> isFinite(p.1) AND isFinite(p.2), h[1]), arrayAll(p -> isFinite(p.1) AND isFinite(p.2), r[1])
+FROM (SELECT polygonConvexHullCartesian(points) AS h, polygonMinimumRotatedRectangleCartesian(points) AS r
+    FROM (SELECT [(0., 2e-310), (1., 1.5e308), (2., -1.5e308)]::MultiPoint AS points));
 
 -- Edges so short that their products underflow still have a direction.
 SELECT polygonMinimumRotatedRectangleCartesian([(0., 0.), (1., 0.), (1e-170, 1e-170)]::MultiPoint);
