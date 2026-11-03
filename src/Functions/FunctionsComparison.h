@@ -2325,6 +2325,83 @@ public:
         return true;
     }
 
+    /// An integer type compiled code holds: its width in bits and whether it is signed.
+    struct IntegerTraits
+    {
+        unsigned bits = 0;
+        bool is_signed = false;
+    };
+
+    static std::optional<IntegerTraits> integerTraits(const IDataType & type)
+    {
+        WhichDataType which(type);
+        if (which.isNativeInt() || which.isInt128())
+            return IntegerTraits{static_cast<unsigned>(type.getSizeOfValueInMemory() * 8), true};
+        if (which.isNativeUInt() || which.isUInt128())
+            return IntegerTraits{static_cast<unsigned>(type.getSizeOfValueInMemory() * 8), false};
+        return {};
+    }
+
+    /// Two integers without a common integer type of up to 64 bits: a 128-bit integer, or a `UInt64` with a signed integer.
+    /// `executeImpl` compares them exactly (`accurate::lessOp` and friends); compiled code compares them extended to a
+    /// type one bit wider than both, where every value of both fits.
+    static bool isWideIntegerPair(const IDataType & left, const IDataType & right)
+    {
+        const auto left_traits = integerTraits(left);
+        const auto right_traits = integerTraits(right);
+        if (!left_traits || !right_traits)
+            return false;
+        if (left_traits->bits == 128 || right_traits->bits == 128)
+            return true;
+        return left_traits->is_signed != right_traits->is_signed
+            && (left_traits->is_signed ? right_traits->bits : left_traits->bits) == 64;
+    }
+
+    /// A float with an `Int64` or a `UInt64`, which have no common type. `executeImpl` compares them exactly.
+    static bool isFloatAnd64BitIntegerPair(const IDataType & left, const IDataType & right)
+    {
+        auto is_64_bit_integer = [](const IDataType & type)
+        {
+            const auto traits = integerTraits(type);
+            return traits && traits->bits == 64;
+        };
+        return (isNativeFloat(left) && is_64_bit_integer(right))
+            || (isNativeFloat(right) && is_64_bit_integer(left));
+    }
+
+    /// Two values of the same `Enum` type, compared by their numbers.
+    static bool isSameEnumPair(const IDataType & left, const IDataType & right)
+    {
+        return isEnum(left) && left.equals(right);
+    }
+
+    /// The exact three-way comparison of a float with a 64-bit integer: -1, 0 or 1 as an `i8`, for a float that is not NaN.
+    /// Like `DecomposedFloat`: a float outside the range of the integer type is greater or less than every integer; inside
+    /// it, the float truncated to an integer is compared first, and on a tie the float with its truncated value.
+    static llvm::Value * compareFloatWithInteger(llvm::IRBuilder<> & b, llvm::Value * f, llvm::Value * i, bool integer_is_signed)
+    {
+        auto * float_type = f->getType();
+        auto * integer_type = i->getType();
+        /// -2^63 and 2^63, or 0 and 2^64: exact in both float types.
+        auto * lowest = llvm::ConstantFP::get(float_type, integer_is_signed ? -9223372036854775808.0 : 0.0);
+        auto * past_highest = llvm::ConstantFP::get(float_type, integer_is_signed ? 9223372036854775808.0 : 18446744073709551616.0);
+        auto * above = b.CreateFCmpOGE(f, past_highest);
+        auto * below = b.CreateFCmpOLT(f, lowest);
+        auto * in_range = b.CreateNot(b.CreateOr(above, below));
+
+        /// Out of range (and NaN) the value is replaced by 0, so that the conversion is defined.
+        auto * f_in_range = b.CreateSelect(in_range, f, llvm::ConstantFP::get(float_type, 0.0));
+        auto * truncated = integer_is_signed ? b.CreateFPToSI(f_in_range, integer_type) : b.CreateFPToUI(f_in_range, integer_type);
+        auto * truncated_float = integer_is_signed ? b.CreateSIToFP(truncated, float_type) : b.CreateUIToFP(truncated, float_type);
+
+        auto * less = integer_is_signed ? b.CreateICmpSLT(truncated, i) : b.CreateICmpULT(truncated, i);
+        auto * greater = integer_is_signed ? b.CreateICmpSGT(truncated, i) : b.CreateICmpUGT(truncated, i);
+        auto * tie = b.CreateSelect(b.CreateFCmpOGT(f_in_range, truncated_float), b.getInt8(1),
+            b.CreateSelect(b.CreateFCmpOLT(f_in_range, truncated_float), b.getInt8(-1), b.getInt8(0)));
+        auto * in_range_result = b.CreateSelect(less, b.getInt8(-1), b.CreateSelect(greater, b.getInt8(1), tie));
+        return b.CreateSelect(above, b.getInt8(1), b.CreateSelect(below, b.getInt8(-1), in_range_result));
+    }
+
     template <typename F>
     static bool castBothTypes(const IDataType * left, const IDataType * right, F && f)
     {
@@ -2352,6 +2429,12 @@ public:
         /// Both sides are compared as the `Int64` the `DateTime64` stores.
         if (WhichDataType(arguments[0]).isDateTime64() || WhichDataType(arguments[1]).isDateTime64())
             return Op<Int64, Int64>::compilable;
+
+        if (isWideIntegerPair(*arguments[0], *arguments[1]) || isSameEnumPair(*arguments[0], *arguments[1]))
+            return Op<Int64, Int64>::compilable;
+
+        if (isFloatAnd64BitIntegerPair(*arguments[0], *arguments[1]))
+            return Op<Float64, Int64>::compilable;
 
         return castBothTypes(arguments[0].get(), arguments[1].get(), [&](const auto & left, const auto & right)
         {
@@ -2387,6 +2470,44 @@ public:
                 auto * left_value = nativeCast(b, arguments[0], common_type);
                 auto * right_value = nativeCast(b, arguments[1], common_type);
                 return b.CreateSelect(CompileOp<Op>::compile(b, left_value, right_value, /*is_signed=*/ true), b.getInt8(1), b.getInt8(0));
+            }
+        }
+
+        if constexpr (Op<Int64, Int64>::compilable)
+        {
+            auto & b = static_cast<llvm::IRBuilder<> &>(builder);
+            const auto & left_type = *arguments[0].type;
+            const auto & right_type = *arguments[1].type;
+
+            if (isWideIntegerPair(left_type, right_type))
+            {
+                const auto left_traits = *integerTraits(left_type);
+                const auto right_traits = *integerTraits(right_type);
+                auto * wide_type = b.getIntNTy(std::max(left_traits.bits, right_traits.bits) + 1);
+                auto * left_value = left_traits.is_signed ? b.CreateSExt(arguments[0].value, wide_type) : b.CreateZExt(arguments[0].value, wide_type);
+                auto * right_value = right_traits.is_signed ? b.CreateSExt(arguments[1].value, wide_type) : b.CreateZExt(arguments[1].value, wide_type);
+                return b.CreateSelect(CompileOp<Op>::compile(b, left_value, right_value, /*is_signed=*/ true), b.getInt8(1), b.getInt8(0));
+            }
+
+            if (isSameEnumPair(left_type, right_type))
+                return b.CreateSelect(
+                    CompileOp<Op>::compile(b, arguments[0].value, arguments[1].value, /*is_signed=*/ true), b.getInt8(1), b.getInt8(0));
+
+            if (isFloatAnd64BitIntegerPair(left_type, right_type))
+            {
+                /// Compare the three-way result with 0, with the float on the left. A NaN compares as in `executeImpl`, where
+                /// every comparison but `notEquals` is false: as the ordered float comparisons of `CompileOp` do.
+                const bool float_is_left = isNativeFloat(left_type);
+                auto * f = float_is_left ? arguments[0].value : arguments[1].value;
+                auto * i = float_is_left ? arguments[1].value : arguments[0].value;
+                auto * three_way = compareFloatWithInteger(b, f, i, integerTraits(float_is_left ? right_type : left_type)->is_signed);
+                auto * zero = b.getInt8(0);
+                auto * ordered = float_is_left
+                    ? CompileOp<Op>::compile(b, three_way, zero, /*is_signed=*/ true)
+                    : CompileOp<Op>::compile(b, zero, three_way, /*is_signed=*/ true);
+                auto * is_nan = b.CreateFCmpUNO(f, f);
+                auto * nan_result = CompileOp<Op>::compile(b, f, f, /*is_signed=*/ true);
+                return b.CreateSelect(b.CreateSelect(is_nan, nan_result, ordered), b.getInt8(1), b.getInt8(0));
             }
         }
 

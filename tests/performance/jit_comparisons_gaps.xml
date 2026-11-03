@@ -1,0 +1,37 @@
+<test>
+    <settings>
+        <min_count_to_compile_expression>0</min_count_to_compile_expression>
+    </settings>
+
+    <create_query>
+        CREATE TABLE jit_comparisons_gaps (u64 UInt64, i32 Int32, i64 Int64, i128 Int128, f64 Float64, n Nullable(Int32), b Int32) Engine = Memory
+    </create_query>
+
+    <fill_query>
+        INSERT INTO jit_comparisons_gaps
+        SELECT cityHash64(number), toInt32(cityHash64(number, 1)), toInt64(cityHash64(number, 2)), toInt128(cityHash64(number, 3)) * 1000003,
+            toFloat64(cityHash64(number, 4) % 100000000) / 13, if(number % 10 = 0, NULL, toInt32(cityHash64(number, 5))), toInt32(number % 1000)
+        FROM numbers(50000000)
+    </fill_query>
+
+    <substitutions>
+        <substitution>
+            <name>compile</name>
+            <values>
+                <value>0</value>
+                <value>1</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <!-- Comparisons without a common integer type of up to 64 bits, fused with other compilable functions. -->
+    <query>SELECT count() FROM jit_comparisons_gaps WHERE u64 > i32 AND b + 1 > 5 SETTINGS compile_expressions = {compile}</query>
+    <query>SELECT count() FROM jit_comparisons_gaps WHERE f64 > i64 OR f64 * 2 &lt; 3 SETTINGS compile_expressions = {compile}</query>
+    <query>SELECT count() FROM jit_comparisons_gaps WHERE i128 > 0 AND i128 * 2 &lt; 1000000000000000 SETTINGS compile_expressions = {compile}</query>
+    <!-- Conversions of a Nullable argument, least and greatest with three or Nullable arguments. -->
+    <query>SELECT sum(toUInt32(n) + 1) FROM jit_comparisons_gaps SETTINGS compile_expressions = {compile}</query>
+    <query>SELECT sum(least(i32, b, n) + 1) FROM jit_comparisons_gaps SETTINGS compile_expressions = {compile}</query>
+    <query>SELECT sum(greatest(n, b) + 1) FROM jit_comparisons_gaps SETTINGS compile_expressions = {compile}</query>
+
+    <drop_query>DROP TABLE IF EXISTS jit_comparisons_gaps</drop_query>
+</test>

@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/Native.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NumberTraits.h>
 #include <Interpreters/Context.h>
@@ -76,6 +77,73 @@ private:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForNulls() const override { return legacy_null_behavior; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+#if USE_EMBEDDED_COMPILER
+    /// Numbers, `Nullable` included, as `executeNumeric`: each argument is converted to the result type, NULL loses against
+    /// any value, and NaN against any number (`candidateReplacesBest`). Not with the legacy NULL behavior.
+    bool isCompilableImpl(const DataTypes & types, const DataTypePtr & result_type) const override
+    {
+        if (legacy_null_behavior || types.size() < 2 || !canBeNativeType(result_type))
+            return false;
+
+        auto is_compilable_number = [](const DataTypePtr & type)
+        {
+            const auto nested = removeNullable(type);
+            return canBeNativeType(nested) && (isInteger(nested) || isNativeFloat(nested));
+        };
+        if (!is_compilable_number(result_type))
+            return false;
+        for (const auto & type : types)
+            if (!is_compilable_number(type))
+                return false;
+        return true;
+    }
+
+    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & result_type) const override
+    {
+        auto & b = static_cast<llvm::IRBuilder<> &>(builder);
+        const auto result_nested = removeNullable(result_type);
+        const bool is_float = isNativeFloat(result_nested);
+        const bool is_signed = !result_nested->isValueRepresentedByUnsignedInteger();
+
+        llvm::Value * best = nullptr;
+        llvm::Value * best_is_null = nullptr;
+        for (const auto & argument : arguments)
+        {
+            const bool is_nullable = argument.type->isNullable();
+            auto * nested_value = is_nullable ? b.CreateExtractValue(argument.value, {0}) : argument.value;
+            auto * value = nativeCast(b, removeNullable(argument.type), nested_value, result_nested);
+            auto * is_null = is_nullable ? b.CreateExtractValue(argument.value, {1}) : b.getFalse();
+            if (!best)
+            {
+                best = value;
+                best_is_null = is_null;
+                continue;
+            }
+
+            llvm::Value * replaces = nullptr;
+            if (is_float)
+            {
+                auto * better = kind == LeastGreatest::Least ? b.CreateFCmpOLT(value, best) : b.CreateFCmpOGT(value, best);
+                replaces = b.CreateOr(better, b.CreateFCmpUNO(best, best));
+            }
+            else if (kind == LeastGreatest::Least)
+                replaces = is_signed ? b.CreateICmpSLT(value, best) : b.CreateICmpULT(value, best);
+            else
+                replaces = is_signed ? b.CreateICmpSGT(value, best) : b.CreateICmpUGT(value, best);
+
+            /// As the fold of `executeNumericImpl`: a NULL best is replaced by anything, a NULL candidate replaces nothing.
+            auto * take = b.CreateOr(best_is_null, b.CreateAnd(b.CreateNot(is_null), replaces));
+            best = b.CreateSelect(take, value, best);
+            best_is_null = b.CreateAnd(best_is_null, is_null);
+        }
+
+        if (!result_type->isNullable())
+            return best;
+        auto * result = llvm::Constant::getNullValue(toNativeType(b, result_type));
+        return b.CreateInsertValue(b.CreateInsertValue(result, best, {0}), best_is_null, {1});
+    }
+#endif
 
     DataTypePtr getReturnTypeImpl(const DataTypes & types) const override
     {

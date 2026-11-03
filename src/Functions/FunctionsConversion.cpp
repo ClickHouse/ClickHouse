@@ -3703,11 +3703,26 @@ bool convertIsCompilableImpl(const DataTypes & types, const DataTypePtr & result
     if (!canBeNativeType(types[0]) || !canBeNativeType(result_type))
         return false;
 
+    /// A `Nullable` argument gives a `Nullable` result (`FunctionConvert` handles NULLs itself): the nested value is converted,
+    /// on NULL rows too, as the interpreted conversion of the nested column does.
+    if (types[0]->isNullable())
+        return result_type->isNullable() && isCompilableNumericConversion(removeNullable(types[0]).get(), removeNullable(result_type).get());
+
     return isCompilableNumericConversion(types[0].get(), result_type.get());
 }
 
 llvm::Value * convertCompileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & result_type)
 {
+    if (arguments[0].type->isNullable())
+    {
+        auto & b = static_cast<llvm::IRBuilder<> &>(builder);
+        auto * nested_value = b.CreateExtractValue(arguments[0].value, {0});
+        auto * is_null = b.CreateExtractValue(arguments[0].value, {1});
+        auto * converted = convertCompileImpl(builder, {ValueWithType(nested_value, removeNullable(arguments[0].type))}, removeNullable(result_type));
+        auto * result = llvm::Constant::getNullValue(toNativeType(b, result_type));
+        return b.CreateInsertValue(b.CreateInsertValue(result, converted, {0}), is_null, {1});
+    }
+
     llvm::Value * result = nullptr;
     castBothTypes(
         arguments[0].type.get(),
