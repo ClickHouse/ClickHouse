@@ -5,6 +5,7 @@
 -- Uses test_cluster_one_shard_two_replicas so hedged requests have a second replica to switch to
 -- 1 shard, replicas 127.0.0.1 / 127.0.0.2, both the local server
 
+SET allow_experimental_abr = 1;
 SET send_logs_level = 'error';
 
 -- `HedgedRequestsChangeReplica` also counts connection-establishment timeouts.

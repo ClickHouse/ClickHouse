@@ -9,6 +9,7 @@
 -- With an equal split of max_execution_time it would only get 10 / 3 = 3.3 s, time out, and fall back to
 -- adaptive_budget_100.
 
+SET allow_experimental_abr = 1;
 SET session_timezone = 'UTC';
 
 DROP TABLE IF EXISTS adaptive_budget_abr;

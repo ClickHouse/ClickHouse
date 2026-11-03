@@ -2,6 +2,7 @@
 -- underlying table, so all underlying tables must have partition keys over the same columns.
 -- The partition expressions themselves may differ.
 
+SET allow_experimental_abr = 1;
 SET session_timezone = 'UTC';
 
 DROP TABLE IF EXISTS abr;

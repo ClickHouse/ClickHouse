@@ -26,23 +26,23 @@ ${CLICKHOUSE_CLIENT} --query "
 "
 
 echo "CREATE without privileges on the underlying tables"
-${CLICKHOUSE_CLIENT} --user="${user}" --query "CREATE TABLE abr_proxy ENGINE = ABR('src', [1, 10], ('ts'))" 2>&1 | grep -o "ACCESS_DENIED" | uniq
+${CLICKHOUSE_CLIENT} --user="${user}" --allow_experimental_abr=1 --query "CREATE TABLE abr_proxy ENGINE = ABR('src', [1, 10], ('ts'))" 2>&1 | grep -o "ACCESS_DENIED" | uniq
 
 echo "CREATE with an explicit column list without privileges on the underlying tables"
-${CLICKHOUSE_CLIENT} --user="${user}" --query "CREATE TABLE abr_proxy (ts DateTime, account_id String, value UInt64) ENGINE = ABR('src', [1, 10], ('ts'))" 2>&1 | grep -o "ACCESS_DENIED" | uniq
+${CLICKHOUSE_CLIENT} --user="${user}" --allow_experimental_abr=1 --query "CREATE TABLE abr_proxy (ts DateTime, account_id String, value UInt64) ENGINE = ABR('src', [1, 10], ('ts'))" 2>&1 | grep -o "ACCESS_DENIED" | uniq
 
 echo "CREATE over underlying tables that do not exist"
-${CLICKHOUSE_CLIENT} --user="${user}" --query "CREATE TABLE abr_proxy ENGINE = ABR('missing', [1, 10], ('ts'))" 2>&1 | grep -o "ACCESS_DENIED" | uniq
+${CLICKHOUSE_CLIENT} --user="${user}" --allow_experimental_abr=1 --query "CREATE TABLE abr_proxy ENGINE = ABR('missing', [1, 10], ('ts'))" 2>&1 | grep -o "ACCESS_DENIED" | uniq
 
 ${CLICKHOUSE_CLIENT} --query "GRANT SHOW COLUMNS ON src_1 TO ${user}"
 echo "CREATE with privileges on only some of the underlying tables"
-${CLICKHOUSE_CLIENT} --user="${user}" --query "CREATE TABLE abr_proxy ENGINE = ABR('src', [1, 10], ('ts'))" 2>&1 | grep -o "ACCESS_DENIED" | uniq
+${CLICKHOUSE_CLIENT} --user="${user}" --allow_experimental_abr=1 --query "CREATE TABLE abr_proxy ENGINE = ABR('src', [1, 10], ('ts'))" 2>&1 | grep -o "ACCESS_DENIED" | uniq
 
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'abr_proxy'"
 
 ${CLICKHOUSE_CLIENT} --query "GRANT SHOW COLUMNS ON src_10 TO ${user}"
 echo "CREATE with privileges on all the underlying tables"
-${CLICKHOUSE_CLIENT} --user="${user}" --query "CREATE TABLE abr_proxy ENGINE = ABR('src', [1, 10], ('ts'))"
+${CLICKHOUSE_CLIENT} --user="${user}" --allow_experimental_abr=1 --query "CREATE TABLE abr_proxy ENGINE = ABR('src', [1, 10], ('ts'))"
 ${CLICKHOUSE_CLIENT} --query "SELECT name, type FROM system.columns WHERE database = currentDatabase() AND table = 'abr_proxy' ORDER BY position"
 
 ${CLICKHOUSE_CLIENT} --query "

@@ -4,6 +4,7 @@
 -- "already got bucket" error. Verifies both legacy interpreter and the analyzer.
 
 -- Force two-level aggregation without reading millions of rows on every shard.
+SET allow_experimental_abr = 1;
 SET group_by_two_level_threshold = 1, group_by_two_level_threshold_bytes = 0;
 -- Exercise SQL-shipped queries: serialized table reads do not preserve the `ABR` routing predicate.
 SET serialize_query_plan = 0;

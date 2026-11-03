@@ -19,6 +19,7 @@
 -- Correct: Chooses retention_bug_1
 -- Bug:     If timestamp is considered in part pruning, it will wrongly skip to retention_bug_10
 
+SET allow_experimental_abr = 1;
 SET session_timezone = 'UTC';
 
 DROP TABLE IF EXISTS abr_retention_bug;

@@ -6,6 +6,7 @@
 -- A 5-day lookback query for region='us' should skip table_1 (not enough 'us' data),
 -- while the same query for region='eu' should select table_1.
 
+SET allow_experimental_abr = 1;
 SET session_timezone = 'UTC';
 
 DROP TABLE IF EXISTS abr_mr;

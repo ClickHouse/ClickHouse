@@ -5,6 +5,7 @@
 -- simulates the "newly added shard" scenario where coarser tables have not yet
 -- accumulated extra history.
 
+SET allow_experimental_abr = 1;
 SET session_timezone = 'UTC';
 
 DROP TABLE IF EXISTS abr_table;

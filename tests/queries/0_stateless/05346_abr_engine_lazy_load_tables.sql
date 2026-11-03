@@ -1,6 +1,7 @@
 -- Tags: no-replicated-database
 -- no-replicated-database: re-attaches an `Atomic` database with `lazy_load_tables`.
 
+SET allow_experimental_abr = 1;
 SET session_timezone = 'UTC';
 
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};

@@ -2,6 +2,7 @@
 -- Verifies that ABR correctly chooses the underlying table with the smallest
 -- sample interval that contains data for the requested time range.
 
+SET allow_experimental_abr = 1;
 SET session_timezone = 'UTC';
 
 DROP TABLE IF EXISTS abr_table;

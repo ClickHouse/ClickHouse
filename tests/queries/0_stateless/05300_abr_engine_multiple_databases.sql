@@ -2,6 +2,7 @@
 -- This test verifies which tables become the underlying tables for ABR engine
 -- when there are identically named tables across multiple databases
 
+SET allow_experimental_abr = 1;
 SET session_timezone = 'UTC';
 
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};

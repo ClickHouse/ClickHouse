@@ -3,6 +3,7 @@
 -- when the PARTITION BY clause contains multiple expressions, where at least
 -- one is time-related.
 
+SET allow_experimental_abr = 1;
 SET session_timezone = 'UTC';
 
 DROP TABLE IF EXISTS abr;

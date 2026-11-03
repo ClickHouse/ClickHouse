@@ -5,6 +5,7 @@
 -- If pushdown is broken, a full scan triggers TOO_MANY_ROWS causing ABR to
 -- fall back to a coarser table, detected via abr_interval.
 
+SET allow_experimental_abr = 1;
 SET session_timezone = 'UTC';
 
 -- Range-splitting fault injection can read the same granule in multiple layers.

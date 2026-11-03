@@ -58,6 +58,7 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_abr;
     extern const SettingsUInt64 abr_first_table_suffix;
     extern const SettingsUInt64 abr_last_table_suffix;
     extern const SettingsSeconds max_execution_time;
@@ -80,6 +81,7 @@ namespace ErrorCodes
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
     extern const int ACCESS_DENIED;
     extern const int UNKNOWN_TABLE;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -490,6 +492,14 @@ void StorageABR::copyTableMetadata(const StoragePtr & storage)
 
 std::shared_ptr<StorageABR> StorageABR::creatorFunction(const StorageFactory::Arguments & args)
 {
+    /// Only `CREATE` (or a full `ATTACH`) is gated. Loading the table at startup, restoring it or replaying it on a replica
+    /// runs without the settings of the user who created it, and must not fail.
+    if (!isReplayedTableDefinition(args.mode, args.query, args.getLocalContext())
+        && !args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_abr])
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Table engine ABR is experimental. Set `allow_experimental_abr` setting to enable it");
+
     ASTs & engine_args = args.engine_args;
     if (engine_args.size() != 3)
         throw Exception(
@@ -985,6 +995,12 @@ The `ABR` (Adaptive Bit Rate) engine is a read-only proxy that routes queries to
 that store the same data at different sampling granularities. It picks the finest-grained underlying table whose retention covers
 the query's time range, and on `TOO_MANY_ROWS` or `TIMEOUT_EXCEEDED` it transparently retries the query on the next coarser table.
 
+<Info>
+This is an experimental feature that may change in backwards-incompatible ways in future releases. Enable the creation of `ABR`
+tables with the setting `allow_experimental_abr`: `SET allow_experimental_abr = 1`. It is only checked when a table is created:
+`ABR` tables are loaded and can be queried regardless of this setting.
+</Info>
+
 The underlying tables are expected to follow a naming convention of `{table_prefix}_{sample_interval}`, where `sample_interval`
 distinguishes the granularity. The engine never writes; data must be ingested directly into the underlying tables. Creating
 an `ABR` table requires `SHOW COLUMNS` on all its underlying tables, and reading from it requires `SELECT` on them.
@@ -1053,6 +1069,7 @@ ENGINE = MergeTree PARTITION BY (toYYYYMM(ts), region) ORDER BY ts;
 CREATE TABLE events_10 AS events_1;
 CREATE TABLE events_100 AS events_1;
 
+SET allow_experimental_abr = 1;
 CREATE TABLE events (ts DateTime, region String, value UInt64)
 ENGINE = ABR('events', [1, 10, 100], ('ts', 'region'));
 

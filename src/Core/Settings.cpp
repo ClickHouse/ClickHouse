@@ -10931,6 +10931,11 @@ Sets the evaluation time to be used with promql dialect, as a Unix timestamp in 
 Allow to create tables with Paimon* table engines.
 )", EXPERIMENTAL, \
         {"26.5", false, false, "New setting."}) \
+    DECLARE(Bool, allow_experimental_abr, false, R"(
+Allow to create tables with the experimental `ABR` table engine.
+It is only checked when a table is created: `ABR` tables are loaded and can be queried regardless of this setting.
+)", EXPERIMENTAL, \
+        {"26.10", false, false, "New setting for the experimental `ABR` table engine."}) \
     DECLARE(Int64, paimon_target_snapshot_id, -1, R"(
 Query-level targeted snapshot read for Paimon incremental mode. When >0, the reader will only fetch the delta
 for the specified snapshot_id without advancing the committed watermark.

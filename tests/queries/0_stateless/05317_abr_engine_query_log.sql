@@ -11,6 +11,7 @@
 --       as NO_AVAILABLE_DATA (the genuine entry for the fallback table must
 --       NOT be erased).
 
+SET allow_experimental_abr = 1;
 SET session_timezone = 'UTC';
 
 DROP TABLE IF EXISTS abr_query_log;

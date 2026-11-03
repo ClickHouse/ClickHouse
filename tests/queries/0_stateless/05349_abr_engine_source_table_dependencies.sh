@@ -12,7 +12,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 DATABASE="${CLICKHOUSE_TEST_UNIQUE_NAME}_db"
 
-${CLICKHOUSE_CLIENT} --query "
+${CLICKHOUSE_CLIENT} --allow_experimental_abr=1 --query "
     DROP DATABASE IF EXISTS ${DATABASE};
     CREATE DATABASE ${DATABASE};
 
