@@ -37,6 +37,11 @@ namespace FailPoints
     extern const char transaction_metadata_store_fail[];
 }
 
+namespace FailPoints
+{
+extern const char version_metadata_store_pause_before_rename[];
+}
+
 namespace MergeTreeSetting
 {
 extern const MergeTreeSettingsBool fsync_part_directory;
@@ -432,6 +437,7 @@ void VersionMetadataOnDisk::storeInfoToDataPartStorage(
         SyncGuardPtr sync_guard;
         if ((*mt_data.getSettings())[MergeTreeSetting::fsync_part_directory])
             sync_guard = data_part_storage.getDirectorySyncGuard();
+        FailPointInjection::pauseFailPoint(FailPoints::version_metadata_store_pause_before_rename);
         data_part_storage.replaceFile(tmp_filename, filename);
     }
     catch (...)

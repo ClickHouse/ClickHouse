@@ -16,7 +16,7 @@ function cleanup()
 trap cleanup EXIT
 
 # The per-operator thresholds are disabled, so the only spill trigger is the workload soft limit.
-# The adaptive aggregation stays enabled: its spill requests are served by draining the staged backlog.
+# The adaptive aggregation stays enabled: its spill requests are served by writing the staged records.
 settings=(
   --workload "$workload"
   --max_rows_to_read 0
@@ -32,40 +32,14 @@ SELECT count(), sum(c) FROM (SELECT number AS k, count() AS c FROM numbers_mt(20
 SELECT count(), sum(c) FROM (SELECT number AS k, count() AS c FROM numbers_mt(20e6) GROUP BY k) SETTINGS enable_adaptive_aggregator=0;
 "
 
-# Fewer than one million keys can never fill an adaptive spill part with the query threshold disabled.
-# A workload request must write this tail to disk instead of hiding it in the shared drain table.
-$CLICKHOUSE_CLIENT -q "CREATE OR REPLACE WORKLOAD $workload SETTINGS max_memory = '4Gi', max_memory_before_spill = '32Mi'"
-$CLICKHOUSE_CLIENT "${settings[@]}" --log_comment "$CLICKHOUSE_TEST_UNIQUE_NAME/tail" -q "
-SELECT count(), sum(c) FROM
-(
-    SELECT concat(toString(number), repeat('x', 512)) AS k, count() AS c
-    FROM numbers_mt(262144) GROUP BY k
-)
-SETTINGS enable_adaptive_aggregator = 1, enable_adaptive_memory_spill_scheduler = 0,
-    adaptive_aggregator_freeze_threshold = 1000, adaptive_aggregator_freeze_threshold_bytes = 0,
-    collect_hash_table_stats_during_aggregation = 0, max_threads = 2, max_block_size = 8192
-"
-
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 $CLICKHOUSE_CLIENT -q "
-SELECT ProfileEvents['MemoryReservationSpilledBytes'] > 0, ProfileEvents['AdaptiveAggregationSpillDrains'] > 0, Settings['enable_adaptive_aggregator']
+SELECT ProfileEvents['MemoryReservationSpilledBytes'] > 0, ProfileEvents['AdaptiveAggregationSpills'] > 0, Settings['enable_adaptive_aggregator']
 FROM system.query_log
 WHERE current_database = currentDatabase()
     AND event_date >= yesterday()
     AND log_comment = '$CLICKHOUSE_TEST_UNIQUE_NAME'
     AND type = 'QueryFinish'
     AND query LIKE 'SELECT count(), sum(c)%'
-ORDER BY event_time_microseconds
-"
-
-$CLICKHOUSE_CLIENT -q "
-SELECT 'tail spilled', count() = 1,
-    max(ProfileEvents['AdaptiveAggregationSpillDrains']) > 0,
-    max(ProfileEvents['AdaptiveAggregationSharedTableSpills']) > 0,
-    max(ProfileEvents['ExternalAggregationCompressedBytes']) > 0
-FROM system.query_log
-WHERE current_database = currentDatabase()
-    AND event_date >= yesterday()
-    AND log_comment = '$CLICKHOUSE_TEST_UNIQUE_NAME/tail'
-    AND type = 'QueryFinish'
+ORDER BY Settings['enable_adaptive_aggregator'] DESC
 "

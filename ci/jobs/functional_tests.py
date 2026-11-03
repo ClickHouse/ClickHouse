@@ -9,6 +9,7 @@ import zlib
 from collections.abc import Mapping
 from pathlib import Path
 
+from ci.jobs.ci_utils import SANITIZERS
 from ci.jobs.scripts.bugfix_validation import (
     bugfix_build_types,
     download_master_builds,
@@ -20,7 +21,7 @@ from ci.jobs.scripts.test_selection_manifest import (
     SELECTION_MANIFEST,
     selection_manifest,
 )
-from ci.jobs.scripts.find_tests import Targeting
+from ci.jobs.scripts.find_tests import GitHubUnavailableError, Targeting
 from ci.jobs.scripts.functional_tests.export_coverage import CoverageExporter
 from ci.jobs.scripts.functional_tests_results import FTResultsProcessor
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
@@ -35,7 +36,6 @@ temp_dir = f"{Utils.cwd()}/ci/tmp"
 # a job parameter string ("amd_asan_ubsan, distributed plan, parallel"), or a
 # job name. Sanitizer builds get the tighter server memory cap (see the
 # `set_memory_ratio` logic in `main`).
-SANITIZERS = ("asan", "tsan", "msan", "ubsan")
 
 # Full stacktrace dumps `clickhouse-test` writes on an abort (hung check,
 # server died, per-test timeout). Names must match `SQL_STACKTRACES_LOG` and
@@ -196,13 +196,21 @@ def run_tests(
     global_time_limit_arg = (
         f" --global_time_limit {global_time_limit}" if global_time_limit > 0 else ""
     )
+    test_list_arg = ""
+    if tests:
+        # A file, not argv: `bash -c` gets the whole command as one argument, which Linux caps at 128 KiB.
+        test_list_file = f"{temp_dir}/test_list.txt"
+        Path(test_list_file).write_text(
+            "".join(f"{test}\n" for test in tests), encoding="utf-8"
+        )
+        test_list_arg = f'--test-list-file "{test_list_file}"'
     # `set -o pipefail` is required so that the pipeline's exit code reflects
     # `clickhouse-test`'s exit code rather than `tee`'s. Without it, a non-zero
     # exit from `clickhouse-test` is silently swallowed by `tee` returning 0.
     command = f"set -o pipefail; clickhouse-test --testname --check-zookeeper-session --hung-check --memory-limit {memory_limit} --trace \
                 --capture-client-stacktrace --queries ./tests/queries --test-runs {rerun_count}{global_time_limit_arg} \
                 {extra_args} \
-                --queries ./tests/queries {('--order=random' if random_order else '')} -- {Targeting.selection_args(tests)} | ts '%Y-%m-%d %H:%M:%S' \
+                --queries ./tests/queries {('--order=random' if random_order else '')} {test_list_arg} | ts '%Y-%m-%d %H:%M:%S' \
                 | tee -a \"{test_output_file}\""
     if Path(test_output_file).exists():
         Path(test_output_file).unlink()
@@ -716,7 +724,11 @@ def main():
 
     runner_options += f" --jobs {workers}"
 
-    if is_flaky_check or is_targeted_check:
+    if is_targeted_check and info.is_merge_queue_event:
+        # The merge queue is meant to fail fast: a few failures are enough to bounce
+        # the entry, and running the rest of the selection only delays the queue.
+        runner_options += " --max-failures 3"
+    elif is_flaky_check or is_targeted_check:
         # Stop after 5 total failures across all parallel workers (fast feedback on broken PRs).
         runner_options += " --max-failures 5"
 
@@ -764,15 +776,23 @@ def main():
         # hunt: the PR CI already ran the full flaky check, and this rerun only
         # needs to catch new tests broken by the current `master` state (e.g. a
         # setting randomization added to `tests/clickhouse-test` after the PR's
-        # last CI run). A randomized setting drawn with probability 0.4 per run
-        # escapes 20 iterations with probability 0.6^20 ~= 4e-5, so a reduced
-        # count keeps merge-queue latency bounded without losing the signal.
+        # last CI run), or new `master` tests broken by the PR. A randomized
+        # setting drawn with probability 0.4 per run escapes 20 iterations with
+        # probability 0.6^20 ~= 4e-5, so a reduced count keeps merge-queue
+        # latency bounded without losing the signal.
         rerun_count = 20
     elif is_flaky_check:
         # Large repeat count so the 45-min global_time_limit is the effective stopping
         # condition, not the repeat count.  Tests run in parallel (--jobs N) with fresh
         # random settings per TestCase; --max-failures 5 stops early on broken PRs.
         rerun_count = 50
+    elif is_targeted_check and info.is_merge_queue_event:
+        # The merge-queue targeted check is a drift guard like the merge-queue
+        # flaky check: the PR CI already repeated the selection 50 times, and
+        # this run only needs to catch tests broken by the merged `master`
+        # state. A few repetitions still sample the randomized settings, and the
+        # run usually ends well before its time limit instead of filling it.
+        rerun_count = 3
     elif is_targeted_check:
         rerun_count = 50
 
@@ -906,6 +926,8 @@ def main():
             if is_bugfix_validation and not is_labeled_bugfix_validation:
                 # Not a bugfix PR - run a simple sanity test
                 tests = ["00001_select_1"]
+            elif is_flaky_check and info.is_merge_queue_event:
+                tests = targeter.get_merge_queue_tests()
             elif is_flaky_check:
                 # Flaky check runs only changed/new test files in this PR.
                 # Previously failed and coverage-relevant tests are handled
@@ -933,8 +955,9 @@ def main():
                 Shell.check(
                     "python3 -m ci.jobs.scripts.test_selection_smoke", strict=True
                 )
+            # In the merge queue the flaky check already reruns the changed tests.
             tests, selection_result = targeter.get_all_relevant_tests_with_info(
-                include_changed_tests=True
+                include_changed_tests=not info.is_merge_queue_event
             )
             SELECTION_MANIFEST.parent.mkdir(parents=True, exist_ok=True)
             SELECTION_MANIFEST.write_text(
@@ -945,12 +968,19 @@ def main():
             )
             selection_result.files = [str(SELECTION_MANIFEST)]
             results.append(selection_result)
-        except CIDBTimeoutError as ex:
-            # CIDB is overloaded (typically while the coverage export inserts).
+        except (CIDBTimeoutError, GitHubUnavailableError) as ex:
+            # CIDB is overloaded (typically while the coverage export inserts),
+            # or the GitHub API keeps failing.
             # Skip rather than fail: an ERROR here would skip every job that
             # waits for the core blocking jobs. Not cached, so a rerun or the
             # next commit selects again.
-            message = f"Targeted tests were not run: test selection timed out in CIDB: {ex}"
+            if isinstance(ex, CIDBTimeoutError):
+                cause = "test selection timed out in CIDB"
+                comment = "CIDB timeout in test selection, rerun to test"
+            else:
+                cause = "the GitHub API failed during test selection"
+                comment = "GitHub API error in test selection, rerun to test"
+            message = f"Targeted tests were not run: {cause}: {ex}"
             print(f"WARNING: {message}")
             info.add_workflow_warning(message)
             skipped = Result.create_from(
@@ -958,7 +988,7 @@ def main():
                 info=f"{message}\n{traceback.format_exc()}",
                 results=results,
             )
-            skipped.set_comment("CIDB timeout in test selection, rerun to test")
+            skipped.set_comment(comment)
             skipped.complete_job(do_not_cache=True)
         except Exception as ex:
             Result.create_from(
@@ -1308,7 +1338,11 @@ def main():
             )
 
         elif is_targeted_check:
-            TARGETED_CHECK_TIME_LIMIT = 30 * 60  # 30 min
+            # The merge-queue run gets the same budget as the PR run, equal to the one
+            # of the merge-queue integration targeted check: its reduced rerun_count
+            # usually ends the run earlier anyway. Reaching the limit is not a failure
+            # (see `GLOBAL_TIME_LIMIT_EXIT_CODE` in `FTResultsProcessor`).
+            TARGETED_CHECK_TIME_LIMIT = 30 * 60
             global_time_limit = max(
                 TARGETED_CHECK_TIME_LIMIT - int(stop_watch.duration), 60
             )

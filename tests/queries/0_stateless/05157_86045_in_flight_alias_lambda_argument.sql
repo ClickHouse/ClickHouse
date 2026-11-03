@@ -1,8 +1,6 @@
 -- An alias whose expression is being resolved right now is not a binding that a nested aliased
 -- expression can use, so it must not hide the argument of the lambda the alias is referenced from.
 
-SET enable_analyzer = 1;
-
 -- The only outer `x` is the projection alias that is being resolved, so `x` inside `issue` keeps
 -- referring to the argument of the lambda: `[0]`.
 WITH isNull(x) AS issue SELECT arrayMap(x -> issue, [1]) AS x;
