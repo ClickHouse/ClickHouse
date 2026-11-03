@@ -8709,7 +8709,7 @@ Prefer bigger buffer size if filesystem cache is enabled to avoid writing small 
 )", 0, \
         {"24.11", true, true, "New setting"}) \
     DECLARE(UInt64, filesystem_cache_boundary_alignment, 0, R"(
-Filesystem cache boundary alignment. For non-disk read (e.g. for cache of remote table engines / table functions) value 0 means no alignment. For disk read (e.g. for MergeTree tables on a disk with cache) value 0 means that `boundary_alignment` from the cache configuration is used.
+Filesystem cache boundary alignment. For non-disk read (e.g. for cache of remote table engines / table functions) value 0 means no alignment. For disk read (e.g. for MergeTree tables on a disk with cache) value 0 means that `boundary_alignment` from the cache configuration is used. The value is capped at `max_file_segment_size` of the cache.
 )", 0, \
         {"24.11", 0, 0, "New setting"}) \
     DECLARE(UInt64, temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds, (10 * 60 * 1000), R"(
