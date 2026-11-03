@@ -464,6 +464,25 @@ static void writeDataFiles(
     }
 }
 
+/// Whether any entry of the manifest has per-file `key_metadata` (an encrypted data file), which a manifest-only rewrite cannot preserve.
+static bool manifestHasKeyMetadata(
+    const IcebergPathFromMetadata & manifest_path,
+    const IcebergPathResolver & path_resolver,
+    ObjectStoragePtr object_storage,
+    ContextPtr context,
+    LoggerPtr log)
+{
+    RelativePathWithMetadata object_info(path_resolver.resolve(manifest_path));
+    auto buf = createReadBuffer(object_info, object_storage, context, log);
+    AvroForIcebergDeserializer deserializer(std::move(buf), manifest_path, getFormatSettings(context));
+    if (!deserializer.hasPath(Iceberg::c_data_file_key_metadata))
+        return false;
+    for (size_t row = 0; row < deserializer.rows(); ++row)
+        if (!deserializer.getValueFromRowByName(row, Iceberg::c_data_file_key_metadata).isNull())
+            return true;
+    return false;
+}
+
 static bool writeConsolidatedManifestFile(
     int metadata_version,
     Poco::JSON::Object::Ptr metadata_object,

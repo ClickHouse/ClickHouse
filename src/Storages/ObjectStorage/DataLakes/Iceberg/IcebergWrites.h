@@ -73,14 +73,6 @@ DataFileColumnStatistics getColumnStatisticsForRewrite(const Iceberg::ParsedMani
 /// Lineage of an existing manifest entry with the values inherited from its manifest resolved, since an EXISTING entry requires them non-null.
 DataFileEntryLineage getEntryLineageForRewrite(const Iceberg::ParsedManifestFileEntry & entry, const ManifestFileCacheKey & manifest);
 
-/// Whether any entry of the manifest has per-file `key_metadata` (an encrypted data file), which a manifest-only rewrite cannot preserve.
-bool manifestHasKeyMetadata(
-    const Iceberg::IcebergPathFromMetadata & manifest_path,
-    const Iceberg::IcebergPathResolver & path_resolver,
-    ObjectStoragePtr object_storage,
-    ContextPtr context,
-    LoggerPtr log);
-
 /// The manifest-list `partitions` field summary of one manifest, accumulated over the partition tuples of its entries.
 class ManifestPartitionSummary
 {
