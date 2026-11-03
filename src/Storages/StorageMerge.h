@@ -116,7 +116,8 @@ public:
 
 private:
     /// (Database, Table, Lock, TableName, Metadata). The metadata is the snapshot the column-level access check
-    /// resolved subcolumns against, so the read uses it too and both see the same schema.
+    /// resolved subcolumns against, so the read uses it too and both see the same schema. It is null when the check
+    /// did not need it, then the read takes the snapshot itself.
     using StorageWithLockAndName = std::tuple<String, StoragePtr, TableLockHolder, String, StorageMetadataPtr>;
     using StorageListWithLocks = std::list<StorageWithLockAndName>;
 
@@ -388,6 +389,9 @@ private:
 
     StorageMerge::StorageListWithLocks getSelectedTables(
         ContextPtr query_context) const;
+
+    /// The metadata snapshot of a child table to read with. It may refresh the metadata of a data lake child, which can be slow.
+    StorageMetadataPtr getChildMetadataSnapshot(const StoragePtr & storage, const ContextPtr & query_context) const;
 };
 
 }

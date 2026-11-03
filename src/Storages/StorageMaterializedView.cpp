@@ -546,10 +546,6 @@ void StorageMaterializedView::readImpl(
     auto target_metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
     auto target_storage_snapshot = storage->getStorageSnapshot(target_metadata_snapshot, context);
 
-    /// Subcolumns (e.g. `t.a`) are covered by the grant on their parent column, so map them
-    /// back to top-level storage columns before the target-table access check below.
-    auto columns_for_access_check = target_storage_snapshot->getColumnNamesForSelectAccessCheck(column_names, context, storage->getStorageID());
-
     /// Reading a view column requires `SELECT` on the source-table column with the same name. A subcolumn
     /// read (e.g. `t.a`) must require exactly what reading its parent `t` requires, so normalize against the
     /// view's own schema (the one the names were resolved against), not the target table's, which can diverge.
@@ -562,8 +558,11 @@ void StorageMaterializedView::readImpl(
 
     /// TODO: remove sql_security_type check after we turn `ignore_empty_sql_security_in_create_view_query=false`
     /// We don't need to check access if the inner table was created automatically.
+    /// Subcolumns (e.g. `t.a`) are covered by the grant on their parent column, so map them back to top-level storage
+    /// columns of the target table.
     if (!has_inner_table && !storage_id.empty() && view_metadata->sql_security_type)
-        context->checkAccess(AccessType::SELECT, storage_id, columns_for_access_check);
+        context->checkAccess(
+            AccessType::SELECT, storage_id, target_storage_snapshot->getColumnNamesForSelectAccessCheck(column_names, context, storage_id));
 
     auto src_table_query_info = query_info;
     src_table_query_info.initial_storage_snapshot = storage_snapshot;
