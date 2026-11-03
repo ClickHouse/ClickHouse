@@ -247,7 +247,8 @@ static void fillStatusColumnsWithNulls(MutableColumns & res_columns, size_t & co
 
 static void fillStatusColumns(MutableColumns & res_columns, size_t & col,
                                 Coordination::GetResponse & finished_data,
-                                UInt64 query_create_time_ms)
+                                UInt64 query_create_time_ms,
+                                bool hide_exception_text)
 {
     if (finished_data.error == Coordination::Error::ZNONODE)
     {
@@ -265,7 +266,12 @@ static void fillStatusColumns(MutableColumns & res_columns, size_t & col,
     /// exception_code
     res_columns[col++]->insert(execution_status.code);
     /// exception_text
-    res_columns[col++]->insert(execution_status.message);
+    /// A host that failed to parse or execute the entry may quote its text in the message (a syntax error
+    /// excerpt, for example), secrets included, so it is hidden together with the query.
+    if (hide_exception_text && !execution_status.message.empty())
+        res_columns[col++]->insert("[HIDDEN]");
+    else
+        res_columns[col++]->insert(execution_status.message);
 
     UInt64 query_finish_time_ms = finished_data.stat.ctime;
     /// query_finish_time
@@ -326,6 +332,9 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
         String cluster_name = clusterNameFromDDLQuery(query);
         UInt64 query_create_time_ms = task_info.stat.ctime;
 
+        /// Without an AST nothing is known about the secrets of the entry, so fail closed then as well.
+        const bool hide_exception_text = !show_secrets && (!query || query->hasSecretParts());
+
         size_t col = 0;
         fillCommonColumns(
             res_columns, col, task, cluster_name, queryForDisplay(context, task, query, show_secrets), show_secrets, query_create_time_ms);
@@ -360,7 +369,7 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
                 repeatValuesInCommonColumns(res_columns, col);
                 size_t rest_col = col;
                 fillHostnameColumns(res_columns, rest_col, host_id);
-                fillStatusColumns(res_columns, rest_col, finished_statuses[host_idx], query_create_time_ms);
+                fillStatusColumns(res_columns, rest_col, finished_statuses[host_idx], query_create_time_ms, hide_exception_text);
                 processed_hosts.insert(host_id_str);
             }
         }
