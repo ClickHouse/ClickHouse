@@ -163,16 +163,22 @@ using CommandSegments = std::vector<CommandSegment>;
 void pullUpTupleElementDefaultsInAlterQuery(
     ASTAlterQuery & alter, const StoragePtr & table, const ContextPtr & context, const std::function<void()> & check_access)
 {
+    bool access_checked = false;
     std::optional<NameSet> resulting_column_names;
     auto is_table_column = [&](const String & name)
     {
+        /// Checked even if the table does not exist, so that the outcome does not reveal whether it exists.
+        if (!access_checked)
+        {
+            check_access();
+            access_checked = true;
+        }
+
         if (!table)
             return false;
 
         if (!resulting_column_names)
         {
-            check_access();
-
             /// The columns of the table, then the commands of the query applied in order: a column dropped
             /// or renamed by the same query does not exist in the resulting schema.
             NameSet names;
@@ -193,8 +199,10 @@ void pullUpTupleElementDefaultsInAlterQuery(
                 }
                 else if (command.type == ASTAlterCommand::RENAME_COLUMN)
                 {
-                    names.erase(getIdentifierName(command.column));
-                    names.insert(getIdentifierName(command.rename_to));
+                    /// `RENAME COLUMN IF EXISTS` of an absent column is a no-op and must not invent the target.
+                    /// Without `IF EXISTS`, such a rename fails the query anyway.
+                    if (names.erase(getIdentifierName(command.column)))
+                        names.insert(getIdentifierName(command.rename_to));
                 }
             }
             resulting_column_names = std::move(names);
