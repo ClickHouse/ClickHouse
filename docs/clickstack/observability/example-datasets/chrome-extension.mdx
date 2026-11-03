@@ -161,17 +161,7 @@ The extension injects observability code into pages you visit. Use it only on si
 </Tab>
 <Tab title="Self-managed">
 
-<Note>
-The existing guide supports custom ingestion endpoints. Its cloud API-key instructions, HyperDX Cloud default endpoint, and local UI setup still need review for Self-managed.
-</Note>
-
-<Info>
-**TL;DR**
-
-This guide shows how to inject the ClickStack Browser SDK into any website using the [HyperDX Chrome extension](https://github.com/kyreddie/hyperdx-chrome-extension). No changes to the target application's source code are required — configure the extension once, browse the site, and view session replays in the observability UI.
-
-Time required: 10-15 minutes
-</Info>
+Use the extension with an existing OpenTelemetry collector that sends data to your self-managed ClickHouse Observability service.
 
 ## Overview {#overview-self-configured}
 
@@ -179,15 +169,15 @@ The [HyperDX Chrome extension](https://github.com/kyreddie/hyperdx-chrome-extens
 
 The SDK is bundled inside the extension (~480 KB), so pages do not need to load scripts from a CDN at runtime. The extension tries external `chrome-extension://` script injection first and falls back to inline injection when CSP blocks extension-origin scripts.
 
-Unlike the [Session Replay Demo](/clickstack/example-datasets/session-replay), which instruments a demo application you control, this approach works on **any** URL you open in Chrome. You generate session data by interacting with the site as a normal user.
+Unlike the [Session Replay Demo](/clickstack/observability/example-datasets/session-replay), which instruments a demo application you control, this approach instruments supported pages you open in Chrome; some pages restrict script injection. You generate session data by interacting with the site as a normal user.
 
 For background on session replay and how it works, see the [Session Replay](/clickstack/observability/features/session-replay) feature page.
 
 ## Prerequisites {#prerequisites-self-configured}
 
 - Google Chrome or a Chromium-based browser (Edge, Brave, etc.)
-- [Docker](https://docs.docker.com/get-docker/) installed, if running ClickStack locally
-- Ports 4317, 4318, and 8080 available (for local ClickStack)
+- An existing self-managed ClickHouse Observability service and a running ingestion collector. If needed, follow the [collector setup guide](/clickstack/self-configured/ingesting-data/collector#configuring-the-collector-self-configured) first.
+- The collector’s OTLP HTTP endpoint, reachable from your browser, and its authentication token if configured.
 
 ## Running the demo {#running-the-demo-self-configured}
 
@@ -208,46 +198,22 @@ cd hyperdx-chrome-extension
 
 The extension appears in your toolbar as **HyperDX Browser Extension**.
 </Step>
-<Step title="Start ClickStack" id="start-clickstack-self-configured">
+<Step title="Get your collector connection details" id="get-api-key-self-configured">
 
-If you already have a ClickStack or HyperDX ingestion endpoint, skip to [Configure the extension](#configure-extension-self-configured).
+Use the OTLP HTTP endpoint of your running collector, for example `http://localhost:4318` when the collector runs on the same machine as your browser. For a remote collector, use its browser-accessible HTTPS URL. Do not append `/v1/logs` or `/v1/traces`.
 
-For a local ClickStack stack, start the OpenTelemetry collector. Replace `{{CLICKHOUSE_ENDPOINT}}` and `{{CLICKHOUSE_PASSWORD}}` with your ClickHouse connection details:
-
-```shell
-export CLICKHOUSE_ENDPOINT={{CLICKHOUSE_ENDPOINT}}
-export CLICKHOUSE_PASSWORD={{CLICKHOUSE_PASSWORD}}
-
-docker run \
-  -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} \
-  -e CLICKHOUSE_USER=default \
-  -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} \
-  -p 8080:8080 \
-  -p 4317:4317 \
-  -p 4318:4318 \
-  clickhouse/clickstack-otel-collector:latest
-```
-
-Open ClickStack UI at [http://localhost:8080](http://localhost:8080) to confirm the UI is running.
-
-For a full local deployment with ClickHouse and ClickStack UI, see [Getting started with ClickStack](/clickstack/getting-started/oss).
-</Step>
-<Step title="Get your API key" id="get-api-key-self-configured">
-
-For local ClickStack, an API key may not be required — leave the field empty in the extension when sending telemetry to a self-hosted collector on `http://localhost:4318`.
-
-For ClickStack Cloud or HyperDX Cloud ingestion, open ClickStack UI, go to **Team Settings → API Keys**, and copy your **Ingestion API Key**.
+If your collector uses `OTLP_AUTH_TOKEN`, use that token as the extension's **API Key**, without adding a `Bearer` prefix. These are the collector's ingestion credentials, not your ClickHouse database username and password. See [Securing the collector](/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured).
 </Step>
 <Step title="Configure the extension" id="configure-extension-self-configured">
 
 Click the **HyperDX Browser Extension** icon in the Chrome toolbar and fill in the settings:
 
-| Field | Local ClickStack example | Notes |
+| Field | Self-managed setting | Notes |
 |-------|--------------------------|-------|
 | **Enable HyperDX Monitoring** | On | Master toggle for injection |
-| **Service Name** | `my-frontend-app` | Required — identifies the service in ClickStack |
-| **API Key** | *(empty)* | Required for cloud ingestion; optional for some self-hosted setups |
-| **Collector URL** | `http://localhost:4318` | OTLP HTTP endpoint; cloud default is `https://in-otel.hyperdx.io` |
+| **Service Name** | `my-frontend-app` | Required — identifies the service in ClickHouse Observability |
+| **API Key** | Your collector’s authentication token | Use the `OTLP_AUTH_TOKEN` value if configured |
+| **Collector URL** | Your collector’s OTLP HTTP endpoint | Replace the extension’s default URL; use `http://localhost:4318` only for a collector on your machine |
 | **Environment** | `development` | Optional — sets `deployment.environment` resource attribute |
 | **Trace Propagation Targets** | `/api\.myapp\.domain/i, /localhost/i` | Optional — comma-separated JavaScript regex patterns for trace header propagation |
 | **Only inject on matching URLs** | Off | Enable to limit which sites are instrumented |
@@ -268,7 +234,7 @@ Interact with the page normally: click links, submit forms, trigger errors, and 
 </Step>
 <Step title="View your session replay" id="view-session-replay-self-configured">
 
-Return to ClickStack UI at [http://localhost:8080](http://localhost:8080) and navigate to **Client Sessions** from the left sidebar.
+Open your self-managed ClickHouse Observability service in ClickHouse Cloud and select **Client Sessions** from the left sidebar. Choose a time range that includes your browsing activity.
 
 You should see your session listed with its duration and event count. Click the ▶️ button to replay it.
 
@@ -306,7 +272,7 @@ If extension-origin scripts are blocked by CSP, the extension logs a fallback me
 <Accordion title="Sessions not appearing in ClickStack UI">
 1. Check the browser console for `[HyperDX Extension]` log messages or errors
 2. Confirm **Enable HyperDX Monitoring** is on and **Service Name** is set
-3. Verify ClickStack is running and the collector URL is correct (e.g. `http://localhost:4318`)
+3. Verify the collector is running, its OTLP HTTP endpoint is reachable from your browser, and the API key matches its authentication token
 4. Adjust the time range in the Client Sessions view (try **Last 15 minutes**)
 5. Hard refresh the browser: `Cmd+Shift+R` (Mac) or `Ctrl+Shift+R` (Windows/Linux)
 </Accordion>
@@ -319,11 +285,10 @@ Reload the extension at `chrome://extensions`, then hard-refresh the tab. This h
 1. Check that monitoring is enabled and a service name is configured
 2. If **Only inject on matching URLs** is on, confirm the current page URL matches one of your patterns
 3. Some sites block both extension-origin and inline script injection via CSP — injection may not be possible on those pages
-4.
 </Accordion>
 
 <Accordion title="HyperDX: Missing apiKey in console">
-Expected when the API key field is empty. Add an ingestion API key from ClickStack UI for cloud endpoints, or ignore if your self-hosted collector accepts unauthenticated local traffic.
+If your collector requires authentication, enter its token in **API Key**, save the configuration, and reload the monitored page. Check browser network requests and collector logs for export errors rather than relying on the injection message alone.
 </Accordion>
 
 ## Privacy {#privacy-self-configured}
@@ -334,7 +299,7 @@ The extension injects observability code into pages you visit. Use it only on si
 
 - [Session Replay](/clickstack/observability/features/session-replay) — feature overview, SDK options, and privacy controls
 - [Browser SDK Reference](/clickstack/observability/ingesting-data/sdks/browser) — full SDK options and advanced configuration
-- [Session Replay Demo](/clickstack/example-datasets/session-replay) — instrument a demo application from source code
+- [Session Replay Demo](/clickstack/observability/example-datasets/session-replay) — instrument a demo application from source code
 - [Getting started with Self-managed](/clickstack/self-configured/getting-started/managed) — set up your service and ingest your first data
 - [HyperDX Chrome extension on GitHub](https://github.com/kyreddie/hyperdx-chrome-extension) — source code and issue tracker
 
