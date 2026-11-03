@@ -602,6 +602,10 @@ TEST(BackgroundSchedulePool, IncreaseThreadsCountNeverLowersPerTypeLimit)
         if (first_wave_finished)
         {
             lock.unlock();
+            /// The pool decrements its running count after the task function returns.
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+            while (!pool->getTasks().empty() && std::chrono::steady_clock::now() < deadline)
+                std::this_thread::yield();
             for (size_t i = limit; i < num_tasks; ++i)
                 EXPECT_TRUE(tasks[i]->activateAndSchedule());
             lock.lock();
