@@ -2258,7 +2258,7 @@ merges, and the column keeps its values until all of them have expired in the
 part. A merge that rewrites the part anyway, for example because of a row
 `TTL`, may still clear the column values that have expired in it.
 )", 0, \
-        {"26.10", false, false, "New setting to apply a column `TTL` only by dropping the whole column from a part once all of its values have expired"}) \
+        {"26.11", false, false, "New setting to apply a column `TTL` only by dropping the whole column from a part once all of its values have expired"}) \
     DECLARE(Bool, materialize_ttl_recalculate_only, false, R"(
 When enabled, `MATERIALIZE TTL` recalculates the stored `TTL` metadata for each data part without removing expired data during that operation. When disabled, normal TTL materialization usually applies the configured row, column, or `GROUP BY` TTL actions. For tables with only row TTL and `ttl_only_drop_parts` enabled, it instead recalculates `TTL` metadata and drops only fully expired parts.
 )", 0) \
