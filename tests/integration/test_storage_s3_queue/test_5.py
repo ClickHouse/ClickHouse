@@ -1434,6 +1434,77 @@ def test_select_after_failed_startup(started_cluster):
     assert_reports_table_is_dropped(node, table_name)
 
 
+def test_rename_after_failed_startup(started_cluster):
+    node = started_cluster.instances["instance_without_keeper_fault_injection"]
+    suffix = generate_random_string()
+    database = f"rename_after_failed_startup_{suffix}"
+    renamed_database = f"{database}_renamed"
+    failed = f"failed_{suffix}"
+    healthy = f"healthy_{suffix}"
+
+    node.query(f"CREATE DATABASE {database} ENGINE = Atomic")
+    try:
+        create_table(
+            started_cluster,
+            node,
+            healthy,
+            "unordered",
+            f"{healthy}_data",
+            database_name=database,
+        )
+        node.query("SYSTEM ENABLE FAILPOINT object_storage_queue_fail_startup")
+        try:
+            assert "Failed to startup" in create_table(
+                started_cluster,
+                node,
+                failed,
+                "unordered",
+                f"{failed}_data",
+                database_name=database,
+                expect_error=True,
+            )
+        finally:
+            node.query("SYSTEM DISABLE FAILPOINT object_storage_queue_fail_startup")
+
+        # Precondition: the failed table stays attached but is no longer registered.
+        assert node.contains_in_log(
+            f"StreamingStorageRegistry: Unregistered table: {database}.{failed}"
+        )
+
+        node.query(f"RENAME TABLE {database}.{failed} TO {database}.{failed}_2")
+        node.query(f"RENAME DATABASE {database} TO {renamed_database}")
+        uuids = dict(
+            row.split("\t")
+            for row in node.query(
+                f"SELECT name, uuid FROM system.tables WHERE database = '{renamed_database}'"
+            ).splitlines()
+        )
+        node.query(
+            f"EXCHANGE TABLES {renamed_database}.{failed}_2 AND {renamed_database}.{healthy}"
+        )
+
+        assert (
+            node.query(
+                f"SELECT name, uuid FROM system.tables WHERE database = '{renamed_database}' ORDER BY name"
+            )
+            == f"{failed}_2\t{uuids[healthy]}\n{healthy}\t{uuids[failed + '_2']}\n"
+        )
+        # The running table is still tracked under each new name.
+        assert node.contains_in_log(
+            f"StreamingStorageRegistry: Renamed table: {database}.{healthy}"
+        )
+        assert node.contains_in_log(
+            f"StreamingStorageRegistry: Renamed table: {renamed_database}.{healthy} ({uuids[healthy]})"
+            f" -> {renamed_database}.{failed}_2 ({uuids[healthy]})"
+        )
+    finally:
+        node.query(f"DROP DATABASE IF EXISTS {database} SYNC")
+        node.query(f"DROP DATABASE IF EXISTS {renamed_database} SYNC")
+
+    assert node.query("SELECT 1") == "1\n"
+    assert not node.contains_in_log(f"Table with storage id {database}.{failed}")
+
+
 def test_select_after_failed_drop(started_cluster):
     node = started_cluster.instances["instance"]
     suffix = generate_random_string()

@@ -1,4 +1,3 @@
-SET allow_experimental_analyzer = 1;
 
 CREATE TABLE t0 (c0 Int) ENGINE = Memory;
 

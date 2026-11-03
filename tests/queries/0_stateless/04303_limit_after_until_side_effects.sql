@@ -23,5 +23,5 @@ SETTINGS extremes = 1;
 
 -- 4. AFTER/UNTIL reference column y not in the SELECT list (the range runs before projection, which
 --    would otherwise drop y). y must stay available for the boundary conditions.
-SELECT x FROM (SELECT number AS x, number * 2 AS y FROM numbers(10)) ORDER BY x LIMIT 3 AFTER y >= 10 SETTINGS enable_analyzer = 1;
-SELECT x FROM (SELECT number AS x, number * 2 AS y FROM numbers(10)) ORDER BY x LIMIT AFTER y >= 10 UNTIL y >= 14 SETTINGS enable_analyzer = 1;
+SELECT x FROM (SELECT number AS x, number * 2 AS y FROM numbers(10)) ORDER BY x LIMIT 3 AFTER y >= 10;
+SELECT x FROM (SELECT number AS x, number * 2 AS y FROM numbers(10)) ORDER BY x LIMIT AFTER y >= 10 UNTIL y >= 14;

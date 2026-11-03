@@ -15,7 +15,7 @@ from ci.jobs.scripts.bugfix_validation import (
     find_master_builds,
 )
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
-from ci.jobs.scripts.find_tests import Targeting
+from ci.jobs.scripts.find_tests import GitHubUnavailableError, Targeting
 from ci.jobs.scripts.integration_coverage_export import IntegrationCoverageExporter
 from ci.jobs.scripts.integration_tests_configs import (
     IMAGES_ENV,
@@ -1828,19 +1828,26 @@ tar -czf ./ci/tmp/logs.tar.gz \
         targeter = Targeting(info=info)
         try:
             tests, results_with_info = targeter.get_all_relevant_tests_with_info()
-        except CIDBTimeoutError as ex:
-            # CIDB is overloaded (typically while the coverage export inserts).
+        except (CIDBTimeoutError, GitHubUnavailableError) as ex:
+            # CIDB is overloaded (typically while the coverage export inserts),
+            # or the GitHub API keeps failing.
             # Skip rather than fail, as the stateless targeted jobs do: an ERROR here
             # would skip every job that waits for the core blocking jobs. Not cached,
             # so a rerun or the next commit selects again.
-            message = f"Targeted tests were not run: test selection timed out in CIDB: {ex}"
+            if isinstance(ex, CIDBTimeoutError):
+                cause = "test selection timed out in CIDB"
+                comment = "CIDB timeout in test selection, rerun to test"
+            else:
+                cause = "the GitHub API failed during test selection"
+                comment = "GitHub API error in test selection, rerun to test"
+            message = f"Targeted tests were not run: {cause}: {ex}"
             print(f"WARNING: {message}")
             info.add_workflow_warning(message)
             skipped = Result.create_from(
                 status=Result.Status.SKIPPED,
                 info=f"{message}\n{traceback.format_exc()}",
             )
-            skipped.set_comment("CIDB timeout in test selection, rerun to test")
+            skipped.set_comment(comment)
             skipped.complete_job(do_not_cache=True)
         # no subtask level for integration tests - cannot add this info to the report now
         # results.append(results_with_info)

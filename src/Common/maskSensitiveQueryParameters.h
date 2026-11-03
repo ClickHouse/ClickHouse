@@ -1,6 +1,8 @@
 #pragma once
 
 #include <string>
+#include <string_view>
+#include <vector>
 
 
 namespace DB
@@ -20,5 +22,21 @@ namespace DB
 /// Only the query-string part (after the first '?') is processed; the path is left untouched.
 /// If the URI has no query string, the original string is returned unchanged.
 std::string maskSensitiveQueryParametersInURI(const std::string & uri);
+
+/// Decode a query-string component (a parameter name or value) the same way the server interprets it:
+/// HTMLForm::readQuery turns '+' into a space and percent-decodes ('%XX'). A name is classified on
+/// this decoded form, otherwise an encoded name like "pass%77ord" (which the server accepts as
+/// "password") would slip past the match and leak its value. Tolerant by design: a malformed escape
+/// is copied through verbatim and nothing throws, since the result is only matched against, never logged.
+std::string decodeQueryComponent(std::string_view name);
+
+/// Whether a percent-decoded query parameter name belongs to an S3 or GCS presigned URL: `AWSAccessKeyId`, `Signature`,
+/// `Expires`, `GoogleAccessId`, or `X-Amz-*`/`X-Goog-*` in any case. `S3::URI` then reads no key from the query.
+bool isPresignedURLParameterName(std::string_view name);
+
+/// Returns the credentials in the query string of a presigned S3, GCS or Azure SAS URL (SigV4 and SigV2): the signature, the
+/// session token and the access key id, each as sent and percent-decoded, so that a text echoing them back can be
+/// scrubbed. Names are matched percent-decoded and case-insensitively. URL metadata such as `X-Amz-Date` is not included.
+std::vector<std::string> presignedURLCredentials(std::string_view uri);
 
 }

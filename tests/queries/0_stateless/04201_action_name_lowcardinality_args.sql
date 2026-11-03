@@ -6,8 +6,6 @@
 -- Covers: src/Functions/identity.h:91 — useDefaultImplementationForLowCardinalityColumns() = false
 -- Covers: src/Functions/identity.h:93-103 — getReturnTypeImpl type validation loop
 
-SET enable_analyzer = 1;
-
 -- LowCardinality(String) constant - first arg
 -- Without the LowCardinality override, this would silently return 'foo'.
 SELECT __actionName(toLowCardinality('foo'), 'bar'); -- { serverError BAD_ARGUMENTS }

@@ -25,25 +25,42 @@ def list_test_files(perf_dir):
     return sorted(f for f in os.listdir(perf_dir) if f.endswith(".xml"))
 
 
+def _root_flag(test_path, name):
+    return ElementTree.parse(test_path).getroot().get(name) == "1"
+
+
 def test_requires_s3(test_path):
     """Whether a test declares that it needs the job-local S3 endpoint."""
-    return ElementTree.parse(test_path).getroot().get("requires_s3") == "1"
+    return _root_flag(test_path, "requires_s3")
+
+
+def test_is_long(test_path):
+    """Whether a test is tagged `long`: `perf.py` skips it unless given `--long`."""
+    return any(tag.text == "long" for tag in ElementTree.parse(test_path).getroot().iter("tag"))
 
 
 def test_requires_read_dataset(test_path):
     """Whether a test needs the shared TPC-H dataset attached before startup."""
-    return ElementTree.parse(test_path).getroot().get("requires_s3_read_dataset") == "1"
+    return _root_flag(test_path, "requires_s3_read_dataset")
 
 
-def _iter_queries(parent, source_dir, stack):
-    """Yield `<query>` elements, descending into `<include>`d `<fragment>` files.
+def test_requires_public_data(test_path):
+    """Whether a test reads the public prefixes that `s3_service.seed_public_data` copies."""
+    return _root_flag(test_path, "requires_s3_public_data")
 
-    A detection-only counterpart to perf.py's expand_includes: it follows the same
-    `<include file="..."/>` -> `<fragment>` structure (paths relative to the file
-    that declares them, cycle-guarded), but only needs to find elements, not splice
-    or rewrite them. A missing or malformed fragment is skipped here; perf.py
-    reports the real error when it runs the test.
-    """
+
+def test_requires_s3_catalog(test_path):
+    """Whether a test reads the Iceberg REST catalog that `s3_service.seed_catalog` fills."""
+    return _root_flag(test_path, "requires_s3_catalog")
+
+
+def test_requires_local_read_dataset(test_path):
+    """Whether a test reads the local Iceberg TPC-H fixture."""
+    return _root_flag(test_path, "requires_local_read_dataset")
+
+
+def _iter_elements(parent, source_dir, stack, tag):
+    """Find matching elements in a test and its included fragments, guarding cycles."""
     for element in parent:
         if element.tag == "include":
             filename = element.get("file")
@@ -56,11 +73,11 @@ def _iter_queries(parent, source_dir, stack):
                 fragment = ElementTree.parse(path).getroot()
             except (OSError, ElementTree.ParseError):
                 continue
-            yield from _iter_queries(fragment, os.path.dirname(path), stack | {path})
+            yield from _iter_elements(fragment, os.path.dirname(path), stack | {path}, tag)
             continue
-        if element.tag == "query":
+        if element.tag == tag:
             yield element
-        yield from _iter_queries(element, source_dir, stack)
+        yield from _iter_elements(element, source_dir, stack, tag)
 
 
 def test_has_shell_query(test_path):
@@ -82,5 +99,18 @@ def test_has_shell_query(test_path):
     source_dir = os.path.dirname(os.path.abspath(test_path))
     return any(
         q.get("type") == "shell"
-        for q in _iter_queries(root, source_dir, {os.path.realpath(test_path)})
+        for q in _iter_elements(root, source_dir, {os.path.realpath(test_path)}, "query")
+    )
+
+
+def test_has_failpoint(test_path):
+    """Whether a test enables a server-wide failpoint, including via `<include>`."""
+    try:
+        root = ElementTree.parse(test_path).getroot()
+    except ElementTree.ParseError:
+        return False
+    source_dir = os.path.dirname(os.path.abspath(test_path))
+    return any(
+        e.get("action") == "enable"
+        for e in _iter_elements(root, source_dir, {os.path.realpath(test_path)}, "failpoint")
     )

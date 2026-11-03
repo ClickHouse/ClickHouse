@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 SET enable_materialized_cte = 1;
 
 -- `extremes` is pinned per statement: a runner-injected `extremes = 0` removes the extremes
