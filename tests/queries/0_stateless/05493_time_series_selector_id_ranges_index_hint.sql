@@ -62,7 +62,8 @@ INNER JOIN
     WHERE event_date >= yesterday() AND current_database = currentDatabase() AND type = 'QueryFinish' AND startsWith(log_comment, '05493_')
 ) AS q USING (query_id)
 WHERE t.event_date >= yesterday() AND t.logger_name = 'StorageTimeSeriesSelector' AND startsWith(t.message, 'Will execute query:')
-ORDER BY q.log_comment;
+ORDER BY q.log_comment
+SETTINGS max_rows_to_read = 0; -- system.text_log can be really big
 
 SELECT '-- the id ranges in indexHint still prune the time ranges table';
 
@@ -90,7 +91,8 @@ SELECT
     sumIf(read_rows, log_comment = 'pruning_regex') - sumIf(read_rows, log_comment = 'pruning_list') AS rows_pruned,
     sumIf(ProfileEvents['SelectedParts'], log_comment = 'pruning_regex') - sumIf(ProfileEvents['SelectedParts'], log_comment = 'pruning_list') AS parts_pruned
 FROM system.query_log
-WHERE event_date >= yesterday() AND current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('pruning_list', 'pruning_regex');
+WHERE event_date >= yesterday() AND current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('pruning_list', 'pruning_regex')
+SETTINGS max_rows_to_read = 0; -- system.query_log can be really big
 
 DROP TABLE ts_prune;
 DROP TABLE ts;
