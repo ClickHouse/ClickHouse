@@ -1703,8 +1703,12 @@ bool createQueryStopsBeforeSources(const ASTCreateQuery & create, const ContextP
     /// path checks it in `doCreateOrReplaceTable` before the populate, and with an explicit structure that
     /// check precedes any analysis of the populating `SELECT`. The destination is not a collected table, so
     /// the generic access preflight does not cover it. The columns are not known here, so the table-level
-    /// grant is required — erring toward suppressing randomization for a column-level grant.
-    if (create.table && !create.isTemporary() && !create.isView() && create.isCreateQueryWithImmediateInsertSelect()
+    /// grant is required — erring toward suppressing randomization for a column-level grant. A
+    /// `MATERIALIZED VIEW ... POPULATE` (without `TO`) is populated the same way: `fillTableIfNeeded`
+    /// inserts into the view itself, which checks `INSERT` on it, and it has no external target that the
+    /// collector would preflight.
+    if (create.table && !create.isTemporary() && (!create.isView() || create.is_materialized_view)
+        && create.isCreateQueryWithImmediateInsertSelect()
         && !context->getAccess()->isGranted(AccessType::INSERT, destination_database, destination_table))
         return true;
 
@@ -3418,7 +3422,8 @@ static bool containsSQLUserDefinedFunctionCall(const IAST & ast)
 /// it and check the access to it only when they run, so it is seen by none of the preflights. The same
 /// goes for the scalar functions that check a grant of their own when they are created: `getServerSetting`
 /// and `getMergeTreeSetting` (`SELECT` on `system.server_settings` / `system.merge_tree_settings`),
-/// `getMacro` (`SELECT` on `system.macros`), and scalar `file` (`READ ON FILE`).
+/// `getMacro` (`SELECT` on `system.macros`), scalar `file` (`READ ON FILE`), and the introspection functions
+/// `demangle`, `addressToSymbol`, `addressToLine` and `addressToLineWithInlines` (their own grants).
 static bool containsStorageReadingScalarFunctionCall(const IAST & ast)
 {
     std::vector<const IAST *> stack{&ast};
@@ -3433,7 +3438,8 @@ static bool containsStorageReadingScalarFunctionCall(const IAST & ast)
             if (name.starts_with("dict") || name == "joinGet" || name == "joinGetOrNull" || name == "hasColumnInTable"
                 || name == "predictXGBoost" || name.starts_with("naiveBayesClassifier") || name == "assignCentroid"
                 || name == "getServerSetting" || name == "getMergeTreeSetting" || name == "getMacro"
-                || name == "file")
+                || name == "file" || name == "demangle" || name == "addressToSymbol" || name == "addressToLine"
+                || name == "addressToLineWithInlines")
                 return true;
         }
 
