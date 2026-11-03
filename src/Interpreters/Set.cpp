@@ -104,8 +104,7 @@ constexpr auto high_masks = []
     return masks;
 }();
 
-/// Whether at least 15 of 16 sampled rows have the same key as the previous row. Each sample is a pseudo-random row
-/// of its sixteenth of the block, so that runs of a regular length cannot line up with the samples.
+/// Whether at least 15 of 16 sampled rows, one pseudo-random row per sixteenth of the block, repeat the previous key.
 bool keysAreSorted(const ColumnRawPtrs & key_columns, size_t rows)
 {
     static constexpr size_t max_samples = 16;
@@ -279,8 +278,7 @@ private:
     PODArray<UInt32> slots32;
     PODArray<UInt64> slots64;
     PODArray<UInt128> slots128;
-    /// One per 64-bit word of a key. With `mixed_hash`, they apply to `intHashCRC32` of a number key, and a longer
-    /// key takes its two slots from the high and low bits of the sum of `intHash64(word ^ multipliers1[i])`.
+    /// One per 64-bit word of a key (see `places`).
     UInt64 multipliers1[2] = {};
     UInt64 multipliers2[2] = {};
     bool mixed_hash = false;
