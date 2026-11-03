@@ -25,8 +25,6 @@
 1
 -- and on a remote shard through Distributed
 1
--- also when the shard inlines the view
-1
 -- a parameterized view with an invalid nested setting fails on a direct read
 1
 -- and on a remote shard

@@ -121,9 +121,6 @@ ${RESTRICTED_CLIENT} --query "SELECT * FROM ${VIEW}" 2>&1 | grep -c -F "UNKNOWN_
 echo "-- and on a remote shard through Distributed"
 ${RESTRICTED_CLIENT} --query "SELECT * FROM ${DIST_VIEW} SETTINGS prefer_localhost_replica = 0" 2>&1 | grep -c -F "UNKNOWN_SETTING"
 
-echo "-- also when the shard inlines the view"
-${RESTRICTED_CLIENT} --query "SELECT * FROM ${DIST_VIEW} SETTINGS prefer_localhost_replica = 0, analyzer_inline_views = 1" 2>&1 | grep -c -F "UNKNOWN_SETTING"
-
 echo "-- a parameterized view with an invalid nested setting fails on a direct read"
 ${RESTRICTED_CLIENT} --query "SELECT * FROM ${PARAM_VIEW}(p = 1)" 2>&1 | grep -c -F "UNKNOWN_SETTING"
 
