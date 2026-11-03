@@ -4,7 +4,7 @@
 SET optimize_use_projections = 1, optimize_use_implicit_projections = 0, prefer_optimize_projection = 0, force_optimize_projection = 0,
     enable_parallel_replicas = 0, optimize_aggregation_in_order = 0;
 
-SELECT '-- sum states of a merged wide part';
+SELECT '-- sum states of a merged wide part, the parts it merged can also give a compact part';
 CREATE TABLE w_est (b UInt64, v UInt64) ENGINE = MergeTree ORDER BY v
     SETTINGS index_granularity = 8192, index_granularity_bytes = 1024, use_const_adaptive_granularity = 1, min_bytes_for_wide_part = 0,
         min_rows_for_wide_part = 0, merge_max_block_size = 8192, enable_vertical_merge_algorithm = 0, enable_block_number_column = 0,

@@ -73,7 +73,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsNonZeroUInt64 merge_max_block_size;
     extern const MergeTreeSettingsUInt64 merge_max_block_size_bytes;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
-    extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
 }
 
 namespace
@@ -383,8 +382,6 @@ String buildProjectionPart(
     Blocks batch;
     size_t batch_rows = 0;
     MutableColumns key_columns;
-    /// a merge sizes each block of a compact part, and of a wide part only without a constant granularity
-    bool merged_by_blocks = merged_part;
     /// the stored columns, as the writer gets them
     auto add = [&](Block projected)
     {
@@ -397,7 +394,7 @@ String buildProjectionPart(
         proj_key.expression->execute(projected);
         out.bytes += getBlockSizeForGranularity(projected);
         if (need_row_bytes)
-            appendRowSizes(out, projected, merged_by_blocks);
+            appendRowSizes(out, projected, merged_part);
 
         if (key_columns.empty())
             for (const auto & name : proj_key.column_names)
@@ -476,23 +473,10 @@ String buildProjectionPart(
         if (merged_part)
         {
             /// a merge chooses the format from the rows and bytes of the parts it merges, and keeps a wide one
-            /// these parts have at least the groups here, and at most the rows of the parent part, if the merge drops no rows
-            const auto & data = read_step->getMergeTreeData();
-            const bool ignores_dropped_rows
-                = mt_settings[MergeTreeSetting::deduplicate_merge_projection_mode] == DeduplicateMergeProjectionMode::IGNORE;
-            const size_t most_rows = ignores_dropped_rows ? std::numeric_limits<size_t>::max() : part->rows_count;
-            /// the settings can change after the writer writes a part, and the parent part has a format that earlier settings chose
-            const bool compact = part->getType() == MergeTreeDataPartType::Compact
-                || data.choosePartFormat(0, merged.rows(), part->info.level, &projection).part_type == MergeTreeDataPartType::Compact;
-            const bool wide = part->getType() == MergeTreeDataPartType::Wide
-                || data.choosePartFormat(std::numeric_limits<size_t>::max(), most_rows, part->info.level, &projection).part_type
-                    == MergeTreeDataPartType::Wide;
-            out.both_formats = compact && wide;
-            if (constant_granularity && wide)
-            {
-                merged_by_blocks = compact;
+            /// a part records neither these parts nor the settings that chose their formats, so each format is possible
+            out.both_formats = read_step->getMergeTreeData().canUsePolymorphicParts();
+            if (constant_granularity)
                 setStoredBytes(out, merged, mt_settings[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization] < 1);
-            }
         }
         add(std::move(merged));
     }
