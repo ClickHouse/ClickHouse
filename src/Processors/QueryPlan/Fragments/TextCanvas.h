@@ -21,9 +21,12 @@ public:
     /// overwriting what was there. A zero-width code point is kept with the character before it.
     void put(size_t x, size_t y, std::string_view text);
 
-    /// Draws a box with the light box-drawing characters, `width` columns wide and 3 lines tall, with `text`
-    /// on the middle line after one space of padding.
-    void box(size_t x, size_t y, size_t width, std::string_view text);
+    /// Draws a box with the light box-drawing characters, `width` columns wide and `boxHeight(text_lines.size())` lines
+    /// tall, with one line of `text_lines` per inner line after one space of padding.
+    void box(size_t x, size_t y, size_t width, const std::vector<String> & text_lines);
+
+    /// The number of lines of a box with `text_lines` lines of text: the text and the top and bottom borders.
+    static size_t boxHeight(size_t text_lines) { return text_lines + 2; }
 
     /// Draws a frame `width` columns wide and `height` lines tall, with `title` in the top border: `┌─ title ───┐`.
     void frame(size_t x, size_t y, size_t width, size_t height, std::string_view title);
@@ -40,6 +43,12 @@ public:
     /// `text` cut to at most `max_width` display columns; a cut text ends with `…`. Control characters are replaced
     /// first (see `replaceControlCharacters`).
     static String cutToWidth(std::string_view text, size_t max_width);
+
+    /// `text` split into lines of at most `max_width` display columns. A line is broken after the last space that
+    /// fits, and a word wider than a line is split between two code points. The spaces at a break are dropped. A
+    /// zero-width code point stays with the character before it. Control characters are replaced first (see
+    /// `replaceControlCharacters`). An empty text gives one empty line.
+    static std::vector<String> wrapToWidth(std::string_view text, size_t max_width);
 
     /// `text` with every ASCII control character (a tab, a newline, ESC, ...) replaced by `�`. A control character has no
     /// width of its own, or one that depends on its position, so it would break the measured width of a box.

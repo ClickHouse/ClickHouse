@@ -27,7 +27,7 @@ void forEachCodePoint(std::string_view text, Callback && callback)
 
 }
 
-String & TextCanvas::cell(size_t x, size_t y)
+String & TextCanvas::cell(const size_t x, const size_t y)
 {
     if (lines.size() <= y)
         lines.resize(y + 1);
@@ -37,7 +37,7 @@ String & TextCanvas::cell(size_t x, size_t y)
     return line[x];
 }
 
-void TextCanvas::put(size_t x, size_t y, std::string_view text)
+void TextCanvas::put(size_t x, const size_t y, const std::string_view text)
 {
     /// The cell of the last character put: a zero-width code point (a combining mark, a virama, a joiner) belongs to it
     /// and is appended to it, taking no column of its own. A text that starts with one attaches it to the cell on its left.
@@ -60,20 +60,23 @@ void TextCanvas::put(size_t x, size_t y, std::string_view text)
     });
 }
 
-void TextCanvas::box(size_t x, size_t y, size_t width, std::string_view text)
+void TextCanvas::box(const size_t x, const size_t y, const size_t width, const std::vector<String> & text_lines)
 {
     String horizontal;
     for (size_t i = 2; i < width; ++i)
         horizontal += "─";
 
     put(x, y, "┌" + horizontal + "┐");
-    put(x, y + 1, "│ ");
-    put(x + 2, y + 1, text);
-    put(x + width - 1, y + 1, "│");
-    put(x, y + 2, "└" + horizontal + "┘");
+    for (size_t i = 0; i < text_lines.size(); ++i)
+    {
+        put(x, y + 1 + i, "│ ");
+        put(x + 2, y + 1 + i, text_lines[i]);
+        put(x + width - 1, y + 1 + i, "│");
+    }
+    put(x, y + boxHeight(text_lines.size()) - 1, "└" + horizontal + "┘");
 }
 
-void TextCanvas::frame(size_t x, size_t y, size_t width, size_t height, std::string_view title)
+void TextCanvas::frame(const size_t x, const size_t y, const size_t width, const size_t height, const std::string_view title)
 {
     String bottom;
     for (size_t i = 2; i < width; ++i)
@@ -92,7 +95,7 @@ void TextCanvas::frame(size_t x, size_t y, size_t width, size_t height, std::str
     put(x, y + height - 1, "└" + bottom + "┘");
 }
 
-std::string_view TextCanvas::at(size_t x, size_t y) const
+std::string_view TextCanvas::at(const size_t x, const size_t y) const
 {
     if (y >= lines.size() || x >= lines[y].size())
         return {};
@@ -112,12 +115,12 @@ void TextCanvas::writeTo(WriteBuffer & out) const
     }
 }
 
-size_t TextCanvas::displayWidth(std::string_view text)
+size_t TextCanvas::displayWidth(const std::string_view text)
 {
     return UTF8::computeWidth(reinterpret_cast<const UInt8 *>(text.data()), text.size());
 }
 
-String TextCanvas::replaceControlCharacters(std::string_view text)
+String TextCanvas::replaceControlCharacters(const std::string_view text)
 {
     String result;
     result.reserve(text.size());
@@ -131,7 +134,64 @@ String TextCanvas::replaceControlCharacters(std::string_view text)
     return result;
 }
 
-String TextCanvas::cutToWidth(std::string_view raw_text, size_t max_width)
+std::vector<String> TextCanvas::wrapToWidth(const std::string_view raw_text, const size_t max_width)
+{
+    const String clean_text = replaceControlCharacters(raw_text);
+
+    std::vector<String> result;
+    String line;
+    size_t width = 0;
+    /// The position in `line` after its last space, and the width of the text after it: where the line is broken.
+    std::optional<size_t> break_position;
+    size_t width_after_break = 0;
+
+    const auto push_line = [&](String text)
+    {
+        while (!text.empty() && text.back() == ' ')
+            text.pop_back();
+        result.push_back(std::move(text));
+    };
+
+    forEachCodePoint(clean_text, [&](std::string_view code_point, size_t code_point_width)
+    {
+        while (code_point_width > 0 && width + code_point_width > max_width && !line.empty())
+        {
+            if (break_position)
+            {
+                push_line(line.substr(0, *break_position));
+                line = line.substr(*break_position);
+                width = width_after_break;
+                break_position.reset();
+            }
+            else
+            {
+                push_line(std::move(line));
+                line.clear();
+                width = 0;
+            }
+        }
+
+        /// A continued line does not start with the spaces of the break.
+        if (code_point == " " && line.empty() && !result.empty())
+            return;
+
+        line += code_point;
+        width += code_point_width;
+        if (code_point == " ")
+        {
+            break_position = line.size();
+            width_after_break = 0;
+        }
+        else if (break_position)
+            width_after_break += code_point_width;
+    });
+
+    if (!line.empty() || result.empty())
+        push_line(std::move(line));
+    return result;
+}
+
+String TextCanvas::cutToWidth(const std::string_view raw_text, const size_t max_width)
 {
     const String clean_text = replaceControlCharacters(raw_text);
     std::string_view text = clean_text;
