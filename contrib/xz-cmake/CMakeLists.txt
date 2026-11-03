@@ -98,6 +98,10 @@ if (ARCH_AMD64 OR ARCH_AARCH64)
     add_compile_definitions(TUKLIB_FAST_UNALIGNED_ACCESS=1)
 endif ()
 
+if (ARCH_AMD64)
+    add_compile_definitions(HAVE_USABLE_CLMUL)
+endif ()
+
 if (ARCH_S390X)
     add_compile_definitions(WORDS_BIGENDIAN)
 endif ()
