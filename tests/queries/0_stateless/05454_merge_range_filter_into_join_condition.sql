@@ -329,17 +329,17 @@ JOIN values('f Float64, k Int64, g Int64, x Int64', (nan, 3, 1, 2), (1, 4, 1, 2)
 WHERE l.g = r.g
 SETTINGS query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 1;
 
--- Nested runtime types can throw even when the outer types are identical.
+-- `less` on `Tuple(Dynamic)` throws `NO_COMMON_TYPE`. It is cheap, so force lazy evaluation when filters are not split.
 SELECT 'R21-tuple-dynamic', 0, count()
 FROM values('x Int64, t Tuple(Dynamic)', (0, tuple(CAST(toDate('2020-01-01'), 'Dynamic')))) AS l
 CROSS JOIN values('x Int64, t Tuple(Dynamic)', (1, tuple(CAST('bad', 'Dynamic')))) AS r
 WHERE l.x > r.x AND l.t < r.t
-SETTINGS query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 0;
+SETTINGS query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 0, short_circuit_function_evaluation = 'force_enable';
 SELECT 'R21-tuple-dynamic', 1, count()
 FROM values('x Int64, t Tuple(Dynamic)', (0, tuple(CAST(toDate('2020-01-01'), 'Dynamic')))) AS l
 CROSS JOIN values('x Int64, t Tuple(Dynamic)', (1, tuple(CAST('bad', 'Dynamic')))) AS r
 WHERE l.x > r.x AND l.t < r.t
-SETTINGS query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 1;
+SETTINGS query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 1, short_circuit_function_evaluation = 'force_enable';
 SELECT 'R21-plan', countIf(explain LIKE '%Expression: %less(%') = 0
 FROM (EXPLAIN PLAN keep_logical_steps = 1, actions = 1
     SELECT count()
