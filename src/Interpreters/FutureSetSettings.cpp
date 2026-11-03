@@ -10,6 +10,8 @@ namespace Setting
     extern const SettingsBool make_distributed_plan;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_bytes_before_external_set;
+    extern const SettingsUInt64 max_bytes_for_external_set_bloom_filter;
+    extern const SettingsUInt64 max_bytes_for_external_set_cache;
     extern const SettingsUInt64 max_bytes_in_set;
     extern const SettingsDouble max_bytes_ratio_before_external_set;
     extern const SettingsUInt64 max_rows_in_set;
@@ -26,10 +28,13 @@ FutureSetSettings::FutureSetSettings(const Settings & settings)
     , transform_null_in(settings[Setting::transform_null_in])
     , max_bytes_before_external_set(settings[Setting::max_bytes_before_external_set])
     , max_bytes_ratio_before_external_set(settings[Setting::max_bytes_ratio_before_external_set])
+    , max_bytes_for_external_set_bloom_filter(settings[Setting::max_bytes_for_external_set_bloom_filter])
+    , max_bytes_for_external_set_cache(settings[Setting::max_bytes_for_external_set_cache])
     , max_block_size(settings[Setting::max_block_size])
     , min_free_disk_space(settings[Setting::min_free_disk_space_for_temporary_data])
     , temporary_files_codec(settings[Setting::temporary_files_codec])
     , temporary_files_buffer_size(settings[Setting::temporary_files_buffer_size])
+    , allow_spilling(true)
 {
     /// A distributed plan ships the set's values to worker tasks, so
     /// `use_index_for_in_with_subqueries_max_values` must not drop them; the transfer limits bound them at

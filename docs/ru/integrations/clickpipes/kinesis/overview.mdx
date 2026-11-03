@@ -38,7 +38,7 @@ Kinesis ClickPipes можно развертывать и настраивать
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step2_kinesis.webp" alt="Заполнение сведений о подключении" size="lg" border />
 
-5. Выберите поток Kinesis, **Data format** и начальное смещение. Для `Protobuf` загрузите файл `.proto` или сериализованный `FileDescriptorSet` (максимум 768 КиБ). Schema registry не требуется.
+5. Выберите поток Kinesis, **Data format** и начальное смещение. Kinesis ClickPipes поддерживают JSON, Avro и Protobuf. Для `Protobuf` загрузите файл `.proto` или сериализованный `FileDescriptorSet` (максимум 768 КиБ) либо настройте AWS Glue Schema Registry. Для Avro настройте AWS Glue Schema Registry. Не используйте загруженную схему Protobuf одновременно с реестром схем.
 
    В интерфейсе отображаются примеры данных из выбранного потока. Параметр **Use Kinesis Enhanced Fan-Out** включён по умолчанию. Подробнее см. в [документации Amazon Kinesis](https://docs.aws.amazon.com/streams/latest/dev/enhanced-consumers.html).
 
@@ -88,7 +88,14 @@ Kinesis ClickPipes можно развертывать и настраивать
 Поддерживаются следующие форматы:
 
 * [JSON](/ru/reference/formats/JSON/JSON)
+* [Avro](/ru/reference/formats/Avro/AvroConfluent) (с AWS Glue Schema Registry)
 * [Protobuf](/ru/reference/formats/Protobuf/Protobuf)
+
+## AWS Glue Schema Registry {#aws-glue-schema-registry}
+
+Kinesis ClickPipes может получать схемы Avro и Protobuf из AWS Glue Schema Registry. При создании ClickPipe выберите **AWS Glue**, затем укажите регион AWS и имя реестра. Дополнительно можно указать роль IAM для доступа к реестру; если она не задана, ClickPipes использует IAM-учётные данные источника Kinesis. Для них требуется разрешение `glue:GetSchemaVersion`.
+
+Те же поля можно настроить через [OpenAPI](/ru/integrations/clickpipes/programmatic-access/openapi) или [Terraform](/ru/integrations/clickpipes/programmatic-access/terraform). Необходимая политика IAM и подробные сведения о конфигурации приведены в [руководстве по реестрам схем](/ru/integrations/clickpipes/kafka/schema-registries#aws-glue-schema-registry).
 
 <div id="compression">
   ## Сжатие

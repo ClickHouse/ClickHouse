@@ -75,6 +75,7 @@
             "es/integrations/connectors/data-visualization/tableau/tableau-analysis-tips"
           ]
         },
+        "es/integrations/connectors/data-visualization/thoughtspot-and-clickhouse",
         {
           "expanded": false,
           "group": "Integraciones de la comunidad",
