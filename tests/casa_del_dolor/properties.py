@@ -95,8 +95,9 @@ no_zero_threads_lambda = lambda: random.randint(1, multiprocessing.cpu_count())
 # window is reported as a shutdown failure rather than letting the server give up on its own.
 SERVER_STOP_WAIT_SECONDS = 30
 
-# How long `dolor.py` waits for a restarted server to answer before giving up on it.
-SERVER_START_WAIT_SECONDS = 10
+# How long `dolor.py` waits for a restarted server to answer before giving up on it, as long as
+# the first start: a restart reloads what the run wrote, at each disk's random request rate.
+SERVER_START_WAIT_SECONDS = 300
 
 # The sleeps `dolor.py` takes between stopping and starting a server: one for the process to
 # settle before the binary may be swapped, one for the Keeper session to expire.
