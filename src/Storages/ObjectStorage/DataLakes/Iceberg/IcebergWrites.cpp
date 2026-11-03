@@ -525,39 +525,6 @@ void ManifestPartitionSummary::add(const Row & partition_value)
     }
 }
 
-DataFileColumnStatistics getColumnStatisticsForRewrite(const Iceberg::ParsedManifestFileEntry & entry)
-{
-    DataFileColumnStatistics stats;
-    for (const auto & [field_id, column_info] : entry.columns_infos)
-    {
-        if (column_info.bytes_size.has_value())
-            stats.column_sizes.emplace_back(field_id, *column_info.bytes_size);
-        if (column_info.rows_count.has_value())
-            stats.value_counts.emplace_back(field_id, *column_info.rows_count);
-        if (column_info.nulls_count.has_value())
-            stats.null_value_counts.emplace_back(field_id, *column_info.nulls_count);
-    }
-    /// Bounds stay the raw serialized bytes, so they round-trip whatever the column type.
-    for (const auto & [field_id, bounds] : entry.value_bounds)
-    {
-        if (!bounds.first.isNull())
-            stats.lower_bounds.emplace_back(field_id, bounds.first.safeGet<String>());
-        if (!bounds.second.isNull())
-            stats.upper_bounds.emplace_back(field_id, bounds.second.safeGet<String>());
-    }
-    return stats;
-}
-
-DataFileEntryLineage getEntryLineageForRewrite(const Iceberg::ParsedManifestFileEntry & entry, const ManifestFileCacheKey & manifest)
-{
-    DataFileEntryLineage lineage;
-    lineage.added_snapshot_id = entry.parsed_snapshot_id.value_or(manifest.added_snapshot_id);
-    lineage.sequence_number = entry.parsed_sequence_number.value_or(manifest.added_sequence_number);
-    /// It can differ from the data sequence number, and when null it inherits the manifest's sequence number too.
-    lineage.file_sequence_number = entry.parsed_file_sequence_number.value_or(manifest.added_sequence_number);
-    return lineage;
-}
-
 void generateManifestFile(
     Poco::JSON::Object::Ptr metadata,
     const std::vector<String> & partition_columns,

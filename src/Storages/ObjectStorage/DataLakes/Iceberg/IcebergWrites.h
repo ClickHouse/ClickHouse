@@ -43,8 +43,6 @@
 namespace DB
 {
 
-struct ManifestFileCacheKey;
-
 String removeEscapedSlashes(const String & json_str);
 
 String stringifyJSON(const Poco::Dynamic::Var & json, unsigned indent = 0);
@@ -66,12 +64,6 @@ struct DataFileEntryLineage
     std::optional<Int64> sequence_number;
     std::optional<Int64> file_sequence_number;
 };
-
-/// Carries the column statistics of an existing manifest entry over verbatim, for a manifest-only rewrite.
-DataFileColumnStatistics getColumnStatisticsForRewrite(const Iceberg::ParsedManifestFileEntry & entry);
-
-/// Lineage of an existing manifest entry with the values inherited from its manifest resolved, since an EXISTING entry requires them non-null.
-DataFileEntryLineage getEntryLineageForRewrite(const Iceberg::ParsedManifestFileEntry & entry, const ManifestFileCacheKey & manifest);
 
 /// The manifest-list `partitions` field summary of one manifest, accumulated over the partition tuples of its entries.
 class ManifestPartitionSummary
