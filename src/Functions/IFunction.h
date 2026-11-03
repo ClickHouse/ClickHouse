@@ -58,9 +58,6 @@ public:
     /// Method `execute` called from another thread should stop after this method is called and throw an exception.
     virtual void cancelExecution() const {}
 
-    /// Returns indexes of arguments that must be `ColumnConst`.
-    virtual ColumnNumbers getArgumentsThatAreAlwaysConstant() const { return {}; }
-
 protected:
     friend struct ::FunctionsStressTestThread;
 
@@ -114,22 +111,22 @@ protected:
       */
     virtual bool useDefaultImplementationForReplicatedColumns() const { return true; }
 
+    /** Some arguments could remain constant during this implementation.
+      */
+    virtual ColumnNumbers getArgumentsThatAreAlwaysConstant() const { return {}; }
+
     /** True if function can be called on default arguments and won't throw.
       * Counterexample: modulo(0, 0)
       *
       * Useful when executing on LowCardinality dictionary, which contains default value even if
       * none of the rows use it.
       *
-      * Also used when executing on Nullable columns: `createBlockWithNestedColumns` leaves the rows
-      * behind a NULL untouched, so a function that declines this contract is not executed on them
-      * either - they are filtered out first, and their result is masked out as NULL anyway. This
-      * means the nested value under a NULL is not observable for such a function, e.g.:
+      * *Not* useful when executing on Nullable columns. The value behind a NULL is
+      * not necessarily default. E.g.:
       *   select assumeNotNull(materialize(null::Nullable(Int32)) + 42) as x
       *   ┌──x─┐
       *   │ 42 │
       *   └────┘
-      * still holds for `plus` (which accepts the contract), while a declining function such as
-      * `modulo` yields the default of its result type there instead.
       */
     virtual bool canBeExecutedOnDefaultArguments() const { return true; }
 
@@ -158,9 +155,6 @@ private:
 
     ColumnPtr executeWithoutLowCardinalityColumns(
             const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
-
-    /// The function and every lambda passed to it are deterministic in the scope of the query.
-    bool isCallDeterministicInScopeOfQuery(const ColumnsWithTypeAndName & arguments) const;
 
     ColumnPtr executeWithoutSparseColumns(
             const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
@@ -233,6 +227,12 @@ public:
       * Used by the `pushDownVolumeReducingFunction` query plan optimization.
       */
     virtual bool isVolumeReducing() const { return false; }
+
+    /** Returns true if the function costs far more than reading its arguments, e.g. one network
+      * request per row. Can be used to postpone the execution of such functions as much as possible
+      * (e.g. PREWHERE vs. WHERE)
+      */
+    virtual bool isExpensive() const { return false; }
 
     /** Returns true if this is a spatial predicate for which bbox-disjoint pruning is safe.
       * Specifically: if the bounding boxes of the geometry arguments are disjoint,
@@ -458,6 +458,9 @@ public:
     /// See IFunctionBase::isSpatialPredicate.
     virtual bool isSpatialPredicate() const { return false; }
 
+    /// See `IFunctionBase::isExpensive`.
+    virtual bool isExpensive() const { return false; }
+
     /// For non-variadic functions, return number of arguments; otherwise return zero (that should be ignored).
     /// For higher-order functions (functions, that have lambda expression as at least one argument).
     /// You pass data types with empty DataTypeFunction for lambda arguments.
@@ -674,6 +677,8 @@ public:
     virtual bool hasObservableSideEffects() const { return false; }
     /// See `IFunctionBase::isVolumeReducing`.
     virtual bool isVolumeReducing() const { return false; }
+    /// See `IFunctionBase::isExpensive`.
+    virtual bool isExpensive() const { return false; }
     virtual bool isSpatialPredicate() const { return false; }
 
     using ShortCircuitSettings = IFunctionBase::ShortCircuitSettings;

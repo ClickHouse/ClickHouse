@@ -3,7 +3,6 @@
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Common/parseGlobs.h>
-#include <Disks/DiskType.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
@@ -79,25 +78,9 @@ String StorageObjectStorageCluster::getPathSample(ContextPtr context)
     /// be absent or later filtered out.
     if (containsOnlyEnumGlobs(path.path))
     {
-        /// Mirror the split in `StorageObjectStorageSource::createFileIterator`: a pattern with
-        /// exactly one brace group is materialized there by `expandSelectionGlob`, so the sample
-        /// path has to obey the same limits. Otherwise analysis would infer hive partitioning -
-        /// and, for a table definition, persist it - from a path that the reader always refuses to
-        /// enumerate. Every other shape is matched by the reader as a regexp, where the product is
-        /// never built, so taking each group's first alternative is enough.
-        if (configuration->getType() != ObjectStorageType::Web && hasExactlyOneBracketsExpansion(path.path))
-        {
-            auto expanded = expandSelectionGlob(path.path);
-            if (!expanded.empty())
-                return expanded.front() + archive_suffix;
-        }
-        /// A regexp is more permissive than a selector glob: a doubled brace like `{{a,b}}` is a
-        /// literal brace around an enum for it, and a comma outside a group is literal text. It is
-        /// also stricter: an empty alternative is literal text for it, and RE2 refuses an alternation
-        /// too large to compile. Such a path is listed instead, the same way the reader lists it, so
-        /// the sample path is never one the reader would not read.
-        else if (auto first = tryExpandSelectionGlobFirstMatchedByRegexp(path.path))
-            return *first + archive_suffix;
+        auto expanded = expandSelectionGlob(path.path);
+        if (!expanded.empty())
+            return expanded.front() + archive_suffix;
     }
 
     auto query_settings = configuration->getQuerySettings(context);
@@ -329,7 +312,8 @@ std::optional<UInt64> StorageObjectStorageCluster::totalBytes(ContextPtr query_c
 void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
     ASTPtr & query,
     const DB::StorageSnapshotPtr & storage_snapshot,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    bool add_structure_and_format)
 {
     auto * table_function = extractTableFunctionFromSelectQuery(query);
     if (!table_function)
@@ -367,7 +351,8 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
 
     if (!endsWith(table_function->name, "Cluster"))
     {
-        configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context, /*with_structure=*/true);
+        if (add_structure_and_format)
+            configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context, /*with_structure=*/true);
 
         /// When a non-cluster table function (e.g. `s3`) was auto-converted to cluster mode
         /// by the `parallel_replicas_for_cluster_engines` setting, rename it to the Cluster variant
@@ -388,7 +373,8 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
     {
         ASTPtr cluster_name_arg = args.front();
         args.erase(args.begin());
-        configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context, /*with_structure=*/true);
+        if (add_structure_and_format)
+            configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context, /*with_structure=*/true);
         args.insert(args.begin(), cluster_name_arg);
     }
     if (settings_temporary_storage)

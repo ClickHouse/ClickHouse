@@ -1,7 +1,5 @@
-#include <algorithm>
 #include <vector>
 #include <Interpreters/JoinOperator.h>
-#include <Core/ProtocolDefines.h>
 
 #include <Columns/IColumn.h>
 #include <Common/MemoryTrackerUtils.h>
@@ -17,8 +15,6 @@
 #include <fmt/ranges.h>
 #include <Interpreters/JoinExpressionActions.h>
 #include <Interpreters/ActionsDAG.h>
-#include <Interpreters/FullSortingMergeJoin.h>
-#include <Interpreters/MergeJoin.h>
 
 
 namespace DB
@@ -29,7 +25,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
     extern const int BAD_ARGUMENTS;
-    extern const int NOT_IMPLEMENTED;
 }
 
 namespace Setting
@@ -75,7 +70,6 @@ namespace Setting
     extern const SettingsBool use_join_disjunctions_push_down;
     extern const SettingsBool enable_lazy_columns_replication;
     extern const SettingsBool enable_software_prefetch_in_join;
-    extern const SettingsBool legacy_join_size_limits_trigger_spilling;
     extern const SettingsBool use_hash_table_stats_for_join_reordering;
     extern const SettingsUInt64 max_bytes_before_external_join;
     extern const SettingsDouble max_bytes_ratio_before_external_join;
@@ -90,7 +84,7 @@ namespace Setting
 namespace QueryPlanSerializationSetting
 {
     extern const QueryPlanSerializationSettingsJoinAlgorithm join_algorithm;
-    extern const QueryPlanSerializationSettingsNonZeroUInt64 max_block_size;
+    extern const QueryPlanSerializationSettingsUInt64 max_block_size;
     extern const QueryPlanSerializationSettingsUInt64 max_rows_in_join;
     extern const QueryPlanSerializationSettingsUInt64 max_bytes_in_join;
     extern const QueryPlanSerializationSettingsOverflowMode join_overflow_mode;
@@ -132,7 +126,6 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsBool use_join_disjunctions_push_down;
     extern const QueryPlanSerializationSettingsBool enable_lazy_columns_replication;
     extern const QueryPlanSerializationSettingsBool enable_software_prefetch_in_join;
-    extern const QueryPlanSerializationSettingsBool legacy_join_size_limits_trigger_spilling;
     extern const QueryPlanSerializationSettingsBool use_hash_table_stats_for_join_reordering;
 
     extern const QueryPlanSerializationSettingsBool enable_join_fixed_hash_table_conversion;
@@ -193,7 +186,6 @@ JoinSettings::JoinSettings(const Settings & query_settings, JoinAnalyzeMode join
     use_join_disjunctions_push_down = query_settings[Setting::use_join_disjunctions_push_down];
     enable_lazy_columns_replication = query_settings[Setting::enable_lazy_columns_replication];
     enable_software_prefetch_in_join = query_settings[Setting::enable_software_prefetch_in_join];
-    legacy_join_size_limits_trigger_spilling = query_settings[Setting::legacy_join_size_limits_trigger_spilling];
 
     use_hash_table_stats_for_join_reordering = query_settings[Setting::use_hash_table_stats_for_join_reordering];
 
@@ -204,7 +196,7 @@ JoinSettings::JoinSettings(const Settings & query_settings, JoinAnalyzeMode join
     min_rows_ratio_for_hash_join_row_store = query_settings[Setting::min_rows_ratio_for_hash_join_row_store];
 }
 
-JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings, UInt64 version)
+JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
 {
     join_algorithms = settings[QueryPlanSerializationSetting::join_algorithm];
     max_block_size = settings[QueryPlanSerializationSetting::max_block_size];
@@ -253,9 +245,6 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings, UInt
     use_join_disjunctions_push_down = settings[QueryPlanSerializationSetting::use_join_disjunctions_push_down];
     enable_lazy_columns_replication = settings[QueryPlanSerializationSetting::enable_lazy_columns_replication];
     enable_software_prefetch_in_join = settings[QueryPlanSerializationSetting::enable_software_prefetch_in_join];
-    /// A plan from before the name existed was built where the size limits still drove spilling.
-    legacy_join_size_limits_trigger_spilling = version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LEGACY_JOIN_SIZE_LIMITS
-        || settings[QueryPlanSerializationSetting::legacy_join_size_limits_trigger_spilling];
     use_hash_table_stats_for_join_reordering = settings[QueryPlanSerializationSetting::use_hash_table_stats_for_join_reordering];
 
     enable_join_fixed_hash_table_conversion = settings[QueryPlanSerializationSetting::enable_join_fixed_hash_table_conversion];
@@ -265,183 +254,7 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings, UInt
     min_rows_ratio_for_hash_join_row_store = settings[QueryPlanSerializationSetting::min_rows_ratio_for_hash_join_row_store];
 }
 
-/// `join_algorithm` is an ordered preference list, and these entries produce a join for any step that reaches
-/// them: their branch in `chooseJoinAlgorithm` ends in an unconditional `HashJoin` / `ConcurrentHashJoin` /
-/// `SpillingHashJoin` (`src/Planner/PlannerJoins.cpp`, `src/Interpreters/ExpressionAnalyzer.cpp`). Whatever follows
-/// such an entry in the list is never consulted, on this side or on an older peer, which walks the same list with
-/// the same order. Note that `prefer_partial_merge` stops the walk, but not always with a hash join: it tries
-/// `MergeJoin` first and falls back to the hash family only where that one declines the step
-/// (see `runsStepWithHashFamily`).
-static bool alwaysProducesJoin(JoinAlgorithm algorithm)
-{
-    return algorithm == JoinAlgorithm::HASH
-        || algorithm == JoinAlgorithm::PARALLEL_HASH
-        || algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE
-        || algorithm == JoinAlgorithm::DEFAULT
-        || algorithm == JoinAlgorithm::AUTO;
-}
-
-/// Whether the `ON` clause is a constant that `JoinStepLogical::buildPhysicalJoinImpl` turns into a `ConstantJoin`:
-/// an always-true one (`ON 1`), left as an empty clause by the analyzer, or an always-false one (`ON NULL`), kept as
-/// a single predicate of type `Nothing` / `Nullable(Nothing)` that is not a binary condition. Both shapes are
-/// resolved the same way on both sides of a serialized plan; an ASOF join is excluded like there, it cannot be a
-/// join on a constant and is rejected later.
-static bool isJoinOnConstant(const JoinOperator & join_operator)
-{
-    if (join_operator.strictness == JoinStrictness::Asof)
-        return false;
-    if (join_operator.expression.empty())
-        return true;
-    return join_operator.expression.size() == 1
-        && join_operator.expression[0].getType()->onlyNull()
-        && std::get<0>(join_operator.expression[0].asBinaryPredicate()) == JoinConditionOperator::Unknown;
-}
-
-/// Whether `predicate` is an equality between one expression of the left side and one of the right side - a `=`
-/// or an `IS NOT DISTINCT FROM`. `JoinStepLogical::addJoinPredicatesToTableJoin` turns exactly those into the join
-/// keys of the `TableJoin` clause; a null-safe key is only wrapped into `tuple(...)` on both sides beforehand,
-/// which changes neither the number of clauses nor the algorithms that can run the step.
-static bool isCrossSideEquality(const JoinActionRef & predicate)
-{
-    auto [op, lhs, rhs] = predicate.asBinaryPredicate();
-    if (op != JoinConditionOperator::Equals && op != JoinConditionOperator::NullSafeEquals)
-        return false;
-    return (lhs.fromLeft() && rhs.fromRight()) || (lhs.fromRight() && rhs.fromLeft());
-}
-
-/// Whether every predicate of the `ON` clause is a cross-side equality. For such a step the merge algorithms decide
-/// on the kind and strictness alone: they decline a mixed (cross-side non-equi) condition, a one-sided filter and a
-/// disjunction, and none of those is left once the clause is plain equalities.
-static bool isPlainEquiJoin(const JoinOperator & join_operator)
-{
-    if (join_operator.expression.empty())
-        return false;
-    return std::ranges::all_of(join_operator.expression, isCrossSideEquality);
-}
-
-/// Whether `algorithm`, listed before `grace_hash`, produces a join for `join_operator` on both sides - so the list
-/// is never walked past it - or is known to be skipped for this step - so the walk goes on. Anything in between,
-/// where the answer depends on more than the step tells, is treated as skipped: the caller then refuses the plan,
-/// which is the safe side.
-static bool producesJoinForStep(JoinAlgorithm algorithm, const JoinOperator & join_operator)
-{
-    if (alwaysProducesJoin(algorithm))
-        return true;
-
-    /// `FullSortingMergeJoin::isSupported` and `MergeJoin::isSupported` are the kind / strictness predicate plus
-    /// conditions on the `ON` clause that a plain equi-join satisfies. A `direct` join needs a key-value right side
-    /// a plan step never has, `ie_join` claims a step before the list is consulted at all: neither is relied upon.
-    if (!isPlainEquiJoin(join_operator))
-        return false;
-
-    if (algorithm == JoinAlgorithm::FULL_SORTING_MERGE || algorithm == JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE)
-        return FullSortingMergeJoin::isMergeAlgorithmStrictnessAndKindSupported(join_operator.kind, join_operator.strictness);
-
-    if (algorithm == JoinAlgorithm::PARTIAL_MERGE)
-        return MergeJoin::isSupported(join_operator.kind, join_operator.strictness);
-
-    return false;
-}
-
-/// Whether `algorithm`, once it has produced a join for `join_operator` (see `producesJoinForStep`), ran it with
-/// the hash family - the only algorithms whose spill trigger the size limits used to be. `prefer_partial_merge`
-/// is the one entry that stops the walk with either: `chooseJoinAlgorithm` tries `MergeJoin` first and falls back
-/// to the hash branch only when `MergeJoin::isSupported` declines the step. For a plain equi-join `MergeJoin`
-/// decides on the kind and strictness alone, on both sides, so the step stays on it there, and the size limits are
-/// hard caps on both sides. For any other `ON` clause (a residual condition, a mixed non-equi predicate) whether
-/// `MergeJoin` declines depends on more than the step tells, so the hash fallback is assumed: the caller then
-/// refuses the plan, which is the safe side.
-static bool runsStepWithHashFamily(JoinAlgorithm algorithm, const JoinOperator & join_operator)
-{
-    if (algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE)
-        return !(isPlainEquiJoin(join_operator) && MergeJoin::isSupported(join_operator.kind, join_operator.strictness));
-    return alwaysProducesJoin(algorithm);
-}
-
-/// Whether the `ON` clause has an equality between one expression of the left side and one of the right side at
-/// the top level. `JoinStepLogical::buildPhysicalJoinImpl` turns exactly those predicates into the join keys of a
-/// single `TableJoin` clause (`addJoinPredicatesToTableJoin`), which is what `TableJoin::oneDisjunct` checks.
-/// Without one, the step never has a one-clause hash join on either side: a single top-level `OR` is split into
-/// one clause per disjunct, two inequalities become an `IEJoinStep` when `ie_join` is enabled, an `INNER ALL` join
-/// is converted to a CROSS join with a residual filter, and anything else is refused - none of which spills.
-static bool hasEqualityKeys(const JoinOperator & join_operator)
-{
-    return std::ranges::any_of(join_operator.expression, isCrossSideEquality);
-}
-
-/// `GraceHashJoin::isSupported` on a step: the kind and strictness it accepts, and a single join clause
-/// (`TableJoin::oneDisjunct`), which a step has exactly when its `ON` clause carries equality keys. This is also
-/// the condition for the hash family to become a `SpillingHashJoin`, so a step that fails it is never spilled by
-/// either side, whatever the preference list says.
-static bool graceHashSupports(const JoinOperator & join_operator)
-{
-    if (join_operator.strictness == JoinStrictness::Asof)
-        return false;
-    const auto kind = join_operator.kind;
-    if (!(isInner(kind) || isLeft(kind) || isRight(kind) || isFull(kind)))
-        return false;
-    return hasEqualityKeys(join_operator);
-}
-
-bool JoinSettings::spillBehaviorDiffersFromLegacy(const JoinOperator & join_operator) const
-{
-    /// The receiver was asked for the old contract anyway, which is what a peer that predates the name does.
-    if (legacy_join_size_limits_trigger_spilling)
-        return false;
-
-    /// A CROSS / comma / PASTE join, and a join on a constant (`ON 1`, `ON NULL`), do not consult the preference
-    /// list at all: `ConstantJoin` / `PasteJoin` are the only way to run them, on both sides, and the size limits
-    /// are hard caps for both of them on both sides.
-    if (isCrossOrComma(join_operator.kind) || isPaste(join_operator.kind))
-        return false;
-    if (isJoinOnConstant(join_operator))
-        return false;
-
-    /// Only a `GraceHashJoin` (standalone, or inside the `SpillingHashJoin` of the hash family) treats the size
-    /// limits as a spill trigger, and only a step it supports can ever be run by one, on either side. An ASOF join,
-    /// a kind outside INNER / LEFT / RIGHT / FULL, and an `ON` clause without equality keys (a disjunction, an
-    /// inequality-only join that becomes an `IEJoinStep` or a CROSS join) are run by algorithms that check the
-    /// limits as hard caps on both sides, and the spill threshold does not apply to any of them.
-    if (!graceHashSupports(join_operator))
-        return false;
-
-    /// Hard caps here, a spill trigger there - but only where the old peer spills at all. Its plain `HashJoin` /
-    /// `ConcurrentHashJoin` (no spill threshold, or a step `GraceHashJoin` cannot run) and its merge algorithms
-    /// check the limits as hard caps exactly like this side, so such a step runs the same with or without the name.
-    /// The peer computes its threshold from `max_bytes_ratio_before_external_join` and its own memory limits, which
-    /// are unknown here, so a non-zero ratio counts as a threshold.
-    const bool size_limits_set = max_rows_in_join != 0 || max_bytes_in_join != 0;
-    const bool spill_threshold_set = max_bytes_before_external_join != 0 || max_bytes_ratio_before_external_join != 0;
-
-    /// `grace_hash` diverges either way here. With a spill threshold it spills at
-    /// `max_bytes_before_external_join` here, and ignores it there. Without one it is not a runnable algorithm
-    /// here at all - the join demotes it to the next entry of the preference list, or refuses the query when it
-    /// is listed alone - while there it still builds a standalone `GraceHashJoin` whose only spill trigger is the
-    /// (unset) size limits.
-    ///
-    /// Only a `grace_hash` that this step actually reaches counts: behind an entry that produces a join for the
-    /// step it is dead weight in the list, and both sides run that join instead.
-    for (auto algorithm : join_algorithms)
-    {
-        if (algorithm == JoinAlgorithm::GRACE_HASH)
-            return true;
-        if (producesJoinForStep(algorithm, join_operator))
-        {
-            /// The hash family becomes a `SpillingHashJoin` on the old peer once it has a threshold, and that is
-            /// where the size limits used to trigger the spill instead of capping. A merge algorithm that takes
-            /// the step checks them as hard caps there too.
-            if (runsStepWithHashFamily(algorithm, join_operator))
-                return size_limits_set && spill_threshold_set;
-            return false;
-        }
-    }
-
-    /// Nothing in the list is known to run the step (`direct`, `ie_join`, a merge algorithm the `ON` clause could
-    /// make decline it): with a size limit the answer depends on more than the step tells, so stay on the safe side.
-    return size_limits_set;
-}
-
-void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings, UInt64 version, const JoinOperator & join_operator) const
+void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings) const
 {
     settings[QueryPlanSerializationSetting::join_algorithm] = join_algorithms;
     settings[QueryPlanSerializationSetting::max_block_size] = max_block_size;
@@ -490,21 +303,6 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings,
     settings[QueryPlanSerializationSetting::use_join_disjunctions_push_down] = use_join_disjunctions_push_down;
     settings[QueryPlanSerializationSetting::enable_lazy_columns_replication] = enable_lazy_columns_replication;
     settings[QueryPlanSerializationSetting::enable_software_prefetch_in_join] = enable_software_prefetch_in_join;
-    /// `QueryPlanSerializationSettings` is a strict named schema, so this name may go on the wire only
-    /// towards a peer whose version knows it. Dropping it is not enough to make a downgraded plan safe:
-    /// a peer below that version keeps the old contract for the settings it does know, so a plan that
-    /// depends on the unified spill trigger has to be refused rather than executed with the old meaning.
-    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LEGACY_JOIN_SIZE_LIMITS)
-        settings[QueryPlanSerializationSetting::legacy_join_size_limits_trigger_spilling] = legacy_join_size_limits_trigger_spilling;
-    else if (spillBehaviorDiffersFromLegacy(join_operator))
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Cannot serialize a join step whose spilling depends on `max_rows_in_join` / `max_bytes_in_join` being hard caps "
-            "or on `grace_hash` spilling at the threshold of `hash` rather than at the size limits, for serialization version {}; "
-            "version {} or newer is required. Set `legacy_join_size_limits_trigger_spilling = 1` to run the whole query with "
-            "the old spill contract instead",
-            version,
-            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LEGACY_JOIN_SIZE_LIMITS);
     settings[QueryPlanSerializationSetting::use_hash_table_stats_for_join_reordering] = use_hash_table_stats_for_join_reordering;
 
     settings[QueryPlanSerializationSetting::enable_join_fixed_hash_table_conversion] = enable_join_fixed_hash_table_conversion;

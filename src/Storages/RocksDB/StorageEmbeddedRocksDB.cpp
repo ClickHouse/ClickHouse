@@ -1078,7 +1078,7 @@ void StorageEmbeddedRocksDB::initDB()
     }
     else
     {
-        std::unique_ptr<rocksdb::DB> db;
+        rocksdb::DB * db = nullptr;
         if (read_only)
             status = rocksdb::DB::OpenForReadOnly(merged, rocksdb_dir, &db);
         else
@@ -1087,7 +1087,7 @@ void StorageEmbeddedRocksDB::initDB()
         if (!status.ok())
             throw Exception(ErrorCodes::ROCKSDB_ERROR, "Failed to open rocksdb path at: {}: {}", rocksdb_dir, status.ToString());
 
-        rocksdb_ptr = std::move(db);
+        rocksdb_ptr = std::unique_ptr<rocksdb::DB>(db);
     }
 }
 

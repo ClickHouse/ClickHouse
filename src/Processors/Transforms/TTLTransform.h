@@ -22,8 +22,7 @@ public:
         const MergeTreeData::MutableDataPartPtr & data_part_,
         const NamesAndTypesList & expired_columns_,
         time_t current_time,
-        bool force_,
-        bool ttl_delete_applied_by_merge_ = false
+        bool force_
     );
 
     String getName() const override { return "TTL"; }
@@ -45,8 +44,6 @@ private:
     std::vector<TTLAlgorithmPtr> algorithms;
     const TTLDeleteAlgorithm * delete_algorithm = nullptr;
     bool all_data_dropped = false;
-    /// The merging algorithm already dropped the expired rows, so `delete_algorithm` counts none.
-    const bool ttl_delete_applied_by_merge = false;
 
     PreparedSets::Subqueries subqueries_for_sets;
 

@@ -903,7 +903,7 @@ public:
                 UInt64 row = 0;
                 UInt64 col = val & 0x3f;
 #if defined(__BMI2__) && !defined(__e2k__)
-                ASM_SHIFT_RIGHT(val, shift, row);
+                CROARING_ASM_SHIFT_RIGHT(val, shift, row);
 #else
                 row = val >> shift;
 #endif
@@ -1018,7 +1018,7 @@ public:
                     UInt64 tmp_offset = 0;
                     UInt64 p = bit_buffer[i][j];
 #if defined(__BMI2__) && !defined(__e2k__)
-                    ASM_SHIFT_RIGHT(p, shift, tmp_offset);
+                    CROARING_ASM_SHIFT_RIGHT(p, shift, tmp_offset);
 #else
                     tmp_offset = p >> shift;
 #endif

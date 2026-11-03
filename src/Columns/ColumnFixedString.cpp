@@ -12,6 +12,10 @@
 #include <base/memcmpSmall.h>
 #include <Common/memcpySmall.h>
 
+#if defined(__SSE2__)
+#    include <emmintrin.h>
+#endif
+
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/Function.h>
 #    include <llvm/IR/IRBuilder.h>
@@ -347,7 +351,11 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
                 res->chars.resize(res_chars_size + n);
                 memcpySmallAllowReadWriteOverflow15(&res->chars[res_chars_size], data_pos + index * n, n);
                 res_chars_size += n;
-                mask = mask & (mask - 1);
+            #ifdef __BMI__
+                mask = _blsr_u64(mask);
+            #else
+                mask = mask & (mask-1);
+            #endif
             }
         }
         data_pos += chars_per_simd_elements;
@@ -408,7 +416,11 @@ void ColumnFixedString::filter(const IColumn::Filter & filt)
                 size_t index = std::countr_zero(mask);
                 memmove(res_data_pos + res_chars_size, data_pos + index * n, n);
                 res_chars_size += n;
-                mask = mask & (mask - 1);
+            #ifdef __BMI__
+                mask = _blsr_u64(mask);
+            #else
+                mask = mask & (mask-1);
+            #endif
             }
         }
         data_pos += chars_per_simd_elements;

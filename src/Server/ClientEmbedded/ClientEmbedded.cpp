@@ -179,8 +179,13 @@ try
     addOptionsToTheClientConfiguration(options);
 
     /// Apply settings specified as command line arguments (read environment variables).
+    /// Apply only the changed settings and check them against the constraints: replacing the whole
+    /// `Settings` would drop what the session context got from the user's profiles and roles
+    /// (e.g. `readonly`, resource limits, `additional_table_filters`).
     global_context = session->sessionContext();
-    global_context->setSettings(*cmd_settings);
+    SettingsChanges cmd_settings_changes = cmd_settings->changes();
+    global_context->checkSettingsConstraints(cmd_settings_changes, SettingSource::QUERY);
+    global_context->applySettingsChanges(cmd_settings_changes);
 
     is_interactive = stdin_is_a_tty;
     /// If a query is passed via SSH - just append it to the list of queries to execute:

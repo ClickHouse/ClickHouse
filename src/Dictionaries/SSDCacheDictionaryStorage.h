@@ -580,14 +580,16 @@ public:
         return true;
     }
 
-    bool readKeys(size_t block_start, size_t blocks_length, PaddedPODArray<KeyType> & out) const
+    /// For complex keys, the keys written into `out` are `std::string_view`s pointing into `read_buffer_memory`,
+    /// so the caller must keep `read_buffer_memory` alive for as long as it uses `out`.
+    bool readKeys(size_t block_start, size_t blocks_length, Memory<> & read_buffer_memory, PaddedPODArray<KeyType> & out) const
     {
         if (block_start + blocks_length > current_blocks_size)
             return false;
 
         size_t buffer_size_in_bytes = blocks_length * block_size;
 
-        Memory<> read_buffer_memory(block_size * blocks_length, block_size);
+        read_buffer_memory = Memory<>(block_size * blocks_length, block_size);
 
         iocb request{};
         iocb * request_ptr = &request;
@@ -623,6 +625,9 @@ public:
                 throw ErrnoException(ErrorCodes::CANNOT_IO_GETEVENTS, "io_getevents: Failed to get an event for asynchronous IO");
         }
 
+        // Unpoison the memory returned from an uninstrumented system function.
+        __msan_unpoison(&event, sizeof(event));
+
         auto read_bytes = eventResult(event);
 
         if (read_bytes != static_cast<ssize_t>(buffer_size_in_bytes))
@@ -634,6 +639,9 @@ public:
 
         ProfileEvents::increment(ProfileEvents::AIORead);
         ProfileEvents::increment(ProfileEvents::AIOReadBytes, read_bytes);
+
+        // Unpoison the memory returned from an uninstrumented system function.
+        __msan_unpoison(read_buffer_memory.data(), buffer_size_in_bytes);
 
         SSDCacheBlock block(block_size);
 
@@ -1151,8 +1159,8 @@ private:
             for (auto & key_in_block : keys_in_block)
             {
                 char * key_data = block_data + key_in_block.offset_in_block;
-                /// This is larger size than necessary but we don't know the exact size of serialized columns
-                size_t size = configuration.read_buffer_blocks_size;
+                /// The serialized columns are within the block, but we don't know their exact size.
+                size_t size = configuration.block_size - key_in_block.offset_in_block;
                 ReadBufferFromString in({key_data, size});
                 deserializeAndInsertIntoColumns(result.fetched_columns, fetch_request, in);
 
@@ -1323,8 +1331,10 @@ private:
                 if (started_reusing_old_partitions)
                 {
                     /// If we start reusing old partitions we need to remove old keys on disk from index before writing buffer
+                    /// For complex keys, `old_keys` point into `old_keys_buffer`, so it must outlive them.
+                    Memory<> old_keys_buffer;
                     PaddedPODArray<KeyType> old_keys;
-                    file_buffer.readKeys(block_index_in_file_before_write, configuration.write_buffer_blocks_size, old_keys);
+                    file_buffer.readKeys(block_index_in_file_before_write, configuration.write_buffer_blocks_size, old_keys_buffer, old_keys);
 
                     size_t file_read_end_block_index = block_index_in_file_before_write + configuration.write_buffer_blocks_size;
 

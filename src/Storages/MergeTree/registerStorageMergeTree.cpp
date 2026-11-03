@@ -83,7 +83,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsString marks_compression_codec;
     extern const MergeTreeSettingsString primary_key_compression_codec;
     extern const MergeTreeSettingsString storage_policy;
-    extern const MergeTreeSettingsBool table_readonly;
 }
 
 namespace ServerSetting
@@ -101,7 +100,6 @@ namespace ErrorCodes
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
     extern const int SUPPORT_IS_DISABLED;
     extern const int ILLEGAL_STATISTICS;
-    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -958,8 +956,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// restart or `UNDROP TABLE`), security checks inside `getDiskConfigurationFromAST` are
         /// intentionally skipped because the disk configuration was already validated when the
         /// table was originally created.
-        /// User-initiated `ATTACH TABLE` queries use `LoadingStrictnessLevel::ATTACH` and must
-        /// still be subject to these checks.
+        /// User-initiated `ATTACH TABLE` queries, with a definition or in the short form, use
+        /// `LoadingStrictnessLevel::ATTACH` and must still be subject to these checks.
         storage_settings->loadFromQuery(
             *args.storage_def, args.getLocalContext(), isLoadingFromExistingMetadata(args.mode),
             args.table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE);
@@ -1092,9 +1090,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 {
                     if (args.mode < LoadingStrictnessLevel::FORCE_ATTACH)
                         throw;
-                    /// Only the analyzed description, which query execution needs, is missing. The declaration itself
-                    /// stays in the metadata, so a later rewrite of the CREATE query still contains it.
-                    metadata.projections.addUnavailable(projection_ast->clone());
                     tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format(
                         "Cannot parse projection {} during server startup, skipping it. "
                         "It may be caused by a dependency on a dropped dictionary or a missing object. "
@@ -1226,18 +1221,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     if (replicated)
     {
-        /** `table_readonly` is not supported for `ReplicatedMergeTree`, so a definition that states it
-          * is refused. Only a fresh definition is: a table that already exists has to keep loading,
-          * however its metadata came to carry the setting - which the `convert_to_replicated` flag
-          * produced before it learned to refuse such a table. That covers a short `ATTACH TABLE t`,
-          * `SECONDARY_CREATE` (`RESTORE` from a backup) and the startup levels, as well as the replays
-          * of a definition an older initiator committed. `ALTER TABLE ... RESET SETTING table_readonly`
-          * is the way out of that state.
-          */
-        if (is_fresh_definition && !is_ddl_replay && !is_stored_definition && !is_shared_catalog_replay
-            && (*storage_settings)[MergeTreeSetting::table_readonly])
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The `table_readonly` setting is not supported for ReplicatedMergeTree");
-
         bool need_check_table_structure = true;
         if (auto txn = args.getLocalContext()->getZooKeeperMetadataTransaction())
             need_check_table_structure = txn->isInitialQuery();
@@ -1880,7 +1863,6 @@ Indexes of type `set` can be utilized by all functions. The other index types ar
 | [mapContainsKeyLike](/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike)                                          | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
 | [mapContainsValue](/reference/functions/regular-functions/tuple-map-functions#mapContainsValue)                                              | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
 | [mapContainsValueLike](/reference/functions/regular-functions/tuple-map-functions#mapContainsValueLike)                                      | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
-| [mapContainsKeyValue](/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyValue)                                        | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
 
 Functions with a constant argument that is less than ngram size can't be used by `ngrambf_v1` for query optimization.
 
@@ -2266,6 +2248,7 @@ Tags:
 - `disk` — a disk within a volume.
 - `max_data_part_size_bytes` — the maximum size of a part that can be stored on any of the volume's disks. If the a size of a merged part estimated to be bigger than `max_data_part_size_bytes` then this part will be written to a next volume. Basically this feature allows to keep new/small parts on a hot (SSD) volume and move them to a cold (HDD) volume when they reach large size. Do not use this setting if your policy has only one volume.
 - `move_factor` — when the amount of available space gets lower than this factor, data automatically starts to move on the next volume if any (by default, 0.1). ClickHouse sorts existing parts by size from largest to smallest (in descending order) and selects parts with the total size that is sufficient to meet the `move_factor` condition. If the total size of all parts is insufficient, all parts will be moved.
+- `backup_metadata_only` — the data of tables on this policy is provided by the storage itself, e.g. a shared read-only dataset (by default, `false`). All volumes of the policy must be read-only. `BACKUP` stores only the definitions of such tables, and `RESTORE` recreates them without restoring data and keeps their UUIDs from the backup, so that they find their data on the storage again. `BACKUP` and `RESTORE` of specific partitions of such a table fail. Only the plain `MergeTree` family is supported: a replicated or shared `MergeTree` table, or a materialized view or a `TimeSeries` table with an inner table on such a policy, is backed up and restored as usual, with a warning.
 - `perform_ttl_move_on_insert` — Disables TTL move on data part INSERT. By default (if enabled) if we insert a data part that already expired by the TTL move rule it immediately goes to a volume/disk declared in move rule. This can significantly slowdown insert in case if destination volume/disk is slow (e.g. S3). If disabled then already expired data part is written into a default volume and then right after moved to TTL volume.
 - `load_balancing` - Policy for disk balancing, `round_robin` or `least_used`.
 - `least_used_ttl_ms` - Configure timeout (in milliseconds) for the updating available space on all disks (`0` - update always, `-1` - never update, default is `60000`). Note, if the disk can be used by ClickHouse only and is not subject to a online filesystem resize/shrink you can use `-1`, in all other cases it is not recommended, since eventually it will lead to incorrect space distribution.
@@ -2544,9 +2527,7 @@ They can be used for prewhere optimization only if we enable `set use_statistics
 #### Part Pruning with Statistics {#part-pruning-with-statistics}
 
 When `use_statistics_for_part_pruning` is enabled, statistics can be used for part pruning.
-Currently, only `basic` statistics (and the deprecated `minmax` statistics) support part pruning.
-On numeric and temporal columns, `basic` (and explicit `minmax`) track the minimum and maximum values in each part, so range predicates can skip parts whose bounds cannot match.
-For `Nullable` columns of any type, `basic` also tracks the number of `NULL` values in each part. That enables pruning based on `IS NULL` / `IS NOT NULL` predicates. On numeric and temporal columns it also tightens range bounds for parts that contain no `NULL` values.
+Currently, only `basic` statistics (and the deprecated `minmax` statistics) support part pruning. When such statistics are defined on a column, ClickHouse tracks the minimum and maximum values for that column in each part.
 Part pruning allows to skip reading entire data parts when the query filter condition cannot match any rows in that part.
 
 **Example:**

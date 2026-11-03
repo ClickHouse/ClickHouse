@@ -14,6 +14,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageProxy.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
@@ -332,8 +333,9 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             /// dropped or moved to another database meanwhile, the same as for ALTER TABLE ... DROP PARTITION.
             /// For the rest of tables types exclusive lock is needed
             /// An `Alias` runs the truncate on its target, so the exemption follows the target:
-            /// `isMergeTree()` resolves it, and is false for a missing or non-MergeTree target.
-            if (table->isMergeTree())
+            /// `isMergeTree()` resolves it, and is false while it is missing or not loaded yet.
+            /// A lazily loaded table is reached through a `StorageProxy`, so classify the storage behind it.
+            if (castStorage<IStorage>(table, DeferredTable::Load)->isMergeTree())
                 table_shared_lock = table->lockForShare(context_->getCurrentQueryId(), context_->getSettingsRef()[Setting::lock_acquire_timeout]);
             else
                 table_excl_lock = table->lockExclusively(context_->getCurrentQueryId(), context_->getSettingsRef()[Setting::lock_acquire_timeout]);

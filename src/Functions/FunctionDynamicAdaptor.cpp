@@ -1,6 +1,5 @@
 #include <Functions/FunctionDynamicAdaptor.h>
 #include <Functions/TypeMismatchStrictness.h>
-#include <Functions/castNestedResult.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/DataTypeDynamic.h>
@@ -20,6 +19,9 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int TYPE_MISMATCH;
+    extern const int CANNOT_CONVERT_TYPE;
     extern const int NO_COMMON_TYPE;
 }
 
@@ -77,7 +79,8 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
         }
         catch (const Exception & e)
         {
-            if (!isTypeMismatchError(e.code()))
+            if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
+                && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
                 throw;
             return nullptr;
         }
@@ -172,7 +175,16 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
         {
             /// If return types are not the same, they must be convertible to each other (like FixedString/String).
             if (!removeNullable(result_type)->equals(*removeNullable(nested_result_type)))
-                return castNestedResult(ColumnWithTypeAndName{makeNullableSafe(nested_result), makeNullableSafe(nested_result_type), ""}, result_type, getName());
+            {
+                try
+                {
+                    return castColumn(ColumnWithTypeAndName{makeNullableSafe(nested_result), makeNullableSafe(nested_result_type), ""}, result_type);
+                }
+                catch (const Exception & e)
+                {
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot convert nested result of function {} with type {} to the expected result type {}: {}", getName(), removeNullable(result_type)->getName(), removeNullable(nested_result_type)->getName(), e.message());
+                }
+            }
 
             return makeNullableSafe(nested_result);
         }
@@ -275,7 +287,16 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
 
             /// If return types are not the same, they must be convertible to each other (like FixedString/String).
             if (!result_type->equals(*nested_result_type))
-                return castNestedResult(ColumnWithTypeAndName{nested_result, nested_result_type, ""}, result_type, getName());
+            {
+                try
+                {
+                    return castColumn(ColumnWithTypeAndName{nested_result, nested_result_type, ""}, result_type);
+                }
+                catch (const Exception & e)
+                {
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot convert nested result of function {} with type {} to the expected result type {}: {}", getName(), result_type->getName(), nested_result_type->getName(), e.message());
+                }
+            }
 
             return nested_result;
         }
@@ -494,9 +515,20 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
         {
             /// If return types are not the same, they must be convertible to each other (like FixedString/String).
             if (!removeNullable(result_type)->equals(*removeNullable(nested_result_type)))
-                variants_results.push_back(castNestedResult(ColumnWithTypeAndName{makeNullableSafe(nested_result), makeNullableSafe(nested_result_type), ""}, result_type, getName()));
+            {
+                try
+                {
+                    variants_results.push_back(castColumn(ColumnWithTypeAndName{makeNullableSafe(nested_result), makeNullableSafe(nested_result_type), ""}, result_type));
+                }
+                catch (const Exception & e)
+                {
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot convert nested result of function {} with type {} to the expected result type {}: {}", getName(), result_type->getName(), nested_result_type->getName(), e.message());
+                }
+            }
             else
+            {
                 variants_results.push_back(makeNullableSafe(nested_result));
+            }
         }
         /// Otherwise cast this result to the resulting Dynamic type.
         else

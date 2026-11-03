@@ -30,7 +30,8 @@
               "group": "リアルタイム分析",
               "pages": [
                 "ja/get-started/quickstarts/create-your-first-materialized-view",
-                "ja/get-started/quickstarts/create-your-first-projection"
+                "ja/get-started/quickstarts/create-your-first-projection",
+                "ja/get-started/quickstarts/tutorial"
               ]
             },
             {

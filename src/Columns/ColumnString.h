@@ -323,7 +323,6 @@ public:
     void validate() const;
 
     bool isCollationSupported() const override { return true; }
-    ColumnPlanes getPlanes() const override;
 
     /// Constructs a ColumnUInt64 representing the `.size` subcolumn, derived from the string offsets.
     ColumnPtr createSizeSubcolumn() const;

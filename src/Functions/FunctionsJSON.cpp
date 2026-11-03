@@ -255,22 +255,24 @@ public:
                 return result_type->createColumnConstWithDefaultValue(input_rows_count)->convertToFullColumnIfConst();
 
             /// Use combined `@` subcolumn that merges literal value and sub-object.
-            /// For typed paths getSubcolumn returns only the literal value. For non-typed paths it returns
-            /// a Dynamic column: literal if present, sub-object as JSON if not, NULL otherwise.
-            /// When type_json_skip_null_typed_paths is enabled, use extractCombinedSubcolumn for every path
-            /// (including typed ones) so a NULL typed literal still surfaces a non-empty sub-object, and
-            /// a parent whose typed descendants are all NULL is treated as absent.
+            /// For typed paths it returns only the literal value. For non-typed paths it returns a Dynamic
+            /// column: literal if present, sub-object as JSON if not, NULL otherwise.
             String combined_name = DataTypeObject::getCombinedSubcolumnName(path);
-            const bool skip_null = format_settings.json.type_json_skip_null_typed_paths;
-            bool is_typed_path = data_type_object.getTypedPaths().contains(path);
-            bool treat_typed_as_always_present = is_typed_path && !skip_null;
+            auto merged_type = data_type_object.getSubcolumnType(combined_name);
 
-            auto merged = skip_null
+            /// Typed paths are always present in a JSON column, even when the key was missing
+            /// from the inserted JSON (they get the type's default value). For non-typed paths
+            /// the combined subcolumn returns a Dynamic column where NULL means absent.
+            /// When type_json_skip_null_typed_paths is enabled, NULL typed paths are treated as absent.
+            bool is_typed_path = data_type_object.getTypedPaths().contains(path);
+            bool treat_typed_as_always_present = is_typed_path && !format_settings.json.type_json_skip_null_typed_paths;
+
+            /// When skip_null_typed_paths is enabled for a non-typed parent path (e.g. 'a' when 'a.b' is typed),
+            /// use extractCombinedSubcolumn which propagates the setting into sub-object emptiness checks.
+            /// Otherwise the sub-object with all-NULL typed descendants would be considered non-empty.
+            auto merged = (format_settings.json.type_json_skip_null_typed_paths && !is_typed_path)
                 ? data_type_object.extractCombinedSubcolumn(path, object_column, true)
                 : data_type_object.getSubcolumn(combined_name, object_column);
-            auto merged_type = skip_null
-                ? data_type_object.getDynamicType()
-                : data_type_object.getSubcolumnType(combined_name);
 
             /// JSONHas must be UInt8 {0,1} from path presence. The generic `else` below would
             /// cast the extracted value to UInt8 and silently return the value itself.
@@ -1169,13 +1171,22 @@ public:
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
 
-    static bool insertResultToColumn(IColumn & dest, const Element & element, std::string_view, const FormatSettings & format_settings, String &)
+    static bool insertResultToColumn(IColumn & dest, const Element & element, std::string_view, const FormatSettings & format_settings, String & error)
     {
         ColumnString & col_str = assert_cast<ColumnString &>(dest);
         auto & chars = col_str.getChars();
+        size_t prev_chars_size = chars.size();
+        bool written = false;
         {
             WriteBufferFromVector<ColumnString::Chars> buf(chars, AppendModeTag());
-            jsonElementToString<JSONParser>(element, buf, format_settings);
+            written = jsonElementToString<JSONParser>(element, buf, format_settings, format_settings.json.max_depth);
+        }
+        /// A value nested deeper than the limit cannot be rendered whole: a failure to extract it.
+        if (!written)
+        {
+            chars.resize_assume_reserved(prev_chars_size);
+            error = fmt::format("Maximum JSON depth ({}) exceeded. Consider raising input_format_json_max_depth setting.", format_settings.json.max_depth);
+            return false;
         }
         col_str.getOffsets().push_back(chars.size());
         return true;
@@ -1205,7 +1216,11 @@ public:
         ColumnArray & col_res = assert_cast<ColumnArray &>(dest);
 
         for (auto value : array)
-            JSONExtractRawImpl<JSONParser>::insertResultToColumn(col_res.getData(), value, {}, format_settings, error);
+        {
+            /// The result keeps one element per array element, also where one cannot be rendered.
+            if (!JSONExtractRawImpl<JSONParser>::insertResultToColumn(col_res.getData(), value, {}, format_settings, error))
+                col_res.getData().insertDefault();
+        }
 
         col_res.getOffsets().push_back(col_res.getOffsets().back() + array.size());
         return true;
@@ -1243,7 +1258,9 @@ public:
         for (const auto & [key, value] : object)
         {
             col_key.insertData(key.data(), key.size());
-            JSONExtractRawImpl<JSONParser>::insertResultToColumn(col_value, value, {}, format_settings, error);
+            /// Keep one value per key even where the value cannot be rendered.
+            if (!JSONExtractRawImpl<JSONParser>::insertResultToColumn(col_value, value, {}, format_settings, error))
+                col_value.insertDefault();
         }
 
         col_arr.getOffsets().push_back(col_arr.getOffsets().back() + object.size());

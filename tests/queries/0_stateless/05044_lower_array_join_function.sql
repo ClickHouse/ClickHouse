@@ -48,17 +48,18 @@ SELECT (SELECT groupArray((x, l)) FROM (SELECT arrayJoin(arraySort(a)) AS x, len
      = (SELECT groupArray((x, l)) FROM (SELECT arrayJoin(arraySort(a)) AS x, length(arraySort(a)) AS l FROM t_reuse ORDER BY x) SETTINGS query_plan_lower_array_join_function = 0);
 DROP TABLE t_reuse;
 
--- rand() keeps one value per source row: such a DAG is not lowered
+-- a query-scope non-deterministic function keeps its pre-expansion value (computed once per source row and
+-- replicated), not one value per expanded row. 2 source rows -> at most 2 distinct values.
 SELECT (SELECT count(DISTINCT r) FROM (SELECT arrayJoin([1, 2, 3]) AS e, rand() AS r FROM numbers(2)) SETTINGS query_plan_lower_array_join_function = 1) <= 2;
 
--- and neither is a WHERE with rand() next to the arrayJoin
+-- a query-scope non-deterministic function in the WHERE would flip from row-replicated to per-expanded-row
+-- if lowered, so the pass must decline (no ArrayJoin step appears).
 SELECT countIf(explain LIKE '%ArrayJoin (ARRAY JOIN)%') = 0 FROM (EXPLAIN SELECT arrayJoin([1, 2, 3]) AS e FROM numbers(2) WHERE e > 0 AND rand() % 2 = 0 SETTINGS query_plan_lower_array_join_function = 1, serialize_query_plan = 0);
 -- but a deterministic filter over the same arrayJoin still lowers
 SELECT countIf(explain LIKE '%ArrayJoin (ARRAY JOIN)%') > 0 FROM (EXPLAIN SELECT arrayJoin([1, 2, 3]) AS e FROM numbers(2) WHERE e > 1 SETTINGS query_plan_lower_array_join_function = 1, serialize_query_plan = 0);
--- an unused element still multiplies the rows, and the join still lowers
+-- count() over an arrayJoin whose element is unused still returns the right number of rows
 SELECT (SELECT count() FROM (SELECT arrayJoin([1, 2, 3]) FROM numbers(4)) SETTINGS query_plan_lower_array_join_function = 1)
      = (SELECT count() FROM (SELECT arrayJoin([1, 2, 3]) FROM numbers(4)) SETTINGS query_plan_lower_array_join_function = 0);
-SELECT countIf(explain LIKE '%ArrayJoin (ARRAY JOIN)%') > 0 FROM (EXPLAIN SELECT count() FROM (SELECT arrayJoin([1, 2, 3]) FROM numbers(4)) SETTINGS query_plan_lower_array_join_function = 1, serialize_query_plan = 0);
 
 -- the raw array input is reused above the join under a distinct name: the passenger stays an array
 SELECT (SELECT groupArray((l, e)) FROM (SELECT length(a) AS l, arrayJoin(a) AS e FROM t_laj ORDER BY e) SETTINGS query_plan_lower_array_join_function = 1)

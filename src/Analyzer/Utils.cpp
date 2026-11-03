@@ -22,7 +22,6 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
-#include <DataTypes/getLeastSupertype.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
@@ -34,6 +33,7 @@
 #include <Columns/validateColumnType.h>
 
 #include <Common/FieldVisitorToString.h>
+#include <Common/checkStackSize.h>
 #include <Common/typeid_cast.h>
 
 #include <base/unit.h>
@@ -61,8 +61,6 @@
 #include <Analyzer/UnionNode.h>
 
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
-
-#include <Poco/String.h>
 
 #include <ranges>
 
@@ -937,14 +935,7 @@ private:
     bool has_function = false;
 };
 
-inline DataTypes getArgumentNodeTypes(const FunctionNode & function_node)
-{
-    return function_node.getArguments().getNodes()
-        | std::views::transform([](const auto & argument) { return argument->getResultType(); })
-        | std::ranges::to<DataTypes>();
-}
-
-inline AggregateFunctionPtr resolveAggregateFunctionImpl(FunctionNode & function_node, const String & function_name, AggregateFunctionStateVariant state_variant)
+inline AggregateFunctionPtr resolveAggregateFunction(FunctionNode & function_node, const String & function_name)
 {
     Array parameters;
     for (const auto & param : function_node.getParameters())
@@ -953,19 +944,17 @@ inline AggregateFunctionPtr resolveAggregateFunctionImpl(FunctionNode & function
         parameters.push_back(constant->getValue());
     }
 
+    const auto & function_node_argument_nodes = function_node.getArguments().getNodes();
+
+    DataTypes argument_types;
+    argument_types.reserve(function_node_argument_nodes.size());
+
+    for (const auto & function_node_argument : function_node_argument_nodes)
+        argument_types.emplace_back(function_node_argument->getResultType());
+
     AggregateFunctionProperties properties;
     auto action = NullsAction::EMPTY;
-    return AggregateFunctionFactory::instance().get(function_name, action, getArgumentNodeTypes(function_node), parameters, properties, state_variant);
-}
-
-inline AggregateFunctionPtr resolveAggregateFunction(FunctionNode & function_node, const String & function_name)
-{
-    return resolveAggregateFunctionImpl(function_node, function_name, AggregateFunctionStateVariant::Aggregation);
-}
-
-inline AggregateFunctionPtr resolveWindowFunction(FunctionNode & function_node, const String & function_name)
-{
-    return resolveAggregateFunctionImpl(function_node, function_name, AggregateFunctionStateVariant::Window);
+    return AggregateFunctionFactory::instance().get(function_name, action, argument_types, parameters, properties);
 }
 
 }
@@ -1057,13 +1046,7 @@ void rerunFunctionResolve(FunctionNode * function_node, ContextPtr context)
     }
     else if (function_node->isWindowFunction())
     {
-        auto & arguments = function_node->getArguments().getNodes();
-        auto argument_types = bindWindowFunctionArgumentTypes(name, getArgumentNodeTypes(*function_node));
-        for (size_t i = 0; i < arguments.size(); ++i)
-            if (!arguments[i]->getResultType()->equals(*argument_types[i]))
-                arguments[i] = createCastFunction(arguments[i], argument_types[i], context);
-
-        function_node->resolveAsWindowFunction(resolveWindowFunction(*function_node, name));
+        function_node->resolveAsWindowFunction(resolveAggregateFunction(*function_node, function_node->getFunctionName()));
     }
 }
 
@@ -1171,26 +1154,8 @@ void resolveOrdinaryFunctionNodeByName(FunctionNode & function_node, const Strin
 
 void resolveAggregateFunctionNodeByName(FunctionNode & function_node, const String & function_name)
 {
-    /// A node that keeps its window definition must stay a window function: one that reports both
-    /// aggregate and window is collected by both the aggregation and the window analysis.
-    if (function_node.hasWindow())
-        function_node.resolveAsWindowFunction(resolveWindowFunction(function_node, function_name));
-    else
-        function_node.resolveAsAggregateFunction(resolveAggregateFunction(function_node, function_name));
-}
-
-/// TODO(Michicosun): Move this to the window function factory.
-DataTypes bindWindowFunctionArgumentTypes(const String & function_name, DataTypes argument_types)
-{
-    const auto function_name_lowercase = Poco::toLower(function_name);
-
-    /// For lag/lead functions the value and the default are brought to their common type, like PostgreSQL's anycompatible.
-    const bool is_lag_or_lead = function_name_lowercase == "lag" || function_name_lowercase == "laginframe"
-                             || function_name_lowercase == "lead" || function_name_lowercase == "leadinframe";
-    if (is_lag_or_lead && argument_types.size() == 3)
-        argument_types[0] = argument_types[2] = getLeastSupertype(DataTypes{argument_types[0], argument_types[2]});
-
-    return argument_types;
+    auto aggregate_function = resolveAggregateFunction(function_node, function_name);
+    function_node.resolveAsAggregateFunction(std::move(aggregate_function));
 }
 
 std::pair<TableExpressionNodePtr, bool> getExpressionSource(const QueryTreeNodePtr & node)
@@ -1452,6 +1417,9 @@ namespace
 /// literal instead: `Variant`, `Dynamic`, dynamic `JSON` paths, shared data and `JSON` object names.
 Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, const DataTypePtr & data_type, bool is_inside_object, bool datetime64_as_numbers, bool date_time_as_numbers)
 {
+    /// Nesting is part of the value rather than of the query text, so no parser limit bounds it.
+    checkStackSize();
+
     if (isColumnConst(*column))
         return getFieldFromColumnForASTLiteralImpl(assert_cast<const ColumnConst& >(*column).getDataColumnPtr(), 0, data_type, is_inside_object, datetime64_as_numbers, date_time_as_numbers);
 
@@ -1637,16 +1605,16 @@ Field getFieldFromColumnForASTLiteral(const ColumnPtr & column, size_t row, cons
     return getFieldFromColumnForASTLiteralImpl(column, row, data_type, false, false, date_time_as_numbers);
 }
 
-/// True if a value of this type cannot be printed as a plain literal and re-parsed into the same type:
-/// a static `Decimal`/`DateTime64`/`Time64` anywhere (all scaled decimals), a `Variant` anywhere (a literal
-/// does not keep the active member type), or a `Dynamic` whose value's type is not visible in the type.
-bool typeNeedsExactLiteralSerialization(const IDataType & type)
+/// True if a value of this type may contain a decimal-backed leaf that needs exact serialization:
+/// a static Decimal/DateTime64/Time64 anywhere (all scaled decimals), or a Dynamic whose runtime
+/// value can be a decimal not visible in the type.
+bool typeMayContainDecimal(const IDataType & type)
 {
     bool result = false;
     auto check = [&](const IDataType & nested)
     {
         WhichDataType which(nested);
-        result |= which.isDecimal() || which.isDateTime64() || which.isTime64() || which.isVariant() || which.isDynamic();
+        result |= which.isDecimal() || which.isDateTime64() || which.isTime64() || which.isDynamic();
     };
     check(type);
     type.forEachChild(check);
@@ -1728,8 +1696,11 @@ ASTPtr makeExactDecimalCarrierAST(const Field & field)
 
 ASTPtr columnConstantToExactLiteralASTImpl(const ColumnPtr & column, size_t row, const DataTypePtr & type, bool date_time_as_numbers)
 {
-    /// Subtrees the default literal path already serializes exactly are left unchanged.
-    if (!typeNeedsExactLiteralSerialization(*type))
+    /// Nesting is part of the value rather than of the query text, so no parser limit bounds it.
+    checkStackSize();
+
+    /// Decimal-free subtrees are serialized exactly by the default literal path, unchanged.
+    if (!typeMayContainDecimal(*type))
         return make_intrusive<ASTLiteral>(getFieldFromColumnForASTLiteral(column, row, type, date_time_as_numbers));
 
     if (isColumnConst(*column))
@@ -1792,14 +1763,6 @@ ASTPtr columnConstantToExactLiteralASTImpl(const ColumnPtr & column, size_t row,
             const auto & values = map_column.getNestedData().getColumnPtr(1);
             size_t start = offsets[static_cast<ssize_t>(row) - 1];
             size_t end = offsets[row];
-            /// An empty map has no leaf to serialize, and an argumentless `map` is inferred as
-            /// `Map(Nothing, Nothing)`, which cannot be converted to a map type carrying a `Variant`. The
-            /// empty literal is inferred as `Array(Nothing)`, so name the map type on it as well, or a
-            /// non-empty sibling in the same parent resolves against an array instead of a map.
-            if (start == end)
-                return makeCastToTypeNameAST(
-                    make_intrusive<ASTLiteral>(getFieldFromColumnForASTLiteral(column, row, type, date_time_as_numbers)),
-                    type->getName());
             ASTs elements;
             for (size_t i = start; i < end; ++i)
             {
@@ -1813,25 +1776,18 @@ ASTPtr columnConstantToExactLiteralASTImpl(const ColumnPtr & column, size_t row,
             const auto & variant_types = assert_cast<const DataTypeVariant &>(*type).getVariants();
             const auto & variant_column = assert_cast<const ColumnVariant &>(*column);
             auto global_discr = variant_column.globalDiscriminatorAt(row);
-            /// Conversion to `Variant` is allowed only from a type equal by name to one of its members, and a
-            /// literal does not keep that name (a `Point` is inferred back as `Tuple(Float64, Float64)`, an
-            /// `Array(UInt64)` as `Array(UInt8)`), so name the member type. Name the whole `Variant` too:
-            /// `array` and `map` resolve their result type from their arguments before an enclosing cast runs.
             if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
-                return makeCastToTypeNameAST(make_intrusive<ASTLiteral>(Null()), type->getName());
+                return make_intrusive<ASTLiteral>(Null());
             const auto & member_type = variant_types[global_discr];
-            auto member_ast = makeCastToTypeNameAST(
-                columnConstantToExactLiteralASTImpl(
-                    variant_column.getVariantPtrByGlobalDiscriminator(global_discr), variant_column.offsetAt(row), member_type,
-                    date_time_as_numbers),
-                member_type->getName());
-            /// A string-like member needs more: conversion of a string to a `Variant` with several members
-            /// parses the text and picks whichever member it parses as, so `'42'` under
-            /// `Variant(String, UInt64)` would arrive as a `UInt64`. A single-member `Variant` is not parsed.
-            if (variant_types.size() > 1 && isStringOrFixedString(removeNullable(removeLowCardinality(member_type))))
-                member_ast = makeCastToTypeNameAST(
-                    std::move(member_ast), std::make_shared<DataTypeVariant>(DataTypes{member_type})->getName());
-            return makeCastToTypeNameAST(std::move(member_ast), type->getName());
+            auto member_ast = columnConstantToExactLiteralASTImpl(
+                variant_column.getVariantPtrByGlobalDiscriminator(global_discr), variant_column.offsetAt(row), member_type,
+                date_time_as_numbers);
+            /// Conversion to `Variant` is allowed only from a type equal by name to one of its members, and a
+            /// literal does not keep the member type (a `Point` is inferred back as `Tuple(Float64, Float64)`,
+            /// an `Array(UInt64)` as `Array(UInt8)`), so name the member type explicitly. This mirrors the
+            /// `Variant` branch of `ConstantNode::toASTImpl`, which the exact path bypasses. The wrapping is
+            /// skipped for a scalar decimal member, which already casts itself to its own type.
+            return makeCastToTypeNameAST(std::move(member_ast), member_type->getName());
         }
         case TypeIndex::Dynamic:
         {
@@ -1841,17 +1797,24 @@ ASTPtr columnConstantToExactLiteralASTImpl(const ColumnPtr & column, size_t row,
             if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
                 return make_intrusive<ASTLiteral>(Null());
 
+            /// A literal alone loses the member type (an `Enum8` is inferred back as its number): name it and the `Dynamic` type.
+            /// A consumer that clears `date_time_as_numbers` has no `Dynamic` and gets the bare member literal.
+            auto name_member = [&](ASTPtr member_ast, const DataTypePtr & member_type)
+            {
+                if (!date_time_as_numbers)
+                    return member_ast;
+                return makeCastToTypeNameAST(makeCastToTypeNameAST(std::move(member_ast), member_type->getName()), type->getName());
+            };
+
             if (global_discr != dynamic_column.getSharedVariantDiscriminator())
             {
-                /// Recurse into the active member itself rather than through the `Variant` branch above:
-                /// `Dynamic` accepts a value of any type, so its member type must not be named, and doing so
-                /// would change the stored subtype of values whose literal is inferred back as a wider or
-                /// narrower type than the initiator's.
                 const auto & variant_types
                     = assert_cast<const DataTypeVariant &>(*dynamic_column.getVariantInfo().variant_type).getVariants();
-                return columnConstantToExactLiteralASTImpl(
-                    variant_column.getVariantPtrByGlobalDiscriminator(global_discr), variant_column.offsetAt(row),
-                    variant_types[global_discr], /*date_time_as_numbers=*/false);
+                return name_member(
+                    columnConstantToExactLiteralASTImpl(
+                        variant_column.getVariantPtrByGlobalDiscriminator(global_discr), variant_column.offsetAt(row),
+                        variant_types[global_discr], date_time_as_numbers),
+                    variant_types[global_discr]);
             }
 
             /// Value stored in the shared binary variant (e.g. Dynamic(max_types=0)): decode its type
@@ -1863,7 +1826,8 @@ ASTPtr columnConstantToExactLiteralASTImpl(const ColumnPtr & column, size_t row,
             auto tmp_column = decoded_type->createColumn();
             tmp_column->reserve(1);
             decoded_type->getDefaultSerialization()->deserializeBinary(*tmp_column, buf, FormatSettings{});
-            return columnConstantToExactLiteralASTImpl(std::move(tmp_column), 0, decoded_type, /*date_time_as_numbers=*/false);
+            return name_member(
+                columnConstantToExactLiteralASTImpl(std::move(tmp_column), 0, decoded_type, date_time_as_numbers), decoded_type);
         }
         case TypeIndex::Object:
         {

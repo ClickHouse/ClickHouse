@@ -260,6 +260,9 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         String text_log_level_str = config.getString("text_log.level", "trace");
         int text_log_level = Poco::Logger::parseLevel(text_log_level_str);
 
+        if (config.has("text_log.level"))
+            max_log_level = std::max(text_log_level, max_log_level);
+
         DB::SystemLogQueueSettings log_settings;
         log_settings.flush_interval_milliseconds
             = config.getUInt64("text_log.flush_interval_milliseconds", DB::TextLog::getDefaultFlushIntervalMilliseconds());
@@ -381,6 +384,12 @@ void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Log
         max_log_level = std::max(syslog_level, max_log_level);
     }
     split->setLevel("Syslog", syslog_level);
+
+    if (allowTextLog() && config.has("text_log.level"))
+    {
+        int text_log_level = Poco::Logger::parseLevel(config.getString("text_log.level"));
+        max_log_level = std::max(text_log_level, max_log_level);
+    }
 
     // Global logging level (it can be overridden for specific loggers).
     logger.setLevel(max_log_level);

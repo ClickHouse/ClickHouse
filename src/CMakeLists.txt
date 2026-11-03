@@ -842,10 +842,6 @@ if (TARGET ch_contrib::vectorscan)
     target_link_libraries(dbms PRIVATE ch_contrib::vectorscan)
 endif()
 
-if (TARGET ch_contrib::simsimd)
-    target_link_libraries(dbms PRIVATE ch_contrib::simsimd)
-endif()
-
 if (TARGET ch_contrib::brotli)
     target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::brotli)
 endif()
@@ -1026,6 +1022,10 @@ if (ENABLE_TESTS)
 
     if (TARGET ch_contrib::krb5)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::krb5)
+    endif()
+
+    if (TARGET ch_contrib::brotli)
+        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::brotli)
     endif()
 
     if (TARGET ch_contrib::simdjson)

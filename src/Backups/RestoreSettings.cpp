@@ -169,13 +169,6 @@ namespace
     using SettingFieldRestoreWorkloadsAndResourcesCreationMode = SettingFieldRestoreAccessCreationMode;
 }
 
-#if CLICKHOUSE_CLOUD
-#define LIST_OF_CLOUD_RESTORE_SETTINGS(M) \
-    M(Bool, allow_local_dictionary_source)
-#else
-#define LIST_OF_CLOUD_RESTORE_SETTINGS(M)
-#endif
-
 /// List of restore settings except base_backup_name and cluster_host_ids.
 #define LIST_OF_RESTORE_SETTINGS(M) \
     M(String, id) \
@@ -205,7 +198,6 @@ namespace
     M(Bool, use_same_s3_credentials_for_base_backup) \
     M(Bool, use_same_password_for_base_backup) \
     M(Bool, restore_broken_parts_as_detached) \
-    LIST_OF_CLOUD_RESTORE_SETTINGS(M) \
     M(Bool, internal) \
     M(String, host_id) \
     M(OptionalString, storage_policy) \
@@ -334,7 +326,7 @@ std::map<String, String> RestoreSettings::getSerializedSettings() const
 
     /// Never expose the password; drop purely internal fields that are not user-facing settings
     /// (`id` has its own column, the rest are internal plumbing for RESTORE ON CLUSTER).
-    for (const auto * key : {"password", "id", "internal", "host_id", "restore_uuid", "allow_local_dictionary_source"})
+    for (const auto * key : {"password", "id", "internal", "host_id", "restore_uuid"})
         res.erase(key);
 
     return res;

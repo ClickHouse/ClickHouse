@@ -3,7 +3,6 @@
 #include <Formats/ColumnMapping.h>
 #include <IO/ReadBuffer.h>
 #include <Processors/Formats/InputFormatErrorsLogger.h>
-#include <Core/Names.h>
 #include <Common/PODArray.h>
 #include <IO/WriteBuffer.h>
 #include <base/types.h>
@@ -123,16 +122,15 @@ public:
     /// in custom serializations (e.g. Sparse) for parsing and avoid extra conversion.
     virtual void setSerializationHints(const SerializationInfoByName & /*hints*/) {}
 
-    void addBuffer(std::unique_ptr<ReadBuffer> buffer) { owned_buffers.emplace_back(std::move(buffer)); }
+    /// Not by value: if the insertion throws, `buffer` must stay with the caller, since this format still reads it.
+    template <typename Buffer>
+    void addBuffer(std::unique_ptr<Buffer> && buffer) { owned_buffers.emplace_back(std::move(buffer)); }
 
     void setErrorsLogger(const InputFormatErrorsLoggerPtr & errors_logger_) { errors_logger = errors_logger_; }
 
     virtual size_t getApproxBytesReadForChunk() const { return 0; }
 
-    /// Query parameters make sense only for the Values format, where the data may contain expressions.
-    virtual void setQueryParameters(const NameToNameMap & /*parameters*/) {}
-
-    virtual void needOnlyCount() { need_only_count = true; }
+    void needOnlyCount() { need_only_count = true; }
 
     virtual std::optional<std::pair<std::vector<size_t>, size_t>> getMatchedBuckets() const { return std::nullopt; }
 

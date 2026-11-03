@@ -22,8 +22,6 @@ using BuiltSetsByHashPtr = std::shared_ptr<BuiltSetsByHash>;
 
 class QueryPlan;
 
-struct DistributedPlanLocalObject;
-
 struct QueryPlanOptimizationSettings
 {
     QueryPlanOptimizationSettings(
@@ -60,6 +58,7 @@ struct QueryPlanOptimizationSettings
     bool merge_expressions;
     bool merge_filters;
     bool filter_push_down;
+    bool filter_push_down_below_limit_by;
     bool propagate_predicate_across_join;
     bool fuse_filter_into_array_join;
     bool lower_array_join_function;
@@ -125,7 +124,8 @@ struct QueryPlanOptimizationSettings
     bool optimize_projection;
     bool use_query_condition_cache;
     bool use_query_condition_cache_for_top_k;
-    bool read_in_order_through_join;
+    /// 0 - off, 1 - on, 2 - on even when the parts have no virtual rows (`force`).
+    UInt64 read_in_order_through_join;
     bool optimize_aggregation_in_order_limit;
     bool correlated_subqueries_use_in_memory_buffer;
     bool push_limit_by_into_sort;
@@ -139,9 +139,6 @@ struct QueryPlanOptimizationSettings
     bool cascades_aggregation_pushdown = true;
 
     bool make_distributed_plan = false;
-    /// The query's record of resolved server-local objects (dictionaries, `Join` tables, ...): a live pointer to the
-    /// query context's, read by the fallback decision. Null outside a query.
-    std::shared_ptr<const DistributedPlanLocalObject> distributed_plan_local_object;
     bool serialize_query_plan = false;
     bool distributed_plan_execute_locally = false;  /// Run all distributed plan tasks locally (debugging)
     bool distributed_plan_single_stage = false;  /// For debugging purposes: force distributed plan to be single-stage

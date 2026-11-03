@@ -23,7 +23,6 @@ KEEPER_INJECT_AUTH=1
 REMOTE_DATABASE_DISK=0
 LLVM_COVERAGE=0
 BUILD_TYPE_CONFIGS_ONLY=0
-DEFAULT_COMPRESSION_CODEC=""
 
 while [[ "$#" -gt 0 ]]; do
     case $1 in
@@ -51,9 +50,6 @@ while [[ "$#" -gt 0 ]]; do
         --encrypted-storage) USE_ENCRYPTED_STORAGE=1 ;;
         --llvm-coverage) LLVM_COVERAGE=1 ;;
         --build-type-configs-only) BUILD_TYPE_CONFIGS_ONLY=1 ;;
-        --default-compression-codec)
-            [ -n "${2:-}" ] || { echo "Option $1 requires a value" ; exit 1 ; }
-            DEFAULT_COMPRESSION_CODEC="$2" && shift ;;
         *) echo "Unknown option: $1" ; exit 1 ;;
     esac
     shift
@@ -264,16 +260,7 @@ sed "s|<async>[01]</async>|<async>$value</async>|" $SRC_PATH/config.d/logger_tra
 # .sql and .sh tests alike; a test that needs a specific codec pins it with
 # `SETTINGS default_compression_codec = '...'`, which overrides this server default.
 default_compression_codec_options=("LZ4" "ZSTD(1)" "ZSTD(3)")
-# The codec is baked into a part's mark offsets and statistics.packed bytes, so two servers
-# writing into one data directory must be given the same one via --default-compression-codec.
-if [ -n "$DEFAULT_COMPRESSION_CODEC" ]; then
-    case " ${default_compression_codec_options[*]} " in
-        *" $DEFAULT_COMPRESSION_CODEC "*) default_compression_codec="$DEFAULT_COMPRESSION_CODEC" ;;
-        *) echo "Unknown default compression codec: $DEFAULT_COMPRESSION_CODEC" ; exit 1 ;;
-    esac
-else
-    default_compression_codec="${default_compression_codec_options[$((RANDOM % ${#default_compression_codec_options[@]}))]}"
-fi
+default_compression_codec="${default_compression_codec_options[$((RANDOM % ${#default_compression_codec_options[@]}))]}"
 echo "Default compression codec: $default_compression_codec"
 {
     echo "<clickhouse>"
@@ -331,7 +318,6 @@ ln -sf $SRC_PATH/config.d/memory_profiler.yaml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/rocksdb.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/process_query_plan_packet.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/storage_conf_03008.xml $DEST_SERVER_PATH/config.d/
-ln -sf $SRC_PATH/config.d/storage_conf_05212.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/memory_access.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/jemalloc_enable_global_profiler.yaml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/jemalloc_flush_profile.yaml $DEST_SERVER_PATH/config.d/

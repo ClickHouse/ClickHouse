@@ -392,10 +392,8 @@ void ThreadStatus::attachToGroupImpl(const ThreadGroupPtr & thread_group_)
     thread_group = thread_group_;
     try
     {
-        /// Reparenting the memory tracker flushes the untracked balance the thread carried in, so the
-        /// counters must be reparented after it, or those bytes are reported as this group's.
-        memory_tracker.setParent(&thread_group->memory_tracker);
         performance_counters.setParent(&thread_group->performance_counters);
+        memory_tracker.setParent(&thread_group->memory_tracker);
 
         query_context = thread_group->query_context;
         global_context = thread_group->global_context;

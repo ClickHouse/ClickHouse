@@ -392,8 +392,7 @@ if args.report == "main":
         exit(0)
 
     run_error_rows = tsvRows("run-errors.tsv")
-    # row[0] is the test name, and one failing test can produce several rows.
-    error_tests += len({row[0] for row in run_error_rows if row})
+    error_tests += len(run_error_rows)
     addSimpleTable("Run Errors", ["Test", "Error"], run_error_rows)
     if run_error_rows:
         errors_explained.append(
@@ -722,10 +721,8 @@ if args.report == "main":
         #
         # This threshold must stay synchronized with SLOWER_QUERIES_FAIL_THRESHOLD
         # in ci/jobs/performance_tests.py: that script discards the status
-        # embedded here and recomputes the final Praktika status. In
-        # `master_head` mode the performance dashboard's per-query verdict is
-        # the gate; the "N slower" message below is reparsed only for the
-        # cumulative `release_base` mode, so the effective gate lives there.
+        # embedded here and recomputes the final Praktika status by reparsing the
+        # "N slower" message below, so the effective gate lives there.
         if slower_queries > 10:
             status = "failure"
         message_array.append(str(slower_queries) + " slower")

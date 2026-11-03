@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <bit>
+#include <cmath>
 #include <limits>
 #include <mutex>
 #include <optional>
@@ -14,14 +15,12 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/IDataType.h>
 #include <DataTypes/hasNullable.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/PreparedSets.h>
-#include <Processors/QueryPlan/RuntimeFilterBloomSizing.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/MergeLock.h>
@@ -168,34 +167,24 @@ static void mergeBloomFilters(BloomFilter & destination, const BloomFilter & sou
 
 static constexpr UInt64 BLOOM_FILTER_SEED = 42;
 static constexpr size_t HASH_BATCH_SIZE = 1024;
+/// Max size up to which the bloom filter grows before the false positive rate starts degrading.
+static constexpr UInt64 MAX_STATS_SIZED_BLOOM_FILTER_BYTES = 4 * 1024 * 1024;
+/// At 3 hash functions achieves a 12.5% false positive rate
+static constexpr Float64 RUNTIME_BLOOM_FILTER_TARGET_FILL_RATE = 0.5;
 
-bool detail::RuntimeFilterIndexAnalysis::supportsDataType(const DataTypePtr & data_type)
+namespace
 {
-    if (!data_type)
+bool typeSupportsMinMaxRange(const DataTypePtr & type)
+{
+    if (!type)
         return false;
 
-    DataTypePtr inner = removeNullable(recursiveRemoveLowCardinality(data_type));
+    DataTypePtr inner = removeNullable(recursiveRemoveLowCardinality(type));
     WhichDataType which(inner);
     return which.isInteger() || which.isDateOrDate32OrDateTimeOrDateTime64();
 }
 
-detail::RuntimeFilterIndexAnalysis::RuntimeFilterIndexAnalysis(const DataTypePtr & data_type, bool positive_filter_)
-    : range_supported(supportsDataType(data_type))
-    , positive_filter(positive_filter_)
-{
-}
-
-void detail::RuntimeFilterIndexAnalysis::setRange(const Range & range)
-{
-    if (!enabled || !range_supported || !positive_filter)
-        return;
-
-    range_min = range.left;
-    range_max = range.right;
-    has_range = true;
-}
-
-void detail::RuntimeFilterIndexAnalysis::extendRange(const Field & new_min, const Field & new_max)
+void extendRange(bool & has_range, Field & range_min, Field & range_max, const Field & new_min, const Field & new_max)
 {
     if (!has_range)
     {
@@ -209,46 +198,6 @@ void detail::RuntimeFilterIndexAnalysis::extendRange(const Field & new_min, cons
         range_min = new_min;
     if (accurateLess(range_max, new_max))
         range_max = new_max;
-}
-
-void detail::RuntimeFilterIndexAnalysis::insert(const IColumn & values)
-{
-    if (!enabled || !range_supported || !positive_filter || values.empty())
-        return;
-
-    Field column_min;
-    Field column_max;
-    values.getExtremes(column_min, column_max, 0, values.size());
-    if (!column_min.isNull() && !column_max.isNull())
-        extendRange(column_min, column_max);
-}
-
-void detail::RuntimeFilterIndexAnalysis::mergeFrom(const RuntimeFilterIndexAnalysis & source)
-{
-    if (enabled && range_supported && positive_filter && source.has_range)
-        extendRange(source.range_min, source.range_max);
-}
-
-std::optional<Range> detail::RuntimeFilterIndexAnalysis::getRange() const
-{
-    if (!enabled || !range_supported || !positive_filter || !has_range || range_min.isNull() || range_max.isNull())
-        return {};
-    return Range(range_min, true, range_max, true);
-}
-
-namespace
-{
-
-/// Whether `equals` can answer differently from the bitwise comparison a hash table performs on keys:
-/// NaN is not equal to itself, and -0.0 is equal to 0.0. A JSON column counts as a whole, because a
-/// float can appear on a path discovered while reading, which is not among the type's static children.
-bool equalsCanDisagreeWithHashTable(const IDataType & type)
-{
-    bool result = false;
-    auto check = [&](const IDataType & nested) { result |= isFloat(nested) || isObject(nested); };
-    check(type);
-    type.forEachChild(check);
-    return result;
 }
 
 void hashFixedSizeColumn(const char * raw_data, size_t value_size, size_t row_count, UInt64 seed, BloomFilterHashPair * out_hashes)
@@ -312,6 +261,23 @@ struct Overloaded : Ts...
 template <typename... Ts>
 Overloaded(Ts...) -> Overloaded<Ts...>;
 
+/// Grow the bloom filter bytes to hold `distinct_keys` keys at the target fill rate using
+/// `hash_functions` hash functions: filter_bits = -hash_functions * distinct_keys / ln(1 - fill_rate)
+/// The formula is built on the following logic:
+/// - distinct_keys * hash_functions: total bit-inserts into the filter
+/// - filter_bits: the size of the filter in bits (what we solve for)
+/// - 1/filter_bits: probability that one bit-insert sets a given bit
+/// - (1 - 1/filter_bits)^(distinct_keys * hash_functions): probability that a given bit is not set after all inserts
+/// - e^(-distinct_keys * hash_functions / filter_bits) is used to approximate the above probability
+/// - 1 - e^(-distinct_keys * hash_functions / filter_bits): expected fraction of bits that end up set (= fill_rate)
+/// For more infomation check: https://www.eecs.harvard.edu/~michaelm/postscripts/im2005b.pdf
+UInt64 growBloomFilterBytes(UInt64 distinct_keys, UInt64 hash_functions, UInt64 default_bloom_filter_bytes, Float64 max_ratio_of_set_bits)
+{
+    const Float64 target_fill_rate = std::min(RUNTIME_BLOOM_FILTER_TARGET_FILL_RATE, max_ratio_of_set_bits);
+    const double ideal_bloom_filter_bytes = std::ceil(-static_cast<double>(hash_functions) * static_cast<double>(distinct_keys) / std::log1p(-target_fill_rate) / 8.0);
+    const double clamped_bloom_filter_bytes = std::clamp(ideal_bloom_filter_bytes, 0.0, static_cast<double>(MAX_STATS_SIZED_BLOOM_FILTER_BYTES));
+    return std::max(static_cast<UInt64>(clamped_bloom_filter_bytes), default_bloom_filter_bytes);
+}
 }
 
 static size_t countPassedStats(ColumnPtr values);
@@ -381,9 +347,7 @@ void ExactSetRuntimeFilter<negate>::finishInsert()
 
     /// If only one element is in the set then use `equals` instead of set lookup.
     /// If the argument is `Nullable`, use `Set` because it can handle `NULL` values.
-    /// If `equals` can disagree with the hash table, use `Set`: this filter must not reject a row the join matches.
-    if (set.getTotalRowCount() == 1 && !argument_can_have_nulls
-        && !equalsCanDisagreeWithHashTable(*filter_column_target_type))
+    if (set.getTotalRowCount() == 1 && !argument_can_have_nulls)
     {
         lookup_state = Single{set.getSetElements().front()};
         return;
@@ -679,8 +643,8 @@ ApproximateSetRuntimeFilter * AdaptiveSetRuntimeFilter::switchToApproximateFilte
 
     if (distinct_keys_hint)
     {
-        bytes_limit = growRuntimeBloomFilterBytesFromStats(
-            *distinct_keys_hint, bloom_filter_hash_functions, bytes_limit, max_ratio_of_set_bits_in_bloom_filter);
+        bytes_limit
+            = growBloomFilterBytes(*distinct_keys_hint, bloom_filter_hash_functions, bytes_limit, max_ratio_of_set_bits_in_bloom_filter);
 
         /// The filter size is capped, so a build side with more distinct keys would produce a Bloom filter
         /// that `checkApproximateFilterWorthiness` discards. Predict that fill rate before constructing it.
@@ -688,8 +652,9 @@ ApproximateSetRuntimeFilter * AdaptiveSetRuntimeFilter::switchToApproximateFilte
         {
             const double least_distinct_keys
                 = static_cast<double>(*distinct_keys_hint) / HashJoinEntry::MAX_OVERESTIMATION_FACTOR;
-            const double predicted_fill_rate = estimateRuntimeBloomFilterSetBitsRatio(
-                least_distinct_keys, RuntimeBloomFilterParameters{bytes_limit, bloom_filter_hash_functions});
+            const double predicted_fill_rate = -std::expm1(
+                -static_cast<double>(bloom_filter_hash_functions) * least_distinct_keys
+                / (static_cast<double>(bytes_limit) * 8.0));
             if (predicted_fill_rate > max_ratio_of_set_bits_in_bloom_filter)
             {
                 ProfileEvents::increment(ProfileEvents::RuntimeFilterBloomFilterBuildsSkipped);
@@ -727,9 +692,16 @@ ColumnPtr SharedFixedHashTableRuntimeFilter::find(const ColumnWithTypeAndName & 
 
 RuntimeFilter::RuntimeFilter(RuntimeFilterConfig config_, Data data_)
     : filter_column_target_type(std::visit([](const auto & filter) { return filter.getTargetType(); }, data_.filter))
+    , range_supported(typeSupportsMinMaxRange(filter_column_target_type))
+    , range_positive(!std::holds_alternative<ExactNotContains>(data_.filter))
     , evaluation_state(std::move(config_))
     , data(std::move(data_))
 {
+    if (!range_supported)
+    {
+        std::lock_guard lock(mutex);
+        data.has_range = false;
+    }
 }
 
 void RuntimeFilter::insert(ColumnPtr values)
@@ -742,7 +714,14 @@ void RuntimeFilter::insert(ColumnPtr values)
             if constexpr (!FilterType::is_prebuilt)
             {
                 data.build_state.assertCanInsert();
-                data.index_analysis.insert(*values);
+                if (data.index_analysis_enabled && range_supported && range_positive && !values->empty())
+                {
+                    Field column_min;
+                    Field column_max;
+                    values->getExtremes(column_min, column_max, 0, values->size());
+                    if (!column_min.isNull() && !column_max.isNull())
+                        extendRange(data.has_range, data.range_min, data.range_max, column_min, column_max);
+                }
                 filter.insert(std::move(values));
             }
         },
@@ -811,7 +790,8 @@ void RuntimeFilter::merge(const RuntimeFilter & source)
         },
         data.filter,
         source.data.filter);
-    data.index_analysis.mergeFrom(source.data.index_analysis);
+    if (data.index_analysis_enabled && range_supported && range_positive && source.data.has_range)
+        extendRange(data.has_range, data.range_min, data.range_max, source.data.range_min, source.data.range_max);
     data.build_state.finishMerge();
 }
 
@@ -819,23 +799,29 @@ void RuntimeFilter::enableIndexAnalysis()
 {
     std::lock_guard lock(mutex);
     data.build_state.assertCanInsert();
-    data.index_analysis.enable();
+    data.index_analysis_enabled = true;
 }
 
 ColumnPtr RuntimeFilter::getRecordedKeyValues() const
 {
+    if (!range_positive)
+        return nullptr;
+
     SharedLockGuard lock(mutex);
-    if (!data.index_analysis.canUseExactValues() || !data.build_state.isFinished())
+    if (!data.index_analysis_enabled || !data.build_state.isFinished())
         return nullptr;
     return std::visit([](const auto & filter) { return filter.getRecordedKeyValues(); }, data.filter);
 }
 
 std::optional<Range> RuntimeFilter::getRecordedKeyRanges() const
 {
-    SharedLockGuard lock(mutex);
-    if (!data.build_state.isFinished())
+    if (!range_supported || !range_positive)
         return {};
-    return data.index_analysis.getRange();
+
+    SharedLockGuard lock(mutex);
+    if (!data.has_range || !data.build_state.isFinished() || data.range_min.isNull() || data.range_max.isNull())
+        return {};
+    return Range(data.range_min, true, data.range_max, true);
 }
 
 template class ExactSetRuntimeFilter<false>;

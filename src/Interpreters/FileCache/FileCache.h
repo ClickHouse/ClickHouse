@@ -70,6 +70,8 @@ struct FileCacheReserveStat
 
     Stat total_stat;
     std::array<Stat, magic_enum::enum_count<FileSegmentKind>()> stat_by_kind{};
+    /// Set if the reservation failed because the cache or the query limit had no room for it.
+    bool not_enough_space = false;
 
     Stat & getStatByKind(FileSegmentKind kind) { return stat_by_kind[static_cast<uint8_t>(kind)]; }
     const Stat & getStatByKind(FileSegmentKind kind) const { return stat_by_kind[static_cast<uint8_t>(kind)]; }
@@ -89,6 +91,7 @@ struct FileCacheReserveStat
         total_stat += other.total_stat;
         for (size_t i = 0; i < stat_by_kind.size(); ++i)
             stat_by_kind[i] += other.stat_by_kind[i];
+        not_enough_space |= other.not_enough_space;
         return *this;
     }
 };

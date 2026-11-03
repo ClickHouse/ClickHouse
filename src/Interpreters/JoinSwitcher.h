@@ -24,8 +24,6 @@ public:
         const HashJoinStatsCollectingParams & stats_collecting_params_ = {});
 
     std::string getName() const override { return "JoinSwitcher"; }
-
-    std::string getAlgorithm() const override { return join->getAlgorithm(); }
     const TableJoin & getTableJoin() const override { return *table_join; }
     bool anyTakeLastRow() const override { return join->anyTakeLastRow(); }
 

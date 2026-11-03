@@ -7,8 +7,8 @@
 -- so the final assertion can prove none of them leaks. They used to leak in plaintext in SHOW CREATE
 -- and logged query text.
 
--- Engine form: SHOW CREATE hides every secret; the non-secret extra_credentials identifiers
--- (role_arn, role_session_name) stay visible while external_id is hidden.
+-- Engine form: SHOW CREATE hides every secret; the non-secret extra_credentials identifier
+-- (role_arn) stays visible while external_id is hidden.
 DROP TABLE IF EXISTS t_04510;
 CREATE TABLE t_04510 (x UInt8)
 ENGINE = S3('http://localhost:11111/test/04510', 'ak', 'SEKRIT_SAK',

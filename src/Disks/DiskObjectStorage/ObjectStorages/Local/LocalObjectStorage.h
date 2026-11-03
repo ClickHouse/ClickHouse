@@ -79,7 +79,7 @@ public:
 
     bool existsOrHasAnyChild(const std::string & path) const override;
 
-    void copyObject( /// NOLINT
+    String copyObject( /// NOLINT
         const StoredObject & object_from,
         const StoredObject & object_to,
         const ReadSettings & read_settings,
@@ -97,8 +97,6 @@ public:
     bool isRemote() const override { return false; }
 
     ReadSettings patchSettings(const ReadSettings & read_settings) const override;
-
-    ObjectStoragePtr cloneImpl() const override;
 
 private:
     void removeObject(const StoredObject & object) const;
