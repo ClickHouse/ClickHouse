@@ -2472,7 +2472,9 @@ static bool isAggregatedType(const DataTypePtr & type, bool allow_tuple_element_
     if (typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(type->getCustomName())
         || typeid_cast<const DataTypeAggregateFunction *>(type.get()))
         return true;
-    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get()); tuple && allow_tuple_element_aggregation)
+    /// Merges flatten only the tuples that `Nested::tryGetFlattenableTuple` accepts: an aggregated value of a tuple type, such as
+    /// `SimpleAggregateFunction(sumMap, Tuple(...))`, is aggregated as a whole, as checked above.
+    if (const auto * tuple = Nested::tryGetFlattenableTuple(type); tuple && allow_tuple_element_aggregation)
         return std::ranges::any_of(tuple->getElements(), [](const auto & element) { return isAggregatedType(element, true); });
     return false;
 }
@@ -2495,6 +2497,15 @@ static std::optional<String> tryGetTupleElementName(const DataTypeTuple & tuple,
         if (position >= 1 && position <= tuple.getElements().size())
             return tuple.getNameByPosition(position);
     }
+    /// A negative position counts from the end, as in `tupleElement(x, -1)`.
+    if (field.getType() == Field::Types::Int64)
+    {
+        const Int64 size = static_cast<Int64>(tuple.getElements().size());
+        const Int64 position = field.safeGet<Int64>();
+        const Int64 resolved = position < 0 ? size + position + 1 : position;
+        if (resolved >= 1 && resolved <= size)
+            return tuple.getNameByPosition(static_cast<size_t>(resolved));
+    }
     return std::nullopt;
 }
 
@@ -2504,15 +2515,15 @@ static void addAggregatedLeaves(const DataTypePtr & type, const String & path, c
 {
     if (sorting_key_columns.contains(path))
         return;
-    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+    if (isAggregatedType(type, false))
     {
+        values.insert(path);
+        return;
+    }
+    if (const auto * tuple = Nested::tryGetFlattenableTuple(type))
         for (size_t i = 0; i < tuple->getElements().size(); ++i)
             addAggregatedLeaves(
                 tuple->getElements()[i], Nested::concatenateName(path, tuple->getElementNames()[i]), sorting_key_columns, values);
-        return;
-    }
-    if (isAggregatedType(type, false))
-        values.insert(path);
 }
 
 /// Adds the flattened names of the aggregated elements of the node `node` of a tuple type, with the flattened name `path`, that the
@@ -2525,14 +2536,14 @@ static void addAggregatedTupleElementsReadByKey(
 {
     if (sorting_key_columns.contains(path))
         return;
-    const auto * tuple = typeid_cast<const DataTypeTuple *>(node.result_type.get());
-    if (!tuple)
+    /// An aggregated value, also one of a tuple type, is aggregated as a whole: merges do not flatten it.
+    if (isAggregatedType(node.result_type, false))
     {
-        if (isAggregatedType(node.result_type, false))
-            values.insert(path);
+        values.insert(path);
         return;
     }
-    if (!isAggregatedType(node.result_type, true))
+    const auto * tuple = Nested::tryGetFlattenableTuple(node.result_type);
+    if (!tuple || !isAggregatedType(node.result_type, true))
         return;
     /// The expression also returns its inputs, so only a column of the key counts as read as a whole.
     if (std::ranges::find(key.column_names, node.result_name) != key.column_names.end())
@@ -2551,6 +2562,41 @@ static void addAggregatedTupleElementsReadByKey(
             && parent->children[0] == &node
             && parent->children[1]->type == ActionsDAG::ActionType::COLUMN;
         const bool is_alias = parent->type == ActionsDAG::ActionType::ALIAS;
+        const bool is_subcolumn = parent->type == ActionsDAG::ActionType::FUNCTION && parent->function_base
+            && parent->function_base->getName() == "getSubcolumn" && parent->children.size() == 2 && parent->children[0] == &node;
+        if (is_subcolumn)
+        {
+            /// `getSubcolumn(x, 'b')` selects the element `x.b`, or a subcolumn of an element, such as `x.a.size0`: the first
+            /// aggregated element on its path is read.
+            const auto * name_column = typeid_cast<const ColumnConst *>(parent->children[1]->column.get());
+            const String subcolumn_name = name_column && name_column->getField().getType() == Field::Types::String
+                ? name_column->getField().safeGet<String>() : String{};
+            if (subcolumn_name.empty() || !node.result_type->tryGetSubcolumnType(subcolumn_name))
+            {
+                addAggregatedLeaves(node.result_type, path, sorting_key_columns, values);
+                return;
+            }
+            bool reads_aggregated_element = false;
+            for (size_t pos = subcolumn_name.find('.');; pos = subcolumn_name.find('.', pos + 1))
+            {
+                const String prefix = subcolumn_name.substr(0, pos);
+                if (auto type = node.result_type->tryGetSubcolumnType(prefix); type && isAggregatedType(type, false))
+                {
+                    const String element = Nested::concatenateName(path, prefix);
+                    if (!sorting_key_columns.contains(element))
+                        values.insert(element);
+                    reads_aggregated_element = true;
+                    break;
+                }
+                if (pos == String::npos)
+                    break;
+            }
+            if (!reads_aggregated_element)
+                addAggregatedTupleElementsReadByKey(
+                    key, parents, *parent, Nested::concatenateName(path, subcolumn_name), sorting_key_columns, values);
+            continue;
+        }
+
         const auto element_name = is_element ? tryGetTupleElementName(*tuple, *parent->children[1]) : std::nullopt;
         if ((!is_element && !is_alias) || (is_element && !element_name))
         {
@@ -2596,10 +2642,10 @@ static void addAggregatedValuesReadByKey(
         }
     }
 
-    if (allow_tuple_element_aggregation && typeid_cast<const DataTypeTuple *>(column.type.get()))
-        addAggregatedTupleElementsReadByKey(key, parents, input, column.name, sorting_key_columns, values);
-    else if (isAggregatedType(column.type, false))
+    if (isAggregatedType(column.type, false))
         values.insert(column.name);
+    else if (allow_tuple_element_aggregation && Nested::tryGetFlattenableTuple(column.type))
+        addAggregatedTupleElementsReadByKey(key, parents, input, column.name, sorting_key_columns, values);
 }
 
 /// In AggregatingMergeTree, background merges aggregate the `SimpleAggregateFunction` and `AggregateFunction` columns that are not

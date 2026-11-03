@@ -14,6 +14,12 @@ DROP TABLE IF EXISTS t_tuple_other_element;
 DROP TABLE IF EXISTS t_tuple_alter;
 DROP TABLE IF EXISTS t_tuple_default;
 DROP TABLE IF EXISTS t_tuple_elements;
+DROP TABLE IF EXISTS t_selector_subcolumn;
+DROP TABLE IF EXISTS t_selector_negative;
+DROP TABLE IF EXISTS t_selector_aggregated;
+DROP TABLE IF EXISTS t_selector_path;
+DROP TABLE IF EXISTS t_selector_path_aggregated;
+DROP TABLE IF EXISTS t_aggregated_tuple;
 DROP TABLE IF EXISTS t_in_sorting_key_subcolumn;
 DROP TABLE IF EXISTS t_in_sorting_key_element;
 DROP TABLE IF EXISTS t_in_sorting_key_element_subcolumn;
@@ -104,6 +110,33 @@ CREATE TABLE t_other_element (x Tuple(a SimpleAggregateFunction(sum, UInt64), b 
 PARTITION BY tupleElement(x, 'a') % 2 ORDER BY x.b SETTINGS allow_tuple_element_aggregation = 1; -- { serverError BAD_ARGUMENTS }
 SET allow_suspicious_primary_key = 0;
 
+-- An element selected by `getSubcolumn` or by a negative position is the same element.
+CREATE TABLE t_selector_subcolumn (k UInt8, x Tuple(a SimpleAggregateFunction(sum, UInt64), b UInt64)) ENGINE = AggregatingMergeTree
+PARTITION BY getSubcolumn(x, 'b') % 2 ORDER BY k SETTINGS allow_tuple_element_aggregation = 1;
+CREATE TABLE t_selector_negative (y Tuple(UInt64, SimpleAggregateFunction(sum, UInt64))) ENGINE = AggregatingMergeTree
+ORDER BY tupleElement(y, -2) SETTINGS allow_tuple_element_aggregation = 1;
+CREATE TABLE t_selector_path (k UInt8, x Tuple(a SimpleAggregateFunction(groupArrayArray, Array(UInt64)), n Tuple(c SimpleAggregateFunction(sum, UInt64), d UInt64)))
+ENGINE = AggregatingMergeTree PARTITION BY getSubcolumn(x, 'n.d') % 2 ORDER BY k SETTINGS allow_tuple_element_aggregation = 1;
+SELECT 'selectors created';
+CREATE TABLE t_selector_aggregated (k UInt8, x Tuple(a SimpleAggregateFunction(sum, UInt64), b UInt64)) ENGINE = AggregatingMergeTree
+PARTITION BY getSubcolumn(x, 'a') % 2 ORDER BY k SETTINGS allow_tuple_element_aggregation = 1; -- { serverError BAD_ARGUMENTS }
+-- A subcolumn of an aggregated element, and an aggregated element of a nested tuple, selected by a path.
+CREATE TABLE t_selector_path_aggregated (k UInt8, x Tuple(a SimpleAggregateFunction(groupArrayArray, Array(UInt64)), n Tuple(c SimpleAggregateFunction(sum, UInt64), d UInt64)))
+ENGINE = AggregatingMergeTree PARTITION BY getSubcolumn(x, 'a.size0') % 2 ORDER BY k SETTINGS allow_tuple_element_aggregation = 1; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE t_selector_path_aggregated (k UInt8, x Tuple(a SimpleAggregateFunction(groupArrayArray, Array(UInt64)), n Tuple(c SimpleAggregateFunction(sum, UInt64), d UInt64)))
+ENGINE = AggregatingMergeTree PARTITION BY getSubcolumn(x, 'n.c') % 2 ORDER BY k SETTINGS allow_tuple_element_aggregation = 1; -- { serverError BAD_ARGUMENTS }
+
+-- An aggregated value of a tuple type is aggregated as a whole, also inside another tuple and when an ALTER makes it one.
+CREATE TABLE t_aggregated_tuple (k UInt8, a SimpleAggregateFunction(sumMap, Tuple(Array(UInt64), Array(UInt64))))
+ENGINE = AggregatingMergeTree PARTITION BY length(tupleElement(a, 1)) ORDER BY k
+SETTINGS allow_tuple_element_aggregation = 1; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE t_aggregated_tuple (k UInt8, x Tuple(s SimpleAggregateFunction(sumMap, Tuple(Array(UInt64), Array(UInt64))), b UInt64))
+ENGINE = AggregatingMergeTree PARTITION BY length(tupleElement(tupleElement(x, 's'), 1)) ORDER BY k
+SETTINGS allow_tuple_element_aggregation = 1; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE t_aggregated_tuple (k UInt8, a Tuple(Array(UInt64), Array(UInt64))) ENGINE = AggregatingMergeTree
+PARTITION BY length(tupleElement(a, 1)) ORDER BY k SETTINGS allow_tuple_element_aggregation = 1;
+ALTER TABLE t_aggregated_tuple MODIFY COLUMN a SimpleAggregateFunction(sumMap, Tuple(Array(UInt64), Array(UInt64))); -- { serverError BAD_ARGUMENTS }
+
 -- A plain MergeTree does not aggregate the column, so the key is fine there.
 CREATE TABLE t_plain (c0 SimpleAggregateFunction(sum, Int64)) ENGINE = MergeTree ORDER BY intDiv(c0, 55);
 SELECT 'plain created';
@@ -120,3 +153,7 @@ DROP TABLE t_in_sorting_key_subcolumn;
 DROP TABLE t_in_sorting_key_element;
 DROP TABLE t_in_sorting_key_element_subcolumn;
 DROP TABLE t_tuple_elements;
+DROP TABLE t_selector_subcolumn;
+DROP TABLE t_selector_negative;
+DROP TABLE t_selector_path;
+DROP TABLE t_aggregated_tuple;
