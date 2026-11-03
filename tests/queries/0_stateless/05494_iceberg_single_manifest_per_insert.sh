@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
 
-# With `iceberg_insert_single_manifest_for_all_partitions`, one INSERT into a partitioned Iceberg table writes one manifest
-# for all the partitions it touches, like Spark and PyIceberg, instead of one manifest per partition. The manifest-list entry must then describe the whole manifest:
+# With `iceberg_insert_single_manifest_for_all_partitions`, each insert stream of an INSERT into a partitioned Iceberg table
+# writes one manifest for all the partitions it touches, like Spark and PyIceberg, instead of one manifest per partition;
+# with `max_insert_threads = 1` the whole INSERT writes exactly one manifest. The manifest-list entry must then describe the whole manifest:
 # real file/row counts and a `partitions` summary whose bounds span every partition tuple, with `contains_null` when
 # one of them is NULL. Partition pruning keeps working on such a manifest, and DROP PARTITION refuses to drop one of
 # its partitions, since that would require rewriting a manifest shared with other partitions.
@@ -17,11 +18,13 @@ TABLE="t_${CLICKHOUSE_DATABASE}_single_manifest"
 TABLE_PATH="${USER_FILES_PATH}/${TABLE}/"
 NULL_TABLE="t_${CLICKHOUSE_DATABASE}_null_partition"
 NULL_TABLE_PATH="${USER_FILES_PATH}/${NULL_TABLE}/"
+PARALLEL_TABLE="t_${CLICKHOUSE_DATABASE}_parallel_insert"
+PARALLEL_TABLE_PATH="${USER_FILES_PATH}/${PARALLEL_TABLE}/"
 
 cleanup()
 {
-    ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE}; DROP TABLE IF EXISTS ${NULL_TABLE}" >/dev/null 2>&1
-    rm -rf "${TABLE_PATH}" "${NULL_TABLE_PATH}"
+    ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE}; DROP TABLE IF EXISTS ${NULL_TABLE}; DROP TABLE IF EXISTS ${PARALLEL_TABLE}" >/dev/null 2>&1
+    rm -rf "${TABLE_PATH}" "${NULL_TABLE_PATH}" "${PARALLEL_TABLE_PATH}"
 }
 trap cleanup EXIT
 
@@ -116,3 +119,25 @@ describe_manifest_list "$(latest_manifest_list "${NULL_TABLE_PATH}")"
 ${CLICKHOUSE_CLIENT} --query "SELECT p, sum(v) FROM ${NULL_TABLE} GROUP BY p ORDER BY p NULLS FIRST"
 ${CLICKHOUSE_CLIENT} --query "SELECT sum(v) FROM ${NULL_TABLE} WHERE p IS NULL SETTINGS use_iceberg_partition_pruning = 1"
 ${CLICKHOUSE_CLIENT} --query "SELECT sum(v) FROM ${NULL_TABLE} WHERE p = -7 SETTINGS use_iceberg_partition_pruning = 1"
+
+# Every insert stream commits its own snapshot, so with several streams one INSERT writes one manifest per stream,
+# each covering all the partitions of the rows that stream received. How many streams get rows is not deterministic.
+echo "--- parallel INSERT: one manifest per insert stream, each spanning all partitions"
+${CLICKHOUSE_CLIENT} --query "
+    CREATE TABLE ${PARALLEL_TABLE} (p Int64, n Int64)
+    ENGINE = IcebergLocal('${PARALLEL_TABLE_PATH}', 'Parquet')
+    PARTITION BY p"
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "
+    INSERT INTO ${PARALLEL_TABLE} SELECT number % 3, number FROM numbers_mt(300000)
+    SETTINGS max_insert_threads = 4, max_threads = 4, max_block_size = 1000"
+SNAPSHOTS=$(${CLICKHOUSE_CLIENT} --query "
+    SELECT count() FROM system.iceberg_history
+    WHERE database = currentDatabase() AND table = '${PARALLEL_TABLE}' AND operation = 'APPEND'")
+${CLICKHOUSE_CLIENT} --query "
+    SELECT
+        count() = ${SNAPSHOTS},
+        uniqExact(added_snapshot_id) = count(),
+        arrayAll(s -> reinterpretAsInt64(tupleElement(s, 'lower_bound')) = 0
+            AND reinterpretAsInt64(tupleElement(s, 'upper_bound')) = 2, groupArray(partitions[1]))
+    FROM file('$(latest_manifest_list "${PARALLEL_TABLE_PATH}")', Avro)"
+${CLICKHOUSE_CLIENT} --query "SELECT p, count() FROM ${PARALLEL_TABLE} GROUP BY p ORDER BY p"
