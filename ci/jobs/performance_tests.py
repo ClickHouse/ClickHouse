@@ -157,6 +157,8 @@ CIDB_TEST_CASES_RESULT_NAME = "Tests"
 
 RAW_QUERY_METRICS_TABLE = "query_metric_runs_v1"
 HISTORICAL_DATA_TABLE = "query_metrics_v2"
+# The public read-only endpoint the job reads the history in `HISTORICAL_DATA_TABLE` from.
+PLAY_CIDB_URL = "https://play.clickhouse.com?user=play"
 
 # --- Aggregate report tables on the play cluster --------------------------
 # These capture everything that used to only live in the static HTML report
@@ -196,10 +198,16 @@ DASHBOARD_INPUT_TABLES = (RAW_QUERY_METRICS_TABLE, HISTORICAL_DATA_TABLE, TEST_T
 # this shard's rows, counted from the start of the uploads.
 DASHBOARD_INGEST_TIMEOUT_SEC = 600
 DASHBOARD_POLL_INTERVAL_SEC = 15
+# Without a dashboard verdict, a PR shard is not failed on a slower query that at least this many other PRs
+# had at this fraction of its difference or more, on the same arch within this many days.
+FALLBACK_SHARED_MIN_OTHER_PRS = 3
+FALLBACK_SHARED_MIN_FRACTION = 0.8
+FALLBACK_SHARED_DAYS = 7
 # A few seconds after praktika started the job's timeout: the time the job has left is counted from here.
 JOB_START = time.monotonic()
 # Kept free at the end of the job: a dashboard poll in flight at the deadline, the end of a cut
-# confirmation rerun, the uploads' minimum below, packing the logs and writing the result.
+# confirmation rerun, the fallback's CIDB lookup, the uploads' minimum below, packing the logs and
+# writing the result.
 JOB_END_RESERVE_SEC = 300
 # The uploads get at least this long, however late the job is.
 DASHBOARD_MIN_UPLOAD_SEC = 60
@@ -570,6 +578,21 @@ def escape_sql_string(value):
     )
 
 
+# The Iceberg configuration (`iceberg_local` / `iceberg_s3` in `--test-options`):
+# `perf.py --table-engine` creates the MergeTree tables of the tests as Iceberg
+# tables. Set once in `main`.
+TABLE_ENGINE = None
+TABLE_ENGINES = ("iceberg_local", "iceberg_s3")
+
+
+def get_results_arch():
+    """The `arch` of the uploaded rows. The CIDB tables of the performance
+    comparison and the dashboard filters have no column for the job, so the rows
+    of the Iceberg configuration carry it in `arch` (`arm_iceberg_local`), and
+    neither history nor the dashboard gate of the MergeTree jobs reads them."""
+    return f"{get_perf_arch()}_{TABLE_ENGINE}" if TABLE_ENGINE else get_perf_arch()
+
+
 def get_perf_arch():
     if Utils.is_arm():
         return "arm"
@@ -703,6 +726,28 @@ def write_max_threads_override():
     return True
 
 
+ICEBERG_PROFILE_OVERRIDE_FILE = "zzz-perf-iceberg.xml"
+
+
+def write_iceberg_profile_override():
+    """The settings of `iceberg_engine.SETTINGS` in the default profile of both
+    servers. `perf.py` sets them for its own statements, but a dropped table
+    deletes its data later, in the background, with the default profile."""
+    for config_dir in (perf_left_config, perf_right_config):
+        target = Path(config_dir) / "users.d" / ICEBERG_PROFILE_OVERRIDE_FILE
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(
+            "<!-- Written by ci/jobs/performance_tests.py for the Iceberg configuration of the performance tests. -->\n"
+            "<clickhouse>\n    <profiles>\n        <default>\n"
+            "            <allow_insert_into_iceberg>1</allow_insert_into_iceberg>\n"
+            "            <allow_experimental_iceberg_compaction>1</allow_experimental_iceberg_compaction>\n"
+            "            <iceberg_delete_data_on_drop>1</iceberg_delete_data_on_drop>\n"
+            "        </default>\n    </profiles>\n</clickhouse>\n"
+        )
+        print(f"Wrote the Iceberg profile override to [{target}]")
+    return True
+
+
 def build_perf_query_history_link(test_name, check_name):
     """Build a ClickHouse Play link showing performance history for a query on master."""
     table = Settings.CI_DB_TABLE_NAME or "checks"
@@ -718,6 +763,7 @@ SELECT
 FROM {table}
 WHERE pull_request_number = 0
     AND check_name LIKE '{cn}'
+    AND (check_name LIKE '%iceberg%') = {'1' if 'iceberg' in cn else '0'}
     AND check_start_time >= now() - INTERVAL 14 DAY
     AND test_name = '{tn}'
 ORDER BY test, check_start_time
@@ -768,7 +814,7 @@ def build_check_results_children(tests_result, check_name_pattern):
 
 def get_insert_metadata(info, compare_against_release):
     return {
-        "ARCH": escape_sql_string(get_perf_arch()),
+        "ARCH": escape_sql_string(get_results_arch()),
         "BASELINE_KIND": "release_base" if compare_against_release else "master_head",
         "WORKFLOW_NAME": escape_sql_string(info.workflow_name),
         "BASE_BRANCH": escape_sql_string(info.base_branch),
@@ -1483,7 +1529,8 @@ class CHServer:
 
     @classmethod
     def run_test(
-        cls, test_file, runs=None, max_queries=0, pr_number=0, results_path=f"{temp_dir}/perf_wd/", long=False
+        cls, test_file, runs=None, max_queries=0, pr_number=0, results_path=f"{temp_dir}/perf_wd/", long=False,
+        table_engine=None,
     ):
         test_name = test_file.split("/")[-1].removesuffix(".xml")
         sw = Utils.Stopwatch()
@@ -1502,7 +1549,7 @@ class CHServer:
                 --profile-seconds 10 \
                 --pr-number {pr_number} \
                 --stop-merges \
-                {test_file}{' --long' if long else ''}",
+                {f'--table-engine {table_engine} ' if table_engine else ''}{test_file}{' --long' if long else ''}",
             verbose=True,
             strip=False,
         )
@@ -2051,19 +2098,98 @@ def perf_dashboard_gate(info, arch, metrics_tsv_path, deadline, missing_inputs):
     return [row for row in rows if row["tier"] in DASHBOARD_BLOCKING_TIERS]
 
 
-def judge_without_dashboard(summary, error):
+_TSV_UINT_RE = re.compile(r"[0-9]+")
+_TSV_FLOAT_RE = re.compile(r"-?[0-9]+(\.[0-9]+)?(e[-+]?[0-9]+)?")
+
+
+def read_slower_queries(path):
+    """The rows of `report/changed-perf.tsv` that `report.py` counts as slower, as
+    {(test, query_index): (query_display_name, diff)} with the strings escaped as in the file.
+    None when the file is missing or a row does not parse."""
+    if not os.path.isfile(path):
+        return None
+    slower = {}
+    with open(path, "r", encoding="utf-8", newline="") as f:
+        lines = f.read().split("\n")
+    for line in filter(None, lines):
+        fields = line.split("\t")
+        if (
+            len(fields) != 9
+            or not _TSV_UINT_RE.fullmatch(fields[5])
+            or not _TSV_UINT_RE.fullmatch(fields[7])
+            or not _TSV_FLOAT_RE.fullmatch(fields[3])
+            or not math.isfinite(float(fields[3]))
+        ):
+            print(f"WARNING: unexpected row in [{path}]: {line[:200]!r}")
+            return None
+        diff = float(fields[3])
+        if int(fields[5]) and diff >= 0:
+            slower[(fields[6], int(fields[7]))] = (fields[8], diff)
+    return slower
+
+
+def shared_slowdowns(slower, arch, pr_number):
+    """The keys of `slower` (see `read_slower_queries`) that at least `FALLBACK_SHARED_MIN_OTHER_PRS` other PRs
+    had with the same display name, at `FALLBACK_SHARED_MIN_FRACTION` of the difference or more, on `arch` within
+    `FALLBACK_SHARED_DAYS` days. None when CIDB did not answer or the answer does not parse."""
+    if not slower:
+        return set()
+    terms = " OR ".join(
+        f"(test = '{escape_sql_string(test)}' AND query_index = {query_index}"
+        f" AND diff >= {FALLBACK_SHARED_MIN_FRACTION * diff!r})"
+        for (test, query_index), (_, diff) in slower.items()
+    )
+    query = f"""\
+SELECT test, query_index, query_display_name, uniqExact(pr_number)
+FROM {HISTORICAL_DATA_TABLE}
+WHERE event_date >= today() - {FALLBACK_SHARED_DAYS + 1}
+    AND event_time >= now() - INTERVAL {FALLBACK_SHARED_DAYS} DAY
+    AND metric = '{DASHBOARD_GATE_METRIC}' AND arch = '{escape_sql_string(arch)}' AND pr_number != {int(pr_number)}
+    AND workflow_name IN ('PR', 'MasterCI')
+    AND ({terms})
+GROUP BY test, query_index, query_display_name
+FORMAT TSV"""
+    answer = CIDBCluster(url=PLAY_CIDB_URL, user="", pwd="").do_select_query(query, retries=1, timeout=20)
+    if answer is None:
+        return None
+    other_prs = {}
+    for line in filter(None, answer.split("\n")):
+        fields = line.split("\t")
+        if len(fields) != 4 or not _TSV_UINT_RE.fullmatch(fields[1]) or not _TSV_UINT_RE.fullmatch(fields[3]):
+            print(f"WARNING: unexpected line in the CIDB answer: {line[:200]!r}")
+            return None
+        other_prs[(fields[0], int(fields[1]), fields[2])] = int(fields[3])
+    return {
+        key
+        for key, (display_name, _) in slower.items()
+        if other_prs.get((*key, display_name), 0) >= FALLBACK_SHARED_MIN_OTHER_PRS
+    }
+
+
+def judge_without_dashboard(summary, error, slower=None, shared=None):
     """Status and message suffix for a `master_head` shard whose dashboard verdict is unavailable.
 
     The dashboard replaced a gate that failed only above 10 slower queries and so passed a single
-    large regression; without the dashboard, any slower query of this shard's report fails."""
+    large regression; without the dashboard, any slower query of this shard's report fails, except
+    those in `shared` (`shared_slowdowns` of `slower`, given for a PR shard)."""
     suffix = f"; performance dashboard verdict unavailable: {error}"
     if not is_perf_summary_message(summary.lower()):
         return Result.Status.FAIL, suffix
-    slower = parse_slower_count(summary.lower())
-    return (
-        Result.Status.FAIL if slower else Result.Status.OK,
-        f"{suffix}; judged by this shard's report instead: {slower} slower",
-    )
+    count = parse_slower_count(summary.lower())
+    suffix += f"; judged by this shard's report instead: {count} slower"
+    if not count:
+        return Result.Status.OK, suffix
+    if slower is None or len(slower) != count:
+        return Result.Status.FAIL, suffix
+    if shared is None:
+        return Result.Status.FAIL, f"{suffix}; the CIDB lookup of other PRs' slowdowns failed"
+    if shared:
+        suffix += (
+            f"; not counted, about as slow in {FALLBACK_SHARED_MIN_OTHER_PRS} or more other PRs on this arch"
+            f" within {FALLBACK_SHARED_DAYS} days: "
+            + ", ".join(f"{test} #{query_index}" for test, query_index in sorted(shared))
+        )
+    return (Result.Status.FAIL if any(key not in shared for key in slower) else Result.Status.OK), suffix
 
 
 def confirm_dashboard_regressions(regressions, pr_number, workdir, end=None):
@@ -2758,12 +2884,19 @@ def main():
             compare_against_release = True
 
     nightly = "nightly" in test_options
+    global TABLE_ENGINE
+    TABLE_ENGINE = next((option for option in test_options if option in TABLE_ENGINES), None)
+    if TABLE_ENGINE:
+        # compare.sh reruns flagged queries to confirm them: with the same tables.
+        os.environ["CHPC_TABLE_ENGINE"] = TABLE_ENGINE
     batch_num -= 1
     assert 0 <= batch_num < total_batches and total_batches >= 1
 
     assert (
         compare_against_master or compare_against_release
     ), "test option: head_master or release_base must be selected"
+    # `release_base` replaces the tests with their vintage of the release branch point.
+    assert not (TABLE_ENGINE and compare_against_release), "the Iceberg configuration runs in master_head mode only"
 
     # release_version = CHVersion.get_release_version()
     info = Info()
@@ -2838,6 +2971,23 @@ def main():
     # changed_files = info.get_custom_data("changed_files")
     if test_keyword:
         test_files = [file for file in test_files if test_keyword in file]
+    elif TABLE_ENGINE:
+        # Round-robin over the tests the rewrite applies to, also in the nightly run: the placement of
+        # `NIGHTLY_PERF_PLACEMENT` balances the `long` tests, which this configuration does not run.
+        skip_list = test_discovery.iceberg_skip_list("./tests/performance/")
+        changed_files = info.get_changed_files() if info.pr_number > 0 else None
+        changed_tests = test_discovery.changed_iceberg_tests(changed_files or [], "./tests/performance/")
+        if changed_tests and not test_discovery.iceberg_code_changed(changed_files):
+            # The pull request changes only performance tests: check that they run in this configuration.
+            # Every job runs them all, there are few.
+            print(f"Only the added or changed tests: {changed_tests}")
+            test_files = changed_tests
+        else:
+            test_files = [
+                file
+                for file in test_files
+                if test_discovery.test_runs_with_table_engine(f"./tests/performance/{file}", skip_list)
+            ][batch_num::total_batches]
     elif nightly:
         # This job, the last test option: `N/M`, or the name of an extra job (`NIGHTLY_PERF_PLACEMENT`).
         job = test_options[-1]
@@ -2851,8 +3001,9 @@ def main():
             test_files = pinned
     else:
         test_files = test_files[batch_num::total_batches]
-    if nightly:
-        # Every measured host runs the yardstick first.
+    if nightly and not TABLE_ENGINE:
+        # Every measured host runs the yardstick first. Not in the Iceberg configuration: it
+        # creates no table, so it would measure nothing of the configuration.
         test_files.insert(0, "calibration.xml")
     print(f"Job Batch: [{batch_num}/{total_batches}]")
     print(f"Test Files ({len(test_files)}): [{test_files}]")
@@ -2864,7 +3015,8 @@ def main():
     if not nightly:
         run_paths = [path for path in run_paths if not test_discovery.test_is_long(path)]
     s3_paths = [path for path in run_paths if test_discovery.test_requires_s3(path)]
-    needs_s3 = bool(s3_paths)
+    # Every test of `iceberg_s3` writes its tables into the job-local object store.
+    needs_s3 = bool(s3_paths) or TABLE_ENGINE == "iceberg_s3"
     needs_s3_read_dataset = any(map(test_discovery.test_requires_read_dataset, run_paths))
     needs_iceberg_read_dataset = needs_s3_read_dataset or any(
         map(test_discovery.test_requires_local_read_dataset, run_paths)
@@ -3022,12 +3174,14 @@ def main():
         installed_sha = get_binary_commit_sha(f"{perf_left}/clickhouse")
         assert installed_sha == reference_sha, f"installed reference {installed_sha} is not --reference-path {reference_sha}"
 
-    if res and not info.is_local_run:
+    if res and TABLE_ENGINE:
+        # The learned thresholds are those of the MergeTree tables on `MasterCI`.
+        print(f"No historical thresholds for the {TABLE_ENGINE} configuration")
+        Shell.check(f"touch {perf_wd}/historical-thresholds.tsv", verbose=True)
+    elif res and not info.is_local_run:
 
         def prepare_historical_data():
-            cidb = CIDBCluster(
-                url="https://play.clickhouse.com?user=play", user="", pwd=""
-            )
+            cidb = CIDBCluster(url=PLAY_CIDB_URL, user="", pwd="")
             if not cidb.is_ready():
                 print(
                     "WARNING: CIDB is not ready, will proceed without historical thresholds"
@@ -3155,6 +3309,8 @@ def main():
             # Same: the CI Logs cluster must be in the config of both servers.
             create_log_export_configs,
         ]
+        if TABLE_ENGINE:
+            commands.append(write_iceberg_profile_override)
 
         if needs_s3:
             commands.append(prepare_s3)
@@ -3286,10 +3442,12 @@ def main():
                     pr_number=info.pr_number,
                     results_path=perf_wd,
                     long=nightly,
+                    table_engine=TABLE_ENGINE,
                 )
                 cleanup_user_files()
+                writes_s3 = TABLE_ENGINE == "iceberg_s3" or (nightly and f"./tests/performance/{test}" in s3_paths)
                 # After a complete teardown; a failed S3 cleanup is an error record and ends the batch, the report still runs.
-                if clean and nightly and f"./tests/performance/{test}" in s3_paths and not s3_service.clear_write_namespaces():
+                if clean and writes_s3 and not s3_service.clear_write_namespaces():
                     name = test.removesuffix(".xml")
                     with open(f"{perf_wd}/{name}-err.log", "a") as f:
                         f.write(f"{name}: S3 cleanup failed, stopping the batch\n")
@@ -3580,6 +3738,9 @@ def main():
             status = Result.Status.OK
             if "errors" in message.lower():
                 status = Result.Status.FAIL
+            elif TABLE_ENGINE:
+                # The dashboard and its history know the MergeTree tables only, see `get_results_arch`.
+                print(f"{TABLE_ENGINE} configuration: no performance dashboard gate")
             elif nightly:
                 print("Nightly run: no performance dashboard or delta gate")
             elif compare_against_release and message:
@@ -3639,7 +3800,12 @@ def main():
                     )
                 except PerfDashboardUnavailable as e:
                     print(f"ERROR: {e}")
-                    status, suffix = judge_without_dashboard(message, e)
+                    slower = shared = None
+                    if info.pr_number > 0 and parse_slower_count(message.lower()):
+                        slower = read_slower_queries(f"{perf_wd}/report/changed-perf.tsv")
+                        if slower is not None:
+                            shared = shared_slowdowns(slower, get_perf_arch(), info.pr_number)
+                    status, suffix = judge_without_dashboard(message, e, slower, shared)
                     message += suffix
                 except PerfDashboardError as e:
                     print(f"ERROR: {e}")
@@ -3686,7 +3852,7 @@ def main():
             check_sub_results += [
                 sub
                 for sub in build_check_results_children(
-                    tests_result, f"%Performance%{arch}%master_head%"
+                    tests_result, f"%Performance%{arch}%master_head%{TABLE_ENGINE or ''}%"
                 )
                 if sub.name not in dashboard_names
             ]
