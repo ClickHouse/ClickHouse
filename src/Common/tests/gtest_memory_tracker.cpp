@@ -35,6 +35,7 @@ namespace CurrentMetrics
 
 namespace ProfileEvents
 {
+    extern const Event MemoryCredits;
     extern const Event MemoryLargeAllocationTraced;
 }
 
@@ -790,4 +791,30 @@ TEST(MemoryTracker, MemoryCreditsExcludeAllocationPendingInParent)
         std::ignore = CurrentMemoryTracker::free(10 * MB);
         expectNear(hierarchy.process.getMemoryCreditsHeldAmount(), 0);
     });
+}
+
+/// The tracker of a query may be destroyed on a thread of another query, e.g. when `ProcessList::getUserInfo` releases the last
+/// copy of its thread group. Settling what the finished query still holds must not charge its `MemoryCredits` to the other query.
+TEST(MemoryTracker, MemoryCreditsOfDestroyedTrackerAreNotChargedToAnotherQuery)
+{
+    /// Large, so that even a microsecond elapsed between the allocation and the destruction is worth many byte-seconds.
+    static constexpr Int64 held = 1024 * MB;
+
+    MemoryTracker user{&total_memory_tracker, VariableContext::User, false};
+    auto finished_query = std::make_unique<MemoryTracker>(&user, VariableContext::Process, false);
+    runAttachedTo(*finished_query, [](MemoryTracker &) { std::ignore = CurrentMemoryTracker::alloc(held); });
+    expectNear(finished_query->getMemoryCreditsHeldAmount(), held);
+
+    ProfileEvents::Counters other_query_counters(VariableContext::Process);
+    MemoryTracker other_query{&user, VariableContext::Process, false};
+    runAttachedTo(other_query, [&](MemoryTracker &)
+    {
+        DB::CurrentThread::get().performance_counters.setParent(&other_query_counters);
+        finished_query.reset();
+    });
+
+    EXPECT_EQ(other_query_counters[ProfileEvents::MemoryCredits], 0u);
+
+    /// Give back to the server total what the user was relieved of.
+    runAttachedTo(total_memory_tracker, [](MemoryTracker &) { std::ignore = CurrentMemoryTracker::free(held); });
 }

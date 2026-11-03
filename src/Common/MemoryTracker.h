@@ -148,10 +148,20 @@ private:
 
     bool updatePeak(Int64 will_be, bool log_memory_usage) noexcept;
     void logMemoryUsage(Int64 current) const;
-    /// `rollback_of_failed_allocation` is set when undoing the increment made by `allocImpl` for an allocation
-    /// that has failed (memory limit, fault injection, overcommit, or a parent tracker throwing): those bytes
-    /// were never obtained, so they must not be counted as held in `MemoryCredits`.
-    Int64 decrementLocalUsage(Int64 size, bool rollback_of_failed_allocation) noexcept;
+    enum class LocalUsageDecrement : uint8_t
+    {
+        /// Memory is freed by the thread that is attached to this tracker (or to one of its descendants).
+        Free,
+        /// Undoing the increment made by `allocImpl` for an allocation that has failed (memory limit, fault injection,
+        /// overcommit, or a parent tracker throwing): those bytes were never obtained, so they must not be counted as held
+        /// in `MemoryCredits`.
+        RollbackOfFailedAllocation,
+        /// Bytes moved off this tracker without a free (drift settlement, `reparent`, `handOverToServer`). This may run on a
+        /// thread that belongs to another query, so `MemoryCredits` are not charged through `CurrentThread`.
+        Adjustment,
+    };
+
+    Int64 decrementLocalUsage(Int64 size, LocalUsageDecrement kind) noexcept;
 
     /// Whether this tracker accumulates `MemoryCredits`: only the outermost Process-level tracker of a query or
     /// merge does (see `takeMemoryCreditsDelta`).
@@ -171,13 +181,18 @@ private:
     /// `current_amount` is the amount that was held during the interval that just elapsed.
     void updateMemoryCredits(Int64 current_amount);
 
+    /// Keep `MemoryCredits` computed on a thread that may not belong to this tracker until the next update or flush.
+    void addPendingMemoryCredits(UInt64 delta);
+    /// Return `delta` plus the `MemoryCredits` kept by `addPendingMemoryCredits`, which are taken.
+    UInt64 takePendingMemoryCredits(UInt64 delta);
+
     void setOrRaiseProfilerLimit(Int64 value);
 
     bool isSizeOkForSampling(UInt64 size) const;
 
     /// Takes `size` off this tracker alone (saturating at zero, negative gives back), as `free` does before
     /// moving on to the parent. Returns what was actually removed. The total does not change.
-    Int64 adjustLocally(Int64 size);
+    Int64 adjustLocally(Int64 size, LocalUsageDecrement kind = LocalUsageDecrement::Adjustment);
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
     std::atomic_bool drift_expected = false;
@@ -221,6 +236,8 @@ private:
     std::atomic<Int64> memory_credits_held_amount {0};
     /// Sum of the sub-second parts (in byte-microseconds) of the `MemoryCredits` intervals, see `convertMemoryCreditsToByteSeconds`.
     std::atomic<UInt64> memory_credits_remainder {0};
+    /// `MemoryCredits` (byte-seconds) of intervals that ended with an adjustment, see `addPendingMemoryCredits`.
+    std::atomic<UInt64> memory_credits_pending {0};
 
     /// allocImpl(...) and free(...) should not be used directly
     friend struct CurrentMemoryTracker;

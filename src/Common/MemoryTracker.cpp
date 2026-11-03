@@ -405,7 +405,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
     {
         if (memoryTrackerCanThrow(level, true) && enforce_memory_limit)
         {
-            decrementLocalUsage(size, /* rollback_of_failed_allocation = */ true);
+            decrementLocalUsage(size, LocalUsageDecrement::RollbackOfFailedAllocation);
 
             /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
             MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
@@ -520,7 +520,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
 
             if (overcommit_result != OvercommitResult::MEMORY_FREED)
             {
-                decrementLocalUsage(size, /* rollback_of_failed_allocation = */ true);
+                decrementLocalUsage(size, LocalUsageDecrement::RollbackOfFailedAllocation);
 
                 bool overcommit_result_ignore
                     = overcommit_result == OvercommitResult::NONE || overcommit_result == OvercommitResult::DISABLED;
@@ -587,7 +587,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
         }
         catch (...)
         {
-            decrementLocalUsage(size, /* rollback_of_failed_allocation = */ true);
+            decrementLocalUsage(size, LocalUsageDecrement::RollbackOfFailedAllocation);
             throw;
         }
     }
@@ -601,7 +601,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
     return allocation_trace;
 }
 
-Int64 MemoryTracker::decrementLocalUsage(Int64 size, bool rollback_of_failed_allocation) noexcept
+Int64 MemoryTracker::decrementLocalUsage(Int64 size, LocalUsageDecrement kind) noexcept
 {
     Int64 accounted_size = size;
     if (level == VariableContext::Global)
@@ -631,9 +631,20 @@ Int64 MemoryTracker::decrementLocalUsage(Int64 size, bool rollback_of_failed_all
         /// difference have to be added back, as that free has already taken it off.
         if (tracksMemoryCredits())
         {
-            const Int64 held_change = rollback_of_failed_allocation ? size - accounted_size : -accounted_size;
+            const Int64 held_change = kind == LocalUsageDecrement::RollbackOfFailedAllocation ? size - accounted_size : -accounted_size;
             if (held_change)
-                updateMemoryCredits(memory_credits_held_amount.fetch_add(held_change, std::memory_order_relaxed));
+            {
+                const Int64 previous_held = memory_credits_held_amount.fetch_add(held_change, std::memory_order_relaxed);
+                /// An adjustment (drift settlement in the destructor, `reparent`, `handOverToServer`) may run on a thread that
+                /// does not belong to this tracker: e.g. `ProcessList::getUserInfo` keeps a copy of the thread group of another
+                /// query, and releasing it may destroy that query's tracker on the thread of the inspecting query. Charging through
+                /// `CurrentThread` would credit the elapsed interval to the wrong query, so it is kept in this tracker and published
+                /// by its next update or flush instead (and dropped if the tracker is being destroyed: the query has finished).
+                if (kind == LocalUsageDecrement::Adjustment)
+                    addPendingMemoryCredits(takeMemoryCreditsDelta(previous_held));
+                else
+                    updateMemoryCredits(previous_held);
+            }
         }
     }
 
@@ -702,9 +713,9 @@ void MemoryTracker::adjustWithUntrackedMemory(Int64 untracked_memory)
 }
 
 
-Int64 MemoryTracker::adjustLocally(Int64 size)
+Int64 MemoryTracker::adjustLocally(Int64 size, LocalUsageDecrement kind)
 {
-    Int64 removed = decrementLocalUsage(size, /* rollback_of_failed_allocation = */ false);
+    Int64 removed = decrementLocalUsage(size, kind);
     if (removed < 0)
         updatePeak(amount.load(std::memory_order_relaxed), /*log_memory_usage*/ false);
     else if (removed > 0)
@@ -954,7 +965,7 @@ AllocationTrace MemoryTracker::free(Int64 size, double _sample_probability)
     }
 
     /// free should never throw, we can update metric early.
-    Int64 accounted_size = adjustLocally(size);
+    Int64 accounted_size = adjustLocally(size, LocalUsageDecrement::Free);
 
     auto * loaded_next = parent.load(std::memory_order_acquire);
     if (!loaded_next)
@@ -1069,13 +1080,30 @@ UInt64 MemoryTracker::convertMemoryCreditsToByteSeconds(UInt64 bytes, UInt64 mic
 }
 
 
+void MemoryTracker::addPendingMemoryCredits(UInt64 delta)
+{
+    if (delta)
+        memory_credits_pending.fetch_add(delta, std::memory_order_relaxed);
+}
+
+
+UInt64 MemoryTracker::takePendingMemoryCredits(UInt64 delta)
+{
+    /// Load first: adjustments are rare, so the hot path does not write to the cache line.
+    if (!memory_credits_pending.load(std::memory_order_relaxed))
+        return delta;
+    const UInt64 pending = memory_credits_pending.exchange(0, std::memory_order_relaxed);
+    return delta > std::numeric_limits<UInt64>::max() - pending ? std::numeric_limits<UInt64>::max() : delta + pending;
+}
+
+
 void MemoryTracker::updateMemoryCredits(Int64 current_amount)
 {
     /// Called from alloc/free while attached to some thread (possibly under a ProfileEventsScope or a
     /// nested Process group). Walk that counter chain to the outermost Process counters and charge
     /// once there, so the value propagates only to User / Global and never lands in Thread, scope, or
     /// nested Process counters used by query_thread_log / query_views_log / nested async-insert rows.
-    if (const UInt64 delta = takeMemoryCreditsDelta(current_amount))
+    if (const UInt64 delta = takePendingMemoryCredits(takeMemoryCreditsDelta(current_amount)))
         DB::CurrentThread::getProfileEvents().incrementAtOutermostProcess(ProfileEvents::MemoryCredits, static_cast<Int64>(delta));
 }
 
@@ -1090,7 +1118,7 @@ void MemoryTracker::flushMemoryCredits(ProfileEvents::Counters & counters)
     /// charge the passed-in thread-group counters directly instead of the current thread's counters. For the same
     /// reason it does not trace: a `ProfileEvent` row in `system.trace_log` would carry the identity of the
     /// current thread, which may belong to another query or to no query at all.
-    if (const UInt64 delta = takeMemoryCreditsDelta(getMemoryCreditsHeldAmount()))
+    if (const UInt64 delta = takePendingMemoryCredits(takeMemoryCreditsDelta(getMemoryCreditsHeldAmount())))
         counters.incrementNoTrace(ProfileEvents::MemoryCredits, static_cast<Int64>(delta));
 }
 
@@ -1123,6 +1151,7 @@ void MemoryTracker::resetCounters()
 {
     amount.store(0, std::memory_order_relaxed);
     memory_credits_held_amount.store(0, std::memory_order_relaxed);
+    memory_credits_pending.store(0, std::memory_order_relaxed);
     peak.store(0, std::memory_order_relaxed);
     soft_limit.store(0, std::memory_order_relaxed);
     hard_limit.store(0, std::memory_order_relaxed);
