@@ -74,9 +74,8 @@ private:
     struct TargetManifest
     {
         ManifestFileCacheKey manifest_key;
-        /// Live entries of the manifest that are not in the dropped partition. Empty for a fully matched manifest,
-        /// which is simply left out of the new manifest list; a partially matched manifest is rewritten with these.
-        std::vector<ProcessedManifestFileEntryPtr> surviving_entries;
+        /// For a manifest shared with other partitions: its entries outside the dropped partition, which the rewritten manifest keeps.
+        std::vector<ProcessedManifestFileEntryPtr> kept_entries;
     };
 
     struct TargetManifests
@@ -85,15 +84,6 @@ private:
         std::vector<TargetManifest> partially_matched;
 
         bool empty() const { return fully_matched.empty() && partially_matched.empty(); }
-    };
-
-    /// A manifest rewritten without the dropped files, plus what its manifest-list entry needs.
-    struct RewrittenManifest
-    {
-        IcebergPathFromMetadata path;
-        Int64 size = 0;
-        ManifestListEntryCounts counts;
-        ManifestPartitionSummary partition_summary;
     };
 
     struct DropPlan
@@ -116,17 +106,24 @@ private:
         Poco::JSON::Object::Ptr new_snapshot;
     };
 
-    ManifestListWriteResult writeManifestList(
-        SnapshotState & state, const DropPlan & plan, FileNamesGenerator & filename_generator, std::vector<String> & files_for_cleanup);
+    struct RewrittenManifest
+    {
+        Iceberg::IcebergPathFromMetadata path;
+        Int64 size = 0;
+        FileContentType content_type;
+        ManifestListEntryCounts counts;
+        ManifestPartitionSummary partition_summary;
+    };
 
-    /// Writes a copy of a partially matched manifest that lists only `surviving_entries`, as EXISTING entries keeping
-    /// their lineage, so the dropped files disappear while the files of the other partitions stay in the table.
-    RewrittenManifest rewriteManifestWithoutDroppedFiles(
+    RewrittenManifest rewriteManifest(
         const SnapshotState & state,
         const TargetManifest & target,
-        const Poco::JSON::Object::Ptr & new_snapshot,
         FileNamesGenerator & filename_generator,
+        Poco::JSON::Object::Ptr new_snapshot,
         std::vector<String> & files_for_cleanup);
+
+    ManifestListWriteResult writeManifestList(
+        SnapshotState & state, const DropPlan & plan, FileNamesGenerator & filename_generator, std::vector<String> & files_for_cleanup);
 
     bool commitMetadataJSON(
         SnapshotState & state,
