@@ -1,0 +1,23 @@
+intDiv, all type pairs: 18416173372848633021
+modulo, all type pairs: 9356153341103801820
+positiveModulo, all type pairs: 12824463883868302247
+compiled	1
+division by zero: Code 153: Division by zero
+minimal signed number by minus one: Code 153: Division of minimal signed number by minus one
+first failing row wins (minimal, then zero): Code 153: Division of minimal signed number by minus one
+first failing row wins (zero, then minimal): Code 153: Division by zero
+modulo by zero: Code 153: Division by zero
+modulo minimal by minus one: Code 153: Division of minimal signed number by minus one
+positiveModulo by the most negative number: Code 153: Division by the most negative number
+positiveModulo, the most negative number with a non-negative remainder: 19
+NULL dividend, zero divisor: [1]
+NULL divisor: [4]
+NULL dividend, Nullable zero divisor: Code 153: Division by zero
+Nullable zero divisor: Code 153: Division by zero
+LowCardinality(Nullable) divisor: [4]
+guard in if, short-circuit: 10
+guard in if, no short-circuit: Code 153: Division by zero
+guard in and, short-circuit: 2
+PREWHERE division by zero: Code 153: Division by zero
+PREWHERE guarded division: 788
+PREWHERE modulo: 164

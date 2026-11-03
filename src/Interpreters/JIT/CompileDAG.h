@@ -53,6 +53,10 @@ public:
         /// For FUNCTION
         FunctionBasePtr function;
         std::vector<size_t> arguments;
+
+        /// The name of the node in the `ActionsDAG`, for error messages. Not part of the hash: expressions that
+        /// differ only in column names share their compiled code.
+        std::string name;
     };
 
     ValueWithType compile(llvm::IRBuilderBase & builder, const ValuesWithType & input_nodes_values_with_type) const;

@@ -31,7 +31,9 @@
 #include <algorithm>
 
 #if USE_EMBEDDED_COMPILER
+#    include <Interpreters/JIT/JITError.h>
 #    include <llvm/IR/IRBuilder.h>
+#    include <optional>
 #endif
 
 namespace ProfileEvents
@@ -1138,7 +1140,21 @@ llvm::Value * IFunction::compile(llvm::IRBuilderBase & builder, const ValuesWith
         }
 
         auto unwrapped_return_type = getReturnTypeImpl(*denulled_arguments_types);
+
+        /// The interpreter does not execute a function that cannot be executed on default arguments on the rows
+        /// where an argument is NULL (`must_filter_null_rows` in `IExecutableFunction`), so those rows must not fail.
+        llvm::Value * any_null = nullptr;
+        if (!canBeExecutedOnDefaultArguments())
+            for (auto * is_null_value : is_null_values)
+                if (is_null_value)
+                    any_null = any_null ? b.CreateOr(any_null, is_null_value) : is_null_value;
+
+        std::optional<JITErrorMaskScope> null_rows_do_not_fail;
+        if (any_null)
+            null_rows_do_not_fail.emplace(b.CreateNot(any_null));
+
         auto * result = compileImpl(builder, unwrapped_arguments, unwrapped_return_type);
+        null_rows_do_not_fail.reset();
         auto * nullable_structure_type = toNativeType(b, makeNullable(unwrapped_return_type));
         auto * nullable_structure_value = llvm::Constant::getNullValue(nullable_structure_type);
 

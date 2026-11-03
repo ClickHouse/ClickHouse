@@ -55,7 +55,9 @@ SELECT 'absolute value', groupArray(if(number % 2 = 0, toDate32('1900-01-01'), t
 -- The rows above compare compiled against interpreted, so they would all pass if compilation stopped
 -- happening. These two pin which shapes compile. CompiledFunctionExecute counts executions of an
 -- already-compiled node, so it does not care whether the global compiled cache was already warm.
-SELECT groupArray(if(number % 2 = 0, toDate32('1900-01-01'), toDateTime64('1970-01-01', 3))) FROM numbers(2)
+-- The condition has no compilable function, so that nothing but the `if` itself could be compiled
+-- (`number % 2 = 0` would compile on its own, since `modulo` is compilable).
+SELECT groupArray(if(number IN (0, 2), toDate32('1900-01-01'), toDateTime64('1970-01-01', 3))) FROM numbers(2)
     SETTINGS compile_expressions = 1, log_comment = '04930_mixed_unit' FORMAT Null;
 
 SELECT groupArray(if(number % 2 = 0, toDate32('1900-01-01'), toDate('1970-01-01'))) FROM numbers(2)

@@ -1,0 +1,39 @@
+<test>
+    <settings>
+        <min_count_to_compile_expression>0</min_count_to_compile_expression>
+    </settings>
+
+    <create_query>
+        CREATE TABLE jit_division (a Int64, b Int32, c UInt32) Engine = Memory
+    </create_query>
+
+    <fill_query>
+        INSERT INTO jit_division
+        SELECT toInt64(cityHash64(number)), toInt32(number % 1000 + 1), toUInt32(number % 977 + 1)
+        FROM numbers(50000000)
+    </fill_query>
+
+    <substitutions>
+        <substitution>
+            <name>compile</name>
+            <values>
+                <value>0</value>
+                <value>1</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <!-- Division and modulo by a column, fused with the arithmetic around them. -->
+    <query>SELECT sum(intDiv(a, b) * 3 + c) FROM jit_division SETTINGS compile_expressions = {compile}</query>
+    <query>SELECT sum(modulo(a, b) * 3 + c) FROM jit_division SETTINGS compile_expressions = {compile}</query>
+    <query>SELECT sum(positiveModulo(a, b) * 3 + c) FROM jit_division SETTINGS compile_expressions = {compile}</query>
+
+    <!-- By a constant: the interpreter uses libdivide, the compiled code multiplications. -->
+    <query>SELECT sum(intDiv(a, 7) * 3 + c) FROM jit_division SETTINGS compile_expressions = {compile}</query>
+    <query>SELECT sum(modulo(c, 13) * 3 + b) FROM jit_division SETTINGS compile_expressions = {compile}</query>
+
+    <!-- A bucket expression, as in GROUP BY intDiv(x, 100). -->
+    <query>SELECT intDiv(c * 7 + 1, 100) AS bucket, count() FROM jit_division GROUP BY bucket FORMAT Null SETTINGS compile_expressions = {compile}</query>
+
+    <drop_query>DROP TABLE IF EXISTS jit_division</drop_query>
+</test>

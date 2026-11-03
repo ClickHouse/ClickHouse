@@ -112,7 +112,8 @@ static void compileFunction(llvm::Module & module, const IFunctionBase & functio
     llvm::IRBuilder<> b(module.getContext());
     auto * size_type = b.getIntNTy(sizeof(size_t) * 8);
     auto * data_type = buildColumnDataStruct(b);
-    auto * func_type = llvm::FunctionType::get(b.getVoidTy(), { size_type, data_type->getPointerTo() }, /*isVarArg=*/false);
+    auto * error_pointer_type = b.getInt8Ty()->getPointerTo();
+    auto * func_type = llvm::FunctionType::get(b.getVoidTy(), { size_type, data_type->getPointerTo(), error_pointer_type }, /*isVarArg=*/false);
 
     /// Create function in module
 
@@ -120,6 +121,7 @@ static void compileFunction(llvm::Module & module, const IFunctionBase & functio
     auto * args = func->args().begin();
     llvm::Value * rows_count_arg = args++;
     llvm::Value * columns_arg = args++;
+    llvm::Value * error_arg = args++;
 
     /// Initialize ColumnDataPlaceholder llvm representation of ColumnData
 
@@ -148,6 +150,9 @@ static void compileFunction(llvm::Module & module, const IFunctionBase & functio
 
     auto * counter_phi = b.CreatePHI(rows_count_arg->getType(), 2);
     counter_phi->addIncoming(llvm::ConstantInt::get(size_type, 0), entry);
+
+    /// Functions that can fail report their failing rows here while their IR is generated.
+    JITErrorSink error_sink(counter_phi);
 
     /// Initialize column row values
 
@@ -204,6 +209,7 @@ static void compileFunction(llvm::Module & module, const IFunctionBase & functio
     b.CreateCondBr(b.CreateICmpEQ(incremeted_counter, rows_count_arg), end, loop);
 
     b.SetInsertPoint(end);
+    error_sink.writeFirstError(b, error_arg);
     b.CreateRetVoid();
 }
 

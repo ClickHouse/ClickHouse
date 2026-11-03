@@ -91,10 +91,14 @@ class LLVMExecutableFunction : public IExecutableFunction
 public:
 
     explicit LLVMExecutableFunction(
-        const std::string & name_, std::shared_ptr<CompiledFunctionHolder> compiled_function_holder_, size_t fused_functions_count_)
+        const std::string & name_,
+        std::shared_ptr<CompiledFunctionHolder> compiled_function_holder_,
+        size_t fused_functions_count_,
+        std::shared_ptr<const std::vector<std::string>> node_names_)
         : name(name_)
         , compiled_function_holder(compiled_function_holder_)
         , fused_functions_count(fused_functions_count_)
+        , node_names(std::move(node_names_))
     {
     }
 
@@ -126,7 +130,14 @@ public:
             columns[arguments.size()] = getColumnData(result_column.get());
 
             auto jit_compiled_function = compiled_function_holder->compiled_function.compiled_function;
-            callJITFunction(jit_compiled_function, input_rows_count, columns.data());
+            JITError error;
+            callJITFunction(jit_compiled_function, input_rows_count, columns.data(), &error);
+            if (error.code != JITErrorCode::None)
+            {
+                if (error.node >= node_names->size())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "JIT-compiled expression {} reported an error for unknown node {}", name, error.node);
+                throwJITError(error.code, (*node_names)[error.node]);
+            }
             ProfileEvents::increment(ProfileEvents::CompiledFunctionRows, input_rows_count * fused_functions_count);
 
             #if defined(MEMORY_SANITIZER)
@@ -160,6 +171,8 @@ private:
     std::shared_ptr<CompiledFunctionHolder> compiled_function_holder;
     /// The number of functions of the original expression fused into this one, for `CompiledFunctionRows`.
     size_t fused_functions_count;
+    /// The names of the nodes of the expression's `CompileDAG`, for the exception of a failed node.
+    std::shared_ptr<const std::vector<std::string>> node_names;
 };
 
 class LLVMFunction : public IFunctionBase
@@ -170,15 +183,23 @@ public:
         : name(dag_.dump())
         , dag(dag_)
     {
+        /// The compiled code is shared by expressions that differ only in column names, so the name of a failed node
+        /// is taken from this expression's DAG.
+        auto names = std::make_shared<std::vector<std::string>>();
+        names->reserve(dag.getNodesCount());
+
         for (size_t i = 0; i < dag.getNodesCount(); ++i)
         {
             const auto & node = dag[i];
+            names->push_back(node.name);
 
             if (node.type == CompileDAG::CompileType::FUNCTION)
                 nested_functions.emplace_back(node.function);
             else if (node.type == CompileDAG::CompileType::INPUT)
                 argument_types.emplace_back(node.result_type);
         }
+
+        node_names = std::move(names);
     }
 
     void setCompiledFunction(std::shared_ptr<CompiledFunctionHolder> compiled_function_holder_)
@@ -213,7 +234,7 @@ public:
         if (!compiled_function_holder)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Compiled function was not initialized {}", name);
 
-        return std::make_unique<LLVMExecutableFunction>(name, compiled_function_holder, nested_functions.size());
+        return std::make_unique<LLVMExecutableFunction>(name, compiled_function_holder, nested_functions.size(), node_names);
     }
 
     bool isDeterministic() const override
@@ -304,6 +325,8 @@ private:
     CompileDAG dag;
     DataTypes argument_types;
     std::vector<FunctionBasePtr> nested_functions;
+    /// The name of each node of `dag`, shared with the executable functions.
+    std::shared_ptr<const std::vector<std::string>> node_names;
     std::shared_ptr<CompiledFunctionHolder> compiled_function_holder;
 };
 
@@ -500,6 +523,7 @@ static CompileDAG getCompilableDAG(
         compile_node.function = node->function_base;
         compile_node.result_type = node->result_type;
         compile_node.type = CompileDAG::CompileType::FUNCTION;
+        compile_node.name = node->result_name;
 
         for (const auto * child : node->children)
             compile_node.arguments.push_back(visited_node_to_compile_dag_position[child]);

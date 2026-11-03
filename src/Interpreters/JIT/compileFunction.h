@@ -9,6 +9,7 @@
 #    include <Core/SortDescription.h>
 #    include <Functions/IFunction.h>
 #    include <Interpreters/JIT/CHJIT.h>
+#    include <Interpreters/JIT/JITError.h>
 
 
 namespace DB
@@ -33,7 +34,8 @@ ColumnData getColumnData(const IColumn * column, size_t skip_rows = 0);
 using ColumnDataRowsOffset = size_t;
 using ColumnDataRowsSize = size_t;
 
-using JITCompiledFunction = void (*)(ColumnDataRowsSize, ColumnData *);
+/// Writes the first error of the rows into `JITError`, which the caller initializes to no error; see `JITErrorSink`.
+using JITCompiledFunction = void (*)(ColumnDataRowsSize, ColumnData *, JITError *);
 
 /** Wrapper to call JIT-compiled functions.
   * UBSan's `-fsanitize=function` reads a type signature at `function_pointer - 8` before every indirect call.
