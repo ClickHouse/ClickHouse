@@ -52,7 +52,7 @@ TimeSeriesDownsamplingPeriods TimeSeriesDownsamplingPeriods::parse(std::string_v
     if (text.empty())
         return result;
 
-    if (text.find('{') != std::string_view::npos || text.find('}') != std::string_view::npos)
+    if (text.contains('{') || text.contains('}'))
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
             "`samples_downsampling_periods` does not accept a series filter, got '{}'", text);
 
