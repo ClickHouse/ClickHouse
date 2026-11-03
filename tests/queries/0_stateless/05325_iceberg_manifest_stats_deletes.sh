@@ -5,7 +5,7 @@
 # Issue 120440: the manifest row estimate subtracts the deleted rows it can count, matching the delete files to the
 # remaining data files as the read does. The estimate stays imprecise.
 # - T1: a position delete file scoped to one data file is subtracted.
-# - T2: a position delete file covering several data files is not; `IcebergRowEstimateSkippedPositionDeleteFiles` counts it.
+# - T2: a position delete file covering several data files is not.
 # - T3: per partition: no filter, a filter that prunes the partition with the deletes, one that keeps only it.
 # - T4: equality deletes are not subtracted, nor a removed delete entry (Spark fixture, see data_minio/deletes_db/README.md).
 # - T5: a key whose range fits the rows but not the rows left after the deletes gets no counted NDV.
@@ -43,18 +43,6 @@ labels()
     echo "live rows: $(${CLICKHOUSE_CLIENT} ${PINS} --query "SELECT count() FROM ${table} AS t WHERE ${filter}")"
 }
 
-# Prints how many position delete files the estimate skipped for the join with <table>. Usage: skipped <tag> <table>.
-skipped()
-{
-    local query_id="${CLICKHOUSE_DATABASE}_$1"
-    ${CLICKHOUSE_CLIENT} ${PINS} --query_id="${query_id}" --query "
-        EXPLAIN keep_logical_steps = 1 SELECT count() FROM mt AS m JOIN $2 AS t ON m.k = t.k" > /dev/null
-    ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
-    echo "skipped delete files: $(${CLICKHOUSE_CLIENT} --query "
-        SELECT ProfileEvents['IcebergRowEstimateSkippedPositionDeleteFiles'] FROM system.query_log
-        WHERE event_date >= yesterday() AND type = 'QueryFinish' AND current_database = currentDatabase() AND query_id = '${query_id}'")"
-}
-
 # u: 2 data files (k 0-99, 100-199), the DELETE touches only the first, so its delete file is scoped to it.
 # g: the same layout, the DELETE touches both files, so its delete file covers both.
 # p: 1 data file per partition (us: odd k, eu: even k), the DELETE touches only the us file.
@@ -86,10 +74,8 @@ ${CLICKHOUSE_CLIENT} ${PINS} --query "
 
 echo '--- T1: delete file scoped to one data file'
 labels u
-skipped t1 u
 echo '--- T2: delete file covering two data files'
 labels g
-skipped t2 g
 echo '--- T3: no filter'
 labels p
 echo "--- T3: WHERE r = 'eu' prunes the partition with the deletes"

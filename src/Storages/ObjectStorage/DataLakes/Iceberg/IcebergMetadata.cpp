@@ -103,7 +103,6 @@ namespace ProfileEvents
 {
 extern const Event IcebergIteratorInitializationMicroseconds;
 extern const Event IcebergMetadataUpdateMicroseconds;
-extern const Event IcebergRowEstimateSkippedPositionDeleteFiles;
 extern const Event IcebergTrivialCountOptimizationApplied;
 extern const Event IcebergGetTableStateMicroseconds;
 }
@@ -1600,14 +1599,18 @@ std::optional<UInt64> countDeletedRows(
 {
     /// Keyed by the data file both bounds name, so each data file needs one lookup instead of a pass over the deletes.
     std::unordered_map<IcebergPathFromMetadata, std::vector<ProcessedManifestFileEntryPtr>> deletes_by_data_file;
+    size_t skipped_delete_files = 0;
     for (const auto & position_delete : position_deletes)
     {
         const auto & lower = position_delete->parsed_entry->lower_reference_data_file_path;
         if (lower.has_value() && lower == position_delete->parsed_entry->upper_reference_data_file_path)
             deletes_by_data_file[*lower].push_back(position_delete);
         else
-            ProfileEvents::increment(ProfileEvents::IcebergRowEstimateSkippedPositionDeleteFiles);
+            ++skipped_delete_files;
     }
+    if (skipped_delete_files)
+        LOG_DEBUG(
+            log, "The row estimate does not subtract {} position delete files that cover several data files", skipped_delete_files);
 
     UInt64 deleted_rows = 0;
     if (deletes_by_data_file.empty())

@@ -1,11 +1,9 @@
 --- T1: delete file scoped to one data file
 Join: m[1000] ⋈ t[no_stats~180]
 live rows: 180
-skipped delete files: 0
 --- T2: delete file covering two data files
 Join: m[1000] ⋈ t[no_stats~200]
 live rows: 180
-skipped delete files: 1
 --- T3: no filter
 Join: m[1000] ⋈ t[no_stats~180]
 live rows: 180
