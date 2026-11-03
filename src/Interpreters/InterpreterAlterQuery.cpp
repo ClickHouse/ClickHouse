@@ -178,30 +178,9 @@ CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const Sto
     SegmentsHolder segments_holder;
     const auto & settings = context->getSettingsRef();
 
-    /// The `TTL` of a table is evaluated by background merges without the session, so a `DateTime` string literal in it
-    /// would be read in the server time zone, not in `session_timezone`: make its time zone explicit, as for the mutations
-    /// below. The type of a column in the `TTL` is the one that the preceding commands of the statement give it, such as
-    /// `MODIFY COLUMN event DateTime('UTC')`, so their names and types are applied to a copy of the columns as the commands
-    /// are parsed. Only the columns are changed there, as the commands are validated later.
-    const String & ttl_session_timezone = settings[Setting::session_timezone].value;
-    std::optional<ColumnsDescription> columns_for_ttl;
-    if (!ttl_session_timezone.empty() && std::ranges::any_of(alter.command_list->children, [](const auto & child)
-        {
-            const auto * command = child->template as<ASTAlterCommand>();
-            return command->type == ASTAlterCommand::MODIFY_TTL && command->ttl;
-        }))
-    {
-        const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
-        columns_for_ttl.emplace(metadata_snapshot->columns);
-    }
-
     for (const auto & child : alter.command_list->children)
     {
         auto * command_ast = child->as<ASTAlterCommand>();
-
-        if (columns_for_ttl && command_ast->type == ASTAlterCommand::MODIFY_TTL && command_ast->ttl)
-            rewriteDateTimeLiteralsWithTimezone(command_ast->ttl->ptr(), *columns_for_ttl, ttl_session_timezone, context);
-
         if (command_ast->type == ASTAlterCommand::EXECUTE_COMMAND)
         {
             segments_holder.take<ExecuteCommands>().push_back(command_ast);
@@ -216,23 +195,6 @@ CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const Sto
             /// is what the command asked for.
             if (reset_command)
                 alter_commands.push_back(std::move(reset_command.value()));
-
-            /// A command that does not fit the columns, such as `MODIFY COLUMN` of a missing column with `IF EXISTS` or
-            /// `ADD COLUMN` without a type, is left to the validation of the statement.
-            if (columns_for_ttl)
-            {
-                auto & columns = *columns_for_ttl;
-                const auto & name = alter_command->column_name;
-                if (alter_command->type == AlterCommand::ADD_COLUMN && alter_command->data_type && !columns.has(name))
-                    columns.add(ColumnDescription(name, alter_command->data_type));
-                else if (alter_command->type == AlterCommand::MODIFY_COLUMN && alter_command->data_type && columns.has(name))
-                    columns.modify(name, [&](ColumnDescription & column) { column.type = alter_command->data_type; });
-                else if (alter_command->type == AlterCommand::RENAME_COLUMN && columns.has(name) && !columns.has(alter_command->rename_to))
-                    columns.rename(name, alter_command->rename_to);
-                else if (alter_command->type == AlterCommand::DROP_COLUMN && !alter_command->clear && !alter_command->partition && columns.has(name))
-                    columns.remove(name);
-            }
-
             alter_commands.push_back(std::move(alter_command.value()));
         }
         else if (auto partition_command = PartitionCommand::parse(command_ast))
@@ -437,6 +399,41 @@ void checkStatisticsMutationsAreAllowed(const MutationCommands & commands, const
     }
 }
 
+/// The `TTL` of a table is evaluated by background merges without the session, so a `DateTime` string literal in it would be
+/// read in the server time zone, not in `session_timezone`: make its time zone explicit in each `MODIFY TTL`, as for the
+/// mutations. The type of a column in the `TTL` is the one that the preceding commands give it, such as
+/// `MODIFY COLUMN event DateTime('UTC')`, so `metadata` is the metadata committed when the locks of the commands are held, and
+/// the names and types of the preceding commands are applied to a copy of its columns. A command that does not fit the columns,
+/// such as `MODIFY COLUMN` of a missing column with `IF EXISTS` or `ADD COLUMN` without a type, is left to the validation.
+void rewriteDateTimeLiteralsInTTL(AlterCommands & commands, const StorageInMemoryMetadata & metadata, const ContextPtr & context)
+{
+    const String & session_timezone = context->getSettingsRef()[Setting::session_timezone].value;
+    if (session_timezone.empty()
+        || !std::ranges::any_of(commands, [](const AlterCommand & command) { return command.type == AlterCommand::MODIFY_TTL && command.ttl; }))
+        return;
+
+    ColumnsDescription columns = metadata.columns;
+    for (auto & command : commands)
+    {
+        const auto & name = command.column_name;
+        if (command.type == AlterCommand::MODIFY_TTL && command.ttl)
+        {
+            /// The command keeps its own copy of the query of the command too.
+            rewriteDateTimeLiteralsWithTimezone(command.ttl, columns, session_timezone, context);
+            if (auto * command_ast = command.ast ? command.ast->as<ASTAlterCommand>() : nullptr; command_ast && command_ast->ttl)
+                rewriteDateTimeLiteralsWithTimezone(command_ast->ttl->ptr(), columns, session_timezone, context);
+        }
+        else if (command.type == AlterCommand::ADD_COLUMN && command.data_type && !columns.has(name))
+            columns.add(ColumnDescription(name, command.data_type));
+        else if (command.type == AlterCommand::MODIFY_COLUMN && command.data_type && columns.has(name))
+            columns.modify(name, [&](ColumnDescription & column) { column.type = command.data_type; });
+        else if (command.type == AlterCommand::RENAME_COLUMN && columns.has(name) && !columns.has(command.rename_to))
+            columns.rename(name, command.rename_to);
+        else if (command.type == AlterCommand::DROP_COLUMN && !command.clear && !command.partition && columns.has(name))
+            columns.remove(name);
+    }
+}
+
 BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table, const ContextPtr & context, bool no_ddl_lock)
 {
     BlockIO res;
@@ -463,6 +460,7 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
                 cache->clear();
             }
             auto metadata_snapshot = table->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
+            rewriteDateTimeLiteralsInTTL(*alter_commands, *metadata_snapshot, context);
             alter_commands->validate(table, context);
 
             bool share_nested = true;
