@@ -676,6 +676,7 @@ do
     test_name=$(basename "$test_file" "-raw.tsv")
     sed -n "s/^query\t/$test_name\t/p" < "$test_file" >> "analyze/query-runs.tsv"
     sed -n "s/^profile\t/$test_name\t/p" < "$test_file" >> "analyze/query-profiles.tsv"
+    sed -n "s/^profile-timeout\t/$test_name\t/p" < "$test_file" >> "analyze/profile-timeouts.tsv"
     sed -n "s/^client-time\t/$test_name\t/p" < "$test_file" >> "analyze/client-times.tsv"
     sed -n "s/^report-threshold\t/$test_name\t/p" < "$test_file" >> "analyze/report-thresholds.tsv"
     sed -n "s/^skipped\t/$test_name\t/p" < "$test_file" >> "analyze/skipped-tests.tsv"
@@ -1416,24 +1417,31 @@ create view profile_run_counters as
         'test text, query_index int, query_id text, version UInt8, time float') query_profiles
     join (
         -- All statements of a multi-statement item share the `query_id` of the
-        -- run. A run that timed out still has a `profile` row and may have
-        -- finished some of its statements, so the whole run is dropped if any
-        -- of its statements failed: counting a part of the work as a run would
-        -- skew the ratios.
+        -- run, so the counters are summed per run.
         select version, query_id,
-            sumIf(ProfileEvents['PerfInstructions'], type = 'QueryFinish') instructions,
-            sumIf(ProfileEvents['PerfCPUCycles'], type = 'QueryFinish') cycles
+            sum(ProfileEvents['PerfInstructions']) instructions,
+            sum(ProfileEvents['PerfCPUCycles']) cycles
         from (
-            select 0 version, query_id, type, ProfileEvents
+            select 0 version, query_id, ProfileEvents
                 from file('left-query-log.tsv', TSVWithNamesAndTypes)
+                where type = 'QueryFinish'
             union all
-            select 1 version, query_id, type, ProfileEvents
+            select 1 version, query_id, ProfileEvents
                 from file('right-query-log.tsv', TSVWithNamesAndTypes)
+                where type = 'QueryFinish'
         )
         where query_id like '%.profile%'
         group by version, query_id
-        having countIf(type in ('ExceptionBeforeStart', 'ExceptionWhileProcessing')) = 0
     ) profile_query_log using (version, query_id)
+    -- A run that timed out still has a `profile` row and may have finished
+    -- some of its statements, so it is dropped as a whole: counting a part of
+    -- the work as a run would skew the ratios. The runner reports such runs
+    -- itself, because a statement that times out while it is planned leaves
+    -- an `ExceptionBeforeStart` record, which the query log export skips.
+    where (version, query_id) not in (
+        select version, query_id
+        from file('analyze/profile-timeouts.tsv', TSV,
+            'test text, query_index int, query_id text, version UInt8, time float'))
     group by test, query_index, version
     ;
 
