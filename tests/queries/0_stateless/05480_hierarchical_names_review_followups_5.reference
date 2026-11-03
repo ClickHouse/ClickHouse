@@ -1,0 +1,19 @@
+--- joinGet of a table of a database with dots is a dependency of the view
+joined
+1
+Code: 630
+--- a compound right argument of IN that may be a subcolumn is not bound to a table
+1
+1
+--- the same name without such a column is the table
+1
+1
+--- the current database is applied once to an unqualified name
+0
+Code: 60
+1
+--- a table name of several parts does not take precedence over an alias, also in the compatibility mode
+2
+--- the tables of a standalone mutation and of CREATE TABLE AS SELECT are bound before ON CLUSTER
+2
+5
