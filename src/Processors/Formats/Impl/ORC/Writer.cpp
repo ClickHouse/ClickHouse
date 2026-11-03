@@ -874,7 +874,7 @@ public:
                 if (null_map && null_map[i])
                     continue;
                 size_t row = offset + i;
-                add_value(std::string_view(chars + offsets[row - 1], offsets[row] - offsets[row - 1]));
+                add_value(std::string_view(chars + offsets[static_cast<ssize_t>(row) - 1], offsets[row] - offsets[static_cast<ssize_t>(row) - 1]));
             }
         }
         else

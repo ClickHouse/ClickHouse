@@ -40,7 +40,7 @@ public:
     bool nextField(UInt32 & field_number, WireType & wire_type);
 
     UInt64 readVarint();
-    Int64 readSignedVarint() { UInt64 v = readVarint(); return static_cast<Int64>((v >> 1) ^ (~(v & 1) + 1)); }
+    Int64 readSignedVarint() { UInt64 v = readVarint(); return static_cast<Int64>(v >> 1) ^ -static_cast<Int64>(v & 1); }
     UInt64 readFixed64();
     UInt32 readFixed32();
     double readDouble();

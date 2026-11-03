@@ -21,7 +21,7 @@ namespace
 
 inline Int64 unZigZag(UInt64 value)
 {
-    return static_cast<Int64>((value >> 1) ^ (~(value & 1) + 1));
+    return static_cast<Int64>(value >> 1) ^ -static_cast<Int64>(value & 1);
 }
 
 inline UInt64 zigZag(Int64 value)
