@@ -459,6 +459,9 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     {
         /// A filter above the array join can read its output, which the statistics of the input do not describe.
         auto stats = estimateReadRowsCount(*node.children.front(), nullptr, for_runtime_filter_transport);
+        /// An array join can add rows and drops the rows with empty arrays, so neither bound of the input holds.
+        stats.estimated_rows_upper.reset();
+        stats.estimated_rows_is_lower_bound = false;
         if (stats.estimated_rows && *stats.estimated_rows != 0)
         {
             /// Such a filter, like the element filter of the step, leaves the row count unknown unless the input is empty.

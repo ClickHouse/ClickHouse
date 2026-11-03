@@ -11,6 +11,8 @@ row policy right side keeps orientation	1
 one-row leaf preserves the composite bound	1
 degenerate-predicate leaf keeps orientation	1
 arrayJoin-expanded side keeps orientation	1
+ARRAY JOIN side keeps orientation	1
+ARRAY JOIN of empty arrays keeps orientation	1
 single-side ON condition keeps orientation	1
 single-side condition in an OR keeps orientation	1
 nested sub-join keeps orientation	1

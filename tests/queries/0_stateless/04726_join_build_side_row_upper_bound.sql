@@ -229,6 +229,30 @@ SELECT 'arrayJoin-expanded side keeps orientation',
     WHERE aj_l_04726.tag = 'keep'
 ) WHERE explain ILIKE '%Join:%';
 
+-- An `ARRAY JOIN` adds rows and drops the rows with empty arrays, so neither bound of its input holds:
+-- the 1-row read of `aj_l_04726` expands to 1000 rows, and the 10 rows of `aje_04726` to none. The
+-- first condition keeps each assertion non-vacuous if the array join step stops appearing.
+CREATE TABLE aje_04726 (id UInt64, arr Array(UInt64)) ENGINE = MergeTree ORDER BY id
+    SETTINGS auto_statistics_types = '';
+INSERT INTO aje_04726 SELECT number, [] FROM numbers(10);
+
+SELECT 'ARRAY JOIN side keeps orientation',
+        countIf(explain ILIKE '%ArrayJoin%') > 0
+    AND countIf(explain ILIKE '%Join: ax[%') > 0 FROM (
+    EXPLAIN actions = 1, keep_logical_steps = 1
+    SELECT count() FROM (SELECT x AS id FROM aj_l_04726 ARRAY JOIN arr AS x WHERE tag = 'keep') AS ax
+    JOIN aj_r_04726 ON ax.id = aj_r_04726.id
+);
+
+SELECT 'ARRAY JOIN of empty arrays keeps orientation',
+        countIf(explain ILIKE '%ArrayJoin%') > 0
+    AND countIf(explain ILIKE '%Join: d[%') > 0 FROM (
+    EXPLAIN actions = 1, keep_logical_steps = 1
+    SELECT count() FROM (SELECT id FROM dim_04726 WHERE nation_id = 5) AS d
+    JOIN (SELECT x AS id FROM aje_04726 ARRAY JOIN arr AS x) AS ae ON d.id = ae.id
+);
+
+DROP TABLE aje_04726;
 DROP TABLE aj_l_04726;
 DROP TABLE aj_r_04726;
 
