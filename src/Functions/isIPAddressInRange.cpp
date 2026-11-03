@@ -219,7 +219,7 @@ namespace DB
 
         String getSignatureString() const override
         {
-            return "(MaybeNullable(String | IPv4 | IPv6), String) -> UInt8";
+            return "(MaybeNullable(String | IPv4 | IPv6 | IsNothing), String) -> UInt8";
         }
 
         size_t getNumberOfArguments() const override { return 2; }
@@ -314,6 +314,8 @@ namespace DB
         static ColumnPtr executeImpl(const IColumn & col_addr, const T & cidr, size_t input_rows_count)
         {
             EXEC_IMPL(col_addr, executeImpl, cidr, input_rows_count)
+            else if (col_addr.onlyNull()) /// `Nullable(Nothing)`, e.g. `materialize(NULL)`.
+                return ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));
             else if (const auto * nullable_column = dynamic_cast<const ColumnNullable *>(&col_addr))
             {
                 EXEC_IMPL(nullable_column->getNestedColumn(), executeImpl, nullable_column, cidr, input_rows_count)

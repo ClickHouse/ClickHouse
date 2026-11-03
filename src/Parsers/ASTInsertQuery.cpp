@@ -121,7 +121,10 @@ void ASTInsertQuery::readJSON(const Poco::JSON::Object & json)
     /// so a non-`ASTFunction` from malformed `clickhouse_json` must be rejected here.
     child = r.readScreenedChildOfType<ASTFunction>("table_function");
     if (child)
+    {
+        child->as<ASTFunction &>().setKind(ASTFunction::Kind::TABLE_FUNCTION);
         table_function = child;
+    }
 
     child = r.readExpressionChild("partition_by");
     if (child)
