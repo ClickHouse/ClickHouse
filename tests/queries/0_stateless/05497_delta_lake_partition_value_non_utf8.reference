@@ -1,0 +1,8 @@
+-- string partition column: the INSERT with a non-UTF-8 value is rejected, the table stays readable
+INCORRECT_DATA
+log versions: 2
+data files: 1
+1	ok
+-- binary partition column: a non-UTF-8 value is rejected too
+INCORRECT_DATA
+log versions: 1
