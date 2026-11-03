@@ -39,7 +39,7 @@ ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_constraint_graph_temporary VALUES (5, 4), (10, 1);
 
 SELECT count() FROM t_constraint_graph_temporary WHERE a > b
-SETTINGS optimize_using_constraints = 1, convert_query_to_cnf = 1, optimize_substitute_columns = 1, optimize_append_index = 1;
+SETTINGS optimize_using_constraints = 1, convert_query_to_cnf = 1, optimize_substitute_columns = 1, optimize_append_index = 1, enable_parallel_replicas = 0;
 
 -- A comparison that is not negated still reaches the graph and is still used to answer the query
 -- without reading the table.

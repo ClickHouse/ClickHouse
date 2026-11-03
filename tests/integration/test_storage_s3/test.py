@@ -3679,7 +3679,6 @@ def test_query_condition_cache(started_cluster):
     select_query = f"SELECT * FROM {table_name} WHERE id < 100 ORDER BY id"
     settings = {
         "use_query_condition_cache": 1,
-        "allow_experimental_analyzer": 1,
     }
 
     query_id_first = f"qcc_s3_first_{generate_random_string()}"
@@ -3783,7 +3782,6 @@ def test_query_condition_cache_overwrite_invalidation(started_cluster):
     select_query = f"SELECT DISTINCT val FROM {table_name} WHERE id < 100"
     settings = {
         "use_query_condition_cache": 1,
-        "allow_experimental_analyzer": 1,
     }
 
     def profile_event(query_id, event):

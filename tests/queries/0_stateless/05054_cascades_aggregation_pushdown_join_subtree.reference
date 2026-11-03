@@ -3,48 +3,50 @@ Expression (Project names)
   Expression ((Before ORDER BY + Projection))
     Sorting
       Aggregating
-        GatherExchange
-          JoinLogical (Broadcast HashJoin )
-            Aggregating
-              JoinLogical (Broadcast HashJoin )
-                Expression ((Apply runtime join filter + Change column names to column identifiers))
-                  ReadFromMergeTree (ParallelRead default.t_corr_left)
-                BuildRuntimeFilter (Build runtime join filter on __table2.k)
-                  Expression (Change column names to column identifiers)
-                    ReadFromMergeTree (ReplicatedRead default.t_corr_right_multi)
+        JoinLogical (Local HashJoin  swapped)
+          BuildRuntimeFilter (Build runtime join filter on __table2.k)
             Expression (Change column names to column identifiers)
-              ReadFromMergeTree (ReplicatedRead default.t_corr_right_uniq)
+              ReadFromMergeTree (default.t_corr_right_multi)
+          GatherExchange
+            Aggregating
+              Expression
+                JoinLogical (Broadcast HashJoin )
+                  Expression ((Apply runtime join filter + Change column names to column identifiers))
+                    ReadFromMergeTree (ParallelRead default.t_corr_left)
+                  Filter ((Apply runtime join filter + Change column names to column identifiers))
+                    ReadFromMergeTree (ReplicatedRead default.t_corr_right_uniq)
 -- canary 2: variant B onto the subtree cascades into a second variant-A pushdown (case 2\'s query)
 Expression (Project names)
   Expression ((Before ORDER BY + Projection))
     Sorting
-      JoinLogical (Local HashJoin  swapped)
-        BuildRuntimeFilter (Build runtime join filter on __table3.k)
-          Expression (Change column names to column identifiers)
-            ReadFromMergeTree (default.t_corr_right_uniq)
-        Aggregating
-          JoinLogical (Local HashJoin  swapped)
-            Expression (Apply runtime join filter)
-              BuildRuntimeFilter (Build runtime join filter on __table2.k)
-                Filter ((Apply runtime join filter + Change column names to column identifiers))
-                  ReadFromMergeTree (default.t_corr_right_multi)
-            GatherExchange
-              Aggregating
-                Expression (((Apply runtime join filter + Apply runtime join filter) + Change column names to column identifiers))
-                  ReadFromMergeTree (ParallelRead default.t_corr_left)
+      Aggregating
+        JoinLogical (Local HashJoin  swapped)
+          BuildRuntimeFilter (Build runtime join filter on __table2.k)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (default.t_corr_right_multi)
+          GatherExchange
+            Aggregating
+              Expression
+                JoinLogical (Broadcast HashJoin )
+                  Expression (((Apply runtime join filter + Apply runtime join filter) + Change column names to column identifiers))
+                    ReadFromMergeTree (ParallelRead default.t_corr_left)
+                  Expression (Apply runtime join filter)
+                    BuildRuntimeFilter (Build runtime join filter on __table3.k)
+                      Filter ((Apply runtime join filter + Change column names to column identifiers))
+                        ReadFromMergeTree (ReplicatedRead default.t_corr_right_uniq)
 -- canary 3: repeated variant B through two LEFT SEMI joins (case 3\'s query)
 Expression (Project names)
   Expression ((Before ORDER BY + Projection))
     Sorting
       JoinLogical (Local HashJoin  swapped)
-        BuildRuntimeFilter (Build runtime join filter on __table3.k)
+        BuildRuntimeFilter (Build runtime join filter on __table2.k)
           Expression (Change column names to column identifiers)
-            ReadFromMergeTree (default.t_corr_right_multi)
+            ReadFromMergeTree (default.t_corr_right_uniq)
         JoinLogical (Local HashJoin  swapped)
           Expression (Apply runtime join filter)
-            BuildRuntimeFilter (Build runtime join filter on __table2.k)
+            BuildRuntimeFilter (Build runtime join filter on __table3.k)
               Filter ((Apply runtime join filter + Change column names to column identifiers))
-                ReadFromMergeTree (default.t_corr_right_uniq)
+                ReadFromMergeTree (default.t_corr_right_multi)
           MergingAggregated
             GatherExchange
               Aggregating

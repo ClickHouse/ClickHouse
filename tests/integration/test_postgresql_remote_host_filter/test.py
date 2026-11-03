@@ -249,6 +249,40 @@ def test_user_attach_respects_remote_host_filter(started_cluster):
     assert "UNACCEPTABLE_URL" in error
 
 
+def test_user_attach_wrapped_in_parallel_with_respects_remote_host_filter(started_cluster):
+    # `PARALLEL WITH` runs each of its statements as an internal query, and the full
+    # `ATTACH DATABASE ... ENGINE = ...` form runs in `ATTACH` mode -- the same pair the server's
+    # own replay of stored metadata shows. The replay exemption is keyed off the loader flag
+    # (`is_metadata_replay`), not off `internal`, so a user statement wrapped this way must still
+    # be rejected by `remote_url_allow_hosts` for both engines.
+    node.query("DROP DATABASE IF EXISTS pg_db_parallel_attach")
+    node.query("DROP DATABASE IF EXISTS pg_db_parallel_other")
+    error = node.query_and_get_error(
+        f"""
+        CREATE DATABASE pg_db_parallel_other
+        PARALLEL WITH
+        ATTACH DATABASE pg_db_parallel_attach ENGINE = PostgreSQL('{BLOCKED_HOST}:5432', 'postgres', 'postgres', '{pg_pass}')
+        """
+    )
+    assert "UNACCEPTABLE_URL" in error
+    assert node.query("SELECT count() FROM system.databases WHERE name = 'pg_db_parallel_attach'").strip() == "0"
+    node.query("DROP DATABASE IF EXISTS pg_db_parallel_other")
+
+    node.query("DROP DATABASE IF EXISTS mpg_parallel_attach")
+    node.query("DROP DATABASE IF EXISTS mpg_parallel_other")
+    error = node.query_and_get_error(
+        f"""
+        CREATE DATABASE mpg_parallel_other
+        PARALLEL WITH
+        ATTACH DATABASE mpg_parallel_attach UUID '00001111-2222-3333-4444-555566667779' ENGINE = MaterializedPostgreSQL('{BLOCKED_HOST}:5432', 'postgres', 'postgres', '{pg_pass}')
+        """,
+        settings={"allow_experimental_database_materialized_postgresql": 1},
+    )
+    assert "UNACCEPTABLE_URL" in error
+    assert node.query("SELECT count() FROM system.databases WHERE name = 'mpg_parallel_attach'").strip() == "0"
+    node.query("DROP DATABASE IF EXISTS mpg_parallel_other")
+
+
 def test_user_attach_table_respects_multi_address_validation(started_cluster):
     # A user `ATTACH TABLE` with a full table definition is a fresh, user-supplied definition,
     # not a metadata replay -- exempting it from the multi-address `addresses_expr` rejection
