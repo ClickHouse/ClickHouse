@@ -493,6 +493,13 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
             /// parallelize the tasks it just enqueued. Publish our spawn_count into the shared
             /// `pending_demand` counter; the thread that actually holds `spawn_mutex` drains it
             /// so no demand is lost when multiple threads push concurrently.
+            /// Even if this step pushed nothing, tasks may be sitting in the global queue with no thread to
+            /// run them (e.g. sources queued at start while every thread cycles through its local task chain).
+            /// CPU slots granted to this allocation after other queries released theirs are only consumed by
+            /// `spawnThreads()`, so without this retry they would stay granted-but-unused until the query ends.
+            if (pool && spawn_count == 0)
+                spawn_count = tasks.getUncoveredHint();
+
             if (pool && spawn_count > 0)
                 pending_demand.fetch_add(spawn_count, std::memory_order_relaxed);
 

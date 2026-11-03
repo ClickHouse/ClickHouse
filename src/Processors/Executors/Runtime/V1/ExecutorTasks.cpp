@@ -29,6 +29,16 @@ void ExecutorTasks::notifySpillRequested()
         executor_contexts[threads_queue.popAny()]->wakeUp();
 }
 
+void ExecutorTasks::updateUncoveredHint()
+{
+    /// Must be called under `mutex`.
+    const size_t queued = task_queue.size() + fast_task_queue.size();
+    const size_t idle = threads_queue.size();
+    const size_t uncovered = queued > idle ? queued - idle : 0;
+    const size_t headroom = num_threads > total_slots ? num_threads - total_slots : 0;
+    uncovered_hint.store(std::min(uncovered, headroom), std::memory_order_relaxed);
+}
+
 void ExecutorTasks::pushSpillTasks(Queue & queue, size_t thread_number)
 {
     std::unique_lock lock(mutex);
@@ -38,6 +48,7 @@ void ExecutorTasks::pushSpillTasks(Queue & queue, size_t thread_number)
         queue.pop();
         has_fast_tasks = true;
     }
+    updateUncoveredHint();
     tryWakeUpAnyOtherThreadWithTasks(*executor_contexts[thread_number], lock);
 }
 
@@ -149,6 +160,7 @@ void ExecutorTasks::tryGetTask(ExecutionThreadContext & context)
         /// Task found.
         if (context.hasTask())
         {
+            updateUncoveredHint();
             /// We have to wake up at least one thread if there are pending tasks.
             /// That thread will wake up other threads during its `tryGetTask()` call if any.
             tryWakeUpAnyOtherThreadWithTasks(context, lock);
@@ -184,6 +196,7 @@ void ExecutorTasks::tryGetTask(ExecutionThreadContext & context)
 
         /// Enqueue thread into stack of waiting threads.
         threads_queue.push(context.thread_number);
+        updateUncoveredHint();
     }
 
     context.wait(finished);
@@ -234,6 +247,7 @@ size_t ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, ExecutionThr
         const size_t idle_before = threads_queue.size();
         const size_t total_slots_now = total_slots;
         const size_t num_threads_now = num_threads;  // const after init but read for clarity
+        updateUncoveredHint();
 
         /// Wake up at least one thread that will wake up other threads if required
         tryWakeUpAnyOtherThreadWithTasks(context, lock);
@@ -311,6 +325,7 @@ size_t ExecutorTasks::fill(Queue & queue, [[maybe_unused]] Queue & async_queue)
         if (next_thread >= use_threads)
             next_thread = 0;
     }
+    updateUncoveredHint();
     return pushed;
 }
 
@@ -322,6 +337,7 @@ size_t ExecutorTasks::upscale(size_t slot_id)
     ++slot_count[slot_id];
     ++total_slots;
     use_threads = std::max(use_threads, slot_id + 1);
+    updateUncoveredHint();
 
     // Too many idle threads can already cover incoming work — don't spawn more.
     if (threads_queue.size() > TOO_MANY_IDLE_THRESHOLD)
@@ -357,6 +373,7 @@ void ExecutorTasks::preempt(size_t slot_id)
 {
     std::unique_lock lock(mutex);
     --total_slots;
+    updateUncoveredHint();
 
     /// We should make sure that preempted thread has no local task inside context.
     /// It is allowed to have tasks in `task_queue` or `fast_task_queue` because they can be stealed by other threads.
@@ -364,6 +381,7 @@ void ExecutorTasks::preempt(size_t slot_id)
     if (auto * task = context->popTask())
     {
         task_queue.push(task, slot_id);
+        updateUncoveredHint();
         /// Wake up at least one thread to avoid deadlocks (all other threads maybe idle)
         tryWakeUpAnyOtherThreadWithTasks(*context, lock); // this releases the lock if it wakes up a thread
     }
@@ -380,6 +398,7 @@ void ExecutorTasks::resume(size_t)
 {
     std::lock_guard lock(mutex);
     ++total_slots;
+    updateUncoveredHint();
 }
 
 void ExecutorTasks::processAsyncTasks()
@@ -404,6 +423,7 @@ void ExecutorTasks::processAsyncTasks()
             if (fast_task_queue.empty())
                 has_fast_tasks = true;
             fast_task_queue.push(processor, task.thread_num);
+            updateUncoveredHint();
 
             /// Wake up a thread to process the task, preferably thread that should process this task
             if (!threads_queue.empty() && !finished)

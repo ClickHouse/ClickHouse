@@ -70,6 +70,13 @@ class ExecutorTasks : public ISpillRequestListener
     /// A set of currently waiting threads.
     ThreadsQueue threads_queue;
 
+    /// Lock-free hint for `PipelineExecutor`: how many queued tasks could run concurrently if more
+    /// threads existed, i.e. min(queued tasks - idle threads, num_threads - total_slots).
+    /// Updated under `mutex`, read without it. Used to retry CPU slot acquisition on steps that
+    /// push nothing themselves (otherwise slots granted after other queries release are never used).
+    std::atomic<size_t> uncovered_hint = 0;
+    void updateUncoveredHint();
+
     /// CPU slots for each thread.
     SlotAllocationPtr cpu_slots;
 
@@ -151,6 +158,9 @@ public:
     String dump();
 
     size_t getNumThreads() const { return num_threads; }
+
+    /// See `uncovered_hint`.
+    size_t getUncoveredHint() const { return uncovered_hint.load(std::memory_order_relaxed); }
 };
 
 }
