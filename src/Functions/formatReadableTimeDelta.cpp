@@ -269,7 +269,11 @@ public:
         if (has_output)
         {
             /// Need delimiter between values. The last delimiter is " and ", all previous are comma.
-            if (is_minimum_unit || (whole_part < 1 && fractional_str.substr(0, (4 - min_unit) * 3) == std::string((4 - min_unit) * 3, '0')))
+            /// No sub-second digits are shown when `min_unit` is above seconds, and `4 - min_unit` would be negative.
+            if (is_minimum_unit
+                || (whole_part < 1
+                    && (min_unit >= Seconds
+                        || fractional_str.substr(0, (4 - min_unit) * 3) == std::string((4 - min_unit) * 3, '0'))))
                 writeCString(" and ", buf_to);
             else
                 writeCString(", ", buf_to);
