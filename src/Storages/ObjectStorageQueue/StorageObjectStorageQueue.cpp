@@ -851,6 +851,17 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
         after_processing_settings_copy = after_processing_settings;
         add_deduplication_info = deduplication_v2;
     }
+    /// An `ALTER` publishes the action in Keeper metadata before its destination settings, so a batch can capture the new
+    /// `MOVE` together with the old, empty destination. Such a batch would read and insert its files and then fail to move
+    /// them, so it is not started; the next poll sees both.
+    if (after_processing == ObjectStorageQueueAction::MOVE
+        && after_processing_settings_copy.after_processing_move_uri.empty()
+        && after_processing_settings_copy.after_processing_move_prefix.empty()
+        && after_processing_settings_copy.after_processing_move_container.empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The destination of `after_processing = 'move'` is not set yet, the settings are being altered. Will retry");
+
     if (max_processed_files_override)
         commit_settings_copy.max_processed_files_before_commit = max_processed_files_override;
     /// Mirrors `is_deduplication_v2` computed in `streamToViews`.
