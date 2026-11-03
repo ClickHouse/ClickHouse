@@ -842,6 +842,7 @@ void StorageObjectStorageSource::lazyInitialize()
     if (reader)
     {
         ++total_files_read;
+        addTotalRowsApproxFromMetadata(*reader.getObjectInfo());
         reader_future = createReaderAsync();
     }
     initialized = true;
@@ -1231,6 +1232,7 @@ Chunk StorageObjectStorageSource::generate()
             break;
 
         ++total_files_read;
+        addTotalRowsApproxFromMetadata(*reader.getObjectInfo());
 
         /// Even if task is finished the thread may be not freed in pool.
         /// So wait until it will be freed before scheduling a new task.
@@ -1241,12 +1243,30 @@ Chunk StorageObjectStorageSource::generate()
     return {};
 }
 
+void StorageObjectStorageSource::addTotalRowsApproxFromMetadata(const ObjectInfo & object_info)
+{
+    /// A file split into buckets is read by several readers, so its number of rows would be counted
+    /// once per bucket. Buckets which only leave out the row groups the query condition cache proved
+    /// to have no match are read by a single reader. A lazily materialized read only reads the rows
+    /// already counted by the main read.
+    if (object_info.file_bucket_info && !object_info.file_bucket_info_from_query_condition_cache)
+        return;
+    if (object_info.rows_to_read)
+        return;
+
+    if (auto num_rows = object_info.getNumRowsHint())
+        addTotalRowsApprox(*num_rows);
+}
+
 void StorageObjectStorageSource::addNumRowsToCache(const ObjectInfo & object_info, size_t num_rows)
 {
     /// The cache key does not include the compression method. Under an explicit `compression_method` the
     /// same object can decode differently (or fail) through another definition with a different codec,
     /// so only row counts read with the codec derived from the path are cached.
     if (!isCompressionMethodHintAuto(configuration->compression_method))
+        return;
+
+    if (!canUseNumRowsFromSchemaCache(format_settings, read_context))
         return;
 
     const auto cache_key = getKeyForSchemaCache(
@@ -1257,7 +1277,7 @@ void StorageObjectStorageSource::addNumRowsToCache(const ObjectInfo & object_inf
     schema_cache.addNumRows(cache_key, num_rows);
 }
 
-StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReader()
+StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReader(bool prefetch_input_format)
 {
     return createReader(
         0,
@@ -1275,7 +1295,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         parser_shared_resources,
         format_filter_info,
         need_only_count,
-        top_k_query_condition_cache_key);
+        top_k_query_condition_cache_key,
+        prefetch_input_format);
 }
 
 StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReader(
@@ -1294,7 +1315,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     FormatParserSharedResourcesPtr parser_shared_resources,
     FormatFilterInfoPtr format_filter_info,
     bool need_only_count,
-    ObjectStorageTopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key)
+    ObjectStorageTopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key,
+    bool prefetch_input_format)
 {
     ObjectInfoPtr object_info;
     bool use_top_k_query_condition_cache_key = false;
@@ -1506,6 +1528,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         /// explicit `compression_method` (including a misspelled one on a table loaded by `ATTACH`, where it is
         /// not rejected) always reads the object as the actual read would.
         if (!isCompressionMethodHintAuto(configuration->compression_method))
+            return std::nullopt;
+
+        if (!canUseNumRowsFromSchemaCache(format_settings, context_))
             return std::nullopt;
 
         const auto cache_key = getKeyForSchemaCache(
@@ -1909,6 +1934,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         if (need_only_count)
             input_format->needOnlyCount();
 
+        if (prefetch_input_format)
+            input_format->prefetch();
+
         builder.init(Pipe(input_format));
 
         if (!identity_partition_columns.empty())
@@ -2102,7 +2130,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
 std::future<StorageObjectStorageSource::ReaderHolder> StorageObjectStorageSource::createReaderAsync()
 {
-    return create_reader_scheduler([=, this] { return createReader(); }, Priority{});
+    return create_reader_scheduler([=, this] { return createReader(/* prefetch_input_format */ true); }, Priority{});
 }
 
 ObjectMetadata getObjectMetadataForRead(const IObjectStorage & object_storage, const RelativePathWithMetadata & object, bool with_tags)
