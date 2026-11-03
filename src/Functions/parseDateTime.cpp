@@ -265,11 +265,6 @@ namespace
             has_year = true;
             is_year_of_era = is_year_of_era_;
             is_week_year = is_week_year_;
-            if (is_week_year_)
-            {
-                week_date_format = true;
-                day_of_year_format = false;
-            }
             return {};
         }
 
