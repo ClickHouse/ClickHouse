@@ -2627,7 +2627,7 @@ static bool shouldUseQueryCacheForSubquery(
 /// Probes the Planner-level (`is_subquery = true`) query result cache and, on a hit, replaces the
 /// plan with a step reading the cached result. Returns true when the plan was served from the cache.
 /// If reads are enabled for both the in-memory and the on-disk cache, the (slower) on-disk cache is
-/// consulted only on a miss in memory.
+/// consulted only on a miss in memory.A miss is recorded in the profile events unless `record_miss` is false.
 static bool tryAddReadFromQueryResultCacheStep(
     QueryPlan & query_plan,
     const ASTPtr & ast,
@@ -2635,7 +2635,8 @@ static bool tryAddReadFromQueryResultCacheStep(
     const Settings & settings,
     const Settings & settings_for_key,
     const QueryResultCachePtr & query_result_cache,
-    const QueryResultCacheOnDiskPtr & query_result_cache_on_disk)
+    const QueryResultCacheOnDiskPtr & query_result_cache_on_disk,
+    bool record_miss = true)
 {
     const bool reads_from_memory = settings[Setting::enable_reads_from_query_cache];
     const bool reads_from_disk = query_result_cache_on_disk && query_result_cache_on_disk->readsEnabled();
@@ -2648,17 +2649,18 @@ static bool tryAddReadFromQueryResultCacheStep(
     if (reads_from_memory)
     {
         reader.emplace(query_result_cache->createReader(key));
-        if (!reader->hasCacheEntryForKey())
+        if (!reader->hasCacheEntryForKey(/*update_profile_events=*/ true, record_miss))
             reader.reset();
     }
     if (!reader && reads_from_disk)
     {
         reader.emplace(query_result_cache_on_disk->createReader(key));
-        if (!reader->hasCacheEntryForKey())
+        if (!reader->hasCacheEntryForKey(/*update_profile_events=*/ true, record_miss))
             reader.reset();
     }
 
-    QueryResultCacheReader::recordProbeResult(reader.has_value());
+    if (reader || record_miss)
+        QueryResultCacheReader::recordProbeResult(reader.has_value());
 
     if (!reader)
         return false;
@@ -2736,6 +2738,52 @@ static void addStreamInQueryResultCacheStepIfNeeded(
     query_plan.addStep(std::move(stream_into_query_result_cache_step));
 }
 
+static bool coalesceSubqueryQueryResultCacheHerd(
+    QueryPlan & query_plan,
+    const ASTPtr & ast,
+    const ContextPtr & query_context,
+    const Settings & settings,
+    const Settings & settings_for_key,
+    const QueryResultCachePtr & query_result_cache,
+    const QueryResultCacheOnDiskPtr & query_result_cache_on_disk,
+    bool skip_context_check,
+    QueryResultCacheHerdTokenHolder & herd_token_holder)
+{
+    const auto herd_wait_timeout = std::chrono::milliseconds(settings[Setting::query_cache_herd_wait_timeout].totalMilliseconds());
+    if (herd_wait_timeout.count() > 0
+        && !query_context->getCurrentQueryId().empty()
+        && settings[Setting::enable_reads_from_query_cache]
+        && canWriteToQueryResultCacheInMemory(query_context)
+        && settings[Setting::query_cache_min_query_runs] == 0
+        && settings[Setting::query_cache_min_query_duration].totalMilliseconds() == 0
+        && checkCanWriteQueryResultCache(
+            ast, query_context, query_result_cache_on_disk, skip_context_check, /*throw_on_error=*/ false))
+    {
+        QueryResultCache::Key coalescing_probe_key(
+            ast, query_context->getCurrentDatabase(), settings_for_key, query_context->getCurrentQueryId(),
+            query_context->getUserID(), query_context->getCurrentRoles(), /* is_subquery = */ true);
+        QueryResultCache::CoalescingKey herd_key{
+            .ast_hash = coalescing_probe_key.ast_hash,
+            .user_id = query_context->getUserID(),
+            .current_user_roles = query_context->getCurrentRoles(),
+            .share_between_users = settings[Setting::query_cache_share_between_users],
+            .is_subquery = true};
+
+        /// The miss of this query has been recorded by the first probe of the caller.
+        auto try_read_from_query_result_cache = [&]
+        {
+            return tryAddReadFromQueryResultCacheStep(
+                query_plan, ast, query_context, settings, settings_for_key, query_result_cache, query_result_cache_on_disk,
+                /*record_miss=*/ false);
+        };
+
+        return coalesceQueryResultCacheHerd(
+            query_result_cache, herd_key, query_context, herd_wait_timeout, try_read_from_query_result_cache, herd_token_holder);
+    }
+
+    return false;
+}
+
 void Planner::buildPlanForUnionNode()
 {
     const auto & union_node = query_tree->as<UnionNode &>();
@@ -2787,6 +2835,8 @@ void Planner::buildPlanForUnionNode()
     ASTPtr ast;
     std::optional<Settings> settings_copy;
     QueryResultCacheOnDiskPtr query_result_cache_on_disk;
+
+    QueryResultCacheHerdTokenHolder herd_token_holder;
     if (should_cache)
     {
         ast = query_tree->toAST({.qualify_indentifiers_with_database = false});
@@ -2796,6 +2846,11 @@ void Planner::buildPlanForUnionNode()
         query_result_cache_on_disk = QueryResultCacheOnDisk::getFromSettings(settings);
 
         if (tryAddReadFromQueryResultCacheStep(query_plan, ast, query_context, settings, *settings_copy, query_result_cache, query_result_cache_on_disk))
+            return;
+
+        if (coalesceSubqueryQueryResultCacheHerd(
+                query_plan, ast, query_context, settings, *settings_copy, query_result_cache, query_result_cache_on_disk,
+                /* skip_context_check = */ !can_use_query_result_cache, herd_token_holder))
             return;
     }
 
@@ -2907,10 +2962,12 @@ void Planner::buildPlanForUnionNode()
         addBuildSubqueriesForMaterializedCTEsIfNeeded(query_plan, select_query_options, materialized_ctes);
     }
 
+    /// The herd token (if this query became the herd executor above) is handed over to the added step, see
+    /// `addStreamInQueryResultCacheStepIfNeeded`. If no step is added, `herd_token_holder` releases it on scope exit.
     if (should_cache)
         addStreamInQueryResultCacheStepIfNeeded(
             query_plan, ast, query_context, settings, *settings_copy, query_result_cache, query_result_cache_on_disk,
-            /* skip_context_check = */ !can_use_query_result_cache);
+            /* skip_context_check = */ !can_use_query_result_cache, &herd_token_holder);
 }
 
 void Planner::buildPlanForQueryNode()
@@ -3001,44 +3058,12 @@ void Planner::buildPlanForQueryNode()
     /// here and the end of this function releases the token via its destructor.
     /// When should_cache is true but the outer query didn't set use_query_cache (explicit subquery opt-in), skip
     /// the context flag check while still respecting safety checks for same condition used for the write path below.
-    bool skip_context_check_for_herd = should_cache && !can_use_query_result_cache;
     QueryResultCacheHerdTokenHolder herd_token_holder;
-    if (should_cache)
-    {
-        const auto herd_wait_timeout = std::chrono::milliseconds(settings[Setting::query_cache_herd_wait_timeout].totalMilliseconds());
-        if (herd_wait_timeout.count() > 0
-            /// The query id tells the herd tokens of this query apart, e.g. not to wait for its own token.
-            && !query_context->getCurrentQueryId().empty()
-            && settings[Setting::enable_reads_from_query_cache]
-            /// Coalescing is tied to the in-memory query result cache (the herd tokens live in it, and the waiters re-probe it
-            /// once the executor is done), so the executor must be able to write to it, same as in `executeQuery`.
-            && canWriteToQueryResultCacheInMemory(query_context)
-            && settings[Setting::query_cache_min_query_runs] == 0
-            && settings[Setting::query_cache_min_query_duration].totalMilliseconds() == 0
-            && checkCanWriteQueryResultCache(
-                ast, query_context, query_result_cache_on_disk, skip_context_check_for_herd, /*throw_on_error=*/ false))
-        {
-            QueryResultCache::Key coalescing_probe_key(
-                ast, query_context->getCurrentDatabase(), *settings_copy, query_context->getCurrentQueryId(),
-                query_context->getUserID(), query_context->getCurrentRoles(), /* is_subquery = */ true);
-            QueryResultCache::CoalescingKey herd_key{
-                .ast_hash = coalescing_probe_key.ast_hash,
-                .user_id = query_context->getUserID(),
-                .current_user_roles = query_context->getCurrentRoles(),
-                .share_between_users = settings[Setting::query_cache_share_between_users],
-                .is_subquery = true};
-
-            auto try_read_from_query_result_cache = [&]
-            {
-                return tryAddReadFromQueryResultCacheStep(
-                    query_plan, ast, query_context, settings, *settings_copy, query_result_cache, query_result_cache_on_disk);
-            };
-
-            if (coalesceQueryResultCacheHerd(
-                    query_result_cache, herd_key, query_context, herd_wait_timeout, try_read_from_query_result_cache, herd_token_holder))
-                return;
-        }
-    }
+    if (should_cache
+        && coalesceSubqueryQueryResultCacheHerd(
+            query_plan, ast, query_context, settings, *settings_copy, query_result_cache, query_result_cache_on_disk,
+            /* skip_context_check = */ !can_use_query_result_cache, herd_token_holder))
+        return;
 
     StorageLimitsList current_storage_limits = storage_limits;
     select_query_info.local_storage_limits = buildStorageLimits(*query_context, select_query_options);

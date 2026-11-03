@@ -3205,7 +3205,7 @@ static BlockIO executeQueryImpl(
         {
             /// If it is a non-internal SELECT, and passive (read) use of the query result cache is enabled, and the cache knows the query,
             /// then set a pipeline with a source populated by the query result cache.
-            auto get_result_from_query_result_cache = [&]()
+            auto get_result_from_query_result_cache = [&](bool record_miss)
             {
                 if (out_ast && can_use_query_result_cache)
                 {
@@ -3220,7 +3220,7 @@ static BlockIO executeQueryImpl(
                     if (read_from_memory_cache)
                     {
                         reader.emplace(query_result_cache->createReader(key));
-                        if (!reader->hasCacheEntryForKey())
+                        if (!reader->hasCacheEntryForKey(/*update_profile_events=*/ true, record_miss))
                             reader.reset();
                     }
                     /// If reads are enabled for both the in-memory and the on-disk cache, the (slower) on-disk cache is consulted
@@ -3228,11 +3228,12 @@ static BlockIO executeQueryImpl(
                     if (!reader && read_from_on_disk_cache)
                     {
                         reader.emplace(query_result_cache_on_disk->createReader(key));
-                        if (!reader->hasCacheEntryForKey())
+                        if (!reader->hasCacheEntryForKey(/*update_profile_events=*/ true, record_miss))
                             reader.reset();
                     }
 
-                    QueryResultCacheReader::recordProbeResult(reader.has_value());
+                    if (reader || record_miss)
+                        QueryResultCacheReader::recordProbeResult(reader.has_value());
 
                     if (reader)
                     {
@@ -3257,7 +3258,7 @@ static BlockIO executeQueryImpl(
             /// Where the result columns come from. Collected for `QueryFlags::collect_result_column_origins` and to be stored with
             /// the result in the query result cache.
             ResultColumnOrigins result_column_origins;
-            bool served_from_query_result_cache = get_result_from_query_result_cache();
+            bool served_from_query_result_cache = get_result_from_query_result_cache(/*record_miss=*/ true);
 
             if (!served_from_query_result_cache)
             {
@@ -3293,8 +3294,11 @@ static BlockIO executeQueryImpl(
                         .share_between_users = settings[Setting::query_cache_share_between_users],
                         .is_subquery = false};
 
+                    /// The miss of this query has been recorded by the first probe above.
+                    auto try_read_from_query_result_cache = [&] { return get_result_from_query_result_cache(/*record_miss=*/ false); };
+
                     served_from_query_result_cache = coalesceQueryResultCacheHerd(
-                        query_result_cache, herd_key, context, herd_wait_timeout, get_result_from_query_result_cache, herd_token_holder);
+                        query_result_cache, herd_key, context, herd_wait_timeout, try_read_from_query_result_cache, herd_token_holder);
                 }
             }
 

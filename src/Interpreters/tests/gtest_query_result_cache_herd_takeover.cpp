@@ -1,9 +1,12 @@
 #include <Interpreters/Cache/QueryResultCache.h>
 
+#include <Common/tests/gtest_global_context.h>
+
 #include <base/unit.h>
 
 #include <gtest/gtest.h>
 
+#include <atomic>
 #include <thread>
 
 using namespace DB;
@@ -35,6 +38,11 @@ QueryResultCache::CoalescingKey makeKey(const IASTHash & hash = ast_hash, bool i
 QueryResultCache makeCache()
 {
     return QueryResultCache(/*max_size_in_bytes=*/ 1_MiB, /*max_entries=*/ 16, /*max_entry_size_in_bytes_=*/ 1_MiB, /*max_entry_size_in_rows_=*/ 1000);
+}
+
+QueryResultCachePtr makeSharedCache()
+{
+    return std::make_shared<QueryResultCache>(/*max_size_in_bytes=*/ 1_MiB, /*max_entries=*/ 16, /*max_entry_size_in_bytes_=*/ 1_MiB, /*max_entry_size_in_rows_=*/ 1000);
 }
 
 }
@@ -186,4 +194,110 @@ TEST(QueryResultCacheHerdTakeover, AQueryOwningOnlyItsTopLevelTokenWaitsForASubq
         EXPECT_EQ(waiter.outcome, Outcome::OwnerSucceeded);
 
     cache.releaseHerdToken(top_level_key, top_level.token, /*succeeded=*/ true);
+}
+
+TEST(QueryResultCacheHerdReprobe, ResultStoredBeforeTheTokenWasAcquiredIsReadFromTheCache)
+{
+    const auto cache = makeSharedCache();
+    const auto key = makeKey();
+
+    /// The executor has completed: its result is in the cache (the probe below finds it) and its token is gone.
+    auto executor = cache->acquireOrWaitHerdToken(key, long_timeout, "executor", neverCancelled());
+    ASSERT_EQ(executor.outcome, Outcome::Acquired);
+    cache->releaseHerdToken(key, executor.token, /*succeeded=*/ true);
+
+    size_t probes = 0;
+    QueryResultCacheHerdTokenHolder holder;
+    const bool served = coalesceQueryResultCacheHerd(
+        cache, key, getContext().context, long_timeout,
+        [&]
+        {
+            ++probes;
+            return true;
+        },
+        holder);
+
+    EXPECT_TRUE(served);
+    EXPECT_EQ(probes, 1u);
+
+    /// The token acquired for the probe was completed: the next identical query does not wait for it and does not time out.
+    auto next = cache->acquireOrWaitHerdToken(key, std::chrono::milliseconds(1), "next", neverCancelled());
+    ASSERT_EQ(next.outcome, Outcome::Acquired);
+    cache->releaseHerdToken(key, next.token, /*succeeded=*/ true);
+}
+
+TEST(QueryResultCacheHerdReprobe, QueryKeepsTheTokenIfTheResultIsNotInTheCache)
+{
+    const auto cache = makeSharedCache();
+    const auto key = makeKey();
+
+    size_t probes = 0;
+    QueryResultCacheHerdTokenHolder holder;
+    const bool served = coalesceQueryResultCacheHerd(
+        cache, key, getContext().context, long_timeout,
+        [&]
+        {
+            ++probes;
+            return false;
+        },
+        holder);
+
+    /// The caller has to execute the query, as it did before the token was acquired...
+    EXPECT_FALSE(served);
+    EXPECT_EQ(probes, 1u);
+
+    /// ... as the herd executor: identical queries wait for its token instead of becoming executors (a cancelled waiter gives up).
+    EXPECT_EQ(cache->acquireOrWaitHerdToken(key, long_timeout, "waiter", []() { return true; }).outcome, Outcome::Independent);
+
+    /// Once the query has executed, the next one becomes the executor.
+    holder.release(/*succeeded=*/ true);
+    auto next = cache->acquireOrWaitHerdToken(key, long_timeout, "next", neverCancelled());
+    ASSERT_EQ(next.outcome, Outcome::Acquired);
+    cache->releaseHerdToken(key, next.token, /*succeeded=*/ true);
+}
+
+TEST(QueryResultCacheHerdReprobe, WaiterLearnsThatTheResultWasReadFromTheCache)
+{
+    const auto cache = makeSharedCache();
+    const auto key = makeKey();
+
+    std::atomic<size_t> waiter_polls = 0;
+    /// `Independent` is not what the waiter is expected to see, so the test fails if the waiter did not store its outcome.
+    Outcome waiter_outcome = Outcome::Independent;
+    std::thread waiter;
+
+    QueryResultCacheHerdTokenHolder holder;
+    const bool served = coalesceQueryResultCacheHerd(
+        cache, key, getContext().context, long_timeout,
+        [&]
+        {
+            /// The query owns the token while it probes the cache, so an identical query that arrives meanwhile waits for it.
+            waiter = std::thread(
+                [&]
+                {
+                    waiter_outcome = cache->acquireOrWaitHerdToken(
+                        key, long_timeout, "waiter",
+                        [&]
+                        {
+                            ++waiter_polls;
+                            return false;
+                        }).outcome;
+                });
+
+            /// A waiter polls for the cancellation every 100 ms, so once it has polled, it is known to wait for the token.
+            const auto give_up_at = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+            while (waiter_polls == 0 && std::chrono::steady_clock::now() < give_up_at)
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+
+            return true;
+        },
+        holder);
+
+    if (waiter.joinable())
+        waiter.join();
+
+    EXPECT_TRUE(served);
+
+    /// The token was completed as succeeded, so the waiter reads the result from the cache instead of taking over.
+    EXPECT_EQ(waiter_outcome, Outcome::OwnerSucceeded);
 }

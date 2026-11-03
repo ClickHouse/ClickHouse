@@ -968,7 +968,11 @@ bool coalesceQueryResultCacheHerd(
         if (result.outcome == QueryResultCache::HerdWaitOutcome::Acquired)
         {
             holder = QueryResultCacheHerdTokenHolder(cache, key, std::move(result.token));
-            return false;
+            if (!try_read_from_cache())
+                return false;
+            /// The result is in the cache and there is nothing to execute. Complete the token successfully.
+            holder.release(/*succeeded=*/ true);
+            return true;
         }
 
         /// Report the cancellation while waiting exactly as the query would report it without coalescing.
@@ -1374,11 +1378,11 @@ QueryResultCacheReader::QueryResultCacheReader(Cache & cache_, const Cache::Key 
     LOG_TRACE(logger, "Query result found for query {}", doubleQuoteString(key.query_string));
 }
 
-bool QueryResultCacheReader::hasCacheEntryForKey(bool update_profile_events) const
+bool QueryResultCacheReader::hasCacheEntryForKey(bool update_profile_events, bool record_miss) const
 {
     bool has_entry = (source_from_chunks != nullptr);
 
-    if (update_profile_events)
+    if (update_profile_events && (has_entry || record_miss))
     {
         /// Only the per-backend breakdown of the on-disk cache is recorded here. `QueryCacheHits` / `QueryCacheMisses` describe
         /// the query result cache as a whole and are recorded by `recordProbeResult` once every backend has been probed: with
