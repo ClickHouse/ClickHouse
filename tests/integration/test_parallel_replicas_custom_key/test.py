@@ -89,6 +89,8 @@ def test_parallel_replicas_custom_key_distributed(
                 "parallel_replicas_mode": parallel_replicas_mode,
                 "prefer_localhost_replica": 0,
                 "serialize_query_plan": 0,
+                # with a memory efficient merge every shard is read from one replica
+                "distributed_aggregation_memory_efficient": 0,
             },
         )
         == expected_result

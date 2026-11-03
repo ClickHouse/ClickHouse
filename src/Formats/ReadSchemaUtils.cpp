@@ -23,6 +23,8 @@ namespace Setting
     extern const SettingsUInt64 input_format_max_rows_to_read_for_schema_inference;
     extern const SettingsUInt64 input_format_max_bytes_to_read_for_schema_inference;
     extern const SettingsSchemaInferenceMode schema_inference_mode;
+    extern const SettingsUInt64 input_format_allow_errors_num;
+    extern const SettingsFloat input_format_allow_errors_ratio;
 }
 
 namespace ErrorCodes
@@ -618,6 +620,15 @@ SchemaCache::Keys getKeysForSchemaCache(
         std::back_inserter(cache_keys),
         [&](const auto & source) { return makeSchemaCacheKey(source, format, additional_format_info, schema_inference_mode); });
     return cache_keys;
+}
+
+bool canUseNumRowsFromSchemaCache(const std::optional<FormatSettings> & format_settings, const ContextPtr & context)
+{
+    if (format_settings)
+        return format_settings->input_allow_errors_num == 0 && format_settings->input_allow_errors_ratio == 0;
+
+    const auto & settings = context->getSettingsRef();
+    return settings[Setting::input_format_allow_errors_num] == 0 && settings[Setting::input_format_allow_errors_ratio] == 0;
 }
 
 }

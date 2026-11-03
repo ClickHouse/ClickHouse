@@ -116,7 +116,10 @@ TableFunctionMergeTreeTextIndex::ResolvedIndex TableFunctionMergeTreeTextIndex::
     /// Otherwise the errors below would reveal the engine and the indexes of a table the user cannot see.
     context->checkAccess(AccessType::SHOW_TABLES, source_database, source_table);
 
-    auto source_table_ptr = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(StorageID{source_database, source_table}, context));
+    StorageID source_table_id{source_database, source_table};
+    auto source_table_ptr = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(source_table_id, context));
+    /// The metadata of an `Alias` is its target's, so the index below is the target's index.
+    checkSourceStorageAccess(context, source_table_ptr, source_table_id, AccessType::SHOW_COLUMNS);
     const auto metadata_handle = source_table_ptr->getInMemoryMetadataPtr(context, false);
     StorageMetadataPtr metadata_snapshot = metadata_handle;
     const auto & index_desc = metadata_snapshot->getSecondaryIndices().getByName(source_index_name);
