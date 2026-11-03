@@ -464,6 +464,8 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
                     if (!resources.renewCPULease())
                     {
                         tasks.downscale(resources.getCPULeaseSlotId());
+                        /// The slot may be granted again later: start a thread for it then.
+                        tasks.requestThreads(1);
                         break; // Downscaling. Unable to renew the lease - thread should stop (but could be rerun later).
                     }
                 }

@@ -146,8 +146,7 @@ public:
     /// one at a time and re-call upscale after each.
     size_t upscale(size_t slot_id);
 
-    /// Downscale by removing slot_id from active slots. Updates use_threads to highest active slot + 1.
-    /// Requests a thread instead, to be started when a slot is granted again.
+    /// Downscale by removing slot_id from active slots. Updates use_threads to highest active slot + 1
     void downscale(size_t slot_id);
 
     /// Request `threads` more threads (e.g. for the initial tasks), clamped to the pipeline width.

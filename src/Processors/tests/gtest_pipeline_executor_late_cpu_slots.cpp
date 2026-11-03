@@ -145,8 +145,7 @@ TEST(PipelineExecutor, ThreadsForSlotsGrantedAfterStartEagerAllocation)
     checkThreadsForLateSlots(/* lazy_allocation */ false);
 }
 
-/// A thread downscaled because its preempted slot was not granted back in time is requested again,
-/// so that it is started when the slot is granted later.
+/// A thread requested in place of a downscaled one is kept until a slot is granted and the thread is started.
 TEST(PipelineExecutor, ThreadRequestedAfterDownscale)
 {
     ExecutorTasks tasks;
@@ -157,6 +156,8 @@ TEST(PipelineExecutor, ThreadRequestedAfterDownscale)
 
     tasks.preempt(1);
     tasks.downscale(1);
+    EXPECT_FALSE(tasks.hasThreadsToSpawn());
+    tasks.requestThreads(1);
     EXPECT_TRUE(tasks.hasThreadsToSpawn());
 
     tasks.upscale(1);
