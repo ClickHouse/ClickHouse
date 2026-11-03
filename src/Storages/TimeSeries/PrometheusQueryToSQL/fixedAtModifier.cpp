@@ -21,16 +21,18 @@ const PrometheusQueryTree::Offset * getFixedAtModifier(const SQLQueryPiece & arg
 
 
 NodeEvaluationRange getRangeAggregationRange(
-    const PrometheusQueryTree::Offset * fixed_at_node, const NodeEvaluationRange & node_range, ConverterContext & context)
+    const SQLQueryPiece & range_argument, const NodeEvaluationRange & node_range, ConverterContext & context)
 {
-    if (!fixed_at_node)
+    if (range_argument.type != ResultType::RANGE_VECTOR || !range_argument.node || range_argument.node->node_type != NodeType::Offset)
         return node_range;
 
-    /// Under a fixed @ modifier the range function's sample window is frozen at the fixed timestamp, while
-    /// the range-vector argument retains its own inner grid.
-    const auto & fixed_range = context.node_range_getter.get(fixed_at_node->getExpression());
-    chassert(fixed_range.start_time == fixed_range.end_time);
-    return NodeEvaluationRange{fixed_range.start_time, fixed_range.end_time, DurationType{0}, node_range.window};
+    /// The range function aggregates on the evaluation range of the expression under the offset node, that is where
+    /// its samples are: the function's own grid shifted back by an offset, or the single point of a fixed @ timestamp.
+    const auto * offset_node = static_cast<const PrometheusQueryTree::Offset *>(range_argument.node);
+    NodeEvaluationRange aggregation_range = context.node_range_getter.get(offset_node->getExpression());
+    aggregation_range.window = node_range.window;
+    chassert(!offset_node->hasAtModifier() || aggregation_range.start_time == aggregation_range.end_time);
+    return aggregation_range;
 }
 
 

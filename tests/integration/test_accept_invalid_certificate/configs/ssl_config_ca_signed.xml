@@ -1,0 +1,15 @@
+<clickhouse>
+    <!-- Native interface with TLS, presenting a certificate that the client's CA signs but whose
+         name (CN=client) is not the address the client connects to.
+    -->
+    <tcp_port_secure>9440</tcp_port_secure>
+
+    <openSSL replace="replace">
+        <server> <!-- Used for https server AND secure tcp port -->
+            <certificateFile>/etc/clickhouse-server/config.d/client-cert.pem</certificateFile>
+            <privateKeyFile>/etc/clickhouse-server/config.d/client-key.pem</privateKeyFile>
+            <caConfig>/etc/clickhouse-server/config.d/ca-cert.pem</caConfig>
+            <verificationMode>none</verificationMode>
+        </server>
+    </openSSL>
+</clickhouse>

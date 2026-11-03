@@ -2,6 +2,7 @@
 
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/FsMetadata.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/FsSnapshot.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/PlainRewritableSnapshotFile.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableLayout.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableMetrics.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Transactions/PathLocks.h>
@@ -10,10 +11,17 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/NormalizedPath.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <Common/Logger.h>
 
+#include <atomic>
 #include <memory>
+#include <mutex>
+#include <optional>
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 namespace DB
 {
@@ -59,19 +67,124 @@ namespace DB
   * without hard links is unchanged.
   *
   * The explicit form cannot be read by servers older than the version that introduced it, so a disk that has it is not readable
-  * after a downgrade. Therefore the creation of hard links is off by default and has to be enabled by the `enable_hard_links`
-  * setting of the disk; with hard links disabled, `createHardLink` copies the blob, as it did before, and no directory ever
+  * after a downgrade. Therefore the creation of hard links can be disabled by the `enable_hard_links` setting of the disk
+  * (on by default); with hard links disabled, `createHardLink` copies the blob, as it did before, and no directory ever
   * switches to the explicit form. The explicit form is always *read*, so a disk written with hard links enabled stays usable
   * after they are disabled again.
+  *
+  * Additionally, `/__meta/snapshot.bin` may contain a compact copy of the whole state (see `PlainRewritableSnapshotFile.h`),
+  * which is written by the disk that owns the data and allows read-only disks to load the state in a single request instead
+  * of listing the metadata directory and reading every `prefix.path`.
   */
+
+struct PlainRewritableSnapshotSettings
+{
+    /// Whether to write the snapshot file after modifications (if the object storage is writable),
+    /// or to load the state from it instead of listing the object storage (if the object storage is read-only).
+    bool enabled = true;
+    /// Zero means the snapshot is rewritten right after every modification (in the committing thread).
+    /// A larger value means it is rewritten in the background not more often than the delay, as long as there were modifications.
+    /// The whole state is serialized on every write, so writing it in the committing thread would make the latency of
+    /// every commit proportional to the size of the whole disk; that is why it is delayed by default.
+    UInt64 write_delay_ms = 1000;
+};
+
 class MetadataStorageFromPlainRewritableObjectStorage final : public IMetadataStorage
 {
     friend class MetadataStorageFromPlainRewritableObjectStorageTransaction;
 
-    void load(bool is_initial_load, bool do_not_load_unchanged_directories);
+    enum class LoadMode
+    {
+        /// The first load in the constructor.
+        Initial,
+        /// Periodic `refresh`: pick up the changes made by another server, keeping the unchanged directories.
+        Incremental,
+        /// `dropCache`: rebuild the state from scratch.
+        Full,
+    };
+
+    /// Must be called under `load_mutex`.
+    void load(LoadMode mode);
+
+    struct SnapshotFileContents
+    {
+        /// The file exists (but `layout` is empty if it could not be read or did not change).
+        bool exists = false;
+        /// The file has the same ETag as the one applied last time, so it was not read.
+        bool unchanged = false;
+        std::optional<PlainRewritableRemoteLayout> layout;
+        /// The strong ETag of the file (also if it was not read), empty if there is none.
+        std::string etag;
+    };
+
+    /// Reads the snapshot file if it exists, unless `skip_if_unchanged` and it is the same as the one applied last time,
+    /// or it is the same as `superseded_snapshot_etag`, or not `read_contents` (then only `exists` and `etag` are filled).
+    /// Must be called under `load_mutex`.
+    SnapshotFileContents tryReadSnapshotFile(const LoggerPtr & log, bool skip_if_unchanged, bool read_contents) const;
+
+    struct TombstoneMarkerObject
+    {
+        std::string removed_name;
+        std::string marker_path;
+        std::string content;
+    };
+
+    /// Lists and reads the markers of unfinished operations (see `PlainRewritableLayout::REMOVED_NAME_PREFIX`).
+    /// A marker that disappears in the meantime is skipped.
+    std::vector<TombstoneMarkerObject> readTombstoneMarkers(const ReadSettings & settings) const;
+
+    struct TargetReadFromBackup
+    {
+        PlainRewritableLayout::PendingReplace pending_replace;
+        std::string backup_key;
+        ObjectMetadata backup_metadata;
+    };
+
+    /// The targets of the replacements that are not committed yet, which a read-only disk reads from their complete backups.
+    /// Sets `has_malformed_markers` if there is a marker whose content is torn (see `PlainRewritableLayout::parseTombstoneMarkerContent`).
+    std::vector<TargetReadFromBackup> findTargetsToReadFromBackups(const LoggerPtr & log, bool & has_malformed_markers) const;
+
+    /// Lists the object storage and publishes the result in `fs`. If `base` is provided, directories whose `prefix.path`
+    /// has the same ETag as in `base` are taken from it without reading `prefix.path` and listing their files.
+    /// Returns whether the disk has nothing but the empty root. The initial load of a writable disk also rolls back or
+    /// reclaims the unfinished operations (see `PlainRewritableLayout::REMOVED_NAME_PREFIX`). Must be called under `load_mutex`.
+    bool loadRemoteLayout(const PlainRewritableRemoteLayout * base, bool is_initial_load, const LoggerPtr & log);
+    PlainRewritableRemoteLayout getCurrentLayout() const;
+    static PlainRewritableRemoteLayout getLayoutOf(const FsSnapshot & tree);
+
+    /// Whether the disk does not write to the object storage: either the object storage is read-only, or the disk is
+    /// attached with `read_only` (wrapped with `ReadOnlyDiskWrapper`), which does not make the object storage read-only.
+    bool isReadOnlyDisk() const { return read_only_disk || object_storage->isReadOnly(); }
+
+    /// The role of the disk regarding the snapshot file. It is chosen once when the disk is created: the task that writes
+    /// the snapshot exists only for a writer, and a reader must never publish its own state over the one of the writer.
+    /// Changing `readonly` of the object storage by `SYSTEM RELOAD CONFIG` does not change it, that requires a restart.
+    enum class SnapshotRole : uint8_t
+    {
+        None,
+        /// Snapshots are enabled and the disk is writable.
+        Writer,
+        /// Snapshots are enabled and the disk is read-only.
+        Reader,
+    };
+    SnapshotRole chooseSnapshotRole() const;
+    bool isSnapshotWriter() const { return snapshot_role == SnapshotRole::Writer; }
+    bool isSnapshotReader() const { return snapshot_role == SnapshotRole::Reader; }
+    /// Called after the in-memory state was changed; writes the snapshot right away or schedules the write.
+    void onLayoutChanged();
+    /// Writes the current state to the snapshot file (or removes the file if the disk is empty) if there were changes.
+    /// Only one write is performed even if there were several changes, since the latest state is written.
+    /// If `required_generation` is non-zero, nothing is done if a previous write already included the change of this generation.
+    void writeSnapshotIfDirty(UInt64 required_generation = 0);
+    void snapshotWriteTask();
 
 public:
-    MetadataStorageFromPlainRewritableObjectStorage(ObjectStoragePtr object_storage_, std::string storage_path_prefix_, bool hard_links_enabled_);
+    MetadataStorageFromPlainRewritableObjectStorage(
+        ObjectStoragePtr object_storage_,
+        std::string storage_path_prefix_,
+        bool hard_links_enabled_,
+        PlainRewritableSnapshotSettings snapshot_settings_ = {},
+        bool read_only_disk_ = false);
 
     MetadataStorageType getType() const override { return MetadataStorageType::PlainRewritable; }
     const std::string & getPath() const override { return storage_path_full; }
@@ -83,6 +196,9 @@ public:
     bool areBlobPathsRandom() const override { return false; }
     bool isPlain() const override { return true; }
     bool isWriteOnce() const override { return false; }
+    /// Blobs are removed right in the transaction, and there is nothing to replicate.
+    bool hasDeadBlobsQueue() const override { return false; }
+    bool hasMissingBlobsQueue() const override { return false; }
     bool supportsHardLinks() const override { return hard_links_enabled; }
 
     MetadataTransactionPtr createTransaction() override;
@@ -90,6 +206,7 @@ public:
     /// Will reload in-memory structure from scratch.
     void dropCache() override;
     void refresh(UInt64 not_sooner_than_milliseconds) override;
+    void shutdown() override;
 
     bool existsFile(const std::string & path) const override;
     bool existsDirectory(const std::string & path) const override;
@@ -113,11 +230,15 @@ private:
     const std::string storage_path_prefix;
     const std::string storage_path_full;
     /// Real hard links require the explicit form of `prefix.path`, which older servers cannot read,
-    /// so they are enabled by the `enable_hard_links` setting of the disk. See the comment above.
+    /// so they can be disabled by the `enable_hard_links` setting of the disk. See the comment above.
     /// The setting is startup-only (`applyNewSettings` is not overridden): `DiskObjectStorage::applyNewSettings` passes the
     /// config prefix of the outer disk, which is not the prefix of this one when the disk is wrapped with a cache, so a reload
     /// would read the setting from the wrong place. Changing it requires a restart, as a downgrade does anyway.
     const bool hard_links_enabled;
+    const PlainRewritableSnapshotSettings snapshot_settings;
+    /// The disk is attached with `read_only`, see `isReadOnlyDisk`.
+    const bool read_only_disk;
+    const SnapshotRole snapshot_role;
 
     /// Transactions hold the locks for the paths they modify while they talk to the object storage and publish the result;
     /// full reloads of the metadata hold the lock for the root. Transactions on unrelated paths run concurrently.
@@ -126,12 +247,33 @@ private:
     std::shared_ptr<PlainRewritableLayout> layout;
 
     std::mutex load_mutex;
-    /// Paths from the last completed load. Validate them against the current snapshot before reuse.
-    std::unordered_map<std::string, std::string> local_paths_by_remote_directory;
     /// The remote paths of the directories of the targets of the pending replacements seen by the last completed load.
-    /// Protected by `load_mutex`, like `local_paths_by_remote_directory`.
+    /// Protected by `load_mutex`.
     std::unordered_set<std::string> remote_directories_of_pending_replaces;
+    /// The ETag of the snapshot file applied by the last load of a reader, empty if the state was not loaded from it.
+    /// Protected by `load_mutex`.
+    std::string applied_snapshot_etag;
+    /// Some files of the state loaded from the snapshot file are read from the backups of pending replacements.
+    /// Protected by `load_mutex`.
+    bool applied_snapshot_had_pending_replaces = false;
+    /// The current state was loaded from the snapshot file (even if its ETag is not usable and `applied_snapshot_etag` is
+    /// empty), so it cannot be a base of an incremental listing. Protected by `load_mutex`.
+    bool state_loaded_from_snapshot = false;
+    /// The ETag of the snapshot file that existed when a reader loaded the state by listing the object storage instead
+    /// (e.g. the file could not be read), empty if there is none. That state is at least as fresh as the file, so the file
+    /// is not applied until it changes. Protected by `load_mutex`.
+    std::string superseded_snapshot_etag;
     AtomicStopwatch previous_refresh;
+
+    /// The version of `fs` after the latest change that has to be written to the snapshot.
+    std::atomic<UInt64> snapshot_dirty_generation = 0;
+    /// Serializes the snapshot writes.
+    std::mutex snapshot_write_mutex;
+    /// The version of `fs` in the last successfully written snapshot. The snapshot is dirty while it is less than
+    /// `snapshot_dirty_generation`. Modified under `snapshot_write_mutex`.
+    std::atomic<UInt64> snapshot_written_generation = 0;
+    /// Must be the last member: it is deactivated first in the destructor, and the task uses the other members.
+    BackgroundSchedulePoolTaskHolder snapshot_write_task;
 };
 
 class MetadataStorageFromPlainObjectStorageCopyFileOperation;
