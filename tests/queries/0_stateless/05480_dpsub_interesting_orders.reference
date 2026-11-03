@@ -22,12 +22,18 @@ merge join
 2	0
 -- build keys in a narrow range: a hash join, whose runtime filter skips most of the sorted probe side
 hash join
--- build keys in a narrow range, but runtime filters disabled: nothing is skipped, a merge join
+-- build keys in a narrow range, runtime filters disabled: the hash join reads the whole probe, the sharded merge only its overlap
 merge join
 -- build keys spread over the probe range: the runtime filter skips nothing, a merge join
 merge join
--- floating-point keys sorted by the key: a merge join
-merge join
+-- a probe side 50 times the build side: streaming it through the merge costs more than probing, a hash join
+hash join
+-- floating-point keys: the merge cannot be sharded by key ranges, one stream loses to a hash join
+hash join
+-- Nullable keys: the merge cannot be sharded by key ranges, one stream loses to a hash join
+hash join
+-- sharding by primary key ranges disabled: one stream loses to a hash join
+hash join
 -- two keys, sorted by a low-cardinality first key only: a hash join
 hash join
 -- two keys, sorted by both, written in another order: a merge join on the keys in sorting key order
@@ -52,7 +58,9 @@ hash join
 1	0
 100	9900
 100	54450
+20	9690
 1000
+1000	999000
 1000	999000
 1000	999000
 1000	1998000

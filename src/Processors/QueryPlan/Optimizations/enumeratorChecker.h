@@ -161,6 +161,7 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const UInt result_subse
         entry.estimated_rows = optimizer.estimateCardinality(dp_table[lhs_subset].estimated_rows, dp_table[rhs_subset].estimated_rows, selectivity, kind, strictness);
         entry.edges.assign(edge.begin(), edge.end());
         entry.method = JoinMethod::Hash;
+        entry.sharded = false;
         entry.merge_class = -1;
         entry.order_class = -1;
         entry.left_plan = -1;
@@ -177,20 +178,25 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::mergeInputCandidates(const UIn
 {
     const auto & entry = dp_table[subset];
     MergeInputCandidates candidates;
-    auto add = [&](const Plan & plan, Int8 plan_index, bool sorted)
+    auto add = [&](const Plan & plan, Int8 plan_index, bool sorted, bool shardable)
     {
         if (plan.estimated_rows)
-            candidates.items[candidates.size++] = {plan_index, {plan.cost, *plan.estimated_rows, sorted}};
+            candidates.items[candidates.size++] = {plan_index, {plan.cost, *plan.estimated_rows, sorted, shardable}};
     };
 
-    const bool is_leaf = std::popcount(subset) == 1;
-    add(entry, -1, is_leaf ? optimizer.isReadInOrder(static_cast<UInt32>(subset), key) : entry.order_class == key);
+    if (std::popcount(subset) == 1)
+    {
+        const auto relation = static_cast<UInt32>(subset);
+        add(entry, -1, optimizer.isReadInOrder(relation, key), optimizer.isShardableLeaf(relation, key));
+        return candidates;
+    }
+    add(entry, -1, entry.order_class == key, entry.order_class == key && entry.sharded);
     /// `ordered` has at most one plan per class.
     for (size_t i = 0; i < entry.ordered.size(); ++i)
     {
         if (entry.ordered[i].order_class == key)
         {
-            add(entry.ordered[i], static_cast<Int8>(i), true);
+            add(entry.ordered[i], static_cast<Int8>(i), true, entry.ordered[i].sharded);
             break;
         }
     }
@@ -253,6 +259,7 @@ void EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::acceptMergeJoins(
         plan.estimated_rows = optimizer.estimateCardinality(left->input.rows, right->input.rows, selectivity, kind, strictness);
         plan.edges.assign(edges.begin(), edges.end());
         plan.method = JoinMethod::Merge;
+        plan.sharded = optimizer.isShardedMerge(left->input, right->input);
         plan.merge_class = static_cast<Int8>(key);
         plan.order_class = keeps_order ? static_cast<Int8>(key) : -1;
 

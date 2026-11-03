@@ -454,6 +454,7 @@ DPJoinEntryPtr optimizeJoinOrder(QueryGraph query_graph, const QueryPlanOptimiza
     /// Not gated on `use_skip_indexes_on_data_read`, which `EXPLAIN` turns off: it would show another plan than the query runs.
     query_graph.runtime_filter_prunes_probe = optimization_settings.enable_join_runtime_filters
         && optimization_settings.enable_join_runtime_filters_index_analysis;
+    query_graph.shard_merge_by_pk_ranges = optimization_settings.query_plan_join_shard_by_pk_ranges;
 
     JoinOrderOptimizer reorderer(
         std::move(query_graph),

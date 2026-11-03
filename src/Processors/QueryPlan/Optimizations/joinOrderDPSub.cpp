@@ -7,6 +7,7 @@
 
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/JoinOperator.h>
+#include <Processors/QueryPlan/PartsSplitter.h>
 #include <Common/Exception.h>
 
 #include <algorithm>
@@ -138,6 +139,16 @@ private:
     double mergeJoinCost(
         MergeJoinInput left, UInt32 left_mask, MergeJoinInput right, UInt32 right_mask, Int32 order_class,
         const SelectivityEstimate & selectivity) const;
+    /// Whether a merge of the two inputs runs sharded by primary key ranges, as `optimizeJoinByShards` does.
+    bool isShardedMerge(const MergeJoinInput & left, const MergeJoinInput & right) const
+    {
+        return query_graph.shard_merge_by_pk_ranges && left.shardable && right.shardable;
+    }
+    /// Whether a single relation read in order by the class can feed a sharded merge on it.
+    bool isShardableLeaf(UInt32 relation_mask, Int32 order_class) const
+    {
+        return isReadInOrder(relation_mask, order_class) && (relation_mask & dpsub_data.shardable_relations);
+    }
     /// The equivalence classes with columns on both sides: one key of the join each.
     UInt64 spanningClasses(UInt32 left_mask, UInt32 right_mask) const;
     /// The classes of all keys of a join, in the order a single relation can be read in, starting with the merge key;
@@ -148,8 +159,8 @@ private:
     /// The work of a hash join of the two sides, see `computeHashJoinWork`. 0 without interesting orders, where costs
     /// count output rows only.
     double hashJoinWork(UInt32 left_mask, std::optional<UInt64> left_rows, UInt32 right_mask, std::optional<UInt64> right_rows) const;
-    /// The fraction of a probe side a hash join's runtime filter lets it read: the overlap of the key range of the build side
-    /// with the key range of a probe table sorted by a key of the join, whose granules the filter prunes. 1 when unknown.
+    /// The overlap of the key range of the build side with the key range of a probe table sorted by a key of the join: what
+    /// a hash join's runtime filter lets it read, and what a sharded merge reads. 1 when unknown.
     double probeReadFraction(UInt32 probe_mask, UInt32 build_mask) const;
     /// Whether a later join may still use a result sorted by the equivalence class.
     bool isInterestingOrder(Int32 order_class, UInt32 relations) const;
@@ -240,6 +251,8 @@ private:
         std::vector<std::vector<Int32>> rel_prefix_classes; /// per relation: the classes it can be read in order of, in order
         std::vector<Int32> edge_class;          /// per edge: the class of an equality of two columns, or -1
         TUInt prepared_storage_mask = 0;
+        /// Relations read in order by a key whose type the primary-key range split supports (`isSafePrimaryDataKeyType`).
+        TUInt shardable_relations = 0;
 
         /// Per relation and class (`relation * num_classes + class`): the value range of its column of the class, if known.
         struct KeyRange
@@ -487,6 +500,17 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
                 continue;
             if (auto it = class_index.find(lhs_class.get()); it != class_index.end())
                 dpsub_data.edge_class[i] = static_cast<Int32>(it->second);
+        }
+
+        dpsub_data.shardable_relations = 0;
+        for (size_t relation = 0; relation < num_relations; ++relation)
+        {
+            const auto & prefix = dpsub_data.rel_prefix_classes[relation];
+            if (prefix.empty())
+                continue;
+            for (const auto & column : dpsub_data.class_members[prefix.front()])
+                if (*column.getSourceRelations().getSingleBit() == relation && isSafePrimaryDataKeyType(*column.getType()))
+                    dpsub_data.shardable_relations |= static_cast<UInt32>(1) << relation;
         }
 
         /// Without an input sorted by a join key no merge join beats a hash join, so costs stay as they are.
@@ -794,7 +818,11 @@ double DPSubJoinOrderOptimizer::mergeJoinCost(
         if (right.sorted && (right_order.empty() || right_order != emitted_order))
             right.sort_groups = distinctValues(right_mask, order_class, right.rows);
     }
-    return computeMergeJoinCost(left, right, selectivity);
+    const bool sharded = isShardedMerge(left, right);
+    double probe_fraction = 1.0;
+    if (sharded)
+        probe_fraction = left.rows >= right.rows ? probeReadFraction(left_mask, right_mask) : probeReadFraction(right_mask, left_mask);
+    return computeMergeJoinCost(left, right, selectivity, sharded, probe_fraction);
 }
 
 UInt64 DPSubJoinOrderOptimizer::spanningClasses(UInt32 left_mask, UInt32 right_mask) const
@@ -841,13 +869,15 @@ double DPSubJoinOrderOptimizer::hashJoinWork(
         return 0;
     const UInt64 left = left_rows.value_or(0);
     const UInt64 right = right_rows.value_or(0);
-    const double probe_fraction = left < right ? probeReadFraction(right_mask, left_mask) : probeReadFraction(left_mask, right_mask);
+    double probe_fraction = 1.0;
+    if (query_graph.runtime_filter_prunes_probe)
+        probe_fraction = left < right ? probeReadFraction(right_mask, left_mask) : probeReadFraction(left_mask, right_mask);
     return computeHashJoinWork(left, right, probe_fraction);
 }
 
 double DPSubJoinOrderOptimizer::probeReadFraction(UInt32 probe_mask, UInt32 build_mask) const
 {
-    if (!query_graph.runtime_filter_prunes_probe || std::popcount(probe_mask) != 1)
+    if (std::popcount(probe_mask) != 1)
         return 1.0;
     const auto & prefix = dpsub_data.rel_prefix_classes[std::countr_zero(probe_mask)];
     if (prefix.empty() || !(dpsub_data.class_relations[prefix.front()] & build_mask))
@@ -1155,6 +1185,7 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::solve()
         JoinKind kind{JoinKind::Inner};
         JoinStrictness strictness{JoinStrictness::All};
         JoinMethod method{JoinMethod::Hash};
+        bool sharded{false};   /// a merge join sharded by primary key ranges
         Int8 merge_class{-1};  /// equivalence class of the merge key
         Int8 order_class{-1};  /// equivalence class the result is sorted by, if a later join may use it
         Int8 left_plan{-1};    /// plan of `left` in its `ordered`, -1 for its cheapest plan

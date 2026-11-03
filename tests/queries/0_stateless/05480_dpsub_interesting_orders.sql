@@ -16,6 +16,8 @@ SET enable_join_runtime_filters = 1;
 SET enable_join_runtime_filters_index_analysis = 1;
 SET use_statistics = 0;
 SET use_hash_table_stats_for_join_reordering = 0;
+-- A merge join of sorted inputs is costed as sharded by primary key ranges only with this on.
+SET query_plan_join_shard_by_pk_ranges = 1;
 
 DROP TABLE IF EXISTS sorted1;
 DROP TABLE IF EXISTS sorted2;
@@ -27,8 +29,11 @@ DROP TABLE IF EXISTS tiny;
 DROP TABLE IF EXISTS probe;
 DROP TABLE IF EXISTS build_narrow;
 DROP TABLE IF EXISTS build_wide;
+DROP TABLE IF EXISTS build_small;
 DROP TABLE IF EXISTS float_a;
 DROP TABLE IF EXISTS float_b;
+DROP TABLE IF EXISTS nullable_a;
+DROP TABLE IF EXISTS nullable_b;
 DROP TABLE IF EXISTS two_keys_a;
 DROP TABLE IF EXISTS two_keys_b;
 DROP TABLE IF EXISTS two_sorted_a;
@@ -46,8 +51,11 @@ CREATE TABLE tiny (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE probe (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE build_narrow (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE build_wide (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE build_small (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE float_a (k Float64, v UInt64) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE float_b (k Float64, v UInt64) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE nullable_a (k Nullable(UInt64), v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS allow_nullable_key = 1;
+CREATE TABLE nullable_b (k Nullable(UInt64), v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS allow_nullable_key = 1;
 CREATE TABLE two_keys_a (k UInt64, s UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE two_keys_b (k UInt64, s UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE two_sorted_a (k UInt64, s UInt64, v UInt64) ENGINE = MergeTree ORDER BY (k, s);
@@ -65,9 +73,11 @@ INSERT INTO tiny SELECT number * 1000, number FROM numbers(10);
 INSERT INTO probe SELECT number, number FROM numbers(1000);
 INSERT INTO build_narrow SELECT number, number FROM numbers(100);
 INSERT INTO build_wide SELECT number * 10, number FROM numbers(100);
--- A merge join matches `-0.0` with `0.0`, as `=` does.
-INSERT INTO float_a SELECT if(number = 0, -0., toFloat64(number)), number FROM numbers(1000);
+INSERT INTO build_small SELECT number * 50, number FROM numbers(20);
+INSERT INTO float_a SELECT toFloat64(number), number FROM numbers(1000);
 INSERT INTO float_b SELECT toFloat64(number), number FROM numbers(1000);
+INSERT INTO nullable_a SELECT number, number FROM numbers(1000);
+INSERT INTO nullable_b SELECT number, number FROM numbers(1000);
 INSERT INTO two_keys_a SELECT number % 2, intHash64(number), number FROM numbers(1000);
 INSERT INTO two_keys_b SELECT number % 2, intHash64(number), number FROM numbers(1000);
 INSERT INTO two_sorted_a SELECT number % 2, intHash64(number), number FROM numbers(1000);
@@ -75,8 +85,8 @@ INSERT INTO two_sorted_b SELECT number % 2, intHash64(number), number FROM numbe
 INSERT INTO tenant_a SELECT 1, number % 2, intHash64(number), number FROM numbers(1000);
 INSERT INTO tenant_b SELECT 1, number % 2, intHash64(number), number FROM numbers(1000);
 
--- A merge join pays a fixed cost, so it wins only for inputs of millions of rows. `build_narrow` covers a tenth of the
--- probe key range, `build_wide` all of it. `two_*` and `tenant_*` have two values of `k`.
+-- A merge join pays a fixed cost, so it wins only for inputs of millions of rows. `build_narrow` covers a hundredth of the
+-- probe key range, `build_wide` and `build_small` all of it. `two_*` and `tenant_*` have two values of `k`.
 SET param__internal_join_table_stat_hints = '{
     "sorted1": { "cardinality": 50000000, "distinct_keys": { "k": 50000000 } },
     "sorted2": { "cardinality": 50000000, "distinct_keys": { "k": 50000000 } },
@@ -86,10 +96,13 @@ SET param__internal_join_table_stat_hints = '{
     "unsorted2": { "cardinality": 50000000, "distinct_keys": { "k": 50000000 } },
     "tiny": { "cardinality": 10, "distinct_keys": { "k": 10 } },
     "probe": { "cardinality": 200000000, "distinct_keys": { "k": 200000000 }, "key_ranges": { "k": [0, 200000000] } },
-    "build_narrow": { "cardinality": 20000000, "distinct_keys": { "k": 20000000 }, "key_ranges": { "k": [0, 20000000] } },
+    "build_narrow": { "cardinality": 2000000, "distinct_keys": { "k": 2000000 }, "key_ranges": { "k": [0, 2000000] } },
     "build_wide": { "cardinality": 20000000, "distinct_keys": { "k": 20000000 }, "key_ranges": { "k": [0, 200000000] } },
+    "build_small": { "cardinality": 4000000, "distinct_keys": { "k": 4000000 }, "key_ranges": { "k": [0, 200000000] } },
     "float_a": { "cardinality": 50000000, "distinct_keys": { "k": 50000000 } },
     "float_b": { "cardinality": 50000000, "distinct_keys": { "k": 50000000 } },
+    "nullable_a": { "cardinality": 50000000, "distinct_keys": { "k": 50000000 } },
+    "nullable_b": { "cardinality": 50000000, "distinct_keys": { "k": 50000000 } },
     "two_keys_a": { "cardinality": 50000000, "distinct_keys": { "k": 2, "s": 50000000 } },
     "two_keys_b": { "cardinality": 50000000, "distinct_keys": { "k": 2, "s": 50000000 } },
     "two_sorted_a": { "cardinality": 50000000, "distinct_keys": { "k": 2, "s": 50000000 } },
@@ -133,7 +146,7 @@ SELECT '-- build keys in a narrow range: a hash join, whose runtime filter skips
 SELECT if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join') FROM (EXPLAIN PLAN SELECT sum(probe.v + build_narrow.v) FROM probe JOIN build_narrow ON probe.k = build_narrow.k)
 WHERE explain LIKE '%Algorithm:%';
 
-SELECT '-- build keys in a narrow range, but runtime filters disabled: nothing is skipped, a merge join';
+SELECT '-- build keys in a narrow range, runtime filters disabled: the hash join reads the whole probe, the sharded merge only its overlap';
 SELECT if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join') FROM (EXPLAIN PLAN SELECT sum(probe.v + build_narrow.v) FROM probe JOIN build_narrow ON probe.k = build_narrow.k)
 WHERE explain LIKE '%Algorithm:%'
 SETTINGS enable_join_runtime_filters = 0;
@@ -142,9 +155,22 @@ SELECT '-- build keys spread over the probe range: the runtime filter skips noth
 SELECT if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join') FROM (EXPLAIN PLAN SELECT sum(probe.v + build_wide.v) FROM probe JOIN build_wide ON probe.k = build_wide.k)
 WHERE explain LIKE '%Algorithm:%';
 
-SELECT '-- floating-point keys sorted by the key: a merge join';
+SELECT '-- a probe side 50 times the build side: streaming it through the merge costs more than probing, a hash join';
+SELECT if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join') FROM (EXPLAIN PLAN SELECT sum(probe.v + build_small.v) FROM probe JOIN build_small ON probe.k = build_small.k)
+WHERE explain LIKE '%Algorithm:%';
+
+SELECT '-- floating-point keys: the merge cannot be sharded by key ranges, one stream loses to a hash join';
 SELECT if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join') FROM (EXPLAIN PLAN SELECT count() FROM float_a JOIN float_b ON float_a.k = float_b.k)
 WHERE explain LIKE '%Algorithm:%';
+
+SELECT '-- Nullable keys: the merge cannot be sharded by key ranges, one stream loses to a hash join';
+SELECT if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join') FROM (EXPLAIN PLAN SELECT count() FROM nullable_a JOIN nullable_b ON nullable_a.k = nullable_b.k)
+WHERE explain LIKE '%Algorithm:%';
+
+SELECT '-- sharding by primary key ranges disabled: one stream loses to a hash join';
+SELECT if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join') FROM (EXPLAIN PLAN SELECT sum(sorted1.v + sorted2.v) FROM sorted1 JOIN sorted2 ON sorted1.k = sorted2.k)
+WHERE explain LIKE '%Algorithm:%'
+SETTINGS query_plan_join_shard_by_pk_ranges = 0;
 
 SELECT '-- two keys, sorted by a low-cardinality first key only: a hash join';
 SELECT if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join') FROM (EXPLAIN PLAN
@@ -193,7 +219,9 @@ SETTINGS query_plan_join_order_use_interesting_orders = 0;
 SELECT count(), sum(sorted1.v + tiny.v) FROM sorted1 JOIN tiny ON sorted1.k = tiny.k;
 SELECT count(), sum(probe.v + build_narrow.v) FROM probe JOIN build_narrow ON probe.k = build_narrow.k;
 SELECT count(), sum(probe.v + build_wide.v) FROM probe JOIN build_wide ON probe.k = build_wide.k;
+SELECT count(), sum(probe.v + build_small.v) FROM probe JOIN build_small ON probe.k = build_small.k;
 SELECT count() FROM float_a JOIN float_b ON float_a.k = float_b.k;
+SELECT count(), sum(nullable_a.v + nullable_b.v) FROM nullable_a JOIN nullable_b ON nullable_a.k = nullable_b.k;
 SELECT count(), sum(two_keys_a.v + two_keys_b.v) FROM two_keys_a JOIN two_keys_b ON two_keys_a.k = two_keys_b.k AND two_keys_a.s = two_keys_b.s;
 SELECT count(), sum(two_sorted_a.v + two_sorted_b.v) FROM two_sorted_a JOIN two_sorted_b ON two_sorted_a.s = two_sorted_b.s AND two_sorted_a.k = two_sorted_b.k;
 SELECT count(), sum(sorted1.v + sorted2.v + sorted3.v + sorted4.v) FROM sorted1 JOIN sorted2 ON sorted1.k = sorted2.k
@@ -212,8 +240,11 @@ DROP TABLE tiny;
 DROP TABLE probe;
 DROP TABLE build_narrow;
 DROP TABLE build_wide;
+DROP TABLE build_small;
 DROP TABLE float_a;
 DROP TABLE float_b;
+DROP TABLE nullable_a;
+DROP TABLE nullable_b;
 DROP TABLE two_keys_a;
 DROP TABLE two_keys_b;
 DROP TABLE two_sorted_a;

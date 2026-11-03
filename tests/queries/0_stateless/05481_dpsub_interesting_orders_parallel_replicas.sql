@@ -13,6 +13,8 @@ SET query_plan_optimize_join_order_limit = 10;
 SET enable_join_runtime_filters = 1;
 SET use_statistics = 0;
 SET use_hash_table_stats_for_join_reordering = 0;
+-- A merge join of sorted inputs is costed as sharded by primary key ranges only with this on.
+SET query_plan_join_shard_by_pk_ranges = 1;
 
 DROP TABLE IF EXISTS pr_sorted1;
 DROP TABLE IF EXISTS pr_sorted2;

@@ -172,6 +172,8 @@ struct QueryGraph
     bool reuse_join_output_order = false;
     /// A hash join's runtime filter prunes the granules of the probe side by its primary key (`enable_join_runtime_filters_index_analysis`).
     bool runtime_filter_prunes_probe = false;
+    /// A sort-merge join of inputs read in order by their primary key runs sharded by key ranges (`query_plan_join_shard_by_pk_ranges`).
+    bool shard_merge_by_pk_ranges = false;
 
     /// Per relation: the longest sequence of its `candidates` it can be read in order of. Called by DPsub only when it
     /// uses interesting orders, since it probes the storage order of every input.
