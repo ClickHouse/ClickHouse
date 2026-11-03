@@ -5,7 +5,7 @@
     "version": "1.0",
     "contact": {
       "name": "ClickHouse Support",
-      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1312017",
+      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1337070",
       "email": "support@clickhouse.com"
     }
   },
@@ -1496,7 +1496,7 @@
     "/v1/organizations/{organizationId}/serviceProfiles": {
       "get": {
         "summary": "List available service profiles",
-        "description": "Returns the custom instance profiles the organization can use in a region. Pass byoc_id to list the profiles configured for a BYOC infrastructure; the region is then taken from the infrastructure and region_id may be omitted. The list is empty when the organization tier does not include custom hardware profiles.",
+        "description": "Returns the custom instance profiles the organization can use in a region. Pass byoc_id to list the profiles configured for a BYOC infrastructure; the region is then taken from the infrastructure and region_id may be omitted. Some profiles have their own availability rules; every other profile, v1-default included, is listed only when the organization has custom hardware profiles (through its plan or a per-organization override).",
         "operationId": "serviceProfilesList",
         "parameters": [
           {
@@ -1613,7 +1613,7 @@
           "Service"
         ],
         "x-mint": {
-          "content": "Returns the custom instance profiles the organization can use in a region. Pass byoc_id to list the profiles configured for a BYOC infrastructure; the region is then taken from the infrastructure and region_id may be omitted. The list is empty when the organization tier does not include custom hardware profiles.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:view` permission.\n\n</div>\n</div>"
+          "content": "Returns the custom instance profiles the organization can use in a region. Pass byoc_id to list the profiles configured for a BYOC infrastructure; the region is then taken from the infrastructure and region_id may be omitted. Some profiles have their own availability rules; every other profile, v1-default included, is listed only when the organization has custom hardware profiles (through its plan or a per-organization override).\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:view` permission.\n\n</div>\n</div>"
         }
       }
     },
@@ -14767,7 +14767,7 @@
       },
       "delete": {
         "summary": "Delete a PostgreSQL service",
-        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Deletes a Postgres service that belongs to the organization",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Deletes a Postgres service that belongs to the organization. Returns 409 if deletion protection is enabled for the service.",
         "operationId": "postgresServiceDelete",
         "parameters": [
           {
@@ -31438,6 +31438,101 @@
           "displayType"
         ]
       },
+      "ClickStackPromqlRangeExpression": {
+        "properties": {
+          "expression": {
+            "description": "PromQL expression. Supports dashboard variables and the $__interval, $__rate_interval, and $__range macros.",
+            "type": "string",
+            "example": "sum by (job) (rate(http_requests_total[$__rate_interval]))"
+          },
+          "alias": {
+            "description": "Prefixed to every series name this expression produces.",
+            "type": "string",
+            "example": "Requests"
+          }
+        },
+        "required": [
+          "expression"
+        ]
+      },
+      "ClickStackLinePromqlChartConfig": {
+        "properties": {
+          "configType": {
+            "description": "Must be \"promql\" to use the PromQL chart config variant.",
+            "type": "string",
+            "enum": [
+              "promql"
+            ],
+            "example": "promql"
+          },
+          "sourceId": {
+            "description": "ID of the PromQL source to query. Must be a source of kind \"promql\".",
+            "type": "string",
+            "example": "65f5e4a3b9e77c001a333333"
+          },
+          "granularity": {
+            "description": "Resolution of range queries, used as the Prometheus step and the $__interval macro. Defaults to \"auto\", which picks one from the time range.",
+            "type": "string",
+            "example": "5 minute"
+          },
+          "numberFormat": {
+            "$ref": "#/components/schemas/ClickStackNumberFormat"
+          },
+          "expressions": {
+            "type": "array",
+            "description": "PromQL expressions to plot.",
+            "items": {
+              "$ref": "#/components/schemas/ClickStackPromqlRangeExpression"
+            }
+          },
+          "legendTemplate": {
+            "description": "Template for series names, using the series' Prometheus labels in double braces.",
+            "type": "string",
+            "example": "{{job}} - {{instance}}"
+          },
+          "fillNulls": {
+            "description": "Fill missing time buckets with zero instead of leaving gaps.",
+            "type": "boolean"
+          },
+          "alignDateRangeToGranularity": {
+            "description": "Expand date range boundaries to the query granularity interval.",
+            "type": "boolean"
+          },
+          "seriesLimit": {
+            "description": "Maximum number of series rendered (top-N by value). Omit to use the default render cap, set 0 for unlimited, or a positive N to keep the top N series.",
+            "type": "integer",
+            "example": 5
+          },
+          "displayType": {
+            "description": "Display as a line time-series chart.",
+            "type": "string",
+            "enum": [
+              "line"
+            ],
+            "example": "line"
+          },
+          "compareToPreviousPeriod": {
+            "description": "Overlay the equivalent previous time period for comparison.",
+            "type": "boolean"
+          },
+          "lineInterpolation": {
+            "description": "How points are connected. Defaults to \"smooth\" when omitted.",
+            "type": "string",
+            "enum": [
+              "smooth",
+              "linear",
+              "step"
+            ],
+            "example": "step"
+          }
+        },
+        "required": [
+          "configType",
+          "sourceId",
+          "expressions",
+          "displayType"
+        ]
+      },
       "ClickStackLineChartConfig": {
         "oneOf": [
           {
@@ -31445,6 +31540,9 @@
           },
           {
             "$ref": "#/components/schemas/ClickStackLineRawSqlChartConfig"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackLinePromqlChartConfig"
           }
         ]
       },
@@ -31468,6 +31566,16 @@
           }
         ]
       },
+      "ClickStackAlertLinePromqlChartConfig": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ClickStackLinePromqlChartConfig"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackAlertChartConfigOverlay"
+          }
+        ]
+      },
       "ClickStackAlertLineChartConfig": {
         "oneOf": [
           {
@@ -31475,6 +31583,9 @@
           },
           {
             "$ref": "#/components/schemas/ClickStackAlertLineRawSqlChartConfig"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackAlertLinePromqlChartConfig"
           }
         ]
       },
@@ -31595,6 +31706,70 @@
           "displayType"
         ]
       },
+      "ClickStackBarPromqlChartConfig": {
+        "properties": {
+          "configType": {
+            "description": "Must be \"promql\" to use the PromQL chart config variant.",
+            "type": "string",
+            "enum": [
+              "promql"
+            ],
+            "example": "promql"
+          },
+          "sourceId": {
+            "description": "ID of the PromQL source to query. Must be a source of kind \"promql\".",
+            "type": "string",
+            "example": "65f5e4a3b9e77c001a333333"
+          },
+          "granularity": {
+            "description": "Resolution of range queries, used as the Prometheus step and the $__interval macro. Defaults to \"auto\", which picks one from the time range.",
+            "type": "string",
+            "example": "5 minute"
+          },
+          "numberFormat": {
+            "$ref": "#/components/schemas/ClickStackNumberFormat"
+          },
+          "expressions": {
+            "type": "array",
+            "description": "PromQL expressions to plot.",
+            "items": {
+              "$ref": "#/components/schemas/ClickStackPromqlRangeExpression"
+            }
+          },
+          "legendTemplate": {
+            "description": "Template for series names, using the series' Prometheus labels in double braces.",
+            "type": "string",
+            "example": "{{job}} - {{instance}}"
+          },
+          "fillNulls": {
+            "description": "Fill missing time buckets with zero instead of leaving gaps.",
+            "type": "boolean"
+          },
+          "alignDateRangeToGranularity": {
+            "description": "Expand date range boundaries to the query granularity interval.",
+            "type": "boolean"
+          },
+          "seriesLimit": {
+            "description": "Maximum number of series rendered (top-N by value). Omit to use the default render cap, set 0 for unlimited, or a positive N to keep the top N series.",
+            "type": "integer",
+            "example": 5
+          },
+          "displayType": {
+            "description": "Display as a stacked-bar time-series chart.",
+            "type": "string",
+            "enum": [
+              "stacked_bar"
+            ],
+            "example": "stacked_bar"
+          }
+        },
+        "required": [
+          "configType",
+          "sourceId",
+          "expressions",
+          "displayType"
+        ]
+      },
       "ClickStackBarChartConfig": {
         "oneOf": [
           {
@@ -31602,6 +31777,9 @@
           },
           {
             "$ref": "#/components/schemas/ClickStackBarRawSqlChartConfig"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackBarPromqlChartConfig"
           }
         ]
       },
@@ -31625,6 +31803,16 @@
           }
         ]
       },
+      "ClickStackAlertBarPromqlChartConfig": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ClickStackBarPromqlChartConfig"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackAlertChartConfigOverlay"
+          }
+        ]
+      },
       "ClickStackAlertBarChartConfig": {
         "oneOf": [
           {
@@ -31632,6 +31820,9 @@
           },
           {
             "$ref": "#/components/schemas/ClickStackAlertBarRawSqlChartConfig"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackAlertBarPromqlChartConfig"
           }
         ]
       },
@@ -31772,6 +31963,80 @@
           "displayType"
         ]
       },
+      "ClickStackStackedLinePromqlChartConfig": {
+        "properties": {
+          "configType": {
+            "description": "Must be \"promql\" to use the PromQL chart config variant.",
+            "type": "string",
+            "enum": [
+              "promql"
+            ],
+            "example": "promql"
+          },
+          "sourceId": {
+            "description": "ID of the PromQL source to query. Must be a source of kind \"promql\".",
+            "type": "string",
+            "example": "65f5e4a3b9e77c001a333333"
+          },
+          "granularity": {
+            "description": "Resolution of range queries, used as the Prometheus step and the $__interval macro. Defaults to \"auto\", which picks one from the time range.",
+            "type": "string",
+            "example": "5 minute"
+          },
+          "numberFormat": {
+            "$ref": "#/components/schemas/ClickStackNumberFormat"
+          },
+          "expressions": {
+            "type": "array",
+            "description": "PromQL expressions to plot.",
+            "items": {
+              "$ref": "#/components/schemas/ClickStackPromqlRangeExpression"
+            }
+          },
+          "legendTemplate": {
+            "description": "Template for series names, using the series' Prometheus labels in double braces.",
+            "type": "string",
+            "example": "{{job}} - {{instance}}"
+          },
+          "fillNulls": {
+            "description": "Fill missing time buckets with zero instead of leaving gaps.",
+            "type": "boolean"
+          },
+          "alignDateRangeToGranularity": {
+            "description": "Expand date range boundaries to the query granularity interval.",
+            "type": "boolean"
+          },
+          "seriesLimit": {
+            "description": "Maximum number of series rendered (top-N by value). Omit to use the default render cap, set 0 for unlimited, or a positive N to keep the top N series.",
+            "type": "integer",
+            "example": 5
+          },
+          "displayType": {
+            "description": "Display as a stacked-line time-series chart.",
+            "type": "string",
+            "enum": [
+              "stacked_line"
+            ],
+            "example": "stacked_line"
+          },
+          "lineInterpolation": {
+            "description": "How points are connected. Defaults to \"linear\" when omitted.",
+            "type": "string",
+            "enum": [
+              "smooth",
+              "linear",
+              "step"
+            ],
+            "example": "step"
+          }
+        },
+        "required": [
+          "configType",
+          "sourceId",
+          "expressions",
+          "displayType"
+        ]
+      },
       "ClickStackStackedLineChartConfig": {
         "oneOf": [
           {
@@ -31779,6 +32044,9 @@
           },
           {
             "$ref": "#/components/schemas/ClickStackStackedLineRawSqlChartConfig"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackStackedLinePromqlChartConfig"
           }
         ]
       },
@@ -31802,6 +32070,16 @@
           }
         ]
       },
+      "ClickStackAlertStackedLinePromqlChartConfig": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ClickStackStackedLinePromqlChartConfig"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackAlertChartConfigOverlay"
+          }
+        ]
+      },
       "ClickStackAlertStackedLineChartConfig": {
         "oneOf": [
           {
@@ -31809,6 +32087,9 @@
           },
           {
             "$ref": "#/components/schemas/ClickStackAlertStackedLineRawSqlChartConfig"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackAlertStackedLinePromqlChartConfig"
           }
         ]
       },
@@ -32152,6 +32433,146 @@
           "displayType"
         ]
       },
+      "ClickStackPromqlInstantExpression": {
+        "properties": {
+          "expression": {
+            "description": "PromQL expression. Supports dashboard variables and the $__interval, $__rate_interval, and $__range macros.",
+            "type": "string",
+            "example": "sum by (job) (rate(http_requests_total[$__rate_interval]))"
+          },
+          "alias": {
+            "description": "Prefixed to every series name this expression produces.",
+            "type": "string",
+            "example": "Requests"
+          },
+          "queryType": {
+            "description": "Whether to evaluate over the time range or at its end. Defaults to \"range\" when omitted.",
+            "type": "string",
+            "enum": [
+              "range",
+              "instant"
+            ],
+            "example": "instant"
+          }
+        },
+        "required": [
+          "expression"
+        ]
+      },
+      "ClickStackPromqlReducibleExpression": {
+        "properties": {
+          "expression": {
+            "description": "PromQL expression. Supports dashboard variables and the $__interval, $__rate_interval, and $__range macros.",
+            "type": "string",
+            "example": "sum by (job) (rate(http_requests_total[$__rate_interval]))"
+          },
+          "alias": {
+            "description": "Prefixed to every series name this expression produces.",
+            "type": "string",
+            "example": "Requests"
+          },
+          "queryType": {
+            "description": "Whether to evaluate over the time range or at its end. Defaults to \"range\" when omitted.",
+            "type": "string",
+            "enum": [
+              "range",
+              "instant"
+            ],
+            "example": "instant"
+          },
+          "reducer": {
+            "description": "How each series' samples are reduced to one value. Defaults to \"lastNotNull\" when omitted. It also applies to instant queries, where each series has a single sample, so e.g. \"count\" turns every value into 1.",
+            "type": "string",
+            "enum": [
+              "lastNotNull",
+              "min",
+              "max",
+              "mean",
+              "sum",
+              "count"
+            ],
+            "example": "max"
+          }
+        },
+        "required": [
+          "expression"
+        ]
+      },
+      "ClickStackNumberPromqlChartConfig": {
+        "properties": {
+          "configType": {
+            "description": "Must be \"promql\" to use the PromQL chart config variant.",
+            "type": "string",
+            "enum": [
+              "promql"
+            ],
+            "example": "promql"
+          },
+          "sourceId": {
+            "description": "ID of the PromQL source to query. Must be a source of kind \"promql\".",
+            "type": "string",
+            "example": "65f5e4a3b9e77c001a333333"
+          },
+          "granularity": {
+            "description": "Resolution of range queries, used as the Prometheus step and the $__interval macro. Defaults to \"auto\", which picks one from the time range.",
+            "type": "string",
+            "example": "5 minute"
+          },
+          "numberFormat": {
+            "$ref": "#/components/schemas/ClickStackNumberFormat"
+          },
+          "displayType": {
+            "description": "Display as a single big-number chart.",
+            "type": "string",
+            "enum": [
+              "number"
+            ],
+            "example": "number"
+          },
+          "expressions": {
+            "type": "array",
+            "description": "PromQL expressions. Only the first is queried; the rest are kept but ignored. The tile displays the first value.",
+            "items": {
+              "$ref": "#/components/schemas/ClickStackPromqlReducibleExpression"
+            }
+          },
+          "color": {
+            "description": "Optional static color applied to the displayed number.",
+            "type": "string",
+            "enum": [
+              "chart-blue",
+              "chart-orange",
+              "chart-red",
+              "chart-cyan",
+              "chart-green",
+              "chart-pink",
+              "chart-purple",
+              "chart-light-blue",
+              "chart-brown",
+              "chart-gray",
+              "chart-success",
+              "chart-warning",
+              "chart-error"
+            ]
+          },
+          "colorRules": {
+            "type": "array",
+            "description": "Ordered conditional color rules evaluated against the displayed value (last match wins). Falls back to color, then the default text color when no rule matches.",
+            "items": {
+              "$ref": "#/components/schemas/ClickStackNumberTileColorCondition"
+            }
+          },
+          "backgroundChart": {
+            "$ref": "#/components/schemas/ClickStackBackgroundChart"
+          }
+        },
+        "required": [
+          "configType",
+          "sourceId",
+          "displayType",
+          "expressions"
+        ]
+      },
       "ClickStackNumberChartConfig": {
         "oneOf": [
           {
@@ -32159,6 +32580,9 @@
           },
           {
             "$ref": "#/components/schemas/ClickStackNumberRawSqlChartConfig"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackNumberPromqlChartConfig"
           }
         ]
       },
@@ -32182,6 +32606,16 @@
           }
         ]
       },
+      "ClickStackAlertNumberPromqlChartConfig": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ClickStackNumberPromqlChartConfig"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackAlertChartConfigOverlay"
+          }
+        ]
+      },
       "ClickStackAlertNumberChartConfig": {
         "oneOf": [
           {
@@ -32189,6 +32623,9 @@
           },
           {
             "$ref": "#/components/schemas/ClickStackAlertNumberRawSqlChartConfig"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackAlertNumberPromqlChartConfig"
           }
         ]
       },
@@ -33874,6 +34311,76 @@
           "select"
         ]
       },
+      "ClickStackHeatmapPromqlChartConfig": {
+        "properties": {
+          "configType": {
+            "description": "Must be \"promql\" to use the PromQL chart config variant.",
+            "type": "string",
+            "enum": [
+              "promql"
+            ],
+            "example": "promql"
+          },
+          "sourceId": {
+            "description": "ID of the PromQL source to query. Must be a source of kind \"promql\".",
+            "type": "string",
+            "example": "65f5e4a3b9e77c001a333333"
+          },
+          "granularity": {
+            "description": "Resolution of range queries, used as the Prometheus step and the $__interval macro. Defaults to \"auto\", which picks one from the time range.",
+            "type": "string",
+            "example": "5 minute"
+          },
+          "numberFormat": {
+            "$ref": "#/components/schemas/ClickStackNumberFormat"
+          },
+          "displayType": {
+            "description": "Display as a heatmap.",
+            "type": "string",
+            "enum": [
+              "heatmap"
+            ],
+            "example": "heatmap"
+          },
+          "expressions": {
+            "type": "array",
+            "description": "PromQL expressions. Only the first is queried; the rest are kept but ignored.",
+            "items": {
+              "$ref": "#/components/schemas/ClickStackPromqlRangeExpression"
+            }
+          },
+          "heatmapMode": {
+            "description": "\"distribution\" buckets the values of all series over time, \"series\" draws one row per series, and \"histogram\" draws one row per Prometheus histogram bucket (series need an \"le\" label). Defaults to \"distribution\" when omitted.",
+            "type": "string",
+            "enum": [
+              "distribution",
+              "series",
+              "histogram"
+            ],
+            "example": "histogram"
+          },
+          "heatmapScaleType": {
+            "description": "Y-axis scale of a distribution heatmap.",
+            "type": "string",
+            "enum": [
+              "log",
+              "linear"
+            ],
+            "example": "log"
+          },
+          "legendTemplate": {
+            "description": "Template for row names of a series heatmap, using the series' Prometheus labels in double braces.",
+            "type": "string",
+            "example": "{{job}}"
+          }
+        },
+        "required": [
+          "configType",
+          "sourceId",
+          "displayType",
+          "expressions"
+        ]
+      },
       "ClickStackHeatmapChartConfig": {
         "oneOf": [
           {
@@ -33881,6 +34388,9 @@
           },
           {
             "$ref": "#/components/schemas/ClickStackHeatmapSeriesChartConfig"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackHeatmapPromqlChartConfig"
           }
         ]
       },
@@ -34119,6 +34629,164 @@
           "displayType"
         ]
       },
+      "ClickStackTablePromqlChartConfig": {
+        "properties": {
+          "configType": {
+            "description": "Must be \"promql\" to use the PromQL chart config variant.",
+            "type": "string",
+            "enum": [
+              "promql"
+            ],
+            "example": "promql"
+          },
+          "sourceId": {
+            "description": "ID of the PromQL source to query. Must be a source of kind \"promql\".",
+            "type": "string",
+            "example": "65f5e4a3b9e77c001a333333"
+          },
+          "granularity": {
+            "description": "Resolution of range queries, used as the Prometheus step and the $__interval macro. Defaults to \"auto\", which picks one from the time range.",
+            "type": "string",
+            "example": "5 minute"
+          },
+          "numberFormat": {
+            "$ref": "#/components/schemas/ClickStackNumberFormat"
+          },
+          "displayType": {
+            "description": "Display as a table chart.",
+            "type": "string",
+            "enum": [
+              "table"
+            ],
+            "example": "table"
+          },
+          "expressions": {
+            "type": "array",
+            "description": "PromQL expressions. Only the first is queried; the rest are kept but ignored.",
+            "items": {
+              "$ref": "#/components/schemas/ClickStackPromqlInstantExpression"
+            }
+          }
+        },
+        "required": [
+          "configType",
+          "sourceId",
+          "displayType",
+          "expressions"
+        ]
+      },
+      "ClickStackPiePromqlChartConfig": {
+        "properties": {
+          "configType": {
+            "description": "Must be \"promql\" to use the PromQL chart config variant.",
+            "type": "string",
+            "enum": [
+              "promql"
+            ],
+            "example": "promql"
+          },
+          "sourceId": {
+            "description": "ID of the PromQL source to query. Must be a source of kind \"promql\".",
+            "type": "string",
+            "example": "65f5e4a3b9e77c001a333333"
+          },
+          "granularity": {
+            "description": "Resolution of range queries, used as the Prometheus step and the $__interval macro. Defaults to \"auto\", which picks one from the time range.",
+            "type": "string",
+            "example": "5 minute"
+          },
+          "numberFormat": {
+            "$ref": "#/components/schemas/ClickStackNumberFormat"
+          },
+          "displayType": {
+            "description": "Display as a pie chart.",
+            "type": "string",
+            "enum": [
+              "pie"
+            ],
+            "example": "pie"
+          },
+          "expressions": {
+            "type": "array",
+            "description": "PromQL expressions. Only the first is queried; the rest are kept but ignored.",
+            "items": {
+              "$ref": "#/components/schemas/ClickStackPromqlReducibleExpression"
+            }
+          },
+          "legendTemplate": {
+            "description": "Template for slice names, using the series' Prometheus labels in double braces.",
+            "type": "string",
+            "example": "{{job}}"
+          },
+          "limit": {
+            "description": "Maximum number of slices (top-N by value), at most 500. Omit or set 0 to show up to 500.",
+            "type": "integer",
+            "example": 10
+          }
+        },
+        "required": [
+          "configType",
+          "sourceId",
+          "displayType",
+          "expressions"
+        ]
+      },
+      "ClickStackCategoricalBarPromqlChartConfig": {
+        "properties": {
+          "configType": {
+            "description": "Must be \"promql\" to use the PromQL chart config variant.",
+            "type": "string",
+            "enum": [
+              "promql"
+            ],
+            "example": "promql"
+          },
+          "sourceId": {
+            "description": "ID of the PromQL source to query. Must be a source of kind \"promql\".",
+            "type": "string",
+            "example": "65f5e4a3b9e77c001a333333"
+          },
+          "granularity": {
+            "description": "Resolution of range queries, used as the Prometheus step and the $__interval macro. Defaults to \"auto\", which picks one from the time range.",
+            "type": "string",
+            "example": "5 minute"
+          },
+          "numberFormat": {
+            "$ref": "#/components/schemas/ClickStackNumberFormat"
+          },
+          "displayType": {
+            "description": "Display as a categorical bar chart.",
+            "type": "string",
+            "enum": [
+              "bar"
+            ],
+            "example": "bar"
+          },
+          "expressions": {
+            "type": "array",
+            "description": "PromQL expressions. Only the first is queried; the rest are kept but ignored.",
+            "items": {
+              "$ref": "#/components/schemas/ClickStackPromqlReducibleExpression"
+            }
+          },
+          "legendTemplate": {
+            "description": "Template for bar names, using the series' Prometheus labels in double braces.",
+            "type": "string",
+            "example": "{{job}}"
+          },
+          "limit": {
+            "description": "Maximum number of bars (top-N by value), at most 500. Omit or set 0 to show up to 500.",
+            "type": "integer",
+            "example": 10
+          }
+        },
+        "required": [
+          "configType",
+          "sourceId",
+          "displayType",
+          "expressions"
+        ]
+      },
       "ClickStackTableChartConfig": {
         "oneOf": [
           {
@@ -34126,6 +34794,9 @@
           },
           {
             "$ref": "#/components/schemas/ClickStackTableRawSqlChartConfig"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackTablePromqlChartConfig"
           }
         ]
       },
@@ -34136,6 +34807,9 @@
           },
           {
             "$ref": "#/components/schemas/ClickStackPieRawSqlChartConfig"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackPiePromqlChartConfig"
           }
         ]
       },
@@ -34146,6 +34820,9 @@
           },
           {
             "$ref": "#/components/schemas/ClickStackCategoricalBarRawSqlChartConfig"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackCategoricalBarPromqlChartConfig"
           }
         ]
       },
@@ -36566,7 +37243,7 @@
             "example": "promql"
           },
           "connection": {
-            "description": "ID of the connection used by this source. Should reference a Prometheus-compatible connection.",
+            "description": "ID of the connection used by this source. Either a ClickHouse connection holding the TimeSeries table, or a Prometheus-compatible connection.",
             "type": "string",
             "example": "507f1f77bcf86cd799439012"
           },
@@ -36581,7 +37258,7 @@
             }
           },
           "timestampValueExpression": {
-            "description": "Required by the API for all source kinds; not used when querying a Prometheus endpoint.",
+            "description": "Required by the API for all source kinds; not used by PromQL queries.",
             "type": "string",
             "example": "timestamp"
           }
@@ -40134,6 +40811,11 @@
         "title": "Postgres Tags",
         "description": "Tags associated with the Postgres service. Tag keys starting with “chc_” are reserved for internal use."
       },
+      "pgDeletionProtectionProperty": {
+        "type": "boolean",
+        "title": "Postgres Service Deletion Protection",
+        "description": "When true, the service cannot be deleted until deletion protection is turned off. Only available for organizations with deletion protection enabled."
+      },
       "pgNameProperty": {
         "type": "string",
         "title": "Postgres Service Name",
@@ -40261,6 +40943,9 @@
             "description": "Hostname for the Postgres service",
             "type": "string"
           },
+          "deletionProtection": {
+            "$ref": "#/components/schemas/pgDeletionProtectionProperty"
+          },
           "earliestRestoreTime": {
             "description": "Earliest point in time the service can be restored to with the restore endpoint. ISO-8601. Only present for a primary service once its first backup has completed.",
             "type": "string",
@@ -40328,6 +41013,9 @@
           },
           "tags": {
             "$ref": "#/components/schemas/pgTags"
+          },
+          "deletionProtection": {
+            "$ref": "#/components/schemas/pgDeletionProtectionProperty"
           }
         }
       },
@@ -40428,6 +41116,9 @@
           },
           "isPrimary": {
             "$ref": "#/components/schemas/pgIsPrimaryProperty"
+          },
+          "deletionProtection": {
+            "$ref": "#/components/schemas/pgDeletionProtectionProperty"
           }
         }
       },

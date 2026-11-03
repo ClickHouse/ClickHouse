@@ -1266,6 +1266,9 @@ void StorageObjectStorageSource::addNumRowsToCache(const ObjectInfo & object_inf
     if (!isCompressionMethodHintAuto(configuration->compression_method))
         return;
 
+    if (!canUseNumRowsFromSchemaCache(format_settings, read_context))
+        return;
+
     const auto cache_key = getKeyForSchemaCache(
         getUniqueStoragePathIdentifier(*configuration, object_info),
         object_info.getFileFormat().value_or(configuration->format),
@@ -1274,7 +1277,7 @@ void StorageObjectStorageSource::addNumRowsToCache(const ObjectInfo & object_inf
     schema_cache.addNumRows(cache_key, num_rows);
 }
 
-StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReader()
+StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReader(bool prefetch_input_format)
 {
     return createReader(
         0,
@@ -1292,7 +1295,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         parser_shared_resources,
         format_filter_info,
         need_only_count,
-        top_k_query_condition_cache_key);
+        top_k_query_condition_cache_key,
+        prefetch_input_format);
 }
 
 StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReader(
@@ -1311,7 +1315,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     FormatParserSharedResourcesPtr parser_shared_resources,
     FormatFilterInfoPtr format_filter_info,
     bool need_only_count,
-    ObjectStorageTopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key)
+    ObjectStorageTopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key,
+    bool prefetch_input_format)
 {
     ObjectInfoPtr object_info;
     bool use_top_k_query_condition_cache_key = false;
@@ -1523,6 +1528,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         /// explicit `compression_method` (including a misspelled one on a table loaded by `ATTACH`, where it is
         /// not rejected) always reads the object as the actual read would.
         if (!isCompressionMethodHintAuto(configuration->compression_method))
+            return std::nullopt;
+
+        if (!canUseNumRowsFromSchemaCache(format_settings, context_))
             return std::nullopt;
 
         const auto cache_key = getKeyForSchemaCache(
@@ -1926,6 +1934,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         if (need_only_count)
             input_format->needOnlyCount();
 
+        if (prefetch_input_format)
+            input_format->prefetch();
+
         builder.init(Pipe(input_format));
 
         if (!identity_partition_columns.empty())
@@ -2119,7 +2130,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
 std::future<StorageObjectStorageSource::ReaderHolder> StorageObjectStorageSource::createReaderAsync()
 {
-    return create_reader_scheduler([=, this] { return createReader(); }, Priority{});
+    return create_reader_scheduler([=, this] { return createReader(/* prefetch_input_format */ true); }, Priority{});
 }
 
 ObjectMetadata getObjectMetadataForRead(const IObjectStorage & object_storage, const RelativePathWithMetadata & object, bool with_tags)
