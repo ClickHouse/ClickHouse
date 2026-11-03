@@ -3,6 +3,7 @@ element with a default created
 allowed created
 attached	0	c
 allowed altered	intDiv(c0, 55), w
+tuple elements altered	kept
 other key	20	4950
 other key altered	intDiv(k, 10), w
 in sorting key	1	1

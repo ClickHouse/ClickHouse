@@ -13,6 +13,7 @@ DROP TABLE IF EXISTS t_plain;
 DROP TABLE IF EXISTS t_tuple_other_element;
 DROP TABLE IF EXISTS t_tuple_alter;
 DROP TABLE IF EXISTS t_tuple_default;
+DROP TABLE IF EXISTS t_tuple_elements;
 DROP TABLE IF EXISTS t_in_sorting_key_subcolumn;
 DROP TABLE IF EXISTS t_in_sorting_key_element;
 DROP TABLE IF EXISTS t_in_sorting_key_element_subcolumn;
@@ -53,6 +54,15 @@ SELECT 'attached', count(), (SELECT comment FROM system.tables WHERE database = 
 ALTER TABLE t_allowed ADD COLUMN v SimpleAggregateFunction(sum, Int64), MODIFY ORDER BY (intDiv(c0, 55), intDiv(v, 2)); -- { serverError BAD_ARGUMENTS }
 ALTER TABLE t_allowed ADD COLUMN w UInt8, MODIFY ORDER BY (intDiv(c0, 55), w);
 SELECT 'allowed altered', sorting_key FROM system.tables WHERE database = currentDatabase() AND name = 't_allowed';
+
+-- So is another element of a tuple that an ALTER makes aggregated, while the key already used an aggregated one.
+CREATE TABLE t_tuple_elements (k UInt8, x Tuple(a SimpleAggregateFunction(max, UInt64), b UInt64)) ENGINE = AggregatingMergeTree
+PARTITION BY (tupleElement(x, 'a') % 2, tupleElement(x, 'b') % 2) ORDER BY k
+SETTINGS allow_tuple_element_aggregation = 1, allow_aggregating_columns_in_partition_or_order_key = 1;
+ALTER TABLE t_tuple_elements MODIFY SETTING allow_aggregating_columns_in_partition_or_order_key = 0;
+ALTER TABLE t_tuple_elements MODIFY COLUMN x Tuple(a SimpleAggregateFunction(max, UInt64), b SimpleAggregateFunction(sum, UInt64)); -- { serverError BAD_ARGUMENTS }
+ALTER TABLE t_tuple_elements MODIFY COLUMN x COMMENT 'kept';
+SELECT 'tuple elements altered', comment FROM system.columns WHERE database = currentDatabase() AND table = 't_tuple_elements' AND name = 'x';
 
 -- Keys that do not depend on SimpleAggregateFunction columns are not affected.
 CREATE TABLE t_other_key (k UInt64, c0 SimpleAggregateFunction(sum, Int64)) ENGINE = AggregatingMergeTree PARTITION BY k % 2 ORDER BY intDiv(k, 10);
@@ -109,3 +119,4 @@ DROP TABLE t_tuple_default;
 DROP TABLE t_in_sorting_key_subcolumn;
 DROP TABLE t_in_sorting_key_element;
 DROP TABLE t_in_sorting_key_element_subcolumn;
+DROP TABLE t_tuple_elements;
