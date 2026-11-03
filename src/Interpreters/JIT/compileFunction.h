@@ -10,6 +10,7 @@
 #    include <Functions/IFunction.h>
 #    include <Interpreters/JIT/CHJIT.h>
 #    include <Interpreters/JIT/JITError.h>
+#    include <Interpreters/JIT/callJITFunction.h>
 
 
 namespace DB
@@ -36,17 +37,6 @@ using ColumnDataRowsSize = size_t;
 
 /// Writes the first error of the rows into `JITError`, which the caller initializes to no error; see `JITErrorSink`.
 using JITCompiledFunction = void (*)(ColumnDataRowsSize, ColumnData *, JITError *);
-
-/** Wrapper to call JIT-compiled functions.
-  * UBSan's `-fsanitize=function` reads a type signature at `function_pointer - 8` before every indirect call.
-  * JIT-compiled functions don't have this prologue, and when JIT code is at a page boundary,
-  * the read accesses unmapped memory, causing a SIGSEGV.
-  */
-template <typename F, typename... Args>
-NO_SANITIZE_UNDEFINED inline decltype(auto) callJITFunction(F && f, Args &&... args)
-{
-    return f(std::forward<Args>(args)...);
-}
 
 struct CompiledFunction
 {

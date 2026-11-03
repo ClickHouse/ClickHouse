@@ -1,0 +1,52 @@
+materialized view, insert into remote()
+0	5
+1	5
+materialized view, background insert into Distributed
+10
+0	5
+1	5
+view()
+0	4
+1	3
+2	3
+row policy
+4
+parameterized view
+0
+1
+2
+received query
+5	0
+5	1
+5	2
+5	3
+5	4
+printed query re-analyzed in a view
+5	0
+5	1
+5	2
+cluster table function
+5	0
+5	1
+5	2
+global in filter pushed to shards
+0
+0
+1
+1
+2
+2
+3
+3
+4
+4
+merge read by a remote replica
+5	0
+5	1
+5	2
+5	10
+5	11
+insert select received by parallel replicas
+0	3	25
+1	3	25
+1
