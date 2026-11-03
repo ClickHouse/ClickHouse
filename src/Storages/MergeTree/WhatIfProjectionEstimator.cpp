@@ -481,7 +481,7 @@ String buildProjectionPart(
             const bool ignores_dropped_rows
                 = mt_settings[MergeTreeSetting::deduplicate_merge_projection_mode] == DeduplicateMergeProjectionMode::IGNORE;
             const size_t most_rows = ignores_dropped_rows ? std::numeric_limits<size_t>::max() : part->rows_count;
-            /// the settings can change after a part is written, and the format of the parent part is one that earlier settings chose
+            /// the settings can change after the writer writes a part, and the parent part has a format that earlier settings chose
             const bool compact = part->getType() == MergeTreeDataPartType::Compact
                 || data.choosePartFormat(0, merged.rows(), part->info.level, &projection).part_type == MergeTreeDataPartType::Compact;
             const bool wide = part->getType() == MergeTreeDataPartType::Wide
