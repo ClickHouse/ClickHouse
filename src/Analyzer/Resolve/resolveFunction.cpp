@@ -3062,10 +3062,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(function_name);
 
         if (!lambda_expression_untyped && user_defined_function)
-        {
             /// Try to substitute user defined SQL expression
             lambda_expression_untyped = tryGetLambdaFromUserDefinedSQLFunctions(user_defined_function, scope.context);
-        }
 
         /** If function is resolved as lambda.
           * Clone lambda before resolve.
