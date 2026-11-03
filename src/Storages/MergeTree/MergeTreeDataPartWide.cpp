@@ -285,6 +285,31 @@ std::vector<ColumnSize> MergeTreeDataPartWide::calculateSubcolumnSizes(const Nam
     return sizes;
 }
 
+ColumnSize MergeTreeDataPartWide::calculateColumnReadSize(const NameAndTypePair & column) const
+{
+    /// Only a column with dynamic subcolumns (`JSON`/`Dynamic`) can keep a second on-disk representation of its data
+    /// that a read does not touch, so only such a column needs the reader to tell its read streams from the rest. Any
+    /// other column's read size is its size on disk, without deserializing a prefix that would load a whole
+    /// `LowCardinality` dictionary, say. The reader of getListOfStreamsForColumns is built on the table's metadata,
+    /// which a projection part does not match; a part without rows has no prefixes to read.
+    if (checksums.empty() || getParentPart() || rows_count == 0 || !column.type->hasDynamicSubcolumns())
+        return getColumnSize(column.name);
+
+    ColumnSize size;
+    /// A file shared by streams of several subcolumns, such as the sizes of a Nested, counts once.
+    std::unordered_set<String> processed_streams;
+    for (const auto & [_, streams] : getListOfStreamsForColumns({column}))
+    {
+        for (const auto & stream : streams)
+        {
+            if (stream.size_hint || processed_streams.insert(stream.name).second)
+                addStreamWithSizeHintToColumnSize(stream, size);
+        }
+    }
+
+    return size;
+}
+
 void MergeTreeDataPartWide::addStreamWithSizeHintToColumnSize(const StreamWithSizeHint & stream, ColumnSize & size) const
 {
     /// A hint is the column's share of a file it shares with others; the marks file is the stream's own.
