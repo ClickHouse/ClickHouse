@@ -39,9 +39,13 @@ for data_path in /var/lib/clickhouse /var/lib/clickhouse/; do
   [ "$data_dir" = "$data_path" ]
   [ "$(chCli "SELECT path FROM system.filesystem_cache_settings WHERE cache_name = 'docker_relative_cache'")" = "${data_dir%/}/caches/docker_relative_cache" ]
 
-  # The entrypoint runs `cd "$DATA_DIR"` before `manage_clickhouse_directories`, regardless of
-  # the image's `WORKDIR`. Without `grep '^/'`, it creates the raw relative path here,
-  # beside `caches`, so this assertion must fail when that filter is removed.
-  docker exec "$cid" test ! -e "${data_dir%/}/docker_relative_cache"
+  # The entrypoint (`entrypoint.sh` or `clickhouse docker-init`) changes into the data directory
+  # before preparing the directories, regardless of the image's `WORKDIR`. Without skipping relative
+  # entries, it creates the raw relative path here, beside `caches`, so this assertion must fail
+  # when that filter is removed.
+  if pathExists "$cid" "${data_dir%/}/docker_relative_cache"; then
+    echo "${data_dir%/}/docker_relative_cache must not exist" >&2
+    exit 1
+  fi
 )
 done

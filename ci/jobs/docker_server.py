@@ -29,6 +29,11 @@ from ci.praktika.utils import Shell, Utils
 
 ARCH = ("amd64", "arm64")
 
+# The variants of each image: `docker/<image>/Dockerfile.<variant>`. The first one is the default,
+# published without a tag suffix; the others get a `-<variant>` suffix.
+SERVER_VARIANTS = ("scratch", "ubuntu", "alpine", "distroless")
+KEEPER_VARIANTS = ("ubuntu", "alpine", "distroless")
+
 temp_path = Path(f"{Utils.cwd()}/ci/tmp")
 
 with tempfile.NamedTemporaryFile("w", delete=False) as f:
@@ -115,7 +120,18 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--reports", default=True, help=argparse.SUPPRESS)
     parser.add_argument("--push", action="store_true", help=argparse.SUPPRESS)
-    parser.add_argument("--os", default=["ubuntu", "alpine", "distroless"], help=argparse.SUPPRESS)
+    parser.add_argument(
+        "--os",
+        default=["scratch", "ubuntu", "alpine", "distroless"],
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "--no-scratch",
+        action=DelOS,
+        nargs=0,
+        default=argparse.SUPPRESS,
+        help="don't build the scratch image (the server's default one)",
+    )
     parser.add_argument(
         "--no-ubuntu",
         action=DelOS,
@@ -227,6 +243,7 @@ def build_and_push_image(
     push: bool,
     repo_urls: dict[str, str],
     os: str,
+    default_os: str,
     tag: str,
     version: str,
     direct_urls: Dict[str, List[str]],
@@ -238,7 +255,7 @@ def build_and_push_image(
     job_timeout: int,
 ) -> List[Result]:
     result = []
-    if os != "ubuntu":
+    if os != default_os:
         tag += f"-{os}"
     init_args = ["docker", "buildx", "build"]
     if push:
@@ -258,9 +275,9 @@ def build_and_push_image(
         dockerfile = f"{image.path}/Dockerfile.{os}"
         urls = []
         if direct_urls:
-            # distroless and ubuntu-server use an Ubuntu builder with dpkg, so they
-            # need .deb packages. alpine and ubuntu-keeper use .tgz packages.
-            uses_deb = os == "distroless" or (
+            # scratch, distroless and ubuntu-server use an Ubuntu builder with dpkg, so
+            # they need .deb packages. alpine and ubuntu-keeper use .tgz packages.
+            uses_deb = os in ("scratch", "distroless") or (
                 os == "ubuntu" and "clickhouse-server" in image.name
             )
             if uses_deb:
@@ -397,10 +414,12 @@ def main():
     if "server image" in info.job_name:
         image_path = args.image_path or "docker/server"
         image_repo = args.image_repo or "clickhouse/clickhouse-server"
+        variants = SERVER_VARIANTS
         job_timeout = JobConfigs.docker_server.timeout
     elif "keeper image" in info.job_name:
         image_path = args.image_path or "docker/keeper"
         image_repo = args.image_repo or "clickhouse/clickhouse-keeper"
+        variants = KEEPER_VARIANTS
         job_timeout = JobConfigs.docker_keeper.timeout
     else:
         assert False, f"Unexpected job name [{info.job_name}]"
@@ -469,24 +488,27 @@ def main():
 
     logging.info("Following tags will be created: %s", ", ".join(tags))
     test_results = []
-    for os_ in args.os:
+    # The variant of each built image, which selects the tests that can run on it.
+    image_os: Dict[str, str] = {}
+    for os_ in (os_ for os_ in args.os if os_ in variants):
         for tag in tags:
-            test_results.extend(
-                build_and_push_image(
-                    image,
-                    push,
-                    repo_urls,
-                    os_,
-                    tag,
-                    version.describe,
-                    direct_urls,
-                    run_url=info.run_url,
-                    sha=info.sha,
-                    apt_mirror_region=apt_mirror_region,
-                    sw=sw,
-                    job_timeout=job_timeout,
-                )
+            build_results = build_and_push_image(
+                image,
+                push,
+                repo_urls,
+                os_,
+                variants[0],
+                tag,
+                version.describe,
+                direct_urls,
+                run_url=info.run_url,
+                sha=info.sha,
+                apt_mirror_region=apt_mirror_region,
+                sw=sw,
+                job_timeout=job_timeout,
             )
+            test_results.extend(build_results)
+            image_os.update({result.name: os_ for result in build_results})
 
     # The server image job validates the tests of both images. Only on a PR to master: a backported fix is in master's `head`.
     bugfix_tests = []
@@ -495,7 +517,7 @@ def main():
     if not push:
         # The image is built locally only when we don't push it
         # See `--output=type=docker`
-        test_docker_library(test_results)
+        test_docker_library(test_results, image_os=image_os)
         if bugfix_tests and any(
             label in info.pr_labels
             for label in (Labels.PR_BUGFIX, Labels.PR_CRITICAL_BUGFIX)

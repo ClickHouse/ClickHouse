@@ -1,4 +1,5 @@
-/// clickhouse docker-init — Docker entrypoint for distroless ClickHouse images.
+/// clickhouse docker-init — Docker entrypoint for ClickHouse images without a shell:
+/// the default image built `FROM scratch` and the distroless image.
 /// Replaces entrypoint.sh in shell-free environments (no bash, no coreutils).
 ///
 /// Usage:
@@ -585,8 +586,29 @@ bool runInitScripts(const std::vector<std::string> & client_base)
         }
         else if (filename.ends_with(".sh"))
         {
-            std::cerr << "docker-init: WARNING: shell scripts cannot run in a distroless "
-                         "environment, skipping " << path << "\n";
+            /// An executable script is run directly, so the kernel starts the interpreter from its `#!` line.
+            /// A non-executable one is given to `sh`: unlike entrypoint.sh, which sources it, we have no shell
+            /// to source it into, so the variables it sets do not reach the scripts that follow.
+            /// The image may have no shell at all. Then the script cannot run, and the initialization fails
+            /// instead of starting the server without it.
+            const bool executable = access(path.c_str(), X_OK) == 0;
+            std::vector<std::string> args;
+            if (executable)
+                args = {path.string()};
+            else
+                args = {"sh", path.string()};
+
+            std::cerr << "docker-init: running " << path << (executable ? "" : " with sh") << "\n";
+            const int code = runCommand(args);
+            if (code != 0)
+            {
+                std::cerr << "docker-init: error: init script " << path << " failed with exit code " << code << "\n";
+                if (code == 127)
+                    std::cerr << "docker-init: the image may have no shell to run it; mount one into the container "
+                                 "(for example, a statically linked busybox as /bin/sh), "
+                                 "or use the `*.sql` and `*.sql.gz` init scripts\n";
+                return false;
+            }
         }
         else
         {
@@ -777,6 +799,11 @@ int mainEntryClickHouseDockerInit(int argc, char ** argv)
     {
         std::string_view arg = argv[i];
 
+        /// The first argument that is not an option is a command to run (see the passthrough mode below),
+        /// and the arguments after it are its own, e.g. `clickhouse-client -h host` or `clickhouse-local --help`.
+        if (!separator_seen && extra_args.empty() && !arg.starts_with("-"))
+            separator_seen = true;
+
         if (!separator_seen && (arg == "--help" || arg == "-h"))
         {
             show_help = true;
@@ -794,7 +821,7 @@ int mainEntryClickHouseDockerInit(int argc, char ** argv)
     {
         std::cout
             << "Usage: clickhouse docker-init [--keeper] [-- <extra-args>...]\n"
-               "Docker entrypoint for distroless ClickHouse images.\n"
+               "Docker entrypoint for ClickHouse images without a shell.\n"
                "\nOptions:\n"
                "  --keeper   Start ClickHouse Keeper instead of server\n"
                "  --help     Show this help message\n"
@@ -873,7 +900,11 @@ int mainEntryClickHouseDockerInit(int argc, char ** argv)
 
         auto exec_argv = buildArgv(exec_cmd);
         execvp(exec_argv[0], exec_argv.data());
-        std::cerr << "docker-init: failed to exec '" << extra_args[0] << "': " << strerror(errno) << "\n"; // NOLINT(concurrency-mt-unsafe)
+        const int exec_errno = errno;
+        std::cerr << "docker-init: failed to exec '" << extra_args[0] << "': " << strerror(exec_errno) << "\n"; // NOLINT(concurrency-mt-unsafe)
+        if (exec_errno == ENOENT)
+            std::cerr << "docker-init: the image contains only ClickHouse, without a shell or other programs; "
+                         "mount the program you need into the container\n";
         return 1;
     }
 
@@ -1009,6 +1040,14 @@ int mainEntryClickHouseDockerInit(int argc, char ** argv)
     auto disk_paths = extractConfigValues(config_file, "storage_configuration.disks.*.path");
     auto disk_metadata_paths = extractConfigValues(config_file, "storage_configuration.disks.*.metadata_path");
 
+    /// A `filesystem_caches` entry is not a `storage_configuration` disk, so the paths above do not cover it,
+    /// and `FileCache::initialize` cannot create one under a directory the server does not own.
+    /// Absolute entries only: those are used verbatim, while a relative one is resolved by the server against
+    /// a prefix (`filesystem_caches_path`, or `<path>/caches` when unset), and preparing it as written would
+    /// create a directory that nothing opens.
+    auto filesystem_caches_paths = extractConfigValues(config_file, "filesystem_caches.*.path");
+    std::erase_if(filesystem_caches_paths, [](const std::string & cache_path) { return !cache_path.starts_with('/'); });
+
     /// Create and chown data directory first, then cd into it.
     if (!data_dir.empty() && !createDirectoryAndChown(data_dir, run_uid, run_gid, do_chown))
         return 1;
@@ -1024,6 +1063,9 @@ int mainEntryClickHouseDockerInit(int argc, char ** argv)
         if (!createDirectoryAndChown(dir, run_uid, run_gid, do_chown))
             return 1;
     for (const auto & dir : disk_metadata_paths)
+        if (!createDirectoryAndChown(dir, run_uid, run_gid, do_chown))
+            return 1;
+    for (const auto & dir : filesystem_caches_paths)
         if (!createDirectoryAndChown(dir, run_uid, run_gid, do_chown))
             return 1;
 

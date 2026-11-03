@@ -1,1 +1,1 @@
-Dockerfile.ubuntu
+Dockerfile.scratch
