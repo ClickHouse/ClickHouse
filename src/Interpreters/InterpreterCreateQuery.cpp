@@ -1013,7 +1013,8 @@ void throwIfTableFunctionCannotBeUsedToCreateTable(const ASTPtr & table_function
 /// matching engine (e.g. `File`) does. Both are checked under the user who issued the query, before the query is
 /// sent anywhere else: the hosts of an `ON CLUSTER` query and the replicas of a `Replicated` database may create
 /// the table without that user, and a definition with an explicit column list does not even read the source to
-/// infer the structure.
+/// infer the structure. A replayed definition, e.g. of a short `ATTACH`, is not checked again, see
+/// `getTablePropertiesAndNormalizeCreateQuery`.
 void checkSourceAccessToCreateTableFromTableFunction(const ITableFunction & table_function, const ContextPtr & context)
 {
     table_function.checkSourceAccess(context, /*is_insert_query=*/ false);
@@ -1098,6 +1099,14 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     if (create.is_time_series_table && (mode <= LoadingStrictnessLevel::SECONDARY_CREATE))
         normalizeTimeSeriesDefinition(create, getContext(), mode, is_restore_from_backup);
 
+    /// The source of `CREATE TABLE ... AS f(...)` is checked for a definition that the user supplies now, see
+    /// `checkSourceAccessToCreateTableFromTableFunction`. A replayed definition (a short `ATTACH`, a replay on a
+    /// follower replica, a recovery from stored metadata, see `isReplayedTableDefinition`) was checked when the
+    /// table was created, under the user who created it, so it is not checked again under the context that replays
+    /// it. `RESTORE` runs under `SECONDARY_CREATE` as well, but its definition comes from the backup and it runs under
+    /// the user who restores it, so it is checked like a new one.
+    const bool check_table_function_source_access = !isReplayedTableDefinition(mode, create, getContext()) || is_restore_from_backup;
+
     TableProperties properties;
     TableLockHolder as_storage_lock;
 
@@ -1107,7 +1116,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Indexes and constraints are not supported for table functions");
 
         /// The structure is given explicitly, so the table function is not resolved to infer it below.
-        if (create.as_table_function)
+        if (create.as_table_function && check_table_function_source_access)
             checkCreateTableAsTableFunction(*create.as_table_function, getContext());
 
         /// Dictionaries have dictionary_attributes_list instead of columns_list
@@ -1162,7 +1171,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
         /// `setEngine` gives this table the table function of the source table, if that one was created from a
         /// table function, and the structure is copied from the source table instead of being inferred from it.
-        if (create.as_table_function)
+        if (create.as_table_function && check_table_function_source_access)
             checkCreateTableAsTableFunction(*create.as_table_function, getContext());
 
         /// A lazily loaded source reports only its columns, so the indices, projections, constraints
@@ -1381,7 +1390,8 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             throwUnreplicatedTableDataNotAllowed();
 
         /// The inference below checks only `READ` on the source, see `checkSourceAccessToCreateTableFromTableFunction`.
-        checkSourceAccessToCreateTableFromTableFunction(*table_function, getContext());
+        if (check_table_function_source_access)
+            checkSourceAccessToCreateTableFromTableFunction(*table_function, getContext());
 
         properties.columns = table_function->getActualTableStructureWithAccess(getContext(), /*is_insert_query*/ true);
     }
@@ -2971,8 +2981,8 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         auto table_function_ast = create.as_table_function->ptr();
         auto table_function = TableFunctionFactory::instance().get(table_function_ast, getContext());
 
-        /// Already checked in `getTablePropertiesAndNormalizeCreateQuery`, together with the source access,
-        /// and checked again for the table function that is executed here.
+        /// Also checked in `getTablePropertiesAndNormalizeCreateQuery`, together with the source access, except for
+        /// a replayed definition that does not infer its structure from the table function, which is checked only here.
         throwIfTableFunctionCannotBeUsedToCreateTable(table_function_ast, *table_function, getContext());
 
         /// Classify the table function before executing it: with a static structure it returns the final storage
