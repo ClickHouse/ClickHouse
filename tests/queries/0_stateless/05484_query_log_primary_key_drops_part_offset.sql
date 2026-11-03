@@ -1,7 +1,7 @@
 -- Tags: no-parallel-replicas
 -- no-parallel-replicas: index analysis runs on the replicas, the initiator does not see it
 
--- marks that `_part_offset` conditions exclude are not primary key drops
+-- with `use_primary_key = 0` the primary key search runs only for `_part_offset` conditions, which are not primary key drops
 
 SET use_query_condition_cache = 0;
 SET use_statistics_for_part_pruning = 0;
@@ -30,6 +30,7 @@ SELECT k FROM t_pk_offset WHERE _part_offset = 5 SETTINGS use_primary_key = 0, l
 SELECT k FROM t_pk_offset WHERE _part_offset = 5 SETTINGS log_comment = 'pk_offset_2' FORMAT Null;
 SELECT k FROM t_no_pk_offset WHERE _part_offset = 5 SETTINGS log_comment = 'pk_offset_3' FORMAT Null;
 SELECT k FROM t_pk_offset WHERE k > 31 SETTINGS log_comment = 'pk_offset_4' FORMAT Null;
+-- together with a useful key condition the `_part_offset` condition prunes in the same search, so its drops count too
 SELECT k FROM t_pk_offset WHERE k > 31 AND _part_offset = 40 SETTINGS log_comment = 'pk_offset_5' FORMAT Null;
 SELECT k FROM t_pk_offset WHERE k > 31 AND _part_starting_offset + _part_offset = 40 SETTINGS log_comment = 'pk_offset_6' FORMAT Null;
 SELECT k FROM t_pk_offset WHERE k > 31 AND _part_offset = 40 SETTINGS use_primary_key = 0, log_comment = 'pk_offset_7' FORMAT Null;

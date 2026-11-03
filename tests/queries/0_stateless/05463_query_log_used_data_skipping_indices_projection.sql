@@ -44,7 +44,7 @@ SETTINGS index_granularity = 8, index_granularity_bytes = 0, min_bytes_for_wide_
 INSERT INTO t_skip_index_projection SELECT number, number FROM numbers(64);
 INSERT INTO t_skip_index_aggregate_projection SELECT number, number FROM numbers(64);
 
--- the projection reads the first part, so only the exclusion of the second part by idx_a counts
+-- the table analysis applies idx_a to both parts before the projection replaces the read of the first one
 SELECT k FROM t_skip_index_projection WHERE a = 5 SETTINGS optimize_use_projections = 1, log_comment = 'skip_index_projection_1';
 SELECT k FROM t_skip_index_projection WHERE a = 5 SETTINGS optimize_use_projections = 0, log_comment = 'skip_index_projection_2';
 SELECT k FROM t_skip_index_projection WHERE a = 5 SETTINGS optimize_use_projections = 1, ignore_data_skipping_indices = 'idx_a', log_comment = 'skip_index_projection_3';
