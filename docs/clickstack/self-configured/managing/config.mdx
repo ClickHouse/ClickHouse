@@ -9,9 +9,9 @@ sidebarTitle: 'Configuration options'
 
 import { Image } from "/snippets/components/Image.jsx";
 
-<Warning>
-This guide needs review for Self-managed ClickHouse Observability. The source settings, collector options, and database tuning guidance have been extracted from the existing configuration reference. Verify available UI settings, collector authentication and defaults, and supported schema changes. Self-hosted application settings have been removed.
-</Warning>
+<Note>
+This page covers **self-managed ClickHouse Observability**. For the recommended fully managed experience, see the documentation [here](/clickstack/observability/managing/config).
+</Note>
 
 This guide covers data source settings, the collector you run, and database schema configuration for Self-managed ClickHouse Observability.
 
@@ -252,7 +252,7 @@ See ["ClickStack OpenTelemetry Collector"](/clickstack/self-configured/ingesting
 
 - `OTLP_AUTH_TOKEN`
   - **Default:** *None*. Used only for standalone image.
-  - **Description:** Allows an OTLP authentication token to be specified. If set, all communication requires this bearer token.
+  - **Description:** Sets the token required for OTLP ingestion. Send its value in the `Authorization` header without a `Bearer` prefix.
   - **Guidance:**
     - Recommended if using the standalone collector image in production.
 

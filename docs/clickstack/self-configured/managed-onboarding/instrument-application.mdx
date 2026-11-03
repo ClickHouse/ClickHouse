@@ -12,6 +12,10 @@ sidebarTitle: 'instrument application'
 
 import InstrumentApplication from '/snippets/clickstack/_instrument_application.mdx';
 
+<Note>
+This page covers **self-managed ClickHouse Observability**. For the recommended fully managed experience, see the documentation [here](/clickstack/observability/example-datasets/instrument-application).
+</Note>
+
 This guide walks you through instrumenting a small Node.js application with OpenTelemetry and sending its logs, metrics, traces, and session replays into Managed ClickStack. The backend is instrumented with no changes to the application source code.
 
 The [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer) is a Node.js app that queries the HackerNews dataset hosted in the public ClickHouse demo. Every chart, table, and search box is backed by a real ClickHouse query, so every interaction produces a trace whose main span is the HTTPS call from the backend out to ClickHouse.

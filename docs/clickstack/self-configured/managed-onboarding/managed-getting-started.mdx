@@ -14,6 +14,10 @@ import { Image } from "/snippets/components/Image.jsx";
 import GatherCredentials from '/snippets/clickstack/_gather_credentials.mdx';
 import CreateIngestionUser from '/snippets/clickstack/_create_ingestion_user.mdx';
 
+<Note>
+This page covers **self-managed ClickHouse Observability**. For the recommended fully managed experience, see the documentation [here](/clickstack/observability/getting-started).
+</Note>
+
 This guide takes you from an empty Managed ClickStack service all the way to logs, metrics, traces, and session replays flowing from a real application. You'll deploy a new OpenTelemetry collector (or adapt an existing one if you have one) against your service, instrument a sample Node.js application with no changes to its business logic, then explore the telemetry in the ClickStack UI.
 
 <Note>

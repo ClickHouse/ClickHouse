@@ -9,6 +9,10 @@ keywords: ['ClickHouse Observability', 'warehouses', 'compute-compute separation
 
 import { ScalePlanFeatureBadge } from "/snippets/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
+<Note>
+This page covers **self-managed ClickHouse Observability**. For the recommended fully managed experience, see the documentation [here](/clickstack/observability/overview).
+</Note>
+
 Observability workloads place two very different demands on the same data. Ingestion is continuous and write heavy, with background merges consuming CPU and memory long after an insert completes. Query load is uneven: dashboards and searches peak during an incident, when a slow response is least acceptable.
 
 With ClickHouse Cloud [warehouses](/products/cloud/features/infrastructure/warehouses), both workloads can be served from the same data by separate compute, so that neither competes with the other for CPU and memory.

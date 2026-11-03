@@ -9,6 +9,10 @@ keywords: ['clickstack', 'json', 'map', 'attributes', 'schema', 'observability']
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
+<Note>
+This page covers **self-managed ClickHouse Observability**. For the recommended fully managed experience, see the documentation [here](/clickstack/observability/overview).
+</Note>
+
 The [default schema](/clickstack/self-configured/ingesting-data/schemas) stores resource, scope, log, and span attributes as `Map(LowCardinality(String), String)` columns. ClickHouse also supports a strongly typed [`JSON` type](/reference/formats/JSON/JSON), and Self-managed ClickHouse Observability has beta support for using it in place of `Map`.
 
 **For typical observability workloads we recommend keeping the [default `Map`-based schema](/clickstack/self-configured/ingesting-data/schemas).** The JSON type is available for users who want to evaluate it on workloads with a small, stable set of attribute keys, but it isn't the recommended schema for general use.

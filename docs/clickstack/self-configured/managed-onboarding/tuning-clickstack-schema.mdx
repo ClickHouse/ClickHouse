@@ -10,6 +10,10 @@ hide_advert: true
 sidebarTitle: 'tuning clickstack schema'
 ---
 
+<Note>
+This page covers **self-managed ClickHouse Observability**. For the recommended fully managed experience, see the documentation [here](/clickstack/observability/overview).
+</Note>
+
 If you've been running ClickStack for a while, you've probably noticed that the default schema handles most observability workloads without any changes. This page is for when that's no longer enough: query latency starts to climb, or your access patterns have drifted away from the defaults.
 
 Four optimizations cover most of what helps in practice. They're listed roughly in order of effort. The first two are local `ALTER TABLE` changes you can roll out incrementally. The third pays off when the same aggregation runs over and over on a dashboard. The fourth needs a table migration, so it's the most involved.

@@ -9,6 +9,10 @@ keywords: ['clickstack', 'trace sampling', 'tail sampling', 'sample rate', 'weig
 
 import { Image } from "/snippets/components/Image.jsx";
 
+<Note>
+This page covers **self-managed ClickHouse Observability**. For the recommended fully managed experience, see the documentation [here](/clickstack/observability/overview).
+</Note>
+
 High-throughput services can produce millions of spans per second. Storing every span is expensive, so teams commonly run the OpenTelemetry Collector's [tail-sampling processor](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/tailsamplingprocessor) to keep only 1-in-N spans. Each kept span carries a `SampleRate` attribute recording N.
 
 Once data is sampled, naive aggregations are wrong: `count()` returns N-times fewer events than actually occurred, `sum()` and `avg()` are biased, and percentiles shift. Dashboards show misleadingly low request counts, throughput, and error rates.

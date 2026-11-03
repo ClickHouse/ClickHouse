@@ -10,6 +10,10 @@ keywords: ['ClickHouse Observability', 'ttl', 'data retention', 'lifecycle', 'st
 import { Image } from "/snippets/components/Image.jsx";
 import OtelLogsSchema from '/snippets/clickstack/_schema_otel_logs.mdx';
 
+<Note>
+This page covers **self-managed ClickHouse Observability**. For the recommended fully managed experience, see the documentation [here](/clickstack/observability/overview).
+</Note>
+
 ## Data retention with TTL {#ttl-clickstack}
 
 Time-to-Live (TTL) is a crucial feature in Self-managed ClickHouse Observability for efficient data retention and management, especially given vast amounts of data are continuously generated. TTL allows for automatic expiration and deletion of older data, ensuring that the storage is optimally used and performance is maintained without manual intervention. This capability is essential for keeping the database lean, reducing storage costs, and ensuring that queries remain fast and efficient by focusing on the most relevant and recent data. Moreover, it helps in compliance with data retention policies by systematically managing data life cycles, thus enhancing the overall sustainability and scalability of the observability solution.

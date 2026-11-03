@@ -10,6 +10,10 @@ sidebarTitle: 'Architecture'
 
 import { Image } from "/snippets/components/Image.jsx";
 
+<Note>
+This page covers **self-managed ClickHouse Observability**. For the recommended fully managed experience, see the documentation [here](/clickstack/observability/architecture).
+</Note>
+
 ClickHouse Observability — Self-managed runs entirely within **ClickHouse Cloud**, providing a fully managed observability backend while preserving the same ClickStack data model and user experience.
 
 In this model, **ClickHouse and the ClickStack UI (HyperDX)** are hosted, operated, and secured by ClickHouse Cloud. Users are responsible only for running an **OpenTelemetry (OTel) collector** to send telemetry data into the managed service.

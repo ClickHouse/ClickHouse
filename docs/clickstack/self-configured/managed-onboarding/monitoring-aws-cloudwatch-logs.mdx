@@ -14,6 +14,10 @@ import { Image } from "/snippets/components/Image.jsx";
 
 import { TrackedLink } from "/snippets/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
+<Note>
+This page covers **self-managed ClickHouse Observability**. For the recommended fully managed experience, see the documentation [here](/clickstack/observability/integration-examples/cloudwatch).
+</Note>
+
 This guide walks you through forwarding AWS CloudWatch logs into Managed ClickStack using the OpenTelemetry [`awscloudwatch` receiver](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/awscloudwatchreceiver), then viewing them in the ClickStack UI.
 
 We'll run a separate collector that polls CloudWatch via the AWS API and forwards events to your ClickStack collector via OTLP. Keep this collector in the same AWS account and region as the log groups to minimise API latency and cost.
