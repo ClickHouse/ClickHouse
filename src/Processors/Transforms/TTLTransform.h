@@ -23,7 +23,10 @@ public:
         const NamesAndTypesList & expired_columns_,
         time_t current_time,
         bool force_,
-        bool ttl_delete_applied_by_merge_ = false
+        bool ttl_delete_applied_by_merge_ = false,
+        /// The columns a mutation rewrites when it does not rewrite the whole part. The block then holds only some columns,
+        /// so rules that change rows are not applied and rules that cannot be evaluated on it keep the source part's info.
+        std::optional<NameSet> rewritten_columns_ = {}
     );
 
     String getName() const override { return "TTL"; }
@@ -47,6 +50,8 @@ private:
     bool all_data_dropped = false;
     /// The merging algorithm already dropped the expired rows, so `delete_algorithm` counts none.
     const bool ttl_delete_applied_by_merge = false;
+
+    std::optional<MergeTreeDataPartTTLInfos> carried_ttl_infos;
 
     PreparedSets::Subqueries subqueries_for_sets;
 

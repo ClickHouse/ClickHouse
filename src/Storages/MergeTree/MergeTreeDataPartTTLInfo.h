@@ -93,6 +93,9 @@ struct MergeTreeDataPartTTLInfos
     }
 };
 
+/// Finds the info of the TTL rule with `result_column`, also when it is stored under another spelling of the same expression.
+TTLInfoMap::const_iterator findTTLInfoForExpression(const TTLInfoMap & ttl_info_map, const String & result_column);
+
 /// Selects the most appropriate TTLDescription using TTL info and current time.
 std::optional<TTLDescription> selectTTLDescriptionForTTLInfos(const TTLDescriptions & descriptions, const TTLInfoMap & ttl_info_map, time_t current_time, bool use_max);
 

@@ -1,0 +1,53 @@
+T1 parts	1
+T1	100	100	100	100
+T1 info	1	1
+T1 merged	50	50
+T2 parts	1
+T2	100	100	100
+T2 merged	0
+T3 parts	1
+T3 mutation	1	
+T3	100	100
+T3 info	1	1
+T4 parts	1
+T4	100	100	100	100
+T4 info	1	1
+T4 merged	50	50
+T5 parts	1
+T5	100	100	100
+T5 info	1	1
+T6 parts	1
+T6	100	100
+T6 info	1	1
+T6 w	1
+T7 parts	1
+T7 x	1	1
+T7 merged	100	0	100
+T8 parts	1
+T8	100	100	100
+T8 ttl	w	1	2100
+T8 ttl	y	1	2105
+T9 parts	1
+T9	100	50	50
+T9 w	1
+T10 parts	1
+T10 before	100
+T10	100	100	100	100
+T11 parts	1
+T11	100	100
+T11 w	1
+T12 parts	1
+T12	100	100
+T12 w	1
+partial	t1	1	1
+partial	t2	1	1
+partial	t3	1	1
+partial	t4	1	1
+partial	t5	1	1
+partial	t6	1	1
+partial	t7	1	1
+partial	t8	1	1
+partial	t9	1	1
+partial	t10	1	1
+partial	t11	1	1
+partial	t12	1	1

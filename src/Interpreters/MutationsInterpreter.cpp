@@ -1675,6 +1675,41 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
     }
 
+    /// `TTLTransform` applies the TTL of every column-TTL column the mutation writes, which reads the inputs of the TTL and of the default.
+    if (std::ranges::any_of(dependencies, [](const auto & dependency) { return dependency.kind == ColumnDependency::TTL_TARGET; }))
+    {
+        NameSet written_columns(read_columns.begin(), read_columns.end());
+        for (const auto & dependency : dependencies)
+            if (!dependency.isReadOnly())
+                written_columns.insert(dependency.column_name);
+        for (const auto & stage : stages)
+            if (!stage.is_readonly)
+                for (const auto & [column_name, _] : stage.column_to_updated)
+                    written_columns.insert(column_name);
+
+        NameSet ttl_inputs;
+        for (const auto & [name, ttl] : metadata_snapshot->getColumnTTLs())
+        {
+            if (!written_columns.contains(name))
+                continue;
+
+            for (const auto & column : ttl.expression_columns)
+                ttl_inputs.insert(column.name);
+
+            if (auto column_default = columns_desc.getDefault(name); column_default && column_default->expression)
+            {
+                auto default_ast = column_default->expression->clone();
+                auto syntax_result = TreeRewriter(context).analyze(default_ast, columns_desc.getAll());
+                for (const auto & column : syntax_result->requiredSourceColumns())
+                    ttl_inputs.insert(column);
+            }
+        }
+
+        for (const auto & name : ttl_inputs)
+            if (auto column = columns_desc.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name))
+                dependencies.emplace(column->getNameInStorage(), ColumnDependency::TTL_EXPRESSION);
+    }
+
     if (!read_columns.empty())
     {
         stages.emplace_back(context);

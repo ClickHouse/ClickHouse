@@ -4276,33 +4276,6 @@ private:
             auto builder = std::make_unique<QueryPipelineBuilder>(std::move(ctx->mutating_pipeline_builder));
             PreparedSets::Subqueries subqueries;
 
-            if (ctx->execute_ttl_type == ExecuteTTLType::NORMAL)
-            {
-                auto transform = std::make_shared<TTLTransform>(
-                    ctx->context,
-                    builder->getSharedHeader(),
-                    *ctx->data,
-                    ctx->metadata_snapshot,
-                    ctx->new_data_part,
-                    NamesAndTypesList{} /*expired_columns*/,
-                    ctx->time_of_mutation,
-                    true);
-                subqueries = transform->getSubqueries();
-                builder->addTransform(std::move(transform));
-            }
-
-            if (ctx->execute_ttl_type == ExecuteTTLType::RECALCULATE)
-            {
-                auto transform = std::make_shared<TTLCalcTransform>(ctx->context, builder->getSharedHeader(), *ctx->data, ctx->metadata_snapshot, ctx->new_data_part, ctx->time_of_mutation, true);
-                subqueries = transform->getSubqueries();
-                builder->addTransform(std::move(transform));
-            }
-
-            if (!subqueries.empty())
-                builder = addCreatingSetsTransform(std::move(builder), std::move(subqueries), ctx->context);
-
-            addIndicesRecalculationTransform(*builder, ctx);
-
             /// Some columns may be present in the interpreter output only for
             /// projection/index recalculation (e.g. CLEAR COLUMN provides a default
             /// value so that dependent projections are rebuilt correctly). Such columns
@@ -4318,6 +4291,36 @@ private:
                     if (new_part_columns_set.contains(col.name))
                         columns_for_writer.push_back(col);
             }
+
+            if (ctx->execute_ttl_type == ExecuteTTLType::NORMAL)
+            {
+                const auto rewritten_columns = columns_for_writer.getNames();
+                auto transform = std::make_shared<TTLTransform>(
+                    ctx->context,
+                    builder->getSharedHeader(),
+                    *ctx->data,
+                    ctx->metadata_snapshot,
+                    ctx->new_data_part,
+                    NamesAndTypesList{} /*expired_columns*/,
+                    ctx->time_of_mutation,
+                    true,
+                    false /*ttl_delete_applied_by_merge*/,
+                    NameSet(rewritten_columns.begin(), rewritten_columns.end()));
+                subqueries = transform->getSubqueries();
+                builder->addTransform(std::move(transform));
+            }
+
+            if (ctx->execute_ttl_type == ExecuteTTLType::RECALCULATE)
+            {
+                auto transform = std::make_shared<TTLCalcTransform>(ctx->context, builder->getSharedHeader(), *ctx->data, ctx->metadata_snapshot, ctx->new_data_part, ctx->time_of_mutation, true);
+                subqueries = transform->getSubqueries();
+                builder->addTransform(std::move(transform));
+            }
+
+            if (!subqueries.empty())
+                builder = addCreatingSetsTransform(std::move(builder), std::move(subqueries), ctx->context);
+
+            addIndicesRecalculationTransform(*builder, ctx);
 
             ctx->out = std::make_shared<MergedColumnOnlyOutputStream>(
                 ctx->new_data_part,
