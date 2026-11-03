@@ -8496,11 +8496,48 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                 return !qualifier_names_table_expression;
             };
 
+            /** A `COLUMNS` list produces the names of the columns its identifiers resolve to, which differ from the written
+              * identifiers if they are compound, as `t.c`, or refer to aliases, as `d` in `WITH t.c AS d`. Such a list may
+              * produce any column, and the other lists produce only the written names.
+              */
+            auto matcher_may_match_column = [&](const MatcherNode & matcher_node, bool is_inside_lambda, const std::string & column_name)
+            {
+                if (matcher_node.isMatchingColumn(column_name))
+                    return true;
+
+                if (matcher_node.getMatcherType() != MatcherNodeType::COLUMNS_LIST)
+                    return false;
+
+                /// The identifiers inside a lambda may refer to its arguments.
+                if (is_inside_lambda)
+                    return true;
+
+                return std::ranges::any_of(matcher_node.getColumnsIdentifiers(), [&](const Identifier & identifier)
+                {
+                    if (identifier.isCompound())
+                        return true;
+
+                    for (const auto * current_scope = &scope; current_scope; current_scope = current_scope->parent_scope)
+                    {
+                        if (current_scope->aliases.alias_name_to_expression_node.contains(identifier.getFullName())
+                            || current_scope->global_with_aliases.alias_name_to_expression_node.contains(identifier.getFullName()))
+                            return true;
+                    }
+
+                    return false;
+                });
+            };
+
             std::unordered_set<std::string> replaced_column_names;
             /// The unqualified matcher arguments of `count` and similar functions are removed by `resolveFunction`.
             std::unordered_set<const IQueryTreeNode *> dropped_matchers;
             /// The nodes with the flag whether they are inside a lambda.
             std::vector<std::pair<const IQueryTreeNode *, bool>> nodes_to_process{{query_node_typed.getProjectionNode().get(), false}};
+            /// The matchers of a named window are expanded together with the projection expressions that refer to it,
+            /// as `w` in `count() OVER w ... WINDOW w AS (PARTITION BY * REPLACE (1 AS c))`. All the named windows are
+            /// processed, including those that are not referred to, as an over-approximation.
+            if (query_node_typed.hasWindow())
+                nodes_to_process.emplace_back(query_node_typed.getWindowNode().get(), false);
             while (!nodes_to_process.empty())
             {
                 const auto [node, is_inside_lambda] = nodes_to_process.back();
@@ -8544,7 +8581,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                         {
                             for (const auto & replaced_column_name : replace_transformer->getReplacementsNames())
                             {
-                                if (matcher_node->isMatchingColumn(replaced_column_name)
+                                if (matcher_may_match_column(*matcher_node, is_inside_lambda, replaced_column_name)
                                     && matcher_may_produce_column(*matcher_node, is_inside_lambda, replaced_column_name)
                                     && std::ranges::none_of(preceding_except_transformers, [&](const auto * except)
                                         { return except->isColumnMatching(replaced_column_name); }))
