@@ -22,7 +22,7 @@ rename_query_id="${CLICKHOUSE_DATABASE}_rename_$RANDOM$RANDOM"
 $CLICKHOUSE_CLIENT --query_id "$rename_query_id" -q "ALTER TABLE t RENAME COLUMN j TO k SETTINGS alter_sync = 0" &
 
 # The rename must be blocked on the pending mutation of partition 1 while merges are stopped.
-while true
+while clickhouse_test_time_left
 do
     if [ "$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.columns WHERE database = currentDatabase() AND table = 't' AND name = 'k'")" = "1" ]; then
         echo "renamed before the pending mutation finished"
