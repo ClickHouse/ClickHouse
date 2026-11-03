@@ -354,7 +354,7 @@ Excel stores numbers as 64-bit floating-point values, so it rounds integers with
 
 ## Description {#description}
 
-The `XLS` format reads Microsoft Excel workbooks in the legacy binary format (`.xls` files): the BIFF8 format of Excel 97-2003 and the BIFF5 format of Excel 5.0/95. Encrypted files and files of Excel 2.x-4.x are not supported. To write Excel files, use the [`XLSX`](/interfaces/formats/XLSX) format.
+The `XLS` format reads Microsoft Excel workbooks in the legacy binary format (`.xls` files): the BIFF8 format of Excel 97-2003 and the BIFF5 format of Excel 5.0/95. Files of Excel 5.0/95 store text in the code page of the workbook rather than in Unicode, and non-ASCII text in them is supported only for the Windows-1252 and ISO-8859-1 code pages (Western European languages). Encrypted files and files of Excel 2.x-4.x are not supported. To write Excel files, use the [`XLSX`](/interfaces/formats/XLSX) format.
 
 ## Example usage {#example-usage}
 
