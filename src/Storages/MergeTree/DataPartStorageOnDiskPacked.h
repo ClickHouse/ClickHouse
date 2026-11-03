@@ -92,6 +92,7 @@ public:
     void precommitTransaction() override;
     void startPrecommitTransaction() override;
     void cancelPrecommitTransaction() override;
+    size_t getPendingPrecommitBytes() const override { return pending_writer_finalization ? pending_writer_finalization->size : 0; }
     void undoTransaction() override;
 
     void setTemporaryDataForTransaction(const TemporaryDataOnDiskScopePtr & tmp_data, size_t max_bytes_in_memory) override;
@@ -137,6 +138,7 @@ private:
         std::unique_ptr<WriteBufferFromFileBase> buffer;
         PackedFilesIO::Index index;
         String archive_path;
+        size_t size;
         bool need_sync;
         bool replace_archive;
     };

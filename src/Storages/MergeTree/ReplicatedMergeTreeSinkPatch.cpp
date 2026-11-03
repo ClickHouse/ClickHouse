@@ -47,17 +47,7 @@ void ReplicatedMergeTreeSinkPatch::finishDelayed(const ZooKeeperWithFaultInjecti
         return;
 
     auto process_list_element = context->getProcessListElement();
-    for (auto & partition : delayed_parts)
-    {
-        if (process_list_element)
-            process_list_element->checkTimeLimit();
-
-        Stopwatch watch;
-        ProfileEventsScope scoped_attach(&partition.part_counters);
-        if (partition.temp_part->part->getDataPartStorage().getType() == MergeTreeDataPartStorageType::Packed)
-            partition.temp_part->startFinalization();
-        partition.elapsed_ns += watch.elapsed();
-    }
+    startPackedPartsFinalization(delayed_parts, storage, process_list_element);
 
     for (auto & partition : delayed_parts)
     {

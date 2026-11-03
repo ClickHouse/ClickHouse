@@ -920,6 +920,7 @@ void DataPartStorageOnDiskPacked::preFinalizeWriter()
         .buffer = std::move(buf),
         .index = std::move(plan.index),
         .archive_path = std::move(archive_path),
+        .size = plan.total_size,
         .need_sync = plan.need_sync,
         .replace_archive = file_is_rewriten,
     });

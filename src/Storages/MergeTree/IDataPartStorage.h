@@ -405,6 +405,8 @@ public:
     /// the transaction of its parent must do it before the parent undoes the transaction: otherwise an upload that
     /// completes after the undo recreates a removed object.
     virtual void cancelPrecommitTransaction() {}
+    /// Size of the data that `startPrecommitTransaction` started to write and `precommitTransaction` did not finish.
+    virtual size_t getPendingPrecommitBytes() const { return 0; }
     virtual bool hasActiveTransaction() const = 0;
 
     /// Lets the active transaction move the buffered data of the files being written to `tmp_data`

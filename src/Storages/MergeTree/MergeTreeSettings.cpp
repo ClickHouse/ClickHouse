@@ -273,6 +273,9 @@ bytes) with some gap to avoid filesystem errors.
     The data of a part is moved to one temporary file, whose write buffers (about 2 MiB with the default
     `temporary_files_buffer_size`) stay in memory until the part is finalized.
     The limit applies separately to the part and to each of its projections. 0 means unlimited.
+    An insert that writes several packed parts to object storage uploads them concurrently, reading the moved
+    data back into upload buffers: it waits for the earlier uploads before starting the next one while the parts
+    being uploaded, including their projections, take at least this many bytes.
     )", 0, \
         {"26.11", 0, 0, "New setting. Bounds the memory taken by the buffered data of a packed part being written by moving it to temporary data. 0 keeps all the data in memory, as before."}) \
     DECLARE(UInt64, compact_parts_max_bytes_to_buffer, 128 * 1024 * 1024, R"(
