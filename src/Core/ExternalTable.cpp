@@ -285,7 +285,7 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
             sample_block.dumpStructure(),
             metadata_snapshot->getSampleBlock().dumpStructure());
 
-    auto sink = storage->write(ASTPtr(), metadata_snapshot, getContext(), /*async_insert=*/false, /*parallel_insert_state=*/nullptr);
+    auto sink = storage->write(ASTPtr(), metadata_snapshot, getContext(), /*async_insert=*/false);
 
     /// Write data
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*data->pipe));

@@ -96,7 +96,7 @@ static std::string writeData(int rows, DB::StoragePtr & table, const DB::Context
         block.insert(column);
     }
 
-    QueryPipeline pipeline(table->write({}, metadata_snapshot, context, /*async_insert=*/false, /*parallel_insert_state=*/nullptr));
+    QueryPipeline pipeline(table->write({}, metadata_snapshot, context, /*async_insert=*/false));
 
     PushingPipelineExecutor executor(pipeline);
     executor.push(block);

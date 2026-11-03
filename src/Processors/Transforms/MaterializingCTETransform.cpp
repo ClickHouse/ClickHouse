@@ -97,7 +97,7 @@ void MaterializingCTETransform::init()
     /// Prepare writing to temporary table
     auto storage = materialized_cte->storage;
     const auto metadata_snapshot = storage->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
-    table_out = QueryPipeline(storage->write({}, metadata_snapshot, nullptr, /*async_insert=*/false, /*parallel_insert_state=*/nullptr));
+    table_out = QueryPipeline(storage->write({}, metadata_snapshot, nullptr, /*async_insert=*/false));
     executor = std::make_unique<PushingPipelineExecutor>(table_out);
 
     LOG_DEBUG(getLogger("MaterializingCTETransform"), "Starting materialization of CTE with name '{}'", materialized_cte->cte_name);

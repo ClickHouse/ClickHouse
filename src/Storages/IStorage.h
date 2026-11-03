@@ -542,7 +542,7 @@ public:
         const StorageMetadataPtr & /*metadata_snapshot*/,
         ContextPtr /*context*/,
         bool /*async_insert*/,
-        const ParallelInsertStatePtr & /*parallel_insert_state*/);
+        const ParallelInsertStatePtr & /*parallel_insert_state*/ = nullptr); // NOLINT
 
     /** Called once per `INSERT` with several insert streams (see `supportsParallelInsert`), before `write` creates
       * the sink of every stream. The sinks of all streams get the returned state as `parallel_insert_state`,
