@@ -831,17 +831,24 @@ def test_read_subcolumns_of_empty_table(started_cluster):
     ]:
         assert instance.query(query, settings=settings) == expected, query
 
-    # The row policy reads `key`, which the query does not select.
+    # The row policy reads `key`, which the query does not select. The policy is applied in the
+    # read step, so `key` must be in the header of the empty source.
     instance.query(
         f"CREATE ROW POLICY empty_subcolumns_policy ON {table} USING key > 0 TO default"
     )
     try:
+        query = f"SELECT value.null FROM {table}"
+        assert instance.query(query, settings=settings) == ""
+        pipeline = [
+            line.strip()
+            for line in instance.query(
+                f"EXPLAIN PIPELINE {query}", settings=settings
+            ).splitlines()
+        ]
+        read_step = pipeline.index("(ReadFromPreparedSource)")
         assert (
-            instance.query(
-                f"SELECT count() FROM {table} WHERE value IS NULL", settings=settings
-            )
-            == "0\n"
-        )
+            pipeline[read_step + 1] == "FilterTransform" and "(Filter)" not in pipeline
+        ), pipeline
     finally:
         instance.query(f"DROP ROW POLICY IF EXISTS empty_subcolumns_policy ON {table}")
 
@@ -860,13 +867,11 @@ def test_read_subcolumns_of_empty_table(started_cluster):
         assert_nested_table_is_created(
             instance, engine_table, materialized_database="default"
         )
-        assert (
-            instance.query(
-                f"SELECT count() FROM {engine_table} WHERE value IS NULL",
-                settings=settings,
-            )
-            == "0\n"
-        )
+        for query, expected in [
+            (f"SELECT count() FROM {engine_table} WHERE value IS NULL", "0\n"),
+            (f"SELECT _part FROM {engine_table}", ""),
+        ]:
+            assert instance.query(query, settings=settings) == expected, query
     finally:
         instance.query(f"DROP TABLE IF EXISTS {engine_table} SYNC")
 
