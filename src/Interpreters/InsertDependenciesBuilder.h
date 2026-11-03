@@ -10,6 +10,7 @@
 
 #include <Common/Logger.h>
 
+#include <algorithm>
 #include <exception>
 #include <memory>
 #include <unordered_map>
@@ -124,6 +125,30 @@ public:
         return sink_stream_size;
     }
 
+    /// The squashing stages of this insert that hold blocks at the same time share the memory budget of
+    /// `capInsertBlockSizeBytesToMemoryLimit`. The budget is split in two halves when there are dependent
+    /// materialized views (otherwise the root takes all of it):
+    ///   - the head squash of the root (the target table or the inner table of the target view) takes
+    ///     one half. It is the squash that decides how large the source blocks are, and every dependent
+    ///     view processes every such block, so it is not split further by the number of views: that
+    ///     would multiply the per-block work of the views;
+    ///   - the squashes of the dependent views share the other half: for every view, the squash of the
+    ///     view query result inside `ExecutingInnerQueryFromViewTransform`, one per sink stream, since
+    ///     every sink chain runs its own copy of the view query, and the sink squash shared between the
+    ///     sink streams when `materialized_views_squash_parallel_inserts` is in effect.
+    /// Both are multiplied by `num_concurrent_copies`, the number of copies of this whole insert that
+    /// run at the same time (the nested `INSERT` of every branch of a forwarding storage like `Alias`).
+    size_t getNumSquashesSharingRootBudget() const
+    {
+        return (getNumDependentViews() ? 2 : 1) * num_concurrent_copies;
+    }
+
+    size_t getNumSquashesSharingViewsBudget() const
+    {
+        const size_t squashes_per_view = sink_stream_size + (squash_parallel_inserts ? 1 : 0);
+        return 2 * std::max<size_t>(1, getNumDependentViews() * squashes_per_view) * num_concurrent_copies;
+    }
+
     /// Whether a synchronous insert into `storage` would actually deduplicate blocks, i.e. some sink
     /// consults the deduplication block ids. For MergeTree-family engines this mirrors how
     /// `MergeTreeSink` / `ReplicatedMergeTreeSink` compute their own `deduplicate` flag (an enabled
@@ -221,10 +246,14 @@ protected:
         bool async_insert_,
         bool skip_destination_table_,
         size_t max_insert_threads,
-        ContextPtr context);
+        ContextPtr context,
+        size_t num_concurrent_copies_ = 1);
 
 private:
     bool isView(StorageIDMaybeEmpty id) const;
+
+    /// `dependent_views` has an entry for the root and one for every materialized view.
+    size_t getNumDependentViews() const { return dependent_views.empty() ? 0 : dependent_views.size() - 1; }
 
     std::pair<ContextPtr, ContextPtr> createSelectInsertContext(const DependencyPath & path);
     bool observePath(const DependencyPath & path);
@@ -253,6 +282,8 @@ private:
     bool async_insert = false;
     bool skip_destination_table = false;
     size_t sink_stream_size = 1;
+    /// See `getNumSquashesSharingRootBudget`.
+    size_t num_concurrent_copies = 1;
 
     /// When the insertion is made into a materialized view, the root_view is the view itself and dependent_views contains its inner table.
     /// When the insertion is made into a regular table (it is init_table_id), the root_view is {} / StorageID::createEmpty() and dependent_views contains init_table_id.
