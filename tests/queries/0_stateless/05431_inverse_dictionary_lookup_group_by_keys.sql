@@ -32,6 +32,12 @@ GROUP BY v HAVING v = 'p' ORDER BY ALL SETTINGS optimize_inverse_dictionary_look
 SELECT dictGet('d', 'a', number) AS v, v LIKE 'p%' AS l, count() FROM numbers(6)
 GROUP BY v HAVING v = 'p' ORDER BY ALL SETTINGS optimize_inverse_dictionary_lookup = 0;
 
+SELECT '-- IN of a dictGet key in SELECT and HAVING';
+SELECT dictGet('d', 'a', number) AS v, v IN ('p', 'zzz') AS i, count() FROM numbers(6)
+GROUP BY v HAVING v NOT IN ('q') ORDER BY ALL SETTINGS optimize_inverse_dictionary_lookup = 1;
+SELECT dictGet('d', 'a', number) AS v, v IN ('p', 'zzz') AS i, count() FROM numbers(6)
+GROUP BY v HAVING v NOT IN ('q') ORDER BY ALL SETTINGS optimize_inverse_dictionary_lookup = 0;
+
 SELECT '-- comparison of a dictGet key in HAVING, ROLLUP';
 SELECT dictGet('d', 'a', number) AS v, number, count() FROM numbers(6)
 GROUP BY ROLLUP(v, number) HAVING v = 'p' ORDER BY ALL SETTINGS optimize_inverse_dictionary_lookup = 1;

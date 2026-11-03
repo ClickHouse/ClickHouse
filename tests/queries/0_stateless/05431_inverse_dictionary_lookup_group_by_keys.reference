@@ -13,6 +13,11 @@
 -- comparisons of a dictGet key in SELECT and HAVING
 p	1	2
 p	1	2
+-- IN of a dictGet key in SELECT and HAVING
+	0	3
+p	1	2
+	0	3
+p	1	2
 -- comparison of a dictGet key in HAVING, ROLLUP
 p	0	2
 p	1	1
