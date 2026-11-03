@@ -114,7 +114,7 @@ bool isColumnIdentifier(const ASTIdentifier & identifier, const ColumnsDescripti
 /// name (`a`), this covers the table qualifier (`t.a`), the database and table qualifiers (`db.t.a`), and a
 /// subcolumn of the alias (`a.v`, `t.a.v`): the planner resolves all of them through the alias expression.
 /// The result is used only for validation, so treating a subcolumn as its whole parent column is fine.
-std::optional<String> findAliasColumn(const ASTIdentifier & identifier, const ColumnsDescription & columns, const ContextPtr & context)
+std::optional<String> findAliasColumn(const ASTIdentifier & identifier, const ColumnsDescription & columns)
 {
     if (columns.hasAlias(identifier.name()))
         return identifier.name();
@@ -123,22 +123,17 @@ std::optional<String> findAliasColumn(const ASTIdentifier & identifier, const Co
     if (parts.size() < 2)
         return {};
 
-    /// The analyzer may resolve `x.y` to the table `x.y` (`a IN default.set_rhs`), even when the table
-    /// has a column `y`. Keep such an identifier as is, so `isColumnIdentifier` rejects it.
-    if (parts.size() == 2 && DatabaseCatalog::instance().isTableExist(StorageID(parts[0], parts[1]), context))
-        return {};
-
     /// Try the longest column name first, so an `ALIAS` column whose name contains a dot is preferred
     /// over an `ALIAS` column named by its prefix. The first name that matches any column wins: a
     /// physical column or its subcolumn (`z.b` of `z Tuple(b ...)`) is resolved as such, and an
     /// unrelated `ALIAS` column named like its suffix (`b`) must not replace it.
-    constexpr auto not_alias_kinds = static_cast<GetColumnsOptions::Kind>(GetColumnsOptions::All & ~GetColumnsOptions::Aliases);
     for (size_t num_qualifiers = 0; num_qualifiers <= 2 && num_qualifiers < parts.size(); ++num_qualifiers)
     {
         for (size_t name_end = parts.size(); name_end > num_qualifiers; --name_end)
         {
             String alias_name = fmt::format("{}", fmt::join(parts.begin() + num_qualifiers, parts.begin() + name_end, "."));
-            if (columns.hasColumnOrSubcolumn(not_alias_kinds, alias_name))
+            if (columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, alias_name)
+                || columns.hasColumnOrSubcolumn(GetColumnsOptions::Ephemeral, alias_name))
                 return {};
             if (columns.hasAlias(alias_name))
                 return alias_name;
@@ -165,7 +160,7 @@ void expandAliasColumns(
         if (lambda_arguments.contains(identifier->name_parts.empty() ? identifier->name() : identifier->name_parts.front()))
             return;
 
-        auto alias_name = findAliasColumn(*identifier, columns, context);
+        auto alias_name = findAliasColumn(*identifier, columns);
         if (!alias_name)
             return;
 
@@ -185,6 +180,27 @@ void expandAliasColumns(
         validateExpandedCustomKey(expanded, columns, context);
         ast = std::move(expanded);
         return;
+    }
+
+    /// The analyzer may resolve `x.y` on the right-hand side of `IN` to the table `x.y`
+    /// (`a IN default.set_rhs`), even when the table has an `ALIAS` column `y`. Keep such an identifier
+    /// as is, so `isColumnIdentifier` rejects it. This applies only to the right-hand side of `IN`:
+    /// anywhere else, `x.y` is never a table, and the analyzer resolves it to the column `y` even if a
+    /// table `x.y` exists (`system.one` in a query over `source AS system`), so it must be expanded.
+    if (const auto * func = ast->as<ASTFunction>(); func && functionIsInOrGlobalInOperator(func->name) && func->arguments
+        && func->arguments->children.size() == 2)
+    {
+        const auto * rhs_identifier = func->arguments->children[1]->as<ASTIdentifier>();
+        if (rhs_identifier && rhs_identifier->name_parts.size() == 2
+            && DatabaseCatalog::instance().isTableExist(StorageID(rhs_identifier->name_parts[0], rhs_identifier->name_parts[1]), context))
+        {
+            auto & lhs = func->arguments->children[0];
+            auto * old_ptr = lhs.get();
+            expandAliasColumns(lhs, columns, context, lambda_arguments, depth);
+            if (lhs.get() != old_ptr)
+                func->arguments->updatePointerToChild(old_ptr, lhs.get());
+            return;
+        }
     }
 
     if (const auto * func = ast->as<ASTFunction>(); func && func->name == "lambda" && func->arguments
