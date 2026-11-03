@@ -76,9 +76,6 @@
 [submodule "contrib/fastops"]
 	path = contrib/fastops
 	url = https://github.com/ClickHouse/fastops
-[submodule "contrib/orc"]
-	path = contrib/orc
-	url = https://github.com/ClickHouse/orc
 [submodule "contrib/sparsehash-c11"]
 	path = contrib/sparsehash-c11
 	url = https://github.com/sparsehash/sparsehash-c11
@@ -477,3 +474,6 @@
 [submodule "contrib/parquet-testing"]
 	path = contrib/parquet-testing
 	url = https://github.com/apache/parquet-testing
+[submodule "contrib/gdeflate"]
+	path = contrib/gdeflate
+	url = https://github.com/NVIDIA/libdeflate.git
