@@ -16,6 +16,8 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Parsers/ParserUnionQueryElement.h>
+#include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 
 #include <optional>
 
@@ -163,7 +165,7 @@ boost::intrusive_ptr<ASTSelectQuery> wrapQueryIntoSelect(ASTPtr query, String & 
 }
 
 
-bool ParserPipeOperators::parseImpl(Pos & pos, ASTPtr & query, Expected & expected)
+bool parsePipeOperators(IParser::Pos & pos, ASTPtr & query, Expected & expected)
 {
     ParserKeyword s_where(Keyword::WHERE);
     ParserKeyword s_select(Keyword::SELECT);
@@ -574,11 +576,14 @@ bool ParserPipeOperators::parseImpl(Pos & pos, ASTPtr & query, Expected & expect
     return true;
 }
 
-std::map<String, Documentation> ParserPipeOperators::getDocumentation() const
-{
-    std::map<String, Documentation> documentation;
+}
 
-    documentation["PIPE OPERATORS"] =
+namespace DB
+{
+
+void registerStatementPipeOperators(StatementFactory & factory)
+{
+    factory.registerStatement("PIPE OPERATORS",
     {
         .description = R"DOCS_MD(
 Pipe operators allow writing queries as a linear chain of transformations that reads from top to bottom, similar to the [pipe syntax of GoogleSQL](https://research.google/pubs/sql-has-problems-we-can-fix-them-pipe-syntax-in-sql/):
@@ -763,9 +768,7 @@ FROM table
 )",
         .parent = "SELECT",
         .related = {"SELECT", "FROM", "WHERE", "ORDER BY", "LIMIT"},
-    };
-
-    return documentation;
+    });
 }
 
 }

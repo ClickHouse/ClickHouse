@@ -29,11 +29,6 @@ bool PartitionPruner::canBePruned(const IMergeTreeDataPart & part) const
     if (part.isEmpty())
         return true;
 
-    return canPartitionBePruned(part);
-}
-
-bool PartitionPruner::canPartitionBePruned(const IMergeTreeDataPart & part) const
-{
     const auto & partition_id = part.info.getPartitionId();
     bool is_valid = false;
 
@@ -59,7 +54,7 @@ bool PartitionPruner::canPartitionBePruned(const IMergeTreeDataPart & part) cons
         if (!is_valid)
         {
             LOG_TRACE(getLogger("PartitionPruner"), "Partition {} gets pruned",
-                part.partition.serializeToString(partition_key.sample_block));
+                part.partition.serializeToString(part.getMetadataSnapshot()));
         }
     }
 

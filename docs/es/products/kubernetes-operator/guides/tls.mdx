@@ -16,7 +16,9 @@ Está orientada a tareas. Para consultar la referencia campo por campo de `spec.
 [Configuración → Configuración de TLS/SSL](/es/products/kubernetes-operator/guides/configuration#tls-ssl-configuration)
 y la [Referencia de la API](/es/products/kubernetes-operator/reference/api-reference#clustertlsspec).
 
-## Requisitos previos {#prerequisites}
+<div id="prerequisites">
+  ## Requisitos previos
+</div>
 
 * Un clúster de ClickHouse en ejecución gestionado por el operador (consulte la [Introducción](/es/products/kubernetes-operator/guides/introduction)).
 * [cert-manager](https://cert-manager.io/docs/installation/) instalado en el clúster.
@@ -26,7 +28,9 @@ El operador no genera certificados por sí mismo, sino que consume un `Secret` d
 que usted proporciona. cert-manager es la forma recomendada de generar y
 rotar ese `Secret`, pero cualquier herramienta que escriba un `Secret` en el formato esperado funciona.
 
-## Cómo debe ser el formato de los certificados para el operador {#secret-format}
+<div id="secret-format">
+  ## Cómo debe ser el formato de los certificados para el operador
+</div>
 
 TLS se habilita haciendo que `spec.settings.tls.serverCertSecret` apunte a un Secret que
 contiene el par de claves del servidor:
@@ -46,7 +50,9 @@ hace falta ninguna conversión. El operador lo monta en cada pod de Kubernetes e
   salvo que `enabled: true`.
 </Note>
 
-## Paso 1 — Crea una CA inicial con cert-manager {#step-1-ca}
+<div id="step-1-ca">
+  ## Paso 1 — Crea una CA inicial con cert-manager
+</div>
 
 La configuración más reproducible es una CA autofirmada que luego firma el
 certificado del servidor. Esto proporciona un `ca.crt` estable en el que los clientes pueden confiar.
@@ -93,7 +99,9 @@ En producción, reemplaza el bootstrap autofirmado por tu emisor real (una
 CA corporativa, Vault, ACME, etc.). Solo cambia el Paso 2 — la configuración del
 clúster es idéntica.
 
-## Paso 2 — Emitir el certificado del servidor {#step-2-cert}
+<div id="step-2-cert">
+  ## Paso 2 — Emitir el certificado del servidor
+</div>
 
 Solicita un certificado de entidad final al emisor de la CA. Los `dnsNames` deben cubrir la forma en que
 los clientes acceden a los pods de Kubernetes. El operador crea un único Service **headless** llamado
@@ -134,7 +142,9 @@ kubectl -n <namespace> get secret clickhouse-cert -o jsonpath='{.data}' | jq 'ke
 # ["ca.crt","tls.crt","tls.key"]
 ```
 
-## Paso 3 — Habilitar TLS en el clúster {#step-3-enable}
+<div id="step-3-enable">
+  ## Paso 3 — Habilitar TLS en el clúster
+</div>
 
 Configure el clúster para usar el Secret:
 
@@ -153,7 +163,9 @@ spec:
         name: clickhouse-cert
 ```
 
-### Qué hace el operador {#what-the-operator-does}
+<div id="what-the-operator-does">
+  ### Qué hace el operador
+</div>
 
 Cuando `tls.enabled: true`, el operador:
 
@@ -178,7 +190,9 @@ Cuando además estableces `required: true`, el operador también:
   [Configuración → `additionalPorts`](/es/products/kubernetes-operator/guides/configuration#additional-ports).
 </Note>
 
-## Paso 4 — Conéctese mediante TLS {#step-4-connect}
+<div id="step-4-connect">
+  ## Paso 4 — Conéctese mediante TLS
+</div>
 
 Con `required: true`, los clientes deben usar los puertos seguros y confiar en la CA. Acceda
 a un pod de Kubernetes de una réplica concreta a través del Service headless (o de su propio `ClusterIP`
@@ -208,7 +222,9 @@ kubectl -n <namespace> get secret clickhouse-cert \
   -o jsonpath='{.data.ca\.crt}' | base64 -d > ca.crt
 ```
 
-## Cifrado del tráfico de Keeper {#keeper-tls}
+<div id="keeper-tls">
+  ## Cifrado del tráfico de Keeper
+</div>
 
 Habilitar TLS en el clúster de ClickHouse **no** cifra la conexión con Keeper.
 Habilítelo en el `KeeperCluster` de forma independiente: emita un certificado para el servicio
@@ -229,12 +245,14 @@ spec:
         name: keeper-cert
 ```
 
-Keeper expone su puerto de Client seguro en `2281`. Una vez que Keeper tiene TLS habilitado,
-**un clúster de ClickHouse que hace referencia a él mediante `keeperClusterRef` se conecta automáticamente a través de TLS**; no se requiere ninguna configuración adicional en el lado de ClickHouseCluster.
-Para un Keeper administrado externamente, establezca en su lugar `spec.externalKeeper.tls: Enabled` y asigne al `port` de cada nodo el puerto de Client seguro del ensemble (por ejemplo, `9281`); el puerto predeterminado `9181` transmite en texto sin cifrar.
-ClickHouse verifica el certificado de Keeper con el almacén de confianza del sistema, además de cualquier [`caBundle`](#custom-ca) que configure.
+Keeper expone su puerto de client seguro en `2281`. Una vez que Keeper tiene TLS habilitado, **el
+clúster de ClickHouse se conecta a él automáticamente a través de TLS**; no se requiere ninguna configuración adicional en el
+lado de ClickHouseCluster. ClickHouse verifica el certificado de Keeper con el almacén de confianza
+del sistema, además de cualquier [`caBundle`](#custom-ca) que configure.
 
-## Bundle de CA personalizado {#custom-ca}
+<div id="custom-ca">
+  ## Bundle de CA personalizado
+</div>
 
 De forma predeterminada, ClickHouse verifica los peers a los que se conecta (otras réplicas, Keeper,
 dictionary sources de HTTPS, S3, …) con el **almacén de confianza del sistema**. Para **confiar además** en
@@ -259,7 +277,9 @@ de** en las raíces públicas, por lo que las conexiones a endpoints públicos s
 configuración autofirmada, haga que `caBundle` apunte a la clave `ca.crt` del mismo Secret que cert-manager
 escribió (como en el ejemplo `cluster_with_ssl`).
 
-## Personalizar la configuración de TLS {#custom-tls-settings}
+<div id="custom-tls-settings">
+  ## Personalizar la configuración de TLS
+</div>
 
 El bloque `openSSL` que genera el operador es la configuración predeterminada, no un límite. Se escribe
 en la configuración principal del servidor; todo lo que esté en `spec.settings.extraConfig` se renderiza en
@@ -286,7 +306,9 @@ para ver las opciones disponibles, y
 [Configuración → Configuración adicional integrada](/es/products/kubernetes-operator/guides/configuration#embedded-extra-configuration)
 para saber cómo se combina `extraConfig`.
 
-## Verificar y solucionar problemas {#troubleshoot}
+<div id="troubleshoot">
+  ## Verificar y solucionar problemas
+</div>
 
 **Verifique que los puertos seguros estén abiertos en el Service headless:**
 
@@ -310,7 +332,9 @@ kubectl -n <namespace> exec <pod> -- ls /etc/clickhouse-server/tls/
 | `certificate verify failed` del Client                                 | El Client no confía en la CA. Pasa el `ca.crt` del Secret o comprueba que los `dnsNames` del certificado incluyan el host al que te conectas.                                                                                                                                                                                                                                                         |
 | Un Client en texto sin cifrar de repente no puede conectarse           | `required: true` quitó los puertos `9000`/`8123`. Cambia el Client a `9440`/`8443`, o establece `required: false` para mantener abiertos los puertos no seguros durante la migración.                                                                                                                                                                                                                 |
 
-## Véase también {#see-also}
+<div id="see-also">
+  ## Véase también
+</div>
 
 * [Configuración → Configuración de TLS/SSL](/es/products/kubernetes-operator/guides/configuration#tls-ssl-configuration) — referencia de campos
 * [Configuración → `additionalPorts`](/es/products/kubernetes-operator/guides/configuration#additional-ports) — puertos reservados
