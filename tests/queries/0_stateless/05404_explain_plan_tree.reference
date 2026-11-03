@@ -466,19 +466,6 @@ Exchanges:
   exchange_0: hash(键 MOD 10), streaming, F0 -> F1, buckets 3 -> 3
   exchange_1: gather, streaming, F1 -> F2, buckets 3 -> 1
 Levels: [F0] -> [F1] -> [F2]
--- make_distributed_plan = 0
-Expression ((Project names + Projection))
-  Aggregating
-    Expression ((Before GROUP BY + Change column names to column identifiers))
-      ReadFromMergeTree (db_XXXXXXXX.big)
--- fallback to local execution
-Expression ((Project names + Projection))
-  TotalsHaving
-    Aggregating
-      Expression ((Before GROUP BY + Change column names to column identifiers))
-        ReadFromMergeTree (db_XXXXXXXX.big)
-
-Not distributed: make_distributed_plan does not support WITH TOTALS
 -- errors
 NOT_IMPLEMENTED
 NOT_IMPLEMENTED

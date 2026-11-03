@@ -14,11 +14,12 @@ class WriteBuffer;
 /// in `FragmentGraphTree.cpp`. Both build a `PreparedFragmentGraph`, so they print the same `Exchanges` and `Levels`
 /// sections and name the exchange keys the same way.
 ///
-/// A graph with one `SingleNode` fragment (a plan that was not cut) is printed by both exactly as `QueryPlan::explainPlan`
-/// prints the plan of the fragment, followed by an empty line and `Not distributed: <reason>` when the fragment has a
-/// `fallback_reason`.
+/// A graph with one `SingleNode` fragment (a plan that was not cut) is followed in both outputs by an empty line and
+/// `Not distributed: <reason>` when the fragment has a `fallback_reason`, and has no `Exchanges` and `Levels` sections.
 
 /// `EXPLAIN PLAN fragments = 1`.
+///
+/// A single node is printed exactly as `QueryPlan::explainPlan` prints its plan.
 ///
 /// Every fragment, even of a cut plan with a single fragment, is printed as a header line
 /// `Query fragment <id> (<stage name>) · tasks=<N>`, the `QueryPlan::explainPlan` output of its plan and an empty line,
@@ -39,10 +40,8 @@ void explainAsFragments(
 /// its buckets (`│` for a streaming exchange, `╎` for a persisted one). Each fragment is drawn under the fragment that
 /// reads it. The drawing is followed by the `Exchanges` and `Levels` sections of `fragments = 1`. Step texts are cut at
 /// 40 columns and the first label line at 48; the picture has no other width limit.
-void explainAsTree(
-    const FragmentGraph & graph,
-    WriteBuffer & buf,
-    const ExplainPlanOptions & options,
-    size_t max_step_description_length);
+///
+/// A single node is drawn too, unlike with `fragments = 1`: the boxes of its steps without a frame around them.
+void explainAsTree(const FragmentGraph & graph, WriteBuffer & buf, const ExplainPlanOptions & options);
 
 }
