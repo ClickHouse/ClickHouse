@@ -28,6 +28,7 @@
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/NestedUtils.h>
 
 
 namespace DB
@@ -136,6 +137,54 @@ static MutableColumnPtr mixColumns(
     return column_mixed;
 }
 
+/// The column that `name` is or is a subcolumn of.
+static String getColumnOfSubcolumn(const ColumnsDescription & columns, const String & name)
+{
+    if (columns.has(name))
+        return name;
+
+    for (auto [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(name))
+    {
+        const auto * column = columns.tryGet(String(column_name));
+        if (column && column->type->tryGetSubcolumnType(subcolumn_name))
+            return column->name;
+    }
+    return name;
+}
+
+/// Columns of `header` that the default of `column_name` reads: directly, through a subcolumn, or through columns
+/// absent from `header`, whose defaults are inlined into the evaluation.
+/// Column matchers are expanded and `ALIAS` references are replaced the same way as in default evaluation.
+static NameSet getHeaderColumnsReadByDefault(
+    const String & column_name,
+    const ColumnsDescription & columns,
+    const ColumnDefaults & column_defaults,
+    const Block & header,
+    const ContextPtr & context)
+{
+    NameSet result;
+    NameSet visited{column_name};
+    std::vector<const ColumnDefault *> defaults{&column_defaults.at(column_name)};
+    while (!defaults.empty())
+    {
+        const ColumnDefault * column_default = defaults.back();
+        defaults.pop_back();
+
+        for (const auto & required : getDefaultExpressionRequiredColumns(*column_default, columns, context))
+        {
+            auto name = getColumnOfSubcolumn(columns, required);
+            if (!visited.insert(name).second)
+                continue;
+
+            if (header.has(name))
+                result.insert(name);
+            else if (auto it = column_defaults.find(name); it != column_defaults.end())
+                defaults.push_back(&it->second);
+        }
+    }
+    return result;
+}
+
 
 AddingDefaultsTransform::AddingDefaultsTransform(
     SharedHeader header,
@@ -178,7 +227,8 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
         return;
 
     const auto * block_missing_values = input_format.getMissingValues();
-    if (!block_missing_values)
+    /// `BlockMissingValues::empty` is also true when the mask holds no columns at all, where the lookups below would be out of range.
+    if (!block_missing_values || block_missing_values->empty())
         return;
 
     const auto & header = getOutputPort().getHeader();
@@ -215,14 +265,11 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
 
     for (const auto & [col_name, col_idx] : columns_needing_defaults)
     {
-        const auto & col_default = column_defaults.at(col_name);
-        NameSet required = getDefaultExpressionRequiredColumns(col_default, columns, context);
-
         NameSet deps;
-        for (const auto & req : required)
+        for (const auto & read : getHeaderColumnsReadByDefault(col_name, columns, column_defaults, header, context))
         {
-            if (columns_needing_defaults_set.contains(req))
-                deps.insert(req);
+            if (columns_needing_defaults_set.contains(read))
+                deps.insert(read);
         }
         dependencies[col_name] = std::move(deps);
     }

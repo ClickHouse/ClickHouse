@@ -156,7 +156,8 @@ std::optional<DataLakeReadEstimate> ReadFromObjectStorageStep::estimateReadFromD
         return std::nullopt;
 
     if (!data_lake_read_estimate)
-        data_lake_read_estimate = configuration->estimateRead(storage_snapshot->metadata, filter_actions_dag.get(), getContext());
+        data_lake_read_estimate
+            = configuration->estimateRead(storage_snapshot->metadata, filter_actions_dag.get(), requiredSourceColumns(), getContext());
     return data_lake_read_estimate;
 }
 
@@ -270,6 +271,9 @@ ObjectStorageTopKQueryConditionCacheKeyPtr ReadFromObjectStorageStep::makeTopKQu
     const auto & settings = getContext()->getSettingsRef();
     if (!top_k_filter || !allow_top_k_query_condition_cache
         || !settings[Setting::use_query_condition_cache] || !settings[Setting::use_query_condition_cache_for_top_k])
+        return {};
+
+    if (!top_k_filter->filter_rows)
         return {};
 
     /// Only a table with a UUID has cache entries. With distributed processing each worker reads a
