@@ -425,7 +425,11 @@ def test_iceberg_table_routes_to_iceberg_arm(started_cluster):
     direct = node.query(f"SHOW CREATE TABLE {direct_db}.`{UNIFORM_TABLE}`")
 
     assert "Iceberg" in proxied
-    assert "DeltaLake" in direct
+    # Without the Delta kernel the Delta arm marks the table unreadable (`ENGINE = Other`),
+    # but it still must not be routed to Iceberg.
+    assert "Iceberg" not in direct
+    if has_delta_kernel(node):
+        assert "DeltaLake" in direct
 
 
 def test_iceberg_table_is_listed_and_readable(started_cluster):
