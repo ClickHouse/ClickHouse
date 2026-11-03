@@ -40,7 +40,7 @@ NameSet getStorageColumnsReadByDefault(const ColumnsDescription & columns, const
 /// `structure_hint`, with the value the insertion table computes for that column.
 void inlineUnwrittenColumnsInStructureHint(
     ColumnsDescription & structure_hint, const ColumnsDescription & insertion_columns, const Names & written_columns,
-    size_t max_expanded_ast_elements);
+    const ContextPtr & context);
 
 /// Removes the `DEFAULT` of each column of `structure_hint` that reads a column of `insertion_columns` by a name the hint
 /// gives to other insertion table columns, and of each column whose `DEFAULT` reads a column whose `DEFAULT` is removed.

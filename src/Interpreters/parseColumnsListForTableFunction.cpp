@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/TypeTree.h>
 #include <DataTypes/getLeastSupertype.h>
+#include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpandedASTBudget.h>
 #include <Interpreters/IdentifierSemantic.h>
@@ -36,6 +37,7 @@ namespace Setting
     extern const SettingsBool allow_suspicious_fixed_string_types;
     extern const SettingsBool allow_suspicious_low_cardinality_types;
     extern const SettingsBool allow_suspicious_variant_types;
+    extern const SettingsUInt64 max_expanded_ast_elements;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
@@ -276,13 +278,41 @@ bool isOtherScope(const IAST & ast)
     return ast.as<ASTSubquery>() || ast.as<ASTSelectQuery>() || ast.as<ASTSelectWithUnionQuery>() || ast.as<ASTTableExpression>();
 }
 
-void collectIdentifierHeads(const IAST & ast, NameSet & heads)
+void collectIdentifierHeadsAndAliases(const IAST & ast, NameSet & names)
 {
     checkStackSize();
     if (const auto * identifier = ast.as<ASTIdentifier>())
-        heads.insert(identifier->name_parts.at(0));
+        names.insert(identifier->name_parts.at(0));
+    if (auto alias = ast.tryGetAlias(); !alias.empty())
+        names.insert(std::move(alias));
     for (const auto & child : ast.children)
-        collectIdentifierHeads(*child, heads);
+        collectIdentifierHeadsAndAliases(*child, names);
+}
+
+/// Collects the aliases of the scope of `ast`, without those of the lambdas and subqueries in it.
+void collectAliases(const IAST & ast, NameSet & aliases)
+{
+    checkStackSize();
+    if (isOtherScope(ast))
+        return;
+    if (auto alias = ast.tryGetAlias(); !alias.empty())
+        aliases.insert(std::move(alias));
+    if (const auto * function = ast.as<ASTFunction>(); function && function->name == "lambda")
+        return;
+    for (const auto & child : ast.children)
+        collectAliases(*child, aliases);
+}
+
+bool hasNonDeterministicFunction(const IAST & ast, const ContextPtr & context)
+{
+    checkStackSize();
+    if (const auto * function = ast.as<ASTFunction>(); function && function->name != "lambda")
+    {
+        auto resolver = FunctionFactory::instance().tryGet(function->name, context);
+        if (!resolver || !resolver->isDeterministicInScopeOfQuery())
+            return true;
+    }
+    return std::ranges::any_of(ast.children, [&](const ASTPtr & child) { return hasNonDeterministicFunction(*child, context); });
 }
 
 ASTPtr renameIdentifierHead(const ASTIdentifier & identifier, const String & head)
@@ -326,16 +356,36 @@ class UnwrittenColumnsInliner
 public:
     UnwrittenColumnsInliner(
         const ColumnsDescription & structure_hint_, const ColumnsDescription & insertion_columns_, const Names & written_columns,
-        size_t max_expanded_ast_elements_)
+        const ContextPtr & context_)
         : structure_hint(structure_hint_)
         , insertion_columns(insertion_columns_)
         , written(written_columns.begin(), written_columns.end())
-        , max_expanded_ast_elements(max_expanded_ast_elements_)
+        , context(context_)
+        , max_expanded_ast_elements(context->getSettingsRef()[Setting::max_expanded_ast_elements])
     {
+        /// The `DEFAULT`s evaluated with those of the hint, found as by `addDefaultRequiredExpressionsRecursively`.
+        ASTs evaluated;
+        for (const auto & column : structure_hint)
+            if (column.default_desc.expression)
+                evaluated.push_back(column.default_desc.expression);
+        NameSet reached;
+        for (size_t i = 0; i < evaluated.size(); ++i)
+        {
+            ASTPtr expression = evaluated[i];
+            collectAliases(*expression, aliases);
+            RequiredSourceColumnsVisitor::Data data;
+            RequiredSourceColumnsVisitor(data).visit(expression);
+            for (const auto & name : data.requiredColumns())
+            {
+                const auto * column = insertion_columns.tryGet(name);
+                if (column && column->default_desc.expression && !written.contains(name) && reached.insert(name).second)
+                    evaluated.push_back(column->default_desc.expression);
+            }
+        }
     }
 
-    /// Returns whether `ast` changed. Identifiers whose head is in `lambda_arguments` are lambda arguments.
-    bool rewrite(ASTPtr & ast, ExpandedASTBudget & budget, const NameSet & lambda_arguments)
+    /// Returns whether `ast` changed. Identifiers whose head is in `masked` are arguments or aliases of the lambdas around `ast`.
+    bool rewrite(ASTPtr & ast, ExpandedASTBudget & budget, const NameSet & masked)
     {
         checkStackSize();
         if (isOtherScope(*ast))
@@ -343,10 +393,11 @@ public:
 
         if (const auto * identifier = ast->as<ASTIdentifier>())
         {
-            if (lambda_arguments.contains(identifier->name_parts.at(0)))
+            const auto & head = identifier->name_parts.at(0);
+            if (masked.contains(head) || aliases.contains(head))
                 return false;
             auto name = IdentifierSemantic::getColumnName(*identifier);
-            const ASTPtr * value = name ? getValue(*name) : nullptr;
+            const ASTPtr * value = name && !aliases.contains(*name) ? getValue(*name) : nullptr;
             if (!value)
                 return false;
             String alias = identifier->tryGetAlias();
@@ -360,14 +411,15 @@ public:
         {
             auto arguments = RequiredSourceColumnsMatcher::extractNamesFromLambda(*function);
             renameCapturingArguments(*function, arguments);
-            NameSet masked = lambda_arguments;
-            masked.insert(arguments.begin(), arguments.end());
-            return rewrite(function->arguments->children[1], budget, masked);
+            NameSet lambda_masked = masked;
+            lambda_masked.insert(arguments.begin(), arguments.end());
+            collectAliases(*function->arguments->children[1], lambda_masked);
+            return rewrite(function->arguments->children[1], budget, lambda_masked);
         }
 
         bool changed = false;
         for (auto & child : ast->children)
-            changed |= rewrite(child, budget, lambda_arguments);
+            changed |= rewrite(child, budget, masked);
         return changed;
     }
 
@@ -380,6 +432,10 @@ private:
 
         const auto * column = insertion_columns.tryGet(name);
         if (!column || written.contains(name))
+            return nullptr;
+
+        /// A non-deterministic value would differ from the one the insertion table computes for its own columns.
+        if (column->default_desc.expression && hasNonDeterministicFunction(*column->default_desc.expression, context))
             return nullptr;
 
         ASTPtr value;
@@ -409,7 +465,7 @@ private:
             capturable.emplace();
             for (const auto & column : insertion_columns)
                 if (column.default_desc.expression && !written.contains(column.name))
-                    collectIdentifierHeads(*column.default_desc.expression, *capturable);
+                    collectIdentifierHeadsAndAliases(*column.default_desc.expression, *capturable);
         }
 
         auto & formals = lambda.arguments->children[0]->as<ASTFunction &>().arguments->children;
@@ -419,7 +475,7 @@ private:
                 continue;
 
             NameSet used;
-            collectIdentifierHeads(lambda, used);
+            collectIdentifierHeadsAndAliases(lambda, used);
             auto is_used = [&](const String & name)
             {
                 return used.contains(name) || capturable->contains(name) || insertion_columns.has(name) || structure_hint.has(name);
@@ -437,11 +493,15 @@ private:
     const ColumnsDescription & structure_hint;
     const ColumnsDescription & insertion_columns;
     const NameSet written;
+    const ContextPtr context;
     const size_t max_expanded_ast_elements;
+    /// The evaluated `DEFAULT`s are resolved in one scope, so an identifier named like an alias of any of them outside
+    /// lambdas may read that alias.
+    NameSet aliases;
 
     std::unordered_map<String, ASTPtr> values;
     NameSet expanding;
-    /// The heads of the identifiers that an inlined value may read.
+    /// The heads of the identifiers and the aliases that an inlined value may contain.
     std::optional<NameSet> capturable;
     size_t next_argument_index = 0;
 };
@@ -465,7 +525,7 @@ NameSet getStorageColumnsReadByDefault(const ColumnsDescription & columns, const
 
 void inlineUnwrittenColumnsInStructureHint(
     ColumnsDescription & structure_hint, const ColumnsDescription & insertion_columns, const Names & written_columns,
-    size_t max_expanded_ast_elements)
+    const ContextPtr & context)
 {
     Names names;
     auto expressions = make_intrusive<ASTExpressionList>();
@@ -478,8 +538,8 @@ void inlineUnwrittenColumnsInStructureHint(
         }
     }
 
-    UnwrittenColumnsInliner inliner(structure_hint, insertion_columns, written_columns, max_expanded_ast_elements);
-    ExpandedASTBudget budget(max_expanded_ast_elements, *expressions, unwritten_columns_expansion);
+    UnwrittenColumnsInliner inliner(structure_hint, insertion_columns, written_columns, context);
+    ExpandedASTBudget budget(context->getSettingsRef()[Setting::max_expanded_ast_elements], *expressions, unwritten_columns_expansion);
     for (size_t i = 0; i < names.size(); ++i)
     {
         auto & expression = expressions->children[i];
