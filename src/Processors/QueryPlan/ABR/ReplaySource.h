@@ -2,6 +2,7 @@
 
 #include <Core/ProtocolDefines.h>
 #include <Formats/NativeReader.h>
+#include <IO/CascadeWriteBuffer.h>
 #include <IO/ReadBuffer.h>
 #include <Processors/ISource.h>
 #include <Processors/Transforms/AggregatingTransform.h>
@@ -13,10 +14,15 @@ namespace DB
 class ReplaySource : public ISource
 {
 public:
-    ReplaySource(SharedHeader header, std::unique_ptr<ReadBuffer> buf_, bool add_aggregation_info_)
+    ReplaySource(
+        SharedHeader header,
+        CascadeWriteBuffer::WriteBufferPtrs owners_,
+        std::unique_ptr<ReadBuffer> buf_,
+        bool add_aggregation_info_)
         : ISource(header)
-        , buf(std::move(buf_))
-        , reader(*buf, *header, DBMS_TCP_PROTOCOL_VERSION)
+        , buffer_owners(std::move(owners_))
+        , buffer(std::move(buf_))
+        , reader(*buffer, *header, DBMS_TCP_PROTOCOL_VERSION)
         , add_aggregation_info(add_aggregation_info_)
     {
     }
@@ -42,7 +48,9 @@ protected:
     }
 
 private:
-    std::unique_ptr<ReadBuffer> buf;
+    /// Owns the spill-files that `buffer` reads from, so it is declared before `buffer` to outlive it.
+    CascadeWriteBuffer::WriteBufferPtrs buffer_owners;
+    std::unique_ptr<ReadBuffer> buffer;
     NativeReader reader;
     bool add_aggregation_info;
 };

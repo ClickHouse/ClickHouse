@@ -104,20 +104,21 @@ ReadFromABR::BufferedResult ReadFromABR::executeAndBuffer(QueryPipeline & pipeli
     cascade_buf->finalize();
 
     ConcatReadBuffer::Buffers read_buffers;
-    for (auto & write_buf : cascade_buf->getResultBuffers())
+    CascadeWriteBuffer::WriteBufferPtrs write_buffers = cascade_buf->getResultBuffers();
+    for (const auto & write_buf : write_buffers)
     {
         if (!write_buf)
             continue;
 
         if (auto * temporary_buf = dynamic_cast<TemporaryDataBuffer *>(write_buf.get()))
         {
-            if (auto reread_buf = temporary_buf->read())
-                read_buffers.emplace_back(std::move(reread_buf));
+            if (auto read_buf = temporary_buf->read())
+                read_buffers.emplace_back(std::move(read_buf));
         }
         else if (auto * readable = dynamic_cast<IReadableWriteBuffer *>(write_buf.get()))
         {
-            if (auto reread_buf = readable->tryGetReadBuffer())
-                read_buffers.emplace_back(std::move(reread_buf));
+            if (auto read_buf = readable->tryGetReadBuffer())
+                read_buffers.emplace_back(std::move(read_buf));
         }
     }
 
@@ -126,7 +127,7 @@ ReadFromABR::BufferedResult ReadFromABR::executeAndBuffer(QueryPipeline & pipeli
         replay_source = std::make_shared<NullSource>(header);
     else
         replay_source = std::make_shared<ReplaySource>(
-            header, std::make_unique<ConcatReadBuffer>(std::move(read_buffers)), add_aggregation_info);
+            header, std::move(write_buffers), std::make_unique<ConcatReadBuffer>(std::move(read_buffers)), add_aggregation_info);
 
     return {
         .replay_source = std::move(replay_source),
