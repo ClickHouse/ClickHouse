@@ -1,3 +1,4 @@
+#include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
@@ -12,6 +13,7 @@
 #include <Common/assert_cast.h>
 #include <base/scope_guard.h>
 
+#include <cstring>
 #include <stdexcept>
 
 namespace DB
@@ -21,6 +23,8 @@ namespace Setting
     extern const SettingsUInt64 input_format_max_rows_to_read_for_schema_inference;
     extern const SettingsUInt64 input_format_max_bytes_to_read_for_schema_inference;
     extern const SettingsSchemaInferenceMode schema_inference_mode;
+    extern const SettingsUInt64 input_format_allow_errors_num;
+    extern const SettingsFloat input_format_allow_errors_ratio;
 }
 
 namespace ErrorCodes
@@ -374,8 +378,18 @@ try
                 /// one according to the inferred schema.
                 if (!format_name)
                 {
+                    /// These text formats accept almost any bytes, so binary data (e.g. the `.dbf` table of a shapefile)
+                    /// would be detected as one of them with meaningless columns. Text has no zero bytes: if the start
+                    /// of the data has one, don't try them. Only a prefix is checked: a memory-mapped file is one buffer
+                    /// with all of its data.
+                    static constexpr size_t max_bytes_to_check_for_zero_byte = DBMS_DEFAULT_BUFFER_SIZE;
+                    ReadBuffer & detection_buf = support_buf_recreation ? *iterator_data.buf : *peekable_buf;
+                    bool has_zero_byte = !detection_buf.eof()
+                        && memchr(detection_buf.position(), 0, std::min(detection_buf.available(), max_bytes_to_check_for_zero_byte)) != nullptr;
+
+                    static const std::vector<String> no_formats;
                     std::unordered_map<String, NamesAndTypesList> format_to_schema;
-                    const auto & formats_set_to_detect = getSimilarFormatsSetForDetection();
+                    const auto & formats_set_to_detect = has_zero_byte ? no_formats : getSimilarFormatsSetForDetection();
                     for (size_t i = 0; i != formats_set_to_detect.size(); ++i)
                     {
                         try
@@ -606,6 +620,15 @@ SchemaCache::Keys getKeysForSchemaCache(
         std::back_inserter(cache_keys),
         [&](const auto & source) { return makeSchemaCacheKey(source, format, additional_format_info, schema_inference_mode); });
     return cache_keys;
+}
+
+bool canUseNumRowsFromSchemaCache(const std::optional<FormatSettings> & format_settings, const ContextPtr & context)
+{
+    if (format_settings)
+        return format_settings->input_allow_errors_num == 0 && format_settings->input_allow_errors_ratio == 0;
+
+    const auto & settings = context->getSettingsRef();
+    return settings[Setting::input_format_allow_errors_num] == 0 && settings[Setting::input_format_allow_errors_ratio] == 0;
 }
 
 }

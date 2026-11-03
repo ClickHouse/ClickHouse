@@ -131,6 +131,7 @@ void ASTInsertQuery::readJSON(const Poco::JSON::Object & json)
     child = r.readScreenedChildOfType<ASTFunction>("table_function");
     if (child)
     {
+        child->as<ASTFunction &>().setKind(ASTFunction::Kind::TABLE_FUNCTION);
         table_function = child;
         children.push_back(table_function);
     }
