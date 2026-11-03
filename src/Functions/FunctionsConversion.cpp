@@ -2040,6 +2040,113 @@ FunctionCast::WrapperType FunctionCast::createMapWrapper(const DataTypePtr & fro
     }
 }
 
+namespace
+{
+
+/// The time zone of a `DateTime` or `DateTime64`, possibly inside `Nullable`, `LowCardinality` or `Array`, else nullptr.
+const TimezoneMixin * getDateTimeTimeZone(const DataTypePtr & type)
+{
+    DataTypePtr nested = removeLowCardinalityAndNullable(type);
+    while (const auto * array = typeid_cast<const DataTypeArray *>(nested.get()))
+        nested = removeLowCardinalityAndNullable(array->getNestedType());
+
+    if (const auto * date_time = typeid_cast<const DataTypeDateTime *>(nested.get()))
+        return date_time;
+    if (const auto * date_time64 = typeid_cast<const DataTypeDateTime64 *>(nested.get()))
+        return date_time64;
+    return nullptr;
+}
+
+DataTypePtr withTimeZone(const DataTypePtr & type, const TimezoneMixin & time_zone)
+{
+    return rewriteTypeTree(
+        type,
+        [&](const DataTypePtr & node) -> DataTypePtr
+        {
+            if (typeid_cast<const DataTypeDateTime *>(node.get()))
+                return std::make_shared<DataTypeDateTime>(time_zone);
+            if (const auto * date_time64 = typeid_cast<const DataTypeDateTime64 *>(node.get()))
+                return std::make_shared<DataTypeDateTime64>(date_time64->getScale(), time_zone);
+            return node;
+        },
+        CustomizationPolicy::Keep);
+}
+
+DataTypePtr withTypedPaths(const DataTypeObject & object, DataTypeObject::TypedPathsMap typed_paths)
+{
+    return std::make_shared<DataTypeObject>(
+        object.getSchemaFormat(), std::move(typed_paths), object.getPathsToSkip(), object.getPathRegexpsToSkip(),
+        object.getMaxDynamicPaths(), object.getMaxDynamicTypes(), object.getSharedTypedPaths());
+}
+
+/// Sets to UTC the time zone of every subtype of `type` at a JSON path whose typed path in `typed_paths` is a `DateTime`,
+/// and of that typed path. A `Map` cannot be changed per key, so its typed paths get the time zone of the `Map` values.
+DataTypePtr rewriteTimeZonesForTypedPaths(
+    const DataTypePtr & type, const String & prefix, DataTypeObject::TypedPathsMap & typed_paths, const FormatSettings & format_settings)
+{
+    static const TimezoneMixin utc("UTC");
+
+    auto rewrite_child = [&](const DataTypePtr & child, const String & path) -> DataTypePtr
+    {
+        auto it = typed_paths.find(path);
+        if (it != typed_paths.end() && getDateTimeTimeZone(child) && getDateTimeTimeZone(it->second))
+        {
+            it->second = withTimeZone(it->second, utc);
+            return withTimeZone(child, utc);
+        }
+        return rewriteTimeZonesForTypedPaths(child, path + ".", typed_paths, format_settings);
+    };
+
+    if (const auto * object = typeid_cast<const DataTypeObject *>(type.get()))
+    {
+        auto object_typed_paths = object->getTypedPaths();
+        bool changed = false;
+        for (auto & [path, path_type] : object_typed_paths)
+        {
+            auto new_path_type = rewrite_child(path_type, prefix + path);
+            changed |= new_path_type != path_type;
+            path_type = std::move(new_path_type);
+        }
+
+        return changed ? withTypedPaths(*object, std::move(object_typed_paths)) : type;
+    }
+
+    /// Otherwise a named `Tuple` is written as a JSON array, not at the paths of its elements.
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get());
+        tuple && tuple->hasExplicitNames() && format_settings.json.write_named_tuples_as_objects)
+    {
+        DataTypes elements = tuple->getElements();
+        const auto & names = tuple->getElementNames();
+        bool changed = false;
+        for (size_t i = 0; i != elements.size(); ++i)
+        {
+            /// Parsing escapes the dots of such a key, so it is not the path `prefix + name`.
+            if (format_settings.json.json_type_escape_dots_in_keys && names[i].contains('.'))
+                continue;
+
+            auto new_element = rewrite_child(elements[i], prefix + names[i]);
+            changed |= new_element != elements[i];
+            elements[i] = std::move(new_element);
+        }
+
+        return changed ? tuple->cloneWithChildren(elements) : type;
+    }
+
+    if (const auto * map = typeid_cast<const DataTypeMap *>(type.get()))
+    {
+        if (const auto * value_time_zone = getDateTimeTimeZone(map->getValueType()))
+        {
+            for (auto & [path, path_type] : typed_paths)
+                if (path.starts_with(prefix) && getDateTimeTimeZone(path_type))
+                    path_type = withTimeZone(path_type, *value_time_zone);
+        }
+    }
+
+    return type;
+}
+
+}
+
 FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & from_type, const DataTypeObject * to_object, bool requested_result_is_nullable) const
 {
     /// Types that differ only in SHARED marks of typed paths have identical columns, no conversion is needed.
@@ -2074,13 +2181,23 @@ FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & 
     if (checkAndGetDataType<DataTypeTuple>(from_type.get())
         || checkAndGetDataType<DataTypeMap>(from_type.get()) || checkAndGetDataType<DataTypeObject>(from_type.get()))
     {
-        return [this, requested_result_is_nullable](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
+        /// The text of a `DateTime` has no time zone, and types that differ only in the time zone of `DateTime` have identical columns.
+        auto typed_paths = to_object->getTypedPaths();
+        DataTypePtr text_from_type = rewriteTimeZonesForTypedPaths(from_type, "", typed_paths, settings.format_settings);
+        if (text_from_type == from_type)
+            text_from_type = nullptr;
+
+        DataTypePtr text_to_type;
+        if (typed_paths != to_object->getTypedPaths())
+            text_to_type = withTypedPaths(*to_object, std::move(typed_paths));
+
+        return [this, requested_result_is_nullable, text_from_type, text_to_type](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
         {
             auto json_string = ColumnString::create();
             ColumnStringHelpers::WriteHelper<ColumnString> write_helper(assert_cast<ColumnString &>(*json_string), input_rows_count);
             auto & write_buffer = write_helper.getWriteBuffer();
             FormatSettings format_settings = settings.format_settings;
-            auto serialization = arguments[0].type->getDefaultSerialization();
+            auto serialization = (text_from_type ? text_from_type : arguments[0].type)->getDefaultSerialization();
             format_settings.json.quote_64bit_integers = false;
             for (size_t i = 0; i < input_rows_count; ++i)
             {
@@ -2090,10 +2207,11 @@ FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & 
             write_helper.finalize();
 
             ColumnsWithTypeAndName args_with_json_string = {ColumnWithTypeAndName(json_string->getPtr(), std::make_shared<DataTypeString>(), "")};
+            const auto & parse_type = text_to_type ? text_to_type : result_type;
             if (requested_result_is_nullable && cast_type == CastType::accurateOrNull)
-                return ConvertImplGenericFromString<false>::execute(args_with_json_string, makeNullable(result_type), nullable_source, input_rows_count, settings);
+                return ConvertImplGenericFromString<false>::execute(args_with_json_string, makeNullable(parse_type), nullable_source, input_rows_count, settings);
 
-            return ConvertImplGenericFromString<true>::execute(args_with_json_string, result_type, nullable_source, input_rows_count, settings);
+            return ConvertImplGenericFromString<true>::execute(args_with_json_string, parse_type, nullable_source, input_rows_count, settings);
         };
     }
 
