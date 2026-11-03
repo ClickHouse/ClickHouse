@@ -220,12 +220,12 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
                 std::move(pipelines[0]), std::move(pipelines[1]), join, join_algorithm_header, max_block_size, this, &processors);
 
             /// Spread the single output stream over `max_streams` for the steps above - unless a step above
-            /// consumes the stream as it is: a merge join above that inherits this join's output order
-            /// (`keepLeftPipelineInOrder`, it would only merge the streams back into one), or, when this join
+            /// consumes the stream as it is (`keepLeftPipelineLayout`): a merge join above that inherits this
+            /// join's output order (it would only merge the streams back into one), or, when this join
             /// was sharded but had to degrade, a step above that pairs the streams positionally with the
             /// shards of another input. A resize hands out chunks arbitrarily, so `max_streams` streams of it
             /// must never be mistaken for `max_streams` shards.
-            if (primary_key_sharding.empty() && !keep_left_read_in_order)
+            if (primary_key_sharding.empty() && left_pipeline_order == LeftPipelineOrder::None)
                 joined_pipeline->resize(max_streams);
         }
         else

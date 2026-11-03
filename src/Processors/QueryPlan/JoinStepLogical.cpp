@@ -2219,9 +2219,10 @@ static void addSortingForMergeJoin(
 
             /// The nested join's single sorted stream is consumed as such: spreading it over `max_threads`
             /// streams (as a merge join otherwise does for the steps above it) would only make this sort
-            /// merge those streams back into one.
+            /// merge those streams back into one. Only the layout is kept: a merge join cannot be pinned to
+            /// the left block order (`canPreserveLeftBlockOrder` is false), and it does not need to be.
             if (auto * nested_join_step = typeid_cast<JoinStep *>(nested_order.join_node->step.get()))
-                nested_join_step->keepLeftPipelineInOrder();
+                nested_join_step->keepLeftPipelineLayout();
         }
 
         node = &nodes.emplace_back(QueryPlan::Node{std::move(sorting_step), {node}});

@@ -102,7 +102,8 @@ public:
     void keepLeftPipelineInOrder(bool disable_squashing = false);
 
     /// Keeps only the left pipe layout (`LeftPipelineOrder::KeepLayout`), without any requirement
-    /// on the join itself. Does not downgrade an already required order.
+    /// on the join itself. For a `YShaped` (merge) join it also keeps its single output stream as it is,
+    /// instead of spreading it over `max_streams`. Does not downgrade an already required order.
     void keepLeftPipelineLayout();
 
     bool isOptimized() const { return optimized; }

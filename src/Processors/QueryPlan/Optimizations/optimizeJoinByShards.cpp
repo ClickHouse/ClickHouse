@@ -517,7 +517,7 @@ void optimizeJoinByShards(QueryPlan::Node & root, bool only_parallel_sorted_merg
             }
             else if (can_split_left_table && !full_sorting_merge_join)
             {
-                /// A hash join keeps its probe streams one-to-one (`keepLeftPipelineInOrder`), so a sharding
+                /// A hash join keeps its probe streams one-to-one (`keepLeftPipelineLayout`), so a sharding
                 /// that a join above applies to the left subtree survives it. An unsharded merge join does
                 /// not: it joins one stream per side and gives one stream back, so the sharding of its left
                 /// subtree would be lost below it and the streams above it would no longer be the shards the
