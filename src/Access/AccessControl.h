@@ -228,7 +228,8 @@ public:
     static bool functionRequiresGrant(std::string_view function_name);
     /// Rewrites the names in `FUNCTION ON <name>` elements to the name the function is registered
     /// under, so that `GRANT FUNCTION ON HEX` or `GRANT FUNCTION ON isASCII` matches the check for
-    /// `hex` or `isValidASCII`. Unknown names, e.g. of a user defined function created later, are kept.
+    /// `hex` or `isValidASCII`. Unknown names, e.g. of a user defined function created later, are kept,
+    /// and so are wildcards (`FUNCTION ON he*`), which match registered names as written.
     static void canonicalizeFunctionNames(AccessRightsElements & elements);
     /// Read once at server start; `SYSTEM RELOAD CONFIG` does not re-read it, as for every other
     /// setting of the `access_control_improvements` section.

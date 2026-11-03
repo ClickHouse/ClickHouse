@@ -478,6 +478,22 @@ def test_grant_by_other_spelling_or_alias():
     )
 
 
+def test_wildcard_grant_is_not_resolved():
+    """A wildcard is a prefix of registered names: resolving `LCASE*` to `lower*` would grant
+    other functions."""
+    instance.query("CREATE USER A")
+
+    instance.query("GRANT FUNCTION ON LCASE* TO A")
+    assert instance.query("SHOW GRANTS FOR A") == TSV(["GRANT FUNCTION ON LCASE* TO A"])
+    assert "Not enough privileges" in instance.query_and_get_error(
+        "SELECT lower('A')", user="A"
+    )
+
+    instance.query("REVOKE FUNCTION ON LCASE* FROM A")
+    instance.query("GRANT FUNCTION ON he* TO A")
+    assert instance.query("SELECT hex('a')", user="A") == "61\n"
+
+
 def test_authentication_grants_by_other_spelling_or_alias():
     """The GRANTS clause of an authentication method limits the rights of the user by intersection,
     so a function name in it must be resolved like in GRANT."""

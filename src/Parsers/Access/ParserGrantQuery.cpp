@@ -1041,6 +1041,7 @@ Names are matched after resolving aliases, so listing `hex` covers `HEX`, and li
 is resolved the same way and stored as the registered name: `GRANT FUNCTION ON HEX` grants `hex`,
 `GRANT FUNCTION ON isASCII` grants `isValidASCII`, and `SHOW GRANTS` shows the registered name.
 The same applies to the `GRANTS` clause of an authentication method in `CREATE USER` and `CREATE TOKEN`.
+A wildcard, `GRANT FUNCTION ON he*`, is a prefix of the registered names and is kept as written.
 
 The setting is read when the server starts. Like the other `access_control_improvements` settings,
 it is not re-read by `SYSTEM RELOAD CONFIG`, so changing the list requires a restart.

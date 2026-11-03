@@ -1329,7 +1329,9 @@ void AccessControl::canonicalizeFunctionNames(AccessRightsElements & elements)
 {
     for (auto & element : elements)
     {
-        if (element.isGlobalWithParameter() && !element.anyParameter()
+        /// A wildcard (`FUNCTION ON he*`) is a prefix of registered names, not a name: resolving `LCASE*` to `lower*`
+        /// would grant other functions.
+        if (element.isGlobalWithParameter() && !element.anyParameter() && !element.wildcard
             && element.access_flags.getParameterType() == AccessFlags::FUNCTION)
         {
             element.parameter = FunctionFactory::instance().resolveNameOrAlias(element.parameter);
