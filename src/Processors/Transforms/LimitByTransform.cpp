@@ -250,9 +250,12 @@ void LimitByTransform::transform(Chunk & chunk)
             grouping_key_columns.push_back(normalized_grouping_key_columns.back().get());
         }
 
-        /// Each row adds at most one group, so make room for all of them before `consumeImpl` inserts any key: if
+        /// Unlike `std::vector`, `VectorWithMemoryTracking` throws `MEMORY_LIMIT_EXCEEDED` when it allocates. If
         /// `push_back` threw between `emplaceKey` and `setMapped`, the key would stay in the hash table without a group
-        /// index. This is done here rather than in `consumeImpl` to keep its row loop as it is.
+        /// index, and `ISimpleTransform::work` would let the next chunk read past the end of `group_counts` for it.
+        /// A row adds at most one group, so room for the whole chunk is reserved before `consumeImpl` inserts any key,
+        /// growing at least twofold so that reallocations stay amortized. This is done here, not in `consumeImpl`,
+        /// because a reserve there changes the codegen of its row loop and slows it down.
         if (group_counts.capacity() - group_counts.size() < row_count)
             group_counts.reserve(std::max<size_t>(group_counts.size() + row_count, group_counts.capacity() * 2));
 

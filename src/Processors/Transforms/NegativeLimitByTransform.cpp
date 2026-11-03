@@ -200,8 +200,10 @@ void NegativeLimitByTransform::consumeImpl(
     size_t run_group = 0;
     for (UInt64 row = 0; row < num_rows; ++row)
     {
-        /// Grow `group_windows` before a key can be inserted: if the allocation threw between `emplaceKey` and
-        /// `setMapped`, the key would stay in the hash table without a group index.
+        /// Unlike `std::vector`, `VectorWithMemoryTracking` throws `MEMORY_LIMIT_EXCEEDED` when it allocates. If
+        /// `emplace_back` threw between `emplaceKey` and `setMapped`, the key would stay in the hash table without a
+        /// group index, and `ISimpleTransform::work` would let a later chunk read past the end of `group_windows` for
+        /// it. So `group_windows` grows before a key can be inserted; a default `GroupWindow` does not allocate.
         if (group_windows.size() == group_windows.capacity())
             group_windows.reserve(std::max<size_t>(16, group_windows.capacity() * 2));
 
