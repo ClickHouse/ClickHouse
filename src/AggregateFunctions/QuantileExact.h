@@ -89,9 +89,7 @@ struct QuantileExactBase
         /// Exact only into an empty state: merging many states into one would otherwise reallocate on every merge.
         if (array.empty())
             array.reserve_exact(rhs.array.size());
-        else
-            reserveForMore(rhs.array.size());
-        array.insert_assume_reserved(rhs.array.begin(), rhs.array.end());
+        array.insert(rhs.array.begin(), rhs.array.end());
     }
 
     void serialize(WriteBuffer & buf) const
@@ -136,16 +134,32 @@ private:
         array.reserve_exact(capacity);
     }
 
+    /// Reserves only for the kept values, so rejected rows never grow the state.
     template <typename Keep>
     void addManyIf(const Value * __restrict values, size_t count, Keep && keep)
     {
-        reserveForMore(count);
+        auto is_kept = [&](size_t i) { return static_cast<size_t>(!isNaN(values[i])) & static_cast<size_t>(keep(i)); };
+
         size_t size = array.size();
+        if (array.capacity() - size < count)
+        {
+            /// The compaction writes every row at the next free slot, so it must end at a kept row to stay within the kept count.
+            while (count > 0 && !is_kept(count - 1))
+                --count;
+
+            size_t kept = 0;
+            for (size_t i = 0; i < count; ++i)
+                kept += is_kept(i);
+            if (kept == 0)
+                return;
+            reserveForMore(kept);
+        }
+
         Value * __restrict out = array.data();
         for (size_t i = 0; i < count; ++i)
         {
             out[size] = values[i];
-            size += static_cast<size_t>(!isNaN(values[i])) & static_cast<size_t>(keep(i));
+            size += is_kept(i);
         }
         array.resize_assume_reserved(size);
     }

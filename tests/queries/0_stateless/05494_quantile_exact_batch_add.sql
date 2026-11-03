@@ -14,3 +14,7 @@ SELECT quantilesExactIf(0.1, 0.5, 0.9)(multiIf(number % 3 = 0, NULL, number % 7 
 SELECT quantilesExact(0.1, 0.5, 0.9)(number) FROM numbers_mt(100000) SETTINGS max_threads = 8;
 SELECT quantilesExactMerge(0.1, 0.5, 0.9)(state) FROM (SELECT quantilesExactState(0.1, 0.5, 0.9)(number) AS state FROM numbers(100000) GROUP BY number % 7);
 SELECT quantilesExactMerge(0.1, 0.5, 0.9)(state) FROM (SELECT quantilesExactState(0.1, 0.5, 0.9)(number) AS state FROM numbers(3) GROUP BY number);
+
+-- Rows filtered out by `-If` or NULL must not grow a full state.
+SELECT quantileExactIf(number, number < 655360) FROM numbers(655361) SETTINGS max_threads = 1, max_block_size = 1024, max_memory_usage = 8388608;
+SELECT quantileExact(if(number < 655360, number, NULL)) FROM numbers(655361) SETTINGS max_threads = 1, max_block_size = 1024, max_memory_usage = 8388608;
