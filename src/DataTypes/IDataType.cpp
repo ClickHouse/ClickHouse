@@ -150,9 +150,9 @@ size_t IDataType::getSizeOfValueInMemory() const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Value of type {} in memory is not of fixed size.", getName());
 }
 
-void IDataType::forEachSubcolumn(const SubcolumnCallback & callback, const SubstreamData & data)
+void IDataType::forEachSubcolumn(const SubcolumnCallback & callback, const SubstreamData & data, size_t initial_array_level)
 {
-    SubcolumnResolution::forEachSubcolumn(data, callback);
+    SubcolumnResolution::forEachSubcolumn(data, callback, initial_array_level);
 }
 
 std::unique_ptr<IDataType::SubcolumnInfo> IDataType::getSubcolumnInfo(

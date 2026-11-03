@@ -26,6 +26,8 @@ struct Subcolumn
 {
     SubstreamPath path;
     String name;
+    /// Set for a name resolved from the type, whose data the path alone does not rebuild.
+    std::optional<SubstreamData> data;
 };
 
 SubstreamPath copyPathPrefix(const SubstreamPath & path, size_t prefix_len)
@@ -48,15 +50,13 @@ std::optional<size_t> findDeclaredParent(const SubstreamPath & path, size_t pref
 }
 
 /// Visits every substream that is offered as a subcolumn, with the name it gets. Each one is a
-/// candidate: another substream may claim the same name. A requested name lets a serialization skip
-/// the substreams that cannot claim it, so pass it when resolving one.
+/// candidate: another substream may claim the same name.
 template <typename Visitor>
 void forEachSubcolumnCandidate(
     const SubstreamData & data,
     size_t initial_array_level,
     Visitor && visit,
-    bool enumerate_dynamic_streams,
-    std::optional<std::string_view> subcolumn_name = {})
+    bool enumerate_dynamic_streams)
 {
     ISerialization::StreamCallback callback = [&](const auto & path)
     {
@@ -74,7 +74,6 @@ void forEachSubcolumnCandidate(
     settings.enumerate_dynamic_streams = enumerate_dynamic_streams;
     settings.enumerate_virtual_streams = true;
     settings.array_level = initial_array_level;
-    settings.subcolumn_name = subcolumn_name;
     data.serialization->enumerateStreams(settings, callback, data);
 }
 
@@ -157,18 +156,13 @@ std::unique_ptr<IDataType::SubcolumnInfo> resolveDynamicSubcolumn(
 
 /// One entry per name: a declared name replaces one already found, so nothing can be emitted before
 /// the walk ends.
-std::vector<Subcolumn> collectSubcolumns(const SubstreamData & data)
+std::vector<Subcolumn> collectSubcolumns(const SubstreamData & data, size_t initial_array_level)
 {
     std::vector<Subcolumn> subcolumns;
     std::unordered_map<String, size_t> position_by_name;
 
-    auto collect = [&](const SubstreamPath & path, size_t prefix_len, String name)
+    auto add = [&](Subcolumn subcolumn)
     {
-        bool is_declared = ISerialization::isDeclaredSubstream(path, prefix_len);
-        if (!is_declared && isHiddenByDynamicSubcolumn(path, prefix_len, name, data, 0))
-            return;
-
-        Subcolumn subcolumn{copyPathPrefix(path, prefix_len), std::move(name)};
         auto [it, inserted] = position_by_name.emplace(subcolumn.name, subcolumns.size());
 
         if (inserted)
@@ -179,27 +173,62 @@ std::vector<Subcolumn> collectSubcolumns(const SubstreamData & data)
 
         /// A declared name takes the place of a generated one. Two declared names keep the first.
         auto & existing = subcolumns[it->second];
-        if (is_declared && !ISerialization::isDeclaredSubstream(existing.path, existing.path.size()))
+        if (ISerialization::isDeclaredSubstream(subcolumn.path, subcolumn.path.size())
+            && !ISerialization::isDeclaredSubstream(existing.path, existing.path.size()))
             existing = std::move(subcolumn);
     };
 
-    forEachSubcolumnCandidate(data, 0, collect, /*enumerate_dynamic_streams=*/ true);
+    auto collect = [&](const SubstreamPath & path, size_t prefix_len, String name)
+    {
+        bool is_declared = ISerialization::isDeclaredSubstream(path, prefix_len);
+        if (!is_declared && isHiddenByDynamicSubcolumn(path, prefix_len, name, data, initial_array_level))
+            return;
+
+        auto prefix = copyPathPrefix(path, prefix_len);
+        /// The names this element's type declares but resolves from the data, which no substream carries:
+        /// the typed paths of a JSON and the names under them. Declared, so they outrank a generated name.
+        if (const auto & element_data = path[prefix_len - 1].data; element_data.type)
+        {
+            element_data.type->forEachKnownDynamicSubcolumnName([&](const String & known_name)
+            {
+                if (auto resolved = resolveDynamicSubcolumn(prefix, known_name, initial_array_level))
+                    add({resolved->substreams_path, name + "." + known_name, resolved->data});
+            }, initial_array_level + ISerialization::getArrayLevel(path, prefix_len));
+        }
+
+        add({std::move(prefix), std::move(name), {}});
+    };
+
+    forEachSubcolumnCandidate(data, initial_array_level, collect, /*enumerate_dynamic_streams=*/ false);
+
+    /// The same for the type itself, which has no substream to hang the names off.
+    if (data.type)
+    {
+        data.type->forEachKnownDynamicSubcolumnName([&](const String & known_name)
+        {
+            if (auto info = data.type->getDynamicSubcolumnInfo(known_name, data, initial_array_level, false))
+                add({info->substreams_path, known_name, info->data});
+        }, initial_array_level);
+    }
 
     return subcolumns;
 }
 
 }
 
-void forEachSubcolumn(const SubstreamData & data, const SubcolumnPathCallback & callback)
+void forEachSubcolumn(const SubstreamData & data, const SubcolumnPathCallback & callback, size_t initial_array_level)
 {
-    for (const auto & subcolumn : collectSubcolumns(data))
+    for (const auto & subcolumn : collectSubcolumns(data, initial_array_level))
         callback(subcolumn.path, subcolumn.name);
 }
 
-void forEachSubcolumn(const SubstreamData & data, const IDataType::SubcolumnCallback & callback)
+void forEachSubcolumn(const SubstreamData & data, const IDataType::SubcolumnCallback & callback, size_t initial_array_level)
 {
-    for (const auto & subcolumn : collectSubcolumns(data))
-        callback(subcolumn.path, subcolumn.name, ISerialization::createFromPath(subcolumn.path, subcolumn.path.size()));
+    for (const auto & subcolumn : collectSubcolumns(data, initial_array_level))
+        callback(
+            subcolumn.path,
+            subcolumn.name,
+            subcolumn.data ? *subcolumn.data : ISerialization::createFromPath(subcolumn.path, subcolumn.path.size()));
 }
 
 std::unique_ptr<IDataType::SubcolumnInfo> findSubcolumn(
@@ -240,7 +269,7 @@ std::unique_ptr<IDataType::SubcolumnInfo> findSubcolumn(
         }
     };
 
-    forEachSubcolumnCandidate(data, initial_array_level, collect, /*enumerate_dynamic_streams=*/ false, subcolumn_name);
+    forEachSubcolumnCandidate(data, initial_array_level, collect, /*enumerate_dynamic_streams=*/ false);
 
     if (found_path)
         return makeSubcolumnInfo(*found_path, found_path->size(), nullptr);

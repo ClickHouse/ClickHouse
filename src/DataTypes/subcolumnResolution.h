@@ -20,8 +20,10 @@ namespace SubcolumnResolution
 
 using SubcolumnPathCallback = std::function<void(const ISerialization::SubstreamPath &, const String &)>;
 
-void forEachSubcolumn(const ISerialization::SubstreamData & data, const SubcolumnPathCallback & callback);
-void forEachSubcolumn(const ISerialization::SubstreamData & data, const IDataType::SubcolumnCallback & callback);
+void forEachSubcolumn(
+    const ISerialization::SubstreamData & data, const SubcolumnPathCallback & callback, size_t initial_array_level = 0);
+void forEachSubcolumn(
+    const ISerialization::SubstreamData & data, const IDataType::SubcolumnCallback & callback, size_t initial_array_level = 0);
 
 std::unique_ptr<IDataType::SubcolumnInfo> findSubcolumn(
     std::string_view subcolumn_name,

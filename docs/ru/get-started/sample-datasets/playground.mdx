@@ -13,9 +13,7 @@ doc_type: 'guide'
 
 Вы можете отправлять запросы в Песочницу ClickHouse с помощью любого HTTP-клиента, например [curl](https://curl.haxx.se) или [wget](https://www.gnu.org/software/wget/), либо установить соединение с использованием драйверов [JDBC](/ru/integrations/language-clients/java/jdbc) или [ODBC](/ru/concepts/features/interfaces/odbc). Более подробная информация о программных продуктах с поддержкой ClickHouse доступна [здесь](/ru/integrations/home).
 
-<div id="credentials">
-  ## Учетные данные
-</div>
+## Учетные данные {#credentials}
 
 | Параметр                     | Значение                           |
 | :--------------------------- | :--------------------------------- |
@@ -24,20 +22,18 @@ doc_type: 'guide'
 | Пользователь                 | `explorer` или `play`              |
 | Пароль                       | (пусто)                            |
 
-<div id="limitations">
-  ## Ограничения
-</div>
+## Ограничения {#limitations}
 
-Запросы выполняются от имени пользователя с доступом только для чтения. Это накладывает некоторые ограничения:
+Запросы выполняются от имени пользователя с правом только на чтение, поэтому действуют следующие ограничения:
 
-* DDL-запросы не разрешены
-* INSERT-запросы не разрешены
+* DDL-запросы запрещены
+* Запросы INSERT запрещены
 
-Для сервиса также действуют квоты на использование.
+На использование сервиса также установлены квоты.
 
-<div id="examples">
-  ## Примеры
-</div>
+Чтобы снять ограничения на запись и попробовать загрузить собственные данные, вы можете оформить бесплатный [пробный период ClickHouse Cloud](https://clickhouse.cloud/signUp?loc=docs-get-started-sample-datasets-playground) или [установить ClickHouse](/ru/get-started/setup/install) локально.
+
+## Примеры {#examples}
 
 Пример HTTPS-конечной точки с использованием `curl`:
 
@@ -51,11 +47,9 @@ curl "https://play.clickhouse.com/?user=explorer" --data-binary "SELECT 'Play Cl
 clickhouse client --secure --host play.clickhouse.com --user explorer
 ```
 
-<div id="specifications">
-  ## Характеристики Песочницы ClickHouse
-</div>
+## Характеристики Песочницы ClickHouse {#specifications}
 
-наша Песочница ClickHouse работает со следующими параметрами:
+Наша Песочница ClickHouse работает со следующими параметрами:
 
 * Размещена в Google Cloud (GCE) в регионе US Central (US-Central-1)
 * Конфигурация из 3 реплик

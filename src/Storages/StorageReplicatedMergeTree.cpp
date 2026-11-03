@@ -46,6 +46,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/Freeze.h>
 #include <Storages/MergeTree/checkDataPart.h>
+#include <Storages/MergeTree/StatisticsCache.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/LeaderElection.h>
@@ -268,6 +269,7 @@ namespace FailPoints
     extern const char rmt_delay_execute_drop_range[];
     extern const char replicated_table_remove_zk_before_get_children[];
     extern const char replicated_table_remove_zk_before_final_multi[];
+    extern const char rmt_restore_replica_pause_before_metadata_version_raise[];
     extern const char rmt_mutation_prune_pause_before_analysis[];
     extern const char rmt_mutation_prune_pause_before_block_allocation[];
     extern const char rmt_mutation_prune_pause_before_zk_partition_list[];
@@ -3443,6 +3445,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
                 .copy_instead_of_hardlink = (*storage_settings_ptr)[MergeTreeSetting::always_use_copy_instead_of_hardlinks] || ((our_zero_copy_enabled || source_zero_copy_enabled) && part_desc->src_table_part->isStoredOnRemoteDiskWithZeroCopySupport()),
                 .metadata_version_to_write = metadata_snapshot->getMetadataVersion(),
                 .invalidated_columns_to_write = IMergeTreeDataPart::getSystemColumnsToInvalidate(part_desc->src_table_part->info),
+                .temporary_data = getContext()->getTempDataOnDisk(),
             };
             auto [res_part, temporary_part_lock] = cloneAndLoadDataPart(
                 part_desc->src_table_part,
@@ -5694,6 +5697,7 @@ bool StorageReplicatedMergeTree::fetchPart(
             {
                 .copy_instead_of_hardlink = (*getSettings())[MergeTreeSetting::always_use_copy_instead_of_hardlinks],
                 .keep_metadata_version = true,
+                .temporary_data = getContext()->getTempDataOnDisk(),
             };
 
             auto [cloned_part, lock] = cloneAndLoadDataPart(
@@ -5807,6 +5811,9 @@ bool StorageReplicatedMergeTree::fetchPart(
 
             if (prewarm_caches.primary_index_cache)
                 part->loadIndexToCache(*prewarm_caches.primary_index_cache);
+
+            if (prewarm_caches.statistics_cache)
+                part->loadStatisticsToCache(*prewarm_caches.statistics_cache);
 
             write_part_log({});
         }
@@ -5962,7 +5969,6 @@ void StorageReplicatedMergeTree::startup()
     LOG_TRACE(log, "Starting up table");
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::startup");
     startOutdatedAndUnexpectedDataPartsLoadingTask();
-    startStatisticsCache();
 
     /// A concurrent `shutdown()` (e.g. a `DETACH` racing with this async startup) may have already set
     /// `shutdown_called`. `shutdown()` publishes that flag before deactivating the periodic tasks, so if
@@ -5982,7 +5988,6 @@ void StorageReplicatedMergeTree::startup()
     {
         if (refresh_parts_task)
             refresh_parts_task->deactivate();
-        stopStatisticsCache();
         stopOutdatedAndUnexpectedDataPartsLoadingTask();
         return;
     }
@@ -6199,13 +6204,11 @@ void StorageReplicatedMergeTree::shutdown(bool)
     /// if it arms them afterwards, it observes `shutdown_called == true` here and stops them itself.
     const bool already_called = shutdown_called.exchange(true);
 
-    /// Deactivate the periodic refresh tasks unconditionally on every call. Without this, the destructor's
-    /// `shutdown(false)` would take the `already_called` branch and could leave `refreshStatistics` running
-    /// concurrently with `~MergeTreeData` destroying `cached_estimator`, which is a data race. Deactivation
-    /// is idempotent.
+    /// Deactivate the periodic refresh task unconditionally on every call. Without this, the destructor's
+    /// `shutdown(false)` would take the `already_called` branch and could leave the task running
+    /// concurrently with `~MergeTreeData`. Deactivation is idempotent.
     if (refresh_parts_task)
         refresh_parts_task->deactivate();
-    stopStatisticsCache();
 
     if (already_called)
     {
@@ -6701,7 +6704,8 @@ bool StorageReplicatedMergeTree::optimize(
                             /*merge_with_ttl_allowed=*/false,
                             /*aggressive=*/true,
                             /*range_filter_=*/nullptr,
-                            /*storage_id_=*/getStorageID()
+                            /*storage_id_=*/getStorageID(),
+                            /*merge_forced_horizontal_=*/deduplicate || cleanup
                         ),
                         /*partitions_hint=*/std::nullopt);
                 }
@@ -7656,6 +7660,7 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(
         createReplica(metadata_snapshot, zookeeper_retries_info);
 
     createNewZooKeeperNodes(zookeeper_retries_info);
+    FailPointInjection::pauseFailPoint(FailPoints::rmt_restore_replica_pause_before_metadata_version_raise);
 
     /// Bump the /metadata ZNode version to match the max parts metadata version.
     /// The table's in-memory metadata_version is derived from the /metadata ZNode stat.version
@@ -7663,12 +7668,41 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(
     if (max_parts_metadata_version > 0)
     {
         auto zookeeper = getZooKeeper();
-        String metadata_str = zookeeper->get(zookeeper_path + "/metadata");
-        for (int32_t i = 0; i < max_parts_metadata_version; ++i)
-            zookeeper->set(zookeeper_path + "/metadata", metadata_str);
-        zookeeper->set(replica_path + "/metadata_version", std::to_string(max_parts_metadata_version));
+        /// Each batch logs an ALTER_METADATA entry of the version it reaches, so a replica that cloned an earlier one catches up.
+        Coordination::Stat metadata_stat;
+        Coordination::Stat columns_stat;
+        String metadata_str = zookeeper->get(zookeeper_path + "/metadata", &metadata_stat);
+        String columns_str = zookeeper->get(zookeeper_path + "/columns", &columns_stat);
+        while (metadata_stat.version < max_parts_metadata_version)
+        {
+            const auto target = static_cast<int32_t>(std::min<Int64>(
+                max_parts_metadata_version, Int64{metadata_stat.version} + static_cast<Int64>(zkutil::MULTI_BATCH_SIZE)));
 
-        LOG_INFO(log, "Bumped metadata version to {} to match parts", max_parts_metadata_version);
+            Coordination::Requests ops;
+            ops.emplace_back(zkutil::makeCheckRequest(zookeeper_path + "/columns", columns_stat.version));
+            for (int32_t version = metadata_stat.version; version < target; ++version)
+                ops.emplace_back(zkutil::makeSetRequest(zookeeper_path + "/metadata", version + 1 == target ? metadata_str : "", version));
+
+            ReplicatedMergeTreeLogEntryData entry;
+            entry.type = LogEntry::ALTER_METADATA;
+            entry.source_replica = replica_name;
+            entry.metadata_str = metadata_str;
+            entry.columns_str = columns_str;
+            entry.alter_version = target;
+            entry.create_time = time(nullptr);
+            entry.have_mutation = false;
+            ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential));
+
+            Coordination::Responses responses;
+            const Coordination::Error code = zookeeper->tryMulti(ops, responses);
+            if (code != Coordination::Error::ZOK && code != Coordination::Error::ZBADVERSION)
+                zkutil::KeeperMultiException::check(code, ops, responses);
+
+            metadata_str = zookeeper->get(zookeeper_path + "/metadata", &metadata_stat);
+            columns_str = zookeeper->get(zookeeper_path + "/columns", &columns_stat);
+        }
+
+        LOG_INFO(log, "Raised metadata version to {} to match parts", metadata_stat.version);
     }
 
     LOG_INFO(log, "Created ZK nodes for table");
@@ -8523,6 +8557,192 @@ void StorageReplicatedMergeTree::getReplicaDelays(time_t & out_absolute_delay, t
     }
 }
 
+
+/** The patch parts a replica holds that a set of base parts does not carry yet: they hold the
+  * acknowledged lightweight updates of those parts. A fetch copies base parts only - a patch part
+  * lives in a partition of its own (`patch-<hash>-<partition_id>`), which no filter by the requested
+  * partition can match - so the copy would silently serve pre-update values. Every other
+  * part-relocation command refuses that situation through `assertNoPatchesForParts`; this is the same
+  * refusal for the one boundary where only the source's part names are known.
+  *
+  * A patch is compared by its data version, as it is there: the mutation component of a patch part's
+  * name is the highest data version it patches, so a patch that the base parts have already been
+  * mutated past - what `APPLY PATCHES` does - is no reason to refuse anything. The bound has to be the
+  * *lowest* data version among the base parts, exactly as in `assertNoPatchesForParts`: a part inserted
+  * after an update carries a higher version than the update's patch, so a bound taken from it would
+  * let that patch - still pending for the older parts - pass unnoticed.
+  */
+static Strings findPatchPartsAboveDataVersion(
+    const Strings & part_names, MergeTreeDataFormatVersion format_version, const String & partition_id, Int64 data_version)
+{
+    Strings patch_parts;
+    for (const auto & part_name : part_names)
+    {
+        auto part_info = MergeTreePartInfo::tryParsePartName(part_name, format_version);
+        if (!part_info)
+            continue;
+
+        if (isPatchForPartition(*part_info, partition_id) && part_info->getDataVersion() > data_version)
+            patch_parts.push_back(part_name);
+    }
+    return patch_parts;
+}
+
+static Int64 getMinDataVersion(const Strings & part_names, MergeTreeDataFormatVersion format_version, const String & partition_id)
+{
+    Int64 min_data_version = std::numeric_limits<Int64>::max();
+    for (const auto & part_name : part_names)
+    {
+        auto part_info = MergeTreePartInfo::tryParsePartName(part_name, format_version);
+        if (part_info && part_info->getPartitionId() == partition_id)
+            min_data_version = std::min(min_data_version, part_info->getDataVersion());
+    }
+    return min_data_version;
+}
+
+/** The parts of every replica of the source table, not only of the one a fetch copies from.
+  * A lightweight update commits its patch part on one replica, and the others learn about it through
+  * a `GET_PART` log entry: until a replica executes that entry, its `parts` lists the patched base part
+  * but not the patch. Neither the random replica `FETCH PART` picks nor the log-pointer heuristic of
+  * `FETCH PARTITION` proves that the chosen one has executed it, while the union over all replicas
+  * holds every patch committed anywhere. The patch is still compared against the base parts of the
+  * chosen replica, so a patch that replica has already applied is no reason to refuse.
+  */
+struct SourceReplicaParts
+{
+    String replica;
+    Strings parts;
+};
+
+static std::vector<SourceReplicaParts> getPartsOfAllReplicas(
+    const zkutil::ZooKeeperPtr & zookeeper, const String & zookeeper_path, MergeTreeDataFormatVersion format_version)
+{
+    Strings replicas = zookeeper->getChildren(fs::path(zookeeper_path) / "replicas");
+    Strings paths;
+    paths.reserve(replicas.size());
+    for (const auto & replica : replicas)
+        paths.push_back(fs::path(zookeeper_path) / "replicas" / replica / "parts");
+
+    /// One batched read of the `parts` of all replicas instead of a round trip per replica.
+    auto responses = zookeeper->tryGetChildren(paths);
+
+    std::vector<SourceReplicaParts> result;
+    result.reserve(replicas.size());
+    for (size_t i = 0; i < replicas.size(); ++i)
+    {
+        /// A replica is skipped only when it was dropped concurrently - never because its parts could not be read.
+        if (responses[i].error == Coordination::Error::ZNONODE)
+            continue;
+        if (responses[i].error != Coordination::Error::ZOK)
+            throw Coordination::Exception::fromPath(responses[i].error, paths[i]);
+
+        /// `parts` of a replica also lists the parts it has already merged or otherwise replaced, until
+        /// their cleanup removes them: only the active ones are the rows the replica holds now.
+        result.push_back({replicas[i], ActiveDataPartSet(format_version, responses[i].names).getParts()});
+    }
+    return result;
+}
+
+static Strings getPatchParts(const std::vector<SourceReplicaParts> & replicas_parts)
+{
+    Strings patch_parts;
+    for (const auto & replica_parts : replicas_parts)
+        for (const auto & part_name : replica_parts.parts)
+            if (part_name.starts_with(MergeTreePartInfo::PATCH_PART_PREFIX))
+                patch_parts.push_back(part_name);
+
+    std::sort(patch_parts.begin(), patch_parts.end());
+    patch_parts.erase(std::unique(patch_parts.begin(), patch_parts.end()), patch_parts.end());
+    return patch_parts;
+}
+
+/** The patch check above is blind once a replica has materialized the update - `APPLY PATCHES`
+  * mutates its base parts past the patch - and `clearUnusedPatchParts` has removed the patch: that
+  * happens per replica, without waiting for the others. A replica that has not executed the
+  * `GET_PART` of the patch then still holds the old base part, and no patch is left anywhere to
+  * reveal that the part is stale.
+  *
+  * The materialized update is still visible as a higher data version of the same rows on another
+  * replica. A mutation with version `V` changes the rows of blocks below `V`, so a part of another
+  * replica that intersects a chosen part proves that the chosen part lacks some mutation when its
+  * data version is above both the chosen part's data version and the lowest block they share. A part
+  * that merely covers a different block range - inserted later, or merged differently - never
+  * satisfies that, because the data version of a part that was not mutated is its lowest block.
+  */
+static void assertNoReplicaHasNewerVersionOfParts(
+    const std::vector<SourceReplicaParts> & replicas_parts,
+    const Strings & chosen_parts,
+    MergeTreeDataFormatVersion format_version,
+    const String & partition_id,
+    const String & source_path,
+    std::string_view command)
+{
+    std::vector<MergeTreePartInfo> chosen_infos;
+    for (const auto & part_name : chosen_parts)
+    {
+        auto part_info = MergeTreePartInfo::tryParsePartName(part_name, format_version);
+        if (part_info && part_info->getPartitionId() == partition_id)
+            chosen_infos.push_back(std::move(*part_info));
+    }
+
+    /// The chosen parts are the active parts of one replica, so they do not intersect each other:
+    /// sorted by `min_block`, they are sorted by `max_block` as well, and the ones intersecting a given
+    /// block range are found by a binary search instead of a scan of all of them.
+    std::sort(chosen_infos.begin(), chosen_infos.end(),
+        [](const MergeTreePartInfo & lhs, const MergeTreePartInfo & rhs) { return lhs.min_block < rhs.min_block; });
+
+    for (const auto & replica_parts : replicas_parts)
+    {
+        for (const auto & part_name : replica_parts.parts)
+        {
+            auto part_info = MergeTreePartInfo::tryParsePartName(part_name, format_version);
+            if (!part_info || part_info->getPartitionId() != partition_id)
+                continue;
+
+            auto it = std::partition_point(chosen_infos.begin(), chosen_infos.end(),
+                [&](const MergeTreePartInfo & chosen) { return chosen.max_block < part_info->min_block; });
+
+            for (; it != chosen_infos.end() && it->min_block <= part_info->max_block; ++it)
+            {
+                const auto & chosen_info = *it;
+                Int64 lowest_shared_block = std::max(chosen_info.min_block, part_info->min_block);
+                if (part_info->getDataVersion() > std::max(chosen_info.getDataVersion(), lowest_shared_block))
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                        "Cannot execute command \"{}\" because replica {} of the source {} has part {}, "
+                        "a newer version of the rows of part {} that would be fetched: "
+                        "the replica chosen to fetch from has not caught up with all updates and mutations of partition {}.\n"
+                        "To execute it you need to:\n"
+                        "1. Wait until all replicas of the source table are synchronized, "
+                        "e.g. with query \"SYSTEM SYNC REPLICA <source table>\" on each of them.\n"
+                        "2. Retry command \"{}\"",
+                        command, replica_parts.replica, source_path, part_name, chosen_info.getPartNameForLogs(), partition_id, command);
+            }
+        }
+    }
+}
+
+static void assertSourceHasNoPatchesForPartition(
+    const Strings & source_patch_parts,
+    MergeTreeDataFormatVersion format_version,
+    const String & partition_id,
+    Int64 min_data_version,
+    const String & source_path,
+    std::string_view command)
+{
+    auto patch_parts = findPatchPartsAboveDataVersion(source_patch_parts, format_version, partition_id, min_data_version);
+    if (patch_parts.empty())
+        return;
+
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+        "Cannot execute command \"{}\" because the source {} has {} unapplied patch part(s) for partition {}, "
+        "which hold updates that its base parts do not.\n"
+        "To execute it you need to:\n"
+        "1. Stop UPDATE queries that affect partition {} of the source table.\n"
+        "2. Run query \"ALTER TABLE <source table> APPLY PATCHES IN PARTITION ID '{}'\" on it.\n"
+        "3. Retry command \"{}\"",
+        command, source_path, patch_parts.size(), partition_id, partition_id, partition_id, command);
+}
+
 void StorageReplicatedMergeTree::fetchPartition(
     const ASTPtr & partition,
     const StorageMetadataPtr & metadata_snapshot,
@@ -8568,6 +8788,19 @@ void StorageReplicatedMergeTree::fetchPartition(
 
         if (part_path.empty())
             throw Exception(ErrorCodes::NO_REPLICA_HAS_PART, "Part {} does not exist on any replica", part_name);
+
+        auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
+        auto source_replicas_parts = getPartsOfAllReplicas(zookeeper, from, format_version);
+        String command = "FETCH PART " + part_name + " FROM " + from_;
+        assertSourceHasNoPatchesForPartition(
+            getPatchParts(source_replicas_parts),
+            format_version,
+            part_info.getPartitionId(),
+            part_info.getDataVersion(),
+            from,
+            command);
+        assertNoReplicaHasNewerVersionOfParts(
+            source_replicas_parts, {part_name}, format_version, part_info.getPartitionId(), from, command);
         /** Let's check that there is no such part in the `detached` directory (where we will write the downloaded parts).
           * Unreliable (there is a race condition) - such a part may appear a little later.
           */
@@ -8676,9 +8909,27 @@ void StorageReplicatedMergeTree::fetchPartition(
             throw Exception(ErrorCodes::TOO_MANY_RETRIES_TO_FETCH_PARTS,
                 "Too many retries to fetch parts from {}:{}", from_zookeeper_name, best_replica_path);
 
-        Strings parts = zookeeper->getChildren(fs::path(best_replica_path) / "parts");
-        ActiveDataPartSet active_parts_set(format_version, parts);
+        /// The parts of the best replica come from the same batched read as the parts of the other replicas,
+        /// so the checks below cost one extra request to Keeper per attempt, whatever the number of replicas.
+        auto source_replicas_parts = getPartsOfAllReplicas(zookeeper, from, format_version);
+        auto best_replica_parts = std::find_if(source_replicas_parts.begin(), source_replicas_parts.end(),
+            [&](const SourceReplicaParts & replica_parts) { return replica_parts.replica == best_replica; });
+        if (best_replica_parts == source_replicas_parts.end())
+            throw Coordination::Exception::fromPath(Coordination::Error::ZNONODE, fs::path(best_replica_path) / "parts");
+
+        ActiveDataPartSet active_parts_set(format_version, best_replica_parts->parts);
         Strings parts_to_fetch;
+
+        String command = "FETCH PARTITION " + partition_id + " FROM " + from_;
+        assertSourceHasNoPatchesForPartition(
+            getPatchParts(source_replicas_parts),
+            format_version,
+            partition_id,
+            getMinDataVersion(active_parts_set.getParts(), format_version, partition_id),
+            from,
+            command);
+        assertNoReplicaHasNewerVersionOfParts(
+            source_replicas_parts, active_parts_set.getParts(), format_version, partition_id, from, command);
 
         if (missing_parts.empty())
         {
@@ -9713,6 +9964,7 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
                 .copy_instead_of_hardlink = always_use_copy_instead_of_hardlinks || (zero_copy_enabled && src_part->isStoredOnRemoteDiskWithZeroCopySupport()),
                 .metadata_version_to_write = metadata_snapshot->getMetadataVersion(),
                 .invalidated_columns_to_write = IMergeTreeDataPart::getSystemColumnsToInvalidate(src_part->info),
+                .temporary_data = query_context->getTempDataOnDisk(),
             };
             if (replace)
             {
@@ -10014,6 +10266,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
                 .copy_instead_of_hardlink = (*storage_settings_ptr)[MergeTreeSetting::always_use_copy_instead_of_hardlinks] || (zero_copy_enabled && src_part->isStoredOnRemoteDiskWithZeroCopySupport()),
                 .metadata_version_to_write = dest_metadata_snapshot->getMetadataVersion(),
                 .invalidated_columns_to_write = IMergeTreeDataPart::getSystemColumnsToInvalidate(src_part->info),
+                .temporary_data = query_context->getTempDataOnDisk(),
             };
             auto [dst_part, dst_part_lock] = dest_table_storage->cloneAndLoadDataPart(
                 src_part,
@@ -11599,7 +11852,9 @@ void StorageReplicatedMergeTree::watchZeroCopyLock(const String & part_name, con
         std::shared_ptr<std::atomic<bool>> flag = std::make_shared<std::atomic<bool>>(true);
         std::string replica;
 
-        auto watch = zookeeper->createWatchFromRawCallback(fmt::format("watchZeroCopyLock::{}", reinterpret_cast<void *>(flag.get())), [flag]() -> Coordination::WatchCallback
+        /// The id is a cache key of the watch callback, so it must be unique for every registration.
+        static std::atomic<UInt64> watch_counter{0};
+        auto watch = zookeeper->createWatchFromRawCallback(fmt::format("watchZeroCopyLock::{}", watch_counter.fetch_add(1)), [flag]() -> Coordination::WatchCallback
         {
             return [flag](const auto &)
             {
