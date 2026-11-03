@@ -88,6 +88,7 @@ namespace ServerSetting
 
 namespace ErrorCodes
 {
+    extern const int AZURE_BLOB_STORAGE_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
@@ -374,6 +375,13 @@ std::unique_ptr<ContainerClient> getContainerClient(const ConnectionParams & par
             return params.createForContainer();
         throw;
     }
+}
+
+String getETag(const Azure::ETag & etag, const String & blob_path)
+{
+    if (!etag.HasValue())
+        throw Exception(ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Azure Blob Storage endpoint did not return an ETag for blob {}", blob_path);
+    return etag.ToString();
 }
 
 AuthMethod getAuthMethod(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
