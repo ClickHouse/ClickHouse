@@ -130,7 +130,7 @@ private:
     template <typename Geom>
     static Ring<Point> computeEnvelope(const Geom & geom)
     {
-        boost::geometry::model::box<Point> box;
+        boost::geometry::model::box<Point> box{};
         boost::geometry::envelope(geom, box);
         return boxToRing(box);
     }
@@ -169,6 +169,11 @@ private:
                 serializer.add(computeEnvelope(multipolygon));
                 break;
             }
+            case GeometryColumnType::MultiPoint: {
+                MultiPoint<Point> multipoint = getMultiPointFromField<Point>(field);
+                serializer.add(computeEnvelope(multipoint));
+                break;
+            }
             case GeometryColumnType::Null: {
                 Ring<Point> empty_ring;
                 serializer.add(empty_ring);
@@ -200,7 +205,7 @@ Returns a Ring (closed rectangle with sides parallel to the coordinate axes).
     )";
     FunctionDocumentation::Syntax syntax_cartesian = "boundingBoxCartesian(geometry)";
     FunctionDocumentation::Arguments arguments_cartesian
-        = {{"geometry", "A geometry value.", {"Ring", "Polygon", "MultiPolygon", "LineString", "MultiLineString", "Point"}}};
+        = {{"geometry", "A geometry value.", {"Ring", "Polygon", "MultiPolygon", "LineString", "MultiLineString", "Point", "MultiPoint"}}};
     FunctionDocumentation::ReturnedValue returned_value_cartesian = {"Returns the bounding box as a Ring (closed rectangle).", {"Ring"}};
     FunctionDocumentation::Examples examples_cartesian
         = {{"Bounding box of a triangle",
@@ -210,7 +215,7 @@ SELECT boundingBoxCartesian([[(0., 0.), (3., 5.), (6., 0.), (0., 0.)]])
             R"(
 [(0,0),(6,0),(6,5),(0,5),(0,0)]
         )"}};
-    FunctionDocumentation::IntroducedIn introduced_in_cartesian = {26, 7};
+    FunctionDocumentation::IntroducedIn introduced_in_cartesian = {26, 11};
     FunctionDocumentation::Category category_cartesian = FunctionDocumentation::Category::GeoPolygon;
     FunctionDocumentation function_documentation_cartesian
         = {description_cartesian,
@@ -233,7 +238,7 @@ produce an incorrect box spanning ~358° instead of ~2°.
     )";
     FunctionDocumentation::Syntax syntax_spherical = "boundingBoxSpherical(geometry)";
     FunctionDocumentation::Arguments arguments_spherical
-        = {{"geometry", "A geometry value.", {"Ring", "Polygon", "MultiPolygon", "LineString", "MultiLineString", "Point"}}};
+        = {{"geometry", "A geometry value.", {"Ring", "Polygon", "MultiPolygon", "LineString", "MultiLineString", "Point", "MultiPoint"}}};
     FunctionDocumentation::ReturnedValue returned_value_spherical
         = {"Returns the bounding box as a Ring (closed rectangle) in spherical coordinates.", {"Ring"}};
     FunctionDocumentation::Examples examples_spherical
@@ -251,7 +256,7 @@ SELECT boundingBoxSpherical(CAST([(179., 50.), (-179., 50.)], 'LineString'))
             R"(
 [(179,50),(181,50),(181,50.004297195777966),(179,50.004297195777966),(179,50)]
         )"}};
-    FunctionDocumentation::IntroducedIn introduced_in_spherical = {26, 7};
+    FunctionDocumentation::IntroducedIn introduced_in_spherical = {26, 11};
     FunctionDocumentation::Category category_spherical = FunctionDocumentation::Category::GeoPolygon;
     FunctionDocumentation function_documentation_spherical
         = {description_spherical,

@@ -128,3 +128,25 @@ centroidCartesian single-point linestring (degenerate)
 (3,7)
 centroidSpherical empty polygon (degenerate)
 0	0
+boundingBoxCartesian MultiPoint
+[(0,0),(6,0),(6,5),(0,5),(0,0)]
+boundingBoxSpherical MultiPoint
+[(0,0),(6,0),(6,5),(0,5),(0,0)]
+boundingBoxSpherical MultiPoint crossing date line
+[(179,50),(181,50),(181,50),(179,50),(179,50)]
+boundingBoxCartesian Geometry MultiPoint
+[(0,0),(6,0),(6,5),(0,5),(0,0)]
+centroidCartesian MultiPoint
+(3,1.6666666666666667)
+centroidSpherical MultiPoint
+3	1.667721
+centroidSpherical MultiPoint along meridian
+0	20
+centroidCartesian Geometry MultiPoint
+(3,1.6666666666666667)
+centroidCartesian single-point MultiPoint (degenerate)
+(3,7)
+centroidCartesian empty MultiPoint (degenerate)
+(0,0)
+centroidSpherical empty MultiPoint (degenerate)
+0	0

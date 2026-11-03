@@ -156,6 +156,21 @@ SphericalPoint computeMultiLineStringSphericalCentroid(const MultiLineString<Sph
     return normalizeAndProject(centroid, SphericalPoint{0, 0});
 }
 
+/// Centroid of a point set: the mean direction of the unit vectors, i.e. the
+/// center of mass of equal point weights on the sphere.
+SphericalPoint computeMultiPointSphericalCentroid(const MultiPoint<SphericalPoint> & multipoint, std::vector<S2Point> & scratch)
+{
+    if (multipoint.empty())
+        return SphericalPoint{0, 0};
+
+    toS2Points(multipoint, scratch);
+    S2Point centroid(0, 0, 0);
+    for (const auto & point : scratch)
+        centroid += point;
+
+    return normalizeAndProject(centroid, multipoint.front());
+}
+
 /// Dispatch to the appropriate centroid function based on geometry type.
 template <typename Geometry>
 SphericalPoint computeGeometrySphericalCentroid(const Geometry & geom, std::vector<S2Point> & scratch)
@@ -170,6 +185,8 @@ SphericalPoint computeGeometrySphericalCentroid(const Geometry & geom, std::vect
         return computeLineStringSphericalCentroid(geom, scratch);
     else if constexpr (std::is_same_v<Geometry, MultiLineString<SphericalPoint>>)
         return computeMultiLineStringSphericalCentroid(geom, scratch);
+    else if constexpr (std::is_same_v<Geometry, MultiPoint<SphericalPoint>>)
+        return computeMultiPointSphericalCentroid(geom, scratch);
     else
     {
         static_assert(std::is_same_v<Geometry, SphericalPoint>);
@@ -324,6 +341,9 @@ private:
             case GeometryColumnType::MultiPolygon:
                 serializer.add(centroid(getMultiPolygonFromField<Point>(field)));
                 break;
+            case GeometryColumnType::MultiPoint:
+                serializer.add(centroid(getMultiPointFromField<Point>(field)));
+                break;
             case GeometryColumnType::Null:
                 serializer.add(Point{0, 0});
                 break;
@@ -367,7 +387,7 @@ Takes any geometry type and returns a Point.
     )";
     FunctionDocumentation::Syntax syntax_cartesian = "centroidCartesian(geometry)";
     FunctionDocumentation::Arguments arguments_cartesian
-        = {{"geometry", "A geometry value.", {"Ring", "Polygon", "MultiPolygon", "LineString", "MultiLineString", "Point"}}};
+        = {{"geometry", "A geometry value.", {"Ring", "Polygon", "MultiPolygon", "LineString", "MultiLineString", "Point", "MultiPoint"}}};
     FunctionDocumentation::ReturnedValue returned_value_cartesian = {"Returns the centroid of the geometry as a Point.", {"Point"}};
     FunctionDocumentation::Examples examples_cartesian
         = {{"Centroid of a square",
@@ -377,7 +397,7 @@ SELECT centroidCartesian([[(0., 0.), (0., 4.), (4., 4.), (4., 0.), (0., 0.)]])
             R"(
 (2,2)
         )"}};
-    FunctionDocumentation::IntroducedIn introduced_in_cartesian = {26, 7};
+    FunctionDocumentation::IntroducedIn introduced_in_cartesian = {26, 11};
     FunctionDocumentation::Category category_cartesian = FunctionDocumentation::Category::GeoPolygon;
     FunctionDocumentation function_documentation_cartesian
         = {description_cartesian,
@@ -398,7 +418,7 @@ which correctly accounts for the curvature of the sphere.
     )";
     FunctionDocumentation::Syntax syntax_spherical = "centroidSpherical(geometry)";
     FunctionDocumentation::Arguments arguments_spherical
-        = {{"geometry", "A geometry value.", {"Ring", "Polygon", "MultiPolygon", "LineString", "MultiLineString", "Point"}}};
+        = {{"geometry", "A geometry value.", {"Ring", "Polygon", "MultiPolygon", "LineString", "MultiLineString", "Point", "MultiPoint"}}};
     FunctionDocumentation::ReturnedValue returned_value_spherical
         = {"Returns the centroid of the geometry as a Point in spherical coordinates.", {"Point"}};
     FunctionDocumentation::Examples examples_spherical
@@ -409,7 +429,7 @@ SELECT centroidSpherical([[(4.346693, 50.858306), (4.367945, 50.852455), (4.3662
             R"(
 (4.352733722119422,50.846349225815466)
         )"}};
-    FunctionDocumentation::IntroducedIn introduced_in_spherical = {26, 7};
+    FunctionDocumentation::IntroducedIn introduced_in_spherical = {26, 11};
     FunctionDocumentation::Category category_spherical = FunctionDocumentation::Category::GeoPolygon;
     FunctionDocumentation function_documentation_spherical
         = {description_spherical,

@@ -190,3 +190,36 @@ SELECT centroidCartesian(CAST([(3., 7.)], 'LineString'));
 SELECT 'centroidSpherical empty polygon (degenerate)';
 SELECT round(centroidSpherical([[(0., 0.), (0., 0.), (0., 0.), (0., 0.)]]).1, 6), round(centroidSpherical([[(0., 0.), (0., 0.), (0., 0.), (0., 0.)]]).2, 6);
 
+SELECT 'boundingBoxCartesian MultiPoint';
+SELECT boundingBoxCartesian(CAST([(0., 0.), (3., 5.), (6., 0.)], 'MultiPoint'));
+
+SELECT 'boundingBoxSpherical MultiPoint';
+SELECT boundingBoxSpherical(CAST([(0., 0.), (3., 5.), (6., 0.)], 'MultiPoint'));
+
+SELECT 'boundingBoxSpherical MultiPoint crossing date line';
+SELECT boundingBoxSpherical(CAST([(179., 50.), (-179., 50.)], 'MultiPoint'));
+
+SELECT 'boundingBoxCartesian Geometry MultiPoint';
+SELECT boundingBoxCartesian(readWKT('MULTIPOINT (0 0, 3 5, 6 0)'));
+
+SELECT 'centroidCartesian MultiPoint';
+SELECT centroidCartesian(CAST([(0., 0.), (3., 5.), (6., 0.)], 'MultiPoint'));
+
+SELECT 'centroidSpherical MultiPoint';
+SELECT round(centroidSpherical(CAST([(0., 0.), (3., 5.), (6., 0.)], 'MultiPoint')).1, 6), round(centroidSpherical(CAST([(0., 0.), (3., 5.), (6., 0.)], 'MultiPoint')).2, 6);
+
+SELECT 'centroidSpherical MultiPoint along meridian';
+SELECT round(centroidSpherical(CAST([(0., 10.), (0., 20.), (0., 30.)], 'MultiPoint')).1, 6), round(centroidSpherical(CAST([(0., 10.), (0., 20.), (0., 30.)], 'MultiPoint')).2, 6);
+
+SELECT 'centroidCartesian Geometry MultiPoint';
+SELECT centroidCartesian(readWKT('MULTIPOINT (0 0, 3 5, 6 0)'));
+
+SELECT 'centroidCartesian single-point MultiPoint (degenerate)';
+SELECT centroidCartesian(CAST([(3., 7.)], 'MultiPoint'));
+
+SELECT 'centroidCartesian empty MultiPoint (degenerate)';
+SELECT centroidCartesian(CAST([], 'MultiPoint'));
+
+SELECT 'centroidSpherical empty MultiPoint (degenerate)';
+SELECT round(centroidSpherical(CAST([], 'MultiPoint')).1, 6), round(centroidSpherical(CAST([], 'MultiPoint')).2, 6);
+
