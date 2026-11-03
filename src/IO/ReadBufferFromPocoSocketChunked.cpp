@@ -175,7 +175,7 @@ bool ReadBufferFromPocoSocketChunked::appendChunkedWithoutWaiting(size_t max_byt
             continue;
         }
 
-        const size_t n = std::min({static_cast<size_t>(payload_left), raw_left, max_bytes - appended});
+        const size_t n = std::min({payload_left, raw_left, max_bytes - appended});
         if (n == 0)
             break;
         std::memmove(out, raw_pos, n);
