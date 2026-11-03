@@ -303,11 +303,31 @@ function stop_server()
       echo -e "Possible deadlock on shutdown (see gdb.log)$FAIL" >> /test_output/test_results.tsv
       echo "thread apply all backtrace (on stop)" >> /test_output/gdb.log
       timeout 30m gdb -batch -ex 'thread apply all backtrace' -p "$pid" | ts '%Y-%m-%d %H:%M:%S' >> /test_output/gdb.log
-      clickhouse stop --force
+      kill_server "$pid"
     else
       echo -e "Warning: server did not stop yet$OK" >> /test_output/test_results.tsv
-      clickhouse stop --force
+      kill_server "$pid"
     fi
+}
+
+# The watchdog logs a SIGKILL of the server like one sent by the OOM killer, and the stress job lets an OOM pass.
+# Kill the watchdog, a fork of the same binary, instead: the server dies with it (PR_SET_PDEATHSIG) and nothing is logged.
+function kill_server()
+{
+    local pid=${1:-}
+    [ -n "$pid" ] || pid="$(cat /var/run/clickhouse-server/clickhouse-server.pid)" ||:
+    if kill -s 0 "$pid" 2>/dev/null
+    then
+        local watchdog exe
+        watchdog="$(ps -o ppid= -p "$pid" | tr -d ' ')" ||:
+        exe="$(readlink "/proc/$pid/exe")" ||:
+        echo -e "Server killed by the harness$OK" >> /test_output/test_results.tsv
+        if [ -n "$watchdog" ] && [ "$watchdog" -gt 1 ] && [ -n "$exe" ] && [ "$(readlink "/proc/$watchdog/exe")" == "$exe" ]
+        then
+            kill -s KILL "$watchdog" ||:
+        fi
+    fi
+    clickhouse stop --force
 }
 
 function wait_server_port_free()

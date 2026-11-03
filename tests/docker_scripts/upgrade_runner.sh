@@ -208,7 +208,7 @@ timeout 10m clickhouse-client --query="SELECT 'Tables count:', count() FROM syst
 (
     echo "thread apply all backtrace (on select tables count)" >> /test_output/gdb.log
     timeout 30m gdb -batch -ex 'thread apply all backtrace' -p "$(cat /var/run/clickhouse-server/clickhouse-server.pid)" | ts '%Y-%m-%d %H:%M:%S' >> /test_output/gdb.log
-    clickhouse stop --force
+    kill_server
 )
 
 # A query can outlive the stress phase and hold its table locks until it ends (one that reads an unreachable S3
