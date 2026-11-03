@@ -62,6 +62,7 @@ namespace Setting
 {
 extern const SettingsInt64 iceberg_snapshot_id;
 extern const SettingsInt64 iceberg_timestamp_ms;
+extern const SettingsNonZeroUInt64 iceberg_metadata_previous_versions_max;
 }
 
 namespace DataLakeStorageSetting
@@ -526,7 +527,7 @@ AlterDropPartitionExecutor::ManifestListWriteResult AlterDropPartitionExecutor::
     auto metadata_info = filename_generator.generateMetadataPathWithInfo();
 
     /// TODO: make generateNextMetadata to accept SnapshotSummaryUpdate
-    auto [new_snapshot, manifest_list_path] = MetadataGenerator{state.metadata_object}.generateNextMetadata(
+    auto [new_snapshot, manifest_list_path] = MetadataGenerator{state.metadata_object, context->getSettingsRef()[Setting::iceberg_metadata_previous_versions_max]}.generateNextMetadata(
         filename_generator,
         metadata_info.path,
         parent_snapshot_id,

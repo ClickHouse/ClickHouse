@@ -51,6 +51,7 @@ namespace DB::ErrorCodes
 namespace DB::Setting
 {
     extern const SettingsUInt64 iceberg_manifest_min_count_to_compact;
+    extern const SettingsNonZeroUInt64 iceberg_metadata_previous_versions_max;
 }
 
 namespace DB::DataLakeStorageSetting
@@ -805,7 +806,7 @@ static bool writeConsolidatedManifestFile(
         write_format);
     generator.setVersion(metadata_version + 1);
 
-    MetadataGenerator metadata_generator(metadata_object);
+    MetadataGenerator metadata_generator(metadata_object, context->getSettingsRef()[Setting::iceberg_metadata_previous_versions_max]);
     auto generated_metadata_info = generator.generateMetadataPathWithInfo();
 
     // Manifest-only rewrite: use a snapshot type that carries all total-* counters forward unchanged, since passing deltas would inflate the totals.
@@ -1098,7 +1099,7 @@ static bool writeMetadataFiles(
         }
     }
 
-    MetadataGenerator metadata_generator(metadata_object);
+    MetadataGenerator metadata_generator(metadata_object, context->getSettingsRef()[Setting::iceberg_metadata_previous_versions_max]);
     std::vector<MetadataGenerator::NextMetadataResult> new_snapshots;
     auto generated_metadata_info = plan.generator.generateMetadataPathWithInfo();
     std::unordered_map<Int64, Poco::JSON::Object::Ptr> snapshot_id_to_snapshot;
