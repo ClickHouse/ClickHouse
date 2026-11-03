@@ -543,7 +543,7 @@ MergeTextIndexesTask::MergeTextIndexesTask(
         for (const auto & substream : substreams)
         {
             /// The merge reads the dictionary and the postings of a source part sequentially,
-            /// so their streams take the regular read buffer size.
+            /// so their streams take the regular read buffer size and keep the page cache lookahead.
             auto stream = makeTextIndexInputStream(
                 segments[i].part_storage,
                 segments[i].index_file_name,
@@ -1281,12 +1281,19 @@ size_t estimatePostingListBufferSize(const TokenPostingsInfo & token_info)
 static MergeTreeReaderSettings makeTextIndexReaderSettings(
     const MergeTreeReaderSettings & reader_settings,
     MergeTreeIndexSubstream::Type substream_type,
-    std::optional<size_t> expected_buffer_size)
+    std::optional<size_t> expected_buffer_size,
+    bool use_page_cache_lookahead)
 {
     using enum MergeTreeIndexSubstream::Type;
 
     auto settings = reader_settings;
     settings.is_compressed = MergeTreeIndexSubstream::isCompressed(substream_type);
+
+    /// An out-of-order stream's seeks never read the lookahead blocks a cache miss would otherwise
+    /// request: the abandoned request leaves data in flight, so the connection (distributed cache,
+    /// or S3 HTTP, see `HTTPConnectionPool::EndpointConnectionPool::atConnectionDestroy`) is dropped.
+    if (!use_page_cache_lookahead && !reader_settings.use_page_cache_lookahead_for_text_index)
+        settings.read_settings.page_cache_settings.lookahead_blocks = 1;
 
     if (expected_buffer_size && (substream_type == TextIndexDictionary || substream_type == TextIndexPostings))
     {
@@ -1334,7 +1341,8 @@ std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
     const String & index_file_name,
     const MergeTreeIndexSubstream & substream,
     const MergeTreeReaderSettings & reader_settings,
-    std::optional<size_t> expected_buffer_size)
+    std::optional<size_t> expected_buffer_size,
+    bool use_page_cache_lookahead)
 {
     const auto stream_name = index_file_name + substream.suffix;
     const auto & extension = substream.extension;
@@ -1364,7 +1372,7 @@ std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
         *actual_stream_name,
         extension,
         data_file_size,
-        makeTextIndexReaderSettings(reader_settings, substream.type, expected_buffer_size));
+        makeTextIndexReaderSettings(reader_settings, substream.type, expected_buffer_size, use_page_cache_lookahead));
 }
 
 std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
@@ -1372,7 +1380,8 @@ std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
     const String & index_file_name,
     const MergeTreeIndexSubstream & substream,
     const MergeTreeReaderSettings & reader_settings,
-    std::optional<size_t> expected_buffer_size)
+    std::optional<size_t> expected_buffer_size,
+    bool use_page_cache_lookahead)
 {
     const auto stream_name = index_file_name + substream.suffix;
     const auto & extension = substream.extension;
@@ -1387,7 +1396,7 @@ std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
         *actual_stream_name,
         extension,
         data_part_storage->getFileSize(*actual_stream_name + extension),
-        makeTextIndexReaderSettings(reader_settings, substream.type, expected_buffer_size));
+        makeTextIndexReaderSettings(reader_settings, substream.type, expected_buffer_size, use_page_cache_lookahead));
 }
 
 }
