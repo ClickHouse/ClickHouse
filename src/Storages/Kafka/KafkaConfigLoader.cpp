@@ -608,7 +608,6 @@ cppkafka::Configuration KafkaConfigLoader::getConsumerConfiguration(TKafkaStorag
     /// configured value (including an explicit "0") from updateConfigurationFromConfig() below win.
     conf.set("statistics.interval.ms", params.default_statistics_interval_ms);
 
-
     // that allows to prevent fast draining of the librdkafka queue
     // during building of single insert block. Improves performance
     // significantly, but may lead to bigger memory consumption.
