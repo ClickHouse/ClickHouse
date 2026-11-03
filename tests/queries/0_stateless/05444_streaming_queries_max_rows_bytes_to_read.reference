@@ -6,6 +6,9 @@ rows 1	10	0	9
 bytes 1	10	0	9
 unbounded rows 30	100	100	4950
 unbounded bytes 1	100	100	4950
+watermark rows 30	30	0	29
+watermark unbounded rows 30	100	100	4950
 partitioned rows 30	30
 partitioned rows 70	70	2
 partitioned unbounded rows 30	100	100	4950
+partitioned watermark unbounded rows 30	100	100	4950

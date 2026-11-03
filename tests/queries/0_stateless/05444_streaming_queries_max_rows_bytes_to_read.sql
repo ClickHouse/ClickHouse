@@ -64,15 +64,19 @@ SELECT 'unbounded bytes 1', count(), uniqExact(k), sum(k)
 FROM (SELECT k FROM t_stream_round_limits STREAM LIMIT 100)
 SETTINGS max_bytes_to_read = 1;
 
--- Not supported with a watermark.
-SELECT k FROM t_stream_round_limits STREAM BOUNDED WATERMARK FOR ts AS ts - INTERVAL 10 SECOND
-SETTINGS max_rows_to_read = 30; -- { serverError NOT_IMPLEMENTED }
+-- The same with a watermark.
+SELECT 'watermark rows 30', count(), min(k), max(k) FROM t_stream_round_limits STREAM BOUNDED WATERMARK FOR ts AS ts - INTERVAL 10 SECOND
+SETTINGS max_rows_to_read = 30;
+
+SELECT 'watermark unbounded rows 30', count(), uniqExact(k), sum(k)
+FROM (SELECT k FROM t_stream_round_limits STREAM WATERMARK FOR ts AS ts - INTERVAL 10 SECOND LIMIT 100)
+SETTINGS max_rows_to_read = 30;
 
 DROP TABLE t_stream_round_limits;
 
 -- Two partitions of five blocks each. The checks do not depend on which partition a round reads first.
 -- One reader stream: each stream has its own budget.
-CREATE TABLE t_stream_round_limits_partitioned (k UInt64)
+CREATE TABLE t_stream_round_limits_partitioned (k UInt64, ts DateTime DEFAULT toDateTime(k))
 ENGINE = MergeTree ORDER BY k PARTITION BY k >= 50
 SETTINGS
     enable_block_number_column = 1,
@@ -83,16 +87,16 @@ SETTINGS
 
 SYSTEM STOP MERGES t_stream_round_limits_partitioned;
 
-INSERT INTO t_stream_round_limits_partitioned SELECT number FROM numbers(0, 10);
-INSERT INTO t_stream_round_limits_partitioned SELECT number FROM numbers(10, 10);
-INSERT INTO t_stream_round_limits_partitioned SELECT number FROM numbers(20, 10);
-INSERT INTO t_stream_round_limits_partitioned SELECT number FROM numbers(30, 10);
-INSERT INTO t_stream_round_limits_partitioned SELECT number FROM numbers(40, 10);
-INSERT INTO t_stream_round_limits_partitioned SELECT number FROM numbers(50, 10);
-INSERT INTO t_stream_round_limits_partitioned SELECT number FROM numbers(60, 10);
-INSERT INTO t_stream_round_limits_partitioned SELECT number FROM numbers(70, 10);
-INSERT INTO t_stream_round_limits_partitioned SELECT number FROM numbers(80, 10);
-INSERT INTO t_stream_round_limits_partitioned SELECT number FROM numbers(90, 10);
+INSERT INTO t_stream_round_limits_partitioned (k) SELECT number FROM numbers(0, 10);
+INSERT INTO t_stream_round_limits_partitioned (k) SELECT number FROM numbers(10, 10);
+INSERT INTO t_stream_round_limits_partitioned (k) SELECT number FROM numbers(20, 10);
+INSERT INTO t_stream_round_limits_partitioned (k) SELECT number FROM numbers(30, 10);
+INSERT INTO t_stream_round_limits_partitioned (k) SELECT number FROM numbers(40, 10);
+INSERT INTO t_stream_round_limits_partitioned (k) SELECT number FROM numbers(50, 10);
+INSERT INTO t_stream_round_limits_partitioned (k) SELECT number FROM numbers(60, 10);
+INSERT INTO t_stream_round_limits_partitioned (k) SELECT number FROM numbers(70, 10);
+INSERT INTO t_stream_round_limits_partitioned (k) SELECT number FROM numbers(80, 10);
+INSERT INTO t_stream_round_limits_partitioned (k) SELECT number FROM numbers(90, 10);
 
 -- The budget is shared by all partitions of the round.
 SELECT 'partitioned rows 30', count() FROM t_stream_round_limits_partitioned STREAM BOUNDED
@@ -104,6 +108,11 @@ SETTINGS max_rows_to_read = 70, max_threads = 1;
 
 SELECT 'partitioned unbounded rows 30', count(), uniqExact(k), sum(k)
 FROM (SELECT k FROM t_stream_round_limits_partitioned STREAM LIMIT 100)
+SETTINGS max_rows_to_read = 30, max_threads = 1;
+
+-- With a watermark, a partition left out of a round is still read later.
+SELECT 'partitioned watermark unbounded rows 30', count(), uniqExact(k), sum(k)
+FROM (SELECT k FROM t_stream_round_limits_partitioned STREAM WATERMARK FOR ts AS ts - INTERVAL 10 SECOND LIMIT 100)
 SETTINGS max_rows_to_read = 30, max_threads = 1;
 
 DROP TABLE t_stream_round_limits_partitioned;

@@ -274,13 +274,12 @@ void MergeTreeCommitOrderSource::work()
         return;
 
     auto [snapshot_block_numbers, was_updated] = subscription->snapshot();
-    auto safe_block_numbers = limitReadRoundBounds(reading_context, read_state, std::move(snapshot_block_numbers));
-
-    auto classification = classifyPartitions(read_state, safe_block_numbers, stream_settings);
+    auto safe_block_numbers = limitReadRoundBounds(reading_context, read_state, snapshot_block_numbers);
+    auto classification = classifyPartitions(read_state, safe_block_numbers, snapshot_block_numbers, stream_settings);
 
     read_state.updatePartitionSet(classification);
     pending_round = {
-        .pipeline = buildReadRoundPipeline(reading_context, read_state, safe_block_numbers),
+        .pipeline = buildReadRoundPipeline(reading_context, read_state, safe_block_numbers, classification),
         .safe_block_numbers = std::move(safe_block_numbers),
         .partitions = std::move(classification),
     };

@@ -9,8 +9,6 @@
 
 #include <Core/Settings.h>
 
-#include <Common/Exception.h>
-
 #include <algorithm>
 #include <optional>
 
@@ -21,11 +19,6 @@ namespace Setting
 {
     extern const SettingsUInt64 max_rows_to_read;
     extern const SettingsUInt64 max_bytes_to_read;
-}
-
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -188,11 +181,6 @@ ReadRoundContext makeReadRoundContext(
     const auto * projection = chooseCommitOrderProjection(*streaming_metadata, columns_to_read);
     const UInt64 max_rows_per_round = context->getSettingsRef()[Setting::max_rows_to_read];
     const UInt64 max_bytes_per_round = context->getSettingsRef()[Setting::max_bytes_to_read];
-
-    /// A partition left out of a round must not be reported idle, which would let the watermark pass its unread rows.
-    if (stream_settings.watermark && (max_rows_per_round || max_bytes_per_round))
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Settings `max_rows_to_read` and `max_bytes_to_read` are not supported for a stream with a watermark");
 
     return ReadRoundContext{
         .storage = storage,
