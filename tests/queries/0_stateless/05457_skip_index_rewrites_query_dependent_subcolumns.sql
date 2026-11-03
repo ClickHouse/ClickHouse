@@ -103,6 +103,37 @@ SELECT 'partition key, subcolumn read explicitly, but not rewritten in the key e
 SELECT replaceRegexpAll(explain, '^[│ ]+', '') FROM (EXPLAIN indexes = 1 SELECT mapKeys(m) FROM t_part WHERE multiIf(m['k'] > 49, 1, 0) = 1 AND `m.key_k` >= 0)
 WHERE explain LIKE '%Parts:%/%';
 
+-- The same with a folded constant argument in the key: the stored key names it `concat('k', '')`,
+-- while the filter's canonical form names it by its value, `'k'`.
+CREATE TABLE t_folded_pk (id UInt32, m Map(String, Int32))
+ENGINE = ReplacingMergeTree ORDER BY multiIf(m[concat('k', '')] > 0, m[concat('k', '')], 0)
+SETTINGS index_granularity = 4, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO t_folded_pk SELECT number, map('k', toInt32(number)) FROM numbers(100);
+
+SELECT 'primary key with a folded argument, subcolumn read explicitly, but not rewritten in the key expression';
+SELECT replaceRegexpAll(explain, '^[│ ]+', '') FROM (EXPLAIN indexes = 1 SELECT id FROM t_folded_pk FINAL WHERE multiIf(m[concat('k', '')] > 0, m[concat('k', '')], 0) > 97 AND `m.key_k` >= 0)
+WHERE explain LIKE '%Granules:%/%';
+SELECT id FROM t_folded_pk FINAL WHERE multiIf(m[concat('k', '')] > 0, m[concat('k', '')], 0) > 97 AND `m.key_k` >= 0 ORDER BY id;
+
+CREATE TABLE t_folded_idx (id UInt32, m Map(String, Int32),
+    INDEX idx multiIf(m[concat('k', '')] > 0, m[concat('k', '')], 0) TYPE minmax GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 4, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO t_folded_idx SELECT number, map('k', toInt32(number)) FROM numbers(100);
+
+SELECT 'skip index with a folded argument, subcolumn read explicitly, but not rewritten in the key expression';
+SELECT replaceRegexpAll(explain, '^[│ ]+', '') FROM (EXPLAIN indexes = 1 SELECT mapKeys(m) FROM t_folded_idx WHERE multiIf(m[concat('k', '')] > 0, m[concat('k', '')], 0) > 97 AND `m.key_k` >= 0)
+WHERE explain LIKE '%Granules:%/%' OR explain LIKE '%Name:%';
+
+CREATE TABLE t_folded_part (id UInt32, m Map(String, Int32))
+ENGINE = MergeTree PARTITION BY multiIf(m[concat('k', '')] > 49, 1, 0) ORDER BY id
+SETTINGS add_minmax_index_for_numeric_columns = 0;
+INSERT INTO t_folded_part SELECT number, map('k', toInt32(number)) FROM numbers(100);
+
+SELECT 'partition key with a folded argument, subcolumn read explicitly, but not rewritten in the key expression';
+SELECT replaceRegexpAll(explain, '^[│ ]+', '') FROM (EXPLAIN indexes = 1 SELECT mapKeys(m) FROM t_folded_part WHERE multiIf(m[concat('k', '')] > 49, 1, 0) = 1 AND `m.key_k` >= 0)
+WHERE explain LIKE '%Parts:%/%';
+
 DROP TABLE t_pk;
 DROP TABLE t_final;
 DROP TABLE t_idx;
@@ -110,3 +141,6 @@ DROP TABLE t_part;
 DROP TABLE t_mixed_pk;
 DROP TABLE t_mixed_idx;
 DROP TABLE t_mixed_part;
+DROP TABLE t_folded_pk;
+DROP TABLE t_folded_idx;
+DROP TABLE t_folded_part;

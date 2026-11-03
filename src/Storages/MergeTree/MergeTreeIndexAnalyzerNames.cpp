@@ -1,12 +1,14 @@
 #include <Storages/MergeTree/MergeTreeIndexAnalyzerNames.h>
 
 #include <Analyzer/ConstantNode.h>
+#include <Analyzer/FunctionNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/TableNode.h>
 #include <Core/LogsLevel.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeArray.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionActionsSettings.h>
@@ -52,27 +54,78 @@ namespace
 /// a constant condition collapses to one of its branches). Then the rewritten expression is not
 /// another name of the stored key, but a different expression. Check that every folded constant has
 /// the same value as the subexpression of the same name in the stored key expression, which was folded
-/// when the key was built. A constant that cannot be found there is not proven equal either.
-bool foldedConstantsMatchKeyExpression(const QueryTreeNodePtr & node, const ActionsDAG & key_dag)
-{
-    if (const auto * constant_node = node->as<ConstantNode>(); constant_node && constant_node->hasSourceExpression())
-    {
-        const String name = constant_node->getSourceExpression()->toAST()->getColumnName();
-        const ActionsDAG::Node * key_node = nullptr;
-        for (const auto & candidate : key_dag.getNodes())
-        {
-            if (candidate.result_name == name)
-            {
-                key_node = &candidate;
-                break;
-            }
-        }
+/// when the key was built. A constant that cannot be found there is not proven equal either, unless it
+/// is a value-preserving conversion introduced by a rewrite pass, see `isEnumCastIntroducedByRewrite`.
+bool foldedConstantMatchesKeyExpression(const ConstantNode & constant_node, const ActionsDAG & key_dag);
 
-        if (!key_node || !key_node->column || !isColumnConst(*key_node->column)
-            || !key_node->result_type->equals(*constant_node->getResultType())
-            || (*key_node->column)[0] != constant_node->getValue())
+/// `IfTransformStringsToEnumPass` replaces the string constants of `if` and `transform` with folded
+/// `_CAST(<string constant>, 'Enum...')`, where the enum is built from these very strings, and casts
+/// the result back to `String`. Such a constant is not in the stored key, but the conversion of a
+/// string to an enum does not depend on the settings, so it has a proven value if its argument has.
+bool isEnumCastIntroducedByRewrite(const ConstantNode & constant_node, const ActionsDAG & key_dag)
+{
+    const auto * function = constant_node.getSourceExpression()->as<FunctionNode>();
+    if (!function || function->getFunctionName() != "_CAST")
+        return false;
+
+    const auto & arguments = function->getArguments().getNodes();
+    if (arguments.size() != 2)
+        return false;
+
+    const auto * argument = arguments[0]->as<ConstantNode>();
+    const auto * type_name = arguments[1]->as<ConstantNode>();
+    if (!argument || !type_name || type_name->hasSourceExpression())
+        return false;
+
+    auto unwrap_array = [](const DataTypePtr & type) -> DataTypePtr
+    {
+        if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
+            return array_type->getNestedType();
+        return nullptr;
+    };
+
+    DataTypePtr result_type = constant_node.getResultType();
+    DataTypePtr argument_type = argument->getResultType();
+    if (auto nested_result_type = unwrap_array(result_type))
+    {
+        result_type = nested_result_type;
+        argument_type = unwrap_array(argument_type);
+        if (!argument_type)
             return false;
     }
+
+    if (!isEnum(result_type) || !isString(argument_type))
+        return false;
+
+    return !argument->hasSourceExpression() || foldedConstantMatchesKeyExpression(*argument, key_dag);
+}
+
+bool foldedConstantMatchesKeyExpression(const ConstantNode & constant_node, const ActionsDAG & key_dag)
+{
+    const String name = constant_node.getSourceExpression()->toAST()->getColumnName();
+    const ActionsDAG::Node * key_node = nullptr;
+    for (const auto & candidate : key_dag.getNodes())
+    {
+        if (candidate.result_name == name)
+        {
+            key_node = &candidate;
+            break;
+        }
+    }
+
+    if (!key_node)
+        return isEnumCastIntroducedByRewrite(constant_node, key_dag);
+
+    return key_node->column && isColumnConst(*key_node->column)
+        && key_node->result_type->equals(*constant_node.getResultType())
+        && (*key_node->column)[0] == constant_node.getValue();
+}
+
+bool foldedConstantsMatchKeyExpression(const QueryTreeNodePtr & node, const ActionsDAG & key_dag)
+{
+    if (const auto * constant_node = node->as<ConstantNode>(); constant_node && constant_node->hasSourceExpression()
+        && !foldedConstantMatchesKeyExpression(*constant_node, key_dag))
+        return false;
 
     for (const auto & child : node->getChildren())
         if (child && !foldedConstantsMatchKeyExpression(child, key_dag))
@@ -452,12 +505,15 @@ PredicateNames getPredicateNames(const ActionsDAG::Node * predicate)
 ///   that the replay rewrote to a subcolumn read. `FunctionToSubcolumnsPass` decides for every column
 ///   once, for all its uses in the filter, so the rewrite of this column was not applied even if the
 ///   filter reads the subcolumn elsewhere (e.g. `` `m.key_k` >= 0 `` written in the query).
+///   The names of the key's functions are compared in the canonical form of index analysis, as the
+///   filter's are, so that a folded constant argument (e.g. `concat('k', '')`) is named by its value.
 /// Returns nullopt if such a subcolumn cannot be attributed to a source column of the key.
 std::optional<NameSet> getSourceColumnsOfSubcolumnsNotInQuery(
     const AlternativeKeyExpression & alternative_key,
     const ExpressionActionsPtr & expression,
     const ColumnsDescription & table_columns,
-    const PredicateNames * predicate)
+    const PredicateNames * predicate,
+    const ContextPtr & context)
 {
     NameSet key_source_columns;
     for (const auto & column : expression->getRequiredColumns())
@@ -472,7 +528,8 @@ std::optional<NameSet> getSourceColumnsOfSubcolumnsNotInQuery(
     NameSet source_columns_not_rewritten_in_filter;
     if (predicate)
     {
-        for (const auto & node : expression->getActionsDAG().getNodes())
+        const auto canonical_key_dag = cloneDAGForIndexAnalysisNames(expression->getActionsDAG().getOutputs(), context);
+        for (const auto & node : canonical_key_dag.getNodes())
         {
             if (node.type != ActionsDAG::ActionType::FUNCTION || alternative_node_names.contains(node.result_name)
                 || !predicate->nodes.contains(node.result_name))
@@ -599,7 +656,7 @@ AlternativeKeyExpressionPtr getAlternativeExpression(
     while (alternative_key)
     {
         auto excluded = getSourceColumnsOfSubcolumnsNotInQuery(
-            *alternative_key, expression, table_columns, predicate_names ? &*predicate_names : nullptr);
+            *alternative_key, expression, table_columns, predicate_names ? &*predicate_names : nullptr, context);
         if (!excluded)
             return nullptr;
         if (excluded->empty())
