@@ -21,6 +21,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
     extern const int BAD_ARGUMENTS;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 namespace
@@ -318,7 +319,12 @@ public:
                 if (!time_slot_column)
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Third argument for function {} must be constant UInt32", getName());
 
-                if (time_slot_size = time_slot_column->getValue<UInt32>(); time_slot_size <= 0)
+                const UInt64 size_value = time_slot_column->getValue<UInt64>();
+                if (size_value > std::numeric_limits<UInt32>::max())
+                    throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Third argument for function {} must not exceed {}, got {}",
+                        getName(), std::numeric_limits<UInt32>::max(), size_value);
+
+                if (time_slot_size = static_cast<UInt32>(size_value); time_slot_size <= 0)
                     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Third argument for function {} must be greater than zero", getName());
             }
 

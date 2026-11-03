@@ -313,7 +313,7 @@ static void recordHypotheticalOutcome(
         if (candidate.projection != &hypothetical.projection || !candidate.stat)
             continue;
         outcome.marks = candidate.sum_marks;
-        outcome.rows = candidate.selected_rows;
+        outcome.rows = candidate.selected_rows + outcome.base_table_rows;
         outcome.chosen = &candidate == best_candidate;
         if (!candidate.stat->description.empty())
             outcome.reason = candidate.stat->description;
@@ -616,6 +616,9 @@ UseProjectionsResult optimizeUseNormalProjections(
             {
                 LOG_DEBUG(logger, "Projection {} skipped: query WHERE does not imply projection WHERE", projection->name);
                 result.projection_reject_reasons.try_emplace(projection->name, "the query WHERE does not imply the projection WHERE");
+                /// the query alone decides it, so WHATIF does not read data for this projection
+                if (hypothetical && projection == &hypothetical->projection)
+                    hypothetical->outcome.rejected_for_query = true;
                 continue;
             }
         }
@@ -692,6 +695,11 @@ UseProjectionsResult optimizeUseNormalProjections(
                 || (candidate.sum_marks == parent_reading_marks && parent_reading_marks > 0 && !sort_order_helps);
             hypothetical->outcome.forced = relax_projection_checks && (helps_nothing || worse_by_cost);
             hypothetical->outcome.serves_order = sort_order_helps;
+            UInt64 base_table_rows = 0;
+            for (const auto & part : parent_reading_select_result->parts_with_ranges)
+                if (candidate.parent_parts.contains(part.data_part.get()))
+                    base_table_rows += part.getRowsCount();
+            hypothetical->outcome.base_table_rows = base_table_rows;
         }
 
         /// Consider projections with equal read cost only if:

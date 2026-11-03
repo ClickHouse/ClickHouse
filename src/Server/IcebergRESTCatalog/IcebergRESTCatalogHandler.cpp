@@ -19,9 +19,13 @@
 #include <Server/HTTP/sendExceptionToHTTPClient.h>
 #include <Server/HTTPHandler.h>
 #include <Server/IServer.h>
+#include <Server/IcebergRESTCatalog/IcebergRESTCatalogCommitTable.h>
+#include <Server/IcebergRESTCatalog/IcebergRESTCatalogCreateTable.h>
 #include <Server/IcebergRESTCatalog/IcebergRESTCatalogJSON.h>
 #include <Server/IcebergRESTCatalog/IcebergRESTCatalogStorage.h>
-#include <Server/IcebergRESTCatalog/IcebergRESTCatalogCreateTable.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
+
+#include <Common/ZooKeeper/KeeperException.h>
 
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Parser.h>
@@ -30,6 +34,9 @@
 #include <base/unit.h>
 #include <boost/algorithm/string/split.hpp>
 #include <fmt/ranges.h>
+
+#include <algorithm>
+#include <set>
 
 namespace DB
 {
@@ -46,44 +53,46 @@ namespace ErrorCodes
     extern const int ACCESS_DENIED;
     extern const int AUTHENTICATION_FAILED;
     extern const int BAD_ARGUMENTS;
+    extern const int METADATA_MISMATCH;
+    extern const int NOT_IMPLEMENTED;
     extern const int QUERY_IS_PROHIBITED;
     extern const int READONLY;
+    extern const int ICEBERG_CATALOG_CONCURRENT_UPDATE;
     extern const int KEEPER_EXCEPTION;
     extern const int NO_ZOOKEEPER;
     extern const int REQUIRED_PASSWORD;
     extern const int SUPPORT_IS_DISABLED;
 }
 
-using namespace IcebergRESTCatalogJSON;
+using namespace IcebergRESTCatalog;
 
 namespace
 {
 
 constexpr size_t MAX_REQUEST_BODY_SIZE = 1_MiB;
-/// Keeper limits path depth and node data size. Reject oversized requests here with 400 instead of a Keeper error.
-constexpr size_t MAX_NAMESPACE_LEVELS = 16;
-constexpr size_t MAX_NAMESPACE_LEVEL_LENGTH = 256;
-constexpr size_t MAX_NAMESPACE_PROPERTIES_SIZE = 64_KiB;
 constexpr size_t MAX_TABLE_NAME_LENGTH = 256;
-/// Metadata files with many snapshots reach tens of megabytes.
-constexpr size_t MAX_METADATA_FILE_SIZE = 64_MiB;
-constexpr char NAMESPACE_LEVEL_SEPARATOR = '\x1F';
 
-/// The Iceberg table property that names the codec of metadata files. The Java reference defaults to `none`.
+/// The Iceberg table property that names the codec of metadata files.
 constexpr auto METADATA_COMPRESSION_CODEC_PROPERTY = "write.metadata.compression-codec";
 
-/// The spec defines only these two. Other codecs would leave files that other engines cannot open.
-CompressionMethod getMetadataCompressionMethod(const std::map<String, String> & properties)
+CompressionMethod getMetadataCompressionMethod(const Poco::JSON::Object & metadata)
 {
-    const auto it = properties.find(METADATA_COMPRESSION_CODEC_PROPERTY);
-    if (it == properties.end())
+    const auto properties = getObject(metadata, Iceberg::f_properties);
+    const auto codec = properties->optValue<String>(METADATA_COMPRESSION_CODEC_PROPERTY, "none");
+    const auto lower = Poco::toLower(codec);
+    if (lower == "none")
         return CompressionMethod::None;
-    const auto codec = Poco::toLower(it->second);
-    if (codec == "none")
-        return CompressionMethod::None;
-    if (codec == "gzip")
+    if (lower == "gzip")
         return CompressionMethod::Gzip;
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "'{}' must be 'none' or 'gzip', got '{}'", METADATA_COMPRESSION_CODEC_PROPERTY, it->second);
+    /// The spec defines only none and gzip. Other codecs would leave files that other engines cannot open.
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "'{}' must be 'none' or 'gzip', got '{}'", METADATA_COMPRESSION_CODEC_PROPERTY, codec);
+}
+
+/// Tables of the namespace go under `location`. The handler maps `BAD_ARGUMENTS` to a 400 response.
+void validateNamespaceLocation(const IcebergRESTCatalogWarehouse & warehouse, const std::map<String, String> & properties)
+{
+    if (const auto it = properties.find("location"); it != properties.end())
+        warehouse.validateLocation(it->second);
 }
 
 /// Codec suffix inside a metadata file name: `v1-<uuid>.gz.metadata.json`. The spec spells gzip as `gz`.
@@ -92,27 +101,10 @@ String getMetadataCompressionSuffix(CompressionMethod compression_method)
     return compression_method == CompressionMethod::Gzip ? ".gz" : "";
 }
 
-/// The handler maps `BAD_ARGUMENTS` to a 400 response.
-void validateNamespace(const IcebergNamespaceName & name)
-{
-    if (name.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Namespace must have at least one level");
-    if (name.size() > MAX_NAMESPACE_LEVELS)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Namespace must have at most {} levels", MAX_NAMESPACE_LEVELS);
-    for (const auto & level : name)
-    {
-        if (level.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Namespace levels must be non-empty");
-        if (level.size() > MAX_NAMESPACE_LEVEL_LENGTH)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Namespace levels must be at most {} bytes", MAX_NAMESPACE_LEVEL_LENGTH);
-    }
-}
-
 IcebergNamespaceName splitNamespace(const String & value)
 {
     IcebergNamespaceName result;
     boost::split(result, value, [](char c) { return c == NAMESPACE_LEVEL_SEPARATOR; });
-    validateNamespace(result);
     return result;
 }
 
@@ -128,11 +120,11 @@ String joinNamespace(const IcebergNamespaceName & name)
     return fmt::format("{}", fmt::join(name, "."));
 }
 
-Poco::JSON::Array namespaceToJSON(const IcebergNamespaceName & name)
+Poco::JSON::Array stringsToJSONArray(const Strings & strings)
 {
     Poco::JSON::Array result;
-    for (const auto & level : name)
-        result.add(level);
+    for (const auto & value : strings)
+        result.add(value);
     return result;
 }
 
@@ -163,7 +155,7 @@ bool getBooleanQueryParameter(const Poco::URI & uri, const String & name, bool d
 Poco::JSON::Object tableIdentifierToJSON(const IcebergNamespaceName & ns, const String & table)
 {
     Poco::JSON::Object result;
-    result.set("namespace", namespaceToJSON(ns));
+    result.set("namespace", stringsToJSONArray(ns));
     result.set("name", table);
     return result;
 }
@@ -234,6 +226,8 @@ void IcebergRESTCatalogHandler::sendNoContent(HTTPServerResponse & response)
 void IcebergRESTCatalogHandler::sendError(
     HTTPServerResponse & response, Poco::Net::HTTPResponse::HTTPStatus status, const String & type, const String & message)
 {
+    LOG_DEBUG(getLogger("IcebergRESTCatalogHandler"), "Request rejected with {} {}: {}", static_cast<int>(status), type, message);
+
     /// ErrorModel from the Iceberg REST specification.
     Poco::JSON::Object error;
     error.set("message", message);
@@ -347,6 +341,9 @@ void IcebergRESTCatalogHandler::handleRequest(HTTPServerRequest & request, HTTPS
             case IcebergRESTOperation::NamespaceExists:
                 handleNamespaceExists(*warehouse, *match, response);
                 return;
+            case IcebergRESTOperation::UpdateNamespaceProperties:
+                handleUpdateNamespaceProperties(*warehouse, *match, request, response, *context);
+                return;
             case IcebergRESTOperation::ListTables:
                 handleListTables(*warehouse, *match, response);
                 return;
@@ -361,6 +358,9 @@ void IcebergRESTCatalogHandler::handleRequest(HTTPServerRequest & request, HTTPS
                 return;
             case IcebergRESTOperation::DropTable:
                 handleDropTable(*warehouse, *match, uri, response, *context);
+                return;
+            case IcebergRESTOperation::UpdateTable:
+                handleUpdateTable(*warehouse, *match, request, response, *context);
                 return;
             default:
                 sendError(
@@ -410,6 +410,13 @@ void IcebergRESTCatalogHandler::handleRequest(HTTPServerRequest & request, HTTPS
             status = Poco::Net::HTTPResponse::HTTP_SERVICE_UNAVAILABLE;
             type = "ServiceUnavailableException";
             message = "Catalog storage is unavailable";
+        }
+        /// The catalog is healthy, the client should retry the request.
+        else if (code == ErrorCodes::ICEBERG_CATALOG_CONCURRENT_UPDATE)
+        {
+            status = Poco::Net::HTTPResponse::HTTP_SERVICE_UNAVAILABLE;
+            type = "ServiceUnavailableException";
+            message = getCurrentExceptionMessage(false);
         }
 
         tryLogCurrentException(log, "Failed to process Iceberg REST catalog request");
@@ -476,7 +483,7 @@ void IcebergRESTCatalogHandler::handleListNamespaces(const IcebergRESTCatalogWar
     if (auto parent_param = getQueryParameter(uri, "parent"); parent_param && !parent_param->empty())
     {
         parent = splitNamespace(*parent_param);
-        if (!warehouse.store->namespaceExists(parent))
+        if (!warehouse.namespaceExists(parent))
         {
             sendNoSuchNamespace(response, parent);
             return;
@@ -484,8 +491,8 @@ void IcebergRESTCatalogHandler::handleListNamespaces(const IcebergRESTCatalogWar
     }
 
     Poco::JSON::Array namespaces;
-    for (const auto & name : warehouse.store->listNamespaces(parent))
-        namespaces.add(namespaceToJSON(name));
+    for (const auto & name : warehouse.listNamespaces(parent))
+        namespaces.add(stringsToJSONArray(name));
 
     Poco::JSON::Object result;
     result.set("namespaces", namespaces);
@@ -496,7 +503,7 @@ void IcebergRESTCatalogHandler::handleLoadNamespace(const IcebergRESTCatalogWare
 {
     const auto ns = splitNamespace(match.path_params.at("namespace"));
     /// The properties double as the existence check.
-    const auto properties = warehouse.store->getNamespaceProperties(ns);
+    const auto properties = warehouse.getNamespaceProperties(ns);
     if (!properties)
     {
         sendNoSuchNamespace(response, ns);
@@ -508,7 +515,7 @@ void IcebergRESTCatalogHandler::handleLoadNamespace(const IcebergRESTCatalogWare
         properties_json.set(key, value);
 
     Poco::JSON::Object result;
-    result.set("namespace", namespaceToJSON(ns));
+    result.set("namespace", stringsToJSONArray(ns));
     result.set("properties", properties_json);
     sendJSON(response, result, Poco::Net::HTTPResponse::HTTP_OK);
 }
@@ -521,12 +528,16 @@ void IcebergRESTCatalogHandler::handleNamespaceExists(const IcebergRESTCatalogWa
     sendNoContent(response);
 }
 
+void IcebergRESTCatalogHandler::checkNotReadonly(const Context & context, const String & action)
+{
+    if (context.getSettingsRef()[Setting::readonly])
+        throw Exception(ErrorCodes::READONLY, "Cannot {} in readonly mode", action);
+}
+
 void IcebergRESTCatalogHandler::checkDDLAllowed(const Context & context, const String & action)
 {
-    const auto & settings = context.getSettingsRef();
-    if (settings[Setting::readonly])
-        throw Exception(ErrorCodes::READONLY, "Cannot {} in readonly mode", action);
-    if (!settings[Setting::allow_ddl])
+    checkNotReadonly(context, action);
+    if (!context.getSettingsRef()[Setting::allow_ddl])
         throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Cannot {}. DDL queries are prohibited for the user", action);
 }
 
@@ -557,24 +568,8 @@ void IcebergRESTCatalogHandler::handleCreateNamespace(const IcebergRESTCatalogWa
             const auto properties_object = json->getObject("properties");
             if (!properties_object)
                 throw Poco::Exception("'properties' must be an object");
-            size_t properties_size = 0;
             for (const auto & [key, value] : *properties_object)
-            {
-                auto value_string = value.extract<String>();
-                properties_size += key.size() + value_string.size();
-                if (properties_size > MAX_NAMESPACE_PROPERTIES_SIZE)
-                    throw Poco::Exception(fmt::format("'properties' must be at most {} bytes in total", MAX_NAMESPACE_PROPERTIES_SIZE));
-                properties[key] = std::move(value_string);
-            }
-        }
-
-        /// Tables of the namespace go under `location`. The server has credentials for one bucket only, so refuse others now.
-        if (const auto it = properties.find("location"); it != properties.end())
-        {
-            if (!hasS3Scheme(it->second))
-                throw Poco::Exception("the 'location' property must be an s3:// URI");
-            if (!warehouse.isInBucket(it->second))
-                throw Poco::Exception("the 'location' property must be inside the warehouse bucket");
+                properties[key] = value.extract<String>();
         }
     }
     catch (const Poco::Exception & e)
@@ -586,9 +581,10 @@ void IcebergRESTCatalogHandler::handleCreateNamespace(const IcebergRESTCatalogWa
             fmt::format("Malformed create namespace request: {}", e.displayText()));
         return;
     }
-    validateNamespace(name);
 
-    if (!warehouse.store->createNamespace(name, properties))
+    validateNamespaceLocation(warehouse, properties);
+
+    if (!warehouse.createNamespace(name, properties))
     {
         sendError(
             response,
@@ -597,22 +593,100 @@ void IcebergRESTCatalogHandler::handleCreateNamespace(const IcebergRESTCatalogWa
             fmt::format("Namespace already exists: {}", joinNamespace(name)));
         return;
     }
+    LOG_INFO(log, "Created namespace {}", joinNamespace(name));
 
     Poco::JSON::Object properties_json;
     for (const auto & [key, value] : properties)
         properties_json.set(key, value);
 
     Poco::JSON::Object result;
-    result.set("namespace", namespaceToJSON(name));
+    result.set("namespace", stringsToJSONArray(name));
     result.set("properties", properties_json);
     sendJSON(response, result, Poco::Net::HTTPResponse::HTTP_OK);
+}
+
+void IcebergRESTCatalogHandler::handleUpdateNamespaceProperties(
+    const IcebergRESTCatalogWarehouse & warehouse,
+    const IcebergRESTRouteMatch & match,
+    HTTPServerRequest & request,
+    HTTPServerResponse & response,
+    const Context & context) const
+{
+    checkDDLAllowed(context, "update namespace properties");
+
+    const auto ns = splitNamespace(match.path_params.at("namespace"));
+
+    const auto body = readRequestBody(request, response, MAX_REQUEST_BODY_SIZE);
+    if (!body)
+        return;
+
+    std::map<String, String> updates;
+    std::set<String> removals;
+    try
+    {
+        Poco::JSON::Parser parser;
+        const auto json = parser.parse(*body).extract<Poco::JSON::Object::Ptr>();
+
+        if (json->has("updates"))
+        {
+            const auto updates_object = json->getObject("updates");
+            if (!updates_object)
+                throw Poco::Exception("'updates' must be an object");
+            for (const auto & [key, value] : *updates_object)
+                updates[key] = value.extract<String>();
+        }
+
+        if (json->has("removals"))
+        {
+            const auto removals_array = json->getArray("removals");
+            if (!removals_array)
+                throw Poco::Exception("'removals' must be an array");
+            for (const auto & key : *removals_array)
+                removals.insert(key.extract<String>());
+        }
+    }
+    catch (const Poco::Exception & e)
+    {
+        sendError(
+            response,
+            Poco::Net::HTTPResponse::HTTP_BAD_REQUEST,
+            "BadRequestException",
+            fmt::format("Malformed update namespace properties request: {}", e.displayText()));
+        return;
+    }
+
+    validateNamespaceLocation(warehouse, updates);
+
+    const auto conflict = std::ranges::find_if(removals, [&](const auto & key) { return updates.contains(key); });
+    if (conflict != removals.end())
+    {
+        sendError(
+            response,
+            Poco::Net::HTTPResponse::HTTP_UNPROCESSABLE_ENTITY,
+            "UnprocessableEntityException",
+            fmt::format("Property key '{}' is in both 'updates' and 'removals'", *conflict));
+        return;
+    }
+
+    const auto result = warehouse.updateNamespaceProperties(ns, updates, removals);
+    if (!result)
+    {
+        sendNoSuchNamespace(response, ns);
+        return;
+    }
+
+    Poco::JSON::Object result_json;
+    result_json.set("updated", stringsToJSONArray(result->updated));
+    result_json.set("removed", stringsToJSONArray(result->removed));
+    result_json.set("missing", stringsToJSONArray(result->missing));
+    sendJSON(response, result_json, Poco::Net::HTTPResponse::HTTP_OK);
 }
 
 std::optional<IcebergNamespaceName> IcebergRESTCatalogHandler::getNamespaceOrSendNotFound(
     const IcebergRESTCatalogWarehouse & warehouse, const IcebergRESTRouteMatch & match, HTTPServerResponse & response)
 {
     auto ns = splitNamespace(match.path_params.at("namespace"));
-    if (!warehouse.store->namespaceExists(ns))
+    if (!warehouse.namespaceExists(ns))
     {
         sendNoSuchNamespace(response, ns);
         return std::nullopt;
@@ -624,8 +698,7 @@ Poco::JSON::Object::Ptr IcebergRESTCatalogHandler::readTableMetadata(
     const IcebergRESTCatalogWarehouse & warehouse, const IcebergTablePointer & pointer) const
 {
     const auto key = warehouse.objectKey(pointer.metadata_location);
-    const auto content = readObjectToString(
-        *warehouse.object_storage, key, server.context()->getReadSettings(), MAX_METADATA_FILE_SIZE, getMetadataFileCompressionMethod(key));
+    const auto content = readObjectToString(*warehouse.object_storage, key, server.context()->getReadSettings(), getMetadataFileCompressionMethod(key));
     return parseJSONObject(content, fmt::format("Metadata file {}", pointer.metadata_location));
 }
 
@@ -649,7 +722,7 @@ void IcebergRESTCatalogHandler::handleListTables(
 
     /// TODO: `pageToken` and `pageSize` are ignored: the whole list is returned at once.
     Poco::JSON::Array identifiers;
-    if (const auto tables = warehouse.store->listTables(*ns))
+    if (const auto tables = warehouse.listTables(*ns))
     {
         for (const auto & table : *tables)
             identifiers.add(tableIdentifierToJSON(*ns, table));
@@ -669,7 +742,7 @@ void IcebergRESTCatalogHandler::handleTableExists(
 
     const auto & table = match.path_params.at("table");
     validateTableName(table);
-    if (!warehouse.store->tableExists(*ns, table))
+    if (!warehouse.tableExists(*ns, table))
     {
         sendNoSuchTable(response, *ns, table);
         return;
@@ -687,7 +760,7 @@ void IcebergRESTCatalogHandler::handleLoadTable(
 
     const auto & table = match.path_params.at("table");
     validateTableName(table);
-    const auto pointer = warehouse.store->getTable(*ns, table);
+    const auto pointer = warehouse.getTable(*ns, table);
     if (!pointer)
     {
         sendNoSuchTable(response, *ns, table);
@@ -713,7 +786,7 @@ void IcebergRESTCatalogHandler::handleCreateTable(
 
     /// The properties double as the existence check.
     const auto ns = splitNamespace(match.path_params.at("namespace"));
-    const auto namespace_properties = warehouse.store->getNamespaceProperties(ns);
+    const auto namespace_properties = warehouse.getNamespaceProperties(ns);
     if (!namespace_properties)
     {
         sendNoSuchNamespace(response, ns);
@@ -766,8 +839,6 @@ void IcebergRESTCatalogHandler::handleCreateTable(
                 properties[key] = value.convert<String>();
         }
 
-        compression_method = getMetadataCompressionMethod(properties);
-
         metadata = buildInitialTableMetadata(
             uuid,
             location,
@@ -775,6 +846,7 @@ void IcebergRESTCatalogHandler::handleCreateTable(
             getOptionalObject(*json, "partition-spec"),
             getOptionalObject(*json, "write-order"),
             std::move(properties));
+        compression_method = getMetadataCompressionMethod(*metadata);
 
         /// Same naming as the ClickHouse Iceberg writer: `<location>/metadata/v<version>-<uuid>.metadata.json`, starting at 1.
         pointer.metadata_location
@@ -813,8 +885,8 @@ void IcebergRESTCatalogHandler::handleCreateTable(
         static_cast<int>(server.context()->getSettingsRef()[Setting::output_format_compression_level]));
 
     /// A Keeper exception (timeout, session loss) leaves the file. The node may exist, so deleting could leave a dangling pointer.
-    using CreateTableResult = KeeperIcebergRESTCatalogStore::CreateTableResult;
-    const auto created = warehouse.store->createTable(ns, name, pointer);
+    using CreateTableResult = IcebergRESTCatalogWarehouse::CreateTableResult;
+    const auto created = warehouse.createTable(ns, name, pointer);
     if (created != CreateTableResult::Created)
     {
         LOG_INFO(log, "Removing metadata file {} because table {}.{} was not registered", object_key, joinNamespace(ns), name);
@@ -841,6 +913,168 @@ void IcebergRESTCatalogHandler::handleCreateTable(
     sendLoadTableResult(pointer.metadata_location, metadata, response);
 }
 
+/// Checks requirements and applies updates in memory, then calls `commitTableMetadata`.
+void IcebergRESTCatalogHandler::handleUpdateTable(
+    const IcebergRESTCatalogWarehouse & warehouse,
+    const IcebergRESTRouteMatch & match,
+    HTTPServerRequest & request,
+    HTTPServerResponse & response,
+    const Context & context) const
+{
+    checkNotReadonly(context, "commit to table");
+
+    const auto ns = getNamespaceOrSendNotFound(warehouse, match, response);
+    if (!ns)
+        return;
+    const auto & table = match.path_params.at("table");
+
+    const auto body = readRequestBody(request, response, MAX_REQUEST_BODY_SIZE);
+    if (!body)
+        return;
+
+    const auto pointer = warehouse.getTable(*ns, table);
+    if (!pointer)
+    {
+        sendNoSuchTable(response, *ns, table);
+        return;
+    }
+    auto metadata = readTableMetadata(warehouse, *pointer);
+
+    CompressionMethod compression_method = CompressionMethod::None;
+    try
+    {
+        const auto json = Poco::JSON::Parser().parse(*body).extract<Poco::JSON::Object::Ptr>();
+        const auto requirements = getArray(*json, "requirements");
+        const auto updates = getArray(*json, "updates");
+
+        if (const auto result = checkTableRequirements(*metadata, *requirements); !result)
+        {
+            sendError(response, Poco::Net::HTTPResponse::HTTP_CONFLICT, "CommitFailedException", result.error());
+            return;
+        }
+
+        /// Do not write a new metadata version for an empty commit.
+        if (updates->size() == 0)
+        {
+            sendCommitTableResult(pointer->metadata_location, metadata, response);
+            return;
+        }
+
+        applyTableUpdatesToJSON(*metadata, *updates, pointer->metadata_location);
+        /// A `set-properties` update may change the codec. The new file follows the updated properties.
+        compression_method = getMetadataCompressionMethod(*metadata);
+    }
+    catch (const Exception & e)
+    {
+        /// The request was based on metadata that another commit has since replaced. The client retries after reloading.
+        if (e.code() == ErrorCodes::METADATA_MISMATCH)
+        {
+            sendError(response, Poco::Net::HTTPResponse::HTTP_CONFLICT, "CommitFailedException", e.message());
+            return;
+        }
+        /// Other errors are not caused by the client. The HTTP layer reports them as internal errors.
+        if (e.code() != ErrorCodes::NOT_IMPLEMENTED && e.code() != ErrorCodes::BAD_ARGUMENTS)
+            throw;
+        sendCommitRequestError(response, e.code(), e.message());
+        return;
+    }
+    catch (const Poco::Exception & e)
+    {
+        sendCommitRequestError(response, ErrorCodes::BAD_ARGUMENTS, e.displayText());
+        return;
+    }
+
+    commitTableMetadata(warehouse, *ns, table, *pointer, metadata, compression_method, response);
+}
+
+void IcebergRESTCatalogHandler::commitTableMetadata(
+    const IcebergRESTCatalogWarehouse & warehouse,
+    const IcebergNamespaceName & ns,
+    const String & table,
+    const IcebergTablePointer & pointer,
+    const Poco::JSON::Object::Ptr & metadata,
+    CompressionMethod compression_method,
+    HTTPServerResponse & response) const
+{
+    /// Get the name for the next metadata.json file.
+    const String new_location
+        = nextMetadataLocation(*metadata, pointer.metadata_location, getMetadataCompressionSuffix(compression_method));
+
+    /// Write the metadata.json to object storage.
+    const auto object_key = warehouse.objectKey(new_location);
+    writeNewObject(
+        *warehouse.object_storage,
+        object_key,
+        toJSONString(*metadata, 4),
+        server.context()->getWriteSettings(),
+        compression_method,
+        static_cast<int>(server.context()->getSettingsRef()[Setting::output_format_compression_level]));
+
+    /// Update Keeper.
+    using UpdateTableResult = IcebergRESTCatalogWarehouse::UpdateTableResult;
+    std::optional<UpdateTableResult> result;
+    try
+    {
+        result = warehouse.updateTable(ns, table, pointer, {.uuid = pointer.uuid, .metadata_location = new_location});
+    }
+    catch (const zkutil::KeeperException & e)
+    {
+        /// The set may have been applied, so the new file must stay. The client reloads the table to find out.
+        LOG_WARNING(log, "Commit of {}.{} to {} has an unknown outcome: {}", joinNamespace(ns), table, new_location, e.message());
+        sendError(response, Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR, "CommitStateUnknownException", "Commit state is unknown");
+        return;
+    }
+
+    if (*result != UpdateTableResult::Updated)
+        warehouse.object_storage->removeObjectIfExists(StoredObject(object_key));
+
+    switch (*result)
+    {
+        case UpdateTableResult::Updated:
+            LOG_INFO(log, "Committed table {}.{}: {} -> {}", joinNamespace(ns), table, pointer.metadata_location, new_location);
+            sendCommitTableResult(new_location, metadata, response);
+            return;
+        case UpdateTableResult::VersionMismatch:
+            sendError(
+                response,
+                Poco::Net::HTTPResponse::HTTP_CONFLICT,
+                "CommitFailedException",
+                fmt::format("Table {}.{} was updated concurrently, retry the commit", joinNamespace(ns), table));
+            return;
+        case UpdateTableResult::UuidMismatch:
+            sendError(
+                response,
+                Poco::Net::HTTPResponse::HTTP_CONFLICT,
+                "CommitFailedException",
+                fmt::format("Table {}.{} was dropped and re-created, reload the table", joinNamespace(ns), table));
+            return;
+        case UpdateTableResult::TableMissing:
+            sendNoSuchTable(response, ns, table);
+            return;
+    }
+}
+
+void IcebergRESTCatalogHandler::sendCommitTableResult(
+    const String & metadata_location, const Poco::JSON::Object::Ptr & metadata, HTTPServerResponse & response)
+{
+    Poco::JSON::Object result;
+    result.set("metadata-location", metadata_location);
+    result.set("metadata", metadata);
+    sendJSON(response, result, Poco::Net::HTTPResponse::HTTP_OK);
+}
+
+void IcebergRESTCatalogHandler::sendCommitRequestError(HTTPServerResponse & response, int code, const String & message)
+{
+    if (code == ErrorCodes::NOT_IMPLEMENTED)
+        sendError(response, Poco::Net::HTTPResponse::HTTP_BAD_REQUEST, "UnsupportedOperationException", message);
+    else
+        sendError(
+            response,
+            Poco::Net::HTTPResponse::HTTP_BAD_REQUEST,
+            "BadRequestException",
+            fmt::format("Malformed commit request: {}", message));
+}
+
 void IcebergRESTCatalogHandler::handleDropTable(
     const IcebergRESTCatalogWarehouse & warehouse,
     const IcebergRESTRouteMatch & match,
@@ -864,7 +1098,7 @@ void IcebergRESTCatalogHandler::handleDropTable(
         return;
     }
 
-    if (!warehouse.store->dropTable(*ns, table))
+    if (!warehouse.dropTable(*ns, table))
     {
         sendNoSuchTable(response, *ns, table);
         return;
