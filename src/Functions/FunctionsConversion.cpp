@@ -2224,6 +2224,11 @@ DataTypePtr rewriteTimeZonesForTypedPaths(
 
     auto rewrite_child = [&](const DataTypePtr & child, const String & path) -> DataTypePtr
     {
+        /// Without this setting `JSONExtractTree` reads an object at a typed path into that path, never into the paths below it.
+        if (!format_settings.json.type_json_allow_duplicated_key_with_literal_and_nested_object
+            && std::ranges::any_of(typed_paths, [&](const auto & entry) { return path.starts_with(entry.first + "."); }))
+            return child;
+
         const String child_prefix = path + ".";
         /// `JSONExtractTree` fills the typed paths below `path` with an object, when there are some.
         const bool read_below = writesJSONObject(child, format_settings)

@@ -34,6 +34,9 @@ SELECT arrayMap(x -> toUnixTimestamp(x.2), CAST('{"m":{"k":"2026-01-01 00:00:00"
 SELECT toUnixTimestamp(CAST('{"t":{"d":"2026-01-01 00:00:00"}}'::JSON(t Tuple(d DateTime('UTC'))), 'JSON(t Tuple(d DateTime64(0, ''Asia/Tokyo'')), `t.d` DateTime(''Asia/Tokyo''))').`t.d`);
 SELECT toUnixTimestamp(CAST('{"t":{"d":"2026-01-01 00:00:00"}}'::JSON(t Tuple(d DateTime('Asia/Tokyo'))), 'JSON(t Tuple(d DateTime64(0, ''Asia/Tokyo'')), `t.d` DateTime(''Asia/Tokyo''))').`t.d`);
 SELECT toUnixTimestamp(tupleElement(CAST('{"t":{"d":"2026-01-01 00:00:00"}}'::JSON(t Tuple(d DateTime('UTC'))), 'JSON(t Tuple(d DateTime64(0, ''Asia/Tokyo'')), `t.d` DateTime(''Asia/Tokyo''))').t, 'd')) SETTINGS type_json_allow_duplicated_key_with_literal_and_nested_object = 0;
+-- Without the setting, the typed path `t` reads the whole object.
+SELECT tupleElement(CAST('{"t":{"d":"2026-01-01 00:00:00"}}'::JSON(t Tuple(d DateTime('Asia/Tokyo'))), 'JSON(t Tuple(d String), `t.d` DateTime(''Asia/Tokyo''))').t, 'd') SETTINGS type_json_allow_duplicated_key_with_literal_and_nested_object = 0;
+SELECT tupleElement(CAST('{"t":{"d":"2026-01-01 00:00:00"}}'::JSON(`t.d` DateTime('Asia/Tokyo')), 'JSON(t Tuple(d String), `t.d` DateTime(''Asia/Tokyo''))').t, 'd') SETTINGS type_json_allow_duplicated_key_with_literal_and_nested_object = 0;
 
 -- Values that do not feed a `DateTime` keep their text.
 SELECT CAST('{"d":"2026-01-01 00:00:00"}'::JSON(d DateTime('Asia/Tokyo')), 'JSON(d String)').d;
