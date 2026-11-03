@@ -3594,7 +3594,12 @@ void ClientBase::receiveLogsAndProfileEvents(ASTPtr parsed_query)
             || *packet_type == Protocol::Server::ProfileInfo
             || *packet_type == Protocol::Server::Progress))
     {
-        receiveAndProcessPacket(parsed_query, false);
+        /// The result of `INSERT ... RETURNING` can be large. After Ctrl+C, cancel the query on
+        /// the server and stop formatting the result, like `receiveResult` does.
+        if (!cancelled && query_interrupt_handler.cancelled())
+            cancelQuery();
+
+        receiveAndProcessPacket(parsed_query, cancelled);
         packet_type = connection->checkPacket(0);
     }
 }
@@ -3603,22 +3608,42 @@ void ClientBase::receiveLogsAndProfileEvents(ASTPtr parsed_query)
 /// Process Log packets and the result of INSERT ... RETURNING, exit when receive Exception or EndOfStream
 bool ClientBase::receiveEndOfQueryForInsert(ASTPtr parsed_query)
 {
+    /// Wait for packets in bounded intervals, to notice Ctrl+C while the server is still producing
+    /// the result of `INSERT ... RETURNING` (see `receiveResult`).
+    const auto receive_timeout = connection_parameters.timeouts.receive_timeout;
+    constexpr size_t default_poll_interval = 1000000; /// in microseconds
+    constexpr size_t min_poll_interval = 5000; /// in microseconds
+    const size_t poll_interval
+        = std::max(min_poll_interval, std::min<size_t>(receive_timeout.totalMicroseconds(), default_poll_interval));
+
     while (true)
     {
+        /// After Ctrl+C, cancel the query on the server and receive the remaining packets without
+        /// formatting the result, to keep the connection in sync. Discarding the output alone (the
+        /// cancellation hook of `std_out`) would not stop the query on the server.
+        if (!cancelled && query_interrupt_handler.cancelled())
+            cancelQuery();
+
+        if (!connection->poll(poll_interval))
+            continue;
+
         Packet packet = connection->receivePacket();
 
         switch (packet.type)
         {
             case Protocol::Server::Data:
-                onData(packet.block, parsed_query);
+                if (!cancelled)
+                    onData(packet.block, parsed_query);
                 break;
 
             case Protocol::Server::Totals:
-                onTotals(packet.block, parsed_query);
+                if (!cancelled)
+                    onTotals(packet.block, parsed_query);
                 break;
 
             case Protocol::Server::Extremes:
-                onExtremes(packet.block, parsed_query);
+                if (!cancelled)
+                    onExtremes(packet.block, parsed_query);
                 break;
 
             case Protocol::Server::ProfileInfo:
