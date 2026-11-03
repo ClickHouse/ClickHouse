@@ -179,6 +179,9 @@ namespace
         bool has_year = false; /// Whether year was explicitly specified.
         bool has_month = false; /// Whether month was explicitly specified.
         bool has_day_of_month = false; /// Whether day of month was explicitly specified.
+        bool has_week = false; /// Whether ISO week of year was explicitly specified.
+        bool has_day_of_week = false; /// Whether day of week was explicitly specified.
+        bool has_day_of_year = false; /// Whether day of year was explicitly specified.
 
         /// If hour_starts_at_1 = true, is_hour_of_half_day = true, hour's range is [1, 12]
         /// If hour_starts_at_1 = true, is_hour_of_half_day = false, hour's range is [1, 24]
@@ -217,6 +220,9 @@ namespace
             has_year = false;
             has_month = false;
             has_day_of_month = false;
+            has_week = false;
+            has_day_of_week = false;
+            has_day_of_year = false;
 
             hour = 0;
             minute = 0;
@@ -265,10 +271,17 @@ namespace
             has_year = true;
             is_year_of_era = is_year_of_era_;
             is_week_year = is_week_year_;
-            if (is_week_year_ && (!has_month || !has_day_of_month))
+            if (is_week_year_)
             {
-                week_date_format = true;
-                day_of_year_format = false;
+                if (has_week || has_day_of_week || (!has_day_of_year && (!has_month || !has_day_of_month)))
+                {
+                    week_date_format = true;
+                    day_of_year_format = false;
+                }
+            }
+            else if (has_month && has_day_of_month && !has_day_of_year)
+            {
+                week_date_format = false;
             }
             return {};
         }
@@ -295,7 +308,9 @@ namespace
 
             month = month_;
             has_month = true;
-            week_date_format = false;
+            has_day_of_year = false;
+            if (!is_week_year || !has_day_of_month || (!has_week && !has_day_of_week))
+                week_date_format = false;
             day_of_year_format = false;
             if (!has_year)
             {
@@ -312,6 +327,8 @@ namespace
                 RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for week of week year must be in the range [1, 53]", week_)
 
             week = week_;
+            has_week = true;
+            has_day_of_year = false;
             if (is_week_year || !has_month || !has_day_of_month)
             {
                 week_date_format = true;
@@ -332,6 +349,9 @@ namespace
                 RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for day of year must be in the range [1, 366]", day_of_year_)
 
             day_of_year = day_of_year_;
+            has_day_of_year = true;
+            has_week = false;
+            has_day_of_week = false;
             day_of_year_format = true;
             week_date_format = false;
             if (!has_year)
@@ -350,7 +370,9 @@ namespace
 
             day = day_of_month;
             has_day_of_month = true;
-            week_date_format = false;
+            has_day_of_year = false;
+            if (!is_week_year || !has_month || (!has_week && !has_day_of_week))
+                week_date_format = false;
             day_of_year_format = false;
             if (!has_year)
             {
@@ -367,6 +389,8 @@ namespace
                 RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for day of week must be in the range [1, 7]", day_of_week_)
 
             day_of_week = day_of_week_;
+            has_day_of_week = true;
+            has_day_of_year = false;
             if (is_week_year || !has_month || !has_day_of_month)
             {
                 week_date_format = true;
