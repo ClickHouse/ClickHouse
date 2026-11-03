@@ -112,8 +112,6 @@ namespace
         int error_code;
     };
 
-    /// With error_handling = Zero/Null only the code is set. The unused `String` keeps the copy constructor and destructor
-    /// non-trivial, so results are returned through memory: with an error returned in registers, the per-row loop is slower.
     struct ErrorCodeAndMessage
     {
         int error_code;
@@ -122,8 +120,15 @@ namespace
         explicit ErrorCodeAndMessage(int error_code_)
             : error_code(error_code_)
         {}
+
+        template <typename... Args>
+        ErrorCodeAndMessage(int error_code_, FormatStringHelper<Args...> formatter, Args &&... args)
+            : error_code(error_code_)
+            , error_message(formatter.format(std::forward<Args>(args)...))
+        {}
     };
 
+    /// `OrZero`/`OrNull` keep `ErrorCodeAndMessage`: with a code-only error returned in registers their per-row loop is slower.
     template <ErrorHandling error_handling>
     using ParseError = std::conditional_t<error_handling == ErrorHandling::Exception, ParseErrorCode, ErrorCodeAndMessage>;
 
@@ -165,9 +170,11 @@ namespace
     template <ErrorHandling error_handling, ReturnType return_type>
     struct alignas(CH_CACHE_LINE_SIZE) ParsedValue
     {
-        using VoidOrError  = std::expected<void,  ParseError<error_handling>>;
-        using Int32OrError = std::expected<Int32, ParseError<error_handling>>;
-        using Int64OrError = std::expected<Int64, ParseError<error_handling>>;
+        using VoidOrError = std::expected<void, ParseError<error_handling>>;
+        template <ErrorHandling mode = error_handling>
+        using Int32OrError = std::expected<Int32, ParseError<mode>>;
+        template <ErrorHandling mode = error_handling>
+        using Int64OrError = std::expected<Int64, ParseError<mode>>;
 
         static constexpr Int32 min_year = return_type == ReturnType::DateTime64 ? 0 : 1970;
         static constexpr Int32 max_year = return_type == ReturnType::DateTime64 ? 9999 : 2106;
@@ -528,45 +535,63 @@ namespace
         }
 
         /// NOLINTBEGIN(readability-else-after-return)
+        template <ErrorHandling build_error_handling = error_handling>
         [[nodiscard]]
-        static Int32OrError daysSinceEpochFromWeekDate(int32_t week_year_, int32_t week_of_year_, int32_t day_of_week_)
+        static Int32OrError<build_error_handling>
+        daysSinceEpochFromWeekDate(int32_t week_year_, int32_t week_of_year_, int32_t day_of_week_)
         {
             /// The range of week_of_year[1, 53], day_of_week[1, 7] already checked before
             if (!yearIsInValidRange(week_year_))
-                RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Invalid week year {}", week_year_)
+                RETURN_ERROR_IN_MODE(build_error_handling, ErrorCodes::CANNOT_PARSE_DATETIME, "Invalid week year {}", week_year_)
 
             if (week_of_year_ == 53)
             {
                 Int32 days_since_epoch_of_jan_first = 0;
-                ASSIGN_RESULT_OR_RETURN_ERROR(days_since_epoch_of_jan_first, (daysSinceEpochFromDate(week_year_, 1, 1)))
+                ASSIGN_RESULT_OR_RETURN_ERROR(
+                    days_since_epoch_of_jan_first, (daysSinceEpochFromDate<build_error_handling>(week_year_, 1, 1)))
                 Int32 first_day_of_week_year = extractISODayOfTheWeek(days_since_epoch_of_jan_first);
                 if (first_day_of_week_year != 4 && !(isLeapYear(week_year_) && first_day_of_week_year == 3))
-                    RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Invalid week 53 for ISO week year {}", week_year_)
+                    RETURN_ERROR_IN_MODE(
+                        build_error_handling, ErrorCodes::CANNOT_PARSE_DATETIME, "Invalid week 53 for ISO week year {}", week_year_)
             }
 
             Int32 days_since_epoch_of_jan_fourth = 0;
-            ASSIGN_RESULT_OR_RETURN_ERROR(days_since_epoch_of_jan_fourth, (daysSinceEpochFromDate(week_year_, 1, 4)))
+            ASSIGN_RESULT_OR_RETURN_ERROR(
+                days_since_epoch_of_jan_fourth, (daysSinceEpochFromDate<build_error_handling>(week_year_, 1, 4)))
             Int32 first_day_of_week_year = extractISODayOfTheWeek(days_since_epoch_of_jan_fourth);
             return days_since_epoch_of_jan_fourth - (first_day_of_week_year - 1) + 7 * (week_of_year_ - 1) + day_of_week_ - 1;
         }
 
+        template <ErrorHandling build_error_handling = error_handling>
         [[nodiscard]]
-        static Int32OrError daysSinceEpochFromDayOfYear(Int32 year_, Int32 day_of_year_)
+        static Int32OrError<build_error_handling> daysSinceEpochFromDayOfYear(Int32 year_, Int32 day_of_year_)
         {
             if (!isDayOfYearValid(year_, day_of_year_))
-                RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Invalid day of year, out of range (year: {} day of year: {})", year_, day_of_year_)
+                RETURN_ERROR_IN_MODE(
+                    build_error_handling,
+                    ErrorCodes::CANNOT_PARSE_DATETIME,
+                    "Invalid day of year, out of range (year: {} day of year: {})",
+                    year_,
+                    day_of_year_)
 
             Int32 res = 0;
-            ASSIGN_RESULT_OR_RETURN_ERROR(res, (daysSinceEpochFromDate(year_, 1, 1)))
+            ASSIGN_RESULT_OR_RETURN_ERROR(res, (daysSinceEpochFromDate<build_error_handling>(year_, 1, 1)))
             res += day_of_year_ - 1;
             return res;
         }
 
+        template <ErrorHandling build_error_handling = error_handling>
         [[nodiscard]]
-        static Int32OrError daysSinceEpochFromDate(Int32 year_, Int32 month_, Int32 day_)
+        static Int32OrError<build_error_handling> daysSinceEpochFromDate(Int32 year_, Int32 month_, Int32 day_)
         {
             if (!isDateValid(year_, month_, day_))
-                RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Invalid date, out of range (year: {} month: {} day_of_month: {})", year_, month_, day_)
+                RETURN_ERROR_IN_MODE(
+                    build_error_handling,
+                    ErrorCodes::CANNOT_PARSE_DATETIME,
+                    "Invalid date, out of range (year: {} month: {} day_of_month: {})",
+                    year_,
+                    month_,
+                    day_)
             /// Days from the epoch (1970-01-01) to the first day of `year_`, in the proleptic Gregorian
             /// calendar (Howard Hinnant's days_from_civil specialised to January 1). Computed rather than
             /// looked up in a table so the whole supported [0000, 9999] range works, not just years near the epoch.
@@ -581,10 +606,8 @@ namespace
 
         template <ErrorHandling build_error_handling = error_handling>
         [[nodiscard]]
-        std::expected<Int64, ParseError<build_error_handling>> buildDateTime(const DateLUTImpl & time_zone)
+        Int64OrError<build_error_handling> buildDateTime(const DateLUTImpl & time_zone)
         {
-            using Build = ParsedValue<build_error_handling, return_type>;
-
             /// The hour of a half-day clock is stored in [0, 11], and PM adds 12 hours to it. They are added to a copy: for a
             /// time zone name in the string (`z` in Joda syntax), this function also runs before the final conversion, so
             /// adding them to `hour` itself added them twice.
@@ -593,11 +616,11 @@ namespace
             // Convert the parsed date/time into a timestamp.
             Int32 days_since_epoch = 0;
             if (week_date_format)
-                ASSIGN_RESULT_OR_RETURN_ERROR(days_since_epoch, Build::daysSinceEpochFromWeekDate(year, week, day_of_week))
+                ASSIGN_RESULT_OR_RETURN_ERROR(days_since_epoch, daysSinceEpochFromWeekDate<build_error_handling>(year, week, day_of_week))
             else if (day_of_year_format)
-                ASSIGN_RESULT_OR_RETURN_ERROR(days_since_epoch, Build::daysSinceEpochFromDayOfYear(year, day_of_year))
+                ASSIGN_RESULT_OR_RETURN_ERROR(days_since_epoch, daysSinceEpochFromDayOfYear<build_error_handling>(year, day_of_year))
             else
-                ASSIGN_RESULT_OR_RETURN_ERROR(days_since_epoch, Build::daysSinceEpochFromDate(year, month, day))
+                ASSIGN_RESULT_OR_RETURN_ERROR(days_since_epoch, daysSinceEpochFromDate<build_error_handling>(year, month, day))
 
             Int64 seconds_since_epoch = days_since_epoch * 86400UZ + hour_of_day * 3600UZ + minute * 60UZ + second;
 
@@ -863,7 +886,11 @@ namespace
                             str_ref,
                             std::string_view(cur, end - cur));
                     else
-                        result = std::unexpected(ErrorCodeAndMessage(ErrorCodes::CANNOT_PARSE_DATETIME));
+                        result = std::unexpected(ErrorCodeAndMessage(
+                            ErrorCodes::CANNOT_PARSE_DATETIME,
+                            "Invalid format input {} is malformed at {}",
+                            str_ref,
+                            std::string_view(cur, end - cur)));
                 }
 
                 if (result.has_value())
@@ -1894,7 +1921,8 @@ namespace
                 const DateLUTImpl & date_time_zone = DateLUT::instance(read_time_zone);
                 const bool has_offset_before_time_zone = parsed_value.has_time_zone_offset;
                 /// Returns the error instead of throwing it: the failure is reported with the message below.
-                const auto result = parsed_value.template buildDateTime<ErrorHandling::Zero>(date_time_zone);
+                constexpr auto build_error_handling = error_handling == ErrorHandling::Exception ? ErrorHandling::Zero : error_handling;
+                const auto result = parsed_value.template buildDateTime<build_error_handling>(date_time_zone);
                 if (result.has_value())
                 {
                     /// An offset parsed before the time zone name selects the instant, for example one of the two occurrences
