@@ -1037,8 +1037,11 @@ void optimizeTreeSecondPass(
             stack, root, [&](auto & frame_node) { tryPushHavingPrefilterIntoAggregation(&frame_node, nodes, extra_settings); });
     }
 
-    /// Last, so that the plan it measures and switches is the settled one.
+    /// After every pass that changes the plan, so that the plan it measures and switches is the settled one.
     considerEnablingParallelReplicas(optimization_settings, root, query_plan);
+
+    /// Last: it reads the final consumers of every remote read.
+    allowReadingShardsFromSeveralReplicas(root);
 }
 
 void addStepsToBuildSets(

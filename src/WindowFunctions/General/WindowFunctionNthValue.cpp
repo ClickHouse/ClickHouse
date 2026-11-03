@@ -46,7 +46,7 @@ public:
 
     void evaluate(char *, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
     {
-        for (size_t i = 0; i < bounds.rows; ++i)
+        for (Int64 i = 0; i < bounds.rows; ++i)
         {
             const Int64 offset = arguments.at(1, bounds.row[i]).getInt();
             if (offset <= 0)
