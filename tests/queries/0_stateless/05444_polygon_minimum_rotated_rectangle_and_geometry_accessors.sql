@@ -35,6 +35,19 @@ FROM (SELECT k, polygonMinimumRotatedRectangleCartesian([(0., 0.), (pow(10., k),
 ORDER BY k;
 SELECT polygonMinimumRotatedRectangleCartesian([(0., 0.), (1e300, 0.), (1e300, 1e-300), (0., 1e-300)]::MultiPoint);
 SELECT polygonMinimumRotatedRectangleCartesian([(0., 0.), (1e-250, 0.), (1e-250, 1e250), (0., 1e250)]::MultiPoint);
+-- A rectangle with sides of 1e300 and 1e-300 (in both orientations) keeps its sides.
+-- The coordinates are divided by the scales of the axes and rounded, because a corner of a rotated rectangle can be off by one ulp of 1e300.
+SELECT arrayMap(p -> (round(p.1 / scale.1, 9), round(p.2 / scale.2, 9)), polygonMinimumRotatedRectangleCartesian(points::MultiPoint)[1])
+FROM (SELECT arrayJoin([
+    ([(0., 0.), (1e300, 0.), (1e300, 1e-300), (0., 1e-300)], (1e300, 1e-300)),
+    ([(0., 0.), (1e-300, 0.), (1e-300, 1e300), (0., 1e300)], (1e-300, 1e300)),
+    ([(0., 0.), (1e250, 0.), (1e250, 1e-250), (0., 1e-250)], (1e250, 1e-250)),
+    ([(0., 0.), (1e300, 1e300), (1e300, 1e-300)], (1e300, 1e300)),
+    -- Huge coordinates, where the area is beyond the range of `Float64`.
+    ([(0., 0.), (4e300, 3e300), (1e300, 2e300)], (1e300, 1e300)),
+    -- A triangle with a diagonal edge, whose tiny x difference must not round to zero next to its huge y difference.
+    ([(0., 0.), (1e-250, 0.), (1e-250, 1e250)], (1e-250, 1e250)),
+    ([(0., 0.), (pow(2., -700), 0.), (pow(2., -700), pow(2., 700))], (pow(2., -700), pow(2., 700)))]) AS t, t.1 AS points, t.2 AS scale);
 -- Tiny points next to a far one, where the products of their differences would underflow: (3e-201, 5e-201) is inside.
 SELECT polygonConvexHullCartesian([(1., 1.), (-9e-201, 2e-201), (-3e-201, -4e-201), (3e-201, 5e-201)]::MultiPoint);
 

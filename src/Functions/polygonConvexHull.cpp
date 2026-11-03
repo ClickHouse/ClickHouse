@@ -62,6 +62,34 @@ int exponentOf(Float64 value)
     return value == 0 || std::isinf(value) ? 0 : std::ilogb(value);
 }
 
+/// The powers of two for the x and the y coordinates before the convex hull, from the smallest nonzero
+/// and the largest absolute values on each axis. The products of the differences of the scaled coordinates must neither
+/// overflow nor underflow. Bringing the largest value of each axis to 2^500 does that, so these powers are preferred,
+/// but they are moved, if possible, so that no coordinate becomes subnormal, where it would be rounded.
+/// If that is not possible together with the bound for underflow, which is for the smallest differences on both axes at once,
+/// the bound is dropped: a rounded coordinate is a sure error, and a product that underflows rarely decides a side.
+std::pair<int, int> hullScales(Float64 min_x, Float64 max_x, Float64 min_y, Float64 max_y)
+{
+    const int x_low = -1022 - exponentOf(min_x);
+    const int x_high = 1020 - exponentOf(max_x);
+    const int y_low = -1022 - exponentOf(min_y);
+    const int y_high = 1020 - exponentOf(max_y);
+    const int sum_high = std::min(1000 - exponentOf(max_x) - exponentOf(max_y), x_high + y_high);
+    int sum_low = std::max(-800 - exponentOf(min_x) - exponentOf(min_y), x_low + y_low);
+    if (sum_low > sum_high)
+        sum_low = x_low + y_low;
+
+    int x_scale = 500 - exponentOf(max_x);
+    int y_scale = 500 - exponentOf(max_y);
+    if (sum_low <= sum_high)
+    {
+        const int sum = std::clamp(x_scale + y_scale, sum_low, sum_high);
+        x_scale = std::clamp(x_scale, std::max(x_low, sum - y_high), std::min(x_high, sum - y_low));
+        y_scale = sum - x_scale;
+    }
+    return {x_scale, y_scale};
+}
+
 /// A `Float64` with a separate exponent, so that sums and products of any coordinates neither overflow nor underflow.
 class FloatWithExponent
 {
@@ -306,8 +334,7 @@ public:
                 {
                     /// Boost decides the side of a point exactly from the products of differences of x and y coordinates,
                     /// unless they overflow or underflow. Multiplying the x and the y coordinates by positive factors keeps
-                    /// the convex hull the same, so then each of them is scaled to bring its largest absolute value to 2^500.
-                    /// It is exact unless there are also values smaller than the largest one by more than 2^1500.
+                    /// the convex hull the same, so then each of them is scaled by a power of two, see `hullScales`.
                     Float64 max_x = 0;
                     Float64 max_y = 0;
                     Float64 min_x = std::numeric_limits<Float64>::infinity(); /// The smallest nonzero absolute values.
@@ -325,8 +352,7 @@ public:
                     });
                     /// A nonzero difference of coordinates is at least 2^-52 of the smaller of them, or of the nonzero one.
                     const bool scaled = exponentOf(max_x) + exponentOf(max_y) > 1000 || exponentOf(min_x) + exponentOf(min_y) < -800;
-                    const int x_scale = scaled ? 500 - exponentOf(max_x) : 0;
-                    const int y_scale = scaled ? 500 - exponentOf(max_y) : 0;
+                    const auto [x_scale, y_scale] = scaled ? hullScales(min_x, max_x, min_y, max_y) : std::pair(0, 0);
                     if (scaled)
                         scaleByPowersOfTwo<Point>(geometries[i], x_scale, y_scale);
 
