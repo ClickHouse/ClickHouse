@@ -17,17 +17,22 @@ echo "SECRET_FILE_CONTENT_MARKER" > "$yaml"
 
 $CLICKHOUSE_CLIENT --query "DROP DICTIONARY IF EXISTS ${CLICKHOUSE_DATABASE}.no_leak"
 
-$CLICKHOUSE_CLIENT --query "
-    CREATE DICTIONARY ${CLICKHOUSE_DATABASE}.no_leak
-    (regexp String, value String)
-    PRIMARY KEY regexp
-    SOURCE(YAMLRegExpTree(PATH '$yaml'))
-    LAYOUT(regexp_tree) LIFETIME(0)"
+# The parse error may surface at CREATE (eager loading) or at the first use (lazy
+# loading), so trigger a load every way and inspect the combined output. Whatever
+# path it takes, the message must name the problem without echoing the file content.
+output=$(
+    $CLICKHOUSE_CLIENT --query "
+        CREATE DICTIONARY ${CLICKHOUSE_DATABASE}.no_leak
+        (regexp String, value String)
+        PRIMARY KEY regexp
+        SOURCE(YAMLRegExpTree(PATH '$yaml'))
+        LAYOUT(regexp_tree) LIFETIME(0)" 2>&1
+    $CLICKHOUSE_CLIENT --query "SYSTEM RELOAD DICTIONARY ${CLICKHOUSE_DATABASE}.no_leak" 2>&1
+    $CLICKHOUSE_CLIENT --query "SELECT dictGet('${CLICKHOUSE_DATABASE}.no_leak', 'value', 'anything')" 2>&1
+)
 
-# Loading fails with the fixed message and without echoing the file content.
-output=$($CLICKHOUSE_CLIENT --query "SELECT dictGet('${CLICKHOUSE_DATABASE}.no_leak', 'value', 'anything')" 2>&1)
 echo "$output" | grep -a -q "SECRET_FILE_CONTENT_MARKER" && echo "LEAK" || echo "no leak"
 echo "$output" | grep -a -q "must be a yaml list of match rules" && echo "expected error" || echo "MISSING EXPECTED ERROR"
 
 $CLICKHOUSE_CLIENT --query "DROP DICTIONARY IF EXISTS ${CLICKHOUSE_DATABASE}.no_leak"
-rm -rf "$USER_FILES_PATH/test_05493"
+rm -rf "${USER_FILES_PATH:?}/test_05493"
