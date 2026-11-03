@@ -162,8 +162,8 @@ public:
 
     void addStream();
     void streamFailed();
-    /// Returns the data files of all streams to the last stream to finish, and nothing to the others.
-    std::optional<std::vector<IcebergWrittenPartition>> streamFinished(std::vector<IcebergWrittenPartition> partitions);
+    /// Takes over the data files of a finished stream. The last stream to finish gets the data files of all streams to commit them.
+    std::optional<std::vector<IcebergWrittenPartition>> finishStreamAndGetAllPartitionsIfLast(std::vector<IcebergWrittenPartition> partitions);
     void setCommitted();
 
 private:

@@ -1222,7 +1222,7 @@ void IcebergInsertTransaction::streamFailed()
     --unfinished_streams;
 }
 
-std::optional<std::vector<IcebergWrittenPartition>> IcebergInsertTransaction::streamFinished(std::vector<IcebergWrittenPartition> partitions)
+std::optional<std::vector<IcebergWrittenPartition>> IcebergInsertTransaction::finishStreamAndGetAllPartitionsIfLast(std::vector<IcebergWrittenPartition> partitions)
 {
     std::lock_guard lock(mutex);
     chassert(unfinished_streams > 0);
@@ -1481,7 +1481,7 @@ void IcebergStorageSink::finalizeBuffers()
     }
 
     reported = true;
-    auto all_partitions = transaction->streamFinished(std::move(partitions));
+    auto all_partitions = transaction->finishStreamAndGetAllPartitionsIfLast(std::move(partitions));
     if (!all_partitions)
     {
         /// The transaction owns the data files now, and the last stream to finish commits them.
