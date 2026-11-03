@@ -41,10 +41,10 @@
 
     <substitutions>
         <substitution>
-            <name>join_algorithm</name>
+            <name>join_settings</name>
             <values>
-                <value>hash</value>
-                <value>parallel_hash</value>
+                <value>join_algorithm = 'hash', parallel_hash_join_threshold = 18446744073709551615</value>
+                <value>join_algorithm = 'parallel_hash', parallel_hash_join_threshold = 0</value>
             </values>
         </substitution>
     </substitutions>
@@ -73,7 +73,7 @@
         )
         GROUP BY cid
         FORMAT Null
-        SETTINGS join_algorithm = '{join_algorithm}'
+        SETTINGS {join_settings}
     ]]></query>
 
     <!-- The same shape with default settings: grouping by a single `UInt16` key selects a fixed hash

@@ -3264,7 +3264,13 @@ protected:
     bool getResultImpl(ASTPtr & node) override
     {
         if (if_permitted)
+        {
+            /// The `ELSE` branch is a table function.
+            if (elements.size() == 2)
+                if (auto * else_function = elements[1]->as<ASTFunction>())
+                    else_function->setKind(ASTFunction::Kind::TABLE_FUNCTION);
             node = makeASTFunction("viewIfPermitted", std::move(elements));
+        }
         else
             node = makeASTFunction("view", std::move(elements));
 
@@ -3470,6 +3476,9 @@ static bool isArrayConstructorWithKeyword(IParser::Pos pos)
                 if (depth == 0)
                     return true;
                 break;
+            /// The statement ends before the bracket is closed.
+            case TokenType::Semicolon:
+                return false;
             default:
                 break;
         }
@@ -3576,7 +3585,11 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         auto start = getFunctionLayer(identifier, is_table_function, /*is_first_identifier=*/true, allow_function_parameters);
         start->is_table_function = is_table_function;
         if (ParserExpressionImpl().parse(std::move(start), pos, node, expected))
+        {
+            if (is_table_function)
+                node->as<ASTFunction &>().setKind(ASTFunction::Kind::TABLE_FUNCTION);
             return true;
+        }
     }
 
     return false;

@@ -1,0 +1,7 @@
+backup
+1
+the restore is cancelled while it is inside an entry write
+1
+the entry written before the cancellation is restored, the remaining one is unchanged
+['key_backup']
+['key_current']
