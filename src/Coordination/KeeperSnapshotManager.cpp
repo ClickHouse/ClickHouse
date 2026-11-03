@@ -1163,6 +1163,22 @@ std::vector<SnapshotMoveCandidate> KeeperSnapshotManager::selectSnapshotsToMove(
         if (file_info->retired_for_removal.load(std::memory_order_acquire))
             continue;
 
+        /// A retained recovery copy of this index can occupy the destination path, and it may be the
+        /// only readable copy: the move would overwrite it with the registered file.
+        if (auto duplicate_it = retained_duplicate_snapshots.find(idx); duplicate_it != retained_duplicate_snapshots.end()
+            && std::ranges::any_of(
+                duplicate_it->second,
+                [&](const auto & duplicate) { return duplicate->disk == target_disk && duplicate->path == file_info->path; }))
+        {
+            LOG_DEBUG(
+                log,
+                "Not moving snapshot {} to disk {} because its retained recovery copy occupies {} there",
+                idx,
+                target_disk->getName(),
+                file_info->path);
+            continue;
+        }
+
         const int64_t count = file_info.use_count();
         if (count > 1)
         {

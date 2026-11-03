@@ -3273,9 +3273,9 @@ TEST_P(CoordinationTestWithCompression, OrphanRemovalArchivesSameIndexDuplicates
 }
 
 /// Startup can retain a same-index copy on the latest disk (its move marker has an unknown version) while
-/// it registers the copy on the regular disk. `finishSnapshotRecovery` then moves the registered snapshot
-/// onto the path of the retained copy, so both refer to one file, which orphan recovery must archive once.
-TEST_P(CoordinationTestWithCompression, OrphanRemovalArchivesMovedOntoRetainedCopyOnce)
+/// it registers the copy on the regular disk. `finishSnapshotRecovery` must not move the registered snapshot
+/// onto the path of the retained copy, and orphan recovery archives both copies.
+TEST_P(CoordinationTestWithCompression, OrphanRemovalArchivesRetainedCopyAtMoveDestination)
 {
     if (GetParam().use_lsmt_storage)
         GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
@@ -5939,45 +5939,47 @@ TEST_P(CoordinationTest, MoveSnapshotCandidateHonorsBoolPublishCallback)
     EXPECT_TRUE(restored_storage->nodes_storage->getCommittedNodeSimple("/move_me", /*out_stats=*/nullptr, /*out_data=*/nullptr));
 }
 
-TEST_P(CoordinationTest, MoveOntoRetainedCopyKeepsPinnedSnapshot)
+TEST_P(CoordinationTest, PlacementMovePreservesRetainedCopyAtDestination)
 {
     ChangelogDirTest snapshots("./snapshots");
     ChangelogDirTest latest("./snapshots_latest");
     ChangelogDirTest rocks("./rocksdb");
 
     auto ctx = makeContextForSnapshotApply(use_lsmt_storage, "./snapshots", "./rocksdb");
-    auto latest_disk = std::make_shared<DB::DiskLocal>("LatestSnapshotDisk", "./snapshots_latest");
+    DB::DiskPtr latest_disk = std::make_shared<DB::DiskLocal>("LatestSnapshotDisk", "./snapshots_latest");
     ctx->setLatestSnapshotDisk(latest_disk);
     auto buf_80 = makeSingleNodeSnapshotBuffer(ctx, 80, "/kept80", "from_80");
     auto buf_90 = makeSingleNodeSnapshotBuffer(ctx, 90, "/kept90", "from_90");
 
-    /// The same snapshot file on both disks: startup selects the latest-disk copy and retains the other one.
+    /// The regular disk has the only readable copy of snapshot 80, and the latest disk has an incomplete
+    /// copy with the same name. Startup registers the latest-disk copy and retains the regular one.
     constexpr auto path_80 = "snapshot_80_aaaaaaaa.bin.zstd";
     auto regular_disk = ctx->getSnapshotDisk();
     writeSnapshotBufferToFile(regular_disk, path_80, buf_80);
-    writeSnapshotBufferToFile(latest_disk, path_80, buf_80);
+    {
+        auto out = latest_disk->writeFile(path_80);
+        const std::string garbage = "incomplete copy";
+        out->write(garbage.data(), garbage.size());
+        out->finalize();
+    }
     writeSnapshotBufferToFile(latest_disk, "snapshot_90_bbbbbbbb.bin.zstd", buf_90);
-    const auto digest_80 = DB::computeKeeperFileDigest(latest_disk, path_80);
+    const auto regular_digest_80 = DB::computeKeeperFileDigest(regular_disk, path_80);
 
     DB::KeeperSnapshotManager manager(3, ctx, true);
     EXPECT_EQ(manager.totalSnapshots(), 2);
     EXPECT_EQ(manager.getSnapshotPin(80)->disk, latest_disk);
 
-    /// Maintenance moves the non-latest snapshot onto the path of its retained copy.
+    /// Maintenance must not move the non-latest snapshot onto the path of its retained copy.
     manager.runMaintenanceInline(0);
-    auto pin = manager.getSnapshotPin(80);
-    ASSERT_NE(pin, nullptr);
-    EXPECT_EQ(pin->disk, regular_disk);
-    EXPECT_FALSE(latest_disk->existsFile(path_80));
-    EXPECT_TRUE(regular_disk->existsFile(path_80));
+    EXPECT_EQ(manager.getSnapshotPin(80)->disk, latest_disk);
+    EXPECT_TRUE(latest_disk->existsFile(path_80));
+    ASSERT_TRUE(regular_disk->existsFile(path_80));
+    EXPECT_EQ(DB::computeKeeperFileDigest(regular_disk, path_80), regular_digest_80);
 
-    /// Retiring the index must not unlink the file while the registered snapshot is pinned.
+    /// Retiring the index removes both copies.
     manager.removeSnapshot(80);
-    EXPECT_TRUE(regular_disk->existsFile(path_80));
-    EXPECT_EQ(DB::computeKeeperFileDigest(pin->disk, pin->path), digest_80);
-
-    pin.reset();
     EXPECT_FALSE(regular_disk->existsFile(path_80));
+    EXPECT_FALSE(latest_disk->existsFile(path_80));
     EXPECT_EQ(manager.totalSnapshots(), 1);
 }
 
