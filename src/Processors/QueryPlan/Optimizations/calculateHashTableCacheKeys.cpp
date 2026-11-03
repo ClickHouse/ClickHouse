@@ -403,10 +403,10 @@ void calculateHashTableCacheKeys(
 
         if (auto * join_step = dynamic_cast<JoinStepLogical *>(node.step.get()))
         {
-            // `HashTablesStatistics` is used currently only for `parallel_hash_join`, i.e. the following calculation doesn't make sense for other join algorithms.
+            /// `HashTablesStatistics` only feeds the hash join family, so the key is not worth computing elsewhere.
             const auto & join_expression = join_step->getJoinOperator().expression;
             bool single_disjunct = join_expression.size() > 1 || (join_expression.size() == 1 && !join_expression.front().isFunction(JoinConditionOperator::Or));
-            const bool calculate = allowParallelHashJoin(
+            const bool calculate = allowHashJoinCacheKeys(
                 join_step->getJoinSettings().join_algorithms,
                 join_step->getJoinOperator().kind,
                 typeid_cast<JoinStepLogicalLookup *>(node.children.back()->step.get()),
@@ -737,7 +737,8 @@ void setAggregationHashTableCacheKeys(const QueryPlanOptimizationSettings & opti
             auto * node = stack.back();
             stack.pop_back();
             /// Without GROUP BY keys the method is `without_key`, whose `init` discards the size
-            /// hint, so such a key can never be consumed.
+            /// hint, so such a key can never be consumed, except by the radix partitioned `uniqExact`
+            /// (see `AggregatingStep::canUseRadixUniqExact`).
             /// A step whose `stats_collecting_params` were left default-constructed (zero
             /// `max_entries_for_hash_table_stats`) keeps no entries, so a key cannot be consumed
             /// there either — stamping one would only make the query collect statistics that are
@@ -745,7 +746,10 @@ void setAggregationHashTableCacheKeys(const QueryPlanOptimizationSettings & opti
             /// Skipping such a step also makes a server-level
             /// `max_entries_for_hash_table_stats = 0` a clean disable for aggregation.
             if (const auto * aggregating = typeid_cast<const AggregatingStep *>(node->step.get());
-                aggregating && !aggregating->getParams().keys.empty()
+                aggregating
+                && (!aggregating->getParams().keys.empty()
+                    || (optimization_settings.optimize_uniq_exact_radix_partitioning
+                        && aggregating->canUseRadixUniqExact()))
                 && aggregating->getParams().stats_collecting_params.max_entries_for_hash_table_stats != 0)
                 aggregating_nodes.push_back(node);
             for (auto * child : node->children)

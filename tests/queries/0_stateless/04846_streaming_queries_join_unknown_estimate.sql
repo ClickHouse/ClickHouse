@@ -3,7 +3,6 @@
 -- therefore unknown cardinality, not an exact zero for join-order estimation.
 
 SET enable_streaming_queries = 1;
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 SET query_plan_optimize_join_order_randomize = 0;
 SET query_plan_join_swap_table = 0;
