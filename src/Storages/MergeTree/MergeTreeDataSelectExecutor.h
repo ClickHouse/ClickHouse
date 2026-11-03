@@ -251,7 +251,8 @@ public:
         const ContextPtr & context,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
         LoggerPtr log,
-        ReadFromMergeTree::IndexStats & index_stats);
+        ReadFromMergeTree::IndexStats & index_stats,
+        bool check_index_usage = true);
 
     /// Filter parts using minmax index and partition key.
     static RangesInDataParts filterPartsByPartition(

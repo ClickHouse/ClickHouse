@@ -705,11 +705,12 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterParts(
     const ContextPtr & context,
     const PartitionIdToMaxBlock * max_block_numbers_to_read,
     LoggerPtr log,
-    ReadFromMergeTree::IndexStats & index_stats)
+    ReadFromMergeTree::IndexStats & index_stats,
+    bool check_index_usage)
 {
     auto res = filterPartsByPartition(
         parts, indexes.partition_pruner, indexes.minmax_idx_condition, indexes.part_values,
-        metadata_snapshot, data, context, max_block_numbers_to_read, log, index_stats);
+        metadata_snapshot, data, context, max_block_numbers_to_read, log, index_stats, check_index_usage);
     return filterPartsByStatistics(res, metadata_snapshot, query_info, mutations_snapshot, context, log, index_stats);
 }
 
@@ -757,9 +758,11 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
         part_filter_counters,
         query_status);
 
-    ProfileEvents::increment(
-        ProfileEvents::GranulesDroppedByPartitionKey,
-        part_filter_counters.num_initial_selected_granules - part_filter_counters.num_granules_after_partition_pruner);
+    /// the estimation passes prune the same parts again with `check_index_usage = false`
+    if (check_index_usage)
+        ProfileEvents::increment(
+            ProfileEvents::GranulesDroppedByPartitionKey,
+            part_filter_counters.num_initial_selected_granules - part_filter_counters.num_granules_after_partition_pruner);
 
     index_stats.emplace_back(ReadFromMergeTree::IndexStat{
         .type = ReadFromMergeTree::IndexType::None,

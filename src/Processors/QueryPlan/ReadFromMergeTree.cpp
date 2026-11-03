@@ -6935,7 +6935,7 @@ RangesInDataParts ReadFromMergeTree::getPartsForPrewhere() const
     IndexStats unused_stats;
     return MergeTreeDataSelectExecutor::filterParts(
         getParts(), *indexes, getStorageMetadata(), data, query_info, mutations_snapshot, getContext(),
-        max_block_numbers_to_read.get(), log, unused_stats);
+        max_block_numbers_to_read.get(), log, unused_stats, /* check_index_usage */ false);
 }
 
 IStorage::ColumnSizeByName ReadFromMergeTree::getColumnSizesForPrewhere(
@@ -7022,7 +7022,7 @@ ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstim
         auto pruned_parts = MergeTreeDataSelectExecutor::filterPartsByPartition(
             parts, indexes->partition_pruner, indexes->minmax_idx_condition,
             indexes->part_values, getStorageMetadata(), data, getContext(),
-            max_block_numbers_to_read.get(), getLogger("ReadFromMergeTree"), unused_stats);
+            max_block_numbers_to_read.get(), getLogger("ReadFromMergeTree"), unused_stats, /* check_index_usage */ false);
         return data.getConditionSelectivityEstimator(pruned_parts, required_columns, getContext());
     }
 
