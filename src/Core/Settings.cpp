@@ -1677,7 +1677,7 @@ Possible values:
     DECLARE(UInt64, distributed_shard_retry_count, 0, R"(
 The maximum number of retries per shard after a replica returns a retryable exception in a distributed read. Retryable errors are `TOO_MANY_SIMULTANEOUS_QUERIES` and `CANNOT_OPEN_FILE` received in a server exception packet. Network errors, connection loss, and timeouts are not retried by this setting.
 
-Retries are supported for reads that select one replica per shard, including hedged requests, `remote`/`cluster` table functions, and lazy remote reads. Reads using multiple replicas or a task coordinator are not retried by this setting.
+Retries are supported for reads that select one replica per shard, including hedged requests, `remote`/`cluster` table functions, and lazy remote reads. Task-based parallel replicas can retry the same assigned replica before it announces parts or requests work; the limit applies separately to each replica. Other reads using multiple replicas or a task iterator are not retried by this setting.
 
 A retry is allowed only before the shard has returned rows, progress, totals, extremes, or profile information. Once that state has been applied, retrying could duplicate results or charge read limits and quotas twice.
 

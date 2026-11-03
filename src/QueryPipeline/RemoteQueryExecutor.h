@@ -390,6 +390,7 @@ private:
     size_t retry_count = 0;
     int last_retry_error_code = 0;
     bool should_retry = false;
+    bool retry_on_assigned_replica = false;
 
     /// Progress, totals, profile information and task assignments cannot be rolled back.
     bool retry_forbidden = false;

@@ -284,6 +284,7 @@ namespace ServerSetting
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_OPEN_FILE;
     extern const int QUERY_CACHE_USED_WITH_NON_THROW_OVERFLOW_MODE;
     extern const int INTO_OUTFILE_NOT_ALLOWED;
     extern const int INVALID_TRANSACTION;
@@ -310,6 +311,7 @@ namespace FailPoints
     extern const char terminate_with_std_exception[];
     extern const char libcxx_hardening_out_of_bounds_assertion[];
     extern const char remote_query_executor_exception_retryable[];
+    extern const char remote_query_executor_cannot_open_file_once[];
     extern const char trigger_sanitizer_error[];
 }
 
@@ -2344,10 +2346,15 @@ static BlockIO executeQueryImpl(
 
     const auto & client_info = context->getClientInfo();
 
-    fiu_do_on(FailPoints::remote_query_executor_exception_retryable, {
-        if (!internal && client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+    if (!internal && client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+    {
+        fiu_do_on(FailPoints::remote_query_executor_exception_retryable, {
             throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES, "Injected TOO_MANY_SIMULTANEOUS_QUERIES error (retryable)");
-    });
+        });
+        fiu_do_on(FailPoints::remote_query_executor_cannot_open_file_once, {
+            throw Exception(ErrorCodes::CANNOT_OPEN_FILE, "Injected CANNOT_OPEN_FILE error (retryable)");
+        });
+    }
 
     if (client_info.initial_query_start_time == 0)
     {

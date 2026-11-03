@@ -1,4 +1,5 @@
 <clickhouse>
+    <process_query_plan_packet>true</process_query_plan_packet>
     <logger>
         <level>trace</level>
     </logger>

@@ -504,6 +504,8 @@ static struct InitFiu
     REGULAR(aggregate_function_state_transfer_throw_after_child) \
     REGULAR(marks_loader_hold_task_until_canceled) \
     REGULAR(remote_query_executor_exception_retryable) \
+    ONCE(remote_query_executor_cannot_open_file_once) \
+    REGULAR(remote_query_executor_exception_after_sending_announcement) \
     REGULAR(remote_query_executor_exception_after_sending_data) \
     REGULAR(remote_query_executor_exception_after_sending_progress) \
     REGULAR(whatif_projection_scan_cut_short)

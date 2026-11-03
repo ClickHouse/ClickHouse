@@ -151,14 +151,16 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     std::shared_ptr<const QueryPlan> query_plan_)
     : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, query_plan_, extension_)
 {
-    /// Note: connection_pool_with_failover_ is intentionally NOT stored into the
-    /// connection_pool_with_failover member here, so the shard-level retry path in processPacket()
-    /// stays disabled for this constructor. It is bound to a single replica's pool, and its
-    /// create_connections re-establishes against that same pool, so a retry could only re-hit the
-    /// same replica rather than fail over. This constructor is used by parallel replicas
-    /// (ReadFromParallelRemoteReplicasStep::createPipeForSingeReplica), which handle replica
-    /// failure through the reading coordinator (markReplicaAsUnavailable) instead. The failover
-    /// pool is still used below for connect-time error tracking via incrementErrorCount.
+    /// Parallel replicas may retry the same assigned replica before it announces parts or requests work.
+    /// Keeping the pool preserves its coordinator identity; later packets set `retry_forbidden`.
+    retry_on_assigned_replica = extension_ && extension_->parallel_reading_coordinator
+        && extension_->replica_info && !extension_->task_iterator;
+    if (retry_on_assigned_replica)
+    {
+        connection_pool_with_failover = connection_pool_with_failover_;
+        pool_mode = PoolMode::GET_ONE;
+        get_replica_pool = [pool] { return pool; };
+    }
     create_connections = [this, pool, throttler, extension_, connection_pool_with_failover_](AsyncCallback)
     {
         const Settings & settings = context->getSettingsRef();
@@ -198,7 +200,8 @@ RemoteQueryExecutor::RemoteQueryExecutor(
                     && parallel_replicas_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_STREAM_ID
                     && (!query_plan || query_plan_serialization_version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_REPLICAS))
                 {
-                    ProfileEvents::increment(ProfileEvents::ParallelReplicasAvailableCount);
+                    if (retry_count == 0)
+                        ProfileEvents::increment(ProfileEvents::ParallelReplicasAvailableCount);
 
                     connection_entries.emplace_back(std::move(result.entry));
                 }
@@ -930,9 +933,7 @@ bool RemoteQueryExecutor::isRetryableError(int error_code) const
     ///
     /// - TOO_MANY_SIMULTANEOUS_QUERIES: the replica is at its concurrency limit; either
     ///   another replica or a later retry on the same replica (once a slot frees up) can succeed.
-    /// - CANNOT_OPEN_FILE: seen in practice when a replica hits its open file descriptor
-    ///   limit (EMFILE/ENFILE) or transiently cannot open a part's file; another replica
-    ///   usually has the data available.
+    /// - `CANNOT_OPEN_FILE`: returned by leaf nodes for filesystem or I/O issues while reading parts.
     return error_code == ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES
         || error_code == ErrorCodes::CANNOT_OPEN_FILE;
 }
@@ -940,10 +941,10 @@ bool RemoteQueryExecutor::isRetryableError(int error_code) const
 void RemoteQueryExecutor::retryQuery()
 {
     chassert(!was_cancelled && !got_data_from_replica && !retry_forbidden);
+    chassert(!retry_on_assigned_replica || !announcement_received);
     chassert(connection_pool_with_failover && get_replica_pool);
     auto failed_pool = get_replica_pool();
     chassert(failed_pool);
-    connection_pool_with_failover->incrementErrorCount(failed_pool);
 
     ++retry_count;
     ProfileEvents::increment(ProfileEvents::DistributedTryCount);
@@ -964,6 +965,7 @@ void RemoteQueryExecutor::retryQuery()
 
     sent_query = false;
     was_cancelled = false;
+    drain_was_skipped = false;
     got_exception_from_replica = false;
     should_retry = false;
 }
@@ -1013,11 +1015,16 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
             /// If the error is retryable and config suggests we should do so, reset query state and retry
             const auto max_retries = context->getSettingsRef()[Setting::distributed_shard_retry_count];
             if (isRetryableError(packet.exception->code()) && !got_data_from_replica && !retry_forbidden && retry_count < max_retries
-                && connection_pool_with_failover && pool_mode == PoolMode::GET_ONE && !extension && get_replica_pool && get_replica_pool())
+                && connection_pool_with_failover && pool_mode == PoolMode::GET_ONE
+                && (!extension || retry_on_assigned_replica) && get_replica_pool)
             {
-                last_retry_error_code = packet.exception->code();
-                should_retry = true;
-                break;
+                if (auto failed_pool = get_replica_pool())
+                {
+                    connection_pool_with_failover->incrementErrorCount(failed_pool);
+                    last_retry_error_code = packet.exception->code();
+                    should_retry = true;
+                    break;
+                }
             }
 
             if (shouldIgnoreShardException(packet.exception->code()))

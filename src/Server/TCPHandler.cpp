@@ -149,6 +149,7 @@ extern const char parallel_replicas_delay_announcement[];
 extern const char parallel_replicas_reading_response_timeout[];
 extern const char remote_query_executor_exception_after_sending_data[];
 extern const char remote_query_executor_exception_after_sending_progress[];
+extern const char remote_query_executor_exception_after_sending_announcement[];
 extern const char tcp_handler_fail_connection_setup[];
 }
 }
@@ -888,6 +889,9 @@ void TCPHandler::runImpl()
                             const auto announcement_mode = announcement.mode;
                             const bool wants_analyzed_ranges = announcement.wants_analyzed_ranges;
                             sendMergeTreeAllRangesAnnouncement(*query_state, std::move(announcement));
+                            fiu_do_on(FailPoints::remote_query_executor_exception_after_sending_announcement, {
+                                throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES, "Injected error after announcing parts");
+                            });
                             ProfileEvents::increment(ProfileEvents::MergeTreeAllRangesAnnouncementsSent);
                             ProfileEvents::increment(
                                 ProfileEvents::MergeTreeAllRangesAnnouncementsSentElapsedMicroseconds, watch.elapsedMicroseconds());

@@ -16,6 +16,9 @@ node4 = cluster.add_instance("node4", main_configs=["configs/remote_servers.xml"
 nodes = (node1, node2, node3, node4)
 failpoints = (
     "remote_query_executor_exception_retryable",
+    "remote_query_executor_cannot_open_file_once",
+    "remote_query_executor_exception_after_sending_announcement",
+    "parallel_replicas_wait_for_unused_replicas",
     "remote_query_executor_exception_after_sending_data",
     "remote_query_executor_exception_after_sending_progress",
     "use_delayed_remote_source",
@@ -33,6 +36,10 @@ def started_cluster():
                 "ENGINE = Distributed(test_cluster, default, local_table, rand())"
             )
             node.query("INSERT INTO local_table SELECT number FROM numbers(1000)")
+        node4.query(
+            "CREATE TABLE hedged_distributed_table(i Int64) "
+            "ENGINE = Distributed(hedged_retry_cluster, default, local_table, rand())"
+        )
         yield cluster
     finally:
         cluster.shutdown()
@@ -148,6 +155,59 @@ def test_retry_limit(limit):
     assert retries(query_id) == limit
 
 
+def parallel_replica_settings():
+    return {
+        "enable_parallel_replicas": 2,
+        "max_parallel_replicas": 3,
+        "cluster_for_parallel_replicas": "hedged_retry_cluster",
+        "parallel_replicas_for_non_replicated_merge_tree": 1,
+        "parallel_replicas_local_plan": 0,
+        "parallel_replicas_min_number_of_rows_per_replica": 0,
+        "distributed_shard_retry_count": 1,
+        "interactive_delay": 100000000,
+    }
+
+
+@pytest.mark.parametrize("plan_based", [0, 1])
+def test_parallel_replicas_retry_before_announcement(plan_based):
+    # Every assigned replica fails once. Recovery must preserve its coordinator
+    # identity and read each range once, even though every error count increases.
+    for node in (node1, node2, node3):
+        node.query(
+            "SYSTEM ENABLE FAILPOINT remote_query_executor_cannot_open_file_once"
+        )
+    node4.query("SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas")
+    query_id = str(uuid.uuid4())
+    assert node4.query(
+        "SELECT count(), sum(i) FROM local_table",
+        query_id=query_id,
+        settings={
+            **parallel_replica_settings(),
+            "parallel_replicas_plan_based": plan_based,
+        },
+    ) == "1000\t499500\n"
+    assert retries(query_id, node4) == 3
+    assert node4.query(
+        "SELECT count() FROM system.clusters "
+        "WHERE cluster = 'hedged_retry_cluster' AND errors_count > 0"
+    ) == "3\n"
+
+
+def test_parallel_replicas_do_not_retry_after_announcement():
+    for node in (node1, node2, node3):
+        node.query(
+            "SYSTEM ENABLE FAILPOINT remote_query_executor_exception_after_sending_announcement"
+        )
+    query_id = str(uuid.uuid4())
+    with pytest.raises(QueryRuntimeException, match="TOO_MANY_SIMULTANEOUS_QUERIES"):
+        node4.query(
+            "SELECT sum(i) FROM local_table",
+            query_id=query_id,
+            settings=parallel_replica_settings(),
+        )
+    assert retries(query_id, node4) == 0
+
+
 def test_hedged_retry_penalizes_packet_producer():
     # Start on a slow healthy replica, then hedge onto a replica that fails. The
     # retry must reach the third, healthy replica and charge the second pool.
@@ -163,7 +223,7 @@ def test_hedged_retry_penalizes_packet_producer():
     query_id = str(uuid.uuid4())
     try:
         assert node4.query(
-            "SELECT sum(i) FROM cluster('hedged_retry_cluster', default, local_table)",
+            "SELECT sum(i) FROM hedged_distributed_table",
             query_id=query_id,
             settings={
                 "distributed_shard_retry_count": 1,
