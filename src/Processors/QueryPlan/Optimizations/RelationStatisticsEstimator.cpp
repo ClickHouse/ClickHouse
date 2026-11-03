@@ -18,6 +18,7 @@
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
+#include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
@@ -363,6 +364,10 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         /// system.one always produces exactly one row — used to implement constant SELECTs like `SELECT 1`.
         return RelationStats{.estimated_rows = 1, .table_name = "system.one"};
     }
+
+    /// Reads no rows, e.g. a `MergeTree` table without parts.
+    if (typeid_cast<const ReadNothingStep *>(step))
+        return RelationStats{.estimated_rows = 0, .table_name = {}, .source = RowEstimateSource::Statistics};
 
     if (const auto * reading = typeid_cast<const CommonSubplanReferenceStep *>(step))
     {

@@ -7,10 +7,10 @@
 
     <substitutions>
         <substitution>
-            <name>algorithm</name>
+            <name>join_settings</name>
             <values>
-                <value>hash</value>
-                <value>parallel_hash</value>
+                <value>join_algorithm = 'hash', parallel_hash_join_threshold = 18446744073709551615</value>
+                <value>join_algorithm = 'parallel_hash', parallel_hash_join_threshold = 0</value>
             </values>
         </substitution>
         <substitution>
@@ -23,7 +23,7 @@
     </substitutions>
 
     <!-- Every right key matched, so there are no unmatched right rows to emit after the probe. -->
-    <query>SELECT count() FROM numbers_mt(50000000) AS l {kind} JOIN numbers_mt(10000000) AS r ON l.number % 10000000 = r.number SETTINGS join_algorithm = '{algorithm}' FORMAT Null</query>
+    <query>SELECT count() FROM numbers_mt(50000000) AS l {kind} JOIN numbers_mt(10000000) AS r ON l.number % 10000000 = r.number SETTINGS {join_settings} FORMAT Null</query>
     <!-- One right key unmatched. -->
-    <query>SELECT count() FROM numbers_mt(50000000) AS l {kind} JOIN numbers_mt(10000001) AS r ON l.number % 10000000 = r.number SETTINGS join_algorithm = '{algorithm}' FORMAT Null</query>
+    <query>SELECT count() FROM numbers_mt(50000000) AS l {kind} JOIN numbers_mt(10000001) AS r ON l.number % 10000000 = r.number SETTINGS {join_settings} FORMAT Null</query>
 </test>
