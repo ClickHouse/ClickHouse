@@ -423,7 +423,7 @@ size_t canonicalChild(const QueryPlan::Node & node, size_t index)
 /// `calculateHashTableCacheKeys` keys a chain of `Expression` steps as its merge, so the plans can match with a
 /// chain in one and its merge in the other: when PREWHERE takes over a filter, the single-node plan keeps a step
 /// the parallel replicas local branch merges away. Walk past the whole chain on both sides.
-const QueryPlan::Node & skipRenames(const QueryPlan::Node & node)
+const QueryPlan::Node & skipExpressionChain(const QueryPlan::Node & node)
 {
     const auto * current = &node;
     while (current->children.size() == 1 && typeid_cast<const ExpressionStep *>(current->step.get()))
@@ -455,8 +455,8 @@ const QueryPlan::Node & skipRenames(const QueryPlan::Node & node)
 /// `T *`.
 bool collectCoordinatedReads(const QueryPlan::Node & replicas_node_in, const QueryPlan::Node & single_node_in, CoordinatedReads & reads)
 {
-    const auto & replicas_node = skipRenames(replicas_node_in);
-    const auto & single_node = skipRenames(single_node_in);
+    const auto & replicas_node = skipExpressionChain(replicas_node_in);
+    const auto & single_node = skipExpressionChain(single_node_in);
 
     if (auto * coordinated = typeid_cast<ReadFromMergeTree *>(replicas_node.step.get());
         coordinated && coordinated->isParallelReadingFromReplicas())

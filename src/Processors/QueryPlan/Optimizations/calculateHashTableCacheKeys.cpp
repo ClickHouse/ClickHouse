@@ -380,29 +380,47 @@ struct ExpressionChain
     const QueryPlan::Node * input = nullptr;
 };
 
+/// The merge of the `ExpressionStep`s from a node down to the first step that is not one, for the step above to extend.
+struct MergedExpressions
+{
+    ActionsDAG actions;
+    SharedHeader input_header;
+    /// The node below the chain.
+    const QueryPlan::Node * input = nullptr;
+};
+
 /// Optimizing a plan again can merge expressions it left apart (the local plan of plan-based parallel
 /// replicas is), so a chain and its merge must have one key, or the two plans cannot be matched.
-static std::optional<ExpressionChain> mergeExpressionChain(const QueryPlan::Node & node)
+/// Extends the merge of the node below instead of merging the whole chain again at every node of it.
+static std::optional<ExpressionChain> mergeExpressionChain(
+    const QueryPlan::Node & node, std::unordered_map<const QueryPlan::Node *, MergedExpressions> & merged_expressions)
 {
-    std::vector<const ExpressionStep *> chain;
-    const QueryPlan::Node * current = &node;
-    while (current->children.size() == 1)
-    {
-        const auto * expression = typeid_cast<const ExpressionStep *>(current->step.get());
-        if (!expression)
-            break;
-        chain.push_back(expression);
-        current = current->children.front();
-    }
-
-    if (chain.size() < 2)
+    const auto * expression = typeid_cast<const ExpressionStep *>(node.step.get());
+    if (!expression || node.children.size() != 1)
         return {};
 
-    ActionsDAG merged = chain.back()->getExpression().clone();
-    for (auto it = chain.rbegin() + 1; it != chain.rend(); ++it)
-        merged = ActionsDAG::merge(std::move(merged), (*it)->getExpression().clone());
+    const auto * child = node.children.front();
+    MergedExpressions merged;
+    const auto it = merged_expressions.find(child);
+    const bool extends_chain = it != merged_expressions.end();
+    if (extends_chain)
+    {
+        /// The plan is a tree, so the merge of the child has no other user.
+        merged = std::move(it->second);
+        merged_expressions.erase(it);
+        merged.actions = ActionsDAG::merge(std::move(merged.actions), expression->getExpression().clone());
+    }
+    else
+    {
+        merged = {expression->getExpression().clone(), expression->getInputHeaders().front(), child};
+    }
 
-    return ExpressionChain{std::make_unique<ExpressionStep>(chain.back()->getInputHeaders().front(), std::move(merged)), current};
+    std::optional<ExpressionChain> chain;
+    if (extends_chain)
+        chain = ExpressionChain{std::make_unique<ExpressionStep>(merged.input_header, merged.actions.clone()), merged.input};
+
+    merged_expressions.emplace(&node, std::move(merged));
+    return chain;
 }
 
 /// These keys identify cached runtime dataflow statistics that feed the Auto-PR cost model, which is
@@ -430,6 +448,9 @@ void calculateHashTableCacheKeys(
     // We use addresses of `left` and `right`, so they should be stable
     std::list<Frame> stack;
     stack.push_back({.node = &root});
+
+    /// The merges of the expression chains whose top the traversal has not passed yet, see `mergeExpressionChain`.
+    std::unordered_map<const QueryPlan::Node *, MergedExpressions> merged_expressions;
 
     while (!stack.empty())
     {
@@ -486,7 +507,7 @@ void calculateHashTableCacheKeys(
             continue;
         }
 
-        const auto chain = mergeExpressionChain(node);
+        const auto chain = mergeExpressionChain(node, merged_expressions);
 
         /// Hash a `JoinStep`'s children in their physical order. `considerEnablingParallelReplicas`
         /// picks the parallelized side by physical slot (child 0, or child 1 for `RIGHT`) — see
