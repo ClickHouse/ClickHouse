@@ -47,6 +47,12 @@ joinGet in an OR of conjunctions
 1
 or of conjunctions
 1
+reader on the preserved side
+1	1
+1
+non-deterministic constant
+1	1
+1
 transitive, WHERE above an enclosing join
 0	1	1
 1	1	1

@@ -87,6 +87,24 @@ SELECT count() FROM (
     WHERE (b.number = 1 AND a.number < 2) OR (b.number = 5 AND a.number > 7)
 ) WHERE explain ILIKE '%Type: inner%';
 
+-- Controls: a representation read of a column of the preserved side gives no verdict on its own but does not block the verdict of a value conjunct.
+-- A constant folded from a non-deterministic function (`now`) is still a constant for the probe.
+SELECT 'reader on the preserved side';
+SELECT a.number, b.number FROM numbers(3) AS a LEFT JOIN (SELECT number FROM numbers(2)) AS b ON a.number = b.number
+WHERE isConstant(a.number) = 0 AND b.number = 1 ORDER BY 1;
+SELECT count() FROM (
+    EXPLAIN actions = 1 SELECT a.number, b.number FROM numbers(3) AS a LEFT JOIN (SELECT number FROM numbers(2)) AS b ON a.number = b.number
+    WHERE isConstant(a.number) = 0 AND b.number = 1
+) WHERE explain ILIKE '%Type: inner%';
+
+SELECT 'non-deterministic constant';
+SELECT a.number, b.number FROM numbers(3) AS a LEFT JOIN (SELECT number FROM numbers(2)) AS b ON a.number = b.number
+WHERE b.number >= toUInt64(toYear(now()) > 2000) ORDER BY 1;
+SELECT count() FROM (
+    EXPLAIN actions = 1 SELECT a.number, b.number FROM numbers(3) AS a LEFT JOIN (SELECT number FROM numbers(2)) AS b ON a.number = b.number
+    WHERE b.number >= toUInt64(toYear(now()) > 2000)
+) WHERE explain ILIKE '%Type: inner%';
+
 -- The transitive rewrite decides from a condition further up the plan; without the padding of the converted side,
 -- a function above reads that side's constants as constants.
 SELECT 'transitive, WHERE above an enclosing join';
