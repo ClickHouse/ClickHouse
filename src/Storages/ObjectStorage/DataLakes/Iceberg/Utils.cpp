@@ -14,6 +14,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/CompressionMethod.h>
@@ -43,6 +44,7 @@
 #include <Common/quoteString.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Cached/CachedObjectStorage.h>
 #include <Disks/IStoragePolicy.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/convertFieldToType.h>
@@ -456,13 +458,27 @@ enum class RemovalOutcome
     Unknown,
 };
 
+/// `CachedObjectStorage::removeObjectIfExists` only drops the cached copy: a disk removes the underlying object
+/// through its metadata storage, and `DataLakeConfiguration::fromDisk` keeps the cache layers of the disk. Remove
+/// the object from the storage under every cache layer first, and only then from the cache of each layer, so that
+/// a concurrent read cannot fill the cache again from an object that is still there.
+void removeObjectThroughCacheLayers(const DB::ObjectStoragePtr & object_storage, const StoredObject & object)
+{
+    std::vector<DB::ObjectStoragePtr> layers{object_storage};
+    while (const auto * cached = typeid_cast<const DB::CachedObjectStorage *>(layers.back().get()))
+        layers.push_back(cached->getWrappedObjectStorage());
+
+    for (auto it = layers.rbegin(); it != layers.rend(); ++it)
+        (*it)->removeObjectIfExists(object);
+}
+
 /// A removal that throws may still have taken effect before its response was lost, so it is
 /// followed by an existence check, and only an object known to be absent counts as removed.
 RemovalOutcome removeObjectAndReconcile(const DB::ObjectStoragePtr & object_storage, const std::string & path)
 {
     try
     {
-        object_storage->removeObjectIfExists(StoredObject(path));
+        removeObjectThroughCacheLayers(object_storage, StoredObject(path));
         return RemovalOutcome::Removed;
     }
     catch (...)

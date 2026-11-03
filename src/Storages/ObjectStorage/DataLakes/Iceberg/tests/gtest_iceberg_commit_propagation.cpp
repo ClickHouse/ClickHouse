@@ -11,6 +11,9 @@
 #include <Common/Exception.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Cached/CachedObjectStorage.h>
+#include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/FileCache/FileCacheSettings.h>
 #include <Core/Defines.h>
 #include <IO/CompressionMethod.h>
 #include <IO/WriteBufferFromFileBase.h>
@@ -32,6 +35,14 @@ namespace DB::ErrorCodes
     extern const int FILE_ALREADY_EXISTS;
     extern const int READONLY;
     extern const int UNKNOWN_STATUS_OF_INSERT;
+}
+
+namespace DB::FileCacheSetting
+{
+    extern const FileCacheSettingsString path;
+    extern const FileCacheSettingsUInt64 max_size;
+    extern const FileCacheSettingsUInt64 max_elements;
+    extern const FileCacheSettingsUInt64 background_download_threads;
 }
 
 namespace
@@ -394,6 +405,7 @@ struct CommitOverExistingVersionHint
     explicit CommitOverExistingVersionHint(
         const std::string & hint_etag, Race race = Race::None, std::optional<std::string> head_etag = std::nullopt)
         : object_storage(std::make_shared<ExistingVersionHintObjectStorage>(hint_etag, race, std::move(head_etag)))
+        , storage_for_commit(object_storage)
     {
     }
 
@@ -414,7 +426,7 @@ struct CommitOverExistingVersionHint
             metadata_file_info,
             "{}",
             Iceberg::IcebergPathFromMetadata::deserialize("/table/metadata/version-hint.text"),
-            object_storage,
+            storage_for_commit,
             getContext().context,
             try_write_version_hint);
     }
@@ -450,6 +462,8 @@ struct CommitOverExistingVersionHint
     const std::vector<std::string> & removed() const { return object_storage->removed; }
 
     std::shared_ptr<ExistingVersionHintObjectStorage> object_storage;
+    /// What the commit works on: `object_storage` itself, or `object_storage` under decorators.
+    ObjectStoragePtr storage_for_commit;
 };
 
 }
@@ -601,6 +615,38 @@ TEST(IcebergCommitPropagation, CreatedVersionHintWithoutETagIsTakenBackAndTheCom
 
     EXPECT_FALSE(commit.object_storage->hintPresent());
     EXPECT_FALSE(commit.object_storage->metadataRemovalAttempted());
+    EXPECT_TRUE(commit.object_storage->metadataPresent());
+}
+
+TEST(IcebergCommitPropagation, CreatedVersionHintWithoutETagIsTakenBackThroughTheCache)
+{
+    /// A table on a disk with a cache works on `CachedObjectStorage`, whose `removeObjectIfExists` only
+    /// drops the cached copy (a disk removes the underlying object through its metadata storage). The
+    /// tagless hint has to be removed from the storage under the cache: if it stayed, every later commit
+    /// would refuse to advance it.
+    CommitOverExistingVersionHint commit("", CommitOverExistingVersionHint::Race::CreatedByThisCommit);
+
+    FileCacheSettings cache_settings;
+    cache_settings[FileCacheSetting::path] = "./iceberg_version_hint_through_cache/";
+    cache_settings[FileCacheSetting::max_size] = 1024 * 1024;
+    cache_settings[FileCacheSetting::max_elements] = 100;
+    cache_settings[FileCacheSetting::background_download_threads] = 0;
+    auto cache = std::make_shared<FileCache>("iceberg_version_hint_through_cache", cache_settings);
+    auto cached = std::make_shared<CachedObjectStorage>(commit.object_storage, cache, cache_settings, "iceberg_version_hint_through_cache");
+    /// Two cache layers, as a disk with two caches has.
+    commit.storage_for_commit = std::make_shared<CachedObjectStorage>(cached, cache, cache_settings, "iceberg_version_hint_through_cache");
+
+    EXPECT_TRUE(commit.run());
+
+    const auto & writes = commit.writes();
+    ASSERT_EQ(writes.size(), 2u);
+    EXPECT_TRUE(writes[1].path.ends_with("version-hint.text")) << writes[1].path;
+
+    const auto & removed = commit.removed();
+    ASSERT_EQ(removed.size(), 1u);
+    EXPECT_EQ(removed[0], writes[1].path);
+
+    EXPECT_FALSE(commit.object_storage->hintPresent());
     EXPECT_TRUE(commit.object_storage->metadataPresent());
 }
 
