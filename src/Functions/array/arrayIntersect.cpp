@@ -179,6 +179,7 @@ DataTypePtr FunctionArrayIntersect::getReturnTypeImpl(const DataTypes & argument
     nested_types.reserve(arguments.size());
 
     bool has_nothing = false;
+    bool has_only_null = false;
     DataTypePtr has_decimal_type = nullptr;
     DataTypePtr has_non_decimal_type = nullptr;
 
@@ -203,6 +204,11 @@ DataTypePtr FunctionArrayIntersect::getReturnTypeImpl(const DataTypes & argument
                 break;
             }
         }
+        else if (mode == ArraySetMode::Intersect && nested_type->onlyNull())
+        {
+            /// An array of `NULL`s, such as the literal `[NULL]`, holds no value to narrow the common type with.
+            has_only_null = true;
+        }
         else
         {
             nested_types.push_back(nested_type);
@@ -226,11 +232,20 @@ DataTypePtr FunctionArrayIntersect::getReturnTypeImpl(const DataTypes & argument
 
     DataTypePtr result_type;
 
-    // If any DataTypeNothing in ArrayModeIntersect or all arrays in ArrayModeUnion are DataTypeNothing
-    if (has_nothing || nested_types.empty())
+    // If any DataTypeNothing in ArrayModeIntersect or all arrays are DataTypeNothing
+    if (has_nothing || (nested_types.empty() && !has_only_null))
         result_type = std::make_shared<DataTypeNothing>();
     else if (mode == ArraySetMode::Intersect)
-        result_type = getMostSubtype(nested_types, true);
+    {
+        if (nested_types.empty())
+            result_type = makeNullable(std::make_shared<DataTypeNothing>());
+        else
+            result_type = getMostSubtype(nested_types, true);
+
+        /// Only `NULL` can be common with an array of `NULL`s, and the other arguments' common type may not hold it.
+        if (has_only_null && !canContainNull(*result_type))
+            result_type = std::make_shared<DataTypeNothing>();
+    }
     else
         result_type = getLeastSupertype(nested_types);
 
@@ -489,7 +504,13 @@ ColumnPtr FunctionArrayIntersect::executeImpl(const ColumnsWithTypeAndName & arg
     DataTypes data_types;
     data_types.reserve(num_args);
     for (size_t i = 0; i < num_args; ++i)
+    {
+        /// Skip arrays of `NULL`s as `getReturnTypeImpl` does, unless the result is one.
+        if (mode == ArraySetMode::Intersect && !nested_return_type->onlyNull()
+            && typeid_cast<const DataTypeArray &>(*arguments[i].type).getNestedType()->onlyNull())
+            continue;
         data_types.push_back(arguments[i].type);
+    }
 
     DataTypePtr return_type_with_nulls;
     if (mode == ArraySetMode::Intersect)

@@ -30,9 +30,6 @@
     https://github.com/ClickHouse/clickhouse-private/issues/17173
 03174_exact_rows_before_aggregation
 
-    https://github.com/ClickHouse/ClickHouse/issues/74411
-02884_create_view_with_sql_security_option
-
     Transactions
     Storage StorageDummy (table test_8yblzvrs.mt1 (560aada5-04ba-4faa-9297-c032a1798def)) does not support transactions. (NOT_IMPLEMENTED)
     query: select 'commit', arraySort(groupArray(n)) from (select n from mt1 union all select * from mt2);
