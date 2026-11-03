@@ -246,26 +246,6 @@ size_t ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, ExecutionThr
     return 0; // No new tasks -- no need for new threads
 }
 
-size_t ExecutorTasks::widthLeft() const
-{
-    return num_threads > total_slots ? num_threads - total_slots : 0;
-}
-
-void ExecutorTasks::addThreadsToSpawn(size_t threads)
-{
-    /// Requests that wait for a CPU slot are not dropped, but they can't exceed the pipeline width.
-    const size_t requested = threads_to_spawn.load(std::memory_order_relaxed);
-    const size_t new_requested = std::min(requested + threads, widthLeft());
-    if (new_requested != requested)
-        threads_to_spawn.store(new_requested, std::memory_order_relaxed);
-}
-
-void ExecutorTasks::requestThreads(size_t threads)
-{
-    std::lock_guard lock(mutex);
-    addThreadsToSpawn(threads);
-}
-
 void ExecutorTasks::init(size_t num_threads_, size_t use_threads_, const SlotAllocationPtr & cpu_slots_, bool profile_processors,
     bool trace_processors, ReadProgressCallback * callback, StepProfiler * step_profiler, QueryStatus * process_list_element)
 {
@@ -349,6 +329,26 @@ size_t ExecutorTasks::upscale(size_t slot_id)
     if (capacity == 0 && threads_to_spawn.load(std::memory_order_relaxed))
         threads_to_spawn.store(0, std::memory_order_relaxed);
     return capacity;
+}
+
+size_t ExecutorTasks::widthLeft() const
+{
+    return num_threads > total_slots ? num_threads - total_slots : 0;
+}
+
+void ExecutorTasks::addThreadsToSpawn(size_t threads)
+{
+    /// Requests that wait for a CPU slot are not dropped, but they can't exceed the pipeline width.
+    const size_t requested = threads_to_spawn.load(std::memory_order_relaxed);
+    const size_t new_requested = std::min(requested + threads, widthLeft());
+    if (new_requested != requested)
+        threads_to_spawn.store(new_requested, std::memory_order_relaxed);
+}
+
+void ExecutorTasks::requestThreads(size_t threads)
+{
+    std::lock_guard lock(mutex);
+    addThreadsToSpawn(threads);
 }
 
 void ExecutorTasks::downscale(size_t slot_id)

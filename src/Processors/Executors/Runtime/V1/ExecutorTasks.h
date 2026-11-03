@@ -128,12 +128,6 @@ public:
     // clamped to the pipeline width not taken by started threads. They are added to `threads_to_spawn`.
     size_t pushTasks(Queue & queue, Queue & async_queue, ExecutionThreadContext & context);
 
-    /// Request `threads` more threads (e.g. for the initial tasks), clamped to the pipeline width.
-    void requestThreads(size_t threads);
-
-    /// Whether requested threads wait for a CPU slot. Lock-free, so it is checked after every task.
-    bool hasThreadsToSpawn() const { return threads_to_spawn.load(std::memory_order_relaxed) > 0; }
-
     void init(size_t num_threads_, size_t use_threads_, const SlotAllocationPtr & cpu_slots_, bool profile_processors,
         bool trace_processors, ReadProgressCallback * callback, StepProfiler * step_profiler, QueryStatus * process_list_element);
 
@@ -157,6 +151,12 @@ public:
     /// Downscale by removing slot_id from active slots. Updates use_threads to highest active slot + 1.
     /// Requests a thread instead, to be started when a slot is granted again.
     void downscale(size_t slot_id);
+
+    /// Request `threads` more threads (e.g. for the initial tasks), clamped to the pipeline width.
+    void requestThreads(size_t threads);
+
+    /// Whether requested threads wait for a CPU slot. Lock-free, so it is checked after every task.
+    bool hasThreadsToSpawn() const { return threads_to_spawn.load(std::memory_order_relaxed) > 0; }
 
     /// Temporarily release slot_id without downscale. Later either downscale() or resume() is called.
     void preempt(size_t slot_id);
