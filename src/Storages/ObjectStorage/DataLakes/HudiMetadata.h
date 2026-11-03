@@ -84,8 +84,8 @@ private:
     mutable std::mutex data_files_mutex;
     mutable Strings data_files TSA_GUARDED_BY(data_files_mutex);
 
-    Strings getDataFilesImpl() const;
-    Strings getDataFiles(const ActionsDAG * filter_dag) const;
+    Strings getDataFilesImpl(const ContextPtr & local_context) const;
+    Strings getDataFiles(const ActionsDAG * filter_dag, const ContextPtr & local_context) const;
     /// The listed data files, or an empty list when nothing has listed them yet.
     Strings getDataFilesIfListed() const;
 };
