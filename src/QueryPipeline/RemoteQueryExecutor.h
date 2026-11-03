@@ -132,7 +132,7 @@ public:
 
     /// Use the lazy reader's already selected connections for the first attempt.
     /// Further attempts select fresh connections from the failover pool.
-    void setInitialConnections(std::vector<ConnectionPoolWithFailover::TryResult> connections_)
+    void setInitialConnections(std::vector<ConnectionPoolWithFailover::TryResult> connections_) // STYLE_CHECK_ALLOW_STD_CONTAINERS: matches the pool API.
     {
         initial_connections = std::move(connections_);
     }
@@ -399,7 +399,7 @@ private:
     /// Resolves the actual packet producer for hedged reads; captures the selected pool
     /// for single-connection multiplexed reads. No pool bookkeeping in `IConnections`.
     std::function<ConnectionPoolPtr()> get_replica_pool;
-    std::optional<std::vector<ConnectionPoolWithFailover::TryResult>> initial_connections;
+    std::optional<std::vector<ConnectionPoolWithFailover::TryResult>> initial_connections; // STYLE_CHECK_ALLOW_STD_CONTAINERS: matches the pool API.
 
 #if defined(OS_LINUX) || defined(OS_DARWIN)
     bool packet_in_progress = false;

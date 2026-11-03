@@ -285,6 +285,7 @@ namespace ServerSetting
 namespace ErrorCodes
 {
     extern const int CANNOT_OPEN_FILE;
+    extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
     extern const int QUERY_CACHE_USED_WITH_NON_THROW_OVERFLOW_MODE;
     extern const int INTO_OUTFILE_NOT_ALLOWED;
     extern const int INVALID_TRANSACTION;
@@ -312,6 +313,7 @@ namespace FailPoints
     extern const char libcxx_hardening_out_of_bounds_assertion[];
     extern const char remote_query_executor_exception_retryable[];
     extern const char remote_query_executor_cannot_open_file_once[];
+    extern const char remote_query_executor_cannot_read_from_file_descriptor[];
     extern const char trigger_sanitizer_error[];
 }
 
@@ -2353,6 +2355,9 @@ static BlockIO executeQueryImpl(
         });
         fiu_do_on(FailPoints::remote_query_executor_cannot_open_file_once, {
             throw Exception(ErrorCodes::CANNOT_OPEN_FILE, "Injected CANNOT_OPEN_FILE error (retryable)");
+        });
+        fiu_do_on(FailPoints::remote_query_executor_cannot_read_from_file_descriptor, {
+            throw Exception(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "Injected CANNOT_READ_FROM_FILE_DESCRIPTOR error (retryable)");
         });
     }
 

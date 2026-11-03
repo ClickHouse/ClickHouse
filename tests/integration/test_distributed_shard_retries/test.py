@@ -17,6 +17,7 @@ nodes = (node1, node2, node3, node4)
 failpoints = (
     "remote_query_executor_exception_retryable",
     "remote_query_executor_cannot_open_file_once",
+    "remote_query_executor_cannot_read_from_file_descriptor",
     "remote_query_executor_exception_after_sending_announcement",
     "parallel_replicas_wait_for_unused_replicas",
     "remote_query_executor_exception_after_sending_data",
@@ -110,6 +111,32 @@ def test_leaf_queries_retried(source, hedged, async_read, lazy):
         "WHERE operation_name = 'RemoteQueryExecutor::execute' "
         f"AND attribute['clickhouse.query_id'] = '{query_id}'"
     ) == "2\t2\t0\n"
+
+
+@pytest.mark.parametrize("limit", [0, 1])
+def test_leaf_file_read_failure(limit):
+    # Keep the first leaf failing so success requires a different replica.
+    node1.query(
+        "SYSTEM ENABLE FAILPOINT remote_query_executor_cannot_read_from_file_descriptor"
+    )
+    query_id = str(uuid.uuid4())
+    settings = {
+        "distributed_shard_retry_count": limit,
+        "load_balancing": "in_order",
+        "prefer_localhost_replica": 0,
+        "use_hedged_requests": 0,
+    }
+    query = "SELECT count(), sum(i) FROM hedged_distributed_table"
+    if limit == 0:
+        with pytest.raises(QueryRuntimeException, match="CANNOT_READ_FROM_FILE_DESCRIPTOR"):
+            node4.query(query, query_id=query_id, settings=settings)
+    else:
+        assert node4.query(query, query_id=query_id, settings=settings) == "1000\t499500\n"
+        assert node4.query(
+            "SELECT host_name FROM system.clusters "
+            "WHERE cluster = 'hedged_retry_cluster' AND errors_count > 0 ORDER BY host_name"
+        ) == "node1\n"
+    assert retries(query_id, node4) == limit
 
 
 @pytest.mark.parametrize("packet", ["data", "progress"])

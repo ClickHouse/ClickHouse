@@ -56,6 +56,7 @@ static struct InitFiu
     ONCE(remote_query_executor_cancel_in_finish_drain) \
     REGULAR(remote_query_executor_exception_retryable) \
     ONCE(remote_query_executor_cannot_open_file_once) \
+    REGULAR(remote_query_executor_cannot_read_from_file_descriptor) \
     REGULAR(remote_query_executor_exception_after_sending_announcement) \
     REGULAR(remote_query_executor_exception_after_sending_data) \
     REGULAR(remote_query_executor_exception_after_sending_progress) \

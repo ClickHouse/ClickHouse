@@ -73,6 +73,7 @@ namespace ErrorCodes
     extern const int SYSTEM_ERROR;
     extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
     extern const int CANNOT_OPEN_FILE;
+    extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
     extern const int UNKNOWN_TABLE;
     extern const int UNKNOWN_DATABASE;
     extern const int BAD_ARGUMENTS;
@@ -336,7 +337,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
         if (extension && extension->parallel_reading_coordinator)
             skip_unavailable_endpoints = true;
 
-        std::vector<ConnectionPoolWithFailover::TryResult> try_results;
+        std::vector<ConnectionPoolWithFailover::TryResult> try_results; // STYLE_CHECK_ALLOW_STD_CONTAINERS: matches the pool API.
         if (initial_connections)
         {
             try_results = std::move(*initial_connections);
@@ -934,8 +935,10 @@ bool RemoteQueryExecutor::isRetryableError(int error_code) const
     /// - TOO_MANY_SIMULTANEOUS_QUERIES: the replica is at its concurrency limit; either
     ///   another replica or a later retry on the same replica (once a slot frees up) can succeed.
     /// - `CANNOT_OPEN_FILE`: returned by leaf nodes for filesystem or I/O issues while reading parts.
+    /// - `CANNOT_READ_FROM_FILE_DESCRIPTOR`: a leaf's file read failed; another replica may have healthy storage.
     return error_code == ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES
-        || error_code == ErrorCodes::CANNOT_OPEN_FILE;
+        || error_code == ErrorCodes::CANNOT_OPEN_FILE
+        || error_code == ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR;
 }
 
 void RemoteQueryExecutor::retryQuery()
