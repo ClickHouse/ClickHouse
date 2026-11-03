@@ -16,7 +16,7 @@ std::string astToString(ASTPtr ast_ptr)
     return ast_ptr->formatWithSecretsOneLine();
 }
 
-std::optional<PartProperties::GeneralTTLInfo> buildGeneralTTLInfo(StorageMetadataPtr metadata_snapshot, MergeTreeDataPartPtr part)
+std::optional<PartProperties::GeneralTTLInfo> buildGeneralTTLInfo(StorageMetadataPtr metadata_snapshot, MergeTreeDataPartPtr part, time_t current_time)
 {
     if (!metadata_snapshot->hasAnyTTL())
         return std::nullopt;
@@ -34,6 +34,7 @@ std::optional<PartProperties::GeneralTTLInfo> buildGeneralTTLInfo(StorageMetadat
         .part_max_ttl = part->ttl_infos.part_max_ttl,
         .column_min_ttl = part->ttl_infos.getMinimalNonFinishedColumnTTL(),
         .group_by_min_ttl = group_by_min_ttl,
+        .rows_ttl_expired = metadata_snapshot->hasRowsTTL() && part->ttl_infos.table_ttl.max && part->ttl_infos.table_ttl.max <= current_time,
     };
 }
 
@@ -177,7 +178,7 @@ PartProperties buildPartProperties(
         .age = current_time - part->modification_time,
         .rows = part->rows_count,
         .has_lightweight_delete = part->hasLightweightDelete(),
-        .general_ttl_info = buildGeneralTTLInfo(metadata_snapshot, part),
+        .general_ttl_info = buildGeneralTTLInfo(metadata_snapshot, part, current_time),
         .recompression_ttl_info = buildRecompressTTLInfo(metadata_snapshot, part, current_time),
     };
 }

@@ -218,8 +218,9 @@ PartsRanges ITTLMergeSelector::select(
     return result;
 }
 
-TTLPartDropMergeSelector::TTLPartDropMergeSelector(time_t current_time_, size_t max_parts_to_drop_at_once_)
+TTLPartDropMergeSelector::TTLPartDropMergeSelector(time_t current_time_, size_t max_parts_to_drop_at_once_, bool only_parts_expired_by_rows_ttl_)
     : ITTLMergeSelector(/*merge_due_times_=*/nullptr, current_time_, max_parts_to_drop_at_once_)
+    , only_parts_expired_by_rows_ttl(only_parts_expired_by_rows_ttl_)
 {
 }
 
@@ -231,6 +232,9 @@ time_t TTLPartDropMergeSelector::getTTLForPart(const PartProperties & part) cons
 bool TTLPartDropMergeSelector::canConsiderPart(const PartProperties & part) const
 {
     if (!part.general_ttl_info.has_value())
+        return false;
+
+    if (only_parts_expired_by_rows_ttl && !part.general_ttl_info->rows_ttl_expired)
         return false;
 
     return part.general_ttl_info->has_any_non_finished_ttls;
