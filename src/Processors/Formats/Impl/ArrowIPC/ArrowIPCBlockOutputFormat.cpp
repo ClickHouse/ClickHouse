@@ -31,6 +31,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 
@@ -351,8 +352,16 @@ std::pair<ColumnPtr, DataTypePtr> ArrowIPCBlockOutputFormat::substituteDictionar
     return {column, type};
 }
 
+void ArrowIPCBlockOutputFormat::checkRowGroupSize() const
+{
+    if (format_settings.arrow.row_group_size == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting output_format_arrow_row_group_size must be greater than 0");
+}
+
 void ArrowIPCBlockOutputFormat::consume(Chunk chunk)
 {
+    checkRowGroupSize();
+
     /// Not in `writeChunk`: a reader gets the schema on the first chunk even when batches are combined.
     writeSchemaIfNeeded();
 
@@ -396,6 +405,30 @@ void ArrowIPCBlockOutputFormat::consume(Chunk chunk)
 
 void ArrowIPCBlockOutputFormat::writeChunk(Chunk chunk)
 {
+    /// `output_format_arrow_row_group_size` caps the rows of one record batch: a larger chunk (a large
+    /// incoming block, or a combined batch) is split into several batches. Smaller chunks are not combined here.
+    const size_t max_rows = format_settings.arrow.row_group_size;
+    if (max_rows && chunk.getNumRows() > max_rows && chunk.getNumColumns() > 0)
+    {
+        const size_t total_rows = chunk.getNumRows();
+        const Columns & all_columns = chunk.getColumns();
+        for (size_t offset = 0; offset < total_rows; offset += max_rows)
+        {
+            const size_t length = std::min(max_rows, total_rows - offset);
+            Columns slice;
+            slice.reserve(all_columns.size());
+            for (const auto & column : all_columns)
+                slice.push_back(column->cut(offset, length));
+            writeRecordBatch(Chunk(std::move(slice), length));
+        }
+        return;
+    }
+
+    writeRecordBatch(std::move(chunk));
+}
+
+void ArrowIPCBlockOutputFormat::writeRecordBatch(Chunk chunk)
+{
     const size_t num_rows = chunk.getNumRows();
     const Columns & columns = chunk.getColumns();
 
@@ -419,6 +452,8 @@ void ArrowIPCBlockOutputFormat::writeChunk(Chunk chunk)
 
 void ArrowIPCBlockOutputFormat::finalizeImpl()
 {
+    checkRowGroupSize();
+
     /// The whole output of a result that never reached a target leaves through here.
     if (staged.getNumRows())
         writeChunk(std::move(staged));
