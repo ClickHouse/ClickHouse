@@ -93,6 +93,9 @@ public:
     /// The query is rewritten for the chosen underlying table, see `rewriteQueryForStorage`.
     bool readRequiresAnalyzedQuery() const override { return true; }
 
+    /// The table is chosen from the filters of the query, and the whole query is retried on another table.
+    bool readRequiresFullQuery() const override { return true; }
+
     ColumnSizeByName getColumnSizes() const override;
     bool supportsPrewhere() const override;
     bool canMoveConditionsToPrewhere() const override;
