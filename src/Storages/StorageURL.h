@@ -165,7 +165,8 @@ private:
 
 bool urlWithGlobs(const String & uri);
 
-String getSampleURI(String uri, ContextPtr context);
+/// The path of the first address of `uri`, as the reader materializes it.
+String getSamplePath(const String & uri, ContextPtr context);
 
 /// The `URL` engine and the `url` table function act as a unified wrapper on top of the
 /// File and object-storage engines: they dispatch to the right backend based on the URL scheme.
