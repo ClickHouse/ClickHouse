@@ -94,7 +94,7 @@ check_masked() {
     local label="$1" out="$2"
     if echo "${out}" | grep -q -e "SA_KEY_LEAK_CHECK" -e "leak-check@" -e "\"service_account\""; then
         echo "${label}: fail (secret leaked: ${out//$'\n'/ })"
-    elif echo "${out}" | grep -q -E "google_service_account_key *= *'\[HIDDEN\]'"; then
+    elif echo "${out}" | grep -q -E "google_service_account_key = \\\\?'\[HIDDEN\]"; then
         echo "${label}: pass"
     else
         echo "${label}: fail (no masked query found: ${out//$'\n'/ })"
