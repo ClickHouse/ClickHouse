@@ -456,10 +456,12 @@ String buildProjectionPart(
             const bool ignores_dropped_rows
                 = mt_settings[MergeTreeSetting::deduplicate_merge_projection_mode] == DeduplicateMergeProjectionMode::IGNORE;
             const size_t most_rows = ignores_dropped_rows ? std::numeric_limits<size_t>::max() : part->rows_count;
-            const bool compact = data.choosePartFormat(0, merged.rows(), part->info.level, &projection).part_type
-                == MergeTreeDataPartType::Compact;
-            const bool wide = data.choosePartFormat(std::numeric_limits<size_t>::max(), most_rows, part->info.level, &projection).part_type
-                == MergeTreeDataPartType::Wide;
+            /// the settings can change after a part is written, and the format of the parent part is one that earlier settings chose
+            const bool compact = part->getType() == MergeTreeDataPartType::Compact
+                || data.choosePartFormat(0, merged.rows(), part->info.level, &projection).part_type == MergeTreeDataPartType::Compact;
+            const bool wide = part->getType() == MergeTreeDataPartType::Wide
+                || data.choosePartFormat(std::numeric_limits<size_t>::max(), most_rows, part->info.level, &projection).part_type
+                    == MergeTreeDataPartType::Wide;
             out.both_formats = compact && wide;
             if (constant_granularity && wide)
             {
