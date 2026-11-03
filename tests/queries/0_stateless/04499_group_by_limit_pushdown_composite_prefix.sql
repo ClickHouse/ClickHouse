@@ -532,9 +532,8 @@ SELECT countIf(explain LIKE '%Top-K%') FROM (EXPLAIN actions = 1
     FROM t_gbylimit_comp GROUP BY a ORDER BY a ASC, max(c) ASC COLLATE 'en' LIMIT 10
     SETTINGS optimize_aggregation_in_order = 0);
 
--- A COLLATE on a matched key would need the heap to rank in collation order,
--- which it cannot; the shape is gated off.
-SELECT 'collate on a matched key: not optimized';
+-- A COLLATE on a matched key: the heap ranks the key in the collation order.
+SELECT 'collate on a matched key: optimized';
 SELECT countIf(explain LIKE '%Top-K%') FROM (EXPLAIN actions = 1
     SELECT c, count()
     FROM t_gbylimit_comp GROUP BY c ORDER BY c ASC COLLATE 'en' LIMIT 10
