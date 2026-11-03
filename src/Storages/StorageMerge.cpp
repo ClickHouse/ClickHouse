@@ -2162,7 +2162,9 @@ StorageMetadataPtr ReadFromMerge::getChildMetadataSnapshot(const StoragePtr & st
     /// The analyzer refreshes only the outer storage, so a data lake child would keep the snapshot of its last direct query.
     resolveStorageProxy(storage)->updateExternalDynamicMetadataIfExists(query_context);
     const auto metadata_handle = storage->getInMemoryMetadataPtr(query_context, false);
-    return metadata_handle;
+    /// Returning the handle itself would convert it as an rvalue, which `StorageMetadataHandle` forbids.
+    StorageMetadataPtr child_metadata = metadata_handle;
+    return child_metadata;
 }
 
 StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
@@ -2246,7 +2248,7 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
                             /// Only a dotted name can be a subcolumn. Without one there is nothing to resolve, and taking the
                             /// snapshot here would refresh every data lake child before the time limit is checked between
                             /// the children in `createChildrenPlans`.
-                            if (std::ranges::any_of(columns_to_check, [](const String & name) { return name.contains('.'); }))
+                            if (std::ranges::any_of(columns_to_check, [](const String & column_name) { return column_name.contains('.'); }))
                             {
                                 /// A query referencing a subcolumn (e.g. `t.a` for a `Tuple` column `t`) keeps the
                                 /// subcolumn name here, but column-level grants are stored against top-level storage
