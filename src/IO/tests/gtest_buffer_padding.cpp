@@ -205,6 +205,7 @@ TEST(BufferPadding, ParallelReadBufferPartialSegmentIsUnpadded)
     EXPECT_EQ(buffer.buffer().size(), 16);
     EXPECT_FALSE(buffer.isPadded());
 
+    buffer.position() = buffer.buffer().end();
     input.open();
     ASSERT_TRUE(buffer.next());
     EXPECT_EQ(buffer.buffer().size(), 48);
