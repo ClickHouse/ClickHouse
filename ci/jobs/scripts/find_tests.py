@@ -568,7 +568,7 @@ class Targeting:
 
     # The merge queue reruns at most this many of the tests that `master` added
     # or changed after the PR's last CI run, per job type: the integration
-    # targeted job of the merge queue has a 20-minute budget and its modules are
+    # targeted job of the merge queue has a 30-minute budget and its modules are
     # much longer.
     MERGE_QUEUE_DRIFT_TESTS_LIMIT = {STATELESS_JOB_TYPE: 30, INTEGRATION_JOB_TYPE: 10}
 

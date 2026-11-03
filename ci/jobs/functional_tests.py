@@ -1338,11 +1338,11 @@ def main():
             )
 
         elif is_targeted_check:
-            # The merge-queue run gets the tighter budget of the merge-queue flaky
-            # check: it delays merges directly, and its reduced rerun_count usually
-            # ends the run earlier anyway. Reaching the limit is not a failure (see
-            # `GLOBAL_TIME_LIMIT_EXIT_CODE` in `FTResultsProcessor`).
-            TARGETED_CHECK_TIME_LIMIT = 20 * 60 if info.is_merge_queue_event else 30 * 60
+            # The merge-queue run gets the same budget as the PR run, equal to the one
+            # of the merge-queue integration targeted check: its reduced rerun_count
+            # usually ends the run earlier anyway. Reaching the limit is not a failure
+            # (see `GLOBAL_TIME_LIMIT_EXIT_CODE` in `FTResultsProcessor`).
+            TARGETED_CHECK_TIME_LIMIT = 30 * 60
             global_time_limit = max(
                 TARGETED_CHECK_TIME_LIMIT - int(stop_watch.duration), 60
             )

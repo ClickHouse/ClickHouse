@@ -37,9 +37,8 @@ workflow = Workflow.Config(
         # are left to the flaky check above; the integration job reruns the
         # integration test modules `master` changed (see
         # `Targeting.get_merge_queue_drift_tests`). The queue is meant to fail
-        # fast: both jobs stop at 3 failed tests, and at 20 minutes from their
-        # start without failing, so they do not extend the queue latency past
-        # the flaky check.
+        # fast: both jobs stop at 3 failed tests, and at 30 minutes from their
+        # start without failing.
         *JobConfigs.stateless_tests_targeted_mq_jobs,
         *JobConfigs.integration_test_targeted_mq_jobs,
         # Reruns the documentation examples against the merge group state, so a
