@@ -1260,8 +1260,8 @@ void logExceptionBeforeStart(
     /// A query that failed before it was registered in the process list (e.g. a syntax error) has no
     /// process list entry to take its counters from. If the handler has already created the thread group
     /// of the query (`QueryScope`), the group has accumulated what the query has produced so far (e.g.
-    /// `QueryParseMicroseconds` of a failed parsing), including the failure itself, and the quotas over
-    /// profile events are charged with its counters. Otherwise, the failure itself is all the query is
+    /// `QueryParseMicroseconds` of a failed parsing), and the quotas over profile events are charged with
+    /// its counters together with the failure itself. Otherwise, the failure itself is all the query is
     /// known to have produced, and they are charged with it directly.
     ProfileEvents::Counters failed_query_counters(VariableContext::Process, /* parent = */ nullptr);
     incrementFailedQueryProfileEvents(ast, context->getClientInfo(), internal, &failed_query_counters);
