@@ -41,6 +41,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_PARSE_DATETIME;
     extern const int ILLEGAL_COLUMN;
+    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
@@ -105,6 +106,14 @@ namespace
     /// key: month, value: cumulative days from January to current month(inclusive) if current year is not leap year.
     constexpr Int32 cumulativeDays[] = {0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334, 365};
 
+    /// With error_handling = Exception, errors are thrown where they are detected and never returned: only the code is kept.
+    struct ParseErrorCode
+    {
+        int error_code;
+    };
+
+    /// With error_handling = Zero/Null only the code is set. The unused `String` keeps the copy constructor and destructor
+    /// non-trivial, so results are returned through memory: with an error returned in registers, the per-row loop is slower.
     struct ErrorCodeAndMessage
     {
         int error_code;
@@ -113,31 +122,29 @@ namespace
         explicit ErrorCodeAndMessage(int error_code_)
             : error_code(error_code_)
         {}
-
-        template <typename... Args>
-        ErrorCodeAndMessage(int error_code_, FormatStringHelper<Args...> formatter, Args &&... args)
-            : error_code(error_code_)
-            , error_message(formatter.format(std::forward<Args>(args)...))
-        {}
     };
 
-    using VoidOrError  = std::expected<void,  ErrorCodeAndMessage>;
-    using PosOrError   = std::expected<Pos,   ErrorCodeAndMessage>;
-    using Int32OrError = std::expected<Int32, ErrorCodeAndMessage>;
-    using Int64OrError = std::expected<Int64, ErrorCodeAndMessage>;
+    template <ErrorHandling error_handling>
+    using ParseError = std::conditional_t<error_handling == ErrorHandling::Exception, ParseErrorCode, ErrorCodeAndMessage>;
+
+    template <typename... Args>
+    [[noreturn, gnu::cold]] NO_INLINE void throwParseError(int error_code, FormatStringHelper<Args...> formatter, Args &&... args)
+    {
+        throw Exception(error_code, std::move(formatter), std::forward<Args>(args)...);
+    }
 
 
-/// Returns an error based on the error handling mode.
-/// As an optimization, for error_handling = Zero/Null, we only care that
-/// an error happened but not which one specifically. This removes the need
-/// to copy the error string.
-#define RETURN_ERROR(error_code, ...)                                         \
-{                                                                             \
-    if constexpr (error_handling == ErrorHandling::Exception)                 \
-        return std::unexpected(ErrorCodeAndMessage(error_code, __VA_ARGS__)); \
-    else                                                                      \
-        return std::unexpected(ErrorCodeAndMessage(error_code));              \
+/// Throws (mode = Exception) or returns an error (mode = Zero/Null).
+/// For Zero/Null, we only care that an error happened but not which one specifically.
+#define RETURN_ERROR_IN_MODE(mode, error_code, ...)                     \
+{                                                                       \
+    if constexpr ((mode) == ErrorHandling::Exception)                   \
+        throwParseError(error_code, __VA_ARGS__);                       \
+    else                                                                \
+        return std::unexpected(ErrorCodeAndMessage(error_code));        \
 }
+
+#define RETURN_ERROR(error_code, ...) RETURN_ERROR_IN_MODE(error_handling, error_code, __VA_ARGS__)
 
 /// Run a function and return an error if the call failed.
 #define RETURN_ERROR_IF_FAILED(function_call)             \
@@ -158,6 +165,10 @@ namespace
     template <ErrorHandling error_handling, ReturnType return_type>
     struct alignas(CH_CACHE_LINE_SIZE) ParsedValue
     {
+        using VoidOrError  = std::expected<void,  ParseError<error_handling>>;
+        using Int32OrError = std::expected<Int32, ParseError<error_handling>>;
+        using Int64OrError = std::expected<Int64, ParseError<error_handling>>;
+
         static constexpr Int32 min_year = return_type == ReturnType::DateTime64 ? 0 : 1970;
         static constexpr Int32 max_year = return_type == ReturnType::DateTime64 ? 9999 : 2106;
 
@@ -568,9 +579,12 @@ namespace
             return res;
         }
 
+        template <ErrorHandling build_error_handling = error_handling>
         [[nodiscard]]
-        Int64OrError buildDateTime(const DateLUTImpl & time_zone)
+        std::expected<Int64, ParseError<build_error_handling>> buildDateTime(const DateLUTImpl & time_zone)
         {
+            using Build = ParsedValue<build_error_handling, return_type>;
+
             /// The hour of a half-day clock is stored in [0, 11], and PM adds 12 hours to it. They are added to a copy: for a
             /// time zone name in the string (`z` in Joda syntax), this function also runs before the final conversion, so
             /// adding them to `hour` itself added them twice.
@@ -579,11 +593,11 @@ namespace
             // Convert the parsed date/time into a timestamp.
             Int32 days_since_epoch = 0;
             if (week_date_format)
-                ASSIGN_RESULT_OR_RETURN_ERROR(days_since_epoch, daysSinceEpochFromWeekDate(year, week, day_of_week))
+                ASSIGN_RESULT_OR_RETURN_ERROR(days_since_epoch, Build::daysSinceEpochFromWeekDate(year, week, day_of_week))
             else if (day_of_year_format)
-                ASSIGN_RESULT_OR_RETURN_ERROR(days_since_epoch, daysSinceEpochFromDayOfYear(year, day_of_year))
+                ASSIGN_RESULT_OR_RETURN_ERROR(days_since_epoch, Build::daysSinceEpochFromDayOfYear(year, day_of_year))
             else
-                ASSIGN_RESULT_OR_RETURN_ERROR(days_since_epoch, daysSinceEpochFromDate(year, month, day))
+                ASSIGN_RESULT_OR_RETURN_ERROR(days_since_epoch, Build::daysSinceEpochFromDate(year, month, day))
 
             Int64 seconds_since_epoch = days_since_epoch * 86400UZ + hour_of_day * 3600UZ + minute * 60UZ + second;
 
@@ -617,7 +631,8 @@ namespace
             seconds_since_epoch -= time_zone_offset;
             if constexpr (return_type == ReturnType::DateTime)
                 if (seconds_since_epoch < 0)
-                    RETURN_ERROR(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Seconds since epoch is negative")
+                    RETURN_ERROR_IN_MODE(
+                        build_error_handling, ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Seconds since epoch is negative")
 
             return seconds_since_epoch;
         }
@@ -627,6 +642,10 @@ namespace
     template <typename Name, ParseSyntax parse_syntax, ReturnType return_type, ErrorHandling error_handling>
     class FunctionParseDateTimeImpl final : public IFunction
     {
+        using VoidOrError  = std::expected<void,  ParseError<error_handling>>;
+        using PosOrError   = std::expected<Pos,   ParseError<error_handling>>;
+        using Int64OrError = std::expected<Int64, ParseError<error_handling>>;
+
     public:
         const bool mysql_M_is_month_name;
         const bool mysql_parse_ckl_without_leading_zeros;
@@ -822,8 +841,10 @@ namespace
                         else
                         {
                             static_assert(error_handling == ErrorHandling::Exception);
-                            const ErrorCodeAndMessage & err = result.error();
-                            throw Exception(err.error_code, "{}", err.error_message);
+                            throw Exception(
+                                ErrorCodes::LOGICAL_ERROR,
+                                "Parsing step returned error {} instead of throwing",
+                                result.error().error_code);
                         }
                     }
                 }
@@ -835,11 +856,14 @@ namespace
                 /// Ensure all input was consumed
                 if (cur < end)
                 {
-                    result = std::unexpected(ErrorCodeAndMessage(
-                        ErrorCodes::CANNOT_PARSE_DATETIME,
-                        "Invalid format input {} is malformed at {}",
-                        str_ref,
-                        std::string_view(cur, end - cur)));
+                    if constexpr (error_handling == ErrorHandling::Exception)
+                        throwParseError(
+                            ErrorCodes::CANNOT_PARSE_DATETIME,
+                            "Invalid format input {} is malformed at {}",
+                            str_ref,
+                            std::string_view(cur, end - cur));
+                    else
+                        result = std::unexpected(ErrorCodeAndMessage(ErrorCodes::CANNOT_PARSE_DATETIME));
                 }
 
                 if (result.has_value())
@@ -867,8 +891,10 @@ namespace
                     else
                     {
                         static_assert(error_handling == ErrorHandling::Exception);
-                        const ErrorCodeAndMessage & err = result.error();
-                        throw Exception(err.error_code, "{}", err.error_message);
+                        throw Exception(
+                            ErrorCodes::LOGICAL_ERROR,
+                            "Parsing step returned error {} instead of throwing",
+                            result.error().error_code);
                     }
                 }
             }
@@ -1867,7 +1893,8 @@ namespace
                 std::string_view read_time_zone{cur, end};
                 const DateLUTImpl & date_time_zone = DateLUT::instance(read_time_zone);
                 const bool has_offset_before_time_zone = parsed_value.has_time_zone_offset;
-                const auto result = parsed_value.buildDateTime(date_time_zone);
+                /// Returns the error instead of throwing it: the failure is reported with the message below.
+                const auto result = parsed_value.template buildDateTime<ErrorHandling::Zero>(date_time_zone);
                 if (result.has_value())
                 {
                     /// An offset parsed before the time zone name selects the instant, for example one of the two occurrences
