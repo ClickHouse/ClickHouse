@@ -211,6 +211,11 @@ void AlterConversions::addMutationCommand(const MutationCommand & command, const
         columns_touched_by_metadata_mutations.insert(command.column_name);
         columns_touched_by_metadata_mutations.insert(command.rename_to);
 
+        /// A rename changes which column a name reads, so an index over that name is stale whatever its
+        /// granules were typed - the type record certifies the type, never the column identity.
+        value_updated_columns.insert(command.column_name);
+        value_updated_columns.insert(command.rename_to);
+
         /// Handle chained renames: if column A was renamed to B, and now B is renamed to C,
         /// update the existing entry to map A directly to C instead of having two separate entries.
         bool chained = false;
