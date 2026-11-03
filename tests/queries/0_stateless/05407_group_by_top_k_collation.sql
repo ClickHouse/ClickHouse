@@ -244,6 +244,26 @@ SETTINGS max_threads = 2, max_block_size = 1024, enable_adaptive_aggregator = 1,
     group_by_two_level_threshold = 100000, group_by_two_level_threshold_bytes = 50000000, enable_group_by_top_k_optimization = 1,
     log_comment = '05407_adaptive_repeats';
 
+-- Other aggregate functions, and none. Each l... key ranks best and comes twice in a row, a0 and á0 repeat throughout,
+-- so trims evict keys whose second row found them in the table earlier in the same block.
+SELECT 'other aggregates';
+SELECT s, count(), sum(number), uniqExact(number) FROM (WITH intDiv(number, 3) AS j SELECT number, multiIf(number % 3 = 0,
+    if(j % 2 = 0, 'a0', 'á0'), concat('l', leftPad(toString(99999 - j), 5, '0'))) AS s FROM numbers(6144))
+GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 65536, enable_group_by_top_k_optimization = 0;
+SELECT s, count(), sum(number), uniqExact(number) FROM (WITH intDiv(number, 3) AS j SELECT number, multiIf(number % 3 = 0,
+    if(j % 2 = 0, 'a0', 'á0'), concat('l', leftPad(toString(99999 - j), 5, '0'))) AS s FROM numbers(6144))
+GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 1024, enable_group_by_top_k_optimization = 1, log_comment = '05407_states';
+SELECT s FROM (WITH intDiv(number, 3) AS j SELECT multiIf(number % 3 = 0,
+    if(j % 2 = 0, 'a0', 'á0'), concat('l', leftPad(toString(99999 - j), 5, '0'))) AS s FROM numbers(6144))
+GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 65536, enable_group_by_top_k_optimization = 0;
+SELECT s FROM (WITH intDiv(number, 3) AS j SELECT multiIf(number % 3 = 0,
+    if(j % 2 = 0, 'a0', 'á0'), concat('l', leftPad(toString(99999 - j), 5, '0'))) AS s FROM numbers(6144))
+GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 1, max_block_size = 1024, enable_group_by_top_k_optimization = 1, log_comment = '05407_keys';
+
 -- After the fillers: 2000 n... keys in cycles, descending l... keys that each rank best, unique n... keys, or one key n;
 -- a0..a4 every 97th row. `observation_rows = 1` judges the heap as early as it can.
 SELECT 'judged heap';
@@ -376,24 +396,25 @@ SETTINGS max_threads = 4, max_block_size = 1024, group_by_two_level_threshold = 
 SYSTEM FLUSH LOGS query_log;
 
 -- Whether the heap pruned (on the shards for the remote queries), the aggregation spilled, and the heap trimmed in the
--- tie cases.
+-- tie and other-aggregate cases.
 SELECT 'engaged';
 SELECT
     i.log_comment,
     sum(q.ProfileEvents['AggregationTopKRowsSkipped'] + q.ProfileEvents['AggregationTopKKeysEvicted']) > 0 AS pruned,
     i.log_comment != '05407_spill' OR sum(q.ProfileEvents['ExternalAggregationWritePart']) > 0 AS spilled,
-    NOT startsWith(i.log_comment, '05407_ties') OR sum(q.ProfileEvents['AggregationTopKKeysEvicted']) > 0 AS trimmed
+    NOT (startsWith(i.log_comment, '05407_ties') OR i.log_comment IN ('05407_keys', '05407_states'))
+        OR sum(q.ProfileEvents['AggregationTopKKeysEvicted']) > 0 AS trimmed
 FROM system.query_log AS q
 INNER JOIN
 (
     SELECT query_id, log_comment FROM system.query_log
     WHERE current_database = currentDatabase() AND is_initial_query AND type = 'QueryFinish' AND event_date >= yesterday()
         AND log_comment IN ('05407_adaptive_repeats', '05407_composite_later', '05407_dynamic_filter',
-            '05407_forced_repeats', '05407_plain', '05407_remote_plan', '05407_remote_plan_nullable',
+            '05407_forced_repeats', '05407_keys', '05407_plain', '05407_remote_plan', '05407_remote_plan_nullable',
             '05407_remote_text', '05407_repeats', '05407_repeats_then_unique', '05407_run_adaptive',
             '05407_run_adaptive_new_best', '05407_run_adaptive_new_keys', '05407_run_never_fills',
             '05407_run_new_best', '05407_run_new_keys', '05407_run_one_key', '05407_run_repeats', '05407_serialized',
-            '05407_small', '05407_spill', '05407_threads', '05407_threads_adaptive', '05407_ties_asc',
+            '05407_small', '05407_spill', '05407_states', '05407_threads', '05407_threads_adaptive', '05407_ties_asc',
             '05407_ties_desc')
 ) AS i ON q.initial_query_id = i.query_id
 WHERE q.type = 'QueryFinish' AND q.event_date >= yesterday() AND (q.is_initial_query = NOT startsWith(i.log_comment, '05407_remote'))
