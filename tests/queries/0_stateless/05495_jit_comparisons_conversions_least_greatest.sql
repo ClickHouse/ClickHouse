@@ -55,6 +55,14 @@ SELECT k, least(i8, n, k) + 1, greatest(n, i8) + 1, least(m, f64, f32) + 1, grea
 SELECT k, least(i8, n, k) + 1 FROM t_jit_gaps ORDER BY k SETTINGS compile_expressions = 1, least_greatest_legacy_null_behavior = 1;
 SELECT k, least(i8, n, k) + 1 FROM t_jit_gaps ORDER BY k SETTINGS compile_expressions = 0, least_greatest_legacy_null_behavior = 1;
 
+-- With two `Nullable` numbers the legacy NULL behavior builds another `least` of the same name and types; the two must
+-- not share compiled code, whichever runs first.
+SELECT 'two Nullable arguments, both NULL behaviors';
+SELECT k, least(n, i8) + 1 FROM t_jit_gaps ORDER BY k SETTINGS compile_expressions = 1, least_greatest_legacy_null_behavior = 0;
+SELECT k, least(n, i8) + 1 FROM t_jit_gaps ORDER BY k SETTINGS compile_expressions = 1, least_greatest_legacy_null_behavior = 1;
+SELECT k, least(n, i8) + 1 FROM t_jit_gaps ORDER BY k SETTINGS compile_expressions = 1, least_greatest_legacy_null_behavior = 0;
+SELECT k, least(n, i8) + 1 FROM t_jit_gaps ORDER BY k SETTINGS compile_expressions = 0, least_greatest_legacy_null_behavior = 1;
+
 -- The compiled queries ran compiled; with the legacy NULL behavior `least` stays interpreted.
 SELECT not(u64 > i64), not(f64 = i64), toUInt32(n) + 1, least(i8, n, k) + 1 FROM t_jit_gaps
     SETTINGS compile_expressions = 1, log_comment = '05495_compiled' FORMAT Null;

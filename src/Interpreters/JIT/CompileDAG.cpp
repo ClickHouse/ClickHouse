@@ -156,6 +156,10 @@ UInt128 CompileDAG::hash() const
                 for (size_t arg : node.arguments)
                     hash.update(arg);
 
+                /// The settings the function captured, which can change its compiled code without changing its types
+                /// (see `IFunctionBase::updateHash`): expressions that differ in them must not share compiled code.
+                node.function->updateHash(hash);
+
                 break;
             }
             case CompileType::INPUT:

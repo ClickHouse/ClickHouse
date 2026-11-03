@@ -76,6 +76,15 @@ private:
     bool isVariadic() const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForNulls() const override { return legacy_null_behavior; }
+
+    /// With two numeric arguments the resolver builds the specialized function under the same name, which handles NULLs
+    /// differently: the generic function hashes a marker of its own, so that the two do not share a key (compiled code).
+    void updateHash(SipHash & hash) const override
+    {
+        hash.update(std::string_view("generic"));
+        hash.update(legacy_null_behavior);
+    }
+
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
 #if USE_EMBEDDED_COMPILER
