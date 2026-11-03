@@ -513,6 +513,23 @@ def test_not_found_shape(started_cluster):
     assert_error_shape(response, "NotFoundException")
 
 
+def test_error_response_keeps_connection_usable(started_cluster):
+    # Routing rejects each POST. Its body must not leak into the next request on the same connection.
+    body = {"name": "t", "padding": "x" * 100000}
+    with requests.Session() as session:
+        for path, expected_code in [
+            ("/v1/other_warehouse/namespaces/ns/tables", 404),
+            ("/v1/my_warehouse/namespaces/ns/tables/t/metrics", 406),
+        ]:
+            response = session.post(catalog_url(path), json=body)
+            assert response.status_code == expected_code, response.text
+            response = session.get(
+                catalog_url("/v1/config"), params={"warehouse": "my_warehouse"}
+            )
+            assert response.status_code == 200, response.text
+            assert response.json()["overrides"]["prefix"] == "my_warehouse"
+
+
 def wait_listening(url, expected):
     for _ in range(100):
         try:
