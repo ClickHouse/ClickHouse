@@ -35,6 +35,7 @@ from ci.jobs.scripts.dataset_download import (
 )
 from ci.jobs.scripts.perf import s3_service, test_discovery
 from ci.praktika._environment import _Environment
+from ci.praktika.cidb import CIDB
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.settings import Settings
@@ -157,8 +158,12 @@ CIDB_TEST_CASES_RESULT_NAME = "Tests"
 
 RAW_QUERY_METRICS_TABLE = "query_metric_runs_v1"
 HISTORICAL_DATA_TABLE = "query_metrics_v2"
-# The public read-only endpoint the job reads the history in `HISTORICAL_DATA_TABLE` from.
-PLAY_CIDB_URL = "https://play.clickhouse.com?user=play"
+
+
+def read_cidb():
+    """The read-only endpoint the job reads the history in `HISTORICAL_DATA_TABLE` from."""
+    url = f"{CIDB.get_read_url(Info())}?user={Settings.CI_DB_READ_USER}"
+    return CIDBCluster(url=url, user="", pwd="")
 
 # --- Aggregate report tables on the play cluster --------------------------
 # These capture everything that used to only live in the static HTML report
@@ -771,7 +776,7 @@ WHERE pull_request_number = 0
     AND test_name = '{tn}'
 ORDER BY test, check_start_time
 """
-    base = Settings.CI_DB_READ_URL or ""
+    base = CIDB.get_read_url(Info())
     user = Settings.CI_DB_READ_USER or ""
     if user:
         sep = "&" if "?" in base else "?"
@@ -2152,7 +2157,7 @@ WHERE event_date >= today() - {FALLBACK_SHARED_DAYS + 1}
     AND ({terms})
 GROUP BY test, query_index, query_display_name
 FORMAT TSV"""
-    answer = CIDBCluster(url=PLAY_CIDB_URL, user="", pwd="").do_select_query(query, retries=1, timeout=20)
+    answer = read_cidb().do_select_query(query, retries=1, timeout=20)
     if answer is None:
         return None
     other_prs = {}
@@ -3184,7 +3189,7 @@ def main():
     elif res and not info.is_local_run:
 
         def prepare_historical_data():
-            cidb = CIDBCluster(url=PLAY_CIDB_URL, user="", pwd="")
+            cidb = read_cidb()
             if not cidb.is_ready():
                 print(
                     "WARNING: CIDB is not ready, will proceed without historical thresholds"

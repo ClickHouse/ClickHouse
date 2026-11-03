@@ -122,6 +122,10 @@ class CIDB:
             passwd=data.get("password"),
         )
 
+    @staticmethod
+    def get_read_url(info) -> str:
+        return json.loads(info.get_secret(Settings.SECRET_CI_DB_CONNECTION).get_value())["url"]
+
     def get_link_to_test_case_statistics(
         self,
         test_name: str,
