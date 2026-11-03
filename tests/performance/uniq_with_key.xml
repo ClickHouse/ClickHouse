@@ -19,6 +19,7 @@
     <fill_query>insert into t_{uniq_keys} select number, number % {uniq_keys} from numbers_mt(5e7)</fill_query>
 
     <query>SELECT uniqExact(a) FROM t_{uniq_keys} group by b</query>
+    <query>SELECT intDiv(number, 65536) AS k, uniqExact(number % 64) FROM numbers_mt(1600000000) GROUP BY k FORMAT Null</query>
 
     <drop_query>drop table t_{uniq_keys}</drop_query>
 </test>

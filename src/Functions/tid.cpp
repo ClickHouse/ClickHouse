@@ -19,7 +19,7 @@ namespace
 
         size_t getNumberOfArguments() const override { return 0; }
 
-        DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeUInt64>(); }
+        String getSignatureString() const override { return "() -> UInt64"; }
 
         DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
         {

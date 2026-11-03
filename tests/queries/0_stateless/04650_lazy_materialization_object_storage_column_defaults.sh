@@ -60,8 +60,6 @@ SELECT a, s FROM lazy_mat_defaults ORDER BY b LIMIT 3;
 SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT a, s FROM lazy_mat_defaults ORDER BY b LIMIT 3) WHERE explain LIKE '%Lazily read columns%';
 "
 
-# `enable_analyzer` is pinned because lazy materialization requires the analyzer
-# (see `QueryPlanOptimizationSettings`), and some CI configurations run with the old analyzer.
 # `s3_validate_etag_on_read` is pinned because for plain (non-data-lake) object storage the lazy
 # reread is only generation-safe on `S3` with the ETag-pinned GET.
 # `query_plan_max_limit_for_lazy_materialization` is pinned because the CI settings randomizer may
@@ -69,7 +67,6 @@ SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT a, s FROM lazy_mat_default
 for enabled in 1 0; do
     echo "-- query_plan_optimize_lazy_materialization_for_object_storage = $enabled"
     ${CLICKHOUSE_CLIENT} \
-        --enable_analyzer=1 \
         --s3_validate_etag_on_read=1 \
         --query_plan_optimize_lazy_materialization=1 \
         --query_plan_max_limit_for_lazy_materialization=0 \

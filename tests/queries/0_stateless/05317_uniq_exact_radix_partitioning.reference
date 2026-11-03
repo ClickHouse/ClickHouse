@@ -1,0 +1,53 @@
+UInt64	400000
+UInt64 consecutive duplicates	400000
+UInt32	1000000
+UInt16	65536
+Int8	256
+Float64	160003
+Float32	1000000
+String	266667
+String consecutive duplicates	133334
+FixedString	400000
+IPv6	400000
+UUID	400000
+Int128	400000
+Nullable(Int64)	300000
+Nullable(String)	300000
+count distinct	400000
+constant	1
+constant Nullable	1
+constant String	1
+constant for empty	0
+repeated UInt64	70000
+repeated UInt32	140000
+repeated String	40000
+repeated many UInt64	300000
+sparse	100001
+sparse String	100001
+sparse without defaults	100000
+statistics radix	600000
+statistics radix	600000
+statistics set	400000
+statistics set	400000
+statistics repeated	300000
+statistics repeated	300000
+empty	0
+only NULLs	0
+null for empty, empty	0	0	UInt64
+null for empty	400000
+totals	400000
+
+totals	400000
+distributed	400000
+single thread	400000
+used	1
+used with null for empty	1
+used with a single thread	1
+used for a constant	1
+used for Nullable	1
+disabled	0
+LowCardinality	0
+two aggregates	0
+GROUP BY	0
+two arguments	0
+projection	150000

@@ -10,15 +10,13 @@ doc_type: 'reference'
 在 ClickHouse `24.3` 版本中，analyzer 默认处于启用状态。
 你可以在[此处](/zh/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer#analyzer)了解有关其工作原理的更多详情。
 
-<div id="known-incompatibilities">
-  ## 已知不兼容项
-</div>
+自 `26.9` 版本起，analyzer 为强制启用：`enable_analyzer` 设置已废弃，将其设置为 `0` 的尝试会被拒绝，并且 ClickHouse 在 `24.3` 之前所使用的查询分析不再受支持。下面列出的不兼容项说明了旧版分析在行为上的差异，以便你更新为其编写的查询；若要观察旧版行为，请在低于 `26.9` 的 ClickHouse 版本上运行该查询。
+
+## 已知不兼容项 {#known-incompatibilities}
 
 尽管修复了大量 bug 并引入了新的优化，这也给 ClickHouse 的行为带来了一些破坏性变更。请阅读以下变更，了解如何为 analyzer 改写你的查询。
 
-<div id="invalid-queries-are-no-longer-optimized">
-  ### 无效查询不再被优化
-</div>
+### 无效查询不再被优化 {#invalid-queries-are-no-longer-optimized}
 
 此前的查询规划基础设施会在查询验证之前先进行 AST 层级的优化。
 这些优化可能会将初始查询重写为有效且可执行的查询。
@@ -27,9 +25,7 @@ doc_type: 'reference'
 这意味着，过去原本还能执行的无效查询现在已不再受支持。
 在这种情况下，必须手动修复查询。
 
-<div id="example-1">
-  #### 示例 1
-</div>
+#### 示例 1 {#example-1}
 
 以下查询在投影列表中使用了列 `number`，但聚合后只有 `toString(number)` 可用。
 在旧版 analyzer 中，`GROUP BY toString(number)` 会被优化为 `GROUP BY number,`，从而使该查询成为合法查询。
@@ -40,9 +36,7 @@ FROM numbers(1)
 GROUP BY toString(number)
 ```
 
-<div id="example-2">
-  #### 示例 2
-</div>
+#### 示例 2 {#example-2}
 
 这个查询也存在同样的问题。列 `number` 在聚合后又与另一个键一起使用。
 此前的查询分析器会将 `number > 5` 这个过滤条件从 `HAVING` 子句移到 `WHERE` 子句，从而修正这个查询。
@@ -69,9 +63,7 @@ GROUP BY n
 
 作为迁移辅助，analyzer 可以对非聚合的 AND 合取项沿用旧版将 `HAVING` 重写到 `WHERE` 的方式。启用 `analyzer_compatibility_allow_non_aggregate_in_having = 1` 即可使用此行为。该设置自 ClickHouse `26.7` 起可用。对于 `WITH CUBE`、`WITH ROLLUP`、`WITH TOTALS` 和 `GROUPING SETS`，该设置会被忽略。包含聚合、`grouping` 或非确定性函数的合取项会保留在 `HAVING` 中；如果任一合取项包含窗口函数或有状态函数 (例如 `rowNumberInBlock`) ，则整个 `HAVING` 的重写都会被禁用，这与旧版行为一致。
 
-<div id="create-view-with-invalid-query">
-  ### 使用无效查询的 `CREATE VIEW`
-</div>
+### 使用无效查询的 `CREATE VIEW` {#create-view-with-invalid-query}
 
 analyzer 始终会执行类型检查。
 此前，可以使用无效的 `SELECT` 查询创建 `VIEW`。
@@ -79,9 +71,7 @@ analyzer 始终会执行类型检查。
 
 现在已无法再通过这种方式创建 `VIEW`。
 
-<div id="example-view">
-  #### 示例
-</div>
+#### 示例 {#example-view}
 
 ```sql
 CREATE TABLE source (data String)
@@ -93,13 +83,9 @@ AS SELECT JSONExtract(data, 'test', 'DateTime64(3)')
 FROM source;
 ```
 
-<div id="known-incompatibilities-of-the-join-clause">
-  ### `JOIN` 子句的已知兼容性问题
-</div>
+### `JOIN` 子句的已知兼容性问题 {#known-incompatibilities-of-the-join-clause}
 
-<div id="join-using-column-from-projection">
-  #### 在 `JOIN` 中使用投影中的列
-</div>
+#### 在 `JOIN` 中使用投影中的列 {#join-using-column-from-projection}
 
 默认情况下，`SELECT` 列表中的别名不能用作 `JOIN USING` 键。
 
@@ -119,9 +105,7 @@ USING (b);
 当该设置为 `false` 时，join 条件默认变为 `t1.b = t2.b`，查询将返回 `2, 'one'`。
 如果 `b` 在 `t1` 中不存在，查询将报错并失败。
 
-<div id="changes-in-behavior-with-join-using-and-aliasmaterialized-columns">
-  #### `JOIN USING` 与 `ALIAS`/`MATERIALIZED` 列的行为变化
-</div>
+#### `JOIN USING` 与 `ALIAS`/`MATERIALIZED` 列的行为变化 {#changes-in-behavior-with-join-using-and-aliasmaterialized-columns}
 
 在 analyzer 中，对于涉及 `ALIAS` 或 `MATERIALIZED` 列的 `JOIN USING` 查询，若使用 `*`，默认会将这些列包含在结果集中。
 
@@ -144,9 +128,7 @@ FULL JOIN t2 USING (payload);
 
 为确保结果一致且符合预期，尤其是在将旧查询迁移到 analyzer 时，建议在 `SELECT` 子句中显式指定列，而不是使用 `*`。
 
-<div id="handling-of-type-modifiers-for-columns-in-using-clause">
-  #### `USING` clause 中列的类型修饰符处理
-</div>
+#### `USING` clause 中列的类型修饰符处理 {#handling-of-type-modifiers-for-columns-in-using-clause}
 
 在 analyzer 中，用于确定 `USING` clause 中指定列共同超类型的规则已统一，从而带来更可预测的结果，
 尤其是在处理 `LowCardinality` 和 `Nullable` 等类型修饰符时。
@@ -165,9 +147,7 @@ USING (id);
 
 在此查询中，`id` 的共同超类型被确定为 `String`，并且会忽略 `t1` 的 `LowCardinality` 修饰符。
 
-<div id="projection-column-names-changes">
-  ### 投影列名变更
-</div>
+### 投影列名变更 {#projection-column-names-changes}
 
 在计算投影列名时，不会展开别名。
 
@@ -175,27 +155,26 @@ USING (id);
 SELECT
     1 + 1 AS x,
     x + 1
-SETTINGS enable_analyzer = 0
 FORMAT PrettyCompact
+```
 
+在 `24.3` 之前，第二列以展开后的别名命名：
+
+```text
    ┌─x─┬─plus(plus(1, 1), 1)─┐
 1. │ 2 │                   3 │
    └───┴─────────────────────┘
+```
 
-SELECT
-    1 + 1 AS x,
-    x + 1
-SETTINGS enable_analyzer = 1
-FORMAT PrettyCompact
+analyzer 会在列名中保留别名：
 
+```text
    ┌─x─┬─plus(x, 1)─┐
 1. │ 2 │          3 │
    └───┴────────────┘
 ```
 
-<div id="incompatible-function-arguments-types">
-  ### 不兼容的函数参数类型
-</div>
+### 不兼容的函数参数类型 {#incompatible-function-arguments-types}
 
 在 analyzer 中，类型推断发生在初始查询分析阶段。
 这一变更意味着，类型检查会在短路求值之前执行；因此，`if` 函数的参数必须始终具有共同超类型。
@@ -206,39 +185,24 @@ FORMAT PrettyCompact
 SELECT toTypeName(if(0, [2, 3, 4], 'String'))
 ```
 
-<div id="heterogeneous-clusters">
-  ### 异构集群
-</div>
+### 异构集群 {#heterogeneous-clusters}
 
-analyzer 显著改变了集群中服务器之间的通信协议。因此，无法在 `enable_analyzer` 设置值不同的服务器之间运行分布式查询。
+analyzer 显著改变了集群中服务器之间的通信协议。因此，无法在对是否使用 analyzer 未达成一致的服务器之间运行分布式查询——对于版本早于 `26.9` 的服务器集群而言，这意味着 `enable_analyzer` 设置值不同的服务器。
 
-<div id="mutations-are-interpreted-by-previous-analyzer">
-  ### 变更仍由先前的 analyzer 解析
-</div>
+版本为 `26.10` 或更新的服务器已不再保留其他查询分析方式，因此它会忽略较旧的发起服务器发送的值，一律使用 analyzer 来分析查询。两种分析方式对结果列的命名并不相同，而发起服务器是按列名来匹配 shard 返回的块的，因此此类查询可能在发起服务器上以 `NOT_FOUND_COLUMN_IN_BLOCK` 失败——例如查询中选择了以非规范大小写书写的函数 (`hostname()`) ，而 analyzer 会将其解析为规范名称 (`hostName()`) 。因此，仍在使用旧查询分析方式运行的集群，必须在其中任何一台服务器升级到 `26.10` 之前，在每台服务器上设置 `enable_analyzer = 1`。
 
-变更仍在使用旧版 analyzer。
-这意味着一些新的 ClickHouse SQL 功能无法在变更中使用。例如，`QUALIFY` 子句。
-可在[这里](https://github.com/ClickHouse/ClickHouse/issues/61563)查看相关状态。
-
-<div id="unsupported-features">
-  ### 不支持的功能
-</div>
+### 不支持的功能 {#unsupported-features}
 
 下面列出了 analyzer 当前不支持的功能：
 
 * Annoy 索引。
 * Hypothesis 索引。相关工作仍在进行中，见[此处](https://github.com/ClickHouse/ClickHouse/pull/48381)。
-* window view 不受支持，且未来也没有支持计划。
 
-<div id="cloud-migration">
-  ## Cloud 迁移
-</div>
+## Cloud 迁移 {#cloud-migration}
 
 我们正在所有当前禁用了 analyzer 的实例上启用该功能，以支持新的功能和性能优化。此变更会实施更严格的 SQL 作用域规则，因此客户需要手动更新不符合要求的查询。
 
-<div id="migration-workflow">
-  ### 迁移流程
-</div>
+### 迁移流程 {#migration-workflow}
 
 1. 使用 `normalized_query_hash` 过滤 `system.query_log`，以识别该查询：
 
@@ -250,21 +214,18 @@ LIMIT 1
 SETTINGS skip_unavailable_shards=1
 ```
 
-2. 添加以下设置，以在启用 analyzer 的情况下运行该查询。
+2. 使用 analyzer 运行该查询，并在查询依赖旧解析行为时，添加可恢复旧版分析中标识符解析行为的兼容性设置。
 
 ```sql
 SETTINGS
-    enable_analyzer=1,
     analyzer_compatibility_join_using_top_level_identifier=1
 ```
 
-3. 重构并验证查询结果，确保其与禁用 analyzer 时生成的输出一致。
+3. 重构并验证查询结果，确保其与该查询在迁移前生成的输出一致。
 
 请参阅内部测试中最常见的不兼容问题。
 
-<div id="unknown-expression-identifier">
-  ### 未知的表达式标识符
-</div>
+### 未知的表达式标识符 {#unknown-expression-identifier}
 
 错误：`Unknown expression identifier ... in scope ... (UNKNOWN_IDENTIFIER)`。异常代码：47
 
@@ -277,9 +238,7 @@ SETTINGS
 * JOIN 连接键：如果连接键是别名，请使用包含完整表达式的 ON，而不要使用 USING。
 * 在外层查询中，请引用子查询/CTE 本身的别名，而不是其内部的表。
 
-<div id="non-aggregated-columns-in-group-by">
-  ### GROUP BY 中的非聚合列
-</div>
+### GROUP BY 中的非聚合列 {#non-aggregated-columns-in-group-by}
 
 错误：`Column ... is not under aggregate function and not in GROUP BY keys (NOT_AN_AGGREGATE)`。异常代码：215
 
@@ -298,9 +257,7 @@ SELECT user_id, any(device_id) FROM table GROUP BY user_id
 SELECT user_id, device_id FROM table GROUP BY user_id, device_id
 ```
 
-<div id="non-aggregated-columns-in-having">
-  ### HAVING 中的非聚合列
-</div>
+### HAVING 中的非聚合列 {#non-aggregated-columns-in-having}
 
 错误：`Column ... is not under aggregate function and not in GROUP BY keys (NOT_AN_AGGREGATE)`。Exception code：215
 
@@ -316,33 +273,38 @@ SELECT category, sum(value) FROM t GROUP BY category HAVING service = 'svc1';
 SELECT category, sum(value) FROM t WHERE service = 'svc1' GROUP BY category;
 ```
 
-<div id="duplicate-cte-names">
-  ### 重复的 CTE 名称
-</div>
+### 重复的 CTE 名称 {#duplicate-cte-names}
 
 错误：`CTE with name ... already exists (MULTIPLE_EXPRESSIONS_FOR_ALIAS)`。异常代码：179
 
-原因：旧版 analyzer 允许定义多个同名的公共表表达式 (WITH ...) ，后面的定义会遮蔽前面的定义。analyzer 不允许这种歧义。
+原因：旧版 analyzer 允许定义多个同名的公用表表达式 (WITH ...) ，后定义的会遮蔽先定义的。新版 analyzer 默认拒绝这种有歧义的写法。
 
-解决方案：将重复的 CTE 重命名为唯一名称。
+解决方案：重命名重复的 CTE，确保名称唯一。作为迁移过渡手段，可以启用 `analyzer_compatibility_allow_cte_redefinition = 1` (自 ClickHouse `26.10` 起可用) 来恢复旧版行为：引用会绑定到该名称下当前未在解析中的最新定义，因此重新定义时可以读取前一个定义，而查询主体读取的是最后一个定义。
+
+限制：即使启用该设置，声明为 `MATERIALIZED` 的 CTE 以及 `WITH RECURSIVE` 子句中的 CTE 仍无法重新定义。另有一种形态与旧版 analyzer 的行为不同：在同一名称的两个定义之间声明的 CTE 也会绑定到最后一个定义，而旧版 analyzer 会将其绑定到其声明处可见的定义。
 
 ```sql
-/* 原始查询 */
-WITH 
-  data AS (SELECT 1 AS id), 
-  data AS (SELECT 2 AS id) -- 重新定义
+/* ORIGINAL QUERY */
+WITH
+  data AS (SELECT 1 AS id),
+  data AS (SELECT id + 1 AS id FROM data) -- Redefined, reads the previous definition
 SELECT * FROM data;
 
-/* 修复后的查询 */
-WITH 
-  raw_data AS (SELECT 1 AS id), 
-  processed_data AS (SELECT 2 AS id)
+/* FIXED QUERY */
+WITH
+  raw_data AS (SELECT 1 AS id),
+  processed_data AS (SELECT id + 1 AS id FROM raw_data)
 SELECT * FROM processed_data;
+
+/* LEGACY BEHAVIOR AS A MIGRATION AID */
+WITH
+  data AS (SELECT 1 AS id),
+  data AS (SELECT id + 1 AS id FROM data)
+SELECT * FROM data
+SETTINGS analyzer_compatibility_allow_cte_redefinition = 1;
 ```
 
-<div id="ambiguous-column-identifiers">
-  ### 歧义列标识符
-</div>
+### 歧义列标识符 {#ambiguous-column-identifiers}
 
 错误：`JOIN [JOIN TYPE] ambiguous identifier ... (AMBIGUOUS_IDENTIFIER)` Exception code: 207
 
@@ -358,9 +320,7 @@ SELECT table1.ID AS ID FROM table1, table2 WHERE ID...
 SELECT table1.ID AS ID_RENAMED FROM table1, table2 WHERE ID_RENAMED...
 ```
 
-<div id="invalid-usage-of-final">
-  ### FINAL 的错误用法
-</div>
+### FINAL 的错误用法 {#invalid-usage-of-final}
 
 错误：`Table expression modifiers FINAL are not supported for subquery...` 或 `Storage ... doesn't support FINAL` (`UNSUPPORTED_METHOD`) 。Exception 代码：1、181
 
@@ -379,9 +339,7 @@ SELECT * FROM (SELECT * FROM my_table) AS subquery FINAL ...
 SELECT * FROM (SELECT * FROM my_table FINAL) AS subquery ...
 ```
 
-<div id="countdistinct-case-insensitivity">
-  ### `countDistinct()` 函数的大小写敏感性
-</div>
+### `countDistinct()` 函数的大小写敏感性 {#countdistinct-case-insensitivity}
 
 错误：`Function with name countdistinct does not exist (UNKNOWN_FUNCTION)`。Exception code：46
 

@@ -10,6 +10,7 @@
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
 #include <Common/Exception.h>
+#include <Common/HTTPHeaderFilter.h>
 #include <Common/RemoteHostFilter.h>
 
 #include <Poco/JSON/Parser.h>
@@ -162,8 +163,11 @@ Poco::JSON::Object::Ptr BigQueryClient::requestJSON(
         if (!request_body.empty())
         {
             headers.emplace_back("Content-Type", "application/json");
-            out_stream_callback = [&request_body](std::ostream & os) { os << request_body; };
+            out_stream_callback = [&request_body](WriteBuffer & out) { writeString(request_body, out); };
         }
+
+        /// Also covers tokens returned by the OAuth endpoint and tables attached without the CREATE check.
+        context->getHTTPHeaderFilter().checkHeaders(headers);
 
         auto buf = BuilderRWBufferFromHTTP(uri)
             .withConnectionGroup(HTTPConnectionGroupType::HTTP)

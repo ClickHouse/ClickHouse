@@ -17,7 +17,6 @@
 -- trivially. The test pins the observable contract of the shape - results and cache use - so that a
 -- future change which starts replacing stamped reads cannot silently reintroduce unsalted reuse.
 
-SET allow_experimental_analyzer = 1;
 SET use_query_condition_cache = 1;
 -- Turn the gate off: this test covers the contract of the query condition cache being
 -- switched off for TopK reads.

@@ -25,6 +25,10 @@ from .usage import ComputeUsage, PipelineUtilization, StorageUsage
 from .utils import Utils
 
 
+class CIDBTimeoutError(RuntimeError):
+    """Every attempt of a CIDB request timed out on the client side."""
+
+
 class CIDB:
     _STATUS_TO_CIDB = {
         Result.Status.OK: "success",
@@ -346,21 +350,26 @@ ORDER BY day DESC
                 )
                 if response.ok:
                     return response
+                timed_out = False
                 error = f"{what} failed, response code [{response.status_code}], body [{response.text}]"
             except Exception as ex:
+                timed_out = isinstance(ex, requests.exceptions.Timeout)
                 error = f"{what} failed, exception [{ex}]"
 
             print(f"WARNING: CIDB {error} - attempt {retry}/{retries}")
             if retry >= retries:
+                if timed_out:
+                    raise CIDBTimeoutError(f"CIDB {error}")
                 raise RuntimeError(f"CIDB {error}")
             time.sleep(2**retry)
 
-    def query(self, query: str, retries: int = 5, log_level="warning"):
+    def query(self, query: str, retries: int = 5, log_level="warning", timeout=None):
         """
         Executes a SELECT query on CI DB with retry support.
 
         :param query: SQL query string
         :param retries: Number of retry attempts on failure
+        :param timeout: Per-attempt timeout in seconds, `Settings.CI_DB_QUERY_TIMEOUT_SEC` by default
         :return: Response text if successful
         """
         params = {
@@ -373,7 +382,7 @@ ORDER BY day DESC
         return self._post_with_retries(
             params=params,
             data=query.encode(),
-            timeout=Settings.CI_DB_QUERY_TIMEOUT_SEC,
+            timeout=timeout or Settings.CI_DB_QUERY_TIMEOUT_SEC,
             retries=retries,
             what="query",
         ).text

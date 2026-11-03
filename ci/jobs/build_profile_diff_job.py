@@ -21,9 +21,10 @@ official-build flag, so their object files, unstripped binaries and link times
 are incomparable to master's (observed on a no-op PR as an apparent -73%
 binary size and -39% link time):
 
-  * `Build (arm_release_pr_cache_warmup)` - the master sccache-warmup build,
-    compiled with exactly the PR flags but never linked. Baseline for object
-    file sizes and per-TU compile times.
+  * `Build (arm_release_performance_reference)` - the warmup build below: a
+    master build made exactly like a PR build, which also fills the sccache,
+    profiled for its object files only.
+    Baseline for object file sizes and per-TU compile times.
   * `Build (arm_release)` - the official master build. Baseline for the
     artifacts that do not depend on debug info: the stripped binary size and
     the per-symbol sizes of the linked binaries, plus per-function ThinLTO
@@ -73,6 +74,7 @@ import json
 import os
 import statistics
 import subprocess
+import time
 import traceback
 from typing import Dict, List, Optional
 
@@ -83,10 +85,10 @@ from ci.praktika.result import Result
 from ci.praktika.utils import Utils
 
 CHECK_NAME = "arm_release"
-# The master sccache-warmup build: compiled with the PR build's exact cmake
-# flags (see PR_CACHE_WARMUP_BUILD_TYPES in build_clickhouse.py), so it is the
+# The master build made exactly like a PR build (see
+# PERFORMANCE_REFERENCE_TO_RELEASE in build_clickhouse.py), so it is the
 # comparable baseline for everything measured before linking.
-WARMUP_CHECK_NAME = "arm_release_pr_cache_warmup"
+WARMUP_CHECK_NAME = "arm_release_performance_reference"
 COMMENT_TAG = "build-profile-diff"
 
 BUILD_DIR = "./ci/tmp/build"
@@ -209,10 +211,11 @@ class Section:
     body: str = ""  # markdown, empty = nothing to show
     significant: bool = False
     summary: str = ""  # one line for the job result info
+    improvement: str = ""  # one line for a notable win, empty = none
 
 
 class Db:
-    def __init__(self):
+    def __init__(self, read_budget_s=None):
         # CI_LOGS_USER only for local runs
         user = os.environ.get("CI_LOGS_USER", BUILD_PROFILE_USER)
         # This job only reads, so it goes to the read-only sub-service of the
@@ -230,9 +233,12 @@ class Db:
                 user=user,
                 password=password,
                 readonly=True,
+                read_budget_s=read_budget_s,
             )
         else:
-            self._cluster = LogCluster(readonly=True, user=user)
+            self._cluster = LogCluster(
+                readonly=True, user=user, read_budget_s=read_budget_s
+            )
 
     def query(self, query: str) -> List[dict]:
         """Run a SELECT and return rows as dicts.
@@ -347,13 +353,16 @@ def resolve_run(
     repo: str,
     table: str = "binary_sizes",
     check_name: str = CHECK_NAME,
+    extra_where: str = "",
 ) -> Optional[Side]:
     """The newest uploaded build run for one side, or None if there is no data.
 
     Resolved from `binary_sizes` by default (the canonical, always-complete
     table); the resulting (check_start_time, instance_id) is reused for every
-    other table of the same build.
+    other table of the same build. `extra_where` limits it to the runs that
+    have matching rows.
     """
+    where = f"\n            AND {extra_where}" if extra_where else ""
     rows = db.query(
         f"""SELECT check_start_time, instance_id
         FROM {table}
@@ -361,7 +370,7 @@ def resolve_run(
             AND {repo_condition(repo)}
             AND pull_request_number = {pr_number}
             AND commit_sha = {quote(sha)}
-            AND check_name = {quote(check_name)}
+            AND check_name = {quote(check_name)}{where}
         ORDER BY check_start_time DESC
         LIMIT 1"""
     )
@@ -520,6 +529,7 @@ class LocalInfo:
     pr_number = 0
     sha = ""
     event_time = ""
+    is_local_run = True
 
     def get_kv_data(self, key):
         return None
@@ -569,7 +579,38 @@ EXTEND_MAX_PAGES = 60
 # `gh` self-bounds connect and TLS handshake but not a stalled response body,
 # so every call carries its own deadline.
 GH_TIMEOUT_SECONDS = 120
+# Attempts per commit listing: GitHub fails single requests while the ones around them succeed.
+GH_ATTEMPTS = 3
 GH_STREAM_LEN = 300
+
+# Wall clock kept back from the CI logs cluster read retries so that the job can
+# still report: praktika SIGKILLs a job at its timeout and a killed job produces
+# no Result at all. The budget starts at the cluster handle and is checked
+# between POST retries, so the reserve has to hold the startup before that, the
+# read in flight when the budget runs out (its readiness schedule, bounded by
+# the retry count at 180 s of backoff, and one POST overrunning its own 60 s
+# socket timeout, measured at up to 185 s on a trickling connection), and the
+# comment refresh plus the job completion. The image pull is not in it: the
+# timeout only starts with the job process.
+CLUSTER_READ_RESERVE_SECONDS = 550
+
+
+def cluster_read_budget_seconds(info):
+    """Wall clock all CI logs cluster reads of this job may spend on retries, together.
+
+    None on a local run, which leaves the reads unbounded.
+    """
+    if info.is_local_run:
+        return None
+    # Not at module scope: ci.defs.job_configs needs a bare `praktika`, which the
+    # documented local run resolves only via the sys.path entry ci.praktika adds.
+    from ci.defs.job_configs import JobConfigs
+
+    job_timeout = JobConfigs.build_profile_diff_job.timeout
+    assert (
+        CLUSTER_READ_RESERVE_SECONDS * 2 < job_timeout
+    ), f"CLUSTER_READ_RESERVE_SECONDS [{CLUSTER_READ_RESERVE_SECONDS}] leaves no usable read budget in a [{job_timeout}] s job"
+    return job_timeout - CLUSTER_READ_RESERVE_SECONDS
 
 
 def _elide_stream(text: str) -> str:
@@ -586,6 +627,9 @@ def _list_commits_page(anchor_sha: str, page: int) -> List[dict]:
     This is NOT the first-parent chain: the listing interleaves merged PRs'
     second-parent commits. Each entry carries its parent shas so that
     `_walk_first_parent` can reconstruct the chain client-side.
+
+    A timeout, an HTTP 5xx or 429, or a failure that names no HTTP status (a
+    cut or reset response) is retried; any other 4xx fails at once.
     """
     # Hardcoded upstream namespace, like the store_data hook: the profile rows
     # in the CI logs cluster carry public-repo shas.
@@ -597,20 +641,30 @@ def _list_commits_page(anchor_sha: str, page: int) -> List[dict]:
         "--jq",
         "[.[] | {sha: .sha, date: .commit.committer.date, parents: [.parents[].sha]}]",
     ]
-    try:
-        res = subprocess.run(argv, capture_output=True, text=True, timeout=GH_TIMEOUT_SECONDS)
-    except subprocess.TimeoutExpired as e:
-        raise RuntimeError(f"gh api timed out after {GH_TIMEOUT_SECONDS} s: {endpoint}") from e
-    if res.returncode != 0:
+    error = None
+    for attempt in range(1, GH_ATTEMPTS + 1):
+        if attempt > 1:
+            print(f"WARNING: {error}, retrying in {5 * (attempt - 1)} s")
+            time.sleep(5 * (attempt - 1))
+        try:
+            res = subprocess.run(argv, capture_output=True, text=True, timeout=GH_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired:
+            error = RuntimeError(f"gh api timed out after {GH_TIMEOUT_SECONDS} s (attempt {attempt} of {GH_ATTEMPTS}): {endpoint}")
+            continue
+        if res.returncode == 0:
+            return json.loads(res.stdout)
         # Field order matters: an outer caller bounds this message before it
         # reaches a public comment, so the exit code and the endpoint - one of
         # up to EXTEND_MAX_PAGES - precede the capped API-controlled streams,
         # which are what name the HTTP status.
-        raise RuntimeError(
-            f"gh api exited {res.returncode} for {endpoint}: "
+        error = RuntimeError(
+            f"gh api exited {res.returncode} for {endpoint} (attempt {attempt} of {GH_ATTEMPTS}): "
             f"err[{_elide_stream(res.stderr)}] out[{_elide_stream(res.stdout)}]"
         )
-    return json.loads(res.stdout)
+        # gh reports an HTTP error as "gh: <message> (HTTP <status>)"; a 4xx other than 429 is not transient.
+        if "(HTTP 4" in res.stderr and "(HTTP 429)" not in res.stderr:
+            break
+    raise error
 
 
 def _walk_first_parent(anchor_sha: str, cutoff: str, max_pages: int, list_page, max_commits: int = 0):
@@ -743,13 +797,13 @@ def find_baseline(db: Db, master_shas: List[str], pr_sha: str, date_condition: s
 def find_warmup_baseline(db: Db, master_shas: List[str], pr_sha: str, date_condition: str, repo: str) -> Optional[str]:
     """The most recent master commit with uploaded warmup-build profile data.
 
-    The warmup build compiles with the PR flags but does not link, so its
+    The warmup build (PR flags) is profiled for its objects only, so its
     canonical data is the object files, not MAIN_BINARY. May legitimately be
     absent while master catches up with profiling the warmup build.
 
-    As in `find_baseline`, the `binary_sizes` row is the completion marker: it
-    is uploaded after the time trace, so a warmup commit selected here also has
-    the per-TU compile times the drill-down reads.
+    As in `find_baseline`, an object-file `binary_sizes` row is the completion
+    marker: it is uploaded after the time trace, so a warmup commit selected
+    here also has the per-TU compile times the drill-down reads.
     """
     candidates = [sha for sha in master_shas if sha != pr_sha][:100]
     if not candidates:
@@ -761,6 +815,7 @@ def find_warmup_baseline(db: Db, master_shas: List[str], pr_sha: str, date_condi
             AND {repo_condition(repo)}
             AND pull_request_number = 0
             AND check_name = {quote(WARMUP_CHECK_NAME)}
+            AND {OBJECT_FILTER}
             AND commit_sha IN ({in_list(candidates)})"""
     )
     with_data = {row["commit_sha"] for row in rows}
@@ -815,6 +870,10 @@ def compare_binaries(db: Db, pr_side, base_side) -> Section:
     profile producer lost it, and is flagged as an incomplete comparison
     instead of an all-green omission. A row the master baseline lacks is
     called out as a missing baseline.
+
+    A binary that became smaller by a significant margin is celebrated rather
+    than flagged. The margin is judged on the delta with the offset taken out,
+    so that the offset never counts towards a win the pull request did not make.
     """
     section = Section(title="Binary sizes")
     rows = db.query(
@@ -848,6 +907,7 @@ def compare_binaries(db: Db, pr_side, base_side) -> Section:
         "|---|---:|---:|---:|",
     ]
     within_offset = []
+    wins = []
     for file in HEADLINE_BINARIES:
         pr_size, base_size = sizes.get(file, (0, 0))
         if not pr_size or not base_size:
@@ -855,7 +915,19 @@ def compare_binaries(db: Db, pr_side, base_side) -> Section:
         delta = pr_size - base_size
         offset = base_size * XRAY_DEBUG_OFFSET_RATIO
         name = strip_build_dir(file)
-        if abs(delta) >= BINARY_SIG_BYTES and abs(delta) >= base_size * BINARY_SIG_RATIO:
+        # The part of a decrease that the offset does not explain.
+        own_delta = delta + offset
+        if -own_delta >= BINARY_SIG_BYTES and -own_delta >= base_size * BINARY_SIG_RATIO:
+            wins.append(f"{md_code(name)} {format_bytes_delta(own_delta, base_size)}")
+            summaries.append(f"{name}: {format_bytes_delta(own_delta, base_size)}")
+            lines.append(
+                f"🎉 {md_code(name)} is smaller than the master baseline by "
+                f"{format_bytes(-delta)}; {format_bytes(offset)} of that is the known "
+                "offset between the two builds, so this pull request makes it smaller by "
+                f"about {format_bytes(-own_delta)} ({-own_delta / base_size:.2%})."
+            )
+            lines.append("")
+        elif abs(delta) >= BINARY_SIG_BYTES and abs(delta) >= base_size * BINARY_SIG_RATIO:
             section.significant = True
             summaries.append(f"{name}: {format_bytes_delta(delta, base_size)}")
         elif (
@@ -890,6 +962,8 @@ def compare_binaries(db: Db, pr_side, base_side) -> Section:
         lines += ["", XRAY_DEBUG_OFFSET_NOTE]
     section.body = "\n".join(lines).rstrip()
     section.summary = "; ".join(summaries)
+    if wins:
+        section.improvement = "Smaller binary: " + ", ".join(wins)
     return section
 
 
@@ -916,7 +990,7 @@ def compare_objects(db: Db, pr_side, base_side) -> Section:
 
     Only the object files the PR build produced are compared. The two builds do
     not have the same target set: the warmup build compiles every object-file
-    target ninja knows about (see PR_CACHE_WARMUP_BUILD_TYPES in
+    target ninja knows about (see PERFORMANCE_REFERENCE_TO_RELEASE in
     build_clickhouse.py), while a PR build only builds `clickhouse-bundle`, so
     hundreds of object files - `grpc_unsecure`, protobuf-lite, the gRPC half of
     google-cloud-cpp, the unit tests, the utils - exist on the warmup side alone.
@@ -1517,15 +1591,20 @@ def build_comment(info, pr_sha: str, base_sha: str, sections: List[Section], war
         "compile times per translation unit against the most recent warmup build that recompiled it).",
         "",
     ]
+    improvements = [s.improvement for s in sections if s.improvement]
     if significant:
         titles = ", ".join(s.title.lower() for s in significant)
         lines.append(f"⚠️ **Significant changes: {titles}.**")
-    else:
+    elif not improvements:
         lines.append("✅ No significant changes.")
+    for improvement in improvements:
+        if lines[-1]:
+            lines.append("")
+        lines.append(f"🎉 **{improvement}.**")
     for section in sections:
         if not section.body:
             continue
-        marker = " ⚠️" if section.significant else ""
+        marker = " ⚠️" if section.significant else " 🎉" if section.improvement else ""
         lines += [
             "",
             f"<details><summary><b>{section.title}</b>{marker}</summary>",
@@ -1595,7 +1674,7 @@ def run_comparison(db, info, args, pr_number: int, pr_sha: str):
         raise RuntimeError("Could not resolve a concrete build run for one of the sides")
     # The warmup baseline may lag while master catches up with profiling the
     # warmup build; the sections that depend on it degrade to a catch-up note.
-    warmup_side = resolve_run(db, windows["base"], 0, warmup_sha, repo, check_name=WARMUP_CHECK_NAME) if warmup_sha else None
+    warmup_side = resolve_run(db, windows["base"], 0, warmup_sha, repo, check_name=WARMUP_CHECK_NAME, extra_where=OBJECT_FILTER) if warmup_sha else None
     # The per-TU compile baseline looks back TU_BASE_DAYS - far past the ~100
     # commits of the anchored chain - so its candidate set is extended with
     # older ancestors (see extend_master_shas).
@@ -1662,7 +1741,7 @@ def main():
         return
 
     try:
-        db = Db()
+        db = Db(read_budget_s=cluster_read_budget_seconds(info))
         comparison = run_comparison(db, info, args, pr_number, pr_sha)
     except LogClusterUnavailable as e:
         # Not a failed comparison - one that never ran. A local run has no job
@@ -1717,6 +1796,9 @@ def main():
 
     summaries = [s.summary or s.title for s in significant]
     result_info = "Significant changes: " + "; ".join(summaries) if significant else f"No significant changes vs master {base_sha[:9]}"
+    improvements = [s.summary for s in sections if s.improvement and not s.significant]
+    if improvements:
+        result_info += "; improvements: " + "; ".join(improvements)
     # Each comparison aspect is reported as its own sub-result: they land as
     # separate rows in cidb and read as separate lines in the CI report.
     sub_results = [

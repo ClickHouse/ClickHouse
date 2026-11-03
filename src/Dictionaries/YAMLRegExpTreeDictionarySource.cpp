@@ -101,7 +101,7 @@ void registerDictionarySourceYAMLRegExpTree(DictionarySourceFactory & factory)
 #endif
     };
 
-    factory.registerSource(kYAMLRegExpTree, create_table_source, Documentation{
+    factory.registerSource(kYAMLRegExpTree, create_table_source, SecretArgumentsSpec{}, Documentation{
         .description = R"DOCS_MD(
 import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 

@@ -12,13 +12,22 @@ class SerializationWrapper : public ISerialization
 protected:
     SerializationPtr nested_serialization;
 
+private:
+    /// Cached `nested_serialization->supportsPooling`, so that the check does not walk the whole nested chain,
+    /// which is quadratic in the depth of deeply nested types (e.g. a `Tuple` element is a `SerializationNamed`).
+    bool nested_supports_pooling;
+
 public:
-    explicit SerializationWrapper(const SerializationPtr & nested_serialization_) : nested_serialization(nested_serialization_) {}
+    explicit SerializationWrapper(const SerializationPtr & nested_serialization_)
+        : nested_serialization(nested_serialization_)
+        , nested_supports_pooling(nested_serialization->supportsPooling())
+    {
+    }
 
     const SerializationPtr & getNested() const  { return nested_serialization; }
 
     KindStack getKindStack() const override { return nested_serialization->getKindStack(); }
-    bool supportsPooling() const override { return nested_serialization->supportsPooling(); }
+    bool supportsPooling() const override { return nested_supports_pooling; }
     MutableColumnPtr wrapColumnForDeserialization(MutableColumnPtr column) const override { return nested_serialization->wrapColumnForDeserialization(std::move(column)); }
 
     void enumerateStreams(

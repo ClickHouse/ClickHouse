@@ -1,3 +1,5 @@
+import uuid
+
 import pytest
 
 from helpers.client import QueryRuntimeException
@@ -6,7 +8,11 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 
 node_server = cluster.add_instance(
-    "node_server", main_configs=["config.d/memory_overrides.yaml"]
+    "node_server",
+    main_configs=[
+        "config.d/memory_overrides.yaml",
+        "config.d/no_memory_tracker_correction.yaml",
+    ],
 )
 node_user = cluster.add_instance(
     "node_user", user_configs=["users.d/memory_overrides.yaml"]
@@ -99,13 +105,27 @@ def test_max_bytes_ratio_before_external_sort(node):
 
 
 @pytest.mark.parametrize(
-    "node,limit_follows_rss",
+    "node,limit_follows_rss,query",
     [
-        pytest.param(node_server, True, id="server"),
-        pytest.param(node_user, False, id="user"),
+        # Peak memory usage: ~14GiB (the `DISTINCT` hash set of 100M unique ~85-byte strings)
+        pytest.param(
+            node_server,
+            True,
+            "SELECT count() FROM (SELECT DISTINCT repeat(number::String, 10) AS k FROM numbers(100e6)) FORMAT Null",
+            id="server",
+        ),
+        # Peak memory usage: ~5.7GiB (7M unique 800-byte strings) against a 4GiB user limit. The final merge
+        # holds a block of every spilled run at once, so `max_block_size` is pinned to its default.
+        pytest.param(
+            node_user,
+            False,
+            "SELECT count() FROM (SELECT DISTINCT repeat(number::String, 100) AS k FROM numbers(10000000, 7000000)) "
+            "SETTINGS max_memory_usage_for_user = '4Gi', max_block_size = 65409 FORMAT Null",
+            id="user",
+        ),
     ],
 )
-def test_max_bytes_ratio_before_external_distinct(node, limit_follows_rss):
+def test_max_bytes_ratio_before_external_distinct(node, limit_follows_rss, query):
     if sanitizer_build["thread"]:
         pytest.skip("TSan build is skipped due to memory overhead")
     if sanitizer_build["memory"]:
@@ -121,11 +141,6 @@ def test_max_bytes_ratio_before_external_distinct(node, limit_follows_rss):
         # `max_memory_usage_for_user` counts tracked bytes rather than RSS.
         pytest.skip("Address Sanitizer RSS overhead leaves no headroom under max_server_memory_usage")
 
-    # Peak memory usage: ~14GiB (the `DISTINCT` hash set of 100M unique ~85-byte strings)
-    query = """
-    SELECT count() FROM (SELECT DISTINCT repeat(number::String, 10) AS k FROM numbers(100e6)) FORMAT Null
-    """
-
     settings = {
         "max_memory_usage": "0",
         "max_bytes_before_external_distinct": 0,
@@ -134,5 +149,57 @@ def test_max_bytes_ratio_before_external_distinct(node, limit_follows_rss):
     node.query(query, settings=settings)
 
     settings["max_bytes_ratio_before_external_distinct"] = 0
+    with pytest.raises(QueryRuntimeException):
+        node.query(query, settings=settings)
+
+
+@pytest.mark.parametrize(
+    "node,limit_follows_rss,query",
+    [
+        # In memory, the set of 100M unique strings of about 85 bytes would take more than 10GiB.
+        pytest.param(
+            node_server,
+            True,
+            "SELECT count() FROM numbers(10) WHERE repeat(toString(number), 10) "
+            "IN (SELECT repeat(number::String, 10) FROM numbers(100e6)) FORMAT Null",
+            id="server",
+        ),
+        # In memory, the set of 7M unique strings of about 700 bytes would take more than 4GiB,
+        # against a 4GiB user limit.
+        pytest.param(
+            node_user,
+            False,
+            "SELECT count() FROM numbers(10) WHERE repeat(toString(number), 100) "
+            "IN (SELECT repeat(number::String, 100) FROM numbers(7000000)) "
+            "SETTINGS max_memory_usage_for_user = '4Gi' FORMAT Null",
+            id="user",
+        ),
+    ],
+)
+def test_max_bytes_ratio_before_external_set(node, limit_follows_rss, query):
+    if sanitizer_build["thread"]:
+        pytest.skip("TSan build is skipped due to memory overhead")
+    if sanitizer_build["memory"]:
+        pytest.skip("Memory Sanitizer uses more memory, making precise memory limit testing unreliable")
+    if limit_follows_rss and sanitizer_build["address"]:
+        # `max_server_memory_usage` is enforced against RSS, and an Address Sanitizer build's RSS
+        # carries redzones and quarantined chunks that the memory tracker never sees, so the set on
+        # disk has no headroom left.
+        pytest.skip("Address Sanitizer RSS overhead leaves no headroom under max_server_memory_usage")
+
+    query_id = str(uuid.uuid4())
+    settings = {
+        "max_memory_usage": "0",
+        "max_bytes_before_external_set": 0,
+        "max_bytes_ratio_before_external_set": 0.3,
+    }
+    node.query(query, settings=settings, query_id=query_id)
+    node.query("SYSTEM FLUSH LOGS query_log")
+    assert node.query(
+        "SELECT ProfileEvents['SetsSpilledToDisk'] FROM system.query_log "
+        f"WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+    ) == "1\n"
+
+    settings["max_bytes_ratio_before_external_set"] = 0
     with pytest.raises(QueryRuntimeException):
         node.query(query, settings=settings)

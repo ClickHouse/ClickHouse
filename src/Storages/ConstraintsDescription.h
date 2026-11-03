@@ -68,6 +68,12 @@ public:
     /// Called from DDL only, so metadata stored before this check still loads.
     void checkExpressionsPreserveRowCount() const;
 
+    /// Rejects a constraint name that is declared more than once. `DROP CONSTRAINT` erases and
+    /// `MODIFY CONSTRAINT` replaces the first declaration of a name, so a second declaration of it is
+    /// reachable only once the first one has been dropped.
+    /// Called from DDL only, so metadata stored before this check still loads.
+    void checkNamesAreUnique() const;
+
     struct AtomId
     {
         size_t group_id;
