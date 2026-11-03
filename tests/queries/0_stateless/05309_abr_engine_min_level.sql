@@ -2,6 +2,7 @@
 -- The ABR table has intervals [1, 10, 100].
 -- Setting abr_first_table_suffix = N skips tables with sample_interval < N.
 
+SET allow_experimental_abr = 1;
 SET session_timezone = 'UTC';
 
 DROP TABLE IF EXISTS abr_table;

@@ -5,6 +5,7 @@
 -- The `ABR` table resolves its source tables for each query instead of keeping them alive, so they can be
 -- detached and dropped with `SYNC`, which waits until nothing holds the table anymore.
 
+SET allow_experimental_abr = 1;
 SET session_timezone = 'UTC';
 
 DROP TABLE IF EXISTS abr;

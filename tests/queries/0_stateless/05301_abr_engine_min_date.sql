@@ -2,6 +2,7 @@
 -- Verifies that ABR correctly extracts the minimum query date from various
 -- filter expressions including AND, OR, NOT, and mixed conditions.
 
+SET allow_experimental_abr = 1;
 SET session_timezone = 'UTC';
 SET allow_suspicious_low_cardinality_types = 1;
 

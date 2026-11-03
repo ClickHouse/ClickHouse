@@ -4,6 +4,7 @@
 -- Verifies that ABR retries on the next table when max_execution_time
 -- causes the first (finer) table to time out during execution.
 
+SET allow_experimental_abr = 1;
 SET session_timezone = 'UTC';
 
 DROP TABLE IF EXISTS abr;

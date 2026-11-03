@@ -2,6 +2,7 @@
 -- The retries after TOO_MANY_ROWS do not go beyond the table of abr_last_table_suffix, and the read
 -- limits are split only between the candidate tables up to it.
 
+SET allow_experimental_abr = 1;
 SET session_timezone = 'UTC';
 
 DROP TABLE IF EXISTS abr;

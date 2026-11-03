@@ -2,6 +2,7 @@
 -- Verifies that row policies defined on underlying tables are correctly
 -- applied when querying through the ABR engine.
 
+SET allow_experimental_abr = 1;
 SET session_timezone = 'UTC';
 
 DROP TABLE IF EXISTS abr;

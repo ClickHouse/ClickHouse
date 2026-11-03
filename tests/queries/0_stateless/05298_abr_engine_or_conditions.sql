@@ -2,6 +2,7 @@
 -- This test verifies that the engine correctly extracts the minimum query date
 -- from complex filter expressions across different time ranges.
 
+SET allow_experimental_abr = 1;
 SET session_timezone = 'UTC';
 
 DROP TABLE IF EXISTS abr;

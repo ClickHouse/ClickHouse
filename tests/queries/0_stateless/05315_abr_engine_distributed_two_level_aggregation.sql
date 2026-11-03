@@ -3,6 +3,7 @@
 --   Disable random settings and pin the value so the plan is deterministic in CI
 
 -- Force two-level aggregation with a small fixture and keep the SQL-shipped pipeline under test.
+SET allow_experimental_abr = 1;
 SET group_by_two_level_threshold = 1, group_by_two_level_threshold_bytes = 0, serialize_query_plan = 0;
 
 DROP TABLE IF EXISTS abr_2l;

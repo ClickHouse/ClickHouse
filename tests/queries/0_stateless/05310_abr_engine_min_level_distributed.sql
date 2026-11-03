@@ -4,6 +4,7 @@
 -- to remote shards and each shard independently respects them.
 -- Uses test_cluster_two_shards_localhost (2 shards, both localhost:9000).
 
+SET allow_experimental_abr = 1;
 SET send_logs_level = 'error';
 SET session_timezone = 'UTC';
 

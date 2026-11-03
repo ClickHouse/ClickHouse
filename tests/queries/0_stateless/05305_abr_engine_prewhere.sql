@@ -4,6 +4,7 @@
 -- The key code path is buildFilterActionsDAG() which merges prewhere_info
 -- into the filter nodes used by chooseBestTable().
 
+SET allow_experimental_abr = 1;
 SET session_timezone = 'UTC';
 
 DROP TABLE IF EXISTS abr_pw;

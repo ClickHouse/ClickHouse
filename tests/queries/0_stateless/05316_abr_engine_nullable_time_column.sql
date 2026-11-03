@@ -2,6 +2,7 @@
 -- Verifies that Nullable(T) and LowCardinality(Nullable(T)) temporal columns
 -- cannot be used for ABR routing.
 
+SET allow_experimental_abr = 1;
 SET allow_suspicious_low_cardinality_types = 1;
 
 DROP TABLE IF EXISTS abr_nullable_time;

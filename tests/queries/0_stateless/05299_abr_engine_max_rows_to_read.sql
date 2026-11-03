@@ -2,6 +2,7 @@
 -- Verifies that ABR falls back to a table with fewer rows when the initial
 -- table would exceed the max_rows_to_read setting.
 
+SET allow_experimental_abr = 1;
 SET session_timezone = 'UTC';
 
 DROP TABLE IF EXISTS abr;
