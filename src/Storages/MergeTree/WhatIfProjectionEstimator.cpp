@@ -72,6 +72,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool use_const_adaptive_granularity;
     extern const MergeTreeSettingsNonZeroUInt64 merge_max_block_size;
     extern const MergeTreeSettingsUInt64 merge_max_block_size_bytes;
+    extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
 }
 
 namespace
@@ -99,6 +100,8 @@ struct ProjectionPartData
     /// for a merged wide part under a constant granularity: its stored bytes, and the least its merged parts can store for its rows
     size_t stored_bytes = 0;
     size_t stored_bytes_floor = 0;
+    /// for a merged part: the merge can choose the other part format too, because the part does not record the parts it merged
+    bool both_formats = false;
     /// for a sample of a projection that drops rows: the rows that the projection keeps of each granule read
     std::vector<UInt32> granule_rows;
 };
@@ -320,6 +323,7 @@ String buildProjectionPart(
     bool need_row_bytes,
     bool merged_part,
     bool constant_granularity,
+    const MergeTreeSettings & mt_settings,
     UInt64 & total_rows_read,
     UInt64 & total_bytes_read,
     const ContextPtr & context)
@@ -439,13 +443,24 @@ String buildProjectionPart(
         if (max_groups && merged.rows() > max_groups)
             return fmt::format(
                 "The projection part of part {} has more than max_rows_to_group_by = {} groups", part->name, max_groups);
-        /// the same part format as `buildSyntheticProjectionParts` chooses
-        if (merged_part && constant_granularity
-            && read_step->getMergeTreeData().choosePartFormat(merged.bytes(), merged.rows(), part->info.level, &projection).part_type
-                == MergeTreeDataPartType::Wide)
+        if (merged_part)
         {
-            merged_by_blocks = false;
-            setStoredBytes(out, merged);
+            /// a merge chooses the format from the rows and bytes of the parts it merges, and keeps a wide one
+            /// these parts have at least the groups here, and at most the rows of the parent part, if the merge drops no rows
+            const auto & data = read_step->getMergeTreeData();
+            const size_t most_rows = mt_settings[MergeTreeSetting::deduplicate_merge_projection_mode] == DeduplicateMergeProjectionMode::IGNORE
+                ? std::numeric_limits<size_t>::max()
+                : part->rows_count;
+            const bool compact = data.choosePartFormat(0, merged.rows(), part->info.level, &projection).part_type
+                == MergeTreeDataPartType::Compact;
+            const bool wide = data.choosePartFormat(std::numeric_limits<size_t>::max(), most_rows, part->info.level, &projection).part_type
+                == MergeTreeDataPartType::Wide;
+            out.both_formats = compact && wide;
+            if (constant_granularity && wide)
+            {
+                merged_by_blocks = compact;
+                setStoredBytes(out, merged);
+            }
         }
         add(std::move(merged));
     }
@@ -588,55 +603,66 @@ std::pair<std::vector<MergeTreeDataPartPtr>, size_t> buildSyntheticProjectionPar
     /// sorted order via one permutation
     stableGetPermutation(data.key_block, sort_description, data.order);
     const PartFromSample whole_part(data, part_rows);
-    const auto part_type = merge_tree.choosePartFormat(whole_part.formatBytes(), whole_part.rows, parent_part->info.level, &projection).part_type;
-    /// the writer takes the mark type from the table settings, not from the parent part
-    const bool adaptive_marks = MergeTreeIndexGranularityInfo(merge_tree, mt_settings, part_type).mark_type.adaptive;
-    /// only adaptive granularity lets block sizes change the layout
-    const bool granularity_per_block = part_type == MergeTreeDataPartType::Compact
-        || (adaptive_marks && !mt_settings[MergeTreeSetting::use_const_adaptive_granularity]);
-
-    /// an insert writes one block, a merge writes blocks of `merge_max_block_size` cut at each source
-    /// a part does not record which, so build each layout
-    const size_t merge_rows = mt_settings[MergeTreeSetting::merge_max_block_size];
-    const size_t merge_bytes = mt_settings[MergeTreeSetting::merge_max_block_size_bytes];
-    /// one granule of bytes is the finest block size that matters
-    const size_t granule_bytes = mt_settings[MergeTreeSetting::index_granularity_bytes];
-    std::vector<std::pair<size_t, size_t>> chunkings;
-    size_t primary = 0;
-    chunkings.emplace_back(whole_part.rows, 0);
-    if (granularity_per_block)
+    /// the layouts the writer can leave for a part format, and the index of the likeliest one
+    auto layouts_of = [&](MergeTreeDataPartType part_type)
     {
-        chunkings.emplace_back(merge_rows, merge_bytes);
-        chunkings.emplace_back(merge_rows, granule_bytes);
-        /// the writer writes a level-zero part in one block and a merged part in merge blocks
-        /// when the row widths differ, the merge also cuts a block at each source
-        if (parent_part->info.level > 0)
-            primary = uneven_rows ? chunkings.size() - 1 : chunkings.size() - 2;
-    }
+        /// the writer takes the mark type from the table settings, not from the parent part
+        const bool adaptive_marks = MergeTreeIndexGranularityInfo(merge_tree, mt_settings, part_type).mark_type.adaptive;
+        /// only adaptive granularity lets block sizes change the layout
+        const bool granularity_per_block = part_type == MergeTreeDataPartType::Compact
+            || (adaptive_marks && !mt_settings[MergeTreeSetting::use_const_adaptive_granularity]);
 
-    std::vector<std::vector<size_t>> layouts;
-    for (const auto & [rows_limit, bytes_limit] : chunkings)
-        layouts.push_back(simulateWriterMarks(whole_part, part_type, mt_settings, adaptive_marks, rows_limit, bytes_limit));
-    /// a merge under a constant granularity: n rows of width w in the merged parts give granules of n / floor(n * w / granule_bytes) rows,
-    /// at least granule_bytes / w, and less than granule_bytes / w * (k + 1) / k for k >= 1 granules of bytes, or twice that for fewer
-    if (data.stored_bytes != 0 && !granularity_per_block)
-    {
-        const auto rows = static_cast<double>(whole_part.rows);
-        const auto bytes = static_cast<double>(granule_bytes);
-        const double widest = static_cast<double>(data.stored_bytes) / rows;
-        const double narrowest = std::max(static_cast<double>(data.stored_bytes_floor) / rows, 1.0);
-        const double granules = std::floor(rows * narrowest / bytes);
-        auto constant = [&](double granule_rows)
+        /// an insert writes one block, a merge writes blocks of `merge_max_block_size` cut at each source
+        /// a part does not record which, so build each layout
+        const size_t merge_rows = mt_settings[MergeTreeSetting::merge_max_block_size];
+        const size_t merge_bytes = mt_settings[MergeTreeSetting::merge_max_block_size_bytes];
+        /// one granule of bytes is the finest block size that matters
+        const size_t granule_bytes = mt_settings[MergeTreeSetting::index_granularity_bytes];
+        std::vector<std::pair<size_t, size_t>> chunkings;
+        size_t primary = 0;
+        chunkings.emplace_back(whole_part.rows, 0);
+        if (granularity_per_block)
         {
-            const auto rows_per_mark = static_cast<size_t>(
-                std::clamp(granule_rows, 1.0, static_cast<double>(mt_settings[MergeTreeSetting::index_granularity])));
-            std::vector<size_t> rows_per_marks(whole_part.rows / rows_per_mark, rows_per_mark);
-            if (whole_part.rows % rows_per_mark != 0)
-                rows_per_marks.push_back(whole_part.rows % rows_per_mark);
-            return rows_per_marks;
-        };
-        layouts = {constant(bytes / widest), constant(bytes / narrowest * (granules >= 1 ? (granules + 1) / granules : 2))};
-    }
+            chunkings.emplace_back(merge_rows, merge_bytes);
+            chunkings.emplace_back(merge_rows, granule_bytes);
+            /// the writer writes a level-zero part in one block and a merged part in merge blocks
+            /// when the row widths differ, the merge also cuts a block at each source
+            if (parent_part->info.level > 0)
+                primary = uneven_rows ? chunkings.size() - 1 : chunkings.size() - 2;
+        }
+
+        std::vector<std::vector<size_t>> layouts;
+        for (const auto & [rows_limit, bytes_limit] : chunkings)
+            layouts.push_back(simulateWriterMarks(whole_part, part_type, mt_settings, adaptive_marks, rows_limit, bytes_limit));
+        /// a merge under a constant granularity: n rows of width w in the merged parts give granules of n / floor(n * w / granule_bytes) rows,
+        /// at least granule_bytes / w, and less than granule_bytes / w * (k + 1) / k for k >= 1 granules of bytes, or twice that for fewer
+        if (data.stored_bytes != 0 && !granularity_per_block)
+        {
+            const auto rows = static_cast<double>(whole_part.rows);
+            const auto bytes = static_cast<double>(granule_bytes);
+            const double widest = static_cast<double>(data.stored_bytes) / rows;
+            const double narrowest = std::max(static_cast<double>(data.stored_bytes_floor) / rows, 1.0);
+            const double granules = std::floor(rows * narrowest / bytes);
+            auto constant = [&](double granule_rows)
+            {
+                const auto rows_per_mark = static_cast<size_t>(
+                    std::clamp(granule_rows, 1.0, static_cast<double>(mt_settings[MergeTreeSetting::index_granularity])));
+                std::vector<size_t> rows_per_marks(whole_part.rows / rows_per_mark, rows_per_mark);
+                if (whole_part.rows % rows_per_mark != 0)
+                    rows_per_marks.push_back(whole_part.rows % rows_per_mark);
+                return rows_per_marks;
+            };
+            layouts = {constant(bytes / widest), constant(bytes / narrowest * (granules >= 1 ? (granules + 1) / granules : 2))};
+        }
+        return std::pair{std::move(layouts), primary};
+    };
+
+    const auto part_type = merge_tree.choosePartFormat(whole_part.formatBytes(), whole_part.rows, parent_part->info.level, &projection).part_type;
+    auto [layouts, primary] = layouts_of(part_type);
+    if (data.both_formats)
+        std::ranges::move(
+            layouts_of(part_type == MergeTreeDataPartType::Wide ? MergeTreeDataPartType::Compact : MergeTreeDataPartType::Wide).first,
+            std::back_inserter(layouts));
 
     auto build = [&](const std::vector<size_t> & rows_per_mark) -> MergeTreeDataPartPtr
     {
@@ -755,11 +781,14 @@ struct SampledPart
     MergeTreeDataPartPtr synthetic;
 };
 
-/// scenario 0 has every part in its likeliest layout, scenarios 1 to 3 have every part in one layout each
+/// scenario 0 has every part in its likeliest layout, the next scenarios have every part in one layout each
+/// a part has at most three layouts for each part format, and a merged part can have both formats
 struct Scenarios
 {
-    std::array<HypotheticalProjectionPtr, 4> scenarios;
+    std::array<HypotheticalProjectionPtr, 7> scenarios;
     bool layouts_differ = false;
+    /// the most layouts of a part
+    size_t layouts = 1;
     UInt64 scanned_parts = 0;
     UInt64 scanned_marks = 0;
     UInt64 uneven_width_parts = 0;
@@ -808,7 +837,7 @@ bool buildScenarios(
         ProjectionPartData part_data;
         if (auto reason = buildProjectionPart(
                 part_data, projection, part, ranges, plan.sample_step > 1, read_step, read_limits, adaptive, merged_part,
-                constant_granularity, total_rows_read, total_bytes_read, context);
+                constant_granularity, mt_settings, total_rows_read, total_bytes_read, context);
             !reason.empty())
         {
             result.empirical_unsupported_reason = std::move(reason);
@@ -858,6 +887,8 @@ bool buildScenarios(
         const auto [parts, primary]
             = buildSyntheticProjectionParts(part_data, projection, data, part, mt_settings, uneven_rows, part_rows);
         out.scenarios[0]->parts[part->name] = parts[primary];
+        chassert(parts.size() < out.scenarios.size());
+        out.layouts = std::max(out.layouts, parts.size());
         /// a part with one layout uses it in every scenario
         for (size_t layout = 0; layout + 1 < out.scenarios.size(); ++layout)
         {
@@ -1050,7 +1081,7 @@ bool tryEstimateProjection(
     if (!buildScenarios(result, built, projection, plan, read_step, baseline_parts, context))
         return false;
 
-    const size_t weighed = built.layouts_differ ? built.scenarios.size() : 1;
+    const size_t weighed = built.layouts_differ ? 1 + built.layouts : 1;
     for (size_t i = 0; i < weighed; ++i)
         weigh(built.scenarios[i]);
 
