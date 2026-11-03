@@ -142,6 +142,8 @@ public:
 
     virtual void needOnlyCount() { need_only_count = true; }
 
+    virtual void prefetch() {}
+
     virtual std::optional<std::pair<std::vector<size_t>, size_t>> getMatchedBuckets() const { return std::nullopt; }
 
     /// TopN dynamic filtering with `FormatTopKFilterInfo::track_row_group_best_values`: for the buckets

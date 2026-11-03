@@ -186,6 +186,13 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t worker
             DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ARCHIVE_ENTRY_INDEX);
     }
 
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_NUM_ROWS)
+    {
+        writeVarUInt(data_lake_metadata.num_rows.has_value(), out);
+        if (data_lake_metadata.num_rows)
+            writeVarUInt(*data_lake_metadata.num_rows, out);
+    }
+
     if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_LANCE_METADATA)
     {
 #if USE_LANCE
@@ -286,6 +293,17 @@ void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
             UInt64 value = 0;
             readVarUInt(value, in);
             archive_entry_index = value;
+        }
+    }
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_NUM_ROWS)
+    {
+        bool has_num_rows = false;
+        readVarUInt(has_num_rows, in);
+        if (has_num_rows)
+        {
+            UInt64 value = 0;
+            readVarUInt(value, in);
+            data_lake_metadata.num_rows = value;
         }
     }
     if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_LANCE_METADATA)
