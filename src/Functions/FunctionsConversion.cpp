@@ -2043,258 +2043,41 @@ FunctionCast::WrapperType FunctionCast::createMapWrapper(const DataTypePtr & fro
 namespace
 {
 
-bool isDateTimeNode(const IDataType & type)
+/// The text of a `DateTime` has no time zone. For a cast from JSON returns the types to write it and to parse it into `to` with,
+/// in which the `DateTime` typed paths of both are in UTC; that does not change their columns. A path below another typed path
+/// is kept, because an object at that typed path can be written or read whole.
+std::pair<DataTypePtr, DataTypePtr> withDateTimeTypedPathsInUTC(const DataTypePtr & from_type, const DataTypeObject & to)
 {
-    return isDateTimeOrDateTime64(type);
-}
-
-/// `withTimeZone` renames the alternatives of such a `Variant`, and `DataTypeVariant` orders them by name.
-bool hasDateTimeInVariant(const DataTypePtr & type)
-{
-    return anyInTypeTree(*type, [](const IDataType & node) { return isVariant(node) && anyInTypeTree(node, isDateTimeNode); });
-}
-
-bool writesJSONObject(const DataTypePtr & type, const FormatSettings & format_settings)
-{
-    const auto nested = removeLowCardinalityAndNullable(type);
-    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(nested.get()))
-        return tuple->hasExplicitNames() && format_settings.json.write_named_tuples_as_objects;
-    if (typeid_cast<const DataTypeMap *>(nested.get()))
-        return !format_settings.json.write_map_as_array_of_tuples;
-    return typeid_cast<const DataTypeObject *>(nested.get()) != nullptr;
-}
-
-/// True when every `DateTime` that `source` writes as JSON text is read by a `DateTime` of `target` at the same position,
-/// and no `DateTime` of `target` reads other text. `JSONExtractTree` reads an `Array` only from a JSON array, a `Map` only
-/// from an object, a `Tuple` from an array by position and from an object by name (named) or by position (unnamed).
-bool dateTimesAreAligned(const DataTypePtr & source, const DataTypePtr & target, const FormatSettings & format_settings)
-{
-    const auto s = removeLowCardinalityAndNullable(source);
-    const auto t = removeLowCardinalityAndNullable(target);
-
-    if (isDateTimeNode(*s) || isDateTimeNode(*t))
-        return isDateTimeNode(*s) && isDateTimeNode(*t);
-
-    const auto * s_map = typeid_cast<const DataTypeMap *>(s.get());
-    if (s_map && format_settings.json.write_map_as_array_of_tuples)
-        return dateTimesAreAligned(s_map->getNestedType(), target, format_settings);
-
-    const bool no_date_time = !anyInTypeTree(*s, isDateTimeNode) && !anyInTypeTree(*t, isDateTimeNode);
-
-    const auto * s_array = typeid_cast<const DataTypeArray *>(s.get());
-    const auto * s_tuple = typeid_cast<const DataTypeTuple *>(s.get());
-    bool writes_object = false;
-    if (s_tuple)
-        writes_object = s_tuple->hasExplicitNames() && format_settings.json.write_named_tuples_as_objects;
-    else if (s_map)
-        writes_object = true;
-    else if (!s_array)
-        return no_date_time;
-
-    if (s_map && anyInTypeTree(*s_map->getKeyType(), isDateTimeNode))
-        return no_date_time;
-
-    const auto * t_array = typeid_cast<const DataTypeArray *>(t.get());
-    const auto * t_tuple = typeid_cast<const DataTypeTuple *>(t.get());
-    const auto * t_map = typeid_cast<const DataTypeMap *>(t.get());
-    if ((t_array && writes_object) || (t_map && (!writes_object || anyInTypeTree(*t_map->getKeyType(), isDateTimeNode)))
-        || (!t_array && !t_tuple && !t_map))
-        return no_date_time;
-
-    auto aligned = [&](const DataTypePtr & s_element, const DataTypePtr & t_element)
+    const auto * from = checkAndGetDataType<DataTypeObject>(from_type.get());
+    if (!from)
+        return {};
+    auto to_utc = [](const DataTypePtr & node) -> DataTypePtr
     {
-        return dateTimesAreAligned(s_element, t_element, format_settings);
+        if (isDateTime(node))
+            return std::make_shared<DataTypeDateTime>("UTC");
+        if (const auto * date_time64 = typeid_cast<const DataTypeDateTime64 *>(node.get()))
+            return std::make_shared<DataTypeDateTime64>(date_time64->getScale(), "UTC");
+        return node;
     };
-
-    auto aligned_with_all = [&](const DataTypePtr & element, const DataTypes & others, bool element_is_source)
+    auto is_date_time = [](const DataTypePtr & type) { return isDateTimeOrDateTime64(removeLowCardinalityAndNullable(type)); };
+    auto from_paths = from->getTypedPaths();
+    auto to_paths = to.getTypedPaths();
+    for (auto & [path, type] : from_paths)
     {
-        for (const auto & other : others)
-            if (!(element_is_source ? aligned(element, other) : aligned(other, element)))
-                return false;
-        return true;
+        auto it = to_paths.find(path);
+        auto is_below = [&](const auto & typed_path) { return path.starts_with(typed_path.first + "."); };
+        if (it == to_paths.end() || !is_date_time(type) || !is_date_time(it->second) || std::ranges::any_of(from_paths, is_below)
+            || std::ranges::any_of(to_paths, is_below))
+            continue;
+        type = rewriteTypeTree(type, to_utc, CustomizationPolicy::Keep);
+        it->second = rewriteTypeTree(it->second, to_utc, CustomizationPolicy::Keep);
+    }
+    auto with_typed_paths = [](const DataTypeObject & object, DataTypeObject::TypedPathsMap typed_paths) -> DataTypePtr
+    {
+        return std::make_shared<DataTypeObject>(object.getSchemaFormat(), std::move(typed_paths), object.getPathsToSkip(),
+            object.getPathRegexpsToSkip(), object.getMaxDynamicPaths(), object.getMaxDynamicTypes(), object.getSharedTypedPaths());
     };
-
-    auto aligned_by_position = [&]
-    {
-        const auto & s_elements = s_tuple->getElements();
-        const auto & t_elements = t_tuple->getElements();
-        for (size_t i = 0; i < std::min(s_elements.size(), t_elements.size()); ++i)
-            if (!aligned(s_elements[i], t_elements[i]))
-                return false;
-        return true;
-    };
-
-    if (!writes_object)
-    {
-        if (s_array && t_array)
-            return aligned(s_array->getNestedType(), t_array->getNestedType());
-        if (s_array)
-            return aligned_with_all(s_array->getNestedType(), t_tuple->getElements(), true);
-        if (t_array)
-            return aligned_with_all(t_array->getNestedType(), s_tuple->getElements(), false);
-        return aligned_by_position();
-    }
-
-    if (s_map && t_map)
-        return aligned(s_map->getValueType(), t_map->getValueType());
-    if (s_map)
-        return aligned_with_all(s_map->getValueType(), t_tuple->getElements(), true);
-    if (t_map)
-        return aligned_with_all(t_map->getValueType(), s_tuple->getElements(), false);
-
-    if (t_tuple->hasExplicitNames())
-    {
-        const auto & s_elements = s_tuple->getElements();
-        const auto & s_names = s_tuple->getElementNames();
-        for (size_t i = 0; i != s_elements.size(); ++i)
-            if (auto t_index = t_tuple->tryGetPositionByName(s_names[i]); t_index && !aligned(s_elements[i], t_tuple->getElement(*t_index)))
-                return false;
-        return true;
-    }
-
-    /// An omitted NULL element shifts the positions of the next ones.
-    if (format_settings.json.skip_null_value_in_named_tuples)
-        return no_date_time;
-    return aligned_by_position();
-}
-
-/// The zone in which `type` writes every `DateTime` value as JSON text, when it is one zone and all values are `DateTime`,
-/// else nullptr. The keys of a `Map` are JSON keys, not values.
-const DateLUTImpl * getValueTimeZone(const DataTypePtr & type)
-{
-    const auto nested = removeLowCardinalityAndNullable(type);
-
-    const TimezoneMixin * time_zone = typeid_cast<const DataTypeDateTime *>(nested.get());
-    if (!time_zone)
-        time_zone = typeid_cast<const DataTypeDateTime64 *>(nested.get());
-    if (time_zone)
-        return time_zone->hasExplicitTimeZone() ? &time_zone->getTimeZone() : &DateLUT::instance();
-
-    if (const auto * array = typeid_cast<const DataTypeArray *>(nested.get()))
-        return getValueTimeZone(array->getNestedType());
-    if (const auto * map = typeid_cast<const DataTypeMap *>(nested.get()))
-        return getValueTimeZone(map->getValueType());
-
-    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(nested.get()))
-    {
-        const DateLUTImpl * result = nullptr;
-        for (const auto & element : tuple->getElements())
-        {
-            const auto * element_time_zone = getValueTimeZone(element);
-            if (!element_time_zone || (result && result != element_time_zone))
-                return nullptr;
-            result = element_time_zone;
-        }
-        return result;
-    }
-
-    return nullptr;
-}
-
-DataTypePtr withTimeZone(const DataTypePtr & type, const TimezoneMixin & time_zone)
-{
-    return rewriteTypeTree(
-        type,
-        [&](const DataTypePtr & node) -> DataTypePtr
-        {
-            if (typeid_cast<const DataTypeDateTime *>(node.get()))
-                return std::make_shared<DataTypeDateTime>(time_zone);
-            if (const auto * date_time64 = typeid_cast<const DataTypeDateTime64 *>(node.get()))
-                return std::make_shared<DataTypeDateTime64>(date_time64->getScale(), time_zone);
-            return node;
-        },
-        CustomizationPolicy::Keep);
-}
-
-DataTypePtr withTypedPaths(const DataTypeObject & object, DataTypeObject::TypedPathsMap typed_paths)
-{
-    return std::make_shared<DataTypeObject>(
-        object.getSchemaFormat(), std::move(typed_paths), object.getPathsToSkip(), object.getPathRegexpsToSkip(),
-        object.getMaxDynamicPaths(), object.getMaxDynamicTypes(), object.getSharedTypedPaths());
-}
-
-/// Sets to UTC the time zone of every subtype of `type` at a JSON path whose typed path in `typed_paths` reads its `DateTime`
-/// values with `DateTime` (`dateTimesAreAligned`), and of that typed path. A `Map` cannot be changed per key, so its typed
-/// paths get the time zone of the `Map` values.
-DataTypePtr rewriteTimeZonesForTypedPaths(
-    const DataTypePtr & type, const String & prefix, DataTypeObject::TypedPathsMap & typed_paths, const FormatSettings & format_settings)
-{
-    static const TimezoneMixin utc("UTC");
-
-    auto rewrite_child = [&](const DataTypePtr & child, const String & path) -> DataTypePtr
-    {
-        /// Without this setting `JSONExtractTree` reads an object at a typed path into that path, never into the paths below it.
-        if (!format_settings.json.type_json_allow_duplicated_key_with_literal_and_nested_object
-            && std::ranges::any_of(typed_paths, [&](const auto & entry) { return path.starts_with(entry.first + "."); }))
-            return child;
-
-        const String child_prefix = path + ".";
-        /// `JSONExtractTree` fills the typed paths below `path` with an object, when there are some.
-        const bool read_below = writesJSONObject(child, format_settings)
-            && format_settings.json.type_json_allow_duplicated_key_with_literal_and_nested_object
-            && std::ranges::any_of(typed_paths, [&](const auto & entry) { return entry.first.starts_with(child_prefix); });
-
-        auto it = read_below ? typed_paths.end() : typed_paths.find(path);
-        if (it != typed_paths.end() && anyInTypeTree(*child, isDateTimeNode) && dateTimesAreAligned(child, it->second, format_settings)
-            && !hasDateTimeInVariant(child) && !hasDateTimeInVariant(it->second))
-        {
-            it->second = withTimeZone(it->second, utc);
-            return withTimeZone(child, utc);
-        }
-        return rewriteTimeZonesForTypedPaths(child, child_prefix, typed_paths, format_settings);
-    };
-
-    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(type.get()))
-    {
-        auto new_nested = rewriteTimeZonesForTypedPaths(nullable->getNestedType(), prefix, typed_paths, format_settings);
-        return new_nested == nullable->getNestedType() ? type : std::make_shared<DataTypeNullable>(new_nested);
-    }
-
-    if (const auto * object = typeid_cast<const DataTypeObject *>(type.get()))
-    {
-        auto object_typed_paths = object->getTypedPaths();
-        bool changed = false;
-        for (auto & [path, path_type] : object_typed_paths)
-        {
-            auto new_path_type = rewrite_child(path_type, prefix + path);
-            changed |= new_path_type != path_type;
-            path_type = std::move(new_path_type);
-        }
-
-        return changed ? withTypedPaths(*object, std::move(object_typed_paths)) : type;
-    }
-
-    /// Otherwise a named `Tuple` is written as a JSON array, not at the paths of its elements.
-    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get());
-        tuple && tuple->hasExplicitNames() && format_settings.json.write_named_tuples_as_objects)
-    {
-        DataTypes elements = tuple->getElements();
-        const auto & names = tuple->getElementNames();
-        bool changed = false;
-        for (size_t i = 0; i != elements.size(); ++i)
-        {
-            const String key = format_settings.json.json_type_escape_dots_in_keys ? escapeDotInJSONKey(names[i]) : names[i];
-            auto new_element = rewrite_child(elements[i], prefix + key);
-            changed |= new_element != elements[i];
-            elements[i] = std::move(new_element);
-        }
-
-        return changed ? tuple->cloneWithChildren(elements) : type;
-    }
-
-    /// Otherwise a `Map` is written as a JSON array, not at the paths of its keys.
-    if (const auto * map = typeid_cast<const DataTypeMap *>(type.get()); map && !format_settings.json.write_map_as_array_of_tuples)
-    {
-        if (const auto * value_time_zone = getValueTimeZone(map->getValueType()))
-        {
-            const TimezoneMixin value_zone(value_time_zone->getTimeZone());
-            for (auto & [path, path_type] : typed_paths)
-                if (path.starts_with(prefix) && anyInTypeTree(*path_type, isDateTimeNode) && !hasDateTimeInVariant(path_type))
-                    path_type = withTimeZone(path_type, value_zone);
-        }
-    }
-
-    return type;
+    return {with_typed_paths(*from, std::move(from_paths)), with_typed_paths(to, std::move(to_paths))};
 }
 
 }
@@ -2333,16 +2116,7 @@ FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & 
     if (checkAndGetDataType<DataTypeTuple>(from_type.get())
         || checkAndGetDataType<DataTypeMap>(from_type.get()) || checkAndGetDataType<DataTypeObject>(from_type.get()))
     {
-        /// The text of a `DateTime` has no time zone, and types that differ only in the time zone of `DateTime` have identical columns.
-        auto typed_paths = to_object->getTypedPaths();
-        DataTypePtr text_from_type = rewriteTimeZonesForTypedPaths(from_type, "", typed_paths, settings.format_settings);
-        if (text_from_type == from_type)
-            text_from_type = nullptr;
-
-        DataTypePtr text_to_type;
-        if (typed_paths != to_object->getTypedPaths())
-            text_to_type = withTypedPaths(*to_object, std::move(typed_paths));
-
+        auto [text_from_type, text_to_type] = withDateTimeTypedPathsInUTC(from_type, *to_object);
         return [this, requested_result_is_nullable, text_from_type, text_to_type](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
         {
             auto json_string = ColumnString::create();
