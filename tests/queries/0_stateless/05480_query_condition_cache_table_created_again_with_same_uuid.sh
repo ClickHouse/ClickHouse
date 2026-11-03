@@ -66,7 +66,8 @@ uuid=$($CLICKHOUSE_CLIENT -q "SELECT generateUUIDv4()")
 create "$uuid"
 $CLICKHOUSE_CLIENT -q "INSERT INTO tab SELECT number + 100 FROM numbers(100)"
 query tab
-$CLICKHOUSE_CLIENT --allow_deprecated_database_ordinary=1 -q "
+# send_logs_level: the server warns once about the first Ordinary database.
+$CLICKHOUSE_CLIENT --allow_deprecated_database_ordinary=1 --send_logs_level=error -q "
     DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_ordinary SYNC;
     CREATE DATABASE ${CLICKHOUSE_DATABASE}_ordinary ENGINE = Ordinary;
     RENAME TABLE tab TO ${CLICKHOUSE_DATABASE}_ordinary.tab;"
