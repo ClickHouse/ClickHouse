@@ -1,0 +1,204 @@
+-- disabled: Sorting remains above ArrayJoin
+Output: x
+
+Limit
+│  Limit 10
+│  Offset 0
+└──Sorting
+   │  Sort description: x ASC
+   │  Limit 10
+   └──ArrayJoin
+      │  ARRAY JOIN arr
+      └──ReadFromMergeTree
+            Read type: Default
+            Parts: 1 | Granules: 1
+            Output: x, arr
+-- enabled: Sorting and guard move below ArrayJoin
+Output: payload
+
+Limit
+│  Limit 10
+│  Offset 0
+└──ArrayJoin
+   │  ARRAY JOIN arr
+   └──Sorting
+      │  Sort description: x ASC
+      │  Limit 10
+      └──Filter
+         │  Filter column: notEmpty(arr)
+         └──ReadFromMergeTree
+               Read type: Default
+               Parts: 1 | Granules: 1
+               Output: payload, arr, x
+-- LEFT ARRAY JOIN: Sorting moves without a guard
+Output: x
+
+Limit
+│  Limit 10
+│  Offset 0
+└──ArrayJoin
+   │  LEFT ARRAY JOIN arr
+   └──Sorting
+      │  Sort description: x ASC
+      │  Limit 10
+      └──ReadFromMergeTree
+            Read type: Default
+            Parts: 1 | Granules: 1
+            Output: x, arr
+-- guard spans every joined column
+notEmpty(arr) OR notEmpty(arr2)
+-- chained ARRAY JOIN: only the outermost step is rewritten
+Output: x
+
+Limit
+│  Limit 10
+│  Offset 0
+└──ArrayJoin
+   │  ARRAY JOIN arr2
+   └──Sorting
+      │  Sort description: x ASC
+      │  Limit 10
+      └──Filter
+         │  Filter column: notEmpty(arr2)
+         └──ArrayJoin
+            │  ARRAY JOIN arr
+            └──ReadFromMergeTree
+                  Read type: Default
+                  Parts: 1 | Granules: 1
+                  Output: x, arr, arr2
+-- joined sort key: not rewritten
+Output: arr
+
+Limit
+│  Limit 10
+│  Offset 0
+└──Sorting
+   │  Sort description: arr ASC
+   │  Limit 10
+   └──ArrayJoin
+      │  ARRAY JOIN arr
+      └──ReadFromMergeTree
+            Read type: Default
+            Parts: 1 | Granules: 1
+            Output: arr
+-- LIMIT WITH TIES: not rewritten
+Output: x
+
+Limit
+│  Limit 10
+│  Offset 0
+│  WITH TIES
+└──Sorting
+   │  Sort description: x ASC
+   └──ArrayJoin
+      │  ARRAY JOIN arr
+      └──ReadFromMergeTree
+            Read type: Default
+            Parts: 1 | Granules: 1
+            Output: x, arr
+-- exact rows before limit: not rewritten
+Output: x
+
+Limit
+│  Limit 10
+│  Offset 0
+│  , Reads all data
+└──Sorting
+   │  Sort description: x ASC
+   │  Limit 10
+   └──ArrayJoin
+      │  ARRAY JOIN arr
+      └──ReadFromMergeTree
+            Read type: Default
+            Parts: 1 | Granules: 1
+            Output: x, arr
+-- LIMIT BY blocks the rewrite
+Output: x
+
+Limit
+│  Limit 10
+│  Offset 0
+└──LimitBy
+   │  Columns: x
+   │  Length 1
+   │  Offset 0
+   └──Sorting
+      │  Sort description: x ASC
+      │  Per-stream LIMIT BY columns: x
+      │  Per-stream LIMIT BY length 1
+      └──ArrayJoin
+         │  ARRAY JOIN arr
+         └──ReadFromMergeTree
+               Read type: Default
+               Parts: 1 | Granules: 1
+               Output: x, arr
+-- several aligned arrays: not rewritten, the step checks their sizes
+Output: x, arr, arr2
+
+Limit
+│  Limit 10
+│  Offset 0
+└──Sorting
+   │  Sort description: x ASC
+   │  Limit 10
+   └──ArrayJoin
+      │  ARRAY JOIN arr, arr2
+      └──ReadFromMergeTree
+            Read type: Default
+            Parts: 1 | Granules: 1
+            Output: x, arr, arr2
+-- fused element filter: not rewritten
+Output: x
+
+Limit
+│  Limit 10
+│  Offset 0
+└──Sorting
+   │  Sort description: x ASC
+   │  Limit 10
+   └──ArrayJoin
+      │  ARRAY JOIN arr
+      │  Element filter column: greater(__array_join_exp_1, 1_UInt8) (removed)
+      └──ReadFromMergeTree
+            Read type: Default
+            Parts: 1 | Granules: 1
+            Output: x, arr
+-- serialized moved plan
+10
+-- read in order replaces the sort: not rewritten
+Output: x
+
+Limit
+│  Limit 10
+│  Offset 0
+└──Sorting
+   │  Prefix sort description: pk ASC
+   │  Result sort description: pk ASC
+   │  Limit 10
+   └──ArrayJoin
+      │  ARRAY JOIN arr
+      └──ReadFromMergeTree
+            Read type: InOrder
+            Parts: 1 | Granules: 1
+            Output: x, arr, pk
+-- read in order does not reach a read below a final DISTINCT: rewritten
+Output: pk
+
+Limit
+│  Limit 10
+│  Offset 0
+└──ArrayJoin
+   │  ARRAY JOIN arr
+   └──Sorting
+      │  Sort description: pk ASC
+      │  Limit 10
+      └──Filter
+         │  Filter column: notEmpty(arr)
+         └──Distinct
+            │  Columns: pk, x, arr
+            └──Distinct
+               │  Columns: pk, x, arr
+               └──ReadFromMergeTree
+                     Read type: Default
+                     Parts: 1 | Granules: 1
+                     Output: pk, x, arr

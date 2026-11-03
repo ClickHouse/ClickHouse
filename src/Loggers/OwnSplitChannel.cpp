@@ -234,6 +234,11 @@ void OwnSplitChannel::addTextLog(std::shared_ptr<SystemLogQueue<TextLogElement>>
     text_log_max_priority.store(max_priority, std::memory_order_relaxed);
 }
 
+void OwnSplitChannel::setTextLogLevel(int max_priority)
+{
+    text_log_max_priority.store(max_priority, std::memory_order_relaxed);
+}
+
 void OwnSplitChannel::setLevel(const std::string & name, int level)
 {
      auto it = channels.find(name);
@@ -282,8 +287,11 @@ void OwnAsyncSplitChannel::open()
     is_open = true;
     try
     {
-        if (text_log_max_priority && !text_log_thread)
+        if (text_log_runnable && (text_log_max_priority || text_log_has_consumer) && !text_log_thread)
+        {
             start_thread(text_log_thread, "AsyncTextLog", *text_log_runnable);
+            text_log_has_consumer = true;
+        }
 
         for (size_t i = 0; i < channels.size(); i++)
         {
@@ -518,12 +526,13 @@ void OwnAsyncSplitChannel::flushTextLogs()
     if (!text_log_locked)
         return;
 
-    /// The async text-log thread services this handshake. It is disabled when text_log.level is none, and is
+    /// The async text-log thread services this handshake. It is not started when text_log.level is none at
+    /// startup (a later reload to none keeps it running, so messages accepted before still get flushed), and is
     /// not running while logging is stopped around
     /// remapExecutable (where the only caller is the fatal signal handler; the server accepts no connections
     /// yet) nor after shutdown, so return instead of waiting forever for a flag nobody will clear. Anything
     /// queued meanwhile is drained when the thread (re)starts.
-    if (!text_log_max_priority || !is_open)
+    if (!text_log_has_consumer || !is_open)
         return;
 
     /// Take a request number and wait until the async thread reports it as served. The thread checks the
@@ -806,6 +815,15 @@ void OwnAsyncSplitChannel::addTextLog(std::shared_ptr<DB::TextLogQueue> log_queu
     text_log_max_priority.store(max_priority, std::memory_order_relaxed);
     text_log_thread = nullptr;
     text_log_runnable = std::make_unique<OwnRunnableForTextLog>(*this);
+}
+
+void OwnAsyncSplitChannel::setTextLogLevel(int max_priority)
+{
+    /// The consumer thread is started in `open` only when the initial level is not 0. Without it,
+    /// raising the level would enqueue messages nobody drains, so keep text_log off in that case.
+    if (!text_log_runnable || (is_open && !text_log_has_consumer))
+        return;
+    text_log_max_priority.store(max_priority, std::memory_order_relaxed);
 }
 
 void OwnAsyncSplitChannel::setLevel(const std::string & name, int level)
