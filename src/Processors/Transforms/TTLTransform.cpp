@@ -4,6 +4,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Columns/ColumnConst.h>
+#include <Common/checkStackSize.h>
 #include <Common/quoteString.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/MaterializedColumnDependencies.h>
@@ -11,6 +12,7 @@
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/replaceAliasColumnsInQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 
 #include <Processors/Port.h>
 #include <Processors/TTL/TTLAggregationAlgorithm.h>
@@ -42,15 +44,57 @@ static TTLExpressions getExpressions(const TTLDescription & ttl_descr, PreparedS
     return {expr.expression, where_expr.expression};
 }
 
-static bool hasLambdaParameterNamedLikeColumn(const IAST & ast, const ColumnsDescription & columns)
+static bool hasFreeIdentifierRootIn(const IAST & ast, NameSet bound)
 {
+    checkStackSize();
+
     if (const auto * function = ast.as<ASTFunction>(); function && function->name == "lambda")
+    {
         for (const auto & name : RequiredSourceColumnsMatcher::extractNamesFromLambda(*function))
-            if (columns.has(name) || columns.hasNested(name))
-                return true;
+            bound.erase(name);
+    }
+    else if (const auto * identifier = ast.as<ASTIdentifier>())
+    {
+        return bound.contains(identifier->name_parts.empty() ? identifier->name() : identifier->name_parts.front());
+    }
+
+    if (bound.empty())
+        return false;
 
     for (const auto & child : ast.children)
-        if (hasLambdaParameterNamedLikeColumn(*child, columns))
+        if (hasFreeIdentifierRootIn(*child, bound))
+            return true;
+
+    return false;
+}
+
+static bool isAliasExpansionCapturedByLambda(const IAST & ast, const ColumnsDescription & columns, const NameSet & bound)
+{
+    checkStackSize();
+
+    if (const auto * function = ast.as<ASTFunction>(); function && function->name == "lambda")
+    {
+        NameSet inner = bound;
+        for (const auto & name : RequiredSourceColumnsMatcher::extractNamesFromLambda(*function))
+            inner.insert(name);
+        return isAliasExpansionCapturedByLambda(*function->arguments->children[1], columns, inner);
+    }
+
+    if (const auto * identifier = ast.as<ASTIdentifier>())
+    {
+        const auto * column = columns.tryGet(identifier->name());
+        if (!column || column->default_desc.kind != ColumnDefaultKind::Alias || bound.contains(identifier->name()))
+            return false;
+
+        if (!identifier->name_parts.empty() && bound.contains(identifier->name_parts.front()))
+            return true;
+
+        return hasFreeIdentifierRootIn(*column->default_desc.expression, bound)
+            || isAliasExpansionCapturedByLambda(*column->default_desc.expression, columns, bound);
+    }
+
+    for (const auto & child : ast.children)
+        if (isAliasExpansionCapturedByLambda(*child, columns, bound))
             return true;
 
     return false;
@@ -222,10 +266,9 @@ TTLTransform::TTLTransform(
             return Result{};
         const auto & column = storage_columns.get(name);
         auto default_ast = it->second.expression->clone();
-        /// A lambda parameter named like a column would capture the free names of an expanded definition.
-        if (replaceAliasColumnsInQuery(default_ast, columns_to_expand, {}, storage_.getContext())
-            && hasLambdaParameterNamedLikeColumn(*default_ast, storage_columns))
-            default_ast = it->second.expression->clone();
+        /// An enclosing lambda parameter would bind a name the expansion brings in; such a default stays as written.
+        if (!isAliasExpansionCapturedByLambda(*default_ast, columns_to_expand, {}))
+            replaceAliasColumnsInQuery(default_ast, columns_to_expand, {}, storage_.getContext());
         default_ast = addTypeConversionToAST(std::move(default_ast), column.type->getName());
         auto syntax_result = TreeRewriter(storage_.getContext()).analyze(default_ast, storage_columns.getAll());
         auto actions = ExpressionAnalyzer{default_ast, syntax_result, storage_.getContext()}.getActions(true);

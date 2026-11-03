@@ -24,14 +24,18 @@ CREATE TABLE t_partial (d Date, k UInt32, q String, a String ALIAS concat(q, 'x'
     w2 String DEFAULT b TTL d + INTERVAL 1 DAY,
     w3 String DEFAULT concat(e, '-xx') TTL d + INTERVAL 1 DAY,
     w4 String DEFAULT arrayMap(z -> concat(z, a), ['1'])[1] TTL d + INTERVAL 1 DAY,
+    a2 String ALIAS arrayMap(q -> concat(q, '!'), ['alias'])[1],
+    w5 String DEFAULT a2 TTL d + INTERVAL 1 DAY,
+    w6 String DEFAULT concat(a, arrayMap(q -> q, ['!'])[1]) TTL d + INTERVAL 1 DAY,
     m String MATERIALIZED concat(a, '!') TTL d + INTERVAL 1 DAY)
     ENGINE = MergeTree ORDER BY k SETTINGS min_bytes_for_wide_part = 0;
-INSERT INTO t_partial (d, k, q, e, w, w2, w3, w4) SELECT if(number % 2 = 0, '2000-01-01', '2100-01-01'), number, toString(number),
-    'given', 'stored', 'stored', 'stored', 'stored' FROM numbers(100);
+INSERT INTO t_partial (d, k, q, e, w, w2, w3, w4, w5, w6) SELECT if(number % 2 = 0, '2000-01-01', '2100-01-01'), number, toString(number),
+    'given', 'stored', 'stored', 'stored', 'stored', 'stored', 'stored' FROM numbers(100);
 OPTIMIZE TABLE t_partial FINAL;
 SELECT 'partial', d < '2050-01-01' AS expired, countIf(w = concat(q, 'x')), countIf(w2 = upper(concat(q, 'x'))),
-    countIf(w3 = 'eph-xx'), countIf(w4 = concat('1', q, 'x')), countIf(m = concat(q, 'x!')),
-    countIf(w = 'stored' AND w2 = 'stored' AND w3 = 'stored' AND w4 = 'stored'), count()
+    countIf(w3 = 'eph-xx'), countIf(w4 = concat('1', q, 'x')), countIf(w5 = 'alias!'), countIf(w6 = concat(q, 'x!')),
+    countIf(m = concat(q, 'x!')),
+    countIf(w = 'stored' AND w2 = 'stored' AND w3 = 'stored' AND w4 = 'stored' AND w5 = 'stored' AND w6 = 'stored'), count()
     FROM t_partial GROUP BY expired ORDER BY expired;
 DROP TABLE t_partial;
 
@@ -44,6 +48,33 @@ OPTIMIZE TABLE t_recompute FINAL;
 SELECT 'recompute', d < '2050-01-01' AS expired, countIf(w = concat(q, '-') AND r = concat(q, '-!')), countIf(w = 'stored' AND r = 'stored!'), count()
     FROM t_recompute GROUP BY expired ORDER BY expired;
 DROP TABLE t_recompute;
+
+DROP TABLE IF EXISTS t_capture;
+CREATE TABLE t_capture (d Date, k UInt32, q String, a String ALIAS concat(q, 'x'),
+    w String DEFAULT arrayMap(q -> concat(q, a), ['1'])[1] TTL d + INTERVAL 1 DAY)
+    ENGINE = MergeTree ORDER BY k SETTINGS min_bytes_for_wide_part = '1G', min_rows_for_wide_part = 1000000000;
+INSERT INTO t_capture (d, k, q, w) SELECT '2000-01-01', number, toString(number), 'stored' FROM numbers(10);
+OPTIMIZE TABLE t_capture FINAL; -- { serverError NOT_FOUND_COLUMN_IN_BLOCK }
+SELECT 'capture', countIf(w = 'stored'), count() FROM t_capture;
+DROP TABLE t_capture;
+
+DROP TABLE IF EXISTS t_capture_chain;
+CREATE TABLE t_capture_chain (d Date, k UInt32, q String, a String ALIAS concat(q, 'x'), b String ALIAS upper(a),
+    w String DEFAULT arrayMap(q -> concat(q, b), ['1'])[1] TTL d + INTERVAL 1 DAY)
+    ENGINE = MergeTree ORDER BY k SETTINGS min_bytes_for_wide_part = '1G', min_rows_for_wide_part = 1000000000;
+INSERT INTO t_capture_chain (d, k, q, w) SELECT '2000-01-01', number, toString(number), 'stored' FROM numbers(10);
+OPTIMIZE TABLE t_capture_chain FINAL; -- { serverError NOT_FOUND_COLUMN_IN_BLOCK }
+SELECT 'capture chain', countIf(w = 'stored'), count() FROM t_capture_chain;
+DROP TABLE t_capture_chain;
+
+DROP TABLE IF EXISTS t_capture_field;
+CREATE TABLE t_capture_field (d Date, k0 UInt32, q String, arr Array(Tuple(a String)), `k.a` String ALIAS concat(q, 'x'),
+    w String DEFAULT arrayMap(k -> k.a, arr)[1] TTL d + INTERVAL 1 DAY)
+    ENGINE = MergeTree ORDER BY k0 SETTINGS min_bytes_for_wide_part = '1G', min_rows_for_wide_part = 1000000000;
+INSERT INTO t_capture_field (d, k0, q, arr, w) SELECT '2000-01-01', number, toString(number), [tuple('field')], 'stored' FROM numbers(10);
+OPTIMIZE TABLE t_capture_field FINAL; -- { serverError NOT_FOUND_COLUMN_IN_BLOCK }
+SELECT 'capture field', countIf(w = 'stored'), count() FROM t_capture_field;
+DROP TABLE t_capture_field;
 
 DROP TABLE IF EXISTS t_update;
 CREATE TABLE t_update (d Date, k UInt32, q String, a String ALIAS concat(q, 'x'), w String DEFAULT a TTL d + INTERVAL 1 DAY)

@@ -1,9 +1,12 @@
 wide base	100	100
 wide proj	100	100
 compact	100	100
-partial	0	0	0	0	0	50	50	50
-partial	1	50	50	50	50	50	0	50
+partial	0	0	0	0	0	0	0	50	50	50
+partial	1	50	50	50	50	50	50	50	0	50
 recompute	0	0	50	50
 recompute	1	50	0	50
+capture	10	10
+capture chain	10	10
+capture field	10	10
 update	50	50
 materialize ttl	50	50
