@@ -3710,9 +3710,9 @@ deepest table expression and when reading from a remote server, checked only on
 the remote server.
 
 For a `STREAM` query over `MergeTree` the limit applies to each read round instead
-(one refresh of an incremental refreshable materialized view): the round reads about
-this many rows, at least one block, and the next round continues from where it stopped.
-`read_overflow_mode` is ignored in this case.
+(one refresh of an incremental refreshable materialized view): the round reads whole source parts
+up to this many rows, at least one part, and the next round continues from where it stopped.
+`read_overflow_mode` is ignored in this case, and the stream uses a single source.
 )", 0) \
     DECLARE(UInt64, max_bytes_to_read, 0, R"(
 The maximum number of bytes (of uncompressed data) that can be read from a table when running a query.

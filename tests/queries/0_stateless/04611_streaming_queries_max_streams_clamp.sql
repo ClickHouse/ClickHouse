@@ -11,6 +11,9 @@ SET send_logs_level = 'error';
 
 SET enable_streaming_queries = 1;
 
+-- Read limits (set by the test profile) leave one streaming source, which would not reach the clamped stream count.
+SET max_rows_to_read = 0, max_bytes_to_read = 0;
+
 -- Keep effective `max_threads` as set below. Under memory pressure (e.g. per_test_coverage)
 -- `getMaxThreadsForAvailableMemory` clamps `max_threads` down to 1, which stops the async branch
 -- from amplifying `requested_num_streams`, so a buggy build would false-pass. See PR #100383.

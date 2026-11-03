@@ -178,12 +178,33 @@ ReadRoundContext makeReadRoundContext(
         .stream_settings = stream_settings,
         .row_level_filter = std::move(row_level_filter),
         .prewhere_filter = std::move(prewhere_filter),
-        .context = makeStreamingContext(context, projection),
+        .context = makeStreamingContext(std::move(context), projection),
         .columns_to_read = std::move(columns_to_read),
         .requested_num_streams = requested_num_streams,
         .max_block_size = max_block_size,
         .output_header = std::move(output_header),
-        .query_context = std::move(context)};
+        .storage_limits = query_info.storage_limits};
+}
+
+ReadRoundLimits getReadRoundLimits(const StorageLimitsList * storage_limits)
+{
+    ReadRoundLimits result;
+    if (!storage_limits)
+        return result;
+
+    const auto tighten = [](UInt64 & current, UInt64 limit)
+    {
+        if (limit && (!current || limit < current))
+            current = limit;
+    };
+
+    for (const auto & limits : *storage_limits)
+    {
+        tighten(result.max_rows, limits.local_limits.size_limits.max_rows);
+        tighten(result.max_bytes, limits.local_limits.size_limits.max_bytes);
+    }
+
+    return result;
 }
 
 }

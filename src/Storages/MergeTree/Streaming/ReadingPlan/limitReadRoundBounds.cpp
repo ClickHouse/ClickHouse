@@ -1,10 +1,6 @@
 #include <Storages/MergeTree/Streaming/ReadingPlan/limitReadRoundBounds.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
-#include <Interpreters/Context.h>
-
-#include <Core/Settings.h>
-
 #include <algorithm>
 #include <limits>
 #include <tuple>
@@ -13,20 +9,12 @@
 namespace DB
 {
 
-namespace Setting
-{
-    extern const SettingsUInt64 max_rows_to_read;
-    extern const SettingsUInt64 max_bytes_to_read;
-}
-
 std::map<String, Int64> limitReadRoundBounds(
     const ReadRoundContext & reading_context,
     const ReadState & state,
     std::map<String, Int64> safe_block_numbers)
 {
-    const auto & settings = reading_context.query_context->getSettingsRef();
-    const UInt64 max_rows = settings[Setting::max_rows_to_read];
-    const UInt64 max_bytes = settings[Setting::max_bytes_to_read];
+    const auto [max_rows, max_bytes] = getReadRoundLimits(reading_context.storage_limits.get());
     if (!max_rows && !max_bytes)
         return safe_block_numbers;
 
@@ -63,6 +51,7 @@ std::map<String, Int64> limitReadRoundBounds(
     /// The partition that waits longest goes first, so a busy partition cannot hold the others back.
     std::ranges::sort(changed_partitions, {}, [](const auto & partition) { return std::tie(partition.next_part_time, partition.partition_id); });
 
+    /// Whole parts only: a merged part may have gaps in its block numbers, so a bound inside it can select no rows.
     double rows_budget = max_rows ? static_cast<double>(max_rows) : std::numeric_limits<double>::infinity();
     double bytes_budget = max_bytes ? static_cast<double>(max_bytes) : std::numeric_limits<double>::infinity();
     bool budget_exhausted = false;
@@ -85,29 +74,20 @@ std::map<String, Int64> limitReadRoundBounds(
             if (part->info.max_block < from || part->info.min_block > safe_block_number)
                 continue;
 
-            const Int64 low = std::max(part->info.min_block, from);
-            const Int64 high = std::min(part->info.max_block, safe_block_number);
-            const double blocks_in_part = static_cast<double>(part->info.max_block - part->info.min_block + 1);
-            const double rows_per_block = static_cast<double>(part->rows_count) / blocks_in_part;
-            const double bytes_per_block = static_cast<double>(part->getBytesUncompressedOnDisk()) / blocks_in_part;
-            const double blocks = static_cast<double>(high - low + 1);
+            const auto rows = static_cast<double>(part->rows_count);
+            const auto bytes = static_cast<double>(part->getBytesUncompressedOnDisk());
 
-            if (rows_per_block * blocks <= rows_budget && bytes_per_block * blocks <= bytes_budget)
+            /// Read at least one part per round.
+            if (any_part_taken && (rows > rows_budget || bytes > bytes_budget))
             {
-                rows_budget -= rows_per_block * blocks;
-                bytes_budget -= bytes_per_block * blocks;
-                any_part_taken = true;
-                continue;
+                bound = std::max(part->info.min_block, from) - 1;
+                budget_exhausted = true;
+                break;
             }
 
-            /// The part crosses the limit: take as many of its blocks as fit, ending the round inside it.
-            /// The limit that is crossed has a non-zero size per block, so the result is finite and below `blocks`.
-            const auto fit = [](double budget, double per_block) { return per_block > 0 ? budget / per_block : std::numeric_limits<double>::infinity(); };
-            const Int64 taken = static_cast<Int64>(std::min(fit(rows_budget, rows_per_block), fit(bytes_budget, bytes_per_block)));
-            /// Read at least one block of data per round.
-            bound = low + std::max<Int64>(taken, any_part_taken ? 0 : 1) - 1;
-            budget_exhausted = true;
-            break;
+            rows_budget -= rows;
+            bytes_budget -= bytes;
+            any_part_taken = true;
         }
     }
 
