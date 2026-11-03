@@ -82,16 +82,19 @@ expect_denied "dynamic_disk_without_key" "
         http_client = 'gcp_oauth')"
 
 # The key is masked in the logged query (named-collection override) and in SHOW CREATE (explicit-url engine form).
+# A value shaped like a real key file: the whole value is replaced by '[HIDDEN]', no field of it is kept.
+SA_KEY_JSON='{"type": "service_account", "client_email": "leak-check@project.iam.gserviceaccount.com", "private_key": "SA_KEY_LEAK_CHECK"}'
+
 mask_qid="05242_mask_${DB}_${RANDOM}"
 $CLICKHOUSE_CLIENT --query_id "${mask_qid}" -q "
-    SELECT * FROM s3(${NC_NOCREDS}, google_service_account_key = 'SA_KEY_LEAK_CHECK', format = 'TSV', structure = 'x UInt8')
+    SELECT * FROM s3(${NC_NOCREDS}, google_service_account_key = '${SA_KEY_JSON}', format = 'TSV', structure = 'x UInt8')
 " > /dev/null 2>&1
 
 check_masked() {
     local label="$1" out="$2"
-    if echo "${out}" | grep -q "SA_KEY_LEAK_CHECK"; then
+    if echo "${out}" | grep -q -e "SA_KEY_LEAK_CHECK" -e "leak-check@" -e "\"service_account\""; then
         echo "${label}: fail (secret leaked: ${out//$'\n'/ })"
-    elif echo "${out}" | grep -q "HIDDEN"; then
+    elif echo "${out}" | grep -q -E "google_service_account_key *= *'\[HIDDEN\]'"; then
         echo "${label}: pass"
     else
         echo "${label}: fail (no masked query found: ${out//$'\n'/ })"
@@ -106,7 +109,7 @@ check_masked "query_log_masking" "$($CLICKHOUSE_CLIENT -m -q "
 
 $CLICKHOUSE_CLIENT -q "
     CREATE TABLE ${TABLE}_engine (x UInt8)
-    ENGINE = S3('http://localhost:11111/test/${DB}_engine.tsv', 'ak', 'sak', google_service_account_key = 'SA_KEY_LEAK_CHECK', format = 'TSV')
+    ENGINE = S3('http://localhost:11111/test/${DB}_engine.tsv', 'ak', 'sak', google_service_account_key = '${SA_KEY_JSON}', format = 'TSV')
 " > /dev/null
 check_masked "show_create_masking" "$($CLICKHOUSE_CLIENT -q "
     SHOW CREATE TABLE ${TABLE}_engine SETTINGS format_display_secrets_in_show_and_select = 0")"

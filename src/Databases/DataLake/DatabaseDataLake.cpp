@@ -266,7 +266,12 @@ void DatabaseDataLake::validateSettings()
             || !settings[DatabaseDataLakeSetting::google_adc_client_id].value.empty()
             || !settings[DatabaseDataLakeSetting::google_adc_client_secret].value.empty()
             || !settings[DatabaseDataLakeSetting::google_adc_refresh_token].value.empty();
-        if (has_google_credentials)
+        /// Only new databases are refused: a database that already exists in the metadata must still load at
+        /// server startup, so it keeps the previous behavior (the data files are read with the credentials of the disk).
+        if (has_google_credentials && is_loading_from_existing_metadata)
+            LOG_WARNING(log, "The `disk` setting of a BigLake catalog is combined with Google credentials: the data files "
+                "are read with the credentials of the disk, not with the credentials of the catalog");
+        else if (has_google_credentials)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "The `disk` setting cannot be combined with `google_service_account_key` or the Google ADC credentials "

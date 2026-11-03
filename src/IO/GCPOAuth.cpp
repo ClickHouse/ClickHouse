@@ -194,6 +194,10 @@ GCPServiceAccountAssertion makeGCPServiceAccountAssertion(
 #if USE_SSL
     const auto now = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
+    /// The claim set of a service account JWT, as specified in
+    /// https://developers.google.com/identity/protocols/oauth2/service-account#authorizingrequests (section "Creating a JWT"):
+    /// `iss` is the email of the service account, `scope` the requested scopes, `aud` the token endpoint,
+    /// `iat` and `exp` the issue and expiration times (seconds since the epoch, at most one hour apart).
     Poco::JSON::Object claims;
     claims.set("iss", client_email);
     claims.set("scope", scope);

@@ -36,4 +36,10 @@ CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = DataLakeCatalog('htt
 SETTINGS catalog_type = 'biglake', warehouse = 'gs://bucket', disk = 'default',
     google_adc_client_id = 'id', google_adc_client_secret = 'secret', google_adc_refresh_token = 'token'; -- { serverError BAD_ARGUMENTS }
 
+-- Without Google credentials `disk` is accepted. `ATTACH` does not connect to the catalog, so the endpoint does not have to exist.
+ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = DataLakeCatalog('http://localhost:1/iceberg')
+SETTINGS catalog_type = 'biglake', warehouse = 'gs://bucket', disk = 'default';
+SELECT count() FROM system.databases WHERE name = {CLICKHOUSE_DATABASE_1:String};
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+
 SELECT count() FROM system.databases WHERE name = {CLICKHOUSE_DATABASE_1:String};
