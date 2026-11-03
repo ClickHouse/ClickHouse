@@ -148,10 +148,12 @@ static bool exposeInputAsDAGOutput(ActionsDAG & dag, const String & column_name)
 /// Create a non-FINAL ReadFromMergeTree plan for non-intersecting parts,
 /// with optional is_deleted filter and WHERE filter applied.
 /// Returns nullopt if PK analysis prunes all granules (nothing to read).
+/// `replaced_analysis` is set when the plan replaces `reading_step` entirely.
 static std::optional<QueryPlan> createNonIntersectingPlan(
     RangesInDataParts parts,
     ReadFromMergeTree * reading_step,
-    FilterStep * filter_step)
+    FilterStep * filter_step,
+    ReadFromMergeTree::AnalysisResultPtr replaced_analysis)
 {
     const auto & data = reading_step->getMergeTreeData();
     const auto & merging_params = data.merging_params;
@@ -249,6 +251,10 @@ static std::optional<QueryPlan> createNonIntersectingPlan(
     if (analysis && analysis->parts_with_ranges.empty())
         return std::nullopt;
 
+    /// the new read starts from the pruned ranges, so the drops are only in the replaced analysis
+    if (replaced_analysis)
+        reading_step->reportIndexUsageWith(*non_final_reading, std::move(replaced_analysis));
+
     QueryPlan plan;
     plan.addStep(std::move(non_final_reading));
 
@@ -304,7 +310,7 @@ static SplitResult trySplitNonIntersectingParts(
     {
         /// All parts are non-intersecting — no FINAL needed at all.
         auto plan = createNonIntersectingPlan(
-            std::move(split.non_intersecting_parts_ranges), reading_step, filter_step);
+            std::move(split.non_intersecting_parts_ranges), reading_step, filter_step, analyzed_result);
 
         if (!plan)
             return {};
@@ -367,8 +373,9 @@ static SplitResult trySplitNonIntersectingParts(
         reading_step->setAnalyzedResult(analyzed_result);
     }
 
+    /// the original read stays in the plan and reports the analysis of all parts
     auto plan = createNonIntersectingPlan(
-        std::move(split.non_intersecting_parts_ranges), reading_step, filter_step);
+        std::move(split.non_intersecting_parts_ranges), reading_step, filter_step, /*replaced_analysis=*/ nullptr);
 
     if (!plan)
         return {};
