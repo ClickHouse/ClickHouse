@@ -65,7 +65,24 @@ WHERE database = currentDatabase()
 DROP TABLE constant_column_after_filter_write;
 DROP TABLE constant_column_after_filter_projection_write;
 
-DROP TABLE IF EXISTS t_proj_const_tuple;
-CREATE TABLE t_proj_const_tuple (k UInt64, t Tuple(a UInt64, b UInt64), PROJECTION p (SELECT t ORDER BY k)) ENGINE = MergeTree ORDER BY k;
-INSERT INTO t_proj_const_tuple SELECT number, (1, 2) FROM numbers(5) WHERE t = (1, 2);
-DROP TABLE t_proj_const_tuple;
+DROP TABLE IF EXISTS t_proj_tuple_eq;
+
+CREATE TABLE t_proj_tuple_eq
+(
+    k UInt64,
+    tup Tuple(UInt64, UInt64),
+    PROJECTION p (SELECT k, tup WHERE tup = (1, 2) ORDER BY k)
+)
+ENGINE = MergeTree ORDER BY k
+SETTINGS ratio_of_defaults_for_sparse_serialization = 0.9375;
+
+INSERT INTO t_proj_tuple_eq VALUES (1, (1, 2)), (2, (3, 4)), (3, (1, 2));
+
+ALTER TABLE t_proj_tuple_eq MATERIALIZE PROJECTION p SETTINGS mutations_sync = 1;
+
+SELECT sum(rows) FROM system.projection_parts
+WHERE database = currentDatabase() AND table = 't_proj_tuple_eq' AND name = 'p' AND active;
+
+SELECT k, tup FROM t_proj_tuple_eq ORDER BY k;
+
+DROP TABLE t_proj_tuple_eq;
