@@ -1259,6 +1259,9 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
             request_uri.addQueryParameter(param, value);
 
         setCredentials(credentials, request_uri);
+        /// The credentials are sent in the `Authorization` header, which <http_forbid_headers> may forbid.
+        /// Checked outside of the `try` below: a forbidden option must fail the read, not fall through to the next one.
+        context_->getHTTPHeaderFilter().checkBasicCredentials(credentials);
 
         const auto & settings = context_->getSettingsRef();
 

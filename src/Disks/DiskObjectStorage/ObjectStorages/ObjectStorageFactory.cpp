@@ -22,6 +22,7 @@
 #include <Disks/loadLocalDiskConfig.h>
 
 #include <Interpreters/Context.h>
+#include <Common/HTTPHeaderFilter.h>
 #include <Common/LoggingFormatStringHelpers.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/logger_useful.h>
@@ -307,7 +308,7 @@ static void registerWebObjectStorage(ObjectStorageFactory & factory)
         const ContextPtr & context,
         bool /* run_access_check */,
         bool /* run_local_paths_check */,
-        RemoteHostFilterCheck /* remote_host_filter_check */) -> ObjectStoragePtr
+        RemoteHostFilterCheck remote_host_filter_check) -> ObjectStoragePtr
     {
         auto uri = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
         if (!uri.ends_with('/'))
@@ -322,6 +323,12 @@ static void registerWebObjectStorage(ObjectStorageFactory & factory)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS, "Bad URI: `{}`. Error: {}", uri, e.what());
         }
+
+        /// The endpoint of a disk defined by a query is user input, and its userinfo is sent in the `Authorization` header,
+        /// so it is subject to <http_forbid_headers> like the URL of a `url` table. A disk loaded from existing metadata
+        /// is not checked, so that it does not fail the table load.
+        if (remote_host_filter_check == RemoteHostFilterCheck::Enforce)
+            context->getHTTPHeaderFilter().checkURIUserInfo(Poco::URI(uri));
 
         return std::make_shared<WebObjectStorage>(uri, "", context);
     });
