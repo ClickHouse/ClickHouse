@@ -811,7 +811,6 @@ static bool writeConsolidatedManifestFile(
     // Manifest-only rewrite: use a snapshot type that carries all total-* counters forward unchanged, since passing deltas would inflate the totals.
     auto new_snapshot = metadata_generator.generateManifestOnlySnapshot(
         generator,
-        generated_metadata_info.path,
         current_snapshot_id);
 
     // Write one manifest file per (partition spec, partition value) group.
@@ -974,6 +973,7 @@ static bool writeConsolidatedManifestFile(
 
         // Commit: write metadata file with If-None-Match + ETag-based CAS version hint; returns false if another writer claimed this version, so the caller retries.
         {
+            MetadataGenerator(metadata_object).trimMetadataLog();
             std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
             Poco::JSON::Stringifier::stringify(metadata_object, oss, 4);
             std::string json_representation = removeEscapedSlashes(oss.str());
@@ -1120,8 +1120,8 @@ static bool writeMetadataFiles(
 
         auto new_snapshot = metadata_generator.generateNextMetadata(
             plan.generator,
-            generated_metadata_info.path,
-            history_record.parent_id,
+            /// `getHistory` reports a missing parent as 0.
+            history_record.parent_id != 0 ? history_record.parent_id : -1,
             append->added_files,
             total_records_count,
             append->added_files_size,
@@ -1463,6 +1463,7 @@ void compactIcebergManifests(
             log,
             persistent_table_components.metadata_compression_method,
             persistent_table_components.table_uuid));
+        MetadataGenerator(metadata_object).addPreviousMetadataFile(persistent_table_components.path_resolver.reverseResolve(metadata_file_path));
 
         /// Validate the format version on the freshly-fetched metadata (before the threshold early-return), since the table may have been upgraded to v3 by another writer after this table object was created.
         const Int32 format_version = metadata_object->getValue<Int32>(Iceberg::f_format_version);
