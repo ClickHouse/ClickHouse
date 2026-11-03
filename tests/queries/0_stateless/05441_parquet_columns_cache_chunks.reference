@@ -1,0 +1,17 @@
+1	250000
+--- without the cache: blocks of the size the settings ask for
+250000	31249875000	1388890
+250	1000	1000
+--- the first read writes the chunks
+250000	31249875000	1388890
+id	4	250000	53392	65536	0	250000
+s	4	250000	53392	65536	0	250000
+--- the second read is served from the cache, in blocks of the chunks
+250000	31249875000	1388890
+4	65536	53392
+--- PREWHERE filters the rows served from the cache
+35715	4464339285	198415
+35715	4464339285	198415
+--- a part of the rows, from the middle of a chunk
+50000	11249975000	300000
+50000	11249975000	300000

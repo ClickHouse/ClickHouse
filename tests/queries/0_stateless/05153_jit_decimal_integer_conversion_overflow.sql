@@ -31,8 +31,10 @@ SELECT toInt64(materialize(42::Decimal64(0))) + 0 FROM numbers(2)
     SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0, log_comment = '05153_kept' FORMAT Null;
 SELECT toFloat64(materialize(42::Decimal64(0))) + 0 FROM numbers(2)
     SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0, log_comment = '05153_float' FORMAT Null;
+-- `short_circuit_function_evaluation_reorder_arguments` would make the heavy `CAST` a lazy argument of `and`, which is not compiled.
 SELECT CAST(materialize(0.5::Decimal64(1)) AS Bool) AND materialize(true) FROM numbers(2)
-    SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0, log_comment = '05153_bool' FORMAT Null;
+    SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0, short_circuit_function_evaluation_reorder_arguments = 0,
+    log_comment = '05153_bool' FORMAT Null;
 SELECT toDecimal32(materialize(7::Int32) + 0, 2) FROM numbers(2)
     SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0, log_comment = '05153_declined' FORMAT Null;
 SELECT materialize(2.0) + materialize(0.0) + materialize(1.0) FROM numbers(2)
