@@ -3538,7 +3538,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
     if (!table_name.empty())
         table = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, getQueryContext());
     /// A view whose own name has a dot: `` `v.x`(...) ``.
-    if (!table && table_name != function->name)
+    if (!table && !function->isCompoundName() && table_name != function->name)
     {
         database_name = getCurrentDatabase();
         table_name = function->name;

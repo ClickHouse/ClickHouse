@@ -96,5 +96,8 @@ ${CLICKHOUSE_CLIENT} -q "
     SELECT countIf(explain LIKE '%FROM ${a}.src%') > 0 FROM (EXPLAIN SYNTAX SELECT * FROM \`v.x\`(p = 1));
 "
 
+echo 'an unquoted v.x(...) is the view x of database v, not the view v.x'
+${CLICKHOUSE_CLIENT} -q "EXPLAIN SYNTAX SELECT * FROM v.x(p = 1)" | grep -c "FROM ${a}.src"
+
 ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none -q "DROP DATABASE ${r} SYNC"
 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE ${a} SYNC"
