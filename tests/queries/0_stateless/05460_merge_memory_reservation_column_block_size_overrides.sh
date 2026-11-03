@@ -34,7 +34,7 @@ function reserved_for_merge()
         CREATE TABLE t_merge_mem_block_size (${columns})
         ENGINE = MergeTree ORDER BY k
         SETTINGS min_bytes_for_wide_part = 0, max_compress_block_size = ${table_block_size},
-            min_columns_to_activate_adaptive_write_buffer = 0, max_memory_ratio_to_activate_adaptive_write_buffer = 0;
+            min_columns_to_activate_adaptive_write_buffer = 0;
 
         INSERT INTO t_merge_mem_block_size SELECT ${values} FROM numbers(2);
         INSERT INTO t_merge_mem_block_size SELECT ${values} FROM numbers(2, 2);

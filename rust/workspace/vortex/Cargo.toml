@@ -16,8 +16,10 @@ concurrent-queue = "2"
 futures = "0.3"
 parking = "2"
 # The same MPMC channel `vortex-io` uses; the scan hands its chunks to any number of consumer
-# threads through it.
-kanal = "0.1"
+# threads through it. `std-mutex`: a thread waiting on a contended channel parks. kanal's default
+# lock only spins, and under TSan its unlock can starve behind the spinners (Cargo applies the
+# feature to every user of the crate).
+kanal = { version = "0.1", features = ["std-mutex"] }
 vortex = { version = "0.84.0", default-features = false, features = ["files", "zstd"] }
 
 [build-dependencies]

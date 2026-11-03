@@ -39,7 +39,6 @@ function reserved_for_merge()
         ENGINE = MergeTree ORDER BY k
         SETTINGS min_bytes_for_wide_part = 0, enable_vertical_merge_algorithm = 0,
                  min_columns_to_activate_adaptive_write_buffer = ${min_columns_to_activate},
-                 max_memory_ratio_to_activate_adaptive_write_buffer = 0,
                  ratio_of_defaults_for_sparse_serialization = 0.9375,
                  max_compress_block_size = 1048576, materialize_projections_on_merge = 1;
 

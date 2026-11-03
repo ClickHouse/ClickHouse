@@ -30,8 +30,7 @@ function reserved_for_merge()
         CREATE TABLE t_merge_mem_nested_projection (k UInt64, n Nested(a UInt64, b UInt64))
         ENGINE = MergeTree ORDER BY k
         SETTINGS min_bytes_for_wide_part = 0, share_nested_offsets = 1, materialize_projections_on_merge = 1,
-            min_columns_to_activate_adaptive_write_buffer = ${adaptive_threshold},
-            max_memory_ratio_to_activate_adaptive_write_buffer = 0;
+            min_columns_to_activate_adaptive_write_buffer = ${adaptive_threshold};
 
         INSERT INTO t_merge_mem_nested_projection SELECT number, range(number % 3), range(number % 3) FROM numbers(2);
         INSERT INTO t_merge_mem_nested_projection SELECT number, range(number % 3), range(number % 3) FROM numbers(2, 2);

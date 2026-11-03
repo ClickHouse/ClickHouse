@@ -31,7 +31,6 @@
 #include <Common/BitHelpers.h>
 #include <city.h>
 #include <Common/BufferAllocationPolicy.h>
-#include <Common/MemoryTracker.h>
 #include <Common/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
@@ -91,7 +90,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 max_bytes_to_merge_at_max_space_in_pool;
     extern const MergeTreeSettingsUInt64 max_bytes_to_merge_at_min_space_in_pool;
     extern const MergeTreeSettingsUInt64 max_compress_block_size;
-    extern const MergeTreeSettingsFloat max_memory_ratio_to_activate_adaptive_write_buffer;
     extern const MergeTreeSettingsUInt64 max_number_of_mutations_for_replica;
     extern const MergeTreeSettingsUInt64 min_columns_to_activate_adaptive_write_buffer;
     extern const MergeTreeSettingsUInt64 min_unreserved_disk_space_for_merge;
@@ -1867,9 +1865,8 @@ static UInt64 estimateNeededMemoryForMergeImpl(
     /// getSettings(&projection.settings_changes). So this resolution is parameterized by the effective
     /// settings and the written columns, and the projection pricing below instantiates it again with the
     /// projection's own settings and columns instead of reusing the parent table's size.
-    /// The smallest resolved size is returned as well: the memory-ratio adaptive trigger of the writer
-    /// (see ratio_triggers_adaptive below) is decided per stream from the stream's own size, and the
-    /// smallest one is the size for which it can be assumed for every stream of the writer.
+    /// The smallest resolved size is returned as well: it bounds the number of compressed blocks a writer
+    /// can produce from a given data volume.
     struct CompressBlockSizeRange
     {
         UInt64 min = 0;
@@ -2384,28 +2381,10 @@ static UInt64 estimateNeededMemoryForMergeImpl(
     /// stream count, or an upper bound of it; the rule is applied only when it holds for the count the writer is
     /// proven to open (`proven_total`), otherwise the streams of a sparse / dense mix that the merged serialization
     /// does not write could switch the eager full-size buffers it does allocate to the adaptive price.
-    /// The memory-ratio rule of the same function (writeBuffersWouldTakeSignificantMemory): every stream
-    /// is adaptive when the writer's streams would preallocate two buffers of the stream's
-    /// max_compress_block_size each, summing to at least max_memory_ratio_to_activate_adaptive_write_buffer
-    /// of the server memory limit. The writer decides it per stream with the stream's own block size; it is
-    /// assumed here only when it holds for the smallest block size any written column of the writer
-    /// resolves to (min_compress_block_size), which then makes it hold for every stream of the writer.
-    /// Otherwise the streams stay priced as non-adaptive, the direction that can only over-reserve.
-    const double max_memory_ratio_for_adaptive = static_cast<double>(settings[MergeTreeSetting::max_memory_ratio_to_activate_adaptive_write_buffer]);
-    const Int64 server_memory_limit = total_memory_tracker.getHardLimit();
-    const auto ratio_triggers_adaptive = [&](size_t streams, UInt64 min_compress_block_size)
-    {
-        if (max_memory_ratio_for_adaptive <= 0 || server_memory_limit <= 0)
-            return false;
-        const double preallocated = static_cast<double>(streams) * 2 * static_cast<double>(min_compress_block_size);
-        return preallocated >= static_cast<double>(server_memory_limit) * max_memory_ratio_for_adaptive;
-    };
-    const auto non_adaptive_stream_count = [&](const WriterStreamCounts & counts, UInt64 min_compress_block_size) -> size_t
+    const auto non_adaptive_stream_count = [&](const WriterStreamCounts & counts) -> size_t
     {
         const size_t proven_streams = counts.proven_total.value_or(counts.total);
         if (min_columns_for_adaptive != 0 && proven_streams >= min_columns_for_adaptive)
-            return 0;
-        if (ratio_triggers_adaptive(proven_streams, min_compress_block_size))
             return 0;
         return adaptive_for_dynamic_subcolumns ? counts.non_adaptive : counts.total;
     };
@@ -2415,9 +2394,9 @@ static UInt64 estimateNeededMemoryForMergeImpl(
     /// WITH SETTINGS (see ALLOWED_PROJECTION_SETTINGS), so every writer resolves them from the table
     /// settings.
     const auto eager_write_buffers
-        = [&](const WriterStreamCounts & counts, UInt64 non_adaptive_compress_block_size, UInt64 min_compress_block_size) -> UInt64
+        = [&](const WriterStreamCounts & counts, UInt64 non_adaptive_compress_block_size) -> UInt64
     {
-        const size_t non_adaptive = non_adaptive_stream_count(counts, min_compress_block_size);
+        const size_t non_adaptive = non_adaptive_stream_count(counts);
         return non_adaptive * eager_stream_buffers_with_marks(non_adaptive_compress_block_size)
             + (counts.total - non_adaptive) * adaptive_eager_buffers_per_stream;
     };
@@ -2508,9 +2487,9 @@ static UInt64 estimateNeededMemoryForMergeImpl(
         = worst_case_write_buffer_size(base_max_compress_block_size, /*adaptive_stream=*/ true, output_encoded_marks_bytes_per_stream);
     /// The worst case of a wide writer's streams, split by the per-stream adaptive decision.
     const auto wide_worst_case
-        = [&](const WriterStreamCounts & counts, UInt64 non_adaptive_size, UInt64 adaptive_size, UInt64 min_compress_block_size)
+        = [&](const WriterStreamCounts & counts, UInt64 non_adaptive_size, UInt64 adaptive_size)
     {
-        const size_t non_adaptive = non_adaptive_stream_count(counts, min_compress_block_size);
+        const size_t non_adaptive = non_adaptive_stream_count(counts);
         return saturatingAdd(
             saturatingStreamsTimesBuffer(non_adaptive, non_adaptive_size),
             saturatingStreamsTimesBuffer(counts.total - non_adaptive, adaptive_size));
@@ -2557,7 +2536,7 @@ static UInt64 estimateNeededMemoryForMergeImpl(
 
     const UInt64 output_worst_case = output_is_compact
         ? compact_worst_case(output_compact_block_size, output_compact_compressors, output_encoded_marks_bytes_per_stream)
-        : wide_worst_case(output_stream_counts, write_buffer_size, adaptive_write_buffer_size, base_min_compress_block_size);
+        : wide_worst_case(output_stream_counts, write_buffer_size, adaptive_write_buffer_size);
 
     /// A stream whose data volume this estimate cannot derive from the source parts - a rebuilt projection,
     /// a variable-size DEFAULT-filled column, a delayed vertical stream - is priced at the buffers its
@@ -2605,7 +2584,7 @@ static UInt64 estimateNeededMemoryForMergeImpl(
 
     const UInt64 output_eager_write_buffers = output_is_compact
         ? compact_eager_buffers(output_compact_block_size, output_compact_compressors)
-        : eager_write_buffers(output_stream_counts, base_max_compress_block_size, base_min_compress_block_size);
+        : eager_write_buffers(output_stream_counts, base_max_compress_block_size);
     /// The data every stream writes is bounded by what the merge reads plus the synthesized fixed-size
     /// defaults; the marks are written by every stream's marks compressor (a single one for a compact part).
     const UInt64 output_written_bytes = saturatingAdd(sum_input_bytes_uncompressed, default_filled_value_bytes);
@@ -2803,7 +2782,7 @@ static UInt64 estimateNeededMemoryForMergeImpl(
                     max_gathering_column_eager_buffers
                         = std::max(
                             max_gathering_column_eager_buffers,
-                            eager_write_buffers(column_stream_counts, base_max_compress_block_size, base_min_compress_block_size));
+                            eager_write_buffers(column_stream_counts, base_max_compress_block_size));
 
                     UInt64 column_uncompressed = 0;
                     for (const auto & part : source_and_patch_parts)
@@ -2847,7 +2826,7 @@ static UInt64 estimateNeededMemoryForMergeImpl(
                 /// size - the direction that can only over-price, and bounded by the streams of
                 /// max_merge_delayed_streams_for_parallel_write column writers.
                 const UInt64 vertical_data_bound = saturatingAdd(
-                    eager_write_buffers(merging_stream_counts, base_max_compress_block_size, base_min_compress_block_size)
+                    eager_write_buffers(merging_stream_counts, base_max_compress_block_size)
                         + max_gathering_column_eager_buffers
                         + saturatingStreamsTimesBuffer(delayed_streams, eager_stream_buffers_with_marks(base_max_compress_block_size))
                         + 3 * (merging_uncompressed + max_gathering_column_uncompressed)
@@ -3356,8 +3335,7 @@ static UInt64 estimateNeededMemoryForMergeImpl(
                         : wide_worst_case(
                             projection_wide_stream_counts,
                             worst_case_write_buffer_size(projection_max_compress_block_size, /*adaptive_stream=*/ false, marks_file_bytes),
-                            worst_case_write_buffer_size(projection_max_compress_block_size, /*adaptive_stream=*/ true, marks_file_bytes),
-                            projection_min_compress_block_size);
+                            worst_case_write_buffer_size(projection_max_compress_block_size, /*adaptive_stream=*/ true, marks_file_bytes));
                 };
                 const UInt64 projection_worst_case = std::max(
                     projection_format_worst_case(temp_projection_is_compact),
@@ -3372,7 +3350,7 @@ static UInt64 estimateNeededMemoryForMergeImpl(
                 {
                     return is_compact
                         ? compact_eager_buffers(projection_compact_block_size, projection_compact_compressors)
-                        : eager_write_buffers(projection_wide_stream_counts, projection_max_compress_block_size, projection_min_compress_block_size);
+                        : eager_write_buffers(projection_wide_stream_counts, projection_max_compress_block_size);
                 };
                 const UInt64 projection_eager_write_buffers = std::max(
                     projection_format_eager_buffers(temp_projection_is_compact),
