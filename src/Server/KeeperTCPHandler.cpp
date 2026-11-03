@@ -14,7 +14,7 @@
 #    include <IO/WriteBufferFromPocoSocket.h>
 #    include <IO/LimitReadBuffer.h>
 #    include <base/defines.h>
-#    include <Common/Hex.h>
+#    include <base/hex.h>
 #    include <Poco/Net/NetException.h>
 #    include <Poco/Util/AbstractConfiguration.h>
 #    include <Common/CurrentThread.h>
@@ -47,11 +47,6 @@
 namespace ProfileEvents
 {
     extern const Event KeeperTotalElapsedMicroseconds;
-    extern const Event KeeperPacketsSent;
-    extern const Event KeeperPacketsReceived;
-    extern const Event KeeperRequestTotal;
-    extern const Event KeeperRequestTotalWithSubrequests;
-    extern const Event KeeperLatency;
 }
 
 namespace DB
@@ -469,16 +464,6 @@ void KeeperTCPHandler::runImpl()
             client_timeout = Poco::Timespan(Coordination::DEFAULT_SESSION_TIMEOUT_MS * Poco::Timespan::MILLISECONDS);
         session_timeout = std::max(client_timeout, min_session_timeout);
         session_timeout = std::min(session_timeout, max_session_timeout);
-        if (session_timeout != client_timeout)
-            LOG_INFO(
-                log,
-                "Client requested session timeout {} ms was adjusted to {} ms by keeper settings "
-                "(min_session_timeout_ms={}, session_timeout_ms={}). "
-                "If this is unintended, adjust keeper_server.coordination_settings on the server side",
-                client_timeout.totalMilliseconds(),
-                session_timeout.totalMilliseconds(),
-                min_session_timeout.totalMilliseconds(),
-                max_session_timeout.totalMilliseconds());
     }
     catch (const Exception & e) /// Typical for an incorrect username, password, or address.
     {
@@ -914,14 +899,12 @@ void KeeperTCPHandler::packageSent()
 {
     conn_stats.incrementPacketsSent();
     keeper_dispatcher->incrementPacketsSent();
-    ProfileEvents::increment(ProfileEvents::KeeperPacketsSent);
 }
 
 void KeeperTCPHandler::packageReceived()
 {
     conn_stats.incrementPacketsReceived();
     keeper_dispatcher->incrementPacketsReceived();
-    ProfileEvents::increment(ProfileEvents::KeeperPacketsReceived);
 }
 
 void KeeperTCPHandler::updateStats(Coordination::ZooKeeperResponsePtr & response, const Coordination::ZooKeeperRequestPtr & request)
@@ -951,13 +934,10 @@ void KeeperTCPHandler::updateStats(Coordination::ZooKeeperResponsePtr & response
                 subrequest_count = static_cast<const Coordination::ZooKeeperMultiRequest &>(*request).requests.size();
         }
 
-        conn_stats.updateLatency(elapsed_ms);
+        conn_stats.updateLatency(elapsed_ms, subrequest_count);
 
         operations.erase(response->xid);
-        keeper_dispatcher->updateKeeperStatLatency(elapsed_ms);
-        ProfileEvents::increment(ProfileEvents::KeeperLatency, elapsed_ms);
-        ProfileEvents::increment(ProfileEvents::KeeperRequestTotal);
-        ProfileEvents::increment(ProfileEvents::KeeperRequestTotalWithSubrequests, subrequest_count);
+        keeper_dispatcher->updateKeeperStatLatency(elapsed_ms, subrequest_count);
 
         last_op.set(std::make_unique<LastOp>(LastOp{
             .name = Coordination::toString(response->getOpNum()),

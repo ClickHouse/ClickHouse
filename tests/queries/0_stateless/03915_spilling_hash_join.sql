@@ -16,6 +16,12 @@ FROM
     EXPLAIN PLAN actions = 1 SELECT * FROM numbers(1) AS t1 JOIN numbers(1) AS t2 ON t1.number = t2.number SETTINGS join_algorithm = 'hash'
 )
 WHERE trim(explain) LIKE 'Algorithm%';
+SELECT trim(explain)
+FROM
+(
+    EXPLAIN PLAN actions = 1 SELECT * FROM numbers(1) AS t1 JOIN numbers(1) AS t2 ON t1.number = t2.number SETTINGS join_algorithm = 'parallel_hash'
+)
+WHERE trim(explain) LIKE 'Algorithm%';
 
 SET join_algorithm = 'hash';
 SET max_threads = 1;
@@ -106,12 +112,11 @@ ON t1.k = t2.k
 SETTINGS log_comment = 'query_03915_10';
 
 -- ====================================================================
--- Parallel layout: SpillingHashJoin wrapping a parallel HashJoin.
+-- Concurrent path: SpillingHashJoin wrapping ConcurrentHashJoin.
 -- ====================================================================
 SET max_bytes_before_external_join = 1000000000;
 SET join_algorithm = 'parallel_hash';
 SET max_threads = 4;
-SET hash_join_layout = 'parallel';
 
 -- Test 11: Small INNER JOIN that fits in memory (concurrent, no spill).
 SELECT 'concurrent inner join small';

@@ -48,9 +48,6 @@ protected:
     bool isEmbeeddedClient() const override;
     void addMultiquery(std::string_view query, Arguments & common_arguments) const;
 
-    /// Name of the logger the signal listener writes crash reports to.
-    static constexpr auto fatal_log_name = "ClientApplicationBase";
-
     virtual void readArguments(int argc, char ** argv, Arguments & common_arguments, std::vector<Arguments> &, std::vector<Arguments> &) = 0;
 
 private:

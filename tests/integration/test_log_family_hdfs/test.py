@@ -30,8 +30,9 @@ def started_cluster():
 
 
 def count_hdfs_objects(fs, path="/clickhouse"):
-    # `fileCount` is recursive: it counts the files of the whole subtree in one request.
-    return fs.get_content_summary(path).fileCount
+    # The object keys contain a nested directory prefix (e.g. `abc/xyz...`),
+    # so count the files recursively; directories are not objects.
+    return sum(len(files) for _, _, files in fs.walk(path))
 
 
 def hdfs_directories(fs, path="/clickhouse"):

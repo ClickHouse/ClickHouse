@@ -2,6 +2,8 @@
 -- Test that merge() function works with remote/distributed tables that have different schemas.
 -- https://github.com/ClickHouse/ClickHouse/issues/86393
 
+SET enable_analyzer = 1;
+
 DROP TABLE IF EXISTS r_t1;
 DROP TABLE IF EXISTS r_t2;
 DROP TABLE IF EXISTS t1;

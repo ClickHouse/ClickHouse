@@ -40,8 +40,8 @@ class AggregateFunctionTimeSeriesGroupArray final :
 public:
     using Base = IAggregateFunctionHelper<AggregateFunctionTimeSeriesGroupArray<TimestampType, ValueType>>;
 
-    using TimestampColumnType = ColumnVectorOrDecimal<TimestampType>;
-    using ValueColumnType = ColumnVectorOrDecimal<ValueType>;
+    using ColVecType = ColumnVectorOrDecimal<TimestampType>;
+    using ColVecResultType = ColumnVectorOrDecimal<ValueType>;
 
     String getName() const override
     {
@@ -183,16 +183,9 @@ public:
 
     static DataTypePtr createResultType(const DataTypes & argument_types_)
     {
+        /// With the single argument form the result type is the same as the type of that argument.
         if (argument_types_.size() == 1)
-        {
-            /// This function can be called with `SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp_type, value_type)))`
-            /// as its only argument, in this case it should return `Array(Tuple(timestamp_type, value_type))`.
-            const auto & array_type = typeid_cast<const DataTypeArray &>(*argument_types_[0]);
-            const auto & tuple_type = typeid_cast<const DataTypeTuple &>(*array_type.getNestedType());
-            if (tuple_type.hasExplicitNames())
-                return std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(tuple_type.getElements(), tuple_type.getElementNames()));
-            return std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(tuple_type.getElements()));
-        }
+            return argument_types_[0];
 
         const bool arrays_passed = (argument_types_[1]->getTypeId() == TypeIndex::Array);
         const auto & timestamp_type = arrays_passed ? typeid_cast<const DataTypeArray *>(argument_types_[0].get())->getNestedType() : argument_types_[0];
@@ -257,8 +250,8 @@ public:
         }
         else
         {
-            const auto & timestamp_column = typeid_cast<const TimestampColumnType &>(*columns[0]);
-            const auto & value_column = typeid_cast<const ValueColumnType &>(*columns[1]);
+            const auto & timestamp_column = typeid_cast<const ColVecType &>(*columns[0]);
+            const auto & value_column = typeid_cast<const ColVecResultType &>(*columns[1]);
             add(place, timestamp_column.getData()[row_num], value_column.getData()[row_num], arena);
         }
     }
@@ -322,8 +315,8 @@ public:
         if (!array_of_pairs_argument && !array_arguments)
         {
             /// Each row holds a single sample.
-            const TimestampType * timestamp_data = typeid_cast<const TimestampColumnType &>(*columns[0]).getData().data();
-            const ValueType * value_data = typeid_cast<const ValueColumnType &>(*columns[1]).getData().data();
+            const TimestampType * timestamp_data = typeid_cast<const ColVecType &>(*columns[0]).getData().data();
+            const ValueType * value_data = typeid_cast<const ColVecResultType &>(*columns[1]).getData().data();
 
             if (!flags_data)
                 addMany(place, timestamp_data, value_data, row_begin, row_end, arena);
@@ -349,8 +342,8 @@ public:
             /// The timestamps and the values are stored in the same array, so they share the offsets.
             timestamp_offsets = array_column.getOffsets().data();
             value_offsets = timestamp_offsets;
-            timestamp_data = typeid_cast<const TimestampColumnType &>(tuple_column.getColumn(0)).getData().data();
-            value_data = typeid_cast<const ValueColumnType &>(tuple_column.getColumn(1)).getData().data();
+            timestamp_data = typeid_cast<const ColVecType &>(tuple_column.getColumn(0)).getData().data();
+            value_data = typeid_cast<const ColVecResultType &>(tuple_column.getColumn(1)).getData().data();
         }
         else
         {
@@ -359,8 +352,8 @@ public:
 
             timestamp_offsets = timestamp_array_column.getOffsets().data();
             value_offsets = value_array_column.getOffsets().data();
-            timestamp_data = typeid_cast<const TimestampColumnType &>(timestamp_array_column.getData()).getData().data();
-            value_data = typeid_cast<const ValueColumnType &>(value_array_column.getData()).getData().data();
+            timestamp_data = typeid_cast<const ColVecType &>(timestamp_array_column.getData()).getData().data();
+            value_data = typeid_cast<const ColVecResultType &>(value_array_column.getData()).getData().data();
         }
 
         size_t previous_timestamp_offset = (row_begin == 0 ? 0 : timestamp_offsets[row_begin - 1]);
@@ -519,8 +512,8 @@ public:
                 "Expected tuple size 2, got {}",
                 tuple.tupleSize());
 
-        TimestampColumnType & timestamps_to = typeid_cast<TimestampColumnType &>(tuple.getColumn(0));
-        ValueColumnType & values_to = typeid_cast<ValueColumnType &>(tuple.getColumn(1));
+        ColVecType & timestamps_to = typeid_cast<ColVecType &>(tuple.getColumn(0));
+        ColVecResultType & values_to = typeid_cast<ColVecResultType &>(tuple.getColumn(1));
 
         Data & data = this->data(place);
 

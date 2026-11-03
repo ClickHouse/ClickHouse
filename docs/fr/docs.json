@@ -4,7 +4,7 @@
       "pages": [
         "fr/index"
       ],
-      "tab": "Accueil"
+      "tab": "Home"
     },
     {
       "menu": [
@@ -21,7 +21,7 @@
           "$ref": "./reference/navigation.json"
         }
       ],
-      "tab": "Base de données"
+      "tab": "Database"
     },
     {
       "menu": [
@@ -64,7 +64,7 @@
     {
       "menu": [
         {
-          "item": "Écosystème",
+          "item": "Ecosystem",
           "pages": [
             "fr/integrations/home",
             "fr/integrations/data-catalogs"
@@ -80,7 +80,7 @@
           "$ref": "./integrations/connectors/navigation.json"
         }
       ],
-      "tab": "Intégrations"
+      "tab": "Integrations"
     },
     {
       "menu": [
@@ -97,7 +97,7 @@
           "$ref": "./resources/about/navigation.json"
         }
       ],
-      "tab": "Ressources"
+      "tab": "Resources"
     }
   ]
 }

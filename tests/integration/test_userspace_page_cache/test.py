@@ -21,7 +21,6 @@ def _is_sanitizer_build():
             [
                 binary,
                 "local",
-                "--tmp",
                 "--query",
                 "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'",
             ],
