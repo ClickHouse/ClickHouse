@@ -47,41 +47,44 @@ void DiskSelector::assertInitialized() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "DiskSelector not initialized");
 }
 
+bool DiskSelector::arePlainRewritableDisksOverlapping(const DiskPtr & disk, const DiskPtr & other_disk)
+{
+    if (!disk->isPlain() || disk->isReadOnly() || disk->isWriteOnce())
+        return false;
+
+    if (!other_disk->isPlain() || other_disk->isReadOnly() || other_disk->isWriteOnce())
+        return false;
+
+    /// Same endpoint
+    if (disk->getObjectStorage()->getDescription() != other_disk->getObjectStorage()->getDescription())
+        return false;
+
+    /// Same bucket
+    if (disk->getObjectStorage()->getObjectsNamespace() != other_disk->getObjectStorage()->getObjectsNamespace())
+        return false;
+
+    LOG_TEST(getLogger("recordDisk"), "Validating plain disk: {}-{}-{}-{}-{} vs {}-{}-{}-{}-{}",
+        disk->getName(), disk->isReadOnly(), disk->isWriteOnce(), disk->getObjectStorage()->getDescription(), disk->getObjectStorage()->getObjectsNamespace(),
+        other_disk->getName(), other_disk->isReadOnly(), other_disk->isWriteOnce(), other_disk->getObjectStorage()->getDescription(), other_disk->getObjectStorage()->getObjectsNamespace());
+
+    /// Nested common keys
+    const auto new_prefix = disk->getObjectStorage()->getCommonKeyPrefix();
+    const auto saved_prefix = other_disk->getObjectStorage()->getCommonKeyPrefix();
+    if (!new_prefix.starts_with(saved_prefix) && !saved_prefix.starts_with(new_prefix))
+        return false;
+
+    /// The same metadata storage under the `cache` and `encrypted` layers is the same disk.
+    return unwrapEncryptedAndCacheLayers(other_disk).get() != unwrapEncryptedAndCacheLayers(disk).get();
+}
+
 void DiskSelector::recordDisk(const std::string & disk_name, DiskPtr disk)
 {
-    if (disk->isPlain() && !disk->isReadOnly() && !disk->isWriteOnce())
+    for (const auto & [saved_disk_name, saved_disk] : disks)
     {
-        for (const auto & [saved_disk_name, saved_disk] : disks)
-        {
-            if (!saved_disk->isPlain() || saved_disk->isReadOnly() || saved_disk->isWriteOnce())
-                continue;
-
-            /// Same endpoint
-            if (disk->getObjectStorage()->getDescription() != saved_disk->getObjectStorage()->getDescription())
-                continue;
-
-            /// Same bucket
-            if (disk->getObjectStorage()->getObjectsNamespace() != saved_disk->getObjectStorage()->getObjectsNamespace())
-                continue;
-
-            LOG_TEST(getLogger("recordDisk"), "Validating plain disk: {}-{}-{}-{}-{} vs {}-{}-{}-{}-{}",
-                disk_name, disk->isReadOnly(), disk->isWriteOnce(), disk->getObjectStorage()->getDescription(), disk->getObjectStorage()->getObjectsNamespace(),
-                saved_disk_name, saved_disk->isReadOnly(), saved_disk->isWriteOnce(), saved_disk->getObjectStorage()->getDescription(), saved_disk->getObjectStorage()->getObjectsNamespace());
-
-            /// Nested common keys
-            const auto new_prefix = disk->getObjectStorage()->getCommonKeyPrefix();
-            const auto saved_prefix = saved_disk->getObjectStorage()->getCommonKeyPrefix();
-            if (new_prefix.starts_with(saved_prefix) || saved_prefix.starts_with(new_prefix))
-            {
-                const auto unwrapped_metadata_storage_saved = unwrapEncryptedAndCacheLayers(saved_disk);
-                const auto unwrapped_metadata_storage_new = unwrapEncryptedAndCacheLayers(disk);
-
-                if (unwrapped_metadata_storage_saved.get() != unwrapped_metadata_storage_new.get())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "It is not possible to register multiple plain-rewritable disks with the same object storage prefix. Disks '{}' and '{}'",
-                        disk_name, saved_disk_name);
-            }
-        }
+        if (arePlainRewritableDisksOverlapping(disk, saved_disk))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "It is not possible to register multiple plain-rewritable disks with the same object storage prefix. Disks '{}' and '{}'",
+                disk_name, saved_disk_name);
     }
 
     const auto [_, inserted] = disks.emplace(disk_name, std::move(disk));

@@ -12,6 +12,7 @@
 #include <mutex>
 #include <optional>
 #include <set>
+#include <vector>
 
 namespace DB
 {
@@ -59,6 +60,11 @@ public:
     /// std::nullopt if the disk `name` is being shut down, and `waitForShutdown` has to be called first.
     std::optional<DiskPtr> tryTakeReleasedDisk(const String & name);
 
+    /// The released disks that are not shut down yet: scheduled for shutdown, being shut down, or still referenced
+    /// by something else. They may still write to their storage, so a new disk must not use the same storage
+    /// meanwhile, even under another name (see `DiskSelector::arePlainRewritableDisksOverlapping`).
+    std::vector<std::pair<String, DiskPtr>> getRetiringDisks();
+
     /// A disk definition (`settings_hash`, see `IDisk::markDiskAsCustom`) loaded from existing metadata,
     /// e.g. at server start, is exempt from the checks of a new definition. It stays exempt after its disk
     /// is released, as if the disk was still registered, so that `UNDROP TABLE` or `DETACH` and `ATTACH`
@@ -97,6 +103,9 @@ private:
     /// the same definition appears before that.
     std::map<String, DiskPtr> lingering_disks TSA_GUARDED_BY(mutex);
     std::set<UInt128> definitions_loaded_from_existing_metadata TSA_GUARDED_BY(mutex);
+    /// The disks passed to `scheduleShutdown`, see `getRetiringDisks`. A disk is destroyed only after it is shut
+    /// down, so it is retiring while its pointer has not expired.
+    std::multimap<String, std::weak_ptr<IDisk>> retiring_disks TSA_GUARDED_BY(mutex);
     bool shutdown_called TSA_GUARDED_BY(mutex) = false;
     /// Started on the first scheduled shutdown.
     std::unique_ptr<ThreadFromGlobalPoolNoTracingContextPropagation> thread TSA_GUARDED_BY(mutex);

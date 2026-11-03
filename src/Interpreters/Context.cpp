@@ -76,6 +76,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #include <Disks/CustomDiskRegistry.h>
 #include <Disks/DiskLocal.h>
+#include <Disks/DiskSelector.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/StoragePolicy.h>
@@ -8541,12 +8542,31 @@ std::pair<DiskPtr, CustomDiskRegistrationPtr> Context::getOrCreateCustomDisk(
     bool need_wrapped_disk_registration = !wrapped_disk_name.empty() && !std::ranges::any_of(nested,
         [&](const auto & nested_registration) { return nested_registration->getDiskName() == wrapped_disk_name; });
 
+    /// A released disk with another name that works with the same storage as the disk created here, and is not
+    /// shut down yet, see below. The disk created here is discarded then, and destroyed without any lock held.
+    String overlapping_retiring_disk_name;
+    bool waited_for_overlapping_retiring_disk = false;
+    DiskPtr discarded_disk;
+
     while (true)
     {
+        discarded_disk.reset();
+
         /// A disk with this name may have just been released by the last table or database using it,
         /// and still be shutting down. A new disk with the same definition would work with the same
         /// metadata and data, so it is created only after the old one is shut down.
         shared->custom_disk_registry.waitForShutdown(name, settings_hash);
+
+        if (!overlapping_retiring_disk_name.empty())
+        {
+            shared->custom_disk_registry.waitForShutdown(overlapping_retiring_disk_name, /* settings_hash = */ 0);
+            overlapping_retiring_disk_name.clear();
+            waited_for_overlapping_retiring_disk = true;
+        }
+
+        /// Declared before the lock, so that the references to the retiring disks are dropped after it is unlocked:
+        /// one of them may be the last one.
+        std::vector<std::pair<String, DiskPtr>> retiring_disks;
 
         std::lock_guard lock(shared->storage_policies_mutex);
 
@@ -8574,7 +8594,36 @@ std::pair<DiskPtr, CustomDiskRegistrationPtr> Context::getOrCreateCustomDisk(
             /// The old disk is not shut down yet because something still references it: use it again.
             disk = std::move(*released_disk);
             if (!disk)
+            {
                 disk = creator(getDisksMap(lock));
+
+                /// `addToDiskMap` rejects a writable `plain_rewritable` disk over the same object storage prefix as
+                /// another disk of the selector. A released disk is not in the selector anymore, but it may still write
+                /// to that storage until it is shut down (e.g. its delayed metadata snapshot), and would overwrite the
+                /// metadata of the new disk. So the new disk is created after the old one is shut down, as for a disk
+                /// with the same name above.
+                retiring_disks = shared->custom_disk_registry.getRetiringDisks();
+                for (const auto & [retiring_disk_name, retiring_disk] : retiring_disks)
+                {
+                    if (!DiskSelector::arePlainRewritableDisksOverlapping(disk, retiring_disk))
+                        continue;
+
+                    if (waited_for_overlapping_retiring_disk)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "It is not possible to register multiple plain-rewritable disks with the same object storage prefix. "
+                            "Disks '{}' and '{}' (it is not used by any table or database anymore, but it is not shut down yet)",
+                            name, retiring_disk_name);
+
+                    overlapping_retiring_disk_name = retiring_disk_name;
+                    break;
+                }
+
+                if (!overlapping_retiring_disk_name.empty())
+                {
+                    discarded_disk = std::move(disk);
+                    continue;
+                }
+            }
             const_cast<DiskSelector *>(disk_selector.get())->addToDiskMap(name, disk);
         }
 

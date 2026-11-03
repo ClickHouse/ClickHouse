@@ -127,6 +127,7 @@ void CustomDiskRegistry::scheduleShutdown(const String & name, DiskPtr disk)
     if (disk_to_shutdown.disk)
     {
         std::lock_guard lock(mutex);
+        retiring_disks.emplace(name, disk_to_shutdown.disk);
         if (!shutdown_called)
         {
             try
@@ -203,8 +204,29 @@ std::optional<DiskPtr> CustomDiskRegistry::tryTakeReleasedDisk(const String & na
 
     DiskPtr disk = std::move(it->second);
     lingering_disks.erase(it);
+    std::erase_if(retiring_disks, [&](const auto & retiring_disk) { return retiring_disk.second.lock() == disk; });
     LOG_DEBUG(log, "Custom disk {} is used again before it was shut down", backQuote(name));
     return disk;
+}
+
+std::vector<std::pair<String, DiskPtr>> CustomDiskRegistry::getRetiringDisks()
+{
+    std::lock_guard lock(mutex);
+
+    std::vector<std::pair<String, DiskPtr>> result;
+    for (auto it = retiring_disks.begin(); it != retiring_disks.end();)
+    {
+        if (auto disk = it->second.lock())
+        {
+            result.emplace_back(it->first, std::move(disk));
+            ++it;
+        }
+        else
+        {
+            it = retiring_disks.erase(it);
+        }
+    }
+    return result;
 }
 
 void CustomDiskRegistry::shutdown()

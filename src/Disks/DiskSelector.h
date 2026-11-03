@@ -53,6 +53,10 @@ public:
     inline static const String DEFAULT_DISK_NAME = "default";
     inline static const String LOCAL_DISK_NAME = "local";
 
+    /// Whether `disk` and `other_disk` are different writable `plain_rewritable` disks over the same object storage
+    /// prefix (or nested prefixes). Two such disks would overwrite the metadata of each other.
+    static bool arePlainRewritableDisksOverlapping(const DiskPtr & disk, const DiskPtr & other_disk);
+
 private:
     DisksMap disks;
     bool is_initialized = false;
