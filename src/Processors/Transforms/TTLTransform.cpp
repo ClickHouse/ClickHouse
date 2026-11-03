@@ -1,18 +1,13 @@
 #include <Processors/Transforms/TTLTransform.h>
 #include <Interpreters/inplaceBlockConversions.h>
-#include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/ExpressionAnalyzer.h>
 #include <Columns/ColumnConst.h>
-#include <Common/checkStackSize.h>
+#include <Columns/ColumnsNumber.h>
 #include <Common/quoteString.h>
-#include <Interpreters/addTypeConversionToAST.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Databases/enableAllExperimentalSettings.h>
 #include <Interpreters/MaterializedColumnDependencies.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/RequiredSourceColumnsVisitor.h>
-#include <Interpreters/replaceAliasColumnsInQuery.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
 
 #include <Processors/Port.h>
 #include <Processors/TTL/TTLAggregationAlgorithm.h>
@@ -44,80 +39,37 @@ static TTLExpressions getExpressions(const TTLDescription & ttl_descr, PreparedS
     return {expr.expression, where_expr.expression};
 }
 
-static bool hasFreeIdentifierIn(const IAST & ast, NameSet bound)
+/// What a read of a part without `column_name` computes for it, named so that no column of the block it runs on shadows it.
+static std::pair<ExpressionActionsPtr, String> buildDefaultExpression(
+    const String & column_name, const ColumnsDescription & columns, const ContextPtr & storage_context)
 {
-    checkStackSize();
-
-    if (const auto * function = ast.as<ASTFunction>(); function && function->name == "lambda")
+    auto name_outside_columns = [&](String name)
     {
-        for (const auto & name : RequiredSourceColumnsMatcher::extractNamesFromLambda(*function))
-            bound.erase(name);
-    }
-    else if (const auto * identifier = ast.as<ASTIdentifier>())
-    {
-        return bound.contains(identifier->name()) || bound.contains(identifier->name_parts.front());
-    }
+        while (columns.has(name))
+            name = "_" + name;
+        return name;
+    };
 
-    if (bound.empty())
-        return false;
+    Block header;
+    for (const auto & column : columns.getAllPhysical())
+        if (column.name != column_name)
+            header.insert({column.type->createColumn(), column.type, column.name});
 
-    for (const auto & child : ast.children)
-        if (hasFreeIdentifierIn(*child, bound))
-            return true;
+    /// The analyzer resolves the expression against a table of the header's columns, which cannot be empty.
+    if (header.columns() == 0)
+        header.insert({ColumnUInt8::create(), std::make_shared<DataTypeUInt8>(), name_outside_columns("_dummy")});
 
-    return false;
-}
+    auto context = Context::createCopy(storage_context);
+    enableAllExperimentalSettings(context);
 
-static void collectAliases(const IAST & ast, NameSet & aliases)
-{
-    checkStackSize();
+    auto dag = evaluateMissingDefaults(header, {{column_name, columns.get(column_name).type}}, columns, context);
+    if (!dag)
+        return {};
 
-    if (auto alias = ast.tryGetAlias(); !alias.empty())
-        aliases.insert(std::move(alias));
-
-    for (const auto & child : ast.children)
-        collectAliases(*child, aliases);
-}
-
-/// Whether expanding an ALIAS column referenced in `ast` would bring in a name bound by an enclosing lambda parameter,
-/// or replace a reference to one of the expression's `aliases`, which the analyzer resolves to the alias, not to the column.
-static bool isAliasExpansionCaptured(const IAST & ast, const ColumnsDescription & columns, const NameSet & aliases, const NameSet & bound)
-{
-    checkStackSize();
-
-    if (const auto * function = ast.as<ASTFunction>(); function && function->name == "lambda")
-    {
-        NameSet inner = bound;
-        for (const auto & name : RequiredSourceColumnsMatcher::extractNamesFromLambda(*function))
-            inner.insert(name);
-        return isAliasExpansionCaptured(*function->arguments->children[1], columns, aliases, inner);
-    }
-
-    if (const auto * identifier = ast.as<ASTIdentifier>())
-    {
-        const auto * column = columns.tryGet(identifier->name());
-        if (!column || column->default_desc.kind != ColumnDefaultKind::Alias || bound.contains(identifier->name()))
-            return false;
-
-        if (aliases.contains(identifier->name()) || bound.contains(identifier->name_parts.front()))
-            return true;
-
-        return hasFreeIdentifierIn(*column->default_desc.expression, bound)
-            || isAliasExpansionCaptured(*column->default_desc.expression, columns, aliases, bound);
-    }
-
-    for (const auto & child : ast.children)
-        if (isAliasExpansionCaptured(*child, columns, aliases, bound))
-            return true;
-
-    return false;
-}
-
-static bool isAliasExpansionCaptured(const IAST & ast, const ColumnsDescription & columns)
-{
-    NameSet aliases;
-    collectAliases(ast, aliases);
-    return isAliasExpansionCaptured(ast, columns, aliases, {});
+    String result_name = name_outside_columns("_ttl_default_" + column_name);
+    dag->getOutputs() = {&dag->addAlias(dag->findInOutputs(column_name), result_name)};
+    dag->removeUnusedActions();
+    return {std::make_shared<ExpressionActions>(std::move(*dag), ExpressionActionsSettings(context)), result_name};
 }
 
 /// A column TTL resets its column to the default, but the `MATERIALIZED` columns computed from it keep
@@ -183,23 +135,14 @@ std::vector<std::vector<TTLTransform::DependentMaterializedColumn>> TTLTransform
         if (!dependents.contains(column.name) || unrecomputable_columns.contains(column.name))
             continue;
 
-        if (isAliasExpansionCaptured(*column.default_desc.expression, storage_columns))
-            continue;
-
-        /// The graph keeps its expression pristine for every caller, and `analyze` rewrites in place.
-        auto expression_ast
-            = addTypeConversionToAST(materialized_dependencies.findNode(column.name)->expression->clone(), column.type->getName());
-        /// The result is looked up by name in a block of the table's columns, which an alias could name.
-        expression_ast->setAlias({});
-        auto syntax_result = TreeRewriter(context).analyze(expression_ast, storage_columns.getAllPhysical());
-        auto expression = ExpressionAnalyzer{expression_ast, syntax_result, context}.getActions(true);
+        auto [expression, result_column_name] = buildDefaultExpression(column.name, storage_columns, context);
 
         /// A non-deterministic expression would also change the rows the TTL did not touch.
-        if (expression->getActionsDAG().hasNonDeterministic())
+        if (!expression || expression->getActionsDAG().hasNonDeterministic())
             continue;
 
         levels[level_of[column.name]].push_back(
-            {column.name, expression, expression_ast->getColumnName(), expression->getRequiredColumns()});
+            {column.name, expression, std::move(result_column_name), expression->getRequiredColumns()});
     }
 
     return levels;
@@ -270,34 +213,11 @@ TTLTransform::TTLTransform(
     const auto & storage_columns = metadata_snapshot_->getColumns();
     const auto & column_defaults = storage_columns.getDefaults();
 
-    /// A part stores no ALIAS and no EPHEMERAL column, so a default reads them through their expressions, as a read
-    /// of a part without the column does. Outside INSERT an EPHEMERAL column is its default, so expand it as an ALIAS.
-    std::optional<ColumnsDescription> columns_with_ephemeral_as_alias;
-    if (auto ephemeral_columns = storage_columns.getEphemeral(); !ephemeral_columns.empty())
-    {
-        columns_with_ephemeral_as_alias.emplace(storage_columns);
-        for (const auto & ephemeral_column : ephemeral_columns)
-            columns_with_ephemeral_as_alias->modify(
-                ephemeral_column.name, [](ColumnDescription & column) { column.default_desc.kind = ColumnDefaultKind::Alias; });
-    }
-    const auto & columns_to_expand = columns_with_ephemeral_as_alias ? *columns_with_ephemeral_as_alias : storage_columns;
-
     auto build_default_expr = [&](const String & name)
     {
-        using Result = std::pair<ExpressionActionsPtr, String>;
-        auto it = column_defaults.find(name);
-        if (it == column_defaults.end())
-            return Result{};
-        const auto & column = storage_columns.get(name);
-        auto default_ast = it->second.expression->clone();
-        if (!isAliasExpansionCaptured(*default_ast, columns_to_expand))
-            replaceAliasColumnsInQuery(default_ast, columns_to_expand, {}, storage_.getContext());
-        default_ast = addTypeConversionToAST(std::move(default_ast), column.type->getName());
-        /// The result is looked up by name in a block of the table's columns, which an alias could name.
-        default_ast->setAlias({});
-        auto syntax_result = TreeRewriter(storage_.getContext()).analyze(default_ast, storage_columns.getAll());
-        auto actions = ExpressionAnalyzer{default_ast, syntax_result, storage_.getContext()}.getActions(true);
-        return Result{actions, default_ast->getColumnName()};
+        if (!column_defaults.contains(name))
+            return std::pair<ExpressionActionsPtr, String>{};
+        return buildDefaultExpression(name, storage_columns, storage_.getContext());
     };
 
     for (const auto & expired_column : expired_columns)
@@ -416,7 +336,7 @@ void TTLTransform::recomputeDependentColumns(Block & block, const std::vector<De
         if (std::any_of(
                 dependent.required_columns.begin(),
                 dependent.required_columns.end(),
-                [&](const auto & required) { return !block.has(required); }))
+                [&](const auto & required) { return !block.findColumnOrSubcolumnByName(required); }))
             continue;
 
         auto recomputed = ITTLAlgorithm::executeExpressionAndGetColumn(dependent.expression, block, dependent.result_column_name);
