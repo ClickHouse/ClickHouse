@@ -67,6 +67,9 @@ add_compile_definitions(
     HAVE___BUILTIN_BSWAPXX
     HAVE___BUILTIN_ASSUME_ALIGNED
 
+    # Select the CRC implementation in a constructor, not with an unsynchronized write on the first call.
+    HAVE_FUNC_ATTRIBUTE_CONSTRUCTOR
+
     _GNU_SOURCE
     __EXTENSIONS__
     _POSIX_PTHREAD_SEMANTICS
