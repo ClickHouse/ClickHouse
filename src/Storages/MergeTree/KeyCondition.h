@@ -297,7 +297,7 @@ public:
         Range key_range,
         const MonotonicFunctionsChain & functions,
         size_t first_function_number,
-        DataTypePtr current_type,
+        const DataTypePtr & key_type,
         bool single_point = false);
 
     /// How many times `applyMonotonicFunctionsChainToRange` answered "unknown" on the current thread because the chain
@@ -1098,4 +1098,9 @@ private:
     /// Holds whether the key columns are sorted in reverse (ORDER BY ... DESC) or not.
     KeyOrder key_order;
 };
+
+/// Whether a float among the values of `column` can equal a value of `key_expression_input_type` other than its
+/// cast to that type, when the two are compared in `comparison_type`. See the definition.
+bool floatValuesMissKeyValues(
+    ColumnPtr column, DataTypePtr type, const DataTypePtr & key_expression_input_type, const DataTypePtr & comparison_type);
 }

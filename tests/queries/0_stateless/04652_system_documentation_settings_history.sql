@@ -1,3 +1,5 @@
+-- Tags: no-msan
+
 -- The documentation of a setting in `system.documentation` (the source of the built-in `/docs` Web UI and of the
 -- `help` command) carries the history of the changes of its default value: the version in which the setting was
 -- introduced and every later change of the default, with the reason for the change. The history is the same data

@@ -664,6 +664,10 @@ protected:
     bool skip_forced_projection_check = false;
     /// True when this context belongs to the inner query of an expanded view.
     bool is_view_inner_query = false;
+    /// Set for the query of a `SQL SECURITY DEFINER` / `NONE` view or materialized view. It must not hand its reads to parallel
+    /// replicas (including the replicas of a `Distributed` shard) or a `-Cluster` storage: a replica cannot run them with its
+    /// privileges. Plan-based local reads stay allowed.
+    bool is_sql_security_overridden_body = false;
     /// Which join statistics EXPLAIN ANALYZE needs. It is a context field rather than a setting on
     /// purpose: only Interpreter may turn it on, but it must reach every join of the
     /// query, including joins in nested plans, which EXPLAIN also prints.
@@ -1367,6 +1371,7 @@ public:
     /// For the resets of a statement that also changes `profile`: `changes_applied_first` decides their constraints.
     void checkSettingsConstraintsForSettingsReset(const std::vector<String> & names, const SettingsChanges & changes_applied_first, SettingSource source);
     void clampToSettingsConstraints(SettingsChanges & changes, SettingSource source);
+    void clampToSettingsConstraintsRejectingInvalidChanges(SettingsChanges & changes, SettingSource source);
     void checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const;
 
     /// Reset settings to the default in effect for them, which under an active `compatibility` is the value of that version.
@@ -1516,6 +1521,11 @@ public:
     void setS3QueueDisableStreaming(bool s3queue_disable_streaming) const;
 
     bool getMessageQueueDisableInsertion() const;
+
+    /// How many extra poll cycles a Keeper-backed Kafka consumer keeps its assignment before
+    /// refreshing its Keeper locks. Mutated at runtime by the config reloader, so read it per use.
+    UInt64 getKafkaLocksRefreshPolls() const;
+    void setKafkaLocksRefreshPolls(UInt64 stream_kafka_locks_refresh_polls) const;
 
     /// The server-level distributed cache switches. They live in `shared`, which is common to every context
     /// (including the background and buffer contexts created once at startup), so a config reload is observed
@@ -2040,6 +2050,15 @@ public:
     bool isViewInnerQuery() const { return is_view_inner_query; }
     void setIsViewInnerQuery(bool value) { is_view_inner_query = value; }
 
+    bool isSQLSecurityOverriddenBody() const { return is_sql_security_overridden_body; }
+    void setSQLSecurityOverriddenBody(bool value) { is_sql_security_overridden_body = value; }
+    /// Turns off in the body of a `SQL SECURITY DEFINER` / `NONE` view the parallel replicas modes that would hand its reads
+    /// to other replicas. Called once the settings of the body are applied, and again after each `SETTINGS` clause inside it.
+    void restrictParallelReplicasInSQLSecurityOverriddenBody();
+    /// True for a secondary query that reads the slice of a `sampling_key` parallel replicas query
+    /// assigned to it by `parallel_replicas_count` / `parallel_replica_offset`.
+    bool isSamplingKeyParallelReplicasFollower() const;
+
     JoinAnalyzeMode getJoinAnalyzeMode() const { return join_analyze_mode; }
     void setJoinAnalyzeMode(JoinAnalyzeMode value) { join_analyze_mode = value; }
 
@@ -2305,6 +2324,7 @@ private:
     void checkSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source);
 
     void clampToSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source);
+    void clampToSettingsConstraintsRejectingInvalidChangesWithLock(SettingsChanges & changes, SettingSource source);
     void checkSettingsConstraintsWithLock(const AlterSettingsProfileElements & profile_elements, SettingSource source) const;
 
     void clampToSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source) const;
