@@ -2,4 +2,3 @@
 # by a pull request to be reachable (see ci/jobs/scripts/check_style/check_broken_links.py).
 #
 # One URL prefix per line: a link that starts with any of them is not checked.
-https://lemire.me/blog/2016/06/27/a-fast-alternative-to-the-modulo-reduction/
