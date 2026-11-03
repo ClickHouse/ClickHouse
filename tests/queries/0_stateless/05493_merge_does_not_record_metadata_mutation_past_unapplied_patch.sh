@@ -74,3 +74,14 @@ $CLICKHOUSE_CLIENT --enable_lightweight_update 1 --query "UPDATE $TABLE SET v = 
 $CLICKHOUSE_CLIENT --query "ALTER TABLE $TABLE DROP COLUMN d1 SETTINGS alter_sync = 0"
 check_merge
 run_mutations
+
+echo "--- a merge that would materialize a RENAME COLUMN registered above an unapplied patch is refused"
+fresh_table "apply_patches_on_merge = 0"
+$CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT $MUTATE_FP"
+$CLICKHOUSE_CLIENT --enable_lightweight_update 1 --query "UPDATE $TABLE SET v = 2 WHERE 1"
+$CLICKHOUSE_CLIENT --query "ALTER TABLE $TABLE RENAME COLUMN d1 TO d3 SETTINGS alter_sync = 0"
+# The merged part could only record a version below the patch, so the rename it wrote would run again later.
+$CLICKHOUSE_CLIENT --query "OPTIMIZE TABLE $TABLE FINAL SETTINGS optimize_throw_if_noop = 1" 2>&1 | expect_error "CANNOT_ASSIGN_OPTIMIZE" "would materialize a pending RENAME COLUMN"
+run_mutations
+$CLICKHOUSE_CLIENT --query "OPTIMIZE TABLE $TABLE FINAL SETTINGS optimize_throw_if_noop = 1"
+$CLICKHOUSE_CLIENT --query "SELECT 'rows by v, d3 after the merge:', v, d3, count() FROM $TABLE GROUP BY v, d3 ORDER BY v, d3"

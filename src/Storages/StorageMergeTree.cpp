@@ -2488,7 +2488,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
         {
             if (reservation && had_registered_mutation_above)
             {
-                if (reservation->op == CommittingBlock::Op::Update)
+                if (reservation->op != CommittingBlock::Op::Mutation)
                 {
                     LOG_DEBUG(
                         log,

@@ -30,7 +30,7 @@ CommittingBlocksSnapshot::CommittingBlocksSnapshot(const CommittingBlocksSet & b
 {
     for (const auto & block : blocks)
     {
-        if (block.op == CommittingBlock::Op::Update || block.op == CommittingBlock::Op::Mutation)
+        if (block.op != CommittingBlock::Op::NewPart)
             reservations.push_back(block);
     }
 }

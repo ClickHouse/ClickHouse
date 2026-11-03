@@ -40,7 +40,8 @@ struct LessCommittingBlock
 using CommittingBlocksSet = std::set<CommittingBlock, LessCommittingBlock>;
 
 /// Committing blocks and the block counter copied together: every later block is above `last_allocated_block`. A reservation
-/// is an `Update` or `Mutation` block (a version allocated but not visible yet), never a `NewPart` block.
+/// is an `Update` or `Mutation` block (a version allocated but not visible yet), never a `NewPart` block. An `Unknown`
+/// block counts as an update, as in `getMinUpdateBlockNumber`.
 class CommittingBlocksSnapshot
 {
 public:
