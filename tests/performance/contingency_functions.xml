@@ -1,4 +1,21 @@
 <test>
+    <create_query>
+        CREATE TABLE crosstab_states
+        (
+            k UInt64,
+            cramers_v AggregateFunction(cramersV, UInt8, UInt8),
+            theils_u AggregateFunction(theilsU, UInt8, UInt8)
+        )
+        ENGINE = MergeTree ORDER BY k
+    </create_query>
+    <fill_query>
+        INSERT INTO crosstab_states
+        SELECT intDiv(number, 100) AS k, cramersVState(number % 100, intDiv(number, 7) % 100), theilsUState(number % 100, intDiv(number, 7) % 100)
+        FROM numbers(2_000_000)
+        GROUP BY k
+    </fill_query>
+    <drop_query>DROP TABLE IF EXISTS crosstab_states</drop_query>
+
     <query>
         SELECT cramersV(number, number) FROM numbers(5_000) FORMAT NULL;
     </query>
@@ -56,6 +73,59 @@
                 toUInt32(number % 1000) AS a,
                 toUInt32(intDiv(number, 1000) % 1000) AS b
             FROM numbers(10_000)
+        ) FORMAT NULL;
+    </query>
+
+    <!-- `-State` of a window function returns states with the ordinary layout -->
+    <query>
+        SELECT finalizeAggregation(cramersVState(a, b) OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW))
+        FROM (SELECT number, number % 100 AS a, intDiv(number, 7) % 100 AS b FROM numbers(3_000)) FORMAT NULL;
+    </query>
+
+    <query>
+        SELECT contingencyState(a, b) OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+        FROM (SELECT number, number % 5 AS a, intDiv(number, 3) % 4 AS b FROM numbers(200_000)) FORMAT NULL;
+    </query>
+
+    <query>
+        SELECT finalizeAggregation(cramersVState(a, b) OVER (ORDER BY number ROWS BETWEEN 100 PRECEDING AND CURRENT ROW))
+        FROM (SELECT number, number % 30 AS a, intDiv(number, 7) % 30 AS b FROM numbers(20_000)) FORMAT NULL;
+    </query>
+
+    <query>
+        SELECT theilsUState(a, b) OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+        FROM (SELECT number, number % 100 AS a, intDiv(number, 7) % 100 AS b FROM numbers(5_000)) FORMAT NULL;
+    </query>
+
+    <query>
+        SELECT finalizeAggregation(theilsUState(a, b) OVER (PARTITION BY p))
+        FROM (SELECT number % 100 AS p, intDiv(number, 100) % 10 AS a, (intDiv(number, 100) * 3 + intDiv(number, 1300)) % 8 AS b FROM numbers(20_000)) FORMAT NULL;
+    </query>
+
+    <!-- `-Merge` of a window function merges ordinary states into the window layout -->
+    <query>
+        SELECT cramersVMerge(cramers_v) OVER (ORDER BY k ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) FROM crosstab_states FORMAT NULL;
+    </query>
+
+    <query>
+        SELECT theilsUMerge(theils_u) OVER (ORDER BY k ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) FROM crosstab_states FORMAT NULL;
+    </query>
+
+    <query>
+        SELECT cramersVMerge(s) OVER (PARTITION BY p)
+        FROM
+        (
+            SELECT p, cramersVState(a, b) OVER (PARTITION BY p ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS s
+            FROM (SELECT number, number % 10 AS p, intDiv(number, 10) % 30 AS a, intDiv(number, 70) % 30 AS b FROM numbers(10_000))
+        ) FORMAT NULL;
+    </query>
+
+    <query>
+        SELECT theilsUMerge(s) OVER (PARTITION BY p)
+        FROM
+        (
+            SELECT p, theilsUState(a, b) OVER (PARTITION BY p ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS s
+            FROM (SELECT number, number % 10 AS p, intDiv(number, 10) % 30 AS a, intDiv(number, 70) % 30 AS b FROM numbers(10_000))
         ) FORMAT NULL;
     </query>
 </test>
