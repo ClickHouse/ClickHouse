@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-fasttest
 -- The drain failpoint is server-wide and can be consumed by other dictionary-shard queries.
 
 SET max_threads = 1, max_insert_threads = 1, max_block_size = 64,
