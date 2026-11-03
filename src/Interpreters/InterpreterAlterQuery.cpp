@@ -462,7 +462,7 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
 /// A setting that sends the table's data elsewhere copies the data as it is stored, so nothing can filter the rows
 /// that a row policy hides (as `StorageSet::checkNoRowPolicy`). It reads only the query and the access entities,
 /// not the table, so it runs on the initiator.
-void checkNoRowPolicyForExport(const ASTAlterQuery & alter, const String & database, const ContextPtr & context)
+void checkNoRowPolicyForExport(const ASTAlterQuery & alter, const ContextPtr & context)
 {
     for (const auto & child : alter.command_list->children)
     {
@@ -474,6 +474,7 @@ void checkNoRowPolicyForExport(const ASTAlterQuery & alter, const String & datab
         if (StorageFactory::instance().getExportAccessOfAnyEngine(changes).empty())
             continue;
 
+        const String database = context->resolveDatabase(alter.getDatabase());
         auto row_policy_filter = context->getRowPolicyFilter(database, alter.getTable(), RowPolicyFilterType::SELECT_FILTER);
         if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
             throw Exception(
@@ -570,7 +571,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         params.access_to_check = getRequiredAccess(table);
 
         /// The hosts run the entry without the user, so the row policy is checked here before the entry is enqueued.
-        checkNoRowPolicyForExport(alter, getContext()->resolveDatabase(alter.getDatabase()), getContext());
+        checkNoRowPolicyForExport(alter, getContext());
 
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
@@ -578,7 +579,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     if (!skip_access_check)
     {
         getContext()->checkAccess(getRequiredAccess(table));
-        checkNoRowPolicyForExport(alter, getContext()->resolveDatabase(alter.getDatabase()), getContext());
+        checkNoRowPolicyForExport(alter, getContext());
     }
 
     if (!table_id)
