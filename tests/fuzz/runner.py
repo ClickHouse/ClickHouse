@@ -252,19 +252,22 @@ def run_fuzzer(fuzzer: str, timeout: int):
         parser.read(path)
 
         if parser.has_section("asan"):
-            env_common["ASAN_OPTIONS"] = (
-                f"{os.environ['ASAN_OPTIONS']}:{':'.join(f'{key}={value}' for key, value in parser['asan'].items())}"
-            )
+            env_common["ASAN_OPTIONS"] = ":".join(
+                [os.environ.get("ASAN_OPTIONS", "")]
+                + [f"{key}={value}" for key, value in parser["asan"].items()]
+            ).lstrip(":")
 
         if parser.has_section("msan"):
-            env_common["MSAN_OPTIONS"] = (
-                f"{os.environ['MSAN_OPTIONS']}:{':'.join(f'{key}={value}' for key, value in parser['msan'].items())}"
-            )
+            env_common["MSAN_OPTIONS"] = ":".join(
+                [os.environ.get("MSAN_OPTIONS", "")]
+                + [f"{key}={value}" for key, value in parser["msan"].items()]
+            ).lstrip(":")
 
         if parser.has_section("ubsan"):
-            env_common["UBSAN_OPTIONS"] = (
-                f"{os.environ['UBSAN_OPTIONS']}:{':'.join(f'{key}={value}' for key, value in parser['ubsan'].items())}"
-            )
+            env_common["UBSAN_OPTIONS"] = ":".join(
+                [os.environ.get("UBSAN_OPTIONS", "")]
+                + [f"{key}={value}" for key, value in parser["ubsan"].items()]
+            ).lstrip(":")
 
         if parser.has_section("fuzzer_arguments"):
             fuzzer_arguments = " ".join(
