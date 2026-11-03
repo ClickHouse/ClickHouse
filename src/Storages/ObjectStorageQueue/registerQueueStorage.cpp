@@ -845,7 +845,7 @@ SETTINGS mode = 'unordered'
 
 ## Settings {#settings}
 
-The set of supported settings is mostly the same as for `S3Queue` table engine, but without `s3queue_` prefix. See [full list of settings settings](/reference/engines/table-engines/integrations/s3queue#settings).
+The set of supported settings is mostly the same as for `S3Queue` table engine, but without `s3queue_` prefix. See [full list of settings](/reference/engines/table-engines/integrations/s3queue#settings).
 To get a list of settings, configured for the table, use `system.azure_queue_settings` table. Available from `24.10`.
 
 Below are the settings only compatible with AzureQueue and not applicable for S3Queue.

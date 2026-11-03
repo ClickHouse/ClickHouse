@@ -1907,6 +1907,11 @@ void PostgreSQLReplicationHandler::consumerFunc()
     catch (...)
     {
         tryLogCurrentException(log);
+        /// Back off after a failure (for example, when `syncTables` cannot flush a buffered table), the
+        /// same way `consume` does for the errors it handles itself. Rescheduling immediately would retry
+        /// the failing operation in a tight loop and could starve `deactivate` of this task, which is
+        /// called by `DETACH TABLE`, `ATTACH TABLE` and shutdown, for an unbounded time.
+        schedule_now = false;
     }
 
     /// A broken coordinated consumer must not be retried: it would only keep failing on the same WAL. Go
