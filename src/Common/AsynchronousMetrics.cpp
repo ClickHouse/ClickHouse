@@ -126,11 +126,13 @@ std::unique_ptr<ReadBufferFromFilePRead> AsynchronousMetrics::openFileIfExists(c
     return {};
 }
 
-void AsynchronousMetrics::openCgroupv2MetricFile(const std::string & filename, std::optional<ReadBufferFromFilePRead> & out)
+std::optional<std::string> AsynchronousMetrics::openCgroupv2MetricFile(const std::string & filename, std::optional<ReadBufferFromFilePRead> & out)
 {
     out.reset();
-    if (auto path = getCgroupsV2PathContainingFile(filename))
+    auto path = getCgroupsV2PathContainingFile(filename);
+    if (path)
         openFileIfExists((path.value() + "/" + filename).c_str(), out);
+    return path;
 };
 
 #endif
@@ -158,7 +160,7 @@ AsynchronousMetrics::AsynchronousMetrics(
 
     /// CGroups v2
     openCgroupv2MetricFile("memory.max", cgroupmem_limit_in_bytes);
-    openCgroupv2MetricFile("cpu.max", cgroupcpu_max);
+    cgroupcpu_max_dir = openCgroupv2MetricFile("cpu.max", cgroupcpu_max);
     openCgroupv2MetricFile("cpu.stat", cgroupcpu_stat);
 
     /// CGroups v1
@@ -1688,6 +1690,10 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     }
 
     Float64 max_cpu_cgroups = 0;
+    /// `cpu.max` exists only while the `cpu` controller is enabled in the parent cgroup, so the nearest one can
+    /// move at runtime, and a descriptor to a removed one fails with ENODEV.
+    if (getCgroupsV2PathContainingFile("cpu.max") != cgroupcpu_max_dir)
+        cgroupcpu_max_dir = openCgroupv2MetricFile("cpu.max", cgroupcpu_max);
     if (cgroupcpu_max)
     {
         try
@@ -1720,9 +1726,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
-            /// The file is removed when the `cpu` controller is disabled in the parent cgroup,
-            /// and reads through the kept descriptor fail with ENODEV from then on.
-            openCgroupv2MetricFile("cpu.max", cgroupcpu_max);
+            cgroupcpu_max_dir = openCgroupv2MetricFile("cpu.max", cgroupcpu_max);
         }
     }
     else if (cgroupcpu_cfs_quota && cgroupcpu_cfs_period)
