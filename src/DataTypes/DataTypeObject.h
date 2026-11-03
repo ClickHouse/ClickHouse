@@ -54,7 +54,6 @@ public:
     TypeIndex getTypeId() const override { return TypeIndex::Object; }
 
     MutableColumnPtr createColumn() const override;
-    MutableColumnPtr createColumn(const ISerialization & serialization) const override;
 
     Field getDefault() const override { return Object(); }
 

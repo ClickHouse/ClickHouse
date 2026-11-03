@@ -29,8 +29,7 @@ public:
     size_t allocatedBytes() const override;
     bool supportsPooling() const override;
 
-    const String & getPathsPrefix() const { return paths_prefix; }
-    const std::unordered_map<String, SerializationPtr> & getTypedPathsSerializations() const { return typed_paths_serializations; }
+    MutableColumnPtr wrapColumnForDeserialization(MutableColumnPtr column) const override;
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,

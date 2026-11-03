@@ -17,9 +17,6 @@
 #include <DataTypes/Serializations/SerializationObjectDistinctPaths.h>
 #include <DataTypes/Serializations/SerializationObjectCombinedPath.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
-#include <DataTypes/Serializations/SerializationDetached.h>
-#include <DataTypes/Serializations/SerializationReplicated.h>
-#include <DataTypes/Serializations/SerializationWrapper.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnBLOB.h>
@@ -453,41 +450,6 @@ MutableColumnPtr DataTypeObject::createColumn() const
     typed_path_columns.reserve(typed_paths.size());
     for (const auto & [path, type] : typed_paths)
         typed_path_columns[path] = type->createColumn();
-
-    return ColumnObject::create(std::move(typed_path_columns), max_dynamic_paths, max_dynamic_types);
-}
-
-MutableColumnPtr DataTypeObject::createColumn(const ISerialization & serialization) const
-{
-    const auto * current_serialization = &serialization;
-    while (const auto * wrapper = dynamic_cast<const SerializationWrapper *>(current_serialization))
-        current_serialization = wrapper->getNested().get();
-
-    if (const auto * replicated = typeid_cast<const SerializationReplicated *>(current_serialization))
-        return ColumnReplicated::create(createColumn(*replicated->getNested()), ColumnUInt8::create());
-
-    if (const auto * detached = typeid_cast<const SerializationDetached *>(current_serialization))
-        return ColumnBLOB::create(createColumn(*detached->getNested()));
-
-    const std::unordered_map<String, SerializationPtr> * typed_path_serializations = nullptr;
-    String paths_prefix;
-    if (const auto * sub_object = typeid_cast<const SerializationSubObject *>(current_serialization))
-    {
-        typed_path_serializations = &sub_object->getTypedPathsSerializations();
-        paths_prefix = sub_object->getPathsPrefix();
-    }
-    else
-    {
-        const auto * object_serialization = dynamic_cast<const SerializationObject *>(current_serialization);
-        if (!object_serialization)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected serialization to create column of type Object");
-        typed_path_serializations = &object_serialization->getTypedPathsSerializations();
-    }
-
-    UnorderedMapWithMemoryTracking<String, MutableColumnPtr> typed_path_columns;
-    typed_path_columns.reserve(typed_paths.size());
-    for (const auto & [path, type] : typed_paths)
-        typed_path_columns[path] = type->createColumn(*typed_path_serializations->at(paths_prefix + path));
 
     return ColumnObject::create(std::move(typed_path_columns), max_dynamic_paths, max_dynamic_types);
 }
