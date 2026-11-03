@@ -425,7 +425,8 @@ static void checkAccessToTableMetadata(const TableNode & table_node, const Conte
     /// `SELECT` is checked in addition to `SHOW_COLUMNS` because the implicit `SELECT` on the
     /// `system` and `information_schema` databases is granted after implications are derived.
     const auto access_rights = context->getAccess()->getAccessRightsWithImplicit();
-    for (const auto & column : table_node.getStorageSnapshot()->metadata->getColumns())
+    const auto & columns = table_node.getStorageSnapshot()->metadata->getColumns();
+    for (const auto & column : columns)
     {
         if (access_rights->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name)
             || access_rights->isGranted(AccessType::SHOW_COLUMNS, storage_id.database_name, storage_id.table_name, column.name))
@@ -433,11 +434,20 @@ static void checkAccessToTableMetadata(const TableNode & table_node, const Conte
 
         /// A grant on the exact name of a subcolumn (e.g. ``GRANT SELECT(`json.a`)``) takes precedence over its column
         /// in the `SELECT` check (see `ColumnsDescription::getColumnNamesForSelectAccessCheck`), so it makes the table
-        /// visible too.
+        /// visible too. Grants are matched by name only, so a granted name counts only if it resolves, by the same
+        /// type-aware resolution as identifiers (including dynamic paths of `JSON` / `Dynamic` / `Map`), to a
+        /// subcolumn of this column: a grant on `secret.no_such_subcolumn` of a scalar column `secret` reveals nothing.
         const String subcolumn_prefix = column.name + '.';
-        if (access_rights->hasExplicitGrantOnColumnsWithPrefix(AccessType::SELECT, storage_id.database_name, storage_id.table_name, subcolumn_prefix)
-            || access_rights->hasExplicitGrantOnColumnsWithPrefix(AccessType::SHOW_COLUMNS, storage_id.database_name, storage_id.table_name, subcolumn_prefix))
-            return;
+        for (const auto access_type : {AccessType::SELECT, AccessType::SHOW_COLUMNS})
+        {
+            for (const auto & name : access_rights->getColumnsWithExplicitGrantAndPrefix(
+                     access_type, storage_id.database_name, storage_id.table_name, subcolumn_prefix))
+            {
+                auto subcolumn = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name);
+                if (subcolumn && subcolumn->isSubcolumn() && subcolumn->getNameInStorage() == column.name)
+                    return;
+            }
+        }
     }
 
     /// Not a single column of the table is visible to the user. Report the denial through the

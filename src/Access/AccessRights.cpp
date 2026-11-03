@@ -560,42 +560,41 @@ public:
         }
     }
 
-    /// Whether a grant on some name that starts with the last name gives `flags_` that the name does not inherit from its
-    /// enclosing level, i.e. whether there is an explicit grant of `flags_` on a name with that prefix.
+    /// Collects the names that start with the last name and have an explicit grant of `flags_`, i.e. a grant that
+    /// gives `flags_` the name does not inherit from its enclosing level.
     template <typename... Args>
-    bool hasExplicitGrantWithPrefix(const AccessFlags & flags_, std::string_view name, const Args &... subnames) const
+    void collectExplicitGrantsWithPrefix(Strings & res, const AccessFlags & flags_, std::string_view name, const Args &... subnames) const
     {
         const auto next_level = static_cast<Level>(level + 1);
         if constexpr (sizeof...(Args) == 0)
         {
             const auto node = tryGetLeaf(name, next_level, /* return_parent_node= */ true);
-            return node.hasExplicitGrantInSubtree(flags_);
+            node.collectExplicitGrantsInSubtree(res, flags_, String{name});
         }
         else
         {
             const auto node = tryGetLeaf(name, next_level);
-            return node.hasExplicitGrantWithPrefix(flags_, subnames...);
+            node.collectExplicitGrantsWithPrefix(res, flags_, subnames...);
         }
     }
 
-    /// Whether some leaf in this subtree has `flags_` while its parent node, which carries the flags the leaf inherits,
-    /// does not.
-    bool hasExplicitGrantInSubtree(const AccessFlags & flags_) const
+    /// Collects the full names (`path` is the name of this node) of the leaves in this subtree that have `flags_`
+    /// while their parent node, which carries the flags the leaf inherits, does not.
+    void collectExplicitGrantsInSubtree(Strings & res, const AccessFlags & flags_, const String & path) const
     {
         if (!children || !max_flags_with_children.contains(flags_))
-            return false;
+            return;
 
         for (const auto & child : *children)
         {
             if (child.isLeaf())
             {
                 if (child.flags.contains(flags_) && !flags.contains(flags_))
-                    return true;
+                    res.push_back(path);
             }
-            else if (child.hasExplicitGrantInSubtree(flags_))
-                return true;
+            else
+                child.collectExplicitGrantsInSubtree(res, flags_, path + child.node_name);
         }
-        return false;
     }
 
     friend bool operator ==(const Node & left, const Node & right)
@@ -1724,12 +1723,13 @@ bool AccessRights::isGrantedInherited(const AccessFlags & flags, std::string_vie
     return root->isGrantedInherited(flags, database, table, column);
 }
 
-bool AccessRights::hasExplicitGrantOnColumnsWithPrefix(
+Strings AccessRights::getColumnsWithExplicitGrantAndPrefix(
     const AccessFlags & flags, std::string_view database, std::string_view table, std::string_view prefix) const
 {
-    if (!root)
-        return false;
-    return root->hasExplicitGrantWithPrefix(flags, database, table, prefix);
+    Strings res;
+    if (root)
+        root->collectExplicitGrantsWithPrefix(res, flags, database, table, prefix);
+    return res;
 }
 
 bool AccessRights::isGrantedWildcard(const AccessFlags & flags) const { return isGrantedImpl<false, true>(flags); }
