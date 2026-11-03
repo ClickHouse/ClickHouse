@@ -1709,6 +1709,7 @@ see ["Understanding ClickHouse data skipping indexes"](/concepts/features/perfor
 
 - [`MinMax`](#minmax) index
 - [`Set`](#set) index
+- [`hypothesis`](#hypothesis) index
 - [`bloom_filter`](#bloom-filter) index
 - [`ngrambf_v1`](#n-gram-bloom-filter) index *(Deprecated)*
 - [`tokenbf_v1`](#token-bloom-filter) index *(Deprecated)*
@@ -1731,6 +1732,17 @@ For each index granule at most `max_rows` many unique values of the specified ex
 
 ```text title="Syntax"
 set(max_rows)
+```
+
+#### Hypothesis {#hypothesis}
+
+For each index granule stores whether a boolean expression, usually a comparison of two columns such as `a < b`, is true for every row of the granule.
+A granule is skipped when the comparisons in the `WHERE` or `PREWHERE` clause cannot hold together with the index expression (where it holds for the granule) and the table [constraints](/reference/statements/create/table#constraints).
+For example, with `INDEX i (a < b) TYPE hypothesis`, a query with `WHERE b <= a` skips every granule where `a < b` holds for all rows.
+The index expression must be of an integer type, for example `Bool` or `UInt8`.
+
+```text title="Syntax"
+hypothesis
 ```
 
 #### Bloom filter {#bloom-filter}
