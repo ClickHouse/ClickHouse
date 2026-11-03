@@ -132,14 +132,9 @@ void ColumnFixedString::deserializeAndInsertFromArena(ReadBuffer & in, const ICo
     in.readStrict(reinterpret_cast<char *>(chars.data() + old_size), n);
 }
 
-void ColumnFixedString::updateHashWithStringValue(std::string_view value, SipHash & hash)
-{
-    hash.update(value.data(), value.size());
-}
-
 void ColumnFixedString::updateHashWithValue(size_t index, SipHash & hash) const
 {
-    updateHashWithStringValue({reinterpret_cast<const char *>(&chars[n * index]), n}, hash);
+    hash.update(reinterpret_cast<const char *>(&chars[n * index]), n);
 }
 
 void ColumnFixedString::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const

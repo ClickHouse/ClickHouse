@@ -26,6 +26,7 @@ import pytest
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 
 pytestmark = pytest.mark.timeout(300)
 
@@ -82,7 +83,7 @@ DISTRIBUTED_SETTINGS = ", ".join([
     "query_plan_convert_join_to_in = 0",
     "query_plan_convert_outer_join_to_inner_join = 0",
     "query_plan_convert_any_join_to_semi_or_anti_join = 0",
-    # Runtime filters are not yet implemented for distributed queries.
+    # Off by default here; `test_join_runtime_filters` turns them on.
     "enable_join_runtime_filters = 0",
     # To support old explain format
     "explain_query_plan_default = 'legacy'",
@@ -603,6 +604,58 @@ def test_profile_events_local_execution(started_cluster):
 
 
 @EXCHANGE_KINDS
+def test_join_runtime_filters(started_cluster, exchange_kind):
+    """A shuffle join sends the runtime filter states of its build tasks through one `rf_merge_*`
+    task to the probe tasks. The result must match the non-distributed query, and no worker task
+    may keep running after the query ends."""
+    buckets = 3
+    query = "SELECT count(), sum(b.id) FROM big AS b INNER JOIN small AS s ON b.id = s.id"
+    query_id = f"dist_join_rf_{uuid.uuid4().hex}"
+    distributed = INITIATOR.query(
+        f"{query} SETTINGS {DISTRIBUTED_SETTINGS}, " + _override(
+            exchange_kind,
+            "enable_join_runtime_filters = 1",
+            "distributed_plan_join_runtime_filters = 1",
+            "join_runtime_filter_min_probe_rows = 0",
+        ),
+        query_id=query_id,
+    )
+    assert distributed == INITIATOR.query(f"{query} SETTINGS make_distributed_plan = 0")
+
+    # Worker tasks carry the initiator query id as `initial_query_id` and the task id as `query`.
+    tasks = []
+    for node in NODES:
+        node.query("SYSTEM FLUSH LOGS query_log")
+        result = node.query(
+            f"""
+            SELECT query, ProfileEvents['RuntimeFilterStatesSent'],
+                ProfileEvents['StreamingExchangeSendBytes'] + ProfileEvents['StreamingExchangeReceiveBytes'],
+                ProfileEvents['WriteBufferFromS3Bytes'], ProfileEvents['ReadBufferFromS3Bytes']
+            FROM system.query_log
+            WHERE type = 'QueryFinish' AND initial_query_id = '{query_id}' AND query_id != initial_query_id
+            """
+        )
+        tasks += [line.split("\t") for line in result.strip().splitlines()]
+
+    merge_tasks = [task for task in tasks if task[0].startswith("rf_merge_")]
+    assert len(merge_tasks) == 1, tasks
+    # Each build task sends its partial state once, to the merge task.
+    assert sum(int(task[1]) for task in tasks if task not in merge_tasks) == buckets, tasks
+    if exchange_kind == "Persisted":
+        # On a persisted chain the merge task reads and writes the states as files in MinIO.
+        streaming_bytes, s3_written, s3_read = (int(field) for field in merge_tasks[0][2:])
+        assert streaming_bytes == 0 and s3_read > 0 and s3_written > 0, merge_tasks
+
+    for node in NODES:
+        assert_eq_with_retry(
+            node,
+            f"SELECT count() FROM system.processes WHERE initial_query_id = '{query_id}'",
+            "0",
+            retry_count=120,
+        )
+
+
+@EXCHANGE_KINDS
 def test_join_with_aggregation(started_cluster, exchange_kind):
     """Combined shuffle: aggregate one side, broadcast the small side, then
     join. Verifies that exchanges around aggregation and join compose."""
@@ -723,26 +776,24 @@ def test_distributed_order_by_without_distributed_read(started_cluster):
         assert distributed == baseline
 
 
-def test_read_in_order_across_surviving_exchange(started_cluster):
-    """An ordered read may only skip the sort when nothing separates it from the sorting step. With the
-    reader bucket count different from the scatter's, the fused exchange is a real redistribution that
-    stays in the plan and delivers each partition its rows in arrival order, so the sorting has to keep
-    sorting. While the read was asked to read in order here anyway, the query returned rows from the
-    wrong part of the table - intermittently, hence the repeats."""
+def test_read_in_order_with_reader_buckets_unlike_scatter(started_cluster):
+    """The scatter under the sorting takes the bucket count of the distributed read below it, not
+    `distributed_plan_default_shuffle_join_bucket_count`, so even with the two settings different the pair
+    collapses and the ordered read feeds the sorting directly. The window straddles a part boundary, where
+    a stream ordered only within its own part would be wrong; the repeats catch an intermittent order."""
     query = "SELECT id FROM big ORDER BY id ASC LIMIT 20 OFFSET 24990"
     baseline = INITIATOR.query(f"{query} SETTINGS make_distributed_plan = 0")
 
-    # 2 reader buckets against the 3 scatter partitions of DISTRIBUTED_SETTINGS: the shuffle they fuse
-    # into is not an identity, so optimizeExchanges keeps it.
-    mismatched_buckets = "distributed_plan_default_reader_bucket_count = 2, " + READ_IN_ORDER
+    # 2 reader buckets against the 3 of `distributed_plan_default_shuffle_join_bucket_count`.
+    reader_buckets = "distributed_plan_default_reader_bucket_count = 2, " + READ_IN_ORDER
     plan = INITIATOR.query(
-        f"EXPLAIN PLAN {query} SETTINGS {DISTRIBUTED_SETTINGS}, {mismatched_buckets}"
+        f"EXPLAIN PLAN {query} SETTINGS {DISTRIBUTED_SETTINGS}, {reader_buckets}"
     )
-    assert "ShuffleExchange" in plan, plan
+    assert "ShuffleExchange" not in plan and "ScatterExchange" not in plan, plan
 
     for _ in range(5):
         distributed = INITIATOR.query(
-            f"{query} SETTINGS {DISTRIBUTED_SETTINGS}, {mismatched_buckets}"
+            f"{query} SETTINGS {DISTRIBUTED_SETTINGS}, {reader_buckets}"
         )
         assert distributed == baseline
 

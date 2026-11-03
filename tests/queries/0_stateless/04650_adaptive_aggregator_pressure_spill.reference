@@ -1,14 +1,6 @@
-Routing table spills once it crosses the key floor
+Spilled staged records merge back exactly
 1
-The drain processed multiple spill floors of records
+The producers spilled almost every staged record
 1
-The spill was exercised
+The spill reached the disk
 1
-Learning-phase tables spill under the external threshold
-1
-The learning phase stood down under pressure
-1
-A learning-phase query fits in a limit only spilling can meet
-3000000
-No pressure, no stand-down
-0

@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 이러한 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며 [소스 코드](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)에서 자동 생성됩니다.
 
-<div id="use_skip_indexes">
-  ## use_skip_indexes
-</div>
+## use_skip_indexes {#use_skip_indexes}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -26,9 +24,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 * 0 — 비활성화됨.
 * 1 — 활성화됨.
 
-<div id="use_skip_indexes_for_disjunctions">
-  ## use_skip_indexes_for_disjunctions
-</div>
+## use_skip_indexes_for_disjunctions {#use_skip_indexes_for_disjunctions}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -42,9 +38,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 * 0 — 비활성화됨.
 * 1 — 활성화됨.
 
-<div id="use_skip_indexes_for_top_k">
-  ## use_skip_indexes_for_top_k
-</div>
+## use_skip_indexes_for_top_k {#use_skip_indexes_for_top_k}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -59,9 +53,7 @@ TopK 필터링에 데이터 스키핑 인덱스를 사용하도록 설정합니�
 * 0 — 비활성화됩니다.
 * 1 — 활성화됩니다.
 
-<div id="use_skip_indexes_if_final">
-  ## use_skip_indexes_if_final
-</div>
+## use_skip_indexes_if_final {#use_skip_indexes_if_final}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -76,9 +68,7 @@ FINAL 수정자를 사용한 쿼리를 실행할 때 스킵 인덱스를 사용�
 * 0 — 비활성화.
 * 1 — 활성화.
 
-<div id="use_skip_indexes_if_final_exact_mode">
-  ## use_skip_indexes_if_final_exact_mode
-</div>
+## use_skip_indexes_if_final_exact_mode {#use_skip_indexes_if_final_exact_mode}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -93,13 +83,11 @@ FINAL 수정자를 사용한 쿼리를 실행할 때 스킵 인덱스를 사용�
 * 0 — 비활성화됨.
 * 1 — 활성화됨.
 
-<div id="use_skip_indexes_on_data_read">
-  ## use_skip_indexes_on_data_read
-</div>
+## use_skip_indexes_on_data_read {#use_skip_indexes_on_data_read}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1"},{"label": "이제 텍스트 인덱스가 일반 제공됩니다"}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "0"},{"label": "기본적으로 활성화"}]}, {"id": "row-3","items": [{"label": "25.9"},{"label": "0"},{"label": "새로운 설정"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "1"},{"label": "기본적으로 활성화"}]}, {"id": "row-2","items": [{"label": "25.9"},{"label": "0"},{"label": "새로운 설정"}]}]} />
 
 데이터를 읽는 동안 데이터 스키핑 인덱스를 사용하도록 설정합니다.
 
