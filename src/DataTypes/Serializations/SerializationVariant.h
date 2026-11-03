@@ -175,8 +175,15 @@ private:
 
     void addVariantElementToPath(SubstreamPath & path, size_t i) const;
 
-    /// True if the discriminators of the Variant at `path` are in storage but no stream of the variant is,
+    /// For each variant: true if the discriminators of the Variant at `path` are in storage but no stream of the variant is,
     /// e.g. the part was written before the variant was added to the type. Such a variant is read as empty.
+    std::vector<bool> getVariantsAbsentInStorage(
+        const std::function<bool(const SubstreamPath &)> & check_stream_exists,
+        const SubstreamPath & path,
+        const SerializationInfoPtr & serialization_info,
+        bool use_specialized_prefixes_and_suffixes_substreams) const;
+
+    /// The same for one variant.
     static bool isVariantAbsentInStorage(
         const std::function<bool(const SubstreamPath &)> & check_stream_exists,
         const SubstreamPath & path,

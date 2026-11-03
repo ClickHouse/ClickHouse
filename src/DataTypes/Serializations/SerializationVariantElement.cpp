@@ -112,12 +112,12 @@ void SerializationVariantElement::enumerateStreams(
         nested_column = nested_column ? removeNullableOrLowCardinalityNullable(nested_column) : nullptr;
     }
 
-    bool variant_absent_in_storage = deserialize_state && deserialize_state->variant_absent_in_storage;
-    if (!variant_absent_in_storage)
-        variant_absent_in_storage = SerializationVariant::isVariantAbsentInStorage(
-            settings.check_stream_exists_callback, settings.path, variant_element_name,
-            SubstreamData(nested_serialization).withType(nested_type).withSerializationInfo(data.serialization_info),
-            settings.use_specialized_prefixes_and_suffixes_substreams);
+    const bool variant_absent_in_storage = deserialize_state
+        ? deserialize_state->variant_absent_in_storage
+        : SerializationVariant::isVariantAbsentInStorage(
+              settings.check_stream_exists_callback, settings.path, variant_element_name,
+              SubstreamData(nested_serialization).withType(nested_type).withSerializationInfo(data.serialization_info),
+              settings.use_specialized_prefixes_and_suffixes_substreams);
     if (variant_absent_in_storage)
         return;
 
