@@ -2337,19 +2337,6 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
 
     /// Is calculated inside MergeProgressCallback.
     ctx->column_parts_pipeline.disableProfileEventUpdate();
-    /// Read and gather the column in another thread, so it overlaps with writing, if a thread is free.
-    if ((*global_ctx->data_settings)[MergeTreeSetting::vertical_merge_read_in_separate_thread])
-        ctx->read_thread_slot = MergeHelperThreads::tryAcquire();
-
-    if (ctx->read_thread_slot)
-    {
-        /// The slot accounts for exactly one thread, and merges do not use the concurrency control of queries.
-        ctx->column_parts_pipeline.setNumThreads(1);
-        ctx->column_parts_pipeline.setConcurrencyControl(false);
-        ctx->async_executor = std::make_unique<PullingAsyncPipelineExecutor>(ctx->column_parts_pipeline);
-    }
-    else
-        ctx->executor = std::make_unique<PullingPipelineExecutor>(ctx->column_parts_pipeline);
 
     NamesAndTypesList columns_list = {*ctx->it_name_and_type};
 
@@ -2381,6 +2368,26 @@ bool MergeTask::VerticalMergeStage::executeVerticalMergeForOneColumn() const
     Stopwatch watch(CLOCK_MONOTONIC_COARSE);
     UInt64 step_time_ms
         = (*global_ctx->data_settings)[MergeTreeSetting::background_task_preferred_step_execution_time_ms].totalMilliseconds();
+
+    /// The executor is created here and not in `prepareVerticalMergeForOneColumn`, because the merge may yield
+    /// between these steps, and `PullingAsyncPipelineExecutor` starts its thread only on the first `pull`.
+    /// So a slot of `MergeHelperThreads` is held only while its thread exists.
+    if (!ctx->executor && !ctx->async_executor)
+    {
+        /// Read and gather the column in another thread, so it overlaps with writing, if a thread is free.
+        if ((*global_ctx->data_settings)[MergeTreeSetting::vertical_merge_read_in_separate_thread])
+            ctx->read_thread_slot = MergeHelperThreads::tryAcquire();
+
+        if (ctx->read_thread_slot)
+        {
+            /// The slot accounts for exactly one thread, and merges do not use the concurrency control of queries.
+            ctx->column_parts_pipeline.setNumThreads(1);
+            ctx->column_parts_pipeline.setConcurrencyControl(false);
+            ctx->async_executor = std::make_unique<PullingAsyncPipelineExecutor>(ctx->column_parts_pipeline);
+        }
+        else
+            ctx->executor = std::make_unique<PullingPipelineExecutor>(ctx->column_parts_pipeline);
+    }
 
     do
     {
