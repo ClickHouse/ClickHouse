@@ -1,14 +1,12 @@
 #include <Interpreters/convertColumnToType.h>
 
 #include <Interpreters/convertFieldToType.h>
-#include <Interpreters/castColumn.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnDynamic.h>
-#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnVariant.h>
-#include <Core/ColumnWithTypeAndName.h>
+#include <Core/AccurateComparison.h>
 #include <Core/Field.h>
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/IDataType.h>
@@ -43,21 +41,50 @@ namespace ErrorCodes
 namespace
 {
 
-/// Column-native conversion for the cases where CAST provably matches `convertFieldToType`:
-/// native-numeric and wide-integer (`Int128`/`Int256`/`UInt128`/`UInt256`) values, in the default AND
-/// `strict` modes. `castColumnAccurateOrNull` uses the same accurate numeric conversion
-/// (`accurate::convertNumeric`) as `convertFieldToType`'s default path (out-of-range / inexact-narrowing
-/// -> NULL), and `convertFieldToType` dispatches wide integers through that same template, so they agree.
-/// For these types `strict` and default agree with it too: `strict` only rejects additional cases for
-/// types that are already excluded here - `Bool` (10 is not a valid `Bool`) and `Decimal` (scale
-/// reduction; `castColumnAccurateOrNull` would round, so it must NOT be used for strict Decimal - and it
-/// isn't, `Decimal` is excluded). The strict equivalence is pinned by `gtest_convert_column_to_type`. Returns:
+/// Convert row 0 of a native-number or wide-integer column to `To` exactly as `convertNumericTypeImpl` in
+/// `convertFieldToType` does: widen the value to its `Field` storage type (`UInt64`/`Int64`/`Float64`, or the wide
+/// integer itself) and call `accurate::convertNumeric<FieldType, To, true>` (out of range or inexact -> not
+/// representable). No `CAST` is built, so converting many constants one by one (a literal `IN` set) costs no
+/// per-value function construction.
+template <typename To>
+ColumnPtr convertNumberColumnTo(const IColumn & value, const WhichDataType & which_from, const DataTypePtr & to)
+{
+    To result{};
+    const auto convert = [&]<typename From>(From source) { return accurate::convertNumeric<From, To, true>(source, result); };
+
+    bool converted = false;
+    if (which_from.isNativeUInt())
+        converted = convert(value.getUInt(0));
+    else if (which_from.isNativeInt())
+        converted = convert(value.getInt(0));
+    else if (which_from.isNativeFloat())
+        converted = convert(value.getFloat64(0));
+    else if (which_from.isUInt128())
+        converted = convert(assert_cast<const ColumnUInt128 &>(value).getElement(0));
+    else if (which_from.isInt128())
+        converted = convert(assert_cast<const ColumnInt128 &>(value).getElement(0));
+    else if (which_from.isUInt256())
+        converted = convert(assert_cast<const ColumnUInt256 &>(value).getElement(0));
+    else
+        converted = convert(assert_cast<const ColumnInt256 &>(value).getElement(0));
+
+    if (!converted)
+        return ColumnPtr{};
+    auto column = to->createColumn();
+    assert_cast<ColumnVector<To> &>(*column).getData().push_back(result);
+    return column;
+}
+
+/// Column-native conversion between native numbers and wide integers (`Int128`/`Int256`/`UInt128`/`UInt256`),
+/// in the default AND `strict` modes. It is `convertFieldToType`'s own numeric conversion (see
+/// `convertNumberColumnTo`), so the two agree by construction; `strict` only rejects additional cases for types
+/// excluded here - `Bool` (10 is not a valid `Bool`) and `Decimal` (scale reduction). Pinned by
+/// `gtest_convert_column_to_type`. Returns:
 ///   - the converted size-1 column of `to` on success,
 ///   - a null `ColumnPtr{}` when not representable,
 ///   - std::nullopt when this fast path does not apply (caller falls back to the `Field` path).
-/// Excluded: `convert_inexact_floats` mode (allows rounding, so `castColumnAccurateOrNull` differs),
-/// `Bool` (clamp/validity semantics), `Decimal`/`BFloat16`, and anything non-numeric
-/// (Date/Enum/String/wrappers/composite).
+/// Excluded: `convert_inexact_floats` mode (accepts the nearest float), `Bool` (clamp/validity semantics),
+/// `Decimal`/`BFloat16`, and anything non-numeric (Date/Enum/String/wrappers/composite).
 std::optional<ColumnPtr> tryConvertNumericColumnNative(
     const IColumn & value,
     const DataTypePtr & from,
@@ -66,27 +93,29 @@ std::optional<ColumnPtr> tryConvertNumericColumnNative(
 {
     if (convert_inexact_floats)
         return std::nullopt;
-    /// Native numbers plus wide integers (`Int128`/`Int256`/`UInt128`/`UInt256`): `convertFieldToType`
-    /// routes wide-integer sources and targets through the very same `accurate::convertNumeric<From, To>`
-    /// as native numbers, so `castColumnAccurateOrNull` matches it for them too (default AND `strict`).
-    /// `Decimal` and `BFloat16` stay on the `Field` path (a strict `Decimal` must reject scale loss that
-    /// the accurate cast would round; `BFloat16` has its own rounding semantics).
     auto is_native_or_wide_number = [](const DataTypePtr & type) { return isNativeNumber(type) || isInteger(type); };
     if (!is_native_or_wide_number(from) || !is_native_or_wide_number(to) || isBool(from) || isBool(to))
         return std::nullopt;
-    /// `strict` is intentionally not a parameter: for native numbers it is equivalent to the default
-    /// accurate path (both reject non-representable values), so this fast path serves strict too.
 
-    ColumnWithTypeAndName arg{value.getPtr(), from, ""};
-    ColumnPtr casted = castColumnAccurateOrNull(arg, to);
-    /// `ExecutableFunctionCast` uses the default implementation for constants, so a `ColumnConst`
-    /// argument yields a `ColumnConst` result. Callers already pass a full column, but unwrap here too
-    /// so the `assert_cast` below is correct regardless of the argument's constness.
-    casted = casted->convertToFullColumnIfConst();
-    const auto & nullable = assert_cast<const ColumnNullable &>(*casted);
-    if (nullable.isNullAt(0))
-        return ColumnPtr{};
-    return nullable.getNestedColumnPtr();
+    const WhichDataType which_from(from);
+    switch (WhichDataType(to).idx)
+    {
+        case TypeIndex::UInt8: return convertNumberColumnTo<UInt8>(value, which_from, to);
+        case TypeIndex::UInt16: return convertNumberColumnTo<UInt16>(value, which_from, to);
+        case TypeIndex::UInt32: return convertNumberColumnTo<UInt32>(value, which_from, to);
+        case TypeIndex::UInt64: return convertNumberColumnTo<UInt64>(value, which_from, to);
+        case TypeIndex::UInt128: return convertNumberColumnTo<UInt128>(value, which_from, to);
+        case TypeIndex::UInt256: return convertNumberColumnTo<UInt256>(value, which_from, to);
+        case TypeIndex::Int8: return convertNumberColumnTo<Int8>(value, which_from, to);
+        case TypeIndex::Int16: return convertNumberColumnTo<Int16>(value, which_from, to);
+        case TypeIndex::Int32: return convertNumberColumnTo<Int32>(value, which_from, to);
+        case TypeIndex::Int64: return convertNumberColumnTo<Int64>(value, which_from, to);
+        case TypeIndex::Int128: return convertNumberColumnTo<Int128>(value, which_from, to);
+        case TypeIndex::Int256: return convertNumberColumnTo<Int256>(value, which_from, to);
+        case TypeIndex::Float32: return convertNumberColumnTo<Float32>(value, which_from, to);
+        case TypeIndex::Float64: return convertNumberColumnTo<Float64>(value, which_from, to);
+        default: return std::nullopt;
+    }
 }
 
 /// Faithful column-native `X -> Decimal` conversion. Reuses the exact public primitives that
@@ -420,7 +449,7 @@ ColumnPtr convertColumnToTypeOrNull(
     chassert(value.size() == 1);
 
     /// Callers usually pass a `ColumnConst` (e.g. from `evaluateConstantExpressionAsColumn`); operate
-    /// on the underlying full column so the fast path's CAST returns a plain (non-const) column and the
+    /// on the underlying full column so the fast paths read row 0 of a plain (non-const) column and the
     /// `Field` fallback reads the value directly.
     const ColumnPtr full = value.convertToFullColumnIfConst();
     const IColumn & unwrapped = *full;
