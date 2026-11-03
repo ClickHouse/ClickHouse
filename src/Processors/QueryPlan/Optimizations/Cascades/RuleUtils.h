@@ -32,8 +32,7 @@ inline std::vector<size_t> getCandidateNodeCounts(size_t max_node_count)
     return {max_node_count};
 }
 
-/// Steps that can run on any data partition independently: stateless per-row steps and a preliminary
-/// `DISTINCT`, which deduplicates each stream on its own. Implemented by
+/// Stateless per-row steps that can run on any data partition independently. Implemented by
 /// `DistributionPassthrough` and therefore excluded from `DefaultImplementation` - both go
 /// through this one predicate so a new passthrough step type cannot end up with two
 /// implementation rules or none.

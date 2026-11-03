@@ -7,7 +7,6 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/Utils.h>
 #include <Core/Settings.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <Functions/FunctionFactory.h>
 
 namespace DB
@@ -73,16 +72,8 @@ public:
         if (!column_node)
             return;
 
-        /// For Nullable, `sum` and `count` skip the same NULL rows as `sum(a + c)`, and if all rows are NULL,
-        /// `sum(a)` is NULL, the same as `sum(a + c)`.
         const auto column_type = column_node->getColumnType();
-        if (!column_type || !isNumber(removeNullable(column_type)))
-            return;
-
-        /// `Decimal` addition computes in the native width of the decimal with an overflow check on every row:
-        /// `sum(a + 4294967296)` over a `Decimal32` column adds `0` per row, and `sum(a + 1200000000)` throws
-        /// `DECIMAL_OVERFLOW` for a row `999999999`. `sum(a) + 1200000000 * count(a)` does neither.
-        if (isDecimal(removeNullable(column_type)) || isDecimal(literal_type))
+        if (!column_type || !isNumber(column_type))
             return;
 
         const auto lhs = std::make_shared<FunctionNode>("sum");

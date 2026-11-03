@@ -5,11 +5,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTPartition.h>
-#include <Parsers/ASTProjectionSelectQuery.h>
-#include <Parsers/ASTQueryWithOutput.h>
-#include <Parsers/ASTSelectIntersectExceptQuery.h>
-#include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Common/checkStackSize.h>
 #include <IO/ReadHelpers.h>
 
@@ -22,19 +17,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-}
-
-bool isBareSelectQuery(const IAST * node)
-{
-    return node
-        && (node->as<ASTSelectQuery>() || node->as<ASTSelectWithUnionQuery>() || node->as<ASTSelectIntersectExceptQuery>()
-            || node->as<ASTProjectionSelectQuery>());
-}
-
-bool hasQueryOutputOptions(const IAST * node)
-{
-    const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(node);
-    return query_with_output && query_with_output->hasOutputOptions();
 }
 
 ASTPtr JSONObjectReader::readIdentifierChild(const char * key) const
@@ -77,64 +59,6 @@ ASTPtr JSONObjectReader::readSpecialFunctionChild(const char * key, const char *
                 expected_name, key);
 
     return child;
-}
-
-namespace
-{
-
-void rejectArgumentlessFunctions(const IAST & ast, const char * key)
-{
-    checkStackSize();
-
-    const auto * function = ast.as<ASTFunction>();
-    if (function && !function->arguments)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Function '{}' for key '{}' has no 'arguments' list during AST JSON deserialization, "
-            "which the SQL parser produces only outside an expression", function->name, key);
-
-    /// A nested query is walked too: `ParserSubquery` accepts only a SELECT, which has no such slot.
-    for (const auto & child : ast.children)
-    {
-        if (child)
-            rejectArgumentlessFunctions(*child, key);
-    }
-}
-
-}
-
-ASTPtr JSONObjectReader::readExpressionChild(const char * key) const
-{
-    ASTPtr child = readChild(key);
-    if (child)
-        rejectArgumentlessFunctions(*child, key);
-    return child;
-}
-
-ASTs JSONObjectReader::readExpressionChildren() const
-{
-    ASTs result = readChildren();
-    for (const auto & child : result)
-    {
-        if (child)
-            rejectArgumentlessFunctions(*child, "children");
-    }
-    return result;
-}
-
-ASTPtr JSONObjectReader::readFunctionChildWithExpressionArguments(const char * key) const
-{
-    ASTPtr child = readChildOfType<ASTFunction>(key);
-    if (child)
-    {
-        if (const auto & arguments = child->as<ASTFunction &>().arguments)
-            rejectArgumentlessFunctions(*arguments, key);
-    }
-    return child;
-}
-
-void JSONObjectReader::screenArgumentlessFunctions(const IAST & ast, const char * key)
-{
-    rejectArgumentlessFunctions(ast, key);
 }
 
 ASTPtr JSONObjectReader::readStringLiteralChild(const char * key) const

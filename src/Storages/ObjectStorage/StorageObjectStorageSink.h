@@ -1,7 +1,6 @@
 #pragma once
 #include <Storages/PartitionedSink.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
-#include <Formats/FormatFilterInfo.h>
 #include <Interpreters/Context_fwd.h>
 
 namespace DB
@@ -20,8 +19,7 @@ public:
         SharedHeader sample_block_,
         ContextPtr context,
         const String & format,
-        const String & compression_method,
-        FormatFilterInfoPtr format_filter_info = nullptr);
+        const String & compression_method);
 
     ~StorageObjectStorageSink() override;
 

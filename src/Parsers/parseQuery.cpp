@@ -1,7 +1,6 @@
 #include <Parsers/parseQuery.h>
 
 #include <Parsers/ParserQuery.h>
-#include <Parsers/ParserSetQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/CommonParsers.h>
@@ -515,17 +514,12 @@ ASTPtr tryParseQuery(
       *
       * This shortcut is needed to avoid complex backtracking in case of obviously erroneous queries.
       */
-    /// 3. A dialect parser's raw text may contain tokens the SQL lexer rejects (e.g. PromQL's `=~`)
-    /// to find the statement end. It also skips case 1's carve-out: raw text has no FORMAT clause.
     IParser::Pos lookahead(token_iterator);
-    IParser::Pos set_lookahead(token_iterator);
-    const bool committed_to_set = parser.consumesRawText() && isCommittedToSetQuery(set_lookahead);
-    const bool consumes_raw_text = parser.consumesRawText() && !committed_to_set;
-    if (consumes_raw_text || !ParserKeyword(Keyword::INSERT_INTO).ignore(lookahead))
+    if (!ParserKeyword(Keyword::INSERT_INTO).ignore(lookahead))
     {
         while (lookahead->type != TokenType::Semicolon && lookahead->type != TokenType::EndOfStream)
         {
-            if (lookahead->isError() && (!consumes_raw_text || lookahead->type == TokenType::ErrorMaxQuerySizeExceeded))
+            if (lookahead->isError())
             {
                 // Advance the position for further processing of possible test hint.
                 // Capture max() BEFORE current_statement_end, which walks fresh tokens
@@ -577,11 +571,8 @@ ASTPtr tryParseQuery(
         return res;
 
     // More granular checks for queries other than INSERT w/inline data.
-    /// Lexical error, unless the parser read the raw text itself and only used the tokens
-    /// to delimit the statement (see IParser::consumesRawText). An input committed to SET
-    /// is ordinary SQL even under a raw-text dialect, so it keeps the lexical error.
-    /// Exceeding `max_query_size` is an error for any parser.
-    if (last_token.isError() && (!consumes_raw_text || last_token.type == TokenType::ErrorMaxQuerySizeExceeded))
+    /// Lexical error
+    if (last_token.isError())
     {
         if (diagnostics)
             diagnostics->error_token = last_token;
@@ -590,10 +581,8 @@ ASTPtr tryParseQuery(
         return nullptr;
     }
 
-    /// Unmatched parentheses. Skipped for raw-text parsers: `TokenIterator::isValid()` stops at
-    /// the first error token, so a lexer-rejected token before a later `)` reads as unmatched.
-    UnmatchedParentheses unmatched_parens
-        = consumes_raw_text ? UnmatchedParentheses{} : checkUnmatchedParentheses(TokenIterator(tokens));
+    /// Unmatched parentheses
+    UnmatchedParentheses unmatched_parens = checkUnmatchedParentheses(TokenIterator(tokens));
     if (!unmatched_parens.empty())
     {
         /// `checkUnmatchedParentheses` walks the entire remaining input, so it can

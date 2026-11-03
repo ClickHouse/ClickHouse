@@ -33,7 +33,6 @@
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/ExpressionVisitor.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/EnginePredicate.h>
-#include <Storages/ObjectStorage/Utils.h>
 #include <delta_kernel_ffi.hpp>
 #include <fmt/ranges.h>
 #include <roaring/roaring.hh>
@@ -67,37 +66,6 @@ namespace DB::FailPoints
 namespace DeltaLake
 {
 
-namespace
-{
-
-/// A file's `numRecords` statistic counts rows that a deletion vector still logically removes,
-/// so it is not a row count for such a file.
-bool hasDeletionVector(ffi::SharedDvInfo * dv_info_ptr)
-{
-    return dv_info_ptr && ffi::dv_info_has_vector(dv_info_ptr);
-}
-
-/// A data file with the size its `add` action records.
-struct DataObjectInfo : public DB::ObjectInfo
-{
-    DataObjectInfo(std::string path_, int64_t size_)
-        : DB::ObjectInfo(DB::RelativePathWithMetadata(std::move(path_)))
-        , size(size_)
-    {
-    }
-
-    std::optional<size_t> getFileSizeHint() const override
-    {
-        if (size > 0)
-            return static_cast<size_t>(size);
-        return std::nullopt;
-    }
-
-    const int64_t size;
-};
-
-}
-
 class TableSnapshot::Iterator final : public DB::IObjectIterator, private DB::WithContext
 {
 private:
@@ -128,6 +96,7 @@ public:
         const TableSchema & table_schema_,
         const DB::NameToNameMap & physical_names_map_,
         const DB::Names & partition_columns_,
+        DB::ObjectStoragePtr object_storage_,
         const DB::ActionsDAG * filter_,
         DB::IDataLakeMetadata::FileProgressCallback callback_,
         size_t list_batch_size_,
@@ -144,6 +113,7 @@ public:
         , read_schema(read_schema_)
         , expression_schema(table_schema_)
         , partition_columns(partition_columns_)
+        , object_storage(object_storage_)
         , callback(callback_)
         , list_batch_size(list_batch_size_)
         , log(log_)
@@ -172,10 +142,10 @@ public:
         if (!physical_names_map_.empty())
         {
             for (auto & [name, value] : expression_schema)
-                name = getPhysicalName(appendToLogicalPath({}, name), physical_names_map_);
+                name = getPhysicalName(name, physical_names_map_);
 
             for (auto & name : partition_columns)
-                name = getPhysicalName(appendToLogicalPath({}, name), physical_names_map_);
+                name = getPhysicalName(name, physical_names_map_);
         }
 
         thread = ThreadFromGlobalPool(
@@ -445,9 +415,13 @@ public:
             }
 
             parseDVHandle(*scan_item, object);
+            object->setObjectMetadata(object_storage->getObjectMetadata(object->getPath(), /*with_tags=*/ false));
 
             if (callback)
-                callback(DB::FileProgress(0, object->getFileSizeHint().value_or(0)));
+            {
+                chassert(object->getObjectMetadata());
+                callback(DB::FileProgress(0, object->getObjectMetadata()->size_bytes));
+            }
             return object;
         }
     }
@@ -579,9 +553,6 @@ public:
         if (transform.tag == ffi::OptionalValue<ffi::SharedExpression *>::Tag::Some)
             transform_handle.emplace(transform.some._0);
 
-        /// Read before `dv_info_handle` is moved into `data_files` below.
-        const bool has_deletion_vector = hasDeletionVector(dv_info_handle.get());
-
         auto * context = static_cast<TableSnapshot::Iterator *>(engine_context);
         if (context->shutdown)
         {
@@ -624,10 +595,8 @@ public:
 
         std::string full_path = DB::resolvePathInsideTable(
             context->getDataPath(), DB::unescapeForFileName(KernelUtils::fromDeltaString(path)));
-        auto object = std::make_shared<DataObjectInfo>(std::move(full_path), size);
+        auto object = std::make_shared<DB::ObjectInfo>(DB::RelativePathWithMetadata(std::move(full_path)));
         object->data_lake_metadata.emplace();
-        if (stats)
-            object->data_lake_metadata->num_rows = stats->num_records;
 
         LOG_TEST(
             context->log,
@@ -641,7 +610,7 @@ public:
 
         context->total_data_files += 1;
         context->total_bytes += size;
-        if (stats && !has_deletion_vector && context->total_rows.has_value())
+        if (stats && context->total_rows.has_value())
             context->total_rows.value() += stats->num_records;
         else
             context->total_rows = std::nullopt;
@@ -670,6 +639,7 @@ private:
     DB::NamesAndTypesList read_schema;
     DB::NamesAndTypesList expression_schema;
     DB::Names partition_columns;
+    const DB::ObjectStoragePtr object_storage;
     const DB::IDataLakeMetadata::FileProgressCallback callback;
     const size_t list_batch_size;
     const LoggerPtr log;
@@ -809,7 +779,7 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl() const
             auto * visitor = static_cast<StatsVisitor *>(engine_context);
             visitor->total_data_files += 1;
             visitor->total_bytes += static_cast<size_t>(size);
-            if (stats && !hasDeletionVector(dv_info_handle.get()) && visitor->total_rows.has_value())
+            if (stats && visitor->total_rows.has_value())
                 visitor->total_rows.value() += stats->num_records;
             else
                 visitor->total_rows = std::nullopt;
@@ -1024,6 +994,7 @@ DB::ObjectIterator TableSnapshot::iterate(
         schema->table_schema,
         schema->physical_names_map,
         schema->partition_columns,
+        object_storage,
         filter_dag,
         callback,
         list_batch_size,
@@ -1040,8 +1011,7 @@ void TableSnapshot::initOrUpdateSchemaIfChanged() const
     if (!schema.has_value())
     {
         auto state = getKernelSnapshotState();
-        auto [table_schema, physical_names_map, timestamp_ntz_paths]
-            = getTableSchemaFromSnapshot(state->snapshot.get(), state->engine.get());
+        auto [table_schema, physical_names_map] = getTableSchemaFromSnapshot(state->snapshot.get(), state->engine.get());
 
         if (table_schema.empty())
             throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Table schema cannot be empty");
@@ -1068,7 +1038,6 @@ void TableSnapshot::initOrUpdateSchemaIfChanged() const
             .read_schema = std::move(read_schema),
             .physical_names_map = std::move(physical_names_map),
             .partition_columns = std::move(partition_columns),
-            .timestamp_ntz_paths = std::move(timestamp_ntz_paths),
         });
     }
 }
@@ -1106,13 +1075,6 @@ const DB::NameToNameMap & TableSnapshot::getPhysicalNamesMap() const
     std::lock_guard lock(mutex);
     initOrUpdateSchemaIfChanged();
     return schema->physical_names_map;
-}
-
-const std::unordered_set<String> & TableSnapshot::getTimestampNtzPaths() const
-{
-    std::lock_guard lock(mutex);
-    initOrUpdateSchemaIfChanged();
-    return schema->timestamp_ntz_paths;
 }
 
 }

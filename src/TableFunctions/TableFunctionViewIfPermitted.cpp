@@ -1,4 +1,5 @@
 #include <Core/Settings.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -20,6 +21,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_analyzer;
 }
 
 namespace ErrorCodes
@@ -136,8 +138,15 @@ bool TableFunctionViewIfPermitted::isPermitted(const ContextPtr & context, const
 
     try
     {
-        /// Will throw ACCESS_DENIED if the current user is not allowed to execute the SELECT query.
-        sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.children[0], context);
+        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        {
+            sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.children[0], context);
+        }
+        else
+        {
+            /// Will throw ACCESS_DENIED if the current user is not allowed to execute the SELECT query.
+            sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(create.children[0], context);
+        }
     }
     catch (Exception & e)
     {
@@ -146,7 +155,7 @@ bool TableFunctionViewIfPermitted::isPermitted(const ContextPtr & context, const
         throw;
     }
 
-    /// We check that columns match only if permitted (otherwise we could reveal the structure to a user who must not know it).
+    /// We check that columns match only if permitted (otherwise we could reveal the structure to an user who must not know it).
     ColumnsDescription columns{sample_block->getNamesAndTypesList()};
     if (columns != else_columns)
     {
@@ -166,7 +175,7 @@ bool TableFunctionViewIfPermitted::isPermitted(const ContextPtr & context, const
 
 void registerTableFunctionViewIfPermitted(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionViewIfPermitted>({.description = R"DOC(Returns the result of a SELECT query as a view, but only if the current user has the permissions required to run it; otherwise it returns the result of the ELSE table function. The privileges needed to resolve the structure of the `ELSE` table function are required either way.)DOC", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{}, {.allow_readonly = true});
+    factory.registerFunction<TableFunctionViewIfPermitted>({.description = R"DOC(Returns the result of a SELECT query as a view, but only if the current user has the permissions required to run it; otherwise it returns the result of the ELSE table function. The privileges needed to resolve the structure of the `ELSE` table function are required either way.)DOC", .category = FunctionDocumentation::Category::TableFunction}, {.allow_readonly = true});
 }
 
 }

@@ -1,0 +1,7 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <materialize_statistics_on_insert>1</materialize_statistics_on_insert>
+        </default>
+    </profiles>
+</clickhouse>
