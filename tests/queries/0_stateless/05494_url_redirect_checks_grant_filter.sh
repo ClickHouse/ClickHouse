@@ -22,7 +22,7 @@ CREATE USER $user_engine;
 GRANT CREATE TEMPORARY TABLE ON *.* TO $user_filtered, $user_full;
 GRANT READ ON URL('http://localhost:${CLICKHOUSE_PORT_HTTP}/upyachka') TO $user_filtered;
 GRANT READ ON URL TO $user_full;
-CREATE TABLE t_redirect (s String) ENGINE = URL('$redirector', 'RawBLOB');
+CREATE TABLE t_redirect (s String) ENGINE = URL('$redirector', 'LineAsString');
 GRANT SELECT ON ${CLICKHOUSE_DATABASE}.t_redirect TO $user_filtered;
 GRANT CREATE TABLE, DROP TABLE, SELECT ON ${CLICKHOUSE_DATABASE}.* TO $user_engine;
 GRANT TABLE ENGINE ON URL TO $user_engine;
@@ -39,7 +39,7 @@ check_denied "$user_filtered" "SELECT * FROM url('$redirector', 'RawBLOB', 's St
 check_denied "$user_filtered" "SELECT * FROM url('$redirector', 'RawBLOB')"
 
 echo "--- the grant without a filter"
-${CLICKHOUSE_CLIENT} --user "$user_full" --max_http_get_redirects 1 --query "SELECT * FROM url('$redirector', 'RawBLOB', 's String')"
+${CLICKHOUSE_CLIENT} --user "$user_full" --max_http_get_redirects 1 --query "SELECT * FROM url('$redirector', 'LineAsString', 's String')"
 
 echo "--- a URL table reads with the grant on the table"
 ${CLICKHOUSE_CLIENT} --user "$user_filtered" --max_http_get_redirects 1 --query "SELECT * FROM t_redirect"
