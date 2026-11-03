@@ -2,6 +2,7 @@
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnSparse.h>
@@ -102,6 +103,9 @@ struct ProjectionPartData
     bool variable_width = false;
     /// a merge sizes the granules by what the part does not record: the memory it builds some states in, or the bytes of the parts it merges
     bool merge_history_unknown = false;
+    /// an order-dependent state that is not of a fixed size can keep other values in another order of the rows, as `any` does
+    /// a part does not record the order of the insert or of the merged parts, the estimate reads the rows in the order of the part
+    bool order_dependent_states = false;
     /// for a merged wide part under a constant granularity: the fewest and the most bytes that its merged parts can store for a row
     size_t stored_row_bytes_least = 0;
     size_t stored_row_bytes_most = 0;
@@ -137,6 +141,8 @@ void appendRowSizes(ProjectionPartData & out, const Block & block, bool merged)
                 continue;
             }
             out.variable_width = true;
+            const auto properties = AggregateFunctionFactory::instance().tryGetProperties(function.getName(), NullsAction::EMPTY);
+            out.order_dependent_states |= !properties || properties->is_order_dependent;
             /// a state built from one state, more merges can leave more memory
             out.merge_history_unknown |= merged && function.allocatesMemoryInArena();
             auto rebuilt = merged ? states->cloneEmpty() : nullptr;
@@ -999,7 +1005,7 @@ bool buildScenarios(
         }
         if (uneven_rows)
             ++out.uneven_width_parts;
-        out.merge_history_parts += part_data.merge_history_unknown;
+        out.merge_history_parts += part_data.merge_history_unknown || part_data.order_dependent_states;
         /// no row passes the filter of the projection, so the writer writes no projection part
         if (part_data.rows == 0)
         {
@@ -1154,9 +1160,9 @@ void setVerdict(
     {
         result.verdict = "too close to call";
         result.verdict_reason = fmt::format(
-            "{} against {} from the base table, but on {} of the {} parts read a merge sizes the granules from data that a part does "
-            "not record (the memory that the merge builds aggregate states in, or the bytes of the merged parts), so the mark count "
-            "is a model, not a measurement",
+            "{} against {} from the base table, but on {} of the {} parts read the writer sizes the granules from data that a part "
+            "does not record (the order of the rows that built order-dependent aggregate states, the memory that a merge builds "
+            "aggregate states in, or the bytes of the merged parts), so the mark count is a model, not a measurement",
             marks_text(projection_marks),
             baseline_marks,
             built.merge_history_parts,
