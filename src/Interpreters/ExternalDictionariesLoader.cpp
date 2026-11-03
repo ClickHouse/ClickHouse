@@ -191,17 +191,38 @@ void ExternalDictionariesLoader::unloadAllDictionaries() const
     unloadAll();
 }
 
-DictionaryStructure ExternalDictionariesLoader::getDictionaryStructure(const std::string & dictionary_name, ContextPtr query_context) const
+ExternalDictionariesLoader::DictionaryDefinition
+ExternalDictionariesLoader::getDictionaryDefinition(const std::string & dictionary_name, ContextPtr query_context) const
 {
     std::string resolved_name = resolveDictionaryName(dictionary_name, query_context);
 
-    auto load_result = getLoadResult(resolved_name);
+    DictionaryDefinition definition;
+    definition.dictionary_name = dictionary_name;
+    definition.load_result = getLoadResult(resolved_name);
 
-    if (load_result.object)
+    if (definition.load_result.object)
     {
-        const auto dictionary = std::static_pointer_cast<const IDictionary>(load_result.object);
-        return dictionary->getStructure();
+        const auto dictionary = std::static_pointer_cast<const IDictionary>(definition.load_result.object);
+        definition.qualified_name = {.database = dictionary->getDatabaseOrNoDatabaseTag(), .table = dictionary->getDictionaryID().getTableName()};
     }
+    else if (definition.load_result.config)
+    {
+        const auto & config = *definition.load_result.config;
+        auto dictionary_id = StorageID::fromDictionaryConfig(*config.config, config.key_in_config);
+        definition.qualified_name = {
+            .database = dictionary_id.database_name.empty() ? std::string(IDictionary::NO_DATABASE_TAG) : dictionary_id.database_name,
+            .table = dictionary_id.table_name};
+    }
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary {} config not found", backQuote(dictionary_name));
+
+    return definition;
+}
+
+DictionaryStructure ExternalDictionariesLoader::DictionaryDefinition::getStructure() const
+{
+    if (load_result.object)
+        return std::static_pointer_cast<const IDictionary>(load_result.object)->getStructure();
 
     if (!load_result.config)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary {} config not found", backQuote(dictionary_name));
@@ -209,11 +230,8 @@ DictionaryStructure ExternalDictionariesLoader::getDictionaryStructure(const std
     return ExternalDictionariesLoader::getDictionaryStructure(*load_result.config);
 }
 
-std::string ExternalDictionariesLoader::getDictionaryLayoutType(const std::string & dictionary_name, ContextPtr query_context) const
+std::string ExternalDictionariesLoader::DictionaryDefinition::getLayoutType() const
 {
-    std::string resolved_name = resolveDictionaryName(dictionary_name, query_context);
-
-    auto load_result = getLoadResult(resolved_name);
     if (!load_result.config)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary {} config not found", backQuote(dictionary_name));
 
@@ -227,6 +245,16 @@ std::string ExternalDictionariesLoader::getDictionaryLayoutType(const std::strin
             backQuote(dictionary_name));
 
     return layout_keys.front();
+}
+
+DictionaryStructure ExternalDictionariesLoader::getDictionaryStructure(const std::string & dictionary_name, ContextPtr query_context) const
+{
+    return getDictionaryDefinition(dictionary_name, query_context).getStructure();
+}
+
+std::string ExternalDictionariesLoader::getDictionaryLayoutType(const std::string & dictionary_name, ContextPtr query_context) const
+{
+    return getDictionaryDefinition(dictionary_name, query_context).getLayoutType();
 }
 
 void ExternalDictionariesLoader::assertDictionaryStructureExists(const std::string & dictionary_name, ContextPtr query_context) const

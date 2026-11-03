@@ -143,11 +143,17 @@ public:
 
         checkAccess(dictionary_name);
 
-        validateDictionaryIsXGBoost(dictionary_name);
+        /// The layout and the structure are read from one resolution of the name, and the access is checked for the
+        /// dictionary they belong to before using them: a hierarchical name (see `DatabaseCatalog`) may denote another
+        /// dictionary than the one checked above after a rename, and even its layout must not be disclosed then.
+        const auto definition = context->getExternalDictionariesLoader().getDictionaryDefinition(dictionary_name, context);
+        checkAccess(definition.qualified_name);
+
+        validateDictionaryIsXGBoost(dictionary_name, definition.getLayoutType());
 
         /// Validated here, from the dictionary structure and without loading the dictionary, rather than only in
         /// `executeImpl`: a call over no rows never reaches the model, and must fail the same way as a call with rows.
-        const auto structure = context->getExternalDictionariesLoader().getDictionaryStructure(dictionary_name, context);
+        const auto structure = definition.getStructure();
         const size_t n_features = structure.key ? structure.key->size() : 0;
         const size_t num_feature_args = feature_end - 1;
         if (num_feature_args != n_features)
@@ -304,9 +310,8 @@ private:
         return static_cast<Int64>(unsigned_value);
     }
 
-    void validateDictionaryIsXGBoost(const String & dictionary_name) const
+    void validateDictionaryIsXGBoost(const String & dictionary_name, const String & layout_type) const
     {
-        const auto layout_type = context->getExternalDictionariesLoader().getDictionaryLayoutType(dictionary_name, context);
         if (layout_type != "xgboost")
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,

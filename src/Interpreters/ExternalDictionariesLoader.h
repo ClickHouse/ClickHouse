@@ -58,6 +58,23 @@ public:
 
     DictionaryStructure getDictionaryStructure(const std::string & dictionary_name, ContextPtr context) const;
 
+    /// The definition of a dictionary read with one resolution of its name, together with the dictionary it belongs to.
+    /// A hierarchical name (see `DatabaseCatalog`) may denote another dictionary than a moment ago, after a rename,
+    /// so a caller that authorizes the dictionary checks `qualified_name` before reading anything from the definition.
+    struct DictionaryDefinition
+    {
+        /// The name as the query wrote it, for error messages.
+        std::string dictionary_name;
+        /// The dictionary the definition belongs to. The database is `IDictionary::NO_DATABASE_TAG` for an XML dictionary.
+        QualifiedTableName qualified_name;
+        LoadResult load_result;
+
+        DictionaryStructure getStructure() const;
+        std::string getLayoutType() const;
+    };
+
+    DictionaryDefinition getDictionaryDefinition(const std::string & dictionary_name, ContextPtr context) const;
+
     /// The layout type of the dictionary as written in its definition, e.g. "hashed" or "naive_bayes".
     /// Read from the dictionary configuration, so it works without loading the dictionary. Throws for
     /// a definition whose layout element does not have exactly one child, like loading it would.
