@@ -23,7 +23,7 @@ function cleanup()
     $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT transaction_metadata_store_fail" ||:
     $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT transaction_mutation_csn_store_fail" ||:
     $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT transaction_mutation_csn_store_fail_after_write" ||:
-    $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT transaction_metadata_sync_fail" ||:
+    $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT local_directory_sync_fail" ||:
 }
 trap cleanup EXIT
 
@@ -189,7 +189,9 @@ $CLICKHOUSE_CLIENT -q "SELECT 'mutations after reattach', count() FROM system.mu
 # ---------------------------------------------------------------------------
 echo "--- F: commit, part metadata, EIO on the directory sync"
 # With `fsync_part_directory` the rename of `txn_version.txt` is followed by a sync of the part
-# directory; a failed sync must reach the retry instead of being logged by the guard's destructor.
+# directory. The failure is injected inside the sync itself: it must reach the retry, and if it
+# were left to the guard's destructor it would be logged, the write would pass, and no retry line
+# would appear.
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_meta_retry_fsync;
     CREATE TABLE t_meta_retry_fsync (k Int64) ENGINE = MergeTree ORDER BY k SETTINGS old_parts_lifetime = 3600, fsync_part_directory = 1;
@@ -202,7 +204,7 @@ tx_sync 7 "ALTER TABLE t_meta_retry_fsync DROP PARTITION ID 'all'"
 tx_sync 7 "INSERT INTO t_meta_retry_fsync VALUES (3)"
 tid=$(tx 7 "SELECT transactionID()" | cut -f2)
 
-$CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT transaction_metadata_sync_fail"
+$CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT local_directory_sync_fail"
 tx_sync 7 "COMMIT"
 
 report_retry_lines part t_meta_retry_fsync

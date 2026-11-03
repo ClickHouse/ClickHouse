@@ -43,7 +43,7 @@ static struct InitFiu
     REGULAR(executing_graph_build_fail) \
     PAUSEABLE_ONCE(polling_queue_before_try_poll) \
     ONCE(transaction_mutation_csn_store_fail_after_write) \
-    ONCE(transaction_metadata_sync_fail) \
+    ONCE(local_directory_sync_fail) \
     ONCE(replicated_merge_tree_insert_quorum_fail_0) \
     REGULAR(replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault) \
     REGULAR(rmt_dedup_conflict_part_name_missing) \

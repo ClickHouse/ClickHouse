@@ -1,4 +1,3 @@
-#include <cerrno>
 #include <optional>
 #include <Interpreters/MergeTreeTransaction/VersionInfo.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadataOnDisk.h>
@@ -16,7 +15,6 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/retryTransientStoreError.h>
-#include <Common/ErrnoException.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/TransactionID.h>
@@ -32,13 +30,11 @@ extern const int LOGICAL_ERROR;
 extern const int CANNOT_OPEN_FILE;
 extern const int NOT_IMPLEMENTED;
 extern const int CANNOT_WRITE_TO_OSTREAM;
-extern const int CANNOT_FSYNC;
 }
 
 namespace FailPoints
 {
     extern const char transaction_metadata_store_fail[];
-    extern const char transaction_metadata_sync_fail[];
 }
 
 namespace FailPoints
@@ -446,14 +442,7 @@ void VersionMetadataOnDisk::storeInfoToDataPartStorage(
         FailPointInjection::pauseFailPoint(FailPoints::version_metadata_store_pause_before_rename);
         data_part_storage.replaceFile(tmp_filename, filename);
         if (sync_guard)
-        {
-            /// Fault injection for tests: the directory sync fails after the rename.
-            fiu_do_on(FailPoints::transaction_metadata_sync_fail,
-            {
-                ErrnoException::throwWithErrno(ErrorCodes::CANNOT_FSYNC, EIO, "Injected transient failure while syncing the part directory");
-            });
             sync_guard->sync();
-        }
     }
     catch (...)
     {
