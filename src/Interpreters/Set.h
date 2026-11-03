@@ -184,6 +184,18 @@ private:
     /// the members that `spillAfterBuild` replaces are `mutable`.
     mutable std::unique_ptr<SetVariants> data = std::make_unique<SetVariants>();
 
+    /// A copy of the keys of `data` with a faster lookup (see `CuckooLookup` in Set.cpp). A lookup builds it once
+    /// the set has been probed with `rows_per_key_before_cuckoo_lookup` rows per key, so short queries do not pay
+    /// for it. It is released when the set changes or spills.
+    class CuckooLookup;
+    mutable std::unique_ptr<CuckooLookup> cuckoo_lookup;
+    /// The number of rows to probe before building `cuckoo_lookup`, or a negative number to not build it.
+    mutable std::atomic<Int64> rows_before_cuckoo_lookup = -1;
+    static constexpr size_t rows_per_key_before_cuckoo_lookup = 16;
+    /// Changes with the keys, so that a table built from the previous keys is not used.
+    mutable UInt64 keys_version = 0;
+    std::unique_ptr<CuckooLookup> createCuckooLookup() const;
+
     /// They are kept after the build, so the set can spill while it is used.
     SetSpillSettings spill_settings;
 

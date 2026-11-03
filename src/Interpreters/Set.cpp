@@ -1,19 +1,26 @@
+#include <array>
 #include <atomic>
+#include <bit>
 #include <optional>
 #include <shared_mutex>
 
 #include <Core/Field.h>
 
+#include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnString.h>
 
+#include <Common/HashTable/Hash.h>
 #include <Common/Logger.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
+#include <base/unaligned.h>
 #include <fmt/format.h>
 #include <Columns/ColumnDecimal.h>
 
@@ -59,10 +66,481 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int MEMORY_LIMIT_EXCEEDED;
     extern const int SET_SIZE_LIMIT_EXCEEDED;
     extern const int TYPE_MISMATCH;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
 }
+
+namespace
+{
+
+/// The mask of the first `bytes` bytes of a 64-bit word loaded from memory.
+constexpr UInt64 firstBytesMask(size_t bytes)
+{
+    if (bytes == 0)
+        return 0;
+    if (bytes >= 8)
+        return ~0ULL;
+    if constexpr (std::endian::native == std::endian::little)
+        return (1ULL << (8 * bytes)) - 1;
+    else
+        return ~0ULL << (64 - 8 * bytes);
+}
+
+constexpr auto low_masks = []
+{
+    std::array<UInt64, 17> masks{};
+    for (size_t size = 0; size <= 16; ++size)
+        masks[size] = firstBytesMask(std::min<size_t>(size, 8));
+    return masks;
+}();
+
+constexpr auto high_masks = []
+{
+    std::array<UInt64, 17> masks{};
+    for (size_t size = 0; size <= 16; ++size)
+        masks[size] = firstBytesMask(size > 8 ? size - 8 : 0);
+    return masks;
+}();
+
+}
+
+/// Exact membership test for the keys of a set, used for the lookups instead of the hash table once the set
+/// has been probed with enough rows to pay for building it (see `execute`). It is built for sets of one 32- or
+/// 64-bit number, of short strings, and of fixed-size keys packed into up to 256 bits (`SetMethodKeysFixed`:
+/// tuples, `FixedString` up to 32 bytes, `UUID`, `IPv6`, 128- and 256-bit numbers).
+///
+/// Probing the hash table takes branches that depend on the data: whether the key is the previous one, and
+/// whether the cell is empty, holds the key or another key. They are mispredicted whenever only some of the
+/// rows are in the set or the cells are partly filled. This table is looked up without branches. It is a
+/// cuckoo hash table: each key is in one of two slots, so a lookup compares the value with both slots. The
+/// slots without a key hold a copy of some key of the set, so a value equal to a slot is always in the set,
+/// and there is no empty slot to check for.
+///
+/// The two slots of a key are given by two multiply-shift hashes, which are the cheapest to compute. They are
+/// linear functions of the key, so the keys of a dense range (such as a random subset of [1, 20n], or such a
+/// range shifted to the high bits) can fall into groups that share too few slots, and then no placement of the
+/// keys exists. If placing the keys fails, the multiply-shift hashes are applied to the CRC32 of a number key, and
+/// for a longer key the slots are the high and low bits of a sum of `intHash64` of its words; for a large set of
+/// numbers whose range is less than `max_range_per_key` per key, from the start.
+///
+/// A string of at most `max_string_size` bytes is a key of 128 bits: its bytes and its length. A longer string
+/// is never in a set of short strings, and a set with a longer string has no table.
+class Set::CuckooLookup
+{
+public:
+    /// A lookup reads two slots. When the table does not fit in the cache, that is two cache misses where the
+    /// hash table often has one, so the table takes at most 8 MiB. Placing the keys often fails when more than
+    /// about 45% of the slots are taken, so there are at least 2.25 slots per key.
+    static constexpr size_t max_bytes = 8 << 20;
+    static constexpr size_t max_slots = max_bytes / sizeof(UInt32);
+    static constexpr size_t max_string_size = 15;
+
+    static constexpr size_t minSlots(size_t num_keys) { return 2 * num_keys + num_keys / 4; }
+
+    /// The hash table of a larger set does not fit in the cache, so probing it costs several times more and the
+    /// table pays for itself after fewer rows.
+    static constexpr size_t max_keys_of_small_set = 1 << 15;
+
+    /// Multiply-shift hashes often fail to place the keys of a range up to a few hundred times larger than the number
+    /// of keys. Retrying with `intHash64` would repeat a placement that takes milliseconds for a large set.
+    static constexpr UInt64 max_range_per_key = 1024;
+
+    size_t allocatedBytes() const
+    {
+        return slots32.allocated_bytes() + slots64.allocated_bytes() + slots128.allocated_bytes() + slots256.allocated_bytes();
+    }
+
+    /// `attempts` is set to the number of placements of the keys that were tried.
+    template <typename Method>
+    static std::unique_ptr<CuckooLookup> tryCreate(const Method & method, size_t num_keys, size_t byte_limit, size_t & attempts)
+    {
+        using Key = typename Method::Key;
+        attempts = 0;
+        if (minSlots(num_keys) * sizeof(Key) > byte_limit)
+            return nullptr;
+        auto lookup = std::make_unique<CuckooLookup>();
+        if constexpr (IsSetMethodOneNumber<Method>::value || IsSetMethodKeysFixed<Method>::value)
+        {
+            if constexpr (std::is_same_v<Key, UInt32> || std::is_same_v<Key, UInt64> || std::is_same_v<Key, UInt128>
+                          || std::is_same_v<Key, UInt256>)
+            {
+                std::vector<Key> keys;
+                keys.reserve(num_keys);
+                for (auto it = method.data.begin(); it != method.data.end(); ++it)
+                    keys.push_back(it->getKey());
+                if (lookup->tryBuildTable(keys, byte_limit, attempts))
+                    return lookup;
+            }
+        }
+        else if constexpr (IsSetMethodString<Method>::value)
+        {
+            std::vector<UInt128> keys;
+            keys.reserve(num_keys);
+            for (auto it = method.data.begin(); it != method.data.end(); ++it)
+            {
+                const std::string_view key = it->getKey();
+                if (key.size() > max_string_size)
+                    return nullptr;
+                /// A copy, so the 16 bytes that `encode` reads are there.
+                char buf[16] = {};
+                memcpy(buf, key.data(), key.size());
+                keys.push_back(encode(reinterpret_cast<const UInt8 *>(buf), key.size()));
+            }
+            if (lookup->tryBuildTable(keys, byte_limit, attempts))
+                return lookup;
+        }
+        return nullptr;
+    }
+
+    /// The same result as `executeImplCase`. Returns false if the table is not for this method and columns.
+    template <typename Method>
+    bool execute(
+        const Method & method, const ColumnRawPtrs & columns, const Sizes & sizes,
+        ColumnUInt8::Container & vec_res, bool negative, ConstNullMapPtr null_map) const
+    {
+        return mixed_hash ? executeWithHash<true>(method, columns, sizes, vec_res, negative, null_map)
+                          : executeWithHash<false>(method, columns, sizes, vec_res, negative, null_map);
+    }
+
+private:
+    template <bool mixed, typename Method>
+    bool executeWithHash(
+        const Method &, const ColumnRawPtrs & columns, const Sizes & sizes,
+        ColumnUInt8::Container & vec_res, bool negative, ConstNullMapPtr null_map) const
+    {
+        using Key = typename Method::Key;
+        const size_t rows = vec_res.size();
+        UInt8 * res = vec_res.data();
+
+        if constexpr (IsSetMethodOneNumber<Method>::value && (std::is_same_v<Key, UInt32> || std::is_same_v<Key, UInt64>))
+        {
+            const IColumn & column = *columns[0];
+            if (getSlots<Key>().empty() || !column.isFixedAndContiguous() || column.sizeOfValueIfFixed() != sizeof(Key))
+                return false;
+            /// The keys are read by the method's own state, exactly as for the hash table.
+            typename Method::State state(columns, sizes, nullptr);
+            static_assert(sizeof(*state.getKeyData()) == sizeof(Key));
+            findNumbers<mixed, Key>(reinterpret_cast<const char *>(state.getKeyData()), rows, res);
+        }
+        else if constexpr (IsSetMethodKeysFixed<Method>::value
+                           && (std::is_same_v<Key, UInt32> || std::is_same_v<Key, UInt64> || std::is_same_v<Key, UInt128>
+                               || std::is_same_v<Key, UInt256>))
+        {
+            if (getSlots<Key>().empty())
+                return false;
+            /// The keys are packed as for the hash table.
+            typename Method::State state(columns, sizes, nullptr);
+            Arena pool;
+            for (size_t i = 0; i < rows; ++i)
+                res[i] = contains<mixed, Key>(state.getKeyHolder(i, pool));
+        }
+        else if constexpr (IsSetMethodString<Method>::value)
+        {
+            const auto * column_string = typeid_cast<const ColumnString *>(columns[0]);
+            if (slots128.empty() || !column_string)
+                return false;
+            const UInt8 * chars = column_string->getChars().data();
+            const IColumn::Offsets & offsets = column_string->getOffsets();
+            /// The strings are read 16 bytes at a time, which the padding of the column allows.
+            IColumn::Offset begin = 0;
+            for (size_t i = 0; i < rows; ++i)
+            {
+                const IColumn::Offset end = offsets[i];
+                res[i] = contains<mixed, UInt128>(encode(chars + begin, end - begin));
+                begin = end;
+            }
+        }
+        else
+            return false;
+
+        /// A row with a NULL key is not in the set.
+        if (null_map)
+        {
+            const UInt8 * is_null = null_map->data();
+            for (size_t i = 0; i < rows; ++i)
+                res[i] = static_cast<UInt8>(res[i] & !is_null[i]);
+        }
+
+        if (negative)
+        {
+            for (size_t i = 0; i < rows; ++i)
+                res[i] ^= 1;
+        }
+
+        return true;
+    }
+
+    template <typename T> struct IsSetMethodOneNumber : std::false_type {};
+    template <typename FieldType, typename Data, bool use_cache>
+    struct IsSetMethodOneNumber<SetMethodOneNumber<FieldType, Data, use_cache>> : std::true_type {};
+
+    template <typename T> struct IsSetMethodKeysFixed : std::false_type {};
+    template <typename Data, bool has_nullable_keys>
+    struct IsSetMethodKeysFixed<SetMethodKeysFixed<Data, has_nullable_keys>> : std::true_type {};
+
+    template <typename T> struct IsSetMethodString : std::false_type {};
+    template <typename Data>
+    struct IsSetMethodString<SetMethodString<Data>> : std::true_type {};
+
+    PODArray<UInt32> slots32;
+    PODArray<UInt64> slots64;
+    PODArray<UInt128> slots128;
+    PODArray<UInt256> slots256;
+    /// The multipliers of the two multiply-shift hashes, one per 64-bit word of a key. With `mixed_hash`, they apply to
+    /// the CRC32 of a number key, and the slots of a longer key are the high and low bits of the sum of
+    /// `intHash64(word ^ multipliers1[i])` over its words.
+    UInt64 multipliers1[4] = {};
+    UInt64 multipliers2[4] = {};
+    bool mixed_hash = false;
+    size_t shift = 0;
+    UInt64 mask = 0;
+
+    static UInt64 splitMix64(UInt64 & state)
+    {
+        UInt64 z = (state += 0x9E3779B97F4A7C15ULL);
+        z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
+        z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
+        return z ^ (z >> 31);
+    }
+
+    /// The key of the string at `data` of `size` bytes, reading 16 bytes. The length goes to the last byte of
+    /// the second word, which a string of at most 15 bytes does not use. A longer string gets the length 16,
+    /// which no key in the table has.
+    static UInt128 encode(const UInt8 * data, size_t size)
+    {
+        const size_t clamped = std::min<size_t>(size, 16);
+        const UInt64 low = unalignedLoad<UInt64>(data) & low_masks[clamped];
+        UInt64 high = unalignedLoad<UInt64>(data + 8) & high_masks[clamped];
+        if constexpr (std::endian::native == std::endian::little)
+            high = (high & ~(0xFFULL << 56)) | (static_cast<UInt64>(clamped) << 56);
+        else
+            high = (high & ~0xFFULL) | clamped;
+        UInt128 key;
+        key.items[0] = low;
+        key.items[1] = high;
+        return key;
+    }
+
+    template <typename Key>
+    PODArray<Key> & getSlots()
+    {
+        if constexpr (std::is_same_v<Key, UInt32>)
+            return slots32;
+        else if constexpr (std::is_same_v<Key, UInt64>)
+            return slots64;
+        else if constexpr (std::is_same_v<Key, UInt128>)
+            return slots128;
+        else
+            return slots256;
+    }
+
+    template <typename Key>
+    const PODArray<Key> & getSlots() const
+    {
+        return const_cast<CuckooLookup *>(this)->getSlots<Key>();
+    }
+
+    /// The two slots of a key.
+    template <bool mixed, typename Key>
+    std::pair<size_t, size_t> places(const Key & key) const
+    {
+        static constexpr size_t num_words = sizeof(Key) <= sizeof(UInt64) ? 1 : sizeof(Key) / sizeof(UInt64);
+        auto word = [&](size_t i) -> UInt64
+        {
+            if constexpr (sizeof(Key) <= sizeof(UInt64))
+                return static_cast<UInt64>(key);
+            else
+                return key.items[i];
+        };
+
+        if constexpr (mixed && sizeof(Key) <= sizeof(UInt64))
+        {
+            const UInt64 hash = intHashCRC32(static_cast<UInt64>(key));
+            return {(hash * multipliers1[0]) >> shift, (hash * multipliers2[0]) >> shift};
+        }
+        else if constexpr (mixed)
+        {
+            UInt64 hash = 0;
+            for (size_t i = 0; i < num_words; ++i)
+                hash += intHash64(word(i) ^ multipliers1[i]);
+            return {hash >> shift, hash & mask};
+        }
+        else
+        {
+            UInt64 hash1 = 0;
+            UInt64 hash2 = 0;
+            for (size_t i = 0; i < num_words; ++i)
+            {
+                hash1 += word(i) * multipliers1[i];
+                hash2 += word(i) * multipliers2[i];
+            }
+            return {hash1 >> shift, hash2 >> shift};
+        }
+    }
+
+    template <bool mixed, typename Key>
+    UInt8 contains(const Key & key) const
+    {
+        const Key * slots = getSlots<Key>().data();
+        const auto [place1, place2] = places<mixed>(key);
+        return static_cast<UInt8>(static_cast<UInt8>(slots[place1] == key) | static_cast<UInt8>(slots[place2] == key));
+    }
+
+    template <typename Key>
+    bool tryBuildTable(const std::vector<Key> & keys, size_t byte_limit, size_t & attempts)
+    {
+        if (keys.empty())
+            return false;
+
+        bool dense = false;
+        if constexpr (sizeof(Key) <= sizeof(UInt64))
+        {
+            if (keys.size() > max_keys_of_small_set)
+            {
+                /// The range of the keys as unsigned and as signed numbers, so that a range around zero is also dense.
+                using Signed = std::make_signed_t<Key>;
+                Key min = keys[0];
+                Key max = keys[0];
+                Key signed_min = keys[0];
+                Key signed_max = keys[0];
+                for (const Key key : keys)
+                {
+                    min = std::min(min, key);
+                    max = std::max(max, key);
+                    signed_min = static_cast<Signed>(key) < static_cast<Signed>(signed_min) ? key : signed_min;
+                    signed_max = static_cast<Signed>(key) > static_cast<Signed>(signed_max) ? key : signed_max;
+                }
+                const UInt64 range = std::min<UInt64>(max - min, static_cast<Key>(signed_max - signed_min));
+                dense = range / max_range_per_key < keys.size();
+            }
+        }
+        size_t bits = 4;
+        while ((1ULL << bits) < minSlots(keys.size()))
+            ++bits;
+
+        /// Placing the keys rarely fails. Then other hash functions are tried, and after a few failures
+        /// a larger table.
+        UInt64 random_state = keys.size();
+        for (size_t attempt = 0; attempt < 16; ++attempt)
+        {
+            if (attempt > 0 && attempt % 4 == 0)
+                ++bits;
+            if ((1ULL << bits) * sizeof(Key) > byte_limit)
+                break;
+            for (size_t i = 0; i < 4; ++i)
+            {
+                multipliers1[i] = splitMix64(random_state) | 1;
+                multipliers2[i] = splitMix64(random_state) | 1;
+            }
+            ++attempts;
+            /// Only the first attempt uses the multiply-shift hashes, unless the keys are dense (see the comment of the class).
+            mixed_hash = attempt > 0 || dense;
+            if (mixed_hash ? tryPlaceKeys<true>(keys, bits) : tryPlaceKeys<false>(keys, bits))
+                return true;
+        }
+        getSlots<Key>().clear();
+        return false;
+    }
+
+    template <bool mixed, typename Key>
+    bool tryPlaceKeys(const std::vector<Key> & keys, size_t bits)
+    {
+        shift = 64 - bits;
+        mask = (1ULL << bits) - 1;
+        const size_t num_slots = 1ULL << bits;
+        auto & slots = getSlots<Key>();
+        /// The slots that get no key keep this copy of a key of the set.
+        slots.assign(num_slots, keys[0]);
+        PODArray<UInt8> occupied(num_slots, 0);
+
+        /// A key that is moved out of a slot goes to its other slot. The number of moves is limited,
+        /// because they would never end if more than two keys had the same two slots.
+        static constexpr size_t max_moves = 100;
+        /// The first slot of a key a few keys ahead is loaded into the cache meanwhile: a large table does not fit in it.
+        static constexpr size_t prefetch_distance = 16;
+        const size_t num_keys = keys.size();
+        for (size_t i = 0; i < num_keys; ++i)
+        {
+            if (i + prefetch_distance < num_keys)
+            {
+                const size_t ahead = places<mixed>(keys[i + prefetch_distance]).first;
+                __builtin_prefetch(&occupied[ahead], 1);
+                __builtin_prefetch(&slots[ahead], 1);
+            }
+
+            Key key = keys[i];
+            size_t current = places<mixed>(key).first;
+            for (size_t moves = 0;; ++moves)
+            {
+                if (!occupied[current])
+                {
+                    occupied[current] = 1;
+                    slots[current] = key;
+                    break;
+                }
+                if (moves == max_moves)
+                    return false;
+                std::swap(key, slots[current]);
+                const auto [first, second] = places<mixed>(key);
+                current = current == first ? second : first;
+            }
+        }
+
+        return true;
+    }
+
+    template <bool mixed, typename Key>
+    void findNumbers(const char * values, size_t rows, UInt8 * res) const
+    {
+        const Key * slots = getSlots<Key>().data();
+        const UInt64 m1 = multipliers1[0];
+        [[maybe_unused]] const UInt64 m2 = multipliers2[0];
+        const size_t s = shift;
+        [[maybe_unused]] const UInt64 m = mask;
+        /// The same as `places`, with the members in registers.
+        auto places_of = [&](Key v) -> std::pair<size_t, size_t>
+        {
+            if constexpr (mixed)
+            {
+                const UInt64 hash = intHashCRC32(static_cast<UInt64>(v));
+                return {(hash * m1) >> s, (hash * m2) >> s};
+            }
+            else
+                return {(static_cast<UInt64>(v) * m1) >> s, (static_cast<UInt64>(v) * m2) >> s};
+        };
+
+        /// Unrolled, so that the loads of the slots for several rows are issued together.
+        size_t i = 0;
+        for (; i + 4 <= rows; i += 4)
+        {
+            const Key v0 = unalignedLoad<Key>(values + (i + 0) * sizeof(Key));
+            const Key v1 = unalignedLoad<Key>(values + (i + 1) * sizeof(Key));
+            const Key v2 = unalignedLoad<Key>(values + (i + 2) * sizeof(Key));
+            const Key v3 = unalignedLoad<Key>(values + (i + 3) * sizeof(Key));
+            const auto [p0, q0] = places_of(v0);
+            const auto [p1, q1] = places_of(v1);
+            const auto [p2, q2] = places_of(v2);
+            const auto [p3, q3] = places_of(v3);
+            const Key a0 = slots[p0];
+            const Key a1 = slots[p1];
+            const Key a2 = slots[p2];
+            const Key a3 = slots[p3];
+            const Key b0 = slots[q0];
+            const Key b1 = slots[q1];
+            const Key b2 = slots[q2];
+            const Key b3 = slots[q3];
+            res[i + 0] = static_cast<UInt8>((a0 == v0) | (b0 == v0));
+            res[i + 1] = static_cast<UInt8>((a1 == v1) | (b1 == v1));
+            res[i + 2] = static_cast<UInt8>((a2 == v2) | (b2 == v2));
+            res[i + 3] = static_cast<UInt8>((a3 == v3) | (b3 == v3));
+        }
+
+        for (; i < rows; ++i)
+            res[i] = contains<mixed, Key>(unalignedLoad<Key>(values + i * sizeof(Key)));
+    }
+};
 
 Set::Set(const SizeLimits & limits_, size_t max_elements_to_fill_, bool transform_null_in_)
     :  limits(limits_), transform_null_in(transform_null_in_), max_elements_to_fill(max_elements_to_fill_)
@@ -89,7 +567,54 @@ void Set::finishInsert()
         is_truncated = disk_set_builder->isTruncated();
         disk_set_builder.reset();
     }
+    else if (data && !cuckoo_lookup)
+    {
+        /// Building the table costs about as much as probing the hash table with a few rows per key, so it is
+        /// built only after that many lookups.
+        const size_t num_keys = data->getTotalRowCount();
+        using Type = SetVariants::Type;
+        const bool has_suitable_key = data->type == Type::key32 || data->type == Type::key64 || data->type == Type::key_string
+            || data->type == Type::keys32 || data->type == Type::keys64 || data->type == Type::keys128 || data->type == Type::keys256
+            || data->type == Type::nullable_keys128 || data->type == Type::nullable_keys256;
+        rows_before_cuckoo_lookup = has_suitable_key && num_keys > 0 && CuckooLookup::minSlots(num_keys) <= CuckooLookup::max_slots
+            ? static_cast<Int64>((num_keys <= CuckooLookup::max_keys_of_small_set ? rows_per_key_before_cuckoo_lookup : 4) * num_keys)
+            : -1;
+    }
     is_created = true;
+}
+
+std::unique_ptr<Set::CuckooLookup> Set::createCuckooLookup() const
+{
+    const size_t num_keys = data->getTotalRowCount();
+
+    /// The table takes memory besides the hash table, so it is built only if it is small compared to the memory
+    /// the query can still use and to the memory at which the set spills.
+    size_t byte_limit = CuckooLookup::max_bytes;
+    if (const auto available = getCurrentQueryAvailableMemory())
+        byte_limit = std::min<size_t>(byte_limit, *available / 8);
+    if (const size_t threshold = spill_settings.max_bytes_before_external_set)
+    {
+        const size_t used = static_cast<size_t>(std::max<Int64>(0, getCurrentQueryMemoryUsage()));
+        byte_limit = std::min(byte_limit, (threshold - std::min(threshold, used)) / 8);
+    }
+
+    Stopwatch watch;
+    size_t attempts = 0;
+    std::unique_ptr<CuckooLookup> lookup;
+    try
+    {
+        lookup = data->callOnMethod([&](const auto & method) { return CuckooLookup::tryCreate(method, num_keys, byte_limit, attempts); });
+    }
+    catch (const Exception & e)
+    {
+        /// The table only makes the lookups faster, so the query continues without it.
+        if (e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
+            throw;
+        return nullptr;
+    }
+    LOG_TRACE(log, "{} the lookup table for {} keys: {} placements tried, {} bytes, {:.3f} ms",
+        lookup ? "Built" : "Did not build", num_keys, attempts, lookup ? lookup->allocatedBytes() : 0, watch.elapsedSeconds() * 1000);
+    return lookup;
 }
 
 ProcessorMemoryStats Set::getMemoryStatsUnlocked() const
@@ -99,7 +624,7 @@ ProcessorMemoryStats Set::getMemoryStatsUnlocked() const
         return {};
 
     ProcessorMemoryStats stats;
-    stats.spillable_memory_bytes = data->getTotalByteCount();
+    stats.spillable_memory_bytes = data->getTotalByteCount() + (cuckoo_lookup ? cuckoo_lookup->allocatedBytes() : 0);
     stats.need_reserved_memory_bytes = estimateMemoryToSpill(/*requested=*/ true);
 
     /// A built set writes its disk set while lookups keep reading the table, so the directory and the Bloom
@@ -250,6 +775,9 @@ size_t Set::spillAfterBuild(std::string_view reason, bool requested) const
         compute_disk_set_keys = new_compute_disk_set_keys;
         disk_set = std::move(new_disk_set);
         table = std::move(data);
+        cuckoo_lookup.reset();
+        rows_before_cuckoo_lookup = -1;
+        ++keys_version;
     }
     ProfileEvents::increment(ProfileEvents::SetsSpilledToDisk);
     return bytes;
@@ -518,6 +1046,11 @@ bool Set::insertFromColumnsImpl(const Columns & columns, SetKeyColumns & holder)
 {
     if (data && data->empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Method Set::setHeader must be called before Set::insertFromBlock");
+
+    /// It would miss the new keys.
+    cuckoo_lookup.reset();
+    rows_before_cuckoo_lookup = -1;
+    ++keys_version;
 
     holder.key_columns.reserve(keys_size);
     holder.materialized_columns.reserve(keys_size);
@@ -910,7 +1443,28 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
         return res;
     }
 
-    data->callOnMethod([&](auto & method) { executeImpl(method, key_columns, vec_res, negative, vec_res.size(), null_map); });
+    std::unique_ptr<CuckooLookup> new_cuckoo_lookup;
+    const UInt64 version_of_keys = keys_version;
+    /// The hash table is not probed for the rows with a NULL key (see `executeImplCase`), but the table below looks up
+    /// every row. So the table is used only if at most half of the rows are NULL (more are, for example, when the values
+    /// of a wider type mostly do not fit into the type of the set), and only the other rows count for building it.
+    const size_t num_null_rows = null_map ? countBytesInFilter(*null_map) : 0;
+    const bool used_cuckoo_lookup = cuckoo_lookup && num_null_rows * 2 <= vec_res.size() && data->callOnMethod([&](const auto & method)
+        { return cuckoo_lookup->execute(method, key_columns, key_sizes, vec_res, negative, null_map); });
+    if (!used_cuckoo_lookup)
+    {
+        data->callOnMethod([&](auto & method) { executeImpl(method, key_columns, vec_res, negative, vec_res.size(), null_map); });
+
+        /// The lookup that probes the last of the rows to wait for builds the table. The keys do not change while
+        /// the shared lock is held, and other lookups continue meanwhile.
+        const Int64 rows = static_cast<Int64>(vec_res.size() - num_null_rows);
+        if (rows > 0 && !cuckoo_lookup && rows_before_cuckoo_lookup.load(std::memory_order_relaxed) > 0)
+        {
+            const Int64 rows_before = rows_before_cuckoo_lookup.fetch_sub(rows, std::memory_order_relaxed);
+            if (rows_before > 0 && rows_before <= rows)
+                new_cuckoo_lookup = createCuckooLookup();
+        }
+    }
 
     /// The set is usually built before the rest of the query takes its memory, so it also spills while it is
     /// used. Spilling takes the lock exclusively, so this lookup releases its shared lock first.
@@ -923,6 +1477,17 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
         lock.unlock();
         spillAfterBuild(reason);
     }
+
+    if (new_cuckoo_lookup)
+    {
+        if (lock.owns_lock())
+            lock.unlock();
+        std::lock_guard exclusive_lock(rwlock);
+        /// Unless the set has spilled or changed meanwhile.
+        if (keys_version == version_of_keys && data && !disk_set && !cuckoo_lookup)
+            cuckoo_lookup = std::move(new_cuckoo_lookup);
+    }
+
     return res;
 }
 
