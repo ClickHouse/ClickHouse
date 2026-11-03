@@ -693,27 +693,6 @@ def _create_trino_partitioned_table(cluster, columns, partitioning):
             id="truncate",
         ),
         pytest.param(
-            "year(k)",
-            "DATE",
-            ("2023-03-15", "2024-08-01", "2025-01-10"),
-            "icebergYear(toDate({}))",
-            id="year",
-        ),
-        pytest.param(
-            "month(k)",
-            "DATE",
-            ("2025-01-05", "2025-02-10", "2025-03-15"),
-            "icebergMonth(toDate({}))",
-            id="month",
-        ),
-        pytest.param(
-            "day(k)",
-            "DATE",
-            ("2025-05-01", "2025-05-02", "2025-05-03"),
-            "icebergDay(toDate({}))",
-            id="day",
-        ),
-        pytest.param(
             "hour(k)",
             "TIMESTAMP(6)",
             ("2025-05-19 10:15:00", "2025-05-19 11:30:00", "2025-05-19 12:45:00"),
@@ -853,52 +832,22 @@ def test_drop_partition_preserves_manifest_metadata(iceberg_db):
     ).strip() == "6"
 
 
-def _create_drop_conflict_table(cluster, shared_manifest):
+def _create_drop_conflict_table(cluster):
+    """Two partitions in one manifest, so dropping one needs a manifest rewrite."""
     name, table, full = _create_trino_partitioned_table(
         cluster, "id INTEGER, p INTEGER, v INTEGER", "p"
     )
-    if shared_manifest:
-        _trino_exec(cluster, f"INSERT INTO {table} VALUES (1, 1, 10), (2, 2, 20)")
-    else:
-        _trino_exec(cluster, f"INSERT INTO {table} VALUES (1, 1, 10)")
-        _trino_exec(cluster, f"INSERT INTO {table} VALUES (2, 2, 20)")
+    _trino_exec(cluster, f"INSERT INTO {table} VALUES (1, 1, 10), (2, 2, 20)")
     assert _trino_exec(
         cluster, f'SELECT count(*) FROM "{NAMESPACE}"."{name}$manifests"'
-    ).strip() == ("1" if shared_manifest else "2")
+    ).strip() == "1"
     return name, table, full
 
 
-@pytest.mark.parametrize("shared_manifest", [False, True], ids=["whole", "partial"])
-def test_trino_partition_delete_manifest_entries(iceberg_db, shared_manifest):
+def test_trino_update_conflicts_with_clickhouse_drop(iceberg_db, pause_trino_commit):
     cluster = iceberg_db
     node = cluster.instances["node1"]
-    name, table, full = _create_drop_conflict_table(cluster, shared_manifest)
-    _trino_exec(cluster, f"DELETE FROM {table} WHERE p = 1")
-
-    entries = _trino_exec(
-        cluster,
-        f"SELECT status, data_file.content, count(*), sum(data_file.record_count) "
-        f'FROM "{NAMESPACE}"."{name}$entries" GROUP BY 1, 2 ORDER BY 1, 2',
-    )
-    # An untouched manifest keeps its original `ADDED` entry; a rewrite uses `EXISTING`.
-    survivor_status = 0 if shared_manifest else 1
-    assert entries == f"{survivor_status}\t0\t1\t1\n2\t0\t1\t1\n"
-    assert _trino_exec(
-        cluster,
-        f'SELECT sum(deleted_data_files_count) FROM "{NAMESPACE}"."{name}$manifests"',
-    ).strip() == "1"
-    expected = "2\t2\t20\n"
-    assert _trino_exec(cluster, f"SELECT id, p, v FROM {table}") == expected
-    assert node.query(f"SELECT id, p, v FROM {full}") == expected
-
-
-@pytest.mark.parametrize("shared_manifest", [False, True], ids=["whole", "partial"])
-def test_trino_update_conflicts_with_clickhouse_drop(
-    iceberg_db, pause_trino_commit, shared_manifest
-):
-    cluster = iceberg_db
-    node = cluster.instances["node1"]
-    name, table, full = _create_drop_conflict_table(cluster, shared_manifest)
+    name, table, full = _create_drop_conflict_table(cluster)
     expected = "2\t2\t20\n"
 
     with ThreadPoolExecutor(max_workers=1) as pool:

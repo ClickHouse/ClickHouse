@@ -918,6 +918,16 @@ ManifestListEntryCounts rewriteManifestForDelete(
     const auto avro_metadata = reader_base->metadata();
     avro::DataFileReader<avro::GenericDatum> reader(std::move(reader_base));
 
+    avro::GenericDatum datum(reader.dataSchema());
+    /// A v2 table can still reference v1 manifests left over from an external v1-to-v2 upgrade. Their entries
+    /// have no sequence number fields, so the rewritten entries could not keep the original lineage.
+    if (!datum.value<avro::GenericRecord>().hasField(f_sequence_number))
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "DROP PARTITION cannot rewrite manifest '{}' written in Iceberg format-version 1, "
+            "because its entries do not carry sequence numbers",
+            source.manifest_file_path.serialize());
+
     avro::DataFileWriter<avro::GenericDatum> writer(std::make_unique<OutputStreamWriteBufferAdapter>(output), reader.dataSchema());
     /// Preserve the original schema, including Iceberg field IDs, and all manifest metadata.
     /// The new container uses the writer's default codec, independently of the source codec.
@@ -928,7 +938,6 @@ ManifestListEntryCounts rewriteManifestForDelete(
     ManifestListEntryCounts counts;
     counts.min_sequence_number = sequence_number;
     counts.partition_summaries = source.partition_summaries;
-    avro::GenericDatum datum(reader.dataSchema());
     for (Int64 row_number = 0; reader.read(datum); ++row_number)
     {
         auto & entry = datum.value<avro::GenericRecord>();
