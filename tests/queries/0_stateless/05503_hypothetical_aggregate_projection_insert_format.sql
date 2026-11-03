@@ -1,5 +1,6 @@
 -- an insert chooses the format of a projection part from the block that it calculates, where the states have no memory of their own
 -- one twin table has the projection from the start, the other one adds and materializes it after the insert
+-- an insert with smaller blocks of the aggregation copies the states into memory of their own, the part does not record its settings
 
 SET optimize_use_projections = 1, optimize_use_implicit_projections = 0, prefer_optimize_projection = 0, force_optimize_projection = 0,
     enable_parallel_replicas = 0, optimize_aggregation_in_order = 0;

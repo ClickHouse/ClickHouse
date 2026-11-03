@@ -109,7 +109,7 @@ struct ProjectionPartData
     /// for a merged wide part under a constant granularity: the fewest and the most bytes that its merged parts can store for a row
     size_t stored_row_bytes_least = 0;
     size_t stored_row_bytes_most = 0;
-    /// for a merged part: the merge can choose the other part format too, because the part does not record the parts it merged
+    /// the writer can choose the other part format too: the part records neither the parts of a merge nor the settings of an insert
     bool both_formats = false;
     /// for a merged wide part under a constant granularity: the most marks of its layouts, if a granule size between them has no layout
     size_t marks_between_layouts = 0;
@@ -336,6 +336,30 @@ Pipe makePartPipe(
     }
 
     return pipe;
+}
+
+/// the bytes of a calculated block with its states in memory of the aggregation, and with its states in memory of their own
+/// an insert keeps the memory of the aggregation for one block, and copies the states for more blocks, see `ProjectionDataSink`
+std::pair<size_t, size_t> calculatedBlockBytes(const Block & block)
+{
+    size_t shared = 0;
+    size_t owned = 0;
+    for (const auto & elem : block)
+    {
+        const auto * states = typeid_cast<const ColumnAggregateFunction *>(elem.column.get());
+        if (!states)
+        {
+            shared += elem.column->byteSize();
+            owned += elem.column->byteSize();
+            continue;
+        }
+        auto copy = states->cloneEmpty();
+        copy->insertRangeFrom(*states, 0, states->size());
+        copy->ensureOwnership();
+        shared += states->size() * sizeof(AggregateDataPtr);
+        owned += copy->byteSize();
+    }
+    return {shared, owned};
 }
 
 /// one row for each group, with the merged states, as in a merged aggregate projection part
@@ -571,6 +595,11 @@ String buildProjectionPart(
             add(*out.materialized, materialized_keys, mergeGroups({mutation_projected}), true);
             finish(*out.materialized, materialized_keys);
             out.materialized->format_bytes = mutation_projected.bytes();
+            /// the part does not record the settings of its insert, so the format of each block of the insert is possible
+            const auto & merge_tree = read_step->getMergeTreeData();
+            const auto [shared_bytes, owned_bytes] = calculatedBlockBytes(merged);
+            out.both_formats = merge_tree.choosePartFormat(shared_bytes, merged.rows(), part->info.level, &projection).part_type
+                != merge_tree.choosePartFormat(owned_bytes, merged.rows(), part->info.level, &projection).part_type;
         }
         add(out, key_columns, std::move(merged), merged_part);
     }
