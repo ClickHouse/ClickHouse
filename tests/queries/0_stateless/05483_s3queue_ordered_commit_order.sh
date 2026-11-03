@@ -61,6 +61,12 @@ function run_arm()
             CREATE MATERIALIZED VIEW ${CLICKHOUSE_DATABASE}.mv_${arm}2 TO ${CLICKHOUSE_DATABASE}.dst_${arm}
             AS SELECT id FROM ${CLICKHOUSE_DATABASE}.queue_${arm}2 ${filter};
         "
+        # Runs of the second server that both start and end in this window, while files are still left.
+        local started busy_until files_left
+        started=$($CLICKHOUSE_CLIENT -q "SELECT toUnixTimestamp64Micro(now64(6))")
+        wait_processed "$keeper_path" 12
+        busy_until=$($CLICKHOUSE_CLIENT -q "SELECT toUnixTimestamp64Micro(now64(6))")
+        files_left=$($CLICKHOUSE_CLIENT -q "SELECT count() < 20 FROM system.s3queue_metadata_cache WHERE zookeeper_path = '${keeper_path}' AND status = 'Processed'")
     fi
 
     local left_query="SELECT count(DISTINCT _path) FROM s3(s3_conn, url = 'http://localhost:11111/${s3_path}/*.csv', format = CSV, structure = 'id UInt64') SETTINGS use_cache_for_count_from_files = 0"
@@ -82,6 +88,16 @@ function run_arm()
         echo "${arm} objects left: $($CLICKHOUSE_CLIENT -q "$left_query")"
     fi
 
+    if [ -n "$second_server" ]; then
+        $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS background_schedule_pool_log"
+        $CLICKHOUSE_CLIENT -q "
+            SELECT '${arm} second server polls while the first one is busy', ${files_left}, count() > 0
+            FROM system.background_schedule_pool_log
+            WHERE database = currentDatabase() AND table = 'queue_${arm}2'
+                AND toUnixTimestamp64Micro(event_time_microseconds) - duration_ms * 1000 > ${started}
+                AND toUnixTimestamp64Micro(event_time_microseconds) < ${busy_until}"
+    fi
+
     $CLICKHOUSE_CLIENT -q "
         DROP TABLE ${CLICKHOUSE_DATABASE}.mv_${arm};
         DROP TABLE ${CLICKHOUSE_DATABASE}.queue_${arm} SYNC;
@@ -100,5 +116,3 @@ run_arm C "parallel_inserts = 1, processing_threads_num = 4, buckets = 1, after_
 # The second server can claim nothing while the first one holds both buckets: it must wait for the next poll,
 # not run empty INSERTs in a loop until the buckets are released.
 run_arm D "processing_threads_num = 2, buckets = 2, max_processed_files_before_commit = 1, after_processing = 'keep'" "WHERE sleepEachRow(0.1) = 0" 1
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS background_schedule_pool_log"
-$CLICKHOUSE_CLIENT -q "SELECT 'D second server polls, long tasks', count() > 1, countIf(duration_ms >= 3000) FROM system.background_schedule_pool_log WHERE database = currentDatabase() AND table = 'queue_D2'"
