@@ -1487,6 +1487,23 @@ void addShuffleStep(QueryPlan & query_plan,
     query_plan.addStep(std::move(shuffle_step));
 }
 
+/// On a shard, `addShuffleStep` appends the internal key column of `SHUFFLE`, by which the initiator merges the streams
+/// of the shards. The expression analysis does not know about this column, so keep it in the output of `actions`
+/// that are applied after the shuffle (for example, before `LIMIT BY`).
+void preserveShuffleKeyColumn(ActionsDAG & actions, const QueryPlan & query_plan)
+{
+    const auto * key_column = query_plan.getCurrentHeader()->findByName(String(ShuffleStep::internal_key_column_name));
+    if (!key_column)
+        return;
+
+    for (const auto * output : actions.getOutputs())
+        if (output->result_name == key_column->name)
+            return;
+
+    const auto & input = actions.addInput(key_column->name, key_column->type);
+    actions.getOutputs().push_back(&input);
+}
+
 template<size_t size>
 ALWAYS_INLINE void addMergeSortingStep(QueryPlan & query_plan,
     const QueryAnalysisResult & query_analysis_result,
@@ -1957,6 +1974,7 @@ void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(
     if (expressions_analysis_result.hasLimitBy())
     {
         auto & limit_by_analysis_result = expressions_analysis_result.getLimitBy();
+        preserveShuffleKeyColumn(limit_by_analysis_result.before_limit_by_actions->dag, query_plan);
         addExpressionStep(
             planner_context,
             query_plan,
@@ -3522,6 +3540,7 @@ void Planner::buildPlanForQueryNode()
             && (!distinct_shuffle || finalize_distinct_shuffle) && expression_analysis_result.hasLimitBy())
         {
             auto & limit_by_analysis_result = expression_analysis_result.getLimitBy();
+            preserveShuffleKeyColumn(limit_by_analysis_result.before_limit_by_actions->dag, query_plan);
             addExpressionStep(
                 planner_context,
                 query_plan,
