@@ -476,6 +476,8 @@ String buildProjectionPart(
     {
         mutation_context = Context::createCopy(read_step->getMergeTreeData().getContext()->getBackgroundContext());
         mutation_context->makeQueryContext();
+        /// `KILL QUERY` and the time limit of the query stop this calculation too
+        mutation_context->setProcessListElement(context->getProcessListElement());
         /// the group limit of the query bounds this calculation too, the estimate is unsupported past it
         if (max_groups)
         {
