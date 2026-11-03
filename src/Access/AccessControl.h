@@ -225,6 +225,15 @@ public:
     void setReadonlyRestrictsSetRole(bool enable) { readonly_restricts_set_role = enable; }
     bool doesReadonlyRestrictSetRole() const { return readonly_restricts_set_role; }
 
+    /// Forbid SQL-created quotas/row policies/masking policies/settings profiles from targeting users.xml users.
+    void setForbidSQLAccessEntitiesTargetingUsersConfig(bool enable) { forbid_sql_access_entities_targeting_users_config = enable; }
+    bool doesForbidSQLAccessEntitiesTargetingUsersConfig() const { return forbid_sql_access_entities_targeting_users_config; }
+
+    bool isEntityFromUsersConfig(const UUID & id) const;
+
+    /// True when a SQL-created access entity is about to be applied to a users.xml user and the setting is on.
+    bool shouldSkipSQLAccessEntityForUser(const UUID & policy_id, const UUID & user_id) const;
+
     std::shared_ptr<const ContextAccess> getContextAccess(const ContextAccessParams & params) const;
 
     std::shared_ptr<const EnabledRoles> getEnabledRoles(
@@ -349,6 +358,7 @@ private:
     std::atomic_bool settings_constraints_replace_previous = false;
     std::atomic_bool table_engines_require_grant = false;
     std::atomic_bool throw_on_invalid_replicated_access_entities = false;
+    std::atomic_bool forbid_sql_access_entities_targeting_users_config = false;
     std::atomic_int bcrypt_workfactor = 12;
     std::atomic<AuthenticationType> default_password_type = AuthenticationType::SHA256_PASSWORD;
     std::atomic_bool allow_experimental_tier_settings = true;

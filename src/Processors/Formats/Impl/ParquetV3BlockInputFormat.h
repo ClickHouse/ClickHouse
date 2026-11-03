@@ -35,6 +35,8 @@ struct ParquetBucketSplitter : public IBucketSplitter
     std::vector<FileBucketInfoPtr> splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_) override;
 };
 
+class KeyCondition;
+
 class ParquetV3BlockInputFormat final : public IInputFormat
 {
 public:
@@ -46,7 +48,8 @@ public:
         FormatFilterInfoPtr format_filter_info_,
         size_t min_bytes_for_seek,
         ParquetMetadataCachePtr metadata_cache_ = nullptr,
-        const std::optional<RelativePathWithMetadata> & object_with_metadata_ = std::nullopt);
+        const std::optional<RelativePathWithMetadata> & object_with_metadata_ = std::nullopt,
+        bool is_remote_fs_ = false);
 
     void resetParser() override;
 
@@ -68,8 +71,15 @@ public:
     bool isTopKFilterApplied() const override;
     bool isMinMaxFromStatisticsApplied() const override { return min_max_from_statistics; }
 
+    void cacheFilterColumnStatistics() override;
+
+    /// Use the columns cache, see `Parquet::ColumnsCacheOptions`. Must be called before the first read.
+    void setColumnsCacheOptions(std::shared_ptr<const Parquet::ColumnsCacheOptions> options) { read_options.columns_cache = std::move(options); }
+
 private:
     Chunk read() override;
+
+    void prefetch() override;
 
     void onCancel() noexcept override;
 
@@ -80,12 +90,17 @@ private:
     ParquetMetadataCachePtr metadata_cache;
     const std::optional<RelativePathWithMetadata> object_with_metadata;
 
-    /// (This mutex is not important. It protects `reader.emplace` in a weird case where onCancel()
+    /// (This mutex is not important. It protects setting `reader` in a weird case where onCancel()
     ///  may be called in parallel with first read(). ReadManager itself is thread safe for that,
-    ///  but initializing vs checking the std::optional would race without this mutex.)
+    ///  but initializing vs checking the pointer would race without this mutex.)
     std::mutex reader_mutex;
 
-    std::optional<Parquet::ReadManager> reader;
+    std::unique_ptr<Parquet::ReadManager> reader;
+    /// Has the file footer, but is not initialized: initializing it starts reading and decoding the column chunks.
+    std::unique_ptr<Parquet::ReadManager> reader_with_footer;
+    std::optional<ParquetMetadataCacheKey> footer_cache_key;
+    ParquetMetadataCache::MappedPtr footer_cache_cell;
+    bool footer_cache_hit = false;
     bool reported_count = false; // if need_only_count
 
     /// The rows were replaced by min / max from column chunk statistics; no row groups were read.
@@ -94,10 +109,43 @@ private:
     BlockMissingValues previous_block_missing_values;
     size_t previous_approx_bytes_read_for_chunk = 0;
 
+    void readFileFooterIfNeeded();
     void initializeIfNeeded();
     std::shared_ptr<ParquetFileBucketInfo> buckets_to_read;
 
-    parquet::format::FileMetaData getFileMetadata(Parquet::Prefetcher & prefetcher) const;
+    /// nullopt if the metadata cache is not used.
+    std::optional<ParquetMetadataCacheKey> getMetadataCacheKey() const;
+    std::shared_ptr<const Parquet::FileFooter> readFileFooter(Parquet::Prefetcher & prefetcher) const;
+    /// For count(), which needs no column chunks.
+    std::shared_ptr<const Parquet::FileFooter> getFileFooter(Parquet::Prefetcher & prefetcher) const;
+
+    /// Only a cell found in the cache keeps statistics: counting them moves the cell, which only a hit may do.
+    ParquetMetadataCache::MappedPtr metadata_cache_cell;
+    std::optional<ParquetMetadataCacheKey> metadata_cache_key;
+};
+
+/// Skips a file version, without opening it, if the kept statistics show that the reader would prune every row group.
+struct ParquetCachedStatisticsFilter
+{
+    /// nullptr if no file can be skipped with this filter and header.
+    static std::shared_ptr<const ParquetCachedStatisticsFilter> create(
+        const FormatFilterInfoPtr & format_filter_info, const Block & header, const FormatSettings & format_settings);
+
+    /// If the kept ranges exclude every row group of the file version, the number of row groups of the file.
+    std::optional<size_t> canSkipFile(ParquetMetadataCache & metadata_cache, const String & path, const String & version) const;
+
+    /// Counts a skipped file as the reader would have counted it.
+    static void countSkippedFile(size_t num_row_groups);
+
+    /// Identifies the statistics ranges of a column in a cache cell: the column and the settings that change how
+    /// the reader finds it in the file and converts its statistics.
+    static String makeColumnKey(const String & column_name, const IDataType & type, const FormatSettings & format_settings);
+
+private:
+    std::shared_ptr<const KeyCondition> key_condition;
+    /// Positions are in the header followed by `FormatFilterInfo::additional_columns`, as `key_condition` was built for.
+    std::vector<std::pair<size_t, String>> column_keys;
+    DataTypes key_types;
 };
 
 class NativeParquetSchemaReader final : public ISchemaReader
@@ -112,7 +160,7 @@ private:
     void initializeIfNeeded();
 
     Parquet::ReadOptions read_options;
-    parquet::format::FileMetaData file_metadata;
+    std::shared_ptr<const Parquet::FileFooter> file_footer;
     bool initialized = false;
 };
 

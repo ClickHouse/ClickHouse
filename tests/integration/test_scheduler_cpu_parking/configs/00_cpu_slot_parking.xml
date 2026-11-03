@@ -1,0 +1,6 @@
+<clickhouse>
+    <cpu_slot_preemption>true</cpu_slot_preemption>
+    <cpu_slot_quantum_ns>10000000</cpu_slot_quantum_ns>
+    <cpu_slot_preemption_timeout_ms>1000</cpu_slot_preemption_timeout_ms>
+    <cpu_slot_parking>true</cpu_slot_parking>
+</clickhouse>

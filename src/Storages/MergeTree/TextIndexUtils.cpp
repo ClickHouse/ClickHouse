@@ -410,23 +410,10 @@ void MergeTextIndexesTask::PositionsMerge::start()
         if (info.cardinality == 0)
             continue;
 
-        if (!(info.header & PostingsSerialization::Flags::HasPositions))
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data in text index: a source of a token with positions has no positions");
-
         auto * stream = task.input_streams[sources[i].source_num].at(MergeTreeIndexSubstream::Type::TextIndexPositions);
         auto * data_buffer = stream->getDataBuffer();
 
-        /// Checked before seeking: an offset outside the stream would leave the buffer out of range.
-        const size_t file_size = stream->getFileSize();
-        if ((info.position_bytes == 0)
-            || (info.position_offset > file_size)
-            || (info.position_bytes > file_size - info.position_offset))
-        {
-            throw Exception(ErrorCodes::CORRUPTED_DATA,
-                "Corrupt text index positions: blob of {} bytes at offset {} is outside the {}-byte stream",
-                info.position_bytes, info.position_offset, file_size);
-        }
-
+        validateTokenPositions(info, stream->getFileSize());
         stream->seekToMark({info.position_offset, 0});
         reader.directory = TextIndexBlockedPositionsCodec::readDirectory(*data_buffer, info.position_offset, info.cardinality, info.position_bytes);
         reader.in = data_buffer;

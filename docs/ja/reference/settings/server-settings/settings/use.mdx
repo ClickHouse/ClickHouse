@@ -12,45 +12,18 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 これらの設定はClickHouseサーバーの設定項目であり、ClickHouseのソースコードから自動生成されています。
 
-<div id="use_minimalistic_part_header_in_zookeeper">
-  ## use_minimalistic_part_header_in_zookeeper
-</div>
+## use_minimalistic_part_header_in_zookeeper {#use_minimalistic_part_header_in_zookeeper}
 
-ZooKeeper におけるデータパーツヘッダーの保存方法です。この設定は [`MergeTree`](/ja/reference/engines/table-engines/mergetree-family/index) ファミリーにのみ適用されます。指定方法は次のとおりです。
+廃止された設定であり、何の効果もありません。[Replicated](/ja/reference/engines/table-engines/mergetree-family/replication) テーブルは、常に単一の `znode` を使ってデータパーツのヘッダーをコンパクトに保存します。古いバージョンで書き込まれた、`columns` と `checksums` の子 `znodes` に分かれた形式のパーツヘッダーも、引き続き読み取れます。
 
-**`config.xml` ファイルの [merge&#95;tree](/ja/reference/settings/server-settings/settings/merge#merge_tree) セクションでグローバルに指定する**
-
-ClickHouse はこの設定をサーバー上のすべてのテーブルに適用します。この設定はいつでも変更できます。既存のテーブルの動作も、設定の変更に応じて変わります。
-
-**テーブルごとに指定する**
-
-テーブル作成時に、対応する[エンジン設定](/ja/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table)を指定します。この設定を持つ既存のテーブルの動作は、グローバル設定が変更されても変わりません。
-
-**設定可能な値**
-
-* `0` — 機能は無効です。
-* `1` — 機能は有効です。
-
-[`use_minimalistic_part_header_in_zookeeper = 1`](/ja/reference/settings/server-settings/settings/use#use_minimalistic_part_header_in_zookeeper) の場合、[replicated](/ja/reference/engines/table-engines/mergetree-family/replication) テーブルは、単一の `znode` を使ってデータパーツのヘッダーをコンパクトに保存します。テーブルに多数のカラムがある場合、この保存方法により Zookeeper に保存されるデータ量を大幅に削減できます。
-
-<Note>
-  `use_minimalistic_part_header_in_zookeeper = 1` を適用すると、この設定をサポートしていないバージョンへ ClickHouseサーバー をダウングレードできなくなります。クラスター内のサーバーで ClickHouse をアップグレードする際は注意してください。すべてのサーバーを一度にアップグレードしないでください。新しいバージョンの ClickHouse は、テスト環境またはクラスター内の少数のサーバーでまず検証するほうが安全です。
-
-  この設定で保存済みのデータパーツヘッダーは、以前の (コンパクトでない) 形式には戻せません。
-</Note>
-
-<div id="use_separate_cache_arena">
-  ## use_separate_cache_arena
-</div>
+## use_separate_cache_arena {#use_separate_cache_arena}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
 
 cache の割り当て (mark cache、非圧縮 cache、page cache) 専用の jemalloc アリーナを有効にします。
 cache データをクエリ処理時の割り当てから分離し、メモリの断片化を軽減します。
 
-<div id="use_shared_merge_tree_log_pipeline">
-  ## use_shared_merge_tree_log_pipeline
-</div>
+## use_shared_merge_tree_log_pipeline {#use_shared_merge_tree_log_pipeline}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
 
