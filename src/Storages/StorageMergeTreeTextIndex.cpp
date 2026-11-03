@@ -566,7 +566,7 @@ private:
 
         /// FieldRef can reference a column cell by pointer, avoiding string copies.
         /// The sparse index is loaded without a cache here, so tokens are stored as a raw column.
-        ColumnsWithTypeAndName ref_columns = {{index_header.sparse_index.getTokensColumn(), string_type, "token"}};
+        ColumnsWithTypeAndName ref_columns = {{index_header.sparse_index.getTokensColumn(), string_type, ""}};
 
         for (size_t i = 0; i < num_blocks; ++i)
         {

@@ -25,7 +25,7 @@ $CLICKHOUSE_CLIENT -q "
 select * from (select key, value from num_1) l
 inner join (select key, value from num_2) r on l.key = r.key
 order by l.key limit 10 offset 700000
-SETTINGS enable_analyzer=1"
+"
 
 # The assertions below read the query text that was shipped to the replicas, which only the
 # query-based implementation produces; plan-based ships a serialized plan fragment. Pinned so
@@ -41,13 +41,13 @@ $CLICKHOUSE_CLIENT -q "
 select * from (select key, value from num_1) l
 inner join (select key, value from num_2) r on l.key = r.key
 order by l.key limit 10 offset 700000
-SETTINGS enable_analyzer=1, $PARALLEL_REPLICAS_SETTINGS, parallel_replicas_local_plan=0"
+SETTINGS $PARALLEL_REPLICAS_SETTINGS, parallel_replicas_local_plan=0"
 
 $CLICKHOUSE_CLIENT -q "
 select * from (select key, value from num_1) l
 inner join (select key, value from num_2) r on l.key = r.key
 order by l.key limit 10 offset 700000
-SETTINGS enable_analyzer=1, send_logs_level='trace', $PARALLEL_REPLICAS_SETTINGS, parallel_replicas_local_plan=0" 2>&1 |
+SETTINGS send_logs_level='trace', $PARALLEL_REPLICAS_SETTINGS, parallel_replicas_local_plan=0" 2>&1 |
 grep "Executing read from.*with parallel replicas\|<Trace>.*Coordinator.*Coordination done" |
 grep -o "(SELECT.*WithMergeableState\|<Trace>.*Coordinator.*Coordination done" |
 sed -re 's/_data_[[:digit:]]+_[[:digit:]]+/_data_/g' |
@@ -60,13 +60,13 @@ $CLICKHOUSE_CLIENT -q "
 select * from (select key, value from num_1) l
 inner join (select key, value from num_2) r on l.key = r.key
 order by l.key limit 10 offset 700000
-SETTINGS enable_analyzer=1, $PARALLEL_REPLICAS_SETTINGS, parallel_replicas_local_plan=1"
+SETTINGS $PARALLEL_REPLICAS_SETTINGS, parallel_replicas_local_plan=1"
 
 $CLICKHOUSE_CLIENT -q "
 select * from (select key, value from num_1) l
 inner join (select key, value from num_2) r on l.key = r.key
 order by l.key limit 10 offset 700000
-SETTINGS enable_analyzer=1, send_logs_level='trace', $PARALLEL_REPLICAS_SETTINGS, parallel_replicas_local_plan=1" 2>&1 |
+SETTINGS send_logs_level='trace', $PARALLEL_REPLICAS_SETTINGS, parallel_replicas_local_plan=1" 2>&1 |
 grep "Executing read from.*with parallel replicas\|<Trace>.*Coordinator.*Coordination done" |
 grep -o "(SELECT.*WithMergeableState\|<Trace>.*Coordinator.*Coordination done" |
 sed -re 's/_data_[[:digit:]]+_[[:digit:]]+/_data_/g' |

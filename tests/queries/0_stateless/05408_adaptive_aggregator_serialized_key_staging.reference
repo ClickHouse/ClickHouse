@@ -1,0 +1,12 @@
+Dynamic key without aggregates
+matches the baseline	1
+records staged	1
+Dynamic key with a count
+matches the baseline	1
+records staged	1
+Dynamic key with arguments
+matches the baseline	1
+records staged	1
+Wide string and number keys with arguments
+matches the baseline	1
+records staged	1
