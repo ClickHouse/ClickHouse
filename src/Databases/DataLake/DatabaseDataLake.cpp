@@ -22,7 +22,6 @@
 #include <IO/ReadHelpers.h>
 #include <Poco/JSON/Parser.h>
 #include <Poco/JSON/Object.h>
-#include <Poco/URI.h>
 
 
 #if USE_AVRO && USE_PARQUET
@@ -44,6 +43,7 @@
 #include <Storages/ObjectStorage/S3/S3SecretArguments.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/StorageNull.h>
+#include <TableFunctions/ITableFunction.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 #include <Storages/ObjectStorage/StorageObjectStorageDefinitions.h>
@@ -165,28 +165,6 @@ namespace FailPoints
 
 namespace
 {
-
-#if USE_HDFS
-/// Throws `ACCESS_DENIED` unless the session of `context` has `READ ON HDFS` for `uri`, normalized as
-/// `ITableFunction::getFunctionURINormalized` does so that grant filters match alike.
-void checkHDFSReadAccess(const ContextPtr & context, const String & uri)
-{
-    String normalized_uri;
-    try
-    {
-        Poco::URI parsed(uri);
-        parsed.normalize();
-        normalized_uri = parsed.toString();
-    }
-    catch (const Poco::Exception &)
-    {
-        /// An unparsable URI matches only an unfiltered grant.
-        normalized_uri.clear();
-    }
-    context->getAccess()->checkAccessWithFilter(
-        AccessType::READ, toStringSource(AccessTypeObjects::Source::HDFS), normalized_uri);
-}
-#endif
 
 /// In refresh-token mode a single token, minted with `auth_scope`, serves both the OneLake
 /// catalog and Azure storage requests, so the scope must be the Azure storage audience.
@@ -1240,7 +1218,10 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
     {
         /// HDFS is read with the server's own identity, so require the same `READ ON HDFS` grant as `icebergHDFS`,
         /// matched against the same URI: the HDFS authority, without the path.
-        checkHDFSReadAccess(context_, hdfs_configuration->getRawURI());
+        context_->getAccess()->checkAccessWithFilter(
+            AccessType::READ,
+            toStringSource(AccessTypeObjects::Source::HDFS),
+            ITableFunction::normalizeURIForAccessCheck(hdfs_configuration->getRawURI()));
         /// Writes reach HDFS through many entrypoints (`INSERT` and its cluster variant, `ALTER`, `OPTIMIZE`, `DROP`...) and
         /// would use the server's own identity, so rather than authorizing each, catalog tables on HDFS are read-only.
         hdfs_configuration->setReadOnly();

@@ -350,7 +350,7 @@ void HDFSObjectStorage::listObjects(const std::string & path, RelativePathsWithM
 void HDFSObjectStorage::throwIfReadonly() const
 {
     if (settings->read_only)
-        throw Exception(ErrorCodes::READONLY, "HDFS object storage `{}` is readonly", url);
+        throw Exception(ErrorCodes::READONLY, "Cannot write to HDFS `{}`: tables of a DataLakeCatalog database located on HDFS are read-only", url);
 }
 
 void HDFSObjectStorage::copyObject( /// NOLINT
