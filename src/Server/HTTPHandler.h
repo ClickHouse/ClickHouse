@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Access/Common/SQLSecurityDefs.h>
+
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -92,6 +94,14 @@ protected:
     /// Set by SQL-defined handlers so that `currentHandler()` and the query_log can report the handler name.
     void setIntrospectionHandlerName(const String & name_) { introspection_handler_name = name_; }
 
+    /// Set by SQL-defined handlers with SQL SECURITY DEFINER or NONE: the query runs as `definer_` (DEFINER) or with the
+    /// global context (NONE) instead of as the authenticated user.
+    void setSQLSecurity(SQLSecurityType type_, std::optional<String> definer_)
+    {
+        sql_security_type = type_;
+        sql_security_definer = std::move(definer_);
+    }
+
     /// The query text belongs to the server rather than to the HTTP request. Its parsing limits must therefore
     /// not be lowered by request settings.
     void setHasServerOwnedQuery() { has_server_owned_query = true; }
@@ -110,6 +120,9 @@ private:
     String getURIForLogging(const HTTPServerRequest & request) const;
 
     String introspection_handler_name;
+
+    std::optional<SQLSecurityType> sql_security_type;
+    std::optional<String> sql_security_definer;
 
     bool has_server_owned_query = false;
 
@@ -240,6 +253,10 @@ private:
         Output & used_output);
 
     void releaseOrCloseSession(const String & session_id, bool close_session);
+
+    /// The query context of a request to a handler with SQL SECURITY DEFINER or NONE, made from the global context.
+    /// `caller_context` is the query context the authenticated user would get.
+    ContextMutablePtr makeSQLSecurityQueryContext(const ContextPtr & caller_context) const;
 
     static void pushDelayedResults(Output & used_output);
 

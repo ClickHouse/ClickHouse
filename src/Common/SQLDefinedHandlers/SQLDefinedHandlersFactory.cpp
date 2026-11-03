@@ -1,6 +1,7 @@
 #include <Common/SQLDefinedHandlers/SQLDefinedHandlersFactory.h>
 #include <Common/SQLDefinedHandlers/SQLDefinedHandlerFromAST.h>
 
+#include <Access/DefinerDependencies.h>
 #include <Parsers/ASTCreateHandlerQuery.h>
 #include <Parsers/ASTDropHandlerQuery.h>
 #include <Common/Exception.h>
@@ -23,11 +24,6 @@ namespace ErrorCodes
     extern const int AMBIGUOUS_HANDLER;
     extern const int KEEPER_EXCEPTION;
 }
-
-/// How many times a replicated create/alter re-reads the set and retries when another replica changed it
-/// concurrently. Contention is resolved in one or two rounds in practice; the bound only guards against a
-/// pathological live-lock and is large enough never to reject a legitimate write.
-static constexpr size_t max_replicated_write_attempts = 100;
 
 SQLDefinedHandlersFactory & SQLDefinedHandlersFactory::instance()
 {
@@ -57,7 +53,7 @@ bool SQLDefinedHandlersFactory::loadIfNot(std::lock_guard<std::mutex> & lock)
     metadata_storage = SQLDefinedHandlersMetadataStorage::create(context);
 
     loaded_handlers = metadata_storage->getAll();
-    rebuildSnapshot(lock);
+    rebuildSnapshot(lock, /* reconcile_definers */ true);
     /// The snapshot is fully applied: mark its version loaded so the background watch does not immediately
     /// treat it as pending (a no-op for non-replicated storage).
     metadata_storage->commitReload();
@@ -79,9 +75,18 @@ void SQLDefinedHandlersFactory::loadIfNot()
     loadIfNot(lock);
 }
 
-void SQLDefinedHandlersFactory::rebuildSnapshot(std::lock_guard<std::mutex> &)
+void SQLDefinedHandlersFactory::rebuildSnapshot(std::lock_guard<std::mutex> &, bool reconcile_definers)
 {
     snapshot = std::make_shared<const SQLDefinedHandlers>(loaded_handlers);
+
+    if (reconcile_definers)
+    {
+        std::unordered_map<String, String> handler_definers;
+        for (const auto & [name, handler] : loaded_handlers)
+            if (handler->sql_security_type == SQLSecurityType::DEFINER && handler->definer)
+                handler_definers.emplace(name, *handler->definer);
+        DefinerDependencies::instance().setHandlerDefiners(std::move(handler_definers));
+    }
 }
 
 void SQLDefinedHandlersFactory::resyncAfterUncertainWrite(const std::string & handler_name, std::lock_guard<std::mutex> & lock)
@@ -93,7 +98,7 @@ void SQLDefinedHandlersFactory::resyncAfterUncertainWrite(const std::string & ha
     try
     {
         loaded_handlers = metadata_storage->getAll();
-        rebuildSnapshot(lock);
+        rebuildSnapshot(lock, /* reconcile_definers */ true);
         metadata_storage->commitReload();
     }
     catch (...)
@@ -105,7 +110,8 @@ void SQLDefinedHandlersFactory::resyncAfterUncertainWrite(const std::string & ha
             "Could not re-read the handlers after an uncertain write of handler `{}`, dropping it from the local snapshot",
             handler_name));
         loaded_handlers.erase(handler_name);
-        rebuildSnapshot(lock);
+        /// The persistent state of the handler is unknown, so its definer stays registered.
+        rebuildSnapshot(lock, /* reconcile_definers */ false);
     }
 }
 
@@ -222,7 +228,7 @@ void SQLDefinedHandlersFactory::createFromSQL(const ASTCreateHandlerQuery & quer
 
     metadata_storage->store(query.handler_name, handler->create_statement, /* replace */ false);
     loaded_handlers.emplace(query.handler_name, handler);
-    rebuildSnapshot(lock);
+    rebuildSnapshot(lock, /* reconcile_definers */ true);
 }
 
 void SQLDefinedHandlersFactory::createReplicated(const ASTCreateHandlerQuery & query, std::lock_guard<std::mutex> & lock)
@@ -239,7 +245,7 @@ void SQLDefinedHandlersFactory::createReplicated(const ASTCreateHandlerQuery & q
         if (current.contains(query.handler_name))
         {
             loaded_handlers = std::move(current);
-            rebuildSnapshot(lock);
+            rebuildSnapshot(lock, /* reconcile_definers */ true);
             if (query.if_not_exists)
                 return;
             throw Exception(ErrorCodes::HANDLER_ALREADY_EXISTS, "A handler `{}` already exists", query.handler_name);
@@ -260,7 +266,7 @@ void SQLDefinedHandlersFactory::createReplicated(const ASTCreateHandlerQuery & q
         catch (...)
         {
             loaded_handlers = std::move(current);
-            rebuildSnapshot(lock);
+            rebuildSnapshot(lock, /* reconcile_definers */ true);
             throw;
         }
 
@@ -281,7 +287,7 @@ void SQLDefinedHandlersFactory::createReplicated(const ASTCreateHandlerQuery & q
         {
             current.emplace(query.handler_name, handler);
             loaded_handlers = std::move(current);
-            rebuildSnapshot(lock);
+            rebuildSnapshot(lock, /* reconcile_definers */ true);
             return;
         }
         /// The set changed concurrently (root version mismatch, or the same name was just created on
@@ -312,7 +318,7 @@ void SQLDefinedHandlersFactory::removeFromSQL(const ASTDropHandlerQuery & query)
 
     metadata_storage->remove(query.handler_name);
     loaded_handlers.erase(query.handler_name);
-    rebuildSnapshot(lock);
+    rebuildSnapshot(lock, /* reconcile_definers */ true);
     LOG_INFO(log, "Dropped handler `{}`", query.handler_name);
 }
 
@@ -350,7 +356,8 @@ void SQLDefinedHandlersFactory::removeReplicated(const ASTDropHandlerQuery & que
     /// to parse) this replica fail-closes and stops serving a handler the source of truth no longer has, rather
     /// than keeping it until the background watch eventually fires.
     loaded_handlers.erase(query.handler_name);
-    rebuildSnapshot(lock);
+    /// The rest of `loaded_handlers` may be stale here, so the definers are reconciled only by the full re-read below.
+    rebuildSnapshot(lock, /* reconcile_definers */ false);
 
     /// Then rebuild the local snapshot from the now-current persistent state to also pick up any concurrent
     /// changes and re-arm the update watch. This matters in the stale-cache direction too: if this replica
@@ -365,7 +372,7 @@ void SQLDefinedHandlersFactory::removeReplicated(const ASTDropHandlerQuery & que
     try
     {
         loaded_handlers = metadata_storage->getAll();
-        rebuildSnapshot(lock);
+        rebuildSnapshot(lock, /* reconcile_definers */ true);
         metadata_storage->commitReload();
     }
     catch (...)
@@ -381,25 +388,60 @@ void SQLDefinedHandlersFactory::removeReplicated(const ASTDropHandlerQuery & que
         throw Exception(ErrorCodes::HANDLER_DOESNT_EXIST, "Cannot drop handler `{}`, because it doesn't exist", query.handler_name);
 }
 
-void SQLDefinedHandlersFactory::updateFromSQL(const ASTCreateHandlerQuery & alter_query)
+bool SQLDefinedHandlersFactory::prepareCreate(const String & handler_name)
+{
+    std::lock_guard lock(mutex);
+    loadIfNot(lock);
+
+    if (!metadata_storage->isReplicated())
+        return loaded_handlers.contains(handler_name);
+
+    /// The local snapshot may not have received a handler created on another replica yet.
+    Int32 version = 0;
+    loaded_handlers = metadata_storage->getAll(version);
+    rebuildSnapshot(lock, /* reconcile_definers */ true);
+    return loaded_handlers.contains(handler_name);
+}
+
+String SQLDefinedHandlersFactory::prepareAlter(const String & handler_name)
 {
     std::lock_guard lock(mutex);
     loadIfNot(lock);
 
     if (metadata_storage->isReplicated())
     {
-        updateReplicated(alter_query, lock);
-        return;
+        Int32 version = 0;
+        loaded_handlers = metadata_storage->getAll(version);
+        rebuildSnapshot(lock, /* reconcile_definers */ true);
     }
 
-    if (!loaded_handlers.contains(alter_query.handler_name))
+    auto it = loaded_handlers.find(handler_name);
+    if (it == loaded_handlers.end())
+        throw Exception(ErrorCodes::HANDLER_DOESNT_EXIST, "Cannot alter handler `{}`, because it doesn't exist", handler_name);
+    return it->second->create_statement;
+}
+
+bool SQLDefinedHandlersFactory::updateFromSQL(
+    const ASTCreateHandlerQuery & alter_query, const String & expected_base, const ASTCreateHandlerQuery & merged)
+{
+    std::lock_guard lock(mutex);
+    loadIfNot(lock);
+
+    if (metadata_storage->isReplicated())
+        return updateReplicated(alter_query, expected_base, merged, lock);
+
+    auto it = loaded_handlers.find(alter_query.handler_name);
+    if (it == loaded_handlers.end())
         throw Exception(ErrorCodes::HANDLER_DOESNT_EXIST, "Cannot alter handler `{}`, because it doesn't exist", alter_query.handler_name);
 
-    /// Build the merged handler (no write yet), check ambiguity against the others, then persist.
-    auto updated = metadata_storage->buildUpdatedHandler(alter_query);
+    if (it->second->create_statement != expected_base)
+        return false;
 
-    auto old = loaded_handlers.at(alter_query.handler_name);
-    loaded_handlers.erase(alter_query.handler_name);
+    /// Build the merged handler (no write yet), check ambiguity against the others, then persist.
+    auto updated = makeSQLDefinedHandler(merged);
+
+    auto old = it->second;
+    loaded_handlers.erase(it);
     /// Keep the ambiguity check and the persistent write under a single recovery scope: if either the
     /// check or `store` fails (e.g. Keeper returns an error or loses the connection), restore the old
     /// handler so that `loaded_handlers` is never left missing an entry that still exists in storage.
@@ -415,14 +457,17 @@ void SQLDefinedHandlersFactory::updateFromSQL(const ASTCreateHandlerQuery & alte
     }
 
     loaded_handlers.emplace(alter_query.handler_name, updated);
-    rebuildSnapshot(lock);
+    rebuildSnapshot(lock, /* reconcile_definers */ true);
+    return true;
 }
 
-void SQLDefinedHandlersFactory::updateReplicated(const ASTCreateHandlerQuery & alter_query, std::lock_guard<std::mutex> & lock)
+bool SQLDefinedHandlersFactory::updateReplicated(
+    const ASTCreateHandlerQuery & alter_query, const String & expected_base, const ASTCreateHandlerQuery & merged,
+    std::lock_guard<std::mutex> & lock)
 {
-    /// Like createReplicated: re-read the set at a known root version, merge the ALTER onto the
-    /// version-consistent snapshot, check ambiguity, and persist conditionally on that version, retrying
-    /// if another replica changed the set in between.
+    /// Like createReplicated: re-read the set at a known root version, check that the handler is still the one the
+    /// ALTER was merged onto, check ambiguity, and persist conditionally on that version, retrying if another
+    /// replica changed the set in between.
     for (size_t attempt = 0; attempt < max_replicated_write_attempts; ++attempt)
     {
         Int32 version = 0;
@@ -432,24 +477,32 @@ void SQLDefinedHandlersFactory::updateReplicated(const ASTCreateHandlerQuery & a
         if (it == current.end())
         {
             loaded_handlers = std::move(current);
-            rebuildSnapshot(lock);
+            rebuildSnapshot(lock, /* reconcile_definers */ true);
             throw Exception(ErrorCodes::HANDLER_DOESNT_EXIST, "Cannot alter handler `{}`, because it doesn't exist", alter_query.handler_name);
         }
 
-        /// Merge onto the statement from this same version-consistent snapshot (no extra Keeper read).
+        /// The handler was changed after the ALTER was merged and validated: the caller re-merges onto the new
+        /// definition.
+        if (it->second->create_statement != expected_base)
+        {
+            loaded_handlers = std::move(current);
+            rebuildSnapshot(lock, /* reconcile_definers */ true);
+            return false;
+        }
+
         /// As in `createReplicated`: a validation failure was decided from the fresh Keeper state, so
         /// reconcile the local snapshot to it before rethrowing, instead of leaving this replica serving
         /// the stale set until the background watch fires.
         SQLDefinedHandlerPtr updated;
         try
         {
-            updated = metadata_storage->buildUpdatedHandler(it->second->create_statement, alter_query);
+            updated = makeSQLDefinedHandler(merged);
             checkAmbiguity(*updated, current);
         }
         catch (...)
         {
             loaded_handlers = std::move(current);
-            rebuildSnapshot(lock);
+            rebuildSnapshot(lock, /* reconcile_definers */ true);
             throw;
         }
 
@@ -471,8 +524,8 @@ void SQLDefinedHandlersFactory::updateReplicated(const ASTCreateHandlerQuery & a
         {
             current[alter_query.handler_name] = updated;
             loaded_handlers = std::move(current);
-            rebuildSnapshot(lock);
-            return;
+            rebuildSnapshot(lock, /* reconcile_definers */ true);
+            return true;
         }
         /// The set changed concurrently: re-read and re-validate.
     }
@@ -488,7 +541,7 @@ void SQLDefinedHandlersFactory::reloadFromSQL()
         return;
 
     loaded_handlers = metadata_storage->getAll();
-    rebuildSnapshot(lock);
+    rebuildSnapshot(lock, /* reconcile_definers */ true);
     /// Advance the loaded version only now that the new snapshot has been fully read, parsed and applied,
     /// so a reload that throws above does not skip the failed version on the next `waitUpdate`.
     metadata_storage->commitReload();

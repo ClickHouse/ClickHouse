@@ -21,6 +21,9 @@ class ASTDropHandlerQuery;
 class SQLDefinedHandlersFactory : private boost::noncopyable
 {
 public:
+    /// How many times a replicated write re-reads the set and retries when it changed concurrently.
+    static constexpr size_t max_replicated_write_attempts = 100;
+
     static SQLDefinedHandlersFactory & instance();
 
     ~SQLDefinedHandlersFactory();
@@ -35,9 +38,20 @@ public:
     /// replicas automatically. Used to strip a redundant ON CLUSTER clause (see removeOnClusterClauseIfNeeded).
     bool isReplicated();
 
+    /// Whether a handler with this name exists, decided from the authoritative state (for replicated storage, a
+    /// version-consistent read from Keeper, which is then installed locally). Used before a CREATE is validated.
+    bool prepareCreate(const String & handler_name);
+
+    /// The stored CREATE HANDLER statement of an existing handler, read from the authoritative state like
+    /// `prepareCreate`. Throws HANDLER_DOESNT_EXIST. Used as the base an ALTER is merged onto and validated against.
+    String prepareAlter(const String & handler_name);
+
     void createFromSQL(const ASTCreateHandlerQuery & query);
     void removeFromSQL(const ASTDropHandlerQuery & query);
-    void updateFromSQL(const ASTCreateHandlerQuery & alter_query);
+
+    /// Stores `merged` (`alter_query` merged onto `expected_base`) as the new definition of the handler, but only if
+    /// the stored statement is still `expected_base`. Otherwise nothing is written and false is returned.
+    bool updateFromSQL(const ASTCreateHandlerQuery & alter_query, const String & expected_base, const ASTCreateHandlerQuery & merged);
 
     void reloadFromSQL();
 
@@ -58,7 +72,9 @@ private:
     const LoggerPtr log = getLogger("SQLDefinedHandlersFactory");
 
     bool loadIfNot(std::lock_guard<std::mutex> & lock);
-    void rebuildSnapshot(std::lock_guard<std::mutex> & lock);
+    /// `reconcile_definers`: whether `loaded_handlers` is an authoritative state (read from or committed to the
+    /// storage), so the definers registered in `DefinerDependencies` are replaced by its ones.
+    void rebuildSnapshot(std::lock_guard<std::mutex> & lock, bool reconcile_definers);
 
     /// Throws AMBIGUOUS_HANDLER if the candidate would ambiguously match the same request
     /// as one of the given handlers (exact/prefix URLs only; regexp cannot be checked).
@@ -74,7 +90,9 @@ private:
     void resyncAfterUncertainWrite(const std::string & handler_name, std::lock_guard<std::mutex> & lock);
 
     void createReplicated(const ASTCreateHandlerQuery & query, std::lock_guard<std::mutex> & lock);
-    void updateReplicated(const ASTCreateHandlerQuery & alter_query, std::lock_guard<std::mutex> & lock);
+    bool updateReplicated(
+        const ASTCreateHandlerQuery & alter_query, const String & expected_base, const ASTCreateHandlerQuery & merged,
+        std::lock_guard<std::mutex> & lock);
     void removeReplicated(const ASTDropHandlerQuery & query, std::lock_guard<std::mutex> & lock);
 
     void updateFunc();

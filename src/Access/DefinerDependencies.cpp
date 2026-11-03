@@ -55,24 +55,59 @@ void DefinerDependencies::unregisterObject(const UUID & object_uuid)
     if (object_it == object_to_definer.end())
         return;
 
-    const auto & definer = object_it->second;
+    const String definer = object_it->second;
+    object_to_definer.erase(object_it);
+
     auto definer_it = definer_to_objects.find(definer);
     if (definer_it != definer_to_objects.end())
     {
         definer_it->second.erase(object_uuid);
         if (definer_it->second.empty())
-        {
-            if (definer.ends_with(":definer"))
-            {
-                auto & access_control = Context::getGlobalContextInstance()->getGlobalContext()->getAccessControl();
-                if (const auto uuid = access_control.find<User>(definer))
-                    access_control.tryRemove(*uuid);
-            }
-
             definer_to_objects.erase(definer_it);
-        }
     }
-    object_to_definer.erase(object_it);
+    releaseDefinerIfUnusedLocked(definer);
+}
+
+void DefinerDependencies::releaseDefinerIfUnusedLocked(const String & definer)
+{
+    if (!definer.ends_with(":definer") || definer_to_objects.contains(definer) || definer_to_handlers.contains(definer))
+        return;
+
+    auto & access_control = Context::getGlobalContextInstance()->getGlobalContext()->getAccessControl();
+    if (const auto uuid = access_control.find<User>(definer))
+        access_control.tryRemove(*uuid);
+}
+
+void DefinerDependencies::setHandlerDefiners(std::unordered_map<String, String> handler_to_definer_)
+{
+    std::lock_guard lock(mutex);
+
+    std::unordered_set<String> released;
+    for (const auto & [handler, definer] : handler_to_definer)
+    {
+        auto it = handler_to_definer_.find(handler);
+        if (it == handler_to_definer_.end() || it->second != definer)
+            released.insert(definer);
+    }
+
+    handler_to_definer = std::move(handler_to_definer_);
+    definer_to_handlers.clear();
+    for (const auto & [handler, definer] : handler_to_definer)
+        definer_to_handlers[definer].insert(handler);
+
+    for (const auto & definer : released)
+        releaseDefinerIfUnusedLocked(definer);
+}
+
+std::vector<String> DefinerDependencies::getHandlersForDefiner(const String & definer) const
+{
+    std::lock_guard lock(mutex);
+
+    auto it = definer_to_handlers.find(definer);
+    if (it == definer_to_handlers.end())
+        return {};
+
+    return {it->second.begin(), it->second.end()};
 }
 
 std::vector<UUID> DefinerDependencies::getObjectsForDefiner(const String & definer) const
@@ -91,7 +126,11 @@ bool DefinerDependencies::hasDependencies(const String & definer) const
     std::lock_guard lock(mutex);
 
     auto it = definer_to_objects.find(definer);
-    return it != definer_to_objects.end() && !it->second.empty();
+    if (it != definer_to_objects.end() && !it->second.empty())
+        return true;
+
+    auto handlers_it = definer_to_handlers.find(definer);
+    return handlers_it != definer_to_handlers.end() && !handlers_it->second.empty();
 }
 
 }

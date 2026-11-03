@@ -3,6 +3,7 @@
 #include <Server/HTTPQueryConstructor.h>
 
 #include <Access/AccessControl.h>
+#include <Access/User.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/chooseNetworkCompressionCodec.h>
@@ -51,6 +52,7 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Formats/FormatFactory.h>
 
+#include <base/EnumReflection.h>
 #include <base/getFQDNOrHostName.h>
 #include <base/isSharedPtrUnique.h>
 #include <Server/HTTP/HTTPResponse.h>
@@ -296,6 +298,21 @@ void HTTPHandler::processQuery(
     if (!authenticateUser(request, params, response))
         return; // '401 Unauthorized' response with 'Negotiate' has been sent at this point.
 
+    /// The query of a handler with SQL SECURITY DEFINER or NONE does not run as the authenticated user, so nothing the
+    /// request chooses (except the output format) is applied to it: the settings, filters and roles of the request,
+    /// and the settings, temporary tables and transaction of an HTTP session.
+    const bool runs_with_sql_security = sql_security_type && *sql_security_type != SQLSecurityType::INVOKER;
+    auto reject_request_input = [&](const String & input)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Handler `{}` with SQL SECURITY {} does not accept `{}` in a request: its query runs with the privileges of "
+            "its definer, so a request can choose only the output format (`default_format`, `output_format` or the "
+            "`X-ClickHouse-Format` header) and query parameters",
+            introspection_handler_name, magic_enum::enum_name(*sql_security_type), input);
+    };
+    if (runs_with_sql_security && params.has("session_id"))
+        reject_request_input("session_id");
+
     /// The user could specify session identifier and session timeout.
     /// It allows to modify settings, create temporary tables and reuse them in subsequent requests.
 
@@ -431,7 +448,22 @@ void HTTPHandler::processQuery(
     /// `http_x_clickhouse_format_overrides_output_format`.
     const String format_header_value = request.get("X-ClickHouse-Format", "");
 
+    if (runs_with_sql_security)
+    {
+        for (const auto & change : settings_changes)
+            if (change.name != "default_format" && change.name != "output_format")
+                reject_request_input(change.name);
+        if (!url_filters_from_params.empty())
+            reject_request_input("filter");
+        if (!deferred_unrecognized_params.empty())
+            reject_request_input(deferred_unrecognized_params.front().first);
+        if (params.has("role"))
+            reject_request_input("role");
+    }
+
     ContextMutablePtr context;
+    /// The query context of the authenticated user, when `context` is not.
+    ContextPtr caller_context;
     {
         /// To decide whether to make a detached query context, we need the run_query_in_background setting's value.
         /// But the setting value may be altered by setting the profile via HTTP params.
@@ -449,7 +481,18 @@ void HTTPHandler::processQuery(
         const bool run_query_in_background = tmp_context->getSettingsRef()[Setting::run_query_in_background];
         const bool throw_on_unsupported_query_inside_transaction = tmp_context->getSettingsRef()[Setting::throw_on_unsupported_query_inside_transaction];
 
-        context = run_query_in_background ? session->makeDetachedQueryContext() : session->makeQueryContext();
+        if (runs_with_sql_security)
+        {
+            if (run_query_in_background)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Handler `{}` with SQL SECURITY {} does not support `run_query_in_background`",
+                    introspection_handler_name, magic_enum::enum_name(*sql_security_type));
+            /// Made for every request: it checks that the credentials are still valid and records the login.
+            caller_context = session->makeQueryContext();
+            context = makeSQLSecurityQueryContext(caller_context);
+        }
+        else
+            context = run_query_in_background ? session->makeDetachedQueryContext() : session->makeQueryContext();
 
         if (run_query_in_background && session->sessionContext()->getCurrentTransaction()
             && throw_on_unsupported_query_inside_transaction)
@@ -512,10 +555,11 @@ void HTTPHandler::processQuery(
         /// `request.clientAddress` is always the direct TCP peer. Behind a proxy, it is the address of the proxy.
         /// `authenticateUserByHTTP` sets `current_address`. If `auth_use_forwarded_address` is `true`, this address comes from `X-Forwarded-For`.
         /// Thus, `system.connections`, `system.processes`, and `system.query_log` show the same address and port.
-        const auto & http_client_info = context->getClientInfo();
+        const auto & peer_context = caller_context ? caller_context : context;
+        const auto & http_client_info = peer_context->getClientInfo();
         ConnectionPeer peer;
         peer.user = http_client_info.current_user;
-        peer.user_id = context->getUserID();
+        peer.user_id = peer_context->getUserID();
         peer.client_address = http_client_info.current_address->host();
         peer.client_port = http_client_info.current_address->port();
         peer.client_name = request.get("User-Agent", "");
@@ -1527,6 +1571,35 @@ void HTTPHandler::processQuery(
         http_continue_callback);
 }
 
+ContextMutablePtr HTTPHandler::makeSQLSecurityQueryContext(const ContextPtr & caller_context) const
+{
+    auto query_context = Context::createCopy(server.context()->getGlobalContext());
+    query_context->makeQueryContext();
+    /// The client info of a normal query of this request: the query kind, the addresses, the interface.
+    query_context->setClientInfo(caller_context->getClientInfo());
+
+    if (*sql_security_type == SQLSecurityType::DEFINER)
+    {
+        if (!sql_security_definer)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Handler `{}` with SQL SECURITY DEFINER has no definer", introspection_handler_name);
+        query_context->setUser(query_context->getAccessControl().getID<User>(*sql_security_definer));
+        /// So the remote parts of the query authenticate as the definer as well.
+        query_context->setCurrentUserName(*sql_security_definer);
+        query_context->setInitialUserName(*sql_security_definer);
+    }
+    else
+    {
+        query_context->setCurrentUserName({});
+        query_context->setInitialUserName({});
+    }
+
+    /// A read-only user cannot write through a handler that runs as someone else.
+    const UInt64 readonly = std::max(
+        caller_context->getSettingsRef()[Setting::readonly].value, query_context->getSettingsRef()[Setting::readonly].value);
+    query_context->setSetting("readonly", Field(readonly));
+    return query_context;
+}
+
 bool HTTPHandler::trySendExceptionToClient(
     int exception_code, const std::string & message, HTTPServerRequest & request, HTTPServerResponse & response, Output & used_output)
 try
@@ -2070,6 +2143,8 @@ SQLDefinedQueryHandler::SQLDefinedQueryHandler(
 {
     setIntrospectionHandlerName(handler.name);
     setConsumesRequestBody(handler.consumes_request_body);
+    if (handler.sql_security_type)
+        setSQLSecurity(*handler.sql_security_type, handler.definer);
 }
 
 std::string SQLDefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context, ReadBuffer & body)
