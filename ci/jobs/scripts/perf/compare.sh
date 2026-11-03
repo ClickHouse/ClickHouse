@@ -571,6 +571,8 @@ function run_tests
                 --max-queries "$max_queries"
                 --profile-seconds "$profile_seconds"
                 --stop-merges
+                # The Iceberg configuration (`iceberg_local`, `iceberg_s3`), see perf.py --table-engine.
+                ${CHPC_TABLE_ENGINE:+--table-engine "$CHPC_TABLE_ENGINE"}
 
                 "$test"
             )
@@ -681,6 +683,7 @@ do
     sed -n "s/^skipped\t/$test_name\t/p" < "$test_file" >> "analyze/skipped-tests.tsv"
     sed -n "s/^display-name\t/$test_name\t/p" < "$test_file" >> "analyze/query-display-names.tsv"
     sed -n "s/^partial\t/$test_name\t/p" < "$test_file" >> "analyze/partial-queries.tsv"
+    sed -n "s/^result-mismatch\t/$test_name\t/p" < "$test_file" >> "analyze/result-mismatches.tsv"
 done
 
 # for each query run, prepare array of metrics from query log
@@ -1077,6 +1080,7 @@ do
             --http-port "$LEFT_SERVER_HTTP_PORT" "$RIGHT_SERVER_HTTP_PORT" \
             ${CHPC_RUNS:+--runs "$CHPC_RUNS"} ${PR_TO_TEST:+--pr-number "$PR_TO_TEST"} \
             --max-queries 0 --profile-seconds 0 --stop-merges \
+            ${CHPC_TABLE_ENGINE:+--table-engine "$CHPC_TABLE_ENGINE"} \
             --queries-to-run $confirm_indexes \
             > "${confirm_dir}/$confirm_test-raw-$placement.tsv.tmp" \
             2> "${confirm_dir}/$confirm_test-err-$placement.log"
