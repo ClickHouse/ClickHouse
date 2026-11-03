@@ -82,6 +82,17 @@ public:
         return Array(params.begin(), params.end() - 3);
     }
 
+    /// The combinator always renders a `String`, whatever the nested function's null semantics are:
+    /// when only `NULL`s were aggregated, the result is the empty sparkbar. Without this, the `Null`
+    /// combinator would consult the *nested* function's `returns_default_when_only_null` property
+    /// (`avg`'s, for example, is false) and wrap the sparkbar into `Nullable(String)`, returning `NULL`
+    /// instead of the empty sparkbar. Since the factory passes the transformed properties to the outer
+    /// combinators, the contract also holds for compositions like `avgSparkbarIf` and `avgSparkbarDistinct`.
+    void transformProperties(AggregateFunctionProperties & properties) const override
+    {
+        properties.returns_default_when_only_null = true;
+    }
+
     AggregateFunctionPtr transformAggregateFunction(
         const AggregateFunctionPtr & nested_function,
         const AggregateFunctionProperties &,

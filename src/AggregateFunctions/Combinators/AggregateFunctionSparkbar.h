@@ -1,9 +1,9 @@
 #pragma once
 
 #include <array>
+#include <cstring>
 #include <string_view>
 
-#include <AggregateFunctions/Combinators/AggregateFunctionNull.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnNothing.h>
@@ -28,6 +28,7 @@ struct Settings;
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
 }
 
@@ -46,6 +47,11 @@ namespace ErrorCodes
   * The explicit range [begin_x, end_x] is always required. Without it, bucketing cannot be
   * performed at aggregation time because the range is not known until all data is seen,
   * and the per-bucket states are irreversible once accumulated.
+  *
+  * State layout: `width` nested states (each padded to the nested alignment), followed by `width`
+  * occupancy flags. A bucket is occupied when at least one row was routed to it. Unoccupied buckets
+  * are rendered blank and do not take part in scaling: an empty nested state does not necessarily
+  * produce zero (e.g. `groupBitAnd` returns all ones), so its result cannot be used.
   */
 template <typename Key>
 class AggregateFunctionSparkbar final
@@ -79,11 +85,12 @@ private:
     /// function does), because squeezing them through Float64 would merge distinct values
     /// beyond the 53-bit exact range into the same bar. For Decimal the scale factor cancels
     /// out in the value / maximum ratio, so the raw underlying integer values are used.
-    /// A bucket's level stays 0 (rendered blank) when its result is NULL, NaN, or not positive.
+    /// A bucket's level stays 0 (rendered blank) when it is skipped (unoccupied or a NULL result),
+    /// or its result is NaN or not positive.
     template <typename T>
     void computeLevels(
         const typename ColumnVectorOrDecimal<T>::Container & data,
-        const NullMap * null_map,
+        const PaddedPODArray<UInt8> & skip,
         PaddedPODArray<UInt8> & levels) const
     {
         const auto value_of = [&](size_t i)
@@ -98,7 +105,7 @@ private:
         V y_max{};
         for (size_t i = 0; i < width; ++i)
         {
-            if (null_map && (*null_map)[i])
+            if (skip[i])
                 continue;
             const V v = value_of(i);
             if (isNaN(v) || v <= V{})
@@ -111,7 +118,7 @@ private:
 
         for (size_t i = 0; i < width; ++i)
         {
-            if (null_map && (*null_map)[i])
+            if (skip[i])
                 continue;
             const V v = value_of(i);
             if (isNaN(v) || v <= V{})
@@ -179,6 +186,13 @@ private:
         offsets.push_back(chars.size());
     }
 
+    UInt8 * occupancy(AggregateDataPtr __restrict place) const { return reinterpret_cast<UInt8 *>(place + width * size_of_data); }
+
+    const UInt8 * occupancy(ConstAggregateDataPtr __restrict place) const
+    {
+        return reinterpret_cast<const UInt8 *>(place + width * size_of_data);
+    }
+
 public:
     AggregateFunctionSparkbar(
         AggregateFunctionPtr nested_function_,
@@ -233,7 +247,7 @@ public:
 
     bool hasTrivialDestructor() const override { return nested_function->hasTrivialDestructor(); }
 
-    size_t sizeOfData() const override { return width * size_of_data; }
+    size_t sizeOfData() const override { return width * size_of_data + width; }
 
     size_t alignOfData() const override { return align_of_data; }
 
@@ -252,6 +266,7 @@ public:
                 throw;
             }
         }
+        memset(occupancy(place), 0, width);
     }
 
     void destroy(AggregateDataPtr __restrict place) const noexcept override
@@ -313,12 +328,20 @@ public:
 
         /// First argument (columns[0]) is the x-axis key; the rest go to the nested function.
         nested_function->add(place + pos * size_of_data, columns + 1, row_num, arena);
+        occupancy(place)[pos] = 1;
     }
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
+        UInt8 * place_occupancy = occupancy(place);
+        const UInt8 * rhs_occupancy = occupancy(rhs);
         for (size_t i = 0; i < width; ++i)
+        {
+            if (!rhs_occupancy[i])
+                continue;
             nested_function->merge(place + i * size_of_data, rhs + i * size_of_data, arena);
+            place_occupancy[i] = 1;
+        }
     }
 
     bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
@@ -341,20 +364,40 @@ public:
         const size_t rhs_align_of_data = rhs_nested->alignOfData();
         const size_t rhs_size_of_data = ::Memory::alignUp(rhs_nested->sizeOfData(), rhs_align_of_data);
 
+        UInt8 * place_occupancy = occupancy(place);
+        const UInt8 * rhs_occupancy = reinterpret_cast<const UInt8 *>(rhs_place + width * rhs_size_of_data);
         for (size_t i = 0; i < width; ++i)
+        {
+            if (!rhs_occupancy[i])
+                continue;
             nested_function->mergeStateFromDifferentVariant(place + i * size_of_data, *rhs_nested, rhs_place + i * rhs_size_of_data, arena);
+            place_occupancy[i] = 1;
+        }
     }
 
+    /// The occupancy flags are written first, followed by the nested states of the occupied buckets only.
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
     {
+        const UInt8 * place_occupancy = occupancy(place);
+        buf.write(reinterpret_cast<const char *>(place_occupancy), width);
         for (size_t i = 0; i < width; ++i)
-            nested_function->serialize(place + i * size_of_data, buf, version);
+            if (place_occupancy[i])
+                nested_function->serialize(place + i * size_of_data, buf, version);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
     {
+        UInt8 * place_occupancy = occupancy(place);
+        buf.readStrict(reinterpret_cast<char *>(place_occupancy), width);
         for (size_t i = 0; i < width; ++i)
-            nested_function->deserialize(place + i * size_of_data, buf, version, arena);
+        {
+            if (place_occupancy[i] > 1)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Incorrect occupancy flag {} of bucket {} in the state of aggregate function {}",
+                    static_cast<UInt32>(place_occupancy[i]), i, getName());
+            if (place_occupancy[i])
+                nested_function->deserialize(place + i * size_of_data, buf, version, arena);
+        }
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
@@ -366,11 +409,18 @@ public:
         for (size_t i = 0; i < width; ++i)
             nested_function->insertResultInto(place + i * size_of_data, *result_col, arena);
 
+        /// Unoccupied buckets and buckets with a `NULL` result are rendered blank and excluded from scaling.
+        const UInt8 * place_occupancy = occupancy(place);
+        PaddedPODArray<UInt8> skip(width);
+        for (size_t i = 0; i < width; ++i)
+            skip[i] = !place_occupancy[i];
+
         const IColumn * data_col = result_col.get();
-        const NullMap * null_map = nullptr;
         if (const auto * nullable = checkAndGetColumn<ColumnNullable>(data_col))
         {
-            null_map = &nullable->getNullMapData();
+            const NullMap & null_map = nullable->getNullMapData();
+            for (size_t i = 0; i < width; ++i)
+                skip[i] |= null_map[i];
             data_col = &nullable->getNestedColumn();
         }
 
@@ -385,7 +435,7 @@ public:
             const auto * col = checkAndGetColumn<ColumnVectorOrDecimal<T>>(data_col);
             if (!col)
                 return false;
-            computeLevels<T>(col->getData(), null_map, levels);
+            computeLevels<T>(col->getData(), skip, levels);
             return true;
         };
 
@@ -411,8 +461,8 @@ public:
         render(assert_cast<ColumnString &>(to), levels);
     }
 
-    /// Any argument may be a bare `NULL`: the own `Null` adapter below skips every row with a `NULL`
-    /// in it, so the result is the empty sparkbar. Without this, the generic `Null` combinator would
+    /// Any argument may be a bare `NULL`: the `Null` adapter skips every row with a `NULL` in it,
+    /// so the result is the empty sparkbar. Without this, the generic `Null` combinator would
     /// replace the whole function with `nothingNull` / `nothingUInt64` and return `NULL` or `0`
     /// instead of a `String`.
     UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNull() const override
@@ -423,24 +473,6 @@ public:
         for (size_t i = 0; i < num_arguments; ++i)
             result.insert(i);
         return result;
-    }
-
-    /// The combinator always renders a `String`, whatever the nested function's null semantics
-    /// are. Without an own adapter the generic `Null` combinator would consult the *nested*
-    /// function's `returns_default_when_only_null` property (`avg`'s, for example, is false) and
-    /// wrap the whole sparkbar into `Nullable(String)`, returning `NULL` for an all-`NULL` input
-    /// instead of the empty sparkbar. Force the non-nullable adapter so the advertised result
-    /// type does not depend on the nested function. `serialize_flag` stays `true`, so the state
-    /// layout is the one the generic adapter would have produced.
-    AggregateFunctionPtr getOwnNullAdapter(
-        const AggregateFunctionPtr & nested_function_,
-        const DataTypes & arguments,
-        const Array & params,
-        const AggregateFunctionProperties & /*properties*/) const override
-    {
-        if (arguments.size() == 1)
-            return std::make_shared<AggregateFunctionNullUnary<false, true>>(nested_function_, arguments, params);
-        return std::make_shared<AggregateFunctionNullVariadic<false, true>>(nested_function_, arguments, params);
     }
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
