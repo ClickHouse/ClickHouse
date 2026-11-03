@@ -10,6 +10,9 @@ namespace DiskFromAST
 
 {
     void ensureDiskIsNotCustom(const std::string & name, ContextPtr context);
+    /// Refuse, for a session without `s3_allow_server_credentials_in_user_queries`, a storage policy with a custom disk that
+    /// uses the server's own credentials.
+    void ensureStoragePolicyIsAllowed(const std::string & storage_policy_name, ContextPtr context);
     /// `stored_definition`: the definition was read from the metadata the server stored for the table (short `ATTACH`),
     /// so its credentials markers are kept as they are: they keep the identity of the disk, and are not honored unless `attach`.
     std::string createCustomDisk(

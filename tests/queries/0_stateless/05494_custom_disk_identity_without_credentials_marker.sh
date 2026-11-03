@@ -72,3 +72,18 @@ run "ATTACH TABLE d.p; INSERT INTO d.p VALUES (8); SELECT count() FROM d.p"
 echo "after restart"
 run "SELECT count() FROM d.p"
 rm -rf "${dir}"
+
+# A wrapper declared by an older version names the disk of the older form below it, while a newer table can have
+# registered the disk of the newer form too. Declaring the same wrapper again must find the wrapper.
+dir="${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_mixed"
+rm -rf "${dir}"
+run() { ${CLICKHOUSE_LOCAL} --path "${dir}/data" --dynamic_disk_allow_from_env=1 -mn -q "$1" -- --custom_local_disks_base_directory="${dir}/" --custom_cached_disks_base_directory="${dir}/caches/" 2>&1 | grep -oE '^[0-9a-z_]+$|\([A-Z_]+\)'; }
+leaf="disk(type = 'from_env T2', path = '${dir}/blobs/')"
+wrapper="disk(name = 'wrapper_disk', type = cache, path = '${dir}/caches/w/', max_size = '1Gi', disk = ${leaf})"
+echo "--- mixed"
+run "CREATE TABLE w (x UInt8) ENGINE = MergeTree ORDER BY x SETTINGS disk = ${wrapper}; CREATE TABLE l (x UInt8) ENGINE = MergeTree ORDER BY x SETTINGS disk = ${leaf}"
+sed -i 's/, equals(_server_credentials_allowed, 1)//' "${dir}"/data/store/*/*/w.sql
+run "CREATE TABLE w2 (x UInt8) ENGINE = MergeTree ORDER BY x SETTINGS disk = ${wrapper}; SELECT 'wrapper_ok'"
+w2_definition=$(grep -o "disk = disk(.*)" "${dir}"/data/store/*/*/w2.sql)
+[ -n "${w2_definition}" ] && [ "${w2_definition}" = "$(grep -o "disk = disk(.*)" "${dir}"/data/store/*/*/w.sql)" ] && echo "w2 same as w"
+rm -rf "${dir}"

@@ -30,9 +30,9 @@ OPT_IN="--s3_allow_server_credentials_in_user_queries=1"
 $CLICKHOUSE_KEEPER_CLIENT -q "create '${ZK_PATH}' 'disk'"
 $CLICKHOUSE_KEEPER_CLIENT -q "create '${ZK_PATH}/type' 'encrypted'"
 
-echo "with the opt-in: create a disk with server credentials: $(run ${OPT_IN} -q "$(create t_server "disk(name = '${SERVER_DISK}', type = 'from_zk ${ZK_PATH}/type', disk = 'default', path = '${CLICKHOUSE_DATABASE}_server/', key = '${KEY}')")")"
+echo "with the opt-in: create a disk with server credentials: $(run ${OPT_IN} -q "$(create t_server "disk(name = '${SERVER_DISK}', type = 'from_zk ${ZK_PATH}/type', disk = 'default', path = 'disks/${CLICKHOUSE_DATABASE}_server/', key = '${KEY}')")")"
 echo "with the opt-in: wrap it: $(run ${OPT_IN} -q "$(create t_wrapper "disk(name = '${WRAPPER_DISK}', type = encrypted, disk = '${SERVER_DISK}', path = 'wrapper/', key = '${KEY}')")")"
-echo "with the opt-in: create a disk without server credentials: $(run ${OPT_IN} -q "$(create t_plain "disk(name = '${PLAIN_DISK}', type = encrypted, disk = 'default', path = '${CLICKHOUSE_DATABASE}_plain/', key = '${KEY}')")")"
+echo "with the opt-in: create a disk without server credentials: $(run ${OPT_IN} -q "$(create t_plain "disk(name = '${PLAIN_DISK}', type = encrypted, disk = 'default', path = 'disks/${CLICKHOUSE_DATABASE}_plain/', key = '${KEY}')")")"
 
 echo "without the opt-in: wrap the disk with server credentials: $(run -q "$(create t1 "$(wrap "${SERVER_DISK}" t1)")")"
 echo "without the opt-in: wrap its wrapper: $(run -q "$(create t2 "$(wrap "${WRAPPER_DISK}" t2)")")"
@@ -46,6 +46,11 @@ INDIRECT_WRAPPER="disk(type = encrypted, disk = 'from_zk ${ZK_PATH}/wrapped', pa
 echo "with the opt-in: wrap it with from_zk: $(run ${OPT_IN} -q "$(create t_indirect "${INDIRECT_WRAPPER}")")"
 $CLICKHOUSE_KEEPER_CLIENT -q "set '${ZK_PATH}/wrapped' '${PLAIN_DISK}'"
 echo "without the opt-in: the same definition after the node changed: $(run -q "$(create t5 "${INDIRECT_WRAPPER}")")"
+
+# A table on a disk gets the storage policy `__<disk>`, which names the disk as well.
+echo "without the opt-in: the storage policy of the disk with server credentials: $(run -q "CREATE TABLE t6 (x UInt8) ENGINE = MergeTree ORDER BY x SETTINGS storage_policy = '__${SERVER_DISK}'")"
+echo "without the opt-in: the storage policy of the disk without server credentials: $(run -q "CREATE TABLE t7 (x UInt8) ENGINE = MergeTree ORDER BY x SETTINGS storage_policy = '__${PLAIN_DISK}'")"
+echo "without the opt-in: change to the storage policy of the disk with server credentials: $(run -q "ALTER TABLE t7 MODIFY SETTING storage_policy = '__${SERVER_DISK}'")"
 
 ${CLICKHOUSE_CLIENT} -q "SELECT name FROM system.tables WHERE database = currentDatabase() ORDER BY name"
 

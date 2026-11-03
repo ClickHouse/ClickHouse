@@ -1,6 +1,7 @@
 #include <Disks/DiskFromAST.h>
 #include <Disks/getDiskConfigurationFromAST.h>
 #include <Disks/DiskSelector.h>
+#include <Disks/IStoragePolicy.h>
 #include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
 #include <Common/SipHash.h>
@@ -71,20 +72,14 @@ static bool hasCredentialsMarker(const ASTs & args, const std::string & marker)
     return std::ranges::any_of(args, [&](const ASTPtr & arg) { return getCredentialsMarker(arg) == marker; });
 }
 
-static bool isRegisteredCustomDisk(ContextPtr context, const std::string & disk_name, UInt128 disk_settings_hash)
-{
-    const auto disks = context->getDisksMap();
-    const auto it = disks.find(disk_name);
-    return it != disks.end() && it->second->isCustomDisk() && it->second->getCustomDiskSettings() == disk_settings_hash;
-}
-
-/// `serializations` holds the definition, then the same definition with other credentials markers; `adds_marker` tells
-/// which of them add a marker. The returned `chosen` is the index of the one the disk was resolved by.
-static std::string getOrCreateCustomDisk(
+/// `serializations` holds the definition, then other forms of it (other credentials markers, other disks below it);
+/// `adds_marker` tells which of them add a marker. Returns the indexes and names of the registered disks the forms match,
+/// the one used first. The others are returned only if this session may use them. If none matches, the first form is
+/// created.
+static std::vector<std::pair<size_t, std::string>> getOrCreateCustomDisk(
     const ASTs & disk_args,
     const std::vector<std::string> & serializations,
     const std::vector<bool> & adds_marker,
-    size_t & chosen,
     ContextPtr context,
     bool attach,
     bool for_system_database,
@@ -147,25 +142,35 @@ static std::string getOrCreateCustomDisk(
         return DiskSelector::TMP_INTERNAL_DISK_PREFIX + toString(hash);
     };
 
-    chosen = 0;
-    auto disk_settings_hash = sipHash128(serializations[0].data(), serializations[0].size());
+    std::vector<UInt128> hashes;
+    for (const auto & serialization : serializations)
+        hashes.push_back(sipHash128(serialization.data(), serialization.size()));
+
     /// A disk declared by an older version is registered under the form of the definition that version stored. Reusing it
-    /// is safe: this session passed the credential checks for its definition, the forms differ only in markers, a form
-    /// that adds one is refused below without the opt-in, and the caller stores the form of the reused disk.
-    if (!attach && !isRegisteredCustomDisk(context, get_disk_name(disk_settings_hash), disk_settings_hash))
+    /// is safe: this session passed the credential checks for its definition, the forms differ only in markers and in the
+    /// equivalent disks below, a form that adds a marker is refused below without the opt-in, and the caller stores the
+    /// form of the reused disk.
+    std::vector<std::pair<size_t, std::string>> matches;
+    if (!attach)
     {
-        for (size_t i = 1; i < serializations.size(); ++i)
+        const auto disks = context->getDisksMap();
+        for (size_t i = 0; i < serializations.size(); ++i)
         {
-            const auto hash = sipHash128(serializations[i].data(), serializations[i].size());
-            if (isRegisteredCustomDisk(context, get_disk_name(hash), hash))
-            {
-                chosen = i;
-                disk_settings_hash = hash;
-                break;
-            }
+            auto name = get_disk_name(hashes[i]);
+            const auto it = disks.find(name);
+            if (it == disks.end() || !it->second->isCustomDisk() || it->second->getCustomDiskSettings() != hashes[i])
+                continue;
+            if (!matches.empty() && restricted && (adds_marker[i] || it->second->customDiskUsesServerCredentials()))
+                continue;
+            matches.emplace_back(i, std::move(name));
         }
     }
-    const auto disk_name = get_disk_name(disk_settings_hash);
+    if (matches.empty())
+        matches.emplace_back(0, get_disk_name(hashes[0]));
+
+    const size_t chosen = matches.front().first;
+    const auto disk_settings_hash = hashes[chosen];
+    const auto & disk_name = matches.front().second;
 
     /// A marker is an allowance persisted for reload, which only a session with the opt-in may store.
     if (adds_marker[chosen] && restricted)
@@ -221,7 +226,7 @@ static std::string getOrCreateCustomDisk(
 #endif
             , disk_name);
 
-    return disk_name;
+    return matches;
 }
 
 template <typename Matcher>
@@ -286,16 +291,34 @@ struct DiskConfigurationFlattenerData
     bool stored_definition;
 };
 
+/// A registered disk a disk function may resolve to, and the changes of credentials markers in the stored definition
+/// (of the function and of the disk functions below it) that give it.
+struct DiskAlternative
+{
+    std::string name;
+    std::vector<std::pair<ASTPtr, CredentialsMarkersChange>> edits;
+    bool adds_marker = false;
+};
+
+/// A disk function already replaced by the name of its disk, and the disks it may resolve to, the used one first.
+struct FlattenedDisk
+{
+    ASTPtr * literal;
+    std::vector<DiskAlternative> alternatives;
+};
+
 /// Replace every disk function in `flat` (bottom-up) with the name of its disk. `original` is the AST `flat` was cloned
-/// from, which is stored in metadata: it gets the markers of the form an existing disk was reused by.
-static void flattenDiskConfiguration(ASTPtr & flat, const ASTPtr & original, const DiskConfigurationFlattenerData & data)
+/// from, which is stored in metadata; the caller applies the edits of the alternative it uses to it. Returns the disk
+/// functions directly in `flat`, or `flat` itself if it is one.
+static std::vector<FlattenedDisk> flattenDiskConfiguration(ASTPtr & flat, const ASTPtr & original, const DiskConfigurationFlattenerData & data)
 {
     checkStackSize();
+    std::vector<FlattenedDisk> below;
     for (size_t i = 0; i < flat->children.size(); ++i)
-        flattenDiskConfiguration(flat->children[i], original->children[i], data);
+        std::ranges::move(flattenDiskConfiguration(flat->children[i], original->children[i], data), std::back_inserter(below));
 
     if (!isDiskFunction(flat))
-        return;
+        return below;
 
     const auto & args = getDiskFunctionArguments(flat);
     std::vector<CredentialsMarkersChange> changes{{}};
@@ -317,22 +340,67 @@ static void flattenDiskConfiguration(ASTPtr & flat, const ASTPtr & original, con
         }
     }
 
-    std::vector<std::string> serializations{flat->formatWithSecretsOneLine()};
-    std::vector<bool> adds_marker{false};
-    for (size_t i = 1; i < changes.size(); ++i)
+    /// Every combination of the disks below (an older wrapper names the disk of the older form), the used ones first.
+    std::vector<std::vector<size_t>> combinations{{}};
+    for (const auto & disk : below)
     {
-        auto candidate = flat->clone();
-        applyCredentialsMarkersChange(getDiskFunctionArguments(candidate), changes[i]);
-        serializations.push_back(candidate->formatWithSecretsOneLine());
-        adds_marker.push_back(changes[i].add_azure);
+        std::vector<std::vector<size_t>> extended;
+        for (size_t alternative = 0; alternative < disk.alternatives.size(); ++alternative)
+        {
+            for (const auto & combination : combinations)
+            {
+                extended.push_back(combination);
+                extended.back().push_back(alternative);
+            }
+        }
+        combinations = std::move(extended);
     }
 
-    size_t chosen = 0;
-    auto disk_name = getOrCreateCustomDisk(
-        args, serializations, adds_marker, chosen, data.context, data.attach, data.for_system_database, data.stored_definition);
-    if (chosen)
-        applyCredentialsMarkersChange(getDiskFunctionArguments(original), changes[chosen]);
-    flat = make_intrusive<ASTLiteral>(disk_name);
+    auto set_disks_below = [&](const std::vector<size_t> & combination)
+    {
+        for (size_t i = 0; i < below.size(); ++i)
+            *below[i].literal = make_intrusive<ASTLiteral>(below[i].alternatives[combination[i]].name);
+    };
+
+    std::vector<std::string> serializations;
+    std::vector<bool> adds_marker;
+    std::vector<DiskAlternative> forms;
+    for (const auto & combination : combinations)
+    {
+        set_disks_below(combination);
+        for (const auto & change : changes)
+        {
+            auto candidate = flat->clone();
+            applyCredentialsMarkersChange(getDiskFunctionArguments(candidate), change);
+            serializations.push_back(candidate->formatWithSecretsOneLine());
+
+            DiskAlternative form{.name = {}, .edits = {}, .adds_marker = change.add_azure};
+            if (!change.drop.empty() || change.add_azure)
+                form.edits.emplace_back(original, change);
+            for (size_t i = 0; i < below.size(); ++i)
+            {
+                const auto & alternative = below[i].alternatives[combination[i]];
+                std::ranges::copy(alternative.edits, std::back_inserter(form.edits));
+                form.adds_marker |= alternative.adds_marker;
+            }
+            forms.push_back(std::move(form));
+            adds_marker.push_back(forms.back().adds_marker);
+        }
+    }
+    /// The disk is created, if it is, from the disks used below.
+    set_disks_below(combinations.front());
+
+    const auto matches = getOrCreateCustomDisk(
+        args, serializations, adds_marker, data.context, data.attach, data.for_system_database, data.stored_definition);
+
+    std::vector<DiskAlternative> alternatives;
+    for (const auto & [index, name] : matches)
+    {
+        alternatives.push_back(std::move(forms[index]));
+        alternatives.back().name = name;
+    }
+    flat = make_intrusive<ASTLiteral>(alternatives.front().name);
+    return {FlattenedDisk{.literal = &flat, .alternatives = std::move(alternatives)}};
 }
 
 /// Persist the credential opt-in into the stored disk definition. For each leaf dynamic S3 disk that resolves
@@ -408,9 +476,33 @@ std::string DiskFromAST::createCustomDisk(
     }
 
     auto ast = disk_function_ast->clone();
-    flattenDiskConfiguration(ast, disk_function_ast, {context, attach, for_system_database, stored_definition});
+    const auto disks = flattenDiskConfiguration(ast, disk_function_ast, {context, attach, for_system_database, stored_definition});
+    for (const auto & [disk_function, change] : disks.front().alternatives.front().edits)
+        applyCredentialsMarkersChange(getDiskFunctionArguments(disk_function), change);
 
     return assert_cast<const ASTLiteral &>(*ast).value.safeGet<String>();
+}
+
+void DiskFromAST::ensureStoragePolicyIsAllowed(const std::string & storage_policy_name, ContextPtr context)
+{
+    if (!context->shouldRestrictUserQueryS3Credentials())
+        return;
+
+    /// `__<disk>` is the policy a table on a disk gets, so it can name a custom disk another session created.
+    const auto storage_policy = context->tryGetStoragePolicy(storage_policy_name);
+    if (!storage_policy)
+        return;
+    for (const auto & disk : storage_policy->getDisks())
+    {
+        if (disk->customDiskUsesServerCredentials())
+            throw Exception(
+                ErrorCodes::ACCESS_DENIED,
+                "The storage policy `{}` has the disk `{}`, which uses the server's own credentials and may not be used from user SQL."
+#if !CLICKHOUSE_CLOUD
+                " Enable the setting `s3_allow_server_credentials_in_user_queries` to allow it."
+#endif
+                , storage_policy_name, disk->getName());
+    }
 }
 
 void DiskFromAST::ensureDiskIsNotCustom(const std::string & disk_name, ContextPtr context)

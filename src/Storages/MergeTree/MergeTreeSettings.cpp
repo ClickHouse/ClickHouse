@@ -3074,7 +3074,11 @@ void MergeTreeSettingsImpl::loadFromQuery(
                     found_disk_setting = true;
                 }
                 else if (name == "storage_policy")
+                {
                     found_storage_policy_setting = true;
+                    if (!is_loading_from_existing_metadata)
+                        DiskFromAST::ensureStoragePolicyIsAllowed(value.safeGet<String>(), context);
+                }
                 else if (name == "table_disk")
                     table_disk = value.safeGet<bool>();
 
