@@ -83,6 +83,8 @@ public:
 
     void beginTransaction() override;
     void commitTransaction() override;
+    /// Keeps the temporary data set by setTemporaryDataForTransaction for the new transaction.
+    void checkpointTransaction() override;
 
     void setPreferredFileOrder(const Strings & file_names) override { preferred_file_order = file_names; }
 
@@ -90,6 +92,8 @@ public:
     void precommitTransaction() override;
     void startPrecommitTransaction() override;
     void undoTransaction() override;
+
+    void setTemporaryDataForTransaction(const TemporaryDataOnDiskScopePtr & tmp_data, size_t max_bytes_in_memory) override;
 
 #if CLICKHOUSE_CLOUD
     TransactionCommitOutcomeVariant tryCommitTransaction(const TransactionCommitOptionsVariant & options) override;
@@ -137,6 +141,14 @@ private:
     };
 
     std::optional<PendingWriterFinalization> pending_writer_finalization;
+
+    /// Where the writer moves the buffered data of the active transaction, see setTemporaryDataForTransaction.
+    struct TemporaryDataForTransaction
+    {
+        TemporaryDataOnDiskScopePtr tmp_data;
+        size_t max_bytes_in_memory = 0;
+    };
+    std::optional<TemporaryDataForTransaction> temporary_data_for_transaction;
 
     bool is_precommitted = false;
 
@@ -187,6 +199,7 @@ private:
     void resetWriterFromTransaction();
     void preFinalizeWriter();
     void finalizeWriter();
+    void setTemporaryDataToWriter();
 
     /// Modifying of files is possible only with transaction.
 
