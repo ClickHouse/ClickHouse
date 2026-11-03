@@ -83,6 +83,9 @@ public:
     /// Evaluate defaulted columns if necessary.
     void evaluateMissingDefaults(Block additional_columns, Columns & res_columns) const;
 
+    /// Whether `fillMissingColumns` may leave a requested column to `evaluateMissingDefaults`.
+    bool mayEvaluateMissingDefaults() const;
+
     /// If part metadata is not equal to storage metadata,
     /// then try to perform conversions of columns.
     void performRequiredConversions(Columns & res_columns) const;
@@ -347,6 +350,8 @@ private:
 
     /// The same as above but with converted Arrays to subcolumns of Nested.
     NamesAndTypesList converted_requested_columns;
+
+    mutable std::optional<bool> may_evaluate_missing_defaults;
 
     struct StringValueFilterForColumn
     {

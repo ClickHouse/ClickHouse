@@ -1511,7 +1511,7 @@ SELECT toIPv4(2130706433);
 
     /// toIPv6 documentation
     FunctionDocumentation::Description description_toIPv6 = R"(
-onverts a string or a `UInt128` form of IPv6 address to [`IPv6`](/reference/data-types/ipv6) type.
+Converts a string or a `UInt128` form of IPv6 address to [`IPv6`](/reference/data-types/ipv6) type.
 For strings, if the IPv6 address has an invalid format, returns an empty value.
 Similar to [`IPv6StringToNum`](/reference/functions/regular-functions/ip-address-functions#IPv6StringToNum) and [`IPv6NumToString`](/reference/functions/regular-functions/ip-address-functions#IPv6NumToString) functions, which convert IPv6 address to and from binary format (i.e. `FixedString(16)`).
 
@@ -3445,7 +3445,7 @@ See also:
     {
         {"x", "A String representation of a number.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue toBFloat16OrNull_returned_value = {"Reurns a 16-bit brain-float value, otherwise `NULL`.", {"BFloat16", "NULL"}};
+    FunctionDocumentation::ReturnedValue toBFloat16OrNull_returned_value = {"Returns a 16-bit brain-float value, otherwise `NULL`.", {"BFloat16", "NULL"}};
     FunctionDocumentation::Examples toBFloat16OrNull_examples = {
     {
         "Usage example",
