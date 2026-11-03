@@ -358,6 +358,33 @@ void SchemaConverter::processSubtree(TraversalNode & node)
         }
     }
 
+    /// GeoParquet geometry column with a native (GeoArrow) encoding: nested lists of
+    /// `struct<x, y>` with the same layout as the corresponding geo type. Read it as a regular
+    /// nested column, requesting the geo type (so that it is also the inferred type). If `Geometry`
+    /// is requested, read the specific geo type and convert it at the end.
+    /// Only top-level columns, because geometry columns must be at the root of the schema.
+    DataTypePtr native_geo_type;
+    if (node.requested && levels.size() == 1 && node.schema_context == SchemaContext::None
+        && options.format.parquet.allow_geoparquet_parser && !isPrimitiveNode(*node.element))
+    {
+        auto geo_it = geo_columns.find(node.getParquetName());
+        if (geo_it != geo_columns.end() && geo_it->second.encoding == GeoEncoding::Native)
+        {
+            DataTypePtr geo_type = getGeoDataType(geo_it->second.type);
+            if (!node.type_hint)
+            {
+                node.type_hint = geo_type;
+                outer_type_hint = geo_type;
+                native_geo_type = geo_type;
+            }
+            else if (node.type_hint->getName() == "Geometry")
+            {
+                node.type_hint = geo_type;
+                native_geo_type = geo_type;
+            }
+        }
+    }
+
     size_t prev_levels_size = levels.size();
     SCOPE_EXIT(
         {
@@ -447,6 +474,16 @@ void SchemaConverter::processSubtree(TraversalNode & node)
             make_array(static_cast<UInt8>(levels[prev_levels_size - 1].rep - i));
 
         output_columns[node.output_idx.value()].idx_in_output_block = idx_in_output_block;
+    }
+
+    if (native_geo_type)
+    {
+        /// The type assembled from the nested columns has the same structure, but loses the custom
+        /// names of the geo types (e.g. `Array(Ring)` instead of `Polygon`), which matter for the
+        /// conversion to `Geometry`.
+        OutputColumnInfo & output = output_columns.at(node.output_idx.value());
+        chassert(output.input_type->equals(*native_geo_type));
+        output.input_type = native_geo_type;
     }
 
     if (outer_type_hint)
@@ -1589,6 +1626,10 @@ void SchemaConverter::processPrimitiveColumn(
     /// If type hint is String, ignore geoparquet and return raw bytes.
     if (geo_metadata.has_value() && (!type_hint || !typeid_cast<const DataTypeString *>(type_hint.get())))
     {
+        if (geo_metadata->encoding == GeoEncoding::Native)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "GeoParquet column with a native (GeoArrow) encoding must be a group (a struct or a list), but it is a primitive column of type {}",
+                thriftToString(type));
         if (type != parq::Type::BYTE_ARRAY)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type of GeoParquet column: {}", thriftToString(type));
 
