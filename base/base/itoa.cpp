@@ -824,7 +824,7 @@ constexpr UInt32 byteShift(UInt32 i)
 }
 
 /// The text of every `UInt8` value: the digits from the lowest address on, and the length in the last byte.
-constexpr std::array<UInt32, 256> uint8_text = []
+constexpr std::array<UInt32, 256> one_byte_to_string_lookup_table = []
 {
     std::array<UInt32, 256> table{};
     for (UInt32 value = 0; value < 256; ++value)
@@ -842,7 +842,7 @@ constexpr std::array<UInt32, 256> uint8_text = []
 /// overwritten by whatever is written next; `max_int_width<UInt8>` reserves the extra byte.
 ALWAYS_INLINE inline char * writeUInt8Text(UInt32 value, char * p)
 {
-    UInt32 entry = uint8_text[value];
+    UInt32 entry = one_byte_to_string_lookup_table[value];
     memcpy(p, &entry, 4);
     return p + ((entry >> byteShift<UInt32>(3)) & 0xFF);
 }
