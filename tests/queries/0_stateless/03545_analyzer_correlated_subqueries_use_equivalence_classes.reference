@@ -8,7 +8,7 @@ Positions: 1
     Join (JOIN FillRightFirst)
     Type: LEFT
     Strictness: ANY
-    Algorithm: ConcurrentHashJoin
+    Algorithm: HashJoin
     Clauses: [(__table3.number) = (__table1.__table3.number)]
       Expression (Left Pre Join Actions)
       Actions: INPUT :: 0 -> __table3.number UInt64 : 0

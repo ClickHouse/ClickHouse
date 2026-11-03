@@ -532,10 +532,12 @@ struct FunctionOperatorMapping
 
 /// A bare `ANY` followed by a single subquery is the SQL quantifier, which the parser rewrites to `IN`, so a
 /// function actually named `any` (the aggregate) in that shape only survives a re-parse while quoted.
-static bool quantifierNameNeedsQuoting(const String & name, const ASTPtr & arguments)
+/// Likewise `columns(...)` parses as a `COLUMNS` matcher
+static bool functionNameNeedsQuoting(const String & name, const ASTPtr & arguments)
 {
-    return equalsCaseInsensitive(name, "any") && arguments && arguments->children.size() == 1
-        && arguments->children[0]->as<ASTSubquery>();
+    return equalsCaseInsensitive(name, "columns")
+        || (equalsCaseInsensitive(name, "any") && arguments && arguments->children.size() == 1
+            && arguments->children[0]->as<ASTSubquery>());
 }
 
 void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
@@ -560,7 +562,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
         std::string nl_or_nothing = settings.one_line ? "" : "\n";
         std::string indent_str = settings.one_line ? "" : std::string(4u * frame.indent, ' ');
         if (!name.empty())
-            ostr << backQuoteIfNeed(name);
+            ostr << (functionNameNeedsQuoting(name, arguments) ? backQuote(name) : backQuoteIfNeed(name));
         ostr << "(";
         ostr << nl_or_nothing;
         FormatStateStacked frame_nested = frame;
@@ -609,7 +611,8 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
     /// Should this function to be written as operator?
     bool written = false;
-    if (isOperator() && arguments && !parameters && frame.allow_operators && getNullsAction() == NullsAction::EMPTY)
+    if (isOperator() && arguments && !parameters && frame.allow_operators && getNullsAction() == NullsAction::EMPTY
+        && !isWindowFunction())
     {
         /// Unary prefix operators.
         if (arguments->children.size() == 1)
@@ -1064,9 +1067,15 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
         return;
     }
 
+    /// In function-call form `not(x)` re-parses as `NOT (x)`, same AST, so skip quoting
+    bool is_plain_not_call = !frame.allow_operators && equalsCaseInsensitive(name, "not") && arguments
+        && arguments->children.size() == 1 && !parameters && getNullsAction() == NullsAction::EMPTY && !isWindowFunction();
+
     /// Empty names are used rarely, to format queries with an extra pair of parentheses for external databases.
-    if (!name.empty())
-        ostr << (quantifierNameNeedsQuoting(name, arguments) ? backQuote(name) : backQuoteIfNeed(name));
+    if (is_plain_not_call)
+        ostr << name;
+    else if (!name.empty())
+        ostr << (functionNameNeedsQuoting(name, arguments) ? backQuote(name) : backQuoteIfNeed(name));
 
     SecretArgumentsResult secret_arguments;
     if (arguments && !settings.show_secrets)

@@ -136,7 +136,6 @@ bool canBeExecutedByEnabledAlgorithm(const JoinSettings & join_settings, JoinKin
             case JoinAlgorithm::DEFAULT:
             case JoinAlgorithm::AUTO:
             case JoinAlgorithm::HASH:
-            case JoinAlgorithm::PARALLEL_HASH:
                 /// The hash-based algorithms implement every kind and strictness.
                 return true;
             case JoinAlgorithm::GRACE_HASH:

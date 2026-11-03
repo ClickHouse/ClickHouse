@@ -23,7 +23,7 @@ def spark_catalog_config():
 
 
 def _options(rng, gates):
-    primary_key = rng.random() < 0.6
+    primary_key = rng.random() < 0.6 and not gates.active("paimon_primary_key_tables")
     return {
         "primary_key": primary_key,
         "bucket": rng.choice([1, 2, 4]) if primary_key else -1,
@@ -112,22 +112,6 @@ class SparkPaimonWriter(Writer):
     def ident(self):
         return paimon_utils.spark_table(self.table_name)
 
-    SCHEMA_OPS = (
-        "add_column",
-        "drop_column",
-        "rename_column",
-        "move_column",
-        "promote_column",
-    )
-
-    def _snapshot_count(self):
-        return self.spark.sql(
-            f"SELECT count(*) FROM {CATALOG}.default.`{self.table_name}$snapshots`"
-        ).collect()[0][0]
-
-    def checkable(self):
-        return not getattr(self, "schema_pending", False)
-
     def _upload(self):
         paimon_utils.upload_paimon_table(self.ctx.cluster, "s3", self.table_name)
 
@@ -157,16 +141,6 @@ class SparkPaimonWriter(Writer):
         )
 
     def execute(self, op, payload):
-        snapshots_before = self._snapshot_count()
-        self._execute(op, payload)
-        if op["kind"] in self.SCHEMA_OPS and self.ctx.gates.active(
-            "paimon_schema_change_without_snapshot"
-        ):
-            self.schema_pending = True
-        elif self._snapshot_count() > snapshots_before:
-            self.schema_pending = False
-
-    def _execute(self, op, payload):
         kind = op["kind"]
         cols = self.model.columns
         sql = self.spark.sql
