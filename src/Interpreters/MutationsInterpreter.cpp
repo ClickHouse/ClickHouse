@@ -837,6 +837,10 @@ bool MutationsInterpreter::projectionComputesFromColumn(
             return true;
 
     const bool column_read = std::ranges::any_of(projection.required_columns, is_column_or_subcolumn);
+    /// A part that does not store the column computes it from its default with the new type, while the projection keeps converting
+    /// the values it stores, so a projection that reads the column is rebuilt for such a part.
+    if (column_read && is_computed_for_part(column_name))
+        return true;
     /// `_parent_part_offset` is the `_part_offset` of the table renamed, not computed from its columns.
     const bool computes_columns = std::ranges::any_of(
         projection.sample_block,

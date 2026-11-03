@@ -11,6 +11,8 @@ DROP TABLE IF EXISTS t_default;
 DROP TABLE IF EXISTS t_alias;
 DROP TABLE IF EXISTS t_subcolumn;
 DROP TABLE IF EXISTS t_default_subcolumn;
+DROP TABLE IF EXISTS t_absent_plain;
+DROP TABLE IF EXISTS t_absent_plain_default;
 
 CREATE TABLE t_aggregate (id UInt64, dt DateTime('UTC'), PROJECTION p (SELECT toHour(dt) AS h, count() GROUP BY h))
 ENGINE = MergeTree ORDER BY id;
@@ -100,6 +102,28 @@ SELECT groupArray(h) FROM (SELECT toUInt16(x.v) AS h, count() FROM t_default_sub
 SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
 SELECT groupArray(h) FROM (SELECT toUInt16(x.v) AS h, count() FROM t_default_subcolumn GROUP BY h ORDER BY h) SETTINGS optimize_use_projections = 0;
 
+-- A projection that stores the column as is is rebuilt for a part that does not store the column: the part computes it from its
+-- default with the new type, while the projection would convert its stored values, for an implicit default and an explicit one.
+CREATE TABLE t_absent_plain (id UInt64) ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+INSERT INTO t_absent_plain SELECT number FROM numbers(3);
+ALTER TABLE t_absent_plain ADD COLUMN x UInt8;
+ALTER TABLE t_absent_plain ADD PROJECTION p (SELECT id, x ORDER BY id);
+ALTER TABLE t_absent_plain MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2;
+ALTER TABLE t_absent_plain MODIFY COLUMN x String SETTINGS mutations_sync = 2;
+SELECT groupArray(x) FROM t_absent_plain SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+SELECT groupArray(x) FROM t_absent_plain SETTINGS optimize_use_projections = 0;
+
+CREATE TABLE t_absent_plain_default (id UInt64) ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+INSERT INTO t_absent_plain_default SELECT number FROM numbers(3);
+ALTER TABLE t_absent_plain_default ADD COLUMN dt DateTime('UTC') DEFAULT '2026-01-01 00:00:00';
+ALTER TABLE t_absent_plain_default ADD PROJECTION p (SELECT id, dt ORDER BY id);
+ALTER TABLE t_absent_plain_default MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2;
+ALTER TABLE t_absent_plain_default MODIFY COLUMN dt DateTime64(0, 'Asia/Tokyo') SETTINGS mutations_sync = 2;
+SELECT groupArray(toHour(dt)) FROM t_absent_plain_default WHERE id >= 0 SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+SELECT groupArray(toHour(dt)) FROM t_absent_plain_default SETTINGS optimize_use_projections = 0;
+
 -- A projection that stores the column as is answers correctly without being rebuilt.
 CREATE TABLE t_plain (id UInt64, dt DateTime('UTC'), PROJECTION p (SELECT * ORDER BY dt)) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t_plain SELECT number, toDateTime('2026-01-01 00:00:00', 'UTC') + INTERVAL number HOUR FROM numbers(5);
@@ -116,3 +140,5 @@ DROP TABLE t_default;
 DROP TABLE t_alias;
 DROP TABLE t_subcolumn;
 DROP TABLE t_default_subcolumn;
+DROP TABLE t_absent_plain;
+DROP TABLE t_absent_plain_default;
