@@ -267,6 +267,21 @@ else()
     install (TARGETS clickhouse RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
 endif()
 
+if (OS_DARWIN AND NOT CMAKE_CROSSCOMPILING)
+    # On macOS the first execution of a freshly linked binary is delayed: the system (syspolicyd)
+    # hashes the entire file to verify its code signature, and for a binary of this size it takes
+    # tens of seconds. The result is cached per binary content, so execute it once right after
+    # linking to pay this cost at build time instead of on the first launch.
+    # Note: codesign --verify does not populate this cache, only exec does, and the cache is
+    # populated even if the execution fails.
+    option (PREWARM_MACOS_BINARY_VERIFICATION "Run the binary once after linking to force macOS code signature verification at build time instead of on first launch" ON)
+    if (PREWARM_MACOS_BINARY_VERIFICATION)
+        add_custom_command (TARGET clickhouse POST_BUILD
+            COMMAND sh -c "./clickhouse --version > /dev/null || true"
+            COMMENT "Prewarming macOS code signature verification of the clickhouse binary" VERBATIM)
+    endif ()
+endif ()
+
 if (BUILD_STRIPPED_BINARY)
     add_custom_target(clickhouse-stripped ALL
         COMMAND "${STRIP_PATH}" -o "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-stripped" --strip-debug --remove-section=.comment --remove-section=.note "${CMAKE_CURRENT_BINARY_DIR}/clickhouse"

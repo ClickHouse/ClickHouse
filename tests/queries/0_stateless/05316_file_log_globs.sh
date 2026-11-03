@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long
+# Tags: long, no-msan
 # A glob in the file name of the FileLog path selects which files of the directory are read.
 # A file that is already read keeps being read after it is renamed to a non-matching name (log rotation),
 # also across DETACH/ATTACH, until it is removed.

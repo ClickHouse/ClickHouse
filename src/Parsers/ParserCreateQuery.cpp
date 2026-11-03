@@ -2040,7 +2040,7 @@ ClickHouse creates the `db_name` database on all the servers of a specified clus
 
 ### ENGINE {#engine}
 
-By default, ClickHouse uses its own [Atomic](/reference/engines/database-engines/atomic) database engine. There are also [MySQL](/reference/engines/database-engines/mysql), [PostgresSQL](/reference/engines/database-engines/postgresql), [MaterializedPostgreSQL](/reference/engines/database-engines/materialized-postgresql), [Replicated](/reference/engines/database-engines/replicated), [SQLite](/reference/engines/database-engines/sqlite).
+By default, ClickHouse uses its own [Atomic](/reference/engines/database-engines/atomic) database engine. There are also [MySQL](/reference/engines/database-engines/mysql), [PostgreSQL](/reference/engines/database-engines/postgresql), [MaterializedPostgreSQL](/reference/engines/database-engines/materialized-postgresql), [Replicated](/reference/engines/database-engines/replicated), [SQLite](/reference/engines/database-engines/sqlite).
 
 ### COMMENT {#comment}
 
@@ -3787,8 +3787,10 @@ COMMENT 'Comment'
 
 <CloudNotSupportedBadge/>
 
-<Note>
-Creating a dictionary with a configuration file is not applicable to ClickHouse Cloud. Please use DDL (see above), and create your dictionary as the `default` user.
+<Note title="ClickHouse Cloud">
+ClickHouse Cloud does not support creating dictionaries with configuration files. Use [`CREATE DICTIONARY`](#creating-a-dictionary-with-a-ddl-query) instead.
+
+When creating a dictionary that reads from a ClickHouse table, include a dedicated user's username and password in the `SOURCE` clause. That user needs `SELECT` permission on the source table. See the [ClickHouse dictionary source example](/reference/statements/create/dictionary/sources/clickhouse).
 </Note>
 
 The dictionary configuration file has the following format:
