@@ -18,6 +18,7 @@ DROP TABLE IF EXISTS t_lambda_modify;
 DROP TABLE IF EXISTS t_lambda_element;
 DROP TABLE IF EXISTS t_lambda_datetime;
 DROP TABLE IF EXISTS t_lambda_mutation;
+DROP TABLE IF EXISTS t_lambda_fixed;
 DROP TABLE IF EXISTS t_rollup_create;
 DROP TABLE IF EXISTS t_rollup_modify;
 
@@ -110,6 +111,14 @@ TTL event + INTERVAL 1 SECOND DELETE WHERE arrayExists(event -> event = '2020-01
     OR arrayExists(event -> event = '2020-01-01 00:00:00', arrayMap(y -> y, arr));
 SELECT 'lambda DateTime', extract(engine_full, 'WHERE .*\\)') FROM system.tables WHERE database = currentDatabase() AND name = 't_lambda_datetime';
 
+-- A function with a fixed argument between the lambda and the arrays binds the parameters to the arrays after it.
+CREATE TABLE t_lambda_fixed (event DateTime, arr Array(DateTime), tags Array(String)) ENGINE = MergeTree ORDER BY tuple()
+TTL event + INTERVAL 1 SECOND DELETE WHERE length(arrayPartialSort((x, y) -> y = 'keep', 1, arr, tags)) > 0
+    OR length(arrayTopK((x, y) -> x = '2020-01-01 00:00:00', 1, arr, tags)) > 0;
+SELECT 'lambda fixed argument', extract(engine_full, 'WHERE .*\\)') FROM system.tables WHERE database = currentDatabase() AND name = 't_lambda_fixed';
+ALTER TABLE t_lambda_fixed MODIFY TTL event + INTERVAL 1 SECOND DELETE WHERE length(arrayBottomK((x, y) -> y = 'keep', 1, arr, tags)) > 0;
+SELECT 'MODIFY TTL lambda fixed argument', extract(engine_full, 'WHERE .*\\)') FROM system.tables WHERE database = currentDatabase() AND name = 't_lambda_fixed';
+
 CREATE TABLE t_lambda_mutation (id UInt8, event DateTime, arr Array(DateTime)) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t_lambda_mutation VALUES (1, 0, [1577804400]), (2, 0, [1577836800]);
 SELECT 'SELECT lambda DateTime', id FROM t_lambda_mutation WHERE arrayExists(event -> event = '2020-01-01 00:00:00', arr);
@@ -131,3 +140,4 @@ DROP TABLE t_lambda_modify;
 DROP TABLE t_lambda_element;
 DROP TABLE t_lambda_datetime;
 DROP TABLE t_lambda_mutation;
+DROP TABLE t_lambda_fixed;

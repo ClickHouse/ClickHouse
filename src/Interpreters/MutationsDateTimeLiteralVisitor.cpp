@@ -103,9 +103,14 @@ DataTypePtr getArgumentType(const ASTPtr & argument, const ColumnsDescription & 
     return column ? column->type : nullptr;
 }
 
+/// Higher-order functions with a fixed argument, a limit or a count, between the lambda and the arrays or the map.
+const std::unordered_set<String> functions_with_fixed_argument_after_lambda = {
+    "arrayPartialSort", "arrayPartialReverseSort", "arrayTopK", "arrayBottomK", "mapPartialSort", "mapPartialReverseSort",
+};
+
 /// The types of the `num_parameters` parameters of the lambda that is the argument `lambda_position` of the higher-order
 /// function `function`: the elements of its arrays, the key and the value of its map, and the accumulator of `arrayFold`.
-/// A type that is not known is nullptr.
+/// A type that is not known is nullptr, and so are all of them when the arguments do not have the layout of such a function.
 DataTypes getLambdaParameterTypes(
     const ASTFunction & function,
     size_t lambda_position,
@@ -141,10 +146,16 @@ DataTypes getLambdaParameterTypes(
         return types;
     }
 
+    /// The arrays or the map follow the lambda, or its fixed argument, such as the limit of arrayPartialSort(f, limit, array).
+    const size_t first_bound = functions_with_fixed_argument_after_lambda.contains(function.name) ? 2 : 1;
+    if (arguments.size() <= first_bound)
+        return types;
+    const size_t num_bound = arguments.size() - first_bound;
+
     /// mapFilter((key, value) -> ..., map) and the other functions of a map.
-    if (num_parameters == 2 && arguments.size() == 2)
+    if (num_parameters == 2 && num_bound == 1)
     {
-        const auto type = argument_type(1);
+        const auto type = argument_type(first_bound);
         if (const auto * map = typeid_cast<const DataTypeMap *>(type.get()))
         {
             types[0] = map->getKeyType();
@@ -153,9 +164,11 @@ DataTypes getLambdaParameterTypes(
         }
     }
 
-    /// arrayMap((x, y) -> ..., array_x, array_y) and the other functions of arrays.
+    /// arrayMap((x, y) -> ..., array_x, array_y) and the other functions of arrays, one array for each parameter.
+    if (num_bound != num_parameters)
+        return types;
     for (size_t i = 0; i < num_parameters; ++i)
-        types[i] = element_type(i + 1);
+        types[i] = element_type(first_bound + i);
     return types;
 }
 
