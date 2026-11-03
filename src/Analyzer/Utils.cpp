@@ -1658,13 +1658,45 @@ bool dependsOnImplicitTimeZone(const IDataType & type)
     });
 }
 
+/// True when `type` contains a value that a conversion to a date or a Unix timestamp reads in the
+/// default time zone of the server: a number (`toDate(1704124800)`) or a string
+/// (`toUnixTimestamp('2024-01-01 00:00:00')`). A `Date` / `Date32` also counts for
+/// `toUnixTimestamp`, which returns the start of that day in the default time zone.
+bool readsTimestampInImplicitTimeZone(const IDataType & type, bool include_dates)
+{
+    return anyInTypeTree(type, [include_dates](const IDataType & nested)
+    {
+        return isNumber(nested) || isStringOrFixedString(nested) || (include_dates && isDateOrDate32(nested));
+    });
+}
+
+bool isConversionToDate(const String & function_name)
+{
+    return function_name.starts_with("toDate") || function_name == "CAST" || function_name == "_CAST"
+        || function_name.starts_with("accurateCast");
+}
+
 bool functionDependsOnImplicitTimeZone(const FunctionBasePtr & function_base)
 {
-    if (dependsOnImplicitTimeZone(*function_base->getResultType()))
+    const auto & result_type = function_base->getResultType();
+    if (dependsOnImplicitTimeZone(*result_type))
         return true;
-    for (const auto & argument_type : function_base->getArgumentTypes())
+    const auto & argument_types = function_base->getArgumentTypes();
+    for (const auto & argument_type : argument_types)
         if (argument_type && dependsOnImplicitTimeZone(*argument_type))
             return true;
+
+    /// The types of these conversions contain no `DateTime`, but they still use the default time zone.
+    /// `toUnixTimestamp` takes an explicit time zone as its second argument. The second argument of
+    /// a conversion to a date may be something else (the default of `toDateOrDefault`, the target type
+    /// of `CAST`), so such conversions are kept on the initiator regardless of it.
+    if (argument_types.empty() || !argument_types[0])
+        return false;
+    const auto & function_name = function_base->getName();
+    if (isConversionToDate(function_name) && anyInTypeTree(*result_type, [](const IDataType & nested) { return isDateOrDate32(nested); }))
+        return readsTimestampInImplicitTimeZone(*argument_types[0], /*include_dates=*/ false);
+    if (function_name == "toUnixTimestamp" && argument_types.size() == 1)
+        return readsTimestampInImplicitTimeZone(*argument_types[0], /*include_dates=*/ true);
     return false;
 }
 
