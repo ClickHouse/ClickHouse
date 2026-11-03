@@ -70,8 +70,10 @@ ExternalDistinctTransform::ExternalDistinctTransform(
     size_t min_free_disk_space_,
     size_t max_block_size_rows_,
     size_t preferred_block_bytes_,
-    bool preserve_input_order_)
+    bool preserve_input_order_,
+    DistinctSetMemoryTracker::SharedCounter shared_set_bytes_)
     : IProcessor({header_}, {header_})
+    , set_memory(shared_set_bytes_)
     , state(std::in_place_type<Hashing>, *header_, columns_, set_size_limits_)
     , limit_hint(limit_hint_)
     , set_size_limits(set_size_limits_)
@@ -82,6 +84,7 @@ ExternalDistinctTransform::ExternalDistinctTransform(
     , preferred_block_bytes(preferred_block_bytes_)
     , preserve_input_order(preserve_input_order_)
 {
+    chassert(!shared_set_bytes_ || !set_size_limits.hasLimits());
 }
 
 ExternalDistinctTransform::~ExternalDistinctTransform() = default;
@@ -439,6 +442,9 @@ void ExternalDistinctTransform::work()
     {
         if constexpr (std::is_same_v<Phase, Hashing>)
         {
+            /// A completed set keeps its bytes in the shared counter until the transform is destroyed. A
+            /// single-stream `DISTINCT` would still retain these keys while other partitions insert theirs,
+            /// so the combined byte limit must count them even if this partition finishes first.
             if (phase.input_finished)
                 state.emplace<Finishing>();
             else
@@ -464,11 +470,17 @@ void ExternalDistinctTransform::consumeHashing(Hashing & hashing)
 {
     if (unlikely(!input_chunk.hasRows()))
     {
+        /// A rowless chunk with a `ChunkInfo` is a marker for the consumer (e.g. a watermark of a streaming
+        /// read). Before spilling, the results of the preceding chunks are already emitted, so it keeps its place.
+        chassert(!output_chunk);
+        if (!input_chunk.getChunkInfos().empty())
+            output_chunk = std::move(input_chunk);
         input_chunk.clear();
         return;
     }
 
     hashing.set.prepareForInsert(input_chunk);
+    set_memory.update(hashing.getRetainedSetBytes());
 
     /// The input columns and existing set are already charged to query memory. The estimates below
     /// cover additional allocations for inserting keys, filtering rows, and preparing the first spill run.
@@ -577,6 +589,7 @@ void ExternalDistinctTransform::consumeHashing(Hashing & hashing)
     }
 
     consumed_rows += processed_rows;
+    set_memory.report(output_chunk, outputs.front().getHeader(), hashing.getRetainedSetBytes());
     result_rows += output_chunk.getNumRows();
 
     /// A hint or a size limit in the 'break' overflow mode retains this final result chunk.
@@ -637,11 +650,14 @@ void ExternalDistinctTransform::startSpilling(Hashing & hashing)
             hashing.set.getTotalRowCount(), formatReadableSizeWithBinarySuffix(hashing.set.getTotalByteCount()));
         auto keys = std::move(hashing.set).extractKeys();
         auto & extracting = state.emplace<ExtractingSuppression>(std::move(keys));
+        /// The extractor retains the set and arena, but the dictionary filtering state is released.
+        set_memory.update(extracting.keys->getTotalByteCount());
         extractSuppressionRun(extracting);
     }
     else
     {
         state.emplace<CollectingInput>();
+        set_memory.update(0);
         LOG_TRACE(log, "DISTINCT hash set is empty; collecting input for ordinary spill runs");
     }
 }
@@ -656,6 +672,7 @@ void ExternalDistinctTransform::extractSuppressionRun(ExtractingSuppression & ex
     while (!isCancelled() && bytes < DEFAULT_BYTES_IN_RUN)
     {
         auto key_columns = extracting.keys->next(maxRowsInSortingUnit(), DEFAULT_BYTES_IN_RUN - bytes);
+        set_memory.update(extracting.keys->getTotalByteCount());
         if (key_columns.empty())
             break;
 
@@ -763,6 +780,8 @@ void ExternalDistinctTransform::flushSortingUnit(CollectingInput & collecting)
 void ExternalDistinctTransform::collectInput(CollectingInput & collecting)
 {
     auto chunk = std::move(input_chunk);
+    /// Rowless marker chunks are dropped here: after spilling, the rows are emitted only once the input
+    /// ends, so a forwarded marker (e.g. a watermark) would overtake the rows that arrived before it.
     if (unlikely(!chunk.hasRows()))
         return;
 
@@ -1012,10 +1031,11 @@ void ExternalDistinctTransform::consumeMerged(Merging & merging)
     /// Arrival numbers have served their purpose after the optional order-restoration sort.
     chassert(!output_chunk);
     output_chunk = spill_layout->restoreOutputChunk(std::move(chunk));
+    set_memory.report(output_chunk, outputs.front().getHeader(), 0);
     result_rows += output_chunk.getNumRows();
 
-    /// The row limit applies to the result. The hash set has been released, so no set memory remains
-    /// to check against the byte limit. The row limit is checked before applying the hint.
+    /// The row limit applies to the result. This stream's hash set has been released, so no local set
+    /// memory remains to check against the byte limit. The row limit is checked before applying the hint.
     if (!set_size_limits.check(result_rows, /*bytes=*/ 0, "DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED)
         || (limit_hint && result_rows >= limit_hint))
         state.emplace<Finishing>();

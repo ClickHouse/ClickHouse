@@ -248,3 +248,101 @@ def test_implicit_index_upgrade_alter_replay(started_cluster):
     node.query("DROP TABLE test_alter_replay SYNC;")
     node2.query("DROP TABLE test_alter_replay SYNC;")
     node.restart_with_original_version()
+
+
+def test_implicit_index_upgrade_alias_join_dropped(started_cluster):
+    """25.10 stores the implicit indices over the ALIAS columns in Keeper and, after an
+    ALTER, in the local definition. The newer server generates them as for a new table
+    (none over the non-deterministic `joinGet`), and still loads the table and activates
+    the replica once the `Join` table read by `a` is dropped."""
+    node = started_cluster.instances["node"]
+
+    node.query("DROP TABLE IF EXISTS test_alias_join SYNC;")
+    node.query("DROP TABLE IF EXISTS test_alias_join_src SYNC;")
+    node.query(
+        "CREATE TABLE test_alias_join_src (k UInt64, v UInt64) ENGINE = Join(ANY, LEFT, k);"
+    )
+    node.query("INSERT INTO test_alias_join_src VALUES (1, 10);")
+    node.query(
+        """
+        CREATE TABLE test_alias_join (
+            key UInt64,
+            a UInt64 ALIAS joinGet('default.test_alias_join_src', 'v', key),
+            b UInt64 ALIAS key * 2
+        )
+        ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_alias_join', 'r1')
+        ORDER BY key
+        SETTINGS add_minmax_index_for_numeric_columns=1, add_minmax_index_for_string_columns=0;
+        """
+    )
+    node.query("INSERT INTO test_alias_join VALUES (1), (2);")
+    node.query("ALTER TABLE test_alias_join MODIFY COMMENT 'c';")
+    definition = node.exec_in_container(
+        ["cat", "/var/lib/clickhouse/metadata/default/test_alias_join.sql"]
+    )
+    assert "INDEX auto_minmax_index_a " in definition
+    assert "INDEX auto_minmax_index_b " in definition
+
+    node.restart_with_latest_version()
+    wait_for_active_replica(node, "test_alias_join")
+    assert node.query("SELECT key, a, b FROM test_alias_join ORDER BY key;") == "1\t10\t2\n2\t0\t4\n"
+    assert (
+        node.query(
+            "SELECT name FROM system.data_skipping_indices WHERE table = 'test_alias_join' ORDER BY name;"
+        )
+        == "auto_minmax_index_b\nauto_minmax_index_key\n"
+    )
+
+    node.query("DROP TABLE test_alias_join_src SETTINGS check_table_dependencies = 0;")
+    node.restart_clickhouse()
+
+    wait_for_active_replica(node, "test_alias_join")
+    assert node.query("SELECT key, b FROM test_alias_join ORDER BY key;") == "1\t2\n2\t4\n"
+    node.query("INSERT INTO test_alias_join VALUES (3);")
+    assert node.query("SELECT count() FROM test_alias_join;").strip() == "3"
+
+    node.query("DROP TABLE test_alias_join SYNC;")
+    node.restart_with_original_version()
+
+
+def test_reserved_name_index_differing_from_implicit_is_kept(started_cluster):
+    """An index with the implicit name but another granularity stays a regular index, in the
+    local definition and in Keeper, so rewriting the definition keeps it, the replica stays
+    active, and the marks its parts were written with stay readable."""
+    node2 = started_cluster.instances["node2"]
+
+    node2.query("DROP TABLE IF EXISTS test_reserved_name SYNC;")
+    node2.query(
+        """
+        ATTACH TABLE test_reserved_name UUID '3d1e7c55-2f4e-4c8b-9a51-6f3d2e1a0b79' (
+            key UInt64,
+            x UInt64,
+            INDEX auto_minmax_index_x x TYPE minmax GRANULARITY 8
+        )
+        ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_reserved_name', 'r1')
+        ORDER BY key
+        SETTINGS add_minmax_index_for_numeric_columns=1, index_granularity=1;
+        """
+    )
+    # The attached replica has no Keeper metadata yet; this writes it from the local definition.
+    node2.query("SYSTEM RESTORE REPLICA test_reserved_name;")
+    node2.query("INSERT INTO test_reserved_name SELECT number, number FROM numbers(64);")
+    node2.query("ALTER TABLE test_reserved_name MODIFY COMMENT 'c';")
+    node2.query("DETACH TABLE test_reserved_name;")
+    node2.query("ATTACH TABLE test_reserved_name;")
+
+    wait_for_active_replica(node2, "test_reserved_name")
+    assert (
+        node2.query(
+            "SELECT granularity FROM system.data_skipping_indices WHERE table = 'test_reserved_name' AND name = 'auto_minmax_index_x';"
+        )
+        == "8\n"
+    )
+    assert (
+        node2.query(
+            "SELECT count() FROM test_reserved_name WHERE x = 50 SETTINGS force_data_skipping_indices = 'auto_minmax_index_x';"
+        )
+        == "1\n"
+    )
+
+    node2.query("DROP TABLE test_reserved_name SYNC;")

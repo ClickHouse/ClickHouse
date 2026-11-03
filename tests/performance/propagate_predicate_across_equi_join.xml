@@ -1,6 +1,5 @@
 <test>
     <settings>
-        <enable_analyzer>1</enable_analyzer>
         <!-- Single thread keeps the unpruned baseline in the 0.1-1 s window -->
         <max_threads>1</max_threads>
     </settings>
