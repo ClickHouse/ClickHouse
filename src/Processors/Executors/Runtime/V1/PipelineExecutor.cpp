@@ -660,7 +660,7 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
 void PipelineExecutor::growDesiredThreads(size_t threads)
 {
     size_t current = desired_threads.load(std::memory_order_relaxed);
-    size_t target;
+    size_t target = 0;
     do
     {
         target = std::min(max_pipeline_threads, current + threads);
