@@ -1511,9 +1511,7 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
             }
         }
 
-        /// Replicas of older versions read the database of a refreshable materialized view's rename.
-        if (!query_context->getParentTable())
-            rename->resetDatabases();
+        rename->resetDatabases();
     }
 
     if (const auto * query_alter = query->as<ASTAlterQuery>())

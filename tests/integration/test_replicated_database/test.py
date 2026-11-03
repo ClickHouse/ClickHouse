@@ -2668,7 +2668,7 @@ def test_rename_with_different_local_database_names(started_cluster):
         == "rename_local_a\tu\n"
     )
 
-    # A refresh enqueues its EXCHANGE with the refreshing replica's database name.
+    # A refresh's EXCHANGE is stored without a database too.
     main_node.query(
         "CREATE MATERIALIZED VIEW rename_local_a.mv REFRESH EVERY 1 YEAR (x UInt8) "
         "ENGINE = ReplicatedMergeTree ORDER BY () EMPTY AS SELECT 1 AS x"
@@ -2681,8 +2681,8 @@ def test_rename_with_different_local_database_names(started_cluster):
         "SELECT extract(value, 'query: ([^\\n]*)') FROM system.zookeeper "
         f"WHERE path = '{zk_path}/log' AND value LIKE '%EXCHANGE TABLES%inner_id%'"
     )
-    assert exchange.startswith(
-        ("EXCHANGE TABLES rename_local_a.", "EXCHANGE TABLES rename_local_b.")
+    assert exchange.startswith("EXCHANGE TABLES `.tmp.inner_id.") and (
+        "rename_local" not in exchange
     ), exchange
     inner_uuid = "SELECT uuid FROM system.tables WHERE database = '{}' AND name LIKE '.inner_id.%'"
     assert main_node.query(inner_uuid.format("rename_local_a")) == dummy_node.query(
