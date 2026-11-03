@@ -118,7 +118,9 @@ def test_create_table_as_source_on_other_shards(started_cluster):
     # node1 hosts shards 0 and 2, so it does not have the shard_1 database. It ships the query to
     # shard_1_hosts, which holds only node2 and node3, the nodes that host shard_1. The legacy ON
     # CLUSTER formats carry the query as written, so the initiator must not read the source
-    # definition it does not have.
+    # definition it does not have. shard_1_hosts is one shard whose replicas share a default database,
+    # so maybeCrossReplication() is false for it, and this covers an initiator without the source, not
+    # the cross-replication branch of prepareOnClusterQuery.
     for node in (node2, node3):
         node.query(
             "CREATE TABLE shard_1.as_source(date Date, id UInt32, shard_id UInt32) "
@@ -144,6 +146,46 @@ def test_create_table_as_source_on_other_shards(started_cluster):
                 )
                 == "MergeTree\n"
             )
+
+
+def test_create_table_as_source_on_other_shards_engine_grant(started_cluster):
+    # table_engines_require_grant is off on these servers, so the user can create every ordinary engine,
+    # one name at a time. That is not TABLE ENGINE ON *, which node1 requires when it cannot read the source.
+    for node in (node2, node3):
+        node.query(
+            "CREATE TABLE shard_1.as_grant_source(date Date, id UInt32, shard_id UInt32) "
+            "ENGINE = MergeTree PARTITION BY toYYYYMM(date) ORDER BY id"
+        )
+
+    node1.query("CREATE USER as_copier")
+    node1.query("GRANT CREATE TABLE ON shard_1.* TO as_copier")
+    node1.query("GRANT CLUSTER ON *.* TO as_copier")
+    node1.query("GRANT SELECT, SHOW COLUMNS ON shard_1.as_grant_source TO as_copier")
+
+    settings = {
+        "distributed_ddl_entry_format_version": 2,
+        "distributed_ddl_output_mode": "throw",
+    }
+    error = node1.query_and_get_error(
+        "CREATE TABLE shard_1.as_grant_inherited ON CLUSTER shard_1_hosts AS shard_1.as_grant_source",
+        settings=settings,
+        user="as_copier",
+    )
+    assert "ACCESS_DENIED" in error
+    assert "TABLE ENGINE ON *" in error
+    assert "or to specify ENGINE explicitly" in error
+
+    node1.query(
+        "CREATE TABLE shard_1.as_grant_own ON CLUSTER shard_1_hosts AS shard_1.as_grant_source "
+        "ENGINE = MergeTree ORDER BY id",
+        settings=settings,
+        user="as_copier",
+    )
+    for node in (node2, node3):
+        assert node.query("EXISTS TABLE shard_1.as_grant_inherited") == "0\n"
+        assert node.query("EXISTS TABLE shard_1.as_grant_own") == "1\n"
+
+    node1.query("DROP USER as_copier")
 
 
 if __name__ == "__main__":

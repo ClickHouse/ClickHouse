@@ -1,0 +1,6 @@
+-- without_write:
+WRITE ON S3
+-- with_write_on_filtered_s3:
+WRITE ON S3
+-- with_write:
+UNKNOWN_DATABASE

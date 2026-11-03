@@ -4094,17 +4094,19 @@ BlockIO InterpreterCreateQuery::execute()
                 /// the UUIDs above do
                 create.as_database = getContext()->resolveDatabase(create.as_database);
 
-                /// Check `SHOW COLUMNS` before looking the source up, else the error tells a user who cannot
-                /// see the source whether it exists.
-                const bool inherits_engine = !create.storage || !create.storage->engine;
-                if (inherits_engine)
-                    getContext()->checkAccess(AccessType::SHOW_COLUMNS, create.as_database, create.as_table);
+                /// The worker copies the columns, indices and projections of the source with no user, whatever the
+                /// engine, so every query needs `SHOW COLUMNS`. Check it before looking the source up, else the
+                /// error tells a user who cannot see the source whether it exists.
+                getContext()->checkAccess(AccessType::SHOW_COLUMNS, create.as_database, create.as_table);
+
+                /// A query with its own `ENGINE` inherits no engine definition, so it skips the lookup, which can
+                /// reach the server behind a `Remote` database. A `TimeSeries` engine still inherits the inner
+                /// engines of the source.
+                const bool inherits_definition = !create.storage || !create.storage->engine || create.is_time_series_table;
 
                 /// The initiator can read the source definition only when it holds the source. A
-                /// cross-replication cluster keeps each shard in a database the initiator may not have. A
-                /// query with its own `ENGINE` inherits no definition, so it skips the lookup, which can reach
-                /// the server behind a `Remote` database before any grant is checked.
-                if (!inherits_engine || DatabaseCatalog::instance().isTableExist({create.as_database, create.as_table}, getContext()))
+                /// cross-replication cluster keeps each shard in a database the initiator may not have.
+                if (!inherits_definition || DatabaseCatalog::instance().isTableExist({create.as_database, create.as_table}, getContext()))
                 {
                     /// OLDEST_VERSION sends no settings, so a worker replaces nothing with Null. check
                     /// what the worker builds, not what our settings give
@@ -4138,22 +4140,25 @@ BlockIO InterpreterCreateQuery::execute()
                     /// the worker inherits the move destination of the source too, and runs with no user
                     checkExportAccess(inherited);
                 }
-                else if (inherits_engine)
+                else
                 {
-                    /// The initiator cannot see the engine and the settings the worker inherits, so require
-                    /// `SELECT` on the source and `TABLE ENGINE` on every engine, which covers any source. A
-                    /// query with its own `ENGINE` inherits neither.
-                    const auto access = getContext()->getAccess();
-                    if (!access->isGranted(AccessType::SELECT, create.as_database, create.as_table)
-                        || !access->isGranted(AccessType::TABLE_ENGINE))
+                    /// The initiator cannot see the definition the worker inherits, so require `SELECT` on the
+                    /// source, `TABLE ENGINE` on every engine and the grants of any move destination, which
+                    /// covers any source.
+                    AccessRightsElements required_access;
+                    required_access.emplace_back(AccessType::SELECT, create.as_database, create.as_table);
+                    required_access.emplace_back(AccessType::TABLE_ENGINE);
+                    required_access.append_range(StorageFactory::instance().getExportAccessOfUnknownDefinition());
+                    if (!getContext()->getAccess()->isGranted(required_access))
                     {
-                        const String qualified_name = backQuoteIfNeed(create.as_database) + "." + backQuoteIfNeed(create.as_table);
                         throw Exception(
                             ErrorCodes::ACCESS_DENIED,
-                            "Not enough privileges. {} is not on this server, so the definition that the new table "
+                            "Not enough privileges. {}.{} is not on this server, so the definition that the new table "
                             "inherits from it cannot be checked here. To execute this query, it's necessary to have "
-                            "the grants SELECT ON {} and TABLE ENGINE ON *, or to specify ENGINE explicitly",
-                            qualified_name, qualified_name);
+                            "the grants {}{}",
+                            backQuoteIfNeed(create.as_database), backQuoteIfNeed(create.as_table),
+                            required_access.toStringWithoutOptions(),
+                            create.is_time_series_table ? "" : ", or to specify ENGINE explicitly");
                     }
                 }
             }
