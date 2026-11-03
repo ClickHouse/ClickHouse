@@ -122,13 +122,32 @@ private:
     }
 
     /// For a file, its directory, so that a file replaced by a new one, as a renewed certificate is, is visible.
+    /// If the file is a symbolic link, the directories of the targets of the links in the chain as well: a
+    /// certificate of Let's Encrypt in `live/<domain>` is a link to `../../archive/<domain>/fullchain<N>.pem`, and a
+    /// renewal adds a new file next to the target and points the link at it.
     void addLocation(const fs::path & path, Access access, const std::string & source)
     {
         std::error_code error;
         if (fs::is_directory(path, error))
+        {
             add(path, access, source);
-        else
-            add(path.parent_path(), access, source);
+            return;
+        }
+        add(path.parent_path(), access, source);
+
+        /// The same limit on the number of links as in the kernel, against a loop.
+        constexpr size_t max_links = 40;
+        fs::path current = path;
+        for (size_t i = 0; i < max_links && fs::is_symlink(current, error); ++i)
+        {
+            fs::path target = fs::read_symlink(current, error);
+            if (error)
+                break;
+            if (target.is_relative())
+                target = current.parent_path() / target;
+            current = target.lexically_normal();
+            add(current.parent_path(), access, source);
+        }
     }
 
     /// For a path with wildcards, the directory up to the first wildcard; otherwise the location of the path.
@@ -261,6 +280,22 @@ private:
     {
         for (const auto * name : {"storage_path", "log_storage_path", "snapshot_storage_path", "data_storage_path"})
             addKey(fmt::format("keeper_server.{}", name), Access::ReadWrite, working_directory);
+
+        /// The directory of the state file, with the same precedence as in `KeeperContext::getStatePathFromConfig`:
+        /// without `storage_path` and `state_storage_disk`, it is the parent of `snapshot_storage_path` or, if that
+        /// is not set, of `log_storage_path`.
+        if (config.has("keeper_server.state_storage_disk") || config.has("keeper_server.storage_path"))
+            return;
+        for (const auto * name : {"snapshot_storage_path", "log_storage_path"})
+        {
+            const std::string key = fmt::format("keeper_server.{}", name);
+            if (config.has(key))
+            {
+                add(absolute(fs::path(config.getString(key)).parent_path().string(), working_directory), Access::ReadWrite,
+                    fmt::format("the state file of Keeper, next to `{}`", key));
+                return;
+            }
+        }
     }
 
     void addLogs()

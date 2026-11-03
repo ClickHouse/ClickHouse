@@ -2026,7 +2026,7 @@ At startup, before it starts any thread, the server moves itself into a new [mou
 - A private empty `/tmp`.
 - The paths listed in the `filesystem_isolation_paths` section of the configuration, with `<read_only>` and `<read_write>` elements.
 
-Symbolic links on the way to a path are recreated inside, and their targets are made visible as well. A directory that is a file's location in the configuration, such as that of a certificate, is mounted whole, so that a renewed file replaced by a new one is visible. Writable directories that do not exist are created before the isolation, as the server would do anyway.
+Symbolic links on the way to a path are recreated inside, and their targets are made visible as well. A directory that is a file's location in the configuration, such as that of a certificate, is mounted whole, so that a renewed file replaced by a new one is visible. If such a file is a symbolic link, as the certificates of Let's Encrypt are, the directories of the targets of the links are mounted as well. Writable directories that do not exist are created before the isolation, as the server would do anyway.
 
 Nothing else is visible, in particular no shell: [executable user defined functions](/sql-reference/functions/udf), executable dictionaries, the `executable` table function and the `Executable` table engine can run only programs that do not need anything outside the visible paths. To run a script, make its interpreter and the libraries it is linked with visible, for example:
 
