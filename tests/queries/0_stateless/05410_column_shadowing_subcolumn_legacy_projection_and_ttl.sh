@@ -31,7 +31,13 @@ clickhouse_local "
     ALTER TABLE d.t_projection_ignore ADD PROJECTION p (SELECT sum(\`a.size0\`));
     ALTER TABLE d.t_projection_ignore MATERIALIZE PROJECTION p SETTINGS mutations_sync = 1;
     CREATE TABLE d.t_ttl (a Array(UInt64)) ENGINE = MergeTree ORDER BY tuple() TTL addDays(toDate('2000-01-01'), 36500 * \`a.size0\`);
-    INSERT INTO d.t_ttl VALUES ([1]);"
+    INSERT INTO d.t_ttl VALUES ([1]);
+    CREATE TABLE d.t_overlap (id UInt64, a JSON, \`a.x\` Array(UInt64)) ENGINE = MergeTree ORDER BY id
+        SETTINGS skip_empty_columns_on_insert = 1, serialization_info_version = 'with_missing_columns',
+            min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+    INSERT INTO d.t_overlap (id, a) VALUES (1, '{\"x\":{\"y\":11}}'), (2, '{\"x\":{\"y\":22}}');
+    ALTER TABLE d.t_overlap ADD PROJECTION p (SELECT sum(toUInt64(\`a.x.y\`)));
+    ALTER TABLE d.t_overlap MATERIALIZE PROJECTION p SETTINGS mutations_sync = 1;"
 
 # shellcheck disable=SC2016
 sed -i 's/^    `a` Array(UInt64)\(,\?\)$/    `a` Array(UInt64),\n    `a.size0` UInt64 DEFAULT 7\1/' "${WORKING_FOLDER}/metadata/d/t_projection.sql"
@@ -39,6 +45,9 @@ sed -i 's/^    `a` Array(UInt64)\(,\?\)$/    `a` Array(UInt64),\n    `a.size0` U
 sed -i 's/^    `a` Array(UInt64)\(,\?\)$/    `a` Array(UInt64),\n    `a.size0` UInt64 DEFAULT 7\1/' "${WORKING_FOLDER}/metadata/d/t_projection_ignore.sql"
 # shellcheck disable=SC2016
 sed -i 's/^    `a` Array(UInt64)\(,\?\)$/    `a` Array(UInt64),\n    `a.size0` UInt64 DEFAULT 0\1/' "${WORKING_FOLDER}/metadata/d/t_ttl.sql"
+# The part records the independent column `a.x` as missing, which does not tell anything about `a.x.y`.
+# shellcheck disable=SC2016
+sed -i 's/^    `a.x` Array(UInt64)\(,\?\)$/    `a.x` Array(UInt64),\n    `a.x.y` UInt64 DEFAULT 7\1/' "${WORKING_FOLDER}/metadata/d/t_overlap.sql"
 
 clickhouse_local "
     SELECT 'projection';
@@ -62,6 +71,13 @@ clickhouse_local "
     SELECT a, \`a.size0\` FROM d.t_ttl;
     INSERT INTO d.t_ttl VALUES ([2], 0);
     OPTIMIZE TABLE d.t_ttl FINAL;
-    SELECT a, \`a.size0\` FROM d.t_ttl;"
+    SELECT a, \`a.size0\` FROM d.t_ttl;
+
+    SELECT 'projection, overlapping marker';
+    SELECT sum(toUInt64(\`a.x.y\`)) FROM d.t_overlap SETTINGS optimize_use_projections = 0;
+    SELECT sum(toUInt64(\`a.x.y\`)) FROM d.t_overlap SETTINGS optimize_use_projections = 1;
+    OPTIMIZE TABLE d.t_overlap FINAL;
+    SELECT sum(toUInt64(\`a.x.y\`)) FROM d.t_overlap SETTINGS optimize_use_projections = 0;
+    SELECT sum(toUInt64(\`a.x.y\`)) FROM d.t_overlap SETTINGS optimize_use_projections = 1;"
 
 rm -rf "${WORKING_FOLDER}"

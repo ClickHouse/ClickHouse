@@ -1016,14 +1016,13 @@ bool IMergeTreeDataPart::readsColumnFromShadowedSubcolumn(const String & column_
     if (tryGetColumnForTable(column_name, table_columns) || !tryGetColumn(column_name))
         return false;
 
-    /// The marker is recorded under the name of the column that the part misses, which is the name itself or, for
-    /// a subcolumn (`a.x.y` of a column `a.x` next to a `JSON` column `a`), one of its prefixes.
-    if (serialization_infos.getMissingColumnInfo(column_name))
-        return false;
-
-    return std::ranges::none_of(
-        Nested::getAllColumnAndSubcolumnPairs(column_name),
-        [&](const auto & split) { return serialization_infos.getMissingColumnInfo(String(split.first)) != nullptr; });
+    /// The marker is recorded under the name of the column of the table that the part misses: the name itself or,
+    /// for a subcolumn (`a.x.y` of a column `a.x` next to a `JSON` column `a`), the name of its storage column. A marker
+    /// of another column named like a prefix (`a.x` next to a column `a.x.y`) does not tell that the part was written
+    /// after the column was added.
+    auto column_in_table = table_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
+    String name_in_table_storage = column_in_table ? column_in_table->getNameInStorage() : column_name;
+    return serialization_infos.getMissingColumnInfo(name_in_table_storage) == nullptr;
 }
 
 SerializationPtr IMergeTreeDataPart::getSerialization(const String & column_name) const
