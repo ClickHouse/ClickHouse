@@ -136,6 +136,23 @@
         SETTINGS enable_join_runtime_filters=1
     </query>
 
+    <!-- 200000 keys over a range of 60 million values -->
+    <query>
+        SELECT avg(o_totalprice)
+        FROM orders
+        JOIN (SELECT toInt32(number * 300) AS k FROM numbers_mt(200000)) AS b
+        ON b.k = o_orderkey
+        SETTINGS enable_join_runtime_filters=0
+    </query>
+
+    <query>
+        SELECT avg(o_totalprice)
+        FROM orders
+        JOIN (SELECT toInt32(number * 300) AS k FROM numbers_mt(200000)) AS b
+        ON b.k = o_orderkey
+        SETTINGS enable_join_runtime_filters=1
+    </query>
+
     <!-- Mixed equi + non-equi ON predicate: before this fix no runtime filter was built at all.
          o_totalprice > c_nationkey * 100 spans both sides so it cannot be pushed to PREWHERE
          and stays as a post-join filter, while the runtime filter is built on c_custkey only. -->
