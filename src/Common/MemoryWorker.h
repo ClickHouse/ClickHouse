@@ -3,6 +3,7 @@
 #include <Common/CgroupsMemoryUsageObserver.h>
 #include <Common/ThreadPool.h>
 #include <Common/Jemalloc.h>
+#include <Common/MemoryStatisticsOS.h>
 #include <Common/PageCache.h>
 #include <Common/IMemoryReleasableCache.h>
 #include <IO/ReadBufferFromFile.h>
@@ -140,7 +141,8 @@ public:
     {
         None,
         Cgroups,
-        Jemalloc
+        Jemalloc,
+        OS
     };
 
     MemoryUsageSource getSource();
@@ -280,6 +282,10 @@ private:
     MemoryUsageSource source{MemoryUsageSource::None};
 
     std::shared_ptr<ICgroupsReader> cgroups_reader;
+
+#if HAS_MEMORY_STATISTICS_OS
+    std::unique_ptr<MemoryStatisticsOS> os_memory_statistics;
+#endif
 
     std::shared_ptr<PageCache> page_cache;
 
