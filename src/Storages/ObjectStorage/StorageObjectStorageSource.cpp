@@ -189,8 +189,21 @@ namespace
 
     String getPageCachePathForObjectStorage(const RelativePathWithMetadata & object_info, const ObjectStoragePtr & object_storage)
     {
+        /// The path of an object is relative to its storage, and a strong ETag identifies only the versions of one
+        /// object, so the key includes the storage: the same path with the same ETag on another endpoint or in
+        /// another bucket or container can have different contents.
         if (object_storage->getType() != ObjectStorageType::Web)
-            return "s3:" + object_info.getPath();
+        {
+            SipHash hash;
+            hash.update(static_cast<UInt8>(object_storage->getType()));
+            hash.update(object_storage->getDescription());
+            hash.update('\0');
+            hash.update(object_storage->getObjectsNamespace());
+            hash.update('\0');
+            hash.update(object_storage->getCommonKeyPrefix());
+            hash.update('\0');
+            return fmt::format("object:{}:{}", toString(hash.get128()), object_info.getPath());
+        }
 
         if (!object_info.read_source_index)
             return "web:" + object_info.getPath();

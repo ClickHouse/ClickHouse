@@ -140,7 +140,7 @@ public:
 
     /// Overload with a fully custom page cache key (path + file_version), bypassing the default
     /// `cache_path_prefix + object.remote_path` derivation.
-    /// Used by `StorageObjectStorageSource` where the key is `"s3:" + path` with `"etag:" + etag`.
+    /// Used by `StorageObjectStorageSource`, where the key is the identity of the storage and the path, with `"etag:" + etag`.
     void needMemoryCache(
         String custom_cache_path,
         String custom_file_version,
