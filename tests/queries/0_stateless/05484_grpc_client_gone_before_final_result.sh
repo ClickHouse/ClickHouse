@@ -50,6 +50,8 @@ with grpc.insecure_channel(f"localhost:{os.environ.get('CLICKHOUSE_PORT_GRPC', '
             wait_until(lambda: future.done() or running())
             if future.cancel():
                 break
+        else:
+            raise RuntimeError(f"{case}: finished before it could be cancelled")
 
         wait_until(lambda: query(f"SELECT count() FROM system.processes WHERE query_id = '{query_id}'") == "0")
 
