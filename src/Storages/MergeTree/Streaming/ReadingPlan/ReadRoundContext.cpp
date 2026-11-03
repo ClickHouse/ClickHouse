@@ -7,19 +7,11 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/Streaming/Utils.h>
 
-#include <Core/Settings.h>
-
 #include <algorithm>
 #include <optional>
 
 namespace DB
 {
-
-namespace Setting
-{
-    extern const SettingsUInt64 max_rows_to_read;
-    extern const SettingsUInt64 max_bytes_to_read;
-}
 
 namespace
 {
@@ -179,8 +171,6 @@ ReadRoundContext makeReadRoundContext(
     const auto storage_metadata = storage.getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/false);
     const auto streaming_metadata = extendMetadataWithStream(storage_metadata, stream_settings);
     const auto * projection = chooseCommitOrderProjection(*streaming_metadata, columns_to_read);
-    const UInt64 max_rows_per_round = context->getSettingsRef()[Setting::max_rows_to_read];
-    const UInt64 max_bytes_per_round = context->getSettingsRef()[Setting::max_bytes_to_read];
 
     return ReadRoundContext{
         .storage = storage,
@@ -188,13 +178,12 @@ ReadRoundContext makeReadRoundContext(
         .stream_settings = stream_settings,
         .row_level_filter = std::move(row_level_filter),
         .prewhere_filter = std::move(prewhere_filter),
-        .context = makeStreamingContext(std::move(context), projection),
+        .context = makeStreamingContext(context, projection),
         .columns_to_read = std::move(columns_to_read),
         .requested_num_streams = requested_num_streams,
         .max_block_size = max_block_size,
         .output_header = std::move(output_header),
-        .max_rows_per_round = max_rows_per_round,
-        .max_bytes_per_round = max_bytes_per_round};
+        .query_context = std::move(context)};
 }
 
 }

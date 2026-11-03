@@ -1,6 +1,10 @@
 #include <Storages/MergeTree/Streaming/ReadingPlan/limitReadRoundBounds.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
+#include <Interpreters/Context.h>
+
+#include <Core/Settings.h>
+
 #include <algorithm>
 #include <limits>
 #include <tuple>
@@ -9,13 +13,20 @@
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsUInt64 max_rows_to_read;
+    extern const SettingsUInt64 max_bytes_to_read;
+}
+
 std::map<String, Int64> limitReadRoundBounds(
     const ReadRoundContext & reading_context,
     const ReadState & state,
     std::map<String, Int64> safe_block_numbers)
 {
-    const UInt64 max_rows = reading_context.max_rows_per_round;
-    const UInt64 max_bytes = reading_context.max_bytes_per_round;
+    const auto & settings = reading_context.query_context->getSettingsRef();
+    const UInt64 max_rows = settings[Setting::max_rows_to_read];
+    const UInt64 max_bytes = settings[Setting::max_bytes_to_read];
     if (!max_rows && !max_bytes)
         return safe_block_numbers;
 
