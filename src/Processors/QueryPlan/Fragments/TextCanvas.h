@@ -11,18 +11,48 @@ namespace DB
 class WriteBuffer;
 
 /// A grid of character cells for drawing text pictures with box-drawing characters, such as `EXPLAIN PLAN tree = 1`.
-/// Every cell holds one character: a code point and the zero-width code points that follow it (combining marks, a
-/// virama, joiners). A character of display width 2 (e.g. CJK) takes two cells; the second one is a continuation that is
-/// not printed. The grid grows as text is put into it.
+///
+/// The model: `lines[y][x]` is one cell, and one cell is one terminal column. Coordinates are `(x, y)` = (column,
+/// line), starting at 0.
+/// - A cell holds the bytes of one visible character, as a `String` rather than a `char`, because a character can be
+///   several UTF-8 bytes (`─`, `é`, `键`).
+/// - Zero-width code points (combining marks, a virama, joiners) go into the cell of the character before them:
+///   `e` followed by U+0301 is one cell `é`, which keeps identifiers such as `café` and `क्ष` intact.
+/// - A character of display width 2 (e.g. CJK) takes two cells: the first holds the character, the second is an empty
+///   continuation that `writeTo` skips, so every following column stays in place.
+/// - The grid grows as text is put into it: writing beyond the current size adds lines and pads them with spaces.
+/// - A later write overwrites a cell, so the order of the calls matters: `TreeBuilder::draw` draws the frames, then the
+///   boxes, then the edges, whose joints (`┴`, `▲`, `┼`) replace single characters of the borders.
+///
+/// The canvas knows nothing about plans, fragments or exchanges: `TreeBuilder` in `FragmentGraphTree.cpp` decides every
+/// coordinate. Example:
+///
+///     TextCanvas canvas;
+///     canvas.frame(0, 0, 30, 7, "F0 · stage_0");
+///     auto lines = TextCanvas::wrapToWidth("Aggregating (partial)", 40);  /// {"Aggregating (partial)"}
+///     size_t width = TextCanvas::displayWidth(lines[0]) + 4;             /// 25
+///     canvas.box(2, 2, width, lines);                                    /// lines 2 to 4
+///     canvas.put(2 + width / 2, 2, "┴");                                 /// the edge to the step that reads this box
+///     canvas.writeTo(buf);
+///
+///     ┌─ F0 · stage_0 ─────────────┐
+///     │                            │
+///     │ ┌───────────┴───────────┐  │
+///     │ │ Aggregating (partial) │  │
+///     │ └───────────────────────┘  │
+///     │                            │
+///     └────────────────────────────┘
 class TextCanvas
 {
 public:
     /// Writes `text` starting at column `x` of line `y`, one character per cell (two cells for wide characters),
-    /// overwriting what was there. A zero-width code point is kept with the character before it.
+    /// overwriting what was there. A zero-width code point is kept with the character before it. The other drawing
+    /// functions draw through `put`.
     void put(size_t x, size_t y, std::string_view text);
 
-    /// Draws a box with the light box-drawing characters, `width` columns wide and `boxHeight(text_lines.size())` lines
-    /// tall, with one line of `text_lines` per inner line after one space of padding.
+    /// Draws a box with its top-left corner at `(x, y)`, `width` columns wide and `boxHeight(text_lines.size())` lines
+    /// tall: `┌───┐`, then one `│ line │` per line of `text_lines` with one space of padding on each side, then
+    /// `└───┘`. The caller computes `width`, usually the widest line plus 4.
     void box(size_t x, size_t y, size_t width, const std::vector<String> & text_lines);
 
     /// The number of lines of a box with `text_lines` lines of text: the text and the top and bottom borders.
@@ -50,8 +80,9 @@ public:
     /// `replaceControlCharacters`). An empty text gives one empty line.
     static std::vector<String> wrapToWidth(std::string_view text, size_t max_width);
 
-    /// `text` with every ASCII control character (a tab, a newline, ESC, ...) replaced by `�`. A control character has no
-    /// width of its own, or one that depends on its position, so it would break the measured width of a box.
+    /// `text` with every ASCII control character (a tab, a newline, ESC, ...) replaced by `�`. A control character has
+    /// no width of its own, or one that depends on the terminal or its position, so it would break the measured width
+    /// of a box.
     static String replaceControlCharacters(std::string_view text);
 
 private:

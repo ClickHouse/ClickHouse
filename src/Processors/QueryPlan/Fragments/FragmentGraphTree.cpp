@@ -284,6 +284,10 @@ private:
         lines.push_back(TextCanvas::cutToWidth(
             fmt::format("{} · {}", exchange.name, prepared.formatExchangeKind(exchange)), max_label_width));
         String mode(PreparedFragmentGraph::formatExchangeMode(exchange.mode));
+        /// A persisted exchange is written to storage before its consumer starts: `⛁` marks it next to the mode, which
+        /// still says it in words, so a terminal without the glyph loses nothing but the mark.
+        if (exchange.mode == ExchangeDescription::Kind::Persisted)
+            mode = "⛁ " + mode;
         if (exchange.source_buckets || exchange.destination_buckets)
             mode += fmt::format(" · {} → {}", exchange.source_buckets, exchange.destination_buckets);
         lines.push_back(std::move(mode));
