@@ -116,6 +116,62 @@ ASTPtr unwrapSelectQuery(ASTPtr ast)
     }
 }
 
+/// Returns a lower bound on a `DateTime64` column as ticks and their scale.
+/// The bound is either a decimal or a whole number of seconds.
+std::pair<Int64, UInt32> boundToTicksAndScale(const Field & bound, const String & time_column)
+{
+    auto out_of_range = [&]
+    {
+        return Exception(
+            ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+            "Cannot route query: the lower bound on '{}' does not fit into the type of the column",
+            time_column);
+    };
+
+    auto narrow = [&](const auto & value) -> Int64
+    {
+        if (value < std::numeric_limits<Int64>::min() || value > std::numeric_limits<Int64>::max())
+            throw out_of_range();
+        return static_cast<Int64>(value);
+    };
+
+    switch (bound.getType())
+    {
+        case Field::Types::UInt64:
+        {
+            const UInt64 seconds = bound.safeGet<UInt64>();
+            if (seconds > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+                throw out_of_range();
+            return {static_cast<Int64>(seconds), 0};
+        }
+        case Field::Types::Int64:
+            return {bound.safeGet<Int64>(), 0};
+        case Field::Types::Decimal32:
+        {
+            const auto & decimal = bound.safeGet<DecimalField<Decimal32>>();
+            return {decimal.getValue().value, decimal.getScale()};
+        }
+        case Field::Types::Decimal64:
+        {
+            const auto & decimal = bound.safeGet<DecimalField<DateTime64>>();
+            return {decimal.getValue().value, decimal.getScale()};
+        }
+        case Field::Types::Decimal128:
+        {
+            const auto & decimal = bound.safeGet<DecimalField<Decimal128>>();
+            return {narrow(decimal.getValue().value), decimal.getScale()};
+        }
+        case Field::Types::Decimal256:
+        {
+            const auto & decimal = bound.safeGet<DecimalField<Decimal256>>();
+            return {narrow(decimal.getValue().value), decimal.getScale()};
+        }
+        default:
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "Unexpected type {} of the lower bound on '{}'", bound.getTypeName(), time_column);
+    }
+}
+
 }
 
 StorageABR::StorageABR(
@@ -696,11 +752,10 @@ std::optional<StorageABR::UnixTimePoint> StorageABR::getQueryLowerBound(const Ke
         Field lower_bound = range.left;
         if (which_time_type.isDateTime64())
         {
-            /// The bound keeps the scale of the literal, which may differ from the scale of the column.
-            /// Bring it to the scale of the column, rounding down, which keeps it a valid lower bound.
-            const auto & date_time = lower_bound.safeGet<DecimalField<DateTime64>>();
-            Int64 ticks = date_time.getValue().value;
-            const UInt32 scale = date_time.getScale();
+            /// The bound is either a decimal with the scale of the literal, or whole seconds for a `DateTime` or integer
+            /// constant, so its scale may differ from the scale of the column. Bring it to the scale of the column,
+            /// rounding down, which keeps it a valid lower bound.
+            auto [ticks, scale] = boundToTicksAndScale(lower_bound, time_column);
             const UInt32 column_scale = getDecimalScale(*time_type);
             if (scale < column_scale)
             {
