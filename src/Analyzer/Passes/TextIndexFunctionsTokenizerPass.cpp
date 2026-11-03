@@ -339,7 +339,7 @@ struct Carriers
     String json_subcolumn;
 };
 
-Carriers carrierNames(const IQueryTreeNode & resolved, const String & resolved_name, const StorageInMemoryMetadata & metadata)
+Carriers carrierNames(const IQueryTreeNode & resolved, const String & resolved_name, const IsShadowingColumn & is_shadowing_column)
 {
     Carriers carriers{.names = {resolved_name}, .json_subcolumn = {}};
 
@@ -351,13 +351,9 @@ Carriers carrierNames(const IQueryTreeNode & resolved, const String & resolved_n
         node = under;
     }
 
-    /// Building the shadowing set walks every column, so only ask once a name has the shape.
     for (size_t i = 0, exposed = carriers.names.size(); i < exposed; ++i)
     {
-        if (!looksLikeMapSubcolumnName(carriers.names[i]))
-            continue;
-
-        if (auto parsed = tryParseMapSubcolumnName(carriers.names[i], getColumnsShadowingMapSubcolumns(metadata)))
+        if (auto parsed = tryParseMapSubcolumnName(carriers.names[i], is_shadowing_column))
             carriers.names.push_back("mapValues(" + parsed->first + ")");
     }
 
@@ -457,7 +453,7 @@ private:
         if (!inserted)
             return it->second;
 
-        const Carriers carriers = map_only_name.empty() ? carrierNames(resolved, name, *metadata)
+        const Carriers carriers = map_only_name.empty() ? carrierNames(resolved, name, getMapSubcolumnShadowingCheck(metadata))
                                                         : Carriers{.names = {name}, .json_subcolumn = {}};
 
         for (const auto & index : indices)

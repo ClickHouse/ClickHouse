@@ -383,7 +383,7 @@ struct IMergeTreeIndex
 };
 
 /// The same check for a caller holding only the metadata, such as an analyzer pass.
-IsShadowingColumn getMapSubcolumnShadowingCheck(StorageMetadataPtr metadata);
+IsShadowingColumn getMapSubcolumnShadowingCheck(StorageMetadataPtr metadata_snapshot);
 
 using MergeTreeIndexPtr = std::shared_ptr<const IMergeTreeIndex>;
 using MergeTreeIndices = std::vector<MergeTreeIndexPtr>;
