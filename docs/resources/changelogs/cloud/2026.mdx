@@ -12,6 +12,62 @@ import { Image } from "/snippets/components/Image.jsx";
 
 In addition to this ClickHouse Cloud changelog, please see the [Cloud Compatibility](/products/cloud/guides/cloud-compatibility) page.
 
+<Update label="Oct 19, 2026">
+
+This week's updates make executable user-defined functions generally available across ClickHouse Cloud, add stronger correctness controls for Kafka ClickPipes, and expand ClickHouse Agents and Langfuse capabilities. You can now use a native UDF runtime, give Python UDFs outbound network access, and manage UDFs through the Cloud API and Terraform; Kafka ClickPipes can use exactly-once delivery and handle tombstone messages; and ClickHouse Agents add scheduled chats, programmatic tool calling, in-run Skills, and Claude Sonnet 5.5.
+
+## New features {#2026-10-19-new-features}
+
+### Executable UDFs are generally available {#executable-udfs-generally-available}
+
+Executable user-defined functions (UDFs) are now generally available on ClickHouse Cloud across AWS, GCP, and Azure, and are enabled for every organization. Since the public beta, UDFs have gained a native runtime for uploading precompiled, statically linked Rust, Go, C++, or Bun binaries; outbound network access for Python UDFs; a per-process memory limit; and a `deterministic` flag that lets the query cache serve queries that call a UDF. Native UDFs cannot be network-enabled. See the [announcement](https://clickhouse.com/blog/executable-udfs-generally-available-on-clickhouse-cloud), the [UDF documentation](/products/cloud/features/sql-console-features/user-defined-functions), and the [LLM token UDF example](https://github.com/ClickHouse/llm-token-udf).
+
+## API {#2026-10-19-api}
+
+### Manage UDFs with the Cloud API and Terraform {#manage-udfs-with-the-cloud-api-and-terraform}
+
+You can now manage the full lifecycle of executable UDFs through 12 new Cloud API endpoints. The Terraform provider adds `clickhouse_udf` and `clickhouse_udf_attachment` resources in version 3.24.0 and later; both support pinning a UDF version per service. See the [announcement](https://clickhouse.com/blog/executable-udfs-generally-available-on-clickhouse-cloud) and the [UDF documentation](/products/cloud/features/sql-console-features/user-defined-functions).
+
+## Improvements {#2026-10-19-improvements}
+
+### UDF performance metrics in `system.query_log` {#udf-performance-metrics-in-system-query-log}
+
+Starting in version 26.6, eight new `ProfileEvents` expose per-query UDF behaviour in `system.query_log`, including wall time, pool wait, CPU, memory, and bytes sent through the pipe. Two server-wide metrics in `system.asynchronous_metrics` report the number of live UDF processes and their total resident memory, including idle pool workers; the memory value is an upper bound because shared pages are counted once per process. See the [UDF monitoring documentation](/products/cloud/features/sql-console-features/user-defined-functions#monitoring).
+
+## ClickPipes {#2026-10-19-clickpipes}
+
+### Exactly-once delivery for Kafka ClickPipes {#exactly-once-delivery-for-kafka-clickpipes}
+
+You can now choose **exactly-once** delivery when creating a Kafka ClickPipe instead of the default at-least-once mode. Recovery deduplicates replayed insert ranges while their deterministic tokens remain in the target table's deduplication window. Configure [`replicated_deduplication_window`](/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window) and [`replicated_deduplication_window_seconds`](/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds) to cover the worst-case replay delay before relying on this instead of downstream deduplication such as `ReplacingMergeTree` and `FINAL`. See [delivery semantics](/integrations/clickpipes/kafka/best-practices#delivery-semantics).
+
+### Tombstone handling for Kafka ClickPipes {#tombstone-handling-for-kafka-clickpipes}
+
+Kafka ClickPipes can now handle tombstone messages: records with a key and a `NULL` payload. You can delete matching destination rows with lightweight deletes when exactly-once semantics is enabled, or mark tombstones as deleted rows. For large workloads, marking rows as deleted is recommended; use a `ReplacingMergeTree` destination table and query its `_is_deleted` virtual column. See [tombstone handling](/integrations/clickpipes/kafka/best-practices#tombstone-handling).
+
+## Console / UI {#2026-10-19-console-ui}
+
+### Scheduled Chats in ClickHouse Agents (beta) {#scheduled-chats-in-clickhouse-agents-beta}
+
+ClickHouse Agents can now run on a recurring schedule: hourly, daily, on weekdays, weekly, or using a custom cron schedule. Choose the time zone and days, and optionally organize each run in a Project. Manage schedules directly from the ClickHouse Agents sidebar.
+
+### Programmatic Tool Calling and in-run Skills for agents {#programmatic-tool-calling-and-in-run-skills-for-agents}
+
+Programmatic Tool Calling lets agents coordinate selected MCP tools through Code Interpreter with loops, branching, retries, and intermediate processing. To use it, enable Code Interpreter and mark tools as Programmatic in Agent Builder. Agents can also create reusable Skills while working and start using them in the same run.
+
+### Better management of long-running agent conversations {#better-management-of-long-running-agent-conversations}
+
+You can manually compact a conversation when its context gets crowded and see more clearly how much context tool results retain. Background tasks are easier to monitor and stop from the chat header, and supported results are delivered automatically. In the sidebar, you can filter and sort conversations, and pinned items now share one draggable section.
+
+### Exportable outputs, simpler file handling, and copyable shared conversations {#exportable-outputs-simpler-file-handling-and-copyable-shared-conversations}
+
+Mermaid diagrams open as full artifacts and can be exported to SVG or PNG; other artifacts can be viewed full-screen, and code blocks can be downloaded as files. You can send an attachment without a prompt, and agents route files to the appropriate tools only when needed. You can also copy a shared conversation into your account and continue it as your own.
+
+### Claude Sonnet 5.5 in ClickHouse Agents {#claude-sonnet-55-in-clickhouse-agents}
+
+Claude Sonnet 5.5 is now available in ClickHouse Agents and also powers the default ClickHouse Agent.
+
+</Update>
+
 <Update label="Oct 5, 2026">
 
 This week's release simplifies billing for customers with multiple ClickHouse Cloud organizations, extends ClickPipes serialization support for Kafka and Kinesis, and introduces an experimental native TCP option for .NET developers. You can now manage prepaid credits across organizations in the console or retrieve balances programmatically; streaming ClickPipes support common Avro and Protobuf workflows; and the .NET driver offers a faster, lower-allocation native client.

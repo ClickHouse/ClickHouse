@@ -20,8 +20,7 @@ left join
      union all select '2', 'B', 'Q', 'C', 'D', 'E1'
      union all select '4', 'L', 'M', 'N', 'O', 'P1') as t2
 on (t1.d = t2.b or t1.c = t2.b or t1.d = t2.b and t1.d = t2.b) or (t1.e = t2.e and t1.a = t2.a and t2.f = t1.f)
-ORDER BY ALL
-SETTINGS enable_analyzer = 1;
+ORDER BY ALL;
 
 
 SELECT 'right ---';
@@ -36,8 +35,7 @@ right join
      union all select '4', 'L', 'M', 'N', 'O', 'P1') as t2
 on
     (t1.d = t2.b OR t1.c = t2.b) OR t1.e = t2.e
-ORDER BY ALL
-SETTINGS enable_analyzer = 1;
+ORDER BY ALL;
 
 SELECT 'inner ---';
 
@@ -52,13 +50,12 @@ inner join
      union all select '4', 'L', 'M', 'N', 'O', 'P1') as t2
 on
     (t1.d = t2.b OR t1.c = t2.b) OR (t1.e = t2.e AND t1.a = t2.a AND t2.f = t1.f)
-ORDER BY ALL
-SETTINGS enable_analyzer = 1;
+ORDER BY ALL;
 
-select * from (select 'a' as a, 'b' as b, 'c' as c, 'd' as d, 'e' as e, 'f' as f) as t1 left join (select 'a' as a, 'b' as b, 'c' as c, 'd' as d, 'e' as e, 'f' as f) as t2 on (t1.d = t2.b or t1.c = t2.b or t1.d = t2.b and t1.d = t2.b) or (t1.e = t2.e and t1.a=t2.a and t2.f=t1.f) ORDER BY ALL SETTINGS enable_analyzer = 1;
-select * from (select 'a' as a, 'b' as b, 'c' as c, 'd' as d, 'e' as e, 'f' as f) as t1 right join (select 'a' as a, 'b' as b, 'c' as c, 'd' as d, 'e' as e, 'f' as f) as t2 on (t1.d = t2.b or t1.c = t2.b) or t1.e = t2.e ORDER BY ALL SETTINGS enable_analyzer = 1;
-select * from (select 'a' as a, 'b' as b, 'c' as c, 'd' as d, 'e' as e, 'f' as f) as t1 inner join (select 'a' as a, 'b' as b, 'c' as c, 'd' as d, 'e' as e, 'f' as f) as t2 on (t1.d = t2.b or t1.c = t2.b) or (t1.e = t2.e and t1.a=t2.a and t2.f=t1.f) ORDER BY ALL SETTINGS enable_analyzer = 1;
-select * from (select 'a' as a, 'b' as b, 'c' as c, 'd' as d, 'e' as e, 'f' as f) as t1 inner join (select 'a' as a, 'b' as b, 'c' as c, 'd' as d, 'e' as e, 'f' as f) as t2 on (t1.d = t2.b or t1.c = t2.b) and (t1.e = t2.e or t1.f=t2.f) SETTINGS enable_analyzer = 1;
+select * from (select 'a' as a, 'b' as b, 'c' as c, 'd' as d, 'e' as e, 'f' as f) as t1 left join (select 'a' as a, 'b' as b, 'c' as c, 'd' as d, 'e' as e, 'f' as f) as t2 on (t1.d = t2.b or t1.c = t2.b or t1.d = t2.b and t1.d = t2.b) or (t1.e = t2.e and t1.a=t2.a and t2.f=t1.f) ORDER BY ALL;
+select * from (select 'a' as a, 'b' as b, 'c' as c, 'd' as d, 'e' as e, 'f' as f) as t1 right join (select 'a' as a, 'b' as b, 'c' as c, 'd' as d, 'e' as e, 'f' as f) as t2 on (t1.d = t2.b or t1.c = t2.b) or t1.e = t2.e ORDER BY ALL;
+select * from (select 'a' as a, 'b' as b, 'c' as c, 'd' as d, 'e' as e, 'f' as f) as t1 inner join (select 'a' as a, 'b' as b, 'c' as c, 'd' as d, 'e' as e, 'f' as f) as t2 on (t1.d = t2.b or t1.c = t2.b) or (t1.e = t2.e and t1.a=t2.a and t2.f=t1.f) ORDER BY ALL;
+select * from (select 'a' as a, 'b' as b, 'c' as c, 'd' as d, 'e' as e, 'f' as f) as t1 inner join (select 'a' as a, 'b' as b, 'c' as c, 'd' as d, 'e' as e, 'f' as f) as t2 on (t1.d = t2.b or t1.c = t2.b) and (t1.e = t2.e or t1.f=t2.f);
 
 SET joined_subquery_requires_alias = 0;
 SET max_threads = 1;

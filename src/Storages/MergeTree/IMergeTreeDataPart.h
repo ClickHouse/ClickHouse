@@ -26,6 +26,7 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
+#include <Storages/MergeTree/MergeTreePartMinMaxIndex.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
 #include <Storages/MergeTree/PatchParts/PatchPartIndex.h>
 #include <Storages/MergeTree/PartDirIntent.h>
@@ -170,6 +171,8 @@ public:
     ColumnSizeByNameConstPtr getColumnSizes() const;
     /// Return the size of all files required to read the specified subcolumn.
     ColumnSize getSubcolumnSize(const String & /*subcolumn_name*/) const;
+    /// The same for several subcolumns at once, listed by one reader; the results go to the cache as well.
+    std::vector<ColumnSize> getSubcolumnSizes(const NamesAndTypesList & subcolumns) const;
 
     virtual std::optional<time_t> getColumnModificationTime(const String & column_name) const = 0;
 
@@ -266,6 +269,11 @@ public:
     /// before are read. The result may contain the estimates of other columns as well.
     Estimates getEstimates(const NameSet & required_columns = {}) const;
     void setEstimates(const Estimates & new_estimates);
+    /// The result of `loadStatistics(required_columns, cache)` if every statistics file it would read is in the cache,
+    /// otherwise `std::nullopt`. It never reads from disk.
+    std::optional<ColumnsStatistics> tryLoadStatisticsFromCache(const NameSet & required_columns, StatisticsCache * cache) const;
+    /// The result of `getEstimates(required_columns)` if it needs nothing read from disk, otherwise `std::nullopt`.
+    std::optional<Estimates> tryGetEstimatesFromMemory(const NameSet & required_columns) const;
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load various metadata into memory: checksums from checksums.txt, index if required, etc.
@@ -435,49 +443,8 @@ public:
     /// As index always loaded into memory
     MergeTreeIndexGranularityPtr index_granularity;
 
-    /// Index that for each part stores min and max values of a set of columns. This allows quickly excluding
-    /// parts based on conditions on these columns imposed by a query.
-    /// Currently this index is built using only columns required by partition expression, but in principle it
-    /// can be built using any set of columns.
-    struct MinMaxIndex
-    {
-        /// A direct product of ranges for each key column. See Storages/MergeTree/KeyCondition.cpp for details.
-        Ranges hyperrectangle;
-        bool initialized = false;
-
-    public:
-        MinMaxIndex() = default;
-
-        /// For month-based partitioning.
-        MinMaxIndex(DayNum min_date, DayNum max_date)
-            : hyperrectangle(1, Range(min_date, true, max_date, true))
-            , initialized(true)
-        {
-        }
-
-        void load(const IMergeTreeDataPart & part);
-
-        using WrittenFiles = std::vector<std::unique_ptr<WriteBufferFromFileBase>>;
-
-        [[nodiscard]] WrittenFiles store(StorageMetadataPtr metadata_snapshot, IDataPartStorage & part_storage, Checksums & checksums, const MergeTreeSettingsPtr & storage_settings) const;
-        [[nodiscard]] WrittenFiles store(const NamesAndTypesList & columns, IDataPartStorage & part_storage, Checksums & checksums, const MergeTreeSettingsPtr & storage_settings) const;
-
-        void update(const Block & block, const NamesAndTypesList & columns);
-        void merge(const MinMaxIndex & other);
-
-        /// Repair the block column ranges of an index inherited from `source_part` when that part does not
-        /// know them: grow the index to the current set of minmax columns and re-derive the ranges of
-        /// `_block_number` / `_block_offset` that came back as the whole universe. See the implementation
-        /// for when each range is recoverable. No-op for an uninitialized index, projection and patch parts.
-        void repairInheritedBlockColumns(const IMergeTreeDataPart & source_part, const StorageMetadataPtr & metadata_snapshot);
-        Names getProbablyWrittenFiles(const IMergeTreeDataPart & part) const;
-        /// For Store
-        static String getFileColumnName(const String & column_name, const MergeTreeSettingsPtr & storage_settings_, const IDataPartStorage & data_part_storage);
-        /// For Load
-        static String getFileColumnName(const String & column_name, const Checksums & checksums_);
-    };
-
-    using MinMaxIndexPtr = std::shared_ptr<MinMaxIndex>;
+    using MinMaxIndex = MergeTreePartMinMaxIndex;
+    using MinMaxIndexPtr = MergeTreePartMinMaxIndexPtr;
 
 private:
     mutable std::mutex minmax_idx_mutex;
@@ -492,7 +459,8 @@ public:
 
     Checksums checksums;
 
-    /// Columns with values, that all have been zeroed by expired ttl
+    /// Columns with no values to store: every value zeroed by a column TTL, or no source part stores the column
+    /// (e.g. added by `ADD COLUMN` without a default and never written).
     NameSet expired_columns;
 
     NameSet invalidated_system_columns;
@@ -914,8 +882,8 @@ protected:
     /// disk using columns and checksums.
     virtual void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const = 0;
 
-    /// Calculate the size of all files required to read a specified subcolumn.
-    virtual ColumnSize calculateSubcolumnSize(const String & /*subcolumn_name*/) const { return {}; }
+    /// Calculate the sizes of all files required to read the specified subcolumns, one size per subcolumn.
+    virtual std::vector<ColumnSize> calculateSubcolumnSizes(const NamesAndTypesList & subcolumns) const { return std::vector<ColumnSize>(subcolumns.size()); }
 
     std::optional<String> getRelativePathForDetachedPart(const String & prefix, bool broken) const;
 
@@ -1021,6 +989,13 @@ private:
     void loadDefaultCompressionCodec();
     void loadPatchPartIndex();
 
+    /// The statistics files that `loadStatistics(required_columns)` reads, with the columns they belong to.
+    std::vector<std::pair<String, const ColumnDescription *>> getStatisticsFilesToLoad(
+        const NameSet & required_columns, const PackedFilesReader * packed_reader) const;
+
+    /// `getEstimates`, or `tryGetEstimatesFromMemory` if `only_from_memory`.
+    std::optional<Estimates> getEstimatesImpl(const NameSet & required_columns, bool only_from_memory) const;
+
     /// Reads one statistics file of the part. `packed_reader` is nullptr if the part stores every
     /// statistics file separately instead of in the packed archive.
     std::shared_ptr<StatisticsCacheCell> loadStatisticsFile(
@@ -1074,6 +1049,11 @@ bool isWidePart(const MergeTreeDataPartPtr & data_part);
 
 inline String getIndexExtension(bool is_compressed_primary_key) { return is_compressed_primary_key ? ".cidx" : ".idx"; }
 bool isCompressedFromIndexExtension(const String & index_extension);
+
+/// Reads a small file of a part, as `IMergeTreeDataPart::readFile` does, so it works without an `IMergeTreeDataPart`.
+std::unique_ptr<ReadBuffer> readPartFile(const IDataPartStorage & data_part_storage, const ReadSettings & read_settings, const String & file_name);
+/// Same as `readPartFile`, or nullptr if the file does not exist.
+std::unique_ptr<ReadBuffer> readPartFileIfExists(const IDataPartStorage & data_part_storage, const ReadSettings & read_settings, const String & file_name);
 
 using MergeTreeDataPartsVector = std::vector<MergeTreeDataPartPtr>;
 
