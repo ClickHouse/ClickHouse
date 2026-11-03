@@ -1056,6 +1056,23 @@ TEST(DistinctSetFilterGrowth, PreparationMaterializesRetainedStringKeys)
     }
 }
 
+TEST(DistinctSetFilterSemantics, ExtractionRetainsMemoryUntilTheLastKey)
+{
+    const Block header{ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "k")};
+    DistinctSetFilter filter(header, {}, {});
+    filter.filter(Chunk({makeNumberColumn<ColumnUInt64>(std::vector<UInt64>{1, 2, 3})}, 3));
+    const auto bytes = filter.getTotalByteCount();
+    ASSERT_GT(bytes, 0);
+    auto keys = std::move(filter).extractKeys();
+    EXPECT_EQ(keys->getTotalByteCount(), bytes);
+    for (size_t i = 0; i < 3; ++i)
+    {
+        const auto columns = keys->next(1, 0);
+        ASSERT_EQ(columns.front()->size(), 1);
+        EXPECT_EQ(keys->getTotalByteCount(), i == 2 ? 0 : bytes);
+    }
+}
+
 TEST(DistinctSetFilterWorkspace, PreparedKeysMatchActualAllocation)
 {
     const auto u8 = std::make_shared<DataTypeUInt8>();

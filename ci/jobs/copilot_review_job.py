@@ -61,9 +61,11 @@ OPENAI_KEY_SECRET = "/ci/llm/openai_api_key"
 
 MODEL = "gpt-6.1-sol"
 # `gpt-6.1-sol` refuses some reviews with "This content was flagged for possible
-# cybersecurity risk"; the remaining attempts then use `FALLBACK_MODEL`.
+# cybersecurity risk"; the remaining attempts then use `FALLBACK_MODEL`. When it is
+# at capacity, only the last attempt does: a same-model retry usually recovers.
 FALLBACK_MODEL = "gpt-5.4"
 CYBER_RISK_FLAG = "flagged for possible cybersecurity risk"
+MODEL_AT_CAPACITY = "Selected model is at capacity"
 
 
 def _join_prompt(*sections):
@@ -336,6 +338,9 @@ def _run(prompt, run_once, agent_name):
             result = run_once(prompt, robot_name, model)
             if model != FALLBACK_MODEL and CYBER_RISK_FLAG in result.info:
                 print(f"WARNING: {model} flagged the review as a cybersecurity risk, switching to {FALLBACK_MODEL}")
+                model = FALLBACK_MODEL
+            elif model != FALLBACK_MODEL and attempt == MAX_ATTEMPTS - 1 and MODEL_AT_CAPACITY in result.info:
+                print(f"WARNING: {model} is at capacity, the last attempt uses {FALLBACK_MODEL}")
                 model = FALLBACK_MODEL
             if not result.is_ok():
                 last_error = (

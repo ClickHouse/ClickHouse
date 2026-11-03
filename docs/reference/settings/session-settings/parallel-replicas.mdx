@@ -133,6 +133,16 @@ Replace table function engines with their -Cluster alternatives
 
 If true, ClickHouse will use parallel replicas algorithm also for non-replicated MergeTree tables
 
+## parallel_replicas_for_object_storage_tables {#parallel_replicas_for_object_storage_tables}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "New setting to read tables with an object storage engine with parallel replicas."}]}]}/>
+
+Read a table with an object storage engine that has a `-Cluster` table function (`S3`, `AzureBlobStorage`, `HDFS`, `Iceberg`, `IcebergS3`, `IcebergAzure`, `IcebergHDFS`, `IcebergLocal`, `DeltaLake`, `DeltaLakeS3`, `DeltaLakeAzure`, `Hudi`, `Paimon`, `PaimonS3`, `PaimonAzure`, `PaimonHDFS`) over the replicas of `cluster_for_parallel_replicas`, the same way `parallel_replicas_for_cluster_engines` does for the table functions. Has no effect when `parallel_replicas_for_cluster_engines` is disabled.
+
+A replica takes part in the read only if it has the table, and the table must have the same definition on every replica.
+
 ## parallel_replicas_for_queries_with_multiple_tables {#parallel_replicas_for_queries_with_multiple_tables}
 
 <BetaBadge/>
@@ -176,6 +186,8 @@ Parts virtually divided into segments to be distributed between replicas for par
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Limit the number of replicas used in a query to (estimated rows to read / min_number_of_rows_per_replica). The max is still limited by 'max_parallel_replicas'
+
+Ignored when `automatic_parallel_replicas_mode` is enabled: the automatic mode decides with its own cost model.
 
 ## parallel_replicas_mode {#parallel_replicas_mode}
 
