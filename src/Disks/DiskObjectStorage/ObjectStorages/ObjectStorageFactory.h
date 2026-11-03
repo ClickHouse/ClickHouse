@@ -49,4 +49,9 @@ private:
     Registry registry;
 };
 
+/// The endpoint of a `web` object storage at `config_prefix`, as the factory creates it: with macros expanded,
+/// and checked to be a valid URI ending with '/'.
+std::string getWebObjectStorageEndpoint(
+    const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const ContextPtr & context);
+
 }

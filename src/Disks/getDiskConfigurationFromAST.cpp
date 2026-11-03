@@ -8,6 +8,7 @@
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <Disks/DiskFactory.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
@@ -18,6 +19,8 @@
 #include <Poco/DOM/Document.h>
 #include <Poco/DOM/Element.h>
 #include <Poco/DOM/Text.h>
+#include <Poco/URI.h>
+#include <Common/HTTPHeaderFilter.h>
 #include <Common/StringUtils.h>
 #include <boost/algorithm/string/predicate.hpp>
 
@@ -598,6 +601,36 @@ void validateResolvedAzureDiskCredentials(
     for (const auto & prefix : prefixes)
         getAzureDiskConnectionParams(config, prefix, anonymous_fallback).checkOrDropServerManagedCredentials();
 #endif
+}
+
+void validateResolvedWebDiskEndpoints(
+    const Poco::Util::AbstractConfiguration & config, ContextPtr context, bool is_loading_from_existing_metadata)
+{
+    /// A disk loaded from existing metadata is not checked, so that it does not fail the table load.
+    if (is_loading_from_existing_metadata)
+        return;
+
+    /// The same prefixes `registerDiskObjectStorage` passes to the object storage factory.
+    std::vector<String> prefixes;
+    if (config.has(".locations"))
+    {
+        Poco::Util::AbstractConfiguration::Keys locations;
+        config.keys(".locations", locations);
+        for (const auto & location : locations)
+            prefixes.push_back(".locations." + location);
+    }
+    else
+        prefixes.push_back("");
+
+    for (const auto & prefix : prefixes)
+    {
+        /// The type is chosen as `ObjectStorageFactory::create` does.
+        const String type = config.has(prefix + ".object_storage_type")
+            ? config.getString(prefix + ".object_storage_type")
+            : config.getString(prefix + ".type", "");
+        if (type == "web")
+            context->getHTTPHeaderFilter().checkURIUserInfo(Poco::URI(getWebObjectStorageEndpoint(config, prefix, context)));
+    }
 }
 
 DiskConfigurationPtr getDiskConfigurationFromAST(const ASTs & disk_args, ContextPtr context)

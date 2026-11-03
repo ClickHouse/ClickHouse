@@ -90,6 +90,13 @@ bool hasAzureServerCredentialsMarker(const Poco::Util::AbstractConfiguration & c
 void validateResolvedAzureDiskCredentials(
     Poco::Util::AbstractConfiguration & config, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database);
 
+/// Refuse a dynamic `web` disk defined by a query whose endpoint has a userinfo, which is sent in the `Authorization`
+/// header, when <http_forbid_headers> forbids that header. Run on every resolution, because a disk that already exists
+/// is reused without building its object storage again: it may have been loaded from existing metadata, which is not
+/// checked so that the table load does not fail, or created before the header was forbidden.
+void validateResolvedWebDiskEndpoints(
+    const Poco::Util::AbstractConfiguration & config, ContextPtr context, bool is_loading_from_existing_metadata);
+
 /*
  * A reverse function.
  */

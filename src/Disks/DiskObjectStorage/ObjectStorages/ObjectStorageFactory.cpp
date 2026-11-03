@@ -22,7 +22,6 @@
 #include <Disks/loadLocalDiskConfig.h>
 
 #include <Interpreters/Context.h>
-#include <Common/HTTPHeaderFilter.h>
 #include <Common/LoggingFormatStringHelpers.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/logger_useful.h>
@@ -299,6 +298,25 @@ static void registerAzureObjectStorage(ObjectStorageFactory & factory)
 }
 #endif
 
+std::string getWebObjectStorageEndpoint(
+    const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const ContextPtr & context)
+{
+    auto uri = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
+    if (!uri.ends_with('/'))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "URI must end with '/', but '{}' doesn't.", uri);
+    try
+    {
+        Poco::URI poco_uri(uri);
+    }
+    catch (const Poco::Exception & e)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Bad URI: `{}`. Error: {}", uri, e.what());
+    }
+    return uri;
+}
+
 static void registerWebObjectStorage(ObjectStorageFactory & factory)
 {
     factory.registerObjectStorageType("web", [](
@@ -308,29 +326,10 @@ static void registerWebObjectStorage(ObjectStorageFactory & factory)
         const ContextPtr & context,
         bool /* run_access_check */,
         bool /* run_local_paths_check */,
-        RemoteHostFilterCheck remote_host_filter_check) -> ObjectStoragePtr
+        RemoteHostFilterCheck /* remote_host_filter_check */) -> ObjectStoragePtr
     {
-        auto uri = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
-        if (!uri.ends_with('/'))
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "URI must end with '/', but '{}' doesn't.", uri);
-        try
-        {
-            Poco::URI poco_uri(uri);
-        }
-        catch (const Poco::Exception & e)
-        {
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "Bad URI: `{}`. Error: {}", uri, e.what());
-        }
-
-        /// The endpoint of a disk defined by a query is user input, and its userinfo is sent in the `Authorization` header,
-        /// so it is subject to <http_forbid_headers> like the URL of a `url` table. A disk loaded from existing metadata
-        /// is not checked, so that it does not fail the table load.
-        if (remote_host_filter_check == RemoteHostFilterCheck::Enforce)
-            context->getHTTPHeaderFilter().checkURIUserInfo(Poco::URI(uri));
-
-        return std::make_shared<WebObjectStorage>(uri, "", context);
+        /// The userinfo of the endpoint of a disk defined by a query is checked by `validateResolvedWebDiskEndpoints`.
+        return std::make_shared<WebObjectStorage>(getWebObjectStorageEndpoint(config, config_prefix, context), "", context);
     });
 }
 
