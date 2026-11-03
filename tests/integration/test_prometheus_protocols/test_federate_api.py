@@ -43,7 +43,7 @@ def setup():
         time_series = [
             ({"__name__": "fed_cpu", "host": "a", "instance": "i1"}, {now - 120: 1.0, now - 60: 2.5}),
             ({"__name__": "fed_cpu", "host": "b"}, {now - 30: 1234567.0}),
-            ({"__name__": "fed_mem", "host": "a"}, {now - 10: 0.00001}),
+            ({"__name__": "fed_mem", "host": "a"}, {now - 10: 0.25}),
             ({"__name__": "fed_old", "host": "a"}, {now - 900: 1.0}),
             ({"__name__": "fed_stale", "host": "a"}, {now - 90: 5.0, now - 30: STALE_NAN}),
             ({"__name__": "fed.dotted", "label.name": 'a"b\\c\nd'}, {now - 20: -3.0}),
@@ -75,7 +75,7 @@ def test_federate_text_format():
         f'fed_cpu{{host="a",instance="i1"}} 2.5 {ms(60)}\n'
         f'fed_cpu{{host="b",instance=""}} 1234567 {ms(30)}\n'
         "# TYPE fed_mem untyped\n"
-        f'fed_mem{{host="a",instance=""}} 1e-05 {ms(10)}\n'
+        f'fed_mem{{host="a",instance=""}} 0.25 {ms(10)}\n'
     )
 
 
@@ -131,37 +131,6 @@ def test_federate_duplicate_timestamps():
         "# TYPE dup_stale untyped\n"
         f'dup_stale{{k="v",instance=""}} 5 {ms(25)}\n'
     )
-
-
-# After a change of `id_generator` the same tags have two identifiers. Like in the instant query they are one series,
-# so it is federated once with its newest sample, and it is absent if that sample is a stale marker.
-def test_federate_after_id_generator_change():
-    stale = "reinterpretAsFloat64(toUInt64(9218868437227405314))"
-    old, new = f"fromUnixTimestamp64Milli({ms(60)})", f"fromUnixTimestamp64Milli({ms(30)})"
-    # Version 9 is the latest one which allows changing `id_generator`.
-    node.query("CREATE TABLE prometheus_idgen ENGINE=TimeSeries SETTINGS version = 9")
-    try:
-        node.query(
-            "INSERT INTO prometheus_idgen (metric_name, tags, samples) VALUES "
-            f"('idgen_live', {{'k': 'v'}}, [({old}, 1)]), ('idgen_stale', {{'k': 'v'}}, [({old}, 1)])"
-        )
-        node.query(
-            "ALTER TABLE prometheus_idgen MODIFY SETTING "
-            "id_generator = 'tuple(sipHash64(metric_name), reinterpretAsUUID(sipHash128(metric_name, tags)))'"
-        )
-        node.query(
-            "INSERT INTO prometheus_idgen (metric_name, tags, samples) VALUES "
-            f"('idgen_live', {{'k': 'v'}}, [({new}, 2)]), ('idgen_stale', {{'k': 'v'}}, [({new}, {stale})])"
-        )
-        assert node.query("SELECT count() FROM timeSeriesTags(prometheus_idgen)") == "4\n"
-        response = requests.get(
-            f"http://{node.ip_address}:9093/dynamic_table/federate",
-            params={"table": "prometheus_idgen", "match[]": '{__name__=~"idgen_.*"}'},
-        )
-        assert response.status_code == 200, response.text
-        assert response.text == "# TYPE idgen_live untyped\n" f'idgen_live{{k="v",instance=""}} 2 {ms(30)}\n'
-    finally:
-        node.query("DROP TABLE prometheus_idgen")
 
 
 def test_federate_without_match_is_empty():

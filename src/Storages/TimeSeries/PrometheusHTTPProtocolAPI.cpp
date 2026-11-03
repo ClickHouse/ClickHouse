@@ -10,6 +10,7 @@
 #include <Core/Field.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <Server/PrometheusMetricsWriter.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/StorageTimeSeriesSelector.h>
 #include <Parsers/ASTExpressionList.h>
@@ -185,37 +186,6 @@ String unescapePrometheusLabelName(const String & name)
         pos = closing + 1;
     }
     return result;
-}
-
-/// Writes a metric or label name with the "underscores" escaping, the default of the Prometheus text format:
-/// like Prometheus, each character not allowed in a legacy metric name ([a-zA-Z_:][a-zA-Z0-9_:]*) becomes '_'.
-void writeFederateName(std::string_view name, WriteBuffer & out)
-{
-    for (size_t pos = 0; pos < name.size();)
-    {
-        char c = name[pos];
-        bool valid = isAlphaASCII(c) || (c == '_') || (c == ':') || (isNumericASCII(c) && pos > 0);
-        writeChar(valid ? c : '_', out);
-        pos += std::min<size_t>(UTF8::seqLength(static_cast<UInt8>(c)), name.size() - pos);
-    }
-}
-
-/// Writes a label value quoted and escaped like the Prometheus text format.
-void writeFederateLabelValue(std::string_view value, WriteBuffer & out)
-{
-    writeChar('"', out);
-    for (char c : value)
-    {
-        if (c == '\\')
-            writeString("\\\\", out);
-        else if (c == '"')
-            writeString("\\\"", out);
-        else if (c == '\n')
-            writeString("\\n", out);
-        else
-            writeChar(c, out);
-    }
-    writeChar('"', out);
 }
 }
 
@@ -1095,12 +1065,12 @@ void PrometheusHTTPProtocolAPI::federate(WriteBuffer & response, const Strings &
                 if (metric_name != last_metric_name)
                 {
                     writeString("# TYPE ", response);
-                    writeFederateName(metric_name, response);
+                    writePrometheusLabelName(metric_name, response);
                     writeString(" untyped\n", response);
                     last_metric_name = metric_name;
                 }
 
-                writeFederateName(metric_name, response);
+                writePrometheusLabelName(metric_name, response);
                 char separator = '{';
                 bool has_instance = false;
                 for (size_t j = start; j < offsets[row]; ++j)
@@ -1111,9 +1081,11 @@ void PrometheusHTTPProtocolAPI::federate(WriteBuffer & response, const Strings &
                         continue;
                     writeChar(separator, response);
                     separator = ',';
-                    writeFederateName(name, response);
+                    writePrometheusLabelName(name, response);
                     writeChar('=', response);
-                    writeFederateLabelValue(value, response);
+                    writeChar('"', response);
+                    writePrometheusLabelValue(value, response);
+                    writeChar('"', response);
                     has_instance |= (name == "instance");
                 }
 
