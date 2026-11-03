@@ -30,6 +30,7 @@
 #include <Parsers/ParserUnionQueryElement.h>
 #include <Parsers/parseIntervalKind.h>
 #include <Common/assert_cast.h>
+#include <Common/checkStackSize.h>
 #include <Common/StringUtils.h>
 
 #include <Parsers/ParserSelectWithUnionQuery.h>
@@ -49,6 +50,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
+    extern const int TOO_DEEP_RECURSION;
 }
 
 
@@ -1544,11 +1546,24 @@ protected:
   *  arr[i][][][j, k] -> arrayMap(x -> arrayMap(y -> y[j][k], x), arr[i])
   * An empty subscript means the same subscripts applied to every element of the array,
   * and it does nothing if there are no subscripts after it.
+  *
+  * It runs after the whole expression is parsed, but before the depth of the query is checked, so the recursive
+  * traversal enforces the same limit as the parser: `max_depth` (`max_parser_depth`, 0 is unlimited) and the stack size.
   */
-static void expandSubscripts(ASTPtr & node);
+static void expandSubscripts(ASTPtr & node, size_t depth, size_t max_depth);
 
-static void collectIdentifierNames(const IAST * node, std::unordered_set<String> & names)
+static void checkSubscriptsExpansionDepth(size_t depth, size_t max_depth)
 {
+    if (max_depth > 0 && depth > max_depth)
+        throw Exception(ErrorCodes::TOO_DEEP_RECURSION, "Maximum parse depth ({}) exceeded. "
+            "Consider rising max_parser_depth parameter.", max_depth);
+    checkStackSize();
+}
+
+static void collectIdentifierNames(const IAST * node, std::unordered_set<String> & names, size_t depth, size_t max_depth)
+{
+    checkSubscriptsExpansionDepth(depth, max_depth);
+
     if (const auto * identifier = node->as<ASTIdentifier>())
     {
         names.insert(identifier->name());
@@ -1556,13 +1571,15 @@ static void collectIdentifierNames(const IAST * node, std::unordered_set<String>
             names.insert(part);
     }
     for (const auto & child : node->children)
-        collectIdentifierNames(child.get(), names);
+        collectIdentifierNames(child.get(), names, depth + 1, max_depth);
 }
 
 /// `subscripts` are in the order of application, `nullptr` stands for the empty subscript.
 /// `depth` is the number of enclosing lambdas created here, so that their parameters have different names.
-static ASTPtr applySubscripts(ASTPtr base, std::span<const ASTPtr> subscripts, size_t depth = 0)
+static ASTPtr applySubscripts(ASTPtr base, std::span<const ASTPtr> subscripts, size_t max_depth, size_t depth = 0)
 {
+    checkSubscriptsExpansionDepth(depth, max_depth);
+
     for (size_t i = 0; i < subscripts.size(); ++i)
     {
         if (subscripts[i])
@@ -1579,7 +1596,7 @@ static ASTPtr applySubscripts(ASTPtr base, std::span<const ASTPtr> subscripts, s
         std::unordered_set<String> used_names;
         for (const auto & subscript : rest)
             if (subscript)
-                collectIdentifierNames(subscript.get(), used_names);
+                collectIdentifierNames(subscript.get(), used_names, 0, max_depth);
 
         static constexpr std::array<std::string_view, 4> names{"x", "y", "z", "w"};
         String prefix(names[depth % names.size()]);
@@ -1587,7 +1604,7 @@ static ASTPtr applySubscripts(ASTPtr base, std::span<const ASTPtr> subscripts, s
         for (size_t suffix = 1; used_names.contains(name); ++suffix)
             name = prefix + std::to_string(suffix);
 
-        auto body = applySubscripts(make_intrusive<ASTIdentifier>(name), rest, depth + 1);
+        auto body = applySubscripts(make_intrusive<ASTIdentifier>(name), rest, max_depth, depth + 1);
         auto lambda = makeASTLambda({name}, std::move(body));
         lambda->setIsOperator(true);
         lambda->setIsLambdaFunction(true);
@@ -1597,13 +1614,15 @@ static ASTPtr applySubscripts(ASTPtr base, std::span<const ASTPtr> subscripts, s
     return base;
 }
 
-static void expandSubscripts(ASTPtr & node)
+static void expandSubscripts(ASTPtr & node, size_t depth, size_t max_depth)
 {
+    checkSubscriptsExpansionDepth(depth, max_depth);
+
     auto * function = node->as<ASTFunction>();
     if (!function || function->name != "arrayElement" || !function->arguments || function->arguments->children.size() != 2)
     {
         for (auto & child : node->children)
-            expandSubscripts(child);
+            expandSubscripts(child, depth + 1, max_depth);
         return;
     }
 
@@ -1632,10 +1651,12 @@ static void expandSubscripts(ASTPtr & node)
         base = element->arguments->children[0];
     }
 
-    expandSubscripts(base);
+    /// Each element of the chain is a function with the arguments, so it accounts for two levels of depth.
+    const size_t chain_depth = depth + 2 * chain.size();
+    expandSubscripts(base, chain_depth, max_depth);
     for (auto & subscript : chain)
         if (subscript)
-            expandSubscripts(subscript);
+            expandSubscripts(subscript, chain_depth, max_depth);
 
     if (!has_marker)
     {
@@ -1653,7 +1674,7 @@ static void expandSubscripts(ASTPtr & node)
 
     std::reverse(chain.begin(), chain.end());
     auto alias = node->tryGetAlias();
-    node = applySubscripts(base, chain);
+    node = applySubscripts(base, chain, max_depth);
     if (!alias.empty())
         node->setAlias(alias);
 }
@@ -3789,7 +3810,7 @@ bool ParserExpressionImpl::parse(std::unique_ptr<Layer> start, IParser::Pos & po
         if (layers.size() == 1 && layers.back()->getResult(node))
         {
             if (has_subscripts_markers)
-                expandSubscripts(node);
+                expandSubscripts(node, 0, pos.max_depth);
             return true;
         }
 
