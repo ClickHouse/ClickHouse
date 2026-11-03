@@ -908,7 +908,10 @@ void registerHiddenPreWriteChecksImpl(
     if (follow_dependent_views && !canInsertIntoAnyColumn(*storage, context))
         return;
 
-    if (follow_dependent_views)
+    /// A storage that does not push the inserted rows to its dependent views (`Kafka`, `NATS`, `RabbitMQ`) runs
+    /// them only when it consumes the rows, in a separate write, so the nested INSERT does not reach them,
+    /// see `InsertDependenciesBuilder::createChainWithDependencies`.
+    if (follow_dependent_views && !storage->noPushingToViewsOnInserts())
         registerHiddenDependentViewsPreWriteChecks(storage, context, gates, origin, depth, result);
 
     if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))

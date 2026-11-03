@@ -1512,6 +1512,47 @@ def test_kafka_insert(kafka_cluster, create_query_generator):
         k.kafka_check_result(result, True)
 
 
+def test_kafka_insert_through_alias_ignores_consumer_views(kafka_cluster):
+    # An INSERT into a `Kafka` table only produces messages: its materialized views run when the messages are
+    # consumed, in a separate write. So the `Too many parts` check of the target of such a view must not reject
+    # an INSERT that reaches the `Kafka` table through a forwarding storage (an `Alias`), as it does not reject
+    # a direct INSERT into it.
+    suffix = k.random_string(6)
+    kafka_table = f"kafka_{suffix}"
+    topic_name = f"insert_alias_{suffix}"
+
+    instance.query(
+        k.generate_old_create_table_query(
+            kafka_table,
+            "key UInt64, value UInt64",
+            topic_list=topic_name,
+            consumer_group=topic_name,
+            format="TSV",
+        )
+    )
+    instance.query(
+        f"""
+        CREATE TABLE test.dst_{suffix} (key UInt64, value UInt64) ENGINE = MergeTree ORDER BY key
+            SETTINGS parts_to_throw_insert = 1;
+        INSERT INTO test.dst_{suffix} VALUES (1000, 1000);
+        CREATE MATERIALIZED VIEW test.mv_{suffix} TO test.dst_{suffix} AS SELECT key, value FROM test.{kafka_table};
+        CREATE TABLE test.alias_{suffix} ENGINE = Alias('test', '{kafka_table}');
+        """
+    )
+
+    message_count = 10
+    values = ",".join(f"({i}, {i})" for i in range(message_count))
+
+    with k.existing_kafka_topic(k.get_admin_client(kafka_cluster), topic_name):
+        k.insert_with_retry(instance, values, table_name=f"alias_{suffix}")
+
+        messages = k.kafka_consume_with_retry(kafka_cluster, topic_name, message_count)
+        rows = sorted(m.strip() for m in messages)
+        assert rows == sorted(f"{i}\t{i}" for i in range(message_count))
+
+    instance.query(f"DROP TABLE test.mv_{suffix}")
+
+
 @pytest.mark.parametrize(
     "create_query_generator",
     [k.generate_old_create_table_query, k.generate_new_create_table_query],
