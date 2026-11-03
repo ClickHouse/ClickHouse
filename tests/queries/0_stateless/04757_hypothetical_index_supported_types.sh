@@ -37,8 +37,8 @@ echo "$error" | grep -oE 'NOT_IMPLEMENTED' | head -1
 $CLICKHOUSE_CLIENT -q "SET allow_experimental_full_text_index = 1; CREATE HYPOTHETICAL INDEX hi ON t_hypo_types (s) TYPE text(tokenizer = 'array') GRANULARITY 1;" 2>&1 | grep -oE 'NOT_IMPLEMENTED' | head -1
 
 echo "--- validate still runs before the allowlist check ---"
-# 'hypothesis' is registered but its validator rejects it outright, so that error must win
-$CLICKHOUSE_CLIENT -q "CREATE HYPOTHETICAL INDEX hi ON t_hypo_types (a > 0) TYPE hypothesis GRANULARITY 1;" 2>&1 | grep -oE 'ILLEGAL_INDEX' | head -1
+# 'bloom_filter' is on the allowlist but its validator rejects a second parameter, so that error must win
+$CLICKHOUSE_CLIENT -q "CREATE HYPOTHETICAL INDEX hi ON t_hypo_types (s) TYPE bloom_filter(0.1, 0.2) GRANULARITY 1;" 2>&1 | grep -oE 'NUMBER_OF_ARGUMENTS_DOESNT_MATCH' | head -1
 # an unregistered type is rejected by the factory lookup, not by the allowlist
 $CLICKHOUSE_CLIENT -q "CREATE HYPOTHETICAL INDEX hi ON t_hypo_types (s) TYPE no_such_index GRANULARITY 1;" 2>&1 | grep -oE 'INCORRECT_QUERY' | head -1
 

@@ -10,7 +10,7 @@ Supported types: bloom_filter, minmax, ngrambf_v1, set, sparse_grams, tokenbf_v1
 NOT_IMPLEMENTED
 NOT_IMPLEMENTED
 --- validate still runs before the allowlist check ---
-ILLEGAL_INDEX
+NUMBER_OF_ARGUMENTS_DOESNT_MATCH
 INCORRECT_QUERY
 --- arguments the creator rejects fail at CREATE, not later ---
 BAD_ARGUMENTS

@@ -1,0 +1,29 @@
+-- a < b AND b <= c holds in granules 0 and 3
+		"rows_read": 4,
+		"rows_read": 2,
+		"rows_read": 4,
+		"rows_read": 2,
+		"rows_read": 2,
+		"rows_read": 2,
+		"rows_read": 4,
+		"rows_read": 2,
+		"rows_read": 4,
+		"rows_read": 2,
+		"rows_read": 2,
+-- a != b holds in granules 0, 1 and 3
+		"rows_read": 4,
+		"rows_read": 4,
+		"rows_read": 1,
+		"rows_read": 4,
+-- a = b holds in granule 2
+		"rows_read": 3,
+		"rows_read": 4,
+		"rows_read": 4,
+		"rows_read": 3,
+-- a < b holds in granules 0 and 3, the constraint adds b <= c
+		"rows_read": 2,
+		"rows_read": 4,
+-- a < 10 holds in granules 0 and 2
+		"rows_read": 2,
+		"rows_read": 2,
+		"rows_read": 4,
