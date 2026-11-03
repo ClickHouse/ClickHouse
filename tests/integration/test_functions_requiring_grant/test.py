@@ -244,6 +244,18 @@ def test_rewrite_target_requires_grant():
     assert instance.query(query, user="A") == "1\n"
 
 
+def test_division_setting_does_not_bypass_grant():
+    """Under `sql_compatible_division_for_integers`, `divide` is renamed to `divideExact`
+    before the analysis."""
+    instance.query("CREATE USER A")
+
+    query = "SELECT divide(8.0, 2.0) SETTINGS sql_compatible_division_for_integers = 1"
+    assert "Not enough privileges" in instance.query_and_get_error(query, user="A")
+
+    instance.query("GRANT FUNCTION ON divide TO A")
+    assert instance.query(query, user="A") == "4\n"
+
+
 def test_query_cache_does_not_outlive_grant():
     """The query cache serves a hit before the query is analyzed, so it must not keep the result
     of a call that needs a grant: the next run after the revoke would skip the check."""

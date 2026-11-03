@@ -20,6 +20,8 @@
             <function>indexHint</function>
             <!-- `in` is replaced by it under `transform_null_in`. -->
             <function>nullIn</function>
+            <!-- Renamed to `divideExact` before the analysis under `sql_compatible_division_for_integers`. -->
+            <function>divide</function>
         </functions_requiring_grant>
     </access_control_improvements>
 </clickhouse>
