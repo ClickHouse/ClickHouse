@@ -308,7 +308,8 @@ SinkToStoragePtr StorageAlias::write(
     const ASTPtr & /*query*/,
     const StorageMetadataPtr & /*metadata_snapshot*/,
     ContextPtr local_context,
-    bool async_insert)
+    bool async_insert,
+    const ParallelInsertStatePtr & /*parallel_insert_state*/)
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::INSERT});
     auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);

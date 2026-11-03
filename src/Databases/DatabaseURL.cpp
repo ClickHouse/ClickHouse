@@ -192,9 +192,9 @@ public:
         table_function->checkSourceAccess(context, /* is_insert_query */ true);
     }
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool async_insert) override
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool async_insert, const ParallelInsertStatePtr & parallel_insert_state) override
     {
-        return getNestedForWrite(context)->write(query, metadata_snapshot, context, async_insert);
+        return getNestedForWrite(context)->write(query, metadata_snapshot, context, async_insert, parallel_insert_state);
     }
 
     void truncate(

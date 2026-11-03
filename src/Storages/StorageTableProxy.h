@@ -162,11 +162,12 @@ public:
         const ASTPtr & query,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         ContextPtr context,
-        bool async_insert) override
+        bool async_insert,
+        const ParallelInsertStatePtr & parallel_insert_state) override
     {
         auto storage = getNested();
         auto nested_metadata = storage->getInMemoryMetadataPtr(context, false);
-        return storage->write(query, nested_metadata, context, async_insert);
+        return storage->write(query, nested_metadata, context, async_insert, parallel_insert_state);
     }
 
     void renameInMemory(const StorageID & new_table_id) override

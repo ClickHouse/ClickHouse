@@ -1350,7 +1350,8 @@ void ReadFromEmbeddedRocksDB::describeActions(JSONBuilder::JSONMap & map) const
 }
 
 SinkToStoragePtr StorageEmbeddedRocksDB::write(
-    const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, bool /*async_insert*/)
+    const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, bool /*async_insert*/,
+    const ParallelInsertStatePtr & /*parallel_insert_state*/)
 {
     if ((*getSettings())[RocksDBSetting::optimize_for_bulk_insert])
     {

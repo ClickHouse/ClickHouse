@@ -1881,7 +1881,7 @@ Chain InsertDependenciesBuilder::createSinkImpl(StorageIDMaybeEmpty view_id) con
             parallel_insert_state = it->second;
         }
 
-        auto sink = inner_storage->writeParallelInsertStream(
+        auto sink = inner_storage->write(
             select_queries.at(view_id), metadata_snapshots.at(inner_table_id), insert_context, async_insert, parallel_insert_state);
         sink->setRuntimeData(thread_groups.at(view_id));
         sink->setHasDependentMaterializedViews(has_dependent_materialized_views);

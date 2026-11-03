@@ -21,7 +21,7 @@ public:
     static ColumnsDescription getColumnsDescription();
     static VirtualColumnsDescription createVirtuals();
 
-    SinkToStoragePtr write(const ASTPtr & /*query*/, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/, bool /*async_insert*/) override;
+    SinkToStoragePtr write(const ASTPtr & /*query*/, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/, bool /*async_insert*/, const ParallelInsertStatePtr & /*parallel_insert_state*/) override;
 
     void readImpl(
         QueryPlan & query_plan,

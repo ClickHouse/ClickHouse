@@ -68,7 +68,7 @@ public:
         size_t /* max_block_size */,
         size_t /* num_streams */) override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool async_insert) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool async_insert, const ParallelInsertStatePtr & /*parallel_insert_state*/) override;
 
     /// We want to control the number of rows in a chunk inserted into NATS
     bool prefersLargeBlocks() const override { return false; }

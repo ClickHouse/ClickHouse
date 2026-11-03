@@ -827,7 +827,7 @@ void StorageQueryRunner::waitForQueriesToFinish(const QueryStatusPtr & query_sta
     dispatcher->waitForAllPending(query_status);
 }
 
-SinkToStoragePtr StorageQueryRunner::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
+SinkToStoragePtr StorageQueryRunner::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/, const ParallelInsertStatePtr & /*parallel_insert_state*/)
 {
     const auto & inserter = local_context->getClientInfo();
     std::shared_ptr<const QueryRunnerJobOrigin> origin;

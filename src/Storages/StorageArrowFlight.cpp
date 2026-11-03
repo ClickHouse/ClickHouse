@@ -335,7 +335,7 @@ private:
 };
 
 SinkToStoragePtr
-StorageArrowFlight::write(const ASTPtr & /* query */, const StorageMetadataPtr & metadata_snapshot, ContextPtr context_, bool /*async_write*/)
+StorageArrowFlight::write(const ASTPtr & /* query */, const StorageMetadataPtr & metadata_snapshot, ContextPtr context_, bool /*async_write*/, const ParallelInsertStatePtr & /*parallel_insert_state*/)
 {
     return std::make_shared<ArrowFlightSink>(metadata_snapshot, connection, dataset_name, context_);
 }

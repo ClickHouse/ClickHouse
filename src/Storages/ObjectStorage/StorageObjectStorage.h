@@ -89,16 +89,10 @@ public:
         const ASTPtr & query,
         const StorageMetadataPtr & metadata_snapshot,
         ContextPtr context,
-        bool async_insert) override;
+        bool async_insert,
+        const ParallelInsertStatePtr & /*parallel_insert_state*/) override;
 
     ParallelInsertStatePtr createParallelInsertState(const StorageMetadataPtr & metadata_snapshot, ContextPtr context) override;
-
-    SinkToStoragePtr writeParallelInsertStream(
-        const ASTPtr & query,
-        const StorageMetadataPtr & metadata_snapshot,
-        ContextPtr context,
-        bool async_insert,
-        const ParallelInsertStatePtr & parallel_insert_state) override;
 
     static SinkToStoragePtr createSink(
         const StorageObjectStorageConfigurationPtr & configuration,

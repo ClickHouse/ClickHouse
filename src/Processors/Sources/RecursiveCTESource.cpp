@@ -264,7 +264,7 @@ private:
             {},
             metadata_snapshot,
             recursive_query_context,
-            false /*async_insert*/);
+            false /*async_insert*/, /*parallel_insert_state=*/nullptr);
 
         pipeline_builder.addChain(Chain(std::move(intermediate_temporary_table_storage_sink)));
 

@@ -6567,7 +6567,7 @@ void StorageReplicatedMergeTree::assertNotStaticStorage() const
 }
 
 
-SinkToStoragePtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool async_insert)
+SinkToStoragePtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool async_insert, const ParallelInsertStatePtr & /*parallel_insert_state*/)
 {
     /// We need to check it explicitly since someone may write to table explicitly (bypassing InterpreterInsertQuery, which has this check)
     if (local_context->getCurrentTransaction())

@@ -302,7 +302,8 @@ SinkToStoragePtr StorageObjectStorageCluster::write(
     const ASTPtr &,
     const StorageMetadataPtr & metadata_snapshot,
     ContextPtr local_context,
-    bool /* async_insert */)
+    bool /* async_insert */,
+    const ParallelInsertStatePtr & /*parallel_insert_state*/)
 {
     if (!configuration->isDataLakeConfiguration())
         configuration->update(object_storage, local_context);

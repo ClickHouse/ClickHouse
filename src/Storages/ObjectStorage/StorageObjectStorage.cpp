@@ -1031,15 +1031,6 @@ void StorageObjectStorage::addFilterPushedDownByInitiator(QueryPlan & query_plan
     query_plan.addStep(std::move(filter_step));
 }
 
-SinkToStoragePtr StorageObjectStorage::write(
-    const ASTPtr & query,
-    const StorageMetadataPtr & metadata_snapshot,
-    ContextPtr local_context,
-    bool async_insert)
-{
-    return writeParallelInsertStream(query, metadata_snapshot, local_context, async_insert, /*parallel_insert_state=*/nullptr);
-}
-
 ParallelInsertStatePtr StorageObjectStorage::createParallelInsertState(const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
 {
     if (!configuration->isDataLakeConfiguration())
@@ -1049,7 +1040,7 @@ ParallelInsertStatePtr StorageObjectStorage::createParallelInsertState(const Sto
     return configuration->createParallelInsertState(sample_block, storage_id, object_storage, local_context, catalog);
 }
 
-SinkToStoragePtr StorageObjectStorage::writeParallelInsertStream(
+SinkToStoragePtr StorageObjectStorage::write(
     const ASTPtr &,
     const StorageMetadataPtr & metadata_snapshot,
     ContextPtr local_context,

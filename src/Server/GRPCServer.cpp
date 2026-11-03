@@ -1264,7 +1264,7 @@ namespace
                 {
                     /// The data will be written directly to the table.
                     auto metadata_snapshot = storage->getInMemoryMetadataPtr(query_context, false);
-                    auto sink = storage->write(ASTPtr(), metadata_snapshot, query_context, /*async_insert=*/false);
+                    auto sink = storage->write(ASTPtr(), metadata_snapshot, query_context, /*async_insert=*/false, /*parallel_insert_state=*/nullptr);
 
                     String format = external_table.format();
                     if (format.empty())

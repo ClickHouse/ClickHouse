@@ -20,7 +20,7 @@ public:
     bool supportsColumnsMask() const override { return true; }
     void fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8> columns_mask) const override;
 
-    SinkToStoragePtr write(const ASTPtr & /*query*/, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/, bool /*async_insert*/) override;
+    SinkToStoragePtr write(const ASTPtr & /*query*/, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/, bool /*async_insert*/, const ParallelInsertStatePtr & /*parallel_insert_state*/) override;
 
     bool isSystemStorage() const override { return true; }
 

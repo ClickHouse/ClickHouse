@@ -366,7 +366,7 @@ void FutureSetFromSubquery::buildExternalTableFromInplaceSet(StoragePtr external
     }
 
     Chunk set_chunk(std::move(converted_columns), set.getTotalRowCount());
-    auto pipeline = QueryPipeline(external_table_->write({}, metadata, nullptr, /*async_insert=*/false));
+    auto pipeline = QueryPipeline(external_table_->write({}, metadata, nullptr, /*async_insert=*/false, /*parallel_insert_state=*/nullptr));
     PushingPipelineExecutor executor(pipeline);
     executor.push(std::move(set_chunk));
     executor.finish();

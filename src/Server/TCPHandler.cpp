@@ -3029,7 +3029,7 @@ bool TCPHandler::processData(QueryState & state, bool scalar)
                 metadata_snapshot->getSampleBlock().dumpStructure());
 
         /// The data will be written directly to the table.
-        QueryPipeline temporary_table_out(storage->write(ASTPtr(), metadata_snapshot, state.query_context, /*async_insert=*/false));
+        QueryPipeline temporary_table_out(storage->write(ASTPtr(), metadata_snapshot, state.query_context, /*async_insert=*/false, /*parallel_insert_state=*/nullptr));
         PushingPipelineExecutor executor(temporary_table_out);
         executor.start();
         executor.push(block);
