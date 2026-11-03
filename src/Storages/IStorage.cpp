@@ -200,7 +200,7 @@ Pipe IStorage::read(
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method read is not supported by storage {}", getName());
 }
 
-SinkToStoragePtr IStorage::write(
+SinkToStoragePtr IStorage::write( // NOLINT(google-default-arguments)
     const ASTPtr & /*query*/,
     const StorageMetadataPtr & /*metadata_snapshot*/,
     ContextPtr /*context*/,

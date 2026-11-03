@@ -537,12 +537,12 @@ public:
       *
       * async_insert - set to true if the write is part of async insert flushing
       */
-    virtual SinkToStoragePtr write(
+    virtual SinkToStoragePtr write( // NOLINT(google-default-arguments)
         const ASTPtr & /*query*/,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         ContextPtr /*context*/,
         bool /*async_insert*/,
-        const ParallelInsertStatePtr & /*parallel_insert_state*/ = nullptr); // NOLINT
+        const ParallelInsertStatePtr & /*parallel_insert_state*/ = nullptr);
 
     /** Called once per `INSERT` with several insert streams (see `supportsParallelInsert`), before `write` creates
       * the sink of every stream. The sinks of all streams get the returned state as `parallel_insert_state`,
