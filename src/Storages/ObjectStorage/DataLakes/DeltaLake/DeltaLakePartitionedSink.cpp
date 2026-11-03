@@ -300,7 +300,7 @@ void DeltaLakePartitionedSink::consume(Chunk & chunk)
                     "Cannot write {} partition value into non-nullable DeltaLake partition column '{}'",
                     is_null ? "NULL" : "empty-string", partition_columns[col]);
 
-            /// The Delta log is UTF-8 JSON: a non-UTF-8 value would make every later read of the table fail.
+            /// Partition values are stored in the Delta log, which is UTF-8 JSON.
             if (!is_null_equivalent && !UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(value.data()), value.size()))
                 throw Exception(
                     ErrorCodes::INCORRECT_DATA,
