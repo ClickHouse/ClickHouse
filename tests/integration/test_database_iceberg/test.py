@@ -3536,12 +3536,10 @@ def test_soak_catalog_database_lifecycle(started_cluster):
     assert node.query(f"SELECT count() FROM system.databases WHERE startsWith(name, '{prefix}')").strip() == "0"
 
 
-# Every `INSERT` into a `DeltaLake` table leaves about ten more established connections to object storage and several threads, held by the table until `DROP TABLE`, beyond the 10 entries of its snapshot cache. Remove the mark once that is fixed: being strict, it turns red then.
-@pytest.mark.xfail(reason="every INSERT into a DeltaLake table leaks connections and threads until DROP TABLE", strict=True)
 def test_soak_delta_lake_insert_and_read(started_cluster):
     """`INSERT` into a `DeltaLake` table, then reads of it, `SOAK_ITERATIONS` times.
 
-    The reader is the Rust Delta kernel, whose allocations `MemoryTracking` does not see, so the resident memory checked by `ResourceSampler.assert_bounded` is what covers it. Each table snapshot and each write transaction builds its own kernel engine with its own object store client, so `DeltaLakeSnapshotCacheSizeElements` is sampled too."""
+    The reader is the Rust Delta kernel, whose allocations `MemoryTracking` does not see, so the resident memory checked by `ResourceSampler.assert_bounded` is what covers it. All snapshots and write transactions of a table share one kernel engine and its object store client, so the connections and threads the table holds must not grow with its commits (https://github.com/ClickHouse/ClickHouse/issues/128298); `DeltaLakeSnapshotCacheSizeElements` is sampled too."""
     node = started_cluster.instances["node1"]
     table = f"soak_delta_{uuid.uuid4().hex[:8]}"
     settings = {"allow_delta_lake_writes": 1, "allow_delta_lake_create_table": 1}
