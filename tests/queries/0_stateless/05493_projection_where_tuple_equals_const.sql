@@ -38,7 +38,7 @@ CREATE TABLE t_proj_tuple_eq_merge
     PROJECTION p (SELECT k, tup WHERE tup = (1, 2) ORDER BY k)
 )
 ENGINE = MergeTree ORDER BY k
-SETTINGS materialize_projections_on_insert = 0, materialize_projections_on_merge = 1;
+SETTINGS materialize_projections_on_insert = 0, materialize_projections_on_merge = 1, ratio_of_defaults_for_sparse_serialization = 0.9375;
 
 INSERT INTO t_proj_tuple_eq_merge VALUES (1, (1, 2)), (2, (3, 4));
 INSERT INTO t_proj_tuple_eq_merge VALUES (3, (1, 2)), (4, (3, 4));
@@ -60,7 +60,8 @@ CREATE TABLE t_proj_tuple_eq_mutation
     k UInt64,
     tup Tuple(UInt64, UInt64)
 )
-ENGINE = MergeTree ORDER BY k;
+ENGINE = MergeTree ORDER BY k
+SETTINGS ratio_of_defaults_for_sparse_serialization = 0.9375;
 
 INSERT INTO t_proj_tuple_eq_mutation VALUES (1, (1, 2)), (2, (3, 4)), (3, (1, 2));
 
