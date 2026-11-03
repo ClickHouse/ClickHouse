@@ -475,12 +475,13 @@ class JobNames:
     # No "++": the job name becomes the GitHub Actions job id via
     # Utils.normalize_string, and '+' is not a valid id character.
     SQLANCER_PP = "SQLancerPP"
+    DATALAKE_FUZZER = "Data lake fuzzer"
     LLVM_COVERAGE = "LLVM Coverage"
     PROMQL_COMPLIANCE = "PromQL Compliance"
     BUILD_PROFILE_DIFF = "Build profile diff"
     INSTALL_TEST = "Install packages"
     ASTFUZZER = "AST fuzzer"
-    BUZZHOUSE = "BuzzHouse"
+    LACASADELDOLOR = "La Casa Del Dolor"
     BUILDOCKER = "BuildDockers"
     BUGFIX_VALIDATE = "Bugfix validation"
     # Per-arch bugfix validation jobs. Each runs the new/modified test on

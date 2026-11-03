@@ -155,7 +155,10 @@ ThreadStatus::ThreadStatus(UInt64 thread_id_)
     /// memory_tracker is already parented to total_memory_tracker, so a thread that never attaches
     /// to a group still honors total_memory_tracker_sample_probability.
     resolveMemorySampleConfig();
-    log = getLogger("ThreadStatus");
+    /// A `ThreadStatus` is created for every job of a thread pool, and `getLogger` locks the global mutex of the
+    /// registry of loggers, so all threads of the pools would contend on it.
+    static const LoggerPtr thread_status_log = getLogger("ThreadStatus");
+    log = thread_status_log;
 
     current_thread = this;
 

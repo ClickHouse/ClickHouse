@@ -172,9 +172,16 @@ ParquetV3BlockInputFormat::ParquetV3BlockInputFormat(
         format_filter_info = std::make_shared<FormatFilterInfo>();
 }
 
-void ParquetV3BlockInputFormat::initializeIfNeeded()
+void ParquetV3BlockInputFormat::prefetch()
 {
-    if (!reader)
+    if (need_only_count)
+        return;
+    readFileFooterIfNeeded();
+}
+
+void ParquetV3BlockInputFormat::readFileFooterIfNeeded()
+{
+    if (!reader && !reader_with_footer)
     {
         format_filter_info->initKeyConditionOnce(getPort().getHeader());
         parser_shared_resources->initOnce([&]
@@ -205,43 +212,54 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
                 parser_shared_resources->opaque = ext;
             });
 
+        auto new_reader = std::make_unique<Parquet::ReadManager>();
+        new_reader->reader.prefetcher.init(in, read_options, parser_shared_resources);
+        /// The code that split the file into buckets may have parsed the footer already.
+        const bool has_bucket_footer = buckets_to_read && buckets_to_read->file_footer;
+        auto load_footer = [&]
+        {
+            return has_bucket_footer ? buckets_to_read->file_footer : readFileFooter(new_reader->reader.prefetcher);
+        };
+        /// Shared with the readers of the other buckets of the file, also when the cache is enabled: the cell
+        /// in the cache gets the column chunks only after the initialization of a reader.
+        Parquet::SharedFileColumnChunksPtr shared_column_chunks = has_bucket_footer ? buckets_to_read->column_chunks : nullptr;
+        footer_cache_key = getMetadataCacheKey();
+        if (footer_cache_key)
+        {
+            std::tie(footer_cache_cell, footer_cache_hit) = metadata_cache->getOrSetMetadata(*footer_cache_key, load_footer);
+            /// The cell may have been evicted and replaced since the split, then share nothing.
+            if (has_bucket_footer && footer_cache_cell->footer != buckets_to_read->file_footer)
+                shared_column_chunks = nullptr;
+            new_reader->reader.setFileFooter(footer_cache_cell->footer, footer_cache_cell->column_chunks, shared_column_chunks);
+            if (footer_cache_hit && object_with_metadata->metadata->isEtagUsableAsCacheKey())
+            {
+                metadata_cache_cell = footer_cache_cell;
+                metadata_cache_key = *footer_cache_key;
+            }
+        }
+        else if (has_bucket_footer)
+        {
+            new_reader->reader.setFileFooter(buckets_to_read->file_footer, {}, shared_column_chunks);
+        }
+        else
+        {
+            new_reader->reader.setFileFooter(load_footer());
+        }
+
+        std::lock_guard lock(reader_mutex);
+        reader_with_footer = std::move(new_reader);
+    }
+}
+
+void ParquetV3BlockInputFormat::initializeIfNeeded()
+{
+    if (!reader)
+    {
+        readFileFooterIfNeeded();
+
         {
             std::lock_guard lock(reader_mutex);
-            reader.emplace();
-            reader->reader.prefetcher.init(in, read_options, parser_shared_resources);
-            /// The code that split the file into buckets may have parsed the footer already.
-            const bool has_bucket_footer = buckets_to_read && buckets_to_read->file_footer;
-            auto load_footer = [&]
-            {
-                return has_bucket_footer ? buckets_to_read->file_footer : readFileFooter(reader->reader.prefetcher);
-            };
-            auto cache_key = getMetadataCacheKey();
-            ParquetMetadataCache::MappedPtr cache_cell;
-            bool cache_hit = false;
-            /// Shared with the readers of the other buckets of the file, also when the cache is enabled: the cell
-            /// in the cache gets the column chunks only after the initialization of a reader.
-            Parquet::SharedFileColumnChunksPtr shared_column_chunks = has_bucket_footer ? buckets_to_read->column_chunks : nullptr;
-            if (cache_key)
-            {
-                std::tie(cache_cell, cache_hit) = metadata_cache->getOrSetMetadata(*cache_key, load_footer);
-                /// The cell may have been evicted and replaced since the split, then share nothing.
-                if (has_bucket_footer && cache_cell->footer != buckets_to_read->file_footer)
-                    shared_column_chunks = nullptr;
-                reader->reader.setFileFooter(cache_cell->footer, cache_cell->column_chunks, shared_column_chunks);
-                if (cache_hit && object_with_metadata->metadata->isEtagUsableAsCacheKey())
-                {
-                    metadata_cache_cell = cache_cell;
-                    metadata_cache_key = *cache_key;
-                }
-            }
-            else if (has_bucket_footer)
-            {
-                reader->reader.setFileFooter(buckets_to_read->file_footer, {}, shared_column_chunks);
-            }
-            else
-            {
-                reader->reader.setFileFooter(load_footer());
-            }
+            reader = std::move(reader_with_footer);
             reader->reader.init(read_options, getPort().getHeader(), format_filter_info);
             /// Of the readers of a split file, only one records the statistics (of all row groups, also of the other buckets).
             if (metadata_cache_cell && format_filter_info->keep_filter_column_statistics && format_filter_info->key_condition
@@ -267,8 +285,9 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
                 buckets_to_read ? std::optional(buckets_to_read->row_group_ids) : std::nullopt,
                 /*other_row_groups_are_read_by_other_readers=*/ buckets_to_read && buckets_to_read->is_split_for_parallel_reading);
             /// Not after the miss that inserted the cell: replacing it would move it to SLRU's protected queue.
-            if (cache_hit)
-                metadata_cache->addColumnChunks(*cache_key, cache_cell, reader->reader.getColumnChunks());
+            if (footer_cache_hit)
+                metadata_cache->addColumnChunks(*footer_cache_key, footer_cache_cell, reader->reader.getColumnChunks());
+            footer_cache_cell.reset();
         }
     }
 }
@@ -511,6 +530,7 @@ void ParquetV3BlockInputFormat::resetReadBuffer()
         std::lock_guard lock(reader_mutex);
         if (reader)
             reader->shutdownTasks();
+        reader_with_footer.reset();
     }
     IInputFormat::resetReadBuffer();
 }
@@ -520,6 +540,10 @@ void ParquetV3BlockInputFormat::resetParser()
     {
         std::lock_guard lock(reader_mutex);
         reader.reset();
+        reader_with_footer.reset();
+        footer_cache_key.reset();
+        footer_cache_cell.reset();
+        footer_cache_hit = false;
         min_max_from_statistics = false;
         metadata_cache_cell.reset();
         metadata_cache_key.reset();
