@@ -1457,7 +1457,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                     if (auto index_result = can_use_index(index_and_condition.index); !index_result)
                     {
-                        LOG_TRACE(log, "{}", index_result.error().text);
+                        LOG_TRACE(log, index_result.error());
                         continue;
                     }
 
