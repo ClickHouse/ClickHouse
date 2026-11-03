@@ -109,6 +109,10 @@ public:
     /// One key range per pattern, or nothing when some pattern can match tokens anywhere in the dictionary.
     std::optional<std::vector<TokenKeyRange>> getPatternTokenKeyRanges() const;
     bool canFilterTokensByLiterals() const;
+    bool canIntersectDictionary() const { return !pattern_cursors.empty(); }
+    /// Like `TextIndexDictionaryDFA::Cursor::next`, but for the union of all pattern DFAs: `token` matches if any
+    /// DFA accepts it, and `lower_bound` is the smallest lower bound of all DFAs.
+    TextIndexDictionaryDFA::Cursor::Result nextPatternToken(std::string_view token, String & lower_bound);
     /// Appends, ascending, the tokens `addTokenToPatterns` accepts, running it only on those holding a pattern's literal.
     void matchTokensByLiterals(const ColumnString & tokens, PaddedPODArray<UInt8> & candidate_marks, std::vector<size_t> & matched_indices);
     /// Marks all pattern queries as bypassed (e.g. dictionary scan budget exhausted).
@@ -149,6 +153,7 @@ private:
     absl::flat_hash_map<const OptimizedRegularExpression *, QueryHashes> queries_by_pattern;
     /// JSON pattern queries grouped by their dictionary-token prefix.
     absl::flat_hash_map<String, QueryHashes> queries_by_prefix;
+    std::vector<TextIndexDictionaryDFA::Cursor> pattern_cursors;
 
     /* Fields updated dynamically during text index analysis. */
 

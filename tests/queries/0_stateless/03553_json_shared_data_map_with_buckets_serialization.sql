@@ -1,4 +1,4 @@
--- Tags: long
+-- Tags: long, no-msan
 
 set output_format_json_quote_64bit_integers=0;
 

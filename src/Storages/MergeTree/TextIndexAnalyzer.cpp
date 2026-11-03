@@ -186,6 +186,8 @@ TextIndexAnalyzer::TextIndexAnalyzer(
     const std::optional<JSONPathValues::IndexConfiguration> & part_configuration)
 {
     global_search_mode = condition_text.getGlobalSearchMode();
+    bool all_patterns_have_automata = true;
+    bool has_general_pattern = false;
 
     for (const auto & [hash, query] : condition_text.getAllSearchQueries())
     {
@@ -207,24 +209,65 @@ TextIndexAnalyzer::TextIndexAnalyzer(
                 ++query_builder.num_live_tokens;
         }
 
-        if (query->getJSONPayload() && query->getJSONPayload()->match_patterns_by_prefix)
+        if (const auto & payload = query->getJSONPayload())
         {
-            for (const auto & prefix : query->getJSONPayload()->pattern_token_prefixes)
+            /// JSON queries have no automata: their patterns match decoded values and their prefixes use key ranges.
+            all_patterns_have_automata = false;
+
+            if (payload->match_patterns_by_prefix)
+            {
+                for (const auto & prefix : payload->pattern_token_prefixes)
+                    queries_by_prefix[prefix].insert(hash);
+            }
+            else
+            {
+                for (const auto & pattern : query->getPatterns())
+                    queries_by_pattern[&pattern].insert(hash);
+            }
+
+            for (const auto & prefix : payload->validation_pattern_prefixes)
                 queries_by_prefix[prefix].insert(hash);
-        }
-        else
-        {
-            for (const auto & pattern : query->getPatterns())
-                queries_by_pattern[&pattern].insert(hash);
+
+            continue;
         }
 
-        if (query->getJSONPayload())
+        for (const auto & pattern : query->getPatterns())
         {
-            for (const auto & prefix : query->getJSONPayload()->validation_pattern_prefixes)
-                queries_by_prefix[prefix].insert(hash);
+            queries_by_pattern[&pattern].insert(hash);
+            has_general_pattern |= pattern.getMatchKind() == RegexpMatchKind::General;
         }
-
+        for (const auto & automaton : query->getPatternAutomata())
+        {
+            if (automaton)
+                pattern_cursors.emplace_back(*automaton);
+            else
+                all_patterns_have_automata = false;
+        }
     }
+
+    /// Prefix and exact literals already have a cheaper contiguous block-range scan.
+    /// Infix patterns without a rejecting prefix retain the SIMD literal filter.
+    if (!all_patterns_have_automata || !has_general_pattern)
+        pattern_cursors.clear();
+}
+
+TextIndexDictionaryDFA::Cursor::Result TextIndexAnalyzer::nextPatternToken(std::string_view token, String & lower_bound)
+{
+    using Result = TextIndexDictionaryDFA::Cursor::Result;
+    bool found = false;
+    String candidate;
+    for (auto & cursor : pattern_cursors)
+    {
+        auto result = cursor.next(token, candidate);
+        if (result == Result::Match)
+            return Result::Match;
+        if (result == Result::Seek && (!found || candidate < lower_bound))
+        {
+            lower_bound = candidate;
+            found = true;
+        }
+    }
+    return found ? Result::Seek : Result::Exhausted;
 }
 
 const TextIndexAnalyzer::QueryBuilder & TextIndexAnalyzer::getQueryBuilder(const TextSearchQuery & query) const
