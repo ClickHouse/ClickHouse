@@ -163,3 +163,6 @@ SELECT parseDateTime('Sun 2026-10-25 12:00:00', '%a %Y-%m-%d %H:%i:%s', 'UTC');
 SELECT parseDateTime('2026-10 43 7', '%G-%m %V %u', 'UTC');
 SELECT parseDateTime('2026-25 43 7', '%G-%d %V %u', 'UTC');
 SELECT parseDateTimeInJodaSyntax('2026-10 43 7', 'xxxx-MM ww e', 'UTC');
+SELECT parseDateTime('2020-01-01 53 5', '%G-%m-%d %V %u', 'UTC');
+SELECT parseDateTime('20-01-01 53 5', '%g-%m-%d %V %u', 'UTC');
+SELECT parseDateTimeInJodaSyntax('2020-01-01 53 5', 'xxxx-MM-dd ww e', 'UTC');

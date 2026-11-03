@@ -175,6 +175,7 @@ namespace
         bool day_of_year_format = false; /// If true, date is composed of year(reuse year), day of year(use day_of_year)
 
         bool is_year_of_era = false; /// If true, year is calculated from era and year of era, the latter cannot be zero or negative.
+        bool is_week_year = false; /// Whether year was specified as an ISO week year (%G, %g, Joda x).
         bool has_year = false; /// Whether year was explicitly specified.
         bool has_month = false; /// Whether month was explicitly specified.
         bool has_day_of_month = false; /// Whether day of month was explicitly specified.
@@ -212,6 +213,7 @@ namespace
             day_of_year_format = false;
 
             is_year_of_era = false;
+            is_week_year = false;
             has_year = false;
             has_month = false;
             has_day_of_month = false;
@@ -249,11 +251,12 @@ namespace
 
             year = 100 * century;
             has_year = true;
+            is_week_year = false;
             return {};
         }
 
         [[nodiscard]]
-        VoidOrError setYear(Int32 year_, bool is_year_of_era_ = false, bool is_week_year = false)
+        VoidOrError setYear(Int32 year_, bool is_year_of_era_ = false, bool is_week_year_ = false)
         {
             if (!yearIsInValidRange(year_))
                 RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for year must be in the range [{}, {}]", year_, min_year, max_year)
@@ -261,7 +264,8 @@ namespace
             year = year_;
             has_year = true;
             is_year_of_era = is_year_of_era_;
-            if (is_week_year)
+            is_week_year = is_week_year_;
+            if (is_week_year_)
             {
                 week_date_format = true;
                 day_of_year_format = false;
@@ -270,7 +274,7 @@ namespace
         }
 
         [[nodiscard]]
-        VoidOrError setYear2(Int32 year_)
+        VoidOrError setYear2(Int32 year_, bool is_week_year_ = false)
         {
             if (year_ >= 70 && year_ < 100)
                 year_ += 1900;
@@ -279,7 +283,7 @@ namespace
             else
                 RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for year2 must be in the range [0, 99]", year_)
 
-            RETURN_ERROR_IF_FAILED(setYear(year_, false, false))
+            RETURN_ERROR_IF_FAILED(setYear(year_, false, is_week_year_))
             return {};
         }
 
@@ -308,7 +312,7 @@ namespace
                 RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for week of week year must be in the range [1, 53]", week_)
 
             week = week_;
-            if (!has_month || !has_day_of_month)
+            if (is_week_year || !has_month || !has_day_of_month)
             {
                 week_date_format = true;
                 day_of_year_format = false;
@@ -363,7 +367,7 @@ namespace
                 RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for day of week must be in the range [1, 7]", day_of_week_)
 
             day_of_week = day_of_week_;
-            if (!has_month || !has_day_of_month)
+            if (is_week_year || !has_month || !has_day_of_month)
             {
                 week_date_format = true;
                 day_of_year_format = false;
@@ -1245,7 +1249,7 @@ namespace
             {
                 Int32 year2 = 0;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, year2)))
-                RETURN_ERROR_IF_FAILED(parsed_value.setYear2(year2))
+                RETURN_ERROR_IF_FAILED(parsed_value.setYear2(year2, true))
                 return cur;
             }
 
@@ -1254,7 +1258,7 @@ namespace
             {
                 Int32 year = 0;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber4<Int32, NeedCheckSpace::Yes>(cur, end, fragment, year)))
-                RETURN_ERROR_IF_FAILED(parsed_value.setYear(year))
+                RETURN_ERROR_IF_FAILED(parsed_value.setYear(year, false, true))
                 return cur;
             }
 
