@@ -137,9 +137,11 @@ ReadFromFormatInfo StorageObjectStorageConfiguration::prepareReadingFromFormat(
     bool supports_subset_of_columns,
     bool supports_tuple_elements,
     ContextPtr local_context,
+    const std::optional<FormatSettings> & format_settings,
     const PrepareReadingFromFormatHiveParams & hive_parameters)
 {
-    return DB::prepareReadingFromFormat(requested_columns, storage_snapshot, local_context, supports_subset_of_columns, supports_tuple_elements, hive_parameters);
+    return DB::prepareReadingFromFormat(
+        requested_columns, storage_snapshot, local_context, format_settings, supports_subset_of_columns, supports_tuple_elements, hive_parameters);
 }
 
 std::optional<ColumnsDescription> StorageObjectStorageConfiguration::tryGetTableStructureFromMetadata(ContextPtr) const

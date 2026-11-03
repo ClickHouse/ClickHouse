@@ -2552,6 +2552,212 @@ bool isStdinNotEmptyAndValid(ReadBuffer & std_in)
         throw;
     }
 }
+
+void collectIdentifiersAndAliases(const ASTPtr & ast, NameSet & names)
+{
+    if (const auto * identifier = ast->as<ASTIdentifier>())
+    {
+        names.insert(identifier->name());
+        if (!identifier->name_parts.empty())
+            names.insert(identifier->name_parts.front());
+    }
+
+    if (auto alias = ast->tryGetAlias(); !alias.empty())
+        names.insert(std::move(alias));
+
+    for (const auto & child : ast->children)
+        collectIdentifiersAndAliases(child, names);
+}
+
+/// Collects the aliases defined in `ast` out of lambda bodies: they are visible in the whole scope, an alias defined in a lambda body only in it.
+void collectScopeAliases(const ASTPtr & ast, NameSet & aliases)
+{
+    if (auto alias = ast->tryGetAlias(); !alias.empty())
+        aliases.insert(std::move(alias));
+
+    if (const auto * function = ast->as<ASTFunction>(); function && function->name == "lambda")
+        return;
+
+    for (const auto & child : ast->children)
+        collectScopeAliases(child, aliases);
+}
+
+/// Generates the aliases of definitions, which are different from the columns and from the identifiers and aliases
+/// in their default expressions, because any of them can be substituted.
+class UniqueNameGenerator
+{
+public:
+    explicit UniqueNameGenerator(const ColumnsDescription & columns)
+    {
+        for (const auto & column : columns)
+        {
+            reserved_names.insert(column.name);
+            if (column.default_desc.expression)
+                collectIdentifiersAndAliases(column.default_desc.expression, reserved_names);
+        }
+    }
+
+    String generate(const String & prefix)
+    {
+        String name;
+        do
+            name = prefix + std::to_string(counter++);
+        while (reserved_names.contains(name));
+        return name;
+    }
+
+private:
+    NameSet reserved_names;
+    size_t counter = 0;
+};
+
+/// Makes the default expressions of the inserted columns computable without the not inserted columns, as the server does:
+/// a not inserted column takes its own default (or the default of its type).
+/// In each expression a not inserted column is defined once, as `_CAST(default, 'Type') AS alias`, and the other uses
+/// refer to the alias, so that a default which is used many times is not copied for every use.
+/// The definition is placed in place of the first use, or, if it is in a lambda body, at the top level of the expression,
+/// as `tupleElement(tuple(expression, definitions...), 1)`, because the lambda arguments and the aliases defined in
+/// a lambda body could capture the columns of the definition, and an alias defined in a lambda body is not visible outside.
+/// The aliases are unique (or the own alias of the first use), so the definitions in the expressions of different columns,
+/// which are computed together, don't clash. The lambdas are not changed otherwise.
+/// An identifier which is a lambda argument or an alias visible in its scope is not a column, as for the server.
+class NotInsertedColumnsDefaults
+{
+public:
+    NotInsertedColumnsDefaults(const NameSet & inserted_columns_, const ColumnsDescription & columns_)
+        : inserted_columns(inserted_columns_), columns(columns_), unique_names(columns_)
+    {
+    }
+
+    void apply(ASTPtr & expression)
+    {
+        aliases.clear();
+        hoisted_aliases.clear();
+        top_level_definitions.clear();
+        top_level_scope_aliases.clear();
+        collectScopeAliases(expression, top_level_scope_aliases);
+        rewrite(expression, top_level_scope_aliases, {});
+
+        if (top_level_definitions.empty())
+            return;
+
+        const String alias = expression->tryGetAlias();
+        expression->setAlias("");
+        auto tuple = makeASTFunction("tuple", expression);
+        for (auto & definition : top_level_definitions)
+            tuple->arguments->children.push_back(std::move(definition));
+        top_level_definitions.clear();
+
+        auto element = makeASTFunction("tupleElement", std::move(tuple), make_intrusive<ASTLiteral>(UInt64(1)));
+        element->setAlias(alias);
+        expression = std::move(element);
+    }
+
+private:
+    /// `scope_aliases` are the aliases of the expression visible in the scope, `shadowed_names` are the arguments of
+    /// the enclosing lambdas and the aliases defined in their bodies, which hide the aliases of the top level.
+    void rewrite(ASTPtr & ast, const NameSet & scope_aliases, const NameSet & shadowed_names, bool in_lambda = false)
+    {
+        if (const auto * identifier = ast->as<ASTIdentifier>())
+        {
+            const String name = identifier->name();
+            if (inserted_columns.contains(name) || !columns.has(name) || scope_aliases.contains(name)
+                || (!identifier->name_parts.empty() && shadowed_names.contains(identifier->name_parts.front()))
+                || (identifier->compound() && scope_aliases.contains(identifier->name_parts.front())))
+                return;
+
+            /// Keep the alias, the expression can refer to it.
+            const String own_alias = identifier->tryGetAlias();
+            if (auto it = aliases.find(name); it != aliases.end())
+            {
+                String alias = it->second;
+                if (shadowed_names.contains(alias))
+                {
+                    /// The own alias of the first use is hidden here, refer to it by a unique alias from the top level.
+                    auto [hoisted_it, inserted] = hoisted_aliases.try_emplace(name);
+                    if (inserted)
+                    {
+                        hoisted_it->second = unique_names.generate("__default_");
+                        auto reference = make_intrusive<ASTIdentifier>(alias);
+                        reference->setAlias(hoisted_it->second);
+                        top_level_definitions.push_back(std::move(reference));
+                    }
+                    alias = hoisted_it->second;
+                }
+
+                auto reference = make_intrusive<ASTIdentifier>(alias);
+                if (own_alias != alias)
+                    reference->setAlias(own_alias);
+                ast = std::move(reference);
+                return;
+            }
+
+            const String alias = own_alias.empty() || in_lambda ? unique_names.generate("__default_") : own_alias;
+            aliases.emplace(name, alias);
+
+            const auto & column = columns.get(name);
+            ASTPtr default_value;
+            if (column.default_desc.expression)
+            {
+                /// The default is computed in the scope of the top level, as the defaults of the server.
+                default_value = column.default_desc.expression->clone();
+                NameSet default_scope_aliases = top_level_scope_aliases;
+                collectScopeAliases(default_value, default_scope_aliases);
+                rewrite(default_value, default_scope_aliases, {});
+            }
+            else
+                default_value = make_intrusive<ASTLiteral>(column.type->getDefault());
+
+            auto definition = makeASTFunction("_CAST", std::move(default_value), make_intrusive<ASTLiteral>(column.type->getName()));
+            definition->setAlias(alias);
+
+            if (in_lambda)
+            {
+                top_level_definitions.push_back(std::move(definition));
+                auto reference = make_intrusive<ASTIdentifier>(alias);
+                reference->setAlias(own_alias);
+                ast = std::move(reference);
+            }
+            else
+                ast = std::move(definition);
+            return;
+        }
+
+        if (auto * function = ast->as<ASTFunction>(); function && function->name == "lambda" && function->arguments
+            && function->arguments->children.size() == 2)
+        {
+            NameSet body_shadowed_names = shadowed_names;
+            const auto * arguments_tuple = function->arguments->children[0]->as<ASTFunction>();
+            if (arguments_tuple && arguments_tuple->arguments)
+                for (const auto & argument : arguments_tuple->arguments->children)
+                    if (const auto * argument_identifier = argument->as<ASTIdentifier>())
+                        body_shadowed_names.insert(argument_identifier->name());
+
+            NameSet body_aliases;
+            collectScopeAliases(function->arguments->children[1], body_aliases);
+            body_shadowed_names.insert(body_aliases.begin(), body_aliases.end());
+
+            NameSet body_scope_aliases = scope_aliases;
+            body_scope_aliases.insert(body_aliases.begin(), body_aliases.end());
+            rewrite(function->arguments->children[1], body_scope_aliases, body_shadowed_names, true);
+            return;
+        }
+
+        for (auto & child : ast->children)
+            rewrite(child, scope_aliases, shadowed_names, in_lambda);
+    }
+
+    /// The defined not inserted columns and the aliases of their definitions.
+    std::unordered_map<String, String> aliases;
+    /// The unique aliases of the top level for the definitions which have the own aliases of their first uses.
+    std::unordered_map<String, String> hoisted_aliases;
+    ASTs top_level_definitions;
+    NameSet top_level_scope_aliases;
+
+    const NameSet & inserted_columns;
+    const ColumnsDescription & columns;
+    UniqueNameGenerator unique_names;
+};
 }
 
 
@@ -2732,10 +2938,21 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
         if (parsed_insert_query->columns)
         {
             auto columns = processColumnTransformers(client_context->getCurrentDatabase(), client_context->getInsertionTable(), columns_for_storage_file, parsed_insert_query->columns);
+            NameSet inserted_columns;
+            for (const auto & col_name : columns->children)
+                inserted_columns.insert(col_name->getColumnName());
+
             ColumnsDescription reordered_description{};
+            NotInsertedColumnsDefaults not_inserted_columns_defaults(inserted_columns, columns_description_for_query);
             for (const auto & col_name : columns->children)
             {
                 auto col = columns_for_storage_file.get(col_name->getColumnName());
+                /// The storage has only the inserted columns.
+                if (col.default_desc.expression)
+                {
+                    col.default_desc.expression = col.default_desc.expression->clone();
+                    not_inserted_columns_defaults.apply(col.default_desc.expression);
+                }
                 reordered_description.add(std::move(col));
             }
 

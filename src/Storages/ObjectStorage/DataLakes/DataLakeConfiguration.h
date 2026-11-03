@@ -589,6 +589,7 @@ private:
         bool supports_subset_of_columns,
         bool supports_tuple_elements,
         ContextPtr local_context,
+        const std::optional<FormatSettings> & format_settings,
         const PrepareReadingFromFormatHiveParams &) override
     {
         assertLocalPathCorrect(object_storage, local_context);
@@ -607,7 +608,7 @@ private:
             }
         }
         return metadata->prepareReadingFromFormat(
-            requested_columns, storage_snapshot, local_context, supports_subset_of_columns, supports_tuple_elements);
+            requested_columns, storage_snapshot, local_context, format_settings, supports_subset_of_columns, supports_tuple_elements);
     }
 };
 

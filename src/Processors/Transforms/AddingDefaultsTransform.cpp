@@ -167,6 +167,7 @@ static NameSet getHeaderColumnsReadByDefault(
         expressions.pop_back();
 
         RequiredSourceColumnsVisitor::Data data;
+        data.mask_subcolumns_of_aliases = true;
         RequiredSourceColumnsVisitor(data).visit(expression);
         for (const auto & required : data.requiredColumns())
         {
@@ -188,13 +189,20 @@ AddingDefaultsTransform::AddingDefaultsTransform(
     SharedHeader header,
     const ColumnsDescription & columns_,
     IInputFormat & input_format_,
-    ContextPtr context_)
+    ContextPtr context_,
+    const std::optional<NamesAndTypesList> & needed_columns_)
     : ISimpleTransform(header, header, true)
     , columns(columns_)
     , column_defaults(columns.getDefaults())
     , input_format(input_format_)
     , context(context_)
 {
+    if (needed_columns_)
+    {
+        needed_columns.emplace();
+        for (const auto & column : *needed_columns_)
+            needed_columns->insert(column.getNameInStorage());
+    }
 }
 
 
@@ -242,6 +250,51 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
         size_t column_idx = res.getPositionByName(col_name);
         if (block_missing_values->hasDefaultBits(column_idx))
             columns_needing_defaults.emplace_back(col_name, column_idx);
+    }
+
+    /// The columns which are read only for the defaults of the needed columns: their own defaults are computed only
+    /// if a default which is computed depends on them. Otherwise they could fail on the values which are not used.
+    if (needed_columns && !columns_needing_defaults.empty())
+    {
+        NameSet missing_columns;
+        for (const auto & [col_name, col_idx] : columns_needing_defaults)
+            missing_columns.insert(col_name);
+
+        NameSet columns_to_compute;
+        NameSet visited;
+        std::vector<String> names_to_visit;
+        for (const auto & [col_name, col_idx] : columns_needing_defaults)
+            if (needed_columns->contains(col_name))
+                names_to_visit.push_back(col_name);
+
+        while (!names_to_visit.empty())
+        {
+            const String name = std::move(names_to_visit.back());
+            names_to_visit.pop_back();
+
+            if (!visited.insert(name).second)
+                continue;
+
+            /// The default of a column which is read and has no missing values is not used.
+            if (missing_columns.contains(name))
+                columns_to_compute.insert(name);
+            else if (res.has(name))
+                continue;
+
+            auto it = column_defaults.find(name);
+            if (it == column_defaults.end())
+                continue;
+
+            RequiredSourceColumnsVisitor::Data columns_context;
+            columns_context.mask_subcolumns_of_aliases = true;
+            auto expression = it->second.expression->clone();
+            RequiredSourceColumnsVisitor(columns_context).visit(expression);
+
+            for (const auto & required_name : columns_context.requiredColumns())
+                names_to_visit.push_back(getColumnOfSubcolumn(columns, required_name));
+        }
+
+        std::erase_if(columns_needing_defaults, [&](const auto & column) { return !columns_to_compute.contains(column.first); });
     }
 
     if (columns_needing_defaults.empty())

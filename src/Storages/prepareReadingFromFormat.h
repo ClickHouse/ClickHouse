@@ -3,6 +3,7 @@
 #include <Storages/StorageSnapshot.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <Interpreters/Context_fwd.h>
+#include <Formats/FormatSettings.h>
 #include <Processors/QueryPlan/Serialization.h>
 
 namespace DB
@@ -101,10 +102,12 @@ namespace DB
     /// Note: currently `supports_tuple_elements` just means ParquetV3BlockInputFormat; if in future
     /// we add support for other subcolumn types in ParquetV3BlockInputFormat, we can just rename
     /// this bool instead of adding another one.
+    /// `format_settings` are the settings of the storage, if it has its own; otherwise the settings of `context` are used.
     ReadFromFormatInfo prepareReadingFromFormat(
         const Strings & requested_columns,
         const StorageSnapshotPtr & storage_snapshot,
         const ContextPtr & context,
+        const std::optional<FormatSettings> & format_settings,
         bool supports_subset_of_columns,
         bool supports_tuple_elements = false,
         const PrepareReadingFromFormatHiveParams & hive_parameters = {});

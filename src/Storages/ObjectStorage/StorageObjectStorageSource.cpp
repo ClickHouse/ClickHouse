@@ -1517,6 +1517,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     std::shared_ptr<ISource> source;
 
     Names row_lineage_columns;
+    /// The columns which `ExtractColumnsTransform` extracts from the chunk read by IInputFormat.
+    NamesAndTypesList columns_to_extract = read_from_format_info.requested_columns;
 
     auto try_get_num_rows_from_cache = [&]() -> std::optional<size_t>
     {
@@ -1594,6 +1596,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         const bool input_format_does_not_read_file = Poco::toLower(format_name) == "one";
 
         row_lineage_columns = getMaterializedRowLineageColumns(*object_info, read_from_format_info, format_name);
+        for (const auto & column_name : row_lineage_columns)
+            columns_to_extract.emplace_back(column_name, rowLineageColumnType());
 
         CompressionMethod compression_method = {};
         if (input_format_does_not_read_file)
@@ -2098,7 +2102,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             builder.addSimpleTransform(
                 [&](const SharedHeader & header)
                 {
-                    return std::make_shared<AddingDefaultsTransform>(header, read_from_format_info.columns_description, *input_format, context_);
+                    return std::make_shared<AddingDefaultsTransform>(
+                        header, read_from_format_info.columns_description, *input_format, context_, columns_to_extract);
                 });
         }
 
@@ -2107,10 +2112,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
     /// Add ExtractColumnsTransform to extract requested columns/subcolumns
     /// from chunk read by IInputFormat.
-    NamesAndTypesList columns_to_extract = read_from_format_info.requested_columns;
-    for (const auto & column_name : row_lineage_columns)
-        columns_to_extract.emplace_back(column_name, rowLineageColumnType());
-
     builder.addSimpleTransform([&](const SharedHeader & header)
     {
         return std::make_shared<ExtractColumnsTransform>(header, columns_to_extract);
