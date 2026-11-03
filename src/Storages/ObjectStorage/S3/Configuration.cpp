@@ -29,6 +29,7 @@
 #include <Storages/IPartitionStrategy.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <IO/S3/URI.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 
 namespace DB
 {
@@ -141,6 +142,16 @@ std::string StorageS3Configuration::getPathInArchive() const
         return url.archive_pattern.value();
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Path {} is not an archive", getRawPath().path);
+}
+
+std::string StorageS3Configuration::getMetadataLocationURI() const
+{
+    /// A GCS bucket is reached through the S3-compatible XML API, but external Iceberg readers
+    /// (PyIceberg, Spark, Trino) open `gs://` with their GCS credentials and `s3://` with an S3 client,
+    /// so the location has to carry the scheme of the service that actually holds the files.
+    if (url.uri.getHost().ends_with("storage.googleapis.com"))
+        return Iceberg::makeIcebergLocationURI("gs", getNamespace(), getRawPath().path);
+    return StorageObjectStorageConfiguration::getMetadataLocationURI();
 }
 
 void StorageS3Configuration::check(ContextPtr context)

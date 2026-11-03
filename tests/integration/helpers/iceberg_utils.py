@@ -456,6 +456,11 @@ def create_iceberg_table(
     settings=None,
     **kwargs,
 ):
+    if storage_type in ("s3", "azure"):
+        # These tests mirror the object key onto the local path and let Spark or pyiceberg read a
+        # downloaded copy of the table. That only resolves with the scheme-less paths of the old
+        # default; a `s3://` or `abfss://` URI would point the reader at the object store instead.
+        settings = {"write_full_path_in_iceberg_metadata": 0, **(settings or {})}
     node.query(
         get_creation_expression(storage_type, table_name, cluster, schema, format_version, partition_by, if_not_exists, compression_method, format, order_by, run_on_cluster=run_on_cluster, **kwargs),
         settings=settings,

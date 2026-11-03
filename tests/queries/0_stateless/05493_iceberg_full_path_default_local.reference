@@ -1,0 +1,5 @@
+3
+location	v1.metadata.json	file://<root>/
+location	v2.metadata.json	file://<root>/
+manifest-list	file://<root>/metadata/snap-<id>.avro
+data-file	file://<root>/data/data-<uuid>.parquet

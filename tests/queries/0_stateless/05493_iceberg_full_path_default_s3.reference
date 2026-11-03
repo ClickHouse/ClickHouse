@@ -1,0 +1,5 @@
+1	a
+2	b
+v1.metadata.json	s3://test/<dir>/
+v2.metadata.json	s3://test/<dir>/
+2	3

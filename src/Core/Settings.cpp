@@ -11145,9 +11145,12 @@ Minimum age in seconds of the files that `ALTER TABLE ... EXECUTE remove_orphan_
 Allow to execute experimental Iceberg command `ALTER TABLE ... EXECUTE expire_snapshots`.
 )", EXPERIMENTAL, \
         {"26.3", false, false, "New setting."}) \
-    DECLARE(Bool, write_full_path_in_iceberg_metadata, false, R"(
-Write full paths (including s3://) into iceberg metadata files.
+    DECLARE(Bool, write_full_path_in_iceberg_metadata, true, R"(
+Write fully-qualified paths (with the URI scheme and the bucket, e.g. `s3://bucket/table/data/...`) into the Iceberg metadata files written by ClickHouse.
+
+The Iceberg specification requires fully-qualified paths in format versions 1 to 3, and external readers such as PyIceberg, Spark and Trino choose the storage client from the scheme. When disabled, ClickHouse records bucket-relative paths such as `/table/data/...`, which only ClickHouse itself can resolve. The scheme is `gs` for a bucket reached through `storage.googleapis.com`, `abfss` for Azure, `file` for a local table and `s3` otherwise.
 )", EXPERIMENTAL, \
+        {"26.11", false, true, "Enabled by default so that Iceberg tables written by ClickHouse record fully-qualified paths and can be opened by external readers."}, \
         {"25.8", false, false, "New setting."}) \
     DECLARE(String, iceberg_metadata_compression_method, "", R"(
 Method to compress `.metadata.json` file.

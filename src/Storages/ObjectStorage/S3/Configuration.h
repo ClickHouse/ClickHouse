@@ -135,6 +135,9 @@ public:
     bool isArchive() const override { return url.archive_pattern.has_value(); }
     std::string getPathInArchive() const override;
 
+    /// Iceberg readers select the storage client from the URI scheme, so a bucket on GCS is recorded as `gs://`.
+    std::string getMetadataLocationURI() const override;
+
     void check(ContextPtr context) override;
     void validateNamespace(const String & name) const override;
     bool isStaticConfiguration() const override { return static_configuration; }
