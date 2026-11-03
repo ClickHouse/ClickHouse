@@ -43,6 +43,28 @@ namespace MergeTreeSetting
 namespace
 {
     using OffsetColumns = std::map<std::string, ColumnPtr>;
+
+    /// For a leaf of a `Nested` column requested as its subcolumn (`n.x.y.null` as the subcolumn `x.y.null` of `n`),
+    /// returns the length of the leaf name (`x.y`) within the subcolumn name. The leaf name may itself contain dots
+    /// and may be followed by a real subcolumn of the leaf (`.size0`, `.null`), so the leaf is found among the elements
+    /// of the `Nested` type. The longest matching element wins: the leaves `x` and `x.y` may coexist, and a read of
+    /// `x.y` must not be taken for the subcolumn `y` of the leaf `x`.
+    std::optional<size_t> findLeafLengthOfNestedSubcolumn(const NameAndTypePair & column)
+    {
+        const auto & subcolumn_name = column.getSubcolumnName();
+        const auto & nested_names = typeid_cast<const DataTypeNestedCustomName &>(*column.getTypeInStorage()->getCustomName()).getNames();
+
+        std::optional<size_t> leaf_length;
+        for (const auto & element_name : nested_names)
+        {
+            bool is_prefix = subcolumn_name.starts_with(element_name)
+                && (subcolumn_name.size() == element_name.size() || subcolumn_name[element_name.size()] == '.');
+
+            if (is_prefix && (!leaf_length || element_name.size() > *leaf_length))
+                leaf_length = element_name.size();
+        }
+        return leaf_length;
+    }
 }
 namespace ErrorCodes
 {
@@ -326,21 +348,25 @@ void IMergeTreeReader::fillMissingColumns(
                         /// of its own, such as `a.x.size0`), not under the name of the `Nested` column. Its frozen default is
                         /// filled here, rather than the current default of the column, which may have changed since.
                         /// The marker names the column as it was named in the part, before a pending `RENAME COLUMN`.
-                        String flattened_name = Nested::concatenateName(column.getNameInStorage(), column.getSubcolumnName());
-                        std::vector<std::pair<String, String>> candidates{{flattened_name, ""}};
-                        for (const auto & [candidate_column, candidate_subcolumn] : Nested::getAllColumnAndSubcolumnPairs(flattened_name))
-                            if (candidate_column.size() > column.getNameInStorage().size())
-                                candidates.emplace_back(String(candidate_column), String(candidate_subcolumn));
-
-                        for (auto & [candidate_column, candidate_subcolumn] : candidates)
+                        /// Only the marker of the actual leaf answers the lookup: the marker of a shorter, independent leaf
+                        /// (`n.x` next to `n.x.y`) records a column of another type.
+                        const SerializationInfoByName::MissingColumnInfo * marker_info = nullptr;
+                        String leaf_subcolumn;
+                        if (auto leaf_length = findLeafLengthOfNestedSubcolumn(column))
                         {
-                            if (alter_conversions->isColumnRenamed(candidate_column))
-                                candidate_column = alter_conversions->getColumnOldName(candidate_column);
+                            const auto & subcolumn_name = column.getSubcolumnName();
+                            String leaf_name = Nested::concatenateName(column.getNameInStorage(), subcolumn_name.substr(0, *leaf_length));
+                            if (*leaf_length < subcolumn_name.size())
+                                leaf_subcolumn = subcolumn_name.substr(*leaf_length + 1);
 
-                            const auto * marker_info = infos.getMissingColumnInfo(candidate_column);
-                            if (!marker_info)
-                                continue;
+                            if (alter_conversions->isColumnRenamed(leaf_name))
+                                leaf_name = alter_conversions->getColumnOldName(leaf_name);
 
+                            marker_info = infos.getMissingColumnInfo(leaf_name);
+                        }
+
+                        if (marker_info)
+                        {
                             ColumnPtr frozen_column;
                             if (marker_info->type_name.empty())
                             {
@@ -350,10 +376,10 @@ void IMergeTreeReader::fillMissingColumns(
                             {
                                 auto frozen_type = DataTypeFactory::instance().get(marker_info->type_name);
                                 frozen_column = frozen_type->createColumnConstWithDefaultValue(num_rows)->convertToFullColumnIfConst();
-                                if (!candidate_subcolumn.empty())
+                                if (!leaf_subcolumn.empty())
                                 {
-                                    frozen_column = frozen_type->getSubcolumn(candidate_subcolumn, frozen_column);
-                                    frozen_type = frozen_type->getSubcolumnType(candidate_subcolumn);
+                                    frozen_column = frozen_type->getSubcolumn(leaf_subcolumn, frozen_column);
+                                    frozen_type = frozen_type->getSubcolumnType(leaf_subcolumn);
                                 }
 
                                 /// The marker records the type of the column when the part was written. The column is read
@@ -364,7 +390,6 @@ void IMergeTreeReader::fillMissingColumns(
                                     frozen_column = castColumn({frozen_column, frozen_type, column.name}, column.type);
                             }
                             res_columns[column_index] = std::move(frozen_column);
-                            break;
                         }
                     }
                     ++column_index;
@@ -563,24 +588,9 @@ std::pair<String, String> IMergeTreeReader::getStorageAndSubcolumnNameInPart(con
           * misses it, so the part is searched for a column that only exists there under its old name
           * and the values are read as defaults while the mutation is pending.
           */
-        /// The leaf name may itself contain dots (`n.b.c` is the leaf `b.c` of `n`, see `Nested::splitName`),
-        /// and it may be followed by a real subcolumn of the leaf (`.size0`, `.null`), so the leaf is found
-        /// among the elements of the Nested type in the current metadata. The longest matching element wins:
-        /// the leaves `x` and `x.y` may coexist, and a read of `x.y` must not be taken for the subcolumn `y`
-        /// of the leaf `x`, which could have a pending rename of its own.
-        const auto & nested_names = typeid_cast<const DataTypeNestedCustomName &>(*required_column.getTypeInStorage()->getCustomName()).getNames();
-
-        std::optional<size_t> leaf_length;
-        for (const auto & element_name : nested_names)
-        {
-            bool is_prefix = subcolumn_name.starts_with(element_name)
-                && (subcolumn_name.size() == element_name.size() || subcolumn_name[element_name.size()] == '.');
-
-            if (is_prefix && (!leaf_length || element_name.size() > *leaf_length))
-                leaf_length = element_name.size();
-        }
-
-        if (leaf_length)
+        /// The leaf is found among the elements of the Nested type in the current metadata: a read of `x.y`
+        /// must not be taken for the subcolumn `y` of a leaf `x`, which could have a pending rename of its own.
+        if (auto leaf_length = findLeafLengthOfNestedSubcolumn(required_column))
         {
             auto leaf_name = Nested::concatenateName(name_in_storage, subcolumn_name.substr(0, *leaf_length));
 
