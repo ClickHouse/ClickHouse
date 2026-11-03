@@ -2,13 +2,16 @@
 #include <Columns/IColumn.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
+#include <Core/SettingsSecrets.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/SecretArguments.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <Common/CurrentThread.h>
+#include <Common/HiddenSecret.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -94,7 +97,8 @@ void ObjectStorageQueueSettings::dumpToSystemEngineSettingsColumns(
     MutableColumnsAndConstraints & params,
     const std::string & table_name,
     const std::string & database_name,
-    const StorageObjectStorageQueue & storage) const
+    const StorageObjectStorageQueue & storage,
+    bool display_secrets) const
 {
     MutableColumns & res_columns = params.res_columns;
     auto metadata_snapshot = storage.getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
@@ -115,6 +119,17 @@ void ObjectStorageQueueSettings::dumpToSystemEngineSettingsColumns(
     {
         return StorageObjectStorageQueue::isSettingChangeable(setting_name, (*this)[ObjectStorageQueueSetting::mode]);
     };
+    /// Hides what `SHOW CREATE TABLE` hides. An engine secret is hidden whole, as its masker renders SQL.
+    auto render_value = [&](const std::string & setting_name, const Field & value) -> String
+    {
+        String rendered = convertFieldToString(value);
+        if (display_secrets)
+            return rendered;
+        if (auto masked = getSecretArgumentsFinder().renderSecretSetting(setting_name, value); masked && masked->contains(HIDDEN_SECRET))
+            return String(HIDDEN_SECRET);
+        CoreSettings::maskSettingValue(setting_name, value, rendered);
+        return rendered;
+    };
 
     for (const auto & change : impl->all())
     {
@@ -123,7 +138,7 @@ void ObjectStorageQueueSettings::dumpToSystemEngineSettingsColumns(
         res_columns[i++]->insert(database_name);
         res_columns[i++]->insert(table_name);
         res_columns[i++]->insert(name);
-        res_columns[i++]->insert(convertFieldToString(change.getValue()));
+        res_columns[i++]->insert(render_value(name, change.getValue()));
         res_columns[i++]->insert(change.getTypeName());
         res_columns[i++]->insert(is_changed(name));
         res_columns[i++]->insert(change.getDescription());
