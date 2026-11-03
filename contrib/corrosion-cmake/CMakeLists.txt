@@ -332,7 +332,13 @@ endfunction()
 function(clickhouse_config_crate_flags target_name)
     corrosion_set_env_vars(${target_name} "CFLAGS=${RUST_CFLAGS}")
     corrosion_set_env_vars(${target_name} "CXXFLAGS=${RUST_CXXFLAGS}")
-    corrosion_set_env_vars(${target_name} "RUSTFLAGS=${RUSTFLAGS}")
+    # Scope the flags to the target triple instead of setting `RUSTFLAGS`. They are target-specific
+    # (`-C target-cpu=x86-64-v3`, the sysroot, sanitizers), and `RUSTFLAGS` also reaches `rustc`
+    # invocations for the host, e.g. the `cargo metadata` run by cbindgen from the `build.rs` of
+    # `delta_kernel_ffi`. When cross-compiling, rustc rejects the flags of a different architecture.
+    string(TOUPPER "${Rust_CARGO_TARGET_CACHED}" rust_target_env)
+    string(REPLACE "-" "_" rust_target_env "${rust_target_env}")
+    corrosion_set_env_vars(${target_name} "CARGO_TARGET_${rust_target_env}_RUSTFLAGS=${RUSTFLAGS}")
     corrosion_set_env_vars(${target_name} "RUSTDOCFLAGS=${RUSTFLAGS}")
     if (CMAKE_OSX_SYSROOT)
         corrosion_set_env_vars(${target_name} "SDKROOT=${CMAKE_OSX_SYSROOT}")
