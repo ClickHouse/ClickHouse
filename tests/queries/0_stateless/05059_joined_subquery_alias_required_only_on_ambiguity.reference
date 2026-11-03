@@ -82,6 +82,8 @@ f(a)	f(r.a)
 0	0
 toString(plus(f(a), 1))	toString(plus(f(r.a), 1))
 1	1
+toString(plus(f(p_a), 1))	toString(plus(f(p_r.a), 1))
+1	1
 -- Equally named columns of a single table expression do not need a qualification
 1	1
 1	1	3

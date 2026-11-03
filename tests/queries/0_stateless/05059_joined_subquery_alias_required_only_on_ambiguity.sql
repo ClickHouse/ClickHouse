@@ -122,6 +122,9 @@ WITH (y -> 0) AS f SELECT * APPLY f FROM (SELECT 1 AS a) AS l, (SELECT 2 AS a) A
 -- The cached name of a nested named-lambda call keeps the column name even if the call folds to a constant
 WITH (y -> 0) AS f, (y -> f(y) + 1) AS g SELECT * APPLY g APPLY toString FROM (SELECT 1 AS a), (SELECT 2 AS a); -- { serverError ALIAS_REQUIRED }
 WITH (y -> 0) AS f, (y -> f(y) + 1) AS g SELECT * APPLY g APPLY toString FROM (SELECT 1 AS a) AS l, (SELECT 2 AS a) AS r FORMAT TSVWithNames;
+-- The same after a prefix renamed the argument of the nested call
+WITH (y -> 0) AS f, (y -> f(y) + 1) AS g SELECT * APPLY (x -> x, 'p_') APPLY g APPLY toString FROM (SELECT 1 AS a), (SELECT 2 AS a); -- { serverError ALIAS_REQUIRED }
+WITH (y -> 0) AS f, (y -> f(y) + 1) AS g SELECT * APPLY (x -> x, 'p_') APPLY g APPLY toString FROM (SELECT 1 AS a) AS l, (SELECT 2 AS a) AS r FORMAT TSVWithNames;
 
 SELECT '-- Equally named columns of a single table expression do not need a qualification';
 SELECT * FROM (SELECT x, x FROM (SELECT 1 AS x));

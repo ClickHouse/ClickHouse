@@ -3372,6 +3372,9 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         /// whether the display name does: `APPLY (x -> 0, 'f')` names the result `fa`, but a following unprefixed
         /// `APPLY toString` formats the fresh constant by its own name, `toString(0)`, for every column.
         bool argument_name_derived_from_column = true;
+        /// The name the next transformer reads for its argument. It may differ from the matched column's name after an
+        /// earlier transformer (`p_a` after `APPLY (x -> x, 'p_')`, `plus(a, 1)` after `APPLY (x -> x + 1)`).
+        String argument_name = result_projection_names.back();
 
         const auto & column_transformers = matcher_node_typed.getColumnTransformers().getNodes();
         for (const auto & transformer : column_transformers)
@@ -3384,6 +3387,8 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
             /// The name this matched column carries into the transformer. A name the transformer
             /// changes belongs to this chain alone and may not be published on a shared node.
             const String projection_name_before_transformer = result_projection_names.back();
+            /// The name this transformer reads for its argument.
+            const String argument_name_before_transformer = argument_name;
             const bool is_last_transformer = transformer.get() == column_transformers.back().get();
             /// Whether the natural name of the node this transformer produces depends on the matched column.
             bool natural_name_derived_from_column = argument_name_derived_from_column;
@@ -3637,6 +3642,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                     /// transformer must observe the updated name (`APPLY (identity, 'p_') APPLY toString`
                     /// -> `toString(p_a)`).
                     node_to_projection_name.insert_or_assign(node, result_projection_names.back());
+                    argument_name = result_projection_names.back();
                     argument_name_derived_from_column = matched_columns_before_transformers.back().projection_name_derived_from_column;
                     /// resolveExpressionNode reads resolved_expressions before node_to_projection_name,
                     /// so the name must reach that cache too. A private copy has no entry yet.
@@ -3655,6 +3661,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                     /// (`toString(identity(a))`, `upper(toString(a))`), matching the legacy path.
                     /// The prefix only affects this column's terminal display name above.
                     node_to_projection_name.emplace(node, natural_projection_name);
+                    argument_name = natural_projection_name;
                     argument_name_derived_from_column = natural_name_derived_from_column;
 
                     /// A following transformer reads the cached name of the node rather than `natural_projection_name` when
@@ -3673,12 +3680,16 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                             argument_name_for_next_transformer = name_it->second;
 
                         /// The cached name keeps the names of nested calls (`plus(f(a), 1)`) even if their resolved bodies
-                        /// no longer contain the column (`plus(0, 1)`), so the name itself is checked as well.
+                        /// no longer contain the column (`plus(0, 1)`), so the name itself is checked as well. The argument
+                        /// may already be renamed by an earlier transformer (`plus(f(p_a), 1)` after `APPLY (x -> x, 'p_')`),
+                        /// so look for the name this transformer read for its argument, not only for the column's name.
                         if (argument_name_for_next_transformer != natural_projection_name)
                             argument_name_derived_from_column = resolvedExpressionNameMayContainMatchedColumn(
                                     node, matched_columns_before_transformers.back().node)
+                                || projectionNameMayContainColumnName(argument_name_for_next_transformer, argument_name_before_transformer)
                                 || projectionNameMayContainColumnName(
                                     argument_name_for_next_transformer, matched_columns_before_transformers.back().name);
+                        argument_name = argument_name_for_next_transformer;
                     }
                 }
                 node_projection_names.clear();
