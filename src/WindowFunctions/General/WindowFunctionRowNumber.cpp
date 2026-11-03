@@ -20,6 +20,16 @@ public:
     {
     }
 
+    std::optional<WindowFrame> getDefaultFrame() const override
+    {
+        /// `row_number` does not depend on the window frame. A frame containing only the current
+        /// row lets `WindowTransform` produce results and release blocks without retaining the partition.
+        WindowFrame frame;
+        frame.type = WindowFrame::FrameType::ROWS;
+        frame.begin_type = WindowFrame::BoundaryType::Current;
+        return frame;
+    }
+
     WindowFunctionRequirements getRequirements(const WindowDescription &) const override
     {
         return WindowFunctionRequirements{};

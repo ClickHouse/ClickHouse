@@ -103,6 +103,18 @@ Strings BackupCoordinationLocal::getReplicatedWorkloadEntitiesDirs(const String 
     return replicated_workload_entities.getDirectories(loader_zk_path, entity_type, "");
 }
 
+void BackupCoordinationLocal::addReplicatedNamedCollectionsDir(const String & replication_id, const String & dir_path)
+{
+    std::lock_guard lock{replicated_named_collections_mutex};
+    replicated_named_collections.addDirectory({replication_id, "", dir_path});
+}
+
+Strings BackupCoordinationLocal::getReplicatedNamedCollectionsDirs(const String & replication_id) const
+{
+    std::lock_guard lock{replicated_named_collections_mutex};
+    return replicated_named_collections.getDirectories(replication_id, "");
+}
+
 void BackupCoordinationLocal::addKeeperMapTable(const String & table_zookeeper_root_path, const String & table_id, const String & data_path_in_backup)
 {
     std::lock_guard lock(keeper_map_tables_mutex);
