@@ -66,7 +66,7 @@ struct DeferredBuildStreamCounts
 };
 
 /// What the size projection needs to know about the maps of one clause. Taken when the join is created, so that the
-/// projection never reads the maps, which a switch to `GraceHashJoin` frees.
+/// projection never reads the maps, which a switch to the external join frees.
 struct DeferredBuildMapShape
 {
     /// The bytes of the buffer of a bucket reserved for `keys` keys.
@@ -116,7 +116,6 @@ private:
         size_t estimate = 0;
         size_t rows = 0;
         std::vector<size_t> bucket_reserves;
-        /// Per slot.
         std::vector<size_t> slot_rows;
         std::vector<size_t> slot_key_bytes;
         size_t max_key_bytes = 0;

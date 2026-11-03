@@ -16,11 +16,11 @@ SETTINGS="join_algorithm = 'parallel_hash', enable_hash_join_deferred_build = 1,
 
 check()
 {
-    local name=$1 threads=$2 threshold=$3 right=$4 kind=$5
+    local name=$1 threads=$2 layout=$3 right=$4 kind=$5
     local logs
     logs=$($CLICKHOUSE_CLIENT --send_logs_level=debug --query "
         SELECT count() FROM (SELECT k FROM (${right}) LIMIT 1) l ${kind} JOIN (${right}) r ON l.k = r.k
-        SETTINGS ${SETTINGS}, max_threads = ${threads}, parallel_hash_join_threshold = ${threshold} FORMAT Null" 2>&1)
+        SETTINGS ${SETTINGS}, max_threads = ${threads}, hash_join_layout = '${layout}' FORMAT Null" 2>&1)
     local line
     line=$(echo "$logs" | grep -o -E 'Deferred build: projected [0-9]+ bytes, built [0-9]+ bytes' | head -1)
     local projected built
@@ -30,19 +30,19 @@ check()
 }
 
 # The left side is one row: only the build matters.
-check unique_u64 4 0 "SELECT number AS k FROM numbers(1000000)" INNER
-check duplicates_u64_all 4 0 "SELECT intDiv(number, 8) AS k FROM numbers(1000000)" INNER
-check duplicates_u64_serial 4 18446744073709551615 "SELECT intDiv(number, 8) AS k FROM numbers(1000000)" INNER
-check unique_string 4 0 "SELECT toString(number) AS k FROM numbers(300000)" INNER
-check long_low_cardinality 1 18446744073709551615 "SELECT toLowCardinality(concat(repeat('x', 200), toString(number % 5000))) AS k FROM numbers(200000)" INNER
-check long_low_cardinality_nullable 1 18446744073709551615 "SELECT toLowCardinality(toNullable(concat(repeat('x', 200), toString(number % 5000)))) AS k FROM numbers(200000)" INNER
-check sparse_duplicates_96_slots 96 0 "SELECT intDiv(number, 2) AS k FROM numbers(2000000)" INNER
-check hot_key 4 0 "SELECT if(number < 900000, 0, number) AS k FROM numbers(1000000)" INNER
-check right_join_nullable 4 0 "SELECT if(number % 3 = 0, NULL, number) AS k FROM numbers(1000000)" RIGHT
+check unique_u64 4 parallel "SELECT number AS k FROM numbers(1000000)" INNER
+check duplicates_u64_all 4 parallel "SELECT intDiv(number, 8) AS k FROM numbers(1000000)" INNER
+check duplicates_u64_serial 4 serial "SELECT intDiv(number, 8) AS k FROM numbers(1000000)" INNER
+check unique_string 4 parallel "SELECT toString(number) AS k FROM numbers(300000)" INNER
+check long_low_cardinality 1 serial "SELECT toLowCardinality(concat(repeat('x', 200), toString(number % 5000))) AS k FROM numbers(200000)" INNER
+check long_low_cardinality_nullable 1 serial "SELECT toLowCardinality(toNullable(concat(repeat('x', 200), toString(number % 5000)))) AS k FROM numbers(200000)" INNER
+check sparse_duplicates_96_slots 96 parallel "SELECT intDiv(number, 2) AS k FROM numbers(2000000)" INNER
+check hot_key 4 parallel "SELECT if(number < 900000, 0, number) AS k FROM numbers(1000000)" INNER
+check right_join_nullable 4 parallel "SELECT if(number % 3 = 0, NULL, number) AS k FROM numbers(1000000)" RIGHT
 
 $CLICKHOUSE_CLIENT --query "
     SELECT count() FROM (SELECT 1 AS k) l INNER JOIN (SELECT number AS k FROM numbers(1000000)) r ON l.k = r.k
-    SETTINGS ${SETTINGS}, max_threads = 4, parallel_hash_join_threshold = 0, log_comment = '05413_uniform' FORMAT Null"
+    SETTINGS ${SETTINGS}, max_threads = 4, hash_join_layout = 'parallel', log_comment = '05413_uniform' FORMAT Null"
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
 $CLICKHOUSE_CLIENT --query "
     SELECT 'uniform buckets grown', ProfileEvents['HashJoinDeferredBuildBucketsGrown']

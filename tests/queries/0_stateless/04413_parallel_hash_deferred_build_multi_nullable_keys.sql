@@ -2,7 +2,7 @@
 
 SET join_algorithm = 'parallel_hash';
 SET collect_hash_table_stats_during_joins = 0;
-SET parallel_hash_join_threshold = 0;
+SET hash_join_layout = 'parallel';
 -- With a spill threshold the stored blocks keep the keys, and only then does an `INNER` or `LEFT` build defer. This one
 -- is far above what these builds take.
 SET max_bytes_before_external_join = 10737418240;

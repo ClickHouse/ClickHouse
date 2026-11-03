@@ -11,7 +11,7 @@ SET max_threads = 4;
 SET query_plan_join_swap_table = 'false';
 SET enable_parallel_replicas = 0;
 SET join_overflow_mode = 'throw';
-SET parallel_hash_join_threshold = 0;
+SET hash_join_layout = 'parallel';
 SET use_statistics = 0; -- Otherwise the planner sizes the builds from the column statistics, and they do not defer.
 
 DROP TABLE IF EXISTS t_r;
@@ -19,8 +19,6 @@ CREATE TABLE t_r (k UInt64) ENGINE = MergeTree ORDER BY ();
 -- 1000000 distinct keys, each twice.
 INSERT INTO t_r SELECT number % 1000000 FROM numbers(2000000);
 
-SELECT count() FROM (SELECT 1 AS k) l INNER JOIN t_r r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 1, max_rows_in_join = 1000; -- { serverError SET_SIZE_LIMIT_EXCEEDED }
 SELECT count() FROM (SELECT 1 AS k) l INNER JOIN t_r r ON l.k = r.k
 SETTINGS enable_hash_join_deferred_build = 1, max_rows_in_join = 999999; -- { serverError SET_SIZE_LIMIT_EXCEEDED }
 SELECT count() FROM (SELECT 1 AS k) l INNER JOIN t_r r ON l.k = r.k

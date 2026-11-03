@@ -34,46 +34,46 @@ FROM (SELECT 50000 + intDiv(number, 2) AS k FROM numbers(200000));
 
 
 SELECT 'inner_all_u64', count(), sum(cityHash64(l.k, l.v, r.v)) FROM t_probe l INNER JOIN t_build r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 0, parallel_hash_join_threshold = 0, log_comment = '04327_off';
+SETTINGS enable_hash_join_deferred_build = 0, hash_join_layout = 'parallel', log_comment = '04327_off';
 SELECT 'inner_all_u64', count(), sum(cityHash64(l.k, l.v, r.v)) FROM t_probe l INNER JOIN t_build r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 0, log_comment = '04327_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'parallel', log_comment = '04327_on';
 SELECT 'inner_all_u64', count(), sum(cityHash64(l.k, l.v, r.v)) FROM t_probe l INNER JOIN t_build r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 18446744073709551615, log_comment = '04327_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'serial', log_comment = '04327_on';
 
 SELECT 'left_all_u64', count(), sum(cityHash64(l.k, l.v, r.k, r.v)) FROM t_probe l LEFT JOIN t_build r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 0, parallel_hash_join_threshold = 0, log_comment = '04327_off';
+SETTINGS enable_hash_join_deferred_build = 0, hash_join_layout = 'parallel', log_comment = '04327_off';
 SELECT 'left_all_u64', count(), sum(cityHash64(l.k, l.v, r.k, r.v)) FROM t_probe l LEFT JOIN t_build r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 0, log_comment = '04327_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'parallel', log_comment = '04327_on';
 SELECT 'left_all_u64', count(), sum(cityHash64(l.k, l.v, r.k, r.v)) FROM t_probe l LEFT JOIN t_build r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 18446744073709551615, log_comment = '04327_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'serial', log_comment = '04327_on';
 
 SELECT 'right_all_u64', count(), sum(cityHash64(l.k, l.v, r.k, r.v)) FROM t_probe l RIGHT JOIN t_build r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 0, parallel_hash_join_threshold = 0, log_comment = '04327_off';
+SETTINGS enable_hash_join_deferred_build = 0, hash_join_layout = 'parallel', log_comment = '04327_off';
 SELECT 'right_all_u64', count(), sum(cityHash64(l.k, l.v, r.k, r.v)) FROM t_probe l RIGHT JOIN t_build r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 0, log_comment = '04327_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'parallel', log_comment = '04327_on';
 SELECT 'right_all_u64', count(), sum(cityHash64(l.k, l.v, r.k, r.v)) FROM t_probe l RIGHT JOIN t_build r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 18446744073709551615, log_comment = '04327_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'serial', log_comment = '04327_on';
 
 SELECT 'full_all_u64', count(), sum(cityHash64(l.k, l.v, r.k, r.v)) FROM t_probe l FULL JOIN t_build r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 0, parallel_hash_join_threshold = 0, log_comment = '04327_off';
+SETTINGS enable_hash_join_deferred_build = 0, hash_join_layout = 'parallel', log_comment = '04327_off';
 SELECT 'full_all_u64', count(), sum(cityHash64(l.k, l.v, r.k, r.v)) FROM t_probe l FULL JOIN t_build r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 0, log_comment = '04327_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'parallel', log_comment = '04327_on';
 SELECT 'full_all_u64', count(), sum(cityHash64(l.k, l.v, r.k, r.v)) FROM t_probe l FULL JOIN t_build r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 18446744073709551615, log_comment = '04327_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'serial', log_comment = '04327_on';
 
 SELECT 'inner_all_str', count(), sum(cityHash64(l.s, l.v, r.v)) FROM t_probe l INNER JOIN t_build r ON l.s = r.s
-SETTINGS enable_hash_join_deferred_build = 0, parallel_hash_join_threshold = 0, log_comment = '04327_off';
+SETTINGS enable_hash_join_deferred_build = 0, hash_join_layout = 'parallel', log_comment = '04327_off';
 SELECT 'inner_all_str', count(), sum(cityHash64(l.s, l.v, r.v)) FROM t_probe l INNER JOIN t_build r ON l.s = r.s
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 0, log_comment = '04327_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'parallel', log_comment = '04327_on';
 SELECT 'inner_all_str', count(), sum(cityHash64(l.s, l.v, r.v)) FROM t_probe l INNER JOIN t_build r ON l.s = r.s
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 18446744073709551615, log_comment = '04327_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'serial', log_comment = '04327_on';
 
 SELECT 'full_all_str', count(), sum(cityHash64(l.s, l.v, r.s, r.v)) FROM t_probe l FULL JOIN t_build r ON l.s = r.s
-SETTINGS enable_hash_join_deferred_build = 0, parallel_hash_join_threshold = 0, log_comment = '04327_off';
+SETTINGS enable_hash_join_deferred_build = 0, hash_join_layout = 'parallel', log_comment = '04327_off';
 SELECT 'full_all_str', count(), sum(cityHash64(l.s, l.v, r.s, r.v)) FROM t_probe l FULL JOIN t_build r ON l.s = r.s
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 0, log_comment = '04327_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'parallel', log_comment = '04327_on';
 SELECT 'full_all_str', count(), sum(cityHash64(l.s, l.v, r.s, r.v)) FROM t_probe l FULL JOIN t_build r ON l.s = r.s
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 18446744073709551615, log_comment = '04327_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'serial', log_comment = '04327_on';
 
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, count(), countIf(ProfileEvents['HashJoinDeferredBuilds'] = 1), countIf(ProfileEvents['HashJoinDeferredPreallocatedElementsInHashTables'] > 0)

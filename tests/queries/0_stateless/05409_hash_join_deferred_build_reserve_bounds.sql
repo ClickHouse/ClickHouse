@@ -5,7 +5,8 @@
 -- rows in all. With a sketch error of up to 6%, the serial layout reserves at most 1.06 * N. The two-level layout adds
 -- a margin of four standard deviations to each of its 256 buckets, so at most 1.27 * N.
 --
--- With a hot key that has 90% of the rows, no bucket reserves more than four even shares.
+-- With a hot key that has 90% of the rows, the reserve still follows the distinct keys: it stays between 0.94 * N and
+-- 2.5 * N, far below the 1000000 rows, and no bucket outgrows its reserve.
 
 SET join_algorithm = 'parallel_hash';
 SET collect_hash_table_stats_during_joins = 0;
@@ -36,11 +37,11 @@ INSERT INTO t_build SELECT 100000 + number, 0 FROM numbers(1000000);
 INSERT INTO t_hot SELECT if(number < 900000, 0, number) FROM numbers(1000000);
 
 SELECT 'masked', count() FROM t_probe l LEFT JOIN t_build r ON l.k = r.k AND r.keep = 1
-SETTINGS parallel_hash_join_threshold = 0, log_comment = '05409_two_level';
+SETTINGS hash_join_layout = 'parallel', log_comment = '05409_two_level';
 SELECT 'masked', count() FROM t_probe l LEFT JOIN t_build r ON l.k = r.k AND r.keep = 1
-SETTINGS parallel_hash_join_threshold = 18446744073709551615, log_comment = '05409_serial';
+SETTINGS hash_join_layout = 'serial', log_comment = '05409_serial';
 SELECT 'hot', count() FROM t_probe l INNER JOIN t_hot r ON l.k = r.k
-SETTINGS parallel_hash_join_threshold = 0, log_comment = '05409_hot';
+SETTINGS hash_join_layout = 'parallel', log_comment = '05409_hot';
 
 SYSTEM FLUSH LOGS query_log;
 SELECT

@@ -199,7 +199,7 @@ size_t DeferredBuildState::projectedBytes(const std::vector<ClauseProjection> & 
 
     size_t bytes = null_map_bytes;
     std::vector<size_t> slot_demand(num_slots);
-    std::vector<size_t> slot_max_allocation(num_slots);
+    size_t max_allocation = 0;
     for (size_t clause = 0; clause < clauses.size(); ++clause)
     {
         const auto & shape = shapes[clause];
@@ -216,11 +216,9 @@ size_t DeferredBuildState::projectedBytes(const std::vector<ClauseProjection> & 
         if (shape.keys_in_arena)
         {
             const double distinct_share = std::min(1.0, static_cast<double>(projection.estimate) / static_cast<double>(projection.rows));
+            max_allocation = std::max(max_allocation, projection.max_key_bytes);
             for (size_t slot = 0; slot < num_slots; ++slot)
-            {
                 slot_demand[slot] += static_cast<size_t>(std::ceil(static_cast<double>(projection.slot_key_bytes[slot]) * distinct_share));
-                slot_max_allocation[slot] = std::max(slot_max_allocation[slot], projection.max_key_bytes);
-            }
         }
 
         if (shape.row_lists)
@@ -229,6 +227,7 @@ size_t DeferredBuildState::projectedBytes(const std::vector<ClauseProjection> & 
             const size_t duplicates = projection.rows - std::min(projection.rows, projection.estimate - projection.estimate / 16);
             const size_t keys_with_duplicates = std::min(projection.estimate, duplicates);
             const size_t nodes = keys_with_duplicates + (duplicates + rows_per_row_list_node - 1) / rows_per_row_list_node;
+            max_allocation = std::max(max_allocation, row_list_node_bytes);
             for (size_t slot = 0; slot < num_slots; ++slot)
             {
                 const size_t slot_nodes = std::min(
@@ -236,13 +235,12 @@ size_t DeferredBuildState::projectedBytes(const std::vector<ClauseProjection> & 
                     static_cast<size_t>(std::ceil(static_cast<double>(nodes) * static_cast<double>(projection.slot_rows[slot])
                                                   / static_cast<double>(projection.rows))));
                 slot_demand[slot] += slot_nodes * row_list_node_bytes;
-                slot_max_allocation[slot] = std::max(slot_max_allocation[slot], row_list_node_bytes);
             }
         }
     }
 
     for (size_t slot = 0; slot < num_slots; ++slot)
-        bytes += arenaBytes(slot_demand[slot], slot_max_allocation[slot]);
+        bytes += arenaBytes(slot_demand[slot], max_allocation);
     return bytes;
 }
 
@@ -266,7 +264,7 @@ std::vector<size_t> deferredBuildBucketReserves(size_t estimate, const std::vect
     for (size_t bucket = 0; bucket < bucket_rows.size(); ++bucket)
     {
         const auto row_share = static_cast<size_t>(std::ceil(
-            static_cast<double>(estimate) * static_cast<double>(bucket_rows[bucket]) / static_cast<double>(rows)));
+            static_cast<double>(target) * static_cast<double>(bucket_rows[bucket]) / static_cast<double>(rows)));
         reserves[bucket] = std::min<size_t>(bucket_rows[bucket], std::max(with_spread, std::min(row_share, max_row_share)));
     }
     return reserves;

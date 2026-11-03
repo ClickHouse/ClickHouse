@@ -23,16 +23,16 @@ INSERT INTO t_l SELECT number, number % 2000, number * 3 FROM numbers(200000);
 INSERT INTO t_r SELECT number * 7, number % 1000, number FROM numbers(20000);
 
 SELECT 'u64', count(), sum(cityHash64(l.v, r.v)) FROM t_l l INNER JOIN t_r r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 0, parallel_hash_join_threshold = 0;
+SETTINGS enable_hash_join_deferred_build = 0, hash_join_layout = 'parallel';
 SELECT 'u64', count(), sum(cityHash64(l.v, r.v)) FROM t_l l INNER JOIN t_r r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 0, log_comment = '05411_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'parallel', log_comment = '05411_on';
 SELECT 'u64', count(), sum(cityHash64(l.v, r.v)) FROM t_l l INNER JOIN t_r r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 18446744073709551615, log_comment = '05411_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'serial', log_comment = '05411_on';
 
 SELECT 'u32_range', count(), sum(cityHash64(l.v, r.v)) FROM t_l l INNER JOIN t_r r ON l.k32 = r.k32
-SETTINGS enable_hash_join_deferred_build = 0, parallel_hash_join_threshold = 18446744073709551615;
+SETTINGS enable_hash_join_deferred_build = 0, hash_join_layout = 'serial';
 SELECT 'u32_range', count(), sum(cityHash64(l.v, r.v)) FROM t_l l INNER JOIN t_r r ON l.k32 = r.k32
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 18446744073709551615, log_comment = '05411_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'serial', log_comment = '05411_on';
 
 SYSTEM FLUSH LOGS query_log;
 SELECT count(), countIf(ProfileEvents['HashJoinDeferredBuilds'] = 1)

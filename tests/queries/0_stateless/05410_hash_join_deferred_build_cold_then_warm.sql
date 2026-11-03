@@ -25,13 +25,13 @@ INSERT INTO t_r_two_level SELECT number % 50000 FROM numbers(100000);
 INSERT INTO t_r_serial SELECT number % 50000 FROM numbers(100000);
 
 SELECT count() FROM t_l l INNER JOIN t_r_two_level r ON l.k = r.k
-SETTINGS parallel_hash_join_threshold = 0, log_comment = '05410_two_level_cold';
+SETTINGS hash_join_layout = 'parallel', log_comment = '05410_two_level_cold';
 SELECT count() FROM t_l l INNER JOIN t_r_two_level r ON l.k = r.k
-SETTINGS parallel_hash_join_threshold = 0, log_comment = '05410_two_level_warm';
+SETTINGS hash_join_layout = 'parallel', log_comment = '05410_two_level_warm';
 SELECT count() FROM t_l l INNER JOIN t_r_serial r ON l.k = r.k
-SETTINGS parallel_hash_join_threshold = 18446744073709551615, log_comment = '05410_serial_cold';
+SETTINGS hash_join_layout = 'serial', log_comment = '05410_serial_cold';
 SELECT count() FROM t_l l INNER JOIN t_r_serial r ON l.k = r.k
-SETTINGS parallel_hash_join_threshold = 18446744073709551615, log_comment = '05410_serial_warm';
+SETTINGS hash_join_layout = 'serial', log_comment = '05410_serial_warm';
 
 SYSTEM FLUSH LOGS query_log;
 SELECT

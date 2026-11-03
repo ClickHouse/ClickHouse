@@ -11,7 +11,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # A deferred build of the two-level layout. Only with a spill threshold do the stored blocks of an `INNER` join keep the
 # keys, so it has one, far above the build. The left side is tiny: only the build counts.
-SETTINGS_BASE="join_algorithm = 'parallel_hash', enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 0, collect_hash_table_stats_during_joins = 0, max_bytes_before_external_join = 10737418240, max_bytes_ratio_before_external_join = 0, query_plan_join_swap_table = 'false', enable_parallel_replicas = 0"
+SETTINGS_BASE="join_algorithm = 'parallel_hash', enable_hash_join_deferred_build = 1, hash_join_layout = 'parallel', collect_hash_table_stats_during_joins = 0, max_bytes_before_external_join = 10737418240, max_bytes_ratio_before_external_join = 0, query_plan_join_swap_table = 'false', enable_parallel_replicas = 0"
 EVENT="HashJoinDeferredBuilds"
 
 # `max_execution_time` must stop the build while the blocks are inserted, not after. Every threshold is a fraction of the

@@ -38,214 +38,214 @@ FROM numbers(60000);
 INSERT INTO t_u SELECT number, number * 5 FROM numbers(20000);
 
 SELECT 'inner_all', count(), sum(cityHash64(l.k, l.v, r.v)) FROM t_l l INNER JOIN t_r r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 0, parallel_hash_join_threshold = 0, log_comment = '05408_off';
+SETTINGS enable_hash_join_deferred_build = 0, hash_join_layout = 'parallel', log_comment = '05408_off';
 SELECT 'inner_all', count(), sum(cityHash64(l.k, l.v, r.v)) FROM t_l l INNER JOIN t_r r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 0, log_comment = '05408_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'parallel', log_comment = '05408_on';
 SELECT 'inner_all', count(), sum(cityHash64(l.k, l.v, r.v)) FROM t_l l INNER JOIN t_r r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 18446744073709551615, log_comment = '05408_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'serial', log_comment = '05408_on';
 
 SELECT 'left_all', count(), sum(cityHash64(l.k, l.v, r.k, r.v)) FROM t_l l LEFT JOIN t_r r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 0, parallel_hash_join_threshold = 0, log_comment = '05408_off';
+SETTINGS enable_hash_join_deferred_build = 0, hash_join_layout = 'parallel', log_comment = '05408_off';
 SELECT 'left_all', count(), sum(cityHash64(l.k, l.v, r.k, r.v)) FROM t_l l LEFT JOIN t_r r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 0, log_comment = '05408_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'parallel', log_comment = '05408_on';
 SELECT 'left_all', count(), sum(cityHash64(l.k, l.v, r.k, r.v)) FROM t_l l LEFT JOIN t_r r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 18446744073709551615, log_comment = '05408_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'serial', log_comment = '05408_on';
 
 SELECT 'right_all', count(), sum(cityHash64(l.k, l.v, r.k, r.v)) FROM t_l l RIGHT JOIN t_r r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 0, parallel_hash_join_threshold = 0, log_comment = '05408_off';
+SETTINGS enable_hash_join_deferred_build = 0, hash_join_layout = 'parallel', log_comment = '05408_off';
 SELECT 'right_all', count(), sum(cityHash64(l.k, l.v, r.k, r.v)) FROM t_l l RIGHT JOIN t_r r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 0, log_comment = '05408_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'parallel', log_comment = '05408_on';
 SELECT 'right_all', count(), sum(cityHash64(l.k, l.v, r.k, r.v)) FROM t_l l RIGHT JOIN t_r r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 18446744073709551615, log_comment = '05408_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'serial', log_comment = '05408_on';
 
 SELECT 'full_all', count(), sum(cityHash64(l.k, l.v, r.k, r.v)) FROM t_l l FULL JOIN t_r r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 0, parallel_hash_join_threshold = 0, log_comment = '05408_off';
+SETTINGS enable_hash_join_deferred_build = 0, hash_join_layout = 'parallel', log_comment = '05408_off';
 SELECT 'full_all', count(), sum(cityHash64(l.k, l.v, r.k, r.v)) FROM t_l l FULL JOIN t_r r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 0, log_comment = '05408_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'parallel', log_comment = '05408_on';
 SELECT 'full_all', count(), sum(cityHash64(l.k, l.v, r.k, r.v)) FROM t_l l FULL JOIN t_r r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 18446744073709551615, log_comment = '05408_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'serial', log_comment = '05408_on';
 
 SELECT 'inner_any', count(), sum(cityHash64(l.k, l.v)) FROM t_l l ANY INNER JOIN t_r r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 0, parallel_hash_join_threshold = 0, log_comment = '05408_off';
+SETTINGS enable_hash_join_deferred_build = 0, hash_join_layout = 'parallel', log_comment = '05408_off';
 SELECT 'inner_any', count(), sum(cityHash64(l.k, l.v)) FROM t_l l ANY INNER JOIN t_r r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 0, log_comment = '05408_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'parallel', log_comment = '05408_on';
 SELECT 'inner_any', count(), sum(cityHash64(l.k, l.v)) FROM t_l l ANY INNER JOIN t_r r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 18446744073709551615, log_comment = '05408_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'serial', log_comment = '05408_on';
 
 SELECT 'left_any', count(), sum(cityHash64(l.k, l.v, r.k)) FROM t_l l ANY LEFT JOIN t_r r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 0, parallel_hash_join_threshold = 0, log_comment = '05408_off';
+SETTINGS enable_hash_join_deferred_build = 0, hash_join_layout = 'parallel', log_comment = '05408_off';
 SELECT 'left_any', count(), sum(cityHash64(l.k, l.v, r.k)) FROM t_l l ANY LEFT JOIN t_r r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 0, log_comment = '05408_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'parallel', log_comment = '05408_on';
 SELECT 'left_any', count(), sum(cityHash64(l.k, l.v, r.k)) FROM t_l l ANY LEFT JOIN t_r r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 18446744073709551615, log_comment = '05408_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'serial', log_comment = '05408_on';
 
 SELECT 'right_any', count(), sum(cityHash64(l.k, r.k, r.v)) FROM t_l l ANY RIGHT JOIN t_r r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 0, parallel_hash_join_threshold = 0, log_comment = '05408_off';
+SETTINGS enable_hash_join_deferred_build = 0, hash_join_layout = 'parallel', log_comment = '05408_off';
 SELECT 'right_any', count(), sum(cityHash64(l.k, r.k, r.v)) FROM t_l l ANY RIGHT JOIN t_r r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 0, log_comment = '05408_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'parallel', log_comment = '05408_on';
 SELECT 'right_any', count(), sum(cityHash64(l.k, r.k, r.v)) FROM t_l l ANY RIGHT JOIN t_r r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 18446744073709551615, log_comment = '05408_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'serial', log_comment = '05408_on';
 
 SELECT 'left_semi', count(), sum(cityHash64(l.k, l.v)) FROM t_l l LEFT SEMI JOIN t_r r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 0, parallel_hash_join_threshold = 0, log_comment = '05408_off';
+SETTINGS enable_hash_join_deferred_build = 0, hash_join_layout = 'parallel', log_comment = '05408_off';
 SELECT 'left_semi', count(), sum(cityHash64(l.k, l.v)) FROM t_l l LEFT SEMI JOIN t_r r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 0, log_comment = '05408_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'parallel', log_comment = '05408_on';
 SELECT 'left_semi', count(), sum(cityHash64(l.k, l.v)) FROM t_l l LEFT SEMI JOIN t_r r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 18446744073709551615, log_comment = '05408_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'serial', log_comment = '05408_on';
 
 SELECT 'left_anti', count(), sum(cityHash64(l.k, l.v)) FROM t_l l LEFT ANTI JOIN t_r r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 0, parallel_hash_join_threshold = 0, log_comment = '05408_off';
+SETTINGS enable_hash_join_deferred_build = 0, hash_join_layout = 'parallel', log_comment = '05408_off';
 SELECT 'left_anti', count(), sum(cityHash64(l.k, l.v)) FROM t_l l LEFT ANTI JOIN t_r r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 0, log_comment = '05408_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'parallel', log_comment = '05408_on';
 SELECT 'left_anti', count(), sum(cityHash64(l.k, l.v)) FROM t_l l LEFT ANTI JOIN t_r r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 18446744073709551615, log_comment = '05408_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'serial', log_comment = '05408_on';
 
 SELECT 'right_semi', count(), sum(cityHash64(r.k, r.v)) FROM t_l l RIGHT SEMI JOIN t_r r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 0, parallel_hash_join_threshold = 0, log_comment = '05408_off';
+SETTINGS enable_hash_join_deferred_build = 0, hash_join_layout = 'parallel', log_comment = '05408_off';
 SELECT 'right_semi', count(), sum(cityHash64(r.k, r.v)) FROM t_l l RIGHT SEMI JOIN t_r r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 0, log_comment = '05408_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'parallel', log_comment = '05408_on';
 SELECT 'right_semi', count(), sum(cityHash64(r.k, r.v)) FROM t_l l RIGHT SEMI JOIN t_r r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 18446744073709551615, log_comment = '05408_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'serial', log_comment = '05408_on';
 
 SELECT 'right_anti', count(), sum(cityHash64(r.k, r.v)) FROM t_l l RIGHT ANTI JOIN t_r r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 0, parallel_hash_join_threshold = 0, log_comment = '05408_off';
+SETTINGS enable_hash_join_deferred_build = 0, hash_join_layout = 'parallel', log_comment = '05408_off';
 SELECT 'right_anti', count(), sum(cityHash64(r.k, r.v)) FROM t_l l RIGHT ANTI JOIN t_r r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 0, log_comment = '05408_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'parallel', log_comment = '05408_on';
 SELECT 'right_anti', count(), sum(cityHash64(r.k, r.v)) FROM t_l l RIGHT ANTI JOIN t_r r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 18446744073709551615, log_comment = '05408_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'serial', log_comment = '05408_on';
 
 SELECT 'asof_inner', count(), sum(cityHash64(l.k, l.t, r.t, r.v)) FROM t_l l ASOF INNER JOIN t_r r ON l.k = r.k AND l.t >= r.t
-SETTINGS enable_hash_join_deferred_build = 0, parallel_hash_join_threshold = 0, log_comment = '05408_off';
+SETTINGS enable_hash_join_deferred_build = 0, hash_join_layout = 'parallel', log_comment = '05408_off';
 SELECT 'asof_inner', count(), sum(cityHash64(l.k, l.t, r.t, r.v)) FROM t_l l ASOF INNER JOIN t_r r ON l.k = r.k AND l.t >= r.t
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 0, log_comment = '05408_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'parallel', log_comment = '05408_on';
 SELECT 'asof_inner', count(), sum(cityHash64(l.k, l.t, r.t, r.v)) FROM t_l l ASOF INNER JOIN t_r r ON l.k = r.k AND l.t >= r.t
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 18446744073709551615, log_comment = '05408_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'serial', log_comment = '05408_on';
 
 SELECT 'asof_left', count(), sum(cityHash64(l.k, l.t, r.t, r.v)) FROM t_l l ASOF LEFT JOIN t_r r ON l.k = r.k AND l.t >= r.t
-SETTINGS enable_hash_join_deferred_build = 0, parallel_hash_join_threshold = 0, log_comment = '05408_off';
+SETTINGS enable_hash_join_deferred_build = 0, hash_join_layout = 'parallel', log_comment = '05408_off';
 SELECT 'asof_left', count(), sum(cityHash64(l.k, l.t, r.t, r.v)) FROM t_l l ASOF LEFT JOIN t_r r ON l.k = r.k AND l.t >= r.t
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 0, log_comment = '05408_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'parallel', log_comment = '05408_on';
 SELECT 'asof_left', count(), sum(cityHash64(l.k, l.t, r.t, r.v)) FROM t_l l ASOF LEFT JOIN t_r r ON l.k = r.k AND l.t >= r.t
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 18446744073709551615, log_comment = '05408_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'serial', log_comment = '05408_on';
 
 SELECT 'inner_all_unique_right', count(), sum(cityHash64(l.k, l.v, r.v)) FROM t_l l INNER JOIN t_u r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 0, parallel_hash_join_threshold = 0, log_comment = '05408_off';
+SETTINGS enable_hash_join_deferred_build = 0, hash_join_layout = 'parallel', log_comment = '05408_off';
 SELECT 'inner_all_unique_right', count(), sum(cityHash64(l.k, l.v, r.v)) FROM t_l l INNER JOIN t_u r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 0, log_comment = '05408_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'parallel', log_comment = '05408_on';
 SELECT 'inner_all_unique_right', count(), sum(cityHash64(l.k, l.v, r.v)) FROM t_l l INNER JOIN t_u r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 18446744073709551615, log_comment = '05408_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'serial', log_comment = '05408_on';
 
 SELECT 'inner_mixed_on', count(), sum(cityHash64(l.k, l.v, r.v)) FROM t_l l INNER JOIN t_r r ON l.k = r.k AND l.v < r.v
-SETTINGS enable_hash_join_deferred_build = 0, parallel_hash_join_threshold = 0, log_comment = '05408_off';
+SETTINGS enable_hash_join_deferred_build = 0, hash_join_layout = 'parallel', log_comment = '05408_off';
 SELECT 'inner_mixed_on', count(), sum(cityHash64(l.k, l.v, r.v)) FROM t_l l INNER JOIN t_r r ON l.k = r.k AND l.v < r.v
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 0, log_comment = '05408_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'parallel', log_comment = '05408_on';
 SELECT 'inner_mixed_on', count(), sum(cityHash64(l.k, l.v, r.v)) FROM t_l l INNER JOIN t_r r ON l.k = r.k AND l.v < r.v
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 18446744073709551615, log_comment = '05408_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'serial', log_comment = '05408_on';
 
 SELECT 'left_right_filter', count(), sum(cityHash64(l.k, l.v, r.k, r.v)) FROM t_l l LEFT JOIN t_r r ON l.k = r.k AND r.keep = 1
-SETTINGS enable_hash_join_deferred_build = 0, parallel_hash_join_threshold = 0, log_comment = '05408_off';
+SETTINGS enable_hash_join_deferred_build = 0, hash_join_layout = 'parallel', log_comment = '05408_off';
 SELECT 'left_right_filter', count(), sum(cityHash64(l.k, l.v, r.k, r.v)) FROM t_l l LEFT JOIN t_r r ON l.k = r.k AND r.keep = 1
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 0, log_comment = '05408_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'parallel', log_comment = '05408_on';
 SELECT 'left_right_filter', count(), sum(cityHash64(l.k, l.v, r.k, r.v)) FROM t_l l LEFT JOIN t_r r ON l.k = r.k AND r.keep = 1
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 18446744073709551615, log_comment = '05408_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'serial', log_comment = '05408_on';
 
 SELECT 'right_right_filter', count(), sum(cityHash64(l.k, l.v, r.k, r.v)) FROM t_l l RIGHT JOIN t_r r ON l.k = r.k AND r.keep = 1
-SETTINGS enable_hash_join_deferred_build = 0, parallel_hash_join_threshold = 0, log_comment = '05408_off';
+SETTINGS enable_hash_join_deferred_build = 0, hash_join_layout = 'parallel', log_comment = '05408_off';
 SELECT 'right_right_filter', count(), sum(cityHash64(l.k, l.v, r.k, r.v)) FROM t_l l RIGHT JOIN t_r r ON l.k = r.k AND r.keep = 1
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 0, log_comment = '05408_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'parallel', log_comment = '05408_on';
 SELECT 'right_right_filter', count(), sum(cityHash64(l.k, l.v, r.k, r.v)) FROM t_l l RIGHT JOIN t_r r ON l.k = r.k AND r.keep = 1
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 18446744073709551615, log_comment = '05408_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'serial', log_comment = '05408_on';
 
 SELECT 'inner_disjuncts', count(), sum(cityHash64(l.k, l.v, r.k, r.v)) FROM t_l l INNER JOIN t_r r ON l.k = r.k OR l.s = r.lc
-SETTINGS enable_hash_join_deferred_build = 0, parallel_hash_join_threshold = 0, log_comment = '05408_off';
+SETTINGS enable_hash_join_deferred_build = 0, hash_join_layout = 'parallel', log_comment = '05408_off';
 SELECT 'inner_disjuncts', count(), sum(cityHash64(l.k, l.v, r.k, r.v)) FROM t_l l INNER JOIN t_r r ON l.k = r.k OR l.s = r.lc
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 0, log_comment = '05408_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'parallel', log_comment = '05408_on';
 SELECT 'inner_disjuncts', count(), sum(cityHash64(l.k, l.v, r.k, r.v)) FROM t_l l INNER JOIN t_r r ON l.k = r.k OR l.s = r.lc
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 18446744073709551615, log_comment = '05408_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'serial', log_comment = '05408_on';
 
 SELECT 'left_disjuncts', count(), sum(cityHash64(l.k, l.v, r.k, r.v)) FROM t_l l LEFT JOIN t_r r ON l.k = r.k OR l.s = r.lc
-SETTINGS enable_hash_join_deferred_build = 0, parallel_hash_join_threshold = 0, log_comment = '05408_off';
+SETTINGS enable_hash_join_deferred_build = 0, hash_join_layout = 'parallel', log_comment = '05408_off';
 SELECT 'left_disjuncts', count(), sum(cityHash64(l.k, l.v, r.k, r.v)) FROM t_l l LEFT JOIN t_r r ON l.k = r.k OR l.s = r.lc
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 0, log_comment = '05408_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'parallel', log_comment = '05408_on';
 SELECT 'left_disjuncts', count(), sum(cityHash64(l.k, l.v, r.k, r.v)) FROM t_l l LEFT JOIN t_r r ON l.k = r.k OR l.s = r.lc
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 18446744073709551615, log_comment = '05408_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'serial', log_comment = '05408_on';
 
 SELECT 'inner_string', count(), sum(cityHash64(l.s, l.v, r.v)) FROM t_l l INNER JOIN t_r r ON l.s = r.s
-SETTINGS enable_hash_join_deferred_build = 0, parallel_hash_join_threshold = 0, log_comment = '05408_off';
+SETTINGS enable_hash_join_deferred_build = 0, hash_join_layout = 'parallel', log_comment = '05408_off';
 SELECT 'inner_string', count(), sum(cityHash64(l.s, l.v, r.v)) FROM t_l l INNER JOIN t_r r ON l.s = r.s
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 0, log_comment = '05408_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'parallel', log_comment = '05408_on';
 SELECT 'inner_string', count(), sum(cityHash64(l.s, l.v, r.v)) FROM t_l l INNER JOIN t_r r ON l.s = r.s
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 18446744073709551615, log_comment = '05408_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'serial', log_comment = '05408_on';
 
 SELECT 'inner_low_cardinality', count(), sum(cityHash64(l.s, l.v, r.v)) FROM t_l l INNER JOIN t_r r ON l.s = r.lc
-SETTINGS enable_hash_join_deferred_build = 0, parallel_hash_join_threshold = 0, log_comment = '05408_off';
+SETTINGS enable_hash_join_deferred_build = 0, hash_join_layout = 'parallel', log_comment = '05408_off';
 SELECT 'inner_low_cardinality', count(), sum(cityHash64(l.s, l.v, r.v)) FROM t_l l INNER JOIN t_r r ON l.s = r.lc
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 0, log_comment = '05408_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'parallel', log_comment = '05408_on';
 SELECT 'inner_low_cardinality', count(), sum(cityHash64(l.s, l.v, r.v)) FROM t_l l INNER JOIN t_r r ON l.s = r.lc
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 18446744073709551615, log_comment = '05408_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'serial', log_comment = '05408_on';
 
 SELECT 'full_nullable', count(), sum(cityHash64(l.k, l.v, r.nk, r.v)) FROM t_l l FULL JOIN t_r r ON l.k = r.nk
-SETTINGS enable_hash_join_deferred_build = 0, parallel_hash_join_threshold = 0, log_comment = '05408_off';
+SETTINGS enable_hash_join_deferred_build = 0, hash_join_layout = 'parallel', log_comment = '05408_off';
 SELECT 'full_nullable', count(), sum(cityHash64(l.k, l.v, r.nk, r.v)) FROM t_l l FULL JOIN t_r r ON l.k = r.nk
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 0, log_comment = '05408_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'parallel', log_comment = '05408_on';
 SELECT 'full_nullable', count(), sum(cityHash64(l.k, l.v, r.nk, r.v)) FROM t_l l FULL JOIN t_r r ON l.k = r.nk
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 18446744073709551615, log_comment = '05408_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'serial', log_comment = '05408_on';
 
 SELECT 'inner_nullable_string', count(), sum(cityHash64(l.s, l.v, r.v)) FROM t_l l INNER JOIN t_r r ON l.s = r.ns
-SETTINGS enable_hash_join_deferred_build = 0, parallel_hash_join_threshold = 0, log_comment = '05408_off';
+SETTINGS enable_hash_join_deferred_build = 0, hash_join_layout = 'parallel', log_comment = '05408_off';
 SELECT 'inner_nullable_string', count(), sum(cityHash64(l.s, l.v, r.v)) FROM t_l l INNER JOIN t_r r ON l.s = r.ns
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 0, log_comment = '05408_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'parallel', log_comment = '05408_on';
 SELECT 'inner_nullable_string', count(), sum(cityHash64(l.s, l.v, r.v)) FROM t_l l INNER JOIN t_r r ON l.s = r.ns
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 18446744073709551615, log_comment = '05408_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'serial', log_comment = '05408_on';
 
 SELECT 'inner_two_keys', count(), sum(cityHash64(l.k, l.v, r.v)) FROM t_l l INNER JOIN t_r r ON l.k = r.k AND l.k2 = r.k2
-SETTINGS enable_hash_join_deferred_build = 0, parallel_hash_join_threshold = 0, log_comment = '05408_off';
+SETTINGS enable_hash_join_deferred_build = 0, hash_join_layout = 'parallel', log_comment = '05408_off';
 SELECT 'inner_two_keys', count(), sum(cityHash64(l.k, l.v, r.v)) FROM t_l l INNER JOIN t_r r ON l.k = r.k AND l.k2 = r.k2
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 0, log_comment = '05408_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'parallel', log_comment = '05408_on';
 SELECT 'inner_two_keys', count(), sum(cityHash64(l.k, l.v, r.v)) FROM t_l l INNER JOIN t_r r ON l.k = r.k AND l.k2 = r.k2
-SETTINGS enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 18446744073709551615, log_comment = '05408_on';
+SETTINGS enable_hash_join_deferred_build = 1, hash_join_layout = 'serial', log_comment = '05408_on';
 
 SELECT 'inner_all_row_store', count(), sum(cityHash64(l.k, l.v, r.s, r.v)) FROM t_l l INNER JOIN t_r r ON l.k = r.k
-SETTINGS min_rows_ratio_for_hash_join_row_store = 0, enable_hash_join_deferred_build = 0, parallel_hash_join_threshold = 0, log_comment = '05408_off';
+SETTINGS min_rows_ratio_for_hash_join_row_store = 0, enable_hash_join_deferred_build = 0, hash_join_layout = 'parallel', log_comment = '05408_off';
 SELECT 'inner_all_row_store', count(), sum(cityHash64(l.k, l.v, r.s, r.v)) FROM t_l l INNER JOIN t_r r ON l.k = r.k
-SETTINGS min_rows_ratio_for_hash_join_row_store = 0, enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 0, log_comment = '05408_on';
+SETTINGS min_rows_ratio_for_hash_join_row_store = 0, enable_hash_join_deferred_build = 1, hash_join_layout = 'parallel', log_comment = '05408_on';
 SELECT 'inner_all_row_store', count(), sum(cityHash64(l.k, l.v, r.s, r.v)) FROM t_l l INNER JOIN t_r r ON l.k = r.k
-SETTINGS min_rows_ratio_for_hash_join_row_store = 0, enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 18446744073709551615, log_comment = '05408_on';
+SETTINGS min_rows_ratio_for_hash_join_row_store = 0, enable_hash_join_deferred_build = 1, hash_join_layout = 'serial', log_comment = '05408_on';
 
 SELECT 'right_all_row_store', count(), sum(cityHash64(l.k, l.v, r.k, r.s, r.v)) FROM t_l l RIGHT JOIN t_r r ON l.k = r.k
-SETTINGS min_rows_ratio_for_hash_join_row_store = 0, enable_hash_join_deferred_build = 0, parallel_hash_join_threshold = 0, log_comment = '05408_off';
+SETTINGS min_rows_ratio_for_hash_join_row_store = 0, enable_hash_join_deferred_build = 0, hash_join_layout = 'parallel', log_comment = '05408_off';
 SELECT 'right_all_row_store', count(), sum(cityHash64(l.k, l.v, r.k, r.s, r.v)) FROM t_l l RIGHT JOIN t_r r ON l.k = r.k
-SETTINGS min_rows_ratio_for_hash_join_row_store = 0, enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 0, log_comment = '05408_on';
+SETTINGS min_rows_ratio_for_hash_join_row_store = 0, enable_hash_join_deferred_build = 1, hash_join_layout = 'parallel', log_comment = '05408_on';
 SELECT 'right_all_row_store', count(), sum(cityHash64(l.k, l.v, r.k, r.s, r.v)) FROM t_l l RIGHT JOIN t_r r ON l.k = r.k
-SETTINGS min_rows_ratio_for_hash_join_row_store = 0, enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 18446744073709551615, log_comment = '05408_on';
+SETTINGS min_rows_ratio_for_hash_join_row_store = 0, enable_hash_join_deferred_build = 1, hash_join_layout = 'serial', log_comment = '05408_on';
 
 -- Without a spill threshold.
 SELECT 'inner_all', count(), sum(cityHash64(l.k, l.v, r.v)) FROM t_l l INNER JOIN t_r r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 1, max_bytes_before_external_join = 0, parallel_hash_join_threshold = 0,
+SETTINGS enable_hash_join_deferred_build = 1, max_bytes_before_external_join = 0, hash_join_layout = 'parallel',
     log_comment = '05408_no_threshold';
 SELECT 'left_all', count(), sum(cityHash64(l.k, l.v, r.k, r.v)) FROM t_l l LEFT JOIN t_r r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 1, max_bytes_before_external_join = 0, parallel_hash_join_threshold = 0,
+SETTINGS enable_hash_join_deferred_build = 1, max_bytes_before_external_join = 0, hash_join_layout = 'parallel',
     log_comment = '05408_no_threshold';
 SELECT 'left_right_filter', count(), sum(cityHash64(l.k, l.v, r.k, r.v)) FROM t_l l LEFT JOIN t_r r ON l.k = r.k AND r.keep = 1
-SETTINGS enable_hash_join_deferred_build = 1, max_bytes_before_external_join = 0, parallel_hash_join_threshold = 0,
+SETTINGS enable_hash_join_deferred_build = 1, max_bytes_before_external_join = 0, hash_join_layout = 'parallel',
     log_comment = '05408_no_threshold';
 SELECT 'right_all', count(), sum(cityHash64(l.k, l.v, r.k, r.v)) FROM t_l l RIGHT JOIN t_r r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 1, max_bytes_before_external_join = 0, parallel_hash_join_threshold = 0,
+SETTINGS enable_hash_join_deferred_build = 1, max_bytes_before_external_join = 0, hash_join_layout = 'parallel',
     log_comment = '05408_no_threshold';
 SELECT 'full_all', count(), sum(cityHash64(l.k, l.v, r.k, r.v)) FROM t_l l FULL JOIN t_r r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 1, max_bytes_before_external_join = 0, parallel_hash_join_threshold = 0,
+SETTINGS enable_hash_join_deferred_build = 1, max_bytes_before_external_join = 0, hash_join_layout = 'parallel',
     log_comment = '05408_no_threshold';
 SELECT 'left_mixed_on', count(), sum(cityHash64(l.k, l.v, r.v)) FROM t_l l LEFT JOIN t_r r ON l.k = r.k AND l.v < r.v
-SETTINGS enable_hash_join_deferred_build = 0, max_bytes_before_external_join = 0, parallel_hash_join_threshold = 0,
+SETTINGS enable_hash_join_deferred_build = 0, max_bytes_before_external_join = 0, hash_join_layout = 'parallel',
     log_comment = '05408_off';
 SELECT 'left_mixed_on', count(), sum(cityHash64(l.k, l.v, r.v)) FROM t_l l LEFT JOIN t_r r ON l.k = r.k AND l.v < r.v
-SETTINGS enable_hash_join_deferred_build = 1, max_bytes_before_external_join = 0, parallel_hash_join_threshold = 0,
+SETTINGS enable_hash_join_deferred_build = 1, max_bytes_before_external_join = 0, hash_join_layout = 'parallel',
     log_comment = '05408_no_threshold';
 SELECT 'inner_disjuncts', count(), sum(cityHash64(l.k, l.v, r.k, r.v)) FROM t_l l INNER JOIN t_r r ON l.k = r.k OR l.s = r.lc
-SETTINGS enable_hash_join_deferred_build = 1, max_bytes_before_external_join = 0, parallel_hash_join_threshold = 0,
+SETTINGS enable_hash_join_deferred_build = 1, max_bytes_before_external_join = 0, hash_join_layout = 'parallel',
     log_comment = '05408_no_threshold';
 SELECT 'left_disjuncts', count(), sum(cityHash64(l.k, l.v, r.k, r.v)) FROM t_l l LEFT JOIN t_r r ON l.k = r.k OR l.s = r.lc
-SETTINGS enable_hash_join_deferred_build = 1, max_bytes_before_external_join = 0, parallel_hash_join_threshold = 0,
+SETTINGS enable_hash_join_deferred_build = 1, max_bytes_before_external_join = 0, hash_join_layout = 'parallel',
     log_comment = '05408_no_threshold';
 
 SYSTEM FLUSH LOGS query_log;

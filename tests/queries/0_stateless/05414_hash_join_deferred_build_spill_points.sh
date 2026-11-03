@@ -10,7 +10,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 SETTINGS="join_algorithm = 'parallel_hash', collect_hash_table_stats_during_joins = 0, max_bytes_ratio_before_external_join = 0,
-    parallel_hash_join_threshold = 0, max_threads = 4, grace_hash_join_initial_buckets = 4, query_plan_join_swap_table = 'false',
+    hash_join_layout = 'parallel', max_threads = 4, grace_hash_join_initial_buckets = 4, query_plan_join_swap_table = 'false',
     enable_parallel_replicas = 0"
 LEFT="(SELECT number * 3 AS k FROM numbers(100000)) l"
 

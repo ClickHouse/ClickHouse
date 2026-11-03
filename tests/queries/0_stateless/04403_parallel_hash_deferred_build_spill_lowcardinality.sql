@@ -3,7 +3,7 @@
 
 SET join_algorithm = 'parallel_hash';
 SET collect_hash_table_stats_during_joins = 0;
-SET parallel_hash_join_threshold = 0;
+SET hash_join_layout = 'parallel';
 SET max_bytes_ratio_before_external_join = 0;
 SET join_use_nulls = 0;
 SET max_threads = 4;

@@ -313,8 +313,9 @@ public:
     /// Peak bytes the build occupied
     size_t getPeakBuildBytes() const { return peak_build_bytes; }
 
-    /// Whether the build stores the right blocks first and inserts their keys in the post-build phase,
-    /// see `enable_hash_join_deferred_build`.
+    /// Whether the build stores the right blocks first and inserts their keys in the post-build phase, once the number
+    /// of distinct keys is known, instead of inserting each block as it arrives (a streaming build).
+    /// See `enable_hash_join_deferred_build`.
     bool defersBuild() const { return deferred_build != nullptr; }
     /// For a deferred build: the bytes it will hold once the stored blocks are inserted. With `all_blocks_stored = false`,
     /// a cheaper estimate from the counts published so far, which concurrent callers may share.
@@ -861,9 +862,7 @@ private:
 
     const HashJoinStatsCollectingParams stats_collecting_params;
 
-    /// Set in the constructor when the build stores the right blocks first and inserts their keys in the post-build
-    /// phase, once the number of distinct keys is known, instead of inserting each block as it arrives (a streaming
-    /// build). See `replayDeferredBuild`.
+    /// Set in the constructor when the build defers, see `replayDeferredBuild`.
     std::unique_ptr<DeferredBuildState> deferred_build;
     /// From `onBuildPhaseFinish` of a deferred build until its keys are in the maps.
     bool replay_pending = false;

@@ -10,7 +10,7 @@ SET max_bytes_before_external_join = 10737418240;
 SET max_bytes_ratio_before_external_join = 0;
 SET join_use_nulls = 0;
 SET max_threads = 4;
-SET parallel_hash_join_threshold = 0;
+SET hash_join_layout = 'parallel';
 SET query_plan_join_swap_table = 'false';
 SET use_statistics = 0; -- Otherwise the planner sizes the builds from the column statistics, and they do not defer.
 

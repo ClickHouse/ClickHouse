@@ -19,7 +19,7 @@ $CLICKHOUSE_CLIENT -q "
 
 # A serial map for 2M string keys needs more than the 100 MB limit, the stored blocks less. The join's own spill
 # threshold is out of reach, so only the scheduler can switch it.
-settings="join_algorithm = 'hash', max_threads = 1, enable_hash_join_deferred_build = 1, parallel_hash_join_threshold = 1000000000,
+settings="join_algorithm = 'hash', max_threads = 1, enable_hash_join_deferred_build = 1, hash_join_layout = 'serial',
     collect_hash_table_stats_during_joins = 0, use_statistics = 0, query_plan_join_swap_table = 'false', enable_parallel_replicas = 0,
     max_bytes_before_external_join = '100Gi', max_bytes_ratio_before_external_join = 0, grace_hash_join_initial_buckets = 8,
     max_bytes_in_join = 0, max_memory_usage = 100000000"

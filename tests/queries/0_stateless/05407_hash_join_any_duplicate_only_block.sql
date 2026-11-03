@@ -15,11 +15,11 @@ SELECT l.k, r.v
 FROM (SELECT number + 1 AS k FROM numbers(2)) AS l
 ANY LEFT JOIN (SELECT if(number < 2, 1, 2) AS k, number AS v FROM numbers(3)) AS r ON l.k = r.k
 ORDER BY l.k
-SETTINGS parallel_hash_join_threshold = 0;
+SETTINGS hash_join_layout = 'parallel';
 
 SELECT 'serial';
 SELECT l.k, r.v
 FROM (SELECT number + 1 AS k FROM numbers(2)) AS l
 ANY LEFT JOIN (SELECT if(number < 2, 1, 2) AS k, number AS v FROM numbers(3)) AS r ON l.k = r.k
 ORDER BY l.k
-SETTINGS parallel_hash_join_threshold = 18446744073709551615;
+SETTINGS hash_join_layout = 'serial';

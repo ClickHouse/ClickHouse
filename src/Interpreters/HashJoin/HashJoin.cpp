@@ -709,7 +709,8 @@ HashJoin::HashJoin(
     /// Statistics of an earlier run, or `reserve_num`, give the size: such a build inserts each block as it arrives, for both layouts.
     bool size_known = size_hint != 0 || getSizeHint(stats_collecting_params.build).has_value();
     const bool may_defer_build = allow_deferred_build && table_join->enableHashJoinDeferredBuild();
-    /// Otherwise the `uniq` statistic of the right key may give it, which is used the same way.
+    /// Otherwise the `uniq` statistic of the right key may give the size. It is used the same way: no deferral, and a reserve
+    /// for a two-level map.
     if (may_defer_build && !size_known)
     {
         if (const auto distinct_keys = table_join->rightKeyDistinctValuesFromUniq())
@@ -1381,7 +1382,7 @@ bool HashJoin::addBlockToJoin(const Block & source_block, size_t /* num_rows */,
 
 bool HashJoin::storesCopies(const Block & block) const
 {
-    /// A parallel build stores copies of narrow rows, made here on a build stream (`shrinkToFit` copies every column).
+    /// A parallel build stores copies of narrow rows. `storeBlock` makes them on a build stream (`shrinkToFit` copies every column).
     /// The producer then reuses its memory instead of faulting in fresh memory for every block.
     return (data->slots.size() > 1 && !useZeroCopyApproach(block)) || shrink_blocks.load(std::memory_order_relaxed);
 }
@@ -1420,7 +1421,8 @@ std::optional<size_t> HashJoin::storedColumnIndex(const String & name) const
 /// Until its inserts, a deferred build holds the stored blocks. It defers only when that is no more than the streaming
 /// build holds. So the stored blocks must have the keys, which an `INNER` or `LEFT` join without a spill budget does not
 /// store. And the map must keep every row: with one row per key, the streaming build drops a block that adds no new key.
-/// Only such a map reads `any_take_last_row`, which the deferred inserts could not follow: they lose the block order.
+/// A one-row-per-key map is also the only one that reads `any_take_last_row`, and the deferred inserts could not follow
+/// it: they lose the block order.
 bool HashJoin::deferredBuildHoldsNoMore() const
 {
     for (const auto & name : table_join->getAllNames(JoinTableSide::Right))
@@ -1487,18 +1489,17 @@ void HashJoin::addPendingInsert(BuildStreamData & build_stream, StoredBlocksList
     /// The keys are in the stored block (`deferredBuildHoldsNoMore`); the ON condition columns are kept as they arrived.
     PendingInsert pending{.stored = stored, .columns = {}, .allocated_bytes = 0};
     const bool copy = storesCopies(block);
-    auto keep = [&](const String & name)
+    for (const auto & clause : onexprs)
     {
+        const String name = clause.condColumnNames().second;
         if (name.empty() || pending.columns.has(name))
-            return;
+            continue;
         auto column = block.getByName(name);
         /// The same copy as `storeBlock` makes, so that the producer's columns are not kept alive.
         if (copy)
             column.column = column.column->cloneResized(column.column->size());
         pending.columns.insert(std::move(column));
-    };
-    for (const auto & clause : onexprs)
-        keep(clause.condColumnNames().second);
+    }
 
     pending.allocated_bytes = pending.columns.allocatedBytes();
     data->addBytes(data->pending_allocated_size, pending.allocated_bytes);

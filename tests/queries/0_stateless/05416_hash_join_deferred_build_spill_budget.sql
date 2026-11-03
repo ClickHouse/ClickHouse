@@ -33,7 +33,7 @@ SETTINGS enable_hash_join_deferred_build = 1, max_bytes_before_external_join = 1
 SELECT 'low_cardinality_nullable', count(), sum(cityHash64(l.k, r.v)) FROM t_l l INNER JOIN t_r r ON l.s = r.s
 SETTINGS enable_hash_join_deferred_build = 1, max_bytes_before_external_join = 1048576, log_comment = '05416_over';
 SELECT 'low_cardinality_nullable', count(), sum(cityHash64(l.k, r.v)) FROM t_l l INNER JOIN t_r r ON l.s = r.s
-SETTINGS enable_hash_join_deferred_build = 1, max_bytes_before_external_join = 1073741824, parallel_hash_join_threshold = 18446744073709551615,
+SETTINGS enable_hash_join_deferred_build = 1, max_bytes_before_external_join = 1073741824, hash_join_layout = 'serial',
     log_comment = '05416_under';
 
 SYSTEM FLUSH LOGS query_log;

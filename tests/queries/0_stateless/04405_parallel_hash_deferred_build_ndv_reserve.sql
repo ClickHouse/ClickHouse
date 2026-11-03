@@ -3,7 +3,7 @@
 
 SET join_algorithm = 'parallel_hash';
 SET collect_hash_table_stats_during_joins = 0;
-SET parallel_hash_join_threshold = 0;
+SET hash_join_layout = 'parallel';
 SET max_bytes_ratio_before_external_join = 0;
 SET join_use_nulls = 0;
 SET max_threads = 4;
@@ -29,7 +29,6 @@ SELECT 'right', count(), sum(cityHash64(l.k, l.v, r.k, r.v)) FROM t_probe l RIGH
 SELECT 'full', count(), sum(cityHash64(l.k, l.v, r.k, r.v)) FROM t_probe l FULL JOIN t_build r ON l.k = r.k;
 
 SET enable_hash_join_deferred_build = 1;
-SET max_bytes_before_external_join = 0;
 SET log_comment = '04405_ndv_standalone';
 
 SELECT 'inner', count(), sum(cityHash64(l.k, l.v, r.v)) FROM t_probe l INNER JOIN t_build r ON l.k = r.k;
