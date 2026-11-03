@@ -27,7 +27,7 @@
   var TICKERS = [
     {
       id: 'clickstack',
-      enabled: true,
+      enabled: false,
       paths: ['/clickstack'],
       content: 'ClickStack Cloud is coming: turnkey observability, powered by ClickHouse. [Join the waitlist](https://clickhouse.com/cloud/clickstack-cloud-waitlist-turnkey?loc=docs-clickstack-ticker)',
       dismissible: true,

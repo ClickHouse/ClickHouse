@@ -2,7 +2,7 @@
 slug: /clickstack/observability/migration/elastic/migrating-agents
 title: 'Migrating agents from Elastic'
 sidebarTitle: 'Migrating agents'
-description: 'Migrating agents from Elastic setup and configuration for ClickHouse Observability and self-configured deployments.'
+description: 'Migrating agents from Elastic setup and configuration for ClickHouse Observability and self-managed deployments.'
 show_related_blogs: true
 keywords: ['ClickHouse Observability']
 doc_type: 'guide'
@@ -35,7 +35,7 @@ The OpenTelemetry Collector provides a sustainable and vendor-neutral solution f
 Configure the destination before following the agent migration steps. The Vector and EDOT examples below send OpenTelemetry data over OTLP HTTP.
 
 <Tabs>
-<Tab title="ClickHouse Observability">
+<Tab title="Fully managed">
 
 Copy your OTLP HTTP endpoint and API key from **Team Settings → Data → Managed Telemetry**. Set these variables in the environment where Vector or EDOT runs:
 
@@ -47,9 +47,9 @@ export OTEL_EXPORTER_OTLP_AUTHORIZATION='Bearer YOUR_API_KEY'
 Use the exact endpoint, including its port, without a `/v1/logs` suffix. See [Sending OpenTelemetry data](/clickstack/observability/ingesting-data/opentelemetry) for connection details.
 
 </Tab>
-<Tab title="Self configured">
+<Tab title="Self-managed">
 
-Deploy your receiving collector using the [self-configured setup guide](/clickstack/self-configured/getting-started/managed). Set its reachable OTLP HTTP endpoint and authorization header in the environment where Vector or EDOT runs:
+Deploy your receiving collector using the [self-managed setup guide](/clickstack/self-configured/getting-started/managed). Set its reachable OTLP HTTP endpoint and authorization header in the environment where Vector or EDOT runs:
 
 ```shell
 export OTEL_EXPORTER_OTLP_ENDPOINT='http://YOUR_COLLECTOR_HOST:4318'

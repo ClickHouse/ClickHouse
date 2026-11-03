@@ -1,6 +1,6 @@
 ---
 slug: /clickstack/self-configured/ingesting-data/schema/map-vs-json
-description: 'When to use the Map type vs the JSON type for attributes in Self Configured ClickHouse Observability'
+description: 'When to use the Map type vs the JSON type for attributes in Self-managed ClickHouse Observability'
 sidebarTitle: 'Map vs JSON type'
 title: 'Map vs JSON type'
 doc_type: 'reference'
@@ -9,7 +9,7 @@ keywords: ['clickstack', 'json', 'map', 'attributes', 'schema', 'observability']
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
-The [default schema](/clickstack/self-configured/ingesting-data/schemas) stores resource, scope, log, and span attributes as `Map(LowCardinality(String), String)` columns. ClickHouse also supports a strongly typed [`JSON` type](/reference/formats/JSON/JSON), and Self Configured ClickHouse Observability has beta support for using it in place of `Map`.
+The [default schema](/clickstack/self-configured/ingesting-data/schemas) stores resource, scope, log, and span attributes as `Map(LowCardinality(String), String)` columns. ClickHouse also supports a strongly typed [`JSON` type](/reference/formats/JSON/JSON), and Self-managed ClickHouse Observability has beta support for using it in place of `Map`.
 
 **For typical observability workloads we recommend keeping the [default `Map`-based schema](/clickstack/self-configured/ingesting-data/schemas).** The JSON type is available for users who want to evaluate it on workloads with a small, stable set of attribute keys, but it isn't the recommended schema for general use.
 
@@ -41,7 +41,7 @@ The JSON type can be a reasonable fit when *all* of the following hold:
 - Your attribute key-set is **small and stable**, meaning you aren't seeing thousands of unique keys, and new keys appear rarely.
 - Ingest throughput is **modest** relative to the attribute cardinality.
 - You want **strongly typed access** to attributes without query-time casts (numbers stay numbers, booleans stay booleans).
-- You are willing to operate a **beta feature** in Self Configured ClickHouse Observability and accept that the integration may change.
+- You are willing to operate a **beta feature** in Self-managed ClickHouse Observability and accept that the integration may change.
 
 If those conditions don't all hold, stay on the [default `Map`-based schema](/clickstack/self-configured/ingesting-data/schemas).
 
@@ -52,7 +52,7 @@ If those conditions don't all hold, stay on the [default `Map`-based schema](/cl
 <Warning>
 **Beta feature, not production ready**
 
-JSON type support in **Self Configured ClickHouse Observability** is a **beta feature**. While the JSON type itself is production-ready in ClickHouse 25.3+, its integration within the service is still under active development and may have limitations, change in the future, or contain bugs.
+JSON type support in **Self-managed ClickHouse Observability** is a **beta feature**. While the JSON type itself is production-ready in ClickHouse 25.3+, its integration within the service is still under active development and may have limitations, change in the future, or contain bugs.
 </Warning>
 
 ClickStack has beta support for the JSON type from version `2.0.4`.
@@ -67,7 +67,7 @@ To use JSON-typed schemas instead of the [default `Map`-based schemas](/clicksta
 
 <a id="managed-clickstack" />
 
-To enable JSON support in Self Configured ClickHouse Observability, contact support@clickhouse.com prior to configuring the collector. The feature must also be enabled in the observability UI in ClickHouse Cloud.
+To enable JSON support in Self-managed ClickHouse Observability, contact support@clickhouse.com prior to configuring the collector. The feature must also be enabled in the observability UI in ClickHouse Cloud.
 
 Set `OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json'` on the collector. For example:
 

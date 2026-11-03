@@ -2,7 +2,7 @@
 slug: /clickstack/self-configured/managing/performance-tuning
 title: 'Performance tuning'
 sidebarTitle: 'Performance tuning'
-description: 'Performance tuning for Self Configured ClickHouse Observability'
+description: 'Performance tuning for Self-managed ClickHouse Observability'
 doc_type: 'guide'
 keywords: ['ClickHouse Observability', 'observability', 'logs', 'performance', 'optimization']
 ---
@@ -16,7 +16,7 @@ import { Image } from "/snippets/components/Image.jsx";
 
 ## Introduction {#introduction}
 
-This guide focuses on the most common and effective performance optimizations for Self Configured ClickHouse Observability, sufficient to optimize the majority of real-world observability workloads, typically up to tens of terabytes of data per day.
+This guide focuses on the most common and effective performance optimizations for Self-managed ClickHouse Observability, sufficient to optimize the majority of real-world observability workloads, typically up to tens of terabytes of data per day.
 
 The optimizations are presented in a deliberate order, starting with the simplest and highest impact techniques and progressing toward more advanced and specialized tuning. Early optimizations should be applied first and will often deliver substantial gains on their own. As data volumes grow and workloads become more demanding, the latter techniques become increasingly worthwhile to explore.
 
@@ -611,7 +611,7 @@ Filtering on columns that appear earlier in the primary key is more efficient th
 <Info>
 **A note on terminology**
 
-Throughout this document, the term "ordering key" is used interchangeably with "primary key." Strictly speaking, these differ in ClickHouse, but for Self Configured ClickHouse Observability, they typically refer to the same columns specified in the table `ORDER BY` clause. For details, see the [ClickHouse documentation](/reference/engines/table-engines/mergetree-family/mergetree#choosing-a-primary-key-that-differs-from-the-sorting-key) on choosing a primary key that differs from the sorting key.
+Throughout this document, the term "ordering key" is used interchangeably with "primary key." Strictly speaking, these differ in ClickHouse, but for Self-managed ClickHouse Observability, they typically refer to the same columns specified in the table `ORDER BY` clause. For details, see the [ClickHouse documentation](/reference/engines/table-engines/mergetree-family/mergetree#choosing-a-primary-key-that-differs-from-the-sorting-key) on choosing a primary key that differs from the sorting key.
 </Info>
 
 Before modifying any primary key, reading through our [guide to understand how primary indexes work](/concepts/core-concepts/primary-indexes) in ClickHouse is strongly recommended:
@@ -930,7 +930,7 @@ For a deeper background, see:
 <BetaBadge/>
 
 <Info>
-**Lightweight projections are Beta for Self Configured ClickHouse Observability**
+**Lightweight projections are Beta for Self-managed ClickHouse Observability**
 
 `_part_offset-based` lightweight projections aren't recommended for observability workloads. While they reduce storage and write I/O, they can introduce more random access at query time, and their production behavior at the observability scale is still being evaluated. This recommendation may change as the feature matures and we gain more operational data.
 </Info>

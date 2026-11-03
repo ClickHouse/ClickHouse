@@ -28,7 +28,7 @@ The package supports ES modules and CommonJS. npm installs its `@opentelemetry/a
 Set the environment variables before starting your application. Use a base OTLP HTTP endpoint without `/v1/traces`, `/v1/logs`, or `/v1/metrics`; exporters append those paths.
 
 <Tabs>
-<Tab title="ClickHouse Observability">
+<Tab title="Fully managed">
 
 Open **Team Settings → Data → Managed Telemetry** and copy the **OTLP HTTP endpoint** and **API key**. Use the exact HTTPS endpoint and port shown for your service:
 
@@ -40,9 +40,9 @@ export OTEL_SERVICE_NAME='my-node-app'
 ```
 
 </Tab>
-<Tab title="Self configured">
+<Tab title="Self-managed">
 
-Use your collector's OTLP HTTP endpoint and the ingestion key configured for its OTLP receiver. For collector setup, see [Ingesting with OpenTelemetry](/clickstack/observability/ingesting-data/opentelemetry#self-configured).
+Use your collector's OTLP HTTP endpoint and the ingestion key configured for its OTLP receiver. For collector setup, see [Ingesting with OpenTelemetry](/clickstack/observability/ingesting-data/opentelemetry#self-managed).
 
 ```shell
 export OTEL_EXPORTER_OTLP_ENDPOINT='http://localhost:4318'

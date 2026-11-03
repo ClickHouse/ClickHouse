@@ -11,7 +11,7 @@ sidebarTitle: 'Local logs & metrics'
 import { Image } from "/snippets/components/Image.jsx";
 
 <Tabs>
-<Tab title="ClickHouse Observability">
+<Tab title="Fully managed">
 
 Collect local logs and system metrics and send them to **ClickHouse Observability** for visualization and analysis.
 
@@ -200,13 +200,13 @@ docker rm local-otel-collector
 ```
 
 </Tab>
-<Tab title="Self configured">
+<Tab title="Self-managed">
 
-This getting started guide allows you to collect local logs and metrics from your system, sending them to ClickHouse Observability — Self Configured for visualization and analysis.
+This getting started guide allows you to collect local logs and metrics from your system, sending them to ClickHouse Observability — Self-managed for visualization and analysis.
 
 **This example works on OSX and Linux systems only**
 
-This guide assumes you have completed the [Getting Started Guide for ClickHouse Observability — Self Configured](/clickstack/self-configured/getting-started/managed) and have the [connection credentials recorded](/clickstack/self-configured/getting-started/managed#next-steps).
+This guide assumes you have completed the [Getting Started Guide for ClickHouse Observability — Self-managed](/clickstack/self-configured/getting-started/managed) and have the [connection credentials recorded](/clickstack/self-configured/getting-started/managed#next-steps).
 
 <Steps>
 <Step title="Create a custom OpenTelemetry configuration" id="create-otel-configuration-self-configured">
@@ -313,7 +313,7 @@ The collector will immediately begin collecting local system logs and metrics.
 </Step>
 <Step title="Select your service" id="select-your-service-self-configured">
 
-Select the service with ClickHouse Observability — Self Configured from the main ClickHouse cloud landing page.
+Select the service with ClickHouse Observability — Self-managed from the main ClickHouse cloud landing page.
 
 <Image img="/images/clickstack/select_service.webp" alt="Select Service" size="lg"/>
 </Step>

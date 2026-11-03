@@ -2,7 +2,7 @@
 slug: /clickstack/observability/integration-examples/nginx-traces
 title: 'Monitoring Nginx traces with ClickHouse Observability'
 sidebarTitle: 'Nginx traces'
-description: 'Collect, search, and visualize Nginx traces in ClickHouse Observability with managed or self-configured ingestion.'
+description: 'Collect, search, and visualize Nginx traces in ClickHouse Observability with managed or self-managed ingestion.'
 doc_type: 'guide'
 keywords: ['ClickHouse Observability', 'Nginx', 'traces', 'otel']
 ---
@@ -20,7 +20,10 @@ Capture distributed traces from Nginx with the OpenTelemetry Nginx module and se
 
 ### Connection details {#connection-details}
 
-For a managed service, open ClickHouse Observability and go to **Team Settings → Data → Managed Telemetry**. Copy your endpoint and API key using **Copy connection details**, or select **Reveal key** to view the masked key.
+<Tabs>
+<Tab title="Fully managed">
+
+Open ClickHouse Observability and go to **Team Settings → Data → Managed Telemetry**. Copy your endpoint and API key using **Copy connection details**, or select **Reveal key** to view the masked key.
 
 <Image img="/images/clickstack/getting-started/observability-managed-telemetry.png" alt="Managed Telemetry connection details"/>
 
@@ -34,7 +37,19 @@ export OTEL_EXPORTER_OTLP_AUTHORIZATION='Bearer YOUR_API_KEY'
 
 Replace the placeholders with your service's connection details. Use the base HTTP endpoint without `/v1/traces`; the collector exporter adds that path.
 
-For self-configured deployments, use your collector's OTLP endpoints and authentication settings. If your collector does not require authentication, omit the Nginx `header authorization` directive and the demo collector's `headers` block. See the [self-configured getting-started guide](/clickstack/self-configured/getting-started/managed).
+</Tab>
+<Tab title="Self-managed">
+
+Use your collector's OTLP endpoints and authentication settings. If your collector does not require authentication, omit the Nginx `header authorization` directive and the demo collector's `headers` block. See the [self-managed getting-started guide](/clickstack/self-configured/getting-started/managed).
+
+```bash
+export OTEL_EXPORTER_OTLP_GRPC_ENDPOINT='http://YOUR_COLLECTOR_HOST:4317'
+export OTEL_EXPORTER_OTLP_ENDPOINT='http://YOUR_COLLECTOR_HOST:4318'
+export OTEL_EXPORTER_OTLP_AUTHORIZATION='YOUR_INGESTION_KEY'
+```
+
+</Tab>
+</Tabs>
 
 The gRPC endpoint must be reachable from Nginx. With Docker Desktop, use `host.docker.internal` to reach a collector on the host. For containers on a shared Docker network, use the collector's container name. Use `http://` for a local endpoint without TLS.
 

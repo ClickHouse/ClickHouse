@@ -1,7 +1,7 @@
 ---
 slug: /clickstack/self-configured/managing/config
 title: 'Configuration options'
-description: 'Configuration options for Self Configured ClickHouse Observability'
+description: 'Configuration options for Self-managed ClickHouse Observability'
 keywords: ['ClickStack configuration', 'observability configuration', 'HyperDX settings', 'collector configuration', 'environment variables']
 doc_type: 'reference'
 sidebarTitle: 'Configuration options'
@@ -10,10 +10,10 @@ sidebarTitle: 'Configuration options'
 import { Image } from "/snippets/components/Image.jsx";
 
 <Warning>
-This guide needs review for Self Configured ClickHouse Observability. The source settings, collector options, and database tuning guidance have been extracted from the existing configuration reference. Verify available UI settings, collector authentication and defaults, and supported schema changes. Self-hosted application settings have been removed.
+This guide needs review for Self-managed ClickHouse Observability. The source settings, collector options, and database tuning guidance have been extracted from the existing configuration reference. Verify available UI settings, collector authentication and defaults, and supported schema changes. Self-hosted application settings have been removed.
 </Warning>
 
-This guide covers data source settings, the collector you run, and database schema configuration for Self Configured ClickHouse Observability.
+This guide covers data source settings, the collector you run, and database schema configuration for Self-managed ClickHouse Observability.
 
 ## User interface {#hyperdx}
 
@@ -271,4 +271,4 @@ You can use [schema customization](/guides/use-cases/observability/build-your-ow
 
 Additionally, materialized views can be used to [transform or filter data during ingestion](/guides/use-cases/observability/build-your-own/schema-design#materialized-columns), provided that data is written to the source table of the view and the application reads from the target table. Materialized views can also be used to [accelerate queries natively](/clickstack/self-configured/managing/materialized-views) in the service.
 
-For more details, refer to ClickHouse documentation on schema design, indexing strategies, and data management best practices - most of which apply directly to Self Configured deployments.
+For more details, refer to ClickHouse documentation on schema design, indexing strategies, and data management best practices - most of which apply directly to Self-managed deployments.

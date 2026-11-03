@@ -26,7 +26,7 @@ The package uses ES modules. npm installs its OpenTelemetry peer dependencies au
 ## Configure your destination {#configure-destination}
 
 <Tabs>
-<Tab title="ClickHouse Observability">
+<Tab title="Fully managed">
 
 Open **Team Settings → Data → Managed Telemetry** in your service and copy the **OTLP HTTP endpoint** and **API key**. Use the complete HTTPS endpoint, including its port, without a signal path such as `/v1/traces`.
 
@@ -43,9 +43,9 @@ init({
 ```
 
 </Tab>
-<Tab title="Self configured">
+<Tab title="Self-managed">
 
-Use the OTLP HTTP endpoint of your collector and its configured ingestion key. The endpoint must be reachable from your users' browsers. For collector setup, see [Ingesting with OpenTelemetry](/clickstack/observability/ingesting-data/opentelemetry#self-configured).
+Use the OTLP HTTP endpoint of your collector and its configured ingestion key. The endpoint must be reachable from your users' browsers. For collector setup, see [Ingesting with OpenTelemetry](/clickstack/observability/ingesting-data/opentelemetry#self-managed).
 
 ```javascript
 import { init } from '@clickhouse/clickstack-browser';
@@ -72,7 +72,7 @@ Browser configuration is visible to anyone who loads the page, including its ing
 
 Load your application, interact with the page, make a request, and emit a console error. In ClickHouse Observability, select a recent time range and search Logs or Traces for `my-frontend-app`. Open Session replay to inspect the recorded session.
 
-If data is missing, inspect the browser console and network requests to `/v1/traces` and `/v1/logs`. Check the endpoint, authorization header, CORS, and Content Security Policy. For self-configured deployments, confirm that your ClickStack version supports replay and the SDK's standard `session.id` attribute; receiving records alone does not confirm that sessions appear in the UI.
+If data is missing, inspect the browser console and network requests to `/v1/traces` and `/v1/logs`. Check the endpoint, authorization header, CORS, and Content Security Policy. For self-managed deployments, confirm that your ClickStack version supports replay and the SDK's standard `session.id` attribute; receiving records alone does not confirm that sessions appear in the UI.
 
 ## Session replay and privacy {#session-replay-and-privacy}
 

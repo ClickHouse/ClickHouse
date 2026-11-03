@@ -11,7 +11,7 @@ import { Image } from "/snippets/components/Image.jsx";
 import DemoArchitecture from '/snippets/_demo.mdx';
 
 <Tabs>
-<Tab title="ClickHouse Observability">
+<Tab title="Fully managed">
 
 Collect logs and metrics from your Kubernetes cluster and send them to **ClickHouse Observability** for visualization and analysis. Monitor your existing pods, nodes, and containers.
 
@@ -284,9 +284,9 @@ Use the **Pods**, **Nodes**, and **Namespaces** tabs to explore your cluster. Yo
 </Steps>
 
 </Tab>
-<Tab title="Self configured">
+<Tab title="Self-managed">
 
-This guide allows you to collect logs and metrics from your Kubernetes system, sending them to **ClickHouse Observability — Self Configured** for visualization and analysis. For demo data we use optionally use the ClickStack fork of the official OpenTelemetry demo.
+This guide allows you to collect logs and metrics from your Kubernetes system, sending them to **ClickHouse Observability — Self-managed** for visualization and analysis. For demo data we use optionally use the ClickStack fork of the official OpenTelemetry demo.
 
 <Frame>
 <iframe src="https://www.youtube.com/embed/winI7256Ejk?si=TRThhzCJdq87xg_x" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
@@ -302,7 +302,7 @@ This guide requires you to have:
 
 ## Deployment options {#deployment-options-self-configured}
 
-This guide uses ClickHouse Observability — Self Configured, with ClickHouse and the observability UI managed in ClickHouse Cloud. The Helm deployment below also runs a local HyperDX instance to provide the collector ingestion key.
+This guide uses ClickHouse Observability — Self-managed, with ClickHouse and the observability UI managed in ClickHouse Cloud. The Helm deployment below also runs a local HyperDX instance to provide the collector ingestion key.
 
 To simulate application traffic, you can optionally deploy the ClickStack fork of the [**OpenTelemetry Demo Application**](https://github.com/ClickHouse/opentelemetry-demo). This generates telemetry data including logs, metrics, and traces. If you already have workloads running in your cluster, you can skip this step and monitor existing pods, nodes, and containers.
 
@@ -414,7 +414,7 @@ my-hyperdx-hdx-oss-v2-otel-collector-64cf698f5c-8s7qj   1/1     Running   0     
 <Step title="Access the HyperDX UI" id="access-the-hyperdx-ui-self-configured">
 
 <Note>
-Even when using ClickHouse Observability — Self Configured, the local HyperDX instance deployed in the Kubernetes cluster is still required. It provides an ingestion key managed by the OpAMP server bundled with HyperDX, with secures ingestion through the deployed OTel collector - a capability not currently available in ClickHouse Observability — Self Configured.
+Even when using ClickHouse Observability — Self-managed, the local HyperDX instance deployed in the Kubernetes cluster is still required. It provides an ingestion key managed by the OpAMP server bundled with HyperDX, with secures ingestion through the deployed OTel collector - a capability not currently available in ClickHouse Observability — Self-managed.
 </Note>
 
 For security, the service uses `ClusterIP` and isn't exposed externally by default.

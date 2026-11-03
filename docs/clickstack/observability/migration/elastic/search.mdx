@@ -2,7 +2,7 @@
 slug: /clickstack/observability/migration/elastic/search
 title: 'Searching in ClickHouse Observability and Elastic'
 sidebarTitle: 'Search'
-description: 'Compare Elastic and ClickHouse Observability search syntax, with schema guidance for managed and self-configured services.'
+description: 'Compare Elastic and ClickHouse Observability search syntax, with schema guidance for managed and self-managed services.'
 doc_type: 'guide'
 keywords: ['clickstack', 'search', 'logs', 'observability', 'full-text search']
 ---
@@ -17,7 +17,7 @@ For simple log and trace exploration, the observability UI provides a [Lucene-st
 
 The search interface supports this familiar syntax but translates it behind the scenes into efficient SQL `WHERE` clauses, making the experience familiar for Kibana users while still allowing users to leverage the power of SQL when needed. This allows you to exploit the full range of [string search functions](/reference/functions/regular-functions/string-search-functions), [similarity functions](/reference/functions/regular-functions/string-functions#stringJaccardIndex) and [date time functions](/reference/functions/regular-functions/date-time-functions) in ClickHouse.
 
-The search syntax below applies to both managed and self-configured services. Field names depend on your schema; the examples use standard OpenTelemetry log fields where applicable.
+The search syntax below applies to both managed and self-managed services. Field names depend on your schema; the examples use standard OpenTelemetry log fields where applicable.
 
 ## ClickHouse Observability search syntax vs Elasticsearch query string {#clickstack-vs-elasticsearch-query-string-self-configured}
 
@@ -51,6 +51,6 @@ The standard OpenTelemetry schema uses fields such as `Body`, `SeverityText`, an
 
 For non-nullable columns, an omitted value is represented by the column's default, such as an empty string. An empty `ServiceName` therefore does not tell you whether the sender omitted the value or explicitly sent an empty string.
 
-For self-configured deployments with custom tables, use your column names and check their defaults and nullability. [`Nullable`](/reference/data-types/nullable) columns can contain `NULL`.
+For self-managed deployments with custom tables, use your column names and check their defaults and nullability. [`Nullable`](/reference/data-types/nullable) columns can contain `NULL`.
 
 For SQL queries, `ServiceName != ''` checks for a non-empty service name. Attributes stored in a `Map` are distinct from top-level columns: use `mapContains(LogAttributes, 'log.file.path')` to check whether an attribute key exists, including when its value is empty.

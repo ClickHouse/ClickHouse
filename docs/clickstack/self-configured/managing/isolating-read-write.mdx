@@ -15,7 +15,7 @@ With ClickHouse Cloud [warehouses](/products/cloud/features/infrastructure/wareh
 
 <ScalePlanFeatureBadge feature="Compute-compute separation"/>
 
-Warehouses are a ClickHouse Cloud feature, so the setup described here applies to Self Configured ClickHouse Observability, with each side of the split sized, scaled and idled on its own over a single copy of the data.
+Warehouses are a ClickHouse Cloud feature, so the setup described here applies to Self-managed ClickHouse Observability, with each side of the split sized, scaled and idled on its own over a single copy of the data.
 
 <Note>
 **When isolation is worth it**
@@ -244,9 +244,9 @@ The MCP server can create dashboards, alerts and saved searches as well as run q
 The service evaluates an alert on the service the alert was created from, so alerts run on the same compute as the UI - the read-only service in this topology.
 
 <Note>
-**Self Configured ClickHouse Observability**
+**Self-managed ClickHouse Observability**
 
-To enable alerts, at least one user with **Service Admin** permissions must sign in to the observability UI at least once. This provisions the dedicated database user which runs alert queries, and that user is shared across every service in the warehouse. See our guide on [Granting access to Self Configured ClickHouse Observability](/clickstack/self-configured/deployment/managed#configure-access).
+To enable alerts, at least one user with **Service Admin** permissions must sign in to the observability UI at least once. This provisions the dedicated database user which runs alert queries, and that user is shared across every service in the warehouse. See our guide on [Granting access to Self-managed ClickHouse Observability](/clickstack/self-configured/deployment/managed#configure-access).
 </Note>
 
 Alert evaluation is a recurring query workload. Include it in the QPS you size the read-only service for - the [sizing model](/clickstack/self-configured/managing/estimating-resources#refining-sizing-assumptions) treats search, dashboard and alerting queries as a single aggregate figure.

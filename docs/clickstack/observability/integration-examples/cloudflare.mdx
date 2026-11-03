@@ -2,7 +2,7 @@
 slug: /clickstack/observability/integration-examples/cloudflare
 title: 'Monitoring Cloudflare logs with ClickHouse Observability'
 sidebarTitle: 'Cloudflare logs'
-description: 'Monitoring Cloudflare logs with ClickHouse Observability setup and configuration for ClickHouse Observability and self-configured deployments.'
+description: 'Ingest Cloudflare logs into self-managed ClickHouse Observability using ClickHouse Cloud and ClickPipes.'
 doc_type: 'guide'
 keywords: ['Cloudflare', 'logs', 'ClickHouse Observability', 'ClickPipes', 'S3', 'HTTP', 'Logpush']
 ---
@@ -11,14 +11,7 @@ import { Image } from "/snippets/components/Image.jsx";
 import { TrackedLink } from "/snippets/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Tabs>
-<Tab title="ClickHouse Observability">
-
-<Note>
-The ClickHouse Observability configuration for this guide is still being adapted. For the managed OTLP endpoint and authentication settings, see [Ingesting with OpenTelemetry](/clickstack/observability/ingesting-data/opentelemetry). The **Self configured** tab contains the existing self-configured instructions.
-</Note>
-
-</Tab>
-<Tab title="Self configured">
+<Tab title="Self-managed">
 
 <Info>
 **TL;DR**

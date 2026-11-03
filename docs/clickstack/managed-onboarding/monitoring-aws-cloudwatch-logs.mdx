@@ -2,9 +2,9 @@
 slug: /use-cases/observability/clickstack/monitoring-aws-cloudwatch-logs
 title: 'Monitoring AWS CloudWatch logs with ClickHouse Observability'
 sidebarTitle: 'Monitor AWS CloudWatch logs'
-description: 'Forward AWS CloudWatch logs into ClickHouse Observability on the self-configured experience via the OpenTelemetry CloudWatch receiver'
+description: 'Forward AWS CloudWatch logs into ClickHouse Observability on the self-managed experience via the OpenTelemetry CloudWatch receiver'
 doc_type: 'guide'
-keywords: ['clickstack', 'aws', 'cloudwatch', 'logs', 'self-configured', 'ClickHouse Observability', 'otel']
+keywords: ['clickstack', 'aws', 'cloudwatch', 'logs', 'self-managed', 'ClickHouse Observability', 'otel']
 unlisted: true
 custom_edit_url: null
 hide_advert: true
@@ -15,9 +15,9 @@ import { Image } from "/snippets/components/Image.jsx";
 import { TrackedLink } from "/snippets/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Note>
-**You are on the self-configured route**
+**You are on the self-managed route**
 
-You have chosen to set up ClickHouse Observability yourself, using the [self-configured experience](/clickstack/self-configured/overview). On this route you run the OpenTelemetry collector, manage ingestion into your ClickHouse Cloud service, tune the schema, and separate ingestion and query workloads with warehouses. See [OpenTelemetry collector](/clickstack/self-configured/ingesting-data/collector), [Performance tuning](/clickstack/self-configured/managing/performance-tuning), and [Isolating read and write workloads](/clickstack/self-configured/managing/isolating-read-write).
+You have chosen to set up ClickHouse Observability yourself, using the [self-managed experience](/clickstack/self-configured/overview). On this route you run the OpenTelemetry collector, manage ingestion into your ClickHouse Cloud service, tune the schema, and separate ingestion and query workloads with warehouses. See [OpenTelemetry collector](/clickstack/self-configured/ingesting-data/collector), [Performance tuning](/clickstack/self-configured/managing/performance-tuning), and [Isolating read and write workloads](/clickstack/self-configured/managing/isolating-read-write).
 
 Prefer a serverless experience where ClickHouse handles ingestion, schemas, and compute for you? Use the default ClickHouse Observability experience and follow [Collecting AWS CloudWatch logs with OpenTelemetry](/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs-serverless) instead.
 </Note>

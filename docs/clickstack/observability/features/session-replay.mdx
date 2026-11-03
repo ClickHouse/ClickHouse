@@ -16,7 +16,7 @@ Because session replays are stored in ClickHouse alongside your logs, traces, an
 ## Instrumenting your application {#instrumentation}
 
 <Tabs>
-<Tab title="ClickHouse Observability">
+<Tab title="Fully managed">
 
 ClickHouse Observability is fully compatible with OpenTelemetry, so you can send browser telemetry (traces, exceptions) using the standard OpenTelemetry JavaScript SDK or any of the [language SDKs](/clickstack/observability/ingesting-data/sdks). However, **session replay requires the Browser SDK** (`@hyperdx/browser`), which extends the OpenTelemetry SDK with session recording, console capture, and network request capture. If you only need traces without session replay, any OTel-compatible browser SDK will work with the service.
 
@@ -99,9 +99,9 @@ The `tracePropagationTargets` option is key to connecting session replays with b
 The Browser SDK also supports [masking inputs and text](/clickstack/observability/ingesting-data/sdks/browser#options) for privacy-sensitive applications, and [attaching user information](/clickstack/observability/ingesting-data/sdks/browser#attach-user-information-or-metadata) so you can search and filter sessions by user in the UI.
 
 </Tab>
-<Tab title="Self configured">
+<Tab title="Self-managed">
 
-Self Configured ClickHouse Observability is fully compatible with OpenTelemetry, so you can send browser telemetry (traces, exceptions) using the standard OpenTelemetry JavaScript SDK or any of the [language SDKs](/clickstack/observability/ingesting-data/sdks). However, **session replay requires the Browser SDK** (`@hyperdx/browser`), which extends the OpenTelemetry SDK with session recording, console capture, and network request capture. If you only need traces without session replay, any OTel-compatible browser SDK will work with the service.
+Self-managed ClickHouse Observability is fully compatible with OpenTelemetry, so you can send browser telemetry (traces, exceptions) using the standard OpenTelemetry JavaScript SDK or any of the [language SDKs](/clickstack/observability/ingesting-data/sdks). However, **session replay requires the Browser SDK** (`@hyperdx/browser`), which extends the OpenTelemetry SDK with session recording, console capture, and network request capture. If you only need traces without session replay, any OTel-compatible browser SDK will work with the service.
 
 The examples below use the Browser SDK. Adding session replay to your application takes just three steps: install the package, initialize the SDK, and all user interactions are captured automatically — no further code changes required.
 
@@ -203,14 +203,14 @@ The correlation works in the other direction too. When viewing a trace in the **
 ## How session data is stored {#data-storage}
 
 <Tabs>
-<Tab title="ClickHouse Observability">
+<Tab title="Fully managed">
 
 Session replay data is stored in a dedicated [`hyperdx_sessions`](/clickstack/self-configured/ingesting-data/schemas#sessions) table in ClickHouse, separate from logs and traces. Each session event is a row with a `Body` field containing the event payload and a `LogAttributes` map storing the event metadata. The `Body` and `LogAttributes` columns together hold the details of the actual session events that are used to reconstruct the replay.
 
-For the full table schema information, see [Tables and schemas (Self Configured reference)](/clickstack/self-configured/ingesting-data/schemas).
+For the full table schema information, see [Tables and schemas (Self-managed reference)](/clickstack/self-configured/ingesting-data/schemas).
 
 </Tab>
-<Tab title="Self configured">
+<Tab title="Self-managed">
 
 Session replay data is stored in a dedicated [`hyperdx_sessions`](/clickstack/self-configured/ingesting-data/schemas#sessions) table in ClickHouse, separate from logs and traces. Each session event is a row with a `Body` field containing the event payload and a `LogAttributes` map storing the event metadata. The `Body` and `LogAttributes` columns together hold the details of the actual session events that are used to reconstruct the replay.
 
@@ -224,7 +224,7 @@ Follow the [session replay demo](/clickstack/observability/example-datasets/sess
 
 ## Learn more {#learn-more}
 - [Session replay demo](/clickstack/observability/example-datasets/session-replay) — instrument an interactive application using your managed connection details
-- [Browser SDK reference](/clickstack/observability/ingesting-data/sdks/browser#options) — shared SDK options and advanced configuration (Self Configured reference)
+- [Browser SDK reference](/clickstack/observability/ingesting-data/sdks/browser#options) — shared SDK options and advanced configuration (Self-managed reference)
 - [Search](/clickstack/observability/features/search) — search syntax for filtering sessions and events
 - [Dashboards](/clickstack/observability/features/dashboards/overview) — build visualizations and dashboards from session and trace data
 - [Alerts](/clickstack/observability/features/alerts) — set up alerts on errors, latency, and other signals

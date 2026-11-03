@@ -1,19 +1,19 @@
 ---
 slug: /clickstack/self-configured/getting-started/managed
-title: 'Getting started with ClickHouse Observability - Self Configured'
-sidebarTitle: 'Self-configured setup'
-description: 'Getting started with ClickHouse Observability - Self Configured'
+title: 'Getting started with Self-managed ClickHouse Observability'
+sidebarTitle: 'Getting started'
+description: 'Getting started with Self-managed ClickHouse Observability'
 doc_type: 'guide'
-keywords: ['ClickHouse Observability - Self Configured', 'getting started', 'ClickHouse Cloud']
+keywords: ['Self-managed ClickHouse Observability', 'getting started', 'ClickHouse Cloud']
 ---
 
 import { Image } from "/snippets/components/Image.jsx";
 
 import ExampleOTelConfig from '/snippets/clickstack/_config_example_otel.mdx';
 
-Deploy ClickHouse Observability - Self Configured on ClickHouse Cloud, send a test event through your ingestion pipeline, and confirm that the event is available in the observability UI.
+Deploy Self-managed ClickHouse Observability on ClickHouse Cloud, send a test event through your ingestion pipeline, and confirm that the event is available in the observability UI.
 
-ClickHouse Cloud operates the ClickHouse backend while you retain control over the ingestion pipeline and schema. ClickHouse Observability - Self Configured provides:
+ClickHouse Cloud operates the ClickHouse backend while you retain control over the ingestion pipeline and schema. Self-managed ClickHouse Observability provides:
 
 - Automatic scaling of compute, independent of storage
 - Low-cost and effectively unlimited retention based on object storage
@@ -42,7 +42,7 @@ This page is showing the **OpenTelemetry** path. Use the guide selector near the
 - To start a new [OpenTelemetry Collector](/clickstack/self-configured/ingesting-data/collector), install [Docker](https://docs.docker.com/get-docker/). For Kubernetes, deploy the collector with [Helm](/clickstack/self-configured/ingesting-data/collector#configuring-the-collector-self-configured).
 - To use an existing collector, run it in the [gateway role](/clickstack/self-configured/ingesting-data/collector#collector-roles-self-configured) and ensure that its distribution includes the [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter). You will add the required configuration in this guide.
 
-## Set up ClickHouse Observability - Self Configured {#set-up-managed-clickstack}
+## Set up Self-managed ClickHouse Observability {#set-up-managed-clickstack}
 
 <Steps titleSize="h3">
 <Step title="Choose an ingestion source and collector setup" id="choose-an-ingestion-source">
@@ -186,7 +186,7 @@ The result should include the test event with the `clickstack-docs-test` service
 
 Start with an [existing Vector pipeline](/clickstack/observability/ingesting-data/vector) that can send data to ClickHouse.
 
-## Set up ClickHouse Observability - Self Configured {#set-up-managed-clickstack-vector}
+## Set up Self-managed ClickHouse Observability {#set-up-managed-clickstack-vector}
 
 <Steps titleSize="h3">
 <Step title="Choose Vector and configure ingestion" id="choose-an-ingestion-source-vector">
@@ -352,7 +352,7 @@ After creating the data source, select **Start exploring** to open the **Search*
 
 </View>
 
-You now have a ClickHouse Observability - Self Configured service, a working ingestion path, and a test event that you can inspect in the observability UI.
+You now have a Self-managed ClickHouse Observability service, a working ingestion path, and a test event that you can inspect in the observability UI.
 
 ## Next steps {#next-steps}
 
@@ -420,4 +420,4 @@ Review production and sizing guidance before using your service for sustained wo
   </Card>
 </CardGroup>
 
-For deployment tasks, see the [ClickHouse Observability - Self Configured deployment guide](/clickstack/self-configured/deployment/managed#additional-tasks).
+For deployment tasks, see the [Self-managed ClickHouse Observability deployment guide](/clickstack/self-configured/deployment/managed#additional-tasks).

@@ -3,7 +3,7 @@
   "item": "ClickHouse Observability",
   "dropdowns": [
     {
-      "dropdown": "ClickHouse Observability",
+      "dropdown": "ClickHouse Observability (Beta)",
       "icon": "/images/icons/icon-clickstack.svg",
       "pages": [
         "clickstack/observability/index",
@@ -12,13 +12,7 @@
           "group": "Introduction",
           "pages": [
             "clickstack/observability/overview",
-            {
-              "group": "Getting started",
-              "pages": [
-                "clickstack/observability/getting-started/index",
-                "clickstack/self-configured/getting-started/managed"
-              ]
-            },
+            "clickstack/observability/getting-started/index",
             {
               "group": "Sample datasets",
               "pages": [
@@ -237,9 +231,10 @@
           ]
         },
         {
-          "group": "Self configured",
+          "group": "Self-managed",
           "pages": [
             "clickstack/self-configured/overview",
+            "clickstack/self-configured/getting-started/managed",
             "clickstack/self-configured/architecture",
             "clickstack/self-configured/deployment/managed",
             {

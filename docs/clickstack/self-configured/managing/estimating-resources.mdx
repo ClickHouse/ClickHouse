@@ -2,7 +2,7 @@
 slug: /clickstack/self-configured/managing/estimating-resources
 title: 'Estimating resources'
 sidebarTitle: 'Estimating resources'
-description: 'Resource estimation guidance for Self Configured ClickHouse Observability deployments'
+description: 'Resource estimation guidance for Self-managed ClickHouse Observability deployments'
 doc_type: 'guide'
 keywords: ['ClickHouse Observability', 'resources', 'sizing', 'compute', 'production', 'capacity planning']
 ---
@@ -64,7 +64,7 @@ At 579 MB/s sustained over 30 days, raw ingest equals 1,500 TB/month. Applying t
 
 ## Isolating observability workloads {#isolating-workloads}
 
-If you're adding Self Configured ClickHouse Observability to an **existing ClickHouse Cloud service** that already supports other workloads, such as real-time application analytics, isolating observability traffic is strongly recommended.
+If you're adding Self-managed ClickHouse Observability to an **existing ClickHouse Cloud service** that already supports other workloads, such as real-time application analytics, isolating observability traffic is strongly recommended.
 
 Use [**Managed Warehouses**](/products/cloud/features/infrastructure/warehouses) to create a **child service** dedicated to observability. This allows you to:
 

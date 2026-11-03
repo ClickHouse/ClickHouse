@@ -2,7 +2,7 @@
 slug: /clickstack/self-configured/managing/production
 title: 'Going to production'
 sidebarTitle: 'Production'
-description: 'Going to production with Self Configured ClickHouse Observability'
+description: 'Going to production with Self-managed ClickHouse Observability'
 doc_type: 'guide'
 toc_max_heading_level: 2
 keywords: ['ClickHouse Observability', 'production', 'deployment', 'best practices', 'operations']
@@ -10,9 +10,9 @@ keywords: ['ClickHouse Observability', 'production', 'deployment', 'best practic
 
 import ResourceEstimation from '/snippets/_resource_estimation.mdx';
 
-When using Self Configured ClickHouse Observability in production, consider the following security, stability, and configuration practices.
+When using Self-managed ClickHouse Observability in production, consider the following security, stability, and configuration practices.
 
-[Self Configured ClickHouse Observability](/clickstack/self-configured/getting-started/managed) applies industry-standard [security practices](/products/cloud/features/security) by default - including enhanced encryption, authentication and connectivity, and managed access controls, as well as providing the following benefits:
+[Self-managed ClickHouse Observability](/clickstack/self-configured/getting-started/managed) applies industry-standard [security practices](/products/cloud/features/security) by default - including enhanced encryption, authentication and connectivity, and managed access controls, as well as providing the following benefits:
 
 - Automatic scaling of compute independent of storage
 - Low-cost and effectively unlimited retention based on object storage
@@ -21,7 +21,7 @@ When using Self Configured ClickHouse Observability in production, consider the 
 - Automated [backups](/products/cloud/features/backups/overview)
 - Seamless upgrades
 
-**Follow these [best practices](/products/cloud/guides/production-readiness) for ClickHouse Cloud when using Self Configured ClickHouse Observability.**
+**Follow these [best practices](/products/cloud/guides/production-readiness) for ClickHouse Cloud when using Self-managed ClickHouse Observability.**
 
 ## Secure ingestion {#secure-ingestion-managed}
 
@@ -35,7 +35,7 @@ It's recommended to create a dedicated user for the OTel collector for ingestion
 
 ## Configure Time To Live (TTL) {#configure-ttl-managed}
 
-Ensure the [Time To Live (TTL)](/clickstack/self-configured/managing/ttl) has been [appropriately configured](/clickstack/self-configured/managing/ttl#modifying-ttl) for your Self Configured ClickHouse Observability deployment. This controls how long data is retained for - the default of 3 days often needs to be modified.
+Ensure the [Time To Live (TTL)](/clickstack/self-configured/managing/ttl) has been [appropriately configured](/clickstack/self-configured/managing/ttl#modifying-ttl) for your Self-managed ClickHouse Observability deployment. This controls how long data is retained for - the default of 3 days often needs to be modified.
 
 ## Estimating Resources {#estimating-resources}
 
@@ -45,7 +45,7 @@ For more details on refining sizing assumptions for your environment, see ["Refi
 
 ### Isolating observability workloads {#isolating-workloads}
 
-If you're adding Self Configured ClickHouse Observability to an **existing ClickHouse Cloud service** that already supports other workloads, such as real-time application analytics, isolating observability traffic is strongly recommended.
+If you're adding Self-managed ClickHouse Observability to an **existing ClickHouse Cloud service** that already supports other workloads, such as real-time application analytics, isolating observability traffic is strongly recommended.
 
 Use [**Managed Warehouses**](/products/cloud/features/infrastructure/warehouses) to create a **child service** dedicated to observability. This allows you to:
 

@@ -1,6 +1,6 @@
 ---
 slug: /clickstack/self-configured/architecture
-description: 'Architecture of ClickHouse Observability — Self Configured'
+description: 'Architecture of ClickHouse Observability — Self-managed'
 title: 'Architecture'
 toc_max_heading_level: 2
 doc_type: 'reference'
@@ -10,7 +10,7 @@ sidebarTitle: 'Architecture'
 
 import { Image } from "/snippets/components/Image.jsx";
 
-ClickHouse Observability — Self Configured runs entirely within **ClickHouse Cloud**, providing a fully managed observability backend while preserving the same ClickStack data model and user experience.
+ClickHouse Observability — Self-managed runs entirely within **ClickHouse Cloud**, providing a fully managed observability backend while preserving the same ClickStack data model and user experience.
 
 In this model, **ClickHouse and the ClickStack UI (HyperDX)** are hosted, operated, and secured by ClickHouse Cloud. Users are responsible only for running an **OpenTelemetry (OTel) collector** to send telemetry data into the managed service.
 
@@ -18,7 +18,7 @@ In this model, **ClickHouse and the ClickStack UI (HyperDX)** are hosted, operat
 
 ### ClickHouse Cloud: the engine {#clickhouse-cloud}
 
-At the heart of ClickHouse Observability — Self Configured is ClickHouse Cloud, a serverless version of ClickHouse - a column-oriented database designed for real-time analytics at scale. It powers the ingestion and querying of observability data, enabling:
+At the heart of ClickHouse Observability — Self-managed is ClickHouse Cloud, a serverless version of ClickHouse - a column-oriented database designed for real-time analytics at scale. It powers the ingestion and querying of observability data, enabling:
 
 - Sub-second search across terabytes of events
 - Ingestion of billions of high-cardinality records per day
@@ -40,7 +40,7 @@ In addition to ClickHouse Open Source, it provides a number of benefits for obse
 
 ### OpenTelemetry collector: data ingestion {#open-telemetry-collector-managed}
 
-ClickHouse Observability — Self Configured includes a pre-configured OpenTelemetry (OTel) collector to ingest telemetry in an open, standardized way. You can send data using the OTLP protocol via:
+ClickHouse Observability — Self-managed includes a pre-configured OpenTelemetry (OTel) collector to ingest telemetry in an open, standardized way. You can send data using the OTLP protocol via:
 
 - gRPC (port `4317`)
 - HTTP (port `4318`)
@@ -62,4 +62,4 @@ ClickStack UI (HyperDX) is the user interface for ClickStack. It offers:
 
 Designed specifically for ClickHouse, HyperDX combines powerful search with intuitive workflows, enabling you to spot anomalies, investigate issues, and gain insights fast. 
 
-In ClickHouse Observability — Self Configured, the UI is integrated into the ClickHouse Cloud console authentication system.
+In ClickHouse Observability — Self-managed, the UI is integrated into the ClickHouse Cloud console authentication system.

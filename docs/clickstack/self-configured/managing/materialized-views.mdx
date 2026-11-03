@@ -2,7 +2,7 @@
 slug: /clickstack/self-configured/managing/materialized-views
 title: 'Materialized views'
 sidebarTitle: 'Materialized views'
-description: 'Tune Self Configured ClickHouse Observability performance using materialized views'
+description: 'Tune Self-managed ClickHouse Observability performance using materialized views'
 doc_type: 'guide'
 keywords: ['ClickHouse Observability', 'observability', 'materialized views', 'performance', 'optimization', 'visualizations', 'aggregations']
 ---
@@ -14,7 +14,7 @@ import { Image } from "/snippets/components/Image.jsx";
 
 ## Introduction {#introduction}
 
-Self Configured ClickHouse Observability can use [Incremental Materialized Views (IMV)](/concepts/features/materialized-views/incremental-materialized-view) to accelerate visualizations that rely on aggregation-heavy queries, such as computing average request duration per minute over time. This feature can dramatically improve query performance and is typically most beneficial for larger deployments, around 10 TB per day and above, while enabling scaling into the petabytes-per-day range. Incremental materialized views are in Beta and should be used with care.
+Self-managed ClickHouse Observability can use [Incremental Materialized Views (IMV)](/concepts/features/materialized-views/incremental-materialized-view) to accelerate visualizations that rely on aggregation-heavy queries, such as computing average request duration per minute over time. This feature can dramatically improve query performance and is typically most beneficial for larger deployments, around 10 TB per day and above, while enabling scaling into the petabytes-per-day range. Incremental materialized views are in Beta and should be used with care.
 
 <Note>
 Alerts can also benefit from materialized views, and will exploit them automatically.

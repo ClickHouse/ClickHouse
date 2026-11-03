@@ -1,6 +1,6 @@
 ---
 slug: /clickstack/self-configured/ingesting-data/collector
-description: 'Configure the ClickStack OpenTelemetry collector for self-configured deployments.'
+description: 'Configure the ClickStack OpenTelemetry collector for self-managed deployments.'
 sidebarTitle: 'OpenTelemetry collector'
 title: 'OpenTelemetry collector'
 doc_type: 'guide'
@@ -33,7 +33,7 @@ Users deploying OTel collectors in the agent role will typically use the [defaul
 
 ## Deploying the collector {#configuring-the-collector-self-configured}
 <br/>
-We recommend using the official ClickStack distribution of the collector for the gateway role when sending to Self Configured ClickHouse Observability, where possible. If you choose to bring your own, ensure it includes the [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter).
+We recommend using the official ClickStack distribution of the collector for the gateway role when sending to Self-managed ClickHouse Observability, where possible. If you choose to bring your own, ensure it includes the [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter).
 
 The collector can be deployed either via Helm (recommended for Kubernetes) or via Docker. The official [ClickStack Helm chart](https://github.com/ClickHouse/ClickStack-helm-charts) embeds the upstream [OpenTelemetry collector Helm chart](https://github.com/open-telemetry/opentelemetry-helm-charts) as a subchart with the ClickStack distribution image preconfigured. For a standalone collector deployment, the upstream chart can be used directly with the ClickStack image, as shown below.
 
@@ -48,7 +48,7 @@ helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm
 helm repo update
 ```
 
-Create a `values.yaml` configuring the ClickStack image and Self Configured ClickHouse Observability credentials:
+Create a `values.yaml` configuring the ClickStack image and Self-managed ClickHouse Observability credentials:
 
 ```yaml
 # values.yaml
@@ -103,7 +103,7 @@ ClickStack images are now published as `clickhouse/clickstack-*` (previously `do
 
 The target ClickHouse instance is configured via the environment variables `CLICKHOUSE_ENDPOINT`, `CLICKHOUSE_USER`, and `CLICKHOUSE_PASSWORD`. The `CLICKHOUSE_ENDPOINT` should be the full ClickHouse Cloud HTTP endpoint, including the protocol and port—for example, `https://99rr6dm6v3.us-central1.gcp.clickhouse.cloud:8443`.
 
-For details on retrieving your Self Configured ClickHouse Observability credentials, see [here](/products/cloud/guides/sql-console/connection-details).
+For details on retrieving your Self-managed ClickHouse Observability credentials, see [here](/products/cloud/guides/sql-console/connection-details).
 
 <Info>
 **Production user**
@@ -113,9 +113,9 @@ You should use a user with the [appropriate credentials](/clickstack/self-config
 
 ### Modifying configuration {#modifying-otel-collector-configuration-managed-self-configured}
 
-#### Configuring Self Configured ClickHouse Observability instance {#configuring-managed-clickstack-self-configured}
+#### Configuring Self-managed ClickHouse Observability instance {#configuring-managed-clickstack-self-configured}
 
-The OpenTelemetry collector can be configured to use a Self Configured ClickHouse Observability instance via the environment variables `CLICKHOUSE_ENDPOINT`, `CLICKHOUSE_USER` and `CLICKHOUSE_PASSWORD`. How these are set depends on your deployment method:
+The OpenTelemetry collector can be configured to use a Self-managed ClickHouse Observability instance via the environment variables `CLICKHOUSE_ENDPOINT`, `CLICKHOUSE_USER` and `CLICKHOUSE_PASSWORD`. How these are set depends on your deployment method:
 
 <Tabs>
 
@@ -249,7 +249,7 @@ We additionally recommend:
 
 ### Creating an ingestion user {#creating-an-ingestion-user-self-configured}
 
-We recommend creating a dedicated database and user for the OTel collector for ingestion into Self Configured ClickHouse Observability. This should have the ability to create and insert into the [tables used by the collector](/clickstack/self-configured/ingesting-data/schemas).
+We recommend creating a dedicated database and user for the OTel collector for ingestion into Self-managed ClickHouse Observability. This should have the ability to create and insert into the [tables used by the collector](/clickstack/self-configured/ingesting-data/schemas).
 
 ```sql
 CREATE DATABASE otel;

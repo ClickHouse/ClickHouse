@@ -2,9 +2,9 @@
 slug: /use-cases/observability/clickstack/setting-up-your-opentelemetry-collector
 title: 'Setting up your OpenTelemetry Collector'
 sidebarTitle: 'Set up your OpenTelemetry Collector'
-description: 'Set up the OpenTelemetry Collector for the self-configured experience of ClickHouse Observability'
+description: 'Set up the OpenTelemetry Collector for the self-managed experience of ClickHouse Observability'
 doc_type: 'guide'
-keywords: ['clickstack', 'opentelemetry', 'collector', 'self-configured', 'ClickHouse Observability', 'gateway', 'telemetrygen']
+keywords: ['clickstack', 'opentelemetry', 'collector', 'self-managed', 'ClickHouse Observability', 'gateway', 'telemetrygen']
 unlisted: true
 custom_edit_url: null
 hide_advert: true
@@ -16,15 +16,15 @@ import ConfirmInUI from '/snippets/clickstack/_confirm_in_ui.mdx';
 import { AgentPrompt } from '/snippets/components/AgentPrompt/AgentPrompt.jsx';
 
 <Note>
-**You are on the self-configured route**
+**You are on the self-managed route**
 
-You have chosen to set up ClickHouse Observability yourself, using the [self-configured experience](/clickstack/self-configured/overview). On this route you run the OpenTelemetry collector, manage ingestion into your ClickHouse Cloud service, tune the schema, and separate ingestion and query workloads with warehouses. See [OpenTelemetry collector](/clickstack/self-configured/ingesting-data/collector), [Performance tuning](/clickstack/self-configured/managing/performance-tuning), and [Isolating read and write workloads](/clickstack/self-configured/managing/isolating-read-write).
+You have chosen to set up ClickHouse Observability yourself, using the [self-managed experience](/clickstack/self-configured/overview). On this route you run the OpenTelemetry collector, manage ingestion into your ClickHouse Cloud service, tune the schema, and separate ingestion and query workloads with warehouses. See [OpenTelemetry collector](/clickstack/self-configured/ingesting-data/collector), [Performance tuning](/clickstack/self-configured/managing/performance-tuning), and [Isolating read and write workloads](/clickstack/self-configured/managing/isolating-read-write).
 
 Prefer a serverless experience where ClickHouse handles ingestion, schemas, and compute for you? Use the default ClickHouse Observability experience and follow the [Getting started guide](/clickstack/observability/getting-started) instead.
 </Note>
 
 
-This guide walks you through deploying an OpenTelemetry collector against your existing ClickHouse Observability service, or adapting your existing collector, before verifying that data is flowing through. On the self-configured experience you run this collector yourself: it receives OTLP from your applications and agents and writes into your ClickHouse Cloud service.
+This guide walks you through deploying an OpenTelemetry collector against your existing ClickHouse Observability service, or adapting your existing collector, before verifying that data is flowing through. On the self-managed experience you run this collector yourself: it receives OTLP from your applications and agents and writes into your ClickHouse Cloud service.
 
 Install the official ClickHouse agent skills before using the setup assistant:
 
@@ -41,7 +41,7 @@ clickhousectl skills --detected-only
 To target one agent, pass `--agent` (for example, `--agent claude`). Add `--global` to install into your home directory rather than the current project.
 
 <AgentPrompt
-  prompt="Use the clickstack-otel-collector skill to wire an OpenTelemetry collector into my self-configured ClickHouse Observability service."
+  prompt="Use the clickstack-otel-collector skill to wire an OpenTelemetry collector into my self-managed ClickHouse Observability service."
   description="Your agent will set up the ClickStack OpenTelemetry collector for you. Works with Claude Code, Cursor, Codex, and other coding agents."
   repositoryUrl="https://github.com/ClickHouse/agent-skills"
   outline={[

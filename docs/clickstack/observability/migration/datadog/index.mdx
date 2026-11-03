@@ -2,7 +2,7 @@
 slug: /clickstack/observability/migration/datadog
 title: 'Migrating from Datadog'
 sidebarTitle: 'Migrating from Datadog'
-description: 'Send logs, traces, and metrics from existing Datadog agents to managed or self-configured ClickHouse Observability.'
+description: 'Send logs, traces, and metrics from existing Datadog agents to managed or self-managed ClickHouse Observability.'
 show_related_blogs: true
 doc_type: 'guide'
 keywords: ['Datadog', 'Datadog agent', 'migration', 'ClickHouse Observability']
@@ -17,14 +17,14 @@ Send logs, traces, and metrics from your existing Datadog agents to ClickHouse O
 
 ## Prerequisites {#prerequisites}
 
-- A managed or self-configured ClickHouse Observability service.
+- A managed or self-managed ClickHouse Observability service.
 - A running Datadog Agent collecting the signals you want to migrate. For traces, your application must already send traces to that Agent through a Datadog SDK.
 - Network access from the Agent to your Datadog receiver endpoint.
 
 ## Set up your destination {#connection-details}
 
 <Tabs>
-<Tab title="ClickHouse Observability">
+<Tab title="Fully managed">
 
 Open your service and navigate to **Team Settings → Data → Managed Telemetry**. Copy the **OTLP HTTP endpoint** and **API key**.
 
@@ -40,7 +40,7 @@ The Datadog endpoint uses the same hostname with port `8126`. No additional coll
 | `logs_no_ssl` | `false` |
 
 </Tab>
-<Tab title="Self configured">
+<Tab title="Self-managed">
 
 The [ClickHouse Observability Collector](/clickstack/self-configured/ingesting-data/collector) includes the [Datadog receiver](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/datadogreceiver). Configure the receiver and connect it to your logs, traces, and metrics pipelines.
 

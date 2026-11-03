@@ -11,7 +11,7 @@ keywords: ['clickstack', 'telemetrygen', 'synthetic data', 'OpenTelemetry', 'tes
 import { Image } from "/snippets/components/Image.jsx";
 
 <Tabs>
-<Tab title="ClickHouse Observability">
+<Tab title="Fully managed">
 
 [`telemetrygen`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/cmd/telemetrygen) is the OpenTelemetry Collector Contrib data generator. It emits synthetic OTLP logs, traces and metrics, and exposes flags that let you shape the data: multiple services, log severities, span statuses and child spans, and different metric types. Use it to send test data to fully managed ClickHouse Observability and explore the results in Search and Chart Explorer.
 
@@ -133,7 +133,7 @@ Open your ClickHouse Observability service. In the `Search` view, set the time r
 </Steps>
 
 </Tab>
-<Tab title="Self configured">
+<Tab title="Self-managed">
 
 [`telemetrygen`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/cmd/telemetrygen) is the OpenTelemetry Collector Contrib data generator. It emits synthetic OTLP logs, traces and metrics, and exposes flags that let you shape the data: multiple services, log severities, span statuses and child spans, and different metric types. Use it to confirm that a ClickStack OpenTelemetry collector is accepting data and that varied, realistic events surface in the observability UI.
 
@@ -142,7 +142,7 @@ This guide assumes the collector is already running with OTLP endpoints on `4317
 <Steps>
 <Step title="Prerequisites" id="prerequisites-managed-self-configured">
 
-This guide assumes you have completed the [Getting Started Guide for ClickHouse Observability — Self Configured](/clickstack/self-configured/getting-started/managed) and have an OpenTelemetry collector running with the OTLP gRPC (`4317`) and HTTP (`4318`) endpoints reachable from the machine you run `telemetrygen` on. If you [secured the collector](/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured) with an `OTLP_AUTH_TOKEN`, keep that value handy.
+This guide assumes you have completed the [Getting Started Guide for ClickHouse Observability — Self-managed](/clickstack/self-configured/getting-started/managed) and have an OpenTelemetry collector running with the OTLP gRPC (`4317`) and HTTP (`4318`) endpoints reachable from the machine you run `telemetrygen` on. If you [secured the collector](/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured) with an `OTLP_AUTH_TOKEN`, keep that value handy.
 </Step>
 <Step title="Install telemetrygen" id="install-telemetrygen-managed-self-configured">
 

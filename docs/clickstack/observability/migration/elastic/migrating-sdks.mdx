@@ -2,7 +2,7 @@
 slug: /clickstack/observability/migration/elastic/migrating-sdks
 title: 'Migrating SDKs from Elastic'
 sidebarTitle: 'Migrating SDKs'
-description: 'Migrate Elastic SDK instrumentation and configure EDOT exports for managed or self-configured ClickHouse Observability.'
+description: 'Migrate Elastic SDK instrumentation and configure EDOT exports for managed or self-managed ClickHouse Observability.'
 show_related_blogs: true
 keywords: ['ClickHouse Observability']
 doc_type: 'guide'
@@ -34,7 +34,7 @@ export OTEL_EXPORTER_OTLP_HEADERS="Authorization=ApiKey P....l"
 To migrate, update the OTLP connection settings in your application's environment and restart the application. The examples below use OTLP HTTP with protobuf encoding.
 
 <Tabs>
-<Tab title="ClickHouse Observability">
+<Tab title="Fully managed">
 
 Copy the OTLP HTTP endpoint and API key from **Team Settings → Data → Managed Telemetry**:
 
@@ -48,7 +48,7 @@ export OTEL_EXPORTER_OTLP_HEADERS='authorization=Bearer%20YOUR_API_KEY'
 Use the exact endpoint, including its port, without a signal suffix such as `/v1/traces`. The header value uses `%20` to encode the space after `Bearer`. See [Sending OpenTelemetry data](/clickstack/observability/ingesting-data/opentelemetry) for connection details.
 
 </Tab>
-<Tab title="Self configured">
+<Tab title="Self-managed">
 
 Point the SDK at your receiving collector's reachable OTLP HTTP endpoint:
 

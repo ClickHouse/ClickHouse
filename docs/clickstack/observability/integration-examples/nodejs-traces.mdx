@@ -2,7 +2,7 @@
 slug: /clickstack/observability/integration-examples/nodejs-traces
 title: 'Monitoring Node.js traces with ClickHouse Observability'
 sidebarTitle: 'Node.js traces'
-description: 'Monitoring Node.js traces with ClickHouse Observability setup and configuration for ClickHouse Observability and self-configured deployments.'
+description: 'Monitoring Node.js traces with ClickHouse Observability setup and configuration for ClickHouse Observability and self-managed deployments.'
 doc_type: 'guide'
 keywords: ['Node.js', 'traces', 'OTEL', 'ClickHouse Observability', 'distributed tracing']
 ---
@@ -20,7 +20,10 @@ Capture traces from your Node.js application with OpenTelemetry automatic instru
 
 ### Connection details {#connection-details}
 
-For a managed service, open ClickHouse Observability and go to **Team Settings → Data → Managed Telemetry**. Copy your OTLP HTTP endpoint and API key. You can use **Copy connection details** to copy the configuration, or **Reveal key** to view the masked key.
+<Tabs>
+<Tab title="Fully managed">
+
+Open ClickHouse Observability and go to **Team Settings → Data → Managed Telemetry**. Copy your OTLP HTTP endpoint and API key. You can use **Copy connection details** to copy the configuration, or **Reveal key** to view the masked key.
 
 <Image img="/images/clickstack/getting-started/observability-managed-telemetry.png" alt="Managed Telemetry connection details"/>
 
@@ -33,7 +36,18 @@ export OTEL_EXPORTER_OTLP_AUTHORIZATION='Bearer YOUR_API_KEY'
 
 Replace the placeholders with the exact endpoint, including its port, and API key from your service. Use the base HTTP endpoint without a `/v1/traces` suffix; the exporter appends the signal path.
 
-For self-configured deployments, use your collector's reachable OTLP HTTP endpoint (for example, `http://YOUR_COLLECTOR_HOST:4318`) and authentication settings. If your collector does not require authentication, omit the exporter's `headers` block from the configurations below. See the [self-configured getting-started guide](/clickstack/self-configured/getting-started/managed) for setup guidance.
+</Tab>
+<Tab title="Self-managed">
+
+Use your collector's reachable OTLP HTTP endpoint (for example, `http://YOUR_COLLECTOR_HOST:4318`) and authentication settings. If your collector does not require authentication, omit the exporter's `headers` block from the configurations below. See the [self-managed getting-started guide](/clickstack/self-configured/getting-started/managed) for setup guidance.
+
+```bash
+export OTEL_EXPORTER_OTLP_ENDPOINT='http://YOUR_COLLECTOR_HOST:4318'
+export OTEL_EXPORTER_OTLP_AUTHORIZATION='YOUR_INGESTION_KEY'
+```
+
+</Tab>
+</Tabs>
 
 ## Integration with an existing Node.js application {#existing-nodejs}
 
@@ -64,7 +78,7 @@ export OTEL_LOGS_EXPORTER='none'
 node --require @opentelemetry/auto-instrumentations-node/register app.js
 ```
 
-Replace `app.js` with your application entry point. The preload initializes instrumentation before your application imports its libraries. For a self-configured endpoint without authentication, omit the headers export and run `unset OTEL_EXPORTER_OTLP_HEADERS`.
+Replace `app.js` with your application entry point. The preload initializes instrumentation before your application imports its libraries. For a self-managed endpoint without authentication, omit the headers export and run `unset OTEL_EXPORTER_OTLP_HEADERS`.
 
 The endpoint must be reachable from the application. If it runs in a container, `localhost` refers to that container.
 
