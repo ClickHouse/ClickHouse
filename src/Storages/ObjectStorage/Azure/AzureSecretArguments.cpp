@@ -51,7 +51,8 @@ AzureConnectionValue classifyAzureConnectionValue(const String & value)
     const size_t authority_end = std::min(value.find('/', authority_begin), value.length());
     if (authority_end == authority_begin || value.find('@', authority_begin) < authority_end)
         return AzureConnectionValue::Unmaskable;
-    return AzureConnectionValue::PlainStorageAccountURL;
+    /// `maskAzureConnectionString` and the Azure parser read a value not starting with `http` as a connection string.
+    return value.starts_with("http") ? AzureConnectionValue::PlainStorageAccountURL : AzureConnectionValue::ConnectionString;
 }
 
 bool maskAzureConnectionString(FunctionSecretArgumentsFinder & finder, ssize_t url_arg_idx, bool argument_is_named = false, size_t start = 0)

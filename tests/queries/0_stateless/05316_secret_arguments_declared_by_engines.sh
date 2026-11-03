@@ -74,6 +74,10 @@ CREATE TABLE test_azure (key UInt64) ENGINE = AzureBlobStorage('https://account.
 CREATE TABLE test_azure (key UInt64) ENGINE = AzureBlobStorage('https://account.blob.core.windows.net', 'container', 'blob', 'CSV', extra_credentials(client_id = 'id', client_secret = 'plain_client_secret', role_arn = 'plain_role_arn'))
 CREATE TABLE test_azure (key UInt64) ENGINE = AzureBlobStorage(azure_conf, sas_token = 'plain_sas_signature')
 CREATE TABLE test_azure (key UInt64) ENGINE = AzureBlobStorage('https://account.blob.core.windows.net/container/blob.csv', 'sp=r&sig=plain_sas_signature' = 'x')
+CREATE TABLE test_azure (key UInt64) ENGINE = AzureBlobStorage('HTTPS://account.blob.core.windows.net/;AccountKey=plain_account_key', 'container', 'blob', 'account', 'plain_account_key_2')
+CREATE TABLE test_azure (key UInt64) ENGINE = AzureBlobStorage(azure_conf, storage_account_url = 'HTTPS://account.blob.core.windows.net/;AccountKey=plain_account_key', account_key = 'plain_account_key_2')
+BACKUP TABLE t TO AzureBlobStorage(azure_conf, storage_account_url = 'HTTPS://account.blob.core.windows.net/;AccountKey=plain_account_key', account_key = 'plain_account_key_2')
+BACKUP TABLE t TO AzureBlobStorage('HTTPS://account.blob.core.windows.net/;AccountKey=plain_account_key', 'container', 'blob', 'account', 'plain_account_key_2')
 CREATE TABLE test_azure_queue (key UInt64) ENGINE = AzureQueue('https://account.blob.core.windows.net', 'container', '*', 'account', 'plain_account_key' = 'x')
 CREATE TABLE test_azure_queue (key UInt64) ENGINE = AzureQueue('https://account.blob.core.windows.net', 'container', '*', 'CSV') SETTINGS after_processing_move_connection_string = 'HTTPS://account.blob.core.windows.net/?sig=plain_sas_signature'
 CREATE TABLE test_azure_queue (key UInt64) ENGINE = AzureQueue('https://account.blob.core.windows.net', 'container', '*', 'CSV') SETTINGS after_processing_move_connection_string = 'https://user:plain_password=x@account.blob.core.windows.net/'
