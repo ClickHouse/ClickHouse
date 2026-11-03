@@ -108,7 +108,10 @@ void checkObjectStorageQueueAzureMoveDestinationHost(
     {
         AzureBlobStorage::ConnectionParams connection_params;
         AzureBlobStorage::processURL(move_connection_string, move_container, connection_params.endpoint, connection_params.auth_method);
-        filter.checkURL(Poco::URI(connection_params.getConnectionURL()));
+        /// Without the query: a connection string can carry a SAS, which the message of `checkURL` must not show.
+        String url = connection_params.getConnectionURL();
+        url = url.substr(0, url.find_first_of("?#"));
+        filter.checkURL(Poco::URI(url));
     }
 #endif
 }
