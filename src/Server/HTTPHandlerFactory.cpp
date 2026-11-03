@@ -1,6 +1,7 @@
 #include <Server/HTTP/HTTPRequestHandler.h>
 #include <Server/HTTPHandler.h>
 #include <Server/HTTPHandlerFactory.h>
+#include <Server/HTTPQueryConstructor.h>
 #include <Server/IServer.h>
 #include <Server/IndexRequestHandler.h>
 #include <Server/InterserverIOHTTPHandler.h>
@@ -627,7 +628,8 @@ void addDefaultHandlersFactory(
         HTTPHandlerConnectionConfig connection_config;
         connection_config.default_session_user = default_session_user;
         return std::make_unique<DynamicQueryHandler>(
-            server, connection_config, "query", std::nullopt, "", path_hints, /* parse_http_path_= */ true, /* allow_aws_signature_v4_= */ true);
+            server, connection_config, "query", std::nullopt, "", path_hints,
+            /* parse_http_path_= */ true, /* allow_path_table_uploads_= */ false, /* allow_aws_signature_v4_= */ true);
     };
     auto query_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(std::move(dynamic_creator));
     query_handler->addFilter([](const auto & request)
@@ -672,7 +674,8 @@ void addCatchAllQueryHandlerFactory(
         HTTPHandlerConnectionConfig connection_config;
         connection_config.default_session_user = default_session_user;
         return std::make_unique<DynamicQueryHandler>(
-            server, connection_config, "query", std::nullopt, "", path_hints, /* parse_http_path_= */ true, /* allow_aws_signature_v4_= */ true);
+            server, connection_config, "query", std::nullopt, "", path_hints,
+            /* parse_http_path_= */ true, /* allow_path_table_uploads_= */ true, /* allow_aws_signature_v4_= */ true);
     };
     /// Path-as-file routing is gated by a single server-level flag (`http_allow_path_requests`,
     /// default on), evaluated here at routing time — before authentication, where the connecting
@@ -691,12 +694,12 @@ void addCatchAllQueryHandlerFactory(
     query_handler->addFilter([allow_path_requests](const auto & request)
         {
             const auto & method = request.getMethod();
-            bool is_get_or_head = method == Poco::Net::HTTPRequest::HTTP_GET
-                               || method == Poco::Net::HTTPRequest::HTTP_HEAD;
-            bool is_post_or_options = method == Poco::Net::HTTPRequest::HTTP_POST
-                                   || method == Poco::Net::HTTPRequest::HTTP_OPTIONS;
-            /// `PUT /database/table.format` uploads a file into a table (see `HTTPHandler::processQuery`).
-            bool is_put = method == Poco::Net::HTTPRequest::HTTP_PUT;
+            const bool is_get_or_head = method == Poco::Net::HTTPRequest::HTTP_GET
+                                     || method == Poco::Net::HTTPRequest::HTTP_HEAD;
+            const bool is_post_or_options = method == Poco::Net::HTTPRequest::HTTP_POST
+                                         || method == Poco::Net::HTTPRequest::HTTP_OPTIONS;
+            const bool is_put = method == Poco::Net::HTTPRequest::HTTP_PUT
+                             && !mayBeParsedAsMultipartFormData(request);
 
             /// An `OPTIONS` request is a CORS preflight (and the web-UI connectivity health-check).
             /// `HTTPHandler::handleRequest` answers it via `processOptionsRequest` before
@@ -718,6 +721,12 @@ void addCatchAllQueryHandlerFactory(
             /// `HTTPHandler::processQuery`; this server-level flag is only the routing-time gate.)
             if (!allow_path_requests)
                 return false;
+
+            if (is_put)
+            {
+                if (!hasHTTPPathFormatSuffix(request.getURI()))
+                    return false;
+            }
 
             /// Skip the path-as-file routing for clients sending an `Authorization` header with a
             /// scheme ClickHouse does not implement. The dynamic handler would otherwise reject the

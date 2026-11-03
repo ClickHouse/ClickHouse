@@ -343,21 +343,37 @@ curl 'http://localhost:8123/my_db/hits.CSV?query=SELECT+a,+b'
 
 If the query already contains a `FROM` clause, the path component only supplies the download filename.
 
-### Upload files into tables {#table-as-file-upload}
+### Upload data to a path table {#path-table-inserts}
 
-Available in ClickHouse 26.11 and later.
-
-With `http_allow_table_as_file` enabled, a `PUT` request to `/table.format.compression` inserts the request body into the table, as `INSERT INTO table FORMAT format`. The compression extension describes the request body. If the path has no format extension, `default_format` is used, and `TabSeparated` if it is empty. The `input_format` and `format` settings take precedence over the format in the path, as for any `INSERT`.
+An HTTP `PUT` request to `/database/table.format` inserts the request body into an existing table. The path extension supplies the input format by default. As with a regular `INSERT`, the `input_format` setting takes precedence over the path format, followed by the bidirectional `format` setting. The request must contain at least one decoded byte and must not include a `query` parameter. This is useful when a file name already contains both the target table and the input format:
 
 ```bash
-# INSERT INTO my_db.hits FORMAT CSV, with the data from hits.csv
-curl -T hits.csv 'http://localhost:8123/my_db/hits.csv'
+printf '1,"one"\n2,"two"\n' \
+  | curl -X PUT -H 'Content-Type: text/csv' --data-binary @- \
+      'http://localhost:8123/my_db/hits.CSV'
 
-# The same with gzip-compressed data
-curl -T hits.csv.gz 'http://localhost:8123/my_db/hits.csv.gz'
+printf '{"a":3,"b":"three"}\n' \
+  | curl -X PUT -H 'Content-Type: application/json' --data-binary @- \
+      'http://localhost:8123/my_db/hits.JSONEachRow'
 ```
 
-A `PUT` request must name a table in the path, and it cannot be combined with the `query` parameter or with filters. It requires the `Content-Length` header or the chunked transfer encoding, so that a dropped connection is not accepted as a partial upload.
+The table must already exist. For a database-prefixed upload, `http_allow_database_as_path` enables the
+`/database/table.format` path. An unqualified `/table.format` upload still requires
+`http_allow_table_as_file`. The request body may use a compression suffix such as `.CSV.gz`; the server
+decompresses it before inserting the rows. Path-table `PUT` uploads use normal `INSERT` semantics, so repeating
+the same request can insert the rows again. Auto-creation, schema inference, and multipart uploads are not
+supported. Use the regular [`INSERT` over HTTP](#insert-queries) form when the query or upload behavior needs
+to be customized.
+
+The final path component is percent-decoded after path splitting, so an encoded format dot such as
+`hits%2ECSV` is also accepted.
+
+```bash
+# The path suffix describes the compressed request body.
+gzip -c rows.csv \
+  | curl -X PUT --data-binary @- \
+      'http://localhost:8123/my_db/hits.CSV.gz'
+```
 
 ### Access tables with S3 clients {#s3-compatible-access}
 
@@ -398,7 +414,7 @@ The following restrictions apply:
 
 ## Insert queries over HTTP/HTTPS {#insert-queries}
 
-The `POST` method of transmitting data is necessary for `INSERT` queries. In this case, you can write the beginning of the query in the URL parameter, and use POST to pass the data to insert. The data to insert could be, for example, a tab-separated dump from MySQL. In this way, the `INSERT` query replaces `LOAD DATA LOCAL INFILE` from MySQL.
+The traditional `POST` method of transmitting data is useful when the query needs to be supplied explicitly. You can write the beginning of the query in the URL parameter, and use POST to pass the data to insert. The data to insert could be, for example, a tab-separated dump from MySQL. In this way, the `INSERT` query replaces `LOAD DATA LOCAL INFILE` from MySQL.
 
 ### Examples {#examples}
 
