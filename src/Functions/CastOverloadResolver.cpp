@@ -214,8 +214,11 @@ public:
             return std::make_unique<CastOverloadResolverImpl>(context_, cast_type, internal, diagnostic, false /*keep_nullable*/, DataTypeValidationSettings{});
 
         const auto & settings_ref = context_->getSettingsRef();
+        DataTypeValidationSettings validation_settings(settings_ref);
+        /// The setting only gates the columns of tables, `FixedArray` values can be used in queries without it.
+        validation_settings.allow_experimental_fixed_array_type = true;
         return std::make_unique<CastOverloadResolverImpl>(
-            context_, cast_type, internal, diagnostic, settings_ref[Setting::cast_keep_nullable], DataTypeValidationSettings(settings_ref));
+            context_, cast_type, internal, diagnostic, settings_ref[Setting::cast_keep_nullable], validation_settings);
     }
 
     static FunctionBasePtr createInternalCast(

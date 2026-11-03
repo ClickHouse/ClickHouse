@@ -48,6 +48,7 @@ SELECT r, e FROM (SELECT [[1, 2], [3, 4]]::FixedArray(2, 2, UInt8) AS m, ['a', '
 
 SELECT '-- table';
 DROP TABLE IF EXISTS t_fixed_array;
+SET allow_experimental_fixed_array_type = 1;
 CREATE TABLE t_fixed_array (id UInt64, v FixedArray(4, Float32), m FixedArray(2, 3, UInt8), s FixedArray(2, String), n FixedArray(2, Nullable(Int32)))
 ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
 INSERT INTO t_fixed_array VALUES (1, [1, 2, 3, 4], [[1, 2, 3], [4, 5, 6]], ['a', 'b'], [1, NULL]), (2, [5, 6, 7, 8], [[7, 8, 9], [10, 11, 12]], ['c', 'dd'], [NULL, 2]);

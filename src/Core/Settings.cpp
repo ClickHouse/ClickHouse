@@ -10769,6 +10769,12 @@ Enable functions for funnel analysis.
     DECLARE(Bool, allow_experimental_nlp_functions, false, R"(
 Enable experimental functions for natural language processing.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_fixed_array_type, false, R"(
+Allows creation of columns of the experimental [FixedArray](/reference/data-types/fixedarray) data type in tables
+(with `CREATE TABLE` and `ALTER TABLE`). It does not affect the use of `FixedArray` in queries, and the tables
+that already have such columns can be attached and used regardless of this setting.
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New experimental setting for the `FixedArray` data type."}) \
     DECLARE(Bool, allow_experimental_hash_functions, false, R"(
 Enable experimental hash functions
 )", EXPERIMENTAL) \

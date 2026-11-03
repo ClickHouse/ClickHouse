@@ -155,6 +155,12 @@ void registerDataTypeFixedArray(DataTypeFactory & factory)
         .description = R"DOCS_MD(
 An array of exactly `N` items of type `T`. The size is a part of the type.
 
+:::note
+`FixedArray` is an experimental feature. Creating columns of this type in tables (with `CREATE TABLE` or `ALTER TABLE`) requires
+the setting [allow_experimental_fixed_array_type](/reference/settings/session-settings#allow_experimental_fixed_array_type) to be enabled.
+Values of this type can be used in queries without it, and the tables that already have such columns can be attached regardless of the setting.
+:::
+
 A multidimensional array (a tensor) can be written by listing all its dimensions: `FixedArray(N, M, T)` is the same type as `FixedArray(N, FixedArray(M, T))`.
 The name of the type is always written in the first form.
 
