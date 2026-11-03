@@ -41,6 +41,8 @@ def clear_workloads_and_resources():
         drop workload if exists production;
         drop workload if exists development;
         drop workload if exists admin;
+        drop workload if exists victim;
+        drop workload if exists competitor;
         drop workload if exists all;
         drop resource if exists cpu;
     """
