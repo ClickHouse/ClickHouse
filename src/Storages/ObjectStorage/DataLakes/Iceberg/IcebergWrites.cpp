@@ -490,7 +490,10 @@ ManifestPartitionSummary::ManifestPartitionSummary(const DataTypes & partition_t
 {
     fields.reserve(partition_types.size());
     for (const auto & type : partition_types)
-        fields.push_back(FieldSummary{.type = type});
+    {
+        auto & field = fields.emplace_back();
+        field.type = type;
+    }
 }
 
 void ManifestPartitionSummary::add(const Row & partition_value)
