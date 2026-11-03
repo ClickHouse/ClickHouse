@@ -20,6 +20,10 @@ DROP TABLE IF EXISTS t_lambda_key;
 DROP TABLE IF EXISTS t_lambda_capture;
 DROP TABLE IF EXISTS t_lambda_src;
 DROP TABLE IF EXISTS t_lambda_dst;
+DROP TABLE IF EXISTS t_lambda_quoted;
+DROP TABLE IF EXISTS t_lambda_quoted_src;
+DROP TABLE IF EXISTS t_lambda_quoted_dst;
+DROP TABLE IF EXISTS t_lambda_element;
 DROP TABLE IF EXISTS t_transfer_src;
 DROP TABLE IF EXISTS t_transfer_dst;
 DROP TABLE IF EXISTS t_transfer_plain_src;
@@ -98,6 +102,19 @@ INSERT INTO t_lambda_src VALUES ('2026-01-01 00:00:00', ['2026-01-01 02:00:00'])
 ALTER TABLE t_lambda_dst ATTACH PARTITION tuple() FROM t_lambda_src;
 SELECT 'lambda parameter attached', count() FROM t_lambda_dst;
 
+-- A quoted `n.dt` is one identifier, the column of a `Nested` here, also inside a lambda with a parameter `n`, while an unquoted
+-- `n.dt` there is an element of the parameter.
+CREATE TABLE t_lambda_quoted (id UInt64, n Nested(dt DateTime('UTC'))) ENGINE = MergeTree ORDER BY arraySum(arrayMap(n -> toHour(`n.dt`[1]), [0]));
+ALTER TABLE t_lambda_quoted MODIFY COLUMN `n.dt` Array(DateTime('Asia/Tokyo')); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+CREATE TABLE t_lambda_quoted_src (id UInt64, n Nested(dt DateTime('UTC'))) ENGINE = MergeTree ORDER BY arraySum(arrayMap(n -> toHour(`n.dt`[1]), [0]));
+CREATE TABLE t_lambda_quoted_dst (id UInt64, n Nested(dt DateTime('Asia/Tokyo'))) ENGINE = MergeTree ORDER BY arraySum(arrayMap(n -> toHour(`n.dt`[1]), [0]));
+INSERT INTO t_lambda_quoted_src VALUES (1, ['2026-01-01 02:00:00']);
+ALTER TABLE t_lambda_quoted_dst ATTACH PARTITION tuple() FROM t_lambda_quoted_src; -- { serverError INCOMPATIBLE_COLUMNS }
+CREATE TABLE t_lambda_element (`n.dt` DateTime('UTC'), arr Array(Tuple(dt DateTime('UTC')))) ENGINE = MergeTree ORDER BY arrayMap(n -> toHour(n.dt), arr);
+ALTER TABLE t_lambda_element MODIFY COLUMN `n.dt` DateTime('Asia/Tokyo');
+ALTER TABLE t_lambda_element MODIFY COLUMN arr Array(Tuple(dt DateTime('Asia/Tokyo'))); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+SELECT 'lambda element', type FROM system.columns WHERE database = currentDatabase() AND table = 't_lambda_element' AND name = 'n.dt';
+
 -- A column used in the key as is, and a column outside the keys, can still change their time zone.
 CREATE TABLE t_plain_key (id UInt64, dt DateTime('UTC')) ENGINE = MergeTree ORDER BY dt;
 INSERT INTO t_plain_key VALUES (1, '2026-01-01 02:00:00');
@@ -141,3 +158,7 @@ DROP TABLE t_lambda_key;
 DROP TABLE t_lambda_capture;
 DROP TABLE t_lambda_src;
 DROP TABLE t_lambda_dst;
+DROP TABLE t_lambda_quoted;
+DROP TABLE t_lambda_quoted_src;
+DROP TABLE t_lambda_quoted_dst;
+DROP TABLE t_lambda_element;

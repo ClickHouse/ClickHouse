@@ -5960,18 +5960,14 @@ bool changesTimeZone(const DataTypePtr & from, const DataTypePtr & to)
 }
 
 /// Adds the identifiers of `ast` that refer to columns, not to the parameters of an enclosing lambda, such as `dt` of
-/// `arrayMap(dt -> toHour(dt), arr)`, nor to their elements, such as `dt.a`.
+/// `arrayMap(dt -> toHour(dt), arr)`, nor to their elements, such as `dt.a`. The first part of the identifier tells it: a quoted
+/// `dt.a` is one part and names a column.
 void collectFreeIdentifiers(const ASTPtr & ast, const NameSet & lambda_parameters, NameSet & result)
 {
     if (const auto * identifier = ast->as<ASTIdentifier>())
     {
-        const auto & name = identifier->name();
-        const bool is_parameter = std::ranges::any_of(lambda_parameters, [&](const String & parameter)
-        {
-            return name == parameter || name.starts_with(parameter + ".");
-        });
-        if (!is_parameter)
-            result.insert(name);
+        if (!lambda_parameters.contains(identifier->name_parts.front()))
+            result.insert(identifier->name());
         return;
     }
 
