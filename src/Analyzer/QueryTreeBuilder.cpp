@@ -251,31 +251,29 @@ void applyQueryLevelSettings(
     set_query.changes.removeSetting("limit");
     set_query.changes.removeSetting("offset");
 
-    /// A nested `SETTINGS` clause (a subquery, a CTE, a view's inner query) used to be applied to
-    /// the per-node context unchecked, letting a user override `readonly`, `CONST` and `MIN`/`MAX`
-    /// constraints - e.g. `additional_table_filters`, which the Planner reads from this context.
-    /// Clamp it instead of throwing, as done for other settings crossing execution contexts
-    /// (`getSQLSecurityOverriddenContext`, secondary queries, DDL replay): violating changes are
-    /// dropped, out-of-bounds values are clamped, so a view whose inner clause violates the
-    /// reader's constraints keeps working. A top-level clause still throws
-    /// (`applySettingsFromQuery`). Clamp a copy: the node keeps the clause as written, so the tree's
-    /// AST and hash are unchanged, and every node executing the subquery clamps it against its own
-    /// constraints. `SETTINGS name = DEFAULT` is parsed into `default_settings`, not into `changes`, and is
-    /// clamped separately below.
+    /// A nested `SETTINGS` clause (a subquery, a CTE, a view's inner query) is clamped to the session's
+    /// settings constraints, as done for other settings crossing execution contexts
+    /// (`getSQLSecurityOverriddenContext`, secondary queries, DDL replay): violating changes are dropped,
+    /// out-of-bounds values are clamped, so a view whose inner clause violates the reader's constraints
+    /// keeps working. A top-level clause still throws (`applySettingsFromQuery`). An unknown name or an
+    /// uncastable value throws as for a top-level clause, on every server that executes the query. The
+    /// node records the effective `changes`: the ones that survive, with their clamped values and the
+    /// literals as written, so `toAST`, the tree hash, the `Planner` and the shards receiving the
+    /// subquery see what was applied. `SETTINGS name = DEFAULT` is parsed into `default_settings`, not
+    /// into `changes`, and is clamped separately below.
     if (!set_query.changes.empty())
     {
         /// One change at a time, so that each is clamped against the context as the preceding changes
         /// left it. Clamping the whole clause as a batch checks every change against the context as it
-        /// was before the clause, and drops a change that "does not change" that pre-clause value - so
-        /// `SETTINGS use_query_cache = 1, use_query_cache = 0` would drop the trailing `0` and leave the
-        /// subquery with `1`, while the clause reads last-wins everywhere else.
+        /// was before the clause - so `SETTINGS use_query_cache = 1, use_query_cache = 0` could resolve
+        /// differently from the last-wins reading the clause has everywhere else.
         for (const auto & change : set_query.changes)
         {
             SettingsChanges single_change{change};
-            updated_context->clampToSettingsConstraints(single_change, SettingSource::QUERY);
+            updated_context->clampToSettingsConstraintsRejectingInvalidChanges(single_change, SettingSource::QUERY);
             updated_context->applySettingsChanges(single_change);
+            settings_changes.insert(settings_changes.end(), single_change.begin(), single_change.end());
         }
-        settings_changes.insert(settings_changes.end(), set_query.changes.begin(), set_query.changes.end());
     }
 
     /// `SETTINGS x = DEFAULT` is parsed into `default_settings`, not `changes`. Reset those settings
@@ -315,6 +313,10 @@ void applyQueryLevelSettings(
             query_parameters_map.insert_or_assign(parameter_name, parameter_value);
         updated_context->addQueryParameters(query_parameters_map);
     }
+
+    /// The clause of a query inside the body of a `SQL SECURITY DEFINER` / `NONE` view must not turn parallel replicas back on.
+    if (updated_context->isSQLSecurityOverriddenBody())
+        updated_context->restrictParallelReplicasInSQLSecurityOverriddenBody();
 }
 
 QueryTreeNodePtr QueryTreeBuilder::buildSelectWithUnionExpression(

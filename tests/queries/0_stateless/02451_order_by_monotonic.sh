@@ -7,7 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --explain_query_plan_default=legacy"
 function explain_sort_description()
 {
-    out=$($CLICKHOUSE_CLIENT --optimize_read_in_order=1 -q "EXPLAIN PLAN actions = 1 $1")
+    out=$($CLICKHOUSE_CLIENT --optimize_read_in_order=1 --enable_parallel_replicas 0 -q "EXPLAIN PLAN actions = 1 $1")
     echo "$out" | grep "Prefix sort description:"
     echo "$out" | grep "Result sort description:"
 }

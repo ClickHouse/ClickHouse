@@ -545,7 +545,9 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_JoinNonJoinedHashTableScansSkipped` ([UInt64](/reference/data-types/int-uint)) — Number of times a RIGHT or FULL hash join skipped scanning its hash table for non-joined rows, because every right key in the scanned part had matched.
 - `ProfileEvent_JoinDelayedJoinedTransformBlockCount` ([UInt64](/reference/data-types/int-uint)) — Number of blocks emitted by DelayedJoinedBlocksWorkerTransform.
 - `ProfileEvent_JoinDelayedJoinedTransformRowCount` ([UInt64](/reference/data-types/int-uint)) — Number of rows emitted by DelayedJoinedBlocksWorkerTransform.
-- `ProfileEvent_JoinSpillingHashJoinSwitchedToGraceJoin` ([UInt64](/reference/data-types/int-uint)) — Number of times a (Concurrent)HashJoin was switched to GraceHashJoin due to memory limit in SpillingHashJoin.
+- `ProfileEvent_JoinSpillingHashJoinSwitchedToGraceJoin` ([UInt64](/reference/data-types/int-uint)) — Number of times a HashJoin was switched to GraceHashJoin due to memory limit in SpillingHashJoin.
+- `ProfileEvent_HashJoinBuiltWithParallelLayout` ([UInt64](/reference/data-types/int-uint)) — Number of hash tables built for hash joins as several parts. Up to `max_threads` threads fill the parts at the same time, and with `max_threads = 1` one thread fills them all. The `parallel_hash_join_threshold` setting decides which hash joins are built this way.
+- `ProfileEvent_HashJoinBuiltWithSerialLayout` ([UInt64](/reference/data-types/int-uint)) — Number of hash tables built for hash joins as one part, one insert at a time. Each hash table counts once, so a grace hash join adds one for every bucket that it loads into memory. See HashJoinBuiltWithParallelLayout.
 - `ProfileEvent_JoinReorderMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time spent executing JOIN reordering algorithm.
 - `ProfileEvent_JoinOptimizeMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time spent executing JOIN plan optimizations.
 - `ProfileEvent_QueryPlanOptimizeMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time spent executing query plan optimizations.
@@ -1761,12 +1763,16 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_RuntimeFilterLookupsBeforeBuildFinished` ([UInt64](/reference/data-types/int-uint)) — Number of blocks looked up in a JOIN Runtime Filter whose build side had not finished yet, which pass through unfiltered
 - `ProfileEvent_JoinBuildPostProcessingMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Elapsed time of post-processing steps after building the right JOIN side.
 - `ProfileEvent_JoinBuildRowStoreMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Elapsed time transforming the right JOIN side payload into row-major format.
-- `ProfileEvent_AIInputTokens` ([UInt64](/reference/data-types/int-uint)) — Total prompt tokens consumed across all AI function calls in the query.
+- `ProfileEvent_AIInputTokens` ([UInt64](/reference/data-types/int-uint)) — Total prompt tokens consumed across all AI function calls in the query, including cache reads and writes.
 - `ProfileEvent_AIOutputTokens` ([UInt64](/reference/data-types/int-uint)) — Total completion tokens consumed across all AI function calls in the query.
+- `ProfileEvent_AICacheReadTokens` ([UInt64](/reference/data-types/int-uint)) — Prompt tokens read from the provider cache, as reported by AI chat providers. Included in AIInputTokens.
+- `ProfileEvent_AICacheWriteTokens` ([UInt64](/reference/data-types/int-uint)) — Prompt tokens written to the provider cache, as reported by AI chat providers. Included in AIInputTokens.
 - `ProfileEvent_AIAPICalls` ([UInt64](/reference/data-types/int-uint)) — Number of HTTP requests dispatched to AI providers.
 - `ProfileEvent_AIAPICallsRetried` ([UInt64](/reference/data-types/int-uint)) — Number of AI provider requests retried after a transient failure.
 - `ProfileEvent_AIAPICallsFailed` ([UInt64](/reference/data-types/int-uint)) — Number of AI provider requests that failed after all retries.
 - `ProfileEvent_AIAPICallsThrottled` ([UInt64](/reference/data-types/int-uint)) — Number of AI provider requests rejected with HTTP 429 (Too Many Requests).
+- `ProfileEvent_AIRequestMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time spent in AI provider requests, including failed attempts and response parsing, excluding retry backoff. Summed across threads.
+- `ProfileEvent_AIRetryBackoffMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time spent waiting before retries of failed AI provider requests. Summed across threads.
 - `ProfileEvent_AIRowsProcessed` ([UInt64](/reference/data-types/int-uint)) — Number of rows that received an AI result.
 - `ProfileEvent_AIRowsSkipped` ([UInt64](/reference/data-types/int-uint)) — Number of rows that received a default value due to quota or error.
 - `ProfileEvent_YTsaurusLookupThrottled` ([UInt64](/reference/data-types/int-uint)) — Number of lookup requests to YTsaurus that were throttled

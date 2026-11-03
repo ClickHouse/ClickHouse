@@ -465,6 +465,9 @@ private:
     struct stat current_archive_stat{};
     std::optional<String> filename_override;
     Block sample_block;
+    /// The archive reader's own buffer when `read_buf` decompresses a file inside an archive. Declared before `read_buf`,
+    /// which references it, so that it is destroyed after.
+    std::unique_ptr<ReadBuffer> archive_entry_read_buf;
     std::unique_ptr<ReadBuffer> read_buf;
     InputFormatPtr input_format;
     std::unique_ptr<QueryPipeline> pipeline;
@@ -530,6 +533,7 @@ public:
     /// and only for a sort column it physically reads from the file.
     bool supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_column) const override;
     void setTopKFilter(std::shared_ptr<const FormatTopKFilterInfo> info_) override { top_k_filter = std::move(info_); }
+    bool supportsTopKStatisticsOnlyFilter() const override { return true; }
 
     bool supportsMinMaxFromStatistics() const override;
     void setMinMaxFromStatistics() override { read_min_max_from_statistics = true; }

@@ -42,7 +42,6 @@ namespace DB
     M(CLUSTER_DISCOVERY, "ClusterDiscover") \
     M(COMPLETED_PIPELINE_EXECUTOR, "QueryCompPipeEx") \
     M(CONFIG_RELOADER, "ConfigReloader") \
-    M(CONCURRENT_JOIN, "ConcurrentJoin") \
     M(CREATE_TABLES, "CreateTables") \
     M(DATABASE_BACKUP, "DatabaseBackup") \
     M(DATABASE_ON_DISK, "DatabaseOnDisk") \
@@ -72,6 +71,7 @@ namespace DB
     M(GRPC_SERVER_QUEUE, "gRPCServerQueue") \
     M(HASHED_DICT_DTOR, "HashedDictDtor") \
     M(HASHED_DICT_LOAD, "HashedDictLoad") \
+    M(HASH_JOIN_DTOR, "HashJoinDtor") \
     M(HTTP_HANDLER, "HTTPHandler") \
     M(HTTP_SERVER_CONN, "HTTPSrvConn") \
     M(ICEBERG_ITERATOR, "IcebergIter") \
