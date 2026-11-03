@@ -24,6 +24,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageFactory.h>
 #include <base/insertAtEnd.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/escapeForFileName.h>
@@ -54,6 +55,7 @@ namespace Setting
     extern const SettingsUInt64 backup_restore_keeper_max_retries;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsBool restore_replicated_merge_tree_to_shared_merge_tree;
+    extern const SettingsBool restore_replace_external_engines_to_null;
 }
 
 namespace ErrorCodes
@@ -311,7 +313,17 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
                 continue;
             }
 
-            if (table_name.database == DatabaseCatalog::TEMPORARY_DATABASE)
+            const ASTCreateQuery & create = table_info.create_table_query->as<const ASTCreateQuery &>();
+            const bool is_temporary = (table_name.database == DatabaseCatalog::TEMPORARY_DATABASE);
+
+            /// The definition comes from the backup, and the table is created by an internal query that checks
+            /// nothing, so settings that send the data elsewhere are authorized here, as for `CREATE`.
+            /// An external engine replaced by `Null` sends nothing, but temporary tables keep their engine.
+            if (restore_settings.create_table != RestoreTableCreationMode::kMustExist
+                && (is_temporary || !context->getSettingsRef()[Setting::restore_replace_external_engines_to_null]))
+                required_access.append_range(StorageFactory::instance().getExportAccess(create));
+
+            if (is_temporary)
             {
                 if (restore_settings.create_table != RestoreTableCreationMode::kMustExist)
                     required_access.emplace_back(AccessType::CREATE_TEMPORARY_TABLE);
@@ -319,7 +331,6 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
             }
 
             AccessFlags flags;
-            const ASTCreateQuery & create = table_info.create_table_query->as<const ASTCreateQuery &>();
 
             if (restore_settings.create_table != RestoreTableCreationMode::kMustExist)
             {
