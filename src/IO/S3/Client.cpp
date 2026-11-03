@@ -12,6 +12,7 @@
 #include <Common/ThreadStatus.h>
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
+#include <Common/Hex.h>
 #include <Common/SipHash.h>
 
 #include <aws/core/Aws.h>
@@ -1485,23 +1486,6 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
 namespace
 {
 
-String hexEncode(const uint8_t * data, size_t size)
-{
-    static constexpr char hex[] = "0123456789abcdef";
-    String out(size * 2, '\0');
-    for (size_t i = 0; i < size; ++i)
-    {
-        out[2 * i] = hex[data[i] >> 4];
-        out[2 * i + 1] = hex[data[i] & 0x0f];
-    }
-    return out;
-}
-
-String hexEncode(std::string_view raw)
-{
-    return hexEncode(reinterpret_cast<const uint8_t *>(raw.data()), raw.size());
-}
-
 /// Encode a path the way `PocoHTTPClient` re-encodes it before sending. `/` stays so the
 /// signed canonical URI matches the request line.
 String encodePathForGCS(std::string_view path)
@@ -1542,7 +1526,8 @@ bool Client::tryGCSCreateIfAbsent(const String & bucket, const String & key, std
     const String datestamp(amz_date, 8);
 
     const char * payload_ptr = body.empty() ? "" : body.data();
-    const String payload_hash = hexEncode(encodeSHA256(payload_ptr, body.size()));
+    const String payload_sha256 = encodeSHA256(payload_ptr, body.size());
+    const String payload_hash = hexString(payload_sha256.data(), payload_sha256.size());
     const String canonical_uri = encodePathForGCS("/" + bucket + "/" + key);
 
     const String canonical_headers = fmt::format(
@@ -1562,11 +1547,12 @@ bool Client::tryGCSCreateIfAbsent(const String & bucket, const String & key, std
 
     /// `auto` / `s3` / `goog4_request` is the scope GCS accepts for an HMAC key on storage.googleapis.com.
     const String scope = fmt::format("{}/auto/s3/goog4_request", datestamp);
+    const String canonical_request_sha256 = encodeSHA256(canonical_request);
     const String string_to_sign = fmt::format(
         "GOOG4-HMAC-SHA256\n{}\n{}\n{}",
         amz_date,
         scope,
-        hexEncode(encodeSHA256(canonical_request)));
+        hexString(canonical_request_sha256.data(), canonical_request_sha256.size()));
 
     std::string key_secret = "GOOG4";
     key_secret.append(secret.data(), secret.size());
@@ -1575,7 +1561,7 @@ bool Client::tryGCSCreateIfAbsent(const String & bucket, const String & key, std
     const auto service_key = hmacSHA256(region_key, "s3");
     const auto signing_key = hmacSHA256(service_key, "goog4_request");
     const auto signature_bytes = hmacSHA256(signing_key, string_to_sign);
-    const String signature_hex = hexEncode(signature_bytes.data(), signature_bytes.size());
+    const String signature_hex = hexString(signature_bytes.data(), signature_bytes.size());
 
     const String authorization = fmt::format(
         "GOOG4-HMAC-SHA256 Credential={}/{}, SignedHeaders={}, Signature={}",
