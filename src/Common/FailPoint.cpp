@@ -132,6 +132,8 @@ static struct InitFiu
     PAUSEABLE(file_segment_pause_before_write) \
     PAUSEABLE(remote_fs_gather_pause_in_read) \
     PAUSEABLE(plain_object_storage_pause_on_file_copy) \
+    PAUSEABLE(named_collections_replicated_update_pause) \
+    PAUSEABLE(named_collections_restore_pause_after_write) \
     REGULAR(file_cache_simulate_evicting_segment) \
     REGULAR(cache_filesystem_failure) \
     REGULAR(cache_filesystem_failure_non_errno) \
@@ -495,6 +497,7 @@ static struct InitFiu
     ONCE(postgresql_output_format_cancel_mid_loop) \
     PAUSEABLE_ONCE(external_distinct_suppression_run_prepared_pause) \
     ONCE(hash_join_throw_after_data_release) \
+    ONCE(spilling_hash_join_throw_after_maps_release) \
     ONCE(stored_columns_index_throw_on_add) \
     REGULAR(smt_force_takeover_predicate_true) \
     REGULAR(smt_takeover_fake_hardware_error_after_set) \
