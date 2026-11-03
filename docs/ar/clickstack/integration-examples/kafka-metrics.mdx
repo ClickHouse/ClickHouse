@@ -35,9 +35,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 * ملف JAR الخاص بـ OpenTelemetry JMX Metric Gatherer (تعليمات التنزيل أدناه)
 
 <Steps>
-  <Step>
-    #### الحصول على مفتاح API لـ ClickStack
-
+  <Step title="الحصول على مفتاح API لـ ClickStack" id="get-api-key">
     يرسل JMX Metric Gatherer البيانات إلى نقطة نهاية OTLP الخاصة بـ ClickStack، والتي تتطلب المصادقة.
 
     1. افتح HyperDX على عنوان URL الخاص بـ ClickStack (على سبيل المثال، http://localhost:8080)
@@ -54,9 +52,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### حمّل OpenTelemetry JMX Metric Gatherer
-
+  <Step title="حمّل OpenTelemetry JMX Metric Gatherer" id="download-jmx">
     حمّل ملف JAR الخاص بـ JMX Metric Gatherer:
 
     ```bash
@@ -65,9 +61,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### تحقّق من تفعيل Kafka JMX
-
+  <Step title="تحقّق من تفعيل Kafka JMX" id="verify-jmx">
     تأكّد من أن JMX مفعّل على وسطاء Kafka لديك. بالنسبة إلى عمليات نشر Docker:
 
     ```yaml
@@ -96,9 +90,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### نشر JMX Metric Gatherer باستخدام Docker Compose
-
+  <Step title="نشر JMX Metric Gatherer باستخدام Docker Compose" id="deploy-jmx">
     يوضح هذا المثال إعدادًا كاملًا يضم Kafka وJMX Metric Gatherer وClickStack. عدّل أسماء الخدمات ونقاط النهاية لتتوافق مع عملية النشر الحالية لديك:
 
     ```yaml
@@ -176,9 +168,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     * `10000` - الفاصل الزمني للتجميع بالمللي ثانية (10 ثوانٍ)
   </Step>
 
-  <Step>
-    #### تحقّق من المقاييس في HyperDX
-
+  <Step title="تحقّق من المقاييس في HyperDX" id="verify-metrics">
     سجّل الدخول إلى HyperDX وتأكد من أن المقاييس تصل بشكل صحيح:
 
     1. انتقل إلى Chart Explorer
@@ -216,13 +206,11 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 للمستخدمين الذين يريدون اختبار تكامل مقاييس Kafka قبل تهيئة أنظمتهم الإنتاجية، نوفر مجموعة بيانات مُولَّدة مسبقًا تتضمن أنماطًا واقعية لمقاييس Kafka.
 
 <Steps>
-  <Step>
-    #### نزّل مجموعة بيانات المقاييس النموذجية
-
+  <Step title="نزّل مجموعة بيانات المقاييس النموذجية" id="download-sample">
     نزّل ملفات المقاييس المُولَّدة مسبقًا (29 ساعة من مقاييس Kafka بأنماط واقعية):
 
     ```bash
-    # نزّل مقاييس gauge (أعداد الأقسام، وأحجام الطوابير، وزمن الوصول، وتأخر المستهلك)
+    # نزّل مقاييس gauge (أعداد الأقسام، وأحجام الطوابير، وزمن الاستجابة، وتأخر المستهلك)
     curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/kafka/kafka-metrics-gauge.csv
 
     # نزّل مقاييس sum (معدلات الرسائل، ومعدلات البايتات، وأعداد الطلبات)
@@ -240,9 +228,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     * **20:00-22:00: تراجع المساء** - انخفاض حاد إلى مستويات الليل
   </Step>
 
-  <Step>
-    #### ابدأ ClickStack
-
+  <Step title="ابدأ ClickStack" id="start-clickstack">
     ابدأ مثيل ClickStack:
 
     ```bash
@@ -252,13 +238,11 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### حمّل المقاييس إلى ClickStack
-
+  <Step title="حمّل المقاييس إلى ClickStack" id="load-metrics">
     حمّل المقاييس مباشرةً إلى ClickHouse:
 
     ```bash
-    # حمّل مقاييس gauge (أعداد الأقسام، وأحجام الطوابير، وزمن الوصول، وتأخر المستهلك)
+    # حمّل مقاييس gauge (أعداد الأقسام، وأحجام الطوابير، وزمن الاستجابة، وتأخر المستهلك)
     cat kafka-metrics-gauge.csv | docker exec -i clickstack-demo \
       clickhouse-client --query "INSERT INTO otel_metrics_gauge FORMAT CSVWithNames"
 
@@ -268,9 +252,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### تحقّق من المقاييس في HyperDX
-
+  <Step title="تحقّق من المقاييس في HyperDX" id="verify-demo-metrics">
     بعد التحميل، أسرع طريقة لرؤية مقاييسك هي عبر لوحة المعلومات المُعَدّة مسبقًا.
 
     انتقل إلى قسم [لوحات المعلومات والتصور](#dashboards) لاستيراد لوحة المعلومات وعرض جميع مقاييس Kafka دفعةً واحدة.
@@ -290,13 +272,11 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 لمساعدتك على بدء مراقبة Kafka باستخدام ClickStack، نوفر تصورات أساسية لمقاييس Kafka.
 
 <Steps>
-  <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/kafka-metrics-dashboard.json'} download="kafka-metrics-dashboard.json" eventName="docs.kafka_metrics_monitoring.dashboard_download">نزّل</TrackedLink> إعدادات لوحة المعلومات
+  <Step title="نزّل إعدادات لوحة المعلومات" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/kafka-metrics-dashboard.json'} download="kafka-metrics-dashboard.json" eventName="docs.kafka_metrics_monitoring.dashboard_download">نزّل ملف إعدادات لوحة المعلومات</TrackedLink>.
   </Step>
 
-  <Step>
-    #### استورد لوحة المعلومات الجاهزة مسبقًا
-
+  <Step title="استورد لوحة المعلومات الجاهزة مسبقًا" id="import-dashboard">
     1. افتح HyperDX وانتقل إلى قسم Dashboards
     2. انقر على **Import Dashboard** في الزاوية العلوية اليمنى ضمن قائمة النقاط الثلاث
 
@@ -307,9 +287,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     <Image img="/images/clickstack/kafka/import-kafka-dashboard.webp" alt="مربع حوار إنهاء الاستيراد" />
   </Step>
 
-  <Step>
-    #### اعرض لوحة المعلومات
-
+  <Step title="اعرض لوحة المعلومات" id="created-dashboard">
     ستُنشأ لوحة المعلومات مع إعداد جميع التصورات مسبقًا:
 
     <Image img="/images/clickstack/kafka/kafka-metrics-dashboard.webp" alt="لوحة معلومات مقاييس Kafka" />
@@ -435,8 +413,8 @@ docker exec <jmx-exporter-container> sh -c "timeout 2 bash -c 'cat < /dev/null >
   ## الانتقال إلى بيئة الإنتاج
 </div>
 
-يرسل هذا الدليل المقاييس مباشرةً من JMX Metric Gatherer إلى نقطة نهاية OTLP الخاصة بـ ClickStack، وهو مناسب للاختبار وعمليات النشر الصغيرة.
+يرسل هذا الدليل المقاييس مباشرةً من JMX Metric Gatherer إلى نقطة نهاية OTLP الخاصة بـ ClickStack، وهو ما يناسب الاختبار وعمليات النشر الصغيرة.
 
-في بيئات الإنتاج، انشر OpenTelemetry Collector الخاص بك كعامل لاستقبال المقاييس من JMX Exporter وتمريرها إلى ClickStack. يوفّر ذلك المعالجة على دفعات، والمرونة، وإدارة التهيئة المركزية.
+بالنسبة إلى بيئات الإنتاج، انشر OpenTelemetry Collector الخاص بك بوصفه agent لتلقّي المقاييس من JMX Exporter وإعادة توجيهها إلى ClickStack. يوفّر ذلك التجميع الدفعي، والمرونة، والإدارة المركزية للتهيئة.
 
-راجع [إدخال البيانات باستخدام OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطلاع على أنماط النشر في بيئة الإنتاج وأمثلة على تهيئة الجامع.
+راجع [إدخال البيانات باستخدام OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطلاع على أنماط النشر في بيئة الإنتاج وأمثلة على تهيئة collector.

@@ -36,6 +36,31 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
+/// Rescale a whole-seconds calendar result back into DateTime64/Time64 ticks: whole * multiplier + rem.
+/// The calendar helpers (addDays/addWeeks/addMonths/addQuarters/addYears) can legitimately clamp `whole`
+/// to the DateLUT boundary (e.g. 9999-12-31), but for scale >= 8 that clamped value times the scale
+/// multiplier no longer fits in Int64 (253402214400 * 10^8 already exceeds Int64::max). WITH FILL passes
+/// deltas from the whole Int64 range, so this must be well-defined: compute in the UInt64 domain, which
+/// wraps by construction, and cast back. Bit-identical to the signed form for any in-range result.
+inline Int64 rescaleWholeToTicks(Int64 whole, Int64 multiplier, Int64 rem)
+{
+    return static_cast<Int64>(static_cast<UInt64>(whole) * static_cast<UInt64>(multiplier) + static_cast<UInt64>(rem));
+}
+
+/// Split DateTime64/Time64 ticks into whole seconds and the remainder, truncating like `std::div`.
+/// `std::div` is an out-of-line libc call (`ldiv`/`lldiv`) on every element, while `/` and `%` on the
+/// same operands compile to a single inline division.
+struct TicksDivResult
+{
+    Int64 quot;
+    Int64 rem;
+};
+
+ALWAYS_INLINE inline TicksDivResult divTicks(Int64 ticks, Int64 multiplier)
+{
+    return {ticks / multiplier, ticks % multiplier};
+}
+
 /// Type of first argument of 'execute' function overload defines what INPUT DataType it is used for.
 /// Return type defines what is the OUTPUT (return) type of the CH function.
 /// Corresponding types:
@@ -200,27 +225,33 @@ struct AddSecondsImpl
     {
         return DateTime64(DecimalUtils::multiplyAdd(delta, DecimalUtils::scaleMultiplier<Time64>(scale), t.value));
     }
-    static NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    /// Compute in the UInt64 domain so an out-of-range delta wraps by construction instead of hitting
+    /// signed overflow, which is UB even under NO_SANITIZE_UNDEFINED. FillingRow::doLongJump passes
+    /// deltas from the whole Int64 range and relies on the wraparound. Bit-identical to the previous
+    /// two's complement behavior for all inputs.
+    static UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
-        return static_cast<UInt32>(t + delta);
+        return static_cast<UInt32>(static_cast<UInt64>(t) + static_cast<UInt64>(delta));
     }
-    static NO_SANITIZE_UNDEFINED DateTime64 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
+    static DateTime64 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
     {
         // use default datetime64 scale
         static_assert(DataTypeDateTime64::default_scale == 3);
-        return (time_zone.fromDayNum(ExtendedDayNum(d)) + delta) * 1000;
+        // UInt64 domain: wraps by construction (see execute(UInt32) above).
+        return static_cast<Int64>((static_cast<UInt64>(time_zone.fromDayNum(ExtendedDayNum(d))) + static_cast<UInt64>(delta)) * 1000ULL);
     }
-    static NO_SANITIZE_UNDEFINED Int64 execute(Int64 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    /// UInt64 domain: wraps by construction (see execute(UInt32) above). Time / Time64 carriers.
+    static Int64 execute(Int64 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
-        return d + delta;
+        return static_cast<Int64>(static_cast<UInt64>(d) + static_cast<UInt64>(delta));
     }
-    static NO_SANITIZE_UNDEFINED Int64 executeForTime(Int32 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    static Int64 executeForTime(Int32 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
-        return static_cast<Int64>(d + delta);
+        return static_cast<Int64>(static_cast<UInt64>(d) + static_cast<UInt64>(delta));
     }
-    static NO_SANITIZE_UNDEFINED UInt32 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
+    static UInt32 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
     {
-        return static_cast<UInt32>(time_zone.fromDayNum(DayNum(d)) + delta);
+        return static_cast<UInt32>(static_cast<UInt64>(time_zone.fromDayNum(DayNum(d))) + static_cast<UInt64>(delta));
     }
     static DateTime64 execute(std::string_view s, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
     {
@@ -235,35 +266,41 @@ struct AddMinutesImpl
 {
     static constexpr auto name = "addMinutes";
 
-    static NO_SANITIZE_UNDEFINED DateTime64 execute(DateTime64 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16 scale)
+    /// UInt64 domain: wraps by construction; FillingRow::doLongJump relies on the wraparound and a
+    /// signed multiply would be UB (see AddSecondsImpl).
+    static DateTime64 execute(DateTime64 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16 scale)
     {
-        return t + 60 * delta * DecimalUtils::scaleMultiplier<DateTime64>(scale);
+        return DateTime64(static_cast<Int64>(
+            static_cast<UInt64>(t.value) + 60 * static_cast<UInt64>(delta) * static_cast<UInt64>(DecimalUtils::scaleMultiplier<DateTime64>(scale))));
     }
-    static NO_SANITIZE_UNDEFINED Time64 execute(Time64 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16 scale)
+    static Time64 execute(Time64 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16 scale)
     {
-        return t + 60 * delta * DecimalUtils::scaleMultiplier<Time64>(scale);
+        return Time64(static_cast<Int64>(
+            static_cast<UInt64>(t.value) + 60 * static_cast<UInt64>(delta) * static_cast<UInt64>(DecimalUtils::scaleMultiplier<Time64>(scale))));
     }
-    static NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    static UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
-        return static_cast<UInt32>(t + delta * 60);
+        return static_cast<UInt32>(static_cast<UInt64>(t) + static_cast<UInt64>(delta) * 60);
     }
-    static NO_SANITIZE_UNDEFINED DateTime64 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
+    static DateTime64 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
     {
         // use default datetime64 scale
         static_assert(DataTypeDateTime64::default_scale == 3);
-        return (time_zone.fromDayNum(ExtendedDayNum(d)) + delta * 60) * 1000;
+        // UInt64 domain: wraps by construction (see AddSecondsImpl).
+        return static_cast<Int64>((static_cast<UInt64>(time_zone.fromDayNum(ExtendedDayNum(d))) + static_cast<UInt64>(delta) * 60) * 1000ULL);
     }
-    static NO_SANITIZE_UNDEFINED Int64 execute(Int64 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    /// UInt64 domain: wraps by construction (see AddSecondsImpl). Time / Time64 carriers.
+    static Int64 execute(Int64 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
-        return d + delta * 60;
+        return static_cast<Int64>(static_cast<UInt64>(d) + static_cast<UInt64>(delta) * 60);
     }
-    static NO_SANITIZE_UNDEFINED Int64 executeForTime(Int32 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    static Int64 executeForTime(Int32 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
-        return static_cast<Int64>(d + delta * 60);
+        return static_cast<Int64>(static_cast<UInt64>(d) + static_cast<UInt64>(delta) * 60);
     }
-    static NO_SANITIZE_UNDEFINED UInt32 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
+    static UInt32 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
     {
-        return static_cast<UInt32>(time_zone.fromDayNum(DayNum(d)) + delta * 60);
+        return static_cast<UInt32>(static_cast<UInt64>(time_zone.fromDayNum(DayNum(d))) + static_cast<UInt64>(delta) * 60);
     }
     static DateTime64 execute(std::string_view s, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
     {
@@ -278,35 +315,41 @@ struct AddHoursImpl
 {
     static constexpr auto name = "addHours";
 
-    static NO_SANITIZE_UNDEFINED DateTime64 execute(DateTime64 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16 scale)
+    /// UInt64 domain: wraps by construction; FillingRow::doLongJump relies on the wraparound and a
+    /// signed multiply would be UB (see AddSecondsImpl).
+    static DateTime64 execute(DateTime64 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16 scale)
     {
-        return t + 3600 * delta * DecimalUtils::scaleMultiplier<DateTime64>(scale);
+        return DateTime64(static_cast<Int64>(
+            static_cast<UInt64>(t.value) + 3600 * static_cast<UInt64>(delta) * static_cast<UInt64>(DecimalUtils::scaleMultiplier<DateTime64>(scale))));
     }
-    static NO_SANITIZE_UNDEFINED Time64 execute(Time64 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16 scale)
+    static Time64 execute(Time64 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16 scale)
     {
-        return t + 3600 * delta * DecimalUtils::scaleMultiplier<Time64>(scale);
+        return Time64(static_cast<Int64>(
+            static_cast<UInt64>(t.value) + 3600 * static_cast<UInt64>(delta) * static_cast<UInt64>(DecimalUtils::scaleMultiplier<Time64>(scale))));
     }
-    static NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    static UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
-        return static_cast<UInt32>(t + delta * 3600);
+        return static_cast<UInt32>(static_cast<UInt64>(t) + static_cast<UInt64>(delta) * 3600);
     }
-    static NO_SANITIZE_UNDEFINED DateTime64 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
+    static DateTime64 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
     {
         // use default datetime64 scale
         static_assert(DataTypeDateTime64::default_scale == 3);
-        return (time_zone.fromDayNum(ExtendedDayNum(d)) + delta * 3600) * 1000;
+        // UInt64 domain: wraps by construction (see AddSecondsImpl).
+        return static_cast<Int64>((static_cast<UInt64>(time_zone.fromDayNum(ExtendedDayNum(d))) + static_cast<UInt64>(delta) * 3600) * 1000ULL);
     }
-    static NO_SANITIZE_UNDEFINED Int64 execute(Int64 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    /// UInt64 domain: wraps by construction (see AddSecondsImpl). Time / Time64 carriers.
+    static Int64 execute(Int64 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
-        return d + delta * 3600;
+        return static_cast<Int64>(static_cast<UInt64>(d) + static_cast<UInt64>(delta) * 3600);
     }
-    static NO_SANITIZE_UNDEFINED Int64 executeForTime(Int32 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    static Int64 executeForTime(Int32 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
-        return static_cast<Int64>(d + delta * 3600);
+        return static_cast<Int64>(static_cast<UInt64>(d) + static_cast<UInt64>(delta) * 3600);
     }
-    static NO_SANITIZE_UNDEFINED UInt32 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
+    static UInt32 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
     {
-        return static_cast<UInt32>(time_zone.fromDayNum(DayNum(d)) + delta * 3600);
+        return static_cast<UInt32>(static_cast<UInt64>(time_zone.fromDayNum(DayNum(d))) + static_cast<UInt64>(delta) * 3600);
     }
     static DateTime64 execute(std::string_view s, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
     {
@@ -321,6 +364,14 @@ struct AddDaysImpl
 {
     static constexpr auto name = "addDays";
 
+    /// Kept out of line: in a fixed-offset time zone every row takes the arithmetic shortcut, so the
+    /// table walk must not be inlined into that loop.
+    static NO_INLINE NO_SANITIZE_UNDEFINED UInt32 addDaysThroughLUT(
+        UInt32 t, Int64 delta, const DateLUTImpl & time_zone)
+    {
+        return static_cast<UInt32>(time_zone.addDays(t, delta));
+    }
+
     template <bool fixed_offset>
     static NO_SANITIZE_UNDEFINED DateTime64 executeWithOffsetMode(
         DateTime64 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16 scale)
@@ -331,8 +382,8 @@ struct AddDaysImpl
             if (time_zone.dayShiftStaysWithinLUT(t, delta, multiplier))
                 return t + delta * DATE_SECONDS_PER_DAY * multiplier;
         }
-        auto d = std::div(t, multiplier);
-        return time_zone.addDays(d.quot, delta) * multiplier + d.rem;
+        auto d = divTicks(t, multiplier);
+        return rescaleWholeToTicks(time_zone.addDays(d.quot, delta), multiplier, d.rem);
     }
     template <bool fixed_offset>
     static NO_SANITIZE_UNDEFINED Time64 executeWithOffsetMode(
@@ -344,8 +395,8 @@ struct AddDaysImpl
             if (time_zone.dayShiftStaysWithinLUT(t, delta, multiplier))
                 return t + delta * DATE_SECONDS_PER_DAY * multiplier;
         }
-        auto d = std::div(t, multiplier);
-        return time_zone.addDays(d.quot, delta) * multiplier + d.rem;
+        auto d = divTicks(t, multiplier);
+        return rescaleWholeToTicks(time_zone.addDays(d.quot, delta), multiplier, d.rem);
     }
     template <bool fixed_offset>
     static NO_SANITIZE_UNDEFINED UInt32 executeWithOffsetMode(
@@ -355,6 +406,7 @@ struct AddDaysImpl
         {
             if (time_zone.dayShiftStaysWithinLUT(t, delta))
                 return static_cast<UInt32>(t + delta * DATE_SECONDS_PER_DAY);
+            return addDaysThroughLUT(t, delta, time_zone);
         }
         return static_cast<UInt32>(time_zone.addDays(t, delta));
     }
@@ -379,13 +431,15 @@ struct AddDaysImpl
             return executeWithOffsetMode<true>(t, delta, time_zone, utc_time_zone, scale);
         return executeWithOffsetMode<false>(t, delta, time_zone, utc_time_zone, scale);
     }
-    static NO_SANITIZE_UNDEFINED UInt16 execute(UInt16 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    /// UInt64 domain: wraps by construction; FillingRow::doLongJump relies on the wraparound and
+    /// signed overflow would be UB (see AddSecondsImpl).
+    static UInt16 execute(UInt16 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
-        return static_cast<UInt16>(d + delta);
+        return static_cast<UInt16>(static_cast<UInt64>(d) + static_cast<UInt64>(delta));
     }
-    static NO_SANITIZE_UNDEFINED Int32 execute(Int32 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    static Int32 execute(Int32 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
-        return static_cast<Int32>(d + delta);
+        return static_cast<Int32>(static_cast<UInt64>(d) + static_cast<UInt64>(delta));
     }
     static NO_SANITIZE_UNDEFINED Int8 execute(Int64, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
@@ -428,8 +482,11 @@ struct AddWeeksImpl
         }
         else
             weeksToDays(delta, days);
-        auto d = std::div(t, multiplier);
-        return time_zone.addDays(d.quot, days) * multiplier + d.rem;
+        auto d = divTicks(t, multiplier);
+        /// `days` (= delta * 7) is computed via weeksToDays in the wrapping (UInt64-equivalent) domain
+        /// above; rescaleWholeToTicks keeps the final whole * multiplier well-defined for large scales.
+        /// WITH FILL passes deltas from the whole Int64 range, so both steps must avoid signed overflow.
+        return rescaleWholeToTicks(time_zone.addDays(d.quot, days), multiplier, d.rem);
     }
     template <bool fixed_offset>
     static NO_SANITIZE_UNDEFINED Time64 executeWithOffsetMode(
@@ -444,8 +501,8 @@ struct AddWeeksImpl
         }
         else
             weeksToDays(delta, days);
-        auto d = std::div(t, multiplier);
-        return time_zone.addDays(d.quot, days) * multiplier + d.rem;
+        auto d = divTicks(t, multiplier);
+        return rescaleWholeToTicks(time_zone.addDays(d.quot, days), multiplier, d.rem);
     }
     template <bool fixed_offset>
     static NO_SANITIZE_UNDEFINED UInt32 executeWithOffsetMode(
@@ -456,6 +513,7 @@ struct AddWeeksImpl
         {
             if (weeksToDays(delta, days) && time_zone.dayShiftStaysWithinLUT(t, days))
                 return static_cast<UInt32>(t + days * DATE_SECONDS_PER_DAY);
+            return AddDaysImpl::addDaysThroughLUT(t, days, time_zone);
         }
         else
             weeksToDays(delta, days);
@@ -482,13 +540,15 @@ struct AddWeeksImpl
             return executeWithOffsetMode<true>(t, delta, time_zone, utc_time_zone, scale);
         return executeWithOffsetMode<false>(t, delta, time_zone, utc_time_zone, scale);
     }
-    static NO_SANITIZE_UNDEFINED UInt16 execute(UInt16 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    /// UInt64 domain: wraps by construction; FillingRow::doLongJump relies on the wraparound and
+    /// signed overflow would be UB (see AddSecondsImpl).
+    static UInt16 execute(UInt16 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
-        return static_cast<UInt16>(d + delta * 7);
+        return static_cast<UInt16>(static_cast<UInt64>(d) + static_cast<UInt64>(delta) * 7);
     }
-    static NO_SANITIZE_UNDEFINED Int32 execute(Int32 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    static Int32 execute(Int32 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
-        return static_cast<Int32>(d + delta * 7);
+        return static_cast<Int32>(static_cast<UInt64>(d) + static_cast<UInt64>(delta) * 7);
     }
     static NO_SANITIZE_UNDEFINED Int8 execute(Int64, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
@@ -514,14 +574,14 @@ struct AddMonthsImpl
     static NO_SANITIZE_UNDEFINED DateTime64 execute(DateTime64 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16 scale)
     {
         auto multiplier = DecimalUtils::scaleMultiplier<DateTime64>(scale);
-        auto d = std::div(t, multiplier);
-        return time_zone.addMonths(d.quot, delta) * multiplier + d.rem;
+        auto d = divTicks(t, multiplier);
+        return rescaleWholeToTicks(time_zone.addMonths(d.quot, delta), multiplier, d.rem);
     }
     static NO_SANITIZE_UNDEFINED Time64 execute(Time64 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16 scale)
     {
         auto multiplier = DecimalUtils::scaleMultiplier<Time64>(scale);
-        auto d = std::div(t, multiplier);
-        return time_zone.addMonths(d.quot, delta) * multiplier + d.rem;
+        auto d = divTicks(t, multiplier);
+        return rescaleWholeToTicks(time_zone.addMonths(d.quot, delta), multiplier, d.rem);
     }
     static NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
     {
@@ -559,14 +619,14 @@ struct AddQuartersImpl
     static NO_SANITIZE_UNDEFINED DateTime64 execute(DateTime64 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16 scale)
     {
         auto multiplier = DecimalUtils::scaleMultiplier<DateTime64>(scale);
-        auto d = std::div(t, multiplier);
-        return time_zone.addQuarters(d.quot, delta) * multiplier + d.rem;
+        auto d = divTicks(t, multiplier);
+        return rescaleWholeToTicks(time_zone.addQuarters(d.quot, delta), multiplier, d.rem);
     }
     static NO_SANITIZE_UNDEFINED Time64 execute(Time64 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16 scale)
     {
         auto multiplier = DecimalUtils::scaleMultiplier<Time64>(scale);
-        auto d = std::div(t, multiplier);
-        return time_zone.addQuarters(d.quot, delta) * multiplier + d.rem;
+        auto d = divTicks(t, multiplier);
+        return rescaleWholeToTicks(time_zone.addQuarters(d.quot, delta), multiplier, d.rem);
     }
     static UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
     {
@@ -604,14 +664,14 @@ struct AddYearsImpl
     static NO_SANITIZE_UNDEFINED DateTime64 execute(DateTime64 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16 scale)
     {
         auto multiplier = DecimalUtils::scaleMultiplier<DateTime64>(scale);
-        auto d = std::div(t, multiplier);
-        return time_zone.addYears(d.quot, delta) * multiplier + d.rem;
+        auto d = divTicks(t, multiplier);
+        return rescaleWholeToTicks(time_zone.addYears(d.quot, delta), multiplier, d.rem);
     }
     static NO_SANITIZE_UNDEFINED Time64 execute(Time64 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16 scale)
     {
         auto multiplier = DecimalUtils::scaleMultiplier<Time64>(scale);
-        auto d = std::div(t, multiplier);
-        return time_zone.addYears(d.quot, delta) * multiplier + d.rem;
+        auto d = divTicks(t, multiplier);
+        return rescaleWholeToTicks(time_zone.addYears(d.quot, delta), multiplier, d.rem);
     }
     static NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
     {
@@ -662,6 +722,15 @@ struct SubtractIntervalImpl : public Transform
         return Transform::execute(t, negated, time_zone, utc_time_zone, scale);
     }
 
+    /// Reached only for `delta == INT64_MIN`, where the negation wraps. Kept out of line: the table
+    /// walk must not be inlined into a fixed-offset loop whose other rows take the shortcut.
+    template <typename T>
+    static NO_INLINE auto executeNegationOverflow(
+        T t, Int64 negated, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
+    {
+        return Transform::template executeWithOffsetMode<false>(t, negated, time_zone, utc_time_zone, scale);
+    }
+
     template <bool fixed_offset, typename T>
     auto executeWithOffsetMode(
         T t,
@@ -671,8 +740,13 @@ struct SubtractIntervalImpl : public Transform
         UInt16 scale) const
     {
         Int64 negated = 0;
-        if (!negate(delta, negated))
-            return Transform::template executeWithOffsetMode<false>(t, negated, time_zone, utc_time_zone, scale);
+        if constexpr (fixed_offset)
+        {
+            if (!negate(delta, negated))
+                return executeNegationOverflow(t, negated, time_zone, utc_time_zone, scale);
+        }
+        else
+            negate(delta, negated);
         return Transform::template executeWithOffsetMode<fixed_offset>(t, negated, time_zone, utc_time_zone, scale);
     }
 
@@ -684,8 +758,9 @@ struct SubtractIntervalImpl : public Transform
         const DateLUTImpl & utc_time_zone,
         UInt16 scale) const
     {
-        /// Signed integer overflow is Ok.
-        return Transform::executeForTime(t, -delta, time_zone, utc_time_zone, scale);
+        /// Negate in the UInt64 domain: plain -delta is signed-overflow UB for delta == INT64_MIN.
+        /// The two's-complement result is identical for every other value.
+        return Transform::executeForTime(t, static_cast<Int64>(-static_cast<UInt64>(delta)), time_zone, utc_time_zone, scale);
     }
 };
 
@@ -783,14 +858,21 @@ struct Processor
     }
 
 private:
+    /// Called once per row from the loops below. The transforms are small, but whether the inliner takes them
+    /// varied between otherwise identical builds (one left `DecimalUtils::multiplyAdd` as a call in the loop of
+    /// `addSeconds` on `DateTime64`, 40% more instructions), so force it.
     template <typename FromDataType, typename T>
-    auto executeTransform(
+    ALWAYS_INLINE auto executeTransform(
         T t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale) const
     {
         if constexpr (supports_fixed_offset_dispatch<Transform, FromDataType>)
-            return transform.template executeWithOffsetMode<fixed_offset>(t, delta, time_zone, utc_time_zone, scale);
+        {
+            [[clang::always_inline]] return transform.template executeWithOffsetMode<fixed_offset>(t, delta, time_zone, utc_time_zone, scale);
+        }
         else
-            return transform.execute(t, delta, time_zone, utc_time_zone, scale);
+        {
+            [[clang::always_inline]] return transform.execute(t, delta, time_zone, utc_time_zone, scale);
+        }
     }
 
     template <typename Value>
@@ -957,6 +1039,31 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    /// Documentation-only — adds/subtracts the integer/float `delta` of the
+    /// given interval unit (encoded in `Transform`) to/from a date or
+    /// date-time value. The optional 3rd argument is a constant time-zone
+    /// string. The concrete result type depends on the input date type and
+    /// the precision of the interval unit (e.g. `addSeconds(Date, ...)`
+    /// promotes to `DateTime`).
+    String getSignatureString() const override
+    {
+        return "(Date | Date32 | Time | Time64 | DateTime | DateTime64 | String, NativeNumber, [const String]) -> Any";
+    }
+
+    /// The declarative signature above is documentation-only: the exact result type is not
+    /// expressible in the DSL, so the `ColumnsWithTypeAndName` override below is authoritative.
+    /// Route the types-only path to it as well, so the base
+    /// `IFunction::getReturnTypeImpl(DataTypes)` never applies the documentation string (which
+    /// would reject valid calls or evaluate an uncaptured return-type name).
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        ColumnsWithTypeAndName columns;
+        columns.reserve(arguments.size());
+        for (const auto & type : arguments)
+            columns.emplace_back(nullptr, type, String{});
+        return getReturnTypeImpl(columns);
+    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {

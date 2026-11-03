@@ -23,10 +23,11 @@ static void setZstdParameter(ZSTD_CCtx * cctx, ZSTD_cParameter param, int value)
 
 void ZstdDeflatingWriteBuffer::initialize(int compression_level, int window_log)
 {
-    cctx = ZSTD_createCCtx();
+    cctx.reset(ZSTD_createCCtx());
     if (cctx == nullptr)
         throw Exception(ErrorCodes::ZSTD_ENCODER_FAILED, "zstd stream encoder init failed: zstd version: {}", ZSTD_VERSION_STRING);
-    setZstdParameter(cctx, ZSTD_c_compressionLevel, compression_level);
+
+    setZstdParameter(cctx.get(), ZSTD_c_compressionLevel, compression_level);
 
     if (window_log > 0)
     {
@@ -39,20 +40,14 @@ void ZstdDeflatingWriteBuffer::initialize(int compression_level, int window_log)
                             "ZSTD codec can't have window log more than {} and lower than {}, given {}",
                             toString(window_log_bounds.upperBound),
                             toString(window_log_bounds.lowerBound), toString(window_log));
-        setZstdParameter(cctx, ZSTD_c_enableLongDistanceMatching, 1);
-        setZstdParameter(cctx, ZSTD_c_windowLog, window_log);
+        setZstdParameter(cctx.get(), ZSTD_c_enableLongDistanceMatching, 1);
+        setZstdParameter(cctx.get(), ZSTD_c_windowLog, window_log);
     }
 
-    setZstdParameter(cctx, ZSTD_c_checksumFlag, 1);
+    setZstdParameter(cctx.get(), ZSTD_c_checksumFlag, 1);
 
     input = {nullptr, 0, 0};
     output = {nullptr, 0, 0};
-}
-
-ZstdDeflatingWriteBuffer::~ZstdDeflatingWriteBuffer()
-{
-    if (cctx)
-        ZSTD_freeCCtx(cctx);
 }
 
 void ZstdDeflatingWriteBuffer::flush(ZSTD_EndDirective mode)
@@ -73,7 +68,7 @@ void ZstdDeflatingWriteBuffer::flush(ZSTD_EndDirective mode)
             output.size = out->buffer().size();
             output.pos = out->offset();
 
-            size_t compression_result = ZSTD_compressStream2(cctx, &output, &input, mode);
+            size_t compression_result = ZSTD_compressStream2(cctx.get(), &output, &input, mode);
             if (ZSTD_isError(compression_result))
                 throw Exception(
                                 ErrorCodes::ZSTD_ENCODER_FAILED,
@@ -114,21 +109,8 @@ void ZstdDeflatingWriteBuffer::finalFlushBefore()
 
 void ZstdDeflatingWriteBuffer::finalFlushAfter()
 {
-    try
-    {
-        size_t err = ZSTD_freeCCtx(cctx);
-        cctx = nullptr;
-        /// This is just in case, since it is impossible to get an error by using this wrapper.
-        if (unlikely(err))
-            throw Exception(ErrorCodes::ZSTD_ENCODER_FAILED, "ZSTD_freeCCtx failed: error: '{}'; zstd version: {}",
-                            ZSTD_getErrorName(err), ZSTD_VERSION_STRING);
-    }
-    catch (...)
-    {
-        /// It is OK not to terminate under an error from ZSTD_freeCCtx()
-        /// since all data already written to the stream.
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    /// Free the memory earlier than the destructor would (ZSTD_freeCCtx never fails on a context created by ZSTD_createCCtx).
+    cctx.reset();
 }
 
 }

@@ -72,7 +72,7 @@ Starting from [version](https://github.com/ClickHouse/ClickHouse/releases) 23.1,
 
 ### CSV files with custom delimiters {#csv-files-with-custom-delimiters}
 
-In case the CSV file uses other than comma delimiter, we can use the [format_csv_delimiter](/reference/settings/formats#format_csv_delimiter) option to set the relevant symbol:
+In case the CSV file uses other than comma delimiter, we can use the [format_csv_delimiter](/reference/settings/formats/format-csv#format_csv_delimiter) option to set the relevant symbol:
 
 ```sql
 SET format_csv_delimiter = ';'
@@ -82,7 +82,7 @@ Now, when we import from a CSV file, `;` symbol is going to be used as a delimit
 
 ### Skipping lines in a CSV file {#skipping-lines-in-a-csv-file}
 
-Sometimes, we might skip a certain number of lines while importing data from a CSV file. This can be done using [input_format_csv_skip_first_lines](/reference/settings/formats#input_format_csv_skip_first_lines) option:
+Sometimes, we might skip a certain number of lines while importing data from a CSV file. This can be done using [input_format_csv_skip_first_lines](/reference/settings/formats/input-format#input_format_csv_skip_first_lines) option:
 
 ```sql
 SET input_format_csv_skip_first_lines = 10
@@ -107,7 +107,7 @@ When using the `file()` function, with ClickHouse Cloud you will need to run the
 
 ### Treating NULL values in CSV files {#treating-null-values-in-csv-files}
 
-Null values can be encoded differently depending on the application that generated the file. By default, ClickHouse uses `\N` as a Null value in CSV. But we can change that using the [format_csv_null_representation](/reference/settings/formats#format_tsv_null_representation) option.
+Null values can be encoded differently depending on the application that generated the file. By default, ClickHouse uses `\N` as a Null value in CSV. But we can change that using the [format_csv_null_representation](/reference/settings/formats/format-csv#format_csv_null_representation) option.
 
 Suppose we have the following CSV file:
 
@@ -158,7 +158,7 @@ Tab-separated data format is widely used as a data interchange format. To load d
 clickhouse-client -q "INSERT INTO sometable FORMAT TabSeparated" < data_small.tsv
 ```
 
-There's also a [TabSeparatedWithNames](/reference/formats/TabSeparated/TabSeparatedWithNames) format to allow working with TSV files that have headers. And, like for CSV, we can skip the first X lines using the [input_format_tsv_skip_first_lines](/reference/settings/formats#input_format_tsv_skip_first_lines) option.
+There's also a [TabSeparatedWithNames](/reference/formats/TabSeparated/TabSeparatedWithNames) format to allow working with TSV files that have headers. And, like for CSV, we can skip the first X lines using the [input_format_tsv_skip_first_lines](/reference/settings/formats/input-format#input_format_tsv_skip_first_lines) option.
 
 ### Raw TSV {#raw-tsv}
 
@@ -217,7 +217,7 @@ Note how it took ClickHouse **~1** second to save 36m rows to a CSV file.
 
 ### Exporting CSV with custom delimiters {#exporting-csv-with-custom-delimiters}
 
-If we want to have other than comma delimiters, we can use the [format_csv_delimiter](/reference/settings/formats#format_csv_delimiter) settings option for that:
+If we want to have other than comma delimiters, we can use the [format_csv_delimiter](/reference/settings/formats/format-csv#format_csv_delimiter) settings option for that:
 
 ```sql
 SET format_csv_delimiter = '|'
@@ -241,7 +241,7 @@ FORMAT CSV
 
 ### Exporting CSV for Windows {#exporting-csv-for-windows}
 
-If we want a CSV file to work fine in a Windows environment, we should consider enabling [output_format_csv_crlf_end_of_line](/reference/settings/formats#output_format_csv_crlf_end_of_line) option. This will use `\r\n` as a line breaks instead of `\n`:
+If we want a CSV file to work fine in a Windows environment, we should consider enabling [output_format_csv_crlf_end_of_line](/reference/settings/formats/output-format#output_format_csv_crlf_end_of_line) option. This will use `\r\n` as a line breaks instead of `\n`:
 
 ```sql
 SET output_format_csv_crlf_end_of_line = 1;
@@ -249,7 +249,7 @@ SET output_format_csv_crlf_end_of_line = 1;
 
 ## Schema inference for CSV files {#schema-inference-for-csv-files}
 
-We might work with unknown CSV files in many cases, so we have to explore which types to use for columns. Clickhouse, by default, will try to guess data formats based on its analysis of a given CSV file.  This is known as "Schema Inference". Detected data types can be explored using the `DESCRIBE` statement in pair with the [file()](/reference/functions/table-functions/file) function:
+We might work with unknown CSV files in many cases, so we have to explore which types to use for columns. ClickHouse, by default, will try to guess data formats based on its analysis of a given CSV file.  This is known as "Schema Inference". Detected data types can be explored using the `DESCRIBE` statement in pair with the [file()](/reference/functions/table-functions/file) function:
 
 ```sql
 DESCRIBE file('data-small.csv', CSV)
@@ -374,4 +374,4 @@ ClickHouse introduces support for many formats, both text, and binary, to cover 
 - [Native and binary formats](/guides/clickhouse/data-formats/binary)
 - [SQL formats](/guides/clickhouse/data-formats/sql)
 
-And also check [clickhouse-local](https://clickhouse.com/blog/extracting-converting-querying-local-files-with-sql-clickhouse-local) - a portable full-featured tool to work on local/remote files without the need for Clickhouse server.
+And also check [clickhouse-local](https://clickhouse.com/blog/extracting-converting-querying-local-files-with-sql-clickhouse-local) - a portable full-featured tool to work on local/remote files without the need for ClickHouse server.

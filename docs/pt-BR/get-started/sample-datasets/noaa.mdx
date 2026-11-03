@@ -251,12 +251,12 @@ em que `<path>` representa o caminho completo para o arquivo local no disco.
 Veja [aqui](https://clickhouse.com/blog/real-world-data-noaa-climate-data#load-the-data) como acelerar esse processo de carregamento.
 
 <div id="inserting-from-s3">
-  ### Inserindo a partir do S3
+  ### Inserção a partir do S3
 </div>
 
 ```sql
 INSERT INTO noaa SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/noaa/noaa_enriched.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/noaa/noaa_enriched.parquet', NOSIGN)
 
 ```
 

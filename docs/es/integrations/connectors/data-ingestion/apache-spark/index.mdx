@@ -10,7 +10,7 @@ integration:
   - category: 'data_ingestion'
 ---
 
-import ClickHouseSupportedBadge from "/snippets/es/components/ClickHouseSupported/ClickHouseSupported.jsx";
+import { ClickHouseSupportedBadge } from "/snippets/es/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
 
@@ -18,7 +18,7 @@ import ClickHouseSupportedBadge from "/snippets/es/components/ClickHouseSupporte
 
 Hay dos formas principales de conectar Apache Spark y ClickHouse:
 
-1. [Spark Connector](/es/integrations/connectors/data-ingestion/apache-spark/spark-native-connector) - El conector de Spark implementa `DataSourceV2` y cuenta con su propia gestión de catálogo.
+1. [Spark Connector](/es/integrations/connectors/data-ingestion/apache-spark/spark-native-connector) - El Spark Connector implementa `DataSourceV2` y cuenta con su propia gestión de catálogo.
    A día de hoy, esta es la forma recomendada de integrar ClickHouse y Spark.
 2. [Spark JDBC](/es/integrations/connectors/data-ingestion/apache-spark/spark-jdbc) - Integra Spark y ClickHouse
    mediante un [origen de datos JDBC](https://spark.apache.org/docs/latest/sql-data-sources-jdbc.html).

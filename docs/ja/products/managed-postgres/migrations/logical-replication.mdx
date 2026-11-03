@@ -7,7 +7,7 @@ keywords: ['postgres', 'postgresql', '論理レプリケーション', '移行',
 doc_type: 'guide'
 ---
 
-import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/ja/components/Image.jsx";
 
 このガイドでは、Postgres のネイティブな論理レプリケーションを使用して PostgreSQL データベースを ClickHouse Managed Postgres に移行する方法を、手順を追って説明します。
@@ -19,8 +19,8 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 </div>
 
 * ソース PostgreSQL データベースにアクセスできること。
-* `psql`,`pg_dump`、`pg_restore` がローカルマシンにインストールされていること。これらは、ターゲットデータベースに空のテーブルを作成するために使用します。通常は PostgreSQL のインストールに含まれています。含まれていない場合は、[PostgreSQL 公式サイト](https://www.postgresql.org/download/) からダウンロードできます。
-* ソースデータベースが ClickHouse Managed Postgres からアクセス可能である必要があります。この接続を許可するために必要なファイアウォールルールまたはセキュリティグループの設定を確認してください。Managed Postgres インスタンスの送信元 IP は、次のように確認できます。
+* `psql`,`pg_dump`、`pg_restore` がローカルマシンにインストールされていること。これらは、移行先データベースに空のテーブルを作成するために使用します。通常は PostgreSQL のインストールに含まれています。含まれていない場合は、[PostgreSQL 公式サイト](https://www.postgresql.org/download/) からダウンロードできます。
+* ソースデータベースが ClickHouse Managed Postgres からアクセス可能である必要があります。この接続を許可するために必要なファイアウォールルールまたはセキュリティグループの設定を確認してください。ClickHouse Managed Postgres インスタンスの送信元 IP は、次のように確認できます。
 
 ```shell
 dig +short <your-managed-postgres-hostname>
@@ -57,7 +57,7 @@ dig +short <your-managed-postgres-hostname>
   ## ソースデータベースのスキーマのみをダンプする
 </div>
 
-論理レプリケーションを設定する前に、移行先データベースの ClickHouse Managed Postgres データベースにスキーマを作成する必要があります。これには、`pg_dump` を使用してソースデータベースのスキーマのみのダンプを作成します。
+論理レプリケーションを設定する前に、移行先の ClickHouse Managed Postgres データベースにスキーマを作成する必要があります。これには、`pg_dump` を使用してソースデータベースのスキーマのみのダンプを作成します。
 
 ```shell
 pg_dump \
@@ -79,10 +79,10 @@ pg_dump \
 <Image img="/images/managed-postgres/pg_dump_restore/source-setup.webp" alt="ソース PostgreSQL テーブルのセットアップ" size="xl" border />
 
 <div id="migration-pgdump-pg-restore-create-pg">
-  ### Managed Postgres インスタンスを作成する
+  ### ClickHouse Managed Postgres インスタンスを作成する
 </div>
 
-まず、Managed Postgres インスタンスが用意されていることを確認してください。可能であれば、ソースと同じリージョンに配置することをおすすめします。手順については、[こちら](/ja/products/managed-postgres/quickstart#create-postgres-database)のクイックガイドを参照してください。このガイドでは、次の構成を作成します。
+まず、ClickHouse Managed Postgres インスタンスが用意されていることを確認してください。可能であれば、ソースと同じリージョンに配置することをおすすめします。手順については、[こちら](/ja/products/managed-postgres/quickstart#create-postgres-database)のクイックガイドを参照してください。このガイドでは、次の構成を作成します。
 
 <Image img="/images/managed-postgres/pg_dump_restore/create-pg-for-migration.webp" alt="ClickHouse Managed Postgres インスタンスを作成" size="md" border />
 
@@ -130,10 +130,10 @@ CREATE PUBLICATION <pub_name> FOR TABLE table1, table2...;
 </Info>
 
 <div id="migration-logical-replication-create-subscription">
-  ### 移行先データベースのClickHouse Managed Postgresデータベースにsubscriptionを作成する
+  ### 移行先の ClickHouse Managed Postgres データベースにsubscriptionを作成する
 </div>
 
-次に、移行先データベースのClickHouse Managed Postgresデータベースに接続し、ソースデータベースのpublicationに接続するsubscriptionを作成します。
+次に、移行先の ClickHouse Managed Postgres データベースに接続し、ソースデータベースのpublicationに接続するsubscriptionを作成します。
 
 ```sql
 CREATE SUBSCRIPTION demo_rds_subscription
@@ -147,7 +147,7 @@ PUBLICATION <pub_name_you_entered_above>;
 
 <Image img="/images/managed-postgres/logical_replication/migration-result.webp" alt="論理レプリケーション後の移行結果" size="xl" border />
 
-以降、ソースデータベースに新たに挿入された行は、ほぼリアルタイムで移行先データベースの ClickHouse Managed Postgres データベースにレプリケートされます。
+以降、ソースデータベースに新たに挿入された行は、ほぼリアルタイムで移行先の ClickHouse Managed Postgres データベースにレプリケートされます。
 
 <div id="migration-logical-replication-caveats">
   ## 注意事項と考慮点
@@ -162,6 +162,6 @@ PUBLICATION <pub_name_you_entered_above>;
   ## 次のステップ
 </div>
 
-おめでとうございます。pg&#95;dump と pg&#95;restore を使用して、PostgreSQL データベースを ClickHouse Managed Postgres へ正常に移行できました。これで、Managed Postgres の機能や ClickHouse とのインテグレーションを試す準備は万全です。まずは 10 分で始められるクイックスタートをご覧ください。
+おめでとうございます。pg&#95;dump と pg&#95;restore を使用して、PostgreSQL データベースを ClickHouse Managed Postgres に正常に移行できました。これで、ClickHouse Managed Postgres の機能や ClickHouse とのインテグレーションを活用する準備が整いました。使い始めるには、次の 10 分間のクイックスタートをご覧ください。
 
-* [Managed Postgres クイックスタートガイド](/ja/products/managed-postgres/quickstart)
+* [ClickHouse Managed Postgres クイックスタートガイド](/ja/products/managed-postgres/quickstart)

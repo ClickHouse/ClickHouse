@@ -37,7 +37,7 @@ ClickHouse Cloud 会定期升级运行在 Kubernetes 上的支持服务，以及
   ## Kubernetes 集群升级流程
 </div>
 
-承载您的 ClickHouse 服务的 Kubernetes 集群 (AWS 使用 EKS，GCP 使用 GKE) 需要定期升级，以确保安全性、兼容性并获得新功能。对于您的 BYOC 部署，ClickHouse Cloud 会负责所有 Kubernetes 集群升级，确保您的集群始终保持在受支持的版本范围内。
+承载您的 ClickHouse 服务的 Kubernetes 集群 (AWS 使用 EKS，GCP 使用 GKE，Azure 使用 AKS) 需要定期升级，以确保安全性、兼容性并获得新功能。对于您的 BYOC 部署，ClickHouse Cloud 会负责所有 Kubernetes 集群升级，确保您的集群始终保持在受支持的版本范围内。
 
 <div id="cluster-upgrade-types">
   ### 集群升级类型
@@ -65,4 +65,4 @@ Kubernetes 集群升级将由 ClickHouse 支持团队与您协调安排。我们
   ### 版本支持
 </div>
 
-ClickHouse Cloud 会将 Kubernetes 集群维持在您的云服务提供商 (AWS EKS 或 Google GKE) 规定的受支持版本范围内。我们会确保您的集群在满足提供商要求的同时，及时获得安全补丁和功能更新。
+ClickHouse Cloud 会将 Kubernetes 集群维持在您的云服务提供商 (AWS EKS、Google GKE 或 Azure AKS) 规定的受支持版本范围内。我们会确保您的集群在满足提供商要求的同时，及时获得安全补丁和功能更新。

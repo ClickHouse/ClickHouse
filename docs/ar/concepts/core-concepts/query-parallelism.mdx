@@ -35,7 +35,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 <br />
 
-يخضع عدد `n` من مسارات المعالجة المتوازية لإعداد [`max_threads`](/ar/reference/settings/session-settings#max_threads)، والذي يساوي افتراضيًا عدد الأنوية (الخيوط) في CPU واحد المتاح لـ ClickHouse على الخادم. في المثال أعلاه، نفترض وجود `4` أنوية.
+يخضع عدد `n` من مسارات المعالجة المتوازية لإعداد [`max_threads`](/ar/reference/settings/session-settings/max-threads#max_threads)، والذي يساوي افتراضيًا عدد الأنوية (الخيوط) في CPU واحد المتاح لـ ClickHouse على الخادم. في المثال أعلاه، نفترض وجود `4` أنوية.
 
 على جهاز يحتوي على `8` أنوية، ستتضاعف تقريبًا إنتاجية معالجة الاستعلام (لكن استخدام الذاكرة سيزداد أيضًا تبعًا لذلك)، لأن عددًا أكبر من المسارات سيعالج البيانات بالتوازي:
 
@@ -141,7 +141,7 @@ FROM
   ## لماذا لا يُلتزم دائمًا بـ max_threads
 </div>
 
-كما ذُكر أعلاه، يُتحكَّم في عدد مسارات المعالجة المتوازية `n` بواسطة الإعداد `max_threads`، والذي يطابق افتراضيًا عدد أنوية CPU المتاحة لـ ClickHouse على الخادم:
+كما ذُكر أعلاه، يُتحكَّم في عدد مسارات المعالجة المتوازية `n` بواسطة الإعداد `max_threads`، والذي يطابق افتراضيًا عدد أنوية CPU المتاحة لـ ClickHouse على الخادم:
 
 ```sql
 SELECT getSetting('max_threads');
@@ -219,23 +219,23 @@ WHERE town = 'LONDON';
     └───────────────────────────────────────────────────────┘  
 ```
 
-بغضّ النظر عن قيمة `max_threads` المُعدّة، لا يخصّص ClickHouse مسارات معالجة متوازية إضافية إلا عندما تكون هناك بيانات كافية تبرّر ذلك. وتشير كلمة &quot;max&quot; في `max_threads` إلى حدٍّ أقصى، لا إلى عددٍ مضمون من خيوط التنفيذ المستخدمة.
+بغضّ النظر عن قيمة `max_threads` المُعدّة، لا يخصّص ClickHouse مسارات معالجة متوازية إضافية إلا عندما تكون هناك بيانات كافية تبرّر ذلك. وتشير كلمة &quot;max&quot; في `max_threads` إلى حدٍّ أقصى، لا إلى عددٍ مضمون من خيوط التنفيذ المستخدمة.
 
 والمقصود بـ &quot;البيانات الكافية&quot; يتحدّد أساسًا من خلال إعدادين يحددان الحد الأدنى لعدد الصفوف (163,840 افتراضيًا) والحد الأدنى لعدد البايتات (2,097,152 افتراضيًا) التي ينبغي أن يعالجها كل مسار معالجة:
 
 بالنسبة إلى عناقيد shared-nothing:
 
-* [merge&#95;tree&#95;min&#95;rows&#95;for&#95;concurrent&#95;read](/ar/reference/settings/session-settings#merge_tree_min_rows_for_concurrent_read)
-* [merge&#95;tree&#95;min&#95;bytes&#95;for&#95;concurrent&#95;read](/ar/reference/settings/session-settings#merge_tree_min_bytes_for_concurrent_read)
+* [merge&#95;tree&#95;min&#95;rows&#95;for&#95;concurrent&#95;read](/ar/reference/settings/session-settings/merge-tree#merge_tree_min_rows_for_concurrent_read)
+* [merge&#95;tree&#95;min&#95;bytes&#95;for&#95;concurrent&#95;read](/ar/reference/settings/session-settings/merge-tree#merge_tree_min_bytes_for_concurrent_read)
 
 بالنسبة إلى العناقيد ذات التخزين المشترك (مثل ClickHouse Cloud):
 
-* [merge&#95;tree&#95;min&#95;rows&#95;for&#95;concurrent&#95;read&#95;for&#95;remote&#95;filesystem](/ar/reference/settings/session-settings#merge_tree_min_rows_for_concurrent_read_for_remote_filesystem)
-* [merge&#95;tree&#95;min&#95;bytes&#95;for&#95;concurrent&#95;read&#95;for&#95;remote&#95;filesystem](/ar/reference/settings/session-settings#merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem)
+* [merge&#95;tree&#95;min&#95;rows&#95;for&#95;concurrent&#95;read&#95;for&#95;remote&#95;filesystem](/ar/reference/settings/session-settings/merge-tree#merge_tree_min_rows_for_concurrent_read_for_remote_filesystem)
+* [merge&#95;tree&#95;min&#95;bytes&#95;for&#95;concurrent&#95;read&#95;for&#95;remote&#95;filesystem](/ar/reference/settings/session-settings/merge-tree#merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem)
 
-بالإضافة إلى ذلك، هناك حدٌّ أدنى صارم لحجم مهمة القراءة، ويُتحكَّم فيه بواسطة:
+بالإضافة إلى ذلك، هناك حدٌّ أدنى صارم لحجم مهمة القراءة، ويُتحكَّم فيه بواسطة:
 
-* [Merge&#95;tree&#95;min&#95;read&#95;task&#95;size](/ar/reference/settings/session-settings#merge_tree_min_read_task_size) + [merge&#95;tree&#95;min&#95;bytes&#95;per&#95;task&#95;for&#95;remote&#95;reading](/ar/reference/settings/session-settings#merge_tree_min_bytes_per_task_for_remote_reading)
+* [merge&#95;tree&#95;min&#95;read&#95;task&#95;size](/ar/reference/settings/session-settings/merge-tree#merge_tree_min_read_task_size) + [merge&#95;tree&#95;min&#95;bytes&#95;per&#95;task&#95;for&#95;remote&#95;reading](/ar/reference/settings/session-settings/merge-tree#merge_tree_min_bytes_per_task_for_remote_reading)
 
 <Warning>
   **لا تعدّل هذه الإعدادات**

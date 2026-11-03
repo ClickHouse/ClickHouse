@@ -59,7 +59,7 @@ SHOW  wal_level;
   ## أنشئ مستخدم ClickPipes وأدر أذونات النسخ المتماثل
 </div>
 
-اتصل بمثيل AlloyDB الخاص بك كمستخدم مسؤول ونفّذ الأوامر التالية:
+اتصل بمثيل AlloyDB الخاص بك كمستخدم إداري ونفّذ الأوامر التالية:
 
 1. أنشئ مستخدمًا مخصصًا لـ ClickPipes:
 
@@ -84,7 +84,7 @@ SHOW  wal_level;
 4. أنشئ [publication](https://www.postgresql.org/docs/current/logical-replication-publication.html) تتضمن الجداول التي تريد نسخها متماثلًا. نوصي بشدة بقصر الـ publication على الجداول التي تحتاجها فقط لتجنب الحمل الإضافي على الأداء.
 
 <Warning>
-  يجب أن يكون لكل جدول مُدرج في الـ publication إما **مفتاح أساسي** معرّف *أو* أن تكون **هوية النسخة المتماثلة** الخاصة به مضبوطة على `FULL`. راجع [الأسئلة الشائعة لـ Postgres](/ar/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication) للحصول على إرشادات حول تحديد النطاق.
+  يجب أن يكون لكل جدول مُدرج في الـ publication إما **مفتاح أساسي** معرّف *أو* أن تكون **replica identity** الخاصة به مضبوطة على `FULL`. راجع [الأسئلة الشائعة لـ Postgres](/ar/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication) للحصول على إرشادات حول تحديد النطاق.
 </Warning>
 
 * لإنشاء publication لجداول محددة:
@@ -99,25 +99,25 @@ SHOW  wal_level;
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-ستحتوي publication ‏`clickpipes` على مجموعة أحداث التغيير الناتجة من الجداول المحددة، وستُستخدم لاحقًا لإدخال دفق النسخ المتماثل.
+تحدّد publication ‏`clickpipes` مجموعة الجداول التي ستُبث أحداث التغيير الخاصة بها إلى ClickPipes. لا نوصي باستخدام `FOR ALL TABLES` إلا إذا كنت تنوي نسخ كل الجداول متماثلًا، لأن تضمين جداول غير ضرورية يزيد حركة WAL من Postgres إلى ClickPipes ويقلل الكفاءة العامة للنسخ المتماثل.
 
 <div id="configure-network-access">
   ## تهيئة الوصول إلى الشبكة
 </div>
 
-<Note>
-  لا يدعم ClickPipes اتصالات Private Service Connect (PSC). إذا كنت لا تسمح بالوصول العام إلى مثيل AlloyDB الخاص بك، فيمكنك [استخدام نفق SSH](#configure-network-access) للاتصال بشكل آمن. سيتم دعم PSC في المستقبل.
-</Note>
-
-بعد ذلك، يجب السماح لـ ClickPipes بالاتصال بمثيل AlloyDB الخاص بك.
+بعد ذلك، اختر كيفية اتصال ClickPipes بمثيل AlloyDB الخاص بك.
 
 <Tabs>
+  <Tab title="استخدام Private Service Connect">
+    للاتصال الخاص من خدمة ClickHouse Cloud مستضافة على GCP، اتبع [دليل GCP Private Service Connect](/ar/integrations/clickpipes/networking/gcp-psc) لتهيئة نقطة نهاية خاصة عكسية لمثيل AlloyDB الخاص بك.
+  </Tab>
+
   <Tab title="السماح بعناوين IP الخاصة بـ ClickPipes">
     1. في Google Cloud Console، انتقل إلى صفحة AlloyDB [Clusters](https://console.cloud.google.com/alloydb/clusters). حدِّد مثيلك الأساسي لفتح صفحة **Overview**.
 
     2. مرِّر لأسفل إلى **Instances in your cluster** وانقر على **Edit primary**.
 
-    3. حدِّد مربع الاختيار **Enable Public IP** للسماح بالاتصال بالمثيل عبر الإنترنت العام. ضمن **Authorized external networks**، أدخل [قائمة عناوين IP الثابتة الخاصة بـ ClickPipes](/ar/integrations/clickpipes/home#list-of-static-ips) للمنطقة التي نُشرت فيها خدمتك.
+    3. حدِّد مربع الاختيار **Enable Public IP** للسماح بالاتصال بالمثيل عبر الإنترنت العام. ضمن **Authorized external networks**، أدخل [قائمة عناوين IP الثابتة الخاصة بـ ClickPipes](/ar/integrations/clickpipes/networking/static-ips) للمنطقة التي نُشرت فيها خدمتك.
 
        <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/4_configure_network_security.webp" alt="تهيئة الشبكة للوصول العام باستخدام قائمة سماح لعناوين IP" size="lg" border />
 
@@ -137,7 +137,7 @@ SHOW  wal_level;
        * تأكد من أن مثيل GCE موجود في نفس Virtual Private Network (VPC) الخاصة بمثيل AlloyDB.
        * تأكد من أن مثيل GCE لديه [عنوان IP عام ثابت](https://cloud.google.com/compute/docs/ip-addresses/reserve-static-external-ip-address). ستستخدم عنوان IP هذا عند توصيل ClickPipes بمضيف bastion عبر SSH.
 
-    2. حدِّث قواعد جدار الحماية الخاصة بمضيف bastion عبر SSH للسماح بحركة المرور من [قائمة عناوين IP الثابتة الخاصة بـ ClickPipes](/ar/integrations/clickpipes/home#list-of-static-ips) للمنطقة التي نُشرت فيها خدمتك.
+    2. حدِّث قواعد جدار الحماية الخاصة بمضيف bastion عبر SSH للسماح بحركة المرور من [قائمة عناوين IP الثابتة الخاصة بـ ClickPipes](/ar/integrations/clickpipes/networking/static-ips) للمنطقة التي نُشرت فيها خدمتك.
 
     3. حدِّث قواعد جدار الحماية الخاصة بـ AlloyDB للسماح بحركة المرور من مضيف bastion عبر SSH.
   </Tab>

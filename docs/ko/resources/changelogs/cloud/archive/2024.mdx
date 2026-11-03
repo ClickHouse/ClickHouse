@@ -61,7 +61,7 @@ AWS용 Bring Your Own Cloud를 이제 베타로 이용할 수 있습니다. 이 
   ### Query API endpoint (일반 제공)
 </div>
 
-ClickHouse Cloud에서 Query API Endpoints가 일반 제공(GA) 단계에 도달했음을 알려드립니다. Query API Endpoints를 사용하면 몇 번만 클릭하여 저장된 쿼리를 위한 RESTful API 엔드포인트를 만들고, 언어별 클라이언트나 복잡한 인증 처리를 거치지 않고도 애플리케이션에서 바로 데이터를 활용할 수 있습니다. 최초 출시 이후 다음과 같은 여러 개선 사항이 적용되었습니다.
+ClickHouse Cloud에서 Query API endpoint가 일반 제공(GA) 단계에 도달했음을 알려드립니다. Query API endpoint를 사용하면 몇 번만 클릭하여 저장된 쿼리를 위한 RESTful API 엔드포인트를 만들고, 언어별 클라이언트나 복잡한 인증 처리를 거치지 않고도 애플리케이션에서 바로 데이터를 활용할 수 있습니다. 최초 출시 이후 다음과 같은 여러 개선 사항이 적용되었습니다.
 
 * 특히 콜드 스타트 시 엔드포인트 지연 시간 감소
 * 엔드포인트 RBAC 제어 강화
@@ -71,7 +71,7 @@ ClickHouse Cloud에서 Query API Endpoints가 일반 제공(GA) 단계에 도달
 
 이러한 개선 사항과 더불어, 기존 프레임워크를 활용해 ClickHouse Cloud 서비스에서 임의의 SQL 쿼리를 실행할 수 있는 범용 Query API 엔드포인트도 발표합니다. 범용 엔드포인트는 서비스 설정 페이지에서 활성화하고 구성할 수 있습니다.
 
-시작하려면 [Query API Endpoints documentation](/ko/products/cloud/guides/sql-console/query-endpoints)을 참조하십시오.
+시작하려면 [Query API endpoint documentation](/ko/products/cloud/guides/sql-console/query-endpoints)을 참조하십시오.
 
 <Image img="/images/cloud/reference/api_endpoints.webp" size="lg" alt="여러 설정이 표시된 API 엔드포인트 구성 화면의 ClickHouse Cloud 인터페이스" border />
 
@@ -106,7 +106,7 @@ ClickHouse는 이미 [거리 함수]https://clickhouse.com/blog/reinvent-2024-pr
   ### ClickPipes가 이제 AWS에서 VPC 간 리소스 액세스를 지원합니다
 </div>
 
-이제 AWS MSK와 같은 특정 데이터 소스에 단방향 액세스 권한을 부여할 수 있습니다. AWS PrivateLink 및 VPC Lattice를 통한 VPC 간 리소스 액세스를 사용하면 공용 네트워크를 거치더라도 프라이버시와 보안을 유지하면서 VPC 및 계정 경계를 넘어 개별 리소스를 공유할 수 있으며, 온프레미스 네트워크에서도 이를 사용할 수 있습니다. 시작하여 리소스 공유를 설정하려면 [공지 글](https://clickhouse.com/blog/clickpipes-crossvpc-resource-endpoints?utm_medium=web\&utm_source=changelog)을 참조하십시오.
+이제 AWS MSK와 같은 특정 데이터 소스에 단방향 액세스 권한을 부여할 수 있습니다. AWS PrivateLink 및 VPC Lattice를 활용한 VPC 간 리소스 액세스를 사용하면 공용 네트워크를 거치더라도 프라이버시와 보안을 유지하면서 VPC 및 계정 경계를 넘어 개별 리소스를 공유할 수 있고, 온프레미스 네트워크에서도 이를 사용할 수 있습니다. 시작하고 리소스 공유를 설정하려면 [공지 게시물](https://clickhouse.com/blog/clickpipes-crossvpc-resource-endpoints?utm_medium=web\&utm_source=changelog)을 참조하십시오.
 
 <Image img="/images/cloud/reference/cross-vpc-clickpipes.webp" size="lg" alt="ClickPipes가 AWS MSK에 연결되는 VPC 간 리소스 액세스 아키텍처를 보여주는 다이어그램" border />
 
@@ -276,7 +276,7 @@ ClickPipes는 ClickHouse Cloud로 데이터를 수집하는 가장 쉬운 방법
 
 ClickHouse에는 스키마를 확인하기 위해 테이블을 검사할 수 있는 [`DESCRIBE`](/ko/reference/statements/describe-table)와 같은 명령이 있습니다. 이러한 명령은 콘솔에 결과를 출력하지만, 테이블과 컬럼에 관한 필요한 정보를 모두 가져오려면 여러 쿼리를 조합해야 하는 경우가 많아 사용이 다소 불편합니다.
 
-최근 Cloud Console에 **테이블 검사기(Table Inspector)** 를 출시했습니다. 이를 통해 SQL을 작성하지 않고도 UI에서 중요한 테이블 및 컬럼 정보를 확인할 수 있습니다. Cloud Console에서 서비스의 Table Inspector를 사용해 보십시오. 하나의 통합된 인터페이스에서 스키마, 스토리지, 압축 등 다양한 정보를 제공합니다.
+최근 Cloud Console에 **테이블 검사기(테이블 검사기)** 를 출시했습니다. 이를 통해 SQL을 작성하지 않고도 UI에서 중요한 테이블 및 컬럼 정보를 확인할 수 있습니다. Cloud Console에서 서비스의 테이블 검사기를 사용해 보십시오. 하나의 통합된 인터페이스에서 스키마, 스토리지, 압축 등 다양한 정보를 제공합니다.
 
 <Image img="/images/cloud/reference/july-18-table-inspector.webp" size="lg" alt="상세한 스키마 및 스토리지 정보를 보여주는 ClickHouse Cloud 테이블 검사기 인터페이스" border />
 
@@ -481,7 +481,7 @@ ClickHouse는 대규모 데이터셋 전체를 빠르게 쿼리할 수 있지만
   ### 이제 ClickHouse Cloud에서 AWS Tokyo 리전을 사용할 수 있습니다
 </div>
 
-이번 릴리스에서 ClickHouse Cloud에 새로운 AWS Tokyo 리전(`ap-northeast-1`)이 추가되었습니다. ClickHouse를 가장 빠른 데이터베이스로 제공하기 위해, 지연 시간을 최대한 줄일 수 있도록 각 클라우드에 더 많은 리전을 지속적으로 추가하고 있습니다. 업데이트된 Cloud Console에서 Tokyo에 새 서비스를 생성할 수 있습니다.
+이번 릴리스에서는 ClickHouse Cloud에 새로운 AWS Tokyo 리전(`ap-northeast-1`)이 추가되었습니다. ClickHouse를 가장 빠른 데이터베이스로 만들기 위해, 지연 시간을 최대한 줄일 수 있도록 각 클라우드에 더 많은 리전을 지속적으로 추가하고 있습니다. 업데이트된 Cloud Console에서 Tokyo에 새 서비스를 생성할 수 있습니다.
 
 <Image img="/images/cloud/reference/create-tokyo-service.webp" size="lg" alt="Tokyo 리전 선택이 표시된 ClickHouse Cloud 서비스 생성 인터페이스" border />
 
@@ -510,18 +510,18 @@ ClickHouse는 대규모 데이터셋 전체를 빠르게 쿼리할 수 있지만
 </div>
 
 <div id="introducing-the-new-clickhouse-cloud-console">
-  ### 새로운 ClickHouse Cloud Console 소개
+  ### 새로운 ClickHouse Cloud 콘솔 소개
 </div>
 
-이번 릴리스에서는 새로운 ClickHouse Cloud Console의 비공개 프리뷰를 선보입니다.
+이번 릴리스에서는 새로운 ClickHouse Cloud 콘솔의 비공개 프리뷰를 선보입니다.
 
-ClickHouse는 개발자 경험을 어떻게 개선할 수 있을지 끊임없이 고민하고 있습니다. 가장 빠른 실시간 데이터 웨어하우스를 제공하는 것만으로는 충분하지 않으며, 사용하고 관리하기도 쉬워야 한다고 생각합니다.
+ClickHouse는 개발자 경험을 어떻게 개선할 수 있을지 끊임없이 고민하고 있습니다. 가장 빠른 실시간 데이터 웨어하우스를 제공하는 것만으로는 충분하지 않으며, 사용과 관리도 쉬워야 한다고 생각합니다.
 
-매월 수천 명의 ClickHouse Cloud 사용자가 SQL 콘솔에서 수십억 건의 쿼리를 실행하고 있습니다. 이에 따라 ClickHouse Cloud 서비스를 그 어느 때보다 더 쉽게 이용할 수 있도록 세계적 수준의 콘솔에 더 많은 투자를 하기로 했습니다. 새로운 ClickHouse Cloud Console 환경은 독립형 SQL Editor와 관리 콘솔을 하나의 직관적인 UI로 통합합니다.
+매월 수천 명의 ClickHouse Cloud 사용자가 SQL 콘솔에서 수십억 건의 쿼리를 실행하고 있습니다. 이에 따라 ClickHouse Cloud 서비스를 그 어느 때보다 더 쉽게 이용할 수 있도록 세계적 수준의 콘솔에 더 많은 투자를 하기로 했습니다. 새로운 ClickHouse Cloud 콘솔 경험은 독립형 SQL Editor와 관리 콘솔을 하나의 직관적인 UI로 통합합니다.
 
-일부 고객에게는 ClickHouse에서 데이터를 탐색하고 관리할 수 있는 통합적이고 몰입감 있는 방식인 새로운 ClickHouse Cloud Console 환경의 프리뷰가 제공됩니다. 우선 액세스를 원하시면 support@clickhouse.com으로 문의하십시오.
+일부 고객에게는 ClickHouse에서 데이터를 탐색하고 관리할 수 있는 통합적이고 몰입감 있는 방식인 새로운 ClickHouse Cloud 콘솔 경험의 프리뷰가 제공됩니다. 우선 액세스를 원하시면 support@clickhouse.com으로 문의하십시오.
 
-<Image img="/images/cloud/reference/new-cloud-console.webp" size="lg" alt="통합 SQL Editor 및 관리 기능이 포함된 새로운 ClickHouse Cloud Console 인터페이스를 보여주는 애니메이션" border />
+<Image img="/images/cloud/reference/new-cloud-console.webp" size="lg" alt="통합 SQL Editor 및 관리 기능이 포함된 새로운 ClickHouse Cloud 콘솔 인터페이스를 보여주는 애니메이션" border />
 
 <div id="march-28-2024">
   ## 2024년 3월 28일
@@ -736,7 +736,7 @@ ClickHouse는 개발자 경험을 어떻게 개선할 수 있을지 끊임없이
 * Python 클라이언트: SQLAlchemy용 Nothing 유형 지원을 추가했습니다
 
 <div id="reliability-changes">
-  ### 안정성 변경 사항
+  ### 신뢰성 변경 사항
 </div>
 
-* 사용자에게 영향을 주는 하위 호환되지 않는 변경 사항: 이전에는 특정 조건에서 두 가지 기능([is&#95;deleted](/ko/reference/engines/table-engines/mergetree-family/replacingmergetree#is_deleted) 및 `OPTIMIZE CLEANUP`)이 ClickHouse 데이터 손상으로 이어질 수 있었습니다. 사용자 데이터의 무결성을 보호하면서도 기능의 핵심은 유지하기 위해 이 기능의 동작 방식을 조정했습니다. 구체적으로는 MergeTree 설정 `clean_deleted_rows`가 이제 더 이상 권장되지 않으며 아무런 효과도 없습니다. `CLEANUP` 키워드는 기본적으로 허용되지 않으며(사용하려면 `allow_experimental_replacing_merge_with_cleanup`를 활성화해야 합니다), `CLEANUP`를 사용하기로 했다면 반드시 `FINAL`과 함께 사용해야 합니다. 또한 `OPTIMIZE FINAL CLEANUP`를 실행한 후에는 더 오래된 버전의 행이 삽입되지 않도록 보장해야 합니다.
+* 사용자에게 영향을 주는 하위 호환되지 않는 변경 사항: 이전에는 특정 조건에서 두 가지 기능([is&#95;deleted](/ko/reference/engines/table-engines/mergetree-family/replacingmergetree#is_deleted) 및 `OPTIMIZE CLEANUP`)이 ClickHouse 데이터 손상으로 이어질 수 있었습니다. 사용자 데이터의 무결성을 보호하면서도 기능의 핵심은 유지하기 위해, 이 기능의 동작 방식을 조정했습니다. 구체적으로, MergeTree 설정 `clean_deleted_rows`는 이제 더 이상 권장되지 않으며 아무런 효과도 없습니다. `CLEANUP` 키워드는 기본적으로 허용되지 않으며(사용하려면 `allow_experimental_replacing_merge_with_cleanup`를 활성화해야 합니다). `CLEANUP`을 사용하기로 했다면 반드시 `FINAL`과 함께 사용해야 하며, `OPTIMIZE FINAL CLEANUP`을 실행한 후에는 더 오래된 버전의 행이 삽입되지 않도록 반드시 보장해야 합니다.

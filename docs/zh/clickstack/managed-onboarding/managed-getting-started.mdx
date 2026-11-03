@@ -30,21 +30,15 @@ import CreateIngestionUser from '/snippets/zh/clickstack/_create_ingestion_user.
 * 如果你还没有 collector，且想按下文的新 collector 路径操作，则需要 **Docker**。
 
 <Steps>
-  <Step>
-    ## 准备好您的凭据
-
+  <Step title="准备好您的凭据" id="gather-credentials">
     <GatherCredentials />
   </Step>
 
-  <Step>
-    ## 创建摄取用户
-
+  <Step title="创建摄取用户" id="create-ingestion-user">
     <CreateIngestionUser />
   </Step>
 
-  <Step>
-    ## 部署 collector
-
+  <Step title="部署 collector" id="deploy-collector">
     请根据您的实际情况选择对应选项。
 
     <Info>
@@ -199,9 +193,7 @@ import CreateIngestionUser from '/snippets/zh/clickstack/_create_ingestion_user.
     </Tabs>
   </Step>
 
-  <Step>
-    ## 克隆并运行应用程序
-
+  <Step title="克隆并运行应用程序" id="clone-and-run-the-application">
     克隆代码仓库，安装依赖项，并创建 `.env` 文件：
 
     ```bash
@@ -224,9 +216,7 @@ import CreateIngestionUser from '/snippets/zh/clickstack/_create_ingestion_user.
     此时，应用程序已经在运行，但尚未接入埋点。ClickStack 中还没有任何数据：它正在等待遥测数据。这就是“before”状态。
   </Step>
 
-  <Step>
-    ## 将应用程序连接到您的采集器
-
+  <Step title="将应用程序连接到您的采集器" id="connect-the-application">
     应用程序需要以下两个值，才能连接到您在上面部署的采集器：
 
     * `OTEL_EXPORTER_OTLP_ENDPOINT`：您的采集器对外暴露的 OTLP 端点 (OTLP over HTTPS 通常使用端口 `4318`) 。
@@ -243,9 +233,7 @@ import CreateIngestionUser from '/snippets/zh/clickstack/_create_ingestion_user.
     SDK 使用 `OTEL_EXPORTER_OTLP_HEADERS` 为三种信号设置授权请求头：链路追踪、指标和日志。如果你的 collector 在本地运行且不要求身份验证，可以将该值留空 (`OTEL_EXPORTER_OTLP_HEADERS=authorization=`) ，但该变量必须存在；如果未设置或值完全为空，SDK 将完全跳过初始化。最后，如果在不使用 TLS 的情况下运行 collector，请确保使用正确的 HTTP protocol (例如：`http://localhost:4318`) 。
   </Step>
 
-  <Step>
-    ## 为应用添加埋点
-
+  <Step title="为应用添加埋点" id="instrument-the-application">
     埋点分为三个部分：安装 SDKs、切换启动命令，以及启用浏览器 SDK。这些操作都不会改变应用程序的业务逻辑。
 
     ### 安装 SDKs
@@ -298,10 +286,8 @@ import CreateIngestionUser from '/snippets/zh/clickstack/_create_ingestion_user.
     </Warning>
   </Step>
 
-  <Step>
-    ## 生成流量
-
-    重启应用程序，使新的启动命令和刚构建好的浏览器打包产物生效：
+  <Step title="生成流量" id="generate-traffic">
+    重启应用程序，让新的启动命令和刚构建的浏览器打包产物生效：
 
     ```bash
     # Ctrl-C the previous run, then:
@@ -311,9 +297,7 @@ import CreateIngestionUser from '/snippets/zh/clickstack/_create_ingestion_user.
     重新加载浏览器选项卡，让 Vite 提供更新后的打包产物；然后多刷新几次应用，切换年份，并点开故事以产生流量。每次交互都会通过你的 collector 将日志、指标、链路追踪和 session replay 事件发送到 ClickStack。
   </Step>
 
-  <Step>
-    ## 启动 ClickStack 并探索你的遥测数据
-
+  <Step title="启动 ClickStack 并探索你的遥测数据" id="launch-clickstack">
     在 [ClickHouse Cloud 控制台](https://console.clickhouse.cloud) 中打开你的服务，从左侧菜单选择 **ClickStack**，然后点击 **开始摄取**。
 
     <Image img="/images/use-cases/observability/clickstack-cloud-first-time.webp" size="lg" alt="启动 ClickStack" border />
@@ -356,8 +340,8 @@ import CreateIngestionUser from '/snippets/zh/clickstack/_create_ingestion_user.
   ## 延伸阅读
 </div>
 
-* [监控 Kubernetes](/zh/clickstack/managed-onboarding/monitoring-kubernetes)：从集群收集日志、基础设施指标和 Kubernetes 事件。
+* [监控 Kubernetes](/zh/clickstack/managed-onboarding/monitoring-kubernetes)：从集群中收集日志、基础设施指标和 Kubernetes 事件。
 * [监控 AWS CloudWatch 日志](/zh/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs)：通过 OpenTelemetry CloudWatch receiver 转发 CloudWatch 日志。
-* [调优托管 ClickStack](/zh/clickstack/managed-onboarding/tuning-clickstack-schema)：优化 schema，以提升查询性能和存储效率。
-* [保护 collector](/zh/clickstack/ingesting-data/collector#securing-the-collector)：为 OTLP 端点启用 TLS，并使用最小权限的摄取用户。
-* [进入生产环境](/zh/clickstack/managing/production)：查看生产环境部署建议。
+* [调优托管 ClickStack](/zh/clickstack/managed-onboarding/tuning-clickstack-schema)：优化你的 schema，以提升查询性能和存储效率。
+* [保护 collector](/zh/clickstack/ingesting-data/collector#securing-the-collector)：为 OTLP 端点启用 TLS，并使用遵循最小权限原则的摄取用户。
+* [进入生产环境](/zh/clickstack/managing/production)：了解生产环境部署的相关建议。

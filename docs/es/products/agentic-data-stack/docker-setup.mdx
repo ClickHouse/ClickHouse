@@ -65,7 +65,7 @@ Ejecute localmente el Agentic Data Stack completo con Docker Compose para hacer 
 
     * **LibreChat** (UI de chat) — [http://localhost:3080](http://localhost:3080)
     * **Langfuse** (observabilidad) — [http://localhost:3000](http://localhost:3000)
-    * **Admin Panel** (configuración de LibreChat desde el navegador) — [http://localhost:3081](http://localhost:3081)
+    * **panel de administración** (configuración de LibreChat desde el navegador) — [http://localhost:3081](http://localhost:3081)
     * **MinIO console** (object storage; credenciales en `.env`) — [http://localhost:9091](http://localhost:9091)
 
     Inicia sesión en LibreChat con las credenciales de administrador de tu archivo `.env`.
@@ -104,7 +104,7 @@ Ejecute localmente el Agentic Data Stack completo con Docker Compose para hacer 
 
     > ¿Qué bases de datos y tablas hay disponibles, y cuántas filas hay en la tabla más grande?
 
-    El agent usa las herramientas del servidor MCP para listar bases de datos y tablas, ejecutar consultas de solo lectura en ClickHouse y elaborar una respuesta a partir de los resultados. No necesitas escribir SQL.
+    El agente usa las herramientas del servidor MCP para listar bases de datos y tablas, ejecutar consultas de solo lectura en ClickHouse y elaborar una respuesta a partir de los resultados. No necesitas escribir SQL.
 
     <Image img="/images/agentic-data-stack/prompt-chat.webp" alt="LibreChat respondiendo a la pregunta de ejemplo al invocar las herramientas MCP de ClickHouse-Local y listar las bases de datos y tablas disponibles" size="md" />
   </Step>

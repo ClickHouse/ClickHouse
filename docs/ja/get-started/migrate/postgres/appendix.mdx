@@ -36,9 +36,9 @@ OLTP システムに慣れ、ACID トランザクションを前提としてい�
   ## 結果整合性
 </div>
 
-ClickHouse は、内部のレプリケーション機構の管理に ClickHouse Keeper (C++ 製の ZooKeeper 実装。ZooKeeper を使用することも可能) を使用しており、主にメタデータの保存と結果整合性の確保を担っています。Keeper は、分散環境内で各 insert に一意の連番を割り当てるために使われます。これは、各操作の順序と整合性を維持するうえで重要です。この仕組みは、マージやミューテーションといったバックグラウンド処理も管理し、それらの作業を分散しつつ、すべてのレプリカで同じ順序で実行されることを保証します。さらに Keeper は、メタデータの管理に加えて、保存された data part のチェックサムの追跡を含むレプリケーション全体の制御センターとして機能し、レプリカ間の分散通知システムとしても機能します。
+ClickHouse は、内部のレプリケーション機構の管理に ClickHouse Keeper (C++ 製の ZooKeeper 実装。ZooKeeper を使用することも可能) を使用しており、主にメタデータの保存と結果整合性の確保を担っています。Keeper は、分散環境内で各 insert に一意の連番を割り当てるために使われます。これは、各操作の順序と整合性を維持するうえで重要です。この仕組みは、マージやミューテーションといったバックグラウンド処理も管理し、それらの作業を分散しつつ、すべてのレプリカで同じ順序で実行されることを保証します。さらに Keeper は、メタデータの管理に加えて、保存された パーツ のチェックサムの追跡を含むレプリケーション全体の制御センターとして機能し、レプリカ間の分散通知システムとしても機能します。
 
-ClickHouse におけるレプリケーションのプロセスは、(1) いずれかのレプリカにデータが挿入されると始まります。このデータは、挿入されたままの生データとして、(2) チェックサムとともにディスクに書き込まれます。書き込みが完了すると、そのレプリカは (3) 一意の block 番号を割り当て、新しいパーツの詳細を記録することで、この新しい data part を Keeper に登録しようとします。ほかのレプリカは、レプリケーションログ内の新しいエントリを (4) 検出すると、(5) 内部 HTTP プロトコルを介して対応する data part をダウンロードし、ZooKeeper に記録されたチェックサムと照合して検証します。この方法により、処理速度の違いや遅延があっても、最終的にはすべてのレプリカが一貫した最新データを保持できるようになります。さらにこのシステムは、複数の操作を同時実行で処理できるため、データ管理プロセスを最適化し、システムの拡張性とハードウェア差異に対する堅牢性を高めます。
+ClickHouse におけるレプリケーションのプロセスは、(1) いずれかのレプリカにデータが挿入されると始まります。このデータは、挿入されたままの生データとして、(2) チェックサムとともにディスクに書き込まれます。書き込みが完了すると、そのレプリカは (3) 一意の block 番号を割り当て、新しいパーツの詳細を記録することで、この新しい パーツ を Keeper に登録しようとします。ほかのレプリカは、レプリケーションログ内の新しいエントリを (4) 検出すると、(5) 内部 HTTP プロトコルを介して対応する パーツ をダウンロードし、ZooKeeper に記録されたチェックサムと照合して検証します。この方法により、処理速度の違いや遅延があっても、最終的にはすべてのレプリカが一貫した最新データを保持できるようになります。さらにこのシステムは、複数の操作を同時実行で処理できるため、データ管理プロセスを最適化し、システムの拡張性とハードウェア差異に対する堅牢性を高めます。
 
 <Image img="/images/integrations/data-ingestion/dbms/postgres-replicas.webp" size="md" alt="結果整合性" />
 
@@ -92,7 +92,7 @@ OSS でこの動作を実現する方法は、分片とレプリカのトポロ�
 
 複数の分片とレプリカを持つトポロジーは、分散テーブルがなくても構成可能です。ただし、このような高度なデプロイメントでは通常、独自のルーティング用インフラストラクチャが用意されています。そのため、複数の分片を持つデプロイメントでは分散テーブルを使用しているものと想定します (分散テーブルは単一分片のデプロイメントでも使用できますが、通常は不要です) 。
 
-この場合、`session_id` や `user_id` などのプロパティに基づいて、一貫したノードルーティングが行われるようにする必要があります。設定 [`prefer_localhost_replica=0`](/ja/reference/settings/session-settings#prefer_localhost_replica) と [`load_balancing=in_order`](/ja/reference/settings/session-settings#load_balancing) は、[クエリで設定](/ja/concepts/features/configuration/settings/settings-query-level) する必要があります。これにより、まず各分片のローカルレプリカが優先され、ローカルレプリカがない場合は設定に記載された順序でレプリカが優先されます。ただし、これはエラー数が同じ場合に限られ、エラー数が多い場合はランダム選択でフェイルオーバーします。決定論的な分片選択の代替として、[`load_balancing=nearest_hostname`](/ja/reference/settings/session-settings#load_balancing) も使用できます。
+この場合、`session_id` や `user_id` などのプロパティに基づいて、一貫したノードルーティングが行われるようにする必要があります。設定 [`prefer_localhost_replica=0`](/ja/reference/settings/session-settings/prefer#prefer_localhost_replica) と [`load_balancing=in_order`](/ja/reference/settings/session-settings/load-balancing#load_balancing) は、[クエリで設定](/ja/concepts/features/configuration/settings/settings-query-level) する必要があります。これにより、まず各分片のローカルレプリカが優先され、ローカルレプリカがない場合は設定に記載された順序でレプリカが優先されます。ただし、これはエラー数が同じ場合に限られ、エラー数が多い場合はランダム選択でフェイルオーバーします。決定論的な分片選択の代替として、[`load_balancing=nearest_hostname`](/ja/reference/settings/session-settings/load-balancing#load_balancing) も使用できます。
 
 > 分散テーブルを作成するときは、クラスターを指定します。config.xml で指定するこのクラスター定義には、分片 (およびそのレプリカ) が列挙されます。これにより、各ノードからどの順序で使用するかをユーザーが制御できます。これを利用すれば、選択を決定論的にできます。
 
@@ -109,7 +109,7 @@ OSS でこの動作を実現する方法は、分片とレプリカのトポロ�
 
 1. **同じノードに対して読み書きする** - ネイティブプロトコルを使用している場合、または [HTTP 経由で書き込み/読み取りを行うセッション](/ja/concepts/features/interfaces/http#default-database) を使用している場合は、同じレプリカに接続している必要があります。この場合、書き込み先のノードから直接読み取るため、読み取り結果は常に一貫します。
 2. **レプリカを手動で同期する** - 1 つのレプリカに書き込み、別のレプリカから読み取る場合は、読み取り前に `SYSTEM SYNC REPLICA LIGHTWEIGHT` を実行できます。
-3. **逐次整合性を有効にする** - クエリ設定 [`select_sequential_consistency = 1`](/ja/reference/settings/session-settings#select_sequential_consistency) を使用します。OSS では、設定 `insert_quorum = 'auto'` も指定する必要があります。
+3. **逐次整合性を有効にする** - クエリ設定 [`select_sequential_consistency = 1`](/ja/reference/settings/session-settings/other#select_sequential_consistency) を使用します。OSS では、設定 `insert_quorum = 'auto'` も指定する必要があります。
 
 <br />
 
@@ -207,6 +207,5 @@ GROUP BY `table`
 | `HSTORE`             | [Map(K, V)](/ja/reference/data-types/map), [Map](/ja/reference/data-types/map)(K,[Variant](/ja/reference/data-types/variant))                                                                   |
 | `UUID`               | [UUID](/ja/reference/data-types/uuid)                                                                                                                                                     |
 | `ARRAY<T>`           | [ARRAY(T)](/ja/reference/data-types/array)                                                                                                                                                |
-| `JSON`               | [String](/ja/reference/data-types/string), [Variant](/ja/reference/data-types/variant), [Nested](/ja/reference/data-types/nested-data-structures/index), [Tuple](/ja/reference/data-types/tuple)   |
 | `JSON`               | [String](/ja/reference/data-types/string), [Variant](/ja/reference/data-types/variant), [Nested](/ja/reference/data-types/nested-data-structures), [Tuple](/ja/reference/data-types/tuple)         |
 | `JSONB`              | [String](/ja/reference/data-types/string)                                                                                                                                                 |

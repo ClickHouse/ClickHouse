@@ -1,0 +1,317 @@
+-- TestStringFunctions
+hello world
+
+what
+what
+this is cool
+this is cool
+hello naïve world
+𐐭end
+𐐭end𐐭
+信念,爱,希望
+0
+5
+13
+17
+4
+7
+5
+13
+17
+4
+7
+0
+5
+5
+0
+6
+3
+2
+2
+2
+1
+2
+1
+1
+3
+4
+0
+0
+1
+3
+4
+\N
+\N
+\N
+aaaaaa
+abXXefabXXef
+abefabef
+tech
+tech
+333tech
+123
+    123
+foo
+foo
+
+
+
+𐐭
+Oesterreich
+
+olleh
+yllacitardauQ
+racecar
+ratically
+
+cally
+
+ratica
+ratically
+ratically
+
+call
+cally
+
+
+
+ratically
+
+cally
+
+ratica
+ratically
+信
+,爱,希望
+爱,希望
+希望
+𐐭
+end
+abc
+def
+ghi
+\N
+\N
+
+
+\N
+abc
+\N
+
+\N
+a
+b
+c
+\N
+\N
+abc
+\N
+abc
+@
+def
+
+abc
+
+def
+\N
+
+信念
+爱
+希望
+\N
+證
+証
+\N
+
+
+hello  
+hello
+hello  
+hello world 
+信念 爱 希望  
+信念 爱 希望 
+信念 爱 希望
+  信念 爱 希望
+
+
+  hello
+  hello
+hello
+ hello world
+信念 爱 希望  
+信念 爱 希望
+ 信念 爱 希望
+  信念 爱 希望
+
+
+hello
+hello
+hello
+hello world
+信念 爱 希望  
+信念 爱 希望
+信念 爱 希望
+信念 爱 希望
+  信念 爱 希望
+abc
+abc
+abc
+abc
+abc
+abc
+
+   
+  hello  
+hello  
+hello  
+llo  
+hello
+llo
+hello  
+hello world 
+llo world 
+
+hello world 
+
+   
+  hello  
+  hello
+  he
+hello
+he
+hello  
+ hello world
+ hello wor
+
+ hello world
+źó
+
+   
+  hello  
+hello
+llo
+he
+hello
+hello
+he
+hello  
+hello world
+hello wor
+llo world
+
+hello world
+ół
+hello
+
+hello world
+what!!
+
+HELLO WORLD
+WHAT!!
+xtext
+text
+xytext
+xyxtext
+xyzxytext
+望信念 爱 希望  
+望望信念 爱 希望  
+希望希信念 爱 希望  
+希望希望信念 爱 希望  
+aaa
+
+tex
+信念 爱 
+textx
+text
+textxy
+textxyx
+textxyzxy
+信念 爱 希望  望
+信念 爱 希望  望望
+信念 爱 希望  希望希
+信念 爱 希望  希望希望
+aaa
+
+tex
+信念 爱 
+hello
+ab  
+ab a
+1
+ab 
+hello naïve world
+\N
+1
+1
+0
+0
+\N
+\N
+\N
+\N
+\N
+1
+1
+0
+0
+\N
+\N
+\N
+\N
+\N
+-- TestTruncateWithPrecision
+10
+1234.5
+1234
+-1234
+-0
+1234.56
+12
+-12
+12.123457
+10
+0
+-- TestUrlFunctions
+v1
+v2
+
+
+v1
+a=b=c
+%F0%A9%B8%BD
+-- TestVarbinaryFunctions
+0
+1
+3
+NBSWY3DPEB3W64TMMQ======
+\N
+\N
+\N
+68656C6C6F20776F726C64
+0
+1
+9223372036854775807
+-9223372036854775807
+0
+1
+2147483647
+-2147483647
+1
+1
+3.14
+3.14
+3.4028235e38
+-3.4028235e38
+0
+1
+3.1415926
+1.7976931348623157e308
+-1.7976931348623157e308
+5e-324
+-5e-324
+38028046
+639479525
+639479525
+1129618807
+4223167559
+\N

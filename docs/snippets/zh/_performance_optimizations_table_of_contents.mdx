@@ -15,7 +15,7 @@ title: 性能优化目录
 | [避免变更](/zh/concepts/best-practices/avoid-mutations)                            | 设计仅追加的工作流，在保持数据准确性和性能的同时，避免高成本的 `UPDATE` 和 `DELETE` 操作。            |
 | [避免 Nullable 列](/zh/concepts/best-practices/avoidnullablecolumns)              | 尽可能使用默认值代替可空列，以减少存储开销并提升查询性能。                                      |
 | [避免 `OPTIMIZE FINAL`](/zh/concepts/best-practices/avoid-optimize-final)        | 了解何时应该以及何时不应该使用 `OPTIMIZE TABLE FINAL`                             |
-| [analyzer](/zh/guides/clickhouse/performance-and-monitoring/analyzer)          | 利用 ClickHouse 新的查询分析器识别性能瓶颈，并优化查询执行计划以提升效率。                        |
+| [analyzer](/zh/guides/clickhouse/performance-and-monitoring/analyzer)          | 利用 ClickHouse 的 analyzer 识别性能瓶颈，并优化查询执行计划以提升效率。                    |
 | [查询剖析](/zh/concepts/features/performance/troubleshoot/sampling-query-profiler) | 使用采样查询分析器分析查询执行模式，识别性能热点，并优化资源使用。                                  |
 | [查询缓存](/zh/concepts/features/performance/caches/query-cache)                   | 通过启用并配置 ClickHouse 内置的查询结果缓存，加速频繁执行的 `SELECT` 查询。                  |
 | [测试硬件](/zh/concepts/features/performance/troubleshoot/performance-test)        | 无需安装即可在任意服务器上运行 ClickHouse 性能基准测试，以评估硬件能力。 (不适用于 ClickHouse Cloud) |

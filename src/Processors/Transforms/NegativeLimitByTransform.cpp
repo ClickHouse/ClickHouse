@@ -179,7 +179,17 @@ void NegativeLimitByTransform::appendRun(const ChunkSlice::ColumnsPtr & columns_
     dropExcessRows(window);
 }
 
+/// Stores a group index in the cell's mapped slot, so a set method cannot be used (and is never selected
+/// here); this overload exists only because the dispatch macro covers every variant.
 template <typename Method>
+requires SetAggregationMethod<Method>
+void NegativeLimitByTransform::consumeImpl(Method &, const ColumnRawPtrs &, const ChunkSlice::ColumnsPtr &, UInt64)
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "NegativeLimitByTransform does not support void-mapped aggregation methods");
+}
+
+template <typename Method>
+requires MapAggregationMethod<Method>
 void NegativeLimitByTransform::consumeImpl(
     Method & method, const ColumnRawPtrs & key_columns, const ChunkSlice::ColumnsPtr & columns_ptr, UInt64 num_rows)
 {
@@ -469,9 +479,10 @@ void NegativeLimitBySortedStreamTransform::consume(Chunk chunk)
 
     /// Segment the sorted chunk into maximal runs of rows that share the same key; each run is
     /// one group.
+    SortedKeyRuns key_runs(normalized_keys.size());
     while (run_start < num_rows)
     {
-        const UInt64 run_end = getEqualRangeEndAssumeSorted(normalized_keys, run_start, num_rows, 1);
+        const UInt64 run_end = getEqualRangeEndAssumeSorted(key_runs, normalized_keys, run_start, num_rows, 1);
 
         append_run(run_start, run_end - run_start);
 

@@ -2,18 +2,18 @@
 slug: /cloud/managed-postgres/monitoring/query-insights
 sidebarTitle: 'Query insights'
 title: 'Query insights pour Postgres'
-description: 'Télémétrie par instruction pour Managed Postgres : chaque query pattern exécuté par votre base de données, classé par impact, avec les compteurs de diagnostic qui expliquent pourquoi chacun est lent'
+description: 'Télémétrie par instruction pour ClickHouse Managed Postgres : chaque pattern de requête exécuté par votre base de données, classé par impact, avec les compteurs de diagnostic qui expliquent pourquoi chacun est lent'
 keywords: ['managed postgres', 'query insights', 'pg_stat_ch', 'slow queries', 'p99 latency', 'query patterns', 'postgres performance', 'temp blocks', 'parallel workers', 'wal']
 doc_type: 'guide'
 ---
 
-import BetaBadge from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/fr/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.query-insights-beta" />
 
 Query Insights recueille la télémétrie de chaque instruction de votre
-instance [Managed Postgres](/fr/products/managed-postgres/overview) et classe chaque
+instance [ClickHouse Managed Postgres](/fr/products/managed-postgres/overview) et classe chaque
 pattern de requête par impact, afin de vous permettre de passer de &quot;le p99 dérive
 à la hausse&quot; à &quot;ce pattern écrit sur disque&quot; sans quitter la console Cloud.
 
@@ -27,12 +27,12 @@ valeurs exactes utilisées dans vos requêtes n’entrent jamais dans le flux de
   ## Ouvrir Query insights
 </div>
 
-Ouvrez votre instance Managed Postgres dans la Cloud Console, puis cliquez sur
+Ouvrez votre instance ClickHouse Managed Postgres dans la Cloud Console, puis cliquez sur
 **Query insights** dans la barre latérale gauche. La page se divise en quatre
 zones, dans l&#39;ordre où vous les utiliserez réellement :
 
 * Un **vue d’ensemble** qui affiche sur un seul écran un aperçu de l&#39;état de santé de la base de données.
-* Une table **requête lente récurrente** qui classe chaque query pattern exécuté par votre base de données,
+* Une table **requête lente récurrente** qui classe chaque pattern de requête exécuté par votre base de données,
   triée selon le critère qui vous semble pertinent.
 * Un panneau **requête récente** qui répertorie les exécutions individuelles dans l&#39;ordre
   chronologique inverse.
@@ -71,7 +71,7 @@ ou nul, et des latences par percentile qui restent proches les unes des autres.
 </div>
 
 Lorsque la vue d’ensemble signale un problème, c’est dans ce tableau que
-l’analyse commence. Une ligne par pattern de requête normalisé, avec les
+l’analyse commence. Une ligne par query pattern normalisé, avec les
 littéraux supprimés pour que les exécutions d’une même instruction SQL se regroupent
 sur une seule et même ligne.
 
@@ -132,7 +132,7 @@ le moment exact où une erreur s’est produite.
 <Image img="/images/managed-postgres/monitoring/query-insights-recent-queries.webp" alt="Table Recent Queries avec des menus déroulants de filtre Database, User, Operation et Application, et des colonnes pour Time, Operation, Query, Duration, Rows, Database, User et Blks read" size="lg" border />
 
 Les colonnes par défaut sont Time, Operation, Query, Duration, Rows,
-Database, User et Blks read. Ouvrez le sélecteur **Columns** pour afficher
+Database, User et Blks read. Ouvrez le sélecteur **colonne** pour afficher
 Application, Blks hit, CPU user, CPU sys et PID. Le tableau accepte
 les mêmes filtres Database, User, Operation et Application que le
 tableau des patterns, et peut être trié par Time, Duration, Rows, Blks read et
@@ -155,7 +155,7 @@ Le volet se présente sous la forme d’une vue unique à défilement comportant
 * **Modèle de requête** — le SQL normalisé avec les littéraux remplacés par `$1`,
   `$2`, … et un bouton pour copier dans le presse-papiers.
 * **Utilisation agrégée des ressources** — une grille de 13 cartes de statistiques couvrant le nombre total
-  d’appels, la latence moy/P95/P99/max, le temps d’exécution total, les lignes renvoyées, le ratio de succès du cache,
+  d’appels, la latence moy/P95/P99/max, le temps d’exécution total, les lignes renvoyées, le taux de réussite du cache,
   les blocs lus, les blocs touchés, le temps CPU, les octets WAL et les erreurs.
 * **Contexte de la requête** — la base de données, l’utilisateur, l’opération et l’application
   dont provient ce pattern.
@@ -164,7 +164,7 @@ Le volet se présente sous la forme d’une vue unique à défilement comportant
 * **Exécutions récentes** — les exécutions individuelles du même pattern,
   avec des compteurs par exécution.
 
-<Image img="/images/managed-postgres/monitoring/query-insights-detail-aggregate.webp" alt="Volet de détail de la requête montrant le bloc de code Modèle de requête et la grille Utilisation agrégée des ressources avec treize cartes de statistiques, notamment le nombre total d’appels, les percentiles de latence, le temps d’exécution total, les lignes renvoyées, le ratio de succès du cache, les blocs lus, les blocs touchés, le temps CPU, les octets WAL et les erreurs" size="md" border />
+<Image img="/images/managed-postgres/monitoring/query-insights-detail-aggregate.webp" alt="Volet de détail de la requête montrant le bloc de code Modèle de requête et la grille Utilisation agrégée des ressources avec treize cartes de statistiques, notamment le nombre total d’appels, les percentiles de latence, le temps d’exécution total, les lignes renvoyées, le taux de réussite du cache, les blocs lus, les blocs touchés, le temps CPU, les octets WAL et les erreurs" size="md" border />
 
 <Image img="/images/managed-postgres/monitoring/query-insights-detail-recent.webp" alt="Suite du volet de détail de la requête, montrant la section Contexte de la requête avec la base de données, l’utilisateur, l’opération et l’application, ainsi qu’une carte Exécutions récentes avec l’horodatage, le statut OK, le rôle du serveur, l’identifiant de l’hôte et des compteurs par exécution pour la durée, les lignes, les accès au cache réussis, le CPU, les blocs partagés lus et les blocs partagés touchés" size="md" border />
 
@@ -196,9 +196,9 @@ se trouve au même endroit, sur un seul écran.
 La même télémétrie est également disponible via
 [ClickHouse Cloud OpenAPI](/fr/products/managed-postgres/openapi#query-insights).
 La table [requête lente récurrente](#slow-patterns) correspond à l’endpoint
-[lister les patterns de requêtes lentes](/fr/api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/slowQueryPatternsGetList),
+[lister les patterns de requêtes lentes](/fr/products/cloud/api-reference/postgres/slow-query-patterns-get-list),
 et le [volet de détail](#detail) correspond à l’endpoint
-[récupérer un pattern de requête lente](/fr/api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/slowQueryPatternGet),
+[récupérer un pattern de requête lente](/fr/products/cloud/api-reference/postgres/slow-query-pattern-get),
 qui renvoie les métriques agrégées d’un pattern ainsi que ses
 exécutions récentes.
 
@@ -257,6 +257,6 @@ ClickHouse. Le code source et les tickets sont disponibles sur
 
 * [Tableau de bord Monitoring](/fr/products/managed-postgres/monitoring/dashboard) — graphiques intégrés sur les ressources et l’activité
 * [Prometheus endpoint](/fr/products/managed-postgres/monitoring/prometheus) — scraper les métriques au niveau de l’hôte dans votre propre stack d’observability
-* [Managed Postgres OpenAPI](/fr/products/managed-postgres/openapi#query-insights) — interroger par programmation les requête lente récurrente et les exécutions récentes
-* [Extensions](/fr/products/managed-postgres/extensions) — les extensions disponibles sur les instances Managed Postgres
+* [ClickHouse Managed Postgres OpenAPI](/fr/products/managed-postgres/openapi#query-insights) — interroger par programmation les requête lente récurrente et les exécutions récentes
+* [Extensions](/fr/products/managed-postgres/extensions) — les extensions disponibles sur les instances ClickHouse Managed Postgres
 * [`pg_stat_ch` sur GitHub](https://github.com/clickhouse/pg_stat_ch) — l’extension open-source sur laquelle repose Query Insights

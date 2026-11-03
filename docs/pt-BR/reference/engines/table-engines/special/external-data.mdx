@@ -19,7 +19,7 @@ Os dados externos podem ser carregados usando o cliente de linha de comando (no 
 No cliente de linha de comando, você pode especificar uma seção de parâmetros no formato
 
 ```bash
---external --file=... [--name=...] [--format=...] [--types=...|--structure=...]
+--external --file=... [--name=...] [--format=...] [--types=...|--structure=...] [--scalar]
 ```
 
 Você pode ter várias seções como esta, de acordo com o número de tabelas que estão sendo transmitidas.
@@ -30,6 +30,7 @@ Só é possível recuperar uma única tabela da stdin.
 
 Os parâmetros a seguir são opcionais: **–name**– Nome da tabela. Se omitido, &#95;data é usado.
 **–format** – Formato dos dados no arquivo. Se omitido, TabSeparated é usado.
+**–scalar** – Envia os dados como um escalar em vez de uma tabela temporária. Os dados devem conter exatamente uma linha; se contiverem várias colunas, elas serão empacotadas em uma única tupla. O valor fica acessível na consulta por meio de `__getScalar('name')`.
 
 Um dos parâmetros a seguir é obrigatório:**–types** – Uma lista de tipos de coluna separados por vírgula. Por exemplo: `UInt64,String`. As colunas serão nomeadas como &#95;1, &#95;2, ...
 **–structure**– A estrutura da tabela no formato`UserID UInt64`, `URL String`. Define os nomes e os tipos das colunas.
@@ -47,6 +48,8 @@ $ cat /etc/passwd | sed 's/:/\t/g' | clickhouse-client --query="SELECT shell, co
 /bin/bash       4
 /usr/sbin/nologin       1
 /bin/sync       1
+$ echo 41 | clickhouse-client --query="SELECT __getScalar('threshold') + 1" --external --scalar --name=threshold --file=- --types=UInt64
+42
 ```
 
 Ao usar a interface HTTP, os dados externos são enviados no formato multipart/form-data. Cada tabela é transmitida como um arquivo separado. O nome da tabela é obtido a partir do nome do arquivo. Os parâmetros `name_format`, `name_types` e `name_structure` são passados para `query_string`, em que `name` é o nome da tabela à qual esses parâmetros correspondem. O significado dos parâmetros é o mesmo de quando se usa o cliente de linha de comando.

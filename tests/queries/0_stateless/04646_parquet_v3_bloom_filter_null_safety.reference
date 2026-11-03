@@ -1,0 +1,12 @@
+standalone bloom filter, null_as_default off: the row group must not be pruned, reading a null must throw
+CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN
+standalone bloom filter, null_as_default on: nulls decode to the default 0, the row group must not be pruned
+{"result":[{"count()":34}],"rows_read":100}
+dictionary filter declines (nullable, null_as_default off): the bloom fallback must not prune, reading a null must throw
+CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN
+dictionary filter with null_as_default on: the default hash keeps the row group, count matches
+{"result":[{"count()":34}],"rows_read":100}
+read as Nullable: nulls stay null, the bloom filter still prunes a non-present value
+{"result":[{"count()":0}],"rows_read":0}
+required column: the bloom filter prunes a non-present value
+{"result":[{"count()":0}],"rows_read":0}

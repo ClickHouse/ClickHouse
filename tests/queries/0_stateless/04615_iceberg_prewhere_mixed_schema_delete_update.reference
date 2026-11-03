@@ -1,0 +1,21 @@
+--- _row_number under PREWHERE (physical positions) ---
+0	0
+3	3
+6	6
+9	9
+12	2
+15	5
+18	8
+21	1
+24	4
+27	7
+--- DELETE survivors ---
+[1,2,4,5,7,8,10,11,13,14,16,17,19,20,22,23,25,26,28,29]
+--- UPDATE: total rows ---
+30
+--- UPDATE: all numbers (each exactly once, no dup/missing) ---
+[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29]
+--- UPDATE: rows carrying the new value ---
+[0,3,6,9,12,15,18,21,24,27]
+--- two sequential DELETEs survivors ---
+[1,2,5,7,10,11,13,14,17,19,22,23,25,26,29]

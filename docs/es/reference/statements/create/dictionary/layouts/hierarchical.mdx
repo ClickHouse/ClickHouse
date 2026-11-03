@@ -42,7 +42,7 @@ Esta tabla contiene una columna `parent_region` que almacena la clave del padre 
 
 ClickHouse admite la propiedad jerárquica para los atributos de diccionarios externos. Esta propiedad permite configurar el diccionario jerárquico de forma similar a la descrita anteriormente.
 
-La función [dictGetHierarchy](/es/reference/functions/regular-functions/ext-dict-functions#dictGetHierarchy) permite obtener la cadena de padres de un elemento.
+La función [dictGetHierarchy](/es/reference/functions/regular-functions/ext-dict-functions#dictGetHierarchy) permite obtener la cadena de padres de un elemento. La función [dictGetRoot](/es/reference/functions/regular-functions/ext-dict-functions#dictGetRoot) devuelve únicamente el ancestro superior (la raíz) de un elemento.
 
 En nuestro ejemplo, la estructura del diccionario puede ser la siguiente:
 

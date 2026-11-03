@@ -18,9 +18,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     يفترض هذا الدليل أنك أكملت [دليل البدء الخاص بـ Managed ClickStack](/ar/clickstack/deployment/managed) ولديك [بيانات اعتماد الاتصال مسجّلة](/ar/clickstack/getting-started/managed#next-steps).
 
     <Steps>
-      <Step>
-        ### أنشئ تهيئة OpenTelemetry مخصّصة
-
+      <Step title="أنشئ تهيئة OpenTelemetry مخصّصة" id="create-otel-configuration">
         أنشئ ملف `custom-local-config.yaml` بالمحتوى التالي:
 
         ```yaml
@@ -102,9 +100,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
         لمزيد من التفاصيل حول بنية إعداد OpenTelemetry (OTel)، نوصي بالرجوع إلى [الدليل الرسمي](https://opentelemetry.io/docs/collector/configuration/).
       </Step>
 
-      <Step>
-        ### ابدأ تشغيل OpenTelemetry Collector
-
+      <Step title="ابدأ تشغيل OpenTelemetry Collector" id="start-the-otel-collector">
         شغّل OpenTelemetry Collector بوضع مستقل باستخدام الأمر التالي:
 
         ```shell
@@ -124,17 +120,13 @@ import { Image } from "/snippets/ar/components/Image.jsx";
         سيبدأ الـcollector فورًا في جمع السجلات المحلية للنظام والمقاييس.
       </Step>
 
-      <Step>
-        ### اختر خدمتك
-
+      <Step title="اختر خدمتك" id="select-your-service">
         اختر الخدمة التي تتضمن Managed ClickStack من الصفحة الرئيسية لـ ClickHouse Cloud.
 
         <Image img="/images/clickstack/select_service.webp" alt="اختر الخدمة" size="lg" />
       </Step>
 
-      <Step>
-        ### استكشاف سجلات النظام
-
+      <Step title="استكشاف سجلات النظام" id="navigate-to-the-hyperdx-ui">
         حدِّد `ClickStack` من القائمة اليسرى للانتقال إلى واجهة ClickStack، حيث ستُسجَّل دخولك تلقائيًا.
 
         يُفترض أن تكون واجهة Search معبأة بسجلات النظام المحلية. وسِّع عوامل التصفية لتحديد `system.log`:
@@ -142,9 +134,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
         <Image img="/images/use-cases/observability/hyperdx-20.webp" alt="سجلات HyperDX المحلية" size="lg" />
       </Step>
 
-      <Step>
-        ### استكشاف مقاييس النظام
-
+      <Step title="استكشاف مقاييس النظام" id="explore-system-metrics">
         يمكننا استكشاف المقاييس باستخدام المخططات.
 
         انتقل إلى Chart Explorer من خلال القائمة اليسرى. حدِّد المصدر `Metrics`، واختر `Maximum` كنوع التجميع.
@@ -167,9 +157,9 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   </Tab>
 
   <Tab title="ClickStack مفتوح المصدر">
-    ### إنشاء تهيئة OpenTelemetry مخصصة
+    ### أنشئ تهيئة OpenTelemetry مخصّصة
 
-    أنشئ ملف `custom-local-config.yaml` بالمحتوى الآتي:
+    أنشئ ملف `custom-local-config.yaml` بالمحتوى التالي:
 
     ```yaml
     receivers:
@@ -235,16 +225,16 @@ import { Image } from "/snippets/ar/components/Image.jsx";
             - clickhouse
     ```
 
-    تجمع هذه التهيئة سجلات النظام والمقاييس الخاصة بأنظمة OSX وLinux، وترسل النتائج إلى ClickStack. تعمل هذه التهيئة على توسيع ClickStack collector بإضافة receivers وpipelines جديدة—إذ تُشير إلى المُصدِّر `clickhouse` والمعالجات (`memory_limiter` و`batch`) المُهيَّأة مسبقاً في ClickStack collector الأساسي.
+    يجمع هذا الإعداد سجلات النظام والمقاييس لأنظمة OSX وLinux، ويرسل النتائج إلى ClickStack. ويوسّع هذا الإعداد مجمّع ClickStack بإضافة مستقبلات وخطوط معالجة جديدة، إذ يشير إلى المصدّر `clickhouse` الحالي وإلى المعالجات (`memory_limiter`, `batch`) المُعدّة مسبقًا في مجمّع ClickStack الأساسي.
 
     <Info>
       **الطوابع الزمنية عند الاستيعاب**
 
-      يضبط هذا الإعداد الطوابع الزمنية أثناء الاستيعاب، إذ يعيّن قيمة زمنية محدَّثة لكل حدث. ومن الأفضل، قدر الإمكان، [إجراء معالجة مسبقة للطوابع الزمنية أو تحليلها](/ar/clickstack/ingesting-data/collector#processing-filtering-transforming-enriching) باستخدام معالجات OTel أو المشغّلات على ملفات السجل، لضمان الاحتفاظ بوقت الحدث بدقة.
+      يضبط هذا الإعداد الطوابع الزمنية عند الاستيعاب، بحيث يعيّن قيمة زمنية محدَّثة لكل حدث. ويُفضَّل استخدام [المعالجة المسبقة أو تحليل الطوابع الزمنية](/ar/clickstack/ingesting-data/collector#processing-filtering-transforming-enriching) عبر معالجات أو عوامل تشغيل OTel في ملفات السجل لضمان الاحتفاظ بوقت الحدث الفعلي بدقة.
 
-      في إعداد المثال هذا، إذا كان المستقبِل أو معالج الملفات مهيأً للبدء من بداية الملف، فستُسند إلى جميع إدخالات السجل الحالية الطابع الزمني المعدَّل نفسه، أي وقت المعالجة بدلاً من وقت الحدث الأصلي. أما أي أحداث جديدة تُلحَق بالملف فستتلقى طوابع زمنية تقارب وقت إنشائها الفعلي.
+      في إعداد المثال هذا، إذا كان المُستقبِل أو معالج الملفات مُعدًّا للبدء من بداية الملف، فستُسنَد الطابع الزمني المعدَّل نفسه إلى جميع إدخالات السجل الحالية، أي وقت المعالجة بدلًا من وقت الحدث الأصلي. أما أي أحداث جديدة تُلحَق بالملف، فستتلقى طوابع زمنية تقارب وقت إنشائها الفعلي.
 
-      ولتجنّب هذا السلوك، يمكنك ضبط موضع البدء على `end` في إعدادات المستقبِل. ويضمن ذلك استيعاب الإدخالات الجديدة فقط ومنحها طوابع زمنية قريبة من وقت وصولها الفعلي.
+      لتجنّب هذا السلوك، يمكنك ضبط موضع البدء على `end` في إعداد المُستقبِل. ويضمن ذلك استيعاب الإدخالات الجديدة فقط وختمها زمنيًا بالقرب من وقت وصولها الفعلي.
     </Info>
 
     لمزيد من التفاصيل حول بنية إعداد OpenTelemetry (OTel)، نوصي بالرجوع إلى [الدليل الرسمي](https://opentelemetry.io/docs/collector/configuration/).
@@ -278,26 +268,26 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
     ينبغي أن تكون مصادر البيانات قد أُنشئت مسبقاً. يجب أن تكون واجهة Search مملوءةً بسجلات النظام المحلية. وسّع عوامل التصفية لتحديد `system.log`:
 
-    <Image img="/images/use-cases/observability/hyperdx-20.webp" alt="السجلات المحلية لـ HyperDX" size="lg" />
+    <Image img="/images/use-cases/observability/hyperdx-20.webp" alt="سجلات HyperDX المحلية" size="lg" />
 
     ### استكشاف مقاييس النظام
 
-    يمكننا استكشاف مقاييسنا عبر المخططات البيانية.
+    يمكننا استكشاف المقاييس باستخدام المخططات.
 
-    انتقل إلى Chart Explorer عبر القائمة اليسرى. حدد المصدر `Metrics` و`Maximum` كنوع التجميع.
+    انتقل إلى Chart Explorer عبر القائمة اليسرى. حدِّد المصدر `Metrics`، واختر `Maximum` كنوع التجميع.
 
-    في قائمة `Select a Metric`، اكتب `memory` ببساطة ثم اختر `system.memory.utilization (Gauge)`.
+    في قائمة `Select a Metric`، اكتب فقط `memory` ثم حدِّد `system.memory.utilization (Gauge)`.
 
-    اضغط على زر التشغيل لعرض استخدام الذاكرة بصريًا مع مرور الوقت.
+    اضغط على زر `Run` لعرض استخدام الذاكرة بمرور الوقت.
 
-    <Image img="/images/use-cases/observability/hyperdx-21.webp" alt="Memory بمرور الزمن" size="lg" />
+    <Image img="/images/use-cases/observability/hyperdx-21.webp" alt="الذاكرة بمرور الوقت" size="lg" />
 
-    لاحظ أن الرقم يُرجَع كنقطة عائمة `%`. لعرضه بشكل أوضح، حدد `Set number format`.
+    لاحظ أن القيمة تُعرَض كنسبة مئوية `%` بصيغة عدد عشري. لعرضها بشكل أوضح، حدِّد `Set number format`.
 
-    <Image img="/images/use-cases/observability/hyperdx-22.webp" alt="تنسيق الرقم" size="lg" />
+    <Image img="/images/use-cases/observability/hyperdx-22.webp" alt="تنسيق الأرقام" size="lg" />
 
-    من القائمة التالية، يمكنك اختيار `Percentage` من القائمة المنسدلة `Output format` ثم النقر على `Apply`.
+    من القائمة التالية، يمكنك اختيار `Percentage` من القائمة المنسدلة `Output format` قبل النقر على `Apply`.
 
-    <Image img="/images/use-cases/observability/hyperdx-23.webp" alt="نسبة الذاكرة بمرور الوقت" size="lg" />
+    <Image img="/images/use-cases/observability/hyperdx-23.webp" alt="النسبة المئوية للذاكرة بمرور الوقت" size="lg" />
   </Tab>
 </Tabs>

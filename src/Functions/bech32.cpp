@@ -96,10 +96,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
-    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
-    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -124,45 +121,15 @@ public:
 
     size_t getNumberOfArguments() const override { return 0; }
 
-    bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
+    /// Not injective: on any encoding error - most easily, data too long for a valid Bech32 string -
+    /// the function returns an empty string, so arbitrarily many distinct inputs share that result.
+    bool isInjective(const ColumnsWithTypeAndName &) const override { return false; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (arguments.size() < 2)
-            throw Exception(
-                ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
-                "At least two string arguments (human_readable_part, data) are required for function {}",
-                getName());
-
-        if (arguments.size() > 3)
-            throw Exception(
-                ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
-                "A maximum of 3 arguments (human_readable_part, data, witness_version | 'bech32' | 'bech32m') are allowed for function {}",
-                getName());
-
-        /// check first two args, human_readable_part and input string
-        for (size_t i = 0; i < 2; ++i)
-            if (!WhichDataType(arguments[i]).isStringOrFixedString())
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of argument {} of function {}, expected String or FixedString",
-                    arguments[i]->getName(),
-                    i + 1,
-                    getName());
-
-        /// check 3rd (optional) arg: either a witness version (UInt*) or encoding variant ('bech32'/'bech32m')
-        size_t arg_idx = 2;
-        if (arguments.size() == 3 && !WhichDataType(arguments[arg_idx]).isNativeUInt() && !WhichDataType(arguments[arg_idx]).isString())
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument {} of function {}, expected unsigned integer (witness version) or String ('bech32'/'bech32m')",
-                arguments[arg_idx]->getName(),
-                arg_idx + 1,
-                getName());
-
-        return std::make_shared<DataTypeString>();
+        return "(StringOrFixedString, StringOrFixedString, [NativeUInt | String]) -> String";
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -442,37 +409,9 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (arguments.empty())
-            throw Exception(
-                ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
-                "At least 1 argument (address) is required for function {}",
-                getName());
-
-        if (arguments.size() > 2)
-            throw Exception(
-                ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
-                "A maximum of 2 arguments (address[, 'raw']) are allowed for function {}",
-                getName());
-
-        WhichDataType dtype(arguments[0]);
-        if (!dtype.isStringOrFixedString())
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
-
-        if (arguments.size() == 2 && !WhichDataType(arguments[1]).isString())
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument 2 of function {}, expected String ('raw')",
-                arguments[1]->getName(),
-                getName());
-
-        DataTypes types(tuple_size);
-        for (size_t i = 0; i < tuple_size; ++i)
-            types[i] = std::make_shared<DataTypeString>();
-
-        return std::make_shared<DataTypeTuple>(types);
+        return "(StringOrFixedString, [String]) -> Tuple(String, String)";
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -665,12 +604,12 @@ REGISTER_FUNCTION(Bech32Repr)
     FunctionDocumentation::Description bech32Encode_description = R"(
 Encodes a binary data string, along with a human-readable part (HRP), using the [Bech32 or Bech32m](https://en.bitcoin.it/wiki/Bech32) algorithms.
 
-:::note
-When using the [`FixedString`](../data-types/fixedstring.md) data type, if a value does not fully fill the row it is padded with null characters.
+<Note>
+When using the [`FixedString`](/reference/data-types/fixedstring) data type, if a value does not fully fill the row it is padded with null characters.
 While the `bech32Encode` function will handle this automatically for the hrp argument, for the data argument the values must not be padded.
-For this reason it is not recommended to use the [`FixedString`](../data-types/fixedstring.md) data type for your data values unless you are
+For this reason it is not recommended to use the [`FixedString`](/reference/data-types/fixedstring) data type for your data values unless you are
 certain that they are all the same length and ensure that your `FixedString` column is set to that length as well.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax bech32Encode_syntax = "bech32Encode(hrp, data[, witver | 'bech32' | 'bech32m'])";
     FunctionDocumentation::Arguments bech32Encode_arguments = {
@@ -686,7 +625,7 @@ certain that they are all the same length and ensure that your `FixedString` col
 -- When no witness version is supplied, the default is 1, the updated Bech32m algorithm.
 SELECT bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'))
             )",
-            "bc1w508d6qejxtdg4y5r3zarvary0c5xw7k8zcwmq"
+            "bc1pw508d6qejxtdg4y5r3zarvary0c5xw7kj9wkru"
         },
         {
             "Bech32 algorithm",
@@ -694,7 +633,7 @@ SELECT bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'))
 -- A witness version of 0 will result in a different address string.
 SELECT bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 0)
             )",
-            "bc1w508d6qejxtdg4y5r3zarvary0c5xw7kj7gz7z"
+            "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4"
         },
         {
             "Custom HRP",
@@ -703,7 +642,7 @@ SELECT bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 0)
 -- SegWit address format, Bech32 allows any hrp that satisfies the above requirements.
 SELECT bech32Encode('abcdefg', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 10)
             )",
-            "abcdefg1w508d6qejxtdg4y5r3zarvary0c5xw7k9rp8r4"
+            "abcdefg12w508d6qejxtdg4y5r3zarvary0c5xw7kh526px"
         },
         {
             "Cosmos SDK address (BIP173, no witness version)",
@@ -712,7 +651,7 @@ SELECT bech32Encode('abcdefg', unhex('751e76e8199196d454941c45d1b3a323f1433bd6')
 -- compatible with Cosmos SDK, Injective, Osmosis, and other non-SegWit chains.
 SELECT bech32Encode('inj', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 'bech32')
             )",
-            "inj1w508d6qejxtdg4y5r3zarvary0c5xw7kgj5aqs"
+            "inj1w508d6qejxtdg4y5r3zarvary0c5xw7ks5q7aq"
         }
     };
     FunctionDocumentation::IntroducedIn bech32Encode_introduced_in = {25, 6};
@@ -722,9 +661,9 @@ SELECT bech32Encode('inj', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 'b
     FunctionDocumentation::Description bech32Decode_description = R"(
 Decodes a Bech32 address string generated by either the bech32 or bech32m algorithms.
 
-:::note
+<Note>
 Unlike the encode function, `bech32Decode` will automatically handle padded FixedStrings.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax bech32Decode_syntax = "bech32Decode(address[, 'raw'])";
     FunctionDocumentation::Arguments bech32Decode_arguments = {
@@ -733,8 +672,24 @@ Unlike the encode function, `bech32Decode` will automatically handle padded Fixe
     };
     FunctionDocumentation::ReturnedValue bech32Decode_returned_value = {"Returns a tuple consisting of `(hrp, data)` that was used to encode the string. The data is in binary format.", {"Tuple(String, String)"}};
     FunctionDocumentation::Examples bech32Decode_examples = {
-        {"Decode address", "SELECT tup.1 AS hrp, hex(tup.2) AS data FROM (SELECT bech32Decode('bc1w508d6qejxtdg4y5r3zarvary0c5xw7kj7gz7z') AS tup)", "bc   751E76E8199196D454941C45D1B3A323F1433BD6"},
-        {"Testnet address", "SELECT tup.1 AS hrp, hex(tup.2) AS data FROM (SELECT bech32Decode('tb1w508d6qejxtdg4y5r3zarvary0c5xw7kzp034v') AS tup)", "tb   751E76E8199196D454941C45D1B3A323F1433BD6"}
+        {
+            "Decode address",
+            "SELECT tup.1 AS hrp, hex(tup.2) AS data FROM (SELECT bech32Decode('bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4') AS tup)",
+            R"(
+┌─hrp─┬─data─────────────────────────────────────┐
+│ bc  │ 751E76E8199196D454941C45D1B3A323F1433BD6 │
+└─────┴──────────────────────────────────────────┘
+            )"
+        },
+        {
+            "Testnet address",
+            "SELECT tup.1 AS hrp, hex(tup.2) AS data FROM (SELECT bech32Decode('tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx') AS tup)",
+            R"(
+┌─hrp─┬─data─────────────────────────────────────┐
+│ tb  │ 751E76E8199196D454941C45D1B3A323F1433BD6 │
+└─────┴──────────────────────────────────────────┘
+            )"
+        }
     };
     FunctionDocumentation::IntroducedIn bech32Decode_introduced_in = {25, 6};
     FunctionDocumentation::Category bech32Decode_category = FunctionDocumentation::Category::Encoding;

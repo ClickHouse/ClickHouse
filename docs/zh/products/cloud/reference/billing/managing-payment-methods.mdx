@@ -56,7 +56,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 * 将某个组织当前使用的 Marketplace 订阅更换为其他组织正在使用的订阅。
 
 <div id="steps-switch-org-already-active">
-  ### 将组织的计费方式从信用卡切换到已在你其他某个组织中启用的 Marketplace 订阅的步骤
+  ### 将组织的计费方式从信用卡切换到已在你其他某个组织中启用的 市场 订阅的步骤
 </div>
 
 1. 前往 ClickHouse Cloud 控制台中的 **Billing** 页面。
@@ -65,12 +65,12 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 <Image img="/images/cloud/reference/billing/03-edit-payment-method.webp" alt="编辑付款方式" size="lg" />
 
 3. 在 **编辑付款方式** 对话框中，你会看到当前信用卡被列为主付款方式。
-4. 在信用卡下方，会显示你其他组织中符合条件的 Marketplace 订阅。每个条目都会显示 Marketplace 类型 (例如 AWS Marketplace) 以及关联的组织名称。
-5. 选择要用于为该组织用量计费的 Marketplace 订阅。
+4. 在信用卡下方，会显示你其他组织中符合条件的 市场 订阅。每个条目都会显示 市场 类型 (例如 AWS 市场) 以及关联的组织名称。
+5. 选择要用于为该组织用量计费的 市场 订阅。
 6. 点击 **更新付款方式** 以确认。
 
 <div id="steps-switch-org-different-org">
-  ### 将某个组织当前的 Marketplace 订阅切换为由另一个组织使用的订阅的步骤
+  ### 将某个组织当前的 市场 订阅切换为由另一个组织使用的订阅的步骤
 </div>
 
 1. 前往 ClickHouse Cloud 控制台中的 **Billing** 页面。
@@ -78,9 +78,9 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 <Image img="/images/cloud/reference/billing/04-edit-payment-method.webp" alt="编辑付款方式" size="lg" />
 
-3. 在 **编辑付款方式** 对话框中，您会看到当前的 Marketplace 订阅被列为付款方式。
-4. 在当前 Marketplace 订阅下方，会显示来自您其他组织的其他符合条件的 Marketplace 订阅。每个条目都会显示 Marketplace 类型 (例如 AWS Marketplace) 以及关联的组织名称。
-5. 选择您希望用于为该组织用量计费的新 Marketplace 订阅。
+3. 在 **编辑付款方式** 对话框中，您会看到当前的 市场 订阅被列为付款方式。
+4. 在当前 市场 订阅下方，会显示来自您其他组织的其他符合条件的 市场 订阅。每个条目都会显示 市场 类型 (例如 AWS 市场) 以及关联的组织名称。
+5. 选择您希望用于为该组织用量计费的新 市场 订阅。
 6. 点击 **更新付款方式** 进行确认。
 
 <div id="add-backup-cc-to-marketplace-org">
@@ -98,16 +98,16 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 </div>
 
 1. 前往 ClickHouse Cloud 控制台中的 **Billing** 页面。
-2. 在 **Billing** 页面的顶部，你会看到主付款方式显示为 Marketplace 订阅，备用付款方式显示为 **None**。
+2. 在 **Billing** 页面的顶部，你会看到主付款方式显示为 市场 订阅，备用付款方式显示为 **None**。
 3. 点击 **add credit card** 按钮，设置备用付款方式。
 
 <Image img="/images/cloud/reference/billing/05-add-backup.webp" alt="添加备用信用卡" size="lg" />
 
-4. 按照说明添加或更新信用卡的账单地址信息。保存后，**Billing** 页面将显示备用信用卡以及主要的 Marketplace 订阅。
+4. 按照说明添加或更新信用卡的账单地址信息。保存后，**Billing** 页面将显示备用信用卡以及主要的 市场 订阅。
 
 <Note>
   配置备用信用卡后，你还可以点击按钮编辑信用卡，并将其设为主付款方式。
-  但如果这样做，你的信用卡将成为该组织唯一的付款方式，而你的 Marketplace 订阅会从 ClickHouse Cloud 中完全移除。
+  但如果这样做，你的信用卡将成为该组织唯一的付款方式，而你的 市场 订阅会从 ClickHouse Cloud 中完全移除。
   你需要返回云市场账户，并按照[&quot;从你的云提供商设置市场计费&quot;](#set-up-marketplace-billing-from-cp)一节中的步骤重新配置。
 </Note>
 

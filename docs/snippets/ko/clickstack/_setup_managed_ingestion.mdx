@@ -2,6 +2,8 @@
 title: Managed 수집 설정
 ---
 
+import ManagedIngestionExampleOtelConfig from '/snippets/ko/clickstack/_config_example_otel.mdx';
+
 <img src="/images/clickstack/getting-started/start_ingestion.webp" alt="" />
 
 &quot;Start Ingestion&quot;을 선택하면 수집 소스를 선택하라는 안내가 표시됩니다. Managed ClickStack는 주요 수집 소스로 OpenTelemetry와 [Vector](https://vector.dev/)를 지원합니다. 또한 사용자는 [ClickHouse Cloud support integrations](/ko/integrations/home)을 사용해 자체 스키마로 데이터를 ClickHouse에 직접 전송할 수도 있습니다.
@@ -51,7 +53,7 @@ title: Managed 수집 설정
 
     이를 위해 적절한 설정으로 ClickHouse exporter를 사용하고 OTLP 수신기를 노출하는 OpenTelemetry Collector 구성 예시가 제공됩니다. 이 구성은 ClickStack 배포판이 기대하는 인터페이스와 동작에 맞춰져 있습니다.
 
-    <ExampleOTelConfig />
+    <ManagedIngestionExampleOtelConfig />
 
     <img src="/images/clickstack/getting-started/otel_collector_start.webp" alt="" />
 

@@ -37,6 +37,10 @@ public:
 
     DirectoryIteratorPtr iterateDirectory(const String & path) const override { return delegate->iterateDirectory(path); }
 
+    /// Forward refresh() so a read-only replica re-reads object-storage metadata (e.g. `plain_rewritable`) and sees
+    /// files written by another server.
+    void refresh(UInt64 not_sooner_than_milliseconds) override { delegate->refresh(not_sooner_than_milliseconds); }
+
     void copyDirectoryContent(
         const String & from_dir,
         const std::shared_ptr<IDisk> & to_disk,
@@ -66,6 +70,10 @@ public:
     bool isRemote() const override { return delegate->isRemote(); }
 
     bool isWriteOnce() const override { return delegate->isWriteOnce(); }
+    /// Forwarded, although a hard link is never created through this wrapper: the callers ask the disk of a table
+    /// whether an operation that needs hard links is possible at all, and a read-only attachment of a disk that
+    /// cannot share blobs must give the same answer as the disk itself.
+    bool supportsHardLinks() const override { return delegate->supportsHardLinks(); }
     bool supportZeroCopyReplication() const override { return delegate->supportZeroCopyReplication(); }
     bool supportParallelWrite() const override { return delegate->supportParallelWrite(); }
     SyncGuardPtr getDirectorySyncGuard(const String & path) const override { return delegate->getDirectorySyncGuard(path); }
@@ -99,6 +107,8 @@ public:
 
     bool supportsChmod() const override { return delegate->supportsChmod(); }
     void chmod(const String & path, mode_t mode) override { delegate->chmod(path, mode); }
+
+    DiskPtr getDelegateDiskIfExists() const override { return delegate; }
 
     bool isReadOnly() const override { return true; }
     std::unique_ptr<WriteBufferFromFileBase> writeFile(const String &, size_t, WriteMode, const WriteSettings &) override { throwNotAllowed(); }

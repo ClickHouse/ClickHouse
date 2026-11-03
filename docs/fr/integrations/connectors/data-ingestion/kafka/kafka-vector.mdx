@@ -17,7 +17,7 @@ Vector est un pipeline de données indépendant des fournisseurs, capable de lir
 
 Le guide de [prise en main](/fr/integrations/connectors/data-ingestion/etl-tools/vector-to-clickhouse) de Vector avec ClickHouse est centré sur le cas d’usage des logs et la lecture d’événements depuis un fichier. Nous utilisons le [jeu de données d’exemple GitHub](https://datasets-documentation.s3.eu-west-3.amazonaws.com/kafka/github_all_columns.ndjson), dont les événements sont stockés dans un topic Kafka.
 
-Vector utilise des [sources](https://vector.dev/docs/about/concepts/#sources) pour récupérer les données selon un modèle push ou pull. Les [sinks](https://vector.dev/docs/about/concepts/#sinks) servent quant à eux de destination pour les événements. Nous utilisons donc la source Kafka et le sink ClickHouse. Notez que, bien que Kafka soit pris en charge comme sink, il n’existe pas de source ClickHouse. Vector n’est donc pas adapté si vous souhaitez transférer des données de ClickHouse vers Kafka.
+Vector utilise des [sources](https://vector.dev/docs/introduction/concepts/#sources) pour récupérer les données selon un modèle push ou pull. Les [sinks](https://vector.dev/docs/introduction/concepts/#sinks) servent quant à eux de destination pour les événements. Nous utilisons donc la source Kafka et le sink ClickHouse. Notez que, bien que Kafka soit pris en charge comme sink, il n’existe pas de source ClickHouse. Vector n’est donc pas adapté si vous souhaitez transférer des données de ClickHouse vers Kafka.
 
 Vector prend également en charge la [transformation](https://vector.dev/docs/reference/configuration/transforms/) des données. Cela dépasse le cadre de ce guide. Si vous en avez besoin pour votre jeu de données, consultez la documentation de Vector.
 

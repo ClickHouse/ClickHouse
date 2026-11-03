@@ -51,9 +51,7 @@ S3('<s3 endpoint>/<directory>', '<access key id>', '<secret access key>', '<extr
 <br />
 
 <Steps>
-  <Step>
-    #### 설정
-
+  <Step title="설정" id="create-a-table">
     다음 데이터베이스와 테이블을 생성하고 여기에 무작위 데이터를 몇 건 삽입하세요:
 
     ```sql
@@ -75,9 +73,7 @@ S3('<s3 endpoint>/<directory>', '<access key id>', '<secret access key>', '<extr
     ```
   </Step>
 
-  <Step>
-    #### 기준 백업 생성
-
+  <Step title="기준 백업 생성" id="create-a-base-initial-backup">
     증분 백업을 수행하려면 시작점이 되는 *기준* 백업이 필요합니다. S3 대상의 첫 번째 매개변수는 S3 엔드포인트이며, 그다음에는
     이 백업에 사용할 버킷 내 디렉터리가 지정됩니다. 이 예시에서 디렉터리 이름은 `my_backup`입니다.
 
@@ -98,9 +94,7 @@ S3('<s3 endpoint>/<directory>', '<access key id>', '<secret access key>', '<extr
     ```
   </Step>
 
-  <Step>
-    #### 데이터 더 추가하기
-
+  <Step title="데이터 더 추가하기" id="add-more-data">
     증분 백업에는 기준 백업과
     백업 대상 테이블의 현재 내용 간 차이가 반영됩니다. 증분 백업을
     수행하기 전에 데이터를 더 추가하십시오:
@@ -112,9 +106,7 @@ S3('<s3 endpoint>/<directory>', '<access key id>', '<secret access key>', '<extr
     ```
   </Step>
 
-  <Step>
-    #### 증분 백업 수행
-
+  <Step title="증분 백업 수행" id="take-an-incremental-backup">
     이 백업 명령은 기준 백업과 유사하지만, `SETTINGS base_backup`과 기준 백업의 위치를 추가로 지정합니다. 증분 백업의 대상은 기준 백업과 같은 디렉터리가 아닙니다. 동일한 endpoint를 사용하지만, 버킷 내에서는 다른 대상 디렉터리를 사용합니다. 기준 백업은 `my_backup`에 있고, 증분 백업은 `my_incremental`에 기록됩니다:
 
     ```sql
@@ -137,9 +129,7 @@ S3('<s3 endpoint>/<directory>', '<access key id>', '<secret access key>', '<extr
     ```
   </Step>
 
-  <Step>
-    #### 증분 백업에서 복원
-
+  <Step title="증분 백업에서 복원" id="restore-from-the-incremental-backup">
     이 명령은 증분 백업을 새 테이블 `test_table_restored`로 복원합니다.
     증분 백업을 복원하면 기준 백업도 함께 복원됩니다.
     복원할 때는 **증분 백업**만 지정하십시오:
@@ -159,9 +149,7 @@ S3('<s3 endpoint>/<directory>', '<access key id>', '<secret access key>', '<extr
     ```
   </Step>
 
-  <Step>
-    #### 개수 확인
-
+  <Step title="개수 확인" id="verify-the-count">
     원본 테이블 `data`에는 2번 삽입되었습니다. 한 번은 1,000행, 다른 한 번은 100행으로, 총 1,100행입니다.
     복원된 테이블에 1,100행이 있는지 확인하십시오:
 
@@ -177,9 +165,7 @@ S3('<s3 endpoint>/<directory>', '<access key id>', '<secret access key>', '<extr
     ```
   </Step>
 
-  <Step>
-    #### 내용 확인
-
+  <Step title="내용 확인" id="verify-the-content">
     원본 테이블 `test_table`의 내용과 복원된 테이블 `test_table_restored`의 내용을 비교합니다:
 
     ```sql

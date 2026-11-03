@@ -37,7 +37,7 @@ Cuando un usuario crea un índice de omisión de datos, se crean dos archivos ad
 * `skp_idx_{index_name}.idx`, que contiene los valores ordenados de la expresión
 * `skp_idx_{index_name}.mrk2`, que contiene los desplazamientos correspondientes dentro de los archivos de datos de columnas asociados.
 
-Si, al ejecutar una consulta y leer los archivos de columnas pertinentes, alguna parte de la condición de filtrado de la cláusula WHERE coincide con la expresión del índice de omisión, ClickHouse usará los datos del archivo de índice para determinar si cada bloque de datos relevante debe procesarse o puede omitirse (suponiendo que el bloque no haya sido excluido previamente al aplicar la clave primaria). Para usar un ejemplo muy simplificado, considere la siguiente tabla cargada con datos predecibles.
+Si, al ejecutar una consulta y leer los archivos de columnas pertinentes, alguna parte de la condición de filtrado de la cláusula WHERE coincide con la expresión del índice de omisión de datos, ClickHouse usará los datos del archivo de índice para determinar si cada bloque de datos relevante debe procesarse o puede omitirse (suponiendo que el bloque no haya sido excluido previamente al aplicar la clave primaria). Para usar un ejemplo muy simplificado, considere la siguiente tabla cargada con datos predecibles.
 
 ```sql
 CREATE TABLE skip_table
@@ -68,13 +68,13 @@ SELECT * FROM skip_table WHERE my_value IN (125, 700)
 8192 rows in set. Elapsed: 0.079 sec. Processed 100.00 million rows, 800.10 MB (1.26 billion rows/s., 10.10 GB/s.
 ```
 
-Ahora agrega un índice de omisión muy básico:
+Ahora agrega un índice de omisión de datos muy básico:
 
 ```sql
 ALTER TABLE skip_table ADD INDEX vix my_value TYPE set(100) GRANULARITY 2;
 ```
 
-Normalmente, los índices de omisión solo se aplican a los datos recién insertados, por lo que añadir el índice no afectará a la consulta anterior.
+Normalmente, los índices de omisión de datos solo se aplican a los datos recién insertados, por lo que añadir el índice no afectará a la consulta anterior.
 
 Para indexar los datos ya existentes, use esta sentencia:
 
@@ -106,7 +106,7 @@ se omitieron sin leer del disco:
 
 <Image img="/images/guides/best-practices/simple_skip.webp" size="md" alt="Omisión simple" />
 
-Puede acceder a información detallada sobre el uso del índice de omisión habilitando la traza al ejecutar consultas.  Desde
+Puede acceder a información detallada sobre el uso del índice de omisión de datos habilitando la traza al ejecutar consultas.  Desde
 clickhouse-client, establezca `send_logs_level`:
 
 ```sql
@@ -114,7 +114,7 @@ SET send_logs_level='trace';
 ```
 
 Esto proporcionará información útil para la depuración al intentar optimizar las consultas SQL y los índices de tabla.  A partir del ejemplo
-anterior, el registro de depuración muestra que el índice de omisión descartó todos los gránulos salvo dos:
+anterior, el registro de depuración muestra que el índice de omisión de datos descartó todos los gránulos salvo dos:
 
 ```sql
 <Debug> default.skip_table (933d4b2c-8cea-4bf9-8c93-c56e900eefd1) (SelectExecutor): Index `vix` has dropped 6102/6104 granules.
@@ -266,5 +266,5 @@ experimentos mentales únicamente.
 
 * [Guía de buenas prácticas](/es/concepts/best-practices/using-data-skipping-indices)
 * [Ejemplos de índices de omisión de datos](/es/concepts/features/performance/skip-indexes/skipping-indexes-examples)
-* [Modificación de índices de omisión de datos](/es/reference/statements/alter/skipping-index)
+* [Administración de índices de omisión de datos](/es/reference/statements/alter/skipping-index)
 * [Información sobre la tabla del sistema](/es/reference/system-tables/data_skipping_indices)

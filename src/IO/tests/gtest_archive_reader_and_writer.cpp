@@ -3,6 +3,7 @@
 
 #include <atomic>
 #include <filesystem>
+#include <thread>
 
 #include <IO/Archives/ArchiveUtils.h>
 #include <IO/Archives/IArchiveReader.h>
@@ -18,8 +19,11 @@
 #include <IO/WriteHelpers.h>
 #include <Poco/TemporaryFile.h>
 #include <Common/Exception.h>
+#include <Common/MemoryTracker.h>
+#include <Common/ThreadStatus.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/thread_local_rng.h>
+#include <base/scope_guard.h>
 
 
 namespace DB::ErrorCodes
@@ -95,7 +99,7 @@ public:
         }
         catch (Exception & e)
         {
-            if ((e.code() != code) || (e.message().find(message) == String::npos))
+            if ((e.code() != code) || !e.message().contains(message))
                 throw;
         }
     }
@@ -1030,6 +1034,42 @@ TEST(ZipArchiveReaderTest, RethrowsCallbackExceptionOnOpen)
 }
 
 
+TEST(ZipArchiveReaderTest, SeekCurOutsideWorkingBufferUsesLogicalPosition)
+{
+    String archive_in_memory;
+    {
+        auto writer = createArchiveWriter("archive.zip", std::make_unique<WriteBufferFromString>(archive_in_memory));
+        writer->setCompression("store", 0);
+
+        auto out = writer->writeFile("file.bin");
+        String data(3 * DBMS_DEFAULT_BUFFER_SIZE, 0);
+        for (size_t i = 0; i < data.size(); ++i)
+            data[i] = 'a' + i % 26;
+        writeString(data, *out);
+        out->finalize();
+        writer->finalize();
+    }
+
+    auto read_archive_func
+        = [&]() -> std::unique_ptr<SeekableReadBuffer> { return std::make_unique<ReadBufferFromString>(archive_in_memory); };
+    auto reader = createArchiveReader("archive.zip", read_archive_func, archive_in_memory.size());
+    auto in = reader->readFile("file.bin", /*throw_on_not_found=*/true);
+
+    /// Fill the working buffer, but consume only part of it.
+    in->ignore(100);
+
+    const off_t relative_offset = DBMS_DEFAULT_BUFFER_SIZE + 100;
+    const off_t expected_position = 100 + relative_offset;
+    EXPECT_EQ(in->seek(relative_offset, SEEK_CUR), expected_position);
+
+    /// Without `resetWorkingBuffer`, the next read returns stale bytes from the old position.
+    char c = 0;
+    readChar(c, *in);
+    EXPECT_EQ(c, static_cast<char>('a' + expected_position % 26));
+    EXPECT_EQ(in->getPosition(), expected_position + 1);
+}
+
+
 /// A `SeekableReadBuffer` whose callbacks can be switched into a failing mode AFTER the
 /// archive has been opened. The flag is held by an externally-owned `shared_ptr` so the
 /// test can flip it between the successful open and the first post-open callback.
@@ -1246,6 +1286,48 @@ TEST(ZipArchiveReaderTest, DoesNotReuseCanceledHandle)
         readStringUntilEOF(content, *in);
         EXPECT_EQ(content.size(), 16u * 1024u);
     }
+}
+
+/// Destroying a read buffer returns its handle to `free_handles`, which may have to grow.
+/// A memory limit reached at that moment must not throw out of the destructor.
+TEST(ZipArchiveReaderTest, ReleasesHandleAtMemoryLimit)
+{
+    String archive_in_memory;
+    {
+        auto writer = createArchiveWriter("archive.zip", std::make_unique<WriteBufferFromString>(archive_in_memory));
+        auto out = writer->writeFile("a.txt");
+        writeString("Hello", *out);
+        out->finalize();
+        writer->finalize();
+    }
+
+    MemoryTracker query_tracker(&total_memory_tracker, VariableContext::Process, false);
+    std::thread([&]
+    {
+        DB::ThreadStatus thread_status;
+        thread_status.memory_tracker.setParent(&query_tracker);
+        thread_status.untracked_memory_limit = 0;
+
+        auto read_archive_func = [&]() -> std::unique_ptr<SeekableReadBuffer>
+        { return std::make_unique<ReadBufferFromString>(archive_in_memory); };
+        auto reader = createArchiveReader("archive.zip", read_archive_func, archive_in_memory.size());
+
+        {
+            /// The pool has one slot from opening the archive, so releasing the second handle grows it.
+            auto first = reader->readFile("a.txt", /*throw_on_not_found=*/true);
+            auto second = reader->readFile("a.txt", /*throw_on_not_found=*/true);
+            first.reset();
+
+            query_tracker.setHardLimit(1);
+            SCOPE_EXIT(query_tracker.setHardLimit(0));
+            second.reset();
+        }
+
+        auto in = reader->readFile("a.txt", /*throw_on_not_found=*/true);
+        String content;
+        readStringUntilEOF(content, *in);
+        EXPECT_EQ(content, "Hello");
+    }).join();
 }
 
 #endif

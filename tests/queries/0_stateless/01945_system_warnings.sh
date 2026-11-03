@@ -11,7 +11,7 @@ build_type=`${CLICKHOUSE_CLIENT} -q "SELECT value FROM system.build_options WHER
 if [[ $build_type == "Debug" ]]; then
     ${CLICKHOUSE_CLIENT} -q "SELECT message FROM system.warnings WHERE message LIKE '%built in debug mode%'"
 else
-    echo "Server was built in debug mode. It will work slowly."
+    echo "ClickHouse was built in debug mode. It will work slowly."
 fi
 
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.warnings WHERE message LIKE '%Obsolete setting%'"

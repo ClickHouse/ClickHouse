@@ -33,9 +33,7 @@ Si vous souhaitez tester l’intégration des logs Kafka avant de configurer vot
 * Accès aux fichiers journaux de Kafka (`server.log`, `controller.log`, etc.)
 
 <Steps>
-  <Step>
-    #### Vérifier la configuration de journalisation de Kafka
-
+  <Step title="Vérifier la configuration de journalisation de Kafka" id="verify-kafka">
     Kafka utilise Log4j et écrit les logs dans le répertoire indiqué par la propriété système `kafka.logs.dir` ou la variable d’environnement `LOG_DIR`. Vérifiez l’emplacement de votre fichier de logs :
 
     ```bash
@@ -61,9 +59,7 @@ Si vous souhaitez tester l’intégration des logs Kafka avant de configurer vot
     </Note>
   </Step>
 
-  <Step>
-    #### Créez une configuration personnalisée de l’OTel collector pour Kafka
-
+  <Step title="Créez une configuration personnalisée de l’OTel collector pour Kafka" id="custom-otel">
     ClickStack vous permet d’étendre la configuration de base de l’OpenTelemetry Collector en montant un fichier de configuration personnalisé et en définissant une variable d’environnement. Cette configuration personnalisée est fusionnée avec la configuration de base gérée par HyperDX via OpAMP.
 
     Créez un fichier nommé `kafka-logs-monitoring.yaml` contenant la configuration suivante :
@@ -120,9 +116,7 @@ Si vous souhaitez tester l’intégration des logs Kafka avant de configurer vot
     </Note>
   </Step>
 
-  <Step>
-    #### Configurer ClickStack pour charger une configuration personnalisée
-
+  <Step title="Configurer ClickStack pour charger une configuration personnalisée" id="load-custom">
     Pour activer une configuration personnalisée du collector dans votre déploiement ClickStack existant, vous devez :
 
     1. Monter le fichier de configuration personnalisé sur `/etc/otelcol-contrib/custom.config.yaml`
@@ -166,9 +160,7 @@ Si vous souhaitez tester l’intégration des logs Kafka avant de configurer vot
     </Note>
   </Step>
 
-  <Step>
-    #### Vérifier les logs dans HyperDX
-
+  <Step title="Vérifier les logs dans HyperDX" id="verifying-logs">
     Une fois la configuration terminée, connectez-vous à HyperDX et vérifiez que les logs sont bien ingérés :
 
     <Image img="/images/clickstack/kafka/logs/search-view.webp" alt="Vue Search" />
@@ -184,9 +176,7 @@ Si vous souhaitez tester l’intégration des logs Kafka avant de configurer vot
 Testez l’intégration des logs Kafka avec un jeu de données d’exemple pré-généré avant de configurer vos systèmes de production.
 
 <Steps>
-  <Step>
-    #### Télécharger le jeu de données d’exemple
-
+  <Step title="Télécharger le jeu de données d’exemple" id="download-sample">
     Téléchargez le fichier de logs d’exemple :
 
     ```bash
@@ -194,9 +184,7 @@ Testez l’intégration des logs Kafka avec un jeu de données d’exemple pré-
     ```
   </Step>
 
-  <Step>
-    #### Créer une configuration de collector de test
-
+  <Step title="Créer une configuration de collector de test" id="test-config">
     Créez un fichier nommé `kafka-logs-demo.yaml` avec la configuration suivante :
 
     ```yaml
@@ -245,9 +233,7 @@ Testez l’intégration des logs Kafka avec un jeu de données d’exemple pré-
     ```
   </Step>
 
-  <Step>
-    #### Exécuter ClickStack avec la configuration de démonstration
-
+  <Step title="Exécuter ClickStack avec la configuration de démonstration" id="run-demo">
     Exécutez ClickStack avec les logs de démonstration et cette configuration :
 
     ```bash
@@ -278,13 +264,11 @@ Testez l’intégration des logs Kafka avec un jeu de données d’exemple pré-
 </div>
 
 <Steps>
-  <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/kafka-logs-dashboard.json'} download="kafka-logs-dashboard.json" eventName="docs.kafka_logs_monitoring.dashboard_download">Télécharger</TrackedLink> la configuration du tableau de bord
+  <Step title="Télécharger la configuration du tableau de bord" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/kafka-logs-dashboard.json'} download="kafka-logs-dashboard.json" eventName="docs.kafka_logs_monitoring.dashboard_download">Télécharger le fichier de configuration du tableau de bord</TrackedLink>.
   </Step>
 
-  <Step>
-    #### Importer un tableau de bord préconfiguré
-
+  <Step title="Importer un tableau de bord préconfiguré" id="import-dashboard">
     1. Ouvrez HyperDX et accédez à la section Dashboards.
     2. Cliquez sur « Import Dashboard » en haut à droite, sous le menu à trois points.
 
@@ -295,10 +279,8 @@ Testez l’intégration des logs Kafka avec un jeu de données d’exemple pré-
     <Image img="/images/clickstack/kafka/logs/finish-import.webp" alt="Finaliser l’importation du tableau de bord des logs Kafka" />
   </Step>
 
-  <Step>
-    #### Le tableau de bord sera créé avec toutes les visualisations préconfigurées
-
-    Pour le jeu de données de démonstration, définissez la plage horaire pour inclure **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)**.
+  <Step title="Le tableau de bord sera créé avec toutes les visualisations préconfigurées" id="created-dashboard">
+    Pour le jeu de données de démonstration, définissez l’intervalle de temps de façon à inclure **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)**.
 
     <Image img="/images/clickstack/kafka/logs/example-dashboard.webp" alt="Exemple de tableau de bord des logs Kafka" />
   </Step>
@@ -340,4 +322,4 @@ Si votre installation Kafka utilise un format Log4j personnalisé, adaptez la re
   ## Passage en production
 </div>
 
-Ce guide s’appuie sur l’OpenTelemetry Collector intégré de ClickStack pour une mise en place rapide. Pour les déploiements en production, nous vous recommandons d’exécuter votre propre OTel Collector et d’envoyer les données vers l’endpoint OTLP de ClickStack. Consultez [l’envoi de données OpenTelemetry](/fr/clickstack/ingesting-data/opentelemetry) pour la configuration de production.
+Ce guide s&#39;appuie sur l&#39;OpenTelemetry Collector intégré à ClickStack pour une mise en place rapide. Pour les déploiements en production, nous recommandons d&#39;exécuter votre propre OTel Collector et d&#39;envoyer les données vers l&#39;endpoint OTLP de ClickStack. Consultez [Envoi de données OpenTelemetry](/fr/clickstack/ingesting-data/opentelemetry) pour la configuration de production.

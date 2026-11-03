@@ -71,7 +71,7 @@ BigQuery ClickPipe는 BigQuery [데이터셋](https://docs.cloud.google.com/bigq
   #### 서비스 계정 자격 증명
 </div>
 
-ClickPipes는 [서비스 계정 키](https://docs.cloud.google.com/iam/docs/keys-create-delete)를 사용해 Google Cloud 프로젝트에 인증합니다. ClickPipes가 BigQuery에서 데이터를 내보내고, 이를 스테이징 GCS 버킷에 적재한 뒤, ClickHouse로 읽어올 수 있도록 필요한 최소한의 [권한](#permissions)만 부여된 전용 서비스 계정을 생성하는 것을 권장합니다.
+ClickPipes는 [서비스 계정 키](https://docs.cloud.google.com/iam/docs/keys-create-delete)를 사용해 Google Cloud 프로젝트에 인증합니다. ClickPipes가 BigQuery에서 데이터를 내보내고, 이를 스테이징 GCS 버킷에 적재한 뒤 ClickHouse에서 읽을 수 있도록, 필요한 최소한의 [권한](#permissions)만 부여된 전용 서비스 계정을 생성하는 것을 권장합니다.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_iam.webp" alt="BigQuery 및 Cloud Storage 권한이 있는 서비스 계정 키 생성" size="lg" border />
 

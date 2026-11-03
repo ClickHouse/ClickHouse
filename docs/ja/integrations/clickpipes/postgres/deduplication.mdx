@@ -136,15 +136,15 @@ LIMIT 10
   #### FINAL 設定
 </div>
 
-クエリ内の各テーブル名に FINAL 修飾子を追加する代わりに、[FINAL 設定](/ja/reference/settings/session-settings#final) を使うと、クエリ内のすべてのテーブルに自動的に FINAL を適用できます。
+クエリ内の各テーブル名に FINAL 修飾子を追加する代わりに、[FINAL 設定](/ja/reference/settings/session-settings/other#final) を使うと、クエリ内のすべてのテーブルに自動的に FINAL を適用できます。
 
 この設定は、クエリごとにもセッション全体にも適用できます。
 
 ```sql
--- クエリごとのFINAL設定
+-- Per query FINAL setting
 SELECT count(*) FROM posts SETTINGS FINAL = 1;
 
--- セッションにFINALを設定する
+-- Set FINAL for the session
 SET final = 1;
 SELECT count(*) FROM posts; 
 ```

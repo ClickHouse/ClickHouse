@@ -1,14 +1,57 @@
 ---
 slug: /best-practices
-keywords: ['Cloud', '기본 키', '순서 지정 키', 'materialized views', '모범 사례', '대량 삽입', '비동기 삽입', '뮤테이션 피하기', '널 허용 컬럼 피하기', 'Optimize Final 피하기', '파티셔닝 키']
-title: ClickHouse의 모범 사례
+keywords: ['Cloud', '프라이머리 키', '순서 지정 키', 'materialized view', '모범 사례', '대량 삽입', '비동기 삽입', '뮤테이션 피하기', '널 허용 컬럼 피하기', 'OPTIMIZE FINAL 피하기', '파티셔닝 키']
+title: 'ClickHouse 모범 사례'
 hide_title: true
 description: 'ClickHouse 모범 사례 섹션의 랜딩 페이지'
 doc_type: 'landing-page'
+mode: wide
 ---
 
-import TableOfContents from '/snippets/ko/_table_of_contents.mdx';
+이 섹션에서는 ClickHouse를 최대한 활용하기 위해 따라야 하는 모범 사례를 소개합니다.
 
-이 섹션에서는 ClickHouse를 최대한 활용하는 데 도움이 되는 모범 사례를 소개합니다.
+<CardGroup cols={2}>
+  <Card title="프라이머리 키 선택하기" icon="key" href="/ko/concepts/best-practices/choosing-a-primary-key">
+    ClickHouse에서 프라이머리 키를 선택하는 방법입니다.
+  </Card>
 
-<TableOfContents />
+  <Card title="데이터 타입 선택하기" icon="shapes" href="/ko/concepts/best-practices/select-data-type">
+    컬럼에 적합한 데이터 타입을 선택하는 방법입니다.
+  </Card>
+
+  <Card title="materialized view 사용하기" icon="layer-group" href="/ko/concepts/best-practices/use-materialized-views">
+    materialized view를 사용해 계산을 쿼리 시점에서 삽입 시점으로 옮깁니다.
+  </Card>
+
+  <Card title="JOIN 최소화 및 최적화하기" icon="link" href="/ko/concepts/best-practices/minimize-optimize-joins">
+    ClickHouse에서 JOIN을 사용할 때의 모범 사례입니다.
+  </Card>
+
+  <Card title="파티셔닝 키 선택하기" icon="folder-tree" href="/ko/concepts/best-practices/partitioning-keys">
+    파티셔닝 키를 선택하는 방법입니다.
+  </Card>
+
+  <Card title="삽입 전략 선택하기" icon="file-import" href="/ko/concepts/best-practices/selecting-an-insert-strategy">
+    대량 삽입과 비동기 삽입을 포함해 삽입 전략을 선택하는 방법입니다.
+  </Card>
+
+  <Card title="상황에 맞게 데이터 스키핑 인덱스 사용하기" icon="filter" href="/ko/concepts/best-practices/using-data-skipping-indices">
+    데이터 스키핑 인덱스를 언제, 어떻게 사용해야 하는지 설명합니다.
+  </Card>
+
+  <Card title="뮤테이션 피하기" icon="ban" href="/ko/concepts/best-practices/avoid-mutations">
+    ClickHouse에서 뮤테이션을 피해야 하는 이유를 설명합니다.
+  </Card>
+
+  <Card title="OPTIMIZE FINAL 피하기" icon="triangle-exclamation" href="/ko/concepts/best-practices/avoid-optimize-final">
+    `OPTIMIZE TABLE ... FINAL`을 피해야 하는 이유를 설명합니다.
+  </Card>
+
+  <Card title="널 허용 컬럼 피하기" icon="circle-minus" href="/ko/concepts/best-practices/avoidnullablecolumns">
+    ClickHouse에서 널 허용 컬럼을 피해야 하는 이유를 설명합니다.
+  </Card>
+
+  <Card title="JSON을 적절히 사용하기" icon="code" href="/ko/concepts/best-practices/json-type">
+    `JSON` 데이터 타입을 언제 사용해야 하는지 설명합니다.
+  </Card>
+</CardGroup>

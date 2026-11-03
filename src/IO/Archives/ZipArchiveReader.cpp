@@ -3,6 +3,7 @@
 #if USE_MINIZIP
 #include <IO/Archives/ZipArchiveWriter.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/quoteString.h>
 #include <base/errnoToString.h>
 
@@ -553,10 +554,15 @@ public:
         if (file_info.compression_method != MZ_COMPRESS_METHOD_STORE)
             throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Seek in compressed archive is not supported.");
 
-        int err = unzSeek64(raw_handle, off, whence);
+        int err = unzSeek64(raw_handle, new_pos, SEEK_SET);
         handle.rethrowStreamException();
         checkResult(err);
-        return unzTell64(raw_handle);
+
+        /// Discard buffered bytes from the previous position. Without this, the next read would
+        /// return stale data while getPosition() (= unzTell64() - available()) would also be wrong.
+        resetWorkingBuffer();
+
+        return new_pos;
     }
 
     bool checkIfActuallySeekable() override
@@ -847,6 +853,8 @@ void ZipArchiveReader::releaseRawHandle(RawHandleWithStream handle_info)
     }
 
     std::lock_guard lock{mutex};
+    /// Called from ~HandleHolder, so growing the pool must not throw MEMORY_LIMIT_EXCEEDED.
+    LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
     free_handles.push_back(handle_info);
 }
 

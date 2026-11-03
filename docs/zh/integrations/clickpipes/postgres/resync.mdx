@@ -32,7 +32,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 以下是一些场景：
 
 1. 你可能需要对源表进行重大的 schema 变更，这会导致现有 ClickPipe 无法继续工作，并且需要重新开始。完成这些变更后，只需点击 重新同步。
-2. 对于 ClickHouse，可能需要更改目标表的 ORDER BY 键。你可以通过 重新同步 将数据重新填充到具有正确排序键的新表中。
+2. 对于 ClickHouse，可能需要更新目标表中 ORDER BY 列的值。你可以通过 重新同步 将数据重新填充到具有正确排序键的新表中。
 3. 如果 ClickPipe 的 replication slot 已失效：重新同步 会创建一个新的 ClickPipe，并在源数据库上创建一个新的 replication slot。
 
 <Note>

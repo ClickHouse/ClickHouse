@@ -9,7 +9,7 @@ doc_type: 'guide'
 
 import { Image } from "/snippets/ko/components/Image.jsx";
 
-이 가이드에서는 ClickHouse 기반의 빠른 in-process SQL OLAP Engine인 [chDB](/ko/products/chdb/index)를 사용해 Marimo 노트북에서 ClickHouse Cloud의 데이터셋을 탐색하는 방법을 알아봅니다.
+이 가이드에서는 ClickHouse 기반의 빠른 in-process SQL OLAP Engine인 [chDB](/ko/chdb/index)를 사용해 Marimo 노트북에서 ClickHouse Cloud의 데이터셋을 탐색하는 방법을 알아봅니다.
 
 **사전 요구 사항:**
 
@@ -313,16 +313,16 @@ WHERE town = 'LONDON'
 
 df_distribution = chdb.query(query_distribution, "DataFrame")
 
-# 인터랙티브 박스 플롯을 생성합니다.
+# create an interactive box plot.
 fig_box = go.Figure()
 
 fig_box.add_trace(
     go.Box(
         y=df_distribution['price'],
         name=f'London {year_slider.value}',
-        boxmean='sd',  # 평균 및 표준편차 표시
+        boxmean='sd',  # Show mean and standard deviation
         marker_color='lightblue',
-        boxpoints='outliers'  # 이상값 포인트 표시
+        boxpoints='outliers'  # Show outlier points
     )
 )
 

@@ -1,4 +1,3 @@
-#include <Core/Streaming/CursorTree_fwd.h>
 #include <Core/Streaming/CursorTree.h>
 
 #include <Common/Exception.h>
@@ -18,12 +17,18 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INVALID_CURSOR_LOOKUP;
+    extern const int BAD_ARGUMENTS;
 }
+
+/// The tree is traversed and destroyed recursively, so its depth must be bounded.
+/// Real cursors are shallow (e.g. `partition_id.block_number`), but the dotted paths may come
+/// from a query (`STREAM CURSOR`) or from external storage (the refresh cursor in data lake metadata).
+static constexpr size_t MAX_CURSOR_TREE_DEPTH = 256;
 
 namespace
 {
 
-void collapseTreeImpl(MapWithMemoryTracking<String, Int64> & collapsed_tree, VectorWithMemoryTracking<String> & path, CursorTreeNode * node)
+void collapseTreeImpl(MapWithMemoryTracking<String, Int64> & collapsed_tree, VectorWithMemoryTracking<String> & path, const CursorTreeNode * node)
 {
     for (const auto & [k, v] : *node)
     {
@@ -38,14 +43,18 @@ void collapseTreeImpl(MapWithMemoryTracking<String, Int64> & collapsed_tree, Vec
     }
 }
 
-MapWithMemoryTracking<String, Int64> collapseTree(CursorTreeNode * node)
+Map collapseTree(const CursorTreeNode * node)
 {
     MapWithMemoryTracking<String, Int64> collapsed_tree;
     VectorWithMemoryTracking<String> path;
 
     collapseTreeImpl(collapsed_tree, path, node);
 
-    return collapsed_tree;
+    Map result;
+    for (const auto & [k, v] : collapsed_tree)
+        result.push_back(Tuple{k, v});
+
+    return result;
 }
 
 }
@@ -133,6 +142,11 @@ Int64 & CursorTreeNode::setValue(const String & key, Int64 value)
     return std::get<Int64>(cell);
 }
 
+CursorTreeNodePtr CursorTreeNode::clone() const
+{
+    return buildCursorTree(collapseTree(this));
+}
+
 CursorTreeNode::Data::iterator CursorTreeNode::begin()
 {
     return data.begin();
@@ -158,13 +172,7 @@ CursorTreeNode::Data::const_iterator CursorTreeNode::end() const
 Map cursorTreeToMap(const CursorTreeNodePtr & ptr)
 {
     chassert(ptr != nullptr);
-    MapWithMemoryTracking<String, Int64> collapsed_tree = collapseTree(ptr.get());
-    Map result;
-
-    for (const auto & [k, v] : collapsed_tree)
-        result.push_back(Tuple{k, v});
-
-    return result;
+    return collapseTree(ptr.get());
 }
 
 CursorTreeNodePtr buildCursorTree(const Map & collapsed_tree)
@@ -180,6 +188,9 @@ CursorTreeNodePtr buildCursorTree(const Map & collapsed_tree)
         VectorWithMemoryTracking<String> path;
         boost::split(path, dotted_path, boost::is_any_of("."));
 
+        if (path.size() > MAX_CURSOR_TREE_DEPTH)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cursor path is too deep: {} components, the maximum is {}", path.size(), MAX_CURSOR_TREE_DEPTH);
+
         CursorTreeNode * node = root.get();
         for (size_t i = 0; i + 1 < path.size(); ++i)
             node = node->getSubtreeOrCreate(path[i]).get();
@@ -188,6 +199,23 @@ CursorTreeNodePtr buildCursorTree(const Map & collapsed_tree)
     }
 
     return root;
+}
+
+void mergeCursors(const CursorTreeNodePtr & into, const CursorTreeNodePtr & from)
+{
+    for (const auto & [key, value] : *from)
+    {
+        if (std::holds_alternative<Int64>(value))
+        {
+            chassert(!into->hasSubtree(key));
+            into->setValue(key, std::get<Int64>(value));
+        }
+        else
+        {
+            chassert(!into->hasValue(key));
+            mergeCursors(into->getSubtreeOrCreate(key), std::get<CursorTreeNodePtr>(value));
+        }
+    }
 }
 
 }

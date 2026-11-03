@@ -7,14 +7,14 @@ doc_type: 'guide'
 keywords: ['hipaa', 'соответствие требованиям', 'здравоохранение', 'безопасность', 'защита данных']
 ---
 
-import BetaBadge from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
-import EnterprisePlanFeatureBadge from "/snippets/ru/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+import { EnterprisePlanFeatureBadge } from "/snippets/ru/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 import { Image } from "/snippets/ru/components/Image.jsx";
 
 <EnterprisePlanFeatureBadge feature="HIPAA" />
 
-ClickHouse предлагает сервисы, соответствующие требованиям правила безопасности закона HIPAA (Health Insurance Portability and Accountability Act) 1996 года. Клиенты могут обрабатывать защищённую медицинскую информацию (PHI) в этих сервисах после подписания соглашения Business Associate Agreement (BAA) и развертывания сервисов в регионе, соответствующем требованиям.
+ClickHouse предлагает сервисы, соответствующие требованиям правила безопасности закона HIPAA (Health Insurance Portability and Accountability Act) 1996 года. Клиенты могут обрабатывать защищённую медицинскую информацию (PHI) в этих сервисах после подписания соглашения Business Associate Agreement (BAA) и развертывания сервисов в регионе, соответствующем требованиям HIPAA.
 
 Дополнительные сведения о программе соответствия требованиям ClickHouse и доступности отчётов стороннего аудита см. в нашем [обзоре соответствия требованиям](/ru/products/cloud/reference/security/compliance-overview) и в [Trust Center](https://trust.clickhouse.com). Кроме того, клиентам следует ознакомиться с нашей страницей [возможностей безопасности](/ru/products/cloud/features/security), чтобы выбрать и внедрить подходящие меры безопасности для своих рабочих нагрузок.
 
@@ -25,9 +25,7 @@ ClickHouse предлагает сервисы, соответствующие �
 </div>
 
 <Steps>
-  <Step>
-    ### Подключение сервисов Enterprise
-
+  <Step title="Подключение сервисов Enterprise" id="sign-up-for-enterprise">
     1. Выберите название своей организации в левом нижнем углу консоли.
     2. Нажмите **Billing**.
     3. Проверьте свой **Plan** в левом верхнем углу.
@@ -35,11 +33,9 @@ ClickHouse предлагает сервисы, соответствующие �
     5. Выберите **Switch to Enterprise**.
   </Step>
 
-  <Step>
-    ### Включение HIPAA для вашей организации
-
+  <Step title="Включение HIPAA для вашей организации" id="enable-hipaa">
     1. Выберите название своей организации в левом нижнем углу консоли.
-    2. Нажмите **Organization details**.
+    2. Нажмите **Organization settings**.
     3. Включите переключатель **Enable HIPAA**.
 
     <br />
@@ -65,9 +61,7 @@ ClickHouse предлагает сервисы, соответствующие �
     <br />
   </Step>
 
-  <Step>
-    ### Развертывание сервисов в регионах, соответствующих требованиям HIPAA
-
+  <Step title="Развертывание сервисов в регионах, соответствующих требованиям HIPAA" id="deploy-hipaa-services">
     1. Выберите **New service** в левом верхнем углу главного экрана в консоли
     2. Измените **Region type** на **HIPAA compliant**
 

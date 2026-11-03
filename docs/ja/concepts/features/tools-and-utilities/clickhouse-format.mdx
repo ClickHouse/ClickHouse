@@ -1,5 +1,5 @@
 ---
-description: 'ClickHouseのデータフォーマットを扱うための format ユーティリティガイド'
+description: 'ClickHouse のデータフォーマットを扱うための format ユーティリティガイド'
 slug: /operations/utilities/clickhouse-format
 title: 'clickhouse-format'
 doc_type: 'reference'
@@ -11,14 +11,14 @@ doc_type: 'reference'
 
 * `--help` or`-h` — ヘルプメッセージを表示します。
 * `--query` — 長さや複雑さを問わずクエリをフォーマットします。
-* `--hilite` or `--highlight` — ANSI 端末のエスケープシーケンスを使用して構文ハイライトを追加します。
+* `--hilite` or `--highlight` — ANSI 端末のエスケープシーケンスによるシンタックスハイライトを追加します。
 * `--oneline` — 1 行でフォーマットします。
 * `--max_line_length` — 指定した長さ未満のクエリを 1 行でフォーマットします。
 * `--comments` — 出力内のコメントを保持します。
-* `--quiet` or `-q` — 構文のみをチェックし、成功時は何も出力しません。
+* `--quiet` or `-q` — 構文チェックのみを行い、成功時は何も出力しません。
 * `--multiquery` or `-n` — 同じファイル内で複数のクエリを許可します。
 * `--obfuscate` — フォーマットの代わりに難読化します。
-* `--seed <string>` — 難読化の結果を決定する任意の文字列シードです。
+* `--seed <string>` — 難読化の結果を決定する任意の文字列のシードです。
 * `--backslash` — フォーマット済みクエリの各行末にバックスラッシュを追加します。Web などから複数行のクエリをコピーしてコマンドラインで実行したい場合に便利です。
 * `--semicolons_inline` — マルチクエリモードでは、セミコロンを新しい行ではなくクエリの最終行に記述します。
 
@@ -26,7 +26,7 @@ doc_type: 'reference'
   ## 例
 </div>
 
-1. クエリのフォーマット:
+1. クエリをフォーマットする:
 
 ```bash title="Query"
 $ clickhouse-format --query "select number from numbers(10) where number%2 order by number desc;"
@@ -39,7 +39,7 @@ WHERE number % 2
 ORDER BY number DESC
 ```
 
-2. 強調表示と1行表示:
+2. 強調表示と1 行:
 
 ```bash title="Query"
 $ clickhouse-format --oneline --hilite <<< "SELECT sum(number) FROM numbers(5);"
@@ -66,7 +66,7 @@ FROM numbers(5)
 
 ```
 
-4. 難読化:
+4. 難読化：
 
 ```bash title="Query"
 $ clickhouse-format --seed Hello --obfuscate <<< "SELECT cost_first_screen BETWEEN a AND b, CASE WHEN x >= 123 THEN y ELSE NULL END;"
@@ -76,7 +76,7 @@ $ clickhouse-format --seed Hello --obfuscate <<< "SELECT cost_first_screen BETWE
 SELECT treasury_mammoth_hazelnut BETWEEN nutmeg AND span, CASE WHEN chive >= 116 THEN switching ELSE ANYTHING END;
 ```
 
-同じクエリと別のseed文字列:
+同じクエリで、別のシード文字列を使った場合:
 
 ```bash title="Query"
 $ clickhouse-format --seed World --obfuscate <<< "SELECT cost_first_screen BETWEEN a AND b, CASE WHEN x >= 123 THEN y ELSE NULL END;"

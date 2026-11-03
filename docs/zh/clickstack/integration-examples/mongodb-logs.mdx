@@ -33,9 +33,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 * 具有访问 MongoDB 日志文件的权限
 
 <Steps>
-  <Step>
-    #### 验证 MongoDB 日志配置
-
+  <Step title="验证 MongoDB 日志配置" id="verify-mongodb">
     MongoDB 4.4+ 默认输出结构化的 JSON 日志。请检查日志文件的位置：
 
     ```bash
@@ -60,17 +58,15 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     更改配置后，重新启动 MongoDB：
 
     ```bash
-    # 适用于 systemd
+    # For systemd
     sudo systemctl restart mongod
 
-    # 适用于 Docker
+    # For Docker
     docker restart <mongodb-container>
     ```
   </Step>
 
-  <Step>
-    #### 为 MongoDB 创建自定义 OTel collector 配置
-
+  <Step title="为 MongoDB 创建自定义 OTel collector 配置" id="custom-otel">
     ClickStack 支持通过挂载自定义配置文件并设置环境变量来扩展基础 OpenTelemetry Collector 配置。自定义配置会与由 HyperDX 通过 OpAMP 管理的基础配置合并。
 
     创建一个名为 `mongodb-monitoring.yaml` 的文件，内容如下：
@@ -134,9 +130,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step>
-    #### 配置 ClickStack 以加载自定义配置
-
+  <Step title="配置 ClickStack 以加载自定义配置" id="load-custom">
     要在现有的 ClickStack 部署中启用自定义 collector 配置，您需要：
 
     1. 将自定义配置文件挂载到 `/etc/otelcol-contrib/custom.config.yaml`
@@ -180,9 +174,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step>
-    #### 在 HyperDX 中验证日志
-
+  <Step title="在 HyperDX 中验证日志" id="verifying-logs">
     配置完成后，登录 HyperDX，确认日志已开始流入：
 
     <Image img="/images/clickstack/mongodb/search-view.webp" alt="MongoDB 日志搜索视图" />
@@ -198,9 +190,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 在配置生产系统之前，先使用预先生成的演示数据集测试 MongoDB 集成。
 
 <Steps>
-  <Step>
-    #### 下载样本数据集
-
+  <Step title="下载样本数据集" id="download-sample">
     下载示例日志文件：
 
     ```bash
@@ -208,9 +198,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### 创建测试 collector 配置
-
+  <Step title="创建测试 collector 配置" id="test-config">
     创建一个名为 `mongodb-demo.yaml` 的文件，并填入以下配置：
 
     ```yaml
@@ -269,9 +257,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### 使用演示配置运行 ClickStack
-
+  <Step title="使用演示配置运行 ClickStack" id="run-demo">
     使用演示日志和配置运行 ClickStack：
 
     ```bash
@@ -302,15 +288,13 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 </div>
 
 <Steps>
-  <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/mongodb-logs-dashboard.json'} download="mongodb-logs-dashboard.json" eventName="docs.mongodb_logs_monitoring.dashboard_download">下载</TrackedLink> 仪表盘配置
+  <Step title="下载仪表盘配置" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/mongodb-logs-dashboard.json'} download="mongodb-logs-dashboard.json" eventName="docs.mongodb_logs_monitoring.dashboard_download">下载仪表盘配置文件</TrackedLink>。
   </Step>
 
-  <Step>
-    #### 导入预建仪表盘
-
+  <Step title="导入预置仪表盘" id="import-dashboard">
     1. 打开 HyperDX，进入 Dashboards 部分。
-    2. 点击右上角省略号菜单中的“Import Dashboard”。
+    2. 点击右上角省略号菜单中的“导入仪表盘”。
 
     <Image img="/images/clickstack/import-dashboard.webp" alt="导入仪表盘" />
 
@@ -319,9 +303,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     <Image img="/images/clickstack/mongodb/finish-import.webp" alt="完成导入 MongoDB 日志仪表盘" />
   </Step>
 
-  <Step>
-    #### 仪表盘创建后将预先配置好所有可视化项
-
+  <Step title="仪表盘创建后将预先配置好所有可视化项" id="created-dashboard">
     对于演示数据集，将时间范围设置为 **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)**。
 
     <Image img="/images/clickstack/mongodb/example-dashboard.webp" alt="MongoDB 日志仪表盘" />
@@ -368,7 +350,7 @@ tail -1 /var/log/mongodb/mongod.log | python3 -m json.tool
 * 针对特定用例创建更多[仪表盘](/zh/clickstack/features/dashboards/overview) (如副本集监控、连接跟踪)
 
 <div id="going-to-production">
-  ## 进入生产环境
+  ## 投入生产
 </div>
 
-本指南基于 ClickStack 内置的 OpenTelemetry Collector，可帮助您快速完成设置。对于生产部署，我们建议运行您自己的 OTel Collector，并将数据发送到 ClickStack 的 OTLP 端点。有关生产环境配置，请参阅[发送 OpenTelemetry 数据](/zh/clickstack/ingesting-data/opentelemetry)。
+本指南基于 ClickStack 内置的 OpenTelemetry Collector，帮助您快速完成设置。对于生产环境部署，我们建议运行您自己的 OTel collector，并将数据发送到 ClickStack 的 OTLP 端点。有关生产环境配置，请参阅[发送 OpenTelemetry 数据](/zh/clickstack/ingesting-data/opentelemetry)。

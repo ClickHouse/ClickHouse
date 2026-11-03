@@ -3,6 +3,7 @@
 #include "config.h"
 
 #if USE_MONGODB
+#include <Common/Logger.h>
 #include <Common/RemoteHostFilter.h>
 
 #include <Analyzer/JoinNode.h>
@@ -10,18 +11,32 @@
 #include <Analyzer/ConstantNode.h>
 #include <Common/NamedCollections/NamedCollections_fwd.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/SecretArgumentsSpec.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
 #include <Storages/SelectQueryInfo.h>
 
+#include <memory>
 #include <optional>
 
 #include <mongocxx/instance.hpp>
 #include <mongocxx/client.hpp>
+#include <mongocxx/logger.hpp>
 
 extern "C" void mongoc_cleanup(void);
 
 namespace DB
 {
+
+/// Forwards the driver's unstructured log to the server log; without a logger the driver discards these messages.
+class MongoDBLogger final : public mongocxx::logger
+{
+public:
+    void operator()(
+        mongocxx::log_level level, bsoncxx::v1::stdx::string_view domain, bsoncxx::v1::stdx::string_view message) noexcept override;
+
+private:
+    LoggerPtr log = getLogger("MongoDB");
+};
 
 /// As per MongoDB CXX driver documentation:
 /// You must create a mongocxx::instance object before you use the C++ driver,
@@ -34,11 +49,9 @@ public:
     MongoDBInstanceHolder(MongoDBInstanceHolder const &) = delete;
     void operator=(MongoDBInstanceHolder const &) = delete;
 
-    static MongoDBInstanceHolder & instance()
-    {
-        static MongoDBInstanceHolder instance;
-        return instance;
-    }
+    /// Defined out of line: a static local in a header-defined function gives every shared
+    /// object its own copy.
+    static MongoDBInstanceHolder & instance();
 
     ~MongoDBInstanceHolder()
     {
@@ -57,11 +70,15 @@ public:
     }
 private:
     MongoDBInstanceHolder() = default;
-    std::optional<mongocxx::instance> inst{std::in_place};
+    std::optional<mongocxx::instance> inst{std::in_place, std::make_unique<MongoDBLogger>()};
 };
 
 struct MongoDBConfiguration
 {
+    /// Declared first: the driver requires the instance to exist before any other driver object is created,
+    /// and a URI parsed on another thread while the instance installs its log handler races in `mongoc_log`.
+    MongoDBInstanceHolder & instance_holder = MongoDBInstanceHolder::instance();
+
     std::unique_ptr<mongocxx::uri> uri;
     String collection;
     std::unordered_set<String> oid_fields = {"_id"};
@@ -112,8 +129,6 @@ public:
         size_t num_streams) override;
 
 private:
-    MongoDBInstanceHolder & instance_holder = MongoDBInstanceHolder::instance();
-
     std::optional<bsoncxx::document::value> visitWhereConstant(
         const ContextPtr & context,
         const ConstantNode * const_node,
@@ -144,6 +159,9 @@ private:
     const MongoDBConfiguration configuration;
     LoggerPtr log;
 };
+
+/// The `SecretArgumentsSpec` of `mongodb` and the `MongoDB` table engine.
+SecretArgumentsSpec mongoDBSecretArguments();
 
 }
 #endif

@@ -17,18 +17,18 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 يُنشأ مستخدمو SQL Console لكل جلسة، وتتم مصادقتهم باستخدام شهادات X.509 التي تُدوَّر تلقائيًا. ويُزال المستخدم عند إنهاء الجلسة. عند إنشاء قوائم الوصول لأغراض التدقيق، يُرجى الانتقال إلى علامة التبويب Settings الخاصة بالخدمة في Console، ومراعاة وصول SQL Console بالإضافة إلى مستخدمي قاعدة البيانات الموجودين في قاعدة البيانات. وإذا كانت الأدوار المخصصة مُهيأة، فسيُدرج وصول المستخدم ضمن الدور الذي ينتهي باسم المستخدم الخاص به.
 
-<div id="sql-console-users-and-roles">
-  ## مستخدمو SQL Console والأدوار
-</div>
+## مستخدمو SQL Console والأدوار {#sql-console-users-and-roles}
 
-يمكن إسناد أدوار SQL Console الأساسية إلى المستخدمين الذين لديهم أذونات Service Read Only وService Admin. لمزيد من المعلومات، راجع [إدارة تعيينات أدوار SQL Console](/ar/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments). يوضّح هذا الدليل كيفية إنشاء دور مخصّص لمستخدم في SQL Console.
+يمكن إسناد أدوار SQL Console الأساسية إلى المستخدمين الذين لديهم أذونات Service Read Only وService Admin. لمزيد من المعلومات، راجع [إدارة مستخدمي Cloud](/ar/products/cloud/guides/security/cloud-access-management/manage-cloud-users#manage-role-assignments). يوضّح هذا الدليل كيفية إنشاء دور مخصّص لمستخدم في SQL Console.
+
+<Tip>
+  يُفضَّل استخدام [أدوار قاعدة البيانات المُدارة عبر Cloud](/ar/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) لإدارة الوصول إلى قاعدة البيانات من Console. الأدوار `sql-console-role:<email>` غير متوافقة مع جلسات JWT داخل SQL Console.
+</Tip>
 
 لإنشاء دور مخصّص لمستخدم في SQL Console ومنحه دورًا عامًا، شغّل الأوامر التالية. يجب أن يتطابق عنوان البريد الإلكتروني مع عنوان البريد الإلكتروني للمستخدم في Console.
 
 <Steps>
-  <Step>
-    #### إنشاء `database_developer` ومنح الأذونات
-
+  <Step title={<>إنشاء <code>database_developer</code> ومنح الأذونات</>} id="create-role-grant-permissions">
     أنشئ الدور `database_developer` وامنحه أذونات `SHOW` و`CREATE` و`ALTER` و`DELETE`.
 
     ```sql
@@ -40,9 +40,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    #### إنشاء دور لمستخدم SQL Console
-
+  <Step title="إنشاء دور لمستخدم SQL Console" id="create-sql-console-user-role">
     أنشئ دورًا لمستخدم SQL Console وهو my.user@domain.com، ثم أسند إليه الدور `database_developer`.
 
     ```sql
@@ -51,9 +49,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    #### يُسنَد إلى المستخدم الدور الجديد عند استخدام SQL Console
-
+  <Step title="يُسنَد إلى المستخدم الدور الجديد عند استخدام SQL Console" id="use-assigned-new-role">
     سيُسنَد إلى المستخدم الدور المرتبط بعنوان بريده الإلكتروني كلما استخدم SQL Console.
   </Step>
 </Steps>
@@ -92,11 +88,9 @@ CREATE USER userName IDENTIFIED WITH sha256_hash BY 'hash';
 
 للاطّلاع على شرح تفصيلي مع أمثلة، راجع [How to connect to ClickHouse Cloud using SSH keys](/ar/resources/support-center/knowledge-base/cloud-services/how-to-connect-to-ch-cloud-using-ssh-keys) في قاعدة المعرفة الخاصة بنا.
 
-<div id="database-permissions">
-  ## أذونات قاعدة البيانات
-</div>
+## أذونات قاعدة البيانات {#database-permissions}
 
-اضبط ما يلي على مستوى الخدمات وقواعد البيانات باستخدام عبارة SQL ‏[GRANT](/ar/reference/statements/grant).
+اضبط ما يلي ضمن الخدمات وقواعد البيانات باستخدام عبارة SQL ‏[GRANT](/ar/reference/statements/grant).
 
 | Role    | Description                                                     |
 | :------ | :-------------------------------------------------------------- |
@@ -107,9 +101,9 @@ CREATE USER userName IDENTIFIED WITH sha256_hash BY 'hash';
 * يمكن منح أدوار قاعدة البيانات لأدوار أخرى، مما يؤدي إلى بنية هرمية. وترث الأدوار جميع أذونات الأدوار التي تكون عضوًا فيها.
 * أدوار قاعدة البيانات خاصة بكل خدمة، ويمكن تطبيقها على عدة قواعد بيانات ضمن الخدمة نفسها.
 
-يوضح الشكل أدناه الطرق المختلفة التي يمكن بها منح مستخدم أذونات.
+يوضح الشكل أدناه الطرق المختلفة التي يمكن بها منح المستخدم أذونات.
 
-<Image img="/images/cloud/security/cloud-access-management/user_grant_permissions_options.webp" alt="رسم توضيحي يبيّن الطرق المختلفة التي يمكن بها منح مستخدم أذونات" size="md" background="black" />
+<Image img="/images/cloud/security/cloud-access-management/user_grant_permissions_options.webp" alt="رسم توضيحي يبيّن الطرق المختلفة التي يمكن بها منح المستخدم أذونات" size="md" background="black" />
 
 <div id="initial-settings">
   ### الإعدادات الأولية
@@ -130,16 +124,12 @@ CREATE USER userName IDENTIFIED WITH sha256_hash BY 'hash';
 
 يمكنك استخدام مولّد تجزئة SHA256 أو دالة برمجية مثل `hashlib` في بايثون لتحويل كلمة مرور مكوّنة من 12 حرفًا أو أكثر وبدرجة تعقيد مناسبة إلى سلسلة SHA256 لتقديمها إلى مسؤول النظام لاستخدامها ككلمة مرور. ويضمن ذلك ألّا يرى المسؤول كلمات المرور غير المشفّرة أو يتعامل معها.
 
-<div id="database-access-listings-with-sql-console-users">
-  ### قوائم الوصول إلى قاعدة البيانات باستخدام مستخدمي SQL console
-</div>
+### قوائم الوصول إلى قاعدة البيانات باستخدام مستخدمي SQL console {#database-access-listings-with-sql-console-users}
 
 يمكن استخدام العملية التالية لإنشاء قائمة وصول كاملة عبر SQL console وقواعد البيانات في مؤسستك.
 
 <Steps>
-  <Step>
-    #### الحصول على قائمة بجميع الأذونات الممنوحة في قاعدة البيانات
-
+  <Step title="الحصول على قائمة بجميع الأذونات الممنوحة في قاعدة البيانات" id="get-a-list-of-all-database-grants">
     شغّل الاستعلامات التالية للحصول على قائمة بجميع الأذونات الممنوحة في قاعدة البيانات.
 
     ```sql
@@ -165,9 +155,7 @@ CREATE USER userName IDENTIFIED WITH sha256_hash BY 'hash';
     ```
   </Step>
 
-  <Step>
-    #### ربط قائمة الأذونات الممنوحة بمستخدمي Console الذين لديهم وصول إلى SQL console
-
+  <Step title="ربط قائمة الأذونات الممنوحة بمستخدمي Console الذين لديهم وصول إلى SQL console" id="associate-grant-list-to-console-users-with-access-to-sql-console">
     اربط هذه القائمة بمستخدمي Console الذين لديهم وصول إلى SQL console.
 
     a. انتقل إلى Console.
@@ -178,12 +166,10 @@ CREATE USER userName IDENTIFIED WITH sha256_hash BY 'hash';
 
     d. مرّر إلى قسم الوصول إلى SQL console.
 
-    e. انقر على الرابط الذي يعرض عدد المستخدمين الذين لديهم وصول إلى قاعدة البيانات `There are # users with access to this service.` لعرض قائمة المستخدمين.
+    e. انقر على رابط عدد المستخدمين الذين لديهم إمكانية الوصول إلى قاعدة البيانات `There are # users with access to this service.` لعرض قائمة المستخدمين.
   </Step>
 </Steps>
 
-<div id="warehouse-users">
-  ## مستخدمو المستودع
-</div>
+## مستخدمو المستودع {#warehouse-users}
 
-تتم مشاركة مستخدمي المستودع بين الخدمات ضمن المستودع نفسه. لمزيد من المعلومات، راجع [عناصر التحكم في الوصول إلى المستودع](/ar/products/cloud/features/infrastructure/warehouses#access-controls).
+يكون مستخدمو المستودع مشتركين بين الخدمات ضمن المستودع نفسه. لمزيد من المعلومات، راجع [ضوابط الوصول إلى المستودع](/ar/products/cloud/features/infrastructure/warehouses#access-controls).

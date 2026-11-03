@@ -15,9 +15,7 @@ title: Windows에서 설치
 </Note>
 
 <Steps>
-  <Step>
-    ## WSL 설치
-
+  <Step title="WSL 설치" id="install-wsl">
     관리자 권한으로 Windows PowerShell을 열고 다음 명령을 실행하세요:
 
     ```bash
@@ -32,9 +30,7 @@ title: Windows에서 설치
     ```
   </Step>
 
-  <Step>
-    ## curl을 사용해 스크립트로 ClickHouse 설치
-
+  <Step title="curl을 사용해 스크립트로 ClickHouse 설치" id="install-clickhouse-via-script-using-curl">
     curl을 사용해 스크립트로 ClickHouse를 설치하려면 다음 명령을 실행하세요:
 
     ```bash
@@ -49,9 +45,7 @@ title: Windows에서 설치
     ```
   </Step>
 
-  <Step>
-    ## clickhouse-local 시작
-
+  <Step title="clickhouse-local 시작" id="start-clickhouse-local">
     `clickhouse-local`을 사용하면 별도 구성 없이도 ClickHouse의
     강력한 SQL 구문으로 로컬 및 원격 파일을 처리할 수 있습니다. 테이블 데이터는
     임시 위치에 저장되므로 `clickhouse-local`을 다시 시작하면
@@ -64,9 +58,7 @@ title: Windows에서 설치
     ```
   </Step>
 
-  <Step>
-    ## clickhouse-server 시작
-
+  <Step title="clickhouse-server 시작" id="start-clickhouse-server">
     데이터를 영구적으로 저장하려면 `clickhouse-server`를 실행해야 합니다. 다음 명령으로
     ClickHouse 서버를 시작할 수 있습니다:
 
@@ -75,9 +67,7 @@ title: Windows에서 설치
     ```
   </Step>
 
-  <Step>
-    ## clickhouse-client 시작
-
+  <Step title="clickhouse-client 시작" id="start-clickhouse-client">
     서버가 실행 중이면 새 터미널 창을 열고 다음 명령을 실행하여
     `clickhouse-client`를 시작하세요:
 

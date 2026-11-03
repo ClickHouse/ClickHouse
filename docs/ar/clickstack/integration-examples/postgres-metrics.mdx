@@ -35,9 +35,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 * مستخدم مراقبة في PostgreSQL لديه الأذونات المناسبة
 
 <Steps>
-  <Step>
-    #### تأكد من أن مستخدم المراقبة لديه الأذونات المطلوبة
-
+  <Step title="تأكد من أن مستخدم المراقبة لديه الأذونات المطلوبة" id="monitoring-permissions">
     يتطلب مستقبِل PostgreSQL مستخدمًا لديه إذن قراءة على طرق عرض الإحصاءات. امنح دور `pg_monitor` لمستخدم المراقبة لديك:
 
     ```sql
@@ -45,9 +43,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### أنشئ تهيئة مخصصة لـ OTel collector
-
+  <Step title="أنشئ تهيئة مخصصة لـ OTel collector" id="create-custom-config">
     يتيح لك ClickStack توسيع تهيئة OpenTelemetry collector الأساسية من خلال تركيب ملف تهيئة مخصص وتعيين متغير بيئة.
 
     أنشئ `postgres-metrics.yaml`:
@@ -93,9 +89,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step>
-    #### انشر ClickStack باستخدام تهيئة مخصصة
-
+  <Step title="انشر ClickStack باستخدام تهيئة مخصصة" id="deploy-clickstack">
     قم بتركيب ملف التهيئة المخصص:
 
     ```bash
@@ -111,16 +105,14 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### تحقّق من جمع المقاييس
-
+  <Step title="تحقّق من جمع المقاييس" id="verify-metrics">
     بعد إكمال التهيئة، سجّل الدخول إلى HyperDX وتأكد من أن المقاييس تتدفق:
 
-    1. انتقل إلى مستكشف المقاييس
+    1. انتقل إلى Metrics explorer
     2. ابحث عن المقاييس التي تبدأ بـ postgresql. (على سبيل المثال: postgresql.backends وpostgresql.commits)
     3. ينبغي أن ترى نقاط بيانات المقاييس تظهر وفقًا لفاصل الجمع الذي قمت بتهيئته
 
-    بمجرد بدء تدفق المقاييس، انتقل إلى قسم [لوحات المعلومات والتصورات المرئية](#dashboards) لاستيراد لوحة المعلومات الجاهزة مسبقًا.
+    بمجرد بدء تدفق المقاييس، انتقل إلى قسم [لوحات المعلومات والتصور](#dashboards) لاستيراد لوحة المعلومات الجاهزة مسبقًا.
   </Step>
 </Steps>
 
@@ -137,9 +129,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 </Info>
 
 <Steps>
-  <Step>
-    #### تنزيل مجموعة بيانات المقاييس النموذجية
-
+  <Step title="تنزيل مجموعة بيانات المقاييس النموذجية" id="download-sample">
     نزّل ملفات المقاييس المُولَّدة مسبقًا (24 ساعة من مقاييس PostgreSQL بأنماط واقعية):
 
     ```bash
@@ -158,10 +148,8 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     * **حالات deadlocks (14:15, 16:30)** - deadlocks نادرة
   </Step>
 
-  <Step>
-    #### ابدأ ClickStack
-
-    ابدأ instance من ClickStack:
+  <Step title="ابدأ ClickStack" id="start-clickstack">
+    ابدأ مثيل من ClickStack:
 
     ```bash
     docker run -d --name clickstack-postgres-demo \
@@ -172,9 +160,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     انتظر نحو 30 ثانية حتى يكتمل تشغيل ClickStack بالكامل.
   </Step>
 
-  <Step>
-    #### حمّل المقاييس إلى ClickStack
-
+  <Step title="حمّل المقاييس إلى ClickStack" id="load-metrics">
     حمّل المقاييس مباشرةً إلى ClickHouse:
 
     ```bash
@@ -188,9 +174,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### تحقّق من المقاييس في HyperDX
-
+  <Step title="تحقّق من المقاييس في HyperDX" id="verify-metrics-demo">
     بعد تحميلها، فإن أسرع طريقة لعرض مقاييسك هي من خلال لوحة المعلومات الجاهزة مسبقًا.
 
     انتقل إلى قسم [لوحات المعلومات والتصورات](#dashboards) لاستيراد لوحة المعلومات وعرض العديد من مقاييس PostgreSQL دفعةً واحدة.
@@ -204,19 +188,17 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 </Steps>
 
 <div id="dashboards">
-  ## لوحات المعلومات والمرئيات
+  ## لوحات المعلومات والتصورات
 </div>
 
-لمساعدتك على بدء مراقبة PostgreSQL باستخدام ClickStack، نوفر مرئيات أساسية لمقاييس PostgreSQL.
+لمساعدتك على بدء مراقبة PostgreSQL باستخدام ClickStack، نوفر تصورات أساسية لمقاييس PostgreSQL.
 
 <Steps>
-  <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/postgres-metrics-dashboard.json'} download="postgres-metrics-dashboard.json" eventName="docs.postgres_metrics_monitoring.dashboard_download">نزّل</TrackedLink> ملف إعداد لوحة المعلومات
+  <Step title="نزّل إعداد لوحة المعلومات" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/postgres-metrics-dashboard.json'} download="postgres-metrics-dashboard.json" eventName="docs.postgres_metrics_monitoring.dashboard_download">نزّل ملف إعداد لوحة المعلومات</TrackedLink>.
   </Step>
 
-  <Step>
-    #### استورد لوحة المعلومات المُعدّة مسبقًا
-
+  <Step title="استورد لوحة المعلومات المُعدّة مسبقًا" id="import-dashboard">
     1. افتح HyperDX وانتقل إلى قسم لوحات المعلومات
     2. انقر على **استيراد لوحة معلومات** في الزاوية العلوية اليمنى من قائمة النقاط الثلاث
 
@@ -227,10 +209,8 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     <Image img="/images/clickstack/postgres/import-dashboard.webp" alt="مربع حوار إنهاء الاستيراد" />
   </Step>
 
-  <Step>
-    #### اعرض لوحة المعلومات
-
-    ستُنشأ لوحة المعلومات مع إعداد جميع المرئيات مسبقًا:
+  <Step title="اعرض لوحة المعلومات" id="created-dashboard">
+    ستُنشأ لوحة المعلومات مع إعداد جميع التصورات مسبقًا:
 
     <Image img="/images/clickstack/postgres/postgres-metrics-dashboard.webp" alt="لوحة معلومات مقاييس PostgreSQL" />
 
@@ -304,4 +284,4 @@ psql -h postgres-host -U otel_monitor -d postgres -c "SELECT version();"
   ## الانتقال إلى بيئة الإنتاج
 </div>
 
-يستند هذا الدليل إلى OTel Collector المضمّن في ClickStack لتوفير إعداد سريع. بالنسبة إلى عمليات النشر في بيئة الإنتاج، نوصي بتشغيل OTel Collector خاص بك وإرسال البيانات إلى نقطة نهاية OTLP الخاصة بـ ClickStack. راجع [إرسال بيانات OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطّلاع على إعدادات بيئة الإنتاج.
+يعتمد هذا الدليل على OpenTelemetry Collector المضمّن في ClickStack لتوفير إعداد سريع. أما في عمليات النشر على بيئة الإنتاج، فنوصي بتشغيل OTel Collector الخاص بك وإرسال البيانات إلى نقطة نهاية OTLP الخاصة بـ ClickStack. راجع [إرسال بيانات OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطلاع على إعدادات الإنتاج.

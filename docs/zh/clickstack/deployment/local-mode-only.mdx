@@ -34,9 +34,7 @@ import JSONSupport from '/snippets/zh/_json_support.mdx';
 <br />
 
 <Steps>
-  <Step>
-    ### 使用 Docker 部署
-
+  <Step title="使用 Docker 部署" id="deploy-with-docker">
     本地模式会在 8080 端口部署 HyperDX UI。
 
     ```shell
@@ -44,10 +42,8 @@ import JSONSupport from '/snippets/zh/_json_support.mdx';
     ```
   </Step>
 
-  <Step>
-    ### 访问 HyperDX UI
-
-    访问 [http://localhost:8080](http://localhost:8080) 即可打开 HyperDX UI。
+  <Step title="访问 HyperDX UI" id="navigate-to-hyperdx-ui">
+    访问 [http://localhost:8080](http://localhost:8080) 即可进入 HyperDX UI。
 
     **你不会被提示创建用户，因为此部署模式未启用身份验证。**
 
@@ -55,7 +51,7 @@ import JSONSupport from '/snippets/zh/_json_support.mdx';
 
     <Image img="/images/use-cases/observability/hyperdx-2.webp" alt="创建登录" size="md" />
 
-    创建一个数据源，保留所有默认值，并在 `Table` 字段中填入 `otel_logs`。其他设置应会自动检测，你可以直接点击 `Save New Source`。
+    创建一个数据源，保留所有默认值，并在 `Table` 字段中填入 `otel_logs`。其他设置应会自动检测，因此你可以直接点击 `Save New Source`。
 
     <Image img="/images/use-cases/observability/hyperdx-logs.webp" alt="创建日志数据源" size="md" />
   </Step>

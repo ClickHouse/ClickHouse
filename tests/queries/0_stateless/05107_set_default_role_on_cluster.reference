@@ -1,0 +1,14 @@
+trailing ON CLUSTER
+0	['05107_role_a']
+leading ON CLUSTER
+0	['05107_role_b']
+ALL EXCEPT
+1	['05107_role_a']
+NONE
+0	[]
+formatting keeps the clause
+SET DEFAULT ROLE r TO u ON CLUSTER c
+SET DEFAULT ROLE r TO u ON CLUSTER c
+an unknown role is rejected on the initiator
+0	[]
+SET ROLE is session-local and takes no ON CLUSTER

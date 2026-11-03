@@ -34,9 +34,7 @@ Si quieres probar la integración antes de configurar tu propio entorno, puedes 
 * Nombre de host o dirección IP de la instancia de ClickStack
 
 <Steps>
-  <Step>
-    #### Instalar el módulo OpenTelemetry para Nginx
-
+  <Step title="Instalar el módulo OpenTelemetry para Nginx" id="install-module">
     La forma más sencilla de añadir tracing a Nginx es usar la imagen oficial de Nginx con soporte integrado para OpenTelemetry.
 
     ##### Usar la imagen nginx:otel
@@ -55,9 +53,7 @@ Si quieres probar la integración antes de configurar tu propio entorno, puedes 
     </Note>
   </Step>
 
-  <Step>
-    #### Configurar Nginx para enviar trazas a ClickStack
-
+  <Step title="Configurar Nginx para enviar trazas a ClickStack" id="configure-nginx">
     Añade la configuración de OpenTelemetry a tu archivo `nginx.conf`. Esta configuración carga el módulo y envía las trazas al endpoint OTLP de ClickStack.
 
     Primero, obtén tu API key:
@@ -125,7 +121,7 @@ Si quieres probar la integración antes de configurar tu propio entorno, puedes 
 
     <Note>
       * **El puerto 4317** es el endpoint gRPC que utiliza el módulo de Nginx
-      * **otel&#95;service&#95;name** debe describir claramente tu instancia de Nginx (por ejemplo, &quot;api-gateway&quot; o &quot;frontend-proxy&quot;)
+      * **otel&#95;service&#95;name** debe describir claramente tu instancia de Nginx (por ejemplo, &quot;api-gateway&quot;, &quot;frontend-proxy&quot;)
       * Cambia **otel&#95;service&#95;name** para que coincida con tu entorno y sea más fácil identificarlo en HyperDX
     </Note>
 
@@ -159,9 +155,7 @@ Si quieres probar la integración antes de configurar tu propio entorno, puedes 
     ```
   </Step>
 
-  <Step>
-    #### Verificar las trazas en HyperDX
-
+  <Step title="Verificar las trazas en HyperDX" id="verifying-traces">
     Una vez configurado, inicia sesión en HyperDX y verifica que las trazas estén llegando. Deberías ver algo como esto. Si no ves trazas, intenta ajustar el rango de tiempo:
 
     <Image img="/images/clickstack/nginx-traces-search-view.webp" alt="Ver trazas" />
@@ -172,12 +166,10 @@ Si quieres probar la integración antes de configurar tu propio entorno, puedes 
   ## Conjunto de datos de demostración
 </div>
 
-Para los usuarios que quieran probar la integración de trazas de nginx antes de configurar sus sistemas de producción, proporcionamos un conjunto de datos de ejemplo con Nginx Traces pregeneradas y patrones de tráfico realistas.
+Para los usuarios que quieran probar la integración de trazas de nginx antes de configurar sus sistemas de producción, proporcionamos un conjunto de datos de ejemplo con trazas de Nginx pregeneradas y patrones de tráfico realistas.
 
 <Steps>
-  <Step>
-    #### Inicia ClickStack
-
+  <Step title="Inicia ClickStack" id="start-clickstack">
     Si aún no tienes ClickStack en ejecución, inícialo con:
 
     ```bash
@@ -193,9 +185,7 @@ Para los usuarios que quieran probar la integración de trazas de nginx antes de
     * Puerto 4318: endpoint OTLP HTTP (utilizado para las trazas de demostración)
   </Step>
 
-  <Step>
-    #### Descarga el conjunto de datos de ejemplo
-
+  <Step title="Descarga el conjunto de datos de ejemplo" id="download-sample">
     Descarga el archivo de trazas de ejemplo y actualiza las marcas de tiempo a la hora actual:
 
     ```bash
@@ -207,14 +197,12 @@ Para los usuarios que quieran probar la integración de trazas de nginx antes de
 
     * 1.000 trace spans con temporización realista
     * 9 endpoints diferentes con patrones de tráfico variados
-    * ~93 % de tasa de éxito (200), ~3 % de errores de cliente (404) y ~4 % de errores del servidor (500)
+    * ~93 % de tasa de éxito (200), ~3 % de errores de cliente (404), ~4 % de errores del servidor (500)
     * Latencias de entre 10 ms y 800 ms
     * Patrones de tráfico originales conservados y desplazados al momento actual
   </Step>
 
-  <Step>
-    #### Envía trazas a ClickStack
-
+  <Step title="Envía trazas a ClickStack" id="send-traces">
     Establece tu API key como variable de entorno (si aún no la has configurado):
 
     ```bash
@@ -239,25 +227,23 @@ Para los usuarios que quieran probar la integración de trazas de nginx antes de
     <Info>
       **En ejecución en localhost**
 
-      Esta demostración asume que ClickStack se está ejecutando localmente en `localhost:4318`. Para instancias remotas, sustituye `localhost` por el hostname de tu ClickStack.
+      Esta demostración asume que ClickStack se está ejecutando localmente en `localhost:4318`. Para instancias remotas, sustituye `localhost` por el nombre de host de tu ClickStack.
     </Info>
 
     Deberías ver una respuesta como `{"partialSuccess":{}}`, lo que indica que las trazas se enviaron correctamente. Las 1.000 trazas se ingestarán en ClickStack.
   </Step>
 
-  <Step>
-    #### Verifica las trazas en HyperDX
-
+  <Step title="Verifica las trazas en HyperDX" id="verify-demo-traces">
     1. Abre [HyperDX](http://localhost:8080/) e inicia sesión en tu cuenta (puede que primero tengas que crear una cuenta)
     2. Ve a la vista Búsqueda y establece la fuente en `Traces`
-    3. Establece el intervalo de tiempo en **2025-10-25 13:00:00 - 2025-10-28 13:00:00**
+    3. Establece el rango de tiempo en **2025-10-25 13:00:00 - 2025-10-28 13:00:00**
 
     Esto es lo que deberías ver en la vista de búsqueda:
 
     <Info>
       **Visualización de la zona horaria**
 
-      HyperDX muestra las marcas de tiempo en la zona horaria local de tu navegador. Los datos de demostración abarcan **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)**. El intervalo de tiempo amplio garantiza que verás las trazas de demostración independientemente de tu ubicación. Una vez que las veas, puedes reducir el intervalo a un período de 24 horas para obtener visualizaciones más claras.
+      HyperDX muestra las marcas de tiempo en la zona horaria local de tu navegador. Los datos de demostración abarcan **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)**. El rango de tiempo amplio garantiza que verás las trazas de demostración independientemente de tu ubicación. Una vez que las veas, puedes reducir el rango a un período de 24 horas para obtener visualizaciones más claras.
     </Info>
 
     <Image img="/images/clickstack/nginx-traces-search-view.webp" alt="Ver trazas" />
@@ -271,13 +257,11 @@ Para los usuarios que quieran probar la integración de trazas de nginx antes de
 Para ayudarte a empezar a monitorizar trazas con ClickStack, proporcionamos visualizaciones esenciales para los datos de trazas.
 
 <Steps>
-  <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/nginx-traces-dashboard.json'} download="nginx-traces-dashboard.json" eventName="docs.nginx_traces_monitoring.dashboard_download">Descargar</TrackedLink> la configuración del dashboard
+  <Step title="Descargar la configuración del dashboard" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/nginx-traces-dashboard.json'} download="nginx-traces-dashboard.json" eventName="docs.nginx_traces_monitoring.dashboard_download">Descargar el archivo de configuración del dashboard</TrackedLink>.
   </Step>
 
-  <Step>
-    #### Importa el dashboard preconfigurado
-
+  <Step title="Importa el dashboard preconfigurado" id="import-dashboard">
     1. Abre HyperDX y ve a la sección Dashboards.
     2. Haz clic en &quot;Import Dashboard&quot; en la esquina superior derecha, en el menú de puntos suspensivos.
 
@@ -288,11 +272,9 @@ Para ayudarte a empezar a monitorizar trazas con ClickStack, proporcionamos visu
     <Image img="/images/clickstack/finish-nginx-traces-dashboard.webp" alt="Finalizar importación" />
   </Step>
 
-  <Step>
-    #### El dashboard se creará con todas las visualizaciones ya configuradas.
-
+  <Step title="El dashboard se creará con todas las visualizaciones ya configuradas." id="created-dashboard">
     <Note>
-      Para el demo dataset, establece el rango de tiempo en **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)** (ajústalo según tu zona horaria local). Por defecto, el dashboard importado no tendrá ningún rango de tiempo especificado.
+      Para el conjunto de datos de demostración, establece el rango de tiempo en **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)** (ajústalo según tu zona horaria local). Por defecto, el dashboard importado no tendrá ningún rango de tiempo especificado.
     </Note>
 
     <Image img="/images/clickstack/nginx-traces-dashboard.webp" alt="Dashboard de ejemplo" />
@@ -358,7 +340,7 @@ tail -f /var/log/nginx/access.log
 * Crea [dashboards](/es/clickstack/features/dashboards/overview) adicionales para casos de uso específicos (monitorización de API, eventos de seguridad)
 
 <div id="going-to-production">
-  ## Paso a producción
+  ## Pasar a producción
 </div>
 
-Esta guía envía trazas directamente desde el módulo de OpenTelemetry de Nginx al endpoint OTLP de ClickStack. Para implementaciones en producción, recomendamos ejecutar tu propio OTel collector como gateway para proporcionar procesamiento por lotes y resiliencia. Consulta [Envío de datos de OpenTelemetry](/es/clickstack/ingesting-data/opentelemetry) para la configuración de producción.
+Esta guía envía trazas directamente desde el módulo OpenTelemetry de Nginx al endpoint de OTLP de ClickStack. Para implementaciones en producción, recomendamos ejecutar un OTel collector propio como gateway para disponer de procesamiento por lotes y resiliencia. Consulte [Envío de datos de OpenTelemetry](/es/clickstack/ingesting-data/opentelemetry) para la configuración de producción.

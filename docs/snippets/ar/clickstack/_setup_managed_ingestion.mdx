@@ -2,6 +2,8 @@
 title: إعداد الاستيعاب المُدار
 ---
 
+import ManagedIngestionExampleOtelConfig from '/snippets/ar/clickstack/_config_example_otel.mdx';
+
 <img src="/images/clickstack/getting-started/start_ingestion.webp" alt="" />
 
 اختر &quot;Start Ingestion&quot;، وسيُطلب منك تحديد مصدر للاستيعاب. يدعم Managed ClickStack كلاً من OpenTelemetry و[Vector](https://vector.dev/) باعتبارهما المصدرين الرئيسيين للاستيعاب. ومع ذلك، يمكن للمستخدمين أيضًا إرسال البيانات مباشرةً إلى ClickHouse ضمن المخطط الخاص بهم باستخدام أي من [التكاملات التي يدعمها ClickHouse Cloud](/ar/integrations/home).
@@ -51,7 +53,7 @@ title: إعداد الاستيعاب المُدار
 
     ولهذا الغرض، نوفّر مثالًا على تهيئة OpenTelemetry Collector يستخدم ClickHouse exporter مع الإعدادات المناسبة ويُفعّل OTLP receivers. تتوافق هذه التهيئة مع الواجهات والسلوك المتوقعين من توزيعة ClickStack.
 
-    <ExampleOTelConfig />
+    <ManagedIngestionExampleOtelConfig />
 
     <img src="/images/clickstack/getting-started/otel_collector_start.webp" alt="" />
 

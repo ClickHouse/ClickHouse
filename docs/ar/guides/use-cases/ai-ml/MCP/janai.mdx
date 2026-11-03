@@ -13,18 +13,14 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 > يشرح هذا الدليل كيفية استخدام خادم ClickHouse MCP مع [Jan.ai](https://jan.ai/docs).
 
 <Steps>
-  <Step>
-    ## تثبيت Jan.ai
-
+  <Step title="تثبيت Jan.ai" id="install-janai">
     Jan.ai هو بديل مفتوح المصدر لـ ChatGPT ويعمل بالكامل دون اتصال بالإنترنت.
-    يمكنك تنزيل Jan.ai لأجهزة [Mac](https://jan.ai/docs/desktop/mac) أو [Windows](https://jan.ai/docs/desktop/windows) أو [Linux](https://jan.ai/docs/desktop/linux).
+    يمكنك تنزيل Jan.ai لأجهزة [Mac](https://jan.ai/docs/desktop/install/mac) أو [Windows](https://jan.ai/docs/desktop/windows) أو [Linux](https://jan.ai/docs/desktop/linux).
 
     وهو تطبيق أصلي، لذا يمكنك تشغيله بمجرد اكتمال تنزيله.
   </Step>
 
-  <Step>
-    ## إضافة LLM إلى Jan.ai
-
+  <Step title="إضافة LLM إلى Jan.ai" id="add-llm-to-janai">
     يمكننا تمكين النماذج من خلال قائمة الإعدادات.
 
     لتمكين OpenAI، نحتاج إلى تقديم مفتاح API، كما هو موضح أدناه:
@@ -32,9 +28,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     <Image img="/images/use-cases/AI_ML/MCP/0_janai_openai.webp" alt="تمكين نماذج OpenAI" size="md" />
   </Step>
 
-  <Step>
-    ## تمكين خوادم MCP
-
+  <Step title="تمكين خوادم MCP" id="enable-mcp-servers">
     وقت كتابة هذا الدليل، كانت خوادم MCP ميزة تجريبية في Jan.ai.
     ويمكننا تمكينها عبر تفعيل الميزات التجريبية:
 
@@ -43,9 +37,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     بمجرد الضغط على مفتاح التبديل هذا، سنرى `MCP servers` في القائمة اليسرى.
   </Step>
 
-  <Step>
-    ## تهيئة خادم ClickHouse MCP
-
+  <Step title="تهيئة خادم ClickHouse MCP" id="configure-clickhouse-mcp-server">
     إذا نقرنا على قائمة `MCP servers`، فسنرى قائمة بخوادم MCP التي يمكننا الاتصال بها:
 
     <Image img="/images/use-cases/AI_ML/MCP/2_janai_mcp_servers_list.webp" alt="قائمة خوادم MCP" size="md" />
@@ -65,9 +57,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     <Image img="/images/use-cases/AI_ML/MCP/5_jani_tools.webp" alt="أدوات خادم ClickHouse MCP" size="md" />
   </Step>
 
-  <Step>
-    ## التحدث إلى خادم ClickHouse MCP باستخدام Jan.ai
-
+  <Step title="التحدث إلى خادم ClickHouse MCP باستخدام Jan.ai" id="chat-to-clickhouse-mcp-server">
     حان الوقت لبدء محادثة حول بعض البيانات المخزنة في ClickHouse!
     لنطرح سؤالًا:
 

@@ -24,6 +24,38 @@ using ProjectionNames = std::vector<ProjectionName>;
 
 struct Settings;
 
+/// Checks whether access to a specific side of a SEMI/ANTI JOIN is allowed.
+/// Used both during identifier resolution and qualified matcher resolution.
+struct SemiAntiJoinSideChecker
+{
+    bool is_semi = false;
+    bool is_anti = false;
+    bool skip_left = false;
+    bool skip_right = false;
+
+    SemiAntiJoinSideChecker() = default;
+
+    SemiAntiJoinSideChecker(
+        const JoinNode & join_node,
+        JoinStrictness strictness,
+        JoinKind kind,
+        const ContextPtr & context,
+        const IQueryTreeNode * resolving_join_on_expression);
+
+    bool shouldSkipSide(JoinTableSide side) const;
+
+    /// The side that stays visible when the compatibility settings hide the other one.
+    /// Returns nullopt when both sides remain visible.
+    std::optional<JoinTableSide> preservedSideOrNone() const;
+
+    /// Throw if access to the given side of a SEMI/ANTI JOIN is denied.
+    /// The caller is responsible for determining the correct side (e.g. via isFromJoinTree).
+    void throwIfTableAccessDenied(
+        JoinTableSide side,
+        const IQueryTreeNode & node_for_error_message,
+        const IQueryTreeNode & scope_node) const;
+};
+
 class IdentifierResolver
 {
 public:
@@ -55,12 +87,22 @@ public:
 
     static bool tryBindIdentifierToTableExpression(
         const IdentifierLookup & identifier_lookup,
-        const QueryTreeNodePtr & table_expression_node,
+        const TableExpressionNodePtr & table_expression_node,
         const IdentifierResolveScope & scope);
 
+    /// Check whether the identifier binds to any table expression of the scope other than `table_expression_node`.
+    /// A table expression which a SEMI/ANTI JOIN hides from the current context (see `isTableExpressionHiddenBySemiAntiJoin`)
+    /// is not a competing binder: its columns are not visible, so they cannot make another name ambiguous.
     static bool tryBindIdentifierToTableExpressions(
         const IdentifierLookup & identifier_lookup,
-        const QueryTreeNodePtr & table_expression_node,
+        const TableExpressionNodePtr & table_expression_node,
+        const IdentifierResolveScope & scope);
+
+    /// Returns true if `table_expression_node` is on the non-preserved side of a SEMI/ANTI JOIN of the nearest
+    /// query scope's join tree and a disabled `semi_join_include_columns_from_both_sides` / `anti_join_include_columns_from_both_sides` hides that side from
+    /// everything outside that join's own ON expression (see `SemiAntiJoinSideChecker`).
+    static bool isTableExpressionHiddenBySemiAntiJoin(
+        const IQueryTreeNode * table_expression_node,
         const IdentifierResolveScope & scope);
 
     static bool tryBindIdentifierToArrayJoinExpressions(
@@ -109,7 +151,7 @@ public:
 
     IdentifierResolveResult tryResolveIdentifierFromJoinTreeNode(
         const IdentifierLookup & identifier_lookup,
-        const QueryTreeNodePtr & join_tree_node,
+        const TableExpressionNodePtr & join_tree_node,
         IdentifierResolveScope & scope);
 
     IdentifierResolveResult tryResolveIdentifierFromJoinTree(
@@ -121,7 +163,7 @@ private:
 
     IdentifierResolveResult tryResolveIdentifierFromStorage(
         const IdentifierLookup & identifier_lookup,
-        const QueryTreeNodePtr & table_expression_node,
+        const TableExpressionNodePtr & table_expression_node,
         const AnalysisTableExpressionData & table_expression_data,
         IdentifierResolveScope & scope,
         size_t identifier_column_qualifier_parts,
@@ -129,17 +171,17 @@ private:
 
     IdentifierResolveResult tryResolveIdentifierFromTableExpression(
         const IdentifierLookup & identifier_lookup,
-        const QueryTreeNodePtr & table_expression_node,
+        const TableExpressionNodePtr & table_expression_node,
         IdentifierResolveScope & scope);
 
     IdentifierResolveResult tryResolveIdentifierFromCrossJoin(
         const IdentifierLookup & identifier_lookup,
-        const QueryTreeNodePtr & table_expression_node,
+        const TableExpressionNodePtr & table_expression_node,
         IdentifierResolveScope & scope);
 
     IdentifierResolveResult tryResolveIdentifierFromJoin(
         const IdentifierLookup & identifier_lookup,
-        const QueryTreeNodePtr & table_expression_node,
+        const TableExpressionNodePtr & table_expression_node,
         IdentifierResolveScope & scope);
 
     QueryTreeNodePtr matchArrayJoinSubcolumns(
@@ -150,7 +192,7 @@ private:
 
     IdentifierResolveResult tryResolveIdentifierFromArrayJoin(
         const IdentifierLookup & identifier_lookup,
-        const QueryTreeNodePtr & table_expression_node,
+        const TableExpressionNodePtr & table_expression_node,
         IdentifierResolveScope & scope);
 
     QueryTreeNodePtr tryResolveExpressionFromArrayJoinNestedExpression(

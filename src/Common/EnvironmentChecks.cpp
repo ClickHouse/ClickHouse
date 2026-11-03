@@ -37,7 +37,12 @@ void checkHarmfulEnvironmentVariables(char ** argv)
             /// NOTE: setenv() is used over unsetenv() since unsetenv() marked as harmful
             if (setenv(var, "", true)) // NOLINT(concurrency-mt-unsafe) // this is safe if not called concurrently
             {
+                /// musl - and so Emscripten - spells this `#define stderr (stderr)`, which
+                /// `-Wdisabled-macro-expansion` reports at every use.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
                 fmt::print(stderr, "Cannot override {} environment variable", var);
+#pragma clang diagnostic pop
                 _exit(1);
             }
             require_reexec = true;

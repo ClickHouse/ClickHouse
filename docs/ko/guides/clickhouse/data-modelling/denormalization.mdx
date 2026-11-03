@@ -87,7 +87,7 @@ CREATE TABLE votes
 ENGINE = MergeTree
 ORDER BY (VoteTypeId, CreationDate, PostId)
 
-INSERT INTO votes SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/*.parquet')
+INSERT INTO votes SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/*.parquet', NOSIGN)
 ```
 
 ```response
@@ -188,7 +188,7 @@ CREATE TABLE badges
 ENGINE = MergeTree
 ORDER BY UserId
 
-INSERT INTO users SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/users.parquet')
+INSERT INTO users SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/users.parquet', NOSIGN)
 ```
 
 ```response
@@ -196,7 +196,7 @@ INSERT INTO users SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.
 ```
 
 ```sql
-INSERT INTO badges SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/badges.parquet')
+INSERT INTO badges SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/badges.parquet', NOSIGN)
 ```
 
 ```response
@@ -241,7 +241,7 @@ CREATE TABLE postlinks
 ENGINE = MergeTree
 ORDER BY (PostId, RelatedPostId)
 
-INSERT INTO postlinks SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/postlinks.parquet')
+INSERT INTO postlinks SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/postlinks.parquet', NOSIGN)
 ```
 
 ```response
@@ -417,4 +417,4 @@ DuplicatePosts: [('2017-04-11 12:18:37.260',3922739),('2017-04-11 12:18:37.260',
   ### 스트리밍
 </div>
 
-또는 [Apache Flink](/ko/integrations/connectors/data-ingestion/apache-flink)와 같은 스트리밍 기술을 사용하여, ClickHouse 외부에서 데이터를 삽입하기 전에 이 작업을 수행할 수 있습니다. 또는 증분 [materialized views](/ko/concepts/features/materialized-views/cascading-materialized-views)를 사용하여 데이터가 삽입되는 시점에 이 과정을 수행할 수도 있습니다.
+또는 [Apache Flink](/ko/integrations/connectors/data-ingestion/apache-flink)와 같은 스트리밍 기술을 사용해 ClickHouse 외부에서, 데이터를 삽입하기 전에 이 작업을 수행할 수 있습니다. 또 다른 방법으로는 증분 [materialized view](/ko/concepts/features/materialized-views/cascading-materialized-views)를 사용해 데이터가 삽입되는 시점에 이 과정을 수행할 수 있습니다.

@@ -24,7 +24,10 @@ def started_cluster():
                 "configs/zookeeper.xml",
                 "configs/s3_credentials_cache.xml",
             ],
-            user_configs=["configs/users.xml", "configs/allow_server_credentials.xml"],
+            # No s3_allow_server_credentials_in_user_queries opt-in: both tests here use only
+            # role_arn-based STS assume-role (extra_credentials(role_arn=...)), which is allowed
+            # regardless of the setting. The environment credentials serve only as the STS base.
+            user_configs=["configs/users.xml"],
             with_zookeeper=True,
             stay_alive=True,
         )
@@ -108,14 +111,14 @@ def test_s3_queue_extra_credentials(started_cluster):
     assert get_count(node, dst_table_name) == 10
 
     assert (
-        "extra_credentials(\\'role_arn\\' = \\'arn::role\\', \\'role_session_name\\' = \\'miniorole\\')"
+        "extra_credentials(\\'role_arn\\' = \\'arn::role\\', \\'role_session_name\\' = \\'[HIDDEN]\\')"
         in node.query(f"SHOW CREATE TABLE {table_name}")
     )
 
     node.restart_clickhouse()
 
     assert (
-        "extra_credentials(\\'role_arn\\' = \\'arn::role\\', \\'role_session_name\\' = \\'miniorole\\')"
+        "extra_credentials(\\'role_arn\\' = \\'arn::role\\', \\'role_session_name\\' = \\'[HIDDEN]\\')"
         in node.query(f"SHOW CREATE TABLE {table_name}")
     )
 
@@ -178,7 +181,7 @@ def test_s3_queue_extra_credentials_backup(started_cluster):
     # are equally invalid for MinIO, so a restored table that silently dropped
     # the clause would fail with the same error. Pin the round trip explicitly.
     assert (
-        "extra_credentials(\\'role_arn\\' = \\'arn::role\\', \\'role_session_name\\' = \\'miniorole\\')"
+        "extra_credentials(\\'role_arn\\' = \\'arn::role\\', \\'role_session_name\\' = \\'[HIDDEN]\\')"
         in node.query(f"SHOW CREATE TABLE {table_name}")
     )
 

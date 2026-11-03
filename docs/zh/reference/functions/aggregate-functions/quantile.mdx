@@ -38,11 +38,11 @@ quantile(level)(expr)
 
 **参数项**
 
-* `expr` — 基于列值的表达式，结果应为数值数据类型、Date 或 DateTime。[`(U)Int*`](/zh/reference/data-types/int-uint) 或 [`Float*`](/zh/reference/data-types/float) 或 [`Decimal*`](/zh/reference/data-types/decimal) 或 [`Date`](/zh/reference/data-types/date) 或 [`DateTime`](/zh/reference/data-types/datetime)
+* `expr` — 基于列值的表达式，结果应为数值数据类型、`Date`、`DateTime` 或 `DateTime64`。[`(U)Int*`](/zh/reference/data-types/int-uint) 或 [`Int128`](/zh/reference/data-types/int-uint) 或 [`UInt128`](/zh/reference/data-types/int-uint) 或 [`Int256`](/zh/reference/data-types/int-uint) 或 [`UInt256`](/zh/reference/data-types/int-uint) 或 [`Float*`](/zh/reference/data-types/float) 或 [`Decimal*`](/zh/reference/data-types/decimal) 或 [`Date`](/zh/reference/data-types/date) 或 [`DateTime`](/zh/reference/data-types/datetime) 或 [`DateTime64`](/zh/reference/data-types/datetime64)
 
 **返回值**
 
-指定级别的近似分位数。[`Float64`](/zh/reference/data-types/float) 或 [`Date`](/zh/reference/data-types/date) 或 [`DateTime`](/zh/reference/data-types/datetime)
+指定级别的近似分位数。数值参数将产生 `Float64`，而 `Decimal`、`Date`、`DateTime` 和 `DateTime64` 参数会保留其输入格式。[`Float64`](/zh/reference/data-types/float) 或 [`Decimal*`](/zh/reference/data-types/decimal) 或 [`Date`](/zh/reference/data-types/date) 或 [`DateTime`](/zh/reference/data-types/datetime) 或 [`DateTime64`](/zh/reference/data-types/datetime64)
 
 **示例**
 

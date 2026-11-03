@@ -65,7 +65,7 @@ psql < postlinks.sql
 
 While small for ClickHouse, this dataset is substantial for Postgres. The above represents a subset covering the first three months of 2024.
 
-> While our example results use the full dataset to show performance differences between Postgres and Clickhouse, all steps documented below are functionally identical with the smaller subset. Users wanting to load the full dataset into Postgres see [here](https://pastila.nl/?00d47a08/1c5224c0b61beb480539f15ac375619d#XNj5vX3a7ZjkdiX7In8wqA==). Due to the foreign constraints imposed by the above schema, the full dataset for PostgreSQL only contains rows that satisfy referential integrity. A [Parquet version](/get-started/sample-datasets/stackoverflow), with no such constraints, can be easily loaded directly into ClickHouse if needed.
+> While our example results use the full dataset to show performance differences between Postgres and ClickHouse, all steps documented below are functionally identical with the smaller subset. Users wanting to load the full dataset into Postgres see [here](https://pastila.nl/?00d47a08/1c5224c0b61beb480539f15ac375619d#XNj5vX3a7ZjkdiX7In8wqA==). Due to the foreign constraints imposed by the above schema, the full dataset for PostgreSQL only contains rows that satisfy referential integrity. A [Parquet version](/get-started/sample-datasets/stackoverflow), with no such constraints, can be easily loaded directly into ClickHouse if needed.
 
 ## Migrating data {#migrating-data}
 

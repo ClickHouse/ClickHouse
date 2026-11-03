@@ -1,0 +1,15 @@
+services:
+    hdfs1:
+        image: prasanthj/docker-hadoop:2.6.0
+        hostname: hdfs1
+        restart: always
+        expose:
+            - ${HDFS_NAME_PORT:-50070}
+            - ${HDFS_DATA_PORT:-50075}
+        entrypoint: /etc/bootstrap.sh -d
+        volumes:
+            - type: ${HDFS_FS:-tmpfs}
+              source: ${HDFS_LOGS:-}
+              target: /usr/local/hadoop/logs
+        sysctls:
+            net.ipv4.ip_local_port_range: '55000 65535'

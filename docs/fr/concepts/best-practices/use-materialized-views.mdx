@@ -20,7 +20,7 @@ Les **vues matérialisées incrémentales** sont mises à jour en temps réel. �
 
 Les **vues matérialisées actualisables**, en revanche, sont mises à jour selon une planification. Ces vues réexécutent périodiquement leur requête complète et remplacent le résultat dans la table cible. Cela ressemble au fonctionnement des vues matérialisées dans les bases de données OLTP traditionnelles comme Postgres.
 
-<Image img="/images/bestpractices/refreshable_materialized_view.webp" size="lg" alt="Schéma d’une vue matérialisée rafraîchissable" />
+<Image img="/images/bestpractices/refreshable_materialized_view.webp" size="lg" alt="Schéma d’une vue matérialisée actualisable" />
 
 Le choix entre les vues matérialisées incrémentales et actualisables dépend en grande partie de la nature de la requête, de la fréquence à laquelle les données changent et du fait que les mises à jour de la vue doivent refléter chaque ligne au moment de son insertion, ou si une actualisation périodique est acceptable. Comprendre ces compromis est essentiel pour concevoir des vues matérialisées performantes et évolutives dans ClickHouse.
 

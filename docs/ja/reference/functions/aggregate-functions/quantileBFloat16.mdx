@@ -34,11 +34,11 @@ quantileBFloat16[(level)](expr)
 
 **引数**
 
-* `expr` — 数値データを含むカラム。[`(U)Int*`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float)
+* `expr` — カラムの値に対する式で、結果は数値データ型、`Date`、または `DateTime` になります。[`(U)Int*`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`Date`](/ja/reference/data-types/date) または [`DateTime`](/ja/reference/data-types/datetime)
 
 **戻り値**
 
-指定したレベルの近似 分位点。[`Float64`](/ja/reference/data-types/float)
+指定したレベルの近似 分位点。`Date` および `DateTime` の入力では、出力フォーマットは入力フォーマットと一致します。[`Float64`](/ja/reference/data-types/float) または [`Date`](/ja/reference/data-types/date) または [`DateTime`](/ja/reference/data-types/datetime)
 
 **例**
 

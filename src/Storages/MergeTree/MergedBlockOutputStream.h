@@ -27,7 +27,9 @@ public:
         bool reset_columns_,
         bool blocks_are_granules_size,
         const WriteSettings & write_settings,
-        WrittenOffsetSubstreams * written_offset_substreams);
+        WrittenOffsetSubstreams * written_offset_substreams,
+        bool try_adaptive_codec,
+        StreamBaseManifestPtr stream_base_manifest);
 
     Block getHeader() const { return metadata_snapshot->getSampleBlock(); }
 

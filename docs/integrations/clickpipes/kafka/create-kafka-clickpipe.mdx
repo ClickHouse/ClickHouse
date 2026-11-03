@@ -31,10 +31,12 @@ Fill out the form by providing your ClickPipe with a name, a description (option
 </Step>
 <Step title="Configure a schema registry (optional)" id="4-configure-your-schema-registry">
 A valid schema is required for Avro and Protobuf topics. See [Schema registries](/integrations/clickpipes/kafka/schema-registries) for more details on how to configure a schema registry.
+
+For Protobuf, you can instead leave **Schema registry** disabled and [upload a schema when selecting your topic](#7-select-your-topic).
 </Step>
 <Step title="Configure a reverse private endpoint (optional)" id="5-configure-reverse-private-endpoint">
 Configure a Reverse Private Endpoint to allow ClickPipes to connect to your Kafka cluster using AWS PrivateLink.
-See our [AWS PrivateLink documentation](/integrations/clickpipes/aws-privatelink) for more information.
+See our [AWS PrivateLink documentation](/integrations/clickpipes/networking/aws-privatelink) for more information.
 </Step>
 <Step title="Configure SSH tunneling (optional)" id="6-configure-ssh-tunneling">
 
@@ -52,11 +54,13 @@ You can use SSH tunneling if your Kafka broker isn't publicly accessible. Instea
 4. Click on "Verify Connection" to verify the connection.
 
 <Note>
-Make sure to whitelist [ClickPipes IP addresses](/integrations/clickpipes/home#list-of-static-ips) in your firewall rules for the SSH bastion host so that ClickPipes can establish the SSH tunnel.
+Make sure to whitelist [ClickPipes IP addresses](/integrations/clickpipes/networking/static-ips) in your firewall rules for the SSH bastion host so that ClickPipes can establish the SSH tunnel.
 </Note>
 </Step>
 <Step title="Select your topic" id="7-select-your-topic">
-Select your topic and the UI will display a sample document from the topic.
+Select your topic. If you aren't using a schema registry, select your data format under **Schema format**. For `Protobuf`, upload a `.proto` file or serialized `FileDescriptorSet` (maximum 768 KiB).
+
+The UI will then display a sample document from the topic.
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step3.webp" alt="Set your topic" size="md"/>
 </Step>
 <Step title="Configure your destination table" id="8-configure-your-destination-table">

@@ -1,0 +1,210 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+# A peer declaring a revision below DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS
+# (54429) sends per-query settings in the legacy binary format: the setting name followed by
+# the raw typed value, with no flags byte and no string conversion. REVISION is pinned one
+# below that constant so the set of exchanged, revision-gated fields is fixed and cannot drift.
+#
+# Exchange 1 asserts that a signed integral setting sent that way is applied:
+# `max_partitions_to_read = 1` against a two-partition table must raise TOO_MANY_PARTITIONS.
+# Exchange 2 sends the same query with no settings at all, so a Data packet there proves the
+# exception comes from the transported setting and not from the hand-rolled handshake.
+
+import os
+import socket
+import struct
+import uuid
+
+CLICKHOUSE_HOST = os.environ.get("CLICKHOUSE_HOST", "127.0.0.1")
+CLICKHOUSE_PORT = int(os.environ.get("CLICKHOUSE_PORT_TCP", "9000"))
+CLICKHOUSE_DATABASE = os.environ.get("CLICKHOUSE_DATABASE", "default")
+CLIENT_NAME = "legacy binary settings"
+
+REVISION = 54428
+
+
+def writeVarUInt(x, ba):
+    for _ in range(0, 9):
+        byte = x & 0x7F
+        if x > 0x7F:
+            byte |= 0x80
+        ba.append(byte)
+        x >>= 7
+        if x == 0:
+            return
+
+
+def writeVarInt(x, ba):
+    # DB::encodeZigZag, src/IO/VarInt.h
+    writeVarUInt(((x << 1) ^ (x >> 63)) & 0xFFFFFFFFFFFFFFFF, ba)
+
+
+def writeStringBinary(s, ba):
+    b = bytes(s, "utf-8") if isinstance(s, str) else s
+    writeVarUInt(len(b), ba)
+    ba.extend(b)
+
+
+def readStrict(s, size=1):
+    res = bytearray()
+    while size:
+        cur = s.recv(size)
+        if not cur:
+            raise EOFError("Connection closed by server")
+        size -= len(cur)
+        res.extend(cur)
+    return res
+
+
+def readUInt(s, size=1):
+    res = readStrict(s, size)
+    val = 0
+    for i in range(len(res)):
+        val += res[i] << (i * 8)
+    return val
+
+
+def readUInt8(s):
+    return readUInt(s)
+
+
+def readUInt32(s):
+    return readUInt(s, 4)
+
+
+def readVarUInt(s):
+    x = 0
+    for i in range(9):
+        byte = readStrict(s)[0]
+        x |= (byte & 0x7F) << (7 * i)
+        if not byte & 0x80:
+            return x
+    return x
+
+
+def readStringBinary(s):
+    size = readVarUInt(s)
+    return readStrict(s, size).decode("utf-8")
+
+
+def sendHello(s):
+    ba = bytearray()
+    writeVarUInt(0, ba)  # Hello
+    writeStringBinary(CLIENT_NAME, ba)
+    writeVarUInt(24, ba)  # major
+    writeVarUInt(9, ba)  # minor
+    writeVarUInt(REVISION, ba)
+    writeStringBinary(CLICKHOUSE_DATABASE, ba)  # database
+    writeStringBinary("default", ba)  # user
+    writeStringBinary("", ba)  # password
+    s.sendall(ba)
+
+
+def receiveHello(s):
+    assert readVarUInt(s) == 0  # Hello
+    readStringBinary(s)  # server name
+    readVarUInt(s)  # major
+    readVarUInt(s)  # minor
+    readVarUInt(s)  # revision
+    readStringBinary(s)  # timezone (>= 54058)
+    readStringBinary(s)  # display name (>= 54372)
+    readVarUInt(s)  # version patch (>= 54401)
+    # No addendum is exchanged below DBMS_MIN_PROTOCOL_VERSION_WITH_ADDENDUM (54458).
+
+
+def serializeClientInfo(ba, query_id):
+    ba.append(1)  # INITIAL_QUERY
+    writeStringBinary("default", ba)  # initial_user
+    writeStringBinary(query_id, ba)  # initial_query_id
+    writeStringBinary("127.0.0.1:9000", ba)  # initial_address
+    ba.append(1)  # interface = TCP
+    writeStringBinary("os_user", ba)
+    writeStringBinary("client_hostname", ba)
+    writeStringBinary(CLIENT_NAME, ba)
+    writeVarUInt(24, ba)  # client major
+    writeVarUInt(9, ba)  # client minor
+    writeVarUInt(REVISION, ba)  # client tcp protocol version
+    writeStringBinary("", ba)  # quota key (>= 54060)
+    writeVarUInt(1, ba)  # client version patch (>= 54401)
+
+
+def sendQuery(s, query, settings):
+    ba = bytearray()
+    query_id = uuid.uuid4().hex
+    writeVarUInt(1, ba)  # Query
+    writeStringBinary(query_id, ba)
+    serializeClientInfo(ba, query_id)
+    for name, value in settings:
+        writeStringBinary(name, ba)
+        writeVarInt(value, ba)
+    writeStringBinary("", ba)  # end of settings
+    writeVarUInt(2, ba)  # stage = Complete
+    ba.append(0)  # no compression
+    writeStringBinary(query, ba)
+    s.sendall(ba)
+
+
+def serializeBlockInfo(ba):
+    writeVarUInt(1, ba)  # field 1
+    ba.append(0)  # is_overflows = false
+    writeVarUInt(2, ba)  # field 2
+    ba.extend(struct.pack("<i", -1))  # bucket_num = -1
+    writeVarUInt(0, ba)  # end of block info
+
+
+def sendEmptyBlock(s):
+    ba = bytearray()
+    writeVarUInt(2, ba)  # Data
+    writeStringBinary("", ba)
+    serializeBlockInfo(ba)
+    writeVarUInt(0, ba)  # columns
+    writeVarUInt(0, ba)  # rows
+    s.sendall(ba)
+
+
+def readException(s):
+    code = readUInt32(s)
+    readStringBinary(s)  # name
+    text = readStringBinary(s)
+    readStringBinary(s)  # trace
+    readUInt8(s)  # has_nested
+    return code, text
+
+
+def runQuery(query, settings):
+    """Return (packet_type, error_code) of the first Data or Exception packet."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(60)
+        s.connect((CLICKHOUSE_HOST, CLICKHOUSE_PORT))
+        sendHello(s)
+        receiveHello(s)
+        sendQuery(s, query, settings)
+        sendEmptyBlock(s)  # no external tables
+        while True:
+            packet = readVarUInt(s)
+            if packet == 1:  # Data
+                return packet, None
+            if packet == 2:  # Exception
+                return packet, readException(s)[0]
+            if packet == 3:  # Progress
+                raise RuntimeError("Progress packet before the first Data packet")
+            if packet == 10:  # Log
+                raise RuntimeError("Log packet before the first Data packet")
+            raise RuntimeError("Unexpected packet {}".format(packet))
+
+
+def main():
+    query = "SELECT i FROM t_legacy_binary_settings ORDER BY i"
+
+    packet, code = runQuery(query, [("max_partitions_to_read", 1)])
+    assert packet == 2, "expected an Exception packet, got packet {}".format(packet)
+    print("code", code)
+
+    packet, _code = runQuery(query, [])
+    assert packet == 1, "expected a Data packet, got packet {}".format(packet)
+    print("control packet", packet)
+
+
+if __name__ == "__main__":
+    main()

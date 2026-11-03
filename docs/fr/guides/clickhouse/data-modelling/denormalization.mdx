@@ -22,7 +22,7 @@ Ce processus réduit le besoin de jointures complexes au moment de la requête e
 
 <br />
 
-Une technique courante, popularisée par les solutions NoSQL, consiste à dénormaliser les données en l’absence de prise en charge de `JOIN`, en stockant effectivement toutes les statistiques ou les lignes associées sur une ligne parente sous forme de colonnes et d’objets imbriqués. Par exemple, dans un schéma de blog, nous pouvons stocker tous les `Comments` sous forme d’`Array` d’objets sur leur post respectif.
+Une technique courante, popularisée par les solutions NoSQL, consiste à dénormaliser les données en l’absence de prise en charge de `JOIN`, en stockant effectivement toutes les statistiques ou les lignes associées sur une ligne parente sous forme de colonnes et d’objets imbriqués. Par exemple, dans un schéma d’exemple pour un blog, nous pouvons stocker tous les `Comments` sous forme d’`Array` d’objets dans leurs posts respectifs.
 
 <div id="when-to-use-denormalization">
   ## Quand utiliser la dénormalisation
@@ -87,7 +87,7 @@ CREATE TABLE votes
 ENGINE = MergeTree
 ORDER BY (VoteTypeId, CreationDate, PostId)
 
-INSERT INTO votes SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/*.parquet')
+INSERT INTO votes SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/*.parquet', NOSIGN)
 ```
 
 ```response
@@ -188,7 +188,7 @@ CREATE TABLE badges
 ENGINE = MergeTree
 ORDER BY UserId
 
-INSERT INTO users SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/users.parquet')
+INSERT INTO users SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/users.parquet', NOSIGN)
 ```
 
 ```response
@@ -196,7 +196,7 @@ INSERT INTO users SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.
 ```
 
 ```sql
-INSERT INTO badges SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/badges.parquet')
+INSERT INTO badges SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/badges.parquet', NOSIGN)
 ```
 
 ```response
@@ -241,14 +241,14 @@ CREATE TABLE postlinks
 ENGINE = MergeTree
 ORDER BY (PostId, RelatedPostId)
 
-INSERT INTO postlinks SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/postlinks.parquet')
+INSERT INTO postlinks SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/postlinks.parquet', NOSIGN)
 ```
 
 ```response
 0 rows in set. Elapsed: 4.726 sec. Processed 6.55 million rows, 129.70 MB (1.39 million rows/s., 27.44 MB/s.)
 ```
 
-Nous pouvons confirmer qu’aucune publication ne présente un nombre excessif de liens empêchant la dénormalisation :
+Nous pouvons confirmer qu’aucun post ne présente un nombre excessif de liens empêchant la dénormalisation :
 
 ```sql
 SELECT PostId, count() AS c
@@ -417,4 +417,4 @@ Les utilisateurs disposent de plusieurs options pour orchestrer cela dans ClickH
   ### Streaming
 </div>
 
-Vous pouvez également choisir d’effectuer cette opération en dehors de ClickHouse, avant l’insertion, à l’aide de technologies de streaming telles qu’[Apache Flink](/fr/integrations/connectors/data-ingestion/apache-flink). Des [vues matérialisées](/fr/concepts/features/materialized-views/cascading-materialized-views) incrémentales peuvent aussi être utilisées pour effectuer ce traitement au fur et à mesure de l’insertion des données.
+Vous pouvez également choisir d’effectuer cette opération en dehors de ClickHouse, avant l’insertion, à l’aide de technologies de streaming comme [Apache Flink](/fr/integrations/connectors/data-ingestion/apache-flink). Autrement, des [vues matérialisées](/fr/concepts/features/materialized-views/cascading-materialized-views) incrémentales peuvent être utilisées pour exécuter ce processus au moment de l’insertion des données.

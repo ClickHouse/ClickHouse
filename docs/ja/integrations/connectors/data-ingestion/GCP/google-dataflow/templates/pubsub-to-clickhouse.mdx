@@ -178,9 +178,9 @@ Google Cloud Console にサインインし、Dataflow を検索します。
    * `projects/<PROJECT_ID>/subscriptions/<SUBSCRIPTION_NAME>` の形式で Pub/Sub の入力サブスクリプション。
    * ClickHouse のエンドポイント URL — ClickHouse Cloud の場合は `https://<HOST>:8443` を使用します。
    * ClickHouse のデータベース、ターゲットテーブル、ユーザー名、パスワード。
-   * 少なくとも 1 つの デッドレター 宛先: ClickHouse テーブルまたは Pub/Sub トピック (あるいはその両方) 。
+   * 少なくとも 1 つの デッドレターの宛先: ClickHouse テーブルまたは Pub/Sub トピック (あるいはその両方) 。
 
-   {/* PLACEHOLDER: 必須フィールドと デッドレター セクションが表示された、展開後の Pub/Sub to ClickHouse テンプレートフォームのスクリーンショットを追加 */}
+   {/* PLACEHOLDER: 必須フィールドと デッドレターの宛先 セクションが表示された、展開後の Pub/Sub to ClickHouse テンプレートフォームのスクリーンショットを追加 */}
 
 5. 必要に応じて、[Template パラメータ](#template-parameters) セクションで詳しく説明しているとおり、バッチ処理 (`windowSeconds`、`batchRowCount`) および `ClickHouseIO` のチューニングパラメータをカスタマイズします。
 
@@ -190,16 +190,16 @@ Google Cloud Console にサインインし、Dataflow を検索します。
 
 ジョブのステータスを監視するには、Google Cloud Console の [Dataflow Jobs タブ](https://console.cloud.google.com/dataflow/jobs) に移動します。ここでは、進行状況やエラーを含むジョブの詳細を確認できます。
 
-<Image img="/images/integrations/data-ingestion/google-dataflow/pubsub-inqueue-job.webp" size="lg" border alt="実行中の Pub/Sub から ClickHouse へのジョブが表示された Dataflow コンソール" />
+<Image img="/images/integrations/data-ingestion/google-dataflow/pubsub-inqueue-job.webp" size="lg" border alt="実行中の Pub/Sub to ClickHouse ジョブが表示された Dataflow コンソール" />
 
 このテンプレートは、`PubSubToClickHouse` ネームスペース配下に次のカスタムメトリクスも出力します。これらは Dataflow のジョブページで確認できます。
 
-| Metric                  | 種類    | 説明                                               |
-| ----------------------- | ----- | ------------------------------------------------ |
-| `messages-received`     | カウンター | パース処理ステップで受信した Pub/Sub メッセージの総数。                 |
-| `rows-parsed-ok`        | カウンター | 正常に行へ変換され、メイン出力にルーティングされたメッセージ。                  |
-| `rows-parse-failed`     | カウンター | パースまたはスキーママッピングに失敗し、デッドレター にルーティングされたメッセージ。 |
-| `message-payload-bytes` | 分布    | 受信した Pub/Sub メッセージのペイロードサイズの分布 (バイト単位) 。         |
+| Metric                  | 種類    | 説明                                         |
+| ----------------------- | ----- | ------------------------------------------ |
+| `messages-received`     | カウンター | パース処理ステップで受信した Pub/Sub メッセージの総数。           |
+| `rows-parsed-ok`        | カウンター | 正常に行へ変換され、メイン出力にルーティングされたメッセージ。            |
+| `rows-parse-failed`     | カウンター | パースまたはスキーママッピングに失敗し、デッドレターにルーティングされたメッセージ。 |
+| `message-payload-bytes` | 分布    | 受信した Pub/Sub メッセージのpayloadサイズの分布 (バイト単位) 。 |
 
 <div id="troubleshooting">
   ## トラブルシューティング

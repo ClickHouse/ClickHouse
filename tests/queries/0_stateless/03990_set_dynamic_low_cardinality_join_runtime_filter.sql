@@ -12,6 +12,6 @@ INSERT INTO t0 SETTINGS allow_suspicious_low_cardinality_types=1 SELECT 'str_' |
 INSERT INTO t0 SETTINGS allow_suspicious_low_cardinality_types=1 VALUES (1::LowCardinality(Int32)), (2::LowCardinality(Int32));
 SELECT count() FROM (
     SELECT t0.c0 FROM (SELECT NULL AS c0) AS v0 RIGHT JOIN t0 USING (c0)
-    SETTINGS allow_dynamic_type_in_join_keys=1, enable_join_runtime_filters=1, max_threads=1
+    SETTINGS allow_dynamic_type_in_join_keys=1, enable_join_runtime_filters=1, join_runtime_filter_min_probe_rows = 0, max_threads=1
 );
 DROP TABLE t0;

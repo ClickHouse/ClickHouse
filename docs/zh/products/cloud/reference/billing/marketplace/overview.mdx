@@ -29,9 +29,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 在 ClickHouse Cloud 控制台中，前往 **Billing**。你应该能在 **Payment details** 部分看到市场名称和相关链接。
 
-<div id="i-am-an-existing-clickhouse-cloud-user-what-happens-when-i-subscribe-to-clickhouse-cloud-via-aws--gcp--azure-marketplace">
-  ### 我是现有的 ClickHouse Cloud 用户。通过 AWS / GCP / Azure 市场订阅 ClickHouse Cloud 后会发生什么？​
-</div>
+### 我是现有的 ClickHouse Cloud 用户。通过 AWS / GCP / Azure 市场订阅 ClickHouse Cloud 后会发生什么？​ {#i-am-an-existing-clickhouse-cloud-user-what-happens-when-i-subscribe-to-clickhouse-cloud-via-aws--gcp--azure-marketplace}
 
 通过云提供商市场注册 ClickHouse Cloud 需要两个步骤：
 
@@ -42,9 +40,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 您可以通过 ClickHouse Cloud 控制台左下角的菜单在不同组织之间切换。
 
-<div id="i-am-an-existing-clickhouse-cloud-user-what-should-i-do-if-i-want-my-existing-services-to-be-billed-via-marketplace">
-  ### 我是现有的 ClickHouse Cloud 用户。如果我希望现有服务通过市场计费，该怎么做？​
-</div>
+### 我是现有的 ClickHouse Cloud 用户。如果我希望现有服务通过市场计费，该怎么做？​ {#i-am-an-existing-clickhouse-cloud-user-what-should-i-do-if-i-want-my-existing-services-to-be-billed-via-marketplace}
 
 您需要通过云提供商市场订阅 ClickHouse Cloud。完成市场订阅并跳转回 ClickHouse Cloud 后，您可以选择将现有的 ClickHouse Cloud 组织关联到市场计费。此后，您现有的资源都将通过市场计费。
 
@@ -82,13 +78,11 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 * [AWS 账单控制台](https://us-east-1.console.aws.amazon.com/billing/home)
 * [GCP 市场订单](https://console.cloud.google.com/marketplace/orders) (选择您用于订阅的结算账户)
 
-<div id="why-do-the-dates-on-the-usage-statements-not-match-my-marketplace-invoice">
-  ### 为什么用量报表上的日期与我的市场发票不一致？​
-</div>
+### 为什么用量报表上的日期与我的市场发票不一致？​ {#why-do-the-dates-on-the-usage-statements-not-match-my-marketplace-invoice}
 
 市场计费遵循自然月周期。例如，对于 12 月 1 日至 1 月 1 日期间的用量，发票会在 1 月 3 日至 1 月 5 日之间生成。
 
-ClickHouse Cloud 的用量报表采用不同的计费周期：用量会从注册当天开始，按 30 天周期计量并报告。
+对于部分已有组织，ClickHouse Cloud 的用量报表所采用的计费周期起始日并非每月 1 日。新建组织采用从每月 1 日开始的月度计费周期。
 
 如果这些日期不一致，用量报表上的日期和发票日期就会不同。由于用量报表会按天跟踪特定服务的使用情况，因此你可以通过报表查看成本明细。
 
@@ -96,7 +90,7 @@ ClickHouse Cloud 的用量报表采用不同的计费周期：用量会从注册
   ### 在哪里可以找到一般计费信息​?
 </div>
 
-请参阅[计费概览](/zh/products/cloud/reference/billing/index)。
+请参阅[计费概览](/zh/products/cloud/reference/billing/billing-overview)。
 
 <div id="is-there-a-difference-in-clickhouse-cloud-pricing-whether-paying-through-the-cloud-provider-marketplace-or-directly-to-clickhouse">
   ### 通过云提供商市场付费与直接向 ClickHouse 付费时，ClickHouse Cloud 的定价是否有差异？
@@ -110,8 +104,10 @@ ClickHouse Cloud 的用量报表采用不同的计费周期：用量会从注册
 
 可以。多个 ClickHouse 组织都可以配置为将后付费用量计入同一个云市场计费账户 (AWS、GCP 或 Azure) 。但是，预付费额度默认不会在各组织之间共享。如果您需要在组织之间共享额度，请联系 [ClickHouse Cloud 支持团队](https://clickhouse.com/support/program)。
 
-<div id="automatically-move-to-PAYG-when-running-out-of-credit">
-  ### 如果我的 ClickHouse Organization 是通过云市场承诺消费协议计费的，那么当额度用完时，是否会自动切换到 PAYG 计费？
-</div>
+### 能否将同一组织内的不同服务计入不同的 Marketplace 订阅？ {#can-i-bill-different-services-within-the-same-organization-to-different-marketplace-subscriptions}
 
-如果您的云市场承诺消费合同仍然有效，而额度已用完，我们会自动将您的组织切换到 PAYG 计费。不过，当现有合同到期后，您需要将新的云市场合同关联到您的组织，或者改为通过信用卡直接计费。
+不能。计费在组织级别进行配置，因此同一 ClickHouse Cloud 组织内的所有服务都会计入同一个 Marketplace 订阅。如果需要分别为服务计费，请针对每种计费方案创建独立的组织。您可以使用同一个 ClickHouse Cloud 控制台用户账户管理多个组织，每个组织都有各自的计费配置。
+
+### 如果我的 ClickHouse 组织是通过云市场承诺消费合同计费的，那么当额度用完时，是否会自动切换到按使用量付费计费？ {#automatically-move-to-PAYG-when-running-out-of-credit}
+
+如果你的云市场承诺消费合同仍然有效，而额度已经用完，我们会自动将你的组织切换到按使用量付费计费。不过，当前合同到期后，你需要将新的云市场合同关联到你的组织，或者将组织改为通过信用卡直接计费。 

@@ -35,6 +35,15 @@ target_compile_definitions (_boost_headers_only INTERFACE
   BOOST_ASIO_STANDALONE=1
   BOOST_ASIO_HAS_STD_INVOKE_RESULT=1 # Avoid using of deprecated in c++ > 17 std::result_of
   BOOST_TIMER_ENABLE_DEPRECATED=1 # wordnet-blast (enabled via USE_NLP) uses Boost legacy timer classes
+  # Make Boost.Math (`studentTTest`, `welchTTest`, `meanZTest`, ...) return the same bits on every architecture.
+  # By default it evaluates `double` functions in `long double`: 80-bit x87 on x86_64, but 128-bit on aarch64,
+  # where musl implements `expl`, `logl`, `powl` and others merely by calling their `double` counterparts.
+  # In `double` the results depend only on the correctly rounded llvm-libc functions.
+  BOOST_MATH_PROMOTE_DOUBLE_POLICY=false
+  # On x86_64 Boost.Math replaces the `double` Lanczos approximation (used by the gamma, beta and incomplete beta
+  # functions) with an SSE2 version that sums in a different order and rounds differently. It has no switch,
+  # so pre-define the include guard of `detail/lanczos_sse2.hpp` to keep the portable version.
+  BOOST_MATH_SPECIAL_FUNCTIONS_LANCZOS_SSE2
 )
 
 # iostreams
@@ -147,6 +156,10 @@ elseif (ARCH_LOONGARCH64)
     )
 elseif (ARCH_E2K)
     # using BOOST_USE_UCONTEXT=ON, don't use ASM
+elseif (ARCH_WASM)
+    # WebAssembly has no assembler and no way to switch stacks from user code, so the fiber
+    # backend has to go through the `ucontext` family, which Emscripten emulates.
+    set (BOOST_USE_UCONTEXT ON)
 elseif(OS_DARWIN)
     set (SRCS_CONTEXT ${SRCS_CONTEXT}
         "${LIBRARY_DIR}/libs/context/src/asm/jump_x86_64_sysv_macho_gas.S"
@@ -174,6 +187,10 @@ target_include_directories (_boost_context PRIVATE ${LIBRARY_DIR})
 
 if (SANITIZE OR BOOST_USE_UCONTEXT)
     target_compile_definitions(_boost_context PUBLIC BOOST_USE_UCONTEXT)
+    if (USE_MUSL)
+        # musl does not implement the ucontext functions.
+        target_link_libraries(_boost_context PUBLIC ch_contrib::ucontext)
+    endif()
 endif()
 
 if (SANITIZE MATCHES "address")

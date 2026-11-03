@@ -6,10 +6,6 @@ tags: ['Erreurs et exceptions']
 keywords: ['OOM', 'limite de mémoire dépassée']
 ---
 
-{frontMatter.description}
-
-{/* truncate */}
-
 import { Image } from "/snippets/fr/components/Image.jsx";
 
 <div id="troubleshooting-out-of-memory-issues">
@@ -32,8 +28,8 @@ Dans ce cas, les utilisateurs disposent de plusieurs options.
 </div>
 
 Pour les scénarios d’agrégation ou de tri gourmands en mémoire, les utilisateurs peuvent utiliser respectivement les paramètres
-[`max_bytes_before_external_group_by`](/fr/reference/settings/session-settings#max_bytes_before_external_group_by)
-et [`max_bytes_before_external_sort`](/fr/reference/settings/session-settings#max_bytes_ratio_before_external_sort).
+[`max_bytes_before_external_group_by`](/fr/reference/settings/session-settings/max-bytes#max_bytes_before_external_group_by)
+et [`max_bytes_before_external_sort`](/fr/reference/settings/session-settings/max-bytes#max_bytes_before_external_sort).
 Le premier est traité en détail [ici](/fr/reference/statements/select/group-by#group-by-in-external-memory).
 
 En résumé, cela garantit que toute agrégation peut être déportée sur disque si un
@@ -42,8 +38,8 @@ contribuera à éviter que les requêtes ne provoquent une erreur d’OOM. Le se
 similaires liés aux tris gourmands en mémoire. Cela peut être particulièrement important dans des
 environnements distribués où un nœud coordinateur reçoit des réponses triées
 de shards enfants. Dans ce cas, le serveur coordinateur peut être amené à trier un
-jeu de données plus volumineux que la mémoire dont il dispose. Avec [`max_bytes_before_external_sort`](/fr/reference/settings/session-settings#max_bytes_ratio_before_external_sort),
-le tri peut être autorisé à déborder sur le disque. Ce paramètre est également utile dans
+jeu de données plus volumineux que la mémoire dont il dispose. Avec [`max_bytes_before_external_sort`](/fr/reference/settings/session-settings/max-bytes#max_bytes_before_external_sort),
+le tri peut être autorisé à être déporté sur disque. Ce paramètre est également utile dans
 les cas où l’utilisateur a un `ORDER BY` après un `GROUP BY` avec un `LIMIT`,
 en particulier lorsque la requête est distribuée.
 
@@ -58,7 +54,7 @@ Cet algorithme charge en mémoire la table située à droite du `JOIN` dans une 
 sur laquelle la table de gauche est ensuite évaluée. Pour minimiser l’utilisation de la mémoire,
 les utilisateurs doivent donc placer la plus petite table à droite. Cette approche
 présente toutefois encore des limites lorsque la mémoire est contrainte. Dans ce cas,
-la jointure `partial_merge` peut être activée via le paramètre [`join_algorithm`](/fr/reference/settings/session-settings#join_algorithm).
+la jointure `partial_merge` peut être activée via le paramètre [`join_algorithm`](/fr/reference/settings/session-settings/join#join_algorithm).
 Cette variante de l’[algorithme de tri-fusion](https://en.wikipedia.org/wiki/Sort-merge_join)
 commence par trier la table de droite en blocs et à créer un index min-max pour ceux-ci.
 Elle trie ensuite des parties de la table de gauche selon la clé de jointure, puis les joint à la

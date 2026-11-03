@@ -83,7 +83,7 @@ clickhousectl local client
 
 تُعد [clickhouse-local](/ar/concepts/features/tools-and-utilities/clickhouse-local) أداة قوية لسطر الأوامر توفّر كامل وظائف ClickHouse ضمن ملف تنفيذي مستقل. وهي في جوهرها قاعدة البيانات نفسها الخاصة بـ خادم ClickHouse، لكنها مُعبّأة بطريقة تتيح لك الاستفادة من جميع إمكانات ClickHouse مباشرةً من سطر الأوامر من دون تشغيل مثيل خادم.
 
-<Image img="/images/deployment-modes/ch-local.webp" alt="clickHouse-local" size="sm" />
+<Image img="/images/deployment-modes/ch-local.webp" alt="clickhouse-local" size="sm" />
 
 تتميّز هذه الأداة في تحليل البيانات السريع، خاصةً عند العمل مع الملفات المحلية أو البيانات المخزّنة في خدمات التخزين السحابي. يمكنك تنفيذ استعلامات مباشرة على الملفات بتنسيقات مختلفة (CSV وJSON وParquet وغيرها) باستخدام صيغة SQL الخاصة بـ ClickHouse، مما يجعلها خيارًا ممتازًا لاستكشاف البيانات بسرعة أو لتنفيذ مهام تحليل لمرة واحدة.
 
@@ -95,7 +95,7 @@ clickhousectl local client
   ## chDB
 </div>
 
-يُعد [chDB](/ar/products/chdb/index) ClickHouse مدمجًا كمحرك قاعدة بيانات يعمل داخل العملية، وتُعد Python التنفيذ الأساسي له، مع توفره أيضًا لـ Go وRust وNodeJS وBun. يوفّر خيار النشر هذا قدرات OLAP القوية في ClickHouse مباشرةً داخل عملية تطبيقك، مما يلغي الحاجة إلى تثبيت قاعدة بيانات منفصلة.
+يُعد [chDB](/ar/chdb/index) ClickHouse مدمجًا كمحرك قاعدة بيانات يعمل داخل العملية، وتُعد Python التنفيذ الأساسي له، مع توفره أيضًا لـ Go وRust وNodeJS وBun. يوفّر خيار النشر هذا قدرات OLAP القوية في ClickHouse مباشرةً داخل عملية تطبيقك، مما يلغي الحاجة إلى تثبيت قاعدة بيانات منفصلة.
 
 <Image img="/images/deployment-modes/chdb.webp" alt="chDB - ClickHouse مدمج" size="sm" />
 

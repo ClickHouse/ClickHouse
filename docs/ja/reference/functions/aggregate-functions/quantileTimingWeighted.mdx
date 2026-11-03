@@ -13,7 +13,7 @@ doc_type: 'reference'
 
 導入バージョン: v1.1.0
 
-指定した精度で、数値データのシーケンスに対し、各要素の重みに応じた [分位数](https://en.wikipedia.org/wiki/Quantile) を計算します。
+指定した精度で、数値データ列に対し、各要素の重みに応じた [分位数](https://en.wikipedia.org/wiki/Quantile) を計算します。
 
 結果は決定論的です (クエリ処理の順序に依存しません) 。この関数は、Web ページの読み込み時間やバックエンドの応答時間のような分布を表すシーケンスを扱うように最適化されています。
 
@@ -50,7 +50,7 @@ quantileTimingWeighted(level)(expr, weight)
 
 **引数**
 
-* `expr` — カラムの値に対する式で、`Float*` 型の数値を返します。負の値をこの関数に渡した場合の動作は未定義です。値が 30,000 を超える場合 (ページの読み込み時間が 30 秒超) 、30,000 と見なされます。[`Float*`](/ja/reference/data-types/float)
+* `expr` — カラムの値に対する式で、数値データ型、`Date`、または `DateTime` を返します。負の値をこの関数に渡した場合の動作は未定義です。値が 30,000 を超える場合 (ページの読み込み時間が 30 秒超) 、30,000 と見なされます。[`(U)Int*`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`Date`](/ja/reference/data-types/date) または [`DateTime`](/ja/reference/data-types/datetime)
 * `weight` — シーケンス要素の重みを持つカラムです。重みは値の出現回数を表す数です。[`UInt*`](/ja/reference/data-types/int-uint)
 
 **戻り値**

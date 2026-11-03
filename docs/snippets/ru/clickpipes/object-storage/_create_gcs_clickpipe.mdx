@@ -1,0 +1,29 @@
+---
+title: Создание GCS ClickPipe
+---
+
+import GCSDataSource from '/snippets/ru/clickpipes/object-storage/google-cloud-storage/_1-data-source.mdx';
+import GCSConnection from '/snippets/ru/clickpipes/object-storage/google-cloud-storage/_2-connection.mdx';
+import CommonSteps from '/snippets/ru/_create_clickpipe.mdx';
+
+<Steps>
+  <Step title="Выберите источник данных" id="1-select-the-data-source">
+    **1.** В ClickHouse Cloud выберите **Источники данных** в главном меню навигации и нажмите **Create ClickPipe**.
+
+    <Frame>
+      <img src="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="Выбор импортируемых данных" />
+    </Frame>
+
+    <GCSDataSource />
+  </Step>
+
+  <Step title="Настройте подключение ClickPipe" id="2-setup-your-clickpipe-connection">
+    **1.** Чтобы настроить новый ClickPipe, необходимо указать данные для подключения и аутентификации в вашем сервисе объектного хранилища.
+
+    <GCSConnection />
+
+    **2.** Нажмите **Incoming data**. ClickPipes получит метаданные из вашего бакета для следующего шага.
+  </Step>
+
+  <CommonSteps />
+</Steps>

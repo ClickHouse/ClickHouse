@@ -4,3 +4,5 @@ LowCardinality(String) condition built	1
 LowCardinality(Nullable(FixedString)) condition built	1
 correctness match	1
 correctness no-match	0
+overlong condition not built	1
+overlong result	0

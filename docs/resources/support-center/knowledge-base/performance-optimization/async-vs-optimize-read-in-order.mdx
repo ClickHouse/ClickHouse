@@ -8,7 +8,7 @@ keywords: ['Synchronous', 'Asynchronous', 'Data Reading']
 
 The new setting allow_asynchronous_read_from_io_pool_for_merge_tree allows the number of reading threads (streams) to be higher than the number of threads in the rest of the query execution pipeline.
 
-Normally the [max_threads](/reference/settings/session-settings#max_threads) setting [controls](https://clickhouse.com/company/events/query-performance-introspection) the number of parallel reading threads and parallel query processing threads:
+Normally the [max_threads](/reference/settings/session-settings/max-threads#max_threads) setting [controls](https://clickhouse.com/company/events/query-performance-introspection) the number of parallel reading threads and parallel query processing threads:
 
 <Image img={sync_read} size="md" alt="Synchronous data reading diagram" />
 

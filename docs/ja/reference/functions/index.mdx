@@ -4,11 +4,31 @@ sidebar: 'sqlreference'
 slug: /sql-reference/functions
 title: '関数の概要'
 doc_type: 'landing-page'
+mode: wide
 ---
 
-| ページ                                                                     | 説明                             |
-| ----------------------------------------------------------------------- | ------------------------------ |
-| [通常の関数](/ja/reference/functions/regular-functions/regular-functions-index) | 各行の結果が、ほかのすべての行に依存しない関数です。     |
-| [集約関数](/ja/reference/functions/aggregate-functions/index)                  | 行をまたいで値の集合を集約する関数です。           |
-| [テーブル関数](/ja/reference/functions/table-functions/index)                    | テーブルを構築するための関数です。              |
-| [ウィンドウ関数](/ja/reference/functions/window-functions/index)                  | 現在の行に関連する行の集合に対して計算を実行できる関数です。 |
+<CardGroup cols={2}>
+  <Card title="通常の関数" icon="function" href="/ja/reference/functions/regular-functions/overview">
+    各行の結果がほかのすべての行から独立している関数です。
+  </Card>
+
+  <Card title="集約関数" icon="calculator" href="/ja/reference/functions/aggregate-functions/index">
+    行をまたいで一連の値を集約する関数です。
+  </Card>
+
+  <Card title="テーブル関数" icon="table" href="/ja/reference/functions/table-functions/index">
+    テーブルを構築するための関数です。
+  </Card>
+
+  <Card title="ウィンドウ関数" icon="chart-column" href="/ja/reference/functions/window-functions/index">
+    現在の行に関連する一連の行に対して計算を実行できる関数です。
+  </Card>
+
+  <Card title="ユーザー定義関数" icon="code" href="/ja/reference/functions/regular-functions/udf">
+    ユーザーが定義したカスタムの実行可能関数です。
+  </Card>
+
+  <Card title="WebAssembly UDF" icon="cube" href="/ja/reference/functions/regular-functions/wasm_udf">
+    WebAssembly で実装されたユーザー定義関数です。
+  </Card>
+</CardGroup>

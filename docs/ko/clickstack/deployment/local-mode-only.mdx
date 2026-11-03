@@ -34,9 +34,7 @@ import JSONSupport from '/snippets/ko/_json_support.mdx';
 <br />
 
 <Steps>
-  <Step>
-    ### Docker로 배포
-
+  <Step title="Docker로 배포" id="deploy-with-docker">
     로컬 모드에서는 8080 포트에 HyperDX UI가 배포됩니다.
 
     ```shell
@@ -44,12 +42,10 @@ import JSONSupport from '/snippets/ko/_json_support.mdx';
     ```
   </Step>
 
-  <Step>
-    ### HyperDX UI로 이동
-
+  <Step title="HyperDX UI로 이동" id="navigate-to-hyperdx-ui">
     HyperDX UI에 접속하려면 [http://localhost:8080](http://localhost:8080)으로 이동하십시오.
 
-    **이 배포 모드에서는 authentication이 활성화되어 있지 않으므로 사용자를 생성하라는 메시지가 표시되지 않습니다.**
+    **이 배포 모드에서는 인증이 활성화되어 있지 않으므로 사용자를 생성하라는 메시지가 표시되지 않습니다.**
 
     ClickHouse Cloud와 같은 외부 ClickHouse 클러스터에 연결하십시오.
 

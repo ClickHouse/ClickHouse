@@ -7,129 +7,93 @@ slug: /cloud/reference/supported-regions
 doc_type: 'reference'
 ---
 
-import EnterprisePlanFeatureBadge from "/snippets/ru/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+import { EnterprisePlanFeatureBadge } from "/snippets/ru/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
-<div id="aws-regions">
-  ## Регионы AWS
-</div>
+## Поддерживаемые регионы {#supported-regions}
 
-* ap-northeast-1 (Токио)
-* ap-northeast-2 (Южная Корея, Сеул)
-* ap-south-1 (Мумбаи)
-* ap-southeast-1 (Сингапур)
-* ap-southeast-2 (Сидней)
-* eu-central-1 (Франкфурт)
-* eu-west-1 (Ирландия)
-* eu-west-2 (Лондон)
-* us-east-1 (Северная Вирджиния)
-* us-east-2 (Огайо)
-* us-west-2 (Орегон)
-* il-central-1 (Израиль, Тель-Авив)
+В следующих таблицах перечислены поддерживаемые регионы для каждого облачного провайдера. Значки указывают на доступность: `Public` для общедоступных регионов, а `Private`, `HIPAA` или `PCI` — для регионов, где доступны соответствующие возможности.
 
-**Частный регион:**
+<Tabs>
+  <Tab title="AWS" id="aws-regions" icon="aws">
+    | Код региона      | Название региона            | Доступность                                                                                              |
+    | ---------------- | --------------------------- | -------------------------------------------------------------------------------------------------------- |
+    | `af-south-1`     | Африка (Кейптаун)           | <Badge color="purple">Private</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `ap-east-1`      | Азия и Океания (Гонконг)    | <Badge color="purple">Private</Badge>                                                                    |
+    | `ap-east-2`      | Азия и Океания (Тайбэй)     | <Badge color="purple">Private</Badge>                                                                    |
+    | `ap-northeast-1` | Азия и Океания (Токио)      | <Badge color="yellow">Public</Badge>                                                                     |
+    | `ap-northeast-2` | Азия и Океания (Сеул)       | <Badge color="yellow">Public</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>  |
+    | `ap-south-1`     | Азия и Океания (Мумбаи)     | <Badge color="yellow">Public</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>  |
+    | `ap-southeast-1` | Азия и Океания (Сингапур)   | <Badge color="yellow">Public</Badge>                                                                     |
+    | `ap-southeast-2` | Азия и Океания (Сидней)     | <Badge color="yellow">Public</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>  |
+    | `ap-southeast-3` | Азия и Океания (Джакарта)   | <Badge color="purple">Private</Badge>                                                                    |
+    | `ap-southeast-5` | Азия и Океания (Малайзия)   | <Badge color="purple">Private</Badge>                                                                    |
+    | `ca-central-1`   | Канада (Центральный)        | <Badge color="yellow">Public</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>  |
+    | `eu-central-1`   | Европа (Франкфурт)          | <Badge color="yellow">Public</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>  |
+    | `eu-north-1`     | Европа (Стокгольм)          | <Badge color="purple">Private</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `eu-west-1`      | Европа (Ирландия)           | <Badge color="yellow">Public</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>  |
+    | `eu-west-2`      | Европа (Лондон)             | <Badge color="yellow">Public</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>  |
+    | `il-central-1`   | Израиль (Тель-Авив)         | <Badge color="yellow">Public</Badge>                                                                     |
+    | `me-central-1`   | Ближний Восток (ОАЭ)        | <Badge color="yellow">Public</Badge>                                                                     |
+    | `mx-central-1`   | Мексика (Центральный)       | <Badge color="purple">Private</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `sa-east-1`      | Южная Америка (Сан-Паулу)   | <Badge color="purple">Private</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `us-east-1`      | Восток США (Сев. Вирджиния) | <Badge color="yellow">Public</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>  |
+    | `us-east-2`      | Восток США (Огайо)          | <Badge color="yellow">Public</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>  |
+    | `us-west-2`      | Запад США (Орегон)          | <Badge color="yellow">Public</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>  |
+  </Tab>
 
-* ca-central-1 (Канада)
-* af-south-1 (Южная Африка)
-* eu-north-1 (Стокгольм)
-* sa-east-1 (Южная Америка)
-* ap-southeast-3 (Джакарта)
-* ap-east-1 (Гонконг)
-* mx-central-1 (Мексика)
+  <Tab title="Google Cloud" id="google-cloud-regions" icon="/images/icons/cloud-providers/google-cloud-color.svg">
+    | Код региона               | Название региона             | Доступность                                                                                             |
+    | ------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------- |
+    | `asia-northeast1`         | Токио, Япония                | <Badge color="yellow">Public</Badge>                                                                    |
+    | `asia-southeast1`         | Джуронг-Вест, Сингапур       | <Badge color="yellow">Public</Badge>                                                                    |
+    | `australia-southeast1`    | Сидней, Австралия            | <Badge color="purple">Private</Badge>                                                                   |
+    | `europe-west2`            | Лондон, Великобритания       | <Badge color="yellow">Public</Badge>                                                                    |
+    | `europe-west3`            | Франкфурт, Германия          | <Badge color="purple">Private</Badge>                                                                   |
+    | `europe-west4`            | Эмсхавен, Нидерланды         | <Badge color="yellow">Public</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `europe-west6`            | Цюрих, Швейцария             | <Badge color="purple">Private</Badge>                                                                   |
+    | `northamerica-northeast1` | Монреаль, Квебек             | <Badge color="purple">Private</Badge>                                                                   |
+    | `us-central1`             | Каунсил-Блаффс, Айова        | <Badge color="yellow">Public</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `us-east1`                | Монкс-Корнер, Южная Каролина | <Badge color="yellow">Public</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `us-west1`                | Дал-Зе-Даллес, Орегон        | <Badge color="purple">Private</Badge>                                                                   |
+  </Tab>
 
-<div id="google-cloud-regions">
-  ## Регионы Google Cloud
-</div>
-
-* asia-southeast1 (Сингапур)
-* asia-northeast1 (Токио)
-* europe-west2 (Лондон)
-* europe-west4 (Нидерланды)
-* us-central1 (Айова)
-* us-east1 (Южная Каролина)
-
-**Частный регион:**
-
-* australia-southeast1 (Сидней)
-* europe-west3 (Франкфурт)
-* europe-west6 (Цюрих)
-* northamerica-northeast1 (Монреаль)
-* us-west1 (Орегон)
-
-<div id="azure-regions">
-  ## Регионы Azure
-</div>
-
-* West US 3 (Аризона)
-* East US 2 (Виргиния)
-* Germany West Central (Франкфурт)
-
-**Частный регион:**
-
-* Japan East (Токио, Сайтама)
-* UAE North (Дубай)
-* Australia East (Новый Южный Уэльс)
+  <Tab title="Azure" id="azure-regions" icon="/images/icons/cloud-providers/azure.svg">
+    | Код региона          | Название региона     | Доступность                           |
+    | -------------------- | -------------------- | ------------------------------------- |
+    | `australiaeast`      | Australia East       | <Badge color="purple">Private</Badge> |
+    | `eastus2`            | East US 2            | <Badge color="yellow">Public</Badge>  |
+    | `germanywestcentral` | Germany West Central | <Badge color="yellow">Public</Badge>  |
+    | `japaneast`          | Japan East           | <Badge color="purple">Private</Badge> |
+    | `uaenorth`           | UAE North            | <Badge color="purple">Private</Badge> |
+    | `westus3`            | West US 3            | <Badge color="yellow">Public</Badge>  |
+  </Tab>
+</Tabs>
 
 <Note>
-  Нужно развернуть в регионе, которого нет в текущем списке? [Отправьте запрос](https://clickhouse.com/pricing?modal=open).
+  Нужно развернуть сервис в регионе, которого пока нет в списке? [Отправьте запрос](https://clickhouse.com/pricing?modal=open).
 </Note>
 
-<div id="private-regions">
-  ## Частные регионы
-</div>
+## Частные регионы {#private-regions}
 
 <EnterprisePlanFeatureBadge feature="Возможность частных регионов" />
 
-Мы предлагаем частные регионы для наших сервисов уровня Enterprise. По вопросам подключения частного региона [свяжитесь с нами](https://clickhouse.com/company/contact).
+Мы предлагаем Частные регионы для сервисов уровня Enterprise. Чтобы запросить Частный регион, [свяжитесь с нами](https://clickhouse.com/company/contact).
 
 Ключевые особенности частных регионов:
 
 * Сервисы не поддерживают автомасштабирование; однако поддерживается ручное вертикальное и горизонтальное масштабирование.
 * Сервисы нельзя перевести в неактивное состояние.
-* Страница статуса недоступна для частных регионов.
 
-Для соответствия требованиям HIPAA могут предъявляться дополнительные требования (включая подписание BAA). Обратите внимание, что HIPAA в настоящее время доступна только для сервисов уровня Enterprise
+Для соответствия требованиям HIPAA могут предъявляться дополнительные требования, включая подписание соглашения Business Associate Agreement (BAA). HIPAA в настоящее время доступна только для сервисов уровня Enterprise.
 
-<div id="hipaa-compliant-regions">
-  ## Регионы, соответствующие требованиям HIPAA
-</div>
+## Регионы, соответствующие требованиям HIPAA {#hipaa-compliant-regions}
 
 <EnterprisePlanFeatureBadge feature="HIPAA" support="true" />
 
-Чтобы развернуть сервисы в регионах, соответствующих требованиям HIPAA, клиенты должны подписать соглашение Business Associate Agreement (BAA) и запросить онбординг через отдел продаж или службу поддержки. Следующие регионы поддерживают соответствие требованиям HIPAA:
+Чтобы развернуть сервисы в регионах, отмеченных в таблице как соответствующие требованиям HIPAA, клиенты должны подписать BAA и запросить онбординг через отдел продаж или службу поддержки.
 
-* AWS af-south-1 (Южная Африка) **Частный регион**
-* AWS ca-central-1 (Канада) **Частный регион**
-* AWS eu-central-1 (Франкфурт)
-* AWS eu-north-1 (Стокгольм) **Частный регион**
-* AWS eu-west-1 (Ирландия)
-* AWS eu-west-2 (Лондон)
-* AWS sa-east-1 (Южная Америка) **Частный регион**
-* AWS us-east-1 (Северная Виргиния)
-* AWS us-east-2 (Огайо)
-* AWS us-west-2 (Орегон)
-* GCP europe-west4 (Нидерланды)
-* GCP us-central1 (Айова)
-* GCP us-east1 (Южная Каролина)
-
-<div id="pci-compliant-regions">
-  ## Регионы, соответствующие требованиям PCI
-</div>
+## Регионы, соответствующие требованиям PCI {#pci-compliant-regions}
 
 <EnterprisePlanFeatureBadge feature="PCI" support="true" />
 
-Чтобы развернуть сервисы в регионах, соответствующих требованиям PCI, клиенты должны запросить онбординг через отдел продаж или службу поддержки. Следующие регионы поддерживают соответствие требованиям PCI:
-
-* AWS af-south-1 (Южная Африка) **Частный регион**
-* AWS ca-central-1 (Канада) **Частный регион**
-* AWS eu-central-1 (Франкфурт)
-* AWS eu-north-1 (Стокгольм) **Частный регион**
-* AWS eu-west-1 (Ирландия)
-* AWS eu-west-2 (Лондон)
-* AWS mx-central-1 (Мексика) **Частный регион**
-* AWS sa-east-1 (Южная Америка) **Частный регион**
-* AWS us-east-1 (Северная Виргиния)
-* AWS us-east-2 (Огайо)
-* AWS us-west-2 (Орегон)
-* GCP europe-west4 (Нидерланды)
-* GCP us-central1 (Айова)
-* GCP us-east1 (Южная Каролина)
+Чтобы развернуть сервисы в отмеченных в таблице регионах, соответствующих требованиям PCI, клиентам необходимо запросить онбординг через отдел продаж или службу поддержки.

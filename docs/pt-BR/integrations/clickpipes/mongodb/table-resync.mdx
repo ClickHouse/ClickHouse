@@ -14,21 +14,17 @@ Há cenários em que pode ser útil ressincronizar tabelas específicas de um pi
 
 Embora a ressincronização de tabelas individuais com o clique de um botão ainda esteja em desenvolvimento, este guia mostra as etapas para fazer isso hoje no ClickPipe do MongoDB.
 
-<div id="removing-table">
-  ### 1. Remova a tabela do pipe
-</div>
+<Steps>
+  <Step title="Remova a tabela do pipe" id="removing-table">
+    Isso pode ser feito seguindo o [guia de remoção de tabela](/pt-BR/integrations/clickpipes/mongodb/remove-table).
+  </Step>
 
-Isso pode ser feito seguindo o [guia para remover a tabela](/pt-BR/integrations/clickpipes/mongodb/remove-table).
+  <Step title="Trunque ou exclua a tabela no ClickHouse" id="truncate-drop-table">
+    Esta etapa serve para evitar a duplicação de dados quando adicionarmos essa tabela novamente na próxima etapa. Você pode fazer isso acessando a aba **SQL Console** no ClickHouse Cloud e executando uma consulta.
+    Observe que temos uma validação para bloquear a adição da tabela se ela já existir no ClickHouse e não estiver vazia.
+  </Step>
 
-<div id="truncate-drop-table">
-  ### 2. Truncar ou remover a tabela no ClickHouse
-</div>
-
-Esta etapa serve para evitar a duplicação de dados quando adicionarmos essa tabela novamente na próxima etapa. Você pode fazer isso acessando a guia **SQL Console** no ClickHouse Cloud e executando uma consulta.
-Observe que temos uma validação para impedir a adição da tabela se ela já existir no ClickHouse e não estiver vazia.
-
-<div id="add-table-again">
-  ### 3. Adicione a tabela ao ClickPipe novamente
-</div>
-
-Isso pode ser feito seguindo o [guia para adicionar a tabela](/pt-BR/integrations/clickpipes/mongodb/add-table).
+  <Step title="Adicione a tabela ao ClickPipe novamente" id="add-table-again">
+    Isso pode ser feito seguindo o [guia de adição de tabela](/pt-BR/integrations/clickpipes/mongodb/add-table).
+  </Step>
+</Steps>

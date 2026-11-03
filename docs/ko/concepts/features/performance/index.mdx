@@ -5,12 +5,39 @@ description: '성능 및 최적화 개요 페이지'
 title: '성능 및 최적화'
 keywords: ['성능 최적화', '모범 사례', '최적화 가이드', 'ClickHouse 성능', '데이터베이스 최적화']
 doc_type: 'reference'
+mode: wide
 ---
 
-import TableOfContents from '/snippets/ko/_performance_optimizations_table_of_contents.mdx';
+이 섹션에는 ClickHouse 성능을 개선하기 위한 팁과 모범 사례가 담겨 있습니다.
+이 섹션에 앞서 [Core Concepts](/ko/concepts/core-concepts/parts)를 먼저 읽어볼 것을 권장합니다.
+여기에서는 성능 개선에 필요한 핵심 개념을 다룹니다.
 
-이 섹션에는 ClickHouse의 성능을 향상시키기 위한 팁과 모범 사례가 포함되어 있습니다.
-성능 향상에 필요한 주요 개념을 다루는 이 섹션의 사전 학습 자료로
-[핵심 개념](/ko/concepts/core-concepts/parts)을 먼저 읽어보시기를 권장합니다.
+<CardGroup cols={2}>
+  <Card title="PREWHERE 최적화" icon="filter" href="/ko/concepts/features/performance/prewhere">
+    불필요한 컬럼을 읽기 전에 데이터를 필터링하여 `PREWHERE`가 I/O를 줄이는 방식과 그 효과를 모니터링하는 방법을 설명합니다.
+  </Card>
 
-<TableOfContents />
+  <Card title="할당 프로파일링" icon="memory" href="/ko/concepts/features/performance/allocation-profiling">
+    jemalloc을 사용해 메모리 할당을 프로파일링합니다.
+  </Card>
+
+  <Card title="25.9 이전 버전용 할당 프로파일링" icon="clock-rotate-left" href="/ko/concepts/features/performance/allocation-profiling-old">
+    ClickHouse 25.9 이전 버전의 할당 프로파일링입니다.
+  </Card>
+
+  <Card title="캐시" icon="hard-drive" href="/ko/concepts/features/performance/caches/caches">
+    쿼리 캐시, 쿼리 조건 캐시, 사용자 공간 페이지 캐시를 포함한 캐시 유형입니다.
+  </Card>
+
+  <Card title="데이터 스키핑 인덱스" icon="forward" href="/ko/concepts/features/performance/skip-indexes/skipping-indexes">
+    예시와 함께 데이터 스키핑 인덱스를 설명합니다.
+  </Card>
+
+  <Card title="지연 머티리얼라이즈" icon="hourglass-half" href="/ko/concepts/features/performance/lazy-materialization">
+    실제로 필요해질 때까지 컬럼 데이터 읽기를 미룹니다.
+  </Card>
+
+  <Card title="문제 해결" icon="bug" href="/ko/concepts/features/performance/troubleshoot/debugging-memory-issues">
+    메모리 문제 디버깅, 하드웨어 테스트, 샘플링 쿼리 프로파일러를 다룹니다.
+  </Card>
+</CardGroup>

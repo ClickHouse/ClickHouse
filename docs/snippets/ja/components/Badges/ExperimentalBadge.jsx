@@ -11,8 +11,11 @@ const Icon = () => {
 }
 export const ExperimentalBadge = () => {
     return (
-        <div className="experimentalBadge">
-            <Icon />実験的機能です。&nbsp;<u><a href='/docs/beta-and-experimental-features#experimental-features'>詳細はこちら。</a></u>
-        </div>
+        <a
+            href="https://clickhouse.com/docs/reference/settings/beta-and-experimental-features#experimental-features"
+            className="experimentalBadge"
+        >
+            <Icon />実験的機能
+        </a>
     )
 }

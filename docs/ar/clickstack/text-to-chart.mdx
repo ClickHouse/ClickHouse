@@ -61,23 +61,17 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </div>
 
 <Steps>
-  <Step>
-    ### الانتقال إلى Chart Explorer
-
+  <Step title="الانتقال إلى Chart Explorer" id="navigate-chart-explorer">
     اختر **Chart Explorer** من القائمة الجانبية اليسرى في HyperDX.
   </Step>
 
-  <Step>
-    ### تحديد مصدر بيانات
-
+  <Step title="تحديد مصدر بيانات" id="select-data-source">
     اختر مصدر البيانات الذي تريد عرضه بصريًا — على سبيل المثال، **السجلات** أو **التتبعات** أو **المقاييس**.
 
     <Image img="/images/clickstack/text-to-chart/chart-explorer.webp" alt="مستكشف المخططات" />
   </Step>
 
-  <Step>
-    ### إدخال موجّه نصي
-
+  <Step title="إدخال موجّه نصي" id="enter-text-prompt">
     في أعلى Chart Explorer، ابحث عن حقل إدخال **AI Assistant**. اكتب وصفًا بلغة طبيعية للمخطط الذي تريد إنشاءه. على سبيل المثال:
 
     * `Show error rates by service over the last 24 hours`
@@ -137,10 +131,10 @@ docker run -e ANTHROPIC_API_KEY='<YOUR_KEY>' -p 8080:8080 clickhouse/clickstack-
 * تعتمد دقة المخطط على وضوح الموجّه وبنية البيانات الأساسية. إذا لم يطابق المخطط المُنشأ التوقعات، فجرّب إعادة صياغة الموجّه أو تحديد أسماء الأعمدة صراحةً.
 
 <div id="further-reading">
-  ## اقرأ أيضًا
+  ## للمزيد من القراءة
 </div>
 
-* [من النص إلى المخططات: طريقة أسرع للتصوّر باستخدام ClickStack](https://clickhouse.com/blog/text-to-charts-faster-way-to-visualize-clickstack) — تدوينة تعرّف بهذه الميزة
-* [لوحات المعلومات والمرئيات](/ar/clickstack/features/dashboards/overview) — إنشاء المخططات يدويًا باستخدام Chart Explorer
-* [البحث](/ar/clickstack/features/search) — صياغة البحث في النص الكامل والخصائص
-* [التهيئة](/ar/clickstack/managing/config) — جميع متغيرات البيئة في ClickStack
+* [من النص إلى المخططات: طريقة أسرع للتصور باستخدام ClickStack](https://clickhouse.com/blog/text-to-charts-faster-way-to-visualize-clickstack) — تدوينة تعرّف بهذه الميزة
+* [لوحات المعلومات والتصورات](/ar/clickstack/features/dashboards/overview) — إنشاء المخططات يدويًا باستخدام Chart Explorer
+* [البحث](/ar/clickstack/features/search) — بنية البحث في النص الكامل والبحث حسب الخصائص
+* [التهيئة](/ar/clickstack/managing/config) — جميع متغيرات بيئة ClickStack

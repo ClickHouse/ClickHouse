@@ -1,14 +1,34 @@
 ---
-description: 'Index 관련 문서'
+description: '인덱스 문서'
 sidebar: 'sqlreference'
 slug: /sql-reference/functions
 title: '함수 개요'
 doc_type: 'landing-page'
+mode: wide
 ---
 
-| 페이지                                                                     | 설명                                     |
-| ----------------------------------------------------------------------- | -------------------------------------- |
-| [일반 함수](/ko/reference/functions/regular-functions/regular-functions-index) | 각 행의 결과가 다른 모든 행과 독립적인 함수입니다.          |
-| [집계 함수](/ko/reference/functions/aggregate-functions/index)                 | 여러 행에 걸친 값 집합을 누적하는 함수입니다.             |
-| [테이블 함수](/ko/reference/functions/table-functions/index)                    | 테이블을 생성하는 메서드입니다.                      |
-| [윈도우 함수](/ko/reference/functions/window-functions/index)                   | 현재 행과 관련된 행 집합에 대해 계산을 수행할 수 있는 함수입니다. |
+<CardGroup cols={2}>
+  <Card title="일반 함수" icon="function" href="/ko/reference/functions/regular-functions/overview">
+    각 행의 결과가 다른 모든 행과 독립적인 함수입니다.
+  </Card>
+
+  <Card title="집계 함수" icon="calculator" href="/ko/reference/functions/aggregate-functions/index">
+    여러 행에 걸쳐 값 집합을 누적하는 함수입니다.
+  </Card>
+
+  <Card title="테이블 함수" icon="table" href="/ko/reference/functions/table-functions/index">
+    테이블을 생성하는 데 사용하는 함수입니다.
+  </Card>
+
+  <Card title="윈도우 함수" icon="chart-column" href="/ko/reference/functions/window-functions/index">
+    현재 행과 관련된 행 집합을 대상으로 계산을 수행할 수 있는 함수입니다.
+  </Card>
+
+  <Card title="사용자 정의 함수" icon="code" href="/ko/reference/functions/regular-functions/udf">
+    사용자가 정의한 실행형 함수입니다.
+  </Card>
+
+  <Card title="WebAssembly UDF" icon="cube" href="/ko/reference/functions/regular-functions/wasm_udf">
+    WebAssembly로 구현된 사용자 정의 함수입니다.
+  </Card>
+</CardGroup>

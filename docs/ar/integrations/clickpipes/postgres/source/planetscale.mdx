@@ -23,10 +23,10 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 يدعم ClickPipes الإصدار 12 من Postgres وما بعده.
 
 <div id="enable-logical-replication">
-  ## فعِّل النسخ المنطقي
+  ## تمكين النسخ المتماثل المنطقي
 </div>
 
-1. لتمكين النسخ المتماثل على مثيل Postgres لديك، نحتاج إلى التأكد من تعيين الإعدادات التالية:
+1. لتمكين النسخ المتماثل على مثيل Postgres لديك، نحتاج إلى التأكد من ضبط الإعدادات التالية:
 
    ```sql
    wal_level = logical
@@ -38,17 +38,17 @@ import { Image } from "/snippets/ar/components/Image.jsx";
    SHOW wal_level;
    ```
 
-   يجب أن تكون القيمة الناتجة `logical` افتراضيًا. إذا لم تكن كذلك، فيُرجى تسجيل الدخول إلى وحدة تحكم PlanetScale والانتقال إلى `Cluster configuration->Parameters` ثم التمرير لأسفل إلى `Write-ahead log` لتغييرها.
+   يجب أن تكون القيمة الناتجة `logical` افتراضيًا. وإذا لم تكن كذلك، فيُرجى تسجيل الدخول إلى Console الخاصة بـ PlanetScale والانتقال إلى `Cluster configuration->Parameters` ثم التمرير لأسفل إلى `Write-ahead log` لتغييرها.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/planetscale/planetscale_wal_level_logical.webp" alt="ضبط wal_level في وحدة تحكم PlanetScale" size="md" border />
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/planetscale/planetscale_wal_level_logical.webp" alt="ضبط wal_level في Console الخاصة بـ PlanetScale" size="md" border />
 
 <Warning>
-  سيؤدي تغيير هذا الإعداد في وحدة تحكم PlanetScale إلى إعادة التشغيل.
+  سيؤدي تغيير هذا الإعداد في Console الخاصة بـ PlanetScale إلى إعادة التشغيل.
 </Warning>
 
-2. بالإضافة إلى ذلك، يُوصى بزيادة الإعداد `max_slot_wal_keep_size` من قيمته الافتراضية البالغة 4GB. ويتم ذلك أيضًا عبر وحدة تحكم PlanetScale بالانتقال إلى `Cluster configuration->Parameters` ثم التمرير لأسفل إلى `Write-ahead log`. للمساعدة في تحديد القيمة الجديدة، يُرجى الاطلاع [هنا](/ar/integrations/clickpipes/postgres/faq#recommended-max_slot_wal_keep_size-settings).
+2. بالإضافة إلى ذلك، يُوصى بزيادة الإعداد `max_slot_wal_keep_size` من قيمته الافتراضية البالغة 4GB. ويتم ذلك أيضًا عبر Console الخاصة بـ PlanetScale بالانتقال إلى `Cluster configuration->Parameters` ثم التمرير لأسفل إلى `Write-ahead log`. للمساعدة في تحديد القيمة الجديدة، يُرجى الاطلاع [هنا](/ar/integrations/clickpipes/postgres/faq#recommended-max_slot_wal_keep_size-settings).
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/planetscale/planetscale_max_slot_wal_keep_size.webp" alt="ضبط max_slot_wal_keep_size في وحدة تحكم PlanetScale" size="md" border />
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/planetscale/planetscale_max_slot_wal_keep_size.webp" alt="ضبط max_slot_wal_keep_size في Console الخاصة بـ PlanetScale" size="md" border />
 
 <div id="creating-a-user-with-permissions-and-publication">
   ## إنشاء مستخدم مع أذونات وpublication
@@ -94,7 +94,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-سيحتوي الـ publication باسم `clickpipes` على مجموعة أحداث التغيير الناتجة عن الجداول المحددة، وسيُستخدم لاحقًا لاستيعاب تدفق النسخ المتماثل.
+يحدّد الـ publication باسم `clickpipes` مجموعة الجداول التي سيتم بث أحداث التغيير الخاصة بها إلى ClickPipes. نوصي بعدم استخدام `FOR ALL TABLES` إلا إذا كنت تنوي تكرار كل الجداول، لأن تضمين جداول غير ضرورية يزيد من حركة WAL من Postgres إلى ClickPipes ويقلّل الكفاءة الإجمالية للنسخ المتماثل.
 
 <div id="caveats">
   ## محاذير

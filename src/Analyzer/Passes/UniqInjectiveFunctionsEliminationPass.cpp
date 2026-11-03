@@ -11,6 +11,8 @@
 
 #include <Core/Settings.h>
 
+#include <DataTypes/IDataType.h>
+
 
 namespace DB
 {
@@ -63,7 +65,15 @@ public:
                 return false;
 
             const auto & arg_function = arg_typed->getFunction();
-            if (!arg_function->isInjective({}))
+            /// Pass the argument types: whether a function is injective can depend on them, as it
+            /// does for `toString` of a date-time in a time zone with a fall-back transition.
+            if (!arg_function->isInjective(arg_typed->getArgumentColumns()))
+                return false;
+
+            /// The `Null` combinator makes `uniq*` skip rows where a Nullable argument is NULL: `uniq(tuple(x))`
+            /// counts the (NULL) row while `uniq(x)` skips it.
+            if (isNullableOrLowCardinalityNullable(arg->getResultType())
+                != isNullableOrLowCardinalityNullable(arg_arguments_nodes[0]->getResultType()))
                 return false;
 
             arg = arg_arguments_nodes[0];

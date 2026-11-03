@@ -21,7 +21,7 @@ Para explorar la biblioteca integrada de plantillas, ve a **Dashboards** y haz c
 
 Esto abre la galería de plantillas, donde se organizan por categoría. Haz clic en **Import** para iniciar el proceso de importación de esa plantilla.
 
-<Image img="/images/use-cases/observability/dashboard-template-gallery.webp" alt="Galería de plantillas de dashboard" size="lg" />
+<Image img="/images/use-cases/observability/dashboard-template-gallery.webp" alt="Galería de plantillas de dashboards" size="lg" />
 
 <div id="importing-a-template">
   ## Importar una plantilla
@@ -36,21 +36,21 @@ Para importar una plantilla, debes configurar una fuente de datos para cada visu
 </div>
 
 <div id="otel-runtime-metrics">
-  ### Métricas de runtime de OTel
+  ### Métricas de tiempo de ejecución de OTel
 </div>
 
-Las plantillas integradas de OTel Runtime Metrics están diseñadas para aplicaciones instrumentadas con [métricas de runtime de OpenTelemetry](https://opentelemetry.io/docs/specs/semconv/runtime/).
+Las plantillas integradas de OTel Runtime Metrics están diseñadas para aplicaciones instrumentadas con [métricas de tiempo de ejecución de OpenTelemetry](https://opentelemetry.io/docs/specs/semconv/runtime/).
 
-| Template                    | Description                                                                                                              |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| **.NET Runtime Metrics**    | Colecciones del GC, tamaño del heap, uso del thread pool y recuento de ensamblados para aplicaciones .NET                |
-| **Go Runtime Metrics**      | Recuento de goroutines, tiempos de pausa del GC, uso del heap y estadísticas de memoria para aplicaciones Go             |
-| **JVM Runtime Metrics**     | Memoria del heap y fuera del heap, duración del GC, recuento de hilos y carga de clases para aplicaciones basadas en JVM |
-| **Node.js Runtime Metrics** | Latencia del bucle de eventos, uso del heap, utilización de CPU y memoria de V8 para aplicaciones Node.js                |
+| Plantilla                                      | Descripción                                                                                                           |
+| ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| **Métricas de tiempo de ejecución de .NET**    | Número de recolecciones de GC, tamaño del heap, uso del thread pool y recuento de ensamblados para aplicaciones .NET  |
+| **Métricas de tiempo de ejecución de Go**      | Número de goroutines, tiempos de pausa de GC, uso del heap y estadísticas de memoria para aplicaciones Go             |
+| **Métricas de tiempo de ejecución de JVM**     | Memoria del heap y fuera del heap, duración de GC, número de hilos y carga de clases para aplicaciones basadas en JVM |
+| **Métricas de tiempo de ejecución de Node.js** | Latencia del bucle de eventos, uso del heap, utilización de CPU y memoria de V8 para aplicaciones Node.js             |
 
 Notas:
 
 * Cada plantilla está configurada con un [filtro personalizado](/es/clickstack/features/dashboards/overview#custom-filters) para servicios cuyo atributo de recurso [`telemetry.sdk.language`](https://opentelemetry.io/docs/specs/semconv/registry/attributes/telemetry/#telemetry-sdk-language) coincide con el runtime del dashboard.
-  * Los entornos con esquemas personalizados para las tablas de métricas de ClickHouse pueden necesitar ajustar este filtro para consultar las columnas correctas de Service Name y Resource Attributes.
+  * Los entornos con esquemas personalizados de tablas de métricas de ClickHouse pueden necesitar ajustar este filtro para consultar las columnas correctas de Service Name y Resource Attributes.
   * En entornos de alto volumen, los tiempos de carga del filtro pueden reducirse [materializando](/es/clickstack/managing/performance-tuning#materialize-frequently-queried-attributes) la columna `ResourceAttributes['telemetry.sdk.language']`.
-* Las plantillas hacen referencia a las Convenciones Semánticas de OTel vigentes en el momento de su publicación y se actualizan periódicamente conforme se actualiza la especificación de OTel. En el caso de servicios instrumentados con SDKs de OTel más antiguos, puede ser necesario [editar](/es/clickstack/features/dashboards/overview#dashboards-editing-visualizations) las visualizaciones para que apunten a nombres de métricas anteriores.
+* Las plantillas hacen referencia a las convenciones semánticas de OTel vigentes en el momento de su publicación y se actualizan periódicamente a medida que se actualiza la especificación de OTel. En el caso de servicios instrumentados con SDKs de OTel más antiguos, puede ser necesario [editar](/es/clickstack/features/dashboards/overview#dashboards-editing-visualizations) las visualizaciones para que apunten a nombres de métricas anteriores.

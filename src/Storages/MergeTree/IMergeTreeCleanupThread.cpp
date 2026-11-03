@@ -22,7 +22,7 @@ IMergeTreeCleanupThread::IMergeTreeCleanupThread(MergeTreeData & data_)
     , log(getLogger(log_name))
     , sleep_ms((*data.getSettings())[MergeTreeSetting::cleanup_delay_period] * 1000)
 {
-    task = data.getContext()->getSchedulePool().createTask(data.getStorageID(), log_name, [this] { run(); });
+    task = data.getContext()->getSchedulePool()->createTask(data.getStorageID(), log_name, [this] { run(); });
 }
 
 IMergeTreeCleanupThread::~IMergeTreeCleanupThread() = default;

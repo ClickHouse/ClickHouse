@@ -13,7 +13,7 @@ doc_type: 'reference'
 
 導入バージョン: v1.1.0
 
-指定された精度で、数値データの数列の[分位点](https://en.wikipedia.org/wiki/Quantile)を計算します。
+指定された精度で、数値データ列の[分位点](https://en.wikipedia.org/wiki/Quantile)を計算します。
 
 結果は決定論的です (クエリ処理の順序に依存しません) 。
 この関数は、Web ページの読み込み時間やバックエンドの応答時間のような分布を表す数列を扱うために最適化されています。
@@ -52,7 +52,7 @@ quantileTiming(level)(expr)
 
 **引数**
 
-* `expr` — カラムの値に対する式で、`Float*` 型の数値を返します。負の値を関数に渡した場合の動作は未定義です。値が 30,000 を超える場合 (ページの読み込み時間が 30 秒を超える場合) は、30,000 と見なされます。[`Float*`](/ja/reference/data-types/float)
+* `expr` — カラム値に対する式で、数値データ型、`Date`、または `DateTime` を返します。負の値を関数に渡した場合の動作は未定義です。値が 30,000 を超える場合 (ページの読み込み時間が 30 秒を超える場合) は、30,000 と見なされます。[`(U)Int*`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`Date`](/ja/reference/data-types/date) または [`DateTime`](/ja/reference/data-types/datetime)
 
 **戻り値**
 

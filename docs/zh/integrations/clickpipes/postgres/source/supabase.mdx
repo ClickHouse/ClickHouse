@@ -62,7 +62,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-`clickpipes` publication 将包含由指定表生成的一组变更事件，后续会用于摄取复制流。
+`clickpipes` publication 定义了将流式传输到 ClickPipes 的那组表的变更事件。除非你打算复制所有表，否则我们不建议使用 `FOR ALL TABLES`，因为包含不必要的表会增加从 Postgres 到 ClickPipes 的 WAL 流量，并降低整体复制效率。
 
 <div id="increase-max_slot_wal_keep_size">
   ## 增加 `max_slot_wal_keep_size`

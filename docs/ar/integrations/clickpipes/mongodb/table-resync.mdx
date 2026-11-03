@@ -14,21 +14,17 @@ integration:
 
 وبينما لا تزال إعادة مزامنة الجداول الفردية بنقرة زر قيد التطوير، يوضح هذا الدليل الخطوات التي تمكّنك من تنفيذ ذلك اليوم في MongoDB ClickPipe.
 
-<div id="removing-table">
-  ### 1. إزالة الجدول من خط الأنابيب
-</div>
+<Steps>
+  <Step title="إزالة الجدول من خط الأنابيب" id="removing-table">
+    يمكن تنفيذ ذلك باتباع [دليل إزالة الجدول](/ar/integrations/clickpipes/mongodb/remove-table).
+  </Step>
 
-يمكن تنفيذ ذلك باتباع [دليل إزالة الجدول](/ar/integrations/clickpipes/mongodb/remove-table).
+  <Step title="تنفيذ TRUNCATE أو حذف الجدول في ClickHouse" id="truncate-drop-table">
+    تهدف هذه الخطوة إلى تجنب تكرار البيانات عند إعادة إضافة هذا الجدول في الخطوة التالية. ويمكنك القيام بذلك بالانتقال إلى علامة التبويب **SQL Console** في ClickHouse Cloud وتشغيل query.
+    لاحظ أن لدينا آلية تحقق تمنع إضافة الجدول إذا كان موجودًا بالفعل في ClickHouse ولم يكن فارغًا.
+  </Step>
 
-<div id="truncate-drop-table">
-  ### 2. نفّذ TRUNCATE أو احذف الجدول في ClickHouse
-</div>
-
-تهدف هذه الخطوة إلى تجنّب تكرار البيانات عند إضافة هذا الجدول مرة أخرى في الخطوة التالية. يمكنك تنفيذ ذلك بالانتقال إلى علامة تبويب **SQL Console** في ClickHouse Cloud وتشغيل استعلام.
-لاحظ أن لدينا آلية تحقّق تمنع إضافة الجدول إذا كان موجودًا بالفعل في ClickHouse ولم يكن فارغًا.
-
-<div id="add-table-again">
-  ### 3. أضِف الجدول إلى ClickPipe مجددًا
-</div>
-
-يمكنك القيام بذلك باتباع [دليل إضافة الجدول](/ar/integrations/clickpipes/mongodb/add-table).
+  <Step title="إضافة الجدول إلى ClickPipe مرة أخرى" id="add-table-again">
+    يمكن تنفيذ ذلك باتباع [دليل إضافة الجدول](/ar/integrations/clickpipes/mongodb/add-table).
+  </Step>
+</Steps>

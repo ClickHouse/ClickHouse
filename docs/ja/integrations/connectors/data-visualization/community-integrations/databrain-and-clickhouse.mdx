@@ -2,7 +2,7 @@
 sidebarTitle: 'Databrain'
 slug: /integrations/databrain
 keywords: ['clickhouse', 'Databrain', '接続', '連携', 'UI', '分析', '組み込み', 'ダッシュボード', '可視化']
-description: 'Databrain は、ClickHouse とシームレスに連携し、顧客向けのダッシュボード、メトリクス、データの可視化を構築できる組み込み型分析プラットフォームです。'
+description: 'Databrain は、ClickHouse とシームレスに連携し、顧客向けのダッシュボード、メトリクス、データの可視化を構築できる埋め込み型分析プラットフォームです。'
 title: 'Databrain を ClickHouse に接続する'
 doc_type: 'guide'
 ---
@@ -10,7 +10,7 @@ doc_type: 'guide'
 import ConnectionDetails from '/snippets/ja/_gather_your_details_http.mdx';
 
 import { Image } from "/snippets/ja/components/Image.jsx";
-import CommunityMaintainedBadge from "/snippets/ja/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
 
@@ -31,75 +31,69 @@ import CommunityMaintainedBadge from "/snippets/ja/components/CommunityMaintaine
 * データソースを接続するための Databrain ワークスペース。
 
 <div id="steps-to-connect-databrain-to-clickhouse">
-  ## Databrain を ClickHouse に接続する手順
+  ## DatabrainをClickHouseに接続する手順
 </div>
 
-<div id="1-gather-your-connection-details">
-  ### 1. 接続情報を確認する
-</div>
+<Steps>
+  <Step title="接続情報を確認する" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="DatabrainのIPアドレスを許可する（必要な場合）" id="2-allow-databrain-ip-addresses">
+    ClickHouseインスタンスでIP filteringが有効になっている場合は、DatabrainのIPアドレスをホワイトリストに登録する必要があります。
 
-<div id="2-allow-databrain-ip-addresses">
-  ### 2. Databrain の IP アドレスを許可する (必要な場合)
-</div>
+    ClickHouse Cloudユーザーの場合:
 
-ClickHouse インスタンスで IP フィルタリングが有効になっている場合は、Databrain の IP アドレスを許可リストに追加する必要があります。
+    1. ClickHouse Cloud consoleで対象のserviceを開きます
+    2. **Settings** → **Security**に移動します
+    3. DatabrainのIPアドレスをallow listに追加します
 
-ClickHouse Cloud ユーザーの場合:
+    <Tip>
+      ホワイトリストに登録するIPアドレスの最新一覧については、[DatabrainのIP whitelistingドキュメント](https://docs.usedatabrain.com/guides/datasources/allow-access-to-our-ip)を参照してください。
+    </Tip>
+  </Step>
 
-1. ClickHouse Cloud console で対象のサービスに移動します
-2. **Settings** → **Security** を開きます
-3. Databrain の IP アドレスを許可リストに追加します
+  <Step title="DatabrainでClickHouseをデータソースとして追加する" id="3-add-clickhouse-as-a-data-source">
+    1. Databrainアカウントにログインし、データソースを追加するワークスペースに移動します。
 
-<Tip>
-  許可リストに追加する最新の IP アドレス一覧については、[Databrain の IP ホワイトリストに関するドキュメント](https://docs.usedatabrain.com/guides/datasources/allow-access-to-our-ip)を参照してください。
-</Tip>
+    2. ナビゲーションメニューで**Data Sources**をクリックします。
 
-<div id="3-add-clickhouse-as-a-data-source">
-  ### 3. DatabrainでClickHouseをデータソースとして追加する
-</div>
+    <Image size="md" img="/images/integrations/data-visualization/databrain_02.webp" alt="Databrainのデータソースメニュー" border />
 
-1. Databrainアカウントにログインし、データソースを追加するワークスペースに移動します。
+    3. **Add a Data Source**または**Connect Data Source**をクリックします。
 
-2. ナビゲーションメニューで**Data Sources**をクリックします。
+    4. 利用可能なコネクタの一覧から**ClickHouse**を選択します。
 
-<Image size="md" img="/images/integrations/data-visualization/databrain_02.webp" alt="Databrainのデータソースメニュー" border />
+    <Image size="md" img="/images/integrations/data-visualization/databrain_03.webp" alt="ClickHouseオプションが表示されたDatabrainのコネクタ選択画面" border />
 
-3. **Add a Data Source**または**Connect Data Source**をクリックします。
+    5. 接続情報を入力します。
+       * **Destination Name**: この接続を識別しやすい名前を入力します (例: &quot;Production ClickHouse&quot; または &quot;Analytics DB&quot;)
+       * **Host**: ClickHouseホストのURLを入力します (例: `https://your-instance.region.aws.clickhouse.cloud`)
+       * **Port**: `8443`を入力します (ClickHouseのデフォルトのHTTPSポート)
+       * **Username**: ClickHouseのユーザー名を入力します
+       * **Password**: ClickHouseのパスワードを入力します
 
-4. 利用可能なコネクタの一覧から**ClickHouse**を選択します。
+    <Image size="md" img="/images/integrations/data-visualization/databrain_04.webp" alt="設定フィールドが表示されたDatabrainのClickHouse接続フォーム" border />
 
-<Image size="md" img="/images/integrations/data-visualization/databrain_03.webp" alt="ClickHouseオプションが表示されたDatabrainのコネクタ選択画面" border />
+    6. **Test Connection**をクリックし、DatabrainがClickHouseインスタンスに接続できることを確認します。
 
-5. 接続情報を入力します。
-   * **Destination Name**: この接続を識別しやすい名前を入力します (例: &quot;Production ClickHouse&quot; または &quot;Analytics DB&quot;) 
-   * **Host**: ClickHouseホストのURLを入力します (例: `https://your-instance.region.aws.clickhouse.cloud`) 
-   * **Port**: `8443`を入力します (ClickHouseのデフォルトのHTTPSポート) 
-   * **Username**: ClickHouseのユーザー名を入力します
-   * **Password**: ClickHouseのパスワードを入力します
+    7. 接続に成功したら、**Save**または**Connect**をクリックしてデータソースを追加します。
+  </Step>
 
-<Image size="md" img="/images/integrations/data-visualization/databrain_04.webp" alt="設定フィールドが表示されたDatabrainのClickHouse接続フォーム" border />
+  <Step title="ユーザー権限を設定する" id="4-configure-user-permissions">
+    接続に使用するClickHouseユーザーに、必要な権限が付与されていることを確認してください。
 
-6. **Test Connection**をクリックし、DatabrainがClickHouseインスタンスに接続できることを確認します。
+    ```sql
+    -- スキーマ情報を読み取る権限を付与
+    GRANT SELECT ON information_schema.* TO your_databrain_user;
 
-7. 接続に成功したら、**Save**または**Connect**をクリックしてデータソースを追加します。
+    -- データベースとテーブルへの読み取りアクセスを付与
+    GRANT SELECT ON your_database.* TO your_databrain_user;
+    ```
 
-<div id="4-configure-user-permissions">
-  ### 4. ユーザー権限を設定する
-</div>
-
-接続に使用する ClickHouse ユーザーに必要な権限が付与されていることを確認してください。
-
-```sql
--- スキーマ情報を読み取るための権限を付与する
-GRANT SELECT ON information_schema.* TO your_databrain_user;
-
--- データベースとテーブルへの読み取りアクセスを付与する
-GRANT SELECT ON your_database.* TO your_databrain_user;
-```
-
-`your_databrain_user` と `your_database` を、実際のユーザー名とデータベース名に置き換えてください。
+    `your_databrain_user`と`your_database`は、実際のusernameおよびDatabase nameに置き換えてください。
+  </Step>
+</Steps>
 
 <div id="using-databrain-with-clickhouse">
   ## ClickHouse で Databrain を使う
@@ -157,7 +151,7 @@ Databrain では、ClickHouse と連携する際にいくつかの高度な機�
 * **マルチテナンシーとシングルテナンシー**: シングルテナント構成とマルチテナント構成の両方で ClickHouse データベースを接続できます
 * **レポートのスケジュール設定**: 自動レポートをスケジュールし、関係者にメールで送信できます
 * **AI を活用したインサイト**: AI を使用してデータから要約やインサイトを生成できます
-* **Embedded Analytics**: ダッシュボードとメトリクスをアプリケーションに直接埋め込めます
+* **埋め込み型分析**: ダッシュボードとメトリクスをアプリケーションに直接埋め込めます
 * **セマンティックレイヤー**: 再利用可能なデータモデルとビジネスロジックを作成できます
 
 <div id="troubleshooting">
@@ -195,5 +189,5 @@ Databrain の機能や、高度な分析を構築する方法について詳し�
 
 * [Databrain ドキュメント](https://docs.usedatabrain.com/)
 * [ClickHouse 連携ガイド](https://docs.usedatabrain.com/guides/datasources/connecting-data-sources-to-databrain/clickhouse)
-* [ダッシュボードの作成](https://docs.usedatabrain.com/guides/dashboards/create-a-dashboard)
-* [メトリクスの構築](https://docs.usedatabrain.com/guides/metrics/create-metrics)
+* [ダッシュボードの作成](https://docs.usedatabrain.com/getting-started/core-concepts/dashboards)
+* [メトリクスの構築](https://docs.usedatabrain.com/getting-started/core-concepts/metrics)

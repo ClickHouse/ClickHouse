@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <memory>
 #include <base/sort.h>
 #include <boost/noncopyable.hpp>
@@ -7,6 +8,7 @@
 #include <Common/PODArray.h>
 #include <Common/SetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <IO/ReadHelpersArena.h>
 
 // Include this header last, because it is an auto-generated dump of questionable
 // garbage that breaks the build (e.g. it changes _POSIX_C_SOURCE).
@@ -47,8 +49,9 @@ private:
     using UnsignedT = std::make_unsigned_t<T>;
     SmallSet<T, small_set_size> small;
     using ValueBuffer = VectorWithMemoryTracking<T>;
-    using RoaringBitmap = std::conditional_t<sizeof(T) >= 8, roaring::Roaring64Map, roaring::Roaring>;
-    using Value = std::conditional_t<sizeof(T) >= 8, UInt64, UInt32>;
+    static constexpr bool use_roaring64 = sizeof(T) >= 8;
+    using RoaringBitmap = std::conditional_t<use_roaring64, roaring::Roaring64Map, roaring::Roaring>;
+    using Value = std::conditional_t<use_roaring64, UInt64, UInt32>;
     std::shared_ptr<RoaringBitmap> roaring_bitmap;
 
     void toLarge()
@@ -83,6 +86,31 @@ public:
         else
         {
             roaring_bitmap->add(static_cast<Value>(value));
+        }
+    }
+
+    void remove(T value)
+    {
+        if (isSmall())
+        {
+            if (small.find(value) == small.end())
+                return;
+
+            /// `SmallSet` has no erase, so rebuild it without the value. It holds at most
+            /// `small_set_size` values, so this is a bounded amount of work.
+            std::array<T, small_set_size> kept{};
+            size_t kept_size = 0;
+            for (const auto & x : small)
+                if (x.getValue() != value)
+                    kept[kept_size++] = x.getValue();
+
+            small.clear();
+            for (size_t i = 0; i < kept_size; ++i)
+                small.insert(kept[i]);
+        }
+        else
+        {
+            roaring_bitmap->remove(static_cast<Value>(value));
         }
     }
 
@@ -131,10 +159,16 @@ public:
                 throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size in groupBitmap (maximum: {})", max_size);
 
             /// TODO: this is unnecessary copying - it will be better to read and deserialize in one pass.
-            std::unique_ptr<char[]> buf(new char[size]);
-            in.readStrict(buf.get(), size);
+            /// A `String` is counted against the memory tracker but not refused by it, so a large legitimate bitmap still loads.
+            String buf;
+            readStringGrowing(buf, size, in);
 
-            roaring_bitmap = std::make_shared<RoaringBitmap>(RoaringBitmap::readSafe(buf.get(), size));
+            roaring_bitmap = std::make_shared<RoaringBitmap>(RoaringBitmap::readSafe(buf.data(), size));
+
+            /// `readSafe` does not validate structure. Reject malformed bitmaps before any set operation.
+            const char * reason = nullptr;
+            if (!roaring_bitmap->internal_validate(&reason))
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid roaring bitmap in groupBitmap state: {}", reason ? reason : "unknown reason");
         }
         else
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown type of roaring bitmap");
@@ -300,10 +334,17 @@ public:
                     ++ret;
             }
         }
+        else if (r1.isSmall())
+        {
+            for (const auto & x : r1.small)
+            {
+                if (roaring_bitmap->contains(static_cast<Value>(x.getValue())))
+                    ++ret;
+            }
+        }
         else
         {
-            std::shared_ptr<RoaringBitmap> new_rb = r1.isSmall() ? r1.getNewRoaringBitmapFromSmall() : r1.roaring_bitmap;
-            ret = (*roaring_bitmap & *new_rb).cardinality();
+            ret = roaring_bitmap->and_cardinality(*r1.roaring_bitmap);
         }
         return ret;
     }
@@ -385,7 +426,7 @@ public:
         }
         else
         {
-            if ((*roaring_bitmap & *r1.roaring_bitmap).cardinality() > 0)
+            if (roaring_bitmap->intersect(*r1.roaring_bitmap))
                 return 1;
         }
 
@@ -449,24 +490,66 @@ public:
      */
     UInt8 rb_contains(UInt64 x) const /// NOLINT
     {
-        if (isSmall())
+        if constexpr (!std::is_same_v<T, UInt64>)
         {
-            if constexpr (!std::is_same_v<T, UInt64>)
-            {
-                if (x > static_cast<UInt64>(std::numeric_limits<UnsignedT>::max()))
-                    return 0;
-            }
-
-            return small.find(static_cast<T>(x)) != small.end();
-        }
-
-        if constexpr (!std::is_same_v<Value, UInt64>)
-        {
-            if (x > static_cast<UInt64>(std::numeric_limits<Value>::max()))
+            if (x > static_cast<UInt64>(std::numeric_limits<UnsignedT>::max()))
                 return 0;
         }
 
-        return roaring_bitmap->contains(static_cast<Value>(x));
+        /// Cast as T so narrow signed values retain a consistent, sign-extended Value through promotion.
+        if (isSmall())
+            return small.find(static_cast<T>(x)) != small.end();
+
+        return roaring_bitmap->contains(static_cast<Value>(static_cast<T>(x)));
+    }
+
+    /**
+     * Context for `rb_contains_bulk`. It caches the container found by the previous lookup in the same bitmap
+     * (or its absence), so consecutive lookups of values that share the high 16 bits skip the container search.
+     * It is bound to one bitmap: a context must not be reused with another bitmap.
+     */
+    struct BulkContext
+    {
+        const roaring::internal::container_t * container = nullptr;
+        /// High 16 bits of the previous lookup, -1 before the first lookup.
+        Int32 key = -1;
+        uint8_t typecode = 0;
+    };
+
+    /**
+     * Same as `rb_contains`, but for a sequence of lookups in the same bitmap.
+     * Unlike `roaring::Roaring::containsBulk`, a change of the container is handled by the same search as in
+     * `rb_contains` rather than by galloping from the previous container, so unordered lookups are not slower.
+     */
+    ALWAYS_INLINE UInt8 rb_contains_bulk(UInt64 x, BulkContext & context) const /// NOLINT
+    {
+        if constexpr (use_roaring64)
+            return rb_contains(x);
+        else
+        {
+            if (x > static_cast<UInt64>(std::numeric_limits<UnsignedT>::max()))
+                return 0;
+
+            if (isSmall())
+                return small.find(static_cast<T>(x)) != small.end();
+
+            const Value value = static_cast<Value>(static_cast<T>(x));
+            const Int32 key = static_cast<Int32>(value >> 16);
+            if (key != context.key)
+                findContainer(key, context);
+            return context.container && roaring::internal::container_contains(context.container, value & 0xFFFF, context.typecode);
+        }
+    }
+
+    /// The slow path of `rb_contains_bulk`, kept out of line so that the per-row part stays small enough to inline.
+    NO_INLINE void findContainer(Int32 key, BulkContext & context) const
+    {
+        const auto & high_low_container = roaring_bitmap->roaring.high_low_container;
+        const Int32 index = roaring::internal::ra_get_index(&high_low_container, static_cast<UInt16>(key));
+        context.key = key;
+        context.container = index < 0
+            ? nullptr
+            : roaring::internal::ra_get_container_at_index(&high_low_container, static_cast<UInt16>(index), &context.typecode);
     }
 
     /**
@@ -496,8 +579,8 @@ public:
     }
 
     /**
-     * Return new set with specified range (not include the range_end)
-     * It's used in subset and currently only support UInt32
+     * Return new set with specified value range (not including range_end).
+     * Element values are compared as UnsignedT.
      */
     UInt64 rb_range(UInt64 range_start, UInt64 range_end, RoaringBitmapWithSmallSet & r1) const /// NOLINT
     {
@@ -509,7 +592,7 @@ public:
             for (const auto & x : small)
             {
                 T val = x.getValue();
-                if (UInt32(val) >= range_start && UInt32(val) < range_end)
+                if (static_cast<UnsignedT>(val) >= range_start && static_cast<UnsignedT>(val) < range_end)
                 {
                     r1.add(val);
                     ++count;
@@ -520,10 +603,12 @@ public:
         {
             for (auto it = roaring_bitmap->begin(); it != roaring_bitmap->end(); ++it)
             {
-                if (*it < range_start)
+                /// Narrow signed values are stored sign-extended in UInt32, compare in UnsignedT domain.
+                const UInt64 uv = static_cast<UnsignedT>(*it);
+                if (uv < range_start)
                     continue;
 
-                if (*it < range_end)
+                if (uv < range_end)
                 {
                     r1.add(static_cast<T>(*it));
                     ++count;
@@ -536,8 +621,7 @@ public:
     }
 
     /**
-     * Return new set of the smallest `limit` values in set which is no less than `range_start`.
-     * It's used in subset and currently only support UInt32
+     * Return new set of the smallest `limit` values (as UnsignedT) which are no less than `range_start`.
      */
     UInt64 rb_limit(UInt64 range_start, UInt64 limit, RoaringBitmapWithSmallSet & r1) const /// NOLINT
     {
@@ -550,14 +634,18 @@ public:
             for (const auto & x : small)
             {
                 T val = x.getValue();
-                if (UInt32(val) >= range_start)
+                if (static_cast<UnsignedT>(val) >= range_start)
                 {
                     answer.push_back(val);
                 }
             }
             if (limit < answer.size())
             {
-                ::nth_element(answer.begin(), answer.begin() + limit, answer.end());
+                ::nth_element(
+                    answer.begin(),
+                    answer.begin() + limit,
+                    answer.end(),
+                    [](const T & lhs, const T & rhs) { return static_cast<UnsignedT>(lhs) < static_cast<UnsignedT>(rhs); });
                 answer.resize(limit);
             }
 
@@ -569,7 +657,9 @@ public:
         UInt64 count = 0;
         for (auto it = roaring_bitmap->begin(); it != roaring_bitmap->end(); ++it)
         {
-            if (*it < range_start)
+            /// Narrow signed values are stored sign-extended in UInt32, compare in UnsignedT domain.
+            const UInt64 uv = static_cast<UnsignedT>(*it);
+            if (uv < range_start)
                 continue;
 
             if (count < limit)
@@ -590,14 +680,24 @@ public:
 
         if (isSmall())
         {
-            UInt64 count = 0;
-            UInt64 offset_count = 0;
-            auto it = small.begin();
-            for (; it != small.end() && offset_count < offset; ++it)
-                ++offset_count;
+            /// The small set holds at most `small_set_size` elements, so no allocation is needed.
+            std::array<T, small_set_size> values{};
+            size_t num_values = 0;
+            for (const auto & x : small)
+                values[num_values++] = x.getValue();
 
-            for (; it != small.end() && count < limit; ++it, ++count)
-                r1.add(it->getValue());
+            /// `offset` is below the size, checked above.
+            const UInt64 count = std::min(limit, static_cast<UInt64>(num_values) - offset);
+
+            /// Only the first `offset + count` elements have to be in order.
+            ::partial_sort(
+                values.begin(),
+                values.begin() + (offset + count),
+                values.begin() + num_values,
+                [](T lhs, T rhs) { return static_cast<UnsignedT>(lhs) < static_cast<UnsignedT>(rhs); });
+
+            for (UInt64 i = offset; i < offset + count; ++i)
+                r1.add(values[i]);
             return count;
         }
 
@@ -631,7 +731,15 @@ public:
             }
             return min_val;
         }
-        return roaring_bitmap->minimum();
+        /// CRoaring returns UINT32_MAX / UINT64_MAX for an empty bitmap.
+        if (roaring_bitmap->isEmpty())
+        {
+            if constexpr (sizeof(T) >= 8)
+                return std::numeric_limits<UInt64>::max();
+            return std::numeric_limits<UInt32>::max();
+        }
+        /// Narrow signed values are stored sign-extended in UInt32; truncate to UnsignedT to match the small-set.
+        return static_cast<UnsignedT>(roaring_bitmap->minimum());
     }
 
     UInt64 rb_max() const /// NOLINT
@@ -649,25 +757,46 @@ public:
             }
             return max_val;
         }
-        return roaring_bitmap->maximum();
+        /// Narrow signed values are stored sign-extended in UInt32; truncate to UnsignedT to match the small-set.
+        return static_cast<UnsignedT>(roaring_bitmap->maximum());
     }
 
     /**
      * Replace value.
-     * It's used in transform and currently can only support UInt32
+     * It's used in transform, from/to are interpreted in the UnsignedT domain.
      */
     void rb_replace(const UInt64 * from_vals, const UInt64 * to_vals, size_t num) /// NOLINT
     {
         if (isSmall())
             toLarge();
 
+        constexpr UInt64 max_element = std::is_same_v<T, UInt64>
+            ? std::numeric_limits<UInt64>::max()
+            : static_cast<UInt64>(std::numeric_limits<UnsignedT>::max());
+
         for (size_t i = 0; i < num; ++i)
         {
             if (from_vals[i] == to_vals[i])
                 continue;
-            bool changed = roaring_bitmap->removeChecked(static_cast<Value>(from_vals[i]));
-            if (changed)
-                roaring_bitmap->add(static_cast<Value>(to_vals[i]));
+
+            /// Rejected regardless of whether the replacement applies, so that the outcome depends
+            /// on the arguments and not on the contents of the bitmap. Storing such a value would
+            /// silently truncate it to an unrelated element.
+            if (to_vals[i] > max_element)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Replacement value {} does not fit into the bitmap element type, the maximum is {}",
+                    to_vals[i],
+                    max_element);
+
+            /// The bitmap cannot hold this value, so there is nothing to replace. Consistent with
+            /// `bitmapContains`, which reports such a value as absent instead of failing.
+            if (from_vals[i] > max_element)
+                continue;
+
+            /// Cast through T so narrow signed values match sign-extended storage (e.g. Int8 255 -> -1 -> 0xFFFFFFFF).
+            if (roaring_bitmap->removeChecked(static_cast<Value>(static_cast<T>(from_vals[i]))))
+                roaring_bitmap->add(static_cast<Value>(static_cast<T>(to_vals[i])));
         }
     }
 
@@ -923,7 +1052,8 @@ struct AggregateFunctionGroupBitmapData
 {
     // If false, all bitmap operations will be treated as merge to initialize the state
     bool init = false;
-    RoaringBitmapWithSmallSet<T, 32> roaring_bitmap_with_small_set;
+    using Bitmap = RoaringBitmapWithSmallSet<T, 32>;
+    Bitmap roaring_bitmap_with_small_set;
     static const char * name() { return "groupBitmap"; }
 };
 

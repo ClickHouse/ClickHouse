@@ -123,38 +123,38 @@ Une fois le déploiement terminé avec succès, vous pouvez commencer à utilise
 instance Azure Data Factory.
 
 <div id="-creating-new-rest-based-linked-service">
-  ## Création d’un nouveau service lié basé sur REST
+  ## Création d’un nouveau service lié REST
 </div>
 
 1. Connectez-vous au Microsoft Azure Portal et ouvrez votre instance Data Factory.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-home-with-data-factory.webp" size="lg" alt="Page d’accueil de l’Azure Portal avec Data Factory" border />
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-home-with-data-factory.webp" size="lg" alt="Page d’accueil d’Azure Portal avec Data Factory" border />
 
 2. Sur la page de vue d’ensemble de Data Factory, cliquez sur **Launch Studio**.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-data-factory-page.webp" size="lg" alt="Page Data Factory de l’Azure Portal" border />
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-data-factory-page.webp" size="lg" alt="Page Data Factory d’Azure Portal" border />
 
 3. Dans le menu de gauche, sélectionnez **Manage**, puis accédez à **Linked services**,
    et cliquez sur **+ New** pour créer un nouveau service lié.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-create-linked-service-button.webp" size="lg" alt="Bouton de nouveau service lié Azure Data Factory" border />
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-create-linked-service-button.webp" size="lg" alt="Bouton New Linked Service d’Azure Data Factory" border />
 
-4. Dans la **barre de recherche New linked service**, saisissez **REST**, sélectionnez **REST** et cliquez sur **Continue**
+4. Dans la **barre de recherche New linked service**, saisissez **REST**, sélectionnez **REST**, puis cliquez sur **Continue**
    pour créer une
    instance de [connecteur REST](https://learn.microsoft.com/en-us/azure/data-factory/connector-rest).
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-search.webp" size="lg" alt="Recherche d’un nouveau service lié dans Azure Data Factory" border />
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-search.webp" size="lg" alt="Recherche New Linked Service d’Azure Data Factory" border />
 
-5. Dans le volet de configuration du service lié, entrez un nom pour votre nouveau service,
-   cliquez sur le champ **Base URL**, puis sur **Add dynamic content** (ce lien
-   n’apparaît que lorsque le champ est sélectionné).
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-lined-service-pane.webp" size="lg" alt="Volet New Lined Service" border />
+5. Dans le panneau de configuration du service lié, entrez un nom pour votre nouveau service,
+   cliquez sur le champ **Base URL**, puis sur **Add dynamic content** (ce lien n’apparaît
+   que lorsque le champ est sélectionné).
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-lined-service-pane.webp" size="lg" alt="Panneau New Lined Service" border />
 
-6. Dans le volet de contenu dynamique, vous pouvez créer une URL paramétrée, ce qui
-   vous permet de définir la requête plus tard lors de la création de jeux de données pour différentes
-   tables — le service lié est ainsi réutilisable.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-base-url-empty.webp" size="lg" alt="URL de base vide du nouveau service lié" border />
+6. Dans le panneau de contenu dynamique, vous pouvez créer une URL paramétrée, ce qui
+   vous permettra de définir la requête plus tard lors de la création de jeux de données pour différentes
+   tables — le service lié sera ainsi réutilisable.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-base-url-empty.webp" size="lg" alt="URL de base vide de New Linked Service" border />
 
 7. Cliquez sur le **&quot;+&quot;** à côté du champ de filtre et ajoutez un nouveau paramètre, nommez-le
    `pQuery`, définissez le type sur String et la valeur par défaut sur `SELECT 1`.
    Cliquez sur **Save**.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-params.webp" size="lg" alt="Paramètres du nouveau service lié" border />
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-params.webp" size="lg" alt="Paramètres de New Linked Service" border />
 
 8. Dans le champ d’expression, saisissez ce qui suit et cliquez sur **OK**. Remplacez
    `your-clickhouse-url.com` par l’adresse réelle de votre instance
@@ -162,18 +162,18 @@ instance Azure Data Factory.
    ```text
    @{concat('https://your-clickhouse-url.com:8443/?query=', encodeUriComponent(linkedService().pQuery))}
    ```
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-expression-field-filled.webp" size="lg" alt="Champ d’expression du nouveau service lié rempli" border />
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-expression-field-filled.webp" size="lg" alt="Champ d’expression rempli de New Linked Service" border />
 
 9. De retour dans le formulaire principal, sélectionnez l’authentification de base, saisissez le nom d’utilisateur et le
    mot de passe utilisés pour vous connecter à votre interface HTTP de ClickHouse, puis cliquez sur **Test
-   connection**. Si tout est correctement configuré, un message de réussite
-   s’affichera.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-check-connection.webp" size="lg" alt="Tester la connexion du nouveau service lié" border />
+   connection**. Si tout est correctement configuré, un message
+   de réussite s’affichera.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-check-connection.webp" size="lg" alt="Vérification de la connexion de New Linked Service" border />
 
 10. Cliquez sur **Create** pour finaliser la configuration.
-    <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-linked-services-list.webp" size="lg" alt="Liste des services liés" border />
+    <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-linked-services-list.webp" size="lg" alt="Liste des Linked Services" border />
 
-Vous devriez maintenant voir votre nouveau service lié basé sur REST dans la liste.
+Vous devriez maintenant voir votre nouveau service lié REST dans la liste.
 
 <div id="creating-a-new-dataset-for-the-clickhouse-http-interface">
   ## Création d’un nouveau jeu de données pour l’interface HTTP de ClickHouse

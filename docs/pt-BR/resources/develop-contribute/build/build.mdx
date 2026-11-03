@@ -53,7 +53,7 @@ Para instalar o Clang no Ubuntu/Debian, use o script de instalação automática
 ```bash
 wget https://apt.llvm.org/llvm.sh
 chmod +x llvm.sh
-sudo ./llvm.sh 21
+sudo ./llvm.sh 22
 ```
 
 Para outras distribuições Linux, verifique se é possível instalar algum dos [pacotes pré-compilados](https://releases.llvm.org/download.html) do LLVM.
@@ -66,8 +66,8 @@ GCC e outros compiladores não têm suporte.
 </div>
 
 <Note>
-Rust é uma dependência opcional do ClickHouse.
-Se o Rust não estiver instalado, alguns recursos do ClickHouse serão omitidos da compilação.
+  Rust é uma dependência opcional do ClickHouse.
+  Se o Rust não estiver instalado, alguns recursos do ClickHouse serão omitidos da compilação.
 </Note>
 
 Primeiro, siga as instruções da [documentação oficial do Rust](https://www.rust-lang.org/tools/install) para instalar o `rustup`.
@@ -83,7 +83,7 @@ rustup component add rust-src
 ```
 
 <div id="build-clickhouse">
-## Compilação do ClickHouse
+  ## Compilação do ClickHouse
 </div>
 
 Recomendamos criar um diretório `build` separado dentro de `ClickHouse`, que contenha todos os artefatos da compilação:
@@ -98,8 +98,8 @@ Você pode ter vários diretórios diferentes (por exemplo, `build_release`, `bu
 Opcional: se você tiver várias versões de compilador instaladas, poderá especificar exatamente qual compilador usar.
 
 ```sh
-export CC=clang-21
-export CXX=clang++-21
+export CC=clang-22
+export CXX=clang++-22
 ```
 
 Para desenvolvimento, recomenda-se o uso de compilações de depuração.
@@ -111,7 +111,7 @@ cmake -D CMAKE_BUILD_TYPE=Debug ..
 ```
 
 <Note>
-Se quiser usar um depurador como o gdb, adicione `-D DEBUG_O_LEVEL="0"` ao comando acima para remover todas as otimizações do compilador, o que pode interferir na capacidade do gdb de visualizar/acessar variáveis.
+  Se quiser usar um depurador como o gdb, adicione `-D DEBUG_O_LEVEL="0"` ao comando acima para remover todas as otimizações do compilador, o que pode interferir na capacidade do gdb de visualizar/acessar variáveis.
 </Note>
 
 Execute `ninja` para compilar:
@@ -133,16 +133,16 @@ ninja -j 1 clickhouse
 ```
 
 <Note>
-`clickhouse-server`, `clickhouse-client` e binários semelhantes são links simbólicos no diretório `programs/` que apontam para o executável `clickhouse` após a conclusão da compilação.
+  `clickhouse-server`, `clickhouse-client` e binários semelhantes são links simbólicos no diretório `programs/` que apontam para o executável `clickhouse` após a conclusão da compilação.
 </Note>
 
 <Tip>
-O CMake fornece atalhos para os comandos acima:
+  O CMake fornece atalhos para os comandos acima:
 
-```sh
-cmake -S . -B build  # configurar a compilação, executar a partir do diretório raiz do repositório
-cmake --build build  # compilar
-```
+  ```sh
+  cmake -S . -B build  # configurar a compilação, executar a partir do diretório raiz do repositório
+  cmake --build build  # compilar
+  ```
 </Tip>
 
 <div id="running-the-clickhouse-executable">

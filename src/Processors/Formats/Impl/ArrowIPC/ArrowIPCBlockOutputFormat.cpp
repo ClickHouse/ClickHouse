@@ -2,6 +2,8 @@
 
 #if USE_ARROW
 
+#include <Formats/FormatFactory.h>
+#include <Processors/Formats/Impl/ArrowBatchRowLimit.h>
 #include <Processors/Formats/Impl/ArrowIPC/FlatBuffersCommon.h>
 #include <Processors/Port.h>
 #include <Core/Block.h>
@@ -23,6 +25,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/NetUtils.h>
 
+#include <algorithm>
 #include <utility>
 
 namespace DB
@@ -254,7 +257,7 @@ std::pair<ColumnPtr, DataTypePtr> ArrowIPCBlockOutputFormat::encodeDictionaryCol
     if (!state.emitted || delta_size > 0)
     {
         ColumnPtr delta = state.values->cut(delta_start, delta_size);
-        auto dict_batch = encoder->encode({delta}, {value_type}, delta_size);
+        auto dict_batch = encoder->encode({delta}, {value_type}, 0, delta_size);
         auto written = writeBatchMessage(dict_batch, dict.id, /*is_delta=*/state.emitted);
         if (!stream)
             dictionary_blocks.push_back({written.offset, written.metadata_length, written.body_length});
@@ -350,18 +353,68 @@ std::pair<ColumnPtr, DataTypePtr> ArrowIPCBlockOutputFormat::substituteDictionar
     return {column, type};
 }
 
+void ArrowIPCBlockOutputFormat::writeRecordBatch(
+    const Columns & columns, const DataTypes & types, size_t begin, size_t end)
+{
+    auto batch = encoder->encode(columns, types, begin, end);
+    auto written = writeBatchMessage(batch);
+    if (!stream)
+        record_blocks.push_back({written.offset, written.metadata_length, written.body_length});
+}
+
 void ArrowIPCBlockOutputFormat::consume(Chunk chunk)
 {
+    /// Not in `writeChunk`: a reader gets the schema on the first chunk even when batches are combined.
     writeSchemaIfNeeded();
 
+    const size_t target_rows = format_settings.arrow.output_record_batch_rows;
+    const size_t target_bytes = format_settings.arrow.output_record_batch_bytes;
+    if (!target_rows && !target_bytes)
+    {
+        writeChunk(std::move(chunk));
+        return;
+    }
+
+    if (chunk.getNumRows() == 0)
+        return;
+
+    /// `ColumnConst::insertRangeFrom` advances the row count without copying the value, and a lazily sparse
+    /// or replicated column cannot be appended to a materialized one. It also has to precede the size
+    /// measured below, which `ColumnConst::byteSize` reports as a single stored value.
+    materializeChunk(chunk);
+
+    auto reached = [&](size_t rows, size_t bytes)
+    { return (target_rows && rows >= target_rows) || (target_bytes && bytes >= target_bytes); };
+
+    /// A chunk that already fills a batch is written as it stands, so a large block is neither copied nor
+    /// combined with its neighbours. `Chunk::append` also requires at least one column.
+    if (chunk.getNumColumns() == 0 || reached(chunk.getNumRows(), chunk.bytes()))
+    {
+        if (staged.getNumRows())
+            writeChunk(std::move(staged));
+        writeChunk(std::move(chunk));
+        return;
+    }
+
+    if (staged.getNumRows())
+        staged.append(chunk);
+    else
+        staged = std::move(chunk);
+
+    if (reached(staged.getNumRows(), staged.bytes()))
+        writeChunk(std::move(staged));
+}
+
+void ArrowIPCBlockOutputFormat::writeChunk(Chunk chunk)
+{
     const size_t num_rows = chunk.getNumRows();
     const Columns & columns = chunk.getColumns();
 
     /// Dictionary-encoded columns are replaced in the record batch by their integer index column; their
-    /// values go into separate DictionaryBatch messages (extended across batches via deltas).
+    /// values go into separate DictionaryBatch messages, written here so they precede every record batch
+    /// of this chunk (extended across chunks via deltas).
     Columns record_columns(columns.begin(), columns.end());
     DataTypes record_types = column_types;
-
     for (size_t i = 0; i < columns.size(); ++i)
     {
         auto [substituted_column, substituted_type] = substituteDictionaries(columns[i], column_types[i], column_dict_plans[i]);
@@ -369,14 +422,33 @@ void ArrowIPCBlockOutputFormat::consume(Chunk chunk)
         record_types[i] = std::move(substituted_type);
     }
 
-    auto batch = encoder->encode(record_columns, record_types, num_rows);
-    auto written = writeBatchMessage(batch);
-    if (!stream)
-        record_blocks.push_back({written.offset, written.metadata_length, written.body_length});
+    /// One record batch per chunk, unless the chunk exceeds what a record batch can address; then it is
+    /// written as several batches over successive row ranges. The limit is measured on the chunk's own
+    /// columns, since a dictionary-encoded one is already reduced to fixed-width indexes by now.
+    size_t offset = 0;
+    do
+    {
+        size_t rows = maxRowsFittingOneArrowBatch(
+            columns,
+            column_types,
+            offset,
+            num_rows,
+            format_settings.arrow.output_fixed_string_as_fixed_byte_array,
+            format_settings.arrow.output_max_record_batch_bytes);
+        /// A row that does not fit on its own cannot be represented at all; let the encoder reject it.
+        rows = std::min(std::max<size_t>(rows, 1), num_rows - offset);
+
+        writeRecordBatch(record_columns, record_types, offset, offset + rows);
+        offset += rows;
+    } while (offset < num_rows);
 }
 
 void ArrowIPCBlockOutputFormat::finalizeImpl()
 {
+    /// The whole output of a result that never reached a target leaves through here.
+    if (staged.getNumRows())
+        writeChunk(std::move(staged));
+
     /// Make sure even an empty result produces a valid stream/file (schema, then EOS or footer).
     writeSchemaIfNeeded();
 
@@ -398,12 +470,45 @@ void ArrowIPCBlockOutputFormat::finalizeImpl()
 
 void ArrowIPCBlockOutputFormat::resetFormatterImpl()
 {
+    /// `finalizeImpl` drains it on every normal path; this also covers a reset after an interrupted one.
+    staged.clear();
     message_writer.emplace(out);
     schema_written = false;
     dictionary_blocks.clear();
     record_blocks.clear();
     for (auto & state : dictionary_states)
         state = DictionaryColumnState{};
+}
+
+void registerOutputFormatArrow(FormatFactory & factory);
+void registerOutputFormatArrow(FormatFactory & factory)
+{
+    factory.registerOutputFormat(
+        "Arrow",
+        [](WriteBuffer & buf,
+           const Block & sample,
+           const FormatSettings & format_settings,
+           FormatFilterInfoPtr /*format_filter_info*/) -> OutputFormatPtr
+        {
+            return std::make_shared<ArrowIPCBlockOutputFormat>(buf, std::make_shared<const Block>(sample), false, format_settings);
+        });
+    factory.markFormatHasNoAppendSupport("Arrow");
+    factory.markOutputFormatNotTTYFriendly("Arrow");
+    factory.setContentType("Arrow", "application/octet-stream");
+
+    factory.registerOutputFormat(
+        "ArrowStream",
+        [](WriteBuffer & buf,
+           const Block & sample,
+           const FormatSettings & format_settings,
+           FormatFilterInfoPtr /*format_filter_info*/) -> OutputFormatPtr
+        {
+            return std::make_shared<ArrowIPCBlockOutputFormat>(buf, std::make_shared<const Block>(sample), true, format_settings);
+        });
+    factory.markFormatHasNoAppendSupport("ArrowStream");
+    factory.markOutputFormatPrefersLargeBlocks("ArrowStream");
+    factory.markOutputFormatNotTTYFriendly("ArrowStream");
+    factory.setContentType("ArrowStream", "application/octet-stream");
 }
 
 }

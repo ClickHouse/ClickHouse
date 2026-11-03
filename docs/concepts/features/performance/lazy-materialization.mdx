@@ -47,7 +47,7 @@ Lazy materialization layers cleanly on top, but unlike the other optimizations m
 
 Consider the following example query which finds Amazon reviews with the highest number of helpful votes, regardless of date, product, rating, or verification status, and returns the top 3 along with their title, headline, and full text.
 
-First running the query (with cold filesystem caches) with lazy materialization disabled (using [`query_plan_optimize_lazy_materialization`](/reference/settings/session-settings#query_plan_optimize_lazy_materialization)):
+First running the query (with cold filesystem caches) with lazy materialization disabled (using [`query_plan_optimize_lazy_materialization`](/reference/settings/session-settings/query-plan#query_plan_optimize_lazy_materialization)):
 
 ```sql title="Query"
 SELECT

@@ -24,21 +24,21 @@ Existen los siguientes grupos principales de configuración de ClickHouse:
 La configuración global se aplica de forma predeterminada, salvo que se sobrescriba en niveles más específicos. La configuración de sesión puede especificarse mediante perfiles, la configuración del usuario y comandos SET. La configuración de consulta puede proporcionarse mediante la cláusula SETTINGS y se aplica a consultas individuales. La configuración de operaciones en segundo plano se aplica a Mutations, Merges y, posiblemente, a otras operaciones que se ejecutan de forma asíncrona en segundo plano.
 
 <div id="see-non-default-settings">
-  ## Ver ajustes no predeterminados
+  ## Ver configuraciones no predeterminadas
 </div>
 
-Para ver qué ajustes se han modificado con respecto a su valor predeterminado, puede consultar la
+Para ver qué configuraciones se han modificado con respecto a su valor predeterminado, puede consultar la
 tabla `system.settings`:
 
 ```sql
 SELECT name, value FROM system.settings WHERE changed
 ```
 
-Si no se ha modificado ningún ajuste con respecto a su valor predeterminado, ClickHouse
+Si no se ha modificado ninguna configuración con respecto a su valor predeterminado, ClickHouse
 no devolverá nada.
 
-Para comprobar el valor de un ajuste concreto, puede especificar el `name` del
-ajuste en la consulta:
+Para comprobar el valor de una configuración concreta, puede especificar el `name` de la
+configuración en la consulta:
 
 ```sql
 SELECT name, value FROM system.settings WHERE name = 'max_threads'
@@ -47,9 +47,9 @@ SELECT name, value FROM system.settings WHERE name = 'max_threads'
 Esto devolverá algo como esto:
 
 ```response
-┌─name────────┬─value─────┐
-│ max_threads │ 'auto(8)' │
-└─────────────┴───────────┘
+┌─name────────┬─value───┐
+│ max_threads │ auto(8) │
+└─────────────┴─────────┘
 
 1 row in set. Elapsed: 0.002 sec.
 ```

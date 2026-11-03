@@ -1,9 +1,9 @@
 ---
-description: '在 Red Hat/CentOS Linux 上安装 ClickHouse'
-keywords: ['ClickHouse', '安装', 'Red Hat', 'CentOS', 'rpm']
-sidebarTitle: 'Red Hat/CentOS'
+description: '在 Redhat/CentOS Linux 上安装 ClickHouse'
+keywords: ['ClickHouse', '安装', 'Redhat', 'CentOS', 'rpm']
+sidebarTitle: 'Redhat/CentOS'
 slug: /install/redhat
-title: '在基于 rpm 的 Linux 发行版上安装 ClickHouse'
+title: '在基于 rpm 的 Linux 发行版中安装 ClickHouse'
 hide_title: true
 doc_type: 'guide'
 ---
@@ -14,16 +14,12 @@ import Recommendations from '/snippets/zh/recommendations.mdx';
 > Linux 发行版上使用官方预编译的 `rpm` 软件包。
 
 <Steps>
-  <Step>
-    ## 查看建议
-
+  <Step title="查看建议" id="review-recommendations">
     <Recommendations />
   </Step>
 
-  <Step>
-    ## 设置 RPM 仓库
-
-    运行以下命令添加官方仓库：
+  <Step title="设置 RPM 仓库" id="setup-the-rpm-repository">
+    运行以下命令以添加官方仓库：
 
     ```bash
     sudo yum install -y yum-utils
@@ -37,20 +33,18 @@ import Recommendations from '/snippets/zh/recommendations.mdx';
     sudo zypper --gpg-auto-import-keys refresh clickhouse-stable
     ```
 
-    在以下步骤中，可根据您使用的包管理器，将 `yum install` 替换为 `zypper install`。
+    在下面的步骤中，可根据你使用的包管理器将 `yum install` 替换为 `zypper install`。
   </Step>
 
-  <Step>
-    ## 安装 ClickHouse server 和 client
-
-    运行以下命令安装 ClickHouse：
+  <Step title="安装 ClickHouse server 和客户端" id="install-clickhouse-server-and-client-1">
+    要安装 ClickHouse，请运行以下命令：
 
     ```bash
     sudo yum install -y clickhouse-server clickhouse-client
     ```
 
-    * 您可以将 `stable` 替换为 `lts`，根据需要使用不同的[发布类型](/zh/resources/support-center/knowledge-base/setup-installation/production)。
-    * 您也可以从 [packages.clickhouse.com/rpm](https://packages.clickhouse.com/rpm/stable) 手动下载并安装软件包。
+    * 你可以将 `stable` 替换为 `lts`，以根据需要使用不同的[发布类型](/zh/resources/support-center/knowledge-base/setup-installation/production)。
+    * 你可以从 [packages.clickhouse.com/rpm](https://packages.clickhouse.com/rpm/stable) 手动下载并安装软件包。
     * 如需指定特定版本，请在包名末尾添加 `-$version`，
       例如：
 
@@ -59,10 +53,8 @@ import Recommendations from '/snippets/zh/recommendations.mdx';
     ```
   </Step>
 
-  <Step>
-    ## 启动 ClickHouse server
-
-    运行以下命令启动 ClickHouse server：
+  <Step title="启动 ClickHouse server" id="start-clickhouse-server-1">
+    要启动 ClickHouse server，请运行：
 
     ```bash
     sudo systemctl enable clickhouse-server
@@ -70,38 +62,34 @@ import Recommendations from '/snippets/zh/recommendations.mdx';
     sudo systemctl status clickhouse-server
     ```
 
-    运行以下命令启动 ClickHouse client：
+    要启动 ClickHouse 客户端，请运行：
 
     ```bash
     clickhouse-client
     ```
 
-    如果您为 server 设置了密码，则需要运行：
+    如果你为 ClickHouse server 设置了密码，则需要运行：
 
     ```bash
     clickhouse-client --password
     ```
   </Step>
 
-  <Step>
-    ## 安装独立运行的 ClickHouse Keeper
-
+  <Step title="安装独立运行的 ClickHouse Keeper" id="install-standalone-clickhouse-keeper-1">
     <Tip>
       在生产环境中，我们强烈建议在专用节点上运行 ClickHouse Keeper。
-      在测试环境中，如果您决定在同一台服务器上运行 ClickHouse Server 和 ClickHouse Keeper，
+      在测试环境中，如果你决定在同一台服务器上运行 ClickHouse Server 和 ClickHouse Keeper，
       则无需安装 ClickHouse Keeper，因为它已包含在 ClickHouse server 中。
     </Tip>
 
-    如需在独立运行的 ClickHouse Keeper 服务器上安装 `clickhouse-keeper`，请运行：
+    要在独立运行的 ClickHouse Keeper 服务器上安装 `clickhouse-keeper`，请运行：
 
     ```bash
     sudo yum install -y clickhouse-keeper
     ```
   </Step>
 
-  <Step>
-    ## 启用并启动 ClickHouse Keeper
-
+  <Step title="启用并启动 ClickHouse Keeper" id="enable-and-start-clickhouse-keeper-1">
     ```bash
     sudo systemctl enable clickhouse-keeper
     sudo systemctl start clickhouse-keeper

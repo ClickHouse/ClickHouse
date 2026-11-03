@@ -1,21 +1,55 @@
 ---
-description: 'Page répertoriant divers outils et utilitaires ClickHouse utiles.'
+description: 'Page répertoriant divers outils et utilitaires utiles pour ClickHouse.'
 keywords: ['outils', 'utilitaires']
 sidebarTitle: 'Liste des outils et utilitaires'
 slug: /operations/utilities/
 title: 'Liste des outils et utilitaires'
 doc_type: 'landing-page'
+mode: wide
 ---
 
-| Outil/Utilitaire                                                                            | Description                                                                                                    |
-| ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| [clickhouse-local](/fr/concepts/features/tools-and-utilities/clickhouse-local)                 | Permet d’exécuter des requêtes SQL sur des données sans démarrer le serveur ClickHouse, à la manière de `awk`. |
-| [clickhouse-benchmark](/fr/concepts/features/tools-and-utilities/clickhouse-benchmark)         | Charge le serveur avec des requêtes et des paramètres personnalisés.                                           |
-| [clickhouse-format](/fr/concepts/features/tools-and-utilities/clickhouse-format)               | Permet de mettre en forme les requêtes d’entrée.                                                               |
-| [ClickHouse obfuscator](/fr/concepts/features/tools-and-utilities/clickhouse-obfuscator)       | Obfusque les données.                                                                                          |
-| [ClickHouse compressor](/fr/concepts/features/tools-and-utilities/clickhouse-compressor)       | Compresse et décompresse les données.                                                                          |
-| [clickhouse-disks](/fr/concepts/features/tools-and-utilities/clickhouse-disks)                 | Fournit des opérations de type système de fichiers sur des fichiers situés sur différents disks ClickHouse.    |
-| [clickhouse-odbc-bridge](/fr/concepts/features/tools-and-utilities/odbc-bridge)                | Un serveur proxy pour le driver ODBC.                                                                          |
-| [clickhouse&#95;backupview](/fr/concepts/features/tools-and-utilities/backupview)              | Un module Python pour analyser les sauvegardes ClickHouse.                                                     |
-| [clickhouse-keeper-client](/fr/concepts/features/tools-and-utilities/clickhouse-keeper-client) | Une application cliente pour interagir avec ClickHouse Keeper.                                                 |
-| [Keeper HTTP API](/fr/concepts/features/tools-and-utilities/clickhouse-keeper-http-api)        | API HTTP et tableau de bord intégré pour ClickHouse Keeper.                                                    |
+<CardGroup cols={2}>
+  <Card title="clickhouse_backupview" href="/fr/concepts/features/tools-and-utilities/backupview">
+    Un module Python pour analyser les sauvegardes ClickHouse.
+  </Card>
+
+  <Card title="clickhouse-benchmark" href="/fr/concepts/features/tools-and-utilities/clickhouse-benchmark">
+    Charge le serveur avec des requêtes et des paramètres personnalisés.
+  </Card>
+
+  <Card title="clickhouse-compressor" href="/fr/concepts/features/tools-and-utilities/clickhouse-compressor">
+    Compresse et décompresse les données.
+  </Card>
+
+  <Card title="clickhouse-disks" href="/fr/concepts/features/tools-and-utilities/clickhouse-disks">
+    Fournit des opérations similaires à celles d’un système de fichiers sur les fichiers de différents disques ClickHouse.
+  </Card>
+
+  <Card title="clickhouse-format" href="/fr/concepts/features/tools-and-utilities/clickhouse-format">
+    Permet de formater les requêtes d&#39;entrée.
+  </Card>
+
+  <Card title="clickhouse-keeper-client" href="/fr/concepts/features/tools-and-utilities/clickhouse-keeper-client">
+    Une application cliente pour interagir avec ClickHouse Keeper.
+  </Card>
+
+  <Card title="API HTTP de Keeper" href="/fr/concepts/features/tools-and-utilities/clickhouse-keeper-http-api">
+    API HTTP et tableau de bord intégré pour ClickHouse Keeper.
+  </Card>
+
+  <Card title="clickhouse-local" href="/fr/concepts/features/tools-and-utilities/clickhouse-local">
+    Permet d&#39;exécuter des requêtes SQL sur des données sans démarrer le ClickHouse server, à la manière de `awk`.
+  </Card>
+
+  <Card title="clickhouse-obfuscator" href="/fr/concepts/features/tools-and-utilities/clickhouse-obfuscator">
+    Obfusque les données.
+  </Card>
+
+  <Card title="clickhouse-odbc-bridge" href="/fr/concepts/features/tools-and-utilities/odbc-bridge">
+    Un serveur proxy pour le pilote ODBC.
+  </Card>
+
+  <Card title="clickhouse-static-files-disk-uploader" href="/fr/concepts/features/tools-and-utilities/static-files-disk-uploader">
+    Prépare un répertoire de données pour une table basée sur le disque `web`.
+  </Card>
+</CardGroup>

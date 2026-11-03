@@ -42,16 +42,7 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const final { return false; }
     bool isVariadic() const final { return false; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        FunctionArgumentDescriptors args{
-            {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isDateTime), nullptr, "DateTime"}
-        };
-
-        validateFunctionArguments(*this, arguments, args);
-
-        return std::make_shared<DataTypeUUID>();
-    }
+    String getSignatureString() const override { return "(DateTime) -> UUID"; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & , size_t input_rows_count) const override
     {
@@ -99,13 +90,9 @@ REGISTER_FUNCTION(DateTimeToUUIDv7)
 {
     /// dateTimeToUUIDv7 documentation
     FunctionDocumentation::Description description = R"(
-Converts a [DateTime](../data-types/datetime.md) value to a [UUIDv7](https://en.wikipedia.org/wiki/UUID#Version_7) at the given time.
+Converts a [DateTime](/reference/data-types/datetime) value to a [UUIDv7](https://www.rfc-editor.org/rfc/rfc9562) at the given time, as defined by [RFC 9562](https://www.rfc-editor.org/rfc/rfc9562).
 
 See section ["UUIDv7 generation"](#uuidv7-generation) for details on UUID structure, counter management, and concurrency guarantees.
-
-:::note
-As of September 2025, version 7 UUIDs are in draft status and their layout may change in future.
-:::
     )";
     FunctionDocumentation::Syntax syntax = "dateTimeToUUIDv7(value)";
     FunctionDocumentation::Arguments arguments = {

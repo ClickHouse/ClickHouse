@@ -1,6 +1,7 @@
 #include <Interpreters/BackupLog.h>
 
 #include <base/getFQDNOrHostName.h>
+#include <Common/config_version.h>
 #include <Common/DateLUTImpl.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeDate.h>
@@ -14,11 +15,27 @@
 namespace DB
 {
 
-BackupLogElement::BackupLogElement(BackupOperationInfo info_)
-    : event_time(std::chrono::system_clock::now())
-    , event_time_usec(timeInMicroseconds(event_time))
-    , info(std::move(info_))
+void BackupLogElement::fromInfo(BackupLogElement & element, const BackupOperationInfo & info)
 {
+    element.event_time = std::chrono::system_clock::now();
+    element.event_time_usec = timeInMicroseconds(element.event_time);
+    element.id = info.id;
+    element.name_ = info.name;
+    element.base_backup_name = info.base_backup_name;
+    element.query_id = info.query_id;
+    element.status = info.status;
+    element.error_message = info.error_message;
+    element.start_time_us = info.start_time_us;
+    element.end_time_us = info.end_time_us;
+    element.num_files = info.num_files;
+    element.total_size = info.total_size;
+    element.num_entries = info.num_entries;
+    element.uncompressed_size = info.uncompressed_size;
+    element.compressed_size = info.compressed_size;
+    element.num_read_files = info.num_read_files;
+    element.num_read_bytes = info.num_read_bytes;
+    element.settings = info.settings;
+    element.engine_settings = info.engine_settings;
 }
 
 ColumnsDescription BackupLogElement::getColumnsDescription()
@@ -26,6 +43,8 @@ ColumnsDescription BackupLogElement::getColumnsDescription()
     return ColumnsDescription
     {
         {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Hostname of the server executing the query."},
+        {"clickhouse_version", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Version of the ClickHouse server that produced the row."},
+        {"system_processor", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "CPU architecture of the ClickHouse server that produced the row."},
         {"event_date", std::make_shared<DataTypeDate>(), "Date of the entry."},
         {"event_time", std::make_shared<DataTypeDateTime>(), "Time of the entry."},
         {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "Time of the entry with microseconds precision."},
@@ -53,24 +72,26 @@ void BackupLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t i = 0;
     columns[i++]->insert(getFQDNOrHostName());
+    columns[i++]->insert(VERSION_STRING);
+    columns[i++]->insert(SYSTEM_PROCESSOR);
     columns[i++]->insert(DateLUT::instance().toDayNum(std::chrono::system_clock::to_time_t(event_time)).toUnderType());
     columns[i++]->insert(std::chrono::system_clock::to_time_t(event_time));
     columns[i++]->insert(event_time_usec);
-    columns[i++]->insert(info.id);
-    columns[i++]->insert(info.name);
-    columns[i++]->insert(info.base_backup_name);
-    columns[i++]->insert(info.query_id);
-    columns[i++]->insert(static_cast<Int8>(info.status));
-    columns[i++]->insert(info.error_message);
-    columns[i++]->insert(static_cast<Decimal64>(info.start_time_us));
-    columns[i++]->insert(static_cast<Decimal64>(info.end_time_us));
-    columns[i++]->insert(info.num_files);
-    columns[i++]->insert(info.total_size);
-    columns[i++]->insert(info.num_entries);
-    columns[i++]->insert(info.uncompressed_size);
-    columns[i++]->insert(info.compressed_size);
-    columns[i++]->insert(info.num_read_files);
-    columns[i++]->insert(info.num_read_bytes);
+    columns[i++]->insert(id);
+    columns[i++]->insert(name_);
+    columns[i++]->insert(base_backup_name);
+    columns[i++]->insert(query_id);
+    columns[i++]->insert(static_cast<Int8>(status));
+    columns[i++]->insert(error_message);
+    columns[i++]->insert(static_cast<Decimal64>(start_time_us));
+    columns[i++]->insert(static_cast<Decimal64>(end_time_us));
+    columns[i++]->insert(num_files);
+    columns[i++]->insert(total_size);
+    columns[i++]->insert(num_entries);
+    columns[i++]->insert(uncompressed_size);
+    columns[i++]->insert(compressed_size);
+    columns[i++]->insert(num_read_files);
+    columns[i++]->insert(num_read_bytes);
 
     auto to_map_field = [](const std::map<String, String> & map)
     {
@@ -80,8 +101,8 @@ void BackupLogElement::appendToBlock(MutableColumns & columns) const
             map_field.push_back(Tuple{key, value});
         return map_field;
     };
-    columns[i++]->insert(to_map_field(info.settings));
-    columns[i++]->insert(to_map_field(info.engine_settings));
+    columns[i++]->insert(to_map_field(settings));
+    columns[i++]->insert(to_map_field(engine_settings));
 }
 
 }
