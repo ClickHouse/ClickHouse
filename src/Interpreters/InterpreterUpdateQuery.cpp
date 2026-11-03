@@ -124,6 +124,11 @@ BlockIO InterpreterUpdateQuery::execute()
         update_query.setDatabase(resolved_table_id.database_name);
         update_query.setTable(resolved_table_id.table_name);
         table_for_access = DatabaseCatalog::instance().tryGetTable(resolved_table_id, getContext());
+
+        /// The tables of the expressions (`WHERE x IN db.ns.keys`) are bound before the query is dispatched `ON CLUSTER`
+        /// or enqueued to a `Replicated` database, see `InterpreterAlterQuery::bindTableNamesInMutationExpressions`.
+        InterpreterAlterQuery::bindTableNamesInMutationExpressions(
+            {update_query.predicate, update_query.assignments}, *query_ptr, table_for_access, resolved_table_id.database_name, getContext());
     }
     const auto row_exists_column_kind = InterpreterAlterQuery::getRowExistsColumnKind(table_for_access, getContext());
 
@@ -149,7 +154,7 @@ BlockIO InterpreterUpdateQuery::execute()
     {
         /// Substitute the database into table functions that use the current database implicitly, e.g.
         /// `merge('tables_regexp')`, before `executeDDLQueryOnCluster` replaces `currentDatabase()` with the
-        /// database of the session. The table identifiers are qualified on each host instead.
+        /// database of the session. The table identifiers are qualified and bound above.
         if (resolved_table_id)
         {
             AddDefaultDatabaseVisitor visitor(getContext(), resolved_table_id.getDatabaseName());

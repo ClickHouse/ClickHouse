@@ -530,6 +530,23 @@ void InterpreterAlterQuery::bindHierarchicalNameOfOperand(String & database, Str
     }
 }
 
+void InterpreterAlterQuery::bindTableNamesInMutationExpressions(
+    const ASTs & expressions, const IAST & query, const StoragePtr & table, const String & database, ContextPtr local_context)
+{
+    ExpandedASTBudget budget(local_context->getSettingsRef()[Setting::max_expanded_ast_elements], query);
+    AddDefaultDatabaseVisitor visitor(local_context, database);
+    /// The expressions refer to the columns of the mutated table: `x IN a.b` may be a subcolumn.
+    visitor.addExpressionSourceTable(table);
+    for (const auto & expression : expressions)
+    {
+        if (!expression)
+            continue;
+        ASTPtr expression_ptr = expression;
+        ApplyWithSubqueryVisitor::visit(expression_ptr, local_context, budget);
+        visitor.visit(expression_ptr);
+    }
+}
+
 BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 {
     ASTSelectWithUnionQuery * modify_query = nullptr;
@@ -599,6 +616,8 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
             ASTPtr modify_query_ptr = modify_query->ptr();
             binding_visitor.visit(modify_query_ptr);
         }
+        /// The mutation expressions refer to the columns of the altered table: `x IN a.b` may be a subcolumn.
+        binding_visitor.addExpressionSourceTable(table);
         for (const auto & child : alter.command_list->children)
         {
             const auto * command = child->as<ASTAlterCommand>();

@@ -4169,6 +4169,17 @@ void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, Cont
 BlockIO InterpreterCreateQuery::executeQueryOnCluster(ASTCreateQuery & create)
 {
     prepareOnClusterQuery(create, getContext(), create.cluster);
+
+    /// The qualified names of the `SELECT` of `CREATE TABLE ... AS SELECT` are bound to the tables they denote here (`db.ns.src`
+    /// to `db`.`ns.src`): the hosts take a qualified name exactly as shipped (see `DatabaseCatalog::isBoundHierarchicalName`).
+    /// The unqualified names are left to the default database of each host, as before. A view is bound in `createTable`.
+    if (create.select && !create.isView())
+    {
+        AddDefaultDatabaseVisitor visitor(getContext(), getContext()->getCurrentDatabase());
+        visitor.onlyBindQualifiedNames();
+        visitor.visit(*create.select);
+    }
+
     DDLQueryOnClusterParams params;
     params.access_to_check = getRequiredAccess();
     return executeDDLQueryOnCluster(query_ptr, getContext(), params);
