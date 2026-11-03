@@ -1611,7 +1611,7 @@ public:
         else
             place_value = findEmptyCell(place_value);
 
-        memcpy(static_cast<void*>(&buf[place_value]), cell, sizeof(*cell));
+        memcpy(static_cast<void*>(&buf[place_value]), static_cast<const void *>(cell), sizeof(*cell));
         ++m_size;
 
         if (unlikely(grower.overflow(m_size)))

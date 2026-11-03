@@ -67,32 +67,35 @@ size_t readHugePageSizeForHashTables()
 {
 #if defined(OS_LINUX) && defined(MADV_HUGEPAGE)
     /// Experiment knob: allows to compare both variants with the same binary.
-    if (const char * env = getenv("CLICKHOUSE_HASH_TABLE_HUGE_PAGES"); env && env[0] == '0')
+    if (const char * env = getenv("CLICKHOUSE_HASH_TABLE_HUGE_PAGES"); env && env[0] == '0') // NOLINT(concurrency-mt-unsafe)
         return 0;
 
-    std::string enabled;
+    auto read_first_line = [](const char * path) -> std::string
     {
-        FILE * f = fopen("/sys/kernel/mm/transparent_hugepage/enabled", "r");
+        FILE * f = fopen(path, "r");
         if (!f)
-            return 0;
+            return {};
         char line[128] = {};
+        std::string result;
         if (fgets(line, sizeof(line), f))
-            enabled = line;
-        fclose(f);
-    }
+            result = line;
+        (void)fclose(f);
+        return result;
+    };
+
+    const std::string enabled = read_first_line("/sys/kernel/mm/transparent_hugepage/enabled");
     if (enabled.empty() || enabled.contains("[never]"))
         return 0;
 
-    size_t huge_page_size = 0;
-    {
-        FILE * f = fopen("/sys/kernel/mm/transparent_hugepage/hpage_pmd_size", "r");
-        if (!f)
-            return 0;
-        unsigned long long value = 0;
-        if (1 == fscanf(f, "%llu", &value))
-            huge_page_size = value;
-        fclose(f);
-    }
+    const std::string huge_page_size_str = read_first_line("/sys/kernel/mm/transparent_hugepage/hpage_pmd_size");
+    if (huge_page_size_str.empty())
+        return 0;
+    char * end = nullptr;
+    errno = 0;
+    const uint64_t value = std::strtoull(huge_page_size_str.c_str(), &end, 10);
+    if (errno != 0 || end == huge_page_size_str.c_str())
+        return 0;
+    const size_t huge_page_size = value;
 
     /// With 64 KiB base pages a PMD huge page is 512 MiB - too coarse to be useful for hash tables.
     if (huge_page_size == 0 || huge_page_size > 32 * 1024 * 1024 || !isPowerOf2(huge_page_size) || huge_page_size <= static_cast<size_t>(::getPageSize()))

@@ -9,6 +9,14 @@
 #include <base/arithmeticOverflow.h>
 
 
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int CANNOT_ALLOCATE_MEMORY;
+}
+}
+
 /** Two-level hash table.
   * Represents 256 (or 1ULL << BITS_FOR_BUCKET) small hash tables (buckets of the first level).
   * To determine which one to use, one of the bytes of the hash function is taken.

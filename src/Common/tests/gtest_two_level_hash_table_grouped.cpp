@@ -161,8 +161,8 @@ TEST(TwoLevelHashTableGrouped, BucketsLeaveTheArena)
         size_t hash_value = map->hash(big_key);
         if (Map::getBucketFromHash(hash_value) != 5)
             continue;
-        Map::LookupResult it;
-        bool inserted;
+        Map::LookupResult it = nullptr;
+        bool inserted = false;
         bucket.emplace(big_key, it, inserted, hash_value);
         it->getMapped() = big_key;
         reference[big_key] = big_key;
