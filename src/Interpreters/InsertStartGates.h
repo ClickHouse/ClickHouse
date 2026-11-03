@@ -507,10 +507,16 @@ public:
             {
                 gate = std::make_shared<InsertStartGate>();
             }
-            else if (chosen->done && !to_merge.empty())
+            else if (chosen->done && (!to_merge.empty() || chosen->lent_flush_exception))
             {
                 /// The decision of `chosen` is borrowed, but the decision of some participants is still
                 /// pending: their checks run in a new gate before the group write writes anything.
+                ///
+                /// A lent gate that rejected the flush of another storage (`lent_flush_exception`) is borrowed
+                /// through a new gate as well, even with nothing to merge: the rejection belongs to the flush it
+                /// was made for, and handing `chosen` itself to this group write would make it rethrow that
+                /// rejection, while the participants' checks enforced by the storage flushed here have passed
+                /// (otherwise `chosen` would not have been chosen).
                 gate = std::make_shared<InsertStartGate>();
                 gate->lent_from = chosen;
                 gate->lent_to_flush_of = flushed_by;
