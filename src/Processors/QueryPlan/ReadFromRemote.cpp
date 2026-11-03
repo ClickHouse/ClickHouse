@@ -971,8 +971,7 @@ void ReadFromRemote::addPipe(
         // Several connections to a shard are correct only when every replica reads its own part of the data,
         // which is the case only for the offset based modes (`SAMPLING_KEY`, `CUSTOM_KEY_SAMPLING`,
         // `CUSTOM_KEY_RANGE`), where the query sent to a replica carries the corresponding filter.
-        // The results of the replicas then share one port, which only a consumer that ignores the order of
-        // its input streams can take, so otherwise the shard is read from one replica.
+        // The replicas then share one port, so a read whose consumer needs stream order uses one replica.
         //
         // In every other case a replica executes the whole query, so there should be a single connection
         // to a shard, otherwise the result of the shard is multiplied by the number of the connections:
