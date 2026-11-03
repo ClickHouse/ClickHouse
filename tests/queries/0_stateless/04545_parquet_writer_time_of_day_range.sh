@@ -13,10 +13,10 @@ ${CLICKHOUSE_CLIENT} -q "SELECT toTime64('23:59:59.999999', 6) FORMAT Parquet" >
 ${CLICKHOUSE_CLIENT} -q "SELECT toTime64('23:59:59.999999999', 9) FORMAT Parquet" > /dev/null && echo "Time64(9) OK"
 
 # Out of range: beyond 24 hours.
-${CLICKHOUSE_CLIENT} -q "SELECT toTime('100:00:00') FORMAT Parquet" 2>&1 | grep -o 'VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE'
-${CLICKHOUSE_CLIENT} -q "SELECT toTime64('100:00:00', 6) FORMAT Parquet" 2>&1 | grep -o 'VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE'
-${CLICKHOUSE_CLIENT} -q "SELECT toTime64('100:00:00', 3) FORMAT Parquet" 2>&1 | grep -o 'VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE'
+${CLICKHOUSE_CLIENT} -q "SELECT toTime('100:00:00') FORMAT Parquet" 2>&1 | grep -o -m1 'VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE' | head -n1
+${CLICKHOUSE_CLIENT} -q "SELECT toTime64('100:00:00', 6) FORMAT Parquet" 2>&1 | grep -o -m1 'VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE' | head -n1
+${CLICKHOUSE_CLIENT} -q "SELECT toTime64('100:00:00', 3) FORMAT Parquet" 2>&1 | grep -o -m1 'VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE' | head -n1
 
 # Out of range: negative.
-${CLICKHOUSE_CLIENT} -q "SELECT toTime('-01:00:00') FORMAT Parquet" 2>&1 | grep -o 'VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE'
-${CLICKHOUSE_CLIENT} -q "SELECT toTime64('-01:00:00', 6) FORMAT Parquet" 2>&1 | grep -o 'VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE'
+${CLICKHOUSE_CLIENT} -q "SELECT toTime('-01:00:00') FORMAT Parquet" 2>&1 | grep -o -m1 'VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE' | head -n1
+${CLICKHOUSE_CLIENT} -q "SELECT toTime64('-01:00:00', 6) FORMAT Parquet" 2>&1 | grep -o -m1 'VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE' | head -n1
