@@ -339,10 +339,9 @@ public:
 
     void initializeFromVectorAndBitmap(const BSINumericIndexedVector & schema, const Roaring & bitmap)
     {
-        initialize(schema.integer_bit_num, schema.fraction_bit_num);
-        if (getTotalBitNum() == 0)
-            return;
-
+        /// Positive 1 needs a value bit and, for signed types, a separate sign bit.
+        const UInt32 minimum_integer_bit_num = schema.isValueTypeSigned() ? 2 : 1;
+        initialize(std::max(schema.integer_bit_num, minimum_integer_bit_num), schema.fraction_bit_num);
         getDataArrayAt(fraction_bit_num)->rb_or(bitmap);
     }
 

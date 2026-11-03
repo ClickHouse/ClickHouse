@@ -36,7 +36,7 @@ SELECT numericIndexedVectorToMap(vec) AS res, toTypeName(vec) AS type;
     {
         FunctionDocumentation::Description description = R"(
 Performs pointwise addition between a `numericIndexedVector` and either another `numericIndexedVector`, a numeric constant, or a `Bitmap`.
-When `v2` is a `Bitmap`, it is converted to a same-schema vector where each bitmap index has value 1.
+When `v2` is a `Bitmap`, it is converted to a vector with the same index and value types, where each bitmap index has value 1. The integer bit width is increased if needed to represent positive 1.
         )";
         FunctionDocumentation::Syntax syntax = "numericIndexedVectorPointwiseAdd(v1, v2)";
         FunctionDocumentation::Arguments arguments
@@ -69,7 +69,7 @@ SELECT
     {
         FunctionDocumentation::Description description = R"(
 Performs pointwise subtraction between a `numericIndexedVector` and either another `numericIndexedVector`, a numeric constant, or a `Bitmap`.
-When `v2` is a `Bitmap`, it is converted to a same-schema vector where each bitmap index has value 1.
+When `v2` is a `Bitmap`, it is converted to a vector with the same index and value types, where each bitmap index has value 1. The integer bit width is increased if needed to represent positive 1.
         )";
         FunctionDocumentation::Syntax syntax = "numericIndexedVectorPointwiseSubtract(v1, v2)";
         FunctionDocumentation::Arguments arguments
@@ -102,7 +102,7 @@ SELECT
     {
         FunctionDocumentation::Description description = R"(
 Performs pointwise multiplication between a `numericIndexedVector` and either another `numericIndexedVector`, a numeric constant, or a `Bitmap`.
-When `v2` is a `Bitmap`, it is converted to a same-schema vector where each bitmap index has value 1.
+When `v2` is a `Bitmap`, it is converted to a vector with the same index and value types, where each bitmap index has value 1. The integer bit width is increased if needed to represent positive 1.
         )";
         FunctionDocumentation::Syntax syntax = "numericIndexedVectorPointwiseMultiply(v1, v2)";
         FunctionDocumentation::Arguments arguments
@@ -135,7 +135,7 @@ SELECT
     {
         FunctionDocumentation::Description description = R"(
 Performs pointwise division between a `numericIndexedVector` and either another `numericIndexedVector`, a numeric constant, or a `Bitmap`.
-When `v2` is a `Bitmap`, it is converted to a same-schema vector where each bitmap index has value 1.
+When `v2` is a `Bitmap`, it is converted to a vector with the same index and value types, where each bitmap index has value 1. The integer bit width is increased if needed to represent positive 1.
         )";
         FunctionDocumentation::Syntax syntax = "numericIndexedVectorPointwiseDivide(v1, v2)";
         FunctionDocumentation::Arguments arguments
@@ -168,7 +168,7 @@ SELECT
     {
         FunctionDocumentation::Description description = R"(
 Performs pointwise comparison between a `numericIndexedVector` and either another `numericIndexedVector`, a numeric constant, or a `Bitmap`.
-When `v2` is a `Bitmap`, it is converted to a same-schema vector where each bitmap index has value 1.
+When `v2` is a `Bitmap`, it is converted to a vector with the same index and value types, where each bitmap index has value 1. The integer bit width is increased if needed to represent positive 1.
 The result is a `numericIndexedVector` containing the indices where the values are equal, with all corresponding values set to 1.
         )";
         FunctionDocumentation::Syntax syntax = "numericIndexedVectorPointwiseEqual(v1, v2)";
@@ -202,7 +202,7 @@ SELECT
     {
         FunctionDocumentation::Description description = R"(
 Performs pointwise comparison between a `numericIndexedVector` and either another `numericIndexedVector`, a numeric constant, or a `Bitmap`.
-When `v2` is a `Bitmap`, it is converted to a same-schema vector where each bitmap index has value 1.
+When `v2` is a `Bitmap`, it is converted to a vector with the same index and value types, where each bitmap index has value 1. The integer bit width is increased if needed to represent positive 1.
 The result is a `numericIndexedVector` containing the indices where the values are not equal, with all corresponding values set to 1.
         )";
         FunctionDocumentation::Syntax syntax = "numericIndexedVectorPointwiseNotEqual(v1, v2)";
@@ -236,7 +236,7 @@ SELECT
     {
         FunctionDocumentation::Description description = R"(
 Performs pointwise comparison between a `numericIndexedVector` and either another `numericIndexedVector`, a numeric constant, or a `Bitmap`.
-When `v2` is a `Bitmap`, it is converted to a same-schema vector where each bitmap index has value 1.
+When `v2` is a `Bitmap`, it is converted to a vector with the same index and value types, where each bitmap index has value 1. The integer bit width is increased if needed to represent positive 1.
 The result is a `numericIndexedVector` containing the indices where the first vector's value is less than the second vector's value, with all corresponding values set to 1.
         )";
         FunctionDocumentation::Syntax syntax = "numericIndexedVectorPointwiseLess(v1, v2)";
@@ -270,7 +270,7 @@ SELECT
     {
         FunctionDocumentation::Description description = R"(
 Performs pointwise comparison between a `numericIndexedVector` and either another `numericIndexedVector`, a numeric constant, or a `Bitmap`.
-When `v2` is a `Bitmap`, it is converted to a same-schema vector where each bitmap index has value 1.
+When `v2` is a `Bitmap`, it is converted to a vector with the same index and value types, where each bitmap index has value 1. The integer bit width is increased if needed to represent positive 1.
 The result is a `numericIndexedVector` containing the indices where the first vector's value is less than or equal to the second vector's value, with all corresponding values set to 1.
         )";
         FunctionDocumentation::Syntax syntax = "numericIndexedVectorPointwiseLessEqual(v1, v2)";
@@ -304,7 +304,7 @@ SELECT
     {
         FunctionDocumentation::Description description = R"(
 Performs pointwise comparison between a `numericIndexedVector` and either another `numericIndexedVector`, a numeric constant, or a `Bitmap`.
-When `v2` is a `Bitmap`, it is converted to a same-schema vector where each bitmap index has value 1.
+When `v2` is a `Bitmap`, it is converted to a vector with the same index and value types, where each bitmap index has value 1. The integer bit width is increased if needed to represent positive 1.
 The result is a `numericIndexedVector` containing the indices where the first vector's value is greater than the second vector's value, with all corresponding values set to 1.
         )";
         FunctionDocumentation::Syntax syntax = "numericIndexedVectorPointwiseGreater(v1, v2)";
@@ -338,7 +338,7 @@ SELECT
     {
         FunctionDocumentation::Description description = R"(
 Performs pointwise comparison between a `numericIndexedVector` and either another `numericIndexedVector`, a numeric constant, or a `Bitmap`.
-When `v2` is a `Bitmap`, it is converted to a same-schema vector where each bitmap index has value 1.
+When `v2` is a `Bitmap`, it is converted to a vector with the same index and value types, where each bitmap index has value 1. The integer bit width is increased if needed to represent positive 1.
 The result is a `numericIndexedVector` containing the indices where the first vector's value is greater than or equal to the second vector's value, with all corresponding values set to 1.
         )";
         FunctionDocumentation::Syntax syntax = "numericIndexedVectorPointwiseGreaterEqual(v1, v2)";
@@ -372,7 +372,7 @@ SELECT
     {
         FunctionDocumentation::Description description = R"(
 Performs pointwise maximum between a `numericIndexedVector` and either another `numericIndexedVector` or a `Bitmap`.
-When `v2` is a `Bitmap`, it is converted to a same-schema vector where each bitmap index has value 1.
+When `v2` is a `Bitmap`, it is converted to a vector with the same index and value types, where each bitmap index has value 1. The integer bit width is increased if needed to represent positive 1.
 The result is a `numericIndexedVector` containing the union of indices from both vectors, where each value is the larger of the two values at that index; for indices present in only one vector, that vector's value is used.
         )";
         FunctionDocumentation::Syntax syntax = "numericIndexedVectorPointwiseMax(v1, v2)";
@@ -409,7 +409,7 @@ SELECT
     {
         FunctionDocumentation::Description description = R"(
 Performs pointwise minimum between a `numericIndexedVector` and either another `numericIndexedVector` or a `Bitmap`.
-When `v2` is a `Bitmap`, it is converted to a same-schema vector where each bitmap index has value 1.
+When `v2` is a `Bitmap`, it is converted to a vector with the same index and value types, where each bitmap index has value 1. The integer bit width is increased if needed to represent positive 1.
 The result is a `numericIndexedVector` containing the union of indices from both vectors, where each value is the smaller of the two values at that index; for indices present in only one vector, that vector's value is used.
         )";
         FunctionDocumentation::Syntax syntax = "numericIndexedVectorPointwiseMin(v1, v2)";
