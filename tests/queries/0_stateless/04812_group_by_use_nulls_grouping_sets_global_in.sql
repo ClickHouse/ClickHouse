@@ -15,7 +15,6 @@
 
 -- The promotion under test is the analyzer's: the old analyzer's `appendGroupByModifiers` returns
 -- early for GROUPING SETS, so no key is promoted there and `UInt8` is correct.
-SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t_04812;
 DROP TABLE IF EXISTS t_04812_empty;

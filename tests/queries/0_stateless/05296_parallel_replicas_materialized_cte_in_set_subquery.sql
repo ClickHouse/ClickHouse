@@ -3,7 +3,7 @@
 -- must be materialized before it is sent to them (issue #112642). The CTE bodies sleep so that the other
 -- replicas always start before the local read finishes.
 
-SET enable_analyzer = 1, enable_materialized_cte = 1;
+SET enable_materialized_cte = 1;
 SET enable_parallel_replicas = 1, max_parallel_replicas = 3, automatic_parallel_replicas_mode = 0;
 SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 SET parallel_replicas_for_non_replicated_merge_tree = 1;

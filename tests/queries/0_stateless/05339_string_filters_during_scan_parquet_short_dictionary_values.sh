@@ -21,12 +21,14 @@ FROM numbers(100000)
 SETTINGS engine_file_truncate_on_insert = 1, output_format_parquet_row_group_size = 10000;
 "
 
+# A dictionary-encoded column read only by the last PREWHERE step is evaluated once per dictionary value,
+# without the filter: `id < 100000` (true for all rows) moves `s` to an earlier step.
 for enable in 0 1; do
-    $CLICKHOUSE_CLIENT -q "SELECT count(), sum(cityHash64(s)) FROM file('$FILE', Parquet) PREWHERE s LIKE '%R%' SETTINGS apply_string_filters_during_scan = $enable"
+    $CLICKHOUSE_CLIENT -q "SELECT count(), sum(cityHash64(s)) FROM file('$FILE', Parquet) PREWHERE s LIKE '%R%' AND id < 100000 SETTINGS apply_string_filters_during_scan = $enable"
 done
 
 # A column that can be written to the columns cache is decoded without the filter, so that the cache gets its values.
-$CLICKHOUSE_CLIENT -q "SELECT count() FROM file('$FILE', Parquet) PREWHERE s LIKE '%R%' SETTINGS apply_string_filters_during_scan = 1, use_columns_cache = 0, max_threads = 1, log_comment = '05338_short_dictionary_values'"
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM file('$FILE', Parquet) PREWHERE s LIKE '%R%' AND id < 100000 SETTINGS apply_string_filters_during_scan = 1, use_columns_cache = 0, max_threads = 1, log_comment = '05338_short_dictionary_values'"
 
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 # Two thirds of the rows do not match. If the filter disabled itself after the first row group,

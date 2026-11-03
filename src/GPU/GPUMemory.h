@@ -8,9 +8,14 @@
 
 #include <base/defines.h>
 
-#include <cuda/memory_pool>
 #include <cuda_runtime_api.h>
-#include <rmm/cuda_stream_view.hpp>
+
+#include <array>
+#include <tuple>
+#include <utility>
+
+#include <cuda/memory_pool>
+#include <cuda/stream_ref>
 
 #include <boost/noncopyable.hpp>
 
@@ -83,7 +88,7 @@ char * growBy(PinnedBuffer & buffer, size_t bytes);
 void appendHostBytes(PinnedBuffer & buffer, std::string_view bytes);
 
 /// Queues a copy of `bytes` bytes from the device to the end of `buffer`, which they fill once `stream` is done.
-void appendFromDevice(PinnedBuffer & buffer, const char * device_bytes, size_t bytes, rmm::cuda_stream_view stream);
+void appendFromDevice(PinnedBuffer & buffer, const char * device_bytes, size_t bytes, cuda::stream_ref stream);
 
 inline std::string_view bytesOf(const PinnedBuffer & buffer)
 {
@@ -95,7 +100,7 @@ inline std::string_view bytesOf(const PinnedBuffer & buffer)
 class DeviceBuffer
 {
 public:
-    explicit DeviceBuffer(rmm::cuda_stream_view stream_) : stream(stream_) { }
+    explicit DeviceBuffer(cuda::stream_ref stream_) : stream(stream_) { }
     ~DeviceBuffer();
 
     DeviceBuffer(DeviceBuffer && other) noexcept;
@@ -118,7 +123,7 @@ public:
     bool empty() const { return used == 0; }
 
 private:
-    rmm::cuda_stream_view stream;
+    cuda::stream_ref stream;
     char * memory = nullptr;
     size_t capacity = 0;
     size_t used = 0;

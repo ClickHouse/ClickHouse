@@ -1,8 +1,10 @@
 #pragma once
 
 #include <base/types.h>
+#include <base/unaligned.h>
 #include <Common/HyperLogLogBiasEstimator.h>
 #include <Common/CompactArray.h>
+#include <Common/Exception.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/transformEndianness.h>
 
@@ -10,14 +12,19 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
 
+#include <algorithm>
 #include <bit>
 #include <cmath>
+#include <cstring>
+#include <limits>
 #include <string>
+#include <type_traits>
 
 namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
 }
 }
@@ -149,6 +156,20 @@ private:
     T denominator;
 };
 
+/// Returns ∑ rank_count[i] * 2^-i, i < size, rounded once to T: the sum times 2^(size - 1) is an integer below 2^(32 + size).
+/// The UInt32 counts may be unaligned (`Denominator` is packed).
+template <typename T, size_t size>
+T sumRankCountsAsInteger(const void * rank_count)
+{
+    static_assert(size - 1 < 64);
+    using Sum = std::conditional_t<32 + size <= 64, UInt64, unsigned __int128>;
+    Sum sum = 0;
+    for (size_t i = 0; i < size; ++i)
+        sum = (sum << 1) + unalignedLoad<UInt32>(static_cast<const char *>(rank_count) + i * sizeof(UInt32));
+    static constexpr T scale = static_cast<T>(1.0 / static_cast<double>(1ULL << (size - 1)));
+    return static_cast<T>(sum) * scale;
+}
+
 /// Fully-functional version of expression's denominator for HyperLogLog algorithm.
 /// Spends more space that lightweight version. Estimates will always be stable.
 /// Used when rank storage is big.
@@ -178,15 +199,44 @@ public:
         memset(rank_count, 0, size * sizeof(UInt32));
     }
 
+    /// Adds deltas[i] to the count of rank i, modulo 2^32 like `update`.
+    void addToRankCounts(const Int32 * deltas)
+    {
+        for (size_t i = 0; i < size; ++i)
+            rank_count[i] += static_cast<UInt32>(deltas[i]);
+    }
+
+    void setRankCounts(const UInt32 * counts)
+    {
+        memcpy(rank_count, counts, size * sizeof(UInt32));
+    }
+
     DenominatorType get() const
     {
-        long double val = rank_count[size - 1];
-        for (int i = size - 2; i >= 0; --i)
+        /// Where long double holds the whole integer sum (eg aarch64 Linux, x86 with 32-bit hashes), the loop below is exact,
+        /// so the integer sum gives the same result. Elsewhere (eg x86 with 64-bit hashes, ppc64le) the loop can round, so it stays.
+        if constexpr (std::numeric_limits<long double>::is_iec559 && std::numeric_limits<long double>::digits >= 32 + size)
+            return sumRankCountsAsInteger<DenominatorType, size>(rank_count);
+        else
         {
-            val /= 2.0L;
-            val += rank_count[i];
+            long double val = rank_count[size - 1];
+            for (int i = size - 2; i >= 0; --i)
+            {
+                val /= 2.0L;
+                val += rank_count[i];
+            }
+            return static_cast<DenominatorType>(val);
         }
-        return static_cast<DenominatorType>(val);
+    }
+
+    /// Only the counts are checked, not the registers: a state whose registers disagree with its counts passes, and
+    /// merging into it can make its counts wrap, so the merged state then fails this check.
+    bool countsAddUp(UInt64 bucket_count, UInt64 zeros) const
+    {
+        UInt64 sum = 0;
+        for (size_t i = 0; i < size; ++i)
+            sum += rank_count[i];
+        return sum == bucket_count && rank_count[0] == zeros;
     }
 
 private:
@@ -238,6 +288,36 @@ struct RankWidth<UInt64>
     }
 };
 
+/// The maximum of two groups of 8 registers of `width` bits; bit i of `raised` is set when register i of rhs is above that of lhs.
+/// Even and odd registers are compared apart, so that every field has free bits above it for the borrow of the subtraction.
+template <UInt8 width>
+UInt64 maxOfGroups(UInt64 lhs, UInt64 rhs, UInt64 & raised)
+{
+    static_assert(width >= 5 && 8 * width <= 64);
+    constexpr size_t slot = 2 * width;
+    constexpr UInt64 field = (1ULL << width) - 1;
+    constexpr UInt64 ones = 1ULL | 1ULL << slot | 1ULL << (2 * slot) | 1ULL << (3 * slot);
+    constexpr UInt64 even = ones * field;
+    constexpr UInt64 guard = ones << width;
+
+    const UInt64 lhs_even = lhs & even;
+    const UInt64 lhs_odd = (lhs >> width) & even;
+    const UInt64 rhs_even = rhs & even;
+    const UInt64 rhs_odd = (rhs >> width) & even;
+
+    /// The guard bit above a field survives the subtraction exactly where lhs >= rhs.
+    const UInt64 less_even = (~((lhs_even | guard) - rhs_even) & guard) >> width;
+    const UInt64 less_odd = (~((lhs_odd | guard) - rhs_odd) & guard) >> width;
+    const UInt64 max_even = lhs_even ^ ((lhs_even ^ rhs_even) & (less_even * field));
+    const UInt64 max_odd = lhs_odd ^ ((lhs_odd ^ rhs_odd) & (less_odd * field));
+
+    /// The flags of registers 2j and 2j + 1 are at bits j * slot and j * slot + 1; the product moves them to bits 2j and 2j + 1 of one byte.
+    constexpr size_t gather_shift = 3 * (slot - 2);
+    constexpr UInt64 gather = 1ULL | 1ULL << (slot - 2) | 1ULL << (2 * (slot - 2)) | 1ULL << gather_shift;
+    raised = (((less_even | less_odd << 1) * gather) >> gather_shift) & 0xFF;
+    return max_even | max_odd << width;
+}
+
 }
 
 
@@ -276,6 +356,8 @@ private:
 
     /// Size of counter's rank in bits.
     static constexpr UInt8 rank_width = details::RankWidth<HashValueType>::get();
+    static constexpr size_t register_values = 1ULL << rank_width;
+    static constexpr UInt64 register_mask = register_values - 1;
 
     using Value = UInt64;
     using RankStore = DB::CompactArray<HashValueType, rank_width, bucket_count>;
@@ -321,14 +403,24 @@ public:
 
         double final_estimate = fixRawEstimate(raw_estimate);
 
+        if (final_estimate < 0)
+            throw DB::Exception(DB::ErrorCodes::INCORRECT_DATA, "Corrupted HyperLogLog state: the estimate {} is negative", final_estimate);
+        /// For 64-bit hashes the estimate of a valid state can exceed the range of UInt64.
+        if (final_estimate + 0.5 >= 0x1p64)
+            return std::numeric_limits<UInt64>::max();
         return static_cast<UInt64>(final_estimate + 0.5); /// NOLINT
     }
 
     void merge(const HyperLogLogCounter & rhs)
     {
-        const auto & rhs_rank_store = rhs.rank_store;
-        for (HashValueType bucket = 0; bucket < bucket_count; ++bucket)
-            update(bucket, rhs_rank_store[bucket]);
+        if constexpr (details::isBigRankStore(precision) && denominator_mode == DenominatorMode::StableIfBig)
+            mergeGroups(rhs);
+        else
+        {
+            const auto & rhs_rank_store = rhs.rank_store;
+            for (HashValueType bucket = 0; bucket < bucket_count; ++bucket)
+                update</* check_rank = */ true>(bucket, rhs_rank_store[bucket]);
+        }
     }
 
     void read(DB::ReadBuffer & in)
@@ -356,6 +448,16 @@ public:
 
             in.readStrict(reinterpret_cast<char *>(&zeros), sizeof(ZerosCounterType));
             DB::transformEndianness<std::endian::native, std::endian::little>(zeros);
+        }
+
+        if constexpr (details::isBigRankStore(precision) && denominator_mode == DenominatorMode::StableIfBig)
+        {
+            if (!denominator.countsAddUp(bucket_count, zeros))
+                throw DB::Exception(
+                    DB::ErrorCodes::INCORRECT_DATA,
+                    "Corrupted HyperLogLog state: the rank counts do not add up to the number of buckets {} or the count of rank 0 "
+                    "is not the stored number of zero registers {}",
+                    bucket_count, zeros);
         }
     }
 
@@ -455,16 +557,144 @@ private:
 
     /// Update maximum rank for current bucket.
     /// ALWAYS_INLINE is required to have better code layout for uniqCombined function
+    /// A rank from another state is checked: a corrupted state can have ranks above `max_rank`, the last index of `rank_count`.
+    template <bool check_rank = false>
     void ALWAYS_INLINE update(HashValueType bucket, UInt8 rank)
     {
         UInt8 cur_rank = rank_store.get(bucket);
 
         if (rank > cur_rank)
         {
+            if constexpr (check_rank)
+            {
+                if (unlikely(rank > max_rank))
+                    throwRankAboveMax(rank);
+            }
+
             if (cur_rank == 0)
                 --zeros;
             denominator.update(cur_rank, rank);
             rank_store.set(bucket, rank);
+        }
+    }
+
+    /// 8 registers take exactly `rank_width` bytes, a block of 8 such groups holds 64 registers.
+    void mergeGroups(const HyperLogLogCounter & rhs)
+    {
+        static constexpr size_t block_size = 8 * rank_width;
+        static constexpr size_t block_count = RankStore::serializedSize() / block_size;
+        static_assert(RankStore::serializedSize() % block_size == 0);
+        /// When the first blocks raise many registers, the counts are rebuilt from all the registers instead of moved one by one.
+        static constexpr size_t sample_blocks = std::min<size_t>(32, block_count / 8);
+        static constexpr size_t rebuild_threshold = 12 * sample_blocks;
+
+        UInt8 * dst = rank_store.getSerializableState().data();
+        const UInt8 * src = rhs.rank_store.getSerializableState().data();
+
+        Int32 deltas[max_rank + 1] = {};
+        size_t raised = 0;
+        size_t block = 0;
+        for (; block < sample_blocks; ++block)
+            raised += mergeBlock(dst + block * block_size, src + block * block_size, deltas);
+
+        if (raised > rebuild_threshold)
+        {
+            /// Four histograms, so that increments of the same rank in neighbouring registers do not wait for each other.
+            /// They cover every value a register can hold.
+            UInt32 histograms[4][register_values] = {};
+            for (size_t b = 0; b < sample_blocks; ++b)
+                for (size_t g = 0; g < 8; ++g)
+                    countRanks(loadGroup(dst + b * block_size + g * rank_width), histograms);
+            for (; block < block_count; ++block)
+                mergeBlockAndCount(dst + block * block_size, src + block * block_size, histograms);
+
+            UInt32 counts[register_values];
+            for (size_t rank = 0; rank < register_values; ++rank)
+                counts[rank] = histograms[0][rank] + histograms[1][rank] + histograms[2][rank] + histograms[3][rank];
+            for (size_t rank = max_valid_rank + 1; rank < register_values; ++rank)
+                if (unlikely(counts[rank] != 0))
+                    throwRankAboveMax(rank);
+            denominator.setRankCounts(counts);
+            zeros = static_cast<ZerosCounterType>(counts[0]);
+            return;
+        }
+
+        for (; block < block_count; ++block)
+            mergeBlock(dst + block * block_size, src + block * block_size, deltas);
+        denominator.addToRankCounts(deltas);
+        zeros = static_cast<ZerosCounterType>(static_cast<Int64>(zeros) + deltas[0]);
+    }
+
+    static UInt64 loadGroup(const UInt8 * data)
+    {
+        UInt64 group = 0;
+        memcpy(&group, data, rank_width);
+        DB::transformEndianness<std::endian::native, std::endian::little>(group);
+        return group;
+    }
+
+    static void storeGroup(UInt8 * data, UInt64 group)
+    {
+        DB::transformEndianness<std::endian::little, std::endian::native>(group);
+        memcpy(data, &group, rank_width);
+    }
+
+    static void countRanks(UInt64 group, UInt32 (&histograms)[4][register_values])
+    {
+        for (size_t i = 0; i < 8; ++i)
+            ++histograms[i % 4][(group >> (i * rank_width)) & register_mask];
+    }
+
+    [[noreturn]] static void throwRankAboveMax(UInt64 rank)
+    {
+        throw DB::Exception(
+            DB::ErrorCodes::INCORRECT_DATA, "Corrupted HyperLogLog state: rank {} is above the maximum rank {}", rank, max_rank);
+    }
+
+    /// Merges a block of rhs into lhs, moves the counts of the registers it raises in `deltas` and returns how many it raises.
+    static ALWAYS_INLINE size_t mergeBlock(UInt8 * dst, const UInt8 * src, Int32 * deltas)
+    {
+        UInt64 lhs_groups[8];
+        UInt64 groups[8];
+        UInt64 raised = 0;
+        for (size_t g = 0; g < 8; ++g)
+        {
+            UInt64 lanes = 0;
+            lhs_groups[g] = loadGroup(dst + g * rank_width);
+            groups[g] = details::maxOfGroups<rank_width>(lhs_groups[g], loadGroup(src + g * rank_width), lanes);
+            raised |= lanes << (g * 8);
+        }
+        if (raised == 0)
+            return 0;
+
+        for (size_t g = 0; g < 8; ++g)
+            storeGroup(dst + g * rank_width, groups[g]);
+
+        const size_t count = std::popcount(raised);
+        while (raised)
+        {
+            const size_t bit = std::countr_zero(raised);
+            raised &= raised - 1;
+            const size_t shift = (bit % 8) * rank_width;
+            const UInt64 cur_rank = (lhs_groups[bit / 8] >> shift) & register_mask;
+            const UInt64 rank = (groups[bit / 8] >> shift) & register_mask;
+            if (unlikely(rank > max_valid_rank))
+                throwRankAboveMax(rank);
+            --deltas[cur_rank];
+            ++deltas[rank];
+        }
+        return count;
+    }
+
+    static ALWAYS_INLINE void mergeBlockAndCount(UInt8 * dst, const UInt8 * src, UInt32 (&histograms)[4][register_values])
+    {
+        for (size_t g = 0; g < 8; ++g)
+        {
+            UInt64 raised = 0;
+            const UInt64 group = details::maxOfGroups<rank_width>(loadGroup(dst + g * rank_width), loadGroup(src + g * rank_width), raised);
+            if (raised)
+                storeGroup(dst + g * rank_width, group);
+            countRanks(group, histograms);
         }
     }
 
@@ -549,6 +779,7 @@ private:
     }
 
     static constexpr int max_rank = sizeof(HashValueType) * 8 - precision + 1;
+    static constexpr UInt64 max_valid_rank = max_rank;
 
     RankStore rank_store;
 

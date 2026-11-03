@@ -16,6 +16,11 @@ SELECT 'scalar', countIf(match(explain, 'Memory: bytes [1-9]')) = 1
 FROM (EXPLAIN ANALYZE SELECT uniqExact(number) FROM numbers_mt(100000)
     SETTINGS count_distinct_optimization = 0);
 
+-- The second run preallocates the states from the statistics of the first one, they are still tracked.
+SELECT 'scalar_second_run', countIf(match(explain, 'Memory: bytes [1-9]')) = 1
+FROM (EXPLAIN ANALYZE SELECT uniqExact(number) FROM numbers_mt(100000)
+    SETTINGS count_distinct_optimization = 0);
+
 -- Parts that predate the projection are aggregated from scratch, so the projection step tracks them.
 DROP TABLE IF EXISTS t_agg_proj;
 CREATE TABLE t_agg_proj (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY tuple();
