@@ -34,8 +34,10 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
     auto configuration = Base::getConfiguration(context);
     const auto & client_info = context->getClientInfo();
 
-    const bool infer_locked_structure = client_info.query_kind != ClientInfo::QueryKind::SECONDARY_QUERY && !is_insert_query
-        && configuration->structure_not_overridable && !clusterHasSecret(context, ITableFunctionCluster<Base>::cluster_name);
+    const bool is_secondary_query = client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+    const bool cluster_has_secret = !is_secondary_query && clusterHasSecret(context, ITableFunctionCluster<Base>::cluster_name);
+    const bool infer_locked_structure = !is_secondary_query && !is_insert_query && configuration->structure_not_overridable
+        && !cluster_has_secret;
 
     ColumnsDescription columns;
     if (configuration->structure != "auto")
@@ -48,7 +50,7 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
     auto object_storage = Base::getObjectStorage(context, !is_insert_query);
     StoragePtr storage;
 
-    if (client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+    if (is_secondary_query)
     {
         /// Like urlCluster/fileCluster, always request a distributed read on a secondary query and
         /// let the initiator decide: it serves the read task when it installed an iterator (the
@@ -85,7 +87,10 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
             ConstraintsDescription{},
             Base::partition_by,
             context,
-            /* is_table_function */true);
+            /* is_table_function */true,
+            /* format_settings_ */ std::nullopt,
+            /* catalog_ */ nullptr,
+            /* cluster_has_secret_ */ cluster_has_secret);
     }
 
     storage->startup();

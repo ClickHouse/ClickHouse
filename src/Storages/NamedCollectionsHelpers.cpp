@@ -242,7 +242,8 @@ bool isSecondaryQueryAuthenticatedByClusterSecret(const ContextPtr & context)
 
 bool clusterHasSecret(const ContextPtr & context, const String & cluster_name)
 {
-    return !context->getCluster(cluster_name)->getSecret().empty();
+    const auto cluster = context->tryGetCluster(cluster_name);
+    return cluster && !cluster->getSecret().empty();
 }
 
 void addInferredFormatAndStructureToNamedCollectionArgs(

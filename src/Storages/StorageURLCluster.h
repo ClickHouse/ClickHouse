@@ -26,7 +26,8 @@ public:
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        const StorageURL::Configuration & configuration_);
+        const StorageURL::Configuration & configuration_,
+        bool cluster_has_secret_);
 
     std::string getName() const override { return "URLCluster"; }
 
@@ -47,6 +48,8 @@ private:
 
     String uri;
     String format_name;
+    /// Whether the cluster had a secret when the columns were chosen: a locked key is sent to the nodes only then.
+    const bool cluster_has_secret;
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
 };
 

@@ -21,7 +21,8 @@ public:
         ContextPtr context_,
         bool is_table_function_ = false,
         std::optional<FormatSettings> format_settings_ = std::nullopt,
-        std::shared_ptr<DataLake::ICatalog> catalog_ = nullptr);
+        std::shared_ptr<DataLake::ICatalog> catalog_ = nullptr,
+        bool cluster_has_secret_ = false);
 
     /// Reads the existing `table_` with the given metadata. Shares its configuration, which is not initialized again.
     StorageObjectStorageCluster(
@@ -110,6 +111,8 @@ private:
     const ObjectStoragePtr object_storage;
     const std::optional<FormatSettings> format_settings;
     const std::shared_ptr<DataLake::ICatalog> catalog;
+    /// Whether the cluster had a secret when the columns were chosen: a locked key is sent to the nodes only then.
+    const bool cluster_has_secret = false;
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
     const ConstStoragePtr table;
 };
