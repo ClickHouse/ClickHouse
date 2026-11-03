@@ -37,7 +37,7 @@ DataManifestsRewriter::DataManifestsRewriter(
     SharedHeader sample_block_,
     String write_format_,
     Grouping grouping_)
-    : metadata_object(std::move(metadata_object_))
+    : metadata_object(metadata_object_)
     , persistent_table_components(persistent_table_components_)
     , object_storage(std::move(object_storage_))
     , context(std::move(context_))
