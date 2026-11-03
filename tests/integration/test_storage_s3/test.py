@@ -2938,6 +2938,41 @@ def test_page_cache(started_cluster):
     assert 0 < int(gets)
 
 
+def test_cache_key_includes_storage(started_cluster):
+    # The same key with the same content, so the same ETag, in another bucket or behind another endpoint:
+    # the filesystem cache and the page cache must not serve it the entry filled by the first object.
+    instance = started_cluster.instances["dummy"]
+    table_name = f"test_cache_key_includes_storage-{uuid.uuid4()}"
+    host = f"{started_cluster.minio_host}:{started_cluster.minio_port}"
+    ip = f"{started_cluster.minio_ip}:{started_cluster.minio_port}"
+
+    for bucket in [started_cluster.minio_bucket, started_cluster.minio_bucket_2]:
+        instance.query(
+            f"insert into function s3('http://{host}/{bucket}/{table_name}.tsv', auto, 'x UInt64') select number from numbers(100) SETTINGS s3_truncate_on_insert=1"
+        )
+
+    urls = [
+        f"http://{host}/{started_cluster.minio_bucket}/{table_name}.tsv",
+        f"http://{ip}/{started_cluster.minio_bucket}/{table_name}.tsv",
+        f"http://{host}/{started_cluster.minio_bucket_2}/{table_name}.tsv",
+    ]
+    for settings in ["filesystem_cache_name = 'cache1', enable_filesystem_cache=1", "use_page_cache_for_object_storage=1"]:
+        for url in urls:
+            query_id = f"{table_name}-{uuid.uuid4()}"
+            assert "100\n" == instance.query(
+                f"select sum(ignore(*) + 1) from s3('{url}', 'TSV', 'x UInt64') SETTINGS {settings}",
+                query_id=query_id,
+            )
+
+            instance.query("SYSTEM FLUSH LOGS")
+
+            assert 0 < int(
+                instance.query(
+                    f"SELECT ProfileEvents['S3GetObject'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+                )
+            )
+
+
 def test_archive(started_cluster):
     uuid.uuid4()
 
