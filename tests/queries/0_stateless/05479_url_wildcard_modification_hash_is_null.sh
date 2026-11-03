@@ -9,6 +9,10 @@
 # therefore be NULL for such a table, while the plain `URL` engine folds the final resource in
 # (see `05457_url_modification_hash_encoding_and_redirect`).
 
+# The test server does not support `Range` requests, so `WebObjectStorage` logs the warning
+# `Unable to read with range header` on every read; it is expected here.
+CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=error
+
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
