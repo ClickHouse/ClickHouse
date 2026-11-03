@@ -230,6 +230,35 @@ QueryTreeNodePtr prepareQueryAffectedQueryTree(const std::vector<MutationCommand
     return query_tree;
 }
 
+NameSet getColumnsRequiredToRecalculateTTL(const StorageInMemoryMetadata & metadata)
+{
+    NameSet res;
+    const auto & columns = metadata.getColumns();
+    auto add = [&](const TTLDescription & ttl)
+    {
+        for (const auto & column : ttl.expression_columns)
+            if (columns.hasPhysical(column.name))
+                res.insert(column.name);
+    };
+
+    if (metadata.hasRowsTTL())
+        add(metadata.getRowsTTL());
+    for (const auto & ttl : metadata.getRowsWhereTTLs())
+        add(ttl);
+    for (const auto & ttl : metadata.getGroupByTTLs())
+        add(ttl);
+    for (const auto & [name, ttl] : metadata.getColumnTTLs())
+        add(ttl);
+    for (const auto & ttl : metadata.getMoveTTLs())
+        add(ttl);
+    for (const auto & ttl : metadata.getRecompressionTTLs())
+        add(ttl);
+
+    return res;
+}
+
+}
+
 ColumnDependencies getAllColumnDependencies(
     const StorageMetadataPtr & metadata_snapshot,
     const NameSet & updated_columns,
@@ -254,8 +283,6 @@ ColumnDependencies getAllColumnDependencies(
     }
 
     return dependencies;
-}
-
 }
 
 
@@ -520,6 +547,11 @@ bool MutationsInterpreter::Source::hasBrokenProjection(const String & name) cons
     return part && part->hasBrokenProjection(name);
 }
 
+bool MutationsInterpreter::Source::hasUnloadedProjection(const String & name) const
+{
+    return part && part->hasUnloadedProjection(name);
+}
+
 bool MutationsInterpreter::Source::isCompactPart() const
 {
     return part && part->getType() == MergeTreeDataPartType::Compact;
@@ -665,6 +697,13 @@ static void validateUpdateColumns(
 
     const auto & storage_columns = storage_snapshot->metadata->columns;
     const auto & virtual_columns = storage_snapshot->metadata->virtuals;
+
+    /// The sign and version columns may be subcolumns, so recomputing the column they belong to changes them as well.
+    for (const auto & key_column : key_columns)
+    {
+        if (auto column = storage_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, key_column))
+            key_storage_columns.insert(column->getNameInStorage());
+    }
     for (const auto & column_name : updated_columns)
     {
         if (key_columns.contains(column_name))
@@ -1010,7 +1049,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         [&](const String & name, ColumnDependency::Kind kind)
     {
         if (kind == ColumnDependency::PROJECTION)
-            return source.hasProjection(name);
+            return source.hasProjection(name) || source.hasUnloadedProjection(name);
 
         if (kind == ColumnDependency::SKIP_INDEX)
             return source.hasSecondaryIndex(name, metadata_snapshot);
@@ -1683,6 +1722,16 @@ void MutationsInterpreter::prepare(bool dry_run)
     /// the freshly written value of the column it depends on.
     emit_materialized_recompute_stages(patch_affected_materialized, std::nullopt);
 
+    /// Without a TTL target the mutation only recalculates TTL infos (see `MutationHelpers::shouldExecuteTTL`),
+    /// and `TTLCalcTransform` evaluates every TTL rule, so it needs the inputs of all of them.
+    auto is_ttl_expression = [](const ColumnDependency & dependency) { return dependency.kind == ColumnDependency::TTL_EXPRESSION; };
+    auto is_ttl_target = [](const ColumnDependency & dependency) { return dependency.kind == ColumnDependency::TTL_TARGET; };
+    if (std::ranges::any_of(dependencies, is_ttl_expression) && std::ranges::none_of(dependencies, is_ttl_target))
+    {
+        for (const auto & name : getColumnsRequiredToRecalculateTTL(*metadata_snapshot))
+            dependencies.emplace(name, ColumnDependency::TTL_EXPRESSION);
+    }
+
     /// We care about affected indices and projections because we also need to rewrite them
     /// when one of index columns updated or filtered with delete.
     /// The same about columns, that are needed for calculation of TTL expressions.
@@ -1783,9 +1832,11 @@ void MutationsInterpreter::prepare(bool dry_run)
             {
                 LOG_DEBUG(logger, "Will rebuild commit-order projection {}", projection.name);
                 materialized_projections.insert(projection.name);
+                continue;
             }
 
-            continue;
+            if (!source.hasUnloadedProjection(projection.name))
+                continue;
         }
 
         /// Always rebuild broken projections.

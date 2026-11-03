@@ -1,7 +1,6 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/79345
 -- The depth of a GLOBAL IN / GLOBAL JOIN subquery must count enclosing subqueries, not query tree nodes.
 
-SET enable_analyzer = 1;
 SET max_subquery_depth = 1;
 
 SELECT count()

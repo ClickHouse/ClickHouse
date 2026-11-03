@@ -19,7 +19,7 @@ echo "CREATE TABLE ${CLICKHOUSE_TABLE} (id UInt64, data String, ts UInt64, value
 
 (
 i=1
-while true; do
+while clickhouse_test_time_left; do
     ts=$(date +%s)
     echo "$i,hello-$i,$ts,3" || exit 0
     ((i++))
