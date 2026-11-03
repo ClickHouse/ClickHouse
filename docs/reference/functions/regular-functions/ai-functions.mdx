@@ -28,6 +28,7 @@ All functions are sharing a common infrastructure that provides:
 
 - **Quota enforcement**: Per-query limits on tokens ([`ai_function_max_input_tokens_per_query`](/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query), [`ai_function_max_output_tokens_per_query`](/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query)) and API calls ([`ai_function_max_api_calls_per_query`](/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query)).
 - **Retry with backoff**: Transient failures are retried ([`ai_function_max_retries`](/reference/settings/session-settings/ai-function#ai_function_max_retries)) with exponential backoff ([`ai_function_retry_initial_delay_ms`](/reference/settings/session-settings/ai-function#ai_function_retry_initial_delay_ms)).
+- **Concurrent requests**: Requests are issued from a server-wide thread pool, several at a time (controlled by [`ai_function_max_concurrent_requests_per_thread`](/reference/settings/session-settings/ai-function#ai_function_max_concurrent_requests_per_thread)).
 
 ## Configuration {#configuration}
 
@@ -156,6 +157,35 @@ By default, AI functions reject an `endpoint` that would send data in cleartext 
 
 Note that in either case the provider receives the input data in cleartext after TLS termination; TLS protects the data only on the network path between the server and the provider.
 
+### Throughput {#throughput}
+
+The AI functions differ from most traditional ClickHouse functions in that their throughput is almost entirely bound by the remote endpoint they send requests to rather than local CPU or I/O. Because of this they benefit significantly from increased concurrency above the standard `max_threads` used throughout ClickHouse. For this reason the requests are issued from a dedicated server-wide thread pool. Its size (`ai_function_max_thread_pool_size`, a server setting) caps how many AI provider requests the whole server has in flight at once, across every query.
+
+[`ai_function_max_concurrent_requests_per_thread`](/reference/settings/session-settings/ai-function#ai_function_max_concurrent_requests_per_thread) bounds each query thread's share of that pool, so a query running on several threads (at most `max_threads`) can have up to that many requests in flight per thread. To stop queries from raising it, put a ceiling on the setting with a [settings profile constraint](/concepts/features/configuration/settings/constraints-on-settings). The ceiling is still per thread, so a query can have up to the ceiling times its number of threads in flight. For example:
+
+```xml
+<profiles>
+    <default>
+        <constraints>
+            <ai_function_max_concurrent_requests_per_thread>
+                <max>16</max>
+            </ai_function_max_concurrent_requests_per_thread>
+        </constraints>
+    </default>
+</profiles>
+```
+
+The default is `8`. A value above `1` loosens two guarantees:
+
+- A request's token usage is only known once its response arrives, so [`ai_function_max_input_tokens_per_query`](/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query) and [`ai_function_max_output_tokens_per_query`](/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query) may overshoot by one request's worth per request in flight, rather than by one request's worth in total.
+- A wave of requests is dispatched before any of their errors is seen, so a query that fails on its first row may still have issued, and been billed for, as many requests as the concurrency allows.
+
+[`ai_function_max_api_calls_per_query`](/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query) is unaffected and stays an exact cap, because a slot is reserved before each request is dispatched.
+
+<Note>
+For a materialized view, the settings must go on the `INSERT` that feeds the view's source table, not on the `CREATE MATERIALIZED VIEW` statement: the quotas are read from the top-level query, and a `SETTINGS` clause in a view definition is ignored.
+</Note>
+
 ## Supported providers {#supported-providers}
 
 | Provider | `provider` value | Chat functions | Notes |
@@ -170,23 +200,48 @@ AI function activity is tracked through ClickHouse [ProfileEvents](/reference/sy
 | ProfileEvent | Description |
 |-------|-------------|
 | `AIAPICalls` | Number of HTTP requests made to the AI provider. |
-| `AIInputTokens` | Total input tokens consumed. |
+| `AIInputTokens` | Total input tokens consumed, including cache reads and writes. |
 | `AIOutputTokens` | Total output tokens consumed. |
+| `AICacheReadTokens` | Input tokens read from the provider's prompt cache. |
+| `AICacheWriteTokens` | Input tokens written to the provider's prompt cache. |
+| `AIRequestMicroseconds` | Total time spent in AI provider calls (request serialization, HTTP round trip, response parsing), including failed attempts, excluding retry backoff. |
+| `AIRetryBackoffMicroseconds` | Total time spent waiting before retries of failed AI provider calls. |
 | `AIRowsProcessed` | Number of rows that received a result. |
 | `AIRowsSkipped` | Number of rows skipped (quota exceeded, or error with `ai_function_throw_on_error = 0`). |
+
+Times are summed across executions and threads, so they can exceed query wall-clock time.
+Divide `AIRequestMicroseconds` by `AIAPICalls` to get mean request latency, including failed attempts.
+These counters are per-query, they do not provide per-request latency information.
+If a query calls multiple AI functions, their counts are added together.
+
+Cache counters are subsets of `AIInputTokens`, not additional tokens. They report provider-emitted cache reads/writes, not any internal ClickHouse caching. A provider that omits cache usage contributes
+zero cache tokens.
 
 Query these events:
 
 ```sql
+SYSTEM FLUSH LOGS;
+
 SELECT
+    query_duration_ms,
     ProfileEvents['AIAPICalls'] AS api_calls,
+    ProfileEvents['AIRequestMicroseconds'] / 1000 AS request_ms,
+    request_ms / nullIf(api_calls, 0) AS mean_request_ms,
+    ProfileEvents['AIRetryBackoffMicroseconds'] / 1000 AS retry_backoff_ms,
+    ProfileEvents['AIRowsProcessed'] AS rows_processed,
+    ProfileEvents['AIRowsSkipped'] AS rows_skipped,
     ProfileEvents['AIInputTokens'] AS input_tokens,
-    ProfileEvents['AIOutputTokens'] AS output_tokens
+    ProfileEvents['AIOutputTokens'] AS output_tokens,
+    ProfileEvents['AICacheReadTokens'] AS cache_read_tokens,
+    ProfileEvents['AICacheWriteTokens'] AS cache_write_tokens
 FROM system.query_log
 WHERE query_id = 'query_id'
-AND type = 'QueryFinish'
+AND type IN ('QueryFinish', 'ExceptionWhileProcessing')
 ORDER BY event_time DESC;
 ```
+
+`log_queries` and `log_profile_events` are enabled by default to record these events in `system.query_log`.
+Server-wide totals are also available in `system.events`.
 
 {/*
 The inner content of the tags below are replaced at doc framework build time with
