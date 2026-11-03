@@ -935,6 +935,12 @@ def test_create(started_cluster):
     assert "`x` String" in node.query(f"SHOW CREATE TABLE {table_ref}")
     assert node.query(f"SELECT * FROM {table_ref}") == "AAPL\n"
 
+    # `storage_endpoint` without the bucket: metadata reads must use the table's bucket.
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME, additional_settings={"storage_endpoint": "http://minio1:9001"})
+    assert "`x` String" in node.query(f"SHOW CREATE TABLE {table_ref}")
+    node.query(f"INSERT INTO {table_ref} VALUES ('MSFT');", settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1})
+    assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "AAPL\nMSFT\n"
+
 
 def test_create_preserves_nested_names_and_uuid_on_reopen(started_cluster):
     node = started_cluster.instances["node1"]

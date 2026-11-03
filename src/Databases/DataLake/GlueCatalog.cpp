@@ -598,10 +598,36 @@ size_t GlueCatalog::CachedSchemaWeightFunction::operator()(const CachedSchema & 
 
 GlueCatalog::ObjectStorageWithPath GlueCatalog::createObjectStorageForEarlyTableAccess(const String & s3_location, const TableMetadata & table_metadata) const
 {
+    /// Parse S3 path to extract bucket and table path
+    String table_path = s3_location;
+    if (table_path.starts_with("s3://"))
+        table_path = table_path.substr(5);
+    else if (table_path.starts_with("s3:/"))
+        table_path = table_path.substr(4);
+
+    std::size_t pos = table_path.find('/');
+    String bucket_name;
+    if (pos != std::string::npos)
+    {
+        bucket_name = table_path.substr(0, pos);
+        table_path = table_path.substr(pos + 1);
+    }
+
+    if (table_path.ends_with('/'))
+        table_path = table_path.substr(0, table_path.size() - 1);
+
     DB::ASTStorage * storage = table_engine_definition->as<DB::ASTStorage>();
     DB::ASTs args = storage->engine->arguments->children;
 
-    String storage_endpoint = !settings.storage_endpoint.empty() ? settings.storage_endpoint : s3_location;
+    /// Add the table's bucket to `storage_endpoint` the same way `DatabaseDataLake::getStorageEndpointForTable` does.
+    String storage_endpoint = s3_location;
+    if (!settings.storage_endpoint.empty())
+    {
+        TableMetadata bucket_location = TableMetadata().withLocation();
+        bucket_location.setLocation("s3://" + bucket_name);
+        storage_endpoint = bucket_location.getLocationWithEndpoint(settings.storage_endpoint, DB::S3UriStyle::AUTO);
+    }
+
     if (args.empty())
         args.emplace_back(DB::make_intrusive<DB::ASTLiteral>(storage_endpoint));
     else
@@ -626,24 +652,6 @@ GlueCatalog::ObjectStorageWithPath GlueCatalog::createObjectStorageForEarlyTable
     DB::StorageObjectStorageConfiguration::initialize(*configuration, args, getContext(), false);
 
     auto object_storage = configuration->createObjectStorage(getContext(), true, {});
-
-    /// Parse S3 path to extract bucket and table path
-    String table_path = s3_location;
-    if (table_path.starts_with("s3://"))
-        table_path = table_path.substr(5);
-    else if (table_path.starts_with("s3:/"))
-        table_path = table_path.substr(4);
-
-    std::size_t pos = table_path.find('/');
-    String bucket_name;
-    if (pos != std::string::npos)
-    {
-        bucket_name = table_path.substr(0, pos);
-        table_path = table_path.substr(pos + 1);
-    }
-
-    if (table_path.ends_with('/'))
-        table_path = table_path.substr(0, table_path.size() - 1);
 
     return {object_storage, bucket_name, table_path};
 }
