@@ -1,0 +1,6 @@
+SELECT * FROM url('https://example.com/api', 'JSONLines', headers('Content-Type' = '[HIDDEN]'), body('[HIDDEN]'))
+SELECT * FROM url('https://example.com/api', 'JSONLines', body('[HIDDEN]'))
+SELECT * FROM url('https://example.com/api', 'JSONLines', body('[HIDDEN]'))
+SELECT * FROM urlCluster('test_cluster', 'https://example.com/api', 'JSONLines', body('[HIDDEN]'))
+SELECT * FROM url(url_creds, body('[HIDDEN]'))
+CREATE TABLE test_url (`key` UInt64) ENGINE = URL('https://example.com/api', 'JSONLines', body('[HIDDEN]'))

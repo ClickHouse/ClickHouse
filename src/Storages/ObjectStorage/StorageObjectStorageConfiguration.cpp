@@ -10,6 +10,7 @@
 #include <Core/Settings.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/Common.h>
+#include <Parsers/ASTFunction.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 #include <Storages/StorageURL.h>
 #include <IO/CompressionMethod.h>
@@ -34,6 +35,27 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsFileLikeEngineDefaultPartitionStrategy file_like_engine_default_partition_strategy;
+}
+
+namespace
+{
+
+/// `body(...)` is supported only by the `url` table function (it forms the HTTP request body). Object
+/// storages have no request-body semantics. The positional argument parsers reject it, but the
+/// named-collection path silently ignores non-`equals` function arguments (with the default
+/// `allow_named_collection_override_by_default = 1`), so reject it explicitly before that branch.
+void rejectBodyArgument(const ASTs & args)
+{
+    for (const auto & arg : args)
+    {
+        const auto * function = arg->as<ASTFunction>();
+        if (function && function->name == "body")
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The 'body' argument is supported only by the 'url' table function.");
+    }
+}
+
 }
 
 std::optional<String> StorageObjectStorageConfiguration::tryGetDiskConfigurationPrefix(
@@ -196,6 +218,9 @@ void StorageObjectStorageConfiguration::initialize(
     else if (auto named_collection = tryGetNamedCollectionWithOverrides(
                  engine_args, local_context, true, nullptr, table_id, /* settings= */ nullptr, configuration_to_initialize.is_replayed_definition))
     {
+        /// `fromNamedCollection` does not see the raw arguments, so an unsupported `body(...)` would be
+        /// silently dropped here. Reject it before taking the named-collection branch.
+        rejectBodyArgument(engine_args);
         configuration_to_initialize.fromNamedCollection(*named_collection, local_context);
 
         /// A base-URL setting (e.g. `s3_base`) rewrote a relative URL coming from the named
