@@ -1290,13 +1290,31 @@ static void splitAndModifyMutationCommands(
             }
             else if (command.type == MutationCommand::Type::DROP_COLUMN)
             {
-                /// Marker-only DROP/CLEAR has the same logical effect as physical data.
-                String marker_name = nameInPart(command.column_name);
-                if (part->getSerializationInfos().isMissingColumn(marker_name))
+                const auto name_in_part = nameInPart(command.column_name);
+                const bool share_nested = (*part->storage.getSettings())[MergeTreeSetting::share_nested_offsets];
+
+                auto push_drop = [&](MutationCommand drop)
                 {
                     if (command.clear)
-                        for_interpreter.push_back(command);
-                    for_file_renames.push_back(command);
+                        for_interpreter.push_back(drop);
+                    for_file_renames.push_back(std::move(drop));
+                };
+
+                /// Flattened Nested is stored as `n.x`. Dropping `n` must name those children,
+                /// or their files are hardlinked into the new part and the column reappears.
+                if (share_nested && part_columns.hasNested(name_in_part))
+                {
+                    for (const auto & nested_column : part_columns.getNested(name_in_part))
+                    {
+                        auto child_command = command;
+                        child_command.column_name = nested_column.name;
+                        push_drop(std::move(child_command));
+                    }
+                }
+                else if (part->getSerializationInfos().isMissingColumn(name_in_part))
+                {
+                    /// Marker-only DROP/CLEAR has the same logical effect as physical data.
+                    push_drop(command);
                 }
             }
         }

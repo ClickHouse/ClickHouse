@@ -2489,7 +2489,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         {
             if (all_columns.has(command.column_name) || (share_nested && all_columns.hasNested(command.column_name)))
             {
-                if (!command.clear) /// CLEAR column is Ok even if there are dependencies.
+                /// `CLEAR` and `IN PARTITION` keep the column for later commands in this ALTER.
+                if (!command.clear && !command.partition)
                 {
                     /// Check if we are going to DROP a column that some other columns depend on.
                     {
@@ -2518,8 +2519,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                             }
                         }
                     }
+                    all_columns.remove(command.column_name);
                 }
-                all_columns.remove(command.column_name);
             }
             else if (!command.if_exists)
             {

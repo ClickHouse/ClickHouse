@@ -26,3 +26,10 @@ CREATE TABLE t_readd_nested_skip (`n.a` UInt8, id UInt8) ENGINE = MergeTree ORDE
 ALTER TABLE t_readd_nested_skip DROP COLUMN IF EXISTS n, RENAME COLUMN IF EXISTS `n.a` TO m;
 DESC TABLE t_readd_nested_skip;
 DROP TABLE t_readd_nested_skip;
+
+DROP TABLE IF EXISTS t_readd_nested_wide;
+CREATE TABLE t_readd_nested_wide (id UInt8, n Nested(a UInt8)) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_readd_nested_wide VALUES (1, [7]);
+ALTER TABLE t_readd_nested_wide DROP COLUMN n, ADD COLUMN IF NOT EXISTS n Nested(a UInt8) SETTINGS mutations_sync = 2;
+SELECT id, `n.a` FROM t_readd_nested_wide;
+DROP TABLE t_readd_nested_wide;

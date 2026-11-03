@@ -13,3 +13,9 @@ DESC TABLE t;
 SELECT name FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 't' AND name = 'auto_minmax_index_x';
 
 DROP TABLE t;
+
+DROP TABLE IF EXISTS t_clear_then_rename;
+CREATE TABLE t_clear_then_rename (id UInt8) ENGINE = MergeTree ORDER BY id;
+ALTER TABLE t_clear_then_rename ADD COLUMN x UInt8, CLEAR COLUMN x, RENAME COLUMN IF EXISTS x TO id; -- { serverError DUPLICATE_COLUMN }
+DESC TABLE t_clear_then_rename;
+DROP TABLE t_clear_then_rename;
