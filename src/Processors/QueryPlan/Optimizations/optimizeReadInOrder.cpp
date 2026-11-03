@@ -128,21 +128,18 @@ struct FindReadingStepContext
     /// below it may be descended too. A gather reached any other way is a real boundary.
     bool inside_collapsing_exchange_pair = false;
 
+    /// The joins which must be pinned to their order-preserving mode by `keepLeftPipelineInOrder`
+    /// when the in-order read is installed. `FilledJoinStep` never appears here: a filled join
+    /// preserves the left order unconditionally and needs no pin.
     std::list<JoinStep *> joins_to_keep_in_order = {};
 
-    /// Set to true when the traversal tunnels through an order-preserving join - a `JoinStep`
-    /// or a `FilledJoinStep` (`StorageJoin` / Dictionary) - on the way to the reading step.
-    /// Both run one `JoiningTransform` per probe-side stream, so callers use this to keep the
-    /// per-stream reading pipeline parallel (see `passed_residual_cpu_step`). Unlike
-    /// `joins_to_keep_in_order` (which is limited to `JoinStep`, the only type that needs
-    /// `keepLeftPipelineInOrder`), this covers `FilledJoinStep` too: a filled join has no
-    /// build-side pipeline to synchronize with and preserves the probe order as is.
-    bool passed_order_preserving_join = false;
-
-    /// Set to true when the traversal passes through an order-preserving INNER JOIN. Unlike a
-    /// `LEFT` join, an inner join can discard probe-side rows, so sorting requires virtual rows
-    /// to choose the next input stream correctly.
-    bool passed_inner_order_preserving_join = false;
+    /// Every join the traversal descended through, filled or not. The join-specific guards (the
+    /// parallel-replica bailouts and the no-virtual-row INNER check) must see all of them: a
+    /// filled INNER join filters rows exactly like a plain one, so judging "went through a join"
+    /// by `joins_to_keep_in_order` alone would let filled joins bypass the guards. A non-empty list
+    /// also makes callers keep the per-stream reading pipeline parallel: each join runs one
+    /// `JoiningTransform` per probe-side stream (see `passed_residual_cpu_step`).
+    std::vector<const IJoin *> traversed_joins = {};
 
     /// Set to true when the traversal descends through an order-preserving step that performs
     /// per-row CPU work above the reading step (a residual `FilterStep`, i.e. a `WHERE` not pushed
@@ -246,27 +243,32 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node, FindReadingStepContext
         if (const auto * join_step = typeid_cast<const JoinStep *>(step))
             join_ptr = join_step->getJoin().get();
         if (const auto * join_step = typeid_cast<const FilledJoinStep *>(step))
+        {
             join_ptr = join_step->getJoin().get();
+            /// FilledJoinStep is expected to preserve left block order, thus no need to call
+            /// keepLeftPipelineInOrder. It also doesn't resize or modify the pipeline.
+            chassert(join_ptr->preservesLeftBlockOrder());
+        }
 
         if (join_ptr)
         {
             const auto & table_join = join_ptr->getTableJoin();
             auto kind = table_join.kind();
             auto strictness = table_join.strictness();
-            /// Grace hash join scatters rows into buckets by hash, destroying the input order.
-            /// PartialMergeJoin re-sorts left blocks by the join key, so it does not keep the left
-            /// stream's original order either (preservesLeftBlockOrder() == false).
+            /// Grace hash join scatters rows into buckets by hash, destroying the input order, so
+            /// it never preserves the left stream's order. `MergeJoin` and `SpillingHashJoin`
+            /// preserve it only on request: `canPreserveLeftBlockOrder` reports whether the later
+            /// `keepLeftPipelineInOrder` call can pin them to an order-preserving mode.
             /// We must not propagate read-in-order through joins that reorder rows.
             if ((strictness == JoinStrictness::Any || strictness == JoinStrictness::All) && isInnerOrLeft(kind)
-                && !join_ptr->hasDelayedBlocks() && join_ptr->preservesLeftBlockOrder())
+                && join_ptr->canPreserveLeftBlockOrder())
             {
                 auto * reading_step = findReadingStep(*node.children.front(), data);
                 if (reading_step)
                 {
-                    data.passed_order_preserving_join = true;
-                    data.passed_inner_order_preserving_join = data.passed_inner_order_preserving_join || kind == JoinKind::Inner;
-                    if (auto * join_step = typeid_cast<JoinStep *>(step))
-                        data.joins_to_keep_in_order.push_back(join_step);
+                    data.traversed_joins.push_back(join_ptr);
+                    if (auto * plain_join_step = typeid_cast<JoinStep *>(step))
+                        data.joins_to_keep_in_order.push_back(plain_join_step);
                 }
                 return reading_step;
             }
@@ -1462,7 +1464,7 @@ InputOrderInfoPtr buildInputOrderInfo(
         /// ("Replica decided to read in Default mode, not in WithOrder").
         /// Skip this optimization for parallel replicas when it goes through a JOIN,
         /// similar to the existing check for parallel replicas in the Union case.
-        if (reading->isParallelReadingFromReplicas() && find_reading_ctx.passed_order_preserving_join)
+        if (reading->isParallelReadingFromReplicas() && !find_reading_ctx.traversed_joins.empty())
             return nullptr;
 
         auto order_info = buildInputOrderFromSortDescription(
@@ -1486,7 +1488,18 @@ InputOrderInfoPtr buildInputOrderInfo(
             /// need virtual rows from every selected part to avoid excessive reading by the merge after the join.
             /// `LEFT ALL` and `LEFT ANY` preserve left rows.
             /// `query_plan_read_in_order_through_join = 'force'` accepts the over-read.
-            const bool join_requires_virtual_rows = find_reading_ctx.passed_inner_order_preserving_join;
+            /// This holds for filled joins (`FilledJoinStep`) just the same - an INNER Join-engine
+            /// table filters the ordered streams exactly like a plain INNER join - so the check
+            /// runs over every traversed join, not only the ones that need the in-order pin.
+            const bool join_requires_virtual_rows = std::ranges::any_of(
+                find_reading_ctx.traversed_joins,
+                [](const IJoin * join)
+                {
+                    const auto & table_join = join->getTableJoin();
+                    const auto strictness = table_join.strictness();
+                    return table_join.kind() != JoinKind::Left
+                        || (strictness != JoinStrictness::All && strictness != JoinStrictness::Any);
+                });
             if (join_requires_virtual_rows && optimization_settings.read_in_order_through_join != 2
                 && (!uses_virtual_row || !reading->everyPartHasVirtualRowBound(order_info.input_order->direction < 0)))
             {
@@ -1530,7 +1543,7 @@ InputOrderInfoPtr buildInputOrderInfo(
             /// `PrefetchingConcatProcessor` collapsed a single-part filtered read into one stream,
             /// all that per-stream join work would be serialized. Keep the streams parallel; they
             /// are merged later, in the `SortingStep` above the join.
-            if (find_reading_ctx.passed_order_preserving_join)
+            if (!find_reading_ctx.traversed_joins.empty())
                 reading->setPreferMultipleStreams();
 
             for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
@@ -1555,7 +1568,7 @@ InputOrderInfoPtr buildInputOrderInfo(
 
             /// Same as for the direct `ReadFromMergeTree` path above, forwarded to the child reads.
             /// The `LIMIT BY` opt-out is handled by `pushLimitByIntoSort`, see above.
-            if (find_reading_ctx.passed_residual_cpu_step || find_reading_ctx.passed_order_preserving_join)
+            if (find_reading_ctx.passed_residual_cpu_step || !find_reading_ctx.traversed_joins.empty())
                 merge->setPreferMultipleStreams();
 
             for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
@@ -1612,7 +1625,7 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
     {
         /// Same as above: skip aggregation-in-order through JOIN for parallel replicas
         /// to avoid coordination mode mismatch.
-        if (reading->isParallelReadingFromReplicas() && find_reading_ctx.passed_order_preserving_join)
+        if (reading->isParallelReadingFromReplicas() && !find_reading_ctx.traversed_joins.empty())
             return {};
 
         /// A follower forced to aggregate in order cannot use an aggregate projection and would read the base table.
@@ -1636,10 +1649,11 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
             /// Aggregation-in-order needs multiple parallel streams for parallel aggregation.
             /// Prevent PrefetchingConcatProcessor from collapsing them into one.
             reading->setPreferMultipleStreams();
+
+            for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
+                join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
         }
 
-        for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
-            join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
         return order_info;
     }
     if (auto * merge = typeid_cast<ReadFromMerge *>(reading_node->step.get()))
@@ -1764,7 +1778,7 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
     {
         /// Same as above: skip distinct-in-order through JOIN for parallel replicas
         /// to avoid coordination mode mismatch.
-        if (reading->isParallelReadingFromReplicas() && find_reading_ctx.passed_order_preserving_join)
+        if (reading->isParallelReadingFromReplicas() && !find_reading_ctx.traversed_joins.empty())
             return {};
 
         auto order_info = buildInputOrderFromUnorderedKeys(
@@ -2139,13 +2153,37 @@ void disableSpreadingSmallReadUnderFullSorting(QueryPlan::Node & node)
         || node.children.size() != 1)
         return;
 
-    QueryPlan::Node * child = node.children.front();
-    while ((typeid_cast<const ExpressionStep *>(child->step.get()) || typeid_cast<const FilterStep *>(child->step.get()))
-           && child->children.size() == 1)
-        child = child->children.front();
+    /// Nodes all of whose output streams reach the sorting.
+    std::vector<QueryPlan::Node *> stack{node.children.front()};
+    while (!stack.empty())
+    {
+        QueryPlan::Node * child = stack.back();
+        stack.pop_back();
+        IQueryPlanStep * step = child->step.get();
 
-    if (auto * reading = typeid_cast<ReadFromMergeTree *>(child->step.get()))
-        reading->disableSpreadingSmallRead();
+        if (auto * reading = typeid_cast<ReadFromMergeTree *>(step))
+        {
+            reading->disableSpreadingSmallRead();
+        }
+        else if (typeid_cast<UnionStep *>(step))
+        {
+            stack.insert(stack.end(), child->children.begin(), child->children.end());
+        }
+        else if (const auto * join_step = typeid_cast<const JoinStep *>(step))
+        {
+            /// A parallel join resizes its probe side to `max_streams`.
+            const auto & join = join_step->getJoin();
+            if (child->children.size() == 2 && join->pipelineType() == JoinPipelineType::FillRightFirst && !join->supportParallelJoin())
+                stack.push_back(child->children[join_step->swap_streams ? 1 : 0]);
+        }
+        else if (!child->children.empty()
+                 && (typeid_cast<ExpressionStep *>(step) || typeid_cast<FilterStep *>(step) || typeid_cast<ArrayJoinStep *>(step)
+                     || typeid_cast<FilledJoinStep *>(step) || typeid_cast<DelayedCreatingSetsStep *>(step)
+                     || typeid_cast<CreatingSetsStep *>(step)))
+        {
+            stack.push_back(child->children.front());
+        }
+    }
 }
 
 void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings & optimization_settings)
