@@ -936,18 +936,17 @@ bool SerializationTuple::supportsPooling() const
     return elems_support_pooling;
 }
 
-MutableColumnPtr SerializationTuple::wrapColumnForDeserialization(MutableColumnPtr column) const
+MutableColumnPtr SerializationTuple::createColumnForDeserialization(const IDataType & type) const
 {
-    /// Element serializations are `SerializationNamed` wrappers that forward to the real element serialization,
-    /// so kinds compose. `column` is freshly created, so its elements are not shared and can be wrapped in place.
-    auto & tuple = assert_cast<ColumnTuple &>(*column);
+    const auto & tuple_type = assert_cast<const DataTypeTuple &>(type);
+    if (elems.empty())
+        return tuple_type.createColumn();
+
+    /// Element serializations are `SerializationNamed` wrappers that forward to the real element serialization, so kinds compose.
+    MutableColumns tuple_columns(elems.size());
     for (size_t i = 0; i != elems.size(); ++i)
-    {
-        auto & element = tuple.getColumnPtr(i);
-        chassert(element->use_count() == 1);
-        element = elems[i]->wrapColumnForDeserialization(element->assumeMutable());
-    }
-    return column;
+        tuple_columns[i] = elems[i]->createColumnForDeserialization(*tuple_type.getElement(i));
+    return ColumnTuple::create(std::move(tuple_columns));
 }
 
 }
