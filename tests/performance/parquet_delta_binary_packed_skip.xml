@@ -1,0 +1,66 @@
+<!--
+    Within-page skips of `DELTA_BINARY_PACKED` `Int32` and `Int64` columns after `PREWHERE` on a separate `PLAIN` column.
+    `constant32` and `linear64` have zero-bit-width miniblocks; `residual32` and `residual64` have nonzero residuals.
+    The predicates skip one row in every 64, or 2048 rows in every 4096. Every page contains passing rows,
+    so whole-page pruning cannot replace the skips. The unfiltered variants are full-read controls.
+
+    The fixture has 8M rows, one page per column per 1M-row group, and an offset index. The offset index
+    keeps the reader on its row-range path instead of passing a row mask into the decoder, where mixed
+    masks reconstruct skipped delta values individually. Compression keeps the checked-in fixture small.
+    The ClickHouse writer does not produce `DELTA_BINARY_PACKED`. Generated with pyarrow 26.0.0 / numpy 2.4.6:
+
+        import numpy as np, pyarrow as pa, pyarrow.parquet as pq
+        n = 1 << 23
+        i = np.arange(n, dtype=np.int64)
+        residual = np.cumsum(np.tile(np.array([0, 1, 3, 2], dtype=np.int32), n // 4), dtype=np.int32)
+        schema = pa.schema([
+            pa.field('selector', pa.uint16(), nullable=False),
+            pa.field('constant32', pa.int32(), nullable=False),
+            pa.field('linear64', pa.int64(), nullable=False),
+            pa.field('residual32', pa.int32(), nullable=False),
+            pa.field('residual64', pa.int64(), nullable=False),
+        ])
+        table = pa.table({'selector': (i % 4096).astype(np.uint16), 'constant32': np.full(n, -17, dtype=np.int32),
+                          'linear64': 1000000000000 + 3 * i, 'residual32': residual,
+                          'residual64': 1000000000000 + residual.astype(np.int64)}, schema=schema)
+        pq.write_table(table, 'tests/performance/user_files/parquet_delta_binary_packed_skip.parquet',
+                       use_dictionary=False, compression='zstd', data_page_version='2.0',
+                       column_encoding={name: 'PLAIN' if name == 'selector' else 'DELTA_BINARY_PACKED' for name in schema.names},
+                       row_group_size=1 << 20, max_rows_per_page=1 << 20, data_page_size=1 << 30,
+                       write_page_index=True, write_statistics=False)
+-->
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+        <max_parsing_threads>1</max_parsing_threads>
+        <input_format_parquet_use_offset_index>1</input_format_parquet_use_offset_index>
+        <input_format_parquet_filter_push_down>0</input_format_parquet_filter_push_down>
+        <input_format_parquet_page_filter_push_down>0</input_format_parquet_page_filter_push_down>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>column</name>
+            <values>
+                <value>constant32</value>
+                <value>linear64</value>
+                <value>residual32</value>
+                <value>residual64</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>predicate</name>
+            <values>
+                <value>1</value>
+                <value>selector % 64 != 0</value>
+                <value>selector &gt;= 2048</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <query>
+        SELECT sum({column}) FROM file('parquet_delta_binary_packed_skip.parquet')
+        PREWHERE {predicate}
+        FORMAT Null
+    </query>
+</test>
