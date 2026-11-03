@@ -709,6 +709,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     if (global_ctx->metadata_snapshot->hasAnyTTL() && local_part_min_ttl && local_part_min_ttl <= global_ctx->time_of_merge)
         ctx->need_remove_expired_values = true;
 
+    const bool has_due_ttl = ctx->need_remove_expired_values;
+
     if (ctx->need_remove_expired_values && global_ctx->ttl_merges_blocker->isCancelled())
     {
         LOG_INFO(ctx->log, "Part {} has values with expired TTL, but merges with TTL are cancelled.", global_ctx->new_data_part->name);
@@ -892,6 +894,14 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
         const auto & columns_desc = global_ctx->metadata_snapshot->getColumns();
 
+        /// A due `TTL ... GROUP BY ... SET` assignment can give such a column non-default values. The TTL step
+        /// that expired columns add applies due TTLs even when TTL merges are stopped.
+        NameSet group_by_ttl_set_columns;
+        if (has_due_ttl)
+            for (const auto & group_by_ttl : global_ctx->metadata_snapshot->getGroupByTTLs())
+                for (const auto & set_part : group_by_ttl.set_parts)
+                    group_by_ttl_set_columns.insert(set_part.column_name);
+
         /// Any storage column not present in any part and without a default expression is considered expired
         for (const auto & storage_column : global_ctx->storage_columns)
         {
@@ -899,6 +909,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
                 && !columns_present_in_patch_parts.contains(storage_column.name)
                 && !renamed_column_targets.contains(storage_column.name)
                 && !missing_columns_to_materialize.contains(storage_column.name)
+                && !group_by_ttl_set_columns.contains(storage_column.name)
                 && !columns_desc.getDefault(storage_column.name))
                 global_ctx->new_data_part->expired_columns.emplace(storage_column.name);
         }
