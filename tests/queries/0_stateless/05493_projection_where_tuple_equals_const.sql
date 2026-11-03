@@ -1,6 +1,8 @@
 -- A projection `WHERE` comparing a `Tuple` column with a constant turns the column into a `ColumnConst`,
 -- which must be materialized before the projection part is written: on insert, merge, and mutation.
 -- https://github.com/ClickHouse/ClickHouse/issues/128533
+-- `ratio_of_defaults_for_sparse_serialization` must stay below 1: at 1 no serialization infos are collected,
+-- so the code path is not reached. It is pinned because the test runner randomizes it.
 
 SET optimize_constant_columns_after_filter = 1;
 
