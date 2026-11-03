@@ -6,16 +6,16 @@ SET optimize_use_projections = 1, optimize_use_implicit_projections = 0, prefer_
 
 -- the merge byte limits stop background merges until OPTIMIZE
 CREATE TABLE l_est (b UInt64, v UInt8, pad FixedString(15)) ENGINE = MergeTree ORDER BY b
-    SETTINGS index_granularity = 8192, index_granularity_bytes = 1024, use_const_adaptive_granularity = 1, min_bytes_for_wide_part = 0,
-        min_rows_for_wide_part = 0, merge_max_block_size = 8192, enable_vertical_merge_algorithm = 0, enable_block_number_column = 0,
-        enable_block_offset_column = 0, ratio_of_defaults_for_sparse_serialization = 1, max_bytes_to_merge_at_max_space_in_pool = 1,
-        max_bytes_to_merge_at_min_space_in_pool = 1;
+    SETTINGS index_granularity = 8192, index_granularity_bytes = 128, min_index_granularity_bytes = 0, use_const_adaptive_granularity = 1,
+        min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, merge_max_block_size = 8192, enable_vertical_merge_algorithm = 0,
+        enable_block_number_column = 0, enable_block_offset_column = 0, ratio_of_defaults_for_sparse_serialization = 1,
+        max_bytes_to_merge_at_max_space_in_pool = 1, max_bytes_to_merge_at_min_space_in_pool = 1;
 CREATE TABLE l_real AS l_est;
 ALTER TABLE l_real ADD PROJECTION p (SELECT toLowCardinality(leftPad(toString(b), 5, '0')) AS k, sum(v) GROUP BY k);
--- 128 parts of one row each
-INSERT INTO l_est SELECT number, 1, '' FROM numbers(128)
+-- 16 parts of one row each
+INSERT INTO l_est SELECT number, 1, '' FROM numbers(16)
     SETTINGS max_block_size = 1, max_insert_block_size = 1, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0;
-INSERT INTO l_real SELECT number, 1, '' FROM numbers(128)
+INSERT INTO l_real SELECT number, 1, '' FROM numbers(16)
     SETTINGS max_block_size = 1, max_insert_block_size = 1, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0;
 SELECT 'parts: ' || toString(count()) FROM system.parts WHERE database = currentDatabase() AND table = 'l_real' AND active;
 OPTIMIZE TABLE l_est FINAL;
