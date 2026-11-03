@@ -504,16 +504,16 @@ def test_namespace_writes(started_cluster, depth):
         assert "data" in catalog.load_table(identifier).schema().column_names
         node.query(f"INSERT INTO {table} VALUES (2, 'new')", settings=settings)
 
-        snapshots = catalog.load_table(identifier).metadata.snapshots
-        assert len(snapshots) == 2
+        metadata = catalog.load_table(identifier).metadata
+        assert len(metadata.snapshots) == 2
+        current = metadata.current_snapshot_id
+        expired = next(s.snapshot_id for s in metadata.snapshots if s.snapshot_id != current)
         node.query(
             f"ALTER TABLE {table} EXECUTE expire_snapshots("
-            f"snapshot_ids = [{snapshots[0].snapshot_id}])",
+            f"snapshot_ids = [{expired}])",
             settings={**settings, "allow_experimental_expire_snapshots": 1},
         )
-        assert [s.snapshot_id for s in catalog.load_table(identifier).metadata.snapshots] == [
-            snapshots[1].snapshot_id
-        ]
+        assert [s.snapshot_id for s in catalog.load_table(identifier).metadata.snapshots] == [current]
         assert node.query(f"SELECT id, data FROM {table} ORDER BY id") == "1\t\\N\n2\tnew\n"
         node.query(f"DROP TABLE {table}", settings=settings)
         assert identifier not in catalog.list_tables(namespace)
