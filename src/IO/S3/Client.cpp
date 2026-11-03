@@ -5,7 +5,7 @@
 #include <algorithm>
 #include <cctype>
 #include <ctime>
-#include <sstream>
+#include <iterator>
 #include <aws/core/utils/crypto/Hash.h>
 #include <Poco/MD5Engine.h>
 #include <Common/CurrentThread.h>
@@ -1512,18 +1512,13 @@ String encodePathForGCS(std::string_view path)
     for (unsigned char c : path)
     {
         const bool unreserved = std::isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~' || c == '/';
-        const bool must_encode = c <= 0x20 || c >= 0x7F || reserved.find(static_cast<char>(c)) != std::string_view::npos;
+        const bool must_encode = c <= 0x20 || c >= 0x7F || reserved.contains(static_cast<char>(c));
         if (unreserved || !must_encode)
             out.push_back(static_cast<char>(c));
         else
             out += fmt::format("%{:02X}", c);
     }
     return out;
-}
-
-std::vector<uint8_t> bytesOf(std::string_view value)
-{
-    return {value.begin(), value.end()};
 }
 
 }
@@ -1575,7 +1570,7 @@ bool Client::tryGCSCreateIfAbsent(const String & bucket, const String & key, std
 
     std::string key_secret = "GOOG4";
     key_secret.append(secret.data(), secret.size());
-    const auto date_key = hmacSHA256(bytesOf(key_secret), datestamp);
+    const auto date_key = hmacSHA256({key_secret.begin(), key_secret.end()}, datestamp);
     const auto region_key = hmacSHA256(date_key, "auto");
     const auto service_key = hmacSHA256(region_key, "s3");
     const auto signing_key = hmacSHA256(service_key, "goog4_request");
@@ -1617,9 +1612,7 @@ bool Client::tryGCSCreateIfAbsent(const String & bucket, const String & key, std
     String error_body;
     if (response->GetResponseBody().good())
     {
-        std::ostringstream captured;
-        captured << response->GetResponseBody().rdbuf();
-        error_body = captured.str();
+        error_body.assign(std::istreambuf_iterator<char>(response->GetResponseBody()), std::istreambuf_iterator<char>());
         if (error_body.size() > 400)
             error_body.resize(400);
     }
