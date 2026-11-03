@@ -604,6 +604,14 @@ void DataPartStorageOnDiskPacked::commitTransaction()
         reader.emplace(volume->getDisk(), getRelativeDataPath(), getReadSettings());
 }
 
+void DataPartStorageOnDiskPacked::cancelPrecommitTransaction()
+{
+    /// `cancel` waits for the scheduled uploads of the buffer.
+    if (pending_writer_finalization)
+        pending_writer_finalization->buffer->cancel();
+    pending_writer_finalization.reset();
+}
+
 void DataPartStorageOnDiskPacked::undoTransaction()
 {
     /// Do not require `writer` or `is_precommitted`: if `startPrecommitTransaction` throws after the writer
@@ -614,9 +622,7 @@ void DataPartStorageOnDiskPacked::undoTransaction()
     if (has_shared_transaction)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot undo shared transaction");
 
-    if (pending_writer_finalization)
-        pending_writer_finalization->buffer->cancel();
-    pending_writer_finalization.reset();
+    cancelPrecommitTransaction();
     transaction->undo();
     transaction.reset();
     /// Release the writer as the commit paths do; otherwise beginTransaction's `transaction || writer`

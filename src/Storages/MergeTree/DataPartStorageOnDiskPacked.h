@@ -91,6 +91,7 @@ public:
     /// Finalizes writer and writes buffered data into transaction.
     void precommitTransaction() override;
     void startPrecommitTransaction() override;
+    void cancelPrecommitTransaction() override;
     void undoTransaction() override;
 
     void setTemporaryDataForTransaction(const TemporaryDataOnDiskScopePtr & tmp_data, size_t max_bytes_in_memory) override;

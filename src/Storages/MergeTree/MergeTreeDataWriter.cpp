@@ -452,7 +452,12 @@ void MergeTreeTemporaryPart::cancel()
     /// A started finalization may have already uploaded the archive; only the transaction knows
     /// its blobs. A no-op for a part whose transaction was already committed.
     if (finalization_started)
+    {
+        /// Projections share the transaction of the part: stop their uploads before it removes the blobs.
+        for (const auto & [_, projection] : part->getProjectionParts())
+            projection->getDataPartStorage().cancelPrecommitTransaction();
         part->getDataPartStorage().undoTransaction();
+    }
 
     /// The part is trying to delete leftovers here
     part.reset();
@@ -470,14 +475,14 @@ void MergeTreeTemporaryPart::startFinalization()
     auto file_order_hint = part->getPreferredFileOrder();
     part->getDataPartStorage().setPreferredFileOrder(file_order_hint);
 
+    /// Set before the first upload starts, so `cancel` also undoes a partially started finalization.
+    finalization_started = true;
     part->getDataPartStorage().startPrecommitTransaction();
     for (const auto & [_, projection] : part->getProjectionParts())
     {
         projection->getDataPartStorage().setPreferredFileOrder(file_order_hint);
         projection->getDataPartStorage().startPrecommitTransaction();
     }
-
-    finalization_started = true;
 }
 
 void MergeTreeTemporaryPart::finalize()

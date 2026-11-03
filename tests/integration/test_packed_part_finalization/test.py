@@ -66,6 +66,13 @@ SETTINGS = {
 def wait_for_uploads(count):
     uploaded_keys = json.loads(gate(f"wait?count={count}"))
     assert len(uploaded_keys) == count, uploaded_keys
+    return uploaded_keys
+
+
+def existing_keys(keys):
+    prefix = f"/{cluster.minio_bucket}/"
+    objects = {o.object_name for o in cluster.minio_client.list_objects(cluster.minio_bucket, "packed-finalization/", recursive=True)}
+    return [key for key in keys if key.removeprefix(prefix) in objects]
 
 
 def check_data(expected_sum=780):
@@ -113,11 +120,12 @@ def test_upload_failure(table):
     check_data()
 
 
-def test_cancel_pending_uploads(table):
+@pytest.mark.parametrize("projection", [False, True])
+def test_cancel_pending_uploads(table, projection):
     gate("arm")
     request = node.get_query_request(INSERT, settings=SETTINGS, query_id="cancel_packed_uploads", timeout=90)
     try:
-        wait_for_uploads(4)
+        uploaded_keys = wait_for_uploads(8 if projection else 4)
         node.query("KILL QUERY WHERE query_id = 'cancel_packed_uploads' ASYNC")
         assert_eq_with_retry(
             node,
@@ -130,6 +138,9 @@ def test_cancel_pending_uploads(table):
     assert "QUERY_WAS_CANCELLED" in error
     # Cancellation may leave completed parts; every published part must be readable.
     assert node.query("CHECK TABLE t SETTINGS check_query_single_value_result = 1") == "1\n"
+    # Cancelled parts, including their projections, must not leave uploaded archives behind.
+    parts = int(node.query("SELECT count() FROM system.parts WHERE table = 't' AND active"))
+    assert len(existing_keys(uploaded_keys)) == parts * (2 if projection else 1)
     node.query("TRUNCATE TABLE t")
     node.query(INSERT, settings=SETTINGS)
     check_data()

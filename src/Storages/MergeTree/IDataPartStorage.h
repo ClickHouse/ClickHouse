@@ -401,6 +401,10 @@ public:
     virtual void precommitTransaction() = 0;
     /// Starts preparing the transaction; `precommitTransaction` waits for completion.
     virtual void startPrecommitTransaction() { precommitTransaction(); }
+    /// Stops the work started by `startPrecommitTransaction` without undoing the transaction. A storage that shares
+    /// the transaction of its parent must do it before the parent undoes the transaction: otherwise an upload that
+    /// completes after the undo recreates a removed object.
+    virtual void cancelPrecommitTransaction() {}
     virtual bool hasActiveTransaction() const = 0;
 
     /// Lets the active transaction move the buffered data of the files being written to `tmp_data`
