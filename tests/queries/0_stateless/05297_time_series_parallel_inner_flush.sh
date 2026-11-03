@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
+# Tags: no-parallel, no-random-settings, no-async-insert
 # The tags table commits first. The samples and recent samples tables are written in parallel after it.
 # The CHECK constraints sleep: 1 s on tags, 3 s on samples and 3 s on recent samples.
 # A serial insert takes about 7 s. A parallel insert takes about 4 s, so it saves at least 1.5 s.
@@ -12,38 +12,13 @@ set -euo pipefail
 
 ${CLICKHOUSE_CLIENT} --multiquery <<'EOF'
 SET allow_experimental_time_series_table = 1;
-DROP TABLE IF EXISTS ts_speed, slow_tags, slow_samples, slow_recent;
+DROP TABLE IF EXISTS ts_speed;
 
-CREATE TABLE slow_tags
-(
-    id Tuple(UInt64, UUID),
-    metric_name LowCardinality(String),
-    tags Map(LowCardinality(String), String),
-    min_time Nullable(DateTime64(3)),
-    max_time Nullable(DateTime64(3)),
-    CONSTRAINT slow CHECK sleepEachRow(1) = 0
-) ENGINE = MergeTree ORDER BY (metric_name, id);
+CREATE TABLE ts_speed UUID '05297000-0000-4000-8000-000000000001' ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 864000;
 
-CREATE TABLE slow_samples
-(
-    id Tuple(UInt64, UUID),
-    timestamp DateTime64(3),
-    value Float64,
-    CONSTRAINT slow CHECK sleepEachRow(3) = 0
-) ENGINE = MergeTree ORDER BY (id, timestamp);
-
-CREATE TABLE slow_recent
-(
-    id Tuple(UInt64, UUID),
-    timestamp DateTime64(3),
-    value Float64,
-    CONSTRAINT slow CHECK sleepEachRow(3) = 0
-) ENGINE = MergeTree
-PARTITION BY toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))
-ORDER BY (id, timestamp);
-
-CREATE TABLE ts_speed ENGINE = TimeSeries SETTINGS version = 8, recent_samples_ttl_seconds = 864000
-    DATA slow_samples TAGS slow_tags RECENT SAMPLES slow_recent;
+ALTER TABLE `.inner_id.tags.05297000-0000-4000-8000-000000000001` ADD CONSTRAINT slow CHECK sleepEachRow(1) = 0;
+ALTER TABLE `.inner_id.samples.05297000-0000-4000-8000-000000000001` ADD CONSTRAINT slow CHECK sleepEachRow(3) = 0;
+ALTER TABLE `.inner_id.recentsamples.05297000-0000-4000-8000-000000000001` ADD CONSTRAINT slow CHECK sleepEachRow(3) = 0;
 EOF
 
 insert_with_comment()
@@ -69,11 +44,11 @@ ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
 serial=$(${CLICKHOUSE_CLIENT} --query "SELECT max(query_duration_ms) FROM system.query_log WHERE current_database = currentDatabase() AND log_comment = 'ts_flush_serial' AND type = 'QueryFinish' AND query LIKE '%INSERT INTO ts_speed%'")
 parallel=$(${CLICKHOUSE_CLIENT} --query "SELECT max(query_duration_ms) FROM system.query_log WHERE current_database = currentDatabase() AND log_comment = 'ts_flush_parallel' AND type = 'QueryFinish' AND query LIKE '%INSERT INTO ts_speed%'")
 
-${CLICKHOUSE_CLIENT} --query "SELECT count() FROM slow_tags"
-${CLICKHOUSE_CLIENT} --query "SELECT count() FROM slow_samples"
-${CLICKHOUSE_CLIENT} --query "SELECT count() FROM slow_recent"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM \`.inner_id.tags.05297000-0000-4000-8000-000000000001\`"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM \`.inner_id.samples.05297000-0000-4000-8000-000000000001\`"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM \`.inner_id.recentsamples.05297000-0000-4000-8000-000000000001\`"
 
-${CLICKHOUSE_CLIENT} --query "DROP TABLE ts_speed, slow_tags, slow_samples, slow_recent"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE ts_speed"
 
 if [[ -z "${serial}" || "${serial}" -lt 6000 ]]; then
     echo "Serial insert took ${serial:-missing} ms" >&2
