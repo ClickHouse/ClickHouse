@@ -137,15 +137,12 @@ ReadFromABR::BufferedResult ReadFromABR::executeAndBuffer(QueryPipeline & pipeli
 
 void ReadFromABR::addTotalsAndExtremes(Pipe & pipe, const BufferedResult & result)
 {
+    /// Do not enable auto_progress, as the rows were already accounted for in the pipeline's attempt.
     if (!result.totals.empty())
-        pipe.addTotalsSource(std::make_shared<SourceFromSingleChunk>(
-            std::make_shared<const Block>(result.totals.cloneEmpty()),
-            Chunk(result.totals.getColumns(), result.totals.rows())));
+        pipe.addTotalsSource(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(result.totals), false));
 
     if (!result.extremes.empty())
-        pipe.addExtremesSource(std::make_shared<SourceFromSingleChunk>(
-            std::make_shared<const Block>(result.extremes.cloneEmpty()),
-            Chunk(result.extremes.getColumns(), result.extremes.rows())));
+        pipe.addExtremesSource(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(result.extremes), false));
 }
 
 void ReadFromABR::addConvertingActions(Pipe & pipe, const Block & header, const ContextPtr & context)

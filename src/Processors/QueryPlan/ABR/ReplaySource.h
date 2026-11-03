@@ -19,7 +19,7 @@ public:
         CascadeWriteBuffer::WriteBufferPtrs owners_,
         std::unique_ptr<ReadBuffer> buf_,
         bool add_aggregation_info_)
-        : ISource(header)
+        : ISource(header, false) /// No auto_progress because the rows were already reported by the attempt's pipeline
         , buffer_owners(std::move(owners_))
         , buffer(std::move(buf_))
         , reader(*buffer, *header, DBMS_TCP_PROTOCOL_VERSION)
