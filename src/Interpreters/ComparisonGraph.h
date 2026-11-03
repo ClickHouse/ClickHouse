@@ -1,9 +1,9 @@
 #pragma once
 
 #include <Core/Field.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/IASTHash.h>
-#include <Interpreters/Context_fwd.h>
 #include <Interpreters/CNFQueryAtomicFormula.h>
 
 #include <Analyzer/Passes/CNFAtomicFormula.h>
@@ -29,15 +29,28 @@ enum class ComparisonGraphCompareResult : uint8_t
     UNKNOWN,
 };
 
+/// Comparison function node of a filter `ActionsDAG`, with the sign it is used under.
+struct ActionsDAGAtomicFormula
+{
+    bool negative = false;
+    const ActionsDAG::Node * node = nullptr;
+};
+
+/// Identity of an `ActionsDAG` node for the graph: a constant by its value, anything else by its
+/// expression text with aliases removed. Two DAGs built from the same expression by different code
+/// (an index expression and a query filter) give the same name.
+String actionsDAGNodeCanonicalName(const ActionsDAG::Node * node);
+
 template <typename T>
-concept ComparisonGraphNodeType = std::same_as<T, ASTPtr> || std::same_as<T, QueryTreeNodePtr>;
+concept ComparisonGraphNodeType = std::same_as<T, ASTPtr> || std::same_as<T, QueryTreeNodePtr> || std::same_as<T, const ActionsDAG::Node *>;
 
 
 template <ComparisonGraphNodeType Node>
 struct GraphComponent
 {
     static constexpr bool with_ast = std::same_as<Node, ASTPtr>;
-    using NodeContainer = std::conditional_t<with_ast, ASTs, QueryTreeNodes>;
+    static constexpr bool with_dag = std::same_as<Node, const ActionsDAG::Node *>;
+    using NodeContainer = std::conditional_t<with_ast, ASTs, std::conditional_t<with_dag, ActionsDAG::NodeRawConstPtrs, QueryTreeNodes>>;
 
     /// Strongly connected component
     struct EqualComponent
@@ -83,11 +96,14 @@ struct GraphComponent
     {
         if constexpr (with_ast)
             return node->getTreeHash(/*ignore_aliases=*/ true);
+        else if constexpr (with_dag)
+            return actionsDAGNodeCanonicalName(node);
         else
             return QueryTreeNodePtrWithHash{node};
     }
 
-    using NodeHashToComponentContainer = std::conditional_t<with_ast, std::unordered_map<IASTHash, size_t, ASTHash>, QueryTreeNodePtrWithHashMap<size_t>>;
+    using NodeHashToComponentContainer = std::conditional_t<with_ast, std::unordered_map<IASTHash, size_t, ASTHash>,
+        std::conditional_t<with_dag, std::unordered_map<String, size_t>, QueryTreeNodePtrWithHashMap<size_t>>>;
     NodeHashToComponentContainer node_hash_to_component;
     std::vector<EqualComponent> vertices;
     std::vector<std::vector<Edge>> edges;
@@ -103,12 +119,15 @@ class ComparisonGraph
 {
 public:
     static constexpr bool with_ast = std::same_as<Node, ASTPtr>;
-    using NodeContainer = std::conditional_t<with_ast, ASTs, QueryTreeNodes>;
-    using Formula = std::conditional_t<with_ast, CNFQueryAtomicFormula, Analyzer::CNFAtomicFormula>;
+    static constexpr bool with_dag = std::same_as<Node, const ActionsDAG::Node *>;
     using Graph = GraphComponent<Node>;
+    using NodeContainer = typename Graph::NodeContainer;
+    using Formula = std::conditional_t<with_ast, CNFQueryAtomicFormula, std::conditional_t<with_dag, ActionsDAGAtomicFormula, Analyzer::CNFAtomicFormula>>;
+
+    ComparisonGraph() = default;
 
     /// atomic_formulas are extracted from constraints.
-    explicit ComparisonGraph(const NodeContainer & atomic_formulas, ContextPtr context = nullptr);
+    explicit ComparisonGraph(const NodeContainer & atomic_formulas);
 
     static ComparisonGraphCompareResult atomToCompareResult(const Formula & atom);
 
@@ -205,6 +224,8 @@ private:
 
 extern template struct GraphComponent<ASTPtr>;
 extern template struct GraphComponent<QueryTreeNodePtr>;
+extern template struct GraphComponent<const ActionsDAG::Node *>;
 extern template class ComparisonGraph<ASTPtr>;
 extern template class ComparisonGraph<QueryTreeNodePtr>;
+extern template class ComparisonGraph<const ActionsDAG::Node *>;
 }

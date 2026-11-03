@@ -5,11 +5,12 @@
 #include <Parsers/ASTFunction.h>
 
 #include <Common/FieldAccurateComparison.h>
+#include <Common/FieldVisitorToString.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ConstantNode.h>
-
-#include <Functions/FunctionFactory.h>
 
 #include <algorithm>
 
@@ -26,62 +27,6 @@ namespace ErrorCodes
 namespace
 {
 
-/// Make function a > b or a >= b
-ASTPtr normalizeAtom(const ASTPtr & atom, ContextPtr)
-{
-    static const std::map<std::string, std::string> inverse_relations =
-    {
-        {"lessOrEquals", "greaterOrEquals"},
-        {"less", "greater"},
-    };
-
-    ASTPtr res = atom->clone();
-    if (const auto * func = res->as<ASTFunction>())
-    {
-        if (const auto it = inverse_relations.find(func->name); it != std::end(inverse_relations))
-        {
-            /// The AST here is not analyzed, so a malformed comparison with the wrong number of
-            /// arguments (e.g. `less(x)` from a fuzzed constraint expression) can reach this point.
-            /// Only binary comparisons can be normalized by swapping their arguments; anything else
-            /// is left unchanged and ignored later, where `arguments.size() == 2` is checked.
-            if (func->arguments && func->arguments->children.size() == 2)
-            {
-                auto new_func = makeASTOperator(it->second, func->arguments->children[1]->clone(), func->arguments->children[0]->clone());
-                new_func->setIsOperator(func->isOperator());
-                res = new_func;
-            }
-        }
-    }
-
-    return res;
-}
-
-QueryTreeNodePtr normalizeAtom(const QueryTreeNodePtr & atom, const ContextPtr & context)
-{
-    static const std::map<std::string, std::string> inverse_relations =
-    {
-        {"lessOrEquals", "greaterOrEquals"},
-        {"less", "greater"},
-    };
-
-    if (const auto * function_node = atom->as<FunctionNode>())
-    {
-        if (const auto it = inverse_relations.find(function_node->getFunctionName()); it != inverse_relations.end())
-        {
-            auto inverted_node = function_node->clone();
-            auto * inverted_function_node = inverted_node->as<FunctionNode>();
-            auto function_resolver = FunctionFactory::instance().get(it->second, context);
-            auto & arguments = inverted_function_node->getArguments().getNodes();
-            chassert(arguments.size() == 2);
-            std::swap(arguments[0], arguments[1]);
-            inverted_function_node->resolveAsFunction(function_resolver);
-            return inverted_node;
-        }
-    }
-
-    return atom;
-}
-
 const FunctionNode * tryGetFunctionNode(const QueryTreeNodePtr & node)
 {
     return node->as<FunctionNode>();
@@ -92,6 +37,12 @@ const ASTFunction * tryGetFunctionNode(const ASTPtr & node)
     return node->as<ASTFunction>();
 }
 
+const ActionsDAG::Node * tryGetFunctionNode(const ActionsDAG::Node * node)
+{
+    node = node->getWithoutAlias();
+    return node->type == ActionsDAG::ActionType::FUNCTION ? node : nullptr;
+}
+
 std::string functionName(const QueryTreeNodePtr & node)
 {
     return node->as<FunctionNode &>().getFunctionName();
@@ -100,6 +51,11 @@ std::string functionName(const QueryTreeNodePtr & node)
 std::string functionName(const ASTPtr & node)
 {
     return node->as<ASTFunction &>().name;
+}
+
+std::string functionName(const ActionsDAG::Node * node)
+{
+    return node->getWithoutAlias()->function_base->getName();
 }
 
 std::optional<Field> tryGetConstantValue(const QueryTreeNodePtr & node)
@@ -114,6 +70,15 @@ std::optional<Field> tryGetConstantValue(const ASTPtr & node)
 {
     if (const auto * constant = node->as<ASTLiteral>())
         return constant->value;
+
+    return {};
+}
+
+std::optional<Field> tryGetConstantValue(const ActionsDAG::Node * node)
+{
+    node = node->getWithoutAlias();
+    if (node->column)
+        return node->column->getField();
 
     return {};
 }
@@ -136,6 +101,11 @@ const auto & getNode(const CNFQueryAtomicFormula & atom)
     return atom.ast;
 }
 
+const auto & getNode(const ActionsDAGAtomicFormula & atom)
+{
+    return atom.node;
+}
+
 std::string nodeToString(const ASTPtr & ast)
 {
     return ast->formatWithSecretsOneLine();
@@ -146,6 +116,11 @@ std::string nodeToString(const QueryTreeNodePtr & node)
     return node->toAST()->formatWithSecretsOneLine();
 }
 
+std::string nodeToString(const ActionsDAG::Node * node)
+{
+    return node->result_name;
+}
+
 const auto & getArguments(const ASTFunction * function)
 {
     return function->arguments->children;
@@ -154,6 +129,50 @@ const auto & getArguments(const ASTFunction * function)
 const auto & getArguments(const FunctionNode * function)
 {
     return function->getArguments().getNodes();
+}
+
+const auto & getArguments(const ActionsDAG::Node * function)
+{
+    return function->children;
+}
+
+void appendCanonicalName(const ActionsDAG::Node & node, WriteBuffer & out)
+{
+    if (const auto constant = tryGetConstantValue(&node))
+    {
+        writeString(applyVisitor(FieldVisitorToString(), *constant), out);
+        return;
+    }
+
+    switch (node.type)
+    {
+        case ActionsDAG::ActionType::ALIAS:
+            appendCanonicalName(*node.children.front(), out);
+            return;
+        case ActionsDAG::ActionType::ARRAY_JOIN:
+            writeCString("arrayJoin(", out);
+            appendCanonicalName(*node.children.front(), out);
+            writeChar(')', out);
+            return;
+        case ActionsDAG::ActionType::FUNCTION:
+        {
+            writeString(node.function_base->getName(), out);
+            writeChar('(', out);
+            for (size_t i = 0; i < node.children.size(); ++i)
+            {
+                if (i != 0)
+                    writeCString(", ", out);
+                appendCanonicalName(*node.children[i], out);
+            }
+            writeChar(')', out);
+            return;
+        }
+        case ActionsDAG::ActionType::INPUT:
+        case ActionsDAG::ActionType::COLUMN:
+        case ActionsDAG::ActionType::PLACEHOLDER:
+            writeString(node.result_name, out);
+            return;
+    }
 }
 
 bool less(const Field & lhs, const Field & rhs)
@@ -239,16 +258,24 @@ ComparisonGraphCompareResult inverseCompareResult(ComparisonGraphCompareResult r
 }
 
 template <ComparisonGraphNodeType Node>
-ComparisonGraph<Node>::ComparisonGraph(const NodeContainer & atomic_formulas, ContextPtr context)
+ComparisonGraph<Node>::ComparisonGraph(const NodeContainer & atomic_formulas)
 {
     if (atomic_formulas.empty())
         return;
 
-    static const std::unordered_map<std::string, typename Graph::Edge::Type> relation_to_enum =
+    /// `less` and `lessOrEquals` are `greater` and `greaterOrEquals` with the arguments swapped.
+    struct Relation
     {
-        {"equals", Graph::Edge::EQUAL},
-        {"greater", Graph::Edge::GREATER},
-        {"greaterOrEquals", Graph::Edge::GREATER_OR_EQUAL},
+        typename Graph::Edge::Type type;
+        bool swap_arguments;
+    };
+    static const std::unordered_map<std::string, Relation> relation_to_edge =
+    {
+        {"equals", {Graph::Edge::EQUAL, false}},
+        {"greater", {Graph::Edge::GREATER, false}},
+        {"greaterOrEquals", {Graph::Edge::GREATER_OR_EQUAL, false}},
+        {"less", {Graph::Edge::GREATER, true}},
+        {"lessOrEquals", {Graph::Edge::GREATER_OR_EQUAL, true}},
     };
 
     /// Firstly build an intermediate graph,
@@ -257,10 +284,8 @@ ComparisonGraph<Node>::ComparisonGraph(const NodeContainer & atomic_formulas, Co
     /// If we have EQUAL relation, then we add both edges (A, B) and (B, A).
 
     Graph g;
-    for (const auto & atom_raw : atomic_formulas)
+    for (const auto & atom : atomic_formulas)
     {
-        const auto atom = normalizeAtom(atom_raw, context);
-
         auto get_index = [](const Node & node, Graph & nodes_graph) -> std::optional<size_t>
         {
             const auto it = nodes_graph.node_hash_to_component.find(Graph::getHash(node));
@@ -274,6 +299,8 @@ ComparisonGraph<Node>::ComparisonGraph(const NodeContainer & atomic_formulas, Co
                             if constexpr (with_ast)
                                 return constraint_node->getTreeHash(/*ignore_aliases=*/ true) == node->getTreeHash(/*ignore_aliases=*/ true)
                                     && constraint_node->getColumnName() == node->getColumnName();
+                            else if constexpr (with_dag)
+                                return actionsDAGNodeCanonicalName(constraint_node) == actionsDAGNodeCanonicalName(node);
                             else
                                 return constraint_node->isEqual(*node);
                         }))
@@ -301,11 +328,14 @@ ComparisonGraph<Node>::ComparisonGraph(const NodeContainer & atomic_formulas, Co
 
                 if (index_left && index_right)
                 {
-                    if (const auto it = relation_to_enum.find(functionName(atom)); it != std::end(relation_to_enum))
+                    if (const auto it = relation_to_edge.find(functionName(atom)); it != std::end(relation_to_edge))
                     {
-                        g.edges[*index_left].push_back({it->second, *index_right});
-                        if (it->second == Graph::Edge::EQUAL)
-                            g.edges[*index_right].push_back({it->second, *index_left});
+                        const auto & [type, swap_arguments] = it->second;
+                        if (swap_arguments)
+                            std::swap(index_left, index_right);
+                        g.edges[*index_left].push_back({type, *index_right});
+                        if (type == Graph::Edge::EQUAL)
+                            g.edges[*index_right].push_back({type, *index_left});
                     }
                 }
             }
@@ -325,14 +355,12 @@ ComparisonGraph<Node>::ComparisonGraph(const NodeContainer & atomic_formulas, Co
     std::tie(node_const_lower_bound, node_const_upper_bound) = buildConstBounds();
 
     /// Find expressions that are known to be unequal.
-    static const std::unordered_set<String> not_equals_functions = {"notEquals", "greater"};
+    static const std::unordered_set<String> not_equals_functions = {"notEquals", "greater", "less"};
 
     /// Explicitly save unequal components.
     /// TODO: Build a graph for unequal components.
-    for (const auto & atom_raw : atomic_formulas)
+    for (const auto & atom : atomic_formulas)
     {
-        const auto atom = normalizeAtom(atom_raw, context);
-
         const auto * function_node = tryGetFunctionNode(atom);
         if (function_node && not_equals_functions.contains(functionName(atom)))
         {
@@ -542,6 +570,8 @@ std::optional<size_t> ComparisonGraph<Node>::getComponentId(const Node & node) c
             if constexpr (with_ast)
                 return constraint_node->getTreeHash(/*ignore_aliases=*/ true) == node->getTreeHash(/*ignore_aliases=*/ true)
                     && constraint_node->getColumnName() == node->getColumnName();
+            else if constexpr (with_dag)
+                return actionsDAGNodeCanonicalName(constraint_node) == actionsDAGNodeCanonicalName(node);
             else
                 return constraint_node->getTreeHash() == node->getTreeHash();
         }))
@@ -618,7 +648,7 @@ std::optional<Node> ComparisonGraph<Node>::getEqualConst(const Node & node) cons
     if (!graph.vertices[index].hasConstant())
         return std::nullopt;
 
-    if constexpr (with_ast)
+    if constexpr (with_ast || with_dag)
         return graph.vertices[index].getConstant();
     else
     {
@@ -860,9 +890,18 @@ std::pair<std::vector<ssize_t>, std::vector<ssize_t>> ComparisonGraph<Node>::bui
     return {std::move(lower), std::move(upper)};
 }
 
+String actionsDAGNodeCanonicalName(const ActionsDAG::Node * node)
+{
+    WriteBufferFromOwnString out;
+    appendCanonicalName(*node, out);
+    return out.str();
+}
+
 template struct GraphComponent<ASTPtr>;
 template struct GraphComponent<QueryTreeNodePtr>;
+template struct GraphComponent<const ActionsDAG::Node *>;
 template class ComparisonGraph<ASTPtr>;
 template class ComparisonGraph<QueryTreeNodePtr>;
+template class ComparisonGraph<const ActionsDAG::Node *>;
 
 }

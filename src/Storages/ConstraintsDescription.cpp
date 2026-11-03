@@ -291,7 +291,7 @@ ConstraintsDescription::QueryTreeData ConstraintsDescription::getQueryTreeData(c
     /// build graph
     if (constraints.empty())
     {
-        data.graph = std::make_unique<ComparisonGraph<QueryTreeNodePtr>>(QueryTreeNodes(), context);
+        data.graph = std::make_unique<ComparisonGraph<QueryTreeNodePtr>>(QueryTreeNodes());
     }
     else
     {
@@ -312,7 +312,7 @@ ConstraintsDescription::QueryTreeData ConstraintsDescription::getQueryTreeData(c
             if (function_node && relations.contains(function_node->getFunctionName()))
                 constraints_for_graph.push_back(atom.node_with_hash.node);
         }
-        data.graph = std::make_unique<ComparisonGraph<QueryTreeNodePtr>>(constraints_for_graph, context);
+        data.graph = std::make_unique<ComparisonGraph<QueryTreeNodePtr>>(constraints_for_graph);
     }
 
     return data;
