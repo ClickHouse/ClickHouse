@@ -46,6 +46,13 @@ SELECT count(), sum(c) FROM (SELECT k, count() AS c FROM remote('127.0.0.{1|2|3}
 SETTINGS parallel_replicas_mode = 'sampling_key', distributed_aggregation_memory_efficient = 0,
     enable_memory_bound_merging_of_aggregation_results = 0, use_hedged_requests = 0, log_queries = 1, log_comment = 'offset_pr_plain_merge';
 
+-- With a local shard and aggregation in order the states are merged in order, so the remote shard is read from one replica.
+SELECT k, count() FROM cluster('test_cluster_two_shard_three_replicas_localhost', currentDatabase(), t_offset_pr_key) GROUP BY k
+SETTINGS parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_custom_key = 'k', prefer_localhost_replica = 1,
+    optimize_aggregation_in_order = 1, distributed_aggregation_memory_efficient = 0, enable_memory_bound_merging_of_aggregation_results = 1,
+    use_hedged_requests = 0, log_queries = 1, log_comment = 'offset_pr_memory_bound'
+FORMAT Null;
+
 -- A full sort and an aggregation that is not in order take the parts in any order too.
 SELECT k FROM (SELECT k FROM remote('127.0.0.{1|2|3}', currentDatabase(), t_offset_pr_sample)) ORDER BY k LIMIT 10
 SETTINGS parallel_replicas_mode = 'sampling_key', use_hedged_requests = 0, log_queries = 1, log_comment = 'offset_pr_full_sort';
@@ -86,7 +93,7 @@ INNER JOIN
 (
     SELECT query_id, log_comment FROM system.query_log
     WHERE event_date >= yesterday() AND current_database = currentDatabase() AND is_initial_query AND type = 'QueryFinish'
-        AND log_comment IN ('offset_pr_count', 'offset_pr_group_by', 'offset_pr_plain_merge', 'offset_pr_full_sort', 'offset_pr_aggregating', 'offset_pr_expression', 'offset_pr_filter', 'offset_pr_union', 'offset_pr_limit', 'offset_pr_root')
+        AND log_comment IN ('offset_pr_count', 'offset_pr_group_by', 'offset_pr_plain_merge', 'offset_pr_full_sort', 'offset_pr_aggregating', 'offset_pr_expression', 'offset_pr_filter', 'offset_pr_union', 'offset_pr_limit', 'offset_pr_root', 'offset_pr_memory_bound')
 ) AS initial ON secondary.initial_query_id = initial.query_id
 WHERE secondary.event_date >= yesterday() AND NOT secondary.is_initial_query AND secondary.type = 'QueryFinish'
 GROUP BY initial.log_comment

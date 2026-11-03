@@ -45,6 +45,7 @@ offset_pr_filter	3
 offset_pr_full_sort	3
 offset_pr_group_by	1
 offset_pr_limit	1
+offset_pr_memory_bound	1
 offset_pr_plain_merge	3
 offset_pr_root	1
 offset_pr_union	6
