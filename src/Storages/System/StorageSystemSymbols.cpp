@@ -1,9 +1,7 @@
 #if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
 
 #include <base/demangle.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/System/StorageSystemSymbols.h>
@@ -21,7 +19,7 @@ namespace DB
 
 
 StorageSystemSymbols::StorageSystemSymbols(const StorageID & table_id_)
-    : StorageWithCommonVirtualColumns(table_id_)
+    : IStorage(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(ColumnsDescription(
@@ -34,23 +32,14 @@ StorageSystemSymbols::StorageSystemSymbols(const StorageID & table_id_)
         {"address_begin", std::make_shared<DataTypeUInt64>(), "Start address of the symbol in the binary."},
         {"address_end", std::make_shared<DataTypeUInt64>(), "End address of the symbol in the binary."},
     }));
-    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-}
-
-VirtualColumnsDescription StorageSystemSymbols::createVirtuals()
-{
-    VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    return desc;
 }
 
 
 namespace
 {
 
-class SymbolsBlockSource final : public ISource
+class SymbolsBlockSource : public ISource
 {
 private:
     using Iterator = std::vector<SymbolIndex::Symbol>::const_iterator;
@@ -82,9 +71,7 @@ protected:
         MutableColumns res_columns = getPort().getHeader().cloneEmptyColumns();
 
 #if USE_XRAY
-        /// Loading the instrumentation map demangles every instrumented function, so do it only when an XRay column is read.
-        const bool read_xray_columns = columns_mask[1] || columns_mask[2];
-        const auto * instrumentation_functions = read_xray_columns ? &InstrumentationManager::instance().getFunctions() : nullptr;
+        const auto & instrumentation_functions = InstrumentationManager::instance().getFunctions();
 #endif
 
         size_t rows_count = 0;
@@ -96,30 +83,24 @@ protected:
             if (columns_mask[src_index++])
                 res_columns[res_index++]->insert(it->name);
 #if USE_XRAY
-            /// Demangling every symbol dominates the scan, so skip it unless an XRay column is read.
-            if (read_xray_columns)
-            {
-                const auto function_name = demangle(it->name);
-                const auto instrumentation_function = instrumentation_functions->get<InstrumentationManager::FunctionName>().find(function_name);
+            const auto function_name = demangle(it->name);
+            const auto instrumentation_function = instrumentation_functions.get<InstrumentationManager::FunctionName>().find(function_name);
 
-                /// Not every function is instrumented, so we need to look for those which are.
-                if (instrumentation_function != instrumentation_functions->get<InstrumentationManager::FunctionName>().end())
-                {
-                    if (columns_mask[src_index++])
-                        res_columns[res_index++]->insert(instrumentation_function->function_name);
-                    if (columns_mask[src_index++])
-                        res_columns[res_index++]->insert(instrumentation_function->function_id);
-                }
-                else
-                {
-                    if (columns_mask[src_index++])
-                        res_columns[res_index++]->insert(Field());
-                    if (columns_mask[src_index++])
-                        res_columns[res_index++]->insert(Field());
-                }
+            /// Not every function is instrumented, so we need to look for those which are.
+            if (instrumentation_function != instrumentation_functions.get<InstrumentationManager::FunctionName>().end())
+            {
+                if (columns_mask[src_index++])
+                    res_columns[res_index++]->insert(instrumentation_function->function_name);
+                if (columns_mask[src_index++])
+                    res_columns[res_index++]->insert(instrumentation_function->function_id);
             }
             else
-                src_index += 2;
+            {
+                if (columns_mask[src_index++])
+                    res_columns[res_index++]->insert(Field());
+                if (columns_mask[src_index++])
+                    res_columns[res_index++]->insert(Field());
+            }
 #endif
             if (columns_mask[src_index++])
                 res_columns[res_index++]->insert(reinterpret_cast<uintptr_t>(it->offset_begin));
@@ -159,9 +140,5 @@ Pipe StorageSystemSymbols::read(
 }
 
 }
-
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemSymbols) }
 
 #endif

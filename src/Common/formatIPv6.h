@@ -5,7 +5,7 @@
 #include <cstring>
 #include <type_traits>
 #include <utility>
-#include <Common/Hex.h>
+#include <base/hex.h>
 #include <base/types.h>
 #include <base/unaligned.h>
 #include <base/MemorySanitizer.h>
@@ -113,6 +113,14 @@ inline const char * parseIPv4(const char * src, const char * end, unsigned char 
 inline bool parseIPv4whole(const char * src, const char * end, unsigned char * dst)
 {
     return parseIPv4(src, end, dst) == end;
+}
+
+/// returns pointer to the right after parsed sequence or null on failed parsing
+inline const char * parseIPv4(const char * src, unsigned char * dst)
+{
+    if (parseIPv4(src, [](){ return false; }, dst))
+        return src;
+    return nullptr;
 }
 
 /** An optimized version of parsing IPv6 string.
@@ -262,7 +270,7 @@ inline bool parseIPv6(T & src, IsEOF eof, unsigned char * dst, int32_t first_blo
 /// returns pointer to the right after parsed sequence or null on failed parsing
 inline const char * parseIPv6(const char * src, const char * end, unsigned char * dst)
 {
-    if (parseIPv6(src, [&src, end](){ chassert(src <= end); return src == end; }, dst))
+    if (parseIPv6(src, [&src, end](){ return src == end; }, dst))
         return src;
     return nullptr;
 }
@@ -271,6 +279,14 @@ inline const char * parseIPv6(const char * src, const char * end, unsigned char 
 inline bool parseIPv6Whole(const char * src, const char * end, unsigned char * dst)
 {
     return parseIPv6(src, end, dst) == end;
+}
+
+/// returns pointer to the right after parsed sequence or null on failed parsing
+inline const char * parseIPv6(const char * src, unsigned char * dst)
+{
+    if (parseIPv6(src, [](){ return false; }, dst))
+        return src;
+    return nullptr;
 }
 
 /** An optimized version of parsing IPv6 string.

@@ -1,83 +1,50 @@
 import argparse
-import json
+import ast
 import os
 import re
 import sys
 from pathlib import Path
-from collections import Counter
-from dataclasses import asdict
-from datetime import datetime, timedelta, timezone
-import time
 
 sys.path.append("./")
 
-from ci.jobs.scripts.coverage_selection import (
-    attach_bracket_owners,
-    build_bracket_owners_query,
-    build_bracket_spans_query,
-    build_candidate_query,
-    build_selector_smoke_seed_query,
-    canonical_coverage_path,
-    load_snapshots,
-    find_brackets,
-    parse_rows,
-    protect_selection,
-    rank_candidates,
-    snapshot_predicate,
-    validate_snapshots,
-)
-from ci.jobs.scripts.test_selection_config import (
-    INTEGRATION_SELECTION_CONFIG,
-    SELECTION_CONFIG,
-)
-
+from ci.jobs.scripts.find_symbols import DiffToSymbols
 from ci.praktika.cidb import CIDB
 from ci.praktika.info import Info
 from ci.praktika.result import Result
+from ci.praktika.settings import Settings
 from ci.praktika.utils import Shell
-from ci.settings.settings import SECRET_CI_DB_CONNECTION
-
-GITHUB_API_URL = "https://api.github.com"
 
 # Query to fetch failed tests from CIDB for a given PR.
-# Pre-filters out commit/check_name combinations with >= 20 failures — these indicate
-# widespread failures (e.g. build broken, environment issue) where every test failed,
-# not genuine per-test flakiness.  Results are ordered by recency-weighted failure
-# count (exponential decay, 7-day half-life). Mandatory failures are not capped before final selection.
-# Everything is relative to the selection cutoff, so jobs of one attempt see the
-# same failures and never the failures of jobs running alongside them.
+# Only returns tests from commit_sha/check_name combinations with fewer than 20 failures.
+# This helps filter out commits with widespread test failures.
 FAILED_TESTS_QUERY = """ \
- select test_name
- from checks
- where pull_request_number = {PR_NUMBER}
+ select distinct test_name
+ from (
+          select test_name, commit_sha, check_name
+          from checks
+          where 1
+            and pull_request_number = {PR_NUMBER}
+            and check_name LIKE '{JOB_TYPE}%'
+            and check_status = 'failure'
+            and match(test_name, '{TEST_NAME_PATTERN}')
+            and test_status = 'FAIL'
+            and check_start_time >= now() - interval 300 day
+          order by check_start_time desc
+              limit 10000
+      )
+ where (commit_sha, check_name) IN (
+     select commit_sha, check_name
+     from checks
+     where 1
+       and pull_request_number = {PR_NUMBER}
    and check_name LIKE '{JOB_TYPE}%'
    and check_status = 'failure'
-   and match(test_name, '{TEST_NAME_PATTERN}')
    and test_status = 'FAIL'
-   and check_start_time >= toDateTime('{CUTOFF}', 'UTC') - interval 30 day
-   and check_start_time < toDateTime('{CUTOFF}', 'UTC')
-   and (commit_sha, check_name) in (
-       select commit_sha, check_name
-       from checks
-       where pull_request_number = {PR_NUMBER}
-         and check_name LIKE '{JOB_TYPE}%'
-         and check_status = 'failure'
-         and test_status = 'FAIL'
-         and check_start_time >= toDateTime('{CUTOFF}', 'UTC') - interval 30 day
-         and check_start_time < toDateTime('{CUTOFF}', 'UTC')
-       group by commit_sha, check_name
-       having count(test_name) < 20
-   )
- group by test_name
- order by count() * exp(-dateDiff('day', max(check_start_time), toDateTime('{CUTOFF}', 'UTC')) / 7.) desc
- \
+   and check_start_time >= now() - interval 300 day
+ group by commit_sha, check_name
+ having count(test_name) < 20
+     ) \
 """
-
-
-class GitHubUnavailableError(RuntimeError):
-    """A GitHub API read of the test selection kept failing for a reason outside
-    the pull request: a server or network error, a rate limit, or a diff that
-    GitHub was still generating."""
 
 
 class Targeting:
@@ -86,574 +53,57 @@ class Targeting:
 
     def __init__(self, info: Info):
         self.info = info
-        self._cidb = None
-        self.config = SELECTION_CONFIG
-        self.selection_diagnostics = {}
         if "stateless" in info.job_name.lower():
             self.job_type = self.STATELESS_JOB_TYPE
         elif "integration" in info.job_name.lower():
             self.job_type = self.INTEGRATION_JOB_TYPE
-            self.config = INTEGRATION_SELECTION_CONFIG
         else:
             self.job_type = None
 
-    def _ci_db(self):
-        # Queries run as the privileged CI user. The public `play` user is
-        # rate/row/time-limited and must be used only for links handed to humans
-        # (see CIDB.get_link_to_test_case_statistics).
-        if self._cidb is None:
-            conn = json.loads(self.info.get_secret(SECRET_CI_DB_CONNECTION).get_value())
-            self._cidb = CIDB(
-                url=conn.get("url"),
-                user=conn.get("user"),
-                passwd=conn.get("password"),
-            )
-        return self._cidb
-
-    # The test selection code: a change here runs `test_selection_smoke` first.
-    SELECTION_SOURCES = (
-        "ci/jobs/scripts/find_tests.py",
-        "ci/jobs/scripts/coverage_selection.py",
-        "ci/jobs/scripts/test_selection_config.py",
-        "ci/jobs/scripts/test_selection_manifest.py",
-        "ci/jobs/scripts/test_selection_smoke.py",
-        "ci/praktika/cidb.py",
-    )
-
-    def selection_code_changed(self):
-        # Unknown changed files count as changed: the smoke is cheap and offline.
-        changed_files = self.info.get_changed_files()
-        return changed_files is None or any(
-            path in self.SELECTION_SOURCES for path in changed_files
-        )
-
-    # Keep in sync with TEST_FILE_EXTENSIONS in tests/clickhouse-test.
-    _TEST_FILE_EXTENSIONS = (".sql.j2", ".sql", ".sh", ".py", ".expect")
-
-    @classmethod
-    def _derive_test_name(cls, fpath: str):
-        """Map a changed file under `tests/queries/0_stateless/` to a test name.
-
-        Returns the test base name (without extension) suitable for `clickhouse-test --test`,
-        or `None` if the file does not correspond to a real test (e.g. a data file like
-        `02995_settings_26_4_1.tsv`, which is consumed by `02995_new_settings_history.sh`
-        but has no test of its own).
-        """
-        fname = os.path.basename(fpath)
-
-        # Direct hit: the changed file is itself a test source file.
-        for ext in cls._TEST_FILE_EXTENSIONS:
-            if fname.endswith(ext):
-                return fname[: -len(ext)]
-
-        # Supporting file (`.reference`, `.reference.j2`, `.tsv`, ...). Walk the
-        # extensions one at a time looking for a sibling test source file with
-        # the same base name. This catches reference updates like
-        # `00172_hits_joins.reference.j2` → `00172_hits_joins.sql.j2` while
-        # rejecting orphan data files like `02995_settings_26_4_1.tsv`.
-        test_dir = Path("tests/queries/0_stateless")
-        candidate = fname
-        while "." in candidate:
-            candidate = candidate.rsplit(".", 1)[0]
-            for ext in cls._TEST_FILE_EXTENSIONS:
-                if (test_dir / f"{candidate}{ext}").is_file():
-                    return candidate
-        return None
-
-    @classmethod
-    def _tests_owning_data_file(cls, fpath: str):
-        """Map an auxiliary stateless file back to the base names of the tests
-        that own it.
-
-        A data fixture may sit next to its test (`02995_settings_26_4_1.tsv`) or
-        in a subdirectory (`data_parquet/02716_data.parquet`); either way it has
-        no test of its own, so `_derive_test_name` skips it. But such a fixture
-        change still alters the surface of the test that consumes it, and a drift
-        guard that skips it would false-green the very drift it exists to catch.
-
-        Fixtures carry their owning test's five-digit prefix by convention, so
-        the prefix narrows the candidates to the `NNNNN_*` tests at the suite
-        root (a handful of files, never the whole suite). Among those, prefer the
-        ones whose body references the fixture's literal filename. When none
-        does, retry with the extensionless stem, since format schemas are
-        conventionally referenced without the extension
-        (`format_schema = 'NNNNN_foo:Message'` for `format_schemas/NNNNN_foo.proto`).
-        The stem is strictly a fallback: a short or cross-extension stem
-        (`03250.proto` → `03250`, or `03036_archive1.tar` next to a test that
-        reads `03036_archive1.zip`) would otherwise pull unrelated prefix
-        siblings into mappings the literal filename already resolves precisely.
-        Fall back to all prefix siblings when neither matches — the reference is
-        then constructed dynamically and cannot be found textually. Return an
-        empty list when the file has no numeric prefix or no test with that
-        prefix exists — there is then genuinely nothing to rerun, and emitting a
-        pattern that matches no test would make `clickhouse-test` exit 1 (the
-        failure mode `PR #104097` fixed).
-        """
-        match = re.match(r"(\d{5})", os.path.basename(fpath))
-        if match is None:
-            return []
-        prefix = match.group(1)
-        test_dir = Path("tests/queries/0_stateless")
-        candidates = {}
-        for ext in cls._TEST_FILE_EXTENSIONS:
-            for test_file in test_dir.glob(f"{prefix}_*{ext}"):
-                candidates[test_file.name[: -len(ext)]] = test_file
-        if not candidates:
-            return []
-        fname = os.path.basename(fpath)
-        stem = os.path.splitext(fname)[0]
-        by_fname = []
-        by_stem = []
-        for base_name, test_file in candidates.items():
-            try:
-                with test_file.open("r", encoding="utf-8", errors="ignore") as f:
-                    body = f.read()
-            except OSError:
-                continue
-            if fname in body:
-                by_fname.append(base_name)
-            elif stem in body:
-                by_stem.append(base_name)
-        referencing = by_fname or by_stem
-        return sorted(referencing) if referencing else sorted(candidates)
-
-    # Submodules with test data, the same as `test_data_submodules` in `ci/defs/job_configs.py`.
-    TEST_DATA_SUBMODULES = ("contrib/parquet-testing",)
-
-    @classmethod
-    def is_test_data_submodule(cls, fpath: str) -> bool:
-        return fpath.removeprefix("./") in cls.TEST_DATA_SUBMODULES
-
-    @classmethod
-    def test_files_using_test_data_submodule(cls, fpath: str):
-        """Map a changed test data submodule to the stateless test source files
-        whose body references its path, so that a bump of the submodule reruns
-        the tests that read it."""
-        fpath = fpath.removeprefix("./")
-        result = []
-        for ext in cls._TEST_FILE_EXTENSIONS:
-            for test_file in Path("tests/queries/0_stateless").glob(f"*{ext}"):
-                try:
-                    with test_file.open("r", encoding="utf-8", errors="ignore") as f:
-                        if fpath in f.read():
-                            result.append(str(test_file))
-                except OSError:
-                    continue
-        return sorted(result)
-
-    @classmethod
-    def _tests_using_test_data_submodule(cls, fpath: str):
-        """The base names of the tests from `test_files_using_test_data_submodule`."""
-        result = []
-        for test_file in cls.test_files_using_test_data_submodule(fpath):
-            name = Path(test_file).name
-            for ext in cls._TEST_FILE_EXTENSIONS:
-                if name.endswith(ext):
-                    result.append(name[: -len(ext)])
-                    break
-        return sorted(result)
-
-    @staticmethod
-    def is_functional_test_file(fpath: str) -> bool:
-        """A changed path that is itself a stateless functional test source file."""
-        fpath = fpath.removeprefix("./")
-        return fpath.startswith("tests/queries/0_stateless/") and Path(fpath).is_file()
-
-    @staticmethod
-    def is_integration_test_file(fpath: str) -> bool:
-        """A changed path that is itself an integration test module."""
-        fpath = fpath.removeprefix("./")
-        return (
-            fpath.startswith("tests/integration/test_")
-            and not fpath.startswith("tests/integration/test_e2e_")
-            and Path(fpath).name.startswith("test")
-            and fpath.endswith(".py")
-            and Path(fpath).is_file()
-        )
-
-    @staticmethod
-    def is_ci_job_script(fpath: str) -> bool:
-        """A changed path under the CI job scripts themselves.
-
-        Tolerated alongside test-file changes by the batch-skip check in
-        `functional_tests.py` / `integration_test_job.py`: such a change is
-        exercised identically by every batch, so a batch that does not
-        contain the changed test file is still a valid check of the
-        (possibly changed) job script.
-        """
-        fpath = fpath.removeprefix("./")
-        return fpath.startswith("ci/jobs/") and Path(fpath).is_file()
-
-    @staticmethod
-    def is_documentation_file(fpath: str) -> bool:
-        """A changed documentation path, the same set as `only_docs` in `filter_job.py`.
-
-        Tolerated alongside test-file changes by the batch-skip check in
-        `functional_tests.py` / `integration_test_job.py`: documentation
-        affects neither the binary nor the selection of tests.
-        """
-        fpath = fpath.removeprefix("./")
-        return (
-            fpath.startswith("docs/")
-            or fpath.startswith("docker/docs")
-            or fpath.endswith(".md")
-        )
-
-    @classmethod
-    def functional_test_hash_batch_file(cls, fpath: str):
-        """Return the on-disk stateless test filename (with extension) that
-        `clickhouse-test --run-by-hash-*` uses to bucket the given changed path,
-        or `None` if it cannot be resolved to a concrete test source file.
-
-        `clickhouse-test`'s `is_test_from_dir`/`get_selected_tests` only look
-        at files directly inside the suite root (`os.listdir`, not
-        recursive), so a file nested in a subdirectory - e.g.
-        `tests/queries/0_stateless/helpers/httpclient.py` or
-        `tests/queries/0_stateless/data_avro/generate_avro.sh` - is never a
-        test case there, no matter its extension. Hashing such a nested
-        file's basename would fabricate a bucket assignment that does not
-        correspond to how `--run-by-hash-*` actually splits the suite, so
-        return `None` (the caller then conservatively runs the batch) unless
-        the file's parent directory is exactly the suite root.
-        """
-        test_dir = Path("tests/queries/0_stateless")
-        path = Path(fpath.removeprefix("./"))
-        if path.parent != test_dir:
-            return None
-        fname = path.name
-        for ext in cls._TEST_FILE_EXTENSIONS:
-            if fname.endswith(ext):
-                return fname
-        base_name = cls._derive_test_name(fpath)
-        if base_name is None:
-            return None
-        for ext in cls._TEST_FILE_EXTENSIONS:
-            if (test_dir / f"{base_name}{ext}").is_file():
-                return f"{base_name}{ext}"
-        return None
-
-    @classmethod
-    def functional_test_source_file(cls, test_name: str):
-        """Return the stateless test source file name (e.g. `00001_x.sql`) for a
-        test name as used by `clickhouse-test` (`00001_x` or `00001_x.`), or
-        `None` when no such file exists in `tests/queries/0_stateless` - a
-        stateful test, or a test that has since been removed or renamed.
-
-        `clickhouse-test` reports rendered `.sql.j2` tests as `<name>.gen` in
-        failures and as `<name>.gen.sql` in coverage. Normalize those report
-        names to the template base before looking up the source file.
-        """
-        base_name = cls.normalize_stateless_test_name(test_name).rstrip(".")
-        test_dir = Path("tests/queries/0_stateless")
-        for ext in cls._TEST_FILE_EXTENSIONS:
-            if (test_dir / f"{base_name}{ext}").is_file():
-                return f"{base_name}{ext}"
-        return None
-
-    @staticmethod
-    def normalize_stateless_test_name(test_name: str) -> str:
-        """Map a rendered `.sql.j2` test name reported by CI to its source name.
-
-        Rendered template tests are recorded as `<name>.gen` by test failures
-        and `<name>.gen.sql` by per-test coverage, whereas `clickhouse-test`
-        selectors match source test names. Keep a trailing dot, used for exact
-        matching of changed tests, intact.
-        """
-        exact = test_name.endswith(".")
-        base_name = test_name.rstrip(".")
-        if base_name.endswith(".gen.sql"):
-            base_name = base_name.removesuffix(".gen.sql")
-        elif base_name.endswith(".gen"):
-            base_name = base_name.removesuffix(".gen")
-        return f"{base_name}." if exact else base_name
-
-    @staticmethod
-    def is_sequential_functional_test(test_source_file: str) -> bool:
-        """True if the on-disk stateless test file (e.g. `00001_x.sql`, as
-        returned by `functional_test_hash_batch_file`) is tagged `no-parallel`
-        or `sequential`.
-
-        Mirrors `clickhouse-test`'s own `is_sequential_test`/tag-parsing logic,
-        so the batch-skip check in `functional_tests.py` can tell whether a
-        changed test would even be selected by a job invoked with the
-        `parallel`/`sequential` runner option (`--no-sequential`/`--no-parallel`),
-        which splits the suite into two independently hash-batched job flavors.
-        """
-        if test_source_file.endswith(".sql") or test_source_file.endswith(".sql.j2"):
-            comment_sign = "--"
-        elif test_source_file.endswith((".sh", ".py", ".expect")):
-            comment_sign = "#"
-        else:
-            return False
-        path = Path("tests/queries/0_stateless") / test_source_file
-        try:
-            with path.open("r", encoding="utf-8", errors="ignore") as f:
-                for line in f:
-                    line = line.rstrip("\n")
-                    if not line.startswith(comment_sign):
-                        continue
-                    rest = line[len(comment_sign) :].lstrip()
-                    if not rest.startswith("Tags:"):
-                        continue
-                    tags = {t.strip() for t in rest[len("Tags:") :].split(",")}
-                    return "no-parallel" in tags or "sequential" in tags
-        except OSError:
-            return False
-        return False
-
-    def get_changed_tests(self, strict=False):
+    def get_changed_tests(self):
         # TODO: add support for integration tests
-        if hasattr(self, "_diff_text") and self._diff_text:
-            # Reuse already-fetched diff text to extract changed file names — avoids
-            # a second diff fetch and works when the diff was pre-fetched via --diff-file.
-            changed_files = sorted(
-                {
-                    m.group(1)
-                    for m in re.finditer(
-                        r"^(?:--- a/|\+\+\+ b/|rename from |rename to )(.+)$",
-                        self._diff_text,
-                        re.MULTILINE,
-                    )
-                }
-            )
-        elif self.info.is_local_run:
+        result = set()
+        if self.info.is_local_run:
             changed_files = Shell.get_output(
-                f"gh pr diff {self.info.pr_number} --repo ClickHouse/ClickHouse --name-only"
+                "git diff --name-only $(git merge-base master HEAD)"
             ).splitlines()
         else:
             changed_files = self.info.get_changed_files()
-        if strict and changed_files is None:
-            raise RuntimeError(
-                "Failed to get changed files required for test selection"
-            )
-        return self.tests_from_changed_files(changed_files)
-
-    @classmethod
-    def tests_from_changed_files(cls, changed_files, verbose=True):
-        """The stateless tests to rerun for the given changed files: the changed
-        tests themselves and the owners of changed data files."""
-        log = print if verbose else lambda *args: None
-        result = set()
-        if not changed_files:
-            return []
-
-        # Tests removed by the change, with no source file left under that name.
-        # Their supporting files (`.reference`, the `.python` helper of a `.sh`
-        # test, ...) go with them and are not fixtures of a surviving test.
-        # A deleted `.py` helper is a fixture, so a removed test is recognized by
-        # its removed reference as well.
-        removed_files = {
-            os.path.basename(fpath)
-            for fpath in changed_files
-            if Path(fpath).parent == Path("tests/queries/0_stateless")
-            and not Path(fpath).exists()
-        }
-        removed_tests = set()
-        for fname in removed_files:
-            for ext in cls._TEST_FILE_EXTENSIONS:
-                if not fname.endswith(ext):
-                    continue
-                name = fname[: -len(ext)]
-                if (
-                    f"{name}.reference" in removed_files
-                    or f"{name}.reference.j2" in removed_files
-                ) and not cls.functional_test_source_file(name):
-                    removed_tests.add(name)
+        assert changed_files, "No changed files"
 
         for fpath in changed_files:
-            if cls.is_test_data_submodule(fpath):
-                for base_name in cls._tests_using_test_data_submodule(fpath):
-                    log(
-                        f"Detected changed test data submodule '{fpath}' used by test '{base_name}'"
-                    )
-                    result.add(f"{base_name}.")
-                continue
-
-            if not fpath.startswith("tests/queries/0_stateless/"):
-                if fpath.startswith("tests/queries/"):
-                    # Log any other changed file under tests/queries for future debugging
-                    log(
-                        f"File '{fpath}' changed, but doesn't match expected test pattern"
-                    )
-                continue
-
-            # A file directly at the suite root may itself be a test source, or a
-            # supporting file (`.reference`, a `.sql.j2` template, ...) whose sibling
-            # test shares its base name.
-            if Path(fpath).parent == Path("tests/queries/0_stateless"):
-                test_base_name = cls._derive_test_name(fpath)
-                if test_base_name is not None and cls.functional_test_source_file(
-                    test_base_name
-                ):
-                    log(f"Detected changed test: '{test_base_name}' (from '{fpath}')")
-                    # The '.' suffix marks a whole-test name; `selection_pattern`
-                    # turns it into the selector that runs only this test.
-                    result.add(f"{test_base_name}.")
+            if re.match(r"tests/queries/0_stateless/\d{5}", fpath):
+                if not Path(fpath).exists():
+                    print(f"File '{fpath}' was removed — skipping")
                     continue
 
-                # A file of a removed test has no owner to rerun. Mapping it as a
-                # fixture would fall back to every test sharing its number prefix.
-                if not Path(fpath).exists():
-                    candidate = os.path.basename(fpath)
-                    while "." in candidate:
-                        candidate = candidate.rsplit(".", 1)[0]
-                        if candidate in removed_tests:
-                            break
-                    if candidate in removed_tests:
-                        log(
-                            f"File '{fpath}' belongs to the removed test '{candidate}' — skipping"
-                        )
-                        continue
+                print(f"Detected changed test file: '{fpath}'")
 
-            # Either a data fixture nested in a subdirectory
-            # (`data_parquet/02716_data.parquet`) or a root-level orphan data file
-            # (`02995_settings_26_4_1.tsv`) with no sibling test. Map it back to the
-            # test(s) that own it so a fixture-only change still reruns the tests
-            # that consume it; otherwise the flaky check — and the merge-queue drift
-            # guard built on it — would silently skip the very test surface the
-            # change affects. Emit only real tests: `_tests_owning_data_file` returns
-            # an empty list when nothing maps, so we never fabricate a no-match
-            # pattern (which would make clickhouse-test exit 1).
-            owning_tests = cls._tests_owning_data_file(fpath)
-            if owning_tests:
-                for base_name in owning_tests:
-                    log(
-                        f"Detected changed data file '{fpath}' owned by test '{base_name}'"
-                    )
-                    # The '.' suffix marks a whole-test name; `selection_pattern`
-                    # turns it into the selector that runs only this test.
-                    result.add(f"{base_name}.")
-            else:
-                log(
-                    f"File '{fpath}' is not a test source and has no owning test — skipping"
+                fname = os.path.basename(fpath)
+                fname_without_ext = os.path.splitext(fname)[0]
+
+                # Add '.' suffix to precisely match this test only
+                result.add(f"{fname_without_ext}.")
+
+            elif fpath.startswith("tests/queries/"):
+                # Log any other changed file under tests/queries for future debugging
+                print(
+                    f"File '{fpath}' changed, but doesn't match expected test pattern"
                 )
 
         return sorted(result)
 
-    # The merge queue reruns at most this many of the tests that `master` added
-    # or changed after the PR's last CI run, in addition to the PR's own tests.
-    MERGE_QUEUE_DRIFT_TESTS_LIMIT = 30
-
-    # Name words that say nothing about the tested feature.
-    _NAME_STOP_WORDS = frozenset(
-        {
-            "test",
-            "with",
-            "from",
-            "into",
-            "when",
-            "without",
-            "check",
-            "data",
-            "impl",
-            "common",
-            "core",
-            "base",
-            "stateless",
-            "queries",
-            "reference",
-        }
-    )
-
-    @classmethod
-    def _name_words(cls, name):
-        """Lowercase words of a test name or a source file name, split at
-        underscores and CamelCase, with the plural `s` removed, so that
-        `05339_string_filters_during_scan_parquet` and `ParquetFilter.cpp`
-        share `parquet` and `filter`."""
-        words = set()
-        for word in re.findall(r"[A-Z]+(?![a-z])|[A-Z]?[a-z]+", name):
-            word = word.lower()
-            if len(word) > 4 and word.endswith("s"):
-                word = word[:-1]
-            if len(word) >= 4 and word not in cls._NAME_STOP_WORDS:
-                words.add(word)
-        return words
-
-    @classmethod
-    def get_merge_queue_drift_tests(cls, changed_files, limit=None):
-        """The stateless tests that `master` added or changed after the last CI
-        run of the PR in a merge-queue entry.
-
-        The PR CI tested the PR merged into the `master` of that time. The tests
-        that landed later never ran with the PR's code, so a PR can break them
-        while every check is green on both sides (e.g. a new test of a code path
-        the PR changes). This catches the reverse of the case the merge-queue
-        flaky check was made for: a `master` change breaking the PR's tests.
-
-        Runs in the `Config Workflow` job of the merge queue, which has the commit
-        history. HEAD is the merge-queue commit: the merge of the queue base
-        (`master` with the entries ahead) and the PR head. The PR CI cannot have
-        been based on a `master` older than the PR head commit, so the tests
-        changed on the first-parent history of the queue base after the PR head
-        commit time are the ones the PR CI may have missed. When the PR has merged
-        `master` since, its merge base bounds the range more tightly.
-
-        When there are more than `limit` such tests, the tests whose names share
-        more words with the names of the files changed by the PR come first, then
-        the newest.
-        """
-        if limit is None:
-            limit = cls.MERGE_QUEUE_DRIFT_TESTS_LIMIT
-        commits = Shell.get_output_or_raise("git rev-list --parents -n 1 HEAD").split()
-        if len(commits) != 3:
-            raise RuntimeError(
-                f"Expected the merge-queue commit to have two parents, got: {commits}"
-            )
-        _, queue_base, pr_head = commits
-        pr_head_time = Shell.get_output_or_raise(f"git log -1 --format=%cI {pr_head}")
-        drift_base = Shell.get_output_or_raise(
-            f"git rev-list -n 1 --first-parent --before={pr_head_time} {queue_base}"
-        )
-        merge_base = Shell.get_output_or_raise(f"git merge-base {queue_base} {pr_head}")
-        if Shell.check(f"git merge-base --is-ancestor {drift_base} {merge_base}"):
-            drift_base = merge_base
-        print(
-            f"Tests changed in the merge-queue base after the PR head {pr_head[:12]} "
-            f"({pr_head_time}): {drift_base[:12]}..{queue_base[:12]}"
-        )
-        drift_files = Shell.get_output_or_raise(
-            f"git diff --no-renames --diff-filter=AM --name-only {drift_base} {queue_base}"
-            f" -- tests/queries/0_stateless/"
-        ).splitlines()
-        tests = cls.tests_from_changed_files(drift_files, verbose=False)
-
-        # A word weighs as many as the files of the PR whose names have it.
-        word_weights = Counter()
-        for fpath in changed_files:
-            word_weights.update(
-                cls._name_words(Path(fpath).name.split(".")[0])
-                | cls._name_words(Path(fpath).parent.name)
-            )
-        scores = {
-            test: sum(word_weights[word] for word in cls._name_words(test))
-            for test in tests
-        }
-        tests.sort(key=lambda test: (scores[test], test), reverse=True)
-        for test in tests[:limit]:
-            print(f"  {test} (relevance {scores[test]})")
-        if len(tests) > limit:
-            print(f"Skipped {len(tests) - limit} less related tests: {tests[limit:]}")
-        return sorted(tests[:limit])
-
-    def get_merge_queue_tests(self):
-        """The tests of the merge-queue flaky check: the PR's new/changed tests
-        and the tests `master` changed after the PR's last CI run, stored by the
-        `Config Workflow` job (see `get_merge_queue_drift_tests`)."""
-        changed_tests = self.get_changed_tests()
-        drift_tests = self.info.get_kv_data()["merge_queue_drift_tests"]
-        print(f"Changed/new tests of the PR ({len(changed_tests)}): {changed_tests}")
-        print(f"Tests changed on master since the PR CI ({len(drift_tests)}): {drift_tests}")
-        return sorted(set(changed_tests) | set(drift_tests))
-
     def get_previously_failed_tests(self):
+        from ci.praktika.cidb import CIDB
+        from ci.praktika.settings import Settings
+
         assert self.job_type, "Unsupported job type"
         assert (
             self.info.pr_number > 0
         ), "Find tests by previous failures applicable only for PRs"
 
         tests = []
-        cidb = self._ci_db()
+        cidb = CIDB(url=Settings.CI_DB_READ_URL, user="play", passwd="")
         if self.job_type == self.INTEGRATION_JOB_TYPE:
             test_name_pattern = "^test_"
         elif self.job_type == self.STATELESS_JOB_TYPE:
@@ -664,9 +114,8 @@ class Targeting:
             PR_NUMBER=self.info.pr_number,
             JOB_TYPE=self.job_type,
             TEST_NAME_PATTERN=test_name_pattern,
-            CUTOFF=self.selection_cutoff(),
         )
-        query_result = cidb.query(query, log_level="") or ""
+        query_result = cidb.query(query, log_level="")
         # Parse test names from the query result
         for line in query_result.strip().split("\n"):
             if line.strip():
@@ -676,565 +125,207 @@ class Targeting:
                     test_name = parts[0]
                     tests.append(test_name)
         print(f"Parsed {len(tests)} test names: {tests}")
-        tests = list(dict.fromkeys(tests))
-        # A test that failed within the CIDB window (30 days) may have been
-        # deleted or renamed on master since — e.g. a flaky test that was
-        # removed instead of deflaked. Passing its name to clickhouse-test (or
-        # to the integration runner) selects nothing; with no other targeted
-        # tests the run ends with "No tests were run." and exit code 1 (the
-        # same failure mode `PR #104097` fixed for orphan data files). Rerun
-        # only tests that still exist in this checkout.
-        missing = [t for t in tests if not self._test_exists(t)]
-        if missing:
-            print(
-                f"Skipping {len(missing)} previously failed tests that no longer "
-                f"exist in the checkout: {missing}"
-            )
-            tests = [t for t in tests if t not in set(missing)]
-        return tests
+        tests = list(set(tests))
+        return sorted(tests)
 
-    def _test_exists(self, test_name: str) -> bool:
-        """Whether a test name reported by CIDB still resolves to a test in
-        this checkout."""
-        if self.job_type == self.INTEGRATION_JOB_TYPE:
-            # Integration test names look like
-            # `test_storage_kafka/test.py::test_case[param]`; the first path
-            # component is the test directory under `tests/integration/`.
-            test_dir = test_name.split("/", 1)[0].split("::", 1)[0]
-            return (Path("tests/integration") / test_dir).is_dir()
-        # Stateless test names are the base name of a file under
-        # `tests/queries/0_stateless/` with one of the known extensions.
-        test_dir = Path("tests/queries/0_stateless")
-        test_name = self.selection_test_name(test_name).rstrip(".")
-        return any(
-            (test_dir / f"{test_name}{ext}").is_file()
-            for ext in self._TEST_FILE_EXTENSIONS
-        )
-
-    # Shared-registry files: purely declarative files whose changes are virtually always
-    # additive (`extern const Event …`, new setting entries, new error codes).  Every
-    # test emits profile events / reads settings, so coverage for any changed line in
-    # these files returns thousands of tests and floods the candidate pool with noise
-    # (the real signal lives in the other files touched by the same PR).  Skip them
-    # from precise coverage admission.
-    # Directories compiled into the instrumented server binary.
-    COVERAGE_SOURCE_PREFIXES = ("src/", "programs/", "base/")
-
-    SHARED_REGISTRY_FILES = frozenset(
-        {
-            "src/Common/ProfileEvents.cpp",
-            "src/Common/ProfileEvents.h",
-            "src/Common/CurrentMetrics.cpp",
-            "src/Common/CurrentMetrics.h",
-            "src/Common/ErrorCodes.cpp",
-            "src/Common/ErrorCodes.h",
-            "src/Common/SettingsChanges.cpp",
-            "src/Core/Settings.cpp",
-        }
-    )
-
-    def selection_cutoff(self):
-        """The point in time that every input of the selection is pinned to.
-
-        Each targeted job selects its tests on its own, so they must agree on
-        what they read from CIDB. The first attempt of a run uses the workflow
-        start time, resolved once by the config job. A rerun (including a rerun
-        of failed jobs only) uses the start of its attempt, so it picks up the
-        failures and coverage recorded since, and its jobs agree with each other.
+    def get_tests_by_changed_symbols(self, symbols):
         """
-        if not hasattr(self, "_selection_cutoff"):
-            if self.info.is_local_run:
-                start = datetime.now(timezone.utc)
-            elif self.info.run_attempt > 1:
-                start = self._run_attempt_start_time()
+        Returns a mapping from symbol to a list of tests that cover it.
+        """
+        SYMBOL_TO_TESTS_QUERY = """
+        SELECT groupArray(test_name) as tests
+        from checks_coverage_inverted
+        where 1
+        and check_start_time > now() - interval 3 days
+        and check_name LIKE '{JOB_TYPE}%'
+        and symbol = '{SYMBOL}'
+        """
+        symbol_to_tests = {}
+        cidb = CIDB(url=Settings.CI_DB_READ_URL, user="play", passwd="")
+        for symbol in symbols:
+            query = SYMBOL_TO_TESTS_QUERY.format(JOB_TYPE=self.job_type, SYMBOL=symbol)
+            result = cidb.query(query, log_level="")
+            # Parse the ClickHouse Array result
+            if result.strip():
+                try:
+                    tests = ast.literal_eval(result.strip())
+                    symbol_to_tests[symbol] = tests if isinstance(tests, list) else []
+                except (ValueError, SyntaxError):
+                    print(f"Failed to parse tests for symbol '{symbol}': {result}")
+                    symbol_to_tests[symbol] = []
             else:
-                assert (
-                    self.info.workflow_start_time > 0
-                ), "Workflow start time is required for test selection"
-                start = datetime.fromtimestamp(
-                    self.info.workflow_start_time, timezone.utc
-                )
-            self._selection_cutoff = start.strftime("%Y-%m-%d %H:%M:%S")
-            self.selection_diagnostics["cutoff"] = self._selection_cutoff
-        return self._selection_cutoff
+                symbol_to_tests[symbol] = []
 
-    def _github_get(self, path, accept="application/vnd.github+json"):
-        """GET `repos/<repo>/<path>` of the GitHub API. Failures that GitHub may not
-        repeat are retried for `github_retry_sec`, then `GitHubUnavailableError`."""
-        import requests
+        return symbol_to_tests
 
-        headers = {"Accept": accept}
-        token = os.environ.get("GITHUB_TOKEN", "")
-        if token:
-            headers["Authorization"] = f"Bearer {token}"
-        repo = self.info.repo_name or "ClickHouse/ClickHouse"
-        url = f"{GITHUB_API_URL}/repos/{repo}/{path}"
-        deadline = time.monotonic() + self.config.github_retry_sec
-        attempt = 0
-        while True:
-            attempt += 1
-            try:
-                response = requests.get(url, headers=headers, timeout=60)
-                response.raise_for_status()
-                return response
-            except requests.HTTPError as ex:
-                error = ex
-                status = ex.response.status_code if ex.response is not None else 0
-                body = ex.response.text if ex.response is not None else ""
-                if status == 429 or (
-                    status == 403
-                    and (
-                        ex.response.headers.get("x-ratelimit-remaining") == "0"
-                        or "rate limit" in body.lower()
-                    )
-                ):
-                    # GitHub asks not to retry before the limit resets.
-                    raise GitHubUnavailableError(f"GitHub API {ex}") from ex
-                # GitHub generates a large diff in the background for a later request.
-                if not (
-                    status >= 500 or (status == 422 and "too long to generate" in body)
-                ):
-                    raise
-            except (
-                requests.ConnectionError,
-                requests.Timeout,
-                requests.exceptions.ChunkedEncodingError,
-            ) as ex:
-                error = ex
-            remaining = deadline - time.monotonic()
-            print(
-                f"WARNING: GitHub API request failed, attempt {attempt}, "
-                f"{max(remaining, 0):.0f} s left to retry: {error}"
-            )
-            if remaining <= 0:
-                raise GitHubUnavailableError(
-                    f"GitHub API failed {attempt} times: {error}"
-                ) from error
-            time.sleep(min(2**attempt, remaining))
-
-    def _run_attempt_start_time(self):
-        response = self._github_get(
-            f"actions/runs/{self.info.run_id}/attempts/{self.info.run_attempt}"
-        )
-        return datetime.fromisoformat(
-            response.json()["run_started_at"].replace("Z", "+00:00")
-        ).astimezone(timezone.utc)
-
-    def coverage_snapshots(self):
-        if not hasattr(self, "_coverage_snapshots"):
-            # An export inserts its rows over several minutes under one
-            # timestamp. Skip exports that may still be in progress at the
-            # cutoff, so jobs starting at different times see the same rows.
-            cutoff = (
-                datetime.fromisoformat(self.selection_cutoff()).replace(
-                    tzinfo=timezone.utc
-                )
-                - timedelta(hours=self.config.coverage_settle_hours)
-            ).strftime("%Y-%m-%d %H:%M:%S")
-            snapshots = load_snapshots(
-                lambda query, timeout: self._ci_db().query(
-                    query, log_level="", timeout=timeout
-                ),
-                cutoff,
-                self.config,
-            )
-            self.selection_diagnostics.update(
-                {
-                    "coverage_cutoff": cutoff,
-                    "coverage_snapshots": snapshots,
-                    "snapshot_identity": "legacy-shard-timestamp",
-                }
-            )
-            validate_snapshots(snapshots, cutoff, self.config)
-            self._coverage_snapshots = snapshots
-        return self._coverage_snapshots
-
-    def build_coverage_query(self, changed_lines, hunk_ranges=None):
-        return build_candidate_query(
-            changed_lines, hunk_ranges or {}, self.coverage_snapshots(), self.config
-        )
-
-    def check_coverage_canary(self):
-        if self.selection_diagnostics.get("canary", {}).get("status") == "OK":
-            return self.selection_diagnostics["canary"]
-        snapshots = self.coverage_snapshots()
-        # Find an actual narrow region, then use the same diff-path conversion,
-        # candidate query and scorer as selection. Never substitute keyword hits.
-        source = f"checks_coverage_lines WHERE {snapshot_predicate(snapshots)}"
-        query = build_selector_smoke_seed_query(source, self.config)
-        started = time.monotonic()
-        self.selection_diagnostics["canary"] = {
-            "status": "checking",
-            "seed_query": query,
-        }
-        seeds = parse_rows(self._ci_db().query(query, log_level=""))
-        if not seeds:
-            raise RuntimeError(
-                f"Coverage canary has no usable regions: {self.selection_diagnostics}"
-            )
-        lines = [
-            (canonical_coverage_path(seed["file"]), int(seed["line_start"]))
-            for seed in seeds
-        ]
-        canary = {
-            "canonical_input_paths": sorted({path for path, _ in lines}),
-            "stored_path_samples": sorted({seed["file"] for seed in seeds}),
-            "newest_coverage_timestamp": max(s["check_start_time"] for s in snapshots),
-        }
-        production_query = self.build_coverage_query(lines)
-        canary["query"] = production_query
-        self.selection_diagnostics["canary"] = canary
-        regions = parse_rows(self._ci_db().query(production_query, log_level=""))
-        canary["region_count"] = len(regions)
-        candidates = rank_candidates(regions, lines, {}, snapshots, self.config)
-        if not candidates:
-            raise RuntimeError(f"Coverage selector canary failed: {json.dumps(canary)}")
-        canary.update(
-            {
-                "status": "OK",
-                "region_count": len(regions),
-                "query_seconds": time.monotonic() - started,
-            }
-        )
-        return canary
-
-    def get_tests_by_changed_lines(self, changed_lines, hunk_ranges=None):
-        coverage_lines = sorted(
-            {
-                (canonical_coverage_path(path), line)
-                for path, line in changed_lines
-                if canonical_coverage_path(path).startswith(
-                    self.COVERAGE_SOURCE_PREFIXES
-                )
-                and canonical_coverage_path(path) not in self.SHARED_REGISTRY_FILES
-            }
-        )
-        self.selection_diagnostics.update(
-            {
-                "changed_lines": sorted(changed_lines),
-                "coverage_lines": coverage_lines,
-                "hunk_ranges": hunk_ranges or {},
-            }
-        )
-        if not coverage_lines:
-            self._coverage_regions = []
-            return []
-        self.check_coverage_canary()
-        query = self.build_coverage_query(coverage_lines, hunk_ranges)
-        started = time.monotonic()
-        raw = self._ci_db().query(query, log_level="")
-        self._coverage_regions = parse_rows(raw)
-        self.selection_diagnostics.update(
-            {
-                "query": query,
-                "query_seconds": time.monotonic() - started,
-                "response_bytes": len(raw.encode()),
-                "region_count": len(self._coverage_regions),
-                "coverage_state": (
-                    "precise_matches"
-                    if self._coverage_regions
-                    else "no_precise_coverage"
-                ),
-            }
-        )
-        return rank_candidates(
-            self._coverage_regions,
-            coverage_lines,
-            hunk_ranges or {},
-            self.coverage_snapshots(),
-            self.config,
-            brackets=self.get_brackets(coverage_lines, hunk_ranges or {}),
-        )
-
-    def get_brackets(self, coverage_lines, hunk_ranges):
-        """The hunks that overlap no coverage region, with the tests that own the
-        regions on both sides of them; see `SelectionConfig.bracket_gap_lines`."""
-        if not self.config.bracket_gap_lines:
-            return []
-        files = {path for path, _ in coverage_lines}
-        hunks = {
-            canonical_coverage_path(path): ranges
-            for path, ranges in hunk_ranges.items()
-            if canonical_coverage_path(path) in files
-        }
-        if not hunks:
-            return []
-        snapshots = self.coverage_snapshots()
-        spans = parse_rows(
-            self._ci_db().query(
-                build_bracket_spans_query(hunks, snapshots, self.config), log_level=""
-            )
-        )
-        brackets = find_brackets(hunks, spans, self.config)
-        if brackets:
-            owners = parse_rows(
-                self._ci_db().query(
-                    build_bracket_owners_query(brackets, snapshots, self.config),
-                    log_level="",
-                )
-            )
-            attach_bracket_owners(brackets, owners)
-        self.selection_diagnostics["brackets"] = [
-            {**bracket, "owners": len(bracket["owners"])} for bracket in brackets
-        ]
-        return brackets
-
-    def get_changed_or_new_tests_with_info(self, strict=False):
-        tests = sorted(self.get_changed_tests(strict=strict))
+    def get_changed_or_new_tests_with_info(self):
+        tests = self.get_changed_tests()
         info = f"Found {len(tests)} changed or new tests:\n"
         for test in tests[:200]:
             info += f" - {test}\n"
         return tests, Result(
             name="tests that were changed or added",
-            status=Result.Status.OK,
+            status=Result.StatusExtended.OK,
             info=info,
         )
 
-    def get_previously_failed_tests_with_info(self, strict=False):
-        try:
-            tests = self.get_previously_failed_tests()
-        except Exception as e:
-            if strict:
-                # The targeted jobs skip when GitHub is unavailable.
-                if isinstance(e, GitHubUnavailableError):
-                    raise
-                raise RuntimeError(
-                    "Failed to get previously failed tests required for test selection"
-                ) from e
-            print(
-                f"WARNING: Failed to get previously failed tests (best effort): {e}",
-                file=sys.stderr,
-            )
-            tests = []
+    def get_previously_failed_tests_with_info(self):
+        tests = self.get_previously_failed_tests()
         # TODO: add job name to the result.info
         info = f"Found {len(tests)} previously failed tests:\n"
         for test in tests[:200]:
             info += f" - {test}\n"
         return tests, Result(
             name="tests that failed in previous runs",
-            status=Result.Status.OK,
+            status=Result.StatusExtended.OK,
             info=info,
         )
 
-    @staticmethod
-    def _parse_diff_lines(diff_text: str) -> list:
+    def get_map_file_line_to_symbol_tests(self, binary_path):
         """
-        Parse a unified diff and return `(filename, line_no)` tuples for every changed line.
-        Line numbers are old-file positions (from the `-a,b` hunk header), which match the
-        master-build coverage data stored in CIDB.  For `-` lines the old-file line number
-        is used directly; for `+` lines (pure additions) the current old-file position
-        (insertion point) is used so that the surrounding function is still found in CIDB.
-        """
-        changed: set = set()
-        current_file = None
-        old_line = 0
-        in_hunk = False
-        for line in diff_text.splitlines():
-            if line.startswith("diff --git "):
-                current_file = None
-                in_hunk = False
-            elif line.startswith("--- "):
-                current_file = line[6:] if line.startswith("--- a/") else None
-                in_hunk = False
-            elif line.startswith("+++ b/"):
-                if current_file is None:
-                    current_file = line[6:]
-                in_hunk = False
-            elif line.startswith("@@ ") and current_file:
-                m = re.search(r"-(\d+)", line)
-                old_line = int(m.group(1)) if m else 0
-                in_hunk = True
-            elif in_hunk:
-                if line.startswith("-"):
-                    changed.add((current_file, old_line))
-                    old_line += 1
-                elif line.startswith("+"):
-                    changed.add((current_file, old_line))  # insertion point in old file
-                elif line.startswith(" "):
-                    old_line += 1  # context line
-        return sorted(changed)
-
-    @staticmethod
-    def _parse_diff_hunk_ranges(diff_text: str) -> dict:
-        """
-        Parse a unified diff and return per-file hunk boundary ranges.
-
-        Returns `{filename: [(hunk_start, hunk_end), ...]}` where each tuple is the
-        old-file start and end line of a hunk.  These ranges are used to expand the
-        CIDB range query beyond just the actually-changed lines so that coverage
-        regions at unchanged context lines adjacent to the change are also captured.
-
-        Example: a hunk `@@ -331,6 ... @@` contains 6 old-file lines (331-336).
-        If CIDB only records a coverage point at line 332 (the first statement
-        after a branch), a query using only the changed lines {331} would miss it,
-        but including the full hunk range [331, 336] finds it.
-        """
-        hunks: dict = {}  # filename -> list of (start, end)
-        current_file = None
-        for line in diff_text.splitlines():
-            if line.startswith("diff --git "):
-                current_file = None
-            elif line.startswith("--- "):
-                current_file = line[6:] if line.startswith("--- a/") else None
-            elif line.startswith("+++ b/"):
-                if current_file is None:
-                    current_file = line[6:]
-            elif line.startswith("@@ ") and current_file:
-                # @@ -old_start,old_count +new_start,new_count @@
-                m = re.search(r"-(\d+)(?:,(\d+))?", line)
-                if m:
-                    start = int(m.group(1))
-                    count = int(m.group(2)) if m.group(2) is not None else 1
-                    end = max(start, start + count - 1)
-                    hunks.setdefault(current_file, []).append((start, end))
-        return hunks
-
-    def get_diff_text(self) -> str:
-        """Fetch the PR diff text (cached on self._diff_text after first call).
-
-        CI containers have no `.git` directory. Fetch a comparison pinned to the PR SHA.
-        For public repos no auth is needed; for private repos GITHUB_TOKEN is used.
-        """
-        if hasattr(self, "_diff_text") and self._diff_text is not None:
-            return self._diff_text
-        assert self.info.pr_number > 0, "Diff fetching applicable for PRs only"
-        repo = self.info.repo_name or "ClickHouse/ClickHouse"
-        if self.info.is_local_run:
-            self._diff_text = Shell.get_output(
-                f"gh pr diff {self.info.pr_number} --repo {repo}"
-            )
-        else:
-            metadata = self._github_get(f"pulls/{self.info.pr_number}").json()
-            if metadata["head"]["sha"] != self.info.sha:
-                raise RuntimeError(
-                    "PR head changed before test selection; refusing a diff for a different SHA"
-                )
-            base_sha = metadata["base"]["sha"]
-            self._diff_text = self._github_get(
-                f"compare/{base_sha}...{self.info.sha}",
-                accept="application/vnd.github.diff",
-            ).text
-            self.selection_diagnostics["diff_base_sha"] = base_sha
-        return self._diff_text
-
-    def get_changed_lines_from_diff(self):
-        """
-        Return changed lines from the PR diff.
-        In CI fetches the diff from GitHub API; for local runs uses `gh pr diff`.
+        Build a mapping from (file, line) to (resolved symbol, [tests]).
+        Returns:
+            dict: {(file, line): (symbol or None, [tests])}
         """
         assert self.info.pr_number > 0, "Find tests by diff applicable for PRs only"
-        return self._parse_diff_lines(self.get_diff_text())
+        dts = DiffToSymbols(binary_path, self.info.pr_number)
+        file_line_to_address_linkagename_symbol = dts.get_map_line_to_symbol()
+        not_resolved_file_lines = {}
+        symbols_to_file_lines = {}
 
-    @classmethod
-    def selection_test_name(cls, test):
-        name = cls.normalize_stateless_test_name(test).rstrip(".")
-        for extension in cls._TEST_FILE_EXTENSIONS:
-            if name.endswith(extension):
-                name = name[: -len(extension)]
-                break
-        return name + "."
+        for (file_, line_), (
+            address,
+            linkage_name,
+            symbol,
+        ) in file_line_to_address_linkagename_symbol.items():
+            if symbol in symbols_to_file_lines:
+                continue
+            if not symbol:
+                if file_ not in not_resolved_file_lines:
+                    not_resolved_file_lines[file_] = set()
+                if (
+                    line_ - 1 in not_resolved_file_lines[file_]
+                ):  # skip consecutive lines
+                    continue
+                not_resolved_file_lines[file_].add(line_)
+            else:
+                symbols_to_file_lines[symbol] = (file_, line_)
 
-    @classmethod
-    def selection_pattern(cls, test):
-        """Render a selected stateless test as a `clickhouse-test` positional selector.
+        # Fetch mapping of symbols to tests from the coverage database
+        symbol_to_tests = self.get_tests_by_changed_symbols(
+            list(symbols_to_file_lines.keys())
+        )
+        map_file_line_to_test = {}
+        for symbol, tests in symbol_to_tests.items():
+            map_file_line_to_test[
+                (symbols_to_file_lines[symbol][0], symbols_to_file_lines[symbol][1])
+            ] = (symbol, list(set(tests)))
+        for file_, lines in not_resolved_file_lines.items():
+            for line in lines:
+                map_file_line_to_test[(file_, line)] = (None, [])
 
-        Those arguments are regexes, and `TestSuite.get_selected_tests` searches them
-        against the suite file name *including* its extension, so a selector that stops
-        short of the whole file name also selects every test whose name extends this one
-        (`01655_plan_optimizations` picks up `01655_plan_optimizations_merge_filters`).
-        Spell the file name out: anchored, escaped, one known extension.
+        return map_file_line_to_test
+
+    def get_most_relevant_tests(self, binary_path, max_tests_per_symbol=100):
         """
-        name = re.escape(cls.selection_test_name(test).rstrip("."))
-        extensions = "|".join(re.escape(ext) for ext in cls._TEST_FILE_EXTENSIONS)
-        return f"^{name}(?:{extensions})$"
+        1. Makes a best effort to get changed symbols by reading the PR diff and the ClickHouse binary DWARF.
+        2. Gets a list of tests that cover each found symbol from the coverage database.
+        3. Skips symbols with more than 'max_tests_per_symbol' tests (too common code).
+        4. Returns the unique tests and a Result with info about the findings.
+        """
 
-    def get_most_relevant_tests(self):
-        changed_lines = self.get_changed_lines_from_diff()
-        hunk_ranges = self._parse_diff_hunk_ranges(self.get_diff_text())
-        candidates = self.get_tests_by_changed_lines(changed_lines, hunk_ranges)
-        self._coverage_candidates = []
-        missing = []
-        for candidate in candidates:
-            if self.job_type == self.INTEGRATION_JOB_TYPE:
-                # Integration coverage is recorded per module, e.g. `test_storage_s3/test.py`.
-                exists = (Path("tests/integration") / candidate["test"]).is_file()
+        file_line_to_symbol_tests = self.get_map_file_line_to_symbol_tests(binary_path)
+        not_resolved_file_lines = {}
+        resolved_file_lines = {}
+        symbols_to_tests = {}
+        selected_tests = set()
+
+        for (file_, line_), (symbol, tests) in file_line_to_symbol_tests.items():
+            if not tests:
+                if (file_, line_) not in not_resolved_file_lines:
+                    not_resolved_file_lines[(file_, line_)] = []
+                not_resolved_file_lines[(file_, line_)] = symbol
             else:
-                exists = self.functional_test_source_file(
-                    self.selection_test_name(candidate["test"])
-                )
-            if exists:
-                self._coverage_candidates.append(candidate)
-            else:
-                missing.append(
-                    {**candidate, "admission_reason": "test_missing_in_checkout"}
-                )
-        self.selection_diagnostics["missing_tests"] = missing
-        tests = [c["test"] for c in self._coverage_candidates]
-        return tests, Result(
-            name="tests found by coverage",
-            status=Result.Status.OK,
-            info=f"Found {len(tests)} precise coverage candidates; entry-count scoring disabled",
+                if symbol in symbols_to_tests:
+                    continue
+                symbols_to_tests[symbol] = tests
+                resolved_file_lines[(file_, line_)] = (symbol, tests)
+
+        info = "Tests not found for lines:\n"
+        for (file_, line), symbol in not_resolved_file_lines.items():
+            info += f"  {file_}:{line} -> symbol: {symbol[:70] + '...' if symbol else 'NOT FOUND'}\n"
+        info = "Tests found for lines:\n"
+        if not resolved_file_lines:
+            info += "  No updates in source code\n"
+        else:
+            for (file_, line), (symbol, tests) in resolved_file_lines.items():
+                info += f"  {file_}:{line} -> symbol: {symbol[:70]}...\n"
+                if len(tests) > max_tests_per_symbol:
+                    info += f"    skipping {len(tests)} tests (too common code)\n"
+                else:
+                    selected_tests.update(tests)
+            for test in tests[:10]:
+                info += f"  - {test}\n"
+            if len(tests) > 10:
+                info += f"    ... and {len(tests) - 10} more tests\n"
+        info += f"Total unique tests: {len(selected_tests)}\n"
+        selected_tests = list(selected_tests)
+        return selected_tests, Result(
+            name="tests found by coverage", status=Result.StatusExtended.OK, info=info
         )
 
-    def get_all_relevant_tests_with_info(self, include_changed_tests=True):
-        self.get_diff_text()
+    def get_all_relevant_tests_with_info(self, ch_path):
+        tests = set()
         results = []
-        changed = []
-        if include_changed_tests and self.job_type == self.STATELESS_JOB_TYPE:
-            changed, result = self.get_changed_or_new_tests_with_info(strict=True)
+
+        # Integration tests run changed test suboptimally (entire module), it might be too long
+        # limit it to stateless tests only
+        if self.job_type == self.STATELESS_JOB_TYPE:
+            changed_tests, result = self.get_changed_or_new_tests_with_info()
+            tests.update(changed_tests)
             results.append(result)
-        failed, result = self.get_previously_failed_tests_with_info(strict=True)
+
+        previously_failed_tests, result = self.get_previously_failed_tests_with_info()
+        tests.update(previously_failed_tests)
         results.append(result)
-        _, result = self.get_most_relevant_tests()
-        candidates = self._coverage_candidates
-        results.append(result)
-        normalize = (
-            self.selection_test_name
-            if self.job_type == self.STATELESS_JOB_TYPE
-            else lambda test: test
-        )
-        selection = protect_selection(
-            changed, failed, candidates, normalize, self.config
-        )
-        self.selection_diagnostics.update(
-            {
-                "selector_version": self.config.version,
-                "coverage_path_version": self.config.path_version,
-                "config": asdict(self.config),
-                "candidates": candidates,
-                **selection,
-            }
-        )
-        ranked = [record["test"] for record in selection["selected"]]
-        details = f"Found {len(ranked)} relevant tests; {len(selection['rejected'])} excluded by temporary ceiling"
-        if selection["mandatory_overflow"]:
-            details += f"; mandatory tests exceed ceiling by {selection['mandatory_overflow']} (all retained)"
-        print(details)
-        return ranked, Result(
+
+        # TODO: Add coverage supoort for Integration tests
+        if self.job_type == self.STATELESS_JOB_TYPE:
+            try:
+                covering_tests, result = self.get_most_relevant_tests(ch_path)
+                tests.update(covering_tests)
+                results.append(result)
+            except Exception as e:
+                print(
+                    f"WARNING: Failed to get coverage-based tests (best effort): {e}",
+                    file=sys.stderr,
+                )
+                results.append(
+                    Result(
+                        name="tests found by coverage",
+                        status=Result.StatusExtended.OK,
+                        info=f"Skipped: {e}",
+                    )
+                )
+                raise
+
+        return tests, Result(
             name="Fetch relevant tests",
-            status=Result.Status.OK,
-            info=details,
+            status=Result.Status.SUCCESS,
+            info=f"Found {len(tests)} relevant tests",
             results=results,
         )
 
 
 if __name__ == "__main__":
-    # local run: use the same pipeline as CI (get_all_relevant_tests_with_info)
+    # local run tests
     parser = argparse.ArgumentParser(
-        description="List tests covering changed lines for a PR by querying the coverage database."
+        description="List changed symbols for a PR by parsing the diff and querying ClickHouse."
     )
     parser.add_argument("pr", help="Pull request number")
     parser.add_argument(
-        "--coverage-only",
-        action="store_true",
-        help="Run only the coverage-based pass (get_most_relevant_tests), skip changed-file "
-        "and previously-failed passes. Uses one fewer GitHub API call — useful for eval.",
-    )
-    parser.add_argument(
-        "--diff-file",
-        default=None,
-        help="Path to a pre-fetched unified diff file. When provided, "
-        "get_changed_lines_from_diff reads from this file instead of calling gh.",
+        "clickhouse_path",
+        help='Path to the clickhouse binary (executed as "clickhouse local")',
     )
     args = parser.parse_args()
 
@@ -1245,20 +336,24 @@ if __name__ == "__main__":
 
     info = InfoLocalTest()
     targeting = Targeting(info)
+    file_line_to_symbol_tests = targeting.get_map_file_line_to_symbol_tests(
+        args.clickhouse_path
+    )
 
-    # If a pre-fetched diff file is provided, monkey-patch get_diff_text so both
-    # get_changed_lines_from_diff and get_most_relevant_tests read from the file
-    # rather than fetching the diff.
-    if args.diff_file:
-        diff_text = Path(args.diff_file).read_text()
-        targeting._diff_text = diff_text
+    print("\nNo tests found for lines:")
+    for (file, line), (symbol, tests) in file_line_to_symbol_tests.items():
+        if tests:
+            continue
+        print(
+            f"{file}:{line} -> symbol [{symbol[:70] + '...' if symbol else 'NOT FOUND'}"
+        )
 
-    if args.coverage_only:
-        ranked, result = targeting.get_most_relevant_tests()
-    else:
-        ranked, result = targeting.get_all_relevant_tests_with_info()
-
-    print(f"\nAll selected tests ({len(ranked)}):")
-    for test in ranked:
-        print(f" {test}")
-    print(f"\nFound {len(ranked)} relevant tests")
+    print("\nTests found for lines:")
+    for (file, line), (symbol, tests) in file_line_to_symbol_tests.items():
+        if not tests:
+            continue
+        print(f"{file}:{line} -> symbol [{symbol[:70]}...]:")
+        for test in tests[:10]:
+            print(f" - {test}")
+        if len(tests) > 10:
+            print(f" - ... and {len(tests) - 10} more tests")

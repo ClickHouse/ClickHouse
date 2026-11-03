@@ -44,7 +44,6 @@ class KeeperTCPHandler : public Poco::Net::TCPServerConnection
 public:
     static void registerConnection(KeeperTCPHandler * conn);
     static void unregisterConnection(KeeperTCPHandler * conn);
-    static void closeAllConnections();
     /// dump all connections statistics
     static void dumpConnections(WriteBufferFromOwnString & buf, bool brief);
     static void resetConnsStats();
@@ -77,8 +76,6 @@ private:
     Poco::Timespan max_session_timeout;
     Poco::Timespan session_timeout;
     int64_t session_id{-1};
-    /// Session the client asked to continue in its handshake, 0 for a new session.
-    int64_t previous_session_id{0};
     Stopwatch session_stopwatch;
     SocketInterruptablePollWrapperPtr poll_wrapper;
     Poco::Timespan send_timeout;
@@ -96,8 +93,9 @@ private:
     std::optional<CompressedReadBuffer> compressed_in;
     std::optional<CompressedWriteBuffer> compressed_out;
 
+    size_t max_request_size = 0;
+
     std::atomic<bool> connected{false};
-    std::atomic<bool> closing_for_shutdown{false};
 
     void runImpl();
 
@@ -107,13 +105,7 @@ private:
     void cancelWriteBuffer() noexcept;
     ReadBuffer & getReadBuffer();
 
-    enum class HandshakeResult
-    {
-        Accepted,
-        Rejected,
-        SessionExpired,
-    };
-    void sendHandshake(HandshakeResult result, bool & use_compression);
+    void sendHandshake(bool has_leader, bool & use_compression);
     Poco::Timespan receiveHandshake(int32_t handshake_length, bool & use_compression);
 
     static bool isHandShake(int32_t handshake_length);

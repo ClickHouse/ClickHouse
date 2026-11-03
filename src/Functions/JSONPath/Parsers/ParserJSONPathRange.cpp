@@ -7,8 +7,6 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/CommonParsers.h>
 
-#include <limits>
-
 namespace DB
 {
 namespace ErrorCodes
@@ -48,11 +46,7 @@ bool ParserJSONPathRange::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
         {
             return false;
         }
-        const auto begin = number_ptr->as<ASTLiteral>()->value.safeGet<UInt64>();
-        /// The exclusive end of a single index must also fit into UInt32.
-        if (begin >= std::numeric_limits<UInt32>::max())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "JSONPath array index {} is out of range", begin);
-        range_indices.first = static_cast<UInt32>(begin);
+        range_indices.first = static_cast<UInt32>(number_ptr->as<ASTLiteral>()->value.safeGet<UInt32>());
 
         if (pos->type == TokenType::Comma || pos->type == TokenType::ClosingSquareBracket)
         {
@@ -69,10 +63,7 @@ bool ParserJSONPathRange::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
             {
                 return false;
             }
-            const auto end = number_ptr->as<ASTLiteral>()->value.safeGet<UInt64>();
-            if (end > std::numeric_limits<UInt32>::max())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "JSONPath array range end {} is out of range", end);
-            range_indices.second = static_cast<UInt32>(end);
+            range_indices.second = static_cast<UInt32>(number_ptr->as<ASTLiteral>()->value.safeGet<UInt32>());
         }
         else
         {

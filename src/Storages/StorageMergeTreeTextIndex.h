@@ -3,15 +3,12 @@
 #include <QueryPipeline/Pipe.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
-#include <Storages/StorageWithCommonVirtualColumns.h>
 
 namespace DB
 {
 
-class MergeTreeIndexText;
-
 /// Internal temporary storage for table function mergeTreeTextIndex(...)
-class StorageMergeTreeTextIndex final : public StorageWithCommonVirtualColumns
+class StorageMergeTreeTextIndex final : public IStorage
 {
 public:
     static const ColumnWithTypeAndName part_name_column;
@@ -22,7 +19,7 @@ public:
         MergeTreeIndexPtr text_index_,
         const ColumnsDescription & columns);
 
-    void readImpl(
+    void read(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -34,12 +31,8 @@ public:
 
     String getName() const override { return "MergeTreeTextIndex"; }
 
-    /// Besides `_table` and `_database`, the columns of the posting lists of the index: `row_id`, and `positions`
-    /// if the index stores them. Reading one returns a row per posting instead of a row per token.
-    static VirtualColumnsDescription createVirtuals(const MergeTreeIndexText & text_index);
-
     /// Throws if the user may not read the tokens of the index of the table `source_storage_id`.
-    static void checkAccess(const ContextPtr & context, const IStorage & source_table, const IMergeTreeIndex & index);
+    static void checkAccess(const ContextPtr & context, const StorageID & source_storage_id, const IMergeTreeIndex & index);
 
 private:
     friend class ReadFromMergeTreeTextIndex;

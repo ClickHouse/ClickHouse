@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstdint>
+#include <cassert>
 #include <type_traits>
 #include <memory>
 
@@ -242,7 +243,7 @@ private:
         {
             if (Traits::less(Traits::extractKey(*i), Traits::extractKey(*(i - 1))))
             {
-                Element * j = nullptr;
+                Element * j;
                 Element tmp = *i;
                 *i = *(i - 1);
                 for (j = i - 1; j > arr && Traits::less(Traits::extractKey(tmp), Traits::extractKey(*(j - 1))); --j)
@@ -493,7 +494,7 @@ private:
 
         for (ssize_t i = 0; /* guarded by 'finish' */; ++i)
         {
-            chassert(i < buckets_for_recursion);
+            assert(i < buckets_for_recursion);
 
             /// We look at i-1th index, because bucket pointers are shifted right on every loop iteration,
             ///  and all buckets before i was completely shifted to the beginning of the next bucket.
@@ -510,7 +511,7 @@ private:
                 if (tag != KeyBits(i))
                 {
                     /// Invariant: tag > i, because the elements with less tags are already at the right places.
-                    chassert(tag > KeyBits(i));
+                    assert(tag > KeyBits(i));
 
                     /// While the tag (digit) of the element is not that we need,
                     /// swap the element with the next element in the bucket for that tag.

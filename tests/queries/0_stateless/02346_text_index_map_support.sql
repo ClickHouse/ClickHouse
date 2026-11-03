@@ -1,8 +1,8 @@
--- Tags: no-parallel-replicas, long
--- Tests that text indexes can be build on and used with Map columns.
-SET explain_query_plan_default = 'legacy';
+-- Tags: no-parallel-replicas
 
-SET query_plan_optimize_count_from_text_index = 0;
+-- Tests that text indexes can be build on and used with Map columns.
+
+SET enable_analyzer = 1;
 
 SELECT 'Function mapKeys';
 

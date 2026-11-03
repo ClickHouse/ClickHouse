@@ -1,7 +1,0 @@
-Row 1:
-──────
-cutURLParame⋯&a=2', 'a'): http://bigmir.net/?ba=1
-cutURLParame⋯ba=1', 'a'): http://bigmir.net/?ba=1
-cutURLParame⋯=2', ['a']): http://bigmir.net/?ba=1
-cutURLParame⋯=1', ['a']): http://bigmir.net/?ba=1
-cutURLParame⋯'a', 'ba']): http://bigmir.net/?
