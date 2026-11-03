@@ -2054,6 +2054,17 @@ bool hasDateTimeInVariant(const DataTypePtr & type)
     return anyInTypeTree(*type, [](const IDataType & node) { return isVariant(node) && anyInTypeTree(node, isDateTimeNode); });
 }
 
+/// True when `type` is written as a JSON object.
+bool writesJSONObject(const DataTypePtr & type, const FormatSettings & format_settings)
+{
+    const auto nested = removeLowCardinalityAndNullable(type);
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(nested.get()))
+        return tuple->hasExplicitNames() && format_settings.json.write_named_tuples_as_objects;
+    if (typeid_cast<const DataTypeMap *>(nested.get()))
+        return !format_settings.json.write_map_as_array_of_tuples;
+    return typeid_cast<const DataTypeObject *>(nested.get()) != nullptr;
+}
+
 /// True when every `DateTime` that `source` writes as JSON text is read by a `DateTime` of `target` at the same position,
 /// and no `DateTime` of `target` reads other text. `JSONExtractTree` reads an `Array` only from a JSON array, a `Map` only
 /// from an object, a `Tuple` from an array by position and from an object by name (named) or by position (unnamed).
@@ -2213,14 +2224,20 @@ DataTypePtr rewriteTimeZonesForTypedPaths(
 
     auto rewrite_child = [&](const DataTypePtr & child, const String & path) -> DataTypePtr
     {
-        auto it = typed_paths.find(path);
+        const String child_prefix = path + ".";
+        /// `JSONExtractTree` fills the typed paths below `path` with an object, when there are some.
+        const bool read_below = writesJSONObject(child, format_settings)
+            && format_settings.json.type_json_allow_duplicated_key_with_literal_and_nested_object
+            && std::ranges::any_of(typed_paths, [&](const auto & entry) { return entry.first.starts_with(child_prefix); });
+
+        auto it = read_below ? typed_paths.end() : typed_paths.find(path);
         if (it != typed_paths.end() && anyInTypeTree(*child, isDateTimeNode) && dateTimesAreAligned(child, it->second, format_settings)
             && !hasDateTimeInVariant(child) && !hasDateTimeInVariant(it->second))
         {
             it->second = withTimeZone(it->second, utc);
             return withTimeZone(child, utc);
         }
-        return rewriteTimeZonesForTypedPaths(child, path + ".", typed_paths, format_settings);
+        return rewriteTimeZonesForTypedPaths(child, child_prefix, typed_paths, format_settings);
     };
 
     if (const auto * nullable = typeid_cast<const DataTypeNullable *>(type.get()))

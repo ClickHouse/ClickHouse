@@ -30,6 +30,11 @@ SELECT toUnixTimestamp(tupleElement(CAST('{"m":{"d":"2026-01-01 00:00:00"}}'::JS
 SELECT toUnixTimestamp(tupleElement(CAST('{"a":["2026-01-01 00:00:00"]}'::JSON(a Array(DateTime('UTC'))), 'JSON(a Tuple(DateTime64(0, ''Asia/Tokyo'')))').a, 1));
 SELECT arrayMap(x -> toUnixTimestamp(x.2), CAST('{"m":{"k":"2026-01-01 00:00:00"}}'::JSON(m Map(String, DateTime('UTC'))), 'JSON(m Array(Tuple(String, DateTime64(0, ''Asia/Tokyo''))))').m) SETTINGS output_format_json_map_as_array_of_tuples = 1;
 
+-- An object at a typed path that prefixes other typed paths fills those.
+SELECT toUnixTimestamp(CAST('{"t":{"d":"2026-01-01 00:00:00"}}'::JSON(t Tuple(d DateTime('UTC'))), 'JSON(t Tuple(d DateTime64(0, ''Asia/Tokyo'')), `t.d` DateTime(''Asia/Tokyo''))').`t.d`);
+SELECT toUnixTimestamp(CAST('{"t":{"d":"2026-01-01 00:00:00"}}'::JSON(t Tuple(d DateTime('Asia/Tokyo'))), 'JSON(t Tuple(d DateTime64(0, ''Asia/Tokyo'')), `t.d` DateTime(''Asia/Tokyo''))').`t.d`);
+SELECT toUnixTimestamp(tupleElement(CAST('{"t":{"d":"2026-01-01 00:00:00"}}'::JSON(t Tuple(d DateTime('UTC'))), 'JSON(t Tuple(d DateTime64(0, ''Asia/Tokyo'')), `t.d` DateTime(''Asia/Tokyo''))').t, 'd')) SETTINGS type_json_allow_duplicated_key_with_literal_and_nested_object = 0;
+
 -- Values that do not feed a `DateTime` keep their text.
 SELECT CAST('{"d":"2026-01-01 00:00:00"}'::JSON(d DateTime('Asia/Tokyo')), 'JSON(d String)').d;
 SELECT toUnixTimestamp(CAST(CAST(tuple('2026-01-01 00:00:00'), 'Tuple(d String)'), 'JSON(d DateTime(''Asia/Tokyo''))').d);
