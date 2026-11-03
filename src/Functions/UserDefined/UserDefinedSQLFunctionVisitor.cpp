@@ -106,6 +106,9 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
     /// The call is committed to this SQL user defined function, so the grant is required here and
     /// not in `UserDefinedSQLFunctionFactory`, which `system.functions` reads without invoking anything.
     checkFunctionAccess(context_, function.name);
+    /// The legacy `TreeRewriter` inlines the body and then may rename calls in it (`in` to `nullIn`, ...) before they
+    /// are checked, so check the calls of the body as written as well.
+    checkFunctionAccessInExpression(context_, create_function_query->function_core);
 
     auto & function_core_expression = create_function_query->function_core->children.at(0);
 

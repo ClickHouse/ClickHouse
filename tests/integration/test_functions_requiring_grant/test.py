@@ -69,6 +69,7 @@ def cleanup_after_test():
         instance.query("DROP TABLE IF EXISTS t")
         instance.query("DROP FUNCTION IF EXISTS wrap_hex")
         instance.query("DROP FUNCTION IF EXISTS listed_udf")
+        instance.query("DROP FUNCTION IF EXISTS wrap_in")
 
 
 def test_unlisted_function_does_not_need_grant():
@@ -230,6 +231,28 @@ def test_values_expression_requires_grant():
         instance.http_query(query, method="POST", user="A")
 
     assert instance.query("SELECT x FROM t") == "1\n1\n1\n"
+
+
+def test_values_expression_with_sql_udf_requires_grant():
+    """The legacy `TreeRewriter` inlines a SQL UDF into a `VALUES` expression and then renames
+    `in` in its body to `nullIn`, so the calls of the body are checked as written."""
+    instance.query("CREATE TABLE t (x Array(UInt8)) ENGINE = Memory")
+    instance.query("CREATE FUNCTION wrap_in AS (x) -> x IN [1]")
+    instance.query("CREATE USER A")
+    instance.query("GRANT INSERT ON t TO A")
+    instance.query("GRANT FUNCTION ON nullIn TO A")
+
+    query = (
+        "INSERT INTO t SETTINGS transform_null_in = 1 "
+        "VALUES (arrayMap(x -> wrap_in(x), [1]))"
+    )
+    assert "Not enough privileges" in instance.http_query_and_get_error(
+        query, method="POST", user="A"
+    )
+
+    instance.query("GRANT FUNCTION ON in TO A")
+    instance.http_query(query, method="POST", user="A")
+    assert instance.query("SELECT x FROM t") == "[1]\n"
 
 
 def test_rewrite_target_requires_grant():
