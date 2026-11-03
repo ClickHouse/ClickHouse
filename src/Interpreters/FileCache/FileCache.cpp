@@ -1003,8 +1003,7 @@ FileCache::getOrSet(
     /// 2. max_file_segments_limit
     FileSegment::Range result_range = initial_range;
 
-    /// A file segment is at most `max_file_segment_size`, a wider window would leave `offset` outside the first segment.
-    /// It can change on config reload, so the cap and the split use one value.
+    /// A file segment is at most `max_size` (reloadable, so read once), a wider window would leave `offset` outside the first segment.
     const size_t max_size = max_file_segment_size.load();
     const size_t alignment = std::min(boundary_alignment_.value_or(boundary_alignment), max_size);
     const auto aligned_offset = FileCacheUtils::roundDownToMultiple(initial_range.left, alignment);
