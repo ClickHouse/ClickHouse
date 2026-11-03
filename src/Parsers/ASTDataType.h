@@ -53,6 +53,11 @@ ASTPtr applyUUIDTypeVersion(const ASTPtr & type_ast, UInt64 uuid_type_version);
   */
 bool applyUUIDTypeVersionInPlace(IAST & ast, UInt64 uuid_type_version);
 
+/** The same, for a subtree taken out of a larger query: `outer_lambda_names` are the names of the lambdas declared in
+  * the rest of the query (see `collectLambdaNames`), which take precedence over the functions of the same name.
+  */
+bool applyUUIDTypeVersionInPlace(IAST & ast, UInt64 uuid_type_version, const std::unordered_set<String> & outer_lambda_names);
+
 /** Rewrites every bare `UUID` type name in an AST subtree to its explicit historical alias `UUID1`, in the same
   * places `applyUUIDTypeVersionInPlace` rewrites it to `UUID2` (data types and type names in string literals).
   *

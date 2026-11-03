@@ -786,6 +786,16 @@ bool applyUUIDTypeVersionInPlace(IAST & ast, UInt64 uuid_type_version)
     return substituteBareUUIDInPlace(ast, false, "UUID2", &lambda_names);
 }
 
+bool applyUUIDTypeVersionInPlace(IAST & ast, UInt64 uuid_type_version, const LambdaNames & outer_lambda_names)
+{
+    if (uuid_type_version != 2)
+        return false;
+
+    LambdaNames lambda_names = outer_lambda_names;
+    collectLambdaNames(ast, lambda_names);
+    return substituteBareUUIDInPlace(ast, false, "UUID2", &lambda_names);
+}
+
 bool pinHistoricalUUIDTypeNamesInPlace(IAST & ast)
 {
     LambdaNames lambda_names;

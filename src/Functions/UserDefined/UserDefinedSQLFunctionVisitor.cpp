@@ -114,18 +114,25 @@ void UserDefinedSQLFunctionVisitor::visitImpl(
             if (expanded_lambda)
             {
                 visitImpl(expanded_lambda, context_, lambda_names, /*inside_apply=*/true);
-                if (applyUUIDTypeVersionInPlace(*expanded_lambda->clone(), 2))
+                /// The lambdas declared in the rest of the query shadow the functions of the same name in the body.
+                if (applyUUIDTypeVersionInPlace(*expanded_lambda->clone(), 2, lambda_names))
                 {
                     apply_transformer->lambda = expanded_lambda;
                     apply_transformer->lambda_arg = expanded_lambda_arg;
                     apply_transformer->func_name.clear();
                 }
             }
-        }
 
-        /// The parameters of an aggregate function, as in `APPLY(quantile(f()))`.
-        if (apply_transformer->parameters)
-            visitImpl(apply_transformer->parameters, context_, lambda_names, /*inside_apply=*/true);
+            /// The parameters of an aggregate function, as in `APPLY(quantile(f()))`, likewise: their expansion changes
+            /// the names of the resulting columns too (`quantile(0.5)(a)` instead of `quantile(f())(a)`).
+            if (apply_transformer->parameters)
+            {
+                ASTPtr expanded_parameters = apply_transformer->parameters->clone();
+                visitImpl(expanded_parameters, context_, lambda_names, /*inside_apply=*/true);
+                if (applyUUIDTypeVersionInPlace(*expanded_parameters->clone(), 2, lambda_names))
+                    apply_transformer->parameters = expanded_parameters;
+            }
+        }
     }
 
     if (const auto * function = ast->template as<ASTFunction>())
