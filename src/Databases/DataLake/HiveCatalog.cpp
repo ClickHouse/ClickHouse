@@ -17,7 +17,6 @@
 #include <Databases/DataLake/Common.h>
 #include <Common/FailPoint.h>
 #include <Core/Settings.h>
-#include <Interpreters/Context.h>
 
 namespace DB::ErrorCodes
 {
