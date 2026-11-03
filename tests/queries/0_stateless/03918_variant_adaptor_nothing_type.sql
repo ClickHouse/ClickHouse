@@ -2,7 +2,6 @@
 -- when a function like arrayElement is executed on Array(Nothing) inside a Variant context.
 -- Previously this caused a logical error exception because Nothing type could not be cast to a Variant type.
 
-SET enable_analyzer = 1;
 SET allow_suspicious_variant_types = 1;
 SET allow_suspicious_types_in_order_by = 1;
 

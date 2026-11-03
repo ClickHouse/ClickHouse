@@ -912,7 +912,6 @@ test_cache_bypass_on_disk_failure/test.py	30560
 test_backward_compatibility/test_functions.py	30553
 test_broken_detached_part_quarantine/test.py	30524
 test_distributed_plan_worker_exchange_port/test.py	30506
-test_analyzer_compatibility/test.py	30493
 test_disabled_access_control_improvements/test_select_from_system_tables.py	30484
 test_access_cache_recompute_coalescing/test.py	30416
 test_incremental_refreshable_mv/test.py	30396

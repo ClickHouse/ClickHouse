@@ -359,7 +359,8 @@ private:
         FormatParserSharedResourcesPtr parser_shared_resources_,
         FormatFilterInfoPtr format_filter_info_,
         LazyFileRegistryPtr lazy_row_index_registry_ = nullptr,
-        TopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key_ = nullptr);
+        TopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key_ = nullptr,
+        const UUID & query_condition_cache_table_id_ = UUIDHelpers::Nil);
 
     /**
       * If specified option --rename_files_after_processing and files created by TableFunctionFile
@@ -419,12 +420,17 @@ private:
     struct stat current_archive_stat{};
     std::optional<String> filename_override;
     Block sample_block;
+    /// The archive reader's own buffer when `read_buf` decompresses a file inside an archive. Declared before `read_buf`,
+    /// which references it, so that it is destroyed after.
+    std::unique_ptr<ReadBuffer> archive_entry_read_buf;
     std::unique_ptr<ReadBuffer> read_buf;
     InputFormatPtr input_format;
     std::unique_ptr<QueryPipeline> pipeline;
     std::unique_ptr<PullingPipelineExecutor> reader;
     FormatParserSharedResourcesPtr parser_shared_resources;
     FormatFilterInfoPtr format_filter_info;
+    /// The `table_id` of the query condition cache entries (see `QueryConditionCache::getTableIdForFileEntries`).
+    UUID query_condition_cache_table_id = UUIDHelpers::Nil;
     TopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key;
 
     /// A file read by a TopN read, whose query condition cache entry is written only when the source
@@ -482,6 +488,7 @@ public:
     /// and only for a sort column it physically reads from the file.
     bool supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_column) const override;
     void setTopKFilter(std::shared_ptr<const FormatTopKFilterInfo> info_) override { top_k_filter = std::move(info_); }
+    bool supportsTopKStatisticsOnlyFilter() const override { return true; }
 
     bool supportsMinMaxFromStatistics() const override;
     void setMinMaxFromStatistics() override { read_min_max_from_statistics = true; }

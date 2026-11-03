@@ -508,6 +508,8 @@ struct Reader
         /// the rows delivered from this row group so far, in the query's order. Only maintained with
         /// `FormatTopKFilterInfo::track_row_group_best_values` (see updateTopKBestValue).
         ColumnPtr top_k_best_value;
+        /// `top_k_best_value` equals the bound of `top_k_sort_column_range` on its side, so no later row can improve it.
+        bool top_k_best_value_is_final = false;
 
         std::deque<RowSubgroup> subgroups;
 
@@ -543,6 +545,8 @@ struct Reader
 
         /// Admitted by ReadManager::admitTopKRowGroups and not fully read yet.
         std::atomic<bool> holds_top_k_admission {false};
+
+        std::atomic<bool> skipped_by_top_k {false};
     };
 
     struct Step
@@ -820,7 +824,8 @@ private:
     /// unknown, and min/max statistics summarize the non-null values only, so a bbox predicate can
     /// look false for the row group or page while a NULL-bbox row inside it still matches.
     bool spatialBboxStatsHaveNoNulls(size_t row_group_idx, size_t spatial_key_condition_idx) const;
-    void adjustRangeFromIndexIfNeeded(Range & range, const PrimitiveColumnInfo & column_info, bool can_be_null) const;
+    /// Returns false if the range is inverted (min > max): such statistics must be ignored.
+    [[nodiscard]] bool adjustRangeFromIndexIfNeeded(Range & range, const PrimitiveColumnInfo & column_info, bool can_be_null) const;
     void prepareBloomFilterCondition();
     /// Look up the row groups in the columns cache and decide which columns to write to it.
     void initColumnsCache();

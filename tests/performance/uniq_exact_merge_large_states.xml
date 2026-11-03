@@ -1,0 +1,11 @@
+<test>
+    <create_query>CREATE TABLE uniq_exact_large_states (s AggregateFunction(uniqExact, UInt64)) ENGINE = Memory</create_query>
+
+    <!-- About 52000 and 20000 keys in each of the 256 buckets: together they outnumber the 65536 cells of a bucket. -->
+    <fill_query>INSERT INTO uniq_exact_large_states SELECT uniqExactState(number) FROM numbers(13400000) SETTINGS max_threads = 1</fill_query>
+    <fill_query>INSERT INTO uniq_exact_large_states SELECT uniqExactState(number) FROM numbers(13400000, 5000000) SETTINGS max_threads = 1</fill_query>
+
+    <query>SELECT uniqExactMerge(s) FROM uniq_exact_large_states FORMAT Null SETTINGS max_threads = 1</query>
+
+    <drop_query>DROP TABLE IF EXISTS uniq_exact_large_states</drop_query>
+</test>
