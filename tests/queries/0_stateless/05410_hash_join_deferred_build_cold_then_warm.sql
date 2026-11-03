@@ -12,6 +12,8 @@ SET query_plan_join_swap_table = 'false';
 SET enable_parallel_replicas = 0;
 SET enable_hash_join_deferred_build = 1;
 SET use_statistics = 0; -- Otherwise the planner sizes the builds from the column statistics, and they do not defer.
+-- The join order optimization gives each join the key of its statistics, so it must run.
+SET query_plan_optimize_join_order_limit = 10;
 
 DROP TABLE IF EXISTS t_l;
 DROP TABLE IF EXISTS t_r_two_level;

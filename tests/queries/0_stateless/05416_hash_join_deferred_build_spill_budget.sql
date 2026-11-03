@@ -16,7 +16,8 @@ DROP TABLE IF EXISTS t_r;
 
 CREATE TABLE t_l (k UInt64, s LowCardinality(Nullable(String))) ENGINE = MergeTree ORDER BY ();
 CREATE TABLE t_r (k UInt64, s LowCardinality(Nullable(String)), v UInt64) ENGINE = MergeTree ORDER BY ();
-INSERT INTO t_l SELECT number * 3, if(number % 5 = 0, NULL, toString(number % 3000)) FROM numbers(100000);
+-- Only 2400 left strings match, so that the joins on `s` stay small.
+INSERT INTO t_l SELECT number * 3, if(number % 5 = 0, NULL, toString(number)) FROM numbers(100000);
 INSERT INTO t_r SELECT number % 200000, if(number % 7 = 0, NULL, toString(number % 3000)), number FROM numbers(400000);
 
 SELECT 'inner', count(), sum(cityHash64(l.k, r.v)) FROM t_l l INNER JOIN t_r r ON l.k = r.k
@@ -24,14 +25,14 @@ SETTINGS enable_hash_join_deferred_build = 0, max_bytes_before_external_join = 0
 SELECT 'inner', count(), sum(cityHash64(l.k, r.v)) FROM t_l l INNER JOIN t_r r ON l.k = r.k
 SETTINGS enable_hash_join_deferred_build = 1, max_bytes_before_external_join = 1073741824, log_comment = '05416_under';
 SELECT 'inner', count(), sum(cityHash64(l.k, r.v)) FROM t_l l INNER JOIN t_r r ON l.k = r.k
-SETTINGS enable_hash_join_deferred_build = 1, max_bytes_before_external_join = 1048576, log_comment = '05416_over';
+SETTINGS enable_hash_join_deferred_build = 1, max_bytes_before_external_join = 3145728, log_comment = '05416_over';
 
 SELECT 'low_cardinality_nullable', count(), sum(cityHash64(l.k, r.v)) FROM t_l l INNER JOIN t_r r ON l.s = r.s
 SETTINGS enable_hash_join_deferred_build = 0, max_bytes_before_external_join = 0;
 SELECT 'low_cardinality_nullable', count(), sum(cityHash64(l.k, r.v)) FROM t_l l INNER JOIN t_r r ON l.s = r.s
 SETTINGS enable_hash_join_deferred_build = 1, max_bytes_before_external_join = 1073741824, log_comment = '05416_under';
 SELECT 'low_cardinality_nullable', count(), sum(cityHash64(l.k, r.v)) FROM t_l l INNER JOIN t_r r ON l.s = r.s
-SETTINGS enable_hash_join_deferred_build = 1, max_bytes_before_external_join = 1048576, log_comment = '05416_over';
+SETTINGS enable_hash_join_deferred_build = 1, max_bytes_before_external_join = 3145728, log_comment = '05416_over';
 SELECT 'low_cardinality_nullable', count(), sum(cityHash64(l.k, r.v)) FROM t_l l INNER JOIN t_r r ON l.s = r.s
 SETTINGS enable_hash_join_deferred_build = 1, max_bytes_before_external_join = 1073741824, hash_join_layout = 'serial',
     log_comment = '05416_under';
