@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Parsers/IAST_fwd.h>
+#include <base/types.h>
 
 namespace DB
 {
@@ -9,6 +10,10 @@ namespace DB
 struct WhatIfSettings
 {
     bool empirical = true;
+    /// row budget for projection estimates, 0 means no limit
+    UInt64 projection_scan_budget_rows = 10'000'000;
+    /// row budget for index estimates, 0 means no limit
+    UInt64 index_scan_budget_rows = 10'000'000;
 
     static WhatIfSettings fromAST(const ASTPtr & settings_ast);
 };

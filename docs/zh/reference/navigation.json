@@ -196,9 +196,7 @@
           "expanded": false,
           "group": "运算符",
           "pages": [
-            "zh/reference/operators/index",
-            "zh/reference/operators/exists",
-            "zh/reference/operators/distributed-ddl"
+            "zh/reference/operators/index"
           ]
         }
       ]
@@ -420,6 +418,7 @@
             "zh/reference/engines/database-engines/index",
             "zh/reference/engines/database-engines/atomic",
             "zh/reference/engines/database-engines/backup",
+            "zh/reference/engines/database-engines/cluster",
             "zh/reference/engines/database-engines/datalake",
             "zh/reference/engines/database-engines/dictionary",
             "zh/reference/engines/database-engines/filesystem",
@@ -428,6 +427,7 @@
             "zh/reference/engines/database-engines/memory",
             "zh/reference/engines/database-engines/mysql",
             "zh/reference/engines/database-engines/ordinary",
+            "zh/reference/engines/database-engines/overlay",
             "zh/reference/engines/database-engines/postgresql",
             "zh/reference/engines/database-engines/remote",
             "zh/reference/engines/database-engines/replicated",
@@ -598,6 +598,7 @@
                 "zh/reference/functions/aggregate-functions/maxIntersectionsPosition",
                 "zh/reference/functions/aggregate-functions/maxMap",
                 "zh/reference/functions/aggregate-functions/meanZTest",
+                "zh/reference/functions/aggregate-functions/mergedJSONPatch",
                 "zh/reference/functions/aggregate-functions/median",
                 "zh/reference/functions/aggregate-functions/min",
                 "zh/reference/functions/aggregate-functions/minMap",
@@ -639,6 +640,15 @@
                 "zh/reference/functions/aggregate-functions/quantileTimingWeighted",
                 "zh/reference/functions/aggregate-functions/quantilesTimingWeighted",
                 "zh/reference/functions/aggregate-functions/rankCorr",
+                "zh/reference/functions/aggregate-functions/regr_avgx",
+                "zh/reference/functions/aggregate-functions/regr_avgy",
+                "zh/reference/functions/aggregate-functions/regr_count",
+                "zh/reference/functions/aggregate-functions/regr_intercept",
+                "zh/reference/functions/aggregate-functions/regr_r2",
+                "zh/reference/functions/aggregate-functions/regr_slope",
+                "zh/reference/functions/aggregate-functions/regr_sxx",
+                "zh/reference/functions/aggregate-functions/regr_sxy",
+                "zh/reference/functions/aggregate-functions/regr_syy",
                 "zh/reference/functions/aggregate-functions/simpleLinearRegression",
                 "zh/reference/functions/aggregate-functions/singleValueOrNull",
                 "zh/reference/functions/aggregate-functions/skewPop",
@@ -659,17 +669,38 @@
                 "zh/reference/functions/aggregate-functions/sumMapWithOverflow",
                 "zh/reference/functions/aggregate-functions/sumWithOverflow",
                 "zh/reference/functions/aggregate-functions/theilsU",
+                "zh/reference/functions/aggregate-functions/timeSeriesAvgToGrid",
+                "zh/reference/functions/aggregate-functions/timeSeriesBottomKMasks",
                 "zh/reference/functions/aggregate-functions/timeSeriesChangesToGrid",
+                "zh/reference/functions/aggregate-functions/timeSeriesCountToGrid",
                 "zh/reference/functions/aggregate-functions/timeSeriesDeltaToGrid",
                 "zh/reference/functions/aggregate-functions/timeSeriesDerivToGrid",
+                "zh/reference/functions/aggregate-functions/timeSeriesFirstToGrid",
                 "zh/reference/functions/aggregate-functions/timeSeriesGroupArray",
+                "zh/reference/functions/aggregate-functions/timeSeriesIncreaseToGrid",
                 "zh/reference/functions/aggregate-functions/timeSeriesInstantDeltaToGrid",
                 "zh/reference/functions/aggregate-functions/timeSeriesInstantRateToGrid",
+                "zh/reference/functions/aggregate-functions/timeSeriesLastToGrid",
                 "zh/reference/functions/aggregate-functions/timeSeriesLastTwoSamples",
+                "zh/reference/functions/aggregate-functions/timeSeriesLimitKMasks",
+                "zh/reference/functions/aggregate-functions/timeSeriesLinearRegressionToGrid",
+                "zh/reference/functions/aggregate-functions/timeSeriesMadToGrid",
+                "zh/reference/functions/aggregate-functions/timeSeriesMaxToGrid",
+                "zh/reference/functions/aggregate-functions/timeSeriesMinToGrid",
                 "zh/reference/functions/aggregate-functions/timeSeriesPredictLinearToGrid",
+                "zh/reference/functions/aggregate-functions/timeSeriesPresentToGrid",
+                "zh/reference/functions/aggregate-functions/timeSeriesQuantileToGrid",
                 "zh/reference/functions/aggregate-functions/timeSeriesRateToGrid",
                 "zh/reference/functions/aggregate-functions/timeSeriesResampleToGridWithStaleness",
                 "zh/reference/functions/aggregate-functions/timeSeriesResetsToGrid",
+                "zh/reference/functions/aggregate-functions/timeSeriesStddevToGrid",
+                "zh/reference/functions/aggregate-functions/timeSeriesStdvarToGrid",
+                "zh/reference/functions/aggregate-functions/timeSeriesSumToGrid",
+                "zh/reference/functions/aggregate-functions/timeSeriesTimestampOfFirstToGrid",
+                "zh/reference/functions/aggregate-functions/timeSeriesTimestampOfLastToGrid",
+                "zh/reference/functions/aggregate-functions/timeSeriesTimestampOfMaxToGrid",
+                "zh/reference/functions/aggregate-functions/timeSeriesTimestampOfMinToGrid",
+                "zh/reference/functions/aggregate-functions/timeSeriesTopKMasks",
                 "zh/reference/functions/aggregate-functions/topK",
                 "zh/reference/functions/aggregate-functions/topKWeighted",
                 "zh/reference/functions/aggregate-functions/uniq",
@@ -945,6 +976,7 @@
           ]
         },
         "zh/reference/formats/SQLInsert",
+        "zh/reference/formats/SQLite",
         {
           "expanded": false,
           "group": "TabSeparated",
@@ -969,15 +1001,6 @@
         "zh/reference/formats/Values",
         "zh/reference/formats/Vertical",
         "zh/reference/formats/XML"
-      ]
-    },
-    {
-      "expandable": true,
-      "expanded": false,
-      "group": "接口",
-      "pages": [
-        "zh/reference/interfaces/specs/NativeProtocol",
-        "zh/reference/interfaces/specs/NativeFormat"
       ]
     },
     {
@@ -1029,6 +1052,7 @@
         "zh/reference/system-tables/codecs",
         "zh/reference/system-tables/collations",
         "zh/reference/system-tables/columns",
+        "zh/reference/system-tables/columns_cache",
         "zh/reference/system-tables/completions",
         "zh/reference/system-tables/constraints",
         "zh/reference/system-tables/contributors",

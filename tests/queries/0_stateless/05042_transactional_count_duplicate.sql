@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-ordinary-database
+-- Tags: no-parallel, no-ordinary-database, no-fasttest
 -- no-parallel: SYSTEM ENABLE FAILPOINT is server-global and the failpoint is one-shot, so a concurrent query would consume it
 -- no-ordinary-database: the test uses transactions
 

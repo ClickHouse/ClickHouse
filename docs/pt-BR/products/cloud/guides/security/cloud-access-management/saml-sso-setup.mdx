@@ -19,15 +19,11 @@ Oferecemos suporte a SSO iniciado pelo provedor de serviço, várias organizaç�
 
 Os clientes que habilitam integrações SAML também podem definir a função padrão que será atribuída a novos usuários e ajustar as configurações de tempo limite da sessão.
 
-<div id="before-you-begin">
-  ## Antes de começar
-</div>
+## Antes de começar {#before-you-begin}
 
 Você precisará de permissões de administrador no seu IdP, da capacidade de adicionar um registro TXT às configurações de DNS do seu domínio e da função **Admin** na sua organização no ClickHouse Cloud. Recomendamos configurar um **link direto para a sua organização** além da sua conexão SAML para simplificar o processo de login. Cada IdP lida com isso de forma diferente. Continue lendo para saber como fazer isso no seu IdP.
 
-<div id="how-it-works">
-  ## Como funciona
-</div>
+## Como funciona {#how-it-works}
 
 Depois que o SAML SSO estiver configurado, os usuários farão login por meio de um fluxo iniciado pelo provedor de serviço:
 
@@ -38,11 +34,11 @@ Depois que o SAML SSO estiver configurado, os usuários farão login por meio de
 
 O restante deste guia aborda a configuração única.
 
-<div id="how-to-configure-your-idp">
-  ## Como configurar seu IdP
-</div>
+## Como configurar seu IdP {#how-to-configure-your-idp}
 
-<Steps>
+Se o SAML já estiver habilitado e você precisar de acesso de administrador, consulte [Configure seu usuário administrador](#configure-your-admin-user) ou [Solução de problemas](#troubleshooting).
+
+<Steps titleSize="h3">
   <Step title="Acesse as configurações da organização" id="access-organization-settings">
     Clique no nome da sua organização no canto inferior esquerdo e selecione Detalhes da organização.
   </Step>
@@ -62,7 +58,7 @@ O restante deste guia aborda a configuração única.
     * [Duo](#duo)
 
     <Tip>
-      O ClickHouse não oferece suporte a login iniciado pelo provedor de identidade. Para facilitar o acesso dos seus usuários ao ClickHouse Cloud, crie um favorito para eles usando este formato de URL de login: `https://console.clickhouse.cloud/?connection={orgId}`, em que `{orgId}` é o Organization ID na página de detalhes da organização.
+      O ClickHouse não oferece suporte a login iniciado pelo provedor de identidade. Para facilitar o acesso dos seus usuários ao ClickHouse Cloud, crie um favorito para eles usando este formato de URL de login: `https://console.clickhouse.cloud/?connection={orgId}`, em que `{orgID}` é o Organization ID na página de detalhes da organização.
     </Tip>
 
     <Image img="/images/cloud/security/saml-self-serve-2.webp" size="lg" alt="Criar aplicativo no provedor de identidade" force />
@@ -124,15 +120,13 @@ O restante deste guia aborda a configuração única.
   </Step>
 </Steps>
 
-<div id="configure-idp">
-  ### Configure o seu provedor de identidade
-</div>
+### Configure o seu provedor de identidade {#configure-idp}
 
 <Tabs>
   <Tab title="Okta" id="okta">
     Você configurará duas App Integrations no Okta para cada organização do ClickHouse: um app SAML e um bookmark para o seu link direto.
 
-    #### Crie um grupo para gerenciar o acesso
+#### Crie um grupo para gerenciar o acesso {#okta-create-group}
 
     1. Faça login na sua instância do Okta como **Administrator**.
     2. Selecione **Groups** à esquerda.
@@ -142,7 +136,7 @@ O restante deste guia aborda a configuração única.
     6. Clique no nome do grupo que você criou.
     7. Clique em **Assign people** para atribuir os usuários que você deseja que tenham acesso a esta organização do ClickHouse.
 
-    #### Crie um app de bookmark para permitir que os usuários façam login de forma transparente
+#### Crie um app de bookmark para permitir que os usuários façam login de forma transparente {#okta-bookmark-app}
 
     1. Selecione **Applications** à esquerda e, em seguida, selecione o subtítulo **Applications**.
     2. Clique em **Browse App Catalog**.
@@ -152,7 +146,7 @@ O restante deste guia aborda a configuração única.
     6. Insira a URL como `https://console.clickhouse.cloud/?connection={organizationid}`
     7. Vá para a aba **Assignments** e adicione o grupo que você criou acima.
 
-    #### Crie um app SAML para habilitar a conexão
+#### Crie um app SAML para habilitar a conexão {#okta-saml-app}
 
     1. Selecione **Applications** à esquerda e, em seguida, selecione o subtítulo **Applications**.
 
@@ -193,7 +187,7 @@ O restante deste guia aborda a configuração única.
   <Tab title="Google" id="google">
     Você configurará um app SAML no Google para cada organização e deverá fornecer aos usuários o link direto (`https://console.clickhouse.cloud/?connection={organizationId}`) para que o adicionem aos favoritos ao usar multi-org SSO.
 
-    #### Criar um app da web do Google
+#### Criar um app da web do Google {#google-web-app}
 
     1. Acesse o console do Google Admin (admin.google.com).
 
@@ -237,7 +231,7 @@ O restante deste guia aborda a configuração única.
   <Tab title="Azure (Microsoft)" id="azure">
     O SAML do Azure (Microsoft) também pode ser chamado de Azure Active Directory (AD) ou Microsoft Entra.
 
-    #### Crie uma aplicação empresarial do Azure
+#### Crie uma aplicação empresarial do Azure {#azure-enterprise-app}
 
     Você configurará uma integração de aplicação com uma URL de login separada para cada organização.
 
@@ -283,7 +277,7 @@ O restante deste guia aborda a configuração única.
   </Tab>
 
   <Tab title="Duo" id="duo">
-    #### Crie um provedor de serviço SAML genérico para o Duo
+#### Crie um provedor de serviço SAML genérico para o Duo {#duo-saml-provider}
 
     1. Siga as instruções em [Duo Single Sign-On for Generic SAML Service Providers](https://duo.com/docs/sso-generic).
 
@@ -305,11 +299,20 @@ O restante deste guia aborda a configuração única.
   </Tab>
 </Tabs>
 
-<div id="troubleshooting">
-  ## Solução de problemas
-</div>
+## Solução de problemas {#troubleshooting}
 
 <AccordionGroup>
+  <Accordion title="As permissões de Admin estão ausentes após o login via SAML">
+    **Causa:** sua nova conta SAML recebe a função SAML padrão configurada. Se essa função não for **Admin**, a conta não terá permissões de administrador, mesmo que sua conta original tenha a função **Admin**. O ClickHouse Cloud não vincula automaticamente contas SAML e não SAML.
+
+    **Correção:** faça login via SAML uma vez para que o novo usuário apareça no ClickHouse Cloud. Em seguida, saia e faça login com sua conta de administrador original para atribuir a função **Admin** ao usuário SAML:
+
+    * Para contas com email e senha, use [o link de login por email](https://console.clickhouse.cloud/?with=email) para contornar o redirecionamento automático para o SAML. O `email` em `?with=email` é um valor literal, não um marcador para o seu endereço de email.
+    * Para contas do Google ou da Microsoft, selecione **Continue with Google** ou **Continue with Microsoft**.
+
+    Saia e faça login via SAML novamente para confirmar o acesso de administrador antes de remover sua conta de administrador original. Consulte [Configure seu usuário administrador](#configure-your-admin-user) para ver o procedimento completo.
+  </Accordion>
+
   <Accordion title="Pode haver uma configuração incorreta no sistema ou uma indisponibilidade do serviço">
     **Causa:** login iniciado pelo provedor de identidade, o que não tem suporte.
 
@@ -341,9 +344,7 @@ O restante deste guia aborda a configuração única.
   </Accordion>
 </AccordionGroup>
 
-<div id="faq">
-  ## Perguntas frequentes
-</div>
+## Perguntas frequentes {#faq}
 
 <AccordionGroup>
   <Accordion title="O ClickHouse Cloud oferece suporte a login iniciado pelo provedor de identidade?">
@@ -365,9 +366,7 @@ O restante deste guia aborda a configuração única.
   </Accordion>
 </AccordionGroup>
 
-<div id="next-steps">
-  ## Próximos passos
-</div>
+## Próximos passos {#next-steps}
 
 * [Manage cloud users](/pt-BR/products/cloud/guides/security/cloud-access-management/manage-cloud-users) — gerencie permissões e restrinja o acesso apenas a conexões SAML.
 * Provisionamento SCIM — automatize o provisionamento de usuários e grupos com [Okta](/pt-BR/products/cloud/guides/security/cloud-access-management/scim-setup) ou [Microsoft Entra ID](/pt-BR/products/cloud/guides/security/cloud-access-management/scim-setup-entra).

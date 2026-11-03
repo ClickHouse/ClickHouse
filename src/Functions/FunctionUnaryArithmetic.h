@@ -53,7 +53,7 @@ struct UnaryOperationImpl
 
     static void NO_INLINE vector(const ArrayA & a, ArrayC & c)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             vectorImpl_x86_64_v4(a, c);
@@ -86,7 +86,7 @@ struct FixedStringUnaryOperationImpl
 
     static void NO_INLINE vector(const ColumnFixedString::Chars & a, ColumnFixedString::Chars & c)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             vectorImpl_x86_64_v4(a, c);
@@ -114,7 +114,7 @@ struct StringUnaryOperationReduceImpl
 
     static UInt64 NO_INLINE vector(const UInt8 * start, const UInt8 * end)
     {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             return vectorImpl_x86_64_v4(start, end);
@@ -206,6 +206,37 @@ public:
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
+
+    /// Per-Op opt-in to declarative signatures:
+    /// - `Op<UInt8>::signature` (authoritative): the DSL drives type-checking
+    ///   and return-type resolution.
+    /// - `Op<UInt8>::signature_documentation` (docs-only): surfaced via
+    ///   `system.functions` but the long-form `getReturnTypeImpl(DataTypes)`
+    ///   stays authoritative — used when the legacy dispatch isn't expressible
+    ///   in the DSL (e.g. `negate` routing tuples to `tupleNegate`).
+    String getSignatureString() const override
+    {
+        if constexpr (requires { Op<UInt8>::signature; })
+            return Op<UInt8>::signature;
+        else if constexpr (requires { Op<UInt8>::signature_documentation; })
+            return Op<UInt8>::signature_documentation;
+        else
+            return {};
+    }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        /// Like `BinaryArithmeticOverloadResolver`, only `signature` (authoritative)
+        /// drives the DSL path; `signature_documentation` is bypassed so the legacy
+        /// `getReturnTypeImpl(DataTypes)` runs.
+        if constexpr (requires { Op<UInt8>::signature; })
+            return IFunction::getReturnTypeImpl(arguments);
+
+        DataTypes data_types(arguments.size());
+        for (size_t i = 0; i < arguments.size(); ++i)
+            data_types[i] = arguments[i].type;
+        return getReturnTypeImpl(data_types);
+    }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {

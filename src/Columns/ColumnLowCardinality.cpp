@@ -21,6 +21,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
+    extern const int PARAMETER_OUT_OF_BOUND;
 }
 
 void throwUnexpectedLowCardinalityIndexType(size_t size)
@@ -30,6 +31,9 @@ void throwUnexpectedLowCardinalityIndexType(size_t size)
 
 namespace
 {
+    /// The range path starts to win around 64 rows when there are only a few distinct short keys.
+    constexpr size_t max_rows_to_translate_individually = 64;
+
     void checkColumn(const IColumn & column)
     {
         if (!dynamic_cast<const IColumnUnique *>(&column))
@@ -258,6 +262,22 @@ void ColumnLowCardinality::doInsertRangeFrom(const IColumn & src, size_t start, 
     {
         compactIfSharedDictionary();
 
+        if (length <= max_rows_to_translate_individually)
+        {
+            const IColumn & src_indexes = low_cardinality_src->getIndexes();
+            if (start > src_indexes.size() || length > src_indexes.size() - start)
+                throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Parameters start = {}, length = {} are out of bound in "
+                    "ColumnLowCardinality::insertRangeFrom method (size() = {}).", start, length, src_indexes.size());
+
+            std::array<UInt64, max_rows_to_translate_individually> positions; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - only the first `length` entries are written before read
+            for (size_t i = 0; i < length; ++i)
+                positions[i] = src_indexes.getUInt(start + i);
+            getDictionary().uniqueInsertRowsFrom(*low_cardinality_src->getDictionary().getNestedColumn(), {positions.data(), length});
+            for (size_t i = 0; i < length; ++i)
+                idx.insertIndex(positions[i]);
+            return;
+        }
+
         /// TODO: Support native insertion from other unique column. It will help to avoid null map creation.
 
         auto sub_idx = IColumn::mutate(low_cardinality_src->getIndexes().cut(start, length));
@@ -278,7 +298,7 @@ void ColumnLowCardinality::insertRangeFromFullColumn(const IColumn & src, size_t
     idx.insertIndexesRange(*inserted_indexes, 0, length);
 }
 
-static void checkIndexesAreLimited(const IColumn & indexes, UInt64 limit)
+void ColumnLowCardinality::checkIndexesAreLimited(const IColumn & indexes, UInt64 limit)
 {
     auto check_for_type = [&](auto type)
     {
@@ -292,14 +312,14 @@ static void checkIndexesAreLimited(const IColumn & indexes, UInt64 limit)
         size_t num_rows = data.size();
         if (num_rows == 0)
             return true;
-        UInt64 max_position = 0;
+        ColumnType max_position = 0;
         for (size_t i = 0; i < num_rows; ++i)
-            max_position = std::max<UInt64>(max_position, data[i]);
+            max_position = std::max(max_position, data[i]);
 
-        if (max_position >= limit)
+        if (static_cast<UInt64>(max_position) >= limit)
             throw Exception(ErrorCodes::INCORRECT_DATA,
                             "Index for LowCardinality is out of range. Dictionary size is {}, "
-                            "but found index with value {}", limit, max_position);
+                            "but found index with value {}", limit, static_cast<UInt64>(max_position));
 
         return true;
     };
@@ -337,6 +357,142 @@ char * ColumnLowCardinality::serializeValueIntoMemory(size_t n, char * memory, c
     return getDictionary().serializeValueIntoMemory(getIndexes().getUInt(n), memory, settings);
 }
 
+void ColumnLowCardinality::serializeAsComparable(size_t n, String & out) const
+{
+    getDictionary().getNestedColumn()->serializeAsComparable(getIndexes().getUInt(n), out);
+}
+
+namespace
+{
+
+template <typename IndexType>
+void batchSerializeLowCardinalityString(
+    const ColumnString & strings,
+    const ColumnVector<IndexType> & indexes,
+    const IColumn::SerializationSettings * settings,
+    std::span<char *> memories,
+    size_t start_row)
+{
+    const auto & offsets = strings.getOffsets();
+    const auto & chars = strings.getChars();
+    const auto & data = indexes.getData();
+    const bool zero_byte = settings && settings->serialize_string_with_zero_byte;
+
+    for (size_t row = 0, size = memories.size(); row < size; ++row)
+    {
+        const size_t index = data[start_row + row];
+        const size_t begin = offsets[static_cast<ssize_t>(index) - 1];
+        const size_t value_size = offsets[index] - begin;
+        const size_t stored_size = value_size + zero_byte;
+        char * memory = memories[row];
+        unalignedStoreLittleEndian<size_t>(memory, stored_size);
+        memory += sizeof(stored_size);
+        memcpy(memory, &chars[begin], value_size);
+        if (zero_byte)
+            memory[value_size] = 0;
+        memories[row] = memory + stored_size;
+    }
+}
+
+template <typename IndexType>
+void collectLowCardinalityStringSizes(
+    const ColumnString & strings,
+    const ColumnVector<IndexType> & indexes,
+    const IColumn::SerializationSettings * settings,
+    PaddedPODArray<UInt64> & sizes)
+{
+    const auto & offsets = strings.getOffsets();
+    const auto & data = indexes.getData();
+    const bool zero_byte = settings && settings->serialize_string_with_zero_byte;
+
+    for (size_t row = 0, size = sizes.size(); row < size; ++row)
+    {
+        const size_t index = data[row];
+        const size_t value_size = offsets[index] - offsets[static_cast<ssize_t>(index) - 1];
+        sizes[row] += sizeof(size_t) + value_size + zero_byte;
+    }
+}
+
+template <typename IndexType>
+void batchSerializeAsComparableLowCardinality(
+    const IColumn & nested_dict,
+    const ColumnVector<IndexType> & indexes,
+    size_t num_rows,
+    VectorWithMemoryTracking<String> & out,
+    const IColumn::Permutation * permutation,
+    const UInt8 * null_map)
+{
+    const auto & data = indexes.getData();
+    batchSerializeAsComparableImpl(num_rows, out, permutation, null_map,
+        [&](size_t src, String & dst) { nested_dict.serializeAsComparable(data[src], dst); });
+}
+
+}
+
+void ColumnLowCardinality::batchSerializeValueIntoMemory(
+    std::span<char *> memories, size_t start_row, const IColumn::SerializationSettings * settings) const
+{
+    chassert(start_row + memories.size() <= size());
+    if (memories.empty())
+        return;
+
+    /// `LowCardinality(String)` is the common case; serialize its dictionary values directly
+    /// instead of resolving every row through `IColumnUnique` and the nested column.
+    if (!getDictionary().nestedColumnIsNullable())
+    {
+        if (const auto * strings = typeid_cast<const ColumnString *>(getDictionary().getNestedNotNullableColumn().get()))
+        {
+            const IColumn & indexes = getIndexes();
+            switch (getSizeOfIndexType())
+            {
+                case sizeof(UInt8):
+                    batchSerializeLowCardinalityString(*strings, assert_cast<const ColumnUInt8 &>(indexes), settings, memories, start_row);
+                    return;
+                case sizeof(UInt16):
+                    batchSerializeLowCardinalityString(*strings, assert_cast<const ColumnUInt16 &>(indexes), settings, memories, start_row);
+                    return;
+                case sizeof(UInt32):
+                    batchSerializeLowCardinalityString(*strings, assert_cast<const ColumnUInt32 &>(indexes), settings, memories, start_row);
+                    return;
+                case sizeof(UInt64):
+                    batchSerializeLowCardinalityString(*strings, assert_cast<const ColumnUInt64 &>(indexes), settings, memories, start_row);
+                    return;
+                default:
+                    break;
+            }
+        }
+    }
+
+    const IColumn & indexes = getIndexes();
+    for (size_t i = 0; i < memories.size(); ++i)
+        memories[i] = getDictionary().serializeValueIntoMemory(indexes.getUInt(start_row + i), memories[i], settings);
+}
+
+void ColumnLowCardinality::batchSerializeAsComparable(
+    size_t num_rows, VectorWithMemoryTracking<String> & out,
+    const Permutation * permutation, const UInt8 * null_map) const
+{
+    const IColumn & nested_dict = *getDictionary().getNestedColumn();
+    const IColumn & indexes = getIndexes();
+    switch (getSizeOfIndexType())
+    {
+        case sizeof(UInt8):
+            batchSerializeAsComparableLowCardinality(nested_dict, assert_cast<const ColumnUInt8 &>(indexes), num_rows, out, permutation, null_map);
+            return;
+        case sizeof(UInt16):
+            batchSerializeAsComparableLowCardinality(nested_dict, assert_cast<const ColumnUInt16 &>(indexes), num_rows, out, permutation, null_map);
+            return;
+        case sizeof(UInt32):
+            batchSerializeAsComparableLowCardinality(nested_dict, assert_cast<const ColumnUInt32 &>(indexes), num_rows, out, permutation, null_map);
+            return;
+        case sizeof(UInt64):
+            batchSerializeAsComparableLowCardinality(nested_dict, assert_cast<const ColumnUInt64 &>(indexes), num_rows, out, permutation, null_map);
+            return;
+        default:
+            throwUnexpectedLowCardinalityIndexType(getSizeOfIndexType());
+    }
+}
+
 std::optional<size_t> ColumnLowCardinality::getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const
 {
     return getDictionary().getSerializedValueSize(getIndexes().getUInt(n), settings);
@@ -354,6 +510,47 @@ void ColumnLowCardinality::collectSerializedValueSizes(PaddedPODArray<UInt64> & 
         sizes.resize_fill(rows);
     else if (sizes.size() != rows)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of sizes: {} doesn't match rows_num: {}. It is a bug", sizes.size(), rows);
+
+    /// Size only the dictionary entries referenced by rows, mirroring `batchSerializeValueIntoMemory`:
+    /// a block may carry a dictionary much larger than itself (e.g. a per-part dictionary after a
+    /// selective filter), and sizing the whole dictionary would then dominate the cost.
+    if (!getDictionary().nestedColumnIsNullable())
+    {
+        if (const auto * strings = typeid_cast<const ColumnString *>(getDictionary().getNestedNotNullableColumn().get()))
+        {
+            const IColumn & indexes = getIndexes();
+            switch (getSizeOfIndexType())
+            {
+                case sizeof(UInt8):
+                    collectLowCardinalityStringSizes(*strings, assert_cast<const ColumnUInt8 &>(indexes), settings, sizes);
+                    return;
+                case sizeof(UInt16):
+                    collectLowCardinalityStringSizes(*strings, assert_cast<const ColumnUInt16 &>(indexes), settings, sizes);
+                    return;
+                case sizeof(UInt32):
+                    collectLowCardinalityStringSizes(*strings, assert_cast<const ColumnUInt32 &>(indexes), settings, sizes);
+                    return;
+                case sizeof(UInt64):
+                    collectLowCardinalityStringSizes(*strings, assert_cast<const ColumnUInt64 &>(indexes), settings, sizes);
+                    return;
+                default:
+                    break;
+            }
+        }
+    }
+
+    if (getDictionary().size() > rows)
+    {
+        const IColumn & indexes = getIndexes();
+        for (size_t i = 0; i < rows; ++i)
+        {
+            const auto value_size = getDictionary().getSerializedValueSize(indexes.getUInt(i), settings);
+            if (!value_size)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Serialized value size is unknown for the dictionary of {}", getName());
+            sizes[i] += *value_size;
+        }
+        return;
+    }
 
     PaddedPODArray<UInt64> dict_sizes;
     getDictionary().collectSerializedValueSizes(dict_sizes, nullptr, settings);

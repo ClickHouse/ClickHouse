@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-ordinary-database, no-old-analyzer
+-- Tags: no-parallel, no-ordinary-database, no-old-analyzer, no-fasttest
 -- no-parallel: SYSTEM ENABLE FAILPOINT is server-global and the failpoint is one-shot, so a concurrent query would consume it
 -- no-ordinary-database: the test uses transactions
 -- no-old-analyzer: `optimize_trivial_count_with_sparsity_filter` is implemented only in the analyzer

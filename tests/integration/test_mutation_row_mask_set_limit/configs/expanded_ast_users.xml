@@ -1,0 +1,7 @@
+<clickhouse>
+    <profiles>
+        <row_mask_expanded_ast_limited>
+            <max_expanded_ast_elements>100</max_expanded_ast_elements>
+        </row_mask_expanded_ast_limited>
+    </profiles>
+</clickhouse>

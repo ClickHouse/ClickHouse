@@ -19,8 +19,6 @@
 #include <Parsers/ParserDatabaseOrNone.h>
 #include <Parsers/ParserStringAndSubstitution.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 
 #include <base/range.h>
 #include <base/insertAtEnd.h>
@@ -868,14 +866,12 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     return true;
 }
-}
 
-namespace DB
+std::map<String, Documentation> ParserCreateUserQuery::getDocumentation() const
 {
+    std::map<String, Documentation> documentation;
 
-void registerStatementUser(StatementFactory & factory)
-{
-    factory.registerStatement("CREATE USER",
+    documentation["CREATE USER"] =
     {
         .description = R"DOCS_MD(
 Creates [user accounts](/concepts/features/security/access-rights#user-account-management).
@@ -1203,9 +1199,9 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
 )",
         .parent = "CREATE",
         .related = {"ALTER USER", "CREATE ROLE", "GRANT", "DROP", "SHOW"},
-    });
+    };
 
-    factory.registerStatement("ALTER USER",
+    documentation["ALTER USER"] =
     {
         .description = R"DOCS_MD(
 Changes ClickHouse user accounts.
@@ -1336,6 +1332,15 @@ Examples:
 - `ALTER USER name1 VALID UNTIL '2025-01-01' IDENTIFIED WITH plaintext_password BY 'password_1', bcrypt_password BY 'password_2'` — the user-level deadline applies to both methods.
 - `ALTER USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID UNTIL '2025-01-01'` — the deadline applies only to the `bcrypt_password` method; `plaintext_password` never expires.
 
+Expired authentication methods are removed automatically: every `ALTER USER` on a user drops the methods whose deadline has already passed - whether or not the statement itself mentions authentication - while the others, including the ones that never expire, are kept. An expired method can never accept a credential again, so keeping it would only occupy a slot in `max_authentication_methods_per_user`. This is what makes rotating short-lived credentials work: `ALTER USER ... ADD IDENTIFIED WITH ... VALID UNTIL ...` can be issued indefinitely without the dead credentials piling up against that limit, and without arranging a window in which only one credential is still valid so that `IDENTIFIED WITH` or `RESET AUTHENTICATION METHODS TO NEW` would not drop a credential still in use.
+
+Two things are deliberately left alone:
+
+- A method that the same statement adds. Writing an already expired credential (`VALID UNTIL` a past date, or `VALID FOR` a negative interval) stays possible.
+- A user whose every method is expired. Such a user keeps them and simply cannot authenticate, which is the state it is already in; the alternative would be a user with no authentication method at all, which is read back as `no_password` and would turn a lapsed credential into an unauthenticated one. Give it a new credential with `ALTER USER ... IDENTIFIED WITH ...` (or `ADD IDENTIFIED WITH ...`, which drops the expired ones in the same statement).
+
+Since the user-level clause is applied before the expired methods are dropped, extending the deadline of a user whose credentials have already lapsed keeps working, and only the methods that are still expired afterwards are removed.
+
 ## VALID FOR Clause {#valid-for-clause}
 
 The `VALID FOR` clause is a convenience shorthand for `VALID UNTIL`. Instead of an absolute date and time it accepts an [interval](/reference/data-types/special-data-types/interval), and the expiration deadline is computed as the current time plus that interval at the moment the query is executed. The result is stored in the `VALID UNTIL` form, so `SHOW CREATE USER` always displays the resolved absolute deadline. It follows the same placement rules as `VALID UNTIL`: before `IDENTIFIED` (or with no authentication method) it is a user-level deadline that applies to every method, while after an authentication method it applies to that method only. The deadline is stored and enforced with second precision, so sub-second intervals (`NANOSECOND`, `MICROSECOND`, `MILLISECOND`) are rejected; the smallest accepted unit is `SECOND`. A negative interval is accepted as a way to mark the credentials as already expired; if the resulting deadline falls before `1970-01-01 00:00:01 UTC`, it is canonicalized to that smallest expired instant, which is what `SHOW CREATE USER` then reports — rendered in the server or session time zone, as described for [`VALID UNTIL`](#valid-until-clause).
@@ -1378,7 +1383,9 @@ ALTER USER [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
 )",
         .parent = "ALTER",
         .related = {"CREATE USER", "ALTER", "GRANT", "SHOW"},
-    });
+    };
+
+    return documentation;
 }
 
 }

@@ -5,7 +5,6 @@ SET explain_query_plan_default = 'legacy';
 
 -- { echo }
 
-SET enable_analyzer = 1;
 SET allow_key_condition_coalesce_rewrite = 1;
 
 DROP TABLE IF EXISTS t_ifnull_keycond;
@@ -14,39 +13,39 @@ ENGINE = MergeTree ORDER BY (team_id, k, s) SETTINGS index_granularity = 8192;
 INSERT INTO t_ifnull_keycond SELECT 1, number % 5, toString(number) FROM numbers(200000);
 
 -- Bare comparison: the primary key builds a `k in [0, 0]` range.
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_ifnull_keycond WHERE team_id = 1 AND k = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_ifnull_keycond WHERE team_id = 1 AND k = 0 SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
 SELECT count() FROM t_ifnull_keycond WHERE team_id = 1 AND k = 0 SETTINGS force_primary_key = 1;
 
 -- `ifNull(X, 0)` wrapper: same `Condition` and result as the bare comparison.
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_ifnull_keycond WHERE team_id = 1 AND ifNull(equals(k, 0), 0)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_ifnull_keycond WHERE team_id = 1 AND ifNull(equals(k, 0), 0) SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
 SELECT count() FROM t_ifnull_keycond WHERE team_id = 1 AND ifNull(equals(k, 0), 0) SETTINGS force_primary_key = 1;
 
 -- `coalesce(X, 0)` wrapper: same as `ifNull`.
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_ifnull_keycond WHERE team_id = 1 AND coalesce(equals(k, 0), 0)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_ifnull_keycond WHERE team_id = 1 AND coalesce(equals(k, 0), 0) SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
 SELECT count() FROM t_ifnull_keycond WHERE team_id = 1 AND coalesce(equals(k, 0), 0) SETTINGS force_primary_key = 1;
 
 -- A truthy fallback is not equivalent to `X`, so `ifNull(X, 1)` must not be rewritten: no `k` range,
 -- only the `team_id` range remains.
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_ifnull_keycond WHERE team_id = 1 AND ifNull(equals(k, 0), 1)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_ifnull_keycond WHERE team_id = 1 AND ifNull(equals(k, 0), 1) SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
 
 -- No inner-function whitelist: any indexable predicate works under the wrapper.
 -- `transform_null_in` turns GLOBAL IN into `globalNullIn`, which `KeyCondition` indexes as a set.
 SET transform_null_in = 1;
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_ifnull_keycond WHERE team_id = 1 AND ifNull(globalNullIn(k, (0)), 0)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_ifnull_keycond WHERE team_id = 1 AND ifNull(globalNullIn(k, (0)), 0) SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
 SELECT count() FROM t_ifnull_keycond WHERE team_id = 1 AND ifNull(globalNullIn(k, (0)), 0) SETTINGS force_primary_key = 1;
 
 -- `has` is turned into a set as well; 80000 rows have `k` in {0, 3}.
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_ifnull_keycond WHERE team_id = 1 AND ifNull(has([0, 3], k), 0)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_ifnull_keycond WHERE team_id = 1 AND ifNull(has([0, 3], k), 0) SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
 SELECT count() FROM t_ifnull_keycond WHERE team_id = 1 AND ifNull(has([0, 3], k), 0) SETTINGS force_primary_key = 1;
 
 -- Boolean context propagates through `or`, so a wrapper in an OR branch is unwrapped too: same range
 -- and pruning as the bare `k = 4 OR k = 0`. 80000 rows have `k` in {0, 4}.
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_ifnull_keycond WHERE team_id = 1 AND (k = 4 OR ifNull(equals(k, 0), 0))) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_ifnull_keycond WHERE team_id = 1 AND (k = 4 OR ifNull(equals(k, 0), 0)) SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
 SELECT count() FROM t_ifnull_keycond WHERE team_id = 1 AND (k = 4 OR ifNull(equals(k, 0), 0)) SETTINGS force_primary_key = 1;
 
 -- The rewrite fires at even `NOT` nesting (net non-inverted), not only at zero: under two `NOT`s the
 -- wrapper is still unwrapped and prunes exactly like the bare `team_id = 1 AND k = 0`.
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_ifnull_keycond WHERE NOT (team_id != 1 OR NOT ifNull(equals(k, 0), 0))) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_ifnull_keycond WHERE NOT (team_id != 1 OR NOT ifNull(equals(k, 0), 0)) SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
 SELECT count() FROM t_ifnull_keycond WHERE NOT (team_id != 1 OR NOT ifNull(equals(k, 0), 0)) SETTINGS force_primary_key = 1;
 
 DROP TABLE t_ifnull_keycond;
