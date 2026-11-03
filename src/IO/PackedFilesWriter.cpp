@@ -1,3 +1,4 @@
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteSettings.h>
@@ -219,34 +220,32 @@ PackedFilesWriter::FinalizePlan PackedFilesWriter::prepareFinalize(const Strings
     ordered_file_names.reserve(num_files);
     /// Order files according to the hint.
     {
-        UnorderedSetWithMemoryTracking<String> already_added_files;
+        /// Unescape each name once instead of once per hint entry: a wide part has an entry per column
+        /// stream in both, so the search was quadratic in the number of columns. Like the search, the map
+        /// keeps the first of the names that unescape to the same one.
+        UnorderedMapWithMemoryTracking<String, const String *> files_by_unescaped_name;
+        files_by_unescaped_name.reserve(num_files);
+        for (const auto & [key, _] : written_files)
+            files_by_unescaped_name.emplace(unescapeForFileName(key), &key);
+
+        /// The keys of `written_files` are not moved, so the set refers to them.
+        UnorderedSetWithMemoryTracking<std::string_view> already_added_files;
+        already_added_files.reserve(num_files);
         for (const auto & hinted_name : files_order_hint)
         {
-            std::string found_file_name;
-            bool found = false;
-            for (const auto & [key, _] : written_files)
-            {
-                if (unescapeForFileName(key) == hinted_name)
-                {
-                    found_file_name = key;
-                    found = true;
-                    break;
-                }
-            }
+            auto it = files_by_unescaped_name.find(hinted_name);
+            if (it == files_by_unescaped_name.end())
+                continue;
 
-            if (found && !already_added_files.contains(found_file_name))
-            {
+            const String & found_file_name = *it->second;
+            if (already_added_files.insert(found_file_name).second)
                 ordered_file_names.push_back(found_file_name);
-                already_added_files.insert(found_file_name);
-            }
         }
+
         for (const auto & [name, _] : written_files)
         {
             if (!already_added_files.contains(name))
-            {
                 ordered_file_names.push_back(name);
-                already_added_files.insert(name);
-            }
         }
     }
     chassert(ordered_file_names.size() == num_files, "Number of files in ordered list doesn't match the number of written files");
