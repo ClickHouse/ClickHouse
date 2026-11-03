@@ -1,3 +1,5 @@
+#include "config.h"
+
 #include <Functions/FunctionFactory.h>
 #include <Functions/geometry.h>
 #include <Functions/geometryConverters.h>
@@ -5,6 +7,8 @@
 #include <Columns/ColumnVariant.h>
 
 #include <base/EnumReflection.h>
+
+#if USE_S2_GEOMETRY
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wambiguous-reversed-operator"
@@ -445,3 +449,5 @@ SELECT centroidSpherical([[(4.346693, 50.858306), (4.367945, 50.852455), (4.3662
 }
 
 }
+
+#endif
