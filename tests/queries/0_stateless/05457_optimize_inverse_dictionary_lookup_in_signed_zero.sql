@@ -33,3 +33,11 @@ FROM numbers(3) ORDER BY number SETTINGS optimize_inverse_dictionary_lookup = 1;
 
 DROP DICTIONARY d_float_signed_zero;
 DROP TABLE t_float_signed_zero;
+
+DROP DICTIONARY IF EXISTS d_lc_signed_zero;
+DROP TABLE IF EXISTS src_lc_signed_zero;
+CREATE TABLE src_lc_signed_zero (id UInt64, val Float64) ENGINE = Memory AS SELECT 1, -0.0 UNION ALL SELECT 2, 0.0;
+CREATE DICTIONARY d_lc_signed_zero (id UInt64, val Float64) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'src_lc_signed_zero')) LAYOUT(FLAT()) LIFETIME(0);
+SELECT id FROM (SELECT toUInt64(1) AS id UNION ALL SELECT toUInt64(2)) WHERE CAST(dictGet('d_lc_signed_zero', 'val', id), 'LowCardinality(Float64)') = 0.0 ORDER BY id SETTINGS optimize_inverse_dictionary_lookup = 1;
+DROP DICTIONARY d_lc_signed_zero;
+DROP TABLE src_lc_signed_zero;

@@ -860,6 +860,8 @@ private:
         /// on the dictionary. Skip optimization for such case.
         if (isNullableOrLowCardinalityNullable(dictget_function_info->return_type))
             return;
+        if (dictget_function_info->return_type->lowCardinality() && isFloat(removeLowCardinality(dictget_function_info->return_type)))
+            return;
 
         auto lookup = tryGetDictionaryLookup(*dictget_function_info);
         if (!lookup)
