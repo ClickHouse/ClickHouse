@@ -91,6 +91,25 @@ struct AggregateFunctionSumData
         Impl::add(sum, toAccumulateResult(value));
     }
 
+    /// On AArch64 clang-23 does not turn a sum of 8- or 16-bit integers into a 64-bit accumulator into a partial
+    /// reduction (`udot`/`sdot` + `uadalp`) any more, and widens every element to 64 bits instead, which is twice as
+    /// slow (https://github.com/llvm/llvm-project/pull/226226). Summing into a 32-bit accumulator over chunks short
+    /// enough not to overflow it is vectorized with `udot`/`sdot` by every compiler, so the result is the same.
+    template <typename Value>
+    static constexpr bool use_narrow_accumulator =
+#if defined(__aarch64__)
+        is_integer<Value> && sizeof(Value) <= 2 && is_integer<T> && sizeof(AccumulateResult) == 8;
+#else
+        false;
+#endif
+
+    template <typename Value>
+    using NarrowAccumulator = std::conditional_t<is_signed_v<Value>, Int32, UInt32>;
+
+    /// The absolute value of a chunk sum stays below 2^31.
+    template <typename Value>
+    static constexpr size_t narrow_accumulator_chunk_size = 1ULL << (31 - 8 * sizeof(Value));
+
     /// Vectorized version
     MULTITARGET_FUNCTION_X86_V4(
     MULTITARGET_FUNCTION_HEADER(
@@ -102,7 +121,21 @@ struct AggregateFunctionSumData
         size_t count = end - start;
         const auto * end_ptr = ptr + count;
 
-        if constexpr (is_floating_point<T>)
+        if constexpr (use_narrow_accumulator<Value>)
+        {
+            AccumulateResult local_sum{};
+            while (ptr < end_ptr)
+            {
+                const auto * chunk_end = ptr + std::min<size_t>(end_ptr - ptr, narrow_accumulator_chunk_size<Value>);
+                NarrowAccumulator<Value> chunk_sum = 0;
+                for (; ptr < chunk_end; ++ptr)
+                    chunk_sum += *ptr;
+                local_sum += chunk_sum;
+            }
+            Impl::add(sum, local_sum);
+            return;
+        }
+        else if constexpr (is_floating_point<T>)
         {
             /// Compiler cannot unroll this loop, do it manually.
             /// (at least for floats, most likely due to the lack of -fassociative-math)
@@ -161,7 +194,21 @@ struct AggregateFunctionSumData
         size_t count = end - start;
         const auto * end_ptr = ptr + count;
 
-        if constexpr ((is_integer<T> || is_decimal<T>) && !is_over_big_int<T>)
+        if constexpr (use_narrow_accumulator<Value>)
+        {
+            AccumulateResult local_sum{};
+            while (ptr < end_ptr)
+            {
+                const auto * chunk_end = ptr + std::min<size_t>(end_ptr - ptr, narrow_accumulator_chunk_size<Value>);
+                NarrowAccumulator<Value> chunk_sum = 0;
+                for (; ptr < chunk_end; ++ptr, ++condition_map)
+                    chunk_sum += static_cast<NarrowAccumulator<Value>>(*ptr) * static_cast<NarrowAccumulator<Value>>(!*condition_map == add_if_zero);
+                local_sum += chunk_sum;
+            }
+            Impl::add(sum, local_sum);
+            return;
+        }
+        else if constexpr ((is_integer<T> || is_decimal<T>) && !is_over_big_int<T>)
         {
             /// For integers we can vectorize the operation if we replace the null check using a multiplication (by 0 for null, 1 for not null)
             /// https://quick-bench.com/q/MLTnfTvwC2qZFVeWHfOBR3U7a8I

@@ -921,19 +921,53 @@ private:
                 }
             }
 
+            /// The plane pointers do not change between rows.
+            PODArray<const UInt8 *> plane_data(num_groups);
+            for (size_t group = 0; group < num_groups; ++group)
+                plane_data[group] = stored_plane(group);
+
+            Float64 * out = result_data.data();
             for (size_t row = 0; row < input_rows_count; ++row)
             {
-                /// Independent partial sums, so the lookups are not one dependent add chain.
-                AccT partial[4]{};
+                /// Four independent partial sums, so the lookups are not one dependent add chain. They are named scalars
+                /// rather than an array indexed by `byte % 4`: an indexed array lives in memory, and the 128-bit reload of
+                /// two partials at the end of a row, straddling the 64-bit store that last updated one of them, cannot be
+                /// forwarded from the store buffer and stalls every row (`qbit_distance_transposed_micro`).
+                AccT partial0{};
+                AccT partial1{};
+                AccT partial2{};
+                AccT partial3{};
                 for (size_t group = 0; group < num_groups; ++group)
                 {
-                    const UInt8 * stored = stored_plane(group) + row * bytes_per_group;
+                    const UInt8 * stored = plane_data[group] + row * bytes_per_group;
                     const TableT * entries = table.data() + group * bytes_per_group * 256;
-                    for (size_t byte = 0; byte < bytes_per_group; ++byte)
-                        partial[byte % 4] += entries[byte * 256 + stored[byte]];
+                    size_t byte = 0;
+                    for (; byte + 4 <= bytes_per_group; byte += 4)
+                    {
+                        partial0 += entries[(byte + 0) * 256 + stored[byte + 0]];
+                        partial1 += entries[(byte + 1) * 256 + stored[byte + 1]];
+                        partial2 += entries[(byte + 2) * 256 + stored[byte + 2]];
+                        partial3 += entries[(byte + 3) * 256 + stored[byte + 3]];
+                    }
+                    /// The tail keeps the `byte % 4` assignment of the loop above, so every partial sum receives the same
+                    /// addends in the same order as before and the result is unchanged.
+                    switch (bytes_per_group - byte)
+                    {
+                        case 3:
+                            partial2 += entries[(byte + 2) * 256 + stored[byte + 2]];
+                            [[fallthrough]];
+                        case 2:
+                            partial1 += entries[(byte + 1) * 256 + stored[byte + 1]];
+                            [[fallthrough]];
+                        case 1:
+                            partial0 += entries[byte * 256 + stored[byte]];
+                            break;
+                        default:
+                            break;
+                    }
                 }
-                const Float64 signed_sum = static_cast<Float64>(partial[0] + partial[1] + partial[2] + partial[3]);
-                result_data[row] = Kernel::fromSignedSum(signed_sum, y2, used_dims, scale);
+                const Float64 signed_sum = static_cast<Float64>(partial0 + partial1 + partial2 + partial3);
+                out[row] = Kernel::fromSignedSum(signed_sum, y2, used_dims, scale);
             }
         }
         else

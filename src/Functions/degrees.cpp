@@ -19,7 +19,7 @@ Float64 degrees(Float64 r)
     return degrees;
 }
 
-using FunctionDegrees = FunctionMathUnary<UnaryFunctionVectorized<DegreesName, degrees>>;
+using FunctionDegrees = FunctionMathUnary<UnaryFunctionVectorized<DegreesName, degrees, true>>;
 
 }
 

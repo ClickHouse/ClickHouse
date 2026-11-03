@@ -10,9 +10,21 @@
 #include <Functions/FunctionSpaceFillingCurve.h>
 #include <Functions/IFunction.h>
 
+/// The morton-nd codecs are chains of small `constexpr` templates meant to fold into the per-row loop.
+/// Whether they do is left to the inliner's cost model, and clang-23 leaves the 8-dimension LUT
+/// decoder (`MortonNDLutDecoder<8, 8, 8>::DecodeInternal`) out of line on AArch64: every row then pays a
+/// call with its XRay sled, callee-saved SIMD spills and a round-trip of the result tuple through the
+/// stack (`morton_decode #6`, +24%). Inlining it unconditionally also lets the table base and the shift
+/// constants be hoisted out of the loop.
+#if defined(__clang__)
+#pragma clang attribute push([[gnu::always_inline]], apply_to = function)
+#endif
 #include <morton-nd/mortonND_LUT.h>
 #if defined(__BMI2__)
 #include <morton-nd/mortonND_BMI2.h>
+#endif
+#if defined(__clang__)
+#pragma clang attribute pop
 #endif
 
 namespace DB
@@ -289,14 +301,18 @@ static_assert(compressMatchesLut<2, 32>());
 static_assert(compressMatchesLut<3, 21>());
 static_assert(compressMatchesLut<5, 12>());
 static_assert(compressMatchesLut<7, 9>());
+static_assert(compressMatchesLut<8, 8>());
 
 /// AArch64 has no pdep/pext, so it reaches this arm rather than the BMI2 one below. Which
-/// dimensions use the compress decoder is a measured list, not a derived one: at 4, 6 and 8
-/// it did not beat `MortonNDLutDecoder` there, so those three keep the table.
+/// dimensions use the compress decoder is a measured list, not a derived one: at 4 and 6 it
+/// did not beat `MortonNDLutDecoder` there, so those two keep the table. At 8 it did not
+/// either under clang-22, but clang-23 compiles the 8-dimension table decoder 24% slower (a
+/// wider SLP schedule with more constant loads), while the compress decoder under clang-23
+/// measures equal to the clang-22 table decoder.
 template <size_t Dimensions>
 constexpr bool use_compress_decoder =
 #if defined(__aarch64__)
-    Dimensions != 4 && Dimensions != 6 && Dimensions != 8;
+    Dimensions != 4 && Dimensions != 6;
 #else
     false;
 #endif
