@@ -1032,4 +1032,8 @@ private:
     /// Holds whether the key columns are sorted in reverse (ORDER BY ... DESC) or not.
     KeyOrder key_order;
 };
+
+/// Errors that must still fail the query when an index evaluates an expression on values the query did not ask about.
+bool isQueryOuterGuardError(int code);
+
 }
