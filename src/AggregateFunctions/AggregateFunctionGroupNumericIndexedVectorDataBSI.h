@@ -1826,13 +1826,6 @@ public:
         rhs_ref.shallowCopyFrom(rhs);
 
         const UInt32 total_bit_num = promoteBitPrecisionInplace(lhs_ref, rhs_ref);
-
-        if (total_bit_num == 0)
-        {
-            res.initialize(0, 0);
-            return;
-        }
-
         res.initialize(lhs_ref.integer_bit_num, lhs_ref.fraction_bit_num);
 
         Roaring present_lhs;
@@ -2317,8 +2310,6 @@ public:
     UInt64 toIndexValueMap(PaddedPODArray<IndexType> & indexes_pod, PaddedPODArray<ValueType> & values_pod) const
     {
         const UInt32 total_bit_num = getTotalBitNum();
-        if (total_bit_num == 0)
-            return 0;
         DataTypePtr value_type = std::make_shared<DataTypeNumber<ValueType>>();
         auto which = WhichDataType(value_type);
         if ((which.isUInt() or which.isInt()) and fraction_bit_num > 0)
