@@ -197,6 +197,10 @@ protected:
     /// so the disk-probe default always misses.
     virtual std::shared_ptr<const PackedFilesReader> getSkipIndicesPackedReader() const;
 
+    /// Reads the index of a skp_idx.packed archive. An archive written in a newer format version
+    /// gives an empty index: its skip indices are not used, while the part itself stays readable.
+    static PackedFilesIO::Index readSkipIndicesPackedIndex(ReadBuffer & in, const String & archive_path);
+
     /// Cheap pre-filtered lookup for the file-read overlay: returns the archive reader only when
     /// @name is a "skp_idx_..." substream that the archive actually contains, else nullptr. The
     /// prefix gate keeps unrelated files (checksums.txt, count.txt, columns.txt, ...) from loading

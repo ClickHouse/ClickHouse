@@ -1237,7 +1237,8 @@ std::shared_ptr<const PackedFilesReader> DataPartStorageOnDiskBase::getSkipIndic
         Expect404ResponseScope scope;
         try
         {
-            skip_indices_packed_reader = std::make_shared<PackedFilesReader>(disk, packed_path, ReadSettings{});
+            auto buf = disk->readFile(packed_path, ReadSettings{}.adjustBufferSize(4096));
+            skip_indices_packed_reader = std::make_shared<PackedFilesReader>(readSkipIndicesPackedIndex(*buf, packed_path));
         }
         catch (const Exception &)
         {
@@ -1249,6 +1250,23 @@ std::shared_ptr<const PackedFilesReader> DataPartStorageOnDiskBase::getSkipIndic
 
     skip_indices_packed_probed = true;
     return skip_indices_packed_reader;
+}
+
+PackedFilesIO::Index DataPartStorageOnDiskBase::readSkipIndicesPackedIndex(ReadBuffer & in, const String & archive_path)
+{
+    /// An empty buffer is left to readIndex, which reports the truncated archive.
+    if (!in.eof())
+    {
+        const auto version = static_cast<UInt8>(*in.position());
+        if (version > PackedFilesIO::MAX_VERSION)
+        {
+            LOG_DEBUG(getLogger("DataPartStorageOnDiskBase"),
+                "Skip indices archive {} has format version {}, newer than the supported {}. Skip indices stored in it will not be used",
+                archive_path, static_cast<UInt32>(version), static_cast<UInt32>(PackedFilesIO::MAX_VERSION));
+            return {};
+        }
+    }
+    return PackedFilesReader::readIndex(in);
 }
 
 void DataPartStorageOnDiskBase::seedSkipIndicesPackedReader(const PackedFilesIO::Index & index) const
