@@ -862,7 +862,14 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
             new_uri->addRegionToURI(request.getRegionOverride());
 
         if (!is_illegal_constraint_exception)
-            checkURIForBucket(bucket, *new_uri);
+        {
+            /// The SDK picks the addressing style of the retry itself (e.g. path-style for a bucket name
+            /// that is not a valid host label, or a dotted one over HTTPS), so resolve the endpoint of
+            /// the actual retry and validate that.
+            auto redirected_request = request;
+            redirected_request.overrideURI(*new_uri);
+            checkURIForBucket(bucket, *new_uri, redirected_request.GetEndpointContextParams());
+        }
 
         const auto & current_uri_override = request.getURIOverride();
         /// we already tried with this URI
@@ -1194,20 +1201,20 @@ std::optional<S3::URI> Client::getURIForBucket(const std::string & bucket) const
     return std::nullopt;
 }
 
-void Client::checkURIForBucket(const std::string & bucket, const S3::URI & uri) const
+void Client::checkURIForBucket(
+    const std::string & bucket, const S3::URI & uri, const Aws::Endpoint::EndpointParameters & endpoint_params) const
 {
     Poco::URI endpoint_uri(uri.endpoint);
     if (client_configuration.remote_host_filter.isBucketAllowed(endpoint_uri.getHost(), endpoint_uri.getPort(), bucket))
         return;
 
-    Poco::URI request_uri = uri.uri;
-    if (uri.is_virtual_hosted_style)
-    {
-        endpoint_uri.setHost(bucket + "." + endpoint_uri.getHost());
-        request_uri.setAuthority(endpoint_uri.getAuthority());
-    }
+    auto & endpoint_provider = const_cast<Client &>(*this).accessEndpointProvider();
+    auto resolved_endpoint = endpoint_provider->ResolveEndpoint(endpoint_params);
+    /// The retry fails the same endpoint resolution before sending anything.
+    if (!resolved_endpoint.IsSuccess())
+        return;
 
-    client_configuration.remote_host_filter.checkURL(request_uri);
+    client_configuration.remote_host_filter.checkURL(Poco::URI(resolved_endpoint.GetResult().GetURL()));
 }
 
 void Client::updateURIForBucket(const std::string & bucket, S3::URI new_uri) const

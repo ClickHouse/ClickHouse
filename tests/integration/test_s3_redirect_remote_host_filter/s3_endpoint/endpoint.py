@@ -10,7 +10,8 @@
 # request would land on /forbidden_hit and flip the "followed" flag -- which the test
 # asserts never happens. The `head` bucket redirects to an allow-listed alias;
 # `virtual` allow-lists the attacker-provided host but not the different bucket host
-# that the AWS SDK constructs for the retry.
+# that the AWS SDK constructs for the retry. `path_style` is not a valid host label, so
+# the AWS SDK sends its retry path-style to the redirect endpoint without the bucket prefix.
 import socket
 
 from bottle import request, response, route, run
@@ -23,6 +24,7 @@ ALLOWED_REDIRECT_TARGET = "redirected:8080"
 UNREACHABLE_REDIRECT_TARGET = "unreachable:8081"
 VIRTUAL_HOSTED_REDIRECT_TARGET = "bucket.s3.resolver:8080"
 VIRTUAL_HOSTED_RETRY_TARGET = "virtual.s3.resolver:8080"
+PATH_STYLE_RETRY_TARGET = "s3.resolver:8080"
 AWS_ENDPOINT = "s3.amazonaws.com:8080"
 AWS_REGION_ENDPOINT = "s3.me-south-1.amazonaws.com:8080"
 
@@ -65,7 +67,7 @@ def server(_bucket, _path=""):
             response.set_header("ETag", '"etag"')
             return ""
 
-    if request.urlparts.netloc == VIRTUAL_HOSTED_RETRY_TARGET:
+    if request.urlparts.netloc in (VIRTUAL_HOSTED_RETRY_TARGET, PATH_STYLE_RETRY_TARGET):
         followed_redirect["hit"] = True
         return "followed"
 
@@ -85,7 +87,7 @@ def server(_bucket, _path=""):
     if _bucket in ("head", "network"):
         target = UNREACHABLE_REDIRECT_TARGET if _bucket == "network" else ALLOWED_REDIRECT_TARGET
         target_path = suffix
-    elif _bucket == "virtual":
+    elif _bucket in ("virtual", "path_style"):
         target = VIRTUAL_HOSTED_REDIRECT_TARGET
         target_path = "forbidden_hit/" + suffix
     else:
