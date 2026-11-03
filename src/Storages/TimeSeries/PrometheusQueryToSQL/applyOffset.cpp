@@ -51,10 +51,15 @@ namespace
                 return std::move(expression);
             }
 
-            case StoreMethod::RAW_DATA:
+            case StoreMethod::SAMPLES:
+            case StoreMethod::TIMESTAMP_AND_VALUE:
             {
+                /// SELECT group,
+                ///        arrayMap(sample -> (CAST(CAST(sample.1, 'result_timestamp_type') + INTERVAL <x> <unit>, 'result_timestamp_type'), sample.2), samples) AS samples
+                /// FROM <samples_data>
+                /// or
                 /// SELECT group, CAST(CAST(timestamp, 'result_timestamp_type') + INTERVAL <x> <unit>, 'result_timestamp_type') AS timestamp, value
-                /// FROM <raw_data>
+                /// FROM <samples_data>
                 SelectQueryBuilder builder;
 
                 builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
@@ -74,23 +79,46 @@ namespace
                 static const std::string_view to_interval_functions[] = {"toIntervalSecond", "toIntervalMillisecond", "toIntervalMicrosecond", "toIntervalNanosecond"};
                 std::string_view to_interval_function = to_interval_functions[interval_scale / 3];
 
-                /// The column `timestamp` is converted to `result_timestamp_type` before adding the interval because it can have
+                /// The timestamp of a sample is converted to `result_timestamp_type` before adding the interval because it can have
                 /// a type which doesn't support intervals (UInt32). Adding an interval can change the scale
                 /// (for example, DateTime64(4) + INTERVAL 1 MICROSECOND is DateTime64(6)), so we cast the sum back.
                 /// Both casts do nothing if the types already match.
                 const String result_timestamp_type_name = context.result_timestamp_type->getName();
-                ASTPtr new_timestamp = makeASTFunction(
-                    "CAST",
-                    makeASTFunction(
-                        "plus",
-                        makeASTFunction("CAST", make_intrusive<ASTIdentifier>(ColumnNames::Timestamp), make_intrusive<ASTLiteral>(result_timestamp_type_name)),
-                        makeASTFunction(to_interval_function, make_intrusive<ASTLiteral>(offset_in_interval_units))),
-                    make_intrusive<ASTLiteral>(result_timestamp_type_name));
+                auto shift_timestamp = [&](ASTPtr timestamp)
+                {
+                    return makeASTFunction(
+                        "CAST",
+                        makeASTFunction(
+                            "plus",
+                            makeASTFunction("CAST", std::move(timestamp), make_intrusive<ASTLiteral>(result_timestamp_type_name)),
+                            makeASTFunction(to_interval_function, make_intrusive<ASTLiteral>(offset_in_interval_units))),
+                        make_intrusive<ASTLiteral>(result_timestamp_type_name));
+                };
 
-                new_timestamp->setAlias(ColumnNames::Timestamp);
-                builder.select_list.push_back(std::move(new_timestamp));
-
-                builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
+                if (expression.store_method == StoreMethod::SAMPLES)
+                {
+                    /// arrayMap(sample -> (<shifted sample.1>, sample.2), samples) AS samples
+                    const String iterator_name = "sample";
+                    ASTPtr sample_timestamp = makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>(iterator_name), make_intrusive<ASTLiteral>(UInt64{1}));
+                    ASTPtr sample_value = makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>(iterator_name), make_intrusive<ASTLiteral>(UInt64{2}));
+                    auto new_samples = makeASTFunction(
+                        "arrayMap",
+                        makeASTFunction(
+                            "lambda",
+                            makeASTFunction("tuple", make_intrusive<ASTIdentifier>(iterator_name)),
+                            makeASTFunction("tuple", shift_timestamp(std::move(sample_timestamp)), std::move(sample_value))),
+                        make_intrusive<ASTIdentifier>(ColumnNames::Samples));
+                    new_samples->setAlias(ColumnNames::Samples);
+                    builder.select_list.push_back(std::move(new_samples));
+                }
+                else
+                {
+                    /// <shifted timestamp> AS timestamp, value
+                    auto new_timestamp = shift_timestamp(make_intrusive<ASTIdentifier>(ColumnNames::Timestamp));
+                    new_timestamp->setAlias(ColumnNames::Timestamp);
+                    builder.select_list.push_back(std::move(new_timestamp));
+                    builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
+                }
 
                 auto & subqueries = context.subqueries;
                 subqueries.emplace_back(subqueries.size(), std::move(expression.select_query), SQLSubqueryType::TABLE);
@@ -186,9 +214,10 @@ namespace
                 return std::move(expression);
             }
 
-            case StoreMethod::RAW_DATA:
+            case StoreMethod::SAMPLES:
+            case StoreMethod::TIMESTAMP_AND_VALUE:
             {
-                /// Can't get in here because RAW_DATA is used only for range vectors, and they are returned above as is.
+                /// Can't get in here because these store methods are used only for range vectors, and they are returned above as is.
                 throwUnexpectedStoreMethod(expression, context);
             }
         }
