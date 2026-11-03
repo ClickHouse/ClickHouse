@@ -217,6 +217,19 @@ SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_compress_b
     index_granularity_bytes = '10Mi', ratio_of_defaults_for_sparse_serialization = 1;
 INSERT INTO t_cache_lowcardinality SELECT number, hex(sipHash128(number % 5000)) || hex(sipHash128(number % 5000 + 5000)) FROM numbers(2e5);
 
+-- Empty values, which write nothing to the stream of the elements or of the string data, before the values of the last
+-- granule: their marks are all the same, and the granules read below need no block of that stream.
+DROP TABLE IF EXISTS t_cache_empty_array;
+CREATE TABLE t_cache_empty_array (key UInt64, a Array(UInt64)) ENGINE = MergeTree ORDER BY key
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity = 1000, index_granularity_bytes = '10Mi',
+    ratio_of_defaults_for_sparse_serialization = 1;
+INSERT INTO t_cache_empty_array SELECT number, if(number < 19000, [], arrayMap(i -> cityHash64(number, i), range(64))) FROM numbers(20000);
+DROP TABLE IF EXISTS t_cache_empty_string;
+CREATE TABLE t_cache_empty_string (key UInt64, s String) ENGINE = MergeTree ORDER BY key
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity = 1000, index_granularity_bytes = '10Mi',
+    ratio_of_defaults_for_sparse_serialization = 1, string_serialization_version = 'with_size_stream', serialization_info_version = 'with_types';
+INSERT INTO t_cache_empty_string SELECT number, if(number < 19000, '', repeat(hex(cityHash64(number)), 32)) FROM numbers(20000);
+
 -- Each column in a single compressed block, which every stream of the read below loads for its own granules: it is still
 -- the part's to read once.
 DROP TABLE IF EXISTS t_one_block_wide;
@@ -252,6 +265,19 @@ SETTINGS merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_inj
 SELECT lc FROM t_cache_lowcardinality WHERE key < 20000 FORMAT Null
 SETTINGS merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0,
     use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_cache_lowcardinality_2';
+
+SELECT a FROM t_cache_empty_array WHERE key < 3000 FORMAT Null
+SETTINGS merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0,
+    use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_cache_empty_array_1';
+SELECT a FROM t_cache_empty_array WHERE key < 3000 FORMAT Null
+SETTINGS merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0,
+    use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_cache_empty_array_2';
+SELECT s FROM t_cache_empty_string WHERE key < 3000 FORMAT Null
+SETTINGS merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0,
+    use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_cache_empty_string_1';
+SELECT s FROM t_cache_empty_string WHERE key < 3000 FORMAT Null
+SETTINGS merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0,
+    use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_cache_empty_string_2';
 
 -- The streams of the null map of a sparse `Nullable`, of a `Dynamic` and of a `Quantized` column are not all known without reading the column,
 -- so the bytes of the granules served from the cache are not measured, and no statistics are collected.
@@ -335,5 +361,7 @@ DROP TABLE t_cache_sparse;
 DROP TABLE t_cache_dynamic;
 DROP TABLE t_cache_quantized;
 DROP TABLE t_cache_lowcardinality;
+DROP TABLE t_cache_empty_array;
+DROP TABLE t_cache_empty_string;
 DROP TABLE t_one_block_wide;
 DROP TABLE t_one_block_compact;

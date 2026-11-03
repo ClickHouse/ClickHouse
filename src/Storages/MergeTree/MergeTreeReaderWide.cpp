@@ -1133,7 +1133,9 @@ void MergeTreeReaderWide::addGranuleServedFromColumnsCache(size_t mark, const st
 
             /// A block that holds the granule is counted once for the reader by `takeCompressedBytesRead`, also when it is read,
             /// or holds other granules or columns served from the cache.
-            stream->addRangeOfMark(mark, getRangesRead(*stream_name));
+            /// The granules that share a `LowCardinality` dictionary read it at the same mark.
+            const bool shared_with_next_granules = substream_path.back().type == ISerialization::Substream::DictionaryKeys;
+            stream->addRangeOfMark(mark, shared_with_next_granules, getRangesRead(*stream_name));
         });
     }
 }

@@ -641,22 +641,27 @@ MergeTreeReaderStreamMultipleColumns::estimateMarkRangeBytesOneColumn(const Mark
     return {max_range_bytes, sum_range_bytes};
 }
 
-void MergeTreeReaderStream::addRangeOfMark(size_t mark, CompressedBlockRanges & ranges)
+void MergeTreeReaderStream::addRangeOfMark(size_t mark, bool shared_with_next_granules, CompressedBlockRanges & ranges)
 {
     /// All marks of an empty file point to its beginning, so don't load them.
     if (file_size == 0)
         return;
 
     loadMarks();
-    const size_t begin = marks_getter->getMark(mark, 0).offset_in_compressed_file;
+    const auto mark_in_file = marks_getter->getMark(mark, 0);
+    const size_t begin = mark_in_file.offset_in_compressed_file;
     size_t end = file_size;
     if (mark + 1 < marks_count)
     {
         const auto next_mark = marks_getter->getMark(mark + 1, 0);
+        /// The granule wrote nothing to the stream, like empty arrays or strings.
+        if (next_mark == mark_in_file && !shared_with_next_granules)
+            return;
+
         end = next_mark.offset_in_compressed_file;
         /// The block goes on to the next later offset if the next mark is inside it. The granule needs the block also if
-        /// it wrote nothing of its own, like the granules that share a `LowCardinality` dictionary: then the next mark is
-        /// the same, at the start of the block, as in `MergeTreeReaderStreamSingleColumn::getRightOffset`.
+        /// it shares the data written after it, like a `LowCardinality` dictionary: then the next mark is the same, at the
+        /// start of the block, as in `MergeTreeReaderStreamSingleColumn::getRightOffset`.
         if (next_mark.offset_in_decompressed_block != 0 || next_mark.offset_in_compressed_file == begin)
         {
             /// The offsets don't decrease, and many marks can share the block, so search instead of scanning them.

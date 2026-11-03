@@ -87,8 +87,9 @@ public:
 
     /// Appends the range in the file, [begin, end), of the compressed blocks that hold the data of the granule `mark` of a
     /// stream of one column: from its mark to the next one. If the next mark is inside a compressed block, which then holds
-    /// the end of this data too, or is the same, up to the next mark at a later offset.
-    void addRangeOfMark(size_t mark, CompressedBlockRanges & ranges);
+    /// the end of this data too, up to the next mark at a later offset. If the next mark is the same, the granule has no
+    /// data of its own: nothing, unless it is `shared_with_next_granules`, as a dictionary, and then also up to a later offset.
+    void addRangeOfMark(size_t mark, bool shared_with_next_granules, CompressedBlockRanges & ranges);
 
     /// Announces the new map if the buffer exists.
     void updateReadRequestMap(MarkRangesPtr request_map_);
