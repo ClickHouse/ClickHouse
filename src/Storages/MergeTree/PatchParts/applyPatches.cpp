@@ -167,9 +167,7 @@ void applyPatchesIndices(
             continue;
 
         auto & result_versions = addDataVersionForColumn(versions_block, result_column.name, result_block.rows(), source_data_version);
-        /// A patch writes distinct values into distinct rows, so a Const column must be materialized:
-        /// neither `updateInplaceFrom` nor `updateFrom` can write into a `ColumnConst`.
-        result_column.column = removeSpecialRepresentations(result_column.column->convertToFullColumnIfConst());
+        result_column.column = removeSpecialRepresentations(result_column.column);
 
         for (const auto & patch_indices : patches)
         {
