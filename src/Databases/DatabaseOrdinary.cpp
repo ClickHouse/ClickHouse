@@ -640,8 +640,13 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
                 /// metadata files are processed in parallel. A table may refer by name to a disk defined by another table
                 /// (as the disk wrapped by a `cache` disk, with the `disk` setting, or with the implicit storage policy
                 /// of the disk), so such a table is processed after all others, see below.
+                /// With `lazy_load_tables`, the scan creates no custom disks and does not look up the disks referenced
+                /// by name (see `getStoragePolicyFromCreateQuery`), so the order does not matter. The names are not
+                /// resolved then either: that may need `include`, `from_env` or `from_zk`, which would make attaching
+                /// the database depend on them before any table is accessed.
                 TableWithNamedDiskReferences table_with_references{.ast = ast, .file_name = file_name, .defined_disks = {}, .referenced_disks = {}};
-                collectCustomDiskNames(*create_query, local_context, table_with_references.defined_disks, table_with_references.referenced_disks);
+                if (!database_metadata_disk_settings[DatabaseMetadataDiskSetting::lazy_load_tables])
+                    collectCustomDiskNames(*create_query, local_context, table_with_references.defined_disks, table_with_references.referenced_disks);
                 if (!table_with_references.referenced_disks.empty())
                 {
                     /// The disks defined in the server configuration are always there, so only references to other disks are waited for.
