@@ -126,8 +126,9 @@ void validateIcebergTimeOfDayMicroseconds(Int64 microseconds);
 
 /// Throws if a column of an Iceberg `time` field (including nested ones) is not `Time` or `Time64`,
 /// which is the case with setting `iceberg_time_as_int64`: the data file would store a plain integer
-/// where Iceberg requires a time of day.
-void checkIcebergTimeColumnsAreWritable(const ColumnMapper & column_mapper, const Block & header);
+/// where Iceberg requires a time of day. Also throws for a map with `Time` or `Time64` keys in an Avro data
+/// file (`write_format`), as the Avro writer cannot write the keys the way Iceberg requires.
+void checkIcebergTimeColumnsAreWritable(const ColumnMapper & column_mapper, const Block & header, const String & write_format);
 
 /// Spec: https://iceberg.apache.org/spec/?h=metadata.json#table-metadata-fields
 std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(

@@ -87,6 +87,7 @@ extern const int FILE_DOESNT_EXIST;
 extern const int BAD_ARGUMENTS;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
 extern const int LOGICAL_ERROR;
+extern const int NOT_IMPLEMENTED;
 extern const int UNSUPPORTED_METHOD;
 extern const int READONLY;
 }
@@ -903,43 +904,60 @@ void validateIcebergTimeOfDayMicroseconds(Int64 microseconds)
 namespace
 {
 
-void checkIcebergTimeColumnIsWritable(const ColumnMapper & column_mapper, const DataTypePtr & type, const String & path)
+void checkIcebergTimeColumnIsWritable(
+    const ColumnMapper & column_mapper, const DataTypePtr & type, const String & path, bool is_avro)
 {
     const auto unwrapped = removeNullable(removeLowCardinality(type));
     const auto & encoding = column_mapper.getStorageColumnEncoding();
-    if (auto it = encoding.find(path); it != encoding.end() && column_mapper.isIcebergTimeFieldId(it->second)
-        && !WhichDataType(unwrapped).isTime() && !WhichDataType(unwrapped).isTime64())
-        throw Exception(
+    if (column_mapper.hasIcebergTimeFieldIds())
+    {
+        if (auto it = encoding.find(path); it != encoding.end() && column_mapper.isIcebergTimeFieldId(it->second)
+            && !WhichDataType(unwrapped).isTime() && !WhichDataType(unwrapped).isTime64())
+            throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Cannot write column {} of type {} into the Iceberg `time` field, which requires `Time` or `Time64`. "
-            "If the table is read with setting `iceberg_time_as_int64`, disable it for writing",
-            path,
-            type->getName());
+                "Cannot write column {} of type {} into the Iceberg `time` field, which requires `Time` or `Time64`. "
+                "If the table is read with setting `iceberg_time_as_int64`, disable it for writing",
+                path,
+                type->getName());
+    }
 
     if (const auto * tuple = typeid_cast<const DataTypeTuple *>(unwrapped.get()))
     {
         for (size_t i = 0; i < tuple->getElements().size(); ++i)
-            checkIcebergTimeColumnIsWritable(column_mapper, tuple->getElement(i), Nested::concatenateName(path, tuple->getNameByPosition(i + 1)));
+            checkIcebergTimeColumnIsWritable(
+                column_mapper, tuple->getElement(i), Nested::concatenateName(path, tuple->getNameByPosition(i + 1)), is_avro);
     }
     else if (const auto * array = typeid_cast<const DataTypeArray *>(unwrapped.get()))
     {
-        checkIcebergTimeColumnIsWritable(column_mapper, array->getNestedType(), Nested::concatenateName(path, "element"));
+        checkIcebergTimeColumnIsWritable(column_mapper, array->getNestedType(), Nested::concatenateName(path, "element"), is_avro);
     }
     else if (const auto * map = typeid_cast<const DataTypeMap *>(unwrapped.get()))
     {
-        checkIcebergTimeColumnIsWritable(column_mapper, map->getKeyType(), Nested::concatenateName(path, "key"));
-        checkIcebergTimeColumnIsWritable(column_mapper, map->getValueType(), Nested::concatenateName(path, "value"));
+        /// The Avro writer writes a `Map` as an Avro `map`, whose keys are strings, while Iceberg requires a map
+        /// with non-string keys to be an array of key-value records, with a `time` key as a `time-micros` `long`.
+        /// A data file with a time key as a string would not match the Iceberg schema for other readers.
+        const auto key_type = removeNullable(removeLowCardinality(map->getKeyType()));
+        if (is_avro && (WhichDataType(key_type).isTime() || WhichDataType(key_type).isTime64()))
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Cannot write column {} of type {} into an Iceberg Avro data file: a map with `time` keys is not supported "
+                "in Avro data files, use Parquet or ORC",
+                path,
+                type->getName());
+        checkIcebergTimeColumnIsWritable(column_mapper, map->getKeyType(), Nested::concatenateName(path, "key"), is_avro);
+        checkIcebergTimeColumnIsWritable(column_mapper, map->getValueType(), Nested::concatenateName(path, "value"), is_avro);
     }
 }
 
 }
 
-void checkIcebergTimeColumnsAreWritable(const ColumnMapper & column_mapper, const Block & header)
+void checkIcebergTimeColumnsAreWritable(const ColumnMapper & column_mapper, const Block & header, const String & write_format)
 {
-    if (!column_mapper.hasIcebergTimeFieldIds())
+    const bool is_avro = Poco::toLower(write_format) == "avro";
+    if (!is_avro && !column_mapper.hasIcebergTimeFieldIds())
         return;
     for (const auto & column : header)
-        checkIcebergTimeColumnIsWritable(column_mapper, column.type, column.name);
+        checkIcebergTimeColumnIsWritable(column_mapper, column.type, column.name, is_avro);
 }
 
 Poco::Dynamic::Var getAvroLogicalType(DataTypePtr type)
