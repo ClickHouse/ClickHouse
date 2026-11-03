@@ -144,6 +144,7 @@ public:
     /// The planner and interpreter use it to decide how to merge aggregated data.
     /// Covers remote storages and `MergeTree` with parallel replicas (hence the context). A storage that
     /// executes the query itself up to the requested processing stage should return true as well.
+    /// Wrappers answer for the table they forward to.
     virtual bool producesMergeableState(const ContextPtr & /*query_context*/) const { return isRemote(); }
 
     /// Returns true for storages that do not store data themselves but read it from other tables,
