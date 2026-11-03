@@ -68,8 +68,12 @@ a non-deterministic default has one value for the whole read
 the query condition cache keeps no verdict over a default that changes between reads
 0
 10000
-05297_qcc_1	0	1
-05297_qcc_2	0	1
+10	10
+05297_qcc_1	0	0
+05297_qcc_2	0	0
+05297_qcc_3	0	1
+0
+10000
 neither the top-K threshold nor the query condition cache skips rows before a default that depends on them
 1
 100

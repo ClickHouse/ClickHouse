@@ -121,6 +121,8 @@ struct MemorySourceFilter
     bool write_prewhere_condition = false;
     std::optional<UInt64> filter_condition_hash;
     bool attach_mark_ranges_info = false;
+    /// The requested physical columns that the conditions read.
+    NamesAndTypesList condition_columns;
     /// The identity of the blocks of the snapshot, see `StorageMemory::BlocksWithCounts`.
     UInt64 generation = 0;
     UInt64 first_block_number = 0;
@@ -165,8 +167,6 @@ struct MemorySourceDefaults
         NamesAndTypesList stored_inputs_to_read;
         /// The arrays of the table that are members of the `Nested` of an input; see `findSizesSource`.
         Names nested_arrays;
-        /// False if the expressions may return other values on another read (e.g. `now64()`).
-        bool is_deterministic = true;
     };
 
     /// A stored column that a default expression names.
@@ -529,20 +529,22 @@ private:
     /// threshold and the query condition cache must not skip rows of such a block, the default sees only the others.
     bool evaluatesRowSetDependentDefault(const Block & src) const
     {
-        if (!defaults)
-            return false;
-
-        const bool lacks_column_with_default = std::ranges::any_of(physical_columns, [&](const NameAndTypePair & column)
-        {
-            return !src.has(column.getNameInStorage()) && defaults->storage_snapshot->getDefault(column.getNameInStorage());
-        });
-        if (!lacks_column_with_default)
+        if (!lacksColumnWithDefault(src, physical_columns))
             return false;
 
         const auto & cache = *defaults;
         std::lock_guard lock(cache.mutex);
         cache.initialize();
         return cache.has_row_set_dependent_default;
+    }
+
+    /// Whether `src` lacks one of `columns` that has a default, so that reading it evaluates the default.
+    bool lacksColumnWithDefault(const Block & src, const NamesAndTypesList & columns) const
+    {
+        return defaults && std::ranges::any_of(columns, [&](const NameAndTypePair & column)
+        {
+            return !src.has(column.getNameInStorage()) && defaults->storage_snapshot->getDefault(column.getNameInStorage());
+        });
     }
 
     /// Reads `columns` from the stored block, cut by `mask`, with a null column for each one the block lacks.
@@ -564,21 +566,18 @@ private:
 
     void fillPhysicalColumns(const Block & src, Columns & result_columns, size_t & read_bytes)
     {
-        bool is_deterministic = true;
-        result_columns = readColumns(src, physical_columns, {MemorySourceColumnList::Physical, 0}, nullptr, src.rows(), read_bytes, is_deterministic);
+        result_columns = readColumns(src, physical_columns, {MemorySourceColumnList::Physical, 0}, nullptr, src.rows(), read_bytes);
     }
 
     /// Reads `columns` from the stored block, the `num_rows` rows selected by `mask` (all rows if it is null). A column the
     /// block lacks gets its `DEFAULT` or `MATERIALIZED` expression evaluated over those rows, or the default value of its type.
-    /// `is_deterministic` is set to false if an evaluated expression may return other values on another read.
     Columns readColumns(
         const Block & src,
         const NamesAndTypesList & columns,
         MemorySourceColumnListId columns_id,
         const IColumn::Filter * mask,
         size_t num_rows,
-        size_t & read_bytes,
-        bool & is_deterministic)
+        size_t & read_bytes)
     {
         Columns result = readStoredColumns(src, columns, mask, num_rows, read_bytes);
 
@@ -598,7 +597,7 @@ private:
         }
 
         if (has_missing)
-            evaluateDefaults(src, columns, columns_id, mask, num_rows, result, read_bytes, is_deterministic);
+            evaluateDefaults(src, columns, columns_id, mask, num_rows, result, read_bytes);
 
         chassert(std::all_of(result.begin(), result.end(), [](const auto & column) { return column != nullptr; }));
         return result;
@@ -612,8 +611,7 @@ private:
         const IColumn::Filter * mask,
         size_t num_rows,
         Columns & result,
-        size_t & read_bytes,
-        bool & is_deterministic)
+        size_t & read_bytes)
     {
         chassert(defaults);
 
@@ -704,7 +702,6 @@ private:
                     new_evaluation.nested_arrays = getArraysOfRequestedNested(new_evaluation.stored_inputs_to_read, cache.storage_snapshot);
 
                     is_stateful = dag->hasStatefulFunctions();
-                    new_evaluation.is_deterministic = std::ranges::all_of(dag->getOutputs(), VirtualColumnUtils::isDeterministic);
                     dag->addMaterializingOutputActions(/*materialize_sparse=*/ false);
                     new_evaluation.actions = std::make_shared<ExpressionActions>(std::move(*dag), ExpressionActionsSettings(cache.context));
                 }
@@ -737,7 +734,6 @@ private:
         {
             size_t rows = num_rows;
             evaluation->actions->execute(block, rows);
-            is_deterministic = is_deterministic && evaluation->is_deterministic;
         }
 
         it = columns.begin();
@@ -793,15 +789,14 @@ private:
 
         const size_t granule_rows = MemorySourceFilter::query_condition_cache_granule_rows;
         const size_t num_granules = (num_src_rows + granule_rows - 1) / granule_rows;
-        const bool use_query_condition_cache = filter->query_condition_cache && num_granules && may_skip_rows;
+        /// No verdict over a default: it is evaluated in the context of each read (e.g. `now64()`, `cast_keep_nullable`).
+        const bool use_query_condition_cache = filter->query_condition_cache && num_granules && may_skip_rows
+            && !lacksColumnWithDefault(src, filter->condition_columns);
         String query_condition_cache_part_name;
 
         /// The granules skipped by the entry of the filter of the query. Nothing is known about PREWHERE
         /// on them, so they must not be recorded as having no rows satisfying it.
         QueryConditionCache::MatchingMarks granules_skipped_by_filter_condition;
-
-        /// A verdict over a default that may return other values on another read must not be recorded.
-        bool defaults_are_deterministic = true;
 
         if (use_query_condition_cache)
         {
@@ -865,7 +860,7 @@ private:
         /// Records the granules where no row has passed the steps.
         auto write_to_query_condition_cache = [&](bool no_rows_passed)
         {
-            if (!use_query_condition_cache || !filter->write_prewhere_condition || !defaults_are_deterministic)
+            if (!use_query_condition_cache || !filter->write_prewhere_condition)
                 return;
 
             if (!no_rows_passed && combined_mask.empty())
@@ -912,8 +907,7 @@ private:
                 return;
 
             Columns columns = readColumns(
-                src, missing, columns_id, combined_mask.empty() ? nullptr : &combined_mask, num_rows, num_read_bytes,
-                defaults_are_deterministic);
+                src, missing, columns_id, combined_mask.empty() ? nullptr : &combined_mask, num_rows, num_read_bytes);
 
             auto column_it = columns.begin();
             for (const auto & name_and_type : missing)
@@ -1007,7 +1001,7 @@ private:
 
         Chunk chunk(std::move(result_columns), num_rows);
 
-        if (use_query_condition_cache && filter->attach_mark_ranges_info && defaults_are_deterministic)
+        if (use_query_condition_cache && filter->attach_mark_ranges_info)
         {
             /// Without the granules removed above, which are already known to have no matches, the chunk
             /// does not hold all rows of the block, so only the whole block can be recorded.
@@ -1660,6 +1654,17 @@ MemorySourceFilterPtr ReadFromMemoryStorageStep::makeSourceFilter(const NamesAnd
             result->generation = snapshot_data.generation;
             result->first_block_number = snapshot_data.first_block_number;
             result->columns_hash = sipHash64(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
+
+            NameSet condition_input_names;
+            if (result->prewhere_condition_hash)
+                for (const auto & column : query_info.prewhere_info->prewhere_actions.getRequiredColumns())
+                    condition_input_names.insert(column.name);
+            if (result->filter_condition_hash)
+                for (const auto & column : filter_actions_dag->getRequiredColumns())
+                    condition_input_names.insert(column.name);
+            for (const auto & column : physical_columns)
+                if (condition_input_names.contains(column.name))
+                    result->condition_columns.push_back(column);
         }
     }
 

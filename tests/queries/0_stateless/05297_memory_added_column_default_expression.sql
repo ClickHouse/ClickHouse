@@ -154,15 +154,23 @@ TRUNCATE TABLE t_memory_add_default_qcc_source;
 INSERT INTO t_memory_add_default_qcc_source VALUES (0, 1);
 SYSTEM RELOAD DICTIONARY d_memory_add_default_qcc;
 SELECT count() FROM t_memory_add_default_qcc WHERE v = 1 SETTINGS use_query_condition_cache = 1, log_comment = '05297_qcc_2';
+SELECT count(), sum(v) FROM t_memory_add_default_qcc WHERE k < 10 SETTINGS use_query_condition_cache = 1, log_comment = '05297_qcc_3';
 SYSTEM FLUSH LOGS query_log;
--- Both reads look the block up in the cache, and neither finds a verdict.
+-- The reads with a condition over `v` do not look the block up in the cache, the one with a condition over `k` does.
 SELECT log_comment, ProfileEvents['QueryConditionCacheHits'] > 0, ProfileEvents['QueryConditionCacheMisses'] > 0
 FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('05297_qcc_1', '05297_qcc_2') AND event_date >= yesterday()
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('05297_qcc_1', '05297_qcc_2', '05297_qcc_3') AND event_date >= yesterday()
 ORDER BY log_comment;
 DROP TABLE t_memory_add_default_qcc;
 DROP DICTIONARY d_memory_add_default_qcc;
 DROP TABLE t_memory_add_default_qcc_source;
+DROP TABLE IF EXISTS t_memory_add_default_qcc_settings;
+CREATE TABLE t_memory_add_default_qcc_settings (k Nullable(UInt64)) ENGINE = Memory;
+INSERT INTO t_memory_add_default_qcc_settings SELECT number FROM numbers(10000);
+ALTER TABLE t_memory_add_default_qcc_settings ADD COLUMN c String DEFAULT toTypeName(CAST(k, 'UInt64'));
+SELECT count() FROM t_memory_add_default_qcc_settings WHERE c = 'Nullable(UInt64)' SETTINGS use_query_condition_cache = 1, cast_keep_nullable = 0;
+SELECT count() FROM t_memory_add_default_qcc_settings WHERE c = 'Nullable(UInt64)' SETTINGS use_query_condition_cache = 1, cast_keep_nullable = 1;
+DROP TABLE t_memory_add_default_qcc_settings;
 
 SELECT 'neither the top-K threshold nor the query condition cache skips rows before a default that depends on them';
 SET max_threads = 1, optimize_move_to_prewhere = 0, query_plan_optimize_lazy_materialization = 0,
