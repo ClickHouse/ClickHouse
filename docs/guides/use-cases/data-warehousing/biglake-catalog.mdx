@@ -60,7 +60,7 @@ SETTINGS
     warehouse = 'gs://<bucket_name>/<optional-prefix>';
 ```
 
-`google_service_account_key` and the `google_adc_*` settings are mutually exclusive.
+`google_service_account_key` and the `google_adc_*` settings are mutually exclusive. Neither can be combined with the `disk` setting, because a table on a disk reads its data files with the credentials of the disk rather than with the credentials of the catalog.
 
 ## Querying Lakehouse runtime catalog tables using ClickHouse {#querying-lakehouse-runtime-tables}
 

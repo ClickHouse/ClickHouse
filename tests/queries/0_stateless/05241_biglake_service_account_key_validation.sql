@@ -1,7 +1,7 @@
 -- Tags: no-fasttest
 -- - no-fasttest: the DataLakeCatalog database engine requires the USE_AVRO build option.
 
--- A BigLake `google_service_account_key` is validated when the catalog is built on CREATE, before any network request.
+-- A BigLake `google_service_account_key` and its combination with other settings are validated on CREATE, before any network request.
 
 SET allow_database_iceberg = 1;
 
@@ -26,5 +26,14 @@ CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = DataLakeCatalog('htt
 SETTINGS catalog_type = 'biglake', warehouse = 'gs://bucket',
     google_service_account_key = '{"type": "service_account", "client_email": "a@b.iam.gserviceaccount.com", "private_key": "x"}',
     google_adc_refresh_token = 'token'; -- { serverError BAD_ARGUMENTS }
+
+-- `disk` would read the data files with the credentials of the disk instead of the Google credentials of the catalog.
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = DataLakeCatalog('http://localhost:1/iceberg')
+SETTINGS catalog_type = 'biglake', warehouse = 'gs://bucket', disk = 'default',
+    google_service_account_key = '{"type": "service_account", "client_email": "a@b.iam.gserviceaccount.com", "private_key": "x"}'; -- { serverError BAD_ARGUMENTS }
+
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = DataLakeCatalog('http://localhost:1/iceberg')
+SETTINGS catalog_type = 'biglake', warehouse = 'gs://bucket', disk = 'default',
+    google_adc_client_id = 'id', google_adc_client_secret = 'secret', google_adc_refresh_token = 'token'; -- { serverError BAD_ARGUMENTS }
 
 SELECT count() FROM system.databases WHERE name = {CLICKHOUSE_DATABASE_1:String};

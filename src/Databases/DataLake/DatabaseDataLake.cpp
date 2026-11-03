@@ -106,6 +106,7 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsString google_adc_quota_project_id;
     extern const DatabaseDataLakeSettingsString google_adc_credentials_file;
     extern const DatabaseDataLakeSettingsString google_service_account_key;
+    extern const DatabaseDataLakeSettingsString disk;
     extern const DatabaseDataLakeSettingsBool force_add_bucket;
     extern const DatabaseDataLakeSettingsBool flat_namespaces;
 }
@@ -252,6 +253,26 @@ void DatabaseDataLake::validateSettings()
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "`warehouse` setting cannot be empty. "
             "Please specify 'SETTINGS warehouse=<warehouse_name>' in the CREATE DATABASE query");
+    }
+
+    if (settings[DatabaseDataLakeSetting::catalog_type].value == DB::DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE
+        && settings[DatabaseDataLakeSetting::disk].changed)
+    {
+        /// The Google credentials of a BigLake catalog are also the credentials of its tables' data files, and they
+        /// reach the tables through `StorageS3Configuration::fromAST` only (see `applyCatalogSpecificConfiguration`).
+        /// A table built on a disk takes the disk's own credentials instead (`fromDisk`), so the user-supplied
+        /// credentials would silently apply to the catalog but not to the data. Refuse the combination.
+        const bool has_google_credentials = !settings[DatabaseDataLakeSetting::google_service_account_key].value.empty()
+            || !settings[DatabaseDataLakeSetting::google_adc_client_id].value.empty()
+            || !settings[DatabaseDataLakeSetting::google_adc_client_secret].value.empty()
+            || !settings[DatabaseDataLakeSetting::google_adc_refresh_token].value.empty();
+        if (has_google_credentials)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The `disk` setting cannot be combined with `google_service_account_key` or the Google ADC credentials "
+                "(google_adc_client_id, google_adc_client_secret, google_adc_refresh_token) of a BigLake catalog: "
+                "the data files of a table on a disk are read with the credentials of the disk, not with the "
+                "credentials of the catalog");
     }
 }
 
