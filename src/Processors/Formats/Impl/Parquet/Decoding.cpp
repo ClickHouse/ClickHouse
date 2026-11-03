@@ -725,6 +725,9 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
     arrow::bit_util::BitReader bit_reader{};
 
     PODArray<UInt64> temp_values;
+    /// Destination of the values skipped by a filter in `decode`. It must not alias `temp_values`,
+    /// which holds the values that pass the filter until they are converted.
+    UInt64 skipped_value = 0;
 
     DeltaBinaryPackedDecoder(std::span<const char> data_, std::shared_ptr<FixedSizeConverter> converter_) : PageDecoder(data_), converter(std::move(converter_))
     {
@@ -857,7 +860,6 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
         {
             auto to_span = col.insertRawUninitialized(pass_count);
             to = to_span.data();
-            temp_values.resize(1);
         }
         else
         {
@@ -865,7 +867,7 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
             temp_values.resize(std::max(num_u64s, size_t(1)));
             to = reinterpret_cast<char *>(temp_values.data());
         }
-        char * skip_buf = reinterpret_cast<char *>(temp_values.data());
+        char * skip_buf = reinterpret_cast<char *>(&skipped_value);
         size_t out_idx = 0;
         for (size_t i = 0; i < num_values; ++i)
         {
