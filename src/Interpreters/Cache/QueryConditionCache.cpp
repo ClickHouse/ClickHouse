@@ -477,14 +477,19 @@ void QueryConditionCache::writeMatchCounts(
         /// The match counts only use the space the `MatchingMarks` leave free (see `counts_cache`). Counts that do not fit
         /// into it are neither allocated nor cached: they would only evict the other match counts and then themselves.
         std::lock_guard counts_size_lock(counts_size_mutex);
-        if (CountsEntryWeight::forMarks(marks_count) > fitMatchCountsIntoFreeSpace())
-            return;
-        auto new_entry = std::make_shared<CountsEntry>(marks_count);
-        FailPointInjection::pauseFailPoint(FailPoints::query_condition_cache_pause_before_caching_match_counts);
-        std::tie(entry, inserted) = counts_cache.getOrSet(key, [&] { return new_entry; });
-        /// A `MatchingMarks` entry inserted since the free space was computed may have found no match counts and then not
-        /// taken its space back (see `write`). It is visible now: fit the match counts into the free space again.
-        fitMatchCountsIntoFreeSpace();
+        /// Match counts are inserted only here, under `counts_size_mutex`: another writer may have inserted them meanwhile.
+        entry = counts_cache.get(key);
+        if (!entry)
+        {
+            if (CountsEntryWeight::forMarks(marks_count) > fitMatchCountsIntoFreeSpace())
+                return;
+            auto new_entry = std::make_shared<CountsEntry>(marks_count);
+            FailPointInjection::pauseFailPoint(FailPoints::query_condition_cache_pause_before_caching_match_counts);
+            std::tie(entry, inserted) = counts_cache.getOrSet(key, [&] { return new_entry; });
+            /// A `MatchingMarks` entry inserted since the free space was computed may have found no match counts and then
+            /// not taken its space back (see `write`). It is visible now: fit the match counts into the free space again.
+            fitMatchCountsIntoFreeSpace();
+        }
     }
 
     {
