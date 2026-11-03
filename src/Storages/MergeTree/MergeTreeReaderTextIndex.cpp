@@ -1006,14 +1006,16 @@ void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const PostingList & 
 
 const PostingList * MergeTreeReaderTextIndex::getFoldedPostings(size_t column_idx) const
 {
-    if (use_lazy_mode || is_always_true[column_idx] || use_fallback[column_idx])
+    /// The folded postings of a `jsonPathValues` query with dynamic fallback also hold the rows that still must be validated.
+    if (use_lazy_mode || is_always_true[column_idx] || use_fallback[column_idx] || use_dynamic_fallback[column_idx])
         return nullptr;
 
     const auto & search_query = search_queries[column_idx];
     if (search_query->getSearchMode() == TextSearchMode::Phrase)
         return nullptr;
 
-    if (search_query->getTokens().empty() && search_query->getPatterns().empty())
+    /// A `jsonPathValues` prefix lookup has neither tokens nor patterns, its tokens are collected from the dictionary.
+    if (search_query->getTokens().empty() && !search_query->hasPatternLookup())
         return &empty_postings;
 
     const auto & query_builder = granule->getAnalyzer().getQueryBuilder(*search_query);
