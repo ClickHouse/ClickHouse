@@ -1,4 +1,5 @@
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -29,6 +30,16 @@ ORDER BY Timestamp;
 
 
 class TestSyncClickStackSchemas(unittest.TestCase):
+    @staticmethod
+    def run_git(*arguments: str, cwd: Path) -> str:
+        return subprocess.run(
+            ["git", *arguments],
+            cwd=cwd,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+
     def test_workflow_generates_nightly_github_actions_schedule(self):
         self.assertEqual(workflow.engine, Workflow.Engine.GH_ACTIONS)
         self.assertEqual(workflow.event, Workflow.Event.SCHEDULE)
@@ -119,6 +130,57 @@ ORDER BY Timestamp;
 after
 """,
             )
+
+    def test_bot_branch_merges_cleanly_after_shallow_checkout_is_deepened(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            remote = root / "remote.git"
+            source = root / "source"
+            checkout = root / "checkout"
+            snippet = "docs/snippets/clickstack/_schema_otel_logs.mdx"
+
+            self.run_git("init", "--bare", remote, cwd=root)
+            self.run_git("init", "--initial-branch=master", source, cwd=root)
+            self.run_git("config", "user.name", "Test User", cwd=source)
+            self.run_git("config", "user.email", "test@example.com", cwd=source)
+            (source / snippet).parent.mkdir(parents=True)
+            (source / snippet).write_text("schema A\n", encoding="utf-8")
+            (source / "unrelated").write_text("before\n", encoding="utf-8")
+            self.run_git("add", snippet, "unrelated", cwd=source)
+            self.run_git("commit", "-m", "base", cwd=source)
+            self.run_git("remote", "add", "origin", remote, cwd=source)
+            self.run_git("push", "origin", "master", cwd=source)
+
+            self.run_git("checkout", "-b", job.BOT_BRANCH, cwd=source)
+            (source / snippet).write_text("schema B\n", encoding="utf-8")
+            self.run_git("add", snippet, cwd=source)
+            self.run_git("commit", "-m", "generated schema", cwd=source)
+            self.run_git("push", "origin", job.BOT_BRANCH, cwd=source)
+
+            self.run_git("checkout", "master", cwd=source)
+            (source / "unrelated").write_text("after\n", encoding="utf-8")
+            self.run_git("add", "unrelated", cwd=source)
+            self.run_git("commit", "-m", "advance master", cwd=source)
+            self.run_git("push", "origin", "master", cwd=source)
+
+            self.run_git(
+                "clone", "--depth=1", "--branch=master", remote.as_uri(), checkout, cwd=root
+            )
+            self.assertEqual(
+                self.run_git("rev-parse", "--is-shallow-repository", cwd=checkout), "true"
+            )
+
+            original_directory = Path.cwd()
+            try:
+                os.chdir(checkout)
+                with mock.patch.object(job, "Info") as info:
+                    info.return_value.git_branch = job.BASE_BRANCH
+                    self.assertTrue(job.checkout_current_base_branch())
+                (checkout / snippet).write_text("schema B\n", encoding="utf-8")
+                self.assertTrue(job.bot_branch_matches_generated_snippets())
+                self.assertTrue(job.bot_branch_merges_cleanly())
+            finally:
+                os.chdir(original_directory)
 
     @mock.patch.object(job, "Info")
     @mock.patch.object(job.Git, "push", return_value=True)

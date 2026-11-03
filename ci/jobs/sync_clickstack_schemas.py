@@ -99,12 +99,22 @@ def open_bot_pull_request() -> str | None:
     return stdout.strip() or None
 
 
+def fetch_bot_branch() -> None:
+    """Fetch the bot branch with the ancestry needed to merge it into the base."""
+    commands = []
+    if Shell.get_output("git rev-parse --is-shallow-repository", strict=True) == "true":
+        commands.append(
+            f"git fetch --no-tags --unshallow origin {shlex.quote(BASE_BRANCH)}"
+        )
+    commands.append(f"git fetch --no-tags origin {shlex.quote(BOT_BRANCH)}")
+
+    if not Shell.check(" && ".join(commands), verbose=True):
+        raise RuntimeError(f"Failed to fetch existing bot branch '{BOT_BRANCH}'")
+
+
 def bot_branch_matches_generated_snippets() -> bool:
     """Check whether the already-open PR already contains this exact sync."""
-    if not Shell.check(
-        f"git fetch --no-tags origin {shlex.quote(BOT_BRANCH)}", verbose=True
-    ):
-        raise RuntimeError(f"Failed to fetch existing bot branch '{BOT_BRANCH}'")
+    fetch_bot_branch()
     return Shell.check(
         f"git diff --quiet FETCH_HEAD -- {SNIPPETS_PATH}", verbose=False
     )
