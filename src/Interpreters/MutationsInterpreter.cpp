@@ -2428,6 +2428,7 @@ void MutationsInterpreter::Source::read(
             createFilterDAGForStage(first_stage),
             false,
             false,
+            canPrefetchInMergeOrMutation(*data, {part}, required_columns, context_),
             context_,
             getLogger("MutationsInterpreter"));
     }

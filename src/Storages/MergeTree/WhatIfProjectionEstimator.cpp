@@ -171,7 +171,9 @@ Pipe makePartPipe(
         std::make_shared<std::atomic<size_t>>(0),
         false,
         false,
-        false);
+        /*prefetch=*/ false,
+        /*allow_prefetch=*/ true,
+        context);
 
     /// keep speed limits, the caller checks sizes
     if (auto query_limits = read_step->getQueryInfo().storage_limits)

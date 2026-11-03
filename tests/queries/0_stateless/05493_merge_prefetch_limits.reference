@@ -1,0 +1,7 @@
+dry run merges
+t_prefetch_300_columns	filesystem_prefetches_limit = 200, filesystem_prefetch_max_memory_usage = \'1Gi\'	0
+t_prefetch_300_columns	filesystem_prefetches_limit = 0, filesystem_prefetch_max_memory_usage = \'1Gi\'	1
+t_prefetch_10_columns	filesystem_prefetches_limit = 200, filesystem_prefetch_max_memory_usage = \'1Gi\'	1
+t_prefetch_10_columns	filesystem_prefetches_limit = 200, filesystem_prefetch_max_memory_usage = 1	0
+background merge
+t_prefetch_300_columns	0

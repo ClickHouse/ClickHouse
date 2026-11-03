@@ -169,10 +169,11 @@ MergeTreeReaderSettings MergeTreeReaderSettings::createForQuery(const ContextPtr
     return result;
 }
 
-MergeTreeReaderSettings MergeTreeReaderSettings::createForMergeMutation(ReadSettings read_settings)
+MergeTreeReaderSettings MergeTreeReaderSettings::createForMergeMutation(ReadSettings read_settings, const ContextPtr & task_context)
 {
     MergeTreeReaderSettings result;
     result.read_settings = std::move(read_settings);
+    result.filesystem_prefetches_limit = task_context->getSettingsRef()[Setting::filesystem_prefetches_limit];
     result.load_marks_asynchronously = false;
     result.save_marks_in_cache = false;
     result.can_read_part_without_marks = true;

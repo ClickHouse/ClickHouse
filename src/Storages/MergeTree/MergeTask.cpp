@@ -2214,6 +2214,9 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
     /// Collect statistics transforms for this column separately.
     BuildStatisticsTransformMap column_build_statistics_transforms;
 
+    /// The sources of all parts read at the same time.
+    const bool allow_prefetch = canPrefetchInMergeOrMutation(*global_ctx->data, global_ctx->future_part->parts, Names{column_name}, global_ctx->context);
+
     for (size_t part_num = 0; part_num < global_ctx->future_part->parts.size(); ++part_num)
     {
         auto plan_for_part = std::make_unique<QueryPlan>();
@@ -2232,6 +2235,7 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
             /*filter=*/ std::nullopt,
             ctx->read_with_direct_io,
             ctx->use_prefetch,
+            allow_prefetch,
             global_ctx->context,
             getLogger("VerticalMergeStage"));
 
@@ -2770,7 +2774,7 @@ bool MergeTask::MergeTextIndexStage::prepare() const
     if (global_ctx->temporary_text_index_storage)
         global_ctx->temporary_text_index_storage->commitTransaction();
 
-    auto reader_settings = MergeTreeReaderSettings::createForMergeMutation(global_ctx->context->getReadSettings());
+    auto reader_settings = MergeTreeReaderSettings::createForMergeMutation(global_ctx->context->getReadSettings(), global_ctx->context);
 
     for (const auto & index : global_ctx->text_indexes_to_merge)
     {
@@ -3561,6 +3565,9 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         merging_column_names.push_back(RowExistsColumn::name);
     }
 
+    /// The sources of all parts read at the same time.
+    const bool allow_prefetch = canPrefetchInMergeOrMutation(*global_ctx->data, global_ctx->future_part->parts, merging_column_names, global_ctx->context);
+
     /// Read from all parts
     std::vector<QueryPlanPtr> plans;
     size_t part_starting_offset = 0;
@@ -3586,6 +3593,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             /*filter=*/ std::nullopt,
             ctx->read_with_direct_io,
             /*prefetch=*/ false,
+            allow_prefetch,
             global_ctx->context,
             ctx->log);
 
