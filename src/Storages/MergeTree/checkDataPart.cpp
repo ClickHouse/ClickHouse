@@ -14,6 +14,7 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/HashingReadBuffer.h>
 #include <IO/S3Common.h>
+#include <DataTypes/Serializations/PrefixReadCancellationChecker.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NetException.h>
 #include <Common/SipHash.h>
@@ -76,6 +77,11 @@ bool isRetryableException(std::exception_ptr exception_ptr)
     try
     {
         rethrow_exception(exception_ptr);
+    }
+    /// A query cancelled inside a structure-prefix read: nothing is known about the part's data.
+    catch (const PrefixReadCancelledException &)
+    {
+        return true;
     }
 #if USE_AWS_S3
     catch (const S3Exception & s3_exception)
@@ -555,6 +561,26 @@ IMergeTreeDataPart::Checksums checkDataPart(
     std::function<bool()> is_cancelled,
     bool throw_on_broken_projection)
 {
+    /// Whether an error leaves the part to a later check, returning empty checksums. A cancellation is
+    /// retryable, but it is rethrown: empty checksums would pass the unchecked part.
+    auto should_return_empty_checksums = [&]
+    {
+        if (isPrefixReadCancelled(std::current_exception()))
+            throw;
+
+        if (!isRetryableException(std::current_exception()))
+            return false;
+
+        LOG_DEBUG(
+            getLogger("checkDataPart"),
+            "Got retriable error {} checking data part {}, will return empty", data_part->name, getCurrentExceptionMessage(false));
+
+        /// We were unable to check data part because of some temporary exception
+        /// like Memory limit exceeded. If part is actually broken we will retry check
+        /// with the next read attempt of this data part.
+        return true;
+    };
+
     /// If check of part has failed and it is stored on disk with cache
     /// try to drop cache and check it once again because maybe the cache
     /// is broken not the part itself.
@@ -603,17 +629,8 @@ IMergeTreeDataPart::Checksums checkDataPart(
         }
         catch (...)
         {
-            if (isRetryableException(std::current_exception()))
-            {
-                LOG_DEBUG(
-                    getLogger("checkDataPart"),
-                    "Got retriable error {} checking data part {}, will return empty", data_part->name, getCurrentExceptionMessage(false));
-
-                /// We were unable to check data part because of some temporary exception
-                /// like Memory limit exceeded. If part is actually broken we will retry check
-                /// with the next read attempt of this data part.
+            if (should_return_empty_checksums())
                 return IMergeTreeDataPart::Checksums{};
-            }
             throw;
         }
 
@@ -636,17 +653,9 @@ IMergeTreeDataPart::Checksums checkDataPart(
     }
     catch (...)
     {
-        if (isRetryableException(std::current_exception()))
-        {
-            LOG_DEBUG(
-                getLogger("checkDataPart"),
-                "Got retriable error {} checking data part {}, will return empty", data_part->name, getCurrentExceptionMessage(false));
-
-            /// We were unable to check data part because of some temporary exception
-            /// like Memory limit exceeded. If part is actually broken we will retry check
-            /// with the next read attempt of this data part.
+        /// Ok: the helpers rethrow it, or return empty checksums for a retryable error, or recheck without the cache.
+        if (should_return_empty_checksums())
             return {};
-        }
         return drop_cache_and_check();
     }
 }
