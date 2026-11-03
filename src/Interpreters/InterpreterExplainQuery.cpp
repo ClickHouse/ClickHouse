@@ -182,10 +182,15 @@ namespace
                 return;
 
             auto [database_name, table_name] = extractDatabaseAndTableNameForParameterizedView(func->name, query_context);
-            if (table_name.empty())
-                return;
-
-            auto storage = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, query_context);
+            StoragePtr storage;
+            if (!table_name.empty())
+                storage = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, query_context);
+            /// A view whose own name has a dot: `` `v.x`(...) ``.
+            if (!storage && table_name != func->name)
+            {
+                table_name = func->name;
+                storage = DatabaseCatalog::instance().tryGetTable({query_context->getCurrentDatabase(), table_name}, query_context);
+            }
             if (!storage)
                 return;
 

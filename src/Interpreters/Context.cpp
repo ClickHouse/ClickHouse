@@ -3531,12 +3531,19 @@ static bool findIdentifier(const ASTFunction * function)
 StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const ASTSelectQuery * select_query_hint)
 {
     ASTFunction * function = assert_cast<ASTFunction *>(table_expression.get());
-    /// Same split as the analyzer: the parser's compound-name flag is lost when a query is formatted and parsed again.
+    /// Same split as the analyzer: a stored `` `db.view`(...) `` has no compound-name flag.
     auto [database_name, table_name] = extractDatabaseAndTableNameForParameterizedView(function->name, shared_from_this());
 
     StoragePtr table;
     if (!table_name.empty())
         table = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, getQueryContext());
+    /// A view whose own name has a dot: `` `v.x`(...) ``.
+    if (!table && table_name != function->name)
+    {
+        database_name = getCurrentDatabase();
+        table_name = function->name;
+        table = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, getQueryContext());
+    }
     if (table)
     {
         if (table.get()->isView() && table->as<StorageView>() && table->as<StorageView>()->isParameterizedView())

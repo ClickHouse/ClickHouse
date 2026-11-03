@@ -2,9 +2,9 @@
 # Tags: zookeeper, no-replicated-database
 # no-replicated-database: the test creates a Replicated database itself.
 
-# A stored query writes a call `db.view(...)` of a parameterized view as `` `db.view`(...) ``.
+# Older versions stored a call `db.view(...)` of a parameterized view as `` `db.view`(...) ``.
 # INSERT ... SELECT into a replicated or distributed table, a refreshable materialized view
-# reloaded from its metadata or defined in a Replicated database, and EXPLAIN SYNTAX must
+# reloaded from such metadata or defined in a Replicated database, and EXPLAIN SYNTAX must
 # resolve that spelling to the view `view` of database `db`, as SELECT does.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -45,7 +45,7 @@ ${CLICKHOUSE_CLIENT} -q "
     CREATE TABLE ${a}.t_rmv (d DateTime, x UInt8) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_rmv', '1') ORDER BY d;
     CREATE TABLE ${a}.sink (d DateTime, x UInt8) ENGINE = MergeTree ORDER BY d;
     CREATE MATERIALIZED VIEW ${a}.mv_sink TO ${a}.sink AS SELECT d, x FROM ${a}.t_rmv;
-    CREATE MATERIALIZED VIEW ${a}.rmv REFRESH EVERY 1 YEAR APPEND TO ${a}.t_rmv EMPTY AS SELECT * FROM ${a}.pv(p = 1);
+    CREATE MATERIALIZED VIEW ${a}.rmv REFRESH EVERY 1 YEAR APPEND TO ${a}.t_rmv EMPTY AS SELECT * FROM \`${a}.pv\`(p = 1);
     DETACH TABLE ${a}.rmv;
     ATTACH TABLE ${a}.rmv;
     SYSTEM REFRESH VIEW ${a}.rmv;
@@ -61,7 +61,7 @@ ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none -q "
     INSERT INTO ${r}.src SELECT toDateTime(number), 1 + (number >= 3) FROM numbers(5);
     CREATE VIEW ${r}.pv AS SELECT d, x FROM ${r}.src WHERE x = {p:UInt8};
     CREATE TABLE ${r}.t_repl (d DateTime, x UInt8) ENGINE = ReplicatedMergeTree ORDER BY d;
-    CREATE MATERIALIZED VIEW ${r}.rmv REFRESH EVERY 1 YEAR APPEND TO ${r}.t_repl EMPTY AS SELECT * FROM ${r}.pv(p = 1);
+    CREATE MATERIALIZED VIEW ${r}.rmv REFRESH EVERY 1 YEAR APPEND TO ${r}.t_repl EMPTY AS SELECT * FROM \`${r}.pv\`(p = 1);
     SYSTEM REFRESH VIEW ${r}.rmv;
     SYSTEM WAIT VIEW ${r}.rmv;
     SELECT count() FROM ${r}.t_repl;
@@ -69,6 +69,23 @@ ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none -q "
 
 echo 'EXPLAIN SYNTAX inlines the view'
 ${CLICKHOUSE_CLIENT} -q "SELECT countIf(explain LIKE '%FROM ${a}.src%') > 0 FROM (EXPLAIN SYNTAX SELECT * FROM \`${a}.pv\`(p = 1))"
+
+echo 'the formatted query keeps the two parts of the name'
+${CLICKHOUSE_CLIENT} -q "
+    SELECT formatQuerySingleLine('SELECT * FROM db.pv(p = 1)');
+    SELECT formatQuerySingleLine('SELECT * FROM \`my-db\`.pv(p = 1)');
+    SELECT formatQuerySingleLine('SELECT * FROM \`db.pv\`(p = 1)');
+"
+
+# This is the query the analyzer sends to other servers, for example for a subquery in IN.
+echo 'the analyzer writes the stored spelling as two parts'
+${CLICKHOUSE_CLIENT} -q "SELECT countIf(explain LIKE '%FROM ${a}.pv(p = 1)%') FROM (EXPLAIN QUERY TREE dump_ast = 1 SELECT * FROM \`${a}.pv\`(p = 1))"
+
+echo 'a view whose own name has a dot'
+${CLICKHOUSE_CLIENT} -q "
+    CREATE VIEW \`v.x\` AS SELECT d FROM ${a}.src WHERE x = {p:UInt8};
+    SELECT countIf(explain LIKE '%FROM ${a}.src%') > 0 FROM (EXPLAIN SYNTAX SELECT * FROM \`v.x\`(p = 1));
+"
 
 ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none -q "DROP DATABASE ${r} SYNC"
 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE ${a} SYNC"

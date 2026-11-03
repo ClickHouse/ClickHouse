@@ -9,3 +9,11 @@ refreshable view in a Replicated database
 3
 EXPLAIN SYNTAX inlines the view
 1
+the formatted query keeps the two parts of the name
+SELECT * FROM db.pv(p = 1)
+SELECT * FROM `my-db`.pv(p = 1)
+SELECT * FROM `db.pv`(p = 1)
+the analyzer writes the stored spelling as two parts
+1
+a view whose own name has a dot
+1
