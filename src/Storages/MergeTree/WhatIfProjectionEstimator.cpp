@@ -96,9 +96,9 @@ struct ProjectionPartData
     bool variable_width = false;
     /// a merge sized the granules by what the part does not record: the memory it built some states in, or the bytes of the parts it merged
     bool merge_history_unknown = false;
-    /// for a merged wide part under a constant granularity: its stored bytes, and the least its merged parts can store for its rows
-    size_t stored_bytes = 0;
-    size_t stored_bytes_floor = 0;
+    /// for a merged wide part under a constant granularity: the fewest and the most bytes that its merged parts can store for a row
+    size_t stored_row_bytes_least = 0;
+    size_t stored_row_bytes_most = 0;
     /// for a merged part: the merge can choose the other part format too, because the part does not record the parts it merged
     bool both_formats = false;
     /// for a merged wide part under a constant granularity: the most marks of its layouts, if a granule size between them has no layout
@@ -175,9 +175,24 @@ size_t storedBytes(const ISerialization & serialization, const IColumn & column)
     return stored.count();
 }
 
-/// a merge under a constant granularity sizes the granule of a wide part from the bytes that its merged parts store
-/// a group of the part is in one or more of them, and a state there is at least an empty state
-/// a state that is not of a fixed size can be of any size there
+/// the fewest and the most bytes that a part stores for one row of the column
+std::pair<size_t, size_t> rowStoredBytes(const ISerialization & serialization, const IColumn & column)
+{
+    size_t least = std::numeric_limits<size_t>::max();
+    size_t most = 0;
+    const size_t rows = column.valuesHaveFixedSize() ? 1 : column.size();
+    for (size_t row = 0; row < rows; ++row)
+    {
+        const size_t bytes = storedBytes(serialization, *column.cut(row, 1));
+        least = std::min(least, bytes);
+        most = std::max(most, bytes);
+    }
+    return {least, most};
+}
+
+/// a merge under a constant granularity sizes the granule of a wide part from the bytes per row that its merged parts store
+/// a group of the part is in one or more of them, so that average is between the fewest and the most bytes of one row
+/// a state there is at least an empty state, and a state that is not of a fixed size can be of any size there
 /// a part can store a key column as sparse, then a row with the default value can take no bytes there
 /// a part records neither the settings of the parts it merged nor whether they were sparse
 void setStoredBytes(ProjectionPartData & out, const Block & block)
@@ -187,24 +202,20 @@ void setStoredBytes(ProjectionPartData & out, const Block & block)
     for (const auto & elem : block)
     {
         const auto serialization = elem.type->getDefaultSerialization();
-        const size_t stored = storedBytes(*serialization, *elem.column);
-        out.stored_bytes += stored;
+        auto [least, most] = rowStoredBytes(*serialization, *elem.column);
+        out.stored_row_bytes_most += most;
 
         /// a type that stores data for each part, as the dictionary of `LowCardinality`, stores more for a row in more parts
-        /// two parts of one row store that data once more than one part of two rows, and the merged parts can store it with each row
+        /// two parts of one row store that data once more than one part of two rows, and a row alone in a part stores the most
         auto row = elem.column->cut(0, 1);
         auto row_twice = row->cloneEmpty();
         row_twice->insertManyFrom(*row, 0, 2);
-        const size_t two_parts = 2 * storedBytes(*serialization, *row);
-        const size_t one_part = storedBytes(*serialization, *row_twice);
-        if (two_parts > one_part)
+        if (2 * storedBytes(*serialization, *row) > storedBytes(*serialization, *row_twice))
         {
             out.merge_history_unknown = true;
-            out.stored_bytes += (two_parts - one_part) * block.rows();
             continue;
         }
 
-        size_t least = stored;
         if (const auto * states = typeid_cast<const ColumnAggregateFunction *>(elem.column.get()))
         {
             const auto & function = *states->getAggregateFunction();
@@ -213,14 +224,11 @@ void setStoredBytes(ProjectionPartData & out, const Block & block)
             empty->insertDefault();
             NullWriteBuffer empty_state;
             function.serialize(assert_cast<const ColumnAggregateFunction &>(*empty).getData()[0], empty_state);
-            least = std::min(least, empty_state.count() * block.rows());
+            least = std::min(least, empty_state.count());
         }
-        else if (isTuple(elem.type))
+        else if (isTuple(elem.type) || (elem.type->supportsSparseSerialization() && elem.column->getNumberOfDefaultRows() != 0))
             least = 0;
-        /// a default value has the fewest bytes, so the rows with other values have at least their share of the bytes
-        else if (elem.type->supportsSparseSerialization())
-            least = static_cast<size_t>(UInt128(stored) * (block.rows() - elem.column->getNumberOfDefaultRows()) / block.rows());
-        out.stored_bytes_floor += least;
+        out.stored_row_bytes_least += least;
     }
 }
 
@@ -677,12 +685,12 @@ std::pair<std::vector<MergeTreeDataPartPtr>, size_t> buildSyntheticProjectionPar
         /// a merge under a constant granularity: n rows of width w in the merged parts give granules of n / floor(n * w / granule_bytes)
         /// rows, at least granule_bytes / w, and less than granule_bytes / w * (k + 1) / k for k >= 1 granules of bytes, or twice that
         /// for fewer
-        if (data.stored_bytes != 0 && !granularity_per_block)
+        if (data.stored_row_bytes_most != 0 && !granularity_per_block)
         {
             const auto rows = static_cast<double>(whole_part.rows);
             const auto bytes = static_cast<double>(granule_bytes);
-            const double widest = static_cast<double>(data.stored_bytes) / rows;
-            const double narrowest = std::max(static_cast<double>(data.stored_bytes_floor) / rows, 1.0);
+            const double widest = static_cast<double>(data.stored_row_bytes_most);
+            const double narrowest = std::max(static_cast<double>(data.stored_row_bytes_least), 1.0);
             const double granules = std::floor(rows * narrowest / bytes);
             auto constant = [&](double granule_rows)
             {

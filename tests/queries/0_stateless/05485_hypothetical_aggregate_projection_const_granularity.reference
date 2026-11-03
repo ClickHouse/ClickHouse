@@ -3,7 +3,7 @@ Baseline (after PK + partition + existing indexes):
 marks: 10
 With p (aggregate projection, hypothetical):
 marks: 8
-marks_span: 7 to 12
+marks_span: 3 to 12
 verdict: too close to call
 real projection part: 8 marks
 real: 8 marks
@@ -12,7 +12,7 @@ Baseline (after PK + partition + existing indexes):
 marks: 10
 With p_a (aggregate projection, hypothetical):
 marks: 8
-marks_span: 2 to 19
+marks_span: 1 to 19
 verdict: too close to call
 real projection part: 5 marks
 -- groupArray and uniqExact states of a merged compact part
