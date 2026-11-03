@@ -1,7 +1,6 @@
 -- Tags: no-fasttest, no-ordinary-database, no-parallel-replicas
 -- no-parallel-replicas: vector-search read hints are produced during local index analysis.
 
-SET enable_analyzer = 1;
 SET mutations_sync = 2;
 SET lightweight_deletes_sync = 2;
 SET parallel_replicas_local_plan = 1;
@@ -34,9 +33,14 @@ FROM
     SETTINGS use_skip_indexes = 0
 );
 
-SELECT 'rescoring row filter excludes the granule mate';
+-- The row filter restricts the read to the rows the vector index returned, and the index still holds
+-- the deleted ones, so applying it while a lightweight delete is unmaterialized would drop candidates
+-- with nothing to take their place - the query would return fewer rows than its LIMIT and miss the
+-- neighbours a deleted candidate shadowed. The index is not used for such a part, so the part is read in
+-- full and the answer is the same as the bruteforce one.
+SELECT 'the same answer with the index';
 WITH [1.0, 0.0] AS reference_vec
-SELECT throwIf(has(groupArray(id), 4), 'Vector search row filter was not applied after lightweight delete')
+SELECT arraySort(groupArray(id))
 FROM
 (
     SELECT id

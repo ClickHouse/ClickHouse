@@ -19,6 +19,7 @@
 
 #include <Databases/MySQL/DatabaseMySQL.h>
 #include <Common/parseRemoteDescription.h>
+#include <Storages/NamedCollectionsHelpers.h>
 
 
 namespace DB
@@ -199,7 +200,7 @@ Arguments also can be passed using [named collections](/concepts/features/config
 
 Simple `WHERE` clauses such as `=, !=, >, >=, <, <=` are currently executed on the MySQL server.
 
-The rest of the conditions and the `LIMIT` sampling constraint are executed in ClickHouse only after the query to MySQL finishes.
+The rest of the conditions are executed in ClickHouse after the query to MySQL finishes. The `LIMIT` sampling constraint is pushed to MySQL only when it is safe and [external_storage_push_down_limit](/reference/settings/session-settings/external-storage#external_storage_push_down_limit) is enabled; otherwise, it is executed in ClickHouse.
 
 ## TLS/SSL {#tls-ssl}
 
@@ -210,8 +211,9 @@ The credentials of an encrypted connection to MySQL are passed as named collecti
 | `ssl_ca_pem` | Contents of the CA certificate that the MySQL server certificate is verified against. |
 | `ssl_cert_pem` | Contents of the client certificate, for certificate-based authentication. |
 | `ssl_key_pem` | Contents of the private key belonging to `ssl_cert_pem`. |
+| `ssl_key_passphrase` | Passphrase of an encrypted `ssl_key` / `ssl_key_pem`. Optional. |
 
-The values are the contents of the corresponding PEM files, which can be copied into a named collection or into a query. They are masked in logs and in `SHOW` queries, the same way passwords are.
+The values are the contents of the corresponding PEM files (and the key passphrase), which can be copied into a named collection or into a query. They are masked in logs and in `SHOW` queries, the same way passwords are.
 
 The same credentials can also be given as paths to files on the server, in `ssl_ca`, `ssl_cert` and `ssl_key` — but **only in a named collection defined in the server configuration file**, and such a value cannot be overridden in a query. The server opens those files with its own privileges, so accepting a path from SQL would let any user who is able to define a MySQL source probe the local filesystem, and authenticate with a certificate and key they are not allowed to read themselves.
 
@@ -384,7 +386,7 @@ WHERE id > (SELECT max(id) FROM mysql_copy);
 - [mysql_map_fixed_string_to_text_in_show_columns](/reference/settings/session-settings/mysql-map#mysql_map_fixed_string_to_text_in_show_columns)
 - [mysql_map_string_to_text_in_show_columns](/reference/settings/session-settings/mysql-map#mysql_map_string_to_text_in_show_columns)
 - [mysql_max_rows_to_insert](/reference/settings/session-settings/mysql#mysql_max_rows_to_insert)
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, mysqlPostgreSQLSecretArguments(4));
 }
 
 }

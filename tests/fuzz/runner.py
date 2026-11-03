@@ -223,6 +223,7 @@ def run_fuzzer(fuzzer: str, timeout: int):
         "only_ascii",           # If 1, generate only ASCII (isprint``+``isspace) inputs. Defaults to 0.
         "use_value_profile",    # If 1, use value profile to guide corpus expansion (adds coverage features for comparison operands). Defaults to 0.
         "dict",                 # Provide a dictionary of input keywords, if absent fuzzer specific dictionary with name <fuzzer>.dict is used when present.
+        "detect_leaks",         # If 1 (default) and LeakSanitizer is enabled, try to detect memory leaks during fuzzing (i.e. not only at shut down).
     ]
 
     allowed_merge_libfuzzer_options = [

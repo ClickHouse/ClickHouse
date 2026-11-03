@@ -876,6 +876,101 @@ def test_filter_pushdown(started_cluster):
     node1.query("DROP TABLE test_filter_pushdown_pg_table")
 
 
+
+def test_limit_pushdown(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("DROP TABLE IF EXISTS test_limit_pushdown")
+    cursor.execute("CREATE TABLE test_limit_pushdown (id integer)")
+    cursor.execute(
+        "INSERT INTO test_limit_pushdown SELECT i FROM generate_series(1, 100) as t(i)"
+    )
+
+    node1.query("DROP TABLE IF EXISTS pg_limit_pushdown")
+    node1.query(
+        f"""
+        CREATE TABLE pg_limit_pushdown (id UInt32)
+        ENGINE PostgreSQL('postgres1:5432', 'postgres', 'test_limit_pushdown', 'postgres', '{pg_pass}');
+    """
+    )
+
+    def remote_queries():
+        """The queries `ReadFromPostgreSQL` has logged for this table, in order."""
+        lines = node1.grep_in_log("Query: SELECT.*test_limit_pushdown").splitlines()
+        return [line.split("Query: ", 1)[1] for line in lines]
+
+    def run(query, **settings):
+        """Return the query result and the queries that were sent to PostgreSQL because of it.
+
+        The number of rows read locally cannot tell whether the `LIMIT` was pushed down: the
+        pipeline stops pulling from the source as soon as the local `LIMIT` is satisfied, so a
+        query that reads a whole remote table still reports only the rows it consumed. The query
+        text that reached PostgreSQL is the only direct evidence.
+        """
+        before = len(remote_queries())
+        result = node1.query(query, settings=settings)
+        for _ in range(30):
+            after = remote_queries()
+            if len(after) > before:
+                break
+            time.sleep(0.5)
+        return result.strip(), after[before:]
+
+    # The LIMIT is sent to PostgreSQL, so only the requested rows are read.
+    result, queries = run("SELECT count() FROM (SELECT * FROM pg_limit_pushdown LIMIT 5)")
+    assert result == "5"
+    assert len(queries) == 1 and queries[0].endswith("LIMIT 5")
+
+    # The OFFSET is applied locally, so the rows it skips have to be read remotely as well.
+    result, queries = run(
+        "SELECT count() FROM (SELECT * FROM pg_limit_pushdown LIMIT 5 OFFSET 3)"
+    )
+    assert result == "5"
+    assert len(queries) == 1 and queries[0].endswith("LIMIT 8")
+
+    # The setting turned off sends no LIMIT at all.
+    result, queries = run(
+        "SELECT count() FROM (SELECT * FROM pg_limit_pushdown LIMIT 5)",
+        external_storage_push_down_limit=0,
+    )
+    assert result == "5"
+    assert len(queries) == 1 and "LIMIT" not in queries[0]
+
+    # `limit + offset` overflows UInt64, so no limit can be pushed down. The plan-level limit of
+    # `ReadFromPostgreSQL` comes from `LimitStep::getLimitForSorting`, which uses 0 as the overflow
+    # sentinel; it must not become a remote `LIMIT 0`, which would turn "all rows except the first"
+    # into "no rows".
+    result, queries = run(
+        "SELECT count() FROM (SELECT * FROM pg_limit_pushdown LIMIT 18446744073709551615 OFFSET 1)"
+    )
+    assert result == "99"
+    assert len(queries) == 1 and "LIMIT" not in queries[0]
+
+    # A real `LIMIT 0` returns nothing and never asks PostgreSQL for a single row.
+    result, _ = run("SELECT count() FROM (SELECT * FROM pg_limit_pushdown LIMIT 0)")
+    assert result == "0"
+
+    # ORDER BY is applied locally, so the remote result must not be truncated.
+    result, queries = run(
+        "SELECT count() FROM (SELECT * FROM pg_limit_pushdown ORDER BY id DESC LIMIT 5)"
+    )
+    assert result == "5"
+    assert len(queries) == 1 and "LIMIT" not in queries[0]
+
+    # `arrayJoin` multiplies the rows after they have been read, so the LIMIT must stay local. The
+    # same holds when it is hidden inside a SQL UDF that is inlined into the query later.
+    node1.query("DROP FUNCTION IF EXISTS pg_limit_pushdown_array_join")
+    node1.query("CREATE FUNCTION pg_limit_pushdown_array_join AS x -> arrayJoin(x)")
+    result, queries = run(
+        "SELECT count() FROM (SELECT pg_limit_pushdown_array_join(if(id <= 3, [], [id])) FROM pg_limit_pushdown LIMIT 3)"
+    )
+    assert result == "3"
+    assert len(queries) == 1 and "LIMIT" not in queries[0]
+    node1.query("DROP FUNCTION pg_limit_pushdown_array_join")
+
+    cursor.execute("DROP TABLE test_limit_pushdown")
+    node1.query("DROP TABLE pg_limit_pushdown")
+
+
 def test_fixed_string_type(started_cluster):
     cursor = started_cluster.postgres_conn.cursor()
     cursor.execute("DROP TABLE IF EXISTS test_fixed_string")
@@ -1165,6 +1260,252 @@ def test_postgres_date32(started_cluster):
     assert "Date32" in result, f"Expected Date32 type, got: {result}"
 
     cursor.execute("DROP TABLE test_date32")
+
+
+def test_postgres_timestamp_with_precision(started_cluster):
+    """Test that a PostgreSQL `timestamp(p)` keeps its precision and its full range when read.
+
+    `timestamp` is a native PostgreSQL type whose range is far wider than that of the 32-bit
+    ClickHouse `DateTime`, so an explicit precision must map to `DateTime64(p)` for every `p`,
+    including `timestamp(0)`. Mapping `timestamp(0)` to `DateTime` would clamp values before 1970 to
+    the epoch and truncate values after 2106.
+    """
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("DROP TABLE IF EXISTS test_timestamp_precision")
+    cursor.execute(
+        "CREATE TABLE test_timestamp_precision (id integer, t0 timestamp(0), t3 timestamp(3), t timestamp)"
+    )
+    # '1900-01-01' is before the epoch and '2200-01-01' is beyond the 32-bit `DateTime` range: both are
+    # ordinary `timestamp` values that must survive the round trip.
+    cursor.execute(
+        "INSERT INTO test_timestamp_precision VALUES "
+        "(1, '1900-01-01 00:00:00', '1900-01-01 00:00:00.125', '1900-01-01 00:00:00.123456'), "
+        "(2, '2200-01-01 00:00:00', '2200-01-01 00:00:00.125', '2200-01-01 00:00:00.123456')"
+    )
+    started_cluster.postgres_conn.commit()
+
+    table = f"postgresql('postgres1:5432', 'postgres', 'test_timestamp_precision', 'postgres', '{pg_pass}')"
+
+    # A bare `timestamp` keeps the historical microsecond mapping.
+    assert node1.query(
+        f"SELECT toTypeName(t0), toTypeName(t3), toTypeName(t) FROM {table} LIMIT 1"
+    ) == "Nullable(DateTime64(0))\tNullable(DateTime64(3))\tNullable(DateTime64(6))\n"
+
+    assert node1.query(f"SELECT id, t0, t3, t FROM {table} ORDER BY id") == (
+        "1\t1900-01-01 00:00:00\t1900-01-01 00:00:00.125\t1900-01-01 00:00:00.123456\n"
+        "2\t2200-01-01 00:00:00\t2200-01-01 00:00:00.125\t2200-01-01 00:00:00.123456\n"
+    )
+
+    cursor.execute("DROP TABLE test_timestamp_precision")
+
+
+def test_postgres_empty_multidimensional_array(started_cluster):
+    """An empty PostgreSQL array is printed as `{}` whatever its dimensionality.
+
+    Such a value carries no nesting to count, so it must be read as an empty array instead of being
+    rejected for having fewer dimensions than the column declares.
+    """
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("DROP TABLE IF EXISTS test_empty_nested_array")
+    cursor.execute("CREATE TABLE test_empty_nested_array (id integer, a integer[][])")
+    cursor.execute(
+        "INSERT INTO test_empty_nested_array VALUES (1, '{}'), (2, '{{1,2},{3,4}}')"
+    )
+    started_cluster.postgres_conn.commit()
+
+    table = f"postgresql('postgres1:5432', 'postgres', 'test_empty_nested_array', 'postgres', '{pg_pass}')"
+    assert (
+        node1.query(f"SELECT id, a FROM {table} ORDER BY id")
+        == "1\t[]\n2\t[[1,2],[3,4]]\n"
+    )
+
+    cursor.execute("DROP TABLE test_empty_nested_array")
+
+
+def test_postgres_unqualified_name_follows_search_path(started_cluster):
+    """An unqualified table name resolves through the whole `search_path`, like PostgreSQL itself.
+
+    Schema discovery must find the table in the same relation the `COPY` statements of the read and
+    write paths will use: the first schema of the `search_path` that contains it. Pinning the lookup
+    to `current_schema()` (the first *existing* schema of the path) would miss a table that lives in
+    a later schema of the path, and pinning it to `public` would resolve a shadowed name in the wrong
+    schema. The dedicated role carries the non-trivial `search_path`, so the connections ClickHouse
+    opens for it pick the path up regardless of any pooling.
+    """
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("DROP SCHEMA IF EXISTS tenant CASCADE")
+    cursor.execute("DROP TABLE IF EXISTS public.search_path_late")
+    cursor.execute("DROP TABLE IF EXISTS public.search_path_shadow")
+    # `DROP ROLE` refuses while the role still holds privileges, so revoke them all first.
+    cursor.execute(
+        "DO $$ BEGIN IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'search_path_user') "
+        "THEN EXECUTE 'DROP OWNED BY search_path_user'; END IF; END $$"
+    )
+    cursor.execute("DROP ROLE IF EXISTS search_path_user")
+    cursor.execute("CREATE SCHEMA tenant")
+    # A table only in `public`, the *second* schema of the path: still found.
+    cursor.execute("CREATE TABLE public.search_path_late (id integer)")
+    cursor.execute("INSERT INTO public.search_path_late VALUES (1), (2)")
+    # A name present in both schemas: the earlier schema of the path wins.
+    cursor.execute("CREATE TABLE tenant.search_path_shadow (id integer)")
+    cursor.execute("INSERT INTO tenant.search_path_shadow VALUES (10)")
+    cursor.execute("CREATE TABLE public.search_path_shadow (id integer)")
+    cursor.execute("INSERT INTO public.search_path_shadow VALUES (20)")
+    cursor.execute(f"CREATE ROLE search_path_user LOGIN PASSWORD '{pg_pass}'")
+    cursor.execute("GRANT USAGE ON SCHEMA tenant, public TO search_path_user")
+    cursor.execute(
+        "GRANT SELECT ON public.search_path_late, public.search_path_shadow TO search_path_user"
+    )
+    # The write-path check below inserts through the same unqualified name.
+    cursor.execute("GRANT SELECT, INSERT ON tenant.search_path_shadow TO search_path_user")
+    cursor.execute("ALTER ROLE search_path_user SET search_path = tenant, public")
+    started_cluster.postgres_conn.commit()
+
+    try:
+        late = f"postgresql('postgres1:5432', 'postgres', 'search_path_late', 'search_path_user', '{pg_pass}')"
+        assert node1.query(f"SELECT id FROM {late} ORDER BY id") == "1\n2\n"
+
+        shadow = f"postgresql('postgres1:5432', 'postgres', 'search_path_shadow', 'search_path_user', '{pg_pass}')"
+        assert node1.query(f"SELECT id FROM {shadow}") == "10\n"
+
+        # The write path resolves the same relation: an unqualified INSERT lands in `tenant`, not `public`.
+        node1.query(f"INSERT INTO TABLE FUNCTION {shadow} VALUES (11)")
+        assert node1.query(f"SELECT id FROM {shadow} ORDER BY id") == "10\n11\n"
+        cursor.execute("SELECT id FROM public.search_path_shadow")
+        assert cursor.fetchall() == [(20,)]
+    finally:
+        cursor.execute("DROP OWNED BY search_path_user")
+        cursor.execute("DROP TABLE public.search_path_late")
+        cursor.execute("DROP TABLE public.search_path_shadow")
+        cursor.execute("DROP SCHEMA tenant CASCADE")
+        cursor.execute("DROP ROLE search_path_user")
+        started_cluster.postgres_conn.commit()
+
+
+def test_postgres_unqualified_pg_catalog_relation(started_cluster):
+    """An unqualified system catalog name resolves through PostgreSQL's implicit `pg_catalog`.
+
+    PostgreSQL searches `pg_catalog` ahead of the explicit `search_path` (unless the path lists it
+    explicitly), so an unqualified `pg_type` denotes the system catalog even when a `public` table of
+    the same name exists. Schema discovery must follow that rule: pinning the lookup to the explicit
+    path alone would report `UNKNOWN_TABLE` for a name the server itself resolves.
+    """
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("DROP TABLE IF EXISTS public.pg_type")
+    started_cluster.postgres_conn.commit()
+
+    table_function = (
+        f"postgresql('postgres1:5432', 'postgres', 'pg_type', 'postgres', '{pg_pass}')"
+    )
+    assert (
+        node1.query(f"SELECT count() FROM {table_function} WHERE typname = 'bool'")
+        == "1\n"
+    )
+
+    # A `public` table of the same name does not shadow the catalog: `pg_catalog` is searched first.
+    cursor.execute("CREATE TABLE public.pg_type (typname text)")
+    cursor.execute("INSERT INTO public.pg_type VALUES ('decoy')")
+    started_cluster.postgres_conn.commit()
+    try:
+        assert (
+            node1.query(f"SELECT count() FROM {table_function} WHERE typname = 'bool'")
+            == "1\n"
+        )
+        assert (
+            node1.query(f"SELECT count() FROM {table_function} WHERE typname = 'decoy'")
+            == "0\n"
+        )
+    finally:
+        cursor.execute("DROP TABLE public.pg_type")
+        started_cluster.postgres_conn.commit()
+
+
+def test_postgres_cancel_propagates_mid_stream(started_cluster):
+    """Cancelling a query over `postgresql(...)` must interrupt the server-side `COPY` mid-stream.
+
+    Once streaming has started, the execution thread blocks inside `read_row` waiting for the next
+    row; the cancel must still send a cancel request to the upstream server (an earlier version only
+    did so while startup was unfinished), otherwise the upstream `COPY` keeps running until it
+    produces the next row or finishes. The view's leading rows are wide enough in total to overflow
+    the server's 8192-byte output buffer several times (the buffer is flushed only when it fills, so
+    a lone wide row could stay partially buffered), guaranteeing complete rows reach ClickHouse and
+    the source demonstrably starts streaming; the last row takes 600 seconds - only a propagated
+    cancel makes the `COPY` disappear from `pg_stat_activity` promptly.
+    """
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("DROP VIEW IF EXISTS cancel_slow_rows")
+    # `CASE` evaluates only the taken branch and `pg_sleep` is volatile, so the sleep runs when the
+    # last row is produced, not up front (`pg_sleep` returns `void`, whose cast to `text` is '').
+    cursor.execute(
+        "CREATE VIEW cancel_slow_rows AS "
+        "SELECT i, CASE WHEN i < 10 THEN repeat('x', 3000) ELSE pg_sleep(600)::text END AS s "
+        "FROM generate_series(0, 10) AS i"
+    )
+    started_cluster.postgres_conn.commit()
+
+    query_id = "test_postgres_cancel_propagates_mid_stream"
+    table_function = (
+        f"postgresql('postgres1:5432', 'postgres', 'cancel_slow_rows', 'postgres', '{pg_pass}')"
+    )
+
+    def run_query():
+        try:
+            # `max_block_size = 1` makes the source emit a chunk after the first row instead of
+            # waiting to fill a block, so progress (`read_rows`) becomes observable mid-stream.
+            node1.query(
+                f"SELECT * FROM {table_function} FORMAT Null",
+                query_id=query_id,
+                settings={"max_block_size": 1},
+            )
+        except Exception:
+            pass  # The query is killed; both a cancel error and a stream error are fine.
+
+    def upstream_copy_count():
+        cursor.execute(
+            "SELECT count(*) FROM pg_stat_activity "
+            "WHERE state = 'active' AND query LIKE '%cancel_slow_rows%' "
+            "AND query NOT LIKE '%pg_stat_activity%'"
+        )
+        return cursor.fetchone()[0]
+
+    busy_pool = Pool(1)
+    job = busy_pool.apply_async(run_query)
+    try:
+        # Wait until streaming has demonstrably started: the first row reached ClickHouse.
+        deadline = time.time() + 60
+        while time.time() < deadline:
+            if (
+                node1.query(
+                    f"SELECT sum(read_rows) FROM system.processes WHERE query_id = '{query_id}'"
+                ).strip()
+                not in ("", "0")
+            ):
+                break
+            time.sleep(0.2)
+        else:
+            raise AssertionError("the query never started streaming rows")
+        assert upstream_copy_count() > 0
+
+        node1.query(f"KILL QUERY WHERE query_id = '{query_id}' ASYNC")
+
+        # The upstream `COPY` must go away long before its 600-second sleep finishes.
+        deadline = time.time() + 60
+        while time.time() < deadline:
+            if upstream_copy_count() == 0:
+                break
+            time.sleep(0.5)
+        else:
+            raise AssertionError("the cancel did not reach the upstream PostgreSQL COPY")
+    finally:
+        # Do not leave a 600-second backend behind on failure.
+        cursor.execute(
+            "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+            "WHERE query LIKE '%cancel_slow_rows%' AND query NOT LIKE '%pg_stat_activity%' AND pid <> pg_backend_pid()"
+        )
+        job.wait(timeout=60)
+        busy_pool.close()
+        cursor.execute("DROP VIEW cancel_slow_rows")
+        started_cluster.postgres_conn.commit()
 
 
 def test_postgres_date32_array(started_cluster):

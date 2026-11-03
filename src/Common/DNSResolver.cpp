@@ -185,6 +185,12 @@ std::unordered_set<String> reverseResolveImpl(const Poco::Net::IPAddress & addre
     {
         if (address.family() == Poco::Net::IPAddress::Family::IPv4)
             ptr_records = ptr_resolver->resolve(address.toString());
+        else if (address.isIPv4Mapped())
+        {
+            /// An IPv4-mapped address is an IPv4 peer of a dual-stack socket, so its PTR record is the IPv4 one.
+            Poco::Net::IPAddress ipv4(reinterpret_cast<const char *>(address.addr()) + 12, 4);
+            ptr_records = ptr_resolver->resolve(ipv4.toString());
+        }
         else
             ptr_records = ptr_resolver->resolve_v6(address.toString());
     }
@@ -409,11 +415,11 @@ std::unordered_set<String> DNSResolver::reverseResolve(const Poco::Net::IPAddres
 
 void DNSResolver::dropCache()
 {
-    impl->cache_host.clear();
-    impl->cache_address.clear();
-
+    /// Under `update_mutex`, so that an update in progress cannot put the entries back.
     std::scoped_lock lock(impl->update_mutex, impl->drop_mutex);
 
+    impl->cache_host.clear();
+    impl->cache_address.clear();
     impl->known_hosts.clear();
     impl->known_addresses.clear();
     impl->new_hosts.clear();

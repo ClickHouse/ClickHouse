@@ -3,6 +3,11 @@ timeout = 20
 use_value_profile = 1
 rss_limit_mb = 4096
 dict = all.dict
+# `clickhouse local` keeps caches and other global state between inputs, so almost every
+# input ends with more allocations than frees. Then libfuzzer re-runs the input and runs a
+# LeakSanitizer pass, which stops all threads and scans the whole heap, after each one.
+# LeakSanitizer still checks for leaks when the process exits.
+detect_leaks = 0
 
 [fuzzer_arguments]
 --max_execution_time=10

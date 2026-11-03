@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/Documentation.h>
+#include <Interpreters/SecretArgumentsSpec.h>
 #include <Common/NamePrompter.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Parsers/IAST_fwd.h>
@@ -90,6 +91,7 @@ public:
         CreatorFn creator_fn;
         StorageFeatures features;
         Documentation documentation;
+        SecretArgumentsSpec secret_arguments;
     };
 
     using Storages = std::unordered_map<std::string, Creator>;
@@ -106,7 +108,7 @@ public:
 
     /// Register a table engine by its name.
     /// No locking, you must register all engines before usage of get.
-    void registerStorage(const std::string & name, CreatorFn creator_fn, StorageFeatures features = StorageFeatures{
+    void registerStorage(const std::string & name, CreatorFn creator_fn, SecretArgumentsSpec secret_arguments, StorageFeatures features = StorageFeatures{
         .supports_settings = false,
         .supports_skipping_indices = false,
         .supports_projections = false,
@@ -125,6 +127,12 @@ public:
     const Storages & getAllStorages() const
     {
         return storages;
+    }
+
+    const SecretArgumentsSpec * tryGetSecretArgumentsSpec(const String & name) const
+    {
+        auto it = storages.find(name);
+        return it == storages.end() ? nullptr : &it->second.secret_arguments;
     }
 
     VectorWithMemoryTracking<String> getAllRegisteredNames() const override
@@ -161,5 +169,11 @@ void checkStorageSettingNames(const StorageFactory::Arguments & args);
 /// Whether the definition is replayed (attach, DDL replay, Keeper recovery, Shared Catalog replay)
 /// rather than written by the user now. Refusing a replayed definition would block loading or retry forever.
 bool isReplayedTableDefinition(LoadingStrictnessLevel mode, const ASTCreateQuery & query, const ContextPtr & local_context);
+
+/// Rejects a definition of a table with its own unreplicated data on disk when `database_replicated_allow_only_replicated_engine`
+/// restricts the `Replicated` database it is created in. The same restriction as in `InterpreterCreateQuery::doCreateTable`
+/// (see `IStorage::hasUnreplicatedTableDataOnDisk`), for engines that must check it before the storage is constructed, because
+/// the construction itself has effects or can fail for an unrelated reason (e.g. schema inference opens the source).
+void throwIfUnreplicatedTableDataNotAllowed(const StorageFactory::Arguments & args);
 
 }

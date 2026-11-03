@@ -20,7 +20,7 @@ LOCAL=(${CLICKHOUSE_LOCAL} --path "${LOCAL_DIR}")
     SETTINGS engine_file_truncate_on_insert = 1, output_format_parquet_row_group_size = 100;
 "
 
-lazy=(--enable_analyzer=1
+lazy=(
       --query_plan_optimize_lazy_materialization=1
       --query_plan_max_limit_for_lazy_materialization=0
       --query_plan_optimize_lazy_materialization_for_file=1)

@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
+#include <Functions/icebergCommon.h>
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/assert_cast.h>
@@ -28,14 +29,6 @@ enum class IcebergDateTransform : uint8_t
     Day,
     Hour,
 };
-
-Int64 floorDivide(Int64 numerator, Int64 denominator)
-{
-    Int64 quotient = numerator / denominator;
-    if (numerator % denominator != 0 && (numerator < 0) != (denominator < 0))
-        --quotient;
-    return quotient;
-}
 
 Int32 narrowToInt32(Int64 value, const char * function_name)
 {

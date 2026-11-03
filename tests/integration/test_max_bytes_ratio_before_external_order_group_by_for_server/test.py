@@ -1,3 +1,5 @@
+import uuid
+
 import pytest
 
 from helpers.client import QueryRuntimeException
@@ -147,5 +149,57 @@ def test_max_bytes_ratio_before_external_distinct(node, limit_follows_rss, query
     node.query(query, settings=settings)
 
     settings["max_bytes_ratio_before_external_distinct"] = 0
+    with pytest.raises(QueryRuntimeException):
+        node.query(query, settings=settings)
+
+
+@pytest.mark.parametrize(
+    "node,limit_follows_rss,query",
+    [
+        # In memory, the set of 100M unique strings of about 85 bytes would take more than 10GiB.
+        pytest.param(
+            node_server,
+            True,
+            "SELECT count() FROM numbers(10) WHERE repeat(toString(number), 10) "
+            "IN (SELECT repeat(number::String, 10) FROM numbers(100e6)) FORMAT Null",
+            id="server",
+        ),
+        # In memory, the set of 7M unique strings of about 700 bytes would take more than 4GiB,
+        # against a 4GiB user limit.
+        pytest.param(
+            node_user,
+            False,
+            "SELECT count() FROM numbers(10) WHERE repeat(toString(number), 100) "
+            "IN (SELECT repeat(number::String, 100) FROM numbers(7000000)) "
+            "SETTINGS max_memory_usage_for_user = '4Gi' FORMAT Null",
+            id="user",
+        ),
+    ],
+)
+def test_max_bytes_ratio_before_external_set(node, limit_follows_rss, query):
+    if sanitizer_build["thread"]:
+        pytest.skip("TSan build is skipped due to memory overhead")
+    if sanitizer_build["memory"]:
+        pytest.skip("Memory Sanitizer uses more memory, making precise memory limit testing unreliable")
+    if limit_follows_rss and sanitizer_build["address"]:
+        # `max_server_memory_usage` is enforced against RSS, and an Address Sanitizer build's RSS
+        # carries redzones and quarantined chunks that the memory tracker never sees, so the set on
+        # disk has no headroom left.
+        pytest.skip("Address Sanitizer RSS overhead leaves no headroom under max_server_memory_usage")
+
+    query_id = str(uuid.uuid4())
+    settings = {
+        "max_memory_usage": "0",
+        "max_bytes_before_external_set": 0,
+        "max_bytes_ratio_before_external_set": 0.3,
+    }
+    node.query(query, settings=settings, query_id=query_id)
+    node.query("SYSTEM FLUSH LOGS query_log")
+    assert node.query(
+        "SELECT ProfileEvents['SetsSpilledToDisk'] FROM system.query_log "
+        f"WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+    ) == "1\n"
+
+    settings["max_bytes_ratio_before_external_set"] = 0
     with pytest.raises(QueryRuntimeException):
         node.query(query, settings=settings)
