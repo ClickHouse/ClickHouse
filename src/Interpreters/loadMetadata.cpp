@@ -11,7 +11,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
-#include <Interpreters/InterpreterSystemQuery.h>
+#include <Interpreters/SystemCommands/SystemCommandsActionLocks.h>
+#include <Interpreters/SystemCommands/SystemCommandsDropReplica.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/loadMetadata.h>
 
@@ -297,7 +298,7 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
     {
         loadDatabase(context, name, metadata_file, has_force_restore_data_flag);
         loaded_databases.insert({name, DatabaseCatalog::instance().getDatabase(name)});
-        if (name.starts_with(InterpreterSystemQuery::RESTORING_DATABASE_NAME_FOR_TABLE_DROPPING_PREFIX))
+        if (name.starts_with(RESTORING_DATABASE_NAME_FOR_TABLE_DROPPING_PREFIX))
             restoring_database_for_table_dropping_names.insert(name);
     }
 
@@ -305,7 +306,7 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
     {
         loadDatabase(context, name, metadata_file, has_force_restore_data_flag);
         loaded_databases.insert({name, DatabaseCatalog::instance().getDatabase(name)});
-        if (name.starts_with(InterpreterSystemQuery::RESTORING_DATABASE_NAME_FOR_TABLE_DROPPING_PREFIX))
+        if (name.starts_with(RESTORING_DATABASE_NAME_FOR_TABLE_DROPPING_PREFIX))
             restoring_database_for_table_dropping_names.insert(name);
     }
 
@@ -525,7 +526,7 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
             ActionLocks::PartsMerge, ActionLocks::PartsFetch, ActionLocks::PartsSend, ActionLocks::DistributedSend
         };
         for (const auto & action : actions_to_stop)
-            InterpreterSystemQuery::startStopActionInDatabase(action, /* start */ false, database_name, database, context, log);
+            startStopActionInDatabase(action, /* start */ false, database_name, database, context, log);
 
         local_context->setSetting("check_table_dependencies", false);
         local_context->setSetting("check_referential_table_dependencies", false);
@@ -533,7 +534,7 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
 
         LOG_INFO(log, "Will start background operations after renaming tables in database {}", database_name);
         for (const auto & action : actions_to_stop)
-            InterpreterSystemQuery::startStopActionInDatabase(action, /* start */ true, database_name, database, context, log);
+            startStopActionInDatabase(action, /* start */ true, database_name, database, context, log);
 
         auto new_database = DatabaseCatalog::instance().getDatabase(database_name);
         UUID db_uuid = new_database->getUUID();
