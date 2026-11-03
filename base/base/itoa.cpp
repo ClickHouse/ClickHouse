@@ -1005,14 +1005,8 @@ ALWAYS_INLINE inline char * writeSIntText(const T & x, char * pos)
 }
 }
 
-/// The shift that places byte `i` of an integer's in-memory representation.
-template <typename T>
-constexpr UInt32 byteShift(UInt32 i)
-{
-    return 8 * (std::endian::native == std::endian::little ? i : sizeof(T) - 1 - i);
-}
+using itoa_impl::byteShift;
 
-/// The text of every `UInt8` value: the digits from the lowest address on, and the length in the last byte.
 constexpr std::array<UInt32, 256> one_byte_to_string_lookup_table = []
 {
     std::array<UInt32, 256> table{};
@@ -1027,47 +1021,14 @@ constexpr std::array<UInt32, 256> one_byte_to_string_lookup_table = []
     return table;
 }();
 
-/// One load and one 4-byte store, with no branch on the length. The bytes after the text are the rest of the entry,
-/// overwritten by whatever is written next; `max_int_width<UInt8>` reserves the extra byte.
-ALWAYS_INLINE inline char * writeUInt8Text(UInt32 value, char * p)
+char * itoa_impl::writeUInt32TextFrom10000(UInt32 value, char * p)
 {
-    UInt32 entry = one_byte_to_string_lookup_table[value];
-    memcpy(p, &entry, 4);
-    return p + ((entry >> byteShift<UInt32>(3)) & 0xFF);
+    return jeaiii::to_text_from_integer(p, value);
 }
 
-char * itoa(UInt8 i, char * p)
+char * itoa_impl::writeUInt64TextFrom10000(UInt64 value, char * p)
 {
-    return writeUInt8Text(i, p);
-}
-
-char * itoa(uint8_t i, char * p)
-{
-    return writeUInt8Text(i, p);
-}
-
-/// The sign without a branch, which mispredicts on mixed-sign data: '-' is always written, and the magnitude
-/// `(i ^ sign) - sign`, in unsigned arithmetic so that the minimum value fits, is written over it when `i` is
-/// not negative.
-template <typename T>
-ALWAYS_INLINE inline char * writeSignedText(T i, char * p)
-{
-    using U = std::make_unsigned_t<T>;
-    U sign = static_cast<U>(i >> (sizeof(T) * 8 - 1));
-    U magnitude = static_cast<U>((static_cast<U>(i) ^ sign) - sign);
-    *p = '-';
-    p += sign & 1;
-    if constexpr (sizeof(T) == 8)
-        return writeUInt64Text(magnitude, p);
-    else if constexpr (sizeof(T) == 1)
-        return writeUInt8Text(magnitude, p);
-    else
-        return jeaiii::to_text_from_integer(p, magnitude);
-}
-
-char * itoa(Int8 i, char * p)
-{
-    return writeSignedText(int8_t(i), p);
+    return writeUInt64Text(value, p);
 }
 
 char * itoa(UInt128 i, char * p)
@@ -1088,47 +1049,6 @@ char * itoa(const UInt256 & i, char * p)
 char * itoa(const Int256 & i, char * p)
 {
     return writeSIntText(i, p);
-}
-
-#define DEFAULT_ITOA(T) \
-    char * itoa(T i, char * p) \
-    { \
-        return jeaiii::to_text_from_integer(p, i); \
-    }
-
-#define SIGNED_ITOA(T) \
-    char * itoa(T i, char * p) \
-    { \
-        return writeSignedText(i, p); \
-    }
-
-#define FOR_MISSING_INTEGER_TYPES(M) \
-    M(UInt16) \
-    M(UInt32)
-
-FOR_MISSING_INTEGER_TYPES(DEFAULT_ITOA)
-SIGNED_ITOA(int8_t)
-SIGNED_ITOA(Int16)
-SIGNED_ITOA(Int32)
-
-/// `long` is not covered by the list above where it is a distinct type.
-#if defined(LONG_IS_A_DISTINCT_TYPE)
-DEFAULT_ITOA(unsigned long)
-SIGNED_ITOA(long)
-#endif
-
-#undef FOR_MISSING_INTEGER_TYPES
-#undef SIGNED_ITOA
-#undef DEFAULT_ITOA
-
-char * itoa(UInt64 i, char * p)
-{
-    return writeUInt64Text(i, p);
-}
-
-char * itoa(Int64 i, char * p)
-{
-    return writeSignedText(i, p);
 }
 
 char * writeFixedDigits(UInt64 value, UInt32 width, char * p)
