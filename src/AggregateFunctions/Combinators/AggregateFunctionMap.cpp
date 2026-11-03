@@ -308,6 +308,7 @@ public:
     void mergeStateFromDifferentVariant(
         AggregateDataPtr __restrict place, const IAggregateFunction & rhs, ConstAggregateDataPtr rhs_place, Arena * arena) const override
     {
+        chassert(canMergeStateFromDifferentVariant(rhs));
         auto rhs_nested = rhs.getNestedFunction();
         chassert(rhs_nested != nullptr);
 
