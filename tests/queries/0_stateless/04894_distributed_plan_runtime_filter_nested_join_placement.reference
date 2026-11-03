@@ -1,0 +1,7 @@
+-- nested joins: both filters wired to the fact-scan fragment
+100
+100
+-- both filters transported, each through its own merge tree
+1
+-- every task that receives a filter is in one stage and receives both filters
+1

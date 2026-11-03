@@ -183,5 +183,5 @@ ALTER TABLE t_mod_def MODIFY COLUMN v UInt32 MATERIALIZED k + 1,
                       MODIFY COLUMN v UInt32 CODEC(T64, LZ4);
 SELECT '12', default_kind, default_expression FROM system.columns
     WHERE database = currentDatabase() AND table = 't_mod_def' AND name = 'v';
-ALTER TABLE t_mod_def MODIFY COLUMN v UInt32 ALIAS k; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE t_mod_def MODIFY COLUMN v UInt32 ALIAS k; -- { serverError BAD_ARGUMENTS }
 DROP TABLE t_mod_def;

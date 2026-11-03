@@ -7,6 +7,9 @@
 -- still finds the entries its first run wrote.
 
 SET max_threads = 1;
+-- `enable_parallel_replicas = 0`: with parallel replicas another replica may do the reads,
+-- and their `ProfileEvents` never reach the `query_log` rows checked below.
+SET enable_parallel_replicas = 0;
 
 DROP TABLE IF EXISTS t_cc_granules;
 

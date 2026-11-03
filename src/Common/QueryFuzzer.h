@@ -1,5 +1,6 @@
 #pragma once
 
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/IDataType.h>
 
 #include <algorithm>
@@ -27,6 +28,7 @@ namespace DB
 {
 
 class ASTExpressionList;
+class ASTColumns;
 class ASTFunction;
 class ASTIdentifier;
 class ASTOrderByElement;
@@ -52,11 +54,7 @@ class SettingsChanges;
 /// name behind fuzzer-produced chains like `first_valueOrNullDistinct`.
 /// Combinator spelling is case-sensitive in ClickHouse (`sumIf` is valid,
 /// `sumif` is not), so these stay PascalCase.
-inline const Strings aggregate_combinator_suffixes = {
-    "If", "Array", "Map", "ForEach", "Distinct", "OrDefault", "OrFill",
-    "OrNull", "Resample", "ArgMin", "ArgMax", "MergeState", "State", "Merge",
-    "SimpleState", "Tuple", "RespectNulls", "IgnoreNulls", "Null",
-};
+const Strings & aggregateCombinatorSuffixes();
 
 /*
  * This is an AST-based query fuzzer that makes random modifications to query
@@ -306,11 +304,12 @@ private:
     /// A JSON Object with the given typed paths / SKIP lists and randomized numeric parameters. A source
     /// limit, when given, is what an unfired randomization keeps.
     DataTypePtr makeRandomObject(
-        std::unordered_map<String, DataTypePtr> typed_paths = {},
+        DataTypeObject::TypedPathsMap typed_paths = {},
         std::unordered_set<String> paths_to_skip = {},
         std::vector<String> path_regexps_to_skip = {},
         std::optional<size_t> source_max_dynamic_paths = std::nullopt,
-        std::optional<size_t> source_max_dynamic_types = std::nullopt);
+        std::optional<size_t> source_max_dynamic_types = std::nullopt,
+        std::unordered_set<String> shared_typed_paths = {});
     /// An (Simple)AggregateFunction re-validated via the factory; nullptr if the aggregate rejects the
     /// arguments or the emitted name does not reparse. version is the one parsed from the source AST.
     DataTypePtr makeAggregateFunctionType(
@@ -330,9 +329,8 @@ private:
     void fuzzWindowFrame(ASTWindowDefinition & def);
     void fuzzWindowDefinition(ASTWindowDefinition & def);
     void fuzzCreateQuery(ASTCreateQuery & create);
-    void swapEngineToCollapsing(ASTStorage & storage, ASTExpressionList * columns_list);
     void fuzzRefreshStrategy(ASTRefreshStrategy & strategy, bool allow_incremental);
-    void fuzzTableStorage(ASTStorage & storage);
+    void fuzzTableStorage(ASTStorage & storage, ASTColumns * columns_list);
     void fuzzExplainQuery(ASTExplainQuery & explain);
     ASTExplainQuery::ExplainKind fuzzExplainKind(ASTExplainQuery::ExplainKind kind = ASTExplainQuery::ExplainKind::QueryPipeline);
     void fuzzExplainSettings(ASTSetQuery & settings_ast, ASTExplainQuery::ExplainKind kind);
@@ -366,6 +364,8 @@ private:
 
     void fuzzTableFunctionName(ASTPtr & table_function);
     void fuzzClusterFunctionArguments(ASTFunction & fn);
+    void fuzzProxyDatabaseEngine(ASTStorage & storage);
+    void fuzzStorageDatabaseEngine(ASTStorage & storage);
     void fuzzMergeFunctionArguments(ASTFunction & fn);
     String makeFuzzedLikePattern();
     String makeBraceExpansion();
