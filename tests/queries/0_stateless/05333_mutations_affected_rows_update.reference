@@ -1,0 +1,21 @@
+basic	3
+no match	0
+several columns	3
+value unchanged	4
+null	3
+in partition	3
+several parts	3
+many blocks	7
+same update twice	5
+same update twice	5
+two commands	3
+two commands	5
+batch	3
+batch	5
+batch	0
+batch sees earlier update	3
+batch sees earlier update	3
+batch sees earlier update	0
+one by one sees earlier update	3
+one by one sees earlier update	3
+materialized column	3

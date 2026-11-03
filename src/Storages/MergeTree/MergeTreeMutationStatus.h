@@ -58,6 +58,9 @@ struct MergeTreeMutationStatus
 
     /// FIXME: currently unused, but would be much better to report killed mutations with this flag.
     bool is_killed = false;
+
+    /// The number of rows affected by the command.
+    UInt64 affected_rows = 0;
 /// NOLINTEND(readability-redundant-string-init)
 };
 

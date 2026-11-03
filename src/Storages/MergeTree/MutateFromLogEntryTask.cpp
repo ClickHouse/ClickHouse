@@ -325,6 +325,7 @@ bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrit
     /// LOGICAL_ERROR if the old guard is still alive. Resetting the task here
     /// releases these guards before the fallback fetch can run.
     auto hardlinked_files = mutate_task->getHardlinkedFiles();
+    auto affected_rows = mutate_task->getAffectedRows();
     mutate_task->updateProfileEvents();
     mutate_task.reset();
 
@@ -368,6 +369,9 @@ bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrit
 
         throw;
     }
+
+    /// Register the number of affected rows by each `DELETE` and `UPDATE` command.
+    storage.queue.addAffectedRowsToMutations(affected_rows);
 
     if (zero_copy_lock)
     {
