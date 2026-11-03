@@ -21,6 +21,7 @@
                 "products/cloud/reference/supported-regions",
                 "products/cloud/features/infrastructure/deployment-options",
                 "products/cloud/guides/cloud-compatibility",
+                "products/cloud/features/public-preview-features",
                 "products/cloud/features/self-service-previews",
                 "products/cloud/guides/infrastructure/deployment-options/clickhouse-private",
                 "products/cloud/guides/infrastructure/deployment-options/clickhouse-government"
