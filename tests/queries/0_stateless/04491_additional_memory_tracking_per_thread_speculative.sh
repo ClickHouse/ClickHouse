@@ -75,7 +75,7 @@ EOF
 # the query would fail with `FUNCTION_THROW_IF_VALUE_IS_NON_ZERO` instead.
 ${CLICKHOUSE_LOCAL} --config-file "$CONFIG_FILE" --query "
     SELECT count() FROM numbers_mt(1000) WHERE NOT throwIf(number < 1000000, 'processor work ran before the speculative reservation')
-    SETTINGS max_threads = 8
+    SETTINGS max_threads = 8, max_block_size = 100
 " 2>&1 | grep -oE 'MEMORY_LIMIT_EXCEEDED|FUNCTION_THROW_IF_VALUE_IS_NON_ZERO' | head -n1
 
 # The same for the single-thread branch of the executor.
