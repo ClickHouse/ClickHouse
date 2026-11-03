@@ -217,7 +217,9 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
         Block block;
         while (executor.pull(block))
         {
-            new_data->addBlockToJoin(block, block.rows(), JoinBuildContext::serial());
+            Block block_to_insert = block;
+            convertRightBlock(block_to_insert);
+            new_data->addBlockToJoin(block_to_insert, block_to_insert.rows(), JoinBuildContext::serial());
             if (persistent)
                 backup_stream.write(block);
         }
