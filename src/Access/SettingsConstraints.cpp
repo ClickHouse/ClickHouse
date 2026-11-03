@@ -247,10 +247,17 @@ void SettingsConstraints::checkRemovedSettings(const SettingsProfileElements & o
     }
 }
 
-void SettingsConstraints::check(const Settings & current_settings, const SettingsProfileElements & profile_elements, SettingSource source, bool skip_config_defined_profiles, bool actor_is_config_defined) const
+void SettingsConstraints::check(
+    const Settings & current_settings,
+    const SettingsProfileElements & profile_elements,
+    SettingSource source,
+    bool skip_config_defined_profiles,
+    bool actor_is_config_defined,
+    const SettingsConstraints * resolved_constraints) const
 {
     boost::container::flat_set<UUID> visited_profiles;
-    checkProfileElements(current_settings, profile_elements, source, visited_profiles, skip_config_defined_profiles, actor_is_config_defined);
+    checkProfileElements(
+        current_settings, profile_elements, source, visited_profiles, skip_config_defined_profiles, actor_is_config_defined, resolved_constraints);
 }
 
 void SettingsConstraints::checkProfileElements(
@@ -259,7 +266,8 @@ void SettingsConstraints::checkProfileElements(
     SettingSource source,
     boost::container::flat_set<UUID> & visited_profiles,
     bool skip_config_defined_profiles,
-    bool actor_is_config_defined) const
+    bool actor_is_config_defined,
+    const SettingsConstraints * resolved_constraints) const
 {
     /// An XML config profile may define a value and a writability constraint for the same setting
     /// as two separate elements (e.g. `<setting>false</setting>` and `<constraints><setting><readonly/></setting></constraints>`).
@@ -289,14 +297,16 @@ void SettingsConstraints::checkProfileElements(
                 continue;
             auto profile = access_control->tryRead<SettingsProfile>(profile_id);
             if (profile)
-                checkProfileElements(current_settings, profile->elements, SettingSource::PROFILE, visited_profiles, skip_config_defined_profiles, actor_is_config_defined);
+                checkProfileElements(
+                    current_settings, profile->elements, SettingSource::PROFILE, visited_profiles, skip_config_defined_profiles,
+                    actor_is_config_defined, resolved_constraints);
             continue;
         }
 
         if (SettingsProfileElements::isAllowBackupSetting(element.setting_name))
             continue;
 
-        checkProfileElementValues(current_settings, element, source, actor_is_config_defined);
+        checkProfileElementValues(current_settings, element, source, actor_is_config_defined, resolved_constraints);
         /// A trusted config-defined admin may declare looser writability than the current constraints.
         if (!actor_is_config_defined)
             checkProfileElementWritability(element, writability_map);
@@ -315,7 +325,8 @@ void SettingsConstraints::checkProfileElementValues(
     const Settings & current_settings,
     const SettingsProfileElement & element,
     SettingSource source,
-    bool actor_is_config_defined) const
+    bool actor_is_config_defined,
+    const SettingsConstraints * resolved_constraints) const
 {
     if (element.value)
     {
@@ -337,7 +348,7 @@ void SettingsConstraints::checkProfileElementValues(
 
     /// With `settings_constraints_replace_previous` a constraint replaces the one it overrides as a whole, so
     /// a bound it leaves out is lifted for whoever gets it. It must keep every bound the actor is subject to;
-    /// the values it declares are checked above.
+    /// the values it declares are checked above. At login the constraint the user ends up with is checked instead.
     if (actor_is_config_defined || !element.isConstraint() || element.writability == SettingConstraintWritability::CONST
         || !access_control || !access_control->doesSettingsConstraintsReplacePrevious())
         return;
@@ -346,15 +357,43 @@ void SettingsConstraints::checkProfileElementValues(
     if (it == constraints.end())
         return;
     const auto & bound = it->second;
-    bool keeps_disallowed_values = std::ranges::all_of(bound.disallowed_values, [&](const Field & value)
+
+    Constraint declared;
+    const Constraint * kept = &declared;
+    if (resolved_constraints)
     {
-        return std::ranges::any_of(element.disallowed_values, [&](const Field & element_value)
-        {
-            return settingCastValueUtil(setting_name, element_value) == value;
-        });
-    });
-    if ((!bound.min_value.isNull() && !element.min_value) || (!bound.max_value.isNull() && !element.max_value) || !keeps_disallowed_values)
-        throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "Setting {} should not be changed", setting_name);
+        auto resolved_it = resolved_constraints->constraints.find(setting_name);
+        if (resolved_it == resolved_constraints->constraints.end())
+            throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "Setting {} should not be changed", setting_name);
+        kept = &resolved_it->second;
+        if (kept->writability == SettingConstraintWritability::CONST)
+            return;
+    }
+    else
+    {
+        if (element.min_value)
+            declared.min_value = *element.min_value;
+        if (element.max_value)
+            declared.max_value = *element.max_value;
+        for (const auto & value : element.disallowed_values)
+            declared.disallowed_values.push_back(settingCastValueUtil(setting_name, value));
+    }
+
+    auto throw_lifted = [&](std::string_view what, const Field & value)
+    {
+        throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION,
+            "Setting {} should not be changed: its constraint leaves out the {} {}, which would lift it",
+            setting_name, what, applyVisitor(FieldVisitorToString(), value));
+    };
+    if (!bound.min_value.isNull() && kept->min_value.isNull())
+        throw_lifted("minimum", bound.min_value);
+    if (!bound.max_value.isNull() && kept->max_value.isNull())
+        throw_lifted("maximum", bound.max_value);
+    for (const auto & value : bound.disallowed_values)
+    {
+        if (std::ranges::find(kept->disallowed_values, value) == kept->disallowed_values.end())
+            throw_lifted("disallowed value", value);
+    }
 }
 
 void SettingsConstraints::checkProfileElementWritability(
@@ -439,6 +478,63 @@ void SettingsConstraints::checkResetToDefault(const Settings & current_settings,
     }
 }
 
+void SettingsConstraints::clampResetToDefault(
+    const Settings & current_settings,
+    std::vector<String> & names,
+    SettingsChanges & clamped_changes,
+    SettingSource source) const
+{
+    std::vector<String> allowed_resets;
+    allowed_resets.reserve(names.size());
+
+    for (const auto & name : names)
+    {
+        if (settingIsBuiltin(name))
+        {
+            /// A reset of a built-in setting is an assignment of its declared default, so it is clamped
+            /// as such. `checkOrClamp` erases a change it refuses, and also one that does not change the
+            /// value - the latter is a no-op reset, so dropping it is what we want either way.
+            const Field default_value = settingDefaultValue(name);
+            SettingsChanges reset_as_change{SettingChange{name, default_value}};
+            checkOrClamp(current_settings, reset_as_change, CLAMP_ON_VIOLATION, source);
+
+            if (reset_as_change.empty())
+                continue;
+
+            if (reset_as_change.front().value == default_value)
+                allowed_resets.push_back(name);
+            else
+                clamped_changes.push_back(reset_as_change.front());
+
+            continue;
+        }
+
+        /// Custom settings have no declared default: resetting one removes it, and there cannot be a
+        /// value constraint for such a setting, so the reset is either performed as written or dropped.
+        Field current_value;
+        bool has_current_value = current_settings.tryGet(name, current_value);
+        for (const auto & equivalent_name : settingEquivalentNames(name))
+        {
+            if (has_current_value)
+                break;
+            has_current_value = current_settings.tryGet(equivalent_name, current_value);
+        }
+
+        if (!has_current_value)
+        {
+            /// Resetting an absent custom setting is a no-op; preserve that behavior.
+            allowed_resets.push_back(name);
+            continue;
+        }
+
+        SettingChange change{name, current_value};
+        if (getChecker(current_settings, Settings::resolveName(name)).check(change, current_value, CLAMP_ON_VIOLATION, source))
+            allowed_resets.push_back(name);
+    }
+
+    names = std::move(allowed_resets);
+}
+
 void SettingsConstraints::check(const MergeTreeSettings & current_settings, const SettingChange & change) const
 {
     checkImpl(current_settings, const_cast<SettingChange &>(change), THROW_ON_VIOLATION);
@@ -455,14 +551,22 @@ void SettingsConstraints::clamp(const Settings & current_settings, SettingsChang
     checkOrClamp(current_settings, changes, CLAMP_ON_VIOLATION, source);
 }
 
+void SettingsConstraints::clampRejectingInvalidChanges(const Settings & current_settings, SettingsChanges & changes, SettingSource source) const
+{
+    checkOrClamp(current_settings, changes, CLAMP_ON_VIOLATION_THROW_ON_INVALID, source);
+}
+
 void SettingsConstraints::checkOrClamp(const Settings & current_settings, SettingsChanges & changes, ReactionOnViolation reaction, SettingSource source) const
 {
     /// If we filter out settings that match the current default here, `compatibility` will silently override them.
     /// So when `compatibility` is present, we keep unchanged settings so they are applied after `compatibility`.
     bool has_compatibility_setting = changes.tryGet("compatibility") != nullptr;
+    /// With `CLAMP_ON_VIOLATION_THROW_ON_INVALID` the surviving list is stored on the query node as the settings
+    /// set explicitly on that node, so a change equal to the current value must stay in the list.
+    bool ignore_unchanged_settings = has_compatibility_setting || reaction == CLAMP_ON_VIOLATION_THROW_ON_INVALID;
     std::erase_if(changes, [&](SettingChange & change)
     {
-        return !checkImpl(current_settings, change, reaction, source, /*ignore_unchanged_settings=*/has_compatibility_setting);
+        return !checkImpl(current_settings, change, reaction, source, ignore_unchanged_settings);
     });
 }
 
@@ -560,7 +664,10 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings,
     if (setting_name == "profile")
         return true;
 
-    if (reaction == THROW_ON_VIOLATION)
+    /// Invalid changes (an unknown or disallowed name, an uncastable value) throw in every mode but `CLAMP_ON_VIOLATION`.
+    const bool throw_on_invalid_change = reaction != CLAMP_ON_VIOLATION;
+
+    if (throw_on_invalid_change)
     {
         try
         {
@@ -581,7 +688,8 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings,
     else if (!access_control->isSettingNameAllowed(setting_name))
         return false;
 
-    Field new_value = getNewValueToCheck(current_settings, change, ignore_unchanged_settings, reaction == THROW_ON_VIOLATION);
+    Field new_value = getNewValueToCheck(
+        current_settings, change, ignore_unchanged_settings, /*throw_on_failure=*/ throw_on_invalid_change);
     if (new_value.isNull())
         return false;
 
@@ -636,9 +744,12 @@ bool SettingsConstraints::Checker::check(SettingChange & change,
                                          SettingSource source,
                                          bool actor_is_config_defined) const
 {
+    /// Every reaction other than `THROW_ON_VIOLATION` clamps or drops a violating change.
+    const bool throw_on_violation = reaction == THROW_ON_VIOLATION;
+
     if (!explain.text.empty())
     {
-        if (reaction == THROW_ON_VIOLATION)
+        if (throw_on_violation)
             throw Exception(explain, code);
         return false;
     }
@@ -648,7 +759,7 @@ bool SettingsConstraints::Checker::check(SettingChange & change,
     /// working because config-defined profiles/users are not checked when applied at login.
     if (!tier_explain.text.empty())
     {
-        if (reaction == THROW_ON_VIOLATION)
+        if (throw_on_violation)
             throw Exception(tier_explain, tier_code);
         return false;
     }
@@ -657,7 +768,7 @@ bool SettingsConstraints::Checker::check(SettingChange & change,
 
     auto less_or_cannot_compare = [=](const Field & left, const Field & right)
     {
-        if (reaction == THROW_ON_VIOLATION)
+        if (throw_on_violation)
             return accurateLess(left, right);
         try
         {
@@ -671,7 +782,7 @@ bool SettingsConstraints::Checker::check(SettingChange & change,
 
     auto equals_or_cannot_compare = [=](const Field & left, const Field & right)
     {
-        if (reaction == THROW_ON_VIOLATION)
+        if (throw_on_violation)
             return accurateEquals(left, right);
         try
         {
@@ -691,7 +802,7 @@ bool SettingsConstraints::Checker::check(SettingChange & change,
     {
         if (constraint.writability == SettingConstraintWritability::CONST)
         {
-            if (reaction == THROW_ON_VIOLATION)
+            if (throw_on_violation)
                 throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "Setting {} should not be changed", setting_name);
             return false;
         }
@@ -702,7 +813,7 @@ bool SettingsConstraints::Checker::check(SettingChange & change,
 
         if (!min_value.isNull() && !max_value.isNull() && less_or_cannot_compare(max_value, min_value))
         {
-            if (reaction == THROW_ON_VIOLATION)
+            if (throw_on_violation)
                 throw Exception(
                     ErrorCodes::SETTING_CONSTRAINT_VIOLATION,
                     "The maximum ({}) value is less than the minimum ({}) value for setting {}",
@@ -719,7 +830,7 @@ bool SettingsConstraints::Checker::check(SettingChange & change,
 
         if (!min_value.isNull() && less_or_cannot_compare(effective_value, min_value))
         {
-            if (reaction == THROW_ON_VIOLATION)
+            if (throw_on_violation)
             {
                 throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "Setting {} shouldn't be less than {}",
                     setting_name, applyVisitor(FieldVisitorToString(), min_value));
@@ -730,7 +841,7 @@ bool SettingsConstraints::Checker::check(SettingChange & change,
 
         if (!max_value.isNull() && less_or_cannot_compare(max_value, effective_value))
         {
-            if (reaction == THROW_ON_VIOLATION)
+            if (throw_on_violation)
             {
                 throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "Setting {} shouldn't be greater than {}",
                     setting_name, applyVisitor(FieldVisitorToString(), max_value));
@@ -744,7 +855,7 @@ bool SettingsConstraints::Checker::check(SettingChange & change,
             bool equals = equals_or_cannot_compare(value, effective_value);
             if (equals)
             {
-                if (reaction == THROW_ON_VIOLATION)
+                if (throw_on_violation)
                     throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "Setting {} shouldn't be {}",
                         setting_name, applyVisitor(FieldVisitorToString(), value));
                 /// On clamp paths there is no sensible value to clamp to — disallowed entries are a
@@ -757,7 +868,7 @@ bool SettingsConstraints::Checker::check(SettingChange & change,
 
     if (!getSettingSourceRestrictions(setting_name).isSourceAllowed(source))
     {
-        if (reaction == THROW_ON_VIOLATION)
+        if (throw_on_violation)
             throw Exception(ErrorCodes::READONLY, "Setting {} is not allowed to be set by {}", setting_name, toString(source));
         return false;
     }

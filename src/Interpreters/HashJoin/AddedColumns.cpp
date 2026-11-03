@@ -65,13 +65,13 @@ const UInt8 * JoinOnKeyColumns::buildRowSkipData(IColumn::Filter & buffer, size_
     });
 }
 
-const UInt8 * JoinOnKeyColumns::buildRowSkipData(IColumn::Filter & buffer, const ScatteredBlock::Indexes & indexes) const
+void LazyOutput::addRef(UInt64 ref_word)
 {
-    return buildRowSkipDataImpl(null_map, join_mask_column, buffer, [&](auto && set_at)
-    {
-        for (size_t i : indexes.getData())
-            set_at(i);
-    });
+    chassert(ref_word != 0);
+    row_refs.emplace_back(ref_word);
+    const auto rows = refWordRows(ref_word);
+    row_count += rows;
+    hash_table_matches += rows;
 }
 
 size_t LazyOutput::buildOutput(
@@ -271,17 +271,6 @@ planJoinEmit(const HashJoin::RightTableData & data, std::span<const size_t> posi
     for (size_t dst_idx = 0; dst_idx < positions.size(); ++dst_idx)
         plan.gather[dst_idx] = gather_by_position[positions[dst_idx]];
     return plan;
-}
-
-void AddedColumns::appendFromBlock(UInt64 ref_word)
-{
-#ifndef NDEBUG
-    /// `ref_word` may be an inline single ref or a list word (pointer + count); firstWord yields
-    /// the head ref of either, whose block is valid for the column-structure assertion.
-    checkColumns(*lazy_output.stored_columns[refWordBlockNo(RowRefList::fromWord(ref_word).firstWord())]);
-#endif
-    if (record_row_refs)
-        lazy_output.addRef(ref_word);
 }
 
 }

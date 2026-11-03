@@ -74,6 +74,9 @@ public:
     /// Returns a reference to the session's ClientInfo.
     const ClientInfo & getClientInfo() const;
 
+    /// Returns the ID of the authenticated user, or `std::nullopt` before the authentication.
+    std::optional<UUID> getUserID() const { return user_id; }
+
     /// Modify the session's ClientInfo.
     void setClientInfo(const ClientInfo & client_info);
     void setClientName(const String & client_name);
@@ -89,7 +92,7 @@ public:
     OpenTelemetry::TracingContext & getClientTraceContext();
 
     /// Makes a session context, can be used one or zero times.
-    /// The function also assigns an user to this context.
+    /// The function also assigns a user to this context.
     ContextMutablePtr makeSessionContext();
     ContextMutablePtr makeSessionContext(const String & session_name_, std::chrono::steady_clock::duration timeout_, bool session_check_);
     ContextMutablePtr sessionContext() { return session_context; }
@@ -100,7 +103,7 @@ public:
 
     /// Makes a query context, can be used multiple times, with or without makeSession() called earlier.
     /// The query context will be created from a copy of a session context if it exists, or from a copy of
-    /// a global context otherwise. In the latter case the function also assigns an user to this context.
+    /// a global context otherwise. In the latter case the function also assigns a user to this context.
     ContextMutablePtr makeQueryContext() const { return makeQueryContext(getClientInfo()); }
     ContextMutablePtr makeQueryContext(const ClientInfo & query_client_info) const;
     ContextMutablePtr makeQueryContext(ClientInfo && query_client_info) const;

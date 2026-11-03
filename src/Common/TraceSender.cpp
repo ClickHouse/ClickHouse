@@ -22,6 +22,10 @@ static_assert(TraceSender::QUERY_ID_MAX_LEN <= std::numeric_limits<uint8_t>::max
 LazyPipeFDs TraceSender::pipe;
 std::atomic<bool> TraceSender::shutdown{false};
 std::atomic<int> TraceSender::in_flight{0};
+std::mutex TraceSender::flush_mutex;
+std::condition_variable TraceSender::flush_cv;
+UInt64 TraceSender::flush_requested = 0;
+UInt64 TraceSender::flush_completed = 0;
 
 static thread_local bool inside_send = false;
 

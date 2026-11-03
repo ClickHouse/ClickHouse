@@ -1822,6 +1822,21 @@ TEST(CompressionCodecMultipleTest, NestedCodecDescription)
     EXPECT_EQ(inner_description->formatForErrorMessage(), "LZ4, ZSTD(3)");
 }
 
+TEST(CompressionCodecMultipleTest, DescriptionsHaveCodecKind)
+{
+    /// `findSecretArguments` skips `Kind::CODEC`, so programs without a secret arguments finder can format these.
+    const auto kind = [](const ASTPtr & description) { return description->as<const ASTFunction &>().getKind(); };
+
+    const auto single = CompressionCodecFactory::instance().get("ZSTD(3)");
+    const auto chain = CompressionCodecFactory::instance().get("LZ4, ZSTD(3)");
+    const CompressionCodecPtr nested = std::make_shared<CompressionCodecMultiple>(Codecs{chain});
+
+    EXPECT_EQ(kind(single->getCodecDescription()), ASTFunction::Kind::CODEC);
+    EXPECT_EQ(kind(single->getFullCodecDescription()), ASTFunction::Kind::CODEC);
+    EXPECT_EQ(kind(chain->getFullCodecDescription()), ASTFunction::Kind::CODEC);
+    EXPECT_EQ(kind(nested->getFullCodecDescription()), ASTFunction::Kind::CODEC);
+}
+
 TEST(CompressionCodecMultipleTest, DecompressMalformedInputReversedRange)
 {
     /// Reproducer for process abort when `compression_methods_size + 1 > source_size`:

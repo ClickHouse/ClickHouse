@@ -1,0 +1,18 @@
+Heap states
+matches the baseline	1
+frozen tables written to disk	1
+Arena states
+matches the baseline	1
+frozen tables written to disk	1
+Fixed states
+matches the baseline	1
+frozen tables written to disk	0
+Inline count
+matches the baseline	1
+frozen tables written to disk	0
+Key-only table
+matches the baseline	1
+frozen tables written to disk	0
+Key-only string table
+matches the baseline	1
+frozen tables written to disk	0

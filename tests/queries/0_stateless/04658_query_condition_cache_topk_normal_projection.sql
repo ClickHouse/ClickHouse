@@ -17,7 +17,6 @@
 -- column): a `__topKFilter` node in the prewhere would be non-deterministic and already suppress
 -- the reader-level write, hiding the gate.
 
-SET allow_experimental_analyzer = 1;
 SET use_query_condition_cache = 1;
 -- Turn the gate off: this test covers the contract of the query condition cache being
 -- switched off for TopK reads.

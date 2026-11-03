@@ -13,13 +13,13 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-## alter_move_to_space_execute_async
+## alter_move_to_space_execute_async {#alter_move_to_space_execute_async}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 以异步方式执行 ALTER TABLE MOVE ... TO [DISK|VOLUME]
 
-## alter_partition_verbose_result
+## alter_partition_verbose_result {#alter_partition_verbose_result}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -54,13 +54,13 @@ ALTER TABLE test FREEZE SETTINGS alter_partition_verbose_result = 1;
 └──────────────┴──────────────┴──────────────┴─────────────┴───────────────────────────────┴─────────────────────────────────────────────────────────────┘
 ```
 
-## alter_sync
+## alter_sync {#alter_sync}
 
 **别名**: `replication_alter_partitions_sync`
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
 
-用于指定由 [`ALTER`](/zh/reference/statements/alter/index)、[`OPTIMIZE`](/zh/reference/statements/optimize) 或 [`TRUNCATE`](/zh/reference/statements/truncate) 查询触发、并在副本上执行的操作的等待行为。
+用于指定 [`ALTER`](/zh/reference/statements/alter/index)、[`OPTIMIZE`](/zh/reference/statements/optimize) 或 [`TRUNCATE`](/zh/reference/statements/truncate) 查询如何等待其操作完成。
 
 可能的值：
 
@@ -72,10 +72,10 @@ ALTER TABLE test FREEZE SETTINGS alter_partition_verbose_result = 1;
 Cloud 默认值：`0`。
 
 <Note>
-  `alter_sync` 仅适用于 `Replicated` 和 `SharedMergeTree` 表；对非 `Replicated` 或 `Shared` 表执行 alter 时，此设置不起作用。
+  `alter_sync` 适用于 `MergeTree` 家族表上的 `ALTER` 查询。仅在 `ReplicatedMergeTree` 和 `SharedMergeTree` 表上，值 `2` 和 `3` 才会等待副本。
 </Note>
 
-## alter_update_mode
+## alter_update_mode {#alter_update_mode}
 
 <SettingsInfoBlock type="AlterUpdateMode" default_value="heavy" />
 

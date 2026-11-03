@@ -33,6 +33,11 @@ class SelectionConfig:
     # Rows of `checks_coverage_lines` that belong to this kind of test.
     coverage_check_name_like: str = "Stateless%per_test_coverage%"
     coverage_test_name_pattern: str = "^[0-9]{5}_"
+    # A failed GitHub API read of the selection is retried this long, then the targeted job skips.
+    github_retry_sec: int = 180
+    # Coverage queries are split by file into queries of at most this size: CIDB
+    # rejects queries over 256 KiB (`max_query_size`), and smaller ones run faster.
+    coverage_query_max_bytes: int = 32 * 1024
 
 
 SELECTION_CONFIG = SelectionConfig()

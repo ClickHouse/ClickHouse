@@ -16,6 +16,9 @@
 #include <Common/StringUtils.h>
 #include <Core/ServerSettings.h>
 #include <Core/UUID.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeString.h>
 #include <Interpreters/AsynchronousInsertLog.h>
 #include <Interpreters/AsynchronousMetricLog.h>
 #include <Interpreters/BackupLog.h>
@@ -49,20 +52,25 @@
 #include <Interpreters/DeadLetterQueue.h>
 #include <Interpreters/SessionLog.h>
 #include <Interpreters/TextLog.h>
+#include <Interpreters/TraceCollector.h>
 #include <Interpreters/TraceLog.h>
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Interpreters/ZooKeeperLog.h>
 #include <Interpreters/AggregatedZooKeeperLog.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTRenameQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTTTLElement.h>
 #include <Parsers/CommonParsers.h>
+#include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserSetQuery.h>
@@ -655,6 +663,10 @@ void SystemLogs::flushImpl(const std::vector<std::pair<String, String>> & names,
         if (text_log)
             flushAsyncTextLogsIfPossible();
 
+        /// Not at shutdown (`ignore_errors`), which a stuck collector would delay.
+        if (trace_log && !ignore_errors)
+            TraceCollector::flush();
+
         for (auto * log : getAllLogs())
         {
             log->flushBufferToLog(std::chrono::system_clock::now());
@@ -719,6 +731,8 @@ void SystemLogs::flushImpl(const std::vector<std::pair<String, String>> & names,
 
             if (log == text_log.get())
                 flushAsyncTextLogsIfPossible();
+            else if (log == trace_log.get())
+                TraceCollector::flush();
 
             log->flushBufferToLog(std::chrono::system_clock::now());
 
@@ -1197,6 +1211,7 @@ void SystemLog<LogElement>::prepareTable()
 
         auto query_context = Context::createCopy(context);
         query_context->makeQueryContext();
+
         addSettingsForQuery(query_context, IAST::QueryKind::Create);
 
         auto create_query_ast = getCreateTableQuery();
@@ -1354,6 +1369,51 @@ void SystemLog<LogElement>::addSettingsForQuery(ContextMutablePtr & mutable_cont
         /// (e.g. marking a rotated table as readonly).
         mutable_context->setSetting("max_query_size", Field{UInt64{0}});
     }
+    else if (query_kind == IAST::QueryKind::Create)
+    {
+        /// Ensure system tables keep a stable schema.
+        /// Disable user-configurable type-related settings to avoid implicit data type changes.
+        /// This applies to the log table as well as to its union table: both are created from
+        /// the same explicit column list, so a session that flips one of these settings would
+        /// otherwise be able to give them different structures, which makes the union table
+        /// mismatch its definition on every check and be recreated on every flush.
+        /// Note: `data_type_default_nullable` is the live half of this pin (several log tables
+        /// declare plain types that it would wrap into `Nullable`), while `flatten_nested` is
+        /// defensive: no system log element currently declares a `Nested` column, so it only
+        /// protects future schema additions and cannot be exercised by a regression test today.
+        mutable_context->setSetting("flatten_nested", false);
+        mutable_context->setSetting("data_type_default_nullable", false);
+    }
+}
+
+/// Replace references to ALIAS columns with their expressions.
+static void replaceAliasColumns(ASTPtr & ast, const std::unordered_map<String, ASTPtr> & alias_expressions)
+{
+    if (const auto * identifier = ast->as<ASTIdentifier>())
+    {
+        if (auto it = alias_expressions.find(identifier->name()); it != alias_expressions.end())
+            ast = it->second->clone();
+        return;
+    }
+
+    /// `TTL ... GROUP BY key SET column = expr` keeps the keys and assignments outside `children`.
+    if (auto * ttl_element = ast->as<ASTTTLElement>())
+    {
+        for (auto & key : ttl_element->group_by_key)
+            replaceAliasColumns(key, alias_expressions);
+        for (auto & assignment : ttl_element->group_by_assignments)
+            replaceAliasColumns(assignment, alias_expressions);
+    }
+    /// The assigned column is a name, not an expression, so only an alias to a renamed column can be mapped.
+    else if (auto * assignment = ast->as<ASTAssignment>())
+    {
+        if (auto it = alias_expressions.find(assignment->column_name); it != alias_expressions.end())
+            if (const auto * target = it->second->as<ASTIdentifier>())
+                assignment->column_name = target->name();
+    }
+
+    for (auto & child : ast->children)
+        replaceAliasColumns(child, alias_expressions);
 }
 
 template <typename LogElement>
@@ -1404,6 +1464,35 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
     /// does not emit those artificial wrapping parens in `system.tables.engine_full`.
     if (auto * storage = storage_with_comment.storage->as<ASTStorage>())
     {
+        /// Key and TTL expressions cannot use ALIAS columns, while the configuration may
+        /// still reference renamed columns that are kept as aliases for compatibility
+        /// (e.g. `finish_date` in `system.opentelemetry_span_log`), so replace them with
+        /// the aliased expressions.
+        if (!alias_columns.empty())
+        {
+            std::unordered_map<String, ASTPtr> alias_expressions;
+            ParserExpression expression_parser;
+            for (const auto & alias : alias_columns)
+                alias_expressions[alias.name] = parseQuery(expression_parser, alias.expression,
+                    "expression for alias column " + backQuote(alias.name),
+                    0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+
+            auto replace_aliases = [&](IAST *& key)
+            {
+                if (!key)
+                    return;
+                ASTPtr new_key = key->ptr();
+                replaceAliasColumns(new_key, alias_expressions);
+                if (new_key.get() != key)
+                    storage->replace(key, new_key);
+            };
+            replace_aliases(storage->partition_by);
+            replace_aliases(storage->order_by);
+            replace_aliases(storage->primary_key);
+            replace_aliases(storage->sample_by);
+            replace_aliases(storage->ttl_table);
+        }
+
         if (storage->partition_by)
             storage->partition_by->setParenthesized(false);
         if (storage->order_by)
@@ -1478,6 +1567,15 @@ ASTPtr SystemLog<LogElement>::getCreateUnionTableQuery()
     auto alias_columns = LogElement::getNamesAndAliases();
     if constexpr (std::is_same_v<LogElement, BucketedMetricLogElement>)
     {
+        /// The `Enum16` keys of `metrics` are numbered by the position of a metric, which changes between versions,
+        /// and a cast between two such enums fails or relabels the keys. A `String` key is cast by name.
+        ordinary_columns.modify("metrics", [](ColumnDescription & column)
+        {
+            const auto & map_type = typeid_cast<const DataTypeMap &>(*column.type);
+            column.type = std::make_shared<DataTypeMap>(
+                std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), map_type.getValueType());
+        });
+
         /// The per-metric columns of the `bucketed` schema are `ALIAS metrics['...']`, while the rotated
         /// tables of the `wide` schema (which was the default before) have them as ordinary columns and
         /// have no `metrics` column at all. An `ALIAS` in the union table would be expanded before reading

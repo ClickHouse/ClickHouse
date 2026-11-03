@@ -1,5 +1,6 @@
 import contextlib
 import os
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -141,6 +142,8 @@ def test_dynamic_handler_put_delete_still_readonly():
             "CREATE DATABASE IF NOT EXISTS test_put_delete_db"
         )
 
+        modifying_query_body = "CREATE DATABASE IF NOT EXISTS test_default_query_put_db"
+
         for method in ("PUT", "DELETE"):
             # A read-only query is allowed over PUT/DELETE for a config handler (nothing to force).
             res_select = cluster.instance.http_request(
@@ -161,6 +164,27 @@ def test_dynamic_handler_put_delete_still_readonly():
             assert (
                 "Cannot execute query in readonly mode" in res_modify.content.decode()
             ), method
+
+
+        # The default query parameter name is also used by configured dynamic handlers. It must not
+        # enable the built-in path-upload mutation exception for a handler-owned PUT route.
+        res_default_modify = cluster.instance.http_request(
+            "test_dynamic_handler_default_query_put",
+            method="PUT",
+            data=modifying_query_body,
+        )
+        assert 200 != res_default_modify.status_code
+        assert "Cannot execute query in readonly mode" in res_default_modify.content.decode()
+
+        # A configured handler that owns a path with a format-looking suffix must also keep the
+        # request readonly; the built-in path-upload exception is only for its catch-all handler.
+        res_default_suffix_modify = cluster.instance.http_request(
+            "test_dynamic_handler_default_query_put.CSV",
+            method="PUT",
+            data=modifying_query_body,
+        )
+        assert 200 != res_default_suffix_modify.status_code
+        assert "Cannot execute query in readonly mode" in res_default_suffix_modify.content.decode()
 
 
 def test_predefined_query_handler():
@@ -1090,3 +1114,38 @@ def test_catch_all_handler():
             response = cluster.instance.http_request(path, method="GET")
             assert response.status_code == 200, f"{path} -> {response.status_code}"
             assert response.content == b"catch-all matched", path
+
+
+def test_command_line_handlers_survive_reload():
+    # The configuration file has no <http_handlers>: the rule comes only from the command line.
+    cluster = ClickHouseCluster(__file__, "test_command_line_handlers_survive_reload")
+    instance = cluster.add_instance(
+        "command_line_handlers",
+        user_configs=["users.d/users.yaml"],
+        extra_args="--http_handlers.rule.url=/command_line "
+        "--http_handlers.rule.handler.type=static "
+        "--http_handlers.rule.handler.response_content=from_command_line",
+    )
+    try:
+        cluster.start()
+        instance.wait_for_log_line("Ready for connections")
+        response = instance.http_request("command_line", method="GET")
+        assert response.content == b"from_command_line"
+
+        reloaded = "config.xml', performed update on configuration"
+        loads = int(instance.count_in_log(reloaded))
+        instance.query("SYSTEM RELOAD CONFIG")
+        instance.query("SYSTEM RELOAD CONFIG")
+        # The log is written asynchronously: wait until both reloads are in it.
+        for _ in range(300):
+            if int(instance.count_in_log(reloaded)) >= loads + 2:
+                break
+            time.sleep(0.1)
+        assert int(instance.count_in_log(reloaded)) >= loads + 2
+
+        # An unchanged configuration must not restart the listener.
+        assert int(instance.count_in_log("Stopped listening for http://")) == 0
+        response = instance.http_request("command_line", method="GET")
+        assert response.content == b"from_command_line"
+    finally:
+        cluster.shutdown()
