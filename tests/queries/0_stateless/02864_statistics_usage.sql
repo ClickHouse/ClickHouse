@@ -1,3 +1,5 @@
+-- Tags: no-parallel-replicas
+-- Tag no-parallel-replicas: the test only checks query plans, which parallel replicas change
 -- Test that the optimizer picks up column statistics
 -- (The concrete statistics type, column data type and predicate type don't matter)
 -- Checks by the predicate evaluation order in EXPLAIN. This is quite fragile, a better approach would be helpful (maybe 'send_logs_level'?)

@@ -230,6 +230,8 @@ QueryTreeNodePtr prepareQueryAffectedQueryTree(const std::vector<MutationCommand
     return query_tree;
 }
 
+}
+
 ColumnDependencies getAllColumnDependencies(
     const StorageMetadataPtr & metadata_snapshot,
     const NameSet & updated_columns,
@@ -254,8 +256,6 @@ ColumnDependencies getAllColumnDependencies(
     }
 
     return dependencies;
-}
-
 }
 
 
@@ -670,6 +670,13 @@ static void validateUpdateColumns(
 
     const auto & storage_columns = storage_snapshot->metadata->columns;
     const auto & virtual_columns = storage_snapshot->metadata->virtuals;
+
+    /// The sign and version columns may be subcolumns, so recomputing the column they belong to changes them as well.
+    for (const auto & key_column : key_columns)
+    {
+        if (auto column = storage_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, key_column))
+            key_storage_columns.insert(column->getNameInStorage());
+    }
     for (const auto & column_name : updated_columns)
     {
         if (key_columns.contains(column_name))
