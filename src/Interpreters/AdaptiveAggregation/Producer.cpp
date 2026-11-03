@@ -703,9 +703,14 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
             const UInt64 hash = hashes[i];
             const size_t partition = layout.partitionOf(hash);
             const size_t key_size = key_size_of(i);
-            const size_t bytes = format.bytesForKey(key_size);
-            UInt32 rest = Record::with_count ? misses.getMultiplicities()[i] : 0;
-            auto count = static_cast<UInt8>(std::min<UInt32>(rest, std::numeric_limits<UInt8>::max()));
+            UInt32 rest = 0;
+            UInt32 count = 0;
+            if constexpr (Record::with_count)
+            {
+                rest = misses.getMultiplicities()[i];
+                count = std::min(rest, Record::max_count);
+            }
+            const size_t bytes = format.bytesForKey(key_size, count);
             char * record = partitions.append(partition, bytes);
             char * const stored_key = format.writeHeader(record, hash, key_size, count);
             write_key(i, key_size, stored_key);
@@ -714,16 +719,18 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
             key_bytes += stored_key_size;
             record_bytes += bytes;
 
-            /// A count past `UInt8` continues in further records of the key.
+            /// A count past the format's `max_count`, the largest that one record holds, continues in further records
+            /// of the key.
             if constexpr (Record::with_count)
             {
                 for (rest -= count; rest; rest -= count)
                 {
-                    count = static_cast<UInt8>(std::min<UInt32>(rest, std::numeric_limits<UInt8>::max()));
-                    char * extra = partitions.append(partition, bytes);
+                    count = std::min(rest, Record::max_count);
+                    const size_t extra_bytes = format.bytesForKey(key_size, count);
+                    char * extra = partitions.append(partition, extra_bytes);
                     memcpy(format.writeHeader(extra, hash, key_size, count), stored_key, stored_key_size);
                     key_bytes += stored_key_size;
-                    record_bytes += bytes;
+                    record_bytes += extra_bytes;
                 }
             }
         }
