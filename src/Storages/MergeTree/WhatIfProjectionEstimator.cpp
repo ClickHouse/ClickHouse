@@ -72,6 +72,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool use_const_adaptive_granularity;
     extern const MergeTreeSettingsNonZeroUInt64 merge_max_block_size;
     extern const MergeTreeSettingsUInt64 merge_max_block_size_bytes;
+    extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
     extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
 }
 
@@ -164,7 +165,8 @@ void appendRowSizes(ProjectionPartData & out, const Block & block, bool merged)
 /// a merge under a constant granularity sizes the granule of a wide part from the bytes that its merged parts store
 /// a group of the part is in one or more of them, and a state there is at least an empty state
 /// a state that is not of a fixed size can be of any size there
-void setStoredBytes(ProjectionPartData & out, const Block & block)
+/// with sparse serialization, a key column with default values can take no bytes for a row there
+void setStoredBytes(ProjectionPartData & out, const Block & block, bool sparse_keys)
 {
     ISerialization::SerializeBinaryBulkSettings settings;
     for (const auto & elem : block)
@@ -189,6 +191,8 @@ void setStoredBytes(ProjectionPartData & out, const Block & block)
             function.serialize(assert_cast<const ColumnAggregateFunction &>(*empty).getData()[0], empty_state);
             least = std::min(least, empty_state.count() * block.rows());
         }
+        else if (sparse_keys && elem.type->supportsSparseSerialization() && (isTuple(elem.type) || elem.column->getNumberOfDefaultRows() != 0))
+            least = 0;
         out.stored_bytes_floor += least;
     }
 }
@@ -459,7 +463,7 @@ String buildProjectionPart(
             if (constant_granularity && wide)
             {
                 merged_by_blocks = compact;
-                setStoredBytes(out, merged);
+                setStoredBytes(out, merged, mt_settings[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization] < 1);
             }
         }
         add(std::move(merged));
