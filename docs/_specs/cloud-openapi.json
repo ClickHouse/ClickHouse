@@ -5,7 +5,7 @@
     "version": "1.0",
     "contact": {
       "name": "ClickHouse Support",
-      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1310615",
+      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1312017",
       "email": "support@clickhouse.com"
     }
   },
@@ -16232,7 +16232,7 @@
     "/v1/organizations/{organizationId}/postgres/{postgresId}/backups": {
       "get": {
         "summary": "List of Postgres service backups",
-        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Returns a list of the base backups retained for a Postgres service, ordered by last modified date, newest first. Results are capped at `limit` (default and maximum 100) per page. Every response carries `limit`, `totalCount` and `nextCursor`; pass `nextCursor` as the `cursor` query parameter to fetch the next page, repeating until it is null. A Postgres service is recovered to a point in time rather than to a single backup, so restore it with the restore endpoint and a timestamp rather than with a backup key from this list.",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Returns a list of the base backups retained for a Postgres service, ordered by last modified date, newest first. Results are capped at `limit` (default and maximum 100) per page. Every response carries `limit`, `totalCount` and `nextCursor`; pass `nextCursor` as the `cursor` query parameter to fetch the next page, repeating until it is null. A Postgres service is recovered to a point in time rather than to a single backup, so restore it with the restore endpoint and a timestamp between the service's `earliestRestoreTime` and now, rather than with a backup key from this list.",
         "operationId": "postgresServiceBackupGetList",
         "parameters": [
           {
@@ -28916,6 +28916,16 @@
           "enabled"
         ]
       },
+      "ClickPipeMongoDBTableConfig": {
+        "properties": {
+          "persistDeletedDocuments": {
+            "description": "Persist the full document as it was right before it was deleted, instead of only its _id. Requires changeStreamPreAndPostImages to be enabled on the source collection.",
+            "type": "boolean",
+            "example": false,
+            "default": false
+          }
+        }
+      },
       "ClickPipeMongoDBPipeTableMapping": {
         "properties": {
           "sourceDatabaseName": {
@@ -28945,6 +28955,9 @@
           },
           "structuredIngestion": {
             "$ref": "#/components/schemas/ClickPipeMongoDBStructuredIngestion"
+          },
+          "mongoConfig": {
+            "$ref": "#/components/schemas/ClickPipeMongoDBTableConfig"
           }
         },
         "required": [
@@ -35911,6 +35924,14 @@
             ],
             "example": "SeverityText"
           },
+          "severityNumberExpression": {
+            "description": "Expression for the numeric OpenTelemetry SeverityNumber (1-24).",
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "SeverityNumber"
+          },
           "bodyExpression": {
             "description": "Expression to extract the log message body.",
             "type": [
@@ -35918,6 +35939,14 @@
               "null"
             ],
             "example": "Body"
+          },
+          "eventNameExpression": {
+            "description": "Expression for the OpenTelemetry log EventName.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "EventName"
           },
           "eventAttributesExpression": {
             "description": "Expression to extract event-level attributes.",
@@ -40231,6 +40260,11 @@
           "hostname": {
             "description": "Hostname for the Postgres service",
             "type": "string"
+          },
+          "earliestRestoreTime": {
+            "description": "Earliest point in time the service can be restored to with the restore endpoint. ISO-8601. Only present for a primary service once its first backup has completed.",
+            "type": "string",
+            "format": "date-time"
           }
         }
       },
@@ -40468,8 +40502,12 @@
             "type": "string",
             "example": "basebackups_005/000000010000000000000002_backup_stop_sentinel.json"
           },
+          "status": {
+            "description": "Status of the backup. Only completed backups are listed, so this is always `ready`.",
+            "type": "string"
+          },
           "lastModified": {
-            "description": "Time the backup was last written to. ISO-8601.",
+            "description": "Time the backup finished. ISO-8601. This is not the earliest point a service can be restored to; use `earliestRestoreTime` on the Postgres service for that.",
             "type": "string",
             "format": "date-time",
             "example": "2026-03-31T18:17:37Z"
@@ -40477,6 +40515,7 @@
         },
         "required": [
           "key",
+          "status",
           "lastModified"
         ]
       },
@@ -41187,14 +41226,6 @@
           },
           "backupEncryptionConfig": {
             "$ref": "#/components/schemas/BackupEncryptionConfig"
-          },
-          "encryptionKey": {
-            "description": "Optional customer provided disk encryption key",
-            "type": "string"
-          },
-          "encryptionAssumedRoleIdentifier": {
-            "description": "Optional role to use for disk encryption",
-            "type": "string"
           },
           "privateEndpointIds": {
             "type": "array",

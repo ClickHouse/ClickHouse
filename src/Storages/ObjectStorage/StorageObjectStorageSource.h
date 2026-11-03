@@ -93,7 +93,11 @@ public:
     /// Compose the Query Condition Cache key (`part_name`) for an object, or return nullopt when the
     /// object cannot be safely cached and caching must be skipped (fail-close). Exposed for testing:
     /// the safety-critical contract is that a weak etag (e.g. HDFS) never keys the cache.
+    static std::optional<String> makeQueryConditionCacheKey(
+        const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, const UUID & table_uuid);
+    /// The key for a table with a UUID, from the path of the object within its storage.
     static std::optional<String> makeQueryConditionCacheKey(const ObjectInfo & object_info, bool is_data_lake);
+    static std::optional<String> makeQueryConditionCacheKey(const String & identifier, const ObjectInfo & object_info, bool is_data_lake);
 
 protected:
     StorageID storage_id;
@@ -107,6 +111,8 @@ protected:
     const bool need_only_count;
     FormatParserSharedResourcesPtr parser_shared_resources;
     FormatFilterInfoPtr format_filter_info;
+    /// The `table_id` of the query condition cache entries (see `QueryConditionCache::getTableIdForFileEntries`).
+    UUID query_condition_cache_table_id = UUIDHelpers::Nil;
     ObjectStorageTopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key;
 
     /// A file read by a TopN read, whose query condition cache entry is written only when the source
@@ -184,6 +190,7 @@ protected:
     static ReaderHolder createReader(
         size_t processor,
         const StorageID & storage_id,
+        const UUID & query_condition_cache_table_id,
         const std::shared_ptr<IObjectIterator> & file_iterator,
         const StorageObjectStorageConfigurationPtr & configuration,
         const ObjectStoragePtr & object_storage,
@@ -196,9 +203,10 @@ protected:
         FormatParserSharedResourcesPtr parser_shared_resources,
         FormatFilterInfoPtr format_filter_info,
         bool need_only_count,
-        ObjectStorageTopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key = nullptr);
+        ObjectStorageTopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key = nullptr,
+        bool prefetch_input_format = false);
 
-    ReaderHolder createReader();
+    ReaderHolder createReader(bool prefetch_input_format = false);
 
     /// Writes `pending_top_k_query_condition_cache_entries` to the query condition cache.
     void writePendingTopKQueryConditionCacheEntries();
@@ -206,6 +214,9 @@ protected:
     std::future<ReaderHolder> createReaderAsync();
 
     void addNumRowsToCache(const ObjectInfo & object_info, size_t num_rows);
+    /// Add the number of rows of the object recorded in the table metadata (e.g. `record_count` of an
+    /// Iceberg data file) to the total number of rows to read, so that the progress of the query is known.
+    void addTotalRowsApproxFromMetadata(const ObjectInfo & object_info);
     void lazyInitialize();
 };
 

@@ -19,6 +19,7 @@ SETTINGS table_disk = 1, disk = disk(
     type = 'object_storage',
     object_storage_type = 'local',
     metadata_type = 'plain_rewritable',
+    metadata_snapshot_write_delay_ms = 0, -- the reader sees the snapshot of the state right after every commit
     path = '${disk_path}');
 
 INSERT INTO writer VALUES (1), (2), (3);
@@ -45,6 +46,8 @@ SELECT sum(a) FROM reader;
 SYSTEM WAIT BLOBS CLEANUP '05345_cache_${CLICKHOUSE_DATABASE}';
 
 SYSTEM FLUSH LOGS text_log;
+
+SET max_rows_to_read = 0; -- system.text_log can be really big
 
 SELECT 'cache layer, blob killer started', count() FROM system.text_log
 WHERE logger_name = '05345_cache_${CLICKHOUSE_DATABASE}::BlobKillerThread' AND message LIKE 'Execution started%';

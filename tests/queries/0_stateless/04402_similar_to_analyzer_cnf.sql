@@ -1,6 +1,6 @@
 -- Regression for the analyzer CNF: `similarTo`/`notSimilarTo` must be present in the analyzer's
 -- `pushNotIntoFunction`/`pullNotOutFunctions` inverse maps (src/Analyzer/Passes/CNF.cpp), mirroring
--- the legacy `TreeCNFConverter`. Otherwise, under `enable_analyzer = 1`, `NOT (s SIMILAR TO p)` is
+-- the legacy `TreeCNFConverter`. Otherwise, `NOT (s SIMILAR TO p)` is
 -- not normalized to `notSimilarTo(s, p)`, so constraint-based optimization diverges from the
 -- explicit `s NOT SIMILAR TO p` form (which the parser already produces as `notSimilarTo`).
 
@@ -22,9 +22,9 @@ INSERT INTO t_similar_to_cnf VALUES ('xyz');
 -- removed entirely. Both filter forms must be optimized identically by the analyzer.
 
 SELECT '-- NOT (s SIMILAR TO ...)';
-EXPLAIN QUERY TREE SELECT count() FROM t_similar_to_cnf WHERE NOT (s SIMILAR TO 'a%') SETTINGS enable_analyzer = 1;
+EXPLAIN QUERY TREE SELECT count() FROM t_similar_to_cnf WHERE NOT (s SIMILAR TO 'a%');
 
 SELECT '-- s NOT SIMILAR TO ...';
-EXPLAIN QUERY TREE SELECT count() FROM t_similar_to_cnf WHERE s NOT SIMILAR TO 'a%' SETTINGS enable_analyzer = 1;
+EXPLAIN QUERY TREE SELECT count() FROM t_similar_to_cnf WHERE s NOT SIMILAR TO 'a%';
 
 DROP TABLE t_similar_to_cnf;

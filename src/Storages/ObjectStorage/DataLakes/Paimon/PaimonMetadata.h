@@ -6,6 +6,7 @@
 #include <atomic>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <vector>
 #include <Disks/IStoragePolicy.h>
 #include <Interpreters/Context_fwd.h>
@@ -100,6 +101,7 @@ private:
 
     Strings collectDataFilesFromManifests(
         const std::vector<PaimonTableStatePtr> & snapshots,
+        const PaimonTableSchema & read_schema,
         ManifestKind kind,
         const std::optional<Paimon::PartitionPruner> & partition_pruner,
         bool deduplicate,
@@ -118,22 +120,32 @@ private:
     /// Throws if the snapshot's index manifest lists deletion vectors. Pass the cursor of an incremental read for its recovery hint.
     void checkNoDeletionVectors(const PaimonTableState & state, std::optional<Int64> incremental_cursor = {}) const;
 
+    /// Throws if a data file written with schema `file_schema_id` cannot be read by column name with `read_schema`.
+    void checkDataFileSchema(
+        const String & file_path,
+        Int64 file_schema_id,
+        const PaimonTableSchema & read_schema,
+        std::optional<Int64> incremental_cursor) const;
+
     /// Load state for a specific snapshot ID
     PaimonTableStatePtr loadStateForSnapshot(Int64 snapshot_id) const;
 
     /// Get snapshots between from_snapshot (exclusive) and to_snapshot (inclusive).
     /// If max_snapshots_to_load > 0, stop loading once the limit is reached.
-    /// If skip_compact is true, snapshots with commit_kind == "COMPACT" are excluded
-    /// (used by incremental read to avoid re-processing compacted data).
+    /// If append_only is true, only APPEND snapshots are returned (and OVERWRITE ones with
+    /// paimon_incremental_read_append_overwrite): COMPACT, OVERWRITE and ANALYZE ones are skipped
+    /// (after checking them for deletion vectors), and any other commit kind throws.
     /// last_scanned_snapshot_id is set to the highest snapshot_id actually visited
-    /// (including skipped compact / missing ones), so the caller can advance the watermark
-    /// past gaps that produced no data files.
+    /// (including skipped / missing ones), so the caller can advance the watermark
+    /// past gaps that produced no data files. last_scanned_state is its state, or nullptr
+    /// when that id was expired.
     std::vector<PaimonTableStatePtr> getSnapshotsBetween(
         Int64 from_snapshot_id,
         Int64 to_snapshot_id,
         UInt64 max_snapshots_to_load,
-        bool skip_compact,
-        std::optional<Int64> & last_scanned_snapshot_id) const;
+        bool append_only,
+        std::optional<Int64> & last_scanned_snapshot_id,
+        PaimonTableStatePtr & last_scanned_state) const;
 
     /// Extract table state from storage_metadata
     static PaimonTableStatePtr extractTableState(StorageMetadataPtr storage_metadata);
@@ -151,22 +163,29 @@ private:
     void checkSupportedConfiguration() const;
 
     /// Collect data files for incremental read (from committed snapshot to current).
-    /// `committed_snapshot_id` is the watermark observed under the processing lock.
+    /// `committed` is the watermark observed under the processing lock.
     Strings collectIncrementalDataFiles(
         const PaimonTableStatePtr & state,
+        const PaimonTableSchema & read_schema,
         const std::optional<Paimon::PartitionPruner> & partition_pruner,
         UInt64 max_consume_snapshots,
-        std::optional<Int64> committed_snapshot_id,
-        std::optional<Int64> & last_consumed_snapshot_id) const;
+        const PaimonCommittedSnapshot & committed,
+        std::optional<Int64> & last_consumed_snapshot_id,
+        std::optional<PaimonSnapshotIdentity> & last_consumed_identity) const;
+
+    /// Throws INVALID_STATE if the warehouse's snapshot `snapshot_id` is not the one the cursor consumed.
+    void checkCursorSnapshotUnchanged(Int64 snapshot_id, const PaimonSnapshotIdentity & consumed) const;
 
     /// Collect data files for a specific snapshot delta (session-level targeted read)
     Strings collectDeltaFilesForSnapshot(
         const PaimonTableStatePtr & state,
+        const PaimonTableSchema & read_schema,
         const std::optional<Paimon::PartitionPruner> & partition_pruner) const;
 
     /// Collect data files for full scan
     Strings collectFullScanDataFiles(
         const PaimonTableStatePtr & state,
+        const PaimonTableSchema & read_schema,
         const std::optional<Paimon::PartitionPruner> & partition_pruner) const;
 
     /// Background refresh task entry
@@ -178,6 +197,10 @@ private:
 
     /// Update mutex: only held briefly during state replacement
     mutable std::mutex update_mutex;
+
+    /// (file schema id, read schema id) pairs `checkDataFileSchema` found compatible. A schema never changes once written.
+    mutable std::mutex checked_file_schemas_mutex;
+    mutable std::set<std::pair<Int64, Int64>> checked_file_schemas TSA_GUARDED_BY(checked_file_schemas_mutex);
 
     /// Persistent components: thread-safe or immutable
     PaimonPersistentComponents persistent_components;

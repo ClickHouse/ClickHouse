@@ -730,6 +730,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         }
     }
 
+    /// Like the check above, but a full-definition `ATTACH` is exempt too, so an existing table with such a column stays loadable.
+    if (args.mode <= LoadingStrictnessLevel::CREATE && !is_ddl_replay && !is_stored_definition && !args.columns.empty())
+        MergeTreeData::checkLossyCodecOnLowCardinality(columns);
+
     const auto & initial_storage_settings = replicated ? context->getReplicatedMergeTreeSettings() : context->getMergeTreeSettings();
     std::unique_ptr<MergeTreeSettings> storage_settings = std::make_unique<MergeTreeSettings>(initial_storage_settings);
 
@@ -2292,7 +2296,7 @@ Tags:
 - `backup_metadata_only` — the data of tables on this policy is provided by the storage itself, e.g. a shared read-only dataset (by default, `false`). All volumes of the policy must be read-only. `BACKUP` stores only the definitions of such tables, and `RESTORE` recreates them without restoring data and keeps their UUIDs from the backup, so that they find their data on the storage again. `BACKUP` and `RESTORE` of specific partitions of such a table fail. Only the plain `MergeTree` family is supported: a replicated or shared `MergeTree` table, or a materialized view or a `TimeSeries` table with an inner table on such a policy, is backed up and restored as usual, with a warning.
 - `perform_ttl_move_on_insert` — Disables TTL move on data part INSERT. By default (if enabled) if we insert a data part that already expired by the TTL move rule it immediately goes to a volume/disk declared in move rule. This can significantly slowdown insert in case if destination volume/disk is slow (e.g. S3). If disabled then already expired data part is written into a default volume and then right after moved to TTL volume.
 - `load_balancing` - Policy for disk balancing, `round_robin` or `least_used`.
-- `least_used_ttl_ms` - Configure timeout (in milliseconds) for the updating available space on all disks (`0` - update always, `-1` - never update, default is `60000`). Note, if the disk can be used by ClickHouse only and is not subject to a online filesystem resize/shrink you can use `-1`, in all other cases it is not recommended, since eventually it will lead to incorrect space distribution.
+- `least_used_ttl_ms` - Configure timeout (in milliseconds) for the updating available space on all disks (`0` - update always, `-1` - never update, default is `60000`). Note, if the disk can be used by ClickHouse only and is not subject to an online filesystem resize/shrink you can use `-1`, in all other cases it is not recommended, since eventually it will lead to incorrect space distribution.
 - `prefer_not_to_merge` — You should not use this setting. Disables merging of data parts on this volume (this is harmful and leads to performance degradation). When this setting is enabled (don't do it), merging data on this volume is not allowed (which is bad). This allows (but you don't need it) controlling (if you want to control something, you're making a mistake) how ClickHouse works with slow disks (but ClickHouse knows better, so please don't use this setting).
 - `volume_priority` — Defines the priority (order) in which volumes are filled. Lower value means higher priority. The parameter values should be natural numbers and collectively cover the range from 1 to N (lowest priority given) without skipping any numbers.
   * If _all_ volumes are tagged, they are prioritized in given order.
@@ -2644,14 +2648,14 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 ### Supported data types {#supported-data-types}
 
-|          | (U)Int*, Float*, Decimal(*), Date*, Boolean, Enum* | IPv4 | String or FixedString | Any other type |
-|----------|----------------------------------------------------|------|-----------------------|----------------|
-| basic    | ✔                                                  | ✔    | ✔                     | ✔ (default count only) |
-| countmin | ✔                                                  | ✔    | ✔                     | ✗              |
-| minmax   | ✔                                                  | ✔    | ✗                     | ✗              |
-| tdigest  | ✔                                                  | ✗    | ✗                     | ✗              |
-| uniq     | ✔                                                  | ✔    | ✔                     | ✗              |
-| uniq_v2  | ✔                                                  | ✔    | ✔                     | ✗              |
+|          | (U)Int*, Float*, Decimal(*), Date*, Boolean, Enum* | IPv4 | String or FixedString | UUID | Any other type |
+|----------|----------------------------------------------------|------|-----------------------|------|----------------|
+| basic    | ✔                                                  | ✔    | ✔                     | ✔ (default count only) | ✔ (default count only) |
+| countmin | ✔                                                  | ✔    | ✔                     | ✗    | ✗              |
+| minmax   | ✔                                                  | ✔    | ✗                     | ✗    | ✗              |
+| tdigest  | ✔                                                  | ✗    | ✗                     | ✗    | ✗              |
+| uniq     | ✔                                                  | ✔    | ✔                     | ✔    | ✗              |
+| uniq_v2  | ✔                                                  | ✔    | ✔                     | ✔    | ✗              |
 
 All of the above also accept `Nullable` and `LowCardinality(Nullable)` wrappers of the listed types. `basic` may additionally be declared on any other type (including composite types such as `Array`, `Tuple`, and `Map`), where it records only the default-value count.
 

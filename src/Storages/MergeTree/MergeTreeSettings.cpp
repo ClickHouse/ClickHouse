@@ -426,6 +426,13 @@ so actual chunk sizes range from `target/2` to `1.5 * target`.
 Smaller values reduce peak memory during merges of JSON columns with many unique paths at the cost of more chunks.
 )", 0, \
         {"26.9", 8192, 8192, "New setting"}) \
+    DECLARE(MergeTreeObjectTypedSharedDataSerializationVersion, object_typed_shared_data_serialization_version, "v1", R"(
+Serialization version of the typed shared data inside JSON data type: the structure that stores the typed paths declared `SHARED` in a part together, in a constant number of files, instead of a separate set of files per path.
+
+Possible values:
+- `v1` - for each granule the data of every `SHARED` path in path order, with the start of every path's data recorded in a marks stream, so that a read of some paths decodes only them.
+)", 0, \
+        {"26.11", "v1", "v1", "New setting"}) \
     DECLARE(MergeTreeDynamicSerializationVersion, dynamic_serialization_version, "v3", R"(
 Serialization version for Dynamic data type. Required for compatibility.
 
@@ -791,7 +798,33 @@ a local file on a disk rather than to ClickHouse Keeper.
     DECLARE(UInt64, max_parts_to_merge_at_once, 100, R"(
 Max amount of parts which can be merged at once (0 - disabled). Doesn't affect
 OPTIMIZE FINAL query.
+
+Also lowered automatically when merging that many parts of this table would not fit in memory, see
+`merge_memory_estimate_per_source_part_column`.
 )", 0) \
+    DECLARE(UInt64, merge_memory_estimate_per_source_part_column, 4096, R"(
+Estimated memory, in bytes, that a merge needs per (source part, column) regardless of how much data the
+parts hold, used to lower `max_parts_to_merge_at_once` so that one merge takes at most a sixteenth of the
+server's memory limit (`max_server_memory_usage`).
+
+A merge keeps one block from every source part alive at the same time, and every column of every one of
+those blocks costs at least a minimum allocation even when the block holds a handful of rows. For a table
+with thousands of columns - `system.metric_log` has over two thousand - merging the default 100 parts at
+once takes hundreds of megabytes before a single row is read. On a server with little memory the merge
+then fails with `MEMORY_LIMIT_EXCEEDED`, its source parts stay where they were, and the next selection
+round picks the same parts again, so the table stops compacting altogether.
+
+A merge that runs through the vertical algorithm (see `enable_vertical_merge_algorithm`) holds only the
+key columns of every source part at once and gathers the other columns one at a time, so it is priced by
+its key columns alone and keeps its full width on a small server. Whether a merge will be vertical is
+predicted from the table definition and the rows and bytes of the candidate parts the same way the merge
+decides it; where the prediction is unsure it prices the merge as a horizontal one. `OPTIMIZE ... DEDUPLICATE`
+always merges horizontally and is priced as such. The projection parts that a merge keeps are merged by
+child merges after it, and the merge is narrowed to fit each of them as well.
+
+Set to `0` to disable this and select merges by `max_parts_to_merge_at_once` alone.
+)", 0, \
+        {"26.11", 0, 4096, "New setting. Lowers `max_parts_to_merge_at_once` when merging that many parts of a very wide table would not fit in memory, so that such merges stop failing with `MEMORY_LIMIT_EXCEEDED` on small servers. The previous value disables the estimate, preserving pre-26.11 behavior."}) \
     DECLARE(Bool, materialize_statistics_on_merge, true, R"(When enabled, merges will build and store statistics for new parts.
     Otherwise they can be created/stored by explicit [MATERIALIZE STATISTICS](/sql-reference/statements/alter/statistics.md)
     or [during INSERTs](/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert))", 0, \
@@ -860,10 +893,11 @@ Maximum number of processed tokens accumulated by a text index builder before fl
 Maximum estimated memory retained by a text index builder before flushing a temporary segment.
 )", 0, \
         {"26.8", std::numeric_limits<UInt64>::max(), 1073741824, "New setting. The previous value disables memory-based flushing to preserve pre-26.8 behavior"}) \
-    DECLARE(TextIndexPostingListCodec, text_index_posting_list_codec, TextIndexPostingListCodec::None, R"(
+    DECLARE(TextIndexPostingListCodec, text_index_posting_list_codec, TextIndexPostingListCodec::PFor, R"(
 Default posting list codec for text indexes. One of `none`, `bitpacking`, `pfor`.
 Can be overridden by explicit `posting_list_codec` index argument.
 )", 0, \
+        {"26.11", "none", "pfor", "Use the `pfor` posting list codec for text indexes by default"}, \
         {"26.6", "none", "none", "New setting"}) \
     DECLARE(Bool, allow_experimental_text_index_phrase_search, false, R"(
 Allow creating text indexes with the experimental `support_phrase_search` argument
@@ -1393,7 +1427,7 @@ For testing. Do not change it.
 )", 0) \
     DECLARE(Bool, optimize_row_order, false, R"(
 Controls if the row order should be optimized during inserts to improve the
-compressability of the newly inserted table part.
+compressibility of the newly inserted table part.
 
 Only has an effect for ordinary MergeTree-engine tables. Does nothing for
 specialized MergeTree engine tables (e.g. CollapsingMergeTree).
@@ -1500,6 +1534,20 @@ Possible values:
 - 1 - always enabled
 )", 0, \
         {"26.1", 500, 500, "New setting"}) \
+    DECLARE(Float, max_memory_ratio_to_activate_adaptive_write_buffer, 1.f / 32, R"(
+Also activate adaptive write buffers when the buffers a wide part preallocates would take at least this
+fraction of the server's memory limit (`max_server_memory_usage`), regardless of
+`min_columns_to_activate_adaptive_write_buffer`.
+
+A wide part preallocates two buffers of `max_compress_block_size` for every stream it writes - the file
+buffer and the compressor's block buffer - so a table with many columns reserves hundreds of megabytes
+before writing a single byte, and every concurrent merge reserves it again. That is negligible on a large
+server but a significant share of the budget on a small one, where it can make an `INSERT` fail with
+`MEMORY_LIMIT_EXCEEDED`.
+
+Set to `0` to disable this trigger and select adaptive write buffers by column count only.
+)", 0, \
+        {"26.11", 0., 1. / 32, "New setting. Activate adaptive write buffers when the buffers a wide part preallocates would take at least this fraction of the server memory limit, so that a many-column table does not reserve hundreds of megabytes of write buffers on a small server. The previous value disables the trigger, preserving pre-26.11 behavior."}) \
     DECLARE(NonZeroUInt64, adaptive_write_buffer_initial_size, 16 * 1024, R"(
 Sets the initial size, in bytes, of each adaptive write buffer used when writing MergeTree data. Buffers grow automatically as needed. Lower values reduce initial memory use, especially for tables with many columns, but may cause more frequent buffer flushes. This is a starting size, not a memory limit.
 
@@ -1623,7 +1671,7 @@ default; this setting will be removed in a future release.
 )", 0) \
     DECLARE(NonZeroUInt64, max_replicated_logs_to_keep, 1000, R"(
 How many records may be in the ClickHouse Keeper log if there is inactive
-replica. An inactive replica becomes lost when when this number exceed.
+replica. An inactive replica becomes lost when this number exceed.
 
 Possible values:
 - Any positive integer.
@@ -2367,8 +2415,8 @@ not be less than the value of the
 / 1024. Otherwise, ClickHouse throws an exception.
 )", 0) \
     DECLARE(Bool, check_sample_column_is_correct, true, R"(
-Enables the check at table creation, that the data type of a column for s
-ampling or sampling expression is correct. The data type must be one of unsigned
+Enables the check at table creation, that the data type of a column for
+sampling or sampling expression is correct. The data type must be one of unsigned
 [integer types](/reference/data-types/int-uint): `UInt8`, `UInt16`,
 `UInt32`, `UInt64`.
 
@@ -2680,9 +2728,10 @@ Per-block codecs are reported by the [`mergeTreeCodecBlockCounts`](/reference/fu
 Notify newest block number to SharedJoin or SharedSet. Only in ClickHouse Cloud.
 )", EXPERIMENTAL, \
         {"25.1", false, false, "Cloud sync"}) \
-    DECLARE(UInt64, shared_merge_tree_virtual_parts_discovery_batch, 1, R"(
+    DECLARE(UInt64, shared_merge_tree_virtual_parts_discovery_batch, 16, R"(
 How many partition discoveries should be packed into batch
 )", 0, \
+        {"26.11", 1, 16, "Increase the default", CompatibilitySetting::Ignore}, \
         {"25.8", 1, 1, "New setting"}) \
     DECLARE(Bool, shared_merge_tree_enable_automatic_empty_partitions_cleanup, true, R"(
 Enabled cleanup of Keeper entries of empty partition.
