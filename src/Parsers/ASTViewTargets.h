@@ -150,6 +150,10 @@ public:
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
     void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override;
+
+private:
+    /// Rebuilds `children` from `targets` in the order `formatTarget` writes the clauses.
+    void normalizeChildrenOrder();
 };
 
 }

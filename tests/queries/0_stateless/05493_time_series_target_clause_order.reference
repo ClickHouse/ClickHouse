@@ -1,0 +1,49 @@
+extra	UInt8	7
+CreateQuery ts (children 3)
+ Identifier ts
+ Storage definition (children 1)
+  Function TimeSeries
+ ViewTargets (children 2)
+  Columns definition (children 1)
+   ExpressionList (children 1)
+    ColumnDeclaration extra (children 1)
+     DataType UInt8
+  Storage definition (children 1)
+   Function MergeTree
+CreateQuery ts (children 3)
+ Identifier ts
+ Storage definition (children 1)
+  Function TimeSeries
+ ViewTargets (children 2)
+  Columns definition (children 1)
+   ExpressionList (children 1)
+    ColumnDeclaration extra (children 1)
+     DataType UInt8
+  Storage definition (children 1)
+   Function MergeTree
+CreateQuery ts (children 3)
+ Identifier ts
+ Storage definition (children 1)
+  Function TimeSeries
+ ViewTargets (children 3)
+  Columns definition (children 1)
+   ExpressionList (children 1)
+    ColumnDeclaration extra (children 1)
+     DataType UInt8
+  Storage definition (children 1)
+   Function ReplacingMergeTree
+  Storage definition (children 1)
+   Function MergeTree
+CreateQuery ts (children 3)
+ Identifier ts
+ Storage definition (children 1)
+  Function TimeSeries
+ ViewTargets (children 3)
+  Columns definition (children 1)
+   ExpressionList (children 1)
+    ColumnDeclaration extra (children 1)
+     DataType UInt8
+  Storage definition (children 1)
+   Function ReplacingMergeTree
+  Storage definition (children 1)
+   Function MergeTree
