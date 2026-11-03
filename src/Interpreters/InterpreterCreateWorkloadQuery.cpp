@@ -27,12 +27,10 @@ BlockIO InterpreterCreateWorkloadQuery::execute()
         access_rights_elements.emplace_back(AccessType::DROP_WORKLOAD);
 
     auto current_context = getContext();
-    /// Hold a shared_ptr to keep the storage alive for the duration of this call, in case of concurrent shutdown.
-    auto workload_entity_storage = current_context->getWorkloadEntityStoragePtr();
 
     if (!create_workload_query.cluster.empty())
     {
-        if (workload_entity_storage->isReplicated())
+        if (current_context->getWorkloadEntityStorage().isReplicated())
             throw Exception(ErrorCodes::INCORRECT_QUERY, "ON CLUSTER is not allowed because workload entities are replicated automatically");
 
         DDLQueryOnClusterParams params;
@@ -46,7 +44,7 @@ BlockIO InterpreterCreateWorkloadQuery::execute()
     bool throw_if_exists = !create_workload_query.if_not_exists && !create_workload_query.or_replace;
     bool replace_if_exists = create_workload_query.or_replace;
 
-    workload_entity_storage->storeEntity(
+    current_context->getWorkloadEntityStorage().storeEntity(
         current_context,
         WorkloadEntityType::Workload,
         workload_name,
@@ -58,7 +56,6 @@ BlockIO InterpreterCreateWorkloadQuery::execute()
     return {};
 }
 
-void registerInterpreterCreateWorkloadQuery(InterpreterFactory & factory);
 void registerInterpreterCreateWorkloadQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

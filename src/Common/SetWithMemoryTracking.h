@@ -21,7 +21,7 @@ namespace DB
 template <typename K, typename Compare = std::less<K>>
 using SetWithMemoryTracking = std::set<K, Compare, AllocatorWithMemoryTracking<K>>;
 
-template <typename K, typename Compare = std::less<K>>
-using MultiSetWithMemoryTracking = std::multiset<K, Compare, AllocatorWithMemoryTracking<K>>;
+template <typename K>
+using MultiSetWithMemoryTracking = std::multiset<K, std::less<K>, AllocatorWithMemoryTracking<K>>;
 
 }

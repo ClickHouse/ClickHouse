@@ -161,7 +161,6 @@ public:
     bool isRetry() const { return current_iteration > 0; }
 
     const std::string & getLastKeeperErrorMessage() const { return keeper_error.message; }
-    Coordination::Error getLastKeeperErrorCode() const { return keeper_error.code; }
 
     /// action will be called only once and only after latest failed retry
     /// NOTE: this one will be called only in case when retries finishes with Keeper exception

@@ -60,28 +60,4 @@ echo -n "additional_table_filters "
     --additional_table_filters "{'src_dist' : 'id != 1'}" -q "INSERT INTO dst_dist SELECT * FROM src_dist"
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH DISTRIBUTED dst_dist; SELECT count() FROM copy_local"
 
-# A source from a `Remote` database whose shard points back to this server reads the underlying
-# local table, so the caller's own SELECT on it is required (the stored credentials are only for
-# genuinely remote servers), like the regular read path enforces.
-remote_db="${CLICKHOUSE_DATABASE}_remote"
-$CLICKHOUSE_CLIENT -q "
-    CREATE DATABASE $remote_db ENGINE = Remote('127.0.0.1', '$CLICKHOUSE_DATABASE', 'default', '');
-    GRANT SHOW COLUMNS ON $CLICKHOUSE_DATABASE.* TO $user;
-    GRANT SELECT, INSERT ON $remote_db.* TO $user;
-    GRANT INSERT ON $CLICKHOUSE_DATABASE.copy_local TO $user;
-"
-echo -n "remote database proxy "
-"${client[@]}" --parallel_distributed_insert_select 2 \
-    -q "INSERT INTO $remote_db.copy_local SELECT * FROM $remote_db.secret_local" |&
-    grep -o -m1 'ACCESS_DENIED' || echo 'NOT DENIED'
-
-# ...and works once SELECT on the underlying table is granted.
-$CLICKHOUSE_CLIENT -q "GRANT SELECT ON $CLICKHOUSE_DATABASE.secret_local TO $user"
-"${client[@]}" --parallel_distributed_insert_select 2 \
-    -q "INSERT INTO $remote_db.copy_local SELECT * FROM $remote_db.secret_local"
-$CLICKHOUSE_CLIENT -q "SELECT count() FROM copy_local"
-
-$CLICKHOUSE_CLIENT -q "
-    DROP DATABASE $remote_db;
-    DROP USER $user;
-"
+$CLICKHOUSE_CLIENT -q "DROP USER $user"

@@ -1,6 +1,5 @@
 #include <Common/typeid_cast.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunction.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Interpreters/inplaceBlockConversions.h>
@@ -29,7 +28,6 @@
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>
-#include <DataTypes/NestedUtils.h>
 
 
 namespace DB
@@ -138,51 +136,6 @@ static MutableColumnPtr mixColumns(
     return column_mixed;
 }
 
-/// The column that `name` is or is a subcolumn of.
-static String getColumnOfSubcolumn(const ColumnsDescription & columns, const String & name)
-{
-    if (columns.has(name))
-        return name;
-
-    for (auto [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(name))
-    {
-        const auto * column = columns.tryGet(String(column_name));
-        if (column && column->type->tryGetSubcolumnType(subcolumn_name))
-            return column->name;
-    }
-    return name;
-}
-
-/// Columns of `header` that the default of `column_name` reads: directly, through a subcolumn, or through columns
-/// absent from `header`, whose defaults are inlined into the evaluation.
-static NameSet getHeaderColumnsReadByDefault(
-    const String & column_name, const ColumnsDescription & columns, const ColumnDefaults & column_defaults, const Block & header)
-{
-    NameSet result;
-    NameSet visited{column_name};
-    std::vector<ASTPtr> expressions{column_defaults.at(column_name).expression};
-    while (!expressions.empty())
-    {
-        auto expression = expressions.back()->clone();
-        expressions.pop_back();
-
-        RequiredSourceColumnsVisitor::Data data;
-        RequiredSourceColumnsVisitor(data).visit(expression);
-        for (const auto & required : data.requiredColumns())
-        {
-            auto name = getColumnOfSubcolumn(columns, required);
-            if (!visited.insert(name).second)
-                continue;
-
-            if (header.has(name))
-                result.insert(name);
-            else if (auto it = column_defaults.find(name); it != column_defaults.end())
-                expressions.push_back(it->second.expression);
-        }
-    }
-    return result;
-}
-
 
 AddingDefaultsTransform::AddingDefaultsTransform(
     SharedHeader header,
@@ -195,27 +148,6 @@ AddingDefaultsTransform::AddingDefaultsTransform(
     , input_format(input_format_)
     , context(context_)
 {
-}
-
-
-void AddingDefaultsTransform::onCancel() noexcept
-{
-    ISimpleTransform::onCancel();
-
-    ExpressionActionsPtr actions;
-    {
-        std::lock_guard lock(current_actions_mutex);
-        actions = current_actions;
-    }
-
-    if (!actions)
-        return;
-
-    for (const auto & node : actions->getNodes())
-    {
-        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function)
-            node.function->cancelExecution();
-    }
 }
 
 
@@ -263,11 +195,17 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
 
     for (const auto & [col_name, col_idx] : columns_needing_defaults)
     {
+        const auto & col_default = column_defaults.at(col_name);
+        RequiredSourceColumnsVisitor::Data columns_context;
+        auto expr_clone = col_default.expression->clone();
+        RequiredSourceColumnsVisitor(columns_context).visit(expr_clone);
+        NameSet required = columns_context.requiredColumns();
+
         NameSet deps;
-        for (const auto & read : getHeaderColumnsReadByDefault(col_name, columns, column_defaults, header))
+        for (const auto & req : required)
         {
-            if (columns_needing_defaults_set.contains(read))
-                deps.insert(read);
+            if (columns_needing_defaults_set.contains(req))
+                deps.insert(req);
         }
         dependencies[col_name] = std::move(deps);
     }
@@ -335,42 +273,7 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
             auto actions = std::make_shared<ExpressionActions>(
                 ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(*dag)),
                 ExpressionActionsSettings(context, CompileExpressions::yes), true);
-
-            /// Publish the actions before anything can observe the cancellation, so that a
-            /// concurrent `onCancel` can always forward `cancelExecution` into a function that is
-            /// about to run or already running. Publishing after the check below would leave a
-            /// window where `onCancel` sees no actions and the evaluation still starts one action.
-            {
-                std::lock_guard lock(current_actions_mutex);
-                current_actions = actions;
-            }
-
-            /// The task can be dispatched before the query is cancelled and start running after it:
-            /// skip the whole default evaluation instead of running one action of it. A cancellation
-            /// landing after this check reaches the running function through the published actions,
-            /// if it supports interruption.
-            if (isCancelled())
-            {
-                {
-                    std::lock_guard lock(current_actions_mutex);
-                    current_actions.reset();
-                }
-                chunk.setColumns(getOutputPort().getHeader().cloneEmptyColumns(), 0);
-                return;
-            }
-
-            actions->execute(evaluate_block, false, false, &getCancellationFlag());
-
-            {
-                std::lock_guard lock(current_actions_mutex);
-                current_actions.reset();
-            }
-
-            if (isCancelled())
-            {
-                chunk.setColumns(getOutputPort().getHeader().cloneEmptyColumns(), 0);
-                return;
-            }
+            actions->execute(evaluate_block);
         }
 
         /// Mix the computed defaults back into res

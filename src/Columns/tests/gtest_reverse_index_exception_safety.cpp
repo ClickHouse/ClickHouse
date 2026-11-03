@@ -75,19 +75,16 @@ TEST(ReverseIndex, ExceptionWhileInsertingDataKeepsDictionaryConsistent)
     const Int64 saved_untracked_limit = CurrentThread::get().untracked_memory_limit;
     const Int64 saved_thread_hard_limit = thread_tracker.getHardLimit();
     const Int64 saved_total_hard_limit = total_memory_tracker.getHardLimit();
-    const UInt64 saved_min_alloc_to_throw = CurrentMemoryTracker::getMinAllocationSizeBytesToThrow();
 
     auto lift_limits = [&]
     {
         total_memory_tracker.setHardLimit(saved_total_hard_limit);
         thread_tracker.setHardLimit(saved_thread_hard_limit);
         CurrentThread::get().untracked_memory_limit = saved_untracked_limit;
-        CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(saved_min_alloc_to_throw);
     };
     SCOPE_EXIT_SAFE(lift_limits());
 
     /// Make even a tiny allocation reach the trackers and fail: no per-thread untracked buffer, limits of one byte.
-    CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(1);
     CurrentThread::get().untracked_memory_limit = 0;
     CurrentThread::flushUntrackedMemory();
     total_memory_tracker.resetCounters();
