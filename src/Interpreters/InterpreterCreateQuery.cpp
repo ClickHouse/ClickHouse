@@ -2348,8 +2348,15 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         visitor.visitTableExpressions(*create.columns_list);
 
     /// A `TTL` that this query gives itself, as opposed to one that `CREATE TABLE ... AS` or `CLONE AS` copies from the source
-    /// table below, which keeps the meaning it has there.
+    /// table below, which keeps the meaning it has there. The same for the engines of the inner tables of a materialized view or
+    /// a `TimeSeries` table, which `CREATE TABLE ... AS` copies from a `TimeSeries` table.
     const bool has_own_ttl = create.storage && create.storage->ttl_table;
+    std::vector<ViewTarget::Kind> inner_targets_with_own_ttl;
+    if (create.targets)
+        for (const auto & target : create.targets->targets)
+            if (const auto * inner_engine = target.inner_engine ? target.inner_engine->as<ASTStorage>() : nullptr;
+                inner_engine && inner_engine->ttl_table)
+                inner_targets_with_own_ttl.push_back(target.kind);
 
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
     TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create, mode);
@@ -2393,16 +2400,39 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// explicit in the definition, as `InterpreterAlterQuery` does for mutations. On a DDL worker (`ON CLUSTER` or a `Replicated`
     /// database) the query was normalized on the initiator, which rewrote its own `TTL`, and a `TTL` copied there from the source
     /// of `CREATE TABLE ... AS` looks like the query's own, so it is not rewritten again.
+    /// An internal query, which creates an inner table, restores a table or creates a system log, does not rewrite either: the
+    /// engine of an inner table is rewritten here, in the definition of the materialized view or the `TimeSeries` table that
+    /// creates it, only when it is this query's own, so that a copied one keeps its meaning and the stored definition matches
+    /// the inner table.
     if (const String & session_timezone = getContext()->getSettingsRef()[Setting::session_timezone].value;
-        !session_timezone.empty() && !getContext()->isDDLOrOnClusterInternal() && !create.attach_short_syntax && !is_restore_from_backup)
+        !session_timezone.empty() && !internal && !getContext()->isDDLOrOnClusterInternal() && !create.attach_short_syntax
+        && !is_restore_from_backup)
     {
         if (has_own_ttl && create.storage && create.storage->ttl_table)
             rewriteDateTimeLiteralsWithTimezone(create.storage->ttl_table->ptr(), properties.columns, session_timezone, getContext());
 
-        /// The inner table of a materialized view is created from the engine of the view, by another `InterpreterCreateQuery` that
-        /// runs in the context of this one, so on a DDL worker it does not rewrite its `TTL` either.
-        if (const auto * inner_engine = create.getTargetInnerEngine(ViewTarget::To); inner_engine && inner_engine->ttl_table)
-            rewriteDateTimeLiteralsWithTimezone(inner_engine->ttl_table->ptr(), properties.columns, session_timezone, getContext());
+        for (const auto kind : inner_targets_with_own_ttl)
+        {
+            const auto * inner_engine = create.getTargetInnerEngine(kind);
+            if (!inner_engine || !inner_engine->ttl_table)
+                continue;
+
+            /// The inner table of a materialized view has the columns of the view; the inner tables of a `TimeSeries` table have
+            /// their own, which its definition lists.
+            if (!create.is_time_series_table)
+            {
+                rewriteDateTimeLiteralsWithTimezone(inner_engine->ttl_table->ptr(), properties.columns, session_timezone, getContext());
+                continue;
+            }
+            const auto * inner_columns = create.getTargetInnerColumns(kind);
+            if (!inner_columns || !inner_columns->columns)
+                continue;
+            ColumnsDescription columns;
+            for (const auto & child : inner_columns->columns->children)
+                if (const auto * declaration = child->as<ASTColumnDeclaration>(); declaration && declaration->getType())
+                    columns.add(ColumnDescription(declaration->name, DataTypeFactory::instance().get(declaration->getType())));
+            rewriteDateTimeLiteralsWithTimezone(inner_engine->ttl_table->ptr(), columns, session_timezone, getContext());
+        }
     }
 
     DatabasePtr database;
