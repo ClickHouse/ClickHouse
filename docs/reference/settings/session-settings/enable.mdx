@@ -310,6 +310,18 @@ With this setting enabled, `ALTER TABLE ... MODIFY COLUMN json JSON(path TypeNam
 type hints is a metadata-only operation: the type hints are applied at query time for existing parts and
 materialized during inserts and background merges instead of rewriting the historical data.
 
+## enable_lateral_join {#enable_lateral_join}
+
+<ExperimentalBadge/>
+
+**Aliases**: `allow_experimental_lateral_join`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_lateral_join`."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "New setting to allow `LATERAL JOIN` syntax."}]}]}/>
+
+Allow LATERAL JOIN syntax. When enabled, subqueries in the right side of a JOIN can reference columns from the left side, enabling correlated subqueries in the FROM clause (SQL standard LATERAL JOIN).
+
 ## enable_lazy_columns_replication {#enable_lazy_columns_replication}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -546,7 +558,7 @@ If it is set to true, prevent scalar subqueries from (de)serializing large scala
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.7"},{"label": "1"},{"label": "New setting for backward compatibility with the old analyzer."}]}, {"id": "row-2","items": [{"label": "25.6"},{"label": "1"},{"label": "New setting for backward compatibility with the old analyzer."}]}, {"id": "row-3","items": [{"label": "25.5"},{"label": "1"},{"label": "New setting for backward compatibility with the old analyzer."}]}, {"id": "row-4","items": [{"label": "25.4"},{"label": "1"},{"label": "New setting for backward compatibility with the old analyzer."}]}]}/>
 
-If disabled, declarations in parent WITH cluases will behave the same scope as they declared in the current scope.
+If disabled, declarations in parent WITH clauses will behave the same scope as they declared in the current scope.
 
 Note that this is a compatibility setting for the analyzer to allow running some invalid queries that old analyzer could execute.
 

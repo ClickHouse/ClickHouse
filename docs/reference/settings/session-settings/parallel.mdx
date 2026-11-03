@@ -34,6 +34,10 @@ Since v25.4, `INSERT ... SELECT` from a `ReplicatedMergeTree` or `SharedMergeTre
 - `parallel_distributed_insert_select = 2`
 - `enable_parallel_replicas = 1`
 
+<Note>
+The rewritten query, including every expression of the `SELECT` (subqueries, UDFs, and so on), is executed on the shards under the credentials of the cluster configuration — the same trust model as other shard-side processing, such as the subqueries of a non-`GLOBAL` `IN`. Configure an interserver secret (the `secret` element of the cluster configuration) if shard-side reads must be authorized as the calling user.
+</Note>
+
 ## parallel_hash_join_threshold {#parallel_hash_join_threshold}
 
 <SettingsInfoBlock type="UInt64" default_value="100000" />

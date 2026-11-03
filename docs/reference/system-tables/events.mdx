@@ -2928,6 +2928,10 @@ Total number of rows in the result of a JOIN operation.
 
 Number of times a (Concurrent)HashJoin was switched to GraceHashJoin due to memory limit in SpillingHashJoin.
 
+### JoinSpillingHashJoinSwitchedToMergeJoin {#joinspillinghashjoinswitchedtomergejoin}
+
+Number of times a (Concurrent)HashJoin was switched to MergeJoin due to memory limit in SpillingHashJoin. MergeJoin is chosen instead of GraceHashJoin when the query plan requires the join to keep the row order of the left stream.
+
 ### KafkaBackgroundReads {#kafkabackgroundreads}
 
 Number of background reads populating materialized views from Kafka since server start
@@ -3958,7 +3962,7 @@ Number of times an error was encountered in background cleanup task
 
 ### MetadataFromKeeperBackgroundCleanupObjects {#metadatafromkeeperbackgroundcleanupobjects}
 
-Number of times a old deleted object clean up was performed by background task
+Number of times an old deleted object clean up was performed by background task
 
 ### MetadataFromKeeperBackgroundCleanupTransactions {#metadatafromkeeperbackgroundcleanuptransactions}
 
@@ -4758,11 +4762,11 @@ See setting prefer_warmed_unmerged_parts_seconds. Number of times read queries u
 
 ### PrimaryIndexCacheHits {#primaryindexcachehits}
 
-Number of times an entry has been found in the primary index cache, so we didn't have to load a index file.
+Number of times an entry has been found in the primary index cache, so we didn't have to load an index file.
 
 ### PrimaryIndexCacheMisses {#primaryindexcachemisses}
 
-Number of times an entry has not been found in the primary index cache, so we had to load a index file in memory, which is a costly operation, adding to query latency.
+Number of times an entry has not been found in the primary index cache, so we had to load an index file in memory, which is a costly operation, adding to query latency.
 
 ### QueriesWithSubqueries {#querieswithsubqueries}
 
@@ -6439,6 +6443,10 @@ Total time spent in processing (queries and other tasks) threads executing CPU i
 ### TableFunctionExecute {#tablefunctionexecute}
 
 Number of table function calls.
+
+### TextIndexDictionaryDFABuilds {#textindexdictionarydfabuilds}
+
+Number of times a DFA was built from a LIKE pattern to skip dictionary blocks of a text index. Reusing an already built DFA is not counted.
 
 ### TextIndexDiscardHint {#textindexdiscardhint}
 
