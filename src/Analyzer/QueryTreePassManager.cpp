@@ -20,6 +20,7 @@
 #include <Analyzer/Passes/ArrayExistsToHasPass.h>
 #include <Analyzer/Passes/RewriteArrayFilterLengthToArrayCountPass.h>
 #include <Analyzer/Passes/AutoFinalOnQueryPass.h>
+#include <Analyzer/Passes/CheckFunctionAccessPass.h>
 #include <Analyzer/Passes/ComparisonTupleEliminationPass.h>
 #include <Analyzer/Passes/HasToInPass.h>
 #include <Analyzer/Passes/ConvertEmptyStringComparisonToFunctionPass.h>
@@ -370,6 +371,9 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze, bool 
     manager.addPass(std::make_unique<InjectRandomOrderIfNoOrderByPass>());
 
     manager.addPass(std::make_unique<DisableParallelReplicasPass>());
+
+    /// Must be the last one: the passes above can replace functions.
+    manager.addPass(std::make_unique<CheckFunctionAccessPass>());
 }
 
 }

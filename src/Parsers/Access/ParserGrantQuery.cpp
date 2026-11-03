@@ -1031,6 +1031,11 @@ user-defined function that calls a listed function also requires a grant for tha
 The result of a query that calls a listed function is not stored in the [query cache](/concepts/features/performance/caches/query-cache),
 so revoking the grant takes effect on the next run of the query.
 
+Both the function as written and the function which is actually executed require the grant. They differ
+when a setting or an optimization replaces a call: `in` is executed as `nullIn` under `transform_null_in`,
+`divide` as `divideExact` under `sql_compatible_division_for_integers`, and `x = 1 OR x = 2 OR x = 3` as
+`x IN (1, 2, 3)`, so such a chain requires the grant for `in` when `in` is listed.
+
 Names are matched after resolving aliases, so listing `hex` covers `HEX`, and listing either
 `isValidASCII` or its `isASCII` alias covers both spellings. The name in `GRANT FUNCTION ON <name>`
 is resolved the same way and stored as the registered name: `GRANT FUNCTION ON HEX` grants `hex`,

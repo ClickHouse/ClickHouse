@@ -3296,7 +3296,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
         /// The function which is actually executed requires its own grant too: the special cases above may have
         /// replaced the written one (`in` with `nullIn` under `transform_null_in`), and so may the factory
-        /// (`toTime` with `toTimeWithFixedDate` under `use_legacy_to_time`).
+        /// (`toTime` with `toTimeWithFixedDate` under `use_legacy_to_time`). Check it here, before the constant
+        /// folding below can execute it; `CheckFunctionAccessPass` checks again after the optimizations.
         checkFunctionAccess(scope.context, function->getName());
     }
     else

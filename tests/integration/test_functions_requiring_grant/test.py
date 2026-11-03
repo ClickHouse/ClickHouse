@@ -313,6 +313,18 @@ def test_factory_replacement_requires_grant():
     assert instance.query(query, user="A") == instance.query(query)
 
 
+def test_optimized_call_requires_grant():
+    """The optimizations after the analysis can replace a call: `x = 1 OR x = 2 OR x = 3` is
+    executed as `x IN (1, 2, 3)`."""
+    instance.query("CREATE USER A")
+
+    query = "SELECT x = 1 OR x = 2 OR x = 3 FROM (SELECT materialize(1) AS x)"
+    assert "Not enough privileges" in instance.query_and_get_error(query, user="A")
+
+    instance.query("GRANT FUNCTION ON in TO A")
+    assert instance.query(query, user="A") == "1\n"
+
+
 def test_query_cache_does_not_outlive_grant():
     """The query cache serves a hit before the query is analyzed, so it must not keep the result
     of a call that needs a grant: the next run after the revoke would skip the check."""
