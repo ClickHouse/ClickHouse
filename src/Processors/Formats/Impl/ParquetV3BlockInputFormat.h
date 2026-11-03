@@ -159,8 +159,10 @@ struct ParquetCachedStatisticsFilter
     /// If the kept ranges exclude every row group of the file version, the number of row groups of the file.
     std::optional<size_t> canSkipFile(ParquetMetadataCache & metadata_cache, const String & path, const String & version) const;
 
-    /// Counts a skipped file as the reader would have counted it.
-    static void countSkippedFile(size_t num_row_groups);
+    /// Counts a skipped file as the reader would have counted it: `num_pruned_row_groups` row groups pruned,
+    /// and, if `count_file`, the file as skipped. The sources of a split file count each its own row groups,
+    /// but the file only once.
+    static void countSkippedFile(size_t num_pruned_row_groups, bool count_file = true);
 
     /// Identifies the statistics ranges of a column in a cache cell: the column and the settings that change how
     /// the reader finds it in the file and converts its statistics.

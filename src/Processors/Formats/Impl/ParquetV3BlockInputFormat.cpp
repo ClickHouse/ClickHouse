@@ -413,11 +413,14 @@ std::optional<size_t> ParquetCachedStatisticsFilter::canSkipFile(
     return cell->footer->metadata.row_groups.size();
 }
 
-void ParquetCachedStatisticsFilter::countSkippedFile(size_t num_row_groups)
+void ParquetCachedStatisticsFilter::countSkippedFile(size_t num_pruned_row_groups, bool count_file)
 {
-    ProfileEvents::increment(ProfileEvents::ParquetFilesSkippedByCachedStatistics);
-    ProfileEvents::increment(ProfileEvents::ParquetPrunedRowGroups, num_row_groups);
-    ProfileEvents::increment(ProfileEvents::ParquetMetadataCacheHits);
+    ProfileEvents::increment(ProfileEvents::ParquetPrunedRowGroups, num_pruned_row_groups);
+    if (count_file)
+    {
+        ProfileEvents::increment(ProfileEvents::ParquetFilesSkippedByCachedStatistics);
+        ProfileEvents::increment(ProfileEvents::ParquetMetadataCacheHits);
+    }
 }
 
 Chunk ParquetV3BlockInputFormat::read()

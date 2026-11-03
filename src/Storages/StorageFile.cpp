@@ -1879,9 +1879,21 @@ bool StorageFileSource::canSkipFileByCachedStatistics()
     if (!num_row_groups || !fileCacheVersionTokenStillHolds(current_path, *current_file_cache_version))
         return false;
 
-    /// Every source of a split file skips it, count it once.
-    if (!split_file || split_file_bucket == 0)
+    if (split_file)
+    {
+        /// The source of each bucket counts the row groups of its bucket as pruned, so that the total does not depend
+        /// on which sources read their buckets and which skip them: the statistics kept by the reader of one bucket
+        /// may let the sources of the other buckets, that start later in the same query, skip the file.
+        /// The file is counted as skipped once.
+        const auto * bucket = typeid_cast<const ParquetFileBucketInfo *>(split_file->buckets.at(split_file_bucket).get());
+        if (!bucket)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "A bucket of the split Parquet file {} is not a Parquet bucket", current_path);
+        ParquetCachedStatisticsFilter::countSkippedFile(bucket->row_group_ids.size(), /*count_file=*/ split_file_bucket == 0);
+    }
+    else
+    {
         ParquetCachedStatisticsFilter::countSkippedFile(*num_row_groups);
+    }
     return true;
 #else
     return false;
