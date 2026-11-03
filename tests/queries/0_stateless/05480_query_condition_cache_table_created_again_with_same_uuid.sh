@@ -4,7 +4,7 @@
 # Tag no-ordinary-database: the table needs a UUID
 # Tag no-replicated-database: an explicit UUID is not allowed in a Replicated database, and the test creates its own one
 
-# A table created again with the same UUID names its parts like the dropped one did,
+# A table created again with the same UUID names its parts like the previous table with this UUID did,
 # and must not reuse the cached data of those parts.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -25,6 +25,7 @@ function query()
     for prewhere in 0 1; do
         $CLICKHOUSE_CLIENT -q "SELECT count() FROM $1 WHERE a < 50
             SETTINGS use_query_condition_cache = 1, use_statistics_for_part_pruning = 0, use_uncompressed_cache = 1,
+                use_columns_cache = 1, enable_reads_from_columns_cache = 1, enable_writes_to_columns_cache = 1,
                 optimize_move_to_prewhere = $prewhere"
     done
 }
@@ -47,7 +48,34 @@ create "$uuid"
 $CLICKHOUSE_CLIENT -q "INSERT INTO tab SELECT number FROM numbers(1000)"
 query tab
 
+# ATTACH with a full definition creates a new table too.
+uuid=$($CLICKHOUSE_CLIENT -q "SELECT generateUUIDv4()")
+create "$uuid"
+$CLICKHOUSE_CLIENT -q "INSERT INTO tab SELECT number + 100 FROM numbers(100)"
+query tab
+# send_logs_level: the server warns that ATTACH with a full definition is not recommended.
+$CLICKHOUSE_CLIENT --send_logs_level=error -q "
+    DROP TABLE tab SYNC;
+    ATTACH TABLE tab UUID '$uuid' (a UInt64) ENGINE = MergeTree ORDER BY tuple()
+        SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi';"
+$CLICKHOUSE_CLIENT -q "INSERT INTO tab SELECT number FROM numbers(100)"
+query tab
+
+# A table moved to a database without UUIDs keeps its parts, and its UUID can be used again.
+uuid=$($CLICKHOUSE_CLIENT -q "SELECT generateUUIDv4()")
+create "$uuid"
+$CLICKHOUSE_CLIENT -q "INSERT INTO tab SELECT number + 100 FROM numbers(100)"
+query tab
+$CLICKHOUSE_CLIENT --allow_deprecated_database_ordinary=1 -q "
+    DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_ordinary SYNC;
+    CREATE DATABASE ${CLICKHOUSE_DATABASE}_ordinary ENGINE = Ordinary;
+    RENAME TABLE tab TO ${CLICKHOUSE_DATABASE}_ordinary.tab;"
+create "$uuid"
+$CLICKHOUSE_CLIENT -q "INSERT INTO tab SELECT number FROM numbers(100)"
+query tab
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE tab SYNC"
+$CLICKHOUSE_CLIENT -q "DROP DATABASE ${CLICKHOUSE_DATABASE}_ordinary SYNC"
 
 # Replica recovery of a Replicated database creates a table again with the UUID stored in Keeper.
 DB="${CLICKHOUSE_DATABASE}_rdb"

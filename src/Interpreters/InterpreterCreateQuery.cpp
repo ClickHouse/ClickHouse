@@ -3018,7 +3018,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 
     /// A table created with the UUID of a dropped table gets its data path and part names,
     /// so the caches keyed by them must not serve the dropped table's data.
-    if (has_explicit_uuid && !create.attach && !internal && !getContext()->isDDLOrOnClusterInternal())
+    if (has_explicit_uuid && !create.attach_short_syntax && !internal && !getContext()->isDDLOrOnClusterInternal())
         getContext()->clearCaches();
 
     database->createTable(getContext(), create.getTable(), res, query_ptr);
