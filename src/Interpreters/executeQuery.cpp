@@ -1260,9 +1260,21 @@ void logExceptionBeforeStart(
     auto get_counters_before_registration = [&]
     {
         /// Only the group created for this very query: a group shared with something else would charge its counters too.
-        if (auto group = CurrentThread::getGroup(); group && group->query_context.lock() == context)
-            return group->performance_counters.getPartiallyAtomicSnapshot();
-        return failed_query_counters.getPartiallyAtomicSnapshot();
+        auto group = CurrentThread::getGroup();
+        if (!group || group->query_context.lock() != context)
+            return failed_query_counters.getPartiallyAtomicSnapshot();
+
+        /// The failure events are not necessarily propagated to the group (the counters of the thread have been
+        /// finalized above), so they are taken from the mirror unless the group already has them.
+        auto group_snapshot = group->performance_counters.getPartiallyAtomicSnapshot();
+        ProfileEvents::Counters combined(VariableContext::Process, /* parent = */ nullptr);
+        for (auto event = ProfileEvents::Event(0); event < ProfileEvents::end(); ++event)
+        {
+            auto value = std::max(group_snapshot[event], failed_query_counters[event]);
+            if (value)
+                combined.incrementNoTrace(event, value);
+        }
+        return combined.getPartiallyAtomicSnapshot();
     };
 
     QueryStatusInfoPtr info;
