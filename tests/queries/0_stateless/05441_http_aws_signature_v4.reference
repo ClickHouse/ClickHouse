@@ -65,7 +65,7 @@ PUT with the INSERT grant on the non-EPHEMERAL columns: 200
 GET after PUT into a table with an EPHEMERAL column: 200 18
 PUT over the temporary data limit: 500 Code: 396
 PUT presigned Values with a SETTINGS clause: 400 Code: 27
-PUT without a table over the temporary data limit: 400 Code: 36
+PUT without a table over the temporary data limit: 501 
 PUT with a deferred 100 Continue: 200 
 POST with a deferred 100 Continue: 200 
 GET after PUT: 200 1	Hello

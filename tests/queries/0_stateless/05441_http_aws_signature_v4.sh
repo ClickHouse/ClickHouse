@@ -302,7 +302,7 @@ show("PUT over the temporary data limit", signed_request("PUT", csv_path, body=b
 show("PUT presigned Values with a SETTINGS clause", send("PUT", values_path,
      presigned_params("PUT", values_path, [("allow_settings_after_format_in_insert", "1")]),
      body=f"SETTINGS input_format_values_interpret_expressions = 1 (15, (SELECT s FROM {database}.private LIMIT 1))".encode()))
-# An upload without a table is rejected before its body is staged.
+# An upload without a table is rejected before its body is staged: a `PUT` without a format in the path is not routed to the query handler.
 show("PUT without a table over the temporary data limit", signed_request("PUT", "/query",
      body=b"".join(b"%d,\"large\"\n" % i for i in range(1000, 2000)), params=[("max_temporary_data_on_disk_size_for_query", "100")]))
 # A deferred `100 Continue` is sent before a signed body is received.
