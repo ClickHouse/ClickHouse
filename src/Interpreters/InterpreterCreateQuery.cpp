@@ -1111,12 +1111,6 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                 const auto & settings = getContext()->getSettingsRef();
                 if (index_desc.type == TEXT_INDEX_NAME && !settings[Setting::enable_full_text_index])
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The text index feature is disabled. Enable the setting 'enable_full_text_index' to use it");
-                /// Only a fresh `CREATE`: attaching existing tables, such as at server startup, must keep working.
-                if (index_desc.type == "jsonbf_v1" && mode <= LoadingStrictnessLevel::CREATE
-                    && !settings[Setting::allow_experimental_json_bloom_filter_index])
-                    throw Exception(
-                        ErrorCodes::SUPPORT_IS_DISABLED,
-                        "The `jsonbf_v1` index is experimental. Enable the setting `allow_experimental_json_bloom_filter_index` to use it");
 
                 properties.indices.push_back(index_desc);
             }
@@ -1387,6 +1381,18 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     {
         properties.constraints.checkExpressionsPreserveRowCount();
         properties.constraints.checkNamesAreUnique();
+    }
+
+    /// Every definition the user supplies now, including indexes copied by `AS src` / `CLONE AS src`. A replay of
+    /// stored metadata, such as at server startup, must keep working.
+    if (isFreshTableDefinition(mode, create.attach_short_syntax)
+        && !getContext()->getSettingsRef()[Setting::allow_experimental_json_bloom_filter_index])
+    {
+        for (const auto & index : properties.indices)
+            if (index.type == "jsonbf_v1")
+                throw Exception(
+                    ErrorCodes::SUPPORT_IS_DISABLED,
+                    "The `jsonbf_v1` index is experimental. Enable the setting `allow_experimental_json_bloom_filter_index` to use it");
     }
 
     ASTPtr new_columns = formatColumns(properties.columns);
