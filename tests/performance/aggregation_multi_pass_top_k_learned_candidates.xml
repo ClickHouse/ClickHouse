@@ -1,0 +1,16 @@
+<test>
+    <!-- The multi-pass top-K strategy of the adaptive aggregator (`adaptive_aggregator_top_k`) when the sample of its
+         pilot misses heavy keys. Five keys of 60000 rows each come in runs, which the strided sample of granules
+         mostly skips, among 200 keys of about 21000 rows spread over the table and 9.8 million unique keys. The first
+         run proves the top only with a fallback, which finds the missed keys. The next runs start from the candidates
+         that the fallback completed (`adaptive_aggregator_top_k_cache_candidates`) and prove the top in one pass, where
+         the ordinary aggregation creates a state for every unique key. -->
+    <create_query>CREATE TABLE top_k_learned (k String) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <fill_query>INSERT INTO top_k_learned SELECT if(number % 10 &lt; 3, concat('spread_', toString(intHash32(number) % 200)), concat('u', toString(number))) FROM numbers(14000000)</fill_query>
+    <fill_query>INSERT INTO top_k_learned SELECT concat('hidden_', toString(intDiv(number, 60000))) FROM numbers(300000)</fill_query>
+    <fill_query>OPTIMIZE TABLE top_k_learned FINAL</fill_query>
+
+    <query>SELECT k, count() AS c FROM top_k_learned GROUP BY k ORDER BY c DESC LIMIT 10 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS top_k_learned</drop_query>
+</test>

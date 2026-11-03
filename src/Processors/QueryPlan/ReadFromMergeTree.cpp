@@ -1632,15 +1632,6 @@ static bool missingColumnReadsPhysicalColumns(
     return false;
 }
 
-/// Which of the two sizes a part records for a column the estimate below should sum up.
-enum class ReadBytesKind : uint8_t
-{
-    /// The bytes the values occupy once decoded, i.e. the amount of work the pipeline does.
-    Uncompressed,
-    /// The bytes the values occupy on disk, i.e. the amount of data the read pulls in.
-    Compressed,
-};
-
 /// Estimate the size of `column_names` over the mark ranges actually selected in `parts_with_ranges`.
 ///
 /// Returns nullopt if the estimate cannot be made conservatively, in which case the caller must not
@@ -3065,7 +3056,7 @@ bool ReadFromMergeTree::hasThrowingReadRowLimit() const
             && settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW && settings[Setting::max_rows_to_read_leaf]);
 }
 
-std::optional<size_t> ReadFromMergeTree::estimateCompressedBytesToRead() const
+std::optional<size_t> ReadFromMergeTree::estimateBytesToRead(ReadBytesKind kind) const
 {
     const auto analysis = analyzed_result_ptr ? analyzed_result_ptr : selectRangesToRead();
     if (!analysis)
@@ -3124,7 +3115,7 @@ std::optional<size_t> ReadFromMergeTree::estimateCompressedBytesToRead() const
             mutations_snapshot,
             context,
             context->getSettingsRef(),
-            ReadBytesKind::Compressed))
+            kind))
         return estimate;
 
     /// No per-column estimate is available. Charge every selected part in full rather than giving up:
@@ -3132,7 +3123,9 @@ std::optional<size_t> ReadFromMergeTree::estimateCompressedBytesToRead() const
     size_t total_bytes = 0;
     for (const auto & part : analysis->parts_with_ranges)
     {
-        if (__builtin_add_overflow(total_bytes, part.data_part->getTotalColumnsSize().data_compressed, &total_bytes))
+        const auto part_size = part.data_part->getTotalColumnsSize();
+        const size_t part_bytes = kind == ReadBytesKind::Compressed ? part_size.data_compressed : part_size.data_uncompressed;
+        if (__builtin_add_overflow(total_bytes, part_bytes, &total_bytes))
             return std::numeric_limits<size_t>::max();
     }
     return total_bytes;
@@ -4996,6 +4989,11 @@ Pipe ReadFromMergeTree::groupStreamsByPartition(
 
 QueryPlanStepPtr ReadFromMergeTree::clone() const
 {
+    return cloneWithContext(context);
+}
+
+std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::cloneWithContext(ContextPtr context_) const
+{
     AnalysisResultPtr analysis_result_copy;
     if (analyzed_result_ptr)
         analysis_result_copy = std::make_shared<AnalysisResult>(*analyzed_result_ptr);
@@ -5021,7 +5019,7 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
         data_settings,
         query_info_copy,
         storage_snapshot,
-        context,
+        context_,
         block_size.max_block_size_rows,
         requested_num_streams,
         max_block_numbers_to_read,

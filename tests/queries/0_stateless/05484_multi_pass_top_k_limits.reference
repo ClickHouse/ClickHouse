@@ -1,0 +1,17 @@
+flushes of the candidate pass
+heavy0	3380	3380
+heavy1	3380	3380
+heavy2	3380	3380
+heavy3	3380	3380
+heavy4	3379	3379
+heavy0	3380	3380
+heavy1	3380	3380
+heavy2	3380	3380
+heavy3	3380	3380
+heavy4	3379	3379
+limits_01_within	1	1	0	0
+limits_02_rows_to_read	0	0	0	0
+limits_03_bytes_to_read	0	0	0	0
+limits_04_rows_to_group_by	0	0	0	0
+limits_05_break	0	0	0	0
+spills_01_candidate_pass	1	1	0	1

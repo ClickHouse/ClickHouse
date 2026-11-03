@@ -1,17 +1,20 @@
 #pragma once
 
 #include <Core/SortDescription.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 
+#include <optional>
 #include <type_traits>
 
 namespace DB
 {
 
-class ActionsDAG;
+class AggregatingStep;
 class ReadFromMergeTree;
+struct AggregateDescription;
 
 struct IDescriptionHolder
 {
@@ -83,9 +86,38 @@ enum class FilterResult
 /// many times and on which rows it was evaluated.
 [[nodiscard]] bool isSensitiveToEvaluationCount(const ActionsDAG & dag);
 
+/// Whether another node of `dag` has the result name of `node`. The reader and the PREWHERE read steps find columns by
+/// name, so another node under the same name would be taken for this one.
+[[nodiscard]] bool hasResultNameClash(const ActionsDAG & dag, const ActionsDAG::Node * node);
+
 /// True if optimizeExchanges will lift a plain gather above this step, so a scatter/gather pair separated
 /// by it still collapses. Shared with findGatherOverRead, which has to predict that rewrite.
 [[nodiscard]] bool canHoistGatherThroughStep(const IQueryPlanStep & step);
+
+/// A top-K of the groups of an aggregation by one of its aggregates (see `findAggregationTopK`).
+struct AggregationTopK
+{
+    QueryPlan::Node * aggregating_node = nullptr;
+    AggregatingStep * aggregating = nullptr;
+    /// The groups that the top takes: the limit of the sorting, `OFFSET` included.
+    size_t limit = 0;
+    /// The position of the aggregate that the top ranks by.
+    size_t rank_index = 0;
+    bool ascending = false;
+    /// Whether the sorting compares the aggregate by a collation.
+    bool has_collator = false;
+};
+
+/// The top-K of the groups of an aggregation that `limit_node` takes, if the plan has the shape of one there: a
+/// `LimitStep` without `WITH TIES` or an exact `rows_before_limit_at_least`, over a `SortingStep` with a limit by one
+/// column without `WITH FILL`, over expressions that pass the column on unchanged and keep the rows of every group,
+/// over a final aggregation by keys, not in order, without grouping sets or an overflow row, of which the column is an
+/// aggregate.
+[[nodiscard]] std::optional<AggregationTopK> findAggregationTopK(QueryPlan::Node & limit_node);
+
+/// Whether an aggregate never exceeds the rows of its group: a lone `count`, or the exact distinct count `uniqExact` or
+/// `uniqExactIf`.
+[[nodiscard]] bool isRowBoundedCount(const AggregateDescription & aggregate);
 
 [[nodiscard]] FilterResult filterResultForNotMatchedRows(
     const ActionsDAG & filter_dag,

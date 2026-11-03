@@ -10,6 +10,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
@@ -379,16 +380,6 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes
     }
 
     return 0;
-}
-
-/// The reader and the PREWHERE read steps find columns by name, so another node under the same name
-/// would be taken for this one.
-static bool hasResultNameClash(const ActionsDAG & dag, const ActionsDAG::Node * node)
-{
-    for (const auto & other : dag.getNodes())
-        if (&other != node && other.result_name == node->result_name)
-            return true;
-    return false;
 }
 
 PrewhereInfoPtr buildTopKDynamicFilterPrewhere(const PrewhereInfoPtr & existing_prewhere_info, const TopKFilterInfo & top_k_filter_info)

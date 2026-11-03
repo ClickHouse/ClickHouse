@@ -11,7 +11,6 @@ namespace DB
 {
 
 class ActionsDAG;
-class IColumn;
 class Set;
 
 /// A query-owned binding shared by the set builder and its consumers. A cache hit does not bind a set
@@ -43,8 +42,6 @@ public:
     std::span<ISpillable * const> get() const { return components; }
 
 private:
-    void add(const IColumn & column);
-
     std::vector<std::shared_ptr<SetSpillState>> states;
     std::vector<ISpillable *> components;
 };

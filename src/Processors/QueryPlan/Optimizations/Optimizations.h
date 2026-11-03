@@ -123,6 +123,12 @@ size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const
 /// bucket of the aggregation output materialize only its n best groups by that count.
 size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings & settings);
 
+/// Lets a final aggregation that feeds a descending top-K by `count`, `uniqExact` or `uniqExactIf` over a `MergeTree`
+/// read run the multi-pass top-K aggregation (see `AggregatingStep::enableMultiPassTopK`). `node` is the `LIMIT` of the
+/// top-K (see `findAggregationTopK`). Runs after every other optimization: the aggregation copies its input as they left
+/// it, to read it again at run time.
+void tryEnableMultiPassTopKAggregation(QueryPlan::Node & node);
+
 /// Split FilterStep into chain `ExpressionStep -> FilterStep`, where FilterStep contains minimal number of nodes.
 size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
 

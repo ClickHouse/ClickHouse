@@ -977,7 +977,7 @@ void considerEnablingParallelReplicas(
 
                 /// A read whose size cannot be measured may be of any size, so it counts as
                 /// qualifying: the gate must never reject a plan on missing information.
-                const auto bytes_to_read = reading->estimateCompressedBytesToRead();
+                const auto bytes_to_read = reading->estimateBytesToRead(ReadBytesKind::Compressed);
                 if (!bytes_to_read || *bytes_to_read / num_replicas >= min_bytes_per_replica)
                 {
                     found_read_worth_parallelizing = true;

@@ -133,6 +133,15 @@ using LazyMaterializingRowsPtr = std::shared_ptr<LazyMaterializingRows>;
 
 struct HypotheticalProjection;
 
+/// Which of the two sizes a part records for a column an estimate of the bytes of a read sums up.
+enum class ReadBytesKind : uint8_t
+{
+    /// The bytes the values occupy once decoded, i.e. the amount of work the pipeline does.
+    Uncompressed,
+    /// The bytes the values occupy on disk, i.e. the amount of data the read pulls in.
+    Compressed,
+};
+
 /// This step is created to read from MergeTree* table.
 /// For now, it takes a list of parts and creates source from it.
 class ReadFromMergeTree final : public SourceStepWithFilter
@@ -321,6 +330,8 @@ public:
     String getName() const override { return name; }
 
     QueryPlanStepPtr clone() const override;
+    /// A copy of the step that reads with the settings of `context_`.
+    std::unique_ptr<ReadFromMergeTree> cloneWithContext(ContextPtr context_) const;
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
@@ -413,12 +424,12 @@ public:
     /// Range analysis charges whole granules, so an estimate must not enforce a throwing read row limit.
     bool hasThrowingReadRowLimit() const;
 
-    /// How many compressed bytes this step reads off disk, based on index analysis (which is run here
-    /// if it has not run yet, and memoized as usual). Where a per-column estimate cannot be made
-    /// conservatively (e.g. a partial read of a compact part, which does not track per-column sizes),
-    /// it charges every selected part in full rather than giving up, so the answer errs high. Returns
-    /// nullopt only when the ranges to read cannot be analyzed at all.
-    std::optional<size_t> estimateCompressedBytesToRead() const;
+    /// How many bytes of `kind` this step reads, based on index analysis (which is run here if it has not
+    /// run yet, and memoized as usual). Where a per-column estimate cannot be made conservatively (e.g. a
+    /// partial read of a compact part, which does not track per-column sizes), it charges every selected
+    /// part in full rather than giving up, so the answer errs high. Returns nullopt when the ranges to read
+    /// cannot be analyzed at all, or when the columns the read takes are only known once it runs.
+    std::optional<size_t> estimateBytesToRead(ReadBytesKind kind) const;
 
     StorageMetadataPtr getStorageMetadata() const { return storage_snapshot->metadata; }
 
