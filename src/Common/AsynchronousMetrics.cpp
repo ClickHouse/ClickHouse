@@ -1692,8 +1692,17 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     Float64 max_cpu_cgroups = 0;
     /// `cpu.max` exists only while the `cpu` controller is enabled in the parent cgroup, so the nearest one can
     /// move at runtime, and a descriptor to a removed one fails with ENODEV.
-    if (getCgroupsV2PathContainingFile("cpu.max") != cgroupcpu_max_dir)
-        cgroupcpu_max_dir = openCgroupv2MetricFile("cpu.max", cgroupcpu_max);
+    try
+    {
+        if (getCgroupsV2PathContainingFile("cpu.max") != cgroupcpu_max_dir)
+            cgroupcpu_max_dir = openCgroupv2MetricFile("cpu.max", cgroupcpu_max);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        cgroupcpu_max.reset();
+        cgroupcpu_max_dir.reset();
+    }
     if (cgroupcpu_max)
     {
         try
@@ -1726,7 +1735,8 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
-            cgroupcpu_max_dir = openCgroupv2MetricFile("cpu.max", cgroupcpu_max);
+            cgroupcpu_max.reset();
+            cgroupcpu_max_dir.reset();
         }
     }
     else if (cgroupcpu_cfs_quota && cgroupcpu_cfs_period)
