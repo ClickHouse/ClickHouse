@@ -13,6 +13,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 DATA_FILE="${USER_FILES_PATH:?}/${CLICKHOUSE_DATABASE}/05331_query_condition_cache.parquet"
+STRINGS_FILE="${USER_FILES_PATH:?}/${CLICKHOUSE_DATABASE}/05331_query_condition_cache_strings.parquet"
 SETTINGS="use_query_condition_cache = 1, optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1"
 
 function run()
@@ -60,6 +61,24 @@ function run_top_k()
         WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND query_id = '${CLICKHOUSE_TEST_UNIQUE_NAME}_${tag}'"
 }
 
+# A top-K read by a `String` column skips row groups by their statistics alone, so their row blocks were never
+# checked against the filter and must not be stored as not matching. The last line checks that row groups were skipped.
+function run_top_k_statistics()
+{
+    local table=$1 tag=$2
+    ${CLICKHOUSE_CLIENT} --query_id="${CLICKHOUSE_TEST_UNIQUE_NAME}_${tag}" --query "
+        SELECT s FROM $table WHERE k > 0 ORDER BY s LIMIT 3
+        SETTINGS $SETTINGS, use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_variable_length_types = 0,
+            query_plan_max_limit_for_top_k_optimization = 0, max_threads = 1, max_parsing_threads = 1"
+    ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM $table WHERE k > 0 SETTINGS $SETTINGS"
+    ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM $table WHERE k > 0 SETTINGS use_query_condition_cache = 0"
+    ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
+    ${CLICKHOUSE_CLIENT} --query "
+        SELECT ProfileEvents['ParquetTopKSkippedRowGroups'] > 0
+        FROM system.query_log
+        WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND query_id = '${CLICKHOUSE_TEST_UNIQUE_NAME}_${tag}'"
+}
+
 ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE t (k UInt64, v UInt64)
     ENGINE = File(Parquet, '${CLICKHOUSE_DATABASE}/05331_query_condition_cache.parquet')
@@ -94,6 +113,26 @@ check_second_run s3
 echo "S3, TopN read first"
 run_top_k ts s3_top_k
 
+echo "File, statistics-only top-K read first"
+${CLICKHOUSE_CLIENT} --query "
+    CREATE TABLE tf_strings (s String, k UInt64)
+    ENGINE = File(Parquet, '${CLICKHOUSE_DATABASE}/05331_query_condition_cache_strings.parquet')
+    SETTINGS output_format_parquet_row_group_size = 16384"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO tf_strings SELECT leftPad(toString(number), 8, '0'), number % 7 FROM numbers(131072)"
+touch -d '2020-01-01 00:00:00' "$STRINGS_FILE"
+run_top_k_statistics tf_strings file_top_k_statistics
+
+echo "S3, statistics-only top-K read first"
+${CLICKHOUSE_CLIENT} --query "
+    CREATE TABLE ts_strings (s String, k UInt64)
+    ENGINE = S3(s3_conn, filename = '${CLICKHOUSE_DATABASE}_05331_query_condition_cache_strings.parquet', format = Parquet)
+    SETTINGS output_format_parquet_row_group_size = 16384"
+${CLICKHOUSE_CLIENT} --query "
+    INSERT INTO ts_strings SELECT leftPad(toString(number), 8, '0'), number % 7 FROM numbers(131072) SETTINGS s3_truncate_on_insert = 1"
+run_top_k_statistics ts_strings s3_top_k_statistics
+
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE ts"
-rm -f "$DATA_FILE"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE tf_strings"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE ts_strings"
+rm -f "$DATA_FILE" "$STRINGS_FILE"

@@ -29,3 +29,17 @@ S3, TopN read first
 501	452024500
 501	452024500
 1
+File, statistics-only top-K read first
+00000001
+00000002
+00000003
+112347
+112347
+1
+S3, statistics-only top-K read first
+00000001
+00000002
+00000003
+112347
+112347
+1

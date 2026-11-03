@@ -1181,9 +1181,9 @@ Chunk StorageObjectStorageSource::generate()
                         }
                     }
 
-                    /// Only a read of the whole file tells which row blocks have no match.
+                    /// Only a read of the whole file without top-K tells which row blocks have no match.
                     auto row_blocks = input_format->getMatchedRowBlocks();
-                    if (row_blocks && query_condition_cache_key && !object_info->file_bucket_info)
+                    if (row_blocks && query_condition_cache_key && !object_info->file_bucket_info && !format_filter_info->top_k_filter)
                     {
                         if (auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache())
                             query_condition_cache->writeRowBlocks(
