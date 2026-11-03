@@ -64,32 +64,31 @@ public:
 
     bool isShortCircuitForArgumentTypes(ShortCircuitSettings & settings, const DataTypes & arguments) const override
     {
-        /// `executeImpl` removes the constant NULL arguments, so the planning is done for the remaining (live) arguments.
-        /// The first live argument is always needed. Every other one is needed only for the rows
-        /// where all the preceding arguments are NULL, so it is evaluated lazily.
-        /// The arguments after the first one that cannot contain NULL are counted as well, although `executeImpl`
-        /// never executes them: a node shared by such an argument and a reachable lazy argument should stay lazy,
-        /// because it is then evaluated only once, under the mask of the reachable argument.
+        /// The first argument that is not always NULL is always needed. Every other argument is needed only
+        /// for the rows where all the preceding arguments are NULL, so it is evaluated lazily.
+        /// The arguments that are always NULL and the arguments after the first one that cannot contain NULL
+        /// are never executed by `executeImpl`, but they are counted as well: they can still have descendants
+        /// in the actions DAG (e.g. `if(intDiv(100, number) > 0, NULL, NULL)` has the type `Nullable(Nothing)`),
+        /// and a node shared by such an argument and a reachable lazy argument should stay lazy, because
+        /// it is then evaluated only once, under the mask of the reachable argument.
         std::optional<size_t> first_live_argument;
-        size_t number_of_live_arguments = 0;
         for (size_t i = 0; i < arguments.size(); ++i)
         {
-            if (arguments[i]->onlyNull())
-                continue;
-
-            if (!first_live_argument)
+            if (!arguments[i]->onlyNull())
+            {
                 first_live_argument = i;
-            ++number_of_live_arguments;
+                break;
+            }
         }
         settings.arguments_with_disabled_lazy_execution.insert(first_live_argument.value_or(0));
-        /// As in `and`, the masks of the live arguments are nested: the rows needed by an argument are a subset
+        /// As in `and`, the masks of the arguments are nested: the rows needed by an argument are a subset
         /// of the rows needed by every preceding argument. So a node that is a common descendant of several
         /// lazy arguments can be lazily executed as well, it is evaluated under the mask of each argument it belongs to.
         /// E.g. in `coalesce(a, f(x), g(x))` the node `x` must not be evaluated for the rows where `a` is not NULL.
         /// A node shared with the first live argument is evaluated eagerly, once for all rows.
-        /// With two live arguments `coalesce` is the same as `ifNull`, there is only one lazy argument, and nothing
+        /// With two arguments `coalesce` is the same as `ifNull`, there is only one lazy argument, and nothing
         /// is gained, so keep the same settings as in `ifNull` (as `multiIf` does for its `if` form).
-        settings.enable_lazy_execution_for_common_descendants_of_arguments = (number_of_live_arguments > 2);
+        settings.enable_lazy_execution_for_common_descendants_of_arguments = (arguments.size() > 2);
         settings.force_enable_lazy_execution = false;
         return true;
     }
