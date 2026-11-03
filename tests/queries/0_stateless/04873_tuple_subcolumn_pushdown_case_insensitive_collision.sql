@@ -1,6 +1,5 @@
 -- Tags: no-fasttest
 
-SET enable_analyzer = 1;
 SET optimize_functions_to_subcolumns = 1;
 -- The pass disables itself for the whole query when a join can wrap results in Nullable, so
 -- stress workers setting join_use_nulls = 1 would make the positive-control arm assert 0.

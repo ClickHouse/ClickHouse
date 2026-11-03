@@ -156,7 +156,7 @@ Name of the data part. The part naming structure can be used to determine many a
         {"removal_csn",                                 std::make_shared<DataTypeUInt64>(), "CSN of transaction that has removed this object"},
 
         {"has_lightweight_delete",                      std::make_shared<DataTypeUInt8>(), "The flag which indicated whether the part has lightweight delete mask."},
-        {"unique_key_bitmap_versions",                  std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Delete-bitmap sidecars on this part: one written for another part reads as 'for_<target>', one carried in from a retired source part as '<csn>_for_<target>'. Empty without a unique key."},
+        {"unique_key_bitmap_versions",                  std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Delete-bitmap sidecars on this part: one written for another part reads as `for_<target>`, one carried in from a retired source part as `<csn>_for_<target>`. Empty without a unique key."},
 
         {"last_removal_attempt_time",                   std::make_shared<DataTypeDateTime>(), "The last time the server tried to delete this part."},
         {"removal_state",                               std::make_shared<DataTypeString>(), "The current state of part removal process."},

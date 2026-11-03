@@ -70,7 +70,7 @@ public:
     static bool constantTimeEquals(const Digest & d1, const Digest & d2);
     /// Compares two Digest values using a constant-time comparison
     /// algorithm. This can be used to prevent timing attacks
-    /// (as discussed in <https://codahale.com/a-lesson-in-timing-attacks/>).
+    /// (as discussed in <https://web.archive.org/web/20090901005747/http://codahale.com/a-lesson-in-timing-attacks/>).
 
 protected:
     virtual void updateImpl(const void * data, std::size_t length) = 0;

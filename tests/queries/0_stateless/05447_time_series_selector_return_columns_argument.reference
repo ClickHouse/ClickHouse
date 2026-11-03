@@ -1,0 +1,23 @@
+-- the returned columns for each layout of the table
+id	Tuple(UInt64, LowCardinality(UUID))					
+samples	Array(Tuple(DateTime64(3), Float64))					
+id	Tuple(UInt64, LowCardinality(UUID))					
+timestamp	DateTime64(3)					
+value	Float64					
+id	Tuple(UInt64, LowCardinality(UUID))					
+samples	Array(Tuple(DateTime64(3), Float64))					
+id	Tuple(UInt64, LowCardinality(UUID))					
+timestamp	DateTime64(3)					
+value	Float64					
+-- the same samples are returned whatever the layout and the requested columns are
+buckets as samples	[('1970-01-01 00:01:40.000',1),('1970-01-01 01:06:40.000',2)]
+buckets as rows	1970-01-01 00:01:40.000	1
+buckets as rows	1970-01-01 01:06:40.000	2
+rows as samples	[('1970-01-01 00:01:40.000',1),('1970-01-01 01:06:40.000',2)]
+rows as rows	1970-01-01 00:01:40.000	1
+rows as rows	1970-01-01 01:06:40.000	2
+-- the time range is applied before the conversion
+2	1970-01-01 00:02:30.000	1970-01-01 01:06:40.000
+2
+-- the argument is required and must be one of the two values
+3
