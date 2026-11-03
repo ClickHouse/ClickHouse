@@ -187,23 +187,16 @@ namespace
         return path.substr(0, position);
     }
 
+    String getObjectStorageHash(const IObjectStorage & object_storage)
+    {
+        const String description = object_storage.getDescription();
+        return sipHash128String(description.substr(0, description.find('?')) + '\0' + object_storage.getObjectsNamespace());
+    }
+
     String getPageCachePathForObjectStorage(const RelativePathWithMetadata & object_info, const ObjectStoragePtr & object_storage)
     {
-        /// The path of an object is relative to its storage, and a strong ETag identifies only the versions of one
-        /// object, so the key includes the storage: the same path with the same ETag on another endpoint or in
-        /// another bucket or container can have different contents.
         if (object_storage->getType() != ObjectStorageType::Web)
-        {
-            SipHash hash;
-            hash.update(static_cast<UInt8>(object_storage->getType()));
-            hash.update(object_storage->getDescription());
-            hash.update('\0');
-            hash.update(object_storage->getObjectsNamespace());
-            hash.update('\0');
-            hash.update(object_storage->getCommonKeyPrefix());
-            hash.update('\0');
-            return fmt::format("object:{}:{}", toString(hash.get128()), object_info.getPath());
-        }
+            return fmt::format("s3:{}:{}", getObjectStorageHash(*object_storage), object_info.getPath());
 
         if (!object_info.read_source_index)
             return "web:" + object_info.getPath();
@@ -855,6 +848,7 @@ void StorageObjectStorageSource::lazyInitialize()
     if (reader)
     {
         ++total_files_read;
+        addTotalRowsApproxFromMetadata(*reader.getObjectInfo());
         reader_future = createReaderAsync();
     }
     initialized = true;
@@ -1244,6 +1238,7 @@ Chunk StorageObjectStorageSource::generate()
             break;
 
         ++total_files_read;
+        addTotalRowsApproxFromMetadata(*reader.getObjectInfo());
 
         /// Even if task is finished the thread may be not freed in pool.
         /// So wait until it will be freed before scheduling a new task.
@@ -1254,12 +1249,30 @@ Chunk StorageObjectStorageSource::generate()
     return {};
 }
 
+void StorageObjectStorageSource::addTotalRowsApproxFromMetadata(const ObjectInfo & object_info)
+{
+    /// A file split into buckets is read by several readers, so its number of rows would be counted
+    /// once per bucket. Buckets which only leave out the row groups the query condition cache proved
+    /// to have no match are read by a single reader. A lazily materialized read only reads the rows
+    /// already counted by the main read.
+    if (object_info.file_bucket_info && !object_info.file_bucket_info_from_query_condition_cache)
+        return;
+    if (object_info.rows_to_read)
+        return;
+
+    if (auto num_rows = object_info.getNumRowsHint())
+        addTotalRowsApprox(*num_rows);
+}
+
 void StorageObjectStorageSource::addNumRowsToCache(const ObjectInfo & object_info, size_t num_rows)
 {
     /// The cache key does not include the compression method. Under an explicit `compression_method` the
     /// same object can decode differently (or fail) through another definition with a different codec,
     /// so only row counts read with the codec derived from the path are cached.
     if (!isCompressionMethodHintAuto(configuration->compression_method))
+        return;
+
+    if (!canUseNumRowsFromSchemaCache(format_settings, read_context))
         return;
 
     const auto cache_key = getKeyForSchemaCache(
@@ -1270,7 +1283,7 @@ void StorageObjectStorageSource::addNumRowsToCache(const ObjectInfo & object_inf
     schema_cache.addNumRows(cache_key, num_rows);
 }
 
-StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReader()
+StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReader(bool prefetch_input_format)
 {
     return createReader(
         0,
@@ -1288,7 +1301,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         parser_shared_resources,
         format_filter_info,
         need_only_count,
-        top_k_query_condition_cache_key);
+        top_k_query_condition_cache_key,
+        prefetch_input_format);
 }
 
 StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReader(
@@ -1307,7 +1321,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     FormatParserSharedResourcesPtr parser_shared_resources,
     FormatFilterInfoPtr format_filter_info,
     bool need_only_count,
-    ObjectStorageTopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key)
+    ObjectStorageTopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key,
+    bool prefetch_input_format)
 {
     ObjectInfoPtr object_info;
     bool use_top_k_query_condition_cache_key = false;
@@ -1519,6 +1534,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         /// explicit `compression_method` (including a misspelled one on a table loaded by `ATTACH`, where it is
         /// not rejected) always reads the object as the actual read would.
         if (!isCompressionMethodHintAuto(configuration->compression_method))
+            return std::nullopt;
+
+        if (!canUseNumRowsFromSchemaCache(format_settings, context_))
             return std::nullopt;
 
         const auto cache_key = getKeyForSchemaCache(
@@ -1922,6 +1940,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         if (need_only_count)
             input_format->needOnlyCount();
 
+        if (prefetch_input_format)
+            input_format->prefetch();
+
         builder.init(Pipe(input_format));
 
         if (!identity_partition_columns.empty())
@@ -2115,7 +2136,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
 std::future<StorageObjectStorageSource::ReaderHolder> StorageObjectStorageSource::createReaderAsync()
 {
-    return create_reader_scheduler([=, this] { return createReader(); }, Priority{});
+    return create_reader_scheduler([=, this] { return createReader(/* prefetch_input_format */ true); }, Priority{});
 }
 
 ObjectMetadata getObjectMetadataForRead(const IObjectStorage & object_storage, const RelativePathWithMetadata & object, bool with_tags)
@@ -2320,6 +2341,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         else
         {
             SipHash hash;
+            hash.update(getObjectStorageHash(*object_storage));
             hash.update(object_info.getPath());
             hash.update(*content_token);
 
