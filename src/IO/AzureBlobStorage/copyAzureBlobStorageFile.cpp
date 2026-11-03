@@ -3,7 +3,6 @@
 #if USE_AZURE_BLOB_STORAGE
 
 #include <Common/PODArray.h>
-#include <Common/ThreadPoolTaskTracker.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/typeid_cast.h>
@@ -12,7 +11,6 @@
 #include <IO/SeekableReadBuffer.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/WriteBufferFromVector.h>
-#include <IO/AzureBlobStorage/isRetryableAzureException.h>
 #include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
 #include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
 #include <Common/getRandomASCIIString.h>
@@ -91,10 +89,23 @@ namespace
         const LoggerPtr log;
         size_t max_single_part_upload_size;
 
+        struct UploadPartTask
+        {
+            size_t part_offset;
+            size_t part_size;
+            std::vector<std::string> block_ids;
+            bool is_finished = false;
+        };
+
         size_t normal_part_size;
-        /// One block id per part, indexed by part number so that `completeMultipartUpload`
-        /// commits the blocks in the right order regardless of the order parts finish in.
-        Strings block_ids;
+        std::vector<std::string> block_ids;
+
+        std::list<UploadPartTask> TSA_GUARDED_BY(bg_tasks_mutex) bg_tasks;
+        int num_added_bg_tasks TSA_GUARDED_BY(bg_tasks_mutex) = 0;
+        int num_finished_bg_tasks TSA_GUARDED_BY(bg_tasks_mutex) = 0;
+        std::exception_ptr bg_exception TSA_GUARDED_BY(bg_tasks_mutex);
+        std::mutex bg_tasks_mutex;
+        std::condition_variable bg_tasks_condvar;
 
         void calculatePartSize()
         {
@@ -187,7 +198,7 @@ namespace
             }
             catch (const Azure::Core::RequestFailedException & e)
             {
-                error_code = getAzureErrorCodeForLog(e);
+                error_code = static_cast<Int32>(e.StatusCode);
                 error_message = e.Message;
                 if (blob_storage_log)
                     blob_storage_log->addEvent(
@@ -201,17 +212,6 @@ namespace
                         error_message);
                 throw;
             }
-
-            if (blob_storage_log)
-                blob_storage_log->addEvent(
-                    BlobStorageLogElement::EventType::Upload,
-                    /* bucket */ dest_container_for_logging,
-                    /* remote_path */ dest_blob,
-                    /* local_path */ {},
-                    /* data_size */ total_size,
-                    watch.elapsedMicroseconds(),
-                    /* error_code */ 0,
-                    /* error_message */ {});
         }
 
         void completeMultipartUpload()
@@ -230,7 +230,7 @@ namespace
             }
             catch (const Azure::Core::RequestFailedException & e)
             {
-                error_code = getAzureErrorCodeForLog(e);
+                error_code = static_cast<Int32>(e.StatusCode);
                 error_message = e.Message;
                 if (blob_storage_log)
                     blob_storage_log->addEvent(
@@ -262,58 +262,116 @@ namespace
         {
             calculatePartSize();
 
-            size_t num_parts = (total_size + normal_part_size - 1) / normal_part_size;
-            block_ids.resize(num_parts);
-
             size_t position = offset;
             size_t end_position = offset + total_size;
 
-            LogSeriesLimiterPtr limited_log = std::make_shared<LogSeriesLimiter>(log, 1, 5);
-            /// Bound the number of parts staged concurrently. Every in-flight part holds a full
-            /// `part_size` buffer in memory, so without this limit a large file (or many files
-            /// copied in parallel on the backups IO thread pool) could schedule all parts at once
-            /// and blow up memory usage.
-            TaskTracker task_tracker(schedule, settings->max_inflight_parts_for_one_file, limited_log);
-
             try
             {
-                for (size_t part_index = 0; position < end_position; ++part_index)
+                while (position < end_position)
                 {
                     size_t next_position = std::min(position + normal_part_size, end_position);
                     size_t part_size = next_position - position; /// `part_size` is either `normal_part_size` or smaller if it's the final part.
 
-                    task_tracker.add([this, part_index, position, part_size]()
-                    {
-                        processUploadPartRequest(part_index, position, part_size);
-                    });
+                    uploadPart(position, part_size);
 
                     position = next_position;
                 }
-
-                task_tracker.waitAll();
-                completeMultipartUpload();
             }
             catch (...)
             {
                 tryLogCurrentException(log, fmt::format("While performing multipart upload of blob {} in container {}", dest_blob, dest_container_for_logging));
-                task_tracker.safeWaitAll();
+                waitForAllBackgroundTasks();
                 throw;
             }
+
+            waitForAllBackgroundTasks();
+            completeMultipartUpload();
         }
 
-        void processUploadPartRequest(size_t part_index, size_t part_offset, size_t part_size)
+
+        void uploadPart(size_t part_offset, size_t part_size)
         {
             LOG_TRACE(log, "Writing part. Container: {}, Blob: {}, Size: {}", dest_container_for_logging, dest_blob, part_size);
 
+            if (!part_size)
+            {
+                LOG_TRACE(log, "Skipping writing an empty part.");
+                return;
+            }
+
+            if (schedule)
+            {
+                UploadPartTask *  task = nullptr;
+
+                {
+                    std::lock_guard lock(bg_tasks_mutex);
+                    task = &bg_tasks.emplace_back();
+                    ++num_added_bg_tasks;
+                }
+
+                /// Notify waiting thread when task finished
+                auto task_finish_notify = [this, task]()
+                {
+                    std::lock_guard lock(bg_tasks_mutex);
+                    task->is_finished = true;
+                    ++num_finished_bg_tasks;
+
+                    /// Notification under mutex is important here.
+                    /// Otherwise, WriteBuffer could be destroyed in between
+                    /// Releasing lock and condvar notification.
+                    bg_tasks_condvar.notify_one();
+                };
+
+                try
+                {
+                    task->part_offset = part_offset;
+                    task->part_size = part_size;
+
+                    schedule([this, task, task_finish_notify]()
+                    {
+                        try
+                        {
+                            processUploadPartRequest(*task);
+                        }
+                        catch (...)
+                        {
+                            std::lock_guard lock(bg_tasks_mutex);
+                            if (!bg_exception)
+                            {
+                                tryLogCurrentException(log, "While writing part");
+                                bg_exception = std::current_exception(); /// The exception will be rethrown after all background tasks stop working.
+                            }
+                        }
+                        task_finish_notify();
+                    }, Priority{});
+                }
+                catch (...)
+                {
+                    task_finish_notify();
+                    throw;
+                }
+            }
+            else
+            {
+                UploadPartTask task;
+                task.part_offset = part_offset;
+                task.part_size = part_size;
+                processUploadPartRequest(task);
+                block_ids.insert(block_ids.end(),task.block_ids.begin(), task.block_ids.end());
+            }
+        }
+
+        void processUploadPartRequest(UploadPartTask & task)
+        {
             ProfileEvents::increment(ProfileEvents::AzureStageBlock);
             if (client->IsClientForDisk())
                 ProfileEvents::increment(ProfileEvents::DiskAzureStageBlock);
 
             auto block_blob_client = client->GetBlockBlobClient(dest_blob);
-            auto read_buffer = std::make_unique<LimitSeekableReadBuffer>(create_read_buffer(), part_offset, part_size);
+            auto read_buffer = std::make_unique<LimitSeekableReadBuffer>(create_read_buffer(), task.part_offset, task.part_size);
 
-            /// part_size is already normalized according to min_upload_part_size and max_upload_part_size.
-            size_t size_to_stage = part_size;
+            /// task.part_size is already normalized according to min_upload_part_size and max_upload_part_size.
+            size_t size_to_stage = task.part_size;
 
             PODArray<char> memory;
             {
@@ -324,8 +382,7 @@ namespace
 
             Azure::Core::IO::MemoryBodyStream stream(reinterpret_cast<const uint8_t *>(memory.data()), size_to_stage);
 
-            auto block_id = getRandomASCIIString(64);
-            block_ids[part_index] = block_id;
+            const auto & block_id = task.block_ids.emplace_back(getRandomASCIIString(64));
 
             Stopwatch watch;
             Int32 error_code = 0;
@@ -336,7 +393,7 @@ namespace
             }
             catch (const Azure::Core::RequestFailedException & e)
             {
-                error_code = getAzureErrorCodeForLog(e);
+                error_code = static_cast<Int32>(e.StatusCode);
                 error_message = e.Message;
                 if (blob_storage_log)
                     blob_storage_log->addEvent(
@@ -365,6 +422,25 @@ namespace
 
             LOG_TRACE(log, "Writing part. Container: {}, Blob: {}, block_id: {}, size: {}",
                       dest_container_for_logging, dest_blob, block_id, size_to_stage);
+        }
+
+
+        void waitForAllBackgroundTasks()
+        {
+            if (!schedule)
+                return;
+
+            std::unique_lock lock(bg_tasks_mutex);
+            /// Suppress warnings because bg_tasks_mutex is actually hold, but tsa annotations do not understand std::unique_lock
+            bg_tasks_condvar.wait(lock, [this]() {return TSA_SUPPRESS_WARNING_FOR_READ(num_added_bg_tasks) == TSA_SUPPRESS_WARNING_FOR_READ(num_finished_bg_tasks); });
+
+            auto exception = TSA_SUPPRESS_WARNING_FOR_READ(bg_exception);
+            if (exception)
+                std::rethrow_exception(exception);
+
+            const auto & tasks = TSA_SUPPRESS_WARNING_FOR_READ(bg_tasks);
+            for (const auto & task : tasks)
+                block_ids.insert(block_ids.end(),task.block_ids.begin(), task.block_ids.end());
         }
     };
 }
@@ -419,82 +495,59 @@ void copyAzureBlobStorageFile(
 
             auto source_uri = block_blob_client_src.GetUrl();
 
-            Stopwatch watch;
-            auto log_copy = [&](Int32 error_code, const String & error_message)
+            if (size < settings->max_single_part_copy_size)
             {
-                if (blob_storage_log)
-                    blob_storage_log->addCopyEvent(
-                        src_container_for_logging, src_blob, dest_container_for_logging, dest_blob, size,
-                        watch.elapsedMicroseconds(), error_code, error_message);
-            };
-
-            try
-            {
-                if (size < settings->max_single_part_copy_size)
+                Azure::Storage::Blobs::CopyBlobFromUriOptions copy_options;
+                if (object_to_attributes.has_value())
                 {
-                    Azure::Storage::Blobs::CopyBlobFromUriOptions copy_options;
-                    if (object_to_attributes.has_value())
-                    {
-                        for (const auto & [key, value] : *object_to_attributes)
-                            copy_options.Metadata[key] = value;
-                    }
+                    for (const auto & [key, value] : *object_to_attributes)
+                        copy_options.Metadata[key] = value;
+                }
 
-                    LOG_TRACE(log, "Copy blob sync {} -> {}", src_blob, dest_blob);
-                    block_blob_client_dest.CopyFromUri(source_uri, copy_options);
+                LOG_TRACE(log, "Copy blob sync {} -> {}", src_blob, dest_blob);
+                block_blob_client_dest.CopyFromUri(source_uri, copy_options);
+            }
+            else
+            {
+                Azure::Storage::Blobs::StartBlobCopyFromUriOptions copy_options;
+                if (object_to_attributes.has_value())
+                {
+                    for (const auto & [key, value] : *object_to_attributes)
+                        copy_options.Metadata[key] = value;
+                }
+
+                Azure::Storage::Blobs::StartBlobCopyOperation operation = block_blob_client_dest.StartCopyFromUri(source_uri, copy_options);
+
+                auto copy_response = operation.PollUntilDone(std::chrono::milliseconds(100));
+                auto properties_model = copy_response.Value;
+
+                auto copy_status = properties_model.CopyStatus;
+                auto copy_status_description = properties_model.CopyStatusDescription;
+
+                /// `CopySource` and `CopyStatusDescription` are optional in the properties of a blob:
+                /// the SDK models them as `Nullable`, and `Nullable::Value()` of an empty one aborts the
+                /// process in a release build (`AZURE_ASSERT_MSG` expands to a bare `std::abort` under
+                /// `NDEBUG`). The properties polled here come from the remote endpoint, which is under no
+                /// obligation to send either header, so nothing below dereferences them unchecked.
+                if (copy_status.HasValue() && copy_status.Value() == Azure::Storage::Blobs::Models::CopyStatus::Success)
+                {
+                    LOG_TRACE(log, "Copy of {} to {} finished", src_blob, dest_blob);
                 }
                 else
                 {
-                    Azure::Storage::Blobs::StartBlobCopyFromUriOptions copy_options;
-                    if (object_to_attributes.has_value())
-                    {
-                        for (const auto & [key, value] : *object_to_attributes)
-                            copy_options.Metadata[key] = value;
-                    }
-
-                    Azure::Storage::Blobs::StartBlobCopyOperation operation = block_blob_client_dest.StartCopyFromUri(source_uri, copy_options);
-
-                    auto copy_response = operation.PollUntilDone(std::chrono::milliseconds(100));
-                    auto properties_model = copy_response.Value;
-
-                    auto copy_status = properties_model.CopyStatus;
-                    auto copy_status_description = properties_model.CopyStatusDescription;
-
-                    /// `CopySource` and `CopyStatusDescription` are optional in the properties of a blob:
-                    /// the SDK models them as `Nullable`, and `Nullable::Value()` of an empty one aborts the
-                    /// process in a release build (`AZURE_ASSERT_MSG` expands to a bare `std::abort` under
-                    /// `NDEBUG`). The properties polled here come from the remote endpoint, which is under no
-                    /// obligation to send either header, so nothing below dereferences them unchecked.
-                    if (copy_status.HasValue() && copy_status.Value() == Azure::Storage::Blobs::Models::CopyStatus::Success)
-                    {
-                        LOG_TRACE(log, "Copy of {} to {} finished", src_blob, dest_blob);
-                    }
-                    else
-                    {
-                        if (copy_status.HasValue())
-                            throw Exception(ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Copy from {} to {} failed with status {} description {} (operation is done {})",
-                                            src_blob, dest_blob, copy_status.Value().ToString(),
-                                            copy_status_description.HasValue() ? copy_status_description.Value() : String("<none>"),
-                                            operation.IsDone());
-                        throw Exception(
-                            ErrorCodes::AZURE_BLOB_STORAGE_ERROR,
-                            "Copy from {} to {} didn't complete with success status (operation is done {})",
-                            src_blob,
-                            dest_blob,
-                            operation.IsDone());
-                    }
+                    if (copy_status.HasValue())
+                        throw Exception(ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Copy from {} to {} failed with status {} description {} (operation is done {})",
+                                        src_blob, dest_blob, copy_status.Value().ToString(),
+                                        copy_status_description.HasValue() ? copy_status_description.Value() : String("<none>"),
+                                        operation.IsDone());
+                    throw Exception(
+                        ErrorCodes::AZURE_BLOB_STORAGE_ERROR,
+                        "Copy from {} to {} didn't complete with success status (operation is done {})",
+                        src_blob,
+                        dest_blob,
+                        operation.IsDone());
                 }
             }
-            catch (const Azure::Core::RequestFailedException & e)
-            {
-                log_copy(getAzureErrorCodeForLog(e), e.Message);
-                throw;
-            }
-            catch (...)
-            {
-                log_copy(static_cast<Int32>(getCurrentExceptionCode()), getCurrentExceptionMessage(false));
-                throw;
-            }
-            log_copy(0, {});
             is_native_copy_done = true;
         }
         catch (const Azure::Storage::StorageException & e)

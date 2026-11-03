@@ -12,9 +12,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # the block unchanged, so nothing is wrapped into `ColumnBLOB`.
 # `enable_analyzer` is pinned because `BlocksMarshallingStep` is only ever added by the analyzer,
 # and CI runs variants with `allow_experimental_analyzer = 0`.
-# `serialize_query_plan` is pinned to 0 so that the counts below describe the plan this test is
-# about: with a serialized plan the shard's own plan is built here instead of on the shard, which
-# changes where the steps are counted. The `distributed plan` CI variants set
+# `serialize_query_plan` is pinned to 0 for the queries that are executed: a plan serialized and
+# shipped to a shard legitimately still carries `BlocksMarshalling`, which is not registered in
+# `QueryPlanStepRegistry` on master, so executing one fails with `Unknown query plan step:
+# BlocksMarshalling` independently of this fix. The `distributed plan` CI variants set
 # `serialize_query_plan = 1` in the default profile.
 CLIENT="$CLICKHOUSE_CLIENT --enable_analyzer 1 --compression 1 --serialize_query_plan 0 --query_kind=secondary_query"
 INITIAL_CLIENT="$CLICKHOUSE_CLIENT --enable_analyzer 1 --compression 1 --serialize_query_plan 0"
@@ -53,8 +54,7 @@ marshalling_counts_query() {
                 rowNumberInAllBlocks() AS rn,
                 min(if(explain ILIKE '%$2%', rn, NULL)) OVER () AS remote_rn
             FROM ( EXPLAIN distributed = 1 $1 )
-        )
-        SETTINGS explain_query_plan_default = 'legacy'"
+        )"
 }
 
 # `GROUPING SETS` with 2+ sets, so `MergingAggregatedTransform::addChunk` type-checks
@@ -147,7 +147,8 @@ $INITIAL_CLIENT -q "
 # `BlocksMarshalling` step, while the branch read from a remote replica must keep it.
 #
 # The last one asserts that a plan which is serialized and shipped to a shard keeps marshalling:
-# the shard sends its blocks back over the network.
+# the shard sends its blocks back over the network. EXPLAIN only, executing such a plan fails with
+# `Unknown query plan step: BlocksMarshalling` both with and without this fix.
 $CLIENT -q "
     SELECT '-- BlocksMarshalling steps for remote(): total, above ReadFromRemote, ReadFromRemote steps';
     $(marshalling_counts_query "
@@ -178,8 +179,7 @@ $INITIAL_CLIENT -q "
         SELECT x, sum(y) FROM remote('127.0.0.{1,2}', currentDatabase(), buf_all)
         GROUP BY GROUPING SETS ((x, z % 1), (intDiv(z, 100), z + 2))
         SETTINGS enable_parallel_blocks_marshalling = 1, prefer_localhost_replica = 0, serialize_query_plan = 0
-    )
-    SETTINGS explain_query_plan_default = 'legacy';
+    );
 "
 
 $CLIENT -q "

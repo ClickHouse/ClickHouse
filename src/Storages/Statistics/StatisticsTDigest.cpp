@@ -5,7 +5,6 @@
 namespace DB
 {
 
-
 StatisticsTDigest::StatisticsTDigest(const SingleStatisticsDescription & description, const DataTypePtr & data_type_)
     : IStatistics(description)
     , data_type(removeNullable(data_type_))
@@ -30,30 +29,25 @@ void StatisticsTDigest::merge(const StatisticsPtr & other_stats)
     t_digest.merge(other->t_digest);
 }
 
-size_t StatisticsTDigest::allocatedBytes() const
-{
-    return sizeof(*this) + t_digest.allocatedBytes();
-}
-
 void StatisticsTDigest::serialize(WriteBuffer & buf)
 {
     t_digest.serialize(buf);
 }
 
-void StatisticsTDigest::deserialize(ReadBuffer & buf, StatisticsFileVersion /*version*/)
+void StatisticsTDigest::deserialize(ReadBuffer & buf)
 {
     t_digest.deserialize(buf);
 }
 
-std::optional<Float64> StatisticsTDigest::estimateLess(const Field & val) const
+Float64 StatisticsTDigest::estimateLess(const Field & val) const
 {
     auto val_as_float = StatisticsUtils::tryConvertToFloat64(val, data_type);
-    if (!val_as_float)
-        return std::nullopt;
+    if (!val_as_float.has_value())
+        return 0;
     return t_digest.getCountLessThan(*val_as_float);
 }
 
-std::optional<Float64> StatisticsTDigest::estimateEqual(const Field & val) const
+Float64 StatisticsTDigest::estimateEqual(const Field & val) const
 {
     auto val_as_float = StatisticsUtils::tryConvertToFloat64(val, data_type);
     if (!val_as_float.has_value())

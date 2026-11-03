@@ -1,9 +1,7 @@
 #include <future>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <memory>
 
 #include <Columns/ColumnString.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -20,7 +18,6 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Access/ContextAccess.h>
 #include <Databases/IDatabase.h>
-#include <Storages/System/extractTablesFilter.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sources/NullSource.h>
@@ -41,7 +38,7 @@ using TFuture = typename StorageSystemReplicas::TPools::StatusPool::TFuture;
 using TStatus = typename StorageSystemReplicas::TPools::StatusPool::TStatus;
 
 StorageSystemReplicas::StorageSystemReplicas(const StorageID & table_id_)
-    : StorageWithCommonVirtualColumns(table_id_)
+    : IStorage(table_id_)
     , pools(std::make_shared<TPools>(128))
 {
 
@@ -61,7 +58,7 @@ StorageSystemReplicas::StorageSystemReplicas(const StorageID & table_id_)
         { "is_session_expired",                   std::make_shared<DataTypeUInt8>(),    "Whether the session with ClickHouse Keeper has expired. Basically the same as `is_readonly`."},
         { "future_parts",                         std::make_shared<DataTypeUInt32>(),   "The number of data parts that will appear as the result of INSERTs or merges that haven't been done yet."},
         { "parts_to_check",                       std::make_shared<DataTypeUInt32>(),   "The number of data parts in the queue for verification. A part is put in the verification queue if there is suspicion that it might be damaged."},
-        { "zookeeper_name",                       std::make_shared<DataTypeString>(),   "The name of the [Zoo]Keeper cluster (possibly auxiliary one) where the table's metadata is stored"},
+        { "zookeeper_name",                       std::make_shared<DataTypeString>(),   "The name of the the [Zoo]Keeper cluster (possibly auxiliary one) where the table's metadata is stored"},
         { "zookeeper_path",                       std::make_shared<DataTypeString>(),   "Path to table data in ClickHouse Keeper."},
         { "replica_name",                         std::make_shared<DataTypeString>(),   "Replica name in ClickHouse Keeper. Different replicas of the same table have different names."},
         { "replica_path",                         std::make_shared<DataTypeString>(),   "Path to replica data in ClickHouse Keeper. The same as concatenating 'zookeeper_path/replicas/replica_path'."},
@@ -78,7 +75,7 @@ StorageSystemReplicas::StorageSystemReplicas(const StorageID & table_id_)
         { "oldest_part_to_get",                   std::make_shared<DataTypeString>(),   "The name of the part to fetch from other replicas obtained from the oldest GET_PARTS entry in the replication queue."},
         { "oldest_part_to_merge_to",              std::make_shared<DataTypeString>(),   "The result part name to merge to obtained from the oldest MERGE_PARTS entry in the replication queue."},
         { "oldest_part_to_mutate_to",             std::make_shared<DataTypeString>(),   "The result part name to mutate to obtained from the oldest MUTATE_PARTS entry in the replication queue."},
-        { "log_max_index",                        std::make_shared<DataTypeUInt64>(),   "Maximum entry number in the log of general activity. This column and the next three (`log_pointer`, `total_replicas`, `active_replicas`) have a non-zero value only where there is an active session with ClickHouse Keeper."},
+        { "log_max_index",                        std::make_shared<DataTypeUInt64>(),   "Maximum entry number in the log of general activity."},
         { "log_pointer",                          std::make_shared<DataTypeUInt64>(),   "Maximum entry number in the log of general activity that the replica copied to its execution queue, plus one. "
                                                                                              "If log_pointer is much smaller than log_max_index, something is wrong."},
         { "last_queue_update",                    std::make_shared<DataTypeDateTime>(), "When the queue was updated last time."},
@@ -97,16 +94,7 @@ StorageSystemReplicas::StorageSystemReplicas(const StorageID & table_id_)
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(description);
-    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-}
-
-VirtualColumnsDescription StorageSystemReplicas::createVirtuals()
-{
-    VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    return desc;
 }
 
 StorageSystemReplicas::~StorageSystemReplicas() = default;
@@ -123,6 +111,7 @@ public:
         const StorageSnapshotPtr & storage_snapshot_,
         const ContextPtr & context_,
         Block sample_block,
+        std::map<String, std::map<String, StoragePtr>> replicated_tables_,
         bool with_zk_fields_,
         size_t max_block_size_,
         std::shared_ptr<StorageSystemReplicas::TPools> pools_)
@@ -132,6 +121,7 @@ public:
             query_info_,
             storage_snapshot_,
             context_)
+        , replicated_tables(std::move(replicated_tables_))
         , with_zk_fields(with_zk_fields_)
         , max_block_size(max_block_size_)
         , pools(std::move(pools_))
@@ -141,17 +131,11 @@ public:
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
 private:
-    /// Collects the replicated tables the query can ask for. Deferred to initializePipeline so
-    /// that the conditions on `database` and `table`, which only become known in applyFilters,
-    /// can keep it from resolving every table of the server.
-    std::map<String, std::map<String, StoragePtr>> collectReplicatedTables() const;
-
+    std::map<String, std::map<String, StoragePtr>> replicated_tables;
     const bool with_zk_fields;
     const size_t max_block_size;
     std::shared_ptr<StorageSystemReplicas::TPools> pools;
     ExpressionActionsPtr virtual_columns_filter;
-    std::function<bool(const String &)> database_name_filter;
-    std::function<bool(const String &)> table_name_filter;
 };
 
 void ReadFromSystemReplicas::applyFilters(ActionDAGNodes added_filter_nodes)
@@ -168,49 +152,13 @@ void ReadFromSystemReplicas::applyFilters(ActionDAGNodes added_filter_nodes)
             { ColumnString::create(), std::make_shared<DataTypeString>(), "engine" },
         };
 
-        /// Read the conditions on `database` and `table` before the filter below is built: that
-        /// build drops the elements of an `IN` over a subquery, and the extraction needs them (it
-        /// builds such a set itself, keeping them).
-        database_name_filter = extractNameFilter(filter_actions_dag->getOutputs().at(0), "database", context);
-        table_name_filter = extractNameFilter(filter_actions_dag->getOutputs().at(0), "table", context);
-
         auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter, context);
         if (dag)
             virtual_columns_filter = VirtualColumnUtils::buildFilterExpression(std::move(*dag), context);
     }
 }
 
-std::map<String, std::map<String, StoragePtr>> ReadFromSystemReplicas::collectReplicatedTables() const
-{
-    const auto access = context->getAccess();
-    const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
-
-    std::map<String, std::map<String, StoragePtr>> replicated_tables;
-    for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
-    {
-        if (database_name_filter && !database_name_filter(db.first))
-            continue;
-
-        /// Check if database can contain replicated tables
-        if (db.second->isExternal())
-            continue;
-        const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, db.first);
-        auto iterator = db.second->getTablesIterator(context, table_name_filter, /* skip_not_loaded */ false);
-        for (; iterator->isValid(); iterator->next())
-        {
-            auto table = castStorage<StorageReplicatedMergeTree>(iterator->table(), DeferredTable::Skip);
-            if (!table)
-                continue;
-            if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, db.first, iterator->name()))
-                continue;
-            replicated_tables[db.first][iterator->name()] = table;
-        }
-    }
-
-    return replicated_tables;
-}
-
-void StorageSystemReplicas::readImpl(
+void StorageSystemReplicas::read(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -221,6 +169,29 @@ void StorageSystemReplicas::readImpl(
     const size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names);
+
+    const auto access = context->getAccess();
+    const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
+
+    /// We collect a set of replicated tables.
+    std::map<String, std::map<String, StoragePtr>> replicated_tables;
+    for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
+    {
+        /// Check if database can contain replicated tables
+        if (db.second->isExternal())
+            continue;
+        const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, db.first);
+        for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
+        {
+            auto table = castStorage<StorageReplicatedMergeTree>(iterator->table(), DeferredTable::Skip);
+            if (!table)
+                continue;
+            if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, db.first, iterator->name()))
+                continue;
+            replicated_tables[db.first][iterator->name()] = table;
+        }
+    }
+
 
     /// Do you need columns that require a ZooKeeper request to compute.
     bool with_zk_fields = false;
@@ -242,12 +213,12 @@ void StorageSystemReplicas::readImpl(
     auto header = storage_snapshot->metadata->getSampleBlock();
     auto reading = std::make_unique<ReadFromSystemReplicas>(
         column_names, query_info, storage_snapshot,
-        std::move(context), std::move(header), with_zk_fields, max_block_size, pools);
+        std::move(context), std::move(header), std::move(replicated_tables), with_zk_fields, max_block_size, pools);
 
     query_plan.addStep(std::move(reading));
 }
 
-class SystemReplicasSource final : public ISource
+class SystemReplicasSource : public ISource
 {
 public:
     SystemReplicasSource(
@@ -294,16 +265,14 @@ void ReadFromSystemReplicas::initializePipeline(QueryPipelineBuilder & pipeline,
 {
     auto header = getOutputHeader();
 
-    auto replicated_tables = collectReplicatedTables();
-
     MutableColumnPtr col_database_mut = ColumnString::create();
     MutableColumnPtr col_table_mut = ColumnString::create();
     MutableColumnPtr col_uuid_mut = ColumnUUID::create();
     MutableColumnPtr col_engine_mut = ColumnString::create();
 
-    for (const auto & db : replicated_tables)
+    for (auto & db : replicated_tables)
     {
-        for (const auto & table : db.second)
+        for (auto & table : db.second)
         {
             col_database_mut->insert(db.first);
             col_table_mut->insert(table.first);
@@ -407,7 +376,7 @@ Chunk SystemReplicasSource::generate()
             }
         }
 
-        const TStatus * status = nullptr;
+        const TStatus * status;
         try
         {
             status = &futures[i].get();
@@ -416,8 +385,7 @@ Chunk SystemReplicasSource::generate()
         {
             if (e.code() == ErrorCodes::ABORTED)
             {
-                /// The table has been shut down or dropped, so its row is skipped instead of being reported as an error.
-                LOG_DEBUG(logger, "Cannot get the status of a storage: {}", e.displayText());
+                tryLogCurrentException(logger, "Received the ABORTED error while trying to get the status of a storage, this is likely because it has been shut down");
                 continue;
             }
             throw;
@@ -485,6 +453,3 @@ Chunk SystemReplicasSource::generate()
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemReplicas) }

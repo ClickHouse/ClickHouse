@@ -1,7 +1,0 @@
-<clickhouse>
-    <profiles>
-        <default>
-            <compatibility>26.7</compatibility>
-        </default>
-    </profiles>
-</clickhouse>

@@ -265,7 +265,6 @@ createAggregateFunctionAvgWeighted(const std::string & name, const DataTypes & a
 
 }
 
-void registerAggregateFunctionAvgWeighted(AggregateFunctionFactory & factory);
 void registerAggregateFunctionAvgWeighted(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(

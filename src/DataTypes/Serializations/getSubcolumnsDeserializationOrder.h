@@ -1,5 +1,6 @@
 #pragma once
 #include <DataTypes/Serializations/ISerialization.h>
+#include <DataTypes/IDataType.h>
 
 namespace DB
 {

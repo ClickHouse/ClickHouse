@@ -4,6 +4,7 @@
 #include <Disks/DiskObjectStorage/Replication/ObjectStorageRouter.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 
+#include <Interpreters/Context.h>
 
 #include <Common/assert_cast.h>
 
@@ -11,12 +12,7 @@ namespace DB
 {
 
 /// TODO: This is crap, we need to reimplement cache disk, it is too bad :(
-DiskObjectStoragePtr DiskObjectStorage::wrapWithCache(
-    FileCachePtr cache,
-    const FileCacheSettings & cache_settings,
-    const String & layer_name,
-    const Poco::Util::AbstractConfiguration & config,
-    const String & config_prefix) const
+DiskObjectStoragePtr DiskObjectStorage::wrapWithCache(FileCachePtr cache, const FileCacheSettings & cache_settings, const String & layer_name) const
 {
     auto registry = object_storages->getRegistry();
     auto local_location = cluster->getLocalLocation();
@@ -28,8 +24,9 @@ DiskObjectStoragePtr DiskObjectStorage::wrapWithCache(
         std::make_shared<MetadataStorageFromCacheObjectStorage>(metadata_storage),
         std::make_shared<ObjectStorageRouter>(std::move(registry)),
         std::dynamic_pointer_cast<const DiskObjectStorage>(shared_from_this()),
-        config,
-        config_prefix);
+        Context::getGlobalContextInstance()->getConfigRef(),
+        "storage_configuration.disks." + layer_name,
+        use_fake_transaction);
 
     return cache_disk;
 }
@@ -45,11 +42,6 @@ NameSet DiskObjectStorage::getCacheLayersNames() const
     }
 
     return disk_names;
-}
-
-DiskObjectStorageConstPtr DiskObjectStorage::getWrappedDisk() const
-{
-    return wrapped_disk;
 }
 
 }

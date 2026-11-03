@@ -1,5 +1,4 @@
 -- Tags: no-fasttest
-SET explain_query_plan_default = 'legacy';
 set optimize_move_to_prewhere = 1;
 set move_all_conditions_to_prewhere = 1;
 set enable_multiple_prewhere_read_steps = 1;
@@ -9,7 +8,6 @@ set enable_analyzer = 1;
 set enable_parallel_replicas = 0;
 set allow_statistics = 1;
 set use_statistics = 1;
-SET materialize_statistics_on_insert = 1;
 
 DROP TABLE IF EXISTS test_improve_prewhere;
 
