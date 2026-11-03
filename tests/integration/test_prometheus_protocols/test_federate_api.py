@@ -73,7 +73,7 @@ def test_federate_text_format():
         f'fed_dotted{{label_name="a\\"b\\\\c\\nd",instance=""}} -3 {ms(20)}\n'
         "# TYPE fed_cpu untyped\n"
         f'fed_cpu{{host="a",instance="i1"}} 2.5 {ms(60)}\n'
-        f'fed_cpu{{host="b",instance=""}} 1.234567e+06 {ms(30)}\n'
+        f'fed_cpu{{host="b",instance=""}} 1234567 {ms(30)}\n'
         "# TYPE fed_mem untyped\n"
         f'fed_mem{{host="a",instance=""}} 1e-05 {ms(10)}\n'
     )

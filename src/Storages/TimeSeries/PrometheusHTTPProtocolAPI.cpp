@@ -217,51 +217,6 @@ void writeFederateLabelValue(std::string_view value, WriteBuffer & out)
     }
     writeChar('"', out);
 }
-
-/// Writes a sample value like Go's strconv.FormatFloat(value, 'g', -1, 64), which the Prometheus text format uses.
-void writeFederateValue(Float64 value, WriteBuffer & out)
-{
-    if (std::isnan(value))
-    {
-        writeString("NaN", out);
-        return;
-    }
-    if (std::isinf(value))
-    {
-        writeString((value > 0) ? "+Inf" : "-Inf", out);
-        return;
-    }
-    if (value == 0)
-    {
-        writeChar('0', out);
-        return;
-    }
-
-    /// Both use the shortest digits, but Go switches to the exponent form from 1e6 on, while fmt does it from 1e16 on.
-    String text = fmt::format("{}", value);
-    if ((std::abs(value) < 1e6) || text.contains('e'))
-    {
-        writeString(text, out);
-        return;
-    }
-
-    bool negative = (text[0] == '-');
-    String digits = text.substr(negative ? 1 : 0);
-    size_t exponent = std::min(digits.find('.'), digits.size()) - 1;
-    std::erase(digits, '.');
-    while (digits.size() > 1 && digits.back() == '0')
-        digits.pop_back();
-
-    if (negative)
-        writeChar('-', out);
-    writeChar(digits[0], out);
-    if (digits.size() > 1)
-    {
-        writeChar('.', out);
-        writeString(std::string_view{digits}.substr(1), out);
-    }
-    writeString(fmt::format("e+{:02}", exponent), out);
-}
 }
 
 PrometheusHTTPProtocolAPI::PrometheusHTTPProtocolAPI(ConstStoragePtr time_series_storage_, const ContextMutablePtr & context_)
@@ -1169,7 +1124,7 @@ void PrometheusHTTPProtocolAPI::federate(WriteBuffer & response, const Strings &
                     writeString("instance=\"\"", response);
                 }
                 writeString("} ", response);
-                writeFederateValue(value_column->getFloat64(row), response);
+                writeScalar(response, value_column->getFloat64(row));
                 writeChar(' ', response);
                 writeIntText(timestamp_column->getInt(row), response);
                 writeChar('\n', response);
