@@ -94,7 +94,7 @@ struct ProjectionPartData
     PaddedPODArray<UInt32> row_bytes;
     /// some stored column has values of different sizes
     bool variable_width = false;
-    /// a merge sized some states by what the part does not record: the memory it built them in, or the states of the parts it merged
+    /// a merge sized the granules by what the part does not record: the memory it built some states in, or the bytes of the parts it merged
     bool merge_history_unknown = false;
     /// for a merged wide part under a constant granularity: its stored bytes, and the least its merged parts can store for its rows
     size_t stored_bytes = 0;
@@ -162,6 +162,19 @@ void appendRowSizes(ProjectionPartData & out, const Block & block, bool merged)
         row_bytes[offset + i] += fixed;
 }
 
+/// the bytes that a part stores for a column
+size_t storedBytes(const ISerialization & serialization, const IColumn & column)
+{
+    NullWriteBuffer stored;
+    ISerialization::SerializeBinaryBulkSettings settings;
+    settings.getter = [&](const ISerialization::SubstreamPath &) -> WriteBuffer * { return &stored; };
+    ISerialization::SerializeBinaryBulkStatePtr state;
+    serialization.serializeBinaryBulkStatePrefix(column, settings, state);
+    serialization.serializeBinaryBulkWithMultipleStreams(column, 0, 0, settings, state);
+    serialization.serializeBinaryBulkStateSuffix(settings, state);
+    return stored.count();
+}
+
 /// a merge under a constant granularity sizes the granule of a wide part from the bytes that its merged parts store
 /// a group of the part is in one or more of them, and a state there is at least an empty state
 /// a state that is not of a fixed size can be of any size there
@@ -171,19 +184,27 @@ void setStoredBytes(ProjectionPartData & out, const Block & block)
 {
     if (block.rows() == 0)
         return;
-    ISerialization::SerializeBinaryBulkSettings settings;
     for (const auto & elem : block)
     {
-        NullWriteBuffer stored;
-        settings.getter = [&](const ISerialization::SubstreamPath &) -> WriteBuffer * { return &stored; };
         const auto serialization = elem.type->getDefaultSerialization();
-        ISerialization::SerializeBinaryBulkStatePtr state;
-        serialization->serializeBinaryBulkStatePrefix(*elem.column, settings, state);
-        serialization->serializeBinaryBulkWithMultipleStreams(*elem.column, 0, 0, settings, state);
-        serialization->serializeBinaryBulkStateSuffix(settings, state);
-        out.stored_bytes += stored.count();
+        const size_t stored = storedBytes(*serialization, *elem.column);
+        out.stored_bytes += stored;
 
-        size_t least = stored.count();
+        /// a type that stores data for each part, as the dictionary of `LowCardinality`, stores more for a row in more parts
+        /// two parts of one row store that data once more than one part of two rows, and the merged parts can store it with each row
+        auto row = elem.column->cut(0, 1);
+        auto row_twice = row->cloneEmpty();
+        row_twice->insertManyFrom(*row, 0, 2);
+        const size_t two_parts = 2 * storedBytes(*serialization, *row);
+        const size_t one_part = storedBytes(*serialization, *row_twice);
+        if (two_parts > one_part)
+        {
+            out.merge_history_unknown = true;
+            out.stored_bytes += (two_parts - one_part) * block.rows();
+            continue;
+        }
+
+        size_t least = stored;
         if (const auto * states = typeid_cast<const ColumnAggregateFunction *>(elem.column.get()))
         {
             const auto & function = *states->getAggregateFunction();
@@ -198,7 +219,7 @@ void setStoredBytes(ProjectionPartData & out, const Block & block)
             least = 0;
         /// a default value has the fewest bytes, so the rows with other values have at least their share of the bytes
         else if (elem.type->supportsSparseSerialization())
-            least = static_cast<size_t>(UInt128(stored.count()) * (block.rows() - elem.column->getNumberOfDefaultRows()) / block.rows());
+            least = static_cast<size_t>(UInt128(stored) * (block.rows() - elem.column->getNumberOfDefaultRows()) / block.rows());
         out.stored_bytes_floor += least;
     }
 }
@@ -1044,8 +1065,8 @@ void setVerdict(
     {
         result.verdict = "too close to call";
         result.verdict_reason = fmt::format(
-            "{} against {} from the base table, but on {} of the {} parts read a merge sized the granules from aggregate states that "
-            "a part does not record (the memory that the merge built them in, or the states of the merged parts), so the mark count "
+            "{} against {} from the base table, but on {} of the {} parts read a merge sized the granules from data that a part does "
+            "not record (the memory that the merge built aggregate states in, or the bytes of the merged parts), so the mark count "
             "is a model, not a measurement",
             marks_text(projection_marks),
             baseline_marks,

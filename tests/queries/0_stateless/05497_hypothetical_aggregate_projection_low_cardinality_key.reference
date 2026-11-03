@@ -1,0 +1,9 @@
+parts: 128
+Baseline (after PK + partition + existing indexes):
+marks: 4
+With p (aggregate projection, hypothetical):
+marks: 8
+marks_span: 1 to 8
+verdict: too close to call
+real projection part: Wide, 128 rows, 7 marks
+real: 4 marks
