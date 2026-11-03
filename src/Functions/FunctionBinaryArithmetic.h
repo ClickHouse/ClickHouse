@@ -918,6 +918,13 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
     /// instantiate the entire class twice for every division-like operation.
     bool division_by_nullable = false;
 
+    void updateHash(SipHash & hash) const override
+    {
+        hash.update(check_decimal_overflow);
+        hash.update(division_by_nullable);
+        hash.update(date_time_overflow_behavior);
+    }
+
     /// Date/Time overflow behavior, captured from the query context at construction time so that
     /// executeImpl does not have to consult the context (which may have been destroyed by the time a
     /// stored expression - e.g. a sorting key - is re-executed during a merge). See #54890.

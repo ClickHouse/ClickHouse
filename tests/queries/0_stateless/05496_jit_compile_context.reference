@@ -1,0 +1,45 @@
+decimal_check_overflow
+0	80835.8673
+1	3.25
+0	80835.8673
+1	3.25
+0	80835.8673
+1	3.25
+date_time_overflow_behavior
+0	0
+1	1
+0	0
+1	1
+0	0
+1	1
+0	0
+1	1
+0	0
+1	1
+0	0
+1	1
+session_timezone
+0	2	1
+1	3	1
+0	2	1
+1	3	1
+0	2	1
+1	3	1
+0	2	1
+1	3	1
+least_greatest_legacy_null_behavior
+0	\N	\N
+1	6	1
+0	2	1
+1	6	1
+0	\N	\N
+1	6	1
+0	2	1
+1	6	1
+short_circuit_function_evaluation
+0	11
+1	1
+0	11
+1	1
+0	11
+1	1
