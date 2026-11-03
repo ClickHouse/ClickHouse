@@ -3,7 +3,6 @@
 -- threw INCOMPATIBLE_TYPE_OF_JOIN, because the ANY -> SEMI/ANTI conversion mutated the
 -- StorageJoin declared strictness, which StorageJoin::getJoinLocked rejects.
 
-SET enable_analyzer = 1;
 SET query_plan_convert_any_join_to_semi_or_anti_join = 1; -- CI may inject False; pin so the conversion pass (whose StorageJoin guard is under test) always runs
 SET join_use_nulls = 0; -- CI may inject True; the Join engine rejects a mismatched join_use_nulls, which is a different error unrelated to this test
 
