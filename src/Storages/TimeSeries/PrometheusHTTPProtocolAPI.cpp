@@ -10,7 +10,6 @@
 #include <Core/Field.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
-#include <Storages/StoragePrometheusQuery.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/StorageTimeSeriesSelector.h>
 #include <Parsers/ASTExpressionList.h>
@@ -60,7 +59,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
-    extern const SettingsUInt64 promql_max_points_per_series;
+    extern const SettingsBool enable_materialized_cte;
     extern const SettingsBool promql_push_down_label_matchers;
 }
 
@@ -243,7 +242,6 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
         evaluation_settings.start_time = parseTimeSeriesTimestamp(params.start_param, time_scale);
         evaluation_settings.end_time = parseTimeSeriesTimestamp(params.end_param, time_scale);
         evaluation_settings.step = parseTimeSeriesDuration(params.step_param, time_scale);
-        evaluation_settings.max_points_per_series = getContext()->getSettingsRef()[Setting::promql_max_points_per_series];
     }
 
     PrometheusQueryToSQL::Converter converter{query_tree, evaluation_settings};
@@ -254,7 +252,10 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
 
     /// Isolate the settings required by generated PromQL from the request context.
     auto query_context = Context::createCopy(getContext());
-    StoragePrometheusQuery::applySettingsForPrometheusQuery(*query_context);
+    if (!getContext()->getSettingsRef()[Setting::enable_materialized_cte].changed)
+        query_context->setSetting("enable_materialized_cte", true);
+
+    query_context->setSetting("empty_result_for_aggregation_by_empty_set", false);
 
     auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), query_context, serverGeneratedQueryFlags(), QueryProcessingStage::Complete);
 
