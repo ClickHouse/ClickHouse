@@ -80,6 +80,13 @@ public:
     void dropExtremes();
     void dropTotalsAndExtremes();
 
+    /// Take the extremes stream out of the pipe, so that the following transforms do not process it, and put it back
+    /// with `attachExtremes`, through `converting` (may be nullptr) if the header has changed meanwhile.
+    /// The processors producing the extremes stay in the pipe. The pipe cannot be united while the extremes are detached.
+    void detachExtremes();
+    OutputPort * getDetachedExtremesPort() const { return detached_extremes_port; }
+    void attachExtremes(ProcessorPtr converting);
+
     /// Add processor to list. It should have size() input ports with compatible header.
     /// Output ports should have same headers.
     /// If totals or extremes are not empty, transform shouldn't change header.
@@ -139,6 +146,9 @@ private:
     OutputPortRawPtrs output_ports;
     OutputPort * totals_port = nullptr;
     OutputPort * extremes_port = nullptr;
+    /// See detachExtremes.
+    OutputPort * detached_extremes_port = nullptr;
+    bool extremes_detached = false;
 
     /// See getPendingSealInputs.
     InputPortRawPtrs pending_seal_inputs;
