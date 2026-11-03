@@ -12,7 +12,6 @@ SET enable_parallel_replicas=1, automatic_parallel_replicas_mode=2, parallel_rep
 -- The optimization works on the query plan, which only the analyzer builds. `InterpreterSelectQuery`
 -- turns `enable_parallel_replicas` off when it sees this settings combination, so with the old
 -- analyzer every shape below - supported or not - would collect no statistics.
-SET enable_analyzer=1;
 
 CREATE TABLE t(number UInt64) ENGINE=MergeTree ORDER BY () AS SELECT * FROM numbers_mt(1e6);
 

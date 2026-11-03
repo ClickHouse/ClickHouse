@@ -9,7 +9,6 @@
 -- while the set's source plan still reads the CTE's `StorageMemory`. More than one
 -- reading stream is needed for that source to be scheduled, hence several parts.
 
-SET enable_analyzer = 1;
 SET enable_materialized_cte = 1;
 SET enable_lightweight_update = 1;
 SET lightweight_delete_mode = 'lightweight_update_force';

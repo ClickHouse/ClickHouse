@@ -8,6 +8,7 @@
     <settings>
         <max_threads>8</max_threads>
         <join_algorithm>hash</join_algorithm>
+        <parallel_hash_join_threshold>18446744073709551615</parallel_hash_join_threshold>
     </settings>
 
     <!-- Nothing is taken from the right side, so neither key is added. -->
