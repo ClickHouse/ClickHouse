@@ -497,13 +497,14 @@ bool LRUFileCachePriority::canFit(
             || current_elements_num + elements - released_elements_assumption <= (max_elements_ ? *max_elements_ : max_elements.load()));
 }
 
-EvictionInfoPtr LRUFileCachePriority::collectEvictionInfo(
+EvictionInfoPtr LRUFileCachePriority::collectEvictionInfo( /// NOLINT
     size_t size,
     size_t elements,
     IFileCachePriority::Iterator *,
     bool is_total_space_cleanup,
     const IFileCachePriority::OriginInfo & origin_info,
-    const CacheStateGuard::Lock & lock)
+    const CacheStateGuard::Lock & lock,
+    QueueEntryType)
 {
     auto info = std::make_unique<QueueEvictionInfo>(description, origin_info.user_id);
     if (!size && !elements)
@@ -549,7 +550,7 @@ EvictionInfoPtr LRUFileCachePriority::collectEvictionInfo(
     return std::make_unique<EvictionInfo>(queue_id, std::move(info));
 }
 
-bool LRUFileCachePriority::collectCandidatesForEviction(
+bool LRUFileCachePriority::collectCandidatesForEviction( /// NOLINT
     EvictionInfo & eviction_info,
     FileCacheReserveStat & stat,
     EvictionCandidates & res,
@@ -558,7 +559,8 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
     size_t max_candidates_size,
     bool /* is_total_space_cleanup */,
     const OriginInfo &,
-    CacheStateGuard &)
+    CacheStateGuard &,
+    QueueEntryType)
 {
     const auto & info = eviction_info.get(queue_id);
     size_t size = info.size_to_evict;
