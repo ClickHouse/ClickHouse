@@ -105,6 +105,9 @@ public:
     bool is_secure = false;
     /// The connection was accepted on the introspection port.
     bool is_from_introspection_port = false;
+    /// The query came over a connection authenticated by the interserver secret. Set by `TCPHandler`, not serialized:
+    /// `interface` is reported by the peer.
+    bool is_interserver_authenticated = false;
     String certificate;
 
     /// For tcp

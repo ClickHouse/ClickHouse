@@ -235,15 +235,6 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
     bool is_insert_query) const
 {
     chassert(configuration);
-    ColumnsDescription columns;
-
-    if (configuration->structure != "auto")
-        columns = parseColumnsListFromString(configuration->structure, context);
-    else if (!structure_hint.empty())
-        columns = structure_hint;
-    else if (!cached_columns.empty())
-        columns = cached_columns;
-
     StoragePtr storage;
     const auto & query_settings = context->getSettingsRef();
 
@@ -255,8 +246,20 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
         && TableFunctionFactory::instance().isTableFunctionName(String(name) + "Cluster");
 
     const auto is_secondary_query = context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+    const bool use_parallel_replicas
+        = can_use_parallel_replicas && !is_secondary_query && !is_insert_query && !context->isSQLSecurityOverriddenBody();
+    const bool send_not_overridable = use_parallel_replicas && sendNotOverridableAutoToCluster(context, parallel_replicas_cluster_name);
+    const bool infer_locked_structure = use_parallel_replicas && configuration->structure_not_overridable && !send_not_overridable;
 
-    if (can_use_parallel_replicas && !is_secondary_query && !is_insert_query && !context->isSQLSecurityOverriddenBody())
+    ColumnsDescription columns;
+    if (configuration->structure != "auto")
+        columns = parseColumnsListFromString(configuration->structure, context);
+    else if (!structure_hint.empty() && !infer_locked_structure)
+        columns = structure_hint;
+    else if (!cached_columns.empty())
+        columns = cached_columns;
+
+    if (use_parallel_replicas)
     {
         storage = std::make_shared<StorageObjectStorageCluster>(
             parallel_replicas_cluster_name,
@@ -267,7 +270,10 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
             ConstraintsDescription{},
             partition_by,
             context,
-            /* is_table_function */true);
+            /* is_table_function */true,
+            /* format_settings_ */ std::nullopt,
+            /* catalog_ */ nullptr,
+            /* send_not_overridable_ */ send_not_overridable);
 
         storage->startup();
         return storage;

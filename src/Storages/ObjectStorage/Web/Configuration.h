@@ -91,7 +91,8 @@ public:
         const String & structure_,
         const String & format_,
         ContextPtr context,
-        bool with_structure) override;
+        bool with_structure,
+        bool skip_not_overridable) override;
 
 protected:
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;

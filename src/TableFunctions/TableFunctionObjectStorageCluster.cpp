@@ -32,11 +32,18 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
     const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const
 {
     auto configuration = Base::getConfiguration(context);
+    const auto & client_info = context->getClientInfo();
+
+    const bool is_secondary_query = client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+    const bool send_not_overridable
+        = !is_secondary_query && sendNotOverridableAutoToCluster(context, ITableFunctionCluster<Base>::cluster_name);
+    const bool infer_locked_structure = !is_secondary_query && !is_insert_query && configuration->structure_not_overridable
+        && !send_not_overridable;
 
     ColumnsDescription columns;
     if (configuration->structure != "auto")
         columns = parseColumnsListFromString(configuration->structure, context);
-    else if (!Base::structure_hint.empty())
+    else if (!Base::structure_hint.empty() && !infer_locked_structure)
         columns = Base::structure_hint;
     else if (!cached_columns.empty())
         columns = cached_columns;
@@ -44,9 +51,7 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
     auto object_storage = Base::getObjectStorage(context, !is_insert_query);
     StoragePtr storage;
 
-    const auto & client_info = context->getClientInfo();
-
-    if (client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+    if (is_secondary_query)
     {
         /// Like urlCluster/fileCluster, always request a distributed read on a secondary query and
         /// let the initiator decide: it serves the read task when it installed an iterator (the
@@ -83,7 +88,10 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
             ConstraintsDescription{},
             Base::partition_by,
             context,
-            /* is_table_function */true);
+            /* is_table_function */true,
+            /* format_settings_ */ std::nullopt,
+            /* catalog_ */ nullptr,
+            /* send_not_overridable_ */ send_not_overridable);
     }
 
     storage->startup();

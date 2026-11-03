@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeString.h>
 
 #include <Interpreters/ClusterFunctionReadTask.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 
 #include <QueryPipeline/RemoteQueryExecutor.h>
 
@@ -49,9 +50,10 @@ StorageURLCluster::StorageURLCluster(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    const StorageURL::Configuration & configuration_)
+    const StorageURL::Configuration & configuration_,
+    bool send_not_overridable_)
     : IStorageCluster(cluster_name_, table_id_, getLogger("StorageURLCluster (" + table_id_.getFullTableName() + ")"))
-    , uri(uri_), format_name(format_)
+    , uri(uri_), format_name(format_), send_not_overridable(send_not_overridable_)
 {
     auto headers = configuration_.headers;
     context->getRemoteHostFilter().checkURL(Poco::URI(uri));
@@ -124,12 +126,16 @@ void StorageURLCluster::updateQueryToSendIfNeeded(
     if (!expression_list || expression_list->children.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function urlCluster, got '{}'", query->formatForErrorMessage());
 
+    /// The nodes of a cluster without a secret check the added values as overrides of the named collection,
+    /// so they infer a locked key themselves.
     if (add_structure_and_format)
         TableFunctionURLCluster::updateStructureAndFormatArgumentsIfNeeded(
             table_function,
-            storage_snapshot->metadata->getColumns().getAll().toNamesAndTypesDescription(),
+            getStructureToSend(storage_snapshot->metadata->getColumns(), context->getInsertionTableColumnsDescription().get()),
             format_name,
-            context
+            context,
+            /* is_replayed_definition= */ false,
+            /* skip_not_overridable= */ !send_not_overridable
         );
 
     /// When a non-cluster table function (`url`) was auto-converted to cluster mode

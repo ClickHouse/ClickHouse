@@ -43,6 +43,22 @@ void checkNamedCollectionOverrideLock(const NamedCollection & collection, const 
 void checkNamedCollectionOverride(
     const NamedCollection & collection, const std::string & key, ContextPtr context, bool is_replayed_definition = false);
 
+/// The initiator of a `*Cluster` table function sends an inferred value over a `NOT OVERRIDABLE` `'auto'` only to a cluster with
+/// a secret, and a node accepts one only on a query authenticated by that secret: any client can send a secondary query.
+bool isSecondaryQueryAuthenticatedByClusterSecret(const ContextPtr & context);
+/// Whether the initiator sends such a value to `cluster_name`: it has a secret and `cluster_function_send_not_overridable_auto` is set.
+bool sendNotOverridableAutoToCluster(const ContextPtr & context, const String & cluster_name);
+
+/// Appends `format = '<format>'` and, if `with_structure`, `structure = '<structure>'` to the arguments of a named collection,
+/// for each of these keys whose value in `collection` is `'auto'` or absent. If `skip_not_overridable`, skips a `NOT OVERRIDABLE` key.
+void addInferredFormatAndStructureToNamedCollectionArgs(
+    ASTs & args,
+    const NamedCollection & collection,
+    const String & format,
+    const String & structure,
+    bool with_structure,
+    bool skip_not_overridable);
+
 /// Checks the overrides of the stored keys in the source of a dictionary at its creation, attachment or restore.
 /// `config_prefix` is the source configuration "<dict_root>.source.<type>" (e.g. "dictionary.source.clickhouse").
 /// Every key that replaces a stored key is checked with `checkNamedCollectionOverride` in `context`.

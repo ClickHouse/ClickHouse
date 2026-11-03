@@ -899,24 +899,14 @@ static void addStructureAndFormatToArgsIfNeededS3(
     ContextPtr context,
     bool with_structure,
     size_t max_number_of_arguments,
-    bool is_replayed_definition)
+    bool is_replayed_definition,
+    bool skip_not_overridable)
 {
     if (auto collection = tryGetNamedCollectionWithOverrides(args, context, true, nullptr, nullptr, nullptr, is_replayed_definition))
     {
         /// In case of named collection, just add key-value pairs "format='...', structure='...'"
         /// at the end of arguments to override existed format and structure with "auto" values.
-        if (collection->getOrDefault<String>("format", "auto") == "auto")
-        {
-            ASTs format_equal_func_args = {make_intrusive<ASTIdentifier>("format"), make_intrusive<ASTLiteral>(format_)};
-            auto format_equal_func = makeASTOperator("equals", std::move(format_equal_func_args));
-            args.push_back(format_equal_func);
-        }
-        if (with_structure && collection->getOrDefault<String>("structure", "auto") == "auto")
-        {
-            ASTs structure_equal_func_args = {make_intrusive<ASTIdentifier>("structure"), make_intrusive<ASTLiteral>(structure_)};
-            auto structure_equal_func = makeASTOperator("equals", std::move(structure_equal_func_args));
-            args.push_back(structure_equal_func);
-        }
+        addInferredFormatAndStructureToNamedCollectionArgs(args, *collection, format_, structure_, with_structure, skip_not_overridable);
     }
     else
     {
@@ -1228,7 +1218,7 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
 }
 
 void StorageS3Configuration::addStructureAndFormatToArgsIfNeeded(
-    ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure)
+    ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure, bool skip_not_overridable)
 {
     addStructureAndFormatToArgsIfNeededS3(
         args,
@@ -1237,7 +1227,8 @@ void StorageS3Configuration::addStructureAndFormatToArgsIfNeeded(
         context,
         with_structure,
         S3StorageParsedArguments::getMaxNumberOfArguments(with_structure),
-        is_replayed_definition);
+        is_replayed_definition,
+        skip_not_overridable);
 }
 }
 

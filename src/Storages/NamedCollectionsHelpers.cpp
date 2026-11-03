@@ -2,6 +2,8 @@
 #include <Interpreters/FunctionSecretArgumentsFinder.h>
 #include <Access/ContextAccess.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Core/Settings.h>
+#include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -18,6 +20,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool cluster_function_send_not_overridable_auto;
+}
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -230,6 +237,42 @@ void checkNamedCollectionOverride(const NamedCollection & collection, const std:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Checking an override of named collection key '{}' requires a context", key);
     if (checkOverrideLockAndFindStoredKey(collection, key, is_replayed_definition))
         context->checkAccess(AccessType::SHOW_NAMED_COLLECTIONS_SECRETS, collection.getName());
+}
+
+bool isSecondaryQueryAuthenticatedByClusterSecret(const ContextPtr & context)
+{
+    const auto & client_info = context->getClientInfo();
+    return client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY && client_info.is_interserver_authenticated;
+}
+
+bool sendNotOverridableAutoToCluster(const ContextPtr & context, const String & cluster_name)
+{
+    if (!context->getSettingsRef()[Setting::cluster_function_send_not_overridable_auto])
+        return false;
+    const auto cluster = context->tryGetCluster(cluster_name);
+    return cluster && !cluster->getSecret().empty();
+}
+
+void addInferredFormatAndStructureToNamedCollectionArgs(
+    ASTs & args,
+    const NamedCollection & collection,
+    const String & format,
+    const String & structure,
+    bool with_structure,
+    bool skip_not_overridable)
+{
+    const auto add = [&](const String & key, const String & value)
+    {
+        if (collection.getOrDefault<String>(key, "auto") != "auto"
+            || (skip_not_overridable && !collection.isOverridable(key, /* default_value= */ true)))
+            return;
+        ASTs equal_func_args = {make_intrusive<ASTIdentifier>(key), make_intrusive<ASTLiteral>(value)};
+        args.push_back(makeASTOperator("equals", std::move(equal_func_args)));
+    };
+
+    add("format", format);
+    if (with_structure)
+        add("structure", structure);
 }
 
 void checkNamedCollectionOverridesInDictionarySource(

@@ -2,6 +2,7 @@
 
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage_fwd.h>
 #include <Formats/FormatFactory.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
@@ -55,7 +56,10 @@ public:
 
     virtual void parseArgumentsImpl(ASTs & args, const ContextPtr & context)
     {
-        StorageObjectStorageConfiguration::initialize(*getConfiguration(context), args, context, true);
+        auto configuration_to_initialize = getConfiguration(context);
+        if (isClusterFunction() && isSecondaryQueryAuthenticatedByClusterSecret(context))
+            configuration_to_initialize->is_replayed_definition = true;
+        StorageObjectStorageConfiguration::initialize(*configuration_to_initialize, args, context, true);
     }
 
     static void updateStructureAndFormatArgumentsIfNeeded(
@@ -70,10 +74,12 @@ public:
             if (configuration.format == "auto")
                 configuration.format = "Parquet"; /// Default format of data lakes.
 
-            configuration.addStructureAndFormatToArgsIfNeeded(args, structure, format, context, /*with_structure=*/true);
+            configuration.addStructureAndFormatToArgsIfNeeded(
+                args, structure, format, context, /*with_structure=*/true, /*skip_not_overridable=*/false);
         }
         else
-            Configuration().addStructureAndFormatToArgsIfNeeded(args, structure, format, context, /*with_structure=*/true);
+            Configuration().addStructureAndFormatToArgsIfNeeded(
+                args, structure, format, context, /*with_structure=*/true, /*skip_not_overridable=*/false);
     }
 
     void setPartitionBy(const ASTPtr & partition_by_) override

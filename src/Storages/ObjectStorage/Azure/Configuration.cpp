@@ -710,24 +710,14 @@ static void addStructureAndFormatToArgsIfNeededAzure(
     const String & format_,
     ContextPtr context,
     bool with_structure,
-    bool is_replayed_definition)
+    bool is_replayed_definition,
+    bool skip_not_overridable)
 {
     if (auto collection = tryGetNamedCollectionWithOverrides(args, context, true, nullptr, nullptr, nullptr, is_replayed_definition))
     {
         /// In case of named collection, just add key-value pairs "format='...', structure='...'"
         /// at the end of arguments to override existed format and structure with "auto" values.
-        if (collection->getOrDefault<String>("format", "auto") == "auto")
-        {
-            ASTs format_equal_func_args = {make_intrusive<ASTIdentifier>("format"), make_intrusive<ASTLiteral>(format_)};
-            auto format_equal_func = makeASTOperator("equals", std::move(format_equal_func_args));
-            args.push_back(format_equal_func);
-        }
-        if (with_structure && collection->getOrDefault<String>("structure", "auto") == "auto")
-        {
-            ASTs structure_equal_func_args = {make_intrusive<ASTIdentifier>("structure"), make_intrusive<ASTLiteral>(structure_)};
-            auto structure_equal_func = makeASTOperator("equals", std::move(structure_equal_func_args));
-            args.push_back(structure_equal_func);
-        }
+        addInferredFormatAndStructureToNamedCollectionArgs(args, *collection, format_, structure_, with_structure, skip_not_overridable);
     }
     else
     {
@@ -906,7 +896,7 @@ std::string StorageAzureConfiguration::getMetadataLocationURI() const
 }
 
 void StorageAzureConfiguration::addStructureAndFormatToArgsIfNeeded(
-    ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure)
+    ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure, bool skip_not_overridable)
 {
     /// The OneLake signature is a single storage URL: the account and the container are
     /// derived from it, and the format is dictated by the data lake metadata, so the
@@ -930,7 +920,8 @@ void StorageAzureConfiguration::addStructureAndFormatToArgsIfNeeded(
         }
         return;
     }
-    addStructureAndFormatToArgsIfNeededAzure(args, structure_, format_, context, with_structure, is_replayed_definition);
+    addStructureAndFormatToArgsIfNeededAzure(
+        args, structure_, format_, context, with_structure, is_replayed_definition, skip_not_overridable);
 }
 
 void StorageAzureConfiguration::fromNamedCollection(const NamedCollection & collection, ContextPtr context)

@@ -69,6 +69,7 @@ namespace Setting
     extern const SettingsMap additional_table_filters;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool async_insert_select_as_async_insert;
+    extern const SettingsBool cluster_function_send_not_overridable_auto;
     extern const SettingsUInt64 force_optimize_skip_unused_shards;
     extern const SettingsUInt64 force_optimize_skip_unused_shards_nesting;
     extern const SettingsBool http_allow_database_as_path;
@@ -306,6 +307,15 @@ void stripInitiatorOnlySettings(Settings & settings)
         settings[Setting::parallel_replicas_for_object_storage_tables].changed = false;
     }
 
+    /// `cluster_function_send_not_overridable_auto` is consulted only by the initiator of a `*Cluster` table function,
+    /// and it is new, so an older node would reject it. Its default is `true`.
+    if (settings[Setting::cluster_function_send_not_overridable_auto].changed
+        || !settings[Setting::cluster_function_send_not_overridable_auto])
+    {
+        settings[Setting::cluster_function_send_not_overridable_auto] = true;
+        settings[Setting::cluster_function_send_not_overridable_auto].changed = false;
+    }
+
     /// `database` is an initiator-only setting as well: the query sent to a shard may leave the remote
     /// table unqualified (e.g. a `Distributed` table created with an empty database argument), and
     /// the shard must resolve it against its own default database.
@@ -327,6 +337,7 @@ constexpr std::string_view initiator_only_setting_names[] = {
     "http_allow_filters_as_unrecognized_url_parameters", "implicit_table_at_top_level",
     "async_insert_select_as_async_insert",
     "parallel_replicas_for_object_storage_tables",
+    "cluster_function_send_not_overridable_auto",
     "database",
 };
 
@@ -347,10 +358,10 @@ void stripInitiatorOnlySettingsFromQuery(const ASTPtr & query)
 
 void stripInitiatorOnlySettingsFromDDLQuery(const ASTPtr & query)
 {
-    /// A stored view body keeps the setting that decides how the view reads its table.
+    /// A stored view body keeps the settings that decide how the view reads its table.
     std::vector<std::string_view> names;
     for (std::string_view name : initiator_only_setting_names)
-        if (name != "parallel_replicas_for_object_storage_tables")
+        if (name != "parallel_replicas_for_object_storage_tables" && name != "cluster_function_send_not_overridable_auto")
             names.push_back(name);
     removeSettingsFromQuery(query, names);
 }

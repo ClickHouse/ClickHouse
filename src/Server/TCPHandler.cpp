@@ -2820,6 +2820,7 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
         }
 
         is_interserver_authenticated = true;
+        client_info.is_interserver_authenticated = true;
 #else
         auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED,
             "Inter-server secret support is disabled, because ClickHouse was built without SSL library");
