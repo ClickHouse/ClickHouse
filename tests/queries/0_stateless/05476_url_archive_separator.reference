@@ -1,0 +1,22 @@
+--- a plain glob path with '::' in its query stays a literal URL
+3
+--- and so does one with '::' in its fragment
+3
+--- a bracketed host keeps its '::'
+archive path a.zip
+archive path a.zip
+archive path a.zip
+--- and so does every bracketed host of a host template
+archive path a.zip
+archive path a.zip
+--- a '::' in the userinfo is not the separator
+archive path a.zip
+--- and without a bracketed host the first '::' is still the separator
+archive path a.zip
+--- a path failover alternative that carries its own scheme is rejected
+Failover alternative 'http://127.0.0.1:2/a.zip' in the URL path carries its own scheme, which cannot be honoured
+--- the URL table engine does not honour archive syntax
+Archive path syntax is not supported by the `URL` table engine
+Archive path syntax is not supported by the `URL` table engine
+--- and a definition whose setting differs from the server default is rejected
+differs from the server default

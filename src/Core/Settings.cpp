@@ -5664,7 +5664,7 @@ Maximum number of allowed addresses (For external storages, table functions, etc
 The `url` table function and the `URL` table engine generate the addresses of a pattern one by one, so for them this limits how many addresses a single query is allowed to generate rather than how large the pattern is. A query that stops early, for example under a `LIMIT`, can use a pattern that describes many more addresses than this. A `_path` or `_file` predicate is applied to every generated address, so the ones it rejects are counted as well.
 )", 0) \
     DECLARE_WITH_ALIAS(Bool, allow_url_wildcard_from_index_pages, false, R"(
-Allow wildcard expansion for `url()` and `ENGINE = URL` from HTTP index pages.
+Allow wildcard expansion for the `url` and `urlCluster` table functions and the `URL` table engine from HTTP index pages.
 )", EXPERIMENTAL, allow_experimental_url_wildcard_from_index_pages, \
         {"26.9", false, false, "Added an alias for setting `allow_experimental_url_wildcard_from_index_pages`."}, \
         {"26.7", false, false, "New setting to enable expanding wildcards in the `url` table function by listing HTTP index pages. At the time the setting was named `allow_experimental_url_wildcard_from_index_pages`, which is now an alias of it."}) \
@@ -8656,7 +8656,7 @@ Max wait time when trying to read data for remote disk
 Max attempts to read with backoff
 )", 0) \
     DECLARE(Bool, cluster_function_process_archive_on_multiple_nodes, true, R"(
-If set to `true`, increases performance of processing archives in cluster functions. Should be set to `false` for compatibility and to avoid errors during upgrade to 25.7+ if using cluster functions with archives on earlier versions.
+If set to `true`, increases performance of processing archives in cluster functions. Should be set to `false` for compatibility and to avoid errors during upgrade to 25.7+ if using cluster functions with archives on earlier versions. `urlCluster` reads that dispatch Web object-storage tasks - archives and HTTP index-page wildcards - additionally require every worker at cluster-function protocol version `14`, which setting this to `false` does not lift.
 )", 0, \
         {"25.7", false, true, "New setting"}) \
     DECLARE(UInt64, max_streams_for_files_processing_in_cluster_functions, 0, R"(
@@ -10284,6 +10284,8 @@ This setting defines the granularity of work distribution across the cluster:
 
 Choosing finer granularity (like `bucket`) can improve parallelism when working with a small number of large files.
 For instance, if a Parquet file contains multiple row groups, enabling `bucket` granularity allows each group to be processed independently by different workers.
+
+The `bucket` granularity is not supported for archive reads. Archive members must be processed with `file` granularity because splitting the outer archive object cannot preserve the identity of an individual member.
 )", 0, \
         {"25.11", "file", "file", "New setting."}) \
     DECLARE(String, cluster_table_function_pushed_down_filter, "", R"(
@@ -10337,7 +10339,7 @@ Note that initially (24.12) there was a server setting (`send_settings_to_client
 )", 0, \
         {"25.2", false, true, "Client-side code (e.g. INSERT input parsing and query output formatting) will use the same settings as the server, including settings from server config."}) \
     DECLARE(Bool, allow_archive_path_syntax, true, R"(
-File/S3 engines/table function will parse paths with '::' as `<archive> :: <file>` if the archive has correct extension.
+The `File` and `S3` table engines and the `file`, `s3`, `s3Cluster`, `url` and `urlCluster` table functions will parse paths with '::' as `<archive> :: <file>` when the part before it has a supported archive extension or contains a glob character (`*`, `?` or `{`); in an `s3`, `url` or `urlCluster` source a space on either side of the '::' is enough as well. In a `url` or `urlCluster` source, a '::' after the '?' or '#' of the URL is a separator only when the URL path itself ends with a supported archive extension.
 )", 0, \
         {"24.8", true, true, "Added new setting to allow disabling archive path syntax."}, \
         {"24.5", false, true, "Added new setting to allow disabling archive path syntax."}) \

@@ -2938,6 +2938,15 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         if (only_replicated_engine_allowed && table_function->hasUnreplicatedTableDataOnDisk())
             throwUnreplicatedTableDataNotAllowed();
 
+        /// A definition that is persisted is interpreted again when it is loaded, so its meaning has to be
+        /// settled now rather than by the context that builds the storage. A definition read back from the
+        /// metadata - a short `ATTACH TABLE`, a recovery of stored metadata, a DDL replay - was validated
+        /// when it was created: it is checked for a changed interpretation but not as a fresh definition,
+        /// and a temporary table is not persisted at all.
+        const bool is_replayed_definition = isReplayedTableDefinition(mode, create, getContext());
+        if (!create.isTemporary() && (!is_replayed_definition || mode == LoadingStrictnessLevel::ATTACH))
+            table_function->checkTableCreationSettings(getContext(), !is_replayed_definition);
+
         /// In case of CREATE AS table_function() query we should use global context
         /// in storage creation because there will be no query context on server startup
         /// and because storage lifetime is bigger than query context lifetime.

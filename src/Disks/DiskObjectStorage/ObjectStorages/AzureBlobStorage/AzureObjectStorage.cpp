@@ -110,6 +110,8 @@ private:
                     .etag = AzureBlobStorage::getETag(blob.Details.ETag, blob.Name),
                     .tags = {},
                     .attributes = {},
+                    .resolved_path = std::nullopt,
+                    .resolved_url = std::nullopt,
                 }));
         }
 
@@ -239,6 +241,8 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
                     .etag = AzureBlobStorage::getETag(blob.Details.ETag, blob.Name),
                     .tags = {},
                     .attributes = {},
+                    .resolved_path = std::nullopt,
+                    .resolved_url = std::nullopt,
                 }));
         }
 

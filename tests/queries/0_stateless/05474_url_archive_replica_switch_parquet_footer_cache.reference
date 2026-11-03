@@ -1,0 +1,7 @@
+primary cold	0
+primary warm	0
+primary disabled
+mirror	1
+cold miss	1
+warm hit	1
+mirror miss	1

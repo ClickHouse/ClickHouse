@@ -1,0 +1,8 @@
+primary cold	100000	100000
+primary warm	100000	100000
+cache allocated	1
+primary disabled
+mirror	100000	200000
+cold miss	1
+warm hit	1
+mirror miss	1

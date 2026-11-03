@@ -46,6 +46,8 @@ ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr o
     if (!send_over_whole_archive)
         archive_entry_index = object->archive_entry_index;
     read_source_index = object->relative_path_with_metadata.read_source_index;
+    is_web_url_task = read_source_index.has_value();
+    resolved_url = object->relative_path_with_metadata.resolved_url;
     file_bucket_info = object->file_bucket_info;
 }
 
@@ -76,6 +78,7 @@ ObjectInfoPtr ClusterFunctionReadTaskResponse::getObjectInfo() const
         object = std::make_shared<ObjectInfo>(path);
     }
     object->relative_path_with_metadata.read_source_index = read_source_index;
+    object->relative_path_with_metadata.resolved_url = resolved_url;
     object->archive_entry_index = archive_entry_index;
     object->data_lake_metadata = data_lake_metadata;
     object->file_bucket_info = file_bucket_info;
@@ -87,6 +90,29 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t worker
 {
     auto protocol_version
         = std::min(static_cast<UInt64>(worker_protocol_version), static_cast<UInt64>(DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION));
+
+    if (is_web_url_task && protocol_version < DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_WEB_URL_TASKS)
+    {
+        throw Exception(
+            ErrorCodes::UNKNOWN_PROTOCOL,
+            "Worker cluster-function protocol version {} cannot process distributed Web `urlCluster` tasks "
+            "(minimum protocol version: {})",
+            protocol_version,
+            DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_WEB_URL_TASKS);
+    }
+
+    /// Fail closed before anything is written: a worker that cannot carry the URL selects a failover option
+    /// again, which may be another resource than the one the metadata probe pinned here. A task that sets
+    /// the URL without the capability marker is rejected by the check above, so this one covers a task that
+    /// carries the URL and nothing else.
+    if (resolved_url.has_value() && protocol_version < DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_WEB_URL_TASKS)
+        throw Exception(
+            ErrorCodes::UNKNOWN_PROTOCOL,
+            "Worker protocol version {} cannot carry `resolved_url`, which is required to read the Web resource "
+            "the metadata probe selected (minimum protocol version: {})",
+            protocol_version,
+            DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_WEB_URL_TASKS);
+
     writeVarUInt(protocol_version, out);
     writeStringBinary(path, out);
 
@@ -178,6 +204,13 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t worker
         if (data_lake_metadata.num_rows)
             writeVarUInt(*data_lake_metadata.num_rows, out);
     }
+
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_WEB_URL_TASKS)
+    {
+        writeVarUInt(resolved_url.has_value(), out);
+        if (resolved_url)
+            writeStringBinary(*resolved_url, out);
+    }
 }
 
 void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
@@ -263,6 +296,18 @@ void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
             UInt64 value = 0;
             readVarUInt(value, in);
             data_lake_metadata.num_rows = value;
+        }
+    }
+
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_WEB_URL_TASKS)
+    {
+        bool has_resolved_url = false;
+        readVarUInt(has_resolved_url, in);
+        if (has_resolved_url)
+        {
+            String value;
+            readStringBinary(value, in);
+            resolved_url = std::move(value);
         }
     }
 }

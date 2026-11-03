@@ -1,0 +1,16 @@
+--- explicit structure, the setting off
+gate refused: 1
+--- explicit structure, the setting on
+created	URL
+read	2	3
+gate refused: 0
+--- reloaded, the index-page setting off
+reloaded	URL
+read	2	3
+gate refused: 0
+--- attached again, the index-page setting off
+attached	URL
+read	2	3
+gate refused: 0
+--- attached again with the archive syntax off is rejected
+archive syntax refused: 1

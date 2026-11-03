@@ -1,4 +1,5 @@
 #include <Processors/Formats/Impl/ParquetMetadataCache.h>
+#include <Common/SipHash.h>
 
 #if USE_PARQUET
 
@@ -176,7 +177,9 @@ ParquetMetadataCache::ParquetMetadataCache(
 }
 ParquetMetadataCacheKey ParquetMetadataCache::createKey(const String & file_path, const String & file_attr)
 {
-    return ParquetMetadataCacheKey{file_path, file_attr};
+    /// The path identifies the object among all storages and can therefore carry the connection of the
+    /// storage, which may hold credentials or a signed token. The key reaches the trace log, so it is hashed.
+    return ParquetMetadataCacheKey{sipHash128String(file_path), file_attr};
 }
 void ParquetMetadataCache::addColumnChunks(
     const ParquetMetadataCacheKey & key, const MappedPtr & cell, const std::vector<Parquet::FileColumnChunksPtr> & column_chunks)

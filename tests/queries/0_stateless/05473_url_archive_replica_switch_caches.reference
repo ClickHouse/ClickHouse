@@ -1,0 +1,16 @@
+primary schema
+a
+Nullable(Int64)
+a
+Nullable(Int64)
+primary cold	1
+primary warm	1
+primary disabled
+mirror count	2
+mirror schema
+b
+Nullable(Int64)
+warm hit	1
+mirror miss	1
+schema warm hit	1
+schema cold miss	1

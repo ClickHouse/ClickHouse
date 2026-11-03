@@ -274,11 +274,20 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
 
 std::optional<ParquetMetadataCacheKey> ParquetV3BlockInputFormat::getMetadataCacheKey() const
 {
-    if (metadata_cache && object_with_metadata.has_value() && object_with_metadata->metadata.has_value())
-        return ParquetMetadataCache::createKey(
-            object_with_metadata->getPath(),
-            object_with_metadata->metadata->getContentCacheToken().value_or(object_with_metadata->metadata->etag));
-    return std::nullopt;
+    if (!metadata_cache || !object_with_metadata.has_value() || !object_with_metadata->metadata.has_value())
+        return std::nullopt;
+    /// An ETag identifies content only within one resource: another bucket, container or Web failover
+    /// endpoint can serve a different file under the same relative path with the same ETag, and the
+    /// footer carries the statistics the filter is pruned by. The content identity of the object
+    /// (see `path_for_content_cache`) names the resource, so the footer is not shared across them.
+    /// A storage whose entries cannot be attributed to a table provides no such identity. A Web object
+    /// still names the resource the metadata probe selected, and the ETag is scoped to it, so the footer
+    /// is not cached at all rather than shared across the endpoints of a failover group.
+    if (!object_with_metadata->path_for_content_cache && object_with_metadata->resolved_url)
+        return std::nullopt;
+    const String path = object_with_metadata->path_for_content_cache.value_or(object_with_metadata->getPath());
+    return ParquetMetadataCache::createKey(
+        path, object_with_metadata->metadata->getContentCacheToken().value_or(object_with_metadata->metadata->etag));
 }
 
 std::shared_ptr<const Parquet::FileFooter> ParquetV3BlockInputFormat::readFileFooter(Parquet::Prefetcher & prefetcher) const

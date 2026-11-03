@@ -155,6 +155,13 @@ struct ObjectMetadata
     bool etag_is_strong = true;
     ObjectAttributes tags;
     ObjectAttributes attributes;
+    /// Concrete path selected by an object-storage failover probe. It is normally unset because
+    /// most storages read the requested path directly; Web storage uses it when path-level failover
+    /// resolves a logical object to a different URL path.
+    std::optional<String> resolved_path;
+    /// Concrete URL selected by a Web failover metadata probe. It pins the later data read to the
+    /// same endpoint so metadata, virtual columns, and bytes all describe one object generation.
+    std::optional<String> resolved_url;
 
     /// `etag` may be used as a content-cache key (filesystem cache, page cache, Parquet
     /// metadata cache) only when it is present and a strong content identifier. A weak
@@ -182,6 +189,9 @@ struct RelativePathWithMetadata
     std::optional<size_t> read_source_index;
     std::optional<String> path_for_glob_matching;
     std::optional<String> path_for_deduplication;
+    /// Concrete URL selected for this logical Web object. It is carried through distributed tasks
+    /// and pins metadata/data requests to the same failover option.
+    std::optional<String> resolved_url;
     bool derive_file_name_from_url_path = false;
     /// For the caches of the decoded content of the object, such as the columns cache: the path that
     /// identifies the object among all storages (with its namespace and connection, see
@@ -200,18 +210,29 @@ struct RelativePathWithMetadata
 
     explicit RelativePathWithMetadata(String relative_path_, std::optional<ObjectMetadata> metadata_ = std::nullopt)
         : relative_path(std::move(relative_path_))
+        , resolved_url(metadata_ ? metadata_->resolved_url : std::nullopt)
         , metadata(std::move(metadata_))
     {}
 
     RelativePathWithMetadata(String relative_path_, std::optional<size_t> read_source_index_, std::optional<ObjectMetadata> metadata_ = std::nullopt)
         : relative_path(std::move(relative_path_))
         , read_source_index(read_source_index_)
+        , resolved_url(metadata_ ? metadata_->resolved_url : std::nullopt)
         , metadata(std::move(metadata_))
     {}
 
     RelativePathWithMetadata(const RelativePathWithMetadata & other) = default;
 
     ~RelativePathWithMetadata() = default;
+
+    void setMetadata(ObjectMetadata metadata_)
+    {
+        /// Keep metadata and data reads on the same Web failover option. Metadata without a URL
+        /// must not discard a binding already received in a distributed task.
+        if (metadata_.resolved_url)
+            resolved_url = metadata_.resolved_url;
+        metadata = std::move(metadata_);
+    }
 
     std::string getFileName() const
     {

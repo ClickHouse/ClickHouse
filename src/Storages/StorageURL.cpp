@@ -1,4 +1,5 @@
 #include <Storages/StorageURL.h>
+#include <IO/Archives/ArchiveUtils.h>
 #include <Storages/ObjectStorage/S3/S3SecretArguments.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageFile.h>
@@ -101,6 +102,7 @@ namespace FailPoints
 
 namespace Setting
 {
+    extern const SettingsBool allow_archive_path_syntax;
     extern const SettingsBool allow_url_wildcard_from_index_pages;
     extern const SettingsBool use_query_condition_cache_for_top_k;
     extern const SettingsBool enable_url_encoding;
@@ -3507,6 +3509,16 @@ void registerStorageURL(StorageFactory & factory)
                 = config.http_method.empty()
                 && urlPathHasListableGlobs(config.url);
 
+            /// This engine does not read archives: a `::` would either become part of the literal URL path or,
+            /// with a listable glob, silently select the object-storage reader. A definition read back from the
+            /// metadata keeps loading, like everywhere else.
+            if (!is_replayed_definition
+                && context->getSettingsRef()[Setting::allow_archive_path_syntax]
+                && getURLAndArchivePattern(config.url).second.has_value())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Archive path syntax is not supported by the `URL` table engine; use the `url` table function");
+
             if (!use_object_storage)
             {
                 return std::make_shared<StorageURL>(
@@ -3551,6 +3563,36 @@ void registerStorageURL(StorageFactory & factory)
 
             auto configuration = std::make_shared<StorageWebConfiguration>();
             configuration->is_replayed_definition = is_replayed_definition;
+            /// The definition is interpreted again when it is loaded, so the decision whether a `::` is an
+            /// archive separator is taken by the session that wrote it, not by the context that builds the
+            /// storage. A fresh definition whose value differs from the server default would be read as
+            /// another resource after a restart, so it is rejected, like `CREATE TABLE ... AS url(...)`.
+            const bool session_archive_syntax = context->getSettingsRef()[Setting::allow_archive_path_syntax];
+            const bool server_archive_syntax
+                = context->getGlobalContext()->getSettingsRef()[Setting::allow_archive_path_syntax];
+            /// A short `ATTACH TABLE` reads the definition back under this session, so it is compared too. Only a
+            /// definition stored by an earlier version, which did not reject the combination, can reach this
+            /// branch with a differing value, which is why no test constructs it.
+            if ((args.mode <= LoadingStrictnessLevel::CREATE || args.mode == LoadingStrictnessLevel::ATTACH)
+                && session_archive_syntax != server_archive_syntax)
+            {
+                /// Compare the interpretation rather than the setting: a source without an archive separator
+                /// means the same thing under both values, so there is nothing to disagree about.
+                const auto interpret = [&](bool archive_syntax)
+                {
+                    return archive_syntax ? getURLAndArchivePattern(config.url)
+                                          : std::pair<String, std::optional<String>>{config.url, std::nullopt};
+                };
+                if (interpret(session_archive_syntax) != interpret(server_archive_syntax))
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Cannot create a table from `URL` while `allow_archive_path_syntax` ({}) differs from the "
+                        "server default ({}): the stored definition is interpreted with the server default, so the "
+                        "columns and the data would come from different resources",
+                        session_archive_syntax,
+                        server_archive_syntax);
+            }
+            configuration->setAllowArchivePathSyntax(session_archive_syntax);
             StorageObjectStorageConfiguration::initialize(*configuration, object_storage_args, context, /* with_table_structure */ false);
 
             /// Same contract as `createStorageObjectStorage`: only a user-issued `CREATE` applies the

@@ -79,7 +79,7 @@ WebObjectStorage::WebObjectStorage(
     HTTPHeaderEntries headers_,
     size_t max_directories_to_read_)
     : WebObjectStorage(
-        URLShards{{URL{.base_url = url_, .query_fragment = query_fragment_}}},
+        URLShards{{URL{.base_url = url_, .query_fragment = query_fragment_, .path_override = std::nullopt}}},
         context_,
         std::move(headers_),
         max_directories_to_read_)
@@ -230,7 +230,9 @@ std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObject( /// NOLINT
     bool use_external_buffer,
     bool /* restrict_seek */) const
 {
-    auto urls = object.read_source_index ? buildURLs(object.remote_path, *object.read_source_index) : buildURLs(object.remote_path);
+    auto urls = object.resolved_url
+        ? std::vector<String>{*object.resolved_url}
+        : (object.read_source_index ? buildURLs(object.remote_path, *object.read_source_index) : buildURLs(object.remote_path));
     /// The async reader (`AsynchronousBoundedReadBuffer` -> `ThreadPoolRemoteFSReader`) reads into an
     /// external buffer regardless of the number of failover URLs, and asserts that the wrapped reader
     /// honors it. The caller (`ReadPipeline`) passes `use_external_buffer` accordingly even when
@@ -425,19 +427,64 @@ std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const Relat
             if (header_name == "ETag")
                 metadata.etag = header_value;
         }
+        /// The resource identity is where the probe ended up, not where it started: `max_http_get_redirects`
+        /// lets one URL name different resources over time, and the caches keyed by this identity must not
+        /// answer with what a resource the read did not come from served. Reads are pinned to it as well, so
+        /// the redirect is resolved once rather than on every request.
+        /// The credentials are not part of the redirect target: `ReadWriteBufferFromHTTP` keeps them across
+        /// hops, while the pinned read derives them from this URL again, so an absolute `Location` that
+        /// carries no userinfo would otherwise lose the authentication of the request that reached it.
+        /// `Poco::URI::setUserInfo` decodes its argument, which would turn a percent-encoded password into a
+        /// different one, so the raw userinfo of that request is spliced into the string form instead.
+        String final_url = response_buf->getCurrentURI().toString();
+        const auto & request_user_info = uri.getUserInfo();
+        if (!request_user_info.empty() && response_buf->getCurrentURI().getUserInfo().empty())
+        {
+            if (const size_t scheme_end = final_url.find("://"); scheme_end != String::npos)
+                final_url.insert(scheme_end + 3, request_user_info + "@");
+        }
+        metadata.resolved_url = final_url;
         return metadata;
     };
 
     std::exception_ptr last_exception;
     bool has_not_found = false;
-    auto urls = path.read_source_index ? buildURLs(path.getPath(), *path.read_source_index) : buildURLs(path.getPath());
-    for (const auto & url : urls)
+
+    if (path.resolved_url)
+    {
+        auto metadata = get_metadata_from_uri(Poco::URI(*path.resolved_url, enable_url_encoding));
+        if (!metadata)
+            return std::nullopt;
+        return metadata;
+    }
+
+    std::vector<const URL *> url_options;
+    if (path.read_source_index)
+    {
+        if (*path.read_source_index >= url_shards.size())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid URL shard index: {}", *path.read_source_index);
+        for (const auto & option : url_shards[*path.read_source_index])
+            url_options.push_back(&option);
+    }
+    else
+    {
+        for (const auto & shard : url_shards)
+            for (const auto & option : shard)
+                url_options.push_back(&option);
+    }
+
+    for (const auto * url_option : url_options)
     {
         try
         {
-            auto metadata = get_metadata_from_uri(Poco::URI(url, enable_url_encoding));
+            const auto resolved_url = buildURL(*url_option, path.getPath());
+            auto metadata = get_metadata_from_uri(Poco::URI(resolved_url, enable_url_encoding));
             if (metadata)
+            {
+                if (url_option->path_override)
+                    metadata->resolved_path = *url_option->path_override;
                 return metadata;
+            }
             has_not_found = true;
         }
         catch (...)
@@ -526,7 +573,11 @@ std::vector<String> WebObjectStorage::buildURLs(const std::string & path, size_t
 
 std::string WebObjectStorage::buildURL(const URL & url_option, const std::string & path)
 {
-    if (path.empty())
+    /// `path` is the logical object identity shared by the shard. A path-level failover option can
+    /// override only the concrete request path while keeping scheduling, caching, and task identity
+    /// attached to that logical object.
+    const auto & effective_path = url_option.path_override ? *url_option.path_override : path;
+    if (effective_path.empty())
         return url_option.base_url + url_option.query_fragment;
 
     Poco::URI base_uri(url_option.base_url, false);
@@ -534,8 +585,16 @@ std::string WebObjectStorage::buildURL(const URL & url_option, const std::string
     if (!base_path.ends_with('/'))
         base_path += '/';
 
-    Poco::URI path_uri(stripLeadingSlashes(path), false);
-    base_uri.setPath(base_path + stripLeadingSlashes(path_uri.getPath()));
+    /// `Poco::URI` reads a colon in the first segment of a relative reference as a scheme and drops what
+    /// precedes it, so `data:2024/b.zip` would become `2024/b.zip`. The path is appended as it is, and only
+    /// the query and the fragment are parsed.
+    const auto query_or_fragment = effective_path.find_first_of("?#");
+    const std::string_view raw_path = query_or_fragment == std::string::npos
+        ? std::string_view{effective_path}
+        : std::string_view{effective_path}.substr(0, query_or_fragment);
+    Poco::URI path_uri(
+        query_or_fragment == std::string::npos ? String{} : effective_path.substr(query_or_fragment), false);
+    base_uri.setPath(base_path + stripLeadingSlashes(std::string{raw_path}));
 
     Poco::URI source_uri(url_option.base_url + url_option.query_fragment, false);
     if (!path_uri.getRawQuery().empty())

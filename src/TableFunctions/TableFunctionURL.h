@@ -12,6 +12,7 @@ namespace DB
 {
 
 class Context;
+class StorageWebConfiguration;
 
 /* url(source, [format, structure, compression]) - creates a temporary storage from url.
  */
@@ -45,6 +46,7 @@ public:
     NameSet getVirtualsToCheckBeforeUsingStructureHint() const override;
     bool hasStaticStructure() const override;
     bool hasUnreplicatedTableDataOnDisk() const override;
+    void checkTableCreationSettings(const ContextPtr & context, bool is_fresh_definition) const override;
     void setPartitionBy(const ASTPtr & partition_by_) override;
 
     static void updateStructureAndFormatArgumentsIfNeeded(
@@ -98,6 +100,15 @@ protected:
 
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
 
+    void checkExperimentalURLWildcardFromIndexPages() const;
+
+    std::shared_ptr<StorageWebConfiguration> createWebObjectStorageConfiguration(
+        const String & source,
+        const String & format_,
+        const String & structure_,
+        const String & compression_method_,
+        ContextPtr context) const;
+
     StorageURL::Configuration configuration;
 
     /// When the URL scheme maps to another backend (file://, s3://, az://, hdfs://, ...), the `url`
@@ -110,6 +121,19 @@ protected:
     String delegate_function_uri;
     /// Whether the URL argument was a relative reference resolved against the `url_base` setting.
     bool is_relative_url = false;
+    /// `allow_url_wildcard_from_index_pages` of the session that parsed the arguments. It is recorded
+    /// here because `getStorage` is handed the global context for a table definition, whose settings are
+    /// the server defaults, while this experimental gate is a session setting: it has to be read from the
+    /// query that asked for the reader, not from the context the storage happens to be built in.
+    bool allow_url_wildcard_from_index_pages = false;
+    /// `allow_archive_path_syntax` of the same session, for the same reason: it decides whether the source
+    /// is an archive, and that decision has to be the one the arguments were parsed with.
+    bool allow_archive_path_syntax = false;
+    /// Whether the storage is being built for a table definition rather than for an ad-hoc query. Such a
+    /// definition was validated when it was created (`checkTableCreationSettings`), and refusing it again
+    /// would block attaching or loading the table, so the experimental gate does not run for it - the rule
+    /// `registerStorageURL` applies with `args.mode <= LoadingStrictnessLevel::CREATE`.
+    mutable bool is_stored_definition = false;
 
 private:
     /// Build `delegate` for a non-URL scheme target by constructing and parsing the delegate

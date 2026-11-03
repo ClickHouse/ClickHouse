@@ -72,6 +72,16 @@ std::optional<ColumnsDescription> ReadBufferIterator::tryGetColumnsFromCache(
     if (!query_settings.schema_inference_use_cache || !isCompressionMethodHintAuto(configuration->compression_method))
         return std::nullopt;
 
+    /// The key names the object within its storage, which for a Web failover group is the group rather
+    /// than the endpoint this read resolves to: its endpoints can serve different contents under the same
+    /// path and the same `Last-Modified`. The entry therefore records the endpoint it was read from, and
+    /// the cache is asked for the one this read uses. `get_last_mod_time` is what probes it, so the cache
+    /// calls this second.
+    auto get_resolved_url = [](const ObjectInfoPtr & object_info) -> SchemaCache::ResolvedURLGetter
+    {
+        return [object_info] { return object_info->relative_path_with_metadata.resolved_url; };
+    };
+
     for (auto it = begin; it < end; ++it)
     {
         const auto & object_info = (*it);
@@ -104,7 +114,7 @@ std::optional<ColumnsDescription> ReadBufferIterator::tryGetColumnsFromCache(
         if (format)
         {
             const auto cache_key = getKeyForSchemaCache(*object_info, *format);
-            if (auto columns = schema_cache.tryGetColumns(cache_key, get_last_mod_time))
+            if (auto columns = schema_cache.tryGetColumns(cache_key, get_last_mod_time, get_resolved_url(object_info)))
                 return columns;
         }
         else
@@ -115,7 +125,7 @@ std::optional<ColumnsDescription> ReadBufferIterator::tryGetColumnsFromCache(
             for (const auto & format_name : FormatFactory::instance().getAllInputFormats())
             {
                 const auto cache_key = getKeyForSchemaCache(*object_info, format_name);
-                if (auto columns = schema_cache.tryGetColumns(cache_key, get_last_mod_time))
+                if (auto columns = schema_cache.tryGetColumns(cache_key, get_last_mod_time, get_resolved_url(object_info)))
                 {
                     /// Now format is known. It should be the same for all files.
                     format = format_name;
@@ -131,14 +141,16 @@ void ReadBufferIterator::setNumRowsToLastFile(size_t num_rows)
 {
     /// Same as `StorageObjectStorageSource::addNumRowsToCache`: the key does not include the compression method.
     if (query_settings.schema_inference_use_cache && isCompressionMethodHintAuto(configuration->compression_method))
-        schema_cache.addNumRows(getKeyForSchemaCache(*current_object_info, *format), num_rows);
+        schema_cache.addNumRows(
+            getKeyForSchemaCache(*current_object_info, *format), num_rows, current_object_info->relative_path_with_metadata.resolved_url);
 }
 
 void ReadBufferIterator::setSchemaToLastFile(const ColumnsDescription & columns)
 {
     /// See `tryGetColumnsFromCache`.
     if (query_settings.schema_inference_use_cache && isCompressionMethodHintAuto(configuration->compression_method))
-        schema_cache.addColumns(getKeyForSchemaCache(*current_object_info, *format), columns);
+        schema_cache.addColumns(
+            getKeyForSchemaCache(*current_object_info, *format), columns, current_object_info->relative_path_with_metadata.resolved_url);
 }
 
 void ReadBufferIterator::setFormatName(const String & format_name)

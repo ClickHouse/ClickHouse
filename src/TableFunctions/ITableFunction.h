@@ -104,6 +104,16 @@ public:
 
     virtual bool canBeUsedToCreateTable() const { return true; }
 
+    /// Validates a definition that is about to be persisted, before `execute` switches to the global
+    /// context. `is_fresh_definition` is false for a short `ATTACH TABLE`, which reads the definition back
+    /// from the metadata: such a definition was validated when it was created, so only the checks that
+    /// could make it read a different resource than it was created for run for it. Not called for
+    /// metadata replay on startup or for `INSERT`, so a definition stored by an earlier version keeps
+    /// loading.
+    virtual void checkTableCreationSettings(const ContextPtr & /*context*/, bool /*is_fresh_definition*/) const
+    {
+    }
+
     /// Whether the storage this table function returns is chosen by the current user's grants
     /// (e.g. `viewIfPermitted`). Such a function cannot appear anywhere in a persisted table
     /// definition, not even nested in an argument of another table function such as `remote`:

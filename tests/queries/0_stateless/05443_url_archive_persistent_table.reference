@@ -1,0 +1,9 @@
+created explicit	42
+created inferred	42
+creation writes rejected
+literal url	7
+plain	5
+session setting differing from the server default is rejected
+reloaded explicit	42
+reloaded inferred	42
+replay writes rejected

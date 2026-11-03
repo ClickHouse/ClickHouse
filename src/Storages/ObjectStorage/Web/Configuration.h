@@ -74,6 +74,12 @@ public:
     const Paths & getPaths() const override { return paths; }
     void setPaths(const Paths & paths_) override { paths = paths_; }
 
+    /// Whether the source is split at `::` into an archive and a path inside it. The reader of a table
+    /// definition is built under the global context, so the decision is taken once by the session that
+    /// parsed the arguments and recorded here, instead of being re-read from the context that happens to
+    /// build the storage.
+    void setAllowArchivePathSyntax(bool allow) { allow_archive_path_syntax = allow; }
+
     String getNamespace() const override { return namespace_prefix; }
     String getDataSourceDescription() const override { return raw_url; }
 
@@ -108,6 +114,7 @@ private:
     Path path;
     Paths paths;
     std::optional<String> archive_pattern;
+    std::optional<bool> allow_archive_path_syntax;
     HTTPHeaderEntries headers_from_ast;
 };
 

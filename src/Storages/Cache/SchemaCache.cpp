@@ -22,41 +22,56 @@ SchemaCache::SchemaCache(size_t max_elements_) : max_elements(max_elements_)
 {
 }
 
-void SchemaCache::addColumns(const Key & key, const ColumnsDescription & columns)
+void SchemaCache::addColumns(const Key & key, const ColumnsDescription & columns, const std::optional<String> & resolved_url)
 {
     std::lock_guard lock(mutex);
-    addUnlocked(key, columns, std::nullopt);
+    addUnlocked(key, columns, std::nullopt, resolved_url);
 }
 
 
-void SchemaCache::addManyColumns(const Keys & keys, const ColumnsDescription & columns)
+void SchemaCache::addManyColumns(const Keys & keys, const ColumnsDescription & columns, const std::optional<String> & resolved_url)
 {
     std::lock_guard lock(mutex);
     for (const auto & key : keys)
-        addUnlocked(key, columns, std::nullopt);
+        addUnlocked(key, columns, std::nullopt, resolved_url);
 }
 
-void SchemaCache::addNumRows(const DB::SchemaCache::Key & key, size_t num_rows)
+void SchemaCache::addNumRows(const DB::SchemaCache::Key & key, size_t num_rows, const std::optional<String> & resolved_url)
 {
     std::lock_guard lock(mutex);
-    addUnlocked(key, std::nullopt, num_rows);
+    addUnlocked(key, std::nullopt, num_rows, resolved_url);
 }
 
-void SchemaCache::addUnlocked(const Key & key, const std::optional<ColumnsDescription> & columns, std::optional<size_t> num_rows)
+void SchemaCache::addUnlocked(
+    const Key & key,
+    const std::optional<ColumnsDescription> & columns,
+    std::optional<size_t> num_rows,
+    const std::optional<String> & resolved_url)
 {
     /// Update columns/num_rows with new values if this key is already in cache.
     if (auto it = data.find(key); it != data.end())
     {
+        auto & schema_info = it->second.schema_info;
+        /// The entry belongs to the resource it was read from, and the two halves are written by
+        /// different callers: a schema from inference, a row count from a later `count()`. Another
+        /// resource of the same group writing under this key describes different contents, so the half
+        /// recorded for the previous one has to go with it instead of staying under the new resource.
+        /// Two endpoints of one group queried in turn therefore keep replacing each other's entry; that
+        /// costs a repeated inference, never a wrong answer, and keeping both would need the endpoint in
+        /// the key, which the schema-cache lookup cannot compute before the metadata probe.
+        if (schema_info.resolved_url != resolved_url)
+            schema_info = SchemaInfo{std::nullopt, std::nullopt, std::time(nullptr), resolved_url};
+
         if (columns)
-            it->second.schema_info.columns = columns;
+            schema_info.columns = columns;
         if (num_rows)
-            it->second.schema_info.num_rows = num_rows;
+            schema_info.num_rows = num_rows;
         return;
     }
 
     time_t now = std::time(nullptr);
     auto it = queue.insert(queue.end(), key);
-    data[key] = {SchemaInfo{columns, num_rows, now}, it};
+    data[key] = {SchemaInfo{columns, num_rows, now, resolved_url}, it};
     checkOverflow();
 }
 
@@ -105,9 +120,12 @@ static ColumnsDescription rebindImplicitTimeZones(const ColumnsDescription & col
     return result;
 }
 
-std::optional<ColumnsDescription> SchemaCache::tryGetColumns(const DB::SchemaCache::Key & key, DB::SchemaCache::LastModificationTimeGetter get_last_mod_time)
+std::optional<ColumnsDescription> SchemaCache::tryGetColumns(
+    const DB::SchemaCache::Key & key,
+    DB::SchemaCache::LastModificationTimeGetter get_last_mod_time,
+    DB::SchemaCache::ResolvedURLGetter get_resolved_url)
 {
-    auto schema_info = tryGetImpl(key, get_last_mod_time);
+    auto schema_info = tryGetImpl(key, get_last_mod_time, get_resolved_url);
     if (!schema_info)
         return std::nullopt;
 
@@ -121,9 +139,12 @@ std::optional<ColumnsDescription> SchemaCache::tryGetColumns(const DB::SchemaCac
     return rebindImplicitTimeZones(*schema_info->columns);
 }
 
-std::optional<size_t> SchemaCache::tryGetNumRows(const DB::SchemaCache::Key & key, DB::SchemaCache::LastModificationTimeGetter get_last_mod_time)
+std::optional<size_t> SchemaCache::tryGetNumRows(
+    const DB::SchemaCache::Key & key,
+    DB::SchemaCache::LastModificationTimeGetter get_last_mod_time,
+    DB::SchemaCache::ResolvedURLGetter get_resolved_url)
 {
-    auto schema_info = tryGetImpl(key, get_last_mod_time);
+    auto schema_info = tryGetImpl(key, get_last_mod_time, get_resolved_url);
     if (!schema_info)
         return std::nullopt;
 
@@ -135,7 +156,8 @@ std::optional<size_t> SchemaCache::tryGetNumRows(const DB::SchemaCache::Key & ke
     return schema_info->num_rows;
 }
 
-std::optional<SchemaCache::SchemaInfo> SchemaCache::tryGetImpl(const Key & key, LastModificationTimeGetter get_last_mod_time)
+std::optional<SchemaCache::SchemaInfo> SchemaCache::tryGetImpl(
+    const Key & key, LastModificationTimeGetter get_last_mod_time, ResolvedURLGetter get_resolved_url)
 {
     std::lock_guard lock(mutex);
     auto it = data.find(key);
@@ -169,6 +191,13 @@ std::optional<SchemaCache::SchemaInfo> SchemaCache::tryGetImpl(const Key & key, 
             return std::nullopt;
         }
     }
+
+    /// The key can name a group of resources, and the entry belongs to the one it was read from. The
+    /// endpoints of a group can serve different contents under the same path and the same modification
+    /// time, so an entry of another endpoint is not served. It is left in place: it is still valid for the
+    /// endpoint that wrote it, and the caller reads the object as it would on a miss.
+    if (schema_info.resolved_url && (!get_resolved_url || get_resolved_url() != schema_info.resolved_url))
+        return std::nullopt;
 
     /// Move key to the end of queue.
     queue.splice(queue.end(), queue, queue_iterator);
