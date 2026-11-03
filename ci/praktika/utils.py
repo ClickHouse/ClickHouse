@@ -17,7 +17,7 @@ from abc import ABC, abstractmethod
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from shlex import quote
 from threading import Event, Thread
@@ -298,22 +298,21 @@ class Shell:
             print("Process already terminated.")
             return
 
-        time_wait = 0
-        wait_interval = 5
+        # Grace period keyed on the readers finishing (`finished`), not on the
+        # leader's own exit. The leader may already be dead while a backgrounded
+        # descendant keeps stdout/stderr open; polling process.poll() here would
+        # return immediately and skip the SIGKILL, leaving a SIGTERM-ignoring
+        # descendant to block the reader threads forever.
+        if finished.wait(100):
+            return
 
-        # Wait for process to terminate
-        while process.poll() is None and time_wait < 100:
-            print("Waiting for process to exit...")
-            time.sleep(wait_interval)
-            time_wait += wait_interval
-
-        # Force kill if still running
-        if process.poll() is None:
-            print("WARNING: Process still running after SIGTERM, sending SIGKILL")
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                print("Process already terminated.")
+        # Still not done after the grace period: escalate to SIGKILL on the whole
+        # group, even when the leader itself has already exited.
+        print("WARNING: Process still running after SIGTERM, sending SIGKILL")
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            print("Process already terminated.")
 
     @classmethod
     def run(
@@ -627,8 +626,19 @@ class Utils:
         return datetime.now().timestamp()
 
     @staticmethod
-    def timestamp_to_str(timestamp):
-        return datetime.utcfromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
+    def to_datetime(value, input_format="unix"):
+        if input_format == "unix":
+            return datetime.fromtimestamp(value, timezone.utc)
+        if input_format == "iso":
+            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        raise ValueError(f"Unsupported datetime input format [{input_format}]")
+
+    @staticmethod
+    def timestamp_to_str(timestamp, input_format="unix"):
+        dt = Utils.to_datetime(timestamp, input_format=input_format)
+        if dt.tzinfo is not None:
+            dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+        return dt.strftime("%Y-%m-%d %H:%M:%S")
 
     @staticmethod
     def get_failed_tests_number(description: str) -> Optional[int]:

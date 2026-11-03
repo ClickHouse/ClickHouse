@@ -1,5 +1,4 @@
--- Tags: no-fasttest, no-random-merge-tree-settings, no-parallel-replicas
--- no-fasttest: the Quantized cases need allow_experimental_codecs.
+-- Tags: no-random-merge-tree-settings, no-parallel-replicas
 -- no-random-merge-tree-settings: every case pins index_granularity so the granule counts are stable.
 -- no-parallel-replicas: EXPLAIN output differs for parallel replicas (an extra per-node Granules
 -- block).
@@ -72,7 +71,7 @@ SELECT '-- 21. over-fire control: a subcolumn the part list cannot describe keep
 -- Independently of that, no stale-type shape is constructible for this carrier at all:
 -- MergeTreeData::checkAlterIsPossible rejects adding, removing or changing a Quantized(...) codec and
 -- restating the type of a Quantized-coded column ("The Quantized(...) codec is immutable via ALTER").
-SET allow_experimental_codecs = 1;
+SET enable_quantized_codec = 1;
 DROP TABLE IF EXISTS t_keep_quantized;
 CREATE TABLE t_keep_quantized (k UInt64, vec Array(Float32) CODEC(Quantized('int8', 8)),
     INDEX idx vec.quantized TYPE minmax GRANULARITY 1)

@@ -1,0 +1,10 @@
+select json.data
+select json.data, json.data.b
+select json.data.b, json.data
+select json.data, json.data.b, json.data.c
+select json.data.b, json.data, json.data.c
+select json.data.b, json.data.c, json.data
+select json.data, json.data.^a
+select json.data.^a, json.data
+select json.data, json.data.^a, json.data.b
+select json.data.b, json.data.^a, json.data

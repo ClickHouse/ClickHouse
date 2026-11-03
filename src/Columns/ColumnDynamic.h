@@ -151,6 +151,11 @@ public:
         return variant_column_ptr->getDataAt(n);
     }
 
+    bool supportsGetDataAt() const override
+    {
+        return variant_column_ptr->supportsGetDataAt();
+    }
+
     void insertData(const char * pos, size_t length) override
     {
         variant_column_ptr->insertData(pos, length);
@@ -186,7 +191,6 @@ public:
 
     std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
-    void skipSerializedInArena(ReadBuffer & in) const override;
     std::optional<size_t> getSerializedValueSize(size_t, const IColumn::SerializationSettings *) const override { return std::nullopt; }
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;

@@ -6,30 +6,18 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'observability', 'aws-lambda', 'lambda-layers']
 ---
 
-**يتكامل هذا الدليل مع:**
+import { ClickStackIntegrates } from '/snippets/ar/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
 
-<table>
-  <tbody>
-    <tr>
-      <td className="pe-2">✅ السجلات</td>
-      <td className="pe-2">✅ المقاييس</td>
-      <td className="pe-2">✅ التتبعات</td>
-    </tr>
-  </tbody>
-</table>
+<ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
 
-<div id="installing-the-otel-lambda-layers">
-  ## تثبيت طبقات Lambda الخاصة بـ OpenTelemetry
-</div>
+## تثبيت طبقات Lambda الخاصة بـ OpenTelemetry {#installing-the-otel-lambda-layers}
 
 يوفّر مشروع OpenTelemetry طبقات Lambda منفصلة من أجل:
 
 1. إضافة instrumentation تلقائيًا إلى شيفرة دالة Lambda الخاصة بك باستخدام auto-instrumentation من OpenTelemetry.
 2. إعادة توجيه السجلات والمقاييس وتتبع المجمّعة إلى ClickStack.
 
-<div id="adding-language-specific-auto-instrumentation">
-  ### إضافة طبقة auto-instrumentation الخاصة باللغة
-</div>
+### إضافة طبقة auto-instrumentation الخاصة باللغة {#adding-language-specific-auto-instrumentation}
 
 تقوم طبقات Lambda الخاصة باللغة والمخصّصة لـ auto-instrumentation بتجهيز شيفرة دالة Lambda لديك تلقائيًا بحزمة OpenTelemetry auto-instrumentation المناسبة للغتك.
 
@@ -110,16 +98,14 @@ keywords: ['ClickStack', 'observability', 'aws-lambda', 'lambda-layers']
   </Tab>
 </Tabs>
 
-<div id="installing-the-otel-collector-layer">
-  ### تثبيت طبقة Lambda الخاصة بـ OpenTelemetry collector
-</div>
+### تثبيت طبقة Lambda الخاصة بـ OpenTelemetry collector {#installing-the-otel-collector-layer}
 
-تتيح لك طبقة Lambda الخاصة بـ collector إعادة توجيه السجلات والمقاييس والتتبعات من دالة Lambda إلى ClickStack دون التأثير في أوقات الاستجابة بسبب كمون المُصدِّر.
+تتيح لك طبقة Lambda الخاصة بـ collector إعادة توجيه السجلات والمقاييس والتتبعات من دالة Lambda إلى ClickStack دون التأثير في أوقات الاستجابة بسبب كمون المُصدِّر.
 
 **لتثبيت طبقة `collector`**:
 
 1. في قسم Layers، انقر على &quot;Add a layer&quot;
-2. حدِّد &quot;specify an ARN&quot; واختر ARN الصحيح بناءً على المعمارية، وتأكد من استبدال `<region>` بمنطقتك (على سبيل المثال: `us-east-2`):
+2. حدِّد &quot;specify an ARN&quot; واختر ARN الصحيح بناءً على المعمارية، وتأكد من استبدال `<region>` بمنطقتك (على سبيل المثال: `us-east-2`):
 
 <Tabs>
   <Tab title="x86_64">
@@ -155,7 +141,7 @@ keywords: ['ClickStack', 'observability', 'aws-lambda', 'lambda-layers']
 
     exporters:
       otlphttp:
-        endpoint: "<YOU_OTEL_COLLECTOR_HTTP_ENDPOINT>"
+        endpoint: "<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>"
         compression: gzip
 
     service:
@@ -192,7 +178,7 @@ keywords: ['ClickStack', 'observability', 'aws-lambda', 'lambda-layers']
 
     exporters:
       otlphttp:
-        endpoint: "<YOU_OTEL_COLLECTOR_HTTP_ENDPOINT>"
+        endpoint: "<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>"
         headers:
           authorization: <YOUR_INGESTION_API_KEY>
         compression: gzip
@@ -221,9 +207,7 @@ keywords: ['ClickStack', 'observability', 'aws-lambda', 'lambda-layers']
 OPENTELEMETRY_COLLECTOR_CONFIG_FILE=/var/task/collector.yaml
 ```
 
-<div id="checking-the-installation">
-  ## التحقق من التثبيت
-</div>
+## التحقق من التثبيت {#checking-the-installation}
 
 بعد نشر الطبقات، ينبغي أن ترى الآن التتبعات التي جُمعت تلقائيًا
 من دالة Lambda الخاصة بك في HyperDX. قد يتسبب المعالجان `decouple` و`batching`
@@ -231,33 +215,25 @@ OPENTELEMETRY_COLLECTOR_CONFIG_FILE=/var/task/collector.yaml
 ولإرسال سجلات أو مقاييس مخصّصة، ستحتاج إلى إضافة OpenTelemetry SDKs الخاصة بلغتك إلى
 تعليماتك البرمجية.
 
-<div id="troubleshoting">
-  ## استكشاف الأخطاء وإصلاحها
-</div>
+## استكشاف الأخطاء وإصلاحها {#troubleshoting}
 
-<div id="custom-instrumentation-not-sending">
-  ### عدم إرسال التضمين البرمجي المخصّص
-</div>
+### عدم إرسال التضمين البرمجي المخصّص {#custom-instrumentation-not-sending}
 
 إذا لم تكن ترى التتبعات التي عرّفتها يدويًا أو أي بيانات قياس عن بُعد أخرى، فقد
 تكون تستخدم إصدارًا غير متوافق من حزمة واجهة برمجة تطبيقات OpenTelemetry. تأكد من أن
 إصدار حزمة واجهة برمجة تطبيقات OpenTelemetry لديك يساوي على الأقل إصدار الحزمة
 المضمَّنة في AWS Lambda أو يكون أقدم منه.
 
-<div id="enabling-sdk-debug-logs">
-  ### تمكين سجلات التصحيح الخاصة بـ SDK
-</div>
+### تمكين سجلات التصحيح الخاصة بـ SDK {#enabling-sdk-debug-logs}
 
 عيّن متغير البيئة `OTEL_LOG_LEVEL` إلى `DEBUG` لتمكين سجلات التصحيح من
 OpenTelemetry SDK. سيساعد ذلك على التأكد من أن طبقة auto-instrumentation
 تقوم بأداتة تطبيقك بشكل صحيح.
 
-<div id="enabling-collector-debug-logs">
-  ### تمكين سجلات التصحيح الخاصة بالـ collector
-</div>
+### تمكين سجلات التصحيح الخاصة بالـ collector {#enabling-collector-debug-logs}
 
 لاستكشاف مشكلات الـ collector وإصلاحها، يمكنك تمكين سجلات التصحيح عبر تعديل
-ملف تكوين الـ collector لإضافة المصدّر `logging`، وضبط مستوى سجلّات telemetry
+ملف تكوين الـ collector لإضافة المصدّر `logging`، وضبط مستوى سجلّات بيانات القياس عن بُعد
 على `debug` لتمكين تسجيل أكثر تفصيلاً من طبقة Lambda الخاصة بالـ collector.
 
 <Tabs>
@@ -276,7 +252,7 @@ OpenTelemetry SDK. سيساعد ذلك على التأكد من أن طبقة au
       logging:
         verbosity: detailed
       otlphttp:
-        endpoint: "<YOU_OTEL_COLLECTOR_HTTP_ENDPOINT>"
+        endpoint: "<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>"
         compression: gzip
 
     service:
@@ -314,7 +290,7 @@ OpenTelemetry SDK. سيساعد ذلك على التأكد من أن طبقة au
       logging:
         verbosity: detailed
       otlphttp:
-        endpoint: "<YOU_OTEL_COLLECTOR_HTTP_ENDPOINT>"
+        endpoint: "<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>"
         headers:
           authorization: <YOUR_INGESTION_API_KEY>
         compression: gzip

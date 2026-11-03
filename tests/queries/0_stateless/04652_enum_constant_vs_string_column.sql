@@ -160,15 +160,11 @@ SELECT 'or_chain_rewritten_to_in', (SELECT arraySort(groupArray(v)) FROM pk_str
 -- which is a separate question that index and rewrite eligibility rules may legitimately change.
 -- Matched with the trailing comma, because a bare '%in%' also matches ordinary, result_type and other
 -- identifiers. This is a mechanism guard rather than a bug detector: the rewrite fires before the fix too.
--- enable_analyzer is pinned because EXPLAIN QUERY TREE throws NOT_IMPLEMENTED without the analyzer, which
--- would abort the whole file on the old analyzer job and under compatibility settings below 24.3. The pin
--- belongs on the outer SELECT: inside the subquery it is rejected as a setting changed in a subquery.
 SELECT 'or_chain_is_rewritten', countIf(explain LIKE '%function_name: in,%') = 1
     AND countIf(explain LIKE '%function_name: or,%') = 0
 FROM (EXPLAIN QUERY TREE run_passes = 1
     SELECT count() FROM pk_str
-    WHERE v = '7' OR v = 'zz' OR v = 'V0')
-SETTINGS enable_analyzer = 1;
+    WHERE v = '7' OR v = 'zz' OR v = 'V0');
 
 SELECT 'tuple_in', (SELECT groupArray(a) FROM pk_pair WHERE (a, b) IN ((CAST('7', 'Enum8(\'7\' = 3)'), 'x'))
     SETTINGS use_skip_indexes = 0, optimize_use_implicit_projections = 0)
@@ -269,16 +265,14 @@ SELECT 'partition_key_prunes', (SELECT sum(toUInt64OrZero(extract(explain, 'Gran
 
 -- The equality above is satisfied by two full scans, and it measures nothing at all if the pinned plan
 -- carries no granule counts, which is what happens with the pin removed, so assert the narrowing
--- separately. Every stage's denominator is the previous stage's numerator, so summing over sections lets
--- one stage's pruning stand in for another's. The two cells below therefore add use_skip_indexes = 0,
--- which leaves Min-Max inert at 5/5 with condition true and makes Partition the stage that prunes, and
--- they read that section by name: measured 1/5 for Partition where the default plan reports 1/1.
+-- separately. Min-Max and Partition both analyze the partition key, and each stage's denominator is the
+-- previous stage's numerator, so the cell below compares the granules left after Partition with the
+-- granules Min-Max started from: 1 of 5, and 5 of 5 if neither stage prunes.
 SELECT 'partition_key_prunes_something', (SELECT
     toUInt64OrZero(extract(arrayStringConcat(groupArray(explain), '|'), 'Partition.*?Granules: (\\d+)/'))
-      < toUInt64OrZero(extract(arrayStringConcat(groupArray(explain), '|'), 'Partition.*?Granules: \\d+/(\\d+)'))
+      < toUInt64OrZero(extract(arrayStringConcat(groupArray(explain), '|'), 'Min-Max.*?Granules: \\d+/(\\d+)'))
     FROM (EXPLAIN indexes = 1 SELECT count() FROM pk_partition WHERE v = CAST('7', 'Enum8(\'7\' = 3)')
-          SETTINGS optimize_use_implicit_projections = 0, optimize_trivial_count_query = 0,
-                   use_skip_indexes = 0));
+          SETTINGS optimize_use_implicit_projections = 0, optimize_trivial_count_query = 0));
 
 -- The condition text is strictly stronger than a granule count, because it names which value the key
 -- analysis used and so detects the name versus number substitution directly. It is read out of the
@@ -294,22 +288,17 @@ SELECT 'partition_key_condition_uses_name', (SELECT
 -- consumer of the converted constant and it fails in the other direction: instead of dropping the matching
 -- row it counted the rows of the '3' partition, returning 3 for a true count of 1. This cell pins the
 -- setting ON rather than off, both to select that route and because the test runner otherwise disables the
--- optimization at random in about one run in twenty. Whether the route is then taken depends on the
--- analyzer, which cannot be pinned inside a subquery, so the cell asserts the count itself: it reads the
--- correct value on either analyzer after the fix and the wrong one on both before it.
+-- optimization at random in about one run in twenty. The cell asserts the count itself.
 SELECT 'partition_key_count', (SELECT count() FROM pk_partition WHERE v = CAST('7', 'Enum8(\'7\' = 3)')
     SETTINGS optimize_trivial_count_query = 1, optimize_use_implicit_projections = 0)
     = (SELECT count() FROM ref_str WHERE v = CAST('7', 'Enum8(\'7\' = 3)'));
 
--- The cell above only covers that route while the route is actually selected, and only the old analyzer
--- selects it: the planner declines trivial count whenever a WHERE is present. Rather than pin an analyzer,
--- which a subquery cannot do, assert that route selection still follows the analyzer in use. This reads 1
--- on either analyzer today and turns 0 if the old analyzer stops taking the partition predicate route,
--- which is the case that would quietly reduce the cell above to an ordinary scan.
+-- The cell above only covers that route while the route is actually selected, and the planner declines
+-- trivial count whenever a WHERE is present. Assert that the route is still not selected.
 SELECT 'partition_key_count_route_follows_analyzer', (SELECT countIf(explain LIKE '%Optimized trivial count%') > 0
     FROM (EXPLAIN SELECT count() FROM pk_partition WHERE v = CAST('7', 'Enum8(\'7\' = 3)')
           SETTINGS optimize_trivial_count_query = 1, optimize_use_implicit_projections = 0))
-    = (SELECT NOT getSetting('enable_analyzer'));
+    = 0;
 
 SELECT 'bloom_filter_fixed_string_prunes', (SELECT sum(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')))
     FROM (EXPLAIN indexes = 1 SELECT count() FROM bf_fixed4 WHERE v = CAST('7', 'Enum8(\'7\' = 3)')))
@@ -390,16 +379,17 @@ SELECT 'control_fixed_string_padding', (SELECT count() FROM pk_fixed10 WHERE key
     SETTINGS use_skip_indexes = 0, optimize_use_implicit_projections = 0) = 8;
 
 -- An Enum element inside a container is still converted to the number, because the Array/Tuple/Map
--- recursion of convertFieldToType passes no element type hint down, and so does
--- createColumnFromConstantArray in the bloom filter condition. The cells below assert the current
--- (wrong) values rather than the desired ones, so the limitation is documented instead of hidden.
+-- recursion of convertFieldToType passes no element type hint down. The cell below asserts the current
+-- (wrong) value rather than the desired one, so the limitation is documented instead of hidden.
 -- The hint propagation is added by https://github.com/ClickHouse/ClickHouse/pull/110084.
 SELECT 'known_limitation_array_element', (SELECT hex(x[1]) FROM values('x Array(String)', [CAST('7', 'Enum8(\'7\' = 3)')])) = '33';
 
--- hasAny and hasAll go through createColumnFromConstantArray, so their bloom filter lookup still uses
--- the number and over prunes. Unlike has, which converts the element with the hint and is fixed above.
-SELECT 'known_limitation_has_any', (SELECT groupArray(v) FROM bf_array WHERE hasAny(v, [CAST('7', 'Enum8(\'7\' = 3)')])) = [];
-SELECT 'known_limitation_has_all', (SELECT groupArray(v) FROM bf_array WHERE hasAll(v, [CAST('7', 'Enum8(\'7\' = 3)')])) = [];
+-- hasAny and hasAll go through createColumnFromConstantArray, which converts the elements with their
+-- own type as well, so their bloom filter lookup agrees with the function - as it does for has above.
+SELECT 'bloom_filter_has_any', (SELECT groupArray(v) FROM bf_array WHERE hasAny(v, [CAST('7', 'Enum8(\'7\' = 3)')]))
+    = (SELECT groupArray(v) FROM bf_array WHERE hasAny(v, [CAST('7', 'Enum8(\'7\' = 3)')]) SETTINGS use_skip_indexes = 0);
+SELECT 'bloom_filter_has_all', (SELECT groupArray(v) FROM bf_array WHERE hasAll(v, [CAST('7', 'Enum8(\'7\' = 3)')]))
+    = (SELECT groupArray(v) FROM bf_array WHERE hasAll(v, [CAST('7', 'Enum8(\'7\' = 3)')]) SETTINGS use_skip_indexes = 0);
 
 DROP TABLE ref_str;
 DROP TABLE pk_str;

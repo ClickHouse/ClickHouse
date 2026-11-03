@@ -47,6 +47,19 @@ class UserDefinedWebAssemblyFunction
 public:
     virtual MutableColumnPtr executeOnBlock(WebAssembly::WasmCompartment * compartment, const Block & block, ContextPtr context, size_t num_rows, StopToken stop_token) const = 0;
 
+    /// True when a call has to place data in, or read data from, the guest's linear memory. Such a
+    /// function cannot run in a compartment whose memory can never hold a single page, while one
+    /// passing its arguments as WebAssembly values is indifferent to the memory configuration.
+    virtual bool requiresGuestLinearMemory() const = 0;
+
+    /// True when a call serializes the whole input block into the guest's linear memory through
+    /// `serialization_format`, so what the memory has to hold is the serialized size of a batch.
+    /// An ABI that hands the guest one row at a time - `ASSEMBLYSCRIPT` builds a separate object
+    /// per row and never reads `serialization_format` - writes no such block, and sizing its
+    /// input by a serialization it does not perform would bound it by bytes it never places
+    /// there.
+    virtual bool serializesInputBlockToGuestMemory() const = 0;
+
     virtual ~UserDefinedWebAssemblyFunction() = default;
 
     static std::unique_ptr<UserDefinedWebAssemblyFunction> create(

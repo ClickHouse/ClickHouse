@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-old-analyzer
-# no-old-analyzer: the explicit FROM-less path relies on `implicit_table_at_top_level`, which is
 # honored only by the analyzer (`QueryTreeBuilder`/`QueryAnalyzer`); the old interpreter resolves a
 # FROM-less `SELECT` against the dummy `system.one`. The feature works only with the analyzer.
 

@@ -189,6 +189,7 @@ IEJoinAlgorithm::IEJoinAlgorithm(
 
     if (residual)
     {
+        set_spillables.add(residual->actions->getActionsDAG());
         const auto & sample = residual->actions->getSampleBlock();
         if (sample.columns() != 1 || !sample.getByPosition(0).type->canBeUsedInBooleanContext())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "IEJoin residual condition must have a single boolean output, got {}",
@@ -936,6 +937,15 @@ bool IEJoinAlgorithm::producePairsBatch(Chunk & chunk)
             has_current_left = true;
         }
 
+        if (!residual && kind == IEJoinKind::LeftAnti)
+        {
+            if (bit_array_end > scan_pos)
+                matched[0][current_left_row] = 1;
+            has_current_left = false;
+            ++l2_cursor;
+            continue;
+        }
+
         std::optional<size_t> found = findNextSetBit();
         if (!found)
             break;
@@ -1116,33 +1126,64 @@ void IEJoinAlgorithm::appendGathered(Chunk & chunk, size_t side, const ColumnUIn
         chunk.addColumn(column->index(indexes, 0));
 }
 
+void IEJoinAlgorithm::cancelResidual() noexcept
+{
+    if (!residual)
+        return;
+
+    for (const auto & node : residual->actions->getNodes())
+    {
+        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function)
+            node.function->cancelExecution();
+    }
+}
+
 IColumn::Filter IEJoinAlgorithm::evaluateResidualMask(const ColumnUInt64 & left_rows, const ColumnUInt64 & right_rows)
 {
-    size_t num_rows = left_rows.size();
-    chassert(num_rows == right_rows.size());
-    produce_work += num_rows;
+    const size_t num_pairs = left_rows.size();
+    chassert(num_pairs == right_rows.size());
+    produce_work += num_pairs;
 
     Columns expression_columns;
     expression_columns.reserve(residual->inputs.size());
     for (const auto & source : residual->inputs)
         expression_columns.push_back(side_columns[source.side][source.position]->index(source.side == 0 ? left_rows : right_rows, 0));
 
+    /// The mask is indexed by candidate pair, so the residual must return one row per pair.
+    /// `executeOnColumns` reports the count its actions produced through the same reference, so
+    /// comparing it is a backstop against a row-count-changing action; it compares totals only.
+    size_t num_rows_after_execute = num_pairs;
+    /// The query may be cancelled before the residual is evaluated or while it is evaluated. Do not
+    /// start (or use) the evaluation then: the returned mask is meaningless, and `merge` sees the
+    /// cancellation and finishes the join without emitting anything of the current batch.
+    if (isCancelled())
+        return IColumn::Filter(num_pairs, 0);
     Columns results = residual->actions->executeOnColumns(
-        std::move(expression_columns), residual_input_header, residual_input_positions, num_rows);
+        std::move(expression_columns), residual_input_header, residual_input_positions, num_rows_after_execute, /*dry_run=*/ false, is_cancelled);
+    if (isCancelled())
+        return IColumn::Filter(num_pairs, 0);
+    if (num_rows_after_execute != num_pairs)
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Residual condition of IEJoin returned {} rows for {} candidate pairs",
+            num_rows_after_execute,
+            num_pairs);
+    }
     ColumnPtr result = results.at(0)->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality();
 
-    IColumn::Filter mask(num_rows);
+    IColumn::Filter mask(num_pairs);
     if (const auto * nullable = checkAndGetColumn<ColumnNullable>(result.get()))
     {
         const auto & null_map = nullable->getNullMapData();
         const auto & values = assert_cast<const ColumnUInt8 &>(nullable->getNestedColumn()).getData();
-        for (size_t row = 0; row < num_rows; ++row)
+        for (size_t row = 0; row < num_pairs; ++row)
             mask[row] = !null_map[row] && values[row];
     }
     else
     {
         const auto & values = assert_cast<const ColumnUInt8 &>(*result).getData();
-        for (size_t row = 0; row < num_rows; ++row)
+        for (size_t row = 0; row < num_pairs; ++row)
             mask[row] = values[row] ? 1 : 0;
     }
     return mask;
@@ -1213,7 +1254,21 @@ IMergingAlgorithm::Status IEJoinAlgorithm::merge()
     if (produce_done)
         return Status({}, true);
 
+    /// A cancelled join stops instead of continuing the scan: the residual is not evaluated after
+    /// the cancellation, so the rows of the current batch, and any unmatched rows that would
+    /// follow, are not decided correctly and must not be emitted.
+    if (isCancelled())
+    {
+        produce_done = true;
+        return Status({}, true);
+    }
+
     Chunk result = produceBatch();
+    if (isCancelled())
+    {
+        produce_done = true;
+        return Status({}, true);
+    }
     return Status(std::move(result), produce_done);
 }
 
@@ -1253,6 +1308,13 @@ IEJoinTransform::IEJoinTransform(
         max_block_size,
         max_block_bytes)
 {
+    algorithm.setCancellationFlag(&getCancellationFlag());
+}
+
+void IEJoinTransform::onCancel() noexcept
+{
+    Base::onCancel();
+    algorithm.cancelResidual();
 }
 
 }

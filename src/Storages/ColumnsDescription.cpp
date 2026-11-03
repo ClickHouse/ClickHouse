@@ -30,8 +30,10 @@
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/addTypeConversionToAST.h>
+#include <Parsers/ASTCodecDeclaration.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -45,6 +47,8 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageDummy.h>
 #include <Common/Exception.h>
+#include <Common/StringUtils.h>
+#include <Common/quoteString.h>
 #include <Common/randomSeed.h>
 #include <Common/typeid_cast.h>
 #include <Analyzer/AggregationUtils.h>
@@ -67,7 +71,6 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
 }
 
 namespace ErrorCodes
@@ -106,6 +109,7 @@ ColumnDescription & ColumnDescription::operator=(const ColumnDescription & other
     default_desc = other.default_desc;
     comment = other.comment;
     codec = other.codec ? other.codec->clone() : nullptr;
+    subcolumn_codecs = other.subcolumn_codecs;
     settings = other.settings;
     ttl = other.ttl ? other.ttl->clone() : nullptr;
     statistics = other.statistics;
@@ -126,6 +130,8 @@ ColumnDescription & ColumnDescription::operator=(ColumnDescription && other) ///
     codec = other.codec ? other.codec->clone() : nullptr;
     other.codec.reset();
 
+    subcolumn_codecs = std::move(other.subcolumn_codecs);
+
     settings = std::move(other.settings);
 
     ttl = other.ttl ? other.ttl->clone() : nullptr;
@@ -145,6 +151,7 @@ bool ColumnDescription::operator==(const ColumnDescription & other) const
         && default_desc == other.default_desc
         && statistics == other.statistics
         && ast_to_str(codec) == ast_to_str(other.codec)
+        && subcolumn_codecs == other.subcolumn_codecs
         && settings == other.settings
         && ast_to_str(ttl) == ast_to_str(other.ttl);
 }
@@ -161,7 +168,7 @@ static String formatASTStateAware(IAST & ast, IAST::FormatState & state)
     return buf.str();
 }
 
-void ColumnDescription::writeText(WriteBuffer & buf, IAST::FormatState & state, bool include_comment) const
+void ColumnDescription::writeText(WriteBuffer & buf, IAST::FormatState & state, bool include_comment, bool include_codec) const
 {
     /// NOTE: Serialization format is insane.
 
@@ -185,7 +192,7 @@ void ColumnDescription::writeText(WriteBuffer & buf, IAST::FormatState & state, 
         writeEscapedString(formatASTStateAware(ast, state), buf);
     }
 
-    if (codec)
+    if (codec && include_codec)
     {
         writeChar('\t', buf);
         writeEscapedString(formatASTStateAware(*codec, state), buf);
@@ -337,7 +344,7 @@ void ColumnsDescription::setAliases(NamesAndAliases aliases)
 {
     for (auto & alias : aliases)
     {
-        ColumnDescription description(std::move(alias.name), std::move(alias.type));
+        ColumnDescription description(std::move(alias.name), std::move(alias.type), std::move(alias.comment));
         description.default_desc.kind = ColumnDefaultKind::Alias;
 
         const char * alias_expression_pos = alias.expression.data();
@@ -355,16 +362,16 @@ void ColumnsDescription::setAliases(NamesAndAliases aliases)
 /// names are considered the same if they completely match or `name_without_dot` matches the part of the name to the point
 static auto getNameRange(const ColumnsDescription::ColumnsContainer & columns, const String & name_without_dot)
 {
-    String name_with_dot = name_without_dot + ".";
-
     /// First we need to check if we have column with name name_without_dot
     /// and if not - check if we have names that start with name_with_dot
-    for (auto it = columns.begin(); it != columns.end(); ++it)
+    const auto & columns_by_name = columns.get<1>();
+    if (auto it = columns_by_name.find(name_without_dot); it != columns_by_name.end())
     {
-        if (it->name == name_without_dot)
-            return std::make_pair(it, std::next(it));
+        auto sequenced_it = columns.project<0>(it);
+        return std::make_pair(sequenced_it, std::next(sequenced_it));
     }
 
+    String name_with_dot = name_without_dot + ".";
     auto begin = std::find_if(columns.begin(), columns.end(), [&](const auto & column){ return startsWith(column.name, name_with_dot); });
 
     if (begin == columns.end())
@@ -380,12 +387,6 @@ static auto getNameRange(const ColumnsDescription::ColumnsContainer & columns, c
     return std::make_pair(begin, end);
 }
 
-namespace
-{
-
-/// If the column carries a `Quantized(...)` codec, attach the serialization that writes the quantized companion stream
-/// and exposes the `<column>.quantized` subcolumn. The customization is attached to this column's own (freshly parsed,
-/// non-shared) type instance, so it does not affect any other column of the same type.
 void attachQuantizeSerializationIfNeeded(ColumnDescription & column)
 {
     auto params = tryExtractQuantizedCodecParams(column.codec);
@@ -406,8 +407,6 @@ void attachQuantizeSerializationIfNeeded(ColumnDescription & column)
 
     auto custom_serialization = std::make_shared<SerializationQuantizedVector>(column.type->getDefaultSerialization(), *params);
     column.type->setCustomization(std::make_unique<DataTypeCustomDesc>(nullptr, std::move(custom_serialization)));
-}
-
 }
 
 void attachQuantizeSerializations(NamesAndTypesList & columns, const ColumnsDescription & metadata)
@@ -491,10 +490,17 @@ void ColumnsDescription::rename(const String & column_from, const String & colum
                         column_from, getHintsMessage(column_from));
     }
 
-    columns.get<1>().modify_key(it, [&column_to] (String & old_name)
+    /// Before `modify_key`: `column_from` may refer to the name of the renamed column itself.
+    const bool has_subcolumns = subcolumns.get<1>().find(column_from) != subcolumns.get<1>().end();
+    removeSubcolumns(column_from);
+
+    bool renamed = columns.get<1>().modify_key(it, [&column_to] (String & old_name)
     {
         old_name = column_to;
     });
+
+    if (renamed && has_subcolumns)
+        addSubcolumns(column_to, it->type);
     invalidateGetCache();
 }
 
@@ -663,7 +669,24 @@ NamesAndTypesList ColumnsDescription::getNested(const String & column_name) cons
     return nested;
 }
 
-void ColumnsDescription::addSubcolumnsToList(NamesAndTypesList & source_list) const
+static GetColumnsOptions::Kind defaultKindToGetKind(ColumnDefaultKind kind)
+{
+    switch (kind)
+    {
+        case ColumnDefaultKind::Default:
+            return GetColumnsOptions::Ordinary;
+        case ColumnDefaultKind::Materialized:
+            return GetColumnsOptions::Materialized;
+        case ColumnDefaultKind::Alias:
+            return GetColumnsOptions::Aliases;
+        case ColumnDefaultKind::Ephemeral:
+            return GetColumnsOptions::Ephemeral;
+    }
+
+    return GetColumnsOptions::None;
+}
+
+void ColumnsDescription::addSubcolumnsToList(NamesAndTypesList & source_list, const GetColumnsOptions & options) const
 {
     NamesAndTypesList subcolumns_list;
     for (const auto & col : source_list)
@@ -675,8 +698,20 @@ void ColumnsDescription::addSubcolumnsToList(NamesAndTypesList & source_list) co
             continue;
 
         auto range = subcolumns.get<1>().equal_range(col.name);
-        if (range.first != range.second)
-            subcolumns_list.insert(subcolumns_list.end(), range.first, range.second);
+        for (auto subcolumn_it = range.first; subcolumn_it != range.second; ++subcolumn_it)
+        {
+            /// A column may be named like a subcolumn of another column (see the note in
+            /// `addSubcolumns`). `tryGetColumn` answers such a name with the column, so the shadowed
+            /// subcolumn is unreachable and must not be listed next to the column: a block that holds
+            /// both under one name is rejected as soon as their types differ, which made every read of
+            /// the table fail after an `ALTER TABLE ... MODIFY COLUMN` of the shadowing column.
+            auto shadowing_column = columns.get<1>().find(subcolumn_it->name);
+            if (shadowing_column != columns.get<1>().end()
+                && (defaultKindToGetKind(shadowing_column->default_desc.kind) & options.kind))
+                continue;
+
+            subcolumns_list.push_back(*subcolumn_it);
+        }
     }
 
     source_list.splice(source_list.end(), std::move(subcolumns_list));
@@ -754,7 +789,7 @@ NamesAndTypesList ColumnsDescription::get(const GetColumnsOptions & options) con
     }
 
     if (options.with_subcolumns)
-        addSubcolumnsToList(res);
+        addSubcolumnsToList(res, options);
 
     auto cached = std::make_shared<const NamesAndTypesList>(std::move(res));
     {
@@ -779,23 +814,6 @@ bool ColumnsDescription::hasNested(const String & column_name) const
 {
     auto range = getNameRange(columns, column_name);
     return range.first != range.second && range.first->name.length() > column_name.length();
-}
-
-static GetColumnsOptions::Kind defaultKindToGetKind(ColumnDefaultKind kind)
-{
-    switch (kind)
-    {
-        case ColumnDefaultKind::Default:
-            return GetColumnsOptions::Ordinary;
-        case ColumnDefaultKind::Materialized:
-            return GetColumnsOptions::Materialized;
-        case ColumnDefaultKind::Alias:
-            return GetColumnsOptions::Aliases;
-        case ColumnDefaultKind::Ephemeral:
-            return GetColumnsOptions::Ephemeral;
-    }
-
-    return GetColumnsOptions::None;
 }
 
 bool ColumnsDescription::hasSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const
@@ -904,6 +922,14 @@ std::optional<const ColumnDescription> ColumnsDescription::tryGetColumnDescripti
             return ColumnDescription{jt->name, jt->type};
     }
 
+    return {};
+}
+
+std::optional<NameAndTypePair> ColumnsDescription::tryGetSubcolumn(const String & subcolumn_name) const
+{
+    auto column = tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withRegularSubcolumns(), subcolumn_name);
+    if (column && column->isSubcolumn())
+        return column;
     return {};
 }
 
@@ -1018,7 +1044,33 @@ bool ColumnsDescription::hasCompressionCodec(const String & column_name) const
 {
     const auto it = columns.get<1>().find(column_name);
 
-    return it != columns.get<1>().end() && it->codec != nullptr;
+    return it != columns.get<1>().end() && (it->codec != nullptr || !it->subcolumn_codecs.empty());
+}
+
+bool ColumnsDescription::hasExplicitDefaultCompressionCodec(const String & column_name) const
+{
+    const auto it = columns.get<1>().find(column_name);
+    if (it == columns.get<1>().end() || it->codec == nullptr)
+        return false;
+
+    /// The stored codec descriptor is a `CODEC(...)` function whose arguments are the pipeline
+    /// stages; a `Default` stage is kept as a bare `Default` identifier (see
+    /// `CompressionCodecFactory::validateCodecAndGetPreprocessedAST`) and means "the part's default
+    /// codec". It can be the only stage (`CODEC(Default)`) or the generic-compression stage of a
+    /// longer pipeline (`CODEC(Delta, Default)`, `CODEC(NONE, Default)`), so look for it among all
+    /// stages rather than requiring the degenerate single-stage form.
+    const auto * codec_func = it->codec->as<ASTFunction>();
+    if (!codec_func || !codec_func->arguments)
+        return false;
+
+    for (const auto & stage : codec_func->arguments->children)
+    {
+        const auto * identifier = stage->as<ASTIdentifier>();
+        if (identifier && equalsCaseInsensitive(identifier->name(), DEFAULT_CODEC_NAME))
+            return true;
+    }
+
+    return false;
 }
 
 ColumnsDescription::ColumnTTLs ColumnsDescription::getColumnTTLs() const
@@ -1028,6 +1080,16 @@ ColumnsDescription::ColumnTTLs ColumnsDescription::getColumnTTLs() const
         if (column.ttl)
             ret.emplace(column.name, column.ttl);
     return ret;
+}
+
+void ColumnsDescription::clearColumnTTLs()
+{
+    /// Deliberately not through `ColumnsDescription::modify`: that also rebuilds the column's
+    /// subcolumns, which `add` does not register for an ALIAS column.
+    for (auto it = columns.begin(); it != columns.end(); ++it)
+        if (it->ttl)
+            columns.modify(it, [](ColumnDescription & column) { column.ttl.reset(); });
+    invalidateGetCache();
 }
 
 void ColumnsDescription::resetColumnTTLs()
@@ -1047,7 +1109,7 @@ void ColumnsDescription::resetColumnTTLs()
 }
 
 
-String ColumnsDescription::toString(bool include_comments) const
+String ColumnsDescription::toString(bool include_comments, bool include_codecs) const
 {
     WriteBufferFromOwnString buf;
     IAST::FormatState ast_format_state;
@@ -1057,7 +1119,22 @@ String ColumnsDescription::toString(bool include_comments) const
     writeCString(" columns:\n", buf);
 
     for (const ColumnDescription & column : columns)
-        column.writeText(buf, ast_format_state, include_comments);
+        column.writeText(buf, ast_format_state, include_comments, include_codecs);
+
+    if (!include_codecs)
+        return buf.str();
+
+    /// Subcolumn codecs are written after the columns, in the form of `CREATE TABLE`.
+    for (const ColumnDescription & column : columns)
+    {
+        for (const auto & [subcolumn_name, codec] : column.subcolumn_codecs)
+        {
+            ASTCodecDeclaration declaration(column.name + "." + subcolumn_name, codec);
+            writeCString("CODEC ", buf);
+            writeEscapedString(formatASTStateAware(declaration, ast_format_state), buf);
+            writeChar('\n', buf);
+        }
+    }
 
     return buf.str();
 }
@@ -1080,7 +1157,31 @@ ColumnsDescription ColumnsDescription::parse(const String & str)
         result.add(column);
     }
 
-    assertEOF(buf);
+    while (!buf.eof())
+    {
+        String line;
+        readEscapedStringUntilEOL(line, buf);
+        buf.ignore(1); /// ignore new line
+
+        ParserCodecDeclaration parser;
+        ASTPtr ast = parseQuery(
+            parser, line, "codec declaration parser", /* max_query_size = */ 0,
+            DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+        const auto & declaration = ast->as<ASTCodecDeclaration &>();
+
+        auto subcolumn = result.tryGetSubcolumn(declaration.name);
+        if (!subcolumn)
+            throw Exception(ErrorCodes::CANNOT_PARSE_TEXT,
+                "Cannot parse codec declaration: {} is not a subcolumn", backQuote(declaration.name));
+
+        auto codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
+            declaration.getCodec(), subcolumn->type, CodecValidationSettings::trusted());
+        result.modify(subcolumn->getNameInStorage(), [&](ColumnDescription & column)
+        {
+            column.subcolumn_codecs.set(subcolumn->getSubcolumnName(), codec);
+        });
+    }
+
     return result;
 }
 
@@ -1151,8 +1252,15 @@ void getDefaultExpressionInfoInto(const ASTColumnDeclaration & col_decl, const D
         info.insert_time_default_columns.insert(col_decl.name);
 
     /** For columns with explicitly-specified type create two expressions:
-    * 1. default_expression aliased as column name with _tmp suffix
-    * 2. conversion of expression (1) to explicitly-specified type alias as column name
+    * 1. conversion of the default expression to the explicitly-specified type, aliased as the column name
+    * 2. the default expression itself, aliased as the column name with a _tmp suffix, so that the block
+    *    also carries the type the expression has before the conversion
+    *
+    * Expression (1) holds its own copy of the default expression rather than referring to the alias of
+    * expression (2). Referring to it made every error inside the default expression surface as a failure
+    * to resolve that alias: `DEFAULT nosuch` reported `Unknown expression or function identifier
+    * 'b_tmp_alter15627740530694008313'` - a name the user has never seen - and even offered it as the
+    * hint for itself. The two expressions are only analysed, never executed, so the copy costs nothing.
     */
     if (col_decl.getType())
     {
@@ -1161,7 +1269,7 @@ void getDefaultExpressionInfoInto(const ASTColumnDeclaration & col_decl, const D
         const auto * data_type_ptr = data_type.get();
 
         info.expr_list->children.emplace_back(setAlias(
-            addTypeConversionToAST(make_intrusive<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()), final_column_name));
+            addTypeConversionToAST(col_default_expression->clone(), data_type_ptr->getName()), final_column_name));
 
         info.expr_list->children.emplace_back(setAlias(col_default_expression->clone(), tmp_column_name));
     }
@@ -1509,21 +1617,7 @@ std::optional<Block> validateColumnsDefaultsAndGetSampleBlockImpl(ASTPtr default
 
     try
     {
-        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
-            return validateDefaultsWithAnalyzer(default_expr_list, all_columns, context, get_sample_block, insert_time_default_columns);
-        else
-        {
-            auto syntax_analyzer_result = TreeRewriter(context).analyze(default_expr_list, all_columns, {}, {}, false, /* allow_self_aliases = */ false);
-            const auto actions = ExpressionAnalyzer(default_expr_list, syntax_analyzer_result, context).getActions(true);
-            for (const auto & action : actions->getActions())
-                if (action.node->type == ActionsDAG::ActionType::ARRAY_JOIN)
-                    throw Exception(ErrorCodes::THERE_IS_NO_DEFAULT_VALUE, "Unsupported default value that requires ARRAY JOIN action");
-
-            if (!get_sample_block)
-                return {};
-
-            return actions->getSampleBlock();
-        }
+        return validateDefaultsWithAnalyzer(default_expr_list, all_columns, context, get_sample_block, insert_time_default_columns);
     }
     catch (Exception & ex)
     {

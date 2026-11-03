@@ -14,8 +14,6 @@ This table function is experimental and disabled by default. Enable it with the 
 SET allow_experimental_eval_table_function = 1;
 ```
 
-It also requires the analyzer ([`enable_analyzer`](/reference/settings/session-settings/allow-experimental#allow_experimental_analyzer), enabled by default).
-
 ## Syntax {#syntax}
 
 ```sql
@@ -104,7 +102,6 @@ Result:
 
 ## Restrictions {#restrictions}
 
-- `eval` works only with query analyzer (`enable_analyzer = 1`).
 - The generated query must be a single `SELECT` query without output options such as `INTO OUTFILE` or `FORMAT`. `eval` does not execute multiple statements.
 - The generated query must be self-contained: it is resolved in its own scope and cannot reference `WITH` aliases or columns of the outer query.
 - The generated query cannot use the `eval` table function again.

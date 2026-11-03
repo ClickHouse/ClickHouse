@@ -1,0 +1,19 @@
+=== no window: every span ===
+query
+└─ child
+=== since yesterday: the child only ===
+child
+=== until five days ago: the root only ===
+query
+=== inclusive bounds: both ===
+query
+└─ child
+=== an empty window says so ===
+within the since/until window
+=== query_id lookup honours the window ===
+query
+└─ child
+within the since/until window
+=== invalid arguments ===
+cannot parse 'yesterday' as a YYYY-MM-DD date for since
+argument 4 must be given by name

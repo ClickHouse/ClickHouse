@@ -23,6 +23,7 @@
 #include <Common/SipHash.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Common/checkStackSize.h>
 
 namespace DB
 {
@@ -321,6 +322,9 @@ Field ColumnDynamic::operator[](size_t n) const
 
 void ColumnDynamic::get(size_t n, Field & res) const
 {
+    /// Object, Dynamic and Variant values nest into each other to a depth that comes from the data, not from the declared type.
+    checkStackSize();
+
     const auto & variant_col = getVariantColumn();
     /// Check if value is not in shared variant.
     if (variant_col.globalDiscriminatorAt(n) != getSharedVariantDiscriminator())
@@ -887,18 +891,6 @@ void ColumnDynamic::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn
         variant_col.getLocalDiscriminators().push_back(variant_col.localDiscriminatorByGlobal(getSharedVariantDiscriminator()));
         variant_col.getOffsets().push_back(shared_variant.size() - 1);
     }
-}
-
-void ColumnDynamic::skipSerializedInArena(ReadBuffer & in) const
-{
-    UInt8 null_bit = 0;
-    readBinaryLittleEndian<UInt8>(null_bit, in);
-    if (null_bit)
-        return;
-
-    size_t type_and_value_size = 0;
-    readBinaryLittleEndian<size_t>(type_and_value_size, in);
-    in.ignore(type_and_value_size);
 }
 
 void ColumnDynamic::updateHashWithValue(size_t n, SipHash & hash) const

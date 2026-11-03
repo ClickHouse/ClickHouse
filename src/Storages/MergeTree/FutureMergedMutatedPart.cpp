@@ -76,6 +76,22 @@ void FutureMergedMutatedPart::assign(MergeTreeData::DataPartsVector parts_, Merg
     part_info.level = max_level + 1;
     part_info.mutation = max_mutation;
 
+    updateName();
+}
+
+void FutureMergedMutatedPart::raiseMutationVersion(Int64 mutation_version)
+{
+    if (mutation_version < part_info.mutation)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Cannot lower the mutation version of the future part {} from {} to {}",
+            name, part_info.mutation, mutation_version);
+
+    part_info.mutation = mutation_version;
+    updateName();
+}
+
+void FutureMergedMutatedPart::updateName()
+{
     if (parts.front()->storage.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
         DayNum min_date = DayNum(std::numeric_limits<UInt16>::max());

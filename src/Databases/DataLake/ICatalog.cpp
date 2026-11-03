@@ -1,4 +1,5 @@
 #include <Databases/DataLake/ICatalog.h>
+#include <Databases/DataLake/DataLakeConstants.h>
 #include <Databases/DataLake/DatabaseDataLakeSettings.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Common/Exception.h>
@@ -9,6 +10,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <iterator>
+#include <set>
 #include <tuple>
 
 #include <Common/FailPoint.h>
@@ -50,7 +52,7 @@ StorageType parseStorageTypeFromLocation(const std::string & location)
     return parseStorageTypeFromString(location.substr(0, pos));
 }
 
-StorageType parseStorageTypeFromString(const std::string & type)
+std::optional<StorageType> tryParseStorageTypeFromString(const std::string & type)
 {
     auto capitalize_first_letter = [] (const std::string & s)
     {
@@ -80,13 +82,18 @@ StorageType parseStorageTypeFromString(const std::string & type)
     else if (storage_type_str == "abfss") /// Azure Blob File System Secure
         storage_type_str = "Azure";
 
-    auto storage_type = magic_enum::enum_cast<StorageType>(capitalize_first_letter(storage_type_str));
+    return magic_enum::enum_cast<StorageType>(capitalize_first_letter(storage_type_str));
+}
+
+StorageType parseStorageTypeFromString(const std::string & type)
+{
+    auto storage_type = tryParseStorageTypeFromString(type);
 
     if (!storage_type)
     {
         throw DB::Exception(
             DB::ErrorCodes::NOT_IMPLEMENTED,
-            "Unsupported storage type: {}", storage_type_str);
+            "Unsupported storage type: {}", type);
     }
 
     return *storage_type;
@@ -346,6 +353,24 @@ DB::SettingsChanges CatalogSettings::allChanged() const
     return changes;
 }
 
+std::string_view ICatalog::getTableEngineName(const TableMetadata & table_metadata) const
+{
+    if (!table_metadata.isDefaultReadableTable())
+        return FAKE_TABLE_ENGINE_NAME_FOR_UNREADABLE_TABLES;
+
+    switch (getTableFormat(table_metadata))
+    {
+        case DataLakeTableFormat::UNKNOWN:
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Table is readable, but its catalog reports no data lake format");
+        case DataLakeTableFormat::DELTA:
+            return "DeltaLake";
+        case DataLakeTableFormat::ICEBERG:
+            return "Iceberg";
+        case DataLakeTableFormat::PAIMON:
+            return "Paimon";
+    }
+}
+
 CatalogTables ICatalog::getTables(const TableNameFilter & filter) const
 {
     switch (filter.kind)
@@ -353,13 +378,27 @@ CatalogTables ICatalog::getTables(const TableNameFilter & filter) const
         case TableNameFilter::Kind::All:
             return getTables();
 
-        case TableNameFilter::Kind::Equals:
+        case TableNameFilter::Kind::In:
         {
-            /// `name = 'ns.table'` -> list only namespace `ns`; the outer filter keeps the exact row.
-            const auto pos = filter.value.rfind('.');
-            if (pos == std::string::npos)
-                return getTables();
-            return listTablesInNamespaceDirect(filter.value.substr(0, pos));
+            /// `name IN ('ns.a', 'other.b')` -> list only namespaces `ns` and `other`; the outer
+            /// filter keeps the exact rows. A name without a namespace tells us nothing about
+            /// which namespace to list, so fall back to the whole catalog.
+            std::set<std::string> namespaces;
+            for (const auto & value : filter.values)
+            {
+                const auto pos = value.rfind('.');
+                if (pos == std::string::npos)
+                    return getTables();
+                namespaces.emplace(value.substr(0, pos));
+            }
+
+            CatalogTables result;
+            for (const auto & namespace_name : namespaces)
+            {
+                auto tables = listTablesInNamespaceDirect(namespace_name);
+                std::move(tables.begin(), tables.end(), std::back_inserter(result));
+            }
+            return result;
         }
 
         case TableNameFilter::Kind::Like:
@@ -395,12 +434,17 @@ CatalogTables ICatalog::getTables(const TableNameFilter & filter) const
     return {};
 }
 
+std::optional<std::string> ICatalog::getDefaultTableLocation(const std::string & /*namespace_name*/, const std::string & /*table_name*/) const
+{
+    return std::nullopt;
+}
+
 void ICatalog::createTable(const String & /*namespace_name*/, const String & /*table_name*/, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr /*metadata_content*/) const
 {
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "createTable is not implemented");
 }
 
-void ICatalog::createNamespaceIfNotExists(const String & /*namespace_name*/, const String & /*location*/) const
+void ICatalog::createNamespaceIfNotExists(const String & /*namespace_name*/) const
 {
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "createNamespaceIfNotExists is not implemented");
 }
@@ -418,6 +462,16 @@ bool ICatalog::updateSchema(
     Int32 /*previous_schema_id*/) const
 {
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "updateSchema is not implemented");
+}
+
+Poco::JSON::Object::Ptr ICatalog::removeSnapshots(
+    const String & /*namespace_name*/,
+    const String & /*table_name*/,
+    Poco::JSON::Object::Ptr /*base_metadata*/,
+    const std::vector<Int64> & /*snapshot_ids*/,
+    const std::vector<String> & /*ref_names*/) const
+{
+    throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "removeSnapshots is not implemented");
 }
 
 void ICatalog::dropTable(const String & /*namespace_name*/, const String & /*table_name*/, bool /*delete_data*/) const

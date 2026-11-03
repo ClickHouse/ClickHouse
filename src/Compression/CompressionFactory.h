@@ -31,6 +31,16 @@ using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;
 
 using CodecNameWithLevel = std::pair<String, std::optional<int>>;
 
+/// Properties of a codec family, declared by the codec at registration.
+struct CompressionCodecFamilyProperties
+{
+    /// The codec is declarative: it only takes effect through the serialization that a column-level `CODEC`
+    /// attaches to the column, and compresses nothing by itself (e.g. `Quantized`). Such a codec cannot be
+    /// given as a string (a table-level, network or temporary files setting, a server config), because there is
+    /// no column there, and cannot be applied directly to bytes, e.g. by `estimateCompressionRatio`.
+    bool is_declarative = false;
+};
+
 struct CodecValidationSettings
 {
     explicit CodecValidationSettings(const Settings & settings_)
@@ -67,7 +77,7 @@ protected:
 public:
     static CompressionCodecFactory & instance();
 
-    /// Return default codec (currently LZ4)
+    /// Return default codec (currently ZSTD(3))
     CompressionCodecPtr getDefaultCodec() const;
 
     /// True if `codec` is the default codec: no CODEC clause (null), or a lone CODEC(Default).
@@ -90,11 +100,9 @@ public:
     /// information about type to improve inner settings, but every codec should
     /// be able to work without information about type. Also AST can contain
     /// codec, which can be alias to current default codec, which can be changed
-    /// in runtime. If only_generic is true than method will filter all
-    /// isGenericCompression() == false codecs from result. If nothing found
-    /// will return codec NONE. It's useful for auxiliary parts of complex columns
-    /// like Nullable, Array and so on. If all codecs are non generic and
-    /// only_generic = true, than codec NONE will be returned.
+    /// in runtime. If `only_generic` is true, only the codecs that do not interpret the values
+    /// are kept: generic compression (`isGenericCompression`) and encryption (`isEncryption`); `NONE`
+    /// if nothing remains.
     CompressionCodecPtr get(const ASTPtr & ast, const IDataType * column_type, CompressionCodecPtr current_default = nullptr, bool only_generic = false) const;
 
     /// Just wrapper for previous method.
@@ -112,6 +120,10 @@ public:
     /// Get codec by name with optional params. Example: LZ4, ZSTD(3)
     CompressionCodecPtr get(const String & compression_codec) const;
 
+    /// Throws if any codec of the chain in `ast` is declarative (see `CompressionCodecFamilyProperties`).
+    /// For a caller that applies a codec chain directly to bytes, e.g. `estimateCompressionRatio`.
+    void checkCodecChainIsNotDeclarative(const ASTPtr & ast) const;
+
     /// Names of the dedicated settings gating registered codec families.
     Strings getGateSettingNames() const;
 
@@ -125,9 +137,22 @@ public:
 
     /// Register codec with parameters and column type. The `source` is captured automatically at the call site
     /// (the codec's registration), so it points to the source file that defines the codec; do not pass it explicitly.
-    void registerCompressionCodecWithType(const String & family_name, std::optional<uint8_t> byte_code, CreatorWithType creator, std::source_location source = std::source_location::current());
+    /// A codec family name is matched case-insensitively, the way the `CODEC` keyword itself is, so `CODEC(zstd)`,
+    /// `CODEC(ZSTD)` and `CODEC(ZStd)` all name the same codec. The spelling used at registration is the canonical
+    /// name, the one `system.codecs` reports.
+    void registerCompressionCodecWithType(
+        const String & family_name,
+        std::optional<uint8_t> byte_code,
+        CreatorWithType creator,
+        CompressionCodecFamilyProperties properties = {},
+        std::source_location source = std::source_location::current());
     /// Register codec with parameters
-    void registerCompressionCodec(const String & family_name, std::optional<uint8_t> byte_code, Creator creator, std::source_location source = std::source_location::current());
+    void registerCompressionCodec(
+        const String & family_name,
+        std::optional<uint8_t> byte_code,
+        Creator creator,
+        CompressionCodecFamilyProperties properties = {},
+        std::source_location source = std::source_location::current());
 
     /// Register codec without parameters
     void registerSimpleCompressionCodec(const String & family_name, std::optional<uint8_t> byte_code, SimpleCreator creator, std::source_location source = std::source_location::current());
@@ -138,6 +163,23 @@ protected:
     CompressionCodecPtr getImpl(const String & family_name, const ASTPtr & arguments, const IDataType * column_type) const;
 
 private:
+    /// The canonical (registered) spelling of a codec family name matched case-insensitively, or nullptr if no such
+    /// codec family is registered.
+    const String * tryGetCanonicalFamilyName(const String & family_name) const;
+
+    /// True if `family_name` names a registered declarative codec (see `CompressionCodecFamilyProperties`).
+    bool isDeclarativeCodec(const String & family_name) const;
+
+    /// A declarative codec given as a string (a table-level, network or temporary files setting, a server config)
+    /// has no column, so accepting it there would silently do nothing. `Default` stands for the codec that encloses
+    /// a column-level `CODEC`; a codec given as a string has no such enclosing default, so it would silently resolve
+    /// to the factory default instead of the table or server default selection.
+    /// Throws if `family_name` names such a codec.
+    void checkCodecIsNotColumnLevelOnly(const String & family_name) const;
+
+    /// The same check for every codec of a chain parsed from a string, e.g. "Delta, Quantized('int8', 64)".
+    void checkCodecChainIsNotColumnLevelOnly(const ASTPtr & ast) const;
+
     ASTPtr validateCodecAndGetPreprocessedASTImpl(
         const ASTPtr & ast, const DataTypePtr & column_type, const Settings * settings, bool sanity_check) const;
 
@@ -151,9 +193,17 @@ private:
     CompressionCodecsCodeDictionary family_code_with_codec;
     /// The source file where each codec family was registered, keyed by family name. See `getCodecDocumentations`.
     UnorderedMapWithMemoryTracking<String, const char *> family_name_with_source;
+    /// The properties declared by each codec family at registration, keyed by family name.
+    UnorderedMapWithMemoryTracking<String, CompressionCodecFamilyProperties> family_name_with_properties;
+    /// The lower-cased family name to the canonical family name, for the case-insensitive lookup.
+    UnorderedMapWithMemoryTracking<String, String> lowercase_family_name_to_canonical;
     CompressionCodecPtr default_codec;
 
     CompressionCodecFactory();
 };
+
+/// Type-specific codecs read a compressed block as a sequence of values, so a block must not end or begin in the middle of a value.
+/// Rounds the block size down to a multiple of the value size, but not below one value.
+size_t roundCompressBlockSizeToWholeValues(size_t block_size, const IDataType & type);
 
 }

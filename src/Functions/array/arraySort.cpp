@@ -362,9 +362,9 @@ it returns an array sorted according to the logic of the provided lambda functio
     description = R"(
 This function is the same as `arraySort` but with an additional `limit` argument allowing partial sorting.
 
-:::tip
+<Tip>
 To retain only the sorted elements use `arrayResize`.
-:::
+</Tip>
     )";
     syntax = "arrayPartialSort([f,] limit, arr [, arr1, ... ,arrN])";
     arguments = {
@@ -392,9 +392,9 @@ in ascending order. The remaining elements `(limit..N]` are in an unspecified or
     description = R"(
 This function is the same as `arrayReverseSort` but with an additional `limit` argument allowing partial sorting.
 
-:::tip
+<Tip>
 To retain only the sorted elements use `arrayResize`.
-:::
+</Tip>
     )";
     syntax = "arrayPartialReverseSort([f,] limit, arr [, arr1, ... ,arrN])";
     returned_value = {R"(

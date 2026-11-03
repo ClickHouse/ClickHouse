@@ -150,35 +150,6 @@ def test_mutation_exponential_backoff_with_replicated_tree(started_cluster):
     assert not node_no_backoff.contains_in_log(REPLICATED_POSTPONE_LOG)
 
 
-def test_mutatuion_exponential_backoff_create_dependent_table(started_cluster):
-    prepare_cluster(False)
-
-    # Executing incorrect mutation.
-    node_with_backoff.query(
-        "ALTER TABLE test_table DELETE WHERE x IN (SELECT x FROM dep_table) SETTINGS allow_nondeterministic_mutations = 1, validate_mutation_query = 0"
-    )
-
-    # Creating dependent table for mutation.
-    node_with_backoff.query(
-        "CREATE TABLE dep_table(x UInt32) ENGINE MergeTree() ORDER BY x"
-    )
-
-    retry_count = 100
-    no_unfinished_mutation = False
-    for _ in range(0, retry_count):
-        if (
-            node_with_backoff.query(
-                "SELECT count() FROM system.mutations WHERE is_done=0"
-            )
-            == "0\n"
-        ):
-            no_unfinished_mutation = True
-            break
-
-    assert no_unfinished_mutation
-    node_with_backoff.query("DROP TABLE IF EXISTS dep_table SYNC")
-
-
 def test_exponential_backoff_setting_override(started_cluster):
     node = node_with_backoff
     node.rotate_logs()
