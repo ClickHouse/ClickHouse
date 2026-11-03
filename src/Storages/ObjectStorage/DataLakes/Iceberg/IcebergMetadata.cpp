@@ -1098,10 +1098,15 @@ void IcebergMetadata::createInitial(
     }
 
     String location_path = configuration_ptr->getRawPath().path;
-    if (local_context->getSettingsRef()[Setting::write_full_path_in_iceberg_metadata].value)
+    if ((catalog && catalog->getCatalogType() == DatabaseDataLakeCatalogType::ICEBERG_REST)
+        || local_context->getSettingsRef()[Setting::write_full_path_in_iceberg_metadata].value)
+    {
         location_path = configuration_ptr->getMetadataLocationURI();
+    }
     else if (!location_path.contains("://") && !location_path.starts_with('/'))
+    {
         location_path = "/" + location_path;
+    }
 
     auto [metadata_content_object, metadata_content] = createEmptyMetadataFile(
         location_path, *columns, partition_by, order_by, local_context, (*configuration_ptr->getDataLakeSettings())[DataLakeStorageSetting::iceberg_format_version]);
