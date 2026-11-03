@@ -44,7 +44,7 @@ static TTLExpressions getExpressions(const TTLDescription & ttl_descr, PreparedS
     return {expr.expression, where_expr.expression};
 }
 
-static bool hasFreeIdentifierRootIn(const IAST & ast, NameSet bound)
+static bool hasFreeIdentifierIn(const IAST & ast, NameSet bound)
 {
     checkStackSize();
 
@@ -55,14 +55,14 @@ static bool hasFreeIdentifierRootIn(const IAST & ast, NameSet bound)
     }
     else if (const auto * identifier = ast.as<ASTIdentifier>())
     {
-        return bound.contains(identifier->name_parts.front());
+        return bound.contains(identifier->name()) || bound.contains(identifier->name_parts.front());
     }
 
     if (bound.empty())
         return false;
 
     for (const auto & child : ast.children)
-        if (hasFreeIdentifierRootIn(*child, bound))
+        if (hasFreeIdentifierIn(*child, bound))
             return true;
 
     return false;
@@ -90,7 +90,7 @@ static bool isAliasExpansionCapturedByLambda(const IAST & ast, const ColumnsDesc
         if (bound.contains(identifier->name_parts.front()))
             return true;
 
-        return hasFreeIdentifierRootIn(*column->default_desc.expression, bound)
+        return hasFreeIdentifierIn(*column->default_desc.expression, bound)
             || isAliasExpansionCapturedByLambda(*column->default_desc.expression, columns, bound);
     }
 

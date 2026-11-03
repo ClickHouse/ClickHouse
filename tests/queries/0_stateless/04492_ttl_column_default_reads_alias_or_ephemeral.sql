@@ -101,6 +101,15 @@ OPTIMIZE TABLE t_capture_field FINAL; -- { serverError NOT_FOUND_COLUMN_IN_BLOCK
 SELECT 'capture field', countIf(w = 'stored'), count() FROM t_capture_field;
 DROP TABLE t_capture_field;
 
+DROP TABLE IF EXISTS t_capture_dotted;
+CREATE TABLE t_capture_dotted (d Date, k UInt32, `q.a` String, a String ALIAS concat(q.a, 'x'),
+    w String DEFAULT arrayMap(`q.a` -> concat(`q.a`, a), ['1'])[1] TTL d + INTERVAL 1 DAY)
+    ENGINE = MergeTree ORDER BY k SETTINGS min_bytes_for_wide_part = '1G', min_rows_for_wide_part = 1000000000;
+INSERT INTO t_capture_dotted (d, k, `q.a`, w) SELECT '2000-01-01', number, toString(number), 'stored' FROM numbers(10);
+OPTIMIZE TABLE t_capture_dotted FINAL; -- { serverError NOT_FOUND_COLUMN_IN_BLOCK }
+SELECT 'capture dotted', countIf(w = 'stored'), count() FROM t_capture_dotted;
+DROP TABLE t_capture_dotted;
+
 DROP TABLE IF EXISTS t_update;
 CREATE TABLE t_update (d Date, k UInt32, q String, a String ALIAS concat(q, 'x'), w String DEFAULT a TTL d + INTERVAL 1 DAY)
     ENGINE = MergeTree ORDER BY k SETTINGS min_bytes_for_wide_part = '1G', min_rows_for_wide_part = 1000000000;
