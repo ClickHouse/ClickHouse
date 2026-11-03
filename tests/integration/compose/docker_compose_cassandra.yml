@@ -4,3 +4,16 @@ services:
         restart: always
         stop_grace_period: 5s
         cpus: 3
+        environment:
+            # By default, the heap size is derived from the memory of the host (up to 8 GB),
+            # and the container is killed when many tests run in parallel.
+            MAX_HEAP_SIZE: 1G
+            HEAP_NEWSIZE: 256M
+        # Accept both plain and TLS connections on the same port, with a self-signed certificate.
+        entrypoint: bash
+        command:
+            - -c
+            - |
+                [ -f /etc/cassandra/.keystore ] || keytool -genkeypair -noprompt -keyalg RSA -alias cassandra -dname CN=cassandra1 -validity 3650 -keystore /etc/cassandra/.keystore -storepass cassandra -keypass cassandra
+                sed -i -e '/^client_encryption_options:/,/^$$/ { s/enabled: false/enabled: true/; s/# optional: true/optional: true/; s|keystore: conf/.keystore|keystore: /etc/cassandra/.keystore| }' /etc/cassandra/cassandra.yaml
+                exec docker-entrypoint.sh cassandra -f

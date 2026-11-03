@@ -301,6 +301,15 @@ Possible values:
 
 Only version `v3` supports changing the shared data serialization version.
 
+## object_typed_shared_data_serialization_version {#object_typed_shared_data_serialization_version}
+<SettingsInfoBlock type="MergeTreeObjectTypedSharedDataSerializationVersion" default_value="v1" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "v1"},{"label": "New setting"}]}]}/>
+
+Serialization version of the typed shared data inside JSON data type: the structure that stores the typed paths declared `SHARED` in a part together, in a constant number of files, instead of a separate set of files per path.
+
+Possible values:
+- `v1` - for each granule the data of every `SHARED` path in path order, with the start of every path's data recorded in a marks stream, so that a read of some paths decodes only them.
+
 ## old_parts_lifetime {#old_parts_lifetime}
 <SettingsInfoBlock type="Seconds" default_value="480" />
 

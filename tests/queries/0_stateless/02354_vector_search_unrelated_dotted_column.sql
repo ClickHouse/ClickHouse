@@ -6,7 +6,6 @@
 -- or in a row policy keep the optimized `_distance` rewrite of the vector-search
 -- `ORDER BY <distance> LIMIT` plan.
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 
 DROP TABLE IF EXISTS t_05042;

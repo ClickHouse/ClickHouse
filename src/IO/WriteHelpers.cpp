@@ -142,7 +142,15 @@ static inline void writeProbablyQuotedStringImpl(std::string_view s, WriteBuffer
         /// because the parser consumes them as clause-starting keywords.
         && !isCaseInsensitiveEqual(s, "from")
         && !isCaseInsensitiveEqual(s, "top")
-        && !isCaseInsensitiveEqual(s, "values"))
+        && !isCaseInsensitiveEqual(s, "values")
+        /// Parsed as unary NOT operator
+        && !isCaseInsensitiveEqual(s, "not")
+        /// `CAST(as AS T)` fails to parse
+        && !isCaseInsensitiveEqual(s, "as")
+        /// `interval AS DAY` parses as INTERVAL literal
+        && !isCaseInsensitiveEqual(s, "interval")
+        /// `EXCEPT strict` parses as EXCEPT STRICT modifier
+        && !isCaseInsensitiveEqual(s, "strict"))
     {
         writeString(s, buf);
     }
@@ -369,7 +377,7 @@ size_t writeFloatTextFastPath(T x, char * buffer, bool force_decimal_point)
         else if (exp > 53 && exp <= 62)
             result = writeFloatTextFastPathFloat64Rounded(x, exp, buffer);
         else
-            result = zmij::detail::write(x, buffer) - buffer;
+            result = zmij::detail::write(buffer, x) - buffer;
     }
     else if constexpr (std::is_same_v<T, Float32> || std::is_same_v<T, BFloat16>)
     {
@@ -407,7 +415,7 @@ size_t writeFloatTextFastPath(T x, char * buffer, bool force_decimal_point)
             result = writeFloatTextFastPathFloat32Rounded(f32, exp, buffer);
         /// Not an integer, or exp out of range: use zmij.
         else
-            result = zmij::detail::write(f32, buffer) - buffer;
+            result = zmij::detail::write(buffer, f32) - buffer;
     }
 
     /// Append a trailing decimal point for finite values whose representation is a bare integer

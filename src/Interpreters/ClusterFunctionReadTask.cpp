@@ -43,6 +43,8 @@ ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr o
 
     const bool send_over_whole_archive = !context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes];
     path = send_over_whole_archive ? object->getPathOrPathToArchiveIfArchive() : object->getPath();
+    if (!send_over_whole_archive)
+        archive_entry_index = object->archive_entry_index;
     read_source_index = object->relative_path_with_metadata.read_source_index;
     file_bucket_info = object->file_bucket_info;
 }
@@ -74,6 +76,7 @@ ObjectInfoPtr ClusterFunctionReadTaskResponse::getObjectInfo() const
         object = std::make_shared<ObjectInfo>(path);
     }
     object->relative_path_with_metadata.read_source_index = read_source_index;
+    object->archive_entry_index = archive_entry_index;
     object->data_lake_metadata = data_lake_metadata;
     object->file_bucket_info = file_bucket_info;
 
@@ -151,6 +154,30 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t worker
             protocol_version,
             DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_READ_SOURCE_INDEX);
     }
+
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ARCHIVE_ENTRY_INDEX)
+    {
+        writeVarUInt(archive_entry_index.has_value(), out);
+        if (archive_entry_index)
+            writeVarUInt(*archive_entry_index, out);
+    }
+    else if (archive_entry_index.has_value())
+    {
+        /// Fail closed: without the position the worker would read the first entry with this name.
+        throw Exception(
+            ErrorCodes::UNKNOWN_PROTOCOL,
+            "Worker protocol version {} cannot carry `archive_entry_index`, which is required to read an archive entry "
+            "whose name an earlier entry of the archive has (minimum protocol version: {})",
+            protocol_version,
+            DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ARCHIVE_ENTRY_INDEX);
+    }
+
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_NUM_ROWS)
+    {
+        writeVarUInt(data_lake_metadata.num_rows.has_value(), out);
+        if (data_lake_metadata.num_rows)
+            writeVarUInt(*data_lake_metadata.num_rows, out);
+    }
 }
 
 void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
@@ -214,6 +241,28 @@ void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
             UInt64 value = 0;
             readVarUInt(value, in);
             read_source_index = value;
+        }
+    }
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ARCHIVE_ENTRY_INDEX)
+    {
+        bool has_archive_entry_index = false;
+        readVarUInt(has_archive_entry_index, in);
+        if (has_archive_entry_index)
+        {
+            UInt64 value = 0;
+            readVarUInt(value, in);
+            archive_entry_index = value;
+        }
+    }
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_NUM_ROWS)
+    {
+        bool has_num_rows = false;
+        readVarUInt(has_num_rows, in);
+        if (has_num_rows)
+        {
+            UInt64 value = 0;
+            readVarUInt(value, in);
+            data_lake_metadata.num_rows = value;
         }
     }
 }

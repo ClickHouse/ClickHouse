@@ -11,7 +11,7 @@ DROP TABLE IF EXISTS ts, ts_ext, ts_after, ext_tags, ext_samples, ext_recent;
 SELECT '--- an insert writes the same rows to the tags, samples and recent samples tables ---';
 
 -- TTL 10 days, and the samples are close to now(), so the background TTL cannot drop them during the test.
-CREATE TABLE ts ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 864000;
+CREATE TABLE ts ENGINE = TimeSeries SETTINGS version = 8, recent_samples_ttl_seconds = 864000;
 
 INSERT INTO ts (metric_name, tags, samples) VALUES
     ('m', map('env', 'prod'), [(now64(3) - INTERVAL 3 MINUTE, 1.), (now64(3) - INTERVAL 2 MINUTE, 2.)]),
@@ -44,7 +44,7 @@ CREATE TABLE ext_recent
     CONSTRAINT c CHECK value != 2000
 ) ENGINE = MergeTree ORDER BY (id, timestamp);
 
-CREATE TABLE ts_ext ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 864000
+CREATE TABLE ts_ext ENGINE = TimeSeries SETTINGS version = 8, recent_samples_ttl_seconds = 864000
     DATA ext_samples TAGS ext_tags RECENT SAMPLES ext_recent;
 
 INSERT INTO ts_ext (metric_name, tags, samples) VALUES ('m', map('env', 'prod'), [(now64(3) - INTERVAL 1 MINUTE, 1.)]);
@@ -71,7 +71,7 @@ SELECT count() FROM ext_recent WHERE value = 2000;
 
 SELECT '--- an insert after a failure still writes all three tables ---';
 
-CREATE TABLE ts_after ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 864000;
+CREATE TABLE ts_after ENGINE = TimeSeries SETTINGS version = 8, recent_samples_ttl_seconds = 864000;
 
 INSERT INTO ts_after (metric_name, tags, samples) VALUES ('m', map('env', 'dev'), [(now64(3) - INTERVAL 1 MINUTE, 5.)]);
 
@@ -106,7 +106,7 @@ SELECT count() FROM ext_samples_dest WHERE value = 12;
 
 SELECT '--- a materialized view on the time series table receives the inserted rows ---';
 
-CREATE TABLE ts_outer ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 864000;
+CREATE TABLE ts_outer ENGINE = TimeSeries SETTINGS version = 8, recent_samples_ttl_seconds = 864000;
 CREATE TABLE ts_outer_dest (metric_name String) ENGINE = MergeTree ORDER BY metric_name;
 CREATE MATERIALIZED VIEW ts_outer_mv TO ts_outer_dest AS SELECT metric_name FROM ts_outer;
 
@@ -128,7 +128,7 @@ CREATE TABLE mem_tags
 CREATE TABLE mem_samples (id Tuple(UInt64, UUID), timestamp DateTime64(3), value Float64) ENGINE = Memory;
 CREATE TABLE mem_recent (id Tuple(UInt64, UUID), timestamp DateTime64(3), value Float64) ENGINE = Memory;
 
-CREATE TABLE ts_mem ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 864000
+CREATE TABLE ts_mem ENGINE = TimeSeries SETTINGS version = 8, recent_samples_ttl_seconds = 864000
     DATA mem_samples TAGS mem_tags RECENT SAMPLES mem_recent;
 
 INSERT INTO ts_mem (metric_name, tags, samples) VALUES ('m', map('env', 'prod'), [(now64(3) - INTERVAL 1 MINUTE, 1.)]);
@@ -168,7 +168,7 @@ CREATE TABLE fail_recent
     value Float64
 ) ENGINE = MergeTree ORDER BY (id, timestamp);
 
-CREATE TABLE ts_fail ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 864000
+CREATE TABLE ts_fail ENGINE = TimeSeries SETTINGS version = 8, recent_samples_ttl_seconds = 864000
     DATA fail_samples TAGS fail_tags RECENT SAMPLES fail_recent;
 
 CREATE TABLE fail_mv_dest (metric_name String) ENGINE = MergeTree ORDER BY metric_name;
@@ -213,7 +213,7 @@ CREATE TABLE mem_samples
 
 CREATE TABLE mem_recent (id Tuple(UInt64, UUID), timestamp DateTime64(3), value Float64) ENGINE = Memory;
 
-CREATE TABLE ts_fail_mem ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 864000
+CREATE TABLE ts_fail_mem ENGINE = TimeSeries SETTINGS version = 8, recent_samples_ttl_seconds = 864000
     DATA mem_samples TAGS mem_tags RECENT SAMPLES mem_recent;
 
 INSERT INTO ts_fail_mem (metric_name, tags, samples) VALUES ('bad_mem', map('env', 'prod'), [(now64(3) - INTERVAL 1 MINUTE, 42.)]); -- { serverError VIOLATED_CONSTRAINT }
@@ -261,7 +261,7 @@ PARTITION BY toDate(timestamp)
 ORDER BY (id, timestamp)
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 
-CREATE TABLE ts_part ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 864000
+CREATE TABLE ts_part ENGINE = TimeSeries SETTINGS version = 8, recent_samples_ttl_seconds = 864000
     DATA part_samples TAGS part_tags RECENT SAMPLES part_recent;
 
 INSERT INTO ts_part (metric_name, tags, samples)
@@ -315,7 +315,7 @@ CREATE TABLE buf_recent
     value Float64
 ) ENGINE = Buffer(currentDatabase(), buf_dest, 1, 86400, 86400, 10000000, 10000000, 100000000, 100000000);
 
-CREATE TABLE ts_buf ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 864000
+CREATE TABLE ts_buf ENGINE = TimeSeries SETTINGS version = 8, recent_samples_ttl_seconds = 864000
     DATA buf_samples TAGS buf_tags RECENT SAMPLES buf_recent;
 
 INSERT INTO ts_buf (metric_name, tags, samples)
@@ -351,7 +351,7 @@ CREATE TABLE def_recent
     extra UInt8 DEFAULT 7
 ) ENGINE = MergeTree ORDER BY (id, timestamp);
 
-CREATE TABLE ts_def ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 864000
+CREATE TABLE ts_def ENGINE = TimeSeries SETTINGS version = 8, recent_samples_ttl_seconds = 864000
     DATA def_samples TAGS def_tags RECENT SAMPLES def_recent;
 
 INSERT INTO ts_def (metric_name, tags, samples) VALUES ('m', map('env', 'prod'), [(toDateTime64('2020-01-01 00:00:00', 3), 1.)]);
@@ -391,7 +391,7 @@ CREATE TABLE dist_recent
     value Float64
 ) ENGINE = Distributed(test_shard_localhost, currentDatabase(), dist_recent_dest);
 
-CREATE TABLE ts_dist ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 864000
+CREATE TABLE ts_dist ENGINE = TimeSeries SETTINGS version = 8, recent_samples_ttl_seconds = 864000
     DATA dist_samples TAGS dist_tags RECENT SAMPLES dist_recent;
 
 INSERT INTO ts_dist (metric_name, tags, samples)
@@ -453,7 +453,7 @@ CREATE TABLE view_barrier_buf
 
 CREATE MATERIALIZED VIEW view_recent_mv TO view_barrier_buf AS SELECT id, timestamp, value FROM view_barrier_recent;
 
-CREATE TABLE ts_view_barrier ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 864000
+CREATE TABLE ts_view_barrier ENGINE = TimeSeries SETTINGS version = 8, recent_samples_ttl_seconds = 864000
     DATA view_barrier_samples TAGS view_barrier_tags RECENT SAMPLES view_barrier_recent;
 
 INSERT INTO ts_view_barrier (metric_name, tags, samples) SETTINGS max_threads = 4, parallel_view_processing = 1, max_block_size = 1 VALUES ('m', map('env', 'prod'), [(toDateTime64('2020-01-01 00:00:00', 3), 42.)]); -- { serverError VIOLATED_CONSTRAINT }
@@ -492,7 +492,7 @@ CREATE TABLE strict_tags
 CREATE TABLE strict_samples (id Tuple(UInt64, UUID), timestamp DateTime64(3), value Float64)
 ENGINE = MergeTree PARTITION BY toDate(timestamp) ORDER BY (id, timestamp);
 
-CREATE TABLE ts_strict ENGINE = TimeSeries DATA strict_samples TAGS strict_tags;
+CREATE TABLE ts_strict ENGINE = TimeSeries SETTINGS version = 8 DATA strict_samples TAGS strict_tags;
 
 SELECT '--- four days in one series are written as blocks of two rows ---';
 
@@ -518,7 +518,7 @@ TRUNCATE TABLE strict_samples;
 CREATE TABLE strict_recent (id Tuple(UInt64, UUID), timestamp DateTime64(3), value Float64)
 ENGINE = MergeTree PARTITION BY toDate(timestamp) ORDER BY (id, timestamp);
 
-CREATE TABLE ts_strict_recent ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 864000
+CREATE TABLE ts_strict_recent ENGINE = TimeSeries SETTINGS version = 8, recent_samples_ttl_seconds = 864000
     DATA strict_samples TAGS strict_tags RECENT SAMPLES strict_recent;
 
 INSERT INTO ts_strict_recent (metric_name, tags, samples) VALUES

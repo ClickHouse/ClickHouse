@@ -93,6 +93,7 @@ public:
     void merge(const SettingsConstraints & other);
 
     /// Checks whether `change` violates these constraints and throws an exception if so.
+    /// The non-const `SettingsChanges &` overload also drops a change equal to the current value from `changes` (unless `compatibility` is present).
     void check(const Settings & current_settings, const SettingChange & change, SettingSource source) const;
     void check(const Settings & current_settings, const SettingsChanges & changes, SettingSource source) const;
     void check(const Settings & current_settings, SettingsChanges & changes, SettingSource source) const;
@@ -129,12 +130,27 @@ public:
     /// `after_reset` holds the values the resets land on, which `compatibility` may have derived.
     void checkResetToDefault(const Settings & current_settings, const Settings & after_reset, const std::vector<String> & names, SettingSource source) const;
 
+    /// Clamping counterpart of `checkResetToDefault`, for a reset crossing an execution context (a nested
+    /// `SETTINGS name = DEFAULT`), where a violation must not throw. `names` is reduced to the resets that
+    /// may be performed as written; a reset clamped by a `MIN` / `MAX` constraint is moved to
+    /// `clamped_changes` as an assignment of the clamped value; a forbidden one is dropped altogether.
+    void clampResetToDefault(
+        const Settings & current_settings,
+        std::vector<String> & names,
+        SettingsChanges & clamped_changes,
+        SettingSource source) const;
+
     /// Checks whether `change` violates these constraints and throws an exception if so. (setting short name is expected inside `changes`)
     void check(const MergeTreeSettings & current_settings, const SettingChange & change) const;
     void check(const MergeTreeSettings & current_settings, const SettingsChanges & changes) const;
 
     /// Checks whether `change` violates these and clamps the `change` if so.
+    /// A change equal to the current value is dropped from `changes` (unless `compatibility` is present).
     void clamp(const Settings & current_settings, SettingsChanges & changes, SettingSource source) const;
+
+    /// Same as `clamp`, but an unknown or disallowed setting name and an uncastable value throw, as in `check`,
+    /// and a change equal to the current value is kept in `changes`.
+    void clampRejectingInvalidChanges(const Settings & current_settings, SettingsChanges & changes, SettingSource source) const;
 
     /// `compatibility` gives a setting only a value that these constraints and `allow_feature_tier` accept,
     /// and leaves any other setting as it is. `restrictsCompatibility` tells whether any value can be refused.
@@ -147,8 +163,12 @@ public:
 private:
     enum ReactionOnViolation
     {
+        /// Any violation, an unknown name or an uncastable value throws.
         THROW_ON_VIOLATION,
+        /// Violations are clamped or dropped; an unknown name or an uncastable value is dropped.
         CLAMP_ON_VIOLATION,
+        /// Violations are clamped or dropped; an unknown name or an uncastable value throws.
+        CLAMP_ON_VIOLATION_THROW_ON_INVALID,
     };
 
     struct Constraint
@@ -210,8 +230,8 @@ private:
         }
     };
 
-    /// Common logic for `check(Settings, SettingsChanges&)` and `clamp`. Both filter out unchanged settings
-    /// (unless `compatibility` is present) and differ only in whether violations throw or get clamped to the nearest bound.
+    /// Common logic for `check`, `clamp` and `clampRejectingInvalidChanges`. The modes differ in whether violations throw or get clamped
+    /// to the nearest bound and whether an invalid change throws or is dropped.
     void
     checkOrClamp(const Settings & current_settings, SettingsChanges & changes, ReactionOnViolation reaction, SettingSource source) const;
 

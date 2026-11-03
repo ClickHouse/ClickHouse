@@ -42,7 +42,7 @@ CREATE TABLE slow_recent
 PARTITION BY toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))
 ORDER BY (id, timestamp);
 
-CREATE TABLE ts_speed ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 864000
+CREATE TABLE ts_speed ENGINE = TimeSeries SETTINGS version = 8, recent_samples_ttl_seconds = 864000
     DATA slow_samples TAGS slow_tags RECENT SAMPLES slow_recent;
 EOF
 

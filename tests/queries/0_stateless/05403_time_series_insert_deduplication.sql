@@ -28,7 +28,7 @@ CREATE TABLE dedup_samples
 ) ENGINE = MergeTree ORDER BY (id, timestamp)
 SETTINGS non_replicated_deduplication_window = 100;
 
-CREATE TABLE ts_dedup ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 864000
+CREATE TABLE ts_dedup ENGINE = TimeSeries SETTINGS version = 8, recent_samples_ttl_seconds = 864000
     DATA dedup_samples TAGS dedup_tags;
 
 INSERT INTO ts_dedup (metric_name, tags, samples)
@@ -88,7 +88,7 @@ CREATE TABLE tokenless_samples
 ) ENGINE = MergeTree ORDER BY (id, timestamp)
 SETTINGS non_replicated_deduplication_window = 100;
 
-CREATE TABLE ts_tokenless ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 864000
+CREATE TABLE ts_tokenless ENGINE = TimeSeries SETTINGS version = 8, recent_samples_ttl_seconds = 864000
     DATA tokenless_samples TAGS tokenless_tags;
 
 INSERT INTO ts_tokenless (metric_name, tags, samples)
@@ -147,7 +147,7 @@ CREATE TABLE partial_samples
 ) ENGINE = MergeTree ORDER BY (id, timestamp)
 SETTINGS non_replicated_deduplication_window = 100;
 
-CREATE TABLE ts_partial ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 864000
+CREATE TABLE ts_partial ENGINE = TimeSeries SETTINGS version = 8, recent_samples_ttl_seconds = 864000
     DATA partial_samples TAGS partial_tags;
 
 INSERT INTO ts_partial (metric_name, tags, samples)

@@ -1,0 +1,7 @@
+all files
+"total_rows_to_read":"600"
+partition pruning
+"total_rows_to_read":"200"
+"total_rows_to_read":"500"
+parallel replicas
+"total_rows_to_read":"600"

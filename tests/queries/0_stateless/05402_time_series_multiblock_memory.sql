@@ -10,7 +10,7 @@ SET max_insert_block_size = 1;
 
 DROP TABLE IF EXISTS ts_blocks;
 
-CREATE TABLE ts_blocks ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 864000;
+CREATE TABLE ts_blocks ENGINE = TimeSeries SETTINGS version = 8, recent_samples_ttl_seconds = 864000;
 
 INSERT INTO ts_blocks (metric_name, tags, samples)
 SELECT 'm', map('n', toString(number)), arrayMap(x -> (toDateTime64('2026-01-01 00:00:00', 3), toFloat64(x)), range(100000))

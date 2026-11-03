@@ -5,6 +5,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Processors/IProcessor.h>
 #include <Processors/ISpillable.h>
+#include <Common/Scheduler/CurrentCPULease.h>
 #include <Processors/QueryPlan/Profiling/Execution/StepProfiler.h>
 #include <Processors/QueryPlan/Profiling/Execution/StepWallClock.h>
 #include <QueryPipeline/ReadProgressCallback.h>
@@ -59,12 +60,27 @@ void ExecutionThreadContext::wait(std::atomic_bool & finished)
 {
     std::unique_lock lock(mutex);
 
+    /// Avoid excessive CPU lease parking
+    if (finished || wake_flag)
+    {
+        wake_flag = false;
+        return;
+    }
+
+    /// Park the CPU lease while sleeping, without holding the mutex
+    lock.unlock();
+    CPULeaseParkGuard park_guard;
+    lock.lock();
+
     condvar.wait(lock, [&]
     {
         return finished || wake_flag;
     });
 
     wake_flag = false;
+
+    /// Do not hold mutex during unparking
+    lock.unlock();
 }
 
 void ExecutionThreadContext::wakeUp()
