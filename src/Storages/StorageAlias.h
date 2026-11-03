@@ -28,6 +28,7 @@ public:
     std::string getName() const override { return "Alias"; }
 
     bool isMergeTree() const override;
+    bool producesMergeableState(const ContextPtr & query_context) const override;
 
     bool readsFromOtherTables() const override { return true; }
     std::vector<StoragePtr> getUnderlyingStorages() const override
