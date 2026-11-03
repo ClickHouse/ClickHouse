@@ -371,7 +371,11 @@ function fuzz
         maximum=50
         while [[ $elapsed -lt $maximum ]]; do
             if actual_fuzzer_pid=$(ps -o pid= --ppid "$fuzzer_pid"); then
-                echo "Found underlying PID!"
+                echo "Found underlying PID $actual_fuzzer_pid"
+                break;
+            # bash reaps an exited timeout at once (keeping its status for wait), so kill -0 fails.
+            elif ! kill -0 "$fuzzer_pid" 2>/dev/null; then
+                echo "The timeout process has exited, not waiting for the fuzzer PID"
                 break;
             else
                 echo "Not found. Trying again..."
