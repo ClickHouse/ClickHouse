@@ -445,6 +445,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     use_top_k_dynamic_filtering_for_single_string_sort_column = from[Setting::use_top_k_dynamic_filtering_for_single_string_sort_column];
     max_limit_for_top_k_optimization = from[Setting::query_plan_max_limit_for_top_k_optimization];
     use_skip_indexes_on_data_read = from[Setting::use_skip_indexes_on_data_read];
+    use_skip_indexes_on_data_read_at_execution = use_skip_indexes_on_data_read;
     prepared_sets_cache = std::move(prepared_sets_cache_);
 
     /// These settings comes from EXPLAIN settings not query settings and outside of the scope of this class

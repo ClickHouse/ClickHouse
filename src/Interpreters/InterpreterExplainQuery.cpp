@@ -95,6 +95,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool explain_syntax_single_record;
+    extern const SettingsBool use_skip_indexes_on_data_read;
     extern const SettingsUInt64 query_plan_max_step_description_length;
     extern const SettingsUInt64 interactive_delay;
     extern const SettingsBool use_concurrency_control;
@@ -1231,6 +1232,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 auto optimization_settings = QueryPlanOptimizationSettings(context);
                 optimization_settings.keep_logical_steps = settings.keep_logical_steps;
                 optimization_settings.is_explain = true;
+                optimization_settings.use_skip_indexes_on_data_read_at_execution = getContext()->getSettingsRef()[Setting::use_skip_indexes_on_data_read];
                 optimization_settings.max_step_description_length = query_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
                 plan.optimize(optimization_settings);
 
@@ -1302,6 +1304,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
                 auto optimization_settings = QueryPlanOptimizationSettings(context);
                 optimization_settings.is_explain = true;
+                optimization_settings.use_skip_indexes_on_data_read_at_execution = getContext()->getSettingsRef()[Setting::use_skip_indexes_on_data_read];
                 optimization_settings.max_step_description_length = query_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
                 auto pipeline = plan.buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings(context));
 
@@ -1371,7 +1374,9 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             // Collect the selected marks, rows, parts during build query pipeline.
             // Hold on to the returned QueryPipelineBuilderPtr because `plan` may have pointers into
             // it (through QueryPlanResourceHolder).
-            auto builder = plan.buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
+            auto optimization_settings = QueryPlanOptimizationSettings(context);
+            optimization_settings.use_skip_indexes_on_data_read_at_execution = getContext()->getSettingsRef()[Setting::use_skip_indexes_on_data_read];
+            auto builder = plan.buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings(context));
 
             plan.explainEstimate(res_columns);
             insert_buf = false;

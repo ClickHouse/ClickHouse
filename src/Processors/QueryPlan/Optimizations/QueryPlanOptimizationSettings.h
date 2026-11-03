@@ -256,6 +256,8 @@ struct QueryPlanOptimizationSettings
     bool use_top_k_dynamic_filtering_for_variable_length_types;
     bool use_top_k_dynamic_filtering_for_single_string_sort_column;
     bool use_skip_indexes_on_data_read;
+    /// `use_skip_indexes_on_data_read` of the query as it runs: `EXPLAIN` turns the setting off for its own planning.
+    bool use_skip_indexes_on_data_read_at_execution;
     size_t max_limit_for_top_k_optimization = 0;
 
     /// Setting needed for Sets (JOIN -> IN optimization)

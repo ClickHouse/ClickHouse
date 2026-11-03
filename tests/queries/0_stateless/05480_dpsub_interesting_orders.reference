@@ -24,6 +24,8 @@ merge join
 hash join
 -- build keys in a narrow range, runtime filters disabled: the hash join reads the whole probe, the sharded merge only its overlap
 merge join
+-- build keys in a narrow range, skip indexes off at read time: the runtime filter skips nothing, a merge join
+merge join
 -- build keys spread over the probe range: the runtime filter skips nothing, a merge join
 merge join
 -- a probe side 50 times the build side: streaming it through the merge costs more than probing, a hash join
@@ -35,6 +37,8 @@ hash join
 -- sorted by the key, but an empty primary key: the merge cannot be sharded, one stream loses to a hash join
 hash join
 -- read in order by the key after a filter fixes the first primary key column, which the range split needs: a hash join
+hash join
+-- joined on a monotonic function of the sorting key: read in order, but not split by key ranges, a hash join
 hash join
 -- sharding by primary key ranges disabled: one stream loses to a hash join
 hash join

@@ -451,9 +451,10 @@ DPJoinEntryPtr optimizeJoinOrder(QueryGraph query_graph, const QueryPlanOptimiza
     query_graph.join_swap_table = optimization_settings.join_swap_table;
     query_graph.use_interesting_orders = query_graph.use_interesting_orders && optimization_settings.enable_join_transitive_predicates;
     query_graph.reuse_join_output_order = optimization_settings.optimize_sorting_by_input_stream_properties;
-    /// Not gated on `use_skip_indexes_on_data_read`, which `EXPLAIN` turns off: it would show another plan than the query runs.
+    /// The runtime filter skips granules at read time only with `use_skip_indexes_on_data_read`, taken as the query runs it.
     query_graph.runtime_filter_prunes_probe = optimization_settings.enable_join_runtime_filters
-        && optimization_settings.enable_join_runtime_filters_index_analysis;
+        && optimization_settings.enable_join_runtime_filters_index_analysis
+        && optimization_settings.use_skip_indexes_on_data_read_at_execution;
     query_graph.shard_merge_by_pk_ranges = optimization_settings.query_plan_join_shard_by_pk_ranges;
 
     JoinOrderOptimizer reorderer(

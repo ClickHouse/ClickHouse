@@ -18,6 +18,7 @@
 #include <Interpreters/TableJoin.h>
 
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
@@ -1051,6 +1052,34 @@ constexpr bool isSwapOnlyJoinStrictness(JoinStrictness strictness)
     return strictness == JoinStrictness::Any || strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti;
 }
 
+/// Whether the column `name` of `node` is the column `column` of the read below, only renamed by expressions and filters: a
+/// key `optimizeJoinByShards` can split by, which matches it to the primary key exactly, not through a monotonic function.
+static bool isReadColumn(const QueryPlan::Node & node, const QueryPlan::Node & reading, String name, const String & column)
+{
+    for (const auto * current = &node; current != &reading; current = current->children.front())
+    {
+        if (current->children.size() != 1)
+            return false;
+        const ActionsDAG * dag = nullptr;
+        if (const auto * expression = typeid_cast<const ExpressionStep *>(current->step.get()))
+            dag = &expression->getExpression();
+        else if (const auto * filter = typeid_cast<const FilterStep *>(current->step.get()))
+            dag = &filter->getExpression();
+        else
+            return false;
+
+        const auto * output = dag->tryFindInOutputs(name);
+        if (!output)
+            return false;
+        while (output->type == ActionsDAG::ActionType::ALIAS)
+            output = output->children.front();
+        if (output->type != ActionsDAG::ActionType::INPUT)
+            return false;
+        name = output->result_name;
+    }
+    return name == column;
+}
+
 /// For each input, the longest sequence of its `candidates` columns that `optimizeReadInOrder` could read it in order of.
 static std::vector<QueryGraph::ReadInOrder> findReadInOrderPrefixes(
     const std::vector<QueryPlan::Node *> & inputs, const SortingStep::Settings & sorting_settings, const std::vector<NameSet> & candidates)
@@ -1073,21 +1102,18 @@ static std::vector<QueryGraph::ReadInOrder> findReadInOrderPrefixes(
         if (!reading || reading->isParallelReadingFromReplicas())
             continue;
 
-        /// The order the input can be read in for all of `names`: storage key columns fixed by a filter do not count.
-        auto read_order = [&](const Names & names) -> InputOrderInfoPtr
+        /// Whether the input can be read in order of all of `names`: storage key columns fixed by a filter do not count.
+        auto is_read_in_order = [&](const Names & names)
         {
             SortDescription sort_description;
             for (const auto & name : names)
                 sort_description.emplace_back(name);
             SortingStep sorting(header, std::move(sort_description), 0, sorting_settings);
             auto order = getInputOrderIfReadInOrderIsUseful(sorting, reading->getStorageMetadata()->getSortingKey(), *inputs[i]);
-            if (order && order->direction == 1 && order->sort_description_for_merging.size() >= names.size())
-                return order;
-            return nullptr;
+            return order && order->direction == 1 && order->sort_description_for_merging.size() >= names.size();
         };
-        auto is_read_in_order = [&](const Names & names) { return read_order(names) != nullptr; };
 
-        /// The range split needs the first primary key column, and it skips no column fixed by a filter.
+        /// The range split needs the merge key to be the first primary key column, of a type it supports.
         const auto & primary_key = reading->getStorageMetadata()->getPrimaryKey();
         const bool primary_key_splits = !reading->isQueryWithFinal() && !primary_key.column_names.empty()
             && isSafePrimaryDataKeyType(*primary_key.data_types.front());
@@ -1096,11 +1122,11 @@ static std::vector<QueryGraph::ReadInOrder> findReadInOrderPrefixes(
         auto & prefix = prefixes[i].prefix;
         for (const auto & first : columns)
         {
-            auto order = read_order({first});
-            if (!order)
+            if (!is_read_in_order({first}))
                 continue;
             prefix = {first};
-            prefixes[i].splits_by_primary_key = primary_key_splits && order->used_prefix_of_sorting_key_size == 1;
+            prefixes[i].splits_by_primary_key = primary_key_splits
+                && isReadColumn(*inputs[i], *reading_node, first, primary_key.column_names.front());
             /// Extend by the next column of the storage order among the candidates.
             for (bool extended = true; extended && prefix.size() < max_prefix_size;)
             {

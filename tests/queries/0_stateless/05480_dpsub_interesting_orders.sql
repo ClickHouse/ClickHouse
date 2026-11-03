@@ -14,6 +14,8 @@ SET query_plan_optimize_join_order_limit = 10;
 SET optimize_sorting_by_input_stream_properties = 1;
 SET enable_join_runtime_filters = 1;
 SET enable_join_runtime_filters_index_analysis = 1;
+-- The runtime filter skips probe granules at read time only with this on.
+SET use_skip_indexes_on_data_read = 1;
 SET use_statistics = 0;
 SET use_hash_table_stats_for_join_reordering = 0;
 -- A merge join of sorted inputs is costed as sharded by primary key ranges only with this on.
@@ -159,6 +161,11 @@ SELECT if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join') FROM
 WHERE explain LIKE '%Algorithm:%'
 SETTINGS enable_join_runtime_filters = 0;
 
+SELECT '-- build keys in a narrow range, skip indexes off at read time: the runtime filter skips nothing, a merge join';
+SELECT if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join') FROM (EXPLAIN PLAN SELECT sum(probe.v + build_narrow.v) FROM probe JOIN build_narrow ON probe.k = build_narrow.k)
+WHERE explain LIKE '%Algorithm:%'
+SETTINGS use_skip_indexes_on_data_read = 0;
+
 SELECT '-- build keys spread over the probe range: the runtime filter skips nothing, a merge join';
 SELECT if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join') FROM (EXPLAIN PLAN SELECT sum(probe.v + build_wide.v) FROM probe JOIN build_wide ON probe.k = build_wide.k)
 WHERE explain LIKE '%Algorithm:%';
@@ -182,6 +189,11 @@ WHERE explain LIKE '%Algorithm:%';
 SELECT '-- read in order by the key after a filter fixes the first primary key column, which the range split needs: a hash join';
 SELECT if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join') FROM (EXPLAIN PLAN
     SELECT count() FROM (SELECT * FROM tenant_a WHERE tenant = 1) AS a JOIN (SELECT * FROM tenant_b WHERE tenant = 1) AS b ON a.k = b.k)
+WHERE explain LIKE '%Algorithm:%';
+
+SELECT '-- joined on a monotonic function of the sorting key: read in order, but not split by key ranges, a hash join';
+SELECT if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join') FROM (EXPLAIN PLAN
+    SELECT count() FROM (SELECT intDiv(k, 2) AS q FROM sorted1) AS x JOIN (SELECT intDiv(k, 2) AS q FROM sorted2) AS y ON x.q = y.q)
 WHERE explain LIKE '%Algorithm:%';
 
 SELECT '-- sharding by primary key ranges disabled: one stream loses to a hash join';
