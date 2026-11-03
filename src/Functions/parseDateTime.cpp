@@ -262,7 +262,7 @@ namespace
         }
 
         [[nodiscard]]
-        VoidOrError setYear(Int32 year_, bool is_year_of_era_ = false, bool is_week_year_ = false)
+        VoidOrError setYear(Int32 year_, bool is_year_of_era_ = false, bool is_week_year_ = false, bool select_week_date_ = false)
         {
             if (!yearIsInValidRange(year_))
                 RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for year must be in the range [{}, {}]", year_, min_year, max_year)
@@ -273,7 +273,7 @@ namespace
             is_week_year = is_week_year_;
             if (is_week_year_)
             {
-                if (has_week || has_day_of_week || (!has_day_of_year && !has_month && !has_day_of_month))
+                if (has_week || has_day_of_week || (select_week_date_ && !has_day_of_year && !has_month && !has_day_of_month))
                 {
                     week_date_format = true;
                     day_of_year_format = false;
@@ -309,7 +309,7 @@ namespace
             month = month_;
             has_month = true;
             has_day_of_year = false;
-            if (!is_week_year || !has_day_of_month || !has_week)
+            if (!is_week_year || !has_day_of_month || !has_week || !has_day_of_week)
                 week_date_format = false;
             day_of_year_format = false;
             if (!has_year)
@@ -371,7 +371,7 @@ namespace
             day = day_of_month;
             has_day_of_month = true;
             has_day_of_year = false;
-            if (!is_week_year || !has_month || !has_week)
+            if (!is_week_year || !has_month || !has_week || !has_day_of_week)
                 week_date_format = false;
             day_of_year_format = false;
             if (!has_year)
@@ -1702,7 +1702,7 @@ namespace
                 Int32 week_year = 0;
                 size_t max_digits = repetitions > 2 ? std::max<size_t>(repetitions, 4) : repetitions;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, true, true, true, repetitions, max_digits, fragment, week_year)))
-                RETURN_ERROR_IF_FAILED(parsed_value.setYear(week_year, false, true))
+                RETURN_ERROR_IF_FAILED(parsed_value.setYear(week_year, false, true, true))
                 return cur;
             }
 
