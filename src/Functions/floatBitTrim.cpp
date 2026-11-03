@@ -35,8 +35,7 @@ struct TrimTraits
     /// Everything but the sign bit.
     static constexpr UInt abs_mask = static_cast<UInt>((UInt{1} << (Traits::bits - 1)) - 1);
     /// Exponent all ones and mantissa zero. With the sign dropped, anything greater is a `NaN`.
-    static constexpr UInt inf_bits
-        = static_cast<UInt>(((UInt{1} << Traits::exponent_bits) - 1) << Traits::mantissa_bits);
+    static constexpr UInt inf_bits = static_cast<UInt>(((UInt{1} << Traits::exponent_bits) - 1) << Traits::mantissa_bits);
 };
 
 template <typename Float>
@@ -60,7 +59,7 @@ MULTITARGET_FUNCTION_X86_V4(
 template <typename Float>
 void processRange(const Float * src, Float * dst, typename TrimTraits<Float>::UInt mask, size_t n)
 {
-#if USE_MULTITARGET_CODE
+#if ENABLE_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v4))
         return processRangeImpl_x86_64_v4<Float>(src, dst, mask, n);
 #endif
@@ -125,8 +124,7 @@ public:
         {
             const Int64 n = arguments[1].column->getInt(0);
             if (n < 0)
-                throw Exception(
-                    ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Second argument of {} must be non-negative, got {}", getName(), n);
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Second argument of {} must be non-negative, got {}", getName(), n);
         }
 
         return result_type;
@@ -204,7 +202,7 @@ negative `n` throws `ARGUMENT_OUT_OF_BOUND`.
     FunctionDocumentation::ReturnedValue returned_value
         = {"Returns `value` with the lowest `n` mantissa bits zeroed, of the same type as `value`.", {"BFloat16", "Float32", "Float64"}};
     FunctionDocumentation::Examples examples = {{"Trim 20 mantissa bits", "SELECT floatBitTrim(1.234::Float64, 20)", "1.2339999999385327"}};
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 9};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 11};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Rounding;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
