@@ -1406,7 +1406,7 @@ void addDistinctStep(QueryPlan & query_plan,
       *    `exact_rows_before_limit` or to accumulate WITH TOTALS, and an early stop makes both short.
       * Then you can get no more than limit_length + limit_offset of different rows.
       */
-    if (((!query_node.hasOrderBy() && !query_node.isShuffle()) || !before_order) && !query_node.hasLimitBy()
+    if (!query_node.isShuffle() && (!query_node.hasOrderBy() || !before_order) && !query_node.hasLimitBy()
         && !query_node.hasLimitAfter() && !query_node.hasLimitUntil()
         && limit_length != 0
         && !query_analysis_result.is_limit_length_negative
@@ -1930,6 +1930,10 @@ void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(
         addSortingStep(query_plan, query_analysis_result, planner_context);
     else if (query_node.isShuffle())
         addShuffleStep(query_plan, query_analysis_result, planner_context, query_processing_info);
+
+    /// Keep every candidate for the global `DISTINCT` followed by a fresh `SHUFFLE` on the initiator.
+    if (query_node.isShuffle() && query_node.isDistinct())
+        return;
 
     /** For DISTINCT step, pre_distinct = false, because if we have limit and distinct,
       * we need to merge streams to one and calculate overall distinct.
@@ -3450,7 +3454,23 @@ void Planner::buildPlanForQueryNode()
             /// There are no aggregation or windows, all expressions before ORDER BY executed on shards
         }
 
-        if (expression_analysis_result.hasSort() || query_node.isShuffle())
+        const bool distinct_shuffle = query_node.isShuffle() && query_node.isDistinct();
+        const bool finalize_distinct_shuffle = distinct_shuffle && query_processing_info.isFinalizingStage();
+
+        if (finalize_distinct_shuffle)
+        {
+            /// Sample distinct result rows, not occurrences in individual streams or shards.
+            /// Incoming shard keys are not part of the projection columns used for deduplication.
+            addDistinctStep(query_plan,
+                query_analysis_result,
+                planner_context,
+                expression_analysis_result.getProjection().projection_column_names,
+                query_node,
+                true /*before_order*/,
+                false /*pre_distinct*/);
+            addShuffleStep(query_plan, query_analysis_result, planner_context, query_processing_info);
+        }
+        else if (expression_analysis_result.hasSort() || query_node.isShuffle())
         {
             /** If there is an ORDER BY for distributed query processing,
               * but there is no aggregation, then on the remote servers ORDER BY was made
@@ -3484,7 +3504,7 @@ void Planner::buildPlanForQueryNode()
             select_query_options);
 
         //// If there was more than one stream, then DISTINCT needs to be performed once again after merging all streams.
-        if (!query_processing_info.isFromAggregationState() && query_node.isDistinct())
+        if (!finalize_distinct_shuffle && !query_processing_info.isFromAggregationState() && query_node.isDistinct())
         {
             addDistinctStep(query_plan,
                 query_analysis_result,
@@ -3495,7 +3515,8 @@ void Planner::buildPlanForQueryNode()
                 false /*pre_distinct*/);
         }
 
-        if (!query_processing_info.isFromAggregationState() && expression_analysis_result.hasLimitBy())
+        if ((!query_processing_info.isFromAggregationState() || finalize_distinct_shuffle)
+            && (!distinct_shuffle || finalize_distinct_shuffle) && expression_analysis_result.hasLimitBy())
         {
             auto & limit_by_analysis_result = expression_analysis_result.getLimitBy();
             addExpressionStep(
