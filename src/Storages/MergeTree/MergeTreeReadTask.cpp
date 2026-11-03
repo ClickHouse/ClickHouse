@@ -603,7 +603,7 @@ bool MergeTreeReadTask::readersChainCanSkipMarksBeforePrewhere(bool prewhere_fil
     /// reader chain and is able to skip whole marks via `canSkipMark`.
     if (!readers.prepared_index)
         return false;
-    return prewhere_filters_by_top_k_threshold ? readers.prepared_index->canSkipAnyMarkBesidesTopKPrimaryKey()
+    return prewhere_filters_by_top_k_threshold ? readers.prepared_index->canSkipAnyMarkBesidesTopKThreshold()
                                                : readers.prepared_index->canSkipAnyMark();
 }
 
