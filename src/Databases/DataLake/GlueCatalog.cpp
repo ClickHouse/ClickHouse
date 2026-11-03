@@ -79,6 +79,7 @@ namespace DB::Setting
     extern const SettingsUInt64 s3_connect_timeout_ms;
     extern const SettingsUInt64 s3_request_timeout_ms;
     extern const SettingsBool iceberg_list_only_v_prefixed_metadata_files;
+    extern const SettingsBool allow_geo_types_in_iceberg;
 }
 
 namespace DB::ServerSetting
@@ -673,7 +674,7 @@ std::shared_ptr<GlueCatalog::CachedSchema> GlueCatalog::getCachedSchema(const St
         if (!schema || !schema->has(DB::Iceberg::f_fields))
             throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "No current Iceberg schema in {}", metadata_uri);
 
-        DB::Iceberg::IcebergSchemaProcessor processor(/*allow_geo_parser=*/true);
+        DB::Iceberg::IcebergSchemaProcessor processor(getContext()->getSettingsRef()[DB::Setting::allow_geo_types_in_iceberg]);
         processor.addIcebergTableSchema(schema);
         auto result = std::make_shared<CachedSchema>();
         result->field_types = getCurrentSchemaFieldTypes(metadata_object);
