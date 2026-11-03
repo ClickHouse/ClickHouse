@@ -784,7 +784,7 @@ std::shared_ptr<const PackedFilesReader> DataPartStorageOnDiskPacked::getSkipInd
                 std::lock_guard lock(skip_indices_packed_mutex);
                 skip_indices_packed_unsupported = !index;
             }
-            seedSkipIndicesPackedReader(index ? std::move(*index) : PackedFilesIO::Index{});
+            seedSkipIndicesPackedReader(index ? *index : PackedFilesIO::Index{});
         }
         catch (const Exception &)
         {
