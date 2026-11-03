@@ -147,7 +147,10 @@ void LimitByTransform::processRunInsideWindow(
     if (slice.length > 0)
     {
         if (unlikely(output_slices.size() == output_slices.capacity()))
-            return appendOutputSliceWithGrowth(slice, group_idx, group_rows_seen_after_run);
+        {
+            appendOutputSliceWithGrowth(slice, group_idx, group_rows_seen_after_run);
+            return;
+        }
 
         output_slices.resize_assume_reserved(output_slices.size() + 1);
         output_slices.back() = slice;
