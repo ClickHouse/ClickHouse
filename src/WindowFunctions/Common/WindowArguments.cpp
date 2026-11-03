@@ -45,13 +45,13 @@ void ArgumentValue::appendTo(IColumn & result) const
     result.insertFrom(*column, row);
 }
 
-WindowArguments::WindowArguments(std::vector<size_t> column_indices_)
+WindowArguments::WindowArguments(VectorWithMemoryTracking<size_t> column_indices_)
     : column_indices(std::move(column_indices_))
     , last_used_block_for_arg(column_indices.size(), 0)
 {
 }
 
-void WindowArguments::setBlocks(const std::vector<Block> & blocks_)
+void WindowArguments::setBlocks(const VectorWithMemoryTracking<Block> & blocks_)
 {
     blocks = blocks_;
     std::ranges::fill(last_used_block_for_arg, 0);

@@ -1,10 +1,10 @@
 #pragma once
 
 #include <Columns/IColumn_fwd.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <base/types.h>
 
 #include <span>
-#include <vector>
 
 namespace DB
 {
@@ -40,17 +40,17 @@ public:
         Int64 end_position = 0;
     };
 
-    explicit WindowArguments(std::vector<size_t> column_indices_);
+    explicit WindowArguments(VectorWithMemoryTracking<size_t> column_indices_);
 
-    void setBlocks(const std::vector<Block> & blocks_);
+    void setBlocks(const VectorWithMemoryTracking<Block> & blocks_);
 
     size_t size() const;
     ArgumentValue at(size_t argument, Int64 position) const;
 
 private:
-    std::vector<size_t> column_indices;
-    std::vector<Block> blocks;
-    mutable std::vector<size_t> last_used_block_for_arg;
+    VectorWithMemoryTracking<size_t> column_indices;
+    VectorWithMemoryTracking<Block> blocks;
+    mutable VectorWithMemoryTracking<size_t> last_used_block_for_arg;
 };
 
 }

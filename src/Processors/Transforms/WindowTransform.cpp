@@ -22,11 +22,11 @@ Columns materializeColumns(Columns columns, const VectorWithMemoryTracking<bool>
     return columns;
 }
 
-std::vector<size_t> argumentColumnIndices(const Block & input_header, const WindowFunctionDescription & function) // STYLE_CHECK_ALLOW_STD_CONTAINERS -- moved into `WindowArguments`, which owns a `std::vector`
+VectorWithMemoryTracking<size_t> argumentColumnIndices(const Block & input_header, const WindowFunctionDescription & function)
 {
     return function.argument_names
         | std::views::transform([&](const String & argument_name) { return input_header.getPositionByName(argument_name); })
-        | std::ranges::to<std::vector<size_t>>(); // STYLE_CHECK_ALLOW_STD_CONTAINERS -- see above
+        | std::ranges::to<VectorWithMemoryTracking<size_t>>();
 }
 
 WindowFunctionWorkspace createWorkspace(const Block & input_header, const WindowFunctionDescription & function, size_t result_column)
@@ -75,13 +75,13 @@ void destroyStates(VectorWithMemoryTracking<GeneralWindowFunctionSlot> & general
         ws.aggregate_function->destroy(ws.aggregate_function_state.data());
 }
 
-std::vector<WindowArguments::Block> collectArgumentBlocks(const SlidingBlocks & blocks, RowNumber batch_start, Int64 batch_start_position) // STYLE_CHECK_ALLOW_STD_CONTAINERS -- passed to `WindowArguments::setBlocks`, which takes a `std::vector`
+VectorWithMemoryTracking<WindowArguments::Block> collectArgumentBlocks(const SlidingBlocks & blocks, RowNumber batch_start, Int64 batch_start_position)
 {
     Int64 first_position = batch_start_position - batch_start.row;
     for (int64_t block_number = batch_start.block; block_number > blocks.begin().block; --block_number)
         first_position -= blocks.blockAt(block_number - 1).rows_count;
 
-    std::vector<WindowArguments::Block> argument_blocks; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- see above
+    VectorWithMemoryTracking<WindowArguments::Block> argument_blocks;
     argument_blocks.reserve(blocks.end().block - blocks.begin().block);
     for (int64_t block_number = blocks.begin().block; block_number < blocks.end().block; ++block_number)
     {
