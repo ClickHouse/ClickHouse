@@ -133,9 +133,8 @@ void checkThreadsForLateSlots(bool lazy_allocation)
 
 }
 
-/// A CPU slot granted to a running pipeline is used right away: a thread is started at the next task boundary,
-/// not only when the pipeline happens to push new tasks to the shared queue (each thread does that after
-/// `max_scheduled_local_tasks` local tasks in a row).
+/// A CPU slot granted to a running pipeline gets a thread at the next task boundary,
+/// even if no step pushes tasks to the shared queue.
 TEST(PipelineExecutor, ThreadsForSlotsGrantedAfterStart)
 {
     checkThreadsForLateSlots(/* lazy_allocation */ true);

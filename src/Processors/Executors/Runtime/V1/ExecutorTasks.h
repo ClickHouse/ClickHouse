@@ -73,10 +73,8 @@ class ExecutorTasks : public ISpillRequestListener
     /// CPU slots for each thread.
     SlotAllocationPtr cpu_slots;
 
-    /// Threads requested for queued tasks or in place of downscaled ones, that have not started yet,
-    /// because no CPU slot was granted at that time.
-    /// Changed under `mutex`; atomic so that `hasThreadsToSpawn` can be checked without the lock after every task.
-    /// Rarely changes, so it is kept apart from the frequently changed fields above to keep those checks cheap.
+    /// Requested threads (for queued tasks or in place of downscaled ones) that wait for a CPU slot.
+    /// Changed under `mutex`, read without it after every task, so it has its own cache line.
     alignas(64) std::atomic<size_t> threads_to_spawn = 0;
 
     /// Threshold found by rolling dice.

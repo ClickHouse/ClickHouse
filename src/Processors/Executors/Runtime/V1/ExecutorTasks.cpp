@@ -229,11 +229,8 @@ size_t ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, ExecutionThr
             queue.pop();
         }
 
-        /// Request a thread for every pushed task that idle threads can't cover, within the pipeline width
-        /// left after the started threads. `PipelineExecutor` adds this delta to the `cpu_slots->setMax(...)`
-        /// target so the slot allocator grows in step with demand, and spawns the requested threads once
-        /// their slots are granted. It is computed before `tryWakeUpAnyOtherThreadWithTasks`, which may
-        /// unlock the mutex.
+        /// A thread for every pushed task that idle threads can't cover, within the pipeline width.
+        /// Computed before `tryWakeUpAnyOtherThreadWithTasks`, which may unlock the mutex.
         const size_t uncovered = pushed - std::min(pushed, threads_queue.size());
         const size_t requested = std::min(uncovered, widthLeft());
         addThreadsToSpawn(requested);
