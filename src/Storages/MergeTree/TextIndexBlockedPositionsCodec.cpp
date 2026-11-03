@@ -6,7 +6,6 @@
 #include <IO/WriteHelpers.h>
 
 #include <algorithm>
-#include <cstring>
 #include <limits>
 #include <numeric>
 
@@ -22,25 +21,6 @@ namespace ErrorCodes
 namespace
 {
 
-UInt64 readVarUIntFrom(const uint8_t *& pos, const uint8_t * end)
-{
-    UInt64 value = 0;
-    int shift = 0;
-    while (true)
-    {
-        if (pos >= end)
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupt text index positions: truncated varint in block payload");
-        const uint8_t byte = *pos++;
-        /// Only bit 63 fits at the last shift, so a larger payload or a continuation would truncate silently.
-        if (shift == 63 && byte > 1)
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupt text index positions: overlong varint in block payload");
-        value |= static_cast<UInt64>(byte & 0x7f) << shift;
-        if (!(byte & 0x80))
-            return value;
-        shift += 7;
-    }
-}
-
 /// Parse a block payload into the delta value lane and per-rank bounds: rank r spans [doc_offsets[r], doc_offsets[r + 1]).
 /// The bounds are derived here and never persisted, so they are UInt64 and put no ceiling on a block's position count.
 void parseBlock(
@@ -54,23 +34,20 @@ void parseBlock(
     auto & doc_offsets = scratch.doc_offsets;
     doc_offsets.resize(docs_in_block + 1);
 
-    const UInt64 freq_bytes = readVarUIntFrom(pos, end);
-    if (freq_bytes > static_cast<UInt64>(end - pos))
-        throw Exception(ErrorCodes::CORRUPTED_DATA,
-            "Corrupt text index positions: frequency run of {} bytes exceeds the {}-byte block", freq_bytes, payload_bytes);
-
     /// PFor emits >= 1 byte per block, so payload size bounds the value count (reject before alloc).
     const UInt64 max_total = payload_bytes * PFor::BLOCK;
     UInt64 total = 0;
-    if (freq_bytes == 0)
+    if (const size_t zeros_bytes = PFor::matchZeros(pos, docs_in_block, end))
     {
+        pos += zeros_bytes;
         std::iota(doc_offsets.begin(), doc_offsets.begin() + docs_in_block, UInt64{0});
         total = docs_in_block;
     }
     else
     {
         scratch.freqs.resize(docs_in_block);
-        if (PFor::decodeBlocks<UInt32>(pos, docs_in_block, PFor::Delta::none, scratch.freqs.data(), pos + freq_bytes) != freq_bytes)
+        const size_t freq_bytes = PFor::decodeBlocks<UInt32>(pos, docs_in_block, PFor::Delta::none, scratch.freqs.data(), end);
+        if (freq_bytes == 0)
             throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupt text index positions: malformed frequency run");
         pos += freq_bytes;
 
@@ -143,23 +120,14 @@ void TextIndexBlockedPositionsCodec::Encoder::addDocument(std::span<const UInt32
 
 size_t TextIndexBlockedPositionsCodec::Encoder::encodeBlock(PaddedPODArray<UInt8> & out)
 {
-    const size_t max_freq_bytes = PFor::maxCompressedBytes<UInt32>(docs_in_block);
-
-    /// The frequency size precedes the run, so the run is encoded to `runs` first.
-    runs.resize(max_freq_bytes);
-    auto * runs_data = reinterpret_cast<uint8_t *>(runs.data());
-
     const size_t begin = out.size();
-    out.resize(begin + 10 + max_freq_bytes + PFor::maxCompressedBytes<UInt32>(values.size()));
-    auto * block_begin = reinterpret_cast<char *>(out.data() + begin);
+    out.resize(begin + PFor::maxCompressedBytes<UInt32>(docs_in_block) + PFor::maxCompressedBytes<UInt32>(values.size()));
+    auto * block_begin = reinterpret_cast<uint8_t *>(out.data() + begin);
 
-    const size_t freq_bytes = has_frequency_run
-        ? PFor::encodeBlocks<UInt32>(std::span<const UInt32>(frequencies_minus_one.data(), frequencies_minus_one.size()), PFor::Delta::none, runs_data)
-        : 0;
-    size_t offset = writeVarUInt(freq_bytes, block_begin) - block_begin;
-    memcpy(block_begin + offset, runs_data, freq_bytes);
-    offset += freq_bytes;
-    offset += PFor::encodeBlocks<UInt32>(std::span<const UInt32>(values.data(), values.size()), PFor::Delta::none, reinterpret_cast<uint8_t *>(block_begin + offset));
+    size_t offset = has_frequency_run
+        ? PFor::encodeBlocks<UInt32>(std::span<const UInt32>(frequencies_minus_one.data(), frequencies_minus_one.size()), PFor::Delta::none, block_begin)
+        : PFor::encodeZeros(docs_in_block, block_begin);
+    offset += PFor::encodeBlocks<UInt32>(std::span<const UInt32>(values.data(), values.size()), PFor::Delta::none, block_begin + offset);
 
     chassert(offset <= out.size() - begin);
     out.resize(begin + offset);

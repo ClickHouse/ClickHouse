@@ -28,8 +28,7 @@ struct TokenPostingsInfo;
 ///     num_blocks x payload, back to back
 ///
 /// Block payload (docs_in_block = min(BLOCK_DOCS, num_docs - b*BLOCK_DOCS)):
-///     [VarUInt: freq_bytes]                        (0 when every document has one position)
-///     [PFor: docs_in_block x (freq - 1)]           (freq_bytes long)
+///     [PFor: docs_in_block x (freq - 1)]           (a single zero block when every document has one position)
 ///     [PFor: total_positions UInt32 values]        (total_positions = docs_in_block + sum(freq - 1);
 ///                                                   within-document deltas in posting order, the
 ///                                                   first position of each document absolute)
@@ -93,8 +92,6 @@ public:
         PODArray<UInt32, 64> frequencies_minus_one;
         bool has_frequency_run = false;
         size_t docs_in_block = 0;
-        /// Frequency run of the open block, encoded before its size is written.
-        PaddedPODArray<UInt8> runs;
         /// Payloads of the sealed blocks.
         PaddedPODArray<UInt8> staged;
         PODArray<UInt64, 16> block_bytes;

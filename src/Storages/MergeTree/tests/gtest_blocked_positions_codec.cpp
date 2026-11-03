@@ -132,7 +132,19 @@ TEST(BlockedPositionsCodec, ExactBlockBoundaries)
 TEST(BlockedPositionsCodec, RandomLarge)
 {
     expectRoundTrip(randomDocs(10000, 6, 1));
-    expectRoundTrip(randomDocs(2500, 1, 2)); /// all frequencies 1: no frequency run at all
+    expectRoundTrip(randomDocs(2500, 1, 2)); /// all frequencies 1: every frequency run is a zero block
+}
+
+TEST(BlockedPositionsCodec, MixedFrequencyRuns)
+{
+    /// Blocks of single positions around a block with a repeated token.
+    PerDocPositions docs;
+    for (uint32_t doc = 0; doc < 3 * TextIndexBlockedPositionsCodec::BLOCK_DOCS; ++doc)
+    {
+        const bool repeated = doc / TextIndexBlockedPositionsCodec::BLOCK_DOCS == 1 && doc % 5 == 0;
+        docs[doc] = repeated ? std::vector<uint32_t>{doc % 7, doc % 7 + 3} : std::vector<uint32_t>{doc % 7};
+    }
+    expectRoundTrip(docs);
 }
 
 TEST(BlockedPositionsCodec, CandidateBlockDecodeMatchesFullDecode)
@@ -338,30 +350,19 @@ TEST(BlockedPositionsCodec, RejectsFrequencyAboveUInt32)
 {
     /// The declared ~40 MB payload lifts the payload-derived bound above UInt32 max, so the
     /// frequency slips past it and must be rejected explicitly, not truncated.
-    const std::string run = frequencyRun({std::numeric_limits<UInt32>::max()});
-    DB::WriteBufferFromOwnString payload;
-    DB::writeVarUInt(run.size(), payload);
-    DB::writeString(run, payload);
-    std::string blob = payload.str();
+    std::string blob = frequencyRun({std::numeric_limits<UInt32>::max()});
     blob.resize(40'000'000, '\0');
     expectDecodeThrows(singleBlockStream(1, blob), 1);
 }
 
-TEST(BlockedPositionsCodec, RejectsFrequencyRunBeyondBlock)
+TEST(BlockedPositionsCodec, RejectsTruncatedFrequencyRun)
 {
-    DB::WriteBufferFromOwnString payload;
-    DB::writeVarUInt(50, payload); /// freq_bytes, larger than the payload
-    DB::writeString(std::string(3, '\0'), payload);
-    expectDecodeThrows(singleBlockStream(1, payload.str()), 1);
+    const std::string run = frequencyRun({1, 5, 3});
+    expectDecodeThrows(singleBlockStream(3, run.substr(0, 2)), 3);
 }
 
 TEST(BlockedPositionsCodec, RejectsPositionsBeyondBlock)
 {
     /// 300 positions in a stream too short for them.
-    const std::string run = frequencyRun({299});
-    DB::WriteBufferFromOwnString payload;
-    DB::writeVarUInt(run.size(), payload);
-    DB::writeString(run, payload);
-    DB::writeString(std::string(8, '\0'), payload);
-    expectDecodeThrows(singleBlockStream(1, payload.str()), 1);
+    expectDecodeThrows(singleBlockStream(1, frequencyRun({299}) + std::string(8, '\0')), 1);
 }
