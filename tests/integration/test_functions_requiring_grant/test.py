@@ -223,11 +223,11 @@ def test_values_expression_requires_grant():
         instance.query("REVOKE FUNCTION ON * FROM A")
         for function in functions:
             assert "Not enough privileges" in instance.http_query_and_get_error(
-                query, user="A"
+                query, method="POST", user="A"
             ), (query, function)
             instance.query(f"GRANT FUNCTION ON {function} TO A")
 
-        instance.http_query(query, user="A")
+        instance.http_query(query, method="POST", user="A")
 
     assert instance.query("SELECT x FROM t") == "1\n1\n1\n"
 
