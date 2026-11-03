@@ -68,6 +68,11 @@ static std::optional<Exception> checkTupleNames(const Strings & names)
     return {};
 }
 
+bool DataTypeTuple::hasValidElementNames(const Strings & names)
+{
+    return !checkTupleNames(names).has_value();
+}
+
 DataTypeTuple::DataTypeTuple(const DataTypes & elems_, const Strings & names_)
     : elems(elems_), names(names_), has_explicit_names(true)
 {

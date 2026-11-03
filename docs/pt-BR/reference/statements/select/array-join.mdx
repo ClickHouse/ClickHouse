@@ -13,7 +13,7 @@ doc_type: 'reference'
 Seu nome vem do fato de que ela pode ser vista como a execução de um `JOIN` com um array ou uma estrutura de dados aninhada. A ideia é semelhante à da função [arrayJoin](/pt-BR/reference/functions/regular-functions/array-join), mas a funcionalidade da cláusula é mais ampla.
 
 <Note>
-  `FROM unnest(...)`, `CROSS JOIN UNNEST(...)` e `LATERAL` do PostgreSQL não são compatíveis. Use `ARRAY JOIN` em vez disso. O nome `unnest` (desde a versão 26.5) é um alias de chamada de função de `arrayJoin` (`SELECT unnest(arr)`), não uma função de tabela.
+  As formas de origem de tabela `FROM unnest(...)`, `CROSS JOIN UNNEST(...)` e `LATERAL unnest(...)` do PostgreSQL não são compatíveis. Use `ARRAY JOIN` em vez disso. O nome `unnest` (desde a versão 26.5) é um alias de chamada de função de `arrayJoin` (`SELECT unnest(arr)`), não uma função de tabela. `JOIN LATERAL <subquery>` sobre uma subconsulta correlacionada é compatível à parte, como funcionalidade experimental; consulte [`JOIN`](/pt-BR/reference/statements/select/join#lateral-join).
 </Note>
 
 Sintaxe:
@@ -31,13 +31,9 @@ Os tipos compatíveis de `ARRAY JOIN` estão listados abaixo:
 * `ARRAY JOIN` - No caso básico, arrays vazios não são incluídos no resultado do `JOIN`.
 * `LEFT ARRAY JOIN` - O resultado do `JOIN` contém linhas com arrays vazios. O valor de um array vazio é definido como o valor padrão do tipo de elemento do array (geralmente 0, string vazia ou NULL).
 
-<div id="basic-array-join-examples">
-  ## Exemplos básicos de ARRAY JOIN
-</div>
+## Exemplos básicos de ARRAY JOIN {#basic-array-join-examples}
 
-<div id="array-join-left-array-join-examples">
-  ### ARRAY JOIN e LEFT ARRAY JOIN
-</div>
+### ARRAY JOIN e LEFT ARRAY JOIN {#array-join-left-array-join-examples}
 
 Os exemplos abaixo demonstram como usar as cláusulas `ARRAY JOIN` e `LEFT ARRAY JOIN`. Vamos criar uma tabela com uma coluna do tipo [Array](/pt-BR/reference/data-types/array) e inserir valores nela:
 
@@ -97,9 +93,7 @@ LEFT ARRAY JOIN arr;
 └─────────────┴─────┘
 ```
 
-<div id="array-join-arrayEnumerate">
-  ### ARRAY JOIN e a função arrayEnumerate
-</div>
+### ARRAY JOIN e a função arrayEnumerate {#array-join-arrayEnumerate}
 
 Essa função normalmente é usada com `ARRAY JOIN`. Ela permite contar algo apenas uma vez para cada array depois de aplicar `ARRAY JOIN`. Exemplo:
 
@@ -137,9 +131,7 @@ WHERE (CounterID = 160656) AND notEmpty(GoalsReached)
 └─────────┴───────┘
 ```
 
-<div id="array_join_arrayEnumerateUniq">
-  ### ARRAY JOIN e arrayEnumerateUniq
-</div>
+### ARRAY JOIN e arrayEnumerateUniq {#array_join_arrayEnumerateUniq}
 
 Esta função é útil ao usar `ARRAY JOIN` e agregar elementos de um array.
 
@@ -175,9 +167,7 @@ LIMIT 10
 └─────────┴─────────┴────────┘
 ```
 
-<div id="using-aliases">
-  ## Usando aliases
-</div>
+## Usando aliases {#using-aliases}
 
 É possível especificar um alias para um array na cláusula `ARRAY JOIN`. Nesse caso, um item do array pode ser acessado por esse alias, mas o próprio array é acessado pelo nome original. Exemplo:
 
@@ -275,9 +265,7 @@ SETTINGS enable_unaligned_array_join = 1;
 └─────────┴─────────┴───┴───────────┘
 ```
 
-<div id="array-join-with-nested-data-structure">
-  ## ARRAY JOIN com estruturas de dados aninhadas
-</div>
+## ARRAY JOIN com estruturas de dados aninhadas {#array-join-with-nested-data-structure}
 
 `ARRAY JOIN` também funciona com [estruturas de dados aninhadas](/pt-BR/reference/data-types/nested-data-structures/index):
 
@@ -390,23 +378,17 @@ ARRAY JOIN nest AS n, arrayEnumerate(`nest.x`) AS num;
 └───────┴─────┴─────┴─────────┴────────────┴─────┘
 ```
 
-<div id="implementation-details">
-  ## Detalhes de implementação
-</div>
+## Detalhes de implementação {#implementation-details}
 
 A ordem de execução da consulta é otimizada na execução de `ARRAY JOIN`. Embora `ARRAY JOIN` sempre deva ser especificado antes da cláusula [WHERE](/pt-BR/reference/statements/select/where)/[PREWHERE](/pt-BR/reference/statements/select/prewhere) em uma consulta, tecnicamente essas operações podem ser executadas em qualquer ordem, a menos que o resultado de `ARRAY JOIN` seja usado para filtrar. A ordem de processamento é controlada pelo otimizador de consultas.
 
-<div id="incompatibility-with-short-circuit-function-evaluation">
-  ### Incompatibilidade com a avaliação de funções em curto-circuito
-</div>
+### Incompatibilidade com a avaliação de funções em curto-circuito {#incompatibility-with-short-circuit-function-evaluation}
 
 [Avaliação de funções em curto-circuito](/pt-BR/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) é um recurso que otimiza a execução de expressões complexas em funções específicas, como `if`, `multiIf`, `and` e `or`. Ele evita que possíveis exceções, como divisão por zero, ocorram durante a execução dessas funções.
 
 `arrayJoin` é sempre executada e não oferece suporte à avaliação de funções em curto-circuito. Isso ocorre porque ela é uma função especial, processada separadamente de todas as outras durante a análise e a execução da consulta, e exige uma lógica adicional que não funciona com a execução em curto-circuito. O motivo é que o número de linhas no resultado depende do resultado de `arrayJoin`, e implementar a execução preguiçosa de `arrayJoin` é complexo e custoso demais.
 
-<div id="related-content">
-  ## Conteúdo relacionado
-</div>
+## Conteúdo relacionado {#related-content}
 
 * Blog: [Como trabalhar com dados de séries temporais no ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
 

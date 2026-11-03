@@ -19,13 +19,15 @@ Ce guide explique le fonctionnement des sauvegardes dans ClickHouse Cloud, les o
 
 ## Liste des statuts des sauvegardes {#backup-status-list}
 
-Les sauvegardes sont exécutées selon la planification configurée pour votre service, qu&#39;il s&#39;agisse de la planification quotidienne par défaut ou d&#39;une [planification personnalisée](/fr/products/cloud/guides/backups/configurable-backups) que vous avez choisie. Toutes les sauvegardes disponibles sont visibles dans l&#39;onglet **Sauvegardes** du service. Vous pouvez y consulter le statut de la sauvegarde, sa durée ainsi que sa taille. Vous pouvez également restaurer une sauvegarde spécifique à l&#39;aide de la colonne **Actions**.
+Les sauvegardes sont exécutées selon la planification configurée pour votre service, qu&#39;il s&#39;agisse de la planification quotidienne par défaut ou d&#39;une [planification personnalisée](/fr/products/cloud/guides/backups/configurable-backups) que vous avez choisie. Tous les points de restauration disponibles sont visibles dans l&#39;onglet **Sauvegardes** du service. Vous pouvez y consulter le statut de la sauvegarde, sa durée ainsi que sa taille. Vous pouvez également restaurer une sauvegarde spécifique à l&#39;aide de la colonne **Actions**.
 
 <Image img="/images/cloud/manage/backup-status-list.webp" size="md" alt="Liste des statuts des sauvegardes dans ClickHouse Cloud" border />
 
 ## Comprendre le coût des sauvegardes {#understanding-backup-cost}
 
 À moins qu’une autre planification ne soit configurée, les services sont sauvegardés toutes les 24 heures, et chaque sauvegarde est conservée pendant 24 heures. La possibilité de configurer des planifications de sauvegarde varie selon le service et le plan. Choisir une planification qui exige de conserver davantage de données ou entraîne des sauvegardes plus fréquentes peut générer des frais de stockage supplémentaires liés aux sauvegardes.
+
+Les points de restauration affichés dans la console ne correspondent pas aux limites de facturation. Un point de restauration peut nécessiter une sauvegarde complète et une ou plusieurs sauvegardes incrémentielles de la même chaîne. L’espace de stockage utilisé par les sauvegardes peut inclure ces sauvegardes conservées, même si elles ne figurent pas parmi les points de restauration distincts.
 
 Pour comprendre le coût des sauvegardes, vous pouvez consulter le coût des sauvegardes par service depuis l’écran Utilisation (comme illustré ci-dessous). Une fois que vos sauvegardes s’exécutent depuis quelques jours selon une planification personnalisée, vous pouvez vous faire une idée du coût et l’extrapoler pour estimer le coût mensuel des sauvegardes.
 

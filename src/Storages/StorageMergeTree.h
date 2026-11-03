@@ -217,6 +217,10 @@ private:
     /// Returns the parts that the new empty parts covered, i.e. the parts this call removed.
     DataPartsVector renameAndCommitEmptyParts(MutableDataPartsVector & new_parts, Transaction & transaction);
 
+    /// Must be called from a `catch` block after renaming the empty parts of `transaction` failed or committing them failed.
+    /// Without a `MergeTreeTransaction`, removes the rolled back empty parts from disk right away. Rethrows the current exception.
+    [[noreturn]] void removeRolledBackEmptyPartsAndRethrow(MutableDataPartsVector & new_parts, Transaction & transaction);
+
     /// Copy the parts to `detached/`. Must run after the removal is committed: cloning first would
     /// leave an orphan copy behind whenever the removal is still refused, and every retry of the
     /// statement would add another `_tryN` directory next to it.
@@ -359,7 +363,7 @@ private:
     BackupEntries backupMutations(UInt64 version, const String & data_path_in_backup) const;
 
     /// Attaches restored parts to the storage.
-    void attachRestoredParts(MutableDataPartsVector && parts, const std::optional<ZooKeeperRetriesInfo> & zookeeper_retries_info) override;
+    void attachRestoredParts(MutableDataPartsVector && parts, const ContextPtr & query_context, const std::optional<ZooKeeperRetriesInfo> & zookeeper_retries_info) override;
 
     std::unique_ptr<MergeTreeSettings> getDefaultSettings() const override;
 
@@ -399,6 +403,10 @@ private:
     };
     void startBackgroundWorkers(StartedBackgroundWorkers * started = nullptr);
     void finishBackgroundWorkers(const StartedBackgroundWorkers & started) noexcept;
+    /// Stops every background task of the table: the periodic refresh tasks, the part loaders, the cleanup
+    /// thread and all assignees. Idempotent. Used after `shutdown_called` is set, both by `shutdown` and by a
+    /// `startup` or an `ALTER` that armed some tasks and then observed a concurrent `shutdown`.
+    void stopAllBackgroundTasks();
     void enableBackgroundWorkers() noexcept;
     void disableBackgroundWorkers() noexcept;
     /// Schedules the merge/mutate and move assignees, the cleanup thread, and the outdated and
@@ -486,7 +494,7 @@ private:
 
         MutationCommands getOnFlyMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const override;
         std::shared_ptr<MergeTreeData::IMutationsSnapshot> cloneEmpty() const override { return std::make_shared<MutationsSnapshot>(); }
-        NameSet getAllUpdatedColumns() const override;
+        NameSet getColumnsChangedOnFly() const override;
     };
 
     class PartMutationBackoffPolicy

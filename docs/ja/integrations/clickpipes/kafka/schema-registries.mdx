@@ -12,16 +12,18 @@ integration:
 
 import { Image } from "/snippets/ja/components/Image.jsx";
 
-ClickPipes は、Avro および Protobuf でエンコードされたレコード値と[構造化 Kafka キー](/ja/integrations/clickpipes/kafka/reference#structured-message-keys)をデコードするためのスキーマレジストリとの連携をサポートしています。
+ClickPipes は、Avro および Protobuf でエンコードされたレコード値をデコードするためのスキーマレジストリとの連携をサポートしています。また、Kafka ClickPipes は[構造化 Kafka キー](/ja/integrations/clickpipes/kafka/reference#structured-message-keys)にも対応しています。
 
 Protobuf のレコード値については、スキーマレジストリを設定せずに[スキーマを直接アップロードする](/ja/integrations/clickpipes/kafka/create-kafka-clickpipe#7-select-your-topic)こともできます。
 
-## Kafka ClickPipes でサポートされるスキーマレジストリ {#supported-schema-registries}
+## ストリーミング ClickPipes でサポートされるスキーマレジストリ {#supported-schema-registries}
 
 Kafka ClickPipes は、2 種類のスキーマレジストリをサポートしています。
 
 * [Confluent 互換レジストリ](#confluent-compatible-registries): Confluent スキーマレジストリ自体や Redpanda Schema Registry など、Confluent スキーマレジストリと API 互換性のあるレジストリです。Avro と Protobuf をサポートします。
-* [AWS Glue Schema Registry](#aws-glue-schema-registry): 通常 Amazon MSK から取得される、AWS Glue SerDe でシリアライズされた Avro データ用です。
+* [AWS Glue Schema Registry](#aws-glue-schema-registry): 通常 Amazon MSK から取得される、AWS Glue SerDe でシリアル化された Avro データ用です。
+
+Kinesis ClickPipes は、Avro および Protobuf データ向けに AWS Glue Schema Registry をサポートしています。
 
 ClickPipes は現在、Azure Schema Registry をサポートしていません。サポートが必要な場合は、[チームまでお問い合わせください](https://clickhouse.com/company/contact?loc=clickpipes)。
 
@@ -61,17 +63,17 @@ ClickPipes は、設定されたスキーマレジストリからスキーマを
 
 ## AWS Glue Schema Registry {#aws-glue-schema-registry}
 
-プロデューサーが AWS Glue SerDe を使用して Avro をシリアル化する場合 (たとえば、Amazon MSK トピックに対して `AWSKafkaAvroSerializer` を使用する場合) 、ClickPipes は AWS Glue Schema Registry からこれらのスキーマを直接解決できます。Glue は Confluent 互換レジストリとは異なるワイヤ形式と API を使用するため、個別に設定する必要があります。
+producer が AWS Glue SerDe を使用して Avro をシリアル化する場合 (たとえば、Amazon MSK トピックに対して `AWSKafkaAvroSerializer` を使用する場合) 、ClickPipes は AWS Glue Schema Registry からこれらのスキーマを直接解決できます。Glue は Confluent 互換レジストリとは異なるワイヤ形式と API を使用するため、個別に設定する必要があります。
 
-AWS Glue Schema Registry の設定は現在、ClickHouse Cloud console でのみ利用できます。ClickPipes API または Terraform プロバイダーではサポートされていません。
+AWS Glue Schema Registry の設定は、ClickHouse Cloud console、ClickPipes API、および Terraform プロバイダーで利用できます。
 
 <Note>
-  **Avro のみ。** AWS Glue レジストリは Avro フォーマットでのみサポートされています。Glue SerDe は JSON と Protobuf のフレーミングにも対応していますが、ClickPipes ではサポートされておらず、パイプの作成時に拒否されます。
+  **Kafka:** AWS Glue レジストリは Avro フォーマットのみをサポートしています。**Kinesis:** AWS Glue レジストリは `AvroConfluent` と `Protobuf` をサポートしています。Glue SerDe を介した JSON はサポートされていません。
 </Note>
 
 ### 設定 {#glue-configuration}
 
-ClickPipe 作成ウィザードの Kafka 接続ステップで **スキーマレジストリ** を有効にし、**レジストリタイプ** を **AWS Glue** に設定します。
+ClickPipe 作成ウィザードの Kafka または Kinesis 接続ステップで **スキーマレジストリ** を有効にし、**レジストリタイプ** を **AWS Glue** に設定します。
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_glue_schema_registry.png" alt="AWS Glue が選択されたスキーマレジストリパネル" size="lg" border />
 
@@ -82,7 +84,7 @@ ClickPipe 作成ウィザードの Kafka 接続ステップで **スキーマレ
 | レジストリ名      | はい   | Glue レジストリの名前です。別のレジストリに属するスキーマは拒否されるため、ClickPipes がスキーマバージョンを解決する際に入力ミスが判明します。 | `my-glue-registry`                                         |
 | IAM ロール ARN | 条件付き | レジストリへのアクセス専用のロールです。ブローカーで IAM 認証を使用している場合は任意ですが、それ以外の場合は必須です。                  | `arn:aws:iam::123456789012:role/ClickHouseAccessRole-glue` |
 
-設定するレジストリ URL はありません。Glue SerDe で生成された各レコードには、そのスキーマバージョンの ID が含まれます。ClickPipes は `glue:GetSchemaVersion` を使用してスキーマバージョンを解決し、異なるスキーマバージョンごとに API 呼び出しを 1 回行ってキャッシュします。スキーマ進化は自動的に処理されます。ストリームの途中でレコードが新しいスキーマバージョンに切り替わった場合は、最初に検出された時点で解決されます。
+設定するレジストリ URL はありません。Glue SerDe で生成された各レコードには、そのスキーマバージョンの ID が含まれます。ClickPipes は `glue:GetSchemaVersion` を使用してスキーマバージョンを解決し、異なるスキーマバージョンごとに API 呼び出しを 1 回行ってキャッシュします。スキーマ進化は自動的に処理されます。ストリームの途中でレコードが新しいスキーマバージョンに切り替わった場合は、最初に検出された時点で解決されます。Kinesis の場合は、[OpenAPI](/ja/integrations/clickpipes/programmatic-access/openapi) または [Terraform](/ja/integrations/clickpipes/programmatic-access/terraform) を使用して同じフィールドを設定してください。
 
 ### IAM の設定 {#glue-iam-setup}
 
@@ -186,8 +188,8 @@ Kafka ClickPipe がすでに IAM を使用して MSK に認証している場合
 
 ### 制限事項 {#glue-limitations}
 
-* Avro のみをサポートします。Glue SerDe 経由の JSON Schema および Protobuf はサポートされていません。
-* Kafka ログソースのみをサポートします。Kinesis ClickPipes では Glue registry を使用できません。
+* Kafka は Avro のみをサポートします。Glue SerDe 経由の JSON Schema および Protobuf はサポートされていません。
+* Kinesis は AWS Glue Schema Registry を介して `AvroConfluent` と `Protobuf` をサポートします。アップロードした Protobuf スキーマをスキーマレジストリと併用することはできません。
 
 ## スキーママッピング {#schema-mapping}
 

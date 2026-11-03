@@ -50,6 +50,10 @@ do
     sleep 1
 done
 
+# SYSTEM FLUSH LOGS covers only the rows queued when it starts, so a row logged while the
+# last flush in the loop was blocked needs one more.
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS part_log"
+
 $CLICKHOUSE_CLIENT -q "
 SELECT event_type, table, part_name, bytes_uncompressed > 0, (bytes_uncompressed > 0 ? (size_in_bytes < bytes_uncompressed ? '1' : toString((size_in_bytes, bytes_uncompressed))) : '0')
 FROM system.part_log

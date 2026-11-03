@@ -8,8 +8,8 @@ namespace DB
 /// Rows-range of the partition seen so far.
 struct PartitionBounds
 {
-    RowNumber start;
-    RowNumber end;
+    RowPoint start;
+    RowPoint end;
     bool fully_visible = false;
 };
 
@@ -20,7 +20,7 @@ public:
 
     void beginAt(const SlidingBlocks & blocks, RowNumber first_row);
     void advance(const SlidingBlocks & blocks);
-    void finish(RowNumber data_end);
+    void finish();
 
     const PartitionBounds & bounds() const;
 
