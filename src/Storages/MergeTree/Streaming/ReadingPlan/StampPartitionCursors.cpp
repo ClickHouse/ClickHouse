@@ -8,8 +8,6 @@
 #include <base/defines.h>
 
 #include <algorithm>
-#include <tuple>
-#include <utility>
 
 namespace DB
 {
@@ -32,38 +30,14 @@ ITransformingStep::Traits getCursorBuildTraits(bool unordered)
     };
 }
 
-class StampPartitionCursorsTransform final : public ISimpleTransform
+/// Sets PartitionCursorInfo for each chunk; the cursor is computed by the derived class.
+/// It is assumed that a chunk originates from a single partition.
+class StampPartitionCursorsTransformBase : public ISimpleTransform
 {
-    PartitionCursor cursorAt(const Columns & cols, size_t row) const
-    {
-        chassert(cols[pos_block_number]->size() == cols[pos_block_offset]->size());
-        chassert(row < cols[pos_block_number]->size() && row < cols[pos_block_offset]->size());
-        return {cols[pos_block_number]->getInt(row), cols[pos_block_offset]->getInt(row)};
-    }
-
-    std::pair<PartitionCursor, PartitionCursor> orderedRange(const Columns & cols, size_t rows) const
-    {
-        return {cursorAt(cols, 0), cursorAt(cols, rows - 1)};
-    }
-
-    std::pair<PartitionCursor, PartitionCursor> unorderedRange(const Columns & cols, size_t rows) const
-    {
-        PartitionCursor min_cursor = cursorAt(cols, 0);
-        PartitionCursor max_cursor = min_cursor;
-        for (size_t i = 1; i < rows; ++i)
-        {
-            const auto cursor = cursorAt(cols, i);
-            min_cursor = std::min(min_cursor, cursor);
-            max_cursor = std::max(max_cursor, cursor);
-        }
-        return {std::move(min_cursor), std::move(max_cursor)};
-    }
-
 public:
-    StampPartitionCursorsTransform(SharedHeader header_, String partition_id_, bool unordered_)
+    explicit StampPartitionCursorsTransformBase(SharedHeader header_)
         : ISimpleTransform(header_, header_, /*skip_empty_chunks=*/false)
-        , partition_id(std::move(partition_id_))
-        , unordered(unordered_)
+        , pos_partition_id(header_->getPositionByName(PartitionIdColumn::name))
         , pos_block_number(header_->getPositionByName(BlockNumberColumn::name))
         , pos_block_offset(header_->getPositionByName(BlockOffsetColumn::name))
     {
@@ -73,39 +47,78 @@ public:
 
     void transform(Chunk & chunk) override
     {
-        const auto & cols = chunk.getColumns();
         const size_t rows = chunk.getNumRows();
         if (rows == 0)
             return;
 
+        const auto & cols = chunk.getColumns();
+
         auto info = std::make_shared<PartitionCursorInfo>();
-        info->partition_id = partition_id;
-        std::tie(info->first, info->last) = unordered ? unorderedRange(cols, rows) : orderedRange(cols, rows);
+        info->partition_id = String(cols[pos_partition_id]->getDataAt(0));
+        info->cursor = computeChunkCursor(cols, rows);
 
         chunk.getChunkInfos().add(std::move(info));
     }
 
+protected:
+    PartitionCursor cursorAt(const Columns & cols, size_t row) const
+    {
+        return {cols[pos_block_number]->getInt(row), cols[pos_block_offset]->getInt(row)};
+    }
+
 private:
-    const String partition_id;
-    const bool unordered;
+    virtual PartitionCursor computeChunkCursor(const Columns & cols, size_t rows) const = 0;
+
+    const size_t pos_partition_id;
     const size_t pos_block_number;
     const size_t pos_block_offset;
 };
 
+/// Ordered stream: rows are already sorted by cursor, so the last row carries the chunk's cursor.
+class StampPartitionCursorsTransform : public StampPartitionCursorsTransformBase
+{
+public:
+    using StampPartitionCursorsTransformBase::StampPartitionCursorsTransformBase;
+
+private:
+    PartitionCursor computeChunkCursor(const Columns & cols, size_t rows) const override
+    {
+        return cursorAt(cols, rows - 1);
+    }
+};
+
+/// Unordered stream: rows are not sorted by cursor, so take the maximum cursor in the chunk.
+class StampPartitionCursorsUnorderedTransform : public StampPartitionCursorsTransformBase
+{
+public:
+    using StampPartitionCursorsTransformBase::StampPartitionCursorsTransformBase;
+
+private:
+    PartitionCursor computeChunkCursor(const Columns & cols, size_t rows) const override
+    {
+        PartitionCursor max_cursor = cursorAt(cols, 0);
+        for (size_t i = 1; i < rows; ++i)
+            max_cursor = std::max(max_cursor, cursorAt(cols, i));
+        return max_cursor;
+    }
+};
+
 }
 
-StampPartitionCursorsStep::StampPartitionCursorsStep(SharedHeader input_header_, String partition_id_, bool unordered_)
+StampPartitionCursorsStep::StampPartitionCursorsStep(SharedHeader input_header_, bool unordered_)
     : ITransformingStep(input_header_, input_header_, getCursorBuildTraits(unordered_))
-    , partition_id(std::move(partition_id_))
     , unordered(unordered_)
 {
 }
 
 void StampPartitionCursorsStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    pipeline.addSimpleTransform([this](const SharedHeader & header) -> ProcessorPtr
+    pipeline.addSimpleTransform([is_unordered = unordered](const SharedHeader & header) -> ProcessorPtr
     {
-        return std::make_shared<StampPartitionCursorsTransform>(header, partition_id, unordered);
+        if (is_unordered)
+            return std::make_shared<StampPartitionCursorsUnorderedTransform>(header);
+
+        return std::make_shared<StampPartitionCursorsTransform>(header);
     });
 }
 

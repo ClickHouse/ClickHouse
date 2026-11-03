@@ -7,7 +7,6 @@
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ColumnDefault.h>
 #include <Storages/StatisticsDescription.h>
-#include <Storages/SubcolumnCodecsDescription.h>
 #include <Common/Exception.h>
 #include <Common/NamePrompter.h>
 #include <Common/SettingsChanges.h>
@@ -45,7 +44,8 @@ enum class VirtualsMaterializationPlace : UInt8
 {
     Reader = 1,
     Plan = 2,
-    All = Reader | Plan,
+    Streaming = 4,
+    All = Reader | Plan | Streaming,
 };
 
 struct GetColumnsOptions
@@ -101,7 +101,6 @@ struct ColumnDescription
     ColumnDefault default_desc;
     String comment;
     ASTPtr codec;
-    SubcolumnCodecsDescription subcolumn_codecs;
     SettingsChanges settings;
     ASTPtr ttl;
     ColumnStatisticsDescription statistics;
@@ -120,7 +119,7 @@ struct ColumnDescription
     bool operator==(const ColumnDescription & other) const;
     bool operator!=(const ColumnDescription & other) const { return !(*this == other); }
 
-    void writeText(WriteBuffer & buf, IAST::FormatState & state, bool include_comment, bool include_codec) const;
+    void writeText(WriteBuffer & buf, IAST::FormatState & state, bool include_comment) const;
     void readText(ReadBuffer & buf);
 };
 
@@ -187,9 +186,6 @@ public:
 
     using ColumnTTLs = std::unordered_map<String, ASTPtr>;
     ColumnTTLs getColumnTTLs() const;
-    /// Drops every column TTL, leaving the rest of each column as it is.
-    void clearColumnTTLs();
-    /// Drops every column TTL and puts each column back through the checks that `add` runs.
     void resetColumnTTLs();
 
     bool has(const String & column_name) const;
@@ -218,10 +214,7 @@ public:
         if (!columns.get<1>().modify(it, std::forward<F>(f)))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot modify ColumnDescription for column {}: column name cannot be changed", column_name);
 
-        invalidateGetCache();
-        /// Aliases don't have real subcolumns, they are derived from the expression.
-        if (it->default_desc.kind != ColumnDefaultKind::Alias)
-            addSubcolumns(it->name, it->type);
+        addSubcolumns(it->name, it->type);
         modifyColumnOrder(column_name, after_column, first);
     }
 
@@ -243,9 +236,6 @@ public:
     std::optional<NameAndTypePair> tryGetColumnOrSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const;
     std::optional<NameAndTypePair> tryGetColumn(const GetColumnsOptions & options, const String & column_name) const;
 
-    /// A subcolumn of any column by its full name (`payload.ts`). Nothing for the name of a column or for an unknown name.
-    std::optional<NameAndTypePair> tryGetSubcolumn(const String & subcolumn_name) const;
-
     std::optional<const ColumnDescription> tryGetColumnOrSubcolumnDescription(GetColumnsOptions::Kind kind, const String & column_name) const;
     std::optional<const ColumnDescription> tryGetColumnDescription(const GetColumnsOptions & options, const String & column_name) const;
 
@@ -254,7 +244,7 @@ public:
     bool hasDefaults() const;
     std::optional<ColumnDefault> getDefault(const String & column_name) const;
 
-    /// Does column has non default specified compression codec, for the column itself or for any of its subcolumns
+    /// Does column has non default specified compression codec
     bool hasCompressionCodec(const String & column_name) const;
 
     /// Does the column's compression codec pipeline contain a `Default` stage (`CODEC(Default)`,
@@ -264,9 +254,7 @@ public:
     /// non-default codec.
     bool hasExplicitDefaultCompressionCodec(const String & column_name) const;
 
-    /// Subcolumn codecs are written as `CODEC name (...)` lines after the columns.
-    /// `include_codecs = false` is for readers that need only names, types and defaults, such as older clients.
-    String toString(bool include_comments, bool include_codecs = true) const;
+    String toString(bool include_comments) const;
     static ColumnsDescription parse(const String & str);
 
     size_t size() const
@@ -349,12 +337,6 @@ struct DefaultExpressionsInfo
     /// MATERIALIZED). ALIAS (read-time) and EPHEMERAL (a non-stored insert input) are not included.
     NameSet insert_time_default_columns;
 };
-
-/// If the column carries a `Quantized(...)` codec, attaches the serialization that writes the quantized companion stream
-/// and exposes the `<column>.quantized` subcolumn. `ColumnsDescription::add` does this itself; it is needed when
-/// the codec is set on a column that is already added. The customization is attached to this column's own
-/// (freshly parsed, non-shared) type instance, so it does not affect any other column of the same type.
-void attachQuantizeSerializationIfNeeded(ColumnDescription & column);
 
 /// Restore the Quantized(...) subcolumns on columns parsed from a part's columns.txt.
 void attachQuantizeSerializations(NamesAndTypesList & columns, const ColumnsDescription & metadata);

@@ -44,8 +44,6 @@ class ParserCreateUserQuery : public IParserBase
 public:
     ParserCreateUserQuery & useAttachMode(bool attach_mode_ = true) { attach_mode = attach_mode_; return *this; }
 
-    std::map<String, Documentation> getDocumentation() const override;
-
 protected:
     const char * getName() const override { return "CREATE USER or ALTER USER query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
