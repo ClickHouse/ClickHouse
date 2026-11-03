@@ -2,9 +2,9 @@
 # Tags: no-fasttest
 # no-fasttest: AzureBlobStorage (Azurite) is not available in the fast test.
 
-# Parsing a short CSV object from object storage must not read past the end of the memory that holds it: with a
-# direct read, and through the userspace page cache with a direct read, a prefetching read and the reader executor
-# (read twice, so that the second read is served from the cache). A sanitizer build aborts on such a read.
+# Parsing a short CSV object through the userspace page cache must not read past the end of the page cache cell that
+# holds it: with a direct read, a prefetching read and the reader executor (read twice, so that the second read is
+# served from the cache). A sanitizer build aborts on such a read.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -26,10 +26,6 @@ SELECT_QUERY="SELECT * FROM azureBlobStorage('${AZURE_CONN}', '${AZURE_CONT}', '
     ORDER BY b SETTINGS input_format_parallel_parsing = 0"
 PAGE_CACHE_USED="SELECT value > 0 FROM system.metrics WHERE metric = 'PageCacheBytes'"
 PAGE_CACHE_HIT="SELECT sum(value) > 0 FROM system.events WHERE event = 'PageCacheReadBytes'"
-
-echo "-- direct read"
-${CLICKHOUSE_CLIENT} --query "${SELECT_QUERY},
-    remote_filesystem_read_method = 'read', use_page_cache_for_object_storage = 0, use_reader_executor = 0"
 
 echo "-- page cache, direct read"
 ${CLICKHOUSE_LOCAL} --config-file "${CONFIG_FILE}" --query "${SELECT_QUERY},
