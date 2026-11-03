@@ -135,12 +135,8 @@ using LazyMaterializingRowsPtr = std::shared_ptr<LazyMaterializingRows>;
 class MergeTreeSelectProcessor : private boost::noncopyable
 {
 public:
-    /// Whether reading `columns` from the part returns what the part stores: each one is a column of the part with
-    /// the same type and with its data in the part, and no mutation is pending for the part (`alter_conversions`, may
-    /// be null). Otherwise the reader computes the values from the table metadata (the current DEFAULT of a column added
-    /// after the part was written, a conversion to another type) or applies the pending mutations, and a metadata-only
-    /// ALTER or a KILL MUTATION can change them without renaming the part. Exact match counts in the query condition
-    /// cache are recorded and used only for such parts.
+    /// Whether reading `columns` returns what the part stores. Otherwise the values come from the table metadata or pending
+    /// mutations, which a metadata-only ALTER or a KILL MUTATION can change without renaming the part.
     static bool partStoresColumnsAsRead(
         const IMergeTreeDataPart & part, const AlterConversions * alter_conversions, const NamesAndTypesList & columns);
 
@@ -226,12 +222,8 @@ private:
     /// applies; then PREWHERE results are not cached.
     std::optional<std::pair<UInt64, String>> prewhere_condition_for_query_condition_cache;
 
-    /// Whether the rows that pass the PREWHERE steps are exactly the rows matching the condition of
-    /// `prewhere_condition_for_query_condition_cache` (its own deterministic hash, not a derived or salted one),
-    /// so that the exact number of them per mark may be recorded in the query condition cache. Only set when
-    /// `query_condition_cache_write_match_counts` asks for it.
+    /// Whether the exact per-mark counts of rows passing PREWHERE may be recorded: only under its own (not derived or salted) hash.
     bool write_prewhere_match_counts_to_query_condition_cache = false;
-    /// The columns the PREWHERE reads. Match counts are recorded only for parts that store them, see `partStoresColumnsAsRead`.
     NamesAndTypesList prewhere_columns_for_match_counts;
 
     /// Current task to read from.

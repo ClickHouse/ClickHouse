@@ -3704,12 +3704,10 @@ bool ReadFromMergeTree::filterDependsOnNonDeterministicVirtuals(const VirtualCol
 
 std::optional<UInt64> ReadFromMergeTree::getQueryConditionCacheKeyForMatchCounts() const
 {
-    /// `use_query_condition_cache` is off with `apply_deleted_mask = 0` as well.
     if (!reader_settings.use_query_condition_cache || !reader_settings.apply_deleted_mask || !allow_query_condition_cache)
         return {};
 
-    /// The same conditions as for consulting the cache (`filterPartsByQueryConditionCache`) and writing to it in
-    /// `MergeTreeSelectProcessor`, and the counts must be of exactly the rows the read returns.
+    /// Must agree with `filterPartsByQueryConditionCache` and `MergeTreeSelectProcessor`: the counts are the rows the read returns.
     if (top_k_filter_info || vector_search_parameters || query_info.isFinal() || isQueryWithSampling()
         || isParallelReadingEnabled() || is_parallel_reading_from_replicas || hasLazilyReadColumns() || lazy_materializing_rows
         || query_info.row_level_filter || deferred_row_level_filter || deferred_prewhere_info)
@@ -3720,7 +3718,7 @@ std::optional<UInt64> ReadFromMergeTree::getQueryConditionCacheKeyForMatchCounts
         return {};
 
     /// Data mutations and patch parts applied on the fly change what the parts return without renaming them. Other pending
-    /// mutations (type changes, `RENAME COLUMN`, `DROP COLUMN`) are checked per part, see `canUseQueryConditionCacheMatchCountsOfPart`.
+    /// mutations are checked per part, see `canUseQueryConditionCacheMatchCountsOfPart`.
     if (mutations_snapshot && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts()))
         return {};
 
@@ -5782,7 +5780,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     if (top_k_filter_info)
         reader_settings.top_k_filter_rows_equal_to_threshold_dropped = top_k_filter_info->rows_equal_to_threshold_dropped;
 
-    /// See `getQueryConditionCacheKeyForMatchCounts`. Checked again here, because the read may have changed since.
+    /// Checked again: the read may have changed since `optimizeUseAggregateProjections` enabled the match counts.
     reader_settings.query_condition_cache_write_match_counts = write_query_condition_cache_match_counts
         && reader_settings.use_query_condition_cache && !reader_settings.query_condition_cache_top_k_salt
         && getQueryConditionCacheKeyForMatchCounts().has_value();

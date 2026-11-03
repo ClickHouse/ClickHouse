@@ -564,7 +564,6 @@ std::vector<std::pair<size_t, size_t>> MergeTreeRangeReader::ReadResult::compute
         }
         granule_begin = granule_end;
 
-        /// Only granules read from their first row (the read could not start inside a granule anyway).
         if (mark >= marks_count || granule_offsets[i].starting_offset != part_index_granularity.getMarkStartingRow(mark)
             || count > part_index_granularity.getMarkRows(mark))
             continue;

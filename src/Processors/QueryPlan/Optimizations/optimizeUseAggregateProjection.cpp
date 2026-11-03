@@ -1207,7 +1207,6 @@ static Block makeBlockWithMinMaxFromStatistics(
     return block;
 }
 
-/// Whether there is a `FilterStep` between the aggregation and the read (`node` is the child of the aggregation).
 static bool hasFilterStepAboveReading(QueryPlan::Node & node)
 {
     IQueryPlanStep * step = node.step.get();
@@ -1218,8 +1217,7 @@ static bool hasFilterStepAboveReading(QueryPlan::Node & node)
     return hasFilterStepAboveReading(*node.children.front());
 }
 
-/// Removes the marks for which the query condition cache knows the exact number of rows matching the PREWHERE of the
-/// read from `select_result` and returns the sum of these numbers.
+/// Removes from `select_result` the marks whose matching rows the query condition cache counted and returns their sum.
 static size_t countRowsFromQueryConditionCache(
     const ReadFromMergeTree & reading,
     ReadFromMergeTree::AnalysisResult & select_result,
@@ -1280,7 +1278,7 @@ static size_t countRowsFromQueryConditionCache(
         select_result.selected_ranges -= part_with_ranges.ranges.size();
         part_with_ranges.ranges = std::move(new_ranges);
 
-        /// The counted marks are not read either, like the primary key exact ranges (see `exact_ranges_excluded`).
+        /// Counted marks are not read either, so they join the primary key exact ranges (see `exact_ranges_excluded`).
         MarkRanges exact_ranges;
         std::merge(
             part_with_ranges.exact_ranges.begin(), part_with_ranges.exact_ranges.end(),
@@ -1482,9 +1480,6 @@ UseProjectionsResult optimizeUseAggregateProjections(
                 part_with_ranges.ranges = std::move(new_ranges);
             }
 
-            /// The query condition cache may know the exact number of rows matching the PREWHERE in the remaining
-            /// marks, if the PREWHERE is the whole filter of the count. Otherwise make the read record them for the
-            /// next time.
             size_t query_condition_cache_count = 0;
             size_t query_condition_cache_parts = 0;
             size_t query_condition_cache_marks = 0;

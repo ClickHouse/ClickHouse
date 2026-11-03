@@ -233,7 +233,6 @@ static bool prewhereFiltersByTopKThreshold(const PrewhereInfoPtr & prewhere_info
 bool MergeTreeSelectProcessor::partStoresColumnsAsRead(
     const IMergeTreeDataPart & part, const AlterConversions * alter_conversions, const NamesAndTypesList & columns)
 {
-    /// Mutations pending for the part: renames, type changes, data mutations applied on the fly, patch parts.
     if (alter_conversions
         && (alter_conversions->hasMutations() || alter_conversions->hasPatches() || !alter_conversions->getRenameMap().empty()
             || !alter_conversions->getAllUpdatedColumns().empty()))
@@ -242,8 +241,7 @@ bool MergeTreeSelectProcessor::partStoresColumnsAsRead(
     const auto & serialization_infos = part.getSerializationInfos();
     for (const auto & column : columns)
     {
-        /// Not a subcolumn or a virtual column, not a column added after the part was written or marked as missing in it,
-        /// and not dropped by a pending mutation (the column may have been added again since).
+        /// Not a subcolumn or a virtual column, not missing in the part, not dropped by a pending mutation (maybe re-added since).
         if (!part.getColumnPosition(column.name) || serialization_infos.isMissingColumn(column.name)
             || part.isSystemColumnInvalidated(column.name) || (alter_conversions && alter_conversions->isColumnDropped(column.name)))
             return false;
@@ -309,8 +307,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
                     prewhere_condition_for_query_condition_cache.emplace(
                         queryConditionCacheHash(output->getHash(), reader_settings.query_condition_cache_settings_salt),
                         prewhere_info->prewhere_actions.getNames()[0]);
-                    /// The rows passing the PREWHERE steps are exactly the rows matching this condition, unless the
-                    /// steps do not filter or the read is restricted to some rows of the granules.
+                    /// The rows passing PREWHERE are exactly the rows matching it, unless it does not filter or only some rows are read.
                     write_prewhere_match_counts_to_query_condition_cache = reader_settings.query_condition_cache_write_match_counts
                         && prewhere_info->need_filter && !reader_settings.query_condition_cache_top_k_salt && !lazy_materializing_rows;
                     if (write_prewhere_match_counts_to_query_condition_cache)

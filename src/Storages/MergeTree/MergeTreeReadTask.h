@@ -206,7 +206,6 @@ public:
         MarkRanges unmatched_mark_ranges;
         MarkRanges query_condition_cache_attributable_marks;
         /// Pairs of (mark, number of its rows that passed PREWHERE) for the granules read completely.
-        /// Populated only when query_condition_cache_write_match_counts is enabled.
         std::vector<std::pair<size_t, size_t>> mark_match_counts;
         size_t row_count = 0;
         size_t num_read_rows = 0;
@@ -309,7 +308,6 @@ private:
     /// Tracks which mark ranges are not matched by PREWHERE (needed for query condition cache)
     MarkRanges prewhere_unmatched_marks;
     MarkRanges query_condition_cache_attributable_marks;
-    /// Exact number of rows that passed PREWHERE per completely read mark (needed for query condition cache)
     std::vector<std::pair<size_t, size_t>> prewhere_mark_match_counts;
 
     BlockSizeParams block_size_params;

@@ -334,8 +334,7 @@ size_t QueryConditionCache::CountsEntryWeight::operator()(const CountsEntry & en
 
 QueryConditionCache::QueryConditionCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)
     : cache(cache_policy, CurrentMetrics::QueryConditionCacheBytes, CurrentMetrics::QueryConditionCacheEntries, max_size_in_bytes, 0, size_ratio)
-    /// Always LRU: the size of `counts_cache` follows the free space of `cache`, which changes with every new entry of
-    /// `cache` and can be small, and LRU simply evicts the least recently used match counts to fit into it.
+    /// Always LRU: its size follows the free space of `cache`, which changes with every new entry of `cache`.
     , counts_cache("LRU", CurrentMetrics::QueryConditionCacheBytes, CurrentMetrics::QueryConditionCacheEntries, max_size_in_bytes, 0, size_ratio)
 {
 }
@@ -365,10 +364,7 @@ void QueryConditionCache::write(
 
     auto [entry, inserted] = cache.getOrSet(key, load_func);
 
-    /// The match counts only use the space the `MatchingMarks` leave free (see `counts_cache`), so a new entry takes its
-    /// space back from the least recently used match counts. Nothing to do (and no lock) if no match counts are cached:
-    /// match counts being cached concurrently are fitted into the free space again after their insertion (see
-    /// `writeMatchCounts`), which then accounts for this entry.
+    /// Take the space back from the match counts. Skipping it when none are cached is safe: `writeMatchCounts` refits after inserting.
     if (inserted && counts_cache.sizeInBytes() != 0)
     {
         std::lock_guard counts_size_lock(counts_size_mutex);
@@ -474,8 +470,6 @@ void QueryConditionCache::writeMatchCounts(
     bool inserted = false;
     if (!entry)
     {
-        /// The match counts only use the space the `MatchingMarks` leave free (see `counts_cache`). Counts that do not fit
-        /// into it are neither allocated nor cached: they would only evict the other match counts and then themselves.
         std::lock_guard counts_size_lock(counts_size_mutex);
         /// Match counts are inserted only here, under `counts_size_mutex`: another writer may have inserted them meanwhile.
         entry = counts_cache.get(key);
@@ -486,8 +480,7 @@ void QueryConditionCache::writeMatchCounts(
             auto new_entry = std::make_shared<CountsEntry>(marks_count);
             FailPointInjection::pauseFailPoint(FailPoints::query_condition_cache_pause_before_caching_match_counts);
             std::tie(entry, inserted) = counts_cache.getOrSet(key, [&] { return new_entry; });
-            /// A `MatchingMarks` entry inserted since the free space was computed may have found no match counts and then
-            /// not taken its space back (see `write`). It is visible now: fit the match counts into the free space again.
+            /// A `MatchingMarks` entry inserted meanwhile may have seen no match counts and skipped this (see `write`).
             fitMatchCountsIntoFreeSpace();
         }
     }
