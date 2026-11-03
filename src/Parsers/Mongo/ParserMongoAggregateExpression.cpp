@@ -504,7 +504,8 @@ ASTPtr makeComparison(std::string_view name, ASTPtr left, ASTPtr right)
   * `toDateTime64` reads a number as seconds - `{"$toDate": 1546300800000}` is 2019 in Mongo,
   * not the year 2282 - so a numeric argument goes through `fromUnixTimestamp64Milli` instead.
   * A literal carries its type here; any other argument dispatches on `toTypeName`, which the
-  * analyzer folds into a constant, so exactly one of the branches survives the analysis.
+  * analyzer folds into a constant, so exactly one of the branches survives the analysis - except
+  * for a `Dynamic`, which dispatches on the type of its value in each row.
   */
 ASTPtr makeToDate(ASTPtr argument)
 {
@@ -542,12 +543,18 @@ ASTPtr makeToDate(ASTPtr argument)
             makeLiteral(Field(String("UTC"))));
         /// `Nullable` and `LowCardinality` wrappers of a numeric type are numeric as well - the type
         /// name of an ordinary column such as `Nullable(Int64)` must not fall through to the branch
-        /// that reads a number as seconds.
+        /// that reads a number as seconds. A `Dynamic` - a field whose first value was `null` -
+        /// holds a number in one document and a string in another, so its type is the one of the
+        /// value in each row, see `makeRuntimeTypeName`; for any other type it is a constant.
         auto is_a_number = makeASTFunction(
             "match",
-            makeASTFunction("toTypeName", value->clone()),
+            makeRuntimeTypeName(value),
             makeLiteral(Field(String(R"(^(Nullable\(|LowCardinality\()*(U?Int|Float|Decimal))"))));
-        return makeASTFunction("if", std::move(is_a_number), std::move(milliseconds), parsed(value->clone()));
+        auto converted = makeASTFunction("if", std::move(is_a_number), std::move(milliseconds), parsed(value->clone()));
+        /// A conversion of a `Dynamic` is not `Nullable`, and converts a `null` to the epoch, while
+        /// `$toDate` of a `null` is `null`. For any other type the condition is true exactly when
+        /// the conversion is `NULL`, and a constant `false` for a type that is not `Nullable`.
+        return makeASTFunction("if", makeASTFunction("isNull", value->clone()), makeNull(), std::move(converted));
     });
 }
 
