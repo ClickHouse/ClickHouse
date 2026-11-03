@@ -134,6 +134,28 @@ class Validator:
                 f"Setting PROJECT_SLUG [{project_slug}] must be non-empty and contain only lowercase letters and digits (no '-', '_' or other separators)",
             )
 
+        # Repo-snapshot settings coherence.
+        _snap = bool(getattr(Settings, "ENABLE_S3_REPO_SNAPSHOT", False))
+        _merge = bool(getattr(Settings, "ENABLE_PR_EPHEMERAL_MERGE_COMMIT", False))
+        _sticky = float(getattr(Settings, "STICKY_MERGE_BASE_HOURS", 0) or 0)
+        # The ephemeral merge is distributed to jobs only via the S3 repo snapshot;
+        # there is no per-job merge-replay path, so it would be a silent no-op.
+        cls.evaluate_check_simple(
+            not _merge or _snap,
+            "Setting ENABLE_PR_EPHEMERAL_MERGE_COMMIT=True requires "
+            "ENABLE_S3_REPO_SNAPSHOT=True (the snapshot distributes the merge to jobs)",
+        )
+        # Sticky base only affects how the PR merge base is chosen.
+        cls.evaluate_check_simple(
+            _sticky <= 0 or _merge,
+            "Setting STICKY_MERGE_BASE_HOURS applies only to the ephemeral merge; "
+            "set ENABLE_PR_EPHEMERAL_MERGE_COMMIT=True or STICKY_MERGE_BASE_HOURS=0",
+        )
+        cls.evaluate_check_simple(
+            _sticky >= 0,
+            f"Setting STICKY_MERGE_BASE_HOURS must be >= 0 (got {_sticky})",
+        )
+
         # NOTE: disabled — this is deploy-time validation (infra project-name
         # uniqueness) and requires ./ci/infrastructure/projects.py to exist.
         # Pipeline/settings validation also runs on runners, whose checkout may

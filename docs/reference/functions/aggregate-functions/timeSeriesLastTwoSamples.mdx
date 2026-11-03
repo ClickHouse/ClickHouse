@@ -17,7 +17,7 @@ Aggregate function that takes time series data as pairs of timestamps and values
 The aggregated table stores only last 2 values for each aligned timestamp. This allows to calculate PromQL-like `irate` and `idelta` by reading much less data then is stored in the raw table.
 
 <Warning>
-This function is experimental, enable it by setting `allow_experimental_ts_to_grid_aggregate_function=true`.
+This function is in private preview, enable it by setting `enable_time_series_aggregate_functions=true`.
 </Warning>
     
 
@@ -41,7 +41,7 @@ Returns a pair of arrays of equal length from 0 to 2. The first array contains t
 **Example table for raw data, and a table for storing re-sampled data**
 
 ```sql title=Query
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 -- Table for raw data
 DROP TABLE IF EXISTS t_raw_timeseries;
 
@@ -119,7 +119,7 @@ ORDER BY metric_id, timestamp;
 **Query the last 2 sample for timestamps '2024-12-12 12:00:15' and '2024-12-12 12:00:30'**
 
 ```sql title=Query
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 -- Table for raw data
 DROP TABLE IF EXISTS t_raw_timeseries;
 
@@ -178,7 +178,7 @@ ORDER BY metric_id, grid_timestamp;
 **Calculate idelta and irate from the raw data**
 
 ```sql title=Query
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 -- Table for raw data
 DROP TABLE IF EXISTS t_raw_timeseries;
 
@@ -218,7 +218,7 @@ GROUP BY metric_id;
 **Calculate idelta and irate from the re-sampled data**
 
 ```sql title=Query
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 -- Table for raw data
 DROP TABLE IF EXISTS t_raw_timeseries;
 

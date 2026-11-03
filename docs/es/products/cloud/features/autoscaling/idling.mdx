@@ -1,29 +1,41 @@
 ---
 sidebarTitle: 'Inactividad automática'
 slug: /cloud/features/autoscaling/idling
-description: 'Inactividad automática e inactividad adaptativa en ClickHouse Cloud'
+description: 'Comprenda los costos de la inactividad automática, los retrasos de conexión y la inactividad adaptativa en ClickHouse Cloud'
 keywords: ['inactividad', 'inactividad automática', 'inactividad adaptativa', 'ahorro de costos', 'pausa']
 title: 'Inactividad automática'
 doc_type: 'guide'
 ---
 
-<div id="automatic-idling">
-  ## Inactividad automática
-</div>
+## Automatic idling {#automatic-idling}
 
-En la página de **Configuración**, también puedes elegir si quieres permitir la inactividad automática de tu servicio cuando permanezca inactivo durante un tiempo determinado (es decir, cuando el servicio no esté ejecutando ninguna consulta enviada por usuarios). La inactividad automática reduce el costo de tu servicio, ya que no se te facturan recursos de cómputo cuando el servicio está en pausa.
+La inactividad automática pausa un servicio de ClickHouse Cloud tras un periodo sin consultas enviadas por los usuarios, sujeto a las [condiciones de inactividad adaptativa](#adaptive-idling). Puede habilitar la inactividad automática y configurar la duración de la inactividad en la página **Settings** del servicio.
+
+## ¿Qué se factura mientras el servicio está en pausa? {#billing-while-paused}
+
+No se te facturan recursos de cómputo mientras el servicio está en pausa. El almacenamiento y los backups se siguen facturando; la inactividad no elimina tus datos almacenados. Consulta [precios](/es/products/cloud/reference/billing/billing-overview) para conocer los detalles de facturación.
 
 <Warning>
   **Configura la lista de acceso IP de tu servicio**
 
-  Cuando creas un servicio de ClickHouse Cloud, la configuración predeterminada de la lista de acceso IP es &#39;Allow from anywhere&#39;. Recomendamos encarecidamente restringir el acceso a direcciones IP o rangos específicos lo antes posible. Los servicios configurados con `Allow from anywhere` pueden pasar periódicamente de un estado inactivo a uno activo debido a rastreadores y escáneres de Internet que buscan IP públicas, lo que puede generar costos inesperados.
+  Cuando creas un servicio de ClickHouse Cloud, la configuración predeterminada de la lista de acceso IP es &#39;Allow from anywhere&#39;. Recomendamos encarecidamente restringir el acceso a direcciones IP o rangos específicos lo antes posible. Los servicios configurados con `Allow from anywhere` pueden pasar periódicamente de un estado de inactividad a uno activo debido a rastreadores y escáneres de Internet que buscan IP públicas, lo que puede generar costos inesperados.
 </Warning>
 
-<div id="adaptive-idling">
-  ### Inactividad adaptativa
-</div>
+## ¿Qué ocurre cuando un client se conecta a un servicio pausado? {#connecting-to-a-paused-service}
 
-ClickHouse Cloud implementa la inactividad adaptativa para evitar interrupciones y, al mismo tiempo, optimizar los costos. El sistema evalúa varias condiciones antes de que un servicio entre en inactividad. La inactividad adaptativa prevalece sobre la configuración de la duración de la inactividad cuando se cumple cualquiera de las condiciones que se indican a continuación:
+Un servicio pausado debe activarse antes de poder responder a las consultas. Las connections al servicio pueden agotar su tiempo de espera mientras está pausado. Las aplicaciones que utilizan la inactividad automática deben tolerar este retraso y gestionar los tiempos de espera de connection. Pruebe el comportamiento de tiempo de espera y retry de su client con un servicio idle antes de confiar en la inactividad automática en production.
+
+<Danger>
+  **Cuándo no conviene utilizar la inactividad automática**
+
+  La inactividad automática resulta adecuada para servicios que se utilizan con poca frecuencia y que pueden tolerar un retraso antes de responder a las consultas. No se recomienda para servicios que dan soporte a features de cara al cliente de uso frecuente. Desactive la inactividad automática si su aplicación no puede tolerar este retraso.
+</Danger>
+
+## ¿Cuándo puede un servicio entrar en inactividad? {#adaptive-idling}
+
+ClickHouse Cloud implementa la inactividad adaptativa para permitir que el mantenimiento en segundo plano finalice y para ajustar la duración de la inactividad en función del tiempo de inicialización del servidor. Estas condiciones controlan **cuándo un servicio activo puede pausarse**; las duraciones indicadas a continuación no son una predicción ni una garantía del tiempo que esperará un client al conectarse a un servicio pausado.
+
+La inactividad adaptativa prevalece sobre la duración de inactividad configurada en los siguientes casos:
 
 * Cuando el número de partes supera el umbral máximo de partes activas (predeterminado: 10.000), el servicio no entra en inactividad para que el mantenimiento en segundo plano pueda continuar
 * Cuando hay operaciones de merge en curso, el servicio no entra en inactividad hasta que esos merges finalicen, para evitar interrumpir la consolidación crítica de datos
@@ -33,12 +45,8 @@ ClickHouse Cloud implementa la inactividad adaptativa para evitar interrupciones
   * Si el tiempo de inicialización del servidor está entre 30 y 60 minutos, el tiempo de espera de inactividad se establece en 30 minutos.
   * Si el tiempo de inicialización del servidor es superior a 60 minutos, el tiempo de espera de inactividad se establece en 1 hora
 
+## ¿Qué trabajo en segundo plano se detiene mientras el servicio está en pausa? {#background-work-while-paused}
+
 <Note>
   El servicio puede entrar en un estado de inactividad en el que suspende las actualizaciones de las [vistas materializadas actualizables](/es/concepts/features/materialized-views/refreshable-materialized-view), el consumo de [S3Queue](/es/reference/engines/table-engines/integrations/s3queue) y la programación de nuevas operaciones de merge. Las operaciones de merge existentes se completarán antes de que el servicio pase al estado de inactividad. Para garantizar el funcionamiento continuo de las vistas materializadas actualizables y del consumo de S3Queue, deshabilite la funcionalidad de inactividad.
 </Note>
-
-<Danger>
-  **Cuándo no usar la inactividad automática**
-
-  Use la inactividad automática solo si su caso de uso puede tolerar una demora antes de poder responder a las consultas, porque cuando un servicio está en pausa, las conexiones al servicio agotarán el tiempo de espera. La inactividad automática es ideal para servicios que se usan con poca frecuencia y en los que se puede tolerar una demora. No se recomienda para servicios que sustentan funcionalidades orientadas al cliente y se usan con frecuencia.
-</Danger>

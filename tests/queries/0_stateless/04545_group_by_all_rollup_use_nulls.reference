@@ -1,0 +1,34 @@
+-- inner projection type --
+Nullable(UInt64)
+-- scalar subquery aggregates --
+2
+2
+2
+2
+-- deterministic key --
+-- top-level aggregate over the derived table --
+1.5
+7
+-- isNull on the super-aggregate row --
+1.5	0
+\N	1
+-- group by all matches explicit key --
+0	9
+1	12
+2	15
+\N	36
+----
+0	9
+1	12
+2	15
+\N	36
+-- correlated subquery over the key --
+0	0
+1	1
+2	2
+\N	\N
+----
+0	0
+1	1
+2	2
+\N	\N

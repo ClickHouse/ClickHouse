@@ -237,14 +237,15 @@ void PrometheusMetricsWriter::writeErrors(WriteBuffer & wb) const
 {
     size_t total_count = 0;
 
-    for (size_t i = 0, end = ErrorCodes::end(); i < end; ++i)
+    for (const auto code : ErrorCodes::getCodes())
     {
-        const auto & error = ErrorCodes::values[i].get();
-        std::string_view name = ErrorCodes::getName(static_cast<ErrorCodes::ErrorCode>(i));
+        std::string_view name = ErrorCodes::getName(code);
 
+        /// Custom error codes have no name, and are not exported.
         if (name.empty())
             continue;
 
+        const auto & error = ErrorCodes::values[code].get();
         std::string key{error_metrics_prefix + toString(name)};
         std::string help = fmt::format("The number of {} errors since last server restart", name);
 

@@ -1,8 +1,10 @@
 #include <filesystem>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
+#include <Compression/CompressionFactory.h>
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperCommon.h>
 #include <Coordination/KeeperConstants.h>
@@ -12,7 +14,6 @@
 #include <Coordination/ReadBufferFromNuraftBuffer.h>
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
 #include <Core/Field.h>
-#include <Common/thread_local_rng.h>
 #include <Disks/IDisk.h>
 #include <IO/CompressionMethod.h>
 #include <IO/ReadBufferFromFile.h>
@@ -21,12 +22,13 @@
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <base/sort.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
-#include <Common/ZooKeeper/ZooKeeperIO.h>
-#include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/Stopwatch.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/ZooKeeper/ZooKeeperIO.h>
+#include <Common/logger_useful.h>
+#include <Common/thread_local_rng.h>
 
 #include <zstd.h>
 
@@ -65,13 +67,28 @@ namespace
         return static_cast<int>(level);
     }
 
-    std::string getSnapshotFileName(uint64_t up_to_log_idx, bool compress_zstd)
+    std::string getSnapshotFileName(uint64_t up_to_log_idx, bool compress_zstd, uint64_t recovery_generation = 0)
     {
         /// Unique-from-birth name avoids collisions between concurrent same-index writes.
-        auto base = fmt::format("snapshot_{}_{:016x}.bin", up_to_log_idx, thread_local_rng());
+        auto base = recovery_generation
+            ? fmt::format("snapshot_{}_recovered_{}_{:016x}.bin", up_to_log_idx, recovery_generation, thread_local_rng())
+            : fmt::format("snapshot_{}_{:016x}.bin", up_to_log_idx, thread_local_rng());
         if (compress_zstd)
             base += ".zstd";
         return base;
+    }
+
+    uint64_t getSnapshotRecoveryGeneration(const std::string & path)
+    {
+        const auto name = fs::path(path).filename().string();
+        const auto index_end = name.find('_', std::string_view("snapshot_").size());
+        constexpr std::string_view recovered_prefix = "_recovered_";
+        if (index_end == std::string::npos || !std::string_view(name).substr(index_end).starts_with(recovered_prefix))
+            return 0;
+
+        const auto generation_begin = index_end + recovered_prefix.size();
+        const auto generation_end = name.find('_', generation_begin);
+        return parse<uint64_t>(name.substr(generation_begin, generation_end - generation_begin));
     }
 
     void cancelAndResetWriteBuffer(std::unique_ptr<WriteBuffer> & buffer)
@@ -123,10 +140,12 @@ namespace
     /// A file fsync does not persist a directory-entry change, so the marker unlink needs the
     /// directory fsynced too, with the fd opened before the unlink. Snapshots live at the disk
     /// root; getDirectorySyncGuard("") returns nullptr (no-op) on non-local disks.
-    void removeSnapshotMarker(const DiskPtr & disk, const std::string & tmp_snapshot_file_name)
+    void removeSnapshotMarker(const DiskPtr & disk, const std::string & tmp_snapshot_file_name, bool checked_directory_sync = false)
     {
         SyncGuardPtr dir_sync_guard = disk->getDirectorySyncGuard("");
         disk->removeFile(tmp_snapshot_file_name);
+        if (checked_directory_sync && dir_sync_guard)
+            dir_sync_guard->sync();
     }
 
     void writeNode(std::string_view data, const KeeperNodeStats & stats, SnapshotVersion version, WriteBuffer & out)
@@ -433,8 +452,17 @@ KeeperSnapshotManager::KeeperSnapshotManager(
 
             LOG_TRACE(log, "Found {} on {}", snapshot_file, disk->getName());
             size_t snapshot_up_to = getLogIdxFromSnapshotPath(snapshot_file);
-            if (existing_snapshots.contains(snapshot_up_to))
+            if (auto registered = existing_snapshots.find(snapshot_up_to); registered != existing_snapshots.end())
             {
+                /// A completed recovery is authoritative for this index, even if archiving its old
+                /// copies was interrupted. A later recovery of that file has a higher generation.
+                if (getSnapshotRecoveryGeneration(snapshot_file) > getSnapshotRecoveryGeneration(registered->second->path))
+                {
+                    duplicate_snapshot_files.push_back(
+                        DuplicateSnapshotFile{registered->second->disk, registered->second->path, snapshot_up_to});
+                    registered->second = makeManagedSnapshotFileInfo(snapshot_file, disk, snapshot_up_to);
+                    continue;
+                }
                 /// Equivalent snapshots for the same committed index (upgrade races, crashed loser
                 /// cleanup, interrupted moves). First-scanned copy stays registered; the duplicate
                 /// is handled after the scan.
@@ -476,6 +504,12 @@ KeeperSnapshotManager::KeeperSnapshotManager(
     for (auto & duplicate : duplicate_snapshot_files)
     {
         const auto & registered = existing_snapshots.at(duplicate.up_to_log_idx);
+        if (getSnapshotRecoveryGeneration(registered->path) > getSnapshotRecoveryGeneration(duplicate.path))
+        {
+            /// Finish an interrupted recovery before ordinary maintenance can move or retire files.
+            archiveSnapshotFile(makeManagedSnapshotFileInfo(duplicate.path, duplicate.disk, duplicate.up_to_log_idx));
+            continue;
+        }
         if (!oldest_retained_idx || duplicate.up_to_log_idx < *oldest_retained_idx)
         {
             LOG_WARNING(
@@ -713,7 +747,9 @@ nuraft::ptr<nuraft::buffer> KeeperSnapshotManager::serializeSnapshotToBuffer(con
         compressed_writer = wrapWriteBufferWithCompressionMethod(
             std::move(writer), CompressionMethod::Zstd, snapshot_zstd_compression_level);
     else
-        compressed_writer = std::make_unique<CompressedWriteBuffer>(*writer);
+        /// Pin `LZ4` explicitly: this is the legacy custom-frame snapshot format, so it must stay `LZ4`
+        /// independently of the server's default compression codec.
+        compressed_writer = std::make_unique<CompressedWriteBuffer>(*writer, CompressionCodecFactory::instance().get("LZ4", {}));
 
     KeeperStorageSnapshot::serialize(snapshot, *compressed_writer, keeper_context);
     compressed_writer->finalize();
@@ -745,14 +781,18 @@ std::unique_ptr<KeeperSnapshotReader> KeeperSnapshotManager::makeSnapshotReader(
     return std::make_unique<KeeperSnapshotReader>(std::move(in), keeper_context);
 }
 
-SnapshotDeserializationResult KeeperSnapshotManager::deserializeSnapshotFromBuffer(nuraft::ptr<nuraft::buffer> buffer, KeeperStorage & storage) const
+SnapshotDeserializationResult KeeperSnapshotManager::deserializeSnapshotFromBuffer(
+    nuraft::ptr<nuraft::buffer> buffer, KeeperStorage & storage, bool allow_orphaned_nodes_removal) const
 {
     auto reader = makeSnapshotReader(buffer);
+    reader->allow_orphaned_nodes_removal = allow_orphaned_nodes_removal;
     storage.loadFromSnapshot(*reader);
 
     SnapshotDeserializationResult result;
     result.snapshot_meta = reader->snapshot_meta;
     result.cluster_config = reader->cluster_config;
+    result.removed_orphan_subtree_roots = std::move(reader->removed_orphan_subtree_roots);
+    result.removed_orphan_ephemeral_sessions = std::move(reader->removed_orphan_ephemeral_sessions);
     return result;
 }
 
@@ -771,7 +811,11 @@ SnapshotDeserializationResult KeeperSnapshotManager::restoreFromLatestSnapshot(K
     auto buffer = deserializeLatestSnapshotBufferFromDisk();
     if (!buffer)
         return {};
-    return deserializeSnapshotFromBuffer(buffer, storage);
+    /// Orphaned-nodes removal is deliberately NOT allowed here. `KeeperStateMachine::init` is the only
+    /// caller that removes orphans, because it is the only one whose caller (`KeeperServer::startup`)
+    /// afterwards verifies that no local log entry above the snapshot references the removed nodes.
+    /// Pruning from here would skip that verification and could silently diverge this replica.
+    return deserializeSnapshotFromBuffer(buffer, storage, /*allow_orphaned_nodes_removal=*/ false);
 }
 
 DiskPtr KeeperSnapshotManager::getDisk() const
@@ -902,11 +946,16 @@ void KeeperSnapshotManager::removeSnapshot(uint64_t log_idx)
 
 SnapshotFileInfoPtr KeeperSnapshotManager::writeSnapshotFile(const KeeperStorageSnapshot & snapshot)
 {
+    return writeSnapshotFile(
+        snapshot, getLatestSnapshotDisk(), getSnapshotFileName(snapshot.snapshot_meta->get_last_log_idx(), compress_snapshots_zstd));
+}
+
+SnapshotFileInfoPtr KeeperSnapshotManager::writeSnapshotFile(
+    const KeeperStorageSnapshot & snapshot, const DiskPtr & disk, const std::string & snapshot_file_name, bool checked_directory_sync)
+{
     auto up_to_log_idx = snapshot.snapshot_meta->get_last_log_idx();
-    auto snapshot_file_name = getSnapshotFileName(up_to_log_idx, compress_snapshots_zstd);
     auto tmp_snapshot_file_name = "tmp_" + snapshot_file_name;
 
-    auto disk = getLatestSnapshotDisk();
     std::unique_ptr<WriteBuffer> writer;
     std::unique_ptr<WriteBuffer> compressed_writer;
     try
@@ -914,8 +963,15 @@ SnapshotFileInfoPtr KeeperSnapshotManager::writeSnapshotFile(const KeeperStorage
         /// Create empty marker: if both tmp_<name> and <name> exist on restart, the snapshot
         /// is treated as incomplete and both are removed (see KeeperSnapshotManager constructor).
         {
+            auto dir_sync_guard = checked_directory_sync ? disk->getDirectorySyncGuard("") : nullptr;
             auto buf = disk->writeFile(tmp_snapshot_file_name);
             buf->finalize();
+            if (checked_directory_sync)
+            {
+                buf->sync();
+                if (dir_sync_guard)
+                    dir_sync_guard->sync();
+            }
         }
 
         writer = disk->writeFile(snapshot_file_name);
@@ -929,7 +985,9 @@ SnapshotFileInfoPtr KeeperSnapshotManager::writeSnapshotFile(const KeeperStorage
         else
         {
             unowned_file_buffer = writer.get();
-            compressed_writer = std::make_unique<CompressedWriteBuffer>(*writer);
+            /// Pin `LZ4` explicitly: this is the legacy custom-frame snapshot format, so it must stay `LZ4`
+            /// independently of the server's default compression codec.
+            compressed_writer = std::make_unique<CompressedWriteBuffer>(*writer, CompressionCodecFactory::instance().get("LZ4", {}));
         }
 
         const size_t bytes_before = compressed_writer->count();
@@ -949,7 +1007,7 @@ SnapshotFileInfoPtr KeeperSnapshotManager::writeSnapshotFile(const KeeperStorage
 
         compressed_writer.reset();
         writer.reset();
-        removeSnapshotMarker(disk, tmp_snapshot_file_name);
+        removeSnapshotMarker(disk, tmp_snapshot_file_name, checked_directory_sync);
     }
     catch (...)
     {
@@ -960,6 +1018,71 @@ SnapshotFileInfoPtr KeeperSnapshotManager::writeSnapshotFile(const KeeperStorage
     }
 
     return makeManagedSnapshotFileInfo(snapshot_file_name, disk, up_to_log_idx);
+}
+
+SnapshotFileInfoPtr KeeperSnapshotManager::rewriteSnapshotAfterRecovery(const KeeperStorageSnapshot & snapshot)
+{
+    if (keeper_context->getServerState() != KeeperContext::Phase::INIT)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Snapshot recovery is only allowed during startup");
+
+    const auto log_idx = snapshot.snapshot_meta->get_last_log_idx();
+    auto original = existing_snapshots.at(log_idx);
+    const auto generation = getSnapshotRecoveryGeneration(original->path);
+    if (generation == std::numeric_limits<uint64_t>::max())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Snapshot recovery generation overflow for index {}", log_idx);
+
+    /// Never replace an existing file: plain object storage cannot rename, and replacement on
+    /// other object disks can unlink the destination before installing the source. The marker
+    /// protects an incomplete write; removing it commits the higher recovery generation on disk.
+    auto repaired = writeSnapshotFile(
+        snapshot,
+        getLatestSnapshotDisk(),
+        getSnapshotFileName(log_idx, compress_snapshots_zstd, generation + 1),
+        /*checked_directory_sync=*/true);
+
+    /// From this point the repaired file must survive any subsequent failure. Restart will prefer
+    /// it and finish archiving old copies, so never retire it as an unpublished write.
+    auto & old_copies = retained_duplicate_snapshots[log_idx];
+    old_copies.push_back(original);
+    existing_snapshots.at(log_idx) = repaired;
+    while (!old_copies.empty())
+    {
+        archiveSnapshotFile(old_copies.back());
+        old_copies.pop_back();
+    }
+    retained_duplicate_snapshots.erase(log_idx);
+    LOG_WARNING(log, "Persisted recovered snapshot {} at {} on disk {}", log_idx, repaired->path, repaired->disk->getName());
+    return repaired;
+}
+
+void KeeperSnapshotManager::archiveSnapshotFile(const SnapshotFileInfoPtr & file_info)
+{
+    const auto & disk = file_info->disk;
+    if (!file_info->path.starts_with("orphaned_"))
+    {
+        auto backup_path = "orphaned_" + file_info->path;
+        {
+            auto dir_sync_guard = disk->getDirectorySyncGuard("");
+            auto reader = disk->readFile(file_info->path, getReadSettings());
+            auto writer = disk->writeFile(backup_path);
+            copyData(*reader, *writer);
+            writer->finalize();
+            writer->sync();
+            if (dir_sync_guard)
+                dir_sync_guard->sync();
+        }
+
+        auto dir_sync_guard = disk->getDirectorySyncGuard("");
+        disk->removeFile(file_info->path);
+        /// A failed directory sync can be retried without trying to read an already removed file.
+        file_info->path.swap(backup_path);
+        LOG_WARNING(
+            log, "Removed superseded snapshot {} after preserving it at {} on disk {}", backup_path, file_info->path, disk->getName());
+        if (dir_sync_guard)
+            dir_sync_guard->sync();
+    }
+    else if (auto dir_sync_guard = disk->getDirectorySyncGuard(""))
+        dir_sync_guard->sync();
 }
 
 SnapshotFileInfoPtr KeeperSnapshotManager::serializeSnapshotToDisk(const KeeperStorageSnapshot & snapshot)

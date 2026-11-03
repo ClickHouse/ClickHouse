@@ -6,30 +6,18 @@ doc_type: 'guide'
 keywords: ['ClickStack', '可观测性', 'aws-lambda', 'lambda-layers']
 ---
 
-**本指南支持以下集成：**
+import { ClickStackIntegrates } from '/snippets/zh/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
 
-<table>
-  <tbody>
-    <tr>
-      <td className="pe-2">✅ 日志</td>
-      <td className="pe-2">✅ 指标</td>
-      <td className="pe-2">✅ 链路追踪</td>
-    </tr>
-  </tbody>
-</table>
+<ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
 
-<div id="installing-the-otel-lambda-layers">
-  ## 安装 OpenTelemetry Lambda layer
-</div>
+## 安装 OpenTelemetry Lambda layer {#installing-the-otel-lambda-layers}
 
 OpenTelemetry 项目提供了独立的 Lambda layer，分别用于：
 
 1. 使用 OpenTelemetry 自动插桩功能，自动为 Lambda 函数代码添加插桩。
 2. 将采集到的日志、指标和链路追踪转发到 ClickStack。
 
-<div id="adding-language-specific-auto-instrumentation">
-  ### 添加特定语言的自动插桩 layer
-</div>
+### 添加特定语言的自动插桩 layer {#adding-language-specific-auto-instrumentation}
 
 特定语言的自动插桩 Lambda layer 会使用适用于相应语言的 OpenTelemetry 自动插桩包，自动为你的 Lambda 函数代码启用插桩。
 
@@ -110,11 +98,9 @@ OpenTelemetry 项目提供了独立的 Lambda layer，分别用于：
   </Tab>
 </Tabs>
 
-<div id="installing-the-otel-collector-layer">
-  ### 安装 OpenTelemetry collector Lambda layer
-</div>
+### 安装 OpenTelemetry collector Lambda layer {#installing-the-otel-collector-layer}
 
-collector Lambda layer 可让你将 Lambda function 的日志、指标和链路追踪转发到 ClickStack，且不会因 exporter 延迟而影响响应时间。
+collector Lambda layer 可让你将 Lambda 函数 的日志、指标和链路追踪转发到 ClickStack，且不会因 exporter 延迟而影响响应时间。
 
 **安装 collector layer**：
 
@@ -155,7 +141,7 @@ collector Lambda layer 可让你将 Lambda function 的日志、指标和链路�
 
     exporters:
       otlphttp:
-        endpoint: "<YOU_OTEL_COLLECTOR_HTTP_ENDPOINT>"
+        endpoint: "<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>"
         compression: gzip
 
     service:
@@ -192,7 +178,7 @@ collector Lambda layer 可让你将 Lambda function 的日志、指标和链路�
 
     exporters:
       otlphttp:
-        endpoint: "<YOU_OTEL_COLLECTOR_HTTP_ENDPOINT>"
+        endpoint: "<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>"
         headers:
           authorization: <YOUR_INGESTION_API_KEY>
         compression: gzip
@@ -221,39 +207,29 @@ collector Lambda layer 可让你将 Lambda function 的日志、指标和链路�
 OPENTELEMETRY_COLLECTOR_CONFIG_FILE=/var/task/collector.yaml
 ```
 
-<div id="checking-the-installation">
-  ## 检查安装
-</div>
+## 检查安装 {#checking-the-installation}
 
 部署这些 layer 后，你现在应该能在 HyperDX 中看到从 Lambda 函数自动收集到的链路追踪。`decouple` 和 `batching`
 处理器可能会导致可观测数据收集出现延迟，因此链路追踪可能不会立即显示。若要发送自定义日志或指标，你需要使用特定语言的
 OpenTelemetry SDK 为代码添加埋点。
 
-<div id="troubleshoting">
-  ## 故障排查
-</div>
+## 故障排查 {#troubleshoting}
 
-<div id="custom-instrumentation-not-sending">
-  ### 自定义插桩未发送
-</div>
+### 自定义插桩未发送 {#custom-instrumentation-not-sending}
 
 如果你看不到手动定义的 链路追踪 或其他遥测数据，可能是因为你使用了与 OpenTelemetry API 包不兼容的版本。请确保你的
 OpenTelemetry API 包版本至少与 AWS Lambda 中包含的版本相同或更低。
 
-<div id="enabling-sdk-debug-logs">
-  ### 启用 SDK 调试日志
-</div>
+### 启用 SDK 调试日志 {#enabling-sdk-debug-logs}
 
 将 `OTEL_LOG_LEVEL` 环境变量设置为 `DEBUG`，以启用
 OpenTelemetry SDK 的调试日志。这有助于确保自动插桩 layer
 已正确对您的应用程序进行插桩。
 
-<div id="enabling-collector-debug-logs">
-  ### 启用 collector 调试日志
-</div>
+### 启用 collector 调试日志 {#enabling-collector-debug-logs}
 
 要排查 collector 问题，可以修改 collector
-配置文件，添加 `logging` exporter，并将 telemetry 的
+配置文件，添加 `logging` exporter，并将 遥测数据 的
 日志级别设置为 `debug`，以启用 collector Lambda layer 的更详细日志。
 
 <Tabs>
@@ -272,7 +248,7 @@ OpenTelemetry SDK 的调试日志。这有助于确保自动插桩 layer
       logging:
         verbosity: detailed
       otlphttp:
-        endpoint: "<YOU_OTEL_COLLECTOR_HTTP_ENDPOINT>"
+        endpoint: "<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>"
         compression: gzip
 
     service:
@@ -310,7 +286,7 @@ OpenTelemetry SDK 的调试日志。这有助于确保自动插桩 layer
       logging:
         verbosity: detailed
       otlphttp:
-        endpoint: "<YOU_OTEL_COLLECTOR_HTTP_ENDPOINT>"
+        endpoint: "<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>"
         headers:
           authorization: <YOUR_INGESTION_API_KEY>
         compression: gzip

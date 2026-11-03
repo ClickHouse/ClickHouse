@@ -1,4 +1,5 @@
 #include <string_view>
+#include <Databases/DataLake/DataLakeConstants.h>
 #include "config.h"
 
 #include <Core/Settings.h>
@@ -10,6 +11,8 @@
 #include <Parsers/ASTSetQuery.h>
 
 #include <TableFunctions/TableFunctionFactory.h>
+#include <Storages/ObjectStorage/Azure/AzureSecretArguments.h>
+#include <Storages/ObjectStorage/S3/S3SecretArguments.h>
 #include <TableFunctions/TableFunctionObjectStorage.h>
 #include <TableFunctions/TableFunctionObjectStorageCluster.h>
 #include <TableFunctions/registerTableFunctions.h>
@@ -35,7 +38,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
-    extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
 }
@@ -196,6 +198,7 @@ ColumnsDescription TableFunctionObjectStorage<
 {
     if (configuration->structure == "auto")
     {
+        configuration->check(context);
         auto storage = getObjectStorage(context, !is_insert_query);
         configuration->lazyInitializeIfNeeded(object_storage, context);
 
@@ -248,15 +251,12 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
     /// Only use parallel replicas if the Cluster variant of this table function exists
     /// (e.g. `s3Cluster` for `s3`). Table functions without a Cluster variant (e.g. `paimonLocal`)
     /// cannot distribute work via task iterators, so distributing would just read all data on every replica.
-    const auto can_use_parallel_replicas = !parallel_replicas_cluster_name.empty()
-        && query_settings[Setting::parallel_replicas_for_cluster_engines]
-        && context->canUseTaskBasedParallelReplicas()
-        && !context->isDistributed()
+    const auto can_use_parallel_replicas = context->canReplaceClusterEngineWithClusterVariant()
         && TableFunctionFactory::instance().isTableFunctionName(String(name) + "Cluster");
 
     const auto is_secondary_query = context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
 
-    if (can_use_parallel_replicas && !is_secondary_query && !is_insert_query)
+    if (can_use_parallel_replicas && !is_secondary_query && !is_insert_query && !context->isSQLSecurityOverriddenBody())
     {
         storage = std::make_shared<StorageObjectStorageCluster>(
             parallel_replicas_cluster_name,
@@ -273,25 +273,15 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
         return storage;
     }
 
-    std::string disk_name;
-    if constexpr (is_data_lake)
-    {
-        disk_name = settings && (*settings)[DataLakeStorageSetting::disk].changed
-            ? (*settings)[DataLakeStorageSetting::disk].value
-            : "";
-    }
-
-    ObjectStoragePtr current_object_storage;
-    if (configuration->isDataLakeConfiguration() && !disk_name.empty())
-        current_object_storage = context->getDisk(disk_name)->getObjectStorage();
-    else
-        current_object_storage = getObjectStorage(context, !is_insert_query);
-
+    /// For a data-lake function with `SETTINGS disk = '...'` this returns the table's private copy of the
+    /// disk's object storage (see `DataLakeConfiguration::fromDisk`), never the disk's own storage: the
+    /// settings update in `lazyInitializeIfNeeded` must not touch the disk.
+    ///
     /// Note: distributed_processing is always false for non-cluster table functions (s3, azure, etc.).
     /// Cluster table functions (s3Cluster, etc.) handle distributed processing in their own getStorage() method.
     storage = std::make_shared<StorageObjectStorage>(
         configuration,
-        current_object_storage,
+        getObjectStorage(context, !is_insert_query),
         context,
         StorageID(getDatabaseName(), table_name),
         columns,
@@ -734,11 +724,11 @@ When reading Avro files that contain **nested records** which diverge across fil
 
 > The number of leaves in record doesn't match the number of elements in tuple...
 
-This happens because ClickHouse expects all nested record structures to match the same schema.  
+This happens because ClickHouse expects all nested record structures to match the same schema.
 To handle this scenario, you can:
 
-- Use `schema_inference_mode='union'` to merge different nested record schemas, or  
-- Manually align your nested structures and enable  
+- Use `schema_inference_mode='union'` to merge different nested record schemas, or
+- Manually align your nested structures and enable
   `use_structure_from_insertion_table_in_table_functions=1`.
 
 <Info>
@@ -762,6 +752,7 @@ SETTINGS schema_inference_mode='union';
 - [S3 engine](/reference/engines/table-engines/integrations/s3)
 - [Integrating S3 with ClickHouse](/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse)
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
+        s3TableFunctionSecretArguments(false),
         {.allow_readonly = false}
     );
 
@@ -783,7 +774,7 @@ gcs(named_collection[, option=value [,..]])
 <Tip>
 **GCS**
 
-The GCS Table Function integrates with Google Cloud Storage by using the GCS XML API and HMAC keys. 
+The GCS Table Function integrates with Google Cloud Storage by using the GCS XML API and HMAC keys.
 See the [Google interoperability docs](https://cloud.google.com/storage/docs/interoperability) for more details about the endpoint and HMAC.
 </Tip>
 
@@ -980,6 +971,7 @@ As a result, the data is written into three files in different buckets: `my_buck
 - [S3 table function](/reference/functions/table-functions/s3)
 - [S3 engine](/reference/engines/table-engines/integrations/s3)
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
+        s3TableFunctionSecretArguments(false),
         {.allow_readonly = false}
     );
 
@@ -989,6 +981,7 @@ As a result, the data is written into three files in different buckets: `my_buck
             .syntax = "cosn(url, access_key_id, secret_access_key)",
             .category = FunctionDocumentation::Category::TableFunction
         },
+        s3TableFunctionSecretArguments(false),
         {.allow_readonly = false}
     );
 
@@ -998,6 +991,7 @@ As a result, the data is written into three files in different buckets: `my_buck
             .syntax = "oss(url, access_key_id, secret_access_key)",
             .category = FunctionDocumentation::Category::TableFunction
         },
+        s3TableFunctionSecretArguments(false),
         {.allow_readonly = false}
     );
 #endif
@@ -1274,6 +1268,7 @@ FROM azureBlobStorage('https://clickhousedocstest.blob.core.windows.net/?sp=r&st
 ## Related {#related}
 - [AzureBlobStorage Table Engine](/reference/engines/table-engines/integrations/azureBlobStorage)
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
+        azureTableFunctionSecretArguments(false),
         {.allow_readonly = false}
     );
 #endif
@@ -1327,7 +1322,7 @@ Paths may use globbing. Files must match the whole path pattern, not only the su
 - `*` — Represents arbitrarily many characters except `/` but including the empty string.
 - `**` — Represents all files inside a folder recursively.
 - `?` — Represents an arbitrary single character.
-- `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`. The strings can contain the `/` symbol.
+- `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`. The strings can contain the `/` symbol. Each string can itself contain the `*` and `?` wildcards, so `{csv,csv.*}` matches both `.csv` and `.csv.gz`.
 - `{N..M}` — Represents any number `>= N` and `<= M`.
 
 Constructions with `{}` are similar to the [remote](/reference/functions/table-functions/remote) and [file](/reference/functions/table-functions/file) table functions.
@@ -1403,6 +1398,7 @@ SELECT * FROM HDFS('hdfs://hdfs1:9000/data/path/date=*/country=*/code=*/*.parque
 
 - [Virtual columns](/reference/engines/table-engines/index#table_engines-virtual_columns)
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
+        SecretArgumentsSpec{},
         {.allow_readonly = false}
     );
 #endif
@@ -1512,7 +1508,7 @@ SELECT * FROM icebergS3('http://test.s3.amazonaws.com/clickhouse-bucket/test_tab
 ```
 
 <Warning>
-ClickHouse supports reading v1 and v2 of the Iceberg format via the `icebergS3`, `icebergAzure`, `icebergHDFS` and `icebergLocal` table functions and `IcebergS3`, `IcebergAzure`, `IcebergHDFS` and `IcebergLocal` table engines. Support for v3 is partial; deletion vectors and manifest compaction aren't supported.
+ClickHouse supports reading v1 and v2 of the Iceberg format via the `icebergS3`, `icebergAzure`, `icebergHDFS` and `icebergLocal` table functions and `IcebergS3`, `IcebergAzure`, `IcebergHDFS` and `IcebergLocal` table engines. Support for v3 is partial: deletion vector reads are supported; manifest compaction isn't supported.
 </Warning>
 
 ## Defining a named collection {#defining-a-named-collection}
@@ -1560,7 +1556,7 @@ ENGINE = IcebergS3(
 
 Or, using AWS Glue Data Catalog with S3:
 ```sql
-CREATE TABLE `my_database.my_table`  
+CREATE TABLE `my_database.my_table`
 ENGINE = IcebergS3(
   's3://my-data-bucket/warehouse/my_database/my_table/',
   'aws_access_key',
@@ -1590,18 +1586,17 @@ ClickHouse supports time travel for Iceberg tables, allowing you to query histor
 
 ClickHouse supports Iceberg tables with [position deletes](https://iceberg.apache.org/spec/#position-delete-files) and [equality deletes](https://iceberg.apache.org/spec/#equality-delete-files). Equality deletes are supported from v25.8.
 
-The following deletion method is **not supported**:
-- [Deletion vectors](https://iceberg.apache.org/spec/#deletion-vectors) (introduced in v3)
+ClickHouse also supports reading [deletion vectors](https://iceberg.apache.org/spec/#deletion-vectors) (introduced in v3). This support is read-only: ClickHouse does not write, update, or compact deletion vectors, and `ALTER TABLE ... DELETE` and `ALTER TABLE ... UPDATE` are not supported for Iceberg format-version 3 tables.
 
 ### Basic usage {#basic-usage}
 
  ```sql
- SELECT * FROM example_table ORDER BY 1 
+ SELECT * FROM example_table ORDER BY 1
  SETTINGS iceberg_timestamp_ms = 1714636800000
  ```
 
  ```sql
- SELECT * FROM example_table ORDER BY 1 
+ SELECT * FROM example_table ORDER BY 1
  SETTINGS iceberg_snapshot_id = 3547395809148285433
  ```
 
@@ -1626,37 +1621,30 @@ Consider this sequence of operations:
  ```sql
  -- Create a table with two columns
   CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example (
-  order_number bigint, 
+  order_number bigint,
   product_code string
-  ) 
-  USING iceberg 
-  OPTIONS ('format-version'='2')
+)
+USING iceberg
+OPTIONS ('format-version'='2')
 
-- - Insert data into the table
-  INSERT INTO spark_catalog.db.time_travel_example VALUES 
+-- Insert data into the table
+INSERT INTO spark_catalog.db.time_travel_example VALUES
     (1, 'Mars')
 
   ts1 = now() // A piece of pseudo code
 
-- - Alter table to add a new column
-  ALTER TABLE spark_catalog.db.time_travel_example ADD COLUMN (price double)
- 
+-- Alter table to add a new column
+ALTER TABLE spark_catalog.db.time_travel_example ADD COLUMN (price double)
+
   ts2 = now()
 
-- - Insert data into the table
-  INSERT INTO spark_catalog.db.time_travel_example VALUES (2, 'Venus', 100)
+-- Insert data into the table
+INSERT INTO spark_catalog.db.time_travel_example VALUES (2, 'Venus', 100)
 
-   ts3 = now()
+  ts3 = now()
 
-- - Query the table at each timestamp
-  SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts1;
-
-+------------+------------+
-|order_number|product_code|
-+------------+------------+
-|           1|        Mars|
-+------------+------------+
-  SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts2;
+-- Query the table at each timestamp
+SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts1;
 
 +------------+------------+
 |order_number|product_code|
@@ -1664,7 +1652,15 @@ Consider this sequence of operations:
 |           1|        Mars|
 +------------+------------+
 
-  SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts3;
+SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts2;
+
++------------+------------+
+|order_number|product_code|
++------------+------------+
+|           1|        Mars|
++------------+------------+
+
+SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts3;
 
 +------------+------------+-----+
 |order_number|product_code|price|
@@ -1686,23 +1682,23 @@ A time travel query at a current moment might show a different schema than the c
 ```sql
 -- Create a table
   CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example_2 (
-  order_number bigint, 
+  order_number bigint,
   product_code string
-  ) 
-  USING iceberg 
-  OPTIONS ('format-version'='2')
+)
+USING iceberg
+OPTIONS ('format-version'='2')
 
 -- Insert initial data into the table
-  INSERT INTO spark_catalog.db.time_travel_example_2 VALUES (2, 'Venus');
+INSERT INTO spark_catalog.db.time_travel_example_2 VALUES (2, 'Venus');
 
 -- Alter table to add a new column
-  ALTER TABLE spark_catalog.db.time_travel_example_2 ADD COLUMN (price double);
+ALTER TABLE spark_catalog.db.time_travel_example_2 ADD COLUMN (price double);
 
   ts = now();
 
 -- Query the table at a current moment but using timestamp syntax
 
-  SELECT * FROM spark_catalog.db.time_travel_example_2 TIMESTAMP AS OF ts;
+SELECT * FROM spark_catalog.db.time_travel_example_2 TIMESTAMP AS OF ts;
 
     +------------+------------+
     |order_number|product_code|
@@ -1711,8 +1707,10 @@ A time travel query at a current moment might show a different schema than the c
     +------------+------------+
 
 -- Query the table at a current moment
-  SELECT * FROM spark_catalog.db.time_travel_example_2;
-    +------------+------------+-----+
+
+SELECT * FROM spark_catalog.db.time_travel_example_2;
+
++------------+------------+-----+
     |order_number|product_code|price|
     +------------+------------+-----+
     |           2|       Venus| NULL|
@@ -1728,16 +1726,16 @@ The second one is that while doing time travel you can't get state of table befo
 ```sql
 -- Create a table
   CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example_3 (
-  order_number bigint, 
+  order_number bigint,
   product_code string
-  ) 
-  USING iceberg 
-  OPTIONS ('format-version'='2');
+)
+USING iceberg
+OPTIONS ('format-version'='2');x
 
   ts = now();
 
 -- Query the table at a specific timestamp
-  SELECT * FROM spark_catalog.db.time_travel_example_3 TIMESTAMP AS OF ts; -- Finises with error: Cannot find a snapshot older than ts.
+SELECT * FROM spark_catalog.db.time_travel_example_3 TIMESTAMP AS OF ts; -- Finishes with error: Cannot find a snapshot older than ts.
 ```
 
 In ClickHouse the behavior is consistent with Spark. You can mentally replace Spark Select queries with ClickHouse Select queries and it will work the same way.
@@ -1758,7 +1756,8 @@ When using the `iceberg` table function in ClickHouse, the system needs to locat
     *Filter for files containing a `table-uuid` field matching your specified UUID (case-insensitive)
 
 3. **Default Search**:
-*If neither of the above settings are provided, all `.metadata.json` files in the `metadata` directory become candidates
+* If neither of the above settings are provided, all `.metadata.json` files in the `metadata` directory become candidates
+* On S3 and Azure, with the query-level setting `iceberg_list_only_v_prefixed_metadata_files` enabled and `iceberg_use_version_hint` disabled, if some of these files have names starting with `v` (as ClickHouse and Hadoop catalogs name them), only those files are candidates, and only they are listed (by the key prefix `metadata/v`, so the manifests stored in the same directory are not). Enable it only for tables whose metadata files are all named this way: in a directory that holds both naming schemes, the `<N>-<uuid>.metadata.json` files are never candidates
 
 ### Selecting the Most Recent File {#most-recent-file}
 
@@ -1771,10 +1770,10 @@ After identifying candidate files using the above rules, the system determines w
 * The file with the highest version number is selected
 * (Version appears as `V` in filenames formatted as `V.metadata.json` or `V-uuid.metadata.json`)
 
-**Note**: All mentioned settings are table function settings (not global or query-level settings) and must be specified as shown below:
+**Note**: All mentioned settings except `iceberg_list_only_v_prefixed_metadata_files` are table function settings (not global or query-level settings) and must be specified as shown below:
 
 ```sql
-SELECT * FROM iceberg('s3://bucket/path/to/iceberg_table', 
+SELECT * FROM iceberg('s3://bucket/path/to/iceberg_table',
     SETTINGS iceberg_metadata_table_uuid = 'a90eed4c-f74b-4e5b-b630-096fb9d09021');
 ```
 
@@ -1870,6 +1869,32 @@ Row 1:
 x: Ivanov
 y: 993
 ```
+
+### `DROP PARTITION` {#iceberg-writes-drop-partition}
+
+`ALTER TABLE ... DROP PARTITION <value>` removes every data file belonging to a single partition and creates a new snapshot that no longer references them. It is supported for local and object-storage Iceberg tables, and for tables in a `DataLakeCatalog` database with the `rest`, `onelake`, `biglake`, `delta_sharing`, `horizon`, `s3tables`, or `unity` (with `use_unity_catalog_v2 = 1`) catalog type.
+
+Enable `allow_insert_into_iceberg` to use this operation.
+
+The operation is supported only for Iceberg `format-version` 2 tables with a single, non-evolved partition spec. Each manifest containing the selected partition must contain no files from other partitions. If a manifest is shared by the selected partition and another partition, the operation fails without changing the table. The operation also rejects affected manifests containing equality-delete files.
+
+The partition value follows the same rules as for `MergeTree`. For a single-column partition, pass a scalar literal; for a multi-column partition, pass a tuple of values:
+
+```sql
+ALTER TABLE iceberg_table DROP PARTITION 2;
+ALTER TABLE iceberg_table DROP PARTITION (2, 5);
+```
+
+For a partition defined with a transform, you can supply either the already-transformed partition-key value as a literal, or the same transform expression applied to a raw source value. The supported transforms are `identity`, `icebergBucket`, `icebergTruncate`, `icebergYear`, `icebergMonth`, `icebergDay`, and `icebergHour`; the `PARTITION BY` aliases `toYearNumSinceEpoch`, `toMonthNumSinceEpoch`, `toRelativeDayNum`, and `toRelativeHourNum` are accepted and evaluated as these transforms. For a single-column partition the transform-expression form must be wrapped in `tuple(...)`:
+
+```sql
+ALTER TABLE iceberg_table DROP PARTITION 0;
+ALTER TABLE iceberg_table DROP PARTITION tuple(icebergBucket(4, 'apple'));
+```
+
+The operation rejects explicitly set `iceberg_snapshot_id`, `iceberg_timestamp_ms`, or `iceberg_metadata_file_path` settings. It modifies the current table state, not a historical snapshot or an explicitly selected metadata version.
+
+The `DROP PARTITION ID '...'` and `DROP PARTITION ALL` forms are not supported. Dropping a partition that does not exist is a no-op. The operation does not physically delete the data files. Earlier snapshots retain access to the removed rows and remain available to time-travel queries until those snapshots expire and their files are cleaned up.
 
 ### Schema evolution {#iceberg-writes-schema-evolution}
 
@@ -2049,6 +2074,7 @@ The command returns a table with two columns (`metric_name String`, `metric_valu
 | `deleted_manifest_lists_count` | Number of manifest list files deleted |
 | `deleted_statistics_files_count` | Number of statistics files deleted (always 0 currently) |
 | `dry_run` | `1` for dry-run mode, `0` for normal execution |
+| `failed_deletions_count` | Number of files whose deletion returned an error. Such a file may be left in storage, and `remove_orphan_files` can delete it later |
 
 The command performs the following steps:
 
@@ -2057,7 +2083,7 @@ The command performs the following steps:
 3. Expires snapshots that are neither retained by the policy nor protected by the timestamp fuse
 4. Computes which files are exclusively associated with expired snapshots
 5. In normal mode: generates new metadata without the expired snapshots
-6. In normal mode: physically deletes unreachable manifest lists, manifest files, and data files
+6. In normal mode: physically deletes unreachable manifest lists, manifest files, and data files, and counts a file whose deletion returns an error in `failed_deletions_count` instead
 7. In `dry_run = 1` mode: skips steps 5 and 6 and only returns the calculated metrics
 
 #### Snapshot Retention Policy {#iceberg-snapshot-retention-policy}
@@ -2074,7 +2100,7 @@ Each snapshot reference (`refs` in the Iceberg metadata) can override these with
 
 **Retention evaluation:**
 
-- **For each branch** (including `main`): the ancestor chain is walked starting from the branch head. Snapshots are retained while either of these conditions is true:
+- **For each branch** (including `main`): the branch head is always retained. The ancestor chain is walked starting from the branch head, and snapshots are retained while either of these conditions is true:
   - The snapshot is one of the first `min-snapshots-to-keep` in the chain
   - The snapshot's age is within `max-snapshot-age-ms` (i.e., `now - timestamp-ms <= max-snapshot-age-ms`)
 - **For tags**: the tagged snapshot is retained unless the tag has exceeded its `max-ref-age-ms`, in which case the tag reference is removed
@@ -2127,7 +2153,7 @@ ALTER TABLE iceberg_table EXECUTE remove_orphan_files()
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `older_than` | `String` (timestamp) | 3 days ago (configurable via `iceberg_orphan_files_older_than_seconds`) | Only consider files with a last-modified time older than this timestamp as orphan candidates. Safety guard against deleting files from in-progress writes. |
+| `older_than` | `String` (timestamp) | 3 days ago (configurable via `iceberg_orphan_files_older_than_seconds`) | Only consider files with a last-modified time older than this timestamp as orphan candidates. Safety guard against deleting files from in-progress writes. Must be at least `iceberg_orphan_files_min_retention_seconds` (1 day) before now. |
 | `location` | `String` | Table location | Restrict the scan to a specific subdirectory under the table location (e.g., `'data/'` or `'metadata/'`). |
 | `dry_run` | `UInt64` | `0` | When `1`, identify orphan files and return the result summary without actually deleting anything. |
 
@@ -2175,13 +2201,14 @@ The command returns a table with `metric_name` and `metric_value` columns showin
 |---|---|---|---|
 | `allow_iceberg_remove_orphan_files` | `Bool` | `false` | Gate setting to enable the feature (experimental). |
 | `iceberg_orphan_files_older_than_seconds` | `UInt64` | `259200` (3 days) | Default `older_than` threshold in seconds when the argument is omitted. |
+| `iceberg_orphan_files_min_retention_seconds` | `UInt64` | `86400` (1 day) | Minimum distance in seconds between `older_than` and now; a more recent `older_than` is rejected. `0` disables the check. |
 
 <Note>
 - **Requires Iceberg format version 2 (or higher).** Version 1 tables are rejected because they lack `manifest-list` pointers in snapshots, which are needed to safely determine the reachable file set. Running the command on a v1 table returns a `BAD_ARGUMENTS` error.
 - Requires both `allow_insert_into_iceberg` and `allow_iceberg_remove_orphan_files` settings to be enabled
 - It is recommended to run `expire_snapshots` before `remove_orphan_files` so that files uniquely referenced by expired snapshots are cleaned up first
 - Use `dry_run = 1` to preview orphan files before deletion
-- The `older_than` threshold protects against deleting files from in-progress writes — the default 3-day threshold provides a generous safety margin
+- An `older_than` closer to now than `iceberg_orphan_files_min_retention_seconds` is rejected, because the files of a write that has not committed yet are not referenced by the table metadata and look like orphans; keep the setting above the longest time a write to the table can take to commit
 </Note>
 
 ## See Also {#see-also}
@@ -2189,11 +2216,13 @@ The command returns a table with `metric_name` and `metric_value` columns showin
 * [Iceberg engine](/reference/engines/table-engines/integrations/iceberg)
 * [Iceberg cluster table function](/reference/functions/table-functions/icebergCluster)
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
+        DataLake::withSecretSettings(s3TableFunctionSecretArguments(false)),
         {.allow_readonly = false});
     factory.registerFunction<TableFunctionIcebergS3>(
          {.description = R"(The table function can be used to read from and insert into an existing Iceberg table stored on S3 object storage.)",
             .syntax = "icebergS3(url, access_key_id, secret_access_key)",
             .category = FunctionDocumentation::Category::TableFunction},
+        DataLake::withSecretSettings(s3TableFunctionSecretArguments(false)),
         {.allow_readonly = false});
 
 #endif
@@ -2202,6 +2231,7 @@ The command returns a table with `metric_name` and `metric_value` columns showin
          {.description = R"(The table function can be used to read from and insert into an existing Iceberg table stored on Azure object storage.)",
             .syntax = "icebergAzure(url, access_key_id, secret_access_key)",
             .category = FunctionDocumentation::Category::TableFunction},
+         DataLake::withSecretSettings(azureTableFunctionSecretArguments(false)),
          {.allow_readonly = false});
 #endif
 #if USE_HDFS
@@ -2209,12 +2239,14 @@ The command returns a table with `metric_name` and `metric_value` columns showin
          {.description = R"(The table function can be used to read the Iceberg table stored on HDFS virtual filesystem.)",
             .syntax = "icebergHDFS(url)",
             .category = FunctionDocumentation::Category::TableFunction},
+         DataLake::withSecretSettings(SecretArgumentsSpec{}),
          {.allow_readonly = false});
 #endif
     factory.registerFunction<TableFunctionIcebergLocal>(
          {.description = R"(The table function can be used to read from and insert into an existing Iceberg table stored locally.)",
             .syntax = "icebergLocal(filename)",
             .category = FunctionDocumentation::Category::TableFunction},
+         DataLake::withSecretSettings(SecretArgumentsSpec{}),
          {.allow_readonly = false});
 }
 #endif
@@ -2258,6 +2290,25 @@ For `paimonS3`, an optional `extra_credentials` parameter can be used to pass a 
 
 A table with the specified structure for reading data in the specified Paimon table.
 
+## Limitations {#limitations}
+
+Merge-on-read is not implemented, so **primary-key tables cannot be read**: the reader returns the raw union of the
+snapshot's data files, which still contains the row versions superseded by later upserts. Reading a table whose schema
+declares `primary-key` therefore throws.
+
+Deletion vectors are not applied, so **snapshots with deletion vectors cannot be read**: the result would still
+contain the rows that later `DELETE` and `UPDATE` statements removed. Reading a snapshot whose index manifest lists
+deletion vectors therefore throws, even after `deletion-vectors.enabled` is turned off.
+A full compaction in Paimon (`compact_strategy => 'full'`) applies the deletion vectors, and the snapshots created after
+it can be read again.
+
+Columns are matched to data files by name, not by Paimon field id, so **data files written before a column was renamed,
+or before a column was dropped and another one with the same name (compared case-insensitively) was added, cannot be
+read**: the result would contain `NULL` for the renamed column and the dropped column's values for the re-added one.
+Reading such a data file therefore throws. Adding and dropping columns is supported. Rewriting the table with the
+current schema in Paimon, for example with `INSERT OVERWRITE <table> SELECT * FROM <table>`, makes the snapshots created
+after it readable.
+
 ## Defining a named collection {#defining-a-named-collection}
 
 Here is an example of configuring a named collection for storing the URL and credentials:
@@ -2297,7 +2348,7 @@ Table function `paimon` is an alias to `paimonS3` now.
 
 | Paimon Data Type | ClickHouse Data Type
 |-------|--------|
-|BOOLEAN     |Int8      |
+|BOOLEAN     |Bool      |
 |TINYINT     |Int8      |
 |SMALLINT     |Int16      |
 |INTEGER     |Int32      |
@@ -2305,7 +2356,7 @@ Table function `paimon` is an alias to `paimonS3` now.
 |FLOAT     |Float32      |
 |DOUBLE     |Float64      |
 |STRING,VARCHAR,BYTES,VARBINARY     |String      |
-|DATE     |Date      |
+|DATE     |Date32      |
 |TIME(p),TIME     |Time('UTC')      |
 |TIMESTAMP(p) WITH LOCAL TIME ZONE     |DateTime64      |
 |TIMESTAMP(p)     |DateTime64('UTC')      |
@@ -2314,6 +2365,7 @@ Table function `paimon` is an alias to `paimonS3` now.
 |DECIMAL(P,S)     |Decimal(P,S)      |
 |ARRAY     |Array      |
 |MAP     |Map    |
+|ROW     |Tuple      |
 
 ## Partition supported {#partition-supported}
 Data types supported in Paimon partition keys:
@@ -2336,11 +2388,13 @@ Data types supported in Paimon partition keys:
 
 * [Paimon cluster table function](/reference/functions/table-functions/paimonCluster)
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
+         DataLake::withSecretSettings(s3TableFunctionSecretArguments(false)),
          {.allow_readonly = false});
     factory.registerFunction<TableFunctionPaimonS3>(
          {.description = R"(The table function can be used to read the Paimon table stored on S3 object store.)",
             .syntax = "paimonS3(url, access_key_id, secret_access_key)",
             .category = FunctionDocumentation::Category::TableFunction},
+         DataLake::withSecretSettings(s3TableFunctionSecretArguments(false)),
          {.allow_readonly = false});
 
 #endif
@@ -2349,6 +2403,7 @@ Data types supported in Paimon partition keys:
          {.description = R"(The table function can be used to read the Paimon table stored on Azure object store.)",
             .syntax = "paimonAzure(url, access_key_id, secret_access_key)",
             .category = FunctionDocumentation::Category::TableFunction},
+         DataLake::withSecretSettings(azureTableFunctionSecretArguments(false)),
          {.allow_readonly = false});
 #endif
 #if USE_HDFS
@@ -2356,12 +2411,14 @@ Data types supported in Paimon partition keys:
          {.description = R"(The table function can be used to read the Paimon table stored on HDFS virtual filesystem.)",
             .syntax = "paimonHDFS(url)",
             .category = FunctionDocumentation::Category::TableFunction},
+         DataLake::withSecretSettings(SecretArgumentsSpec{}),
          {.allow_readonly = false});
 #endif
     factory.registerFunction<TableFunctionPaimonLocal>(
          {.description = R"(The table function can be used to read the Paimon table stored locally.)",
             .syntax = "paimonLocal(filename)",
             .category = FunctionDocumentation::Category::TableFunction},
+         DataLake::withSecretSettings(SecretArgumentsSpec{}),
          {.allow_readonly = false});
 }
 #endif
@@ -2373,7 +2430,7 @@ void registerTableFunctionDeltaLake(TableFunctionFactory & factory)
 #if USE_AWS_S3
     factory.registerFunction<TableFunctionDeltaLake>(
          {.description = R"DOCS_MD(
-Provides a table-like interface to [Delta Lake](https://github.com/delta-io/delta) tables in Amazon S3, Azure Blob Storage, or a locally mounted file system, supporting both reads and writes (from v25.10)
+Provides a table-like interface to [Delta Lake](https://github.com/delta-io/delta) tables in Amazon S3, Azure Blob Storage, or a locally mounted file system, supporting both reads and writes (writes for S3 and GCS from v25.10, for Azure from v26.9)
 
 ## Syntax {#syntax}
 
@@ -2475,20 +2532,23 @@ Query id: 65032944-bed6-4d45-86b3-a71205a2b659
 - [DeltaLake engine](/reference/engines/table-engines/integrations/deltalake)
 - [DeltaLake cluster table function](/reference/functions/table-functions/deltalakeCluster)
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
+         DataLake::withSecretSettings(s3TableFunctionSecretArguments(false)),
          {.allow_readonly = false});
 
     factory.registerFunction<TableFunctionDeltaLakeS3>(
-         {.description = R"(The table function can be used to read the DeltaLake table stored on S3.)",
+         {.description = R"(The table function can be used to read and write the DeltaLake table stored on S3.)",
             .syntax = "deltaLakeS3(url, access_key_id, secret_access_key)",
             .category = FunctionDocumentation::Category::TableFunction},
+         DataLake::withSecretSettings(s3TableFunctionSecretArguments(false)),
          {.allow_readonly = false});
 #endif
 
 #if USE_AZURE_BLOB_STORAGE
     factory.registerFunction<TableFunctionDeltaLakeAzure>(
-         {.description = R"(The table function can be used to read the DeltaLake table stored on Azure object store.)",
+         {.description = R"(The table function can be used to read and write the DeltaLake table stored on Azure object store (writes from version 26.9).)",
             .syntax = "deltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])",
             .category = FunctionDocumentation::Category::TableFunction},
+         DataLake::withSecretSettings(azureTableFunctionSecretArguments(false)),
          {.allow_readonly = false});
 #endif
     // Register the new local Delta Lake table function
@@ -2496,6 +2556,7 @@ Query id: 65032944-bed6-4d45-86b3-a71205a2b659
          {.description = R"(The table function can be used to read the DeltaLake table stored locally.)",
             .syntax = "deltaLakeLocal(path)",
             .category = FunctionDocumentation::Category::TableFunction},
+         DataLake::withSecretSettings(SecretArgumentsSpec{}),
          {.allow_readonly = false});
 }
 #endif
@@ -2542,6 +2603,7 @@ A table with the specified structure for reading data in the specified Hudi tabl
 - [Hudi engine](/reference/engines/table-engines/integrations/hudi)
 - [Hudi cluster table function](/reference/functions/table-functions/hudiCluster)
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
+         DataLake::withSecretSettings(s3TableFunctionSecretArguments(false)),
          {.allow_readonly = false});
 }
 #endif

@@ -52,64 +52,71 @@ bool BrotliReadBuffer::nextImpl()
     if (eof_flag)
         return false;
 
-    do
+    while (true)
     {
-        if (!in_available)
+        do
         {
-            in->nextIfAtEnd();
-            in_available = in->buffer().end() - in->position();
-            in_data = reinterpret_cast<uint8_t *>(in->position());
-        }
-
-        if (brotli->result == BROTLI_DECODER_RESULT_NEEDS_MORE_INPUT && (!in_available || in->eof()))
-        {
-            /// If the inner stream is completely empty (e.g. a URL returned 404
-            /// and http_skip_not_found_url_for_globs is set), there is nothing to decompress.
-            if (!in_available && in->eof() && total_in == 0)
+            if (!in_available)
             {
-                eof_flag = true;
-                return false;
+                in->nextIfAtEnd();
+                in_available = in->buffer().end() - in->position();
+                in_data = reinterpret_cast<uint8_t *>(in->position());
             }
 
+            if (brotli->result == BROTLI_DECODER_RESULT_NEEDS_MORE_INPUT && (!in_available || in->eof()))
+            {
+                /// If the inner stream is completely empty (e.g. a URL returned 404
+                /// and http_skip_not_found_url_for_globs is set), there is nothing to decompress.
+                if (!in_available && in->eof() && total_in == 0)
+                {
+                    eof_flag = true;
+                    return false;
+                }
+
+                throw Exception(
+                    ErrorCodes::BROTLI_READ_FAILED,
+                    "brotli decode error{}",
+                    getExceptionEntryWithFileName(*in));
+            }
+
+            out_capacity = internal_buffer.size();
+            out_data = reinterpret_cast<uint8_t *>(internal_buffer.begin());
+
+            size_t in_available_before = in_available;
+            brotli->result = BrotliDecoderDecompressStream(brotli->state, &in_available, &in_data, &out_capacity, &out_data, nullptr);
+            total_in += in_available_before - in_available;
+
+            in->position() = in->buffer().end() - in_available;
+        }
+        while (brotli->result == BROTLI_DECODER_RESULT_NEEDS_MORE_INPUT && out_capacity == internal_buffer.size());
+
+        working_buffer.resize(internal_buffer.size() - out_capacity);
+
+        if (brotli->result == BROTLI_DECODER_RESULT_SUCCESS)
+        {
+            if (in->eof())
+            {
+                eof_flag = true;
+                return !working_buffer.empty();
+            }
+
+            /// Another stream follows, e.g. one written by an `INSERT` that appended to the file.
+            brotli = std::make_unique<BrotliStateWrapper>();
+            if (working_buffer.empty())
+                continue;
+            return true;
+        }
+
+        if (brotli->result == BROTLI_DECODER_RESULT_ERROR)
+        {
             throw Exception(
                 ErrorCodes::BROTLI_READ_FAILED,
                 "brotli decode error{}",
                 getExceptionEntryWithFileName(*in));
         }
 
-        out_capacity = internal_buffer.size();
-        out_data = reinterpret_cast<uint8_t *>(internal_buffer.begin());
-
-        size_t in_available_before = in_available;
-        brotli->result = BrotliDecoderDecompressStream(brotli->state, &in_available, &in_data, &out_capacity, &out_data, nullptr);
-        total_in += in_available_before - in_available;
-
-        in->position() = in->buffer().end() - in_available;
+        return true;
     }
-    while (brotli->result == BROTLI_DECODER_RESULT_NEEDS_MORE_INPUT && out_capacity == internal_buffer.size());
-
-    working_buffer.resize(internal_buffer.size() - out_capacity);
-
-    if (brotli->result == BROTLI_DECODER_RESULT_SUCCESS)
-    {
-        if (in->eof())
-        {
-            eof_flag = true;
-            return !working_buffer.empty();
-        }
-
-        throw Exception(ErrorCodes::BROTLI_READ_FAILED, "brotli decode error{}", getExceptionEntryWithFileName(*in));
-    }
-
-    if (brotli->result == BROTLI_DECODER_RESULT_ERROR)
-    {
-        throw Exception(
-            ErrorCodes::BROTLI_READ_FAILED,
-            "brotli decode error{}",
-            getExceptionEntryWithFileName(*in));
-    }
-
-    return true;
 }
 }
 

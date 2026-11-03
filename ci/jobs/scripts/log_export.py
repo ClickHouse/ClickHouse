@@ -1,8 +1,8 @@
 """Export of the `system.*_log` tables of a local server to the CI Logs cluster.
 
 Every check exports its system logs the same way: for each system log table a
-`Distributed` table (`system.<table>_sender`) is created next to it, fed by a
-materialized view (`system.<table>_watcher`) that adds the columns identifying
+`Distributed` table (`<export database>.<table>_sender`) is created, fed by a
+materialized view (`<export database>.<table>_watcher`) that adds the columns identifying
 the CI run. The rows are then sent to the CI Logs cluster in the background, by
 the server itself. The tables and the views are created by
 `ci/jobs/scripts/functional_tests/setup_log_cluster.sh`; this module holds what
@@ -50,13 +50,15 @@ CI_LOGS_SENDER_USER_CONFIG = "./tests/config/users.d/ci_logs_sender.yaml"
 # The port of the local server to export from, for `setup_log_cluster.sh`.
 SERVER_PORT_ENV = "LOG_EXPORT_SERVER_PORT"
 
+# The local database of the export tables; must match the default of
+# `LOG_EXPORT_DATABASE` in `setup_log_cluster.sh`, which creates them.
+LOG_EXPORT_DATABASE = "ci_logs_export"
+
 # The `Distributed` tables the export sends through, created by `start` as
-# `system.<log table>_sender`. `endsWith` rather than `LIKE '%\_sender'`, to
-# keep the escape of the underscore out of a query that goes through a shell
-# command line.
+# `<LOG_EXPORT_DATABASE>.<log table>_sender`
 SENDER_TABLES_QUERY = (
     "SELECT database || '.' || name FROM system.tables "
-    "WHERE database = 'system' AND endsWith(name, '_sender') AND engine = 'Distributed'"
+    f"WHERE database = '{LOG_EXPORT_DATABASE}' AND endsWith(name, '_sender') AND engine = 'Distributed'"
 )
 
 _credentials = None
@@ -231,3 +233,24 @@ def stop_distributed_sends(port=None):
 def start_distributed_sends(port=None):
     """Undo `stop_distributed_sends`."""
     return _switch_distributed_sends(True, port)
+
+
+def flush_held_rows(port=None):
+    """Send the rows held back by `stop_distributed_sends` and hold the sends
+    back again, so that the backlog stays bounded.
+
+    The flush is bounded by the same 5 minutes as the one in `stop`; what it
+    does not manage to send stays in the local files. Returns whether the sends
+    are held back again - when not, the caller has to tear the export down.
+    """
+    port_arg = _set_server_port(port)
+    for query in ("SYSTEM FLUSH LOGS", "SYSTEM FLUSH ASYNC INSERT QUEUE"):
+        Shell.check(f'clickhouse-client {port_arg} --query "{query}"', verbose=True)
+    start_distributed_sends(port)
+    Shell.check(
+        f'clickhouse-client {port_arg} --query "{SENDER_TABLES_QUERY}" | '
+        "timeout --verbose --preserve-status --signal TERM --kill-after 1m 5m "
+        f'xargs -n1 -P10 -r -i clickhouse-client {port_arg} --query "SYSTEM FLUSH DISTRIBUTED {{}}"',
+        verbose=True,
+    )
+    return stop_distributed_sends(port)

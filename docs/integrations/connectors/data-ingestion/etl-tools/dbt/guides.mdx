@@ -2,1040 +2,798 @@
 sidebarTitle: 'Guides'
 slug: /integrations/dbt/guides
 description: 'Guides for using dbt with ClickHouse'
-keywords: ['clickhouse', 'dbt', 'guides']
+keywords: ['clickhouse', 'dbt', 'guides', 'jaffle shop']
 title: 'Guides'
 doc_type: 'guide'
 ---
-
-import { Image } from "/snippets/components/Image.jsx";
 
 import { ClickHouseSupportedBadge } from "/snippets/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge/>
 
-This section provides guides on setting up dbt and the ClickHouse adapter, as well as an example of using dbt with ClickHouse using a publicly available IMDB dataset. The example covers the following steps:
+This guide walks through the ClickHouse-specific side of dbt using the [Jaffle Shop for ClickHouse](https://github.com/ClickHouse/jaffle-shop-clickhouse) project, the ClickHouse port of dbt Labs' classic sample project. Starting from a project that already builds, it shows how to:
 
-1. Creating a dbt project and setting up the ClickHouse adapter.
-2. Defining a model.
-3. Updating a model.
-4. Creating an incremental model.
-5. Creating a snapshot model.
-6. Using materialized views.
+1. Understand how the project's views and tables land in ClickHouse.
+2. Load data with seeds and control the ClickHouse types and table layout.
+3. Configure a table model with a ClickHouse engine, sorting key and partitioning.
+4. Turn a table into an incremental model and pick an incremental strategy.
+5. Create a snapshot.
+6. Use ClickHouse materialized views.
 
-These guides are designed to be used in conjunction with the rest of the [documentation](/integrations/connectors/data-ingestion/etl-tools/dbt/index), the [features and configurations](/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations) and the [materializations reference](/integrations/connectors/data-ingestion/etl-tools/dbt/materializations).
+It's designed to be read alongside the rest of the [documentation](/integrations/connectors/data-ingestion/etl-tools/dbt/index), the [features and configurations](/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations) page and the [materializations reference](/integrations/connectors/data-ingestion/etl-tools/dbt/materializations).
 
-## Setup {#setup}
+## Before you start {#before-you-start}
 
-Follow the instructions in the [Setup of dbt and the ClickHouse adapter](/integrations/connectors/data-ingestion/etl-tools/dbt/index) section to prepare your environment.
+Follow the README of [ClickHouse/jaffle-shop-clickhouse](https://github.com/ClickHouse/jaffle-shop-clickhouse) first. It explains how to set the project up with dbt Core 1.x, dbt OSS, dbt v2 or the dbt platform, how to point it at a local ClickHouse (docker) or ClickHouse Cloud, how to load the sample data with `dbt seed`, and how to run the first `dbt build`. Once `dbt build` completes successfully, come back here for the ClickHouse-specific examples and configurations.
 
-**Important: The following is tested under python 3.9.**
+After the README steps you should have two databases in ClickHouse:
 
-### Prepare ClickHouse {#prepare-clickhouse}
+- `raw`: the six source tables loaded from CSV files by `dbt seed` (`raw_customers`, `raw_orders`, `raw_items`, `raw_products`, `raw_stores`, `raw_supplies`).
+- `jaffle_shop` (the `schema` of your profile): six staging views (`stg_*`) and seven mart tables (`customers`, `orders`, `order_items`, `products`, `locations`, `supplies`, `metricflow_time_spine`).
 
-dbt excels when modeling highly relational data. For the purposes of example, we provide a small IMDB dataset with the following relational schema. This dataset originates from the[ relational dataset repository](https://relational.fit.cvut.cz/dataset/IMDb). This is trivial relative to common schemas used with dbt but represents a manageable sample:
+If your profile uses a different `schema`, replace `jaffle_shop` in the queries below with your value.
 
-<Image img="/images/integrations/data-ingestion/etl-tools/dbt/dbt_01.webp" size="lg" alt="IMDB table schema" />
+<Note>
+**dbt Core 1.x, dbt OSS, dbt v2 and the dbt platform.** Every command and model in this guide is the same on all of them. The examples were tested with dbt Core 1.12 with `dbt-clickhouse` 1.10 and with dbt OSS 2.0 against ClickHouse 26.8; dbt v2 runs the same adapter, and the dbt platform runs dbt v2. The console output shown is from dbt Core 1.x, and the few places where the engines behave differently are called out. See the [dbt OSS, dbt v2 and dbt platform page](/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform) for the current status of the v2 adapter, and [Connect ClickHouse](https://docs.getdbt.com/docs/platform/connect-data-platform/connect-clickhouse) in the dbt documentation to get started on the dbt platform.
+</Note>
 
-We use a subset of these tables as shown.
+All SQL statements that aren't dbt commands are meant to be run directly against ClickHouse, for example with `clickhouse client`, the ClickHouse Cloud SQL console or the SQL client of your choice.
 
-Create the following tables:
+## How the project is materialized {#views-and-tables}
+
+The Jaffle Shop configures its materializations in `dbt_project.yml`: staging models are views and marts are tables.
+
+```yaml
+models:
+  jaffle_shop:
+    staging:
+      +materialized: view
+    marts:
+      +materialized: table
+```
+
+A **view** model is rebuilt with a `CREATE OR REPLACE VIEW` statement on every run. It stores no data, so it costs nothing to build, but every query against it runs the model's SQL against the source tables. ClickHouse keeps the compiled SQL of the model in the view definition:
 
 ```sql
-CREATE DATABASE imdb;
+SHOW CREATE VIEW jaffle_shop.stg_orders;
+```
 
-CREATE TABLE imdb.actors
+```response
+CREATE VIEW jaffle_shop.stg_orders
 (
-    id         UInt32,
-    first_name String,
-    last_name  String,
-    gender     FixedString(1)
-) ENGINE = MergeTree ORDER BY (id, first_name, last_name, gender);
+    `order_id` String,
+    `location_id` String,
+    `customer_id` String,
+    ...
+    `ordered_at` DateTime
+)
+AS WITH
+    source AS
+    (
+        SELECT *
+        FROM raw.raw_orders
+    ),
+    renamed AS
+    (
+        SELECT
+            id AS order_id,
+            store_id AS location_id,
+            ...
+            dateTrunc('day', ordered_at) AS ordered_at
+        FROM source
+    )
+SELECT *
+FROM renamed
+```
 
-CREATE TABLE imdb.directors
-(
-    id         UInt32,
-    first_name String,
-    last_name  String
-) ENGINE = MergeTree ORDER BY (id, first_name, last_name);
+A **table** model is rebuilt from scratch on every run: the adapter creates a new table, runs an `INSERT INTO ... SELECT` with the model's SQL and atomically exchanges it with the previous version. Query performance is much better than a view, at the cost of storage and of rebuilding the whole table every time. Look at the table dbt created for the `orders` mart:
 
-CREATE TABLE imdb.genres
-(
-    movie_id UInt32,
-    genre    String
-) ENGINE = MergeTree ORDER BY (movie_id, genre);
+```sql
+SHOW CREATE TABLE jaffle_shop.orders;
+```
 
-CREATE TABLE imdb.movie_directors
+```response
+CREATE TABLE jaffle_shop.orders
 (
-    director_id UInt32,
-    movie_id    UInt64
-) ENGINE = MergeTree ORDER BY (director_id, movie_id);
+    `order_id` String,
+    `location_id` String,
+    `customer_id` String,
+    ...
+    `customer_order_number` UInt64
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS replicated_deduplication_window = '0', index_granularity = 8192
+```
 
-CREATE TABLE imdb.movies
-(
-    id   UInt32,
-    name String,
-    year UInt32,
-    rank Float32 DEFAULT 0
-) ENGINE = MergeTree ORDER BY (id, name, year);
+Two things are ClickHouse-specific here. The model doesn't declare a table engine, so the adapter uses `MergeTree`, and it doesn't declare a sorting key, so the adapter uses `ORDER BY tuple()`, meaning the data isn't sorted at all. This is fine for a sample project, but for a real table you'll want to choose both, which is what the next sections do. The [materializations page](/integrations/connectors/data-ingestion/etl-tools/dbt/materializations) lists every table configuration the adapter supports.
 
-CREATE TABLE imdb.roles
-(
-    actor_id   UInt32,
-    movie_id   UInt32,
-    role       String,
-    created_at DateTime DEFAULT now()
-) ENGINE = MergeTree ORDER BY (actor_id, movie_id);
+## Loading data with seeds {#seeds}
+
+The Jaffle Shop uses dbt [seeds](https://docs.getdbt.com/docs/build/seeds) to load its raw data from the CSV files in `seeds/jaffle-data`. Seeds are meant for small, static reference data (code tables, mappings), not for loading a warehouse; the project uses them for convenience so you can get going without another ingestion tool, which is why the seeds are disabled unless you pass `--vars '{"load_source_data": true}'`.
+
+Seeds are still a good place to learn how dbt creates ClickHouse tables. dbt infers a column type for each CSV column, and the inferred types differ between engines:
+
+| CSV value | dbt v1 | v2 engine |
+|-----------|--------|-----------|
+| `700` | `Int32` | `Int64` |
+| `0.06` | `Float32` | `Float64` |
+| `2024-09-01T15:01:00` | `DateTime` | `DateTime64(6)` |
+| `Philadelphia` | `String` | `String` |
+
+When the type matters, pin it with `column_types`. The project already does this for the `opened_at` column of the `raw_stores` seed in `dbt_project.yml`:
+
+```yaml
+seeds:
+  jaffle_shop:
+    +schema: raw
+    jaffle-data:
+      +enabled: "{{ var('load_source_data', false) }}"
+      raw_stores:
+        +column_types:
+          opened_at: DateTime64(3)
+```
+
+Seeds also accept the ClickHouse table configurations `engine`, `order_by` and `partition_by`. For example, to sort the `raw_orders` seed by order time and partition it by month, add a properties file next to the CSVs, `seeds/jaffle-data/_raw_orders.yml`:
+
+```yaml
+seeds:
+  - name: raw_orders
+    config:
+      order_by: (ordered_at, id)
+      partition_by: toYYYYMM(ordered_at)
 ```
 
 <Note>
-The column `created_at` for the table `roles`, which defaults to a value of `now()`. We use this later to identify incremental updates to our models - see [Incremental Models](#creating-an-incremental-materialization).
+Use a properties file for these ClickHouse seed configurations rather than `+order_by` or `+engine` keys under `seeds:` in `dbt_project.yml`. dbt Core 1.x accepts both forms, but dbt v2 only recognizes them in a properties file and rejects the `dbt_project.yml` keys with `Unrecognized key ... Custom keys must go under +meta`.
 </Note>
 
-We use the `s3` function to read the source data from public endpoints to insert data. Run the following commands to populate the tables:
+Re-load that seed and check the table it produced:
 
-```sql
-INSERT INTO imdb.actors
-SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/imdb/imdb_ijs_actors.tsv.gz', NOSIGN,
-'TSVWithNames');
-
-INSERT INTO imdb.directors
-SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/imdb/imdb_ijs_directors.tsv.gz', NOSIGN,
-'TSVWithNames');
-
-INSERT INTO imdb.genres
-SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/imdb/imdb_ijs_movies_genres.tsv.gz', NOSIGN,
-'TSVWithNames');
-
-INSERT INTO imdb.movie_directors
-SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/imdb/imdb_ijs_movies_directors.tsv.gz', NOSIGN,
-        'TSVWithNames');
-
-INSERT INTO imdb.movies
-SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/imdb/imdb_ijs_movies.tsv.gz', NOSIGN,
-'TSVWithNames');
-
-INSERT INTO imdb.roles(actor_id, movie_id, role)
-SELECT actor_id, movie_id, role
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/imdb/imdb_ijs_roles.tsv.gz', NOSIGN,
-'TSVWithNames');
+```bash
+dbt seed --select raw_orders --full-refresh --vars '{"load_source_data": true}'
 ```
 
-The execution of these may vary depending on your bandwidth, but each should only take a few seconds to complete. Execute the following query to compute a summary of each actor, ordered by the most movie appearances, and to confirm the data was loaded successfully:
-
 ```sql
-SELECT id,
-       any(actor_name)          AS name,
-       uniqExact(movie_id)    AS num_movies,
-       avg(rank)                AS avg_rank,
-       uniqExact(genre)         AS unique_genres,
-       uniqExact(director_name) AS uniq_directors,
-       max(created_at)          AS updated_at
-FROM (
-         SELECT imdb.actors.id  AS id,
-                concat(imdb.actors.first_name, ' ', imdb.actors.last_name)  AS actor_name,
-                imdb.movies.id AS movie_id,
-                imdb.movies.rank AS rank,
-                genre,
-                concat(imdb.directors.first_name, ' ', imdb.directors.last_name) AS director_name,
-                created_at
-         FROM imdb.actors
-                  JOIN imdb.roles ON imdb.roles.actor_id = imdb.actors.id
-                  LEFT OUTER JOIN imdb.movies ON imdb.movies.id = imdb.roles.movie_id
-                  LEFT OUTER JOIN imdb.genres ON imdb.genres.movie_id = imdb.movies.id
-                  LEFT OUTER JOIN imdb.movie_directors ON imdb.movie_directors.movie_id = imdb.movies.id
-                  LEFT OUTER JOIN imdb.directors ON imdb.directors.id = imdb.movie_directors.director_id
-         )
-GROUP BY id
-ORDER BY num_movies DESC
-LIMIT 5;
+SHOW CREATE TABLE raw.raw_orders;
 ```
-
-The response should look like:
 
 ```response
-+------+------------+----------+------------------+-------------+--------------+-------------------+
-|id    |name        |num_movies|avg_rank          |unique_genres|uniq_directors|updated_at         |
-+------+------------+----------+------------------+-------------+--------------+-------------------+
-|45332 |Mel Blanc   |832       |6.175853582979779 |18           |84            |2022-04-26 14:01:45|
-|621468|Bess Flowers|659       |5.57727638854796  |19           |293           |2022-04-26 14:01:46|
-|372839|Lee Phelps  |527       |5.032976449684617 |18           |261           |2022-04-26 14:01:46|
-|283127|Tom London  |525       |2.8721716524875673|17           |203           |2022-04-26 14:01:46|
-|356804|Bud Osborne |515       |2.0389507108727773|15           |149           |2022-04-26 14:01:46|
-+------+------------+----------+------------------+-------------+--------------+-------------------+
+CREATE TABLE raw.raw_orders
+(
+    `id` String,
+    `customer` String,
+    `ordered_at` DateTime,
+    `store_id` String,
+    `subtotal` Int32,
+    `tax_paid` Int32,
+    `order_total` Int32
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(ordered_at)
+ORDER BY (ordered_at, id)
+SETTINGS index_granularity = 8192
 ```
 
-In the later guides, we will convert this query into a model - materializing it in ClickHouse as a dbt view and table.
+`dbt seed --full-refresh` drops and recreates the table, so run it before you build anything that depends on the table's data directly, such as the materialized view later in this guide.
 
-## Connecting to ClickHouse {#connecting-to-clickhouse}
+## Configuring a table for ClickHouse {#table-configuration}
 
-1. Create a dbt project. In this case we name this after our `imdb` source. When prompted, select `clickhouse` as the database source.
+The `orders` mart is the natural place to start: it's queried by the `customers` mart and by the project's metrics, and it's an event-style table with a timestamp. Add a `config` block at the top of `models/marts/orders.sql` to choose the engine, the sorting key and a partitioning scheme:
 
-    ```bash
-    clickhouse-user@clickhouse:~$ dbt init imdb
-
-    16:52:40  Running with dbt=1.1.0
-    Which database would you like to use?
-    [1] clickhouse
-
-    (Don't see the one you want? https://docs.getdbt.com/docs/available-adapters)
-
-    Enter a number: 1
-    16:53:21  No sample profile found for clickhouse.
-    16:53:21
-    Your new dbt project "imdb" was created!
-
-    For more information on how to configure the profiles.yml file,
-    please consult the dbt documentation here:
-
-    https://docs.getdbt.com/docs/configure-your-profile
-    ```
-
-2. `cd` into your project folder:
-
-    ```bash
-    cd imdb
-    ```
-
-3. At this point, you will need the text editor of your choice. In the examples below, we use the popular VS Code. Opening the IMDB directory, you should see a collection of yml and sql files:
-
-    <Image img="/images/integrations/data-ingestion/etl-tools/dbt/dbt_02.webp" size="lg" alt="New dbt project" />
-
-4. Update your `dbt_project.yml` file to specify our first model - `actor_summary` and set profile to `clickhouse_imdb`.
-
-    <Image img="/images/integrations/data-ingestion/etl-tools/dbt/dbt_03.webp" size="lg" alt="dbt profile" />
-
-    <Image img="/images/integrations/data-ingestion/etl-tools/dbt/dbt_04.webp" size="lg" alt="dbt profile" />
-
-5. We next need to provide dbt with the connection details for our ClickHouse instance. Add the following to your `~/.dbt/profiles.yml`.
-
-    ```yml
-    clickhouse_imdb:
-      target: dev
-      outputs:
-        dev:
-          type: clickhouse
-          schema: imdb_dbt
-          host: localhost
-          port: 8123
-          user: default
-          password: ''
-          secure: False
-    ```
-
-    Note the need to modify the user and password. There are additional available settings documented[ here](https://github.com/silentsokolov/dbt-clickhouse#example-profile).
-
-6. From the IMDB directory, execute the `dbt debug` command to confirm whether dbt is able to connect to ClickHouse.
-
-    ```bash
-    clickhouse-user@clickhouse:~/imdb$ dbt debug
-    17:33:53  Running with dbt=1.1.0
-    dbt version: 1.1.0
-    python version: 3.10.1
-    python path: /home/dale/.pyenv/versions/3.10.1/bin/python3.10
-    os info: Linux-5.13.0-10039-tuxedo-x86_64-with-glibc2.31
-    Using profiles.yml file at /home/dale/.dbt/profiles.yml
-    Using dbt_project.yml file at /opt/dbt/imdb/dbt_project.yml
-
-    Configuration:
-    profiles.yml file [OK found and valid]
-    dbt_project.yml file [OK found and valid]
-
-    Required dependencies:
-    - git [OK found]
-
-    Connection:
-    host: localhost
-    port: 8123
-    user: default
-    schema: imdb_dbt
-    secure: False
-    verify: False
-    Connection test: [OK connection ok]
-
-    All checks passed!
-    ```
-
-    Confirm the response includes `Connection test: [OK connection ok]` indicating a successful connection.
-
-## Creating a simple view materialization {#creating-a-simple-view-materialization}
-
-When using the view materialization, a model is rebuilt as a view on each run, via a `CREATE VIEW AS` statement in ClickHouse. This doesn't require any additional storage of data but will be slower to query than table materializations.
-
-1. From the `imdb` folder, delete the directory `models/example`:
-
-    ```bash
-    clickhouse-user@clickhouse:~/imdb$ rm -rf models/example
-    ```
-
-2. Create a new file in the `actors` within the `models` folder. Here we create files that each represent an actor model:
-
-    ```bash
-    clickhouse-user@clickhouse:~/imdb$ mkdir models/actors
-    ```
-
-3. Create the files `schema.yml` and `actor_summary.sql` in the `models/actors` folder.
-
-    ```bash
-    clickhouse-user@clickhouse:~/imdb$ touch models/actors/actor_summary.sql
-    clickhouse-user@clickhouse:~/imdb$ touch models/actors/schema.yml
-    ```
-    The file `schema.yml` defines our tables. These will subsequently be available for use in macros.  Edit
-    `models/actors/schema.yml` to contain this content:
-    ```yml
-    version: 2
-
-    sources:
-    - name: imdb
-      tables:
-      - name: directors
-      - name: actors
-      - name: roles
-      - name: movies
-      - name: genres
-      - name: movie_directors
-    ```
-    The `actors_summary.sql` defines our actual model. Note in the config function we also request the model be materialized as a view in ClickHouse. Our tables are referenced from the `schema.yml` file via the function `source` e.g. `source('imdb', 'movies')` refers to the `movies` table in the `imdb` database.  Edit `models/actors/actors_summary.sql` to contain this content:
-    ```sql
-    {{ config(materialized='view') }}
-
-    with actor_summary as (
-    SELECT id,
-        any(actor_name) as name,
-        uniqExact(movie_id)    as num_movies,
-        avg(rank)                as avg_rank,
-        uniqExact(genre)         as genres,
-        uniqExact(director_name) as directors,
-        max(created_at) as updated_at
-    FROM (
-            SELECT {{ source('imdb', 'actors') }}.id as id,
-                    concat({{ source('imdb', 'actors') }}.first_name, ' ', {{ source('imdb', 'actors') }}.last_name) as actor_name,
-                    {{ source('imdb', 'movies') }}.id as movie_id,
-                    {{ source('imdb', 'movies') }}.rank as rank,
-                    genre,
-                    concat({{ source('imdb', 'directors') }}.first_name, ' ', {{ source('imdb', 'directors') }}.last_name) as director_name,
-                    created_at
-            FROM {{ source('imdb', 'actors') }}
-                        JOIN {{ source('imdb', 'roles') }} ON {{ source('imdb', 'roles') }}.actor_id = {{ source('imdb', 'actors') }}.id
-                        LEFT OUTER JOIN {{ source('imdb', 'movies') }} ON {{ source('imdb', 'movies') }}.id = {{ source('imdb', 'roles') }}.movie_id
-                        LEFT OUTER JOIN {{ source('imdb', 'genres') }} ON {{ source('imdb', 'genres') }}.movie_id = {{ source('imdb', 'movies') }}.id
-                        LEFT OUTER JOIN {{ source('imdb', 'movie_directors') }} ON {{ source('imdb', 'movie_directors') }}.movie_id = {{ source('imdb', 'movies') }}.id
-                        LEFT OUTER JOIN {{ source('imdb', 'directors') }} ON {{ source('imdb', 'directors') }}.id = {{ source('imdb', 'movie_directors') }}.director_id
-            )
-    GROUP BY id
+```sql
+{{
+    config(
+        materialized='table',
+        engine='MergeTree()',
+        order_by='(ordered_at, order_id)',
+        partition_by='toYYYYMM(ordered_at)'
     )
+}}
 
-    select *
-    from actor_summary
-    ```
-    Note how we include the column `updated_at` in our final actor_summary. We use this later for incremental materializations.
+with
 
-4. From the `imdb` directory execute the command `dbt run`.
+orders as (
 
-    ```bash
-    clickhouse-user@clickhouse:~/imdb$ dbt run
-    15:05:35  Running with dbt=1.1.0
-    15:05:35  Found 1 model, 0 tests, 1 snapshot, 0 analyses, 181 macros, 0 operations, 0 seed files, 6 sources, 0 exposures, 0 metrics
-    15:05:35
-    15:05:36  Concurrency: 1 threads (target='dev')
-    15:05:36
-    15:05:36  1 of 1 START view model imdb_dbt.actor_summary.................................. [RUN]
-    15:05:37  1 of 1 OK created view model imdb_dbt.actor_summary............................. [OK in 1.00s]
-    15:05:37
-    15:05:37  Finished running 1 view model in 1.97s.
-    15:05:37
-    15:05:37  Completed successfully
-    15:05:37
-    15:05:37  Done. PASS=1 WARN=0 ERROR=0 SKIP=0 TOTAL=1
-    ```
+    select * from {{ ref('stg_orders') }}
 
-5. dbt will represent the model as a view in ClickHouse as requested. We can now query this view directly. This view will have been created in the `imdb_dbt` database - this is determined by the schema parameter in the file `~/.dbt/profiles.yml` under the `clickhouse_imdb` profile.
+),
+...
+```
 
-    ```sql
-    SHOW DATABASES;
-    ```
+The rest of the model stays as it is. `materialized='table'` repeats what `dbt_project.yml` already says for marts, which keeps the model self-describing when you switch it to incremental later. Rebuild only this model:
 
-    ```response
-    +------------------+
-    |name              |
-    +------------------+
-    |INFORMATION_SCHEMA|
-    |default           |
-    |imdb              |
-    |imdb_dbt          |  <---created by dbt!
-    |information_schema|
-    |system            |
-    +------------------+
-    ```
+```bash
+dbt run --select orders
+```
 
-    Querying this view, we can replicate the results of our earlier query with a simpler syntax:
+```response
+1 of 1 START sql table model `jaffle_shop`.`orders` ............................ [RUN]
+1 of 1 OK created sql table model `jaffle_shop`.`orders` ....................... [OK in 0.44s]
+```
 
-    ```sql
-    SELECT * FROM imdb_dbt.actor_summary ORDER BY num_movies DESC LIMIT 5;
-    ```
+The table now has a proper sorting key and one partition per month:
 
-    ```response
-    +------+------------+----------+------------------+------+---------+-------------------+
-    |id    |name        |num_movies|avg_rank          |genres|directors|updated_at         |
-    +------+------------+----------+------------------+------+---------+-------------------+
-    |45332 |Mel Blanc   |832       |6.175853582979779 |18    |84       |2022-04-26 15:26:55|
-    |621468|Bess Flowers|659       |5.57727638854796  |19    |293      |2022-04-26 15:26:57|
-    |372839|Lee Phelps  |527       |5.032976449684617 |18    |261      |2022-04-26 15:26:56|
-    |283127|Tom London  |525       |2.8721716524875673|17    |203      |2022-04-26 15:26:56|
-    |356804|Bud Osborne |515       |2.0389507108727773|15    |149      |2022-04-26 15:26:56|
-    +------+------------+----------+------------------+------+---------+-------------------+
-    ```
+```sql
+SHOW CREATE TABLE jaffle_shop.orders;
+```
 
-## Creating a table materialization {#creating-a-table-materialization}
+```response
+CREATE TABLE jaffle_shop.orders
+(
+    ...
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(ordered_at)
+ORDER BY (ordered_at, order_id)
+SETTINGS replicated_deduplication_window = '0', index_granularity = 8192
+```
 
-In the previous example, our model was materialized as a view. While this might offer sufficient performance for some queries, more complex SELECTs or frequently executed queries may be better materialized as a table.  This materialization is useful for models that will be queried by BI tools to ensure users have a faster experience. This effectively causes the query results to be stored as a new table, with the associated storage overheads - effectively, an `INSERT TO SELECT` is executed. Note that this table will be reconstructed each time i.e., it isn't incremental. Large result sets may therefore result in long execution times - see [dbt Limitations](/integrations/connectors/data-ingestion/etl-tools/dbt/index#limitations).
+```sql
+SELECT partition, sum(rows) AS rows
+FROM system.parts
+WHERE database = 'jaffle_shop' AND table = 'orders' AND active
+GROUP BY partition
+ORDER BY partition;
+```
 
-1. Modify the file `actors_summary.sql` such that the `materialized` parameter is set to `table`. Notice how `ORDER BY` is defined, and notice we use the `MergeTree` table engine:
+```response
+┌─partition─┬─rows─┐
+│ 202409    │ 1497 │
+│ 202410    │ 1698 │
+│ 202411    │ 2262 │
+...
+│ 202508    │ 9389 │
+└───────────┴──────┘
+```
 
-    ```sql
-    {{ config(order_by='(updated_at, id, name)', engine='MergeTree()', materialized='table') }}
-    ```
+Besides `engine`, `order_by` and `partition_by`, table models accept `primary_key`, `ttl`, `settings`, `query_settings`, `projections` and `indexes`, and columns can carry `codec` and `ttl` through a model contract. They're all described in the [materializations page](/integrations/connectors/data-ingestion/etl-tools/dbt/materializations).
 
-2. From the `imdb` directory execute the command `dbt run`. This execution may take a little longer to execute - around 10s on most machines.
+## Creating an incremental model {#incremental}
 
-    ```bash
-    clickhouse-user@clickhouse:~/imdb$ dbt run
-    15:13:27  Running with dbt=1.1.0
-    15:13:27  Found 1 model, 0 tests, 1 snapshot, 0 analyses, 181 macros, 0 operations, 0 seed files, 6 sources, 0 exposures, 0 metrics
-    15:13:27
-    15:13:28  Concurrency: 1 threads (target='dev')
-    15:13:28
-    15:13:28  1 of 1 START table model imdb_dbt.actor_summary................................. [RUN]
-    15:13:37  1 of 1 OK created table model imdb_dbt.actor_summary............................ [OK in 9.22s]
-    15:13:37
-    15:13:37  Finished running 1 table model in 10.20s.
-    15:13:37
-    15:13:37  Completed successfully
-    15:13:37
-    15:13:37  Done. PASS=1 WARN=0 ERROR=0 SKIP=0 TOTAL=1
-    ```
+Rebuilding `orders` from scratch on every run is fine for 62,000 rows, but not for a table that grows by millions of rows a day. dbt's [incremental materialization](https://docs.getdbt.com/docs/build/incremental-models) only processes the rows that changed since the last run. Converting the `orders` model requires two additions:
 
-3. Confirm the creation of the table `imdb_dbt.actor_summary`:
+1. **`unique_key`**: the column that identifies a row, `order_id` here. The adapter uses it to replace rows that are processed again instead of duplicating them.
+2. **An incremental filter**: a `where` clause wrapped in `{% if is_incremental() %}` that selects only the rows to process. It's applied on incremental runs but not when the table is first built (or rebuilt with `--full-refresh`). Orders carry a timestamp, so the filter compares `ordered_at` against the latest value already in the table, referenced through the `{{ this }}` variable.
 
-    ```sql
-    SHOW CREATE TABLE imdb_dbt.actor_summary;
-    ```
+Update `models/marts/orders.sql` so the `config` block and the end of the model look like this:
 
-    You should the table with the appropriate data types:
-    ```response
-    +----------------------------------------
-    |statement
-    +----------------------------------------
-    |CREATE TABLE imdb_dbt.actor_summary
-    |(
-    |`id` UInt32,
-    |`first_name` String,
-    |`last_name` String,
-    |`num_movies` UInt64,
-    |`updated_at` DateTime
-    |)
-    |ENGINE = MergeTree
-    |ORDER BY (id, first_name, last_name)
-    +----------------------------------------
-    ```
-
-4. Confirm the results from this table are consistent with previous responses. Notice an appreciable improvement in the response time now that the model is a table:
-
-    ```sql
-    SELECT * FROM imdb_dbt.actor_summary ORDER BY num_movies DESC LIMIT 5;
-    ```
-
-    ```response
-    +------+------------+----------+------------------+------+---------+-------------------+
-    |id    |name        |num_movies|avg_rank          |genres|directors|updated_at         |
-    +------+------------+----------+------------------+------+---------+-------------------+
-    |45332 |Mel Blanc   |832       |6.175853582979779 |18    |84       |2022-04-26 15:26:55|
-    |621468|Bess Flowers|659       |5.57727638854796  |19    |293      |2022-04-26 15:26:57|
-    |372839|Lee Phelps  |527       |5.032976449684617 |18    |261      |2022-04-26 15:26:56|
-    |283127|Tom London  |525       |2.8721716524875673|17    |203      |2022-04-26 15:26:56|
-    |356804|Bud Osborne |515       |2.0389507108727773|15    |149      |2022-04-26 15:26:56|
-    +------+------------+----------+------------------+------+---------+-------------------+
-    ```
-
-    Feel free to issue other queries against this model. For example, which actors have the highest ranking movies with more than 5 appearances?
-
-    ```sql
-    SELECT * FROM imdb_dbt.actor_summary WHERE num_movies > 5 ORDER BY avg_rank  DESC LIMIT 10;
-    ```
-
-## Creating an Incremental Materialization {#creating-an-incremental-materialization}
-
-The previous example created a table to materialize the model. This table will be reconstructed for each dbt execution. This may be infeasible and extremely costly for larger result sets or complex transformations. To address this challenge and reduce the build time, dbt offers Incremental materializations. This allows dbt to insert or update records into a table since the last execution, making it appropriate for event-style data. Under the hood a temporary table is created with all the updated records and then all the untouched records as well as the updated records are inserted into a new target table. This results in similar [limitations](/integrations/connectors/data-ingestion/etl-tools/dbt/index#limitations) for large result sets as for the table model.
-
-To overcome these limitations for large sets, the adapter supports 'inserts_only' mode, where all the updates are inserted into the target table without creating a temporary table (more about it below).
-
-To illustrate this example, we will add the actor "Clicky McClickHouse", who will appear in an incredible 910 movies - ensuring he has appeared in more films than even [Mel Blanc](https://en.wikipedia.org/wiki/Mel_Blanc).
-
-1. First, we modify our model to be of type incremental. This addition requires:
-
-    1. **unique_key** - To ensure the adapter can uniquely identify rows, we must provide a unique_key - in this case, the `id` field from our query will suffice. This ensures we will have no row duplicates in our materialized table. For more details on uniqueness constraints, see[ here](https://docs.getdbt.com/docs/building-a-dbt-project/building-models/configuring-incremental-models#defining-a-uniqueness-constraint-optional).
-    2. **Incremental filter** - We also need to tell dbt how it should identify which rows have changed on an incremental run. This is achieved by providing a delta expression. Typically this involves a timestamp for event data; hence our updated_at timestamp field. This column, which defaults to the value of now() when rows are inserted, allows new roles to be identified. Additionally, we need to identify the alternative case where new actors are added. Using the `{{this}}` variable, to denote the existing materialized table, this gives us the expression `where id > (select max(id) from {{ this }}) or updated_at > (select max(updated_at) from {{this}})`. We embed this inside the `{% if is_incremental() %}` condition, ensuring it is only used on incremental runs and not when the table is first constructed. For more details on filtering rows for incremental models, see [this discussion in the dbt docs](https://docs.getdbt.com/docs/building-a-dbt-project/building-models/configuring-incremental-models#filtering-rows-on-an-incremental-run).
-
-    Update the file `actor_summary.sql` as follows:
-
-    ```sql
-    {{ config(order_by='(updated_at, id, name)', engine='MergeTree()', materialized='incremental', unique_key='id') }}
-    with actor_summary as (
-        SELECT id,
-            any(actor_name) as name,
-            uniqExact(movie_id)    as num_movies,
-            avg(rank)                as avg_rank,
-            uniqExact(genre)         as genres,
-            uniqExact(director_name) as directors,
-            max(created_at) as updated_at
-        FROM (
-            SELECT {{ source('imdb', 'actors') }}.id as id,
-                concat({{ source('imdb', 'actors') }}.first_name, ' ', {{ source('imdb', 'actors') }}.last_name) as actor_name,
-                {{ source('imdb', 'movies') }}.id as movie_id,
-                {{ source('imdb', 'movies') }}.rank as rank,
-                genre,
-                concat({{ source('imdb', 'directors') }}.first_name, ' ', {{ source('imdb', 'directors') }}.last_name) as director_name,
-                created_at
-        FROM {{ source('imdb', 'actors') }}
-            JOIN {{ source('imdb', 'roles') }} ON {{ source('imdb', 'roles') }}.actor_id = {{ source('imdb', 'actors') }}.id
-            LEFT OUTER JOIN {{ source('imdb', 'movies') }} ON {{ source('imdb', 'movies') }}.id = {{ source('imdb', 'roles') }}.movie_id
-            LEFT OUTER JOIN {{ source('imdb', 'genres') }} ON {{ source('imdb', 'genres') }}.movie_id = {{ source('imdb', 'movies') }}.id
-            LEFT OUTER JOIN {{ source('imdb', 'movie_directors') }} ON {{ source('imdb', 'movie_directors') }}.movie_id = {{ source('imdb', 'movies') }}.id
-            LEFT OUTER JOIN {{ source('imdb', 'directors') }} ON {{ source('imdb', 'directors') }}.id = {{ source('imdb', 'movie_directors') }}.director_id
-        )
-        GROUP BY id
+```sql
+{{
+    config(
+        materialized='incremental',
+        unique_key='order_id',
+        engine='MergeTree()',
+        order_by='(ordered_at, order_id)',
+        partition_by='toYYYYMM(ordered_at)'
     )
-    select *
-    from actor_summary
+}}
 
-    {% if is_incremental() %}
+with
 
-    -- this filter will only be applied on an incremental run
-    where id > (select max(id) from {{ this }}) or updated_at > (select max(updated_at) from {{this}})
+orders as (
 
-    {% endif %}
-    ```
+    select * from {{ ref('stg_orders') }}
 
-    Note that our model will only respond to updates and additions to the `roles` and `actors` tables. To respond to all tables, users would be encouraged to split this model into multiple sub-models - each with their own incremental criteria. These models can in turn be referenced and connected. For further details on cross-referencing models see [here](https://docs.getdbt.com/reference/dbt-jinja-functions/ref).
+),
 
-2. Execute a `dbt run` and confirm the results of the resulting table:
+...
 
-    ```response
-    clickhouse-user@clickhouse:~/imdb$  dbt run
-    15:33:34  Running with dbt=1.1.0
-    15:33:34  Found 1 model, 0 tests, 1 snapshot, 0 analyses, 181 macros, 0 operations, 0 seed files, 6 sources, 0 exposures, 0 metrics
-    15:33:34
-    15:33:35  Concurrency: 1 threads (target='dev')
-    15:33:35
-    15:33:35  1 of 1 START incremental model imdb_dbt.actor_summary........................... [RUN]
-    15:33:41  1 of 1 OK created incremental model imdb_dbt.actor_summary...................... [OK in 6.33s]
-    15:33:41
-    15:33:41  Finished running 1 incremental model in 7.30s.
-    15:33:41
-    15:33:41  Completed successfully
-    15:33:41
-    15:33:41  Done. PASS=1 WARN=0 ERROR=0 SKIP=0 TOTAL=1
-    ```
+select * from customer_order_count
 
-    ```sql
-    SELECT * FROM imdb_dbt.actor_summary ORDER BY num_movies DESC LIMIT 5;
-    ```
+{% if is_incremental() %}
 
-    ```response
-    +------+------------+----------+------------------+------+---------+-------------------+
-    |id    |name        |num_movies|avg_rank          |genres|directors|updated_at         |
-    +------+------------+----------+------------------+------+---------+-------------------+
-    |45332 |Mel Blanc   |832       |6.175853582979779 |18    |84       |2022-04-26 15:26:55|
-    |621468|Bess Flowers|659       |5.57727638854796  |19    |293      |2022-04-26 15:26:57|
-    |372839|Lee Phelps  |527       |5.032976449684617 |18    |261      |2022-04-26 15:26:56|
-    |283127|Tom London  |525       |2.8721716524875673|17    |203      |2022-04-26 15:26:56|
-    |356804|Bud Osborne |515       |2.0389507108727773|15    |149      |2022-04-26 15:26:56|
-    +------+------------+----------+------------------+------+---------+-------------------+
-    ```
+-- this filter will only be applied on an incremental run
+where ordered_at >= (select max(ordered_at) from {{ this }})
 
-3. We will now add data to our model to illustrate an incremental update. Add our actor  "Clicky McClickHouse" to the `actors` table:
+{% endif %}
+```
 
-    ```sql
-    INSERT INTO imdb.actors VALUES (845466, 'Clicky', 'McClickHouse', 'M');
-    ```
+`stg_orders` truncates `ordered_at` to the day, so the filter uses `>=`: on every run the whole latest day is processed again and, thanks to `unique_key`, the rows already loaded are replaced rather than duplicated. That's what makes it safe for orders that arrive later on the same day.
 
-4. Let's have "Clicky" star in 910 random movies:
+Run the model. The table already exists, so this first run is already an incremental one: only the latest day is re-processed.
 
-    ```sql
-    INSERT INTO imdb.roles
-    SELECT now() as created_at, 845466 as actor_id, id as movie_id, 'Himself' as role
-    FROM imdb.movies
-    LIMIT 910 OFFSET 10000;
-    ```
+```bash
+dbt run --select orders
+```
 
-5. Confirm he is indeed now the actor with the most appearances by querying the underlying source table and bypassing any dbt models:
+```response
+1 of 1 START sql incremental model `jaffle_shop`.`orders` ...................... [RUN]
+1 of 1 OK created sql incremental model `jaffle_shop`.`orders` ................. [OK in 0.94s]
+```
 
-    ```sql
-    SELECT id,
-        any(actor_name)          as name,
-        uniqExact(movie_id)    as num_movies,
-        avg(rank)                as avg_rank,
-        uniqExact(genre)         as unique_genres,
-        uniqExact(director_name) as uniq_directors,
-        max(created_at)          as updated_at
-    FROM (
-            SELECT imdb.actors.id                                                   as id,
-                    concat(imdb.actors.first_name, ' ', imdb.actors.last_name)       as actor_name,
-                    imdb.movies.id as movie_id,
-                    imdb.movies.rank                                                 as rank,
-                    genre,
-                    concat(imdb.directors.first_name, ' ', imdb.directors.last_name) as director_name,
-                    created_at
-            FROM imdb.actors
-                    JOIN imdb.roles ON imdb.roles.actor_id = imdb.actors.id
-                    LEFT OUTER JOIN imdb.movies ON imdb.movies.id = imdb.roles.movie_id
-                    LEFT OUTER JOIN imdb.genres ON imdb.genres.movie_id = imdb.movies.id
-                    LEFT OUTER JOIN imdb.movie_directors ON imdb.movie_directors.movie_id = imdb.movies.id
-                    LEFT OUTER JOIN imdb.directors ON imdb.directors.id = imdb.movie_directors.director_id
-            )
-    GROUP BY id
-    ORDER BY num_movies DESC
-    LIMIT 2;
-    ```
+Now add some new data. The Jaffle Shop data ends in August 2025, so we introduce a new customer, Clicky McClickHouse, who ordered a jaffle yesterday. Insert a customer, an order and its order item in the raw tables:
 
-    ```response
-    +------+-------------------+----------+------------------+------+---------+-------------------+
-    |id    |name               |num_movies|avg_rank          |genres|directors|updated_at         |
-    +------+-------------------+----------+------------------+------+---------+-------------------+
-    |845466|Clicky McClickHouse|910       |1.4687938697032283|21    |662      |2022-04-26 16:20:36|
-    |45332 |Mel Blanc          |909       |5.7884792542982515|19    |148      |2022-04-26 16:17:42|
-    +------+-------------------+----------+------------------+------+---------+-------------------+
-    ```
+```sql
+INSERT INTO raw.raw_customers VALUES ('clicky-0001', 'Clicky McClickHouse');
 
-6. Execute a `dbt run` and confirm our model has been updated and matches the above results:
+INSERT INTO raw.raw_orders VALUES
+    ('clicky-order-0001', 'clicky-0001', now() - INTERVAL 1 DAY,
+     '4b6c2304-2b9e-41e4-942a-cf11a1819378', 1100, 66, 1166);
 
-    ```response
-    clickhouse-user@clickhouse:~/imdb$  dbt run
-    16:12:16  Running with dbt=1.1.0
-    16:12:16  Found 1 model, 0 tests, 1 snapshot, 0 analyses, 181 macros, 0 operations, 0 seed files, 6 sources, 0 exposures, 0 metrics
-    16:12:16
-    16:12:17  Concurrency: 1 threads (target='dev')
-    16:12:17
-    16:12:17  1 of 1 START incremental model imdb_dbt.actor_summary........................... [RUN]
-    16:12:24  1 of 1 OK created incremental model imdb_dbt.actor_summary...................... [OK in 6.82s]
-    16:12:24
-    16:12:24  Finished running 1 incremental model in 7.79s.
-    16:12:24
-    16:12:24  Completed successfully
-    16:12:24
-    16:12:24  Done. PASS=1 WARN=0 ERROR=0 SKIP=0 TOTAL=1
-    ```
+INSERT INTO raw.raw_items VALUES ('clicky-item-0001', 'clicky-order-0001', 'JAF-001');
+```
 
-    ```sql
-    SELECT * FROM imdb_dbt.actor_summary ORDER BY num_movies DESC LIMIT 2;
-    ```
+The store id is Philadelphia, the item is a `nutellaphone who dis?` jaffle at 11.00 and the tax is Philadelphia's 6%, so the project's data tests still pass. Run the whole project so the staging views and the `order_items` table see the new rows before `orders` does:
 
-    ```response
-    +------+-------------------+----------+------------------+------+---------+-------------------+
-    |id    |name               |num_movies|avg_rank          |genres|directors|updated_at         |
-    +------+-------------------+----------+------------------+------+---------+-------------------+
-    |845466|Clicky McClickHouse|910       |1.4687938697032283|21    |662      |2022-04-26 16:20:36|
-    |45332 |Mel Blanc          |909       |5.7884792542982515|19    |148      |2022-04-26 16:17:42|
-    +------+-------------------+----------+------------------+------+---------+-------------------+
-    ```
+```bash
+dbt run
+```
+
+```response
+...
+10 of 13 OK created sql table model `jaffle_shop`.`order_items` ................ [OK in 0.30s]
+...
+12 of 13 START sql incremental model `jaffle_shop`.`orders` .................... [RUN]
+12 of 13 OK created sql incremental model `jaffle_shop`.`orders` ............... [OK in 0.73s]
+13 of 13 START sql table model `jaffle_shop`.`customers` ....................... [RUN]
+13 of 13 OK created sql table model `jaffle_shop`.`customers` .................. [OK in 0.28s]
+```
+
+The new order is in the incremental table and the `customers` mart, rebuilt from it, knows about the new customer:
+
+```sql
+SELECT order_id, customer_id, ordered_at, order_total, customer_order_number
+FROM jaffle_shop.orders
+WHERE customer_id = 'clicky-0001';
+```
+
+```response
+┌─order_id──────────┬─customer_id─┬──────────ordered_at─┬─order_total─┬─customer_order_number─┐
+│ clicky-order-0001 │ clicky-0001 │ 2026-09-14 00:00:00 │       11.66 │                     1 │
+└───────────────────┴─────────────┴─────────────────────┴─────────────┴───────────────────────┘
+```
+
+```sql
+SELECT customer_name, count_lifetime_orders, lifetime_spend, customer_type
+FROM jaffle_shop.customers
+WHERE customer_id = 'clicky-0001';
+```
+
+```response
+┌─customer_name───────┬─count_lifetime_orders─┬─lifetime_spend─┬─customer_type─┐
+│ Clicky McClickHouse │                     1 │          11.66 │ new           │
+└─────────────────────┴───────────────────────┴────────────────┴───────────────┘
+```
 
 ### Internals {#internals}
 
-We can identify the statements executed to achieve the above incremental update by querying ClickHouse's query log.
+ClickHouse's query log shows the statements the adapter ran for the incremental update:
 
 ```sql
-SELECT event_time, query  FROM system.query_log WHERE type='QueryStart' AND query LIKE '%dbt%'
-AND event_time > subtractMinutes(now(), 15) ORDER BY event_time LIMIT 100;
+SELECT event_time, written_rows, tables
+FROM system.query_log
+WHERE query_kind = 'Insert' AND type = 'QueryFinish'
+  AND has(databases, 'jaffle_shop')
+  AND event_time > now() - INTERVAL 15 MINUTE
+ORDER BY event_time;
 ```
 
-Adjust the above query to the period of execution. We leave result inspection to the user but highlight the general strategy used by the adapter to perform incremental updates:
+The default incremental strategy of the adapter works as follows. In the diagrams of this section, an arrow from a table to a statement means the statement reads that table; an arrow from a statement to a table means it writes to, mutates, renames or drops it:
 
-1. The adapter creates a temporary table `actor_sumary__dbt_tmp`. Rows that have changed are streamed into this table.
-2. A new table, `actor_summary_new,` is created. The rows from the old table are, in turn, streamed from the old to new, with a check to make sure row ids don't exist in the temporary table. This effectively handles updates and duplicates.
-3. The results from the temporary table are streamed into the new `actor_summary` table:
-4. Finally, the new table is exchanged atomically with the old version via an `EXCHANGE TABLES` statement. The old and temporary tables are in turn dropped.
+1. A table `orders__dbt_new_data` is created and the model's SQL, including the incremental filter, is inserted into it. In the run above, 378 rows were written: the 377 orders of the latest day already loaded plus the new one.
+2. A table `orders__dbt_tmp` is created with the same structure as `orders`, and all rows of `orders` whose `order_id` isn't in `orders__dbt_new_data` are copied into it.
+3. All rows of `orders__dbt_new_data` are inserted into `orders__dbt_tmp`. Steps 2 and 3 are what replaces the rows of the latest day instead of duplicating them.
+4. `orders__dbt_new_data` is dropped.
+5. `orders__dbt_tmp` is swapped with `orders` using an atomic `EXCHANGE TABLES` statement (through an intermediate rename to `orders__dbt_backup`), so `orders` now holds the new version.
+6. The old version is dropped.
 
-This is visualized below:
+```mermaid
+flowchart TB
+    stg[("stg_orders")]
+    items[("order_items")]
+    orders[("orders<br/>(current version)")]
+    new_data[("orders__dbt_new_data")]
+    tmp[("orders__dbt_tmp")]
+    new_orders[("orders<br/>(new version, was orders__dbt_tmp)")]
+    old_orders[("orders__dbt_tmp<br/>(old version, was orders)")]
+    q1["1. INSERT INTO orders__dbt_new_data<br/>SELECT ... model SQL ...<br/>WHERE ordered_at >= (SELECT max(ordered_at) FROM orders)"]
+    q2["2. INSERT INTO orders__dbt_tmp<br/>SELECT * FROM orders<br/>WHERE order_id NOT IN (SELECT order_id FROM orders__dbt_new_data)"]
+    q3["3. INSERT INTO orders__dbt_tmp<br/>SELECT * FROM orders__dbt_new_data"]
+    q4["4. DROP TABLE orders__dbt_new_data"]
+    q5["5. EXCHANGE TABLES orders__dbt_tmp AND orders"]
+    q6["6. DROP TABLE orders__dbt_tmp"]
+    stg -->|reads| q1
+    items -->|reads| q1
+    q1 -->|inserts the changed rows| new_data
+    orders -->|reads| q2
+    new_data -->|reads the keys| q2
+    new_data -->|reads| q3
+    q2 -->|"inserts the rows<br/>that did not change"| tmp
+    q3 -->|"inserts the<br/>changed rows"| tmp
+    q3 ~~~ q4
+    q4 -->|drops| new_data
+    tmp ~~~ q5
+    q5 -->|"swaps the names"| new_orders
+    q5 -->|"swaps the names"| old_orders
+    q5 ~~~ q6
+    q6 -->|drops| old_orders
+    classDef temp fill:#dbeafe,stroke:#1d4ed8;
+    classDef target fill:#fef3c7,stroke:#b45309;
+    classDef source fill:#dcfce7,stroke:#15803d;
+    classDef query fill:#f3f4f6,stroke:#6b7280;
+    class new_data,tmp,old_orders temp;
+    class orders,new_orders target;
+    class stg,items source;
+    class q1,q2,q3,q4,q5,q6 query;
+```
 
-<Image img="/images/integrations/data-ingestion/etl-tools/dbt/dbt_05.webp" size="lg" alt="incremental updates dbt" />
+Step 2 copies the whole table, so this strategy is as expensive as a table rebuild on very large models; see the [limitations](/integrations/connectors/data-ingestion/etl-tools/dbt/index#limitations). The strategies below avoid the copy.
 
-This strategy may encounter challenges on very large models. For further details see [Limitations](/integrations/connectors/data-ingestion/etl-tools/dbt/index#limitations).
+### Append strategy {#append-strategy}
 
-### Append Strategy (inserts-only mode) {#append-strategy-inserts-only-mode}
+The `append` strategy inserts the rows selected by the model straight into the target table. No temporary tables are created and nothing is copied, so it's as cheap as an incremental run can be. The price is that nothing is deduplicated either: if the incremental filter selects a row that's already in the table, you get it twice. Use it for immutable, event-style data, and make sure the filter only selects genuinely new rows.
 
-To overcome the limitations of large datasets in incremental models, the adapter uses the dbt configuration parameter `incremental_strategy`. This can be set to the value `append`. When set, updated rows are inserted directly into the target table (a.k.a `imdb_dbt.actor_summary`) and no temporary table is created.
-Note: Append only mode requires your data to be immutable or for duplicates to be acceptable. If you want an incremental table model that supports altered rows don't use this mode!
+With the day-truncated `ordered_at`, that means switching the filter to `>`. Change the model:
 
-To illustrate this mode, we will add another new actor and re-execute dbt run with `incremental_strategy='append'`.
+```sql
+{{
+    config(
+        materialized='incremental',
+        incremental_strategy='append',
+        unique_key='order_id',
+        engine='MergeTree()',
+        order_by='(ordered_at, order_id)',
+        partition_by='toYYYYMM(ordered_at)'
+    )
+}}
 
-1. Configure append only mode in actor_summary.sql:
+...
 
-   ```sql
-   {{ config(order_by='(updated_at, id, name)', engine='MergeTree()', materialized='incremental', unique_key='id', incremental_strategy='append') }}
-   ```
+{% if is_incremental() %}
 
-2. Let's add another famous actor - Danny DeBito
-
-   ```sql
-   INSERT INTO imdb.actors VALUES (845467, 'Danny', 'DeBito', 'M');
-   ```
-
-3. Let's star Danny in 920 random movies.
-
-   ```sql
-   INSERT INTO imdb.roles
-   SELECT now() as created_at, 845467 as actor_id, id as movie_id, 'Himself' as role
-   FROM imdb.movies
-   LIMIT 920 OFFSET 10000;
-   ```
-
-4. Execute a dbt run and confirm that Danny was added to the actor-summary table
-
-   ```response
-   clickhouse-user@clickhouse:~/imdb$ dbt run
-   16:12:16  Running with dbt=1.1.0
-   16:12:16  Found 1 model, 0 tests, 1 snapshot, 0 analyses, 186 macros, 0 operations, 0 seed files, 6 sources, 0 exposures, 0 metrics
-   16:12:16
-   16:12:17  Concurrency: 1 threads (target='dev')
-   16:12:17
-   16:12:17  1 of 1 START incremental model imdb_dbt.actor_summary........................... [RUN]
-   16:12:24  1 of 1 OK created incremental model imdb_dbt.actor_summary...................... [OK in 0.17s]
-   16:12:24
-   16:12:24  Finished running 1 incremental model in 0.19s.
-   16:12:24
-   16:12:24  Completed successfully
-   16:12:24
-   16:12:24  Done. PASS=1 WARN=0 ERROR=0 SKIP=0 TOTAL=1
-   ```
-
-   ```sql
-   SELECT * FROM imdb_dbt.actor_summary ORDER BY num_movies DESC LIMIT 3;
-   ```
-
-   ```response
-   +------+-------------------+----------+------------------+------+---------+-------------------+
-   |id    |name               |num_movies|avg_rank          |genres|directors|updated_at         |
-   +------+-------------------+----------+------------------+------+---------+-------------------+
-   |845467|Danny DeBito       |920       |1.4768987303293204|21    |670      |2022-04-26 16:22:06|
-   |845466|Clicky McClickHouse|910       |1.4687938697032283|21    |662      |2022-04-26 16:20:36|
-   |45332 |Mel Blanc          |909       |5.7884792542982515|19    |148      |2022-04-26 16:17:42|
-   +------+-------------------+----------+------------------+------+---------+-------------------+
-   ```
-
-Note how much faster that incremental was compared to the insertion of "Clicky".
-
-Checking again the query_log table reveals the differences between the 2 incremental runs:
-
-   ```sql
-INSERT INTO imdb_dbt.actor_summary ("id", "name", "num_movies", "avg_rank", "genres", "directors", "updated_at")
-WITH actor_summary AS (
-   SELECT id,
-      any(actor_name) AS name,
-      uniqExact(movie_id)    AS num_movies,
-      avg(rank)                AS avg_rank,
-      uniqExact(genre)         AS genres,
-      uniqExact(director_name) AS directors,
-      max(created_at) AS updated_at
-   FROM (
-      SELECT imdb.actors.id AS id,
-         concat(imdb.actors.first_name, ' ', imdb.actors.last_name) AS actor_name,
-         imdb.movies.id AS movie_id,
-         imdb.movies.rank AS rank,
-         genre,
-         concat(imdb.directors.first_name, ' ', imdb.directors.last_name) AS director_name,
-         created_at
-      FROM imdb.actors
-         JOIN imdb.roles ON imdb.roles.actor_id = imdb.actors.id
-         LEFT OUTER JOIN imdb.movies ON imdb.movies.id = imdb.roles.movie_id
-         LEFT OUTER JOIN imdb.genres ON imdb.genres.movie_id = imdb.movies.id
-         LEFT OUTER JOIN imdb.movie_directors ON imdb.movie_directors.movie_id = imdb.movies.id
-         LEFT OUTER JOIN imdb.directors ON imdb.directors.id = imdb.movie_directors.director_id
-   )
-   GROUP BY id
-)
-
-SELECT *
-FROM actor_summary
 -- this filter will only be applied on an incremental run
-WHERE id > (SELECT max(id) FROM imdb_dbt.actor_summary) OR updated_at > (SELECT max(updated_at) FROM imdb_dbt.actor_summary)
-   ```
+where ordered_at > (select max(ordered_at) from {{ this }})
 
-In this run, only the new rows are added straight to `imdb_dbt.actor_summary` table and there is no table creation involved.
-
-### Delete and insert mode (experimental) {#deleteinsert-mode-experimental}
-
-Historically ClickHouse has had only limited support for updates and deletes, in the form of asynchronous [Mutations](/reference/statements/alter/index). These can be extremely IO-intensive and should generally be avoided.
-
-ClickHouse 22.8 introduced [lightweight deletes](/reference/statements/delete) and ClickHouse 25.7 introduced [lightweight updates](/reference/statements/update). With the introduction of these features, modifications from single update queries, even when being materialized asynchronously, will occur instantly from the user's perspective.
-
-This mode can be configured for a model via the `incremental_strategy` parameter i.e.
-
-```sql
-{{ config(order_by='(updated_at, id, name)', engine='MergeTree()', materialized='incremental', unique_key='id', incremental_strategy='delete+insert') }}
+{% endif %}
 ```
 
-This strategy operates directly on the target model's table, so if there is an issue during the operation, the data in the incremental model is likely to be in an invalid state - there is no atomic update.
+Add a second new customer, Danny DeBito, with an order placed today in Brooklyn (4% tax) containing a jaffle and a coffee:
 
-In summary, this approach:
+```sql
+INSERT INTO raw.raw_customers VALUES ('danny-0001', 'Danny DeBito');
 
-1. The adapter creates a temporary table `actor_sumary__dbt_tmp`. Rows that have changed are streamed into this table.
-2. A `DELETE` is issued against the current `actor_summary` table. Rows are deleted by id from `actor_sumary__dbt_tmp`
-3. The rows from `actor_sumary__dbt_tmp` are inserted into `actor_summary` using an `INSERT INTO actor_summary SELECT * FROM actor_sumary__dbt_tmp`.
+INSERT INTO raw.raw_orders VALUES
+    ('danny-order-0001', 'danny-0001', now(),
+     '40e6ddd6-b8f6-4e17-8bd6-5e53966809d2', 1900, 76, 1976);
 
-This process is shown below:
+INSERT INTO raw.raw_items VALUES
+    ('danny-item-0001', 'danny-order-0001', 'JAF-003'),
+    ('danny-item-0002', 'danny-order-0001', 'BEV-004');
+```
 
-<Image img="/images/integrations/data-ingestion/etl-tools/dbt/dbt_06.webp" size="lg" alt="lightweight delete incremental" />
+```bash
+dbt run
+```
 
-### insert_overwrite mode (experimental) {#insert_overwrite-mode-experimental}
-Performs the following steps:
+```response
+...
+12 of 13 START sql incremental model `jaffle_shop`.`orders` .................... [RUN]
+12 of 13 OK created sql incremental model `jaffle_shop`.`orders` ............... [OK in 0.11s]
+...
+```
 
-1. Create a staging (temporary) table with the same structure as the incremental model relation: `CREATE TABLE {staging} AS {target}`.
-2. Insert only new records (produced by SELECT) into the staging table.
-3. Replace only new partitions (present in the staging table) into the target table.
+The incremental model ran in a fraction of the time of the previous run. Both new customers have exactly one order in the table:
 
-<br />
+```sql
+SELECT order_id, customer_id, ordered_at, order_total, is_food_order, is_drink_order
+FROM jaffle_shop.orders
+WHERE customer_id IN ('clicky-0001', 'danny-0001')
+ORDER BY ordered_at;
+```
+
+```response
+┌─order_id──────────┬─customer_id─┬──────────ordered_at─┬─order_total─┬─is_food_order─┬─is_drink_order─┐
+│ clicky-order-0001 │ clicky-0001 │ 2026-09-14 00:00:00 │       11.66 │             1 │              0 │
+│ danny-order-0001  │ danny-0001  │ 2026-09-15 00:00:00 │       19.76 │             1 │              1 │
+└───────────────────┴─────────────┴─────────────────────┴─────────────┴───────────────┴────────────────┘
+```
+
+The query log confirms the difference: this time the only statement touching `orders` is a single `INSERT INTO jaffle_shop.orders ... SELECT ...` with the model's SQL and the incremental filter, and it wrote one row.
+
+<Warning>
+With `>` and a day-truncated timestamp, an order that arrives later on the same day as the latest loaded order is never picked up. In a real project, filter on a timestamp with full precision, or on a monotonically increasing ingestion time, when you use the `append` strategy.
+</Warning>
+
+### Delete and insert strategy {#delete-insert-strategy}
+
+Historically ClickHouse has had only limited support for updates and deletes, in the form of asynchronous [mutations](/reference/statements/alter/index). These can be extremely IO-intensive and should generally be avoided. ClickHouse 22.8 introduced [lightweight deletes](/reference/statements/delete) and ClickHouse 25.7 introduced [lightweight updates](/reference/statements/update). With these, the effect of a single delete or update statement is visible immediately from the user's perspective even though it's materialized asynchronously.
+
+The `delete+insert` strategy relies on lightweight deletes and is configured through the `incremental_strategy` parameter:
+
+```sql
+{{
+    config(
+        materialized='incremental',
+        incremental_strategy='delete+insert',
+        unique_key='order_id',
+        engine='MergeTree()',
+        order_by='(ordered_at, order_id)',
+        partition_by='toYYYYMM(ordered_at)'
+    )
+}}
+```
+
+It operates directly on the target table, so if something fails halfway the data in the incremental model is likely to be in an invalid state: there is no atomic swap. In summary:
+
+1. A temporary table (`orders__dbt_new_data_<run_id>`) is created and the rows selected by the model are inserted into it.
+2. A `DELETE` is issued against `orders` for every `order_id` present in the temporary table.
+3. The rows of the temporary table are inserted into `orders`.
+4. The temporary table is dropped.
+
+```mermaid
+flowchart TB
+    stg[("stg_orders")]
+    items[("order_items")]
+    orders[("orders")]
+    new_data[("orders__dbt_new_data_#lt;run_id#gt;")]
+    q1["1. CREATE TABLE orders__dbt_new_data_#lt;run_id#gt; AS<br/>SELECT ... model SQL ...<br/>WHERE ordered_at >= (SELECT max(ordered_at) FROM orders)"]
+    q2["2. DELETE FROM orders<br/>WHERE order_id IN (SELECT order_id FROM orders__dbt_new_data_#lt;run_id#gt;)"]
+    q3["3. INSERT INTO orders<br/>SELECT * FROM orders__dbt_new_data_#lt;run_id#gt;"]
+    q4["4. DROP TABLE orders__dbt_new_data_#lt;run_id#gt;"]
+    stg -->|reads| q1
+    items -->|reads| q1
+    q1 -->|creates and fills with the changed rows| new_data
+    new_data -->|reads the keys| q2
+    q2 -->|deletes the matching rows| orders
+    new_data -->|reads| q3
+    q3 -->|inserts the changed rows| orders
+    q4 -->|drops| new_data
+    classDef temp fill:#dbeafe,stroke:#1d4ed8;
+    classDef target fill:#fef3c7,stroke:#b45309;
+    classDef source fill:#dcfce7,stroke:#15803d;
+    classDef query fill:#f3f4f6,stroke:#6b7280;
+    class new_data temp;
+    class orders target;
+    class stg,items source;
+    class q1,q2,q3,q4 query;
+```
+
+### Insert overwrite strategy (experimental) {#insert-overwrite-strategy}
+
+The `insert_overwrite` strategy replaces whole partitions, so it needs a `partition_by` configuration like the monthly one on `orders`. It performs the following steps:
+
+1. Create a staging table (`orders__dbt_new_data_<run_id>`) with the same structure as `orders`.
+2. Insert only the rows selected by the model into the staging table.
+3. List the partitions present in the staging table from `system.parts`.
+4. Replace exactly those partitions in `orders` with `ALTER TABLE ... REPLACE PARTITION ... FROM` the staging table.
+5. Drop the staging table.
 
 This approach has the following advantages:
 
-* It is faster than the default strategy because it doesn't copy the entire table.
-* It is safer than other strategies because it doesn't modify the original table until the INSERT operation completes successfully: in case of intermediate failure, the original table isn't modified.
-* It implements "partitions immutability" data engineering best practice. Which simplifies incremental and parallel data processing, rollbacks, etc.
+* It's faster than the default strategy because it doesn't copy the entire table.
+* It's safer than the other strategies because it doesn't modify the original table until the INSERT operation completes successfully: in case of an intermediate failure, the original table isn't modified.
+* It implements the "partition immutability" data engineering best practice, which simplifies incremental and parallel data processing, rollbacks, etc.
 
-<Image img="/images/integrations/data-ingestion/etl-tools/dbt/dbt_07.webp" size="lg" alt="insert overwrite incremental" />
+```mermaid
+flowchart TB
+    stg[("stg_orders")]
+    items[("order_items")]
+    orders[("orders<br/>PARTITION BY toYYYYMM(ordered_at)")]
+    staging[("orders__dbt_new_data_#lt;run_id#gt;")]
+    parts[("system.parts")]
+    q1["1. CREATE TABLE orders__dbt_new_data_#lt;run_id#gt; AS orders"]
+    q2["2. INSERT INTO orders__dbt_new_data_#lt;run_id#gt;<br/>SELECT ... model SQL ...<br/>WHERE ordered_at >= (SELECT max(ordered_at) FROM orders)"]
+    q3["3. SELECT DISTINCT partition_id FROM system.parts<br/>WHERE table = 'orders__dbt_new_data_#lt;run_id#gt;' AND active"]
+    q4["4. ALTER TABLE orders<br/>REPLACE PARTITION ID '202509' FROM orders__dbt_new_data_#lt;run_id#gt;,<br/>REPLACE PARTITION ID ... (one per partition found in step 3)"]
+    q5["5. DROP TABLE orders__dbt_new_data_#lt;run_id#gt;"]
+    q1 -->|creates empty, same structure as orders| staging
+    stg -->|reads| q2
+    items -->|reads| q2
+    q2 -->|inserts the changed rows| staging
+    parts -->|reads the partitions of the staging table| q3
+    q3 -->|partition ids| q4
+    staging -->|reads| q4
+    q4 -->|replaces those partitions| orders
+    q5 -->|drops| staging
+    classDef temp fill:#dbeafe,stroke:#1d4ed8;
+    classDef target fill:#fef3c7,stroke:#b45309;
+    classDef source fill:#dcfce7,stroke:#15803d;
+    classDef query fill:#f3f4f6,stroke:#6b7280;
+    class staging temp;
+    class orders target;
+    class stg,items,parts source;
+    class q1,q2,q3,q4,q5 query;
+```
 
-## Creating a snapshot {#creating-a-snapshot}
+The [materializations page](/integrations/connectors/data-ingestion/etl-tools/dbt/materializations#materialization-incremental) covers the remaining options of the incremental materialization, including the `microbatch` strategy and `on_schema_change`.
 
-dbt snapshots allow a record to be made of changes to a mutable model over time. This in turn allows point-in-time queries on models, where analysts can "look back in time" at the previous state of a model. This is achieved using [type-2 Slowly Changing Dimensions](https://en.wikipedia.org/wiki/Slowly_changing_dimension#Type_2:_add_new_row) where from and to date columns record when a row was valid. This functionality is supported by the ClickHouse adapter and is demonstrated below.
+## Creating a snapshot {#snapshot}
 
-This example assumes you have completed [Creating an Incremental Table Model](#creating-an-incremental-materialization). Make sure your actor_summary.sql doesn't set inserts_only=True. Your models/actor_summary.sql should look like this:
+dbt [snapshots](https://docs.getdbt.com/docs/build/snapshots) record how the rows of a mutable table change over time, so analysts can look back at the state of the data at any point in the past. They implement [type-2 slowly changing dimensions](https://en.wikipedia.org/wiki/Slowly_changing_dimension#Type_2:_add_new_row): each version of a row is stored with the interval during which it was valid.
 
-   ```sql
-   {{ config(order_by='(updated_at, id, name)', engine='MergeTree()', materialized='incremental', unique_key='id') }}
+The `customers` mart is a good candidate: `count_lifetime_orders`, `lifetime_spend` and `customer_type` all change every time a customer orders again. Before continuing, set the `orders` model back to the default incremental strategy from the [incremental section](#incremental) (remove `incremental_strategy='append'` and change the filter back to `>=`), so orders placed later today are picked up.
 
-   with actor_summary as (
-       SELECT id,
-           any(actor_name) as name,
-           uniqExact(movie_id)    as num_movies,
-           avg(rank)                as avg_rank,
-           uniqExact(genre)         as genres,
-           uniqExact(director_name) as directors,
-           max(created_at) as updated_at
-       FROM (
-           SELECT {{ source('imdb', 'actors') }}.id as id,
-               concat({{ source('imdb', 'actors') }}.first_name, ' ', {{ source('imdb', 'actors') }}.last_name) as actor_name,
-               {{ source('imdb', 'movies') }}.id as movie_id,
-               {{ source('imdb', 'movies') }}.rank as rank,
-               genre,
-               concat({{ source('imdb', 'directors') }}.first_name, ' ', {{ source('imdb', 'directors') }}.last_name) as director_name,
-               created_at
-       FROM {{ source('imdb', 'actors') }}
-           JOIN {{ source('imdb', 'roles') }} ON {{ source('imdb', 'roles') }}.actor_id = {{ source('imdb', 'actors') }}.id
-           LEFT OUTER JOIN {{ source('imdb', 'movies') }} ON {{ source('imdb', 'movies') }}.id = {{ source('imdb', 'roles') }}.movie_id
-           LEFT OUTER JOIN {{ source('imdb', 'genres') }} ON {{ source('imdb', 'genres') }}.movie_id = {{ source('imdb', 'movies') }}.id
-           LEFT OUTER JOIN {{ source('imdb', 'movie_directors') }} ON {{ source('imdb', 'movie_directors') }}.movie_id = {{ source('imdb', 'movies') }}.id
-           LEFT OUTER JOIN {{ source('imdb', 'directors') }} ON {{ source('imdb', 'directors') }}.id = {{ source('imdb', 'movie_directors') }}.director_id
-       )
-       GROUP BY id
-   )
-   select *
-   from actor_summary
+Snapshots are defined in YAML since dbt 1.9. Create `snapshots/customers_snapshot.yml`:
 
-   {% if is_incremental() %}
+```yaml
+snapshots:
+  - name: customers_snapshot
+    relation: ref('customers')
+    config:
+      unique_key: customer_id
+      strategy: check
+      check_cols:
+        - count_lifetime_orders
+        - lifetime_spend
+        - customer_type
+```
 
-   -- this filter will only be applied on an incremental run
-   where id > (select max(id) from {{ this }}) or updated_at > (select max(updated_at) from {{this}})
+The `check` strategy compares the listed columns between the current snapshot and the source on every run and records a new version whenever any of them changed. If your model has a reliable "last updated" timestamp column, the `timestamp` strategy is cheaper: set `strategy: timestamp` and `updated_at: <column>`. The Jaffle Shop's `last_ordered_at` is truncated to the day, so it wouldn't catch a second order on the same day, which is why this example uses `check`.
 
-   {% endif %}
-   ```
+Take the first snapshot:
 
-1. Create a file `actor_summary` in the snapshots directory.
+```bash
+dbt snapshot
+```
 
-    ```bash
-     touch snapshots/actor_summary.sql
-    ```
+```response
+1 of 1 START snapshot `jaffle_shop`.`customers_snapshot` ....................... [RUN]
+1 of 1 OK snapshotted `jaffle_shop`.`customers_snapshot` ....................... [OK in 0.17s]
+```
 
-2. Update the contents of the actor_summary.sql file with the following content:
-    ```sql
-    {% snapshot actor_summary_snapshot %}
+The snapshot table is created next to the models. The project's `generate_schema_name` macro puts every relation in the target schema for non-production targets, so a `schema` config on the snapshot would only take effect with the `prod` target. It contains one row per customer, with the dbt bookkeeping columns `dbt_valid_from` and `dbt_valid_to`; the latter is `NULL` for the current version of a row:
 
-    {{
+```sql
+SELECT customer_id, count_lifetime_orders, lifetime_spend, customer_type, dbt_valid_from, dbt_valid_to
+FROM jaffle_shop.customers_snapshot
+WHERE customer_id IN ('clicky-0001', 'danny-0001')
+ORDER BY customer_id, dbt_valid_from;
+```
+
+```response
+┌─customer_id─┬─count_lifetime_orders─┬─lifetime_spend─┬─customer_type─┬──────dbt_valid_from─┬─dbt_valid_to─┐
+│ clicky-0001 │                     1 │          11.66 │ new           │ 2026-09-15 01:15:32 │         ᴺᵁᴸᴸ │
+│ danny-0001  │                     1 │          19.76 │ new           │ 2026-09-15 01:15:32 │         ᴺᵁᴸᴸ │
+└─────────────┴───────────────────────┴────────────────┴───────────────┴─────────────────────┴──────────────┘
+```
+
+Clicky comes back for a coffee today:
+
+```sql
+INSERT INTO raw.raw_orders VALUES
+    ('clicky-order-0002', 'clicky-0001', now(),
+     '4b6c2304-2b9e-41e4-942a-cf11a1819378', 600, 36, 636);
+
+INSERT INTO raw.raw_items VALUES ('clicky-item-0002', 'clicky-order-0002', 'BEV-001');
+```
+
+Run the models so `orders` and `customers` reflect the new order, then take a second snapshot:
+
+```bash
+dbt run
+dbt snapshot
+```
+
+```response
+1 of 1 START snapshot `jaffle_shop`.`customers_snapshot` ....................... [RUN]
+1 of 1 OK snapshotted `jaffle_shop`.`customers_snapshot` ....................... [OK in 0.73s]
+```
+
+Clicky now has two rows in the snapshot. The first version was closed by setting its `dbt_valid_to`, and the new version, now a `returning` customer with two orders, is open. Danny didn't change, so his row is untouched:
+
+```sql
+SELECT customer_id, count_lifetime_orders, lifetime_spend, customer_type, dbt_valid_from, dbt_valid_to
+FROM jaffle_shop.customers_snapshot
+WHERE customer_id IN ('clicky-0001', 'danny-0001')
+ORDER BY customer_id, dbt_valid_from;
+```
+
+```response
+┌─customer_id─┬─count_lifetime_orders─┬─lifetime_spend─┬─customer_type─┬──────dbt_valid_from─┬────────dbt_valid_to─┐
+│ clicky-0001 │                     1 │          11.66 │ new           │ 2026-09-15 01:15:32 │ 2026-09-15 01:16:16 │
+│ clicky-0001 │                     2 │          18.02 │ returning     │ 2026-09-15 01:16:16 │                ᴺᵁᴸᴸ │
+│ danny-0001  │                     1 │          19.76 │ new           │ 2026-09-15 01:15:32 │                ᴺᵁᴸᴸ │
+└─────────────┴───────────────────────┴────────────────┴───────────────┴─────────────────────┴─────────────────────┘
+```
+
+Under the hood the adapter builds the new version of the snapshot in a table `customers_snapshot__snapshot_upsert` and swaps it in with `EXCHANGE TABLES` (or a drop and rename where the server can't exchange tables), so readers see either the previous or the new version of the snapshot. See the [snapshot section of the materializations page](/integrations/connectors/data-ingestion/etl-tools/dbt/materializations#snapshot) for the configuration reference.
+
+## Using materialized views {#materialized-views}
+
+Everything so far needs a `dbt run` to bring new data into the models. ClickHouse [materialized views](/concepts/features/materialized-views/index) work differently: they're insert triggers. Every block of rows inserted into the source table is transformed by the view's `SELECT` and written into a target table, with no scheduling involved. The adapter exposes them through the `materialized_view` materialization.
+
+Create `models/marts/daily_store_revenue.sql` with the number of orders and the revenue per store and day, reading directly from the raw orders table:
+
+```sql
+{{
     config(
-    target_schema='snapshots',
-    unique_key='id',
-    strategy='timestamp',
-    updated_at='updated_at',
+        materialized='materialized_view',
+        engine='SummingMergeTree()',
+        order_by='(order_date, store_id)'
     )
-    }}
+}}
 
-    select * from {{ref('actor_summary')}}
+select
+    toDate(ordered_at) as order_date,
+    store_id,
+    count() as orders,
+    sum(order_total) as revenue_cents
+from {{ source('ecom', 'raw_orders') }}
+group by order_date, store_id
+```
 
-    {% endsnapshot %}
-    ```
+The `engine` and `order_by` apply to the target table. `SummingMergeTree` adds up the numeric columns of rows that share the same sorting key when it merges parts, which is exactly what a per-day, per-store aggregate needs.
 
-A few observations regarding this content:
-* The select query defines the results you wish to snapshot over time. The function ref is used to reference our previously created actor_summary model.
-* We require a timestamp column to indicate record changes. Our updated_at column (see [Creating an Incremental Table Model](#creating-an-incremental-materialization)) can be used here. The parameter strategy indicates our use of a timestamp to denote updates, with the parameter updated_at specifying the column to use. If this isn't present in your model you can alternatively use the [check strategy](https://docs.getdbt.com/docs/building-a-dbt-project/snapshots#check-strategy). This is significantly more inefficient and requires the user to specify a list of columns to compare.  dbt compares the current and historical values of these columns, recording any changes (or doing nothing if identical).
+```bash
+dbt run --select daily_store_revenue
+```
 
-3. Run the command `dbt snapshot`.
+```response
+1 of 1 START sql materialized_view model `jaffle_shop`.`daily_store_revenue` ... [RUN]
+1 of 1 OK created sql materialized_view model `jaffle_shop`.`daily_store_revenue`  [OK in 0.25s]
+```
 
-    ```response
-    clickhouse-user@clickhouse:~/imdb$ dbt snapshot
-    13:26:23  Running with dbt=1.1.0
-    13:26:23  Found 1 model, 0 tests, 1 snapshot, 0 analyses, 181 macros, 0 operations, 0 seed files, 3 sources, 0 exposures, 0 metrics
-    13:26:23
-    13:26:25  Concurrency: 1 threads (target='dev')
-    13:26:25
-    13:26:25  1 of 1 START snapshot snapshots.actor_summary_snapshot...................... [RUN]
-    13:26:25  1 of 1 OK snapshotted snapshots.actor_summary_snapshot...................... [OK in 0.79s]
-    13:26:25
-    13:26:25  Finished running 1 snapshot in 2.11s.
-    13:26:25
-    13:26:25  Completed successfully
-    13:26:25
-    13:26:25  Done. PASS=1 WARN=0 ERROR=0 SKIP=0 TOTAL=1
-    ```
+The adapter created two objects: the target table, named after the model, and the materialized view itself with the `_mv` suffix, pointing at the target table with a `TO` clause. By default (`catchup=True`) the target table was also backfilled with the existing orders:
 
-Note how a table actor_summary_snapshot has been created in the snapshots db (determined by the target_schema parameter).
+```sql
+SELECT name, engine
+FROM system.tables
+WHERE database = 'jaffle_shop' AND name LIKE 'daily_store_revenue%';
+```
 
-4. Sampling this data you will see how dbt has included the columns dbt_valid_from and dbt_valid_to. The latter has values set to null. Subsequent runs will update this.
+```response
+┌─name───────────────────┬─engine───────────┐
+│ daily_store_revenue    │ SummingMergeTree │
+│ daily_store_revenue_mv │ MaterializedView │
+└────────────────────────┴──────────────────┘
+```
 
-    ```sql
-    SELECT id, name, num_movies, dbt_valid_from, dbt_valid_to FROM snapshots.actor_summary_snapshot ORDER BY num_movies DESC LIMIT 5;
-    ```
+```sql
+SHOW CREATE TABLE jaffle_shop.daily_store_revenue_mv;
+```
 
-    ```response
-    +------+----------+------------+----------+-------------------+------------+
-    |id    |first_name|last_name   |num_movies|dbt_valid_from     |dbt_valid_to|
-    +------+----------+------------+----------+-------------------+------------+
-    |845467|Danny     |DeBito      |920       |2022-05-25 19:33:32|NULL        |
-    |845466|Clicky    |McClickHouse|910       |2022-05-25 19:32:34|NULL        |
-    |45332 |Mel       |Blanc       |909       |2022-05-25 19:31:47|NULL        |
-    |621468|Bess      |Flowers     |672       |2022-05-25 19:31:47|NULL        |
-    |283127|Tom       |London      |549       |2022-05-25 19:31:47|NULL        |
-    +------+----------+------------+----------+-------------------+------------+
-    ```
+```response
+CREATE MATERIALIZED VIEW jaffle_shop.daily_store_revenue_mv TO jaffle_shop.daily_store_revenue
+(
+    `order_date` Date,
+    `store_id` String,
+    `orders` UInt64,
+    `revenue_cents` Int64
+)
+AS SELECT
+    toDate(ordered_at) AS order_date,
+    store_id,
+    count() AS orders,
+    sum(order_total) AS revenue_cents
+FROM raw.raw_orders
+GROUP BY
+    order_date,
+    store_id
+```
 
-5. Make our favorite actor Clicky McClickHouse appear in another 10 films.
+Now insert another raw order for Danny, without running dbt afterwards:
 
-    ```sql
-    INSERT INTO imdb.roles
-    SELECT now() as created_at, 845466 as actor_id, rand(number) % 412320 as movie_id, 'Himself' as role
-    FROM system.numbers
-    LIMIT 10;
-    ```
+```sql
+INSERT INTO raw.raw_orders VALUES
+    ('danny-order-0002', 'danny-0001', now(),
+     '40e6ddd6-b8f6-4e17-8bd6-5e53966809d2', 1400, 56, 1456);
 
-6. Re-run the dbt run command from the `imdb` directory. This will update the incremental model. Once this is complete, run the dbt snapshot to capture the changes.
+INSERT INTO raw.raw_items VALUES ('danny-item-0003', 'danny-order-0002', 'JAF-004');
+```
 
-    ```response
-    clickhouse-user@clickhouse:~/imdb$ dbt run
-    13:46:14  Running with dbt=1.1.0
-    13:46:14  Found 1 model, 0 tests, 1 snapshot, 0 analyses, 181 macros, 0 operations, 0 seed files, 3 sources, 0 exposures, 0 metrics
-    13:46:14
-    13:46:15  Concurrency: 1 threads (target='dev')
-    13:46:15
-    13:46:15  1 of 1 START incremental model imdb_dbt.actor_summary....................... [RUN]
-    13:46:18  1 of 1 OK created incremental model imdb_dbt.actor_summary.................. [OK in 2.76s]
-    13:46:18
-    13:46:18  Finished running 1 incremental model in 3.73s.
-    13:46:18
-    13:46:18  Completed successfully
-    13:46:18
-    13:46:18  Done. PASS=1 WARN=0 ERROR=0 SKIP=0 TOTAL=1
+The target table already reflects it. Brooklyn now has two orders today:
 
-    clickhouse-user@clickhouse:~/imdb$ dbt snapshot
-    13:46:26  Running with dbt=1.1.0
-    13:46:26  Found 1 model, 0 tests, 1 snapshot, 0 analyses, 181 macros, 0 operations, 0 seed files, 3 sources, 0 exposures, 0 metrics
-    13:46:26
-    13:46:27  Concurrency: 1 threads (target='dev')
-    13:46:27
-    13:46:27  1 of 1 START snapshot snapshots.actor_summary_snapshot...................... [RUN]
-    13:46:31  1 of 1 OK snapshotted snapshots.actor_summary_snapshot...................... [OK in 4.05s]
-    13:46:31
-    13:46:31  Finished running 1 snapshot in 5.02s.
-    13:46:31
-    13:46:31  Completed successfully
-    13:46:31
-    13:46:31  Done. PASS=1 WARN=0 ERROR=0 SKIP=0 TOTAL=1
-   ```
+```sql
+SELECT order_date, store_id, sum(orders) AS orders, sum(revenue_cents) AS revenue_cents
+FROM jaffle_shop.daily_store_revenue
+WHERE order_date >= yesterday()
+GROUP BY order_date, store_id
+ORDER BY order_date, store_id;
+```
 
-7. If we now query our snapshot, notice we have 2 rows for Clicky McClickHouse. Our previous entry now has a dbt_valid_to value. Our new value is recorded with the same value in the dbt_valid_from column, and a dbt_valid_to value of null. If we did have new rows, these would also be appended to the snapshot.
+```response
+┌─order_date─┬─store_id─────────────────────────────┬─orders─┬─revenue_cents─┐
+│ 2026-09-14 │ 4b6c2304-2b9e-41e4-942a-cf11a1819378 │      1 │          1166 │
+│ 2026-09-15 │ 40e6ddd6-b8f6-4e17-8bd6-5e53966809d2 │      2 │          3432 │
+│ 2026-09-15 │ 4b6c2304-2b9e-41e4-942a-cf11a1819378 │      1 │           636 │
+└────────────┴──────────────────────────────────────┴────────┴───────────────┘
+```
 
-    ```sql
-    SELECT id, name, num_movies, dbt_valid_from, dbt_valid_to FROM snapshots.actor_summary_snapshot ORDER BY num_movies DESC LIMIT 5;
-    ```
+The query aggregates with `sum()` and `GROUP BY` on purpose: `SummingMergeTree` only collapses rows with the same key when parts are merged in the background, so until then the two Brooklyn orders are two rows in the table. Always aggregate on read (or use `FINAL`) with summing and aggregating engines. Meanwhile the `orders` incremental model still has a single order for Danny until the next `dbt run`.
 
-    ```response
-    +------+----------+------------+----------+-------------------+-------------------+
-    |id    |first_name|last_name   |num_movies|dbt_valid_from     |dbt_valid_to       |
-    +------+----------+------------+----------+-------------------+-------------------+
-    |845467|Danny     |DeBito      |920       |2022-05-25 19:33:32|NULL               |
-    |845466|Clicky    |McClickHouse|920       |2022-05-25 19:34:37|NULL               |
-    |845466|Clicky    |McClickHouse|910       |2022-05-25 19:32:34|2022-05-25 19:34:37|
-    |45332 |Mel       |Blanc       |909       |2022-05-25 19:31:47|NULL               |
-    |621468|Bess      |Flowers     |672       |2022-05-25 19:31:47|NULL               |
-    +------+----------+------------+----------+-------------------+-------------------+
-    ```
+Later runs of `dbt run` keep the target table and its data and only update the view definition, with `ALTER TABLE ... MODIFY QUERY` when the change allows it, so it's safe to keep the model in the project. `dbt run --full-refresh` rebuilds the target table and backfills it again (unless `catchup` is `False`). The [materialized views page](/integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view) covers the rest: schema changes with `on_schema_change`, disabling the backfill with `catchup`, refreshable materialized views, several views feeding the same target and defining the target table as its own model.
 
-For further details on dbt snapshots see [here](https://docs.getdbt.com/docs/building-a-dbt-project/snapshots).
+## Further information {#further-information}
 
-## Using seeds {#using-seeds}
-
-dbt provides the ability to load data from CSV files. This capability isn't suited to loading large exports of a database and is more designed for small files typically used for code tables and [dictionaries](/concepts/features/dictionaries/index), e.g. mapping country codes to country names. For a simple example, we generate and then upload a list of genre codes using the seed functionality.
-
-1. We generate a list of genre codes from our existing dataset. From the dbt directory, use the `clickhouse-client` to create a file `seeds/genre_codes.csv`:
-
-    ```bash
-    clickhouse-user@clickhouse:~/imdb$ clickhouse-client --password <password> --query
-    "SELECT genre, ucase(substring(genre, 1, 3)) as code FROM imdb.genres GROUP BY genre
-    LIMIT 100 FORMAT CSVWithNames" > seeds/genre_codes.csv
-    ```
-
-2. Execute the `dbt seed` command. This will create a new table `genre_codes` in our database `imdb_dbt` (as defined by our schema configuration) with the rows from our csv file.
-
-    ```bash
-    clickhouse-user@clickhouse:~/imdb$ dbt seed
-    17:03:23  Running with dbt=1.1.0
-    17:03:23  Found 1 model, 0 tests, 1 snapshot, 0 analyses, 181 macros, 0 operations, 1 seed file, 6 sources, 0 exposures, 0 metrics
-    17:03:23
-    17:03:24  Concurrency: 1 threads (target='dev')
-    17:03:24
-    17:03:24  1 of 1 START seed file imdb_dbt.genre_codes..................................... [RUN]
-    17:03:24  1 of 1 OK loaded seed file imdb_dbt.genre_codes................................. [INSERT 21 in 0.65s]
-    17:03:24
-    17:03:24  Finished running 1 seed in 1.62s.
-    17:03:24
-    17:03:24  Completed successfully
-    17:03:24
-    17:03:24  Done. PASS=1 WARN=0 ERROR=0 SKIP=0 TOTAL=1
-    ```
-3. Confirm these have been loaded:
-
-    ```sql
-    SELECT * FROM imdb_dbt.genre_codes LIMIT 10;
-    ```
-
-    ```response
-    +-------+----+
-    |genre  |code|
-    +-------+----+
-    |Drama  |DRA |
-    |Romance|ROM |
-    |Short  |SHO |
-    |Mystery|MYS |
-    |Adult  |ADU |
-    |Family |FAM |
-
-    |Action |ACT |
-    |Sci-Fi |SCI |
-    |Horror |HOR |
-    |War    |WAR |
-    +-------+----+=
-    ```
-
-## Further Information {#further-information}
-
-The previous guides only touch the surface of dbt functionality. Users are recommended to read the excellent [dbt documentation](https://docs.getdbt.com/docs/introduction).
+This guide only touches the surface of dbt. The [dbt documentation](https://docs.getdbt.com/docs/introduction) is the reference for everything that isn't ClickHouse-specific. For the adapter, see the [features and configurations](/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations) page for profile settings and global features, the [materializations page](/integrations/connectors/data-ingestion/etl-tools/dbt/materializations) for every configuration used above, and the [dbt OSS, dbt v2 and dbt platform page](/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform) if you run dbt OSS, dbt v2 or the dbt platform. Contributions of new examples to the [Jaffle Shop for ClickHouse](https://github.com/ClickHouse/jaffle-shop-clickhouse) are welcome.

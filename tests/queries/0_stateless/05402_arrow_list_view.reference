@@ -1,0 +1,56 @@
+--- Arrow ---
+id	Nullable(Int32)					
+lv	Array(Nullable(Int32))					
+llv	Array(Nullable(String))					
+nested	Array(Array(Nullable(Int8)))					
+dict	Array(Nullable(String))					
+1	[30,40]	['b','c']	[[8,9]]	['y']
+2	[10,20,30]	['b']	[[7]]	['x','y']
+3	[]	['a','b','c']	[[8,9],[7]]	['x']
+4	[]	[]	[]	['x','y','x']
+5	[40]	['a']	[[7],[]]	[]
+1	['b','c']
+2	['b']
+3	['a','b','c']
+4	[]
+5	['a']
+1	[NULL,NULL]
+2	[NULL]
+3	[]
+4	[NULL,NULL,NULL]
+5	[NULL]
+--- ArrowStream ---
+id	Nullable(Int32)					
+lv	Array(Nullable(Int32))					
+llv	Array(Nullable(String))					
+nested	Array(Array(Nullable(Int8)))					
+dict	Array(Nullable(String))					
+1	[30,40]	['b','c']	[[8,9]]	['y']
+2	[10,20,30]	['b']	[[7]]	['x','y']
+3	[]	['a','b','c']	[[8,9],[7]]	['x']
+4	[]	[]	[]	['x','y','x']
+5	[40]	['a']	[[7],[]]	[]
+1	['b','c']
+2	['b']
+3	['a','b','c']
+4	[]
+5	['a']
+1	[NULL,NULL]
+2	[NULL]
+3	[]
+4	[NULL,NULL,NULL]
+5	[NULL]
+--- unused child rows are not validated ---
+['x']
+['y']
+[]
+--- unused child rows of out-of-order ranges are not validated ---
+['y']
+['x']
+[]
+--- contiguous ranges after the start of the child ---
+[3,4]
+[5]
+[6]
+--- a range past the end of the child ---
+INCORRECT_DATA

@@ -8,12 +8,37 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 class Context;
+class QueryStatus;
+
+/// How often the column-oriented `system.parts` siblings consult `QueryStatus` while enumerating
+/// the columns of a part: a wide table can have many thousands of columns per part, and polling
+/// only at the part boundary would leave a long uninterruptible stretch. The period is small,
+/// because a poll is a clock read, while filling the row of a single column allocates and copies
+/// much more than that.
+static constexpr size_t COLUMNS_CANCELLATION_CHECK_PERIOD = 16;
+
+/// Test-only instrumentation, a no-op unless the `slowdown_system_parts_enumeration` failpoint
+/// is enabled: sleeps while enumerating the parts of specially named tables, to make the eager
+/// result building slow enough for the tests of query cancellation and time limits.
+void slowDownSystemPartsEnumeration(const String & table_name);
+
+/// The same, but for the column-enumeration loops: sleeps once per
+/// `COLUMNS_CANCELLATION_CHECK_PERIOD` enumerated columns of a part.
+void slowDownSystemPartsColumnsEnumeration(const String & table_name, size_t column_position);
+
+/// The same, but for the storage-discovery prepass of `StoragesInfoStream` (the eager walk over
+/// all databases and tables): sleeps on every walked table with the matching name, so that the
+/// tests can prove that the walk itself stops at its cancellation checkpoint. It is scoped to
+/// a narrower table-name prefix than `slowDownSystemPartsEnumeration`, so that the discovery
+/// fixture does not slow down the walk for the queries that test the later checkpoints.
+void slowDownSystemPartsDiscovery(const String & table_name);
+
+/// The same, but for the column-metadata prepass of the column-oriented tables. It is scoped to
+/// a narrower table-name prefix than the loops above, so that the tests can exercise the prepass
+/// checkpoints and the later per-part / per-column checkpoints independently: a query over a
+/// table slowed down in the prepass never reaches the later loops within its time limit.
+void slowDownSystemPartsMetadataEnumeration(const String & table_name, size_t column_position);
 
 struct StoragesInfo
 {
@@ -29,8 +54,10 @@ struct StoragesInfo
 
     explicit operator bool() const { return storage != nullptr; }
 
-    MergeTreeData::DataPartsVector getParts(MergeTreeData::DataPartStateVector & state, bool has_state_column) const;
-    MergeTreeData::ProjectionPartsVector getProjectionParts(MergeTreeData::DataPartStateVector & state, bool has_state_column) const;
+    /// If `query_status` is provided, the part enumeration periodically checks for query cancellation
+    /// and time limits, and if the time limit is exceeded in the 'break' mode, stops early.
+    MergeTreeData::DataPartsVector getParts(MergeTreeData::DataPartStateVector & state, bool has_state_column, const std::shared_ptr<QueryStatus> & query_status) const;
+    MergeTreeData::ProjectionPartsVector getProjectionParts(MergeTreeData::DataPartStateVector & state, bool has_state_column, const std::shared_ptr<QueryStatus> & query_status) const;
 };
 
 /** A helper class that enumerates the storages that match given query. */
@@ -42,53 +69,16 @@ public:
     StoragesInfoStreamBase(const StoragesInfoStreamBase&) = default;
     virtual ~StoragesInfoStreamBase() = default;
 
-    StoragesInfo next()
-    {
-        while (next_row < rows)
-        {
-            StoragesInfo info;
+    StoragesInfo next();
 
-            info.database = (*database_column)[next_row].safeGet<String>();
-            info.table = (*table_column)[next_row].safeGet<String>();
-            UUID storage_uuid = (*storage_uuid_column)[next_row].safeGet<UUID>();
-
-            auto is_same_table = [&storage_uuid, this] (size_t row) -> bool
-            {
-                return (*storage_uuid_column)[row].safeGet<UUID>() == storage_uuid;
-            };
-
-            /// We may have two rows per table which differ in 'active' value.
-            /// If rows with 'active = 0' were not filtered out, this means we
-            /// must collect the inactive parts. Remember this fact in StoragesInfo.
-            for (; next_row < rows && is_same_table(next_row); ++next_row)
-            {
-                const auto active = (*active_column)[next_row].safeGet<UInt64>();
-                if (active == 0)
-                    info.need_inactive_parts = true;
-            }
-
-            info.storage = storages.at(storage_uuid);
-
-            /// For table not to be dropped and set of columns to remain constant.
-            if (!tryLockTable(info))
-                continue;
-
-            info.engine = info.storage->getName();
-
-            info.data = dynamic_cast<MergeTreeData *>(info.storage.get());
-            if (!info.data)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown engine {}", info.engine);
-
-            return info;
-        }
-
-        return {};
-    }
 protected:
     virtual bool tryLockTable(StoragesInfo & info);
 
     String query_id;
     std::chrono::milliseconds lock_timeout;
+
+    /// Enumerating the storages can be slow, so we check for query cancellation and time limits.
+    std::shared_ptr<QueryStatus> query_status;
 
     ColumnPtr database_column;
     ColumnPtr table_column;

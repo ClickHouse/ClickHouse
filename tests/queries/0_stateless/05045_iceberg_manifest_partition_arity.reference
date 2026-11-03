@@ -24,3 +24,8 @@ ICEBERG_SPECIFICATION_VIOLATION
 --- A8 a leading unmodellable field is not realigned onto the wrong value ---
 201
 0
+--- A9 the manifest list prunes both tables before their patched manifests are read ---
+201
+201
+1
+1

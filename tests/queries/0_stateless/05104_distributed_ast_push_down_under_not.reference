@@ -1,0 +1,22 @@
+570
+570
+570
+a NOT over a single non-convertible conjunct
+140
+140
+a NOT over an OR
+70
+70
+a top-level AND still pushes its convertible conjuncts
+430
+430
+430
+a nested AND under a top-level AND
+687
+687
+fully convertible predicates are still pushed
+930
+930
+the shard still receives the filter for a top-level AND, and none under NOT
+05104_and	1
+05104_not	0

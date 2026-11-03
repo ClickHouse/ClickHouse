@@ -61,7 +61,9 @@ public:
 
     void removeObjectIfExists(const StoredObject & object) override;
 
-    void removeObjectsIfExist(const StoredObjects & objects) override;
+    void removeObjectsIfExist( /// NOLINT
+        const StoredObjects & objects,
+        StoredObjects * successful_objects = nullptr) override;
 
     void copyObject( /// NOLINT
         const StoredObject & object_from,
@@ -112,6 +114,8 @@ public:
 
     bool supportParallelWrite() const override { return object_storage->supportParallelWrite(); }
 
+    bool supportsAtomicWrite() const override { return object_storage->supportsAtomicWrite(); }
+
     bool supportsObjectGenerationComparison() const override { return object_storage->supportsObjectGenerationComparison(); }
 
     const FileCacheSettings & getCacheSettings() const { return cache_settings; }
@@ -127,7 +131,7 @@ public:
         return object_storage->getAzureBlobStorageAuthMethod();
     }
 
-    const AzureBlobStorage::ConnectionParams & getAzureBlobStorageConnectionParams() const override
+    std::shared_ptr<const AzureBlobStorage::ConnectionParams> getAzureBlobStorageConnectionParams() const override
     {
         return object_storage->getAzureBlobStorageConnectionParams();
     }
@@ -153,13 +157,19 @@ public:
     }
 
 #if USE_AZURE_BLOB_STORAGE || USE_AWS_S3
-    void tagObjects(const StoredObjects & objects, const std::string & tag_key, const std::string & tag_value) override
+    void tagObjects( /// NOLINT
+        const StoredObjects & objects,
+        const std::string & tag_key,
+        const std::string & tag_value,
+        StoredObjects * successful_objects = nullptr) override
     {
-        object_storage->tagObjects(objects, tag_key, tag_value);
+        object_storage->tagObjects(objects, tag_key, tag_value, successful_objects);
     }
 #endif
 
     ObjectStoragePtr getUnderlying() override { return object_storage; }
+
+    ObjectStoragePtr cloneImpl() const override;
 
 private:
     FileCacheKey getCacheKey(const std::string & path) const;

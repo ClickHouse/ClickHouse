@@ -156,7 +156,8 @@ StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & /*ast_function*/, Cont
         source_database_name_or_regexp,
         database_is_regexp,
         source_table_regexp,
-        context);
+        context,
+        /*keep_inferred_source_metadata=*/ true);
 
     res->startup();
     return res;
@@ -187,7 +188,7 @@ merge(['db_name',] 'tables_regexp')
 ## Related {#related}
 
 - [Merge](/reference/engines/table-engines/special/merge) table engine
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{},
         {.allow_readonly = true}
     );
 }
