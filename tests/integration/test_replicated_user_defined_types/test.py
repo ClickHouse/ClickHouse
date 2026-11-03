@@ -47,6 +47,18 @@ def test_replication():
     node1.query("CREATE FUNCTION ReplId AS (x) -> x + 1")
     assert_eq_with_retry(node2, "SELECT ReplId(1)", "2\n")
     assert node2.query("SELECT toTypeName(CAST(1, 'ReplId'))") == "UInt64\n"
+
+    # While both exist, replacing one of them is propagated to that one only: the ZooKeeper watches of a function
+    # and of a type with the same name must not be mixed up.
+    node1.query("CREATE OR REPLACE FUNCTION ReplId AS (x) -> x + 2")
+    assert_eq_with_retry(node2, "SELECT ReplId(1)", "3\n")
+    node1.query("CREATE TYPE OR REPLACE ReplId AS UInt32")
+    assert_eq_with_retry(node2, "SELECT toTypeName(CAST(1, 'ReplId'))", "UInt32\n")
+    node1.query("CREATE OR REPLACE FUNCTION ReplId AS (x) -> x + 3")
+    assert_eq_with_retry(node2, "SELECT ReplId(1)", "4\n")
+    node1.query("CREATE TYPE OR REPLACE ReplId AS UInt64")
+    assert_eq_with_retry(node2, "SELECT toTypeName(CAST(1, 'ReplId'))", "UInt64\n")
+
     node1.query("DROP FUNCTION ReplId")
     assert_eq_with_retry(node2, "SHOW TYPES", "ReplId\nReplPair\n")
 

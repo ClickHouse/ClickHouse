@@ -57,9 +57,12 @@ namespace
         return root_path + "/" + String{getNodePrefix(object_type)} + escapeForFileName(object_name) + String{sql_extension};
     }
 
-    String makeWatchIdFromName(const String & name)
+    /// The storages of functions and of types share the ZooKeeper session, and `createWatchFromRawCallback` reuses the
+    /// callback registered under the same id, so the id must include the kind of the object: otherwise the changes of
+    /// a type would be reported to the storage of a function with the same name, and vice versa.
+    String makeWatchIdFromName(const UserDefinedSQLObjectType & type, const String & name)
     {
-        return fmt::format("UserDefinedSQLObjectsZooKeeperStorage(name={})", name);
+        return fmt::format("UserDefinedSQLObjectsZooKeeperStorage(type={}, name={})", type, name);
     }
 
     String makeWatchIdFromType(const UserDefinedSQLObjectType & type)
@@ -316,7 +319,7 @@ bool UserDefinedSQLObjectsZooKeeperStorage::getObjectDataAndSetWatch(
     UserDefinedSQLObjectType object_type,
     const String & object_name)
 {
-    auto object_watcher = zookeeper->createWatchFromRawCallback(makeWatchIdFromName(object_name), [&] -> Coordination::WatchCallback
+    auto object_watcher = zookeeper->createWatchFromRawCallback(makeWatchIdFromName(object_type, object_name), [&] -> Coordination::WatchCallback
     {
         return [my_watch_queue = watch_queue, object_type, object_name](const Coordination::WatchResponse & response)
         {
