@@ -1,4 +1,4 @@
-<test>
+<test iceberg="0">
     <create_query>
         CREATE TABLE crosstab_states
         (
