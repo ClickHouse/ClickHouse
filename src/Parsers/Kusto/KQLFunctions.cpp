@@ -806,14 +806,18 @@ const std::map<String, Entry> & scalarFunctions()
                 1,
                 1,
                 [](const ASTs & a) -> ASTPtr
-                { return makeASTFunction("toDateTime64", makeASTFunction("divide", a[0], litI(1000000)), litI(7), litS("UTC")); }});
+                {
+                    return makeASTFunction("toDateTime64", makeASTFunction("divide", a[0], lit(Float64(1000000))), lit(UInt64(7)), litS("UTC"));
+                }});
         result.emplace(
             "unixtime_nanoseconds_todatetime",
             Entry{
                 1,
                 1,
                 [](const ASTs & a) -> ASTPtr
-                { return makeASTFunction("toDateTime64", makeASTFunction("divide", a[0], litI(1000000000)), litI(7), litS("UTC")); }});
+                {
+                    return makeASTFunction("toDateTime64", makeASTFunction("divide", a[0], lit(Float64(1000000000))), lit(UInt64(7)), litS("UTC"));
+                }});
         result.emplace("week_of_year", Entry{1, 1, [](const ASTs & a) -> ASTPtr { return makeASTFunction("toISOWeek", a[0]); }});
         result.emplace(
             "unixtime_seconds_todatetime",
@@ -824,7 +828,9 @@ const std::map<String, Entry> & scalarFunctions()
                 1,
                 1,
                 [](const ASTs & a) -> ASTPtr
-                { return makeASTFunction("toDateTime64", makeASTFunction("divide", a[0], litI(1000)), litI(7), litS("UTC")); }});
+                {
+                    return makeASTFunction("toDateTime64", makeASTFunction("divide", a[0], lit(Float64(1000))), lit(UInt64(7)), litS("UTC"));
+                }});
         result.emplace(
             "datetime_diff",
             Entry{

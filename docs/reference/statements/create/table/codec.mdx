@@ -42,6 +42,8 @@ ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
 
 Codecs can be combined in a pipeline, for example, `CODEC(Delta, Default)`.
 
+Codec names are case-insensitive, so `CODEC(ZSTD)`, `CODEC(zstd)` and `CODEC(ZStd)` all name the same codec.
+
 <Tip>
 You can't decompress ClickHouse database files with external utilities like `lz4`. Instead, use the special [clickhouse-compressor](https://github.com/ClickHouse/ClickHouse/tree/master/programs/compressor) utility.
 </Tip>
@@ -85,6 +87,18 @@ High compression levels are useful for asymmetric scenarios, like compress once,
 
 <Note>
 This codec is experimental and requires `SET enable_zxc_codec = 1` to use.
+</Note>
+
+### GDeflate {#gdeflate}
+
+<ExperimentalBadge/>
+
+`GDeflate[(level)]` — [GDeflate](https://github.com/NVIDIA/libdeflate/tree/gdeflate), a variant of Deflate whose bit stream is split into 32 interleaved sub-streams, with configurable `level`. Possible levels: \[1, 12\]. Default level: 6.
+
+A block is compressed in independent chunks of 64 KiB, each a GDeflate page, the format that nvcomp and DirectStorage expand on a GPU, many chunks in parallel. On the CPU, it compresses and decompresses about as fast as Deflate, slower than `LZ4` and `ZSTD`. For columns of integers (`Int*`, `UInt*`, `Decimal32`, `Decimal64`, `Date`, `Date32`, `DateTime`, `DateTime64`), a chunk whose values lie close together is bit-packed before it is compressed, each value as its difference from the least value of the chunk, where that makes the chunk smaller.
+
+<Note>
+This codec is experimental and requires `SET enable_gdeflate_codec = 1` to use.
 </Note>
 
 ### Obsolete: ZSTD_QAT {#zstd_qat}
@@ -131,6 +145,22 @@ The codec accepts an optional variant argument:
 This codec is in beta and requires `SET enable_alp_codec = 1` to use.
 </Note>
 
+### PCO {#pco}
+
+<BetaBadge/>
+
+`PCO(level)` — Lossless compression for sequences of fixed-width numbers, using the [pcodec](https://github.com/pcodec/pcodec) library. Applicable to all numeric types of 1, 2, 4 or 8 bytes (`Int8`..`Int64`, `UInt8`..`UInt64`, `Float32`, `Float64`, and the types backed by them such as `Date`, `DateTime`, `Decimal32`, `Decimal64`, `IPv4`, and `Enum`). `Decimal128`/`Decimal256` and non-numeric types are not supported.
+
+pcodec identifies an approximate structure of the numbers (a "mode", e.g. an approximate common multiplier) and splits each value into "latents" that it then compresses with delta encoding and an interleaved [tANS](https://en.wikipedia.org/wiki/Asymmetric_numeral_systems) entropy coder. On numeric columns with smooth, multimodal, or high-entropy distributions (measurements, timings, counters, identifiers) it often compresses better than `Gorilla`/`FPC`/`ZSTD`/`ALP`; it has no run-length or match-based path, so constant or low-cardinality columns compress worse. Encoding is several times slower than `ZSTD`; decoding is workload-dependent.
+
+The optional `level` argument sets the compression level from 0 to 12; the default is 8. When a block would not compress (e.g. incompressible data), it is stored uncompressed, so the codec never expands data by more than a small constant per block.
+
+The payload of each compression block is a standalone [`.pco`](https://github.com/pcodec/pcodec) stream, compatible with the reference pcodec implementation.
+
+<Note>
+This codec is in beta and requires `SET enable_pco_codec = 1` to use. Because it needs the column type, it can only be specified per column; it cannot be used in the untyped compression settings (`marks_compression_codec`, `primary_key_compression_codec`, `default_compression_codec`) or in `TTL ... RECOMPRESS`.
+</Note>
+
 ### FPC {#fpc}
 
 `FPC(level, float_size)` - Repeatedly predicts the next floating point value in the sequence using the better of two predictors, then XORs the actual with the predicted value, and leading-zero compresses the result. Similar to Gorilla, this is efficient when storing a series of floating point values that change slowly. For 64-bit values (double), FPC is faster than Gorilla, for 32-bit values your mileage may vary. Possible `level` values: 1-28, the default value is 12.  Possible `float_size` values: 4, 8, the default value is `sizeof(type)` if type is Float. In all other cases, it's 4. For a detailed description of the algorithm see [High Throughput Compression of Double-Precision Floating-Point Data](https://userweb.cs.txstate.edu/~burtscher/papers/dcc07a.pdf).
@@ -140,6 +170,7 @@ This codec is in beta and requires `SET enable_alp_codec = 1` to use.
 <ExperimentalBadge/>
 
 `SZ3` or `SZ3(algorithm, error_bound_mode, error_bound)` - A lossy but error-bound codec ([SZ3 Lossy Compressor](https://szcompressor.org/)) for columns of type Float32, Float64, Array(Float32), or Array(Float64). For array columns, compression is most effective when all arrays have the same length (they are then compressed as fixed-width vectors); arrays of different lengths are still supported and are compressed as a flat sequence of values. The codec is not applicable to Map columns, because its keys would be corrupted by lossy compression. Supported values for 'algorithm' are `ALGO_LORENZO_REG`, `ALGO_INTERP_LORENZO` and `ALGO_INTERP`. Supported values for 'error_bound_mode' are `ABS`, `REL`, `PSNR` and `ABS_AND_REL`. Argument 'error_bound' is the maximum error and of type Float64.
+The codec is also not applicable to LowCardinality columns of MergeTree tables (also inside Array, Tuple or Nested), because their dictionaries would be corrupted.
 
 <Note>
 This codec is experimental and requires `SET enable_sz3_codec = 1` to use.

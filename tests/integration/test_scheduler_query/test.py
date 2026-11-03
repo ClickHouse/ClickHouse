@@ -169,6 +169,15 @@ def ensure_workload_concurrency(workload, limit: int) -> None:
         time.sleep(0.1)
 
 
+def queued_queries(workload) -> int:
+    return int(
+        node.query(
+            f"select queue_length from system.scheduler where "
+            f"path like '%/{workload}/%' and type='request_queue' and resource='query'"
+        ).strip()
+    )
+
+
 def test_max_concurrent_queries() -> None:
     node.query(
         """
@@ -235,14 +244,58 @@ def test_max_waiting_queries_updated() -> None:
         """
     )
 
-    pool_all = QueryPool(6, "all")
+    holder_error: list[str] = []
+    waiter_errors: list[str] = []
 
-    pool_all.start()
-    ensure_total_concurrency(1)
-    ensure_workload_concurrency("all", 1)
-    pool_all.stop()
-    # The raised limit (3) is enforced, not the initial 1 — proving the update reached the queue.
-    assert "Workload limit `max_waiting_queries` has been reached: 3 of 3" in pool_all.last_error
+    def hold_the_slot() -> None:
+        try:
+            node.query(
+                "select sleepEachRow(1) from numbers(300) "
+                "settings max_block_size=1, workload='all'",
+                query_id="max_waiting_updated_holder",
+            )
+        except QueryRuntimeException as e:
+            holder_error.append(str(e))  # expected: killed at teardown
+
+    def wait_for_the_slot() -> None:
+        try:
+            node.query("select 1 settings workload='all'")
+        except Exception as e:
+            waiter_errors.append(str(e))
+
+    holder = threading.Thread(target=hold_the_slot)
+    holder.start()
+    waiters: list[threading.Thread] = []
+    try:
+        while (
+            node.query(
+                "select count() from system.processes where query_id = 'max_waiting_updated_holder'"
+            ).strip()
+            == "0"
+        ):
+            assert not holder_error, holder_error
+            time.sleep(0.1)
+
+        # The holder keeps the only slot, so these queries wait in the queue; the old limit 1 rejects the second one.
+        waiters = [threading.Thread(target=wait_for_the_slot) for _ in range(3)]
+        for waiter in waiters:
+            waiter.start()
+        deadline = time.time() + 60
+        while queued_queries("all") < 3:
+            assert not waiter_errors, waiter_errors
+            assert time.time() < deadline, f"queued queries: {queued_queries('all')}"
+            time.sleep(0.1)
+
+        error = node.query_and_get_error(
+            "select 1 settings workload='all', workload_admission_timeout_ms=10000"
+        )
+        assert "Workload limit `max_waiting_queries` has been reached: 3 of 3" in error, error
+    finally:
+        node.query("kill query where query_id = 'max_waiting_updated_holder' sync")
+        holder.join()
+        for waiter in waiters:
+            waiter.join()
+    assert not waiter_errors, waiter_errors
 
 
 def test_admission_timeout_query_slot() -> None:
