@@ -101,10 +101,15 @@ committed partitionValues:
 2026-09-18 03:34:56.123456	2026-09-18 03:34:56.123456	1
 committed partitionValues: "partitionValues":{"p":"2026-09-18T03:34:56.123456Z"}
 committed paths: p=2026-09-18T03%253A34%253A56.123456Z/<uuid>.parquet
+-- the legacy (non-kernel) reader must read that value as UTC as well: it ignored the Z and
+-- parsed it in the session zone, so p came back 9 hours off d
+2026-09-18 03:34:56.123456	2026-09-18 03:34:56.123456	1
 -- timestamp_ntz has no time zone, so it keeps the space-separated form, and it was shifted
 -- the same way before the fix
 2026-09-18 03:34:56.123456	2026-09-18 03:34:56.123456	1
 committed partitionValues: "partitionValues":{"p":"2026-09-18 03:34:56.123456"}
+-- and so must the legacy reader
+2026-09-18 03:34:56.123456	2026-09-18 03:34:56.123456	1
 -- the remaining Delta primitive types need no per-type conversion under default settings, and
 -- this pins that: each is written both as a partition column and as a plain column, and the
 -- two must agree.

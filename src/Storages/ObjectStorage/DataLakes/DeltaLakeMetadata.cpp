@@ -918,9 +918,10 @@ Field DeltaLakeMetadata::getFieldValue(const String & value, DataTypePtr data_ty
 
     if (which.isDateTime64())
     {
+        /// A Delta timestamp partition value is a UTC wall clock, with or without the ISO 8601 'Z' suffix.
         ReadBufferFromString in(value);
         DateTime64 time = 0;
-        readDateTime64Text(time, 6, in, assert_cast<const DataTypeDateTime64 *>(check_type.get())->getTimeZone());
+        readDateTime64Text(time, 6, in, DateLUT::instance("UTC"));
         return time;
     }
 

@@ -222,6 +222,13 @@ ${CLICKHOUSE_LOCAL} --allow_delta_lake_writes=1 --session_timezone='Asia/Tokyo' 
 echo "committed partitionValues: $(committed_partition_values "${ROOT}/ts")"
 echo "committed paths: $(committed_paths "${ROOT}/ts")"
 
+echo "-- the legacy (non-kernel) reader must read that value as UTC as well: it ignored the Z and"
+echo "-- parsed it in the session zone, so p came back 9 hours off d"
+${CLICKHOUSE_LOCAL} --allow_delta_kernel_rs=0 --session_timezone='Asia/Tokyo' --query "
+    SELECT toString(p, 'UTC') AS p_utc, toString(d, 'UTC') AS d_utc, p = d AS partition_matches_data
+    FROM deltaLakeLocal('${ROOT}/ts');
+"
+
 # The same schema with timestamp_ntz, which the kernel only accepts when the table declares the
 # feature. This type has no time zone, so the ISO Z form above is not merely non-canonical for it
 # but unparseable (the kernel retries that pattern only for timestamp), and it keeps the
@@ -242,6 +249,11 @@ ${CLICKHOUSE_LOCAL} --allow_delta_lake_writes=1 --session_timezone='Asia/Tokyo' 
     FROM deltaLakeLocal('${ROOT}/ts_ntz');
 "
 echo "committed partitionValues: $(committed_partition_values "${ROOT}/ts_ntz")"
+echo "-- and so must the legacy reader"
+${CLICKHOUSE_LOCAL} --allow_delta_kernel_rs=0 --session_timezone='Asia/Tokyo' --query "
+    SELECT toString(p, 'UTC') AS p_utc, toString(d, 'UTC') AS d_utc, p = d AS partition_matches_data
+    FROM deltaLakeLocal('${ROOT}/ts_ntz');
+"
 
 # (id Int32 NOT NULL, one partition column per remaining Delta primitive type, each paired with a
 # plain column of the same type holding the same value) partitioned by the six partition columns.
