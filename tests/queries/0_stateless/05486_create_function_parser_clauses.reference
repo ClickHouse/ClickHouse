@@ -1,0 +1,6 @@
+CREATE FUNCTION f ON CLUSTER c AS x -> x
+CREATE FUNCTION f ARGUMENTS () ENGINE = n() AS \'c\'
+CREATE FUNCTION f ARGUMENTS (Int32, String) ENGINE = n() AS \'c\'
+CREATE FUNCTION f ENGINE = n(opt_level = \'2\', std = \'c11\') AS \'return 1\'
+ATTACH FUNCTION f ARGUMENTS (a Int32) RETURNS UInt8 ENGINE = n(opt_level = \'0\') AS \'return a\'
+CREATE FUNCTION w LANGUAGE WASM ARGUMENTS (a Int32, b UInt8) RETURNS UInt64 FROM \'mod\' :: \'fn\' ABI ROW_DIRECT DETERMINISTIC SHA256_HASH \'cafe42\' SETTINGS serialization_format = \'CSV\'
