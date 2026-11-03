@@ -89,7 +89,7 @@ rm -rf "$TABLE_PATH"
 
 # The other side of the boundary: an Iceberg table on remote storage keeps one INSERT per replica,
 # because its sink re-reads the metadata and retries a conflicting commit. The retried conflict is
-# logged as an error, hence `send_logs_level`.
+# logged as an error, hence `send_logs_level`. A deduplication token, which only MergeTree tables use, keeps it too.
 ICEBERG_LOG_COMMENT="iceberg-fanout-${CLICKHOUSE_DATABASE}"
 
 $CLICKHOUSE_CLIENT --query "
@@ -107,6 +107,7 @@ SET enable_parallel_replicas = 1, max_parallel_replicas = 3,
     parallel_distributed_insert_select = 2,
     automatic_parallel_replicas_mode = 0,
     send_logs_level = 'fatal',
+    insert_deduplication_token = 'iceberg-token',
     log_comment = '${ICEBERG_LOG_COMMENT}';
 INSERT INTO pr_ice SELECT id, s FROM pr_src;
 "

@@ -860,7 +860,7 @@ static bool isInsertSelectTrivialEnoughForDistributedExecution(const ASTInsertQu
 
 /// Every node of a distributed write runs the whole INSERT over its own slice of the read, so the writes
 /// add up to a single logical INSERT only where each node's write becomes visible on all of them.
-static bool targetAbsorbsDistributedWrite(const StoragePtr & table)
+static bool targetAbsorbsDistributedWrite(const StoragePtr & table, const Settings & settings)
 {
     /// A data lake answers `supportsReplication()` with `isDataLakeConfiguration()`, which says nothing about
     /// concurrent writers: the Iceberg sink retries a conflicting commit, the Delta one does not, and a local
@@ -869,6 +869,14 @@ static bool targetAbsorbsDistributedWrite(const StoragePtr & table)
     const bool shared_lake_retries_conflicting_commits = object_storage && object_storage->isIcebergStorage()
         && object_storage->getObjectStorage()->isRemote();
     if (!(table->isMergeTree() || shared_lake_retries_conflicting_commits) || !table->supportsReplication())
+        return false;
+
+    /// Each node numbers its blocks from zero, so a deduplication token gives blocks of different nodes the same
+    /// identifiers, and a non-parallel quorum insert allows only one part in flight per table.
+    if (table->isMergeTree()
+        && (!settings[Setting::insert_deduplication_token].value.empty()
+            || (!settings[Setting::insert_quorum_parallel]
+                && (settings[Setting::insert_quorum].is_auto || settings[Setting::insert_quorum].valueOr(0) >= 2))))
         return false;
 
     /// `Alias` answers the engine predicates from the table it points at, and an insert into it also pushes
@@ -902,7 +910,7 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
     if (!context->canUseParallelReplicasOnInitiator())
         return {};
 
-    if (!targetAbsorbsDistributedWrite(table))
+    if (!targetAbsorbsDistributedWrite(table, settings))
         return {};
 
     if (!isInsertSelectTrivialEnoughForDistributedExecution(query))
@@ -1316,7 +1324,7 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
         return {};
 
     StoragePtr dst_storage = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(query.table_id, local_context));
-    if (!targetAbsorbsDistributedWrite(dst_storage))
+    if (!targetAbsorbsDistributedWrite(dst_storage, local_context->getSettingsRef()))
         return {};
 
     auto & select = query.select->as<ASTSelectWithUnionQuery &>();

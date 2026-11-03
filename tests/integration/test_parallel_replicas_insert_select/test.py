@@ -531,3 +531,66 @@ def test_insert_select_time_series_independent_uuids(start_cluster, local_plan):
 
     execute_on_cluster("DROP TABLE ts_dst SYNC")
     execute_on_cluster("DROP TABLE ts SYNC")
+
+
+# Each node of a distributed `INSERT SELECT` numbers its blocks from zero, so a deduplication token gives blocks of
+# different nodes the same identifiers and the later ones are dropped as duplicates, and a quorum insert without
+# `insert_quorum_parallel` allows only one part in flight per table. Such an insert runs on the initiator alone,
+# while the read stays distributed. Several source parts and small blocks give every node several blocks to write.
+@pytest.mark.parametrize("source", ["table", "cluster_function"])
+@pytest.mark.parametrize(
+    "write_settings",
+    [
+        pytest.param({"insert_deduplication_token": "token"}, id="deduplication_token"),
+        pytest.param({"insert_quorum": 2, "insert_quorum_parallel": 0}, id="sequential_quorum"),
+    ],
+)
+def test_insert_select_colliding_write_settings(start_cluster, source, write_settings):
+    rows = 300000
+    create_tables("t_target", populate_count=0, skip_last_replica=False)
+    if source == "table":
+        create_tables("t_source", populate_count=0, skip_last_replica=False)
+        execute_on_cluster("SYSTEM STOP MERGES t_source")
+        for i in range(3):
+            node1.query(f"INSERT INTO t_source SELECT number, toString(number) FROM numbers({i * rows // 3}, {rows // 3})")
+        node2.query("SYSTEM SYNC REPLICA t_source")
+        node3.query("SYSTEM SYNC REPLICA t_source")
+        select = "SELECT * FROM t_source"
+    else:
+        for node in [node1, node2, node3]:
+            for i in range(6):
+                node.query(
+                    f"INSERT INTO FUNCTION file('colliding_write_settings_{i}.csv', 'CSV') "
+                    f"SELECT number, toString(number) FROM numbers({i * rows // 6}, {rows // 6}) "
+                    "SETTINGS engine_file_truncate_on_insert = 1"
+                )
+        select = (
+            "SELECT * FROM fileCluster(test_1_shard_3_replicas, 'colliding_write_settings_*.csv', 'CSV', 'key Int64, value String')"
+        )
+
+    query_id = str(uuid.uuid4())
+    node1.query(
+        f"INSERT INTO t_target {select}",
+        settings={
+            "parallel_distributed_insert_select": 2,
+            "enable_parallel_replicas": 2,
+            "max_parallel_replicas": 3,
+            "cluster_for_parallel_replicas": "test_1_shard_3_replicas",
+            "parallel_replicas_local_plan": False,
+            "max_block_size": 1000,
+            "min_insert_block_size_rows": 1000,
+            "min_insert_block_size_bytes": 0,
+            "max_insert_threads": 1,
+            **write_settings,
+        },
+        query_id=query_id,
+    )
+    node1.query("SYSTEM SYNC REPLICA t_target LIGHTWEIGHT")
+    assert node1.query("SELECT count(), uniqExact(key) FROM t_target") == f"{rows}\t{rows}\n"
+
+    execute_on_cluster("SYSTEM FLUSH LOGS query_log")
+    assert node1.query(
+        f"SELECT countIf(query_kind = 'Insert'), countIf(query_kind = 'Select' AND NOT is_initial_query) > 0 "
+        f"FROM clusterAllReplicas(test_1_shard_3_replicas, system.query_log) "
+        f"WHERE initial_query_id = '{query_id}' AND type = 'QueryFinish'"
+    ) == "1\t1\n"
