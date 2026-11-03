@@ -1365,12 +1365,18 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
 
 void StorageURLSource::addNumRowsToCache(const String & uri, size_t num_rows)
 {
+    if (!canUseNumRowsFromSchemaCache(format_settings, getContext()))
+        return;
+
     auto cache_key = getKeyForSchemaCache(uri, format, format_settings, getContext());
     StorageURL::getSchemaCache(getContext()).addNumRows(cache_key, num_rows);
 }
 
 std::optional<size_t> StorageURLSource::tryGetNumRowsFromCache(const String & uri, std::optional<time_t> last_mod_time)
 {
+    if (!canUseNumRowsFromSchemaCache(format_settings, getContext()))
+        return std::nullopt;
+
     auto cache_key = getKeyForSchemaCache(uri, format, format_settings, getContext());
     auto get_last_mod_time = [&]() -> std::optional<time_t>
     {
