@@ -520,8 +520,7 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
                     part_name,
                     data_part_info->getIndexGranularity().getMarksCount(),
                     data_part_info->getIndexGranularity().hasFinalMark(),
-                    res.read_mark_ranges,
-                    data_part_info->getDataPart()->storage.getTableObjectId()));
+                    res.read_mark_ranges));
             }
 
             /// Some rows survived PREWHERE, but individual granules within this batch may
@@ -666,8 +665,7 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                             condition,
                             marks,
                             data_part_info->getIndexGranularity().getMarksCount(),
-                            data_part_info->getIndexGranularity().hasFinalMark(),
-                            data_part_info->getDataPart()->storage.getTableObjectId());
+                            data_part_info->getIndexGranularity().hasFinalMark());
                     };
 
                     if (prewhere_condition_for_query_condition_cache)

@@ -6218,6 +6218,9 @@ void Context::clearQueryResultCache(const std::optional<String> & tag) const
 
 void Context::clearCaches() const
 {
+    /// Keyed by file path for local disks. Takes the context mutex itself.
+    clearPageCache();
+
     std::lock_guard lock(shared->mutex);
 
     /// Each cache is null-checked because some `Context` users intentionally do

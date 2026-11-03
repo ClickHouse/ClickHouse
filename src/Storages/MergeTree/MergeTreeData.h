@@ -762,9 +762,6 @@ public:
     /// Returns a pointer to primary index cache if it is enabled.
     PrimaryIndexCachePtr getPrimaryIndexCache() const;
 
-    /// Unique per table object in the process, unlike the UUID, which a table created again can reuse.
-    UInt64 getTableObjectId() const { return table_object_id; }
-
     struct CachesToPrewarm
     {
         MarkCachePtr mark_cache;
@@ -2535,9 +2532,6 @@ private:
     bool isDiskEligibleForOrphanedPartsSearch(DiskPtr disk) const;
 
     ConditionSelectivityEstimatorPtr cached_selectivity_estimator;
-
-    static UInt64 nextTableObjectId();
-    const UInt64 table_object_id = nextTableObjectId();
 };
 
 /// RAII struct to record big parts that are submerging or emerging.
