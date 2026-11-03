@@ -108,7 +108,7 @@ void checkObjectStorageQueueAzureMoveDestinationHost(
     {
         AzureBlobStorage::ConnectionParams connection_params;
         AzureBlobStorage::processURL(move_connection_string, move_container, connection_params.endpoint, connection_params.auth_method);
-        filter.checkURL(Poco::URI(connection_params.getConnectionURLWithoutQuery()));
+        filter.checkURL(Poco::URI(connection_params.getConnectionURL()));
     }
 #endif
 }

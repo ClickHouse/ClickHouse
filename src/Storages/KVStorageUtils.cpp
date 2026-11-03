@@ -490,13 +490,6 @@ bool traverseDAGFilter(
     return false;
 }
 
-/// `-0.` and `0.` are equal but serialize to different keys, and the readers merge equal keys before the lookup,
-/// so a key set holding a floating-point zero cannot find both.
-bool hasFloatZeroKey(const FieldVector & keys)
-{
-    return std::ranges::any_of(keys, [](const Field & key) { return anyFieldSatisfies(key, isFloatZeroField); });
-}
-
 }
 
 std::pair<FieldVectorPtr, bool> getFilterKeys(
@@ -510,7 +503,7 @@ std::pair<FieldVectorPtr, bool> getFilterKeys(
     FieldVectorPtr res = std::make_shared<FieldVector>();
     auto matched_keys = traverseDAGFilterSingleColumn(primary_key, primary_key_type, predicate, context, res);
 
-    return std::make_pair(res, !matched_keys || hasFloatZeroKey(*res));
+    return std::make_pair(res, !matched_keys);
 }
 
 std::pair<FieldVectorPtr, bool> getFilterKeys(
@@ -527,7 +520,7 @@ std::pair<FieldVectorPtr, bool> getFilterKeys(
     FieldVectorPtr res = std::make_shared<FieldVector>();
     auto matched_keys = traverseDAGFilter(primary_keys, primary_key_types, predicate, context, res);
 
-    return std::make_pair(res, !matched_keys || hasFloatZeroKey(*res));
+    return std::make_pair(res, !matched_keys);
 }
 
 std::vector<std::string> serializeKeysToRawString(

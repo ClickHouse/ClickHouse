@@ -1,4 +1,4 @@
--- Tags: long, no-azure-blob-storage, no-msan
+-- Tags: long, no-azure-blob-storage
 
 SET enable_funnel_functions = 1;
 

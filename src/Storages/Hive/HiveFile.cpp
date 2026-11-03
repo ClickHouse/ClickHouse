@@ -8,6 +8,7 @@
 #include <arrow/status.h>
 #include <parquet/file_reader.h>
 #include <parquet/statistics.h>
+#include <orc/Statistics.hh>
 
 #include <fmt/core.h>
 #include <Common/Exception.h>
@@ -33,16 +34,23 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-template <class FieldType, class T>
-Range createRangeFromOrcStatistics(const std::optional<T> & minimum, const std::optional<T> & maximum)
+template <class FieldType, class StatisticsType>
+Range createRangeFromOrcStatistics(const StatisticsType * stats)
 {
     /// Null values or NaN/Inf values of double type.
-    if (minimum && maximum)
-        return Range(FieldType(*minimum), true, FieldType(*maximum), true);
-    if (minimum)
-        return Range::createLeftBounded(FieldType(*minimum), true);
-    if (maximum)
-        return Range::createRightBounded(FieldType(*maximum), true);
+    if (stats->hasMinimum() && stats->hasMaximum())
+    {
+        return Range(FieldType(stats->getMinimum()), true, FieldType(stats->getMaximum()), true);
+    }
+    if (stats->hasMinimum())
+    {
+        return Range::createLeftBounded(FieldType(stats->getMinimum()), true);
+    }
+    if (stats->hasMaximum())
+    {
+        return Range::createRightBounded(FieldType(stats->getMaximum()), true);
+    }
+
     return Range::createWholeUniverseWithoutNull();
 }
 
@@ -101,40 +109,48 @@ void IHiveFile::loadSplitMinMaxIndexes()
     split_minmax_idxes_loaded = true;
 }
 
-Range HiveORCFile::buildRange(const ORC::Proto::ColumnStatistics * col_stats)
+Range HiveORCFile::buildRange(const orc::ColumnStatistics * col_stats)
 {
-    /// A missing `has_null` means that the column may contain nulls.
-    if (!col_stats || col_stats->has_null.value_or(true))
+    if (!col_stats || col_stats->hasNull())
         return Range::createWholeUniverseWithoutNull();
 
-    if (const auto & int_stats = col_stats->int_statistics)
-        return createRangeFromOrcStatistics<Int64>(int_stats->minimum, int_stats->maximum);
-    if (const auto & double_stats = col_stats->double_statistics)
-        return createRangeFromOrcStatistics<Float64>(double_stats->minimum, double_stats->maximum);
-    if (const auto & string_stats = col_stats->string_statistics)
-        return createRangeFromOrcStatistics<String>(string_stats->minimum, string_stats->maximum);
-    if (const auto & bool_stats = col_stats->bucket_statistics)
+    if (const auto * int_stats = dynamic_cast<const orc::IntegerColumnStatistics *>(col_stats))
     {
-        if (bool_stats->count.empty())
-            return Range::createWholeUniverseWithoutNull();
-        UInt64 true_cnt = bool_stats->count[0];
-        UInt64 false_cnt = col_stats->number_of_values.value_or(0) - true_cnt;
+        return createRangeFromOrcStatistics<Int64>(int_stats);
+    }
+    if (const auto * double_stats = dynamic_cast<const orc::DoubleColumnStatistics *>(col_stats))
+    {
+        return createRangeFromOrcStatistics<Float64>(double_stats);
+    }
+    if (const auto * string_stats = dynamic_cast<const orc::StringColumnStatistics *>(col_stats))
+    {
+        return createRangeFromOrcStatistics<String>(string_stats);
+    }
+    if (const auto * bool_stats = dynamic_cast<const orc::BooleanColumnStatistics *>(col_stats))
+    {
+        auto false_cnt = bool_stats->getFalseCount();
+        auto true_cnt = bool_stats->getTrueCount();
         if (false_cnt && true_cnt)
+        {
             return Range(UInt8(0), true, UInt8(1), true);
+        }
         if (false_cnt)
+        {
             return Range::createLeftBounded(UInt8(0), true);
+        }
         if (true_cnt)
+        {
             return Range::createRightBounded(UInt8(1), true);
-        return Range::createWholeUniverseWithoutNull();
+        }
     }
-    if (const auto & timestamp_stats = col_stats->timestamp_statistics)
+    else if (const auto * timestamp_stats = dynamic_cast<const orc::TimestampColumnStatistics *>(col_stats))
     {
-        /// The deprecated `minimum` and `maximum` are in the local time zone of the writer, which is
-        /// unknown for the statistics of the whole file, so only the UTC bounds are usable.
-        return createRangeFromOrcStatistics<UInt32>(timestamp_stats->minimum_utc, timestamp_stats->maximum_utc);
+        return createRangeFromOrcStatistics<UInt32>(timestamp_stats);
     }
-    if (const auto & date_stats = col_stats->date_statistics)
-        return createRangeFromOrcStatistics<UInt16>(date_stats->minimum, date_stats->maximum);
+    else if (const auto * date_stats = dynamic_cast<const orc::DateColumnStatistics *>(col_stats))
+    {
+        return createRangeFromOrcStatistics<UInt16>(date_stats);
+    }
     return Range::createWholeUniverseWithoutNull();
 }
 
@@ -143,12 +159,14 @@ void HiveORCFile::prepareReader()
     in = std::make_unique<ReadBufferFromHDFS>(namenode_url, path, getContext()->getGlobalContext()->getConfigRef(), getContext()->getReadSettings());
     auto format_settings = getFormatSettings(getContext());
     std::atomic<int> is_stopped{0};
-    reader = createORCReader(asORCInputStream(*in, format_settings, /*use_prefetch=*/false, is_stopped), ORC::ReaderOptions{});
+    orc::ReaderOptions options;
+    options.setMemoryPool(getORCMemoryPool());
+    reader = createORCReader(asORCInputStream(*in, format_settings, /*use_prefetch=*/false, is_stopped), options);
 }
 
 void HiveORCFile::prepareColumnMapping()
 {
-    const ORC::Type & type = reader->getType();
+    const orc::Type & type = reader->getType();
     size_t count = type.getSubtypeCount();
     for (size_t pos = 0; pos < count; pos++)
     {
@@ -165,7 +183,7 @@ bool HiveORCFile::useFileMinMaxIndex() const
 }
 
 
-std::unique_ptr<IMergeTreeDataPart::MinMaxIndex> HiveORCFile::buildMinMaxIndex(const std::vector<ORC::Proto::ColumnStatistics> * statistics)
+std::unique_ptr<IMergeTreeDataPart::MinMaxIndex> HiveORCFile::buildMinMaxIndex(const orc::Statistics * statistics)
 {
     if (!statistics)
         return nullptr;
@@ -188,7 +206,7 @@ std::unique_ptr<IMergeTreeDataPart::MinMaxIndex> HiveORCFile::buildMinMaxIndex(c
         {
             size_t pos = it->second;
             /// Attention: column statistics start from 1. 0 has special purpose.
-            const ORC::Proto::ColumnStatistics * col_stats = pos + 1 < statistics->size() ? &(*statistics)[pos + 1] : nullptr;
+            const orc::ColumnStatistics * col_stats = statistics->getColumnStatistics(static_cast<unsigned>(pos + 1));
             idx->hyperrectangle[i] = buildRange(col_stats);
         }
         ++i;
@@ -205,7 +223,8 @@ void HiveORCFile::loadFileMinMaxIndexImpl()
         prepareColumnMapping();
     }
 
-    file_minmax_idx = buildMinMaxIndex(&reader->getStatistics());
+    auto statistics = reader->getStatistics();
+    file_minmax_idx = buildMinMaxIndex(statistics.get());
 }
 
 bool HiveORCFile::useSplitMinMaxIndex() const
@@ -224,8 +243,7 @@ void HiveORCFile::loadSplitMinMaxIndexesImpl()
 
     auto * raw_reader = reader.get();
     auto stripe_num = raw_reader->getNumberOfStripes();
-    const auto & stripe_statistics = raw_reader->getMetadata().stripe_stats;
-    auto stripe_stats_num = stripe_statistics.size();
+    auto stripe_stats_num = raw_reader->getNumberOfStripeStatistics();
     if (stripe_num != stripe_stats_num)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "orc file:{} has different strip num {} and strip statistics num {}", path, stripe_num, stripe_stats_num);
@@ -233,7 +251,8 @@ void HiveORCFile::loadSplitMinMaxIndexesImpl()
     split_minmax_idxes.resize(stripe_num);
     for (size_t i = 0; i < stripe_num; ++i)
     {
-        split_minmax_idxes[i] = buildMinMaxIndex(&stripe_statistics[i].col_stats);
+        auto stripe_stats = raw_reader->getStripeStatistics(i);
+        split_minmax_idxes[i] = buildMinMaxIndex(stripe_stats.get());
     }
 }
 

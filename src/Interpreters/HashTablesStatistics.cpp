@@ -104,12 +104,6 @@ std::optional<HashTablesCacheStatistics> getHashTablesCacheStatistics()
         res.hits += hash_join_match_stats->hits;
         res.misses += hash_join_match_stats->misses;
     }
-    if (auto radix_uniq_exact_stats = getHashTablesStatistics<RadixUniqExactEntry>().getCacheStats())
-    {
-        res.entries += radix_uniq_exact_stats->entries;
-        res.hits += radix_uniq_exact_stats->hits;
-        res.misses += radix_uniq_exact_stats->misses;
-    }
     return res;
 }
 
@@ -175,5 +169,4 @@ std::optional<HashJoinMatchEntry> getHashJoinMatchHint(const DB::StatsCollecting
 template class HashTablesStatistics<AggregationEntry>;
 template class HashTablesStatistics<HashJoinEntry>;
 template class HashTablesStatistics<HashJoinMatchEntry>;
-template class HashTablesStatistics<RadixUniqExactEntry>;
 }
