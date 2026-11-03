@@ -29,6 +29,8 @@
 
 #include <Common/Macros.h>
 
+#include <Poco/URI.h>
+
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 
@@ -133,7 +135,7 @@ ObjectStoragePtr ObjectStorageFactory::create(
         PreformattedMessage::create(
             "Custom disks with endpoints that are not allowed by `remote_url_allow_hosts` were kept while loading existing "
             "metadata (server start or UNDROP): {}. Add `<s3_bucket>host/bucket</s3_bucket>` (S3) or `<host>host</host>` "
-            "(Azure) entries for them or recreate the tables that use them.",
+            "(Azure, HDFS) entries for them or recreate the tables that use them.",
             fmt::join(disks, ", ")));
 }
 
@@ -231,12 +233,23 @@ static void registerHDFSObjectStorage(ObjectStorageFactory & factory)
            const ContextPtr & context,
            bool /* run_access_check */,
            bool /* run_local_paths_check */,
-        RemoteHostFilterCheck /* remote_host_filter_check */) -> ObjectStoragePtr
+           RemoteHostFilterCheck remote_host_filter_check) -> ObjectStoragePtr
         {
             auto uri = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
             checkHDFSURL(uri);
             if (uri.back() != '/')
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "HDFS path must ends with '/', but '{}' doesn't.", uri);
+
+            /// Checked before `HDFSObjectStorage` connects; a disk loaded from existing metadata is only reported.
+            if (remote_host_filter_check != RemoteHostFilterCheck::None)
+            {
+                const Poco::URI endpoint_uri(uri);
+                if (!context->getGlobalContext()->getRemoteHostFilter().checkURL(
+                        endpoint_uri, /* throw_on_error */ remote_host_filter_check == RemoteHostFilterCheck::Enforce))
+                    warnAboutDiskNotAllowedByRemoteHostFilter(
+                        name, endpoint_uri.getAuthority(), fmt::format("<host>{}</host>", endpoint_uri.getHost()),
+                        context->getGlobalContext());
+            }
 
             std::unique_ptr<HDFSObjectStorageSettings> settings = std::make_unique<HDFSObjectStorageSettings>(
                 config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024), context->getSettingsRef()[Setting::hdfs_replication]);
