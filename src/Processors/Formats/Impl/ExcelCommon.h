@@ -122,6 +122,14 @@ std::optional<LocalDateTime> serialToLocalDateTime(double serial, bool date1904)
 /// Returns nothing for dates before 1900-01-01 or after 9999-12-31, which Excel cannot represent.
 std::optional<double> localDateTimeToSerial(Int64 days_since_epoch, double seconds_of_day);
 
+/// The same in the date system of a workbook.
+std::optional<double> localDateTimeToSerial(Int64 days_since_epoch, double seconds_of_day, bool date1904);
+
+/// Parses the value of a cell of the date type (`t="d"` in `XLSX`), which is a date, a date and time, or a time in the ISO 8601 format,
+/// into a `Number` cell with the serial date in the date system of the workbook. Returns false if the value is valid but cannot be represented
+/// as a serial date (a date before 1900 or a time with a time zone offset). Throws if the value is malformed.
+bool parseISO8601Cell(std::string_view text, bool date1904, Cell & cell);
+
 /// Formats a cell as text, like it would look in the `String` column.
 void cellToString(const Cell & cell, bool date1904, String & out);
 

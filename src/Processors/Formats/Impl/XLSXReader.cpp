@@ -504,10 +504,22 @@ void XLSXSheetReader::readCell(Cell & cell, UInt32 & column)
     }
     else if (cell_type == "d")
     {
-        /// A date in the ISO 8601 format (used by the strict variant of Office Open XML). Keep it as a string:
-        /// ClickHouse parses such strings into the date and time types.
-        cell.type = CellType::String;
-        cell.text = std::move(value);
+        /// A date in the ISO 8601 format (used by the strict variant of Office Open XML).
+        /// Convert it to a serial date, like the dates stored as numbers, so it is inferred and read as a date.
+        if (parseISO8601Cell(value, date1904, cell))
+        {
+            /// The number format tells whether a date with the time `00:00:00` is meant to be a date or a date and time.
+            if (cell.format != NumberFormatKind::Time && style < style_kinds.size()
+                && (style_kinds[style] == NumberFormatKind::Date || style_kinds[style] == NumberFormatKind::DateTime))
+                cell.format = style_kinds[style];
+        }
+        else
+        {
+            /// The date cannot be represented as a serial date. Keep it as a string:
+            /// ClickHouse parses such strings into the date and time types.
+            cell.type = CellType::String;
+            cell.text = std::move(value);
+        }
     }
     else
     {

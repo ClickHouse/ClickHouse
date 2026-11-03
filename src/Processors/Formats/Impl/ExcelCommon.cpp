@@ -68,6 +68,33 @@ void civilFromDays(Int64 days, Int64 & year, UInt32 & month, UInt32 & day)
         ++year;
 }
 
+/// http://howardhinnant.github.io/date_algorithms.html#days_from_civil
+Int64 daysFromCivil(Int64 year, UInt32 month, UInt32 day)
+{
+    if (month <= 2)
+        --year;
+    const Int64 era = (year >= 0 ? year : year - 399) / 400;
+    const UInt32 year_of_era = static_cast<UInt32>(year - era * 400);
+    const UInt32 day_of_year = (153 * (month > 2 ? month - 3 : month + 9) + 2) / 5 + day - 1;
+    const UInt32 day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    return era * 146097 + static_cast<Int64>(day_of_era) - 719468;
+}
+
+bool readDigits(std::string_view text, size_t & pos, size_t count, UInt32 & value)
+{
+    if (pos + count > text.size())
+        return false;
+    value = 0;
+    for (size_t i = 0; i < count; ++i)
+    {
+        if (!isNumericASCII(text[pos + i]))
+            return false;
+        value = value * 10 + static_cast<UInt32>(text[pos + i] - '0');
+    }
+    pos += count;
+    return true;
+}
+
 void writeTwoDigits(UInt32 value, String & out)
 {
     out += static_cast<char>('0' + value / 10);
@@ -475,6 +502,110 @@ std::optional<double> localDateTimeToSerial(Int64 days_since_epoch, double secon
     if (serial_days < 1 || static_cast<double>(serial_days) > MAX_SERIAL)
         return {};
     return static_cast<double>(serial_days) + seconds_of_day / 86400.0;
+}
+
+std::optional<double> localDateTimeToSerial(Int64 days_since_epoch, double seconds_of_day, bool date1904)
+{
+    if (!date1904)
+        return localDateTimeToSerial(days_since_epoch, seconds_of_day);
+    Int64 serial_days = days_since_epoch + DAYS_FROM_1904_EPOCH_TO_UNIX_EPOCH;
+    if (serial_days < 0 || static_cast<double>(serial_days) > MAX_SERIAL - 1462)
+        return {};
+    return static_cast<double>(serial_days) + seconds_of_day / 86400.0;
+}
+
+bool parseISO8601Cell(std::string_view text, bool date1904, Cell & cell)
+{
+    auto malformed = [&]
+    {
+        return Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse the date '{}' of a cell of the date type in an XLSX sheet", text);
+    };
+
+    size_t pos = 0;
+    bool has_date = false;
+    bool has_time = false;
+    UInt32 year = 0;
+    UInt32 month = 1;
+    UInt32 day = 1;
+    UInt32 hours = 0;
+    UInt32 minutes = 0;
+    UInt32 seconds = 0;
+    double fraction = 0;
+
+    /// A time without a date is either `Thh:mm:ss` or `hh:mm:ss`.
+    if (!text.empty() && text[0] != 'T' && !(text.size() > 2 && text[2] == ':'))
+    {
+        if (!readDigits(text, pos, 4, year) || pos >= text.size() || text[pos++] != '-' || !readDigits(text, pos, 2, month)
+            || pos >= text.size() || text[pos++] != '-' || !readDigits(text, pos, 2, day))
+            throw malformed();
+        if (month < 1 || month > 12 || day < 1 || day > 31)
+            throw malformed();
+        has_date = true;
+    }
+
+    if (pos < text.size() && (text[pos] == 'T' || (!has_date && text[pos] != 'Z')))
+    {
+        if (text[pos] == 'T')
+            ++pos;
+        if (!readDigits(text, pos, 2, hours) || pos >= text.size() || text[pos++] != ':' || !readDigits(text, pos, 2, minutes))
+            throw malformed();
+        if (pos < text.size() && text[pos] == ':')
+        {
+            ++pos;
+            if (!readDigits(text, pos, 2, seconds))
+                throw malformed();
+            if (pos < text.size() && text[pos] == '.')
+            {
+                ++pos;
+                double scale = 0.1;
+                size_t first_digit = pos;
+                while (pos < text.size() && isNumericASCII(text[pos]))
+                {
+                    fraction += (text[pos] - '0') * scale;
+                    scale /= 10;
+                    ++pos;
+                }
+                if (pos == first_digit)
+                    throw malformed();
+            }
+        }
+        /// 24:00:00 is the end of the day.
+        if (hours > 24 || minutes > 59 || seconds > 59 || (hours == 24 && (minutes || seconds || fraction != 0)))
+            throw malformed();
+        has_time = true;
+    }
+
+    if (!has_date && !has_time)
+        throw malformed();
+
+    if (pos < text.size() && text[pos] == 'Z')
+        ++pos;
+    else if (pos < text.size() && (text[pos] == '+' || text[pos] == '-') && has_time)
+        /// Excel dates do not have a time zone, and there is no way to convert a time with an offset to a local time
+        /// without knowing the time zone of the reader. Keep such values as strings.
+        return false;
+    if (pos != text.size())
+        throw malformed();
+
+    double seconds_of_day = hours * 3600.0 + minutes * 60.0 + seconds + fraction;
+
+    if (!has_date)
+    {
+        cell.type = CellType::Number;
+        cell.format = NumberFormatKind::Time;
+        cell.number = seconds_of_day / 86400.0;
+        return true;
+    }
+
+    auto serial = localDateTimeToSerial(daysFromCivil(year, month, day), seconds_of_day, date1904);
+    if (!serial)
+        /// Excel cannot represent dates before 1900 (or 1904) as numbers, but they are valid in the cells of the date type.
+        return false;
+
+    cell.type = CellType::Number;
+    cell.format = has_time ? NumberFormatKind::DateTime : NumberFormatKind::Date;
+    cell.number = *serial;
+    return true;
 }
 
 void cellToString(const Cell & cell, bool date1904, String & out)
