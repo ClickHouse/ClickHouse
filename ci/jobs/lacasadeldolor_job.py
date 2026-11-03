@@ -11,7 +11,12 @@ import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from ci.jobs.ast_fuzzer_job import JOB_ARTIFACTS, WORKSPACE_PATH, analyze_job_logs
+from ci.jobs.ast_fuzzer_job import (
+    JOB_ARTIFACTS,
+    WORKSPACE_PATH,
+    analyze_job_logs,
+    triage_failure,
+)
 from ci.jobs.buzzhouse_job import generate_buzz_config
 from ci.jobs.scripts.clickhouse_service import ClickHouseService
 from ci.jobs.scripts.integration_tests_configs import IMAGES_ENV
@@ -60,6 +65,19 @@ CLEANUP_FAILURES = (
     "Failed to close the Spark HTTP server",
 )
 CLEANUP_SANITIZER_ASSERT = "Exception: Sanitizer assert found for instance"
+
+# What the AI triage of a failure is told about reproducing it
+TRIAGE_REPRO_HINT = (
+    "`fuzzerout.sql` is the full log of the statements BuzzHouse sent; the last ones "
+    "before the failure are the suspects. They often depend on tables, settings or "
+    "dictionaries created by earlier statements, so replay the tail first and grow the "
+    "replayed prefix until the failure reproduces. Unlike a plain BuzzHouse run, the "
+    "servers run with a randomized configuration (`effective_config<N>.xml`, "
+    "`effective_users<N>.xml`, `keeper<N>.xml`) and are restarted during the run, as "
+    "`dolor.log` records; `buzzhouse.json` holds the BuzzHouse configuration and "
+    "`server.sh` the server command line. When a repro with default settings fails, "
+    "start a server with the effective configuration."
+)
 
 
 def _start_docker_in_docker():
@@ -377,6 +395,7 @@ def _complete_with_artifacts(
     for file in paths:
         if file.exists() and file.stat().st_size > 0:
             result.set_files(file)
+    triage_failure(result, "La Casa del Dolor", paths, TRIAGE_REPRO_HINT)
     result.complete_job()
 
 
@@ -769,6 +788,7 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
         if failure is not None:
             _complete_with_artifacts(failure, sw, workspace_path, paths)
 
+    triage_failure(result, "La Casa del Dolor", paths, TRIAGE_REPRO_HINT)
     result.complete_job()
 
 

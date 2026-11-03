@@ -1,7 +1,7 @@
 """
 AI triage for fuzzer/stress job failures.
 
-After a fuzz-style job (AST Fuzzer, BuzzHouse, Stress test) fails, an AI agent
+After a fuzz-style job (AST Fuzzer, La Casa del Dolor, Stress test) fails, an AI agent
 inspects the failure evidence and judges it, and this script files or references
 a tracking issue. A failure that an open, independent issue already tracks (see
 below) is linked to it with no agent run at all. A second, separately budgeted
