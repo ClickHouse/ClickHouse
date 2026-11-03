@@ -4,6 +4,8 @@
 #include <Disks/IStoragePolicy.h>
 #include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
+#include <Common/Macros.h>
+#include <Common/RemoteHostFilter.h>
 #include <Common/SipHash.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Parsers/ASTExpressionList.h>
@@ -16,6 +18,8 @@
 #include <Parsers/IAST.h>
 #include <Common/NamedCollections/NamedCollectionConfiguration.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
+
+#include <Poco/URI.h>
 
 #include <algorithm>
 #include <memory>
@@ -182,7 +186,9 @@ static std::vector<std::pair<size_t, std::string>> getOrCreateCustomDisk(
     if (!attach && (disk_name.empty() || disk_name == "." || disk_name == ".." || disk_name.contains('/')))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk name cannot be empty, `.`, `..` or contain `/` ({})", disk_name);
 
+    bool created = false;
     auto disk = context->getOrCreateDisk(disk_name, [&](const DisksMap & disks_map) -> DiskPtr {
+        created = true;
         /// A wrapper (`encrypted`, `cache`) names a disk another session may have created with the opt-in. It is looked up
         /// in the map the wrapper is created from, so that it cannot be registered in between.
         const auto wrapped = disks_map.find(config->getString(".disk", ""));
@@ -225,6 +231,11 @@ static std::vector<std::pair<size_t, std::string>> getOrCreateCustomDisk(
             " Enable the setting `s3_allow_server_credentials_in_user_queries` to allow it."
 #endif
             , disk_name);
+
+    /// A reused disk was checked against an older `remote_url_allow_hosts` or only warned about on load.
+    if (!created && !attach && config->getString("object_storage_type", config->getString("type", "")) == "hdfs")
+        context->getGlobalContext()->getRemoteHostFilter().checkURL(
+            Poco::URI(context->getMacros()->expand(config->getString("endpoint"))));
 
     return matches;
 }
