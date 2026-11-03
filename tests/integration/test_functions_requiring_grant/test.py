@@ -279,6 +279,20 @@ def test_division_setting_does_not_bypass_grant():
     assert instance.query(query, user="A") == "4\n"
 
 
+def test_factory_replacement_requires_grant():
+    """Under `use_legacy_to_time`, the function factory gives `toTimeWithFixedDate` for `toTime`."""
+    instance.query("CREATE USER A")
+
+    query = (
+        "SELECT toTime(toDateTime('2026-01-01 12:00:00')) "
+        "SETTINGS use_legacy_to_time = 1"
+    )
+    assert "Not enough privileges" in instance.query_and_get_error(query, user="A")
+
+    instance.query("GRANT FUNCTION ON toTimeWithFixedDate TO A")
+    assert instance.query(query, user="A") == instance.query(query)
+
+
 def test_query_cache_does_not_outlive_grant():
     """The query cache serves a hit before the query is analyzed, so it must not keep the result
     of a call that needs a grant: the next run after the revoke would skip the check."""

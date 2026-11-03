@@ -1480,9 +1480,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     /// built-in or user defined. Check the grant here, before any of the rewrites below can replace the
     /// call (`if` with a constant condition, `IN` with an array, the early short-circuit of `and`/`or`, ...)
     /// or rename it.
-    const String written_function_name = function_name;
     if (!lambda_expression_untyped)
-        checkFunctionAccess(scope.context, written_function_name);
+        checkFunctionAccess(scope.context, function_name);
 
     /** Early short-circuit optimization for ordinary builtin AND/OR functions. Perform this
       * only after checking scoped lambdas and registered UDFs, so a builtin cannot bypass a
@@ -3241,11 +3240,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         return result_projection_names;
     }
 
-    /// The special cases above may have replaced the written function with another one, e.g. `in` with `nullIn`
-    /// under `transform_null_in`. The function which is actually executed requires its own grant too.
-    if (function_name != written_function_name)
-        checkFunctionAccess(scope.context, function_name);
-
     FunctionOverloadResolverPtr function = UserDefinedExecutableFunctionFactory::instance().tryGet(function_name, scope.context, parameters); /// NOLINT(readability-static-accessed-through-instance)
     /// Executable UDFs may have parameters. They are checked in UserDefinedExecutableFunctionFactory.
     bool can_have_parameters = (function != nullptr);
@@ -3299,6 +3293,11 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     if (function)
     {
         checkFunctionNodeHasEmptyNullsAction(function_node);
+
+        /// The function which is actually executed requires its own grant too: the special cases above may have
+        /// replaced the written one (`in` with `nullIn` under `transform_null_in`), and so may the factory
+        /// (`toTime` with `toTimeWithFixedDate` under `use_legacy_to_time`).
+        checkFunctionAccess(scope.context, function->getName());
     }
     else
     {

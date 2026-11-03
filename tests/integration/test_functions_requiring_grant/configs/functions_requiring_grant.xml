@@ -22,6 +22,8 @@
             <function>nullIn</function>
             <!-- Renamed to `divideExact` before the analysis under `sql_compatible_division_for_integers`. -->
             <function>divide</function>
+            <!-- The factory gives it for `toTime` under `use_legacy_to_time`. -->
+            <function>toTimeWithFixedDate</function>
         </functions_requiring_grant>
     </access_control_improvements>
 </clickhouse>
