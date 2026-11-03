@@ -34,6 +34,7 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <Common/Exception.h>
+#include <Common/FieldVisitorDump.h>
 #include <Common/Logger.h>
 
 #if USE_AVRO && !CLICKHOUSE_CLOUD
@@ -50,6 +51,7 @@ namespace DB::ErrorCodes
 namespace DB::Setting
 {
     extern const SettingsUInt64 iceberg_manifest_min_count_to_compact;
+    extern const SettingsBool iceberg_insert_single_manifest_for_all_partitions;
 }
 
 namespace DB::DataLakeStorageSetting
@@ -643,8 +645,9 @@ static bool writeConsolidatedManifestFile(
             schema_id);
     };
 
-    /// Live data files grouped by (partition spec-id, schema-id): a manifest carries a single spec and one `schema` header,
-    /// but its entries may belong to any number of partitions, each entry carrying its own partition tuple.
+    /// Live data files grouped by (partition spec-id, schema-id), since a manifest carries a single spec and one `schema` header.
+    /// Its entries may belong to any number of partitions, each entry carrying its own partition tuple; unless
+    /// `iceberg_insert_single_manifest_for_all_partitions` is set, the files are grouped by partition value as well.
     struct ManifestGroup
     {
         /// The partition spec the source files were written with; the rewritten manifest reuses it.
@@ -668,7 +671,8 @@ static bool writeConsolidatedManifestFile(
         std::unordered_set<String> seen_file_paths;
     };
 
-    std::map<std::pair<Int32, Int32>, ManifestGroup> manifest_groups;
+    std::map<std::tuple<Int32, Int32, String>, ManifestGroup> manifest_groups;
+    const bool single_manifest_for_all_partitions = context->getSettingsRef()[Setting::iceberg_insert_single_manifest_for_all_partitions];
 
     // Collect live data files from the current snapshot only; iterating older snapshots would resurrect deleted files.
     size_t total_data_files = 0;
@@ -696,7 +700,12 @@ static bool writeConsolidatedManifestFile(
         for (const auto & data_file : files_handle.getFilesWithoutDeleted(FileContentType::DATA))
         {
             const Int32 source_schema_id = data_file->resolved_schema_id;
-            auto & group = manifest_groups[{source_partition_spec_id, source_schema_id}];
+            /// The dump carries a type tag, so `UInt64` and `Int64` partition values never collide.
+            String partition_key;
+            if (!single_manifest_for_all_partitions)
+                for (const auto & value : data_file->normalized_partition_key_value)
+                    partition_key += applyVisitor(FieldVisitorDump(), value) + "|";
+            auto & group = manifest_groups[{source_partition_spec_id, source_schema_id, std::move(partition_key)}];
             group.partition_spec_id = source_partition_spec_id;
             group.schema_id = source_schema_id;
 
@@ -726,10 +735,10 @@ static bool writeConsolidatedManifestFile(
         return true;
     }
 
-    /// Data manifests already optimally consolidated (at most one per spec and schema): rewriting cannot reduce the count, so report success.
+    /// Data manifests already optimally consolidated (at most one per group): rewriting cannot reduce the count, so report success.
     if (manifest_groups.size() >= data_manifest_paths.size())
     {
-        LOG_INFO(log, "Manifests already optimally consolidated ({} data manifests, {} spec and schema groups); nothing to do",
+        LOG_INFO(log, "Manifests already optimally consolidated ({} data manifests, {} groups); nothing to do",
                  data_manifest_paths.size(), manifest_groups.size());
         return true;
     }
@@ -765,7 +774,7 @@ static bool writeConsolidatedManifestFile(
         generated_metadata_info.path,
         current_snapshot_id);
 
-    // Write one manifest file per (partition spec, schema) group.
+    // Write one manifest file per group.
     std::vector<IcebergPathFromMetadata> consolidated_manifest_paths;
     std::vector<Int64> manifest_entry_sizes;
     /// Parallel to consolidated_manifest_paths: existing (not added) file/row counts, since the referenced data files already exist.

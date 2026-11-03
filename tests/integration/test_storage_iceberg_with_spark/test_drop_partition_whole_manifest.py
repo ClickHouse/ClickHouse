@@ -146,7 +146,7 @@ def test_drop_partition_after_position_delete(
 
 
 @pytest.mark.parametrize("storage_type", ["s3", "local"])
-def test_drop_partition_shared_manifest_is_rewritten(
+def test_drop_partition_shared_manifest_is_rejected(
     started_cluster_iceberg_with_spark, storage_type
 ):
     cluster = started_cluster_iceberg_with_spark
@@ -171,24 +171,28 @@ def test_drop_partition_shared_manifest_is_rewritten(
     )
 
     create_iceberg_table(storage_type, instance, table_name, cluster)
-    instance.query(
-        f"ALTER TABLE {table_name} DROP PARTITION 1",
-        settings={"allow_insert_into_iceberg": 1},
-    )
-    assert instance.query(f"SELECT * FROM {table_name} ORDER BY tag") == (
-        "2\tkeep-a\n3\tkeep-b\n"
-    )
 
-    # A ClickHouse INSERT spanning several partitions writes them into one manifest as well.
+    def assert_drop_rejected(partition):
+        error = instance.query_and_get_error(
+            f"ALTER TABLE {table_name} DROP PARTITION {partition}",
+            settings={"allow_insert_into_iceberg": 1},
+        )
+        assert "NOT_IMPLEMENTED" in error, error
+        assert "rewriting a manifest" in error, error
+
+    assert_drop_rejected(1)
+
+    # With `iceberg_insert_single_manifest_for_all_partitions`, a ClickHouse INSERT spanning several partitions writes them into one manifest as well.
     instance.query(
         f"INSERT INTO {table_name} VALUES (4, 'new-a'), (5, 'new-b'), (2, 'new-c')",
-        settings={"allow_insert_into_iceberg": 1},
+        settings={
+            "allow_insert_into_iceberg": 1,
+            "iceberg_insert_single_manifest_for_all_partitions": 1,
+        },
     )
-    instance.query(
-        f"ALTER TABLE {table_name} DROP PARTITION 3",
-        settings={"allow_insert_into_iceberg": 1},
-    )
-    expected = [(2, "keep-a"), (2, "new-c"), (4, "new-a"), (5, "new-b")]
+    assert_drop_rejected(4)
+
+    expected = [(1, "drop"), (2, "keep-a"), (2, "new-c"), (3, "keep-b"), (4, "new-a"), (5, "new-b")]
     assert instance.query(f"SELECT * FROM {table_name} ORDER BY tag, value") == "".join(
         f"{tag}\t{value}\n" for tag, value in expected
     )

@@ -136,7 +136,7 @@ ClickHouse supports partition pruning during SELECT queries for Iceberg tables, 
 
 Enable `allow_insert_into_iceberg` to use this operation.
 
-The operation is supported only for Iceberg `format-version` 2 tables with a single, non-evolved partition spec. A manifest that holds only files of the selected partition is dropped from the new snapshot. A manifest shared by the selected partition and other partitions is rewritten without the dropped files; the surviving files are kept as `EXISTING` entries with their original snapshot id and sequence numbers. Rewriting a manifest whose entries carry per-file `key_metadata` (encrypted data files) is not supported. The operation also rejects affected manifests containing equality-delete files.
+The operation is supported only for Iceberg `format-version` 2 tables with a single, non-evolved partition spec. Each manifest containing the selected partition must contain no files from other partitions. If a manifest is shared by the selected partition and another partition, the operation fails without changing the table. With `iceberg_insert_single_manifest_for_all_partitions` enabled, an `INSERT` writes the files of all partitions it touches into one manifest, so a partition written by the same `INSERT` as other partitions cannot be dropped. The operation also rejects affected manifests containing equality-delete files.
 
 The partition value follows the same rules as for `MergeTree`. For a single-column partition, pass a scalar literal; for a multi-column partition, pass a tuple of values:
 

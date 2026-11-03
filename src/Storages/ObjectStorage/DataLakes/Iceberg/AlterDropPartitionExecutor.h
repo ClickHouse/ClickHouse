@@ -13,7 +13,6 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/FileNamesGenerator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergTableStateSnapshot.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/MetadataGenerator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
@@ -74,8 +73,6 @@ private:
     struct TargetManifest
     {
         ManifestFileCacheKey manifest_key;
-        /// For a manifest shared with other partitions: its entries outside the dropped partition, which the rewritten manifest keeps.
-        std::vector<ProcessedManifestFileEntryPtr> kept_entries;
     };
 
     struct TargetManifests
@@ -105,22 +102,6 @@ private:
         GeneratedMetadataFileWithInfo metadata_info;
         Poco::JSON::Object::Ptr new_snapshot;
     };
-
-    struct RewrittenManifest
-    {
-        Iceberg::IcebergPathFromMetadata path;
-        Int64 size = 0;
-        FileContentType content_type;
-        ManifestListEntryCounts counts;
-        ManifestPartitionSummary partition_summary;
-    };
-
-    RewrittenManifest rewriteManifest(
-        const SnapshotState & state,
-        const TargetManifest & target,
-        FileNamesGenerator & filename_generator,
-        Poco::JSON::Object::Ptr new_snapshot,
-        std::vector<String> & files_for_cleanup);
 
     ManifestListWriteResult writeManifestList(
         SnapshotState & state, const DropPlan & plan, FileNamesGenerator & filename_generator, std::vector<String> & files_for_cleanup);

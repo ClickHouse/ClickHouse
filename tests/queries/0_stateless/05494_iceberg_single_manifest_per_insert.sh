@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
 
-# One INSERT into a partitioned Iceberg table writes one manifest for all the partitions it touches, like Spark and
-# PyIceberg, instead of one manifest per partition. The manifest-list entry must then describe the whole manifest:
+# With `iceberg_insert_single_manifest_for_all_partitions`, one INSERT into a partitioned Iceberg table writes one manifest
+# for all the partitions it touches, like Spark and PyIceberg, instead of one manifest per partition. The manifest-list entry must then describe the whole manifest:
 # real file/row counts and a `partitions` summary whose bounds span every partition tuple, with `contains_null` when
-# one of them is NULL. Partition pruning keeps working on such a manifest, and DROP PARTITION, which used to refuse a
-# manifest shared with other partitions, rewrites it without the dropped files while keeping the others' lineage.
+# one of them is NULL. Partition pruning keeps working on such a manifest, and DROP PARTITION refuses to drop one of
+# its partitions, since that would require rewriting a manifest shared with other partitions.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
+
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --iceberg_insert_single_manifest_for_all_partitions=1"
 
 TABLE="t_${CLICKHOUSE_DATABASE}_single_manifest"
 TABLE_PATH="${USER_FILES_PATH}/${TABLE}/"
@@ -99,36 +101,9 @@ echo "--- second INSERT: manifests written"
 count_manifests "${TABLE_PATH}"
 describe_manifest_list "$(latest_manifest_list "${TABLE_PATH}")"
 
-SNAPSHOT_BEFORE_DROP=$(${CLICKHOUSE_CLIENT} --format TSVRaw --query "
-    SELECT snapshot_id FROM system.iceberg_history
-    WHERE database = currentDatabase() AND table = '${TABLE}'
-    ORDER BY made_current_at DESC LIMIT 1")
-
-echo "--- DROP PARTITION 11: the manifest shared with partitions 10 and 12 is rewritten, the other one is carried forward"
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "ALTER TABLE ${TABLE} DROP PARTITION 11"
+echo "--- DROP PARTITION 11 is rejected: its manifest is shared with partitions 10 and 12"
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "ALTER TABLE ${TABLE} DROP PARTITION 11" 2>&1 | grep -o 'NOT_IMPLEMENTED' | head -1
 ${CLICKHOUSE_CLIENT} --query "SELECT p, count(), sum(toInt64(v)) FROM ${TABLE} GROUP BY p ORDER BY p"
-describe_manifest_list "$(latest_manifest_list "${TABLE_PATH}")"
-
-echo "--- rewritten manifest keeps the files as EXISTING with their original sequence number"
-NEW_MANIFESTS=$(${CLICKHOUSE_CLIENT} --query "SELECT manifest_path FROM file('$(latest_manifest_list "${TABLE_PATH}")', Avro) ORDER BY added_files_count DESC, existing_files_count DESC")
-for manifest in ${NEW_MANIFESTS}; do
-    ${CLICKHOUSE_CLIENT} --query "
-        SELECT tupleElement(data_file, 'partition') AS partition, status, sequence_number, tupleElement(data_file, 'record_count') AS rows
-        FROM file('${TABLE_PATH}metadata/$(basename "${manifest}")', Avro)
-        ORDER BY partition, rows"
-done
-
-echo "--- time travel to before the DROP still sees partition 11"
-${CLICKHOUSE_CLIENT} --iceberg_snapshot_id="${SNAPSHOT_BEFORE_DROP}" --query "SELECT p, count() FROM ${TABLE} GROUP BY p ORDER BY p"
-
-echo "--- DELETE in partition 10 then DROP PARTITION 10 (data manifest shared with 12, delete manifest fully matched)"
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --mutations_sync=2 --query "DELETE FROM ${TABLE} WHERE p = 10 AND v = '0'"
-${CLICKHOUSE_CLIENT} --query "SELECT p, count(), sum(toInt64(v)) FROM ${TABLE} GROUP BY p ORDER BY p"
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "ALTER TABLE ${TABLE} DROP PARTITION 10"
-${CLICKHOUSE_CLIENT} --query "SELECT p, count(), sum(toInt64(v)) FROM ${TABLE} GROUP BY p ORDER BY p"
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "ALTER TABLE ${TABLE} DROP PARTITION 12"
-echo "--- all partitions dropped"
-${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${TABLE}"
 
 echo "--- NULL and non-NULL partition values in one INSERT"
 ${CLICKHOUSE_CLIENT} --query "
