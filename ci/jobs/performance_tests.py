@@ -13,6 +13,7 @@ import traceback
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
 from shlex import quote
@@ -195,6 +196,13 @@ DASHBOARD_INPUT_TABLES = (RAW_QUERY_METRICS_TABLE, HISTORICAL_DATA_TABLE, TEST_T
 # this shard's rows, counted from the start of the uploads.
 DASHBOARD_INGEST_TIMEOUT_SEC = 600
 DASHBOARD_POLL_INTERVAL_SEC = 15
+# A few seconds after praktika started the job's timeout: the time the job has left is counted from here.
+JOB_START = time.monotonic()
+# Kept free at the end of the job: a dashboard poll in flight at the deadline, the end of a cut
+# confirmation rerun, the uploads' minimum below, packing the logs and writing the result.
+JOB_END_RESERVE_SEC = 300
+# The uploads get at least this long, however late the job is.
+DASHBOARD_MIN_UPLOAD_SEC = 60
 # Longest pause between the attempts of an upload in `DASHBOARD_INPUT_TABLES` that CIDB failed.
 CIDB_UPLOAD_RETRY_INTERVAL_SEC = 60
 # Pause between the log export flushes of a nightly run.
@@ -562,6 +570,21 @@ def escape_sql_string(value):
     )
 
 
+# The Iceberg configuration (`iceberg_local` / `iceberg_s3` in `--test-options`):
+# `perf.py --table-engine` creates the MergeTree tables of the tests as Iceberg
+# tables. Set once in `main`.
+TABLE_ENGINE = None
+TABLE_ENGINES = ("iceberg_local", "iceberg_s3")
+
+
+def get_results_arch():
+    """The `arch` of the uploaded rows. The CIDB tables of the performance
+    comparison and the dashboard filters have no column for the job, so the rows
+    of the Iceberg configuration carry it in `arch` (`arm_iceberg_local`), and
+    neither history nor the dashboard gate of the MergeTree jobs reads them."""
+    return f"{get_perf_arch()}_{TABLE_ENGINE}" if TABLE_ENGINE else get_perf_arch()
+
+
 def get_perf_arch():
     if Utils.is_arm():
         return "arm"
@@ -695,6 +718,28 @@ def write_max_threads_override():
     return True
 
 
+ICEBERG_PROFILE_OVERRIDE_FILE = "zzz-perf-iceberg.xml"
+
+
+def write_iceberg_profile_override():
+    """The settings of `iceberg_engine.SETTINGS` in the default profile of both
+    servers. `perf.py` sets them for its own statements, but a dropped table
+    deletes its data later, in the background, with the default profile."""
+    for config_dir in (perf_left_config, perf_right_config):
+        target = Path(config_dir) / "users.d" / ICEBERG_PROFILE_OVERRIDE_FILE
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(
+            "<!-- Written by ci/jobs/performance_tests.py for the Iceberg configuration of the performance tests. -->\n"
+            "<clickhouse>\n    <profiles>\n        <default>\n"
+            "            <allow_insert_into_iceberg>1</allow_insert_into_iceberg>\n"
+            "            <allow_experimental_iceberg_compaction>1</allow_experimental_iceberg_compaction>\n"
+            "            <iceberg_delete_data_on_drop>1</iceberg_delete_data_on_drop>\n"
+            "        </default>\n    </profiles>\n</clickhouse>\n"
+        )
+        print(f"Wrote the Iceberg profile override to [{target}]")
+    return True
+
+
 def build_perf_query_history_link(test_name, check_name):
     """Build a ClickHouse Play link showing performance history for a query on master."""
     table = Settings.CI_DB_TABLE_NAME or "checks"
@@ -710,6 +755,7 @@ SELECT
 FROM {table}
 WHERE pull_request_number = 0
     AND check_name LIKE '{cn}'
+    AND (check_name LIKE '%iceberg%') = {'1' if 'iceberg' in cn else '0'}
     AND check_start_time >= now() - INTERVAL 14 DAY
     AND test_name = '{tn}'
 ORDER BY test, check_start_time
@@ -760,7 +806,7 @@ def build_check_results_children(tests_result, check_name_pattern):
 
 def get_insert_metadata(info, compare_against_release):
     return {
-        "ARCH": escape_sql_string(get_perf_arch()),
+        "ARCH": escape_sql_string(get_results_arch()),
         "BASELINE_KIND": "release_base" if compare_against_release else "master_head",
         "WORKFLOW_NAME": escape_sql_string(info.workflow_name),
         "BASE_BRANCH": escape_sql_string(info.base_branch),
@@ -1127,6 +1173,23 @@ class CIDBUnavailableReason(str):
     """An upload failure reason: CIDB did not answer until the deadline."""
 
 
+def job_end(info):
+    """Until when the dashboard gate and its confirmation may run so that the job ends before its timeout."""
+    config = info.job_config
+    timeout = config.get("timeout") if isinstance(config, Mapping) else getattr(config, "timeout", None)
+    if not isinstance(timeout, (int, float)) or timeout <= 0:
+        raise RuntimeError(f"Cannot bound the dashboard wait: job timeout is [{timeout!r}]")
+    return JOB_START + timeout - JOB_END_RESERVE_SEC
+
+
+def upload_budget(end):
+    """Seconds the uploads may take from now: `DASHBOARD_INGEST_TIMEOUT_SEC`, cut to what is left
+    before `end` (None: no cut), but at least `DASHBOARD_MIN_UPLOAD_SEC`."""
+    if end is None:
+        return DASHBOARD_INGEST_TIMEOUT_SEC
+    return min(DASHBOARD_INGEST_TIMEOUT_SEC, max(DASHBOARD_MIN_UPLOAD_SEC, end - time.monotonic()))
+
+
 class NotAttemptedReason(str):
     """An upload failure reason: the deadline had passed before the first attempt."""
 
@@ -1179,8 +1242,8 @@ def insert_into_cidb(cidb, info, table, query, data, deadline, token_key=None):
         print(f"WARNING: insert into [{table}] failed, retrying in {pause:.0f}s")
         time.sleep(pause)
     if error is None:
-        return NotAttemptedReason(f"not attempted, the {DASHBOARD_INGEST_TIMEOUT_SEC}s budget was spent")
-    reason = f"the {DASHBOARD_INGEST_TIMEOUT_SEC}s budget was spent, last error: {error}"
+        return NotAttemptedReason("not attempted, the upload budget was spent")
+    reason = f"the upload budget was spent, last error: {error}"
     if hard_error is None:
         return CIDBUnavailableReason(reason)
     return reason if hard_error == error else f"{reason}, earlier error: {hard_error}"
@@ -1458,7 +1521,8 @@ class CHServer:
 
     @classmethod
     def run_test(
-        cls, test_file, runs=None, max_queries=0, pr_number=0, results_path=f"{temp_dir}/perf_wd/", long=False
+        cls, test_file, runs=None, max_queries=0, pr_number=0, results_path=f"{temp_dir}/perf_wd/", long=False,
+        table_engine=None,
     ):
         test_name = test_file.split("/")[-1].removesuffix(".xml")
         sw = Utils.Stopwatch()
@@ -1477,7 +1541,7 @@ class CHServer:
                 --profile-seconds 10 \
                 --pr-number {pr_number} \
                 --stop-merges \
-                {test_file}{' --long' if long else ''}",
+                {f'--table-engine {table_engine} ' if table_engine else ''}{test_file}{' --long' if long else ''}",
             verbose=True,
             strip=False,
         )
@@ -1807,7 +1871,7 @@ class PerfDashboardUnavailable(PerfDashboardError):
 
 
 # Measured backend-outage signatures in the dashboard's application errors.
-DASHBOARD_OUTAGE_SIGNATURES = ("connect: connection refused", "context canceled")
+DASHBOARD_OUTAGE_SIGNATURES = ("connect: connection refused", "context canceled", "Unknown table expression identifier")
 
 
 def dashboard_did_not_answer(status, body):
@@ -1976,7 +2040,7 @@ def perf_dashboard_gate(info, arch, metrics_tsv_path, deadline, missing_inputs):
     `PerfDashboardUnavailable` when no verdict could be obtained because CIDB
     or the dashboard did not answer, and a plain `PerfDashboardError` for every
     other reason; the caller fails the check on the latter rather than passing
-    a run nobody has judged."""
+    a run nobody has judged. No request starts once `deadline` has passed."""
     if missing_inputs:
         reasons = missing_inputs.values()
         unavailable = any(isinstance(r, CIDBUnavailableReason) for r in reasons) and all(
@@ -1994,7 +2058,14 @@ def perf_dashboard_gate(info, arch, metrics_tsv_path, deadline, missing_inputs):
 
     run_id = None
     hard_reason = None
+    reason = "it was spent before the first request"
     while True:
+        if time.monotonic() >= deadline:
+            if hard_reason not in (None, reason):
+                reason = f"{reason}; earlier: {hard_reason}"
+            raise (PerfDashboardError if hard_reason else PerfDashboardUnavailable)(
+                f"dashboard did not serve this shard within the upload budget: {reason}"
+            )
         try:
             if run_id is None:
                 run_id = dashboard_run_id(info)
@@ -2007,13 +2078,6 @@ def perf_dashboard_gate(info, arch, metrics_tsv_path, deadline, missing_inputs):
         except PerfDashboardError as e:
             reason = str(e)
             hard_reason = hard_reason or reason
-        if time.monotonic() >= deadline:
-            if hard_reason not in (None, reason):
-                reason = f"{reason}; earlier: {hard_reason}"
-            raise (PerfDashboardError if hard_reason else PerfDashboardUnavailable)(
-                "dashboard did not serve this shard within "
-                f"{DASHBOARD_INGEST_TIMEOUT_SEC}s: {reason}"
-            )
         print(f"Waiting for the performance dashboard: {reason}")
         time.sleep(min(DASHBOARD_POLL_INTERVAL_SEC, max(0, deadline - time.monotonic())))
 
@@ -2041,7 +2105,7 @@ def judge_without_dashboard(summary, error):
     )
 
 
-def confirm_dashboard_regressions(regressions, pr_number, workdir):
+def confirm_dashboard_regressions(regressions, pr_number, workdir, end=None):
     """Rerun dashboard blockers once on fresh servers; missing evidence stays blocking.
 
     Reuse the shard confirmation measurements/randomization test, but carry the
@@ -2088,6 +2152,11 @@ def confirm_dashboard_regressions(regressions, pr_number, workdir):
         selected[test, index] = row
     if not selected:
         return rows
+    timeout = 1500 if end is None else min(1500, end - time.monotonic())
+    if timeout <= 0:
+        for row in selected.values():
+            row["confirmation"] = "Not rerun: no time left before the job timeout; remains blocking"
+        return rows
 
     workdir = Path(workdir).resolve()
     output_dir = workdir / "analyze-dashboard-confirm"
@@ -2114,7 +2183,7 @@ def confirm_dashboard_regressions(regressions, pr_number, workdir):
         cwd=str(workdir),
         env=env,
         log_file=str(workdir / "dashboard-confirm.log"),
-        timeout=1500,
+        timeout=timeout,
     )
     if exit_code:
         for row in selected.values():
@@ -2728,15 +2797,24 @@ def main():
             compare_against_release = True
 
     nightly = "nightly" in test_options
+    global TABLE_ENGINE
+    TABLE_ENGINE = next((option for option in test_options if option in TABLE_ENGINES), None)
+    if TABLE_ENGINE:
+        # compare.sh reruns flagged queries to confirm them: with the same tables.
+        os.environ["CHPC_TABLE_ENGINE"] = TABLE_ENGINE
     batch_num -= 1
     assert 0 <= batch_num < total_batches and total_batches >= 1
 
     assert (
         compare_against_master or compare_against_release
     ), "test option: head_master or release_base must be selected"
+    # `release_base` replaces the tests with their vintage of the release branch point.
+    assert not (TABLE_ENGINE and compare_against_release), "the Iceberg configuration runs in master_head mode only"
 
     # release_version = CHVersion.get_release_version()
     info = Info()
+    # Before any stage: a job without a usable timeout fails now, not after the benchmarks.
+    end = job_end(info) if compare_against_master and not info.is_local_run else None
     reference_chain = []
 
     # Read before any stage, so that a resume attributes the same commits.
@@ -2806,6 +2884,23 @@ def main():
     # changed_files = info.get_custom_data("changed_files")
     if test_keyword:
         test_files = [file for file in test_files if test_keyword in file]
+    elif TABLE_ENGINE:
+        # Round-robin over the tests the rewrite applies to, also in the nightly run: the placement of
+        # `NIGHTLY_PERF_PLACEMENT` balances the `long` tests, which this configuration does not run.
+        skip_list = test_discovery.iceberg_skip_list("./tests/performance/")
+        changed_files = info.get_changed_files() if info.pr_number > 0 else None
+        changed_tests = test_discovery.changed_iceberg_tests(changed_files or [], "./tests/performance/")
+        if changed_tests and not test_discovery.iceberg_code_changed(changed_files):
+            # The pull request changes only performance tests: check that they run in this configuration.
+            # Every job runs them all, there are few.
+            print(f"Only the added or changed tests: {changed_tests}")
+            test_files = changed_tests
+        else:
+            test_files = [
+                file
+                for file in test_files
+                if test_discovery.test_runs_with_table_engine(f"./tests/performance/{file}", skip_list)
+            ][batch_num::total_batches]
     elif nightly:
         # This job, the last test option: `N/M`, or the name of an extra job (`NIGHTLY_PERF_PLACEMENT`).
         job = test_options[-1]
@@ -2819,8 +2914,9 @@ def main():
             test_files = pinned
     else:
         test_files = test_files[batch_num::total_batches]
-    if nightly:
-        # Every measured host runs the yardstick first.
+    if nightly and not TABLE_ENGINE:
+        # Every measured host runs the yardstick first. Not in the Iceberg configuration: it
+        # creates no table, so it would measure nothing of the configuration.
         test_files.insert(0, "calibration.xml")
     print(f"Job Batch: [{batch_num}/{total_batches}]")
     print(f"Test Files ({len(test_files)}): [{test_files}]")
@@ -2832,7 +2928,8 @@ def main():
     if not nightly:
         run_paths = [path for path in run_paths if not test_discovery.test_is_long(path)]
     s3_paths = [path for path in run_paths if test_discovery.test_requires_s3(path)]
-    needs_s3 = bool(s3_paths)
+    # Every test of `iceberg_s3` writes its tables into the job-local object store.
+    needs_s3 = bool(s3_paths) or TABLE_ENGINE == "iceberg_s3"
     needs_s3_read_dataset = any(map(test_discovery.test_requires_read_dataset, run_paths))
     needs_iceberg_read_dataset = needs_s3_read_dataset or any(
         map(test_discovery.test_requires_local_read_dataset, run_paths)
@@ -2990,7 +3087,11 @@ def main():
         installed_sha = get_binary_commit_sha(f"{perf_left}/clickhouse")
         assert installed_sha == reference_sha, f"installed reference {installed_sha} is not --reference-path {reference_sha}"
 
-    if res and not info.is_local_run:
+    if res and TABLE_ENGINE:
+        # The learned thresholds are those of the MergeTree tables on `MasterCI`.
+        print(f"No historical thresholds for the {TABLE_ENGINE} configuration")
+        Shell.check(f"touch {perf_wd}/historical-thresholds.tsv", verbose=True)
+    elif res and not info.is_local_run:
 
         def prepare_historical_data():
             cidb = CIDBCluster(
@@ -3123,6 +3224,8 @@ def main():
             # Same: the CI Logs cluster must be in the config of both servers.
             create_log_export_configs,
         ]
+        if TABLE_ENGINE:
+            commands.append(write_iceberg_profile_override)
 
         if needs_s3:
             commands.append(prepare_s3)
@@ -3254,10 +3357,12 @@ def main():
                     pr_number=info.pr_number,
                     results_path=perf_wd,
                     long=nightly,
+                    table_engine=TABLE_ENGINE,
                 )
                 cleanup_user_files()
+                writes_s3 = TABLE_ENGINE == "iceberg_s3" or (nightly and f"./tests/performance/{test}" in s3_paths)
                 # After a complete teardown; a failed S3 cleanup is an error record and ends the batch, the report still runs.
-                if clean and nightly and f"./tests/performance/{test}" in s3_paths and not s3_service.clear_write_namespaces():
+                if clean and writes_s3 and not s3_service.clear_write_namespaces():
                     name = test.removesuffix(".xml")
                     with open(f"{perf_wd}/{name}-err.log", "a") as f:
                         f.write(f"{name}: S3 cleanup failed, stopping the batch\n")
@@ -3347,10 +3452,12 @@ def main():
         res = results[-1].is_ok()
 
     # In `master_head` mode the dashboard gate judges the shard on these
-    # uploads, so they share one deadline with the gate's wait.
-    upload_deadline = (
-        time.monotonic() + DASHBOARD_INGEST_TIMEOUT_SEC if compare_against_master else None
-    )
+    # uploads, so its wait ends by their deadline, and by `end` at the latest.
+    upload_deadline = None
+    if compare_against_master:
+        budget = upload_budget(end)
+        print(f"Upload budget: {budget:.0f}s")
+        upload_deadline = time.monotonic() + budget
     # A dashboard input stays here, with the reason, until its upload succeeds.
     missing_dashboard_inputs = {}
 
@@ -3546,6 +3653,9 @@ def main():
             status = Result.Status.OK
             if "errors" in message.lower():
                 status = Result.Status.FAIL
+            elif TABLE_ENGINE:
+                # The dashboard and its history know the MergeTree tables only, see `get_results_arch`.
+                print(f"{TABLE_ENGINE} configuration: no performance dashboard gate")
             elif nightly:
                 print("Nightly run: no performance dashboard or delta gate")
             elif compare_against_release and message:
@@ -3597,11 +3707,11 @@ def main():
                         info,
                         get_perf_arch(),
                         f"{perf_wd}/report/all-query-metrics.tsv",
-                        upload_deadline,
+                        upload_deadline if end is None else min(upload_deadline, end),
                         missing_dashboard_inputs,
                     )
                     dashboard_regressions = confirm_dashboard_regressions(
-                        dashboard_regressions, info.pr_number, perf_wd
+                        dashboard_regressions, info.pr_number, perf_wd, end
                     )
                 except PerfDashboardUnavailable as e:
                     print(f"ERROR: {e}")
@@ -3652,7 +3762,7 @@ def main():
             check_sub_results += [
                 sub
                 for sub in build_check_results_children(
-                    tests_result, f"%Performance%{arch}%master_head%"
+                    tests_result, f"%Performance%{arch}%master_head%{TABLE_ENGINE or ''}%"
                 )
                 if sub.name not in dashboard_names
             ]
