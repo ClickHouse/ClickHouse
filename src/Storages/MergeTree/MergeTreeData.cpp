@@ -13,7 +13,6 @@
 #include <Common/CurrentThread.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/ThreadPool.h>
-#include <Common/ThreadStatus.h>
 #include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
 
