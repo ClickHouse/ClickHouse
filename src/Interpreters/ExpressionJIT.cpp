@@ -134,9 +134,11 @@ public:
             callJITFunction(jit_compiled_function, input_rows_count, columns.data(), &error);
             if (error.code != JITErrorCode::None)
             {
-                if (error.node >= node_names->size())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "JIT-compiled expression {} reported an error for unknown node {}", name, error.node);
-                throwJITError(error.code, (*node_names)[error.node]);
+                const auto & error_sites = compiled_function_holder->compiled_function.error_sites;
+                if (error.site >= error_sites.size() || error_sites[error.site].node >= node_names->size())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "JIT-compiled expression {} reported an error for unknown site {}", name, error.site);
+                const auto & site = error_sites[error.site];
+                throwJITError(error, site, (*node_names)[site.node]);
             }
             ProfileEvents::increment(ProfileEvents::CompiledFunctionRows, input_rows_count * fused_functions_count);
 

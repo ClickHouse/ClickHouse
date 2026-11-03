@@ -1,0 +1,22 @@
+lift into Decimal128
+values that fit
+100000000	Decimal(38, 30)
+1	Decimal(38, 30)
+1	Decimal(38, 30)
+100000000	Decimal(38, 30)
+1	Decimal(38, 30)
+1	Decimal(38, 30)
+CASE
+1	2
+1	2
+branch not taken
+Decimal64 into Decimal128
+0	1	Decimal(38, 30)
+1	2	Decimal(38, 30)
+0	1	Decimal(38, 30)
+1	2	Decimal(38, 30)
+Nullable
+0	1
+1	5
+0	1
+1	5

@@ -105,7 +105,7 @@ static llvm::StructType * buildFixedStringType(llvm::IRBuilderBase &b)
     return llvm::StructType::get(data_ptr_type, b.getInt64Ty());
 }
 
-static void compileFunction(llvm::Module & module, const IFunctionBase & function)
+static void compileFunction(llvm::Module & module, const IFunctionBase & function, std::vector<JITErrorSite> & error_sites)
 {
     const auto & function_argument_types = function.getArgumentTypes();
 
@@ -211,15 +211,17 @@ static void compileFunction(llvm::Module & module, const IFunctionBase & functio
     b.SetInsertPoint(end);
     error_sink.writeFirstError(b, error_arg);
     b.CreateRetVoid();
+    error_sites = error_sink.getSites();
 }
 
 CompiledFunction compileFunction(CHJIT & jit, const IFunctionBase & function)
 {
     Stopwatch watch;
 
+    std::vector<JITErrorSite> error_sites;
     auto compiled_module = jit.compileModule([&](llvm::Module & module)
     {
-        compileFunction(module, function);
+        compileFunction(module, function, error_sites);
     });
 
     ProfileEvents::increment(ProfileEvents::CompileExpressionsMicroseconds, watch.elapsedMicroseconds());
@@ -232,7 +234,8 @@ CompiledFunction compileFunction(CHJIT & jit, const IFunctionBase & function)
     CompiledFunction result_compiled_function
     {
         .compiled_function = compiled_function_ptr,
-        .compiled_module = compiled_module
+        .compiled_module = compiled_module,
+        .error_sites = std::move(error_sites),
     };
 
     return result_compiled_function;

@@ -44,6 +44,9 @@ struct CompiledFunction
     JITCompiledFunction compiled_function{};
 
     CHJIT::CompiledModule compiled_module;
+
+    /// The error sites of the function; `JITError::site` indexes them.
+    std::vector<JITErrorSite> error_sites;
 };
 
 /** Compile function to native jit code using CHJIT instance.

@@ -28,12 +28,13 @@ SELECT multiIf(number = 0, materialize(addSeconds(toTime64('00:00:00', 0), 10000
 SELECT if(number = 0, materialize(addSeconds(toTime64('00:00:00', 0), 10000000000)), toTime64('00:00:01', 9)) FROM numbers(1);
 SELECT multiIf(number = 0, materialize(addSeconds(toTime64('00:00:00', 0), 10000000000)), number = 1, toTime64('00:00:01', 0), toDateTime64('2000-01-01 00:00:00', 9, 'UTC')) FROM numbers(1); -- { serverError DECIMAL_OVERFLOW }
 
--- The widest lift that cannot overflow stays compiled and exact at the lowest value; one step wider is interpreted.
+-- The widest lift that cannot overflow stays compiled and exact at the lowest value; one step wider is compiled too,
+-- with an overflow check that raises `DECIMAL_OVERFLOW` like the interpreted cast.
 SELECT multiIf(number = 0, materialize(toDecimal32(-2147483648, 0)), number = 1, toDecimal32(1, 0), toDecimal64(1, 9)) FROM numbers(1);
 SELECT multiIf(number = 0, materialize(toDecimal32(-2147483648, 0)), number = 1, toDecimal32(1, 0), toDecimal64(1, 9)) FROM numbers(2)
     SETTINGS log_comment = '05315_kept' FORMAT Null;
 SELECT multiIf(number = 0, materialize(toDecimal32(1, 0)), number = 1, toDecimal32(1, 0), toDecimal64(1, 10)) FROM numbers(2)
-    SETTINGS log_comment = '05315_declined' FORMAT Null;
+    SETTINGS log_comment = '05315_checked' FORMAT Null;
 SELECT materialize(2.0) + materialize(0.0) + materialize(1.0) FROM numbers(2)
     SETTINGS log_comment = '05315_control' FORMAT Null;
 
@@ -49,4 +50,4 @@ WITH shapes AS
 -- Comparing with the control keeps the first column valid in a build without the embedded compiler.
 SELECT
     (SELECT compiled FROM shapes WHERE log_comment = '05315_kept') = (SELECT compiled FROM shapes WHERE log_comment = '05315_control'),
-    (SELECT compiled FROM shapes WHERE log_comment = '05315_declined') = 0;
+    (SELECT compiled FROM shapes WHERE log_comment = '05315_checked') = (SELECT compiled FROM shapes WHERE log_comment = '05315_control');
