@@ -48,6 +48,7 @@
 #include <mach/mach.h>
 #include <mach/mach_vm.h>
 #include <mach/thread_act.h>
+#include <pthread/stack_np.h>
 #endif
 
 #pragma clang diagnostic push
@@ -766,10 +767,19 @@ StackTrace::StackTrace(FramePointers frame_pointers_, size_t size_, size_t offse
 namespace
 {
 
-/// Frame-pointer walk of a stopped thread. Reads only addresses inside [lo, hi), a range known to be
-/// mapped and readable, so a torn or foreign chain ends the walk instead of faulting. A fiber's chain
-/// ends at the null frame pointer that make_fcontext plants (issue #111579).
-__attribute__((no_sanitize("address", "thread")))
+/// A stopped thread that is exiting unmaps its own stack in a syscall that suspension does not
+/// interrupt, so its frames are copied by the kernel, which reports a fault instead of taking it.
+/// PLCrashReporter reads foreign stacks the same way (`plcrash_async_task_memcpy`).
+bool readFrameRecord(uintptr_t fp, uintptr_t (&record)[2])
+{
+    mach_vm_size_t size = 0;
+    return mach_vm_read_overwrite(mach_task_self(), fp, sizeof(record), reinterpret_cast<mach_vm_address_t>(record), &size)
+            == KERN_SUCCESS
+        && size == sizeof(record);
+}
+
+/// Frame-pointer walk of a stopped thread inside [lo, hi), so a torn or foreign chain ends the walk.
+/// A fiber's chain ends at the null frame pointer that make_fcontext plants (issue #111579).
 size_t walkFramePointers(uintptr_t pc, uintptr_t fp, uintptr_t lo, uintptr_t hi, FramePointers & frames)
 {
     size_t size = 0;
@@ -778,9 +788,12 @@ size_t walkFramePointers(uintptr_t pc, uintptr_t fp, uintptr_t lo, uintptr_t hi,
     {
         if (fp < lo || fp >= hi || fp % alignof(uintptr_t) != 0 || hi - fp < 2 * sizeof(uintptr_t))
             break;
-        const auto * frame = reinterpret_cast<const uintptr_t *>(fp);
-        uintptr_t next_fp = frame[0];
-        uintptr_t return_address = frame[1];
+        uintptr_t record[2];
+        if (!readFrameRecord(fp, record))
+            break;
+        /// Apple's frame record decoder, which strips pointer authentication from arm64e frames.
+        uintptr_t return_address = 0;
+        uintptr_t next_fp = pthread_stack_frame_decode_np(reinterpret_cast<uintptr_t>(record), &return_address);
         if (return_address == 0)
             break;
         frames[size++] = reinterpret_cast<void *>(return_address);
@@ -812,6 +825,30 @@ bool findReadableRegion(uintptr_t address, uintptr_t & lo, uintptr_t & hi)
     lo = region_address;
     hi = region_address + region_size;
     return true;
+}
+
+/// x86_64 Darwin binds imports lazily, in dyld under a lock that a stopped thread may hold, so every
+/// external call made while a thread is stopped is bound by calling it once beforehand, as Chromium's
+/// sampling profiler does (`SuspendableThreadDelegateMac`).
+void bindSuspensionCalls()
+{
+    thread_resume(MACH_PORT_NULL);
+#if defined(__aarch64__)
+    arm_thread_state64_t state{};
+    mach_msg_type_number_t count = ARM_THREAD_STATE64_COUNT;
+    thread_get_state(MACH_PORT_NULL, ARM_THREAD_STATE64, reinterpret_cast<thread_state_t>(&state), &count);
+#elif defined(__x86_64__)
+    x86_thread_state64_t state{};
+    mach_msg_type_number_t count = x86_THREAD_STATE64_COUNT;
+    thread_get_state(MACH_PORT_NULL, x86_THREAD_STATE64, reinterpret_cast<thread_state_t>(&state), &count);
+#endif
+    uintptr_t record[2] = {};
+    readFrameRecord(reinterpret_cast<uintptr_t>(&state), record);
+    pthread_stack_frame_decode_np(reinterpret_cast<uintptr_t>(record), nullptr);
+    uintptr_t lo = 0;
+    uintptr_t hi = 0;
+    findReadableRegion(reinterpret_cast<uintptr_t>(&state), lo, hi);
+    mach_port_deallocate(mach_task_self(), MACH_PORT_NULL);
 }
 
 /// One suspension at a time in the process: two threads stopping each other at once (the profiler
@@ -851,6 +888,7 @@ StackTrace::SuspendedThread::SuspendedThread(const ThreadHandle & handle_)
 {
     if (handle.thread == pthread_self())
         return;
+    [[maybe_unused]] static const bool bound = (bindSuspensionCalls(), true);
     suspension_mutex.lock();
     suspended = thread_suspend(handle.mach_thread) == KERN_SUCCESS;
     if (!suspended)
