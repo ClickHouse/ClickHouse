@@ -10,14 +10,13 @@ ENGINE = S3Queue('http://whatever-we-dont-care:9001/root/t_secrets/*', NOSIGN, '
 SETTINGS mode = 'unordered',
     after_processing_move_access_key_id = 'key_id_05493',
     after_processing_move_secret_access_key = 'SEKRIT_05493_1',
-    after_processing_move_connection_string = 'DefaultEndpointsProtocol=https;AccountName=a;AccountKey=SEKRIT_05493_2;',
-    format_avro_schema_registry_url = 'http://user:SEKRIT_05493_3@registry:8080/';
+    after_processing_move_connection_string = 'DefaultEndpointsProtocol=https;AccountName=a;AccountKey=SEKRIT_05493_2;';
 
 SELECT name, value
 FROM system.s3_queue_settings
 WHERE database = currentDatabase() AND table = 't_secrets'
     AND name IN ('after_processing_move_access_key_id', 'after_processing_move_secret_access_key',
-        'after_processing_move_connection_string', 'format_avro_schema_registry_url', 'mode')
+        'after_processing_move_connection_string', 'mode')
 ORDER BY name;
 
 DROP TABLE t_secrets;

@@ -2,7 +2,6 @@
 #include <Columns/IColumn.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
-#include <Core/SettingsSecrets.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
@@ -119,16 +118,15 @@ void ObjectStorageQueueSettings::dumpToSystemEngineSettingsColumns(
     {
         return StorageObjectStorageQueue::isSettingChangeable(setting_name, (*this)[ObjectStorageQueueSetting::mode]);
     };
-    /// Hides what `SHOW CREATE TABLE` hides. An engine secret is hidden whole, as its masker renders SQL.
+    /// Hides what `SHOW CREATE TABLE` hides. A secret is hidden whole, as its masker renders SQL.
     auto render_value = [&](const std::string & setting_name, const Field & value) -> String
     {
-        String rendered = convertFieldToString(value);
-        if (display_secrets)
-            return rendered;
-        if (auto masked = getSecretArgumentsFinder().renderSecretSetting(setting_name, value); masked && masked->contains(HIDDEN_SECRET))
-            return String(HIDDEN_SECRET);
-        CoreSettings::maskSettingValue(setting_name, value, rendered);
-        return rendered;
+        if (!display_secrets)
+        {
+            if (auto masked = getSecretArgumentsFinder().renderSecretSetting(setting_name, value); masked && masked->contains(HIDDEN_SECRET))
+                return String(HIDDEN_SECRET);
+        }
+        return convertFieldToString(value);
     };
 
     for (const auto & change : impl->all())
