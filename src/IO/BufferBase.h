@@ -13,7 +13,8 @@ class MMapReadBufferFromFileDescriptor;
 class MMapReadBufferFromFileWithCache;
 
 template <typename Storage>
-concept PaddedBufferStorage = requires(const Storage & storage) {
+concept PaddedBufferStorage = requires(const Storage & storage)
+{
     { storage.data() };
     { storage.size() } -> std::convertible_to<size_t>;
     requires std::is_pointer_v<decltype(storage.data())>;
@@ -78,7 +79,7 @@ public:
         {
         }
 
-        WorkingBuffer(const Buffer & buffer_)
+        WorkingBuffer(const Buffer & buffer_) /// NOLINT(google-explicit-constructor)
             : Buffer(buffer_)
         {
         }
