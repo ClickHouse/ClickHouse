@@ -7,3 +7,7 @@ definition 0, call 1
 definition 0, call 1
 -- SHOW COLUMNS on the view
 definition 1, call 0
+-- SELECT(x) on the view
+definition 0, call 1
+-- SELECT on the view
+definition 1, call 0

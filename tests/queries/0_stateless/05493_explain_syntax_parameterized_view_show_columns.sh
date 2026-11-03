@@ -41,4 +41,13 @@ echo "-- SHOW COLUMNS on the view"
 ${CLICKHOUSE_CLIENT} --query "GRANT SHOW COLUMNS ON ${CLICKHOUSE_DATABASE}.pv TO ${user}"
 explain_as_user "EXPLAIN SYNTAX SELECT * FROM pv(n = 3)"
 
+echo "-- SELECT(x) on the view"
+${CLICKHOUSE_CLIENT} --query "REVOKE SHOW COLUMNS ON ${CLICKHOUSE_DATABASE}.pv FROM ${user}"
+${CLICKHOUSE_CLIENT} --query "GRANT SELECT(x) ON ${CLICKHOUSE_DATABASE}.pv TO ${user}"
+explain_as_user "EXPLAIN SYNTAX SELECT * FROM pv(n = 3)"
+
+echo "-- SELECT on the view"
+${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.pv TO ${user}"
+explain_as_user "EXPLAIN SYNTAX SELECT * FROM pv(n = 3)"
+
 ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS ${user}"
