@@ -13,6 +13,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Common/Exception.h>
 #include <Common/FieldVisitorDump.h>
 #include <Common/logger_useful.h>
@@ -51,7 +52,8 @@ DataManifestsRewriter::DataManifestsRewriter(
     partition_specs = metadata_object->getArray(f_partition_specs);
 }
 
-void DataManifestsRewriter::collect(const ManifestFileCacheKeys & data_manifests)
+void DataManifestsRewriter::collect(
+    const ManifestFileCacheKeys & data_manifests, const std::function<bool(const IcebergPathFromMetadata &)> & skip_file)
 {
     if (collected)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The data manifests of an Iceberg manifest rewrite are collected twice");
@@ -88,6 +90,8 @@ void DataManifestsRewriter::collect(const ManifestFileCacheKeys & data_manifests
         for (const auto & data_file : files_handle.getFilesWithoutDeleted(FileContentType::DATA))
         {
             const auto & entry = *data_file->parsed_entry;
+            if (skip_file && skip_file(entry.file_path_key))
+                continue;
 
             /// Files of different specs or schemas are never merged into one manifest: a manifest carries a single spec
             /// and one `schema` header. `FieldVisitorDump`'s type tag prevents UInt64/Int64 collisions.
@@ -150,6 +154,17 @@ void DataManifestsRewriter::collect(const ManifestFileCacheKeys & data_manifests
             group.files.push_back(std::move(file));
             ++data_files_count;
         }
+    }
+
+    /// A `Field` carrier does not establish that the partition value can be written: e.g. an identity partition of a
+    /// `fixed` column of an older partition spec has `String` values, while `getAvroType` has no `FixedString`.
+    for (const auto & [_, group] : groups)
+    {
+        if (group.files.empty())
+            continue;
+        const auto & resolved_spec = resolvePartitionSpec(group.partition_spec_id, group.schema_id);
+        if (!std::ranges::all_of(resolved_spec.partition_types, canGetAvroType))
+            has_unsupported_partition_values = true;
     }
 }
 

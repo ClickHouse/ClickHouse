@@ -94,6 +94,35 @@ ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --use_iceberg_metadata_files_
 manifests "${T}"
 ${CLICKHOUSE_CLIENT} --query "SELECT count(), sum(v) FROM ${T}"
 
-for suffix in partitioned unpartitioned disabled min_count; do
+echo "--- DROP PARTITION after a merge"
+T="${PREFIX}_drop_partition"
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${T} (p Int32, v Int32) ENGINE = IcebergLocal('${USER_FILES_PATH}/${T}/', 'Parquet') PARTITION BY (p)"
+# Insert 11 merges the manifests of inserts 1 to 10 into one manifest spanning partitions 0 to 9.
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --iceberg_manifest_min_count_to_compact=10 -m --query "$(inserts "${T}" 1 12)"
+manifests "${T}"
+# The merged manifest is rewritten without the files of the dropped partition.
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "ALTER TABLE ${T} DROP PARTITION 3"
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "ALTER TABLE ${T} DROP PARTITION 1"
+manifests "${T}"
+${CLICKHOUSE_CLIENT} --query "SELECT p, count(), sum(v) FROM ${T} GROUP BY p ORDER BY p"
+
+echo "--- full OPTIMIZE after a merge"
+T="${PREFIX}_optimize"
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${T} (p Int32, v Int32) ENGINE = IcebergLocal('${USER_FILES_PATH}/${T}/', 'Parquet')"
+# Insert 3 merges the manifests of inserts 1 and 2, which the snapshots of inserts 1 and 2 keep referencing.
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --iceberg_manifest_min_count_to_compact=2 -m --query "$(inserts "${T}" 1 3)"
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --mutations_sync=2 --query "ALTER TABLE ${T} DELETE WHERE v = 2"
+# The full compaction cannot rewrite a data file listed in several manifests, so it fails and leaves the table intact.
+IS_CLOUD=$(${CLICKHOUSE_CLIENT} --query "SELECT value FROM system.build_options WHERE name = 'CLICKHOUSE_CLOUD'")
+OPTIMIZE_ERR=$(${CLICKHOUSE_CLIENT} --allow_experimental_iceberg_compaction=1 --query "OPTIMIZE TABLE ${T}" 2>&1)
+if [[ "${IS_CLOUD}" = "1" ]] || echo "${OPTIMIZE_ERR}" | grep -qF 'NOT_IMPLEMENTED'; then
+    echo "OPTIMIZE rejected the history"
+else
+    echo "FAIL: ${OPTIMIZE_ERR}"
+fi
+${CLICKHOUSE_CLIENT} --query "SELECT count(), sum(v) FROM ${T}"
+${CLICKHOUSE_CLIENT} --query "SELECT count(), sum(v) FROM ${T} SETTINGS iceberg_snapshot_id = $(metadata "${T}" snapshot 2)"
+
+for suffix in partitioned unpartitioned disabled min_count drop_partition optimize; do
     ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${PREFIX}_${suffix}"
 done

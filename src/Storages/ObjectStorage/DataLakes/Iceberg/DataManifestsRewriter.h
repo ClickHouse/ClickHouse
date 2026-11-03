@@ -12,6 +12,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
 
+#include <functional>
 #include <map>
 #include <span>
 #include <unordered_set>
@@ -46,8 +47,11 @@ public:
         String write_format_,
         Grouping grouping_);
 
-    /// Reads the data manifests and collects their live data files. Can be called once.
-    void collect(const ManifestFileCacheKeys & data_manifests);
+    /// Reads the data manifests and collects their live data files, except the ones for which `skip_file` returns true.
+    /// Can be called once.
+    void collect(
+        const ManifestFileCacheKeys & data_manifests,
+        const std::function<bool(const IcebergPathFromMetadata &)> & skip_file = {});
 
     size_t getDataFilesCount() const { return data_files_count; }
 
@@ -55,7 +59,8 @@ public:
     /// so the caller must not call `write` then.
     bool hasEncryptedDataFiles() const { return has_encrypted_data_files; }
 
-    /// Whether a collected data file has a partition value that `generateManifestFile` cannot write.
+    /// Whether a collected data file has a partition value, or the partition spec of a collected data file has a
+    /// partition type, that `generateManifestFile` cannot write.
     bool hasUnsupportedPartitionValues() const { return has_unsupported_partition_values; }
 
     /// The number of manifests `write` produces. `max_entries_per_manifest` is used only with `Grouping::SpanPartitions`.

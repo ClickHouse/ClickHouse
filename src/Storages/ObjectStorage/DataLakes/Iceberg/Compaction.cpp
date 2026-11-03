@@ -293,6 +293,19 @@ static Plan getPlan(
                 else
                 {
                     data_file_ptr = plan.path_to_data_file[data_file_path];
+                    /// The rewrite assigns each data file to a single manifest and lists it only there. A data file
+                    /// listed in several manifests, e.g. after an `INSERT` merged the manifests of its parent snapshot
+                    /// into a new one while older snapshots keep the original ones, would disappear from the manifests
+                    /// it is not assigned to, and with them from the snapshots referencing only those. Fail before
+                    /// anything is written, leaving the table intact.
+                    if (data_file_ptr->manifest_list != manifest_files[manifest_file.manifest_file_path])
+                        throw Exception(
+                            ErrorCodes::NOT_IMPLEMENTED,
+                            "Iceberg compaction does not support this table history: data file {} is listed in manifests {} and {} "
+                            "(e.g. after the manifests were merged). The table is left unchanged.",
+                            data_file_path.serialize(),
+                            data_file_ptr->manifest_list->path.serialize(),
+                            manifest_file.manifest_file_path.serialize());
                 }
                 plan.partitions[partition_index].push_back(data_file_ptr);
                 plan.snapshot_id_to_data_files[snapshot.snapshot_id].push_back(plan.partitions[partition_index].back());
