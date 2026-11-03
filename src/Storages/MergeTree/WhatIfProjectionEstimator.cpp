@@ -96,8 +96,9 @@ struct ProjectionPartData
     size_t format_bytes = 0;
     /// per-row bytes, only filled for adaptive granularity
     PaddedPODArray<UInt32> row_bytes;
-    /// for a level-zero aggregate part: per-row bytes of the new states that `MATERIALIZE PROJECTION` merges the states into, if they differ
-    PaddedPODArray<UInt32> rebuilt_row_bytes;
+    /// for a level-zero aggregate part: the part that `MATERIALIZE PROJECTION` writes, if it can differ from the part of an insert
+    /// its `format_bytes` are those of the block before the merge, the mutation chooses the format from them
+    std::unique_ptr<ProjectionPartData> materialized;
     /// some stored column has values of different sizes
     bool variable_width = false;
     /// a merge sizes the granules by what the part does not record: the memory it builds some states in, or the bytes of the parts it merges
@@ -412,47 +413,50 @@ String buildProjectionPart(
     pipeline.setNormalizedQueryHash(context->getNormalizedQueryHash());
     PullingPipelineExecutor executor(pipeline);
 
-    /// the source gives one block for each granule, and each `calculate` builds an interpreter, so call it for each batch
+    /// an aggregate projection part has one row for each group of the part, so the groups of all batches merge first
+    const bool aggregate = projection.type == ProjectionDescription::Type::Aggregate;
+    /// an insert calculates the projection of the whole part at once, see `MergeTreeDataWriter::writeTempPart`
+    /// other parts: the source gives one block for each granule, and each `calculate` builds an interpreter, so call it for each batch
     /// the filter of the projection works row by row, so the size of the batch does not change the result
     /// a sample keeps the granule of each projection row, so the scan calculates a projection that drops rows for each granule
     const bool per_granule = sampled && (projection.where_clause_ast || has_delete_mask);
-    const size_t batch_limit = per_granule ? 1 : context->getSettingsRef()[Setting::max_block_size];
+    const size_t batch_limit = per_granule ? 1
+        : aggregate && !merged_part        ? std::numeric_limits<size_t>::max()
+                                           : context->getSettingsRef()[Setting::max_block_size];
     Blocks batch;
     size_t batch_rows = 0;
     MutableColumns key_columns;
-    /// an aggregate projection part has one row for each group of the part, so the groups of all batches merge first
-    const bool aggregate = projection.type == ProjectionDescription::Type::Aggregate;
     /// the stored columns, as the writer gets them
-    auto add = [&](Block projected)
+    auto add = [&](ProjectionPartData & target, MutableColumns & keys, Block projected, bool merged_states)
     {
         /// the writer chooses the part format before the key expression and sizes the granules after it
-        out.format_bytes += projected.bytes();
+        target.format_bytes += projected.bytes();
         /// `required_columns` can skip a subcolumn the key needs, add it back like the writer does
         for (const auto & required : proj_key.expression->getRequiredColumns())
             if (!projected.has(required))
                 projected.insert(projected.getSubcolumnByName(required));
         proj_key.expression->execute(projected);
-        out.bytes += getBlockSizeForGranularity(projected);
+        target.bytes += getBlockSizeForGranularity(projected);
         if (need_row_bytes)
-            appendRowSizes(out, projected, merged_part);
-        /// `MATERIALIZE PROJECTION` merges each state of a part into a new state, see `writeTempProjectionPart`
-        if (need_row_bytes && aggregate && !merged_part)
-        {
-            ProjectionPartData rebuilt;
-            appendRowSizes(rebuilt, projected, /* merged */ true);
-            if (rebuilt.row_bytes != out.row_bytes)
-                out.rebuilt_row_bytes = std::move(rebuilt.row_bytes);
-        }
+            appendRowSizes(target, projected, merged_states);
 
-        if (key_columns.empty())
+        if (keys.empty())
             for (const auto & name : proj_key.column_names)
-                key_columns.push_back(projected.getByName(name).column->convertToFullColumnIfConst()->cloneEmpty());
+                keys.push_back(projected.getByName(name).column->convertToFullColumnIfConst()->cloneEmpty());
 
-        for (size_t i = 0; i < key_columns.size(); ++i)
+        for (size_t i = 0; i < keys.size(); ++i)
         {
             auto source = projected.getByName(proj_key.column_names[i]).column->convertToFullColumnIfConst();
-            key_columns[i]->insertRangeFrom(*source, 0, source->size());
+            keys[i]->insertRangeFrom(*source, 0, source->size());
         }
+    };
+    auto finish = [&](ProjectionPartData & target, MutableColumns & keys)
+    {
+        if (keys.empty() || keys[0]->empty())
+            return;
+        target.rows = keys[0]->size();
+        for (size_t i = 0; i < keys.size(); ++i)
+            target.key_block.insert({std::move(keys[i]), proj_key.data_types[i], proj_key.column_names[i]});
     };
     Blocks groups;
     /// past the group limit of the query the estimate is unsupported instead of failing the query, so a batch stops at the limit
@@ -464,11 +468,29 @@ String buildProjectionPart(
         limited_context->setSetting("group_by_overflow_mode", Field("break"));
         projection_context = std::move(limited_context);
     }
+    /// `MATERIALIZE PROJECTION` calculates with the settings of the background profile, see `MutatePlainMergeTreeTask::createTaskContext`
+    /// the settings of the aggregation can change how the calculated block holds the states, and so its bytes
+    ContextMutablePtr mutation_context;
+    Block mutation_projected;
+    if (aggregate && !merged_part)
+    {
+        mutation_context = Context::createCopy(read_step->getMergeTreeData().getContext()->getBackgroundContext());
+        mutation_context->makeQueryContext();
+        /// the group limit of the query bounds this calculation too, the estimate is unsupported past it
+        if (max_groups)
+        {
+            mutation_context->setSetting("max_rows_to_group_by", Field(max_groups));
+            mutation_context->setSetting("group_by_overflow_mode", Field("break"));
+        }
+    }
     auto flush = [&]
     {
         if (batch.empty())
             return;
-        auto projected = projection.calculate(concatenateBlocks(batch), out.read_rows - batch_rows, projection_context);
+        const auto rows = concatenateBlocks(batch);
+        auto projected = projection.calculate(rows, out.read_rows - batch_rows, projection_context);
+        if (mutation_context)
+            mutation_projected = projection.calculate(rows, out.read_rows - batch_rows, mutation_context);
         batch.clear();
         batch_rows = 0;
         if (per_granule)
@@ -476,7 +498,7 @@ String buildProjectionPart(
         if (aggregate)
             groups.push_back(std::move(projected));
         else
-            add(std::move(projected));
+            add(out, key_columns, std::move(projected), false);
     };
 
     size_t read_bytes = 0;
@@ -513,7 +535,7 @@ String buildProjectionPart(
     flush();
     if (!groups.empty())
     {
-        auto merged = mergeGroups(groups);
+        auto merged = merged_part ? mergeGroups(groups) : std::move(groups.front());
         /// the groups of all batches hold the groups of each batch, so a batch that stopped at the limit is over it here
         if (max_groups && merged.rows() > max_groups)
             return fmt::format(
@@ -536,16 +558,21 @@ String buildProjectionPart(
                 background[Setting::min_insert_block_size_bytes], read_step->getStorageSnapshot()->metadata->getProjections().size() + 2);
             out.merge_history_unknown |= (mutation_rows == 0 && mutation_bytes == 0) || (mutation_rows != 0 && out.read_rows > mutation_rows)
                 || (mutation_bytes != 0 && read_bytes > mutation_bytes);
+            /// `MATERIALIZE PROJECTION` merges the block that it calculates, see `writeTempProjectionPart`
+            /// the merge builds each state anew, and it compares the keys as a sort does: 0 and -0 or two NaNs are one group there,
+            /// the hash table of an insert keeps them apart
+            out.materialized = std::make_unique<ProjectionPartData>();
+            MutableColumns materialized_keys;
+            add(*out.materialized, materialized_keys, mergeGroups({mutation_projected}), true);
+            finish(*out.materialized, materialized_keys);
+            out.materialized->format_bytes = mutation_projected.bytes();
         }
-        add(std::move(merged));
+        add(out, key_columns, std::move(merged), merged_part);
     }
-
-    if (key_columns.empty() || key_columns[0]->empty())
-        return {};
-
-    out.rows = key_columns[0]->size();
-    for (size_t i = 0; i < key_columns.size(); ++i)
-        out.key_block.insert({std::move(key_columns[i]), proj_key.data_types[i], proj_key.column_names[i]});
+    finish(out, key_columns);
+    if (out.materialized && out.materialized->rows == out.rows && out.materialized->row_bytes == out.row_bytes
+        && out.materialized->format_bytes == out.format_bytes)
+        out.materialized.reset();
 
     return {};
 }
@@ -554,16 +581,12 @@ String buildProjectionPart(
 struct PartFromSample
 {
     const ProjectionPartData & sample;
-    /// the sizes of the sample rows, in read order
-    const PaddedPODArray<UInt32> & row_bytes;
     size_t rows;
     /// bytes of the part rows before the first one each sample row stands for
     std::vector<UInt64> bytes_before_sample_row;
 
-    PartFromSample(const ProjectionPartData & sample_, size_t rows_) : PartFromSample(sample_, rows_, sample_.row_bytes) { }
-
-    PartFromSample(const ProjectionPartData & sample_, size_t rows_, const PaddedPODArray<UInt32> & row_bytes_)
-        : sample(sample_), row_bytes(row_bytes_), rows(rows_), bytes_before_sample_row(sample.rows + 1)
+    PartFromSample(const ProjectionPartData & sample_, size_t rows_)
+        : sample(sample_), rows(rows_), bytes_before_sample_row(sample.rows + 1)
     {
         for (size_t sample_row = 0; sample_row < sample.rows; ++sample_row)
         {
@@ -582,8 +605,8 @@ struct PartFromSample
 
     size_t sampleRowBytes(size_t sample_row) const
     {
-        const bool per_row = row_bytes.size() == sample.rows;
-        return per_row ? row_bytes[sample.order[sample_row]] : std::max<size_t>(sample.bytes / sample.rows, 1);
+        const bool per_row = sample.row_bytes.size() == sample.rows;
+        return per_row ? sample.row_bytes[sample.order[sample_row]] : std::max<size_t>(sample.bytes / sample.rows, 1);
     }
 
     UInt64 bytesBefore(size_t part_row) const
@@ -682,9 +705,12 @@ std::pair<std::vector<MergeTreeDataPartPtr>, size_t> buildSyntheticProjectionPar
     /// sorted order via one permutation
     stableGetPermutation(data.key_block, sort_description, data.order);
     const PartFromSample whole_part(data, part_rows);
-    std::optional<PartFromSample> rebuilt_part;
-    if (!data.rebuilt_row_bytes.empty())
-        rebuilt_part.emplace(data, part_rows, data.rebuilt_row_bytes);
+    std::optional<PartFromSample> materialized_part;
+    if (data.materialized)
+    {
+        stableGetPermutation(data.materialized->key_block, sort_description, data.materialized->order);
+        materialized_part.emplace(*data.materialized, data.materialized->rows);
+    }
     /// the layouts the writer can leave for a part format, and the index of the likeliest one
     auto layouts_of = [&](MergeTreeDataPartType part_type)
     {
@@ -716,9 +742,6 @@ std::pair<std::vector<MergeTreeDataPartPtr>, size_t> buildSyntheticProjectionPar
         std::vector<std::vector<size_t>> layouts;
         for (const auto & [rows_limit, bytes_limit] : chunkings)
             layouts.push_back(simulateWriterMarks(whole_part, part_type, mt_settings, adaptive_marks, rows_limit, bytes_limit));
-        /// `MATERIALIZE PROJECTION` writes a part that it calculates in one batch as one block of states that it merges anew
-        if (rebuilt_part)
-            layouts.push_back(simulateWriterMarks(*rebuilt_part, part_type, mt_settings, adaptive_marks, rebuilt_part->rows, 0));
         /// a merge under a constant granularity: n rows of width w in the merged parts give granules of n / floor(n * w / granule_bytes)
         /// rows, at least granule_bytes / w, and less than granule_bytes / w * (k + 1) / k for k >= 1 granules of bytes, or twice that
         /// for fewer
@@ -754,8 +777,23 @@ std::pair<std::vector<MergeTreeDataPartPtr>, size_t> buildSyntheticProjectionPar
         std::ranges::move(
             layouts_of(part_type == MergeTreeDataPartType::Wide ? MergeTreeDataPartType::Compact : MergeTreeDataPartType::Wide).first,
             std::back_inserter(layouts));
+    /// `MATERIALIZE PROJECTION` writes a part that it calculates in one batch as one block, in the format that it chose before the merge
+    /// the block before the merge has a row for each group of the hash table, as the block of an insert
+    const size_t written_layouts = layouts.size();
+    if (materialized_part)
+    {
+        const auto materialized_type
+            = merge_tree.choosePartFormat(data.materialized->format_bytes, whole_part.rows, parent_part->info.level, &projection).part_type;
+        layouts.push_back(simulateWriterMarks(
+            *materialized_part,
+            materialized_type,
+            mt_settings,
+            MergeTreeIndexGranularityInfo(merge_tree, mt_settings, materialized_type).mark_type.adaptive,
+            materialized_part->rows,
+            0));
+    }
 
-    auto build = [&](const std::vector<size_t> & rows_per_mark) -> MergeTreeDataPartPtr
+    auto build = [&](const std::vector<size_t> & rows_per_mark, const PartFromSample & source) -> MergeTreeDataPartPtr
     {
         const size_t num_marks = rows_per_mark.size();
         std::vector<size_t> partial_sums(num_marks);
@@ -767,12 +805,13 @@ std::pair<std::vector<MergeTreeDataPartPtr>, size_t> buildSyntheticProjectionPar
 
         /// primary index = the key at the first row of every granule
         Columns index_columns;
-        index_columns.reserve(data.key_block.columns());
-        for (const auto & key_column : data.key_block)
+        index_columns.reserve(source.sample.key_block.columns());
+        for (const auto & key_column : source.sample.key_block)
         {
             auto index_column = key_column.column->cloneEmpty();
             for (size_t mark = 0; mark < num_marks; ++mark)
-                index_column->insertFrom(*key_column.column, data.order[whole_part.sampleRow(mark != 0 ? partial_sums[mark - 1] : 0)]);
+                index_column->insertFrom(
+                    *key_column.column, source.sample.order[source.sampleRow(mark != 0 ? partial_sums[mark - 1] : 0)]);
             index_columns.push_back(std::move(index_column));
         }
 
@@ -780,7 +819,7 @@ std::pair<std::vector<MergeTreeDataPartPtr>, size_t> buildSyntheticProjectionPar
         auto part = const_cast<IMergeTreeDataPart &>(*parent_part)
                         .getProjectionPartBuilder(projection.name, &projection, PartDirIntent::Synthetic, /* is_temp_projection */ true)
                         .withPartType(MergeTreeDataPartType::Compact)
-                        .withBytesAndRows(0, whole_part.rows, 0)
+                        .withBytesAndRows(0, source.rows, 0)
                         .build();
         part->setColumns(
             projection.metadata->getColumns().getAllPhysical(),
@@ -791,7 +830,7 @@ std::pair<std::vector<MergeTreeDataPartPtr>, size_t> buildSyntheticProjectionPar
         return part;
     };
 
-    /// equal layouts use the same part
+    /// equal layouts use the same part, they have the same rows and so the same groups
     std::vector<MergeTreeDataPartPtr> built(layouts.size());
     for (size_t i = 0; i < layouts.size(); ++i)
     {
@@ -799,7 +838,7 @@ std::pair<std::vector<MergeTreeDataPartPtr>, size_t> buildSyntheticProjectionPar
             if (layouts[j] == layouts[i])
                 built[i] = built[j];
         if (!built[i])
-            built[i] = build(layouts[i]);
+            built[i] = build(layouts[i], i < written_layouts ? whole_part : *materialized_part);
     }
     return {std::move(built), primary};
 }
