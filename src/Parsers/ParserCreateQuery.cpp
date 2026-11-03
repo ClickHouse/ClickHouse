@@ -2040,7 +2040,7 @@ ClickHouse creates the `db_name` database on all the servers of a specified clus
 
 ### ENGINE {#engine}
 
-By default, ClickHouse uses its own [Atomic](/reference/engines/database-engines/atomic) database engine. There are also [MySQL](/reference/engines/database-engines/mysql), [PostgresSQL](/reference/engines/database-engines/postgresql), [MaterializedPostgreSQL](/reference/engines/database-engines/materialized-postgresql), [Replicated](/reference/engines/database-engines/replicated), [SQLite](/reference/engines/database-engines/sqlite).
+By default, ClickHouse uses its own [Atomic](/reference/engines/database-engines/atomic) database engine. There are also [MySQL](/reference/engines/database-engines/mysql), [PostgreSQL](/reference/engines/database-engines/postgresql), [MaterializedPostgreSQL](/reference/engines/database-engines/materialized-postgresql), [Replicated](/reference/engines/database-engines/replicated), [SQLite](/reference/engines/database-engines/sqlite).
 
 ### COMMENT {#comment}
 
@@ -2987,6 +2987,7 @@ This codec is in beta and requires `SET enable_pco_codec = 1` to use. Because it
 <ExperimentalBadge/>
 
 `SZ3` or `SZ3(algorithm, error_bound_mode, error_bound)` - A lossy but error-bound codec ([SZ3 Lossy Compressor](https://szcompressor.org/)) for columns of type Float32, Float64, Array(Float32), or Array(Float64). For array columns, compression is most effective when all arrays have the same length (they are then compressed as fixed-width vectors); arrays of different lengths are still supported and are compressed as a flat sequence of values. The codec is not applicable to Map columns, because its keys would be corrupted by lossy compression. Supported values for 'algorithm' are `ALGO_LORENZO_REG`, `ALGO_INTERP_LORENZO` and `ALGO_INTERP`. Supported values for 'error_bound_mode' are `ABS`, `REL`, `PSNR` and `ABS_AND_REL`. Argument 'error_bound' is the maximum error and of type Float64.
+The codec is also not applicable to LowCardinality columns of MergeTree tables (also inside Array, Tuple or Nested), because their dictionaries would be corrupted.
 
 <Note>
 This codec is experimental and requires `SET enable_sz3_codec = 1` to use.
@@ -3774,8 +3775,10 @@ COMMENT 'Comment'
 
 <CloudNotSupportedBadge/>
 
-<Note>
-Creating a dictionary with a configuration file is not applicable to ClickHouse Cloud. Please use DDL (see above), and create your dictionary as the `default` user.
+<Note title="ClickHouse Cloud">
+ClickHouse Cloud does not support creating dictionaries with configuration files. Use [`CREATE DICTIONARY`](#creating-a-dictionary-with-a-ddl-query) instead.
+
+When creating a dictionary that reads from a ClickHouse table, include a dedicated user's username and password in the `SOURCE` clause. That user needs `SELECT` permission on the source table. See the [ClickHouse dictionary source example](/reference/statements/create/dictionary/sources/clickhouse).
 </Note>
 
 The dictionary configuration file has the following format:
