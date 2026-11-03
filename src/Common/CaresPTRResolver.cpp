@@ -247,7 +247,7 @@ bool CaresPTRResolver::wait_and_process(AresChannelRAII & channel_raii)
         for (size_t i = 0; i < dns_state.poll_nfds; ++i)
         {
             const struct pollfd & pfd = dns_state.poll_fds[i];
-            const int rfd = (pfd.revents & POLLIN) ? pfd.fd : ARES_SOCKET_BAD;
+            const int rfd = (pfd.revents & (POLLIN | POLLERR | POLLHUP)) ? pfd.fd : ARES_SOCKET_BAD;
             const int wfd = (pfd.revents & POLLOUT) ? pfd.fd : ARES_SOCKET_BAD;
 
             if (rfd != ARES_SOCKET_BAD || wfd != ARES_SOCKET_BAD)
