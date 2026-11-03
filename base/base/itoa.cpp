@@ -5,6 +5,8 @@
 #include <base/extended_types.h>
 #include <base/itoa.h>
 
+#include <array>
+
 #if defined(__x86_64__)
 #    include <cpuid.h>
 #    include <immintrin.h>
@@ -814,9 +816,45 @@ ALWAYS_INLINE inline char * writeSIntText(const T & x, char * pos)
 }
 }
 
+/// The shift that places byte `i` of an integer's in-memory representation.
+template <typename T>
+constexpr UInt32 byteShift(UInt32 i)
+{
+    return 8 * (std::endian::native == std::endian::little ? i : sizeof(T) - 1 - i);
+}
+
+/// The text of every `UInt8` value: the digits from the lowest address on, and the length in the last byte.
+constexpr std::array<UInt32, 256> uint8_text = []
+{
+    std::array<UInt32, 256> table{};
+    for (UInt32 value = 0; value < 256; ++value)
+    {
+        UInt32 length = value >= 100 ? 3 : (value >= 10 ? 2 : 1);
+        UInt32 entry = length << byteShift<UInt32>(3);
+        for (UInt32 i = length, rest = value; i > 0; --i, rest /= 10)
+            entry |= ('0' + rest % 10) << byteShift<UInt32>(i - 1);
+        table[value] = entry;
+    }
+    return table;
+}();
+
+/// One load and one 4-byte store, with no branch on the length. The bytes after the text are the rest of the entry,
+/// overwritten by whatever is written next; `max_int_width<UInt8>` reserves the extra byte.
+ALWAYS_INLINE inline char * writeUInt8Text(UInt32 value, char * p)
+{
+    UInt32 entry = uint8_text[value];
+    memcpy(p, &entry, 4);
+    return p + ((entry >> byteShift<UInt32>(3)) & 0xFF);
+}
+
 char * itoa(UInt8 i, char * p)
 {
-    return jeaiii::to_text_from_integer(p, uint8_t(i));
+    return writeUInt8Text(i, p);
+}
+
+char * itoa(uint8_t i, char * p)
+{
+    return writeUInt8Text(i, p);
 }
 
 /// The sign without a branch, which mispredicts on mixed-sign data: '-' is always written, and the magnitude
@@ -832,6 +870,8 @@ ALWAYS_INLINE inline char * writeSignedText(T i, char * p)
     p += sign & 1;
     if constexpr (sizeof(T) == 8)
         return writeUInt64Text(magnitude, p);
+    else if constexpr (sizeof(T) == 1)
+        return writeUInt8Text(magnitude, p);
     else
         return jeaiii::to_text_from_integer(p, magnitude);
 }
@@ -874,7 +914,6 @@ char * itoa(const Int256 & i, char * p)
     }
 
 #define FOR_MISSING_INTEGER_TYPES(M) \
-    M(uint8_t) \
     M(UInt16) \
     M(UInt32)
 
