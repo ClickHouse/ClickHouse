@@ -2054,7 +2054,6 @@ bool hasDateTimeInVariant(const DataTypePtr & type)
     return anyInTypeTree(*type, [](const IDataType & node) { return isVariant(node) && anyInTypeTree(node, isDateTimeNode); });
 }
 
-/// True when `type` is written as a JSON object.
 bool writesJSONObject(const DataTypePtr & type, const FormatSettings & format_settings)
 {
     const auto nested = removeLowCardinalityAndNullable(type);
