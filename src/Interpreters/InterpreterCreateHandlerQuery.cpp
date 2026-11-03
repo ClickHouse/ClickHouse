@@ -45,11 +45,11 @@ namespace ErrorCodes
 namespace
 {
 
-/// A user holding every privilege with the grant option (like an `access_management` user) can run any query a
-/// handler can run.
+/// A user holding every privilege with the grant option can run any query a handler can run. The named collection
+/// privileges are not required: `users.xml` administrators do not get them by default.
 bool hasFullAccess(const ContextPtr & context)
 {
-    return context->getAccess()->hasGrantOption(AccessType::ALL);
+    return context->getAccess()->hasGrantOption(AccessType::ALL - AccessType::NAMED_COLLECTION_ADMIN);
 }
 
 /// `processSQLSecurityOption` stores an ephemeral definer as a clone named `<user>:definer`. A real user can have the

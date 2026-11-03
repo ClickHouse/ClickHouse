@@ -245,7 +245,7 @@ Invoking a handler does not require any separate grant, and authentication works
 
 Like a [view](/reference/statements/create/view#sql_security), a handler runs its query as the user who requests it (`SQL SECURITY INVOKER`, the default), as a definer (`SQL SECURITY DEFINER` with `DEFINER = user`, or `DEFINER = CURRENT_USER`, which is the default definer), or without a user (`SQL SECURITY NONE`). A definer other than the current user requires the `SET DEFINER` grant on that user, and `SQL SECURITY NONE` requires the `ALLOW SQL SECURITY NONE` grant. There is no grant to invoke a handler, so a handler with `SQL SECURITY DEFINER` runs its query with the privileges of the definer for every authenticated user who requests its URL.
 
-The query is checked against the privileges of the user who creates or alters the handler, unless that user has full access (all privileges with the grant option):
+The query is checked against the privileges of the user who creates or alters the handler, unless that user has full access (all privileges with the grant option; the named collection privileges are not required):
 - if the handler runs as this user (`DEFINER = CURRENT_USER`), a `SELECT` without query parameters is analyzed as the `SELECT` of a view is, and other queries are checked when they run;
 - otherwise, the query must be a `SELECT` without query parameters and without a `SETTINGS` clause, and the user must be allowed to run it.
 

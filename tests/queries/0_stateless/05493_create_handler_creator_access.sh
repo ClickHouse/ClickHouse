@@ -13,13 +13,16 @@ DB_B="${DB}_b"
 BASE="${CLICKHOUSE_PORT_HTTP_PROTO}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}"
 U="u_lim_${DB}"
 U_ALL="u_all_${DB}"
+U_SA1="u_sa1_${DB}"
+U_SA2="u_sa2_${DB}"
+U_SA3="u_sa3_${DB}"
 F="f_${DB}"
 
 cleanup() {
     for h in $($CLICKHOUSE_CLIENT -q "SELECT name FROM system.handlers WHERE endsWith(name, '_${DB}')"); do
         $CLICKHOUSE_CLIENT -q "DROP HANDLER IF EXISTS \`$h\`"
     done
-    $CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS ${U}, ${U_ALL}; DROP FUNCTION IF EXISTS ${F}; DROP DATABASE IF EXISTS ${DB_B}"
+    $CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS ${U}, ${U_ALL}, ${U_SA1}, ${U_SA2}, ${U_SA3}; DROP FUNCTION IF EXISTS ${F}; DROP DATABASE IF EXISTS ${DB_B}"
 }
 trap cleanup EXIT
 cleanup
@@ -160,3 +163,19 @@ $CLICKHOUSE_CLIENT -q "SELECT name, countSubstrings(create_query, '${F}') FROM s
 $CLICKHOUSE_CLIENT -q "CREATE OR REPLACE FUNCTION ${F} AS () -> (SELECT count() + 100 FROM ${DB}.t2)"
 ${CLICKHOUSE_CURL} -sS "${BASE}/${DB}/h16"
 ${CLICKHOUSE_CURL} -sS "${BASE}/${DB}/h16b"
+
+echo "--- 18. full access does not need the named collection privileges"
+$CLICKHOUSE_CLIENT -q "
+CREATE USER ${U_SA1}, ${U_SA2}, ${U_SA3} NOT IDENTIFIED;
+GRANT ALL ON *.* TO ${U_SA1}, ${U_SA2}, ${U_SA3} WITH GRANT OPTION;
+REVOKE SHOW NAMED COLLECTIONS SECRETS ON *.* FROM ${U_SA1};
+REVOKE NAMED COLLECTION ADMIN ON *.* FROM ${U_SA2};
+REVOKE ACCESS MANAGEMENT ON *.* FROM ${U_SA3};"
+for n in 1 2; do
+    u="u_sa${n}_${DB}"
+    as_user "$u" "CREATE HANDLER h18a${n}_${DB} URL '/${DB}/h18a${n}' AS SELECT * FROM ${DB}.t WHERE id = {id:UInt32}"
+    as_user "$u" "CREATE HANDLER h18b${n}_${DB} URL REGEXP '/${DB}/h18b${n}/(?P<id>\\\\d+)' AS SELECT {id:UInt32}"
+    as_user "$u" "CREATE HANDLER h18c${n}_${DB} URL '/${DB}/h18c${n}' METHODS (POST) AS INSERT INTO ${DB}.t FORMAT TSV"
+done
+echo "without ACCESS MANAGEMENT:"
+reason "$U_SA3" "CREATE HANDLER h18a3_${DB} URL '/${DB}/h18a3' AS SELECT * FROM ${DB}.t WHERE id = {id:UInt32}"

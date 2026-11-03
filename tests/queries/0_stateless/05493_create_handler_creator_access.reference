@@ -80,3 +80,12 @@ h16	0
 h16b	0
 1
 1
+--- 18. full access does not need the named collection privileges
+OK
+OK
+OK
+OK
+OK
+OK
+without ACCESS MANAGEMENT:
+with query parameters
