@@ -31,7 +31,9 @@ DISTRIBUTED_SETTINGS = (
     "distributed_plan_default_shuffle_join_bucket_count = 2, "
     "distributed_plan_default_reader_bucket_count = 2, "
     "distributed_plan_max_rows_to_broadcast = 0, "
-    "distributed_plan_fallback_to_local_execution = 0"
+    "distributed_plan_fallback_to_local_execution = 0, "
+    # A trivial `count()` reads from a prepared source, which a distributed plan cannot run remotely.
+    "optimize_trivial_count_query = 0"
 )
 
 
@@ -100,7 +102,7 @@ def test_tasks_share_query_slot(started_cluster):
 def test_distributed_subqueries_share_query_slot(started_cluster):
     # Every distributed subquery has its own distributed plan; the tasks of all of them are parts of
     # the same query and share its slot. The outer query reads a table too, because a plan that reads
-    # `system.one` cannot be distributed.
+    # `system.one` cannot be distributed (and so cannot a trivial `count()`, see `DISTRIBUTED_SETTINGS`).
     joined_before = joined_slots(node1)
     result = node1.query(
         f"""
