@@ -25,7 +25,7 @@ public:
 
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert, const ParallelInsertStatePtr & /*parallel_insert_state*/) override;
 
     bool storesDataOnDisk() const override { return true; }
     /// With `persistent = 0` the table keeps its data only in memory, like `Memory`.

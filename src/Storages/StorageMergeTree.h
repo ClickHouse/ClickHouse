@@ -85,7 +85,7 @@ public:
     std::optional<UInt64> totalBytesUncompressed(const Settings &) const override;
     MutationCounters getMutationCounters() const override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert, const ParallelInsertStatePtr & /*parallel_insert_state*/) override;
 
     /** Perform the next step in combining the parts.
       */

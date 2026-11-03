@@ -109,7 +109,8 @@ public:
         StorageObjectStorageConfigurationPtr configuration,
         const std::optional<FormatSettings> & format_settings,
         ContextPtr context,
-        std::shared_ptr<DataLake::ICatalog> catalog) override;
+        std::shared_ptr<DataLake::ICatalog> catalog,
+        const ParallelInsertStatePtr & parallel_insert_state) override;
 
 private:
     using TableSnapshotCache = CacheBase<SnapshotVersion, DeltaLake::TableSnapshot>;

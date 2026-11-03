@@ -68,7 +68,7 @@ public:
         size_t num_streams) override;
 
     SinkToStoragePtr
-    write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
+    write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert, const ParallelInsertStatePtr & /*parallel_insert_state*/) override;
     void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &) override;
 
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;

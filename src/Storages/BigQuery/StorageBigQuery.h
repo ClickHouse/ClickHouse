@@ -53,7 +53,8 @@ public:
         const ASTPtr & query,
         const StorageMetadataPtr & metadata_snapshot,
         ContextPtr context,
-        bool async_insert) override;
+        bool async_insert,
+        const ParallelInsertStatePtr & /*parallel_insert_state*/) override;
 
     static BigQueryConfiguration getConfiguration(ASTs & engine_args, ContextPtr context, const StorageID * table_id = nullptr);
 

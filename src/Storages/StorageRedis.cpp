@@ -600,7 +600,8 @@ SinkToStoragePtr StorageRedis::write(
     const ASTPtr & /*query*/,
     const StorageMetadataPtr & metadata_snapshot,
     ContextPtr /*context*/,
-    bool /*async_insert*/)
+    bool /*async_insert*/,
+    const ParallelInsertStatePtr & /*parallel_insert_state*/)
 {
     return std::make_shared<RedisSink>(*this, metadata_snapshot);
 }

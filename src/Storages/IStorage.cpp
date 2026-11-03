@@ -200,11 +200,12 @@ Pipe IStorage::read(
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method read is not supported by storage {}", getName());
 }
 
-SinkToStoragePtr IStorage::write(
+SinkToStoragePtr IStorage::write( // NOLINT(google-default-arguments)
     const ASTPtr & /*query*/,
     const StorageMetadataPtr & /*metadata_snapshot*/,
     ContextPtr /*context*/,
-    bool /*async_insert*/)
+    bool /*async_insert*/,
+    const ParallelInsertStatePtr & /*parallel_insert_state*/)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method write is not supported by storage {}", getName());
 }

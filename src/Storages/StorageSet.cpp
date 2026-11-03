@@ -139,7 +139,7 @@ void SetOrJoinSink::onFinish()
 }
 
 
-SinkToStoragePtr StorageSetOrJoinBase::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool /*async_insert*/)
+SinkToStoragePtr StorageSetOrJoinBase::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool /*async_insert*/, const ParallelInsertStatePtr & /*parallel_insert_state*/)
 {
     UInt64 id = ++increment;
     return std::make_shared<SetOrJoinSink>(

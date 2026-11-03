@@ -577,7 +577,8 @@ SinkToStoragePtr StorageBigQuery::write(
     const ASTPtr & /*query*/,
     const StorageMetadataPtr & metadata_snapshot,
     ContextPtr context,
-    bool /*async_insert*/)
+    bool /*async_insert*/,
+    const ParallelInsertStatePtr & /*parallel_insert_state*/)
 {
     bool snapshot_is_live = false;
     const auto & analyzed_fields = getFields(context, snapshot_is_live);

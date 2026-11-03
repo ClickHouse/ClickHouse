@@ -55,7 +55,7 @@ public:
     bool supportsColumnsWithDynamicStructure() const override;
     bool supportsTransactions() const override { return getTargetTable()->supportsTransactions(); }
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert, const ParallelInsertStatePtr & /*parallel_insert_state*/) override;
 
     void drop() override;
     void dropInnerTableIfAny(bool sync, ContextPtr local_context) override;

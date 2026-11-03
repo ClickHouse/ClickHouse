@@ -1031,11 +1031,21 @@ void StorageObjectStorage::addFilterPushedDownByInitiator(QueryPlan & query_plan
     query_plan.addStep(std::move(filter_step));
 }
 
+ParallelInsertStatePtr StorageObjectStorage::createParallelInsertState(const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
+{
+    if (!configuration->isDataLakeConfiguration())
+        return nullptr;
+
+    const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
+    return configuration->createParallelInsertState(sample_block, storage_id, object_storage, local_context, catalog);
+}
+
 SinkToStoragePtr StorageObjectStorage::write(
     const ASTPtr &,
     const StorageMetadataPtr & metadata_snapshot,
     ContextPtr local_context,
-    bool /* async_insert */)
+    bool /* async_insert */,
+    const ParallelInsertStatePtr & parallel_insert_state)
 {
     /// For data lake we did update in getExternalDynamicMetadata.
     if (!is_table_function && !configuration->isDataLakeConfiguration())
@@ -1043,7 +1053,7 @@ SinkToStoragePtr StorageObjectStorage::write(
         configuration->update(object_storage, local_context);
     }
 
-    return createSink(configuration, object_storage, storage_id, format_settings, catalog, metadata_snapshot, local_context);
+    return createSink(configuration, object_storage, storage_id, format_settings, catalog, metadata_snapshot, local_context, parallel_insert_state);
 }
 
 SinkToStoragePtr StorageObjectStorage::createSink(
@@ -1053,7 +1063,8 @@ SinkToStoragePtr StorageObjectStorage::createSink(
     const std::optional<FormatSettings> & format_settings,
     const std::shared_ptr<DataLake::ICatalog> & catalog,
     const StorageMetadataPtr & metadata_snapshot,
-    const ContextPtr & local_context)
+    const ContextPtr & local_context,
+    const ParallelInsertStatePtr & parallel_insert_state)
 {
     const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
     const auto & settings = configuration->getQuerySettings(local_context);
@@ -1078,7 +1089,7 @@ SinkToStoragePtr StorageObjectStorage::createSink(
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Writes are not supported for engine");
 
     if (configuration->isDataLakeConfiguration() && configuration->supportsWrites())
-        return configuration->write(sample_block, storage_id, object_storage, format_settings, local_context, catalog);
+        return configuration->write(sample_block, storage_id, object_storage, format_settings, local_context, catalog, parallel_insert_state);
 
     /// Not a data lake, just raw object storage
 

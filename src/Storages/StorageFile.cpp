@@ -3549,7 +3549,8 @@ SinkToStoragePtr StorageFile::write(
     const ASTPtr & query,
     const StorageMetadataPtr & metadata_snapshot,
     ContextPtr context,
-    bool /*async_insert*/)
+    bool /*async_insert*/,
+    const ParallelInsertStatePtr & /*parallel_insert_state*/)
 {
     if (!use_table_fd && archive_info.has_value())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Writing to archives is not supported");

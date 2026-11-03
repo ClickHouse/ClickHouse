@@ -139,7 +139,7 @@ struct TableFixture
         column->insert(Field(UInt64(1)));
         Block block{ColumnWithTypeAndName(std::move(column), type, "k")};
 
-        auto sink = storage->write(nullptr, metadata_handle, context, /*async_insert=*/false);
+        auto sink = storage->write(nullptr, metadata_handle, context, /*async_insert=*/false, /*parallel_insert_state=*/nullptr);
 
         Pipe pipe(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(block)));
         /// The `MergeTree` sink reads the deduplication info off the chunk, so the insert chain that

@@ -895,7 +895,8 @@ void StorageTimeSeries::readImpl(
 
 
 SinkToStoragePtr StorageTimeSeries::write(
-    const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool async_insert)
+    const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool async_insert,
+    const ParallelInsertStatePtr & /*parallel_insert_state*/)
 {
     checkTimeSeriesVersionIsWritable(*this);
 

@@ -419,13 +419,25 @@ public:
             metadata->drop(local_context);
     }
 
+    ParallelInsertStatePtr createParallelInsertState(
+        SharedHeader sample_block,
+        const StorageID & table_id,
+        ObjectStoragePtr object_storage,
+        ContextPtr context,
+        std::shared_ptr<DataLake::ICatalog> catalog) override
+    {
+        lazyInitializeIfNeeded(object_storage, context);
+        return getMetadata()->createParallelInsertState(sample_block, table_id, object_storage, shared_from_this(), context, catalog);
+    }
+
     SinkToStoragePtr write(
         SharedHeader sample_block,
         const StorageID & table_id,
         ObjectStoragePtr object_storage,
         const std::optional<FormatSettings> & format_settings,
         ContextPtr context,
-        std::shared_ptr<DataLake::ICatalog> catalog) override
+        std::shared_ptr<DataLake::ICatalog> catalog,
+        const ParallelInsertStatePtr & parallel_insert_state) override
     {
         lazyInitializeIfNeeded(object_storage, context);
         /// When the storage carries no format settings (table functions pass none),
@@ -440,7 +452,8 @@ public:
             shared_from_this(),
             format_settings.has_value() ? *format_settings : getFormatSettings(context),
             context,
-            catalog);
+            catalog,
+            parallel_insert_state);
     }
 
     std::shared_ptr<DataLake::ICatalog> getCatalog([[maybe_unused]] ContextPtr context, [[maybe_unused]] const StorageID & table_id) const override

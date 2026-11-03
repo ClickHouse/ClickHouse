@@ -89,7 +89,7 @@ StorageSystemWasmModules::StorageSystemWasmModules(const StorageID & table_id_, 
     , wasm_module_manager(wasm_module_manager_)
 {}
 
-SinkToStoragePtr StorageSystemWasmModules::write(const ASTPtr &, const StorageMetadataPtr &, ContextPtr /* context */, bool /*async_insert*/)
+SinkToStoragePtr StorageSystemWasmModules::write(const ASTPtr &, const StorageMetadataPtr &, ContextPtr /* context */, bool /*async_insert*/, const ParallelInsertStatePtr & /*parallel_insert_state*/)
 {
     auto write_header = std::make_shared<Block>();
     for (const auto & [name, type] : StorageSystemWasmModules::getColumnsDescription().getInsertable())

@@ -1250,7 +1250,7 @@ void StorageDistributed::read(
 }
 
 
-SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
+SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/, const ParallelInsertStatePtr & /*parallel_insert_state*/)
 {
     checkLocalShardAccess(AccessType::INSERT, local_context);
 

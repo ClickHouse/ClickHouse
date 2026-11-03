@@ -1,5 +1,6 @@
 #pragma once
 
+#include <mutex>
 #include <unordered_map>
 #include <unordered_set>
 #include <Core/Range.h>
@@ -141,6 +142,43 @@ void generateManifestList(
     const std::vector<Int64> & entry_row_counts = {},
     const std::vector<Int64> & entry_file_counts = {});
 
+/// The data files one insert stream wrote into one partition.
+struct IcebergWrittenPartition
+{
+    ChunkPartitioner::PartitionKey partition_key;
+    std::vector<Iceberg::IcebergPathFromMetadata> data_files;
+    std::vector<UInt64> row_counts;
+    std::vector<UInt64> byte_counts;
+    std::vector<DataFileStatisticsPtr> statistics;
+};
+
+/// Shared by the sinks of all insert streams of one `INSERT`. Every stream hands its data files over when it finishes,
+/// and the last stream to finish commits the data files of all streams in one snapshot.
+class IcebergInsertTransaction : public IParallelInsertState
+{
+public:
+    IcebergInsertTransaction(ObjectStoragePtr object_storage_, const Iceberg::IcebergPathResolver & path_resolver_);
+    ~IcebergInsertTransaction() override;
+
+    void addStream();
+    void streamFailed();
+    /// Takes over the data files of a finished stream. The last stream to finish gets the data files of all streams to commit them.
+    std::optional<std::vector<IcebergWrittenPartition>> finishStreamAndGetAllPartitionsIfLast(std::vector<IcebergWrittenPartition> partitions);
+    void setCommitted();
+
+private:
+    ObjectStoragePtr object_storage;
+    Iceberg::IcebergPathResolver path_resolver;
+
+    std::mutex mutex;
+    size_t unfinished_streams TSA_GUARDED_BY(mutex) = 0;
+    bool failed TSA_GUARDED_BY(mutex) = false;
+    bool committed TSA_GUARDED_BY(mutex) = false;
+    std::vector<IcebergWrittenPartition> written_partitions TSA_GUARDED_BY(mutex);
+};
+
+using IcebergInsertTransactionPtr = std::shared_ptr<IcebergInsertTransaction>;
+
 class IcebergStorageSink final : public SinkToStorage
 {
 public:
@@ -152,7 +190,8 @@ public:
         ContextPtr context_,
         std::shared_ptr<DataLake::ICatalog> catalog_,
         const Iceberg::PersistentTableComponents & persistent_table_components_,
-        const StorageID & table_id_);
+        const StorageID & table_id_,
+        IcebergInsertTransactionPtr transaction_);
 
     ~IcebergStorageSink() override;
 
@@ -212,6 +251,11 @@ private:
     const DataLakeStorageSettingsPtr data_lake_settings;
     const String write_format;
 
+    IcebergInsertTransactionPtr transaction;
+    /// The stream has reported to `transaction` that it finished or failed.
+    bool reported = false;
+    /// The data files of all insert streams, committed by the last stream to finish.
+    std::vector<IcebergWrittenPartition> written_partitions;
 };
 
 }

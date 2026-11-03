@@ -597,7 +597,7 @@ void StorageMaterializedView::readImpl(
     }
 }
 
-SinkToStoragePtr StorageMaterializedView::write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr local_context, bool async_insert)
+SinkToStoragePtr StorageMaterializedView::write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr local_context, bool async_insert, const ParallelInsertStatePtr & parallel_insert_state)
 {
     auto view_metadata = getInMemoryMetadataPtr(local_context, false);
     auto context = view_metadata->getSQLSecurityOverriddenContext(local_context);
@@ -615,7 +615,7 @@ SinkToStoragePtr StorageMaterializedView::write(const ASTPtr & query, const Stor
         context->checkAccess(AccessType::INSERT, storage_id, query_sample_block.getNames());
     }
 
-    auto sink = storage->write(query, metadata_snapshot, context, async_insert);
+    auto sink = storage->write(query, metadata_snapshot, context, async_insert, parallel_insert_state);
 
     sink->addInterpreterContext(context);
     sink->addTableLock(lock);

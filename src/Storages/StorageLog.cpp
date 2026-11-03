@@ -1149,7 +1149,7 @@ void StorageLog::readImpl(
         num_streams));
 }
 
-SinkToStoragePtr StorageLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
+SinkToStoragePtr StorageLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/, const ParallelInsertStatePtr & /*parallel_insert_state*/)
 {
     WriteLock lock{rwlock, getLockTimeout(local_context)};
     if (!lock)

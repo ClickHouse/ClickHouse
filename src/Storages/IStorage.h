@@ -10,6 +10,7 @@
 #include <Storages/CheckResults.h>
 #include <Storages/ColumnDependency.h>
 #include <Storages/ColumnSize.h>
+#include <Storages/IParallelInsertState.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/VirtualColumnsDescription.h>
@@ -536,11 +537,21 @@ public:
       *
       * async_insert - set to true if the write is part of async insert flushing
       */
-    virtual SinkToStoragePtr write(
+    virtual SinkToStoragePtr write( // NOLINT(google-default-arguments)
         const ASTPtr & /*query*/,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         ContextPtr /*context*/,
-        bool /*async_insert*/);
+        bool /*async_insert*/,
+        const ParallelInsertStatePtr & /*parallel_insert_state*/ = nullptr);
+
+    /** Called once per `INSERT` with several insert streams (see `supportsParallelInsert`), before `write` creates
+      * the sink of every stream. The sinks of all streams get the returned state as `parallel_insert_state`,
+      * so they can, for example, commit their data together.
+      */
+    virtual ParallelInsertStatePtr createParallelInsertState(const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/)
+    {
+        return nullptr;
+    }
 
     /** Checks on the initiator that the current user is allowed to insert into this table, in
       * addition to the `INSERT` privilege on the table name checked by the interpreter.

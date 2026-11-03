@@ -59,7 +59,7 @@ public:
         size_t num_streams) override;
 
     SinkToStoragePtr
-    write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context_, bool async_write) override;
+    write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context_, bool async_write, const ParallelInsertStatePtr & /*parallel_insert_state*/) override;
 
     static ColumnsDescription getTableStructureFromData(std::shared_ptr<ArrowFlightConnection> connection_, const String & dataset_name_, ContextPtr context_);
 

@@ -302,13 +302,14 @@ SinkToStoragePtr StorageObjectStorageCluster::write(
     const ASTPtr &,
     const StorageMetadataPtr & metadata_snapshot,
     ContextPtr local_context,
-    bool /* async_insert */)
+    bool /* async_insert */,
+    const ParallelInsertStatePtr & /*parallel_insert_state*/)
 {
     if (!configuration->isDataLakeConfiguration())
         configuration->update(object_storage, local_context);
 
     return StorageObjectStorage::createSink(
-        configuration, object_storage, getStorageID(), format_settings, catalog, metadata_snapshot, local_context);
+        configuration, object_storage, getStorageID(), format_settings, catalog, metadata_snapshot, local_context, /*parallel_insert_state=*/nullptr);
 }
 
 bool StorageObjectStorageCluster::supportsParallelInsert() const

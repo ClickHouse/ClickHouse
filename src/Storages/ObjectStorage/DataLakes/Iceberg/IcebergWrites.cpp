@@ -1180,6 +1180,67 @@ void generateManifestList(
     writer.close();
 }
 
+IcebergInsertTransaction::IcebergInsertTransaction(ObjectStoragePtr object_storage_, const Iceberg::IcebergPathResolver & path_resolver_)
+    : object_storage(object_storage_)
+    , path_resolver(path_resolver_)
+{
+}
+
+IcebergInsertTransaction::~IcebergInsertTransaction()
+{
+    std::lock_guard lock(mutex);
+    if (committed)
+        return;
+
+    for (const auto & written : written_partitions)
+    {
+        for (const auto & data_file : written.data_files)
+        {
+            try
+            {
+                object_storage->removeObjectIfExists(StoredObject(path_resolver.resolve(data_file)));
+            }
+            catch (...)
+            {
+                tryLogCurrentException(getLogger("IcebergInsertTransaction"), "Best-effort cleanup of data files failed");
+            }
+        }
+    }
+}
+
+void IcebergInsertTransaction::addStream()
+{
+    std::lock_guard lock(mutex);
+    ++unfinished_streams;
+}
+
+void IcebergInsertTransaction::streamFailed()
+{
+    std::lock_guard lock(mutex);
+    chassert(unfinished_streams > 0);
+    failed = true;
+    --unfinished_streams;
+}
+
+std::optional<std::vector<IcebergWrittenPartition>> IcebergInsertTransaction::finishStreamAndGetAllPartitionsIfLast(std::vector<IcebergWrittenPartition> partitions)
+{
+    std::lock_guard lock(mutex);
+    chassert(unfinished_streams > 0);
+    for (auto & partition : partitions)
+        written_partitions.push_back(std::move(partition));
+    if (--unfinished_streams > 0)
+        return std::nullopt;
+    if (failed)
+        throw Exception(ErrorCodes::DATALAKE_DATABASE_ERROR, "Another insert stream failed, nothing was committed into the Iceberg table");
+    return written_partitions;
+}
+
+void IcebergInsertTransaction::setCommitted()
+{
+    std::lock_guard lock(mutex);
+    committed = true;
+}
+
 IcebergStorageSink::IcebergStorageSink(
     ObjectStoragePtr object_storage_,
     StorageObjectStorageConfigurationPtr configuration_,
@@ -1188,7 +1249,8 @@ IcebergStorageSink::IcebergStorageSink(
     ContextPtr context_,
     std::shared_ptr<DataLake::ICatalog> catalog_,
     const Iceberg::PersistentTableComponents & persistent_table_components_,
-    const StorageID & table_id_)
+    const StorageID & table_id_,
+    IcebergInsertTransactionPtr transaction_)
     : SinkToStorage(sample_block_)
     , sample_block(sample_block_)
     , object_storage(object_storage_)
@@ -1199,6 +1261,7 @@ IcebergStorageSink::IcebergStorageSink(
     , persistent_table_components(persistent_table_components_)
     , data_lake_settings(configuration_->getDataLakeSettings())
     , write_format(configuration_->format)
+    , transaction(std::move(transaction_))
 {
     /// Resolve like the retry below, not through the pointer: a pointer can name a version behind
     /// the newest committed one, and with no pointer a mixed-scheme listing must fail closed here
@@ -1268,11 +1331,15 @@ IcebergStorageSink::IcebergStorageSink(
             break;
         }
     }
+
+    transaction->addStream();
 }
 
 IcebergStorageSink::~IcebergStorageSink()
 {
     cancelBuffers();
+    if (!reported)
+        transaction->streamFailed();
     /// Covers every way an insert can stop without committing, including cancellation, which skips `onException`.
     if (!committed)
         removeDataFilesAndManifests();
@@ -1384,6 +1451,8 @@ void IcebergStorageSink::onFinish()
     if (isCancelled())
     {
         cancelBuffers();
+        reported = true;
+        transaction->streamFailed();
         return;
     }
 
@@ -1394,17 +1463,44 @@ void IcebergStorageSink::onFinish()
 void IcebergStorageSink::onException(std::exception_ptr /* exception */)
 {
     cancelBuffers();
+    if (!reported)
+    {
+        reported = true;
+        transaction->streamFailed();
+    }
 }
 
 void IcebergStorageSink::finalizeBuffers()
 {
+    std::vector<IcebergWrittenPartition> partitions;
     for (auto & [partition_key, writer] : writer_per_partition_key)
     {
         writer.finalize();
-        total_chunks_size += writer.getResultBytes();
+        partitions.push_back(
+            {partition_key, writer.getDataFiles(), writer.getDataFileRowCounts(), writer.getDataFileByteCounts(), writer.getPerFileStatistics()});
     }
 
-    if (writer_per_partition_key.empty())
+    reported = true;
+    auto all_partitions = transaction->finishStreamAndGetAllPartitionsIfLast(std::move(partitions));
+    if (!all_partitions)
+    {
+        /// The transaction owns the data files now, and the last stream to finish commits them.
+        writer_per_partition_key.clear();
+        return;
+    }
+    written_partitions = std::move(*all_partitions);
+
+    total_rows = 0;
+    for (const auto & written : written_partitions)
+    {
+        for (size_t i = 0; i < written.data_files.size(); ++i)
+        {
+            total_rows += static_cast<Int64>(written.row_counts[i]);
+            total_chunks_size += static_cast<Int64>(written.byte_counts[i]);
+        }
+    }
+
+    if (written_partitions.empty())
         return;
 
     snapshot_id = MetadataGenerator(metadata).generateSnapshotId();
@@ -1418,6 +1514,7 @@ void IcebergStorageSink::finalizeBuffers()
         {
             successed_write = true;
             committed = true;
+            transaction->setCommitted();
             break;
         }
         ++i;
@@ -1484,8 +1581,16 @@ bool IcebergStorageSink::initializeMetadata()
         parent_snapshot = metadata->getValue<Int64>(Iceberg::f_current_snapshot_id);
 
     Int64 total_data_files = 0;
-    for (const auto & [_, writer] : writer_per_partition_key)
-        total_data_files += static_cast<Int64>(writer.getDataFiles().size());
+    std::unordered_map<ChunkPartitioner::PartitionKey, IcebergWrittenPartition, ChunkPartitioner::PartitionKeyHasher> files_per_partition_key;
+    for (const auto & written : written_partitions)
+    {
+        total_data_files += static_cast<Int64>(written.data_files.size());
+        auto & files = files_per_partition_key[written.partition_key];
+        files.data_files.insert(files.data_files.end(), written.data_files.begin(), written.data_files.end());
+        files.row_counts.insert(files.row_counts.end(), written.row_counts.begin(), written.row_counts.end());
+        files.byte_counts.insert(files.byte_counts.end(), written.byte_counts.begin(), written.byte_counts.end());
+        files.statistics.insert(files.statistics.end(), written.statistics.begin(), written.statistics.end());
+    }
 
     /// Incremental refreshable-MV write: the streaming source filled the cursor on the query context;
     /// embed it (as stored) so it commits atomically with these data files. Absent for plain inserts.
@@ -1500,7 +1605,7 @@ bool IcebergStorageSink::initializeMetadata()
         total_data_files,
         total_rows,
         total_chunks_size,
-        /* num_partitions */ static_cast<Int64>(writer_per_partition_key.size()),
+        /* num_partitions */ static_cast<Int64>(files_per_partition_key.size()),
         /* added_delete_files */ 0,
         /* num_deleted_rows */ 0,
         snapshot_id,
@@ -1584,16 +1689,16 @@ bool IcebergStorageSink::initializeMetadata()
         /// On a retry the manifests are reused and only the manifest list is written.
         if (manifest_entries.empty())
         {
-            for (const auto & [partition_key, writer] : writer_per_partition_key)
+            for (const auto & [partition_key, files] : files_per_partition_key)
             {
                 auto manifest_entry_path = filename_generator.generateManifestEntryName();
                 manifest_entries_in_storage.push_back(resolver.resolve(manifest_entry_path));
                 manifest_entries.push_back(manifest_entry_path);
                 Int64 manifest_row_count = 0;
-                for (UInt64 data_file_row_count : writer.getDataFileRowCounts())
+                for (UInt64 data_file_row_count : files.row_counts)
                     manifest_row_count += static_cast<Int64>(data_file_row_count);
                 manifest_entry_row_counts.push_back(manifest_row_count);
-                manifest_entry_file_counts.push_back(static_cast<Int64>(writer.getDataFiles().size()));
+                manifest_entry_file_counts.push_back(static_cast<Int64>(files.data_files.size()));
 
                 /// The manifest holds a single partition tuple, which becomes its manifest-list field summary.
                 if (partitioner)
@@ -1614,8 +1719,8 @@ bool IcebergStorageSink::initializeMetadata()
                     /// per-file statistics instead of letting every entry inherit the manifest-wide aggregate
                     /// (which can report more nulls than the file has rows, and prunes non-empty files).
                     std::vector<const DataFileStatistics *> per_file_fresh_statistics;
-                    per_file_fresh_statistics.reserve(writer.getPerFileStatistics().size());
-                    for (const auto & file_statistics : writer.getPerFileStatistics())
+                    per_file_fresh_statistics.reserve(files.statistics.size());
+                    for (const auto & file_statistics : files.statistics)
                         per_file_fresh_statistics.push_back(file_statistics.get());
 
                     generateManifestFile(
@@ -1623,10 +1728,10 @@ bool IcebergStorageSink::initializeMetadata()
                         partitioner ? partitioner->getColumns() : std::vector<String>{},
                         partition_key,
                         partitioner ? partitioner->getResultTypes() : DataTypes{},
-                        writer.getDataFiles(),
-                        writer.getDataFileRowCounts(),
-                        writer.getDataFileByteCounts(),
-                        writer.getResultStatistics(),
+                        files.data_files,
+                        files.row_counts,
+                        files.byte_counts,
+                        /*data_file_statistics=*/std::nullopt,
                         sample_block,
                         new_snapshot,
                         write_format,

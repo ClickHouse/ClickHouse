@@ -82,7 +82,8 @@ public:
         const ASTPtr & query,
         const StorageMetadataPtr & metadata_snapshot,
         ContextPtr local_context,
-        bool async_insert) override;
+        bool async_insert,
+        const ParallelInsertStatePtr & /*parallel_insert_state*/) override;
 
     /// Distributed write to target table
     std::optional<QueryPipeline> distributedWrite(const ASTInsertQuery & query, ContextPtr local_context) override;
