@@ -319,7 +319,7 @@ KeeperHandlingConsumer::getLockedTopicPartitions()
         if (lock_response.error == Coordination::Error::ZNONODE)
             continue;
         if (lock_response.error != Coordination::Error::ZOK)
-            throw Coordination::Exception(lock_response.error, "Can't get data for node {}", lock_paths[i]);
+            throw Coordination::Exception::fromPath(lock_response.error, lock_paths[i]);
         replicas_with_lock.insert(lock_response.data);
 
         const auto & lock_name = lock_nodes[i];
