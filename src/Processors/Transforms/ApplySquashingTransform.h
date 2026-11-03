@@ -6,7 +6,7 @@
 namespace DB
 {
 
-class ApplySquashingTransform final : public ExceptionKeepingTransform
+class ApplySquashingTransform : public ExceptionKeepingTransform
 {
 public:
     explicit ApplySquashingTransform(SharedHeader header);

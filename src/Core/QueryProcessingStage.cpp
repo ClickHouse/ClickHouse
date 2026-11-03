@@ -14,7 +14,7 @@ namespace QueryProcessingStage
 
     Enum fromString(const std::string & stage_string)
     {
-        Enum stage = {};
+        Enum stage;
 
         if (stage_string == "complete")
             stage = Complete;

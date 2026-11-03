@@ -1,4 +1,5 @@
 -- To prevent old analyzer type checks
+SET enable_analyzer=1;
 
 EXPLAIN SYNTAX SELECT ((0, * IN *) AS a) * 1;
 
