@@ -140,6 +140,8 @@ def test_token_endpoint_rejects_assertion():
     )
     assert "AUTHENTICATION_FAILED" in error
     assert "Failed to obtain GCP access token" in error
+    # The reason given by the token endpoint is part of the error.
+    assert "unknown service account" in error
 
 
 def test_token_endpoint_must_be_allowed():

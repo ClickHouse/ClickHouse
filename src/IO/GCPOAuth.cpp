@@ -84,12 +84,16 @@ GCPOAuthToken postTokenRequest(
     String token_json_raw;
     readStringUntilEOF(token_json_raw, *response_body);
 
+    /// The error response of the token endpoint (RFC 6749, section 5.2) carries `error` and `error_description`,
+    /// e.g. `invalid_grant` for an expired refresh token or an unknown service account, and no credentials.
+    static constexpr size_t max_error_response_size = 1024;
     if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
         throw Exception(
             ErrorCodes::AUTHENTICATION_FAILED,
-            "Failed to obtain GCP access token: {} (HTTP {})",
+            "Failed to obtain GCP access token: {} (HTTP {}): {}",
             response.getReason(),
-            static_cast<int>(response.getStatus()));
+            static_cast<int>(response.getStatus()),
+            std::string_view(token_json_raw).substr(0, max_error_response_size));
 
     Poco::JSON::Parser parser;
     auto object = parser.parse(token_json_raw).extract<Poco::JSON::Object::Ptr>();
