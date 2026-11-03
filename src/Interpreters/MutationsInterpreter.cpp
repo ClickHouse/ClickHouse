@@ -1686,6 +1686,8 @@ void MutationsInterpreter::prepare(bool dry_run)
             if (!stage.is_readonly)
                 for (const auto & [column_name, _] : stage.column_to_updated)
                     written_columns.insert(column_name);
+        written_columns.insert(patch_affected_materialized.begin(), patch_affected_materialized.end());
+        written_columns.insert(clear_affected_materialized.begin(), clear_affected_materialized.end());
 
         NameSet ttl_inputs;
         for (const auto & [name, ttl] : metadata_snapshot->getColumnTTLs())

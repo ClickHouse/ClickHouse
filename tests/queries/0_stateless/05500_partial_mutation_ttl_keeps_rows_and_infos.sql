@@ -119,7 +119,9 @@ FROM numbers(100) SETTINGS max_block_size = 1000, min_insert_block_size_rows = 1
 SELECT 'T8 parts', count() FROM system.parts WHERE database = currentDatabase() AND table = 't8' AND active;
 ALTER TABLE t8 UPDATE w = 'x', d1 = toDateTime('2095-01-01 00:00:00', 'UTC') WHERE 1 SETTINGS mutations_sync = 2;
 SELECT 'T8', count(), countIf(w = 'x'), countIf(y = toString(k)) FROM t8;
-SELECT 'T8 ttl', column, column_ttl_min = column_ttl_max, toYear(column_ttl_min) FROM system.parts_columns
+SELECT 'T8 ttl', column, column_ttl_min = column_ttl_max,
+    column_ttl_min = if(column = 'w', toDateTime('2100-01-01 00:00:00', 'UTC'), toDateTime('2105-01-01 00:00:00', 'UTC'))
+FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't8' AND active AND column IN ('w', 'y') ORDER BY column;
 
 -- T9: the column TTL resets the rewritten column to its `DEFAULT`, which reads a column the mutation does not otherwise read.
@@ -173,6 +175,19 @@ ALTER TABLE t12 UPDATE d = toDateTime('2090-01-01 00:00:00', 'UTC') WHERE 1 SETT
 SELECT 'T12', count(), countIf(w = 'a' || toString(k)) FROM t12;
 SELECT 'T12 w', column_ttl_min = toDateTime('2090-01-01 00:00:01', 'UTC') FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't12' AND active AND column = 'w';
+
+-- T13: CLEAR COLUMN recomputes a MATERIALIZED column whose own TTL reads a column the mutation does not otherwise read.
+CREATE TABLE t13 (k UInt64, c DateTime('UTC'), e DateTime('UTC'), x String TTL c + INTERVAL 10 YEAR,
+    m DateTime('UTC') MATERIALIZED c TTL e + INTERVAL 10 YEAR, v String)
+ENGINE = MergeTree ORDER BY k
+SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+SYSTEM STOP TTL MERGES t13;
+INSERT INTO t13 (k, c, e, x, v) SELECT number, toDateTime('2090-01-01 00:00:00', 'UTC'), toDateTime('2090-01-01 00:00:00', 'UTC'),
+    toString(number), toString(number) FROM numbers(100)
+SETTINGS max_block_size = 1000, min_insert_block_size_rows = 1000, max_insert_block_size = 1000;
+ALTER TABLE t13 CLEAR COLUMN c SETTINGS mutations_sync = 2;
+SELECT 'T13 mutation', is_done, latest_fail_reason FROM system.mutations WHERE database = currentDatabase() AND table = 't13';
+SELECT 'T13', count(), countIf(m = toDateTime(0, 'UTC')), countIf(x = toString(k)) FROM t13;
 
 -- Every mutation above rewrote only some columns of its part.
 SYSTEM FLUSH LOGS part_log;
