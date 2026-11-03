@@ -20827,10 +20827,22 @@ async function loadCompletions() {
     const [server_address, user, password] = [url_elem.value, user_elem.value, password_elem.value];
 
     try {
-        const response = await fetch(buildCompletionUrl(server_address, user, password), {
-            method: "POST",
-            body: COMPLETION_QUERY,
-            headers: { 'Authorization': 'never' },
+        /// Admitted like the query of a run (`admitRunQuery`), and holding the admission until the body
+        /// is read: the completion query is a query of the user too, so with
+        /// `max_concurrent_queries_for_user = 1` an implicit-user probe in flight would make the server
+        /// reject it with `TOO_MANY_SIMULTANEOUS_QUERIES`, and suggestions would stay unavailable.
+        let payload;
+        const response = await admitRunQuery(server_address, new AbortController().signal, async () => {
+            const response = await fetch(buildCompletionUrl(server_address, user, password), {
+                method: "POST",
+                body: COMPLETION_QUERY,
+                headers: { 'Authorization': 'never' },
+            });
+            if (response.ok) {
+                payload = response.text();
+                await Promise.allSettled([payload]);
+            }
+            return response;
         });
         rememberAuthenticationOutcome(response, server_address, user, password);
         /// The connection settings changed while loading — discard this stale result.
@@ -20845,7 +20857,7 @@ async function loadCompletions() {
             completionsLoadStarted = false;
             return;
         }
-        const text = await response.text();
+        const text = await payload;
         if (generation !== connectionGeneration) {
             return;
         }

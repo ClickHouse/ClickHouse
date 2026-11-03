@@ -100,6 +100,7 @@ def test_play_credentials_store(started_cluster, nodejs_container):
         "probe-after-run-completes",
         "run-and-store-share-one-probe",
         "credentials-check-waits-for-probe",
+        "completions-wait-for-probe",
         "refill-after-passwordless-login",
         "refill-after-passwordless-query",
         "no-password-credential-api-skips",

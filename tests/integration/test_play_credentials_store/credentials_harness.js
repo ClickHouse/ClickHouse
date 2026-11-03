@@ -185,7 +185,7 @@ const FUNCTIONS = ['effectiveConnectionUser', 'implicitUserStamp', 'implicitUser
     'serverAddressWithoutSession', 'storeCredentials', 'getServerStatus', 'buildCompletionUrl',
     'isAutofilled', 'dropAutofilledStalePassword', 'passwordlessLoginKey', 'loadPasswordlessLogins',
     'rememberLoginPassword', 'rememberAuthenticationOutcome', 'connectionTuple', 'checkCredentials',
-    'auxiliaryQuery', 'submitDownload'];
+    'auxiliaryQuery', 'submitDownload', 'loadCompletions'];
 
 function boot(js, { withPasswordCredential = true, storage = makeStorage() } = {}) {
     const ctx = makeContext(storage);
@@ -697,6 +697,64 @@ scenario('credentials-check-waits-for-probe', async js => {
     assertEqual(ctx.user_elem.classList.contains('ok'), true, 'the valid credentials are shown as valid');
     assertEqual(ctx.user_elem.classList.contains('fail'), false, 'and not as failed');
     assertEqual(dropdowns, 0, 'the connection menu is not opened');
+});
+
+/// The completion query (`loadCompletions`) is a query of the user too: with
+/// `max_concurrent_queries_for_user = 1` a completion load started while an implicit-user probe is in
+/// flight is rejected with `TOO_MANY_SIMULTANEOUS_QUERIES`, and the suggestions stay unavailable until
+/// another focus retries it. The load must be sent only after the probe has settled, and load the words.
+scenario('completions-wait-for-probe', async js => {
+    const settle = async () => { for (let i = 0; i < 5; ++i) await new Promise(resolve => setImmediate(resolve)); };
+    const ctx = boot(js);
+    ctx.implicit_user = 'alice';
+    ctx.url_elem.value = 'http://host:8123/';
+    ctx.user_elem.value = '';
+    ctx.password_elem.value = 'secret';
+    ctx.server = ctx.url_elem.value;
+    /// The page state `loadCompletions` reads and writes.
+    ctx.completionsLoadStarted = false;
+    ctx.connectionGeneration = 0;
+    ctx.completionWords = [];
+    ctx.COMPLETION_QUERY = 'SELECT word FROM system.completions';
+    ctx.wasmAvailable = () => true;
+    ctx.updateCompletions = () => {};
+    const fetch = ctx.fetch;
+    let in_flight = 0;
+    let rejected = 0;
+    let release_probe;
+    const probe_held = new Promise(resolve => { release_probe = resolve; });
+    ctx.fetch = async (url, options) => {
+        if (in_flight) {
+            ++rejected;
+            ctx.fetched.push({ url, options });
+            return { ok: false, status: 500, headers: { get: () => null }, json: async () => ({}), text: async () => 'TOO_MANY_SIMULTANEOUS_QUERIES' };
+        }
+        ++in_flight;
+        try {
+            if (String(options.body).includes('system.completions')) {
+                ctx.fetched.push({ url, options });
+                return { ok: true, status: 200, headers: { get: () => null }, text: async () => 'SELECT\nFROM\n' };
+            }
+            const response = await fetch(url, options);
+            await probe_held;
+            return response;
+        } finally {
+            --in_flight;
+        }
+    };
+    const probe = vm.runInContext("learnImplicitUser(server, 'secret')", ctx);
+    await settle();
+    assertEqual(ctx.fetched.length, 1, 'the probe is in flight');
+    const load = vm.runInContext('loadCompletions()', ctx);
+    await settle();
+    assertEqual(ctx.fetched.length, 1, 'no completion query while the probe is in flight');
+    release_probe();
+    assertEqual(await probe, 'alice', 'the probe learns the implicit user');
+    await load;
+    assertEqual(ctx.fetched.length, 2, 'the completion query is sent once the probe has settled');
+    assertEqual(rejected, 0, 'no query is rejected for the single slot');
+    assertEqual(ctx.completionWords.map(w => w.w).join(','), 'FROM,SELECT', 'the completions are loaded');
+    assertEqual(ctx.completionsLoadStarted, true, 'and not left for a retry');
 });
 
 /// A Download and a database-panel query (`auxiliaryQuery`) are queries of the user too, so with
