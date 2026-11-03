@@ -44,11 +44,21 @@ SELECT toUnixTimestamp(CAST('{"d":"2026-01-01 00:00:00"}'::JSON(d LowCardinality
 1767225600
 SELECT toUnixTimestamp(CAST(CAST(map('d', toDateTime('2026-01-01 00:00:00', 'UTC')), 'Dynamic'), 'JSON(d DateTime64(0, ''Asia/Tokyo''))').d);
 1767225600
+SELECT toUnixTimestamp(CAST('{"t":{"d":"2026-01-01 00:00:00"}}'::JSON(t Tuple(d DateTime('UTC'))), 'JSON(t Map(String, DateTime64(0, ''Asia/Tokyo'')))').t['d']);
+1767225600
+SELECT toUnixTimestamp(tupleElement(CAST('{"m":{"d":"2026-01-01 00:00:00"}}'::JSON(m Map(String, DateTime('UTC'))), 'JSON(m Tuple(d DateTime64(0, ''Asia/Tokyo'')))').m, 'd'));
+1767225600
+SELECT toUnixTimestamp(tupleElement(CAST('{"a":["2026-01-01 00:00:00"]}'::JSON(a Array(DateTime('UTC'))), 'JSON(a Tuple(DateTime64(0, ''Asia/Tokyo'')))').a, 1));
+1767225600
+SELECT arrayMap(x -> toUnixTimestamp(x.2), CAST('{"m":{"k":"2026-01-01 00:00:00"}}'::JSON(m Map(String, DateTime('UTC'))), 'JSON(m Array(Tuple(String, DateTime64(0, ''Asia/Tokyo''))))').m) SETTINGS output_format_json_map_as_array_of_tuples = 1;
+[1767225600]
 -- Values that do not feed a `DateTime` keep their text.
 SELECT CAST('{"d":"2026-01-01 00:00:00"}'::JSON(d DateTime('Asia/Tokyo')), 'JSON(d String)').d;
 2026-01-01 00:00:00
 SELECT toUnixTimestamp(CAST(CAST(tuple('2026-01-01 00:00:00'), 'Tuple(d String)'), 'JSON(d DateTime(''Asia/Tokyo''))').d);
 1767193200
+SELECT tupleElement(CAST(CAST(tuple(tuple(NULL, toDateTime('2026-01-01 00:00:00', 'Asia/Tokyo'))), 'Tuple(t Tuple(a Nullable(String), b DateTime(''Asia/Tokyo'')))'), 'JSON(t Tuple(String, DateTime64(0, ''Asia/Tokyo'')))').t, 1) SETTINGS output_format_json_skip_null_value_in_named_tuples = 1;
+2026-01-01 00:00:00
 DROP TABLE IF EXISTS t_json_datetime_alter;
 CREATE TABLE t_json_datetime_alter (id UInt8, j JSON(d DateTime('UTC'))) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t_json_datetime_alter VALUES (1, '{"d":"2026-01-01 00:00:00"}');
@@ -65,3 +75,11 @@ ALTER TABLE t_json_datetime_alter_pending MODIFY COLUMN j JSON(d DateTime64(0, '
 SELECT j FROM t_json_datetime_alter_pending;
 {"d":"2026-01-01 09:00:00"}
 DROP TABLE t_json_datetime_alter_pending;
+-- The Map column type was created under UTC, the cast runs under Asia/Tokyo.
+SET session_timezone = 'UTC';
+DROP TABLE IF EXISTS t_json_datetime_map_session;
+CREATE TABLE t_json_datetime_map_session (m Map(String, DateTime)) ENGINE = Memory;
+INSERT INTO t_json_datetime_map_session VALUES (map('k', toDateTime(1767225600)));
+SELECT toUnixTimestamp(CAST(m, 'JSON(k DateTime(''Asia/Tokyo''))').k), toUnixTimestamp(CAST(m, 'JSON(k DateTime(''UTC''))').k) FROM t_json_datetime_map_session SETTINGS session_timezone = 'Asia/Tokyo';
+1767225600	1767225600
+DROP TABLE t_json_datetime_map_session;

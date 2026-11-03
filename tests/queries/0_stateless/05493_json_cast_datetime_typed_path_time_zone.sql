@@ -25,10 +25,15 @@ SELECT toUnixTimestamp(CAST(CAST(tuple(toDateTime('2026-01-01 00:00:00', 'UTC'))
 SELECT toUnixTimestamp(accurateCastOrNull('{"d":"2026-01-01 00:00:00"}'::JSON(d DateTime('UTC')), 'JSON(d DateTime64(0, ''Asia/Tokyo''))').d);
 SELECT toUnixTimestamp(CAST('{"d":"2026-01-01 00:00:00"}'::JSON(d LowCardinality(Nullable(DateTime('UTC')))), 'JSON(d Nullable(DateTime64(0, ''Asia/Tokyo'')))').d) SETTINGS allow_suspicious_low_cardinality_types = 1;
 SELECT toUnixTimestamp(CAST(CAST(map('d', toDateTime('2026-01-01 00:00:00', 'UTC')), 'Dynamic'), 'JSON(d DateTime64(0, ''Asia/Tokyo''))').d);
+SELECT toUnixTimestamp(CAST('{"t":{"d":"2026-01-01 00:00:00"}}'::JSON(t Tuple(d DateTime('UTC'))), 'JSON(t Map(String, DateTime64(0, ''Asia/Tokyo'')))').t['d']);
+SELECT toUnixTimestamp(tupleElement(CAST('{"m":{"d":"2026-01-01 00:00:00"}}'::JSON(m Map(String, DateTime('UTC'))), 'JSON(m Tuple(d DateTime64(0, ''Asia/Tokyo'')))').m, 'd'));
+SELECT toUnixTimestamp(tupleElement(CAST('{"a":["2026-01-01 00:00:00"]}'::JSON(a Array(DateTime('UTC'))), 'JSON(a Tuple(DateTime64(0, ''Asia/Tokyo'')))').a, 1));
+SELECT arrayMap(x -> toUnixTimestamp(x.2), CAST('{"m":{"k":"2026-01-01 00:00:00"}}'::JSON(m Map(String, DateTime('UTC'))), 'JSON(m Array(Tuple(String, DateTime64(0, ''Asia/Tokyo''))))').m) SETTINGS output_format_json_map_as_array_of_tuples = 1;
 
 -- Values that do not feed a `DateTime` keep their text.
 SELECT CAST('{"d":"2026-01-01 00:00:00"}'::JSON(d DateTime('Asia/Tokyo')), 'JSON(d String)').d;
 SELECT toUnixTimestamp(CAST(CAST(tuple('2026-01-01 00:00:00'), 'Tuple(d String)'), 'JSON(d DateTime(''Asia/Tokyo''))').d);
+SELECT tupleElement(CAST(CAST(tuple(tuple(NULL, toDateTime('2026-01-01 00:00:00', 'Asia/Tokyo'))), 'Tuple(t Tuple(a Nullable(String), b DateTime(''Asia/Tokyo'')))'), 'JSON(t Tuple(String, DateTime64(0, ''Asia/Tokyo'')))').t, 1) SETTINGS output_format_json_skip_null_value_in_named_tuples = 1;
 
 DROP TABLE IF EXISTS t_json_datetime_alter;
 CREATE TABLE t_json_datetime_alter (id UInt8, j JSON(d DateTime('UTC'))) ENGINE = MergeTree ORDER BY id;
@@ -45,3 +50,11 @@ SYSTEM STOP MERGES t_json_datetime_alter_pending;
 ALTER TABLE t_json_datetime_alter_pending MODIFY COLUMN j JSON(d DateTime64(0, 'Asia/Tokyo')) SETTINGS mutations_sync = 0, alter_sync = 0;
 SELECT j FROM t_json_datetime_alter_pending;
 DROP TABLE t_json_datetime_alter_pending;
+
+-- The Map column type was created under UTC, the cast runs under Asia/Tokyo.
+SET session_timezone = 'UTC';
+DROP TABLE IF EXISTS t_json_datetime_map_session;
+CREATE TABLE t_json_datetime_map_session (m Map(String, DateTime)) ENGINE = Memory;
+INSERT INTO t_json_datetime_map_session VALUES (map('k', toDateTime(1767225600)));
+SELECT toUnixTimestamp(CAST(m, 'JSON(k DateTime(''Asia/Tokyo''))').k), toUnixTimestamp(CAST(m, 'JSON(k DateTime(''UTC''))').k) FROM t_json_datetime_map_session SETTINGS session_timezone = 'Asia/Tokyo';
+DROP TABLE t_json_datetime_map_session;

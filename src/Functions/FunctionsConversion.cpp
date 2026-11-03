@@ -2055,7 +2055,8 @@ bool hasDateTimeInVariant(const DataTypePtr & type)
 }
 
 /// True when every `DateTime` that `source` writes as JSON text is read by a `DateTime` of `target` at the same position,
-/// and no `DateTime` of `target` reads other text.
+/// and no `DateTime` of `target` reads other text. `JSONExtractTree` reads an `Array` only from a JSON array, a `Map` only
+/// from an object, a `Tuple` from an array by position and from an object by name (named) or by position (unnamed).
 bool dateTimesAreAligned(const DataTypePtr & source, const DataTypePtr & target, const FormatSettings & format_settings)
 {
     const auto s = removeLowCardinalityAndNullable(source);
@@ -2064,53 +2065,101 @@ bool dateTimesAreAligned(const DataTypePtr & source, const DataTypePtr & target,
     if (isDateTimeNode(*s) || isDateTimeNode(*t))
         return isDateTimeNode(*s) && isDateTimeNode(*t);
 
-    const auto * s_array = typeid_cast<const DataTypeArray *>(s.get());
-    const auto * t_array = typeid_cast<const DataTypeArray *>(t.get());
-    if (s_array && t_array)
-        return dateTimesAreAligned(s_array->getNestedType(), t_array->getNestedType(), format_settings);
-
     const auto * s_map = typeid_cast<const DataTypeMap *>(s.get());
-    const auto * t_map = typeid_cast<const DataTypeMap *>(t.get());
-    if (s_map && t_map)
-        return !anyInTypeTree(*s_map->getKeyType(), isDateTimeNode) && !anyInTypeTree(*t_map->getKeyType(), isDateTimeNode)
-            && dateTimesAreAligned(s_map->getValueType(), t_map->getValueType(), format_settings);
+    if (s_map && format_settings.json.write_map_as_array_of_tuples)
+        return dateTimesAreAligned(s_map->getNestedType(), target, format_settings);
 
+    const bool no_date_time = !anyInTypeTree(*s, isDateTimeNode) && !anyInTypeTree(*t, isDateTimeNode);
+
+    const auto * s_array = typeid_cast<const DataTypeArray *>(s.get());
     const auto * s_tuple = typeid_cast<const DataTypeTuple *>(s.get());
+    bool writes_object = false;
+    if (s_tuple)
+        writes_object = s_tuple->hasExplicitNames() && format_settings.json.write_named_tuples_as_objects;
+    else if (s_map)
+        writes_object = true;
+    else if (!s_array)
+        return no_date_time;
+
+    if (s_map && anyInTypeTree(*s_map->getKeyType(), isDateTimeNode))
+        return no_date_time;
+
+    const auto * t_array = typeid_cast<const DataTypeArray *>(t.get());
     const auto * t_tuple = typeid_cast<const DataTypeTuple *>(t.get());
-    if (s_tuple && t_tuple)
+    const auto * t_map = typeid_cast<const DataTypeMap *>(t.get());
+    if ((t_array && writes_object) || (t_map && (!writes_object || anyInTypeTree(*t_map->getKeyType(), isDateTimeNode)))
+        || (!t_array && !t_tuple && !t_map))
+        return no_date_time;
+
+    auto aligned = [&](const DataTypePtr & s_element, const DataTypePtr & t_element)
     {
-        /// As `TupleNode` fills it: a JSON object goes by name into a named `Tuple`, anything else by position.
-        const bool by_name = s_tuple->hasExplicitNames() && format_settings.json.write_named_tuples_as_objects && t_tuple->hasExplicitNames();
+        return dateTimesAreAligned(s_element, t_element, format_settings);
+    };
+
+    auto aligned_with_all = [&](const DataTypePtr & element, const DataTypes & others, bool element_is_source)
+    {
+        for (const auto & other : others)
+            if (!(element_is_source ? aligned(element, other) : aligned(other, element)))
+                return false;
+        return true;
+    };
+
+    auto aligned_by_position = [&]
+    {
         const auto & s_elements = s_tuple->getElements();
         const auto & t_elements = t_tuple->getElements();
+        for (size_t i = 0; i < std::min(s_elements.size(), t_elements.size()); ++i)
+            if (!aligned(s_elements[i], t_elements[i]))
+                return false;
+        return true;
+    };
+
+    if (!writes_object)
+    {
+        if (s_array && t_array)
+            return aligned(s_array->getNestedType(), t_array->getNestedType());
+        if (s_array)
+            return aligned_with_all(s_array->getNestedType(), t_tuple->getElements(), true);
+        if (t_array)
+            return aligned_with_all(t_array->getNestedType(), s_tuple->getElements(), false);
+        return aligned_by_position();
+    }
+
+    if (s_map && t_map)
+        return aligned(s_map->getValueType(), t_map->getValueType());
+    if (s_map)
+        return aligned_with_all(s_map->getValueType(), t_tuple->getElements(), true);
+    if (t_map)
+        return aligned_with_all(t_map->getValueType(), s_tuple->getElements(), false);
+
+    if (t_tuple->hasExplicitNames())
+    {
+        const auto & s_elements = s_tuple->getElements();
         const auto & s_names = s_tuple->getElementNames();
         for (size_t i = 0; i != s_elements.size(); ++i)
-        {
-            std::optional<size_t> t_index;
-            if (by_name)
-                t_index = t_tuple->tryGetPositionByName(s_names[i]);
-            else if (i < t_elements.size())
-                t_index = i;
-
-            if (t_index && !dateTimesAreAligned(s_elements[i], t_elements[*t_index], format_settings))
+            if (auto t_index = t_tuple->tryGetPositionByName(s_names[i]); t_index && !aligned(s_elements[i], t_tuple->getElement(*t_index)))
                 return false;
-        }
         return true;
     }
 
-    return !anyInTypeTree(*s, isDateTimeNode) && !anyInTypeTree(*t, isDateTimeNode);
+    /// An omitted NULL element shifts the positions of the next ones.
+    if (format_settings.json.skip_null_value_in_named_tuples)
+        return no_date_time;
+    return aligned_by_position();
 }
 
-/// The time zone of every `DateTime` value that `type` writes as JSON text when it is one zone and all values are `DateTime`,
+/// The zone in which `type` writes every `DateTime` value as JSON text, when it is one zone and all values are `DateTime`,
 /// else nullptr. The keys of a `Map` are JSON keys, not values.
-const TimezoneMixin * getValueTimeZone(const DataTypePtr & type)
+const DateLUTImpl * getValueTimeZone(const DataTypePtr & type)
 {
     const auto nested = removeLowCardinalityAndNullable(type);
 
-    if (const auto * date_time = typeid_cast<const DataTypeDateTime *>(nested.get()))
-        return date_time;
-    if (const auto * date_time64 = typeid_cast<const DataTypeDateTime64 *>(nested.get()))
-        return date_time64;
+    const TimezoneMixin * time_zone = typeid_cast<const DataTypeDateTime *>(nested.get());
+    if (!time_zone)
+        time_zone = typeid_cast<const DataTypeDateTime64 *>(nested.get());
+    if (time_zone)
+        return time_zone->hasExplicitTimeZone() ? &time_zone->getTimeZone() : &DateLUT::instance();
+
     if (const auto * array = typeid_cast<const DataTypeArray *>(nested.get()))
         return getValueTimeZone(array->getNestedType());
     if (const auto * map = typeid_cast<const DataTypeMap *>(nested.get()))
@@ -2118,11 +2167,11 @@ const TimezoneMixin * getValueTimeZone(const DataTypePtr & type)
 
     if (const auto * tuple = typeid_cast<const DataTypeTuple *>(nested.get()))
     {
-        const TimezoneMixin * result = nullptr;
+        const DateLUTImpl * result = nullptr;
         for (const auto & element : tuple->getElements())
         {
             const auto * element_time_zone = getValueTimeZone(element);
-            if (!element_time_zone || (result && &result->getTimeZone() != &element_time_zone->getTimeZone()))
+            if (!element_time_zone || (result && result != element_time_zone))
                 return nullptr;
             result = element_time_zone;
         }
@@ -2212,13 +2261,15 @@ DataTypePtr rewriteTimeZonesForTypedPaths(
         return changed ? tuple->cloneWithChildren(elements) : type;
     }
 
-    if (const auto * map = typeid_cast<const DataTypeMap *>(type.get()))
+    /// Otherwise a `Map` is written as a JSON array, not at the paths of its keys.
+    if (const auto * map = typeid_cast<const DataTypeMap *>(type.get()); map && !format_settings.json.write_map_as_array_of_tuples)
     {
         if (const auto * value_time_zone = getValueTimeZone(map->getValueType()))
         {
+            const TimezoneMixin value_zone(value_time_zone->getTimeZone());
             for (auto & [path, path_type] : typed_paths)
                 if (path.starts_with(prefix) && anyInTypeTree(*path_type, isDateTimeNode) && !hasDateTimeInVariant(path_type))
-                    path_type = withTimeZone(path_type, *value_time_zone);
+                    path_type = withTimeZone(path_type, value_zone);
         }
     }
 
