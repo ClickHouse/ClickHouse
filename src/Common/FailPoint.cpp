@@ -54,6 +54,11 @@ static struct InitFiu
     ONCE(remote_query_executor_cancel_before_send) \
     ONCE(remote_query_executor_cancel_and_drain_in_receive_window) \
     ONCE(remote_query_executor_cancel_in_finish_drain) \
+    REGULAR(remote_query_executor_exception_retryable) \
+    ONCE(remote_query_executor_cannot_open_file_once) \
+    REGULAR(remote_query_executor_exception_after_sending_announcement) \
+    REGULAR(remote_query_executor_exception_after_sending_data) \
+    REGULAR(remote_query_executor_exception_after_sending_progress) \
     PAUSEABLE_ONCE(distributed_sink_pause_before_push) \
     PAUSEABLE_ONCE(access_control_pause_after_feature_tier_check) \
     ONCE(connection_stale_on_establish) \
@@ -503,11 +508,6 @@ static struct InitFiu
     REGULAR(aggregate_function_state_transfer_throw) \
     REGULAR(aggregate_function_state_transfer_throw_after_child) \
     REGULAR(marks_loader_hold_task_until_canceled) \
-    REGULAR(remote_query_executor_exception_retryable) \
-    ONCE(remote_query_executor_cannot_open_file_once) \
-    REGULAR(remote_query_executor_exception_after_sending_announcement) \
-    REGULAR(remote_query_executor_exception_after_sending_data) \
-    REGULAR(remote_query_executor_exception_after_sending_progress) \
     REGULAR(whatif_projection_scan_cut_short)
 
 namespace FailPoints
