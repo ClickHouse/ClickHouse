@@ -3,20 +3,29 @@
 #include <gtest/gtest.h>
 
 #include <IO/BufferWithOwnMemory.h>
+#include <IO/ParallelReadBuffer.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
+#include <base/scope_guard.h>
 
 #if USE_SNAPPY
 #include <snappy.h>
 #include <IO/SnappyBasicReadBuffer.h>
 #endif
 
+#include <cstring>
+#include <future>
 #include <string>
+#include <thread>
 #include <type_traits>
+#include <vector>
 
 using namespace DB;
 
 static_assert(!std::is_constructible_v<BufferBase::WorkingBuffer, char *, char *, bool>);
+/// Mutating through the raw base would bypass the padding bookkeeping.
+static_assert(!std::is_convertible_v<BufferBase::WorkingBuffer &, BufferBase::Buffer &>);
+static_assert(std::is_convertible_v<const BufferBase::WorkingBuffer &, const BufferBase::Buffer &>);
 static_assert(PaddedBufferStorage<Memory<>>);
 static_assert(!PaddedBufferStorage<char *>);
 static_assert(!PaddedBufferStorage<std::string>);
@@ -68,6 +77,53 @@ private:
     bool nextImpl() override { return false; }
 };
 
+/// Publishes the first `first_piece` bytes of a segment, then blocks until `release` before writing the rest.
+class GatedReadAtBuffer : public SeekableReadBuffer
+{
+public:
+    GatedReadAtBuffer(std::string data_, size_t first_piece_)
+        : SeekableReadBuffer(nullptr, 0)
+        , data(std::move(data_))
+        , first_piece(first_piece_)
+    {
+    }
+
+    bool supportsReadAt() override { return true; }
+    off_t seek(off_t, int) override { return 0; }
+    off_t getPosition() override { return 0; }
+
+    size_t readBigAt(char * to, size_t n, size_t offset, const std::function<bool(size_t)> & progress_callback) const override
+    {
+        size_t first = std::min(first_piece, n);
+        memcpy(to, data.data() + offset, first);
+        if (progress_callback(first))
+            return first;
+
+        gate.wait();
+        memcpy(to + first, data.data() + offset + first, n - first);
+        progress_callback(n);
+        return n;
+    }
+
+    void open()
+    {
+        if (!released)
+        {
+            released = true;
+            release.set_value();
+        }
+    }
+
+private:
+    bool nextImpl() override { return false; }
+
+    std::string data;
+    size_t first_piece;
+    std::promise<void> release;
+    std::shared_future<void> gate = release.get_future().share();
+    bool released = false;
+};
+
 }
 
 TEST(BufferPadding, RawRangesAreUnpaddedByDefault)
@@ -117,6 +173,42 @@ TEST(BufferPadding, ForwardingAndSwapPreserveTheProperty)
     padded.swap(unpadded);
     EXPECT_FALSE(padded.isPadded());
     EXPECT_TRUE(unpadded.isPadded());
+}
+
+TEST(BufferPadding, ParallelReadBufferPartialSegmentIsUnpadded)
+{
+    GatedReadAtBuffer input(std::string(64, 'x'), 16);
+
+    std::vector<std::thread> threads;
+    SCOPE_EXIT({
+        for (auto & thread : threads)
+            thread.join();
+    });
+
+    auto schedule = [&threads](std::function<void()> && job, Priority)
+    {
+        std::promise<void> done;
+        auto future = done.get_future();
+        threads.emplace_back([task = std::move(job), promise = std::move(done)]() mutable
+        {
+            task();
+            promise.set_value();
+        });
+        return future;
+    };
+
+    ParallelReadBuffer buffer(input, schedule, 1, 64, 64);
+    SCOPE_EXIT({ input.open(); });
+
+    /// The worker is still writing the rest of the segment right after this range.
+    ASSERT_TRUE(buffer.next());
+    EXPECT_EQ(buffer.buffer().size(), 16);
+    EXPECT_FALSE(buffer.isPadded());
+
+    input.open();
+    ASSERT_TRUE(buffer.next());
+    EXPECT_EQ(buffer.buffer().size(), 48);
+    EXPECT_TRUE(buffer.isPadded());
 }
 
 #if USE_SNAPPY

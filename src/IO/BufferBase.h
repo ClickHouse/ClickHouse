@@ -70,17 +70,18 @@ public:
 
     /** A working range together with the promise that SIMD readers may access the padding after it.
       * Constructing or assigning from a raw `Buffer` clears the promise. Copying another
-      * `WorkingBuffer` preserves it.
+      * `WorkingBuffer` preserves it. The range is only exposed as `const Buffer &`, because mutating it
+      * through a `Buffer &` would bypass the padding bookkeeping.
       */
-    struct WorkingBuffer : Buffer
+    struct WorkingBuffer
     {
         WorkingBuffer(Position begin_pos_, Position end_pos_)
-            : Buffer(begin_pos_, end_pos_)
+            : buffer(begin_pos_, end_pos_)
         {
         }
 
         WorkingBuffer(const Buffer & buffer_) /// NOLINT(google-explicit-constructor)
-            : Buffer(buffer_)
+            : buffer(buffer_)
         {
         }
 
@@ -89,16 +90,23 @@ public:
 
         WorkingBuffer & operator=(const Buffer & other)
         {
-            Buffer::operator=(other);
+            buffer = other;
             padded_end = nullptr;
             return *this;
         }
+
+        operator const Buffer &() const { return buffer; } /// NOLINT(google-explicit-constructor)
+
+        Position begin() const { return buffer.begin(); }
+        Position end() const { return buffer.end(); }
+        size_t size() const { return buffer.size(); }
+        bool empty() const { return buffer.empty(); }
 
         void resize(size_t size)
         {
             if (padded_end && size > static_cast<size_t>(padded_end - begin()))
                 padded_end = nullptr;
-            Buffer::resize(size);
+            buffer.resize(size);
         }
 
         /** Construct a padded range only from storage whose type guarantees enough right padding.
@@ -135,7 +143,7 @@ public:
 
         void swap(WorkingBuffer & other) noexcept
         {
-            Buffer::swap(other);
+            buffer.swap(other.buffer);
             std::swap(padded_end, other.padded_end);
         }
 
@@ -147,7 +155,7 @@ public:
         };
 
         WorkingBuffer(Position begin_pos_, Position end_pos_, Position padded_end_, PaddedTag)
-            : Buffer(begin_pos_, end_pos_)
+            : buffer(begin_pos_, end_pos_)
             , padded_end(padded_end_)
         {
         }
@@ -157,6 +165,7 @@ public:
             return WorkingBuffer(begin_pos_, end_pos_, end_pos_, PaddedTag{});
         }
 
+        Buffer buffer;
         Position padded_end = nullptr;
 
         friend class BufferBase;
