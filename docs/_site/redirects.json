@@ -1,5 +1,13 @@
 [
   {
+    "destination": "/clickstack/self-configured/getting-started/managed",
+    "source": "/clickstack/getting-started/managed"
+  },
+  {
+    "destination": "/clickstack/self-configured/deployment/managed",
+    "source": "/clickstack/deployment/managed"
+  },
+  {
     "destination": "/clickstack/managing/overview",
     "source": "/clickstack/managing/admin"
   },
@@ -41928,7 +41936,7 @@
     "source": "/use-cases/observability/clickstack/deployment/clickhouse-embedded"
   },
   {
-    "destination": "/clickstack/deployment/managed",
+    "destination": "/clickstack/self-configured/deployment/managed",
     "source": "/use-cases/observability/clickstack/deployment/clickstack-clickhouse-cloud"
   },
   {
@@ -41976,7 +41984,7 @@
     "source": "/use-cases/observability/clickstack/deployment/helm-v1"
   },
   {
-    "destination": "/clickstack/deployment/managed",
+    "destination": "/clickstack/self-configured/deployment/managed",
     "source": "/use-cases/observability/clickstack/deployment/hyperdx-clickhouse-cloud"
   },
   {
@@ -42032,7 +42040,7 @@
     "source": "/use-cases/observability/clickstack/getting-started/local-data"
   },
   {
-    "destination": "/clickstack/getting-started/managed",
+    "destination": "/clickstack/self-configured/getting-started/managed",
     "source": "/use-cases/observability/clickstack/getting-started/managed"
   },
   {

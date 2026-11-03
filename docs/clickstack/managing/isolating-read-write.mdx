@@ -95,12 +95,12 @@ The ClickStack UI always connects to the ClickHouse service from which it is lau
 1. Select the read-only service in the ClickHouse Cloud console.
 2. Select **ClickStack** from the left navigation menu.
 
-Every query issued by the UI then runs on that read-only compute. No configuration inside ClickStack is required. See our guide on [Using ClickStack with read-only compute](/clickstack/deployment/managed#clickstack-read-only-compute).
+Every query issued by the UI then runs on that read-only compute. No configuration inside ClickStack is required. See our guide on [Using ClickStack with read-only compute](/clickstack/self-configured/deployment/managed#clickstack-read-only-compute).
 
 <Warning>
 **ClickStack state is scoped to the service**
 
-Dashboards, saved searches, alerts and sources belong to the service ClickStack was launched from, and don't follow you to another service in the same warehouse - even though both services share the same data. Sources using the [default OpenTelemetry schema](/clickstack/deployment/managed#adding-data-sources) are auto-detected on the new service, so search over that data works straight away, but custom or manually configured sources - and everything else you saved - has to be recreated.
+Dashboards, saved searches, alerts and sources belong to the service ClickStack was launched from, and don't follow you to another service in the same warehouse - even though both services share the same data. Sources using the [default OpenTelemetry schema](/clickstack/self-configured/deployment/managed#adding-data-sources) are auto-detected on the new service, so search over that data works straight away, but custom or manually configured sources - and everything else you saved - has to be recreated.
 
 Choose the service you want to run ClickStack from before building dashboards. If you're switching an established deployment, note that alerts created on the previous service keep evaluating there - on that service's compute - until you delete them.
 </Warning>
@@ -244,9 +244,9 @@ The MCP server can create dashboards, alerts and saved searches as well as run q
 ClickStack evaluates an alert on the service the alert was created from, so alerts run on the same compute as the UI - the read-only service in this topology.
 
 <Note>
-**Managed ClickStack**
+**Self-managed ClickHouse Observability**
 
-To enable alerts, at least one user with **Service Admin** permissions must sign in to ClickStack at least once. This provisions the dedicated database user which runs alert queries, and that user is shared across every service in the warehouse. See our guide on [Granting access to Managed ClickStack](/clickstack/deployment/managed#configure-access).
+To enable alerts, at least one user with **Service Admin** permissions must sign in to ClickStack at least once. This provisions the dedicated database user which runs alert queries, and that user is shared across every service in the warehouse. See our guide on [Granting access to Self-managed ClickHouse Observability](/clickstack/self-configured/deployment/managed#configure-access).
 </Note>
 
 Alert evaluation is a recurring query workload. Include it in the QPS you size the read-only service for - the [sizing model](/clickstack/managing/estimating-resources#refining-sizing-assumptions) treats search, dashboard and alerting queries as a single aggregate figure.
@@ -272,7 +272,7 @@ Having alerts configured on a service doesn't keep it awake. Alert evaluations t
 The remaining trade-offs are the ones that follow from state being per service:
 
 - The common alerts, and any dashboards that go with them, exist only on the alerting service and aren't visible to users working on the query service. Notifications are delivered to the same [destinations](/clickstack/features/alerts) either way, so what users lose is sight of the definitions, not the alerting itself.
-- Sources on the alerting service are separate objects. Those using the [default OpenTelemetry schema](/clickstack/deployment/managed#adding-data-sources) are auto-detected, but custom sources have to be configured there too before an alert can reference them.
+- Sources on the alerting service are separate objects. Those using the [default OpenTelemetry schema](/clickstack/self-configured/deployment/managed#adding-data-sources) are auto-detected, but custom sources have to be configured there too before an alert can reference them.
 
 If a single set of alerts is small enough that its evaluation load is a rounding error against dashboard traffic, keep everything on one read-only service - the operational cost of maintaining definitions in two places is the larger of the two costs.
 
