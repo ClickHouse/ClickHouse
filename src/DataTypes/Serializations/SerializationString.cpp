@@ -291,7 +291,16 @@ static NO_INLINE void deserializeBinaryFilteredWithKnownSizes(
     size_t values_replaced = 0;
     size_t bytes_skipped = 0;
 
+    /// The values decided by the bulk scan are accounted separately: they are not checked one by one,
+    /// so filtering them pays off even when they are short. Only the found candidates are checked
+    /// one by one against the other conditions of the filter, if there are any.
+    size_t bulk_values_checked = 0;
+    size_t bulk_values_replaced = 0;
+    size_t bulk_bytes_skipped = 0;
+    size_t bulk_values_checked_individually = 0;
+
     const bool use_bulk_scan = filter.hasBulkScanCondition();
+    const bool has_other_conditions = filter.hasOtherConditions();
 
     /// The original (unfiltered) cumulative offset of the current stream position.
     /// The invariant `chars.size() == offsets.back()` held before the new offsets were appended.
@@ -352,13 +361,14 @@ static NO_INLINE void deserializeBinaryFilteredWithKnownSizes(
                 const char * value_data = buffer_begin + (original_pos - scan_original_start);
                 original_pos = offsets[i];
 
-                ++values_checked;
+                ++bulk_values_checked;
 
                 bool matches = false;
                 if (next_matched < matched_values.size() && matched_values[next_matched] == i)
                 {
                     ++next_matched;
                     matches = filter.matchOtherConditions(value_data, value_size);
+                    bulk_values_checked_individually += has_other_conditions;
                 }
 
                 if (matches)
@@ -370,8 +380,8 @@ static NO_INLINE void deserializeBinaryFilteredWithKnownSizes(
                 }
                 else
                 {
-                    ++values_replaced;
-                    bytes_skipped += value_size;
+                    ++bulk_values_replaced;
+                    bulk_bytes_skipped += value_size;
                 }
 
                 offsets[i] = offset;
@@ -390,6 +400,7 @@ static NO_INLINE void deserializeBinaryFilteredWithKnownSizes(
 
     data.resize_exact(offset);
     filter.updateStats(values_checked, values_replaced, bytes_skipped);
+    filter.updateStatsOfBulkScan(bulk_values_checked, bulk_values_replaced, bulk_bytes_skipped, bulk_values_checked_individually);
 }
 
 /// Deserialization which checks every value against the filter and reads non-matching values as empty strings.
@@ -581,7 +592,7 @@ void SerializationString::enumerateStreamsWithoutSize(
     settings.path.pop_back();
 }
 
-ISerialization::DeserializeBinaryBulkStatePtr DeserializeBinaryBulkStateStringWithoutSizeStream::clone() const
+ISerialization::DeserializeBinaryBulkStatePtr DeserializeBinaryBulkStateStringWithoutSizeStream::cloneImpl(ISerialization::DeserializeBinaryBulkStateCloneContext &) const
 {
     auto res = std::make_shared<DeserializeBinaryBulkStateStringWithoutSizeStream>();
     res->need_string_data = need_string_data;
@@ -899,20 +910,53 @@ void serializeStringSizes(const IColumn & column, WriteBuffer & ostr, UInt64 off
     }
 }
 
+void serializeStringOffsets(const ColumnString::Offsets & offsets, WriteBuffer & ostr, size_t offset, size_t limit)
+{
+    const ColumnString::Offset base = offsets[offset - 1];
+    if (base == 0)
+    {
+        SerializationNumber<ColumnString::Offset>::serializeBinaryBulk(offsets, ostr, offset, limit);
+        return;
+    }
+
+    if (limit == 0)
+        return;
+
+    if constexpr (std::endian::native == std::endian::big)
+    {
+        for (size_t i = offset; i < offset + limit; ++i)
+            writeBinaryLittleEndian(offsets[i] - base, ostr);
+    }
+    else
+    {
+        PaddedPODArray<ColumnString::Offset> rebased;
+        rebased.resize(limit);
+
+        for (size_t i = 0; i < limit; ++i)
+            rebased[i] = offsets[offset + i] - base;
+
+        ostr.write(reinterpret_cast<const char *>(rebased.data()), sizeof(ColumnString::Offset) * limit);
+    }
+}
+
 void appendStringSizesToColumnStringOffsets(ColumnString & column_string, const UInt64 * sizes, size_t start, size_t rows)
 {
     auto & offsets = column_string.getOffsets();
-
-    offsets.reserve(offsets.size() + rows);
 
     /// The sizes come from a separate stream, so nothing bounds them by the data that follows them and
     /// their sum can overflow the offsets. A 128-bit accumulator cannot overflow, so one check of the
     /// total is enough: below it every offset is exact.
     unsigned __int128 offset = offsets.empty() ? 0 : offsets.back();
+
+    /// Resize once and write through a pointer: `push_back` checks the capacity on every row.
+    const size_t old_size = offsets.size();
+    offsets.resize(old_size + rows);
+    IColumn::Offset * out = offsets.data() + old_size;
+    const UInt64 * in = sizes + start;
     for (size_t i = 0; i < rows; ++i)
     {
-        offset += sizes[start + i];
-        offsets.push_back(static_cast<IColumn::Offset>(offset));
+        offset += in[i];
+        out[i] = static_cast<IColumn::Offset>(offset);
     }
 
     if (unlikely(offset > MAX_TOTAL_STRING_SIZE))
@@ -982,12 +1026,11 @@ void SerializationString::serializeBinaryBulkWithSizeStream(
     const auto & offsets = column_string.getOffsets();
 
     /// On disk (position independent) the stream carries per-row sizes so a granule reads on its own.
-    /// Over the network it carries the cumulative offsets directly (like Array offsets) for exact
-    /// reader preallocation.
+    /// Over the network it carries cumulative offsets counted from the first written row, for exact reader preallocation.
     if (settings.position_independent_encoding)
         serializeStringSizes(column, *size_stream, offset, limit);
     else
-        SerializationNumber<ColumnString::Offset>::serializeBinaryBulk(offsets, *size_stream, offset, limit);
+        serializeStringOffsets(offsets, *size_stream, offset, limit);
 
     settings.path.back() = Substream::Regular;
     auto * stream = settings.getter(settings.path);

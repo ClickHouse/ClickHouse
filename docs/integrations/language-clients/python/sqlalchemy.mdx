@@ -143,6 +143,8 @@ with engine.connect() as conn:
 
 Errors raised by the driver through a SQLAlchemy connection use the DB-API classes exported from `clickhouse_connect.dbapi`. They are the same class objects as the corresponding classes in `clickhouse_connect.driver.exceptions`, so SQLAlchemy wraps them in the matching `sqlalchemy.exc.DBAPIError` subclass. `StreamFailureError` is an `OperationalError` and is wrapped as `sqlalchemy.exc.OperationalError`.
 
+If a table does not exist, column inspection and table reflection raise `sqlalchemy.exc.NoSuchTableError`. The exception also inherits from `sqlalchemy.exc.NoResultFound` so existing handlers still catch it. Its message is `Table <database>.<table_name> does not exist`.
+
 SQL execution follows the driver's [HTTP retry policy](/integrations/language-clients/python/driver-api#http-retries). Native bulk inserts use the [insert retry policy](/integrations/language-clients/python/advanced-inserting#insert-retries-and-deduplication).
 
 If caller cancellation can interrupt an explicit `AsyncConnection.invalidate()`, run invalidation in an owned task and wait for that task before propagating cancellation. This lets SQLAlchemy finish its connection-record bookkeeping:
@@ -441,6 +443,8 @@ ClickHouse does not support recursive materialized CTEs. The SQLAlchemy helpers 
 ## DDL and reflection {#sqlalchemy-ddl-reflection}
 
 ClickHouse Connect provides ClickHouse data types, table engines, dictionary constructs, database DDL, and table reflection.
+
+`Inspector.get_table_names()` includes all view kinds for compatibility. `MetaData.reflect()` includes them by default, and `only` can select a view by name. Use `Inspector.get_view_names()` for non-materialized views and `Inspector.get_materialized_view_names()` for materialized views. Both methods accept `schema` and work on SQLAlchemy 1.4.40 and later, including 2.x. View definition inspection through `Inspector.get_view_definition()` is not supported.
 
 `Nullable()` and `LowCardinality()` from `clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes` accept a ClickHouse SQLAlchemy type class or instance and preserve its concrete type for type checkers. For example, `Nullable(String)` returns a `String` instance and can be passed directly to `Column`. Type checkers infer `list[String]` for `[Nullable(String)]`. If the list also holds other ClickHouse types, annotate it as `list[ChSqlaType]` and import `ChSqlaType` from `clickhouse_connect.cc_sqlalchemy.datatypes.base`.
 

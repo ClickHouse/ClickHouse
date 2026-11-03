@@ -5,7 +5,6 @@
 -- (`DEFINER` and `NONE` start from the global context). Under `hash` the `Left` group is reported
 -- only when the join was told to collect statistics, so a zero count means the mode did not arrive.
 
-SET enable_analyzer = 1;
 SET join_algorithm = 'hash';
 
 DROP TABLE IF EXISTS l;
