@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/NamesAndTypes.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Parsers/IAST_fwd.h>
 
@@ -26,21 +27,11 @@ public:
     bool hasActions() const { return !original_actions.getActions().empty(); }
     const ActionsDAG & getOriginalActionsDAG() const { return original_actions.getActionsDAG(); }
 
-    /// The preprocessor expression as an AST reading from an identifier named `col_name`, to splice into a larger expression.
-    ASTPtr getExpressionAST(const String & col_name) const;
-
-    bool isASCIILowerOrUpper() const { return is_ascii_lower_or_upper; }
-
 private:
-    /// True only when the preprocessor is exactly lower/upper applied directly to the index column
-    /// (no nested transformations, and not the UTF-8 variants).
-    bool is_ascii_lower_or_upper = false;
     /// The name of the column on which the index is defined.
     String index_column_name;
     /// The type of the column on which the index is defined.
     DataTypePtr index_column_type;
-    /// The preprocessor expression with the index column replaced by a placeholder identifier.
-    ASTPtr expression_ast_for_index_column;
     /// The original expression actions that executes the preprocessor expression
     /// and the index expression from the required index column.
     ExpressionActions original_actions;

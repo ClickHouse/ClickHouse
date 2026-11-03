@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Storages/StorageFuzzQuery.h>
 
+#include "config.h"
 
 namespace DB
 {

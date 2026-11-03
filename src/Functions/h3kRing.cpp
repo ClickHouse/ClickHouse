@@ -2,16 +2,16 @@
 
 #if USE_H3
 
+#include <vector>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
-#include <Functions/CancellationBudget.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
-#include <Common/VectorWithMemoryTracking.h>
+#include <Common/AllocatorWithMemoryTracking.h>
 #include <Interpreters/castColumn.h>
 
 
@@ -28,7 +28,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionH3KRing final : public IFunction
+class FunctionH3KRing : public IFunction
 {
 public:
     static constexpr auto name = "h3kRing";
@@ -43,10 +43,6 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
     bool useDefaultImplementationForConstants() const override { return true; }
-    /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
-    /// row references it, and `0` is not a valid H3 index, so executing on the whole dictionary would
-    /// fail on entirely valid data.
-    bool canBeExecutedOnDefaultArguments() const override { return !validator.throw_on_error; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -100,17 +96,11 @@ public:
 
         const auto & data_k = col_k->getData();
 
-        auto dst_data_column = ColumnUInt64::create();
-        auto dst_offsets_column = ColumnArray::ColumnOffsets::create(input_rows_count);
-        auto & dst_data = *dst_data_column;
-        auto & dst_offsets = dst_offsets_column->getData();
+        auto dst = ColumnArray::create(ColumnUInt64::create());
+        auto & dst_data = dst->getData();
+        auto & dst_offsets = dst->getOffsets();
+        dst_offsets.resize(input_rows_count);
         auto current_offset = 0;
-
-        /// The whole block is expanded inside this one call and the size of each row's result is driven by the
-        /// arguments rather than by the input size, so the executor's between-blocks cancellation check cannot
-        /// bound it: a cancelled query would keep a thread busy until the last row was done.
-        const std::function<void()> check_cancellation = makeCancellationCheck(name);
-        CancellationBudget budget(check_cancellation);
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
@@ -133,17 +123,12 @@ public:
                 continue;
             }
 
-            int64_t disk_size = 0;
-            maxGridDiskSize(k, &disk_size);
-            const auto vec_size = static_cast<size_t>(disk_size);
-            budget.charge(vec_size * sizeof(H3Index));
-
-            VectorWithMemoryTracking<H3Index> hindex_vec;
+            const auto vec_size = maxGridDiskSize(k);
+            std::vector<H3Index, AllocatorWithMemoryTracking<H3Index>> hindex_vec;
             hindex_vec.resize(vec_size);
             gridDisk(origin_hindex, k, hindex_vec.data());
 
-            /// Go through PODArray::reserve: it grows capacity geometrically, IColumn::reserve sizes it exactly.
-            dst_data.getData().reserve(dst_data.size() + vec_size);
+            dst_data.reserve(dst_data.size() + vec_size);
             for (auto hindex : hindex_vec)
             {
                 if (hindex != 0)
@@ -155,7 +140,7 @@ public:
             dst_offsets[row] = current_offset;
         }
 
-        return ColumnArray::create(std::move(dst_data_column), std::move(dst_offsets_column));
+        return dst;
     }
 };
 

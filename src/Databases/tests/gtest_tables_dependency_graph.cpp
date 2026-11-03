@@ -1,4 +1,5 @@
 #include <Databases/TablesDependencyGraph.h>
+#include <Core/UUID.h>
 #include <Interpreters/StorageID.h>
 
 #include <gtest/gtest.h>
@@ -78,4 +79,22 @@ TEST(TablesDependencyGraph, SplitByDependencyLevelMixedCycle)
     EXPECT_EQ(split[1].size(), 1u);
     EXPECT_EQ(split[1][0].getTableName(), "leaf");
     EXPECT_EQ(split.back().size(), 2u);
+}
+
+/// After `RENAME` of a materialized view that selects from itself, the view graph holds the view
+/// as two nodes: the old name with the UUID, and the new name. Adding the dependency of the new name
+/// on the UUID gives the new name to the first node and removes the second one, the node of `table_id`.
+TEST(TablesDependencyGraph, AddDependencyWhenTableNodeIsRemoved)
+{
+    TablesDependencyGraph graph("test");
+
+    UUID uuid = UUIDHelpers::generateV4();
+    graph.addDependency(StorageID{"db", "mv", uuid}, StorageID{"db", "mv2"});
+    graph.addDependency(StorageID{"db", "mv2"}, StorageID{"db", "mv2", uuid});
+
+    EXPECT_EQ(graph.getNumberOfTables(), 1u);
+    auto dependencies = graph.getDependencies(StorageID{"db", "mv2", uuid});
+    ASSERT_EQ(dependencies.size(), 1u);
+    EXPECT_EQ(dependencies[0].getFullTableName(), "db.mv2");
+    EXPECT_EQ(dependencies[0].uuid, uuid);
 }

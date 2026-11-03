@@ -10,10 +10,10 @@ namespace DB
 class Block;
 class Chunk;
 class QueryPipeline;
+class PipelineExecutor;
 class PullingOutputFormat;
 struct ProfileInfo;
 
-class PipelineExecutor;
 using PipelineExecutorPtr = std::shared_ptr<PipelineExecutor>;
 
 /// Pulling executor for QueryPipeline. Always execute pipeline in single thread.

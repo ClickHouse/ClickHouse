@@ -145,15 +145,7 @@ def sendQuery(s, query):
     # client info
     serializeClientInfo(ba, query_id)
 
-    # The server symbolizes a text stack trace before it can answer, which costs seconds on an
-    # instrumented build, and readException below discards the trace field. This has to travel in
-    # the protocol settings field: TCPHandler snapshots calculate_text_stack_trace from the query
-    # context before executeQuery parses the query text, so an inline SETTINGS clause reaches the
-    # logging path but not the one that answers the client.
-    writeStringBinary("calculate_text_stack_trace", ba)
-    writeVarUInt(1, ba)  # is_important
-    writeStringBinary("0", ba)
-    writeStringBinary("", ba)  # End of settings
+    writeStringBinary("", ba)  # No settings
     writeStringBinary("", ba)  # No interserver secret
     writeVarUInt(2, ba)  # Stage - Complete
     ba.append(0)  # No compression

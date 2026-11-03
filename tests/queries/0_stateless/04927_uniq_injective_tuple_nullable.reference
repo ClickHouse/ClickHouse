@@ -1,9 +1,6 @@
 tuple
 3	3	3	3	3
 3	3	3	3	3
-bitmaskToArray and bitPositionsToArray
-3	3
-3	3
 nested, LowCardinality and multiple arguments
 3	3
 3	3

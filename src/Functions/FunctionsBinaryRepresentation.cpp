@@ -209,7 +209,7 @@ struct UnbinImpl
 
 /// Encode number or string to string with binary or hexadecimal representation
 template <typename Impl>
-class EncodeToBinaryRepresentation final : public IFunction
+class EncodeToBinaryRepresentation : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
@@ -586,7 +586,7 @@ public:
 
 /// Decode number or string from string with binary or hexadecimal representation
 template <typename Impl>
-class DecodeFromBinaryRepresentation final : public IFunction
+class DecodeFromBinaryRepresentation : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
@@ -596,9 +596,7 @@ public:
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 1; }
-    /// Not injective: decoding is deliberately tolerant. It is case-insensitive, and an incomplete leading
-    /// group is padded, so `unhex('0a')`, `unhex('0A')` and `unhex('a')` all decode to the same byte.
-    bool isInjective(const ColumnsWithTypeAndName &) const override { return false; }
+    bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
@@ -772,10 +770,10 @@ it to the byte represented by the number. The returned value is a binary string 
 
 If you want to convert the result to a number, you can use the `reverse` and `reinterpretAs<Type>` functions.
 
-<Note>
+:::note
 `clickhouse-client` interprets strings as UTF-8.
 This may cause that values returned by `hex` to be displayed surprisingly.
-</Note>
+:::
 
 Supports both uppercase and lowercase letters `A-F`.
 The number of hexadecimal digits does not have to be even.
@@ -792,7 +790,7 @@ For a numeric argument the inverse of hex(N) is not performed by unhex().
             "Basic usage",
             "SELECT unhex('303132'), UNHEX('4D7953514C')",
             R"(
-┌─unhex('303132')─┬─UNHEX('4D7953514C')─┐
+┌─unhex('303132')─┬─unhex('4D7953514C')─┐
 │ 012             │ MySQL               │
 └─────────────────┴─────────────────────┘
             )"
@@ -876,9 +874,9 @@ Interprets each pair of binary digits (in the argument) as a number and converts
 
 For a numeric argument `unbin()` does not return the inverse of `bin()`. If you want to convert the result to a number, you can use the reverse and `reinterpretAs<Type>` functions.
 
-<Note>
+:::note
 If `unbin` is invoked from within the `clickhouse-client`, binary strings are displayed using UTF-8.
-</Note>
+:::
 
 Supports binary digits `0` and `1`. The number of binary digits does not have to be multiples of eight. If the argument string contains anything other than binary digits,
 the result is undefined (no exception is thrown).
@@ -892,7 +890,7 @@ the result is undefined (no exception is thrown).
             "Basic usage",
             "SELECT UNBIN('001100000011000100110010'), UNBIN('0100110101111001010100110101000101001100')",
             R"(
-┌─UNBIN('001100000011000100110010')─┬─UNBIN('0100110101111001010100110101000101001100')─┐
+┌─unbin('001100000011000100110010')─┬─unbin('0100110101111001010100110101000101001100')─┐
 │ 012                               │ MySQL                                             │
 └───────────────────────────────────┴───────────────────────────────────────────────────┘
             )"

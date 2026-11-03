@@ -1,28 +1,14 @@
 #include <IO/Operators.h>
 #include <Parsers/ASTBackupQuery.h>
-#include <Parsers/ASTJSONHelpers.h>
-#include <Parsers/ASTJSONReadHelpers.h>
-#include <Parsers/ASTFromJSON.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSnapshotQuery.h>
-#include <base/EnumReflection.h>
-#include <Common/Exception.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
-
-#include <algorithm>
 
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-    extern const int SYNTAX_ERROR;
-}
-
 namespace
 {
     using Kind = ASTBackupQuery::Kind;
@@ -76,50 +62,6 @@ namespace
             ostr << backQuoteIfNeed(table_name.second);
         }
     }
-    void formatExceptDataTables(const std::set<DatabaseAndTableName> & except_data_tables, WriteBuffer & ostr, const IAST::FormatSettings &, bool only_table_names=false)
-    {
-        if (except_data_tables.empty())
-            return;
-
-        ostr << " EXCEPT DATA FROM " << (except_data_tables.size() == 1 ? "TABLE" : "TABLES") << " ";
-
-        bool need_comma = false;
-        for (const auto & table_name : except_data_tables)
-        {
-            if (std::exchange(need_comma, true))
-                ostr << ", ";
-
-            if (!table_name.first.empty() && !only_table_names)
-                ostr << backQuoteIfNeed(table_name.first) << ".";
-            ostr << backQuoteIfNeed(table_name.second);
-        }
-    }
-
-    /// Formats the `EXCEPT DATA FROM TABLE` clause of a single-object element. The clause always names the
-    /// element's own object, so it is regenerated from the element itself: what the parser reduced to a flag
-    /// round-trips back to exactly the name that flag was derived from (this matters for ON CLUSTER queries,
-    /// which are formatted on the initiator and parsed again on every worker host).
-    void formatExceptDataFromThisTable(const Element & element, WriteBuffer & ostr, bool with_database_name)
-    {
-        if (!element.except_data)
-            return;
-
-        ostr << " EXCEPT DATA FROM TABLE ";
-        if (with_database_name)
-        {
-            /// Normally the clause names the element's own database. Before `setCurrentDatabase` has run the
-            /// element's database can still be empty while the clause stated one, and that name must survive
-            /// formatting: a `BACKUP ... ON CLUSTER` query is formatted unresolved on the initiator and parsed
-            /// again on every host, and each host has to be able to re-run the comparison `setCurrentDatabase`
-            /// does against its own current database. Dropping it would turn a query that must be rejected
-            /// there into one that silently excludes a different table's data.
-            const String & clause_database_name
-                = element.database_name.empty() ? element.except_data_database_name : element.database_name;
-            if (!clause_database_name.empty())
-                ostr << backQuoteIfNeed(clause_database_name) << ".";
-        }
-        ostr << backQuoteIfNeed(element.table_name);
-    }
 
     void formatElement(const Element & element, WriteBuffer & ostr, const IAST::FormatSettings & format)
     {
@@ -143,7 +85,6 @@ namespace
 
                 if (element.partitions)
                     formatPartitions(*element.partitions, ostr, format);
-                formatExceptDataFromThisTable(element, ostr, /*with_database_name=*/true);
                 break;
             }
 
@@ -157,7 +98,6 @@ namespace
                     ostr << " AS ";
                     ostr << backQuoteIfNeed(element.new_table_name);
                 }
-                formatExceptDataFromThisTable(element, ostr, /*with_database_name=*/false);
                 break;
             }
 
@@ -173,7 +113,6 @@ namespace
                 }
 
                 formatExceptTables(element.except_tables, ostr, format, /*only_table_names*/true);
-                formatExceptDataTables(element.except_data_tables, ostr, format, /*only_table_names*/true);
                 break;
             }
 
@@ -182,7 +121,6 @@ namespace
                 ostr << "ALL";
                 formatExceptDatabases(element.except_databases, ostr, format);
                 formatExceptTables(element.except_tables, ostr, format);
-                formatExceptDataTables(element.except_data_tables, ostr, format);
                 break;
             }
         }
@@ -271,53 +209,9 @@ namespace
 
 void ASTBackupQuery::Element::setCurrentDatabase(const String & current_database)
 {
-    if (!current_database.empty())
-        fillEmptyDatabaseNames(current_database);
-
-    /// `EXCEPT DATA FROM TABLE` on a single-object element refers to the element's own object, so the
-    /// `except_data` flag follows the element's database name wherever it is resolved and needs nothing done
-    /// here. What may still be pending is the comparison the parser could not make.
-    checkExceptDataDatabaseName();
-}
-
-
-/// Compares the database name written in a single-object element's `EXCEPT DATA FROM TABLE` clause with the
-/// element's own, now that the element's own name is resolved. The parser defers this comparison when the
-/// element is written unqualified, because only the current database decides it: `BACKUP TABLE t EXCEPT DATA
-/// FROM TABLE test.t` is a correct query when the current database is `test`, and a wrong one otherwise, and
-/// the parser knows neither.
-///
-/// This runs even for an empty current database: a clause naming a database can never match an element which
-/// has none, so skipping the comparison would accept the clause as if it had named the element's own object
-/// and silently exclude that object's data instead.
-void ASTBackupQuery::Element::checkExceptDataDatabaseName()
-{
-    if (except_data_database_name.empty())
+    if (current_database.empty())
         return;
 
-    if (except_data_database_name != database_name)
-        throw Exception(
-            ErrorCodes::SYNTAX_ERROR,
-            "EXCEPT DATA FROM TABLE clause of a single-object BACKUP element can only name that element's own "
-            "object, but it names a table of database {} while the element's object is {}. Write the element "
-            "with that database name if that is what was meant, or exclude the data at the database level "
-            "(BACKUP DATABASE {} EXCEPT DATA FROM TABLE {}.{})",
-            backQuoteIfNeed(except_data_database_name),
-            database_name.empty() ? backQuoteIfNeed(table_name)
-                                  : backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(table_name),
-            backQuoteIfNeed(except_data_database_name),
-            backQuoteIfNeed(except_data_database_name),
-            backQuoteIfNeed(table_name));
-
-    /// Verified; the element's own database name now carries it (and `formatExceptDataFromThisTable` prefers
-    /// that one), so this field has served its purpose. Clearing it keeps `setCurrentDatabase` idempotent and
-    /// the invariant simple: non-empty means "not compared against the element's own database yet".
-    except_data_database_name.clear();
-}
-
-
-void ASTBackupQuery::Element::fillEmptyDatabaseNames(const String & current_database)
-{
     if (type == ASTBackupQuery::TABLE)
     {
         if (database_name.empty())
@@ -334,19 +228,6 @@ void ASTBackupQuery::Element::fillEmptyDatabaseNames(const String & current_data
             {
                 except_tables.emplace(DatabaseAndTableName{current_database, except_table.second});
                 it = except_tables.erase(it);
-            }
-            else
-            {
-                ++it;
-            }
-        }
-        for (auto it = except_data_tables.begin(); it != except_data_tables.end();)
-        {
-            const auto & except_data_table = *it;
-            if (except_data_table.first.empty())
-            {
-                except_data_tables.emplace(DatabaseAndTableName{current_database, except_data_table.second});
-                it = except_data_tables.erase(it);
             }
             else
             {
@@ -371,9 +252,6 @@ ASTPtr ASTBackupQuery::fromSnapshotQuery(const ASTSnapshotQuery & query)
             element.database_name,
             /*partitions*/ {},
             element.except_tables,
-            /*except_data_tables*/ {},
-            /*except_data*/ false,
-            /*except_data_database_name*/ {},
             element.except_databases});
     if (query.snapshot_destination)
         res->set(res->backup_name, query.snapshot_destination->clone());
@@ -448,7 +326,7 @@ void ASTBackupQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
     ostr << ((kind == Kind::BACKUP) ? " TO " : " FROM ");
     backup_name->format(ostr, fs);
 
-    if (settings || base_backup_name || cluster_host_ids)
+    if (settings || base_backup_name)
         formatSettings(settings, base_backup_name, cluster_host_ids, ostr, fs);
 }
 
@@ -464,446 +342,6 @@ ASTPtr ASTBackupQuery::getRewrittenASTWithoutOnCluster(const WithoutOnClusterAST
 IAST::QueryKind ASTBackupQuery::getQueryKind() const
 {
     return kind == Kind::BACKUP ? QueryKind::Backup : QueryKind::Restore;
-}
-
-namespace
-{
-    using Element = ASTBackupQuery::Element;
-    using ElementType = ASTBackupQuery::ElementType;
-
-    void writeElementJSON(const Element & e, JSONObjectWriter & w)
-    {
-        WriteBuffer & out = w.getOut();
-        const FormatSettings & fs = w.getFormatSettings();
-        out << "{\"type\":";
-        writeJSONString(magic_enum::enum_name(e.type), out, fs);
-        if (!e.table_name.empty())
-        {
-            out << ",\"table_name\":";
-            writeJSONString(e.table_name, out, fs);
-        }
-        if (!e.database_name.empty())
-        {
-            out << ",\"database_name\":";
-            writeJSONString(e.database_name, out, fs);
-        }
-        if (!e.new_table_name.empty())
-        {
-            out << ",\"new_table_name\":";
-            writeJSONString(e.new_table_name, out, fs);
-        }
-        if (!e.new_database_name.empty())
-        {
-            out << ",\"new_database_name\":";
-            writeJSONString(e.new_database_name, out, fs);
-        }
-        if (e.partitions)
-        {
-            out << ",\"partitions\":[";
-            bool first = true;
-            for (const auto & p : *e.partitions)
-            {
-                if (!first) out << ',';
-                first = false;
-                p->writeJSON(out);
-            }
-            out << ']';
-        }
-        if (!e.except_tables.empty())
-        {
-            out << ",\"except_tables\":[";
-            bool first = true;
-            for (const auto & [db, tbl] : e.except_tables)
-            {
-                if (!first) out << ',';
-                first = false;
-                out << "{\"database\":";
-                writeJSONString(db, out, fs);
-                out << ",\"table\":";
-                writeJSONString(tbl, out, fs);
-                out << '}';
-            }
-            out << ']';
-        }
-        if (!e.except_data_tables.empty())
-        {
-            out << ",\"except_data_tables\":[";
-            bool first = true;
-            for (const auto & [db, tbl] : e.except_data_tables)
-            {
-                if (!first) out << ',';
-                first = false;
-                out << "{\"database\":";
-                writeJSONString(db, out, fs);
-                out << ",\"table\":";
-                writeJSONString(tbl, out, fs);
-                out << '}';
-            }
-            out << ']';
-        }
-        if (e.except_data)
-            out << ",\"except_data\":true";
-        if (!e.except_data_database_name.empty())
-        {
-            /// Only set while the element's own database is unresolved, and emitted for the same reason
-            /// `formatExceptDataFromThisTable` emits it: dropping it here would lose the comparison
-            /// `Element::setCurrentDatabase` still owes, turning a query that must be rejected into one that
-            /// silently excludes the data of a different table.
-            out << ",\"except_data_database\":";
-            writeJSONString(e.except_data_database_name, out, fs);
-        }
-        if (!e.except_databases.empty())
-        {
-            out << ",\"except_databases\":[";
-            bool first = true;
-            for (const auto & db : e.except_databases)
-            {
-                if (!first) out << ',';
-                first = false;
-                writeJSONString(db, out, fs);
-            }
-            out << ']';
-        }
-        out << '}';
-    }
-
-    Element readElementJSON(const Poco::JSON::Object & elem_obj, size_t element_index)
-    {
-        /// Each backup/restore element is a non-AST struct; count it against the same element budget
-        /// as AST nodes so a tiny-AST payload cannot carry millions of elements past `max_ast_elements`.
-        countJSONDeserializationElement();
-        Element e;
-        /// Read the scalar fields through `JSONObjectReader` so they are validated strictly (an exact
-        /// JSON integer/string), like the AST helpers above. Reading directly through `Poco::getValue`
-        /// coerces scalar types, so malformed `clickhouse_json` (e.g. a number where a name is expected)
-        /// would build a different valid AST instead of being rejected with `BAD_ARGUMENTS`.
-        JSONObjectReader elem_reader(elem_obj);
-        if (!elem_obj.has("type"))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'type' for BACKUP/RESTORE element at index {} during AST JSON deserialization", element_index);
-        String type_str = elem_reader.getString("type");
-        auto type_opt = magic_enum::enum_cast<ElementType>(type_str);
-        if (!type_opt)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown BACKUP/RESTORE element type at index {}: '{}'", element_index, type_str);
-        e.type = *type_opt;
-        e.table_name = elem_reader.getString("table_name");
-        e.database_name = elem_reader.getString("database_name");
-        e.new_table_name = elem_obj.has("new_table_name") ? elem_reader.getString("new_table_name") : e.table_name;
-        e.new_database_name = elem_obj.has("new_database_name") ? elem_reader.getString("new_database_name") : e.database_name;
-        if (elem_obj.has("partitions"))
-        {
-            auto arr = elem_obj.getArray("partitions");
-            if (!arr)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "'partitions' is not a JSON array at element index {} during AST JSON deserialization", element_index);
-            ASTs partitions;
-            /// Cap the reserve by the remaining element budget; each partition AST is counted by
-            /// `createFromJSON` below, but the reserve runs off the untrusted array length first.
-            partitions.reserve(std::min<size_t>(arr->size(), getJSONDeserializationRemainingElements()));
-            for (unsigned int i = 0; i < arr->size(); ++i)
-            {
-                auto p_obj = arr->getObject(i);
-                if (!p_obj)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'partitions' array at element index {} during AST JSON deserialization", i, element_index);
-                auto partition_ast = IAST::createFromJSON(*p_obj);
-                /// `parsePartitions` builds every entry with `ParserPartition`, and MergeTree backup/restore
-                /// downcasts each entry via `as<ASTPartition &>()` in `getPartitionIDsFromQuery`, so any other
-                /// node type must be rejected at the JSON boundary instead of that internal cast.
-                if (!partition_ast->as<ASTPartition>())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected node type at index {} in 'partitions' array at element index {} during AST JSON deserialization", i, element_index);
-                partitions.push_back(std::move(partition_ast));
-            }
-            e.partitions = std::move(partitions);
-        }
-        if (elem_obj.has("except_tables"))
-        {
-            auto arr = elem_obj.getArray("except_tables");
-            if (!arr)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "'except_tables' is not a JSON array at element index {} during AST JSON deserialization", element_index);
-            for (unsigned int i = 0; i < arr->size(); ++i)
-            {
-                /// Count each non-AST entry against the element budget (memory guard).
-                countJSONDeserializationElement();
-                auto t_obj = arr->getObject(i);
-                if (!t_obj)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'except_tables' array at element index {} during AST JSON deserialization", i, element_index);
-                JSONObjectReader t_reader(*t_obj);
-                String db = t_reader.getString("database");
-                String tbl = t_reader.getString("table");
-                e.except_tables.emplace(std::move(db), std::move(tbl));
-            }
-        }
-        if (elem_obj.has("except_data_tables"))
-        {
-            auto arr = elem_obj.getArray("except_data_tables");
-            if (!arr)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "'except_data_tables' is not a JSON array at element index {} during AST JSON deserialization", element_index);
-            for (unsigned int i = 0; i < arr->size(); ++i)
-            {
-                /// Count each non-AST entry against the element budget (memory guard).
-                countJSONDeserializationElement();
-                auto t_obj = arr->getObject(i);
-                if (!t_obj)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'except_data_tables' array at element index {} during AST JSON deserialization", i, element_index);
-                JSONObjectReader t_reader(*t_obj);
-                String db = t_reader.getString("database");
-                String tbl = t_reader.getString("table");
-                e.except_data_tables.emplace(std::move(db), std::move(tbl));
-            }
-        }
-        e.except_data = elem_reader.getBool("except_data");
-        e.except_data_database_name = elem_reader.getString("except_data_database");
-        if (elem_obj.has("except_databases"))
-        {
-            auto arr = elem_obj.getArray("except_databases");
-            if (!arr)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "'except_databases' is not a JSON array at element index {} during AST JSON deserialization", element_index);
-            for (unsigned int i = 0; i < arr->size(); ++i)
-            {
-                /// Count each non-AST entry against the element budget (memory guard).
-                countJSONDeserializationElement();
-                auto var = arr->get(i);
-                if (!var.isString())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Element at index {} of 'except_databases' at element index {} is not a string during AST JSON deserialization", i, element_index);
-                e.except_databases.insert(var.extract<String>());
-            }
-        }
-
-        /// Validate per `ElementType` that the required fields are present and that no field
-        /// invalid for the type is supplied. `formatElement` reproduces only a type-specific
-        /// subset of these fields, so accepting the others would let `clickhouse_json` carry data
-        /// that the formatted SQL drops while `BackupEntriesCollector`/`RestorerFromBackup` still
-        /// act on it — for example a `partitions` list on a `TEMPORARY TABLE`, which the parser
-        /// never produces and `formatElement` omits, but the backup/restore logic would honour.
-        auto reject_field = [&](const char * key, const char * type_name)
-        {
-            if (elem_obj.has(key))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Field '{}' is not valid for BACKUP/RESTORE element type {} at index {} during AST JSON deserialization",
-                    key, type_name, element_index);
-        };
-        switch (e.type)
-        {
-            case ElementType::TABLE:
-                /// Valid: table_name, database_name, new_table_name, new_database_name, partitions,
-                /// except_data, except_data_database (the only type for which the last one is meaningful).
-                /// `except_data_tables` is rejected: a single-object element can only exclude the data of its own
-                /// object, which is what `except_data` says. A list here would let `clickhouse_json` name a table
-                /// outside this element's scope - the shape the parser refuses and `formatElement` cannot produce.
-                if (e.table_name.empty())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing or empty 'table_name' for BACKUP/RESTORE element at index {} during AST JSON deserialization", element_index);
-                reject_field("except_tables", "TABLE");
-                reject_field("except_data_tables", "TABLE");
-                reject_field("except_databases", "TABLE");
-                break;
-            case ElementType::TEMPORARY_TABLE:
-                /// Valid: table_name, new_table_name, except_data. A temporary table has no database.
-                if (e.table_name.empty())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing or empty 'table_name' for BACKUP/RESTORE element at index {} during AST JSON deserialization", element_index);
-                reject_field("database_name", "TEMPORARY_TABLE");
-                reject_field("new_database_name", "TEMPORARY_TABLE");
-                reject_field("partitions", "TEMPORARY_TABLE");
-                reject_field("except_tables", "TEMPORARY_TABLE");
-                reject_field("except_data_tables", "TEMPORARY_TABLE");
-                /// A temporary table has no database, so its clause can never name one.
-                reject_field("except_data_database", "TEMPORARY_TABLE");
-                reject_field("except_databases", "TEMPORARY_TABLE");
-                break;
-            case ElementType::DATABASE:
-                /// Valid: database_name, new_database_name, except_tables, except_data_tables.
-                if (e.database_name.empty())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing or empty 'database_name' for BACKUP/RESTORE element at index {} during AST JSON deserialization", element_index);
-                reject_field("table_name", "DATABASE");
-                reject_field("new_table_name", "DATABASE");
-                reject_field("partitions", "DATABASE");
-                reject_field("except_data", "DATABASE");
-                reject_field("except_data_database", "DATABASE");
-                reject_field("except_databases", "DATABASE");
-                /// A DATABASE element selects the tables of exactly one database, so its EXCEPT DATA FROM
-                /// TABLE/TABLES clause can only name tables of that database - which is what
-                /// `parseExceptDataTables` enforces for the SQL form, filling in an omitted database name
-                /// from the element and rejecting any other. `clickhouse_json` has to enforce the same
-                /// invariant, because `BackupEntriesCollector::gatherDatabaseMetadata` looks only at entries
-                /// whose database is the one it is gathering: an entry naming another database - or naming
-                /// none, which matches no database at all - is silently dropped and excludes nothing. That is
-                /// the worst outcome for a data-exclusion clause, so reject it rather than accept a no-op.
-                for (const auto & [except_data_db, except_data_tbl] : e.except_data_tables)
-                {
-                    if (except_data_db != e.database_name)
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Entry with database '{}' and table '{}' in 'except_data_tables' does not belong to database "
-                            "'{}' of the DATABASE BACKUP/RESTORE element at index {} during AST JSON deserialization: "
-                            "every entry must name that element's own database explicitly",
-                            except_data_db, except_data_tbl, e.database_name, element_index);
-                    if (except_data_tbl.empty())
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Empty table name in 'except_data_tables' of the BACKUP/RESTORE element at index {} during "
-                            "AST JSON deserialization", element_index);
-                }
-                break;
-            case ElementType::ALL:
-                /// Valid: except_databases, except_tables, except_data_tables.
-                reject_field("table_name", "ALL");
-                reject_field("database_name", "ALL");
-                reject_field("new_table_name", "ALL");
-                reject_field("new_database_name", "ALL");
-                reject_field("partitions", "ALL");
-                reject_field("except_data", "ALL");
-                reject_field("except_data_database", "ALL");
-                /// An ALL element may name a table of any database, and may leave the database name out for
-                /// `setCurrentDatabase` to fill in from the current database, so neither is checked here. An
-                /// empty table name matches no table at all, though, and is the same silent no-op as above.
-                for (const auto & except_data_table : e.except_data_tables)
-                {
-                    if (except_data_table.second.empty())
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Empty table name in 'except_data_tables' of the BACKUP/RESTORE element at index {} during "
-                            "AST JSON deserialization", element_index);
-                }
-                break;
-        }
-
-        /// `except_data_database` only records the database a single-object element's clause named while the
-        /// element's own database was still unresolved, so it is meaningless without the clause itself, and
-        /// once the element does state a database the two must already agree - that is the comparison
-        /// `parseExceptDataFromThisTable` makes at parse time and the one `Element::setCurrentDatabase` makes
-        /// afterwards. Enforce both here so `clickhouse_json` cannot build an element the parser would refuse.
-        if (!e.except_data_database_name.empty())
-        {
-            if (!e.except_data)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Field 'except_data_database' requires 'except_data' to be true for the BACKUP/RESTORE element at "
-                    "index {} during AST JSON deserialization", element_index);
-            if (!e.database_name.empty() && (e.except_data_database_name != e.database_name))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Field 'except_data_database' is '{}' but the BACKUP/RESTORE element at index {} names database "
-                    "'{}' during AST JSON deserialization: the EXCEPT DATA FROM TABLE clause of a single-object "
-                    "element can only name that element's own object",
-                    e.except_data_database_name, element_index, e.database_name);
-        }
-
-        return e;
-    }
-}
-
-void ASTBackupQuery::writeJSON(WriteBuffer & out) const
-{
-    JSONObjectWriter w(out, "BackupQuery");
-    w.writeString("kind", std::string(magic_enum::enum_name(kind)));
-    w.writeChild("backup_name", backup_name);
-    w.writeChild("base_backup_name", base_backup_name);
-    w.writeChild("base_snapshot_name", base_snapshot_name);
-    w.writeChild("settings", settings);
-    w.writeChild("cluster_host_ids", cluster_host_ids);
-    if (!cluster.empty())
-        w.writeString("cluster", cluster);
-    if (!elements.empty())
-    {
-        w.writeKey("elements");
-        WriteBuffer & buf = w.getOut();
-        buf << '[';
-        for (size_t i = 0; i < elements.size(); ++i)
-        {
-            if (i > 0) buf << ',';
-            writeElementJSON(elements[i], w);
-        }
-        buf << ']';
-    }
-    w.writeChildren(children);
-    writeOutputOptionsJSON(w);
-}
-
-void ASTBackupQuery::readJSON(const Poco::JSON::Object & json)
-{
-    JSONObjectReader r(json);
-    if (!r.has("kind"))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'kind' field in `BackupQuery` during AST JSON deserialization");
-    String kind_str = r.getString("kind");
-    auto kind_opt = magic_enum::enum_cast<Kind>(kind_str);
-    if (!kind_opt)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown BACKUP/RESTORE kind: '{}'", kind_str);
-    kind = *kind_opt;
-    /// `backup_name`, `base_backup_name` and `base_snapshot_name` are parser-owned `ASTFunction`
-    /// children (`ParserBackupQuery::parseBackupName` marks them as `BACKUP_NAME`). Restoring them
-    /// with the generic child path would let a wrong node type reach `IAST::set` as an internal cast
-    /// error; validate by type so malformed `clickhouse_json` is rejected with `BAD_ARGUMENTS`.
-    auto backup_name_child = r.readChildOfType<ASTFunction>("backup_name");
-    if (!backup_name_child)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'backup_name' for `BackupQuery` during AST JSON deserialization");
-    set(backup_name, backup_name_child);
-    auto base_backup_name_child = r.readChildOfType<ASTFunction>("base_backup_name");
-    if (base_backup_name_child)
-        set(base_backup_name, base_backup_name_child);
-    auto base_snapshot_name_child = r.readChildOfType<ASTFunction>("base_snapshot_name");
-    if (base_snapshot_name_child)
-    {
-        /// `FROM SNAPSHOT` is parser-producible only for `BACKUP` (`ParserBackupQuery` gates it on
-        /// `kind == Kind::BACKUP`). A `RESTORE` carrying `base_snapshot_name` would format the
-        /// parser-impossible `RESTORE FROM SNAPSHOT ...` and restore an empty `elements` set, so
-        /// reject the combination at the JSON boundary.
-        if (kind != Kind::BACKUP)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "'base_snapshot_name' (FROM SNAPSHOT) is only valid for BACKUP, not RESTORE, during AST JSON deserialization");
-        set(base_snapshot_name, base_snapshot_name_child);
-    }
-    /// `settings` is parser-produced as an `ASTSetQuery`; `BackupSettings`/`RestoreSettings` do
-    /// `query.settings->as<const ASTSetQuery &>().changes`, so reject any other node type here.
-    settings = r.readChildOfType<ASTSetQuery>("settings");
-    if (settings)
-        children.push_back(settings);
-    cluster_host_ids = r.readChild("cluster_host_ids");
-    if (cluster_host_ids)
-        children.push_back(cluster_host_ids);
-    cluster = r.getString("cluster");
-
-    /// `elements` is empty precisely for `BACKUP/RESTORE FROM SNAPSHOT ... TO ...`: `ParserBackupQuery`
-    /// skips `parseElements` in that branch (`base_snapshot_name` set) and `formatQueryImpl` formats
-    /// the snapshot form without touching `elements`. Every other shape carries at least one element.
-    /// `writeJSON` mirrors this by omitting the `elements` key when the vector is empty, so the reader
-    /// must accept its own output: require a non-empty `elements` array only when there is no
-    /// `base_snapshot_name`, and reject elements alongside a snapshot as a parser-impossible shape.
-    auto arr = r.getArray("elements");
-    if (base_snapshot_name)
-    {
-        if (arr && arr->size() != 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "`BACKUP/RESTORE FROM SNAPSHOT` must not carry 'elements' during AST JSON deserialization");
-    }
-    else
-    {
-        if (!arr)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'elements' for `BackupQuery` during AST JSON deserialization");
-        if (arr->size() == 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty 'elements' array for `BackupQuery` during AST JSON deserialization");
-    }
-    if (arr)
-    {
-        /// Cap the reserve by the remaining element budget; `readElementJSON` counts each element,
-        /// but the reserve would otherwise run off the untrusted array length first.
-        elements.reserve(std::min<size_t>(arr->size(), getJSONDeserializationRemainingElements()));
-        for (unsigned int i = 0; i < arr->size(); ++i)
-        {
-            auto elem_obj = arr->getObject(i);
-            if (!elem_obj)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'elements' array during AST JSON deserialization", i);
-            elements.push_back(readElementJSON(*elem_obj, i));
-        }
-    }
-
-    /// Validate BACKUP-only fields are not present in RESTORE queries
-    if (kind == Kind::RESTORE)
-    {
-        for (size_t i = 0; i < elements.size(); ++i)
-        {
-            if (!elements[i].except_data_tables.empty())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "'except_data_tables' (EXCEPT DATA FROM TABLE/TABLES) is only valid for BACKUP, not RESTORE, "
-                    "at element index {} during AST JSON deserialization", i);
-            if (elements[i].except_data)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "'except_data' (EXCEPT DATA FROM TABLE) is only valid for BACKUP, not RESTORE, "
-                    "at element index {} during AST JSON deserialization", i);
-        }
-    }
-
-    readOutputOptionsJSON(r);
 }
 
 }

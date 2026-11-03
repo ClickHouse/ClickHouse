@@ -1,17 +1,18 @@
 #pragma once
 
 #include <Functions/FunctionHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <Core/callOnTypeIndex.h>
 #include <Columns/ColumnVector.h>
 #include <Common/intExp10.h>
 #include <Interpreters/castColumn.h>
 #include <Functions/IFunction.h>
 #include <Common/intExp.h>
-#include <Common/NaNUtils.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 #include <Core/Defines.h>
 #include <cmath>
@@ -19,6 +20,12 @@
 #include <array>
 #include <base/sort.h>
 #include <algorithm>
+
+#ifdef __SSE4_1__
+    #include <smmintrin.h>
+#else
+    #include <fenv.h>
+#endif
 
 
 namespace DB
@@ -30,6 +37,7 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int ILLEGAL_COLUMN;
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_SET_ROUNDING_MODE;
 }
 
 
@@ -58,16 +66,29 @@ enum class ScaleMode : uint8_t
 
 enum class RoundingMode : uint8_t
 {
-    Round,
-    Floor,
-    Ceil,
-    Trunc,
+#ifdef __SSE4_1__
+    Round   = _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC,
+    Floor   = _MM_FROUND_TO_NEG_INF | _MM_FROUND_NO_EXC,
+    Ceil    = _MM_FROUND_TO_POS_INF | _MM_FROUND_NO_EXC,
+    Trunc   = _MM_FROUND_TO_ZERO | _MM_FROUND_NO_EXC,
+#else
+    Round   = 8,    /// Values correspond to above values, just in case.
+    Floor   = 9,
+    Ceil    = 10,
+    Trunc   = 11,
+#endif
 };
 
 enum class TieBreakingMode : uint8_t
 {
     Auto,    /// banker's rounding for floating point numbers, round up otherwise
     Bankers, /// banker's rounding
+};
+
+enum class Vectorize : uint8_t
+{
+    No,
+    Yes
 };
 
 /// For N, no more than the number of digits in the largest type.
@@ -92,12 +113,7 @@ struct IntegerRoundingComputation
         {
             case RoundingMode::Trunc:
             {
-                /// `x - x % scale` instead of `x / scale * scale`. For wide integer types
-                /// (`Decimal128`/`Decimal256`) the compiler emits a single divmod helper call
-                /// (`__udivmodti4`) that returns both quotient and remainder, so we can
-                /// compute the truncated value with a subtraction and skip the multi-word
-                /// `imul scale` that the textbook formulation would otherwise require.
-                return x - x % scale;
+                return x / scale * scale;
             }
             case RoundingMode::Floor:
             {
@@ -175,14 +191,64 @@ struct IntegerRoundingComputation
 };
 
 
-/// `Round` rounds half to even regardless of the current floating point rounding mode.
-/// Plain scalar code, so the loop in `FloatRoundingImpl::apply` vectorizes to the widest vectors of the target.
+template <typename T, Vectorize vectorize>
+class FloatRoundingComputationBase;
+
+#ifdef __SSE4_1__
+
+/// Vectorized implementation for x86.
+
+template <>
+class FloatRoundingComputationBase<Float32, Vectorize::Yes>
+{
+public:
+    using ScalarType = Float32;
+    using VectorType = __m128;
+    static const size_t data_count = 4;
+
+    static VectorType load(const ScalarType * in) { return _mm_loadu_ps(in); }
+    static VectorType load1(const ScalarType in) { return _mm_load1_ps(&in); }
+    static void store(ScalarType * out, VectorType val) { _mm_storeu_ps(out, val);}
+    static VectorType multiply(VectorType val, VectorType scale) { return _mm_mul_ps(val, scale); }
+    static VectorType divide(VectorType val, VectorType scale) { return _mm_div_ps(val, scale); }
+    template <RoundingMode mode> static VectorType apply(VectorType val) { return _mm_round_ps(val, int(mode)); }
+
+    static VectorType prepare(size_t scale)
+    {
+        return load1(static_cast<ScalarType>(scale));
+    }
+};
+
+template <>
+class FloatRoundingComputationBase<Float64, Vectorize::Yes>
+{
+public:
+    using ScalarType = Float64;
+    using VectorType = __m128d;
+    static const size_t data_count = 2;
+
+    static VectorType load(const ScalarType * in) { return _mm_loadu_pd(in); }
+    static VectorType load1(const ScalarType in) { return _mm_load1_pd(&in); }
+    static void store(ScalarType * out, VectorType val) { _mm_storeu_pd(out, val);}
+    static VectorType multiply(VectorType val, VectorType scale) { return _mm_mul_pd(val, scale); }
+    static VectorType divide(VectorType val, VectorType scale) { return _mm_div_pd(val, scale); }
+    template <RoundingMode mode> static VectorType apply(VectorType val) { return _mm_round_pd(val, int(mode)); }
+
+    static VectorType prepare(size_t scale)
+    {
+        return load1(static_cast<ScalarType>(scale));
+    }
+};
+
+#endif
+
+/// Sequential implementation for ARM. Also used for scalar arguments.
 
 inline float roundWithMode(float x, RoundingMode mode)
 {
     switch (mode)
     {
-        case RoundingMode::Round: return __builtin_roundevenf(x);
+        case RoundingMode::Round: return nearbyintf(x);
         case RoundingMode::Floor: return floorf(x);
         case RoundingMode::Ceil: return ceilf(x);
         case RoundingMode::Trunc: return truncf(x);
@@ -195,7 +261,7 @@ inline double roundWithMode(double x, RoundingMode mode)
 {
     switch (mode)
     {
-        case RoundingMode::Round: return __builtin_roundeven(x);
+        case RoundingMode::Round: return nearbyint(x);
         case RoundingMode::Floor: return floor(x);
         case RoundingMode::Ceil: return ceil(x);
         case RoundingMode::Trunc: return trunc(x);
@@ -206,35 +272,69 @@ inline double roundWithMode(double x, RoundingMode mode)
 
 inline BFloat16 roundWithMode(BFloat16 x, RoundingMode mode)
 {
-    return BFloat16(roundWithMode(Float32(x), mode));
+    switch (mode)
+    {
+        case RoundingMode::Round: return BFloat16(nearbyintf(Float32(x)));
+        case RoundingMode::Floor: return BFloat16(floorf(Float32(x)));
+        case RoundingMode::Ceil: return BFloat16(ceilf(Float32(x)));
+        case RoundingMode::Trunc: return BFloat16(truncf(Float32(x)));
+    }
+
+    std::unreachable();
 }
+
+template <typename T>
+class FloatRoundingComputationBase<T, Vectorize::No>
+{
+public:
+    using ScalarType = T;
+    using VectorType = T;
+    static const size_t data_count = 1;
+
+    static VectorType load(const ScalarType * in) { return *in; }
+    static VectorType load1(const ScalarType in) { return in; }
+    static VectorType store(ScalarType * out, ScalarType val) { return *out = val;}
+    static VectorType multiply(VectorType val, VectorType scale) { return val * scale; }
+    static VectorType divide(VectorType val, VectorType scale) { return val / scale; }
+    template <RoundingMode mode> static VectorType apply(VectorType val) { return roundWithMode(val, mode); }
+
+    static VectorType prepare(size_t scale)
+    {
+        return load1(ScalarType(scale));
+    }
+};
+
+template <>
+class FloatRoundingComputationBase<BFloat16, Vectorize::Yes> : public FloatRoundingComputationBase<BFloat16, Vectorize::No>
+{
+};
 
 
 /** Implementation of low-level round-off functions for floating-point values.
   */
-template <typename T, RoundingMode rounding_mode, ScaleMode scale_mode>
-struct FloatRoundingComputation
+template <typename T, RoundingMode rounding_mode, ScaleMode scale_mode, Vectorize vectorize>
+class FloatRoundingComputation : public FloatRoundingComputationBase<T, vectorize>
 {
-    static T prepare(size_t scale)
+    using Base = FloatRoundingComputationBase<T, vectorize>;
+
+public:
+    static void compute(const T * __restrict in, const typename Base::VectorType & scale, T * __restrict out)
     {
-        return T(scale);
-    }
+        auto val = Base::load(in);
 
-    static ALWAYS_INLINE T compute(T val, T scale)
-    {
-        if constexpr (scale_mode == ScaleMode::Positive)
-            val = val * scale;
-        else if constexpr (scale_mode == ScaleMode::Negative)
-            val = val / scale;
+        if (scale_mode == ScaleMode::Positive)
+            val = Base::multiply(val, scale);
+        else if (scale_mode == ScaleMode::Negative)
+            val = Base::divide(val, scale);
 
-        val = roundWithMode(val, rounding_mode);
+        val = Base::template apply<rounding_mode>(val);
 
-        if constexpr (scale_mode == ScaleMode::Positive)
-            val = val / scale;
-        else if constexpr (scale_mode == ScaleMode::Negative)
-            val = val * scale;
+        if (scale_mode == ScaleMode::Positive)
+            val = Base::divide(val, scale);
+        else if (scale_mode == ScaleMode::Negative)
+            val = Base::multiply(val, scale);
 
-        return val;
+        Base::store(out, val);
     }
 };
 
@@ -247,24 +347,56 @@ struct FloatRoundingImpl
 private:
     static_assert(!is_decimal<T>);
 
-    using Op = FloatRoundingComputation<T, rounding_mode, scale_mode>;
-    using Container = typename ColumnVector<T>::Container;
+    template <Vectorize vectorize =
+#ifdef __SSE4_1__
+        Vectorize::Yes
+#else
+        Vectorize::No
+#endif
+    >
+    using Op = FloatRoundingComputation<T, rounding_mode, scale_mode, vectorize>;
+    using Data = std::array<T, Op<>::data_count>;
+    using ColumnType = ColumnVector<T>;
+    using Container = typename ColumnType::Container;
 
 public:
     static NO_INLINE void apply(const Container & in, size_t scale, Container & out)
     {
-        const T scale_value = Op::prepare(scale);
-        const size_t size = in.size();
-        const T * __restrict p_in = in.data();
-        T * __restrict p_out = out.data();
+        auto mm_scale = Op<>::prepare(scale);
 
-        for (size_t i = 0; i < size; ++i)
-            p_out[i] = Op::compute(p_in[i], scale_value);
+        const size_t data_count = std::tuple_size<Data>();
+
+        const T* end_in = in.data() + in.size();
+        const T* limit = in.data() + in.size() / data_count * data_count;
+
+        const T* __restrict p_in = in.data();
+        T* __restrict p_out = out.data();
+
+        while (p_in < limit)
+        {
+            Op<>::compute(p_in, mm_scale, p_out);
+            p_in += data_count;
+            p_out += data_count;
+        }
+
+        if (p_in < end_in)
+        {
+            Data tmp_src{{}};
+            Data tmp_dst;
+
+            size_t tail_size_bytes = (end_in - p_in) * sizeof(*p_in);
+
+            memcpy(&tmp_src, p_in, tail_size_bytes);
+            Op<>::compute(reinterpret_cast<T *>(&tmp_src), mm_scale, reinterpret_cast<T *>(&tmp_dst));
+            memcpy(p_out, &tmp_dst, tail_size_bytes);
+        }
     }
 
-    static void applyOne(T in, size_t scale, T & out)
+    static void applyOne(T in, size_t scale, T& out)
     {
-        out = Op::compute(in, Op::prepare(scale));
+        using ScalarOp = Op<Vectorize::No>;
+        auto s = ScalarOp::prepare(scale);
+        ScalarOp::compute(&in, s, &out);
     }
 };
 
@@ -284,22 +416,11 @@ public:
         const T * __restrict p_in = in.data();
         T * __restrict p_out = out.data();
 
+        /// clang-21 vectorization on aarch64 shows 20% performance decrease.
+        /// Let's use scalar variant instead.
 #if defined(__aarch64__)
-        /// NEON has no 64-bit multiply-high, so a vectorized division by a constant moves every lane through
-        /// general purpose registers and `round(Int64)` got 20% slower. Narrower types vectorize well.
-        if constexpr (sizeof(T) >= 8)
-        {
-            _Pragma("clang loop vectorize(disable)")
-            while (p_in < end_in)
-            {
-                Op::compute(p_in, scale, p_out);
-                ++p_in;
-                ++p_out;
-            }
-            return;
-        }
+        _Pragma("clang loop vectorize(disable)")
 #endif
-
         while (p_in < end_in)
         {
             Op::compute(p_in, scale, p_out);
@@ -557,7 +678,7 @@ public:
 /// Functions that round the value of an input parameter of type (U)Int8/16/32/64, Float32/64 or Decimal32/64/128.
 /// Accept an additional optional parameter of type (U)Int8/16/32/64 (0 by default).
 template <typename Name, RoundingMode rounding_mode, TieBreakingMode tie_breaking_mode>
-class FunctionRounding final : public IFunction
+class FunctionRounding : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -614,6 +735,15 @@ public:
             return true;
         };
 
+#if !defined(__SSE4_1__)
+        /// In case of "nearbyint" function is used, we should ensure the expected rounding mode for the Banker's rounding.
+        /// Actually it is by default. But we will set it just in case.
+
+        if constexpr (rounding_mode == RoundingMode::Round)
+            if (0 != fesetround(FE_TONEAREST))
+                throw Exception(ErrorCodes::CANNOT_SET_ROUNDING_MODE, "Cannot set floating point rounding mode");
+#endif
+
         TypeIndex left_index = value_arg.type->getTypeId();
         if (!callOnBasicType<void, true, true, true, false>(left_index, call_data))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", value_arg.name, getName());
@@ -626,10 +756,8 @@ public:
         return true;
     }
 
-    Monotonicity getMonotonicityForRange(const IDataType &, const Field & left, const Field & right) const override
+    Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
     {
-        if (isNaNField(left) || isNaNField(right))
-            return {};
         return { .is_monotonic = true, .is_always_monotonic = true };
     }
 };
@@ -637,7 +765,7 @@ public:
 
 /// Rounds down to a number within explicitly specified array.
 /// If the value is less than the minimal bound - returns the minimal bound.
-class FunctionRoundDown final : public IFunction
+class FunctionRoundDown : public IFunction
 {
 public:
     static constexpr auto name = "roundDown";
@@ -749,38 +877,16 @@ private:
     void NO_INLINE executeImplNumToNum(const Container & src, Container & dst, const Array & boundaries) const
     {
         using ValueType = typename Container::value_type;
-        VectorWithMemoryTracking<ValueType> boundary_values;
-        boundary_values.reserve(boundaries.size());
-        for (const auto & boundary_field : boundaries)
-        {
-            auto boundary = static_cast<ValueType>(boundary_field.safeGet<ValueType>());
-            /// Drop NaN boundaries: they have no position in the ordering, so keeping them
-            /// would break the strict-weak-ordering contract of `::sort` below.
-            if constexpr (is_floating_point<ValueType>)
-                if (isNaN(boundary))
-                    continue;
-            boundary_values.push_back(boundary);
-        }
-
-        size_t size = src.size();
-        dst.resize(size);
-
-        /// No finite boundary to round to (every boundary was NaN). Reachable only for
-        /// floating-point ValueType.
-        if (boundary_values.empty())
-        {
-            for (size_t i = 0; i < size; ++i)
-                dst[i] = NaNOrZero<ValueType>();
-            return;
-        }
+        std::vector<ValueType> boundary_values(boundaries.size());
+        for (size_t i = 0; i < boundaries.size(); ++i)
+            boundary_values[i] = static_cast<ValueType>(boundaries[i].safeGet<ValueType>());
 
         ::sort(boundary_values.begin(), boundary_values.end());
         boundary_values.erase(std::unique(boundary_values.begin(), boundary_values.end()), boundary_values.end());
 
-        /// NaN inputs have no defined position in the boundary ordering: every comparison
-        /// against NaN is false, which breaks both the linear-search carry-over hint and
-        /// `std::upper_bound`'s strict-weak-ordering contract. Propagate NaN through
-        /// unchanged so the result is the same in scalar and vector paths.
+        size_t size = src.size();
+        dst.resize(size);
+
         if (boundary_values.size() < 32)    /// Just a guess
         {
             /// Linear search with value on previous iteration as a hint.
@@ -793,15 +899,6 @@ private:
             for (size_t i = 0; i < size; ++i)
             {
                 auto value = src[i];
-
-                if constexpr (is_floating_point<ValueType>)
-                {
-                    if (isNaN(value))
-                    {
-                        dst[i] = value;
-                        continue;
-                    }
-                }
 
                 if (*it < value)
                 {
@@ -823,15 +920,6 @@ private:
         {
             for (size_t i = 0; i < size; ++i)
             {
-                if constexpr (is_floating_point<ValueType>)
-                {
-                    if (isNaN(src[i]))
-                    {
-                        dst[i] = src[i];
-                        continue;
-                    }
-                }
-
                 auto it = std::upper_bound(boundary_values.begin(), boundary_values.end(), src[i]);
                 if (it == boundary_values.end())
                 {
