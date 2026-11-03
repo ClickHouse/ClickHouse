@@ -10,6 +10,9 @@
 #include <Analyzer/TableNode.h>
 #include <Core/Block.h>
 #include <Core/ConstantValue.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -761,6 +764,19 @@ namespace
 
                 if (auto val = analyzeConstant(rhs_node, lhs_node, matches))
                     return DisjunctionList{ConjunctionMap{std::move(*val)}};
+            }
+            else if (node->function_base->getName() == "empty" && node->children.size() == 1)
+            {
+                const auto * arg_node = node->children.at(0);
+                if (isStringOrFixedString(removeNullable(removeLowCardinality(arg_node->result_type))))
+                {
+                    ActionsDAG::Node empty_const;
+                    empty_const.type = ActionsDAG::ActionType::COLUMN;
+                    empty_const.result_type = std::make_shared<DataTypeString>();
+                    empty_const.column = empty_const.result_type->createColumnConst(1, Field(String{}));
+                    if (auto val = analyzeConstant(arg_node, &empty_const, matches))
+                        return DisjunctionList{ConjunctionMap{std::move(*val)}};
+                }
             }
             else if (node->function_base->getName() == "in")
             {
