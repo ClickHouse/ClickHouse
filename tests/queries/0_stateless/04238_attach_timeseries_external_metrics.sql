@@ -17,11 +17,11 @@ DROP TABLE IF EXISTS metrics_target_04238;
 DROP TABLE IF EXISTS ts_with_external_metrics_04238;
 
 CREATE TABLE metrics_target_04238 (
-    metric_family String,
+    metric_family_name String,
     type String,
     unit String,
     help String)
-ENGINE = ReplacingMergeTree ORDER BY metric_family;
+ENGINE = ReplacingMergeTree ORDER BY metric_family_name;
 
 CREATE TABLE ts_with_external_metrics_04238 ENGINE = TimeSeries METRICS metrics_target_04238;
 

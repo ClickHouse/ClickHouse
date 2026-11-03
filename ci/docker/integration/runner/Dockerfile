@@ -37,29 +37,14 @@ RUN apt-get update \
     luajit \
     libssl-dev \
     libcurl4-openssl-dev \
-    openjdk-17-jdk-headless \
+    default-jdk \
+    software-properties-common \
     libkrb5-dev \
     krb5-user \
     g++ \
-    unzip \
+    awscli \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
-
-# The awscli apt package is gone in ubuntu:24.04, install a pinned AWS CLI v2
-ARG AWSCLI_VERSION=2.36.41
-ARG AWSCLI_SHA256_X86_64=659c1fe734a9534736fa452bb1b557dd4cccadea5823f45a74c0f09408a93d22
-ARG AWSCLI_SHA256_AARCH64=1612cda15d605985d8cb675ec429c8916e3b696fa52325994955dc3215c590a9
-RUN arch="$(uname -m)" \
-    && case "$arch" in \
-        x86_64) sha256="$AWSCLI_SHA256_X86_64" ;; \
-        aarch64) sha256="$AWSCLI_SHA256_AARCH64" ;; \
-        *) echo "Unsupported architecture: $arch" >&2; exit 1 ;; \
-    esac \
-    && curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-${arch}-${AWSCLI_VERSION}.zip" -o awscliv2.zip \
-    && echo "$sha256  awscliv2.zip" | sha256sum --check --strict \
-    && unzip -q awscliv2.zip \
-    && ./aws/install \
-    && rm -rf awscliv2.zip aws
 
 ENV TZ=Etc/UTC
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
@@ -84,24 +69,24 @@ COPY requirements.txt /
 RUN python3.13 -m pip install --no-cache-dir -r requirements.txt
 
 
-RUN curl -fsSL -O https://archive.apache.org/dist/spark/spark-4.0.0/spark-4.0.0-bin-hadoop3.tgz \
-    && tar xzvf spark-4.0.0-bin-hadoop3.tgz -C / \
-    && rm spark-4.0.0-bin-hadoop3.tgz
+RUN curl -fsSL -O https://archive.apache.org/dist/spark/spark-3.5.5/spark-3.5.5-bin-hadoop3.tgz \
+    && tar xzvf spark-3.5.5-bin-hadoop3.tgz -C / \
+    && rm spark-3.5.5-bin-hadoop3.tgz
 
 # download spark and packages
 # if you change packages, don't forget to update them in tests/integration/helpers/cluster.py
-RUN packages="io.delta:delta-spark_2.13:4.0.0,\
-org.apache.hudi:hudi-spark4.0-bundle_2.13:1.2.0,\
-org.apache.iceberg:iceberg-spark-runtime-4.0_2.13:1.11.0,\
-org.apache.hadoop:hadoop-aws:3.4.1,\
+RUN packages="io.delta:delta-spark_2.12:3.1.0,\
+org.apache.hudi:hudi-spark3.5-bundle_2.12:1.0.1,\
+org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.8.1,\
+org.apache.hadoop:hadoop-aws:3.3.4,\
 com.amazonaws:aws-java-sdk-bundle:1.12.262,\
-org.apache.hadoop:hadoop-azure:3.4.1,\
+org.apache.hadoop:hadoop-azure:3.3.4,\
 com.microsoft.azure:azure-storage:8.6.6,\
-org.apache.spark:spark-avro_2.13:4.0.0,\
-org.apache.sedona:sedona-spark-4.0_2.13:1.9.1,\
-org.apache.paimon:paimon-spark-4.0:1.3.2"\
-    && /spark-4.0.0-bin-hadoop3/bin/spark-shell --conf spark.jars.ivy=/root/.ivy2 --packages "$packages" \
-    && find /root/.ivy2/ -name '*.jar' -exec ln -sf {} /spark-4.0.0-bin-hadoop3/jars/ \;
+org.apache.spark:spark-avro_2.12:3.5.1,\
+org.apache.sedona:sedona-spark-3.5_2.12:1.6.1,\
+org.apache.paimon:paimon-spark-3.5:1.1.1"\
+    && /spark-3.5.5-bin-hadoop3/bin/spark-shell --packages "$packages" \
+    && find /root/.ivy2/ -name '*.jar' -exec ln -sf {} /spark-3.5.5-bin-hadoop3/jars/ \;
 
 RUN set -x \
   && addgroup --system dockremap \
@@ -125,6 +110,6 @@ COPY --from=clickhouse/cctools:859fb360308eb8ac47ad \
 
 EXPOSE 2375
 
-ENV SPARK_HOME="/spark-4.0.0-bin-hadoop3" \
+ENV SPARK_HOME="/spark-3.5.5-bin-hadoop3" \
     PATH="${SPARK_HOME}/bin:${PATH}" \
     JAVA_TOOL_OPTIONS="-Djdk.attach.allowAttachSelf=true"

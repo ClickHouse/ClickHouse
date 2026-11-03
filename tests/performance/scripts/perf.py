@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import argparse
-import atexit
 import itertools
 import json
 import logging
@@ -80,12 +79,6 @@ def ch_median(times):
 # quantile with the same resolution past the enumerable range.
 MAX_EXACT_SPLIT_RUNS = 8
 SAMPLED_SPLITS = 10000
-
-# `ErrorCodes::TIMEOUT_EXCEEDED`, src/Common/ErrorCodes.cpp. Spelled out instead of
-# read from `clickhouse_driver.errors.ErrorCodes`, whose contents vary by version.
-TIMEOUT_EXCEEDED = 159
-UNKNOWN_TABLE = 60
-UNKNOWN_DATABASE = 81
 
 
 def stat_threshold(left_times, right_times):
@@ -238,11 +231,6 @@ parser.add_argument(
     help="Test no more than this number of queries, chosen at random.",
 )
 parser.add_argument(
-    "--soft-max-queries",
-    action="store_true",
-    help='Let tests marked <test run_all_queries="1"> ignore --max-queries.',
-)
-parser.add_argument(
     "--queries-to-run",
     nargs="*",
     type=int,
@@ -268,13 +256,6 @@ parser.add_argument(
     help="For how many seconds to profile a query for which the performance has changed.",
 )
 parser.add_argument(
-    "--profile-all-queries",
-    action="store_true",
-    help="Profile every query of every test, not only the ones whose performance has "
-    "changed. Costs --profile-seconds per query per server. A single test can ask for "
-    'the same with <test profile_all_queries="1">.',
-)
-parser.add_argument(
     "--long", action="store_true", help="Do not skip the tests tagged as long."
 )
 parser.add_argument(
@@ -294,14 +275,6 @@ parser.add_argument(
     help="Don't create or drop the tables, use the existing ones instead.",
 )
 parser.add_argument(
-    "--stop-merges",
-    action="store_true",
-    help="Stop background merges on all servers after the setup queries of a "
-    "read-only test and start them again after it. Every test also starts "
-    "merges first, because the servers are shared by the tests of a run. "
-    "Needs the SYSTEM MERGES privilege.",
-)
-parser.add_argument(
     "--jemalloc-purge",
     choices=["disabled", "after-fill", "before-each-query", "before-each-run"],
     default="before-each-run",
@@ -309,14 +282,6 @@ parser.add_argument(
     "Purging equalises per-process jemalloc dirty-page state between LEFT and "
     "RIGHT, which otherwise diverges across the test and causes background "
     "purges to do asymmetric work during measured queries.",
-)
-parser.add_argument(
-    "--pr-number",
-    type=int,
-    default=0,
-    help="Number of the pull request under test. A setup query marked "
-    'do_not_check_in_pr="<this number>" is allowed to fail on the reference '
-    "server. With the default 0 no failure is tolerated.",
 )
 args = parser.parse_args()
 
@@ -348,38 +313,6 @@ xml_dir = os.path.dirname(os.path.abspath(args.file[0].name))
 tree = et.parse(args.file[0])
 root = tree.getroot()
 
-
-def expand_includes(parent, source_dir, stack):
-    """Inline <fragment> children in order, with paths relative to their source file."""
-    index = 0
-    while index < len(parent):
-        element = parent[index]
-        if element.tag != "include":
-            if element.tag in ("query", "settings") and element.get("file"):
-                path = os.path.join(source_dir, element.get("file"))
-                element.set("file", os.path.relpath(path, xml_dir))
-            expand_includes(element, source_dir, stack)
-            index += 1
-            continue
-
-        filename = element.get("file")
-        if not filename or len(element.attrib) != 1:
-            raise ValueError('<include> requires exactly one attribute: file="..."')
-        path = os.path.realpath(os.path.join(source_dir, filename))
-        if path in stack:
-            raise ValueError(f"Cyclic performance-test include: {' -> '.join((*stack, path))}")
-        fragment = et.parse(path).getroot()
-        if fragment.tag != "fragment":
-            raise ValueError(f"Performance-test include {path} must have a <fragment> root")
-        expand_includes(fragment, os.path.dirname(path), (*stack, path))
-        parent.remove(element)
-        children = list(fragment)
-        parent[index:index] = children
-        index += len(children)
-
-
-expand_includes(root, xml_dir, (os.path.realpath(args.file[0].name),))
-
 reportStageEnd("parse")
 
 # Process query parameters
@@ -402,29 +335,17 @@ def substitute_parameters(query_templates, other_templates=[]):
     query_results = []
     other_results = [[]] * (len(other_templates))
     for i, q in enumerate(query_templates):
-        try:
-            # We need stable order of keys here, so that the order of substitutions
-            # is always the same, and the query indexes are consistent across test
-            # runs.
-            keys = sorted(set(n for _, n, _, _ in string.Formatter().parse(q) if n))
-            values = [available_parameters[k] for k in keys]
-            combos = itertools.product(*values)
-            for c in combos:
-                with_keys = dict(zip(keys, c))
-                query_results.append(q.format(**with_keys))
-                for j, t in enumerate(other_templates):
-                    other_results[j].append(t[i].format(**with_keys))
-        except (KeyError, ValueError, IndexError) as e:
-            raise Exception(
-                f"Failed to substitute parameters ({type(e).__name__}: {e}) "
-                f"in the template:\n{q}\n"
-                f"Parameters available from <substitutions>: "
-                f"{sorted(available_parameters)}. Every {{name}} in a "
-                "performance test is expanded as a substitution placeholder; "
-                "if the braces are literal SQL syntax (e.g. a parameterized "
-                "view parameter like {ts:DateTime64(3)}), escape them by "
-                "doubling: {{...}}."
-            ) from e
+        # We need stable order of keys here, so that the order of substitutions
+        # is always the same, and the query indexes are consistent across test
+        # runs.
+        keys = sorted(set(n for _, n, _, _ in string.Formatter().parse(q) if n))
+        values = [available_parameters[k] for k in keys]
+        combos = itertools.product(*values)
+        for c in combos:
+            with_keys = dict(zip(keys, c))
+            query_results.append(q.format(**with_keys))
+            for j, t in enumerate(other_templates):
+                other_results[j].append(t[i].format(**with_keys))
     if len(other_templates):
         return query_results, other_results
     else:
@@ -513,37 +434,19 @@ def execute_query_group(connection, q_list, query_id, settings):
     """
     total = 0
     for q in q_list:
-        try:
-            connection.execute(q, query_id=query_id, settings=settings)
-        except Exception as e:
-            # For the censored time of a query that timed out.
-            e.elapsed_before = total
-            raise
+        connection.execute(q, query_id=query_id, settings=settings)
         total += connection.last_query.elapsed
     return total
 
 
-def censored_elapsed(e, budget):
-    """With `--long`, a timeout's censored time (completed statements plus `budget`), else `None`."""
-    if args.long and (isinstance(e, subprocess.TimeoutExpired) or getattr(e, "code", None) == TIMEOUT_EXCEEDED):
-        return getattr(e, "elapsed_before", 0) + budget
-
-
 def load_settings_file(xml_root, base_dir):
-    """Load and merge settings from every <settings file="..."/> element.
-
-    After include expansion a test can carry more than one file-backed <settings>
-    (e.g. one from the test and one from an included fragment); honor them all
-    instead of silently dropping every file but the first. Inline settings are
-    already merged across all <settings> blocks via findall("settings/*")."""
-    merged = {}
-    for elem in xml_root.findall("settings"):
-        if "file" not in elem.attrib:
-            continue
-        path = os.path.join(base_dir, elem.attrib["file"])
-        with open(path, "r", encoding="utf-8") as f:
-            merged.update(json.load(f)["settings"])
-    return merged
+    """Load settings from a JSON file referenced by <settings file="..."/> attribute."""
+    elem = xml_root.find("settings")
+    if elem is None or "file" not in elem.attrib:
+        return {}
+    path = os.path.join(base_dir, elem.attrib["file"])
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)["settings"]
 
 
 # Build a list of test queries, substituting parameters to query templates.
@@ -649,9 +552,6 @@ if not args.long:
         if tag.text == "long":
             print("skipped\tTest is tagged as long.")
             sys.exit(0)
-else:
-    # Termination must reach the teardown, and prewarm re-raises this class.
-    signal.signal(signal.SIGTERM, signal.default_int_handler)
 
 # Shell-script queries do not yet carry the connection options that the SQL path
 # honours. SQL queries connect through `clickhouse_driver.Client` with `--user` /
@@ -664,8 +564,9 @@ else:
 # options, fail closed: reject the test up front rather than benchmark the wrong
 # endpoint. (Done after the `--print-queries` / `--print-settings` early exits so
 # those read-only paths are unaffected.)
-has_shell_queries = any(q["kind"] == "shell" for q in test_queries)
-if has_shell_queries and (args.user != "default" or args.password != "" or args.secure):
+if any(q["kind"] == "shell" for q in test_queries) and (
+    args.user != "default" or args.password != "" or args.secure
+):
     raise Exception(
         'Shell-script queries (<query type="shell">) do not support the '
         "--user / --password / --secure connection options yet: the shell "
@@ -673,78 +574,11 @@ if has_shell_queries and (args.user != "default" or args.password != "" or args.
         "Remove these options, or run this test without shell-script queries."
     )
 
-# Setup queries, in document order. The do_not_check_in_pr attribute is honoured only on these elements.
-setup_query_elements = [e for e in root.findall("./*") if e.tag in ("create_query", "fill_query")]
-
-for e in root.iter():
-    if "do_not_check_in_pr" in e.attrib and e not in setup_query_elements:
-        raise Exception(
-            "do_not_check_in_pr is only allowed on top-level <create_query> "
-            f"and <fill_query> elements, but was found on <{e.tag}>"
-        )
-
-if has_shell_queries and any("do_not_check_in_pr" in e.attrib for e in setup_query_elements):
-    raise Exception(
-        "do_not_check_in_pr is not compatible with shell queries: a shell "
-        "performance test must run on every server to be comparable"
-    )
-
-# Setup queries paired with a flag. Tolerate query's failure on the reference server
-# only when do_not_check_in_pr matches --pr-number.
-create_query_templates = []
-for e in setup_query_elements:
-    attr = e.get("do_not_check_in_pr")
-    if attr is not None and not re.fullmatch("[1-9][0-9]*", attr):
-        raise Exception(
-            f'Invalid do_not_check_in_pr="{attr}" on <{e.tag}> in the test '
-            "file: must be the number of the pull request that introduces "
-            "the test (a positive integer)"
-        )
-    create_query_templates.append(
-        (e.text, attr is not None and int(attr) == args.pr_number)
-    )
-
-# <query file=...> have no element to carry the attribute. We can add support for it later if needed.
-create_query_templates += [(template, False) for template in extra_create_queries]
-
 # Print report threshold for the test if it is set.
 ignored_relative_change = 0.05
 if "max_ignored_relative_change" in root.attrib:
     ignored_relative_change = float(root.attrib["max_ignored_relative_change"])
     print(f"report-threshold\t{ignored_relative_change}")
-
-# Opt-in per run or per test: profile every query, not only those whose timings changed.
-profile_all_queries = args.profile_all_queries or root.attrib.get(
-    "profile_all_queries", "0"
-) not in ("0", "false", "")
-
-# Opt-in per test: run every query. Honored only with --soft-max-queries.
-run_all_queries = root.attrib.get("run_all_queries", "0") not in ("0", "false", "")
-
-# Per test: the time budget of each statement, in prewarm and in measured runs.
-if "max_query_seconds" in root.attrib:
-    args.max_query_seconds = int(root.attrib["max_query_seconds"])
-    args.prewarm_max_query_seconds = args.max_query_seconds
-
-# With --stop-merges, background merges are stopped on every server after the
-# setup queries, so the measured queries of both servers see the part layout the
-# setup left, and no merge competes with them for the CPU. A test whose measured
-# queries write or run shell scripts needs merges, so they keep running for it;
-# `keep_merges_running="1"` on <test> opts out explicitly.
-WRITE_KEYWORDS = {
-    "INSERT", "ALTER", "OPTIMIZE", "SYSTEM", "DELETE", "UPDATE", "TRUNCATE",
-    "CREATE", "DROP", "RENAME", "EXCHANGE", "ATTACH", "DETACH", "KILL",
-    "BACKUP", "RESTORE",
-}
-stop_merges = (
-    args.stop_merges
-    and root.attrib.get("keep_merges_running", "0") in ("0", "false", "")
-    and all(
-        q["kind"] == "sql"
-        and not any(first_keyword(s) in WRITE_KEYWORDS for s in q["statements"])
-        for q in test_queries
-    )
-)
 
 reportStageEnd("before-connect")
 
@@ -753,56 +587,10 @@ servers = [
     { "host": host or args.host[0], "port": port or args.port[0], "user": args.user, "password": args.password, "secure": args.secure }
     for (host, port) in itertools.zip_longest(args.host, args.port)
 ]
-# Setup statements like `OPTIMIZE ... FINAL` are silent for long; raise the 300 s default under `--long`.
-driver_options = {"send_receive_timeout": 30 * 60} if args.long else {}
 # Force settings_is_important to fail queries on unknown settings.
 all_connections = [
-    clickhouse_driver.Client(**server, settings_is_important=True, **driver_options) for server in servers
+    clickhouse_driver.Client(**server, settings_is_important=True) for server in servers
 ]
-# Connection 0 is the reference only in a comparison: a single server is the tested one.
-reference = 0 if len(all_connections) > 1 else None
-
-drop_query_templates = [q.text for q in root.findall("drop_query")] + extra_drop_queries
-# The connections that run the setup queries, and so the drop queries.
-setup_connections = []
-threads = []
-teardown_done = False
-
-
-def teardown():
-    """Print `teardown-complete` and return True only if every drop query succeeded or found its object absent."""
-    global teardown_done
-    if teardown_done:
-        return
-    teardown_done = True
-    if any(t.is_alive() for t in threads):
-        print("teardown-skipped\tsetup workers active")
-        return False
-    # A drop query that waits for a mutation would hang while merges are stopped.
-    if stop_merges:
-        for c in (all_connections[i] for i in setup_connections):
-            c.execute("SYSTEM START MERGES")
-    clean = True
-    for conn_index in setup_connections:
-        c = all_connections[conn_index]
-        for q in substitute_parameters(drop_query_templates):
-            try:
-                c.execute(q)
-                print(f"drop\t{conn_index}\t{c.last_query.elapsed}\t{tsv_escape(q)}")
-            except Exception as e:
-                # The object is not there, so the server is clean.
-                if getattr(e, "code", None) in (UNKNOWN_TABLE, UNKNOWN_DATABASE):
-                    continue
-                print(f"drop query failed on server {conn_index}: {q}\n{e}", file=sys.stderr)
-                clean = False
-    if clean:
-        print("teardown-complete")
-    return clean
-
-
-# Runs after an uncaught exception, `KeyboardInterrupt` and `sys.exit` too.
-if not args.keep_created_tables and not args.use_existing_tables:
-    atexit.register(teardown)
 
 # Long-lived workers to fan out per-connection commands (SYSTEM JEMALLOC PURGE
 # etc.) in parallel so both servers see the same operation at the same wall
@@ -880,7 +668,7 @@ def run_shell_query(conn_index, script, timeout):
     )
     try:
         _, stderr_bytes = proc.communicate(timeout=timeout)
-    except (subprocess.TimeoutExpired, KeyboardInterrupt):
+    except subprocess.TimeoutExpired:
         # Kill the whole process group, not just `bash`, then reap it.
         try:
             os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
@@ -904,16 +692,12 @@ for i, s in enumerate(servers):
 
 reportStageEnd("connect")
 
-# The servers are shared by all tests of the run, so undo a `SYSTEM STOP MERGES`
-# left by a previous test that did not reach its teardown.
-if args.stop_merges:
-    for c in all_connections:
-        c.execute("SYSTEM START MERGES")
-
 if not args.use_existing_tables:
     # Run drop queries, ignoring errors. Do this before all other activity,
     # because clickhouse_driver disconnects on error (this is not configurable),
     # and the new connection loses the changes in settings.
+    drop_query_templates = [q.text for q in root.findall("drop_query")]
+    drop_query_templates += extra_drop_queries
     drop_queries = substitute_parameters(drop_query_templates)
     for conn_index, c in enumerate(all_connections):
         for q in drop_queries:
@@ -924,9 +708,6 @@ if not args.use_existing_tables:
                 pass
 
     reportStageEnd("drop-1")
-
-# One-line summary per connection whose tolerated setup query failed there.
-setup_error_on_connection = [None] * len(all_connections)
 
 # First apply JSON settings (<settings file="..."/>), then inline (<settings><key>value</key></settings>).
 # Inline settings override file settings.
@@ -940,89 +721,47 @@ for conn_index, c in enumerate(all_connections):
     # We have to perform a query to make sure the settings work. Otherwise an
     # unknown setting will lead to failing precondition check, and we will skip
     # the test, which is wrong.
-    try:
-        c.execute("select 1")
-    except Exception:
-        # With `--long`, the reference may lack a setting: nothing more runs there.
-        if conn_index != reference or not args.long:
-            raise
-        setup_error_on_connection[conn_index] = "settings failed on the reference server, running the test on the new server only"
-        print(f"{setup_error_on_connection[conn_index]}\n{traceback.format_exc()}", file=sys.stderr)
+    c.execute("select 1")
 
 reportStageEnd("settings")
 
-setup_connections = [i for i, e in enumerate(setup_error_on_connection) if not e]
-
-# Diagnostics of setup queries tolerated on the reference server, reported
-# from the main thread below. They must not reach this test's stderr: a
-# persisted stderr becomes Run Errors rows, which are documented as requiring
-# action, and these rows would hide the error that actually failed the run.
-tolerated_setup_diagnostics = []
-
 if not args.use_existing_tables:
-    # Run create and fill queries. We will run them simultaneously for both servers, to save time.
-    create_queries = []
-    for template, tolerate_on_reference in create_query_templates:
-        create_queries += [
-            (q, tolerate_on_reference) for q in substitute_parameters([template])
-        ]
+    # Run create and fill queries. We will run them simultaneously for both
+    # servers, to save time. The weird XML search + filter is because we want to
+    # keep the relative order of elements, and etree doesn't support the
+    # appropriate xpath query.
+    create_query_templates = [
+        q.text for q in root.findall("./*") if q.tag in ("create_query", "fill_query")
+    ]
+    create_query_templates += extra_create_queries
+    create_queries = substitute_parameters(create_query_templates)
 
     # Disallow temporary tables, because the clickhouse_driver reconnects on
     # errors, and temporary tables are destroyed. We want to be able to continue
     # after some errors.
-    for q, _ in create_queries:
+    for q in create_queries:
         if re.search("create temporary table", q, flags=re.IGNORECASE):
-            print(f"Temporary tables are not allowed in performance tests: '{q}'", file=sys.stderr)
+            print(
+                f"Temporary tables are not allowed in performance tests: '{q}'",
+                file=sys.stderr,
+            )
             sys.exit(1)
 
     def do_create(connection, index, queries):
-        for q, tolerate_on_reference in queries:
-            try:
-                connection.execute(q)
-                print(f"create\t{index}\t{connection.last_query.elapsed}\t{tsv_escape(q)}")
-            except Exception:
-                # Failures on any server other than the reference (connection 0), or of setup queries without the opt-out, stay fatal.
-                if index != reference or not (tolerate_on_reference or args.long):
-                    raise
+        for q in queries:
+            connection.execute(q)
+            print(f"create\t{index}\t{connection.last_query.elapsed}\t{tsv_escape(q)}")
 
-                message = (
-                    "setup query failed on the reference server and is tolerated "
-                    f"by {'--long' if args.long else f'do_not_check_in_pr matching --pr-number {args.pr_number}'}, "
-                    f"running the test on the new server only: {tsv_escape(q)[:200]}"
-                )
-                tolerated_setup_diagnostics.append(f"{message}\n{traceback.format_exc()}")
-                setup_error_on_connection[index] = message
-                break
-
-    # Daemon threads with `--long` let a terminated process exit during setup.
     threads = [
-        SafeThread(target=do_create, args=(all_connections[i], i, create_queries), daemon=args.long)
-        for i in setup_connections
+        SafeThread(target=do_create, args=(connection, index, create_queries))
+        for index, connection in enumerate(all_connections)
     ]
 
     for t in threads:
         t.start()
 
-    # SafeThread.join() re-raises the worker's exception, so join every thread
-    # before reporting: a diagnostic queued by one thread must not be lost to
-    # another thread's failure, and the list must not be read while a thread
-    # can still append to it.
-    setup_exception = None
     for t in threads:
-        try:
-            t.join()
-        except BaseException as e:
-            if setup_exception is None:
-                setup_exception = e
-
-    for diagnostic in tolerated_setup_diagnostics:
-        print(f"tolerated-setup-error\t{tsv_escape(diagnostic)}")
-
-    if setup_exception is not None:
-        # Flush before raising so the diagnostics reach the raw .tsv even though
-        # we are about to exit through an unhandled exception.
-        sys.stdout.flush()
-        raise setup_exception
+        t.join()
 
     reportStageEnd("create")
 
@@ -1045,21 +784,6 @@ def purge_jemalloc_on_all_connections(reason):
 if args.jemalloc_purge != "disabled":
     purge_jemalloc_on_all_connections("after-fill")
 
-# A connection whose settings failed replays them with every query (see
-# `setup_error_on_connection`), so the merge control skips it.
-if stop_merges:
-    for c in (all_connections[i] for i in setup_connections):
-        c.execute("SYSTEM STOP MERGES")
-    # The stop only cancels the running merges, each of them notices it at its
-    # next check, so wait until none is left before measuring anything.
-    for c in (all_connections[i] for i in setup_connections):
-        deadline = time.monotonic() + 300
-        while c.execute("SELECT count() FROM system.merges")[0][0]:
-            if time.monotonic() >= deadline:
-                raise Exception("Merges are still running 300 s after SYSTEM STOP MERGES")
-            time.sleep(0.1)
-    reportStageEnd("stop-merges")
-
 
 # Let's sync the data to avoid writeback affects performance
 os.system("sync")
@@ -1068,7 +792,7 @@ reportStageEnd("sync")
 # By default, test all queries.
 queries_to_run = range(0, len(test_queries))
 
-if args.max_queries and not (args.soft_max_queries and run_all_queries):
+if args.max_queries:
     # If specified, test a limited number of queries chosen at random.
     queries_to_run = random.sample(
         range(0, len(test_queries)), min(len(test_queries), args.max_queries)
@@ -1080,17 +804,6 @@ if args.queries_to_run:
 
 # Run test queries.
 profile_total_seconds = 0
-# A failed query is reported by a `run-error` line and skipped; the test still exits non-zero.
-failed_queries = []
-
-
-def fail_query(query_index, server, e):
-    summary = getattr(e, "message", None) or str(e)
-    print(f"run-error\t{query_index}\t{server}\t{tsv_escape(summary.splitlines()[0])}")
-    sys.stdout.flush()
-    failed_queries.append(query_index)
-
-
 for query_index in queries_to_run:
     q_item = test_queries[query_index]
     query_prefix = f"{test_name}.query{query_index}"
@@ -1113,14 +826,8 @@ for query_index in queries_to_run:
     # new one. We want to run them on the new server only, so that the PR author
     # can ensure that the test works properly. Remember the errors we had on
     # each server.
-    # A connection whose tolerated (do_not_check_in_pr) setup query failed
-    # starts out already failed for every query, so the partial
-    # ("backward-incompatible") machinery excludes it from the comparison.
-    query_error_on_connection = list(setup_error_on_connection)
-    prewarm_exceptions = {}
+    query_error_on_connection = [None] * len(all_connections)
     for conn_index, c in enumerate(all_connections):
-        if query_error_on_connection[conn_index]:
-            continue
         try:
             prewarm_id = f"{query_prefix}.prewarm0"
 
@@ -1161,34 +868,22 @@ for query_index in queries_to_run:
             )
         except KeyboardInterrupt:
             raise
-        except BaseException as e:
+        except:
             # FIXME the driver reconnects on error and we lose settings, so this
             # might lead to further errors or unexpected behavior.
             query_error_on_connection[conn_index] = traceback.format_exc()
-            prewarm_exceptions[conn_index] = e
             continue
 
     # Report all errors that occurred during prewarm and decide what to do next.
-    # A failure on a tested server fails the query; a failure on the reference
-    # only runs the query on the rest of them.
+    # If prewarm fails for the query on all servers -- skip the query and
+    # continue testing the next query.
+    # If prewarm fails on one of the servers, run the query on the rest of them.
     no_errors = []
     for i, e in enumerate(query_error_on_connection):
         if e:
-            # A tolerated (do_not_check_in_pr) setup failure is inherited by
-            # every query of the test and was already reported once, above. It
-            # must not be repeated on this test's stderr, which the report stage
-            # turns into Run Errors rows. An error the query produced itself is
-            # still reported there.
-            if setup_error_on_connection[i] is None:
-                print(e, file=sys.stderr)
+            print(e, file=sys.stderr)
         else:
             no_errors.append(i)
-
-    # A failure (error or timeout) of a tested server fails the test, whatever the reference did.
-    tested_failure = next((i for i, e in enumerate(query_error_on_connection) if e and i != reference), None)
-    if tested_failure is not None:
-        fail_query(query_index, tested_failure, prewarm_exceptions[tested_failure])
-        continue
 
     # A shell-script query is a benchmark we control end to end, so -- unlike an
     # SQL query that may legitimately use a function missing from the old server
@@ -1201,9 +896,8 @@ for query_index in queries_to_run:
     # each failing server to stdout as a `run-error` line so it survives in the
     # archived per-test raw .tsv (the per-test stderr log is not uploaded).
     # compare.sh parses raw .tsv by known leading tag and ignores the rest, so
-    # adding this tag is safe. The policy above already failed the test for a
-    # tested-side error; with `--long`, a reference-only error is `partial`.
-    if not args.long and q_item["kind"] == "shell" and len(no_errors) < len(all_connections):
+    # adding this tag is safe.
+    if q_item["kind"] == "shell" and len(no_errors) < len(all_connections):
         failed = []
         for i, e in enumerate(query_error_on_connection):
             if e:
@@ -1234,10 +928,6 @@ for query_index in queries_to_run:
     profile_seconds = 0
     threshold_seconds = 0.0
     run = 0
-    failed_run = None
-    # With `--long`, the rows of a query that failed midway must not reach the analysis.
-    query_rows = []
-    emit_row = query_rows.append if args.long else print
 
     # Arrays of run times for each connection.
     all_server_times = []
@@ -1265,7 +955,6 @@ for query_index in queries_to_run:
         if run % 2 == 1:
             conn_order = list(reversed(conn_order))
 
-        timeouts = []
         for conn_index, c in conn_order:
             # conn_index addresses this_query_connections (the servers that
             # survived prewarm); map it back to the real server to pick the right
@@ -1279,13 +968,7 @@ for query_index in queries_to_run:
                 except KeyboardInterrupt:
                     raise
                 except Exception as e:
-                    elapsed = censored_elapsed(e, args.max_query_seconds)
-                    if elapsed is None:
-                        if args.long:
-                            failed_run = (server_index, e)
-                            break
-                        raise Exception(f"{run_id}: {e}")
-                    timeouts.append(server_index)
+                    raise Exception(f"{run_id}: {e}")
             else:
                 try:
                     elapsed = execute_query_group(
@@ -1295,21 +978,15 @@ for query_index in queries_to_run:
                         {"max_execution_time": args.max_query_seconds},
                     )
                 except clickhouse_driver.errors.Error as e:
-                    elapsed = censored_elapsed(e, args.max_query_seconds)
-                    if elapsed is None:
-                        if args.long:
-                            failed_run = (server_index, e)
-                            break
-                        # Add query id to the exception to make debugging easier.
-                        e.args = (run_id, *e.args)
-                        e.message = run_id + ": " + e.message
-                        raise
-                    timeouts.append(server_index)
+                    # Add query id to the exception to make debugging easier.
+                    e.args = (run_id, *e.args)
+                    e.message = run_id + ": " + e.message
+                    raise
 
             all_server_times[conn_index].append(elapsed)
 
             server_seconds += elapsed
-            emit_row(f"query\t{query_index}\t{run_id}\t{server_index}\t{elapsed}")
+            print(f"query\t{query_index}\t{run_id}\t{conn_index}\t{elapsed}")
 
             if elapsed > args.max_query_seconds:
                 # Do not stop processing pathologically slow queries,
@@ -1318,12 +995,6 @@ for query_index in queries_to_run:
                     f"The query no. {query_index} is taking too long to run ({elapsed} s)",
                     file=sys.stderr,
                 )
-
-        if failed_run:
-            break
-        if any(i != reference for i in timeouts):
-            failed_run = (next(i for i in timeouts if i != reference), "timed out on the tested server")
-            break
 
         # Be careful with the counter, after this line it's the next iteration
         # already.
@@ -1338,9 +1009,9 @@ for query_index in queries_to_run:
         # --cap runs normally, --cap-fast runs for fast queries (they are cheap
         # to rerun and, in relative terms, the noisiest). The escape from
         # pathologically slow queries — stop once the cumulative time per server
-        # reaches 30 seconds (three budgets with `--long`) — takes precedence over the --min-runs floor, so a
+        # reaches 30 seconds — takes precedence over the --min-runs floor, so a
         # e.g. 12 s query stops after 3 runs instead of burning 5 x 12 s x 2.
-        if avg_time_per_server >= (3 * args.max_query_seconds if args.long else 30):
+        if avg_time_per_server >= 30:
             break
 
         if run < args.min_runs:
@@ -1370,18 +1041,12 @@ for query_index in queries_to_run:
         if not is_fast_query or run >= args.cap_fast:
             break
 
-    if failed_run:
-        fail_query(query_index, *failed_run)
-        continue
-    if query_rows:
-        print("\n".join(query_rows))
-
     client_seconds = time.perf_counter() - start_seconds - threshold_seconds
     print(f"client-time\t{query_index}\t{client_seconds}\t{server_seconds}")
     median = [statistics.median(t) for t in all_server_times]
     print(f"median\t{query_index}\t{median[0]}")
 
-    # Run additional profiling queries to collect profile data, by default only if test times appeared to be different.
+    # Run additional profiling queries to collect profile data, but only if test times appeared to be different.
     # We have to do it after normal runs because otherwise it will affect test statistics too much
     if len(all_server_times) != 2:
         continue
@@ -1398,9 +1063,7 @@ for query_index in queries_to_run:
     # difference we use in report (max(median) / min(median)).
     relative_diff = (median[1] - median[0]) / median[0]
     print(f"diff\t{query_index}\t{median[0]}\t{median[1]}\t{relative_diff}\t{pvalue}")
-    if not profile_all_queries and (
-        abs(relative_diff) < ignored_relative_change or pvalue > 0.05
-    ):
+    if abs(relative_diff) < ignored_relative_change or pvalue > 0.05:
         continue
 
     if q_item["kind"] == "shell":
@@ -1413,15 +1076,10 @@ for query_index in queries_to_run:
     # of runs, because we also have short queries.
     profile_start_seconds = time.perf_counter()
     run = 0
-    profile_budget_reached = False
-    while (
-        not profile_budget_reached
-        and time.perf_counter() - profile_start_seconds < args.profile_seconds
-    ):
+    while time.perf_counter() - profile_start_seconds < args.profile_seconds:
         run_id = f"{query_prefix}.profile{run}"
 
         for conn_index, c in enumerate(this_query_connections):
-            run_start_seconds = time.perf_counter()
             try:
                 profile_elapsed = execute_query_group(
                     c,
@@ -1431,34 +1089,22 @@ for query_index in queries_to_run:
                         "query_profiler_real_time_period_ns": 10000000,
                         "query_profiler_cpu_time_period_ns": 10000000,
                         "metrics_perf_events_enabled": 1,
-                        # Allocation sampling can make a query orders of magnitude
-                        # slower, so each statement of a run is bounded by the
-                        # profiling budget; a multi-statement item takes a multiple.
-                        "max_execution_time": args.profile_seconds,
+                        # Dedicated profile runs are not timed, so we can afford
+                        # the overhead of allocation sampling to also collect
+                        # MemorySample and JemallocSample stacks for flamegraphs.
                         "memory_profiler_sample_probability": 0.1,
                         "jemalloc_enable_profiler": 1,
                         "jemalloc_collect_profile_samples_in_trace_log": 1,
                     },
                 )
-            except clickhouse_driver.errors.ServerException as e:
-                if e.code != TIMEOUT_EXCEEDED:
-                    e.args = (run_id, *e.args)
-                    e.message = run_id + ": " + e.message
-                    raise
-                # The samples taken before the budget ran out are in `trace_log`;
-                # the `profile` row below is what joins them into the report.
-                profile_elapsed = time.perf_counter() - run_start_seconds
-                profile_budget_reached = True
                 print(
-                    f"profile-timeout\t{query_index}\t{run_id}\t{conn_index}"
-                    f"\t{profile_elapsed}"
+                    f"profile\t{query_index}\t{run_id}\t{conn_index}\t{profile_elapsed}"
                 )
             except clickhouse_driver.errors.Error as e:
                 # Add query id to the exception to make debugging easier.
                 e.args = (run_id, *e.args)
                 e.message = run_id + ": " + e.message
                 raise
-            print(f"profile\t{query_index}\t{run_id}\t{conn_index}\t{profile_elapsed}")
 
         run += 1
 
@@ -1468,20 +1114,12 @@ print(f"profile-total\t{profile_total_seconds}")
 
 reportStageEnd("run")
 
-# Start merges before the teardown: a drop query such as `ALTER TABLE ... DROP INDEX`
-# creates a mutation and waits for it, and mutations do not run while merges are stopped.
-if stop_merges:
-    for c in (all_connections[i] for i in setup_connections):
-        c.execute("SYSTEM START MERGES")
-
 # Run drop queries
-teardown_clean = True
-if not args.long and not args.keep_created_tables and not args.use_existing_tables:
-    teardown_clean = teardown()
-    reportStageEnd("drop-2")
+if not args.keep_created_tables and not args.use_existing_tables:
+    drop_queries = substitute_parameters(drop_query_templates)
+    for conn_index, c in enumerate(all_connections):
+        for q in drop_queries:
+            c.execute(q)
+            print(f"drop\t{conn_index}\t{c.last_query.elapsed}\t{tsv_escape(q)}")
 
-if failed_queries:
-    print(f"{len(failed_queries)} queries failed, see the 'run-error' lines", file=sys.stderr)
-    sys.exit(1)
-if not teardown_clean:
-    sys.exit(1)
+    reportStageEnd("drop-2")

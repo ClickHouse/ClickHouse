@@ -1,6 +1,3 @@
--- Random settings limits: merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability=(0, 0)
--- `PartsSplitter` fault injection reads the granule on each layer border twice, which changes `read_rows`.
-
 -- Statistics describe all rows of a part, including the ones a row policy hides. Pruning parts by them
 -- would make the number of rows read an oracle over the values of the hidden rows, so statistics
 -- pruning is disabled when a row policy applies, whether the policy belongs to the table, to a child

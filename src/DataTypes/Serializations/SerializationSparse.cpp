@@ -59,10 +59,10 @@ struct DeserializeStateSparse : public ISerialization::DeserializeBinaryBulkStat
         has_value_after_defaults = false;
     }
 
-    ISerialization::DeserializeBinaryBulkStatePtr cloneImpl(ISerialization::DeserializeBinaryBulkStateCloneContext & context) const override
+    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
         auto new_state = std::make_shared<DeserializeStateSparse>(*this);
-        new_state->nested = nested ? nested->clone(context) : nullptr;
+        new_state->nested = nested ? nested->clone() : nullptr;
         return new_state;
     }
 };
@@ -264,6 +264,7 @@ void SerializationSparse::enumerateStreams(
 
     settings.path.push_back(Substream::SparseOffsets);
     auto offsets_data = SubstreamData(SerializationNumber<UInt64>::create())
+                            .withType(data.type ? std::make_shared<DataTypeUInt64>() : nullptr)
                             .withColumn(column_sparse ? column_sparse->getOffsetsPtr() : nullptr)
                             .withSerializationInfo(data.serialization_info);
 

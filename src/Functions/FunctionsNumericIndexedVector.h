@@ -48,9 +48,19 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(Map(K, V)) -> AggregateFunction('groupNumericIndexedVector', K, V)";
+        const auto * arg = checkAndGetDataType<DataTypeMap>(arguments[0].get());
+        if (!arg)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The argument for function {} must be Map type", getName());
+        DataTypes argument_types = {arg->getKeyType(), arg->getValueType()};
+        Array params_row;
+        AggregateFunctionProperties properties;
+        AggregateFunctionPtr numeric_indexed_vector_function;
+        auto action = NullsAction::EMPTY;
+        numeric_indexed_vector_function = AggregateFunctionFactory::instance().get(
+            NameAggregateFunctionGroupNumericIndexedVector::name, action, argument_types, params_row, properties);
+        return std::make_shared<DataTypeAggregateFunction>(numeric_indexed_vector_function, argument_types, params_row);
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -128,26 +138,6 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 2; }
-
-    /// Binary ops between two NumericIndexedVector sketches or a sketch and a
-    /// scalar. Both sketches must share inner index/value types, which the DSL
-    /// doesn't model, so the signature is documentation-only.
-    String getSignatureString() const override
-    {
-        return "(A : AggregateFunction('groupNumericIndexedVector', Any, Any), AggregateFunction('groupNumericIndexedVector', Any, Any)) -> A"
-               " OR (A : AggregateFunction('groupNumericIndexedVector', Any, Any), Number) -> A";
-    }
-
-    /// Keep the `getReturnTypeImpl(DataTypes)` validator below authoritative: `executeImpl` selects
-    /// the implementation from the first argument and reinterprets the second state as the same
-    /// specialization, so mismatched inner types must be rejected here.
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        DataTypes data_types(arguments.size());
-        for (size_t i = 0; i < arguments.size(); ++i)
-            data_types[i] = arguments[i].type;
-        return getReturnTypeImpl(data_types);
-    }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -546,11 +536,6 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
-    String getSignatureString() const override
-    {
-        return "(AggregateFunction('groupNumericIndexedVector', Any, Any)) -> " + DataTypeNumber<ToType>{}.getName();
-    }
-
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto * agg_type = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
@@ -647,14 +632,6 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
 
-    /// The result type is the sketch's value type V (the second inner argument
-    /// of `groupNumericIndexedVector`). The DSL captures it directly inside
-    /// the matcher, so the signature is authoritative for this function.
-    String getSignatureString() const override
-    {
-        return "(AggregateFunction('groupNumericIndexedVector', Any, V), Any) -> V";
-    }
-
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto * type0 = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
@@ -750,11 +727,6 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
-    String getSignatureString() const override
-    {
-        return "(AggregateFunction('groupNumericIndexedVector', Any, Any)) -> String";
-    }
-
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto * agg_type = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
@@ -835,11 +807,6 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 1; }
-
-    String getSignatureString() const override
-    {
-        return "(AggregateFunction('groupNumericIndexedVector', K, V)) -> Map(K, V)";
-    }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
