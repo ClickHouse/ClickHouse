@@ -310,11 +310,17 @@ tryParseDictFunctionCall(const QueryTreeNodePtr & node, const ContextPtr & conte
                 if (!declared_key_column || !declared_key_column->type->equals(*outer_key_column.type))
                     return std::nullopt;
 
-                /// Crossed a view boundary: check access on the view's own exposed column, not on
+                /// Crossed a view boundary: check access on the view's own exposed columns, not on
                 /// whatever table its private inner resolution happens to use (which can run under
-                /// the view definer's rights, not the invoker's).
+                /// the view definer's rights, not the invoker's). The rewrite removes the reference to
+                /// the original column, so the planner would no longer check access to it: skip the
+                /// rewrite unless the invoker may read both the original column and the key column.
+                /// Then the query without the rewrite throws `ACCESS_DENIED` as usual.
                 const auto & storage_id = outer_table_node->getStorageID();
-                if (!context->getAccess()->isGranted(
+                const auto access = context->getAccess();
+                if (!access->isGranted(
+                        AccessType::SELECT, storage_id.getDatabaseName(), storage_id.getTableName(), column_node->getColumnName())
+                    || !access->isGranted(
                         AccessType::SELECT, storage_id.getDatabaseName(), storage_id.getTableName(), outer_key_column.name))
                     return std::nullopt;
             }
