@@ -249,6 +249,8 @@ public:
         /// the granules of the projection part, not of the parent part. Parts excluded entirely keep their records.
         /// `recordIndexUsage` reports the sum of all records.
         std::unordered_map<const IMergeTreeDataPart *, std::unordered_map<String, IndexUsage>> index_usage;
+        /// The granules that the partition key dropped in the analyses whose ranges this one analyzed again.
+        UInt64 earlier_granules_dropped_by_partition_key = 0;
         std::atomic<bool> exceeded_row_limits = false;
 
         AnalysisResult() = default;
@@ -275,6 +277,7 @@ public:
             , pk_condition_useful(other.pk_condition_useful)
             , skip_index_names(other.skip_index_names)
             , index_usage(other.index_usage)
+            , earlier_granules_dropped_by_partition_key(other.earlier_granules_dropped_by_partition_key)
             , exceeded_row_limits(other.exceeded_row_limits.load())
         {}
 
@@ -300,6 +303,7 @@ public:
             , pk_condition_useful(other.pk_condition_useful)
             , skip_index_names(std::move(other.skip_index_names))
             , index_usage(std::move(other.index_usage))
+            , earlier_granules_dropped_by_partition_key(other.earlier_granules_dropped_by_partition_key)
             , exceeded_row_limits(other.exceeded_row_limits.load())
         {}
 
@@ -317,6 +321,9 @@ public:
 
         /// Replaces the record of `part` from `projection_name` with the record of the analysis of `part` in `projection_result`.
         void setProjectionIndexUsage(const IMergeTreeDataPart * part, const String & projection_name, const AnalysisResult & projection_result);
+
+        /// Adds the index usage of `earlier`, the analysis whose ranges this one analyzed again.
+        void addEarlierIndexUsage(const AnalysisResult & earlier);
     };
 
     using AnalysisResultPtr = std::shared_ptr<AnalysisResult>;

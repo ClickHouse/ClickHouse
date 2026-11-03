@@ -3006,6 +3006,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
 
 ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool find_exact_ranges) const
 {
+    /// `getParts` gives the ranges of the earlier analysis, the drops in it are not seen again
+    auto earlier_result = analyzed_result_ptr;
     analyzed_result_ptr = selectRangesToRead(
         getParts(),
         mutations_snapshot,
@@ -3027,6 +3029,9 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool 
         allow_top_k_prewhere_query_condition_cache,
         supportsSkipIndexesOnDataRead(),
         /*check_row_limits=*/true);
+
+    if (earlier_result)
+        analyzed_result_ptr->addEarlierIndexUsage(*earlier_result);
 
     /// After the row-limit checks above; like them, the analysis totals count the rows before deletes.
     if (const auto * uk_read_snapshot = tryGetDeleteBitmapSnapshot(*storage_snapshot))
@@ -5330,13 +5335,20 @@ static void forEachIndexLayer(const ReadFromMergeTree::IndexStats & index_stats,
     }
 }
 
+static UInt64 granulesDroppedByPartitionKey(const ReadFromMergeTree::AnalysisResult & result)
+{
+    UInt64 granules_dropped = result.earlier_granules_dropped_by_partition_key;
+    forEachIndexLayer(result.index_stats, [&](const ReadFromMergeTree::IndexStat & stat, UInt64 granules_before)
+    {
+        if (stat.type == ReadFromMergeTree::IndexType::MinMax || stat.type == ReadFromMergeTree::IndexType::Partition)
+            granules_dropped += granules_before - std::min<UInt64>(granules_before, stat.num_granules_after);
+    });
+    return granules_dropped;
+}
+
 void ReadFromMergeTree::recordIndexUsage(const AnalysisResult & result, const StorageID & storage_id, const ContextMutablePtr & query_context)
 {
-    forEachIndexLayer(result.index_stats, [](const IndexStat & stat, UInt64 granules_before)
-    {
-        if (stat.type == IndexType::MinMax || stat.type == IndexType::Partition)
-            ProfileEvents::increment(ProfileEvents::GranulesDroppedByPartitionKey, granules_before - std::min<UInt64>(granules_before, stat.num_granules_after));
-    });
+    ProfileEvents::increment(ProfileEvents::GranulesDroppedByPartitionKey, granulesDroppedByPartitionKey(result));
     UInt64 granules_dropped_by_primary_key = 0;
     UInt64 granules_dropped_by_skip_indexes = 0;
     std::vector<bool> is_used(result.skip_index_names.size());
@@ -5390,6 +5402,23 @@ void ReadFromMergeTree::AnalysisResult::setProjectionIndexUsage(
         if (projection_usage->used_skip_indexes[id])
             usage.addSkipIndex(getSkipIndexId(projection_result.skip_index_names[id]));
     index_usage[part][projection_name] = std::move(usage);
+}
+
+void ReadFromMergeTree::AnalysisResult::addEarlierIndexUsage(const AnalysisResult & earlier)
+{
+    earlier_granules_dropped_by_partition_key += granulesDroppedByPartitionKey(earlier);
+    for (const auto & [part, part_records] : earlier.index_usage)
+    {
+        for (const auto & [source, earlier_usage] : part_records)
+        {
+            auto & usage = index_usage[part][source];
+            usage.granules_dropped_by_primary_key += earlier_usage.granules_dropped_by_primary_key;
+            usage.granules_dropped_by_skip_indexes += earlier_usage.granules_dropped_by_skip_indexes;
+            for (size_t id = 0; id < earlier_usage.used_skip_indexes.size(); ++id)
+                if (earlier_usage.used_skip_indexes[id])
+                    usage.addSkipIndex(getSkipIndexId(earlier.skip_index_names[id]));
+        }
+    }
 }
 
 void ReadFromMergeTree::addUsedSkipIndexes(const NameSet & index_names, const StorageID & storage_id, const ContextMutablePtr & query_context)
