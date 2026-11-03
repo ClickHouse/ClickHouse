@@ -2,10 +2,12 @@
 
 #include <WindowFunctions/Common/WindowArguments.h>
 
-#include <Columns/IColumn_fwd.h>
 #include <Interpreters/WindowDescription.h>
 
-#include <deque>
+#include <Columns/IColumn_fwd.h>
+
+#include <Common/DevectorWithMemoryTracking.h>
+
 #include <vector>
 
 namespace DB
@@ -26,7 +28,7 @@ public:
 
 private:
     std::vector<std::vector<size_t>> argument_positions;
-    std::vector<std::deque<WindowArguments::Block>> function_blocks;
+    std::vector<DevectorWithMemoryTracking<WindowArguments::Block>> function_blocks;
     Int64 partition_begin_position = 0;
     Int64 end_position = 0;
 };

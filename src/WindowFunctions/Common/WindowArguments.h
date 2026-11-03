@@ -3,7 +3,7 @@
 #include <Columns/IColumn_fwd.h>
 #include <base/types.h>
 
-#include <deque>
+#include <Common/DevectorWithMemoryTracking.h>
 #include <vector>
 
 namespace DB
@@ -38,13 +38,13 @@ public:
         Int64 end_position = 0;
     };
 
-    WindowArguments(const std::deque<Block> & blocks_, Int64 first_row_position_, Int64 num_arguments_);
+    WindowArguments(const DevectorWithMemoryTracking<Block> & blocks_, Int64 first_row_position_, Int64 num_arguments_);
 
     Int64 size() const;
     ArgumentValue at(size_t argument, Int64 row) const;
 
 private:
-    const std::deque<Block> & blocks;
+    const DevectorWithMemoryTracking<Block> & blocks;
     const Int64 first_row_position;
     const Int64 num_arguments;
     mutable std::vector<size_t> last_used_block;
