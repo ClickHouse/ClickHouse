@@ -142,16 +142,10 @@ size_t convertedBlockSize(size_t table_size, size_t max_block_size, size_t max_r
     return std::min(max_block_size, table_size) + 1;
 }
 
-bool topKHeapStartsLate(const DB::Aggregator::Params & params)
-{
-    return params.top_k && params.top_k->hasCollators() && params.top_k->observation_rows != 0;
-}
-
 void initDataVariantsWithSizeHint(
     DB::AggregatedDataVariants & result, DB::AggregatedDataVariants::Type method_chosen, const DB::Aggregator::Params & params)
 {
-    /// A heap that waits to start lets the table grow as without the optimization, so it takes the same size hint.
-    if (params.top_k && !topKHeapStartsLate(params))
+    if (params.top_k)
     {
         result.init(method_chosen);
         ProfileEvents::increment(ProfileEvents::AggregationHashTablesInitializedAsTwoLevel, result.isTwoLevel());
@@ -191,11 +185,6 @@ void initDataVariantsWithSizeHint(
         result.init(method_chosen);
     }
     ProfileEvents::increment(ProfileEvents::AggregationHashTablesInitializedAsTwoLevel, result.isTwoLevel());
-}
-
-bool topKHeapWaits(const DB::Aggregator::Params & params, const DB::TopKAggregationHeapBase & heap)
-{
-    return topKHeapStartsLate(params) && !heap.heap_column && !heap.frozen && !heap.start_allowed;
 }
 
 /// Collection and use of the statistics should be enabled. `repeat_dominated` is the adaptive verdict of the run (see
@@ -1264,9 +1253,7 @@ void Aggregator::executeImpl(
             state.skipRowsBefore(row_begin);
     }
 
-    const bool top_k_waits = topKHeapWaits(params, method.top_k_heap);
-
-    if (params.top_k && !method.top_k_heap.frozen && !top_k_waits)
+    if (params.top_k && !method.top_k_heap.frozen)
     {
         method.top_k_heap.initIfNeeded(
             key_columns, params.top_k->key_columns,
@@ -1288,7 +1275,7 @@ void Aggregator::executeImpl(
         }
     }
 
-    const bool top_k = params.top_k && !method.top_k_heap.frozen && !top_k_waits;
+    const bool top_k = params.top_k && !method.top_k_heap.frozen;
 
     auto execute = [&]<bool prefetch_v, bool top_k_v>(bool no_more_keys_arg, bool use_compiled_functions)
     {
@@ -1341,12 +1328,6 @@ void Aggregator::executeImpl(
         dispatch.template operator()<true>();
         /// Publish this block's tightenings now: this may be the thread's last block.
         method.top_k_heap.exchangeSharedBoundary();
-        /// After the block, so that its rows meet the boundary they tightened.
-        if (!all_keys_are_const && method.top_k_heap.collatedSkipsRepeat(key_columns, row_begin, row_end))
-        {
-            method.top_k_heap.freeze();
-            ProfileEvents::increment(ProfileEvents::AggregationTopKHeapsFrozen);
-        }
     }
     else
         dispatch.template operator()<false>();
@@ -1538,6 +1519,12 @@ void NO_INLINE Aggregator::executeImplBatchNoAggregates(
         return false;
     };
 
+    /// See `TopKAggregationHeapBase::ranksUnderCollation`. Only for a key holder that is cheap to build twice.
+    static constexpr bool may_look_up_first = top_k && !has_typed_key && State::has_cheap_key_holder;
+    [[maybe_unused]] bool look_up_first = false;
+    if constexpr (may_look_up_first)
+        look_up_first = method.top_k_heap.ranksUnderCollation();
+
     auto heap_push = [&]([[maybe_unused]] size_t row, [[maybe_unused]] const auto & emplace_result)
     {
         if constexpr (top_k)
@@ -1606,6 +1593,13 @@ void NO_INLINE Aggregator::executeImplBatchNoAggregates(
 
         if constexpr (top_k)
         {
+            if constexpr (may_look_up_first)
+            {
+                /// A known key has nothing to add.
+                if (look_up_first && method.top_k_heap.hasBoundary() && state.findKey(method.data, i, *aggregates_pool).isFound())
+                    continue;
+            }
+
             if (skip_bitmap ? static_cast<bool>(skip_bitmap[i])
                             : (method.top_k_heap.hasBoundary() && heap_should_skip(i)))
             {
@@ -1769,6 +1763,12 @@ void NO_INLINE Aggregator::executeImplBatch(
         return false;
     };
 
+    /// See `TopKAggregationHeapBase::ranksUnderCollation`. Only for a key holder that is cheap to build twice.
+    static constexpr bool may_look_up_first = top_k && !has_typed_key && State::has_cheap_key_holder;
+    [[maybe_unused]] bool look_up_first = false;
+    if constexpr (may_look_up_first)
+        look_up_first = method.top_k_heap.ranksUnderCollation();
+
     [[maybe_unused]] size_t top_k_rows_skipped = 0;
 
     if (is_simple_count)
@@ -1847,6 +1847,19 @@ void NO_INLINE Aggregator::executeImplBatch(
 
                 if constexpr (top_k)
                 {
+                    if constexpr (may_look_up_first)
+                    {
+                        if (look_up_first && method.top_k_heap.hasBoundary())
+                        {
+                            auto find_result = state.findKey(method.data, i, *aggregates_pool);
+                            if (find_result.isFound())
+                            {
+                                ++getInlineCountState(find_result.getMapped());
+                                continue;
+                            }
+                        }
+                    }
+
                     if (skip_bitmap ? static_cast<bool>(skip_bitmap[i])
                                     : (method.top_k_heap.hasBoundary() && heap_should_skip(i)))
                     {
@@ -1968,6 +1981,19 @@ void NO_INLINE Aggregator::executeImplBatch(
 
             if constexpr (top_k)
             {
+                if constexpr (may_look_up_first)
+                {
+                    if (look_up_first && method.top_k_heap.hasBoundary())
+                    {
+                        auto find_result = state.findKey(method.data, i, *aggregates_pool);
+                        if (find_result.isFound())
+                        {
+                            places[i] = find_result.getMapped();
+                            continue;
+                        }
+                    }
+                }
+
                 if (skip_bitmap
                     ? static_cast<bool>(skip_bitmap[i])
                     : (method.top_k_heap.hasBoundary() && heap_should_skip(i)))
@@ -2496,14 +2522,7 @@ bool Aggregator::executeOnBlock(Columns columns,
     /// certainly will not rank the block: it errs towards "active" when the shared-boundary
     /// exchange in `executeImpl` may still restart the profitability window and keep the heap
     /// running, so an active heap never sees key columns in a representation it cannot rank.
-    /// A waiting heap cannot start inside the block, so it ranks nothing in it.
-    const auto * top_k_heap = params.top_k ? result.topKHeap() : nullptr;
-    const bool top_k_waits = top_k_heap && topKHeapWaits(params, *top_k_heap);
-    const bool top_k_active = params.top_k && !result.topKHeapInactive() && !top_k_waits;
-
-    /// The frozen kernel does not consult the heap, so a running collated heap keeps its stream off the adaptive path.
-    if (adaptive && adaptive->isLearning() && top_k_heap && params.top_k->hasCollators() && !top_k_heap->frozen && !top_k_waits)
-        adaptive->standDownForTopK();
+    const bool top_k_active = params.top_k && !result.topKHeapInactive();
 
     /// Remember the columns we will work with
     for (size_t i = 0; i < params.keys_size; ++i)
@@ -2552,8 +2571,6 @@ bool Aggregator::executeOnBlock(Columns columns,
         result.without_key = place;
     }
 
-    const size_t keys_before_block = top_k_waits ? result.sizeWithoutOverflowRow() : 0;
-
     /// We select one of the aggregation methods and call it.
 
     /// For the case when there are no keys (all aggregate into one row).
@@ -2579,7 +2596,7 @@ bool Aggregator::executeOnBlock(Columns columns,
             columns, row_begin, row_end, result, key_columns, aggregate_functions_instructions.data(), *adaptive, all_keys_are_const,
             aggregator_tracker ? result.memory_tracker.get() : nullptr);
     }
-    else if (adaptive && adaptive->isLearning() && result.isConvertibleToTwoLevel() && !all_keys_are_const && !top_k_waits
+    else if (adaptive && adaptive->isLearning() && result.isConvertibleToTwoLevel() && !all_keys_are_const
              && result.sizeWithoutOverflowRow() + (row_end - row_begin) > params.adaptive_aggregator_freeze_threshold
              && adaptiveLearningSlices(*adaptive))
     {
@@ -2621,37 +2638,6 @@ bool Aggregator::executeOnBlock(Columns columns,
 
     size_t result_size = result.sizeWithoutOverflowRow();
 
-    /// A collated heap tests every row with a locale comparison, which costs more than the hash-table work it saves
-    /// unless the rows keep inserting new keys. So it starts only once the table holds `collated_top_k_min_keys` keys
-    /// and the last block inserted new keys for at least `collated_top_k_min_new_key_share` of its rows. Measured on
-    /// 20M rows, `LIMIT 10`, 'en', 1 thread: a heap started at 1M or 3M keys is 1.5x or 1.2x slower, at 12.6M 1.6x faster.
-    static constexpr size_t collated_top_k_min_keys = 32768;
-    static constexpr double collated_top_k_min_new_key_share = 0.995;
-    if (top_k_waits && result_size >= collated_top_k_min_keys && row_end > row_begin)
-    {
-        auto & heap = *result.topKHeap();
-        const bool learning = adaptive && adaptive->isLearning();
-        if (static_cast<double>(result_size - keys_before_block)
-            >= collated_top_k_min_new_key_share * static_cast<double>(row_end - row_begin))
-        {
-            heap.start_allowed = true;
-            heap.adaptive_fallback = learning;
-            if (learning)
-                adaptive->standDownForTopK();
-        }
-        else if (learning)
-        {
-            heap.frozen = true;
-            ProfileEvents::increment(ProfileEvents::AggregationTopKHeapsFrozen);
-        }
-    }
-    const bool top_k_still_waits = top_k_waits && topKHeapWaits(params, *result.topKHeap());
-
-    /// Once the collated heap gives up, its stream learns again, and freezes below if its table is past the bounds. Until
-    /// then the table stays single-level (see below), unless it went to disk: a learning table must be single-level.
-    if (adaptive && adaptive->stoodDownForTopK() && result.isConvertibleToTwoLevel() && result.topKHeap()->frozen)
-        adaptive->learnAgain();
-
     Int64 current_memory_usage = getCurrentQueryMemoryUsage();
     const bool over_external_threshold = params.max_bytes_before_external_group_by
         && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by);
@@ -2663,7 +2649,7 @@ bool Aggregator::executeOnBlock(Columns columns,
     {
         std::optional<MemoryTrackerSwitcher> scope;
         aggregator_scope(scope, /*table_may_freeze=*/adaptive->isLearning());
-        stays_adaptive = advanceAdaptiveProducer(result, *adaptive, row_end - row_begin, over_external_threshold, top_k_still_waits);
+        stays_adaptive = advanceAdaptiveProducer(result, *adaptive, row_end - row_begin, over_external_threshold);
     }
     if (stays_adaptive)
     {
@@ -2688,20 +2674,11 @@ bool Aggregator::executeOnBlock(Columns columns,
     bool worth_convert_to_two_level = worthConvertToTwoLevel(
         params.group_by_two_level_threshold, result_size, params.group_by_two_level_threshold_bytes, result_size_bytes);
 
-    /// A stream stood down for a running collated heap converts only to go to disk, or when it finishes.
-    const bool keeps_single_level = adaptive && adaptive->stoodDownForTopK() && !over_external_threshold && !top_k_still_waits
-        && !result.topKHeap()->frozen;
-
     /** Converting to a two-level data structure.
       * It allows you to make, in the subsequent, an effective merge - either economical from memory or parallel.
       */
     if (result.isConvertibleToTwoLevel() && worth_convert_to_two_level)
-    {
-        if (keeps_single_level)
-            std::get<AdaptiveAggregationProducer::BaselineState>(adaptive->phase).two_level_deferred = true;
-        else
-            result.convertToTwoLevel();
-    }
+        result.convertToTwoLevel();
 
     /// Checking the constraints.
     if (!checkLimits(result_size, no_more_keys))

@@ -12,7 +12,6 @@
 #include <base/PackedStringRef.h>
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
 #include <Common/Arena.h>
-#include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/assert_cast.h>
 #include <Core/CompareHelper.h>
@@ -68,8 +67,6 @@ struct TopKAggregationHeapBase
     bool is_composite = false;              /// `heap_column` is a `ColumnTuple`
     bool is_prefix_mode = false;            /// ranks only a key prefix, which identifies many groups: skip-only, the caller must not erase
     bool frozen = false;                    /// abandoned at runtime; aggregation proceeds as if the optimization were off
-    bool start_allowed = false;             /// a heap with a `COLLATE` key starts only after `Aggregator::executeOnBlock` allows it
-    bool adaptive_fallback = false;         /// when the heap gives up, its stream returns to the adaptive aggregator
     std::vector<AggregateDataPtr> free_states;  /// state slots of pruned groups, reused by later inserts (arena memory is never returned)
 
     TopKAggregationHeapBase() = default;
@@ -96,12 +93,10 @@ struct TopKAggregationHeapBase
 
     bool shouldFreeze() const;
 
-    /// Called after a block with all `GROUP BY` key columns: whether a heap with a `COLLATE` key should freeze because
-    /// it stopped keeping new keys out of the hash table.
-    bool collatedSkipsRepeat(const ColumnRawPtrs & key_columns, size_t row_begin, size_t row_end)
-    {
-        return has_collators && sampleCollatedSkips(key_columns, row_begin, row_end);
-    }
+    /// Whether some ranked key has a `COLLATE`. The aggregation loops then look a row's key up in the hash table before
+    /// they call `shouldSkip`: a key already in the table is aggregated without the locale comparison, so the comparison
+    /// runs once per row with a new key instead of once per row.
+    bool ranksUnderCollation() const { return has_collators; }
 
     /// Whether the next block certainly runs with the heap frozen. Unlike `shouldFreeze`, this
     /// accounts for the `exchangeSharedBoundary` call that precedes the freeze check, which may
@@ -202,18 +197,6 @@ protected:
     UInt64 window_start_observed_rows = 0;  /// `observed_rows` and `skipped_rows` when the freeze window last (re)started
     UInt64 window_start_skipped_rows = 0;
     bool window_restarted_for_shared = false; /// the window restarted once when the shared boundary first took effect
-
-    /// Collated heaps only: a hash sample of the keys the heap skipped, see `sampleCollatedSkips`.
-    std::unique_ptr<HashSet<UInt32>> skipped_key_sample;
-    std::vector<UInt32> sample_hashes;      /// scratch: the weak hashes of the block's keys
-    std::vector<UInt32> recent_key_slots;   /// tags of recently seen key hashes, direct-mapped
-    UInt64 sample_rows = 0;                 /// sampled rows in the current window
-    UInt64 sample_new_keys = 0;             /// of them, rows the heap skipped whose key the sample had not seen
-    UInt64 sample_window_rows = 0;          /// all rows of the current window
-    UInt64 sample_recent_repeats = 0;       /// of them, rows whose key hash was in `recent_key_slots`
-    UInt64 repeat_rows = 0;                 /// rows of the windows since the last one whose skipped rows were mostly new keys
-    UInt64 blocks_after_sample = 0;         /// blocks since the sample filled up, to move the checked slice
-    bool skip_sample_done = false;          /// the sample filled up, so only `recent_key_slots` decides
 
     /// Scratch buffers; members only to avoid per-batch/per-trim allocation.
     std::vector<UInt8> skip_bitmap;         /// per-row skip decisions for the typed batch path
@@ -420,8 +403,6 @@ private:
     void publishBoundary();
 
     bool shouldSkipCollated(const ColumnRawPtrs & source_columns, size_t source_row) const;
-
-    bool sampleCollatedSkips(const ColumnRawPtrs & key_columns, size_t row_begin, size_t row_end);
 
     template <bool with_collation>
     bool sourceAboveBoundary(const IColumn & source_column, size_t source_row) const

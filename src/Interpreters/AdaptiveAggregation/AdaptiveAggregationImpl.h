@@ -475,14 +475,11 @@ struct AdaptiveAggregationProducer
         std::unique_ptr<HyperLogLogCounter<12, UInt64, TrivialHash, UInt64>> distinct_sampled_inputs;
     };
 
-    /// The thread aggregates exactly as with the feature off. It stands down for good at its
+    /// Terminal: the thread aggregates exactly as with the feature off. It stands down at its
     /// thaw, once its own staged stream proves to repeat its misses (see
-    /// `Aggregator::adaptiveStagingRepeats`), and for the time a collated top-K heap runs (`for_top_k`).
+    /// `Aggregator::adaptiveStagingRepeats`).
     struct BaselineState
     {
-        bool for_top_k = false;
-        /// A two-level conversion that `for_top_k` deferred to the finish (see `executeOnBlock`).
-        bool two_level_deferred = false;
     };
 
     using Phase = std::variant<LearningState, FrozenState, BaselineState>;
@@ -498,12 +495,6 @@ struct AdaptiveAggregationProducer
     }
     void learnAgain() { phase = LearningState{}; }
     void standDown() { phase = BaselineState{}; }
-    void standDownForTopK() { phase = BaselineState{.for_top_k = true}; }
-    bool stoodDownForTopK() const
-    {
-        const auto * baseline = std::get_if<BaselineState>(&phase);
-        return baseline && baseline->for_top_k;
-    }
 
     AdaptiveAggregationSessionPtr session;
 

@@ -180,7 +180,7 @@ a10	11
 0
 not collatable
 0
-start condition
+repeated keys
 a0	10
 á0	10
 a1	11
@@ -241,7 +241,7 @@ k1	2
 k10	2
 k100	2
 k1000	2
-running heap
+judged heap
 a0	95
 a1	95
 a2	95
@@ -289,11 +289,6 @@ m100	1
 m1000	1
 m0	1
 m1	47233
-m10	1
-m100	1
-m1000	1
-m0	1
-m1	1
 m10	1
 m100	1
 m1000	1
@@ -339,32 +334,28 @@ l20002	1	2
 l20003	0	2
 l20004	1	2
 engaged
-05407_composite_later	1	1	1	1
-05407_dynamic_filter	1	1	1	1
-05407_gave_up	0	1	1	1
-05407_late_lc	1	1	1	1
-05407_late_start	1	1	1	1
-05407_plain_at_once	1	1	1	1
-05407_remote_plan	1	1	1	1
-05407_remote_plan_nullable	1	1	1	1
-05407_remote_text	1	1	1	1
-05407_spill	1	1	1	1
-05407_threads	1	1	1	1
-05407_threads_adaptive	1	1	1	1
-05407_ties_asc	1	1	1	1
-05407_ties_desc	1	1	1	1
-05407_wait_repeats	0	1	1	1
-05407_wait_small	0	1	1	1
-running heap engaged
-05407_run_after_sample	1	1
-05407_run_never_fills	0	1
-05407_run_new_best	1	1
-05407_run_new_keys	1	0
-05407_run_one_key	1	1
-05407_run_repeats	1	1
-forced heap engaged
-05407_forced_repeats	1	0
-adaptive with a started heap
-05407_run_adaptive	1	1	1	1
-05407_run_adaptive_new_best	1	0	0	1
-05407_run_adaptive_new_keys	1	0	0	1
+05407_adaptive_repeats	1	1	1
+05407_composite_later	1	1	1
+05407_dynamic_filter	1	1	1
+05407_forced_repeats	1	1	1
+05407_plain	1	1	1
+05407_remote_plan	1	1	1
+05407_remote_plan_nullable	1	1	1
+05407_remote_text	1	1	1
+05407_repeats	1	1	1
+05407_repeats_then_unique	1	1	1
+05407_run_adaptive	1	1	1
+05407_run_adaptive_new_best	1	1	1
+05407_run_adaptive_new_keys	1	1	1
+05407_run_never_fills	1	1	1
+05407_run_new_best	1	1	1
+05407_run_new_keys	1	1	1
+05407_run_one_key	1	1	1
+05407_run_repeats	1	1	1
+05407_serialized	1	1	1
+05407_small	1	1	1
+05407_spill	1	1	1
+05407_threads	1	1	1
+05407_threads_adaptive	1	1	1
+05407_ties_asc	1	1	1
+05407_ties_desc	1	1	1
