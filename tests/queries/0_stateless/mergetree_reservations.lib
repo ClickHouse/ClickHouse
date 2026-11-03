@@ -8,17 +8,18 @@ function wait_for_query_result()
     local expected=$2
     local deadline=$((SECONDS + ${WAIT_TIMEOUT_SECONDS:-60}))
     local result=""
-    while true; do
+    while clickhouse_test_time_left; do
         result=$($CLICKHOUSE_CLIENT --query "$query")
         if [[ "$result" == "$expected" ]]; then
             return 0
         fi
         if (( SECONDS >= deadline )); then
-            echo "Timed out waiting for '$expected' from: $query (last result: '$result')"
-            exit 1
+            break
         fi
         sleep 0.1
     done
+    echo "Timed out waiting for '$expected' from: $query (last result: '$result')"
+    exit 1
 }
 
 # Block until a query is parked in the failpoint; fail the test if it is not reached within 60 s.
