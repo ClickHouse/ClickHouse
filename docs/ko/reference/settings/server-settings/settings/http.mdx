@@ -12,25 +12,23 @@ import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/Setting
 
 이 설정은 ClickHouse 서버를 구성하는 항목이며 ClickHouse 소스에서 자동으로 생성됩니다.
 
-<div id="http_allow_path_requests">
-  ## http_allow_path_requests
-</div>
+## http_allow_path_requests {#http_allow_path_requests}
 
-<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
 
 HTTP 인터페이스가 경로 형식의 요청(예: `/my_db/my_table.csv`)을 쿼리 핸들러로 라우팅하도록 허용합니다.
 
 이 플래그는 인증 전에 이루어지는 라우팅 결정만 제어하므로 사용자별 설정에 따라 달라질 수 없습니다. 라우팅 후에는 사용자별 설정인 [`http_allow_database_as_path`](/ko/reference/settings/session-settings#http_allow_database_as_path), [`http_allow_table_as_file`](/ko/reference/settings/session-settings#http_allow_table_as_file), [`http_allow_filters_as_path`](/ko/reference/settings/session-settings#http_allow_filters_as_path)가 인증된 사용자에 대해 라우팅된 경로를 실제로 해석할지 여부를 제어합니다. 이 플래그가 꺼져 있으면 알 수 없는 경로는 일반 `404`를 반환합니다.
 
+기본적으로 활성화되어 있습니다. 구성된 핸들러가 아닌 모든 경로에 대해 `404`를 반환하던 이전 동작으로 복원하려면 `0`으로 설정하십시오.
+
 **예시**
 
 ```xml
-<http_allow_path_requests>1</http_allow_path_requests>
+<http_allow_path_requests>0</http_allow_path_requests>
 ```
 
-<div id="http_handlers">
-  ## http_handlers
-</div>
+## http_handlers {#http_handlers}
 
 사용자 지정 HTTP 핸들러를 사용할 수 있습니다.
 새 http 핸들러를 추가하려면 새 `<rule>`를 추가하면 됩니다.
@@ -95,9 +93,7 @@ HTTP 인터페이스가 경로 형식의 요청(예: `/my_db/my_table.csv`)을 �
 </http_handlers>
 ```
 
-<div id="http_options_response">
-  ## http_options_response
-</div>
+## http_options_response {#http_options_response}
 
 `OPTIONS` HTTP 요청의 응답에 헤더를 추가하는 데 사용됩니다.
 `OPTIONS` 메서드는 CORS 프리플라이트 요청을 보낼 때 사용됩니다.
@@ -127,9 +123,7 @@ HTTP 인터페이스가 경로 형식의 요청(예: `/my_db/my_table.csv`)을 �
 </http_options_response>
 ```
 
-<div id="http_server_default_response">
-  ## http_server_default_response
-</div>
+## http_server_default_response {#http_server_default_response}
 
 ClickHouse HTTP(s) 서버에 액세스할 때 기본으로 표시되는 페이지입니다.
 기본값은 &quot;Ok.&quot;이며 끝에 줄 바꿈(line feed)이 포함됩니다.

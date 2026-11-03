@@ -16,8 +16,10 @@ namespace DB
 
 class BlockMissingValues;
 struct SelectQueryInfo;
+class ColumnMapper;
 
 using ColumnMappingPtr = std::shared_ptr<ColumnMapping>;
+using ColumnMapperPtr = std::shared_ptr<ColumnMapper>;
 using IColumnFilter = PaddedPODArray<UInt8>;
 
 /// Most (all?) file formats have a natural order of rows within the file.
@@ -124,6 +126,9 @@ public:
     /// in custom serializations (e.g. Sparse) for parsing and avoid extra conversion.
     virtual void setSerializationHints(const SerializationInfoByName & /*hints*/) {}
 
+    /// `FormatFilterInfo::column_mapper`, for a format whose creator does not receive the `FormatFilterInfo`.
+    virtual void setColumnMapper(const ColumnMapperPtr & /*column_mapper*/) {}
+
     /// Not by value: if the insertion throws, `buffer` must stay with the caller, since this format still reads it.
     template <typename Buffer>
     void addBuffer(std::unique_ptr<Buffer> && buffer) { owned_buffers.emplace_back(std::move(buffer)); }
@@ -137,6 +142,8 @@ public:
 
     virtual void needOnlyCount() { need_only_count = true; }
 
+    virtual void prefetch() {}
+
     virtual std::optional<std::pair<std::vector<size_t>, size_t>> getMatchedBuckets() const { return std::nullopt; }
 
     /// TopN dynamic filtering with `FormatTopKFilterInfo::track_row_group_best_values`: for the buckets
@@ -148,6 +155,8 @@ public:
     virtual bool isTopKFilterApplied() const { return false; }
     /// Whether the rows returned for this file were built from statistics (`FormatFilterInfo::min_max_from_statistics`).
     virtual bool isMinMaxFromStatisticsApplied() const { return false; }
+    /// Called after the file was read, if its version provably did not change during the read.
+    virtual void cacheFilterColumnStatistics() {}
 
 protected:
     ReadBuffer & getReadBuffer() const { chassert(in); return *in; }

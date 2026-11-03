@@ -1,4 +1,4 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-msan
 -- no-fasttest: upper/lowerUTF8 use ICU
 
 SET send_logs_level = 'fatal';
