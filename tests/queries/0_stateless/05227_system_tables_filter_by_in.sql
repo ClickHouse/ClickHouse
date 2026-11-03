@@ -7,6 +7,7 @@
 -- must agree, whatever the storage decided to skip.
 -- The tables of parts list the outdated ones too, so those must outlive the test: a cleanup
 -- between the two scans of one check would make them disagree.
+-- Outdated parts can still go away during the test (for example, with `SharedMergeTree` in ClickHouse Cloud), so the checks of parts count only the active ones.
 
 DROP TABLE IF EXISTS t_a;
 DROP TABLE IF EXISTS t_b;
@@ -74,20 +75,20 @@ SELECT
 WITH ['t_a', 't_c'] AS wanted
 SELECT
     'parts',
-    (SELECT count() FROM system.parts WHERE database = currentDatabase() AND table IN ('t_a', 't_c'))
-        = (SELECT countIf(has(wanted, table)) FROM system.parts WHERE database = currentDatabase());
+    (SELECT count() FROM system.parts WHERE database = currentDatabase() AND table IN ('t_a', 't_c') AND active)
+        = (SELECT countIf(has(wanted, table)) FROM system.parts WHERE database = currentDatabase() AND active);
 
 WITH ['t_a', 't_c'] AS wanted
 SELECT
     'parts_columns',
-    (SELECT count() FROM system.parts_columns WHERE database = currentDatabase() AND table IN ('t_a', 't_c'))
-        = (SELECT countIf(has(wanted, table)) FROM system.parts_columns WHERE database = currentDatabase());
+    (SELECT count() FROM system.parts_columns WHERE database = currentDatabase() AND table IN ('t_a', 't_c') AND active)
+        = (SELECT countIf(has(wanted, table)) FROM system.parts_columns WHERE database = currentDatabase() AND active);
 
 WITH ['t_a', 't_c'] AS wanted
 SELECT
     'projection_parts',
-    (SELECT count() FROM system.projection_parts WHERE database = currentDatabase() AND table IN ('t_a', 't_c'))
-        = (SELECT countIf(has(wanted, table)) FROM system.projection_parts WHERE database = currentDatabase());
+    (SELECT count() FROM system.projection_parts WHERE database = currentDatabase() AND table IN ('t_a', 't_c') AND active)
+        = (SELECT countIf(has(wanted, table)) FROM system.projection_parts WHERE database = currentDatabase() AND active);
 
 WITH ['t_a', 't_c'] AS wanted
 SELECT
