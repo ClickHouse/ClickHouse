@@ -19,6 +19,9 @@ DROP TABLE IF EXISTS t_lambda_element;
 DROP TABLE IF EXISTS t_lambda_datetime;
 DROP TABLE IF EXISTS t_lambda_mutation;
 DROP TABLE IF EXISTS t_lambda_fixed;
+DROP TABLE IF EXISTS t_lambda_tuple;
+DROP TABLE IF EXISTS t_lambda_tuple_mutation;
+DROP TABLE IF EXISTS t_alias_mutation;
 DROP TABLE IF EXISTS t_rollup_create;
 DROP TABLE IF EXISTS t_rollup_modify;
 
@@ -125,6 +128,31 @@ SELECT 'SELECT lambda DateTime', id FROM t_lambda_mutation WHERE arrayExists(eve
 ALTER TABLE t_lambda_mutation DELETE WHERE arrayExists(event -> event = '2020-01-01 00:00:00', arr) SETTINGS mutations_sync = 2;
 SELECT 'DELETE lambda DateTime', id FROM t_lambda_mutation;
 
+-- The parameters are bound as the function binds them, also unpacked from an array of tuples and after a fixed argument
+-- of a function that is not named anywhere in the rewrite.
+CREATE TABLE t_lambda_tuple (event DateTime, arr Array(Tuple(DateTime, String)), packed Array(Tuple(String, DateTime)))
+ENGINE = MergeTree ORDER BY tuple()
+TTL event + INTERVAL 1 SECOND DELETE WHERE arrayExists((event, tag) -> event = '2020-01-01 00:00:00' AND tag = 'keep', arr)
+    OR arrayPackBitsToFixedString((tag, event) -> event = '2020-01-01 00:00:00', 1, packed) != unhex('00');
+SELECT 'lambda tuple', extract(engine_full, 'WHERE .*\\)') FROM system.tables WHERE database = currentDatabase() AND name = 't_lambda_tuple';
+
+CREATE TABLE t_lambda_tuple_mutation (id UInt8, arr Array(Tuple(DateTime, String)), packed Array(Tuple(String, DateTime)))
+ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_lambda_tuple_mutation VALUES
+    (1, [(1577804400, 'keep')], []), (2, [(1577836800, 'keep')], []), (3, [], [('keep', 1577804400)]), (4, [], [('keep', 1577836800)]);
+ALTER TABLE t_lambda_tuple_mutation DELETE WHERE arrayExists((event, tag) -> event = '2020-01-01 00:00:00', arr) SETTINGS mutations_sync = 2;
+ALTER TABLE t_lambda_tuple_mutation DELETE WHERE arrayPackBitsToFixedString((tag, event) -> event = '2020-01-01 00:00:00', 1, packed) != unhex('00')
+SETTINGS mutations_sync = 2;
+SELECT 'DELETE lambda tuple', groupArray(id) FROM (SELECT id FROM t_lambda_tuple_mutation ORDER BY id);
+
+-- An identifier that names an alias of the expression is the aliased expression, not the column with its name: the array
+-- `c` of the lambda, and the `String` alias `event`, whose comparison keeps its string.
+CREATE TABLE t_alias_mutation (id UInt8, c UInt8, event DateTime) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_alias_mutation VALUES (1, 0, 0), (2, 0, 0), (3, 0, 0);
+ALTER TABLE t_alias_mutation DELETE WHERE id = 1 AND has([1, 2] AS c, 1) AND arrayExists(x -> x = 1, c) SETTINGS mutations_sync = 2;
+ALTER TABLE t_alias_mutation DELETE WHERE (toString(id) AS event) != '' AND event = '2' SETTINGS mutations_sync = 2;
+SELECT 'DELETE alias', groupArray(id) FROM (SELECT id FROM t_alias_mutation ORDER BY id);
+
 DROP TABLE t_create;
 DROP TABLE t_modify;
 DROP TABLE t_source;
@@ -141,3 +169,6 @@ DROP TABLE t_lambda_element;
 DROP TABLE t_lambda_datetime;
 DROP TABLE t_lambda_mutation;
 DROP TABLE t_lambda_fixed;
+DROP TABLE t_lambda_tuple;
+DROP TABLE t_lambda_tuple_mutation;
+DROP TABLE t_alias_mutation;

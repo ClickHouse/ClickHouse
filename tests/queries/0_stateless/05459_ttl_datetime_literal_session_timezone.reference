@@ -16,3 +16,6 @@ lambda fixed argument	WHERE (length(arrayPartialSort((x, y) -> (y = \'keep\'), 1
 MODIFY TTL lambda fixed argument	WHERE length(arrayBottomK((x, y) -> (y = \'keep\'), 1, arr, tags))
 SELECT lambda DateTime	1
 DELETE lambda DateTime	2
+lambda tuple	WHERE arrayExists((event, tag) -> ((event = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\')) AND (tag = \'keep\')), arr) OR (arrayPackBitsToFixedString((tag, event) -> (event = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\')), 1, packed) != unhex(\'00\'))
+DELETE lambda tuple	[2,4]
+DELETE alias	[3]

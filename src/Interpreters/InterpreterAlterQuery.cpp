@@ -200,7 +200,7 @@ CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const Sto
         auto * command_ast = child->as<ASTAlterCommand>();
 
         if (columns_for_ttl && command_ast->type == ASTAlterCommand::MODIFY_TTL && command_ast->ttl)
-            rewriteDateTimeLiteralsWithTimezone(command_ast->ttl->ptr(), *columns_for_ttl, ttl_session_timezone);
+            rewriteDateTimeLiteralsWithTimezone(command_ast->ttl->ptr(), *columns_for_ttl, ttl_session_timezone, context);
 
         if (command_ast->type == ASTAlterCommand::EXECUTE_COMMAND)
         {
@@ -275,7 +275,7 @@ CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const Sto
                 auto source_alter = mutation_command->ast();
                 auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
                 auto tz_rewritten_ast = rewriteDateTimeLiteralsWithTimezone(
-                    *source_alter, metadata_snapshot->columns, session_tz);
+                    *source_alter, metadata_snapshot->columns, session_tz, context);
                 if (tz_rewritten_ast)
                 {
                     auto * tz_alter_command = tz_rewritten_ast->as<ASTAlterCommand>();
