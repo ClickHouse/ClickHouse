@@ -184,7 +184,7 @@ With Docker Compose, modify the collector configuration using the same environme
 
 ```yaml
   otel-collector:
-    image: hyperdx/hyperdx-otel-collector
+    image: clickhouse/clickstack-otel-collector
     environment:
       CLICKHOUSE_ENDPOINT: 'https://mxl4k3ul6a.us-east-2.aws.clickhouse-staging.com:8443'
       HYPERDX_LOG_LEVEL: ${HYPERDX_LOG_LEVEL}

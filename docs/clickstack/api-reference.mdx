@@ -48,7 +48,7 @@ This is different from the **Ingestion API Key** found in Team Settings, which i
 The API server runs on port `8000` by default (separate from the UI on port `8080`). When using the all-in-one Docker image, ensure you map this port explicitly:
 
 ```bash
-docker run -p 8080:8080 -p 8000:8000 -p 4317:4317 -p 4318:4318 docker.hyperdx.io/hyperdx/hyperdx-all-in-one
+docker run -p 8080:8080 -p 8000:8000 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-all-in-one
 ```
 
 Include the key in the `Authorization` header:
