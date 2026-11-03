@@ -1367,6 +1367,7 @@ public:
     /// For the resets of a statement that also changes `profile`: `changes_applied_first` decides their constraints.
     void checkSettingsConstraintsForSettingsReset(const std::vector<String> & names, const SettingsChanges & changes_applied_first, SettingSource source);
     void clampToSettingsConstraints(SettingsChanges & changes, SettingSource source);
+    void clampToSettingsConstraintsRejectingInvalidChanges(SettingsChanges & changes, SettingSource source);
     void checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const;
 
     /// Reset settings to the default in effect for them, which under an active `compatibility` is the value of that version.
@@ -1516,6 +1517,11 @@ public:
     void setS3QueueDisableStreaming(bool s3queue_disable_streaming) const;
 
     bool getMessageQueueDisableInsertion() const;
+
+    /// How many extra poll cycles a Keeper-backed Kafka consumer keeps its assignment before
+    /// refreshing its Keeper locks. Mutated at runtime by the config reloader, so read it per use.
+    UInt64 getKafkaLocksRefreshPolls() const;
+    void setKafkaLocksRefreshPolls(UInt64 stream_kafka_locks_refresh_polls) const;
 
     /// The server-level distributed cache switches. They live in `shared`, which is common to every context
     /// (including the background and buffer contexts created once at startup), so a config reload is observed
@@ -2305,6 +2311,7 @@ private:
     void checkSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source);
 
     void clampToSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source);
+    void clampToSettingsConstraintsRejectingInvalidChangesWithLock(SettingsChanges & changes, SettingSource source);
     void checkSettingsConstraintsWithLock(const AlterSettingsProfileElements & profile_elements, SettingSource source) const;
 
     void clampToSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source) const;

@@ -19,31 +19,38 @@ namespace DB
 class HashJoin;
 class GraceHashJoin;
 class ConcurrentHashJoin;
+class MergeJoin;
 
-/// An IJoin wrapper that automatically switches to GraceHashJoin to spill to disk when memory limits are exceeded.
+/// An IJoin wrapper that automatically switches to an external join to spill to disk when memory limits are exceeded.
+/// The external join is GraceHashJoin, or MergeJoin (partial merge) when the query plan requires
+/// the left stream's original row order (`keepLeftPipelineInOrder`): GraceHashJoin scatters left
+/// rows into buckets by hash and returns them per bucket, while MergeJoin spills only the sorted
+/// right side and streams every left block through exactly once, in order.
 ///
 /// Operates in two modes depending on the constructor parameters:
 ///
 /// Single-thread mode:
 /// Blocks are fed directly into a HashJoin instance during the build phase.
 /// If the data exceeds max_bytes_before_external_join, the blocks are extracted via releaseJoinedBlocks and drained into a new
-/// GraceHashJoin.
+/// GraceHashJoin (or MergeJoin when pinned to the left order).
 /// If all blocks fit in memory, the HashJoin is promoted to chosen_join with zero rework.
 ///
 /// Concurrent mode:
 /// Blocks are fed into a ConcurrentHashJoin from multiple threads concurrently.
-/// A SharedMutex protects the COLLECTING -> GRACE_HASH_JOIN transition: addBlockToJoin takes a shared lock, while
-/// switchToGraceHashJoin takes an exclusive lock.
-/// If the data exceeds max_bytes_before_external_join, a GraceHashJoin is created and ConcurrentHashJoin slots are converted via
-/// addBlockToJoin calls possibly from multiple threads.
+/// A SharedMutex protects the COLLECTING -> GRACE_HASH_JOIN / MERGE_JOIN transition: addBlockToJoin takes a shared lock, while
+/// switchToExternalJoin takes an exclusive lock.
+/// If the data exceeds max_bytes_before_external_join, the external join is created and ConcurrentHashJoin slots are converted via
+/// addBlockToJoin calls possibly from multiple threads. Inserts into a MergeJoin target are serialized
+/// by merge_join_insert_mutex, so its build stays single-threaded; GraceHashJoin inserts stay concurrent.
 /// If all blocks fit in memory, the ConcurrentHashJoin is promoted to chosen_join with zero rework.
 ///
-/// hasDelayedBlocks always returns true so that the pipeline includes the delayed-block
-/// transforms needed by GraceHashJoin. When HashJoin / ConcurrentHashJoin is used,
+/// While not pinned, hasDelayedBlocks returns true so that the pipeline includes the
+/// delayed-block transforms needed by GraceHashJoin. When HashJoin / ConcurrentHashJoin is used,
 /// isDelayedBlocksProcessingEnabled is false and the probe streams close those transforms after the build.
-/// Because hasDelayedBlocks returns true, the read-in-order-through-join optimisation
-/// in optimizeReadInOrder.cpp will NOT propagate through SpillingHashJoin (same as
-/// GraceHashJoin), since spilling may reorder rows.
+/// The read-in-order-through-join optimisation in optimizeReadInOrder.cpp asks
+/// canPreserveLeftBlockOrder first and, if the in-order plan is chosen, pins this join with
+/// keepLeftPipelineInOrder: from then on the spill fallback is MergeJoin, no delayed-block
+/// transforms are added, and the output keeps the left stream's order.
 class SpillingHashJoin final : public IJoin
 {
 public:
@@ -112,8 +119,14 @@ public:
         size_t num_streams) const override;
 
     IBlocksStreamPtr getDelayedBlocks() override;
-    bool hasDelayedBlocks() const override { return true; }
+    /// Pinned to the left order, the spill fallback is MergeJoin, which needs no delayed-block
+    /// transforms (and their outputs would be interleaved with the main ones, breaking the order).
+    bool hasDelayedBlocks() const override { return !keep_left_block_order; }
     bool isDelayedBlocksProcessingEnabled() const override;
+
+    bool preservesLeftBlockOrder() const override { return keep_left_block_order; }
+    bool canPreserveLeftBlockOrder() const override;
+    void keepLeftPipelineInOrder() override;
 
     void onBuildPhaseFinish() override;
     void onProbePhaseFinish(std::optional<size_t> matched_right_rows) override;
@@ -138,10 +151,20 @@ private:
     {
         COLLECTING, // Right-side blocks are being collected in HashJoin / ConcurrentHashJoin, no spilling yet.
         GRACE_HASH_JOIN, // Spilled to disk and switched to GraceHashJoin, but some concurrent slots may still be unconverted.
+        MERGE_JOIN, // Spilled to disk and switched to MergeJoin (pinned to the left order), slots may still be unconverted.
         IN_MEMORY_JOIN // All blocks fit in memory, using HashJoin / ConcurrentHashJoin directly without switching.
     };
 
-    void switchToGraceHashJoin(JoinBuildContext context, bool spill_immediately = false);
+    /// Creates the external join (MergeJoin when pinned to the left order, GraceHashJoin
+    /// otherwise) and drains the collected right blocks into it. `spill_immediately` is for the
+    /// memory-pressure path: a new GraceHashJoin then repartitions as it takes the data over,
+    /// instead of holding all of it in bucket 0 until the next spill request (MergeJoin always
+    /// puts the drained blocks on disk right away).
+    void switchToExternalJoin(JoinBuildContext context, bool spill_immediately = false);
+    /// Every insert into the external join funnels through here: MergeJoin inserts are
+    /// serialized by `merge_join_insert_mutex` (single-threaded build), GraceHashJoin inserts
+    /// stay concurrent.
+    bool addBlockToExternalJoin(const Block & block, size_t num_rows, JoinBuildContext context);
     void tryConvertSlots(JoinBuildContext context);
 
     LoggerPtr log;
@@ -156,8 +179,17 @@ private:
 
     SharedMutex switch_mutex;
     std::atomic<size_t> next_slot_to_convert{0};
+    /// Serializes the inserts into the pinned MergeJoin fallback: its build stays
+    /// single-threaded even though multiple build threads hand their blocks over (see
+    /// `addBlockToExternalJoin`).
+    std::mutex merge_join_insert_mutex;
     mutable std::mutex totals_mutex;
     bool supports_parallel_non_joined_blocks_processing{false};
+
+    /// The query plan requires the left stream's original row order: the spill fallback is pinned
+    /// to MergeJoin instead of GraceHashJoin. Set by `keepLeftPipelineInOrder` during query plan
+    /// optimization, before the query pipeline runs, so plain bool is enough.
+    bool keep_left_block_order = false;
 
     std::atomic<State> state{State::COLLECTING};
 
@@ -169,6 +201,9 @@ private:
 
     /// GraceHashJoin created during overflow. Also assigned to chosen_join.
     std::shared_ptr<GraceHashJoin> grace_join;
+
+    /// MergeJoin created during overflow when pinned to the left order. Also assigned to chosen_join.
+    std::shared_ptr<MergeJoin> merge_join;
 
     /// The real join, created when switching out of COLLECTING state.
     JoinPtr chosen_join;

@@ -1,0 +1,81 @@
+<test>
+    <!--
+        Read-in-order through a spilling hash join: with the order requested by the plan,
+        `SpillingHashJoin` spills through `MergeJoin` (order-preserving) instead of
+        `GraceHashJoin`, so the read-in-order optimization applies and the LIMIT consumes
+        only a prefix of the left table. Without it the same query reads all of the left
+        table, probes the spilled join with every row, and sorts the full result.
+        The right side always pays the full build (sort + spill): the contrast is in the
+        probe and the sort, so the left table is much bigger than the right one.
+
+        Three query shapes:
+        - LIMIT over the correlated table: the prefix read, matches local to the prefix;
+        - LIMIT over the scattered table (`id` uncorrelated with `t`): the matches of even a
+          small prefix hop between the spilled right blocks, exercising the match-time
+          gathering of the order-preserving probe;
+        - no LIMIT, top-level ORDER BY: both sides read the whole left table, so the win is
+          the avoided full sort of the joined result (the in-order plan merges the
+          already-ordered streams instead).
+    -->
+    <settings>
+        <max_threads>16</max_threads>
+        <optimize_read_in_order>1</optimize_read_in_order>
+        <query_plan_read_in_order_through_join>1</query_plan_read_in_order_through_join>
+        <read_in_order_use_virtual_row>1</read_in_order_use_virtual_row>
+        <query_plan_join_swap_table>false</query_plan_join_swap_table>
+        <max_bytes_before_external_join>20000000</max_bytes_before_external_join>
+        <max_bytes_ratio_before_external_join>0</max_bytes_ratio_before_external_join>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>algo</name>
+            <values>
+                <value>hash</value>
+                <value>parallel_hash</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>
+        CREATE TABLE ev_inorder_spill (t UInt64, id UInt64) ENGINE = MergeTree ORDER BY t
+    </create_query>
+    <create_query>
+        CREATE TABLE ev_inorder_spill_scattered (t UInt64, id UInt64) ENGINE = MergeTree ORDER BY t
+    </create_query>
+    <create_query>
+        CREATE TABLE pl_inorder_spill (id UInt64, payload String) ENGINE = MergeTree ORDER BY tuple()
+    </create_query>
+
+    <!-- Every left row has exactly one match, so the LIMIT fills up from the first blocks. -->
+    <fill_query>INSERT INTO ev_inorder_spill SELECT number, number % 2000000 FROM numbers_mt(20000000)</fill_query>
+    <!-- Uncorrelated ids: the matches of consecutive left rows land in arbitrary right blocks. -->
+    <fill_query>INSERT INTO ev_inorder_spill_scattered SELECT number, cityHash64(number) % 2000000 FROM numbers_mt(20000000)</fill_query>
+    <!-- The build side (~90 MB in the hash table) crosses the 20 MB spill threshold early. -->
+    <fill_query>INSERT INTO pl_inorder_spill SELECT number, toString(cityHash64(number)) FROM numbers_mt(2000000)</fill_query>
+
+    <query>
+        SELECT t, payload FROM ev_inorder_spill INNER JOIN pl_inorder_spill ON ev_inorder_spill.id = pl_inorder_spill.id
+        ORDER BY t LIMIT 100
+        SETTINGS join_algorithm = '{algo}'
+        FORMAT Null
+    </query>
+
+    <query>
+        SELECT t, payload FROM ev_inorder_spill_scattered INNER JOIN pl_inorder_spill ON ev_inorder_spill_scattered.id = pl_inorder_spill.id
+        ORDER BY t LIMIT 100
+        SETTINGS join_algorithm = '{algo}'
+        FORMAT Null
+    </query>
+
+    <query>
+        SELECT t, payload FROM ev_inorder_spill INNER JOIN pl_inorder_spill ON ev_inorder_spill.id = pl_inorder_spill.id
+        ORDER BY t
+        SETTINGS join_algorithm = '{algo}'
+        FORMAT Null
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS ev_inorder_spill</drop_query>
+    <drop_query>DROP TABLE IF EXISTS ev_inorder_spill_scattered</drop_query>
+    <drop_query>DROP TABLE IF EXISTS pl_inorder_spill</drop_query>
+</test>
