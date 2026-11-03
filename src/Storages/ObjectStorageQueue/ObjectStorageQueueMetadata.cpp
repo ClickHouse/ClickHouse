@@ -447,9 +447,10 @@ void ObjectStorageQueueMetadata::ExplicitPartitions::forgetIdle(size_t max_idle_
     auto zk_retries = getKeeperRetriesControl(metadata.log);
 
     Strings partition_keys;
+    Coordination::Stat partitions_stat;
     zk_retries.retryLoop([&]
     {
-        partition_keys = metadata.getZooKeeper()->getChildren(getPartitionsPath());
+        partition_keys = metadata.getZooKeeper()->getChildren(getPartitionsPath(), &partitions_stat);
     });
 
     const auto processed_bucket_paths = ObjectStorageQueueOrderedFileMetadata::getProcessedBucketPaths(metadata.zookeeper_path, metadata.buckets_num);
@@ -494,6 +495,7 @@ void ObjectStorageQueueMetadata::ExplicitPartitions::forgetIdle(size_t max_idle_
                 continue;
 
             Coordination::Requests requests;
+            requests.push_back(zkutil::makeCheckRequest(getPartitionsPath(), partitions_stat.version));
             requests.push_back(zkutil::makeRemoveRequest(partition_paths[j], partition.stat.version));
             if (has_processed)
                 requests.push_back(zkutil::makeRemoveRequest(processed_paths[j], processed.stat.version));
