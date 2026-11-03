@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeTime.h>
 #include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -1038,7 +1039,25 @@ public:
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    /// Execution throws for some row values when a String date is parsed, a `UInt64` or floating-point delta does not fit `Int64`,
+    /// or the delta is scaled to ticks with an overflow check: sub-second units and seconds on `DateTime64` / `Time64`, and
+    /// sub-second units with an `Int64` delta on `DateTime` (a narrower delta cannot overflow `UInt32 * 10^9`).
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
+    {
+        /// A NULL or Nothing argument returns NULL before `getReturnTypeImpl` checks the arity, so a single argument can get here.
+        if (arguments.size() < 2)
+            return false;
+
+        constexpr bool sub_second = std::is_base_of_v<AddNanosecondsImpl, Transform> || std::is_base_of_v<AddMicrosecondsImpl, Transform>
+            || std::is_base_of_v<AddMillisecondsImpl, Transform>;
+        constexpr bool seconds = std::is_base_of_v<AddSecondsImpl, Transform>;
+
+        const auto from_type = removeLowCardinalityAndNullable(arguments[0].type);
+        const auto delta_type = removeLowCardinalityAndNullable(arguments[1].type);
+        return isString(from_type) || isUInt64(delta_type) || isFloat(delta_type)
+            || ((sub_second || seconds) && (isDateTime64(from_type) || isTime64(from_type)))
+            || (sub_second && isInt64(delta_type));
+    }
 
     /// Documentation-only — adds/subtracts the integer/float `delta` of the
     /// given interval unit (encoded in `Transform`) to/from a date or
