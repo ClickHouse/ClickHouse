@@ -1,7 +1,6 @@
 -- Element access of a Map with Enum keys by a constant name is optimized
 -- to a key subcolumn read (which prunes buckets in the bucketed Map serialization).
 
-SET enable_analyzer = 1;
 SET optimize_functions_to_subcolumns = 1;
 
 DROP TABLE IF EXISTS t_map_enum_buckets;

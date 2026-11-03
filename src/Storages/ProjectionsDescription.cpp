@@ -14,6 +14,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
@@ -69,6 +70,7 @@ namespace Setting
 {
 
 extern const SettingsBool enable_positional_arguments_for_projections;
+extern const SettingsBool prefer_column_name_to_alias;
 
 }
 
@@ -591,6 +593,9 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     mut_context->setSetting("enable_positional_arguments", positional_arguments_for_projections);
     /// Projection required-columns must always expand ALIAS columns, regardless of session settings.
     mut_context->setSetting("optimize_respect_aliases", true);
+    /// Resolve aliases as a reload of the stored definition does, which analyzes it with the server settings.
+    mut_context->setSetting(
+        "prefer_column_name_to_alias", query_context->getGlobalContext()->getSettingsRef()[Setting::prefer_column_name_to_alias].value);
     mut_context->setQueryKindInitial();
 
     bool is_aggregate = false;
@@ -608,16 +613,40 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
 
         is_aggregate = query_node.hasGroupBy() || hasAggregateFunctionNodes(query_tree);
 
+        ConvertToASTOptions ast_options;
+        ast_options.fully_qualified_identifiers = false;
+
         /// Expand aliases in projection ORDER BY using the Analyzer-resolved query tree.
         /// cloneToASTSelect() appends the ORDER BY expression as the last SELECT child,
         /// so the last resolved projection column has aliases fully expanded.
         if (projection_order_by)
         {
             auto & projection_nodes = query_node.getProjection().getNodes();
-            ConvertToASTOptions ast_options;
-            ast_options.fully_qualified_identifiers = false;
             projection_order_by = projection_nodes.back()->toAST(ast_options);
             projection_order_by->setAlias({});
+        }
+
+        /// An identifier in `WHERE` may refer to an alias of the query, not to the column: the rows are filtered
+        /// by the resolved `WHERE`, in which a substituted alias keeps its name.
+        if (result.where_clause_ast)
+            result.where_clause_ast = query_node.getWhere()->toAST(ast_options);
+    }
+
+    /// With `WHERE` the query runs to `WithMergeableState`, whose header holds the results of the `SELECT` expressions,
+    /// so the `ORDER BY` appended to `SELECT` is replaced with the columns it reads: the part stores those, not its result.
+    if (projection_order_by && result.where_clause_ast && !is_aggregate)
+    {
+        auto metadata_snapshot = storage->getInMemoryMetadataPtr(query_context, false);
+        const auto virtuals = metadata_snapshot->virtuals;
+        auto & select_list = result.query_ast->as<ASTSelectQuery &>().select()->children;
+        select_list.pop_back();
+        for (const auto & column :
+             KeyDescription::getKeyFromAST(projection_order_by, columns, virtuals, query_context).expression->getRequiredColumns())
+        {
+            /// A column of the source table, which an alias of the same name does not replace.
+            auto identifier = make_intrusive<ASTIdentifier>(column);
+            IdentifierSemantic::setMembership(*identifier, 0);
+            select_list.push_back(std::move(identifier));
         }
     }
 
