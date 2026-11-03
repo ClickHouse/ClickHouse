@@ -23,5 +23,11 @@ $CLICKHOUSE_CLIENT -q "
     FROM system.warnings WHERE message LIKE 'Queries or settings profiles changed obsolete settings since the server start: %'"
 
 echo "-- ... and logged"
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS text_log"
-$CLICKHOUSE_CLIENT -q "SELECT count() > 0 FROM system.text_log WHERE level = 'Warning' AND message LIKE 'Obsolete setting \`max_memory_usage_for_all_queries\` is changed%'"
+# The log entry can be written after the response is sent, so retry until it appears.
+while clickhouse_test_time_left; do
+    $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS text_log"
+    res=$($CLICKHOUSE_CLIENT -q "SELECT count() > 0 FROM system.text_log WHERE level = 'Warning' AND message LIKE 'Obsolete setting \`max_memory_usage_for_all_queries\` is changed%'")
+    [ "$res" = 1 ] && break
+    sleep 0.5
+done
+echo "$res"
