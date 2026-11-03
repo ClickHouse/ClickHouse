@@ -214,12 +214,12 @@ struct DistributedQueryTaskDescription
 {
     String initial_query_id;
     DistributedQueryTask task;
-    String serialized_query_plan;
-    ExchangeDescriptions exchanges;
+    std::shared_ptr<const String> serialized_query_plan = std::make_shared<const String>();
+    std::shared_ptr<const ExchangeDescriptions> exchanges = std::make_shared<const ExchangeDescriptions>();
     ExchangeStreamSources exchange_stream_sources;
     /// The initiator's changed settings, applied on the worker so query limits and execution-affecting
     /// settings (e.g. max_memory_usage) are honored remotely.
-    SettingsChanges settings_changes;
+    std::shared_ptr<const SettingsChanges> settings_changes = std::make_shared<const SettingsChanges>();
     /// Wire-format version of the task. A worker that knows only an older version rejects it.
     UInt64 serialization_version = DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION;
 };

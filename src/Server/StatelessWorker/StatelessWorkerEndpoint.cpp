@@ -50,7 +50,7 @@ void serializeTask(const DistributedQueryTaskDescription & task_description, Wri
     const auto & task = task_description.task;
 
     writeStringBinary(task.task_id, out);
-    writeStringBinary(task_description.serialized_query_plan, out);
+    writeStringBinary(*task_description.serialized_query_plan, out);
 
     writeVarUInt(task.parameters.parameters.size(), out);
     for (const auto & [name, field] : task.parameters.parameters)
@@ -75,8 +75,8 @@ void serializeTask(const DistributedQueryTaskDescription & task_description, Wri
         writeStringBinary(stream_id.destination_bucket, out);
     }
 
-    writeVarUInt(task_description.exchanges.size(), out);
-    for (const auto & [name, exchange] : task_description.exchanges)
+    writeVarUInt(task_description.exchanges->size(), out);
+    for (const auto & [name, exchange] : *task_description.exchanges)
     {
         chassert(name == exchange.name);
         writeStringBinary(exchange.name, out);
@@ -94,8 +94,8 @@ void serializeTask(const DistributedQueryTaskDescription & task_description, Wri
             writeVarUInt(address.port, out);
     }
 
-    writeVarUInt(task_description.settings_changes.size(), out);
-    for (const auto & change : task_description.settings_changes)
+    writeVarUInt(task_description.settings_changes->size(), out);
+    for (const auto & change : *task_description.settings_changes)
     {
         writeStringBinary(change.name, out);
         writeFieldBinary(change.value, out);
@@ -138,7 +138,9 @@ void deserializeTask(DistributedQueryTaskDescription & task_description, ReadBuf
     auto & task = task_description.task;
 
     readStringBinary(task.task_id, in);
-    readStringBinary(task_description.serialized_query_plan, in);
+    auto serialized_query_plan = std::make_shared<String>();
+    readStringBinary(*serialized_query_plan, in);
+    task_description.serialized_query_plan = std::move(serialized_query_plan);
 
     size_t parameters_size = 0;
     readVarUInt(parameters_size, in);
@@ -170,6 +172,8 @@ void deserializeTask(DistributedQueryTaskDescription & task_description, ReadBuf
         readStringBinary(task.output_exchange_streams[i].destination_bucket, in);
     }
 
+    auto exchanges = std::make_shared<ExchangeDescriptions>();
+    task_description.exchanges = exchanges;
     size_t exchanges_size = 0;
     readVarUInt(exchanges_size, in);
     for (size_t i = 0; i < exchanges_size; ++i)
@@ -185,7 +189,7 @@ void deserializeTask(DistributedQueryTaskDescription & task_description, ReadBuf
         exchange.kind = static_cast<ExchangeDescription::Kind>(kind);
         readVarUInt(exchange.source_bucket_count, in);
         readVarUInt(exchange.destination_bucket_count, in);
-        task_description.exchanges[name] = exchange;
+        (*exchanges)[name] = exchange;
     }
 
     size_t exchange_stream_sources_size = 0;
@@ -203,15 +207,17 @@ void deserializeTask(DistributedQueryTaskDescription & task_description, ReadBuf
 
     if (version >= 1)
     {
+        auto settings_changes = std::make_shared<SettingsChanges>();
+        task_description.settings_changes = settings_changes;
         size_t settings_changes_size = 0;
         readVarUInt(settings_changes_size, in);
-        task_description.settings_changes.reserve(settings_changes_size);
+        settings_changes->reserve(settings_changes_size);
         for (size_t i = 0; i < settings_changes_size; ++i)
         {
             String name;
             readStringBinary(name, in);
             Field value = readFieldBinary(in);
-            task_description.settings_changes.emplace_back(name, value);
+            settings_changes->emplace_back(name, value);
         }
     }
 

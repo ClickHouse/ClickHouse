@@ -833,6 +833,43 @@ String serializeTaskWithDescriptors(std::vector<RuntimeFilterReceiveDescriptor> 
 
 }
 
+TEST(DistributedTaskSerialization, CommonFieldsRoundTripAndAreSharedByCopies)
+{
+    DistributedQueryTaskDescription description;
+    description.initial_query_id = "q1";
+    description.task.task_id = "t0";
+    description.serialized_query_plan = std::make_shared<const String>("plan");
+    description.exchanges = std::make_shared<const ExchangeDescriptions>(ExchangeDescriptions{
+        {"exchange", ExchangeDescription{
+            .name = "exchange",
+            .kind = ExchangeDescription::Kind::Streaming,
+            .source_bucket_count = 2,
+            .destination_bucket_count = 3,
+        }},
+    });
+    description.settings_changes = std::make_shared<const SettingsChanges>(SettingsChanges{{"max_threads", 4}});
+
+    const auto copy = description;
+    EXPECT_EQ(copy.serialized_query_plan, description.serialized_query_plan);
+    EXPECT_EQ(copy.exchanges, description.exchanges);
+    EXPECT_EQ(copy.settings_changes, description.settings_changes);
+
+    WriteBufferFromOwnString out;
+    serializeTask(copy, out);
+    ReadBufferFromString in(out.str());
+    DistributedQueryTaskDescription restored;
+    deserializeTask(restored, in);
+
+    ASSERT_TRUE(restored.serialized_query_plan);
+    ASSERT_TRUE(restored.exchanges);
+    ASSERT_TRUE(restored.settings_changes);
+    EXPECT_EQ(*restored.serialized_query_plan, "plan");
+    ASSERT_EQ(restored.exchanges->size(), 1);
+    EXPECT_EQ(restored.exchanges->at("exchange").destination_bucket_count, 3);
+    ASSERT_EQ(restored.settings_changes->size(), 1);
+    EXPECT_EQ(restored.settings_changes->front().name, "max_threads");
+}
+
 /// The restored task serializes to the same bytes, so no field of a descriptor is lost on the way.
 TEST(DistributedTaskSerialization, RuntimeFilterDescriptorsRoundTrip)
 {

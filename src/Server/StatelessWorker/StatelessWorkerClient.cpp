@@ -103,7 +103,10 @@ String sendTask(const String & endpoint_uri, const String & unique_task_id, cons
             {"clickhouse.target_host", fmt::format("{}:{}", uri.getHost(), uri.getPort())},
         });
 
-    auto task_serializer = [task_description] (WriteBuffer & buf)
+    /// The serializer only runs while `doSendTask` writes the request body on this same thread,
+    /// before `sendTask` returns, so it can refer to the description without copying it: the
+    /// parallel dispatch path copies the stage-wide description once per task already.
+    auto task_serializer = [&task_description] (WriteBuffer & buf)
     {
         serializeTask(task_description, buf);
     };

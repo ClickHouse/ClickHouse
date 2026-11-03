@@ -457,6 +457,10 @@ static struct InitFiu
     REGULAR(keeper_changelog_readahead_fill_exception) \
     ONCE(keeper_changelog_preallocate_no_space) \
     ONCE(distributed_plan_record_failure_while_starting_tasks) \
+    PAUSEABLE_ONCE(distributed_plan_pause_first_task_start) \
+    PAUSEABLE_ONCE(distributed_plan_pause_second_task_start) \
+    ONCE(distributed_plan_fail_after_task_start) \
+    PAUSEABLE_ONCE(distributed_plan_pause_untracked_task_cleanup) \
     ONCE(distributed_plan_delay_root_cause_report) \
     ONCE(distributed_plan_delay_failed_task_release) \
     REGULAR(distributed_plan_runtime_filter_receive_branch_fails_before_connect) \

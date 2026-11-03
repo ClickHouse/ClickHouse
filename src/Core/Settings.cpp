@@ -11128,6 +11128,11 @@ Only takes effect when `make_distributed_plan` (private preview) is enabled.
 Run all tasks of a distributed query plan locally. Useful for testing and debugging.
 )", EXPERIMENTAL, \
         {"25.5", 0, 0, "New experimental setting."}) \
+    DECLARE(UInt64, distributed_plan_parallel_task_dispatch, 16, R"(
+Maximum number of in-flight start requests when dispatching remote tasks of the same stage in parallel. Zero dispatches tasks sequentially.
+Stages are still started sequentially in dependency order. This setting does not change the query plan or local execution.
+)", EXPERIMENTAL, \
+        {"26.11", 16, 16, "New experimental setting to dispatch the tasks of the same distributed plan stage in parallel."}) \
     DECLARE(NonZeroUInt64, distributed_plan_default_shuffle_join_bucket_count, 8, R"(
 Default number of buckets for distributed shuffle-hash-join.
 Used by the rule-based distributed planner. The cost-based optimizer chooses the fan-out by estimated cost and does not use this setting.
