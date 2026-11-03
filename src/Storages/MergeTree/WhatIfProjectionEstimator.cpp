@@ -191,7 +191,8 @@ void setStoredBytes(ProjectionPartData & out, const Block & block, bool sparse_k
             function.serialize(assert_cast<const ColumnAggregateFunction &>(*empty).getData()[0], empty_state);
             least = std::min(least, empty_state.count() * block.rows());
         }
-        else if (sparse_keys && elem.type->supportsSparseSerialization() && (isTuple(elem.type) || elem.column->getNumberOfDefaultRows() != 0))
+        else if (sparse_keys && elem.type->supportsSparseSerialization()
+                 && (isTuple(elem.type) || elem.column->getNumberOfDefaultRows() != 0))
             least = 0;
         out.stored_bytes_floor += least;
     }
@@ -452,9 +453,9 @@ String buildProjectionPart(
             /// a merge chooses the format from the rows and bytes of the parts it merges, and keeps a wide one
             /// these parts have at least the groups here, and at most the rows of the parent part, if the merge drops no rows
             const auto & data = read_step->getMergeTreeData();
-            const size_t most_rows = mt_settings[MergeTreeSetting::deduplicate_merge_projection_mode] == DeduplicateMergeProjectionMode::IGNORE
-                ? std::numeric_limits<size_t>::max()
-                : part->rows_count;
+            const bool ignores_dropped_rows
+                = mt_settings[MergeTreeSetting::deduplicate_merge_projection_mode] == DeduplicateMergeProjectionMode::IGNORE;
+            const size_t most_rows = ignores_dropped_rows ? std::numeric_limits<size_t>::max() : part->rows_count;
             const bool compact = data.choosePartFormat(0, merged.rows(), part->info.level, &projection).part_type
                 == MergeTreeDataPartType::Compact;
             const bool wide = data.choosePartFormat(std::numeric_limits<size_t>::max(), most_rows, part->info.level, &projection).part_type
@@ -638,8 +639,9 @@ std::pair<std::vector<MergeTreeDataPartPtr>, size_t> buildSyntheticProjectionPar
         std::vector<std::vector<size_t>> layouts;
         for (const auto & [rows_limit, bytes_limit] : chunkings)
             layouts.push_back(simulateWriterMarks(whole_part, part_type, mt_settings, adaptive_marks, rows_limit, bytes_limit));
-        /// a merge under a constant granularity: n rows of width w in the merged parts give granules of n / floor(n * w / granule_bytes) rows,
-        /// at least granule_bytes / w, and less than granule_bytes / w * (k + 1) / k for k >= 1 granules of bytes, or twice that for fewer
+        /// a merge under a constant granularity: n rows of width w in the merged parts give granules of n / floor(n * w / granule_bytes)
+        /// rows, at least granule_bytes / w, and less than granule_bytes / w * (k + 1) / k for k >= 1 granules of bytes, or twice that
+        /// for fewer
         if (data.stored_bytes != 0 && !granularity_per_block)
         {
             const auto rows = static_cast<double>(whole_part.rows);
@@ -661,7 +663,8 @@ std::pair<std::vector<MergeTreeDataPartPtr>, size_t> buildSyntheticProjectionPar
         return std::pair{std::move(layouts), primary};
     };
 
-    const auto part_type = merge_tree.choosePartFormat(whole_part.formatBytes(), whole_part.rows, parent_part->info.level, &projection).part_type;
+    const auto part_type
+        = merge_tree.choosePartFormat(whole_part.formatBytes(), whole_part.rows, parent_part->info.level, &projection).part_type;
     auto [layouts, primary] = layouts_of(part_type);
     if (data.both_formats)
         std::ranges::move(
