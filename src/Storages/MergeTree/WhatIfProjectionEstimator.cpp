@@ -729,7 +729,11 @@ std::pair<std::vector<MergeTreeDataPartPtr>, size_t> buildSyntheticProjectionPar
         std::vector<std::pair<size_t, size_t>> chunkings;
         size_t primary = 0;
         chunkings.emplace_back(whole_part.rows, 0);
-        if (granularity_per_block)
+        /// a level-zero aggregate part gets merge blocks only if `MATERIALIZE PROJECTION` calculates it in more batches,
+        /// one batch gives one temporary part that the mutation renames, see `MergeProjectionPartsTask`
+        const bool merge_blocks = parent_part->info.level > 0 || projection.type != ProjectionDescription::Type::Aggregate
+            || data.merge_history_unknown;
+        if (granularity_per_block && merge_blocks)
         {
             chunkings.emplace_back(merge_rows, merge_bytes);
             chunkings.emplace_back(merge_rows, granule_bytes);
