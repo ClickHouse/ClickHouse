@@ -672,12 +672,10 @@ public:
         if (total_bit_num == 0)
             return false;
 
-        /// The value 1 is represented by the single set bit at index `fraction_bit_num`
-        /// (the lowest integer bit). When `integer_bit_num == 0` that bit lies outside
-        /// `data_array` (which has `total_bit_num` entries), so the vector cannot represent
-        /// the value 1, and `getDataArrayAt(fraction_bit_num)` in `pointwiseMultiply` would
-        /// read out of bounds. Such a vector is therefore never all-ones.
-        if (fraction_bit_num >= total_bit_num)
+        /// Positive 1 needs an integer value bit distinct from the sign bit. With no
+        /// integer bits the slice is absent; with one signed integer bit it encodes -1.
+        const UInt32 minimum_integer_bit_num = isValueTypeSigned() ? 2 : 1;
+        if (integer_bit_num < minimum_integer_bit_num)
             return false;
 
         /// An empty vector carries no values, so it is not all-ones. The value 1 is the single
@@ -1322,6 +1320,14 @@ public:
      */
     static void pointwiseDivide(const BSINumericIndexedVector & lhs, const BSINumericIndexedVector & rhs, BSINumericIndexedVector & res)
     {
+        if (rhs.allValuesEqualOne())
+        {
+            /// Preserve exact values at divisor indexes without converting them to `Float64`.
+            /// Missing divisor indexes and divisor-only indexes remain explicit zeros.
+            lhs.andBitmap(*rhs.getDataArrayAt(rhs.fraction_bit_num), res);
+            addUnionZeroIndexes(lhs, rhs, res);
+            return;
+        }
         UInt32 max_integer_bit_num = std::max(lhs.integer_bit_num, rhs.integer_bit_num);
         UInt32 max_fraction_bit_num = std::max(lhs.fraction_bit_num, rhs.fraction_bit_num);
 
