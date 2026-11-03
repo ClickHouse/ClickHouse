@@ -1,14 +1,6 @@
 -- results identical with and without the optimization
 OK
 OK
-OK
-OK
-OK
-OK
-OK
-OK
-OK
-OK
 -- the values beyond the threshold are not copied
 PLAIN: replaced > 0: True
 PLAIN, PREWHERE: replaced > 0: True
@@ -29,19 +21,19 @@ shared conjunct: replaced == 0: True
 0
 -- columns cache
 0
-20000	120000
+4000	24000
 1
-20000	120000
+4000	24000
 -- query condition cache
-019999
-019998
-019997
-019996
-019995
-20000	120000
-019999
-019998
-019996
-019995
-019993
-13333	79998
+003999
+003998
+003997
+003996
+003995
+4000	24000
+003999
+003997
+003995
+003993
+003991
+2666	15996

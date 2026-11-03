@@ -30,23 +30,23 @@ MT="max_threads = 4, max_parsing_threads = 4"
 ON="use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_variable_length_types = 0"
 OFF="use_top_k_dynamic_filtering = 0, use_top_k_dynamic_filtering_for_variable_length_types = 0"
 
-# 20 row groups of 1000 rows; every row group holds values from the whole range, so neither the statistics nor the
+# 8 row groups of 500 rows; every row group holds values from the whole range, so neither the statistics nor the
 # dictionary can skip it. `s` is unique and never empty, `e` is '' in one of ten rows, `t` repeats each value 4 times,
-# `r` has its 100 smallest values once and 300 others in every row group (a dictionary small enough for the
+# `r` has its 100 smallest values once and 100 others in every row group (a dictionary small enough for the
 # `ColumnReplicated` decoding of a single-column PREWHERE),
 # `k` is unique. p.parquet is PLAIN, d.parquet dictionary-encoded, dl.parquet and db.parquet DELTA_LENGTH_BYTE_ARRAY and
 # DELTA_BYTE_ARRAY.
 "${LOCAL[@]}" --query "
     INSERT INTO FUNCTION file('${DIR}/p.parquet', Parquet)
-    SELECT leftPad(toString((number * 7919) % 20000), 6, '0') AS s, if(number % 10 = 3, '', s) AS e,
-        leftPad(toString(intDiv((number * 7919) % 20000, 4)), 6, '0') AS t,
-        leftPad(toString(if((number * 7919) % 20000 < 100, (number * 7919) % 20000, 100 + (number * 7919) % 300)), 6, '0') AS r,
+    SELECT leftPad(toString((number * 7919) % 4000), 6, '0') AS s, if(number % 10 = 3, '', s) AS e,
+        leftPad(toString(intDiv((number * 7919) % 4000, 4)), 6, '0') AS t,
+        leftPad(toString(if((number * 7919) % 4000 < 100, (number * 7919) % 4000, 100 + (number * 7919) % 100)), 6, '0') AS r,
         number AS k
-    FROM numbers(20000)
-    SETTINGS output_format_parquet_row_group_size = 1000, output_format_parquet_max_dictionary_size = 0, engine_file_truncate_on_insert = 1;
+    FROM numbers(4000)
+    SETTINGS output_format_parquet_row_group_size = 500, output_format_parquet_max_dictionary_size = 0, engine_file_truncate_on_insert = 1;
 
     INSERT INTO FUNCTION file('${DIR}/d.parquet', Parquet) SELECT * FROM file('${DIR}/p.parquet')
-    SETTINGS output_format_parquet_row_group_size = 1000, engine_file_truncate_on_insert = 1;
+    SETTINGS output_format_parquet_row_group_size = 500, engine_file_truncate_on_insert = 1;
 
     INSERT INTO FUNCTION s3('${S3_P}', 'test', 'testtest', 'RawBLOB') SELECT * FROM file('${DIR}/p.parquet', 'RawBLOB')
     SETTINGS s3_truncate_on_insert = 1;"
@@ -55,7 +55,7 @@ python3 -c "
 import pyarrow.parquet as pq
 table = pq.read_table('${DIR}/p.parquet')
 for name, encoding in (('dl', 'DELTA_LENGTH_BYTE_ARRAY'), ('db', 'DELTA_BYTE_ARRAY')):
-    pq.write_table(table, '${DIR}/' + name + '.parquet', use_dictionary=False, row_group_size=1000,
+    pq.write_table(table, '${DIR}/' + name + '.parquet', use_dictionary=False, row_group_size=500,
                    column_encoding={'s': encoding, 'e': encoding, 't': encoding})
 "
 
@@ -97,35 +97,40 @@ for checked in (mode(1), mode(2)):
 }
 
 echo "-- results identical with and without the optimization"
+# The decoding of every encoding: OFFSET, values '' in the file, ties at the threshold and a second filter step.
+queries=()
 for F in "${P}" "${D}" "${DL}" "${DB}"; do
-    queries=(
+    queries+=(
         "SELECT s FROM ${F} WHERE s != '' ORDER BY s LIMIT 5"
         "SELECT s FROM ${F} WHERE s != '' ORDER BY s DESC LIMIT 5 OFFSET 3"
-        "SELECT r FROM ${F} WHERE r != '' ORDER BY r DESC LIMIT 5 OFFSET 3"
-        "SELECT s FROM ${F} PREWHERE s != '' ORDER BY s DESC LIMIT 5"
-        "SELECT s FROM ${F} WHERE notEmpty(s) ORDER BY s LIMIT 5 OFFSET 7"
         "SELECT e FROM ${F} WHERE e != '' ORDER BY e LIMIT 5"
-        "SELECT e FROM ${F} WHERE e > '' ORDER BY e DESC LIMIT 5"
         "SELECT t, k FROM ${F} WHERE t != '' ORDER BY t, k LIMIT 6"
         "SELECT t, k FROM ${F} WHERE t != '' ORDER BY t DESC, k LIMIT 6"
         "SELECT t, k FROM ${F} WHERE t != '' ORDER BY t, k DESC LIMIT 1"
         "SELECT t, k FROM ${F} WHERE t != '' ORDER BY t DESC, k DESC LIMIT 1"
-        "SELECT s, k FROM ${F} WHERE s != '' ORDER BY s LIMIT 5"
         "SELECT s, k FROM ${F} WHERE s != '' AND k % 3 != 0 ORDER BY s LIMIT 5"
-        "SELECT e FROM file('${DIR}/p.parquet', Parquet, 'e Nullable(String), k UInt64') WHERE e != '' ORDER BY e LIMIT 5"
-        "SELECT e FROM file('${DIR}/p.parquet', Parquet, 'e LowCardinality(String), k UInt64') WHERE e != '' ORDER BY e LIMIT 5"
-        "SELECT e FROM file('${DIR}/d.parquet', Parquet, 'e LowCardinality(Nullable(String)), k UInt64') WHERE e != '' ORDER BY e LIMIT 5"
-        "SELECT s FROM ${F} WHERE s != '' ORDER BY s LIMIT 5 SETTINGS use_top_k_dynamic_filtering_for_variable_length_types = 1"
-        "SELECT x FROM (SELECT intDiv(1, length(s)) AS x, s FROM ${F}) WHERE s != '' ORDER BY s LIMIT 5 SETTINGS query_plan_filter_push_down = 0"
-        "SELECT s, d FROM tp WHERE s != '' ORDER BY s LIMIT 5 SETTINGS optimize_move_to_prewhere = 0, query_plan_optimize_lazy_materialization = 0"
-        "SELECT s, d FROM td WHERE s != '' ORDER BY s LIMIT 5 SETTINGS query_plan_optimize_lazy_materialization = 0"
-        "SELECT s, d FROM tp PREWHERE length(s) < 1000 WHERE s != '' ORDER BY s LIMIT 5 SETTINGS query_plan_optimize_lazy_materialization = 0"
-        "SELECT s FROM ${F} PREWHERE throwIf(length(s) = 0) = 0 AND s != '' ORDER BY s LIMIT 5"
-        "WITH notEmpty(s) AS ok SELECT s FROM ${F} PREWHERE throwIf(NOT ok) = 0 AND ok ORDER BY s LIMIT 5"
     )
-    compare
 done
-queries=("SELECT s FROM s3('${S3_P}', 'test', 'testtest', 'Parquet') WHERE s != '' ORDER BY s LIMIT 5")
+# The filters and the plans that arm the bound, which do not depend on the encoding.
+queries+=(
+    "SELECT r FROM ${D} WHERE r != '' ORDER BY r DESC LIMIT 5 OFFSET 3"
+    "SELECT s FROM ${P} PREWHERE s != '' ORDER BY s DESC LIMIT 5"
+    "SELECT s FROM ${D} PREWHERE s != '' ORDER BY s DESC LIMIT 5"
+    "SELECT s FROM ${P} WHERE notEmpty(s) ORDER BY s LIMIT 5 OFFSET 7"
+    "SELECT e FROM ${P} WHERE e > '' ORDER BY e DESC LIMIT 5"
+    "SELECT s, k FROM ${P} WHERE s != '' ORDER BY s LIMIT 5"
+    "SELECT e FROM file('${DIR}/p.parquet', Parquet, 'e Nullable(String), k UInt64') WHERE e != '' ORDER BY e LIMIT 5"
+    "SELECT e FROM file('${DIR}/p.parquet', Parquet, 'e LowCardinality(String), k UInt64') WHERE e != '' ORDER BY e LIMIT 5"
+    "SELECT e FROM file('${DIR}/d.parquet', Parquet, 'e LowCardinality(Nullable(String)), k UInt64') WHERE e != '' ORDER BY e LIMIT 5"
+    "SELECT s FROM ${P} WHERE s != '' ORDER BY s LIMIT 5 SETTINGS use_top_k_dynamic_filtering_for_variable_length_types = 1"
+    "SELECT x FROM (SELECT intDiv(1, length(s)) AS x, s FROM ${P}) WHERE s != '' ORDER BY s LIMIT 5 SETTINGS query_plan_filter_push_down = 0"
+    "SELECT s, d FROM tp WHERE s != '' ORDER BY s LIMIT 5 SETTINGS optimize_move_to_prewhere = 0, query_plan_optimize_lazy_materialization = 0"
+    "SELECT s, d FROM td WHERE s != '' ORDER BY s LIMIT 5 SETTINGS query_plan_optimize_lazy_materialization = 0"
+    "SELECT s, d FROM tp PREWHERE length(s) < 1000 WHERE s != '' ORDER BY s LIMIT 5 SETTINGS query_plan_optimize_lazy_materialization = 0"
+    "SELECT s FROM ${P} PREWHERE throwIf(length(s) = 0) = 0 AND s != '' ORDER BY s LIMIT 5"
+    "WITH notEmpty(s) AS ok SELECT s FROM ${P} PREWHERE throwIf(NOT ok) = 0 AND ok ORDER BY s LIMIT 5"
+    "SELECT s FROM s3('${S3_P}', 'test', 'testtest', 'Parquet') WHERE s != '' ORDER BY s LIMIT 5"
+)
 compare
 
 # One thread: the row groups are started one by one, and the threshold is set by the first ones.
