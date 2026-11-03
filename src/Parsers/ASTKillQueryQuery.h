@@ -57,6 +57,12 @@ public:
     }
 
     QueryKind getQueryKind() const override { return QueryKind::KillQuery; }
+
+protected:
+    void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override
+    {
+        f(nullptr, &where_expression);
+    }
 };
 
 }

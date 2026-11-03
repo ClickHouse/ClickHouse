@@ -606,7 +606,7 @@ void applyRule(ASTPtr &ast, RewriteRuleObjectPtr rule, std::unordered_map<String
             /// `ASTQueryParameter` and the rewritten query is still formatted/analyzed with
             /// the placeholder. Record such single-child replacements and fix the pointers
             /// after rebuilding `children`, mirroring `ReplaceQueryParameterVisitor::visitChildren`.
-            std::vector<std::pair<const IAST *, ASTPtr>> replaced_children;
+            std::vector<std::pair<ASTPtr, ASTPtr>> replaced_children;
             for (auto & child : top->children)
             {
                 auto * query_parameter = child->as<ASTQueryParameter>();
@@ -661,15 +661,26 @@ void applyRule(ASTPtr &ast, RewriteRuleObjectPtr rule, std::unordered_map<String
                     /// does for an ordinary query parameter.
                     if (!query_parameter->alias.empty())
                         captured->setAlias(query_parameter->alias);
-                    replaced_children.emplace_back(child.get(), captured);
+                    replaced_children.emplace_back(child, captured);
                     new_children.push_back(std::move(captured));
                 }
             }
             top->children = std::move(new_children);
-            /// `child.get()` above is still a live address: any typed pointer that referenced
-            /// the replaced placeholder keeps it alive, so this only rewrites those pointers.
             for (const auto & [old_ptr, new_ptr] : replaced_children)
-                top->updatePointerToChild(old_ptr, new_ptr);
+            {
+                top->updatePointerToChild(old_ptr.get(), new_ptr);
+                /// `replaced_children` holds the only remaining reference to the placeholder unless
+                /// a typed member of `top` still points at it, i.e. the AST class does not register
+                /// that member in `forEachPointerToChild`. The rewritten query would then still be
+                /// formatted and executed with the placeholder (or the template's stale node), so
+                /// refuse the rewrite instead of running a different query than the rule describes.
+                if (old_ptr->use_count() != 1)
+                    throw Exception(
+                        ErrorCodes::REWRITE_RULE_UNSUPPORTED_QUERY_PARAMETER_TYPE,
+                        "Resulting rewrite rule template uses the query parameter `{}` in a position of `{}` "
+                        "that does not support substitution\n",
+                        old_ptr->as<ASTQueryParameter &>().name, top->getID());
+            }
         }
         ast = std::move(resulting_query);
     } else if (query_rule.reject())
