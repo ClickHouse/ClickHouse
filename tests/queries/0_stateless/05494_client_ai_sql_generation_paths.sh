@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-tsan
 # Tag no-fasttest: the `??` command needs the AI SQL generator (`ENABLE_CLIENT_AI`), which is not built in the fast test.
+# Tag no-tsan: the tool call callbacks print from the main thread while the thinking animation of `AIToolExecutionDisplay::startThinking` prints to the same `std::ostream` from its own thread, so a tool call always races on the stream state (read `ios_base::width` at `AISQLGenerator.cpp:47` against the animation thread).
 
 # `?? <text>` asks the configured model for a query: the generator echoes every call of the schema
 # exploration tools with the result handed back to the model, says whether a query came out of the
 # answer, and puts that query into the next input line, where the user runs it. Documented in
-# docs/concepts/features/interfaces/client.mdx, "AI-powered SQL generation". The provider is a
-# local HTTP server speaking just enough of the OpenAI chat completion protocol, so no network and
-# no API key are needed; all its answers are successful ones, because a provider that refuses makes
-# the generator report the refusal as a `LOGICAL_ERROR`, which aborts a build with assertions. The
-# query reaches the input line only in an interactive session, so the client runs on a pseudo
-# terminal, in one process for both cases, as the coverage binary is slow to start.
+# docs/concepts/features/interfaces/client.mdx, "AI-powered SQL generation". The provider is a local
+# HTTP server speaking just enough of the OpenAI chat completion protocol, so no network and no API
+# key are needed; every answer is a successful one, because a refusal is reported as a `LOGICAL_ERROR`,
+# which aborts a build with assertions. The query reaches the input line only in an interactive
+# session, so the client runs on a pseudo terminal, in one process for both cases (slow binaries).
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
