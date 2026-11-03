@@ -24,7 +24,9 @@ std::string getChineseZodiac();
 bool isCloudEndpoint(const std::string & host);
 
 #if USE_REPLXX
-void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors, const Context & context, int cursor_position);
+/// If `last_is_delimiter` is not null, it is set to whether the query ends with a delimiter (and left
+/// intact if the query ends with whitespace).
+void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors, const Context & context, int cursor_position, bool * last_is_delimiter);
 String highlighted(const String & query, const Context & context);
 #endif
 

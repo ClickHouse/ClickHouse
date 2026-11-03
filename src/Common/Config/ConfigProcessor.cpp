@@ -204,6 +204,7 @@ std::string ConfigProcessor::encryptValue(const std::string & codec_name, const 
     auto bytes_written = codec.compress(value.data(), static_cast<UInt32>(value.size()), memory.data());
     std::string encrypted_value(memory.data(), bytes_written);
     std::string hex_value;
+    /// NOLINTNEXTLINE(clang-analyzer-core.StackAddressEscape)
     boost::algorithm::hex(encrypted_value.begin(), encrypted_value.end(), std::back_inserter(hex_value));
     return hex_value;
 }

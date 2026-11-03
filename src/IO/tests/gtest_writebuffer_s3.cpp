@@ -27,7 +27,9 @@
 #include <IO/ReadBufferFromEncryptedFile.h>
 #include <IO/AsyncReadCounters.h>
 #include <IO/ReadBufferFromS3.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/S3/Client.h>
+#include <IO/S3/copyS3File.h>
 
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
@@ -193,6 +195,20 @@ struct EventCounts
 
 struct Client;
 
+/// Read a request body the way the AWS SDK does: block reads of `content_length` bytes via
+/// istream::read (which routes to streambuf::xsgetn). `data << body->rdbuf()` instead reads
+/// char-by-char through sbumpc/uflow, which needs a streambuf get area -- StdStreamBufFromReadBuffer
+/// (used by the copyS3File body path) implements only xsgetn/underflow and leaves the get area empty,
+/// so the rdbuf() form segfaults on it. Reading by content length works for every body stream.
+inline std::string readRequestBody(const std::shared_ptr<Aws::IOStream> & body, size_t content_length)
+{
+    std::string data;
+    data.resize(content_length);
+    body->read(data.data(), static_cast<std::streamsize>(content_length));
+    data.resize(static_cast<size_t>(body->gcount()));
+    return data;
+}
+
 struct InjectionModel
 {
     virtual ~InjectionModel() = default;
@@ -239,7 +255,7 @@ struct Client : DB::S3::Client
     static DB::S3::PocoHTTPClientConfiguration GetClientConfiguration()
     {
         DB::RemoteHostFilter remote_host_filter;
-        return DB::S3::ClientFactory::instance().createClientConfiguration(
+        auto configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
             "some-region",
             remote_host_filter,
             /* s3_max_redirects = */ 100,
@@ -250,6 +266,12 @@ struct Client : DB::S3::Client
             /* for_disk_s3 = */ false,
             /* opt_disk_name = */ {},
             /* request_throttler = */ {});
+        /// createClientConfiguration leaves retryStrategy unset; ClientFactory::create() normally
+        /// fills it in. This mock builds DB::S3::Client directly, bypassing the factory, so replicate
+        /// that here -- otherwise chassert(client_configuration.retryStrategy) in Client::doRequest
+        /// aborts every request in debug/sanitizer builds.
+        configuration.retryStrategy = std::make_shared<DB::S3::Client::RetryStrategy>(configuration.retry_strategy);
+        return configuration;
     }
 
     void setInjectionModel(std::shared_ptr<MockS3::InjectionModel> injections_)
@@ -270,10 +292,9 @@ struct Client : DB::S3::Client
         }
 
         auto & bStore = store->GetBucketStore(request.GetBucket());
-        std::stringstream data;
-        data << request.GetBody()->rdbuf();
-        bStore.PutObject(request.GetKey(), data.str());
-        counters.writtenSize += data.str().length();
+        const std::string data = readRequestBody(request.GetBody(), request.GetContentLength());
+        bStore.PutObject(request.GetKey(), data);
+        counters.writtenSize += data.length();
 
         Aws::S3::Model::PutObjectOutcome outcome;
         Aws::S3::Model::PutObjectResult result(outcome.GetResultWithOwnership());
@@ -359,12 +380,11 @@ struct Client : DB::S3::Client
             }
         }
 
-        std::stringstream data;
-        data << request.GetBody()->rdbuf();
-        counters.writtenSize += data.str().length();
+        const std::string data = readRequestBody(request.GetBody(), request.GetContentLength());
+        counters.writtenSize += data.length();
 
         auto & bStore = store->GetBucketStore(request.GetBucket());
-        auto etag = bStore.UploadPart(request.GetUploadId(), data.str());
+        auto etag = bStore.UploadPart(request.GetUploadId(), data);
 
         Aws::S3::Model::UploadPartResult result;
         result.SetETag(etag);
@@ -458,6 +478,31 @@ struct UploadPartFailIngection: InjectionModel
     {
         return Aws::Client::AWSError<Aws::Client::CoreErrors>(Aws::Client::CoreErrors::VALIDATION, "FailInjection", "UploadPartFailIngection", false);
     }
+};
+
+/// Fails the first `fail_times` CompleteMultipartUpload calls with the un-typed MinIO `InvalidPart`
+/// eventual-consistency error, then lets the real mock store handle the rest. The AWS SDK cannot map
+/// <Code>InvalidPart</Code> to a typed model error, so it produces UNKNOWN as the error type and keeps
+/// the raw code only in the exception name -- exactly the shape WriteBufferFromS3 must recognise to
+/// retry (see AWSErrorMarshaller::Marshall).
+struct CompleteMPUInvalidPartOnceIngection : InjectionModel
+{
+    explicit CompleteMPUInvalidPartOnceIngection(size_t fail_times_) : fail_times(fail_times_) {}
+
+    std::optional<Aws::S3::Model::CompleteMultipartUploadOutcome> call(const Aws::S3::Model::CompleteMultipartUploadRequest & /*request*/) override
+    {
+        if (calls++ >= fail_times)
+            return std::nullopt;
+        return Aws::Client::AWSError<Aws::Client::CoreErrors>(
+            Aws::Client::CoreErrors::UNKNOWN,
+            "InvalidPart",
+            "One or more of the specified parts could not be found. The part may not have been uploaded, "
+            "or the specified entity tag may not match the part's entity tag.",
+            false);
+    }
+
+    size_t fail_times;
+    size_t calls = 0;
 };
 
 struct BaseSyncPolicy
@@ -831,6 +876,77 @@ TEST_P(SyncAsync, ExceptionOnCompleteMPU) {
             throw;
         }
       }, DB::S3Exception);
+}
+
+/// A transient MinIO `InvalidPart` on CompleteMultipartUpload must be retried, not surfaced as a
+/// hard failure. Regression test for the `Code: 499 ... InvalidPart` flake at hits_s3 fixture load.
+/// The injection fails the first completion attempt with `InvalidPart` (UNKNOWN type, name only),
+/// then succeeds; the write must finalize and store the object. Without the retry-predicate fix in
+/// WriteBufferFromS3::completeMultipartUpload the first failure is thrown straight through and this
+/// test fails.
+TEST_P(SyncAsync, CompleteMPURetriesInvalidPart) {
+    setInjectionModel(std::make_shared<MockS3::CompleteMPUInvalidPartOnceIngection>(/* fail_times= */ 1));
+
+    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // no single part
+    getSettings()[Setting::s3_min_upload_part_size] = 1; // small parts are ok
+
+    auto buffer = getWriteBuffer("complete_mpu_invalid_part_retry");
+    buffer->write('A');
+
+    getAsyncPolicy().setAutoExecute(true);
+    buffer->finalize();
+
+    /// The completion was attempted twice: once failing with InvalidPart, once succeeding.
+    EXPECT_EQ(client->counters.multiUploadComplete, 2u);
+    EXPECT_EQ(client->counters.multiUploadAbort, 0u);
+
+    auto & bStore = client->store->GetBucketStore(bucket);
+    EXPECT_EQ(bStore.objects["complete_mpu_invalid_part_retry"].size(), 1u);
+}
+
+/// The same transient MinIO `InvalidPart` on CompleteMultipartUpload must also be retried by the
+/// copyDataToS3File / copyS3File helper path (UploadHelper::completeMultipartUpload), which backs
+/// MinIO-backed backups and DiskObjectStorage server-side copies. Injects `InvalidPart` on the first
+/// completion attempt, then succeeds; the copy must finalize and store the object. Without the shared
+/// retry predicate in UploadHelper::completeMultipartUpload the first failure is thrown straight
+/// through and this test fails.
+TEST_F(WBS3Test, CopyDataToS3FileRetriesInvalidPart) {
+    setInjectionModel(std::make_shared<MockS3::CompleteMPUInvalidPartOnceIngection>(/* fail_times= */ 1));
+
+    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // force multipart
+    getSettings()[Setting::s3_min_upload_part_size] = 1; // small parts are ok
+    getSettings()[Setting::s3_check_objects_after_upload] = false;
+
+    S3::S3RequestSettings request_settings;
+    request_settings.updateFromSettings(settings, /* if_changed */ true, /* validate_settings */ false);
+
+    client->resetCounters();
+
+    const String payload = "copy_invalid_part_payload";
+    auto create_read_buffer = [&]() -> std::unique_ptr<SeekableReadBuffer>
+    {
+        return std::make_unique<ReadBufferFromOwnString>(payload);
+    };
+
+    /// Empty schedule => the multipart upload (and completion) runs synchronously on this thread.
+    copyDataToS3File(
+        create_read_buffer,
+        /* offset= */ 0,
+        /* size= */ payload.size(),
+        client,
+        bucket,
+        "copy_data_invalid_part_retry",
+        request_settings,
+        /* blob_storage_log= */ nullptr,
+        /* schedule= */ {},
+        /* object_metadata= */ std::nullopt);
+
+    /// The completion was attempted twice: once failing with InvalidPart, once succeeding.
+    EXPECT_EQ(client->counters.multiUploadComplete, 2u);
+    EXPECT_EQ(client->counters.multiUploadAbort, 0u);
+
+    auto & bStore = client->store->GetBucketStore(bucket);
+    EXPECT_EQ(bStore.objects["copy_data_invalid_part_retry"].size(), payload.size());
 }
 
 TEST_P(SyncAsync, ExceptionOnUploadPart) {

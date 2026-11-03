@@ -78,6 +78,11 @@ DEFINE_ICEBERG_FIELD(null_value_counts);
 DEFINE_ICEBERG_FIELD(lower_bounds);
 DEFINE_ICEBERG_FIELD(upper_bounds);
 DEFINE_ICEBERG_FIELD(partitions);
+/// Fields of a manifest-list `partitions` field_summary record.
+DEFINE_ICEBERG_FIELD(contains_null);
+DEFINE_ICEBERG_FIELD(contains_nan);
+DEFINE_ICEBERG_FIELD(lower_bound);
+DEFINE_ICEBERG_FIELD(upper_bound);
 DEFINE_ICEBERG_FIELD(key_metadata);
 
 
@@ -110,6 +115,7 @@ DEFINE_ICEBERG_FIELD_ALIAS(partition_transform, transform);
 DEFINE_ICEBERG_FIELD_ALIAS(partition_name, name);
 DEFINE_ICEBERG_FIELD_ALIAS(default_spec_id, default-spec-id);
 DEFINE_ICEBERG_FIELD_ALIAS(partition_spec, partition-spec);
+DEFINE_ICEBERG_FIELD_ALIAS(manifest_partition_spec_id, partition-spec-id);
 DEFINE_ICEBERG_FIELD_ALIAS(partition_specs, partition-specs);
 DEFINE_ICEBERG_FIELD_ALIAS(spec_id, spec-id);
 DEFINE_ICEBERG_FIELD_ALIAS(added_records, added-records);

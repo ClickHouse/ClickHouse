@@ -10,6 +10,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
+    extern const int TOO_LARGE_ARRAY_SIZE;
     extern const int UNKNOWN_SETTING;
 }
 
@@ -23,7 +24,14 @@ void BaseSettingsHelpers::writeString(std::string_view str, WriteBuffer & out)
 String BaseSettingsHelpers::readString(ReadBuffer & in)
 {
     String str;
-    readStringBinary(str, in);
+    readStringBinaryGrowing(str, in);
+    return str;
+}
+
+String BaseSettingsHelpers::readName(ReadBuffer & in)
+{
+    String str;
+    readStringBinaryGrowing(str, in, MAX_SETTING_NAME_SIZE);
     return str;
 }
 
@@ -53,6 +61,11 @@ SettingsTierType BaseSettingsHelpers::getTier(UInt64 flags)
 void BaseSettingsHelpers::throwSettingNotFound(std::string_view name)
 {
     throw Exception(ErrorCodes::UNKNOWN_SETTING, "Unknown setting '{}'", String{name});
+}
+
+void BaseSettingsHelpers::throwTooManySettings(std::string_view what)
+{
+    throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too many {} received (maximum: {})", String{what}, MAX_SETTINGS_IN_A_SEQUENCE);
 }
 
 /// Log the summary of unknown settings as a warning instead of warning for each one separately.

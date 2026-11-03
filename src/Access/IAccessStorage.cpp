@@ -3,6 +3,7 @@
 #include <Access/Credentials.h>
 #include <Access/User.h>
 #include <Access/AccessBackup.h>
+#include <algorithm>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/IBackupCoordination.h>
 #include <Backups/IRestoreCoordination.h>
@@ -554,6 +555,14 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
             if (!isAddressAllowed(*user, address))
                 throwAddressNotAllowed(address);
 
+            /// `MySQLHandler` chooses the `mysql_native_password` plugin from an earlier snapshot of the user, and the user
+            /// can be altered while the client is answering. Re-check on the snapshot used for the authentication: if any
+            /// method cannot be enforced by the Native41 auth response, reject it instead of letting that method silently
+            /// drop out of the checks below. See `Authentication::mysqlNative41CannotVerify`.
+            if (typeid_cast<const MySQLNative41Credentials *>(&credentials)
+                && std::ranges::any_of(user->authentication_methods, Authentication::mysqlNative41CannotVerify))
+                throw Exception(ErrorCodes::WRONG_PASSWORD, "Invalid credentials");
+
             bool skipped_not_allowed_authentication_methods = false;
 
             bool need_second_factor = false;
@@ -571,6 +580,12 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
                 if (cred_check_result == Authentication::CredentialsCheckResult::Success)
                 {
                     auth_result.authentication_data = auth_method;
+
+                    /// Consume the code only once the whole authentication succeeded: the credential
+                    /// checks above are pure, so a failed attempt cannot consume a valid code.
+                    if (!Authentication::consumeOneTimePassword(credentials, auth_method))
+                        throw Exception(ErrorCodes::WRONG_PASSWORD, "The one-time password has already been used");
+
                     return auth_result;
                 }
                 if (cred_check_result == Authentication::CredentialsCheckResult::NeedSecondFactor)
@@ -583,6 +598,8 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
                               "check allow_no_password and allow_plaintext_password settings in the server configuration");
             }
 
+            /// Reported for a missing code before the password is checked (see `checkBasicAuthentication`),
+            /// so this error does not confirm the password.
             if (need_second_factor)
                 throw Exception(ErrorCodes::REQUIRED_SECOND_FACTOR, "Authentication requires second factor");
             throw Exception(ErrorCodes::WRONG_PASSWORD, "Invalid credentials");

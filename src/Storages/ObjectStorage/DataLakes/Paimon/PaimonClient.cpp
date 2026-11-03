@@ -274,6 +274,7 @@ PaimonSnapshot PaimonTableClient::getSnapshot(const std::pair<Int64, String> & s
 std::vector<PaimonManifestFileMeta> PaimonTableClient::getManifestMeta(String manifest_list_path)
 {
     /// read manifest list file
+    Paimon::checkPathIsRelativeToTable(manifest_list_path, "manifest list");
     auto context = getContext();
     RelativePathWithMetadata relative_path(std::filesystem::path(table_location) / (PAIMON_MANIFEST_DIR) / manifest_list_path);
     auto manifest_list_buf = createReadBuffer(relative_path, object_storage, context, log);
@@ -293,6 +294,7 @@ std::vector<PaimonManifestFileMeta> PaimonTableClient::getManifestMeta(String ma
 PaimonManifest
 PaimonTableClient::getDataManifest(String manifest_path, const PaimonTableSchema & table_schema, const String & partition_default_name)
 {
+    Paimon::checkPathIsRelativeToTable(manifest_path, "manifest");
     String manifest_file_name(manifest_path.begin() + manifest_path.find_last_of('/') + 1, manifest_path.end());
     if (manifest_file_name.starts_with("index-manifest-"))
         return {};

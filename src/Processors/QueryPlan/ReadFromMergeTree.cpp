@@ -2821,6 +2821,11 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     if (direction != 1 && query_info.isFinal())
         return false;
 
+    /// The prefix indexes this snapshot's sorting key, and a clone of its expression list is resized
+    /// to `prefix_size`, which appends null `ASTPtr` children when the prefix is longer than the key.
+    if (prefix_size > storage_snapshot->metadata->getSortingKey().column_names.size())
+        return false;
+
     query_info.input_order_info = std::make_shared<InputOrderInfo>(SortDescription{}, prefix_size, direction, read_limit);
     reader_settings.read_in_order = true;
 
@@ -3061,7 +3066,14 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
             result_projection);
     }
 
-    if (!result.split_parts.layers.empty())
+    /// `split_parts` is a static pre-split of the parts into primary-key layers made by
+    /// `optimizeJoinByShards` for the single-node plan, where the join steps above consume one
+    /// output port per layer. It must be ignored for a read coordinated across parallel replicas:
+    /// automatic parallel replicas (`considerEnablingParallelReplicas`) reuses the single-node
+    /// analysis for the replicas plan, whose fresh join does not expect layered output, and each
+    /// layer would create its own reading pool announcing to the coordinator, which rejects the
+    /// second announcement from the same replica with a "Duplicate announcement received" exception.
+    if (!result.split_parts.layers.empty() && !is_parallel_reading_from_replicas)
         return readByLayers(
             result.parts_with_ranges,
             std::move(result.split_parts),

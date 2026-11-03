@@ -1,0 +1,13 @@
+two databases from one backup
+1000	499500
+1000	499500
+--
+recreated under the same name
+1000	499500
+1000	499500
+--
+recreated under a different name
+1000	499500
+--
+rename is not supported
+Backup: RENAME DATABASE is not supported. (NOT_IMPLEMENTED)

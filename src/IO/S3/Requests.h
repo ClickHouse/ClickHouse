@@ -61,6 +61,9 @@ inline void setChecksumAlgorithm(R & request)
 }
 };
 
+/// The `x-amz-storage-class` value for a storage class name; throws if the name contains CR or LF.
+Model::StorageClass getStorageClassForName(const std::string & name);
+
 template <typename BaseRequest>
 class ExtendedRequest : public BaseRequest
 {

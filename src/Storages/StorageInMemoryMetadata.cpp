@@ -20,6 +20,8 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 
+#include <Poco/Net/SocketAddress.h>
+
 
 namespace DB
 {
@@ -132,6 +134,18 @@ UUID StorageInMemoryMetadata::getDefinerID(DB::ContextPtr context) const
     return access_control.getID<User>(*definer);
 }
 
+namespace
+{
+
+/// Custom-key parallel replicas evaluate a user-supplied expression over the body's columns; turn them off there.
+void dropParallelReplicasCustomKey(Context & body_context)
+{
+    body_context.setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+    body_context.setSetting("parallel_replicas_custom_key", String{});
+}
+
+}
+
 ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(ContextPtr context, const ClientInfo * client_info) const
 {
     if (!sql_security_type)
@@ -161,18 +175,78 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     if (context->getZooKeeperMetadataTransaction())
         new_context->initZooKeeperMetadataTransaction(context->getZooKeeperMetadataTransaction());
 
+    auto changed_settings = context->getSettingsRef().changes();
+    /// Invoker filters must not be injected into a DEFINER/NONE body.
+    changed_settings.removeSetting("additional_table_filters");
+
+    /// Internal initiator-set settings: kept for secondary queries so that followers read their slice of a body's SAMPLE,
+    /// dropped for an initial query where only the invoker could supply them. The query kind is client-declared, not authenticated.
+    if (context->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
+    {
+        changed_settings.removeSetting("parallel_replicas_count");
+        changed_settings.removeSetting("parallel_replica_offset");
+    }
+
+    /// Drop the invoker's key even if only the definer's profile activates it.
+    const bool drop_custom_key = context->canUseParallelReplicasCustomKey() || changed_settings.tryGet("parallel_replicas_custom_key");
+
     if (sql_security_type == SQLSecurityType::NONE)
     {
-        new_context->applySettingsChanges(context->getSettingsRef().changes());
+        new_context->applySettingsChanges(changed_settings);
+        if (drop_custom_key)
+            dropParallelReplicasCustomKey(*new_context);
         return new_context;
     }
 
     new_context->setUser(getDefinerID(context));
 
-    auto changed_settings = context->getSettingsRef().changes();
+    /// `Context::setUser` only sets the access-control identity (`user_id`); it does not touch the
+    /// user names in `ClientInfo`. That is harmless when there is an invoker whose names were copied
+    /// above, but a scheduled refresh of a refreshable materialized view builds its context from the
+    /// global context, where `current_user`, `initial_user` and `authenticated_user` are empty.
+    /// `RemoteQueryExecutor` sends the names as-is, and a shard that accepts the interserver
+    /// `<secret>` treats an empty `initial_user` as "interserver mode": it skips authentication
+    /// (see `TCPHandler::receiveQuery`) and executes the query with full access
+    /// (see `Context::getAccess`, `full_access = !user_id`). Stamp the definer into the empty fields
+    /// so the remote leg of the query is bounded by the same identity as the local one. Non-empty
+    /// fields are left alone so `currentUser` inside an ordinary `DEFINER` view still returns the
+    /// invoker. `AsynchronousInsertQueue` and `InterpreterExecuteAsQuery` do the same.
+    {
+        const auto & new_client_info = new_context->getClientInfo();
+        const bool current_user_empty = new_client_info.current_user.empty();
+        const bool initial_user_empty = new_client_info.initial_user.empty();
+        const bool authenticated_user_empty = new_client_info.authenticated_user.empty();
+
+        if (current_user_empty || initial_user_empty || authenticated_user_empty)
+        {
+            const auto definer_name = new_context->getUserName();
+            if (current_user_empty)
+                new_context->setCurrentUserName(definer_name);
+            if (initial_user_empty)
+            {
+                new_context->setInitialUserName(definer_name);
+                /// The shard authenticates the definer by `initial_user` and checks `initial_address`
+                /// against the allowed hosts of that user. Without an invoker, the address is the
+                /// unspecified `0.0.0.0`, which only matches users with `HOST ANY`. The query is
+                /// produced by this server itself, so present it as coming from the local host.
+                if (!new_client_info.initial_address || new_client_info.initial_address->host().isWildcard())
+                    new_context->setInitialAddress(Poco::Net::SocketAddress(Poco::Net::IPAddress("127.0.0.1"), 0));
+            }
+            if (authenticated_user_empty)
+            {
+                ClientInfo client_info_with_definer = new_context->getClientInfo();
+                client_info_with_definer.authenticated_user = definer_name;
+                new_context->setClientInfo(client_info_with_definer);
+            }
+        }
+    }
+
     new_context->clampToSettingsConstraints(changed_settings, SettingSource::QUERY);
     new_context->applySettingsChanges(changed_settings);
     new_context->setSetting("allow_ddl", 1);
+    /// After the constraints: the definer's profile must not be able to keep the invoker's key alive.
+    if (drop_custom_key)
+        dropParallelReplicasCustomKey(*new_context);
 
     // parallel replicas related
     if (context->canUseTaskBasedParallelReplicas() && context->hasMergeTreeAllRangesCallback())

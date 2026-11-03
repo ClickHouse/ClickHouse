@@ -10,6 +10,7 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionFactory.h>
+#include <Core/Block.h>
 #include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -24,6 +25,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Storages/StorageProxy.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/Squashing.h>
@@ -48,6 +50,7 @@
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Common/OpenSSLHelpers.h>
+#include <Common/quoteString.h>
 #include <Common/Stopwatch.h>
 #include <Common/VersionNumber.h>
 #include <Common/logger_useful.h>
@@ -127,6 +130,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 tcp_close_connection_after_queries_num;
     extern const ServerSettingsUInt64 tcp_close_connection_after_queries_seconds;
     extern const ServerSettingsUInt64 handshake_timeout_milliseconds;
+    extern const ServerSettingsBool interserver_tables_status_allow_unauthenticated;
 }
 
 namespace FailPoints
@@ -248,6 +252,21 @@ void validateClientInfo(const ClientInfo & session_client_info, const ClientInfo
         // os_user, quota_key, client_trace_context can be different.
     }
 }
+
+/// Reject a packet that cannot appear at this point of the protocol without reading its payload.
+/// `UNEXPECTED_PACKET_FROM_CLIENT` closes the connection, so the payload is never needed - and
+/// deserializing it would expose a large amount of code (data types, serializations and aggregate
+/// function states in a `Data` packet) to a peer that, in interserver mode, has not authenticated yet.
+/// The unread payload is also why the connection cannot be reused: the leftover input starts
+/// mid-packet, so `runImpl` does not try to skip it for this error code.
+[[noreturn]] void throwUnexpectedPacket(UInt64 packet_type)
+{
+    throw Exception(
+        DB::ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
+        "Unexpected packet {} received from client",
+        Protocol::Client::toString(packet_type));
+}
+
 struct TurnOffBoolSettingTemporary
 {
     bool & setting;
@@ -1028,8 +1047,11 @@ void TCPHandler::runImpl()
                 std::lock_guard lock(*callback_mutex);
 
                 /// A query packet is always followed by one or more data packets.
-                /// If some of those data packets are left, try to skip them.
-                if (!query_state->read_all_data)
+                /// If some of those data packets are left, try to skip them - but only from a packet
+                /// boundary. Skipping from inside a packet parses its remaining bytes as packets of
+                /// their own, deserializing whatever they say and then blocking until `receive_timeout`.
+                if (!query_state->read_all_data && query_state->at_packet_boundary
+                    && exception_code != ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT)
                     skipData(*query_state);
             }
             catch (...)
@@ -1040,9 +1062,10 @@ void TCPHandler::runImpl()
             }
 
             /// We close the connection after an exception if there is something wrong with the connection,
-            /// otherwise we try to preserve it and reuse for other queries.
-            if (exception->code() == ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT || exception->code() == ErrorCodes::USER_EXPIRED
-                || exception->code() == ErrorCodes::TCP_CONNECTION_LIMIT_REACHED)
+            /// otherwise we try to preserve it and reuse for other queries. A half-read packet counts
+            /// as wrong: the next query would read the rest of it as a packet of its own.
+            if (!query_state->at_packet_boundary || exception_code == ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT
+                || exception_code == ErrorCodes::USER_EXPIRED || exception_code == ErrorCodes::TCP_CONNECTION_LIMIT_REACHED)
             {
                 LOG_DEBUG(log, "Going to close connection due to exception: {}", exception->message());
                 query_state->finalizeOut(out);
@@ -1100,12 +1123,20 @@ bool TCPHandler::receivePacketsExpectQuery(std::shared_ptr<QueryState> & state)
     switch (packet_type)
     {
         case Protocol::Client::Hello:
-            processUnexpectedHello();
+            throwUnexpectedPacket(packet_type);
 
         case Protocol::Client::Data:
         case Protocol::Client::Scalar:
-            processUnexpectedData();
-            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet Data received from client");
+            /// The payload is deliberately left unread: nothing consumes it here (the connection
+            /// closes with no reply), and in interserver mode the connection is not authenticated
+            /// until the Query packet, so reading it would deserialize a peer-chosen type.
+            ///
+            /// Name that case for what it is: an unauthenticated peer, so that `runImpl` answers it
+            /// the way it answers every other interserver authentication failure.
+            if (is_interserver_mode && !is_interserver_authenticated)
+                throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                    "Unexpected data packet received before interserver authentication");
+            throwUnexpectedPacket(packet_type);
 
         case Protocol::Client::Ping:
             writeVarUInt(Protocol::Server::Pong, *out);
@@ -1167,28 +1198,24 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
         }
 
         UInt64 packet_type = 0;
+        /// The type is a varuint, so a client can leave the input mid-packet by truncating it.
+        state.at_packet_boundary = false;
         readVarUInt(packet_type, *in);
 
         switch (packet_type)
         {
             case Protocol::Client::IgnoredPartUUIDs:
-                processUnexpectedIgnoredPartUUIDs();
-
             case Protocol::Client::Query:
-                processUnexpectedQuery();
-
             case Protocol::Client::Hello:
-                processUnexpectedHello();
-
             case Protocol::Client::TablesStatusRequest:
-                processUnexpectedTablesStatusRequest();
+                throwUnexpectedPacket(packet_type);
 
             case Protocol::Client::Data:
             case Protocol::Client::Scalar:
             {
                 bool empty_block;
                 if (state.skipping_data)
-                    empty_block = !processUnexpectedData();
+                    empty_block = !skipDataPacket(state);
                 else
                     empty_block = !processData(state, packet_type == Protocol::Client::Scalar);
                 if (empty_block)
@@ -1200,12 +1227,14 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
                 return receiveQueryPlan(state);
 
             case Protocol::Client::Ping:
+                state.at_packet_boundary = true;  /// no body
                 writeVarUInt(Protocol::Server::Pong, *out);
                 out->finishChunk();
                 out->next();
                 continue;
 
             case Protocol::Client::Cancel:
+                state.at_packet_boundary = true;  /// no body, and `processCancel` throws
                 processCancel(state);
                 return false; // We return false from this function as if no more data received
 
@@ -1521,8 +1550,22 @@ void TCPHandler::processTablesStatusRequest()
     request.read(*in, client_tcp_protocol_version);
 
     ContextPtr context_to_resolve_table_names;
+    /// An interserver connection is not authenticated until its first `Query`, but this request arrives
+    /// before it. Until then, report every table as present, not replicated and writable, so that nothing
+    /// is disclosed and the initiator still proceeds to the `Query`.
+    bool hide_table_status = false;
     if (is_interserver_mode)
     {
+        if (!is_interserver_authenticated
+            && !server.context()->getServerSettings()[ServerSetting::interserver_tables_status_allow_unauthenticated])
+        {
+            LOG_DEBUG(LogFrequencyLimiter(log, 10),
+                "Answering an unauthenticated interserver TablesStatusRequest without the table status. "
+                "Replica staleness, readonly state and table existence are not taken into account until "
+                "a query on this connection has authenticated with the cluster secret.");
+            hide_table_status = true;
+        }
+
         /// In the interserver mode session context does not exist, because authentication is done for each query.
         /// We also cannot create query context earlier, because it cannot be created before authentication,
         /// but query is not received yet. So we have to do this trick.
@@ -1540,13 +1583,20 @@ void TCPHandler::processTablesStatusRequest()
     TablesStatusResponse response;
     for (const QualifiedTableName & table_name: request.tables)
     {
+        if (hide_table_status)
+        {
+            response.table_states_by_id.emplace(table_name, TableStatus{});
+            continue;
+        }
+
         auto resolved_id = context_to_resolve_table_names->tryResolveStorageID({table_name.database, table_name.table});
         StoragePtr table = DatabaseCatalog::instance().tryGetTable(resolved_id, context_to_resolve_table_names);
         if (!table)
             continue;
 
         TableStatus status;
-        if (auto * replicated_table = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
+        /// The initiator asks about this table by name, so a lazily loaded replica is loaded to report its delay.
+        if (auto * replicated_table = castStorage<StorageReplicatedMergeTree>(table, DeferredTable::Load).get())
         {
             status.is_replicated = true;
             status.absolute_delay = static_cast<UInt32>(replicated_table->getAbsoluteDelay());
@@ -1572,15 +1622,6 @@ void TCPHandler::processTablesStatusRequest()
 
     out->finishChunk();
     out->next();
-}
-
-
-void TCPHandler::processUnexpectedTablesStatusRequest()
-{
-    TablesStatusRequest skip_request;
-    skip_request.read(*in, client_tcp_protocol_version);
-
-    throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet TablesStatusRequest received from client");
 }
 
 
@@ -1747,7 +1788,10 @@ bool TCPHandler::receiveProxyHeader()
     /// Only PROXYv1 is supported.
     /// Validation of protocol is not fully performed.
 
-    LimitReadBuffer limit_in(*in, {.read_no_more=107, .expect_eof=true}); /// Maximum length from the specs.
+    /// No `expect_eof`: except for the `UNKNOWN` health check below, the client sends its handshake
+    /// right after the header, so the connection does not end at the limit. An over-long header is
+    /// rejected anyway, by carrying no `\r\n` within these 107 bytes.
+    LimitReadBuffer limit_in(*in, {.read_no_more=107}); /// Maximum length from the specs.
 
     assertString("PROXY ", limit_in);
 
@@ -1872,6 +1916,16 @@ std::unique_ptr<Session> TCPHandler::makeSession()
 /// from consuming excessive memory. See #52501.
 static constexpr size_t MAX_HELLO_STRING_SIZE = 64 * 1024;
 
+/** The externally granted roles are a serialized list of role names. Both the size of the list and
+  * the number of names in it come from the peer, and in interserver mode they are read before the
+  * secret hash of the query is checked, so bound them.
+  */
+static constexpr size_t MAX_EXTRA_ROLES_SIZE = 1024 * 1024;
+/// Only read on the interserver path, which is compiled out without SSL.
+[[maybe_unused]] static constexpr size_t MAX_EXTRA_ROLES = 65536;
+/// A role name is an identifier, and it is resized to its declared size before its value arrives.
+[[maybe_unused]] static constexpr size_t MAX_EXTRA_ROLE_NAME_SIZE = 64 * 1024;
+
 void TCPHandler::receiveHello()
 {
     /// Receive `hello` packet.
@@ -1971,19 +2025,6 @@ void TCPHandler::receiveHello()
     /// Perform handshake for SSH authentication
     if (is_ssh_based_auth)
     {
-        const auto authentication_types = session->getAuthenticationTypesOrLogInFailure(user);
-
-        bool user_supports_ssh_authentication = std::find_if(
-            authentication_types.begin(),
-            authentication_types.end(),
-            [](auto authentication_type)
-            {
-               return authentication_type ==  AuthenticationType::SSH_KEY;
-            }) != authentication_types.end();
-
-        if (!user_supports_ssh_authentication)
-            throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Expected authentication with SSH key");
-
         if (client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_SSH_AUTHENTICATION)
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Cannot authenticate user with SSH key, because client version is too old");
 
@@ -2045,23 +2086,6 @@ void TCPHandler::receiveAddendum()
 
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_VERSIONED_PARALLEL_REPLICAS_PROTOCOL)
         readVarUInt(client_parallel_replicas_protocol_version, *in);
-}
-
-
-void TCPHandler::processUnexpectedHello()
-{
-    UInt64 skip_uint_64;
-    String skip_string;
-
-    readStringBinary(skip_string, *in, MAX_HELLO_STRING_SIZE);
-    readVarUInt(skip_uint_64, *in);
-    readVarUInt(skip_uint_64, *in);
-    readVarUInt(skip_uint_64, *in);
-    readStringBinary(skip_string, *in, MAX_HELLO_STRING_SIZE);
-    readStringBinary(skip_string, *in, MAX_HELLO_STRING_SIZE);
-    readStringBinary(skip_string, *in, MAX_HELLO_STRING_SIZE);
-
-    throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet Hello received from client");
 }
 
 
@@ -2133,22 +2157,16 @@ void TCPHandler::processIgnoredPartUUIDs()
 }
 
 
-void TCPHandler::processUnexpectedIgnoredPartUUIDs()
-{
-    std::vector<UUID> skip_part_uuids;
-    readVectorBinary(skip_part_uuids, *in);
-    throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet IgnoredPartUUIDs received from client");
-}
-
-
 ClusterFunctionReadTaskResponsePtr TCPHandler::receiveClusterFunctionReadTaskResponse(QueryState & state)
 {
     UInt64 packet_type = 0;
+    state.at_packet_boundary = false;
     readVarUInt(packet_type, *in);
 
     switch (packet_type)
     {
         case Protocol::Client::Cancel:
+            state.at_packet_boundary = true;  /// no body, and `processCancel` throws
             processCancel(state);
             return {};
 
@@ -2156,6 +2174,7 @@ ClusterFunctionReadTaskResponsePtr TCPHandler::receiveClusterFunctionReadTaskRes
         {
             auto task = std::make_shared<ClusterFunctionReadTaskResponse>();
             task->deserialize(*in);
+            state.at_packet_boundary = true;
             return task;
         }
 
@@ -2169,11 +2188,13 @@ ClusterFunctionReadTaskResponsePtr TCPHandler::receiveClusterFunctionReadTaskRes
 std::optional<ParallelReadResponse> TCPHandler::receivePartitionMergeTreeReadTaskResponse(QueryState & state)
 {
     UInt64 packet_type = 0;
+    state.at_packet_boundary = false;
     readVarUInt(packet_type, *in);
 
     switch (packet_type)
     {
         case Protocol::Client::Cancel:
+            state.at_packet_boundary = true;  /// no body, and `processCancel` throws
             processCancel(state);
             return {};
 
@@ -2181,6 +2202,7 @@ std::optional<ParallelReadResponse> TCPHandler::receivePartitionMergeTreeReadTas
         {
             ParallelReadResponse response;
             response.deserialize(*in, client_parallel_replicas_protocol_version);
+            state.at_packet_boundary = true;
             return response;
         }
 
@@ -2246,7 +2268,7 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
     // TODO: check if having `is_interserver_mode` doesn't break interoperability with the CH-client.
     if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_INTERSERVER_EXTERNALLY_GRANTED_ROLES)
     {
-        readStringBinary(received_extra_roles, *in);
+        readStringBinary(received_extra_roles, *in, MAX_EXTRA_ROLES_SIZE);
     }
 
     /// Interserver secret.
@@ -2261,13 +2283,17 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
 
     readVarUInt(compression, *in);
     state->compression = static_cast<Protocol::Compression>(compression);
-    last_block_in.compression = state->compression;
 
     readStringBinary(state->query, *in);
 
     Settings passed_params;
     if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
         passed_params.read(*in, settings_format);
+
+    /// The packet is read, so the data packets that always follow it are owed from here on, whether
+    /// or not the rest of the query is set up successfully. Marking it any later would strand that
+    /// data for the next query on this connection to read as its first packet.
+    state->read_all_data = false;
 
     if (is_interserver_mode)
     {
@@ -2342,7 +2368,7 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
             {
                 ReadBufferFromString buffer(received_extra_roles);
 
-                readVectorBinary(external_roles, buffer);
+                readVectorBinary(external_roles, buffer, MAX_EXTRA_ROLES, MAX_EXTRA_ROLE_NAME_SIZE);
                 LOG_DEBUG(log, "Parsed extra roles [{}]", fmt::join(external_roles, ", "));
             }
 
@@ -2460,54 +2486,23 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
         std::chrono::milliseconds ms(sleep_after_receiving_query.totalMilliseconds());
         std::this_thread::sleep_for(ms);
     }
-
-    state->read_all_data = false;
 }
 
-void TCPHandler::processUnexpectedQuery()
-{
-    UInt64 skip_uint_64;
-    String skip_string;
-
-    readStringBinary(skip_string, *in);
-
-    ClientInfo skip_client_info;
-    if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_CLIENT_INFO)
-        skip_client_info.read(*in, client_tcp_protocol_version);
-
-    Settings skip_settings;
-    auto settings_format = (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsWriteFormat::STRINGS_WITH_FLAGS
-                                                                                                      : SettingsWriteFormat::BINARY;
-    skip_settings.read(*in, settings_format);
-
-    std::string skip_hash;
-    bool interserver_secret = client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET;
-    if (interserver_secret)
-        readStringBinary(skip_hash, *in, 32);
-
-    readVarUInt(skip_uint_64, *in);
-
-    readVarUInt(skip_uint_64, *in);
-    last_block_in.compression = static_cast<Protocol::Compression>(skip_uint_64);
-
-    readStringBinary(skip_string, *in);
-
-    if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
-        skip_settings.read(*in, settings_format);
-
-    throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet Query received from client");
-}
 
 bool TCPHandler::receiveQueryPlan(QueryState & state)
 {
-    bool unexpected_packet = state.stage != QueryProcessingStage::QueryPlan || state.plan_and_sets || !state.query_context || state.read_all_data;
-    auto context = unexpected_packet ? Context::getGlobalContextInstance() : state.query_context;
+    /// Rejected while draining a failed query too: consuming it would only buy the reuse of a
+    /// connection whose query is already lost, at the price of running the plan deserializer on a
+    /// peer's bytes.
+    if (state.skipping_data || state.stage != QueryProcessingStage::QueryPlan || state.plan_and_sets
+        || !state.query_context || state.read_all_data)
+        throwUnexpectedPacket(Protocol::Client::QueryPlan);
+
+    const auto & context = state.query_context;
 
     auto plan_and_sets = QueryPlan::deserialize(*in, context);
+    state.at_packet_boundary = true;
     LOG_TRACE(log, "Received query plan");
-
-    if (!state.skipping_data && unexpected_packet)
-        throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet QueryPlan received from client");
 
     state.plan_and_sets = std::make_shared<QueryPlanAndSets>(std::move(plan_and_sets));
     return true;
@@ -2523,14 +2518,17 @@ bool TCPHandler::processData(QueryState & state, bool scalar)
 
     /// Read one block from the network and write it down
     Block block = state.block_in->read();
+    state.at_packet_boundary = true;
 
     if (block.empty())
         return false;
 
     if (scalar)
     {
-        /// Scalar value
-        state.query_context->addScalar(temporary_id.table_name, block);
+        /// Scalar value received from the client over the wire. It must not be trusted as a
+        /// server-computed scalar-subquery result (see Context::addClientScalar): otherwise a client
+        /// could name it with a row policy's scalar-subquery hash and forge the policy's result.
+        state.query_context->addClientScalar(temporary_id.table_name, block);
     }
     else if (!state.need_receive_data_for_insert && !state.need_receive_data_for_input)
     {
@@ -2551,6 +2549,22 @@ bool TCPHandler::processData(QueryState & state, bool scalar)
             state.query_context->addExternalTable(temporary_id.table_name, std::move(temporary_table));
         }
         auto metadata_snapshot = storage->getInMemoryMetadataPtr();
+
+        /// The block is self-describing and comes from the client, while the schema of an external table
+        /// is bound once, by its first block (see the branch above). Every block after that one must match
+        /// that schema: the columns are written to the table as a `Chunk`, which carries no types at all,
+        /// and `MemorySink::consume` labels them with the table header again. A block declaring other
+        /// types would therefore not be rejected anywhere, and its data would later be read as the type
+        /// the header names - a type confusion on data the client controls, not a data error.
+        if (resolved && !isCompatibleHeader(block, metadata_snapshot->getSampleBlock()))
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Structure of the block for external table {} does not match the structure of the table. "
+                "Received:\n{}\nExpected:\n{}",
+                backQuoteIfNeed(temporary_id.table_name),
+                block.dumpStructure(),
+                metadata_snapshot->getSampleBlock().dumpStructure());
+
         /// The data will be written directly to the table.
         QueryPipeline temporary_table_out(storage->write(ASTPtr(), metadata_snapshot, state.query_context, /*async_insert=*/false));
         PushingPipelineExecutor executor(temporary_table_out);
@@ -2573,20 +2587,25 @@ bool TCPHandler::processData(QueryState & state, bool scalar)
 }
 
 
-bool TCPHandler::processUnexpectedData()
+bool TCPHandler::skipDataPacket(QueryState & state)
 {
+    /// The client keeps sending the data of a query that has already failed. The block is
+    /// deserialized only to find where the packet ends, so that the rest of the data can be
+    /// discarded and the connection reused for the next query.
     String skip_external_table_name;
     readStringBinary(skip_external_table_name, *in);
 
     std::shared_ptr<ReadBuffer> maybe_compressed_in;
-    if (last_block_in.compression == Protocol::Compression::Enable)
+    if (state.compression == Protocol::Compression::Enable)
         maybe_compressed_in = std::make_shared<CompressedReadBuffer>(*in, /* allow_different_codecs */ true, /* external_data */ query_kind != ClientInfo::QueryKind::SECONDARY_QUERY);
     else
         maybe_compressed_in = in;
 
-    auto skip_block_in = std::make_shared<NativeReader>(*maybe_compressed_in, client_tcp_protocol_version);
-    bool empty_block = skip_block_in->read().empty();
-    return !empty_block;
+    NativeReader skip_block_in(*maybe_compressed_in, client_tcp_protocol_version);
+    bool has_rows = !skip_block_in.read().empty();
+
+    state.at_packet_boundary = true;
+    return has_rows;
 }
 
 
@@ -2760,11 +2779,13 @@ void TCPHandler::receivePacketsExpectCancel(QueryState & state)
                 throw NetException(ErrorCodes::ABORTED, "Client has dropped the connection, cancel the query.");
 
             UInt64 packet_type = 0;
+            state.at_packet_boundary = false;
             readVarUInt(packet_type, *in);
 
             switch (packet_type)
             {
                 case Protocol::Client::Cancel:
+                    state.at_packet_boundary = true;  /// no body, and `processCancel` throws
                     processCancel(state);
                     break;
 

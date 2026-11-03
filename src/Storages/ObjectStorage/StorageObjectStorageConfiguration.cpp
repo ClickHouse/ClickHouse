@@ -257,7 +257,16 @@ std::string StorageObjectStorageConfiguration::Path::cutGlobs(bool supports_part
 
 void StorageObjectStorageConfiguration::check(ContextPtr)
 {
-    FormatFactory::instance().checkFormatName(format);
+    checkFormat();
+}
+
+void StorageObjectStorageConfiguration::checkFormat() const
+{
+    /// `auto` is a sentinel meaning the format must be inferred from the data; it is not a real format
+    /// name and is resolved (and thus validated) during schema/format inference. Skipping it here lets
+    /// `check` run before inference (e.g. to enforce HTTP host/header filters first).
+    if (format != "auto")
+        FormatFactory::instance().checkFormatName(format);
 }
 
 bool StorageObjectStorageConfiguration::isNamespaceWithGlobs() const

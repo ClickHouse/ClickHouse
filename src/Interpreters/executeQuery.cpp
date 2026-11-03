@@ -422,6 +422,27 @@ static UInt64 getQueryMetricLogInterval(ContextPtr context)
     return interval_milliseconds;
 }
 
+String formatQueryForLogging(const String & query, const Settings & settings)
+{
+    const char * pos = query.data();
+    const char * end = pos + query.size();
+    ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
+    String parse_error;
+    const ASTPtr ast = tryParseQuery(
+        parser,
+        pos,
+        end,
+        parse_error,
+        /*hilite*/ false,
+        "",
+        /*allow_multi_statements*/ false,
+        settings[Setting::max_query_size],
+        settings[Setting::max_parser_depth],
+        settings[Setting::max_parser_backtracks],
+        /*skip_insignificant*/ true);
+    return ast ? ast->formatForLogging(settings[Setting::log_queries_cut_to_length]) : "";
+}
+
 QueryLogElement logQueryStart(
     const std::chrono::time_point<std::chrono::system_clock> & query_start_time,
     const ContextMutablePtr & context,
@@ -1779,7 +1800,10 @@ static BlockIO executeQueryImpl(
                     if (auto * create_interpreter = typeid_cast<InterpreterCreateQuery *>(interpreter.get()))
                     {
                         create_interpreter->setIsRestoreFromBackup(flags.distributed_backup_restore);
-                        create_interpreter->setInternal(internal);
+                        /// `InterpreterCreateQuery` uses `internal` to mean "initiated by the server itself, so all
+                        /// the restrictions for user queries (access checks among them) can be skipped". A query
+                        /// written by the user is never that, even when it is executed as a nested `internal` query.
+                        create_interpreter->setInternal(internal && !flags.user_initiated);
                     }
 
                     std::unique_ptr<OpenTelemetry::SpanHolder> span;

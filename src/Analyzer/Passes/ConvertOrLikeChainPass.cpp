@@ -99,7 +99,17 @@ public:
             if (!pattern || !isString(pattern->getResultType()))
                 continue;
 
-            auto regexp = likePatternToRegexp(pattern->getValue().safeGet<String>());
+            bool has_end_anchor = false;
+            auto regexp = likePatternToRegexp(pattern->getValue().safeGet<String>(), &has_end_anchor);
+
+            /// `likePatternToRegexp` anchors every pattern which does not end in an unescaped `%`, and
+            /// `multiMatchAny` runs the regexp through Vectorscan, whose `$` also matches before a final
+            /// newline (PCRE), while the original `like`/`ilike` uses RE2, where `$` is the absolute end.
+            /// Rewriting such a branch would match a broader set: `LIKE 'a'` would also match `'a\n'`.
+            /// Keep it as the original `{i}like` instead.
+            if (has_end_anchor)
+                continue;
+
             /// Case insensitive. Works with UTF-8 as well.
             if (is_ilike)
                 regexp = "(?i)" + regexp;

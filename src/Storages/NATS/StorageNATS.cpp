@@ -31,6 +31,8 @@
 #include <boost/algorithm/string/trim.hpp>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
+#include <Common/RemoteHostFilter.h>
+#include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadPool.h>
@@ -76,6 +78,7 @@ static const uint32_t QUEUE_SIZE = 100000;
 static const auto RESCHEDULE_MS = 500;
 static const auto MAX_THREAD_WORK_DURATION_MS = 60000;
 
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -83,6 +86,57 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int CANNOT_CONNECT_NATS;
     extern const int QUERY_NOT_ALLOWED;
+}
+
+namespace
+{
+
+/// Checks a NATS address against the remote host filter and returns the address rebuilt from its parsed
+/// parts - the string to hand to libnats in place of the original value. The remote host filter must see
+/// exactly the host and port libnats will dial, so the value is not passed on as it was written: the
+/// rebuilt address is `[scheme://][credentials@]host:port` with an explicit port, a form libnats
+/// re-parses to the same host and port.
+///
+/// libnats reads a URL of the form `[scheme://][user[:password]@]host[:port]` as a C string, splits the
+/// credentials at the last `@`, substitutes `localhost` for an empty host, allows a `/path` after the
+/// port, and connects to port 4222 when none is given (`natsUrl_Create`). An address which such a
+/// re-parse could read differently - a NUL, a `/`, an empty host, a character outside printable ASCII -
+/// is rejected instead of repaired. Throws `UNACCEPTABLE_URL` for a host the filter does not allow and
+/// `BAD_ARGUMENTS` for an address it cannot parse safely.
+String validateNATSAddress(const String & address, const RemoteHostFilter & remote_host_filter)
+{
+    if (address.contains('\0'))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "NATS address must not contain NUL characters");
+
+    String host_and_port = address;
+
+    String scheme;
+    if (const auto scheme_end = host_and_port.find("://"); scheme_end != String::npos)
+    {
+        scheme = host_and_port.substr(0, scheme_end + strlen("://"));
+        host_and_port = host_and_port.substr(scheme_end + strlen("://"));
+
+        for (const char c : scheme.substr(0, scheme_end))
+            if (!isAlphaASCII(c))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid scheme in NATS address '{}'", address);
+    }
+
+    String credentials;
+    if (const auto credentials_end = host_and_port.rfind('@'); credentials_end != String::npos)
+    {
+        credentials = host_and_port.substr(0, credentials_end + 1);
+        host_and_port = host_and_port.substr(credentials_end + 1);
+
+        /// The credentials are kept verbatim (a password may contain almost anything, including
+        /// non-ASCII), only ASCII control characters (which include DEL) are rejected.
+        for (const char c : credentials)
+            if (isASCII(c) && !isPrintableASCII(c))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected character in the credentials of NATS address '{}'", address);
+    }
+
+    return scheme + credentials + remote_host_filter.checkAndGetCanonicalHostAndPort(host_and_port, 4222, "NATS address");
+}
+
 }
 
 
@@ -124,6 +178,13 @@ StorageNATS::StorageNATS(
         .reconnect_wait = static_cast<int>((*nats_settings)[NATSSetting::nats_reconnect_wait].value),
         .secure = (*nats_settings)[NATSSetting::nats_secure].value
     };
+
+    const auto & remote_host_filter = context_->getRemoteHostFilter();
+    if (!configuration.url.empty())
+        configuration.url = validateNATSAddress(configuration.url, remote_host_filter);
+    for (auto & server : configuration.servers)
+        if (!server.empty())
+            server = validateNATSAddress(server, remote_host_filter);
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -280,11 +341,40 @@ void StorageNATS::initializeConsumersFunc()
 
 void StorageNATS::createConsumersConnection()
 {
+    /// The NATS client library closes a connection for good once the server has rejected the same
+    /// credentials on two consecutive reconnect attempts - a rotated password and an expired token
+    /// both take that path - and it never reopens a closed connection. Build a new one, otherwise
+    /// the table would stay silently idle until it is detached and attached again.
+    if (consumers_connection && consumers_connection->isClosed())
+    {
+        /// The table name is in the logger. The error handler of the client library reports the
+        /// rejected credentials too, but it knows only the connection, so this is the line which
+        /// tells an operator which table lost its connection and why.
+        LOG_WARNING(
+            log,
+            "The NATS client library closed the connection to {} for good. Last error: {}. Creating a new one",
+            consumers_connection->connectionInfoForLog(),
+            consumers_connection->lastErrorForLog());
+
+        dropConsumers();
+        consumers_connection.reset();
+    }
+
     if (consumers_connection)
         return;
 
     auto connect_future = event_handler.createConnection(configuration);
     consumers_connection = connect_future.get();
+}
+
+void StorageNATS::dropConsumers()
+{
+    unsubscribeConsumers();
+
+    /// A consumer subscribes through the connection it was created with, so it cannot outlive it.
+    const size_t num_consumers_to_drop = num_created_consumers.exchange(0);
+    for (size_t i = 0; i < num_consumers_to_drop; ++i)
+        popConsumer();
 }
 
 void StorageNATS::createConsumers()
@@ -625,12 +715,45 @@ void StorageNATS::streamingToViewsFunc()
 {
     auto table_id = getStorageID();
 
+    /// A closed connection is dead for good, and the cycle below only waits for one to reconnect,
+    /// so build a new connection and new consumers here. Only the connection and the consumers:
+    /// the new consumers subscribe below, once the connection is up, the same way as for any other
+    /// cycle whose consumers are not subscribed.
+    ///
+    /// No connection at all means a previous attempt dropped the closed one and then failed to
+    /// connect, so try again.
+    if (!shutdown_called && (!consumers_connection || consumers_connection->isClosed()))
+    {
+        try
+        {
+            createConsumersConnection();
+            createConsumers();
+        }
+        catch (...)
+        {
+            LOG_WARNING(log, "Cannot reinitialize consumers: {}", getCurrentExceptionMessage(false));
+            streaming_task->scheduleAfter(RESCHEDULE_MS);
+            return;
+        }
+    }
+
     bool consumers_queues_are_empty = false;
 
     try
     {
         if (consumers_connection && consumers_connection->isConnected())
         {
+            /// The consumers which replaced the ones of a closed connection are not subscribed:
+            /// `initializeConsumersFunc` subscribes only once, on the way to the first cycle.
+            /// Without a standing subscription every cycle would subscribe through `NATSSource`
+            /// and unsubscribe at its end, a window too short for the broker to deliver anything.
+            if (!consumers_ready && !subscribeConsumers())
+            {
+                unsubscribeConsumers();
+                streaming_task->scheduleAfter(RESCHEDULE_MS);
+                return;
+            }
+
             auto start_time = std::chrono::steady_clock::now();
 
             mv_attached.store(true);
@@ -794,14 +917,21 @@ void registerStorageNATS(StorageFactory & factory)
     auto creator_fn = [](const StorageFactory::Arguments & args)
     {
         auto nats_settings = std::make_unique<NATSSettings>();
-        if (auto named_collection = tryGetNamedCollectionWithOverrides(args.engine_args, args.getLocalContext(), true, nullptr, &args.table_id))
+        if (auto named_collection = tryGetNamedCollectionWithOverrides(
+                args.engine_args,
+                args.getLocalContext(),
+                /*throw_unknown_collection=*/ true,
+                /*complex_args=*/ nullptr,
+                &args.table_id,
+                args.storage_def->settings))
         {
             nats_settings->loadFromNamedCollection(named_collection);
         }
         else if (!args.storage_def->settings)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "NATS engine must have settings");
 
-        nats_settings->loadFromQuery(*args.storage_def);
+        if (args.storage_def->settings)
+            nats_settings->loadFromQuery(*args.storage_def);
 
         if (!(*nats_settings)[NATSSetting::nats_url].changed && !(*nats_settings)[NATSSetting::nats_server_list].changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify either `nats_url` or `nats_server_list` settings");

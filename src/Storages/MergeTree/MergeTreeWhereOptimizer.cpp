@@ -107,6 +107,9 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
         if (it != column_sizes.end())
             total_size_of_queried_columns += it->second;
     }
+
+    if (estimator)
+        total_rows = estimator->getTotalRows();
 }
 
 void MergeTreeWhereOptimizer::optimize(SelectQueryInfo & select_query_info, const ContextPtr & context) const
@@ -383,6 +386,22 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
             /// Find min position in PK of any column that is used in this condition.
             pk_positions.emplace(cond.min_position_in_primary_key);
         }
+
+        /// Combine I/O cost with selectivity using the classic conjunctive filter ordering rule:
+        /// sort by cost / (1 - selectivity), i.e. cost per rejected row.
+        const double rejected_rows = static_cast<double>(total_rows) - static_cast<double>(cond.estimated_row_count);
+        if (total_rows == 0)
+            /// No statistics: fall back to pure I/O cost.
+            cond.cost_with_selectivity = static_cast<double>(cond.columns_size);
+        else if (rejected_rows <= 0)
+            /// Rejects no rows, so it is useless in PREWHERE regardless of its cost: schedule it last.
+            cond.cost_with_selectivity = std::numeric_limits<double>::infinity();
+        else if (cond.columns_size == 0)
+            /// Compact parts don't track per-column compressed sizes: fall back to pure selectivity,
+            /// otherwise every condition collapses to cost 0 and keeps its original position.
+            cond.cost_with_selectivity = static_cast<double>(cond.estimated_row_count);
+        else
+            cond.cost_with_selectivity = static_cast<double>(cond.columns_size) / rejected_rows;
 
         res.emplace_back(std::move(cond));
     }

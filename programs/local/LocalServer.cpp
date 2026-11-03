@@ -355,7 +355,9 @@ static DatabasePtr createClickHouseLocalDatabaseOverlay(const String & name_, Co
         DatabaseCatalog::getStoreDirPath(default_database_uuid);
 
     overlay->registerNextDatabase(std::make_shared<DatabaseAtomic>(name_, default_database_metadata_path, default_database_uuid, context));
-    overlay->registerNextDatabase(std::make_shared<DatabaseFilesystem>(name_, "", context));
+    /// Not a metadata replay: this database is registered fresh on every start, so a missing path
+    /// should still be refused here. Master reaches this through `DatabaseURL` and has no such call.
+    overlay->registerNextDatabase(std::make_shared<DatabaseFilesystem>(name_, "", context, /*is_internal_metadata_replay=*/false));
     return overlay;
 }
 
@@ -398,7 +400,7 @@ void LocalServer::tryInitPath()
             LOG_DEBUG(log, "Can not get temporary folder: {}", e.what());
             parent_folder = std::filesystem::current_path();
 
-            std::filesystem::is_directory(parent_folder); // that will throw an exception if it's not a directory
+            (void)std::filesystem::is_directory(parent_folder); // checks the path is accessible (may throw on I/O error)
             LOG_DEBUG(log, "Will create working directory inside current directory: {}", parent_folder.string());
         }
 

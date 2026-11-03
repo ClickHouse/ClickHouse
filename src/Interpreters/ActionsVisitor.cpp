@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <memory>
 
 #include <Common/assert_cast.h>
@@ -32,6 +33,7 @@
 #include <Columns/ColumnSet.h>
 
 #include <Storages/StorageSet.h>
+#include <Storages/StorageProxy.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -52,6 +54,7 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/interpretSubquery.h>
+#include <Interpreters/FunctionSecretArgumentsFinderActionsDAG.h>
 #include <Interpreters/misc.h>
 #include <Parsers/QueryParameterVisitor.h>
 
@@ -477,6 +480,14 @@ void ScopeStack::addFunction(
 
     const auto & node = stack[level].actions_dag.addFunction(function, std::move(children), std::move(result_name));
     stack[level].index->addNode(&node);
+
+    {
+        auto & mutable_node = const_cast<ActionsDAG::Node &>(node);
+        bool node_has_secret = FunctionSecretArgumentsFinderActionsDAG(node).getResult().hasSecrets();
+        bool child_has_secret = std::any_of(
+            node.children.begin(), node.children.end(), [](const ActionsDAG::Node * child) { return child->is_masked_secret; });
+        mutable_node.is_masked_secret = node_has_secret || (node.column && child_has_secret);
+    }
 
     for (size_t j = level + 1; j < stack.size(); ++j)
     {
@@ -1270,7 +1281,7 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
                 if (auto set = data.prepared_sets->findStorage(set_key))
                     return set;
 
-                if (StorageSet * storage_set = dynamic_cast<StorageSet *>(table.get()))
+                if (StorageSet * storage_set = castStorage<StorageSet>(table, DeferredTable::Load).get())
                     return data.prepared_sets->addFromStorage(set_key, right_in_operand, storage_set->getSet(), table_id);
             }
 

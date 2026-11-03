@@ -141,6 +141,13 @@ namespace Net
         poco_socket_t sockfd();
         /// Returns the underlying socket descriptor.
 
+        SSL * ssl() const;
+        /// Returns the underlying OpenSSL SSL object, or null if the SSL handshake
+        /// has not been performed yet.
+        ///
+        /// The object is normally guarded by the socket's mutex; a caller that uses it
+        /// directly must ensure the socket is not accessed concurrently.
+
         X509 * peerCertificate() const;
         /// Returns the peer's certificate.
 
@@ -209,7 +216,7 @@ namespace Net
         /// Returns true iff the given host name is the local host
         /// (either "localhost" or "127.0.0.1").
 
-        bool mustRetry(int rc, Poco::Timespan & remaining_time);
+        bool mustRetry(int rc, int sslError, int socketError, Poco::Timespan & remaining_time);
         /// Returns true if the last operation should be retried,
         /// otherwise false.
         ///
@@ -223,7 +230,7 @@ namespace Net
         /// not become readable or writable within the sockets
         /// receive or send timeout.
 
-        int handleError(int rc);
+        int handleError(int rc, int sslError, int socketError, unsigned long errorCode);
         /// Handles an SSL error by throwing an appropriate exception.
 
         void reset();
@@ -244,6 +251,10 @@ namespace Net
         Poco::AutoPtr<SocketImpl> _pSocket;
         Context::Ptr _pContext;
         bool _needHandshake;
+        bool _fatalError;
+        bool _pendingWrite = false;
+        /// Whether the last `SSL_write` returned `SSL_ERROR_WANT_WRITE`. OpenSSL keeps that record pending
+        /// until `SSL_write` is retried, even after other operations change what `SSL_get_error` reports.
         std::string _peerHostName;
         Session::Ptr _pSession;
 
@@ -260,6 +271,12 @@ namespace Net
     inline poco_socket_t SecureSocketImpl::sockfd()
     {
         return _pSocket->sockfd();
+    }
+
+
+    inline SSL * SecureSocketImpl::ssl() const
+    {
+        return _pSSL;
     }
 
 

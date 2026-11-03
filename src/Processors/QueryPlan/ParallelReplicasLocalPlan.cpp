@@ -108,6 +108,8 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
     /// how constant node names are generated (using source expression instead of _CAST wrapper),
     /// leading to column name mismatches with the expected header.
     auto select_query_options = SelectQueryOptions(processed_stage);
+    /// The local replica's plan is united into the parent pipeline in this process.
+    select_query_options.is_local_plan_for_distributed_query = true;
 
     /// For Analyzer, identifier in GROUP BY/ORDER BY/LIMIT BY lists has been resolved to
     /// ConstantNode in QueryTree if it is an alias of a constant, so we should not replace

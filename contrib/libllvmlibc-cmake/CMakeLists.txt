@@ -6,8 +6,6 @@ if (NOT (ARCH_AMD64 OR ARCH_AARCH64))
 endif()
 
 set(SRCS
-    "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/common_constants.cpp"
-
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/acos.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/asin.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/asinf.cpp"
@@ -19,7 +17,6 @@ set(SRCS
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/cos.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/exp.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/exp2.cpp"
-    "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/explogxf.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/expm1.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/fabs.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/fabsl.cpp"

@@ -13,6 +13,7 @@
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageMergeTreeAnalyzeIndexes.h>
+#include <Storages/StorageProxy.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
@@ -122,7 +123,7 @@ protected:
         auto reader_settings = MergeTreeReaderSettings::createForQuery(context, *table_settings, query_info);
 
         StorageMetadataPtr metadata_snapshot = storage->getInMemoryMetadataPtr();
-        const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(storage.get());
+        const auto * merge_tree_data = castStorage<MergeTreeData>(storage, DeferredTable::Load).get();
         if (!merge_tree_data)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MergeTreeAnalyzeIndexes expected MergeTree table, got: {}", storage->getName());
 
@@ -297,11 +298,11 @@ StorageMergeTreeAnalyzeIndexes::StorageMergeTreeAnalyzeIndexes(
     const ASTPtr & predicate_,
     const OptionalVectorSearchParameters & vector_search_parameters_)
     : IStorage(table_id_)
-    , source_table(source_table_)
+    , source_table(resolveStorageProxyLoading(source_table_))
     , predicate(predicate_)
     , vector_search_parameters(vector_search_parameters_)
 {
-    const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(source_table.get());
+    const auto * merge_tree_data = castStorage<MergeTreeData>(source_table, DeferredTable::Load).get();
     if (!merge_tree_data)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MergeTreeAnalyzeIndexes expected MergeTree table, got: {}", source_table->getName());
 

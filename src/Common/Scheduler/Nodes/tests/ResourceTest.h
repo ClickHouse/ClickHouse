@@ -283,6 +283,11 @@ public:
         failed_cost -= value;
     }
 
+    ISchedulerNode & getRoot()
+    {
+        return *root_node;
+    }
+
     void processEvents()
     {
         while (event_queue.tryProcess()) {}

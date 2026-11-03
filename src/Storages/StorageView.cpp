@@ -111,6 +111,9 @@ ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage
     view_settings[Setting::max_result_bytes] = 0;
     view_settings[Setting::extremes] = false;
     view_context->setSettings(view_settings);
+    /// The view query is the inner query of the view:
+    /// e.g. it must read the table itself, not the inserted block of a materialized view.
+    view_context->setIsViewInnerQuery(true);
     return view_context;
 }
 

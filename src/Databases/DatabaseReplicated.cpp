@@ -45,6 +45,7 @@
 #include <Processors/Sinks/EmptySink.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageKeeperMap.h>
+#include <Storages/StorageProxy.h>
 #include <base/chrono_io.h>
 #include <base/defines.h>
 #include <base/getFQDNOrHostName.h>
@@ -1551,6 +1552,10 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         query_context->setCurrentDatabase(getDatabaseName());
         query_context->setCurrentQueryId({});
 
+        /// The CREATE queries below come from metadata this database already stored, so they must be
+        /// accepted as they are: they re-derive tables that exist.
+        query_context->setRecoveryFromStoredMetadata(true);
+
         /// We will execute some CREATE queries for recovery (not ATTACH queries),
         /// so we need to allow experimental features that can be used in a CREATE query
         enableAllExperimentalSettings(query_context);
@@ -2504,7 +2509,7 @@ bool DatabaseReplicated::shouldReplicateQuery(const ContextPtr & query_context, 
         auto table_id = query_context->resolveStorageID(ast, Context::ResolveOrdinary);
         StoragePtr table = DatabaseCatalog::instance().getTable(table_id, query_context);
 
-        return table->as<StorageKeeperMap>() != nullptr;
+        return castStorage<StorageKeeperMap>(table, DeferredTable::Load) != nullptr;
     };
 
     const auto is_replicated_table = [&](const ASTPtr & ast)

@@ -404,7 +404,7 @@ static bool writeMetadataFiles(
     auto manifest_entries_in_storage = std::make_shared<Strings>();
     Strings manifest_entries;
     Int32 manifest_lengths = 0;
-
+    std::vector<std::vector<std::pair<Field, DataTypePtr>>> entry_partition_summaries;
     auto cleanup = [object_storage, delete_filenames, manifest_entries_in_storage, storage_manifest_list_name, storage_metadata_name]()
     {
         try
@@ -430,6 +430,17 @@ static bool writeMetadataFiles(
             auto [manifest_entry_name, storage_manifest_entry_name] = filename_generator.generateManifestEntryName();
             manifest_entries_in_storage->push_back(storage_manifest_entry_name);
             manifest_entries.push_back(manifest_entry_name);
+
+            /// The manifest holds a single partition tuple, which becomes its manifest-list field summary.
+            if (chunk_partitioner)
+            {
+                const auto & partition_types = chunk_partitioner->getResultTypes();
+                std::vector<std::pair<Field, DataTypePtr>> partition_summary;
+                partition_summary.reserve(partition_key.size());
+                for (size_t i = 0; i < partition_key.size(); ++i)
+                    partition_summary.emplace_back(partition_key[i], partition_types[i]);
+                entry_partition_summaries.push_back(std::move(partition_summary));
+            }
 
             auto buffer_manifest_entry = object_storage->writeObject(
                 StoredObject(storage_manifest_entry_name),
@@ -482,7 +493,9 @@ static bool writeMetadataFiles(
                     new_snapshot,
                     manifest_lengths,
                     *buffer_manifest_list,
-                    content_type);
+                    content_type,
+                    /* use_previous_snapshots */ true,
+                    entry_partition_summaries);
                 buffer_manifest_list->finalize();
             }
             catch (...)

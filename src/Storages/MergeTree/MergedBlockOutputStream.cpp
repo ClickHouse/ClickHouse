@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Common/FailPoint.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/MergeTreeTransaction.h>
@@ -20,6 +21,11 @@ namespace ErrorCodes
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool enable_index_granularity_compression;
+}
+
+namespace FailPoints
+{
+    extern const char patch_part_index_write_empty[];
 }
 
 MergedBlockOutputStream::MergedBlockOutputStream(
@@ -332,9 +338,17 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
             const auto & source_parts = new_part->getSourcePartsSet();
             if (!source_parts.empty())
             {
+                /// Writes an index without source parts, which is the corruption shape the load path
+                /// rejects: a patch part that holds rows but names no part it patches. Only for tests.
+                bool write_empty_index = false;
+                fiu_do_on(FailPoints::patch_part_index_write_empty, { write_empty_index = true; });
+
                 write_hashed_file(SourcePartsSetForPatch::FILENAME, [&](auto & buffer)
                 {
-                    source_parts.writeBinary(buffer);
+                    if (write_empty_index)
+                        SourcePartsSetForPatch{}.writeBinary(buffer);
+                    else
+                        source_parts.writeBinary(buffer);
                 });
             }
         }
