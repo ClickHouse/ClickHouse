@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: zookeeper, no-replicated-database
+# no-replicated-database: ON CLUSTER is not allowed for a Replicated database
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
