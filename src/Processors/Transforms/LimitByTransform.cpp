@@ -179,8 +179,14 @@ void LimitByTransform::consumeImpl(Method & hash_method, const ColumnRawPtrs & g
             FailPointInjection::pauseFailPoint(FailPoints::limit_by_transform_mid_loop_pause);
 
         auto key_emplace_result = state.emplaceKey(hash_method.data, row_idx, *data.aggregates_pool);
+        /// A key is given its group index only after `push_back` succeeds. If it throws, the key stays in the hash table
+        /// with a null mapped value, and since `ISimpleTransform::work` may pass later chunks to this transform, the key
+        /// gets its group the next time it is seen.
+        if (key_emplace_result.isInserted())
+            key_emplace_result.setMapped(nullptr);
+
         size_t row_group_idx = 0;
-        if (key_emplace_result.isInserted()) /// New grouping key
+        if (!key_emplace_result.getMapped()) /// New grouping key
         {
             /// Assign a stable index into `group_counts` to the grouping key we just inserted.
             row_group_idx = group_counts.size();
@@ -249,15 +255,6 @@ void LimitByTransform::transform(Chunk & chunk)
             normalized_grouping_key_columns.push_back(removeSpecialRepresentations(chunk_columns[position])->convertToFullColumnIfConst());
             grouping_key_columns.push_back(normalized_grouping_key_columns.back().get());
         }
-
-        /// Unlike `std::vector`, `VectorWithMemoryTracking` throws `MEMORY_LIMIT_EXCEEDED` when it allocates. If
-        /// `push_back` threw between `emplaceKey` and `setMapped`, the key would stay in the hash table without a group
-        /// index, and `ISimpleTransform::work` would let the next chunk read past the end of `group_counts` for it.
-        /// A row adds at most one group, so room for the whole chunk is reserved before `consumeImpl` inserts any key,
-        /// growing at least twofold so that reallocations stay amortized. This is done here, not in `consumeImpl`,
-        /// because a reserve there changes the codegen of its row loop and slows it down.
-        if (group_counts.capacity() - group_counts.size() < row_count)
-            group_counts.reserve(std::max<size_t>(group_counts.size() + row_count, group_counts.capacity() * 2));
 
         /// `consumeImpl` maps rows to groups and splits the chunk into runs.
         switch (data.type)
