@@ -8,7 +8,7 @@ buckets	1970-01-01 00:01:00.000	1970-01-01 00:01:10.000	1970-01-01 00:01:20.000	
 buckets	1970-01-01 00:02:00.000	1970-01-01 00:02:10.000	1970-01-01 00:02:50.000	[('1970-01-01 00:02:10.000',2)]	['1970-01-01 00:02:20.000','1970-01-01 00:02:50.000']	[2,3]
 buckets	1970-01-01 00:03:00.000	1970-01-01 00:03:10.000	1970-01-01 00:03:10.000	[('1970-01-01 00:03:10.000',3)]	[]	[]
 buckets	1970-01-01 00:04:00.000	1970-01-01 00:04:10.000	1970-01-01 00:04:10.000	[]	['1970-01-01 00:04:10.000']	[4]
--- unsorted histograms are sorted; of duplicates by timestamp the greatest count wins (the flavours compared as Float64, a NaN count loses), then the greatest sum, then the other elements; never the input order
+-- unsorted histograms are sorted; of duplicates by timestamp the greatest count wins (counts compared exactly across flavours, a NaN count loses), then the greatest sum, then the other elements; never the input order
 dups	10000	0	5	0	4	[(0,5)]	[]
 dups	20000	0	7	0	6	[(0,7)]	[]
 dups	30000	0	5	0	1	[(0,5)]	[]
@@ -28,5 +28,8 @@ timestamps_only	1970-01-01 00:02:00.000	0	['1970-01-01 00:02:40.000']	[0]	[0]	[[
 -- an insert without histograms stores an empty histograms array, with or without the histograms.* columns in the column list
 all_columns	[('1970-01-01 00:01:40.000',2)]	[]
 floats_only	[('1970-01-01 00:01:40.000',1)]	[]
+-- mixed integer and float counts above 2^53 choose the same winner in both input orders
+mixed_counts_ABC	0	9007199254740993	0	1
+mixed_counts_ACB	0	9007199254740993	0	1
 -- the recent samples table gets the same histograms
 (1,2)	(1,2)

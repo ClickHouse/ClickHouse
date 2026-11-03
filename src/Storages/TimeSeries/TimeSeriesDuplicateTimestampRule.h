@@ -32,7 +32,7 @@ public:
 
     /// An order over the payload (every element but `timestamp`) of the histogram samples `lhs` and `rhs` of `view`; the greater
     /// sample is the preferred one. Returns a negative number, 0 or a positive number. The first differing key decides:
-    /// 1. the total count: both integer histograms -> `count_int`, both float -> `count_float`, mixed -> both as `Float64`;
+    /// 1. the total count: `count_int` for integer histograms, `count_float` for float histograms, compared exactly across flavours;
     /// 2. `sum`;
     /// 3. the other elements in the stored order, each by the comparison of its column (`IColumn::compareAt`: arrays and tuples
     ///    lexicographically, a proper prefix is less).

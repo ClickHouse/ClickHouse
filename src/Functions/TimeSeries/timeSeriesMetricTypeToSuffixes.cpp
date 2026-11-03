@@ -28,8 +28,9 @@ std::span<const std::string_view> suffixesForType(std::string_view type)
     /// already includes the type suffix (e.g. a counter family `http_requests_total` with a series of the same
     /// name), while the OpenMetrics format appends the suffix to the family name (`http_requests` + `_total`).
     static constexpr std::string_view counter[] = {"", "_total"};
-    static constexpr std::string_view histogram[] = {"_bucket", "_count", "_sum"};
-    static constexpr std::string_view gauge_histogram[] = {"_bucket", "_gcount", "_gsum"};
+    /// Native histograms use the family name itself, while classic histograms use the suffixed members.
+    static constexpr std::string_view histogram[] = {"", "_bucket", "_count", "_sum"};
+    static constexpr std::string_view gauge_histogram[] = {"", "_bucket", "_gcount", "_gsum"};
     static constexpr std::string_view summary[] = {"", "_count", "_sum"};
     static constexpr std::string_view info[] = {"", "_info"};
     static constexpr std::string_view empty[] = {""};
@@ -102,6 +103,7 @@ REGISTER_FUNCTION(TimeSeriesMetricTypeToSuffixes)
 {
     FunctionDocumentation::Description description = R"(
 Returns the metric-name suffixes for a metric family of the given Prometheus type.
+For `histogram` and `gaugehistogram`, the empty suffix matches native histograms and the other suffixes match classic histogram members.
 )";
     FunctionDocumentation::Syntax syntax = "timeSeriesMetricTypeToSuffixes(type)";
     FunctionDocumentation::Arguments arguments = {
@@ -117,9 +119,9 @@ Returns the metric-name suffixes for a metric family of the given Prometheus typ
 SELECT timeSeriesMetricTypeToSuffixes('histogram') AS suffixes;
             )",
             R"(
-┌─suffixes────────────────────┐
-│ ['_bucket','_count','_sum'] │
-└─────────────────────────────┘
+┌─suffixes───────────────────────┐
+│ ['','_bucket','_count','_sum'] │
+└────────────────────────────────┘
             )"
         }
     };

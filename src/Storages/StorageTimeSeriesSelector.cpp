@@ -740,7 +740,8 @@ namespace
     /// so the read arrays decide which rows exist: a consumer gets exactly the arrays it names, and a query naming none (e.g. `count()`
     /// or `id` only) asks whether a row has samples of any kind, so every array is read.
     std::vector<SamplesColumnToRead> getSamplesColumnsToRead(
-        const StorageTimeSeriesSelector::Configuration & config, bool has_bucketed_samples, const Names & column_names)
+        const StorageTimeSeriesSelector::Configuration & config,
+        bool has_bucketed_samples)
     {
         if (!has_bucketed_samples)
             return {{TimeSeriesColumnNames::Timestamp, config.table_timestamp_type}, {TimeSeriesColumnNames::Value, config.table_value_type}};
@@ -751,24 +752,7 @@ namespace
         if (!histograms_returned)
             return {samples};
 
-        const SamplesColumnToRead histograms{TimeSeriesColumnNames::Histograms, config.table_histograms_type};
-        bool samples_requested = false;
-        bool histograms_requested = false;
-        for (const auto & column_name : column_names)
-        {
-            if (column_name == TimeSeriesColumnNames::Samples)
-                samples_requested = true;
-            else if (column_name == TimeSeriesColumnNames::Histograms)
-                histograms_requested = true;
-            if (samples_requested && histograms_requested)
-                break;
-        }
-
-        if (samples_requested && !histograms_requested)
-            return {samples};
-        if (histograms_requested && !samples_requested)
-            return {histograms};
-        return {samples, histograms};
+        return {samples, {TimeSeriesColumnNames::Histograms, config.table_histograms_type}};
     }
 
     /// The bounds of `time_range_to_filter_samples` must have the scale of `table_timestamp_type`.
@@ -1315,7 +1299,7 @@ void StorageTimeSeriesSelector::readImpl(
     auto samples_table_id = time_series_storage->getTargetTableID(samples_table_kind, context);
     auto tags_table_id = time_series_storage->getTargetTableID(ViewTarget::Tags, context);
 
-    const auto columns_to_read = getSamplesColumnsToRead(config, bucket_step_seconds != 0, column_names);
+    const auto columns_to_read = getSamplesColumnsToRead(config, bucket_step_seconds != 0);
 
     auto column_name_by_tag_name = makeColumnNameByTagNameMap(*time_series_settings);
 

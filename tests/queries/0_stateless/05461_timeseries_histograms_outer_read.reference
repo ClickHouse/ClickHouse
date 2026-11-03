@@ -23,10 +23,19 @@ mixed	[1.5,2.5]
 [('1970-01-01 00:01:40.000',1.5),('1970-01-01 00:01:50.000',2.5)]	[]
 [('1970-01-01 00:02:10.000',2)]	['1970-01-01 00:02:05.000','1970-01-01 00:02:20.000']
 []	
-[0]	
-[1]	gauge
-[2,3]	gauge
+[]	gaugehistogram
+[]	gaugehistogram
+[]	gaugehistogram
+[]	histogram
+[]	histogram
+[]	histogram
+[0]	gaugehistogram
+[1]	histogram
+[2,3]	histogram
 [10]	
+float_hist	float_hist	gaugehistogram	seconds	Float histogram	[0]
+mixed	mixed	histogram	seconds	Mixed samples	[1]
+mixed	mixed	histogram	seconds	Mixed samples	[2,3]
 -- ARRAY JOIN over the arrays of the group
 float_hist	1970-01-01 00:01:40.000	0
 int_hist	1970-01-01 00:01:40.000	10
@@ -40,4 +49,11 @@ mixed	1970-01-01 00:02:20.000	3
 [('1970-01-01 00:01:10.000',1)]	[1]
 [('1970-01-01 00:02:10.000',2)]	[2,3]
 5
+-- merging an aggregate state preserves ordering and deduplication, including after serialization
+[(200000,1),(210000,3),(220000,5)]
+[(200000,1),(210000,3),(220000,5)]
+-- a single sorted input array is deduplicated, with the greatest count winning
+[(200000,1),(210000,3),(220000,5)]
+-- disjoint input arrays can each contain duplicate timestamps
+[(80000,1),(125000,2),(140000,3)]
 -- a table of version 11 has no histograms.* columns

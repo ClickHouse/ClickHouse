@@ -53,7 +53,7 @@ FROM timeSeriesSamples(ts) AS s JOIN timeSeriesTags(ts) AS t ON s.id = t.id
 WHERE t.metric_name = 'buckets'
 ORDER BY s.bucket;
 
-SELECT '-- unsorted histograms are sorted; of duplicates by timestamp the greatest count wins (the flavours compared as Float64, a NaN count loses), then the greatest sum, then the other elements; never the input order';
+SELECT '-- unsorted histograms are sorted; of duplicates by timestamp the greatest count wins (counts compared exactly across flavours, a NaN count loses), then the greatest sum, then the other elements; never the input order';
 -- Timestamp 20: equal counts, the greater sum comes first in the input. Timestamp 50: equal counts and sums, the pairs decide
 -- (the count of the bucket 0: 2 beats 1), again against the input order. See TimeSeriesDuplicateTimestampRule.
 INSERT INTO ts (metric_name, tags, histograms.timestamp, histograms.flags, histograms.count_int, histograms.count_float, histograms.sum, histograms.positive_int, histograms.positive_float)
@@ -98,6 +98,25 @@ INSERT INTO ts VALUES ('all_columns', map('job', 'api'), [(toDateTime64(100, 3),
 SELECT t.metric_name, s.samples, s.histograms
 FROM timeSeriesSamples(ts) AS s JOIN timeSeriesTags(ts) AS t ON s.id = t.id
 WHERE t.metric_name IN ('floats_only', 'all_columns')
+ORDER BY t.metric_name;
+
+SELECT '-- mixed integer and float counts above 2^53 choose the same winner in both input orders';
+-- A: integer count 2^53, sum 3; B: integer count 2^53 + 1, sum 1; C: float count 2^53, sum 2.
+-- Rounding the integer counts to `Float64` when comparing flavours makes B > A, A > C, C > B.
+INSERT INTO ts (metric_name, tags, histograms.timestamp, histograms.flags, histograms.sum,
+                histograms.count_int, histograms.zero_count_int, histograms.count_float, histograms.zero_count_float)
+WITH [toInt64(9007199254740992), toInt64(9007199254740993), toInt64(0)] AS int_counts,
+     [0., 0., 9007199254740992.] AS float_counts
+SELECT concat('mixed_counts_', ordering), map(), arrayMap(i -> toDateTime64(100, 3), permutation),
+       arrayMap(i -> [0, 0, 1][i], permutation), arrayMap(i -> [3., 1., 2.][i], permutation),
+       arrayMap(i -> int_counts[i], permutation), arrayMap(i -> int_counts[i], permutation),
+       arrayMap(i -> float_counts[i], permutation), arrayMap(i -> float_counts[i], permutation)
+FROM values('ordering String, permutation Array(UInt8)', ('ABC', [1, 2, 3]), ('ACB', [1, 3, 2]));
+
+SELECT t.metric_name, h.flags, h.count_int, h.count_float, h.sum
+FROM timeSeriesSamples(ts) AS s ARRAY JOIN s.histograms AS h
+JOIN timeSeriesTags(ts) AS t ON s.id = t.id
+WHERE t.metric_name IN ('mixed_counts_ABC', 'mixed_counts_ACB')
 ORDER BY t.metric_name;
 
 SELECT '-- the recent samples table gets the same histograms';

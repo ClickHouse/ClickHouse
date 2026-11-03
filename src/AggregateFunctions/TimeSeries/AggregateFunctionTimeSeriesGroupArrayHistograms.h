@@ -20,6 +20,7 @@
 #include <Storages/TimeSeries/TimeSeriesHistogramsColumnsView.h>
 #include <base/sort.h>
 
+#include <algorithm>
 #include <numeric>
 #include <optional>
 #include <vector>
@@ -42,8 +43,9 @@ namespace ErrorCodes
 
 /// The state of `timeSeriesGroupArrayHistograms`: the added arrays as references to ranges of their source tuple columns, so a merge
 /// of float-only rows allocates nothing and no array is copied before the result is built. Empty arrays are not recorded. With the
-/// first and last timestamp of the arrays the state tracks whether every array starts after the previous one ended (`appends_only`):
-/// then the result is their concatenation. The state lives on the heap. A deserialized state owns the column its ranges refer to.
+/// first and last timestamp of the arrays the state tracks whether every array starts after the previous one ended and its own
+/// timestamps strictly increase (`appends_only`): then the result is their concatenation. The state lives on the heap.
+/// A deserialized state owns the column its ranges refer to.
 template <typename TimestampType>
 struct AggregateFunctionTimeSeriesGroupArrayHistogramsData
 {
@@ -60,13 +62,26 @@ struct AggregateFunctionTimeSeriesGroupArrayHistogramsData
     TimestampType last_timestamp{};
     bool appends_only = true;
 
-    void addRange(ColumnPtr source, size_t offset, size_t size, TimestampType first, TimestampType last)
+    void addRange(ColumnPtr source, size_t offset, size_t size, const typename ColumnVectorOrDecimal<TimestampType>::Container & timestamps)
     {
+        const auto first = timestamps[offset];
         if (ranges.empty())
             first_timestamp = first;
         else if (!(last_timestamp < first))
             appends_only = false;
-        last_timestamp = last;
+
+        /// Direct aggregate inputs can contain duplicate timestamps within one array, unlike the arrays written by the sink.
+        if (appends_only)
+        {
+            const auto begin = timestamps.begin() + offset;
+            const auto end = begin + size;
+            appends_only = std::adjacent_find(begin, end, [](auto lhs, auto rhs)
+            {
+                return lhs >= rhs;
+            }) == end;
+        }
+
+        last_timestamp = timestamps[offset + size - 1];
         num_elements += size;
         ranges.push_back(Range{std::move(source), offset, size});
     }
@@ -76,9 +91,12 @@ struct AggregateFunctionTimeSeriesGroupArrayHistogramsData
         if (rhs.ranges.empty())
             return;
         if (ranges.empty())
-            first_timestamp = rhs.first_timestamp;
-        else if (!rhs.appends_only || !(last_timestamp < rhs.first_timestamp))
-            appends_only = false;
+        {
+            *this = rhs;
+            return;
+        }
+
+        appends_only &= rhs.appends_only && (last_timestamp < rhs.first_timestamp);
         last_timestamp = rhs.last_timestamp;
         num_elements += rhs.num_elements;
         ranges.insert(ranges.end(), rhs.ranges.begin(), rhs.ranges.end());
@@ -133,7 +151,7 @@ public:
             return;
         const size_t offset = array->getOffsets()[static_cast<ssize_t>(row_num) - 1];
         const auto & timestamps = getTimestamps(array->getData());
-        this->data(place).addRange(array->getDataPtr(), offset, size, timestamps[offset], timestamps[offset + size - 1]);
+        this->data(place).addRange(array->getDataPtr(), offset, size, timestamps);
     }
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -177,12 +195,30 @@ public:
 
         size_t num_arrays = 0;
         readVarUInt(num_arrays, buf);
-        PODArray<UInt64> array_ends(num_arrays);
-        for (auto & end : array_ends)
+        /// Reserve smaller states once, bounding the initial allocation from the untrusted count.
+        /// Larger states grow as their offsets are read, like the samples in `timeSeriesGroupArray`.
+        PODArray<UInt64> array_ends;
+        array_ends.reserve(std::min(num_arrays, MAX_ARRAYS_TO_RESERVE));
+        UInt64 previous_end = 0;
+        for (size_t i = 0; i != num_arrays; ++i)
+        {
+            UInt64 end = 0;
             readVarUInt(end, buf);
+            if (end <= previous_end)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Invalid array end {} after {} in state of aggregate function {}: array ends must strictly increase",
+                    end, previous_end, name);
+            array_ends.push_back(end);
+            previous_end = end;
+        }
 
         size_t num_elements = 0;
         readVarUInt(num_elements, buf);
+        if (previous_end != num_elements)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Last array end {} does not match the number of elements {} in state of aggregate function {}",
+                previous_end, num_elements, name);
+
         MutableColumnPtr elements = tuple_type->createColumn();
         const FormatSettings format_settings;
         for (size_t i = 0; i != num_elements; ++i)
@@ -193,8 +229,7 @@ public:
         size_t begin = 0;
         for (const UInt64 end : array_ends)
         {
-            if (end > begin)
-                data.addRange(owned, begin, end - begin, timestamps[begin], timestamps[end - 1]);
+            data.addRange(owned, begin, end - begin, timestamps);
             begin = end;
         }
     }
@@ -213,9 +248,8 @@ public:
             return;
         }
 
-        /// A single non-empty input array is sorted and deduplicated already (the sink writes it so): it is copied once,
-        /// from its source column into the result.
-        if (data.ranges.size() == 1)
+        /// A single array with strictly increasing timestamps is copied once, from its source column into the result.
+        if (data.appends_only && data.ranges.size() == 1)
         {
             const auto & range = data.ranges.front();
             tuple_to.insertRangeFrom(*range.source, range.offset, range.size);
@@ -234,6 +268,8 @@ private:
     /// The version of the serialized state, checked on deserialization: the state embeds the tuple's binary serialization,
     /// so a server with another element list must refuse it instead of misreading it.
     static constexpr UInt16 FORMAT_VERSION = 1;
+
+    static constexpr size_t MAX_ARRAYS_TO_RESERVE = 4096;
 
     static const typename TimestampColumnType::Container & getTimestamps(const IColumn & tuple)
     {

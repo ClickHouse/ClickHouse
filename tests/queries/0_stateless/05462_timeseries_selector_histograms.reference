@@ -24,12 +24,13 @@ samples	Array(Tuple(DateTime64(3), Float64))
 1
 -- the rows of a series are merged with timeSeriesGroupArrayHistograms
 [('1970-01-01 00:01:05.000',1)]	[('1970-01-01 00:01:40.000',1),('1970-01-01 00:02:10.000',2),('1970-01-01 00:03:20.000',3)]
--- only the requested arrays are read: a row is returned when a requested array has samples in the range
-0	0
+-- the same rows are returned regardless of which arrays are requested
+1	0
 1	2
 1
-0	0
+1	0
 1	2
+[]
 1
 1
 1

@@ -3,7 +3,7 @@
 
 -- `timeSeriesSelector` over a TimeSeries table storing native histogram samples returns them in the column `histograms` next to
 -- `samples` with `return_columns = 'samples'`: the stored tuples of a row of the samples table cut to the time range, one row per
--- series and bucket. Only the requested arrays are read, and a row is returned when a requested array has samples in the range.
+-- series and bucket. Both arrays are read, and a row is returned when either array has samples in the range, regardless of projection.
 -- `'timestamp_and_value'` returns the float samples only. PromQL rejects histogram samples in the evaluated range until it supports them.
 
 SET allow_experimental_time_series_table = 1;
@@ -68,7 +68,7 @@ SELECT '-- the rows of a series are merged with timeSeriesGroupArrayHistograms';
 SELECT timeSeriesGroupArray(samples), arrayMap(h -> (h.timestamp, h.count_int), timeSeriesGroupArrayHistograms(histograms))
 FROM timeSeriesSelector(ts, 'm_buckets', 0, 1000, 'samples') GROUP BY id;
 
-SELECT '-- only the requested arrays are read: a row is returned when a requested array has samples in the range';
+SELECT '-- the same rows are returned regardless of which arrays are requested';
 SELECT count(), sum(length(samples)) FROM timeSeriesSelector(ts, 'm_hist', 0, 1000, 'samples');
 SELECT count(), sum(length(histograms)) FROM timeSeriesSelector(ts, 'm_hist', 0, 1000, 'samples');
 SELECT count() FROM timeSeriesSelector(ts, 'm_hist', 0, 1000, 'samples');
@@ -76,9 +76,8 @@ SELECT count(), sum(length(histograms)) FROM timeSeriesSelector(ts, 'm_float', 0
 SELECT count(), sum(length(samples)) FROM timeSeriesSelector(ts, 'm_float', 0, 1000, 'samples');
 SELECT histograms FROM timeSeriesSelector(ts, 'm_float', 0, 1000, 'samples');
 
--- The generated query mentions the histograms column only when it is requested (the name of the samples table contains "samples",
--- so the absence of the float samples can't be checked the same way).
-SELECT plan NOT LIKE '%histograms%'
+-- The generated query reads `histograms` even when only `samples` is requested, so histogram-only rows are preserved.
+SELECT plan LIKE '%histograms%'
 FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN actions = 1 SELECT id, samples FROM timeSeriesSelector(ts, 'm_mixed', 0, 1000, 'samples')));
 SELECT plan LIKE '%histograms%'
 FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN actions = 1 SELECT id, histograms FROM timeSeriesSelector(ts, 'm_mixed', 0, 1000, 'samples')));

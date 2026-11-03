@@ -42,8 +42,16 @@ SELECT '-- subsets of the columns: the samples table alone, with the tags table,
 SELECT histograms.count_int FROM ts ORDER BY ALL;
 SELECT metric_name, histograms.sum FROM ts ORDER BY ALL;
 SELECT samples, histograms.timestamp FROM ts ORDER BY ALL;
-INSERT INTO ts (metric_family, type, unit, help) VALUES ('mixed', 'gauge', '', '');
+INSERT INTO ts (metric_family, type, unit, help) VALUES
+    ('mixed', 'histogram', 'seconds', 'Mixed samples'),
+    ('float_hist', 'gaugehistogram', 'seconds', 'Float histogram');
 SELECT histograms.count_int, type FROM ts ORDER BY ALL;
+
+-- Native histograms match their unsuffixed family name, including when filtering by metadata with `FINAL`.
+SELECT metric_name, metric_family, type, unit, help, histograms.count_int
+FROM ts FINAL
+WHERE type IN ('histogram', 'gaugehistogram') AND notEmpty(histograms.timestamp)
+ORDER BY ALL;
 
 SELECT '-- ARRAY JOIN over the arrays of the group';
 SELECT metric_name, t, c FROM ts ARRAY JOIN histograms.timestamp AS t, histograms.count_int AS c ORDER BY metric_name, t;
@@ -57,6 +65,45 @@ SELECT histograms.timestamp, histograms.count_int FROM ts WHERE metric_name = 'p
 SELECT histograms.timestamp, histograms.count_int, histograms.sum FROM ts FINAL WHERE metric_name = 'parts';
 SELECT samples, histograms.count_int FROM ts FINAL WHERE metric_name = 'mixed' ORDER BY ALL;
 SELECT count() FROM ts FINAL;
+
+SELECT '-- merging an aggregate state preserves ordering and deduplication, including after serialization';
+SELECT arrayMap(h -> (toUnixTimestamp64Milli(h.timestamp), h.count_int), timeSeriesGroupArrayHistogramsMerge(state))
+FROM
+(
+    SELECT timeSeriesGroupArrayHistogramsState(histograms) AS state
+    FROM timeSeriesSamples(ts)
+    WHERE id IN (SELECT id FROM timeSeriesTags(ts) WHERE metric_name = 'parts')
+)
+SETTINGS max_threads = 1;
+
+INSERT INTO FUNCTION file(currentDatabase() || '_histogram_states.native', Native)
+SELECT timeSeriesGroupArrayHistogramsState(histograms) AS state
+FROM timeSeriesSamples(ts)
+WHERE id IN (SELECT id FROM timeSeriesTags(ts) WHERE metric_name = 'parts')
+SETTINGS engine_file_truncate_on_insert = 1, max_threads = 1;
+
+SELECT arrayMap(h -> (toUnixTimestamp64Milli(h.timestamp), h.count_int), timeSeriesGroupArrayHistogramsMerge(state))
+FROM file(currentDatabase() || '_histogram_states.native', Native);
+
+SELECT '-- a single sorted input array is deduplicated, with the greatest count winning';
+SELECT arrayMap(h -> (toUnixTimestamp64Milli(h.timestamp), h.count_int), timeSeriesGroupArrayHistograms(histograms))
+FROM
+(
+    SELECT arraySort(h -> h.timestamp, arrayFlatten(groupArray(histograms))) AS histograms
+    FROM timeSeriesSamples(ts)
+    WHERE id IN (SELECT id FROM timeSeriesTags(ts) WHERE metric_name = 'parts')
+);
+
+SELECT '-- disjoint input arrays can each contain duplicate timestamps';
+SELECT arrayMap(h -> (toUnixTimestamp64Milli(h.timestamp), h.count_int),
+               timeSeriesGroupArrayHistograms(arraySort(h -> h.timestamp, arrayConcat(histograms, histograms))))
+FROM
+(
+    SELECT histograms FROM timeSeriesSamples(ts)
+    WHERE id IN (SELECT id FROM timeSeriesTags(ts) WHERE metric_name = 'mixed')
+    ORDER BY bucket
+)
+SETTINGS max_threads = 1;
 
 SELECT '-- a table of version 11 has no histograms.* columns';
 CREATE TABLE ts_v11 ENGINE = TimeSeries SETTINGS version = 11, recent_samples_ttl_seconds = 0;

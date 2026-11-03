@@ -1,8 +1,8 @@
 #include <Storages/TimeSeries/TimeSeriesDuplicateTimestampRule.h>
 
 #include <Columns/IColumn.h>
-#include <Core/CompareHelper.h>
 #include <Storages/TimeSeries/TimeSeriesHistogramsColumnsView.h>
+#include <base/DecomposedFloat.h>
 
 
 namespace DB
@@ -15,13 +15,18 @@ namespace
     /// `IColumn::compareAt` orders a NaN below any number with this hint, so a NaN count or sum loses to any other.
     constexpr int nan_is_less = -1;
 
-    /// The first key: the total count, exact when both samples are of the same flavour, as `Float64` when they are not.
+    /// The first key: the total count, compared exactly even across flavours without rounding an integer to `Float64`.
     int compareCounts(const View & view, size_t lhs, size_t rhs)
     {
         const bool lhs_float = view.isFloatAt(lhs);
         const bool rhs_float = view.isFloatAt(rhs);
         if (lhs_float != rhs_float)
-            return CompareHelper<Float64>::compare(view.countAt(lhs), view.countAt(rhs), nan_is_less);
+        {
+            const DecomposedFloat<Float64> float_count(view.count_float.getData()[lhs_float ? lhs : rhs]);
+            const Int64 int_count = view.count_int.getData()[lhs_float ? rhs : lhs];
+            const int result = float_count.isNaN() ? nan_is_less : float_count.compare(int_count);
+            return lhs_float ? result : -result;
+        }
         const IColumn & counts = lhs_float ? static_cast<const IColumn &>(view.count_float) : view.count_int;
         return counts.compareAt(lhs, rhs, counts, nan_is_less);
     }

@@ -43,8 +43,10 @@ namespace
     struct Sizes
     {
         size_t num_histograms = 0;
-        size_t num_int_buckets = 0;
-        size_t num_float_buckets = 0;
+        size_t num_positive_int_buckets = 0;
+        size_t num_negative_int_buckets = 0;
+        size_t num_positive_float_buckets = 0;
+        size_t num_negative_float_buckets = 0;
         size_t num_custom_values = 0;
     };
 
@@ -56,8 +58,10 @@ namespace
             sizes.num_histograms += element->histograms_size();
             for (const auto & histogram : element->histograms())
             {
-                sizes.num_int_buckets += histogram.positive_deltas_size() + histogram.negative_deltas_size();
-                sizes.num_float_buckets += histogram.positive_counts_size() + histogram.negative_counts_size();
+                sizes.num_positive_int_buckets += histogram.positive_deltas_size();
+                sizes.num_negative_int_buckets += histogram.negative_deltas_size();
+                sizes.num_positive_float_buckets += histogram.positive_counts_size();
+                sizes.num_negative_float_buckets += histogram.negative_counts_size();
                 sizes.num_custom_values += histogram.custom_values_size();
             }
         }
@@ -132,10 +136,10 @@ namespace
             for (const auto & column : payload)
                 column->reserve(sizes.num_histograms);
 
-            /// The sizes are counted over both sides of the histograms. The positive side gets the whole reservation and
-            /// the negative side grows on demand: reserving the total for each side would double the allocation.
-            positive_int.reserve(sizes.num_int_buckets);
-            positive_float.reserve(sizes.num_float_buckets);
+            positive_int.reserve(sizes.num_positive_int_buckets);
+            negative_int.reserve(sizes.num_negative_int_buckets);
+            positive_float.reserve(sizes.num_positive_float_buckets);
+            negative_float.reserve(sizes.num_negative_float_buckets);
             custom_values.elements.reserve(sizes.num_custom_values);
         }
     };
