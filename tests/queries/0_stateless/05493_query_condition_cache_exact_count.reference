@@ -52,6 +52,11 @@
 16700
 16700
 33334
+-- a part with counted granules is not served from a normal projection, which would return their rows again
+100020
+1	0
+100020
+100020
 -- counted from the cache
 qcc_count_01	read
 qcc_count_02	counted

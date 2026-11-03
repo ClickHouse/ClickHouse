@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-parallel-replicas
+# Tags: no-parallel, no-parallel-replicas
+# no-parallel: a concurrent drop or rename of a MergeTree table without a UUID clears the whole query condition cache
 # no-parallel-replicas: reads with parallel replicas neither record nor use match counts
 
 # The exact counts of matching rows per granule that the query condition cache keeps for a count()

@@ -1,4 +1,5 @@
--- Tags: no-parallel-replicas
+-- Tags: no-parallel, no-parallel-replicas
+-- no-parallel: a concurrent drop or rename of a MergeTree table without a UUID clears the whole query condition cache
 -- no-parallel-replicas: reads with parallel replicas neither record nor use match counts
 -- Random settings limits: use_query_condition_cache=(1, 1); optimize_move_to_prewhere=(1, 1); optimize_use_projections=(1, 1); optimize_use_implicit_projections=(1, 1); apply_string_filters_during_scan=(1, 1)
 

@@ -1,4 +1,5 @@
--- Tags: no-parallel-replicas
+-- Tags: no-parallel, no-parallel-replicas
+-- no-parallel: a concurrent drop or rename of a MergeTree table without a UUID clears the whole query condition cache
 -- no-parallel-replicas: reads with parallel replicas neither record nor use match counts
 -- Random settings limits: use_query_condition_cache=(1, 1); optimize_move_to_prewhere=(1, 1); optimize_use_projections=(1, 1); optimize_use_implicit_projections=(1, 1); apply_string_filters_during_scan=(1, 1)
 
@@ -20,6 +21,7 @@ DROP TABLE IF EXISTS t_qcc_count_parts;
 DROP TABLE IF EXISTS t_qcc_count_adaptive;
 DROP TABLE IF EXISTS t_qcc_count_final;
 DROP TABLE IF EXISTS t_qcc_count_sample;
+DROP TABLE IF EXISTS t_qcc_count_projection;
 
 -- 101 granules of 1000 rows, except the last one with 500 rows. 'match' is only in the first 50 granules.
 CREATE TABLE t_qcc_count (k UInt64, v UInt64, s String)
@@ -142,6 +144,24 @@ SELECT count() FROM t_qcc_count_sample SAMPLE 1 / 2 WHERE s LIKE '%match%';
 SELECT count() FROM t_qcc_count_sample SAMPLE 1 / 2 WHERE s LIKE '%match%' SETTINGS use_query_condition_cache = 0;
 SELECT count() FROM t_qcc_count_sample WHERE s LIKE '%match%' SETTINGS log_comment = 'qcc_count_36';
 
+SELECT '-- a part with counted granules is not served from a normal projection, which would return their rows again';
+CREATE TABLE t_qcc_count_projection (k UInt64, s String, PROJECTION p (SELECT s ORDER BY s))
+ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 100000, index_granularity_bytes = '10Mi';
+SYSTEM STOP MERGES t_qcc_count_projection;
+-- Granule 0 has too many matching rows to be counted, granules 1 and 2 have 10 each.
+INSERT INTO t_qcc_count_projection SELECT number, if(number < 100000 OR number % 10000 = 5, 'needle', 'hay') FROM numbers(300000);
+-- Records the counts of granules 1 and 2.
+SELECT count() FROM t_qcc_count_projection PREWHERE s LIKE '%needle%';
+-- Granules 1 and 2 are counted, granule 0 is read from the table, not from `p`. EXPLAIN uses the query condition
+-- cache only when the explained query enables it.
+SELECT
+    countIf(explain LIKE '%ReadFromPreparedSource (_exact_count_projection)%') > 0,
+    countIf(explain LIKE '%ReadFromMergeTree (p)%') > 0
+FROM (EXPLAIN SELECT count() FROM t_qcc_count_projection PREWHERE s LIKE '%needle%'
+    SETTINGS use_query_condition_cache = 1, enable_parallel_replicas = 0, prefer_optimize_projection = 1);
+SELECT count() FROM t_qcc_count_projection PREWHERE s LIKE '%needle%' SETTINGS prefer_optimize_projection = 1;
+SELECT countIf(s LIKE '%needle%') FROM t_qcc_count_projection;
+
 SELECT '-- counted from the cache';
 SYSTEM FLUSH LOGS query_log;
 SELECT
@@ -157,3 +177,4 @@ DROP TABLE t_qcc_count_parts;
 DROP TABLE t_qcc_count_adaptive;
 DROP TABLE t_qcc_count_final;
 DROP TABLE t_qcc_count_sample;
+DROP TABLE t_qcc_count_projection;
