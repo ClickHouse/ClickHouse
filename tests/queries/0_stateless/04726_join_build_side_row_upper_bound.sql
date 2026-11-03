@@ -419,6 +419,60 @@ SELECT 'OFFSET subquery keeps orientation',
     JOIN (SELECT id, val FROM fact_04726 LIMIT 50000 OFFSET 10) AS ol ON d.id = ol.id
 );
 
+-- A sort, read or time limit in `break` mode can stop the input before `min(input, limit)` rows, so
+-- it must drop the lower bound. Each arm is a swapping arm above plus that setting.
+SELECT 'sort that can break keeps orientation',
+        countIf(explain ILIKE '%Join: d%') > 0
+    AND countIf(explain ILIKE '%Join: bs%') = 0 FROM (
+    EXPLAIN actions = 1, keep_logical_steps = 1
+    SELECT avg(val)
+    FROM (SELECT id FROM dim_04726 WHERE nation_id = 5) AS d
+    JOIN (SELECT id, val FROM fact_04726 ORDER BY val LIMIT 50000
+        SETTINGS max_rows_to_sort = 1, sort_overflow_mode = 'break') AS bs ON d.id = bs.id
+);
+
+SELECT 'read that can break keeps orientation',
+        countIf(explain ILIKE '%Join: d%') > 0
+    AND countIf(explain ILIKE '%Join: rb%') = 0 FROM (
+    EXPLAIN actions = 1, keep_logical_steps = 1
+    SELECT avg(val)
+    FROM (SELECT id FROM dim_04726 WHERE nation_id = 5) AS d
+    JOIN (SELECT id, val FROM fact_04726 LIMIT 50000
+        SETTINGS max_rows_to_read = 1000000, read_overflow_mode = 'break') AS rb ON d.id = rb.id
+);
+
+SELECT 'read that can time out keeps orientation',
+        countIf(explain ILIKE '%Join: d%') > 0
+    AND countIf(explain ILIKE '%Join: tb%') = 0 FROM (
+    EXPLAIN actions = 1, keep_logical_steps = 1
+    SELECT avg(val)
+    FROM (SELECT id FROM dim_04726 WHERE nation_id = 5) AS d
+    JOIN (SELECT id, val FROM fact_04726 LIMIT 50000
+        SETTINGS max_execution_time = 3600, timeout_overflow_mode = 'break') AS tb ON d.id = tb.id
+);
+
+-- The leaf limits apply only on a shard, so these two arms plan the join there: the first is the
+-- swapping arm, the second adds a leaf read limit in `break` mode.
+SELECT 'limited subquery on a shard keeps orientation', countIf(explain ILIKE '%Join: lb%') > 0
+FROM remote('127.0.0.1', view(
+    SELECT explain FROM (
+        EXPLAIN actions = 1, keep_logical_steps = 1
+        SELECT avg(val)
+        FROM (SELECT id FROM {CLICKHOUSE_DATABASE:Identifier}.dim_04726 WHERE nation_id = 5) AS d
+        JOIN (SELECT id, val FROM {CLICKHOUSE_DATABASE:Identifier}.fact_04726 LIMIT 50000) AS lb ON d.id = lb.id)))
+SETTINGS prefer_localhost_replica = 0;
+
+SELECT 'leaf read that can break keeps orientation',
+        countIf(explain ILIKE '%Join: d%') > 0
+    AND countIf(explain ILIKE '%Join: lb%') = 0
+FROM remote('127.0.0.1', view(
+    SELECT explain FROM (
+        EXPLAIN actions = 1, keep_logical_steps = 1
+        SELECT avg(val)
+        FROM (SELECT id FROM {CLICKHOUSE_DATABASE:Identifier}.dim_04726 WHERE nation_id = 5) AS d
+        JOIN (SELECT id, val FROM {CLICKHOUSE_DATABASE:Identifier}.fact_04726 LIMIT 50000) AS lb ON d.id = lb.id)))
+SETTINGS prefer_localhost_replica = 0, max_rows_to_read_leaf = 1000000, read_overflow_mode_leaf = 'break';
+
 -- An `IN (subquery)` puts a set-building step into its query's join input, which passes every row
 -- through. The first condition keeps the assertion non-vacuous if that step stops appearing.
 SELECT 'IN subquery keeps orientation',

@@ -27,6 +27,11 @@ window subqueries keep orientation	1
 limited subquery keeps orientation	1
 sorted limited subquery keeps orientation	1
 OFFSET subquery keeps orientation	1
+sort that can break keeps orientation	1
+read that can break keeps orientation	1
+read that can time out keeps orientation	1
+limited subquery on a shard keeps orientation	1
+leaf read that can break keeps orientation	1
 IN subquery keeps orientation	1
 DISTINCT subquery keeps orientation	1
 build side rows	0	4

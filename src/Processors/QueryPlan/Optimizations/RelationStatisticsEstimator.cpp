@@ -26,6 +26,7 @@
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/StreamInQueryResultCacheStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
+#include <QueryPipeline/StreamLocalLimits.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Common/logger_useful.h>
@@ -123,6 +124,25 @@ void clearColumnValueRanges(std::unordered_map<String, ColumnStats> & column_sta
         stats.max_value.reset();
         stats.null_fraction.reset();
     }
+}
+
+/// A limit in `break` mode ends the stream early instead of throwing.
+bool stopsEarlyOnOverflow(const SizeLimits & limits)
+{
+    return limits.hasLimits() && limits.overflow_mode == OverflowMode::BREAK;
+}
+
+bool readCanStopEarly(const std::shared_ptr<const StorageLimitsList> & storage_limits)
+{
+    return storage_limits
+        && std::ranges::any_of(
+               *storage_limits,
+               [](const StorageLimits & limits)
+               {
+                   const auto & local = limits.local_limits;
+                   return stopsEarlyOnOverflow(local.size_limits) || stopsEarlyOnOverflow(limits.leaf_limits)
+                       || (local.speed_limits.max_execution_time != 0 && local.timeout_overflow_mode == OverflowMode::BREAK);
+               });
 }
 
 /// A runtime filter prunes nothing at plan time, so it must not count as a filter when estimating.
@@ -305,8 +325,8 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
         /// `selected_rows` counts physical rows in the selected ranges, so it is the exact row count
         /// only when nothing drops rows afterwards: no filter, SAMPLE or FINAL, no mutation applied
-        /// while reading (a lightweight delete or patch part filters at read time) and no `UNIQUE KEY`
-        /// delete bitmap.
+        /// while reading (a lightweight delete or patch part filters at read time), no `UNIQUE KEY`
+        /// delete bitmap and no read or time limit in `break` mode.
         const auto & mutations = reading->getMutationsSnapshot();
         const bool mutations_can_remove_rows = mutations
             && (mutations->hasLightweightDeletedMask() || mutations->hasDataMutations() || mutations->hasPatchParts());
@@ -314,7 +334,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         const bool no_row_removal_after_read = !has_filter && !reading->getPrewhereInfo() && !reading->getRowLevelFilter()
             && !reading->getDeferredRowLevelFilter() && !reading->isQueryWithSampling()
             && !reading->isQueryWithFinal() && !mutations_can_remove_rows
-            && !reading->getStorageMetadata()->hasUniqueKey();
+            && !reading->getStorageMetadata()->hasUniqueKey() && !readCanStopEarly(reading->getQueryInfo().storage_limits);
 
         return RelationStats{
             .estimated_rows = analyzed_result->selected_rows,
@@ -512,7 +532,9 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     if (const auto * sorting_step = typeid_cast<const SortingStep *>(step))
     {
         auto stats = estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport);
-        /// A sort with a limit emits `min(input, limit)` rows, so a lower bound stays one.
+        /// A sort emits `min(input, limit)` rows, so a lower bound stays one unless a `break` sort limit stops it early.
+        if (stopsEarlyOnOverflow(sorting_step->getSettings().size_limits))
+            stats.estimated_rows_is_lower_bound = false;
         if (sorting_step->getLimit())
         {
             if (!stats.estimated_rows || stats.estimated_rows > sorting_step->getLimit())
