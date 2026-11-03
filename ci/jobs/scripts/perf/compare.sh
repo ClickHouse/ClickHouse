@@ -140,6 +140,14 @@ function configure
     fi
 }
 
+# Prints `--tmp` if `clickhouse local` of the binary $1 has the option (see local_command in ci/jobs/performance_tests.py).
+function local_tmp_option
+{
+    if grep -qE '^[[:space:]]*--tmp[[:space:]]' < <("$1" local --help 2>/dev/null); then
+        echo --tmp
+    fi
+}
+
 # addressToLine resolves a frame to "file:line" only where DWARF covers
 # ClickHouse code. PR builds use -g0 (DISABLE_ALL_DEBUG_SYMBOLS): the symbol
 # table remains (addressToSymbol works) but there is no line info, so the patched
@@ -151,13 +159,15 @@ function configure
 # resolves comparably on both and is left untouched.
 function match_reference_debug_info
 {
-    local left right left_lines right_lines
+    local left right left_lines right_lines left_tmp right_tmp
     left=$(readlink -f left/clickhouse-server)
     right=$(readlink -f right/clickhouse-server)
+    left_tmp=$(local_tmp_option "$left")
+    right_tmp=$(local_tmp_option "$right")
     # Running clickhouse also decompresses the self-extracting binary in place.
     local probe="select countIf(addressToLine(arrayJoin(trace)) like '%:%') from system.stack_trace"
-    left_lines=$("$left" local --allow_introspection_functions=1 --query "$probe" 2>/dev/null ||:)
-    right_lines=$("$right" local --allow_introspection_functions=1 --query "$probe" 2>/dev/null ||:)
+    left_lines=$("$left" local ${left_tmp:+"$left_tmp"} --allow_introspection_functions=1 --query "$probe" 2>/dev/null ||:)
+    right_lines=$("$right" local ${right_tmp:+"$right_tmp"} --allow_introspection_functions=1 --query "$probe" 2>/dev/null ||:)
     if [ "$(( ${right_lines:-0} * 4 ))" -lt "${left_lines:-0}" ]; then
         strip --strip-debug "$left"
     fi
@@ -561,6 +571,8 @@ function run_tests
                 --max-queries "$max_queries"
                 --profile-seconds "$profile_seconds"
                 --stop-merges
+                # The Iceberg configuration (`iceberg_local`, `iceberg_s3`), see perf.py --table-engine.
+                ${CHPC_TABLE_ENGINE:+--table-engine "$CHPC_TABLE_ENGINE"}
 
                 "$test"
             )
@@ -671,6 +683,7 @@ do
     sed -n "s/^skipped\t/$test_name\t/p" < "$test_file" >> "analyze/skipped-tests.tsv"
     sed -n "s/^display-name\t/$test_name\t/p" < "$test_file" >> "analyze/query-display-names.tsv"
     sed -n "s/^partial\t/$test_name\t/p" < "$test_file" >> "analyze/partial-queries.tsv"
+    sed -n "s/^result-mismatch\t/$test_name\t/p" < "$test_file" >> "analyze/result-mismatches.tsv"
 done
 
 # for each query run, prepare array of metrics from query log
@@ -1067,6 +1080,7 @@ do
             --http-port "$LEFT_SERVER_HTTP_PORT" "$RIGHT_SERVER_HTTP_PORT" \
             ${CHPC_RUNS:+--runs "$CHPC_RUNS"} ${PR_TO_TEST:+--pr-number "$PR_TO_TEST"} \
             --max-queries 0 --profile-seconds 0 --stop-merges \
+            ${CHPC_TABLE_ENGINE:+--table-engine "$CHPC_TABLE_ENGINE"} \
             --queries-to-run $confirm_indexes \
             > "${confirm_dir}/$confirm_test-raw-$placement.tsv.tmp" \
             2> "${confirm_dir}/$confirm_test-err-$placement.log"
