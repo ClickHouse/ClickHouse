@@ -23,24 +23,16 @@ const PrometheusQueryTree::Offset * getFixedAtModifier(const SQLQueryPiece & arg
 NodeEvaluationRange getRangeAggregationRange(
     const SQLQueryPiece & range_argument, const NodeEvaluationRange & node_range, ConverterContext & context)
 {
-    const auto * fixed_at_node = getFixedAtModifier(range_argument);
-    if (!fixed_at_node)
-    {
-        if (range_argument.type != ResultType::RANGE_VECTOR || !range_argument.node || range_argument.node->node_type != NodeType::Offset)
-            return node_range;
+    if (range_argument.type != ResultType::RANGE_VECTOR || !range_argument.node || range_argument.node->node_type != NodeType::Offset)
+        return node_range;
 
-        /// The offset expression is evaluated on the grid shifted back by the offset.
-        const auto * offset_node = static_cast<const PrometheusQueryTree::Offset *>(range_argument.node);
-        NodeEvaluationRange shifted_range = context.node_range_getter.get(offset_node->getExpression());
-        shifted_range.window = node_range.window;
-        return shifted_range;
-    }
-
-    /// Under a fixed @ modifier the range function's sample window is frozen at the fixed timestamp, while
-    /// the range-vector argument retains its own inner grid.
-    const auto & fixed_range = context.node_range_getter.get(fixed_at_node->getExpression());
-    chassert(fixed_range.start_time == fixed_range.end_time);
-    return NodeEvaluationRange{fixed_range.start_time, fixed_range.end_time, DurationType{0}, node_range.window};
+    /// The range function aggregates on the evaluation range of the expression under the offset node, that is where
+    /// its samples are: the function's own grid shifted back by an offset, or the single point of a fixed @ timestamp.
+    const auto * offset_node = static_cast<const PrometheusQueryTree::Offset *>(range_argument.node);
+    NodeEvaluationRange aggregation_range = context.node_range_getter.get(offset_node->getExpression());
+    aggregation_range.window = node_range.window;
+    chassert(!offset_node->hasAtModifier() || aggregation_range.start_time == aggregation_range.end_time);
+    return aggregation_range;
 }
 
 

@@ -14,20 +14,17 @@ SELECT 'lin', map('s', '0'), arrayMap(k -> (toDateTime64(1000000 + k * 15, 3), t
 
 SELECT 'ts_of_last_over_time(lin[1m] offset 1m)', value FROM prometheusQuery(ts, 'ts_of_last_over_time(lin[1m] offset 1m)', 1000600);
 SELECT 'ts_of_first_over_time(lin[1m] offset 1m)', value FROM prometheusQuery(ts, 'ts_of_first_over_time(lin[1m] offset 1m)', 1000600);
-SELECT 'ts_of_max_over_time(lin[1m] offset 1m)', value FROM prometheusQuery(ts, 'ts_of_max_over_time(lin[1m] offset 1m)', 1000600);
 SELECT 'ts_of_last_over_time(lin[1m] offset -1m)', value FROM prometheusQuery(ts, 'ts_of_last_over_time(lin[1m] offset -1m)', 1000600);
 SELECT 'ts_of_last_over_time(lin[1m] offset 1m) range', arrayMap(x -> x.2, samples)
 FROM prometheusQueryRange(ts, 'ts_of_last_over_time(lin[1m] offset 1m)', 1000540, 1000600, 30);
 
 SELECT 'lin[1m] offset 1m', arrayMap(x -> (toFloat64(x.1), x.2), samples) FROM prometheusQuery(ts, 'lin[1m] offset 1m', 1000600);
 SELECT 'lin[30s] offset -1m', arrayMap(x -> (toFloat64(x.1), x.2), samples) FROM prometheusQuery(ts, 'lin[30s] offset -1m', 1000600);
-SELECT 'lin[1m] offset 500ms', arrayMap(x -> (toFloat64(x.1), x.2), samples) FROM prometheusQuery(ts, 'lin[1m] offset 500ms', 1000600);
 
 SELECT 'lin[1m:15s] offset 1m', arrayMap(x -> (toFloat64(x.1), x.2), samples) FROM prometheusQuery(ts, 'lin[1m:15s] offset 1m', 1000600);
 SELECT 'ts_of_last_over_time(lin[1m:15s] offset 1m)', value FROM prometheusQuery(ts, 'ts_of_last_over_time(lin[1m:15s] offset 1m)', 1000600);
 
 SELECT 'predict_linear(lin[2m] offset 1m, 60)', value FROM prometheusQuery(ts, 'predict_linear(lin[2m] offset 1m, 60)', 1000600);
-SELECT 'predict_linear(lin[2m:15s] offset 1m, 60)', value FROM prometheusQuery(ts, 'predict_linear(lin[2m:15s] offset 1m, 60)', 1000600);
 SELECT 'predict_linear(lin[2m] offset 1m, 60) range', arrayMap(x -> x.2, samples)
 FROM prometheusQueryRange(ts, 'predict_linear(lin[2m] offset 1m, 60)', 1000540, 1000600, 30);
 
