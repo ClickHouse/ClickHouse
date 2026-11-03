@@ -24,7 +24,6 @@ class DataTypeVariant final : public IDataType
 {
 private:
     DataTypes variants;
-    bool fixed_discriminator_order = false;
 
 public:
     static constexpr bool is_parametric = true;

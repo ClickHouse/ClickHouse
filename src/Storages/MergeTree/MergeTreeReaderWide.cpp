@@ -981,12 +981,8 @@ void MergeTreeReaderWide::addStreams(
         has_any_stream = true;
     };
 
-    /// Only the part's own serialization tells a stream it lacks by design from a subcolumn its type lacks.
     ISerialization::EnumerateStreamsSettings enumerate_settings;
-    const auto & name_in_part = name_and_type.getNameInStorage();
-    auto column_in_part = part_columns.tryGetColumn(GetColumnsOptions::AllPhysical, name_in_part);
-    if (column_in_part
-        && (!name_and_type.isSubcolumn() || hasSubcolumnInPart(name_in_part, *column_in_part->type, name_and_type.getSubcolumnName())))
+    if (isReadWithTypeInPart(name_and_type))
     {
         enumerate_settings.check_stream_exists_callback = [&](const ISerialization::SubstreamPath & substream_path)
         {
@@ -1006,6 +1002,14 @@ void MergeTreeReaderWide::addStreams(
     /// derived substreams its type has besides (the element null maps of a `Variant`).
     if (!has_any_stream && (!has_derived_stream || !has_all_streams))
         columns_absent_from_part.insert(name_and_type.name);
+}
+
+bool MergeTreeReaderWide::isReadWithTypeInPart(const NameAndTypePair & name_and_type) const
+{
+    const auto & name_in_part = name_and_type.getNameInStorage();
+    auto column_in_part = part_columns.tryGetColumn(GetColumnsOptions::AllPhysical, name_in_part);
+    return column_in_part
+        && (!name_and_type.isSubcolumn() || hasSubcolumnInPart(name_in_part, *column_in_part->type, name_and_type.getSubcolumnName()));
 }
 
 MergeTreeReaderStream & MergeTreeReaderWide::FileStreams::getOrCreate(const String & stream_name, const StreamFactory & factory)
@@ -1316,11 +1320,15 @@ void MergeTreeReaderWide::deserializePrefix(
             if (stream_name)
                 streams.release(*stream_name);
         };
-        deserialize_settings.check_stream_exists_callback = [&](const ISerialization::SubstreamPath & substream_path) -> bool
+        /// Not memoized: the prefixes are deserialized in parallel, and a Variant asks this for each of its variants.
+        if (isReadWithTypeInPart(name_and_type))
         {
-            const auto & stream_name = getStreamName(name_and_type, substream_path);
-            return stream_name.has_value();
-        };
+            deserialize_settings.check_stream_exists_callback = [&](const ISerialization::SubstreamPath & substream_path) -> bool
+            {
+                return IMergeTreeDataPart::getStreamNameForColumn(
+                    name_and_type, substream_path, DATA_FILE_EXTENSION, data_part_info_for_read->getChecksums(), storage_settings).has_value();
+            };
+        }
         deserialize_settings.release_all_prefixes_streams = settings.read_only_column_sample;
         deserialize_settings.has_uniform_marks_callback =
             [&](const ISerialization::SubstreamPath & substream_path,

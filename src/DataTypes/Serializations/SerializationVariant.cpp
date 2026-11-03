@@ -46,13 +46,12 @@ static void checkDiscriminatorValue(ColumnVariant::Discriminator discr, size_t n
             static_cast<UInt32>(discr), num_variants);
 }
 
-UInt128 SerializationVariant::getHash(const VariantSerializations & variant_serializations_, const String & variant_name_, bool fixed_discriminator_order_)
+UInt128 SerializationVariant::getHash(const VariantSerializations & variant_serializations_, const String & variant_name_)
 {
     SipHash hash;
     hash.update("Variant");
     hash.update(variant_name_.size());
     hash.update(variant_name_);
-    hash.update(fixed_discriminator_order_);
     for (const auto & serialization : variant_serializations_)
         hash.update(serialization->getHash());
     return hash.get128();
@@ -86,14 +85,14 @@ struct DeserializeBinaryBulkStateVariant : public ISerialization::DeserializeBin
     }
 };
 
-SerializationPtr SerializationVariant::create(const DataTypes & variant_types_, const VariantSerializations & variant_serializations_, const Names & variant_names_, const String & variant_name_, bool fixed_discriminator_order_)
+SerializationPtr SerializationVariant::create(const DataTypes & variant_types_, const VariantSerializations & variant_serializations_, const Names & variant_names_, const String & variant_name_)
 {
     for (const auto & serialization : variant_serializations_)
     {
         if (!serialization->supportsPooling())
-            return std::shared_ptr<ISerialization>(new SerializationVariant(variant_types_, variant_serializations_, variant_names_, variant_name_, fixed_discriminator_order_));
+            return std::shared_ptr<ISerialization>(new SerializationVariant(variant_types_, variant_serializations_, variant_names_, variant_name_));
     }
-    return ISerialization::pooled(getHash(variant_serializations_, variant_name_, fixed_discriminator_order_), [&] { return new SerializationVariant(variant_types_, variant_serializations_, variant_names_, variant_name_, fixed_discriminator_order_); });
+    return ISerialization::pooled(getHash(variant_serializations_, variant_name_), [&] { return new SerializationVariant(variant_types_, variant_serializations_, variant_names_, variant_name_); });
 }
 
 bool SerializationVariant::isElementSubcolumn(const SubstreamPath & path, const String & element_name)
@@ -105,14 +104,12 @@ SerializationVariant::SerializationVariant(
     const DataTypes & variant_types_,
     const VariantSerializations & variant_serializations_,
     const Names & variant_names_,
-    const String & variant_name_,
-    bool fixed_discriminator_order_)
+    const String & variant_name_)
     : variant_types(variant_types_.begin(), variant_types_.end())
     , variant_serializations(variant_serializations_)
     , variant_names(variant_names_)
     , deserialize_text_order(getVariantsDeserializeTextOrder(variant_types_))
     , variant_name(variant_name_)
-    , fixed_discriminator_order(fixed_discriminator_order_)
 {
 }
 
@@ -147,7 +144,7 @@ void SerializationVariant::enumerateStreams(
     settings.path.pop_back();
 
     std::vector<bool> variants_absent_in_storage;
-    if (settings.check_stream_exists_callback && fixed_discriminator_order)
+    if (settings.check_stream_exists_callback)
     {
         variants_absent_in_storage.resize(variant_serializations.size());
         for (size_t i = 0; i != variant_serializations.size(); ++i)
@@ -180,9 +177,7 @@ void SerializationVariant::enumerateStreams(
             column_variant ? column_variant->localDiscriminatorByGlobal(i) : i,
             make_subcolumn_nullable,
             nullptr,
-            variant_serializations.size(),
-            /*selected_subcolumn_is_null_map_=*/false,
-            fixed_discriminator_order);
+            variant_serializations.size());
 
         auto variant_data = SubstreamData(variant_serializations[i])
                              .withType(type)
@@ -285,14 +280,11 @@ void SerializationVariant::deserializeBinaryBulkStatePrefix(
     variant_state->discriminators_state = discriminators_state;
     variant_state->variant_states.resize(variant_serializations.size());
     variant_state->variants_absent_in_storage.resize(variant_serializations.size());
-    if (fixed_discriminator_order)
-    {
-        for (size_t i = 0; i < variant_serializations.size(); ++i)
-            variant_state->variants_absent_in_storage[i] = isVariantAbsentInStorage(
-                settings.check_stream_exists_callback, settings.path, variant_names[i],
-                SubstreamData(variant_serializations[i]).withType(variant_types[i]),
-                settings.use_specialized_prefixes_and_suffixes_substreams);
-    }
+    for (size_t i = 0; i < variant_serializations.size(); ++i)
+        variant_state->variants_absent_in_storage[i] = isVariantAbsentInStorage(
+            settings.check_stream_exists_callback, settings.path, variant_names[i],
+            SubstreamData(variant_serializations[i]).withType(variant_types[i]),
+            settings.use_specialized_prefixes_and_suffixes_substreams);
 
     settings.path.push_back(Substream::VariantElements);
     for (size_t i = 0; i < variant_serializations.size(); ++i)
@@ -823,12 +815,6 @@ bool SerializationVariant::isVariantAbsentInStorage(
     if (!check_stream_exists)
         return false;
 
-    /// Compact parts without substream marks report every stream as missing, the discriminators included.
-    SubstreamPath discriminators_path = path;
-    discriminators_path.push_back(Substream::VariantDiscriminators);
-    if (!check_stream_exists(discriminators_path))
-        return false;
-
     EnumerateStreamsSettings settings;
     settings.path = path;
     settings.path.push_back(Substream::VariantElements);
@@ -848,8 +834,13 @@ bool SerializationVariant::isVariantAbsentInStorage(
         has_stream_in_storage = check_stream_exists(substream_path);
     };
     variant_data.serialization->enumerateStreams(settings, callback, variant_data);
+    if (!has_streams || has_stream_in_storage)
+        return false;
 
-    return has_streams && !has_stream_in_storage;
+    /// Compact parts without substream marks report every stream as missing, the discriminators included.
+    SubstreamPath discriminators_path = path;
+    discriminators_path.push_back(Substream::VariantDiscriminators);
+    return check_stream_exists(discriminators_path);
 }
 
 void SerializationVariant::serializeBinary(const Field & /*field*/, WriteBuffer & /*ostr*/, const FormatSettings & /*settings*/) const

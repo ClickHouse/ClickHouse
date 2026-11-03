@@ -18,7 +18,7 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ALL_DATA;
 }
 
-UInt128 SerializationVariantElement::getHash(const SerializationPtr & nested_, const String & variant_element_name_, ColumnVariant::Discriminator variant_discriminator_, size_t num_variants_, bool nullable_added_by_extraction_, bool selected_subcolumn_is_null_map_, bool fixed_discriminator_order_)
+UInt128 SerializationVariantElement::getHash(const SerializationPtr & nested_, const String & variant_element_name_, ColumnVariant::Discriminator variant_discriminator_, size_t num_variants_, bool nullable_added_by_extraction_, bool selected_subcolumn_is_null_map_)
 {
     SipHash hash;
     hash.update("VariantElement");
@@ -29,7 +29,6 @@ UInt128 SerializationVariantElement::getHash(const SerializationPtr & nested_, c
     hash.update(num_variants_);
     hash.update(nullable_added_by_extraction_);
     hash.update(selected_subcolumn_is_null_map_);
-    hash.update(fixed_discriminator_order_);
     return hash.get128();
 }
 
@@ -39,12 +38,11 @@ SerializationPtr SerializationVariantElement::create(
     ColumnVariant::Discriminator variant_discriminator_,
     size_t num_variants_,
     bool nullable_added_by_extraction_,
-    bool selected_subcolumn_is_null_map_,
-    bool fixed_discriminator_order_)
+    bool selected_subcolumn_is_null_map_)
 {
     if (!nested_->supportsPooling())
-        return std::shared_ptr<ISerialization>(new SerializationVariantElement(nested_, variant_element_name_, variant_discriminator_, num_variants_, nullable_added_by_extraction_, selected_subcolumn_is_null_map_, fixed_discriminator_order_));
-    return ISerialization::pooled(getHash(nested_, variant_element_name_, variant_discriminator_, num_variants_, nullable_added_by_extraction_, selected_subcolumn_is_null_map_, fixed_discriminator_order_), [&] { return new SerializationVariantElement(nested_, variant_element_name_, variant_discriminator_, num_variants_, nullable_added_by_extraction_, selected_subcolumn_is_null_map_, fixed_discriminator_order_); });
+        return std::shared_ptr<ISerialization>(new SerializationVariantElement(nested_, variant_element_name_, variant_discriminator_, num_variants_, nullable_added_by_extraction_, selected_subcolumn_is_null_map_));
+    return ISerialization::pooled(getHash(nested_, variant_element_name_, variant_discriminator_, num_variants_, nullable_added_by_extraction_, selected_subcolumn_is_null_map_), [&] { return new SerializationVariantElement(nested_, variant_element_name_, variant_discriminator_, num_variants_, nullable_added_by_extraction_, selected_subcolumn_is_null_map_); });
 }
 
 bool SerializationVariantElement::isNullMapSubstream(Substream::Type type)
@@ -115,7 +113,7 @@ void SerializationVariantElement::enumerateStreams(
     }
 
     bool variant_absent_in_storage = deserialize_state && deserialize_state->variant_absent_in_storage;
-    if (!variant_absent_in_storage && fixed_discriminator_order)
+    if (!variant_absent_in_storage)
         variant_absent_in_storage = SerializationVariant::isVariantAbsentInStorage(
             settings.check_stream_exists_callback, settings.path, variant_element_name,
             SubstreamData(nested_serialization).withType(nested_type).withSerializationInfo(data.serialization_info),
@@ -155,7 +153,7 @@ void SerializationVariantElement::deserializeBinaryBulkStatePrefix(
 
     auto variant_element_state = std::make_shared<DeserializeBinaryBulkStateVariantElement>();
     variant_element_state->discriminators_state = discriminators_state;
-    variant_element_state->variant_absent_in_storage = fixed_discriminator_order && SerializationVariant::isVariantAbsentInStorage(
+    variant_element_state->variant_absent_in_storage = SerializationVariant::isVariantAbsentInStorage(
         settings.check_stream_exists_callback, settings.path, variant_element_name, SubstreamData(nested_serialization),
         settings.use_specialized_prefixes_and_suffixes_substreams);
 
@@ -415,8 +413,7 @@ SerializationVariantElement::VariantSubcolumnCreator::VariantSubcolumnCreator(
     bool make_nullable_,
     const ColumnPtr & null_map_,
     size_t num_variants_,
-    bool selected_subcolumn_is_null_map_,
-    bool fixed_discriminator_order_)
+    bool selected_subcolumn_is_null_map_)
     : local_discriminators(local_discriminators_)
     , null_map(null_map_)
     , variant_element_name(variant_element_name_)
@@ -425,7 +422,6 @@ SerializationVariantElement::VariantSubcolumnCreator::VariantSubcolumnCreator(
     , make_nullable(make_nullable_)
     , num_variants(num_variants_)
     , selected_subcolumn_is_null_map(selected_subcolumn_is_null_map_)
-    , fixed_discriminator_order(fixed_discriminator_order_)
 {
 }
 
@@ -443,8 +439,7 @@ SerializationVariantElement::VariantSubcolumnCreator::specializeForSelectedSubco
         make_nullable,
         null_map,
         num_variants,
-        /*selected_subcolumn_is_null_map_=*/true,
-        fixed_discriminator_order);
+        /*selected_subcolumn_is_null_map_=*/true);
 }
 
 DataTypePtr SerializationVariantElement::VariantSubcolumnCreator::create(const DataTypePtr & prev) const
@@ -459,7 +454,7 @@ SerializationPtr SerializationVariantElement::VariantSubcolumnCreator::create(co
     const bool nullable_added = make_nullable && prev_type && !isNullableOrLowCardinalityNullable(prev_type);
     const bool absent_element_is_null = absenceGoesIntoNullMap() && prev_type && isUInt8(prev_type);
     return SerializationVariantElement::create(
-        prev, variant_element_name, global_variant_discriminator, num_variants, nullable_added, absent_element_is_null, fixed_discriminator_order);
+        prev, variant_element_name, global_variant_discriminator, num_variants, nullable_added, absent_element_is_null);
 }
 
 ColumnPtr SerializationVariantElement::VariantSubcolumnCreator::create(const DB::ColumnPtr & prev) const

@@ -74,11 +74,11 @@ public:
     using VariantTypes = VectorWithMemoryTracking<DataTypePtr>;
 
 private:
-    explicit SerializationVariant(const DataTypes & variant_types_, const VariantSerializations & variant_serializations_, const Names & variant_names_, const String & variant_name_, bool fixed_discriminator_order_);
+    explicit SerializationVariant(const DataTypes & variant_types_, const VariantSerializations & variant_serializations_, const Names & variant_names_, const String & variant_name_);
 
 public:
-    static UInt128 getHash(const VariantSerializations & variant_serializations_, const String & variant_name_, bool fixed_discriminator_order_);
-    static SerializationPtr create(const DataTypes & variant_types_, const VariantSerializations & variant_serializations_, const Names & variant_names_, const String & variant_name_, bool fixed_discriminator_order_);
+    static UInt128 getHash(const VariantSerializations & variant_serializations_, const String & variant_name_);
+    static SerializationPtr create(const DataTypes & variant_types_, const VariantSerializations & variant_serializations_, const Names & variant_names_, const String & variant_name_);
 
     /// Whether a resolved subcolumn is really this variant, which its name alone cannot tell: a
     /// sibling element can flatten to the same name.
@@ -175,8 +175,8 @@ private:
 
     void addVariantElementToPath(SubstreamPath & path, size_t i) const;
 
-    /// True if the discriminators of the Variant at `path` are in storage but no stream of the variant is:
-    /// the part was written before the variant was added to the type, so it holds no values of it.
+    /// True if the discriminators of the Variant at `path` are in storage but no stream of the variant is,
+    /// e.g. the part was written before the variant was added to the type. Such a variant is read as empty.
     static bool isVariantAbsentInStorage(
         const std::function<bool(const SubstreamPath &)> & check_stream_exists,
         const SubstreamPath & path,
@@ -266,8 +266,6 @@ private:
     std::vector<size_t> deserialize_text_order;
     /// Name of Variant data type for better exception messages.
     String variant_name;
-    /// A variant can be appended to a Variant with a fixed discriminator order, so older data may have no streams for it.
-    bool fixed_discriminator_order;
 };
 
 }

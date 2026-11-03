@@ -65,7 +65,6 @@ DataTypeVariant::DataTypeVariant(const DataTypes & variants_)
 
 DataTypeVariant::DataTypeVariant(const DataTypes & variants_, FixedDiscriminatorOrder)
 {
-    fixed_discriminator_order = true;
     std::unordered_set<String> names;
     for (const auto & type : variants_)
     {
@@ -218,7 +217,7 @@ SerializationPtr DataTypeVariant::doGetSerialization(const SerializationInfoSett
         variant_names.push_back(variant->getName());
     }
 
-    return SerializationVariant::create(variants, serializations, variant_names, getName(), fixed_discriminator_order);
+    return SerializationVariant::create(variants, serializations, variant_names, getName());
 }
 
 DataTypePtr DataTypeVariant::doCloneWithChildren(const DataTypes & new_children) const
