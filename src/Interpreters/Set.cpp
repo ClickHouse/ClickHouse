@@ -104,6 +104,27 @@ constexpr auto high_masks = []
     return masks;
 }();
 
+/// Whether at least 15 of 16 sampled rows have the same key as the previous row. Each sample is a pseudo-random row
+/// of its sixteenth of the block, so that runs of a regular length cannot line up with the samples.
+bool keysAreSorted(const ColumnRawPtrs & key_columns, size_t rows)
+{
+    static constexpr size_t max_samples = 16;
+    if (rows < 2)
+        return false;
+    const size_t samples = std::min(max_samples, rows - 1);
+    const size_t stride = (rows - 1) / samples;
+    size_t repeats = 0;
+    for (size_t i = 0; i < samples; ++i)
+    {
+        const size_t row = 1 + i * stride + intHash64(i) % stride;
+        bool repeat = true;
+        for (const auto * column : key_columns)
+            repeat = repeat && column->compareAt(row, row - 1, *column, 1) == 0;
+        repeats += repeat;
+    }
+    return repeats * 16 >= samples * 15;
+}
+
 }
 
 /// A cuckoo hash table of the keys of a set, looked up without data-dependent branches instead of the hash table
@@ -114,14 +135,14 @@ class Set::CuckooLookup
 public:
     /// The table is built by a single lookup on the query's critical path, so only small sets get one.
     static constexpr size_t max_keys = 1 << 15;
-    static constexpr size_t max_bytes = 8 << 20;
+    static constexpr size_t max_bytes = 2 << 20;
     static constexpr size_t max_string_size = 15;
 
     static constexpr size_t minSlots(size_t num_keys) { return 2 * num_keys + num_keys / 4; }
 
     size_t allocatedBytes() const
     {
-        return slots32.allocated_bytes() + slots64.allocated_bytes() + slots128.allocated_bytes() + slots256.allocated_bytes();
+        return slots32.allocated_bytes() + slots64.allocated_bytes() + slots128.allocated_bytes();
     }
 
     /// Builds nothing if the peak memory of a placement would exceed `memory_budget`.
@@ -133,8 +154,7 @@ public:
         auto lookup = std::make_unique<CuckooLookup>();
         if constexpr (IsSetMethodOneNumber<Method>::value || IsSetMethodKeysFixed<Method>::value)
         {
-            if constexpr (std::is_same_v<Key, UInt32> || std::is_same_v<Key, UInt64> || std::is_same_v<Key, UInt128>
-                          || std::is_same_v<Key, UInt256>)
+            if constexpr (std::is_same_v<Key, UInt32> || std::is_same_v<Key, UInt64> || std::is_same_v<Key, UInt128>)
             {
                 if (attemptPeakBytes(num_keys, sizeof(Key), minBits(num_keys), 0) > memory_budget)
                     return nullptr;
@@ -199,8 +219,7 @@ private:
             findNumbers<mixed, Key>(reinterpret_cast<const char *>(state.getKeyData()), rows, res);
         }
         else if constexpr (IsSetMethodKeysFixed<Method>::value
-                           && (std::is_same_v<Key, UInt32> || std::is_same_v<Key, UInt64> || std::is_same_v<Key, UInt128>
-                               || std::is_same_v<Key, UInt256>))
+                           && (std::is_same_v<Key, UInt32> || std::is_same_v<Key, UInt64> || std::is_same_v<Key, UInt128>))
         {
             if (getSlots<Key>().empty())
                 return false;
@@ -260,11 +279,10 @@ private:
     PODArray<UInt32> slots32;
     PODArray<UInt64> slots64;
     PODArray<UInt128> slots128;
-    PODArray<UInt256> slots256;
     /// One per 64-bit word of a key. With `mixed_hash`, they apply to `intHashCRC32` of a number key, and a longer
     /// key takes its two slots from the high and low bits of the sum of `intHash64(word ^ multipliers1[i])`.
-    UInt64 multipliers1[4] = {};
-    UInt64 multipliers2[4] = {};
+    UInt64 multipliers1[2] = {};
+    UInt64 multipliers2[2] = {};
     bool mixed_hash = false;
     size_t shift = 0;
     UInt64 mask = 0;
@@ -301,10 +319,11 @@ private:
             return slots32;
         else if constexpr (std::is_same_v<Key, UInt64>)
             return slots64;
-        else if constexpr (std::is_same_v<Key, UInt128>)
-            return slots128;
         else
-            return slots256;
+        {
+            static_assert(std::is_same_v<Key, UInt128>);
+            return slots128;
+        }
     }
 
     template <typename Key>
@@ -389,9 +408,11 @@ private:
         {
             if (attempt > 0 && attempt % 4 == 0)
                 ++bits;
-            if ((1ULL << bits) * sizeof(Key) > max_bytes || attemptPeakBytes(keys.size(), sizeof(Key), bits, previous_bits) > memory_budget)
+            /// A retry of the same size reuses the slots in place.
+            const size_t reallocated_bits = bits > previous_bits ? previous_bits : 0;
+            if ((1ULL << bits) * sizeof(Key) > max_bytes || attemptPeakBytes(keys.size(), sizeof(Key), bits, reallocated_bits) > memory_budget)
                 break;
-            for (size_t i = 0; i < 4; ++i)
+            for (size_t i = 0; i < std::size(multipliers1); ++i)
             {
                 multipliers1[i] = splitMix64(random_state) | 1;
                 multipliers2[i] = splitMix64(random_state) | 1;
@@ -531,8 +552,8 @@ void Set::finishInsert()
         const size_t num_keys = data->getTotalRowCount();
         using Type = SetVariants::Type;
         const bool has_suitable_key = data->type == Type::key32 || data->type == Type::key64 || data->type == Type::key_string
-            || data->type == Type::keys32 || data->type == Type::keys64 || data->type == Type::keys128 || data->type == Type::keys256
-            || data->type == Type::nullable_keys128 || data->type == Type::nullable_keys256;
+            || data->type == Type::keys32 || data->type == Type::keys64 || data->type == Type::keys128
+            || data->type == Type::nullable_keys128;
         rows_before_cuckoo_lookup = has_suitable_key && num_keys > 0 && num_keys <= CuckooLookup::max_keys && !cuckoo_lookup_disabled
             ? static_cast<Int64>(rows_per_key_before_cuckoo_lookup * num_keys)
             : -1;
@@ -1395,7 +1416,9 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
     /// most half of the rows are NULL, and only the other rows count towards building it.
     const bool may_use_cuckoo_lookup = cuckoo_lookup || rows_before_cuckoo_lookup.load(std::memory_order_relaxed) > 0;
     const size_t num_null_rows = null_map && may_use_cuckoo_lookup ? countBytesInFilter(*null_map) : 0;
-    const bool used_cuckoo_lookup = cuckoo_lookup && num_null_rows * 2 <= vec_res.size() && data->callOnMethod([&](const auto & method)
+    /// The hash table answers a key equal to the previous row's from its cache, without a lookup.
+    const bool keys_sorted = may_use_cuckoo_lookup && data->type != SetVariants::Type::key_string && keysAreSorted(key_columns, vec_res.size());
+    const bool used_cuckoo_lookup = !keys_sorted && cuckoo_lookup && num_null_rows * 2 <= vec_res.size() && data->callOnMethod([&](const auto & method)
         { return cuckoo_lookup->execute(method, key_columns, key_sizes, vec_res, negative, null_map); });
     if (!used_cuckoo_lookup)
     {
@@ -1403,7 +1426,7 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
 
         /// The keys do not change while the shared lock is held, so the table is built here and installed below.
         const Int64 rows = static_cast<Int64>(vec_res.size() - num_null_rows);
-        if (rows > 0 && !cuckoo_lookup && rows_before_cuckoo_lookup.load(std::memory_order_relaxed) > 0)
+        if (!keys_sorted && rows > 0 && !cuckoo_lookup && rows_before_cuckoo_lookup.load(std::memory_order_relaxed) > 0)
         {
             const Int64 rows_before = rows_before_cuckoo_lookup.fetch_sub(rows, std::memory_order_relaxed);
             if (rows_before > 0 && rows_before <= rows)
