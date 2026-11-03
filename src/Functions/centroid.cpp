@@ -32,7 +32,7 @@ namespace
 /// Convert a range of SphericalPoints (lon, lat in degrees) to S2Points.
 /// Reuses the caller-owned buffer to avoid per-call heap allocations.
 template <typename Container>
-void toS2Points(const Container & vertices, std::vector<S2Point> & out)
+void toS2Points(const Container & vertices, std::vector<S2Point> & out) /// STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
     out.clear();
     out.reserve(vertices.size());
@@ -72,7 +72,7 @@ size_t loopVertexCount(const Ring<SphericalPoint> & ring)
 /// Compute the true centroid × area for a ring using S2::GetCentroid,
 /// with sign normalized to positive (CCW) orientation so that
 /// polygon hole subtraction (outer - holes) works correctly.
-S2Point computeRingCentroidS2(const Ring<SphericalPoint> & ring, std::vector<S2Point> & scratch)
+S2Point computeRingCentroidS2(const Ring<SphericalPoint> & ring, std::vector<S2Point> & scratch) /// STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
     size_t n = loopVertexCount(ring);
     if (n < 3)
@@ -92,13 +92,13 @@ S2Point computeRingCentroidS2(const Ring<SphericalPoint> & ring, std::vector<S2P
     return centroid;
 }
 
-SphericalPoint computeRingSphericalCentroid(const Ring<SphericalPoint> & ring, std::vector<S2Point> & scratch)
+SphericalPoint computeRingSphericalCentroid(const Ring<SphericalPoint> & ring, std::vector<S2Point> & scratch) /// STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
     S2Point centroid = computeRingCentroidS2(ring, scratch);
     return normalizeAndProject(centroid, ring.empty() ? SphericalPoint{0, 0} : ring.front());
 }
 
-SphericalPoint computePolygonSphericalCentroid(const Polygon<SphericalPoint> & polygon, std::vector<S2Point> & scratch)
+SphericalPoint computePolygonSphericalCentroid(const Polygon<SphericalPoint> & polygon, std::vector<S2Point> & scratch) /// STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
     S2Point centroid(0, 0, 0);
 
@@ -116,7 +116,7 @@ SphericalPoint computePolygonSphericalCentroid(const Polygon<SphericalPoint> & p
     return normalizeAndProject(centroid, fallback);
 }
 
-SphericalPoint computeMultiPolygonSphericalCentroid(const MultiPolygon<SphericalPoint> & multipolygon, std::vector<S2Point> & scratch)
+SphericalPoint computeMultiPolygonSphericalCentroid(const MultiPolygon<SphericalPoint> & multipolygon, std::vector<S2Point> & scratch) /// STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
     S2Point centroid(0, 0, 0);
 
@@ -130,7 +130,7 @@ SphericalPoint computeMultiPolygonSphericalCentroid(const MultiPolygon<Spherical
     return normalizeAndProject(centroid, SphericalPoint{0, 0});
 }
 
-SphericalPoint computeLineStringSphericalCentroid(const LineString<SphericalPoint> & linestring, std::vector<S2Point> & scratch)
+SphericalPoint computeLineStringSphericalCentroid(const LineString<SphericalPoint> & linestring, std::vector<S2Point> & scratch) /// STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
     if (linestring.size() < 2)
         return linestring.empty() ? SphericalPoint{0, 0} : linestring.front();
@@ -141,7 +141,7 @@ SphericalPoint computeLineStringSphericalCentroid(const LineString<SphericalPoin
     return normalizeAndProject(centroid, SphericalPoint{0, 0});
 }
 
-SphericalPoint computeMultiLineStringSphericalCentroid(const MultiLineString<SphericalPoint> & multilinestring, std::vector<S2Point> & scratch)
+SphericalPoint computeMultiLineStringSphericalCentroid(const MultiLineString<SphericalPoint> & multilinestring, std::vector<S2Point> & scratch) /// STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
     S2Point centroid(0, 0, 0);
 
@@ -158,7 +158,7 @@ SphericalPoint computeMultiLineStringSphericalCentroid(const MultiLineString<Sph
 
 /// Centroid of a point set: the mean direction of the unit vectors, i.e. the
 /// center of mass of equal point weights on the sphere.
-SphericalPoint computeMultiPointSphericalCentroid(const MultiPoint<SphericalPoint> & multipoint, std::vector<S2Point> & scratch)
+SphericalPoint computeMultiPointSphericalCentroid(const MultiPoint<SphericalPoint> & multipoint, std::vector<S2Point> & scratch) /// STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
     if (multipoint.empty())
         return SphericalPoint{0, 0};
@@ -173,7 +173,7 @@ SphericalPoint computeMultiPointSphericalCentroid(const MultiPoint<SphericalPoin
 
 /// Dispatch to the appropriate centroid function based on geometry type.
 template <typename Geometry>
-SphericalPoint computeGeometrySphericalCentroid(const Geometry & geom, std::vector<S2Point> & scratch)
+SphericalPoint computeGeometrySphericalCentroid(const Geometry & geom, std::vector<S2Point> & scratch) /// STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
     if constexpr (std::is_same_v<Geometry, Ring<SphericalPoint>>)
         return computeRingSphericalCentroid(geom, scratch);
@@ -245,7 +245,7 @@ public:
             Field field;
             if constexpr (std::is_same_v<Point, SphericalPoint>)
             {
-                std::vector<S2Point> scratch;
+                std::vector<S2Point> scratch; /// STYLE_CHECK_ALLOW_STD_CONTAINERS
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
                     column_variant->get(i, field);
@@ -282,7 +282,7 @@ public:
 
                     if constexpr (std::is_same_v<Point, SphericalPoint>)
                     {
-                        std::vector<S2Point> scratch;
+                        std::vector<S2Point> scratch; /// STYLE_CHECK_ALLOW_STD_CONTAINERS
                         for (size_t i = 0; i < input_rows_count; ++i)
                         {
                             Point centroid = computeGeometrySphericalCentroid(geometries[i], scratch);
@@ -357,7 +357,7 @@ private:
     }
 
     static void
-    processField(const Field & field, GeometryColumnType type, PointSerializer<Point> & serializer, std::vector<S2Point> & scratch)
+    processField(const Field & field, GeometryColumnType type, PointSerializer<Point> & serializer, std::vector<S2Point> & scratch) /// STYLE_CHECK_ALLOW_STD_CONTAINERS
     {
         static_assert(std::is_same_v<Point, SphericalPoint>);
         processFieldImpl(
