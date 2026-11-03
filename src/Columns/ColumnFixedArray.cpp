@@ -4,6 +4,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
@@ -656,6 +657,15 @@ ColumnPtr recursiveRemoveFixedArray(const ColumnPtr & column)
         if (nested.get() == column_nullable->getNestedColumnPtr().get())
             return column;
         return ColumnNullable::create(nested, column_nullable->getNullMapColumnPtr());
+    }
+
+    /// The lazily replicated column keeps its indexes, only the replicated values are converted.
+    if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(column.get()))
+    {
+        auto nested = recursiveRemoveFixedArray(column_replicated->getNestedColumn());
+        if (nested.get() == column_replicated->getNestedColumn().get())
+            return column;
+        return ColumnReplicated::create(nested, column_replicated->getIndexesColumn());
     }
 
     return column;

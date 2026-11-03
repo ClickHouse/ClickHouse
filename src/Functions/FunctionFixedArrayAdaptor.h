@@ -63,7 +63,7 @@ private:
     DataTypes argument_types;
 };
 
-/** Replaces `FixedArray(N, T)` with `Array(T)` in the type and the column of the argument (also inside `ColumnConst`),
+/** Replaces `FixedArray(N, T)` with `Array(T)` in the type and the column of the argument (also inside `ColumnConst` and `ColumnReplicated`),
   * but only at the first level: `T` keeps its type. It is used by the functions that are specialized for `FixedArray`,
   * so that an element of a multidimensional `FixedArray` is still a `FixedArray`. Other arguments are returned as is.
   */

@@ -1,6 +1,7 @@
 #include <Functions/FunctionFixedArrayAdaptor.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedArray.h>
+#include <Columns/ColumnReplicated.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedArray.h>
 
@@ -114,6 +115,10 @@ ColumnWithTypeAndName removeOuterFixedArray(const ColumnWithTypeAndName & argume
     if (const auto * column_const = typeid_cast<const ColumnConst *>(argument.column.get()))
         res.column = ColumnConst::create(
             assert_cast<const ColumnFixedArray &>(column_const->getDataColumn()).convertToArray(), column_const->size());
+    else if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(argument.column.get()))
+        res.column = ColumnReplicated::create(
+            assert_cast<const ColumnFixedArray &>(*column_replicated->getNestedColumn()).convertToArray(),
+            column_replicated->getIndexesColumn());
     else if (argument.column)
         res.column = assert_cast<const ColumnFixedArray &>(*argument.column).convertToArray();
     return res;
