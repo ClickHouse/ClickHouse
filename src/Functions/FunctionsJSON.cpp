@@ -29,6 +29,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDynamic.h>
+#include <DataTypes/DataTypeExponentialTimeDecaying.h>
 #include <DataTypes/DataTypeObject.h>
 
 #include <Functions/IFunction.h>
@@ -40,6 +41,7 @@
 #include <Common/FunctionDocumentation.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/castColumn.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -51,6 +53,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_simdjson;
+    extern const SettingsBool allow_experimental_time_decay_aggregate_functions;
     extern const SettingsDateTimeInputFormat cast_string_to_date_time_mode;
     extern const SettingsBool json_extract_named_tuples_as_objects;
     extern const SettingsBool json_extract_use_cast_string_to_date_time_mode;
@@ -782,6 +785,10 @@ public:
 
     explicit JSONOverloadResolver(ContextPtr context)
         : allow_simdjson(context->getSettingsRef()[Setting::allow_simdjson])
+        , allow_experimental_time_decay_aggregate_functions(
+              context->getSettingsRef()[Setting::allow_experimental_time_decay_aggregate_functions])
+        , data_type_validation_settings(
+              DataTypeValidationSettings::forNonStorageDefinition(context->getSettingsRef()))
         , format_settings(getFormatSettings(context))
     {
         /// Extracting a string JSON value into a DateTime/DateTime64 column is a string-to-type
@@ -845,6 +852,16 @@ public:
     FunctionBasePtr build(const ColumnsWithTypeAndName & arguments) const override
     {
         DataTypePtr json_return_type = Impl<DummyJSONParser>::getReturnType(Name::name, createBlockWithNestedColumns(arguments));
+        if (!allow_experimental_time_decay_aggregate_functions
+            && containsExponentialTimeDecaying(json_return_type))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Type {} is experimental and disabled by default. Enable it with setting "
+                "allow_experimental_time_decay_aggregate_functions",
+                json_return_type->getName());
+
+        validateDataType(json_return_type, data_type_validation_settings);
+
         NullPresence null_presence = getNullPresense(arguments);
         DataTypePtr return_type = wrapReturnType(arguments, json_return_type, null_presence);
 
@@ -883,6 +900,8 @@ private:
     }
 
     const bool allow_simdjson;
+    const bool allow_experimental_time_decay_aggregate_functions;
+    const DataTypeValidationSettings data_type_validation_settings;
     FormatSettings format_settings;
     UInt64 settings_hash = 0;
 };

@@ -17,6 +17,7 @@ struct GetSetElementParams
 {
     bool transform_null_in = true;
     bool forbid_unknown_enum_values = false;
+    bool validate_time_decay_types = false;
 };
 
 /** Get set elements for constant part of IN subquery.

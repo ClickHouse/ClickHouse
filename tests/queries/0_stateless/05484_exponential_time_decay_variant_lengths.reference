@@ -1,0 +1,6 @@
+ExponentialTimeDecaying64(20)
+ExponentialTimeDecaying128(20)
+ExponentialTimeDecaying64(10, direct)	ExponentialTimeDecaying64(10, direct)	1
+ExponentialTimeDecaying64(20, direct)	ExponentialTimeDecaying64(20, direct)	1
+ExponentialTimeDecaying64(10, direct)
+ExponentialTimeDecaying64(20, direct)

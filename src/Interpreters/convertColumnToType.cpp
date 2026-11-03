@@ -21,6 +21,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/DataTypeExponentialTimeDecaying.h>
 #include <base/DayNum.h>
 #include <Common/Exception.h>
 #include <Common/FieldAccurateComparison.h>
@@ -407,6 +408,13 @@ DataTypePtr resolveActiveAlternativeType(const IColumn & value, const DataTypePt
     return from;
 }
 
+void validateConvertedColumn(const IColumn & column, const DataTypePtr & type)
+{
+    if (containsExponentialTimeDecaying(type))
+        validateExponentialTimeDecayingColumn(
+            column, type, "conversion to ExponentialTimeDecaying");
+}
+
 }
 
 ColumnPtr convertColumnToTypeOrNull(
@@ -448,6 +456,9 @@ ColumnPtr convertColumnToTypeOrNull(
     /// `get` keeps neither the `Bool` tag nor the active `Variant`/`Dynamic` alternative; restore both so
     /// the delegated `convertFieldToType` behaves as it would for a genuine value of the constant.
     const DataTypePtr source = resolveActiveAlternativeType(unwrapped, from);
+    /// A `NULL` has no curve payload; let the existing null-conversion rules handle it.
+    if (strict && !field.isNull())
+        assertExponentialTimeDecayingConversionTypesCompatible(source, to, "strict conversion");
     retagBoolInField(field, source);
 
     const Field converted = convertFieldToType(field, *to, source.get(), format_settings, strict, convert_inexact_floats);
@@ -462,6 +473,7 @@ ColumnPtr convertColumnToTypeOrNull(
         {
             auto null_column = to->createColumn();
             null_column->insert(Field());
+            validateConvertedColumn(*null_column, to);
             return null_column;
         }
         return {};
@@ -473,6 +485,7 @@ ColumnPtr convertColumnToTypeOrNull(
 
     auto column = to->createColumn();
     column->insert(converted);
+    validateConvertedColumn(*column, to);
     return column;
 }
 

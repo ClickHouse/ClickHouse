@@ -98,6 +98,8 @@ namespace Setting
     extern const SettingsBool precise_float_parsing;
     extern const SettingsBool date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands;
     extern const SettingsDateTimeInputFormat cast_string_to_date_time_mode;
+    extern const SettingsBool allow_experimental_time_decay_aggregate_functions;
+    extern const SettingsString exponential_time_decay_default_mode;
 }
 
 namespace ErrorCodes
@@ -136,6 +138,8 @@ struct FunctionConvertSettings
     const bool check_conversion_from_numbers_to_enum;
     const bool date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands;
     const bool cast_keep_nullable;
+    const bool allow_experimental_time_decay_aggregate_functions;
+    const String exponential_time_decay_default_mode;
     const FormatSettings::DateTimeInputFormat cast_string_to_date_time_mode;
     const FormatSettings format_settings;
     /// `format_settings` has too many members to hash one by one; this hashes the session settings it
@@ -155,6 +159,8 @@ struct FunctionConvertSettings
         , check_conversion_from_numbers_to_enum(context && context->getSettingsRef()[Setting::check_conversion_from_numbers_to_enum])
         , date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands(context && context->getSettingsRef()[Setting::date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands])
         , cast_keep_nullable(context && context->getSettingsRef()[Setting::cast_keep_nullable])
+        , allow_experimental_time_decay_aggregate_functions(!context || context->getSettingsRef()[Setting::allow_experimental_time_decay_aggregate_functions])
+        , exponential_time_decay_default_mode(context ? context->getSettingsRef()[Setting::exponential_time_decay_default_mode].value : "compact")
         , cast_string_to_date_time_mode(context ? context->getSettingsRef()[Setting::cast_string_to_date_time_mode] : FormatSettings::DateTimeInputFormat::Basic)
         , format_settings(context ? getFormatSettings(context) : FormatSettings{})
         , format_settings_hash(context ? getFormatSettingsHash(context->getSettingsRef()) : 0)
@@ -182,6 +188,8 @@ struct FunctionConvertSettings
         hash.update(check_conversion_from_numbers_to_enum);
         hash.update(date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands);
         hash.update(cast_keep_nullable);
+        hash.update(allow_experimental_time_decay_aggregate_functions);
+        hash.update(exponential_time_decay_default_mode);
         hash.update(cast_string_to_date_time_mode);
         hash.update(format_settings_hash);
     }

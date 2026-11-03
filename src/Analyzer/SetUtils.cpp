@@ -7,7 +7,9 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeExponentialTimeDecaying.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 
@@ -16,6 +18,7 @@
 #include <Interpreters/convertColumnToType.h>
 
 #include <Common/assert_cast.h>
+#include <Common/checkStackSize.h>
 
 namespace DB
 {
@@ -29,6 +32,36 @@ extern const int UNKNOWN_ELEMENT_OF_ENUM;
 
 namespace
 {
+
+void assertTimeDecayConstantSetMemberCompatible(const DataTypePtr & lhs, const DataTypePtr & rhs)
+{
+    checkStackSize();
+    const auto left = removeLowCardinalityAndNullable(lhs);
+    const auto right = removeLowCardinalityAndNullable(rhs);
+    if (isNothing(right))
+        return;
+
+    if (const auto * left_tuple = typeid_cast<const DataTypeTuple *>(left.get()))
+    {
+        const auto * right_tuple = typeid_cast<const DataTypeTuple *>(right.get());
+        if (right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
+        {
+            for (size_t i = 0; i < left_tuple->getElements().size(); ++i)
+                assertTimeDecayConstantSetMemberCompatible(left_tuple->getElements()[i], right_tuple->getElements()[i]);
+            return;
+        }
+    }
+    else if (const auto * left_array = typeid_cast<const DataTypeArray *>(left.get()))
+    {
+        if (const auto * right_array = typeid_cast<const DataTypeArray *>(right.get()))
+        {
+            assertTimeDecayConstantSetMemberCompatible(left_array->getNestedType(), right_array->getNestedType());
+            return;
+        }
+    }
+
+    assertExponentialTimeDecayingTypesCompatible(left, right, "IN constant set");
+}
 
 /// Unwrap Nullable to get to the underlying Tuple type.
 /// Also unwrap LowCardinality for robustness, even though LowCardinality(Tuple) is not supported.
@@ -697,6 +730,12 @@ ColumnsWithTypeAndName getSetElementsForConstantValue(
         lhs_unpacked_types = {std::make_shared<DataTypeNullable>(nested_tuple_type)};
     }
 
+    auto assert_set_element_type_compatible = [&](const DataTypePtr & element_type)
+    {
+        if (params.validate_time_decay_types)
+            assertTimeDecayConstantSetMemberCompatible(lhs_expression_type, element_type);
+    };
+
     auto build_from_array = [&](const DataTypePtr & type)
     {
         /// Hot path: an `Array` RHS whose key columns are all native numbers (single scalar key, or a
@@ -704,6 +743,7 @@ ColumnsWithTypeAndName getSetElementsForConstantValue(
         /// already contiguous key columns - convert them directly, without `membersFromArray` cutting
         /// each element into a size-1 column. Everything else keeps the general per-element path.
         const auto & nested_type = assert_cast<const DataTypeArray &>(*type).getNestedType();
+        assert_set_element_type_compatible(nested_type);
         if (auto fast = tryBuildFromNativeArray(rhs_column, nested_type, lhs_unpacked_types, params))
             return std::move(*fast);
         return createBlockFromCollection(membersFromArray(rhs_column, type), lhs_unpacked_types, params);
@@ -711,11 +751,14 @@ ColumnsWithTypeAndName getSetElementsForConstantValue(
 
     auto build_from_tuple = [&](const DataTypePtr & type)
     {
+        for (const auto & element_type : getTupleType(type)->getElements())
+            assert_set_element_type_compatible(element_type);
         return createBlockFromCollection(membersFromTuple(rhs_column, type), lhs_unpacked_types, params);
     };
 
     auto build_from_single_value = [&](const DataTypePtr & type)
     {
+        assert_set_element_type_compatible(type);
         return createBlockFromCollection(membersFromSingleValue(rhs_column, type), lhs_unpacked_types, params);
     };
 
