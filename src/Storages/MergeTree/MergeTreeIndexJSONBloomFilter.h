@@ -142,7 +142,7 @@ public:
         ContextPtr context,
         const Block & header_,
         std::shared_ptr<const JSONBloomPathMatcher> path_matcher_,
-        NameSet columns_shadowing_map_subcolumns_);
+        IsShadowingColumn is_column_shadowing_subcolumn_);
 
     bool alwaysUnknownOrTrue() const override;
     bool usesPath(const String & path) const;
@@ -190,7 +190,7 @@ private:
     const Block & header;
     std::shared_ptr<const JSONBloomPathMatcher> path_matcher;
     const FormatSettings comparison_format_settings;
-    const NameSet columns_shadowing_map_subcolumns;
+    const IsShadowingColumn is_column_shadowing_subcolumn;
     std::vector<RPNElement> rpn;
     bool has_dynamic_probes = false;
 };
@@ -214,15 +214,11 @@ public:
         const MergeTreeDataPartChecksums & checksums,
         const IDataPartStorage & storage,
         const std::string & relative_path_prefix) const override;
-    MergeTreeIndexSubstreams getAllSubstreamsInPart(
-        const MergeTreeDataPartChecksums & checksums,
-        const std::string & relative_path_prefix,
-        const IDataPartStorage * storage) const override;
     void serializePartMetadata(MergeTreeIndexOutputStreams & streams) const override;
     MergeTreeIndexPartMetadataPtr deserializePartMetadata(MergeTreeIndexInputStreams & streams) const override;
 
 private:
-    NameSet getColumnsShadowingJSONSubcolumns() const;
+    IsShadowingColumn getJSONSubcolumnShadowingCheck() const;
 
     size_t bits_per_row;
     size_t hash_functions;

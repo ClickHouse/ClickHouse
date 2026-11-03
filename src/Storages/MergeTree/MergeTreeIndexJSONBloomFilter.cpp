@@ -1945,12 +1945,12 @@ std::optional<JSONPathMatch> tryMatchJSONSubcolumn(std::string_view column_path,
 }
 
 std::optional<JSONPathMatch> tryMatchDirectJSONPath(
-    const RPNBuilderTreeNode & node, const Block & header, const NameSet & columns_shadowing_map_subcolumns)
+    const RPNBuilderTreeNode & node, const Block & header, const IsShadowingColumn & is_column_shadowing_subcolumn)
 {
-    if (!node.getDAGNode() || columns_shadowing_map_subcolumns.contains(node.getColumnName()))
+    if (!node.getDAGNode() || is_column_shadowing_subcolumn(node.getColumnName()))
         return std::nullopt;
 
-    if (const auto parsed_map_subcolumn = tryParseMapSubcolumnName(node.getColumnName(), columns_shadowing_map_subcolumns))
+    if (const auto parsed_map_subcolumn = tryParseMapSubcolumnName(node.getColumnName(), is_column_shadowing_subcolumn))
     {
         auto match = tryMatchJSONSubcolumn(parsed_map_subcolumn->first, header);
         const auto * map_type = match ? typeid_cast<const DataTypeMap *>(removeJSONBloomWrappers(match->type).get()) : nullptr;
@@ -1972,15 +1972,15 @@ std::optional<JSONPathMatch> tryMatchDirectJSONPath(
 }
 
 std::optional<JSONPathMatch> tryMatchJSONPath(
-    const RPNBuilderTreeNode & node, const Block & header, const NameSet & columns_shadowing_map_subcolumns)
+    const RPNBuilderTreeNode & node, const Block & header, const IsShadowingColumn & is_column_shadowing_subcolumn)
 {
     if (!node.isFunction())
-        return tryMatchDirectJSONPath(node, header, columns_shadowing_map_subcolumns);
+        return tryMatchDirectJSONPath(node, header, is_column_shadowing_subcolumn);
 
     const auto function = node.toFunctionNode();
     if ((function.getFunctionName() == "CAST" || function.getFunctionName() == "_CAST") && function.getArgumentsSize() == 2)
     {
-        auto match = tryMatchJSONPath(function.getArgumentAt(0), header, columns_shadowing_map_subcolumns);
+        auto match = tryMatchJSONPath(function.getArgumentAt(0), header, is_column_shadowing_subcolumn);
         const auto * dag_node = node.getDAGNode();
         if (!match || !dag_node || match->cast_type)
             return std::nullopt;
@@ -1994,7 +1994,7 @@ std::optional<JSONPathMatch> tryMatchJSONPath(
 
     if (function.getFunctionName() == "tupleElement" && function.getArgumentsSize() == 2)
     {
-        auto match = tryMatchJSONPath(function.getArgumentAt(0), header, columns_shadowing_map_subcolumns);
+        auto match = tryMatchJSONPath(function.getArgumentAt(0), header, is_column_shadowing_subcolumn);
         const auto * dag_node = node.getDAGNode();
         Field element;
         DataTypePtr element_type;
@@ -2019,7 +2019,7 @@ std::optional<JSONPathMatch> tryMatchJSONPath(
         return std::nullopt;
 
     auto map_node = function.getArgumentAt(0);
-    auto map_match = tryMatchDirectJSONPath(map_node, header, columns_shadowing_map_subcolumns);
+    auto map_match = tryMatchDirectJSONPath(map_node, header, is_column_shadowing_subcolumn);
     if (!map_match)
         return std::nullopt;
 
@@ -2064,7 +2064,7 @@ bool isJSONBloomPathFilterSafe(
 std::optional<String> tryMatchJSONPresencePath(
     const RPNBuilderTreeNode & node,
     const Block & header,
-    const NameSet & columns_shadowing_map_subcolumns,
+    const IsShadowingColumn & is_column_shadowing_subcolumn,
     const JSONBloomPathMatcher & path_matcher)
 {
     String column_name;
@@ -2085,7 +2085,7 @@ std::optional<String> tryMatchJSONPresencePath(
         column_name = function.getArgumentAt(0).getColumnName();
     }
 
-    if (columns_shadowing_map_subcolumns.contains(column_name))
+    if (is_column_shadowing_subcolumn(column_name))
         return std::nullopt;
     auto match = tryMatchJSONSubcolumn(column_name, header);
     if (!match || match->indexes_missing_values || match->role != JSONBloomRole::Scalar || !path_matcher.shouldIndex(match->logical_path))
@@ -2954,11 +2954,11 @@ MergeTreeIndexConditionJSONBloomFilter::MergeTreeIndexConditionJSONBloomFilter(
     ContextPtr context,
     const Block & header_,
     std::shared_ptr<const JSONBloomPathMatcher> path_matcher_,
-    NameSet columns_shadowing_map_subcolumns_)
+    IsShadowingColumn is_column_shadowing_subcolumn_)
     : header(header_)
     , path_matcher(std::move(path_matcher_))
     , comparison_format_settings(getJSONComparisonFormatSettings(context))
-    , columns_shadowing_map_subcolumns(std::move(columns_shadowing_map_subcolumns_))
+    , is_column_shadowing_subcolumn(std::move(is_column_shadowing_subcolumn_))
 {
     if (!predicate)
     {
@@ -3147,7 +3147,7 @@ bool MergeTreeIndexConditionJSONBloomFilter::extractAtomFromTree(const RPNBuilde
         const auto argument = function.getArgumentAt(0);
         if (!canContainNull(*argument.getDAGNode()->result_type))
             return false;
-        auto path = tryMatchJSONPresencePath(argument, header, columns_shadowing_map_subcolumns, *path_matcher);
+        auto path = tryMatchJSONPresencePath(argument, header, is_column_shadowing_subcolumn, *path_matcher);
         return path && set_exists({std::move(*path)}, false);
     }
     if (function.getArgumentsSize() != 2)
@@ -3202,8 +3202,8 @@ bool MergeTreeIndexConditionJSONBloomFilter::extractAtomFromTree(const RPNBuilde
 
         auto key_node = function.getArgumentAt(0);
         const auto all_paths_column = tryMatchJSONAllPaths(key_node, header);
-        auto path = tryMatchJSONPath(key_node, header, columns_shadowing_map_subcolumns);
-        auto presence_path = tryMatchJSONPresencePath(key_node, header, columns_shadowing_map_subcolumns, *path_matcher);
+        auto path = tryMatchJSONPath(key_node, header, is_column_shadowing_subcolumn);
+        auto presence_path = tryMatchJSONPresencePath(key_node, header, is_column_shadowing_subcolumn, *path_matcher);
         if (!all_paths_column && !path && !presence_path)
             return false;
 
@@ -3301,7 +3301,7 @@ bool MergeTreeIndexConditionJSONBloomFilter::extractAtomFromTree(const RPNBuilde
             return path && set_exists({std::move(*path)}, false);
         }
 
-        auto path = tryMatchJSONPath(*key_node, header, columns_shadowing_map_subcolumns);
+        auto path = tryMatchJSONPath(*key_node, header, is_column_shadowing_subcolumn);
         if (path && path_matcher->shouldIndex(path->logical_path)
             && isJSONBloomPathFilterSafe(
                 key_node->getDAGNode()->result_type, constant, constant_type, comparison_format_settings, path->indexes_missing_values))
@@ -3321,14 +3321,14 @@ bool MergeTreeIndexConditionJSONBloomFilter::extractAtomFromTree(const RPNBuilde
         }
 
         /// Fall back to path presence when a missing path cannot satisfy the condition.
-        auto presence_path = tryMatchJSONPresencePath(*key_node, header, columns_shadowing_map_subcolumns, *path_matcher);
+        auto presence_path = tryMatchJSONPresencePath(*key_node, header, is_column_shadowing_subcolumn, *path_matcher);
         if (!presence_path
             || !isJSONBloomPathFilterSafe(key_node->getDAGNode()->result_type, constant, constant_type, comparison_format_settings, false))
             return false;
         return set_exists({std::move(*presence_path)}, false);
     }
 
-    auto path = tryMatchJSONPath(*key_node, header, columns_shadowing_map_subcolumns);
+    auto path = tryMatchJSONPath(*key_node, header, is_column_shadowing_subcolumn);
     if (!path || !path_matcher->shouldIndex(path->logical_path))
         return false;
     out.path = path->logical_path;
@@ -3399,17 +3399,23 @@ MergeTreeIndexJSONBloomFilter::MergeTreeIndexJSONBloomFilter(
 {
 }
 
-NameSet MergeTreeIndexJSONBloomFilter::getColumnsShadowingJSONSubcolumns() const
+IsShadowingColumn MergeTreeIndexJSONBloomFilter::getJSONSubcolumnShadowingCheck() const
 {
     /// Another column, or a subcolumn of one, can have the name of a subcolumn of the indexed column, such as a
     /// column named `json.x`. A predicate on that name reads the other column, so it must not use this index.
-    auto result = getColumnsShadowingMapSubcolumns();
+    /// Names shaped like a Map key subcolumn `<map>.key_<k>` are refused whenever a column or a subcolumn has
+    /// them, as in `getMapSubcolumnShadowingCheck`. Looked up on demand for the same reason as there.
     const auto & json_column = index.column_names.front();
-    const auto prefix = json_column + ".";
-    for (const auto & column : metadata_snapshot->getColumns().get(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns()))
-        if (column.name.starts_with(prefix) && column.getNameInStorage() != json_column)
-            result.insert(column.name);
-    return result;
+    return [metadata = metadata_snapshot, json_column, prefix = json_column + "."](const String & column_name)
+    {
+        auto options = GetColumnsOptions(GetColumnsOptions::All).withRegularSubcolumns();
+        auto column = metadata->getColumns().tryGetColumn(options, column_name);
+        if (!column)
+            return false;
+        if (column_name.contains(".key_"))
+            return true;
+        return column_name.starts_with(prefix) && column->getNameInStorage() != json_column;
+    };
 }
 
 MergeTreeIndexGranulePtr MergeTreeIndexJSONBloomFilter::createIndexGranule() const
@@ -3437,7 +3443,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexJSONBloomFilter::createIndexAggregator
 MergeTreeIndexConditionPtr MergeTreeIndexJSONBloomFilter::createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const
 {
     return std::make_shared<MergeTreeIndexConditionJSONBloomFilter>(
-        predicate, context, index.sample_block, path_matcher, getColumnsShadowingJSONSubcolumns());
+        predicate, context, index.sample_block, path_matcher, getJSONSubcolumnShadowingCheck());
 }
 
 namespace
@@ -3476,14 +3482,6 @@ MergeTreeIndexFormat MergeTreeIndexJSONBloomFilter::getPhysicalFormat(
     if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx2", &storage))
         return {2, getSubstreams()};
     return {0, {}};
-}
-
-MergeTreeIndexSubstreams MergeTreeIndexJSONBloomFilter::getAllSubstreamsInPart(
-    const MergeTreeDataPartChecksums & checksums, const std::string & relative_path_prefix, const IDataPartStorage * storage) const
-{
-    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx2", storage))
-        return getSubstreams();
-    return {};
 }
 
 void MergeTreeIndexJSONBloomFilter::serializePartMetadata(MergeTreeIndexOutputStreams & streams) const
