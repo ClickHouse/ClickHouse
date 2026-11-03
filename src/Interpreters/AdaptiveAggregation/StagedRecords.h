@@ -110,57 +110,58 @@ Key ALWAYS_INLINE readStagedKey(const char * key_pos, size_t key_size, [[maybe_u
     }
 }
 
-/// A length in a record: the size of a byte-staged key or of a `String` argument. One byte holds a length below
-/// `staged_length_escape`, which nearly every length is; a longer one is that byte followed by the length as a
-/// `UInt32`. The `UInt32` holds every length, because the buffer rejects a record whose chunk does not fit 32 bits
-/// (see `PartitionedRecordBuffer::append`). A `VarUInt` takes a second byte from 128 on, which keys such as URLs often
-/// reach, and its read needs a bound and a check of it for every byte; this length takes one comparison.
-inline constexpr UInt8 staged_length_escape = 255;
+/// A staged `UInt` is a number in a record that is nearly always small: the size of a byte-staged key or of a `String`
+/// argument, or the count of a byte-staged key's count record. One byte holds a number below `staged_uint_escape`; a
+/// larger one is that byte followed by the number as a `UInt32`. The `UInt32` holds every size, because the buffer
+/// rejects a record whose chunk does not fit 32 bits (see `PartitionedRecordBuffer::append`), and every count, which
+/// the staging keeps as a `UInt32`. A `VarUInt` takes a second byte from 128 on, which keys such as URLs often reach,
+/// and its read needs a bound and a check of it for every byte; a staged `UInt` takes one comparison.
+inline constexpr UInt8 staged_uint_escape = 255;
 
-inline size_t ALWAYS_INLINE stagedLengthBytes(size_t length)
+inline size_t ALWAYS_INLINE stagedUIntBytes(size_t value)
 {
-    return length < staged_length_escape ? 1 : 1 + sizeof(UInt32);
+    return value < staged_uint_escape ? 1 : 1 + sizeof(UInt32);
 }
 
-/// Writes `length` at `to` and returns the position after it.
-inline char * ALWAYS_INLINE writeStagedLength(char * to, size_t length)
+/// Writes `value` at `to` and returns the position after it.
+inline char * ALWAYS_INLINE writeStagedUInt(char * to, size_t value)
 {
-    chassert(length <= std::numeric_limits<UInt32>::max());
-    if (length < staged_length_escape)
+    chassert(value <= std::numeric_limits<UInt32>::max());
+    if (value < staged_uint_escape)
     {
-        *to = static_cast<char>(length);
+        *to = static_cast<char>(value);
         return to + 1;
     }
-    *to = static_cast<char>(staged_length_escape);
-    unalignedStore<UInt32>(to + 1, static_cast<UInt32>(length));
+    *to = static_cast<char>(staged_uint_escape);
+    unalignedStore<UInt32>(to + 1, static_cast<UInt32>(value));
     return to + 1 + sizeof(UInt32);
 }
 
-/// Reads the length at `from` and moves `from` past it.
-inline size_t ALWAYS_INLINE readStagedLength(const char *& from)
+/// Reads the staged `UInt` at `from` and moves `from` past it.
+inline size_t ALWAYS_INLINE readStagedUInt(const char *& from)
 {
     const auto first = static_cast<UInt8>(*from);
-    if (first < staged_length_escape) [[likely]]
+    if (first < staged_uint_escape) [[likely]]
     {
         ++from;
         return first;
     }
-    const size_t length = unalignedLoad<UInt32>(from + 1);
+    const size_t value = unalignedLoad<UInt32>(from + 1);
     from += 1 + sizeof(UInt32);
-    return length;
+    return value;
 }
 
-/// A staged `String` argument: its length and the bytes, copied straight from and to the column without its
-/// serialization's virtual calls.
+/// A staged `String` argument: its length as a staged `UInt` and the bytes, copied straight from and to the column
+/// without its serialization's virtual calls.
 inline size_t ALWAYS_INLINE stagedStringBytes(std::string_view value)
 {
-    return stagedLengthBytes(value.size()) + value.size();
+    return stagedUIntBytes(value.size()) + value.size();
 }
 
 /// Writes a staged `String` at `to` and returns the position after it.
 inline char * ALWAYS_INLINE writeStagedString(char * to, std::string_view value)
 {
-    char * bytes = writeStagedLength(to, value.size());
+    char * bytes = writeStagedUInt(to, value.size());
     memcpy(bytes, value.data(), value.size());
     return bytes + value.size();
 }
@@ -168,7 +169,7 @@ inline char * ALWAYS_INLINE writeStagedString(char * to, std::string_view value)
 /// Reads the staged `String` at `from` and moves `from` past it.
 inline std::string_view ALWAYS_INLINE readStagedString(const char *& from)
 {
-    const size_t size = readStagedLength(from);
+    const size_t size = readStagedUInt(from);
     const std::string_view value(from, size);
     from += size;
     return value;
@@ -298,47 +299,56 @@ size_t stagedFixedKeyBytes(size_t packed_key_bytes)
 /// A record of a fixed-width key stores no hash: the merge rehashes the key in a few instructions, which costs less
 /// than the bytes of a hash in a record of a dozen or two, written by the staging, read by the merge, and written to
 /// disk and read back by a spill. A record of a byte-staged key stores the hash in the form of its `Hash` (see
-/// `AdaptiveStagedHash`) and the size of the key as a staged length.
+/// `AdaptiveStagedHash`) and the size of the key as a staged `UInt`.
 ///
 /// Every format offers the readers the same interface: `bytes(record)`, the size of the record; `key(record)`, the
 /// position and the size of its stored key; `readKey(record, hash)`, the key as the table takes it; and
 /// `hash(table, record)`, the routing hash of the key, which `table` hashes as the producer's table did. A count format
-/// also has `count(record)`. The writer reserves the size that `bytesForKey` (key formats) or `bytesFor` (argument
-/// formats) gives and fills the record from `writeHeader(record, hash, key_size, ...)`, whose last argument is the
-/// count of a count record or the size of an argument record. It returns the position where the writer stores the
-/// `keyBytes(key_size)` bytes of the key. The formats of a fixed-width key ignore `key_size`: they know the stored
-/// width. An argument format with `with_variable_arguments` may hold variable-size arguments after the key; the others
-/// hold none, so the writer compiles their loop without the code for them. An argument format with `fixed_width_key`
-/// stores the key's `fixed_key.bytes` at `key_offset` in every record, from which the drain rebuilds a key that is also
-/// an argument (see `AdaptiveArgumentLayout::key_field`).
+/// also has `count(record)`, and `max_count`, the largest count of one record. The writer reserves the size that
+/// `bytesForKey(key_size, count)` (key formats) or `bytesFor` (argument formats) gives and fills the record from
+/// `writeHeader(record, hash, key_size, ...)`, whose last argument is the count of a count record or the size of an
+/// argument record. It returns the position where the writer stores the `keyBytes(key_size)` bytes of the key. The
+/// formats of a fixed-width key ignore `key_size`: they know the stored width. An argument format with
+/// `with_variable_arguments` may hold variable-size arguments after the key; the others hold none, so the writer
+/// compiles their loop without the code for them. An argument format with `fixed_width_key` stores the key's
+/// `fixed_key.bytes` at `key_offset` in every record, from which the drain rebuilds a key that is also an argument (see
+/// `AdaptiveArgumentLayout::key_field`).
 
-/// Count and key-only records of a byte-staged key: {hash, [UInt8 count,] key size, key}. The count is a contribution
-/// within one block; the staging splits a larger one into several records, which the merge adds up.
+/// Count and key-only records of a byte-staged key: {hash, [count,] key size, key}. The count is a contribution within
+/// one block, stored as a staged `UInt`, so a key that repeats in a block takes one record whatever its count:
+/// splitting a large count into several records would copy a key of any length into each of them.
 template <typename Key, typename Hash, bool with_count_>
 struct StagedByteKeyRecord
 {
     static constexpr bool with_count = with_count_;
     static constexpr bool with_arguments = false;
+    static constexpr UInt32 max_count = std::numeric_limits<UInt32>::max();
     using StoredHash = typename Hash::Stored;
     static constexpr size_t count_offset = sizeof(StoredHash);
-    static constexpr size_t size_offset = count_offset + (with_count ? 1 : 0);
 
-    static size_t bytesForKey(size_t key_size) { return size_offset + stagedLengthBytes(key_size) + key_size; }
+    static size_t bytesForKey(size_t key_size, UInt32 count)
+    {
+        return count_offset + (with_count ? stagedUIntBytes(count) : 0) + stagedUIntBytes(key_size) + key_size;
+    }
 
     static size_t keyBytes(size_t key_size) { return key_size; }
 
-    static char * writeHeader(char * record, UInt64 routing_hash, size_t key_size, UInt8 count)
+    static char * writeHeader(char * record, UInt64 routing_hash, size_t key_size, UInt32 count)
     {
         unalignedStore<StoredHash>(record, Hash::store(routing_hash));
+        char * pos = record + count_offset;
         if constexpr (with_count)
-            record[count_offset] = static_cast<char>(count);
-        return writeStagedLength(record + size_offset, key_size);
+            pos = writeStagedUInt(pos, count);
+        return writeStagedUInt(pos, key_size);
     }
 
     static std::pair<const char *, size_t> key(const char * record)
     {
-        const char * pos = record + size_offset;
-        const size_t size = readStagedLength(pos);
+        const char * pos = record + count_offset;
+        /// The count precedes the size of the key.
+        if constexpr (with_count)
+            readStagedUInt(pos);
+        const size_t size = readStagedUInt(pos);
         return {pos, size};
     }
 
@@ -363,16 +373,22 @@ struct StagedByteKeyRecord
         return readStagedKey<Key>(pos, size, routing_hash);
     }
 
-    static UInt8 count(const char * record) requires with_count { return static_cast<UInt8>(record[count_offset]); }
+    static UInt32 count(const char * record) requires with_count
+    {
+        const char * pos = record + count_offset;
+        return static_cast<UInt32>(readStagedUInt(pos));
+    }
 };
 
-/// Count and key-only records of a fixed-width key: {[UInt8 count,] key}, of one size for the query. The count is
-/// split as in `StagedByteKeyRecord`.
+/// Count and key-only records of a fixed-width key: {[UInt8 count,] key}, of one size for the query. The count is a
+/// contribution within one block; the staging splits a larger one into several records, which the merge adds up. A
+/// further record repeats the key, which is a few bytes wide.
 template <typename Key, bool with_count_>
 struct StagedFixedKeyRecord
 {
     static constexpr bool with_count = with_count_;
     static constexpr bool with_arguments = false;
+    static constexpr UInt32 max_count = std::numeric_limits<UInt8>::max();
     static constexpr size_t key_offset = with_count ? 1 : 0;
 
     explicit StagedFixedKeyRecord(size_t key_bytes)
@@ -381,14 +397,17 @@ struct StagedFixedKeyRecord
     {
     }
 
-    size_t bytesForKey(size_t) const { return stride; }
+    size_t bytesForKey(size_t, UInt32) const { return stride; }
 
     size_t keyBytes(size_t) const { return fixed_key.bytes; }
 
-    static char * writeHeader(char * record, UInt64, size_t, UInt8 count)
+    static char * writeHeader(char * record, UInt64, size_t, UInt32 count)
     {
         if constexpr (with_count)
+        {
+            chassert(count <= max_count);
             record[0] = static_cast<char>(count);
+        }
         return record + key_offset;
     }
 
@@ -401,7 +420,7 @@ struct StagedFixedKeyRecord
     template <typename Table>
     UInt64 hash(const Table & table, const char * record) const { return table.hash(readKey(record, 0)); }
 
-    static UInt8 count(const char * record) requires with_count { return static_cast<UInt8>(record[0]); }
+    static UInt32 count(const char * record) requires with_count { return static_cast<UInt8>(record[0]); }
 
     const StagedFixedKey<Key> fixed_key;
     /// The size of every record of the query.
@@ -553,7 +572,7 @@ struct StagedByteKeyStringArgumentRecord
 
     size_t bytesFor(size_t key_size, size_t variable_bytes) const
     {
-        return size_offset + stagedLengthBytes(key_size) + key_size + variable_bytes;
+        return size_offset + stagedUIntBytes(key_size) + key_size + variable_bytes;
     }
 
     static size_t keyBytes(size_t key_size) { return key_size; }
@@ -561,13 +580,13 @@ struct StagedByteKeyStringArgumentRecord
     char * writeHeader(char * record, UInt64 routing_hash, size_t key_size, size_t) const
     {
         unalignedStore<StoredHash>(record + hash_offset, Hash::store(routing_hash));
-        return writeStagedLength(record + size_offset, key_size);
+        return writeStagedUInt(record + size_offset, key_size);
     }
 
     std::pair<const char *, size_t> key(const char * record) const
     {
         const char * pos = record + size_offset;
-        const size_t size = readStagedLength(pos);
+        const size_t size = readStagedUInt(pos);
         return {pos, size};
     }
 
@@ -623,7 +642,7 @@ struct StagedByteKeyGeneralArgumentRecord
 
     size_t bytesFor(size_t key_size, size_t variable_bytes) const
     {
-        return size_offset + stagedLengthBytes(key_size) + key_size + variable_bytes;
+        return size_offset + stagedUIntBytes(key_size) + key_size + variable_bytes;
     }
 
     static size_t keyBytes(size_t key_size) { return key_size; }
@@ -632,13 +651,13 @@ struct StagedByteKeyGeneralArgumentRecord
     {
         unalignedStore<StoredHash>(record + hash_offset, Hash::store(routing_hash));
         unalignedStore<UInt32>(record + record_size_offset, static_cast<UInt32>(record_bytes));
-        return writeStagedLength(record + size_offset, key_size);
+        return writeStagedUInt(record + size_offset, key_size);
     }
 
     std::pair<const char *, size_t> key(const char * record) const
     {
         const char * pos = record + size_offset;
-        const size_t size = readStagedLength(pos);
+        const size_t size = readStagedUInt(pos);
         return {pos, size};
     }
 
