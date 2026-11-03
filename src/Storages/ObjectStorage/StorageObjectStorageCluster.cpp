@@ -14,6 +14,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
@@ -453,7 +454,9 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
     if (!endsWith(table_function->name, "Cluster"))
     {
         if (add_structure_and_format)
-            configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context, /*with_structure=*/true);
+            configuration->addStructureAndFormatToArgsIfNeeded(
+                args, structure, configuration->format, context, /*with_structure=*/true,
+                /*skip_not_overridable=*/!clusterHasSecret(context, target_cluster_name));
 
         /// When a non-cluster table function (e.g. `s3`) was auto-converted to cluster mode
         /// by the `parallel_replicas_for_cluster_engines` setting, rename it to the Cluster variant
@@ -480,7 +483,9 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
         ASTPtr cluster_name_arg = args.front();
         args.erase(args.begin());
         if (add_structure_and_format)
-            configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context, /*with_structure=*/true);
+            configuration->addStructureAndFormatToArgsIfNeeded(
+                args, structure, configuration->format, context, /*with_structure=*/true,
+                /*skip_not_overridable=*/!clusterHasSecret(context, target_cluster_name));
         if (!target_cluster_name.empty())
             cluster_name_arg = make_intrusive<ASTLiteral>(target_cluster_name);
         args.insert(args.begin(), std::move(cluster_name_arg));

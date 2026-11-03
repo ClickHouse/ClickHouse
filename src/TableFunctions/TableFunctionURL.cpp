@@ -123,7 +123,14 @@ void TableFunctionURL::parseArguments(const ASTPtr & ast, ContextPtr context)
 
 void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & context)
 {
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(args, context))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(
+            args,
+            context,
+            /* throw_unknown_collection= */ true,
+            nullptr,
+            nullptr,
+            nullptr,
+            /* is_replayed_definition= */ isClusterFunction() && isSecondaryQueryAuthenticatedByClusterSecret(context)))
     {
         StorageURL::processNamedCollectionResult(configuration, *named_collection);
 
@@ -375,7 +382,9 @@ StoragePtr TableFunctionURL::getStorage(
             format_,
             compression_method_,
             StorageID(getDatabaseName(), table_name),
-            columns.empty() || structure_not_overridable ? getActualTableStructure(context, true) : columns,
+            columns.empty() || (structure_not_overridable && !clusterHasSecret(context, parallel_replicas_cluster_name))
+                ? getActualTableStructure(context, true)
+                : columns,
             ConstraintsDescription{},
             configuration);
     }

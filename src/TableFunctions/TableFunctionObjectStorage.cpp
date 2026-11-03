@@ -235,15 +235,6 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
     bool is_insert_query) const
 {
     chassert(configuration);
-    ColumnsDescription columns;
-
-    if (configuration->structure != "auto")
-        columns = parseColumnsListFromString(configuration->structure, context);
-    else if (!structure_hint.empty())
-        columns = structure_hint;
-    else if (!cached_columns.empty())
-        columns = cached_columns;
-
     StoragePtr storage;
     const auto & query_settings = context->getSettingsRef();
 
@@ -255,8 +246,19 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
         && TableFunctionFactory::instance().isTableFunctionName(String(name) + "Cluster");
 
     const auto is_secondary_query = context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+    const bool use_parallel_replicas = can_use_parallel_replicas && !is_secondary_query && !is_insert_query;
+    const bool infer_locked_structure = use_parallel_replicas && configuration->structure_not_overridable
+        && !clusterHasSecret(context, parallel_replicas_cluster_name);
 
-    if (can_use_parallel_replicas && !is_secondary_query && !is_insert_query)
+    ColumnsDescription columns;
+    if (configuration->structure != "auto")
+        columns = parseColumnsListFromString(configuration->structure, context);
+    else if (!structure_hint.empty() && !infer_locked_structure)
+        columns = structure_hint;
+    else if (!cached_columns.empty())
+        columns = cached_columns;
+
+    if (use_parallel_replicas)
     {
         storage = std::make_shared<StorageObjectStorageCluster>(
             parallel_replicas_cluster_name,

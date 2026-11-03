@@ -125,7 +125,8 @@ public:
         const String & structure_,
         const String & format_,
         ContextPtr context,
-        bool with_structure) override;
+        bool with_structure,
+        bool skip_not_overridable) override;
 
     void setInitializationAsOneLake(
         const String & client_id_,

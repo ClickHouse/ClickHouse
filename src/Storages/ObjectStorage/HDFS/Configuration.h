@@ -79,7 +79,12 @@ public:
     ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly, CredentialsConfigurationCallback /*refresh_credentials_callback*/) override;
 
     void addStructureAndFormatToArgsIfNeeded(
-        ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure) override;
+        ASTs & args,
+        const String & structure_,
+        const String & format_,
+        ContextPtr context,
+        bool with_structure,
+        bool skip_not_overridable) override;
 
 private:
     void initializeFromParsedArguments(const HDFSStorageParsedArguments & parsed_arguments);

@@ -76,9 +76,16 @@ public:
         return connection_params;
     }
 
-    void addStructureAndFormatToArgsIfNeeded(ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure) override
+    void addStructureAndFormatToArgsIfNeeded(
+        ASTs & args,
+        const String & structure_,
+        const String & format_,
+        ContextPtr context,
+        bool with_structure,
+        bool skip_not_overridable) override
     {
-        StorageAzureConfiguration::addStructureAndFormatToArgsIfNeeded(args, structure_, format_, context, with_structure);
+        StorageAzureConfiguration::addStructureAndFormatToArgsIfNeeded(
+            args, structure_, format_, context, with_structure, skip_not_overridable);
     }
 };
 
@@ -298,7 +305,8 @@ TEST(StorageAzureConfiguration, AddStructureAndFormatTooFewArgs)
     StorageAzureConfigurationFriend conf;
 
     ASSERT_THROW_ERROR_CODE(
-        conf.addStructureAndFormatToArgsIfNeeded(engine_args, "", "Parquet", Context::getGlobalContextInstance(), /*with_structure=*/false),
+        conf.addStructureAndFormatToArgsIfNeeded(
+            engine_args, "", "Parquet", Context::getGlobalContextInstance(), /*with_structure=*/false, /*skip_not_overridable=*/false),
         Exception,
         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
         "Expected 3 to");
@@ -312,7 +320,8 @@ TEST(StorageAzureConfiguration, AddStructureAndFormatTooManyArgs)
     StorageAzureConfigurationFriend conf;
 
     ASSERT_THROW_ERROR_CODE(
-        conf.addStructureAndFormatToArgsIfNeeded(engine_args, "", "Parquet", Context::getGlobalContextInstance(), /*with_structure=*/false),
+        conf.addStructureAndFormatToArgsIfNeeded(
+            engine_args, "", "Parquet", Context::getGlobalContextInstance(), /*with_structure=*/false, /*skip_not_overridable=*/false),
         Exception,
         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
         "Expected 3 to");
@@ -325,7 +334,8 @@ TEST(StorageAzureConfiguration, AddStructureAndFormatKeepsExtraCredentials)
 
     ASTs engine_args = getEngineArgs(query);
     StorageAzureConfigurationFriend conf;
-    conf.addStructureAndFormatToArgsIfNeeded(engine_args, "a Int32", "Parquet", Context::getGlobalContextInstance(), /*with_structure=*/true);
+    conf.addStructureAndFormatToArgsIfNeeded(
+        engine_args, "a Int32", "Parquet", Context::getGlobalContextInstance(), /*with_structure=*/true, /*skip_not_overridable=*/false);
 
     /// (url, container, blobpath, format, compression, structure, extra_credentials)
     ASSERT_EQ(engine_args.size(), 7u);

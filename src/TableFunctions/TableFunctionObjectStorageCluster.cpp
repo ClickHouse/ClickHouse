@@ -32,19 +32,21 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
     const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const
 {
     auto configuration = Base::getConfiguration(context);
+    const auto & client_info = context->getClientInfo();
+
+    const bool infer_locked_structure = client_info.query_kind != ClientInfo::QueryKind::SECONDARY_QUERY && !is_insert_query
+        && configuration->structure_not_overridable && !clusterHasSecret(context, ITableFunctionCluster<Base>::cluster_name);
 
     ColumnsDescription columns;
     if (configuration->structure != "auto")
         columns = parseColumnsListFromString(configuration->structure, context);
-    else if (!Base::structure_hint.empty())
+    else if (!Base::structure_hint.empty() && !infer_locked_structure)
         columns = Base::structure_hint;
     else if (!cached_columns.empty())
         columns = cached_columns;
 
     auto object_storage = Base::getObjectStorage(context, !is_insert_query);
     StoragePtr storage;
-
-    const auto & client_info = context->getClientInfo();
 
     if (client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
     {

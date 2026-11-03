@@ -156,26 +156,12 @@ void StorageWebConfiguration::addStructureAndFormatToArgsIfNeeded(
     const String & structure_,
     const String & format_,
     ContextPtr context,
-    bool with_structure)
+    bool with_structure,
+    bool skip_not_overridable)
 {
     if (auto collection = tryGetNamedCollectionWithOverrides(args, context, true, nullptr, nullptr, nullptr, is_replayed_definition))
     {
-        if (collection->getOrDefault<String>("format", "auto") == "auto")
-        {
-            ASTs format_equal_func_args;
-            format_equal_func_args.emplace_back(make_intrusive<ASTIdentifier>("format"));
-            format_equal_func_args.emplace_back(make_intrusive<ASTLiteral>(format_));
-            auto format_equal_func = makeASTOperator("equals", std::move(format_equal_func_args));
-            args.push_back(format_equal_func);
-        }
-        if (with_structure && collection->getOrDefault<String>("structure", "auto") == "auto")
-        {
-            ASTs structure_equal_func_args;
-            structure_equal_func_args.emplace_back(make_intrusive<ASTIdentifier>("structure"));
-            structure_equal_func_args.emplace_back(make_intrusive<ASTLiteral>(structure_));
-            auto structure_equal_func = makeASTOperator("equals", std::move(structure_equal_func_args));
-            args.push_back(structure_equal_func);
-        }
+        addInferredFormatAndStructureToNamedCollectionArgs(args, *collection, format_, structure_, with_structure, skip_not_overridable);
         return;
     }
 

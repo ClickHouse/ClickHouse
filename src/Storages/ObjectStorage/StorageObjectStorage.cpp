@@ -1288,7 +1288,8 @@ bool hasPartitionStrategyArgument(const ASTs & args)
 
 void StorageObjectStorage::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const
 {
-    configuration->addStructureAndFormatToArgsIfNeeded(args, "", configuration->format, context, /*with_structure=*/false);
+    configuration->addStructureAndFormatToArgsIfNeeded(
+        args, "", configuration->format, context, /*with_structure=*/false, /*skip_not_overridable=*/false);
 
     if (configuration->partition_strategy_was_inferred
         && configuration->partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE

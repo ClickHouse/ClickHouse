@@ -125,7 +125,8 @@ void StorageURLCluster::updateQueryToSendIfNeeded(
     if (!expression_list || expression_list->children.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function urlCluster, got '{}'", query->formatForErrorMessage());
 
-    /// The nodes check the added values as overrides of the named collection, so they infer a locked key themselves.
+    /// The nodes of a cluster without a secret check the added values as overrides of the named collection,
+    /// so they infer a locked key themselves.
     if (add_structure_and_format)
         TableFunctionURLCluster::updateStructureAndFormatArgumentsIfNeeded(
             table_function,
@@ -133,7 +134,7 @@ void StorageURLCluster::updateQueryToSendIfNeeded(
             format_name,
             context,
             /* is_replayed_definition= */ false,
-            /* skip_not_overridable= */ true
+            /* skip_not_overridable= */ !clusterHasSecret(context, target_cluster_name)
         );
 
     /// When a non-cluster table function (`url`) was auto-converted to cluster mode
