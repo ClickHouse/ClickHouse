@@ -17,6 +17,7 @@
 #include <Common/MemoryTracker.h>
 #include <Common/MemoryWorker.h>
 #include <base/getMemoryAmount.h>
+#include <base/scope_guard.h>
 
 namespace
 {
@@ -104,6 +105,15 @@ void testNegativeTrackerIsCorrectedToAllocatedNotResident(DB::MemoryWorker::Memo
     const size_t memory_amount = getMemoryAmount();
     if (memory_amount > 0 && memory_amount < (4ul << 30))
         GTEST_SKIP() << "The test needs at least 4 GiB of memory, available: " << memory_amount;
+
+    /// The started worker also publishes the resident memory, which includes the freed pages kept dirty below, via
+    /// `MemoryTracker::updateRSS`. Nothing refreshes it after the worker is destroyed (there is no other memory worker
+    /// in the gtest binary, and `MemoryTracker::resetCounters` does not reset it), and the RSS takes part in the hard
+    /// limit check of `MemoryTracker::allocImpl`, so the stale value would leak into later tests. Declared before the
+    /// worker and the allocations, so that it runs after they are destroyed, on every exit path including skips and
+    /// failed assertions.
+    const Int64 previous_rss = total_memory_tracker.getRSS();
+    SCOPE_EXIT({ MemoryTracker::updateRSS(previous_rss); });
 
     const DirtyDecayDisabler dirty_decay_disabler;
 
