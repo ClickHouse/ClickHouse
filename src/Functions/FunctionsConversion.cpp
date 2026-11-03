@@ -2595,20 +2595,17 @@ bool sharedDataIsAffected(
     return false;
 }
 
-/// Finds rows the JSON parser would reject: a new leaf typed path with no scalar value in the row
-/// but with source data below it. Reusing the paths below and defaulting the leaf would invent a
-/// value the row never had, which is why format+parse raises INCORRECT_DATA here.
-/// Returns whether such a row exists; with `throw_on_invalid_row` the first one raises instead.
-/// Destination skip rules are irrelevant here: the parser fails at the leaf before descending, so
-/// skipping a path below it changes nothing, and a typed path can never itself match a SKIP rule.
-bool validateNewLeafTypedPaths(
+/// True if a row holds source data below a new leaf typed path that has no scalar value at the leaf
+/// itself. The optimized path cannot build the leaf from such a row: depending on the leaf type the
+/// parser rejects the object, stringifies it, or infers a variant, and it never reuses the paths
+/// below. Such a block is handed to format+parse, which reproduces whatever the parser would do.
+bool newLeafTypedPathsNeedFormatParse(
     const ColumnObject & src,
     const ObjectConversionPlan & plan,
     size_t rows,
-    bool skip_null_typed_paths,
-    bool throw_on_invalid_row)
+    bool skip_null_typed_paths)
 {
-    /// Nothing to reject in an empty block: the parser would not read any value either.
+    /// An empty block reads no value, so nothing is below any leaf.
     if (plan.new_leaf_typed_paths.empty() || rows == 0)
         return false;
 
@@ -2627,7 +2624,6 @@ bool validateNewLeafTypedPaths(
     {
         std::string_view path;
         String descendant_prefix;                   /// "<path>.", the start of the range of paths below the leaf
-        const IDataType * type = nullptr;           /// for the error message
         const IColumn * scalar = nullptr;           /// dynamic path at the leaf, absent in some rows
         VectorWithMemoryTracking<const IColumn *> below;
         bool always_below = false;                  /// data below the leaf in every row
@@ -2640,7 +2636,6 @@ bool validateNewLeafTypedPaths(
         Leaf leaf;
         leaf.path = path;
         leaf.descendant_prefix = path + '.';
-        leaf.type = plan.new_typed_paths.at(path).get();
 
         if (auto it = src_dynamic_paths.find(path); it != src_dynamic_paths.end())
         {
@@ -2685,16 +2680,7 @@ bool validateNewLeafTypedPaths(
 
         /// Every row holds data below the leaf and nothing can supply a scalar.
         if (leaf.always_below && !leaf.scalar && !has_shared_data)
-        {
-            if (!throw_on_invalid_row)
-                return true;
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA,
-                "Cannot insert data into JSON column: cannot read {} value from a JSON object "
-                "(while reading path {})",
-                leaf.type->getName(),
-                leaf.path);
-        }
+            return true;
 
         leaves.push_back(std::move(leaf));
     }
@@ -2746,16 +2732,7 @@ bool validateNewLeafTypedPaths(
             }
 
             if (has_value_below)
-            {
-                if (!throw_on_invalid_row)
-                    return true;
-                throw Exception(
-                    ErrorCodes::INCORRECT_DATA,
-                    "Cannot insert data into JSON column: cannot read {} value from a JSON object "
-                    "(while reading path {})",
-                    leaf.type->getName(),
-                    leaf.path);
-            }
+                return true;
         }
     }
 
@@ -2984,28 +2961,33 @@ ColumnPtr convertObjectColumns(
                 return true;
         }
 
+        /// The parser applies SKIP REGEXP while descending each object level, so a match on any ancestor
+        /// removes its whole subtree. Test every ancestor prefix as well as the full path.
+        const bool partial = format_settings.json.type_json_use_partial_match_to_skip_paths_by_regexp;
         for (const auto & regexp : plan.new_skip_regexps)
         {
-            if (format_settings.json.type_json_use_partial_match_to_skip_paths_by_regexp)
+            for (size_t pos = 0;;)
             {
-                if (RE2::PartialMatch(re2::StringPiece(path.data(), path.size()), *regexp))
+                size_t dot = path.find('.', pos);
+                std::string_view prefix = dot == std::string_view::npos ? path : path.substr(0, dot);
+                const re2::StringPiece piece(prefix.data(), prefix.size());
+                if (partial ? RE2::PartialMatch(piece, *regexp) : RE2::FullMatch(piece, *regexp))
                     return true;
-            }
-            else
-            {
-                if (RE2::FullMatch(re2::StringPiece(path.data(), path.size()), *regexp))
-                    return true;
+                if (dot == std::string_view::npos)
+                    break;
+                pos = dot + 1;
             }
         }
 
         return false;
     };
 
-    /// With type_json_skip_invalid_typed_paths the parser defaults such a path and drops the data
-    /// below it. Reproducing that would mean rewriting the reused sub-columns and shared data.
     const bool skip_invalid = format_settings.json.type_json_skip_invalid_typed_paths;
-    if (validateNewLeafTypedPaths(
-            src, plan, rows, format_settings.json.type_json_skip_null_typed_paths, /*throw_on_invalid_row=*/!skip_invalid))
+
+    /// A new leaf typed path with source data below it (an object in that row) is left to format+parse:
+    /// the optimized path cannot build the leaf from the reused sub-columns, and what the parser does
+    /// there depends on the leaf type (reject, stringify, infer).
+    if (newLeafTypedPathsNeedFormatParse(src, plan, rows, format_settings.json.type_json_skip_null_typed_paths))
         return {};
 
     /// ======================== Phase 2: Classify source dynamic paths ========================
