@@ -3,14 +3,12 @@
 # Tag no-fasttest: the `??` command needs the AI SQL generator (`ENABLE_CLIENT_AI`), which is not built in the fast test.
 # Tag no-tsan: the tool call callbacks print from the main thread while the thinking animation of `AIToolExecutionDisplay::startThinking` prints to the same `std::ostream` from its own thread, so a tool call always races on the stream state (read `ios_base::width` at `AISQLGenerator.cpp:47` against the animation thread).
 
-# `?? <text>` asks the configured model for a query: the generator echoes every call of the schema
-# exploration tools with the result handed back to the model, says whether a query came out of the
-# answer, and puts that query into the next input line, where the user runs it. Documented in
-# docs/concepts/features/interfaces/client.mdx, "AI-powered SQL generation". The provider is a local
-# HTTP server speaking just enough of the OpenAI chat completion protocol, so no network and no API
-# key are needed; every answer is a successful one, because a refusal is reported as a `LOGICAL_ERROR`,
-# which aborts a build with assertions. The query reaches the input line only in an interactive
-# session, so the client runs on a pseudo terminal, in one process for both cases (slow binaries).
+# `?? <text>` asks the configured model for a query: the generator echoes every call of the schema exploration tools with the
+# result handed back to the model, says whether a query came out of the answer, and puts that query into the next input line, where
+# the user runs it. Documented in docs/concepts/features/interfaces/client.mdx, "AI-powered SQL generation". The provider is a local
+# HTTP server speaking just enough of the OpenAI chat completion protocol, so no network and no API key are needed; every answer is
+# a successful one, because a refusal is reported as a `LOGICAL_ERROR`, which aborts a build with assertions. The query reaches the
+# input line only in an interactive session, so the client runs on a pseudo terminal, in one process for both cases (slow binaries).
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -106,11 +104,13 @@ for keys, text in ACTIONS:
     ok = wait_for(PATTERN.get(text, re.escape(text)))
     if ok and text:
         print(text)
-os.write(master, b"\x04")
-# The farewell is a holiday greeting on some days (`isNewYearMode`), so the end of the session is the
-# terminal closing and not a text, and how the client ended is its exit status alone. A diagnostic of
-# a sanitizer or of a failing shutdown comes behind the expected lines, so keep the whole terminal.
-ended = wait_for(None, 60)
+# The end-of-file character must land on an idle input line: while the client works, the terminal is in cooked mode, where it ends the current
+# line instead of reaching the client, so a slow binary loses it and has to be asked again. The farewell is a holiday greeting on some days
+# (`isNewYearMode`), so the session ends when the terminal closes and how it ended is the exit status alone; keep the whole terminal for that.
+ended = False
+for _ in range(4 if ok and wait_for(PROMPT) else 0):
+    os.write(master, b"\x04")
+    if wait_for(None, 30): ended = True; break
 if not ended or not ok: os.kill(pid, signal.SIGKILL)
 status = os.waitpid(pid, 0)[1]
 if not ok or not ended or status != 0:
