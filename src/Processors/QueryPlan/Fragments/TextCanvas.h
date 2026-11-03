@@ -21,9 +21,14 @@ public:
     /// overwriting what was there. A zero-width code point is kept with the character before it.
     void put(size_t x, size_t y, std::string_view text);
 
-    /// Draws a box with the light box-drawing characters, `width` columns wide and 3 lines tall, with `text`
-    /// on the middle line after one space of padding.
-    void box(size_t x, size_t y, size_t width, std::string_view text);
+    /// Draws a box with the light box-drawing characters, `width` columns wide, with `title` on its first inner line
+    /// after one space of padding. Without `details` the box is 3 lines tall; otherwise a separator `├───┤` follows the
+    /// title and every detail is on its own line under it, so the box is `details.size() + 4` lines tall
+    /// (see `boxHeight`).
+    void box(size_t x, size_t y, size_t width, std::string_view title, const std::vector<String> & details = {});
+
+    /// The number of lines of a box with `details_count` detail lines.
+    static size_t boxHeight(size_t details_count) { return details_count == 0 ? 3 : details_count + 4; }
 
     /// Draws a frame `width` columns wide and `height` lines tall, with `title` in the top border: `┌─ title ───┐`.
     void frame(size_t x, size_t y, size_t width, size_t height, std::string_view title);

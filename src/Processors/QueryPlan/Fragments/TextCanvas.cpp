@@ -60,17 +60,30 @@ void TextCanvas::put(size_t x, size_t y, std::string_view text)
     });
 }
 
-void TextCanvas::box(size_t x, size_t y, size_t width, std::string_view text)
+void TextCanvas::box(size_t x, size_t y, size_t width, std::string_view title, const std::vector<String> & details)
 {
     String horizontal;
     for (size_t i = 2; i < width; ++i)
         horizontal += "─";
 
+    const auto put_line = [&](size_t line_y, std::string_view text)
+    {
+        put(x, line_y, "│ ");
+        put(x + 2, line_y, text);
+        put(x + width - 1, line_y, "│");
+    };
+
     put(x, y, "┌" + horizontal + "┐");
-    put(x, y + 1, "│ ");
-    put(x + 2, y + 1, text);
-    put(x + width - 1, y + 1, "│");
-    put(x, y + 2, "└" + horizontal + "┘");
+    put_line(y + 1, title);
+    size_t line_y = y + 2;
+    if (!details.empty())
+    {
+        put(x, line_y, "├" + horizontal + "┤");
+        ++line_y;
+        for (const auto & detail : details)
+            put_line(line_y++, detail);
+    }
+    put(x, line_y, "└" + horizontal + "┘");
 }
 
 void TextCanvas::frame(size_t x, size_t y, size_t width, size_t height, std::string_view title)

@@ -34,12 +34,14 @@ void explainAsFragments(
 
 /// `EXPLAIN PLAN tree = 1`: the query fragments drawn with box-drawing characters.
 ///
-/// Every step of every fragment is a box, connected to the boxes of its inputs as in a plan tree; the steps of a
+/// Every step of every fragment except an `Expression` step is a box, connected to the boxes of its inputs as in a plan
+/// tree; the box of the input of an `Expression` step takes its place. A box shows the step name and description, and
+/// under a separator the lines `explainStepDetails` writes for the step with `options`. The steps of a
 /// fragment are surrounded by a frame titled `F<id> · <stage name>`; and every exchange is an edge from the send step of
 /// the producer up to the matching receive step of the consumer, labelled with the exchange name and kind, its mode and
 /// its buckets (`│` for a streaming exchange, `╎` for a persisted one). Each fragment is drawn under the fragment that
 /// reads it. The drawing is followed by the `Exchanges` and `Levels` sections of `fragments = 1`. Step texts are cut at
-/// 40 columns and the first label line at 48; the picture has no other width limit.
+/// 40 columns, detail lines at 60 and the first label line at 48; the picture has no other width limit.
 ///
 /// A single node is drawn too, unlike with `fragments = 1`: the boxes of its steps without a frame around them.
 void explainAsTree(const FragmentGraph & graph, WriteBuffer & buf, const ExplainPlanOptions & options);

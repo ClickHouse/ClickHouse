@@ -4,9 +4,11 @@
 #include <Processors/QueryPlan/Fragments/PreparedFragmentGraph.h>
 #include <Processors/QueryPlan/Fragments/TextCanvas.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <IO/Operators.h>
 #include <IO/WriteBuffer.h>
+#include <IO/WriteBufferFromString.h>
 #include <Common/Exception.h>
 
 #include <fmt/format.h>
@@ -28,18 +30,19 @@ namespace ErrorCodes
 namespace
 {
 
-/// The text of a step box is cut to this many columns.
+/// The text of a step box (its name and description) is cut to this many columns.
 constexpr size_t max_step_text_width = 40;
+/// The detail lines of a step box are cut to this many columns.
+constexpr size_t max_detail_width = 60;
 /// The first line of an exchange label (name and kind) is cut to this many columns.
 constexpr size_t max_label_width = 48;
 /// Columns between a step box and the frame of its fragment.
 constexpr Int64 frame_padding = 2;
-/// Lines of a step box.
-constexpr size_t box_height = 3;
-
 struct StepBox
 {
     String text;
+    /// The lines `EXPLAIN` prints under the step, drawn under the text.
+    std::vector<String> details;
     /// Index in `FragmentGraph::fragments`.
     size_t fragment = 0;
     /// Inputs in the plan, then, for a receive step, the send step of the producer fragment.
@@ -52,6 +55,17 @@ struct StepBox
 
     Int64 left() const { return center - static_cast<Int64>(width / 2); }
     Int64 right() const { return left() + static_cast<Int64>(width) - 1; }
+    size_t height() const { return TextCanvas::boxHeight(details.size()); }
+    /// The bottom border of the box.
+    size_t bottom() const { return y + height() - 1; }
+
+    void updateWidth()
+    {
+        width = TextCanvas::displayWidth(text);
+        for (const auto & detail : details)
+            width = std::max(width, TextCanvas::displayWidth(detail));
+        width += 4;
+    }
 };
 
 struct FragmentFrame
@@ -98,7 +112,7 @@ public:
             for (size_t i = 0; i < frames.size(); ++i)
                 drawFrame(canvas, i);
         for (const auto & step_box : boxes)
-            canvas.box(static_cast<size_t>(step_box.left()), step_box.y, step_box.width, step_box.text);
+            canvas.box(static_cast<size_t>(step_box.left()), step_box.y, step_box.width, step_box.text, step_box.details);
         for (size_t i = 0; i < boxes.size(); ++i)
             drawEdges(canvas, i);
         canvas.writeTo(buf);
@@ -158,24 +172,65 @@ private:
         return TextCanvas::cutToWidth(text, max_step_text_width);
     }
 
-    size_t addBox(String text, size_t fragment)
+    /// The lines plain `EXPLAIN` prints under the step with the same options, each cut to `max_detail_width`.
+    std::vector<String> stepDetails(IQueryPlanStep & step, const PrettyNames & names) const
+    {
+        WriteBufferFromOwnString out;
+        IQueryPlanStep::FormatSettings settings{
+            .out = out,
+            .header_prefix = "",
+            .detail_prefix = "",
+            .write_header = options.header,
+            .compact = options.compact,
+            .pretty = options.pretty,
+            .pretty_names = names.pretty_names,
+            .runtime_filter_names = names.runtime_filter_names};
+        explainStepDetails(step, settings, options);
+
+        std::vector<String> details;
+        std::string_view text = out.str();
+        while (!text.empty())
+        {
+            size_t end = text.find('\n');
+            std::string_view line = text.substr(0, end);
+            if (!line.empty())
+                details.push_back(TextCanvas::cutToWidth(line, max_detail_width));
+            if (end == std::string_view::npos)
+                break;
+            text.remove_prefix(end + 1);
+        }
+        return details;
+    }
+
+    size_t addBox(String text, std::vector<String> details, size_t fragment)
     {
         StepBox step_box;
-        step_box.width = TextCanvas::displayWidth(text) + 4;
         step_box.text = std::move(text);
+        step_box.details = std::move(details);
         step_box.fragment = fragment;
+        step_box.updateWidth();
         boxes.push_back(std::move(step_box));
         return boxes.size() - 1;
     }
 
-    size_t addPlanBoxes(const QueryPlan::Node & node, size_t fragment)
+    /// An `Expression` step is never drawn: the box of its input takes its place, as in plain `EXPLAIN` with `compact`.
+    static const QueryPlan::Node & skipExpressions(const QueryPlan::Node & node)
     {
-        size_t index = addBox(stepText(*node.step), fragment);
+        const QueryPlan::Node * current = &node;
+        while (current->step->getName() == "Expression" && current->children.size() == 1)
+            current = current->children.front();
+        return *current;
+    }
+
+    size_t addPlanBoxes(const QueryPlan::Node & plan_node, size_t fragment, const PrettyNames & names)
+    {
+        const auto & node = skipExpressions(plan_node);
+        size_t index = addBox(stepText(*node.step), stepDetails(*node.step, names), fragment);
         if (const auto * exchange_id = PreparedFragmentGraph::tryGetReceiveExchangeId(*node.step))
             receive_boxes[{fragment, *exchange_id}] = index;
         for (const auto * child : node.children)
         {
-            size_t child_index = addPlanBoxes(*child, fragment);
+            size_t child_index = addPlanBoxes(*child, fragment, names);
             boxes[index].children.push_back(child_index);
         }
         return index;
@@ -198,7 +253,7 @@ private:
 
             if (!fragment.plan || !fragment.plan->getRootNode())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Fragment {} has no plan to draw", fragment.id);
-            frames[i].root_box = addPlanBoxes(*fragment.plan->getRootNode(), i);
+            frames[i].root_box = addPlanBoxes(*fragment.plan->getRootNode(), i, prepared.getPrettyNames(fragment));
         }
     }
 
@@ -265,7 +320,7 @@ private:
             {
                 auto & step_box = boxes[receive_box];
                 step_box.text = TextCanvas::cutToWidth(fmt::format("{} ← F{}", step_box.text, exchange.from), max_step_text_width);
-                step_box.width = TextCanvas::displayWidth(step_box.text) + 4;
+                step_box.updateWidth();
                 frames[producer].title += fmt::format(" · also read by F{}", exchange.to);
             }
         }
@@ -388,7 +443,7 @@ private:
     void layoutRows(size_t fragment, size_t top_box_y)
     {
         std::vector<size_t> producers;
-        size_t bottom_box_y = top_box_y;
+        size_t bottom = 0;
         bool branches_to_producers = false;
 
         std::vector<std::pair<size_t, size_t>> stack{{frames[fragment].root_box, top_box_y}};
@@ -397,7 +452,7 @@ private:
             auto [index, y] = stack.back();
             stack.pop_back();
             boxes[index].y = y;
-            bottom_box_y = std::max(bottom_box_y, y);
+            bottom = std::max(bottom, boxes[index].bottom());
 
             const auto & children = boxes[index].children;
             size_t in_fragment = 0;
@@ -415,14 +470,14 @@ private:
             if (to_producers > 1)
                 branches_to_producers = true;
             /// One input: `▲`, `│`, then the input box. Several: one more line for the branch.
-            size_t child_y = y + box_height + (in_fragment > 1 ? 2 : 1);
+            size_t child_y = boxes[index].bottom() + 1 + (in_fragment > 1 ? 2 : 1);
             for (size_t child : children)
                 if (!crossesFragments(index, child))
                     stack.emplace_back(child, child_y);
         }
 
         auto & frame = frames[fragment];
-        frame.bottom = bottom_box_y + box_height;
+        frame.bottom = bottom + 1;
 
         size_t label_height = 0;
         for (size_t producer_root : producers)
@@ -465,7 +520,7 @@ private:
             return;
 
         const auto center = static_cast<size_t>(step_box.center);
-        canvas.put(center, step_box.y + 2, "▲");
+        canvas.put(center, step_box.bottom(), "▲");
 
         std::vector<size_t> in_fragment;
         std::vector<size_t> producers;
@@ -474,13 +529,13 @@ private:
 
         if (!in_fragment.empty())
         {
-            canvas.put(center, step_box.y + 3, "│");
+            canvas.put(center, step_box.bottom() + 1, "│");
             if (in_fragment.size() > 1)
             {
                 std::vector<Int64> centers;
                 for (size_t child : in_fragment)
                     centers.push_back(boxes[child].center);
-                drawBranch(canvas, step_box.y + 4, step_box.center, centers);
+                drawBranch(canvas, step_box.bottom() + 2, step_box.center, centers);
             }
             for (size_t child : in_fragment)
                 canvas.put(static_cast<size_t>(boxes[child].center), boxes[child].y, "┴");
@@ -492,7 +547,7 @@ private:
         /// From the receive step down to the frame of its fragment, across it, along the labels, across the frame of
         /// the producer, to its send step.
         const auto & frame = frames[step_box.fragment];
-        for (size_t y = step_box.y + 3; y < frame.bottom; ++y)
+        for (size_t y = step_box.bottom() + 1; y < frame.bottom; ++y)
             canvas.put(center, y, "│");
         canvas.put(center, frame.bottom, "┼");
 

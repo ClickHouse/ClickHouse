@@ -32,9 +32,13 @@ PreparedFragmentGraph::PreparedFragmentGraph(const FragmentGraph & graph_, const
     if (graph.fragments.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The fragment graph has no fragments");
 
-    /// A plan that was not cut is printed by `QueryPlan::explainPlan` alone, which builds its own names.
+    /// A plan that was not cut has its own naming scope, the one `QueryPlan::explainPlan` builds for it.
     if (single_node)
+    {
+        if (options.pretty)
+            pretty_names = QueryPlanFormat::buildPrettyNamesPerPlan(getPlan(graph.fragments.front()));
         return;
+    }
 
     print_order.reserve(graph.fragments.size());
     for (const auto & fragment : graph.fragments | std::views::reverse)
@@ -105,6 +109,17 @@ const QueryPlan & PreparedFragmentGraph::getPlan(const QueryFragment & fragment)
     if (!fragment.plan)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Fragment {} has no plan to explain", fragment.id);
     return *fragment.plan;
+}
+
+const PrettyNames & PreparedFragmentGraph::getPrettyNames(const QueryFragment & fragment) const
+{
+    static const PrettyNames no_names;
+    if (!options.pretty)
+        return no_names;
+    auto it = pretty_names.names.find(&getPlan(fragment));
+    if (it == pretty_names.names.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The plan of fragment {} has no pretty names", fragment.id);
+    return it->second;
 }
 
 const String * PreparedFragmentGraph::tryGetReceiveExchangeId(const IQueryPlanStep & step)
