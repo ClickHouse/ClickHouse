@@ -32,9 +32,12 @@ public:
     void disableProfileEventUpdate() { update_profile_events = false; }
 
     /// Check the limits on the amount of data to read and the speed limits against the progress of this callback only,
-    /// instead of the progress of the whole query in the process list element. The progress is still reported to the
-    /// process list element. Used when a query executes a pipeline that may be abandoned and replaced by another one,
-    /// so that the data read by the abandoned pipeline is not counted against the limits of the next one.
+    /// instead of the progress of the whole query in the process list element. Used when a query executes a pipeline
+    /// that may be abandoned and replaced by another one, so that the data read by the abandoned pipeline is not counted
+    /// against the limits of the next one.
+    /// The data actually read is still reported to the query, but the estimates of the data to read are not: a reported
+    /// estimate cannot be withdrawn, neither from the process list element nor from the initiator of a distributed query,
+    /// so the estimate of an abandoned pipeline would be checked against the limits of the whole query.
     void checkLimitsOnOwnProgress() { check_limits_on_own_progress = true; }
 
     bool onProgress(uint64_t read_rows, uint64_t read_bytes, const StorageLimitsList & storage_limits);

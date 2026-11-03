@@ -147,7 +147,8 @@ public:
     void disableProfileEventUpdate() { update_profile_events = false; }
     /// Do not account rows read by this pipeline in the query progress and read limits.
     void disableReadProgress() { report_read_progress = false; }
-    /// Check the read limits against the data read by this pipeline only, see `ReadProgressCallback::checkLimitsOnOwnProgress`.
+    /// Check the read limits against the data read by this pipeline only, and keep its estimates of the data to read out of
+    /// the progress of the query, see `ReadProgressCallback::checkLimitsOnOwnProgress`.
     void checkReadLimitsOnOwnProgress() { check_read_limits_on_own_progress = true; }
 
     /// Create progress callback from limits and quotas.
