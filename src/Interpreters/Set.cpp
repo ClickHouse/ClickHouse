@@ -178,7 +178,8 @@ public:
                     return nullptr;
                 /// `encode` reads 16 bytes.
                 char buf[16] = {};
-                memcpy(buf, key.data(), key.size());
+                if (!key.empty())
+                    memcpy(buf, key.data(), key.size());
                 keys.push_back(encode(reinterpret_cast<const UInt8 *>(buf), key.size()));
             }
             if (lookup->tryBuildTable(keys, memory_budget, attempts))
