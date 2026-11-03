@@ -1475,7 +1475,8 @@ std::function<bool()> TCPHandler::makeConnectionAliveCheck(std::shared_ptr<Query
     /// block). The query is not admitted yet, so it must neither wait for the client (that would hold up the
     /// admission deadline, the cancellation and the slot that may be handed to it meanwhile) nor materialize
     /// client data (the memory limits of the query and its user are not applied yet). So consume the input
-    /// only when it has already been received and is exactly the terminating empty block or a `Cancel`. If
+    /// only when it has already been received and is exactly the terminating empty block or a `Cancel` (which
+    /// may also come instead of the external tables). If
     /// the client sends non-empty external tables, they are read after the admission, as usual, and a
     /// `Cancel` is only noticed then. Called without `ProcessList::mutex`.
     return [this, &query_state, socket_alive = makeSocketAliveCheckCallback(socket())]() -> bool
@@ -1511,13 +1512,19 @@ std::function<bool()> TCPHandler::makeConnectionAliveCheck(std::shared_ptr<Query
                 terminator = getExternalTablesTerminatorState(state);
             }
 
-            if (terminator != ExternalTablesTerminatorState::Complete)
+            if (terminator == ExternalTablesTerminatorState::Incomplete)
                 return true;
 
-            /// Reads only the buffered bytes of the packet and creates no table, because the block is empty.
-            if (receivePacketsExpectData(state))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "The terminating block of external tables is not empty");
-            state.received_external_tables = true;
+            if (terminator == ExternalTablesTerminatorState::Complete)
+            {
+                /// Reads only the buffered bytes of the packet and creates no table, because the block is empty.
+                if (receivePacketsExpectData(state))
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "The terminating block of external tables is not empty");
+                state.received_external_tables = true;
+            }
+            /// Otherwise, the input is not empty. The client may send `Cancel` instead of the external tables (as
+            /// `receivePacketsExpectData` accepts), e.g. `ClientBase::processInsertQuery` does so when sending the
+            /// external tables fails, so check for it below. Non-empty external tables are read after the admission.
         }
 
         if (!in->available())

@@ -2761,6 +2761,52 @@ def test_native_cancel_after_fragmented_terminator_while_waiting_in_queue(starte
     ).strip() == "735"  # QUERY_WAS_CANCELLED_BY_CLIENT
 
 
+def test_native_cancel_before_external_tables_while_waiting_in_queue(started_cluster):
+    """
+    A native client may send `Cancel` right after the query, without the external-tables
+    terminator. `clickhouse-client` does so for an `INSERT` with `--external`: sending the external
+    tables fails after the query is sent, and the cleanup sends `Cancel` and waits for the reply.
+    The queued query must notice that `Cancel` while the blockers are still running.
+    """
+    prefix = uuid.uuid4().hex[:8]
+    waiter_id = f"native_cancel_before_terminator_waiter_{prefix}"
+    table = f"aq_cancel_before_terminator_{prefix}"
+    node.query(f"CREATE TABLE default.{table} (x UInt8) ENGINE = Memory")
+    pool = Pool(4)
+    blocker_ids = occupy_both_slots(pool, prefix)
+    waiter = None
+    try:
+        command = Client(node.ip_address, 9000, command=cluster.client_bin_path).command
+        waiter = subprocess.Popen(
+            command
+            + [
+                "--query_id", waiter_id,
+                "--queue_max_wait_ms", "30000",
+                "--external", "--file=/dev/null", "--name=ext", "--format=TSV", "--structure=x UInt8",
+                "-q", f"INSERT INTO default.{table} VALUES (1)",
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        # The client exits only after the server replies to `Cancel`.
+        waiter.wait(timeout=DISCONNECT_DETECTION_TIMEOUT)
+        assert_abandoned_waiter_was_cancelled(node, blocker_ids, waiter_id)
+    finally:
+        if waiter is not None and waiter.poll() is None:
+            waiter.kill()
+            waiter.wait()
+        kill_blockers(blocker_ids)
+        pool.close()
+        pool.join()
+
+    assert_query_never_started(node, waiter_id)
+    assert node.query(
+        f"SELECT exception_code FROM system.query_log WHERE query_id = '{waiter_id}' AND type = 'ExceptionBeforeStart'"
+    ).strip() == "735"  # QUERY_WAS_CANCELLED_BY_CLIENT
+    assert node.query(f"SELECT count() FROM default.{table}").strip() == "0"
+    node.query(f"DROP TABLE default.{table}")
+
+
 def test_shutdown_cancels_queued_queries(started_cluster):
     """
     The bulk cancellation at shutdown (`ProcessList::killAllQueries`) must cancel the queued queries
@@ -2846,17 +2892,22 @@ def test_postgresql_cancel_request_while_waiting_in_queue(started_cluster):
 def test_mysql_kill_query_while_waiting_in_queue(started_cluster):
     """
     MySQL `KILL QUERY <connection_id>` must cancel the query of that connection while it is still
-    waiting for admission (it is not in `system.processes` yet), and report success.
+    waiting for admission (it is not in `system.processes` yet), and report success. Another user
+    may cancel it only with the `KILL QUERY` privilege.
     """
     import pymysql
 
     create_protocol_user("aq_mysql_user")
+    create_protocol_user("aq_mysql_other_user")
+    create_protocol_user("aq_mysql_killer_user")
+    node.query("GRANT KILL QUERY ON *.* TO aq_mysql_killer_user")
     prefix = uuid.uuid4().hex[:8]
     marker = f"mysql_kill_marker_{prefix}"
     pool = Pool(4)
     blocker_ids = occupy_both_slots(pool, prefix)
     victim = pymysql.connect(host=node.ip_address, port=9004, user="aq_mysql_user", password="pw")
-    killer = pymysql.connect(host=node.ip_address, port=9004, user="aq_mysql_user", password="pw")
+    other = pymysql.connect(host=node.ip_address, port=9004, user="aq_mysql_other_user", password="pw")
+    other_killer = pymysql.connect(host=node.ip_address, port=9004, user="aq_mysql_killer_user", password="pw")
     try:
         result = {}
 
@@ -2872,7 +2923,17 @@ def test_mysql_kill_query_while_waiting_in_queue(started_cluster):
         waiter.start()
         wait_for_queue_length(node, 1)
 
-        with killer.cursor() as cursor:
+        # Another user without the `KILL QUERY` privilege must not cancel the waiter. The cancellation is
+        # synchronous, so the waiter must still be queued right after the statement.
+        with other.cursor() as cursor:
+            try:
+                cursor.execute(f"KILL QUERY {victim.thread_id()}")
+            except pymysql.err.MySQLError:
+                pass
+        assert get_prometheus_metric(node, "QueryAdmissionQueueLength") == 1
+        assert waiter.is_alive() and not result, result
+
+        with other_killer.cursor() as cursor:
             # `KILL QUERY` is not subject to the admission limit; it must not fail with `NOTHING_TO_KILL`.
             cursor.execute(f"KILL QUERY {victim.thread_id()}")
 
@@ -2886,7 +2947,8 @@ def test_mysql_kill_query_while_waiting_in_queue(started_cluster):
         ).strip() == "2", "blockers finished before the queue drained"
     finally:
         victim.close()
-        killer.close()
+        other.close()
+        other_killer.close()
         kill_blockers(blocker_ids)
         pool.close()
         pool.join()
