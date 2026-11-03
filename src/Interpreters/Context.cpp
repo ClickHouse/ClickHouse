@@ -2381,12 +2381,17 @@ void Context::setUserFilesPolicy(const String & policy_name, const String & path
     /// a `plain_rewritable` disk are updated only by the writes of this server, so another server
     /// would keep using a stale existence, size and modification time: return no rows for a file
     /// that is no longer empty, or choose to rewrite a file instead of rejecting an append.
-    /// The check goes through `getMetadataStorage`, which wrappers such as `encrypted` forward.
-    if (disk->isPlain() && disk->getMetadataStorage()->cachesObjectMetadata())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Disk `{}` of the user files policy `{}` caches the object metadata in memory "
-            "(a `plain_rewritable` disk, or a plain disk with `object_metadata_cache_size`), "
-            "which is not supported for user files", disk->getName(), policy_name);
+    /// The check walks the chain of wrapped disks, because not every wrapper forwards `isPlain`
+    /// (e.g. `ReadOnlyDiskWrapper` of a disk attached with `read_only` does not), while all of
+    /// them forward the reads of sizes and modification times to the cached disk.
+    for (DiskPtr layer = disk; layer; layer = layer->getDelegateDiskIfExists())
+    {
+        if (layer->isPlain() && layer->getMetadataStorage()->cachesObjectMetadata())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Disk `{}` of the user files policy `{}` caches the object metadata in memory "
+                "(a `plain_rewritable` disk, or a plain disk with `object_metadata_cache_size`), "
+                "which is not supported for user files", disk->getName(), policy_name);
+    }
 
     {
         /// An `encrypted` disk takes a path that already starts with its own path inside the
