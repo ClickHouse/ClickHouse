@@ -87,3 +87,18 @@ $CLICKHOUSE_CLIENT -q "
     DROP NAMED COLLECTION ${NC}_format;
     DROP TABLE t_05481;
 "
+
+# A plain `SELECT` goes the same way: the nodes must receive the structure and format the initiator resolved instead of
+# inferring the schema again. Every forwarded query must name the format and a structure after it.
+for function in "fileCluster('${CLUSTER}', '${FILE_DIR}/part_{1,2}.jsonl', 'JSONEachRow')" \
+    "urlCluster('${CLUSTER}', '${S3_DIR}/part_{1,2}.jsonl', 'JSONEachRow')"
+do
+    query_id="05481_select_${CLICKHOUSE_DATABASE}_${RANDOM}"
+    $CLICKHOUSE_CLIENT --query_id "${query_id}" -q "SELECT * FROM ${function} FORMAT Null"
+    $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
+    echo "--- forwarded SELECT from ${function%%(*} ---"
+    $CLICKHOUSE_CLIENT -q "
+        SELECT count() > 0, countIf(query NOT LIKE '%''JSONEachRow'', ''%')
+        FROM system.query_log
+        WHERE event_date >= yesterday() AND initial_query_id = '${query_id}' AND NOT is_initial_query AND type = 'QueryFinish'"
+done

@@ -26,3 +26,7 @@
 NUMBER_OF_COLUMNS_DOESNT_MATCH
 --- url converted to urlCluster, structure not overridable, INSERT ---
 NUMBER_OF_COLUMNS_DOESNT_MATCH
+--- forwarded SELECT from fileCluster ---
+1	0
+--- forwarded SELECT from urlCluster ---
+1	0
