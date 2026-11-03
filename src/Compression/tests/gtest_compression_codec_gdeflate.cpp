@@ -30,24 +30,23 @@ std::vector<char> makeBlock(const char * page, UInt32 page_size, UInt32 uncompre
     return block;
 }
 
-/// Decompresses `block`: it either throws or reproduces `expected`.
-void decompressOrThrow(const CompressionCodecGDeflate & codec, const std::vector<char> & block, const std::vector<char> & expected)
+/// Decompresses `block` of a malformed page. GDeflate has no checksum of its own (the checksum of the compressed
+/// block catches a corrupt page), so the page may expand to anything or be refused; it must only stay in its bounds.
+void decompressMalformed(const CompressionCodecGDeflate & codec, const std::vector<char> & block, UInt32 uncompressed_size)
 {
-    std::vector<char> out(expected.size());
+    std::vector<char> out(uncompressed_size);
     try
     {
         codec.decompress(block.data(), static_cast<UInt32>(block.size()), out.data());
     }
-    catch (const Exception &)
+    catch (const Exception &) // NOLINT(bugprone-empty-catch)
     {
-        return;
     }
-    EXPECT_EQ(out, expected);
 }
 
 }
 
-/// Truncated, corrupt and random pages are refused without reading past the end of the page.
+/// A valid page expands to its data; truncated, corrupt and random pages are not read past their end.
 TEST(CompressionCodecGDeflate, MalformedPages)
 {
     const CompressionCodecGDeflate codec(CompressionCodecGDeflate::DEFAULT_LEVEL);
@@ -65,27 +64,29 @@ TEST(CompressionCodecGDeflate, MalformedPages)
         const char * page = &compressed[header_size + 2 * sizeof(UInt32)];
         const UInt32 page_size = unalignedLoadLittleEndian<UInt32>(&compressed[header_size + sizeof(UInt32)]);
 
-        decompressOrThrow(codec, makeBlock(page, page_size, size), raw);
+        const auto block = makeBlock(page, page_size, size);
+        std::vector<char> out(size);
+        codec.decompress(block.data(), static_cast<UInt32>(block.size()), out.data());
+        EXPECT_EQ(out, raw);
 
         for (UInt32 cut = 1; cut <= page_size; ++cut)
-            decompressOrThrow(codec, makeBlock(page, page_size - cut, size), raw);
+            decompressMalformed(codec, makeBlock(page, page_size - cut, size), size);
 
         std::vector<char> corrupt(page, page + page_size);
         for (size_t i = 0; i < 1000; ++i)
         {
             std::vector<char> bad = corrupt;
             bad[rng() % page_size] ^= static_cast<char>(1 << (rng() % 8));
-            decompressOrThrow(codec, makeBlock(bad.data(), page_size, size), raw);
+            decompressMalformed(codec, makeBlock(bad.data(), page_size, size), size);
         }
     }
 
     std::vector<char> garbage(300);
-    const std::vector<char> expected(1000);
     for (UInt32 size = 0; size < garbage.size(); ++size)
         for (size_t i = 0; i < 20; ++i)
         {
             for (auto & c : garbage)
                 c = static_cast<char>(rng());
-            decompressOrThrow(codec, makeBlock(garbage.data(), size, static_cast<UInt32>(expected.size())), expected);
+            decompressMalformed(codec, makeBlock(garbage.data(), size, 1000), 1000);
         }
 }
