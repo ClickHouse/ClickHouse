@@ -850,10 +850,12 @@ void setOOMScore(int value, LoggerRawPtr log)
 
 void Server::beforeStartingThreads()
 {
-    /// As in `main`, but from the configuration as it is before a `from_zk` value arrives: the isolation can only be
-    /// done while the process has a single thread, and connecting to ZooKeeper takes several.
+    /// From the configuration as it is before a `from_zk` value arrives: the isolation can only be done while the
+    /// process has a single thread, and connecting to ZooKeeper takes several. Only this one setting is read here, and
+    /// the others are loaded and validated in `main` as usual.
     ServerSettings server_settings;
-    server_settings.loadSettingsFromConfig(config());
+    if (config().has("filesystem_isolation"))
+        server_settings.set("filesystem_isolation", config().getString("filesystem_isolation"));
     const FilesystemIsolationMode mode = server_settings[ServerSetting::filesystem_isolation];
     if (mode == FilesystemIsolationMode::Disabled)
     {

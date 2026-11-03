@@ -282,6 +282,15 @@ void BaseDaemon::initialize(Application & self)
     }
     umask(umask_num);
 
+    /// It decrypts the encrypted elements of the configuration, so that the values read from `config` below are
+    /// plain. It also writes the preprocessed configuration into the `path` of the configuration file, which may be
+    /// hidden by the isolation of the filesystem in `beforeStartingThreads`.
+    ConfigProcessor(config_path).savePreprocessedConfig(loaded_config, ""
+#if USE_SSL
+    , true // skip loading encryption keys from ZK
+#endif
+    );
+
     /// No thread but the background threads of jemalloc has been started up to this point, and `Jemalloc::setup`
     /// below configures them.
     beforeStartingThreads();
@@ -294,13 +303,6 @@ void BaseDaemon::initialize(Application & self)
         config().getBool(Jemalloc::config_collect_global_profile_samples_in_trace_log, Jemalloc::default_collect_global_profile_samples_in_trace_log),
         config().getUInt64(Jemalloc::config_profiler_sampling_rate, Jemalloc::default_profiler_sampling_rate));
 #endif
-
-    ConfigProcessor(config_path).savePreprocessedConfig(loaded_config, ""
-#if USE_SSL
-    , true // skip loading encryption keys from ZK
-#endif
-    );
-
 
 #if defined(OS_LINUX)
     /// Configure RLIMIT_SIGPENDING
