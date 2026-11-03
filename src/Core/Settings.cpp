@@ -10911,7 +10911,7 @@ If set to true, allow using the text index.
     DECLARE(Bool, allow_experimental_json_bloom_filter_index, false, R"(
 Allows creating the `jsonbf_v1` data skipping index on `JSON` columns with `CREATE TABLE` and `ALTER TABLE ... ADD INDEX`.
 )", EXPERIMENTAL, \
-        {"26.10", false, false, "New setting to allow the experimental `jsonbf_v1` data skipping index."}) \
+        {"26.11", false, false, "New setting to allow the experimental `jsonbf_v1` data skipping index."}) \
     DECLARE(Bool, query_plan_direct_read_from_text_index, true, R"(
 Allow to perform full text search filtering using only the inverted text index in query plan.
 )", 0, \
