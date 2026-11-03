@@ -1,6 +1,4 @@
-#include <array>
 #include <atomic>
-#include <bit>
 #include <limits>
 #include <optional>
 #include <shared_mutex>
@@ -10,7 +8,6 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
-#include <Columns/ColumnString.h>
 
 #include <Common/HashTable/Hash.h>
 #include <Common/Logger.h>
@@ -75,35 +72,6 @@ namespace ErrorCodes
 namespace
 {
 
-/// The mask of the first `bytes` bytes of a 64-bit word loaded from memory.
-constexpr UInt64 firstBytesMask(size_t bytes)
-{
-    if (bytes == 0)
-        return 0;
-    if (bytes >= 8)
-        return ~0ULL;
-    if constexpr (std::endian::native == std::endian::little)
-        return (1ULL << (8 * bytes)) - 1;
-    else
-        return ~0ULL << (64 - 8 * bytes);
-}
-
-constexpr auto low_masks = []
-{
-    std::array<UInt64, 17> masks{};
-    for (size_t size = 0; size <= 16; ++size)
-        masks[size] = firstBytesMask(std::min<size_t>(size, 8));
-    return masks;
-}();
-
-constexpr auto high_masks = []
-{
-    std::array<UInt64, 17> masks{};
-    for (size_t size = 0; size <= 16; ++size)
-        masks[size] = firstBytesMask(size > 8 ? size - 8 : 0);
-    return masks;
-}();
-
 /// Whether at least 15 of 16 sampled rows, one pseudo-random row per sixteenth of the block, repeat the previous key.
 bool keysAreSorted(const ColumnRawPtrs & key_columns, size_t rows)
 {
@@ -135,7 +103,6 @@ public:
     /// The table is built by a single lookup on the query's critical path, so only small sets get one.
     static constexpr size_t max_keys = 1 << 15;
     static constexpr size_t max_bytes = 2 << 20;
-    static constexpr size_t max_string_size = 15;
 
     static constexpr size_t minSlots(size_t num_keys) { return 2 * num_keys + num_keys / 4; }
 
@@ -162,26 +129,6 @@ public:
                 if (lookup->tryBuildTable(keys, memory_budget, attempts))
                     return lookup;
             }
-        }
-        else if constexpr (IsSetMethodString<Method>::value)
-        {
-            if (attemptPeakBytes(num_keys, sizeof(UInt128), minBits(num_keys), 0) > memory_budget)
-                return nullptr;
-            PODArray<UInt128> keys;
-            keys.reserve_exact(num_keys);
-            for (auto it = method.data.begin(); it != method.data.end(); ++it)
-            {
-                const std::string_view key = it->getKey();
-                if (key.size() > max_string_size)
-                    return nullptr;
-                /// `encode` reads 16 bytes.
-                char buf[16] = {};
-                if (!key.empty())
-                    memcpy(buf, key.data(), key.size());
-                keys.push_back(encode(reinterpret_cast<const UInt8 *>(buf), key.size()));
-            }
-            if (lookup->tryBuildTable(keys, memory_budget, attempts))
-                return lookup;
         }
         return nullptr;
     }
@@ -226,22 +173,6 @@ private:
             for (size_t i = 0; i < rows; ++i)
                 res[i] = contains<mixed, Key>(state.getKeyHolder(i, pool));
         }
-        else if constexpr (IsSetMethodString<Method>::value)
-        {
-            const auto * column_string = typeid_cast<const ColumnString *>(columns[0]);
-            if (slots128.empty() || !column_string)
-                return false;
-            const UInt8 * chars = column_string->getChars().data();
-            const IColumn::Offsets & offsets = column_string->getOffsets();
-            /// Reading 16 bytes past the start of the last string stays within the padding of the column.
-            IColumn::Offset begin = 0;
-            for (size_t i = 0; i < rows; ++i)
-            {
-                const IColumn::Offset end = offsets[i];
-                res[i] = contains<mixed, UInt128>(encode(chars + begin, end - begin));
-                begin = end;
-            }
-        }
         else
             return false;
 
@@ -270,10 +201,6 @@ private:
     template <typename Data, bool has_nullable_keys>
     struct IsSetMethodKeysFixed<SetMethodKeysFixed<Data, has_nullable_keys>> : std::true_type {};
 
-    template <typename T> struct IsSetMethodString : std::false_type {};
-    template <typename Data>
-    struct IsSetMethodString<SetMethodString<Data>> : std::true_type {};
-
     PODArray<UInt32> slots32;
     PODArray<UInt64> slots64;
     PODArray<UInt128> slots128;
@@ -290,23 +217,6 @@ private:
         z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
         z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
         return z ^ (z >> 31);
-    }
-
-    /// The bytes of the string and, in the last byte, its length. A string longer than 15 bytes gets the length 16,
-    /// which no key has.
-    static UInt128 encode(const UInt8 * data, size_t size)
-    {
-        const size_t clamped = std::min<size_t>(size, 16);
-        const UInt64 low = unalignedLoad<UInt64>(data) & low_masks[clamped];
-        UInt64 high = unalignedLoad<UInt64>(data + 8) & high_masks[clamped];
-        if constexpr (std::endian::native == std::endian::little)
-            high = (high & ~(0xFFULL << 56)) | (static_cast<UInt64>(clamped) << 56);
-        else
-            high = (high & ~0xFFULL) | clamped;
-        UInt128 key;
-        key.items[0] = low;
-        key.items[1] = high;
-        return key;
     }
 
     template <typename Key>
@@ -571,8 +481,7 @@ void Set::finishInsert()
     {
         const size_t num_keys = data->getTotalRowCount();
         using Type = SetVariants::Type;
-        const bool has_suitable_key = data->type == Type::key32 || data->type == Type::key64 || data->type == Type::key_string
-            || data->type == Type::keys32 || data->type == Type::keys64 || data->type == Type::keys128
+        const bool has_suitable_key = data->type == Type::key32 || data->type == Type::key64 || data->type == Type::keys32 || data->type == Type::keys64 || data->type == Type::keys128
             || data->type == Type::nullable_keys128;
         rows_before_cuckoo_lookup = has_suitable_key && num_keys > 0 && num_keys <= CuckooLookup::max_keys && !cuckoo_lookup_disabled
             ? static_cast<Int64>(rows_per_key_before_cuckoo_lookup * num_keys)
@@ -1437,7 +1346,7 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
     const bool may_use_cuckoo_lookup = cuckoo_lookup || rows_before_cuckoo_lookup.load(std::memory_order_relaxed) > 0;
     const size_t num_null_rows = null_map && may_use_cuckoo_lookup ? countBytesInFilter(*null_map) : 0;
     /// The hash table answers a key equal to the previous row's from its cache, without a lookup.
-    const bool keys_sorted = may_use_cuckoo_lookup && data->type != SetVariants::Type::key_string && keysAreSorted(key_columns, vec_res.size());
+    const bool keys_sorted = may_use_cuckoo_lookup && keysAreSorted(key_columns, vec_res.size());
     /// The keys do not change while the shared lock is held, so the table is built here, looks up this block, and is
     /// installed below.
     const Int64 rows = static_cast<Int64>(vec_res.size() - num_null_rows);

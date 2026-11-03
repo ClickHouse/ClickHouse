@@ -42,17 +42,6 @@ SELECT countIf(reinterpretAsUUID(toUInt128(x)) IN (SELECT reinterpretAsUUID(toUI
     AND countIf(reinterpretAsUUID(toUInt128(x)) NOT IN (SELECT reinterpretAsUUID(toUInt128(number * 3)) FROM numbers(1000))) = countIf(NOT (x % 3 = 0 AND x < 3000))
 FROM (SELECT intHash64(number) % 6000 AS x FROM numbers(40000));
 
--- String keys of 0 to 15 bytes. Three probe rows in ten append 'x', 'xy' or a zero byte to a key, so that they match
--- no key; some of them are 16 or 17 bytes long and start with a 15-byte key.
-SELECT countIf(s IN (SELECT if(number = 0, '', concat(toString(number), repeat('x', number % 13))) FROM numbers(1000))) = countIf(kind >= 3 AND j < 1000)
-    AND countIf(s NOT IN (SELECT if(number = 0, '', concat(toString(number), repeat('x', number % 13))) FROM numbers(1000))) = countIf(NOT (kind >= 3 AND j < 1000))
-FROM
-(
-    SELECT intHash64(number) % 2000 AS j, number % 10 AS kind,
-        concat(if(j = 0, '', concat(toString(j), repeat('x', j % 13))), multiIf(kind = 0, 'x', kind = 1, 'xy', kind = 2, char(0), '')) AS s
-    FROM numbers(40000)
-);
-
 -- Nullable(UInt64) with NULL rows, whose nested values are also in the set, and NULL in the set.
 SELECT countIf(x IN (SELECT if(number = 0, NULL, number * 3) FROM numbers(1000))) = countIf(x IS NOT NULL AND x % 3 = 0 AND x > 0 AND x < 3000)
     AND countIf(x NOT IN (SELECT if(number = 0, NULL, number * 3) FROM numbers(1000))) = countIf(x IS NOT NULL AND NOT (x % 3 = 0 AND x > 0 AND x < 3000))
