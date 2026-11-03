@@ -413,7 +413,7 @@ void BackgroundSchedulePool::increaseThreadsCount(size_t new_threads_count)
     {
         max_parallel_tasks_per_type = new_max_parallel_tasks_per_type;
 
-        /// A group paused at the old limit would otherwise resume only when one of its own tasks finishes.
+        /// Groups paused at the old limit are runnable under the new one.
         for (auto & [task_type, group] : task_groups)
         {
             if (!group.runnable_list_pos && !group.tasks.empty())
@@ -422,7 +422,7 @@ void BackgroundSchedulePool::increaseThreadsCount(size_t new_threads_count)
                 runnable_task_types.push_back(task_type);
             }
         }
-        /// Parked workers are counted as available below, so wake them for the new headroom of every runnable group.
+        /// Wake parked workers: the spawn below counts them as available.
         tasks_cond_var.notify_all();
     }
 
