@@ -34,6 +34,7 @@
 #include <base/range.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
+#include <Common/MultiVersion.h>
 #include <Common/FailPoint.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/re2.h>
@@ -46,7 +47,6 @@
 #include <algorithm>
 #include <filesystem>
 #include <atomic>
-#include <functional>
 #include <memory>
 #include <mutex>
 #include <string_view>
@@ -80,23 +80,21 @@ extern const char access_control_pause_after_feature_tier_check[];
 
 namespace
 {
+    /// `access_control_improvements.functions_requiring_grant`, by the names the functions are registered under.
+    struct FunctionsRequiringGrant
+    {
+        std::unordered_set<String> names;
+        /// Identifies the list in the key of the query result cache. The same list gives the same value
+        /// in every process, because the on-disk cache keeps its entries across restarts.
+        UInt64 fingerprint = 0;
+    };
+
     /// Process-wide, so that `checkFunctionAccess` can skip the whole check with one relaxed
     /// atomic load on the default empty list: reaching the `AccessControl` instance would mean
     /// `Context::getAccessControl`, which takes a shared lock on the global context mutex, on
     /// every function resolution. There is one `AccessControl` per server process.
     std::atomic<bool> functions_requiring_grant_enabled{false};
-    std::atomic<UInt64> functions_requiring_grant_fingerprint{0};
-    std::mutex functions_requiring_grant_mutex;
-
-    struct TransparentStringHash
-    {
-        using is_transparent = void;
-        size_t operator()(std::string_view sv) const noexcept { return std::hash<std::string_view>{}(sv); }
-        size_t operator()(const String & s) const noexcept { return std::hash<std::string_view>{}(s); }
-    };
-    using FunctionNameSet = std::unordered_set<String, TransparentStringHash, std::equal_to<>>;
-
-    std::shared_ptr<const FunctionNameSet> functions_requiring_grant_names = std::make_shared<const FunctionNameSet>();
+    MultiVersion<FunctionsRequiringGrant> functions_requiring_grant{std::make_unique<const FunctionsRequiringGrant>()};
 
     Strings parseFunctionsRequiringGrant(const Poco::Util::AbstractConfiguration & config)
     {
@@ -1252,7 +1250,8 @@ void AccessControl::setFunctionsRequiringGrantFromConfig(const Poco::Util::Abstr
 
 void AccessControl::setFunctionsRequiringGrant(const Strings & function_names)
 {
-    auto names = std::make_shared<FunctionNameSet>();
+    auto list = std::make_unique<FunctionsRequiringGrant>();
+    auto & names = list->names;
     for (const auto & name : function_names)
     {
         if (name.empty())
@@ -1280,7 +1279,7 @@ void AccessControl::setFunctionsRequiringGrant(const Strings & function_names)
         {
             /// Store the registered name, so that `<function>isValidASCII</function>` also covers
             /// the `isASCII` alias and `<function>HEX</function>` covers `hex`.
-            names->emplace(std::move(registered_name));
+            names.emplace(std::move(registered_name));
         }
         else if (aggregate_function_factory.isAggregateFunctionName(name))
         {
@@ -1301,13 +1300,11 @@ void AccessControl::setFunctionsRequiringGrant(const Strings & function_names)
                 "Function '{}' listed in access_control_improvements.functions_requiring_grant is neither an ordinary nor an "
                 "aggregate function. It will require GRANT FUNCTION only if a user defined function with this name exists.",
                 name);
-            names->emplace(name);
+            names.emplace(name);
         }
     }
 
-    /// The same list gives the same value in every process, because the on-disk query cache keeps it
-    /// across restarts.
-    Strings sorted_names(names->begin(), names->end());
+    Strings sorted_names(names.begin(), names.end());
     std::ranges::sort(sorted_names);
     SipHash fingerprint;
     for (const auto & name : sorted_names)
@@ -1315,13 +1312,10 @@ void AccessControl::setFunctionsRequiringGrant(const Strings & function_names)
         fingerprint.update(name.size());
         fingerprint.update(name);
     }
-    functions_requiring_grant_fingerprint.store(fingerprint.get64(), std::memory_order_relaxed);
+    list->fingerprint = fingerprint.get64();
 
-    const bool enabled = !names->empty();
-    {
-        std::lock_guard lock(functions_requiring_grant_mutex);
-        functions_requiring_grant_names = std::move(names);
-    }
+    const bool enabled = !names.empty();
+    functions_requiring_grant.set(std::move(list));
     functions_requiring_grant_enabled.store(enabled, std::memory_order_release);
 }
 
@@ -1339,25 +1333,19 @@ void AccessControl::canonicalizeFunctionNames(AccessRightsElements & elements)
     }
 }
 
-UInt64 AccessControl::getFunctionsRequiringGrantFingerprint() noexcept
+UInt64 AccessControl::getFunctionsRequiringGrantFingerprint()
 {
-    return functions_requiring_grant_fingerprint.load(std::memory_order_relaxed);
+    return functions_requiring_grant.get()->fingerprint;
 }
 
-bool AccessControl::functionRequiresGrant(std::string_view function_name)
+bool AccessControl::functionRequiresGrant(const String & function_name)
 {
     if (!functions_requiring_grant_enabled.load(std::memory_order_acquire))
         return false;
 
-    std::shared_ptr<const FunctionNameSet> names;
-    {
-        std::lock_guard lock(functions_requiring_grant_mutex);
-        names = functions_requiring_grant_names;
-    }
-    /// Both sides are canonical names: the config list is canonicalized in
-    /// `setFunctionsRequiringGrant`, and the callers in `checkFunctionAccess` canonicalize the
-    /// name written in the query. So a plain lookup is enough, with no allocation.
-    return names->contains(function_name);
+    /// Both sides are registered names: the list is resolved in `setFunctionsRequiringGrant`, and
+    /// `checkFunctionAccess` resolves the name of the call.
+    return functions_requiring_grant.get()->names.contains(function_name);
 }
 
 std::shared_ptr<const ContextAccess> AccessControl::getContextAccess(const ContextAccessParams & params) const

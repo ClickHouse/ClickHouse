@@ -222,10 +222,10 @@ public:
     /// when the list is empty, so the function-resolution path pays nothing in the default case.
     static bool hasFunctionsRequiringGrant() noexcept;
     /// Identifies the list, so that a query cache entry written under another list is not read.
-    static UInt64 getFunctionsRequiringGrantFingerprint() noexcept;
+    static UInt64 getFunctionsRequiringGrantFingerprint();
     /// Pass the name the function is registered under: the configured list is resolved with
     /// `IFactoryWithAliases::resolveNameOrAlias`, and so must be the name of the call.
-    static bool functionRequiresGrant(std::string_view function_name);
+    static bool functionRequiresGrant(const String & function_name);
     /// Rewrites the names in `FUNCTION ON <name>` elements to the name the function is registered
     /// under, so that `GRANT FUNCTION ON HEX` or `GRANT FUNCTION ON isASCII` matches the check for
     /// `hex` or `isValidASCII`. Unknown names, e.g. of a user defined function created later, are kept,
