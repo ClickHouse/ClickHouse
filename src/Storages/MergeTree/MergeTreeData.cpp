@@ -13815,7 +13815,9 @@ void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & 
     LOG_ERROR(log, "Table definition is incorrect. {}. It may lead to corruption of data or crashes. You need to resolve it manually", message);
 }
 
-MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const
+MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(
+    IStorage & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot,
+    const ContextPtr & local_context) const
 {
     /// NOLINT(storage-cast): a reference, and the `StoragePtr` overload below resolves the proxy.
     MergeTreeData * src_data = dynamic_cast<MergeTreeData *>(&source_table);
@@ -13875,24 +13877,30 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
     /// as `toHour(dt)`, gives other values in another time zone: the primary key and the partition of a source part would not
     /// match the key of this table, and pruning would drop its rows. A column used in the key as is, such as `ORDER BY dt`, is
     /// not an argument of an expression and keeps its order in any time zone, so it may differ, as `MODIFY COLUMN` allows.
-    for (const auto & name : getColumnsUsedInKeyExpressions(*my_snapshot))
+    /// A replica that replays a committed `MOVE PARTITION TO TABLE` of a `Replicated` database applies it as the initiator did,
+    /// which may be an older version that did not check it, as for `MODIFY COLUMN`.
+    if (!local_context || !isSecondaryDDLReplay(local_context))
     {
-        auto my_column = my_snapshot->getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name);
-        auto src_column = src_snapshot->getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name);
-        if (my_column && src_column && changesTimeZone(src_column->type, my_column->type))
-            throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS,
-                "Column {} is used in a key expression, and its time zone differs between the tables: {} in the source table, "
-                "{} in the destination table",
-                backQuoteIfNeed(name), src_column->type->getName(), my_column->type->getName());
+        for (const auto & name : getColumnsUsedInKeyExpressions(*my_snapshot))
+        {
+            auto my_column = my_snapshot->getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name);
+            auto src_column = src_snapshot->getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name);
+            if (my_column && src_column && changesTimeZone(src_column->type, my_column->type))
+                throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS,
+                    "Column {} is used in a key expression, and its time zone differs between the tables: {} in the source table, "
+                    "{} in the destination table",
+                    backQuoteIfNeed(name), src_column->type->getName(), my_column->type->getName());
+        }
     }
 
     return *src_data;
 }
 
 MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(
-    const StoragePtr & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const
+    const StoragePtr & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot,
+    const ContextPtr & local_context) const
 {
-    return checkStructureAndGetMergeTreeData(*resolveStorageProxyLoading(source_table), src_snapshot, my_snapshot);
+    return checkStructureAndGetMergeTreeData(*resolveStorageProxyLoading(source_table), src_snapshot, my_snapshot, local_context);
 }
 
 /// must_on_same_disk=false is used only when attach partition; Both for same disk and different disk.
