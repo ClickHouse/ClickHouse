@@ -10,12 +10,13 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
 {
 
-class FunctionRegexpQuoteMeta final : public IFunction
+class FunctionRegexpQuoteMeta : public IFunction
 {
 public:
     static constexpr auto name = "regexpQuoteMeta";
@@ -42,9 +43,13 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return "(String) -> String";
+        if (!WhichDataType(arguments[0].type).isString())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of 1 argument of function {}. Must be String.",
+                arguments[0].type->getName(), getName());
+
+        return std::make_shared<DataTypeString>();
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override

@@ -1,0 +1,24 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <disk_db_remote>
+                <type>object_storage</type>
+                <object_storage_type>s3</object_storage_type>
+                <metadata_type>plain_rewritable</metadata_type>
+                <endpoint>http://localhost:11111/test/test-{shard}|{replica}</endpoint>
+                <access_key_id>clickhouse</access_key_id>
+                <secret_access_key>clickhouse</secret_access_key>
+            </disk_db_remote>
+        </disks>
+    </storage_configuration>
+    <macros>
+        <shard>s1</shard>
+        <replica>r1</replica>
+    </macros>
+    <zookeeper>
+        <node index="1">
+            <host>localhost</host>
+            <port>9181</port>
+        </node>
+    </zookeeper>
+</clickhouse>

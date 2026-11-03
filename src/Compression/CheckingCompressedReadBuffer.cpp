@@ -5,8 +5,8 @@ namespace DB
 
 bool CheckingCompressedReadBuffer::nextImpl()
 {
-    size_t size_decompressed = 0;
-    size_t size_compressed_without_checksum = 0;
+    size_t size_decompressed;
+    size_t size_compressed_without_checksum;
     size_t size_compressed = readCompressedData(size_decompressed, size_compressed_without_checksum, true);
 
     if (!size_compressed)

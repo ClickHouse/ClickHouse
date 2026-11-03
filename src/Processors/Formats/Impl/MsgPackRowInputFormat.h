@@ -60,12 +60,12 @@ private:
     bool null_as_default;
 };
 
-class MsgPackRowInputFormat final : public IRowInputFormat
+class MsgPackRowInputFormat : public IRowInputFormat
 {
 public:
     MsgPackRowInputFormat(SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & settings);
 
-    String getName() const override { return "MsgPackRowInputFormat"; }
+    String getName() const override { return "MagPackRowInputFormat"; }
     void resetParser() override;
     void setReadBuffer(ReadBuffer & in_) override;
     void resetReadBuffer() override;
@@ -87,7 +87,7 @@ private:
     const DataTypes data_types;
 };
 
-class MsgPackSchemaReader final : public IRowSchemaReader
+class MsgPackSchemaReader : public IRowSchemaReader
 {
 public:
     MsgPackSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);

@@ -197,7 +197,7 @@ public:
         {
             reverseIndexEmplaceNonZero(key, impl_it, inserted, hash_value, object);
         }
-        chassert(impl_it != nullptr);
+        assert(impl_it != nullptr);
         it = iterator(this, impl_it);
     }
 
@@ -323,7 +323,7 @@ class ReverseIndex
 {
 public:
     ReverseIndex(UInt64 num_prefix_rows_to_skip_, UInt64 base_index_)
-        : num_prefix_rows_to_skip(num_prefix_rows_to_skip_), base_index(base_index_), external_saved_hash_snapshot(nullptr) {}
+        : num_prefix_rows_to_skip(num_prefix_rows_to_skip_), base_index(base_index_), external_saved_hash_ptr(nullptr) {}
 
     void setColumn(ColumnType * column_);
 
@@ -353,33 +353,24 @@ public:
     ColumnType * getColumn() const { return column; }
     size_t size() const;
 
-    /// The span covers the dictionary as it was when the hashes were first calculated, and is never
-    /// extended: positions inserted afterwards are outside it.
-    std::span<const UInt64> tryGetSavedHash() const
+    const UInt64 * tryGetSavedHash() const
     {
         if (!use_saved_hash)
-            return {};
+            return nullptr;
 
-        /// Data and length both come from the one published column, so they always describe the
-        /// same buffer. Only the thread that wins the exchange assigns the owner, so the owning
-        /// member is never read by another thread.
-        const ColumnUInt64 * snapshot = external_saved_hash_snapshot.load(std::memory_order_acquire);
-        if (!snapshot)
+        UInt64 * ptr = external_saved_hash_ptr.load();
+        if (!ptr)
         {
             auto hash = calcHashes();
-            const ColumnUInt64 * expected = nullptr;
-            if (external_saved_hash_snapshot.compare_exchange_strong(
-                    expected, hash.get(), std::memory_order_release, std::memory_order_acquire))
-            {
-                snapshot = hash.get();
+            ptr = &hash->getData()[0];
+            UInt64 * expected = nullptr;
+            if (external_saved_hash_ptr.compare_exchange_strong(expected, ptr))
                 external_saved_hash = std::move(hash);
-            }
             else
-                snapshot = expected;
+                ptr = expected;
         }
 
-        const auto & hash_data = snapshot->getData();
-        return {hash_data.data(), hash_data.size()};
+        return ptr;
     }
 
     size_t allocatedBytes() const { return index ? index->getBufferSizeInBytes() : 0; }
@@ -394,9 +385,9 @@ private:
     /// Lazy initialized.
     std::unique_ptr<IndexMapType> index;
     mutable ColumnUInt64::MutablePtr saved_hash;
-    /// For usage during GROUP BY. Owns the column published by external_saved_hash_snapshot.
+    /// For usage during GROUP BY
     mutable ColumnUInt64::MutablePtr external_saved_hash;
-    mutable std::atomic<const ColumnUInt64 *> external_saved_hash_snapshot;
+    mutable std::atomic<UInt64 *> external_saved_hash_ptr;
 
     void buildIndex();
 
@@ -470,11 +461,11 @@ void ReverseIndex<IndexType, ColumnType>::buildIndex()
 
     using IteratorType = typename IndexMapType::iterator;
     IteratorType iterator;
-    bool inserted = false;
+    bool inserted;
 
     for (auto row : collections::range(num_prefix_rows_to_skip, size))
     {
-        UInt64 hash = 0;
+        UInt64 hash;
         if constexpr (use_saved_hash)
             hash = new_saved_hash->getElement(row);
         else

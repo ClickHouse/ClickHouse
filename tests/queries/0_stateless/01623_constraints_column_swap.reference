@@ -1,4 +1,8 @@
-SELECT\n    plus(cityHash64(a), 10),\n    plus(b, 3)\nFROM column_swap_test_test\nWHERE equals(cityHash64(a), 1)
+SELECT
+    cityHash64(a) + 10,
+    b + 3
+FROM column_swap_test_test
+WHERE cityHash64(a) = 1
 QUERY id: 0
   PROJECTION COLUMNS
     plus(cityHash64(a), 10) UInt64
@@ -23,7 +27,12 @@ QUERY id: 0
         LIST id: 12, nodes: 2
           COLUMN id: 13, column_name: b, result_type: UInt64, source_id: 5
           CONSTANT id: 14, constant_value: UInt64_1, constant_value_type: UInt8
-SELECT\n    plus(cityHash64(a), 10),\n    plus(b, 3)\nFROM column_swap_test_test\nPREWHERE equals(cityHash64(a), 1)
+  SETTINGS enable_analyzer=1
+SELECT
+    cityHash64(a) + 10,
+    b + 3
+FROM column_swap_test_test
+PREWHERE cityHash64(a) = 1
 QUERY id: 0
   PROJECTION COLUMNS
     plus(cityHash64(a), 10) UInt64
@@ -48,7 +57,12 @@ QUERY id: 0
         LIST id: 12, nodes: 2
           COLUMN id: 13, column_name: b, result_type: UInt64, source_id: 5
           CONSTANT id: 14, constant_value: UInt64_1, constant_value_type: UInt8
-SELECT\n    plus(cityHash64(a), 10),\n    plus(b, 3)\nFROM column_swap_test_test\nWHERE equals(cityHash64(a), 0)
+  SETTINGS enable_analyzer=1
+SELECT
+    cityHash64(a) + 10,
+    b + 3
+FROM column_swap_test_test
+WHERE cityHash64(a) = 0
 QUERY id: 0
   PROJECTION COLUMNS
     plus(cityHash64(a), 10) UInt64
@@ -73,7 +87,12 @@ QUERY id: 0
         LIST id: 12, nodes: 2
           COLUMN id: 13, column_name: b, result_type: UInt64, source_id: 5
           CONSTANT id: 14, constant_value: UInt64_0, constant_value_type: UInt8
-SELECT\n    plus(cityHash64(a), 10),\n    plus(b, 3)\nFROM column_swap_test_test\nWHERE equals(b, 0)
+  SETTINGS enable_analyzer=1
+SELECT
+    cityHash64(a) + 10,
+    b + 3
+FROM column_swap_test_test
+WHERE b = 0
 QUERY id: 0
   PROJECTION COLUMNS
     plus(cityHash64(a), 10) UInt64
@@ -98,7 +117,12 @@ QUERY id: 0
         LIST id: 12, nodes: 2
           COLUMN id: 13, column_name: b, result_type: UInt64, source_id: 5
           CONSTANT id: 14, constant_value: UInt64_0, constant_value_type: UInt8
-SELECT\n    plus(cityHash64(a), 10),\n    plus(b, 3)\nFROM column_swap_test_test\nWHERE equals(b, 1)
+  SETTINGS enable_analyzer=1
+SELECT
+    cityHash64(a) + 10,
+    b + 3
+FROM column_swap_test_test
+WHERE b = 1
 QUERY id: 0
   PROJECTION COLUMNS
     plus(cityHash64(a), 10) UInt64
@@ -123,7 +147,10 @@ QUERY id: 0
         LIST id: 12, nodes: 2
           COLUMN id: 13, column_name: b, result_type: UInt64, source_id: 5
           CONSTANT id: 14, constant_value: UInt64_1, constant_value_type: UInt8
-SELECT plus(cityHash64(a), 10)\nFROM column_swap_test_test\nWHERE equals(cityHash64(a), 0)
+  SETTINGS enable_analyzer=1
+SELECT cityHash64(a) + 10
+FROM column_swap_test_test
+WHERE cityHash64(a) = 0
 QUERY id: 0
   PROJECTION COLUMNS
     plus(cityHash64(a), 10) UInt64
@@ -142,7 +169,12 @@ QUERY id: 0
         LIST id: 8, nodes: 2
           COLUMN id: 9, column_name: b, result_type: UInt64, source_id: 5
           CONSTANT id: 10, constant_value: UInt64_0, constant_value_type: UInt8
-SELECT\n    plus(cityHash64(a), 10),\n    a\nFROM column_swap_test_test\nWHERE equals(cityHash64(a), 0)
+  SETTINGS enable_analyzer=1
+SELECT
+    cityHash64(a) + 10,
+    a
+FROM column_swap_test_test
+WHERE cityHash64(a) = 0
 QUERY id: 0
   PROJECTION COLUMNS
     plus(cityHash64(a), 10) UInt64
@@ -169,7 +201,12 @@ QUERY id: 0
               LIST id: 13, nodes: 1
                 COLUMN id: 14, column_name: a, result_type: String, source_id: 7
           CONSTANT id: 15, constant_value: UInt64_0, constant_value_type: UInt8
-SELECT\n    plus(b, 10),\n    a\nFROM column_swap_test_test\nWHERE equals(b, 0)
+  SETTINGS enable_analyzer=1
+SELECT
+    b + 10,
+    a
+FROM column_swap_test_test
+WHERE b = 0
 QUERY id: 0
   PROJECTION COLUMNS
     plus(b, 10) UInt64
@@ -196,7 +233,12 @@ QUERY id: 0
               LIST id: 13, nodes: 1
                 COLUMN id: 14, column_name: a, result_type: String, source_id: 7
           CONSTANT id: 15, constant_value: UInt64_0, constant_value_type: UInt8
-SELECT\n    substring(reverse(b), 1, 1),\n    a\nFROM column_swap_test_test\nWHERE equals(a, \'c\')
+  SETTINGS enable_analyzer=1
+SELECT
+    substring(reverse(b), 1, 1),
+    a
+FROM column_swap_test_test
+WHERE a = \'c\'
 QUERY id: 0
   PROJECTION COLUMNS
     substring(reverse(b), 1, 1) String
@@ -213,7 +255,12 @@ QUERY id: 0
         LIST id: 6, nodes: 2
           COLUMN id: 7, column_name: a, result_type: String, source_id: 3
           CONSTANT id: 8, constant_value: \'c\', constant_value_type: String
-SELECT\n    substring(reverse(b), 1, 1),\n    a\nFROM column_swap_test_test\nWHERE equals(substring(reverse(b), 1, 1), \'c\')
+  SETTINGS enable_analyzer=1
+SELECT
+    substring(reverse(b), 1, 1),
+    a
+FROM column_swap_test_test
+WHERE substring(reverse(b), 1, 1) = \'c\'
 QUERY id: 0
   PROJECTION COLUMNS
     substring(reverse(b), 1, 1) String
@@ -230,7 +277,12 @@ QUERY id: 0
         LIST id: 6, nodes: 2
           COLUMN id: 7, column_name: a, result_type: String, source_id: 3
           CONSTANT id: 8, constant_value: \'c\', constant_value_type: String
-SELECT\n    substring(reverse(b), 1, 1) AS t1,\n    a AS t2\nFROM column_swap_test_test\nWHERE equals(substring(reverse(b), 1, 1), \'c\')
+  SETTINGS enable_analyzer=1
+SELECT
+    substring(reverse(b), 1, 1) AS t1,
+    a AS t2
+FROM column_swap_test_test
+WHERE substring(reverse(b), 1, 1) = \'c\'
 QUERY id: 0
   PROJECTION COLUMNS
     t1 String
@@ -247,7 +299,10 @@ QUERY id: 0
         LIST id: 6, nodes: 2
           COLUMN id: 7, column_name: a, result_type: String, source_id: 3
           CONSTANT id: 8, constant_value: \'c\', constant_value_type: String
-SELECT substring(reverse(b), 1, 1)\nFROM column_swap_test_test\nWHERE equals(substring(reverse(b), 1, 1), \'c\')
+  SETTINGS enable_analyzer=1
+SELECT substring(reverse(b), 1, 1)
+FROM column_swap_test_test
+WHERE substring(reverse(b), 1, 1) = \'c\'
 QUERY id: 0
   PROJECTION COLUMNS
     substring(reverse(b), 1, 1) String
@@ -262,7 +317,9 @@ QUERY id: 0
         LIST id: 5, nodes: 2
           COLUMN id: 6, column_name: a, result_type: String, source_id: 3
           CONSTANT id: 7, constant_value: \'c\', constant_value_type: String
-SELECT a\nFROM t_bad_constraint
+  SETTINGS enable_analyzer=1
+SELECT a
+FROM t_bad_constraint
 QUERY id: 0
   PROJECTION COLUMNS
     a UInt32
@@ -271,3 +328,4 @@ QUERY id: 0
       COLUMN id: 2, column_name: a, result_type: UInt32, source_id: 3
   JOIN TREE
     TABLE id: 3, alias: __table1, table_name: default.t_bad_constraint
+  SETTINGS enable_analyzer=1
