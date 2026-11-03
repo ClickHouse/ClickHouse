@@ -534,7 +534,7 @@ std::optional<String> getColumnToReadInsteadOfSubcolumn(
     for (auto [name_in_storage, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(column_name))
     {
         auto merge_column = merge_columns.tryGetColumn(GetColumnsOptions::All, String(name_in_storage));
-        if (merge_column && merge_column->type->tryGetSubcolumnType(String(subcolumn_name)) && child_columns.has(String(name_in_storage)))
+        if (merge_column && merge_column->type->tryGetSubcolumnType(subcolumn_name) && child_columns.has(String(name_in_storage)))
             return String(name_in_storage);
     }
 
@@ -2038,6 +2038,15 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
         /// unmarshalls its blocks, so `BlocksMarshallingStep` must not be added to it.
         auto child_select_query_options = SelectQueryOptions(processed_stage).positionalArgumentsAlreadyResolved();
         child_select_query_options.is_local_plan_for_distributed_query = true;
+
+        /// The query tree passes already ran on the whole query, and this child plan's header must
+        /// stay convertible to the common header derived from it. Re-running the optimization passes
+        /// on the child query can change the result shape - e.g. `CountDistinctPass` may rewrite
+        /// `uniqExact(x)` to `count()` over a `GROUP BY` subquery for a plain local child table while
+        /// the common header still expects an `AggregateFunction(uniqExact, ...)` state, because the
+        /// rewrite was rightfully skipped for the whole `Merge` table due to a remote carrier among
+        /// its children. Run only the resolve passes, same as for queries sent to remote shards.
+        child_select_query_options.ignore_ast_optimizations = true;
 
         /// Converting query to AST because types might be different in the source table.
         /// Need to resolve types again.
