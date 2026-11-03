@@ -2,6 +2,10 @@
 #include <Storages/ObjectStorage/S3/S3SecretArguments.h>
 #include <Common/HiddenSecret.h>
 #include <Analyzer/IQueryTreeNode.h>
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/QueryTreePassManager.h>
+#include <Analyzer/UnionNode.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageFile.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
@@ -175,6 +179,17 @@ static const std::unordered_set<std::string_view> optional_configuration_keys = 
 
 namespace
 {
+    ContextMutablePtr getBodyFormatContext(const IStorageURLBase::Body & body, const ContextPtr & context)
+    {
+        /// Use the query's effective settings for both the serializer and Content-Type. A resolved
+        /// UNION can print nested AST nodes that no longer expose its settings as a top-level clause.
+        /// For an original AST, building the tree applies settings without resolving or executing it.
+        auto query_tree = body.query_tree ? body.query_tree : buildQueryTree(body.query, context);
+        if (const auto * query_node = query_tree->as<QueryNode>())
+            return Context::createCopy(query_node->getContext());
+        return Context::createCopy(query_tree->as<UnionNode &>().getContext());
+    }
+
     /// Interpret the `body(...)` subquery. Executes it as a subquery (as `interpretSubquery` does),
     /// in a context sanitized the same way `interpretSubquery` and `getSubqueryContext` do it:
     /// the settings that apply to the top-level query only (`max_result_rows`, `max_result_bytes`,
@@ -208,7 +223,15 @@ namespace
         /// between all the requests a single read sends (schema inference, the read itself, retries, redirects).
         /// Interpret a private copy.
         if (body.query_tree)
-            return InterpreterSelectQueryAnalyzer(body.query_tree->clone(), body_context, subquery_options).buildQueryPipeline();
+        {
+            auto query_tree = body.query_tree->clone();
+            QueryTreePassManager pass_manager(body_context);
+            addQueryTreePasses(pass_manager);
+            /// Only name resolution has run on this subtree. Complete the remaining semantic and
+            /// optimization passes without resolving positions or inlined view contexts again.
+            pass_manager.runFrom(query_tree, 1);
+            return InterpreterSelectQueryAnalyzer(query_tree, body_context, subquery_options).buildQueryPipeline();
+        }
 
         ASTPtr query = body.query->clone();
         if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
@@ -262,7 +285,8 @@ void IStorageURLBase::Body::addContentTypeHeaderIfNeeded(HTTPHeaderEntries & req
         if (boost::iequals(header.name, "Content-Type"))
             return;
 
-    request_headers.emplace_back("Content-Type", FormatFactory::instance().getContentType(getFormatName(), getFormatSettings(context)));
+    request_headers.emplace_back(
+        "Content-Type", FormatFactory::instance().getContentType(getFormatName(), getFormatSettings(getBodyFormatContext(*this, context))));
 }
 
 std::function<void(WriteBuffer &)> IStorageURLBase::Body::makeCallback(const ContextPtr & context) const
@@ -279,6 +303,7 @@ std::function<void(WriteBuffer &)> IStorageURLBase::Body::makeCallback(const Con
     }
 
     const String body_format = getFormatName();
+    auto body_context = getBodyFormatContext(*this, context);
 
     /// Preflight the output-format construction before returning the callback. The callback itself
     /// runs only after `ReadWriteBufferFromHTTP` has already sent the request to the remote server,
@@ -291,19 +316,19 @@ std::function<void(WriteBuffer &)> IStorageURLBase::Body::makeCallback(const Con
     /// Redirects and retries invoke the callback again, and a read of a glob URL shares the callback
     /// between sources that may run in parallel; a pipeline can be executed only once, so exactly one
     /// invocation takes the prepared one and every other invocation builds its own.
-    auto prepared_pipeline = std::make_shared<PreflightedBodyPipeline>(buildBodyQueryPipeline(*this, context));
+    auto prepared_pipeline = std::make_shared<PreflightedBodyPipeline>(buildBodyQueryPipeline(*this, body_context));
     {
         NullWriteBuffer null_buf;
-        auto preflight_format = context->getOutputFormat(body_format, null_buf, materializeBlock(prepared_pipeline->getHeader()));
+        auto preflight_format = body_context->getOutputFormat(body_format, null_buf, materializeBlock(prepared_pipeline->getHeader()));
     }
 
-    return [body_copy = *this, body_format, context, prepared_pipeline](WriteBuffer & out)
+    return [body_copy = *this, body_format, body_context, prepared_pipeline](WriteBuffer & out)
     {
         auto prepared = prepared_pipeline->take();
-        QueryPipelineBuilder builder = prepared.has_value() ? std::move(*prepared) : buildBodyQueryPipeline(body_copy, context);
+        QueryPipelineBuilder builder = prepared.has_value() ? std::move(*prepared) : buildBodyQueryPipeline(body_copy, body_context);
 
         /// The caller finalizes `out` after the callback returns.
-        auto out_format = context->getOutputFormat(body_format, out, materializeBlock(builder.getHeader()));
+        auto out_format = body_context->getOutputFormat(body_format, out, materializeBlock(builder.getHeader()));
         out_format->setAutoFlush();
 
         auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
