@@ -53,6 +53,29 @@ FROM timeSeriesSamples(ts) AS t, base WHERE bucket = b;
 DROP TABLE ts;
 DROP TABLE base;
 
+SELECT '-- the intervals count from the Unix epoch for any type and timezone of the timestamps: the same offsets are kept';
+
+CREATE TABLE ts (samples Array(Tuple(UInt32, Float64))) ENGINE = TimeSeries
+SETTINGS samples_bucket_step_seconds = 70, recent_samples_ttl_seconds = 0, samples_downsampling_periods = '1s:7s';
+INSERT INTO ts (metric_name, tags, samples) SELECT 'm', map(), arrayMap(i -> (toUInt32(i), toFloat64(i)), range(70));
+OPTIMIZE TABLE ts FINAL;
+SELECT arrayMap(x -> toUnixTimestamp(x.timestamp), samples) FROM timeSeriesSamples(ts);
+DROP TABLE ts;
+
+CREATE TABLE ts (samples Array(Tuple(DateTime64(3, 'UTC'), Float64))) ENGINE = TimeSeries
+SETTINGS samples_bucket_step_seconds = 70, recent_samples_ttl_seconds = 0, samples_downsampling_periods = '1s:7s';
+INSERT INTO ts (metric_name, tags, samples) SELECT 'm', map(), arrayMap(i -> (toDateTime64(i, 3, 'UTC'), toFloat64(i)), range(70));
+OPTIMIZE TABLE ts FINAL;
+SELECT arrayMap(x -> toUnixTimestamp(x.timestamp), samples) FROM timeSeriesSamples(ts);
+DROP TABLE ts;
+
+CREATE TABLE ts (samples Array(Tuple(DateTime64(3, 'Asia/Kolkata'), Float64))) ENGINE = TimeSeries
+SETTINGS samples_bucket_step_seconds = 70, recent_samples_ttl_seconds = 0, samples_downsampling_periods = '1s:7s';
+INSERT INTO ts (metric_name, tags, samples) SELECT 'm', map(), arrayMap(i -> (toDateTime64(i, 3, 'Asia/Kolkata'), toFloat64(i)), range(70));
+OPTIMIZE TABLE ts FINAL;
+SELECT arrayMap(x -> toUnixTimestamp(x.timestamp), samples) FROM timeSeriesSamples(ts);
+DROP TABLE ts;
+
 SELECT '-- the recent samples table keeps every sample';
 CREATE TABLE ts ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 864000, samples_downsampling_periods = '30d:5m';
 SELECT count() FROM system.tables WHERE database = currentDatabase() AND name LIKE '.inner\_id.recentsamples.%' AND engine_full LIKE '%GROUP BY%';

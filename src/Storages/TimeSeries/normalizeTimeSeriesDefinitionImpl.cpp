@@ -700,14 +700,17 @@ namespace
 
     /// The expression of `SET samples = ...` of a downsampling TTL rule: the samples of the group sorted and merged by
     /// `timeSeriesGroupArray`, then only the last sample of each `[k * interval, (k + 1) * interval)` interval is kept.
+    /// `toDateTime` makes the rule work for any type of the timestamps, and the timezone is named because `toStartOfInterval`
+    /// counts from local midnight, while the intervals must count from the Unix epoch like the buckets.
     ASTPtr makeDownsampledSamplesExpression(UInt64 interval_seconds)
     {
         auto samples = [] { return makeASTFunction("timeSeriesGroupArray", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Samples)); };
         /// The operators are marked as such to be formatted as `(s, i) -> ... a[i + 1].1 ...`, the way the parser reads them back.
         auto start_of_interval = [&](ASTPtr sample)
         {
+            auto timestamp = makeASTOperator("tupleElement", std::move(sample), make_intrusive<ASTLiteral>(static_cast<UInt64>(1)));
             return makeASTFunction("toStartOfInterval",
-                makeASTOperator("tupleElement", std::move(sample), make_intrusive<ASTLiteral>(static_cast<UInt64>(1))),
+                makeASTFunction("toDateTime", std::move(timestamp), make_intrusive<ASTLiteral>(String{"UTC"})),
                 makeASTFunction("toIntervalSecond", make_intrusive<ASTLiteral>(interval_seconds)));
         };
 
