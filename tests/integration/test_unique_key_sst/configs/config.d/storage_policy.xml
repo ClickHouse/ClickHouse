@@ -19,6 +19,12 @@
                 <path>encrypted/</path>
                 <key>1234567812345678</key>
             </encrypted_disk>
+            <uk_plain_rewritable>
+                <type>object_storage</type>
+                <object_storage_type>local</object_storage_type>
+                <path>/var/lib/clickhouse/disks/uk_plain_rewritable/</path>
+                <metadata_type>plain_rewritable</metadata_type>
+            </uk_plain_rewritable>
         </disks>
         <policies>
             <!-- Extends the built-in `default` policy so a UNIQUE KEY table can
@@ -41,6 +47,26 @@
                 </volumes>
                 <move_factor>0.0</move_factor>
             </s3_extending>
+            <plain_rewritable_extending>
+                <volumes>
+                    <plain_rewritable>
+                        <disk>uk_plain_rewritable</disk>
+                    </plain_rewritable>
+                    <default>
+                        <disk>default</disk>
+                    </default>
+                </volumes>
+                <move_factor>0.0</move_factor>
+            </plain_rewritable_extending>
+            <uk_reload>
+                <volumes>
+                    <!-- uk_reload_extra_volume -->
+                    <default>
+                        <disk>default</disk>
+                    </default>
+                </volumes>
+                <move_factor>0.0</move_factor>
+            </uk_reload>
         </policies>
     </storage_configuration>
 </clickhouse>

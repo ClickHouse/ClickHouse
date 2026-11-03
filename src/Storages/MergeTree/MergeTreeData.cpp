@@ -61,6 +61,7 @@
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Disks/createVolume.h>
+#include <Disks/supportWritingWithAppend.h>
 #include <IO/Expect404ResponseScope.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
@@ -7108,6 +7109,26 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 ErrorCodes::BAD_ARGUMENTS,
                 "The disk of table {} with `table_disk = true` cannot be changed",
                 getStorageID().getNameForLogs());
+    }
+
+    /// A UNIQUE KEY insert commits its part under a transaction, so every disk of the table must support transactions.
+    if (old_metadata.hasUniqueKey())
+    {
+        const auto & new_disk = (*alter_effective_settings)[MergeTreeSetting::disk];
+        const auto new_storage_policy = new_disk.changed
+            ? local_context->getStoragePolicyFromDisk(new_disk)
+            : local_context->getStoragePolicy((*alter_effective_settings)[MergeTreeSetting::storage_policy]);
+        if (new_storage_policy != getStoragePolicy())
+        {
+            Strings disk_names;
+            for (const auto & disk : new_storage_policy->getDisks())
+                if (!supportWritingWithAppend(disk))
+                    disk_names.push_back(disk->getName());
+            if (!disk_names.empty())
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "UNIQUE KEY is not supported for table {}: disk {} does not support transactions",
+                    getStorageID().getNameForLogs(), fmt::join(disk_names, ", "));
+        }
     }
 
     /// A `Replicated` database runs the same ALTER again on every other replica. Only the first run of it,

@@ -183,6 +183,78 @@ def test_unique_key_switch_policy_to_s3(started_cluster):
     node.query("DROP TABLE uk_local SYNC")
 
 
+def test_unique_key_switch_policy_to_plain_rewritable_is_rejected(started_cluster):
+    # A `plain_rewritable` disk does not support transactions, which a UNIQUE KEY insert
+    # needs, so a policy that adds one is rejected like a CREATE on that disk.
+    node.query("DROP TABLE IF EXISTS uk_local_pr SYNC")
+    node.query(
+        """
+        CREATE TABLE uk_local_pr (id UInt64, v String)
+        ENGINE = MergeTree
+        UNIQUE KEY (id)
+        ORDER BY (id)
+        SETTINGS min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1,
+                 max_bytes_to_merge_at_max_space_in_pool = 1
+        """,
+        settings=UK_SETTINGS,
+    )
+    node.query(
+        "INSERT INTO uk_local_pr VALUES (10, 'a'), (20, 'b'), (30, 'c')",
+        settings=UK_SETTINGS,
+    )
+
+    assert "SUPPORT_IS_DISABLED" in node.query_and_get_error(
+        "ALTER TABLE uk_local_pr MODIFY SETTING storage_policy = 'plain_rewritable_extending'",
+        settings=UK_SETTINGS,
+    )
+
+    assert node.query("SELECT id, v FROM uk_local_pr ORDER BY id") == EXPECTED_ROWS
+
+    node.query("DROP TABLE uk_local_pr SYNC")
+
+
+def test_unique_key_insert_rejected_after_reload_adds_plain_rewritable_disk(started_cluster):
+    config_path = "/etc/clickhouse-server/config.d/storage_policy.xml"
+    marker = "<!-- uk_reload_extra_volume -->"
+    extra_volume = "<plain_rewritable><disk>uk_plain_rewritable</disk></plain_rewritable>"
+    node.query("DROP TABLE IF EXISTS uk_reload_pr SYNC")
+    node.query(
+        """
+        CREATE TABLE uk_reload_pr (id UInt64, v String)
+        ENGINE = MergeTree
+        UNIQUE KEY (id)
+        ORDER BY (id)
+        SETTINGS storage_policy = 'uk_reload', min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1,
+                 max_bytes_to_merge_at_max_space_in_pool = 1
+        """,
+        settings=UK_SETTINGS,
+    )
+    node.query(
+        "INSERT INTO uk_reload_pr VALUES (10, 'a'), (20, 'b'), (30, 'c')",
+        settings=UK_SETTINGS,
+    )
+
+    try:
+        node.replace_in_config(config_path, marker, extra_volume)
+        node.query("SYSTEM RELOAD CONFIG")
+        assert node.query(
+            "SELECT has(groupArrayArray(disks), 'uk_plain_rewritable') FROM system.storage_policies"
+            " WHERE policy_name = 'uk_reload'"
+        ) == "1\n"
+
+        assert "SUPPORT_IS_DISABLED" in node.query_and_get_error(
+            "INSERT INTO uk_reload_pr VALUES (40, 'd')",
+            settings=UK_SETTINGS,
+        )
+
+        assert node.query("SELECT id, v FROM uk_reload_pr ORDER BY id") == EXPECTED_ROWS
+    finally:
+        node.query("DROP TABLE IF EXISTS uk_reload_pr SYNC")
+        # A reload cannot remove a disk from a policy, so only a restart restores the original one.
+        node.replace_in_config(config_path, extra_volume, marker)
+        node.restart_clickhouse()
+
+
 def test_unique_key_sst_checksums(started_cluster):
     # Converted from stateless test 04836_unique_key_sst_checksums.sh (stateless
     # tests must not modify the server's data on disk).
