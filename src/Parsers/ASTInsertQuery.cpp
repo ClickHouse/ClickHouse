@@ -1,5 +1,7 @@
 #include <iomanip>
 
+#include <Poco/String.h>
+
 #include <Common/logger_useful.h>
 #include <Common/SipHash.h>
 #include <Parsers/ASTIdentifier.h>
@@ -237,7 +239,10 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
     }
     else if (table_id)
     {
-        ostr << (!table_id.database_name.empty() ? backQuoteIfNeed(table_id.database_name) + "." : "") << backQuoteIfNeed(table_id.table_name);
+        if (table_id.database_name.empty() && Poco::toUpper(table_id.table_name) == "FUNCTION")
+            ostr << backQuote(table_id.table_name);
+        else
+            ostr << (!table_id.database_name.empty() ? backQuoteIfNeed(table_id.database_name) + "." : "") << backQuoteIfNeed(table_id.table_name);
     }
     else
     {
@@ -248,7 +253,11 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         }
 
         chassert(table);
-        table->format(ostr, settings, state, frame);
+        String table_name;
+        if (!database && tryGetIdentifierNameInto(table, table_name) && Poco::toUpper(table_name) == "FUNCTION")
+            settings.writeIdentifier(ostr, table_name, /*ambiguous=*/true);
+        else
+            table->format(ostr, settings, state, frame);
     }
 
     if (columns)
