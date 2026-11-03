@@ -29,9 +29,12 @@ namespace
 
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-        String getSignatureString() const override
+        DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
         {
-            return "(const String) -> UInt8";
+            if (!isString(arguments[0]))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+                    arguments[0]->getName(), getName());
+            return std::make_shared<DataTypeUInt8>();
         }
 
         ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override

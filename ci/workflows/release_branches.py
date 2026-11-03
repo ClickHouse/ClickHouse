@@ -1,11 +1,11 @@
 from praktika import Workflow
 
 from ci.defs.defs import (
+    BINARIES_WITH_LONG_RETENTION,
     DOCKERS,
     LOOM_SECRETS,
     SECRETS,
     ArtifactConfigs,
-    with_long_retention_tags,
 )
 from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.filter_job import should_skip_job
@@ -16,21 +16,23 @@ builds_for_release_branch = [
     if "coverage" not in job.name and "binary" not in job.name
 ] + JobConfigs.release_build_jobs
 
-clickhouse_binaries_with_tags = with_long_retention_tags(
-    ArtifactConfigs.clickhouse_binaries
-)
+# Add long retention tags to subset of artifacts
+clickhouse_binaries_with_tags = []
+for artifact in ArtifactConfigs.clickhouse_binaries:
+    if artifact.name in BINARIES_WITH_LONG_RETENTION:
+        artifact = artifact.add_tags({"retention": "long"})
+    clickhouse_binaries_with_tags.append(artifact)
 
 workflow = Workflow.Config(
     name="ReleaseBranchCI",
     event=Workflow.Event.PUSH,
     branches=["2[1-9].[1-9][0-9]", "2[1-9].[1-9]"],
-    engine=Workflow.Engine.GH_ACTIONS,
     jobs=[
         *builds_for_release_branch,
         *[
             job
             for job in JobConfigs.special_build_jobs
-            if any(t in job.name for t in ("darwin", "illumos"))
+            if any(t in job.name for t in ("darwin",))
         ],
         *JobConfigs.sign_macos_binary_jobs,
         JobConfigs.docker_server,
@@ -38,6 +40,11 @@ workflow = Workflow.Config(
         *JobConfigs.install_check_master_jobs,
         *[job for job in JobConfigs.functional_tests_jobs if "asan" in job.name],
         *[job for job in JobConfigs.unittest_jobs if "fuzzer" not in job.name],
+        *[
+            job
+            for job in JobConfigs.integration_test_asan_master_jobs
+            if "asan" in job.name
+        ],
         *[
             job
             for job in JobConfigs.integration_test_jobs_required

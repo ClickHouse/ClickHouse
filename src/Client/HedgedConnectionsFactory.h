@@ -1,11 +1,11 @@
 #pragma once
 
-#if defined(OS_LINUX) || defined(OS_DARWIN)
+#if defined(OS_LINUX)
 
 #include <Common/TimerDescriptor.h>
 #include <Common/Epoll.h>
-#include <Common/CoroutineStack.h>
-#include <Common/StackfulCoroutine.h>
+#include <Common/FiberStack.h>
+#include <Common/Fiber.h>
 #include <Client/ConnectionEstablisher.h>
 #include <Client/ConnectionPoolWithFailover.h>
 #include <unordered_map>
@@ -54,7 +54,6 @@ public:
         bool fallback_to_stale_replicas_,
         UInt64 max_parallel_replicas_,
         bool skip_unavailable_shards_,
-        bool fail_if_replica_unprobed_,
         std::shared_ptr<QualifiedTableName> table_to_check_ = nullptr,
         GetPriorityForLoadBalancing::Func priority_func = {});
 
@@ -149,7 +148,7 @@ private:
 
     std::shared_ptr<QualifiedTableName> table_to_check;
     int last_used_index = -1;
-    Epoll epoll{EpollNesting::ConnectionsFactory};
+    Epoll epoll;
     LoggerPtr log;
     std::string fail_messages;
 
@@ -177,7 +176,6 @@ private:
 
     const size_t max_parallel_replicas = 1;
     const bool skip_unavailable_shards = false;
-    const bool fail_if_replica_unprobed = false;
 };
 
 }

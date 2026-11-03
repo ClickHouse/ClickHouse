@@ -28,22 +28,10 @@ public:
      */
     ASTPtr partition;
 
-    /// Multiple partitions specified via IN PARTITION p1, p2, ...
-    ASTPtr partitions;
-
     ASTPtr predicate;
 
 protected:
     void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
-
-    /// These members are separate pointers to nodes that `children` holds too, so a visitor that
-    /// replaces a child has to be able to repair them.
-    void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override
-    {
-        f(nullptr, &partition);
-        f(nullptr, &partitions);
-        f(nullptr, &predicate);
-    }
 };
 
 }
