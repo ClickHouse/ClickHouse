@@ -2,56 +2,64 @@
 slug: /clickstack/observability/overview
 title: 'ClickHouse Observability'
 sidebarTitle: 'Overview'
-description: 'Overview of fully managed ClickHouse Observability'
+description: 'Overview of ClickHouse Observability and its fully managed and self-managed options'
 doc_type: 'guide'
 keywords: ['clickstack', 'observability', 'logs', 'monitoring', 'platform']
 ---
 
-**ClickHouse Observability** is a fully managed observability platform built on ClickHouse, unifying logs, traces, metrics and session in a single high-performance solution. Designed for monitoring and debugging complex systems, it enables developers and SREs to trace issues end-to-end without switching between tools or manually stitching together data using timestamps or correlation IDs.
+**ClickHouse Observability** is a fully managed observability platform for SREs, developers, and their AI agents, built on open-source ClickStack. Search, query, and correlate OpenTelemetry logs, traces, and metrics alongside session replays in one platform.
 
-At its core is a simple but powerful idea: all observability data should be ingested as wide, rich events. These events are stored in ClickHouse tables by data type - logs, traces, metrics, and sessions - but remain fully queryable and cross-correlatable at the database level.
+Investigate through the ClickStack UI or connect your own agents through the [MCP server](/clickstack/observability/mcp). Use investigation tools to search logs and follow traces, and SQL for deeper analysis. Rich logs and trace spans capture request details, custom attributes, and business context to help explain failures.
 
-The platform is built to handle high-cardinality workloads efficiently by leveraging ClickHouse's column-oriented architecture and fully parallelized execution engine. This enables sub-second queries across massive datasets, fast aggregations over wide time ranges, and deep inspection of individual traces.
+A self-managed option is also available for teams that need more control over ingestion and database configuration.
 
 ## Features {#features}
 
-The stack includes several key features designed for debugging and root cause analysis:
-
-- Correlate/search logs, metrics, session replays, and traces all in one place
-- Blazing-fast searches & visualizations optimized for ClickHouse
-- Intuitive full-text search and property search syntax (ex. `level:err`), SQL optional.
-- Set up alerts in just a few clicks
-- Dashboard high cardinality events without a complex query language
-- Native JSON string querying
-- Live tail logs and traces to always get the freshest events
-- OpenTelemetry (OTel) supported out of the box
-- Monitor health and performance from HTTP requests to DB queries (APM)
-- Event deltas for identifying anomalies and performance regressions
-- Log pattern recognition
-- Open pages directly with [deep links](/clickstack/observability/url-parameters) using URL query parameters
+- Connect your own agents through [MCP](/clickstack/observability/mcp) to search telemetry, follow traces, analyze patterns and changes, and run SQL.
+- Search and correlate logs, traces, metrics, and session replays in one place.
+- Run fast searches and aggregations across high-cardinality telemetry.
+- Use [full-text search and Lucene-style filters](/clickstack/observability/features/search) such as `level:err`, or SQL for deeper analysis.
+- Explore telemetry with [AI notebooks](/clickstack/observability/notebooks) and create [charts from natural-language questions](/clickstack/observability/text-to-chart).
+- Build [dashboards](/clickstack/observability/features/dashboards/overview) and configure [alerts](/clickstack/observability/features/alerts).
+- Query JSON fields and custom attributes in logs and trace spans.
+- Follow requests from browser interactions through backend services and database queries.
+- Identify recurring failures with [event patterns](/clickstack/observability/features/event-patterns) and investigate changes with [event deltas](/clickstack/observability/features/event-deltas).
+- Live tail logs and traces as new events arrive.
+- Ingest OpenTelemetry data through a managed OTLP endpoint.
+- Share searches and investigation views through [deep links](/clickstack/observability/url-parameters).
 
 ## How it works {#how-it-works}
 
-Send logs, metrics, and traces to the managed OTLP endpoint, then explore them in the observability UI. The service handles ingestion, storage, scaling, and queries. You remain responsible for instrumenting your applications and collecting telemetry from your environment.
+Send OpenTelemetry logs, traces, and metrics to the managed OTLP endpoint. ClickHouse Observability handles ingestion, schemas, storage, and scaling. You remain responsible for instrumenting your applications and collecting telemetry from your environment.
+
+Explore the data in the ClickStack UI or connect an MCP-compatible agent. Investigation tools support tasks such as searching logs and following traces. SQL lets you correlate signals, compare historical behavior, and investigate questions beyond predefined views.
+
+### Fully managed or self-managed {#fully-managed-or-self-managed}
+
+These are two ways to use the same product, with the same ClickStack investigation experience.
+
+**Fully managed ClickHouse Observability** is the recommended choice for most teams. Send telemetry to a managed OpenTelemetry endpoint, and ClickHouse handles ingestion, schemas, infrastructure, and scaling. Volume-based pricing ties costs to the data you send, so your team can focus on investigating issues rather than operating the platform. Follow the [getting started guide](/clickstack/observability/getting-started).
+
+**Self-managed ClickHouse Observability** gives you control over database configuration, schemas, ingestion, sizing, and scaling. It suits experienced database or observability teams that want to tune their ClickHouse deployment for specific workloads. You run the ingestion collector and take responsibility for database tuning and capacity planning, while ClickHouse Cloud manages the underlying infrastructure. See the [self-managed overview](/clickstack/self-configured/overview).
 
 ## Principles {#clickstack-principles}
 
-The platform is designed with a set of core principles that prioritize ease of use, performance, and flexibility at every layer of the observability stack:
+### Bring your own agents {#bring-your-own-agents}
+
+Connect the agents and development tools your team already uses through MCP. Agents can search logs, follow traces, and identify patterns and changes using the same telemetry available in the UI. They can also run SQL to correlate evidence and explore questions that the investigation tools do not directly cover.
 
 ### User-friendly and purpose-built {#user-friendly-purpose-built}
 
-The UI supports both SQL and Lucene-style syntax, allowing users to choose the query interface that fits their workflow. Purpose-built for observability, the UI is optimized to help teams identify root causes quickly and navigate complex data without friction.
+The ClickStack UI brings search, trace exploration, charts, dashboards, and alerts together. Use Lucene-style filters and visual query builders for everyday questions, then turn to SQL when you need more control over the analysis.
 
 ### End-to-end observability {#end-to-end-observability}
 
-The platform provides full-stack visibility, from front-end user sessions to backend infrastructure metrics, application logs, and distributed traces. This unified view enables deep correlation and analysis across the entire system.
+Connect frontend session replays with application logs, distributed traces, and metrics to follow failures across your system. Wide events keep request details, custom attributes, and business context together in logs and trace spans, helping you identify which requests, services, and customers are affected.
 
 ### Built for ClickHouse {#built-for-clickhouse}
 
-Every layer of the stack is designed to make full use of ClickHouse's capabilities. Queries are optimized to leverage ClickHouse's analytical functions and columnar engine, ensuring fast search and aggregation over massive volumes of data.
+ClickHouse's columnar storage, compression, and parallel query execution support fast searches and aggregations across large volumes of high-cardinality telemetry. Concurrent queries let engineers and agents investigate the same data in parallel.
 
 ### OpenTelemetry-native {#open-telemetry-native}
 
-The platform is natively integrated with OpenTelemetry, accepting telemetry through a managed OTLP endpoint.
-
-For self-managed, see [Self-managed](/clickstack/self-configured/overview).
+Send telemetry using standard OpenTelemetry instrumentation, SDKs, and collectors. The managed OTLP endpoint accepts logs, traces, and metrics, so you can use existing instrumentation without adopting a proprietary collection format.

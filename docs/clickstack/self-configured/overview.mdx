@@ -2,111 +2,36 @@
 slug: /clickstack/self-configured/overview
 title: 'Self-managed ClickHouse Observability'
 sidebarTitle: 'Overview'
-description: 'Overview of Self-managed ClickHouse Observability'
+description: 'Operating responsibilities and setup guides for self-managed ClickHouse Observability'
 doc_type: 'guide'
 keywords: ['clickstack', 'observability', 'logs', 'monitoring', 'platform']
 ---
-
-import { Image } from "/snippets/components/Image.jsx";
 
 <Note>
 This page covers **self-managed ClickHouse Observability**. For the recommended fully managed experience, see the documentation [here](/clickstack/observability/overview).
 </Note>
 
-<Image img="/images/use-cases/observability/hyperdx-landing.webp" alt="Landing page" size="lg"/>
+Self-managed ClickHouse Observability gives you the ClickStack investigation experience with control over ingestion and database configuration. It suits teams that need to customize schemas, tune query performance, or choose how to size and scale their service.
 
-**ClickHouse Observability** is a production-grade observability platform built on ClickHouse, unifying logs, traces, metrics and session in a single high-performance solution. Designed for monitoring and debugging complex systems, it enables developers and SREs to trace issues end-to-end without switching between tools or manually stitching together data using timestamps or correlation IDs.
+ClickHouse Cloud hosts and operates ClickHouse and the ClickStack UI. You run the ingestion collector and manage the database configuration for your workload.
 
-At its core is a simple but powerful idea: all observability data should be ingested as wide, rich events. These events are stored in ClickHouse tables by data type - logs, traces, metrics, and sessions - but remain fully queryable and cross-correlatable at the database level.
+## What you manage {#what-you-manage}
 
-The platform is built to handle high-cardinality workloads efficiently by leveraging ClickHouse's column-oriented architecture, flexible schema for high-cardinality attributes, and fully parallelized execution engine. This enables sub-second queries across massive datasets, fast aggregations over wide time ranges, and deep inspection of individual traces.
+- **Ingestion:** deploy and operate your [OpenTelemetry collector](/clickstack/self-configured/ingesting-data/collector), including its receivers, processing, authentication, and connection to ClickHouse Cloud.
+- **Schemas and data sources:** choose your [tables and schemas](/clickstack/self-configured/ingesting-data/schemas) and configure the UI's [data sources](/clickstack/self-configured/managing/config) to query them.
+- **Capacity and performance:** [estimate resources](/clickstack/self-configured/managing/estimating-resources), configure sizing and scaling, and [tune performance](/clickstack/self-configured/managing/performance-tuning) as your workload changes.
+- **Retention:** set [data retention policies](/clickstack/self-configured/managing/ttl) to balance investigation needs and storage costs.
 
-## Features {#features}
+ClickHouse Cloud manages the underlying infrastructure, database upgrades, and backups. This does not remove your responsibility for database tuning and capacity planning.
 
-The stack includes several key features designed for debugging and root cause analysis:
+## How data flows {#architectural-overview}
 
-- Correlate/search logs, metrics, session replays, and traces all in one place
-- Schema agnostic, works on top of your existing ClickHouse schema
-- Blazing-fast searches & visualizations optimized for ClickHouse
-- Intuitive full-text search and property search syntax (ex. `level:err`), SQL optional.
-- Analyze trends in anomalies with event deltas
-- Set up alerts in just a few clicks
-- Dashboard high cardinality events without a complex query language
-- Native JSON string querying
-- Live tail logs and traces to always get the freshest events
-- OpenTelemetry (OTel) supported out of the box
-- Monitor health and performance from HTTP requests to DB queries (APM)
-- Event deltas for identifying anomalies and performance regressions
-- Log pattern recognition
-- Open pages directly with [deep links](/clickstack/observability/url-parameters) using URL query parameters
+Applications and infrastructure send telemetry to your collector. The collector processes it and writes it to your ClickHouse Cloud service. The hosted ClickStack UI queries that data for search, visualization, and investigation.
 
-## Components {#components}
+See the [self-managed architecture](/clickstack/self-configured/architecture) for the component diagram and details.
 
-The platform consists of three core components:
+## Get started {#get-started}
 
-1. **UI (ClickStack UI)** – a purpose-built frontend for exploring and visualizing observability data
-2. **OpenTelemetry collector** – a custom-built, preconfigured collector with an opinionated schema for logs, traces, and metrics
-3. **ClickHouse** – the high-performance analytical database at the heart of the stack
+Follow the [getting started guide](/clickstack/self-configured/getting-started/managed) to set up your service and connect a collector. Then use a [sample dataset](/clickstack/observability/example-datasets) to explore the UI; choose the **Self-managed** instructions where available.
 
-In **Self-managed ClickHouse Observability**, ClickHouse and the ClickStack UI are hosted and operated in [ClickHouse Cloud](/products/cloud/getting-started/cloud-get-started), while you configure and run the OpenTelemetry collector.
-
-To get started, visit the [Getting started guide](/clickstack/self-configured/getting-started/managed) before loading a [sample dataset](/clickstack/observability/example-datasets/index). You can also explore the [Self-managed deployment guide](/clickstack/self-configured/deployment/managed) and [production best practices](/clickstack/self-configured/managing/production).
-
-## Principles {#clickstack-principles}
-
-The platform is designed with a set of core principles that prioritize ease of use, performance, and flexibility at every layer of the observability stack:
-
-### Easy to set up in minutes {#clickstack-easy-to-setup}
-
-Whether you're starting fresh or integrating with an existing setup, you can be up and running in minutes.
-
-### User-friendly and purpose-built {#user-friendly-purpose-built}
-
-The ClickStack UI supports both SQL and Lucene-style syntax, allowing users to choose the query interface that fits their workflow. Purpose-built for observability, the UI is optimized to help teams identify root causes quickly and navigate complex data without friction.
-
-### End-to-end observability {#end-to-end-observability}
-
-The platform provides full-stack visibility, from front-end user sessions to backend infrastructure metrics, application logs, and distributed traces. This unified view enables deep correlation and analysis across the entire system.
-
-### Built for ClickHouse {#built-for-clickhouse}
-
-Every layer of the stack is designed to make full use of ClickHouse's capabilities. Queries are optimized to leverage ClickHouse's analytical functions and columnar engine, ensuring fast search and aggregation over massive volumes of data.
-
-### OpenTelemetry-native {#open-telemetry-native}
-
-The platform is natively integrated with OpenTelemetry, ingesting all data through an OpenTelemetry collector endpoint. For advanced users, it also supports direct ingestion into ClickHouse using native file formats, custom pipelines, or third-party tools like Vector.
-
-### Customizable schemas {#open-source-and-customizable}
-
-The schema is flexible and user-modifiable, and the UI is designed to be configurable to custom schemas without requiring changes.
-
-## Architectural overview {#architectural-overview}
-
-<Image img="/images/use-cases/observability/clickstack-self-managed-architecture.svg" alt="Self-managed OpenTelemetry collector sending telemetry to ClickHouse and ClickStack UI hosted in ClickHouse Cloud" size="md" />
-
-In this model, **ClickHouse and the UI (ClickStack UI)** are hosted, operated, and secured by ClickHouse Cloud. Users are responsible only for running an OpenTelemetry Collector to send telemetry data into the managed service.
-
-Self-managed ClickHouse Observability consists of the following components:
-
-1. **UI (ClickStack UI)**
-   The ClickStack UI is fully integrated into ClickHouse Cloud and managed as part of the service. It provides log search, trace exploration, dashboards, alerting, and correlation across telemetry types, with integrated authentication and access control.
-
-2. **OpenTelemetry collector (self-managed)**
-   Users run an OpenTelemetry Collector that receives telemetry data from their applications and infrastructure. This collector forwards data via OTLP to ClickHouse Cloud. While any standards-compliant OpenTelemetry Collector can be used, we strongly recommend the **ClickStack distribution**, which is preconfigured and optimized for ClickHouse ingestion and works out of the box with ClickStack schemas.
-
-3. **ClickHouse Cloud**
-   ClickHouse is fully managed in ClickHouse Cloud, serving as the storage and query engine for all observability data. Users don't need to manage clusters, upgrades, or operational concerns.
-
-Self-managed ClickHouse Observability provides several key benefits:
-
-- **Automatic scaling of compute independent of storage**
-- **Low-cost and effectively unlimited retention** backed by object storage
-- **[Independent read and write isolation](/clickstack/self-configured/managing/isolating-read-write)** using ClickHouse Cloud Warehouses
-- **Integrated authentication and access control**
-- **Automated backups**
-- **Security and compliance features**
-- **Seamless upgrades with no operational downtime**
-
-This deployment model allows teams to focus entirely on observability workflows and instrumentation, without the overhead of operating ClickHouse or the UI themselves.
-
-See the [Getting started guide](/clickstack/self-configured/getting-started/managed) for setup instructions.
+Before using the service in production, review the [production guidance](/clickstack/self-configured/managing/production) and [administration overview](/clickstack/self-configured/managing/overview).
