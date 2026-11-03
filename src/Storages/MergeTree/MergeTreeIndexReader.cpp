@@ -153,10 +153,13 @@ void MergeTreeIndexReader::initStreamIfNeeded()
         auto stream_name = stream_name_opt.value_or(full_stream_name);
 
         auto stream_settings = settings;
-        /// `JSON` value filters are read in small pieces from random places of the substream,
-        /// so it doesn't make sense to read more data in the buffer.
+        size_t stream_marks_count = marks_count;
+        /// `JSON` value filters are read only at the offsets stored in the regular substream, in small pieces from
+        /// random places, so the substream is read as a whole file without its marks. Its file is opened by the first
+        /// read, which predicates that don't need large filters never do, and a larger buffer doesn't make sense.
         if (substream.type == JSONBloomFilterValues)
         {
+            stream_marks_count = 1;
             stream_settings.read_settings.local_fs_settings.buffer_size = 16 * 1024;
             stream_settings.read_settings.remote_fs_settings.buffer_size = 16 * 1024;
         }
@@ -165,7 +168,7 @@ void MergeTreeIndexReader::initStreamIfNeeded()
             stream_name,
             substream.extension,
             data_part_info,
-            marks_count,
+            stream_marks_count,
             all_mark_ranges,
             mark_cache,
             uncompressed_cache,
@@ -191,8 +194,9 @@ void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * co
 
         if (stream_mark != mark)
         {
-            for (const auto & stream : stream_holders)
-                stream->seekToMark(mark);
+            for (const auto & [type, stream] : streams)
+                if (type != MergeTreeIndexSubstream::Type::JSONBloomFilterValues)
+                    stream->seekToMark(mark);
         }
 
         if (!res)
@@ -258,8 +262,9 @@ void MergeTreeIndexReader::read(size_t mark, size_t current_granule_num, MergeTr
 
 void MergeTreeIndexReader::adjustRightMark(size_t right_mark)
 {
-    for (const auto & stream : stream_holders)
-        stream->adjustRightMark(right_mark);
+    for (const auto & [type, stream] : streams)
+        if (type != MergeTreeIndexSubstream::Type::JSONBloomFilterValues)
+            stream->adjustRightMark(right_mark);
 }
 
 }
