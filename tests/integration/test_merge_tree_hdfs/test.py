@@ -6,6 +6,7 @@ import pytest
 from pyhdfs import HdfsClient
 
 from helpers.cluster import ClickHouseCluster, is_arm
+from helpers.config_manager import ConfigManager
 from helpers.utility import generate_values
 from helpers.wait_for_helpers import (
     wait_for_delete_empty_parts,
@@ -85,7 +86,10 @@ def cluster():
     try:
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
-            "node", main_configs=["configs/config.d/storage_conf.xml"], with_hdfs=True
+            "node",
+            main_configs=["configs/config.d/storage_conf.xml"],
+            with_hdfs=True,
+            stay_alive=True,
         )
         logging.info("Starting cluster...")
         cluster.start()
@@ -451,3 +455,35 @@ def test_move_replace_partition_to_another_table(cluster):
         - FILES_OVERHEAD_METADATA_VERSION * 2
         + FILES_OVERHEAD_PER_INVALIDATED_COLUMN * 2,
     )
+
+
+def test_sql_hdfs_disk_remote_host_filter(cluster):
+    node = cluster.instances["node"]
+    fs = HdfsClient(hosts=cluster.hdfs_ip, user_name="root")
+
+    def hdfs_disk(path):
+        return f"disk(type = 'hdfs', endpoint = 'hdfs://hdfs1:9000/sql_disk_filter/{path}/')"
+
+    # Created before the list excludes hdfs1: loaded from metadata on restart, so it is only reported.
+    node.query(
+        "CREATE TABLE t_existing_hdfs_disk (x UInt32) ENGINE = MergeTree ORDER BY x "
+        f"SETTINGS disk = {hdfs_disk('filter_existing')}"
+    )
+    node.query("INSERT INTO t_existing_hdfs_disk VALUES (1)")
+
+    with ConfigManager() as cm:
+        cm.add_main_config(node, "configs/remote_url_allow_hosts.xml")
+
+        error = node.query_and_get_error(
+            "CREATE TABLE t_blocked_hdfs_disk (x UInt32) ENGINE = MergeTree ORDER BY x "
+            f"SETTINGS disk = {hdfs_disk('filter_blocked')}"
+        )
+        assert "UNACCEPTABLE_URL" in error, error
+        # Rejected before HDFSObjectStorage connects, so the access check wrote nothing.
+        assert not fs.exists("/sql_disk_filter/filter_blocked")
+
+        node.restart_clickhouse()
+        assert node.query("SELECT x FROM t_existing_hdfs_disk") == "1\n"
+        assert node.contains_in_log("is not allowed by `remote_url_allow_hosts`")
+
+    node.query("DROP TABLE t_existing_hdfs_disk SYNC")
