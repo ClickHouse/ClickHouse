@@ -63,6 +63,29 @@ RUN arch="$(uname -m)" \
     && ./aws/install \
     && rm -rf awscliv2.zip aws
 
+# The agent the AI triage of La Casa del Dolor failures runs (`ci/jobs/scripts/ai_fuzz_triage.py`):
+# the job runs in this image, so it cannot use the `codex` of the runner host. Its Linux sandbox
+# needs `bwrap`, which the release archive does not bundle.
+ARG CODEX_VERSION=0.166.0
+ARG CODEX_SHA256_X86_64=a0bf572d2f93f056c6712a6da348e96078dc84f3885fd7be67807ef389cb3978
+ARG CODEX_SHA256_AARCH64=94eb707605ec2646b2e05b7edf7c4e7b3ccf02b16237c34ae9beb8cfb7f810a9
+RUN apt-get update \
+    && env DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends bubblewrap \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/* \
+    && arch="$(uname -m)" \
+    && case "$arch" in \
+        x86_64) sha256="$CODEX_SHA256_X86_64" ;; \
+        aarch64) sha256="$CODEX_SHA256_AARCH64" ;; \
+        *) echo "Unsupported architecture: $arch" >&2; exit 1 ;; \
+    esac \
+    && curl -fsSL "https://github.com/openai/codex/releases/download/rust-v${CODEX_VERSION}/codex-${arch}-unknown-linux-musl.tar.gz" -o codex.tar.gz \
+    && echo "$sha256  codex.tar.gz" | sha256sum --check --strict \
+    && tar -xzf codex.tar.gz \
+    && install -m 0755 "codex-${arch}-unknown-linux-musl" /usr/local/bin/codex \
+    && rm -f codex.tar.gz "codex-${arch}-unknown-linux-musl" \
+    && codex --version
+
 ENV TZ=Etc/UTC
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
