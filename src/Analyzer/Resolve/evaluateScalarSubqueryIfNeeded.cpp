@@ -23,6 +23,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+#include <Access/EnabledQuota.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/ProcessorsProfileLog.h>
@@ -282,6 +283,12 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
             BlockIO io;
             auto & query_plan = interpreter->getQueryPlan();
             bool skip_execution_for_exists = false;
+
+            /// A scalar subquery is executed during the analysis of the query, before the quotas of the query are checked,
+            /// so an exhausted quota over profile events is checked here, before the subquery consumes any resources.
+            /// The query plan has been built above, so `ignoreQuota` is known (e.g. for exempt tables in `system`).
+            if (auto quota = subquery_context->getQuota(); quota && !interpreter->ignoreQuota())
+                quota->checkExceededProfileEvents(subquery_context->getNormalizedQueryHash());
 
             if (execute_for_exists)
             {

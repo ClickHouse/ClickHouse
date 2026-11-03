@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/WriteHelpers.h>
+#include <Access/EnabledQuota.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/ProcessorsProfileLog.h>
@@ -250,6 +251,11 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
         }
         else
         {
+            /// A scalar subquery is executed during the analysis of the query, before the quotas of the query are checked,
+            /// so an exhausted quota over profile events is checked here, before the subquery consumes any resources.
+            if (auto quota = data.getContext()->getQuota(); quota && !interpreter->ignoreQuota())
+                quota->checkExceededProfileEvents(data.getContext()->getNormalizedQueryHash());
+
             auto io = interpreter->execute();
 
             PullingAsyncPipelineExecutor executor(io.pipeline);

@@ -1246,13 +1246,24 @@ void logExceptionBeforeStart(
     /// Update performance counters before logging to query_log
     CurrentThread::finalizePerformanceCounters();
 
-    /// A query that failed before it was registered in the process list (e.g. a syntax error) has
-    /// no thread group, so its counters cannot be taken from there; the failure itself is then
-    /// all it has produced, and the quotas over profile events are charged with it directly.
+    /// A query that failed before it was registered in the process list (e.g. a syntax error) has no
+    /// process list entry to take its counters from. If the handler has already created the thread group
+    /// of the query (`QueryScope`), the group has accumulated what the query has produced so far (e.g.
+    /// `QueryParseMicroseconds` of a failed parsing), including the failure itself, and the quotas over
+    /// profile events are charged with its counters. Otherwise, the failure itself is all the query is
+    /// known to have produced, and they are charged with it directly.
     ProfileEvents::Counters failed_query_counters(VariableContext::Process, /* parent = */ nullptr);
     incrementFailedQueryProfileEvents(ast, context->getClientInfo(), internal, &failed_query_counters);
 
     QueryStatusPtr process_list_elem = context->getProcessListElementSafe();
+
+    auto get_counters_before_registration = [&]
+    {
+        /// Only the group created for this very query: a group shared with something else would charge its counters too.
+        if (auto group = CurrentThread::getGroup(); group && group->query_context.lock() == context)
+            return group->performance_counters.getPartiallyAtomicSnapshot();
+        return failed_query_counters.getPartiallyAtomicSnapshot();
+    };
 
     QueryStatusInfoPtr info;
     if (process_list_elem)
@@ -1268,14 +1279,14 @@ void logExceptionBeforeStart(
             usedQuotaProfileEvents(quota, process_list_elem, quota_normalized_query_hash);
         else if (quota && quota->hasProfileEventLimits())
         {
-            auto failed_query_snapshot = failed_query_counters.getPartiallyAtomicSnapshot();
+            auto failed_query_snapshot = get_counters_before_registration();
             quota->usedProfileEvents(quota_normalized_query_hash, {&failed_query_snapshot}, /* check_exceeded = */ false);
         }
     }
     if (process_list_elem)
         excludeFromOuterQueryQuota(ast, process_list_elem);
     else if (auto outer_query = getOuterQueryToExcludeFrom(ast))
-        outer_query->addExcludedProfileEvents(failed_query_counters.getPartiallyAtomicSnapshot());
+        outer_query->addExcludedProfileEvents(get_counters_before_registration());
     logQueryMetricLogFinish(context, /*internal=*/ false, elem.client_info.current_query_id, query_end_time, info);
 
     if (query_log)
