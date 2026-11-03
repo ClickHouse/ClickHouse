@@ -32,6 +32,10 @@ struct TensorElement
 
 void collectIdentifierNames(const IQueryTreeNode & node, std::unordered_set<String> & names)
 {
+    /// An alias is a name in the scope of the lambda function as well, a generated name must not clash with it.
+    if (node.hasAlias())
+        names.insert(node.getAlias());
+
     if (const auto * identifier = node.as<IdentifierNode>())
     {
         names.insert(identifier->getIdentifier().getFullName());
@@ -289,7 +293,11 @@ private:
             bool has_indices = std::any_of(subscripts.begin(), subscripts.end(), [&](const QueryTreeNodePtr & subscript) { return dependsOnIndices(*subscript); });
             if (has_indices)
             {
+                /// The alias of the element, like in `(a[i] AS v) + v`, is the alias of its value now.
+                String alias = node->getAlias();
                 node = replaceTensorElement(array, subscripts);
+                if (!alias.empty())
+                    node->setAlias(alias);
                 return;
             }
         }
