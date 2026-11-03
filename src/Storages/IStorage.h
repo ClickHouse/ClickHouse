@@ -134,6 +134,11 @@ public:
     /// read that rewrites the query per underlying table. Wrappers answer for the table they forward to.
     virtual bool readRequiresAnalyzedQuery() const { return isRemote(); }
 
+    /// Returns true if `read` needs the whole query, filters included, so the table cannot be read from a
+    /// serialized query plan, which only names the table and the columns to read. A remote server is sent
+    /// the SQL of a query that reads such a table, even with `serialize_query_plan`.
+    virtual bool readRequiresFullQuery() const { return false; }
+
     /// Returns true if the storage hands back already-processed, mergeable partial state that
     /// must be combined like a remote shard's output, regardless of data locality.
     /// The planner and interpreter use it to decide how to merge aggregated data.

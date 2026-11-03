@@ -1132,6 +1132,8 @@ whole, across all attempts. The candidate tables are the chosen table and the co
 - `ABR` does not support row policies directly. Define them on the underlying tables instead.
 - An `ABR` table can only be the leftmost table of a `JOIN`. To join it on another side, read it through a subquery with a
   condition on its time column: `JOIN (SELECT ... FROM abr_table WHERE ts >= ...)`.
+- An `ABR` table cannot be read from a serialized query plan, which does not carry the filters of the query. With
+  `serialize_query_plan = 1`, a distributed query that reads `ABR` tables on remote servers is sent to them as SQL instead.
 )DOCS_MD",
             .syntax = "ENGINE = ABR(table_prefix, sample_intervals, retention_expression)",
             .examples = {{
