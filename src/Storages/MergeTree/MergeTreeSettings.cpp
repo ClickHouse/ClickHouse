@@ -2140,7 +2140,7 @@ two threads instead of one, and it keeps up to two more blocks of the column in 
 The threads are limited by the server setting [max_merge_helper_threads](/reference/settings/server-settings/settings/max#max_merge_helper_threads).
 If all of them are used, the merge reads the column in its own thread.
 )", 0, \
-        {"26.10", false, false, "New setting to read and gather the columns of a Vertical merge in a separate thread"}) \
+        {"26.11", false, false, "New setting to read and gather the columns of a Vertical merge in a separate thread"}) \
     DECLARE(UInt64, max_postpone_time_for_failed_mutations_ms, 5ULL * 60 * 1000, R"(
 Maximum exponential backoff, in milliseconds, before retrying a failed mutation on the same data part. The delay increases after repeated failures and is capped by this value. Set to `0` to retry without postponement.
 )", 0) \
