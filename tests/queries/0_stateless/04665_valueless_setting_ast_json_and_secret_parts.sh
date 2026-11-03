@@ -24,10 +24,10 @@ $CLICKHOUSE_CLIENT -q "SELECT position(parseQueryToJSON(\$\$SELECT 1 SETTINGS ma
 # Executing the JSON payload must be rejected exactly like the SQL form, instead of silently running
 # with the setting equal to 1.
 JSON=$($CLICKHOUSE_CLIENT -q "SELECT parseQueryToJSON(\$\$SELECT 1 SETTINGS max_threads\$\$) FORMAT TSVRaw")
-$CLICKHOUSE_CLIENT --dialect clickhouse_json --allow_experimental_json_ast_dialect 1 -q "$JSON" 2>&1 | grep -o "TYPE_MISMATCH" | head -n 1
+$CLICKHOUSE_CLIENT --dialect clickhouse_json --enable_json_ast_dialect 1 -q "$JSON" 2>&1 | grep -o "TYPE_MISMATCH" | head -n 1
 # The valueless form of a `Bool` setting still executes.
 JSON_BOOL=$($CLICKHOUSE_CLIENT -q "SELECT parseQueryToJSON(\$\$SELECT 1 SETTINGS optimize_move_to_prewhere\$\$) FORMAT TSVRaw")
-$CLICKHOUSE_CLIENT --dialect clickhouse_json --allow_experimental_json_ast_dialect 1 -q "$JSON_BOOL"
+$CLICKHOUSE_CLIENT --dialect clickhouse_json --enable_json_ast_dialect 1 -q "$JSON_BOOL"
 
 # A payload may pair the flag with a value the parser would never produce. Deserialization must not
 # reject it: that runs before `executeQueryImpl` has an AST to mask with, so the raw JSON text -
@@ -43,7 +43,7 @@ CRAFTED_JSON=$($CLICKHOUSE_CLIENT -q "SELECT $CRAFTED FORMAT TSVRaw")
 # the payload while deserializing would have logged the raw JSON text there, password included; what
 # must be logged is the masked AST, which omits the value of a valueless setting entirely.
 QUERY_ID="04665_crafted_$CLICKHOUSE_DATABASE"
-${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&dialect=clickhouse_json&allow_experimental_json_ast_dialect=1&log_queries=1&query_id=$QUERY_ID" \
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&dialect=clickhouse_json&enable_json_ast_dialect=1&log_queries=1&query_id=$QUERY_ID" \
     --data-binary "$CRAFTED_JSON" 2>&1 | grep -o "TYPE_MISMATCH" | head -n 1
 for _ in {1..60}; do
     $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"

@@ -9,7 +9,9 @@
 #include <Common/Exception.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageLoop.h>
+#include <Storages/StorageProxy.h>
 #include <TableFunctions/registerTableFunctions.h>
 
 namespace DB
@@ -19,6 +21,7 @@ namespace DB
         extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
         extern const int ILLEGAL_TYPE_OF_ARGUMENT;
         extern const int UNKNOWN_TABLE;
+        extern const int ACCESS_DENIED;
     }
     namespace
     {
@@ -39,6 +42,15 @@ namespace DB
             std::string loop_database_name;
             std::string loop_table_name;
         };
+
+        /// Otherwise a data lake table reports the schema of the snapshot pinned by its last direct query.
+        /// An `Alias` whose target was dropped reports no columns instead, so it is not refreshed.
+        void refreshExternalMetadata(const StoragePtr & storage, const ContextPtr & context)
+        {
+            if (const auto * alias = storage->as<StorageAlias>(); alias && !alias->tryGetTargetTable())
+                return;
+            resolveStorageProxyLoading(storage)->updateExternalDynamicMetadataIfExists(context);
+        }
 
     }
 
@@ -117,6 +129,7 @@ namespace DB
         if (!storage)
             throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table '{}' not found in database '{}'", loop_table_name, database_name);
 
+        refreshExternalMetadata(storage, context);
         auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
         return metadata_snapshot->getColumns();
     }
@@ -140,6 +153,19 @@ namespace DB
             if (!storage)
                 throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table '{}' not found in database '{}'", loop_table_name, database_name);
             context->checkAccess(AccessType::SELECT, database_name, loop_table_name);
+
+            /// An `Alias` publishes its target's metadata to the caller before any row is read, so
+            /// the target must be readable in full here; the per-column check happens later, once
+            /// the loop's own `SELECT` runs.
+            if (const auto * alias = storage->as<StorageAlias>();
+                alias && !alias->isTargetTableGranted(context, AccessType::SELECT, {}))
+                throw Exception(
+                    ErrorCodes::ACCESS_DENIED,
+                    "Not enough privileges to read the table that {} points to",
+                    StorageID{database_name, loop_table_name}.getNameForLogs());
+
+            /// `StorageLoop` takes its columns from this table's metadata.
+            refreshExternalMetadata(storage, context);
         }
         else
         {
@@ -218,7 +244,7 @@ SELECT * FROM loop(numbers(3)) LIMIT 7;
 SELECT * FROM loop(mysql('localhost:3306', 'test', 'test', 'user', 'password'));
 ...
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{});
     }
 
 }

@@ -20,6 +20,8 @@ If the array is empty, `arrayJoin` produces no rows.
 To return a single row containing the default value of the array type, you can wrap it with [emptyArrayToSingle](/reference/functions/regular-functions/array-functions#emptyArrayToSingle), for example: `arrayJoin(emptyArrayToSingle(...))`.
 </Note>
 
+`unnest` (since version 26.5) is a case-insensitive alias of `arrayJoin` in function-call form (`SELECT unnest(arr)`). PostgreSQL table-source syntax is not supported (`FROM unnest(...)`, `CROSS JOIN UNNEST(...)`, and `LATERAL`). Use the [`ARRAY JOIN`](/reference/statements/select/array-join) clause for those queries.
+
 For example:
 
 ```sql title="Query"
@@ -51,6 +53,8 @@ WHERE arrayJoin(cities) IN ['Istanbul', 'Berlin'];
 └─────────────┘
 ```
 
+There is one exception: `arrayJoin`, including via its `unnest` alias, is not allowed in a `JOIN ON` condition that is evaluated during the join, because such a condition must preserve the number of rows and is evaluated separately for each batch of joined rows. A condition that applies to one side only, and an equality key over `arrayJoin`, are extracted before the join and are unaffected. A non-disjunctive `ALL INNER JOIN` condition is also unaffected, because there the condition is applied after the join instead. Where the expansion depends on one side only, move it into an `ARRAY JOIN` in a subquery before the join; a condition whose `arrayJoin` argument reads columns from both sides has to be restructured.
+
 A query can use multiple `arrayJoin` functions. In this case, the transformation is performed multiple times and the rows are multiplied.
 For example:
 
@@ -80,6 +84,31 @@ GROUP BY
 │           1 │ Babruysk │ Firefox │
 └─────────────┴──────────┴─────────┘
 ```
+
+### Row order {#row-order}
+
+For each source row, `arrayJoin` produces the elements in their order in the array.
+
+If a query has more than one `arrayJoin` call with different arguments, the result has one row for each combination of the elements. The order of these rows is not guaranteed, because it depends on the query plan. For example, if `WHERE` uses one of the calls, the query can expand this call first. To get a predictable order, use `ORDER BY`:
+
+```sql title="Query"
+SELECT arrayJoin(['a', 'b']) AS x, arrayJoin([1, 2]) AS y
+WHERE y > 0
+ORDER BY x, y
+```
+
+```text title="Response"
+┌─x─┬─y─┐
+│ a │ 1 │
+│ a │ 2 │
+│ b │ 1 │
+│ b │ 2 │
+└───┴───┘
+```
+
+Without `ORDER BY`, this query can return the rows in the order `('a', 1)`, `('b', 1)`, `('a', 2)`, `('b', 2)`.
+
+Without `ORDER BY`, the order of the source rows is not guaranteed. For a stable order and for pages with `LIMIT` and `OFFSET`, see the section "Row Order and Paging" of the [`ARRAY JOIN`](/reference/statements/select/array-join) clause. The rules for `ORDER BY` in that section apply to `arrayJoin` too.
 
 ### Best practice {#important-note}
 

@@ -15,7 +15,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 <ClickHouseSupportedBadge />
 
 **Apache Beam** هو نموذج برمجة موحّد ومفتوح المصدر يتيح للمطوّرين تعريف خطوط أنابيب معالجة البيانات الدفعية والمتدفقة (المستمرة) وتنفيذها. وتكمن مرونة Apache Beam في قدرته على دعم مجموعة واسعة من سيناريوهات معالجة البيانات، بدءًا من عمليات ETL ‏(الاستخراج والتحويل والتحميل) ووصولًا إلى معالجة الأحداث المعقّدة والتحليلات في الوقت الفعلي.
-يعتمد هذا التكامل على [JDBC connector](https://github.com/ClickHouse/clickhouse-java) الرسمي من ClickHouse في طبقة الإدراج الأساسية.
+يعتمد هذا التكامل على [JDBC موصل](https://github.com/ClickHouse/clickhouse-java) الرسمي من ClickHouse في طبقة الإدراج الأساسية.
 
 <div id="integration-package">
   ## حزمة التكامل
@@ -161,7 +161,7 @@ public class Main {
 يرجى مراعاة القيود التالية عند استخدام الموصل:
 
 * حتى الآن، لا تتوفر سوى عملية Sink. ولا يدعم الموصل عملية Source.
-* يُجري ClickHouse إزالة التكرار عند الإدراج في جدول `ReplicatedMergeTree` أو في جدول `Distributed` مبني فوق `ReplicatedMergeTree`. أما بدون replication، فقد يؤدي الإدراج في جدول MergeTree عادي إلى تكرار الصفوف إذا فشلت عملية الإدراج ثم نجحت إعادة المحاولة لاحقًا. ومع ذلك، تُدرَج كل block بصورة ذرّية، ويمكن ضبط حجم block باستخدام `ClickHouseIO.Write.withMaxInsertBlockSize(long)`. وتتحقق إزالة التكرار باستخدام checksums الخاصة بـ blocks المُدرجة. لمزيد من المعلومات حول إزالة التكرار، يُرجى زيارة [إزالة التكرار](/ar/concepts/features/operations/insert/deduplication) و[إعدادات insert deduplicate](/ar/reference/settings/session-settings#insert_deduplicate).
+* يُجري ClickHouse إزالة التكرار عند الإدراج في جدول `ReplicatedMergeTree` أو في جدول `Distributed` مبني فوق `ReplicatedMergeTree`. أما بدون replication، فقد يؤدي الإدراج في جدول MergeTree عادي إلى تكرار الصفوف إذا فشلت عملية الإدراج ثم نجحت إعادة المحاولة لاحقًا. ومع ذلك، تُدرَج كل block بصورة ذرّية، ويمكن ضبط حجم block باستخدام `ClickHouseIO.Write.withMaxInsertBlockSize(long)`. وتتحقق إزالة التكرار باستخدام checksums الخاصة بـ blocks المُدرجة. لمزيد من المعلومات حول إزالة التكرار، يُرجى زيارة [إزالة التكرار](/ar/concepts/features/operations/insert/deduplication) و[إعدادات insert deduplicate](/ar/reference/settings/session-settings/insert#insert_deduplicate).
 * لا يُجري الموصل أي عبارات DDL؛ لذلك، يجب أن يكون الجدول الهدف موجودًا قبل الإدراج.
 
 <div id="related-content">

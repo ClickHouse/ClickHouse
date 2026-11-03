@@ -20,6 +20,8 @@ doc_type: 'reference'
   配列型のデフォルト値を含む 1 行を返すには、[emptyArrayToSingle](/ja/reference/functions/regular-functions/array-functions#emptyArrayToSingle) でラップします。たとえば、`arrayJoin(emptyArrayToSingle(...))` のようにします。
 </Note>
 
+`unnest` (バージョン 26.5 以降) は、関数呼び出し形式 (`SELECT unnest(arr)`) における `arrayJoin` の大文字と小文字を区別しないエイリアスです。PostgreSQL のテーブルソース構文 (`FROM unnest(...)`、`CROSS JOIN UNNEST(...)`、および `LATERAL`) はサポートされていません。これらのクエリには [`ARRAY JOIN`](/ja/reference/statements/select/array-join) 句を使用してください。
+
 例えば：
 
 ```sql title="Query"
@@ -50,6 +52,8 @@ WHERE arrayJoin(cities) IN ['Istanbul', 'Berlin'];
 │           2 │
 └─────────────┘
 ```
+
+例外が1つあります。`unnest` エイリアスを介する場合を含め、`arrayJoin` は結合時に評価される `JOIN ON` 条件では使用できません。このような条件では行数を維持する必要があり、結合された行の各バッチごとに個別に評価されるためです。一方の側にのみ適用される条件と、`arrayJoin` を含む等値キーは結合前に抽出されるため、影響を受けません。論理和を含まない `ALL INNER JOIN` 条件も影響を受けません。この場合は、条件が結合後に適用されるためです。展開が一方の側のみに依存する場合は、結合前にサブクエリ内の `ARRAY JOIN` に移動してください。`arrayJoin` の引数が両方の側のカラムを参照する条件は、再構成する必要があります。
 
 1つのクエリで複数の `arrayJoin` 関数を使用できます。この場合、変換は複数回行われ、行数がその分だけ増えます。
 たとえば:

@@ -42,7 +42,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   </Step>
 
   <Step title="设置你的账户" id="set-up-your-account">
-    此时，设置尚未完成，你的 ClickHouse Cloud 组织也还未通过 Marketplace 计费。现在，你需要在 Marketplace 订阅中点击 Set up your account，跳转到 ClickHouse Cloud 完成设置。
+    此时，设置尚未完成，你的 ClickHouse Cloud 组织也还未通过 Marketplace 计费。现在，你需要在 Marketplace 订阅中点击设置你的账户，跳转到 ClickHouse Cloud 完成设置。
 
     <Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-4.webp" alt="设置你的账户" border />
 
@@ -76,7 +76,11 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   <Step title="将 Marketplace 订阅添加到组织" id="add-marketplace-subscription">
     成功登录后，你可以选择创建一个新组织并将此 Marketplace 订阅用于该组织的计费，或者选择一个现有组织并将此订阅用于其计费。
 
-    <Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-8.webp" size="md" alt="添加 Marketplace 订阅" border />
+    <Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-8.webp" size="lg" alt="添加 Marketplace 订阅" border />
+
+    如果你正在注册新的 ClickHouse 账户，系统会为你创建一个默认组织，你可以将 Marketplace 订阅关联到该组织。
+
+    <Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-13.webp" size="lg" alt="将默认组织关联到 AWS Marketplace 订阅" border />
 
     完成此步骤后，你的组织将连接到此 AWS 订阅，所有用量都将通过你的 AWS 账户计费。
 

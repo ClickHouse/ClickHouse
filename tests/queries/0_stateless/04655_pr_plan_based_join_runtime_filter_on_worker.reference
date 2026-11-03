@@ -1,4 +1,4 @@
 result	10000
 result	10000
-remote queries	1	filter built on worker	1	filter applied on worker	1
+remote queries	1	filter built on worker	1	filter applied on worker	1	filter never disabled	1
 no filter built	1

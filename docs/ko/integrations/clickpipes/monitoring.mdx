@@ -1,5 +1,6 @@
 ---
 sidebarTitle: '모니터링'
+icon: 'chart-line'
 description: 'Prometheus 메트릭을 사용하여 ClickPipes를 모니터링합니다.'
 slug: /integrations/clickpipes/monitoring
 title: 'ClickPipes 모니터링'
@@ -102,10 +103,12 @@ ClickPipes_Latency{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickho
   ### 지연 시간
 </div>
 
-| 메트릭                                       | 유형            | 사용 가능 대상           | 설명                                                                     |
-| ----------------------------------------- | ------------- | ------------------ | ---------------------------------------------------------------------- |
-| `ClickPipes_Latency`                      | Gauge (*avg*) | 스트리밍, 객체 스토리지 | 레코드가 소스에서 생성된 시점부터 ClickHouse에 기록되는 시점까지의 시간(밀리초)입니다.                  |
-| `ClickPipes_SourceReplicationLatency_MiB` | Gauge (*avg*) | CDC (Postgres 전용)  | 소스 측 replication slot 지연을 MiB 단위로 나타냅니다. Postgres ClickPipes에서만 제공됩니다. |
+| 메트릭                                       | 유형            | 사용 가능 대상          | 설명                                                                       |
+| ----------------------------------------- | ------------- | ----------------- | ------------------------------------------------------------------------ |
+| `ClickPipes_Latency`                      | Gauge (*avg*) | 전체                | 레코드가 소스에서 생성된 시점부터 ClickHouse에 기록되는 시점까지의 시간(밀리초)입니다.                    |
+| `ClickPipes_SourceReplicationLatency_MiB` | Gauge (*avg*) | CDC (Postgres 전용) | 소스 측 replication slot 지연을 MiB 단위로 나타냅니다. Postgres ClickPipes에서만 제공됩니다.   |
+| `ClickPipes_CDC_SourceLatency`            | Gauge (*avg*) | CDC               | 소스 이벤트 타임스탬프부터 ClickPipes에서 처리될 때까지의 지연 시간을 밀리초 단위로 나타냅니다.               |
+| `ClickPipes_CDC_DestinationLatency`       | Gauge (*avg*) | CDC               | ClickPipe에서 이벤트를 수신한 시점부터 ClickHouse 테이블에 기록될 때까지의 지연 시간을 밀리초 단위로 나타냅니다. |
 
 <div id="metrics-resources">
   ### 리소스 사용률

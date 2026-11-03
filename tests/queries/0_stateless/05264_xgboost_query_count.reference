@@ -1,0 +1,10 @@
+Before any prediction
+0	0
+No rows to predict
+0	0
+One row per predicted row
+1000
+1000	1
+All features constant: evaluated at most once per block
+1000
+1	1

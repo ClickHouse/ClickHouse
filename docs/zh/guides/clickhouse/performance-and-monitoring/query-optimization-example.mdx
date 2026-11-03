@@ -1,0 +1,414 @@
+---
+slug: /optimize/query-optimization-example
+sidebarTitle: '查询优化实战示例'
+title: '查询优化实战示例'
+description: '通过调整 schema 和排序键，了解如何提升 ClickHouse 查询性能'
+doc_type: 'guide'
+keywords: ['查询优化', '性能', 'NYC Taxi', '数据类型', '排序键']
+---
+
+import NYCTaxiExampleDataset from '/snippets/zh/_nyc_taxi_example_dataset.mdx';
+
+本指南针对 NYC Taxi 数据集采用两种优化方法。首先，通过选择更精确的列类型，减少存储和处理的数据量。随后，引入排序键，使 ClickHouse 能够在选择性查询中跳过部分数据。每项更改均以同一基线进行衡量。有关本示例所遵循的整体工作流程，请参阅[查询优化概述](/zh/guides/clickhouse/performance-and-monitoring/query-optimization)。
+
+<div id="before-you-begin">
+  ## 开始之前
+</div>
+
+以下示例使用 `nyc_taxi.trips_small_inferred` 表。如果尚未创建并加载该表，请按以下步骤操作：
+
+<Accordion title="设置示例数据集">
+  <NYCTaxiExampleDataset />
+</Accordion>
+
+源 Parquet 文件包含约 3.29 亿行。本指南中的耗时是在单个部署环境中记录的，会因可用计算资源而异。请比较各阶段之间的相对变化，而不要期待完全相同的耗时。
+
+将此方法应用于您自己的工作负载时，请使用[诊断慢查询](/zh/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries)识别反复出现的查询模式，并在修改查询或 schema 前选择一次有代表性的执行。
+
+<div id="process-overview">
+  ## 流程概述
+</div>
+
+本示例包含以下三个阶段：
+
+1. 针对推断的 schema 运行三个独立的工作负载查询，以建立基线。
+2. 创建一个列类型更精确的表，加载相同的数据，然后重新运行这些查询。
+3. 创建另一个使用相同优化 schema 和排序键的表，然后再次运行这些查询。
+
+在不同阶段分别更改 schema 和排序键，能更容易区分它们各自的影响。[优化方法](/zh/guides/clickhouse/performance-and-monitoring/optimization-approaches)介绍了何时应考虑这些更改，以及如何验证其效果。有关如何收集可比较的测量结果，请参阅[隔离查询瓶颈](/zh/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks)。
+
+<div id="define-the-baseline-workload">
+  ## 定义基准工作负载
+</div>
+
+在运行该工作负载所用的同一客户端会话中，禁用远程数据的文件系统缓存、查询缓存和查询条件缓存：
+
+```sql
+SET enable_filesystem_cache = 0;
+SET use_query_cache = 0;
+SET use_query_condition_cache = 0;
+```
+
+<Note>
+  这些设置有助于确保测试期间的多次运行结果可比。完成测量后，请将其恢复为原先的值。
+</Note>
+
+以下三个相互独立的查询构成基准工作负载。请针对后续阶段创建的每个表运行这三个查询。在可比条件下多次执行每个查询，并记录具有代表性的耗时 (如中位数) 、读取行数和峰值内存占用。有关完整的测量流程 (包括如何从 `system.query_log` 获取这些值) ，请参阅[建立可重复的基准](/zh/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks#establish-a-repeatable-baseline)。
+
+<div id="calculated-speed-filter">
+  ### 按计算出的行程速度过滤
+</div>
+
+此查询先计算行程耗时和速度，再统计速度超过每小时 30 英里的乘车行程距离分布：
+
+```sql
+WITH
+    dateDiff('s', pickup_datetime, dropoff_datetime) AS trip_time,
+    (trip_distance / trip_time) * 3600 AS speed_mph
+SELECT quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+FROM nyc_taxi.trips_small_inferred
+WHERE speed_mph > 30
+FORMAT JSON;
+```
+
+<div id="date-range-aggregation">
+  ### 汇总日期范围内的行程
+</div>
+
+此查询计算 2009 年第一季度的乘车次数、行程距离和平均支付金额：
+
+```sql
+SELECT
+    payment_type,
+    count() AS trip_count,
+    formatReadableQuantity(sum(trip_distance)) AS total_distance,
+    avg(total_amount) AS total_amount_avg,
+    avg(tip_amount) AS tip_amount_avg
+FROM nyc_taxi.trips_small_inferred
+WHERE pickup_datetime >= '2009-01-01'
+  AND pickup_datetime < '2009-04-01'
+GROUP BY payment_type
+ORDER BY trip_count DESC;
+```
+
+<div id="passenger-count-filter">
+  ### 按乘客人数筛选
+</div>
+
+此查询计算乘客人数为一人或两人的行程的平均耗时：
+
+```sql
+SELECT avg(dateDiff('s', pickup_datetime, dropoff_datetime))
+FROM nyc_taxi.trips_small_inferred
+WHERE passenger_count = 1 OR passenger_count = 2
+FORMAT JSON;
+```
+
+原始测量结果如下：
+
+| 工作负载    |      耗时 |      读取行数 |     峰值内存占用 |
+| ------- | ------: | --------: | ---------: |
+| 计算速度过滤器 | 1.699 秒 | 329.04 百万 | 440.24 MiB |
+| 日期范围聚合 | 1.419 秒 | 329.04 百万 | 546.75 MiB |
+| 乘客数量过滤器 | 1.414 秒 | 329.04 百万 | 451.53 MiB |
+
+这三个查询均读取了约 3.29 亿行，接近表中的总行数。这说明可从两个方面优化该工作负载：先降低处理所选列的开销，再在过滤条件允许时减少所选行数。
+
+<div id="optimize-the-schema">
+  ## 优化 schema
+</div>
+
+Schema inference 是开始探索数据集的实用方法，但 inferred types 可能比 workload 所需的类型范围更宽泛或更宽松。更改 schema 前应先检查数据，不要想当然地认为 inferred type 没有必要。
+
+<div id="nullable">
+  ### 避免使用不必要的 Nullable 列
+</div>
+
+[`Nullable`](/zh/reference/data-types/nullable) 列除了存储值外，还会存储空值掩码。当需要区分空值与该类型的默认值时，应保留 `Nullable`；但对于确保始终包含值的列，应避免使用它。
+
+统计示例 schema 中所用列的空值数量：
+
+```sql
+SELECT
+    countIf(vendor_id IS NULL) AS vendor_id_nulls,
+    countIf(pickup_datetime IS NULL) AS pickup_datetime_nulls,
+    countIf(dropoff_datetime IS NULL) AS dropoff_datetime_nulls,
+    countIf(passenger_count IS NULL) AS passenger_count_nulls,
+    countIf(trip_distance IS NULL) AS trip_distance_nulls,
+    countIf(ratecode_id IS NULL) AS ratecode_id_nulls,
+    countIf(fare_amount IS NULL) AS fare_amount_nulls,
+    countIf(extra IS NULL) AS extra_nulls,
+    countIf(mta_tax IS NULL) AS mta_tax_nulls,
+    countIf(tip_amount IS NULL) AS tip_amount_nulls,
+    countIf(tolls_amount IS NULL) AS tolls_amount_nulls,
+    countIf(total_amount IS NULL) AS total_amount_nulls,
+    countIf(payment_type IS NULL) AS payment_type_nulls,
+    countIf(pickup_location_id IS NULL) AS pickup_location_id_nulls,
+    countIf(dropoff_location_id IS NULL) AS dropoff_location_id_nulls
+FROM nyc_taxi.trips_small_inferred
+FORMAT VERTICAL;
+```
+
+```response
+Row 1:
+──────
+vendor_id_nulls:           0
+pickup_datetime_nulls:     0
+dropoff_datetime_nulls:    0
+passenger_count_nulls:     0
+trip_distance_nulls:       0
+ratecode_id_nulls:          167200929
+fare_amount_nulls:         0
+extra_nulls:               0
+mta_tax_nulls:             137946731
+tip_amount_nulls:          0
+tolls_amount_nulls:        0
+total_amount_nulls:        0
+payment_type_nulls:        69305
+pickup_location_id_nulls:  0
+dropoff_location_id_nulls: 0
+```
+
+此数据集中只有 `ratecode_id`、`mta_tax` 和 `payment_type` 包含 NULL 值。优化后的 schema 保留了这些列的 `Nullable`，并将其从其他列中移除。
+
+<div id="low-cardinality">
+  ### 对重复值使用 LowCardinality
+</div>
+
+[`LowCardinality`](/zh/reference/data-types/lowcardinality) 使用字典编码，可减少含有大量重复值的列的存储和处理开销。应用前，请先检查不同值的数量：
+
+```sql
+SELECT
+    uniq(ratecode_id),
+    uniq(pickup_location_id),
+    uniq(dropoff_location_id),
+    uniq(vendor_id)
+FROM nyc_taxi.trips_small_inferred
+FORMAT VERTICAL;
+```
+
+```response
+Row 1:
+──────
+uniq(ratecode_id):         6
+uniq(pickup_location_id):  260
+uniq(dropoff_location_id): 260
+uniq(vendor_id):           3
+```
+
+这四列的不同值数量明显少于行数。它们适合作为使用 `LowCardinality` 的候选列，但仍应针对实际工作负载评估其效果。约 10,000 个不同值可作为识别候选列的参考起点，而非固定上限。
+
+<div id="optimize-data-type">
+  ### 选择更精确的数据类型
+</div>
+
+使用在安全保留所需取值范围和精度的前提下最窄的数据类型。例如，在替换自动推断出的 `Int64` 或 `Float64` 类型之前，先检查数值列的最小值和最大值：
+
+```sql
+SELECT
+    min(payment_type),
+    max(payment_type),
+    min(passenger_count),
+    max(passenger_count)
+FROM nyc_taxi.trips_small_inferred;
+```
+
+```response
+   ┌─min(payment_type)─┬─max(payment_type)─┬─min(passenger_count)─┬─max(passenger_count)─┐
+1. │                 1 │                 4 │                    0 │                  255 │
+   └───────────────────┴───────────────────┴──────────────────────┴──────────────────────┘
+```
+
+两个整数列都可使用 [`UInt8`](/zh/reference/data-types/int-uint)，尽管 `passenger_count` 的最大值为 255。该示例还为 `trip_distance` 使用 [`Float32`](/zh/reference/data-types/float)，并为货币值使用 [`Decimal32`](/zh/reference/data-types/decimal)。此数据集中的所有值均在目标范围内；由于该工作负载比较的是聚合结果，因此示例接受较低的浮点精度和精确到分的货币精度。若需要保留精确的源值，请使用更宽的源数据类型。由于示例查询不需要秒以下精度，因此示例将推断出的 [`DateTime64`](/zh/reference/data-types/datetime64) 列替换为相同时区 `UTC` 中的 [`DateTime`](/zh/reference/data-types/datetime)。
+
+这些选择仅适用于此数据集。在应用相同更改前，请确认生产数据对范围、精度和可空性的要求。
+
+<div id="apply-the-optimizations">
+  ### 应用 schema 变更
+</div>
+
+创建一个不带排序键的表，以便此阶段能够独立衡量 schema 变更：
+
+```sql
+CREATE TABLE nyc_taxi.trips_small_no_pk
+(
+    vendor_id LowCardinality(String),
+    pickup_datetime DateTime('UTC'),
+    dropoff_datetime DateTime('UTC'),
+    passenger_count UInt8,
+    trip_distance Float32,
+    ratecode_id LowCardinality(Nullable(String)),
+    pickup_location_id LowCardinality(String),
+    dropoff_location_id LowCardinality(String),
+    payment_type Nullable(UInt8),
+    fare_amount Decimal32(2),
+    extra Decimal32(2),
+    mta_tax Nullable(Decimal32(2)),
+    tip_amount Decimal32(2),
+    tolls_amount Decimal32(2),
+    total_amount Decimal32(2)
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+INSERT INTO nyc_taxi.trips_small_no_pk
+SELECT *
+FROM nyc_taxi.trips_small_inferred;
+```
+
+在每个工作负载查询中，将 `nyc_taxi.trips_small_inferred` 替换为 `nyc_taxi.trips_small_no_pk`，然后重新运行这三个查询。原始示例记录了以下具有代表性的结果：
+
+| 工作负载    | 推断的 schema | 优化后的 schema |     读取行数 | 优化后的峰值内存占用 |
+| ------- | ---------: | ----------: | -------: | ---------: |
+| 计算速度过滤器 |    1.699 秒 |     1.353 秒 | 3.2904 亿 | 337.12 MiB |
+| 日期范围聚合  |    1.419 秒 |     1.171 秒 | 3.2904 亿 | 531.09 MiB |
+| 乘客数量过滤器  |    1.414 秒 |     1.188 秒 | 3.2904 亿 | 265.05 MiB |
+
+查询读取的行数仍然相同，但优化后的 schema 减少了这些行所表示的数据量。因此，无需更改数据筛选条件，即可缩短查询耗时并降低峰值内存占用。
+
+比较两个表的磁盘占用空间：
+
+```sql
+SELECT
+    table,
+    formatReadableSize(sum(data_compressed_bytes)) AS compressed,
+    formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed,
+    sum(rows) AS rows
+FROM system.parts
+WHERE active = 1
+  AND database = 'nyc_taxi'
+  AND table IN ('trips_small_inferred', 'trips_small_no_pk')
+GROUP BY database, table
+ORDER BY sum(data_compressed_bytes) DESC;
+```
+
+```response
+   ┌─table────────────────┬─compressed─┬─uncompressed─┬──────rows─┐
+1. │ trips_small_inferred │ 7.38 GiB   │ 37.41 GiB    │ 329044175 │
+2. │ trips_small_no_pk    │ 4.89 GiB   │ 15.31 GiB    │ 329044175 │
+   └──────────────────────┴────────────┴──────────────┴───────────┘
+```
+
+对于此数据集，优化后的 schema 可将压缩存储空间减少约 34%，从 7.38 GiB 降至 4.89 GiB。
+
+<div id="optimize-the-ordering-key">
+  ## 优化排序键
+</div>
+
+在 [`MergeTree`](/zh/reference/engines/table-engines/mergetree-family/mergetree) 家族中，排序键决定行在磁盘上的排列顺序。ClickHouse 会根据该顺序构建稀疏主索引，以跳过无法满足查询过滤条件的粒度。与许多事务型数据库中的主键不同，排序键不强制唯一性。
+
+排序键应反映重要且经常执行的查询所使用的过滤条件。列的顺序很重要：当查询按键的有效前缀进行过滤时，键最为有效。若经常用于过滤，低基数列有时适合作为键的前导列；对于基于时间的工作负载，时间组件通常也很有用。有关详细的选择建议，请参阅[选择主键](/zh/best-practices/choosing-a-primary-key)。
+
+本示例使用 `(passenger_count, pickup_datetime, dropoff_datetime)`。`passenger_count` 的不同值较少，且用于按乘客数量过滤；`pickup_datetime` 则用于按日期范围聚合。尽管 `pickup_datetime` 不是第一列，但在前导列未受约束时，ClickHouse 仍可利用后续键列的值排除数据。通常，按排序键的有效前缀进行过滤可实现更高效的裁剪。
+
+<div id="apply-the-ordering-key-change">
+  ### 应用排序键更改
+</div>
+
+使用上一阶段相同的优化 schema 创建表，仅更改排序键：
+
+```sql
+CREATE TABLE nyc_taxi.trips_small_pk
+(
+    vendor_id LowCardinality(String),
+    pickup_datetime DateTime('UTC'),
+    dropoff_datetime DateTime('UTC'),
+    passenger_count UInt8,
+    trip_distance Float32,
+    ratecode_id LowCardinality(Nullable(String)),
+    pickup_location_id LowCardinality(String),
+    dropoff_location_id LowCardinality(String),
+    payment_type Nullable(UInt8),
+    fare_amount Decimal32(2),
+    extra Decimal32(2),
+    mta_tax Nullable(Decimal32(2)),
+    tip_amount Decimal32(2),
+    tolls_amount Decimal32(2),
+    total_amount Decimal32(2)
+)
+ENGINE = MergeTree
+ORDER BY (passenger_count, pickup_datetime, dropoff_datetime);
+
+INSERT INTO nyc_taxi.trips_small_pk
+SELECT *
+FROM nyc_taxi.trips_small_no_pk;
+```
+
+在每个工作负载查询中，将表名替换为 `nyc_taxi.trips_small_pk`，然后重新运行这三个查询。
+
+<div id="compare-the-results">
+  ## 比较结果
+</div>
+
+原始指南记录了三个阶段的以下测量结果：
+
+| 工作负载    | 测量指标   | 推断的 schema | 优化后的 schema | 优化后的 schema 和排序键 |
+| ------- | ------ | ---------: | ----------: | ---------------: |
+| 计算速度过滤器 | 耗时     |    1.699 秒 |     1.353 秒 |          0.765 秒 |
+|         | 读取行数   |   3.2904 亿 |    3.2904 亿 |         3.2904 亿 |
+|         | 峰值内存占用 | 440.24 MiB |  337.12 MiB |       444.19 MiB |
+| 日期范围聚合  | 耗时     |    1.419 秒 |     1.171 秒 |          0.248 秒 |
+|         | 读取行数   |   3.2904 亿 |    3.2904 亿 |           4146 万 |
+|         | 峰值内存占用 | 546.75 MiB |  531.09 MiB |       173.50 MiB |
+| 乘客数量过滤器 | 耗时     |    1.414 秒 |     1.188 秒 |          0.431 秒 |
+|         | 读取行数   |   3.2904 亿 |    3.2904 亿 |         2.7699 亿 |
+|         | 峰值内存占用 | 451.53 MiB |  265.05 MiB |       197.38 MiB |
+
+schema 优化可减少存储占用，并降低处理所选值的开销。对于日期范围聚合，排序键带来的额外提升最为显著，因为 ClickHouse 可以跳过日期范围外的粒度。乘客数量过滤器读取的行数也更少，因为它按首个键列进行过滤。计算速度过滤器仍会读取整个表，因为其过滤条件基于 `pickup_datetime`、`dropoff_datetime` 和 `trip_distance`，而不是排序键的有效前缀。
+
+使用 `EXPLAIN indexes = 1` 查看日期范围聚合：
+
+```sql
+EXPLAIN indexes = 1
+SELECT
+    payment_type,
+    count() AS trip_count,
+    formatReadableQuantity(sum(trip_distance)) AS total_distance,
+    avg(total_amount) AS total_amount_avg,
+    avg(tip_amount) AS tip_amount_avg
+FROM nyc_taxi.trips_small_pk
+WHERE pickup_datetime >= '2009-01-01'
+  AND pickup_datetime < '2009-04-01'
+GROUP BY payment_type
+ORDER BY trip_count DESC
+SETTINGS
+    use_query_condition_cache = 0,
+    use_skip_indexes_on_data_read = 0;
+```
+
+<Note>
+  在 ClickHouse 25.9 及更高版本中，这些设置可确保 `EXPLAIN` 显示所使用的索引，以及这些索引排除的 parts 和粒度。
+</Note>
+
+```response
+ReadFromMergeTree (nyc_taxi.trips_small_pk)
+Indexes:
+  PrimaryKey
+    Keys:
+      pickup_datetime
+    Condition: and((pickup_datetime in (-Inf, 1238543999]), (pickup_datetime in [1230768000, +Inf)))
+    Parts: 9/9
+    Granules: 5061/40167
+```
+
+主索引从 40,167 个粒度中筛选出 5,061 个。因此，日期范围聚合仅需处理 4,146 万行，而不是全部的 3.2904 亿行。
+
+<div id="apply-the-method-to-your-workload">
+  ## 将该方法应用于您的工作负载
+</div>
+
+对您自己的工作负载采用相同的步骤：
+
+1. 记录基线耗时、读取的行数和字节数，以及峰值内存占用。
+2. 检查所选列是否使用了不必要的宽类型或过于宽松的类型。
+3. 在不改变数据布局的前提下，应用 schema 变更并测量其影响。
+4. 根据重要的高频查询所使用的过滤器测试排序键。
+5. 使用 `EXPLAIN indexes = 1` 比较读取的数据，然后在可比条件下重新运行基线查询。
+
+不要假定此示例中的类型或排序键同样适用于其他数据集。应根据观测到的值和查询过滤条件作出这些决策。
+
+<div id="next-steps">
+  ## 后续步骤
+</div>
+
+如果 schema 和排序键的调整无法解决已测得的瓶颈，请返回[优化方法](/zh/guides/clickhouse/performance-and-monitoring/optimization-approaches)，评估 projections、materialized views、数据跳过索引或预计算。

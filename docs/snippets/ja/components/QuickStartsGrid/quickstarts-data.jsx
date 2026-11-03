@@ -53,15 +53,15 @@ export const quickStartsData = [
   },
   {
     "id": "create-your-first-service-on-cloud",
-    "title": "最初のCloud サービスを作成し、サンプルデータを読み込む",
-    "description": "ClickHouse Cloud サービスを作成し、SQL コンソールを確認してサンプルデータセットを読み込むと、わずか数分で実際のデータに対するクエリを開始できます。",
-    "href": "/ja/get-started/quickstarts/create-your-first-service-on-cloud",
+    "title": "ClickHouse Cloud クイックスタート",
+    "description": "ClickHouse Cloud のクイックスタートガイド",
     "useCases": [
       "all"
     ],
     "products": [
       "cloud"
-    ]
+    ],
+    "href": "/ja/get-started/setup/cloud"
   },
   {
     "id": "creating-tables",

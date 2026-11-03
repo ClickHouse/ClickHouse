@@ -28,8 +28,8 @@ ClickHouse는 파트 내부의 데이터를 구성할 때 서로 독립적인 �
 
 파트 유형은 다음 table settings에 따라 결정됩니다.
 
-* [`min_bytes_for_wide_part`](/ko/reference/settings/merge-tree-settings#min_bytes_for_wide_part): 파트가 Wide format을 사용하기 위한 최소 바이트 수
-* [`min_rows_for_wide_part`](/ko/reference/settings/merge-tree-settings#min_rows_for_wide_part): 파트가 Wide format을 사용하기 위한 최소 행 수
+* [`min_bytes_for_wide_part`](/ko/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_wide_part): 파트가 Wide format을 사용하기 위한 최소 바이트 수
+* [`min_rows_for_wide_part`](/ko/reference/settings/merge-tree-settings/min-rows#min_rows_for_wide_part): 파트가 Wide format을 사용하기 위한 최소 행 수
 
 데이터 파트의 바이트 수 또는 행 수 중 하나라도 해당 설정값보다 작으면 해당 파트는 `Compact` 포맷으로 저장되며, 그렇지 않으면 `Wide` 포맷을 사용합니다.
 
@@ -71,10 +71,10 @@ Compact-to-wide 머지는 ClickHouse가 compact-to-wide 변환에 [수직 병합
 
 저장 포맷은 파트의 파일이 디스크에 물리적으로 어떻게 저장되는지를 결정합니다.
 
-| 포맷         | 설명                           | 사용 가능 여부      |
-| ---------- | ---------------------------- | ------------- |
-| **Full**   | 각 파일이 파트 디렉터리에 개별적으로 저장됩니다   | 오픈 소스 및 Cloud |
-| **패킹** | 모든 파일이 하나의 아카이브 파일로 묶여 저장됩니다 | 오픈 소스 및 Cloud |
+| 포맷       | 설명                                                          | 사용 가능 여부      |
+| -------- | ----------------------------------------------------------- | ------------- |
+| **Full** | 각 파일이 파트 디렉터리에 개별적으로 저장됩니다                                  | 오픈 소스 및 Cloud |
+| **패킹**   | 대부분의 파트 파일이 하나의 아카이브 파일로 묶여 저장되고(프로젝션 및 일부 서비스 파일은 별도로 기록됨) | 오픈 소스 및 Cloud |
 
 <div id="full-storage">
   ### Full 스토리지
@@ -86,13 +86,13 @@ Full 스토리지에서는 각 파트가 여러 개의 개별 파일로 이루�
   ### 패킹 스토리지
 </div>
 
-패킹 스토리지에서는 모든 파트 파일이 하나의 아카이브로 묶입니다. 이렇게 하면 파일 작업 수가 크게 줄어듭니다. 각 요청마다 지연 시간과 비용이 발생하는 S3와 같은 원격 스토리지에서는 이것이 특히 중요합니다.
+패킹 스토리지에서는 대부분의 파트 파일이 하나의 아카이브로 묶입니다. 프로젝션과 몇몇 서비스 파일인 `txn_version.txt`, `delete-on-destroy.txt`, `invalidated_system_columns.txt`은 파트 자체가 기록된 후에 생성되거나 재작성될 수 있으므로 여전히 별도로 기록됩니다. 이렇게 하면 파일 작업 수가 크게 줄어듭니다. 각 요청마다 지연 시간과 비용이 발생하는 S3와 같은 원격 스토리지에서는 이것이 특히 중요합니다.
 
 **패킹 스토리지의 이점:**
 
 * S3/객체 스토리지 API 호출 수 감소
 * 조정 서비스의 메타데이터 부담 감소
-* 더 낮은 스토리지 비용(풀 스토리지는 훨씬 더 비쌀 수 있음)
+* 더 낮은 스토리지 비용(Full 스토리지는 훨씬 더 비쌀 수 있음)
 * 원격 스토리지의 소규모 파트에서 더 나은 성능
 
 <div id="when-packed-storage-is-used">
@@ -101,9 +101,9 @@ Full 스토리지에서는 각 파트가 여러 개의 개별 파일로 이루�
 
 다음 조건 중 **하나라도** 참이면 해당 파트가 패킹 스토리지를 사용합니다.
 
-* 비압축 바이트 수 &lt; [`min_bytes_for_full_part_storage`](/ko/reference/settings/merge-tree-settings#min_bytes_for_full_part_storage)
-* 행 수 &lt; [`min_rows_for_full_part_storage`](/ko/reference/settings/merge-tree-settings#min_rows_for_full_part_storage)
-* 머지 수준 &lt; [`min_level_for_full_part_storage`](/ko/reference/settings/merge-tree-settings#min_level_for_full_part_storage)
+* 비압축 바이트 수 &lt; [`min_bytes_for_full_part_storage`](/ko/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_full_part_storage)
+* 행 수 &lt; [`min_rows_for_full_part_storage`](/ko/reference/settings/merge-tree-settings/min-rows#min_rows_for_full_part_storage)
+* 머지 수준 &lt; [`min_level_for_full_part_storage`](/ko/reference/settings/merge-tree-settings/min-level#min_level_for_full_part_storage)
 
 패킹 스토리지는 옵트인 방식입니다. 세 가지 설정의 기본값은 모두 `0`이므로, 이들 중 하나의 값을 높이지 않으면 파트는 Full 스토리지를 사용합니다.
 
@@ -118,8 +118,8 @@ Full 스토리지에서는 각 파트가 여러 개의 개별 파일로 이루�
 
 다음과 같은 사용 사례에서는 기본값(0)에서 변경하는 것을 고려할 수 있습니다.
 
-* 테이블에 데이터가 정기적으로 수집되면 초기 파트는 빠르게 머지되므로, 처음부터 전체 파트 포맷으로 저장하는 것은 비효율적입니다
-* 이 매개변수를 설정하면 삽입 중 비용이 큰 S3 PUT 요청을 줄일 수 있습니다. 예를 들어 한 분석에서는 전체 파트를 생성하는 삽입의 경우 삽입당 평균 31.3회의 PUT 요청이 발생한 반면, 패킹 파트만 생성하는 삽입의 경우 삽입당 평균 2.22회의 PUT 요청만 발생했습니다
+* 테이블에 데이터가 정기적으로 수집되면 초기 파트는 빠르게 머지되므로, 처음부터 Full 파트 포맷으로 저장하는 것은 비효율적입니다
+* 이 매개변수를 설정하면 삽입 중 비용이 큰 S3 PUT 요청을 줄일 수 있습니다. 예를 들어 한 분석에서는 Full 파트를 생성하는 삽입의 경우 삽입당 평균 31.3회의 PUT 요청이 발생한 반면, 패킹 파트만 생성하는 삽입의 경우 삽입당 평균 2.22회의 PUT 요청만 발생했습니다
 * 패킹 스토리지는 각 컬럼마다 별도의 파일을 만드는 대신 모든 데이터를 하나의 파일에 기록하므로, 특히 컬럼이 많은 테이블에서는 삽입 작업이 더 빨라집니다.
 
 권장 구성:
@@ -132,7 +132,7 @@ Full 스토리지에서는 각 파트가 여러 개의 개별 파일로 이루�
 * 수준 2 이상의 파트만 Full 스토리지 포맷을 사용합니다
 
 <Tip>
-  머지가 충분히 일어나지 않는, 매우 크지만 빈도가 낮은 쓰기를 받는 테이블에는 이 설정을 사용하지 마십시오. 큰 초기 쓰기의 경우 처음부터 전체 파트 스토리지를 사용하는 편이 더 유리할 수 있습니다.
+  머지가 충분히 일어나지 않는, 매우 크지만 빈도가 낮은 쓰기를 받는 테이블에는 이 설정을 사용하지 마십시오. 큰 초기 쓰기의 경우 처음부터 Full 파트 스토리지를 사용하는 편이 더 유리할 수 있습니다.
 </Tip>
 
 <div id="combining-part-types-and-storage-formats">
@@ -153,6 +153,10 @@ Full 스토리지에서는 각 파트가 여러 개의 개별 파일로 이루�
 </div>
 
 기존 파트의 유형과 저장소 유형은 [`system.parts`](/ko/reference/system-tables/parts) 테이블에서 확인할 수 있습니다:
+
+<Note>
+  open-source ClickHouse에서는 버전 26.9부터 `system.parts`에서 `part_storage_type`이 제공됩니다. 버전 26.8 이하에서는 쿼리에서 `part_storage_type`을 생략하고 `part_type`으로만 그룹화하고 정렬하십시오.
+</Note>
 
 ```sql
 SELECT

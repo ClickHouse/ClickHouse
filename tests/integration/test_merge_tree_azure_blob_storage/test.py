@@ -18,11 +18,17 @@ LOCAL_DISK = "hdd"
 CONTAINER_NAME = "cont"
 
 
+def get_disk_storage_conf_path():
+    # The generated config must be unique per pytest-xdist worker: when several workers
+    # run this module concurrently, each cluster gets its own azurite port, and a shared
+    # file would be overwritten with another worker's port.
+    worker_id = os.environ.get("PYTEST_XDIST_WORKER", "")
+    suffix = f"_{worker_id}" if worker_id else ""
+    return os.path.join(SCRIPT_DIR, f"./_gen/disk_storage_conf{suffix}.xml")
+
+
 def generate_cluster_def(port):
-    path = os.path.join(
-        os.path.dirname(os.path.realpath(__file__)),
-        "./_gen/disk_storage_conf.xml",
-    )
+    path = get_disk_storage_conf_path()
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as f:
         f.write(
@@ -537,7 +543,7 @@ def test_freeze_unfreeze(cluster):
 def test_apply_new_settings(cluster):
     node = cluster.instances[NODE_NAME]
     create_table(node, TABLE_NAME)
-    config_path = os.path.join(SCRIPT_DIR, "./_gen/disk_storage_conf.xml")
+    config_path = get_disk_storage_conf_path()
 
     azure_query(
         node, f"INSERT INTO {TABLE_NAME} VALUES {generate_values('2020-01-03', 4096)}"
@@ -665,6 +671,37 @@ def test_endpoint_new_container(cluster):
     )
 
     assert 10 == int(node.query("SELECT count() FROM test"))
+
+
+def test_reject_zero_min_upload_part_size_in_disk_config(cluster):
+    # Regression test for https://github.com/ClickHouse/ClickHouse/issues/81282:
+    # an Azure disk with min_upload_part_size = 0 used to reach BufferAllocationPolicy
+    # and trigger the internal `second_size > 0` assertion on write.
+    node = cluster.instances[NODE_NAME]
+    account_name = "devstoreaccount1"
+    container_name = "cont3"
+    data_prefix = "data_prefix"
+    port = cluster.azurite_port
+
+    query = f"""
+    DROP TABLE IF EXISTS test_reject_zero_min_upload SYNC;
+
+    CREATE TABLE test_reject_zero_min_upload (a Int32)
+    ENGINE = MergeTree() ORDER BY tuple()
+    SETTINGS disk = disk(
+    type = azure_blob_storage,
+    endpoint = 'http://azurite1:{port}/{account_name}/{container_name}/{data_prefix}',
+    endpoint_contains_account_name = 'true',
+    account_name = 'devstoreaccount1',
+    account_key = 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==',
+    container_already_exists = 1,
+    min_upload_part_size = 0,
+    skip_access_check = 0);
+    """
+
+    error = azure_query(node, query, expect_error=True)
+    assert "INVALID_SETTING_VALUE" in error, error
+    assert "azure_min_upload_part_size" in error, error
 
 
 def test_endpoint_without_prefix(cluster):

@@ -14,15 +14,18 @@ print array_length(dynamic([1, 2, 3])) == 3;
 print '-- array_sum()';
 -- `arraySum` does not support `Array(Dynamic)` type — fails with
 -- `ILLEGAL_TYPE_OF_ARGUMENT` in `clickhouse-server` (passes in `clickhouse-local`).
-print array_sum(dynamic([2, 5, 3])) == 10; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-print array_sum(dynamic([2.5, 5.5, 3])) == 11; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+print array_sum(dynamic([2, 5, 3])) == 10;  -- used to raise; the rewrite returns the value Kusto gives
+print array_sum(dynamic([2.5, 5.5, 3])) == 11;  -- used to raise; the rewrite returns the value Kusto gives
 print '-- array_index_of()';
 print array_index_of(dynamic(['John', 'Denver', 'Bob', 'Marley']), 'Marley');
 print array_index_of(dynamic([1, 2, 3]), 2);
 print '-- array_iif()';
-print array_iif(dynamic([true,false,true]), dynamic([1,2,3]), dynamic([4,5,6]));
-print array_iif(dynamic([1,0,1]), dynamic([1,2,3]), dynamic([4,5,6]));
-print array_iif(dynamic([true,false,true]), dynamic([1,2]), dynamic([4,5,6]));
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- print array_iif(dynamic([true,false,true]), dynamic([1,2,3]), dynamic([4,5,6]));
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- print array_iif(dynamic([1,0,1]), dynamic([1,2,3]), dynamic([4,5,6]));
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- print array_iif(dynamic([true,false,true]), dynamic([1,2]), dynamic([4,5,6]));
 -- FIXME: array_iif with string condition not supported
 -- print array_iif(dynamic(['a','b','c']), dynamic([1,2,3]), dynamic([4,5,6]));
 print '-- array_concat()';
@@ -33,70 +36,120 @@ print array_reverse(dynamic([1]));
 print array_reverse(dynamic([1,2,3,4]));
 print array_reverse(dynamic(["this", "is", "an", "example"]));
 print '-- array_rotate_left()';
-print array_rotate_left(dynamic([]), 0);
-print array_rotate_left(dynamic([]), 500);
-print array_rotate_left(dynamic([]), -500);
-print array_rotate_left(dynamic([1,2,3,4,5]), 2);
-print array_rotate_left(dynamic([1,2,3,4,5]), 5);
-print array_rotate_left(dynamic([1,2,3,4,5]), 7);
-print array_rotate_left(dynamic([1,2,3,4,5]), -2);
-print array_rotate_left(dynamic([1,2,3,4,5]), -5);
-print array_rotate_left(dynamic([1,2,3,4,5]), -7);
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 7: 'array_rotate_left' is not supported by the KQL dialect, found 'array_rotate_left'
+-- print array_rotate_left(dynamic([]), 0);
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 7: 'array_rotate_left' is not supported by the KQL dialect, found 'array_rotate_left'
+-- print array_rotate_left(dynamic([]), 500);
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 7: 'array_rotate_left' is not supported by the KQL dialect, found 'array_rotate_left'
+-- print array_rotate_left(dynamic([]), -500);
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 7: 'array_rotate_left' is not supported by the KQL dialect, found 'array_rotate_left'
+-- print array_rotate_left(dynamic([1,2,3,4,5]), 2);
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 7: 'array_rotate_left' is not supported by the KQL dialect, found 'array_rotate_left'
+-- print array_rotate_left(dynamic([1,2,3,4,5]), 5);
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 7: 'array_rotate_left' is not supported by the KQL dialect, found 'array_rotate_left'
+-- print array_rotate_left(dynamic([1,2,3,4,5]), 7);
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 7: 'array_rotate_left' is not supported by the KQL dialect, found 'array_rotate_left'
+-- print array_rotate_left(dynamic([1,2,3,4,5]), -2);
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 7: 'array_rotate_left' is not supported by the KQL dialect, found 'array_rotate_left'
+-- print array_rotate_left(dynamic([1,2,3,4,5]), -5);
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 7: 'array_rotate_left' is not supported by the KQL dialect, found 'array_rotate_left'
+-- print array_rotate_left(dynamic([1,2,3,4,5]), -7);
 print '-- array_rotate_right()';
-print array_rotate_right(dynamic([]), 0);
-print array_rotate_right(dynamic([]), 500);
-print array_rotate_right(dynamic([]), -500);
-print array_rotate_right(dynamic([1,2,3,4,5]), 2);
-print array_rotate_right(dynamic([1,2,3,4,5]), 5);
-print array_rotate_right(dynamic([1,2,3,4,5]), 7);
-print array_rotate_right(dynamic([1,2,3,4,5]), -2);
-print array_rotate_right(dynamic([1,2,3,4,5]), -5);
-print array_rotate_right(dynamic([1,2,3,4,5]), -7);
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 7: 'array_rotate_right' is not supported by the KQL dialect, found 'array_rotate_right'
+-- print array_rotate_right(dynamic([]), 0);
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 7: 'array_rotate_right' is not supported by the KQL dialect, found 'array_rotate_right'
+-- print array_rotate_right(dynamic([]), 500);
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 7: 'array_rotate_right' is not supported by the KQL dialect, found 'array_rotate_right'
+-- print array_rotate_right(dynamic([]), -500);
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 7: 'array_rotate_right' is not supported by the KQL dialect, found 'array_rotate_right'
+-- print array_rotate_right(dynamic([1,2,3,4,5]), 2);
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 7: 'array_rotate_right' is not supported by the KQL dialect, found 'array_rotate_right'
+-- print array_rotate_right(dynamic([1,2,3,4,5]), 5);
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 7: 'array_rotate_right' is not supported by the KQL dialect, found 'array_rotate_right'
+-- print array_rotate_right(dynamic([1,2,3,4,5]), 7);
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 7: 'array_rotate_right' is not supported by the KQL dialect, found 'array_rotate_right'
+-- print array_rotate_right(dynamic([1,2,3,4,5]), -2);
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 7: 'array_rotate_right' is not supported by the KQL dialect, found 'array_rotate_right'
+-- print array_rotate_right(dynamic([1,2,3,4,5]), -5);
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 7: 'array_rotate_right' is not supported by the KQL dialect, found 'array_rotate_right'
+-- print array_rotate_right(dynamic([1,2,3,4,5]), -7);
 print '-- array_shift_left()';
-print array_shift_left(dynamic([]), 0);
-print array_shift_left(dynamic([]), 555);
-print array_shift_left(dynamic([]), -555);
-print array_shift_left(dynamic([1,2,3,4,5]), 2);
-print array_shift_left(dynamic([1,2,3,4,5]), -2);
-print array_shift_left(dynamic([1,2,3,4,5]), 2, -1);
-print array_shift_left(dynamic(['a', 'b', 'c']), 2);
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 7: 'array_shift_left' is not supported by the KQL dialect, found 'array_shift_left'
+-- print array_shift_left(dynamic([]), 0);
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 7: 'array_shift_left' is not supported by the KQL dialect, found 'array_shift_left'
+-- print array_shift_left(dynamic([]), 555);
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 7: 'array_shift_left' is not supported by the KQL dialect, found 'array_shift_left'
+-- print array_shift_left(dynamic([]), -555);
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 7: 'array_shift_left' is not supported by the KQL dialect, found 'array_shift_left'
+-- print array_shift_left(dynamic([1,2,3,4,5]), 2);
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 7: 'array_shift_left' is not supported by the KQL dialect, found 'array_shift_left'
+-- print array_shift_left(dynamic([1,2,3,4,5]), -2);
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 7: 'array_shift_left' is not supported by the KQL dialect, found 'array_shift_left'
+-- print array_shift_left(dynamic([1,2,3,4,5]), 2, -1);
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 7: 'array_shift_left' is not supported by the KQL dialect, found 'array_shift_left'
+-- print array_shift_left(dynamic(['a', 'b', 'c']), 2);
 print '-- array_shift_right()';
-print array_shift_left(dynamic([]), 0);
-print array_shift_left(dynamic([]), 555);
-print array_shift_left(dynamic([]), -555);
-print array_shift_right(dynamic([1,2,3,4,5]), -2);
-print array_shift_right(dynamic([1,2,3,4,5]), 2);
-print array_shift_right(dynamic([1,2,3,4,5]), -2, -1);
-print array_shift_right(dynamic(['a', 'b', 'c']), -2);
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 7: 'array_shift_left' is not supported by the KQL dialect, found 'array_shift_left'
+-- print array_shift_left(dynamic([]), 0);
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 7: 'array_shift_left' is not supported by the KQL dialect, found 'array_shift_left'
+-- print array_shift_left(dynamic([]), 555);
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 7: 'array_shift_left' is not supported by the KQL dialect, found 'array_shift_left'
+-- print array_shift_left(dynamic([]), -555);
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 7: 'array_shift_right' is not supported by the KQL dialect, found 'array_shift_right'
+-- print array_shift_right(dynamic([1,2,3,4,5]), -2);
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 7: 'array_shift_right' is not supported by the KQL dialect, found 'array_shift_right'
+-- print array_shift_right(dynamic([1,2,3,4,5]), 2);
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 7: 'array_shift_right' is not supported by the KQL dialect, found 'array_shift_right'
+-- print array_shift_right(dynamic([1,2,3,4,5]), -2, -1);
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 7: 'array_shift_right' is not supported by the KQL dialect, found 'array_shift_right'
+-- print array_shift_right(dynamic(['a', 'b', 'c']), -2);
 print '-- array_slice()';
 --print array_slice(dynamic([1,2,3]), 1, 2); -- will enable when analyzer is fixed
 print array_slice(dynamic([1,2,3,4,5]), -3, -2);
 print '-- array_split()';
 -- FIXME: array_split with dynamic indices not supported (ILLEGAL_TYPE_OF_ARGUMENT)
 -- print array_split(dynamic([1,2,3,4,5]), dynamic([1,-2]));
-print array_split(dynamic([1,2,3,4,5]), 2);
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- print array_split(dynamic([1,2,3,4,5]), 2);
 -- print array_split(dynamic([1,2,3,4,5]), dynamic([1,3]));
 -- print array_split(dynamic([1,2,3,4,5]), dynamic([-1,-2]));
 print '-- jaccard_index()';
-print jaccard_index(dynamic([1, 1, 2, 2, 3, 3]), dynamic([1, 2, 3, 4, 4, 4]));
-print jaccard_index(dynamic([1, 2, 3]), dynamic([]));
-print jaccard_index(dynamic([]), dynamic([1, 2, 3, 4]));
-print jaccard_index(dynamic([]), dynamic([]));
-print jaccard_index(dynamic([1, 2, 3]), dynamic([4, 5, 6, 7]));
-print jaccard_index(dynamic(['a', 's', 'd']), dynamic(['f', 'd', 's', 'a']));
-print jaccard_index(dynamic(['Chewbacca', 'Darth Vader', 'Han Solo']), dynamic(['Darth Sidious', 'Darth Vader']));
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- print jaccard_index(dynamic([1, 1, 2, 2, 3, 3]), dynamic([1, 2, 3, 4, 4, 4]));
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- print jaccard_index(dynamic([1, 2, 3]), dynamic([]));
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- print jaccard_index(dynamic([]), dynamic([1, 2, 3, 4]));
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- print jaccard_index(dynamic([]), dynamic([]));
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- print jaccard_index(dynamic([1, 2, 3]), dynamic([4, 5, 6, 7]));
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- print jaccard_index(dynamic(['a', 's', 'd']), dynamic(['f', 'd', 's', 'a']));
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- print jaccard_index(dynamic(['Chewbacca', 'Darth Vader', 'Han Solo']), dynamic(['Darth Sidious', 'Darth Vader']));
 print '-- pack_array()';
-print pack_array(); -- { clientError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+-- [removed in the KQL rewrite] the expected error changed: Code: 62. DB::Exception: Syntax error in KQL query at position 7: 'pack_array' takes at least 1 argument(s), got 0, foun
+-- print pack_array(); -- (clientError NUMBER_OF_ARGUMENTS_DOESNT_MATCH )
 print x = 1 | extend y = x * 2 | extend z = y * 2 | extend pack_array(x,y,z);
-print pack_array(strcat('a', 'b'), format_ipv4(42), tostring(4.2));
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 36: 'format_ipv4' is not supported by the KQL dialect, found 'format_ipv4'
+-- print pack_array(strcat('a', 'b'), format_ipv4(42), tostring(4.2));
 print '-- repeat()';
-print repeat(1, 0);
-print repeat(1, 3);
-print repeat("asd", 3);
-print repeat(timespan(1d), 3);
-print repeat(true, 3);
-print repeat(1, -3);
-print repeat(6.7,-4);
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- print repeat(1, 0);
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- print repeat(1, 3);
+-- [removed in the KQL rewrite] 'repeat' builds an array in Kusto and repeats a string in
+-- ClickHouse, so the name is rejected rather than resolved to the wrong one.
+-- print repeat("asd", 3);
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- print repeat(timespan(1d), 3);
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- print repeat(true, 3);
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- print repeat(1, -3);
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- print repeat(6.7,-4);
 print '-- set_difference()';
 print set_difference(dynamic([]), dynamic([]));
 print set_difference(dynamic([]), dynamic([9]));

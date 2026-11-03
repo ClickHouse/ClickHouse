@@ -11,6 +11,7 @@ integration:
 ---
 
 import { Image } from "/snippets/es/components/Image.jsx";
+import { IAMAuthentication } from "/snippets/es/clickpipes/_iam_authentication.mdx";
 
 <div id="supported-postgres-versions">
   ## Versiones compatibles de Postgres
@@ -103,18 +104,11 @@ La publicación `clickpipes` define el conjunto de tablas cuyos eventos de cambi
   ### Uso de autenticación con IAM (opcional)
 </div>
 
-En lugar de una contraseña, puede autenticar al usuario de ClickPipes mediante el acceso basado en roles de AWS IAM. Cree el usuario de la siguiente manera y luego concédale los mismos privilegios de esquema y replicación que se muestran arriba:
-
-```sql
-CREATE USER clickpipes_iam_user;
-GRANT rds_iam TO clickpipes_iam_user;
-```
-
-<Note>
-  La autenticación con IAM para la replicación requiere que el parámetro `rds.iam_auth_for_replication` esté configurado en `1`. Esta función es compatible a partir de PostgreSQL 11; en versiones anteriores, solo puede ejecutar ClickPipes en modo `Initial Load Only`.
-</Note>
-
-Consulte [autenticación de base de datos con IAM de AWS (RDS/Aurora)](/es/integrations/clickpipes/postgres/auth) para ver todos los pasos necesarios para configurar el rol de IAM y la política que ClickPipes necesita para autenticarse de esta manera.
+<IAMAuthentication engine="postgres" service="rds">
+  <Note>
+    La autenticación con IAM para la replicación requiere que el parámetro `rds.iam_auth_for_replication` esté configurado en `1`. Esta función es compatible a partir de PostgreSQL 11; en versiones anteriores, solo puede ejecutar ClickPipes en modo `Initial Load Only`.
+  </Note>
+</IAMAuthentication>
 
 <div id="configure-network-access">
   ## Configurar el acceso de red
@@ -124,7 +118,7 @@ Consulte [autenticación de base de datos con IAM de AWS (RDS/Aurora)](/es/integ
   ### Control de acceso basado en IP
 </div>
 
-Si desea restringir el tráfico a su instancia de RDS, añada las [IPs NAT estáticas documentadas](/es/integrations/clickpipes/home#list-of-static-ips) a las `reglas de entrada` del grupo de seguridad de su RDS.
+Si desea restringir el tráfico a su instancia de RDS, añada las [IPs NAT estáticas documentadas](/es/integrations/clickpipes/networking/static-ips) a las `reglas de entrada` del grupo de seguridad de su RDS.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp" alt="¿Dónde encontrar el grupo de seguridad en RDS Postgres?" size="lg" border />
 

@@ -117,14 +117,28 @@ IFileCachePriority::IteratorPtr LRUFileCachePriority::add( /// NOLINT
     KeyMetadataPtr key_metadata,
     size_t offset,
     size_t size,
-    const CachePriorityGuard::WriteLock & lock,
     const CacheStateGuard::Lock * state_lock,
     bool)
 {
+    assertNotSealed("add");
+    auto lock = getPriorityGuard().writeLock();
     return std::make_shared<LRUIterator>(add(
         std::make_shared<Entry>(key_metadata->key, offset, size, key_metadata),
         lock,
         state_lock));
+}
+
+IFileCachePriority::IteratorPtr LRUFileCachePriority::addForRestore( /// NOLINT
+    KeyMetadataPtr key_metadata,
+    size_t offset,
+    size_t size,
+    QueueEntryType /* original_queue_type */,
+    const CachePriorityGuard::WriteLock & lock,
+    const CacheStateGuard::Lock * state_lock)
+{
+    assertNotSealed("addForRestore");
+    return std::make_shared<LRUIterator>(add(
+        std::make_shared<Entry>(key_metadata->key, offset, size, key_metadata), lock, state_lock));
 }
 
 LRUFileCachePriority::LRUIterator LRUFileCachePriority::add(
@@ -167,7 +181,7 @@ LRUFileCachePriority::LRUIterator LRUFileCachePriority::add(
         CurrentMetrics::add(CurrentMetrics::FilesystemCachePriorityQueueElements);
 
     if (entry->size)
-        state->add(entry->size, /* elements */1, *state_lock);
+        entryAdd(entry->size, /* elements */1, *state_lock);
 
     LOG_TEST(
         log, "Added entry into LRU queue, key: {}, offset: {}, size: {}",
@@ -182,7 +196,7 @@ LRUFileCachePriority::remove(LRUQueue::iterator it, const CachePriorityGuard::Wr
     /// If size is 0, entry is invalidated, current_elements_num was already updated.
     auto & entry = **it;
     if (entry.size)
-        state->sub(entry.size, /* elements */1);
+        entrySub(entry.size, /* elements */1);
 
     const bool was_invalidated = entry.getState() == Entry::State::Invalidated;
     entry.setRemoved(lock);
@@ -253,23 +267,35 @@ bool LRUFileCachePriority::LRUIterator::operator ==(const LRUIterator & other) c
     return cache_priority == other.cache_priority && iterator == other.iterator;
 }
 
-void LRUFileCachePriority::iterate(
-    IterateFunc func,
-    FileCacheReserveStat & stat,
-    const CachePriorityGuard::ReadLock & lock)
+void LRUFileCachePriority::assertNotSealed(std::string_view method) const
 {
-    InvalidatedEntriesInfos invalidated_entries;
-    iterateImpl(queue.begin(), func, stat, invalidated_entries, lock);
+    if (structure_sealed)
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Structural operation `{}` on a sealed priority queue ({}). "
+            "A wrapper priority is missing an override for it. This is a bug",
+            method, description);
+    }
 }
 
-size_t LRUFileCachePriority::removeInvalidatedEntries(size_t max_batch, CachePriorityGuard & cache_guard)
+void LRUFileCachePriority::iterate(IterateFunc func, FileCacheReserveStat & stat)
+{
+    assertNotSealed("iterate");
+    auto lock = getPriorityGuard().readLock();
+    iterateImpl(queue.begin(), func, stat, lock);
+}
+
+size_t LRUFileCachePriority::removeInvalidatedEntries(size_t max_batch)
 {
     if (invalidated_count.load(std::memory_order_relaxed) == 0)
         return 0;
 
+    assertNotSealed("removeInvalidatedEntries");
+
     /// The write lock is acquired lazily, only when a live `Invalidated` ref is found,
     /// and is then held for the rest of the batch. Refs whose entry was already removed
-    /// elsewhere (e.g. by the opportunistic `removeEntries` during eviction) can be
+    /// elsewhere (e.g. by `invalidateBeforeRemove` racing a concurrent removal) can be
     /// discarded without it: entries are registered here only in `Invalidated` state and
     /// the only transition out of it is the terminal `Removed`, set under the write lock
     /// in `remove`. So an expired or non-`Invalidated` ref can never become removable
@@ -293,7 +319,7 @@ size_t LRUFileCachePriority::removeInvalidatedEntries(size_t max_batch, CachePri
             if (auto entry = ref.entry.lock(); entry && entry->getState() == Entry::State::Invalidated)
             {
                 if (!lock)
-                    lock.emplace(cache_guard.writeLock());
+                    lock.emplace(getPriorityGuard().writeLock());
 
                 /// The entry could have been removed while the lock was being acquired.
                 if (entry->getState() == Entry::State::Invalidated)
@@ -324,7 +350,6 @@ LRUFileCachePriority::iterateImpl(
     LRUQueue::iterator start_pos,
     IterateFunc func,
     FileCacheReserveStat & stat,
-    InvalidatedEntriesInfos & invalidated_entries,
     const CachePriorityGuard::ReadLock &)
 {
     const size_t max_elements_to_iterate = queue.size();
@@ -360,8 +385,8 @@ LRUFileCachePriority::iterateImpl(
                 }
                 case Entry::State::Invalidated:
                 {
+                    /// Skip invalidated entries; the background cleanup task removes them.
                     stat.update(entry.size, FileSegmentKind::Regular, FileCacheReserveStat::State::Invalidated);
-                    invalidated_entries.emplace_back(*it, std::make_shared<LRUIterator>(this, it));
                     return false;
                 }
                 case Entry::State::Evicting:
@@ -528,13 +553,11 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
     EvictionInfo & eviction_info,
     FileCacheReserveStat & stat,
     EvictionCandidates & res,
-    InvalidatedEntriesInfos & invalidated_entries,
     IFileCachePriority::IteratorPtr /* reservee */,
     EvictionCursor eviction_cursor,
     size_t max_candidates_size,
     bool /* is_total_space_cleanup */,
     const OriginInfo &,
-    CachePriorityGuard & cache_guard,
     CacheStateGuard &)
 {
     const auto & info = eviction_info.get(queue_id);
@@ -558,7 +581,7 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
         return IterationResult::CONTINUE;
     };
 
-    auto lock = cache_guard.readLock();
+    auto lock = getPriorityGuard().readLock();
 
     const bool use_cursor = eviction_cursor != EvictionCursor::FromHead;
 
@@ -604,7 +627,7 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
 
         return IterationResult::CONTINUE;
     },
-    stat, invalidated_entries, lock);
+    stat, lock);
 
     if (use_cursor)
         setEvictionPos(eviction_cursor, iteration_pos, lock);
@@ -651,20 +674,29 @@ LRUFileCachePriority::LRUIterator LRUFileCachePriority::move(
     }
 #endif
 
+    /// Both queues must be protected by the same structural guard: the caller
+    /// holds one `WriteLock`, and the splice mutates both lists.
+    chassert(&getPriorityGuard() == &other.getPriorityGuard());
+
     other.moveEvictionPosIfEqual(it.iterator, lock);
     queue.splice(queue.end(), other.queue, it.iterator);
 
+    /// Both queues must share the same per-user `CacheUsage`: the entry stays with the same
+    /// user, so `cache_usage->total_size` has zero net delta and the mirror needs no update.
+    chassert(cache_usage == other.cache_usage);
     state->add(entry.size, /* elements */1, state_lock);
     other.state->sub(entry.size, /* elements */1);
 
     return LRUIterator(this, it.iterator);
 }
 
-IFileCachePriority::PriorityDumpPtr LRUFileCachePriority::dump(const CachePriorityGuard::ReadLock & lock)
+IFileCachePriority::PriorityDumpPtr LRUFileCachePriority::dump()
 {
+    assertNotSealed("dump");
+    auto lock = getPriorityGuard().readLock();
     std::vector<FileSegmentInfo> res;
     FileCacheReserveStat stat{};
-    iterate([&](LockedKey &, const FileSegmentMetadataPtr & segment_metadata)
+    iterateImpl(queue.begin(), [&](LockedKey &, const FileSegmentMetadataPtr & segment_metadata)
     {
         res.emplace_back(FileSegment::getInfo(segment_metadata->file_segment));
         return IterationResult::CONTINUE;
@@ -716,10 +748,11 @@ EvictionInfoPtr LRUFileCachePriority::collectEvictionInfoForResize(
 bool LRUFileCachePriority::tryIncreasePriority(
     Iterator & iterator,
     bool /* is_space_reservation_complete */,
-    CachePriorityGuard & queue_guard,
     CacheStateGuard &)
 {
-    auto lock = queue_guard.tryWriteLock();
+    assertNotSealed("tryIncreasePriority");
+    /// Best-effort promotion: skip rather than block if the (per-priority) guard is contended.
+    auto lock = getPriorityGuard().tryWriteLock();
     if (!lock.owns_lock())
         return false;
 
@@ -748,6 +781,12 @@ void LRUFileCachePriority::LRUIterator::remove(const CachePriorityGuard::WriteLo
     assertValid();
     cache_priority->remove(iterator, lock);
     iterator = LRUQueue::iterator{};
+}
+
+void LRUFileCachePriority::LRUIterator::remove()
+{
+    auto lock = getPriorityGuard().writeLock();
+    remove(lock);
 }
 
 void LRUFileCachePriority::LRUIterator::invalidate() noexcept
@@ -784,7 +823,7 @@ void LRUFileCachePriority::LRUIterator::invalidateImpl() noexcept
         CurrentMetrics::add(CurrentMetrics::FilesystemCacheInvalidatedElements);
 
     if (entry_size)
-        cache_priority->state->sub(entry_size, 1);
+        cache_priority->entrySub(entry_size, 1);
 }
 
 void LRUFileCachePriority::LRUIterator::incrementSize(
@@ -811,7 +850,7 @@ void LRUFileCachePriority::LRUIterator::incrementSize(
         "Incrementing size with {} in LRU queue for entry {}",
         size, entry_ptr->toString());
 
-    cache_priority->state->add(size, elements, lock);
+    cache_priority->entryAdd(size, elements, lock);
     entry_ptr->size += size;
 
     cache_priority->check(lock);
@@ -832,7 +871,7 @@ void LRUFileCachePriority::LRUIterator::decrementSize(size_t size)
              size, entry_ptr->toString());
 
     const bool became_empty = entry_ptr->size == size;
-    cache_priority->state->sub(size, /* elements */became_empty ? 1 : 0);
+    cache_priority->entrySub(size, /* elements */became_empty ? 1 : 0);
     entry_ptr->size -= size;
 }
 
@@ -851,8 +890,10 @@ bool LRUFileCachePriority::LRUIterator::assertValid() const
     return true;
 }
 
-void LRUFileCachePriority::shuffle(const CachePriorityGuard::WriteLock &)
+void LRUFileCachePriority::shuffle()
 {
+    assertNotSealed("shuffle");
+    auto lock = getPriorityGuard().writeLock();
     chassert(TSA_SUPPRESS_WARNING_FOR_READ(reserve_eviction_pos) == queue.end());
     chassert(TSA_SUPPRESS_WARNING_FOR_READ(background_eviction_pos) == queue.end());
     std::vector<LRUQueue::iterator> its;
@@ -904,22 +945,26 @@ void LRUFileCachePriority::holdImpl(
 
 void LRUFileCachePriority::releaseImpl(size_t size, size_t elements)
 {
-    /// Once the atomic decrements below reach 0, `CacheUsagePerUser::snapshot`
-    /// may concurrently erase this priority and free `cache_usage_stat_guard`,
-    /// so pin it locally to keep the mutex alive until `~unique_lock`.
-    /// This lock is only needed for `OvercommitFileCachePriority::check`'s
-    /// debug consistency check; non-overcommit policies leave the guard unset.
-    auto stat_guard = cache_usage_stat_guard;
-    auto lock = stat_guard
-        ? std::optional<CacheUsageStatGuard::Lock>(stat_guard->lock())
-        : std::nullopt;
-
     state->sub(size, elements);
 
     total_hold_size -= size;
     total_hold_elements -= elements;
 
     //LOG_TEST(log, "Released {} by size and {} by elements", size, elements);
+}
+
+void LRUFileCachePriority::entryAdd(uint64_t size, uint64_t elements, const CacheStateGuard::Lock & lock)
+{
+    state->add(size, elements, lock);
+    if (cache_usage)
+        cache_usage->update(static_cast<int64_t>(size), static_cast<int64_t>(elements));
+}
+
+void LRUFileCachePriority::entrySub(uint64_t size, uint64_t elements)
+{
+    state->sub(size, elements);
+    if (cache_usage)
+        cache_usage->update(-static_cast<int64_t>(size), -static_cast<int64_t>(elements));
 }
 
 LRUFileCachePriority::LRUQueue::iterator & LRUFileCachePriority::evictionPos(EvictionCursor cursor)

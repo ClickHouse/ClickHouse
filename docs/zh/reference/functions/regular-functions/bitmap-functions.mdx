@@ -119,9 +119,9 @@ SELECT bitmapToArray(bitmapAndnot(bitmapBuild([1, 2, 3]), bitmapBuild([3, 4, 5])
 ```
 
 ```response title=Response
-┌─res────┐
-│ [1, 2] │
-└────────┘
+┌─res───┐
+│ [1,2] │
+└───────┘
 ```
 
 <div id="bitmapAndnotCardinality">
@@ -166,7 +166,7 @@ SELECT bitmapAndnotCardinality(bitmapBuild([1,2,3]), bitmapBuild([3,4,5])) AS re
 
 引入版本：v20.1.0
 
-根据无符号整数数组构建 bitmap。它是函数 [`bitmapToArray`](/zh/reference/functions/regular-functions/bitmap-functions#bitmapToArray) 的逆操作。
+根据整数数组构建 bitmap。支持的元素类型为 8、16、32 或 64 位有符号和无符号整数。它是函数 [`bitmapToArray`](/zh/reference/functions/regular-functions/bitmap-functions#bitmapToArray) 的逆操作。
 
 **语法**
 
@@ -176,7 +176,7 @@ bitmapBuild(array)
 
 **参数**
 
-* `array` — 无符号整数数组。[`Array(UInt*)`](/zh/reference/data-types/array)
+* `array` — 整数数组。[`Array((U)Int*)`](/zh/reference/data-types/array)
 
 **返回值**
 
@@ -187,13 +187,27 @@ bitmapBuild(array)
 **用法示例**
 
 ```sql title=Query
-SELECT bitmapBuild([1, 2, 3, 4, 5]) AS res, toTypeName(res);
+-- A bitmap is a binary value, so it is shown with `hex`.
+SELECT hex(bitmapBuild([1, 2, 3, 4, 5])) AS res, toTypeName(bitmapBuild([1, 2, 3, 4, 5])) AS type;
 ```
 
 ```response title=Response
-┌─res─┬─toTypeName(bitmapBuild([1, 2, 3, 4, 5]))─────┐
-│     │ AggregateFunction(groupBitmap, UInt8)        │
-└─────┴──────────────────────────────────────────────┘
+┌─res────────────┬─type──────────────────────────────────┐
+│ 00050102030405 │ AggregateFunction(groupBitmap, UInt8) │
+└────────────────┴───────────────────────────────────────┘
+```
+
+**有符号 bitmap**
+
+```sql title=Query
+-- A bitmap is a binary value, so it is shown with `hex`.
+SELECT hex(bitmapBuild([-128, -1]::Array(Int8))) AS res, toTypeName(bitmapBuild([-128, -1]::Array(Int8))) AS type;
+```
+
+```response title=Response
+┌─res──────┬─type─────────────────────────────────┐
+│ 000280FF │ AggregateFunction(groupBitmap, Int8) │
+└──────────┴──────────────────────────────────────┘
 ```
 
 <div id="bitmapCardinality">
@@ -238,7 +252,7 @@ SELECT bitmapCardinality(bitmapBuild([1, 3, 3, 5, 7, 7])) AS res
 
 引入版本：v20.1.0
 
-检查 bitmap 是否包含指定元素。
+检查 bitmap 是否包含指定元素。该值会按 bitmap 元素类型的无符号整数进行比较。对于有符号 bitmap，负元素会匹配其对应的无符号值 (例如，`Int8` 值 `-1` 匹配 `255`) 。
 
 **语法**
 
@@ -264,7 +278,19 @@ SELECT bitmapContains(bitmapBuild([1, 2, 3]), 2) AS res;
 
 ```response title=Response
 ┌─res─┐
-│  1  │
+│   1 │
+└─────┘
+```
+
+**有符号 bitmap**
+
+```sql title=Query
+SELECT bitmapContains(bitmapBuild([-1]::Array(Int8)), 255) AS res;
+```
+
+```response title=Response
+┌─res─┐
+│   1 │
 └─────┘
 ```
 
@@ -300,7 +326,7 @@ SELECT bitmapHasAll(bitmapBuild([1, 2, 3]), bitmapBuild([2, 3])) AS res;
 
 ```response title=Response
 ┌─res─┐
-│  1  │
+│   1 │
 └─────┘
 ```
 
@@ -336,7 +362,7 @@ SELECT bitmapHasAny(bitmapBuild([1, 2, 3]), bitmapBuild([3, 4, 5])) AS res;
 
 ```response title=Response
 ┌─res─┐
-│  1  │
+│   1 │
 └─────┘
 ```
 
@@ -346,7 +372,7 @@ SELECT bitmapHasAny(bitmapBuild([1, 2, 3]), bitmapBuild([3, 4, 5])) AS res;
 
 引入版本：v20.1.0
 
-返回 bitmap 中被置位的最大位的位置；如果 bitmap 为空，则返回 `0`。
+返回 bitmap 中最大的元素，并将其解释为 bitmap 元素类型的无符号整数。对于有符号 bitmap，负值会被视为对应的无符号值 (例如，`Int8` 值 `-1` 为 `255`) 。如果 bitmap 为空，则返回 `0`。
 
 **语法**
 
@@ -360,7 +386,7 @@ bitmapMax(bitmap)
 
 **返回值**
 
-返回 bitmap 中被置位的最大位的位置；否则返回 `0`。[`UInt64`](/zh/reference/data-types/int-uint)
+返回 bitmap 中最大的元素，并以 bitmap 元素类型的无符号值表示；如果 bitmap 为空，则返回 `0` [`UInt64`](/zh/reference/data-types/int-uint)
 
 **示例**
 
@@ -376,13 +402,25 @@ SELECT bitmapMax(bitmapBuild([1, 2, 3, 4, 5])) AS res;
 └─────┘
 ```
 
+**有符号 bitmap**
+
+```sql title=Query
+SELECT bitmapMax(bitmapBuild([-128, -1]::Array(Int8))) AS res;
+```
+
+```response title=Response
+┌─res─┐
+│ 255 │
+└─────┘
+```
+
 <div id="bitmapMin">
   ## bitmapMin
 </div>
 
 引入版本：v20.1.0
 
-返回 bitmap 中最小的已置位的位的位置。如果所有位都未置位，则返回 `UINT32_MAX` (如果 bitmap 包含超过 `2^64` 位，则返回 `UINT64_MAX`) 。
+返回 bitmap 中最小的元素，并将其视为 bitmap 元素类型的无符号整数。对于有符号 bitmap，负值会被视为对应的无符号值 (例如，`Int8` 值 `-128` 视为 `128`) 。如果 bitmap 为空，则返回 `UINT32_MAX` (如果 bitmap 元素类型宽于 32 位，则返回 `UINT64_MAX`) 。
 
 **语法**
 
@@ -396,11 +434,11 @@ bitmapMin(bitmap)
 
 **返回值**
 
-返回 bitmap 中最小置位所在的位置，或 `UINT32_MAX`/`UINT64_MAX` [`UInt64`](/zh/reference/data-types/int-uint)
+返回 bitmap 中最小的元素，以 bitmap 元素类型的无符号值表示；如果 bitmap 为空，则返回 `UINT32_MAX`/`UINT64_MAX` [`UInt64`](/zh/reference/data-types/int-uint)
 
 **示例**
 
-**使用示例**
+**用法示例**
 
 ```sql title=Query
 SELECT bitmapMin(bitmapBuild([3, 5, 2, 6])) AS res;
@@ -409,6 +447,18 @@ SELECT bitmapMin(bitmapBuild([3, 5, 2, 6])) AS res;
 ```response title=Response
 ┌─res─┐
 │   2 │
+└─────┘
+```
+
+**有符号 bitmap**
+
+```sql title=Query
+SELECT bitmapMin(bitmapBuild([-128, -1]::Array(Int8))) AS res;
+```
+
+```response title=Response
+┌─res─┐
+│ 128 │
 └─────┘
 ```
 
@@ -443,9 +493,9 @@ SELECT bitmapToArray(bitmapOr(bitmapBuild([1, 2, 3]), bitmapBuild([3, 4, 5]))) A
 ```
 
 ```response title=Response
-┌─res─────────────┐
-│ [1, 2, 3, 4, 5] │
-└─────────────────┘
+┌─res─────────┐
+│ [1,2,3,4,5] │
+└─────────────┘
 ```
 
 <div id="bitmapOrCardinality">
@@ -490,7 +540,7 @@ SELECT bitmapOrCardinality(bitmapBuild([1,2,3]), bitmapBuild([3,4,5])) AS res;
 
 引入版本：v20.1.0
 
-返回 bitmap 的一个子集，仅包含指定范围 [start, end) 内被置位的位。使用从 1 开始的索引。
+返回 bitmap 的一个子集，其中包含值范围 `[start, end)` 内的元素。元素值按 bitmap 元素类型的无符号整数进行比较。
 
 **语法**
 
@@ -500,11 +550,11 @@ bitmapSubsetInRange(bitmap, start, end)
 
 **参数**
 
-* `bitmap` — 要从中提取 子集 的 bitmap。[`AggregateFunction(groupBitmap, T)`](/zh/reference/data-types/aggregatefunction)。- `start` — 范围起始位置 (含) 。[`UInt*`](/zh/reference/data-types/int-uint) - `end` — 范围结束位置 (不含) 。[`UInt*`](/zh/reference/data-types/int-uint)
+* `bitmap` — 要从中提取 子集 的 bitmap。[`AggregateFunction(groupBitmap, T)`](/zh/reference/data-types/aggregatefunction)。- `start` — 范围的起始位置 (含) 。[`UInt*`](/zh/reference/data-types/int-uint) - `end` — 值范围的结束位置 (不含) 。[`UInt*`](/zh/reference/data-types/int-uint)
 
 **返回值**
 
-返回一个仅包含指定范围内置位的 bitmap [`AggregateFunction(groupBitmap, T)`](/zh/reference/data-types/aggregatefunction)
+返回一个仅包含指定值范围内元素的 bitmap [`AggregateFunction(groupBitmap, T)`](/zh/reference/data-types/aggregatefunction)
 
 **示例**
 
@@ -515,9 +565,9 @@ SELECT bitmapToArray(bitmapSubsetInRange(bitmapBuild([1, 2, 3, 4, 5]), 2, 5)) AS
 ```
 
 ```response title=Response
-┌─res───────┐
-│ [2, 3, 4] │
-└───────────┘
+┌─res─────┐
+│ [2,3,4] │
+└─────────┘
 ```
 
 <div id="bitmapSubsetLimit">
@@ -526,7 +576,7 @@ SELECT bitmapToArray(bitmapSubsetInRange(bitmapBuild([1, 2, 3, 4, 5]), 2, 5)) AS
 
 引入版本：v20.1.0
 
-返回从位置 `range_start` 开始、最多包含 `cardinality_limit` 个置位的 bitmap 子集。使用从 1 开始的索引。
+返回一个最多包含 `cardinality_limit` 个元素的子集，其中元素值大于或等于 `range_start`，并按无符号顺序选取其中最小的值。
 
 **语法**
 
@@ -536,24 +586,24 @@ bitmapSubsetLimit(bitmap, range_start, cardinality_limit)
 
 **参数**
 
-* `bitmap` — bitmap 对象。[`AggregateFunction(groupBitmap, T)`](/zh/reference/data-types/aggregatefunction)。- `range_start` — 范围的起始位置 (包含) 。[`UInt32`](/zh/reference/data-types/int-uint) - `cardinality_limit` — 子集的最大基数。[`UInt32`](/zh/reference/data-types/int-uint)
+* `bitmap` — bitmap 对象。[`AggregateFunction(groupBitmap, T)`](/zh/reference/data-types/aggregatefunction)。- `range_start` — 范围的起始值 (含) 。[`UInt32`](/zh/reference/data-types/int-uint) - `cardinality_limit` — 子集的最大基数。[`UInt32`](/zh/reference/data-types/int-uint)
 
 **返回值**
 
-返回一个 bitmap，其中从 `range_start` 开始最多包含 `cardinality_limit` 个置位。[`AggregateFunction(groupBitmap, T)`](/zh/reference/data-types/aggregatefunction)
+返回一个 bitmap，其中最多包含 `cardinality_limit` 个无符号值不小于 `range_start` 的元素。[`AggregateFunction(groupBitmap, T)`](/zh/reference/data-types/aggregatefunction)
 
 **示例**
 
 **使用示例**
 
 ```sql title=Query
-SELECT bitmapToArray(bitmapSubsetLimit(bitmapBuild([1, 5, 3, 2, 8]), 3, 2)) AS res;
+SELECT arraySort(bitmapToArray(bitmapSubsetLimit(bitmapBuild([1, 5, 3, 2, 8]), 3, 2))) AS res;
 ```
 
 ```response title=Response
-┌─res────┐
-│ [5, 3] │
-└────────┘
+┌─res───┐
+│ [3,5] │
+└───────┘
 ```
 
 <div id="bitmapToArray">
@@ -562,7 +612,7 @@ SELECT bitmapToArray(bitmapSubsetLimit(bitmapBuild([1, 5, 3, 2, 8]), 3, 2)) AS r
 
 自 v20.1.0 引入
 
-将 bitmap 转换为无符号整数数组。它是函数 [`bitmapBuild`](/zh/reference/functions/regular-functions/bitmap-functions#bitmapBuild) 的逆操作。
+将 bitmap 转换为其元素组成的数组。数组元素类型与 bitmap 元素类型 `T` 一致 (有符号或无符号整数) 。它是函数 [`bitmapBuild`](/zh/reference/functions/regular-functions/bitmap-functions#bitmapBuild) 的逆操作。
 
 **语法**
 
@@ -576,7 +626,7 @@ bitmapToArray(bitmap)
 
 **返回值**
 
-返回 bitmap 中包含的无符号整数数组 [`Array(UInt*)`](/zh/reference/data-types/array)
+返回 bitmap 中包含的元素数组 [`Array(T)`](/zh/reference/data-types/array)
 
 **示例**
 
@@ -587,9 +637,21 @@ SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5])) AS res;
 ```
 
 ```response title=Response
-┌─res─────────────┐
-│ [1, 2, 3, 4, 5] │
-└─────────────────┘
+┌─res─────────┐
+│ [1,2,3,4,5] │
+└─────────────┘
+```
+
+**有符号 bitmap**
+
+```sql title=Query
+SELECT arraySort(bitmapToArray(bitmapBuild([-128, -1]::Array(Int8)))) AS res;
+```
+
+```response title=Response
+┌─res───────┐
+│ [-128,-1] │
+└───────────┘
 ```
 
 <div id="bitmapTransform">
@@ -598,7 +660,11 @@ SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5])) AS res;
 
 引入版本：v20.1.0
 
-通过将 `from_array` 中指定的位值替换为 `to_array` 中对应的位值，在 bitmap 中最多可修改 N 位。
+根据从 `from_array` 到 `to_array` 的映射替换 bitmap 中的元素。
+值会被解释为 bitmap 元素类型的无符号整数 (与 [`bitmapContains`](/zh/reference/functions/regular-functions/bitmap-functions#bitmapContains) 位于同一值域) 。
+对于有符号 bitmap，负元素会与其对应的无符号值匹配 (例如，`Int8` 值 `-1` 与 `255` 匹配) 。
+`to_array` 中不适合 bitmap 元素类型的值会引发 `BAD_ARGUMENTS`。`from_array` 中
+不适合该类型的值不会被找到，因此不会应用相应的替换。
 
 **语法**
 
@@ -608,7 +674,7 @@ bitmapTransform(bitmap, from_array, to_array)
 
 **参数**
 
-* `bitmap` — bitmap 对象。[`AggregateFunction(groupBitmap, T)`](/zh/reference/data-types/aggregatefunction)。- `from_array` — 需要替换的原始置位组成的 Array。[`Array(T)`](/zh/reference/data-types/array)。- `to_array` — 用于替换的新置位组成的 Array。[`Array(T)`](/zh/reference/data-types/array)。
+* `bitmap` — bitmap 对象。[`AggregateFunction(groupBitmap, T)`](/zh/reference/data-types/aggregatefunction)。- `from_array` — 要替换的原始置位组成的 Array。[`Array(T)`](/zh/reference/data-types/array)。- `to_array` — 用于替换的新置位组成的 Array。[`Array(T)`](/zh/reference/data-types/array)。
 
 **返回值**
 
@@ -623,9 +689,21 @@ SELECT bitmapToArray(bitmapTransform(bitmapBuild([1, 2, 3, 4, 5]), [2, 4], [20, 
 ```
 
 ```response title=Response
-┌─res───────────────┐
-│ [1, 3, 5, 20, 40] │
-└───────────────────┘
+┌─res───────────┐
+│ [1,3,5,20,40] │
+└───────────────┘
+```
+
+**有符号 bitmap**
+
+```sql title=Query
+SELECT arraySort(bitmapToArray(bitmapTransform(bitmapBuild([-1, 0]::Array(Int8)), [255], [10]))) AS res;
+```
+
+```response title=Response
+┌─res────┐
+│ [0,10] │
+└────────┘
 ```
 
 <div id="bitmapXor">
@@ -659,9 +737,9 @@ SELECT bitmapToArray(bitmapXor(bitmapBuild([1, 2, 3]), bitmapBuild([3, 4, 5]))) 
 ```
 
 ```response title=Response
-┌─res──────────┐
-│ [1, 2, 4, 5] │
-└──────────────┘
+┌─res───────┐
+│ [1,2,4,5] │
+└───────────┘
 ```
 
 <div id="bitmapXorCardinality">
@@ -706,7 +784,7 @@ SELECT bitmapXorCardinality(bitmapBuild([1,2,3]), bitmapBuild([3,4,5])) AS res;
 
 引入版本：v21.9.0
 
-返回 bitmap 的一个子集，从位置 `offset` 开始。返回的 bitmap 的最大基数为 `cardinality_limit`。
+按无符号值升序跳过 `offset` 个元素后，返回 bitmap 的一个子集。返回的 bitmap 的最大基数为 `cardinality_limit`。
 
 **语法**
 
@@ -716,11 +794,11 @@ subBitmap(bitmap, offset, cardinality_limit)
 
 **参数**
 
-* `bitmap` — Bitmap 对象。[`AggregateFunction(groupBitmap, T)`](/zh/reference/data-types/aggregatefunction). - `offset` — 从开头起要跳过的置位数量 (从零开始计数) 。[`UInt32`](/zh/reference/data-types/int-uint) - `cardinality_limit` — 子集中最多包含的置位数量。[`UInt32`](/zh/reference/data-types/int-uint)
+* `bitmap` — Bitmap 对象。[`AggregateFunction(groupBitmap, T)`](/zh/reference/data-types/aggregatefunction). - `offset` — 从开头要跳过的置位数量 (从零开始计数) 。[`UInt32`](/zh/reference/data-types/int-uint) - `cardinality_limit` — 子集中最多包含的置位数量。[`UInt32`](/zh/reference/data-types/int-uint)
 
 **返回值**
 
-返回一个 bitmap，按升序跳过 `offset` 个置位后开始，最多包含 `limit` 个置位。[`AggregateFunction(groupBitmap, T)`](/zh/reference/data-types/aggregatefunction)
+返回一个 bitmap，按无符号值升序跳过 `offset` 个元素后，最多包含 `cardinality_limit` 个元素。[`AggregateFunction(groupBitmap, T)`](/zh/reference/data-types/aggregatefunction)
 
 **示例**
 
@@ -731,9 +809,9 @@ SELECT bitmapToArray(subBitmap(bitmapBuild([1, 2, 3, 4, 5]), 2, 2)) AS res;
 ```
 
 ```response title=Response
-┌─res────┐
-│ [3, 4] │
-└────────┘
+┌─res───┐
+│ [3,4] │
+└───────┘
 ```
 
 {/*AUTOGENERATED_END*/}

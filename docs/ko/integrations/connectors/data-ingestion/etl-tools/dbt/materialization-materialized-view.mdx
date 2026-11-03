@@ -522,20 +522,20 @@ select a, b, c from {{ source('raw', 'table_2') }}
 </Tip>
 
 <div id="refreshable-materialized-views">
-  ## 갱신 가능 materialized view
+  ## 갱신 가능 구체화 뷰
 </div>
 
-[갱신 가능 materialized view](/ko/concepts/features/materialized-views/refreshable-materialized-view)는 ClickHouse에서 쿼리를 주기적으로 다시 실행해 그 결과를 저장하는 특수한 유형의 materialized view이며, 다른 데이터베이스의 materialized view와 유사하게 동작합니다. 이는 실시간 삽입 트리거보다 주기적인 스냅샷이나 집계가 필요한 경우에 유용합니다.
+[갱신 가능 구체화 뷰](/ko/concepts/features/materialized-views/refreshable-materialized-view)는 ClickHouse에서 쿼리를 주기적으로 다시 실행해 그 결과를 저장하는 특수한 유형의 materialized view이며, 다른 데이터베이스의 materialized view와 유사하게 동작합니다. 이는 실시간 삽입 트리거보다 주기적인 스냅샷이나 집계가 필요한 경우에 유용합니다.
 
 <Tip>
-  갱신 가능 materialized view는 [암시적 대상](#implicit-target) 방식과 [명시적 대상](#explicit-target) 방식 **모두**에서 사용할 수 있습니다. `refreshable` 구성은 대상 테이블 관리 방식과는 독립적입니다.
+  갱신 가능 구체화 뷰는 [암시적 대상](#implicit-target) 방식과 [명시적 대상](#explicit-target) 방식 **모두**에서 사용할 수 있습니다. `refreshable` 구성은 대상 테이블 관리 방식과는 독립적입니다.
 </Tip>
 
-갱신 가능 materialized view를 사용하려면 다음 옵션과 함께 MV 모델에 `refreshable` 구성 객체를 추가하십시오:
+갱신 가능 구체화 뷰를 사용하려면 다음 옵션과 함께 MV 모델에 `refreshable` 구성 객체를 추가하십시오:
 
 | 옵션                            | 설명                                                                                            | 필수 여부 | 기본값   |
 | ----------------------------- | --------------------------------------------------------------------------------------------- | ----- | ----- |
-| refresh&#95;interval          | 인터벌 절(필수)                                                                                     | 예     |       |
+| interval                      | `EVERY 5 MINUTE`와 같은 인터벌 절(필수)                                                                | 예     |       |
 | randomize                     | 무작위화 절이며, `RANDOMIZE FOR` 뒤에 추가됩니다                                                            |       |       |
 | append                        | `True`로 설정하면 갱신할 때마다 기존 행을 삭제하지 않고 테이블에 행을 삽입합니다. 이 삽입은 일반적인 INSERT SELECT와 마찬가지로 원자적이지 않습니다. |       | False |
 | depends&#95;on                | 갱신 가능 MV의 종속성 목록입니다. 종속성은 `{schema}.{view_name}` 형식으로 지정하십시오                                  |       |       |
@@ -591,6 +591,19 @@ SELECT
 FROM {{ source('raw', 'events') }}
 GROUP BY event_date, event_type
 ```
+
+<div id="refreshable-updating-parameters">
+  ### 갱신 매개변수 업데이트
+</div>
+
+dbt-clickhouse 1.10.2부터 기존 갱신 가능 구체화 뷰의 갱신 매개변수(`interval`, `randomize`, `depends_on`)를 변경하면 일반 `dbt run` 실행 시 `ALTER TABLE ... MODIFY REFRESH`를 통해 해당 뷰에 직접 적용됩니다. materialized view는 삭제하거나 재생성하지 않으므로 데이터가 손실되지 않으며, 변경 사항을 적용하는 동안 &quot;공백 구간&quot;도 발생하지 않습니다.
+
+일부 전환은 직접 적용할 수 없습니다. dbt는 이를 조용히 무시하지 않고 `dbt run --full-refresh`를 사용하라는 오류를 표시하며 실행을 실패 처리합니다.
+
+* 일반 materialized view를 갱신 가능 materialized view로 변환하는 경우(`refreshable` 구성 추가) 또는 그 반대의 경우(구성 제거)
+* ClickHouse에서는 `MODIFY REFRESH`를 통해 `APPEND`를 추가하거나 제거할 수 없으므로 `append` 설정을 변경하는 경우
+
+`--full-refresh`는 materialized view를 삭제하고 재생성하므로 [활성 수집 중 동작](#behavior-during-active-ingestion)에 설명된 영향이 발생한다는 점에 유의하십시오.
 
 <div id="explicit-target-limitations">
   ### 제한 사항

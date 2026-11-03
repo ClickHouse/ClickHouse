@@ -23,5 +23,12 @@ ENGINE = URL('http://server/')
 --- URL database engine on the server
 Ok.
 Ok.
---- the base URL must contain a scheme
+--- the base URL must contain a scheme, and the rejected value is not echoed back (last line counts the leaks)
 must contain a scheme
+must contain a scheme
+0
+--- the base-url password is masked in the display surfaces (the last line counts the leaks)
+URL(\'https://user:[HIDDEN]@localhost:11111/x/\')
+CREATE DATABASE secret_db
+ENGINE = URL('https://user:[HIDDEN]@localhost:11111/x/')
+0

@@ -67,15 +67,15 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 * `rabbitmq_queue_base` - 큐 이름에 대한 힌트를 지정합니다. 이 설정의 사용 사례는 아래에 설명되어 있습니다.
 * `rabbitmq_persistent` - 1(true)로 설정하면 삽입 쿼리의 전달 모드가 2로 설정됩니다(메시지가 &#39;persistent&#39;로 표시됨). 기본값: `0`.
 * `rabbitmq_skip_broken_messages` – 블록당 schema와 호환되지 않는 메시지에 대해 RabbitMQ 메시지 parser가 허용하는 한도입니다. `rabbitmq_skip_broken_messages = N`이면 엔진은 parse할 수 없는 RabbitMQ 메시지 *N*개를 건너뜁니다(메시지 하나는 데이터 행 하나에 해당함). 기본값: `0`.
-* `rabbitmq_max_block_size` - RabbitMQ에서 데이터를 플러시하기 전에 수집할 행 수입니다. 기본값: [max&#95;insert&#95;block&#95;size](/ko/reference/settings/session-settings#max_insert_block_size).
-* `rabbitmq_flush_interval_ms` - RabbitMQ에서 데이터를 플러시하기 위한 timeout입니다. 기본값: [stream&#95;flush&#95;interval&#95;ms](/ko/reference/settings/session-settings#stream_flush_interval_ms).
+* `rabbitmq_max_block_size` - RabbitMQ에서 데이터를 플러시하기 전에 수집할 행 수입니다. 기본값: [max&#95;insert&#95;block&#95;size](/ko/reference/settings/session-settings/max-insert#max_insert_block_size).
+* `rabbitmq_flush_interval_ms` - RabbitMQ에서 데이터를 플러시하기 위한 timeout입니다. 기본값: [stream&#95;flush&#95;interval&#95;ms](/ko/reference/settings/session-settings/stream#stream_flush_interval_ms).
 * `rabbitmq_queue_settings_list` - 큐를 생성할 때 RabbitMQ 설정을 지정할 수 있습니다. 사용 가능한 설정: `x-max-length`, `x-max-length-bytes`, `x-message-ttl`, `x-expires`, `x-priority`, `x-max-priority`, `x-overflow`, `x-dead-letter-exchange`, `x-queue-type`. 큐에서는 `durable` 설정이 자동으로 활성화됩니다.
-* `rabbitmq_address` - 연결에 사용할 주소입니다. 이 설정 또는 `rabbitmq_host_port`를 사용하십시오.
+* `rabbitmq_address` - 연결에 사용할 주소입니다: `amqp(s)://user:password@host:port/vhost`. 이 설정 또는 `rabbitmq_host_port`를 사용하십시오. 둘 다 설정된 경우 `rabbitmq_address`가 사용됩니다. 해당 host와 port는 [remote&#95;url&#95;allow&#95;hosts](/ko/reference/settings/server-settings/settings/remote#remote_url_allow_hosts)와 대조하여 확인됩니다.
 * `rabbitmq_vhost` - RabbitMQ vhost입니다. 기본값: `'/'`.
 * `rabbitmq_queue_consume` - 사용자 정의 큐를 사용하고 exchange, 큐, binding 선언 등 RabbitMQ 설정은 수행하지 않습니다. 기본값: `false`.
 * `rabbitmq_username` - RabbitMQ 사용자 이름입니다.
 * `rabbitmq_password` - RabbitMQ 비밀번호입니다.
-* `reject_unhandled_messages` - 오류 발생 시 메시지를 거부합니다(RabbitMQ negative acknowledgement 전송). `rabbitmq_queue_settings_list`에 `x-dead-letter-exchange`가 정의되어 있으면 이 설정은 자동으로 활성화됩니다.
+* `reject_unhandled_messages` - 오류 발생 시 메시지를 거부합니다(RabbitMQ negative 확인 응답 전송). `rabbitmq_queue_settings_list`에 `x-dead-letter-exchange`가 정의되어 있으면 이 설정은 자동으로 활성화됩니다.
 * `rabbitmq_commit_on_select` - select 쿼리가 실행될 때 메시지를 commit합니다. 기본값: `false`.
 * `rabbitmq_max_rows_per_message` — 행 기반 포맷에서 하나의 RabbitMQ 메시지에 기록할 수 있는 최대 행 수입니다. 기본값: `1`.
 * `rabbitmq_empty_queue_backoff_start_ms` — RabbitMQ 큐가 비어 있을 때 읽기를 다시 예약하기 위한 시작 백오프 지점입니다.
@@ -87,7 +87,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
   ### SSL 연결
 </div>
 
-연결 주소에 `rabbitmq_secure = 1` 또는 `amqps`를 사용하십시오: `rabbitmq_address = 'amqps://guest:guest@localhost/vhost'`.
+`rabbitmq_host_port` 형식에서는 TLS를 사용하려면 `rabbitmq_secure = 1`을 설정하십시오.
+`rabbitmq_address` 형식에서는 전송 방식이 URI scheme으로 결정되므로 `amqps`를 사용하십시오: `rabbitmq_address = 'amqps://guest:guest@localhost/vhost'`. 주소 형식에서는 `rabbitmq_secure`가 무시되며, `rabbitmq_secure = 1`을 평문 `amqp://` 주소와 함께 사용하면 암호화되지 않은 상태로 연결하는 대신 거부됩니다.
 사용 중인 라이브러리의 기본 동작은 생성된 TLS 연결이 충분히 안전한지 확인하지 않는 것입니다. 인증서가 만료되었거나, 자체 서명되었거나, 누락되었거나, 유효하지 않더라도 연결은 그대로 허용됩니다. 더 엄격한 인증서 검사는 향후 구현될 수 있습니다.
 
 또한 rabbitmq 관련 설정과 함께 포맷 설정도 추가할 수 있습니다.
@@ -155,7 +156,7 @@ Exchange 유형 옵션:
 * 모든 메시지가 성공적으로 처리되지 않았을 때 특정 durable 큐에서 읽기를 복원할 수 있습니다. 특정 큐 하나에서 읽기를 재개하려면 `rabbitmq_queue_base` 설정에 해당 큐 이름을 지정하고 `rabbitmq_num_consumers` 및 `rabbitmq_num_queues`는 지정하지 마십시오(기본값은 1). 특정 테이블에 대해 선언된 모든 큐에서 읽기를 재개하려면 `rabbitmq_queue_base`, `rabbitmq_num_consumers`, `rabbitmq_num_queues`에 이전과 동일한 설정을 지정하면 됩니다. 기본적으로 큐 이름은 테이블마다 고유합니다.
 * 큐가 durable로 선언되어 있고 자동 삭제되지 않으므로 재사용할 수 있습니다. (RabbitMQ CLI 도구를 사용해 삭제할 수 있습니다.)
 
-성능을 높이기 위해 수신된 메시지는 [max&#95;insert&#95;block&#95;size](/ko/reference/settings/session-settings#max_insert_block_size) 크기의 블록으로 그룹화됩니다. [stream&#95;flush&#95;interval&#95;ms](/ko/reference/settings/server-settings/settings) 밀리초 안에 블록이 형성되지 않으면, 블록이 완전하지 않더라도 데이터가 테이블로 플러시됩니다.
+성능을 높이기 위해 수신된 메시지는 [max&#95;insert&#95;block&#95;size](/ko/reference/settings/session-settings/max-insert#max_insert_block_size) 크기의 블록으로 그룹화됩니다. [stream&#95;flush&#95;interval&#95;ms](/ko/reference/settings/session-settings/stream#stream_flush_interval_ms) 밀리초 안에 블록이 형성되지 않으면, 블록이 완전하지 않더라도 데이터가 테이블로 플러시됩니다.
 
 `rabbitmq_num_consumers` 및/또는 `rabbitmq_num_queues` 설정이 `rabbitmq_exchange_type`와 함께 지정된 경우:
 
@@ -220,6 +221,14 @@ RabbitMQ 엔진은 ClickHouse에서 지원하는 모든 [포맷](/ko/reference/f
 하나의 RabbitMQ 메시지에 들어가는 행 수는 포맷이 행 기반인지 블록 기반인지에 따라 달라집니다:
 
 * 행 기반 포맷에서는 하나의 RabbitMQ 메시지에 들어가는 행 수를 `rabbitmq_max_rows_per_message` 설정으로 제어할 수 있습니다.
-* 블록 기반 포맷에서는 블록을 더 작은 파트로 나눌 수는 없지만, 하나의 블록에 들어가는 행 수는 공통 설정 [max&#95;block&#95;size](/ko/reference/settings/session-settings#max_block_size)로 제어할 수 있습니다.
+* 블록 기반 포맷에서는 블록을 더 작은 파트로 나눌 수는 없지만, 하나의 블록에 들어가는 행 수는 공통 설정 [max&#95;block&#95;size](/ko/reference/settings/session-settings/max#max_block_size)로 제어할 수 있습니다.
+
+<div id="data-durability">
+  ## 전원 손실 시 데이터 내구성
+</div>
+
+`RabbitMQ` 엔진은 삽입된 데이터가 디스크에 기록되기 전에 OS 페이지 캐시가 사라지면 이미 소비한 행이 조용히 손실될 수 있습니다. Batch가 종속 materialized view에 푸시된 후 consumer는 브로커에 `basic.ack`를 보내며, 브로커는 이를 통해 해당 메시지를 삭제합니다. 하지만 삽입된 행은 대상 파트가 fsync된 후에야 내구성을 갖습니다. 기본적으로 이는 동기적으로 수행되지 않습니다(`fsync_after_insert = 0`). 확인 응답 후 대상 파트가 fsync되기 전에 페이지 캐시가 손실되면 브로커는 이미 메시지를 삭제한 상태이며, consumer는 다시 연결할 때 해당 메시지 다음부터 처리를 재개합니다. 따라서 오류 없이 행이 손실되고 `count()`는 단순히 더 작게 나타납니다. 일반적인 프로세스 강제 종료로는 커널이 페이지 캐시를 유지하고 결국 디스크에 기록하므로 이 문제가 드러나지 않습니다. 반면 페이지 캐시가 손실되면 이 문제가 드러납니다. 예로는 장치 수준의 전원 손실이나 비정상적인 호스트 또는 커널 재설정이 있습니다.
+
+권장되는 materialized view 활용 경로에서는 전체 삽입 파이프라인이 완료된 후에만 확인 응답이 전송됩니다. 대상 `MergeTree` 테이블에서 `fsync_after_insert = 1`(및 `fsync_part_directory = 1`)을 설정하면 확인 응답이 전송되기 전에 삽입된 파트의 내구성이 보장되므로 이 구간을 크게 줄일 수 있습니다. 캐스케이딩 materialized view의 대상을 포함하여 Batch가 삽입되는 모든 `MergeTree` 테이블에서 이 설정을 활성화해야 합니다. 이러한 테이블 중 하나라도 기본값으로 남아 있으면 해당 파트는 여전히 손실될 수 있습니다. 비동기 중간 계층은 이 설정만으로 내구성을 확보할 수 없습니다. 예를 들어 `Distributed` 대상은 ClickHouse Cloud 외부에서는 기본값인 `distributed_foreground_insert = 0`에서 백그라운드로 삽입하므로, 자체적인 내구성 설정이나 동기 삽입이 필요합니다. 이 완화 조치는 `rabbitmq_commit_on_select = 1`을 사용하는 직접 `INSERT ... SELECT ... FROM <rabbitmq_table>`에는 적용되지 않습니다. 이 경우 메시지는 대상에 내구성 있는 파트가 기록된 후가 아니라 읽기가 끝에 도달했을 때 확인 응답됩니다.
 
 {/*AUTOGENERATED_END*/}

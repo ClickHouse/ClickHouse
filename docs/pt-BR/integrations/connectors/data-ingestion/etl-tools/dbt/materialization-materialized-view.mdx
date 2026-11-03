@@ -522,23 +522,23 @@ A tabela a seguir resume a segurança de cada operação quando há inserções 
 </Tip>
 
 <div id="refreshable-materialized-views">
-  ## Visões Materializadas Atualizáveis
+  ## Views Materializadas Atualizáveis
 </div>
 
-[Visões Materializadas Atualizáveis](/pt-BR/concepts/features/materialized-views/refreshable-materialized-view) são um tipo especial de visão materializada no ClickHouse que reexecuta periodicamente a consulta e armazena o resultado, de forma semelhante ao funcionamento das visões materializadas em outros bancos de dados. Isso é útil em cenários nos quais você precisa de snapshots ou agregações periódicas, em vez de gatilhos de inserção em tempo real.
+[Views Materializadas Atualizáveis](/pt-BR/concepts/features/materialized-views/refreshable-materialized-view) são um tipo especial de visão materializada no ClickHouse que reexecuta periodicamente a consulta e armazena o resultado, de forma semelhante ao funcionamento das visões materializadas em outros bancos de dados. Isso é útil em cenários nos quais você precisa de snapshots ou agregações periódicas, em vez de gatilhos de inserção em tempo real.
 
 <Tip>
-  Visões materializadas atualizáveis podem ser usadas com **as duas** abordagens: [destino implícito](#implicit-target) e [destino explícito](#explicit-target). A configuração `refreshable` é independente de como a tabela de destino é gerenciada.
+  Views materializadas atualizáveis podem ser usadas com **as duas** abordagens: [destino implícito](#implicit-target) e [destino explícito](#explicit-target). A configuração `refreshable` é independente de como a tabela de destino é gerenciada.
 </Tip>
 
-Para usar uma visão materializada atualizável, adicione um objeto de configuração `refreshable` ao seu modelo de MV com as seguintes opções:
+Para usar uma view materializada atualizável, adicione um objeto de configuração `refreshable` ao seu modelo de MV com as seguintes opções:
 
 | Opção                         | Descrição                                                                                                                                                                   | Obrigatório | Valor padrão |
 | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | ------------ |
-| refresh&#95;interval          | A cláusula de intervalo (obrigatória)                                                                                                                                       | Sim         |              |
+| interval                      | A cláusula de intervalo (obrigatória), como `EVERY 5 MINUTE`                                                                                                                | Sim         |              |
 | randomize                     | A cláusula de randomização, que aparecerá após `RANDOMIZE FOR`                                                                                                              |             |              |
 | append                        | Se definido como `True`, cada atualização insere linhas na tabela sem excluir as linhas existentes. A inserção não é atômica, assim como em um `INSERT SELECT` normal.      |             | False        |
-| depends&#95;on                | Uma lista de dependências para a mv atualizável. Forneça as dependências no seguinte formato: `{schema}.{view_name}`                                                        |             |              |
+| depends&#95;on                | Uma lista de dependências para a view materializada atualizável. Forneça as dependências no seguinte formato: `{schema}.{view_name}`                                                        |             |              |
 | depends&#95;on&#95;validation | Define se a existência das dependências fornecidas em `depends_on` deve ser validada. Caso uma dependência não contenha um schema, a validação ocorrerá no schema `default` |             | False        |
 
 <div id="refreshable-implicit-example">
@@ -591,6 +591,19 @@ SELECT
 FROM {{ source('raw', 'events') }}
 GROUP BY event_date, event_type
 ```
+
+<div id="refreshable-updating-parameters">
+  ### Atualização dos parâmetros de atualização
+</div>
+
+A partir do dbt-clickhouse 1.10.2, as alterações nos parâmetros de atualização (`interval`, `randomize` e `depends_on`) de uma view materializada atualizável existente são aplicadas diretamente durante uma execução normal de `dbt run`, usando `ALTER TABLE ... MODIFY REFRESH`. A view materializada não é removida nem recriada; portanto, nenhum dado é perdido e não há uma &quot;janela cega&quot; enquanto a alteração é aplicada.
+
+Algumas transições não podem ser aplicadas diretamente. Em vez de ignorá-las silenciosamente, o dbt encerrará a execução com um erro solicitando que você use `dbt run --full-refresh`:
+
+* Converter uma view materializada regular em uma atualizável (adicionando a configuração `refreshable`) ou vice-versa (removendo-a).
+* Alterar a configuração `append`, pois o ClickHouse não permite adicionar nem remover `APPEND` por meio de `MODIFY REFRESH`.
+
+Lembre-se de que um `--full-refresh` remove e recria a view materializada, com as implicações descritas em [Comportamento durante a ingestão ativa](#behavior-during-active-ingestion).
 
 <div id="explicit-target-limitations">
   ### Limitações

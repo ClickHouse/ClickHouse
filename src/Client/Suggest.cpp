@@ -15,8 +15,10 @@
 #include <Functions/FunctionFactory.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/Context.h>
+#include <Client/ClientBaseHelpers.h>
 #include <Client/Connection.h>
 #include <Client/LocalConnection.h>
+#include <Core/Settings.h>
 
 
 namespace DB
@@ -169,7 +171,8 @@ void Suggest::load(ContextPtr context, const ConnectionParameters & connection_p
                 fetch(*connection,
                     connection_parameters.timeouts,
                     suggestion_query,
-                    my_context->getClientInfo());
+                    my_context->getClientInfo(),
+                    my_context->getSettingsRef());
             }
             catch (const Exception & e)
             {
@@ -209,24 +212,33 @@ void Suggest::load(ContextPtr context, const ConnectionParameters & connection_p
 void Suggest::load(IServerConnection & connection,
                    const ConnectionTimeouts & timeouts,
                    Int32 suggestion_limit,
-                   const ClientInfo & client_info)
+                   const ClientInfo & client_info,
+                   const Settings & settings,
+                   std::ostream & error_stream)
 {
     try
     {
+        last_exchange_ended_in_sync = false;
         auto suggestion_query = getLoadSuggestionQuery(connection, suggestion_limit, true, timeouts);
-        fetch(connection, timeouts, suggestion_query, client_info);
+        fetch(connection, timeouts, suggestion_query, client_info, settings);
     }
     catch (...)
     {
-        std::cerr << "Suggestions loading exception: " << getCurrentExceptionMessage(false, true) << std::endl;
+        error_stream << "Suggestions loading exception: " << getCurrentExceptionMessage(false, true) << std::endl;
         last_error = getCurrentExceptionCode();
     }
 }
 
-void Suggest::fetch(IServerConnection & connection, const ConnectionTimeouts & timeouts, const std::string & query, const ClientInfo & client_info)
+void Suggest::fetch(IServerConnection & connection, const ConnectionTimeouts & timeouts, const std::string & query, const ClientInfo & client_info, const Settings & settings)
 {
+    /// Pass the compression-related settings (rather than `nullptr`) so this helper query honors
+    /// `network_compression_method` like a regular client query, instead of unconditionally using the
+    /// built-in default network codec. The rest of the session settings must not leak into this query -
+    /// it is a plain SQL query issued by the client itself, so, for example, a session-level `dialect`
+    /// would make the server fail to parse it.
+    const Settings compression_settings = networkCompressionSettings(settings);
     connection.sendQuery(
-        timeouts, query, {} /* query_parameters */, "" /* query_id */, QueryProcessingStage::Complete, nullptr, &client_info, false, {} /* external_roles*/, {});
+        timeouts, query, {} /* query_parameters */, "" /* query_id */, QueryProcessingStage::Complete, &compression_settings, &client_info, false, {} /* external_roles*/, {});
 
     while (true)
     {
@@ -247,10 +259,16 @@ void Suggest::fetch(IServerConnection & connection, const ConnectionTimeouts & t
                 continue;
 
             case Protocol::Server::Exception:
+                /// A server exception is the terminal packet of a protocol-consistent exchange:
+                /// the query was sent with the terminating empty block (`with_pending_data` is
+                /// false), and the server drains what it has not read yet and preserves the
+                /// connection. Unlike a transport failure, it leaves the connection in sync.
+                last_exchange_ended_in_sync = true;
                 packet.exception->rethrow();
                 return;
 
             case Protocol::Server::EndOfStream:
+                last_exchange_ended_in_sync = true;
                 last_error = ErrorCodes::OK;
                 return;
 

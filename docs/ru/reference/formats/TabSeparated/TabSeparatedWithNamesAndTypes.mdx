@@ -19,10 +19,10 @@ doc_type: 'reference'
 Отличается от формата [`TabSeparated`](/ru/reference/formats/TabSeparated/TabSeparated) тем, что в первой строке записываются имена столбцов, а во второй — типы столбцов.
 
 <Note>
-  * Если для настройки [`input_format_with_names_use_header`](/ru/reference/settings/formats#input_format_with_names_use_header) установлено значение `1`,
-    столбцы из входных данных будут сопоставляться со столбцами таблицы по их именам, а столбцы с неизвестными именами будут пропускаться, если для настройки [`input_format_skip_unknown_fields`](/ru/reference/settings/formats#input_format_skip_unknown_fields) установлено значение `1`.
+  * Если для настройки [`input_format_with_names_use_header`](/ru/reference/settings/formats/input-format#input_format_with_names_use_header) установлено значение `1`,
+    столбцы из входных данных будут сопоставляться со столбцами таблицы по их именам, а столбцы с неизвестными именами будут пропускаться, если для настройки [`input_format_skip_unknown_fields`](/ru/reference/settings/formats/input-format#input_format_skip_unknown_fields) установлено значение `1`.
     В противном случае первая строка будет пропущена.
-  * Если для настройки [`input_format_with_types_use_header`](/ru/reference/settings/formats#input_format_with_types_use_header) установлено значение `1`,
+  * Если для настройки [`input_format_with_types_use_header`](/ru/reference/settings/formats/input-format#input_format_with_types_use_header) установлено значение `1`,
     типы из входных данных будут сравниваться с типами соответствующих столбцов таблицы. В противном случае вторая строка будет пропущена.
 </Note>
 

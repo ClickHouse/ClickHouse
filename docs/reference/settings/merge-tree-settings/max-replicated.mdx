@@ -41,7 +41,7 @@ Could be used for throttling speed when replicating data to add or replace
 new nodes.
 
 ## max_replicated_logs_to_keep {#max_replicated_logs_to_keep}
-<SettingsInfoBlock type="UInt64" default_value="1000" />
+<SettingsInfoBlock type="NonZeroUInt64" default_value="1000" />
 
 How many records may be in the ClickHouse Keeper log if there is inactive
 replica. An inactive replica becomes lost when when this number exceed.

@@ -1,0 +1,11 @@
+::ffff:192.168.0.1	8080
+64:ff9b::192.0.2.33	0
+::ffff:192.168.0.1	::ffff:192.168.0.1
+::ffff:192.168.0.1	8080
+hex-only literals are unchanged
+2001:db8::1	8080
+a dotted literal that is not an IPv6 address is not a host
+1	0
+1
+and the plain (non-RFC) functions are unchanged
+1	0

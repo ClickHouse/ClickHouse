@@ -1,0 +1,231 @@
+---
+slug: /optimize/isolate-query-bottlenecks
+sidebarTitle: 'Isolate query bottlenecks'
+sidebar_label: 'Isolate query bottlenecks'
+sidebar_position: 3
+title: 'Isolate query bottlenecks'
+description: 'Use a repeatable three-run comparison to isolate bottlenecks in slow ClickHouse queries'
+doc_type: 'guide'
+keywords: ['query optimization', 'query bottlenecks', 'performance', 'benchmarking']
+---
+
+import { Image } from "/snippets/components/Image.jsx";
+import NYCTaxiExampleDataset from '/snippets/_nyc_taxi_example_dataset.mdx';
+
+Query optimization is easier when you change one part of a query at a time and compare the results with a stable baseline. This guide shows how to progressively simplify a query and use the differences between runs to identify which operations contribute most to its duration. You can then validate the suspected bottleneck before choosing an optimization.
+
+## Before you begin {#before-you-begin}
+
+Start with a recurring slow-query pattern you want to investigate. If you have not identified one yet, [Diagnose slow queries](/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries) walks through the process.
+
+To run the examples in this guide as written, create and load the `nyc_taxi.trips_small_inferred` table if you have not already done so:
+
+<Accordion title="Set up the example dataset">
+  <NYCTaxiExampleDataset />
+</Accordion>
+
+The example table uses `ORDER BY ()`, so its date filter cannot use an ordering key to eliminate data during the read. Use the example to practice the comparison method rather than as a performance target.
+
+## How it works {#how-it-works}
+
+Progressively simplifying a query lets you compare its duration before and after removing a stage of work. The differences help you decide whether to investigate scanning and filtering, grouping, aggregate calculations, or later work such as sorting and output formatting:
+
+1. Run the original query to establish the baseline measurements.
+2. Keep `GROUP BY`, replace the query's aggregate calculations with `count`, and remove later operations such as sorting and output formatting.
+3. Remove the grouping and run an ungrouped `count` to approximate the work retained by scanning, filtering, and any joins.
+
+These stages apply directly to conventional grouped aggregate queries. For more complex queries, apply the same principle to one `SELECT` block at a time: preserve equivalent data sources and filters, remove one operation at a time, and verify the execution plan after each change.
+
+<Note>
+These differences are diagnostic estimates, not exact measurements of ClickHouse execution stages. Changing the query can alter its execution plan, columns read, and data passed between stages. Use the results to form a hypothesis. Then validate it with query logs and [`EXPLAIN`](/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries#explain-statement).
+</Note>
+
+## Establish a repeatable baseline {#establish-a-repeatable-baseline}
+
+Use the following practices to make the measurements comparable:
+
+- Keep the `FROM`, `JOIN`, `PREWHERE`, and `WHERE` clauses unchanged so every comparison uses the same data and time range.
+- Run each version of the query several times under similar system load.
+- Keep cache conditions consistent. Either run each version of the query before recording measurements or disable the caches listed below. Do not compare cached and uncached runs.
+- Record a representative duration, such as the median across repeated runs after any warm-up runs, rather than relying on the fastest or slowest result.
+- Change one variable at a time so that you can associate a performance difference with a specific change.
+
+For an uncached diagnostic comparison, disable the ClickHouse filesystem cache for remote data, the query cache, and the query-condition cache. Disable implicit projections as well so that the `count` in run C does not use an optimized execution plan that bypasses the scan you intend to compare.
+
+```sql
+SET enable_filesystem_cache = 0;
+SET use_query_cache = 0;
+SET use_query_condition_cache = 0;
+SET optimize_use_implicit_projections = 0;
+```
+
+<Note>
+These `SET` statements apply only to the current session. Run all comparison queries in that session, or apply the same settings to every run. The filesystem cache setting does not disable the operating system's page cache or every [ClickHouse cache](/concepts/features/performance/caches/caches). When you finish, close the dedicated session or restore each setting to its previous value.
+</Note>
+
+The workflow combines controlled query runs with measurements from the query log:
+
+<Image img="/images/guides/best-practices/query_optimization_diagram_1.webp" size="lg" alt="Workflow for identifying candidate queries in query logs and testing changes in isolation"/>
+
+Collect measurements for each run as follows:
+
+1. Assign a unique query ID to every run, or record the ID generated by your query interface. For example, identify repeated runs as `bottleneck-a-1`, `bottleneck-a-2`, and `bottleneck-a-3`. With `clickhouse-client`, pass `--query_id your-query-id` when you execute a query.
+2. Execute each comparison query several times under the same conditions. Keep warm-up runs separate from the measured runs.
+3. Flush the query log before looking up recently completed queries:
+
+   ```sql
+   SYSTEM FLUSH LOGS;
+   ```
+
+   If you cannot run `SYSTEM FLUSH LOGS`, wait for the query log to flush automatically, then retry the lookup. If the record never appears, verify that query logging is enabled, that you can read `system.query_log`, and that you are querying the node that ran the query.
+4. Look up the completed record for each query ID. `system.query_log` records both `QueryStart` and `QueryFinish` events for a completed query. Filter for `QueryFinish`, which contains the final duration, rows and bytes read, and peak memory:
+
+   ```sql
+   SELECT
+       query_id,
+       query_duration_ms,
+       read_rows,
+       read_bytes,
+       memory_usage
+   FROM system.query_log
+   WHERE type = 'QueryFinish'
+     AND query_id = 'your-query-id'
+   ORDER BY event_time_microseconds DESC
+   LIMIT 1;
+   ```
+
+5. For each version of the query, use the median duration from the measured runs. Record `read_rows`, `read_bytes`, and peak memory from the run closest to that median so that the measurements remain tied to an actual run.
+
+<Note>
+For distributed queries, `memory_usage` in the initiating query's `QueryFinish` record is not a cluster-wide peak. Use `initial_query_id` to inspect child `QueryFinish` records on participating nodes.
+</Note>
+
+Use a table like the following to organize the representative measurements. See [`system.query_log`](/reference/system-tables/query_log) for more information about its fields and configuration.
+
+<Tabs>
+  <Tab title="Table">
+
+| Run | Query version | Representative duration | `read_rows` | `read_bytes` | Peak memory |
+| --- | --- | --- | --- | --- | --- |
+| A | Original query |  |  |  |  |
+| B | Grouped `count` |  |  |  |  |
+| C | Ungrouped `count` |  |  |  |  |
+
+  </Tab>
+  <Tab title="CSV">
+
+```csv title="query-comparison.csv"
+Run,Query version,Representative duration,read_rows,read_bytes,Peak memory
+A,Original query,,,,
+B,Grouped count,,,,
+C,Ungrouped count,,,,
+```
+
+  </Tab>
+</Tabs>
+
+## Run progressively simpler queries {#run-progressively-simpler-queries}
+
+To demonstrate all three comparisons, the example uses the grouped [date-range workload](/guides/clickhouse/performance-and-monitoring/query-optimization-example#date-range-aggregation). You can apply the method to a different query without following the worked example. If the query does not contain `GROUP BY`, skip run B as described below.
+
+<Steps>
+<Step title="Run A: Measure the original query" id="run-a-measure-the-original-query">
+
+Run the complete query without changing its filters, grouping, aggregate expressions, sorting, or output. This establishes the baseline duration, rows and bytes read, and peak memory usage.
+
+This query groups trips by payment type and calculates several aggregate values:
+
+```sql
+SELECT
+    payment_type,
+    count() AS trip_count,
+    formatReadableQuantity(sum(trip_distance)) AS total_distance,
+    avg(total_amount) AS total_amount_avg,
+    avg(tip_amount) AS tip_amount_avg
+FROM nyc_taxi.trips_small_inferred
+WHERE pickup_datetime >= '2009-01-01'
+  AND pickup_datetime < '2009-04-01'
+GROUP BY payment_type
+ORDER BY trip_count DESC;
+```
+
+Record the query's measurements as run A.
+
+</Step>
+<Step title="Run B: Retain grouping with count" id="run-b-retain-grouping-with-count">
+
+Preserve the query's `FROM`, `JOIN`, `PREWHERE`, `WHERE`, and grouping keys. Replace its aggregate expressions with a grouped `count`. Remove work after aggregation, including the original sorting and output expressions.
+
+```sql
+SELECT
+    payment_type,
+    count() AS trip_count
+FROM nyc_taxi.trips_small_inferred
+WHERE pickup_datetime >= '2009-01-01'
+  AND pickup_datetime < '2009-04-01'
+GROUP BY payment_type;
+```
+
+Run B still scans and filters the data, performs any joins, and constructs the groups. Compare its duration with run A to estimate the contribution of the original aggregate expressions and work after aggregation. Also compare `read_bytes`, because removing aggregate expressions can remove columns from the read.
+
+If the original query does not contain a `GROUP BY`, there is no grouping stage to isolate. Skip run B and compare the original query directly with run C.
+
+</Step>
+<Step title="Run C: Remove grouping" id="run-c-remove-grouping">
+
+Remove `GROUP BY` and return a single `count`. Keep the `FROM`, `JOIN`, `PREWHERE`, and `WHERE` clauses unchanged so that the remaining work is comparable.
+
+```sql
+SELECT count()
+FROM nyc_taxi.trips_small_inferred
+WHERE pickup_datetime >= '2009-01-01'
+  AND pickup_datetime < '2009-04-01';
+```
+
+Run C provides a baseline for the operations its plan retains, not an isolated measurement of scanning or filtering. Compare it with run B to estimate the contribution of grouping. Also compare `read_bytes`, because removing the grouping key can reduce the columns read. The returned `count` shows how many rows reach aggregation after the preserved filters and joins.
+
+Before interpreting run C, confirm that its execution plan reads the intended data source and applies the preserved filters. A projection or metadata-based count can change the work performed. For a scan-based baseline, disable the optimization shown in the plan for all three runs: use `optimize_use_implicit_projections = 0` for an implicit projection, `optimize_use_projections = 0` for an explicit projection, or `optimize_trivial_count_query = 0` for an unfiltered count served from table metadata.
+
+If run C remains slow, investigate the operations retained in it, beginning with scanning and filtering. Use query logs and `EXPLAIN` to validate the suspected bottleneck before changing the query.
+
+</Step>
+</Steps>
+
+## Interpret the differences {#interpret-the-differences}
+
+Compare representative durations from repeated runs instead of subtracting two individual timings. Large, consistent differences indicate where to investigate next:
+
+| Observation | Potential bottlenecks | Next investigation |
+| --- | --- | --- |
+| Run A is much slower than run B | Aggregate expressions, sorting, other work after aggregation, or additional columns read | Inspect expensive aggregate functions, expressions, `ORDER BY`, `read_bytes`, and peak memory usage |
+| Run B is much slower than run C | Grouping, group cardinality, or reading the grouping keys | Inspect grouping keys, the number of groups, `read_bytes`, and peak memory usage |
+| Run C remains slow | Scanning, filtering, joins, or another operation retained by run C | Inspect rows and bytes read, primary-key use, data-skipping indexes, and the execution plan; then validate the suspected bottleneck |
+| All three runs have similar durations | The source of latency might be common to all three versions, or simplification might have changed the execution plan | Compare `read_rows`, `read_bytes`, and peak memory across the runs. If they are also similar, investigate the operations retained by run C. Otherwise, compare the execution plans for differences |
+
+### Compare rows read with the count result {#compare-rows-read-with-count-result}
+
+Compare `read_rows` for run C with the value returned by its `count`. For example, if `read_rows` is 100 million and `count` returns 1 million, ClickHouse scanned approximately 100 source rows for every row counted. This shows that the filter rejected most of the rows read from the table, but it does not identify why. This ratio is intended for straightforward single-table scans. For queries with multiple data sources or projections, interpret `read_rows` using the execution plan instead.
+
+For ClickHouse 25.9 and later, disable the query-condition cache and dynamic application of data-skipping indexes before inspecting index usage:
+
+```sql
+SET use_query_condition_cache = 0;
+SET use_skip_indexes_on_data_read = 0;
+```
+
+Then use [`EXPLAIN indexes = 1`](/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries#explain-statement) to see which indexes ClickHouse used and how many parts and granules each index eliminated. If ClickHouse selected more granules than expected, inspect whether the filters align with the table's ordering key and whether partition pruning or a data-skipping index could eliminate more granules. If the plan has no `Indexes` section, `EXPLAIN` did not report index pruning for that query. A full-table analytical query, by contrast, is expected to read most of the table.
+
+## Validate the suspected bottleneck {#validate-the-suspected-bottleneck}
+
+After the comparison points to a likely bottleneck, validate it before changing the schema or query. Use evidence appropriate to the suspected source of latency:
+
+- For a scan or filtering bottleneck, use `EXPLAIN indexes = 1` with the settings described above to see which indexes ClickHouse uses and how many parts and granules each index eliminates. Check whether the plan uses an implicit projection instead of the expected scan.
+- For a grouping or aggregation bottleneck, inspect relevant query profile events and peak memory usage.
+- If run C remains slow and contains joins, compare it with a diagnostic query that removes one join at a time. A large decrease in duration suggests that the removed join contributes significant work. Because removing a join changes the query's meaning, use this comparison only to isolate timing and interpret changes in row count separately.
+- For a bottleneck in another operation retained by run C, inspect the execution plan and relevant query profile events.
+
+See the [slow-query diagnosis guide](/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries#explain-statement) for details about the index information returned by `EXPLAIN`. Apply one targeted change, then repeat runs A, B, and C under the same conditions. Confirm that the change reduced the intended work and did not move the bottleneck elsewhere.
+
+## Next steps {#next-steps}
+
+Continue with [Optimization approaches](/guides/clickhouse/performance-and-monitoring/optimization-approaches) to match the suspected bottleneck to one or more targeted changes.

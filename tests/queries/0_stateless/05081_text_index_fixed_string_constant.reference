@@ -1,0 +1,112 @@
+Ground truth
+1
+Text Index
+-- ngrams tokenizer on a String column
+---- FixedString comparison
+2
+2
+2
+2
+-- ngrams tokenizer on a FixedString column
+---- FixedString comparison
+2
+2
+2
+2
+-- splitByNonAlpha tokenizer on a String column
+---- FixedString comparison
+2
+2
+2
+2
+-- splitByNonAlpha tokenizer on a FixedString column
+---- FixedString comparison
+2
+2
+2
+2
+-- array tokenizer on a String column
+---- FixedString comparison
+2
+2
+2
+2
+-- array tokenizer on a FixedString column
+---- FixedString comparison
+2
+2
+2
+2
+-- sparseGrams tokenizer on a String column
+---- FixedString comparison
+2
+2
+2
+2
+-- sparseGrams tokenizer on a FixedString column
+---- FixedString comparison
+2
+2
+2
+2
+Bloom Filter Index
+-- tokenbf_v1 on a String column
+---- FixedString comparison
+2
+2
+2
+2
+-- tokenbf_v1 on a FixedString column
+---- FixedString comparison
+2
+2
+2
+2
+-- ngrambf_v1 on a String column
+---- FixedString comparison
+2
+2
+2
+2
+-- ngrambf_v1 on a FixedString column
+---- FixedString comparison
+2
+2
+2
+2
+Functions
+-- hasAny and hasAll ignore the padding
+2
+2
+2
+2
+2
+2
+2
+2
+-- has keeps the padding
+0
+0
+2
+2
+-- mapContainsKey and mapContainsValue keep the padding
+0
+0
+0
+0
+2
+2
+-- startsWith and endsWith keep the padding
+0
+0
+0
+0
+2
+2
+2
+2
+-- an unpadded constant still prunes
+2
+0
+2
+0

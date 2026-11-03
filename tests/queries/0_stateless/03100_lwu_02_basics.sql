@@ -23,7 +23,7 @@ INSERT INTO t_shared SELECT number, number FROM numbers(50, 10);
 
 UPDATE t_shared SET c1 = 222 WHERE id % 2 = 0;
 
-SELECT name, rows  FROM system.parts WHERE database = currentDatabase() AND table = 't_shared' ORDER BY name;
+SELECT replaceRegexpOne(name, 'patch-[0-9a-f]+', 'patch-<hash>') AS name, rows FROM system.parts WHERE database = currentDatabase() AND table = 't_shared' ORDER BY name;
 
 SELECT * FROM t_shared ORDER BY id;
 

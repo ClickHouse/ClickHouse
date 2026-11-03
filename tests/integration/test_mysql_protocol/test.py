@@ -276,6 +276,62 @@ def test_mysql_client_secure(started_cluster):
     ) 
 
 
+def test_mysql_require_secure_transport_ignores_advertised_capability(started_cluster):
+    # `mysql_require_secure_transport` must be enforced from the actual state of the transport, not
+    # from the capability bit the client advertises. A plaintext client that sets `CLIENT_SSL` in its
+    # `HandshakeResponse` without ever sending an `SSLRequest` stays on the unencrypted socket, so it
+    # must be rejected all the same.
+    CLIENT_PROTOCOL_41 = 0x200
+    CLIENT_SSL = 0x800
+    CLIENT_SECURE_CONNECTION = 0x8000
+    CLIENT_PLUGIN_AUTH = 0x80000
+
+    # A user that needs no credentials, so that the handshake would complete with an OK packet if
+    # the gate did not reject it: this is what makes the test prove the gate rather than an
+    # authentication failure.
+    creds = {"password": "123"}
+    node_secure.query("DROP USER IF EXISTS mysql_plaintext_client_ssl", settings=creds)
+    node_secure.query(
+        "CREATE USER mysql_plaintext_client_ssl IDENTIFIED WITH no_password",
+        settings=creds,
+    )
+
+    sock = socket.create_connection(
+        (started_cluster.get_instance_ip("node_secure"), server_port), timeout=10
+    )
+    try:
+        # Read and discard the server greeting.
+        assert _mysql_recv_packet(sock) is not None
+
+        capabilities = (
+            CLIENT_PROTOCOL_41
+            | CLIENT_SSL
+            | CLIENT_SECURE_CONNECTION
+            | CLIENT_PLUGIN_AUTH
+        )
+        body = struct.pack("<I", capabilities)
+        body += struct.pack("<I", 16 * 1024 * 1024)  # max packet size
+        body += bytes([0x21])  # charset utf8_general_ci
+        body += b"\x00" * 23  # reserved
+        body += b"mysql_plaintext_client_ssl\x00"
+        body += bytes([0])  # empty auth response
+        body += b"mysql_native_password\x00"
+        # The payload is longer than an `SSLRequest`, so the server keeps reading it as a plaintext
+        # `HandshakeResponse` and the connection is never upgraded to TLS.
+        _mysql_send_packet(sock, 1, body)
+
+        try:
+            reply = _mysql_recv_packet(sock)
+        except (ConnectionResetError, socket.timeout, OSError):
+            reply = None
+        # The server either closes the connection or replies with an error packet, but it must never
+        # accept the handshake with an OK packet.
+        assert reply is None or reply[0] == 0xFF, reply
+    finally:
+        sock.close()
+        node_secure.query("DROP USER mysql_plaintext_client_ssl", settings=creds)
+
+
 def test_mysql_client_exception(started_cluster):
     # Poco exception.
     code, (stdout, stderr) = started_cluster.mysql_client_container.exec_run(
@@ -376,7 +432,7 @@ def test_mysql_replacement_query(started_cluster):
     code, (stdout, stderr) = started_cluster.mysql_client_container.exec_run(
         """
         mysql --protocol tcp -h {host} -P {port} default -u default
-        --password=123 -e "kill query 0;"
+        --password=123 -e "set kill_throw_if_noop = 0; kill query 0;"
     """.format(
             host=started_cluster.get_instance_ip("node"), port=server_port
         ),
@@ -387,7 +443,7 @@ def test_mysql_replacement_query(started_cluster):
     code, (stdout, stderr) = started_cluster.mysql_client_container.exec_run(
         """
         mysql --protocol tcp -h {host} -P {port} default -u default
-        --password=123 -e "kill query where query_id='mysql:0';"
+        --password=123 -e "set kill_throw_if_noop = 0; kill query where query_id='mysql:0';"
     """.format(
             host=started_cluster.get_instance_ip("node"), port=server_port
         ),
@@ -574,6 +630,12 @@ def test_mysql_replacement_query_injection(started_cluster):
     # "^[0-9]" check silently dropped every multi-digit id. A single trailing ';' is accepted
     # (programmatic clients pass it through), but a non-numeric tail or a second statement is not,
     # so it stays injection-safe and never falls through to the unsupported raw "KILL QUERY <id>".
+    cursor.execute("SET kill_throw_if_noop = 1")
+    with pytest.raises(pymysql.Error) as exc_info:
+        cursor.execute(f"KILL QUERY {client.thread_id()}")
+    assert "No query to kill" in str(exc_info.value)
+
+    cursor.execute("SET kill_throw_if_noop = 0")
     cursor.execute("KILL QUERY 12")
     cursor.execute("KILL QUERY 12;")
     with pytest.raises(pymysql.Error):
@@ -1207,7 +1269,7 @@ def test_mysqljs_client(started_cluster, nodejs_container):
         ),
         demux=True,
     )
-    assert code == 1
+    assert code == 1, stderr
     assert (
         "MySQL is requesting the sha256_password authentication method, which is not supported."
         in stderr.decode()
@@ -1219,23 +1281,26 @@ def test_mysqljs_client(started_cluster, nodejs_container):
         ),
         demux=True,
     )
-    assert code == 0
+    assert code == 0, stderr
 
-    code, (_, _) = nodejs_container.exec_run(
+    code, (_, stderr) = nodejs_container.exec_run(
         "node test.js {host} {port} user_with_double_sha1 abacaba".format(
             host=started_cluster.get_instance_ip("node"), port=server_port
         ),
         demux=True,
     )
-    assert code == 0
+    assert code == 0, stderr
 
-    code, (_, _) = nodejs_container.exec_run(
+    code, (_, stderr) = nodejs_container.exec_run(
         "node test.js {host} {port} user_with_empty_password 123".format(
             host=started_cluster.get_instance_ip("node"), port=server_port
         ),
         demux=True,
     )
-    assert code == 1
+    assert code == 1, stderr
+    # An uncaught error anywhere in the client also exits 1, so the exit code alone
+    # does not tell a refused password from a client that never reached the server.
+    assert b"Authentication failed" in (stderr or b""), stderr
 
 
 def test_java_client_text(started_cluster, java_container):

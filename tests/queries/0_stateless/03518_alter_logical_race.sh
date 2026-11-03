@@ -222,7 +222,10 @@ function thread_insert()
         # worker cleanly instead of letting `set -e` fail the whole test for that benign
         # shutdown/restart race. A genuine INSERT error is printed by `run_with_retry` (which
         # then returns 0), so it still fails the empty-reference test.
-        run_with_retry "INSERT INTO alter_table (a, b, c, d, e, f, g) SELECT rand(1), rand(2), rand(3), rand(4), rand(5), rand(6), rand(7) FROM numbers(1000)" || break
+        # `randConstant` puts each INSERT into a single partition, so it writes one part: the merge-selecting
+        # task tries a merge before a mutation, and an INSERT writing a part per partition keeps a merge
+        # selectable on every pass, starving the ALTER's mutation.
+        run_with_retry "INSERT INTO alter_table (a, b, c, d, e, f, g) SELECT rand(1), randConstant(2), rand(3), rand(4), rand(5), rand(6), rand(7) FROM numbers(1000)" || break
         inserts=$((inserts + 1))
         # Record that the INSERT side has made progress (see `within_budget`).
         touch "$INSERT_PROGRESS_MARKER"

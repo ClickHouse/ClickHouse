@@ -408,7 +408,7 @@ through their JSON AST form.
         R"(SELECT formatQueryFromJSON(parseQueryToJSON('SELECT a, b FROM t WHERE x > 1'));)",
         R"(
 ┌─formatQueryFromJSON(parseQueryToJSON('SELECT a, b FROM t WHERE x > 1'))─┐
-│ SELECT a, b FROM t WHERE x > 1                                         │
+│ SELECT a, b FROM t WHERE x > 1                                          │
 └─────────────────────────────────────────────────────────────────────────┘
         )"
     },

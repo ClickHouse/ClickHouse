@@ -49,28 +49,28 @@ Langfuse는 오픈 소스 구성 요소만 사용하며, 로컬, 클라우드 �
 ```mermaid
 flowchart TB
     User["UI, API, SDKs"]
-    subgraph vpc ["VPC"]
-        Web["웹 서버<br/>(langfuse/langfuse)"]
-        Worker["비동기 작업자<br/>(langfuse/worker)"]
-        Postgres@{ img: "https://langfuse.com/images/logos/postgres_icon.svg", label: "Postgres - OLTP\n(트랜잭션 데이터)", pos: "b", w: 60, h: 60, constraint: "on" }
-        Cache@{ img: "https://langfuse.com/images/logos/redis_icon.png", label: "Redis\n(캐시, 큐)", pos: "b", w: 60, h: 60, constraint: "on" }
-        Clickhouse@{ img: "https://langfuse.com/images/logos/clickhouse_icon.svg", label: "Clickhouse - OLAP\n(관측성 데이터)", pos: "b", w: 60, h: 60, constraint: "on" }
-        S3@{ img: "https://langfuse.com/images/logos/s3_icon.svg", label: "S3 / Blob Storage\n(원시 이벤트, 멀티모달 첨부 데이터)", pos: "b", w: 60, h: 60, constraint: "on" }
+    subgraph vpc["VPC"]
+        Web["Web Server<br/>(langfuse/langfuse)"]
+        Worker["Async Worker<br/>(langfuse/worker)"]
+        Postgres@{ img: "https://langfuse.com/images/logos/postgres_icon.svg", label: "Postgres - OLTP\n(Transactional Data)", pos: "b", w: 60, h: 60, constraint: "on" }
+        Cache@{ img: "https://langfuse.com/images/logos/redis_icon.png", label: "Redis\n(Cache, Queue)", pos: "b", w: 60, h: 60, constraint: "on" }
+        ClickHouse@{ img: "https://langfuse.com/images/logos/clickhouse_icon.svg", label: "ClickHouse - OLAP\n(Observability Data)", pos: "b", w: 60, h: 60, constraint: "on" }
+        S3@{ img: "https://langfuse.com/images/logos/s3_icon.svg", label: "S3 / Blob Storage\n(Raw events, multi-modal attachments)", pos: "b", w: 60, h: 60, constraint: "on" }
     end
-    LLM["LLM API/gateway<br/>(선택 사항; BYO; 동일한 VPC 내 또는 VPC 피어링 환경에 배치 가능)"]
+    LLM["LLM API/Gateway<br/>(optional; BYO; can be same VPC or VPC-peered)"]
 
     User --> Web
     Web --> S3
     Web --> Postgres
     Web --> Cache
-    Web --> Clickhouse
-    Web -..->|"Playground에서는 선택 사항"| LLM
+    Web --> ClickHouse
+    Web -..->|"optional for playground"| LLM
 
     Cache --> Worker
-    Worker --> Clickhouse
+    Worker --> ClickHouse
     Worker --> Postgres
     Worker --> S3
-    Worker -..->|"evals에서는 선택 사항"| LLM
+    Worker -..->|"optional for evals"| LLM
 ```
 
 <div id="features">

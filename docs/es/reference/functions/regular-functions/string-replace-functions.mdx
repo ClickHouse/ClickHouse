@@ -108,9 +108,9 @@ SELECT overlay('My father is from Mexico.', 'mother', 4) AS res;
 ```
 
 ```response title=Response
-┌─res──────────────────────┐
-│ My mother is from Mexico.│
-└──────────────────────────┘
+┌─res───────────────────────┐
+│ My mother is from Mexico. │
+└───────────────────────────┘
 ```
 
 **Reemplazo con longitud**
@@ -120,9 +120,9 @@ SELECT overlay('My father is from Mexico.', 'dad', 4, 6) AS res;
 ```
 
 ```response title=Response
-┌─res───────────────────┐
-│ My dad is from Mexico.│
-└───────────────────────┘
+┌─res────────────────────┐
+│ My dad is from Mexico. │
+└────────────────────────┘
 ```
 
 <div id="overlayUTF8">
@@ -131,7 +131,7 @@ SELECT overlay('My father is from Mexico.', 'dad', 4, 6) AS res;
 
 Introducido en: v24.9.0
 
-Reemplaza parte de la cadena `s` por otra cadena, `replace`, a partir del índice `offset`, basado en 1.
+Reemplaza parte de la cadena `s` por otra cadena, `replace`, a partir del `índice basado en 1` `offset`.
 Asume que la cadena contiene texto válido codificado en UTF-8.
 Si no se cumple esta suposición, no se lanza ninguna excepción y el resultado es indefinido.
 
@@ -145,7 +145,7 @@ overlayUTF8(s, replace, offset[, length])
 
 * `s` — La cadena de entrada. [`String`](/es/reference/data-types/string)
 * `replace` — La cadena de reemplazo. [`const String`](/es/reference/data-types/string)
-* `offset` — Un entero `Int` (indexado desde 1). Si `offset` es negativo, se cuenta desde el final de la cadena de entrada `s`. [`(U)Int*`](/es/reference/data-types/int-uint)
+* `offset` — Un entero `Int` (índice basado en 1). Si `offset` es negativo, se cuenta desde el final de la cadena de entrada `s`. [`(U)Int*`](/es/reference/data-types/int-uint)
 * `length` — Opcional. Especifica la longitud del fragmento de la cadena de entrada `s` que se va a reemplazar. Si no se especifica `length`, el número de caracteres eliminados de `s` es igual a la longitud de `replace`; de lo contrario, se eliminan `length` caracteres. [`(U)Int*`](/es/reference/data-types/int-uint)
 
 **Valor devuelto**
@@ -161,9 +161,9 @@ SELECT overlayUTF8('Mein Vater ist aus Österreich.', 'der Türkei', 20) AS res;
 ```
 
 ```response title=Response
-┌─res───────────────────────────┐
-│ Mein Vater ist aus der Türkei.│
-└───────────────────────────────┘
+┌─res────────────────────────────┐
+│ Mein Vater ist aus der Türkei. │
+└────────────────────────────────┘
 ```
 
 <div id="printf">
@@ -359,9 +359,9 @@ SELECT replaceRegexpAll('Hello123', '.', '\\0\\0') AS res
 ```
 
 ```response title=Response
-┌─res──────────────────┐
-│ HHeelllloo112233     │
-└──────────────────────┘
+┌─res──────────────┐
+│ HHeelllloo112233 │
+└──────────────────┘
 ```
 
 **Ejemplo de reemplazo de una subcadena vacía**

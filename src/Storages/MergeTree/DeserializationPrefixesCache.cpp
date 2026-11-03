@@ -20,21 +20,13 @@ std::unordered_map<std::string, ISerialization::DeserializeBinaryBulkStatePtr> D
 
 std::unordered_map<std::string, ISerialization::DeserializeBinaryBulkStatePtr> DeserializationPrefixesCache::clonePrefixes() const
 {
+    /// One context for the whole map: the states the columns share stay shared.
+    ISerialization::DeserializeBinaryBulkStateCloneContext context;
     std::unordered_map<std::string, ISerialization::DeserializeBinaryBulkStatePtr> cloned;
     cloned.reserve(prefixes->size());
     for (const auto & [name, prefix] : *prefixes)
-        cloned[name] = prefix ? prefix->clone() : nullptr;
+        cloned[name] = prefix ? prefix->clone(context) : nullptr;
     return cloned;
-}
-
-void DeserializationPrefixesCache::addToOwnershipValidator(ColumnsOwnershipValidator & validator) const
-{
-    /// `prefixes` is written once under `mutex` before `is_set` becomes true and is never mutated
-    /// afterwards, so once `is_set` is observed as true the stored states can be read without locking.
-    /// The states themselves are the originals shared with the reader clones; enumerate them read-only.
-    if (!is_set)
-        return;
-    validator.add(*prefixes);
 }
 
 }

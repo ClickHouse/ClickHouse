@@ -1,0 +1,284 @@
+---
+slug: /use-cases/observability/clickstack/url-parameters
+title: '딥 링크'
+sidebarTitle: '딥 링크'
+description: 'URL 쿼리 매개변수를 사용해 ClickStack 페이지로 직접 연결'
+doc_type: 'reference'
+keywords: ['ClickStack', 'URL 매개변수', '쿼리 매개변수', '딥 링크', 'permalink', 'HyperDX']
+---
+
+URL 쿼리 매개변수를 사용한 딥 링크로 ClickStack 페이지를 열면 외부 시스템(알림 알림, 런북, CI job, chat 메시지 등)에서 특정 검색, 대시보드 또는 패널로 바로 이동할 수 있습니다.
+
+이 페이지의 예시에서는 `<YOUR_CLICKSTACK_URL>`을 사용합니다. 이를 ClickStack URL로 바꾸십시오. 예를 들어 로컬 open source 배포에서는 `http://localhost:8080`을 사용하고, ClickHouse Cloud의 관리형 ClickStack에서는 `https://hyperdx.clickhouse.cloud`을 사용합니다.
+
+<Note>
+  예시에서는 가독성을 위해 URL 인코딩하지 않은 쿼리 매개변수를 표시합니다. 프로그래밍 방식으로 링크를 구성할 때는 각 쿼리 매개변수 값을 URL 인코딩하십시오.
+</Note>
+
+<Info>
+  **관리형 ClickStack 서비스 ID 매개변수**
+
+  ClickHouse Cloud에서 관리형 ClickStack을 사용하는 경우, 링크를 따라온 인증된 사용자가 둘 이상의 ClickHouse Cloud 서비스를 사용할 권한이 있다면 어떤 ClickHouse Cloud 서비스를 로드할지 식별할 수 있도록 링크에 `?chcServiceId=` 매개변수를 포함해야 합니다.
+
+  예시: 특정 Cloud 서비스에서 검색 열기
+
+  ```text
+  https://hyperdx.clickhouse.cloud/search?chcServiceId=abc123
+  ```
+</Info>
+
+<div id="search">
+  ## 검색 — `/search`
+</div>
+
+기본 로그/트레이스 검색 보기입니다. 검색 구문에 관한 자세한 내용은 [검색](/ko/clickstack/features/search)을 참조하십시오.
+
+| 매개변수            | 포맷                                                                         | 설명                                                                                    |
+| --------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `source`        | string                                                                     | 검색할 소스입니다. 소스 ID 또는 소스 **이름**(예: `Logs`)을 지정할 수 있습니다. 이 페이지에서는 Log 및 Trace 소스만 지원됩니다. |
+| `where`         | string                                                                     | Lucene 또는 SQL 구문으로 작성한 필터 쿼리 텍스트입니다(`whereLanguage` 참조).                              |
+| `whereLanguage` | `lucene` | `sql`                                                           | `where`에 사용된 쿼리 언어입니다.                                                                |
+| `select`        | string                                                                     | 결과 테이블에 표시할 SQL 컬럼/표현식 목록입니다.                                                         |
+| `filters`       | `{"type":"sql","condition":"<column> IN ('<value1>', '<value2>', ...)"}[]` | `where`와 함께 적용되는 구조화된 패싯 필터입니다.                                                       |
+| `orderBy`       | string                                                                     | 결과 테이블의 SQL 정렬 표현식입니다.                                                                |
+| `mode`          | `results` | `delta` | `pattern`                                            | 활성 분석 모드입니다. `delta`는 트레이스 소스에서만 사용할 수 있습니다.                                          |
+| `isLive`        | `true` | `false`                                                           | 라이브 테일 활성화 여부입니다(기본값: `true`).                                                        |
+| `traceId`       | string                                                                     | 지정한 트레이스 ID의 트레이스 워터폴 보기로 바로 이동합니다.                                                   |
+| `from`, `to`    | epoch 밀리초                                                                  | 절대 시간 범위입니다. 생략하면 최근 15분이 기본값으로 사용됩니다.                                                |
+
+저장된 검색은 `/search/<savedSearchId>`에서 직접 열 수도 있습니다.
+
+<div id="example-search-errors">
+  ### 예시: 특정 시간 범위에서 `Logs` 소스의 `checkout` 서비스 오류 검색
+</div>
+
+```text
+<YOUR_CLICKSTACK_URL>/search?source=Logs&from=1735689600000&to=1735693200000&where=level:error&filters=[{"type":"sql","condition":"ServiceName IN ('checkout')"}]
+```
+
+<div id="example-search-trace">
+  ### 예시: 트레이스의 워터폴 뷰로 바로 이동
+</div>
+
+```text
+<YOUR_CLICKSTACK_URL>/search?source=Traces&traceId=ba7217967eb90d040b7eb39f97ecc5c4
+```
+
+<div id="saved-searches">
+  ## 저장된 검색 — `/search/list`
+</div>
+
+저장된 검색 목록입니다.
+
+| 매개변수  | 포맷     | 설명                            |
+| ----- | ------ | ----------------------------- |
+| `tag` | string | 이 태그가 지정된 저장된 검색만 목록에 표시합니다. |
+
+<div id="example-saved-searches-tag">
+  ### 예시: `production` 태그가 지정된 저장된 검색 나열
+</div>
+
+```text
+<YOUR_CLICKSTACK_URL>/search/list?tag=production
+```
+
+<div id="dashboards">
+  ## 대시보드 — `/dashboards/<dashboardId>`
+</div>
+
+저장된 대시보드입니다. `<dashboardId>`를 생략하면(`/dashboards`) 임시 저장되지 않은 대시보드가 열립니다. 대시보드 구축에 관한 자세한 내용은 [Dashboards](/ko/clickstack/features/dashboards/overview)를 참조하십시오.
+
+| 매개변수                | 포맷                                                                                                                                  | 설명                                                    |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| `from`, `to`        | epoch 밀리초                                                                                                                           | 모든 타일에 적용되는 시간 범위입니다. 생략하면 최근 15분이 기본값으로 적용됩니다.       |
+| `where`             | 문자열                                                                                                                                 | 모든 타일에 적용되는 대시보드 수준의 필터 쿼리 텍스트입니다.                    |
+| `whereLanguage`     | `lucene` | `sql`                                                                                                                    | `where`를 작성하는 데 사용되는 쿼리 언어입니다.                        |
+| `filters`           | `{"type":"sql","condition":"<column> IN ('<value1>', '<value2>', ...)"}[]`                                                          | `ServiceName` 필터 드롭다운에서 두 항목을 선택하는 구조화된 대시보드 필터 값입니다. |
+| `granularity`       | `auto` | `30 second` | `1 minute` | `5 minute` | `10 minute` | `15 minute` | `30 minute` | `1 hour` | `12 hour` | `1 day` | `7 day` | 시계열 타일의 버킷 크기입니다. `auto`는 선택한 시간 범위에 따라 버킷 크기를 선택합니다. |
+| `highlightedTileId` | 문자열                                                                                                                                 | 특정 타일로 스크롤하여 강조 표시합니다. 알림에서 연결할 때 유용합니다.              |
+
+<div id="example-dashboard-highlight">
+  ### 예시: 특정 시간 범위에서 하나의 타일을 강조 표시한 대시보드 열기
+</div>
+
+알림 알림에서 해당 알림을 발생시킨 타일로 바로 연결할 때 유용합니다.
+
+```text
+<YOUR_CLICKSTACK_URL>/dashboards/64f1c2a1e8b9f3a1b0d2e5c7?from=1735689600000&to=1735693200000&highlightedTileId=chart-1
+```
+
+<div id="dashboards-list">
+  ## 대시보드 목록 — `/dashboards/list`
+</div>
+
+| 매개변수  | 포맷     | 설명                        |
+| ----- | ------ | ------------------------- |
+| `tag` | string | 태그를 기준으로 대시보드 목록을 필터링합니다. |
+
+<div id="example-dashboards-list-tag">
+  ### 예시: `infra` 태그가 지정된 대시보드 목록 조회
+</div>
+
+```text
+<YOUR_CLICKSTACK_URL>/dashboards/list?tag=infra
+```
+
+<div id="chart-explorer">
+  ## Chart Explorer — `/chart`
+</div>
+
+즉석에서 만들고 공유할 수 있는 차트 빌더입니다.
+
+| 매개변수         | 포맷        | 설명                                                                                                 |
+| ------------ | --------- | -------------------------------------------------------------------------------------------------- |
+| `config`     | JSON      | 전체 차트 구성(source, select, where, 차트 유형 등)입니다. 일반적으로 직접 작성하는 대신 앱 내의 &quot;Share&quot; 링크를 통해 생성됩니다. |
+| `from`, `to` | epoch 밀리초 | 시간 범위입니다. 생략하면 기본값으로 최근 15분이 사용됩니다.                                                                |
+
+<div id="example-chart-config">
+  ### 예시: 특정 시간 범위에 대한 p99 지연 시간 차트 구성 열기
+</div>
+
+```text
+<YOUR_CLICKSTACK_URL>/chart?granularity=auto&from=1785759381784&to=1785762981785&config={"name":"","select":[{"aggFn":"quantile","aggCondition":"","aggConditionLanguage":"lucene","valueExpression":"Duration","level":0.99,"alias":"p99"}],"where":"","whereLanguage":"lucene","displayType":"line","alignDateRangeToGranularity":true,"source":"68814eb5d40a9d0449afc1f2","connection":"68814b6fd40a9d0449afbe78","groupBy":"ServiceName"}
+```
+
+<div id="alerts">
+  ## 알림 — `/alerts`
+</div>
+
+알림 생성 및 관리에 대한 자세한 내용은 [알림](/ko/clickstack/features/alerts)을 참조하십시오.
+
+| 매개변수      | 포맷     | 설명                            |
+| --------- | ------ | ----------------------------- |
+| `search`  | string | 알림 이름 또는 설명에 대한 자유 텍스트 필터입니다. |
+| `tag`     | string | 태그로 필터링합니다.                   |
+| `creator` | string | 알림 생성자 이름으로 필터링합니다.           |
+
+<div id="example-alerts-filter">
+  ### 예시: `on-call` 태그가 지정된 알림 목록
+</div>
+
+```text
+<YOUR_CLICKSTACK_URL>/alerts?tag=on-call
+```
+
+<div id="session-replay">
+  ## 세션 리플레이 — `/sessions`
+</div>
+
+세션 리플레이를 탐색하고 재생합니다. 기능에 대한 자세한 내용은 [세션 리플레이](/ko/clickstack/features/session-replay)를 참조하십시오.
+
+| 매개변수            | 포맷               | 설명                                         |
+| --------------- | ---------------- | ------------------------------------------ |
+| `sessionSource` | string           | 세션 소스 ID 또는 이름입니다.                         |
+| `where`         | string           | 세션 목록을 필터링하는 쿼리 텍스트입니다.                    |
+| `whereLanguage` | `lucene` | `sql` | `where`에 작성된 쿼리 언어입니다.                     |
+| `from`, `to`    | epoch 밀리초        | 세션 목록의 시간 범위입니다. 생략하면 최근 15분이 기본값으로 사용됩니다. |
+| `sid`           | string           | ID로 특정 세션을 엽니다.                            |
+| `sfrom`, `sto`  | epoch 밀리초        | 열린 세션의 시간 윈도우입니다(`sid`와 함께 사용).            |
+
+<div id="example-sessions-time-range">
+  ### 예시: 특정 시간 범위의 세션 리플레이 탐색
+</div>
+
+```text
+<YOUR_CLICKSTACK_URL>/sessions?from=1735689600000&to=1735693200000
+```
+
+<div id="example-sessions-open">
+  ### 예시: 기록된 시간 윈도우에 특정 세션 리플레이 열기
+</div>
+
+```text
+<YOUR_CLICKSTACK_URL>/sessions?sid=6712abf0e4b0f2a1c3d4e5f6&sfrom=1735689600000&sto=1735690200000
+```
+
+<div id="service-map">
+  ## 서비스 맵 — `/service-map`
+</div>
+
+기능에 대한 자세한 내용은 [서비스 맵](/ko/clickstack/service-maps)을 참조하십시오.
+
+| 매개변수             | 포맷        | 설명                                                          |
+| ---------------- | --------- | ----------------------------------------------------------- |
+| `source`         | string    | 트레이스 소스 ID 또는 이름입니다.                                   |
+| `samplingFactor` | integer   | 트레이스 샘플링 제수입니다(`1` = 트레이스의 100%, `2` = 50%, `4` = 25% 등). |
+| `from`, `to`     | epoch 밀리초 | 시간 범위입니다. 생략하면 최근 15분이 기본값으로 적용됩니다.                         |
+
+<div id="example-service-map">
+  ### 예시: 지정한 시간 범위의 서비스 맵 보기
+</div>
+
+```text
+<YOUR_CLICKSTACK_URL>/service-map?from=1735689600000&to=1735693200000
+```
+
+<div id="services">
+  ## 서비스 — `/services`
+</div>
+
+서비스별 HTTP, 데이터베이스, 오류 대시보드입니다.
+
+| 매개변수            | 포맷                                                                         | 설명                                           |
+| --------------- | -------------------------------------------------------------------------- | -------------------------------------------- |
+| `tab`           | `http` | `database` | `errors`                                             | 표시할 서비스 대시보드 하위 탭입니다. 기본값은 `http`입니다.        |
+| `source`        | string                                                                     | 트레이스 소스 ID입니다.                               |
+| `service`       | string                                                                     | 선택한 서비스 이름입니다.                               |
+| `where`         | string                                                                     | 필터 쿼리 텍스트입니다.                                |
+| `whereLanguage` | `lucene` | `sql`                                                           | `where`에 사용된 쿼리 언어입니다. 이 페이지의 기본값은 `sql`입니다. |
+| `filters`       | `{"type":"sql","condition":"<column> IN ('<value1>', '<value2>', ...)"}[]` | 대시보드 필터 바 값입니다.                              |
+| `from`, `to`    | epoch 밀리초                                                                  | 시간 범위입니다. 생략하면 최근 15분으로 기본 설정됩니다.            |
+
+<div id="example-services-database">
+  ### 예시: 특정 시간 범위에서 서비스의 데이터베이스 대시보드 보기
+</div>
+
+```text
+<YOUR_CLICKSTACK_URL>/services?tab=database&service=checkout&from=1735689600000&to=1735693200000
+```
+
+<div id="example-services-errors">
+  ### 예시: 서비스의 오류 대시보드 보기
+</div>
+
+```text
+<YOUR_CLICKSTACK_URL>/services?tab=errors&service=payments
+```
+
+<div id="kubernetes">
+  ## Kubernetes — `/kubernetes`
+</div>
+
+| 매개변수                                   | 포맷                               | 설명                                                   |
+| -------------------------------------- | -------------------------------- | ---------------------------------------------------- |
+| `logSource`, `metricSource`            | string                           | 로그 및 메트릭 소스 ID입니다. 하나만 제공하면 다른 소스는 연관된 소스로 기본 설정됩니다. |
+| `tab`                                  | 예: `pods`, `nodes`, `namespaces` | 활성 하위 보기입니다.                                         |
+| `q`                                    | string                           | 리소스 목록의 Lucene 쿼리입니다.                                |
+| `podName`, `nodeName`, `namespaceName` | string                           | 특정 파드, 노드 또는 네임스페이스의 상세 정보 패널을 엽니다.                  |
+| `from`, `to`                           | epoch 밀리초                        | 시간 범위입니다. 생략하면 최근 15분으로 기본 설정됩니다.                    |
+
+<div id="example-kubernetes-pod">
+  ### 예시: 특정 파드의 상세 정보 패널 열기
+</div>
+
+```text
+<YOUR_CLICKSTACK_URL>/kubernetes?tab=pods&podName=checkout-7d9f8b5c-2xk9p
+```
+
+<div id="notebooks">
+  ## 노트북 — `/notebook/<notebookId>`
+</div>
+
+<Info>
+  **관리형 ClickStack에서만 사용 가능**
+
+  노트북은 관리형 ClickStack 배포에서만 사용할 수 있습니다. 기능에 대한 자세한 내용은 [AI 노트북](/ko/clickstack/notebooks)를 참조하십시오.
+</Info>
+
+<div id="example-notebook-open">
+  ### 예시: 특정 Cloud 서비스에서 지정된 노트북 열기
+</div>
+
+```text
+<YOUR_CLICKSTACK_URL>/notebook/64f1c2a1e8b9f3a1b0d2e5c7?chcServiceId=abc123
+```

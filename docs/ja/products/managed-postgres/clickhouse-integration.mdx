@@ -1,7 +1,7 @@
 ---
 slug: /cloud/managed-postgres/clickhouse-integration
-sidebarTitle: 'ClickHouse 連携'
-title: 'ClickHouse 連携'
+sidebarTitle: 'ClickHouse に同期'
+title: 'ClickHouse に同期'
 description: '組み込みの CDC（変更データキャプチャ）機能を使って、Postgres のデータを ClickHouse にレプリケートします'
 keywords: ['Postgres', 'ClickHouse 連携', 'CDC', 'レプリケーション', 'ClickPipes', 'データ同期']
 doc_type: 'guide'
@@ -12,14 +12,14 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.clickhouse-integration-beta" />
 
-すべての Managed Postgres インスタンスには、任意の ClickHouse サービスに対する CDC 機能が標準で組み込まれています。これにより、Postgres インスタンス上のデータの一部または全部を ClickHouse に移行し、Postgres 側で発生したデータの変更を ClickHouse に継続的かつほぼリアルタイムで反映できます。この機能は内部的に [ClickPipes](/ja/integrations/clickpipes/home) によって提供されています。
+すべての ClickHouse Managed Postgres インスタンスには、任意の ClickHouse サービスに対する CDC 機能が標準で組み込まれています。これにより、Postgres インスタンス上のデータの一部または全部を ClickHouse に移行し、Postgres 側で発生したデータの変更を ClickHouse に継続的かつほぼリアルタイムで反映できます。この機能は内部的に [ClickPipes](/ja/integrations/clickpipes/home) によって提供されています。
 
-これを利用するには、Postgres インスタンスのサイドバーで **ClickHouse 連携** をクリックします。
+これを利用するには、Postgres インスタンスのサイドバーで **Sync to ClickHouse** をクリックします。
 
 <Image img="/images/managed-postgres/clickhouse-integration-intro.webp" alt="サイドバーのインテグレーションオプションを示す ClickHouse 連携のランディングページ" size="md" border />
 
 <Note>
-  先に進む前に、Postgres サービスに ClickPipes サービスからアクセスできることを確認してください。通常はデフォルトでアクセス可能ですが、IP アクセスを制限している場合は、**ClickHouse service** が配置されているリージョンに応じて、[こちら](/ja/integrations/clickpipes/home#list-of-static-ips) の一覧にある一部の送信元 IP からのアクセスを許可する必要がある場合があります。
+  先に進む前に、Postgres サービスに ClickPipes サービスからアクセスできることを確認してください。通常はデフォルトでアクセス可能ですが、IP アクセスを制限している場合は、**ClickHouse service** が配置されているリージョンに応じて、[こちら](/ja/integrations/clickpipes/networking/static-ips) の一覧にある一部の送信元 IP からのアクセスを許可する必要がある場合があります。
 </Note>
 
 ClickPipe の設定を開始するには、**Replicate data in ClickHouse** をクリックします。

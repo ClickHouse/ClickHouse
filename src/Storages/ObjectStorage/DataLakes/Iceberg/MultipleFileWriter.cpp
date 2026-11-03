@@ -5,12 +5,28 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Interpreters/Context.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
+#include <IO/WriteBufferFromFileBase.h>
 
 
 namespace DB
 {
 
 #if USE_AVRO
+
+static std::vector<Int64> fieldIdsOfWrittenColumns(const ColumnMapper & mapper, const Block & written_block)
+{
+    const auto & field_id_by_name = mapper.getStorageColumnEncoding();
+    std::vector<Int64> field_ids;
+    field_ids.reserve(written_block.columns());
+    for (const auto & column : written_block)
+    {
+        auto it = field_id_by_name.find(column.name);
+        if (it == field_id_by_name.end())
+            return {};
+        field_ids.push_back(it->second);
+    }
+    return field_ids;
+}
 
 MultipleFileWriter::MultipleFileWriter(
     UInt64 max_data_file_num_rows_,
@@ -26,8 +42,8 @@ MultipleFileWriter::MultipleFileWriter(
     : max_data_file_num_rows(max_data_file_num_rows_)
     , max_data_file_num_bytes(max_data_file_num_bytes_)
     , schema(schema_)
-    , stats(schema_)
     , column_mapper(Iceberg::createColumnMapperFromFields(schema_))
+    , stats(schema_, fieldIdsOfWrittenColumns(*column_mapper, *sample_block_))
     , filename_generator(filename_generator_)
     , path_resolver(path_resolver_)
     , object_storage(object_storage_)
@@ -43,9 +59,8 @@ void MultipleFileWriter::startNewFile()
     if (buffer)
         finalize();
 
-    current_file_stats = std::make_shared<DataFileStatistics>(schema);
+    current_file_stats = std::make_shared<DataFileStatistics>(schema, fieldIdsOfWrittenColumns(*column_mapper, *sample_block));
     current_file_num_rows = 0;
-    current_file_num_bytes = 0;
     auto metadata_path = filename_generator.generateDataFileName();
     auto storage_path = path_resolver.resolve(metadata_path);
 
@@ -59,23 +74,35 @@ void MultipleFileWriter::startNewFile()
         format_settings->parquet.bloom_filter_push_down = true;
         format_settings->parquet.filter_push_down = true;
     }
+
+    /// The Parquet writer writes a row group to the file only when the row group is complete, so the size of the file,
+    /// which `consume` compares with the limit, does not grow until then. A row group bigger than the limit would make
+    /// a file never cut: with the default `output_format_parquet_row_group_size_bytes` (512 MiB before compression),
+    /// the limit would be ignored for all smaller files.
+    FormatSettings file_format_settings = format_settings ? *format_settings : getFormatSettings(context);
+    file_format_settings.parquet.row_group_bytes = std::min(file_format_settings.parquet.row_group_bytes, max_data_file_num_bytes);
+
     /// The ORC String/FixedString logical-type handling lives in ORCBlockOutputFormat, keyed on
     /// the column mapper, so it covers the compaction/mutation rewrite paths too.
     FormatFilterInfoPtr format_filter_info = std::make_shared<FormatFilterInfo>(nullptr, context, column_mapper, nullptr, nullptr);
     output_format = FormatFactory::instance().getOutputFormatParallelIfPossible(
-        write_format, *buffer, *sample_block, context, format_settings, format_filter_info);
+        write_format, *buffer, *sample_block, context, file_format_settings, format_filter_info);
 }
 
 void MultipleFileWriter::consume(const Chunk & chunk)
 {
-    if (!current_file_num_rows || *current_file_num_rows >= max_data_file_num_rows || *current_file_num_bytes >= max_data_file_num_bytes)
+    /// The size limit is compared against the bytes written to the current file so far, that is, the compressed size,
+    /// the same measure as `file_size_in_bytes` in the manifest, which the compaction uses to select its input files.
+    /// Comparing it against the uncompressed size makes the files smaller than the target by the compression ratio,
+    /// and the output of the compaction is selected by the compaction again. The file can exceed the limit
+    /// by what the output format has not written yet: an incomplete Parquet row group and the row groups being encoded.
+    if (!current_file_num_rows || *current_file_num_rows >= max_data_file_num_rows || buffer->count() >= max_data_file_num_bytes)
     {
         startNewFile();
     }
     output_format->write(sample_block->cloneWithColumns(chunk.getColumns()));
     output_format->flush();
     *current_file_num_rows += chunk.getNumRows();
-    *current_file_num_bytes += chunk.bytes();
     stats.update(chunk);
     current_file_stats->update(chunk);
 }
@@ -84,22 +111,18 @@ void MultipleFileWriter::finalize()
 {
     output_format->flush();
     output_format->finalize();
+
+    auto column_sizes_on_disk = output_format->getColumnSizesOnDisk();
+    if (current_file_stats)
+    {
+        current_file_stats->addColumnSizesOnDisk(column_sizes_on_disk, *sample_block);
+        current_file_stats->setSplitOffsets(output_format->getRowGroupOffsets());
+    }
+    stats.addColumnSizesOnDisk(column_sizes_on_disk, *sample_block);
+
     buffer->finalize();
-    auto buffer_bytes = buffer->count();
-    UInt64 file_bytes = 0;
-    if (buffer_bytes > 0)
-    {
-        file_bytes = buffer_bytes;
-        total_bytes += file_bytes;
-    }
-    else if (!data_file_names.empty())
-    {
-        /// Some storage backends (e.g. Azure) don't track bytes in the write buffer.
-        /// Fall back to querying the actual object size.
-        auto obj_metadata = object_storage->getObjectMetadata(path_resolver.resolve(data_file_names.back()), /*with_tags=*/false);
-        file_bytes = obj_metadata.size_bytes;
-        total_bytes += file_bytes;
-    }
+    UInt64 file_bytes = buffer->count();
+    total_bytes += file_bytes;
 
     if (current_file_stats)
         completed_file_stats.push_back(std::move(current_file_stats));

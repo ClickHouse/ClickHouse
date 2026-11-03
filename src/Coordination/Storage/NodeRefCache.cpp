@@ -3,6 +3,32 @@
 namespace Coordination::Storage
 {
 
+NodeRefCache::Entry * NodeRefCache::findEntry(NodePathHash path_hash)
+{
+    auto * cell = map.find(path_hash);
+    return cell ? &cell->getMapped() : nullptr;
+}
+
+const NodeRefCache::Entry * NodeRefCache::findEntry(NodePathHash path_hash) const
+{
+    const auto * cell = map.find(path_hash);
+    return cell ? &cell->getMapped() : nullptr;
+}
+
+NodeRefCache::Entry & NodeRefCache::getOrInsertEntry(NodePathHash path_hash)
+{
+    return map[path_hash];
+}
+
+void NodeRefCache::eraseEntry(NodePathHash path_hash, Entry & entry)
+{
+    /// `HashTable::erase` clears the cell without running the value's destructor, so we have to
+    /// do its cleanup manually. This is why `map` is private.
+    entry.block.store(nullptr);
+    bool erased = map.erase(path_hash);
+    chassert(erased);
+}
+
 bool NodeRefCache::tryGet(NodePathHash path_hash, NodeRef & out_node, const Entry ** out_entry) const
 {
     const auto * lookup = map.find(path_hash);

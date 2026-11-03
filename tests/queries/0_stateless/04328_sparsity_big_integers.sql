@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: Not supported
-
 -- Big integer columns (Int128 / Int256 / UInt128 / UInt256) classify the same way
 -- as native integers for the sparsity-filter equality patterns: SQL `col = 0`
 -- matches exactly the rows the persisted `num_defaults` counter records.

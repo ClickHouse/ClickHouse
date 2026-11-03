@@ -1,0 +1,21 @@
+index_used	1
+granules_plain	Granules: 5/50
+granules_to_nullable	Granules: 5/50
+granules_null_if	Granules: 5/50
+granules_subquery	Granules: 5/50
+plain	5
+to_nullable	5
+null_if	5
+scalar_subquery	5
+subquery_plain	5
+nullable_constant	5
+nobulk_index_used	1
+nobulk_granules_plain	Granules: 5/50
+nobulk_granules_to_nullable	Granules: 5/50
+nobulk_granules_null_if	Granules: 5/50
+nobulk_granules_subquery	Granules: 5/50
+nobulk_plain	5
+nobulk_to_nullable	5
+nobulk_null_if	5
+nobulk_subquery_plain	5
+nobulk_nullable_constant	5
