@@ -79,6 +79,11 @@ bool IcebergRESTCatalogWarehouse::namespaceExists(const IcebergNamespaceName & n
     return store->namespaceExists(ns);
 }
 
+IcebergRESTCatalogWarehouse::DropNamespaceResult IcebergRESTCatalogWarehouse::dropNamespace(const IcebergNamespaceName & ns) const
+{
+    return store->dropNamespace(ns);
+}
+
 std::optional<std::map<String, String>> IcebergRESTCatalogWarehouse::getNamespaceProperties(const IcebergNamespaceName & ns) const
 {
     return store->getNamespaceProperties(ns);

@@ -165,6 +165,16 @@ def update_namespace_properties(
     )
 
 
+def drop_namespace(name_levels, expected_code=204, auth=None):
+    namespace = "\x1f".join(name_levels)
+    return catalog_request(
+        "DELETE",
+        f"/v1/my_warehouse/namespaces/{namespace}",
+        expected_code=expected_code,
+        auth=auth,
+    )
+
+
 def load_namespace_properties(name_levels):
     namespace = "\x1f".join(name_levels)
     response = catalog_request("GET", f"/v1/my_warehouse/namespaces/{namespace}")
@@ -302,6 +312,7 @@ def test_config(started_cluster):
         "POST /v1/{prefix}/namespaces",
         "GET /v1/{prefix}/namespaces/{namespace}",
         "HEAD /v1/{prefix}/namespaces/{namespace}",
+        "DELETE /v1/{prefix}/namespaces/{namespace}",
         "POST /v1/{prefix}/namespaces/{namespace}/properties",
         "GET /v1/{prefix}/namespaces/{namespace}/tables",
         "POST /v1/{prefix}/namespaces/{namespace}/tables",
@@ -463,6 +474,38 @@ def test_update_namespace_properties(started_cluster):
         assert_error_shape(response, "BadRequestException")
 
 
+def test_drop_namespace(started_cluster):
+    ns = f"drop_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns])
+    create_namespace([ns, "child"])
+    create_table(f"{ns}\x1fchild", "t")
+
+    response = drop_namespace([ns, "child"], expected_code=409)
+    assert_error_shape(response, "NamespaceNotEmptyException")
+    response = drop_namespace([ns], expected_code=409)
+    assert_error_shape(response, "NamespaceNotEmptyException")
+
+    drop_table(f"{ns}\x1fchild", "t")
+    drop_namespace([ns, "child"])
+    response = requests.head(catalog_url(f"/v1/my_warehouse/namespaces/{ns}\x1fchild"))
+    assert response.status_code == 404
+    assert list_namespaces(parent=ns) == []
+
+    drop_namespace([ns])
+    response = drop_namespace([ns], expected_code=404)
+    assert_error_shape(response, "NoSuchNamespaceException")
+    assert [ns] not in list_namespaces()
+    assert not get_keeper().exists(f"{KEEPER_ROOT}/namespaces/{ns}")
+
+    # Parents created implicitly stay until they are dropped explicitly.
+    create_namespace([ns, "a", "b"])
+    drop_namespace([ns, "a", "b"])
+    response = requests.head(catalog_url(f"/v1/my_warehouse/namespaces/{ns}\x1fa"))
+    assert response.status_code == 204
+    drop_namespace([ns, "a"])
+    drop_namespace([ns])
+
+
 def test_malformed_create_namespace(started_cluster):
     for body in [
         None,
@@ -612,6 +655,8 @@ def test_create_namespace_rejects_readonly(started_cluster):
         response = update_namespace_properties(
             [ns], updates={"owner": "bob"}, auth=(user, ""), expected_code=403
         )
+        assert_error_shape(response, "ForbiddenException")
+        response = drop_namespace([ns], auth=(user, ""), expected_code=403)
         assert_error_shape(response, "ForbiddenException")
     assert load_namespace_properties([ns]) == {}
 
@@ -988,6 +1033,9 @@ def test_pyiceberg_client(started_cluster):
     catalog.drop_table(f"{ns}.events")
     assert catalog.list_tables(ns) == []
     assert not catalog.table_exists(f"{ns}.events")
+
+    catalog.drop_namespace(ns)
+    assert (ns,) not in catalog.list_namespaces()
 
 
 def test_names_with_slash(started_cluster):

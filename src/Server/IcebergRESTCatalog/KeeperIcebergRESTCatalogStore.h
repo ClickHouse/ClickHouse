@@ -57,6 +57,16 @@ public:
 
     bool namespaceExists(const IcebergNamespaceName & name) const;
 
+    enum class DropNamespaceResult
+    {
+        Dropped,
+        NamespaceMissing,
+        /// The namespace has tables or child namespaces.
+        NotEmpty,
+    };
+
+    DropNamespaceResult dropNamespace(const IcebergNamespaceName & name);
+
     std::optional<std::map<String, String>> getNamespaceProperties(const IcebergNamespaceName & name) const;
 
     /// Applies `removals` first, then `updates`. nullopt if the namespace does not exist.

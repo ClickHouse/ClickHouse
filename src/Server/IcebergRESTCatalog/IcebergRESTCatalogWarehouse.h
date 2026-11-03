@@ -35,6 +35,8 @@ public:
     /// Catalog state. See `KeeperIcebergRESTCatalogStore` for the contracts.
     bool createNamespace(const IcebergNamespaceName & ns, const std::map<String, String> & properties) const;
     bool namespaceExists(const IcebergNamespaceName & ns) const;
+    using DropNamespaceResult = KeeperIcebergRESTCatalogStore::DropNamespaceResult;
+    DropNamespaceResult dropNamespace(const IcebergNamespaceName & ns) const;
     std::optional<std::map<String, String>> getNamespaceProperties(const IcebergNamespaceName & ns) const;
     std::optional<UpdateNamespacePropertiesResult> updateNamespaceProperties(
         const IcebergNamespaceName & ns, const std::map<String, String> & updates, const std::set<String> & removals) const;

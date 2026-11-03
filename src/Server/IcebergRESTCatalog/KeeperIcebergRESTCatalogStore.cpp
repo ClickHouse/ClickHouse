@@ -200,6 +200,27 @@ bool KeeperIcebergRESTCatalogStore::namespaceExists(const IcebergNamespaceName &
     return getZooKeeper()->exists(namespacePath(name));
 }
 
+KeeperIcebergRESTCatalogStore::DropNamespaceResult KeeperIcebergRESTCatalogStore::dropNamespace(const IcebergNamespaceName & name)
+{
+    auto component_guard = Coordination::setCurrentComponent("KeeperIcebergRESTCatalogStore::dropNamespace");
+    const auto path = namespacePath(name);
+    auto zookeeper = getZooKeeper();
+
+    /// Keeper refuses to remove a node with children, so a concurrent create under this namespace makes the multi fail.
+    Coordination::Requests ops;
+    ops.emplace_back(zkutil::makeRemoveRequest(tablesPath(name), -1));
+    ops.emplace_back(zkutil::makeRemoveRequest(childNamespacesPath(name), -1));
+    ops.emplace_back(zkutil::makeRemoveRequest(path, -1));
+    Coordination::Responses responses;
+    const auto code = zookeeper->tryMulti(ops, responses);
+    if (code == Coordination::Error::ZNONODE)
+        return DropNamespaceResult::NamespaceMissing;
+    if (code == Coordination::Error::ZNOTEMPTY)
+        return DropNamespaceResult::NotEmpty;
+    zkutil::KeeperMultiException::check(code, ops, responses);
+    return DropNamespaceResult::Dropped;
+}
+
 std::optional<std::map<String, String>> KeeperIcebergRESTCatalogStore::getNamespaceProperties(const IcebergNamespaceName & name) const
 {
     auto component_guard = Coordination::setCurrentComponent("KeeperIcebergRESTCatalogStore::getNamespaceProperties");

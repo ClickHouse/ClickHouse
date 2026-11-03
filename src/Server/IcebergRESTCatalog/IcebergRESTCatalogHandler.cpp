@@ -341,6 +341,9 @@ void IcebergRESTCatalogHandler::handleRequest(HTTPServerRequest & request, HTTPS
             case IcebergRESTOperation::NamespaceExists:
                 handleNamespaceExists(*warehouse, *match, response);
                 return;
+            case IcebergRESTOperation::DropNamespace:
+                handleDropNamespace(*warehouse, *match, response, *context);
+                return;
             case IcebergRESTOperation::UpdateNamespaceProperties:
                 handleUpdateNamespaceProperties(*warehouse, *match, request, response, *context);
                 return;
@@ -526,6 +529,32 @@ void IcebergRESTCatalogHandler::handleNamespaceExists(const IcebergRESTCatalogWa
         return;
 
     sendNoContent(response);
+}
+
+void IcebergRESTCatalogHandler::handleDropNamespace(
+    const IcebergRESTCatalogWarehouse & warehouse, const IcebergRESTRouteMatch & match, HTTPServerResponse & response, const Context & context) const
+{
+    checkDDLAllowed(context, "drop namespace");
+
+    using DropNamespaceResult = IcebergRESTCatalogWarehouse::DropNamespaceResult;
+    const auto ns = splitNamespace(match.path_params.at("namespace"));
+    switch (warehouse.dropNamespace(ns))
+    {
+        case DropNamespaceResult::Dropped:
+            LOG_INFO(log, "Dropped namespace {}", joinNamespace(ns));
+            sendNoContent(response);
+            return;
+        case DropNamespaceResult::NamespaceMissing:
+            sendNoSuchNamespace(response, ns);
+            return;
+        case DropNamespaceResult::NotEmpty:
+            sendError(
+                response,
+                Poco::Net::HTTPResponse::HTTP_CONFLICT,
+                "NamespaceNotEmptyException",
+                fmt::format("Namespace {} is not empty", joinNamespace(ns)));
+            return;
+    }
 }
 
 void IcebergRESTCatalogHandler::checkNotReadonly(const Context & context, const String & action)
