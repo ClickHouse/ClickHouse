@@ -1,6 +1,6 @@
--- Tags: no-parallel, no-parallel-replicas
--- no-parallel: drops the (instance-wide) query condition cache
+-- Tags: no-parallel-replicas
 -- no-parallel-replicas: reads with parallel replicas neither record nor use match counts
+-- Random settings limits: use_query_condition_cache=(1, 1); optimize_move_to_prewhere=(1, 1); optimize_use_projections=(1, 1); optimize_use_implicit_projections=(1, 1); apply_string_filters_during_scan=(1, 1)
 
 -- The exact counts of matching rows per granule that the query condition cache keeps for a count() are
 -- keyed by part name and condition. A metadata-only ALTER can change what an unchanged part returns: a
@@ -11,21 +11,11 @@
 -- classified at the end: 'counted' (answered from the cache alone), 'partly counted' (some granules
 -- counted, the others read) or 'read'.
 
-SET use_query_condition_cache = 1;
-SET optimize_move_to_prewhere = 1;
-SET query_plan_optimize_prewhere = 1;
-SET optimize_use_projections = 1;
-SET optimize_use_implicit_projections = 1;
+-- apply_string_filters_during_scan moves the string filters of a count() to PREWHERE, and only filters in PREWHERE are
+-- counted.
 SET apply_mutations_on_fly = 0;
 SET enable_parallel_replicas = 0;
 SET session_timezone = 'UTC';
--- Moves the string filters of a count() to PREWHERE: only filters in PREWHERE are counted
-SET apply_string_filters_during_scan = 1;
--- Reads through the columns cache do not record counts
-SET use_columns_cache = 0;
--- Part pruning by statistics and the trivial count over them do not see a pending DROP COLUMN
-SET use_statistics_for_part_pruning = 0;
-SET optimize_trivial_count_with_sparsity_filter = 0;
 
 DROP TABLE IF EXISTS t_qcc_count_alter;
 
@@ -36,7 +26,6 @@ SETTINGS index_granularity = 1000, index_granularity_bytes = '10Mi', add_minmax_
 SYSTEM STOP MERGES t_qcc_count_alter;
 
 INSERT INTO t_qcc_count_alter SELECT number, if(number % 3 = 0, 'match', 'x'), number % 1000, '2020-01-01 00:00:00' FROM numbers(100000);
-SYSTEM DROP QUERY CONDITION CACHE;
 
 SELECT '-- the DEFAULT of a column that the first part does not store changes';
 ALTER TABLE t_qcc_count_alter ADD COLUMN y String DEFAULT 'match';

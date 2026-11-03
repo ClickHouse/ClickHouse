@@ -55,7 +55,7 @@ SELECT number, if(number < 100000 OR number % 10000 = 5, 'needle', 'hay') FROM n
 
 -- Records the counts of granules 1 and 2.
 SELECT count() FROM t_exact_count_normal_projection_qcc PREWHERE s LIKE '%needle%'
-SETTINGS use_query_condition_cache = 1, use_columns_cache = 0, enable_parallel_replicas = 0;
+SETTINGS use_query_condition_cache = 1, enable_parallel_replicas = 0;
 
 -- Granules 1 and 2 are counted, granule 0 is read from the table, not from `p`. EXPLAIN uses the query condition
 -- cache only when the explained query enables it.
@@ -63,10 +63,10 @@ SELECT
     countIf(explain LIKE '%ReadFromPreparedSource (_exact_count_projection)%') > 0,
     countIf(explain LIKE '%ReadFromMergeTree (p)%') > 0
 FROM (EXPLAIN SELECT count() FROM t_exact_count_normal_projection_qcc PREWHERE s LIKE '%needle%'
-    SETTINGS use_query_condition_cache = 1, use_columns_cache = 0, enable_parallel_replicas = 0, prefer_optimize_projection = 1);
+    SETTINGS use_query_condition_cache = 1, enable_parallel_replicas = 0, prefer_optimize_projection = 1);
 
 SELECT count() FROM t_exact_count_normal_projection_qcc PREWHERE s LIKE '%needle%'
-SETTINGS use_query_condition_cache = 1, use_columns_cache = 0, enable_parallel_replicas = 0, prefer_optimize_projection = 1;
+SETTINGS use_query_condition_cache = 1, enable_parallel_replicas = 0, prefer_optimize_projection = 1;
 SELECT countIf(s LIKE '%needle%') FROM t_exact_count_normal_projection_qcc;
 
 DROP TABLE t_exact_count_normal_projection_qcc;

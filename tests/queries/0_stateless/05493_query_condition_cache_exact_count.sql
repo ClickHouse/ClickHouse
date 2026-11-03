@@ -1,6 +1,6 @@
--- Tags: no-parallel, no-parallel-replicas
--- no-parallel: drops the (instance-wide) query condition cache
+-- Tags: no-parallel-replicas
 -- no-parallel-replicas: reads with parallel replicas neither record nor use match counts
+-- Random settings limits: use_query_condition_cache=(1, 1); optimize_move_to_prewhere=(1, 1); optimize_use_projections=(1, 1); optimize_use_implicit_projections=(1, 1); apply_string_filters_during_scan=(1, 1)
 
 -- A count() whose whole filter is a deterministic PREWHERE records the exact number of matching rows
 -- per granule in the query condition cache, and a later count() with the same filter adds them up
@@ -10,17 +10,10 @@
 -- one row of the prepared count), 'partly counted' (some granules counted, the others read) or 'read'.
 -- Merges are stopped wherever the parts must stay the same between two queries.
 
-SET use_query_condition_cache = 1;
-SET optimize_move_to_prewhere = 1;
-SET query_plan_optimize_prewhere = 1;
-SET optimize_use_projections = 1;
-SET optimize_use_implicit_projections = 1;
+-- apply_string_filters_during_scan moves the string filters of a count() to PREWHERE, and only filters in PREWHERE are
+-- counted.
 SET apply_mutations_on_fly = 0;
 SET enable_parallel_replicas = 0;
--- Moves the string filters of a count() to PREWHERE: only filters in PREWHERE are counted
-SET apply_string_filters_during_scan = 1;
--- Reads through the columns cache do not record counts yet
-SET use_columns_cache = 0;
 
 DROP TABLE IF EXISTS t_qcc_count;
 DROP TABLE IF EXISTS t_qcc_count_parts;
@@ -39,7 +32,6 @@ SELECT number, (number * 7919) % 100003, if(number % 7 = 0 AND number < 50000, c
 FROM numbers(100500);
 
 SELECT '-- the second count() is answered from the counts recorded by the first';
-SYSTEM DROP QUERY CONDITION CACHE;
 SELECT count() FROM t_qcc_count WHERE s LIKE '%match%' SETTINGS log_comment = 'qcc_count_01';
 SELECT count() FROM t_qcc_count WHERE s LIKE '%match%' SETTINGS log_comment = 'qcc_count_02';
 -- Not only a count() of this filter: read as before

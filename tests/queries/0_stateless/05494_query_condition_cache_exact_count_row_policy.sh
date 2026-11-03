@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-parallel-replicas
-# no-parallel: drops the (instance-wide) query condition cache
+# Tags: no-parallel-replicas
 # no-parallel-replicas: reads with parallel replicas neither record nor use match counts
 
 # The exact counts of matching rows per granule that the query condition cache keeps for a count()
@@ -18,7 +17,7 @@ policy_hide="p_qcc_count_hide_${CLICKHOUSE_DATABASE}"
 policy_show="p_qcc_count_show_${CLICKHOUSE_DATABASE}"
 
 query="SELECT count() FROM ${CLICKHOUSE_DATABASE}.t_qcc_count_policy WHERE s LIKE '%match%'
-    SETTINGS use_query_condition_cache = 1, optimize_move_to_prewhere = 1, optimize_use_projections = 1, optimize_use_implicit_projections = 1, enable_parallel_replicas = 0, apply_string_filters_during_scan = 1, use_columns_cache = 0"
+    SETTINGS use_query_condition_cache = 1, optimize_move_to_prewhere = 1, optimize_use_projections = 1, optimize_use_implicit_projections = 1, enable_parallel_replicas = 0, apply_string_filters_during_scan = 1"
 
 run() # query id suffix, then client options
 {
@@ -36,7 +35,6 @@ ENGINE = MergeTree ORDER BY k
 SETTINGS index_granularity = 1000, index_granularity_bytes = '10Mi', add_minmax_index_for_numeric_columns = 0;
 SYSTEM STOP MERGES t_qcc_count_policy;
 INSERT INTO t_qcc_count_policy SELECT number, if(number % 3 = 0, 'match', 'x') FROM numbers(100000);
-SYSTEM DROP QUERY CONDITION CACHE;
 "
 
 echo "-- without a row policy (the second count is answered from the cache)"
@@ -73,7 +71,7 @@ SYSTEM FLUSH LOGS query_log;
 SELECT replaceOne(query_id, '${CLICKHOUSE_DATABASE}_', ''),
     multiIf(NOT has(projections, tables[1] || '._exact_count_projection'), 'read', read_rows = 1, 'counted', 'partly counted')
 FROM system.query_log
-WHERE event_date >= yesterday() AND event_time >= now() - 1200 AND type = 'QueryFinish'
+WHERE event_date >= yesterday() AND event_time >= now() - 1200 AND current_database = currentDatabase() AND type = 'QueryFinish'
     AND query_id LIKE '${CLICKHOUSE_DATABASE}\\_qcc\\_count\\_%'
 ORDER BY query_id;
 "
