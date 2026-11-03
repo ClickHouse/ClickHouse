@@ -158,6 +158,7 @@
 #include <Interpreters/StorageID.h>
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Analyzer/Utils.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
@@ -3530,22 +3531,12 @@ static bool findIdentifier(const ASTFunction * function)
 StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const ASTSelectQuery * select_query_hint)
 {
     ASTFunction * function = assert_cast<ASTFunction *>(table_expression.get());
-    String database_name = getCurrentDatabase();
-    String table_name = function->name;
+    /// Same split as the analyzer: the parser's compound-name flag is lost when a query is formatted and parsed again.
+    auto [database_name, table_name] = extractDatabaseAndTableNameForParameterizedView(function->name, shared_from_this());
 
-    if (function->isCompoundName())
-    {
-        std::vector<std::string> parts;
-        splitInto<'.'>(parts, function->name);
-
-        if (parts.size() == 2)
-        {
-            database_name = std::move(parts[0]);
-            table_name = std::move(parts[1]);
-        }
-    }
-
-    StoragePtr table = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, getQueryContext());
+    StoragePtr table;
+    if (!table_name.empty())
+        table = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, getQueryContext());
     if (table)
     {
         if (table.get()->isView() && table->as<StorageView>() && table->as<StorageView>()->isParameterizedView())

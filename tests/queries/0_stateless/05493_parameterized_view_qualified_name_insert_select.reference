@@ -1,0 +1,11 @@
+into ReplicatedMergeTree
+3
+into Distributed
+3
+refreshable view reloaded from metadata, feeding a materialized view
+3	1
+3	1
+refreshable view in a Replicated database
+3
+EXPLAIN SYNTAX inlines the view
+1

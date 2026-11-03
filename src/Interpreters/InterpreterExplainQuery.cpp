@@ -2,6 +2,7 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterExplainQuery.h>
 
+#include <Analyzer/Utils.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <QueryPipeline/BlockIO.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -180,17 +181,9 @@ namespace
             if (TableFunctionFactory::instance().isTableFunctionName(func->name))
                 return;
 
-            String database_name = query_context->getCurrentDatabase();
-            String table_name = func->name;
-            if (func->isCompoundName())
-            {
-                std::vector<std::string> parts;
-                splitInto<'.'>(parts, func->name);
-                if (parts.size() != 2)
-                    return;
-                database_name = parts[0];
-                table_name = parts[1];
-            }
+            auto [database_name, table_name] = extractDatabaseAndTableNameForParameterizedView(func->name, query_context);
+            if (table_name.empty())
+                return;
 
             auto storage = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, query_context);
             if (!storage)
