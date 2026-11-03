@@ -4,7 +4,6 @@
 -- A lightweight UPDATE / DELETE whose predicate is a constant `ignore(...)` is torn down before its `IN` set is built.
 -- Nothing in the set's plan may start reading on that teardown: the MATERIALIZED CTE it reads is never written.
 
-SET enable_analyzer = 1;
 SET enable_materialized_cte = 1;
 SET enable_lightweight_update = 1;
 SET lightweight_delete_mode = 'lightweight_update_force';

@@ -6,8 +6,6 @@
 -- propagation either - not even its earlier arms, which do not carry the clause themselves (only the last
 -- arm does, where the parser leaves a trailing clause).
 
-SET allow_experimental_analyzer = 1;
-
 SYSTEM DROP QUERY CACHE TAG '05325_union_opt_out';
 
 SELECT count() FROM

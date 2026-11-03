@@ -6634,7 +6634,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             stderr,
             "The AST node '{}' was already visited before."
             " Depth {}, {} visited nodes, current top AST:\n{}\n",
-            static_cast<void *>(ast.get()),
+            ast->getID(),
             current_ast_depth,
             debug_visited_nodes.size(),
             (*debug_top_ast)->dumpTree());

@@ -5,7 +5,6 @@
 -- result.
 
 -- Correlated subqueries are a feature of the analyzer, so this test needs it.
-SET enable_analyzer = 1;
 SET allow_experimental_correlated_subqueries = 1;
 -- CI may inject False; pin it so the conversion pass under test always runs.
 SET query_plan_convert_any_join_to_semi_or_anti_join = 1;
