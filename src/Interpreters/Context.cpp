@@ -368,6 +368,7 @@ namespace Setting
     extern const SettingsString local_filesystem_read_method;
     extern const SettingsBool local_filesystem_read_prefetch;
     extern const SettingsUInt64 max_backup_bandwidth;
+    extern const SettingsUInt64 max_expanded_ast_elements;
     extern const SettingsUInt64 max_local_read_bandwidth;
     extern const SettingsUInt64 max_local_write_bandwidth;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
@@ -3755,6 +3756,8 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
 
                     if (!structure_hint.empty())
                     {
+                        inlineUnwrittenColumnsInStructureHint(
+                            structure_hint, insert_columns, insert_column_names, getSettingsRef()[Setting::max_expanded_ast_elements]);
                         removeMisboundDefaultsFromStructureHint(structure_hint, insertion_columns_by_hint_column, insert_columns);
                         table_function_ptr->setStructureHint(structure_hint);
                     }

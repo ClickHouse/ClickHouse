@@ -3,13 +3,14 @@
 #include <Parsers/IAST_fwd.h>
 
 #include <cstddef>
+#include <string_view>
 
 
 namespace DB
 {
 
-/// Counts the AST elements that the propagation of `WITH` elements copies into a query and throws
-/// `TOO_BIG_AST` once they exceed `max_expanded_ast_elements`. A copied element can itself carry copies
+/// Counts the AST elements that an expansion, such as the propagation of `WITH` elements, copies into a query
+/// and throws `TOO_BIG_AST` once they exceed `max_expanded_ast_elements`. A copied element can itself carry copies
 /// of the elements declared before it, so a `WITH` list whose elements refer to the preceding ones, or a
 /// chain of common table expressions each reading the previous one twice, grows exponentially.
 /// The limit applies to the whole expanded query: the first copy also charges the elements of `root`,
@@ -20,7 +21,11 @@ namespace DB
 class ExpandedASTBudget
 {
 public:
-    ExpandedASTBudget(size_t max_elements_, const IAST & root_) : max_elements(max_elements_), root(root_) {}
+    /// `expansion_` names the expansion in the error message.
+    ExpandedASTBudget(size_t max_elements_, const IAST & root_, std::string_view expansion_ = "WITH elements")
+        : max_elements(max_elements_), root(root_), expansion(expansion_)
+    {
+    }
 
     /// Returns a copy of `ast` that is added to the query.
     ASTPtr clone(const ASTPtr & ast);
@@ -38,6 +43,7 @@ private:
 
     const size_t max_elements;
     const IAST & root;
+    const std::string_view expansion;
     size_t used_elements = 0;
     bool root_counted = false;
 };
