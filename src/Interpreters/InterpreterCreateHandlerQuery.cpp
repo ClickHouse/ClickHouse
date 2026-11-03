@@ -7,6 +7,7 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
+#include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -21,11 +22,17 @@
 #include <Common/SQLDefinedHandlers/SQLDefinedHandlersFactory.h>
 #include <Common/SQLDefinedHandlers/SQLDefinedHandlersMetadataStorage.h>
 #include <base/EnumReflection.h>
+#include <Core/Settings.h>
 #include <Poco/String.h>
 
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsUInt64 max_expanded_ast_elements;
+}
 
 namespace ErrorCodes
 {
@@ -117,17 +124,25 @@ String describeStatementKind(const IAST & statement)
 
 /// Qualifies the names with the database of the user storing the handler, as `CREATE VIEW` does: otherwise they
 /// would resolve in the current database of the request.
-void qualifyStatement(ASTPtr & statement, const AddDefaultDatabaseVisitor & visitor, const String & database)
+void qualifyStatement(ASTPtr & statement, const AddDefaultDatabaseVisitor & visitor, const String & database, const ContextPtr & context)
 {
+    const size_t max_expanded_ast_elements = context->getSettingsRef()[Setting::max_expanded_ast_elements];
+    auto qualify_select = [&](ASTPtr & select)
+    {
+        /// The full traversal of the visitor expects the common table expressions to be expanded.
+        ApplyWithSubqueryVisitor::visit(select, max_expanded_ast_elements);
+        visitor.visit(select);
+    };
+
     if (auto * insert = statement->as<ASTInsertQuery>())
     {
         if (insert->getDatabase().empty())
             insert->setDatabase(database);
         if (insert->select)
-            visitor.visit(insert->select);
+            qualify_select(insert->select);
         return;
     }
-    visitor.visit(statement);
+    qualify_select(statement);
 }
 
 /// The check `CREATE VIEW` does for its `SELECT`.
@@ -203,7 +218,7 @@ void validateHandlerQuery(ASTCreateHandlerQuery & handler, const ContextPtr & co
         if (full_access || self_definer)
         {
             if (runs_as_definer)
-                qualifyStatement(statement, visitor, database);
+                qualifyStatement(statement, visitor, database, context);
             /// The privileges for a parameterized SELECT and for an INSERT are checked when the query runs as the definer.
             if (!full_access && is_select && analyzeReceiveQueryParams(statement).empty())
                 checkSelectAccess(statement, context);
@@ -233,7 +248,7 @@ void validateHandlerQuery(ASTCreateHandlerQuery & handler, const ContextPtr & co
                 "who stores the handler: settings can change what the query reads. {}",
                 handler.handler_name, context->getUserName(), way_out);
 
-        qualifyStatement(statement, visitor, database);
+        qualifyStatement(statement, visitor, database, context);
         checkSelectAccess(statement, context);
     }
 }
