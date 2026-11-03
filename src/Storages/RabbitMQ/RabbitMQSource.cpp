@@ -279,6 +279,10 @@ Chunk RabbitMQSource::generateImpl()
 
     StreamingFormatExecutor executor(non_virtual_header, input_format, on_error);
 
+    /// Once per block: getStorageID() locks the table's id_mutex.
+    const auto storage_id = storage.getStorageID();
+    const Field table_name = storage_id.getTableName();
+
     bool aborted = false;
 
     /// Channel id will not change during read.
@@ -354,7 +358,7 @@ Chunk RabbitMQSource::generateImpl()
                 virtual_columns[3]->insert(message.redelivered);
                 virtual_columns[4]->insert(message.message_id);
                 virtual_columns[5]->insert(message.timestamp);
-                virtual_columns[6]->insert(storage.getStorageID().getTableName());
+                virtual_columns[6]->insert(table_name);
                 if (handle_error_mode == StreamingHandleErrorMode::STREAM)
                 {
                     if (exception_message)
@@ -374,7 +378,6 @@ Chunk RabbitMQSource::generateImpl()
             {
                 chassert(exception_message);
                 const auto time_now = std::chrono::system_clock::now();
-                auto storage_id = storage.getStorageID();
 
                 auto dead_letter_queue = context->getDeadLetterQueue();
                 if (!dead_letter_queue)
