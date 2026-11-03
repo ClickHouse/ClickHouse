@@ -52,7 +52,6 @@
 #include <Interpreters/QueryAliasesVisitor.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/replaceAliasColumnsInQuery.h>
-#include <Interpreters/RewriteCountDistinctVisitor.h>
 #include <Interpreters/RewriteUniqToCountVisitor.h>
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
 #include <Interpreters/Context.h>
@@ -149,7 +148,6 @@ namespace Setting
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool collect_hash_table_stats_during_aggregation;
     extern const SettingsBool compile_sort_description;
-    extern const SettingsBool count_distinct_optimization;
     extern const SettingsUInt64 cross_to_inner_join_rewrite;
     extern const SettingsBool distributed_aggregation_memory_efficient;
     extern const SettingsBool empty_result_for_aggregation_by_constant_keys_on_empty_set;
@@ -656,12 +654,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     }
 
     query_info.query = query_ptr->clone();
-
-    if (settings[Setting::count_distinct_optimization])
-    {
-        RewriteCountDistinctFunctionMatcher::Data data_rewrite_countdistinct;
-        RewriteCountDistinctFunctionVisitor(data_rewrite_countdistinct).visit(query_ptr);
-    }
 
     if (settings[Setting::optimize_uniq_to_count])
     {
@@ -2069,7 +2061,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         add_sorting(*joined_plan, join_clause.key_names_right, JoinTableSide::Right);
                     }
 
-                    QueryPlanStepPtr join_step = std::make_unique<JoinStep>(
+                    auto join_step = std::make_unique<JoinStep>(
                         query_plan.getCurrentHeader(),
                         joined_plan->getCurrentHeader(),
                         expressions.join,
@@ -2078,7 +2070,6 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         /* min_block_size_bytes_ */ 0,
                         max_streams,
                         /* required_output_ = */ NameSet{},
-                        /* keep_left_read_in_order_ = */ false,
                         /* use_new_analyzer_ = */ false);
 
                     join_step->setStepDescription(fmt::format("JOIN {}", expressions.join->pipelineType()), options.max_step_description_length);
