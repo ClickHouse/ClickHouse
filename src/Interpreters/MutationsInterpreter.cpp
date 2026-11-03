@@ -230,6 +230,33 @@ QueryTreeNodePtr prepareQueryAffectedQueryTree(const std::vector<MutationCommand
     return query_tree;
 }
 
+NameSet getColumnsRequiredToRecalculateTTL(const StorageInMemoryMetadata & metadata)
+{
+    NameSet res;
+    const auto & columns = metadata.getColumns();
+    auto add = [&](const TTLDescription & ttl)
+    {
+        for (const auto & column : ttl.expression_columns)
+            if (columns.hasPhysical(column.name))
+                res.insert(column.name);
+    };
+
+    if (metadata.hasRowsTTL())
+        add(metadata.getRowsTTL());
+    for (const auto & ttl : metadata.getRowsWhereTTLs())
+        add(ttl);
+    for (const auto & ttl : metadata.getGroupByTTLs())
+        add(ttl);
+    for (const auto & [name, ttl] : metadata.getColumnTTLs())
+        add(ttl);
+    for (const auto & ttl : metadata.getMoveTTLs())
+        add(ttl);
+    for (const auto & ttl : metadata.getRecompressionTTLs())
+        add(ttl);
+
+    return res;
+}
+
 }
 
 ColumnDependencies getAllColumnDependencies(
@@ -1687,6 +1714,16 @@ void MutationsInterpreter::prepare(bool dry_run)
     /// the read_columns stage above, so emitting these stages afterwards lets each level read
     /// the freshly written value of the column it depends on.
     emit_materialized_recompute_stages(patch_affected_materialized, std::nullopt);
+
+    /// Without a TTL target the mutation only recalculates TTL infos (see `MutationHelpers::shouldExecuteTTL`),
+    /// and `TTLCalcTransform` evaluates every TTL rule, so it needs the inputs of all of them.
+    auto is_ttl_expression = [](const ColumnDependency & dependency) { return dependency.kind == ColumnDependency::TTL_EXPRESSION; };
+    auto is_ttl_target = [](const ColumnDependency & dependency) { return dependency.kind == ColumnDependency::TTL_TARGET; };
+    if (std::ranges::any_of(dependencies, is_ttl_expression) && std::ranges::none_of(dependencies, is_ttl_target))
+    {
+        for (const auto & name : getColumnsRequiredToRecalculateTTL(*metadata_snapshot))
+            dependencies.emplace(name, ColumnDependency::TTL_EXPRESSION);
+    }
 
     /// We care about affected indices and projections because we also need to rewrite them
     /// when one of index columns updated or filtered with delete.
