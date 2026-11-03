@@ -11173,7 +11173,7 @@ Allow to execute experimental Iceberg command `ALTER TABLE ... EXECUTE expire_sn
 )", EXPERIMENTAL, \
         {"26.3", false, false, "New setting."}) \
     DECLARE(Bool, write_full_path_in_iceberg_metadata, false, R"(
-Write full paths (including s3://) into iceberg metadata files.
+Write full paths (including s3://) into iceberg metadata files. Tables created in a `DataLakeCatalog` database always get full paths.
 )", EXPERIMENTAL, \
         {"25.8", false, false, "New setting."}) \
     DECLARE(String, iceberg_metadata_compression_method, "", R"(

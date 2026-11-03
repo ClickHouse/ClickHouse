@@ -762,7 +762,9 @@ object_storages_properties = {
         "metadata_keep_free_space_bytes": threshold_generator(
             0.2, 0.2, 0, 10 * 1024 * 1024
         ),
-        "min_upload_part_size": threshold_generator(0.2, 0.2, 1, 10 * 1024 * 1024),
+        # Never above the lower bound of max_upload_part_size: validateUploadSettings
+        # rejects min > max, and rejects a zero min
+        "min_upload_part_size": threshold_generator(0.2, 0.2, 1, 10 * 1024 * 1024, 24),
         # `objects_chunk_size_to_delete` is read only by S3Settings, so it is left out here
         "object_metadata_cache_size": threshold_generator(
             0.2, 0.2, 0, 10 * 1024 * 1024
@@ -775,7 +777,11 @@ object_storages_properties = {
             0.2, 0.2, 0, 30000, allow_unlimited=False
         ),
         # "skip_access_check": true_false_lambda, may break the startup
-        "strict_upload_part_size": threshold_generator(0.2, 0.2, 0, 100 * 1024 * 1024),
+        # Never above the lower bound of max_upload_part_size: validateUploadSettings
+        # rejects strict > max
+        "strict_upload_part_size": threshold_generator(
+            0.2, 0.2, 0, 16 * 1024 * 1024, 24
+        ),
         "thread_pool_size": threads_lambda,
         "upload_part_size_multiply_factor": threshold_generator(0.2, 0.2, 1, 10, 4),
         "upload_part_size_multiply_parts_count_threshold": threshold_generator(
