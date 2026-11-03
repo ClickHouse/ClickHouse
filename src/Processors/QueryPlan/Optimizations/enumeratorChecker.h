@@ -259,7 +259,7 @@ void EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::acceptMergeJoins(
         plan.estimated_rows = optimizer.estimateCardinality(left->input.rows, right->input.rows, selectivity, kind, strictness);
         plan.edges.assign(edges.begin(), edges.end());
         plan.method = JoinMethod::Merge;
-        plan.sharded = optimizer.isShardedMerge(left->input, right->input);
+        plan.sharded = optimizer.isShardedMerge(left->input, left_mask, right->input, right_mask);
         plan.merge_class = static_cast<Int8>(key);
         plan.order_class = keeps_order ? static_cast<Int8>(key) : -1;
 

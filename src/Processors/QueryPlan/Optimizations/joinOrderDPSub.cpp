@@ -139,10 +139,10 @@ private:
         MergeJoinInput left, UInt32 left_mask, MergeJoinInput right, UInt32 right_mask, Int32 order_class,
         const SelectivityEstimate & selectivity) const;
     /// Whether a merge of the two inputs runs sharded by primary key ranges, as `optimizeJoinByShards` does.
-    bool isShardedMerge(const MergeJoinInput & left, const MergeJoinInput & right) const
-    {
-        return query_graph.shard_merge_by_pk_ranges && left.shardable && right.shardable;
-    }
+    bool isShardedMerge(const MergeJoinInput & left, UInt32 left_mask, const MergeJoinInput & right, UInt32 right_mask) const;
+    /// Whether the statistics show that a table splits into one key range for a merge on the classes: each leading primary
+    /// key column it is joined on has a single distinct value.
+    bool hasConstantShardKey(UInt32 relation_mask, UInt64 key_classes) const;
     /// Whether a single relation read in order by the class can feed a sharded merge on it.
     bool isShardableLeaf(UInt32 relation_mask, Int32 order_class) const
     {
@@ -252,6 +252,8 @@ private:
         TUInt prepared_storage_mask = 0;
         /// Relations a sharded merge can split by primary key ranges on the class they are read in order of.
         TUInt shardable_relations = 0;
+        /// Per relation: how many leading classes of its read order are its leading primary key columns.
+        std::vector<UInt8> rel_primary_key_prefix;
 
         /// Per relation and class (`relation * num_classes + class`): the value range of its column of the class, if known.
         struct KeyRange
@@ -440,6 +442,7 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
     dpsub_data.edge_class.assign(n, -1);
     dpsub_data.prepared_storage_mask = toMask(query_graph.prepared_storage_relations);
     dpsub_data.shardable_relations = 0;
+    dpsub_data.rel_primary_key_prefix.assign(num_relations, 0);
     dpsub_data.key_ranges.assign(dpsub_data.interesting_orders ? num_relations * num_classes : 0, {});
     if (dpsub_data.interesting_orders)
     {
@@ -486,7 +489,9 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
             {
                 for (const auto & name : prefixes[relation].prefix)
                     dpsub_data.rel_prefix_classes[relation].push_back(column_class.at({relation, name}));
-                if (prefixes[relation].splits_by_primary_key)
+                const size_t primary_key_prefix = std::min(prefixes[relation].primary_key_prefix, prefixes[relation].prefix.size());
+                dpsub_data.rel_primary_key_prefix[relation] = static_cast<UInt8>(primary_key_prefix);
+                if (primary_key_prefix > 0)
                     dpsub_data.shardable_relations |= static_cast<UInt32>(1) << relation;
             }
         }
@@ -811,11 +816,42 @@ double DPSubJoinOrderOptimizer::mergeJoinCost(
         if (right.sorted && (right_order.empty() || right_order != emitted_order))
             right.sort_groups = distinctValues(right_mask, order_class, right.rows);
     }
-    const bool sharded = isShardedMerge(left, right);
+    const bool sharded = isShardedMerge(left, left_mask, right, right_mask);
     double probe_fraction = 1.0;
     if (sharded)
         probe_fraction = left.rows >= right.rows ? probeReadFraction(left_mask, right_mask) : probeReadFraction(right_mask, left_mask);
     return computeMergeJoinCost(left, right, selectivity, sharded, probe_fraction);
+}
+
+bool DPSubJoinOrderOptimizer::isShardedMerge(
+    const MergeJoinInput & left, UInt32 left_mask, const MergeJoinInput & right, UInt32 right_mask) const
+{
+    if (!query_graph.shard_merge_by_pk_ranges || !left.shardable || !right.shardable)
+        return false;
+    /// One key range is one shard, whatever the other side holds.
+    const UInt64 key_classes = spanningClasses(left_mask, right_mask);
+    for (const UInt32 side : {left_mask, right_mask})
+        if (std::popcount(side) == 1 && hasConstantShardKey(side, key_classes))
+            return false;
+    return true;
+}
+
+bool DPSubJoinOrderOptimizer::hasConstantShardKey(UInt32 relation_mask, UInt64 key_classes) const
+{
+    const size_t relation = std::countr_zero(relation_mask);
+    const auto & prefix = dpsub_data.rel_prefix_classes[relation];
+    size_t used = 0;
+    for (; used < dpsub_data.rel_primary_key_prefix[relation] && ((key_classes >> prefix[used]) & 1); ++used)
+    {
+        const auto & members = dpsub_data.equiv_classes[prefix[used]];
+        const bool constant = std::ranges::any_of(members, [&](const auto & member)
+        {
+            return (member.relation_bit & relation_mask) && member.ndv && *member.ndv <= 1;
+        });
+        if (!constant)
+            return false;
+    }
+    return used > 0;
 }
 
 UInt64 DPSubJoinOrderOptimizer::spanningClasses(UInt32 left_mask, UInt32 right_mask) const

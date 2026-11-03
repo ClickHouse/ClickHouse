@@ -40,6 +40,10 @@ hash join
 hash join
 -- joined on a monotonic function of the sorting key: read in order, but not split by key ranges, a hash join
 hash join
+-- primary key on a constant first key only: one key range, one stream loses to a hash join
+hash join
+-- the same with the second key in the primary key: split by it, a merge join
+merge join
 -- sharding by primary key ranges disabled: one stream loses to a hash join
 hash join
 -- two keys, sorted by a low-cardinality first key only: a hash join
@@ -68,6 +72,8 @@ hash join
 100	54450
 20	9690
 1000
+1000	999000
+1000	999000
 1000	999000
 1000	999000
 1000	999000

@@ -1113,10 +1113,7 @@ static std::vector<QueryGraph::ReadInOrder> findReadInOrderPrefixes(
             return order && order->direction == 1 && order->sort_description_for_merging.size() >= names.size();
         };
 
-        /// The range split needs the merge key to be the first primary key column, of a type it supports.
         const auto & primary_key = reading->getStorageMetadata()->getPrimaryKey();
-        const bool primary_key_splits = !reading->isQueryWithFinal() && !primary_key.column_names.empty()
-            && isSafePrimaryDataKeyType(*primary_key.data_types.front());
 
         std::ranges::sort(columns);
         auto & prefix = prefixes[i].prefix;
@@ -1125,8 +1122,6 @@ static std::vector<QueryGraph::ReadInOrder> findReadInOrderPrefixes(
             if (!is_read_in_order({first}))
                 continue;
             prefix = {first};
-            prefixes[i].splits_by_primary_key = primary_key_splits
-                && isReadColumn(*inputs[i], *reading_node, first, primary_key.column_names.front());
             /// Extend by the next column of the storage order among the candidates.
             for (bool extended = true; extended && prefix.size() < max_prefix_size;)
             {
@@ -1142,6 +1137,12 @@ static std::vector<QueryGraph::ReadInOrder> findReadInOrderPrefixes(
                     prefix.pop_back();
                 }
             }
+            /// The range split uses the leading primary key columns themselves, of types it supports.
+            auto & usable = prefixes[i].primary_key_prefix;
+            while (!reading->isQueryWithFinal() && usable < prefix.size() && usable < primary_key.column_names.size()
+                && isSafePrimaryDataKeyType(*primary_key.data_types[usable])
+                && isReadColumn(*inputs[i], *reading_node, prefix[usable], primary_key.column_names[usable]))
+                ++usable;
             break;
         }
     }

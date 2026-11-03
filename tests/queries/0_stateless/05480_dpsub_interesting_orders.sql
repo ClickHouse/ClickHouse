@@ -38,6 +38,10 @@ DROP TABLE IF EXISTS nullable_a;
 DROP TABLE IF EXISTS nullable_b;
 DROP TABLE IF EXISTS no_pk_a;
 DROP TABLE IF EXISTS no_pk_b;
+DROP TABLE IF EXISTS short_pk_a;
+DROP TABLE IF EXISTS short_pk_b;
+DROP TABLE IF EXISTS full_pk_a;
+DROP TABLE IF EXISTS full_pk_b;
 DROP TABLE IF EXISTS two_keys_a;
 DROP TABLE IF EXISTS two_keys_b;
 DROP TABLE IF EXISTS two_sorted_a;
@@ -62,6 +66,10 @@ CREATE TABLE nullable_a (k Nullable(UInt64), v UInt64) ENGINE = MergeTree ORDER 
 CREATE TABLE nullable_b (k Nullable(UInt64), v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS allow_nullable_key = 1;
 CREATE TABLE no_pk_a (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k PRIMARY KEY tuple();
 CREATE TABLE no_pk_b (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k PRIMARY KEY tuple();
+CREATE TABLE short_pk_a (k UInt64, s UInt64, v UInt64) ENGINE = MergeTree ORDER BY (k, s) PRIMARY KEY k;
+CREATE TABLE short_pk_b (k UInt64, s UInt64, v UInt64) ENGINE = MergeTree ORDER BY (k, s) PRIMARY KEY k;
+CREATE TABLE full_pk_a (k UInt64, s UInt64, v UInt64) ENGINE = MergeTree ORDER BY (k, s);
+CREATE TABLE full_pk_b (k UInt64, s UInt64, v UInt64) ENGINE = MergeTree ORDER BY (k, s);
 CREATE TABLE two_keys_a (k UInt64, s UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE two_keys_b (k UInt64, s UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE two_sorted_a (k UInt64, s UInt64, v UInt64) ENGINE = MergeTree ORDER BY (k, s);
@@ -86,6 +94,10 @@ INSERT INTO nullable_a SELECT number, number FROM numbers(1000);
 INSERT INTO nullable_b SELECT number, number FROM numbers(1000);
 INSERT INTO no_pk_a SELECT number, number FROM numbers(1000);
 INSERT INTO no_pk_b SELECT number, number FROM numbers(1000);
+INSERT INTO short_pk_a SELECT 0, number, number FROM numbers(1000);
+INSERT INTO short_pk_b SELECT 0, number, number FROM numbers(1000);
+INSERT INTO full_pk_a SELECT 0, number, number FROM numbers(1000);
+INSERT INTO full_pk_b SELECT 0, number, number FROM numbers(1000);
 INSERT INTO two_keys_a SELECT number % 2, intHash64(number), number FROM numbers(1000);
 INSERT INTO two_keys_b SELECT number % 2, intHash64(number), number FROM numbers(1000);
 INSERT INTO two_sorted_a SELECT number % 2, intHash64(number), number FROM numbers(1000);
@@ -113,6 +125,10 @@ SET param__internal_join_table_stat_hints = '{
     "nullable_b": { "cardinality": 50000000, "distinct_keys": { "k": 50000000 } },
     "no_pk_a": { "cardinality": 50000000, "distinct_keys": { "k": 50000000 } },
     "no_pk_b": { "cardinality": 50000000, "distinct_keys": { "k": 50000000 } },
+    "short_pk_a": { "cardinality": 50000000, "distinct_keys": { "k": 1, "s": 50000000 } },
+    "short_pk_b": { "cardinality": 50000000, "distinct_keys": { "k": 1, "s": 50000000 } },
+    "full_pk_a": { "cardinality": 50000000, "distinct_keys": { "k": 1, "s": 50000000 } },
+    "full_pk_b": { "cardinality": 50000000, "distinct_keys": { "k": 1, "s": 50000000 } },
     "two_keys_a": { "cardinality": 50000000, "distinct_keys": { "k": 2, "s": 50000000 } },
     "two_keys_b": { "cardinality": 50000000, "distinct_keys": { "k": 2, "s": 50000000 } },
     "two_sorted_a": { "cardinality": 50000000, "distinct_keys": { "k": 2, "s": 50000000 } },
@@ -196,6 +212,16 @@ SELECT if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join') FROM
     SELECT count() FROM (SELECT intDiv(k, 2) AS q FROM sorted1) AS x JOIN (SELECT intDiv(k, 2) AS q FROM sorted2) AS y ON x.q = y.q)
 WHERE explain LIKE '%Algorithm:%';
 
+SELECT '-- primary key on a constant first key only: one key range, one stream loses to a hash join';
+SELECT if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join') FROM (EXPLAIN PLAN
+    SELECT count() FROM short_pk_a JOIN short_pk_b ON short_pk_a.k = short_pk_b.k AND short_pk_a.s = short_pk_b.s)
+WHERE explain LIKE '%Algorithm:%';
+
+SELECT '-- the same with the second key in the primary key: split by it, a merge join';
+SELECT if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join') FROM (EXPLAIN PLAN
+    SELECT count() FROM full_pk_a JOIN full_pk_b ON full_pk_a.k = full_pk_b.k AND full_pk_a.s = full_pk_b.s)
+WHERE explain LIKE '%Algorithm:%';
+
 SELECT '-- sharding by primary key ranges disabled: one stream loses to a hash join';
 SELECT if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join') FROM (EXPLAIN PLAN SELECT sum(sorted1.v + sorted2.v) FROM sorted1 JOIN sorted2 ON sorted1.k = sorted2.k)
 WHERE explain LIKE '%Algorithm:%'
@@ -252,6 +278,8 @@ SELECT count(), sum(probe.v + build_small.v) FROM probe JOIN build_small ON prob
 SELECT count() FROM float_a JOIN float_b ON float_a.k = float_b.k;
 SELECT count(), sum(nullable_a.v + nullable_b.v) FROM nullable_a JOIN nullable_b ON nullable_a.k = nullable_b.k;
 SELECT count(), sum(no_pk_a.v + no_pk_b.v) FROM no_pk_a JOIN no_pk_b ON no_pk_a.k = no_pk_b.k;
+SELECT count(), sum(short_pk_a.v + short_pk_b.v) FROM short_pk_a JOIN short_pk_b ON short_pk_a.k = short_pk_b.k AND short_pk_a.s = short_pk_b.s;
+SELECT count(), sum(full_pk_a.v + full_pk_b.v) FROM full_pk_a JOIN full_pk_b ON full_pk_a.k = full_pk_b.k AND full_pk_a.s = full_pk_b.s;
 SELECT count(), sum(two_keys_a.v + two_keys_b.v) FROM two_keys_a JOIN two_keys_b ON two_keys_a.k = two_keys_b.k AND two_keys_a.s = two_keys_b.s;
 SELECT count(), sum(two_sorted_a.v + two_sorted_b.v) FROM two_sorted_a JOIN two_sorted_b ON two_sorted_a.s = two_sorted_b.s AND two_sorted_a.k = two_sorted_b.k;
 SELECT count(), sum(sorted1.v + sorted2.v + sorted3.v + sorted4.v) FROM sorted1 JOIN sorted2 ON sorted1.k = sorted2.k
@@ -277,6 +305,10 @@ DROP TABLE nullable_a;
 DROP TABLE nullable_b;
 DROP TABLE no_pk_a;
 DROP TABLE no_pk_b;
+DROP TABLE short_pk_a;
+DROP TABLE short_pk_b;
+DROP TABLE full_pk_a;
+DROP TABLE full_pk_b;
 DROP TABLE two_keys_a;
 DROP TABLE two_keys_b;
 DROP TABLE two_sorted_a;
