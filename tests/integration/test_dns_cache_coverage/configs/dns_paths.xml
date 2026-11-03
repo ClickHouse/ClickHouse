@@ -1,0 +1,15 @@
+<clickhouse>
+    <!-- Nothing listens on this port: the test only needs the host name to be resolved, which
+         `GraphiteWriter` does on every transmission. `localhost` is not resolved by any other code
+         path on this instance, so `system.dns_cache` witnesses that this one goes through the cache. -->
+    <graphite>
+        <host>localhost</host>
+        <port>42000</port>
+        <interval>1</interval>
+        <root_path>test</root_path>
+        <metrics>true</metrics>
+        <events>false</events>
+        <events_cumulative>false</events_cumulative>
+        <asynchronous_metrics>false</asynchronous_metrics>
+    </graphite>
+</clickhouse>

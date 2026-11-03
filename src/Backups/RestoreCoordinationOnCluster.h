@@ -64,10 +64,17 @@ public:
     /// Sets that this replica is going to restore replicated workload entities (WORKLOAD and RESOURCE).
     /// The function returns false if workload entities at a specified zk path are being already restored by another replica.
     bool acquireReplicatedWorkloadEntities(const String & loader_zk_path) override;
+    bool acquireReplicatedNamedCollections(const String & replication_id) override;
+    void addReplicatedNamedCollectionsDir(const String & replication_id, const String & dir_path) override;
+    Strings getReplicatedNamedCollectionsDirs(const String & replication_id) const override;
+    bool doesInitiatorCheckNamedCollectionsRestoreRights() const override;
 
     /// Sets that this table is going to restore data into Keeper for all KeeperMap tables defined on root_zk_path.
     /// The function returns false if data for this specific root path is already being restored by another table.
     bool acquireInsertingDataForKeeperMap(const String & root_zk_path, const String & table_unique_id) override;
+
+    void addRocksDBTable(const String & rocksdb_dir, const String & election_id) override;
+    String getRocksDBDataOwnerElectionId(const String & rocksdb_dir) const override;
 
     /// Generates a new UUID for a table. The same UUID must be used for a replicated table on each replica,
     /// (because otherwise the macro "{uuid}" in the ZooKeeper path will not work correctly).

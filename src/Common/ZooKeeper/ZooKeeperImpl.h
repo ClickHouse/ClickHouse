@@ -169,6 +169,12 @@ public:
         uint32_t get_children_recursive_nodes_limit,
         ListRecursiveCallback callback) override;
 
+    void listWithOptions(
+        const String & path,
+        const ListOptions & options,
+        ListWithOptionsCallback callback,
+        WatchCallbackPtrOrEventPtr watch) override;
+
     void exists(
         const String & path,
         ExistsCallback callback,
@@ -413,6 +419,10 @@ private:
     CurrentMetrics::Increment active_session_metric_increment{CurrentMetrics::ZooKeeperSession};
     std::shared_ptr<ZooKeeperLog> zk_log;
     std::shared_ptr<AggregatedZooKeeperLog> aggregated_zookeeper_log;
+
+    bool resolveSystemLogs();
+    enum class SystemLogsState { Unresolved, InProgress, Resolved };
+    std::atomic<SystemLogsState> system_logs_state{SystemLogsState::Unresolved};
 
     std::atomic<int64_t> last_zxid_seen;
 

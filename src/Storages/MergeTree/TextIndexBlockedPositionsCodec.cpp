@@ -1,10 +1,10 @@
 #include <Storages/MergeTree/TextIndexBlockedPositionsCodec.h>
+#include <Storages/MergeTree/MergeTreeIndexText.h>
 
 #include <Compression/PFor.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#include <bit>
 #include <limits>
 #include <numeric>
 
@@ -105,143 +105,91 @@ void parseBlock(
             static_cast<size_t>(pos - payload) + consumed, payload_bytes);
 }
 
-/// Append each requested document's absolute positions to `positions`, and its end offset to `offsets`.
-void emitRanks(
-    const PaddedPODArray<UInt64> & doc_offsets,
-    const PaddedPODArray<UInt32> & values,
-    std::span<const UInt32> local_ranks,
-    PaddedPODArray<UInt32> & offsets,
-    PaddedPODArray<UInt32> & positions)
-{
-    const size_t num_positions = std::accumulate(local_ranks.begin(), local_ranks.end(), size_t{},
-        [&doc_offsets](size_t sum, UInt32 rank) { return sum + (doc_offsets[rank + 1] - doc_offsets[rank]); });
-
-    const size_t base = positions.size();
-    positions.resize(base + num_positions);
-    UInt32 * out = positions.data() + base;
-    offsets.reserve(offsets.size() + local_ranks.size());
-
-    for (UInt32 rank : local_ranks)
-    {
-        const UInt64 lane_end = doc_offsets[rank + 1];
-        /// Every document has at least one position, and its first one is absolute; the rest are deltas.
-        UInt32 position = values[doc_offsets[rank]];
-        *out++ = position;
-        for (UInt64 k = doc_offsets[rank] + 1; k < lane_end; ++k)
-        {
-            /// The writer emits strictly increasing positions, so a zero delta or a wrap means corruption.
-            const UInt32 delta = values[k];
-            if ((delta == 0) || (position > std::numeric_limits<UInt32>::max() - delta))
-                throw Exception(ErrorCodes::CORRUPTED_DATA,
-                    "Corrupt text index positions: positions do not increase within a document");
-            position += delta;
-            *out++ = position;
-        }
-
-        offsets.push_back(static_cast<UInt32>(out - positions.data()));
-    }
-}
-
 }
 
 
-void TextIndexBlockedPositionsCodec::encode(std::span<const RoaringishEntry> entries, WriteBuffer & out)
+void TextIndexBlockedPositionsCodec::Encoder::finishDocument(bool sorted)
 {
-    /// Flatten the sorted roaringish buckets into per-document freqs + within-document delta positions.
-    PaddedPODArray<UInt32> freqs;
-    PaddedPODArray<UInt32> values;
-    UInt32 current_doc = 0;
-    UInt32 prev_position = 0;
-    bool has_doc = false;
-    for (const auto & entry : entries)
-    {
-        if (entry.bitmap == 0)
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "Text index positions: empty bitmap in roaringish entry");
+    auto * first = values.begin() + open_document_begin;
+    auto * last = values.end();
+    chassert(first != last);
 
-        if (!has_doc || entry.doc_id != current_doc)
-        {
-            current_doc = entry.doc_id;
-            has_doc = true;
-            freqs.push_back(0);
-        }
-        const UInt32 base = entry.group * RoaringishEntry::BITMAP_BITS;
-        UInt32 bitmap = entry.bitmap;
-        while (bitmap)
-        {
-            const UInt32 position = base + static_cast<UInt32>(std::countr_zero(bitmap));
-            values.push_back(freqs.back() == 0 ? position : position - prev_position);
-            prev_position = position;
-            ++freqs.back();
-            bitmap &= bitmap - 1;
-        }
+    if (!sorted)
+    {
+        std::sort(first, last);
+        last = std::unique(first, last);
+        values.resize(last - values.begin());
     }
+
+    const size_t freq = last - first;
 
     /// Decoders address the whole-token stream with UInt32 offsets; refuse to write an unreadable part.
-    if (values.size() > std::numeric_limits<UInt32>::max())
+    num_positions += freq;
+    if (num_positions > std::numeric_limits<UInt32>::max())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "Text index positions: more than {} positions for a single token", std::numeric_limits<UInt32>::max());
 
-    const UInt64 num_docs = freqs.size();
-    const UInt64 num_blocks = (num_docs + BLOCK_DOCS - 1) / BLOCK_DOCS;
+    /// The first position of a document is stored absolute, the rest as deltas.
+    std::adjacent_difference(first, last, first);
+
+    if (freq > 1)
+    {
+        exceptions.push_back(static_cast<UInt32>(docs_in_block));
+        exceptions.push_back(static_cast<UInt32>(freq));
+    }
+
+    ++docs_in_block;
+    ++num_docs;
+    open_document_begin = values.size();
+
+    if (docs_in_block == BLOCK_DOCS)
+        block_bytes.push_back(encodeBlock(staged));
+}
+
+void TextIndexBlockedPositionsCodec::Encoder::addDocument(std::span<const UInt32> positions)
+{
+    chassert(!positions.empty());
+    chassert(std::ranges::adjacent_find(positions, std::greater_equal<UInt32>{}) == positions.end());
+
+    values.insert(positions.begin(), positions.end());
+    finishDocument(true);
+}
+
+size_t TextIndexBlockedPositionsCodec::Encoder::encodeBlock(PaddedPODArray<UInt8> & out)
+{
+    const size_t num_exceptions = exceptions.size() / 2;
+    const size_t begin = out.size();
+    out.resize(begin + 10 + num_exceptions * 20 + PFor::maxCompressedBytes<UInt32>(values.size()));
+
+    auto * block_begin = reinterpret_cast<uint8_t *>(out.data() + begin);
+    size_t offset = writeVarUIntTo(block_begin, num_exceptions);
+    for (UInt32 value : exceptions)
+        offset += writeVarUIntTo(block_begin + offset, value);
+    offset += PFor::encodeBlocks<UInt32>(std::span<const UInt32>(values.data(), values.size()), PFor::Delta::none, block_begin + offset);
+
+    out.resize(begin + offset);
+    values.clear();
+    exceptions.clear();
+    open_document_begin = 0;
+    docs_in_block = 0;
+    return offset;
+}
+
+void TextIndexBlockedPositionsCodec::Encoder::finalize(WriteBuffer & out)
+{
+    /// Freed on return, so the allocator reuses it for the next token.
+    PaddedPODArray<UInt8> last_block;
+    const size_t num_blocks = block_bytes.size() + (docs_in_block != 0);
+    const size_t last_block_bytes = docs_in_block != 0 ? encodeBlock(last_block) : 0;
+
     writeVarUInt(num_docs, out);
     writeVarUInt(num_blocks, out);
-    if (num_docs == 0)
-        return;
-
-    /// Stage the block payloads to learn their sizes; the directory precedes them.
-    std::vector<size_t> block_totals(num_blocks);
-    std::vector<size_t> block_bytes(num_blocks);
-    std::vector<uint8_t> staged;
-    {
-        size_t reserve_bytes = 0;
-        size_t doc_index = 0;
-        for (UInt64 b = 0; b < num_blocks; ++b)
-        {
-            const size_t docs_in_block = std::min<size_t>(BLOCK_DOCS, num_docs - b * BLOCK_DOCS);
-            size_t total = 0;
-            for (size_t i = 0; i < docs_in_block; ++i)
-                total += freqs[doc_index++];
-            block_totals[b] = total;
-            reserve_bytes += 10 + docs_in_block * 10 + PFor::maxCompressedBytes<UInt32>(total);
-        }
-        staged.resize(reserve_bytes);
-    }
-
-    size_t staged_offset = 0;
-    size_t value_offset = 0;
-    for (UInt64 b = 0; b < num_blocks; ++b)
-    {
-        const size_t doc_begin = b * BLOCK_DOCS;
-        const size_t docs_in_block = std::min<size_t>(BLOCK_DOCS, num_docs - doc_begin);
-        uint8_t * block_begin = staged.data() + staged_offset;
-        size_t offset = 0;
-
-        const size_t total = block_totals[b];
-        size_t num_exceptions = 0;
-        for (size_t i = 0; i < docs_in_block; ++i)
-            if (freqs[doc_begin + i] > 1)
-                ++num_exceptions;
-        offset += writeVarUIntTo(block_begin + offset, num_exceptions);
-        for (size_t i = 0; i < docs_in_block; ++i)
-        {
-            if (freqs[doc_begin + i] > 1)
-            {
-                offset += writeVarUIntTo(block_begin + offset, i);
-                offset += writeVarUIntTo(block_begin + offset, freqs[doc_begin + i]);
-            }
-        }
-
-        offset += PFor::encodeBlocks<UInt32>(std::span<const UInt32>(values.data() + value_offset, total), PFor::Delta::none, block_begin + offset);
-        value_offset += total;
-
-        block_bytes[b] = offset;
-        staged_offset += offset;
-    }
-    chassert(value_offset == values.size());
-
-    for (UInt64 b = 0; b < num_blocks; ++b)
-        writeVarUInt(block_bytes[b], out);
-    out.write(reinterpret_cast<const char *>(staged.data()), staged_offset);
+    for (UInt64 bytes : block_bytes)
+        writeVarUInt(bytes, out);
+    if (num_blocks != block_bytes.size())
+        writeVarUInt(last_block_bytes, out);
+    out.write(reinterpret_cast<const char *>(staged.data()), staged.size());
+    out.write(reinterpret_cast<const char *>(last_block.data()), last_block.size());
 }
 
 TextIndexBlockedPositionsCodec::Directory TextIndexBlockedPositionsCodec::readDirectory(
@@ -305,13 +253,53 @@ void TextIndexBlockedPositionsCodec::decodeBlock(
     PaddedPODArray<UInt32> & positions,
     DecodeScratch & scratch)
 {
+    readBlock(in, dir, block_idx, scratch);
+    emitRanks(scratch, local_ranks, offsets, positions);
+}
+
+void TextIndexBlockedPositionsCodec::readBlock(ReadBuffer & in, const Directory & dir, size_t block_idx, DecodeScratch & scratch)
+{
     const size_t payload_bytes = dir.block_offsets[block_idx + 1] - dir.block_offsets[block_idx];
     scratch.payload.resize(payload_bytes);
     in.readStrict(scratch.payload.data(), payload_bytes);
 
     parseBlock(reinterpret_cast<const uint8_t *>(scratch.payload.data()), payload_bytes,
                dir.docsInBlock(block_idx), scratch.doc_offsets, scratch.values);
-    emitRanks(scratch.doc_offsets, scratch.values, local_ranks, offsets, positions);
+}
+
+void TextIndexBlockedPositionsCodec::emitRanks(
+    const DecodeScratch & scratch,
+    std::span<const UInt32> local_ranks,
+    PaddedPODArray<UInt32> & offsets,
+    PaddedPODArray<UInt32> & positions)
+{
+    const size_t num_positions = std::accumulate(local_ranks.begin(), local_ranks.end(), size_t{},
+        [&scratch](size_t sum, UInt32 rank) { return sum + (scratch.doc_offsets[rank + 1] - scratch.doc_offsets[rank]); });
+
+    const size_t base = positions.size();
+    positions.resize(base + num_positions);
+    UInt32 * out = positions.data() + base;
+    offsets.reserve(offsets.size() + local_ranks.size());
+
+    for (UInt32 rank : local_ranks)
+    {
+        const UInt64 lane_end = scratch.doc_offsets[rank + 1];
+        /// Every document has at least one position, and its first one is absolute; the rest are deltas.
+        UInt32 position = scratch.values[scratch.doc_offsets[rank]];
+        *out++ = position;
+        for (UInt64 k = scratch.doc_offsets[rank] + 1; k < lane_end; ++k)
+        {
+            /// The writer emits strictly increasing positions, so a zero delta or a wrap means corruption.
+            const UInt32 delta = scratch.values[k];
+            if ((delta == 0) || (position > std::numeric_limits<UInt32>::max() - delta))
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "Corrupt text index positions: positions do not increase within a document");
+            position += delta;
+            *out++ = position;
+        }
+
+        offsets.push_back(static_cast<UInt32>(out - positions.data()));
+    }
 }
 
 void TextIndexBlockedPositionsCodec::decodeAll(
@@ -340,6 +328,21 @@ void TextIndexBlockedPositionsCodec::decodeAll(
     }
 
     chassert(doc_offsets.size() == expected_num_docs + 1);
+}
+
+void validateTokenPositions(const TokenPostingsInfo & info, size_t file_size)
+{
+    if (!(info.header & PostingsSerialization::Flags::HasPositions))
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data in text index: a token with {} postings has no positions", info.cardinality);
+
+    if ((info.position_bytes == 0)
+        || (info.position_offset > file_size)
+        || (info.position_bytes > file_size - info.position_offset))
+    {
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupt text index positions: blob of {} bytes at offset {} is outside the {}-byte stream",
+            info.position_bytes, info.position_offset, file_size);
+    }
 }
 
 }

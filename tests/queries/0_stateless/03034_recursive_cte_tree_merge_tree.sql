@@ -1,7 +1,5 @@
 -- { echoOn }
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS tree;
 CREATE TABLE tree
 (

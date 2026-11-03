@@ -1,0 +1,8 @@
+<test>
+    <settings>
+        <max_memory_usage>30000000000</max_memory_usage>
+    </settings>
+
+    <query>SELECT uniqUpTo(5)(SearchPhrase) FROM hits_100m_single FORMAT Null</query>
+    <query>SELECT uniqUpTo(5)(SearchPhrase, URL) FROM hits_100m_single FORMAT Null</query>
+</test>

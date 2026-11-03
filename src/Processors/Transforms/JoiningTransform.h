@@ -7,6 +7,7 @@
 #include <Processors/IProcessor.h>
 #include <Processors/ISource.h>
 #include <Interpreters/IJoin.h>
+#include <Interpreters/SetSpillable.h>
 
 namespace DB
 {
@@ -33,15 +34,29 @@ private:
 
 using FinishCounterPtr = std::shared_ptr<FinishCounter>;
 
-/// Sums the match totals reported by each probe stream as it drains.
+/// Sums the match totals reported by each probe stream as it drains. A stream that counted no matches
+/// reports nothing, and then the sum counts no matches either.
 class RightRowsMatchCounter
 {
 public:
-    void add(size_t matched_right_rows_) { matched_right_rows.fetch_add(matched_right_rows_, std::memory_order_relaxed); }
-    size_t get() const { return matched_right_rows.load(std::memory_order_relaxed); }
+    void add(std::optional<size_t> matched_right_rows_)
+    {
+        if (matched_right_rows_)
+            matched_right_rows.fetch_add(*matched_right_rows_, std::memory_order_relaxed);
+        else
+            counted_every_match.store(false, std::memory_order_relaxed);
+    }
+
+    std::optional<size_t> get() const
+    {
+        if (!counted_every_match.load(std::memory_order_relaxed))
+            return {};
+        return matched_right_rows.load(std::memory_order_relaxed);
+    }
 
 private:
     std::atomic_size_t matched_right_rows{0};
+    std::atomic_bool counted_every_match{true};
 };
 
 using RightRowsMatchCounterPtr = std::shared_ptr<RightRowsMatchCounter>;
@@ -51,6 +66,7 @@ using RightRowsMatchCounterPtr = std::shared_ptr<RightRowsMatchCounter>;
 /// First input is for data from left table.
 /// Second input has empty header and is connected with FillingRightJoinSide.
 /// We can process left table only when Join is filled. Second input is used to signal that FillingRightJoinSide is finished.
+/// An optional third input carries the delayed joined blocks, forwarded after the left table and the non-joined rows.
 class JoiningTransform final : public IProcessor
 {
 public:
@@ -68,12 +84,15 @@ public:
     ~JoiningTransform() override;
 
     String getName() const override { return "JoiningTransform"; }
+    std::span<ISpillable * const> getSpillables() override { return set_spillables.get(); }
 
     const JoinPtr & getJoin() const { return join; }
 
     static Block transformHeader(Block header, const JoinPtr & join);
 
     OutputPort & getFinishedSignal();
+
+    InputPort & addDelayedBlocksInput();
 
     Status prepare() override;
     void work() override;
@@ -91,7 +110,12 @@ private:
     bool is_drained = false;
     bool is_last_drained = false;
 
+    InputPort * build_finished_input = nullptr;
+    InputPort * delayed_blocks_input = nullptr;
+    bool delayed_blocks_checked = false;
+
     JoinPtr join;
+    SetSpillables set_spillables;
     bool on_totals;
     /// Whether this transform emits non-joined rows itself once all probe streams have drained.
     /// False when separate `NonJoinedBlocksTransform` processors own the emission.
@@ -109,9 +133,24 @@ private:
     size_t max_block_size;
 
     RightRowsMatchCounterPtr match_counter;
-    size_t matched_right_rows = 0;
+    std::optional<size_t> matched_right_rows = 0;
 
     Block readExecute(Chunk & chunk);
+};
+
+class RuntimeFilter;
+using RuntimeFilterConstPtr = std::shared_ptr<const RuntimeFilter>;
+
+/// Attached to the "seal" chunk emitted through the optional seal port of
+/// FillingRightJoinSideTransform when the build side of a JOIN is complete. The seal itself is
+/// a pure completion signal; the runtime filter is an optional payload for pruning the gated
+/// probe-side read (see SealGatedReadTransform).
+struct RuntimeFilterSealInfo : public ChunkInfoCloneable<RuntimeFilterSealInfo>
+{
+    RuntimeFilterSealInfo() = default;
+    RuntimeFilterSealInfo(const RuntimeFilterSealInfo & other) = default;
+
+    RuntimeFilterConstPtr filter;
 };
 
 /// Fills Join with block from right table.
@@ -120,25 +159,45 @@ private:
 class FillingRightJoinSideTransform final : public IProcessor
 {
 public:
-    FillingRightJoinSideTransform(SharedHeader input_header, JoinPtr join_, FinishCounterPtr finish_counter_);
+    FillingRightJoinSideTransform(SharedHeader input_header, JoinPtr join_, FinishCounterPtr finish_counter_, JoinBuildContext build_context_);
     String getName() const override { return "FillingRightJoinSide"; }
 
     InputPort * addTotalsPort();
 
+    /// An optional payload for the seal: the completed runtime filter built from this join's
+    /// build side, if there is one.
+    using SealPayloadGetter = std::function<RuntimeFilterConstPtr()>;
+
+    /// Adds an extra output port emitting a single "seal" chunk when the whole build side is
+    /// complete (the hash table is ready to be probed). Only the transform which completes
+    /// the build emits, the seal ports of the concurrent others just finish, so resizing all
+    /// of them to one stream yields exactly one seal. Called by the join pipeline wiring.
+    OutputPort * addSealPort(SealPayloadGetter seal_payload_getter_);
+
     Status prepare() override;
     void work() override;
 
-    ProcessorMemoryStats getMemoryStats() override;
-    bool spillOnSize(size_t bytes) override;
+    std::span<ISpillable * const> getSpillables() override { return {&spillable, spillable ? 1uz : 0uz}; }
 
 private:
+    /// Emit the seal (if this transform completed the build and emit is allowed) and finish
+    /// the seal port.
+    void finishSealPort(bool emit);
+
     JoinPtr join;
+    ISpillable * const spillable = join->getSpillable();
     FinishCounterPtr finish_counter;
+    const JoinBuildContext build_context;
     Chunk chunk;
     bool stop_reading = false;
     bool for_totals = false;
     bool set_totals = false;
     bool post_build_phase = false;
+
+    OutputPort * seal_port = nullptr;
+    SealPayloadGetter seal_payload_getter;
+    bool seal_done = false;
+    bool completed_the_build = false;
 };
 
 class DelayedBlocksTask : public ChunkInfoCloneable<DelayedBlocksTask>
@@ -166,12 +225,15 @@ public:
     explicit DelayedJoinedBlocksTransform(size_t num_streams, JoinPtr join_);
 
     String getName() const override { return "DelayedJoinedBlocksTransform"; }
+    std::span<ISpillable * const> getSpillables() override { return set_spillables.get(); }
+    bool requiresAllOutputsPushable() const override { return true; }
 
     Status prepare() override;
     void work() override;
 
 private:
     JoinPtr join;
+    SetSpillables set_spillables;
 
     IBlocksStreamPtr delayed_blocks = nullptr;
     bool finished = false;

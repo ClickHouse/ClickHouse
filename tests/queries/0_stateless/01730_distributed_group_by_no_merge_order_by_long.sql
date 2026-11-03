@@ -8,9 +8,12 @@ SET enable_parallel_blocks_marshalling = 0;
 
 -- does not use 127.1 due to prefer_localhost_replica
 
-select * from remote('127.{2..11}', view(select * from numbers(1e6))) group by number order by number limit 20 settings distributed_group_by_no_merge=0, max_memory_usage='100Mi'; -- { serverError MEMORY_LIMIT_EXCEEDED }
+-- The next two queries share this cap. It must stay below what no_merge=0 makes the initiator hold at
+-- once (every shard's single-level block, 10 x 1e6 x 8 B = 76 MiB) and above one shard's own 1e6-key
+-- table plus output block (about 41 MiB), so the limit is hit on the initiator; no_merge=2 fits under both.
+select * from remote('127.{2..11}', view(select * from numbers(1e6))) group by number order by number limit 20 settings distributed_group_by_no_merge=0, max_memory_usage='64Mi'; -- { serverError MEMORY_LIMIT_EXCEEDED }
 -- no memory limit error, because with distributed_group_by_no_merge=2 remote servers will do ORDER BY and will cut to the LIMIT
-select * from remote('127.{2..11}', view(select * from numbers(1e6))) group by number order by number limit 20 settings distributed_group_by_no_merge=2, max_memory_usage='100Mi';
+select * from remote('127.{2..11}', view(select * from numbers(1e6))) group by number order by number limit 20 settings distributed_group_by_no_merge=2, max_memory_usage='64Mi';
 
 -- since the MergingSortedTransform will start processing only when all ports (remotes) will have some data,
 -- and the query with GROUP BY on remote servers will first do GROUP BY and then send the block,

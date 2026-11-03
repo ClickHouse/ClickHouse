@@ -12,17 +12,13 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 Эти настройки доступны в [system.merge&#95;tree&#95;settings](/ru/reference/system-tables/merge_tree_settings) и автоматически генерируются на основе исходного кода ClickHouse.
 
-<div id="marks_compress_block_size">
-  ## marks_compress_block_size
-</div>
+## marks_compress_block_size {#marks_compress_block_size}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="65536" />
 
-Размер блока сжатия marks, то есть фактический размер сжимаемого блока.
+Размер блоков (в несжатых байтах), используемых при записи сжатых файлов меток для новых или перезаписанных частей данных. Применяется только при включённой настройке `compress_marks`. Эта настройка управляет обрамлением и буферизацией при сжатии, но не влияет на гранулярность индекса.
 
-<div id="marks_compression_codec">
-  ## marks_compression_codec
-</div>
+## marks_compression_codec {#marks_compression_codec}
 
 <SettingsInfoBlock type="String" default_value="ZSTD(3)" />
 

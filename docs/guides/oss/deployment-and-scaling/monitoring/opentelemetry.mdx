@@ -23,6 +23,32 @@ The trace context is propagated to downstream services in the following cases:
 
 * [url](/reference/functions/table-functions/url) table function. Trace context information is sent in HTTP headers.
 
+## Spans of distributed queries {#spans-of-distributed-queries}
+
+For a distributed `SELECT`, every read from a remote shard is covered by a `RemoteQueryExecutor::execute` span. These spans carry attributes identifying the query fragment:
+
+* `clickhouse.cluster` and `clickhouse.shard_num` — the cluster and the shard the executor reads from;
+* `clickhouse.query_id` and `clickhouse.initial_query_id` — the query ids from the initiator's perspective;
+* `clickhouse.target_host` — the addresses of the established connections.
+
+The `status_code` of such a span tells how the fragment ended:
+
+* `OK` — the shard delivered its full result.
+* `ERROR` — the fragment failed: the shard returned an exception, the initiator failed to read the data, or cancelling the shard failed.
+* `UNSET` — neither success nor failure. Such spans carry an attribute to give more context.
+
+`INSERT` queries into a `Distributed` table produce analogous spans in `DistributedSink` with the same `clickhouse.cluster` and `clickhouse.shard_num` attribute keys.
+
+### Spans of distributed plan tasks {#spans-of-distributed-plan-tasks}
+
+With the experimental `make_distributed_plan` setting, a query is split into a plan of stages, and each stage into tasks that are dispatched to stateless workers over HTTP. The dispatch request carries the trace context in the `traceparent` and `tracestate` headers, so the spans on the worker join the initiator's trace:
+
+* `StatelessWorkerClient::sendTask` (kind `CLIENT`) — one span per dispatched task on the initiator, covering the start request only; the task itself runs asynchronously on the worker and is polled for completion. Attributes: `clickhouse.distributed.task_id`, `clickhouse.initial_query_id` and `clickhouse.target_host`, plus `clickhouse.exception` when the dispatch fails;
+* `InterserverIOHTTPHandler` (kind `SERVER`) — the worker side of a request that carries a trace context, with `clickhouse.uri`, `http.method` and `clickhouse.http_status`. A request that fails before its task starts (an authentication failure, or an exception in the endpoint) records `clickhouse.exception` and `clickhouse.exception_code` on this span, which is then the only worker-side trace of the dispatch. Requests without a `traceparent` header (for example part fetches between replicas) are not traced;
+* `DistributedPlanTask::execute` (kind `SERVER`) — the execution of one task on the worker, the analogue of the `query` span of a regular query: it carries `db.statement`, `clickhouse.query_id` and `clickhouse.query_status` or the exception the same way, plus the task identity: `clickhouse.distributed.task_id`, `clickhouse.initial_query_id`, `clickhouse.distributed.plan_hash` (the hash of the serialized plan fragment), `clickhouse.distributed.serialization_version`, `clickhouse.distributed.execute_locally` and the `clickhouse.exchange.inputs` / `clickhouse.exchange.outputs` streams the task reads and writes.
+
+The task span outlives the request span that started it. With `distributed_plan_execute_locally = 1` no request is sent: the tasks run on the initiator's threads and their `DistributedPlanTask::execute` spans attach to the initiator's trace directly.
+
 ## Tracing ClickHouse Keeper Requests {#tracing-clickhouse-keeper-requests}
 
 ClickHouse supports OpenTelemetry tracing for [ClickHouse Keeper](/guides/oss/deployment-and-scaling/keeper/index) requests (ZooKeeper-compatible coordination service). This feature provides detailed visibility into the lifecycle of Keeper operations, from client request submission through server-side processing.
@@ -63,7 +89,7 @@ When tracing is enabled, ClickHouse creates spans for both client-side and serve
 - `keeper.dispatcher.requests_queue` — Request queuing in the dispatcher
 - `keeper.write.pre_commit` — Preprocessing write requests before Raft commit
 - `keeper.write.commit` — Processing write requests after Raft commit
-- `keeper.read.wait_for_write` — Read requests waiting for dependent writes
+- `keeper.read.wait_for_write` — Read requests queued behind an in-flight request batch
 - `keeper.read.process` — Processing read requests
 - `keeper.dispatcher.responses_queue` — Response queuing in the dispatcher
 - `keeper.send_response` — Sending the response to the client

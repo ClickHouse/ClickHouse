@@ -4,6 +4,7 @@
 
 #include <Compression/PFor/bulk.h>
 
+#include <algorithm>
 #include <optional>
 #include <span>
 #include <vector>
@@ -15,7 +16,7 @@ using detail::BLOCK;
 
 /// Worst-case compressed byte count for `count` values of type T.
 template <typename T>
-inline size_t maxCompressedBytes(size_t count) noexcept
+inline constexpr size_t maxCompressedBytes(size_t count) noexcept
 {
     return sizeof(T) * count + 2 * (count / BLOCK + 1) + 16;
 }
@@ -33,6 +34,46 @@ inline size_t decodeBlocks(const uint8_t * in, size_t count, Delta mode, T * out
 {
     return detail::bulkDecode<T>(in, count, mode, out, end);
 }
+
+/// Computes an upper bound on the bytes that `encodeBlocks` writes for a stream of values in `mode`, while
+/// the stream grows one value at a time. A caller uses it to fill a buffer of a given size without encoding
+/// the values. The bound holds because the encoder writes each block in its cheapest layout, and no layout
+/// takes more than a header of two bytes plus the values, after the delta transform, packed at the width of
+/// the widest one. The mode is a template parameter, as in `deltaApply`, because a caller checks the bound
+/// for every value that it considers.
+template <typename T, Delta mode>
+class EncodedBytesBound
+{
+public:
+    /// Appends `value` unless that makes the bound exceed `max_bytes`, and returns whether it did.
+    bool tryAddValue(T value, size_t max_bytes) noexcept
+    {
+        const unsigned width = std::max(block_width, detail::bitWidth(detail::deltaResidual<mode>(value, prev)));
+        if (full_blocks_bytes + 2 + detail::packedBytes(block_values + 1, width) > max_bytes)
+            return false;
+
+        prev = value;
+        block_width = width;
+        if (++block_values == BLOCK)
+        {
+            full_blocks_bytes += 2 + detail::packedBytes(BLOCK, block_width);
+            block_values = 0;
+            block_width = 0;
+        }
+        return true;
+    }
+
+private:
+    /// The delta transform of the next value needs the last value of the stream.
+    T prev = 0;
+
+    /// The full blocks take at most this many bytes.
+    size_t full_blocks_bytes = 0;
+
+    /// The block being filled holds `block_values` values, and the widest of them takes `block_width` bits.
+    unsigned block_values = 0;
+    unsigned block_width = 0;
+};
 
 /// Self-describing compress into a caller buffer (>= maxCompressedBytes<T>): [varint count][u8 flags][block stream].
 template <typename T>
