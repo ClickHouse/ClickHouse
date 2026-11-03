@@ -552,9 +552,17 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         /// permissive parse. When the bareword `select` turns out to be an explicit AS alias, the
         /// strict reparse yields the same result anyway.
         auto begin = pos;
-        if (!parse_tables_and_alias_list(/*allow_alias_without_as_keyword*/ true)
-            || (!s_select.checkWithoutMoving(pos, expected) && hasTopLevelSelectAlias(tables)
-                && endsWithBarewordSelect(begin, tables_end)))
+        bool reparse_with_as_keyword = false;
+        {
+            /// What the permissive attempt captured is kept only if its result is the one used.
+            PartialASTSavepoint permissive_attempt(expected);
+            reparse_with_as_keyword = !parse_tables_and_alias_list(/*allow_alias_without_as_keyword*/ true)
+                || (!s_select.checkWithoutMoving(pos, expected) && hasTopLevelSelectAlias(tables)
+                    && endsWithBarewordSelect(begin, tables_end));
+            if (!reparse_with_as_keyword)
+                permissive_attempt.commit();
+        }
+        if (reparse_with_as_keyword)
         {
             pos = begin;
             tables = nullptr;

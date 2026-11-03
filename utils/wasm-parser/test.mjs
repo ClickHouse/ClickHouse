@@ -439,6 +439,9 @@ if (hasAstJson) {
         ['SELECT * FROM t,', 'SelectQuery', 'tables.children[1]', 16, 16],
         ['FROM t JOIN u ON a =', 'SelectQuery', 'tables.children[1]', 19, 20, false],
         ['SELECT * FROM t JOIN (SELECT a FROM', 'SelectQuery', 'tables', 35, 35],
+        /// The permissive parse of `FROM t SELECT` takes `SELECT` as the alias of `t`: what it captured is dropped
+        /// when the strict parse is the one used, and the failed clause is the one of the strict parse.
+        ['FROM t SELECT JOIN(u,', 'SelectQuery', 'select', 21, 21, false],
         /// The abandoned `SELECT` of `eval` is dropped with the attempt, and the outer one reports.
         ['SELECT * FROM eval(SELECT a FROM', 'SelectQuery', 'tables', 26, 27],
         /// Captured at the column list, which the parser then got past.
@@ -665,6 +668,8 @@ if (hasAstJson) {
             ['ALTER DATABASE d MODIFY SETTING', ' x = 1', ['database_ast', 'alter_object', 'command_list.children.0.command_type']],
             /// The `SETTINGS` of the `SELECT` of an `INSERT` are in those of the `INSERT` too.
             ['INSERT INTO t SETTINGS a = 2 SELECT 1 SETTINGS max_threads = 1, a = 3 FORMAT', ' CSV', ['settings_ast', 'select']],
+            /// The tables of `FROM t SELECT ...` have no alias `SELECT`, as in the `ast` of the whole statement.
+            ['FROM t SELECT JOIN(u,', ' 1)', ['tables']],
             /// A `RETURNING` clause that parsed is kept when the data source after it failed.
             ['INSERT INTO t RETURNING (SELECT a) FROM INFILE', " 'data.csv'", ['returning']],
             /// A `PRIMARY KEY` in the column list is in the storage definition, also one that failed.
