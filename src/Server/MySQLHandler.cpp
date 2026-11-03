@@ -891,8 +891,9 @@ void MySQLHandler::comFieldList(ReadBuffer & payload)
     const auto session_context = session->sessionContext();
     String database = session_context->getCurrentDatabase();
     /// The current database may be hierarchical (`USE db.ns` for the tables `ns.*` of the database `db`): resolve the
-    /// name first, so that the access is checked for the table that is read below (the lookup is exact).
-    StorageID table_id = DatabaseCatalog::instance().resolveHierarchicalName({database, packet.table}, session_context);
+    /// name first, so that the access is checked for the table that is read below (the lookup is exact). The name is
+    /// unqualified, and the current database is applied once, by the resolution.
+    StorageID table_id = DatabaseCatalog::instance().resolveHierarchicalName({"", packet.table}, session_context);
     /// Mirror the access check of the SQL `DESCRIBE`/`SHOW COLUMNS` statements (InterpreterDescribeQuery).
     /// Check before getTable() so this command does not become a table-existence oracle.
     session_context->checkAccess(AccessType::SHOW_COLUMNS, table_id.database_name, table_id.table_name);

@@ -33,8 +33,9 @@ StorageID InterpreterShowColumnsQuery::resolveTable() const
 {
     const auto & query = query_ptr->as<const ASTShowColumnsQuery &>();
     /// A hierarchical name (`a.b.c`, or `c` inside `USE a.b`) is the database and the table of the table it refers to
-    /// (see `DatabaseCatalog`).
-    return DatabaseCatalog::instance().resolveHierarchicalName({getContext()->resolveDatabase(query.database), query.table}, getContext());
+    /// (see `DatabaseCatalog`). The database is passed as written, so that the current database is applied once: inside
+    /// `USE a.b`, the name `c` is not also the table `a.b.c` of the database `a.b`.
+    return DatabaseCatalog::instance().resolveHierarchicalName({query.database, query.table}, getContext());
 }
 
 String InterpreterShowColumnsQuery::getRewrittenQuery(const StorageID & table_id)

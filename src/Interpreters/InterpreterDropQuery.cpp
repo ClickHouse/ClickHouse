@@ -107,7 +107,8 @@ static void bindHierarchicalTableName(ASTDropQuery & drop, const ContextPtr & co
     if (drop.isTemporary())
         return;
 
-    String database = drop.getDatabase();
+    const String database_as_written = drop.getDatabase();
+    String database = database_as_written;
     const String table = drop.getTable();
     if (database.empty())
     {
@@ -118,8 +119,10 @@ static void bindHierarchicalTableName(ASTDropQuery & drop, const ContextPtr & co
             return;
     }
 
+    /// An unqualified name is resolved as written, with the current database applied once: inside `USE a.b`, the name
+    /// `t` is not also the table `a.b.t` of the database `a.b`.
     auto & catalog = DatabaseCatalog::instance();
-    StorageID resolved = catalog.resolveHierarchicalName(StorageID(database, table), context);
+    StorageID resolved = catalog.resolveHierarchicalName(StorageID(database_as_written, table), context);
     if (resolved.database_name == database && resolved.table_name == table)
         return;
     if (!catalog.isTableExist(resolved, context))
@@ -197,6 +200,8 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
     /// NOTE: it does not contain UUID, we will resolve it with locked DDLGuard
     auto table_id = StorageID(query);
+    /// The current database is filled in below, but the hierarchical resolution must apply it once only.
+    const String database_as_written = table_id.database_name;
     if (query.isTemporary() || table_id.database_name.empty())
     {
         if (context_->tryResolveStorageID(table_id, Context::ResolveExternal))
@@ -214,7 +219,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
     /// A hierarchical name (`a.b.c`, or `c` inside `USE a.b`) is resolved to the database and the table of the existing
     /// table before the DDL guard is taken, so that the guard protects that table; see `DatabaseCatalog`.
     {
-        StorageID resolved = DatabaseCatalog::instance().resolveHierarchicalName(StorageID(table_id.database_name, table_id.table_name), context_);
+        StorageID resolved = DatabaseCatalog::instance().resolveHierarchicalName(StorageID(database_as_written, table_id.table_name), context_);
         if (resolved.database_name != table_id.database_name || resolved.table_name != table_id.table_name)
         {
             table_id.database_name = resolved.database_name;
