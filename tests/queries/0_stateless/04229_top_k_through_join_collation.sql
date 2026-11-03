@@ -8,7 +8,6 @@
 -- read-in-order nor the explicit `Sort + Limit` on the preserved input, and
 -- we fall back to a full join + full sort.
 
-SET enable_analyzer = 1;
 SET query_plan_top_k_through_join = 1;
 
 DROP TABLE IF EXISTS t_l;

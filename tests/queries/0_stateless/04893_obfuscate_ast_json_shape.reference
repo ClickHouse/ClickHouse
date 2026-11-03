@@ -1,0 +1,7 @@
+1
+1
+obfuscate(SELECT 1)
+obfuscate(1, 2)
+1
+SELECT * FROM obfuscate(SELECT 1)
+1

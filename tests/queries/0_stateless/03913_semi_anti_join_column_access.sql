@@ -14,7 +14,6 @@
 -- Note: JOIN ON expressions can access both sides regardless of settings.
 
 -- These settings require the analyzer.
-SET allow_experimental_analyzer = 1;
 
 -- Test ANTI JOIN setting
 SET anti_join_include_columns_from_both_sides = 0;
