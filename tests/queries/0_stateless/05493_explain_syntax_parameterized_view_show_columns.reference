@@ -1,0 +1,9 @@
+-- no grants
+SELECT * FROM pv(equals(n, 3))
+definition 0, call 1
+-- SELECT on the table behind the view, no grant on the view
+definition 0, call 1
+definition 0, call 1
+definition 0, call 1
+-- SHOW COLUMNS on the view
+definition 1, call 0
