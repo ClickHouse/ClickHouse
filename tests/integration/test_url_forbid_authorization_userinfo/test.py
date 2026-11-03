@@ -5,6 +5,7 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 # `configs/config.xml` forbids the `Authorization` header in `http_forbid_headers`.
 node = cluster.add_instance("node", main_configs=["configs/config.xml"])
+CONFIG_PATH = "/etc/clickhouse-server/config.d/config.xml"
 
 USER = "url_userinfo_user"
 PASSWORD = "url_userinfo_password"
@@ -32,6 +33,7 @@ def assert_forbidden_without_requests(query):
         node.query(f"SELECT count() FROM system.query_log WHERE user = '{USER}'")
         == "0\n"
     )
+    return error
 
 
 def test_url_without_credentials():
@@ -102,6 +104,51 @@ def test_url_without_credentials():
 )
 def test_url_credentials_forbidden(query):
     assert_forbidden_without_requests(query)
+
+
+def test_avro_schema_registry_url_without_authority():
+    # The URL has no authority, so it has neither a userinfo nor a host, but the schema
+    # with id 1 is requested from `http://USER:PASSWORD@127.0.0.1:8123/schemas/ids/1`,
+    # which its path resolves to. The data is the magic byte and the schema id 1.
+    error = assert_forbidden_without_requests(
+        "SELECT * FROM format(AvroConfluent, 'a UInt8', '\\x00\\x00\\x00\\x00\\x01') "
+        "SETTINGS format_avro_schema_registry_url = "
+        f"'http:http://{USER}:{PASSWORD}@127.0.0.1:8123/'"
+    )
+    assert "while fetching schema id = 1" in error, error
+
+
+def replace_forbidden_header(old, new):
+    node.replace_in_config(
+        CONFIG_PATH, f"<header>{old}</header>", f"<header>{new}</header>"
+    )
+    node.query("SYSTEM RELOAD CONFIG")
+
+
+def test_web_disk_reused_after_authorization_is_forbidden():
+    # A disk created while `Authorization` is allowed is reused, without creating it
+    # again, for a later definition equal to its own.
+    disk_name = "url_userinfo_reused_web_disk"
+    create_table = (
+        "CREATE TABLE url_userinfo_reused_web_disk (x UInt64) "
+        f"ENGINE = MergeTree ORDER BY x SETTINGS disk = disk(name = '{disk_name}', "
+        f"type = web, endpoint = 'http://{USER}:{PASSWORD}@127.0.0.1:8123/')"
+    )
+
+    replace_forbidden_header("Authorization", "X-Not-Forbidden")
+    try:
+        # `disk` and `storage_policy` together are rejected after the disk is created, so
+        # the disk is created without a table, and no request is sent to its endpoint.
+        error = node.query_and_get_error(f"{create_table}, storage_policy = 'default'")
+        assert "cannot be specified at the same time" in error, error
+    finally:
+        replace_forbidden_header("X-Not-Forbidden", "Authorization")
+
+    assert (
+        node.query(f"SELECT count() FROM system.disks WHERE name = '{disk_name}'")
+        == "1\n"
+    )
+    assert_forbidden_without_requests(create_table)
 
 
 def test_url_engine_credentials_forbidden():
