@@ -41,7 +41,7 @@ CREATE TABLE dst_bare (k UInt64)
 CREATE TABLE al_bare ENGINE = Alias(currentDatabase(), 'dst_bare');
 
 SET allow_experimental_insert_into_iceberg = 1;
-CREATE TABLE dst_iceberg (k UInt64)
+CREATE TABLE dst_iceberg (k Int64)
     ENGINE = IcebergLocal('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/iceberg', 'Parquet');
 "
 

@@ -453,12 +453,10 @@ def test_replicated_database_populate_reads_local_source(start_cluster):
 # The replicas name the inner tables of a `TimeSeries` table after a UUID each of them assigned, because each
 # created its table on its own. A read through `timeSeriesSamples` must still be coordinated as one read:
 # replicas that announced it under their own inner table's name would each read everything. The insert goes
-# to a `Null` table, because an insert into a non-replicated `MergeTree` is not distributed. Every sample is a
+# to a replicated table, because an insert into a non-replicated table is not distributed. Every sample is a
 # series of its own, so every row of the samples table holds one sample.
 @pytest.mark.parametrize("local_plan", [False, True])
 def test_insert_select_time_series_independent_uuids(start_cluster, local_plan):
-    execute_on_cluster("DROP TABLE IF EXISTS ts_mv SYNC")
-    execute_on_cluster("DROP TABLE IF EXISTS ts_res SYNC")
     execute_on_cluster("DROP TABLE IF EXISTS ts_dst SYNC")
     execute_on_cluster("DROP TABLE IF EXISTS ts SYNC")
     for node in [node1, node2, node3]:
@@ -467,9 +465,9 @@ def test_insert_select_time_series_independent_uuids(start_cluster, local_plan):
             "INSERT INTO ts (metric_name, tags, samples) "
             "SELECT 'm', map('i', toString(number)), [(toDateTime64(number, 3), toFloat64(number))] FROM numbers(10000)"
         )
-        node.query("CREATE TABLE ts_dst (value Float64) ENGINE = Null")
-        node.query("CREATE TABLE ts_res (value Float64) ENGINE = MergeTree ORDER BY value")
-        node.query("CREATE MATERIALIZED VIEW ts_mv TO ts_res AS SELECT value FROM ts_dst")
+        node.query(
+            f"CREATE TABLE ts_dst (value Float64) ENGINE = ReplicatedMergeTree('/test_parallel_replicas/shard1/ts_dst', '{node.name}') ORDER BY value"
+        )
     assert len(set(query_per_node("SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name = 'ts'"))) == 3
 
     query_id = str(uuid.uuid4())
@@ -486,7 +484,8 @@ def test_insert_select_time_series_independent_uuids(start_cluster, local_plan):
         },
         query_id=query_id,
     )
-    assert node1.query("SELECT count(), sum(value) FROM clusterAllReplicas(test_1_shard_3_replicas, currentDatabase(), ts_res)") == "10000\t49995000\n"
+    node1.query("SYSTEM SYNC REPLICA ts_dst LIGHTWEIGHT")
+    assert node1.query("SELECT count(), sum(value) FROM ts_dst") == "10000\t49995000\n"
 
     # The insert has to have been sent to the other replicas, otherwise the result above shows nothing.
     execute_on_cluster("SYSTEM FLUSH LOGS query_log")
@@ -514,7 +513,7 @@ def test_insert_select_time_series_independent_uuids(start_cluster, local_plan):
     # read under another name.
     try:
         result = node1.query(
-            "SELECT count(), sum(r.samples[1].2) FROM ts_res RIGHT JOIN timeSeriesSamples(ts) AS r ON ts_res.value = r.samples[1].2",
+            "SELECT count(), sum(r.samples[1].2) FROM ts_dst RIGHT JOIN timeSeriesSamples(ts) AS r ON ts_dst.value = r.samples[1].2",
             settings={
                 "enable_parallel_replicas": 2,
                 "max_parallel_replicas": 3,
@@ -530,7 +529,5 @@ def test_insert_select_time_series_independent_uuids(start_cluster, local_plan):
     except QueryRuntimeException as e:
         assert "UNKNOWN_TABLE" in str(e)
 
-    execute_on_cluster("DROP TABLE ts_mv SYNC")
-    execute_on_cluster("DROP TABLE ts_res SYNC")
     execute_on_cluster("DROP TABLE ts_dst SYNC")
     execute_on_cluster("DROP TABLE ts SYNC")
