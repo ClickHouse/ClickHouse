@@ -73,7 +73,7 @@
 #include <Common/formatReadable.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
-#include <Interpreters/HypotheticalObjectStore.h>
+#include <Interpreters/WhatIf/HypotheticalObjectStore.h>
 #include <Storages/MergeTree/WhatIf/WhatIfEstimator.h>
 
 #include <Analyzer/QueryTreeBuilder.h>

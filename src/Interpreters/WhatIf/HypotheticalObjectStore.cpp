@@ -1,4 +1,4 @@
-#include <Interpreters/HypotheticalObjectStore.h>
+#include <Interpreters/WhatIf/HypotheticalObjectStore.h>
 
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/Exception.h>

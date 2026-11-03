@@ -1,4 +1,4 @@
-#include <Interpreters/InterpreterHypotheticalObjectQuery.h>
+#include <Interpreters/WhatIf/InterpreterHypotheticalObjectQuery.h>
 
 #include <Access/Common/AccessFlags.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
@@ -6,7 +6,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/HypotheticalObjectStore.h>
+#include <Interpreters/WhatIf/HypotheticalObjectStore.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Parsers/ASTHypotheticalObjectQuery.h>

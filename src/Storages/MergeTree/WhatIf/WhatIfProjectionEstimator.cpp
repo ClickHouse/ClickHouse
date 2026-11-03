@@ -9,7 +9,7 @@
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/InterpreterHypotheticalObjectQuery.h>
+#include <Interpreters/WhatIf/InterpreterHypotheticalObjectQuery.h>
 #include <Interpreters/sortBlock.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/IProcessor.h>

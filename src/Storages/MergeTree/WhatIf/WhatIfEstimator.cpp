@@ -2,7 +2,7 @@
 
 #include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/HypotheticalObjectStore.h>
+#include <Interpreters/WhatIf/HypotheticalObjectStore.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/JoinedTables.h>
 #include <Parsers/ASTSelectQuery.h>
