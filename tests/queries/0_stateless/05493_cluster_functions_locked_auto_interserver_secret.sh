@@ -141,6 +141,8 @@ expect_locked structure -q "SELECT * FROM s3Cluster('${SECRET}', ${NC}_s3_struct
 echo "--- in a secondary query without the secret ---"
 expect_locked structure --query_kind secondary_query -q "SELECT * FROM urlCluster('${SECRET}', ${NC}_url_structure, structure = 'id UInt32')"
 expect_locked structure --query_kind secondary_query -q "SELECT * FROM s3Cluster('${SECRET}', ${NC}_s3_structure, structure = 'id UInt32')"
+echo "--- in a secondary query that reports the interserver interface without the secret ---"
+python3 "$CUR_DIR"/05493_cluster_functions_locked_auto_interserver_secret.python "${SECRET}" "${NC}"
 echo "--- in a function that is not a cluster function, forwarded with the secret ---"
 $CLICKHOUSE_CLIENT -q "
     CREATE VIEW v_url_05493 AS SELECT * FROM url(${NC}_url_late, structure = 'id UInt32');

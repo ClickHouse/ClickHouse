@@ -236,8 +236,7 @@ void checkNamedCollectionOverride(const NamedCollection & collection, const std:
 bool isSecondaryQueryAuthenticatedByClusterSecret(const ContextPtr & context)
 {
     const auto & client_info = context->getClientInfo();
-    return client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
-        && client_info.interface == ClientInfo::Interface::TCP_INTERSERVER;
+    return client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY && client_info.is_interserver_authenticated;
 }
 
 bool clusterHasSecret(const ContextPtr & context, const String & cluster_name)
