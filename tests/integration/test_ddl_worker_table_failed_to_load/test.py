@@ -11,7 +11,7 @@ cluster = ClickHouseCluster(__file__)
 
 node1 = cluster.add_instance(
     "node1",
-    main_configs=["configs/remote_servers.xml"],
+    main_configs=["configs/remote_servers.xml", "configs/async_load_databases.xml"],
     with_zookeeper=True,
     stay_alive=True,
     with_remote_database_disk=False,
