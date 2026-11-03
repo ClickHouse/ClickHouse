@@ -8,8 +8,9 @@
 
 #include <base/EnumReflection.h>
 
-#if USE_S2_GEOMETRY
+#include <vector>
 
+#if USE_S2_GEOMETRY
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wambiguous-reversed-operator"
 #include <s2/s2latlng.h>
@@ -18,8 +19,7 @@
 #include <s2/s2point_span.h>
 #include <s2/s2polyline_measures.h>
 #pragma clang diagnostic pop
-
-#include <vector>
+#endif
 
 namespace DB
 {
@@ -32,6 +32,8 @@ extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 
 namespace
 {
+
+#if USE_S2_GEOMETRY
 
 /// Convert a range of SphericalPoints (lon, lat in degrees) to S2Points.
 /// Reuses the caller-owned buffer to avoid per-call heap allocations.
@@ -198,6 +200,8 @@ SphericalPoint computeGeometrySphericalCentroid(const Geometry & geom, std::vect
     }
 }
 
+#endif
+
 template <typename Traits>
 class FunctionCentroid : public IFunction
 {
@@ -247,6 +251,7 @@ public:
         if (column_variant)
         {
             Field field;
+#if USE_S2_GEOMETRY
             if constexpr (std::is_same_v<Point, SphericalPoint>)
             {
                 std::vector<S2Point> scratch; /// STYLE_CHECK_ALLOW_STD_CONTAINERS
@@ -261,6 +266,7 @@ public:
                 }
             }
             else
+#endif
             {
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
@@ -284,6 +290,7 @@ public:
 
                     auto geometries = Converter::convert(arguments[0].column->convertToFullColumnIfConst());
 
+#if USE_S2_GEOMETRY
                     if constexpr (std::is_same_v<Point, SphericalPoint>)
                     {
                         std::vector<S2Point> scratch; /// STYLE_CHECK_ALLOW_STD_CONTAINERS
@@ -294,6 +301,7 @@ public:
                         }
                     }
                     else
+#endif
                     {
                         for (size_t i = 0; i < input_rows_count; ++i)
                             serializer.add(computeCartesianCentroid(geometries[i]));
@@ -360,8 +368,8 @@ private:
         processFieldImpl(field, type, serializer, [](auto && geom) { return computeCartesianCentroid(geom); });
     }
 
-    static void
-    processField(const Field & field, GeometryColumnType type, PointSerializer<Point> & serializer, std::vector<S2Point> & scratch) /// STYLE_CHECK_ALLOW_STD_CONTAINERS
+    template <typename Scratch>
+    static void processField(const Field & field, GeometryColumnType type, PointSerializer<Point> & serializer, Scratch & scratch)
     {
         static_assert(std::is_same_v<Point, SphericalPoint>);
         processFieldImpl(
@@ -375,11 +383,13 @@ struct CartesianTraits
     static constexpr auto name = "centroidCartesian";
 };
 
+#if USE_S2_GEOMETRY
 struct SphericalTraits
 {
     using PointType = SphericalPoint;
     static constexpr auto name = "centroidSpherical";
 };
+#endif
 
 }
 
@@ -415,6 +425,7 @@ SELECT centroidCartesian([[(0., 0.), (0., 4.), (4., 4.), (4., 0.), (0., 0.)]])
 
     factory.registerFunction<FunctionCentroid<CartesianTraits>>(function_documentation_cartesian);
 
+#if USE_S2_GEOMETRY
     FunctionDocumentation::Description description_spherical = R"(
 Calculates the centroid (center of mass) of a geometry in spherical coordinates.
 Takes any geometry type and returns a Point. Uses the true centroid (mass centroid)
@@ -446,8 +457,7 @@ SELECT centroidSpherical([[(4.346693, 50.858306), (4.367945, 50.852455), (4.3662
            category_spherical};
 
     factory.registerFunction<FunctionCentroid<SphericalTraits>>(function_documentation_spherical);
-}
-
-}
-
 #endif
+}
+
+}

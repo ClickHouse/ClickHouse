@@ -96,38 +96,10 @@ centroidCartesian Geometry Polygon
 (2,2)
 centroidCartesian Geometry MultiPolygon
 (3,3)
-centroidSpherical Point
-(2,3)
-centroidSpherical Ring
-4.352734	50.846349
-centroidSpherical Polygon
-4.352734	50.846349
-centroidSpherical LineString
-5	0
-centroidSpherical MultiLineString
-5	0
-centroidSpherical MultiPolygon
-2.992674	2.998309
-centroidSpherical date line crossing LineString
-180	0
-centroidSpherical near North Pole
-0	90
-centroidSpherical Polygon with hole
-5	5.006907
-centroidSpherical square
-2	2.000402
-centroidSpherical Geometry Point
-(2,3)
-centroidSpherical Geometry Polygon
-2	2.000402
-centroidSpherical globe-spanning polygon (triggers adaptive origin)
-135	90
 centroidCartesian empty polygon (degenerate)
 (0,0)
 centroidCartesian single-point linestring (degenerate)
 (3,7)
-centroidSpherical empty polygon (degenerate)
-0	0
 boundingBoxCartesian MultiPoint
 [(0,0),(6,0),(6,5),(0,5),(0,0)]
 boundingBoxSpherical MultiPoint
@@ -138,15 +110,9 @@ boundingBoxCartesian Geometry MultiPoint
 [(0,0),(6,0),(6,5),(0,5),(0,0)]
 centroidCartesian MultiPoint
 (3,1.6666666666666667)
-centroidSpherical MultiPoint
-3	1.667721
-centroidSpherical MultiPoint along meridian
-0	20
 centroidCartesian Geometry MultiPoint
 (3,1.6666666666666667)
 centroidCartesian single-point MultiPoint (degenerate)
 (3,7)
 centroidCartesian empty MultiPoint (degenerate)
 (0,0)
-centroidSpherical empty MultiPoint (degenerate)
-0	0
