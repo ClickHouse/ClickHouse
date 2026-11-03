@@ -9,6 +9,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/Arena.h>
 #include <Core/callOnTypeIndex.h>
+#include <Core/Field.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
@@ -1171,27 +1172,18 @@ private:
                 applyVisitor(FieldVisitorSum(val), acc);
                 break;
             case SumMapOp::Min:
-                if (isFieldNaN(val))
+                if (isNaNField(val))
                     return;
-                if (isFieldNaN(acc) || val < acc)
+                if (isNaNField(acc) || val < acc)
                     acc = val;
                 break;
             case SumMapOp::Max:
-                if (isFieldNaN(val))
+                if (isNaNField(val))
                     return;
-                if (isFieldNaN(acc) || val > acc)
+                if (isNaNField(acc) || val > acc)
                     acc = val;
                 break;
         }
-    }
-
-    static bool isFieldNaN(const Field & f)
-    {
-        /// BFloat16 is stored as Float64 in Field (via NearestFieldType),
-        /// so the Float64 case covers both.
-        if (f.getType() == Field::Types::Float64)
-            return isNaN(f.safeGet<Float64>());
-        return false;
     }
 
     /// Check if accumulator value equals the identity element (for compaction)
