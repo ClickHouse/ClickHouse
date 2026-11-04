@@ -15,6 +15,7 @@
 #include <Analyzer/Resolve/IdentifierResolver.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/TableNode.h>
+#include <Analyzer/Utils.h>
 #include <Common/FailPoint.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
@@ -51,6 +52,7 @@
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageView.h>
+#include <TableFunctions/TableFunctionFactory.h>
 
 #include <base/scope_guard.h>
 
@@ -497,16 +499,51 @@ bool isStorageEligibleForPlanCache(const StoragePtr & storage, const StorageMeta
     return true;
 }
 
+/// Returns true if the AST reads a table by itself: a subquery (`(SELECT ...)`, `IN (SELECT ...)`)
+/// or the bare `IN some_table` / `IN some_table_function(...)` form, whose right-hand side the
+/// analyzer resolves as a table and reads like a subquery.
+bool astReadsTables(const ASTPtr & ast)
+{
+    if (ast->as<ASTSubquery>() || ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
+        return true;
+
+    if (const auto * function = ast->as<ASTFunction>();
+        function && function->arguments && isNameOfInFunction(function->name))
+    {
+        const auto & arguments = function->arguments->children;
+        if (arguments.size() >= 2)
+        {
+            const auto & right = arguments[1];
+            if (right->as<ASTIdentifier>())
+                return true;
+            if (const auto * right_function = right->as<ASTFunction>();
+                right_function && TableFunctionFactory::instance().isTableFunctionName(right_function->name))
+                return true;
+        }
+    }
+
+    for (const auto & child : ast->children)
+        if (astReadsTables(child))
+            return true;
+
+    return false;
+}
+
 /// Table constraints are analyzed into the plan by the constraint-based optimizations
 /// (`convert_query_to_cnf`, `optimize_using_constraints`, `optimize_substitute_columns`): their
 /// expressions are folded and used to rewrite the query predicate, while they never appear in the
 /// analyzed query tree checked by `queryTreeIsEligibleForPlanCache`. A constraint calling a
 /// non-deterministic function (e.g. `getSetting`) would be frozen into the cached plan, and the
 /// constraint text in the schema fingerprint does not capture the folded value.
+/// A constraint with a subquery is unsafe for the same reason: `ConstraintsDescription::getQueryTreeData`
+/// folds the subquery into a constant while optimizing the predicate, so the value read from the other
+/// table is baked into the plan. That table is neither a plan leaf nor a scalar boundary seen by the
+/// dependency collection, so a change to it would not invalidate the entry, and the folding escapes
+/// `query_plan_cache_allow_scalar_subqueries`. Such constraints are rejected like row-policy subqueries.
 bool constraintsContainFunctionsUnsafeForQueryPlanCache(const StorageInMemoryMetadata & metadata, const ContextPtr & context)
 {
     for (const auto & constraint : metadata.getConstraints().getConstraints())
-        if (astContainsFunctionsUnsafeForQueryPlanCache(constraint, context))
+        if (astReadsTables(constraint) || astContainsFunctionsUnsafeForQueryPlanCache(constraint, context))
             return true;
     return false;
 }
@@ -616,7 +653,7 @@ bool fillDependency(QueryPlanCacheDependency & dep, const StoragePtr & storage, 
     if (constraintsContainFunctionsUnsafeForQueryPlanCache(*metadata, context))
     {
         LOG_DEBUG(getLogger("QueryPlanCache"),
-            "Not caching plan: a constraint of {}.{} uses a function unsafe for the plan cache", dep.database, dep.table);
+            "Not caching plan: a constraint of {}.{} contains a subquery or uses a function unsafe for the plan cache", dep.database, dep.table);
         return false;
     }
 
