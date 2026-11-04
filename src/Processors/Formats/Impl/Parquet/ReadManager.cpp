@@ -82,7 +82,7 @@ std::optional<size_t> AtomicBitSet::findNextAndNot(const AtomicBitSet & mask, si
 
 void ReadManager::init(
     FormatParserSharedResourcesPtr parser_shared_resources_,
-    const std::optional<std::vector<size_t>> & buckets_to_read_,
+    RowGroupSelection row_groups_to_read_,
     bool other_row_groups_are_read_by_other_readers)
 {
     parser_shared_resources = parser_shared_resources_;
@@ -90,12 +90,7 @@ void ReadManager::init(
     if (!reader.file_footer)
         reader.setFileFooter(Reader::readFileFooter(reader.prefetcher, reader.options.format.parquet.footer_read_size));
 
-    if (buckets_to_read_)
-    {
-        row_groups_to_read = std::unordered_set<UInt64>{};
-        for (auto rg : *buckets_to_read_)
-            row_groups_to_read->insert(rg);
-    }
+    row_groups_to_read = std::move(row_groups_to_read_);
     reader.prefilterAndInitRowGroups(row_groups_to_read);
     reader.preparePrewhere();
 
@@ -103,11 +98,12 @@ void ReadManager::init(
     /// the row groups not in the bucket count as pruned, e.g. the ones the query condition cache knows to
     /// have no matching rows.
     size_t row_groups_to_consider = reader.file_metadata().row_groups.size();
-    if (row_groups_to_read && other_row_groups_are_read_by_other_readers)
+    const auto * row_group_ids = std::get_if<std::unordered_set<UInt64>>(&row_groups_to_read);
+    if (row_group_ids && other_row_groups_are_read_by_other_readers)
     {
         row_groups_to_consider = 0;
         for (size_t i = 0; i < reader.file_metadata().row_groups.size(); ++i)
-            row_groups_to_consider += row_groups_to_read->contains(i);
+            row_groups_to_consider += row_group_ids->contains(i);
     }
     ProfileEvents::increment(ProfileEvents::ParquetReadRowGroups, reader.row_groups.size());
     ProfileEvents::increment(ProfileEvents::ParquetPrunedRowGroups, row_groups_to_consider - reader.row_groups.size());

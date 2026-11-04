@@ -50,11 +50,11 @@ public:
     /// (I'm trying this style because the usual pattern of passing-through lots of arguments through
     /// layers of constructors seems bad. This seems better but still not great, hopefully there's an
     /// even better way.)
-    /// `other_row_groups_are_read_by_other_readers` means that the row groups not in `buckets_to_read_`
+    /// `other_row_groups_are_read_by_other_readers` means that the row groups not in `row_groups_to_read_`
     /// are read by other readers of the same query, so they are not counted as pruned by this one.
     void init(
         FormatParserSharedResourcesPtr parser_shared_resources_,
-        const std::optional<std::vector<size_t>> & buckets_to_read_,
+        RowGroupSelection row_groups_to_read_,
         bool other_row_groups_are_read_by_other_readers = false);
 
     ~ReadManager();
@@ -131,8 +131,7 @@ private:
     std::priority_queue<Task, std::vector<Task>, Task::Comparator> delivery_queue;
     std::condition_variable delivery_cv;
     std::exception_ptr exception;
-    /// Nullopt means that ReadManager reads all row groups
-    std::optional<std::unordered_set<UInt64>> row_groups_to_read;
+    RowGroupSelection row_groups_to_read;
 
     /// Used when `reader.row_groups_ordered_by_top_k`, see admitTopKRowGroups.
     struct TopKAdmission
