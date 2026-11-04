@@ -111,7 +111,7 @@ GROUP BY k;
 -- A text without spaces is split between characters, and a wide character that does not fit at the end of a line moves
 -- to the next one: the read box below wraps \`(db_XXXXXXXX.\` and 20 characters of two columns each at 40 columns.
 SELECT '-- long text without spaces';
-CREATE TABLE $DB.\`一二三四五六七八九十一二三四五六七八九十\`(\`键\` UInt64) ENGINE = MergeTree ORDER BY \`键\`;
+CREATE TABLE $DB.\`一二三四五六七八九十一二三四五六七八九十\`(\`键\` UInt64) ENGINE = MergeTree ORDER BY \`键\` SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0;
 INSERT INTO $DB.\`一二三四五六七八九十一二三四五六七八九十\` SELECT number FROM numbers(0, 1000);
 EXPLAIN tree = 1
 SELECT \`键\` % 10 AS k, sum(\`键\`)
