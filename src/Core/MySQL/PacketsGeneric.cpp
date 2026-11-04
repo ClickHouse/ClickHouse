@@ -35,7 +35,9 @@ OKPacket::OKPacket(
 
 size_t OKPacket::getPayloadSize() const
 {
-    size_t result = 2 + getLengthEncodedNumberSize(affected_rows);
+    /// Header, `affected_rows` and `last_insert_id` are all length-encoded variables, so the size of
+    /// `last_insert_id` must be taken into account as well; it is not always one byte.
+    size_t result = 1 + getLengthEncodedNumberSize(affected_rows) + getLengthEncodedNumberSize(last_insert_id);
 
     if (capabilities & CLIENT_PROTOCOL_41)
     {
@@ -75,8 +77,11 @@ void OKPacket::readPayloadImpl(ReadBuffer & payload)
         payload.readStrict(reinterpret_cast<char *>(&status_flags), 2);
     }
 
-    readLengthEncodedString(info, payload);
-    if ((capabilities & CLIENT_SESSION_TRACK) && (status_flags & SERVER_SESSION_STATE_CHANGED))
+    /// Some servers omit the `info` field completely when there is nothing to report (Connector/J
+    /// works around the same behaviour, see Bug#35630063), so it must only be read if bytes remain.
+    if (!payload.eof())
+        readLengthEncodedString(info, payload);
+    if ((capabilities & CLIENT_SESSION_TRACK) && (status_flags & SERVER_SESSION_STATE_CHANGED) && !payload.eof())
         readLengthEncodedString(session_state_changes, payload);
 }
 
