@@ -2987,6 +2987,19 @@ static LambdaShapeMatch matchUpToLambdaArgumentTypes(const QueryTreeNodePtr & no
     if (!node || !shape)
         return node == shape ? LambdaShapeMatch::Equal : LambdaShapeMatch::Different;
 
+    /// Folding a function of lambda arguments depends on their types, so the two sides can be folded differently.
+    const auto * node_constant = node->as<ConstantNode>();
+    const auto * shape_constant = shape->as<ConstantNode>();
+    bool node_is_folded = node_constant && node_constant->hasSourceExpression();
+    bool shape_is_folded = shape_constant && shape_constant->hasSourceExpression();
+    if ((node_is_folded || shape_is_folded) && !(node_constant && shape_constant && node->isEqual(*shape, {.compare_aliases = false})))
+    {
+        auto match = matchUpToLambdaArgumentTypes(
+            node_is_folded ? node_constant->getSourceExpression() : node,
+            shape_is_folded ? shape_constant->getSourceExpression() : shape);
+        return match == LambdaShapeMatch::EqualUpToLambdaArgumentTypes ? match : LambdaShapeMatch::Different;
+    }
+
     if (node->getNodeType() != shape->getNodeType())
         return LambdaShapeMatch::Different;
 

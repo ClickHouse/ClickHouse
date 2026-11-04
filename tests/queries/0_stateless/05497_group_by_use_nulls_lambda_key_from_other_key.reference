@@ -89,6 +89,17 @@
 1	1	1
 1	\N	1
 \N	\N	2
+-- lambda body folded to a constant
+0	0	1	1
+0	\N	1	1
+1	0	1	1
+1	\N	1	1
+\N	\N	0	2
+0	[]	1
+0	['UInt64']	1
+1	[]	1
+1	['UInt64']	1
+\N	[]	2
 -- near misses are not the key
 0	0	0	0	0	1	1
 0	\N	0	0	0	1	1

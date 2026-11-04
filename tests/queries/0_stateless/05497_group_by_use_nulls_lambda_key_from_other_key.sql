@@ -45,6 +45,10 @@ SELECT number, arrayCount(x -> x > 0, [number]) AS k, count() FROM numbers(3) GR
 SELECT '-- APPLY';
 SELECT number, * APPLY (x -> arrayCount(y -> y > 0, [x])), count() FROM numbers(2) GROUP BY ROLLUP(number, arrayCount(y -> y > 0, [number])) ORDER BY ALL;
 
+SELECT '-- lambda body folded to a constant';
+SELECT number, arrayCount(x -> isNull(x), [number]) AS k, arrayCount(x -> isNotNull(x), [number]) AS other_folded, count() FROM numbers(2) GROUP BY ROLLUP(number, k) ORDER BY ALL;
+SELECT number, arrayMap(x -> toTypeName(x), [number]) AS k, count() FROM numbers(2) GROUP BY ROLLUP(number, k) ORDER BY ALL;
+
 SELECT '-- near misses are not the key';
 SELECT number, arrayCount(x -> x > 0, [number]) AS k, arrayCount(x -> x > 1, [number]) AS other_constant, arrayCount(y -> y > 0, [number]) AS other_argument, arrayExists(x -> x > 0, [number]) AS other_function, arrayCount(x -> x > 0, [number, 1]) AS other_array, count() FROM numbers(2) GROUP BY ROLLUP(number, k) ORDER BY ALL;
 
