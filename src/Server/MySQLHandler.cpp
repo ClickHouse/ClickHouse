@@ -921,7 +921,7 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
         QueryScope query_scope = QueryScope::create(query_context);
 
         /// For admission queue disconnect detection.
-        query_context->setConnectionAliveCheck(makeSocketAliveCheckCallback(socket()));
+        query_context->setConnectionAliveCheck(makeSocketAliveCheckCallback(activeSocket()));
 
         std::atomic<size_t> affected_rows {0};
         auto prev = query_context->getProgressCallback();
@@ -1015,6 +1015,9 @@ Block MySQLHandler::describePreparedStatement(const String & statement, ResultCo
     auto query_context = session->makeQueryContext();
     query_context->setCurrentQueryId(fmt::format("mysql:{}:{}", connection_id, toString(UUIDHelpers::generateV4())));
     QueryScope query_scope = QueryScope::create(query_context);
+
+    /// For admission queue disconnect detection: `executeQuery` below waits for admission like `comQuery`.
+    query_context->setConnectionAliveCheck(makeSocketAliveCheckCallback(activeSocket()));
 
     const auto & settings = query_context->getSettingsRef();
 
@@ -1198,6 +1201,11 @@ MySQLHandlerSSL::MySQLHandlerSSL(
     : MySQLHandler(server_, tcp_server_, socket_, ssl_enabled, secure_required_, connection_id_, std::move(default_session_user_), read_event_, write_event_)
     , private_key(private_key_)
 {}
+
+Poco::Net::StreamSocket & MySQLHandlerSSL::activeSocket()
+{
+    return ss ? *ss : socket();
+}
 
 void MySQLHandlerSSL::authPluginSSL()
 {

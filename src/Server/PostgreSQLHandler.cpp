@@ -1197,6 +1197,15 @@ void PostgreSQLHandler::makeSecureConnectionSSL()
 void PostgreSQLHandler::makeSecureConnectionSSL() {}
 #endif
 
+Poco::Net::StreamSocket & PostgreSQLHandler::activeSocket()
+{
+#if USE_SSL
+    if (ss)
+        return *ss;
+#endif
+    return socket();
+}
+
 void PostgreSQLHandler::sendParameterStatusData(PostgreSQLProtocol::Messaging::StartupMessage & start_up_message)
 {
     auto & parameters = start_up_message.parameters;
@@ -1577,7 +1586,7 @@ PostgreSQLHandler::CopyQueryResult PostgreSQLHandler::processCopyQuery(const Str
         QueryScope query_scope = QueryScope::create(query_context);
 
         /// For admission queue disconnect detection.
-        query_context->setConnectionAliveCheck(makeSocketAliveCheckCallback(socket()));
+        query_context->setConnectionAliveCheck(makeSocketAliveCheckCallback(activeSocket()));
 
         String columns_to_insert;
         if (!copy_query->column_names.empty())
@@ -1954,7 +1963,7 @@ PostgreSQLHandler::CopyQueryResult PostgreSQLHandler::processCopyQuery(const Str
         QueryScope query_scope = QueryScope::create(query_context);
 
         /// For admission queue disconnect detection.
-        query_context->setConnectionAliveCheck(makeSocketAliveCheckCallback(socket()));
+        query_context->setConnectionAliveCheck(makeSocketAliveCheckCallback(activeSocket()));
 
         String columns_to_select = "*";
         if (!copy_query->column_names.empty())
@@ -2363,7 +2372,7 @@ UInt64 PostgreSQLHandler::executeQueryWithTracking(
     SCOPE_EXIT({ query_context->setProgressCallback(prev_callback); });
 
     /// For admission queue disconnect detection.
-    query_context->setConnectionAliveCheck(makeSocketAliveCheckCallback(socket()));
+    query_context->setConnectionAliveCheck(makeSocketAliveCheckCallback(activeSocket()));
 
     auto set_result_details = [](const QueryResultDetails & details)
     {
