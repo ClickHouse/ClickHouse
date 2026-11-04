@@ -894,6 +894,7 @@ void registerInputFormatValues(FormatFactory & factory)
     {
         return std::make_shared<ValuesBlockInputFormat>(buf, std::make_unique<const Block>(header), params, settings);
     });
+    factory.markInputFormatSupportsResetParser("Values");
 
     factory.setDocumentation("Values", Documentation{
         .description = R"DOCS_MD(

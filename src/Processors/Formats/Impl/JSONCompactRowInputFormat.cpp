@@ -76,6 +76,7 @@ void registerInputFormatJSONCompact(FormatFactory & factory)
     {
         return std::make_shared<JSONCompactRowInputFormat>(std::make_unique<const Block>(sample), buf, std::move(params), settings);
     });
+    factory.markInputFormatSupportsResetParser("JSONCompact");
 
     factory.markFormatSupportsSubsetOfColumns("JSONCompact");
     /// Data in this format is commonly stored in `.json` files, but the `json` extension infers as `JSON`.

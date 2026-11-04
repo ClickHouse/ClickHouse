@@ -944,6 +944,7 @@ void registerInputFormatGeoJSON(FormatFactory & factory)
             return std::make_shared<GeoJSONRowInputFormat>(
                 buf, std::make_shared<const Block>(sample), std::move(params), settings);
         });
+    factory.markInputFormatSupportsResetParser("GeoJSON");
 
     factory.registerFileExtension("geojson", "GeoJSON");
     factory.setDocumentation("GeoJSON", Documentation{

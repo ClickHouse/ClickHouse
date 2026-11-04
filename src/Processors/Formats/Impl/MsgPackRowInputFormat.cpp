@@ -806,6 +806,7 @@ void registerInputFormatMsgPack(FormatFactory & factory)
     {
         return std::make_shared<MsgPackRowInputFormat>(std::make_shared<const Block>(sample), buf, params, settings);
     });
+    factory.markInputFormatSupportsResetParser("MsgPack");
     factory.registerFileExtension("messagepack", "MsgPack");
 
     factory.setDocumentation("MsgPack", Documentation{

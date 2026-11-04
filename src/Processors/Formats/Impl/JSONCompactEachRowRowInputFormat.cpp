@@ -262,6 +262,7 @@ void registerInputFormatJSONCompactEachRow(FormatFactory & factory)
             {
                 return std::make_shared<JSONCompactEachRowRowInputFormat>(std::make_unique<const Block>(sample), buf, std::move(params), with_names, with_types, yield_strings, settings);
             });
+            factory.markInputFormatSupportsResetParser(format_name);
         };
 
         registerWithNamesAndTypes(yield_strings ? "JSONCompactStringsEachRow" : "JSONCompactEachRow", register_func);

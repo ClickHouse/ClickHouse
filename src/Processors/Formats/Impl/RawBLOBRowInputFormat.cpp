@@ -59,6 +59,7 @@ void registerInputFormatRawBLOB(FormatFactory & factory)
     {
         return std::make_shared<RawBLOBRowInputFormat>(std::make_shared<const Block>(sample), buf, params);
     });
+    factory.markInputFormatSupportsResetParser("RawBLOB");
 
     factory.setDocumentation("RawBLOB", Documentation{
         .description = R"DOCS_MD(

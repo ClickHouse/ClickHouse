@@ -930,6 +930,7 @@ void registerInputFormatVortex(FormatFactory & factory)
                 std::move(format_filter_info),
                 is_remote_fs);
         });
+    factory.markInputFormatSupportsResetParser("Vortex");
     factory.markFormatSupportsSubsetOfColumns("Vortex");
 
     factory.setDocumentation("Vortex", Documentation{.description = R"DOCS_MD(

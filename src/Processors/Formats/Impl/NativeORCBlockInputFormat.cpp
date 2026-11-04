@@ -3012,6 +3012,7 @@ void registerInputFormatORC(FormatFactory & factory)
             return std::make_shared<NativeORCBlockInputFormat>(
                 buf, std::make_shared<const Block>(sample), settings, use_prefetch, min_bytes_for_seek, format_filter_info);
         });
+    factory.markInputFormatSupportsResetParser("ORC");
     factory.markFormatSupportsSubsetOfColumns("ORC");
 
     factory.setDocumentation("ORC", Documentation{

@@ -398,6 +398,7 @@ void CustomSeparatedFormatReader::setReadBuffer(ReadBuffer & in_)
 {
     buf = assert_cast<PeekableReadBuffer *>(&in_);
     FormatWithNamesAndTypesReader::setReadBuffer(*buf);
+    columns = 0;
 }
 
 CustomSeparatedSchemaReader::CustomSeparatedSchemaReader(
@@ -462,6 +463,7 @@ void registerInputFormatCustomSeparated(FormatFactory & factory)
             {
                 return std::make_shared<CustomSeparatedRowInputFormat>(std::make_shared<const Block>(sample), buf, params, with_names, with_types, ignore_spaces, settings);
             });
+            factory.markInputFormatSupportsResetParser(format_name);
         };
         registerWithNamesAndTypes(ignore_spaces ? "CustomSeparatedIgnoreSpaces" : "CustomSeparated", register_func);
         markFormatWithNamesAndTypesSupportsSamplingColumns(ignore_spaces ? "CustomSeparatedIgnoreSpaces" : "CustomSeparated", factory);

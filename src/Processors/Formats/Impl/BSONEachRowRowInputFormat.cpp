@@ -1112,6 +1112,7 @@ void registerInputFormatBSONEachRow(FormatFactory & factory)
         "BSONEachRow",
         [](ReadBuffer & buf, const Block & sample, IRowInputFormat::Params params, const FormatSettings & settings)
         { return std::make_shared<BSONEachRowRowInputFormat>(buf, std::make_shared<const Block>(sample), std::move(params), settings); });
+    factory.markInputFormatSupportsResetParser("BSONEachRow");
     factory.registerFileExtension("bson", "BSONEachRow");
 
     factory.setDocumentation("BSONEachRow", Documentation{

@@ -724,6 +724,7 @@ void registerInputFormatParquet(FormatFactory & factory)
             is_remote_fs
         );
     });
+    factory.markInputFormatSupportsResetParser("Parquet");
     factory.markFormatSupportsSubsetOfColumns("Parquet");
     factory.registerPrewhereSupportChecker("Parquet", [](const FormatSettings &)
     {
