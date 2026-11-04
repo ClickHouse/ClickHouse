@@ -7108,21 +7108,6 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         alter_effective_settings = std::move(copy);
     }
 
-    const auto & new_disk = (*alter_effective_settings)[MergeTreeSetting::disk];
-    const auto new_storage_policy = new_disk.changed
-        ? local_context->getStoragePolicyFromDisk(new_disk)
-        : local_context->getStoragePolicy((*alter_effective_settings)[MergeTreeSetting::storage_policy]);
-    if (new_storage_policy != getStoragePolicy())
-    {
-        /// The roots of a `table_disk` table are taken when it is created, so its disks are fixed.
-        if ((*settings_from_storage)[MergeTreeSetting::table_disk])
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "The disk of table {} with `table_disk = true` cannot be changed",
-                getStorageID().getNameForLogs());
-        checkStoragePolicy(new_storage_policy);
-    }
-
     /// A `Replicated` database runs the same ALTER again on every other replica. Only the first run of it,
     /// the one the database queue executes, decides whether the change is allowed. Checking it again on the
     /// other replicas only adds a way to fail: `allow_feature_tier` comes from each replica's own config, so
@@ -7137,6 +7122,21 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     if (!is_replay_on_another_replica)
         local_context->checkMergeTreeSettingsConstraints(
             *settings_from_storage, alter_effective_settings->changesFrom(*settings_from_storage));
+
+    const auto & new_disk = (*alter_effective_settings)[MergeTreeSetting::disk];
+    const auto new_storage_policy = new_disk.changed
+        ? local_context->getStoragePolicyFromDisk(new_disk)
+        : local_context->getStoragePolicy((*alter_effective_settings)[MergeTreeSetting::storage_policy]);
+    if (new_storage_policy != getStoragePolicy())
+    {
+        /// The roots of a `table_disk` table are taken when it is created, so its disks are fixed.
+        if ((*settings_from_storage)[MergeTreeSetting::table_disk])
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The disk of table {} with `table_disk = true` cannot be changed",
+                getStorageID().getNameForLogs());
+        checkStoragePolicy(new_storage_policy);
+    }
 
     const bool is_secondary_replay = isSecondaryDDLReplay(local_context);
 
