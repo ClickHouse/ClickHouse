@@ -76,7 +76,7 @@ public:
     {
         /// The `IgnoreSet` variants are called with the left operand alone during type analysis,
         /// hence the optional second argument there.
-        const auto result_type = in_null_as_unknown ? "Nullable(UInt8)" : "UInt8";
+        const auto * const result_type = in_null_as_unknown ? "Nullable(UInt8)" : "UInt8";
         return ignore_set ? fmt::format("(Any, [Any]) -> {}", result_type) : fmt::format("(Any, Any) -> {}", result_type);
     }
 
