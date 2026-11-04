@@ -8,6 +8,9 @@
     <query>SELECT estimateCompressionRatio('ZSTD', 65536)(toLowCardinality(s)) FROM t_ecr_lc_perf FORMAT Null</query>
     <query>SELECT k, estimateCompressionRatio('LZ4', 65536)(s) FROM t_ecr_lc_perf GROUP BY k FORMAT Null</query>
     <query>SELECT k, estimateCompressionRatio('LZ4', 65536)(lc) FROM t_ecr_lc_perf GROUP BY k FORMAT Null</query>
+    <query>SELECT estimateCompressionRatio('LZ4', 65536, 'LowCardinality(String)')(s) FROM t_ecr_lc_perf FORMAT Null</query>
+    <query>SELECT estimateCompressionRatio('LZ4', 65536)(s) FROM t_ecr_lc_perf SETTINGS max_block_size = 1000 FORMAT Null</query>
+    <query>SELECT estimateCompressionRatio('LZ4', 65536)(lc) FROM t_ecr_lc_perf SETTINGS max_block_size = 1000 FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS t_ecr_lc_perf</drop_query>
 </test>
