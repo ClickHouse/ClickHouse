@@ -76,8 +76,8 @@ public:
         ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure) override;
 
 protected:
-    const Paths & getPathsImpl() const override { return paths; }
-    void setPathsImpl(const Paths & paths_) override
+    const Paths & getPathsImpl() const override TSA_REQUIRES_SHARED(paths_mutex) { return paths; }
+    void setPathsImpl(const Paths & paths_) override TSA_REQUIRES(paths_mutex)
     {
         paths = paths_;
     }
@@ -91,7 +91,7 @@ private:
 
     String url;
     Path path;
-    Paths paths;
+    Paths paths TSA_GUARDED_BY(paths_mutex);
 };
 }
 

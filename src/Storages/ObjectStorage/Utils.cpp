@@ -48,7 +48,7 @@ std::optional<String> checkAndGetNewFileOnInsertIfNeeded(
     const StorageObjectStorageConfiguration & configuration,
     const StorageObjectStorageQuerySettings & settings,
     const String & key,
-    size_t sequence_number)
+    size_t & sequence_number)
 {
     if (settings.truncate_on_insert
         || !object_storage.exists(StoredObject(key)))

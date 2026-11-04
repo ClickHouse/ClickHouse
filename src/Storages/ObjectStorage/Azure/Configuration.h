@@ -142,8 +142,8 @@ public:
     }
 
 protected:
-    const Paths & getPathsImpl() const override { return blobs_paths; }
-    void setPathsImpl(const Paths & paths) override { blobs_paths = paths; }
+    const Paths & getPathsImpl() const override TSA_REQUIRES_SHARED(paths_mutex) { return blobs_paths; }
+    void setPathsImpl(const Paths & paths) override TSA_REQUIRES(paths_mutex) { blobs_paths = paths; }
 
     void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override;
 private:
@@ -152,7 +152,7 @@ private:
     ASTPtr extractExtraCredentials(ASTs & args);
 
     Path blob_path;
-    Paths blobs_paths;
+    Paths blobs_paths TSA_GUARDED_BY(paths_mutex);
     AzureBlobStorage::ConnectionParams connection_params;
     DiskPtr disk;
 

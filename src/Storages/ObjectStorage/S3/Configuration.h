@@ -147,7 +147,7 @@ public:
     S3::URI url;
 
 
-    Paths keys;
+    Paths keys TSA_GUARDED_BY(paths_mutex);
 
     std::unique_ptr<S3Settings> s3_settings;
     std::unique_ptr<S3Capabilities> s3_capabilities;
@@ -162,8 +162,8 @@ public:
     String biglake_adc_refresh_token;
 
 protected:
-    const Paths & getPathsImpl() const override { return keys; }
-    void setPathsImpl(const Paths & paths) override
+    const Paths & getPathsImpl() const override TSA_REQUIRES_SHARED(paths_mutex) { return keys; }
+    void setPathsImpl(const Paths & paths) override TSA_REQUIRES(paths_mutex)
     {
         keys = paths;
     }

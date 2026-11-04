@@ -172,8 +172,9 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
     validateNamespace(configuration->getNamespace(), configuration);
     validateKey(file_path);
 
+    size_t sequence_number = 1;
     if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(
-            *object_storage, *configuration, query_settings, file_path, /* sequence_number */1))
+            *object_storage, *configuration, query_settings, file_path, sequence_number))
     {
         file_path = *new_key;
     }

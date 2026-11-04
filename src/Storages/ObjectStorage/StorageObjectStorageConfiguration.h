@@ -447,10 +447,13 @@ public:
     std::optional<String> source_disk_name;
 
 protected:
-    /// Path list storage. Only ever called with `paths_mutex` held, or before the configuration is
-    /// shared with any query. Subclasses override these, never the locking wrappers above.
-    virtual const Paths & getPathsImpl() const = 0;
-    virtual void setPathsImpl(const Paths & paths) = 0;
+    /// Guards the path list, which subclasses store. Never held while acquiring another lock,
+    /// and never across remote I/O.
+    mutable SharedMutex paths_mutex;
+
+    /// Path list storage. Subclasses override these, never the locking wrappers above.
+    virtual const Paths & getPathsImpl() const TSA_REQUIRES_SHARED(paths_mutex) = 0;
+    virtual void setPathsImpl(const Paths & paths) TSA_REQUIRES(paths_mutex) = 0;
 
     void checkFormat() const;
 
@@ -472,13 +475,11 @@ private:
     // When using `partition_strategy=hive`, a recursive reading pattern will be appended `'table_root/**.parquet'
     Path read_path;
 
-    /// Guards the path list. Never held while acquiring another lock, and never across remote I/O.
-    mutable SharedMutex paths_mutex;
     /// Taken by writers only, around the whole allocate-derive-publish sequence. Acquired before
     /// `paths_mutex`, which is the only ordering between the two.
     std::mutex path_allocation_mutex;
-    /// The lowest sequence number no write has taken yet. Guarded by `path_allocation_mutex`.
-    size_t next_write_sequence = 0;
+    /// The lowest sequence number no write has taken yet.
+    size_t next_write_sequence TSA_GUARDED_BY(path_allocation_mutex) = 0;
 };
 
 using StorageObjectStorageConfigurationPtr = std::shared_ptr<StorageObjectStorageConfiguration>;

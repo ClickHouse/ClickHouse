@@ -72,8 +72,8 @@ public:
     void addStructureAndFormatToArgsIfNeeded(ASTs &, const String &, const String &, ContextPtr, bool) override { }
 
 protected:
-    const Paths & getPathsImpl() const override { return paths; }
-    void setPathsImpl(const Paths & paths_) override
+    const Paths & getPathsImpl() const override TSA_REQUIRES_SHARED(paths_mutex) { return paths; }
+    void setPathsImpl(const Paths & paths_) override TSA_REQUIRES(paths_mutex)
     {
         paths = paths_;
         path = paths_[0];
@@ -86,7 +86,7 @@ private:
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;
     String disk_name;
     Path path;
-    Paths paths;
+    Paths paths TSA_GUARDED_BY(paths_mutex);
     void initializeFromParsedArguments(const LocalStorageParsedArguments & parsed_arguments);
 };
 
