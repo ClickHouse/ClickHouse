@@ -525,3 +525,23 @@ SELECT sumMap(k, v) FROM
     UNION ALL
     SELECT [toDecimal64(110, 2)]::Array(Dynamic) AS k, [toInt64(2)] AS v
 );
+
+-- ===================== -WithOverflow keeps sums wide until output =====================
+
+-- The sum wraps around to zero only on output, so the key is not compacted away.
+SELECT 'sumMapWithOverflow narrow sum wraps to zero';
+SELECT sumMapWithOverflow([1, 1], [toUInt8(200), toUInt8(56)]);
+SELECT sumMapWithOverflow([1, 1], [toInt8(-128), toInt8(-128)]);
+SELECT sumMapFilteredWithOverflow([1])([1, 1, 2], [toUInt8(200), toUInt8(56), toUInt8(1)]);
+SELECT sumMapWithOverflowMerge(s) FROM
+(
+    SELECT sumMapWithOverflowState([1], [toUInt8(200)]) AS s
+    UNION ALL
+    SELECT sumMapWithOverflowState([1], [toUInt8(56)]) AS s
+);
+
+-- Version-1 states hold the wide sum (256 as `UInt64`), as the generic path writes them.
+SELECT 'sumMapWithOverflow version-1 state keeps wide sum';
+SELECT hex(sumMapWithOverflowState([1, 1], [toUInt8(200), toUInt8(56)]));
+SELECT finalizeAggregation(CAST(unhex('01010001000000000000') AS AggregateFunction(sumMapWithOverflow, Array(UInt8), Array(UInt8))));
+SELECT finalizeAggregation(CAST(unhex('01010001000000000000') AS AggregateFunction(sumMapFilteredWithOverflow([1]), Array(UInt8), Array(UInt8))));

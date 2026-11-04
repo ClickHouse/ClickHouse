@@ -232,7 +232,8 @@ struct SumMapKeyTraits<std::string_view>
 ///   |<------------------------- block_size ---------------------------------------->|
 ///
 /// - Each value[i] is stored at its natural alignment (block_alignment = max).
-/// - Accumulator type may differ from input (e.g. UInt8 -> UInt64 when !overflow).
+/// - Accumulator type may differ from input: sums are accumulated in `NearestFieldType`
+///   (e.g. UInt8 -> UInt64), and -WithOverflow narrows them to the input type only on output.
 /// - Null bitmap: 1 bit per value column, packed LSB-first per byte.
 ///     bit = 1: null (no value accumulated yet, initial state)
 ///     bit = 0: value present (cleared on first non-null input)
@@ -374,25 +375,21 @@ public:
             auto inner_type = removeNullable(type);
             desc.input_type_index = inner_type->getTypeId();
 
-            /// Determine accumulator type: for overflow=false, promote numeric types
-            /// (but not decimals, matching the generic path behavior)
-            if (!overflow)
-            {
-                WhichDataType which(inner_type);
-                if (which.isDecimal())
-                    desc.acc_type_index = desc.input_type_index;
-                else if (inner_type->canBePromoted())
-                    desc.acc_type_index = inner_type->promoteNumericType()->getTypeId();
-                else
-                    desc.acc_type_index = desc.input_type_index;
-            }
+            /// Determine the accumulator type, matching the generic path, which accumulates
+            /// `Field`s of `NearestFieldType`:
+            /// - Sums (with or without overflow) are kept wide, so that -WithOverflow wraps around
+            ///   only once, on output (`insertNarrowed`), and version-1 states keep the wide sum.
+            /// - Min/max never leave the input range, so they keep the input type, except that
+            ///   floats are compared as `Float64`.
+            /// - Decimals are never promoted.
+            if (WhichDataType(inner_type).isDecimal() || !inner_type->canBePromoted())
+                desc.acc_type_index = desc.input_type_index;
+            else if (op == SumMapOp::Sum)
+                desc.acc_type_index = inner_type->promoteNumericType()->getTypeId();
+            else if (desc.input_type_index == TypeIndex::Float32 || desc.input_type_index == TypeIndex::BFloat16)
+                desc.acc_type_index = TypeIndex::Float64;
             else
-            {
-                if (desc.input_type_index == TypeIndex::Float32 || desc.input_type_index == TypeIndex::BFloat16)
-                    desc.acc_type_index = TypeIndex::Float64;
-                else
-                    desc.acc_type_index = desc.input_type_index;
-            }
+                desc.acc_type_index = desc.input_type_index;
 
             auto [sz, al] = nativeSizeAlignForTypeIndex(desc.acc_type_index);
             desc.native_size = sz;
@@ -1001,7 +998,7 @@ private:
         dispatchOnTypeIndex(desc.acc_type_index, [&](auto acc_tag)
         {
             using AccType = decltype(acc_tag);
-            /// Fast path: when input type matches accumulator type (overflow mode,
+            /// Fast path: when input type matches accumulator type (min/max,
             /// decimals, or same-type inputs), skip the inner type dispatch entirely.
             AccType val = (desc.input_type_index == desc.acc_type_index)
                 ? extractValueFromColumn<AccType>(data_col, elem_idx)
@@ -1210,18 +1207,56 @@ private:
             V val = *reinterpret_cast<const V *>(block + desc.offset);
             if constexpr (is_decimal<V>)
                 assert_cast<ColumnDecimal<V> &>(col).getData().push_back(val);
-            else if constexpr (std::is_same_v<V, Float64>)
-            {
-                if (overflow && desc.input_type_index == TypeIndex::Float32)
-                    assert_cast<ColumnVector<Float32> &>(col).getData().push_back(static_cast<Float32>(val));
-                else if (overflow && desc.input_type_index == TypeIndex::BFloat16)
-                    assert_cast<ColumnVector<BFloat16> &>(col).getData().push_back(static_cast<BFloat16>(val));
-                else
-                    assert_cast<ColumnVector<V> &>(col).getData().push_back(val);
-            }
+            else if (overflow && desc.acc_type_index != desc.input_type_index)
+                insertNarrowed(col, val, desc.input_type_index);
             else
                 assert_cast<ColumnVector<V> &>(col).getData().push_back(val);
         });
+    }
+
+    template <typename T, typename V>
+    static void pushBackNarrowed(IColumn & col, V val)
+    {
+        assert_cast<ColumnVector<T> &>(col).getData().push_back(static_cast<T>(val));
+    }
+
+    /// -WithOverflow returns the input type, but accumulates in a wider type (see the constructor).
+    /// Narrow on output: integers wrap around, as `ColumnVector::insert(Field)` does in the generic path.
+    /// The cases are listed explicitly to avoid instantiating another type matrix.
+    template <typename V>
+    static void insertNarrowed(IColumn & col, V val, TypeIndex result_type_index)
+    {
+        if constexpr (std::is_same_v<V, UInt64>)
+        {
+            switch (result_type_index)
+            {
+                case TypeIndex::UInt8: pushBackNarrowed<UInt8>(col, val); return;
+                case TypeIndex::UInt16: pushBackNarrowed<UInt16>(col, val); return;
+                case TypeIndex::UInt32: pushBackNarrowed<UInt32>(col, val); return;
+                default: break;
+            }
+        }
+        else if constexpr (std::is_same_v<V, Int64>)
+        {
+            switch (result_type_index)
+            {
+                case TypeIndex::Int8: pushBackNarrowed<Int8>(col, val); return;
+                case TypeIndex::Int16: pushBackNarrowed<Int16>(col, val); return;
+                case TypeIndex::Int32: pushBackNarrowed<Int32>(col, val); return;
+                default: break;
+            }
+        }
+        else if constexpr (std::is_same_v<V, Float64>)
+        {
+            switch (result_type_index)
+            {
+                case TypeIndex::Float32: pushBackNarrowed<Float32>(col, val); return;
+                case TypeIndex::BFloat16: pushBackNarrowed<BFloat16>(col, val); return;
+                default: break;
+            }
+        }
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Unexpected narrowing of {} accumulator to {} in SumMapTyped", TypeName<V>, magic_enum::enum_name(result_type_index));
     }
 };
 
