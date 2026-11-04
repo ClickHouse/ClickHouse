@@ -6,6 +6,10 @@ temporary table is read locally
 1	2
 500	1000
 999	1998
-join with a temporary table
+join of regular tables is shipped: local Join steps
+0
+join with a temporary table runs locally: local Join steps, local reads
+1	1
 1000	5994000
+1	1
 10	90

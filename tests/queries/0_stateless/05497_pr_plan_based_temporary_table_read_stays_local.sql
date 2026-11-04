@@ -30,8 +30,19 @@ FROM (EXPLAIN description = 0 SELECT sum(v) FROM t_pr_tmp);
 SELECT sum(v) FROM t_pr_tmp;
 SELECT k, v FROM t_pr_tmp WHERE k IN (1, 500, 999) ORDER BY k;
 
-SELECT 'join with a temporary table';
+-- `description = 0` does not print a shipped fragment, so a `Join` or `ReadFromMergeTree` step in the output runs
+-- on the initiator. The legacy EXPLAIN format prints each step name alone on an indented line.
+SET explain_query_plan_default = 'legacy';
+SELECT 'join of regular tables is shipped: local Join steps';
+SELECT countIf(trimBoth(explain) = 'Join')
+FROM (EXPLAIN description = 0 SELECT count() FROM t_pr_regular AS r INNER JOIN t_pr_regular AS t ON r.k = t.k);
+
+SELECT 'join with a temporary table runs locally: local Join steps, local reads';
+SELECT countIf(trimBoth(explain) = 'Join'), countIf(trimBoth(explain) = 'ReadFromMergeTree') > 0
+FROM (EXPLAIN description = 0 SELECT count(), sum(r.v + t.v) FROM t_pr_regular AS r INNER JOIN t_pr_tmp AS t ON r.k = t.k);
 SELECT count(), sum(r.v + t.v) FROM t_pr_regular AS r INNER JOIN t_pr_tmp AS t ON r.k = t.k;
+SELECT countIf(trimBoth(explain) = 'Join'), countIf(trimBoth(explain) = 'ReadFromMergeTree') > 0
+FROM (EXPLAIN description = 0 SELECT count(), sum(t.v) FROM t_pr_tmp AS t INNER JOIN t_pr_regular AS r ON r.k = t.k WHERE r.v < 100);
 SELECT count(), sum(t.v) FROM t_pr_tmp AS t INNER JOIN t_pr_regular AS r ON r.k = t.k WHERE r.v < 100;
 
 DROP TABLE t_pr_regular;
