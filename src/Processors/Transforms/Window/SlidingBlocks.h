@@ -31,7 +31,7 @@ struct SlidingBlock
     /// Inputs
     const Columns input_columns;
     const Columns materialized_columns;
-    /// Set only at the positions some aggregate function reads with `LowCardinality` (see `WindowTransformParams`).
+    /// Set only at the positions some aggregate function reads with `LowCardinality` (see `WindowTransform`).
     const Columns low_cardinality_columns;
 
     /// Helper data

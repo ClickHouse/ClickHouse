@@ -146,6 +146,18 @@ WindowTransform::WindowTransform(
                     arena = std::make_unique<Arena>();
             }
         }
+
+        for (const auto & ws : workspaces)
+        {
+            for (size_t i = 0; i < ws.argument_column_indices.size(); ++i)
+            {
+                if (ws.argument_keeps_low_cardinality[i])
+                {
+                    keep_low_cardinality.resize(params.input_header.columns(), false);
+                    keep_low_cardinality[ws.argument_column_indices[i]] = true;
+                }
+            }
+        }
     }
     catch (...)
     {
@@ -236,7 +248,7 @@ void WindowTransform::writeOutCurrentRow()
 void WindowTransform::addInputBlock(Chunk chunk)
 {
     auto rows_count = static_cast<int64_t>(chunk.getNumRows());
-    auto low_cardinality_columns = keepLowCardinalityColumns(chunk.getColumns(), params.keep_low_cardinality);
+    auto low_cardinality_columns = keepLowCardinalityColumns(chunk.getColumns(), keep_low_cardinality);
     auto materialized_columns = materializeColumns(chunk.getColumns(), params.should_materialize);
     auto index = indexes.calculate(materialized_columns, rows_count);
     auto & block = blocks.add(std::move(chunk), std::move(materialized_columns), std::move(low_cardinality_columns), std::move(index));

@@ -98,6 +98,8 @@ private:
     /// The general functions with their states, and the aggregates; each names its output column.
     std::vector<GeneralWindowFunctionSlot> general_functions;
     std::vector<WindowFunctionWorkspace> workspaces;
+    /// The input columns some aggregate reads with `LowCardinality`; empty when none does.
+    std::vector<bool> keep_low_cardinality;
     Arena states_arena;
     WindowFunctionRequirements required;
 
