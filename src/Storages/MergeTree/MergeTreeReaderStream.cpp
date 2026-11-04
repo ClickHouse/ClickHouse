@@ -339,6 +339,7 @@ size_t CountedCompressedBlocks::take(const String & file, CompressedBlockRanges 
     size_t bytes = 0;
     for (const auto & [range_begin, range_end] : ranges)
     {
+        chassert(range_begin <= range_end);
         /// Only the bytes of the range that are not counted already, merging it into the counted ones.
         size_t begin = range_begin;
         size_t end = range_end;
