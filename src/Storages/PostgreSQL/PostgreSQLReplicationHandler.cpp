@@ -2979,6 +2979,28 @@ void PostgreSQLReplicationHandler::checkTeardownTargetIsRecordedSourceCluster(pq
 }
 
 
+void PostgreSQLReplicationHandler::checkLeakedPublicationTargetIsRecordedSourceCluster(pqxx::nontransaction & tx)
+{
+    auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::checkLeakedPublicationTargetIsRecordedSourceCluster");
+
+    const String path = coordination_keeper_path + "/source_system_identifier";
+    String recorded_system_identifier;
+    if (!getContext()->getZooKeeper()->tryGet(path, recorded_system_identifier))
+        return;
+
+    /// Read through the session that runs the drop, as in `checkTeardownTargetIsRecordedSourceCluster`.
+    const String target_system_identifier = postgres::fetchSystemIdentifier(tx);
+    if (target_system_identifier != recorded_system_identifier)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The coordinated MaterializedPostgreSQL setup at Keeper path '{}' replicates the PostgreSQL cluster with "
+            "system identifier {}, but this replica is connected to the PostgreSQL cluster with system identifier {}. "
+            "The publication {} on that cluster does not belong to this setup, so it is not dropped. All replicas of "
+            "one coordinated setup must replicate the same PostgreSQL cluster. (If the existing setup was dropped "
+            "incompletely, remove the leftover Keeper path manually.)",
+            coordination_keeper_path, recorded_system_identifier, target_system_identifier, doubleQuoteString(publication_name));
+}
+
+
 void PostgreSQLReplicationHandler::ensureCoordinatedTableSetCompatible()
 {
     /// The authoritative shared table set must be fenced BEFORE this replica builds any nested table.
@@ -4492,7 +4514,14 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables(const std::se
                     "table set is stale. Dropping it; it will be recreated",
                     doubleQuoteString(publication_name), coordination_keeper_path);
 
-        execWithRetryAndFaultInjection(connection, [&](pqxx::nontransaction & tx_){ dropPublication(tx_); });
+        /// The absence of other coordination state does not prove that the publication belongs to this setup:
+        /// an interrupted first startup may have recorded the source cluster only. Check it through the session
+        /// of every drop attempt (`execWithRetry` may reconnect to another backend).
+        execWithRetryAndFaultInjection(connection, [&](pqxx::nontransaction & tx_)
+        {
+            checkLeakedPublicationTargetIsRecordedSourceCluster(tx_);
+            dropPublication(tx_);
+        });
         publication_exists_before_startup = false;
     }
 

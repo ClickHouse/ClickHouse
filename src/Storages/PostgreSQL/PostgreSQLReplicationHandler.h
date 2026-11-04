@@ -360,6 +360,15 @@ private:
     /// objects instead of the ones this setup created.
     void checkTeardownTargetIsRecordedSourceCluster(pqxx::nontransaction & tx);
 
+    /// Called right before a fresh coordinated CREATE drops a publication leaked by an incompletely dropped
+    /// setup. If <keeper_path>/source_system_identifier is still recorded (for example, an interrupted first
+    /// startup recorded it before it wrote any other coordination state), throws unless the session of `tx`
+    /// is connected to that PostgreSQL cluster: otherwise the by-name drop could delete the identically named
+    /// publication of an unrelated deployment on another cluster, before the registration rejects the
+    /// mismatch. A missing node does not prevent the drop: the final teardown removes it after the by-name
+    /// drops, also when they failed, and the leaked publication must still be recoverable.
+    void checkLeakedPublicationTargetIsRecordedSourceCluster(pqxx::nontransaction & tx);
+
     /// Publish this replica's derived table set at <keeper_path>/table_set (first replica) or check it
     /// against the already published one (joining replica), throwing on a mismatch. This fences the
     /// authoritative shared table set BEFORE any nested table is built: without it, two fresh replicas

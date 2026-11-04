@@ -1542,6 +1542,49 @@ def test_leaked_publication_is_not_adopted_by_fresh_coordinated_create(started_c
     pg_query('DROP TABLE IF EXISTS "old_table"')
 
 
+def test_leaked_publication_of_another_source_cluster_is_not_dropped(started_cluster):
+    # An interrupted first startup can record <keeper_path>/source_system_identifier for PostgreSQL cluster X
+    # and stop before it writes any other coordination state. A fresh CREATE on the same keeper path that is
+    # connected to another cluster Y sees a publication with the generated name and no snapshot marker or
+    # registered replica, but it must not drop that publication as leaked: it belongs to Y's own deployment.
+    # Simulate X by recording a foreign system identifier.
+    pg_manager.create_postgres_table("test_table")
+    publication_name = "postgres_database_ch_publication"
+    pg_query(f'CREATE PUBLICATION "{publication_name}" FOR TABLE ONLY "test_table"')
+
+    source_keeper_path = "/clickhouse/mat_pg/1/foreign_source_test"
+    zk = started_cluster.get_kazoo_client("zoo1")
+    try:
+        zk.create(
+            source_keeper_path + "/source_system_identifier",
+            b"1",
+            makepath=True,
+        )
+
+        settings = [
+            "materialized_postgresql_table_engine = 'ReplicatedReplacingMergeTree'",
+            f"materialized_postgresql_keeper_path = '{source_keeper_path}'",
+            "materialized_postgresql_replica_name = '{replica}'",
+            "materialized_postgresql_tables_list = 'test_table'",
+        ]
+        message = f"The publication \"{publication_name}\" on that cluster does not belong to this setup"
+        baseline = count_in_all_logs(instance, message)
+        pg_manager.create_materialized_db(
+            ip=cluster.postgres_ip, port=cluster.postgres_port, settings=settings
+        )
+
+        # The background startup task refuses the drop (and keeps retrying), so the publication survives.
+        wait_for_new_log_occurrence(instance, message, baseline)
+        assert pg_query(
+            f"SELECT tablename FROM pg_publication_tables WHERE pubname = '{publication_name}'"
+        ) == [("test_table",)]
+    finally:
+        pg_manager.drop_materialized_db()
+        zk.delete(source_keeper_path, recursive=True)
+        zk.stop()
+        pg_query(f'DROP PUBLICATION IF EXISTS "{publication_name}"')
+
+
 def test_refused_drop_in_restart_window_does_not_disable_startup(started_cluster):
     # A fail-close refused DROP DATABASE deactivates the background startup task up front. In the
     # attach/restart window - where the replication handler has not been rebuilt yet - the refusal must
