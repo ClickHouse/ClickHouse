@@ -3,6 +3,7 @@
 #include <optional>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
@@ -12,10 +13,15 @@
 #include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
+#include <Functions/CastOverloadResolver.h>
+#include <Functions/IFunction.h>
+#include <IO/NullWriteBuffer.h>
 #include <IO/ReadBuffer.h>
 #include <IO/VarInt.h>
 #include <IO/WriteBuffer.h>
@@ -26,9 +32,11 @@
 #include <base/types.h>
 #include <Common/Arena.h>
 #include <Common/Exception.h>
+#include <Common/StringUtils.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/assert_cast.h>
+#include <Poco/String.h>
 
 namespace DB
 {
@@ -120,6 +128,10 @@ struct Run
     /// A handful of substreams: a linear search beats hashing.
     VectorWithMemoryTracking<Stream> streams;
 
+    /// With a target type: the rows in the argument type are serialized into a buffer that only counts bytes, the baseline.
+    std::optional<ColumnWriter> source_writer;
+    std::unique_ptr<NullWriteBuffer> source_counter;
+
     bool finished = false;
     /// The sizes of this run and of the finished runs before it since the state was last read.
     UInt64 uncompressed_bytes = 0;
@@ -130,6 +142,8 @@ struct Run
         /// Left over by an exception; the finalized ones are gone already.
         for (auto & stream : streams)
             stream.calculator->cancel();
+        if (source_counter)
+            source_counter->cancel();
     }
 
     WriteBuffer * streamFor(const ISerialization::SubstreamPath & path)
@@ -167,13 +181,18 @@ private:
     static constexpr size_t bytes_per_granule = 10 * 1024 * 1024;
 
     const DataTypePtr argument_type;
+    /// The `target_type` parameter when it differs from the argument type: the rows are cast to it before they are serialized,
+    /// while the baseline of the ratio stays their size in the argument type.
+    const DataTypePtr target_type;
+    const ExecutableFunctionPtr cast_function;
+    const DataTypePtr estimated_type;
     const CompressionCodecPtr default_codec;
     /// The `codec` parameter, or the default codec, as the `CODEC` clause of a column.
     const ASTPtr codec_description;
     const size_t block_size_bytes;
     const size_t low_cardinality_max_dictionary_size;
     const bool low_cardinality_use_single_dictionary_for_part;
-    /// The layout of every substream of the default serialization of the argument type; building it validates the codec against
+    /// The layout of every substream of the default serialization of the estimated type; building it validates the codec against
     /// the type. A substream only a column reveals (sparse offsets, the variants of `Dynamic`) is resolved when a run starts.
     const StreamLayouts stream_layouts;
 
@@ -184,6 +203,13 @@ private:
         /// The serialized values are compressed directly, so a declarative codec would measure nothing.
         CompressionCodecFactory::instance().checkCodecChainIsNotDeclarative(ast);
         return ast;
+    }
+
+    /// The cast to the target type; `prepare` builds the converters and so rejects a conversion that does not exist.
+    static ExecutableFunctionPtr createCast(const DataTypePtr & from, const DataTypePtr & to)
+    {
+        ColumnsWithTypeAndName arguments{{from->createColumn(), from, ""}, {nullptr, std::make_shared<DataTypeString>(), ""}};
+        return createInternalCast(arguments[0], to, CastType::accurate, {}, nullptr)->prepare(arguments);
     }
 
     /// As `MergeTreeDataPartWriterOnDisk::getSubstreamCodec` and `MergeTreeDataPartWriterWide::addStreams`: the codec applies to the
@@ -232,13 +258,13 @@ private:
         return std::clamp<size_t>(bytes_per_granule / bytes_per_row, 1, rows_per_granule);
     }
 
-    /// Starts a run for `column`: its serialization, its streams and the prefix.
-    std::unique_ptr<Run> startRun(const IColumn & column, ISerialization::KindStack kind_stack) const
+    /// Starts a run for `column` (cast from `source` with a target type): its serialization, its streams and the prefix.
+    std::unique_ptr<Run> startRun(const IColumn & column, const IColumn & source, ISerialization::KindStack kind_stack) const
     {
         auto run = std::make_unique<Run>();
         run->kind_stack = std::move(kind_stack);
-        run->writer.type = argument_type;
-        run->writer.serialization = argument_type->getSerialization(*argument_type->getSerializationInfo(column));
+        run->writer.type = estimated_type;
+        run->writer.serialization = estimated_type->getSerialization(*estimated_type->getSerializationInfo(column));
         setWriterSettings(run->writer.settings);
 
         Run * raw = run.get();
@@ -253,10 +279,23 @@ private:
                 const StreamLayout layout = it != stream_layouts.end() ? it->second : resolveStreamLayout(path);
                 raw->streams.push_back({key, std::make_unique<CompressedSizeCalculator>(layout.codec, layout.block_size)});
             },
-            argument_type,
+            estimated_type,
             column.getPtr());
         run->writer.settings.getter = [raw](const ISerialization::SubstreamPath & path) { return raw->streamFor(path); };
         run->writer.writePrefix(column);
+
+        if (cast_function)
+        {
+            run->source_counter = std::make_unique<NullWriteBuffer>();
+            auto & source_writer = run->source_writer.emplace();
+            source_writer.type = argument_type;
+            source_writer.serialization = argument_type->getDefaultSerialization();
+            setWriterSettings(source_writer.settings);
+            source_writer.settings.getter
+                = [counter = run->source_counter.get()](const ISerialization::SubstreamPath &) -> WriteBuffer * { return counter; };
+            source_writer.writePrefix(source);
+        }
+
         return run;
     }
 
@@ -272,7 +311,17 @@ private:
         {
             stream.calculator->finalize();
             run.compressed_bytes += stream.calculator->getCompressedBytes();
-            run.uncompressed_bytes += stream.calculator->getUncompressedBytes();
+            if (!run.source_writer)
+                run.uncompressed_bytes += stream.calculator->getUncompressedBytes();
+        }
+
+        if (run.source_writer)
+        {
+            run.source_writer->writeSuffix();
+            run.source_counter->finalize();
+            run.uncompressed_bytes += run.source_counter->count();
+            run.source_counter.reset();
+            run.source_writer.reset();
         }
 
         run.streams.clear();
@@ -280,13 +329,13 @@ private:
     }
 
     /// The current run, or a new one when there is none, when the state was read, or when the representation changed.
-    Run & runFor(const Data & data_ref, const IColumn & rows) const
+    Run & runFor(const Data & data_ref, const IColumn & rows, const IColumn & source) const
     {
         auto kind_stack = ISerialization::getKindStack(rows);
         if (data_ref.run && !data_ref.run->finished && data_ref.run->kind_stack == kind_stack)
             return *data_ref.run;
 
-        auto run = startRun(rows, std::move(kind_stack));
+        auto run = startRun(rows, source, std::move(kind_stack));
         if (data_ref.run)
         {
             finishRun(*data_ref.run);
@@ -297,12 +346,37 @@ private:
         return *data_ref.run;
     }
 
+    ColumnPtr castRows(const IColumn & rows, size_t offset, size_t limit) const
+    {
+        ColumnPtr column = (offset == 0 && limit == rows.size()) ? rows.getPtr() : rows.cut(offset, limit);
+        ColumnsWithTypeAndName arguments{
+            {column, argument_type, ""},
+            {DataTypeString().createColumnConst(limit, target_type->getName()), std::make_shared<DataTypeString>(), ""}};
+        return cast_function->execute(arguments, target_type, limit, /*dry_run=*/ false);
+    }
+
     /// Serializes the rows of [offset, offset + limit) one granule at a time, as the writer serializes a block.
     void serializeRows(const Data & data_ref, const IColumn & rows, size_t offset, size_t limit) const
     {
-        const size_t granule_rows = granuleRows(rows);
+        /// The baseline of a target type is the dense serialization of the rows in the argument type.
+        const ColumnPtr dense = cast_function ? rows.convertToFullColumnIfSparse() : nullptr;
+        const IColumn & source = dense ? *dense : rows;
+
+        const size_t granule_rows = granuleRows(source);
         for (size_t end = offset + limit; offset < end; offset += granule_rows)
-            runFor(data_ref, rows).writer.write(rows, offset, std::min(granule_rows, end - offset));
+        {
+            const size_t rows_in_granule = std::min(granule_rows, end - offset);
+            if (!cast_function)
+            {
+                runFor(data_ref, rows, rows).writer.write(rows, offset, rows_in_granule);
+                continue;
+            }
+
+            ColumnPtr cast_rows = castRows(source, offset, rows_in_granule);
+            Run & run = runFor(data_ref, *cast_rows, source);
+            run.source_writer->write(source, offset, rows_in_granule);
+            run.writer.write(*cast_rows, 0, rows_in_granule);
+        }
     }
 
     void flushBuffer(const Data & data_ref) const
@@ -377,16 +451,20 @@ public:
         const Array & params,
         std::optional<String> codec,
         std::optional<UInt64> block_size_bytes_,
+        DataTypePtr target_type_,
         const Settings * settings)
         : IAggregateFunctionDataHelper(arguments, params, std::make_shared<DataTypeFloat64>())
         , argument_type(arguments[0])
+        , target_type(target_type_ && !target_type_->equals(*argument_type) ? std::move(target_type_) : nullptr)
+        , cast_function(target_type ? createCast(argument_type, target_type) : nullptr)
+        , estimated_type(target_type ? target_type : argument_type)
         , default_codec(CompressionCodecFactory::instance().getDefaultCodec())
         , codec_description(codec ? parseCodecDescription(*codec) : default_codec->getFullCodecDescription())
         , block_size_bytes(block_size_bytes_.value_or(DBMS_DEFAULT_BUFFER_SIZE))
         /// The settings the MergeTree writer takes from the query; their defaults when there is no query (a type being parsed).
         , low_cardinality_max_dictionary_size(settings ? (*settings)[Setting::low_cardinality_max_dictionary_size] : 8192)
         , low_cardinality_use_single_dictionary_for_part(settings && (*settings)[Setting::low_cardinality_use_single_dictionary_for_part])
-        , stream_layouts(buildStreamLayouts(argument_type))
+        , stream_layouts(buildStreamLayouts(estimated_type))
     {
     }
 
@@ -492,21 +570,43 @@ static AggregateFunctionPtr createAggregateFunctionEstimateCompressionRatio(
 {
     if (arguments.size() != 1)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires exactly one argument", name);
-    if (parameters.size() > 2)
-        throw Exception(ErrorCodes::UNKNOWN_QUERY_PARAMETER, "Aggregate function {} accepts at most two parameters", name);
+    if (parameters.size() > 3)
+        throw Exception(ErrorCodes::UNKNOWN_QUERY_PARAMETER, "Aggregate function {} accepts at most three parameters", name);
 
+    const auto & type_factory = DataTypeFactory::instance();
     std::optional<String> codec;
     std::optional<UInt64> block_size_bytes;
+    DataTypePtr target_type;
     for (const auto & param : parameters)
     {
         if (param.getType() == Field::Types::String)
         {
-            if (codec.has_value())
-                throw Exception(
-                    ErrorCodes::BAD_QUERY_PARAMETER,
-                    "Multiple string type parameters specified for {}. Expected at most one string type (codec) parameter",
-                    name);
-            codec = param.safeGet<String>();
+            const String & value = param.safeGet<String>();
+
+            /// No codec is named like a data type: a string that names a type is the target type, any other string the codec.
+            if (DataTypePtr type = type_factory.tryGet(value))
+            {
+                if (target_type)
+                    throw Exception(
+                        ErrorCodes::BAD_QUERY_PARAMETER,
+                        "Multiple data type parameters specified for {}. Expected at most one data type (target_type) parameter",
+                        name);
+                target_type = std::move(type);
+            }
+            else
+            {
+                /// A string starting with the name of a type family is a mistyped type: report its error, not an unknown codec.
+                const String family(value.begin(), std::find_if_not(value.begin(), value.end(), isWordCharASCII));
+                if (type_factory.hasNameOrAlias(family) || type_factory.hasNameOrAlias(Poco::toLower(family)))
+                    type_factory.get(value);
+
+                if (codec.has_value())
+                    throw Exception(
+                        ErrorCodes::BAD_QUERY_PARAMETER,
+                        "Multiple codec parameters specified for {}. Expected at most one string that is not a data type (codec)",
+                        name);
+                codec = value;
+            }
         }
         else if (param.getType() == Field::Types::UInt64)
         {
@@ -534,12 +634,12 @@ static AggregateFunctionPtr createAggregateFunctionEstimateCompressionRatio(
         {
             throw Exception(
                 ErrorCodes::UNKNOWN_QUERY_PARAMETER,
-                "Invalid parameter type for {}. Expected String (codec) and/or UInt64 (block_size_bytes)",
+                "Invalid parameter type for {}. Expected String (codec or target_type) and/or UInt64 (block_size_bytes)",
                 name);
         }
     }
 
-    return std::make_shared<AggregateFunctionEstimateCompressionRatio>(arguments, parameters, codec, block_size_bytes, settings);
+    return std::make_shared<AggregateFunctionEstimateCompressionRatio>(arguments, parameters, codec, block_size_bytes, target_type, settings);
 }
 
 void registerAggregateFunctionEstimateCompressionRatio(AggregateFunctionFactory & factory);
@@ -550,20 +650,21 @@ Estimates the compression ratio of a given column without compressing it.
 
 The estimate follows the layout of a MergeTree wide part: every substream of the column (the dictionary and the indexes of a `LowCardinality` column, the null map of a `Nullable` column, the sizes of an `Array` column, ...) is compressed on its own, the codec applies to the data substreams while the structural substreams keep only its generic codecs, as `CODEC(...)` on a table column does, and the rows are serialized one granule at a time. A `LowCardinality` column is estimated with its dictionary encoding. The rows of each `GROUP BY` group and of each window frame are serialized as if they were a part of their own, so the result also depends on how the rows are split between groups, threads and frames.
 
-To estimate another representation of the data, convert the argument, for example `toLowCardinality(s)` or `CAST(ip AS IPv6)`. The ratio relates the serialized size of a representation to its compressed size, so to compare the on-disk sizes of two representations, divide their serialized sizes by their ratios (for an existing column, `column_data_uncompressed_bytes` in `system.parts_columns`).
+To estimate another representation of the data, either convert the argument, for example `toLowCardinality(s)` or `CAST(ip AS IPv6)`, which gives the ratio of that representation, or pass the type as the `target_type` parameter, which keeps the serialized size of the column as it is as the baseline, so that the ratios for different target types are directly comparable. The on-disk size of a representation is its serialized size divided by its ratio (for an existing column, `column_data_uncompressed_bytes` in `system.parts_columns`).
 
 <Note>
 For the examples below, the result will differ based on the default compression codec of the server.
 See [Column Compression Codecs](/reference/statements/create/table#column_compression_codec).
 </Note>
     )";
-    FunctionDocumentation::Syntax syntax = "estimateCompressionRatio([codec, block_size_bytes])(column)";
+    FunctionDocumentation::Syntax syntax = "estimateCompressionRatio([codec][, block_size_bytes][, target_type])(column)";
     FunctionDocumentation::Arguments arguments = {
         {"column", "Column of any type.", {"Any"}}
     };
     FunctionDocumentation::Parameters parameters = {
         {"codec", "String containing a compression codec or multiple comma-separated codecs in a single string.", {"String"}},
-        {"block_size_bytes", "Block size of compressed data. This is similar to setting both [`max_compress_block_size`](/reference/settings/merge-tree-settings/max#max_compress_block_size) and [`min_compress_block_size`](/reference/settings/merge-tree-settings/min#min_compress_block_size). The default value is 1 MiB (1048576 bytes). Maximum allowed value is 256 MiB (268435456 bytes).", {"UInt64"}}
+        {"block_size_bytes", "Block size of compressed data. This is similar to setting both [`max_compress_block_size`](/reference/settings/merge-tree-settings/max#max_compress_block_size) and [`min_compress_block_size`](/reference/settings/merge-tree-settings/min#min_compress_block_size). The default value is 1 MiB (1048576 bytes). Maximum allowed value is 256 MiB (268435456 bytes).", {"UInt64"}},
+        {"target_type", "Name of a data type. The column is estimated as if it were stored as this type: its rows are converted to it, as `accurateCast` does, and compressed with the codec, while the ratio keeps the serialized size of the column in its own type as the baseline. The ratios of one column for different target types are therefore directly comparable: the higher the ratio, the smaller the column would be on disk. The parameters can be given in any order: a string that names a data type is the target type, any other string is the codec.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns an estimate compression ratio for the given column.", {"Float64"}};
     FunctionDocumentation::Examples examples = {
@@ -609,6 +710,55 @@ SELECT estimateCompressionRatio('T64, ZSTD')(number) AS estimate FROM compressio
 ┌───────────estimate─┐
 │ 143.60078980434392 │
 └────────────────────┘
+        )"
+    },
+    {
+        "Comparing a column with another representation of its data",
+        R"(
+CREATE TABLE compression_estimate_strings
+(
+    `s` String
+)
+ENGINE = MergeTree()
+ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0;
+
+INSERT INTO compression_estimate_strings
+SELECT concat('category_', toString(number % 50)) FROM system.numbers LIMIT 100_000;
+
+-- `as_low_cardinality` is the ratio of the `LowCardinality(String)` representation, whose serialized size is already
+-- small, so it is lower than `as_string` although the column takes fewer bytes on disk. `as_low_cardinality_vs_string`
+-- keeps the size of the `String` column as the baseline: `LowCardinality(String)` stores it in 1361 / 231 ≈ 6 times
+-- fewer bytes than `String`.
+SELECT
+    estimateCompressionRatio('LZ4')(s) AS as_string,
+    estimateCompressionRatio('LZ4')(toLowCardinality(s)) AS as_low_cardinality,
+    estimateCompressionRatio('LZ4', 'LowCardinality(String)')(s) AS as_low_cardinality_vs_string
+FROM compression_estimate_strings
+        )",
+        R"(
+┌──────────as_string─┬─as_low_cardinality─┬─as_low_cardinality_vs_string─┐
+│ 230.69403714565004 │   116.280276816609 │           1361.0149942329874 │
+└────────────────────┴────────────────────┴──────────────────────────────┘
+        )"
+    },
+    {
+        "Comparing a wider type for the same values under different codecs",
+        R"(
+-- `IPv6` stores the same addresses in 16 bytes instead of 4. The `IPv6` ratios keep the size of the `IPv4` column as the
+-- baseline, so each pair compares the on-disk sizes of the two representations: with `LZ4` the 12 constant bytes of every
+-- address cost space, with `ZSTD` they compress away.
+SELECT
+    estimateCompressionRatio('LZ4')(ip) AS lz4_as_ipv4,
+    estimateCompressionRatio('LZ4', 'IPv6')(ip) AS lz4_as_ipv6,
+    estimateCompressionRatio('ZSTD')(ip) AS zstd_as_ipv4,
+    estimateCompressionRatio('ZSTD', 'IPv6')(ip) AS zstd_as_ipv6
+FROM (SELECT toIPv4(number * 7919) AS ip FROM numbers(100000))
+        )",
+        R"(
+┌────────lz4_as_ipv4─┬───────lz4_as_ipv6─┬───────zstd_as_ipv4─┬───────zstd_as_ipv6─┐
+│ 0.9960283370061879 │ 0.753694516307123 │ 1.0557822554676324 │ 1.2303679415329154 │
+└────────────────────┴───────────────────┴────────────────────┴────────────────────┘
         )"
     },
     {
