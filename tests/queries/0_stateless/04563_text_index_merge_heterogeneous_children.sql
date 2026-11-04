@@ -2,8 +2,6 @@
 
 SET query_plan_direct_read_from_text_index = 1;
 SET query_plan_text_index_add_hint = 1;
--- Keeps the `ifNull` that `'prod' IN map['env']` resolves to, which the `mapValues` index does not answer.
-SET allow_key_condition_coalesce_rewrite = 0;
 
 DROP TABLE IF EXISTS t_idx;
 DROP TABLE IF EXISTS t_plain;
