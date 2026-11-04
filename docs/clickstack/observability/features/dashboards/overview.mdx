@@ -20,9 +20,9 @@ The **Chart Explorer** interface allows you to visualize metrics, traces, and lo
 Each visualization begins by selecting a **data source**, followed by a **metric**, with optional **filter expressions** and **group by** fields. Conceptually, visualizations map to a SQL `GROUP BY` query under the hood — you define metrics to aggregate across selected dimensions.
 
 <Tip>
-**AI-powered chart generation**
+**AI-powered chart and dashboard generation**
 
-ClickHouse Observability also supports creating charts from natural language prompts using the [text-to-chart](/clickstack/observability/text-to-chart) feature. Describe what you want to see, and the UI generates the visualization automatically.
+ClickHouse Observability also supports creating charts from natural language prompts using the [text-to-chart](/clickstack/observability/text-to-chart) feature. Describe what you want to see, and the UI generates the visualization automatically. To generate a complete dashboard with multiple tiles, use [Text-to-Dashboard](/clickstack/observability/text-to-dashboard).
 </Tip>
 
 For example, you might chart the number of errors (`count()`) grouped by service name.

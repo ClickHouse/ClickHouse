@@ -47,6 +47,7 @@
             },
             "clickstack/observability/notebooks",
             "clickstack/observability/text-to-chart",
+            "clickstack/observability/text-to-dashboard",
             "clickstack/observability/features/event-patterns",
             "clickstack/observability/features/event-deltas",
             "clickstack/observability/features/alerts",

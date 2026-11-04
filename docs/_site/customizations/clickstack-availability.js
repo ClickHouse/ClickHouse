@@ -1933,6 +1933,12 @@
       "/clickstack/observability/text-to-chart"
     ]
   ],
+  "/clickstack/observability/text-to-dashboard": [
+    [
+      "ClickHouse Observability",
+      "/clickstack/observability/text-to-dashboard"
+    ]
+  ],
   "/clickstack/observability/url-parameters": [
     [
       "Open Source",
