@@ -3456,26 +3456,26 @@ Possible values:
     DECLARE(UInt64, http_max_fields, 1000, R"(
 Maximum number of fields in HTTP request headers, query parameters, and form data.
 )", 0, \
-        {"26.4", 1000, 1000, "The change was backported to 26.3 and is recorded there."}, \
-        {"26.3", 1000000, 1000, "Reduce default to limit pre-authentication memory usage by HTTP connections."}) \
+        {"26.4", 1000, 1000, "The change was backported to 26.1 and is recorded there."}, \
+        {"26.1", 1000000, 1000, "Reduce default to limit pre-authentication memory usage by HTTP connections."}) \
     DECLARE(UInt64, http_max_field_name_size, 4 * 1024, R"(
 Maximum length of a field name in HTTP request headers, query parameters, and form data.
 )", 0, \
-        {"26.4", 4096, 4096, "The change was backported to 26.3 and is recorded there."}, \
-        {"26.3", 131072, 4096, "Reduce default to limit pre-authentication memory usage by HTTP connections."}) \
+        {"26.4", 4096, 4096, "The change was backported to 26.1 and is recorded there."}, \
+        {"26.1", 131072, 4096, "Reduce default to limit pre-authentication memory usage by HTTP connections."}) \
     DECLARE(UInt64, http_max_field_value_size, 128 * 1024, R"(
 Maximum length of a field value in HTTP request headers, query parameters, and form data.
 )", 0) \
     DECLARE(UInt64, http_max_request_header_size, 10 * 1024 * 1024, R"(
 Maximum total size of all HTTP request headers (names and values combined) in bytes.
 )", 0, \
-        {"26.4", 10485760, 10485760, "The change was backported to 26.3 and is recorded there."}, \
-        {"26.3", 0, 10485760, "New setting to limit total HTTP request header size before authentication."}) \
+        {"26.4", 10485760, 10485760, "The change was backported to 26.1 and is recorded there."}, \
+        {"26.1", 0, 10485760, "New setting to limit total HTTP request header size before authentication."}) \
     DECLARE(Seconds, http_headers_read_timeout, 30, R"(
 Maximum time in seconds to read all HTTP request headers. This is a total deadline for the entire header parsing phase, not a per-read timeout. Protects against slowloris-style attacks where a client trickles header data slowly to hold connections open.
 )", 0, \
-        {"26.4", 30, 30, "The change was backported to 26.3 and is recorded there."}, \
-        {"26.3", 0, 30, "New setting to limit total time for reading HTTP request headers, protecting against slowloris attacks."}) \
+        {"26.4", 30, 30, "The change was backported to 26.1 and is recorded there."}, \
+        {"26.1", 0, 30, "New setting to limit total time for reading HTTP request headers, protecting against slowloris attacks."}) \
     DECLARE(Bool, http_skip_not_found_url_for_globs, true, R"(
 Skip URLs for globs with HTTP_NOT_FOUND error
 )", 0) \
@@ -8712,7 +8712,9 @@ Wait time to lock cache for space reservation in filesystem cache
     DECLARE(UInt64, filesystem_cache_wait_for_concurrent_download_timeout_milliseconds, 1000, R"(
 Maximum time to wait for a file segment which is being downloaded to the filesystem cache by a concurrent query. When the timeout is reached, the read bypasses the filesystem cache for that range and reads directly from remote storage, while the concurrent download continues to fill the cache. Value `0` means do not wait at all: bypass the cache immediately if the needed range is not downloaded yet. Lowering this value bounds the tail latency of cache-hit reads which would otherwise wait for another query's download pace at the cost of additional requests to remote storage.
 )", 0, \
-        {"26.8", 1000, 1000, "The change was backported to 26.3 and is recorded there."}, \
+        {"26.8", 1000, 1000, "The change was backported to 26.3 and 26.5 and is recorded there."}, \
+        {"26.5", 60000, 1000, "The bounded wait is the default again: 26.4 does not have this setting."}, \
+        {"26.4", 1000, 60000, "26.4 does not have this setting, which was backported to 26.3 and 26.5 but not to 26.4."}, \
         {"26.3", 60000, 1000, "New setting to bound how long a read waits for a file segment being downloaded to the filesystem cache by a concurrent query; on timeout the read bypasses the cache instead of waiting indefinitely. The previous value 60000 corresponds to the old behavior (one full 60 s wait cycle on the downloader)."}) \
     DECLARE(Bool, filesystem_cache_prefer_bigger_buffer_size, true, R"(
 Prefer bigger buffer size if filesystem cache is enabled to avoid writing small file segments which deteriorate cache performance. On the other hand, enabling this setting might increase memory usage.

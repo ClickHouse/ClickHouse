@@ -35,16 +35,17 @@ azure_validate_etag_on_read	0
 use_text_index_postings_cache	1
 azure_validate_etag_on_read	1
 use_text_index_postings_cache	0
-backported to 26.3
-filesystem_cache_wait_for_concurrent_download_timeout_milliseconds	1000
+backported to 26.1
 http_headers_read_timeout	30
 http_max_field_name_size	4096
 http_max_fields	1000
 http_max_request_header_size	10485760
-filesystem_cache_wait_for_concurrent_download_timeout_milliseconds	60000
 http_headers_read_timeout	0
 http_max_field_name_size	131072
 http_max_fields	1000000
 http_max_request_header_size	0
-MergeTree, backported to 26.8
-26.8
+backported to 26.3 and 26.5, not to 26.4
+1000
+60000
+1000
+60000

@@ -70,20 +70,22 @@ SELECT name, value FROM system.settings
 WHERE name IN ('azure_validate_etag_on_read', 'use_text_index_postings_cache')
 ORDER BY name;
 
-SELECT 'backported to 26.3';
-SET compatibility = '26.3';
+SELECT 'backported to 26.1';
+SET compatibility = '26.1';
 SELECT name, value FROM system.settings
-WHERE name IN ('filesystem_cache_wait_for_concurrent_download_timeout_milliseconds', 'http_headers_read_timeout',
-               'http_max_field_name_size', 'http_max_fields', 'http_max_request_header_size')
+WHERE name IN ('http_headers_read_timeout', 'http_max_field_name_size', 'http_max_fields', 'http_max_request_header_size')
 ORDER BY name;
-SET compatibility = '26.2';
+SET compatibility = '25.12';
 SELECT name, value FROM system.settings
-WHERE name IN ('filesystem_cache_wait_for_concurrent_download_timeout_milliseconds', 'http_headers_read_timeout',
-               'http_max_field_name_size', 'http_max_fields', 'http_max_request_header_size')
+WHERE name IN ('http_headers_read_timeout', 'http_max_field_name_size', 'http_max_fields', 'http_max_request_header_size')
 ORDER BY name;
 
--- The MergeTree pin is read once per server from the default profile, so the record itself is checked.
-SELECT 'MergeTree, backported to 26.8';
-SELECT version FROM system.settings_changes ARRAY JOIN changes AS c
-WHERE type = 'MergeTree' AND tupleElement(c, 'name') = 'enable_row_mask_update_coalescing'
-    AND tupleElement(c, 'previous_value') != tupleElement(c, 'new_value');
+SELECT 'backported to 26.3 and 26.5, not to 26.4';
+SET compatibility = '26.5';
+SELECT value FROM system.settings WHERE name = 'filesystem_cache_wait_for_concurrent_download_timeout_milliseconds';
+SET compatibility = '26.4';
+SELECT value FROM system.settings WHERE name = 'filesystem_cache_wait_for_concurrent_download_timeout_milliseconds';
+SET compatibility = '26.3';
+SELECT value FROM system.settings WHERE name = 'filesystem_cache_wait_for_concurrent_download_timeout_milliseconds';
+SET compatibility = '26.2';
+SELECT value FROM system.settings WHERE name = 'filesystem_cache_wait_for_concurrent_download_timeout_milliseconds';
