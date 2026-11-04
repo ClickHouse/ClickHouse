@@ -146,6 +146,22 @@ public:
         writeU16(0); /// Comment length.
     }
 
+    /// Forgets the written entries, so that a new archive can be written to the (restarted) output buffer.
+    void reset()
+    {
+        if (deflate_initialized)
+        {
+            deflateEnd(&zstream);
+            deflate_initialized = false;
+        }
+        zstream = {};
+        offset = 0;
+        entries.clear();
+        current = {};
+        in_entry = false;
+        crc = 0;
+    }
+
 private:
     /// Bit 3: the sizes are in the data descriptor; bit 11: the names are in UTF-8.
     static constexpr UInt16 FLAGS = 0x0808;
@@ -547,10 +563,21 @@ private:
         zip.finish();
     }
 
-    void onCancel() noexcept override
+    /// There is no `onCancel` override: it may run concurrently with `consume`, which replaces `sheet_buffer`. An unfinished
+    /// worksheet buffer is cancelled in the destructor.
+
+    /// The formatter can be reused for another output (for example, by `MessageQueueSink` for each message), so the state
+    /// of the ZIP archive and of the workbook must be reset.
+    void resetFormatterImpl() override
     {
         if (sheet_buffer)
+        {
             sheet_buffer->cancel();
+            sheet_buffer.reset();
+        }
+        zip.reset();
+        sheet_names.clear();
+        rows_in_sheet = 0;
     }
 
     void writeEntry(const String & name, std::string_view content)
