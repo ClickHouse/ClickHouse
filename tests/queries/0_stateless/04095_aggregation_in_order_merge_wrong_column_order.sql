@@ -31,11 +31,12 @@ SETTINGS index_granularity = 128;
 -- multi-stream merge bug in FinishAggregatingInOrderAlgorithm.
 SYSTEM STOP MERGES t_inorder_merge_order;
 
--- Create multiple parts to ensure parallel in-order aggregation streams
-INSERT INTO t_inorder_merge_order SELECT 'key_' || toString(rand() % 100), number % 200, number FROM numbers(500000);
-INSERT INTO t_inorder_merge_order SELECT 'key_' || toString(rand() % 100), number % 200, number FROM numbers(500000);
-INSERT INTO t_inorder_merge_order SELECT 'key_' || toString(rand() % 100), number % 200, number FROM numbers(500000);
-INSERT INTO t_inorder_merge_order SELECT 'key_' || toString(rand() % 100), number % 200, number FROM numbers(500000);
+-- Create multiple parts to ensure parallel in-order aggregation streams.
+-- Each part contains every one of the 100 * 200 (a, b) pairs five times.
+INSERT INTO t_inorder_merge_order SELECT 'key_' || toString(intDiv(number, 200) % 100), number % 200, number FROM numbers(100000);
+INSERT INTO t_inorder_merge_order SELECT 'key_' || toString(intDiv(number, 200) % 100), number % 200, number FROM numbers(100000);
+INSERT INTO t_inorder_merge_order SELECT 'key_' || toString(intDiv(number, 200) % 100), number % 200, number FROM numbers(100000);
+INSERT INTO t_inorder_merge_order SELECT 'key_' || toString(intDiv(number, 200) % 100), number % 200, number FROM numbers(100000);
 
 -- The query must produce exactly 20000 distinct (a, b) groups.
 -- Before the fix, with multiple streams and small block sizes, swapped column
