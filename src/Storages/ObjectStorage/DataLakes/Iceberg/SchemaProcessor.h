@@ -120,6 +120,9 @@ public:
 
     static UnorderedMapWithMemoryTracking<String, Int64> traverseSchema(Poco::JSON::Array::Ptr schema);
 
+    /// The largest field id in `schema`, nested ids included.
+    static Int64 getMaxFieldId(Poco::JSON::Array::Ptr schema);
+
     /// Paths whose Iceberg logical type is `string` (not `binary`); both read as DataTypeString.
     static std::unordered_set<String> collectIcebergStringPaths(Poco::JSON::Array::Ptr schema);
 

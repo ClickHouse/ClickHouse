@@ -10,6 +10,7 @@
 #include <Common/typeid_cast.h>
 #include <IO/S3RequestSettings.h>
 #include <Common/BlobStorageLogWriter.h>
+#include <Common/HTTPConnectionInfo.h>
 #include <Interpreters/Context.h>
 #include <IO/LimitSeekableReadBuffer.h>
 #include <IO/S3/getObjectInfo.h>
@@ -65,6 +66,7 @@ namespace S3RequestSetting
     extern const S3RequestSettingsUInt64 max_single_operation_copy_size;
     extern const S3RequestSettingsUInt64 max_single_part_upload_size;
     extern const S3RequestSettingsUInt64 max_unexpected_write_error_retries;
+    extern const S3RequestSettingsBool use_idempotency_id;
     extern const S3RequestSettingsUInt64 max_upload_part_size;
     extern const S3RequestSettingsUInt64 min_upload_part_size;
     extern const S3RequestSettingsString storage_class_name;
@@ -123,7 +125,9 @@ namespace
         const LoggerPtr log;
         const std::optional<S3::RequestChecksum::Algorithm> upload_checksum_algorithm;
         /// Identifies this upload among all writers to `dest_key`, stamped by `CreateMultipartUpload`.
-        const String idempotency_id = getRandomASCIIString(S3::IDEMPOTENCY_ID_LENGTH);
+        /// Empty if disabled by the `use_idempotency_id` request setting.
+        const String idempotency_id
+            = request_settings[S3RequestSetting::use_idempotency_id] ? getRandomASCIIString(S3::IDEMPOTENCY_ID_LENGTH) : "";
 
         /// Represents a task uploading a single part.
         /// Keep this struct small because there can be thousands of parts.
@@ -153,7 +157,8 @@ namespace
             request.SetContentType("binary/octet-stream");
 
             auto metadata = object_metadata.value_or(ObjectAttributes{});
-            metadata[S3::IDEMPOTENCY_ID_METADATA_KEY] = idempotency_id;
+            if (!idempotency_id.empty())
+                metadata[S3::IDEMPOTENCY_ID_METADATA_KEY] = idempotency_id;
             request.SetMetadata(metadata);
 
             const auto & storage_class_name = request_settings[S3RequestSetting::storage_class_name];
@@ -175,6 +180,7 @@ namespace
             if (client_ptr->isClientForDisk())
                 ProfileEvents::increment(ProfileEvents::DiskS3CreateMultipartUpload);
 
+            HTTPConnectionInfoScope connection_info_scope(blob_storage_log != nullptr);
             Stopwatch watch;
             auto outcome = client_ptr->CreateMultipartUpload(request);
             auto elapsed = watch.elapsedMicroseconds();
@@ -231,6 +237,7 @@ namespace
                 if (client_ptr->isClientForDisk())
                     ProfileEvents::increment(ProfileEvents::DiskS3CompleteMultipartUpload);
 
+                HTTPConnectionInfoScope connection_info_scope(blob_storage_log != nullptr);
                 Stopwatch watch;
                 auto outcome = client_ptr->CompleteMultipartUpload(request);
                 auto elapsed = watch.elapsedMicroseconds();
@@ -271,6 +278,7 @@ namespace
             abort_request.SetKey(dest_key);
             abort_request.SetUploadId(multipart_upload_id);
 
+            HTTPConnectionInfoScope connection_info_scope(blob_storage_log != nullptr);
             Stopwatch watch;
             auto outcome = client_ptr->AbortMultipartUpload(abort_request);
             auto elapsed = watch.elapsedMicroseconds();
@@ -560,6 +568,7 @@ namespace
                 if (client_ptr->isClientForDisk())
                     ProfileEvents::increment(ProfileEvents::DiskS3PutObject);
 
+                HTTPConnectionInfoScope connection_info_scope(blob_storage_log != nullptr);
                 Stopwatch watch;
                 auto outcome = client_ptr->PutObject(request);
                 auto elapsed = watch.elapsedMicroseconds();
@@ -646,6 +655,7 @@ namespace
             if (client_ptr->isClientForDisk())
                 ProfileEvents::increment(ProfileEvents::DiskS3UploadPart);
 
+            HTTPConnectionInfoScope connection_info_scope(blob_storage_log != nullptr);
             Stopwatch watch;
             auto outcome = client_ptr->UploadPart(req);
             auto elapsed = watch.elapsedMicroseconds();
@@ -793,6 +803,7 @@ namespace
                 if (client_ptr->isClientForDisk())
                     ProfileEvents::increment(ProfileEvents::DiskS3CopyObject);
 
+                HTTPConnectionInfoScope connection_info_scope(blob_storage_log != nullptr);
                 Stopwatch watch;
                 auto outcome = client_ptr->CopyObject(request);
                 auto elapsed = watch.elapsedMicroseconds();
@@ -908,6 +919,7 @@ namespace
             if (client_ptr->isClientForDisk())
                 ProfileEvents::increment(ProfileEvents::DiskS3UploadPartCopy);
 
+            HTTPConnectionInfoScope connection_info_scope(blob_storage_log != nullptr);
             Stopwatch watch;
             auto outcome = client_ptr->UploadPartCopy(req);
             auto elapsed = watch.elapsedMicroseconds();

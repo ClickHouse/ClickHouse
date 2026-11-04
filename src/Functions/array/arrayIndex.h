@@ -803,7 +803,13 @@ private:
 
         /// A pair of date or time types always has a common type, which `allowArguments` has already
         /// required of it: neither side is a native number, so it took the `getLeastSupertype` branch.
-        const auto common_type = getLeastSupertype(DataTypes{element_type, needle_type});
+        return executeInCommonType(arguments, result_type);
+    }
+
+    ColumnPtr executeInCommonType(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
+    {
+        const auto & element_type = assert_cast<const DataTypeArray &>(*arguments[0].type).getNestedType();
+        const auto common_type = getLeastSupertype(DataTypes{element_type, arguments[1].type});
         const auto common_array_type = std::make_shared<DataTypeArray>(common_type);
 
         ColumnsWithTypeAndName new_arguments = arguments;
@@ -813,6 +819,23 @@ private:
         new_arguments[1].type = common_type;
 
         return executeArrayImpl(new_arguments, result_type);
+    }
+
+    /// A constant array is searched by comparing `Field`s, and the `Field` of an `Enum` value is its number,
+    /// while the non-constant path compares it with a `String` by name, in their common type.
+    /// Cast before `executeArrayImpl` splits a `Nullable` needle: its `NULL` rows hold `0`, maybe not an enum value.
+    ColumnPtr executeEnumNeedleInConstantStrings(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
+    {
+        if (!isColumnConst(*arguments[0].column))
+            return nullptr;
+
+        const auto * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].type.get());
+        if (!array_type
+            || !isStringOrFixedString(removeLowCardinalityAndNullable(array_type->getNestedType()))
+            || !isEnum(removeLowCardinalityAndNullable(arguments[1].type)))
+            return nullptr;
+
+        return executeInCommonType(arguments, result_type);
     }
 
     /** If one or both arguments passed to this function are nullable,
@@ -831,6 +854,9 @@ private:
     ColumnPtr executeArrayImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
     {
         if (auto res = executeDifferentDateTimeUnits(arguments, result_type))
+            return res;
+
+        if (auto res = executeEnumNeedleInConstantStrings(arguments, result_type))
             return res;
 
         const ColumnPtr & ptr = arguments[0].column;

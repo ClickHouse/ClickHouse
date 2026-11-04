@@ -24,6 +24,7 @@ public:
     String getName() const override { return "ParquetBlockOutputFormat"; }
 
     UnorderedMapWithMemoryTracking<String, size_t> getColumnSizesOnDisk() const override { return column_sizes_on_disk; }
+    VectorWithMemoryTracking<UInt64> getRowGroupOffsets() const override { return row_group_offsets; }
 
 private:
     struct MemoryToken
@@ -126,6 +127,7 @@ private:
     Parquet::SchemaElements schema;
     Parquet::FileWriteState file_state;
     UnorderedMapWithMemoryTracking<String, size_t> column_sizes_on_disk;
+    VectorWithMemoryTracking<UInt64> row_group_offsets;
     size_t base_offset = 0; // initial out.count(), just for assert
 
     std::mutex mutex;

@@ -276,27 +276,36 @@ ColumnPtr FunctionArrayReduceInRanges::executeImpl(
                 Int64 index = indices_col.getInt(j);
                 UInt64 length = lengths_col.getUInt(j);
 
-                /// Keep the same as in arraySlice
+                /// Keep the same as in arraySlice: the range is clipped to the array.
+                /// The bounds are compared with the remaining size instead of being added to the user-controlled
+                /// `index` and `length`, which could wrap around.
+                const size_t size = end - begin;
 
                 if (index > 0)
                 {
-                    local_begin = index - 1;
-                    if (local_begin + length < end - begin)
-                        local_end = local_begin + length;
-                    else
-                        local_end = end - begin;
+                    const UInt64 offset = static_cast<UInt64>(index) - 1;
+                    if (offset < size)
+                    {
+                        local_begin = offset;
+                        local_end = local_begin + std::min<UInt64>(length, size - local_begin);
+                    }
                 }
                 else if (index < 0)
                 {
-                    if (end - begin + index > 0)
-                        local_begin = end - begin + index;
+                    /// Written this way to not overflow for the minimum `Int64`.
+                    const UInt64 offset_from_end = static_cast<UInt64>(-(index + 1)) + 1;
+                    if (offset_from_end <= size)
+                    {
+                        local_begin = size - offset_from_end;
+                        local_end = local_begin + std::min<UInt64>(length, size - local_begin);
+                    }
                     else
-                        local_begin = 0;
-
-                    if (local_begin + length < end - begin)
-                        local_end = local_begin + length;
-                    else
-                        local_end = end - begin;
+                    {
+                        /// The range starts before the array: skip the part of it that is before the start.
+                        const UInt64 before_start = offset_from_end - size;
+                        if (length > before_start)
+                            local_end = std::min<UInt64>(length - before_start, size);
+                    }
                 }
             }
 
@@ -473,6 +482,8 @@ REGISTER_FUNCTION(ArrayReduceInRanges)
     FunctionDocumentation::Description description = R"(
 Applies an aggregate function to array elements in the given ranges and returns an array containing the result corresponding to each range.
 The function will return the same result as multiple `arrayReduce(agg_func, arraySlice(arr1, index, length), ...)`.
+The only difference is that the length is unsigned: a length greater than the maximum `Int64` value selects the rest of the array,
+while `arraySlice` interprets such a value as a negative length.
 )";
     FunctionDocumentation::Syntax syntax = "arrayReduceInRanges(agg_f, ranges, arr1[, arr2, ... ,arrN])";
     FunctionDocumentation::Arguments arguments = {
