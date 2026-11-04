@@ -228,6 +228,9 @@ StorageKafka2::StorageKafka2(
 StorageKafka2::~StorageKafka2()
 {
     auto component_guard = Coordination::setCurrentComponent("StorageKafka2::~StorageKafka2");
+    /// The `librdkafka` callbacks dereference `this`, so the consumers must go first. Same as `StorageKafka`.
+    if (!shutdown_called)
+        shutdown(false);
     replica_is_active_node.reset();
 }
 
@@ -545,7 +548,7 @@ StorageKafka2::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapsho
     ProfileEvents::increment(ProfileEvents::KafkaWrites);
 
     if (topics.size() > 1)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Can't write to Kafka table with multiple topics!");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Can't write to Kafka table with multiple topics");
 
     cppkafka::Configuration conf = getProducerConfiguration();
 
@@ -732,6 +735,12 @@ size_t StorageKafka2::getPollTimeoutMillisecond() const
 {
     return (*kafka_settings)[KafkaSetting::kafka_poll_timeout_ms].changed ? (*kafka_settings)[KafkaSetting::kafka_poll_timeout_ms].totalMilliseconds()
                                                          : getContext()->getSettingsRef()[Setting::stream_poll_timeout_ms].totalMilliseconds();
+}
+
+UInt64 StorageKafka2::getLocksRefreshPolls() const
+{
+    /// Read per call rather than cached: the config reloader mutates this at runtime.
+    return getContext()->getKafkaLocksRefreshPolls();
 }
 
 size_t StorageKafka2::getSchemaRegistrySkipBytes() const
@@ -1398,7 +1407,7 @@ std::optional<StorageKafka2::StallKind> StorageKafka2::streamToViews(size_t idx,
         if (consumer->needsNewKeeper())
             consumer->setKeeper(getZooKeeperAndAssertActive());
 
-        if (const auto cannot_poll_reason = consumer->prepareToPoll(); cannot_poll_reason.has_value())
+        if (const auto cannot_poll_reason = consumer->prepareToPoll(getLocksRefreshPolls()); cannot_poll_reason.has_value())
             return getStallKind(*cannot_poll_reason);
 
         LOG_TRACE(log, "Trying to consume from consumer {}", idx);

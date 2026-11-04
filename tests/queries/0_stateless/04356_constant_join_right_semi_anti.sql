@@ -1,5 +1,4 @@
 -- Some joins return different results with and without the analyzer. Let's enforce both stay the same.
-SET enable_analyzer = 1;
 SELECT 'left semi true';
 SELECT l.number
 FROM numbers(2) AS l SEMI JOIN numbers(3) AS r ON 1
