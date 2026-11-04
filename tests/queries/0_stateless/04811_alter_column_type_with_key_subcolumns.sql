@@ -360,3 +360,25 @@ SELECT 'Array(Array(JSON)) inner sizes, the JSON changes -> allow:';
 ALTER TABLE t_alter_key_sub MODIFY COLUMN a Array(Array(JSON(x Int64, y String)));
 SELECT 'key subcolumn values:', groupArray(k) FROM (SELECT a.size1 AS k FROM t_alter_key_sub ORDER BY id);
 DROP TABLE t_alter_key_sub;
+
+-- A geometry converted to its collection type becomes a collection of one, so the sizes change.
+CREATE TABLE t_alter_key_sub (id UInt32, a LineString) ENGINE = MergeTree PARTITION BY a.size0 ORDER BY id;
+INSERT INTO t_alter_key_sub VALUES (0, [(0, 0), (1, 1)]), (1, [(0, 0), (1, 1), (2, 2)]);
+SELECT 'LineString sizes in the partition key, LineString -> MultiLineString -> reject:';
+ALTER TABLE t_alter_key_sub MODIFY COLUMN a MultiLineString; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+SELECT 'key subcolumn values:', groupArray(k) FROM (SELECT a.size0 AS k FROM t_alter_key_sub ORDER BY id);
+DROP TABLE t_alter_key_sub;
+
+CREATE TABLE t_alter_key_sub (id UInt32, a Array(LineString)) ENGINE = MergeTree PARTITION BY a.size1 ORDER BY id;
+INSERT INTO t_alter_key_sub VALUES (0, [[(0, 0), (1, 1)]]), (1, [[(0, 0), (1, 1), (2, 2)]]);
+SELECT 'Array(LineString) inner sizes in the partition key, Array(LineString) -> Array(MultiLineString) -> reject:';
+ALTER TABLE t_alter_key_sub MODIFY COLUMN a Array(MultiLineString); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+SELECT 'key subcolumn values:', groupArray(k) FROM (SELECT a.size1 AS k FROM t_alter_key_sub ORDER BY id);
+DROP TABLE t_alter_key_sub;
+
+CREATE TABLE t_alter_key_sub (id UInt32, a Array(LineString)) ENGINE = MergeTree PARTITION BY a.size0 ORDER BY id;
+INSERT INTO t_alter_key_sub VALUES (0, [[(0, 0), (1, 1)]]), (1, [[(0, 0)], [(1, 1)]]);
+SELECT 'Array(LineString) outer sizes in the partition key, Array(LineString) -> Array(MultiLineString) -> allow:';
+ALTER TABLE t_alter_key_sub MODIFY COLUMN a Array(MultiLineString);
+SELECT 'key subcolumn values:', groupArray(k) FROM (SELECT a.size0 AS k FROM t_alter_key_sub ORDER BY id);
+DROP TABLE t_alter_key_sub;

@@ -5978,13 +5978,29 @@ bool conversionKeepsSubcolumnValuesImpl(
     const auto * to_array = typeid_cast<const DataTypeArray *>(to.get());
     if (from_array || to_array)
     {
+        if (!from_array || !to_array)
+            return false;
+
         /// `sizeN` is named by the array level, so a nested `JSON` or `Tuple` can have a subcolumn of the same name.
-        /// Converting an array keeps the sizes at every level.
         auto steps = valueSelectingSteps(from_info->substreams_path);
         auto is_elements = [](const ISerialization::Substream & step) { return step.type == ISerialization::Substream::ArrayElements; };
         bool reads_sizes = !steps.empty() && steps.back().type == ISerialization::Substream::ArraySizes
             && std::all_of(steps.begin(), std::prev(steps.end()), is_elements);
-        return from_array && to_array && (reads_sizes || check_below(from_array->getNestedType(), to_array->getNestedType()));
+        if (!reads_sizes)
+            return check_below(from_array->getNestedType(), to_array->getNestedType());
+
+        /// Converting an array keeps its sizes, but a geometry becomes a collection of one: `LineString` -> `MultiLineString`
+        /// adds an array level.
+        for (size_t level = 0; level < steps.size(); ++level)
+        {
+            if (!from_array || !to_array
+                || ((from_array->getCustomName() || to_array->getCustomName())
+                    && from_array->getNumberOfDimensions() != to_array->getNumberOfDimensions()))
+                return false;
+            from_array = typeid_cast<const DataTypeArray *>(from_array->getNestedType().get());
+            to_array = typeid_cast<const DataTypeArray *>(to_array->getNestedType().get());
+        }
+        return true;
     }
 
     /// `key_<k>` of a `Map` finds its value by parsing `<k>` as the key type.

@@ -104,3 +104,9 @@ Array(Tuple(size0 ...)) sizes, the element size0 changes -> allow:
 key subcolumn values:	[1,0,2]
 Array(Array(JSON)) inner sizes, the JSON changes -> allow:
 key subcolumn values:	[[1],[0],[2]]
+LineString sizes in the partition key, LineString -> MultiLineString -> reject:
+key subcolumn values:	[2,3]
+Array(LineString) inner sizes in the partition key, Array(LineString) -> Array(MultiLineString) -> reject:
+key subcolumn values:	[[2],[3]]
+Array(LineString) outer sizes in the partition key, Array(LineString) -> Array(MultiLineString) -> allow:
+key subcolumn values:	[1,2]
