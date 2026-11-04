@@ -13,8 +13,6 @@
 #include <Processors/Sources/MongoDBSource.h>
 #include <Storages/NamedCollectionsHelpers.h>
 
-#include <Poco/URI.h>
-
 #include <bsoncxx/builder/basic/array.hpp>
 
 using bsoncxx::builder::basic::kvp;
@@ -68,47 +66,18 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
                 if (named_collection->has("options"))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'options' key should not be set when using 'uri', as connection options are already part of the URI");
                 validateNamedCollection(*named_collection, {"uri", "collection"}, {});
-                configuration->uri = std::make_unique<mongocxx::uri>(named_collection->get<String>("uri"));
             }
             else
-            {
                 validateNamedCollection(*named_collection, {"host", "db", "collection"}, {"port", "user", "password", "options"});
-                String user = named_collection->get<String>("user");
-                String auth_string;
-                String escaped_password;
-                Poco::URI::encode(named_collection->get<String>("password"), "!?#/'\",;:$&()[]*+=@", escaped_password);
-                if (!user.empty())
-                    auth_string = fmt::format("{}:{}@", user, escaped_password);
-                configuration->uri = std::make_unique<mongocxx::uri>(fmt::format("mongodb://{}{}:{}/{}?{}",
-                                                                                 auth_string,
-                                                                                 named_collection->get<String>("host"),
-                                                                                 named_collection->getOrDefault<String>("port", "27017"),
-                                                                                 named_collection->get<String>("db"),
-                                                                                 named_collection->getOrDefault<String>("options", "")));
-            }
+
+            /// Built the same way by `checkMongoDBDictionarySourceServerCredentials` when the dictionary is created.
+            configuration->setDictionarySourceURI(*named_collection);
             configuration->collection = named_collection->get<String>("collection");
         }
         else
         {
             configuration->collection = config.getString(config_prefix + ".collection");
-            auto uri_str = config.getString(config_prefix + ".uri", "");
-            if (!uri_str.empty())
-                configuration->uri = std::make_unique<mongocxx::uri>(uri_str);
-            else
-            {
-                String user = config.getString(config_prefix + ".user", "");
-                String auth_string;
-                String escaped_password;
-                Poco::URI::encode(config.getString(config_prefix + ".password", ""), "!?#/'\",;:$&()[]*+=@", escaped_password);
-                if (!user.empty())
-                    auth_string = fmt::format("{}:{}@", user, escaped_password);
-                configuration->uri = std::make_unique<mongocxx::uri>(fmt::format("mongodb://{}{}:{}/{}?{}",
-                                                                                 auth_string,
-                                                                                 config.getString(config_prefix + ".host"),
-                                                                                 config.getString(config_prefix + ".port", "27017"),
-                                                                                 config.getString(config_prefix + ".db"),
-                                                                                 config.getString(config_prefix + ".options", "")));
-            }
+            configuration->setDictionarySourceURI(config, config_prefix);
         }
 
         configuration->checkHosts(context);
@@ -116,8 +85,9 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
 
         /// The source of a dictionary created with a DDL query comes from the query. Such a dictionary is loaded by the
         /// server rather than by a session, so `context` is the global context and the restriction follows the server's
-        /// own settings, not those of the session that created or queries the dictionary. Dictionaries defined in the
-        /// server configuration files are written by an operator and are not restricted.
+        /// own settings, not those of the session that queries the dictionary. The settings of the session that defines
+        /// it are applied when it is created (see `checkMongoDBDictionarySourceServerCredentials`). Dictionaries defined
+        /// in the server configuration files are written by an operator and are not restricted.
         if (created_from_ddl)
             configuration->checkServerCredentials(context);
 

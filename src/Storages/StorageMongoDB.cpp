@@ -15,6 +15,7 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/maskURIPassword.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/quoteString.h>
 #include <Common/StringUtils.h>
 #include <Common/parseAddress.h>
@@ -40,6 +41,10 @@
 
 #include <bsoncxx/json.hpp>
 #include <mongocxx/exception/logic_error.hpp>
+
+#include <Poco/Exception.h>
+#include <Poco/URI.h>
+#include <Poco/Util/AbstractConfiguration.h>
 
 #include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/split.hpp>
@@ -172,6 +177,97 @@ void MongoDBConfiguration::checkServerCredentials(const ContextPtr & context) co
             ". Enable the setting `s3_allow_server_credentials_in_user_queries` to permit it"
 #endif
             ".");
+}
+
+void MongoDBConfiguration::setDictionarySourceURI(const NamedCollection & named_collection)
+{
+    if (named_collection.has("uri"))
+    {
+        uri = std::make_unique<mongocxx::uri>(named_collection.get<String>("uri"));
+        return;
+    }
+
+    String user = named_collection.get<String>("user");
+    String auth_string;
+    String escaped_password;
+    Poco::URI::encode(named_collection.get<String>("password"), MONGODB_RESERVED_CHARS, escaped_password);
+    if (!user.empty())
+        auth_string = fmt::format("{}:{}@", user, escaped_password);
+    uri = std::make_unique<mongocxx::uri>(fmt::format("mongodb://{}{}:{}/{}?{}",
+                                                      auth_string,
+                                                      named_collection.get<String>("host"),
+                                                      named_collection.getOrDefault<String>("port", "27017"),
+                                                      named_collection.get<String>("db"),
+                                                      named_collection.getOrDefault<String>("options", "")));
+}
+
+void MongoDBConfiguration::setDictionarySourceURI(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
+{
+    auto uri_str = config.getString(config_prefix + ".uri", "");
+    if (!uri_str.empty())
+    {
+        uri = std::make_unique<mongocxx::uri>(uri_str);
+        return;
+    }
+
+    String user = config.getString(config_prefix + ".user", "");
+    String auth_string;
+    String escaped_password;
+    Poco::URI::encode(config.getString(config_prefix + ".password", ""), MONGODB_RESERVED_CHARS, escaped_password);
+    if (!user.empty())
+        auth_string = fmt::format("{}:{}@", user, escaped_password);
+    uri = std::make_unique<mongocxx::uri>(fmt::format("mongodb://{}{}:{}/{}?{}",
+                                                      auth_string,
+                                                      config.getString(config_prefix + ".host"),
+                                                      config.getString(config_prefix + ".port", "27017"),
+                                                      config.getString(config_prefix + ".db"),
+                                                      config.getString(config_prefix + ".options", "")));
+}
+
+void checkMongoDBDictionarySourceServerCredentials(
+    const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const ContextPtr & context)
+{
+    MongoDBConfiguration configuration;
+
+    MutableNamedCollectionPtr named_collection;
+    if (const auto collection_name = config.getString(config_prefix + ".name", ""); !collection_name.empty())
+    {
+        /// Not with `tryGetNamedCollectionWithOverrides`, which also checks the privilege to use the collection in
+        /// `context` and registers the dictionary as dependent on it: loading the source does both.
+        NamedCollectionFactory::instance().loadIfNot();
+        const auto collection = NamedCollectionFactory::instance().tryGet(collection_name);
+        if (!collection)
+            return;
+
+        named_collection = copyNamedCollectionWithDictionarySourceOverrides(*collection, config, config_prefix);
+
+        /// `setDictionarySourceURI` reads these keys with `NamedCollection::get`, which throws if one is missing.
+        const bool has_connection_keys = named_collection->has("uri")
+            || (named_collection->has("host") && named_collection->has("db") && named_collection->has("user")
+                && named_collection->has("password"));
+        if (!has_connection_keys)
+            return;
+    }
+
+    try
+    {
+        if (named_collection)
+            configuration.setDictionarySourceURI(*named_collection);
+        else
+            configuration.setDictionarySourceURI(config, config_prefix);
+    }
+    catch (const mongocxx::logic_error &)
+    {
+        /// The driver does not parse the connection string.
+        return;
+    }
+    catch (const Poco::NotFoundException &)
+    {
+        /// `host` or `db` is missing.
+        return;
+    }
+
+    configuration.checkServerCredentials(context);
 }
 
 StorageMongoDB::StorageMongoDB(
