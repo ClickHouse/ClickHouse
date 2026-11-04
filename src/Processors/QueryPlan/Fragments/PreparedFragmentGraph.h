@@ -14,7 +14,7 @@ class WriteBuffer;
 class IQueryPlanStep;
 
 /// What every output of a `FragmentGraph` needs, computed once and shared by `EXPLAIN PLAN fragments = 1` and
-/// `EXPLAIN PLAN tree = 1` (see `FragmentGraphExplain.h`), so that they name the same things the same way.
+/// `EXPLAIN PLAN tree = 1` (see `FragmentGraphExplain.h`), so that they have one name for the same objects.
 ///
 /// `graph` and `options` must outlive the object. With `pretty`, the names point to the plans of the fragments, which
 /// belong to the cut distributed plan, so the cut must outlive the object too.

@@ -1253,7 +1253,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                     const auto build_explain = [&](const FragmentGraph & graph)
                     {
                         if (settings.query_plan_options.tree)
-                            explainAsTree(graph, buf, settings.query_plan_options);
+                            explainAsTree(graph, buf, settings.query_plan_options, max_step_description_length);
                         else
                             explainAsFragments(graph, buf, settings.query_plan_options, max_step_description_length);
                     };

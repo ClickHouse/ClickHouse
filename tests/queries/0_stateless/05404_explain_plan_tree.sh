@@ -40,7 +40,9 @@ SET
     distributed_plan_optimize_exchanges = 1,
     distributed_plan_default_shuffle_join_bucket_count = 3,
     distributed_plan_default_reader_bucket_count = 3,
-    distributed_plan_force_exchange_kind = 'Streaming';
+    distributed_plan_force_exchange_kind = 'Streaming',
+    -- These queries must be distributed: a fallback to local execution is an error, not a plain plan.
+    distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- shuffle join with aggregation';
 EXPLAIN tree = 1
@@ -97,6 +99,16 @@ INSERT INTO $DB.\`大表名字测试数据\` SELECT number FROM numbers(0, 10000
 EXPLAIN tree = 1
 SELECT \`键\` % 10 AS k, sum(\`键\`)
 FROM $DB.\`大表名字测试数据\`
+GROUP BY k;
+
+-- A text without spaces is split between characters, and a wide character that does not fit at the end of a line moves
+-- to the next one: the read box below wraps \`(db_XXXXXXXX.\` and 20 characters of two columns each at 40 columns.
+SELECT '-- long text without spaces';
+CREATE TABLE $DB.\`一二三四五六七八九十一二三四五六七八九十\`(\`键\` UInt64) ENGINE = MergeTree ORDER BY \`键\`;
+INSERT INTO $DB.\`一二三四五六七八九十一二三四五六七八九十\` SELECT number FROM numbers(0, 1000);
+EXPLAIN tree = 1
+SELECT \`键\` % 10 AS k, sum(\`键\`)
+FROM $DB.\`一二三四五六七八九十一二三四五六七八九十\`
 GROUP BY k;
 EOF
 

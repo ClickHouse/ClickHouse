@@ -28,18 +28,18 @@ namespace ErrorCodes
 namespace
 {
 
-/// The text of a step box is cut to this many columns.
+/// The text of a step box is wrapped to lines of this many columns.
 constexpr size_t max_step_text_width = 40;
 /// The first line of an exchange label (name and kind) is cut to this many columns.
 constexpr size_t max_label_width = 48;
 /// Columns between a step box and the frame of its fragment.
 constexpr Int64 frame_padding = 2;
-/// Lines of a step box.
-constexpr size_t box_height = 3;
-
 struct StepBox
 {
+    /// The whole text of the step: its name and description.
     String text;
+    /// `text` wrapped to `max_step_text_width` columns, one line per inner line of the box.
+    std::vector<String> lines;
     /// Index in `FragmentGraph::fragments`.
     size_t fragment = 0;
     /// Inputs in the plan, then, for a receive step, the send step of the producer fragment.
@@ -52,6 +52,19 @@ struct StepBox
 
     Int64 left() const { return center - static_cast<Int64>(width / 2); }
     Int64 right() const { return left() + static_cast<Int64>(width) - 1; }
+    size_t height() const { return TextCanvas::boxHeight(lines.size()); }
+    /// The line of the bottom border.
+    size_t bottom() const { return y + height() - 1; }
+
+    void setText(String new_text)
+    {
+        text = std::move(new_text);
+        lines = TextCanvas::wrapToWidth(text, max_step_text_width);
+        width = 0;
+        for (const auto & line : lines)
+            width = std::max(width, TextCanvas::displayWidth(line));
+        width += 4;
+    }
 };
 
 struct FragmentFrame
@@ -64,13 +77,14 @@ struct FragmentFrame
 class TreeBuilder
 {
 public:
-    explicit TreeBuilder(const PreparedFragmentGraph & prepared_)
+    TreeBuilder(const PreparedFragmentGraph & prepared_, size_t max_step_description_length_)
         : prepared(prepared_)
         , graph(prepared.graph)
         , options(prepared.options)
         , frameless(prepared.single_node)
         , padding(frameless ? 0 : frame_padding)
         , sibling_gap(3 + 2 * padding)
+        , max_step_description_length(max_step_description_length_)
     {
         for (size_t i = 0; i < graph.fragments.size(); ++i)
             fragment_index_by_id[graph.fragments[i].id] = i;
@@ -98,7 +112,7 @@ public:
             for (size_t i = 0; i < frames.size(); ++i)
                 drawFrame(canvas, i);
         for (const auto & step_box : boxes)
-            canvas.box(static_cast<size_t>(step_box.left()), step_box.y, step_box.width, step_box.text);
+            canvas.box(static_cast<size_t>(step_box.left()), step_box.y, step_box.width, step_box.lines);
         for (size_t i = 0; i < boxes.size(); ++i)
             drawEdges(canvas, i);
         canvas.writeTo(buf);
@@ -114,6 +128,8 @@ private:
     const Int64 padding;
     /// Columns between the subtrees of two inputs of a step; the subtrees already include the padding.
     const Int64 sibling_gap;
+    /// A description is cut to this many bytes, as in `QueryPlan::explainPlan`; 0 means no limit.
+    const size_t max_step_description_length;
     std::unordered_map<UInt32, size_t> fragment_index_by_id;
 
     std::vector<StepBox> boxes;
@@ -153,16 +169,17 @@ private:
         String description(step.getStepDescription());
         if (options.pretty)
             description = QueryPlanFormat::trimColumnIdentifier(description);
+        if (max_step_description_length)
+            description = description.substr(0, max_step_description_length);
         if (options.description && !description.empty())
             text += fmt::format(" ({})", description);
-        return TextCanvas::cutToWidth(text, max_step_text_width);
+        return text;
     }
 
     size_t addBox(String text, size_t fragment)
     {
         StepBox step_box;
-        step_box.width = TextCanvas::displayWidth(text) + 4;
-        step_box.text = std::move(text);
+        step_box.setText(std::move(text));
         step_box.fragment = fragment;
         boxes.push_back(std::move(step_box));
         return boxes.size() - 1;
@@ -264,8 +281,7 @@ private:
             else
             {
                 auto & step_box = boxes[receive_box];
-                step_box.text = TextCanvas::cutToWidth(fmt::format("{} ← F{}", step_box.text, exchange.from), max_step_text_width);
-                step_box.width = TextCanvas::displayWidth(step_box.text) + 4;
+                step_box.setText(fmt::format("{} ← F{}", step_box.text, exchange.from));
                 frames[producer].title += fmt::format(" · also read by F{}", exchange.to);
             }
         }
@@ -280,6 +296,10 @@ private:
         lines.push_back(TextCanvas::cutToWidth(
             fmt::format("{} · {}", exchange.name, prepared.formatExchangeKind(exchange)), max_label_width));
         String mode(PreparedFragmentGraph::formatExchangeMode(exchange.mode));
+        /// A persisted exchange is written to storage before its consumer starts: `⛁` marks it next to the mode, which
+        /// still says it in words, so a terminal without the glyph loses nothing but the mark.
+        if (exchange.mode == ExchangeDescription::Kind::Persisted)
+            mode = "⛁ " + mode;
         if (exchange.source_buckets || exchange.destination_buckets)
             mode += fmt::format(" · {} → {}", exchange.source_buckets, exchange.destination_buckets);
         lines.push_back(std::move(mode));
@@ -388,7 +408,7 @@ private:
     void layoutRows(size_t fragment, size_t top_box_y)
     {
         std::vector<size_t> producers;
-        size_t bottom_box_y = top_box_y;
+        size_t bottom = 0;
         bool branches_to_producers = false;
 
         std::vector<std::pair<size_t, size_t>> stack{{frames[fragment].root_box, top_box_y}};
@@ -397,7 +417,7 @@ private:
             auto [index, y] = stack.back();
             stack.pop_back();
             boxes[index].y = y;
-            bottom_box_y = std::max(bottom_box_y, y);
+            bottom = std::max(bottom, boxes[index].bottom());
 
             const auto & children = boxes[index].children;
             size_t in_fragment = 0;
@@ -415,14 +435,14 @@ private:
             if (to_producers > 1)
                 branches_to_producers = true;
             /// One input: `▲`, `│`, then the input box. Several: one more line for the branch.
-            size_t child_y = y + box_height + (in_fragment > 1 ? 2 : 1);
+            size_t child_y = boxes[index].bottom() + 1 + (in_fragment > 1 ? 2 : 1);
             for (size_t child : children)
                 if (!crossesFragments(index, child))
                     stack.emplace_back(child, child_y);
         }
 
         auto & frame = frames[fragment];
-        frame.bottom = bottom_box_y + box_height;
+        frame.bottom = bottom + 1;
 
         size_t label_height = 0;
         for (size_t producer_root : producers)
@@ -465,7 +485,7 @@ private:
             return;
 
         const auto center = static_cast<size_t>(step_box.center);
-        canvas.put(center, step_box.y + 2, "▲");
+        canvas.put(center, step_box.bottom(), "▲");
 
         std::vector<size_t> in_fragment;
         std::vector<size_t> producers;
@@ -474,13 +494,13 @@ private:
 
         if (!in_fragment.empty())
         {
-            canvas.put(center, step_box.y + 3, "│");
+            canvas.put(center, step_box.bottom() + 1, "│");
             if (in_fragment.size() > 1)
             {
                 std::vector<Int64> centers;
                 for (size_t child : in_fragment)
                     centers.push_back(boxes[child].center);
-                drawBranch(canvas, step_box.y + 4, step_box.center, centers);
+                drawBranch(canvas, step_box.bottom() + 2, step_box.center, centers);
             }
             for (size_t child : in_fragment)
                 canvas.put(static_cast<size_t>(boxes[child].center), boxes[child].y, "┴");
@@ -492,7 +512,7 @@ private:
         /// From the receive step down to the frame of its fragment, across it, along the labels, across the frame of
         /// the producer, to its send step.
         const auto & frame = frames[step_box.fragment];
-        for (size_t y = step_box.y + 3; y < frame.bottom; ++y)
+        for (size_t y = step_box.bottom() + 1; y < frame.bottom; ++y)
             canvas.put(center, y, "│");
         canvas.put(center, frame.bottom, "┼");
 
@@ -528,12 +548,16 @@ private:
 
 }
 
-void explainAsTree(const FragmentGraph & graph, WriteBuffer & buf, const ExplainPlanOptions & options)
+void explainAsTree(
+    const FragmentGraph & graph,
+    WriteBuffer & buf,
+    const ExplainPlanOptions & options,
+    size_t max_step_description_length)
 {
     const PreparedFragmentGraph prepared(graph, options);
 
     validateFragmentGraph(graph);
-    TreeBuilder(prepared).draw(buf);
+    TreeBuilder(prepared, max_step_description_length).draw(buf);
 
     /// A plan that was not cut has no exchanges, and its one level says nothing.
     if (prepared.single_node)
