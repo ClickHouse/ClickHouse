@@ -174,7 +174,7 @@ compare_with_cpu "SELECT sum(v_u64) FROM gpu_device_filter WHERE v_u8 < 200"
 check_plan "filter on the device" "SELECT k_u8, sum(v_u64) FROM gpu_device_filter WHERE v_u8 < 200 AND k_i8 > 0 GROUP BY k_u8"
 check_plan "filter on the device" "SELECT k_u8, sum(v_u64) FROM gpu_device_filter WHERE v_f64 < 100 GROUP BY k_u8"
 check_plan "filter on the CPU" "SELECT k_u8, sum(v_u64) FROM gpu_device_filter WHERE v_u8 % 2 = 0 GROUP BY k_u8"
-check_plan "filter on the CPU" "SELECT k_u8, sum(v_u64) FROM gpu_device_filter WHERE v_f64 < v_u8 GROUP BY k_u8"
+check_plan "filter on the device" "SELECT k_u8, sum(v_u64) FROM gpu_device_filter WHERE v_f64 < v_u8 GROUP BY k_u8"
 check_plan "filter on the CPU" "SELECT k_u8, sum(v_u64) FROM gpu_device_filter WHERE v_null > 0 GROUP BY k_u8"
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE gpu_device_filter"

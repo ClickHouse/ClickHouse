@@ -137,7 +137,8 @@ constexpr size_t min_rows_to_split = 1UL << 20;
 /// by one reader. A piece of several ranges is split between its ranges, one of one range at its middle mark.
 void splitPartsAmongReaders(std::vector<PartToRead> & parts, size_t min_pieces)
 {
-    if (parts.size() >= min_pieces)
+    /// No parts are left of a read whose indexes leave no marks.
+    if (parts.empty() || parts.size() >= min_pieces)
         return;
 
     struct Piece

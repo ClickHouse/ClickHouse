@@ -171,206 +171,101 @@ bool deviceHasIntrinsic(llvm::StringRef name)
     return false;
 }
 
-/// The part of `ActionsDAG` that an expression is of, as `CompileDAG` compiles it: every function of it compiles, and
-/// its inputs are the columns it reads.
-class DeviceDAG
+/// The comparisons of `dag` with a string or `Decimal` constant, which do not compile, with the constant converted to the
+/// type of the column it is compared with, as the comparison converts it, which compile: `d < '1994-01-01'` of a `Date`
+/// is `d < 8766`. The nodes of `dag`, a copy that is not shared, are changed in place.
+void convertConstantsOfComparisons(ActionsDAG & dag)
 {
-public:
-    explicit DeviceDAG(String & refusal_) : refusal(refusal_) { }
-
-    bool build(const ActionsDAG::Node * root) { return add(root).has_value(); }
-
-    CompileDAG dag;
-    std::vector<NameAndTypePair> columns;
-
-private:
-    bool refused(const String & reason)
+    for (const auto & const_node : dag.getNodes())
     {
-        refusal = reason;
-        return false;
-    }
+        if (const_node.type != ActionsDAG::ActionType::FUNCTION || const_node.children.size() != 2
+            || !isComparison(const_node.function_base->getName()))
+            continue;
 
-    std::optional<size_t> refuse(const String & reason)
-    {
-        refusal = reason;
-        return {};
-    }
-
-    std::optional<size_t> added(CompileDAG::Node node)
-    {
-        dag.addNode(std::move(node));
-        return dag.getNodesCount() - 1;
-    }
-
-    std::optional<size_t> add(const ActionsDAG::Node * node)
-    {
-        node = withoutAliases(node);
-        if (auto it = positions.find(node); it != positions.end())
-            return it->second;
-
-        std::optional<size_t> position;
-        switch (node->type)
-        {
-            case ActionsDAG::ActionType::INPUT:
-                position = addInput(*node);
-                break;
-            case ActionsDAG::ActionType::COLUMN:
-                position = addConstant(node->column, node->result_type);
-                break;
-            case ActionsDAG::ActionType::FUNCTION:
-                position = addFunction(*node);
-                break;
-            case ActionsDAG::ActionType::ALIAS:
-            case ActionsDAG::ActionType::ARRAY_JOIN:
-            case ActionsDAG::ActionType::PLACEHOLDER:
-                return refuse("an expression that is not of functions, columns and constants");
-        }
-
-        if (position)
-            positions.emplace(node, *position);
-        return position;
-    }
-
-    std::optional<size_t> addInput(const ActionsDAG::Node & node)
-    {
-        const auto element_type = filterElementTypeOf(*node.result_type);
-        if (!element_type || *element_type == GPUElementType::String || !canBeNativeType(*node.result_type) || node.result_type->isNullable())
-            return refuse("a column of type " + node.result_type->getName() + ", which the device does not read");
-        if (columns.size() >= max_expression_columns)
-            return refuse("an expression of more columns than the device takes");
-
-        columns.emplace_back(node.result_name, node.result_type);
-        return added({.type = CompileDAG::CompileType::INPUT, .result_type = node.result_type, .column = {}, .function = {}, .arguments = {}});
-    }
-
-    std::optional<size_t> addConstant(const ColumnConstPtr & column, const DataTypePtr & type)
-    {
-        if (!column)
-            return refuse("a column of an expression that is not a constant");
-        if (!canBeNativeType(*type) || type->isNullable())
-            return refuse("a constant of type " + type->getName() + ", which does not compile");
-        return added({.type = CompileDAG::CompileType::CONSTANT, .result_type = type, .column = column, .function = {}, .arguments = {}});
-    }
-
-    /// A string or `Decimal` constant that a comparison converts to the type of the column it is compared with, converted
-    /// here, and the comparison of the converted constant: `d < '1994-01-01'` of a `Date` is `d < 8766`.
-    bool convertConstants(
-        const ActionsDAG::Node & node, FunctionBasePtr & function, ColumnsWithTypeAndName & arguments, std::vector<ColumnConstPtr> & converted_constants)
-    {
-        const String name = node.function_base->getName();
-        if (!isComparison(name) || node.children.size() != 2)
-            return true;
-
-        const ActionsDAG::Node * children[2] = {withoutAliases(node.children[0]), withoutAliases(node.children[1])};
+        auto & node = const_cast<ActionsDAG::Node &>(const_node);
         bool converted = false;
         for (size_t i = 0; i < 2; ++i)
         {
-            const ActionsDAG::Node & constant = *children[i];
-            const ActionsDAG::Node & other = *children[1 - i];
+            const ActionsDAG::Node & constant = *withoutAliases(node.children[i]);
+            const ActionsDAG::Node & other = *withoutAliases(node.children[1 - i]);
             if (!isConstantToConvert(constant) || isConstantToConvert(other))
                 continue;
 
+            const WhichDataType which(other.result_type);
             DataTypePtr type;
-            if (isString(constant.result_type))
-            {
-                const WhichDataType which(other.result_type);
-                if (which.isDateOrDate32() || which.isDateTime() || which.isNativeInt() || which.isNativeUInt() || which.isNativeFloat())
-                    type = other.result_type;
-            }
-            else if (isFloat(other.result_type))
-            {
+            if (isString(constant.result_type)
+                && (which.isDateOrDate32() || which.isDateTime() || which.isNativeInt() || which.isNativeUInt() || which.isNativeFloat()))
+                type = other.result_type;
+            else if (isDecimal(constant.result_type) && which.isNativeFloat())
                 /// ClickHouse compares a `Decimal` with a float as both converted to `Float64`.
                 type = std::make_shared<DataTypeFloat64>();
-            }
-            if (!type)
-                return refused("a comparison of a constant of type " + constant.result_type->getName() + " with one of " + other.result_type->getName());
 
-            const Field value = convertFieldToType((*constant.column)[0], *type);
+            const Field value = type ? convertFieldToType((*constant.column)[0], *type) : Field();
             if (value.isNull())
-                return refused("a constant compared with a column that it does not convert to the column's type");
+                continue;
 
-            converted_constants[i] = type->createColumnConst(1, value);
-            arguments[i] = {converted_constants[i], type, constant.result_name};
+            node.children[i] = &dag.addColumn(type->createColumnConst(1, value), type, constant.result_name);
             converted = true;
         }
 
         if (!converted)
-            return true;
+            continue;
 
-        /// The query's settings of comparisons, as the comparison is built with in the plan.
+        ColumnsWithTypeAndName arguments;
+        for (const auto * child : node.children)
+            arguments.push_back({child->column, child->result_type, child->result_name});
+
+        /// With the query's settings of comparisons, as the comparison of the plan is built.
         const ContextPtr query_context = CurrentThread::tryGetQueryContext();
         if (!query_context)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "An expression for the GPU compiled outside of a query");
-        function = FunctionFactory::instance().get(name, query_context)->build(arguments);
-        return true;
+        node.function_base = FunctionFactory::instance().get(node.function_base->getName(), query_context)->build(arguments);
+        node.function = node.function_base->prepare(arguments);
     }
+}
 
-    std::optional<size_t> addFunction(const ActionsDAG::Node & node)
-    {
-        if (!node.function_base)
-            return refuse("a function node without a function");
-
-        FunctionBasePtr function = node.function_base;
-        ColumnsWithTypeAndName arguments;
-        for (const auto * child : node.children)
-        {
-            const auto * argument = withoutAliases(child);
-            arguments.push_back({argument->column, argument->result_type, argument->result_name});
-        }
-        std::vector<ColumnConstPtr> converted_constants(node.children.size());
-        if (!convertConstants(node, function, arguments, converted_constants))
-            return {};
-
-        const DataTypePtr & result_type = function->getResultType();
-        if (result_type->isNullable() || !canBeNativeType(*result_type))
-            return refuse("a function of a result of type " + result_type->getName() + ", which does not compile");
-
-        const DataTypes argument_types = function->getArgumentTypes();
-        const auto skipped = function->getArgumentsThatDontParticipateInCompilation(argument_types);
-        std::vector<size_t> positions_of_arguments;
-        for (size_t i = 0; i < node.children.size(); ++i)
-        {
-            const ActionsDAG::Node * child = withoutAliases(node.children[i]);
-            if (std::ranges::find(skipped, i) != skipped.end())
-            {
-                if (!child->column || child->column->onlyNull())
-                    return refuse("an argument of `" + function->getName() + "` that it takes as a constant, which is not one");
-                positions_of_arguments.push_back(*added({
-                    .type = CompileDAG::CompileType::CONSTANT,
-                    .result_type = child->result_type,
-                    .column = child->column,
-                    .skip_compile = true,
-                    .function = {},
-                    .arguments = {},
-                }));
-                continue;
-            }
-
-            if (argument_types[i]->isNullable() || !canBeNativeType(*argument_types[i]))
-                return refuse("an argument of `" + function->getName() + "` of type " + argument_types[i]->getName() + ", which does not compile");
-
-            /// A converted constant is not of the DAG.
-            const auto position = converted_constants[i] ? addConstant(converted_constants[i], arguments[i].type) : add(child);
-            if (!position)
-                return {};
-            positions_of_arguments.push_back(*position);
-        }
-
-        if (!function->isCompilable())
-            return refuse("a function that does not compile: `" + function->getName() + "` of " + std::to_string(argument_types.size()) + " arguments");
-
-        return added({
-            .type = CompileDAG::CompileType::FUNCTION,
-            .result_type = node.result_type,
-            .column = {},
-            .function = function,
-            .arguments = std::move(positions_of_arguments),
-        });
-    }
-
-    String & refusal;
-    std::unordered_map<const ActionsDAG::Node *, size_t> positions;
+/// The part of an expression that compiles, as the CPU's JIT takes it, and the columns it reads, which are its inputs.
+struct DeviceDAG
+{
+    CompileDAG dag;
+    std::vector<NameAndTypePair> columns;
 };
+
+std::optional<DeviceDAG> deviceDAGOf(const ActionsDAG::Node & root, String & refusal)
+{
+    ActionsDAG::NodeRawConstPtrs inputs;
+    DeviceDAG result{.dag = getCompilableDAG(&root, inputs, {}), .columns = {}};
+
+    for (const auto * input : inputs)
+    {
+        const ActionsDAG::Node & node = *withoutAliases(input);
+        if (node.type == ActionsDAG::ActionType::FUNCTION)
+            refusal = "a function that does not compile: `" + node.function_base->getName() + "`";
+        else if (node.type != ActionsDAG::ActionType::INPUT)
+            refusal = "a constant of type " + node.result_type->getName() + ", which does not compile";
+        else if (const auto type = filterElementTypeOf(*node.result_type); !type || *type == GPUElementType::String)
+            refusal = "a column of type " + node.result_type->getName() + ", which the device does not read";
+        else if (result.columns.size() >= max_expression_columns)
+            refusal = "an expression of more columns than the device takes";
+        else
+        {
+            result.columns.emplace_back(node.result_name, node.result_type);
+            continue;
+        }
+        return {};
+    }
+
+    /// The code of a `Nullable` value is a pair of the value and a flag, which the device does not read.
+    for (size_t i = 0; i < result.dag.getNodesCount(); ++i)
+    {
+        if (result.dag[i].result_type->isNullable())
+        {
+            refusal = "an expression of a `Nullable` value";
+            return {};
+        }
+    }
+    return result;
+}
 
 /// The kernel of `dag`: `void name(ptr column_0, ..., ptr result, i64 rows)`, a thread for each row.
 void emitKernel(llvm::Module & module, const DeviceDAG & device_dag, const DataTypePtr & result_type, Output output, const std::string & name)
@@ -484,18 +379,23 @@ std::optional<std::string> emitPTX(llvm::Module & module, llvm::TargetMachine & 
 
 std::optional<CompiledGPUExpression> compile(const ActionsDAG & dag, const String & output_name, Output output, String & refusal)
 {
-    const ActionsDAG::Node * root = dag.tryFindInOutputs(output_name);
-    if (!root)
+    const ActionsDAG::Node * output_node = dag.tryFindInOutputs(output_name);
+    if (!output_node)
     {
         refusal = "an expression that is not among the outputs of its actions";
         return {};
     }
 
-    DeviceDAG device_dag(refusal);
-    if (!device_dag.build(root))
-        return {};
+    ActionsDAG expression = ActionsDAG::cloneSubDAG({output_node}, false);
+    convertConstantsOfComparisons(expression);
+    const ActionsDAG::Node * root = withoutAliases(expression.getOutputs().front());
 
-    const DataTypePtr result_type = withoutAliases(root)->result_type;
+    auto compiled_dag = deviceDAGOf(*root, refusal);
+    if (!compiled_dag)
+        return {};
+    DeviceDAG & device_dag = *compiled_dag;
+
+    const DataTypePtr result_type = root->result_type;
     const WhichDataType which(result_type);
     if (output == Output::Bitmask && !(which.isNativeUInt() || which.isNativeInt()))
     {
