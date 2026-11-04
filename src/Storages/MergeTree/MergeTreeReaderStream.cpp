@@ -674,32 +674,28 @@ void MergeTreeReaderStream::addRangeOfMark(size_t mark, bool shared_with_next_gr
     size_t end = file_size;
     if (mark + 1 < marks_count)
     {
-        size_t next = mark + 1;
+        const auto next_mark = marks_getter->getMark(mark + 1, 0);
         /// The granule wrote nothing to the stream, like empty arrays or strings.
-        if (marks_getter->getMark(next, 0) == mark_in_file && !shared_with_next_granules)
+        if (next_mark == mark_in_file && !shared_with_next_granules)
             return;
 
-        /// The granule shares the data written after it, like a `LowCardinality` dictionary. A merge may also write the
-        /// granule in several calls and start the dictionary of the next mark in the middle of it: as in
-        /// `MergeTreeReaderStreamSingleColumn::getRightOffset`, go on to the next different mark after the next one.
-        if (shared_with_next_granules)
-            next = findNextDifferentMark(*marks_getter, next, marks_count);
-
-        if (next < marks_count)
+        end = next_mark.offset_in_compressed_file;
+        /// The block goes on to the next later offset if the next mark is inside it. The granule needs the block also if
+        /// it shares the data written after it, like a `LowCardinality` dictionary: then the next mark is the same, at the
+        /// start of the block.
+        /// A dictionary is written at the end of the call that fills it, so a granule written in one call needs none after
+        /// the next mark. A merge may write a granule in several calls and start the next dictionary in the middle of it.
+        /// The marks don't tell these apart, so unlike `MergeTreeReaderStreamSingleColumn::getRightOffset`, which bounds
+        /// what reading may need, the next dictionary is not counted for the granule.
+        if (next_mark.offset_in_decompressed_block != 0 || next_mark.offset_in_compressed_file == begin)
         {
-            const auto next_mark = marks_getter->getMark(next, 0);
-            end = next_mark.offset_in_compressed_file;
-            /// The block goes on to the next later offset if the next mark is inside it.
-            if (next_mark.offset_in_decompressed_block != 0 || next_mark.offset_in_compressed_file == begin)
+            /// The offsets don't decrease, and many marks can share the block, so search instead of scanning them.
+            const auto marks = std::views::iota(mark + 1, marks_count);
+            const auto it = std::ranges::partition_point(marks, [&](size_t i)
             {
-                /// The offsets don't decrease, and many marks can share the block, so search instead of scanning them.
-                const auto marks = std::views::iota(next, marks_count);
-                const auto it = std::ranges::partition_point(marks, [&](size_t i)
-                {
-                    return marks_getter->getMark(i, 0).offset_in_compressed_file <= next_mark.offset_in_compressed_file;
-                });
-                end = it == marks.end() ? file_size : marks_getter->getMark(*it, 0).offset_in_compressed_file;
-            }
+                return marks_getter->getMark(i, 0).offset_in_compressed_file <= next_mark.offset_in_compressed_file;
+            });
+            end = it == marks.end() ? file_size : marks_getter->getMark(*it, 0).offset_in_compressed_file;
         }
     }
     ranges.emplace_back(begin, end);
