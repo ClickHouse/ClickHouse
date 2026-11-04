@@ -56,7 +56,7 @@ static bool shouldSuppressPrewhereForVectorSearch(const ReadFromMergeTree & read
     if (read_from_merge_tree_step.isParallelReadingFromReplicas())
         return false;
 
-    /// Under FINAL the vector-search read hints never filter rows (see the vector search second pass).
+    /// Under FINAL the vector search read hints never filter rows.
     if (read_from_merge_tree_step.isQueryWithFinal())
         return false;
 
