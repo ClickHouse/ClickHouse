@@ -28,9 +28,6 @@ SELECT 'file', countIf(explain LIKE '%ilter column:%k = 5%') FROM (EXPLAIN PLAN 
 
 SELECT 'file result', count() FROM (SELECT * FROM src WHERE k = 5) AS s INNER JOIN file(currentDatabase() || '_05497.parquet', Parquet, 'k Int64') AS t ON s.k = t.k
 SETTINGS log_comment = '05497_file';
-SYSTEM FLUSH LOGS query_log;
-SELECT 'file pruned row groups', ProfileEvents['ParquetPrunedRowGroups'] > 0
-FROM system.query_log WHERE current_database = currentDatabase() AND log_comment = '05497_file' AND type = 'QueryFinish';
 
 SELECT 'file IN', countIf(explain LIKE '%ilter column:%k IN (5, 50000)%') FROM (EXPLAIN PLAN actions = 1
     SELECT count() FROM (SELECT * FROM src WHERE k IN (5, 50000)) AS s INNER JOIN file(currentDatabase() || '_05497.parquet', Parquet, 'k Int64') AS t ON s.k = t.k);
@@ -39,10 +36,22 @@ SELECT 'file IN result', count() FROM (SELECT * FROM src WHERE k IN (5, 50000)) 
 SELECT 's3', countIf(explain LIKE '%ilter column:%k = 5%') FROM (EXPLAIN PLAN actions = 1
     SELECT count() FROM (SELECT * FROM src WHERE k = 5) AS s
     INNER JOIN s3(s3_conn, filename = '05497/' || currentDatabase() || '.parquet', format = Parquet, structure = 'k Int64') AS t ON s.k = t.k);
+SELECT 's3 result', count() FROM (SELECT * FROM src WHERE k = 5) AS s
+    INNER JOIN s3(s3_conn, filename = '05497/' || currentDatabase() || '.parquet', format = Parquet, structure = 'k Int64') AS t ON s.k = t.k
+SETTINGS log_comment = '05497_s3', enable_filesystem_cache = 0;
 
 SELECT 'url', countIf(explain LIKE '%ilter column:%k = 5%') FROM (EXPLAIN PLAN actions = 1
     SELECT count() FROM (SELECT * FROM src WHERE k = 5) AS s
     INNER JOIN url('http://localhost:11111/test/05497/' || currentDatabase() || '.parquet', Parquet, 'k Int64') AS t ON s.k = t.k);
+SELECT 'url result', count() FROM (SELECT * FROM src WHERE k = 5) AS s
+    INNER JOIN url('http://localhost:11111/test/05497/' || currentDatabase() || '.parquet', Parquet, 'k Int64') AS t ON s.k = t.k
+SETTINGS log_comment = '05497_url', enable_filesystem_cache = 0;
+
+SYSTEM FLUSH LOGS query_log;
+SELECT log_comment, ProfileEvents['ParquetPrunedRowGroups'] > 0
+FROM system.query_log
+WHERE current_database = currentDatabase() AND log_comment IN ('05497_file', '05497_s3', '05497_url') AND type = 'QueryFinish'
+ORDER BY log_comment;
 
 SELECT 'csv', countIf(explain LIKE '%ilter column:%k = 5%') FROM (EXPLAIN PLAN actions = 1
     SELECT count() FROM (SELECT * FROM src WHERE k = 5) AS s INNER JOIN file(currentDatabase() || '_05497.csv', CSV, 'k Int64') AS t ON s.k = t.k);

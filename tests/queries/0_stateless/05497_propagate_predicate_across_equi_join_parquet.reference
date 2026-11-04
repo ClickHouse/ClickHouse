@@ -1,10 +1,14 @@
 file	2
 file result	1
-file pruned row groups	1
 file IN	2
 file IN result	2
 s3	2
+s3 result	1
 url	2
+url result	1
+05497_file	1
+05497_s3	1
+05497_url	1
 csv	1
 filter push-down off	1
 use_primary_key = 0	2

@@ -92,8 +92,8 @@ const FilterStep * findFilterBelow(const QueryPlan::Node * node)
 }
 
 /// Columns of the read below the target that a filter can prune: the primary key of a MergeTree,
-/// or the columns another source can skip data by. Empty when there is none
-NameSet getTargetPrunableColumns(const QueryPlan::Node * target_root)
+/// or, of the columns the join keys resolve to, those another source can skip data by. Empty when there is none
+NameSet getTargetPrunableColumns(const QueryPlan::Node * target_root, const SubstitutionMap & substitution)
 {
     const auto * read = walkDown(target_root, [](const auto * n)
     {
@@ -112,10 +112,16 @@ NameSet getTargetPrunableColumns(const QueryPlan::Node * target_root)
     }
 
     const auto & source = dynamic_cast<const SourceStepWithFilterBase &>(*read->step);
+    const auto & header = *source.getOutputHeader();
     NameSet result;
-    for (const auto & column : *source.getOutputHeader())
-        if (source.canSkipDataByFilterOn(column))
-            result.insert(column.name);
+    for (const auto & [_, target_column] : substitution)
+    {
+        const auto name = resolveDown(target_root, target_column.name, /*stop_at_filter=*/false);
+        if (!name || result.contains(*name))
+            continue;
+        if (const auto * column = header.findByName(*name); column && source.canSkipDataByFilterOn(*column))
+            result.insert(*name);
+    }
     return result;
 }
 
@@ -247,7 +253,7 @@ size_t tryPropagateToSide(
     if (!source_filter)
         return 0;
     /// Only helps when the target's read can prune by the copy
-    const auto prunable_columns = getTargetPrunableColumns(target_root);
+    const auto prunable_columns = getTargetPrunableColumns(target_root, substitution);
     if (prunable_columns.empty())
         return 0;
 

@@ -8051,7 +8051,7 @@ on the other side can use them.
 Applies when the filter and the read are separated from the join only by expression and filter
 steps, and when the copied conjunct compares a constant (including `IN` with a constant set) with
 either a primary key column of a `MergeTree` read, or a column of a `Parquet` read (`file`, `url`,
-object storage that is not a data lake) of an integer, `Date`, `Date32` or `Decimal` type without a
+object storage that is not a data lake) of an integer of up to 64 bits, `Date`, `Date32` or `Decimal` type without a
 default expression, whose row groups the read can skip by min/max statistics. A predicate below a
 nested join or below `DISTINCT`, or a comparison between two key columns, is left alone: it could
 not drive pruning on the other side, so copying it would only add work.
