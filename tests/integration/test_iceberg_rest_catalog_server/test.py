@@ -2,6 +2,7 @@
 
 import base64
 import gzip
+import http.client
 import json
 import time
 import uuid
@@ -515,19 +516,28 @@ def test_not_found_shape(started_cluster):
 
 def test_error_response_keeps_connection_usable(started_cluster):
     # Routing rejects each POST. Its body must not leak into the next request on the same connection.
-    body = {"name": "t", "padding": "x" * 100000}
-    with requests.Session() as session:
+    # http.client never reconnects on its own, so a closed socket fails the follow-up GET.
+    body = json.dumps({"name": "t", "padding": "x" * 100000})
+    connection = http.client.HTTPConnection(node.ip_address, CATALOG_PORT)
+    try:
         for path, expected_code in [
             ("/v1/other_warehouse/namespaces/ns/tables", 404),
             ("/v1/my_warehouse/namespaces/ns/tables/t/metrics", 406),
         ]:
-            response = session.post(catalog_url(path), json=body)
-            assert response.status_code == expected_code, response.text
-            response = session.get(
-                catalog_url("/v1/config"), params={"warehouse": "my_warehouse"}
+            connection.request(
+                "POST", path, body=body, headers={"Content-Type": "application/json"}
             )
-            assert response.status_code == 200, response.text
-            assert response.json()["overrides"]["prefix"] == "my_warehouse"
+            response = connection.getresponse()
+            text = response.read().decode()
+            assert response.status == expected_code, text
+            assert response.getheader("Connection", "").lower() != "close", text
+            connection.request("GET", "/v1/config?warehouse=my_warehouse")
+            response = connection.getresponse()
+            text = response.read().decode()
+            assert response.status == 200, text
+            assert json.loads(text)["overrides"]["prefix"] == "my_warehouse"
+    finally:
+        connection.close()
 
 
 def wait_listening(url, expected):

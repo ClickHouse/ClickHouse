@@ -217,7 +217,10 @@ void IcebergRESTCatalogHandler::sendJSON(
     setResponseDefaultHeaders(response);
     response.setStatus(status);
     response.setContentType("application/json");
-    *response.send() << toJSONString(json);
+    /// The declared length marks the end of the body, so the connection can stay open for the next request.
+    const auto body = toJSONString(json);
+    response.setContentLength(body.size());
+    *response.send() << body;
 }
 
 void IcebergRESTCatalogHandler::sendNoContent(HTTPServerResponse & response)
