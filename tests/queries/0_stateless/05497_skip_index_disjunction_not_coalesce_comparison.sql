@@ -80,6 +80,28 @@ INSERT INTO t_ready SELECT number, 50, number FROM numbers(16);
 SELECT count() FROM t_ready WHERE (b < 10 OR b > 100) IN (SELECT true) OR x = 9;
 SELECT count() FROM t_ready WHERE NOT ((b < 10 OR b > 100) NOT IN (SELECT true)) OR x = 9;
 
+-- Per-part constant folding can turn an operand into a constant; the folded filter must keep one RPN layout too.
+DROP TABLE IF EXISTS t_fold;
+CREATE TABLE t_fold
+(
+    p UInt32,
+    id UInt32,
+    b UInt32,
+    c Nullable(UInt32),
+    x UInt32,
+    INDEX ib b TYPE minmax GRANULARITY 1,
+    INDEX ic c TYPE minmax GRANULARITY 1
+)
+ENGINE = MergeTree
+PARTITION BY p
+ORDER BY id
+SETTINGS index_granularity = 4, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
+
+INSERT INTO t_fold SELECT 10, number, 1, 500, number FROM numbers(16);
+
+SELECT count() FROM t_fold WHERE (coalesce(c, b) < p OR x = 9) AND c > 0 AND b > 0 SETTINGS use_constant_folding_in_index_analysis = 1;
+SELECT count() FROM t_fold WHERE (NOT (coalesce(c, b) >= p) OR x = 9) AND c > 0 AND b > 0 SETTINGS use_constant_folding_in_index_analysis = 1;
+
 -- With the rewrite off, a negated ifNull range still reaches the monotonic chain over a Nullable partition key; both counts must match.
 DROP TABLE IF EXISTS t_chain_part;
 DROP TABLE IF EXISTS t_chain_flat;
@@ -93,5 +115,6 @@ SELECT (SELECT count() FROM t_chain_flat WHERE NOT (ifNull(c0, 0) >= 7) SETTINGS
 DROP TABLE t_minmax;
 DROP TABLE t_set;
 DROP TABLE t_ready;
+DROP TABLE t_fold;
 DROP TABLE t_chain_part;
 DROP TABLE t_chain_flat;
