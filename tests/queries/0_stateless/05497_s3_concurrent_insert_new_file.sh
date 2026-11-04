@@ -123,3 +123,17 @@ echo "acknowledged writers: $(echo -n "${acknowledged%,}" | tr ',' '\n' | grep -
 $CLICKHOUSE_CLIENT -q "
     SELECT arraySort(groupUniqArray(a)) = arrayConcat([0], [${acknowledged%,}]::Array(UInt64))
     FROM s3(s3_conn, filename='$conflict*', format=Parquet, structure='a UInt64')"
+
+# TRUNCATE deletes the objects but keeps their names in the path list: the inserts that follow must
+# write to free names, not to a listed one that another insert has already created again.
+truncated="test_05497_truncate_${CLICKHOUSE_DATABASE}_${RANDOM}"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE t_05497_truncate (a UInt64) ENGINE = S3(s3_conn, filename='$truncated', format=Parquet)"
+for i in 1 2; do
+    $CLICKHOUSE_CLIENT --s3_create_new_file_on_insert 1 -q "INSERT INTO t_05497_truncate SELECT $i"
+done
+$CLICKHOUSE_CLIENT -q "TRUNCATE TABLE t_05497_truncate"
+for i in 3 4; do
+    $CLICKHOUSE_CLIENT --s3_create_new_file_on_insert 1 -q "INSERT INTO t_05497_truncate SELECT $i"
+done
+$CLICKHOUSE_CLIENT -q "SELECT arraySort(groupArray(a)) FROM s3(s3_conn, filename='$truncated*', format=Parquet, structure='a UInt64')"
+$CLICKHOUSE_CLIENT -q "DROP TABLE t_05497_truncate"

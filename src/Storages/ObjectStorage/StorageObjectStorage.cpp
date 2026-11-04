@@ -1088,7 +1088,8 @@ SinkToStoragePtr StorageObjectStorage::createSink(
     }
 
     const auto paths = configuration->getPaths();
-    auto write_path = paths.back().path;
+    /// Unless the insert truncates, the probe below checks the first path, which is written when it is free.
+    auto write_path = settings.truncate_on_insert ? paths.back().path : paths.front().path;
     if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(*object_storage, *configuration, settings, paths.front().path, paths.size()))
     {
         configuration->addPath({*new_key});
