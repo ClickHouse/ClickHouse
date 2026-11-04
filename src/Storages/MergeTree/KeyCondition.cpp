@@ -742,6 +742,13 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
     bool need_inversion,
     bool boolean_context);
 
+static const ActionsDAG::Node * tryRewriteBooleanCondition(
+    const ActionsDAG::Node & condition,
+    const String & condition_name,
+    ActionsDAG & inverted_dag,
+    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & inputs_mapping,
+    const ContextPtr & context);
+
 /// Rewrite `<op>(coalesce(a_1, ..., a_N), const)` (or with `ifNull`, or with the constant on the
 /// left) into
 ///     `(y_1 <op> const)`
@@ -872,7 +879,7 @@ static const ActionsDAG::Node * tryRewriteCoalesceComparison(
         /// `MergeTreeDataSelectExecutor::filterMarksUsingIndex` assumes both RPNs share the same length and
         /// position layout; the mismatch puts partial results at the wrong positions of `partial_disjunction_result`,
         /// which can skip granules that match the filter.
-        if (const auto * rewritten = tryRewriteCoalesceComparison(cmp_node, canonical_op_str, inverted_dag, inputs_mapping, context))
+        if (const auto * rewritten = tryRewriteBooleanCondition(cmp_node, canonical_op_str, inverted_dag, inputs_mapping, context))
             return *rewritten;
         return cmp_node;
     };
@@ -1249,14 +1256,41 @@ static const ActionsDAG::Node * tryRewriteNullIfComparison(
 
     ActionsDAG::NodeRawConstPtrs args = {&cloned_col, &cloned_const};
     const auto & cmp_node = inverted_dag.addFunction(function_builder, args, "");
-    /// Normalize the generated comparison through tryRewriteCoalesceComparison so that
+    /// Normalize the generated comparison through tryRewriteBooleanCondition so that
     /// the template KeyCondition and each skip-index KeyCondition produce the same RPN atoms.
     /// Without this, nullIf(coalesce(a, b), sentinel) = const can expand coalesce differently
     /// across passes, causing filterMarksUsingIndex to misalign atom positions and drop granules.
     const String cmp_name(canonical_op);
-    if (const auto * rewritten = tryRewriteCoalesceComparison(cmp_node, cmp_name, inverted_dag, inputs_mapping, context))
+    if (const auto * rewritten = tryRewriteBooleanCondition(cmp_node, cmp_name, inverted_dag, inputs_mapping, context))
         return rewritten;
     return &cmp_node;
+}
+
+/// Rewrites that are valid only for a non-inverted condition in a boolean context.
+/// They are tried in order and lazily, since each of them may add nodes to `inverted_dag`.
+static const ActionsDAG::Node * tryRewriteBooleanCondition(
+    const ActionsDAG::Node & condition,
+    const String & condition_name,
+    ActionsDAG & inverted_dag,
+    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & inputs_mapping,
+    const ContextPtr & context)
+{
+    if (const auto * rewritten = tryRewriteIsTrueCondition(condition, condition_name, inverted_dag, inputs_mapping, context))
+        return rewritten;
+    if (const auto * rewritten = tryRewriteInTruthyCondition(condition, condition_name, inverted_dag, inputs_mapping, context))
+        return rewritten;
+
+    if (!context->getSettingsRef()[Setting::allow_key_condition_coalesce_rewrite])
+        return nullptr;
+
+    if (const auto * rewritten = tryRewriteCoalesceComparison(condition, condition_name, inverted_dag, inputs_mapping, context))
+        return rewritten;
+    if (const auto * rewritten = tryRewriteCoalesceCondition(condition, condition_name, inverted_dag, inputs_mapping, context))
+        return rewritten;
+    if (const auto * rewritten = tryRewriteNullIfComparison(condition, condition_name, inverted_dag, inputs_mapping, context))
+        return rewritten;
+
+    return nullptr;
 }
 
 static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
@@ -1322,29 +1356,6 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
         case ActionsDAG::ActionType::FUNCTION:
         {
             auto name = node.function_base->getName();
-
-            /// Rewrites that are valid only for a non-inverted condition in a boolean context.
-            /// They are tried in order and lazily, since each of them may add nodes to `inverted_dag`.
-            auto try_rewrite_boolean_condition
-                = [&](const ActionsDAG::Node & condition, const String & condition_name) -> const ActionsDAG::Node *
-            {
-                if (const auto * rewritten = tryRewriteIsTrueCondition(condition, condition_name, inverted_dag, inputs_mapping, context))
-                    return rewritten;
-                if (const auto * rewritten = tryRewriteInTruthyCondition(condition, condition_name, inverted_dag, inputs_mapping, context))
-                    return rewritten;
-
-                if (!context->getSettingsRef()[Setting::allow_key_condition_coalesce_rewrite])
-                    return nullptr;
-
-                if (const auto * rewritten = tryRewriteCoalesceComparison(condition, condition_name, inverted_dag, inputs_mapping, context))
-                    return rewritten;
-                if (const auto * rewritten = tryRewriteCoalesceCondition(condition, condition_name, inverted_dag, inputs_mapping, context))
-                    return rewritten;
-                if (const auto * rewritten = tryRewriteNullIfComparison(condition, condition_name, inverted_dag, inputs_mapping, context))
-                    return rewritten;
-
-                return nullptr;
-            };
 
             /// A `not` that receives an inversion cancels against it and substitutes its argument for
             /// the result. That is only truthiness-preserving: `not(not(x))` is `x != 0` (a `UInt8`),
@@ -1441,7 +1452,9 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                 res = &inverted_dag.addFunction(function_builder, children, "");
                 handled_inversion = true;
             }
-            else if (const auto * rewritten = !need_inversion && boolean_context ? try_rewrite_boolean_condition(node, name) : nullptr)
+            else if (const auto * rewritten = !need_inversion && boolean_context
+                         ? tryRewriteBooleanCondition(node, name, inverted_dag, inputs_mapping, context)
+                         : nullptr)
             {
                 res = rewritten;
                 handled_inversion = true;
@@ -1467,7 +1480,8 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                     res = &inverted_dag.addFunction(function_builder, children, "");
                     /// `res` is a non-inverted condition over wrapper-free arguments; rewrite it so a later pass keeps the same RPN layout.
                     if (boolean_context)
-                        if (const auto * rewritten_inverse = try_rewrite_boolean_condition(*res, func_name))
+                        if (const auto * rewritten_inverse
+                            = tryRewriteBooleanCondition(*res, func_name, inverted_dag, inputs_mapping, context))
                             res = rewritten_inverse;
                     handled_inversion = true;
                 }
@@ -1499,7 +1513,7 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                     }
 
                     if (!need_inversion && boolean_context)
-                        if (const auto * rewritten_clone = try_rewrite_boolean_condition(*res, name))
+                        if (const auto * rewritten_clone = tryRewriteBooleanCondition(*res, name, inverted_dag, inputs_mapping, context))
                             res = rewritten_clone;
                 }
             }

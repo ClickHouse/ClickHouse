@@ -40,6 +40,9 @@ SELECT count() FROM t_minmax WHERE materialize(coalesce(c, b)) <= 10 OR x = 9;
 SELECT count() FROM t_minmax WHERE CAST(coalesce(c, b), 'UInt32') <= 10 OR x = 9;
 SELECT count() FROM t_minmax WHERE materialize(coalesce(c, b)) <=> 10 OR x = 9;
 SELECT count() FROM t_minmax WHERE ifNull(c < 10 OR b > 100, materialize(0)) OR x = 9;
+-- A comparison that a rewrite builds (a nullIf operand of coalesce, a nested nullIf) must get the same rewrites.
+SELECT count() FROM t_minmax WHERE coalesce(c, nullIf(coalesce(c, b), toUInt32(0))) = toUInt32(7) OR x = 9;
+SELECT count() FROM t_minmax WHERE nullIf(nullIf(coalesce(c, toNullable(b)), toNullable(toUInt32(0))), toNullable(toUInt32(1))) = toNullable(toUInt32(7)) OR x = 9;
 
 CREATE TABLE t_set
 (
