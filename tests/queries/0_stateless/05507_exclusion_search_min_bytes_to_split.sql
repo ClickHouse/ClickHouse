@@ -12,21 +12,24 @@
 
 SET merge_tree_coarse_index_granularity = 8;
 SET use_query_condition_cache = 0;
+-- Lowered from the default of 65536, so that the parts of the test stay small (writing one-row granules is slow in
+-- sanitizer builds); the perf test `primary_key_exclusion_search_small_granules` runs the issue's 2M-row repro.
+SET merge_tree_generic_exclusion_search_exhaustive_part_marks = 8192;
 
 DROP TABLE IF EXISTS t_small_granules;
 DROP TABLE IF EXISTS t_small_part;
 DROP TABLE IF EXISTS t_wide_rows;
 DROP TABLE IF EXISTS t_default_granularity;
 
--- More marks than `merge_tree_generic_exclusion_search_exhaustive_part_marks`, so the default settings apply the threshold.
+-- More marks than `merge_tree_generic_exclusion_search_exhaustive_part_marks`, so the threshold applies.
 CREATE TABLE t_small_granules (c1 DateTime, c2 UInt8, c3 String)
 ENGINE = MergeTree ORDER BY (c1, c2, c3) SETTINGS index_granularity = 1;
 
 -- One block, so that one part is written without a merge of thousands of one-row granules.
 INSERT INTO t_small_granules
 SELECT toDateTime('2026-01-01 00:00:00') + intDiv(number, 4), (number % 4) >= 2, toString(number % 97)
-FROM numbers(131072)
-SETTINGS max_insert_threads = 1, max_block_size = 131072, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0;
+FROM numbers(16384)
+SETTINGS max_insert_threads = 1, max_block_size = 65536, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0;
 
 SELECT 'parts', count() FROM system.parts WHERE database = currentDatabase() AND table = 't_small_granules' AND active;
 
@@ -62,8 +65,8 @@ SETTINGS log_comment = '05507 small part default';
 SELECT 'small part any size', count(), sum(cityHash64(c1, c3)) FROM t_small_part WHERE c2
 SETTINGS merge_tree_generic_exclusion_search_exhaustive_part_marks = 0, log_comment = '05507 small part any size';
 
--- With the same one-row granules but rows of about 4 KiB, a range of a few marks already holds more data than
--- the threshold, so the search is as exact as the exhaustive one and still prunes.
+-- With the same one-row granules but rows of about 4 KiB, a single mark already holds as much data as the
+-- threshold, so the search is as exact as the exhaustive one and still prunes.
 CREATE TABLE t_wide_rows (c1 UInt32, c2 UInt8, c3 String)
 ENGINE = MergeTree ORDER BY (c1, c2) SETTINGS index_granularity = 1;
 

@@ -1,10 +1,10 @@
 parts	1
-small default	65536	15282571328750861691
-small exhaustive	65536	15282571328750861691
-small no primary key	65536	15282571328750861691
-small compatibility	65536	15282571328750861691
-small equals default	65536	15282571328750861691
-small equals exhaustive	65536	15282571328750861691
+small default	8192	11541948862947538143
+small exhaustive	8192	11541948862947538143
+small no primary key	8192	11541948862947538143
+small compatibility	8192	11541948862947538143
+small equals default	8192	11541948862947538143
+small equals exhaustive	8192	11541948862947538143
 small part default	2048	9888814654029600427
 small part any size	2048	9888814654029600427
 wide default	2048	8388608
@@ -13,11 +13,11 @@ default granularity default	404	40420200
 default granularity exhaustive	404	40420200
 05507 default granularity default	7	1	0	0
 05507 default granularity exhaustive	7	1	0	0
-05507 small compatibility	131072	1	0	1
-05507 small default	131072	1	0	1
-05507 small equals default	131072	1	0	1
-05507 small equals exhaustive	98304	0	1	0
-05507 small exhaustive	98304	0	1	0
+05507 small compatibility	16384	1	0	1
+05507 small default	16384	1	0	1
+05507 small equals default	16384	1	0	1
+05507 small equals exhaustive	12288	0	1	0
+05507 small exhaustive	12288	0	1	0
 05507 small part any size	4096	1	0	1
 05507 small part default	3072	0	0	0
 05507 wide default	2112	0	0	0
