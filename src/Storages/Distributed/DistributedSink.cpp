@@ -590,7 +590,7 @@ void DistributedSink::writeSync(const Block & block)
         initWritingJobs(block_to_send, start, end);
 
         size_t jobs_count = random_shard_insert ? 1 : (remote_jobs_count + local_jobs_count);
-        size_t max_threads = std::min<size_t>(settings[Setting::max_distributed_connections], jobs_count);
+        size_t max_threads = std::min<size_t>(std::max<UInt64>(settings[Setting::max_distributed_connections], 1), jobs_count);
         pool.emplace(
             CurrentMetrics::DistributedInsertThreads,
             CurrentMetrics::DistributedInsertThreadsActive,
