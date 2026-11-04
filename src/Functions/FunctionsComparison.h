@@ -2369,6 +2369,14 @@ public:
             || (isNativeFloat(right) && is_64_bit_integer(left));
     }
 
+    /// Two `Decimal` values of the same scale (of up to 128 bits): `DecimalComparison` compares them without scaling, as the
+    /// integers they store, the narrower one converted to the wider type.
+    static bool isSameScaleDecimalPair(const IDataType & left, const IDataType & right)
+    {
+        return isDecimal(left) && isDecimal(right) && canBeNativeType(left) && canBeNativeType(right)
+            && getDecimalScale(left) == getDecimalScale(right);
+    }
+
     /// Two values of the same `Enum` type, compared by their numbers.
     static bool isSameEnumPair(const IDataType & left, const IDataType & right)
     {
@@ -2430,7 +2438,8 @@ public:
         if (WhichDataType(arguments[0]).isDateTime64() || WhichDataType(arguments[1]).isDateTime64())
             return Op<Int64, Int64>::compilable;
 
-        if (isWideIntegerPair(*arguments[0], *arguments[1]) || isSameEnumPair(*arguments[0], *arguments[1]))
+        if (isWideIntegerPair(*arguments[0], *arguments[1]) || isSameEnumPair(*arguments[0], *arguments[1])
+            || isSameScaleDecimalPair(*arguments[0], *arguments[1]))
             return Op<Int64, Int64>::compilable;
 
         if (isFloatAnd64BitIntegerPair(*arguments[0], *arguments[1]))
@@ -2486,6 +2495,14 @@ public:
                 auto * wide_type = b.getIntNTy(std::max(left_traits.bits, right_traits.bits) + 1);
                 auto * left_value = left_traits.is_signed ? b.CreateSExt(arguments[0].value, wide_type) : b.CreateZExt(arguments[0].value, wide_type);
                 auto * right_value = right_traits.is_signed ? b.CreateSExt(arguments[1].value, wide_type) : b.CreateZExt(arguments[1].value, wide_type);
+                return b.CreateSelect(CompileOp<Op>::compile(b, left_value, right_value, /*is_signed=*/ true), b.getInt8(1), b.getInt8(0));
+            }
+
+            if (isSameScaleDecimalPair(left_type, right_type))
+            {
+                const auto bits = static_cast<unsigned>(std::max(left_type.getSizeOfValueInMemory(), right_type.getSizeOfValueInMemory()) * 8);
+                auto * left_value = b.CreateSExtOrTrunc(arguments[0].value, b.getIntNTy(bits));
+                auto * right_value = b.CreateSExtOrTrunc(arguments[1].value, b.getIntNTy(bits));
                 return b.CreateSelect(CompileOp<Op>::compile(b, left_value, right_value, /*is_signed=*/ true), b.getInt8(1), b.getInt8(0));
             }
 

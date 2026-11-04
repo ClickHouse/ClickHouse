@@ -15,9 +15,9 @@ bitXor	49	49
 coalesce	209	225
 divide	100	112
 divideOrNull	100	100
-equals	91	180
-greater	91	180
-greaterOrEquals	91	180
+equals	93	180
+greater	93	180
+greaterOrEquals	93	180
 greatest	64	127
 identity	15	15
 if	206	446
@@ -34,8 +34,8 @@ isNotNull	2	15
 isNull	2	15
 isZeroOrNull	0	8
 least	64	127
-less	91	180
-lessOrEquals	91	180
+less	93	180
+lessOrEquals	93	180
 midpoint	8	116
 minus	88	128
 modulo	38	66
@@ -45,8 +45,8 @@ multiIf	105	225
 multiply	88	115
 negate	10	12
 not	8	8
-notEquals	91	180
-nullIf	91	180
+notEquals	93	180
+nullIf	93	180
 or	64	64
 plus	88	133
 positiveModulo	0	54
