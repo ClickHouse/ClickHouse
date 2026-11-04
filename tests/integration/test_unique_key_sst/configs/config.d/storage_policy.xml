@@ -58,15 +58,6 @@
                 </volumes>
                 <move_factor>0.0</move_factor>
             </plain_rewritable_extending>
-            <uk_reload>
-                <volumes>
-                    <!-- uk_reload_extra_volume -->
-                    <default>
-                        <disk>default</disk>
-                    </default>
-                </volumes>
-                <move_factor>0.0</move_factor>
-            </uk_reload>
         </policies>
     </storage_configuration>
 </clickhouse>

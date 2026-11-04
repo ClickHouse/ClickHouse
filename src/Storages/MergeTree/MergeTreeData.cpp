@@ -2318,6 +2318,17 @@ void MergeTreeData::checkStoragePolicy(const StoragePolicyPtr & new_storage_poli
 {
     const auto old_storage_policy = getStoragePolicy();
     old_storage_policy->checkCompatibleWith(new_storage_policy);
+
+    if (hasUniqueKey())
+    {
+        for (const auto & disk : new_storage_policy->getDisks())
+        {
+            if (!supportWritingWithAppend(disk))
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "UNIQUE KEY is not supported for table {}: disk {} does not support writing with append",
+                    getStorageID().getNameForLogs(), disk->getName());
+        }
+    }
 }
 
 
@@ -7109,32 +7120,6 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 ErrorCodes::BAD_ARGUMENTS,
                 "The disk of table {} with `table_disk = true` cannot be changed",
                 getStorageID().getNameForLogs());
-    }
-
-    /// UNIQUE KEY inserts need transactions, which a table supports only if all its disks support writing with append.
-    if (old_metadata.hasUniqueKey())
-    {
-        const auto & new_disk = (*alter_effective_settings)[MergeTreeSetting::disk];
-        const auto new_storage_policy = new_disk.changed
-            ? local_context->getStoragePolicyFromDisk(new_disk)
-            : local_context->getStoragePolicy((*alter_effective_settings)[MergeTreeSetting::storage_policy]);
-        if (new_storage_policy != getStoragePolicy())
-        {
-            Strings disk_names;
-            for (const auto & disk : new_storage_policy->getDisks())
-            {
-                /// `supportWritingWithAppend` looks through one wrapper only, and an encrypted disk can wrap another one.
-                auto innermost_disk = disk;
-                while (auto delegate_disk = innermost_disk->getDelegateDiskIfExists())
-                    innermost_disk = delegate_disk;
-                if (!supportWritingWithAppend(innermost_disk))
-                    disk_names.push_back(disk->getName());
-            }
-            if (!disk_names.empty())
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                    "UNIQUE KEY is not supported for table {}: disk {} does not support writing with append",
-                    getStorageID().getNameForLogs(), fmt::join(disk_names, ", "));
-        }
     }
 
     /// A `Replicated` database runs the same ALTER again on every other replica. Only the first run of it,

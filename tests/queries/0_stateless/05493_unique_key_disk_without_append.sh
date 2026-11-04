@@ -15,7 +15,6 @@ UUID=$($CLICKHOUSE_CLIENT -q "SELECT generateUUIDv4()")
 $CLICKHOUSE_CLIENT --enable_unique_key 1 -n -q "
 CREATE TABLE t_local (c0 Int32) ENGINE = MergeTree ORDER BY c0 UNIQUE KEY (c0) SETTINGS disk = 'local_plain_rewritable'; -- { serverError SUPPORT_IS_DISABLED }
 CREATE TABLE t_enc (c0 Int32) ENGINE = MergeTree ORDER BY c0 UNIQUE KEY (c0) SETTINGS disk = 'encrypted_s3_plain_rewritable_cache'; -- { serverError SUPPORT_IS_DISABLED }
-CREATE TABLE t_enc2 (c0 Int32) ENGINE = MergeTree ORDER BY c0 UNIQUE KEY (c0) SETTINGS disk = disk(type = 'encrypted', key = '1234567812345678', disk = 'encrypted_s3_plain_rewritable_cache'); -- { serverError SUPPORT_IS_DISABLED }
 CREATE MATERIALIZED VIEW mv ENGINE = MergeTree ORDER BY c0 UNIQUE KEY (c0) SETTINGS disk = 'local_plain_rewritable' AS SELECT 1::Int32 AS c0; -- { serverError SUPPORT_IS_DISABLED }
 CREATE MATERIALIZED VIEW rmv REFRESH EVERY 1 HOUR APPEND ENGINE = MergeTree ORDER BY c0 UNIQUE KEY (c0) SETTINGS disk = 'local_plain_rewritable' EMPTY AS SELECT 1::Int32 AS c0; -- { serverError SUPPORT_IS_DISABLED }
 

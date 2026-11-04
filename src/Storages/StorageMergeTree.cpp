@@ -227,31 +227,6 @@ static bool supportTransaction(const Disks & disks, LoggerPtr log)
     return true;
 }
 
-namespace
-{
-
-/// UNIQUE KEY inserts need transactions, which a table supports only if all its disks support writing with append.
-void checkDisksSupportWritingWithAppend(const StorageID & table_id, const Disks & disks)
-{
-    Strings disk_names;
-    for (const auto & disk : disks)
-    {
-        /// `supportWritingWithAppend` looks through one wrapper only, and an encrypted disk can wrap another one.
-        auto innermost_disk = disk;
-        while (auto delegate_disk = innermost_disk->getDelegateDiskIfExists())
-            innermost_disk = delegate_disk;
-        if (!supportWritingWithAppend(innermost_disk))
-            disk_names.push_back(disk->getName());
-    }
-
-    if (!disk_names.empty())
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "UNIQUE KEY is not supported for table {}: disk {} does not support writing with append",
-            table_id.getNameForLogs(), fmt::join(disk_names, ", "));
-}
-
-}
-
 StorageMergeTree::StorageMergeTree(
     const StorageID & table_id_,
     const String & relative_data_path_,
@@ -275,8 +250,10 @@ StorageMergeTree::StorageMergeTree(
     , cleanup_thread(*this)
     , support_transaction(supportTransaction(getDisks(), log.load()))
 {
-    if (mode <= LoadingStrictnessLevel::CREATE && metadata_.hasUniqueKey())
-        checkDisksSupportWritingWithAppend(getStorageID(), getDisks());
+    if (mode <= LoadingStrictnessLevel::CREATE && metadata_.hasUniqueKey() && !support_transaction)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "UNIQUE KEY is not supported for table {}: a disk of its storage policy does not support transactions",
+            getStorageID().getNameForLogs());
 
     initializeDirectoriesAndFormatVersion(relative_data_path_, LoadingStrictnessLevel::ATTACH <= mode, date_column_name);
 
@@ -547,8 +524,10 @@ StorageMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & met
 {
     assertNotReadonly();
 
-    if (metadata_snapshot->hasUniqueKey())
-        checkDisksSupportWritingWithAppend(getStorageID(), getDisks());
+    if (metadata_snapshot->hasUniqueKey() && !support_transaction)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "UNIQUE KEY is not supported for table {}: a disk of its storage policy does not support transactions",
+            getStorageID().getNameForLogs());
 
     const auto & settings = local_context->getSettingsRef();
     return std::make_shared<MergeTreeSink>(*this, metadata_snapshot, settings[Setting::max_partitions_per_insert_block], local_context);
