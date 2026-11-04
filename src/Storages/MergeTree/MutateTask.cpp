@@ -3924,6 +3924,7 @@ MutateTask::MutateTask(
 
 
 bool MutateTask::execute()
+try
 {
     Stopwatch watch;
     SCOPE_EXIT({ ctx->execute_elapsed_ns += watch.elapsedNanoseconds(); });
@@ -3960,11 +3961,15 @@ bool MutateTask::execute()
     }
     return false;
 }
+catch (...)
+{
+    /// Stops the other in-flight reads of this mutation: the thread group's cancellation predicates read this flag.
+    (*ctx->mutate_entry)->is_cancelled.store(true, std::memory_order_relaxed);
+    throw;
+}
 
 void MutateTask::cancel() noexcept
 {
-    (*ctx->mutate_entry)->is_cancelled.store(true, std::memory_order_relaxed);
-
     if (task)
         task->cancel();
 
@@ -4450,7 +4455,8 @@ bool MutateTask::prepare()
         ctx->metadata_snapshot,
         *commands_for_execution,
         context_for_reading,
-        [&my_ctx = *ctx](const Progress &) { my_ctx.checkOperationIsNotCanceled(); }
+        [&my_ctx = *ctx](const Progress &) { my_ctx.checkOperationIsNotCanceled(); },
+        [&my_ctx = *ctx] { (*my_ctx.mutate_entry)->is_cancelled.store(true, std::memory_order_relaxed); }
     );
 
     if (!is_storage_touched.any_rows_affected)

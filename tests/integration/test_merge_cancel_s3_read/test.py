@@ -607,6 +607,8 @@ def get_throttled(node):
         pytest.param("optimize", "read", id="optimize"),
         pytest.param("dry-run", "read", id="dry-run"),
         pytest.param("background", "next-column-setup", id="next-column-setup"),
+        pytest.param("mutation", "read", id="mutation"),
+        pytest.param("mutation-probe", "read", id="mutation-probe"),
     ],
 )
 def test_failed_merge_stops_its_other_s3_reads(cluster, broken_s3, runner, failure):
@@ -623,25 +625,34 @@ def test_failed_merge_stops_its_other_s3_reads(cluster, broken_s3, runner, failu
     thread, which destroys a failed task without cancelling it. `dry-run` is `OPTIMIZE ... DRY RUN
     PARTS`, whose reads run in the group of its query rather than of the merge. All three fail on a
     read of `a`. `next-column-setup` fails while it sets up the pipeline of `b`, with the reads of
-    `a` in flight.
+    `a` in flight. `mutation` is a mutation of one part that fails on a read of `a` while another
+    of its reads is in flight (`remote_filesystem_read_method = 'threadpool'`), and
+    `mutation-probe` fails the same way in the query that counts the rows the mutation affects.
     """
     node = cluster.instances["node"]
-    via_optimize = runner != "background"
-    if failure == "next-column-setup":
-        table = "t_failed_setup_bg"
-    else:
+    via_optimize = runner in ("optimize", "dry-run")
+    is_mutation = runner.startswith("mutation")
+    if failure == "read":
         table = {
             "background": "t_failed_read_bg",
             "optimize": "t_failed_read_opt",
             "dry-run": "t_failed_read_dry",
+            "mutation": "t_failed_read_mut",
+            "mutation-probe": "t_failed_read_mut_probe",
         }[runner]
+    else:
+        table = "t_failed_setup_bg"
     # The assignee needs `min_age_to_force_merge_seconds` to pick two parts of this size, see
-    # `test_shutdown_cancels_s3_read`.
+    # `test_shutdown_cancels_s3_read`. A mutation reads one part, so no merge competes with it.
+    num_parts = 1 if is_mutation else 2
     assignee_settings = (
         ""
-        if via_optimize
+        if via_optimize or is_mutation
         else ", min_age_to_force_merge_seconds = 1, merge_selecting_sleep_ms = 1000"
     )
+    # A mutation fails on the sizes of `a`, see below.
+    if is_mutation:
+        assignee_settings += ", string_serialization_version = 'with_size_stream'"
 
     node.query(f"DROP TABLE IF EXISTS {table} SYNC")
     node.query(
@@ -656,7 +667,7 @@ def test_failed_merge_stops_its_other_s3_reads(cluster, broken_s3, runner, failu
     optimize = None
     try:
         node.query(f"SYSTEM STOP MERGES {table}")
-        for part in range(2):
+        for part in range(num_parts):
             node.query(
                 f"INSERT INTO {table} SELECT number + {part} * 200000, "
                 f"repeat('x', 100), repeat('y', 100) FROM numbers(200000)"
@@ -666,7 +677,7 @@ def test_failed_merge_stops_its_other_s3_reads(cluster, broken_s3, runner, failu
             f"SELECT name FROM system.parts WHERE database = currentDatabase() "
             f"AND table = '{table}' AND active ORDER BY name"
         ).split()
-        assert len(parts) == 2, parts
+        assert len(parts) == num_parts, parts
         uuid = node.query(
             f"SELECT uuid FROM system.tables WHERE database = currentDatabase() "
             f"AND name = '{table}'"
@@ -690,8 +701,16 @@ def test_failed_merge_stops_its_other_s3_reads(cluster, broken_s3, runner, failu
         if failure == "read":
             # Not retryable, so the merge fails on this read. `NoSuchUpload` rather than
             # `AccessDenied`, which may be retried after refreshing the credentials.
-            broken_s3.setup_at_object_get(action="no_such_upload", key=a_keys[0])
-            in_flight_keys = b_keys
+            if is_mutation:
+                # A mutation prefetches every stream before it reads the first one, and reads the sizes
+                # of `a` before its data, so whichever column it reads first, the read of the data of `a`
+                # is in flight when this one fails.
+                failing_key = object_key(parts[0], "a.size.bin")
+                in_flight_keys = [object_key(parts[0], "a.bin")]
+            else:
+                failing_key = a_keys[0]
+                in_flight_keys = b_keys
+            broken_s3.setup_at_object_get(action="no_such_upload", key=failing_key)
             expected_error = "upload does not exist"
         else:
             node.query(f"SYSTEM ENABLE FAILPOINT {SETUP_FAILPOINT}")
@@ -700,6 +719,17 @@ def test_failed_merge_stops_its_other_s3_reads(cluster, broken_s3, runner, failu
         # Retryable, so the other reads spin in the retry loop, as in the arms above.
         for key in in_flight_keys:
             broken_s3.setup_at_object_get(count=1000000, action="slow_down", key=key)
+
+        # The count of the rows each one affects reads only `id` for the first, and `a` and `b` for the
+        # second, so only the second fails in it.
+        if runner == "mutation":
+            node.query(
+                f"ALTER TABLE {table} DELETE WHERE id % 2 = 0 SETTINGS mutations_sync = 0"
+            )
+        elif runner == "mutation-probe":
+            node.query(
+                f"ALTER TABLE {table} DELETE WHERE a = b SETTINGS mutations_sync = 0"
+            )
 
         throttled_before = get_throttled(node)
         node.query(f"SYSTEM START MERGES {table}")
@@ -754,14 +784,18 @@ def test_failed_merge_stops_its_other_s3_reads(cluster, broken_s3, runner, failu
         # writes this row only once its exception has left it, so a task stuck destroying its
         # in-flight reads writes none. A dry run writes no row, and its error is checked below.
         if runner != "dry-run":
+            if is_mutation:
+                event = "event_type = 'MutatePart'"
+            else:
+                event = "event_type = 'MergeParts' AND merge_algorithm = 'Vertical'"
             node.query("SYSTEM FLUSH LOGS part_log")
             assert int(
                 node.query(
                     f"SELECT count() FROM system.part_log WHERE database = currentDatabase() "
-                    f"AND table = '{table}' AND event_type = 'MergeParts' AND error != 0 "
-                    f"AND merge_algorithm = 'Vertical' AND exception LIKE '%{expected_error}%'"
+                    f"AND table = '{table}' AND {event} AND error != 0 "
+                    f"AND exception LIKE '%{expected_error}%'"
                 )
-            ), "no vertical merge failed as injected, so the oracle above was vacuous"
+            ), "no merge or mutation failed as injected, so the oracle above was vacuous"
 
         if via_optimize:
             _, error = optimize.get_answer_and_error()
@@ -779,7 +813,7 @@ def test_failed_merge_stops_its_other_s3_reads(cluster, broken_s3, runner, failu
                 )
 
         # A failed merge keeps its source parts, so no data is lost.
-        assert int(node.query(f"SELECT count() FROM {table}")) == 400000
+        assert int(node.query(f"SELECT count() FROM {table}")) == 200000 * num_parts
         assert (
             int(
                 node.query(
@@ -787,7 +821,7 @@ def test_failed_merge_stops_its_other_s3_reads(cluster, broken_s3, runner, failu
                     f"WHERE database = currentDatabase() AND table = '{table}' AND active"
                 )
             )
-            == 2
+            == num_parts
         )
     finally:
         if failure == "next-column-setup":

@@ -265,7 +265,8 @@ IsStorageTouched isStorageTouchedByMutations(
     const StorageMetadataPtr & /*metadata_snapshot*/,
     const std::vector<MutationCommand> & commands,
     ContextPtr context,
-    std::function<void(const Progress & value)> check_operation_is_not_cancelled)
+    std::function<void(const Progress & value)> check_operation_is_not_cancelled,
+    std::function<void()> on_exception)
 {
     static constexpr IsStorageTouched no_rows = {.any_rows_affected = false, .all_rows_affected = false};
     static constexpr IsStorageTouched all_rows = {.any_rows_affected = true, .all_rows_affected = true};
@@ -335,15 +336,24 @@ IsStorageTouched isStorageTouchedByMutations(
     io.pipeline.setProgressCallback(check_operation_is_not_cancelled);
 
     Block block;
-    while (block.rows() == 0 && executor.pull(block));
+    try
+    {
+        while (block.rows() == 0 && executor.pull(block));
 
-    if (!block.rows())
-        return no_rows;
-    if (block.rows() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "count() expression returned {} rows, not 1", block.rows());
+        if (!block.rows())
+            return no_rows;
+        if (block.rows() != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "count() expression returned {} rows, not 1", block.rows());
 
-    Block tmp_block;
-    while (executor.pull(tmp_block));
+        Block tmp_block;
+        while (executor.pull(tmp_block));
+    }
+    catch (...)
+    {
+        /// `executor` and `io` wait for the reads still in flight when they are destroyed.
+        on_exception();
+        throw;
+    }
 
     auto count = (*block.getByName("count()").column)[0].safeGet<UInt64>();
     ProfileEvents::increment(ProfileEvents::MutationAffectedRowsUpperBound, count);

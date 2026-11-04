@@ -31,13 +31,15 @@ ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, co
 size_t evaluateMutationCommandsSize(const std::vector<MutationCommand> & commands, const StoragePtr & storage, ContextPtr context);
 
 /// Return false if the data isn't going to be changed by mutations.
+/// `on_exception` runs when reading the part fails, before the reads still in flight are waited for.
 IsStorageTouched isStorageTouchedByMutations(
     MergeTreeData::DataPartPtr source_part,
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
     const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MutationCommand> & commands,
     ContextPtr context,
-    std::function<void(const Progress & value)> check_operation_is_not_cancelled
+    std::function<void(const Progress & value)> check_operation_is_not_cancelled,
+    std::function<void()> on_exception
 );
 
 /// Build the WHERE-style filter for a mutation command. The parsed
