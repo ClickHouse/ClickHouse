@@ -1137,7 +1137,7 @@ private:
                 simd_kernel = nullptr;
 #endif
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         const auto untranspose_kernel = SerializationQBit::resolveUntransposeBitPlane<Word>();
 #else
         constexpr auto untranspose_kernel = TargetSpecific::Default::untransposeBitPlaneImpl<Word>;
@@ -1364,7 +1364,7 @@ private:
         simsimd_metric_dense_punned_t simd_kernel = resolveSimdKernel<Float32>();
 #endif
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         const auto untranspose_kernel = SerializationQBit::resolveUntransposeBitPlane<uint8_t>();
 #else
         constexpr auto untranspose_kernel = TargetSpecific::Default::untransposeBitPlaneImpl<uint8_t>;
