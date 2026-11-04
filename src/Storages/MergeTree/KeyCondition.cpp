@@ -4191,6 +4191,17 @@ void KeyCondition::prepareSetAtomsForIn(
     if (!prepared_set->hasExplicitSetElements())
         return;
 
+    const auto & function_name = func.getFunctionName();
+    const bool is_negative = function_name == "notIn" || function_name == "globalNotIn"
+        || function_name == "notNullIn" || function_name == "globalNotNullIn";
+    if (is_negative && func.getFunctionBase()->useNullAsUnknownSemanticsForIn() && prepared_set->hasNull())
+    {
+        /// With standard NULL semantics, a match makes `NOT IN` false and a miss makes it NULL.
+        /// Therefore a set containing NULL cannot make a negative predicate true for any key.
+        group.atoms.emplace_back(RPNElement::ALWAYS_FALSE);
+        return;
+    }
+
     /** Try to convert set columns to primary key columns.
       * Example: SELECT id FROM test_table WHERE id IN (SELECT 1);
       * In this example table `id` column has type UInt64, Set column has type UInt8. To use index
