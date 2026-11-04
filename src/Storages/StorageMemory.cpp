@@ -5,7 +5,6 @@
 #include <Common/FailPoint.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/MemoryTrackerUtils.h>
-#include <Columns/ColumnCompressed.h>
 #include <Core/Names.h>
 #include <Core/Settings.h>
 
@@ -16,11 +15,12 @@
 #include <Databases/DatabasesCommon.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/getColumnFromBlock.h>
-#include <Interpreters/inplaceBlockConversions.h>
+#include <Interpreters/addMissingDefaults.h>
 #include <Interpreters/Context.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/ExpressionActions.h>
@@ -57,7 +57,6 @@
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <Disks/TemporaryFileOnDisk.h>
 #include <IO/copyData.h>
-#include <Common/FailPoint.h>
 #include <Common/FileChecker.h>
 #include <Common/formatReadable.h>
 
@@ -510,17 +509,14 @@ void StorageMemory::truncate(
 
 static Names storedColumnNames(const Block & block)
 {
-    Names names;
-    names.reserve(block.columns());
-    for (const auto & column : block)
-        names.push_back(column.name);
+    auto names = block.getNames();
     std::sort(names.begin(), names.end());
     return names;
 }
 
 static void renameStoredColumn(Block & block, const String & from, const String & to)
 {
-    if (!block.findByName(from))
+    if (!block.has(from))
         return;
 
     auto renamed = block.getByName(from);
@@ -529,42 +525,35 @@ static void renameStoredColumn(Block & block, const String & from, const String 
     block.insert(std::move(renamed));
 }
 
-/// An exact column wins over dotted names, matching `ColumnsDescription::remove`.
+/// Exact name wins, same as `ColumnsDescription::remove`. Otherwise drop the flattened `name.*` group.
 static void eraseStoredColumn(Block & block, const String & name)
 {
-    if (block.findByName(name))
+    if (block.has(name))
     {
         block.erase(name);
         return;
     }
 
-    const String prefix = name + ".";
-    Names nested;
-    for (const auto & column : block)
-        if (column.name.starts_with(prefix))
-            nested.push_back(column.name);
-    for (const auto & nested_name : nested)
+    for (const auto & nested_name : Nested::getAllNestedColumnsForTable(block, name))
         block.erase(nested_name);
 }
 
-static void renameStoredColumnOrGroup(Block & block, const String & from, const String & to)
+/// `DROP` or `RENAME` of `n` also frees `n.*`.
+static bool nameOrParentWasFreed(const NameSet & freed, const String & name)
 {
-    if (block.findByName(from))
+    for (String prefix = name; ; )
     {
-        renameStoredColumn(block, from, to);
-        return;
-    }
+        if (freed.contains(prefix))
+            return true;
 
-    const String prefix = from + ".";
-    Names nested;
-    for (const auto & column : block)
-        if (column.name.starts_with(prefix))
-            nested.push_back(column.name);
-    for (const auto & nested_name : nested)
-        renameStoredColumn(block, nested_name, to + nested_name.substr(from.size()));
+        const auto dot = prefix.rfind('.');
+        if (dot == String::npos)
+            return false;
+        prefix.resize(dot);
+    }
 }
 
-/// Drop and rename retire stored values so a reused name reads its new default.
+/// Materialize names this statement freed or cleared. Leave other missing columns for the read path.
 static void applyStoredColumnIdentity(
     Block & block,
     const AlterCommands & commands,
@@ -573,72 +562,69 @@ static void applyStoredColumnIdentity(
     bool compress)
 {
     const size_t rows = block.rows();
+    NameSet freed;
+    NameSet cleared;
+
     for (const auto & command : commands)
     {
         if (command.ignore || command.partition)
             continue;
 
         if (command.type == AlterCommand::RENAME_COLUMN)
-            renameStoredColumnOrGroup(block, command.column_name, command.rename_to);
+        {
+            freed.insert(command.column_name);
+            renameStoredColumn(block, command.column_name, command.rename_to);
+        }
         else if (command.type == AlterCommand::DROP_COLUMN)
         {
             /// `IF EXISTS` drops only an exact name. `CLEAR` still rewrites a flattened group.
-            if (command.if_exists && !command.clear && !block.findByName(command.column_name))
+            if (command.if_exists && !command.clear && !block.has(command.column_name))
                 continue;
+
+            if (command.clear)
+                cleared.insert(command.column_name);
+            else
+                freed.insert(command.column_name);
             eraseStoredColumn(block, command.column_name);
         }
     }
 
-    if (rows == 0)
-        return;
+    NamesAndTypesList required;
+    bool materialize = false;
+    for (const auto & column : block)
+        required.emplace_back(column.name, column.type);
 
-    NamesAndTypesList missing_defaults;
-    for (const auto & column : metadata.columns)
+    for (const auto & column : metadata.columns.getAllPhysical())
     {
-        if (column.default_desc.kind == ColumnDefaultKind::Alias || column.default_desc.kind == ColumnDefaultKind::Ephemeral)
-            continue;
         if (block.has(column.name))
             continue;
-
-        const auto & desc = column.default_desc;
-        const bool has_expression = desc.expression
-            && (desc.kind == ColumnDefaultKind::Default || desc.kind == ColumnDefaultKind::Materialized);
-        if (has_expression)
-            missing_defaults.emplace_back(column.name, column.type);
-        else
-            block.insert({column.type->createColumnConst(rows, column.type->getDefault()), column.type, column.name});
+        if (!cleared.contains(column.name) && !nameOrParentWasFreed(freed, column.name))
+            continue;
+        required.emplace_back(column.name, column.type);
+        materialize = true;
     }
 
-    if (!missing_defaults.empty())
-    {
-        const bool added_dummy = block.columns() == 0;
-        if (added_dummy)
-        {
-            block.insert(
-            {
-                ColumnConst::create(ColumnUInt8::create(1, static_cast<UInt8>(0)), rows),
-                std::make_shared<DataTypeUInt8>(),
-                "_dummy",
-            });
-        }
+    if (!materialize || rows == 0)
+        return;
 
-        for (auto & column : block)
-            column.column = column.column->decompress();
+    /// With no columns, `block.rows()` is 0. One placeholder keeps `rows` for `addMissingDefaults`.
+    if (block.columns() == 0)
+        block.insert({
+            ColumnConst::create(ColumnUInt8::create(1, static_cast<UInt8>(0)), rows),
+            std::make_shared<DataTypeUInt8>(),
+            "_dummy"});
 
-        if (auto dag = evaluateMissingDefaults(block, missing_defaults, metadata.columns, context, false))
-        {
-            auto actions = std::make_shared<ExpressionActions>(std::move(*dag), ExpressionActionsSettings(context->getSettingsRef()));
-            actions->execute(block);
-        }
-        if (added_dummy)
-            block.erase("_dummy");
-    }
+    for (auto & column : block)
+        column.column = column.column->decompress();
+
+    auto dag = addMissingDefaults(block, required, metadata.columns, context);
+    auto actions = std::make_shared<ExpressionActions>(std::move(dag), ExpressionActionsSettings(context->getSettingsRef()));
+    actions->execute(block);
 
     if (compress)
     {
         for (auto & column : block)
-            if (!typeid_cast<const ColumnCompressed *>(column.column.get()))
-                column.column = column.column->compress(true);
+            column.column = column.column->compress(true);
     }
 }
 

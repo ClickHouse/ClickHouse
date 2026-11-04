@@ -831,6 +831,20 @@ static void splitAndModifyMutationCommands(
         return name;
     };
 
+    /// `nameInPart` already applied this mutation's renames. Keep a `DROP` of a destination on that
+    /// on-disk name (`DROP a, RENAME b TO a`).
+    NameSet rename_targets_in_mutation;
+    for (const auto & command : commands)
+        if (command.type == MutationCommand::Type::RENAME_COLUMN)
+            rename_targets_in_mutation.insert(command.rename_to);
+
+    auto onDiskName = [&](const String & name) -> String
+    {
+        if (rename_targets_in_mutation.contains(name))
+            return name;
+        return nameInPart(name);
+    };
+
     /// `a.b.x` can be a subcolumn of `a.b` even when a column `a` exists, so resolve by type, not by prefix.
     auto getColumnNameInStorage = [&](const String & name) -> std::optional<String>
     {
@@ -992,7 +1006,7 @@ static void splitAndModifyMutationCommands(
 
                         /// A group can store one child and keep another as a missing-column marker.
                         const auto & serialization_infos = part->getSerializationInfos();
-                        const auto marker_root = nameInPart(command.column_name);
+                        const auto marker_root = onDiskName(command.column_name);
                         auto push_marker = [&](const String & marker_name)
                         {
                             if (!serialization_infos.isMissingColumn(marker_name))
@@ -1022,7 +1036,7 @@ static void splitAndModifyMutationCommands(
             else if (command.type == MutationCommand::Type::DROP_COLUMN)
             {
                 /// Marker-only DROP/CLEAR must still update metadata and dependencies.
-                const auto name_in_part = nameInPart(command.column_name);
+                const auto name_in_part = onDiskName(command.column_name);
                 const auto & serialization_infos = part->getSerializationInfos();
                 const bool share_nested_offsets = (*part->storage.getSettings())[MergeTreeSetting::share_nested_offsets];
 
@@ -1343,19 +1357,19 @@ static void splitAndModifyMutationCommands(
                     for_interpreter.push_back(command);
 
                 auto file_command = command;
-                /// `part_columns` follows renames in this mutation, so `b` can name source column `a`.
+                /// Map the drop onto an earlier rename's source, not onto a name this mutation reuses.
                 if (command.type == MutationCommand::Type::DROP_COLUMN)
                 {
                     if (auto it = renamed_to_source.find(command.column_name); it != renamed_to_source.end())
                         file_command.column_name = it->second;
-                    else if (const auto source_name = nameInPart(command.column_name); source_name != command.column_name)
+                    else if (const auto source_name = onDiskName(command.column_name); source_name != command.column_name)
                         file_command.column_name = source_name;
                 }
                 for_file_renames.push_back(std::move(file_command));
             }
             else if (command.type == MutationCommand::Type::DROP_COLUMN)
             {
-                const auto name_in_part = nameInPart(command.column_name);
+                const auto name_in_part = onDiskName(command.column_name);
                 const bool share_nested = (*part->storage.getSettings())[MergeTreeSetting::share_nested_offsets];
                 /// `part_columns` already includes renames from earlier commands of this mutation.
                 const auto source_columns = part->getColumnsDescription();
@@ -2358,13 +2372,12 @@ static NameToNameVector collectFilesForRenames(
             }
             else if (command.type == MutationCommand::Type::RENAME_COLUMN)
             {
-                /// Delete the source file. Renaming it first would keep the data under the dropped name.
-                const bool source_or_target_dropped = std::ranges::any_of(commands_for_renames, [&](const auto & other)
+                /// `RENAME a TO b, DROP b` deletes `a`. `DROP a, RENAME b TO a` still renames `b`.
+                const bool source_dropped = std::ranges::any_of(commands_for_renames, [&](const auto & other)
                 {
-                    return other.type == MutationCommand::Type::DROP_COLUMN
-                        && (other.column_name == command.column_name || other.column_name == command.rename_to);
+                    return other.type == MutationCommand::Type::DROP_COLUMN && other.column_name == command.column_name;
                 });
-                if (source_or_target_dropped)
+                if (source_dropped)
                 {
                     remove_column_streams(command.column_name);
                     continue;
