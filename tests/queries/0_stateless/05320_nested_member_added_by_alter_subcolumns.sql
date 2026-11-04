@@ -99,7 +99,6 @@ SELECT k, materialize(n.t.q), materialize(n.m.keys), materialize(n.nt.null) FROM
 SELECT k, materialize(n.j.x), materialize(n.j.x.size0), materialize(n.j.x.size1), arraySum(n.j.x.size1) FROM t_nested_add_compact ORDER BY k;
 SELECT k, n.a, materialize(n.c.size1) FROM t_nested_add_compact ORDER BY k;
 
--- Memory finds the shared offsets only through a sibling read in the same step.
 SELECT k, n.a, n.c.size1 FROM t_nested_add_memory ORDER BY k;
 SELECT k, n.a, materialize(n.e.size1), materialize(n.e.size2) FROM t_nested_add_memory ORDER BY k;
 SELECT k, n.a, materialize(n.m.size1) FROM t_nested_add_memory ORDER BY k;
@@ -113,3 +112,14 @@ SELECT k, n.a, materialize(n.j.x), materialize(n.j.x.size0), materialize(n.j.x.s
 DROP TABLE t_nested_add_wide;
 DROP TABLE t_nested_add_compact;
 DROP TABLE t_nested_add_memory;
+
+-- A FINAL merge combines a part written before the ALTER with one that stores the added member.
+DROP TABLE IF EXISTS t_nested_add_final;
+CREATE TABLE t_nested_add_final (id UInt64, v UInt64, `p.x` Array(Int64))
+ENGINE = ReplacingMergeTree(v) ORDER BY id;
+SYSTEM STOP MERGES t_nested_add_final;
+INSERT INTO t_nested_add_final VALUES (1, 1, [1, 2]), (2, 1, [3]);
+ALTER TABLE t_nested_add_final ADD COLUMN `p.j` Array(JSON);
+INSERT INTO t_nested_add_final VALUES (1, 2, [7, 8, 9], ['{"r":["a","b"]}', '{"r":["c",1]}', '{"r":5}']), (2, 2, [10, 11], ['{"r":[1,2]}', '{"r":[2.5,"d",null]}']);
+SELECT id, v, p.x, p.j.r.:`Array(Dynamic)`, p.j.r.:`Array(Nullable(String))` FROM t_nested_add_final FINAL ORDER BY id;
+DROP TABLE t_nested_add_final;
