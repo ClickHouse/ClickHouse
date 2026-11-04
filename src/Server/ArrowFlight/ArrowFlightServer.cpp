@@ -634,9 +634,7 @@ static arrow::Result<std::tuple<std::shared_ptr<arrow::Schema>, std::vector<std:
     bool query_finished = false;
     bool handling_exception = false;
     SCOPE_EXIT({
-        if (query_finished)
-            block_io.onFinish();
-        else if (!handling_exception)
+        if (!query_finished && !handling_exception)
             block_io.onCancelOrConnectionLoss();
     });
 
@@ -690,8 +688,6 @@ static arrow::Result<std::tuple<std::shared_ptr<arrow::Schema>, std::vector<std:
             tables.emplace_back(
         CHColumnToArrowColumn::calculateArrowTable(
             *header, "Arrow", chunks, conversion_settings, header->size(), schema));
-
-        query_finished = true;
     }
     catch (...)
     {
@@ -699,6 +695,9 @@ static arrow::Result<std::tuple<std::shared_ptr<arrow::Schema>, std::vector<std:
         block_io.onException();
         throw;
     }
+
+    block_io.onFinish();
+    query_finished = true;
 
     return std::tuple{schema, tables};
 }
@@ -848,9 +847,7 @@ arrow::Status ArrowFlightServer::GetSchema(
                 bool query_finished = false;
                 bool handling_exception = false;
                 SCOPE_EXIT({
-                    if (query_finished)
-                        block_io.onFinish();
-                    else if (!handling_exception)
+                    if (!query_finished && !handling_exception)
                         block_io.onCancelOrConnectionLoss();
                 });
 
@@ -870,8 +867,6 @@ arrow::Status ArrowFlightServer::GetSchema(
                         ARROW_RETURN_NOT_OK(status);
                         schema = status.ValueUnsafe();
                     }
-
-                    query_finished = true;
                 }
                 catch (...)
                 {
@@ -879,6 +874,9 @@ arrow::Status ArrowFlightServer::GetSchema(
                     block_io.onException();
                     throw;
                 }
+
+                block_io.onFinish();
+                query_finished = true;
             }
         }
 
@@ -1146,9 +1144,7 @@ arrow::Status ArrowFlightServer::DoGet(
             bool query_finished = false;
             bool handling_exception = false;
             SCOPE_EXIT({
-                if (query_finished)
-                    block_io.onFinish();
-                else if (!handling_exception)
+                if (!query_finished && !handling_exception)
                     block_io.onCancelOrConnectionLoss();
             });
 
@@ -1173,8 +1169,6 @@ arrow::Status ArrowFlightServer::DoGet(
                 auto header = executor.getHeader();
                 auto ch_to_arrow_converter = createCHToArrowConverter(header, query_context);
                 ch_to_arrow_converter->chChunkToArrowTable(table, chunks, header.columns());
-
-                query_finished = true;
             }
             catch (...)
             {
@@ -1182,6 +1176,9 @@ arrow::Status ArrowFlightServer::DoGet(
                 block_io.onException();
                 throw;
             }
+
+            block_io.onFinish();
+            query_finished = true;
         }
 
         auto stream_res = arrow::RecordBatchReader::MakeFromIterator(
@@ -1288,9 +1285,7 @@ arrow::Status ArrowFlightServer::DoPut(
         bool query_finished = false;
         bool handling_exception = false;
         SCOPE_EXIT({
-            if (query_finished)
-                block_io.onFinish();
-            else if (!handling_exception)
+            if (!query_finished && !handling_exception)
                 block_io.onCancelOrConnectionLoss();
         });
 
@@ -1317,8 +1312,6 @@ arrow::Status ArrowFlightServer::DoPut(
                 CompletedPipelineExecutor executor(pipeline);
                 executor.execute();
             }
-
-            query_finished = true;
         }
         catch (...)
         {
@@ -1326,6 +1319,9 @@ arrow::Status ArrowFlightServer::DoPut(
             block_io.onException();
             throw;
         }
+
+        block_io.onFinish();
+        query_finished = true;
 
         if (!dont_write_flight_sql_metadata)
         {
