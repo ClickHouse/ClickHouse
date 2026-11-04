@@ -31,19 +31,22 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-/// Checks the endpoints the disk was built with, in every location: macros in its definition may expand
-/// to another host by now.
-static void checkCustomDiskRemoteHosts(const DiskPtr & disk, const ContextPtr & context)
+/// Checks the endpoints a custom disk and the custom disks it wraps were built with, in every location:
+/// macros in a definition may expand to another host by now. Disks from the server config are exempt.
+static void checkCustomDiskRemoteHosts(DiskPtr disk, const ContextPtr & context)
 {
-    const auto * object_disk = dynamic_cast<const DiskObjectStorage *>(disk.get());
-    if (!object_disk)
-        return;
-
     const auto & filter = context->getGlobalContext()->getRemoteHostFilter();
-    for (const auto & [_, storage] : object_disk->getObjectStorages())
+    for (; disk && disk->isCustomDisk(); disk = disk->getDelegateDiskIfExists())
     {
-        if (storage->getType() == ObjectStorageType::HDFS)
-            filter.checkURL(Poco::URI(storage->getDescription()));
+        const auto * object_disk = dynamic_cast<const DiskObjectStorage *>(disk.get());
+        if (!object_disk)
+            continue;
+
+        for (const auto & [_, storage] : object_disk->getObjectStorages())
+        {
+            if (storage->getType() == ObjectStorageType::HDFS)
+                filter.checkURL(Poco::URI(storage->getDescription()));
+        }
     }
 }
 
@@ -126,9 +129,20 @@ static std::string getOrCreateCustomDisk(
     if (!attach && (disk_name.empty() || disk_name == "." || disk_name == ".." || disk_name.contains('/')))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk name cannot be empty, `.`, `..` or contain `/` ({})", disk_name);
 
+    /// A wrapper (`encrypted`, `cache`) takes the disk it names from the map, so no object storage is built for it.
+    const bool is_wrapper = config->has("disk");
+    const auto check_wrapped_disk = [&](const DisksMap & disks_map)
+    {
+        if (auto it = disks_map.find(config->getString("disk")); it != disks_map.end())
+            checkCustomDiskRemoteHosts(it->second, context);
+    };
+
     bool created = false;
     auto disk = context->getOrCreateDisk(disk_name, [&](const DisksMap & disks_map) -> DiskPtr {
         created = true;
+        /// Before the wrapper is built: `cache` starts the wrapped disk, which writes to it.
+        if (!attach && is_wrapper)
+            check_wrapped_disk(disks_map);
         auto result = DiskFactory::instance().create(
             disk_name, *config, /* config_path */"", context, disks_map, /* attach */attach, /* custom_disk */true);
         /// Mark that disk can be used without storage policy.
@@ -150,8 +164,13 @@ static std::string getOrCreateCustomDisk(
 
     /// A reused disk was checked against an older `remote_url_allow_hosts` or only warned about on load.
     /// A short `ATTACH` reuses the disk of its own stored definition, which is exempt like loading at start.
-    if (!created && !attach && !stored_definition && !config->has("disk"))
-        checkCustomDiskRemoteHosts(disk, context);
+    if (!created && !attach && !stored_definition)
+    {
+        if (is_wrapper)
+            check_wrapped_disk(context->getDisksMap());
+        else
+            checkCustomDiskRemoteHosts(disk, context);
+    }
 
     return disk_name;
 }
