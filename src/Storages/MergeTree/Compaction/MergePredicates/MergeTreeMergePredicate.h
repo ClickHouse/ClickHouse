@@ -35,7 +35,7 @@ private:
     /// Data versions of the regular parts. Filled only if there are patch parts in the table.
     /// Used to check that a merge of patch parts does not span the data version of an existing part.
     DataVersionsByPartition data_versions_by_partition;
-    /// Taken before the patch parts are read, so a patch allocated after it is above `lastAllocatedBlock`.
+    /// Taken before the parts are read, so a part allocated after it is above `lastAllocatedBlock`.
     CommittingBlocksSnapshot reservations;
 };
 

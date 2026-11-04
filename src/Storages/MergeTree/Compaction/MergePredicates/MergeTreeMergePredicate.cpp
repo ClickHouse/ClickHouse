@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <iterator>
+#include <limits>
 
 namespace DB
 {
@@ -111,9 +112,7 @@ MergeTreeMergePredicate::MergeTreeMergePredicate(
 
     /// The patch parts that a merge applies must be visible to that merge itself, and nothing here
     /// checks their visibility later, so they are taken from the active parts that the transaction sees.
-    /// A patch above the snapshot is an attached one (`updateLightweight` allocates its block under the
-    /// same counter, `ATTACH PART` does not); it is left for read time, like a patch above a pending update.
-    const Int64 max_patch_version = reservations.minUpdateBlock().value_or(reservations.lastAllocatedBlock() + 1);
+    const Int64 max_patch_version = reservations.minUpdateBlock().value_or(std::numeric_limits<Int64>::max());
     patches_by_partition = getPatchPartsByPartition(getPatchPartInfos(storage, tx_), max_patch_version);
 }
 
@@ -238,8 +237,9 @@ PartsRange MergeTreeMergePredicate::getPatchesToApplyOnMerge(PartsRangeView rang
     if (it == patches_by_partition.end() || it->second.empty())
         return {};
 
-    /// Only an attached patch part reaches the bound below: `updateLightweight` waits for lower mutations
-    /// and takes this mutex to plan its read, `ATTACH PART` does neither. Such a patch is left for read time.
+    /// A block allocated but not visible yet bounds the patches a merge applies like a registered mutation
+    /// does. Only an attached patch part lands above one: `updateLightweight` waits for lower mutations and
+    /// takes this mutex to plan its read, `ATTACH PART` does neither. Such a patch is left for read time.
     Int64 next_version = storage.getNextMutationVersion(first_part.getDataVersion(), merge_mutate_lock);
     if (auto reservation = reservations.firstReservationAfter(first_part.getDataVersion()))
         next_version = next_version == 0 ? reservation->number : std::min(next_version, reservation->number);

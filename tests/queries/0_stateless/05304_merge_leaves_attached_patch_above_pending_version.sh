@@ -4,8 +4,9 @@
 # no-replicated-database -- the local timing of `ATTACH PART`, the mutation and `OPTIMIZE` is assumed.
 # no-shared-merge-tree -- the bounds under test are `MergeTreeMergePredicate`'s.
 
-# `ATTACH PART` of a patch takes a fresh block number without waiting, so it can land above a not yet registered
-# mutation or above a running `OPTIMIZE`'s snapshot. The merge must leave such a patch for read time.
+# `ATTACH PART` of a patch takes a fresh block number without waiting, so it can land above a mutation that has
+# allocated its block but is not registered yet. The merge must leave such a patch for read time, as it would
+# below a registered mutation. A patch attached after a running `OPTIMIZE`'s snapshot is applied like any other.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
