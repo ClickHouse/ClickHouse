@@ -556,7 +556,7 @@ namespace
             client_ptr->setKMSHeaders(request);
         }
 
-        /// Returns true if the single-part upload failed with EntityTooLarge / InvalidRequest and the
+        /// Returns true if the single-part upload of a non-empty object failed with EntityTooLarge / InvalidRequest and the
         /// caller should fall back to a multipart upload. The fallback is done by the caller (not here)
         /// so the PutObject request and its in-memory body can be released first.
         bool processPutRequest(S3::PutObjectRequest & request)
@@ -593,7 +593,8 @@ namespace
                     return false;
                 }
 
-                if (outcome.GetError().GetExceptionName() == "EntityTooLarge" || outcome.GetError().GetExceptionName() == "InvalidRequest")
+                if (size && (outcome.GetError().GetExceptionName() == "EntityTooLarge" ||
+                             outcome.GetError().GetExceptionName() == "InvalidRequest"))
                 {
                     // Can't come here with MinIO, MinIO allows single part upload for large objects.
                     LOG_INFO(
@@ -830,7 +831,8 @@ namespace
                     outcome.GetError().GetExceptionName() == "AccessDenied" ||
                     S3::Client::RetryStrategy::useGCSRewrite(outcome.GetError()))
                 {
-                    if (!supports_multipart_copy || outcome.GetError().GetExceptionName() == "AccessDenied")
+                    /// A multipart upload cannot write an empty object.
+                    if (!supports_multipart_copy || !size || outcome.GetError().GetExceptionName() == "AccessDenied")
                     {
                         LOG_INFO(
                             log,
