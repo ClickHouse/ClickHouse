@@ -22,6 +22,7 @@
 #include <memory>
 #include <optional>
 #include <thread>
+#include <vector>
 
 namespace ProfileEvents
 {
@@ -523,6 +524,97 @@ TEST(RuntimeFilterLookup, LookupMergesExactContainsFilters)
     expectMask(apply_filter->execute(arguments, apply_filter->getResultType(), 3, false), {1, 0, 1});
     EXPECT_EQ(filter->getStats().blocks_processed.load(), 1);
     EXPECT_EQ(filter->getStats().rows_checked.load(), 3);
+}
+
+TEST(RuntimeFilterLookup, LookupMergesPartialsWithPendingKeysInPairs)
+{
+    /// Dense bitset partials that keep their keys as values (3 keys over 2M values; 16 x 64 KiB of bits cover 8M values)
+    /// are merged with each other; the registered filter takes their union in one merge when the last expected partial
+    /// is added, so its count of expected merges stays 3 until then.
+    const auto type = makeUInt64Type();
+    auto lookup = createRuntimeFilterLookup();
+    const auto make_filter = [&](UInt64 key)
+    {
+        auto filter = std::make_unique<RuntimeFilter>(
+            /*filters_to_merge_=*/3,
+            makeRuntimeFilterConfig(),
+            RuntimeFilter::Adaptive(type, makeGeometry(64_KiB, 2, 3, 1.0), std::nullopt, false));
+        filter->insert(makeUInt64Column({key, 1'000'000 + key, 2'000'000 + key}));
+        EXPECT_TRUE(filter->hasPendingKeys());
+        return filter;
+    };
+    lookup->add("runtime_filter", "runtime_filter", make_filter(1));
+    auto filter = lookup->find("runtime_filter");
+    ASSERT_TRUE(filter);
+    for (const UInt64 key : {2, 3})
+    {
+        lookup->add("runtime_filter", "runtime_filter", make_filter(key));
+        EXPECT_FALSE(filter->isReady());
+        EXPECT_EQ(filter->getFiltersToMerge(), 3);
+    }
+    lookup->add("runtime_filter", "runtime_filter", make_filter(4));
+    ASSERT_TRUE(filter->isReady());
+    expectMask(
+        filter->find(makeUInt64ColumnWithType({1, 2, 3, 4, 5, 1'000'001, 1'000'004, 1'000'005, 2'000'003, 2'000'000}, type)),
+        {1, 1, 1, 1, 0, 1, 1, 0, 1, 0});
+}
+
+TEST(RuntimeFilterLookup, LookupMergesPartialsOfConcurrentStreams)
+{
+    /// All streams add their partials at once: half keep sparse keys as values and are merged in pairs, half have
+    /// their dense keys in bits and are merged directly. The registered filter becomes ready with every key.
+    const auto type = makeUInt64Type();
+    constexpr UInt64 streams = 32;
+    auto lookup = createRuntimeFilterLookup();
+    std::barrier<> sync(streams);
+    std::vector<std::thread> threads;
+    std::vector<UInt64> keys;
+    for (UInt64 stream = 0; stream < streams; ++stream)
+    {
+        if (stream % 2 == 0)
+            keys.insert(keys.end(), {stream, 1'000'000 + stream, 2'000'000 + stream});
+        else
+            for (UInt64 i = 0; i < 200; ++i)
+                keys.push_back(3'000'000 + stream * 256 + i);
+    }
+    for (UInt64 stream = 0; stream < streams; ++stream)
+    {
+        threads.emplace_back(
+            [&, stream]
+            {
+                auto filter = std::make_unique<RuntimeFilter>(
+                    streams - 1,
+                    makeRuntimeFilterConfig(),
+                    RuntimeFilter::Adaptive(type, makeGeometry(64_KiB, 2, 3, 1.0), std::nullopt, false));
+                auto column = ColumnUInt64::create();
+                for (const UInt64 key : keys)
+                    if ((key < 3'000'000 ? key % 1'000'000 : (key - 3'000'000) / 256) == stream)
+                        column->insertValue(key);
+                filter->insert(std::move(column));
+                EXPECT_EQ(filter->hasPendingKeys(), stream % 2 == 0);
+                sync.arrive_and_wait();
+                lookup->add("runtime_filter", "runtime_filter", std::move(filter));
+            });
+    }
+    for (auto & thread : threads)
+        thread.join();
+
+    auto filter = lookup->find("runtime_filter");
+    ASSERT_TRUE(filter);
+    ASSERT_TRUE(filter->isReady());
+    auto probe = ColumnUInt64::create();
+    for (const UInt64 key : keys)
+        probe->insertValue(key);
+    for (UInt64 stream = 0; stream < streams; ++stream)
+    {
+        probe->insertValue(500'000 + stream);
+        probe->insertValue(3'000'000 + stream * 256 + (stream % 2 == 0 ? 0 : 200));
+        probe->insertValue(3'000'000 + stream * 256 + 255);
+    }
+    const auto mask = filter->find(ColumnWithTypeAndName(std::move(probe), type, "k"));
+    ASSERT_EQ(mask->size(), keys.size() + 3 * streams);
+    for (size_t row = 0; row < mask->size(); ++row)
+        EXPECT_EQ(mask->getUInt(row), row < keys.size() ? 1 : 0) << row;
 }
 
 TEST(RuntimeFilterLookup, SkipBudgetPreservesSerialExhaustionSemantics)

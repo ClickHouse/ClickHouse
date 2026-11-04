@@ -64,8 +64,10 @@ struct RuntimeFilterBuildState
     void assertCanFind() const;
     void assertCanMerge() const;
     bool hasPendingMerges() const { return filters_to_merge != 0; }
+    size_t getFiltersToMerge() const { return filters_to_merge; }
     bool isFinished() const { return inserts_are_finished; }
-    void finishMerge();
+    /// Records the merge of a filter that holds the keys of `filters` expected filters.
+    void finishMerge(size_t filters = 1);
     void finishInserts() { inserts_are_finished = true; }
 
 private:
@@ -262,6 +264,7 @@ public:
     UInt64 countDistinctKeys();
 
     bool empty() const { return !has_keys; }
+    bool hasPendingKeys() const { return !pending_keys->empty(); }
     UInt64 getBytes() const { return words.size() * sizeof(UInt64) + pending_keys->byteSize(); }
 
 private:
@@ -304,6 +307,8 @@ public:
     void mergeFrom(const AdaptiveSetRuntimeFilter & source);
     ColumnPtr getRecordedKeyValues() const;
     DataTypePtr getTargetType() const { return filter_column_target_type; }
+    /// Whether the filter is a dense bitset that still keeps keys as values: merging it sets one bit per key.
+    bool hasPendingKeys() const;
 
     /// Records the range of the inserted keys, so that it is serialized and merged with the state. A
     /// transported partial needs it: no `RuntimeFilter` is around it to record the range for index
@@ -467,7 +472,22 @@ public:
 
     /// Add all keys from one filter to the other so that destination filter contains the union of both filters.
     /// The source must be a distinct filter. Both filters are locked in stable address order.
-    void merge(const RuntimeFilter & source);
+    /// Accounts for `source_filters` expected merges: the source and the filters already merged into it.
+    void merge(const RuntimeFilter & source, size_t source_filters = 1);
+
+    size_t getFiltersToMerge() const
+    {
+        SharedLockGuard lock(mutex);
+        return data.build_state.getFiltersToMerge();
+    }
+
+    /// Whether merging this filter sets one bit per key, see `AdaptiveSetRuntimeFilter::hasPendingKeys`.
+    bool hasPendingKeys() const
+    {
+        SharedLockGuard lock(mutex);
+        const auto * adaptive = std::get_if<Adaptive>(&data.filter);
+        return adaptive && adaptive->hasPendingKeys();
+    }
 
     /// Opt in to collecting build-side metadata for storage index analysis.
     void enableIndexAnalysis();

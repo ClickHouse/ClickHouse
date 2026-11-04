@@ -91,10 +91,13 @@ void RuntimeFilterBuildState::assertCanMerge() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge more runtime filters than expected");
 }
 
-void RuntimeFilterBuildState::finishMerge()
+void RuntimeFilterBuildState::finishMerge(size_t filters)
 {
     assertCanMerge();
-    --filters_to_merge;
+    chassert(filters != 0);
+    if (filters > filters_to_merge)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge more runtime filters than expected");
+    filters_to_merge -= filters;
 }
 
 void RuntimeFilterSkipBudget::replenish(UInt64 rows, UInt64 multiplier)
@@ -752,25 +755,27 @@ bool DenseBitsetRuntimeFilter::mergeFrom(const DenseBitsetRuntimeFilter & source
     min_key = new_min;
     max_key = new_max;
 
-    if (!source.pending_keys->empty())
+    if (!words.empty() || !source.words.empty()
+        || pending_keys->byteSize() + source.pending_keys->byteSize() >= bitsetWordsForRange(min_key, max_key) * sizeof(UInt64))
+    {
+        /// Our bits cover the range of all keys after this, so they also cover the keys and the bits of the source.
+        setPendingBits();
+        if (!source.pending_keys->empty())
+            setBits(*source.pending_keys);
+        if (!source.words.empty())
+        {
+            const size_t offset = static_cast<size_t>((source.words_begin - words_begin) / static_cast<Int64>(BITSET_WORD_BITS));
+            chassert(source.words_begin >= words_begin && offset + source.words.size() <= words.size());
+            for (size_t i = 0; i < source.words.size(); ++i)
+                words[offset + i] |= source.words[i];
+        }
+    }
+    else if (!source.pending_keys->empty())
     {
         auto keys = IColumn::mutate(std::move(pending_keys));
+        keys->reserve(keys->size() + source.pending_keys->size());
         keys->insertRangeFrom(*source.pending_keys, 0, source.pending_keys->size());
         pending_keys = std::move(keys);
-    }
-
-    if (!source.words.empty())
-    {
-        /// Our bits cover the range of all keys after this, so they also cover the bits of the source.
-        setPendingBits();
-        const size_t offset = static_cast<size_t>((source.words_begin - words_begin) / static_cast<Int64>(BITSET_WORD_BITS));
-        chassert(source.words_begin >= words_begin && offset + source.words.size() <= words.size());
-        for (size_t i = 0; i < source.words.size(); ++i)
-            words[offset + i] |= source.words[i];
-    }
-    else if (pending_keys->byteSize() >= bitsetWordsForRange(min_key, max_key) * sizeof(UInt64))
-    {
-        setPendingBits();
     }
     return true;
 }
@@ -946,6 +951,12 @@ void AdaptiveSetRuntimeFilter::boundExactSetByKeyBytes()
     dense_bitset_allowed = false;
     if (auto * exact_filter = std::get_if<ExactFilter>(&filter))
         exact_filter->boundKeyBytes();
+}
+
+bool AdaptiveSetRuntimeFilter::hasPendingKeys() const
+{
+    const auto * bitset_filter = std::get_if<DenseBitsetRuntimeFilter>(&filter);
+    return bitset_filter && bitset_filter->hasPendingKeys();
 }
 
 void AdaptiveSetRuntimeFilter::insert(ColumnPtr values)
@@ -1394,7 +1405,7 @@ ColumnPtr RuntimeFilter::find(const ColumnWithTypeAndName & values) const
     return result;
 }
 
-void RuntimeFilter::merge(const RuntimeFilter & source)
+void RuntimeFilter::merge(const RuntimeFilter & source, size_t source_filters)
 {
     if (&source == this)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge a runtime filter with itself");
@@ -1432,7 +1443,7 @@ void RuntimeFilter::merge(const RuntimeFilter & source)
         data.filter,
         source.data.filter);
     data.index_analysis.mergeFrom(source.data.index_analysis);
-    data.build_state.finishMerge();
+    data.build_state.finishMerge(source_filters);
 }
 
 void RuntimeFilter::enableIndexAnalysis()
@@ -1466,25 +1477,68 @@ class RuntimeFilterLookup : public IRuntimeFilterLookup
 public:
     void add(const String & key, const String & display_name, UniqueRuntimeFilterPtr runtime_filter) override
     {
-        std::lock_guard lock(mutex);
-        auto & filter = filters_by_name[key];
-        if (!filter)
+        /// A partial that still keeps keys as values waits for the next one, and the two are merged outside the lock,
+        /// so the bits of all streams are not set under the lock. Other partials are merged directly unless one waits.
+        bool merge_in_pairs = runtime_filter->hasPendingKeys();
+        size_t partials = 1; /// Expected filters whose keys `runtime_filter` holds.
+        while (true)
         {
-            ProfileEvents::increment(ProfileEvents::RuntimeFiltersCreated);
-            filter.reset(runtime_filter.release()); /// Save new filter.
-            /// Record the readable structural name once because the map is keyed by the opaque rendezvous key.
-            display_names.emplace(key, display_name);
-            LOG_TRACE(getLogger("RuntimeFilter"), "Registered runtime filter '{}' under key '{}'", display_name, key);
+            UniqueRuntimeFilterPtr other;
+            size_t other_partials = 0;
+            {
+                std::lock_guard lock(mutex);
+                auto & filter = filters_by_name[key];
+                if (!filter)
+                {
+                    ProfileEvents::increment(ProfileEvents::RuntimeFiltersCreated);
+                    filter.reset(runtime_filter.release()); /// Save new filter.
+                    /// Record the readable structural name once because the map is keyed by the opaque rendezvous key.
+                    display_names.emplace(key, display_name);
+                    LOG_TRACE(getLogger("RuntimeFilter"), "Registered runtime filter '{}' under key '{}'", display_name, key);
+                }
+                else
+                {
+                    if (auto parked = parked_partials.find(key); parked != parked_partials.end())
+                    {
+                        other = std::move(parked->second.filter);
+                        other_partials = parked->second.partials;
+                        parked_partials.erase(parked);
+                    }
+
+                    if (!other)
+                    {
+                        if (merge_in_pairs && filter->getFiltersToMerge() > partials)
+                        {
+                            /// A partial that is not added yet, or is being merged now, will take this one.
+                            parked_partials.emplace(key, ParkedPartial{std::move(runtime_filter), partials});
+                            return;
+                        }
+                        filter->merge(*runtime_filter, partials); /// Add all new keys to an existing filter.
+                        LOG_TRACE(
+                            getLogger("RuntimeFilter"),
+                            "Merged {} partials into runtime filter '{}' under key '{}'",
+                            partials,
+                            display_name,
+                            key);
+                    }
+                }
+
+                if (!other)
+                {
+                    /// The registration above already makes the filter findable by the probe side, so skipping
+                    /// the call below holds it in the registered-but-unfinished state that is otherwise transient.
+                    fiu_do_on(FailPoints::runtime_filter_skip_finish_insert, { return; });
+                    filter->finishInsert();
+                    return;
+                }
+            }
+
+            if (other_partials > partials)
+                std::swap(runtime_filter, other);
+            runtime_filter->merge(*other);
+            partials += other_partials;
+            merge_in_pairs = true;
         }
-        else
-        {
-            filter->merge(*runtime_filter); /// Add all new keys to an existing filter.
-            LOG_TRACE(getLogger("RuntimeFilter"), "Merged a partial into runtime filter '{}' under key '{}'", display_name, key);
-        }
-        /// The registration above already makes the filter findable by the probe side, so skipping
-        /// the call below holds it in the registered-but-unfinished state that is otherwise transient.
-        fiu_do_on(FailPoints::runtime_filter_skip_finish_insert, { return; });
-        filter->finishInsert();
     }
 
     void replace(const String & name, UniqueRuntimeFilterPtr runtime_filter) override
@@ -1528,8 +1582,16 @@ public:
     }
 
 private:
+    struct ParkedPartial
+    {
+        UniqueRuntimeFilterPtr filter;
+        size_t partials = 0;
+    };
+
     mutable SharedMutex mutex;
     std::unordered_map<String, SharedRuntimeFilterPtr> filters_by_name TSA_GUARDED_BY(mutex);
+    /// At most one partial per key waits here for the next one to be merged with it.
+    std::unordered_map<String, ParkedPartial> parked_partials TSA_GUARDED_BY(mutex);
     /// Readable structural name per rendezvous key, for logging. Kept under the same lock and
     /// preserved across `replace` because the replacement keeps the original registration's name.
     std::unordered_map<String, String> display_names TSA_GUARDED_BY(mutex);
