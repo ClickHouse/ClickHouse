@@ -120,7 +120,7 @@ void replaceSubcolumnsToGetSubcolumnFunctionInQuery(ASTPtr & ast, const NamesAnd
     replaceSubcolumns(ast, columns, /*is_root=*/ true, /*lambda=*/ nullptr, unnamed, aliased);
 
     /// The old analyzer has one alias scope for the whole expression, lambdas included, so an alias that a different
-    /// expression also has, an alias set only in lambdas and read outside all of them, or a name used elsewhere, is left off.
+    /// expression also has, an alias set only in lambdas and read outside all of them, or a name another expression uses, is left off.
     if (!aliased.empty())
     {
         std::unordered_map<String, IASTHash> hashes;
@@ -146,9 +146,16 @@ void replaceSubcolumnsToGetSubcolumnFunctionInQuery(ASTPtr & ast, const NamesAnd
 
     NameSet names;
     collectNames(*ast, names);
+    std::unordered_map<String, IASTHash> hashes;
+    NameSet conflicting;
+    collectConflictingAliases(*ast, hashes, conflicting);
     for (const auto & [function, name] : unnamed)
     {
-        if (names.contains(name))
+        /// An alias of this same expression does not take the name.
+        auto it = hashes.find(name);
+        bool same_expression = it != hashes.end() && !conflicting.contains(name)
+            && it->second == function->getTreeHash(/*ignore_aliases=*/ true);
+        if (names.contains(name) && !same_expression)
             continue;
         function->setAlias(name);
         function->setPreferAliasToColumnName(true);

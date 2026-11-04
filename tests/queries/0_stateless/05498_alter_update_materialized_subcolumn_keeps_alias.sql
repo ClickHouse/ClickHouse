@@ -83,6 +83,15 @@ ALTER TABLE t_collision UPDATE t = tuple(200) WHERE 1;
 SELECT t, z, m FROM t_collision;
 DROP TABLE t_collision;
 
+-- The subcolumn is also aliased to its own name, which is the same expression, so the name is kept.
+DROP TABLE IF EXISTS t_same_name;
+CREATE TABLE t_same_name (t Tuple(a UInt32), m String MATERIALIZED concat(formatRowNoNewline('JSONEachRow', t.a), '/', toString(t.a AS `t.a`))) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_same_name (t) VALUES (tuple(100));
+SELECT t, m FROM t_same_name;
+ALTER TABLE t_same_name UPDATE t = tuple(200) WHERE 1;
+SELECT t, m FROM t_same_name;
+DROP TABLE t_same_name;
+
 -- An alias of the subcolumn is also given to another expression inside a lambda.
 DROP TABLE IF EXISTS t_lambda_alias;
 CREATE TABLE t_lambda_alias (t Tuple(a UInt32), z UInt32, m String MATERIALIZED concat(toString(t.a AS r), '-', arrayStringConcat(arrayMap(x -> toString(x AS r), [z])))) ENGINE = MergeTree ORDER BY tuple();
