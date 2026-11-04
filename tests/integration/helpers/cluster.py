@@ -6132,9 +6132,9 @@ class ClickHouseInstance:
                     time.sleep(1)
 
             # Some sanitizer report in progress? Bounded, see `SANITIZER_REPORT_WAIT_SECONDS`.
-            report_deadline = time.time() + SANITIZER_REPORT_WAIT_SECONDS
+            report_deadline = time.monotonic() + SANITIZER_REPORT_WAIT_SECONDS
             while (
-                time.time() < report_deadline
+                time.monotonic() < report_deadline
                 and self.get_process_pid("llvm-symbolizer") is not None
                 and self.get_process_pid("clickhouse") is not None
             ):
