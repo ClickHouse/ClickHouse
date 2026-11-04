@@ -2070,10 +2070,17 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
         /// Need to resolve types again.
         auto ast = modified_query_info.query_tree->toAST();
         /// The analyzer substitutes the inserted block of a materialized view for its source table only when given it.
+        /// A child that is the source table itself reads the table, as it does at `FetchColumns`.
+        auto view_source = modified_context->isViewInnerQuery() ? nullptr : modified_context->getViewSource();
+        if (view_source && view_source->getStorageID().getFullNameNotQuoted() == storage->getStorageID().getFullNameNotQuoted())
+        {
+            modified_context->clearViewSource();
+            view_source = nullptr;
+        }
         InterpreterSelectQueryAnalyzer interpreter(ast,
             modified_context,
             child_select_query_options,
-            modified_context->isViewInnerQuery() ? nullptr : modified_context->getViewSource());
+            view_source);
 
         auto & planner = interpreter.getPlanner();
         planner.buildQueryPlanIfNeeded();
