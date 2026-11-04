@@ -539,11 +539,19 @@ bool parseISO8601Cell(std::string_view text, bool date1904, Cell & cell)
     UInt32 seconds = 0;
     double fraction = 0;
 
+    auto skip_char = [&](char c)
+    {
+        if (pos >= text.size() || text[pos] != c)
+            return false;
+        ++pos;
+        return true;
+    };
+
     /// A time without a date is either `Thh:mm:ss` or `hh:mm:ss`.
     if (!text.empty() && text[0] != 'T' && !(text.size() > 2 && text[2] == ':'))
     {
-        if (!readDigits(text, pos, 4, year) || pos >= text.size() || text[pos++] != '-' || !readDigits(text, pos, 2, month)
-            || pos >= text.size() || text[pos++] != '-' || !readDigits(text, pos, 2, day))
+        if (!readDigits(text, pos, 4, year) || !skip_char('-') || !readDigits(text, pos, 2, month) || !skip_char('-')
+            || !readDigits(text, pos, 2, day))
             throw malformed();
         if (month < 1 || month > 12 || day < 1 || day > 31)
             throw malformed();
@@ -554,7 +562,7 @@ bool parseISO8601Cell(std::string_view text, bool date1904, Cell & cell)
     {
         if (text[pos] == 'T')
             ++pos;
-        if (!readDigits(text, pos, 2, hours) || pos >= text.size() || text[pos++] != ':' || !readDigits(text, pos, 2, minutes))
+        if (!readDigits(text, pos, 2, hours) || !skip_char(':') || !readDigits(text, pos, 2, minutes))
             throw malformed();
         if (pos < text.size() && text[pos] == ':')
         {
