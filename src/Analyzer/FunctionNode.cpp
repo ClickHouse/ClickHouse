@@ -246,7 +246,8 @@ ASTPtr FunctionNode::toASTImpl(const ConvertToASTOptions & options) const
 
     function_ast->name = function_name;
     function_ast->setNullsAction(nulls_action);
-    function_ast->setIsOperator(is_operator);
+    /// Table functions are `TableFunctionNode`, so `not` here is boolean NOT
+    function_ast->setIsOperator(is_operator || function_name == "not");
 
     if (isWindowFunction())
     {
@@ -296,7 +297,10 @@ ASTPtr FunctionNode::toASTImpl(const ConvertToASTOptions & options) const
         if (auto * identifier_node = window_node->as<IdentifierNode>())
             function_ast->window_name = identifier_node->getIdentifier().getFullName();
         else
-            function_ast->window_definition = window_node->toAST(new_options);
+        {
+            function_ast->children.push_back(window_node->toAST(new_options));
+            function_ast->window_definition = function_ast->children.back();
+        }
     }
 
     return function_ast;

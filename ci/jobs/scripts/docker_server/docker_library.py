@@ -6,6 +6,7 @@ which would pull in `ci.defs.job_configs` and the rest of that script's module s
 
 import logging
 import os
+import re
 import shlex
 import tempfile
 import traceback
@@ -21,6 +22,24 @@ GITHUB_SERVER_URL = os.getenv("GITHUB_SERVER_URL", "https://github.com")
 SCRIPT_DIR = Path(__file__).resolve().parent  # ci/jobs/scripts/docker_server
 CONFIG_OVERRIDE = SCRIPT_DIR / "config.sh"
 TEMP_PATH = SCRIPT_DIR.parents[2] / "tmp"  # parents[2] is `ci`
+REPO_ROOT = SCRIPT_DIR.parents[3]
+OFFICIAL_IMAGES_REPO = "docker-library/official-images"
+
+# A test is a `clickhouse-*` or `keeper-*` directory, the names `config.sh` runs; `tests/lib.sh` is a shared helper.
+_TEST_FILE_RE = re.compile(
+    r"ci/jobs/scripts/docker_server/tests/((?:clickhouse|keeper)-[^/]+)/"
+)
+
+
+def changed_tests(changed_files) -> list:
+    """Names of the tests with a changed file that still exists."""
+    tests = []
+    for file in changed_files or []:
+        file = file.removeprefix(".").removeprefix("/")
+        match = _TEST_FILE_RE.match(file)
+        if match and (REPO_ROOT / file).is_file() and match.group(1) not in tests:
+            tests.append(match.group(1))
+    return tests
 
 
 def is_distroless_image(docker_image: str) -> bool:
@@ -132,5 +151,79 @@ def test_docker_library(test_results, check_images=None) -> None:
                 name=test_name,
                 status=Result.Status.FAIL,
                 info=f"Exception while testing docker library: {traceback.format_exc()}",
+            )
+        )
+
+
+def validate_bugfix_tests(test_results, master_images, tests) -> None:
+    """Run a bug fix's changed tests on the images built from master, where they must fail.
+
+    A test that passes on every image whose `config.sh` list has it does not reproduce the bug. Like the functional
+    tests' Bugfix validation, failing on one image is enough: a bug can be in one variant only.
+    """
+    # Cloned by `test_docker_library`, which reports a failed clone itself.
+    repo_path = TEMP_PATH / OFFICIAL_IMAGES_REPO
+    run_sh = repo_path / "test/run.sh"
+    configs = f"-c {shlex.quote((repo_path / 'test/config.sh').as_posix())} -c {shlex.quote(CONFIG_OVERRIDE.as_posix())}"
+    failed_on = {test: [] for test in tests}
+    passed_on = {test: [] for test in tests}
+    logs = {test: [] for test in tests}
+    pulled_all = True
+    for image in master_images:
+        if not Shell.check(
+            f"docker pull {shlex.quote(image)}", verbose=True, retries=3
+        ):
+            test_results.append(
+                Result(
+                    name=f"bugfix validation ({image})",
+                    status=Result.Status.ERROR,
+                    info=f"Failed to pull {image}",
+                )
+            )
+            pulled_all = False
+            continue
+        for test in tests:
+            cmd = f"{shlex.quote(run_sh.as_posix())} -t {shlex.quote(test)} {shlex.quote(image)} {configs}"
+            exit_code, stdout, stderr = Shell.get_res_stdout_stderr(cmd, verbose=True)
+            if "image has no tests" in stdout:
+                continue
+            if exit_code == 0:
+                passed_on[test].append(image)
+            elif f"'{test}' [" in stdout:
+                failed_on[test].append(image)
+                logs[test].extend(part for part in (stdout, stderr) if part)
+            else:
+                test_results.append(
+                    Result(
+                        name=f"bugfix validation: {test} ({image})",
+                        status=Result.Status.ERROR,
+                        info="\n".join(
+                            part
+                            for part in (
+                                f"{test} did not run on {image}",
+                                stdout,
+                                stderr,
+                            )
+                            if part
+                        ),
+                    )
+                )
+    for test in tests:
+        if failed_on[test]:
+            status = Result.Status.OK
+            info = f"{test} fails on {', '.join(failed_on[test])}, built from master, as expected"
+        elif passed_on[test]:
+            status = Result.Status.FAIL
+            info = f"{test} passes on {', '.join(passed_on[test])}, built from master, so it does not reproduce the bug"
+        elif pulled_all:
+            status = Result.Status.ERROR
+            info = f"{test} runs on none of {', '.join(master_images)}"
+        else:
+            continue
+        test_results.append(
+            Result(
+                name=f"bugfix validation: {test}",
+                status=status,
+                info="\n".join([info, *logs[test]]),
             )
         )
