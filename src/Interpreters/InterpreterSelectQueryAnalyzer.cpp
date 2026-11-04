@@ -293,6 +293,7 @@ PlanWithParallelReplicas buildQueryPlanForAutomaticParallelReplicas(
     // CTEs materialization should be done in the original plan, but not in the plan with parallel replicas.
     optimization_settings.materialize_ctes = false;
     // If the parallel replicas plan will be chosen, the index analysis result will be reused from the single-replica plan.
+    // A read that can use direct read from a text index still builds its index conditions, see `readNeedsIndexesForDirectTextRead`.
     optimization_settings.query_plan_optimize_primary_key = false;
     // Depends on PK optimizations that we don't perform here
     optimization_settings.optimize_projection = false;
