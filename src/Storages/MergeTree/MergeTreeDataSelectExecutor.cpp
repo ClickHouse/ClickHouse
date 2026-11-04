@@ -117,6 +117,7 @@ namespace Setting
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsUInt64 merge_tree_coarse_index_granularity;
     extern const SettingsUInt64 merge_tree_generic_exclusion_search_max_steps;
+    extern const SettingsUInt64 merge_tree_generic_exclusion_search_exhaustive_part_marks;
     extern const SettingsUInt64 merge_tree_generic_exclusion_search_min_bytes_to_split;
     extern const SettingsUInt64 merge_tree_min_bytes_for_seek;
     extern const SettingsUInt64 merge_tree_min_rows_for_seek;
@@ -2959,10 +2960,14 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         /// Splitting a range costs up to `merge_tree_coarse_index_granularity` checks, and every subrange that
         /// survives is sought to and read separately, so a range that holds less data than
         /// `merge_tree_generic_exclusion_search_min_bytes_to_split` is cheaper to read whole than to analyze.
-        /// The threshold is converted to marks with the average data volume of a mark of this part. A part
-        /// without size information (zero bytes) keeps the exhaustive search.
+        /// The threshold is converted to marks with the average data volume of a mark of this part. It is only
+        /// applied to parts whose exhaustive search (at most `2 * marks_count - 1` checks) may be expensive:
+        /// a part with up to `merge_tree_generic_exclusion_search_exhaustive_part_marks` marks is always
+        /// searched exhaustively, as its analysis takes a bounded time whatever its granules hold. A part
+        /// without size information (zero bytes) keeps the exhaustive search as well.
         size_t min_marks_to_split = 0;
-        if (const size_t min_bytes_to_split = settings[Setting::merge_tree_generic_exclusion_search_min_bytes_to_split])
+        const size_t min_bytes_to_split = settings[Setting::merge_tree_generic_exclusion_search_min_bytes_to_split];
+        if (min_bytes_to_split && marks_count > settings[Setting::merge_tree_generic_exclusion_search_exhaustive_part_marks])
         {
             const size_t marks_without_final = part.getIndexGranularity().getMarksCountWithoutFinal();
             const size_t bytes_per_mark = marks_without_final ? part.getTotalColumnsSize().data_uncompressed / marks_without_final : 0;

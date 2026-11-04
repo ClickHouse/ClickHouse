@@ -6,24 +6,27 @@
 -- The generic exclusion search over the primary key must not split mark ranges that hold less data than the
 -- analysis of the split costs (https://github.com/ClickHouse/ClickHouse/issues/125812). With one-row granules
 -- and a first key column that changes every four rows, the exhaustive search for a condition on the second key
--- column checks about two ranges per row. `merge_tree_generic_exclusion_search_min_bytes_to_split` stops the
--- descent at ranges of a few kilobytes; the query results do not change.
+-- column checks about two ranges per row. For a part with more than
+-- `merge_tree_generic_exclusion_search_exhaustive_part_marks` marks, `merge_tree_generic_exclusion_search_min_bytes_to_split`
+-- stops the descent at ranges of a few kilobytes; the query results do not change.
 
 SET merge_tree_coarse_index_granularity = 8;
 SET use_query_condition_cache = 0;
 
 DROP TABLE IF EXISTS t_small_granules;
+DROP TABLE IF EXISTS t_small_part;
 DROP TABLE IF EXISTS t_wide_rows;
 DROP TABLE IF EXISTS t_default_granularity;
 
+-- More marks than `merge_tree_generic_exclusion_search_exhaustive_part_marks`, so the default settings apply the threshold.
 CREATE TABLE t_small_granules (c1 DateTime, c2 UInt8, c3 String)
 ENGINE = MergeTree ORDER BY (c1, c2, c3) SETTINGS index_granularity = 1;
 
 -- One block, so that one part is written without a merge of thousands of one-row granules.
 INSERT INTO t_small_granules
 SELECT toDateTime('2026-01-01 00:00:00') + intDiv(number, 4), (number % 4) >= 2, toString(number % 97)
-FROM numbers(16384)
-SETTINGS max_insert_threads = 1, max_block_size = 65536, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0;
+FROM numbers(131072)
+SETTINGS max_insert_threads = 1, max_block_size = 131072, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0;
 
 SELECT 'parts', count() FROM system.parts WHERE database = currentDatabase() AND table = 't_small_granules' AND active;
 
@@ -34,7 +37,7 @@ SETTINGS merge_tree_generic_exclusion_search_min_bytes_to_split = 0, log_comment
 SELECT 'small no primary key', count(), sum(cityHash64(c1, c3)) FROM t_small_granules WHERE c2
 SETTINGS use_primary_key = 0;
 
--- The setting bounds the analysis time only, so it applies regardless of `compatibility`.
+-- The settings bound the analysis time only, so they apply regardless of `compatibility`.
 SELECT 'small compatibility', count(), sum(cityHash64(c1, c3)) FROM t_small_granules WHERE c2
 SETTINGS compatibility = '25.12', log_comment = '05507 small compatibility';
 
@@ -43,6 +46,21 @@ SELECT 'small equals default', count(), sum(cityHash64(c1, c3)) FROM t_small_gra
 SETTINGS log_comment = '05507 small equals default';
 SELECT 'small equals exhaustive', count(), sum(cityHash64(c1, c3)) FROM t_small_granules WHERE c2 = 1
 SETTINGS merge_tree_generic_exclusion_search_min_bytes_to_split = 0, log_comment = '05507 small equals exhaustive';
+
+-- A part with fewer marks than `merge_tree_generic_exclusion_search_exhaustive_part_marks` is searched exhaustively,
+-- as its analysis is cheap whatever its granules hold; the threshold applies to it only when that setting is lowered.
+CREATE TABLE t_small_part (c1 DateTime, c2 UInt8, c3 String)
+ENGINE = MergeTree ORDER BY (c1, c2, c3) SETTINGS index_granularity = 1;
+
+INSERT INTO t_small_part
+SELECT toDateTime('2026-01-01 00:00:00') + intDiv(number, 4), (number % 4) >= 2, toString(number % 97)
+FROM numbers(4096)
+SETTINGS max_insert_threads = 1, max_block_size = 65536, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0;
+
+SELECT 'small part default', count(), sum(cityHash64(c1, c3)) FROM t_small_part WHERE c2
+SETTINGS log_comment = '05507 small part default';
+SELECT 'small part any size', count(), sum(cityHash64(c1, c3)) FROM t_small_part WHERE c2
+SETTINGS merge_tree_generic_exclusion_search_exhaustive_part_marks = 0, log_comment = '05507 small part any size';
 
 -- With the same one-row granules but rows of about 4 KiB, a range of a few marks already holds more data than
 -- the threshold, so the search is as exact as the exhaustive one and still prunes.
@@ -55,9 +73,9 @@ FROM numbers(4096)
 SETTINGS max_insert_threads = 1, max_block_size = 65536, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0;
 
 SELECT 'wide default', count(), sum(length(c3)) FROM t_wide_rows WHERE c2
-SETTINGS log_comment = '05507 wide default';
+SETTINGS merge_tree_generic_exclusion_search_exhaustive_part_marks = 0, log_comment = '05507 wide default';
 SELECT 'wide exhaustive', count(), sum(length(c3)) FROM t_wide_rows WHERE c2
-SETTINGS merge_tree_generic_exclusion_search_min_bytes_to_split = 0, log_comment = '05507 wide exhaustive';
+SETTINGS merge_tree_generic_exclusion_search_exhaustive_part_marks = 0, merge_tree_generic_exclusion_search_min_bytes_to_split = 0, log_comment = '05507 wide exhaustive';
 
 -- At the default `index_granularity` a single mark holds more data than the threshold, so nothing changes.
 CREATE TABLE t_default_granularity (a UInt8, b UInt32)
@@ -69,9 +87,9 @@ FROM numbers(1000000)
 SETTINGS max_insert_threads = 1, max_block_size = 1000000, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0;
 
 SELECT 'default granularity default', count(), sum(b) FROM t_default_granularity WHERE b BETWEEN 100000 AND 100100
-SETTINGS log_comment = '05507 default granularity default';
+SETTINGS merge_tree_generic_exclusion_search_exhaustive_part_marks = 0, log_comment = '05507 default granularity default';
 SELECT 'default granularity exhaustive', count(), sum(b) FROM t_default_granularity WHERE b BETWEEN 100000 AND 100100
-SETTINGS merge_tree_generic_exclusion_search_min_bytes_to_split = 0, log_comment = '05507 default granularity exhaustive';
+SETTINGS merge_tree_generic_exclusion_search_exhaustive_part_marks = 0, merge_tree_generic_exclusion_search_min_bytes_to_split = 0, log_comment = '05507 default granularity exhaustive';
 
 SYSTEM FLUSH LOGS query_log;
 
@@ -86,5 +104,6 @@ WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comm
 ORDER BY log_comment;
 
 DROP TABLE t_small_granules;
+DROP TABLE t_small_part;
 DROP TABLE t_wide_rows;
 DROP TABLE t_default_granularity;
