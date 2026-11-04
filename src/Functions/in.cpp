@@ -333,7 +333,7 @@ Checks if the left operand is a member of the right operand set. Returns 1 if it
     full_name_in += suffix;
     factory.registerFunction(full_name_in, [ignore_set, n = full_name_in](ContextPtr context)
     {
-        return FunctionIn::create(n, false, true, ignore_set, context->getSettingsRef()[Setting::in_null_as_unknown]);
+        return FunctionIn::create(n, false, true, ignore_set, context && context->getSettingsRef()[Setting::in_null_as_unknown]);
     }, std::move(documentation_in));
 
     /// globalIn
@@ -353,7 +353,7 @@ Same as `in`, but uses global set distribution in distributed queries. The set i
     full_name_globalIn += suffix;
     factory.registerFunction(full_name_globalIn, [ignore_set, n = full_name_globalIn](ContextPtr context)
     {
-        return FunctionIn::create(n, false, true, ignore_set, context->getSettingsRef()[Setting::in_null_as_unknown]);
+        return FunctionIn::create(n, false, true, ignore_set, context && context->getSettingsRef()[Setting::in_null_as_unknown]);
     }, std::move(documentation_globalIn));
 
     /// notIn
@@ -373,7 +373,7 @@ Checks if the left operand is NOT a member of the right operand set. Returns 1 i
     full_name_notIn += suffix;
     factory.registerFunction(full_name_notIn, [ignore_set, n = full_name_notIn](ContextPtr context)
     {
-        return FunctionIn::create(n, true, true, ignore_set, context->getSettingsRef()[Setting::in_null_as_unknown]);
+        return FunctionIn::create(n, true, true, ignore_set, context && context->getSettingsRef()[Setting::in_null_as_unknown]);
     }, std::move(documentation_notIn));
 
     /// globalNotIn
@@ -393,7 +393,7 @@ Same as `notIn`, but uses global set distribution in distributed queries. The se
     full_name_globalNotIn += suffix;
     factory.registerFunction(full_name_globalNotIn, [ignore_set, n = full_name_globalNotIn](ContextPtr context)
     {
-        return FunctionIn::create(n, true, true, ignore_set, context->getSettingsRef()[Setting::in_null_as_unknown]);
+        return FunctionIn::create(n, true, true, ignore_set, context && context->getSettingsRef()[Setting::in_null_as_unknown]);
     }, std::move(documentation_globalNotIn));
 
     /// nullIn
@@ -413,7 +413,7 @@ Checks if the left operand is a member of the right operand set. Unlike `in`, NU
     full_name_nullIn += suffix;
     factory.registerFunction(full_name_nullIn, [ignore_set, n = full_name_nullIn](ContextPtr context)
     {
-        return FunctionIn::create(n, false, false, ignore_set, context->getSettingsRef()[Setting::in_null_as_unknown]);
+        return FunctionIn::create(n, false, false, ignore_set, context && context->getSettingsRef()[Setting::in_null_as_unknown]);
     }, std::move(documentation_nullIn));
 
     /// globalNullIn
@@ -433,7 +433,7 @@ Same as `nullIn`, but uses global set distribution in distributed queries. The s
     full_name_globalNullIn += suffix;
     factory.registerFunction(full_name_globalNullIn, [ignore_set, n = full_name_globalNullIn](ContextPtr context)
     {
-        return FunctionIn::create(n, false, false, ignore_set, context->getSettingsRef()[Setting::in_null_as_unknown]);
+        return FunctionIn::create(n, false, false, ignore_set, context && context->getSettingsRef()[Setting::in_null_as_unknown]);
     }, std::move(documentation_globalNullIn));
 
     /// notNullIn
@@ -453,7 +453,7 @@ Checks if the left operand is NOT a member of the right operand set. Unlike `not
     full_name_notNullIn += suffix;
     factory.registerFunction(full_name_notNullIn, [ignore_set, n = full_name_notNullIn](ContextPtr context)
     {
-        return FunctionIn::create(n, true, false, ignore_set, context->getSettingsRef()[Setting::in_null_as_unknown]);
+        return FunctionIn::create(n, true, false, ignore_set, context && context->getSettingsRef()[Setting::in_null_as_unknown]);
     }, std::move(documentation_notNullIn));
 
     /// globalNotNullIn
@@ -473,7 +473,7 @@ Same as `notNullIn`, but uses global set distribution in distributed queries. Th
     full_name_globalNotNullIn += suffix;
     factory.registerFunction(full_name_globalNotNullIn, [ignore_set, n = full_name_globalNotNullIn](ContextPtr context)
     {
-        return FunctionIn::create(n, true, false, ignore_set, context->getSettingsRef()[Setting::in_null_as_unknown]);
+        return FunctionIn::create(n, true, false, ignore_set, context && context->getSettingsRef()[Setting::in_null_as_unknown]);
     }, std::move(documentation_globalNotNullIn));
 }
 
