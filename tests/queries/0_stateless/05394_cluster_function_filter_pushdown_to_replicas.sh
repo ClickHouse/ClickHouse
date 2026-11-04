@@ -32,6 +32,7 @@ ${CLICKHOUSE_CLIENT} --query "
         AND initial_query_id IN (SELECT query_id FROM system.query_log WHERE current_database = currentDatabase() AND is_initial_query)"
 
 # A lambda conjunct is evaluated on the initiator only: its body is JIT-compiled while the initiator plans the query.
+# The replicas get only `t.id % 2 = 0`, so they return exactly the 15000 even ids.
 for LAMBDA in "x -> x > 1 AND x < 1000, [t.id]" "x -> x > 1 AND x < t.id, [1000, 2000]"; do
     query_id="${CLICKHOUSE_TEST_UNIQUE_NAME}_lambda_${RANDOM}"
     ${CLICKHOUSE_CLIENT} --query_id="${query_id}" --query "
@@ -45,7 +46,7 @@ for LAMBDA in "x -> x > 1 AND x < 1000, [t.id]" "x -> x > 1 AND x < t.id, [1000,
     ${CLICKHOUSE_CLIENT} --query "
         SELECT
             count() > 0 AND countIf(Settings['cluster_table_function_pushed_down_filter'] != '') = count() AS all_secondary_queries_have_filter,
-            sum(result_rows) < 30000 AS replicas_returned_fewer_rows
+            sum(result_rows) = 15000 AS replicas_filtered_only_by_the_rest
         FROM system.query_log
         WHERE initial_query_id = '${query_id}' AND type = 'QueryFinish' AND is_initial_query = 0 AND query LIKE '%${TABLE}%'
             AND initial_query_id IN (SELECT query_id FROM system.query_log WHERE current_database = currentDatabase() AND is_initial_query)"
