@@ -3,6 +3,8 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/Passes/OptimizeKeyExpressionsUtils.h>
+#include <Analyzer/QueryNode.h>
 #include <Analyzer/Utils.h>
 
 #include <Core/Settings.h>
@@ -105,6 +107,12 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
+        if (const auto * query_node = node->as<QueryNode>())
+        {
+            group_by_keys_stack.push_back(getGroupByKeys(*query_node));
+            return;
+        }
+
         if (!getSettings()[Setting::optimize_dictget_tuple_element])
             return;
 
@@ -125,6 +133,10 @@ public:
         bool is_dict_get_or_default = (dict_get_name == "dictGetOrDefault");
 
         if (!is_dict_get && !is_dict_get_or_default)
+            return;
+
+        /// A `GROUP BY` key is read from the aggregation result, so it is not rewritten into its arguments.
+        if (isGroupByKeyAfterAggregation(tuple_element_args[0], group_by_keys_stack.back()))
             return;
 
         auto & dict_get_args = dict_get_function->getArguments().getNodes();
@@ -247,11 +259,25 @@ public:
         /// key argument, while the tuple-attribute form drops it (a tuple cannot be `LowCardinality`).
         /// If the result types differ, the rewrite would change the type observed by the parent
         /// node and break the surrounding query tree. Bail out in that case.
-        if (!new_dict_get_function.getResultType()->equals(*tuple_element_function->getResultType()))
+        if (!new_dict_get_function.getResultType()->equals(*tuple_element_function->getFunctionOrThrow()->getResultType()))
             return;
+
+        /// A `group_by_use_nulls` copy of a `GROUP BY` key is the key made `Nullable`: rewrite it like the key and keep it `Nullable`.
+        if (tuple_element_function->isConvertedToNullable())
+            new_dict_get_function.convertToNullable();
 
         node = std::move(new_dict_get_node);
     }
+
+    void leaveImpl(QueryTreeNodePtr & node)
+    {
+        if (node->getNodeType() == QueryTreeNodeType::QUERY)
+            group_by_keys_stack.pop_back();
+    }
+
+private:
+    /// The `GROUP BY` keys of each enclosing query; the first entry is for an expression outside of any query.
+    std::vector<QueryTreeNodes> group_by_keys_stack{1};
 };
 
 }

@@ -3,6 +3,8 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/Passes/DistanceTransposedPartialReadsPass.h>
+#include <Analyzer/Passes/OptimizeKeyExpressionsUtils.h>
+#include <Analyzer/QueryNode.h>
 #include <Analyzer/Utils.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
@@ -40,6 +42,12 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
+        if (const auto * query_node = node->as<QueryNode>())
+        {
+            group_by_keys_stack.push_back(getGroupByKeys(*query_node));
+            return;
+        }
+
         if (!getSettings()[Setting::optimize_qbit_distance_function_reads])
             return;
 
@@ -70,6 +78,10 @@ public:
         auto * precision_node = function_arguments_nodes[2]->as<ConstantNode>();
         if (!qbit_node || qbit_node->getColumnName() == "__grouping_set" || !precision_node
             || precision_node->getValue().getType() != Field::Types::UInt64)
+            return;
+
+        /// A `GROUP BY` key is read from the aggregation result, so it is not rewritten into its subcolumns.
+        if (isGroupByKeyAfterAggregation(function_arguments_nodes[0], group_by_keys_stack.back()))
             return;
 
         /// A Variant or Dynamic reference vector carries per-row type and null semantics: the distance function is
@@ -222,7 +234,7 @@ public:
         /// the trailing size constant whenever the original result was Nullable to keep the rewritten result type identical.
         /// When the QBit column itself is Nullable, the nullability already flows through the Nullable bit-plane subcolumns, so the size
         /// constant does not need to carry it.
-        auto original_result_type = function_node->getResultType();
+        auto original_result_type = function_node->getFunctionOrThrow()->getResultType();
         if (!is_nullable && (original_result_type->isNullable() || original_result_type->isLowCardinalityNullable()))
             last_size_constant->convertToNullable();
 
@@ -278,14 +290,24 @@ public:
         /// and Dynamic - are excluded up front. Reaching a mismatch here therefore means the optimization silently
         /// changed the query result type, which is a bug in this pass rather than a user error, so fail loudly instead
         /// of degrading to an unoptimized result.
-        if (!function_node->getResultType()->equals(*original_result_type))
+        if (!function_node->getFunctionOrThrow()->getResultType()->equals(*original_result_type))
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "DistanceTransposedPartialReadsPass changed the result type of function {} from {} to {}",
                 function_name,
                 original_result_type->getName(),
-                function_node->getResultType()->getName());
+                function_node->getFunctionOrThrow()->getResultType()->getName());
     }
+
+    void leaveImpl(QueryTreeNodePtr & node)
+    {
+        if (node->getNodeType() == QueryTreeNodeType::QUERY)
+            group_by_keys_stack.pop_back();
+    }
+
+private:
+    /// The `GROUP BY` keys of each enclosing query; the first entry is for an expression outside of any query.
+    std::vector<QueryTreeNodes> group_by_keys_stack{1};
 };
 
 }
