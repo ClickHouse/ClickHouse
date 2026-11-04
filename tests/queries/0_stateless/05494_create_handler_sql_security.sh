@@ -28,11 +28,17 @@ U_BG="u_bg_${DB}"
 U_BGCALLER="u_bgcaller_${DB}"
 USERS="${U_DEF}, ${U_DEF2}, ${U_DEF3}, ${U_LIM}, ${U_CALLER}, ${U_ROCALLER}, ${U_SD}, ${U_NONE}, ${U_RO}, ${E}, ${EE}, \`${EE}:definer\`, ${EE2}, \`${EE2}:definer\`, ${U_RET}, ${U_BG}, ${U_BGCALLER}"
 
+# Queries go over HTTP: starting a client for each one makes the test too slow under sanitizers.
+http_query() { ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary "$1"; }
+http_query_as() { ${CLICKHOUSE_CURL} -sS -u "$1:" "${CLICKHOUSE_URL}" --data-binary "$2"; }
+
 cleanup() {
-    for h in $($CLICKHOUSE_CLIENT -q "SELECT name FROM system.handlers WHERE endsWith(name, '_${DB}')"); do
-        $CLICKHOUSE_CLIENT -q "DROP HANDLER IF EXISTS \`$h\`"
+    for h in $(http_query "SELECT name FROM system.handlers WHERE endsWith(name, '_${DB}')"); do
+        http_query "DROP HANDLER IF EXISTS \`$h\`"
     done
-    $CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS ${USERS}; DROP SETTINGS PROFILE IF EXISTS p_caller_${DB}, p_ro_${DB}, p_def_ro_${DB}, p_rw_${DB}, p_bg_${DB}; DROP DATABASE IF EXISTS ${DB_B}"
+    http_query "DROP USER IF EXISTS ${USERS}"
+    http_query "DROP SETTINGS PROFILE IF EXISTS p_caller_${DB}, p_ro_${DB}, p_def_ro_${DB}, p_rw_${DB}, p_bg_${DB}"
+    http_query "DROP DATABASE IF EXISTS ${DB_B}"
 }
 trap cleanup EXIT
 cleanup
@@ -42,21 +48,21 @@ ERRORS='ACCESS_DENIED|NOT_IMPLEMENTED|BAD_ARGUMENTS|HAVE_DEPENDENT_OBJECTS|READO
 # Prints OK, or the name of the error.
 run() {
     local out
-    if out=$("$@" 2>&1); then
+    if out=$("$@" 2>&1) && [[ "$out" != *"DB::Exception"* ]]; then
         echo OK
     else
         echo "$out" | grep -o -m1 -E "\((${ERRORS})\)" || echo "$out"
     fi
 }
-as_user() { run $CLICKHOUSE_CLIENT --user "$1" -q "$2"; }
-as_default() { run $CLICKHOUSE_CLIENT -q "$1"; }
+as_user() { run http_query_as "$1" "$2"; }
+as_default() { run http_query "$1"; }
 # Prints the response, or the name of the error.
 request() {
     local out
     out=$(${CLICKHOUSE_CURL} -sS "$@" 2>&1)
     echo "$out" | grep -o -m1 -E "\((${ERRORS})\)" || echo "$out"
 }
-handler_query() { $CLICKHOUSE_CLIENT -q "SELECT replaceAll($2, '${DB}', 'DB') FROM system.handlers WHERE name = '$1'"; }
+handler_query() { http_query "SELECT replaceAll($2, '${DB}', 'DB') FROM system.handlers WHERE name = '$1'"; }
 
 $CLICKHOUSE_CLIENT -q "
 CREATE TABLE ${DB}.t (id UInt32, v String) ENGINE = MergeTree ORDER BY id;
@@ -94,18 +100,18 @@ request -u "${U_CALLER}:" "${BASE}/${DB}/hi"
 echo "--- 3. SQL SECURITY NONE"
 as_default "CREATE HANDLER hn_${DB} URL '/${DB}/hn' SQL SECURITY NONE AS SELECT count() FROM ${DB}.t"
 request -u "${U_CALLER}:" "${BASE}/${DB}/hn"
-$CLICKHOUSE_CLIENT --user "${U_LIM}" -q "CREATE HANDLER hn2_${DB} URL '/${DB}/hn2' SQL SECURITY NONE AS SELECT 1" 2>&1 \
+http_query_as "${U_LIM}" "CREATE HANDLER hn2_${DB} URL '/${DB}/hn2' SQL SECURITY NONE AS SELECT 1" \
     | grep -o -m1 'ALLOW SQL SECURITY NONE'
 
 echo "--- 4. DEFINER"
-$CLICKHOUSE_CLIENT --user "${U_LIM}" -q "CREATE HANDLER h4a_${DB} URL '/${DB}/h4a' DEFINER = ${U_DEF} SQL SECURITY DEFINER AS SELECT 1" 2>&1 \
+http_query_as "${U_LIM}" "CREATE HANDLER h4a_${DB} URL '/${DB}/h4a' DEFINER = ${U_DEF} SQL SECURITY DEFINER AS SELECT 1" \
     | grep -o -m1 'SET DEFINER'
 as_user "${U_LIM}" "CREATE HANDLER h4_${DB} URL '/${DB}/h4' DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT * FROM ${DB}.t ORDER BY id"
-$CLICKHOUSE_CLIENT -q "GRANT SELECT ON ${DB}.t TO ${U_LIM}"
+http_query "GRANT SELECT ON ${DB}.t TO ${U_LIM}"
 as_user "${U_LIM}" "CREATE HANDLER h4_${DB} URL '/${DB}/h4' DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT * FROM ${DB}.t ORDER BY id"
 handler_query "h4_${DB}" create_query
 request -u "${U_CALLER}:" "${BASE}/${DB}/h4"
-$CLICKHOUSE_CLIENT -q "REVOKE SELECT ON ${DB}.t FROM ${U_LIM}"
+http_query "REVOKE SELECT ON ${DB}.t FROM ${U_LIM}"
 request "${BASE}/${DB}/h4"
 
 echo "--- 5. a handler with SQL SECURITY DEFINER or NONE runs only SELECT and INSERT"
@@ -123,7 +129,7 @@ for query in "${QUERIES[@]}"; do
     as_default "CREATE HANDLER h5_${DB} URL '/${DB}/h5' METHODS (POST) SQL SECURITY DEFINER AS ${query}"
     as_default "CREATE HANDLER h5_${DB} URL '/${DB}/h5' METHODS (POST) SQL SECURITY NONE AS ${query}"
     as_default "CREATE HANDLER h5_${DB} URL '/${DB}/h5' METHODS (POST) AS ${query}"
-    $CLICKHOUSE_CLIENT -q "DROP HANDLER h5_${DB}"
+    http_query "DROP HANDLER h5_${DB}"
 done
 
 echo "--- 6. a request to it can choose only the output format and the query parameters"
@@ -134,9 +140,9 @@ done
 echo "X-ClickHouse-Database: $(request -X POST -H "X-ClickHouse-Database: ${DB}" "${BASE}/${DB}/h6")"
 echo "X-ClickHouse-Query-Id: $(request -X POST -H "X-ClickHouse-Query-Id: q6_${DB}" "${BASE}/${DB}/h6")"
 echo "X-ClickHouse-Quota: $(request -X POST -H "X-ClickHouse-Quota: k_${DB}" "${BASE}/${DB}/h6")"
-$CLICKHOUSE_CLIENT -q "SELECT count() FROM ${DB}.t3"
+http_query "SELECT count() FROM ${DB}.t3"
 request -X POST "${BASE}/${DB}/h6"
-$CLICKHOUSE_CLIENT -q "SELECT count() FROM ${DB}.t3"
+http_query "SELECT count() FROM ${DB}.t3"
 echo "INVOKER:"
 request "${BASE}/${DB}/hi?select=id&filter=id%3E1"
 as_default "CREATE HANDLER hp_${DB} URL REGEXP '/${DB}/hp/.*' AS SELECT currentDatabase() = 'system'"
@@ -146,7 +152,7 @@ echo "--- 7. a safe method runs it in the readonly mode"
 as_default "CREATE HANDLER h7_${DB} URL '/${DB}/h7' METHODS (GET, POST) DEFINER = ${U_DEF} SQL SECURITY DEFINER AS INSERT INTO ${DB}.t3 SELECT 7"
 request "${BASE}/${DB}/h7"
 request -X POST "${BASE}/${DB}/h7"
-$CLICKHOUSE_CLIENT -q "SELECT count() FROM ${DB}.t3 WHERE id = 7"
+http_query "SELECT count() FROM ${DB}.t3 WHERE id = 7"
 
 echo "--- 8. the settings of the requesting user do not apply, except readonly"
 as_user "${U_CALLER}" "SELECT * FROM numbers(2)"
@@ -154,7 +160,7 @@ request -u "${U_CALLER}:" "${BASE}/${DB}/hd"
 request -u "${U_CALLER}:" "${BASE}/${DB}/hd?default_format=JSONEachRow"
 request -u "${U_CALLER}:" -H "X-ClickHouse-Format: JSONEachRow" "${BASE}/${DB}/hd"
 request -u "${U_ROCALLER}:" -X POST "${BASE}/${DB}/h6"
-$CLICKHOUSE_CLIENT -q "SELECT count() FROM ${DB}.t3"
+http_query "SELECT count() FROM ${DB}.t3"
 as_default "CREATE HANDLER h8r_${DB} URL '/${DB}/h8r' DEFINER = ${U_RO} SQL SECURITY DEFINER AS SELECT count() FROM ${DB}.t4 SETTINGS max_threads = 1"
 request -u "${U_ROCALLER}:" "${BASE}/${DB}/h8r"
 request "${BASE}/${DB}/h8r"
@@ -162,26 +168,26 @@ as_default "CREATE HANDLER h8i_${DB} URL '/${DB}/h8i' AS SELECT toTypeName(toTim
 as_default "CREATE HANDLER h8d_${DB} URL '/${DB}/h8d' DEFINER = ${U_DEF} SQL SECURITY DEFINER AS SELECT toTypeName(toTime(now()))"
 request -u "${U_CALLER}:" "${BASE}/${DB}/h8i"
 request -u "${U_CALLER}:" "${BASE}/${DB}/h8d"
-$CLICKHOUSE_CLIENT -q "ALTER SETTINGS PROFILE p_def_ro_${DB} SETTINGS readonly = 2 CHANGEABLE_IN_READONLY"
-$CLICKHOUSE_CLIENT -q "CREATE SETTINGS PROFILE p_rw_${DB} SETTINGS readonly = 0"
-run $CLICKHOUSE_CLIENT -q "CREATE HANDLER h8w_${DB} URL '/${DB}/h8w' METHODS (POST) DEFINER = ${U_RO} SQL SECURITY DEFINER AS INSERT INTO ${DB}.t4 SETTINGS readonly = 0 FORMAT TSV"
-run $CLICKHOUSE_CLIENT -q "CREATE HANDLER h8s_${DB} URL '/${DB}/h8s' DEFINER = ${U_RO} SQL SECURITY DEFINER AS SELECT count() FROM ${DB}.t4 SETTINGS readonly = 0"
-run $CLICKHOUSE_CLIENT -q "CREATE HANDLER h8x_${DB} URL '/${DB}/h8x' METHODS (POST) DEFINER = ${U_RO} SQL SECURITY DEFINER AS INSERT INTO ${DB}.t4 SETTINGS readonly = DEFAULT FORMAT TSV"
-run $CLICKHOUSE_CLIENT -q "CREATE HANDLER h8p_${DB} URL '/${DB}/h8p' METHODS (POST) DEFINER = ${U_RO} SQL SECURITY DEFINER AS INSERT INTO ${DB}.t4 SETTINGS profile = 'p_rw_${DB}' FORMAT TSV"
-$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.handlers WHERE name IN ('h8w_${DB}', 'h8s_${DB}', 'h8x_${DB}', 'h8p_${DB}')"
-$CLICKHOUSE_CLIENT -q "ALTER SETTINGS PROFILE p_def_ro_${DB} SETTINGS readonly = 2"
+http_query "ALTER SETTINGS PROFILE p_def_ro_${DB} SETTINGS readonly = 2 CHANGEABLE_IN_READONLY"
+http_query "CREATE SETTINGS PROFILE p_rw_${DB} SETTINGS readonly = 0"
+as_default "CREATE HANDLER h8w_${DB} URL '/${DB}/h8w' METHODS (POST) DEFINER = ${U_RO} SQL SECURITY DEFINER AS INSERT INTO ${DB}.t4 SETTINGS readonly = 0 FORMAT TSV"
+as_default "CREATE HANDLER h8s_${DB} URL '/${DB}/h8s' DEFINER = ${U_RO} SQL SECURITY DEFINER AS SELECT count() FROM ${DB}.t4 SETTINGS readonly = 0"
+as_default "CREATE HANDLER h8x_${DB} URL '/${DB}/h8x' METHODS (POST) DEFINER = ${U_RO} SQL SECURITY DEFINER AS INSERT INTO ${DB}.t4 SETTINGS readonly = DEFAULT FORMAT TSV"
+as_default "CREATE HANDLER h8p_${DB} URL '/${DB}/h8p' METHODS (POST) DEFINER = ${U_RO} SQL SECURITY DEFINER AS INSERT INTO ${DB}.t4 SETTINGS profile = 'p_rw_${DB}' FORMAT TSV"
+http_query "SELECT count() FROM system.handlers WHERE name IN ('h8w_${DB}', 'h8s_${DB}', 'h8x_${DB}', 'h8p_${DB}')"
+http_query "ALTER SETTINGS PROFILE p_def_ro_${DB} SETTINGS readonly = 2"
 
 echo "--- 9. ALTER HANDLER"
 as_default "ALTER HANDLER hd_${DB} SQL SECURITY INVOKER"
 handler_query "hd_${DB}" create_query
 as_default "ALTER HANDLER hd_${DB} DEFINER = ${U_DEF} SQL SECURITY DEFINER"
-$CLICKHOUSE_CLIENT --user "${U_LIM}" -q "ALTER HANDLER hd_${DB} URL '/${DB}/hd2'" 2>&1 | grep -o -m1 'SET DEFINER'
+http_query_as "${U_LIM}" "ALTER HANDLER hd_${DB} URL '/${DB}/hd2'" | grep -o -m1 'SET DEFINER'
 as_default "ALTER HANDLER hd_${DB} URL '/${DB}/hd' METHODS (GET)"
 handler_query "hd_${DB}" create_query
 
 echo "--- 10. a definer cannot be dropped"
-$CLICKHOUSE_CLIENT -q "DROP USER ${U_DEF}" 2>&1 | grep -o -m1 "HAVE_DEPENDENT_OBJECTS"
-$CLICKHOUSE_CLIENT -q "DROP USER ${U_DEF}" 2>&1 | grep -c -m1 "handler hd_${DB}"
+http_query "DROP USER ${U_DEF}" | grep -o -m1 "HAVE_DEPENDENT_OBJECTS"
+http_query "DROP USER ${U_DEF}" | grep -c -m1 "handler hd_${DB}"
 as_default "CREATE HANDLER hd2_${DB} URL '/${DB}/hd2' DEFINER = ${U_DEF2} SQL SECURITY DEFINER AS SELECT 1"
 as_default "DROP USER ${U_DEF2}"
 as_default "ALTER HANDLER hd2_${DB} SQL SECURITY INVOKER"
@@ -192,13 +198,13 @@ as_default "DROP USER ${U_DEF3}"
 
 echo "--- 12. an ephemeral definer"
 as_default "CREATE HANDLER he_${DB} URL '/${DB}/he' DEFINER = ${E} SQL SECURITY DEFINER AS SELECT 1"
-$CLICKHOUSE_CLIENT -q "SELECT countSubstrings(create_query, '${E}:definer') FROM system.handlers WHERE name = 'he_${DB}'"
-$CLICKHOUSE_CLIENT -q "DROP USER \`${E}:definer\`" 2>&1 | grep -o -m1 "HAVE_DEPENDENT_OBJECTS"
+http_query "SELECT countSubstrings(create_query, '${E}:definer') FROM system.handlers WHERE name = 'he_${DB}'"
+http_query "DROP USER \`${E}:definer\`" | grep -o -m1 "HAVE_DEPENDENT_OBJECTS"
 as_default "DROP USER ${E}"
-$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.users WHERE name = '${E}:definer'"
+http_query "SELECT count() FROM system.users WHERE name = '${E}:definer'"
 request "${BASE}/${DB}/he"
 as_default "DROP HANDLER he_${DB}"
-$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.users WHERE name = '${E}:definer'"
+http_query "SELECT count() FROM system.users WHERE name = '${E}:definer'"
 
 echo "--- 13. a request to it cannot choose the database"
 request -u "${U_CALLER}:" "${BASE}/${DB}/hd?database=${DB_B}"
@@ -207,9 +213,9 @@ request "${BASE}/${DB}/hi?database=${DB_B}"
 
 echo "--- 14. the creator must be allowed to run the query of a handler running as another user"
 as_user "${U_SD}" "CREATE HANDLER h14a_${DB} URL '/${DB}/h14a' DEFINER = ${U_DEF} SQL SECURITY DEFINER AS SELECT * FROM ${DB}.t"
-$CLICKHOUSE_CLIENT -q "GRANT SELECT ON ${DB}.t TO ${U_SD}"
+http_query "GRANT SELECT ON ${DB}.t TO ${U_SD}"
 as_user "${U_SD}" "CREATE HANDLER h14a_${DB} URL '/${DB}/h14a' DEFINER = ${U_DEF} SQL SECURITY DEFINER AS SELECT * FROM ${DB}.t"
-$CLICKHOUSE_CLIENT -q "GRANT INSERT ON ${DB}.t3 TO ${U_SD}"
+http_query "GRANT INSERT ON ${DB}.t3 TO ${U_SD}"
 as_user "${U_SD}" "CREATE HANDLER h14b_${DB} URL '/${DB}/h14b' METHODS (POST) DEFINER = ${U_DEF} SQL SECURITY DEFINER AS INSERT INTO ${DB}.t3 FORMAT TSV"
 as_user "${U_SD}" "CREATE HANDLER h14b_${DB} URL '/${DB}/h14b' METHODS (POST) DEFINER = CURRENT_USER SQL SECURITY DEFINER AS INSERT INTO ${DB}.t3 FORMAT TSV"
 as_user "${U_NONE}" "CREATE HANDLER h14c_${DB} URL '/${DB}/h14c' SQL SECURITY NONE AS SELECT * FROM ${DB}.t"
@@ -217,11 +223,11 @@ as_user "${U_NONE}" "CREATE HANDLER h14c_${DB} URL '/${DB}/h14c' SQL SECURITY NO
 echo "--- 15. the restrictions of the definer apply"
 as_default "CREATE HANDLER h15_${DB} URL '/${DB}/h15' METHODS (POST) DEFINER = ${U_RO} SQL SECURITY DEFINER AS INSERT INTO ${DB}.t4 FORMAT TSV"
 printf '1\n' | request -X POST --data-binary @- "${BASE}/${DB}/h15"
-$CLICKHOUSE_CLIENT -q "SELECT count() FROM ${DB}.t4"
+http_query "SELECT count() FROM ${DB}.t4"
 
 echo "--- 16. ON CLUSTER"
 as_default "CREATE HANDLER h16_${DB} ON CLUSTER test_shard_localhost URL '/${DB}/h16' DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT 1"
-$CLICKHOUSE_CLIENT -q "GRANT SELECT ON ${DB}.t TO ${U_LIM}"
+http_query "GRANT SELECT ON ${DB}.t TO ${U_LIM}"
 as_user "${U_LIM}" "CREATE HANDLER h16_${DB} ON CLUSTER test_shard_localhost URL '/${DB}/h16' AS SELECT * FROM ${DB}.t"
 as_default "CREATE HANDLER h16_${DB} ON CLUSTER test_shard_localhost URL '/${DB}/h16' AS SELECT * FROM ${DB}.t"
 as_user "${U_LIM}" "ALTER HANDLER h16_${DB} ON CLUSTER test_shard_localhost URL '/${DB}/h16b'"
@@ -236,8 +242,8 @@ q17=$(grep -i '^X-ClickHouse-Query-Id:' "${CLICKHOUSE_TMP}/h17_${DB}.headers" | 
 # The query log entry can be written after the HTTP response is sent.
 # With serialize_query_plan the shard's entry has empty `databases`, so the initial query's entry is filtered.
 for _ in {1..60}; do
-    res=$($CLICKHOUSE_CLIENT -q "
-    SYSTEM FLUSH LOGS query_log;
+    http_query "SYSTEM FLUSH LOGS query_log"
+    res=$(http_query "
     SELECT count() > 0, replaceAll(any(initial_user), '${DB}', 'DB') FROM system.query_log
     WHERE NOT is_initial_query AND type = 'QueryFinish' AND event_date >= yesterday()
         AND initial_query_id IN (SELECT query_id FROM system.query_log WHERE query_id = '${q17}' AND is_initial_query
@@ -248,7 +254,7 @@ done
 echo "$res"
 
 echo "--- 18. SQL SECURITY NONE keeps the readonly mode"
-$CLICKHOUSE_CLIENT -q "CREATE TABLE ${DB}.t5 (id UInt32) ENGINE = MergeTree ORDER BY id"
+http_query "CREATE TABLE ${DB}.t5 (id UInt32) ENGINE = MergeTree ORDER BY id"
 as_default "CREATE HANDLER h18_${DB} URL '/${DB}/h18' METHODS (GET, POST) SQL SECURITY NONE AS INSERT INTO ${DB}.t5 SELECT 1"
 as_default "CREATE HANDLER h18p_${DB} URL '/${DB}/h18p' METHODS (GET, POST) SQL SECURITY NONE AS INSERT INTO ${DB}.t5 SELECT 2 PARALLEL WITH INSERT INTO ${DB}.t5 SELECT 3"
 request "${BASE}/${DB}/h18"
@@ -256,41 +262,49 @@ ${CLICKHOUSE_CURL} -sS -o /dev/null -I "${BASE}/${DB}/h18"
 request -u "${U_ROCALLER}:" -X POST "${BASE}/${DB}/h18"
 request "${BASE}/${DB}/h18p"
 request -u "${U_ROCALLER}:" -X POST "${BASE}/${DB}/h18p"
-$CLICKHOUSE_CLIENT -q "SELECT count() FROM ${DB}.t5"
+http_query "SELECT count() FROM ${DB}.t5"
 request -X POST "${BASE}/${DB}/h18"
 request -X POST "${BASE}/${DB}/h18p"
-$CLICKHOUSE_CLIENT -q "SELECT groupArray(id) FROM (SELECT id FROM ${DB}.t5 ORDER BY id)"
+http_query "SELECT groupArray(id) FROM (SELECT id FROM ${DB}.t5 ORDER BY id)"
 
 echo "--- 19. ALTER HANDLER checks the DEFINER and SQL SECURITY it sets or keeps"
 as_default "CREATE HANDLER h19_${DB} URL '/${DB}/h19' AS SELECT 1"
 as_default "CREATE HANDLER h19n_${DB} URL '/${DB}/h19n' SQL SECURITY NONE AS SELECT 1"
-$CLICKHOUSE_CLIENT --user "${U_LIM}" -q "ALTER HANDLER h19_${DB} DEFINER = ${U_DEF} SQL SECURITY DEFINER" 2>&1 | grep -o -m1 'SET DEFINER'
-$CLICKHOUSE_CLIENT --user "${U_LIM}" -q "ALTER HANDLER h19_${DB} SQL SECURITY NONE" 2>&1 | grep -o -m1 'ALLOW SQL SECURITY NONE'
-$CLICKHOUSE_CLIENT --user "${U_LIM}" -q "ALTER HANDLER h19n_${DB} URL '/${DB}/h19m'" 2>&1 | grep -o -m1 'ALLOW SQL SECURITY NONE'
+http_query_as "${U_LIM}" "ALTER HANDLER h19_${DB} DEFINER = ${U_DEF} SQL SECURITY DEFINER" | grep -o -m1 'SET DEFINER'
+http_query_as "${U_LIM}" "ALTER HANDLER h19_${DB} SQL SECURITY NONE" | grep -o -m1 'ALLOW SQL SECURITY NONE'
+http_query_as "${U_LIM}" "ALTER HANDLER h19n_${DB} URL '/${DB}/h19m'" | grep -o -m1 'ALLOW SQL SECURITY NONE'
 handler_query "h19_${DB}" create_query
 handler_query "h19n_${DB}" create_query
 as_user "${U_NONE}" "ALTER HANDLER h19n_${DB} URL '/${DB}/h19m'"
 handler_query "h19n_${DB}" url
 
 echo "--- 20. a definer named <user>:definer is not the ephemeral <user>"
-$CLICKHOUSE_CLIENT -q "CREATE USER ${EE}, ${EE2} NOT IDENTIFIED IN memory; CREATE USER \`${EE}:definer\` NOT IDENTIFIED; GRANT CREATE HANDLER, ALTER HANDLER ON *.* TO ${EE}, ${EE2}; GRANT INSERT ON ${DB}.t5 TO \`${EE}:definer\`"
+http_query "CREATE USER ${EE}, ${EE2} NOT IDENTIFIED IN memory"
+http_query "CREATE USER \`${EE}:definer\` NOT IDENTIFIED"
+http_query "GRANT CREATE HANDLER, ALTER HANDLER ON *.* TO ${EE}, ${EE2}"
+http_query "GRANT INSERT ON ${DB}.t5 TO \`${EE}:definer\`"
 as_default "CREATE HANDLER h20_${DB} URL '/${DB}/h20' METHODS (POST) DEFINER = \`${EE}:definer\` SQL SECURITY DEFINER AS SELECT 1"
-$CLICKHOUSE_CLIENT --user "${EE}" -q "ALTER HANDLER h20_${DB} AS INSERT INTO ${DB}.t5 SELECT 20" 2>&1 | grep -o -m1 'SET DEFINER'
-$CLICKHOUSE_CLIENT --user "${EE}" -q "ALTER HANDLER h20_${DB} URL '/${DB}/h20b'" 2>&1 | grep -o -m1 'SET DEFINER'
+http_query_as "${EE}" "ALTER HANDLER h20_${DB} AS INSERT INTO ${DB}.t5 SELECT 20" | grep -o -m1 'SET DEFINER'
+http_query_as "${EE}" "ALTER HANDLER h20_${DB} URL '/${DB}/h20b'" | grep -o -m1 'SET DEFINER'
 handler_query "h20_${DB}" create_query
 as_user "${EE2}" "CREATE HANDLER h20e_${DB} URL '/${DB}/h20e' DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT 1"
-$CLICKHOUSE_CLIENT --user "${EE2}" -q "ALTER HANDLER h20e_${DB} URL '/${DB}/h20f'" 2>&1 | grep -o -m1 'SET DEFINER'
+http_query_as "${EE2}" "ALTER HANDLER h20e_${DB} URL '/${DB}/h20f'" | grep -o -m1 'SET DEFINER'
 as_user "${EE2}" "ALTER HANDLER h20e_${DB} URL '/${DB}/h20f' DEFINER = CURRENT_USER SQL SECURITY DEFINER"
 handler_query "h20e_${DB}" url
 
 echo "--- 21. the RETURNING query of an INSERT is qualified"
-$CLICKHOUSE_CLIENT -q "CREATE USER ${U_RET} NOT IDENTIFIED DEFAULT DATABASE ${DB_B}; GRANT INSERT ON ${DB}.t5 TO ${U_RET}; GRANT SELECT ON ${DB}.t TO ${U_RET}; GRANT SELECT ON ${DB_B}.t TO ${U_RET}"
+http_query "CREATE USER ${U_RET} NOT IDENTIFIED DEFAULT DATABASE ${DB_B}"
+http_query "GRANT INSERT ON ${DB}.t5 TO ${U_RET}"
+http_query "GRANT SELECT ON ${DB}.t TO ${U_RET}"
+http_query "GRANT SELECT ON ${DB_B}.t TO ${U_RET}"
 as_default "CREATE HANDLER h21_${DB} URL '/${DB}/h21' METHODS (POST) DEFINER = ${U_RET} SQL SECURITY DEFINER AS INSERT INTO t5 RETURNING (SELECT v FROM t ORDER BY id LIMIT 1) SELECT 21"
 handler_query "h21_${DB}" create_query
 request -X POST "${BASE}/${DB}/h21"
 
 echo "--- 22. neither the definer's nor the requesting user's profile runs it in the background"
-$CLICKHOUSE_CLIENT -q "CREATE USER ${U_BG}, ${U_BGCALLER} NOT IDENTIFIED; GRANT SELECT ON ${DB}.t TO ${U_BG}; CREATE SETTINGS PROFILE p_bg_${DB} SETTINGS run_query_in_background = 1 TO ${U_BG}, ${U_BGCALLER}"
+http_query "CREATE USER ${U_BG}, ${U_BGCALLER} NOT IDENTIFIED"
+http_query "GRANT SELECT ON ${DB}.t TO ${U_BG}"
+http_query "CREATE SETTINGS PROFILE p_bg_${DB} SETTINGS run_query_in_background = 1 TO ${U_BG}, ${U_BGCALLER}"
 as_default "CREATE HANDLER h22_${DB} URL '/${DB}/h22' DEFINER = ${U_BG} SQL SECURITY DEFINER AS SELECT count() FROM ${DB}.t"
 as_default "CREATE HANDLER h22c_${DB} URL '/${DB}/h22c' DEFINER = ${U_DEF} SQL SECURITY DEFINER AS SELECT count() FROM ${DB}.t"
 request "${BASE}/${DB}/h22"
@@ -298,11 +312,12 @@ request -u "${U_BGCALLER}:" "${BASE}/${DB}/h22c"
 request "${BASE}/${DB}/h22c"
 
 echo "--- 23. a query parameter naming the database of an INSERT is kept"
-$CLICKHOUSE_CLIENT -q "CREATE TABLE ${DB_B}.t5 (id UInt32) ENGINE = MergeTree ORDER BY id; GRANT INSERT ON ${DB_B}.t5 TO ${U_DEF}"
+http_query "CREATE TABLE ${DB_B}.t5 (id UInt32) ENGINE = MergeTree ORDER BY id"
+http_query "GRANT INSERT ON ${DB_B}.t5 TO ${U_DEF}"
 as_default "CREATE HANDLER h23_${DB} URL '/${DB}/h23' METHODS (POST) DEFINER = ${U_DEF} SQL SECURITY DEFINER AS INSERT INTO {db:Identifier}.t5 SELECT 23"
 handler_query "h23_${DB}" query
 request -X POST "${BASE}/${DB}/h23?param_db=${DB_B}"
-$CLICKHOUSE_CLIENT -q "SELECT groupArray(id) FROM ${DB_B}.t5"
+http_query "SELECT groupArray(id) FROM ${DB_B}.t5"
 
 echo "--- 24. a request to it cannot attach external tables"
 as_default "CREATE HANDLER h24_${DB} URL '/${DB}/h24' METHODS (POST) DEFINER = ${U_DEF} SQL SECURITY DEFINER AS SELECT count() FROM ${DB}.t WHERE v = {p:String}"
