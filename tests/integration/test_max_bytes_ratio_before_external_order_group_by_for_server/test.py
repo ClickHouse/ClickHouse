@@ -91,22 +91,29 @@ def test_max_bytes_ratio_before_external_sort(node):
 
 
 @pytest.mark.parametrize(
-    "node",
+    "node,query",
     [
-        pytest.param(node_server, id="server"),
-        pytest.param(node_user, id="user"),
+        # Peak memory usage: ~14GiB (the `DISTINCT` hash set of 100M unique ~85-byte strings)
+        pytest.param(
+            node_server,
+            "SELECT count() FROM (SELECT DISTINCT repeat(number::String, 10) AS k FROM numbers(100e6)) FORMAT Null",
+            id="server",
+        ),
+        # Peak memory usage: ~5.7GiB (7M unique 800-byte strings) against a 4GiB user limit. The final merge
+        # holds a block of every spilled run at once, so `max_block_size` is pinned to its default.
+        pytest.param(
+            node_user,
+            "SELECT count() FROM (SELECT DISTINCT repeat(number::String, 100) AS k FROM numbers(10000000, 7000000)) "
+            "SETTINGS max_memory_usage_for_user = '4Gi', max_block_size = 65409 FORMAT Null",
+            id="user",
+        ),
     ],
 )
-def test_max_bytes_ratio_before_external_distinct(node):
+def test_max_bytes_ratio_before_external_distinct(node, query):
     if node.is_built_with_thread_sanitizer():
         pytest.skip("TSan build is skipped due to memory overhead")
     if node.is_built_with_memory_sanitizer():
         pytest.skip("Memory Sanitizer uses more memory, making precise memory limit testing unreliable")
-
-    # Peak memory usage: ~14GiB (the `DISTINCT` hash set of 100M unique ~85-byte strings)
-    query = """
-    SELECT count() FROM (SELECT DISTINCT repeat(number::String, 10) AS k FROM numbers(100e6)) FORMAT Null
-    """
 
     settings = {
         "max_memory_usage": "0",
