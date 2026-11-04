@@ -137,6 +137,9 @@ struct ProjectionDescription
 
     bool isPrimaryKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const;
 
+    /// Whether a read of the parent table can take `column_name` from this projection's parts.
+    bool canProvideParentColumn(const String & column_name) const;
+
     /**
      * @brief Calculates the projection result for a given input block.
      *
