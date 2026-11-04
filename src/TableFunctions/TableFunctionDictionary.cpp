@@ -146,7 +146,7 @@ SELECT * FROM dictionary('new_dictionary');
 ## Related {#related}
 
 - [Dictionary engine](/reference/engines/table-engines/special/dictionary)
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{});
 }
 
 }

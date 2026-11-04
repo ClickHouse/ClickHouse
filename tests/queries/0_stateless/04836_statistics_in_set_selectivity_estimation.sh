@@ -33,9 +33,9 @@ QUERY="SELECT count() FROM probe_tbl WHERE k1 IN (SELECT id FROM set_tbl) AND k2
 
 # The 20000-element set is above the limit in the first run and below it in the second, so the same
 # query takes the size-based path and then the exact-range path.
-$CLICKHOUSE_CLIENT --use_statistics=1 --optimize_move_to_prewhere=1 --query_plan_optimize_prewhere=1 --allow_reorder_prewhere_conditions=1 --statistics_max_set_size_for_exact_selectivity_estimation=10000 \
+$CLICKHOUSE_CLIENT --use_statistics=1 --optimize_move_to_prewhere=1 --allow_reorder_prewhere_conditions=1 --statistics_max_set_size_for_exact_selectivity_estimation=10000 \
     --log_comment="capped_${RUN}" --query "$QUERY FORMAT Null"
-$CLICKHOUSE_CLIENT --use_statistics=1 --optimize_move_to_prewhere=1 --query_plan_optimize_prewhere=1 --allow_reorder_prewhere_conditions=1 --statistics_max_set_size_for_exact_selectivity_estimation=0 \
+$CLICKHOUSE_CLIENT --use_statistics=1 --optimize_move_to_prewhere=1 --allow_reorder_prewhere_conditions=1 --statistics_max_set_size_for_exact_selectivity_estimation=0 \
     --log_comment="exact_${RUN}" --query "$QUERY FORMAT Null"
 
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
@@ -56,18 +56,18 @@ echo '--- the estimate never changes the result ---'
 $CLICKHOUSE_CLIENT -m --query "
 SELECT
     (SELECT count() FROM probe_tbl WHERE k1 IN (SELECT id FROM set_tbl) AND k2 > 5
-     SETTINGS use_statistics = 1, optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1, allow_reorder_prewhere_conditions = 1, statistics_max_set_size_for_exact_selectivity_estimation = 10000) AS capped,
+     SETTINGS use_statistics = 1, optimize_move_to_prewhere = 1, allow_reorder_prewhere_conditions = 1, statistics_max_set_size_for_exact_selectivity_estimation = 10000) AS capped,
     capped = (SELECT count() FROM probe_tbl WHERE k1 IN (SELECT id FROM set_tbl) AND k2 > 5
-              SETTINGS use_statistics = 1, optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1, allow_reorder_prewhere_conditions = 1, statistics_max_set_size_for_exact_selectivity_estimation = 0) AS same_as_exact,
+              SETTINGS use_statistics = 1, optimize_move_to_prewhere = 1, allow_reorder_prewhere_conditions = 1, statistics_max_set_size_for_exact_selectivity_estimation = 0) AS same_as_exact,
     capped = (SELECT count() FROM probe_tbl WHERE k1 IN (SELECT id FROM set_tbl) AND k2 > 5
-              SETTINGS use_statistics = 0, optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1, allow_reorder_prewhere_conditions = 1) AS same_as_no_statistics;
+              SETTINGS use_statistics = 0, optimize_move_to_prewhere = 1, allow_reorder_prewhere_conditions = 1) AS same_as_no_statistics;
 "
 
 # The size-based estimate must agree with the exact ranges well enough to pick the same PREWHERE.
 echo '--- same PREWHERE as the exact ranges ---'
-capped_pw=$($CLICKHOUSE_CLIENT --use_statistics=1 --optimize_move_to_prewhere=1 --query_plan_optimize_prewhere=1 --allow_reorder_prewhere_conditions=1 --statistics_max_set_size_for_exact_selectivity_estimation=10000 \
+capped_pw=$($CLICKHOUSE_CLIENT --use_statistics=1 --optimize_move_to_prewhere=1 --allow_reorder_prewhere_conditions=1 --statistics_max_set_size_for_exact_selectivity_estimation=10000 \
     --query "EXPLAIN actions=1 $QUERY" | grep -F 'Prewhere filter column:')
-exact_pw=$($CLICKHOUSE_CLIENT --use_statistics=1 --optimize_move_to_prewhere=1 --query_plan_optimize_prewhere=1 --allow_reorder_prewhere_conditions=1 --statistics_max_set_size_for_exact_selectivity_estimation=0 \
+exact_pw=$($CLICKHOUSE_CLIENT --use_statistics=1 --optimize_move_to_prewhere=1 --allow_reorder_prewhere_conditions=1 --statistics_max_set_size_for_exact_selectivity_estimation=0 \
     --query "EXPLAIN actions=1 $QUERY" | grep -F 'Prewhere filter column:')
 [ -n "$capped_pw" ] && echo 1 || echo "no prewhere chosen"
 [ "$capped_pw" = "$exact_pw" ] && echo 1 || { echo "PREWHERE differs"; echo "$capped_pw"; echo "$exact_pw"; }
@@ -79,9 +79,9 @@ exact_pw=$($CLICKHOUSE_CLIENT --use_statistics=1 --optimize_move_to_prewhere=1 -
 echo '--- expression on the left: same PREWHERE above and below the limit ---'
 LITERALS=$($CLICKHOUSE_CLIENT --query "SELECT arrayStringConcat(groupArray(toString(number)), ',') FROM numbers(500)")
 EXPR_QUERY="SELECT count() FROM probe_tbl WHERE bitXor(k1, 42) IN ($LITERALS) AND k2 > 5"
-expr_capped=$($CLICKHOUSE_CLIENT --use_statistics=1 --optimize_move_to_prewhere=1 --query_plan_optimize_prewhere=1 --allow_reorder_prewhere_conditions=1 --statistics_max_set_size_for_exact_selectivity_estimation=100 \
+expr_capped=$($CLICKHOUSE_CLIENT --use_statistics=1 --optimize_move_to_prewhere=1 --allow_reorder_prewhere_conditions=1 --statistics_max_set_size_for_exact_selectivity_estimation=100 \
     --query "EXPLAIN actions=1 $EXPR_QUERY" | grep -F 'Prewhere filter column:')
-expr_exact=$($CLICKHOUSE_CLIENT --use_statistics=1 --optimize_move_to_prewhere=1 --query_plan_optimize_prewhere=1 --allow_reorder_prewhere_conditions=1 --statistics_max_set_size_for_exact_selectivity_estimation=0 \
+expr_exact=$($CLICKHOUSE_CLIENT --use_statistics=1 --optimize_move_to_prewhere=1 --allow_reorder_prewhere_conditions=1 --statistics_max_set_size_for_exact_selectivity_estimation=0 \
     --query "EXPLAIN actions=1 $EXPR_QUERY" | grep -F 'Prewhere filter column:')
 [ "$expr_capped" = "$expr_exact" ] && echo 1 || { echo "PREWHERE differs"; echo "$expr_capped"; echo "$expr_exact"; }
 
@@ -96,7 +96,7 @@ INSERT INTO probe_unindexed SELECT number, number, repeat('x', 20) FROM numbers(
 INSERT INTO probe_unindexed SELECT number + 20000, number, repeat('x', 20) FROM numbers(20000);
 OPTIMIZE TABLE probe_unindexed FINAL;
 "
-$CLICKHOUSE_CLIENT --use_statistics=1 --optimize_move_to_prewhere=1 --query_plan_optimize_prewhere=1 --allow_reorder_prewhere_conditions=1 --log_comment="unbuilt_${RUN}" \
+$CLICKHOUSE_CLIENT --use_statistics=1 --optimize_move_to_prewhere=1 --allow_reorder_prewhere_conditions=1 --log_comment="unbuilt_${RUN}" \
     --query "SELECT count() FROM probe_unindexed WHERE k1 IN (SELECT id FROM set_tbl) AND k2 > 5 FORMAT Null"
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
 $CLICKHOUSE_CLIENT --query "

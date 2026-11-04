@@ -17,6 +17,7 @@
 #include <fmt/ranges.h>
 #include <Interpreters/JoinExpressionActions.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/FullSortingMergeJoin.h>
 #include <Interpreters/MergeJoin.h>
 
@@ -35,6 +36,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsJoinAlgorithm join_algorithm;
+    extern const SettingsBool allow_block_nested_loop_join;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_rows_in_join;
     extern const SettingsUInt64 max_bytes_in_join;
@@ -54,6 +56,7 @@ namespace Setting
     extern const SettingsBool collect_hash_table_stats_during_joins;
     extern const SettingsUInt64 max_size_to_preallocate_for_joins;
     extern const SettingsUInt64 parallel_hash_join_threshold;
+    extern const SettingsHashJoinLayout hash_join_layout;
 
     extern const SettingsBool joined_block_split_single_row;
     extern const SettingsBool parallel_non_joined_rows_processing;
@@ -90,6 +93,7 @@ namespace Setting
 namespace QueryPlanSerializationSetting
 {
     extern const QueryPlanSerializationSettingsJoinAlgorithm join_algorithm;
+    extern const QueryPlanSerializationSettingsBool allow_block_nested_loop_join;
     extern const QueryPlanSerializationSettingsNonZeroUInt64 max_block_size;
     extern const QueryPlanSerializationSettingsUInt64 max_rows_in_join;
     extern const QueryPlanSerializationSettingsUInt64 max_bytes_in_join;
@@ -112,6 +116,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsBool collect_hash_table_stats_during_joins;
     extern const QueryPlanSerializationSettingsUInt64 max_size_to_preallocate_for_joins;
     extern const QueryPlanSerializationSettingsUInt64 parallel_hash_join_threshold;
+    extern const QueryPlanSerializationSettingsHashJoinLayout hash_join_layout;
 
     extern const QueryPlanSerializationSettingsBool joined_block_split_single_row;
     extern const QueryPlanSerializationSettingsBool parallel_non_joined_rows_processing;
@@ -146,6 +151,7 @@ JoinSettings::JoinSettings(const Settings & query_settings, JoinAnalyzeMode join
     : join_analyze_mode(join_analyze_mode_)
 {
     join_algorithms = query_settings[Setting::join_algorithm];
+    allow_block_nested_loop_join = query_settings[Setting::allow_block_nested_loop_join];
 
     max_block_size = query_settings[Setting::max_block_size];
 
@@ -181,6 +187,7 @@ JoinSettings::JoinSettings(const Settings & query_settings, JoinAnalyzeMode join
     collect_hash_table_stats_during_joins = query_settings[Setting::collect_hash_table_stats_during_joins];
     max_size_to_preallocate_for_joins = query_settings[Setting::max_size_to_preallocate_for_joins];
     parallel_hash_join_threshold = query_settings[Setting::parallel_hash_join_threshold];
+    hash_join_layout = query_settings[Setting::hash_join_layout];
 
     temporary_files_codec = query_settings[Setting::temporary_files_codec];
     temporary_files_buffer_size = query_settings[Setting::temporary_files_buffer_size];
@@ -207,6 +214,9 @@ JoinSettings::JoinSettings(const Settings & query_settings, JoinAnalyzeMode join
 JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings, UInt64 version)
 {
     join_algorithms = settings[QueryPlanSerializationSetting::join_algorithm];
+    /// A plan from before the name existed was built where the block nested loop join did not exist.
+    allow_block_nested_loop_join = version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_BLOCK_NESTED_LOOP_JOIN
+        && settings[QueryPlanSerializationSetting::allow_block_nested_loop_join];
     max_block_size = settings[QueryPlanSerializationSetting::max_block_size];
 
     max_rows_in_join = settings[QueryPlanSerializationSetting::max_rows_in_join];
@@ -233,6 +243,8 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings, UInt
     collect_hash_table_stats_during_joins = settings[QueryPlanSerializationSetting::collect_hash_table_stats_during_joins];
     max_size_to_preallocate_for_joins = settings[QueryPlanSerializationSetting::max_size_to_preallocate_for_joins];
     parallel_hash_join_threshold = settings[QueryPlanSerializationSetting::parallel_hash_join_threshold];
+    /// An older initiator does not write the name, so its plans get `auto`.
+    hash_join_layout = settings[QueryPlanSerializationSetting::hash_join_layout];
 
     joined_block_split_single_row = settings[QueryPlanSerializationSetting::joined_block_split_single_row];
     parallel_non_joined_rows_processing = settings[QueryPlanSerializationSetting::parallel_non_joined_rows_processing];
@@ -266,7 +278,7 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings, UInt
 }
 
 /// `join_algorithm` is an ordered preference list, and these entries produce a join for any step that reaches
-/// them: their branch in `chooseJoinAlgorithm` ends in an unconditional `HashJoin` / `ConcurrentHashJoin` /
+/// them: their branch in `chooseJoinAlgorithm` ends in an unconditional `HashJoin` or
 /// `SpillingHashJoin` (`src/Planner/PlannerJoins.cpp`, `src/Interpreters/ExpressionAnalyzer.cpp`). Whatever follows
 /// such an entry in the list is never consulted, on this side or on an older peer, which walks the same list with
 /// the same order. Note that `prefer_partial_merge` stops the walk, but not always with a hash join: it tries
@@ -275,7 +287,6 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings, UInt
 static bool alwaysProducesJoin(JoinAlgorithm algorithm)
 {
     return algorithm == JoinAlgorithm::HASH
-        || algorithm == JoinAlgorithm::PARALLEL_HASH
         || algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE
         || algorithm == JoinAlgorithm::DEFAULT
         || algorithm == JoinAlgorithm::AUTO;
@@ -444,6 +455,10 @@ bool JoinSettings::spillBehaviorDiffersFromLegacy(const JoinOperator & join_oper
 void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings, UInt64 version, const JoinOperator & join_operator) const
 {
     settings[QueryPlanSerializationSetting::join_algorithm] = join_algorithms;
+    /// `QueryPlanSerializationSettings` is a strict named schema, so the name goes on the wire only towards a peer
+    /// that knows it. An older peer has no block nested loop join at all: it behaves as with the setting disabled.
+    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_BLOCK_NESTED_LOOP_JOIN)
+        settings[QueryPlanSerializationSetting::allow_block_nested_loop_join] = allow_block_nested_loop_join;
     settings[QueryPlanSerializationSetting::max_block_size] = max_block_size;
 
     settings[QueryPlanSerializationSetting::max_rows_in_join] = max_rows_in_join;
@@ -470,6 +485,10 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings,
     settings[QueryPlanSerializationSetting::collect_hash_table_stats_during_joins] = collect_hash_table_stats_during_joins;
     settings[QueryPlanSerializationSetting::max_size_to_preallocate_for_joins] = max_size_to_preallocate_for_joins;
     settings[QueryPlanSerializationSetting::parallel_hash_join_threshold] = parallel_hash_join_threshold;
+    /// A peer below this version does not know the name and picks the layout itself. That can change only the speed,
+    /// the memory use and the order of rows, so the plan is not refused.
+    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_HASH_JOIN_LAYOUT)
+        settings[QueryPlanSerializationSetting::hash_join_layout] = hash_join_layout;
 
     settings[QueryPlanSerializationSetting::joined_block_split_single_row] = joined_block_split_single_row;
     settings[QueryPlanSerializationSetting::parallel_non_joined_rows_processing] = parallel_non_joined_rows_processing;
@@ -512,6 +531,15 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings,
     settings[QueryPlanSerializationSetting::join_runtime_filter_from_fixed_hash_table] = join_runtime_filter_from_fixed_hash_table;
     settings[QueryPlanSerializationSetting::enable_hash_join_row_store] = enable_hash_join_row_store;
     settings[QueryPlanSerializationSetting::min_rows_ratio_for_hash_join_row_store] = min_rows_ratio_for_hash_join_row_store;
+}
+
+bool JoinSettings::canRunGraceHash() const
+{
+    const auto global_context = Context::getGlobalContextInstance();
+    if (!global_context || !global_context->getSharedTempDataOnDisk())
+        return false;
+
+    return legacy_join_size_limits_trigger_spilling || max_bytes_before_external_join > 0 || join_algorithms.size() == 1;
 }
 
 UInt64 JoinSettings::getMaxBytesBeforeExternalJoin(UInt64 max_bytes_before_external_join, double max_bytes_ratio_before_external_join)

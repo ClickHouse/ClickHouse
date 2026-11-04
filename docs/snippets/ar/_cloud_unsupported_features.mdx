@@ -4,9 +4,7 @@ title: الميزات غير المدعومة في Cloud
 
 تسرد الجداول التالية الميزات وإجراءات النشر ذاتية الإدارة المصنّفة على أنها غير مدعومة في ClickHouse Cloud. يوضح كل إدخال الإمكانية غير المدعومة تحديدًا، حتى إذا كانت صفحته المصدر تتناول أيضًا وظائف مدعومة.
 
-<div id="unsupported-managed-infrastructure-and-operations">
-  ### البنية التحتية والعمليات المُدارة
-</div>
+### البنية التحتية والعمليات المُدارة {#unsupported-managed-infrastructure-and-operations}
 
 | الإمكانات غير المدعومة                                              | الوثائق                                                                                                                                      |
 | ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -16,9 +14,7 @@ title: الميزات غير المدعومة في Cloud
 | إجراء اختبارات أداء للأجهزة المُدارة ذاتيًا                         | [الدليل](/ar/concepts/features/performance/troubleshoot/performance-test)                                                                       |
 | تطبيق التوصيات التشغيلية للإدارة الذاتية                            | [الدليل](/ar/guides/oss/best-practices/tips)                                                                                                    |
 
-<div id="unsupported-authentication-and-security">
-  ### المصادقة والأمان
-</div>
+### المصادقة والأمان {#unsupported-authentication-and-security}
 
 | الإمكانية غير المدعومة         | الوثائق                                                                                                                                        |
 | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -27,9 +23,7 @@ title: الميزات غير المدعومة في Cloud
 | مصادقة LDAP وتعيين الأدوار     | [التهيئة](/ar/concepts/features/security/configuring-ldap)، [المصادِق](/ar/concepts/features/security/external-authenticators/ldap)                  |
 | المصادقة باستخدام شهادة X.509  | [مصادقة المستخدم](/ar/concepts/features/security/ssl-user-auth)، [المصادِق الخارجي](/ar/concepts/features/security/external-authenticators/ssl-x509) |
 
-<div id="unsupported-interfaces-and-integrations">
-  ### الواجهات والتكاملات
-</div>
+### الواجهات والتكاملات {#unsupported-interfaces-and-integrations}
 
 | الإمكانية غير المدعومة                       | الوثائق                                                                                                                                                                                                                                                                                                                                                                 |
 | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -40,9 +34,7 @@ title: الميزات غير المدعومة في Cloud
 | تكامل تخزين الكائنات MinIO المتوافق مع S3    | [دليل](/ar/integrations/connectors/data-ingestion/s3-minio)                                                                                                                                                                                                                                                                                                                |
 | تكامل تخزين الكائنات Tigris المتوافق مع S3   | [دليل](/ar/integrations/connectors/data-ingestion/s3-tigris)                                                                                                                                                                                                                                                                                                               |
 
-<div id="unsupported-database-and-table-engines">
-  ### محركات قواعد البيانات والجداول
-</div>
+### محركات قواعد البيانات والجداول {#unsupported-database-and-table-engines}
 
 | إمكانية غير مدعومة                                               | الوثائق                                                                                                                                                                                                                                                                |
 | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -57,9 +49,7 @@ title: الميزات غير المدعومة في Cloud
 | محرك الجدول `YTsaurus`                                        | [مرجع](/ar/reference/engines/table-engines/integrations/ytsaurus)                                                                                                                                                                                                         |
 | محركات الجداول من عائلة `Log` (`Log` و`StripeLog` و`TinyLog`) | [نظرة عامة على العائلة](/ar/reference/engines/table-engines/log-family)، [`Log`](/ar/reference/engines/table-engines/log-family/log)، [`StripeLog`](/ar/reference/engines/table-engines/log-family/stripelog)، [`TinyLog`](/ar/reference/engines/table-engines/log-family/tinylog) |
 
-<div id="unsupported-dictionaries-and-server-configuration">
-  ### القواميس وإعدادات الخادم
-</div>
+### القواميس وإعدادات الخادم {#unsupported-dictionaries-and-server-configuration}
 
 | إمكانية غير مدعومة                                                              | الوثائق                                                                                                                                                                                                                     |
 | ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -70,9 +60,7 @@ title: الميزات غير المدعومة في Cloud
 | مصدر القاموس `YTsaurus`                                                         | [مرجع](/ar/reference/statements/create/dictionary/sources/ytsaurus)                                                                                                                                                            |
 | قواميس محلّل النصوص اليابانية المُعدّة على الخادم                               | [مرجع](/ar/reference/engines/table-engines/mergetree-family/textindexes#japanese-tokenizer-dictionary)                                                                                                                         |
 
-<div id="unsupported-data-formats-and-codecs">
-  ### تنسيقات البيانات ومرمّزات الضغط
-</div>
+### تنسيقات البيانات ومرمّزات الضغط {#unsupported-data-formats-and-codecs}
 
 | إمكانية غير مدعومة                                                                   | الوثائق                                                                                                                                                                                       |
 | ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -80,24 +68,19 @@ title: الميزات غير المدعومة في Cloud
 | تنسيقات `Protobuf` و`ProtobufList` و`ProtobufSingle` مع ملفات المخطط على جانب الخادم | [الدليل](/ar/guides/clickhouse/data-formats/binary#protocol-buffers)، [`ProtobufList`](/ar/reference/formats/Protobuf/ProtobufList)، [`ProtobufSingle`](/ar/reference/formats/Protobuf/ProtobufSingle) |
 | مرمّزات الضغط المتقادمة `ZSTD_QAT` و`DEFLATE_QPL`                                    | [`ZSTD_QAT`](/ar/reference/statements/create/table#zstd_qat)، [`DEFLATE_QPL`](/ar/reference/statements/create/table#deflate_qpl)                                                                    |
 
-<div id="unsupported-functions-and-experimental-features">
-  ### الدوال والميزات التجريبية
-</div>
+### الدوال والميزات التجريبية {#unsupported-functions-and-experimental-features}
 
 | الإمكانية غير المدعومة                                    | الوثائق                                                                                                                                                                                                                                                                                                                   |
 | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | دوال تجريبية لمعالجة اللغة الطبيعية                       | [مرجع](/ar/reference/functions/regular-functions/nlp-functions)                                                                                                                                                                                                                                                              |
 | معاملات تجريبية متعددة العبارات مع commit وrollback       | [دليل](/ar/concepts/features/operations/insert/transactions#transactions-commit-and-rollback)                                                                                                                                                                                                                                |
 | دوال تجريبية لاستبطان المعاملات                           | [`transactionID`](/ar/reference/functions/regular-functions/other-functions#transactionID)، [`transactionLatestSnapshot`](/ar/reference/functions/regular-functions/other-functions#transactionLatestSnapshot)، [`transactionOldestSnapshot`](/ar/reference/functions/regular-functions/other-functions#transactionOldestSnapshot) |
-| دوال النوافذ الزمنية لـ `WindowView`                      | [مرجع](/ar/reference/functions/regular-functions/time-window-functions)                                                                                                                                                                                                                                                      |
-| `WindowView` التجريبية                                    | [مرجع](/ar/reference/statements/create/view#window-view)                                                                                                                                                                                                                                                                     |
+| دوال النوافذ الزمنية                                      | [مرجع](/ar/reference/functions/regular-functions/time-window-functions)                                                                                                                                                                                                                                                      |
 | دوال WebAssembly المعرّفة من المستخدم                     | [نظرة عامة](/ar/reference/functions/regular-functions/udf#webassembly-user-defined-functions)، [دليل](/ar/reference/functions/regular-functions/wasm_udf)                                                                                                                                                                       |
 | دوال تنفيذية معرّفة من المستخدم ومعتمدة على برامج التشغيل | [مرجع](/ar/reference/functions/regular-functions/udf#driver-based-executable-user-defined-functions)                                                                                                                                                                                                                         |
 | دالة الجدول `filesystem` للملفات المحلية على الخادم       | [مرجع](/ar/reference/functions/table-functions/filesystem)                                                                                                                                                                                                                                                                   |
 
-<div id="unsupported-administration-and-access-control">
-  ### الإدارة والتحكّم في الوصول
-</div>
+### الإدارة والتحكّم في الوصول {#unsupported-administration-and-access-control}
 
 | الإمكانية غير المدعومة                                            | الوثائق                                                                                                                                              |
 | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |

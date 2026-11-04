@@ -1,0 +1,174 @@
+---
+title: Сведения о подключении в CLI
+---
+
+На этой странице описано, как получить сведения о подключении к существующему сервису ClickHouse Cloud — имя хоста, номера портов, имя пользователя и пароль — из командной строки с помощью [ClickHouse CLI](/ru/products/cloud/features/cli) (`clickhousectl`). Команды выполняются в неинтерактивном режиме; с флагом `--json` `clickhousectl` выводит результат в формате JSON.
+
+## Предварительные требования {#prerequisites}
+
+Установите ClickHouse CLI:
+
+```bash
+curl https://clickhouse.com/cli | sh
+```
+
+Также потребуется `jq`.
+
+Для описанных ниже шагов записи требуется [аутентификация по API key](/ru/products/cloud/features/admin-features/api/openapi): `cloud service start` (только если ваш сервис находится в состоянии `stopped`) и `reset-password`. Вход через OAuth работает только для чтения и охватывает лишь шаги чтения (`service list`, `service get`):
+
+```bash
+clickhousectl cloud auth login --api-key <YOUR_KEY> --api-secret <YOUR_SECRET>
+```
+
+Также можно задать переменные окружения `CLICKHOUSE_CLOUD_API_KEY` и `CLICKHOUSE_CLOUD_API_SECRET`. Проверьте результат командой `clickhousectl cloud auth status`: должна отобразиться запись со scope `read/write`.
+
+Кроме того, вам понадобится уже созданный сервис ClickHouse Cloud, из которого можно взять сведения о подключении, — например, созданный в рамках быстрого старта [Create your first Cloud service](/ru/get-started/quickstarts/create-your-first-service-on-cloud) или в CLI-сценарии [Cloud quick start](/ru/getting-started/quick-start/cloud).
+
+## Найдите свой сервис {#find-your-service}
+
+Выведите список сервисов в вашей организации и запомните ID того, к которому хотите подключиться:
+
+```bash
+clickhousectl cloud service list --json | jq -r '.[] | [.id, .name, .state] | @tsv'
+```
+
+```text
+9c2d4e61-7a35-49c8-8f0e-2b5a1d7c3e90	my-first-service	running
+```
+
+Сохраните ID сервиса — все остальные команды в этом руководстве принимают его в качестве аргумента. Чтобы найти его по имени:
+
+```bash
+CH_ID=$(clickhousectl cloud service list --json | jq -r '.[] | select(.name == "my-first-service") | .id')
+```
+
+Сервис должен быть запущен, чтобы на одном из следующих шагов проверить подключение. Если он находится в состоянии `stopped`, запустите его и опрашивайте состояние, пока оно не станет `running` (сервис в состоянии `idle` из-за масштабирования при простое пробуждается автоматически при первом подключении, поэтому здесь никаких действий не требуется):
+
+```bash
+clickhousectl cloud service start "$CH_ID"
+while [ "$(clickhousectl cloud service get "$CH_ID" --json | jq -r .state)" != "running" ]; do
+  sleep 15
+done
+```
+
+## Получение сведений о подключении {#get-your-connection-details}
+
+`clickhousectl cloud service get` возвращает полные сведения о сервисе, включая по одной конечной точке для каждого открытого протокола. Сохраните ответ и извлеките из него нужные данные:
+
+```bash
+clickhousectl cloud service get "$CH_ID" --json > service.json
+jq '.endpoints' service.json
+```
+
+```json
+[
+  {
+    "host": "abc123.us-east-1.aws.clickhouse.cloud",
+    "port": 9440,
+    "protocol": "nativesecure"
+  },
+  {
+    "host": "abc123.us-east-1.aws.clickhouse.cloud",
+    "port": 8443,
+    "protocol": "https"
+  }
+]
+```
+
+Это два основных сетевых протокола ClickHouse Cloud, каждый на своём порту:
+
+* **Собственный протокол (`nativesecure`, порт 9440)** — бинарный протокол, используемый `clickhouse-client`, `clickhouse-local` и большинством драйверов для конкретных языков. Это самый быстрый вариант, поддерживающий все возможности ClickHouse. В Cloud требуется TLS.
+* **Протокол HTTPS (`https`, порт 8443)** — интерфейс на основе HTTP, удобный для REST-клиентов, `curl`, веб-инструментов и драйверов, предпочитающих HTTP. В Cloud также требует TLS.
+
+Оба протокола требуют шифрования TLS при подключении к ClickHouse Cloud — подключиться в открытом виде нельзя. Большинство инструментов делает это автоматически, если указан правильный порт, но в зависимости от клиента может потребоваться передать флаг `--secure` или задать `ssl=true`. В большинстве руководств по быстрому старту и сценариев работы с CLI в этой серии используется **собственный протокол на порту 9440**.
+
+Извлеките имя хоста и порты:
+
+```bash
+CH_HOST=$(jq -r '.endpoints[] | select(.protocol == "nativesecure") | .host' service.json)
+CH_NATIVE_PORT=$(jq -r '.endpoints[] | select(.protocol == "nativesecure") | .port' service.json)
+CH_HTTPS_PORT=$(jq -r '.endpoints[] | select(.protocol == "https") | .port' service.json)
+```
+
+Имя пользователя — `default`, если вы не создавали дополнительных пользователей базы данных.
+
+## Получение пароля {#get-a-password}
+
+Пароль пользователя `default` возвращается ровно один раз — командой `clickhousectl cloud service create`; впоследствии его нельзя получить ни через API, ни через CLI. Если вы сохранили пароль при создании сервиса, присвойте его переменной, которая используется в последующих шагах, и пропустите сброс:
+
+```bash
+CH_PASSWORD='<your saved password>'
+```
+
+Если он утерян, сгенерируйте новый:
+
+```bash
+CH_PASSWORD=$(clickhousectl cloud service reset-password "$CH_ID" --json | jq -r .password)
+```
+
+<Warning>
+  `reset-password` немедленно делает недействительным прежний пароль пользователя `default` — любой клиент, всё ещё настроенный на старый пароль, не сможет пройти аутентификацию. Если сервис входит в [хранилище](/ru/products/cloud/features/infrastructure/warehouses), пользователи базы данных являются общими для всех сервисов этого хранилища, поэтому сброс меняет пароль и во всех остальных сервисах хранилища. Как и исходный, новый пароль отображается только один раз, поэтому сохраните его в надёжном месте.
+</Warning>
+
+## Сохраните сведения о подключении для повторного использования {#save-your-connection-details-for-reuse}
+
+Эти сведения о подключении вам часто понадобятся в руководствах по быстрому старту. Чтобы не вводить их каждый раз заново, экспортируйте их как переменные окружения в текущем сеансе терминала:
+
+```bash
+export CLICKHOUSE_HOST=$CH_HOST
+export CLICKHOUSE_USER=default
+export CLICKHOUSE_PASSWORD=$CH_PASSWORD
+```
+
+<Warning>
+  Эти переменные окружения действуют только в рамках текущего сеанса терминала. Не храните пароли в файлах профиля shell (`.bashrc`, `.zshrc`) и не коммитьте их в систему контроля версий.
+</Warning>
+
+## Проверка подключения {#verify-connectivity}
+
+Проверьте HTTPS-интерфейс (порт 8443) с помощью `curl`:
+
+```bash
+curl --user "$CLICKHOUSE_USER:$CLICKHOUSE_PASSWORD" \
+  "https://$CLICKHOUSE_HOST:8443/?query=SELECT%201"
+```
+
+```text
+1
+```
+
+Проверьте собственный протокол (порт 9440) с помощью [**клиента ClickHouse**](/ru/concepts/features/interfaces/client). ClickHouse CLI сам управляет бинарным файлом `clickhouse`, поэтому, если его у вас ещё нет, команда `clickhousectl local use latest` установит его и создаст символическую ссылку `~/.local/bin/clickhouse`. Затем:
+
+```bash
+clickhouse client --host "$CLICKHOUSE_HOST" --secure --port 9440 \
+  --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" \
+  --query "SELECT concat('Connected to ClickHouse ', version(), ' as ', currentUser())"
+```
+
+```text
+Connected to ClickHouse 26.2.1.558 as default
+```
+
+## Очистка {#cleanup}
+
+В этом руководстве только считываются метаданные сервиса и (при необходимости) сбрасывается пароль — новые облачные ресурсы не создаются, поэтому удалять нечего.
+
+Единственное исключение: если ваш сервис находился в состоянии `stopped`, а вы запустили его только для проверки подключения, то теперь он продолжает работать, и за вычислительные ресурсы начисляется плата. Остановите его снова, если он вам пока не нужен:
+
+```bash
+clickhousectl cloud service stop "$CH_ID"
+```
+
+## Дальнейшие шаги {#next-steps}
+
+Теперь у вас есть все сведения о подключении, необходимые для подключения к сервису ClickHouse Cloud из любого внешнего инструмента. Найденные здесь имя хоста, порт, username и password используются далее во всей серии быстрых стартов.
+
+Далее ознакомьтесь со следующими быстрыми стартами:
+
+* [Вставка данных с помощью клиента ClickHouse](/ru/get-started/quickstarts/insert-data-using-clickhouse-client)
+* [Создание первой таблицы семейства MergeTree](/ru/get-started/quickstarts/create-your-first-mergetree-table)
+
+Либо углубитесь в справочную документацию:
+
+* [Нативный интерфейс (TCP)](/ru/concepts/features/interfaces/tcp)
+* [HTTP-интерфейс](/ru/concepts/features/interfaces/http)

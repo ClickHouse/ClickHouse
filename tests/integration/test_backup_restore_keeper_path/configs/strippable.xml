@@ -1,0 +1,4 @@
+<clickhouse>
+    <default_replica_path>/clickhouse/tables/fixedroot/{shard}</default_replica_path>
+    <default_replica_name>{replica}</default_replica_name>
+</clickhouse>
