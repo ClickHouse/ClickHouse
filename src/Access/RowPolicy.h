@@ -73,6 +73,7 @@ using RowPolicyPtr = std::shared_ptr<const RowPolicy>;
 
 /// A row policy filter is applied as a per-row predicate at the storage read stage, so a
 /// row-count-changing function like `arrayJoin` breaks the reader's invariants. Reject it.
+/// A column matcher (`*`, `COLUMNS(...)`) has no meaning in a per-row predicate either. Reject it too.
 void checkRowPolicyFilterExpression(const ASTPtr & expression);
 
 }

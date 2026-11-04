@@ -6,7 +6,8 @@
 namespace DB::JemallocMergeTreeArena
 {
 
-/// Dedicated jemalloc arena(s) for long-lived MergeTree heap state:
+/// Dedicated jemalloc arena(s) for long-lived table and MergeTree heap state:
+///   - the storage object and its metadata for any engine, built in `StorageFactory::get`.
 ///   - per-part metadata: `SerializationInfoByName`, `MergeTreeDataPartChecksums` tree,
 ///     the per-part `Poco::LRUCache<String, ColumnSize>(1024)` and its delegates, the
 ///     `ColumnSize`/`IndexSize` maps, `MinMaxIndex`, `VersionMetadataOnDisk`,

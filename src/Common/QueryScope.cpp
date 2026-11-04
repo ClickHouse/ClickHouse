@@ -4,9 +4,15 @@
 #include <Common/ThreadStatus.h>
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Interpreters/Context.h>
+#include <Core/Settings.h>
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsUInt64 max_untracked_memory;
+}
 
 namespace ErrorCodes
 {
@@ -69,6 +75,13 @@ QueryScope & QueryScope::operator=(QueryScope && other) noexcept
 QueryScope QueryScope::createForQueryContext()
 {
     return createForQueryContext(0);
+}
+
+QueryScope QueryScope::createForQueryContext(ContextPtr session_context)
+{
+    const auto exempt_users = session_context->getUsersToIgnoreEarlyMemoryLimitCheck();
+    const bool exempt = exempt_users && exempt_users->contains(session_context->getClientInfo().current_user);
+    return createForQueryContext(exempt ? static_cast<Int64>(session_context->getSettingsRef()[Setting::max_untracked_memory]) : 0);
 }
 
 QueryScope QueryScope::createForQueryContext(Int64 untracked_memory_limit)

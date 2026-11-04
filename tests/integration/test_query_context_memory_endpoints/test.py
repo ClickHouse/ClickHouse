@@ -260,9 +260,12 @@ def test_endpoint_setup_limit_and_recovery(endpoint, batching_limit, limit, leve
     # The large setting is inherited from the session before the query clears it.
     # The logical value is small, but its copied capacity still belongs to this query.
     with payload_user(limit, batching_limit) as user:
-        with pytest.raises(
-            Exception, match=f"{level} memory limit exceeded during query setup"
-        ):
+        expected_error = (
+            "Query memory limit exceeded during query setup"
+            if level == "Query"
+            else "User memory limit exceeded:.*already allocated"
+        )
+        with pytest.raises(Exception, match=expected_error):
             run_endpoint(endpoint, user)
         node.query(f"ALTER USER {user} MODIFY SETTINGS {limit} = 0")
         run_endpoint(endpoint, user)

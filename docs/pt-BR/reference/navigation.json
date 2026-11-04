@@ -196,9 +196,7 @@
           "expanded": false,
           "group": "Operadores",
           "pages": [
-            "pt-BR/reference/operators/index",
-            "pt-BR/reference/operators/exists",
-            "pt-BR/reference/operators/distributed-ddl"
+            "pt-BR/reference/operators/index"
           ]
         }
       ]
@@ -420,6 +418,7 @@
             "pt-BR/reference/engines/database-engines/index",
             "pt-BR/reference/engines/database-engines/atomic",
             "pt-BR/reference/engines/database-engines/backup",
+            "pt-BR/reference/engines/database-engines/cluster",
             "pt-BR/reference/engines/database-engines/datalake",
             "pt-BR/reference/engines/database-engines/dictionary",
             "pt-BR/reference/engines/database-engines/filesystem",
@@ -428,6 +427,7 @@
             "pt-BR/reference/engines/database-engines/memory",
             "pt-BR/reference/engines/database-engines/mysql",
             "pt-BR/reference/engines/database-engines/ordinary",
+            "pt-BR/reference/engines/database-engines/overlay",
             "pt-BR/reference/engines/database-engines/postgresql",
             "pt-BR/reference/engines/database-engines/remote",
             "pt-BR/reference/engines/database-engines/replicated",
@@ -598,6 +598,7 @@
                 "pt-BR/reference/functions/aggregate-functions/maxIntersectionsPosition",
                 "pt-BR/reference/functions/aggregate-functions/maxMap",
                 "pt-BR/reference/functions/aggregate-functions/meanZTest",
+                "pt-BR/reference/functions/aggregate-functions/mergedJSONPatch",
                 "pt-BR/reference/functions/aggregate-functions/median",
                 "pt-BR/reference/functions/aggregate-functions/min",
                 "pt-BR/reference/functions/aggregate-functions/minMap",
@@ -639,6 +640,15 @@
                 "pt-BR/reference/functions/aggregate-functions/quantileTimingWeighted",
                 "pt-BR/reference/functions/aggregate-functions/quantilesTimingWeighted",
                 "pt-BR/reference/functions/aggregate-functions/rankCorr",
+                "pt-BR/reference/functions/aggregate-functions/regr_avgx",
+                "pt-BR/reference/functions/aggregate-functions/regr_avgy",
+                "pt-BR/reference/functions/aggregate-functions/regr_count",
+                "pt-BR/reference/functions/aggregate-functions/regr_intercept",
+                "pt-BR/reference/functions/aggregate-functions/regr_r2",
+                "pt-BR/reference/functions/aggregate-functions/regr_slope",
+                "pt-BR/reference/functions/aggregate-functions/regr_sxx",
+                "pt-BR/reference/functions/aggregate-functions/regr_sxy",
+                "pt-BR/reference/functions/aggregate-functions/regr_syy",
                 "pt-BR/reference/functions/aggregate-functions/simpleLinearRegression",
                 "pt-BR/reference/functions/aggregate-functions/singleValueOrNull",
                 "pt-BR/reference/functions/aggregate-functions/skewPop",
@@ -659,17 +669,38 @@
                 "pt-BR/reference/functions/aggregate-functions/sumMapWithOverflow",
                 "pt-BR/reference/functions/aggregate-functions/sumWithOverflow",
                 "pt-BR/reference/functions/aggregate-functions/theilsU",
+                "pt-BR/reference/functions/aggregate-functions/timeSeriesAvgToGrid",
+                "pt-BR/reference/functions/aggregate-functions/timeSeriesBottomKMasks",
                 "pt-BR/reference/functions/aggregate-functions/timeSeriesChangesToGrid",
+                "pt-BR/reference/functions/aggregate-functions/timeSeriesCountToGrid",
                 "pt-BR/reference/functions/aggregate-functions/timeSeriesDeltaToGrid",
                 "pt-BR/reference/functions/aggregate-functions/timeSeriesDerivToGrid",
+                "pt-BR/reference/functions/aggregate-functions/timeSeriesFirstToGrid",
                 "pt-BR/reference/functions/aggregate-functions/timeSeriesGroupArray",
+                "pt-BR/reference/functions/aggregate-functions/timeSeriesIncreaseToGrid",
                 "pt-BR/reference/functions/aggregate-functions/timeSeriesInstantDeltaToGrid",
                 "pt-BR/reference/functions/aggregate-functions/timeSeriesInstantRateToGrid",
+                "pt-BR/reference/functions/aggregate-functions/timeSeriesLastToGrid",
                 "pt-BR/reference/functions/aggregate-functions/timeSeriesLastTwoSamples",
+                "pt-BR/reference/functions/aggregate-functions/timeSeriesLimitKMasks",
+                "pt-BR/reference/functions/aggregate-functions/timeSeriesLinearRegressionToGrid",
+                "pt-BR/reference/functions/aggregate-functions/timeSeriesMadToGrid",
+                "pt-BR/reference/functions/aggregate-functions/timeSeriesMaxToGrid",
+                "pt-BR/reference/functions/aggregate-functions/timeSeriesMinToGrid",
                 "pt-BR/reference/functions/aggregate-functions/timeSeriesPredictLinearToGrid",
+                "pt-BR/reference/functions/aggregate-functions/timeSeriesPresentToGrid",
+                "pt-BR/reference/functions/aggregate-functions/timeSeriesQuantileToGrid",
                 "pt-BR/reference/functions/aggregate-functions/timeSeriesRateToGrid",
                 "pt-BR/reference/functions/aggregate-functions/timeSeriesResampleToGridWithStaleness",
                 "pt-BR/reference/functions/aggregate-functions/timeSeriesResetsToGrid",
+                "pt-BR/reference/functions/aggregate-functions/timeSeriesStddevToGrid",
+                "pt-BR/reference/functions/aggregate-functions/timeSeriesStdvarToGrid",
+                "pt-BR/reference/functions/aggregate-functions/timeSeriesSumToGrid",
+                "pt-BR/reference/functions/aggregate-functions/timeSeriesTimestampOfFirstToGrid",
+                "pt-BR/reference/functions/aggregate-functions/timeSeriesTimestampOfLastToGrid",
+                "pt-BR/reference/functions/aggregate-functions/timeSeriesTimestampOfMaxToGrid",
+                "pt-BR/reference/functions/aggregate-functions/timeSeriesTimestampOfMinToGrid",
+                "pt-BR/reference/functions/aggregate-functions/timeSeriesTopKMasks",
                 "pt-BR/reference/functions/aggregate-functions/topK",
                 "pt-BR/reference/functions/aggregate-functions/topKWeighted",
                 "pt-BR/reference/functions/aggregate-functions/uniq",
@@ -945,6 +976,7 @@
           ]
         },
         "pt-BR/reference/formats/SQLInsert",
+        "pt-BR/reference/formats/SQLite",
         {
           "expanded": false,
           "group": "TabSeparated",
@@ -974,15 +1006,6 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "Interfaces",
-      "pages": [
-        "pt-BR/reference/interfaces/specs/NativeProtocol",
-        "pt-BR/reference/interfaces/specs/NativeFormat"
-      ]
-    },
-    {
-      "expandable": true,
-      "expanded": false,
       "group": "Configurações",
       "pages": [
         "pt-BR/reference/settings/index",
@@ -1004,7 +1027,7 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "Tabelas do sistema",
+      "group": "Tabelas de sistema",
       "pages": [
         "pt-BR/reference/system-tables/overview",
         "pt-BR/reference/system-tables/aggregate_function_combinators",
@@ -1029,6 +1052,7 @@
         "pt-BR/reference/system-tables/codecs",
         "pt-BR/reference/system-tables/collations",
         "pt-BR/reference/system-tables/columns",
+        "pt-BR/reference/system-tables/columns_cache",
         "pt-BR/reference/system-tables/completions",
         "pt-BR/reference/system-tables/constraints",
         "pt-BR/reference/system-tables/contributors",

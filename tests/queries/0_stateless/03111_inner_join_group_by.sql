@@ -1,7 +1,5 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/50705
 
-set enable_analyzer=1;
-
 SELECT
     count(s0.number),
     s1.half

@@ -35,6 +35,7 @@ public:
     static QueryScope createForQueryContext();
     /// Recovery users can retain their configured batching allowance while receiving a query.
     static QueryScope createForQueryContext(Int64 untracked_memory_limit);
+    static QueryScope createForQueryContext(ContextPtr session_context);
     void attachToQueryContext(ContextMutablePtr query_context, std::function<void()> fatal_error_callback = {});
     static QueryScope createForFlushAsyncInsert(ContextMutablePtr query_context, ThreadGroupPtr parent);
 

@@ -1,0 +1,27 @@
+--- COPY copy_marker FROM STDIN 'x\ty\n\\.\n'
+COPY 1
+x	y
+--- COPY copy_marker FROM STDIN 'x\ty\n\\.\nignored\tafter the marker\n'
+COPY 1
+x	y
+--- COPY copy_marker FROM STDIN 'x\ty\n\\.\r\n'
+COPY 1
+x	y
+--- COPY copy_marker FROM STDIN 'x\ty\n\\.\n'
+COPY 1
+x	y
+--- COPY copy_marker FROM STDIN 'x\ty\n\\.\n'
+COPY 1
+x	y
+--- COPY copy_marker FROM STDIN 'x\ty\n\\.'
+COPY 1
+x	y
+--- COPY copy_marker FROM STDIN '\\\\.\ty\n'
+COPY 1
+\.	y
+--- COPY copy_marker FROM STDIN WITH (FORMAT csv) 'x,y\n\\.\n'
+COPY 1
+x	y
+--- COPY copy_marker FROM STDIN WITH (FORMAT csv) '"x\n\\.\n",y\n\\.\n'
+COPY 1
+x|\.|	y
