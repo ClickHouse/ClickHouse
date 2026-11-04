@@ -647,14 +647,13 @@ ReplicasInfo DatabaseReplicated::parseReplicasInfo(const Cluster & cluster_, Mul
     return ReplicasInfo{.replicas = std::move(replicas_info), .replicas_belong_to_shared_catalog = false};
 }
 
-/// Logs the exception being handled. Same rationale as in `tryGetCluster`: the caller (e.g. `system.clusters`)
+/// Logs the exception being handled; `code` is its `getCurrentExceptionCode`. Same rationale as in `tryGetCluster`: the caller (e.g. `system.clusters`)
 /// treats an empty `ReplicasInfo` as "skip the replica state columns for this database", and the Keeper state of a
 /// `Replicated` database can be in flux during normal lifecycle operations. Log expected coordination/connection
 /// failures at `information` so they do not leak into the client stderr at the default `send_logs_level = warning`,
 /// but keep anything unexpected at the default `error` level.
-static void logReplicasInfoFailure(const LoggerPtr & log)
+static void logReplicasInfoFailure(const LoggerPtr & log, int code)
 {
-    const auto code = getCurrentExceptionCode();
     if (code == ErrorCodes::KEEPER_EXCEPTION || code == ErrorCodes::ALL_CONNECTION_TRIES_FAILED)
         tryLogCurrentException(log, "Failed to get replicas info (possibly due to concurrent database lifecycle operations)", LogsLevel::information);
     else
@@ -671,7 +670,7 @@ ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_)
     }
     catch (...)
     {
-        logReplicasInfoFailure(log);
+        logReplicasInfoFailure(log, getCurrentExceptionCode());
         return {};
     }
 }
@@ -706,7 +705,7 @@ std::vector<ReplicasInfo> DatabaseReplicated::tryGetReplicasInfoBatch(std::span<
         }
         catch (...)
         {
-            logReplicasInfoFailure(target.database->log);
+            logReplicasInfoFailure(target.database->log, getCurrentExceptionCode());
         }
     };
 
@@ -722,7 +721,7 @@ std::vector<ReplicasInfo> DatabaseReplicated::tryGetReplicasInfoBatch(std::span<
         }
         catch (...)
         {
-            logReplicasInfoFailure(target.database->log);
+            logReplicasInfoFailure(target.database->log, getCurrentExceptionCode());
         }
     }
 
