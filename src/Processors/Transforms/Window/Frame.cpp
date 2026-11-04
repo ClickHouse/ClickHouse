@@ -4,6 +4,7 @@
 #include <base/defines.h>
 
 #include <algorithm>
+#include <limits>
 
 namespace DB
 {
@@ -187,6 +188,19 @@ void Frame::advance(const SlidingBlocks & blocks, const RowPoint & current, cons
 const FrameBounds & Frame::bounds() const
 {
     return frame_bounds;
+}
+
+Int64 Frame::firstRowToRead() const
+{
+    const WindowFrame & window_frame = params.window_description.frame;
+
+    if (window_frame.begin_type == WindowFrame::BoundaryType::Offset)
+        return frame_bounds.start.row_index_in_partition;
+
+    if (window_frame.end_type != WindowFrame::BoundaryType::Unbounded)
+        return frame_bounds.end.row_index_in_partition;
+
+    return std::numeric_limits<Int64>::max();
 }
 
 }

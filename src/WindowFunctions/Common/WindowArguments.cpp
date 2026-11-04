@@ -64,7 +64,7 @@ WindowArguments::WindowArguments(const DevectorWithMemoryTracking<Block> & block
     : blocks(blocks_)
     , first_row_position(first_row_position_)
     , num_arguments(num_arguments_)
-    , last_used_block(num_arguments_, 0)
+    , last_used_block(num_arguments_ + 1, 0)
 {
 }
 
@@ -78,6 +78,31 @@ ArgumentValue WindowArguments::at(size_t argument, Int64 row) const
     const Int64 position = first_row_position + row;
     const Block & block = blocks[blockIndexAt(blocks, last_used_block[argument], position)];
     return ArgumentValue(*block.columns[argument], position - block.begin_position);
+}
+
+std::vector<ArgumentsSegment> WindowArguments::segments(Int64 begin_row, Int64 end_row) const
+{
+    std::vector<ArgumentsSegment> segments;
+    if (begin_row >= end_row)
+        return segments;
+
+    const Int64 begin_position = first_row_position + begin_row;
+    const Int64 end_position = first_row_position + end_row;
+    const size_t first_block = blockIndexAt(blocks, last_used_block.back(), begin_position);
+    for (size_t block_index = first_block; block_index < blocks.size(); ++block_index)
+    {
+        const Block & block = blocks[block_index];
+        if (block.begin_position >= end_position)
+            break;
+
+        segments.push_back(ArgumentsSegment{
+            .columns = block.columns,
+            .row_begin = static_cast<size_t>(std::max(begin_position, block.begin_position) - block.begin_position),
+            .row_end = static_cast<size_t>(std::min(end_position, block.end_position) - block.begin_position),
+        });
+    }
+
+    return segments;
 }
 
 }

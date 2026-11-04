@@ -36,9 +36,6 @@ struct SlidingBlock
     const int64_t rows_count = 0;
     const int64_t block_number = 0;
     const SlidingIndex index;
-
-    /// Output
-    mutable MutableColumns result_columns;
 };
 
 class SlidingBlocks

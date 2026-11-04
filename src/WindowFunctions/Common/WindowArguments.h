@@ -4,6 +4,7 @@
 #include <base/types.h>
 
 #include <Common/DevectorWithMemoryTracking.h>
+#include <span>
 #include <vector>
 
 namespace DB
@@ -28,6 +29,13 @@ private:
     size_t row;
 };
 
+struct ArgumentsSegment
+{
+    std::span<const IColumn * const> columns;
+    size_t row_begin = 0;
+    size_t row_end = 0;
+};
+
 class WindowArguments
 {
 public:
@@ -42,6 +50,7 @@ public:
 
     Int64 size() const;
     ArgumentValue at(size_t argument, Int64 row) const;
+    std::vector<ArgumentsSegment> segments(Int64 begin_row, Int64 end_row) const;
 
 private:
     const DevectorWithMemoryTracking<Block> & blocks;
