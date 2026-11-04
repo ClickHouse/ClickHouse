@@ -493,4 +493,9 @@ def test_sql_hdfs_disk_remote_host_filter(cluster):
         # The identical definition reuses the disk loaded from metadata with only a warning.
         assert_rejected("t_reused_hdfs_disk", "filter_existing")
 
+        # A short ATTACH reuses the disk of its stored definition, so it is not checked.
+        node.query("DETACH TABLE t_existing_hdfs_disk")
+        node.query("ATTACH TABLE t_existing_hdfs_disk")
+        assert node.query("SELECT x FROM t_existing_hdfs_disk") == "1\n"
+
     node.query("DROP TABLE t_existing_hdfs_disk SYNC")

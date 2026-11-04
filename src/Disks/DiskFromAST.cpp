@@ -233,7 +233,8 @@ static std::vector<std::pair<size_t, std::string>> getOrCreateCustomDisk(
             , disk_name);
 
     /// A reused disk was checked against an older `remote_url_allow_hosts` or only warned about on load.
-    if (!created && !attach && config->getString("object_storage_type", config->getString("type", "")) == "hdfs")
+    /// A short `ATTACH` reuses the disk of its own stored definition, which is exempt like loading at start.
+    if (!created && !attach && !stored_definition && config->getString("object_storage_type", config->getString("type", "")) == "hdfs")
         context->getGlobalContext()->getRemoteHostFilter().checkURL(
             Poco::URI(context->getMacros()->expand(config->getString("endpoint"))));
 
