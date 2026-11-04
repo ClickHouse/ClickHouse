@@ -756,7 +756,7 @@ def write_iceberg_profile_override():
     return True
 
 
-def build_perf_query_history_link(test_name, check_name):
+def build_perf_query_history_link(test_name, check_name, read_url):
     """Build a ClickHouse Play link showing performance history for a query on master."""
     table = Settings.CI_DB_TABLE_NAME or "checks"
     tn = (test_name or "").replace("'", "''")
@@ -776,7 +776,7 @@ WHERE pull_request_number = 0
     AND test_name = '{tn}'
 ORDER BY test, check_start_time
 """
-    base = CIDB.get_read_url(Info())
+    base = read_url
     user = Settings.CI_DB_READ_USER or ""
     if user:
         sep = "&" if "?" in base else "?"
@@ -784,7 +784,7 @@ ORDER BY test, check_start_time
     return f"{base}#{Utils.to_base64(query)}"
 
 
-def build_check_results_children(tests_result, check_name_pattern):
+def build_check_results_children(tests_result, check_name_pattern, read_url):
     """Per-query rows for "Check Results": one row per slower/unstable query.
 
     Rows carry compare.sh's verdict, which the report renderer classifies
@@ -809,13 +809,14 @@ def build_check_results_children(tests_result, check_name_pattern):
     children = []
     for base, (_, tr) in chosen.items():
         sub = Result(name=base, status=tr.status, duration=tr.duration)
-        sub.set_label(
-            "query history",
-            # The represented row's own name: CIDB's test_name keeps the side
-            # suffix, and the link filters on an exact match.
-            link=build_perf_query_history_link(tr.name, check_name_pattern),
-            hint="Performance history for this query on master",
-        )
+        if read_url:
+            sub.set_label(
+                "query history",
+                # The represented row's own name: CIDB's test_name keeps the side
+                # suffix, and the link filters on an exact match.
+                link=build_perf_query_history_link(tr.name, check_name_pattern, read_url),
+                hint="Performance history for this query on master",
+            )
         children.append(sub)
     return children
 
@@ -3867,7 +3868,9 @@ def main():
             check_sub_results += [
                 sub
                 for sub in build_check_results_children(
-                    tests_result, f"%Performance%{arch}%master_head%{TABLE_ENGINE or ''}%"
+                    tests_result,
+                    f"%Performance%{arch}%master_head%{TABLE_ENGINE or ''}%",
+                    os.environ.get(CIDB.READ_URL_ENV),
                 )
                 if sub.name not in dashboard_names
             ]
