@@ -152,9 +152,18 @@ def lookup_table():
         node.query("CREATE TABLE lim (v UInt32) ENGINE = MergeTree ORDER BY v")
         node.query(f"INSERT INTO lim VALUES ({value})")
         node.query("GRANT SELECT ON default.lim TO u")
+        node.query("CREATE TABLE kv (k UInt64, v UInt32) ENGINE = MergeTree ORDER BY k")
+        node.query(f"INSERT INTO kv VALUES (1, {value})")
+        node.query(
+            "CREATE DICTIONARY d (k UInt64, v UInt32) PRIMARY KEY k "
+            "SOURCE(CLICKHOUSE(TABLE 'kv')) LIFETIME(0) LAYOUT(FLAT())"
+        )
+        node.query("GRANT dictGet ON default.d TO u")
     yield
     for node in (initiator, receiver):
         node.query("DROP TABLE IF EXISTS lim")
+        node.query("DROP DICTIONARY IF EXISTS d")
+        node.query("DROP TABLE IF EXISTS kv")
 
 
 # A scalar subquery that reads a table gets the rows of the receiver there, so an entry of the query with the same text
@@ -170,6 +179,31 @@ def test_receiver_evaluates_its_own_scalar_subquery_over_a_table(
         "additional_table_filters": "{'default.m': 'x < (SELECT max(v) FROM default.lim)'}"
     }
     assert select("SELECT count() FROM dist", serialize_query_plan, **filters) == "3\n"
+
+
+# Also through a dictionary, and next to a constant that changes with each analysis of the entry.
+@pytest.mark.parametrize("serialize_query_plan", [0, 1])
+@pytest.mark.parametrize(
+    "entry",
+    [
+        "x < (SELECT dictGet('default.d', 'v', materialize(toUInt64(1))))",
+        "x < (SELECT max(v) FROM default.lim WHERE v != randConstant()) AND y != randConstant() + 10",
+    ],
+)
+def test_receiver_evaluates_its_own_scalar_subquery_over_server_state(
+    receiver_profile, lookup_table, serialize_query_plan, entry
+):
+    filters = "{'default.m': '" + entry.replace("'", "\\'") + "'}"
+    escaped = filters.replace("\\", "\\\\").replace("'", "\\'")
+    receiver_profile(f"additional_table_filters = '{escaped}'")
+    assert (
+        select(
+            "SELECT count() FROM dist",
+            serialize_query_plan,
+            additional_table_filters=filters,
+        )
+        == "3\n"
+    )
 
 
 @pytest.mark.parametrize("serialize_query_plan", [0, 1])

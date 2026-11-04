@@ -1127,6 +1127,30 @@ bool hasNondeterministicConstant(const QueryTreeNodePtr & node)
     return false;
 }
 
+/// Whether the value of `node` can differ between nodes with the same settings: it reads a table other than `system.one`,
+/// or calls a function such as `dictGet` that is constant within a query but not deterministic. A constant keeps its value,
+/// so it is not looked into.
+bool readsServerState(const QueryTreeNodePtr & node)
+{
+    if (const auto * table = node->as<TableNode>())
+    {
+        const auto & id = table->getStorageID();
+        return id.database_name != DatabaseCatalog::SYSTEM_DATABASE || id.table_name != "one";
+    }
+    if (node->getNodeType() == QueryTreeNodeType::TABLE_FUNCTION)
+        return true;
+    if (node->getNodeType() == QueryTreeNodeType::CONSTANT)
+        return false;
+    if (const auto * function = node->as<FunctionNode>())
+        if (auto base = function->getFunction(); base && !base->isDeterministic() && base->isDeterministicInScopeOfQuery())
+            return true;
+
+    for (const auto & child : node->getChildren())
+        if (child && readsServerState(child))
+            return true;
+    return false;
+}
+
 /// Replaces each constant of `node` folded from another value in `other`, the same filter analyzed again, with its source
 /// expression, and returns whether it replaced any. A part of different shape in `other` is left as is.
 bool replaceIrreproducibleConstants(QueryTreeNodePtr & node, const QueryTreeNodePtr & other)
@@ -1142,6 +1166,8 @@ bool replaceIrreproducibleConstants(QueryTreeNodePtr & node, const QueryTreeNode
 
         /// `randConstant() % 2` has the same value in both with probability 1/2, its argument does not.
         auto source = constant->getSourceExpression();
+        if (isQueryOrUnionNode(source) && readsServerState(source))
+            return false;
         if (!replaceIrreproducibleConstants(source, other_constant.getSourceExpression())
             && constant->isEqual(other_constant, {.compare_aliases = false}))
             return false;
@@ -1162,29 +1188,10 @@ bool replaceIrreproducibleConstants(QueryTreeNodePtr & node, const QueryTreeNode
     return replaced;
 }
 
-/// Whether `node` reads a table other than `system.one`, also through a subquery folded into a constant.
-bool readsTable(const QueryTreeNodePtr & node)
-{
-    if (const auto * table = node->as<TableNode>())
-    {
-        const auto & id = table->getStorageID();
-        return id.database_name != DatabaseCatalog::SYSTEM_DATABASE || id.table_name != "one";
-    }
-    if (node->getNodeType() == QueryTreeNodeType::TABLE_FUNCTION)
-        return true;
-    if (const auto * constant = node->as<ConstantNode>(); constant && constant->hasSourceExpression())
-        return readsTable(constant->getSourceExpression());
-
-    for (const auto & child : node->getChildren())
-        if (child && readsTable(child))
-            return true;
-    return false;
-}
-
 /// Replaces each constant of `node` folded from a scalar subquery with its source expression, and returns whether `node`
 /// has a subquery. Each analysis of the filter on another node runs the subquery again, so `(SELECT rand())` gets another
-/// value, while one node reuses the first result. The constants folded inside the subquery stay. A subquery that reads a
-/// table keeps its value: the table can hold other rows on another node.
+/// value, while one node reuses the first result. The constants folded inside the subquery stay, and so does the result
+/// of a subquery that reads server state: another node can hold other data.
 bool replaceScalarSubqueryResults(QueryTreeNodePtr & node)
 {
     if (const auto * constant = node->as<ConstantNode>())
@@ -1193,7 +1200,7 @@ bool replaceScalarSubqueryResults(QueryTreeNodePtr & node)
             return false;
 
         auto source = constant->getSourceExpression();
-        if (readsTable(source) || !replaceScalarSubqueryResults(source))
+        if (!replaceScalarSubqueryResults(source) || readsServerState(source))
             return false;
 
         node = std::move(source);
@@ -1209,7 +1216,7 @@ bool replaceScalarSubqueryResults(QueryTreeNodePtr & node)
 
 /// Equal for two `additional_table_filters` entries only if they resolve to the same predicate, including the
 /// constants folded from settings. A constant that changes when the entry is analyzed again, such as `randConstant()`,
-/// or the result of a scalar subquery that reads no table, is compared by its expression.
+/// or the result of a scalar subquery that reads no server state, is compared by its expression.
 std::pair<UInt64, UInt64> additionalFilterHash(
     const ASTPtr & filter_ast, const TableExpressionNodePtr & table_expression, const ContextPtr & query_context)
 {
