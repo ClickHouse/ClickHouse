@@ -29,13 +29,24 @@ JOIN l ON x.k = l.k ORDER BY x.k LIMIT 2;
 SELECT /* 05507 left */ x.k, x.s, l.payload FROM (SELECT k, sum(v) AS s FROM r GROUP BY k WITH TOTALS SETTINGS use_query_cache = 1) AS x
 JOIN l ON x.k = l.k ORDER BY x.k LIMIT 2;
 
-SYSTEM FLUSH LOGS query_log;
+SELECT '-- a run read from the cache without totals still reads lazily';
+SELECT /* 05507 nototals */ l.k, l.payload, x.c FROM l LEFT JOIN (SELECT k, count() AS c FROM r GROUP BY k SETTINGS use_query_cache = 1) AS x
+ON l.k = x.k ORDER BY x.c, l.k LIMIT 2 SETTINGS log_processors_profiles = 1 FORMAT Null;
+SELECT /* 05507 nototals */ l.k, l.payload, x.c FROM l LEFT JOIN (SELECT k, count() AS c FROM r GROUP BY k SETTINGS use_query_cache = 1) AS x
+ON l.k = x.k ORDER BY x.c, l.k LIMIT 2 SETTINGS log_processors_profiles = 1 FORMAT Null;
+
+SYSTEM FLUSH LOGS query_log, processors_profile_log;
 SELECT '-- a run of each was served from the cache';
 SELECT
     countIf(query LIKE '%/* 05507 right */%' AND ProfileEvents['QueryCacheHits'] > 0) > 0,
     countIf(query LIKE '%/* 05507 left */%' AND ProfileEvents['QueryCacheHits'] > 0) > 0
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND query_kind = 'Select';
+SELECT countIf(q.query LIKE '%/* 05507 nototals */%' AND q.ProfileEvents['QueryCacheHits'] > 0 AND p.lazy > 0) > 0
+FROM system.query_log q
+LEFT JOIN (SELECT query_id, countIf(name = 'LazyMaterializingTransform') AS lazy FROM system.processors_profile_log GROUP BY query_id) AS p
+ON q.query_id = p.query_id
+WHERE q.current_database = currentDatabase() AND q.type = 'QueryFinish' AND q.query_kind = 'Select';
 
 DROP TABLE l;
 DROP TABLE r;

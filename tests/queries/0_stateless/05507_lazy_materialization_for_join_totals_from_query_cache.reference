@@ -16,5 +16,7 @@
 1	34	p1
 
 0	190	
+-- a run read from the cache without totals still reads lazily
 -- a run of each was served from the cache
 1	1
+1
