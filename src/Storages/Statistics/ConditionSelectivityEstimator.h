@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Storages/Statistics/RelationProfile.h>
 #include <Storages/Statistics/Statistics.h>
 
 #include <Core/Field.h>
@@ -11,6 +10,24 @@ namespace DB
 {
 
 class RPNBuilderTreeNode;
+
+struct ColumnStats
+{
+    UInt64 num_distinct_values = 0;
+    /// Average uncompressed size of one value; 0 means unknown.
+    Float64 avg_bytes = 0;
+    /// Value range from `basic`/`minmax` statistics; unset when unknown.
+    std::optional<Field> min_value = {};
+    std::optional<Field> max_value = {};
+    /// Fraction of NULL values; unset when unknown.
+    std::optional<Float64> null_fraction = {};
+};
+
+struct RelationProfile
+{
+    UInt64 rows = 0;
+    std::unordered_map<String, ColumnStats> column_stats = {};
+};
 
 struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
@@ -157,9 +174,6 @@ private:
 
 using ConditionSelectivityEstimatorPtr = std::shared_ptr<ConditionSelectivityEstimator>;
 
-/// `equals(x, x)` of one node whose type makes `x = x` true on every row (no NULL, NaN or composite values).
-bool isAlwaysTrueEquality(const ActionsDAG::Node & node);
-
 /// Builds an estimator for a set of data parts by merging their statistics column by column.
 /// The statistics passed in are not modified, so they may come from the statistics cache.
 class ConditionSelectivityEstimatorBuilder
@@ -168,8 +182,6 @@ public:
     explicit ConditionSelectivityEstimatorBuilder(ContextPtr context_);
     void addStatistics(const String & column_name, const ColumnStatisticsPtr & column_stats);
     void incrementRowCount(UInt64 rows);
-    /// See `ColumnStatistics::setCardinality`; the column must have statistics.
-    void setCardinality(const String & column_name, UInt64 cardinality);
     ConditionSelectivityEstimatorPtr getEstimator() const;
 
 private:

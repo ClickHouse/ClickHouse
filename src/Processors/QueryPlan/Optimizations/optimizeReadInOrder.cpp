@@ -1,18 +1,14 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnSet.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
-#include <DataTypes/getLeastSupertype.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/PreparedSets.h>
-#include <Interpreters/Set.h>
 #include <Interpreters/TableJoin.h>
 #include <Parsers/ASTWindowDefinition.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -128,16 +124,7 @@ struct FindReadingStepContext
     /// below it may be descended too. A gather reached any other way is a real boundary.
     bool inside_collapsing_exchange_pair = false;
 
-    /// The joins which must be pinned to their order-preserving mode by `keepLeftPipelineInOrder`
-    /// when the in-order read is installed. `FilledJoinStep` never appears here: a filled join
-    /// preserves the left order unconditionally and needs no pin.
     std::list<JoinStep *> joins_to_keep_in_order = {};
-
-    /// Every join the traversal descended through, filled or not. The join-specific guards (the
-    /// parallel-replica bailouts and the no-virtual-row INNER check) must see all of them: a
-    /// filled INNER join filters rows exactly like a plain one, so judging "went through a join"
-    /// by `joins_to_keep_in_order` alone would let filled joins bypass the guards.
-    std::vector<const IJoin *> traversed_joins = {};
 };
 
 /// Find the gather that tryMakeDistributedRead put directly over a reading step, looking through only
@@ -210,33 +197,23 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node, FindReadingStepContext
         if (const auto * join_step = typeid_cast<const JoinStep *>(step))
             join_ptr = join_step->getJoin().get();
         if (const auto * join_step = typeid_cast<const FilledJoinStep *>(step))
-        {
             join_ptr = join_step->getJoin().get();
-            /// FilledJoinStep is expected to preserve left block order, thus no need to call
-            /// keepLeftPipelineInOrder. It also doesn't resize or modify the pipeline.
-            chassert(join_ptr->preservesLeftBlockOrder());
-        }
 
         if (join_ptr)
         {
             const auto & table_join = join_ptr->getTableJoin();
             auto kind = table_join.kind();
             auto strictness = table_join.strictness();
-            /// Grace hash join scatters rows into buckets by hash, destroying the input order, so
-            /// it never preserves the left stream's order. `MergeJoin` and `SpillingHashJoin`
-            /// preserve it only on request: `canPreserveLeftBlockOrder` reports whether the later
-            /// `keepLeftPipelineInOrder` call can pin them to an order-preserving mode.
+            /// Grace hash join scatters rows into buckets by hash, destroying the input order.
+            /// PartialMergeJoin re-sorts left blocks by the join key, so it does not keep the left
+            /// stream's original order either (preservesLeftBlockOrder() == false).
             /// We must not propagate read-in-order through joins that reorder rows.
             if ((strictness == JoinStrictness::Any || strictness == JoinStrictness::All) && isInnerOrLeft(kind)
-                && join_ptr->canPreserveLeftBlockOrder())
+                && !join_ptr->hasDelayedBlocks() && join_ptr->preservesLeftBlockOrder())
             {
                 auto * reading_step = findReadingStep(*node.children.front(), data);
-                if (reading_step)
-                {
-                    data.traversed_joins.push_back(join_ptr);
-                    if (auto * plain_join_step = typeid_cast<JoinStep *>(step))
-                        data.joins_to_keep_in_order.push_back(plain_join_step);
-                }
+                if (auto * join_step = typeid_cast<JoinStep *>(step); reading_step && join_step)
+                    data.joins_to_keep_in_order.push_back(join_step);
                 return reading_step;
             }
         }
@@ -250,20 +227,9 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node, FindReadingStepContext
 /// Fixed columns are 'x' and 'y'.
 using FixedColumns = std::unordered_set<const ActionsDAG::Node *>;
 
-/// Whether the type is a `Variant` or `Dynamic`, also as an element of a `Tuple` or of a nested `Tuple`: `equals` compares tuples
-/// element by element, but `Array` and `Map` values of one type with `compareAt`, which tells apart the types stored in a `Dynamic`.
-bool isVariantOrDynamicThroughTuples(const DataTypePtr & type_with_wrappers)
-{
-    auto type = removeLowCardinalityAndNullable(type_with_wrappers);
-    if (isVariant(type) || isDynamic(type))
-        return true;
-    const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get());
-    return tuple && std::ranges::any_of(tuple->getElements(), isVariantOrDynamicThroughTuples);
-}
-
 /// Whether `column = constant` holds for several values of the column that sort differently, so it does not fix the column.
 /// `equals` pads a `FixedString` with zero bytes against a `String`, so `s = toFixedString('a', 2)` matches `'a'` with any
-/// number of trailing zero bytes, also inside `Tuple`, `Variant` and `Dynamic`, but not inside `Array` or `Map` cast to a common type.
+/// number of trailing zero bytes, also inside `Tuple`, `Variant` and `Dynamic`, but not inside `Array` or `Map`.
 bool equalsMatchesSeveralValues(
     const DataTypePtr & column_type_with_wrappers, ColumnPtr constant, const DataTypePtr & constant_type_with_wrappers)
 {
@@ -297,24 +263,12 @@ bool equalsMatchesSeveralValues(
 
     if (isString(column_type) && isFixedString(constant_type))
         return true;
-    /// A float is compared with a `Decimal`, `DateTime64` or `Time64` in `Float64`, which keeps distinct `Decimal32` values
-    /// distinct but not wider ones, so `d = 1.0` matches both `1` and `1.000000000000000001`.
-    if (isColumnedAsDecimal(column_type) && !WhichDataType(column_type).isDecimal32() && isFloat(constant_type))
-        return true;
     /// Values of several types can be equal to the constant (`'a'` as `String` and `FixedString(1)`) and sort differently.
     if (isVariant(column_type) || isDynamic(column_type))
-        return true;
-    /// `Array` values without a common type are compared element by element with `equals`, which can match several values.
-    /// `equals` looks for the common type without `LowCardinality`, which cannot hold every common type, e.g. `DateTime64`.
-    if (isArray(column_type) && isArray(constant_type)
-        && !tryGetLeastSupertype(DataTypes{recursiveRemoveLowCardinality(column_type), recursiveRemoveLowCardinality(constant_type)}))
         return true;
 
     const auto * column_tuple = typeid_cast<const DataTypeTuple *>(column_type.get());
     const auto * constant_tuple = typeid_cast<const DataTypeTuple *>(constant_type.get());
-    /// `equals` parses a string into the type of the tuple, so only `Variant` and `Dynamic` elements can match several values.
-    if (column_tuple && isStringOrFixedString(constant_type))
-        return isVariantOrDynamicThroughTuples(column_type);
     if (!column_tuple || !constant_tuple)
         return false;
 
@@ -330,56 +284,7 @@ bool equalsMatchesSeveralValues(
     return false;
 }
 
-/// Whether `set_node` is a ready set with exactly one element, like the right side of `x IN ('a')`,
-/// so that `probe IN set` fixes `probe` to a single value.
-/// Only `FutureSetFromTuple` is filled at planning time; sets from subqueries or storages are not.
-/// A `FutureSetFromTuple` may also be a shipped subquery set that kept the subquery's type,
-/// e.g. `d IN (SELECT 1.0)` for `d Decimal`. `Set::execute` converts the probe to the set key type,
-/// and this conversion may be non-injective, so require the key type to be the probe type
-/// (up to `LowCardinality` and `Nullable`), so that the conversion is an identity.
-bool isSingleElementSetForProbe(const ActionsDAG::Node & set_node, const ActionsDAG::Node & probe)
-{
-    if (set_node.type != ActionsDAG::ActionType::COLUMN || !set_node.column)
-        return false;
-
-    const auto * column_set = checkAndGetColumn<const ColumnSet>(&set_node.column->getDataColumn());
-    if (!column_set)
-        return false;
-
-    const auto * set_from_tuple = typeid_cast<const FutureSetFromTuple *>(column_set->getData().get());
-    if (!set_from_tuple)
-        return false;
-
-    auto set = set_from_tuple->get();
-    if (!set || !set->isCreated() || set->getTotalRowCount() != 1)
-        return false;
-
-    const auto & set_types = set->getDataTypes();
-    if (set_types.size() != 1)
-        return false;
-
-    auto probe_type = removeLowCardinalityAndNullable(probe.result_type);
-    auto set_type = removeLowCardinalityAndNullable(set_types.front());
-    return probe_type->equals(*set_type);
-}
-
-void addFixedColumn(const ActionsDAG::Node * fixed_column, FixedColumns & fixed_columns)
-{
-    fixed_columns.insert(fixed_column);
-
-    /// Support injective functions chain.
-    const ActionsDAG::Node * maybe_injective = fixed_column;
-    while (maybe_injective->type == ActionsDAG::ActionType::FUNCTION
-        && maybe_injective->children.size() == 1
-        && maybe_injective->function_base->isInjective(getFunctionArgumentColumns(*maybe_injective)))
-    {
-        maybe_injective = maybe_injective->children.front();
-        fixed_columns.insert(maybe_injective);
-    }
-}
-
 /// Right now we find only simple cases like 'and(..., and(..., and(column = value, ...), ...'
-/// A single-element `IN`, like `column IN (value)`, fixes the column the same way as `column = value`.
 /// Injective functions are supported here. For a condition 'injectiveFunction(x) = 5' column 'x' is fixed.
 void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expression, FixedColumns & fixed_columns)
 {
@@ -418,13 +323,20 @@ void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expr
 
                 if (maybe_fixed_column && num_constant_columns + 1 == node->children.size()
                     && !equalsMatchesSeveralValues(maybe_fixed_column->result_type, constant->column, constant->result_type))
-                    addFixedColumn(maybe_fixed_column, fixed_columns);
-            }
-            else if (name == "in" || name == "globalIn" || name == "nullIn" || name == "globalNullIn")
-            {
-                if (node->children.size() == 2 && !node->children[0]->column
-                    && isSingleElementSetForProbe(*node->children[1], *node->children[0]))
-                    addFixedColumn(node->children[0], fixed_columns);
+                {
+                    //std::cerr << "====== Added fixed column " << maybe_fixed_column->result_name << ' ' << static_cast<const void *>(maybe_fixed_column) << std::endl;
+                    fixed_columns.insert(maybe_fixed_column);
+
+                    /// Support injective functions chain.
+                    const ActionsDAG::Node * maybe_injective = maybe_fixed_column;
+                    while (maybe_injective->type == ActionsDAG::ActionType::FUNCTION
+                        && maybe_injective->children.size() == 1
+                        && maybe_injective->function_base->isInjective(getFunctionArgumentColumns(*maybe_injective)))
+                    {
+                        maybe_injective = maybe_injective->children.front();
+                        fixed_columns.insert(maybe_injective);
+                    }
+                }
             }
         }
     }
@@ -1431,7 +1343,7 @@ InputOrderInfoPtr buildInputOrderInfo(
         /// ("Replica decided to read in Default mode, not in WithOrder").
         /// Skip this optimization for parallel replicas when it goes through a JOIN,
         /// similar to the existing check for parallel replicas in the Union case.
-        if (reading->isParallelReadingFromReplicas() && !find_reading_ctx.traversed_joins.empty())
+        if (reading->isParallelReadingFromReplicas() && !find_reading_ctx.joins_to_keep_in_order.empty())
             return nullptr;
 
         auto order_info = buildInputOrderFromSortDescription(
@@ -1454,14 +1366,11 @@ InputOrderInfoPtr buildInputOrderInfo(
             /// Joins that can discard left rows need virtual rows from every selected part to avoid
             /// excessive reading by the merge after the join. `LEFT ALL` and `LEFT ANY` preserve left rows.
             /// `query_plan_read_in_order_through_join = 'force'` accepts the over-read.
-            /// This holds for filled joins (`FilledJoinStep`) just the same - an INNER Join-engine
-            /// table filters the ordered streams exactly like a plain INNER join - so the check
-            /// runs over every traversed join, not only the ones that need the in-order pin.
             const bool join_requires_virtual_rows = std::ranges::any_of(
-                find_reading_ctx.traversed_joins,
-                [](const IJoin * join)
+                find_reading_ctx.joins_to_keep_in_order,
+                [](const auto * join_step)
                 {
-                    const auto & table_join = join->getTableJoin();
+                    const auto & table_join = join_step->getJoin()->getTableJoin();
                     const auto strictness = table_join.strictness();
                     return table_join.kind() != JoinKind::Left
                         || (strictness != JoinStrictness::All && strictness != JoinStrictness::Any);
@@ -1561,7 +1470,7 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
     {
         /// Same as above: skip aggregation-in-order through JOIN for parallel replicas
         /// to avoid coordination mode mismatch.
-        if (reading->isParallelReadingFromReplicas() && !find_reading_ctx.traversed_joins.empty())
+        if (reading->isParallelReadingFromReplicas() && !find_reading_ctx.joins_to_keep_in_order.empty())
             return {};
 
         /// A follower forced to aggregate in order cannot use an aggregate projection and would read the base table.
@@ -1581,11 +1490,10 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
                 order_info.input_order->limit);
             if (!can_read)
                 return {};
-
-            for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
-                join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
         }
 
+        for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
+            join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
         return order_info;
     }
     if (auto * merge = typeid_cast<ReadFromMerge *>(reading_node->step.get()))
@@ -1706,7 +1614,7 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
     {
         /// Same as above: skip distinct-in-order through JOIN for parallel replicas
         /// to avoid coordination mode mismatch.
-        if (reading->isParallelReadingFromReplicas() && !find_reading_ctx.traversed_joins.empty())
+        if (reading->isParallelReadingFromReplicas() && !find_reading_ctx.joins_to_keep_in_order.empty())
             return {};
 
         auto order_info = buildInputOrderFromUnorderedKeys(
@@ -2051,46 +1959,6 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
         /// Use buffering only if have filter or don't have limit.
         bool use_buffering = order_info->limit == 0;
         sorting->convertToFinishSorting(order_info->sort_description_for_merging, use_buffering, apply_virtual_row);
-    }
-}
-
-void disableSpreadingSmallReadUnderFullSorting(QueryPlan::Node & node)
-{
-    const auto * sorting = typeid_cast<const SortingStep *>(node.step.get());
-    if (!sorting || sorting->getType() != SortingStep::Type::Full || sorting->getLimit() != 0 || sorting->hasPartitions()
-        || node.children.size() != 1)
-        return;
-
-    /// Nodes all of whose output streams reach the sorting.
-    std::vector<QueryPlan::Node *> stack{node.children.front()};
-    while (!stack.empty())
-    {
-        QueryPlan::Node * child = stack.back();
-        stack.pop_back();
-        IQueryPlanStep * step = child->step.get();
-
-        if (auto * reading = typeid_cast<ReadFromMergeTree *>(step))
-        {
-            reading->disableSpreadingSmallRead();
-        }
-        else if (typeid_cast<UnionStep *>(step))
-        {
-            stack.insert(stack.end(), child->children.begin(), child->children.end());
-        }
-        else if (const auto * join_step = typeid_cast<const JoinStep *>(step))
-        {
-            /// A parallel join resizes its probe side to `max_streams`.
-            const auto & join = join_step->getJoin();
-            if (child->children.size() == 2 && join->pipelineType() == JoinPipelineType::FillRightFirst && !join->supportParallelJoin())
-                stack.push_back(child->children[join_step->swap_streams ? 1 : 0]);
-        }
-        else if (!child->children.empty()
-                 && (typeid_cast<ExpressionStep *>(step) || typeid_cast<FilterStep *>(step) || typeid_cast<ArrayJoinStep *>(step)
-                     || typeid_cast<FilledJoinStep *>(step) || typeid_cast<DelayedCreatingSetsStep *>(step)
-                     || typeid_cast<CreatingSetsStep *>(step)))
-        {
-            stack.push_back(child->children.front());
-        }
     }
 }
 

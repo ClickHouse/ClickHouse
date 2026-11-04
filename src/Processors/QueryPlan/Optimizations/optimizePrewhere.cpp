@@ -413,13 +413,11 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     QueryPlanStepPtr new_step;
     if (!optimize_result.fully_moved_to_prewhere)
     {
-        auto new_filter_step = std::make_unique<FilterStep>(
+        new_step = std::make_unique<FilterStep>(
             source_step_with_filter->getOutputHeader(),
             std::move(remaining_expr),
             filter_step->getFilterColumnName(),
             filter_step->removesFilterColumn());
-        new_filter_step->setOptimizeConstantColumnsAfterFilter(filter_step->getOptimizeConstantColumnsAfterFilter());
-        new_step = std::move(new_filter_step);
     }
     else
     {

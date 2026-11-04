@@ -986,11 +986,6 @@ SerializationPtr IMergeTreeDataPart::tryGetSerialization(const String & column_n
     return serializations->tryGet(column_name);
 }
 
-SerializationPtr IMergeTreeDataPart::tryGetSubcolumnSerialization(const String & column_name, const String & subcolumn_name) const
-{
-    return serializations->tryGetSubcolumnSerialization(column_name, subcolumn_name);
-}
-
 bool IMergeTreeDataPart::isMovingPart() const
 {
     fs::path part_directory_path = getDataPartStorage().getRelativePath();
@@ -1108,19 +1103,7 @@ void IMergeTreeDataPart::clearCaches()
         /// there is no in-flight write to guard against, and removing the entries is enough.
         if (auto columns_cache = storage.getContext()->getColumnsCache())
         {
-            columns_cache->removePart(storage.getStorageID().uuid, getColumnsCachePartName(name, parent_part_name));
-        }
-    }
-
-    /// The projection parts go away with this part. Their entries are removed when they are destroyed, but a part
-    /// whose caches are cleared early (an outdated part that nobody else holds) should not keep them until then.
-    /// A reader of a projection part holds its parent part, so no reader can still write them either.
-    if (auto columns_cache = storage.getContext()->getColumnsCache())
-    {
-        for (const auto & [_, projection_part] : projection_parts)
-        {
-            if (projection_part->mayStoreColumnsInColumnsCache())
-                columns_cache->removePart(storage.getStorageID().uuid, getColumnsCachePartName(projection_part->name, name));
+            columns_cache->removePart(storage.getStorageID().uuid, name);
         }
     }
 }
@@ -1128,8 +1111,10 @@ void IMergeTreeDataPart::clearCaches()
 bool IMergeTreeDataPart::mayStoreColumnsInColumnsCache() const
 {
     /// Only these parts are ever written to the columns cache, see `clearCaches`: the entries are
-    /// keyed by the UUID of the table and the name of the part, see `getColumnsCachePartName`.
-    return canUseColumnsCacheForPart(storage.getStorageID().uuid);
+    /// keyed by the UUID of the table and the name of the part.
+    return getType() == MergeTreeDataPartType::Wide
+        && !isProjectionPart()
+        && storage.getStorageID().uuid != UUIDHelpers::Nil;
 }
 
 bool IMergeTreeDataPart::mayStoreDataInCaches() const
@@ -1149,21 +1134,11 @@ bool IMergeTreeDataPart::mayStoreDataInCaches() const
     /// know nothing about it: a part whose only footprint is there has to be cleared as well, or its
     /// entries stay resident until a much later filesystem cleanup and evict entries of live parts
     /// in the meantime. Asking the cache is one lookup in its per-part index.
-    auto columns_cache = storage.getContext()->getColumnsCache();
-    if (!columns_cache)
+    if (!mayStoreColumnsInColumnsCache())
         return false;
 
-    if (mayStoreColumnsInColumnsCache() && columns_cache->containsPart(storage.getStorageID().uuid, getColumnsCachePartName(name, parent_part_name)))
-        return true;
-
-    /// The entries of the projection parts are removed with the caches of this part, see `clearCaches`.
-    for (const auto & [_, projection_part] : projection_parts)
-    {
-        if (projection_part->mayStoreColumnsInColumnsCache()
-            && columns_cache->containsPart(storage.getStorageID().uuid, getColumnsCachePartName(projection_part->name, name)))
-            return true;
-    }
-    return false;
+    auto columns_cache = storage.getContext()->getColumnsCache();
+    return columns_cache && columns_cache->containsPart(storage.getStorageID().uuid, name);
 }
 
 void IMergeTreeDataPart::removeIfNeeded()
@@ -1446,9 +1421,13 @@ std::shared_ptr<StatisticsCacheCell> IMergeTreeDataPart::loadStatisticsFile(
     }
 }
 
-std::vector<std::pair<String, const ColumnDescription *>> IMergeTreeDataPart::getStatisticsFilesToLoad(
-    const NameSet & required_columns, const PackedFilesReader * packed_reader) const
+ColumnsStatistics IMergeTreeDataPart::loadStatistics(const NameSet & required_columns, StatisticsCache * cache) const
 {
+    auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::loadStatistics");
+
+    /// The list of statistics files is known without reading them: it is the index of the packed
+    /// archive, which is read once per part, or the checksums of a part that stores every file separately.
+    const PackedFilesReader * packed_reader = getStatisticsPackedReader();
     const auto & all_columns = getColumnsDescription();
 
     /// Pairs of a statistics file and the column it belongs to.
@@ -1500,18 +1479,6 @@ std::vector<std::pair<String, const ColumnDescription *>> IMergeTreeDataPart::ge
             if (const auto * column_desc = getColumnForStatisticsFile(filename, all_columns))
                 files_to_load.emplace_back(std::move(filename), column_desc);
     }
-
-    return files_to_load;
-}
-
-ColumnsStatistics IMergeTreeDataPart::loadStatistics(const NameSet & required_columns, StatisticsCache * cache) const
-{
-    auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::loadStatistics");
-
-    /// The list of statistics files is known without reading them: it is the index of the packed
-    /// archive, which is read once per part, or the checksums of a part that stores every file separately.
-    const PackedFilesReader * packed_reader = getStatisticsPackedReader();
-    const auto files_to_load = getStatisticsFilesToLoad(required_columns, packed_reader);
 
     /// `clearCaches` is one-shot: once it has run, nothing evicts the entries of this part again,
     /// so a part whose caches are cleared must not fill the cache any more.
@@ -1597,16 +1564,6 @@ String IMergeTreeDataPart::getPathForCacheKey() const
 
 Estimates IMergeTreeDataPart::getEstimates(const NameSet & required_columns) const
 {
-    return *getEstimatesImpl(required_columns, /* only_from_memory = */ false);
-}
-
-std::optional<Estimates> IMergeTreeDataPart::tryGetEstimatesFromMemory(const NameSet & required_columns) const
-{
-    return getEstimatesImpl(required_columns, /* only_from_memory = */ true);
-}
-
-std::optional<Estimates> IMergeTreeDataPart::getEstimatesImpl(const NameSet & required_columns, bool only_from_memory) const
-{
     std::lock_guard lock(estimates_mutex);
 
     if (estimates_complete)
@@ -1625,19 +1582,7 @@ std::optional<Estimates> IMergeTreeDataPart::getEstimatesImpl(const NameSet & re
     /// The statistics themselves are owned by the statistics cache; only the estimates map is
     /// kept on the part (until reload), so build it in the dedicated arena, like the rest of the
     /// part's metadata.
-    auto statistics_cache = storage.getContext()->getStatisticsCache();
-    ColumnsStatistics statistics;
-    if (only_from_memory)
-    {
-        auto cached_statistics = tryLoadStatisticsFromCache(columns_to_load, statistics_cache.get());
-        if (!cached_statistics)
-            return std::nullopt;
-        statistics = std::move(*cached_statistics);
-    }
-    else
-    {
-        statistics = loadStatistics(columns_to_load, statistics_cache.get());
-    }
+    auto statistics = loadStatistics(columns_to_load, storage.getContext()->getStatisticsCache().get());
 
     {
         ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
@@ -1655,34 +1600,6 @@ std::optional<Estimates> IMergeTreeDataPart::getEstimatesImpl(const NameSet & re
         }
     }
     return estimates;
-}
-
-std::optional<ColumnsStatistics> IMergeTreeDataPart::tryLoadStatisticsFromCache(const NameSet & required_columns, StatisticsCache * cache) const
-{
-    if (!cache || cleared_data_in_caches)
-        return std::nullopt;
-
-    /// The index of the packed archive is read from disk on first access, so the statistics are not in memory until it is read.
-    const PackedFilesReader * packed_reader = nullptr;
-    if (checksums.has(String(ColumnsStatistics::FILENAME)))
-    {
-        std::lock_guard lock(statistics_reader_mutex);
-        if (!statistics_reader)
-            return std::nullopt;
-        packed_reader = statistics_reader.get();
-    }
-
-    const String part_path = getPathForCacheKey();
-    ColumnsStatistics result;
-    for (const auto & [filename, column_desc] : getStatisticsFilesToLoad(required_columns, packed_reader))
-    {
-        auto cell = cache->get(StatisticsCache::hash(part_path, column_desc->name));
-        if (!cell)
-            return std::nullopt;
-        if (cell->stats)
-            result.emplace(column_desc->name, cell->stats);
-    }
-    return result;
 }
 
 void IMergeTreeDataPart::setEstimates(const Estimates & new_estimates)
@@ -1810,8 +1727,8 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     }
     catch (...)
     {
-        /// Don't scare people with broken part error if it's retryable or an I/O error.
-        if (!isRetryableException(std::current_exception()) && !isIOErrorException(std::current_exception()))
+        /// Don't scare people with broken part error if it's retryable.
+        if (!isRetryableException(std::current_exception()))
         {
             if (Exception * e = current_exception_cast<Exception *>())
             {
@@ -2893,10 +2810,10 @@ UInt64 IMergeTreeDataPart::readExistingRowsCount()
         size_t rows_to_read = index_granularity->getMarkRows(current_mark);
         continue_reading = (current_mark != 0);
 
-        MutableColumns result(1);
-        Columns shared_result(1);
+        MutableColumns result;
+        result.resize(1);
 
-        size_t rows_read = reader->readRows(current_mark, total_mark, continue_reading, rows_to_read, result, shared_result);
+        size_t rows_read = reader->readRows(current_mark, total_mark, continue_reading, rows_to_read, result);
         if (!rows_read)
         {
             LOG_WARNING(storage.log, "Part {} has lightweight delete, but _row_exists column not found", name);
@@ -4123,11 +4040,6 @@ bool IMergeTreeDataPart::hasBrokenProjection(const String & projection_name) con
     return it->second->is_broken;
 }
 
-bool IMergeTreeDataPart::hasUnloadedProjection(const String & projection_name) const
-{
-    return !hasProjection(projection_name) && checksums.has(projection_name + ".proj");
-}
-
 void IMergeTreeDataPart::setBrokenReason(const String & message, int code) const
 {
     std::lock_guard lock(broken_reason_mutex);
@@ -4180,9 +4092,9 @@ ColumnPtr IMergeTreeDataPart::getColumnSample(const NameAndTypePair & column) co
         ValueSizeMap{},
         ReadBufferFromFileBase::ProfileCallback{});
 
-    MutableColumns result(1);
-    Columns shared_result(1);
-    reader->readRows(0, total_mark, false, 0, result, shared_result);
+    MutableColumns result;
+    result.resize(1);
+    reader->readRows(0, total_mark, false, 0, result);
     return std::move(result[0]);
 }
 
