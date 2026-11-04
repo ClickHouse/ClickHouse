@@ -5977,7 +5977,15 @@ bool conversionKeepsSubcolumnValuesImpl(
     const auto * from_array = typeid_cast<const DataTypeArray *>(from.get());
     const auto * to_array = typeid_cast<const DataTypeArray *>(to.get());
     if (from_array || to_array)
-        return from_array && to_array && check_below(from_array->getNestedType(), to_array->getNestedType());
+    {
+        /// `sizeN` is named by the array level, so a nested `JSON` or `Tuple` can have a subcolumn of the same name.
+        /// Converting an array keeps the sizes at every level.
+        auto steps = valueSelectingSteps(from_info->substreams_path);
+        auto is_elements = [](const ISerialization::Substream & step) { return step.type == ISerialization::Substream::ArrayElements; };
+        bool reads_sizes = !steps.empty() && steps.back().type == ISerialization::Substream::ArraySizes
+            && std::all_of(steps.begin(), std::prev(steps.end()), is_elements);
+        return from_array && to_array && (reads_sizes || check_below(from_array->getNestedType(), to_array->getNestedType()));
+    }
 
     /// `key_<k>` of a `Map` finds its value by parsing `<k>` as the key type.
     if (!from_info->substreams_path.empty() && from_info->substreams_path.front().type == ISerialization::Substream::MapKeyValue)
@@ -6003,11 +6011,13 @@ bool conversionKeepsSubcolumnValuesImpl(
             return false;
 
         /// The text is parsed with the type of `to`, so an integer type reads an `Enum` name as a number. Only these types read
-        /// every value back unchanged: `DateTime` text is local time, and a `Bool` or `Date32` value out of range is clamped.
+        /// every value back unchanged: `DateTime` text is local time, a `Date32` value out of range is clamped, and a custom
+        /// serialization (`Bool`) can write a value as another one.
         auto changes_on_reparse = [](const IDataType & type)
         {
-            return !((isInteger(type) && type.getName() != "Bool") || isStringOrFixedString(type) || isEnum(type) || isUUID(type)
-                || isIPv4(type) || isIPv6(type) || isDate(type) || isArray(type) || type.isNullable() || type.lowCardinality());
+            return type.getCustomSerialization() != nullptr
+                || !(isInteger(type) || isStringOrFixedString(type) || isEnum(type) || isUUID(type) || isIPv4(type) || isIPv6(type)
+                     || isDate(type) || isArray(type) || type.isNullable() || type.lowCardinality());
         };
 
         const String & path = to_info->substreams_path.front().object_path_name;

@@ -316,6 +316,14 @@ ALTER TABLE t_alter_key_sub MODIFY COLUMN data JSON(a Bool, c String); -- { serv
 SELECT 'key subcolumn values:', groupArray(reinterpretAsUInt8(k)) FROM (SELECT data.a AS k FROM t_alter_key_sub ORDER BY id);
 DROP TABLE t_alter_key_sub;
 
+-- The storage type of a SimpleAggregateFunction keeps the Bool serialization.
+CREATE TABLE t_alter_key_sub (id UInt32, data JSON(a SimpleAggregateFunction(any, Bool))) ENGINE = MergeTree PARTITION BY data.a ORDER BY id;
+INSERT INTO t_alter_key_sub SELECT * FROM format(RowBinary, 'id UInt32, data JSON(a SimpleAggregateFunction(any, Bool))', unhex('000000000101610001000000010161010200000001016102'));
+SELECT 'typed SimpleAggregateFunction(any, Bool) path in the partition key, other paths change -> reject:';
+ALTER TABLE t_alter_key_sub MODIFY COLUMN data JSON(a SimpleAggregateFunction(any, Bool), c String); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+SELECT 'key subcolumn values:', groupArray(reinterpretAsUInt8(k)) FROM (SELECT data.a AS k FROM t_alter_key_sub ORDER BY id);
+DROP TABLE t_alter_key_sub;
+
 CREATE TABLE t_alter_key_sub (id UInt32, data JSON(a Date32)) ENGINE = MergeTree ORDER BY (data.a, id) SETTINGS index_granularity = 1;
 INSERT INTO t_alter_key_sub SELECT * FROM format(RowBinary, 'id UInt32, data JSON(a Date32)', unhex('0000000001016100000000010000000101610100000002000000010161ffffff7f'));
 SELECT 'typed Date32 path, other paths change -> reject:';
@@ -329,4 +337,26 @@ INSERT INTO t_alter_key_sub (id) VALUES (0);
 SELECT 'key subcolumn 31 levels deep, a sibling changes -> allow:';
 ALTER TABLE t_alter_key_sub MODIFY COLUMN c Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Int64)))))))))))))))))))))))))))))), b UInt64);
 SELECT toTypeName(c.b), c.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a FROM t_alter_key_sub;
+DROP TABLE t_alter_key_sub;
+
+-- The sizes of an array are not a subcolumn of its elements, even when the elements have a subcolumn of the same name.
+CREATE TABLE t_alter_key_sub (id UInt32, a Array(JSON(x Int64))) ENGINE = MergeTree ORDER BY (a.size0, id) SETTINGS index_granularity = 1;
+INSERT INTO t_alter_key_sub VALUES (0, ['{"x" : 1}']), (1, []), (2, ['{"x" : 1}', '{"x" : 2}']);
+SELECT 'Array(JSON) sizes, the JSON changes -> allow:';
+ALTER TABLE t_alter_key_sub MODIFY COLUMN a Array(JSON(x Int64, y String));
+SELECT 'key subcolumn values:', groupArray(k) FROM (SELECT a.size0 AS k FROM t_alter_key_sub ORDER BY id);
+DROP TABLE t_alter_key_sub;
+
+CREATE TABLE t_alter_key_sub (id UInt32, a Array(Tuple(size0 UInt8, x Int64))) ENGINE = MergeTree ORDER BY (a.size0, id) SETTINGS index_granularity = 1;
+INSERT INTO t_alter_key_sub VALUES (0, [(5, 1)]), (1, []), (2, [(5, 1), (5, 2)]);
+SELECT 'Array(Tuple(size0 ...)) sizes, the element size0 changes -> allow:';
+ALTER TABLE t_alter_key_sub MODIFY COLUMN a Array(Tuple(size0 UInt16, x Int64));
+SELECT 'key subcolumn values:', groupArray(k) FROM (SELECT a.size0 AS k FROM t_alter_key_sub ORDER BY id);
+DROP TABLE t_alter_key_sub;
+
+CREATE TABLE t_alter_key_sub (id UInt32, a Array(Array(JSON(x Int64)))) ENGINE = MergeTree ORDER BY (a.size1, id) SETTINGS index_granularity = 1;
+INSERT INTO t_alter_key_sub VALUES (0, [['{"x" : 1}']]), (1, [[]]), (2, [['{"x" : 1}', '{"x" : 2}']]);
+SELECT 'Array(Array(JSON)) inner sizes, the JSON changes -> allow:';
+ALTER TABLE t_alter_key_sub MODIFY COLUMN a Array(Array(JSON(x Int64, y String)));
+SELECT 'key subcolumn values:', groupArray(k) FROM (SELECT a.size1 AS k FROM t_alter_key_sub ORDER BY id);
 DROP TABLE t_alter_key_sub;
