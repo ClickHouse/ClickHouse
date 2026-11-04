@@ -856,9 +856,8 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
         if (values_per_block == 0 || values_per_block % 128 != 0 || miniblocks_per_block == 0 || values_per_block % miniblocks_per_block != 0 || values_per_block / miniblocks_per_block % 32 != 0)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid DELTA_BINARY_PACKED header");
 
-        /// The number of values in a miniblock is passed to `BitReader::GetBatch` as `int`, and the size of
-        /// a miniblock in bits is computed as the number of values times the bit width (at most 64).
-        /// Bounding the block size keeps both from overflowing on corrupted data.
+        /// The size of a miniblock in bits is computed as the number of values times the bit width
+        /// (at most 64). Bounding the block size keeps it from overflowing on corrupted data.
         if (values_per_block > UInt64(std::numeric_limits<Int32>::max()))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid DELTA_BINARY_PACKED block size: {}", values_per_block);
 
