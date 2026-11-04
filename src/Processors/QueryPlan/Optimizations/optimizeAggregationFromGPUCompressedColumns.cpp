@@ -335,6 +335,7 @@ std::optional<ReadColumns> matchReducedColumns(
 
             ReadFromGPUCompressedColumns::DerivedColumn derived{
                 .expression = computed_argument->second.compiled.expression,
+                .kernel = computed_argument->second.compiled.kernel,
                 .columns = {},
                 .description = aggregate.argument_names.front(),
             };
@@ -520,6 +521,7 @@ std::optional<MatchedFilter> matchPrewhere(const ReadFromMergeTree & reading)
 
     return MatchedFilter{ReadFromGPUCompressedColumns::DeviceFilter{
         .expression = compiled->expression,
+        .kernel = compiled->kernel,
         .columns = std::move(compiled->columns),
         .description = prewhere->prewhere_column_name,
     }};
@@ -755,7 +757,8 @@ void pushGroupFilterToDevice(const FilterStep & filter, ReadFromGPUCompressedCol
     }
 
     const Block & header = *source.getOutputHeader();
-    ReadFromGPUCompressedColumns::GroupFilter group_filter{.expression = compiled->expression, .columns = {}, .description = filter.getFilterColumnName()};
+    ReadFromGPUCompressedColumns::GroupFilter group_filter{
+        .expression = compiled->expression, .kernel = compiled->kernel, .columns = {}, .description = filter.getFilterColumnName()};
     for (const auto & column : compiled->columns)
     {
         if (!header.has(column.name))
@@ -1032,6 +1035,7 @@ std::optional<SplitPrewhere> splitPrewhere(const ReadFromMergeTree & reading)
 
     split.device = {
         .expression = compiled->expression,
+        .kernel = compiled->kernel,
         .columns = std::move(compiled->columns),
         .description = device_dag->getOutputs().front()->result_name,
     };

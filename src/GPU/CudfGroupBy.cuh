@@ -10,6 +10,15 @@
 namespace DB::GPU
 {
 
+/// A value column of a `GROUP BY` that the device computes from other value columns by `expression`, into a `Float64`:
+/// the `columns[i]`-th value column is what it reads as its column `i`.
+struct GPUDerivedValue
+{
+    GPUExpression expression;
+    uint32_t columns[max_expression_columns];
+    uint32_t num_columns = 0;
+};
+
 /// A `GROUP BY` on the device through one `cudf::groupby::streaming_groupby`, which keeps the groups on the device across
 /// the batches: of keys of integers and strings, by the aggregates of value columns, several of one column or a `count` of
 /// none among them.

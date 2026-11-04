@@ -1,6 +1,7 @@
 #pragma once
 
 #include <GPU/GPUExpression.cuh>
+#include <GPU/GPUExpressionCompiler.h>
 #include <GPU/GPUTypes.cuh>
 #include "config.h"
 
@@ -43,6 +44,8 @@ public:
     struct DerivedColumn
     {
         GPU::GPUExpression expression;
+        /// Keeps the kernel of `expression` loaded.
+        std::shared_ptr<const GPU::GPUKernel> kernel;
         /// Of `columns`, what it loads as its column `i`.
         std::vector<size_t> columns;
         /// The expression as the plan names it.
@@ -65,6 +68,8 @@ public:
     struct GroupFilter
     {
         GPU::GPUExpression expression;
+        /// Keeps the kernel of `expression` loaded.
+        std::shared_ptr<const GPU::GPUKernel> kernel;
         std::vector<uint32_t> columns;
         /// The predicate as the plan names it.
         String description;
@@ -82,6 +87,8 @@ public:
     struct DeviceFilter
     {
         GPU::GPUExpression expression;
+        /// Keeps the kernel of `expression` loaded.
+        std::shared_ptr<const GPU::GPUKernel> kernel;
         std::vector<NameAndTypePair> columns;
         /// The predicate as the plan names it.
         String description;

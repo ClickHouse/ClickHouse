@@ -9,6 +9,11 @@
 #include <GPU/GPUTypeMapping.h>
 
 #include <Columns/ColumnConst.h>
+#include <Common/CacheBase.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/HashTable/Hash.h>
+#include <Common/logger_useful.h>
+#include <Core/Defines.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/Hex.h>
@@ -16,6 +21,8 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/Native.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionsComparison.h>
+#include <Interpreters/castColumn.h>
 #include <Interpreters/JIT/CompileDAG.h>
 #include <Interpreters/convertFieldToType.h>
 
@@ -40,15 +47,22 @@
 #include <llvm/Target/TargetOptions.h>
 #include <llvm/TargetParser/Triple.h>
 
+#include <boost/noncopyable.hpp>
+
 #include <memory>
 #include <mutex>
-#include <unordered_map>
 #include <unordered_set>
 
 extern "C" void LLVMInitializeNVPTXTargetInfo();
 extern "C" void LLVMInitializeNVPTXTarget();
 extern "C" void LLVMInitializeNVPTXTargetMC();
 extern "C" void LLVMInitializeNVPTXAsmPrinter();
+
+namespace CurrentMetrics
+{
+    extern const Metric GPUExpressionKernelCacheBytes;
+    extern const Metric GPUExpressionKernelCacheCount;
+}
 
 namespace DB::ErrorCodes
 {
@@ -59,27 +73,60 @@ namespace DB::ErrorCodes
 namespace DB::GPU
 {
 
-namespace
-{
-
-constexpr const char * nvptx_triple = "nvptx64-nvidia-cuda";
-
-/// What the kernel of an expression writes for a row.
-enum class Output
-{
-    /// A bit of the mask for each row that the predicate holds for.
-    Bitmask,
-    Float64,
-};
-
-/// A kernel loaded on the device, which lives as long as the process, as the `GPUExpression`s of it do.
-struct Kernel
+struct GPUKernel : private boost::noncopyable
 {
     std::string name;
     cudaLibrary_t library = nullptr;
     cudaKernel_t kernel = nullptr;
     uint32_t block_size = 0;
+    /// What the kernel weighs in the cache of the compiler.
+    size_t ptx_size = 0;
+
+    ~GPUKernel()
+    {
+        if (!library)
+            return;
+
+        /// Nothing keeps the kernel any longer, but a launch of it that a query queued may still be running.
+        cudaError_t status = cudaDeviceSynchronize();
+        if (status == cudaSuccess)
+            status = cudaLibraryUnload(library);
+        if (status != cudaSuccess)
+        {
+            cudaGetLastError();
+            LOG_ERROR(getLogger("GPUExpressionCompiler"), "Cannot unload kernel {}: {}", name, cudaGetErrorString(status));
+        }
+    }
 };
+
+namespace
+{
+
+constexpr const char * nvptx_triple = "nvptx64-nvidia-cuda";
+
+/// Of the PTX of the kernels that the cache keeps loaded, besides those that expressions in use keep.
+constexpr size_t max_kernel_cache_bytes = 256UL << 20;
+
+struct GPUKernelWeight
+{
+    size_t operator()(const GPUKernel & kernel) const { return kernel.ptx_size; }
+};
+
+using GPUKernelCache = CacheBase<UInt128, GPUKernel, UInt128Hash, GPUKernelWeight>;
+
+/// The kernels compiled so far, a bounded number of them, as `CompiledExpressionCache` bounds the CPU's. One that it
+/// evicts is unloaded once the last expression of it is gone.
+GPUKernelCache & kernelCache()
+{
+    /// Never destroyed: the unloading of the kernels at the exit of the process would come after CUDA is gone.
+    static auto * cache = new GPUKernelCache(
+        CurrentMetrics::GPUExpressionKernelCacheBytes,
+        CurrentMetrics::GPUExpressionKernelCacheCount,
+        max_kernel_cache_bytes,
+        DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_ENTRIES);
+    return *cache;
+}
+
 
 void checkLoading(cudaError_t status, const std::string & what)
 {
@@ -116,10 +163,11 @@ uint32_t blockSizeOf(cudaKernel_t kernel, const std::string & name)
 }
 
 /// `name` of `ptx`, loaded on the device.
-std::unique_ptr<Kernel> loadKernel(const std::string & name, const std::string & ptx)
+std::shared_ptr<GPUKernel> loadKernel(const std::string & name, const std::string & ptx)
 {
-    auto kernel = std::make_unique<Kernel>();
+    auto kernel = std::make_shared<GPUKernel>();
     kernel->name = name;
+    kernel->ptx_size = ptx.size();
     checkLoading(
         cudaLibraryLoadData(&kernel->library, ptx.c_str(), nullptr, nullptr, 0, nullptr, nullptr, 0), "load the PTX of kernel " + name);
     checkLoading(cudaLibraryGetKernel(&kernel->kernel, kernel->library, name.c_str()), "find kernel " + name + " in its PTX");
@@ -224,6 +272,9 @@ bool deviceHasIntrinsic(llvm::StringRef name)
 /// is `d < 8766`. The nodes of `dag`, a copy that is not shared, are changed in place.
 void convertConstantsOfComparisons(ActionsDAG & dag)
 {
+    std::optional<ComparisonParams> params;
+    ContextPtr query_context;
+
     for (const auto & const_node : dag.getNodes())
     {
         if (const_node.type != ActionsDAG::ActionType::FUNCTION || const_node.children.size() != 2
@@ -239,16 +290,33 @@ void convertConstantsOfComparisons(ActionsDAG & dag)
             if (!isConstantToConvert(constant) || isConstantToConvert(other))
                 continue;
 
+            if (!params)
+            {
+                /// With the query's settings of comparisons, as the comparison of the plan is built.
+                query_context = CurrentThread::tryGetQueryContext();
+                if (!query_context)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "An expression for the GPU compiled outside of a query");
+                params.emplace(query_context);
+            }
+
+            /// Converted as `FunctionComparison` converts it: a string to the other's type, read as `cast_string_to_date_time_mode`
+            /// says, and a `Decimal` compared with a float, with the float, to a `Float64`.
             const WhichDataType which(other.result_type);
             DataTypePtr type;
+            Field value;
             if (isString(constant.result_type)
                 && (which.isDateOrDate32() || which.isDateTime() || which.isNativeInt() || which.isNativeUInt() || which.isNativeFloat()))
+            {
                 type = other.result_type;
+                value = convertFieldToType((*constant.column)[0], *type, constant.result_type.get(), params->format_settings);
+            }
             else if (isDecimal(constant.result_type) && which.isNativeFloat())
-                /// ClickHouse compares a `Decimal` with a float as both converted to `Float64`.
+            {
                 type = std::make_shared<DataTypeFloat64>();
+                value = (*castColumn({constant.column, constant.result_type, constant.result_name}, type))[0];
+            }
 
-            const Field value = type ? convertFieldToType((*constant.column)[0], *type) : Field();
+            /// What does not convert is compared otherwise, and the comparison does not compile.
             if (value.isNull())
                 continue;
 
@@ -263,10 +331,6 @@ void convertConstantsOfComparisons(ActionsDAG & dag)
         for (const auto * child : node.children)
             arguments.push_back({child->column, child->result_type, child->result_name});
 
-        /// With the query's settings of comparisons, as the comparison of the plan is built.
-        const ContextPtr query_context = CurrentThread::tryGetQueryContext();
-        if (!query_context)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "An expression for the GPU compiled outside of a query");
         node.function_base = FunctionFactory::instance().get(node.function_base->getName(), query_context)->build(arguments);
         node.function = node.function_base->prepare(arguments);
     }
@@ -316,7 +380,7 @@ std::optional<DeviceDAG> deviceDAGOf(const ActionsDAG::Node & root, String & ref
 }
 
 /// The kernel of `dag`: `void name(ptr column_0, ..., ptr result, i64 rows)`, a thread for each row.
-void emitKernel(llvm::Module & module, const DeviceDAG & device_dag, const DataTypePtr & result_type, Output output, const std::string & name)
+void emitKernel(llvm::Module & module, const DeviceDAG & device_dag, const DataTypePtr & result_type, GPUExpressionResult output, const std::string & name)
 {
     llvm::LLVMContext & context = module.getContext();
     llvm::IRBuilder<> b(context);
@@ -349,7 +413,7 @@ void emitKernel(llvm::Module & module, const DeviceDAG & device_dag, const DataT
     }
     llvm::Value * value = device_dag.dag.compile(b, values).value;
 
-    if (output == Output::Float64)
+    if (output == GPUExpressionResult::Float64)
     {
         b.CreateStore(nativeCast(b, result_type, value, std::make_shared<DataTypeFloat64>()), b.CreateInBoundsGEP(b.getDoubleTy(), result, row));
         b.CreateBr(done);
@@ -425,7 +489,7 @@ std::optional<std::string> emitPTX(llvm::Module & module, llvm::TargetMachine & 
     return std::string(ptx.str());
 }
 
-std::optional<CompiledGPUExpression> compile(const ActionsDAG & dag, const String & output_name, Output output, String & refusal)
+std::optional<CompiledGPUExpression> compile(const ActionsDAG & dag, const String & output_name, GPUExpressionResult output, String & refusal)
 {
     const ActionsDAG::Node * output_node = dag.tryFindInOutputs(output_name);
     if (!output_node)
@@ -434,7 +498,8 @@ std::optional<CompiledGPUExpression> compile(const ActionsDAG & dag, const Strin
         return {};
     }
 
-    ActionsDAG expression = ActionsDAG::cloneSubDAG({output_node}, false);
+    /// Without aliases, which `getCompilableDAG` takes as inputs, so that `(x + y AS s) > 0` compiles as `x + y > 0` does.
+    ActionsDAG expression = ActionsDAG::cloneSubDAG({output_node}, true);
     convertConstantsOfComparisons(expression);
     const ActionsDAG::Node * root = withoutAliases(expression.getOutputs().front());
 
@@ -445,12 +510,12 @@ std::optional<CompiledGPUExpression> compile(const ActionsDAG & dag, const Strin
 
     const DataTypePtr result_type = root->result_type;
     const WhichDataType which(result_type);
-    if (output == Output::Bitmask && !(which.isNativeUInt() || which.isNativeInt()))
+    if (output == GPUExpressionResult::Bitmask && !(which.isNativeUInt() || which.isNativeInt()))
     {
         refusal = "a predicate of type " + result_type->getName();
         return {};
     }
-    if (output == Output::Float64 && !which.isFloat64())
+    if (output == GPUExpressionResult::Float64 && !which.isFloat64())
     {
         refusal = "an expression of type " + result_type->getName() + " instead of a `Float64`";
         return {};
@@ -461,18 +526,10 @@ std::optional<CompiledGPUExpression> compile(const ActionsDAG & dag, const Strin
     hash.update(dag_hash);
     hash.update(output);
     hash.update(deviceArchitecture());
-    const std::string name = "clickhouse_gpu_" + getHexUIntLowercase(hash.get128());
+    const UInt128 key = hash.get128();
+    const std::string name = "clickhouse_gpu_" + getHexUIntLowercase(key);
 
-    static std::mutex mutex;
-    static std::unordered_map<std::string, std::unique_ptr<Kernel>> kernels;
-
-    const Kernel * kernel = nullptr;
-    {
-        std::lock_guard lock(mutex);
-        if (auto it = kernels.find(name); it != kernels.end())
-            kernel = it->second.get();
-    }
-
+    std::shared_ptr<const GPUKernel> kernel = kernelCache().get(key);
     if (!kernel)
     {
         auto machine = nvptxTargetMachine();
@@ -487,21 +544,19 @@ std::optional<CompiledGPUExpression> compile(const ActionsDAG & dag, const Strin
             return {};
 
         /// Loaded once, by the first query that compiles it, which another one compiling it waits for.
-        std::lock_guard lock(mutex);
-        auto it = kernels.find(name);
-        if (it == kernels.end())
-            it = kernels.emplace(name, loadKernel(name, *ptx)).first;
-        kernel = it->second.get();
+        kernel = kernelCache().getOrSet(key, [&] { return loadKernel(name, *ptx); }).first;
     }
 
     CompiledGPUExpression compiled;
     compiled.expression.kernel = kernel->kernel;
+    compiled.expression.result = output;
     compiled.expression.block_size = kernel->block_size;
     compiled.expression.name = kernel->name.c_str();
     compiled.expression.num_columns = static_cast<uint32_t>(device_dag.columns.size());
     for (size_t i = 0; i < device_dag.columns.size(); ++i)
         compiled.expression.column_types[i] = *filterElementTypeOf(*device_dag.columns[i].type);
     compiled.columns = std::move(device_dag.columns);
+    compiled.kernel = std::move(kernel);
     return compiled;
 }
 
@@ -509,12 +564,12 @@ std::optional<CompiledGPUExpression> compile(const ActionsDAG & dag, const Strin
 
 std::optional<CompiledGPUExpression> compileGPUFilter(const ActionsDAG & dag, const String & filter_column_name, String & refusal)
 {
-    return compile(dag, filter_column_name, Output::Bitmask, refusal);
+    return compile(dag, filter_column_name, GPUExpressionResult::Bitmask, refusal);
 }
 
 std::optional<CompiledGPUExpression> compileGPUExpression(const ActionsDAG & dag, const String & output_name, String & refusal)
 {
-    return compile(dag, output_name, Output::Float64, refusal);
+    return compile(dag, output_name, GPUExpressionResult::Float64, refusal);
 }
 
 }

@@ -307,7 +307,9 @@ struct CudfGroupBy::State
         filter_mask.resize(cudf::bitmask_allocation_size_bytes(num_rows), stream);
         auto * mask = static_cast<cudf::bitmask_type *>(filter_mask.data());
 
-        evaluatePredicateToBitmask(filter, inputs, rows, mask, stream);
+        if (filter.result != GPUExpressionResult::Bitmask)
+            throwGPUError("a filter of a `GROUP BY` by an expression that is not a predicate");
+        evaluateGPUExpression(filter, inputs, rows, mask, stream);
 
         return guarded("counting the rows a filter leaves out", [&]
         {
@@ -471,6 +473,26 @@ struct CudfGroupBy::State
         }));
     }
 
+    /// The value columns of a batch of `rows` rows that `derived` is computed from.
+    __host__ static GPUExpressionInputs inputsOf(const GPUDerivedValue & derived, const std::vector<DeviceFixedColumn> & values, size_t rows)
+    {
+        if (derived.expression.result != GPUExpressionResult::Float64 || derived.num_columns > max_expression_columns)
+            throwGPUError(("a derived value of " + std::to_string(derived.num_columns) + " columns, or not into a `Float64`").c_str());
+
+        GPUExpressionInputs inputs;
+        inputs.count = derived.num_columns;
+        for (uint32_t i = 0; i < derived.num_columns; ++i)
+        {
+            const uint32_t column = derived.columns[i];
+            if (column >= values.size())
+                throwGPUError(("a derived value of value column " + std::to_string(column) + " of " + std::to_string(values.size())).c_str());
+            if (values[column].rows < rows)
+                throwGPUError(("a derived value of " + std::to_string(rows) + " rows over a column of " + std::to_string(values[column].rows)).c_str());
+            inputs.columns[i] = {.data = values[column].data, .type = values[column].element_type};
+        }
+        return inputs;
+    }
+
     /// Appends to `columns`, the keys and the values of a batch of `rows` rows, the values derived from them.
     __host__ void derive(std::vector<cudf::column_view> & columns, size_t rows)
     {
@@ -491,7 +513,7 @@ struct CudfGroupBy::State
             rmm::device_buffer & out = derived_values[j];
             if (out.size() < rows * sizeof(double))
                 out.resize(rows * sizeof(double), stream);
-            evaluateDerivedValue(derived[j], batch_values, rows, static_cast<double *>(out.data()), stream);
+            evaluateGPUExpression(derived[j].expression, inputsOf(derived[j], batch_values, rows), rows, out.data(), stream);
             columns.emplace_back(cudf::data_type{cudf::type_id::FLOAT64}, static_cast<cudf::size_type>(rows), out.data(), nullptr, 0);
         }
     }
