@@ -2324,7 +2324,8 @@ bool MergeTreeIndexConditionText::traverseMapElementValueNode(
 
     /// The plan applies the index tokenizer and postprocessor to these only when the index takes them.
     const auto function_name = function_node.getFunctionName();
-    if (function_name == "hasAnyTokens" || function_name == "hasAllTokens" || function_name == "hasPhrase")
+    if (function_name == "hasToken" || function_name == "hasAnyTokens" || function_name == "hasAllTokens"
+        || function_name == "hasPhrase")
         return true;
 
     /// A map element reads the value type's default for a key the map does not hold, while the index
@@ -2334,7 +2335,7 @@ bool MergeTreeIndexConditionText::traverseMapElementValueNode(
 
     if (!function_dag_node || !element_dag_node
         || !function_dag_node->function_base || !function_dag_node->isDeterministic()
-        || !WhichDataType(removeNullable(function_dag_node->result_type)).isUInt8())
+        || !WhichDataType(removeLowCardinalityAndNullable(function_dag_node->result_type)).isUInt8())
         return false;
 
     /// `hasIndexForMapElementValue` matched this index, so its single expression is `mapValues(m)`.

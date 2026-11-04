@@ -111,6 +111,30 @@ SELECT 'S10 control prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count(
 SELECT 'S10 subcolumn prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_cast WHERE CAST(m['k'], 'String') LIKE '%hel%') WHERE explain LIKE '%Granules: 1/2%';
 SELECT 'S10 arrayElement prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_cast WHERE CAST(m['k'], 'String') LIKE '%hel%' SETTINGS optimize_functions_to_subcolumns = 0) WHERE explain LIKE '%Granules: 1/2%';
 
+DROP TABLE IF EXISTS t_lc;
+CREATE TABLE t_lc (id UInt32, m Map(String, LowCardinality(FixedString(6))),
+                   INDEX tix mapValues(m) TYPE text(tokenizer = ngrams(3)))
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO t_lc VALUES (1, map('other', 'abcdef')), (2, map('k', 'hello'));
+
+-- S11: as S1 and S2 for a LowCardinality value type, for which the pattern returns LowCardinality(UInt8).
+SELECT 'S11 oracle', count() FROM t_lc WHERE m['k'] LIKE concat('%', char(0), char(0), char(0), '%') SETTINGS use_skip_indexes = 0;
+SELECT 'S11 subcolumn', count() FROM t_lc WHERE m.key_k LIKE concat('%', char(0), char(0), char(0), '%');
+SELECT 'S11 toLowCardinality', count() FROM t_lc WHERE toLowCardinality(m['k']) LIKE concat('%', char(0), char(0), char(0), '%') SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT 'S11 subcolumn prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_lc WHERE m.key_k LIKE '%zzz%') WHERE explain LIKE '%Granules: 0/2%';
+SELECT 'S11 toLowCardinality prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_lc WHERE toLowCardinality(m['k']) LIKE '%zzz%' SETTINGS optimize_functions_to_subcolumns = 0) WHERE explain LIKE '%Granules: 0/2%';
+
+DROP TABLE IF EXISTS t_cast_post;
+CREATE TABLE t_cast_post (id UInt32, m Map(String, Nullable(String)),
+                          INDEX tix mapValues(m) TYPE text(tokenizer = splitByNonAlpha, postprocessor = lower(mapValues(m))))
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO t_cast_post VALUES (1, map('k', 'hello')), (2, map('k', 'other'));
+
+-- S12: `hasToken` applies the index postprocessor, which lowercases the needle, so row 1 matches. The cast
+-- throws on the NULL default, and the index must still be used, or the postprocessor is not applied.
+SELECT 'S12 subcolumn', groupArray(id) FROM (SELECT id FROM t_cast_post WHERE hasToken(CAST(m['k'], 'String'), 'HELLO') ORDER BY id);
+SELECT 'S12 arrayElement', groupArray(id) FROM (SELECT id FROM t_cast_post WHERE hasToken(CAST(m['k'], 'String'), 'HELLO') ORDER BY id SETTINGS optimize_functions_to_subcolumns = 0);
+
 DROP TABLE t_fs;
 DROP TABLE t_str;
 DROP TABLE t_null;
@@ -118,3 +142,5 @@ DROP TABLE t_dyn;
 DROP TABLE t_arr;
 DROP TABLE t_post;
 DROP TABLE t_cast;
+DROP TABLE t_lc;
+DROP TABLE t_cast_post;

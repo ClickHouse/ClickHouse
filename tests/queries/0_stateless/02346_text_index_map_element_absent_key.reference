@@ -27,3 +27,10 @@ S10 arrayElement	1
 S10 control prunes	1
 S10 subcolumn prunes	0
 S10 arrayElement prunes	0
+S11 oracle	1
+S11 subcolumn	1
+S11 toLowCardinality	1
+S11 subcolumn prunes	1
+S11 toLowCardinality prunes	1
+S12 subcolumn	[1]
+S12 arrayElement	[1]
