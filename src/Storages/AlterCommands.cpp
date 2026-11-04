@@ -1686,6 +1686,10 @@ MutationStageDecision AlterCommand::getMutationStageDecision(
 
     if (type == DROP_COLUMN)
     {
+        /// Plain `DROP COLUMN IF EXISTS` skips a missing exact name. `CLEAR` still rewrites children.
+        if (if_exists && !clear && !partition && !metadata.columns.has(column_name))
+            return decision;
+
         decision.requires_mutation = metadata.columns.hasColumnOrNested(GetColumnsOptions::AllPhysical, column_name);
         return decision;
     }

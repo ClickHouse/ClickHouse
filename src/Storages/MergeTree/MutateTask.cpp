@@ -983,6 +983,11 @@ static void splitAndModifyMutationCommands(
                             for_interpreter.push_back(command);
                             for_file_renames.push_back(command); /// For packed parts
                         }
+                        else if (has_nested_column)
+                        {
+                            for (const auto & nested_column : part_columns.getNested(command.column_name))
+                                dropped_columns.emplace(nested_column.name);
+                        }
                         else
                             dropped_columns.emplace(command.column_name);
                     }
@@ -991,15 +996,32 @@ static void splitAndModifyMutationCommands(
             else if (command.type == MutationCommand::Type::DROP_COLUMN)
             {
                 /// Marker-only DROP/CLEAR must still update metadata and dependencies.
-                String marker_name = nameInPart(command.column_name);
-                if (part->getSerializationInfos().isMissingColumn(marker_name))
+                const auto name_in_part = nameInPart(command.column_name);
+                const auto & serialization_infos = part->getSerializationInfos();
+                const bool share_nested_offsets = (*part->storage.getSettings())[MergeTreeSetting::share_nested_offsets];
+
+                auto push_marker = [&](const String & marker_name)
                 {
+                    if (!serialization_infos.isMissingColumn(marker_name))
+                        return;
+
+                    auto marker_command = command;
+                    marker_command.column_name = marker_name;
                     if (command.clear)
                     {
-                        for_interpreter.push_back(command);
-                        mutated_columns.emplace(command.column_name);
+                        for_interpreter.push_back(marker_command);
+                        mutated_columns.emplace(marker_name);
                     }
-                    for_file_renames.push_back(command);
+                    for_file_renames.push_back(std::move(marker_command));
+                };
+
+                push_marker(name_in_part);
+                if (share_nested_offsets)
+                {
+                    const String prefix = name_in_part + ".";
+                    for (const auto & missing : serialization_infos.getMissingColumns())
+                        if (missing.name.starts_with(prefix))
+                            push_marker(missing.name);
                 }
             }
         }
@@ -1292,29 +1314,47 @@ static void splitAndModifyMutationCommands(
             {
                 const auto name_in_part = nameInPart(command.column_name);
                 const bool share_nested = (*part->storage.getSettings())[MergeTreeSetting::share_nested_offsets];
+                /// `part_columns` already includes renames from earlier commands of this mutation.
+                const auto source_columns = part->getColumnsDescription();
+                const auto & serialization_infos = part->getSerializationInfos();
+                NameSet dropped_sources;
 
-                auto push_drop = [&](MutationCommand drop)
+                auto push_source = [&](const String & source_name)
                 {
-                    if (command.clear)
-                        for_interpreter.push_back(drop);
-                    for_file_renames.push_back(std::move(drop));
+                    if (!dropped_sources.insert(source_name).second)
+                        return;
+
+                    MutationCommand file_command = command;
+                    file_command.column_name = source_name;
+                    for_file_renames.push_back(std::move(file_command));
+
+                    if (!command.clear)
+                        return;
+
+                    MutationCommand interpreter_command = command;
+                    interpreter_command.column_name = source_name;
+                    if (alter_conversions->columnHasNewName(source_name))
+                        interpreter_command.column_name = alter_conversions->getColumnNewName(source_name);
+                    for_interpreter.push_back(std::move(interpreter_command));
                 };
 
-                /// Flattened Nested is stored as `n.x`. Dropping `n` must name those children,
-                /// or their files are hardlinked into the new part and the column reappears.
-                if (share_nested && part_columns.hasNested(name_in_part))
+                if (share_nested && source_columns.hasNested(name_in_part))
                 {
-                    for (const auto & nested_column : part_columns.getNested(name_in_part))
-                    {
-                        auto child_command = command;
-                        child_command.column_name = nested_column.name;
-                        push_drop(std::move(child_command));
-                    }
+                    for (const auto & nested_column : source_columns.getNested(name_in_part))
+                        push_source(nested_column.name);
                 }
-                else if (part->getSerializationInfos().isMissingColumn(name_in_part))
+                else if (source_columns.has(name_in_part))
+                    push_source(name_in_part);
+
+                if (serialization_infos.isMissingColumn(name_in_part))
+                    push_source(name_in_part);
+
+                if (share_nested)
                 {
-                    /// Marker-only DROP/CLEAR has the same logical effect as physical data.
-                    push_drop(command);
+                    const String prefix = name_in_part + ".";
+                    for (const auto & missing : serialization_infos.getMissingColumns())
+                        if (missing.name.starts_with(prefix))
+                            push_source(missing.name);
                 }
             }
         }
@@ -1560,7 +1600,7 @@ getColumnsForNewDataPart(
         auto new_name = it == renamed_columns_from_to.end() ? name : it->second;
 
         /// Column can be removed only in this data part by CLEAR COLUMN query.
-        if (!storage_columns_set.contains(new_name) || removed_columns.contains(new_name))
+        if (!storage_columns_set.contains(new_name) || removed_columns.contains(new_name) || removed_columns.contains(name))
             continue;
 
         /// In compact part we read all columns and all of them are in @updated_header.
@@ -1625,7 +1665,7 @@ getColumnsForNewDataPart(
             auto it = renamed_columns_from_to.find(mc.name);
             auto new_name = it == renamed_columns_from_to.end() ? mc.name : it->second;
 
-            if (!storage_columns_set.contains(new_name) || removed_columns.contains(new_name))
+            if (!storage_columns_set.contains(new_name) || removed_columns.contains(new_name) || removed_columns.contains(mc.name))
                 continue;
             if (updated_header.has(new_name))
                 continue;
@@ -1707,25 +1747,33 @@ getColumnsForNewDataPart(
                 auto renamed_it = renamed_columns_to_from.find(it->name);
                 if (renamed_it != renamed_columns_to_from.end())
                 {
-                    source_col = source_columns_name_to_type.find(renamed_it->second);
-                    if (source_col == source_columns_name_to_type.end())
+                    /// Dropped source data must not follow the rename into the re-added column.
+                    if (removed_columns.contains(renamed_it->second))
+                    {
                         it = storage_columns.erase(it);
+                    }
                     else
                     {
-                        /// Take a type from source part column.
-                        /// It may differ from column type in storage.
-                        ///
-                        /// A full rewrite re-reads this column through the interpreter, which
-                        /// applies the rename together with every type change that came after it,
-                        /// so the new part must record the type in storage - see the same-named
-                        /// case below.
-                        if (!rewrites_all_columns)
-                            *it = NameAndTypePair{it->name, source_col->second};
+                        source_col = source_columns_name_to_type.find(renamed_it->second);
+                        if (source_col == source_columns_name_to_type.end())
+                            it = storage_columns.erase(it);
+                        else
+                        {
+                            /// Take a type from source part column.
+                            /// It may differ from column type in storage.
+                            ///
+                            /// A full rewrite re-reads this column through the interpreter, which
+                            /// applies the rename together with every type change that came after it,
+                            /// so the new part must record the type in storage - see the same-named
+                            /// case below.
+                            if (!rewrites_all_columns)
+                                *it = NameAndTypePair{it->name, source_col->second};
 
-                        if (fill_columns_substreams)
-                            addRenamedColumnToColumnsSubstreams(new_columns_substreams, source_columns_substreams, it->name, source_col->first, *source_part->getColumnPosition(source_col->first));
+                            if (fill_columns_substreams)
+                                addRenamedColumnToColumnsSubstreams(new_columns_substreams, source_columns_substreams, it->name, source_col->first, *source_part->getColumnPosition(source_col->first));
 
-                        ++it;
+                            ++it;
+                        }
                     }
                 }
                 else
@@ -1762,6 +1810,11 @@ getColumnsForNewDataPart(
                         /// being renamed away (DROP xxx + RENAME yyy TO xxx, or the swap
                         /// RENAME xxx TO zzz + RENAME yyy TO xxx).
                         auto renamed_from = renamed_columns_to_from.at(it->name);
+                        if (removed_columns.contains(renamed_from))
+                        {
+                            it = storage_columns.erase(it);
+                            continue;
+                        }
                         auto maybe_name_and_type = source_columns.tryGetByName(renamed_from);
                         if (!maybe_name_and_type)
                             throw Exception(

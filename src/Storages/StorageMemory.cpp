@@ -2,6 +2,7 @@
 #include <Common/Exception.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/MemoryTrackerUtils.h>
+#include <Core/Names.h>
 #include <Core/Settings.h>
 
 #include <Interpreters/TemporaryDataOnDisk.h>
@@ -13,8 +14,12 @@
 #include <Interpreters/getColumnFromBlock.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/Context.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/StorageFactory.h>
@@ -471,6 +476,106 @@ void StorageMemory::truncate(
     setData(std::make_unique<BlocksWithCounts>());
 }
 
+static void eraseStoredColumn(Block & block, const String & name)
+{
+    if (block.findByName(name))
+        block.erase(name);
+
+    const String prefix = name + ".";
+    Names nested;
+    for (const auto & column : block)
+        if (column.name.starts_with(prefix))
+            nested.push_back(column.name);
+    for (const auto & nested_name : nested)
+        block.erase(nested_name);
+}
+
+static void renameStoredColumn(Block & block, const String & from, const String & to)
+{
+    if (!block.findByName(from))
+        return;
+
+    auto renamed = block.getByName(from);
+    renamed.name = to;
+    block.erase(from);
+    block.insert(std::move(renamed));
+}
+
+/// Drop and rename retire stored values so a reused name reads its new default.
+static void applyStoredColumnIdentity(Block & block, const AlterCommands & commands, const StorageInMemoryMetadata & metadata, ContextPtr context)
+{
+    const size_t rows = block.rows();
+    for (const auto & command : commands)
+    {
+        if (command.ignore || command.partition)
+            continue;
+
+        if (command.type == AlterCommand::RENAME_COLUMN)
+        {
+            renameStoredColumn(block, command.column_name, command.rename_to);
+
+            const String prefix = command.column_name + ".";
+            Names nested;
+            for (const auto & column : block)
+                if (column.name.starts_with(prefix))
+                    nested.push_back(column.name);
+            for (const auto & nested_name : nested)
+                renameStoredColumn(block, nested_name, command.rename_to + nested_name.substr(command.column_name.size()));
+        }
+        else if (command.type == AlterCommand::DROP_COLUMN)
+        {
+            /// `IF EXISTS` drops only an exact name, so flattened `n.*` stays.
+            if (command.if_exists && !block.findByName(command.column_name))
+                continue;
+            eraseStoredColumn(block, command.column_name);
+        }
+    }
+
+    NamesAndTypesList missing;
+    for (const auto & column : metadata.columns)
+    {
+        if (!column.default_desc.expression)
+            continue;
+        if (column.default_desc.kind != ColumnDefaultKind::Default && column.default_desc.kind != ColumnDefaultKind::Materialized)
+            continue;
+        if (!block.has(column.name))
+            missing.emplace_back(column.name, column.type);
+    }
+    if (missing.empty() || rows == 0)
+        return;
+
+    const bool added_dummy = block.columns() == 0;
+    if (added_dummy)
+    {
+        block.insert(
+        {
+            ColumnConst::create(ColumnUInt8::create(1, static_cast<UInt8>(0)), rows),
+            std::make_shared<DataTypeUInt8>(),
+            "_dummy",
+        });
+    }
+
+    if (auto dag = evaluateMissingDefaults(block, missing, metadata.columns, context, false))
+    {
+        auto actions = std::make_shared<ExpressionActions>(std::move(*dag), ExpressionActionsSettings(context->getSettingsRef()));
+        actions->execute(block);
+    }
+    if (added_dummy)
+        block.erase("_dummy");
+}
+
+static bool changesStoredColumns(const AlterCommands & commands)
+{
+    for (const auto & command : commands)
+    {
+        if (command.ignore || command.partition)
+            continue;
+        if (command.type == AlterCommand::DROP_COLUMN || command.type == AlterCommand::RENAME_COLUMN)
+            return true;
+    }
+    return false;
+}
+
 void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr context, DB::IStorage::AlterLockHolder & /*alter_lock_holder*/, DB::DDLGuardPtr & /*ddl_guard*/)
 {
     auto table_id = getStorageID();
@@ -481,26 +586,37 @@ void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr conte
     /// Check that the resulting metadata does not exceed max_query_size before mutating any in-memory state.
     checkMetadataDoesNotExceedMaxQuerySize(table_id, new_metadata, context);
 
-    if (params.isSettingsAlter())
-    {
-        auto & settings_changes = new_metadata.settings_changes->as<ASTSetQuery &>();
-        const auto current_settings_snapshot = memory_settings.get();
-        const auto & current_settings = *current_settings_snapshot;
-        auto changed_settings_ptr = std::make_unique<MemorySettings>(current_settings);
-        auto & changed_settings = *changed_settings_ptr;
-        changed_settings.applyChanges(settings_changes.changes);
-        changed_settings.sanityCheck();
+    const bool rewrite_blocks = changesStoredColumns(params);
 
-        /// Installed under `mutex` together with the trimmed data, so that an `INSERT` finishing meanwhile
+    if (params.isSettingsAlter() || rewrite_blocks)
+    {
+        std::unique_ptr<MemorySettings> changed_settings_ptr;
+        bool shrink_limits = false;
+        if (params.isSettingsAlter())
+        {
+            auto & settings_changes = new_metadata.settings_changes->as<ASTSetQuery &>();
+            const auto current_settings_snapshot = memory_settings.get();
+            const auto & current_settings = *current_settings_snapshot;
+            changed_settings_ptr = std::make_unique<MemorySettings>(current_settings);
+            auto & changed_settings = *changed_settings_ptr;
+            changed_settings.applyChanges(settings_changes.changes);
+            changed_settings.sanityCheck();
+
+            shrink_limits = !current_settings[MemorySetting::max_bytes_to_keep]
+                || current_settings[MemorySetting::max_bytes_to_keep] > changed_settings[MemorySetting::max_bytes_to_keep]
+                || !current_settings[MemorySetting::max_rows_to_keep]
+                || current_settings[MemorySetting::max_rows_to_keep] > changed_settings[MemorySetting::max_rows_to_keep];
+        }
+
+        /// Installed under `mutex` together with the rewritten blocks, so that an `INSERT` finishing meanwhile
         /// (`MemorySink::onFinish`) evicts by either the old or the new limits, and never reads freed settings.
         std::lock_guard lock(mutex);
 
-        /// When modifying the values of max_bytes_to_keep and max_rows_to_keep to be smaller than the old values,
-        /// the old data needs to be removed.
-        if (!current_settings[MemorySetting::max_bytes_to_keep] || current_settings[MemorySetting::max_bytes_to_keep] > changed_settings[MemorySetting::max_bytes_to_keep]
-            || !current_settings[MemorySetting::max_rows_to_keep] || current_settings[MemorySetting::max_rows_to_keep] > changed_settings[MemorySetting::max_rows_to_keep])
+        std::unique_ptr<BlocksWithCounts> new_data;
+        if (shrink_limits)
         {
-            auto new_data = std::make_unique<BlocksWithCounts>(*(data.get()));
+            new_data = std::make_unique<BlocksWithCounts>(*(data.get()));
+            const auto & changed_settings = *changed_settings_ptr;
             while (!new_data->blocks.empty()
                    && ((changed_settings[MemorySetting::max_bytes_to_keep] && new_data->bytes > changed_settings[MemorySetting::max_bytes_to_keep])
                        || (changed_settings[MemorySetting::max_rows_to_keep] && new_data->rows > changed_settings[MemorySetting::max_rows_to_keep])))
@@ -511,19 +627,37 @@ void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr conte
                 if (new_data->bytes - bytes_to_remove < changed_settings[MemorySetting::min_bytes_to_keep]
                     || new_data->rows - rows_to_remove < changed_settings[MemorySetting::min_rows_to_keep])
                 {
-                    break; // stop - removing next block will put us under min_bytes / min_rows threshold
+                    break;
                 }
 
-                // delete old block from current storage table
                 new_data->rows -= rows_to_remove;
                 new_data->bytes -= bytes_to_remove;
                 new_data->blocks.erase(new_data->blocks.begin());
                 ++new_data->first_block_number;
             }
-
-            setData(std::move(new_data));
         }
-        memory_settings.set(std::move(changed_settings_ptr));
+
+        if (rewrite_blocks)
+        {
+            if (!new_data)
+            {
+                new_data = std::make_unique<BlocksWithCounts>();
+                new_data->blocks = data.get()->blocks;
+                new_data->rows = data.get()->rows;
+            }
+
+            for (auto & block : new_data->blocks)
+                applyStoredColumnIdentity(block, params, new_metadata, context);
+
+            new_data->bytes = 0;
+            for (const auto & block : new_data->blocks)
+                new_data->bytes += block.allocatedBytes();
+        }
+
+        if (new_data)
+            setData(std::move(new_data));
+        if (changed_settings_ptr)
+            memory_settings.set(std::move(changed_settings_ptr));
     }
 
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata, /*validate_new_create_query=*/true);
