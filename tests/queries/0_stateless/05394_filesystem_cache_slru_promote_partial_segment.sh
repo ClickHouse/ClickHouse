@@ -86,11 +86,13 @@ $CLICKHOUSE_CLIENT -q "
     FROM system.filesystem_cache
     WHERE cache_name = '$cache_name' AND state = 'PARTIALLY DOWNLOADED' AND file_segment_range_begin = 0"
 
+# The mark cache is shared with other tests. A read that misses it reloads each mark file through
+# this cache, which can promote the mark file's segment, so mark file loads are subtracted.
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 $CLICKHOUSE_CLIENT -q "
     SELECT
         replaceOne(query_id, '${qid_prefix}_', '') AS read,
-        ProfileEvents['FilesystemCachePromotedFileSegments'] >= 2 AS promoted,
+        ProfileEvents['FilesystemCachePromotedFileSegments'] - ProfileEvents['LoadedMarksFiles'] >= 2 AS promoted,
         ProfileEvents['CachedReadBufferReadFromSourceBytes'] = 0 AS all_from_cache,
         ProfileEvents['FilesystemCacheEvictedFileSegments'] > 0 AS evicted
     FROM system.query_log
