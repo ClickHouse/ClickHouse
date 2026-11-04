@@ -1237,7 +1237,7 @@ def test_expire_snapshots_with_catalog(started_cluster):
     node.query(
         f"ALTER TABLE {table_ref} EXECUTE expire_snapshots("
         f"snapshot_ids = [{expired[0].snapshot_id}, {expired[1].snapshot_id}]);",
-        settings={"allow_insert_into_iceberg": 1, "allow_experimental_expire_snapshots": 1},
+        settings={"allow_insert_into_iceberg": 1, "allow_expire_snapshots": 1},
     )
 
     assert [snapshot.snapshot_id for snapshot in committed_snapshots()] == [retained.snapshot_id]
@@ -1253,7 +1253,7 @@ def test_expire_snapshots_with_catalog(started_cluster):
     assert len(committed_snapshots()) == 2
     node.query(
         f"ALTER TABLE {table_ref} EXECUTE expire_snapshots(retention_period = '1ms', retain_last = 1);",
-        settings={"allow_insert_into_iceberg": 1, "allow_experimental_expire_snapshots": 1},
+        settings={"allow_insert_into_iceberg": 1, "allow_expire_snapshots": 1},
     )
     snapshots = committed_snapshots()
     assert len(snapshots) == 1 and snapshots[0].snapshot_id != retained.snapshot_id, snapshots
