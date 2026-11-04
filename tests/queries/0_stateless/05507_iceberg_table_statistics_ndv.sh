@@ -13,6 +13,11 @@
 # - T3: after an append, the current snapshot has no statistics, so they are not used.
 # - T4: time travel to the analyzed snapshot uses them again.
 # - T5: an equality on a Decimal and a join on a String, with the setting on and off.
+# Fixture r written by Trino 474: 300 rows (k = 0..299, s = 's' || k % 50, u = 'u' || k % 30) with statistics on write, then
+# 20 rows (k = 300..319, s = 'x' || k, u = 'v' || k % 15 for an even k, else NULL) without, then `ANALYZE ... WITH (columns =
+# ARRAY['u'])`, which keeps the blobs of k and s computed from the previous snapshot in the statistics file of the current one.
+# - T6: only the blob of u is used for the current snapshot, clamped to the non-NULL rows of a pruned read; time travel to
+#   the previous one uses all of its blobs.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -35,15 +40,20 @@ LAKE="${CLICKHOUSE_USER_FILES_UNIQUE}"
 rm -rf "${LAKE}"
 mkdir -p "${LAKE}"
 cp -r "${CUR_DIR}/data_minio/table_statistics_db/ndv_table" "${LAKE}/ndv_table"
+cp -r "${CUR_DIR}/data_minio/table_statistics_db/retained_table" "${LAKE}/retained_table"
 
-# Prints the numbers of distinct values of the `Estimated statistics` trace line of t. Usage: ndv [client flags].
+# Prints the numbers of distinct values of the `Estimated statistics` trace line of a table. Usage: ndv <table> <columns>
+# <filter> [client flags].
 ndv()
 {
+    local table="$1" columns="$2" filter="$3"
+    shift 3
     ${CLICKHOUSE_CLIENT_TRACE} ${PINS} "$@" --query "
-        EXPLAIN SELECT t.k, t.g, t.s, t.dec, t.d, t.sid, t.n FROM t JOIN dim ON t.k = dim.k" 2>&1 >/dev/null \
-        | grep -oE "Estimated statistics for [A-Za-z]+ t: .*" | head -n 1 \
+        EXPLAIN SELECT ${columns} FROM ${table} JOIN dim ON ${table}.k = dim.k ${filter}" 2>&1 >/dev/null \
+        | grep -oE "Estimated statistics for [A-Za-z]+ ${table}: .*" | head -n 1 \
         | grep -oE '__table1\.[a-z]+: [0-9]+( \[[^]]*\])?' | sed 's/__table1\.//' | sort
 }
+T_COLUMNS="t.k, t.g, t.s, t.dec, t.d, t.sid, t.n"
 
 # Prints the `Join:` and `ResultRows:` lines of the logical plan. Usage: labels <query> [client flags].
 labels()
@@ -79,11 +89,11 @@ ${CLICKHOUSE_CLIENT} --query "
 
 echo '--- T1: the current snapshot has statistics'
 echo 'Expect the theta NDV for d 11, dec 6, n 7, s 50, sid 3000; g 91 and k 3000 from the range of their bounds (theta: g 10).'
-ndv ${ON}
+ndv t "${T_COLUMNS}" "" ${ON}
 
 echo '--- T2: T1 with the setting off'
 echo 'Expect 300, 10% of the 3000 rows, for d, dec, n, s, sid; g 91 and k 3000 as in T1.'
-ndv ${OFF}
+ndv t "${T_COLUMNS}" "" ${OFF}
 
 echo '--- T5: dec = -5'
 echo 'Expect ~500: dec has 6 values, so 3000 / 6; off ~30, the default 1% (true 500).'
@@ -104,13 +114,35 @@ ${CLICKHOUSE_CLIENT} ${PINS} --query "
 
 echo '--- T3: the current snapshot has no statistics'
 echo 'Expect 400, 10% of the 4000 rows, for d, dec, n, s, sid: the statistics are of the previous snapshot.'
-ndv ${ON}
+ndv t "${T_COLUMNS}" "" ${ON}
 
 FIRST_SNAPSHOT=$(${CLICKHOUSE_CLIENT} --query "
     SELECT snapshot_id FROM system.iceberg_history WHERE database = currentDatabase() AND table = 't' AND parent_id = 0")
 
 echo '--- T4: time travel to the analyzed snapshot'
 echo 'Expect T1 again.'
-ndv ${ON} --iceberg_snapshot_id="${FIRST_SNAPSHOT}"
+ndv t "${T_COLUMNS}" "" ${ON} --iceberg_snapshot_id="${FIRST_SNAPSHOT}"
+
+${CLICKHOUSE_CLIENT} ${PINS} --query "CREATE TABLE r ENGINE = IcebergLocal('${LAKE}/retained_table')"
+
+echo '--- fixture r: rows, distinct values of s and u; blobs of the current statistics file: computed from the current snapshot, field id, ndv'
+${CLICKHOUSE_CLIENT} --query "SELECT count(), uniqExact(s), uniqExact(u) FROM r"
+${CLICKHOUSE_CLIENT} --query "
+    SELECT JSONExtractUInt(blob, 'snapshot-id') = current, JSONExtractInt(blob, 'fields', 1), JSONExtractString(blob, 'properties', 'ndv')
+    FROM
+    (
+        SELECT JSONExtractUInt(json, 'current-snapshot-id') AS current, arrayJoin(JSONExtractArrayRaw(json, 'statistics')) AS stats_file
+        FROM file('${LAKE}/retained_table/metadata/00004-*.metadata.json', 'JSONAsString')
+    )
+    ARRAY JOIN JSONExtractArrayRaw(stats_file, 'blob-metadata') AS blob
+    WHERE JSONExtractUInt(stats_file, 'snapshot-id') = current"
+
+echo '--- T6: a statistics file with blobs of the previous snapshot'
+echo 'Expect u 40 from its blob; s 32, 10% of the 320 rows, as its blob gives 50 of the previous snapshot (true 70); k 320 from its bounds.'
+ndv r "r.k, r.s, r.u" "" ${ON}
+echo 'k >= 300 prunes the read to the 20 rows of the second file, 10 of them with u: expect u 40 clamped to 10, s 2, k 20.'
+ndv r "r.k, r.s, r.u" "WHERE r.k >= 300" ${ON} --use_iceberg_partition_pruning=1
+echo 'Time travel to the previous snapshot: expect s 50 and u 30 from its blobs; k 300 from its bounds.'
+ndv r "r.k, r.s, r.u" "" ${ON} --iceberg_snapshot_id=75667572448823849
 
 rm -rf "${LAKE}"

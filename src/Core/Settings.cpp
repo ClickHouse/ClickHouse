@@ -9745,7 +9745,7 @@ With [`use_statistics`](#use_statistics) enabled, estimate an Iceberg read for j
 )", 0, \
         {"26.11", false, false, "New setting to estimate the rows and column statistics of Iceberg reads for join reordering from manifest files."}) \
     DECLARE(Bool, use_iceberg_table_statistics_ndv, false, R"(
-With [`use_iceberg_manifest_statistics`](#use_iceberg_manifest_statistics) enabled, take the number of distinct values of an Iceberg column for which the manifest files give none from the table statistics in `metadata.json`: the `ndv` property of an `apache-datasketches-theta-v1` blob over that one column, as written by Spark `compute_table_stats` or Trino `ANALYZE`. Only the statistics of the snapshot that is read are used. The numbers drive join reordering and condition estimates only and never change query results.
+With [`use_iceberg_manifest_statistics`](#use_iceberg_manifest_statistics) enabled, take the number of distinct values of an Iceberg column for which the manifest files give none from the table statistics in `metadata.json`: the `ndv` property of an `apache-datasketches-theta-v1` blob over that one column, as written by Spark `compute_table_stats` or Trino `ANALYZE`. Only the blobs computed from the snapshot that is read are used. The numbers drive join reordering and condition estimates only and never change query results.
 )", 0, \
         {"26.11", false, false, "New setting to take the numbers of distinct values of Iceberg columns from the table statistics in `metadata.json` for join reordering."}) \
     DECLARE(Bool, iceberg_tolerate_conflicting_manifest_schemas, true, R"(
