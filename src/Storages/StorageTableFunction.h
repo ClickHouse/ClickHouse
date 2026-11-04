@@ -84,15 +84,15 @@ public:
     /// its definition. Forwarding these would run the table function, which fails while its source is missing.
     void applyMetadataChangesToCreateQueryForBackup(const ASTPtr & create_query) const override
     {
-        IStorage::applyMetadataChangesToCreateQueryForBackup(create_query);
+        IStorage::applyMetadataChangesToCreateQueryForBackup(create_query); // NOLINT(bugprone-parent-virtual-call)
     }
     void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override
     {
-        IStorage::backupData(backup_entries_collector, data_path_in_backup, partitions);
+        IStorage::backupData(backup_entries_collector, data_path_in_backup, partitions); // NOLINT(bugprone-parent-virtual-call)
     }
     void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override
     {
-        IStorage::restoreDataFromBackup(restorer, data_path_in_backup, partitions);
+        IStorage::restoreDataFromBackup(restorer, data_path_in_backup, partitions); // NOLINT(bugprone-parent-virtual-call)
     }
     bool supportsBackupPartition() const override { return false; }
     void finalizeRestoreFromBackup() override {}
