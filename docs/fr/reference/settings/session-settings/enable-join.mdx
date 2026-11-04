@@ -14,7 +14,7 @@ import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [code source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## enable_join_fixed_hash_table_conversion
+## enable_join_fixed_hash_table_conversion {#enable_join_fixed_hash_table_conversion}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -22,7 +22,7 @@ Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tab
 
 Permet d’activer la conversion de la table de hachage en tableau plat pour les jointures lorsque la clé est un seul entier avec une plage de valeurs réduite.
 
-## enable_join_key_only_hash_tables
+## enable_join_key_only_hash_tables {#enable_join_key_only_hash_tables}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -30,7 +30,7 @@ Permet d’activer la conversion de la table de hachage en tableau plat pour les
 
 Utiliser des tables de hachage qui ne stockent que les join keys, sans référence à une row de droite, pour les jointures dont le résultat ne peut jamais contenir une valeur issue d&#39;une row de droite : `LEFT ANTI`, et `LEFT SEMI` lorsqu&#39;aucune column de droite n&#39;est sélectionnée. Une telle table possède une cell plus petite et permet d&#39;abandonner les blocks de droite au lieu de les stocker.
 
-## enable_join_runtime_filters
+## enable_join_runtime_filters {#enable_join_runtime_filters}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -38,15 +38,22 @@ Utiliser des tables de hachage qui ne stockent que les join keys, sans référen
 
 Filtre la partie gauche à l’aide de l’ensemble des clés de JOIN collectées du côté droit à l’exécution.
 
-## enable_join_runtime_filters_index_analysis
+## enable_join_runtime_filters_index_analysis {#enable_join_runtime_filters_index_analysis}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Les JOIN runtime filters sont devenus une fonctionnalité du Production tier."}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "0"},{"label": "Nouveau paramètre permettant d’activer le filtrage des jointures à l’aide d’une analyse d’index dynamique"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Les JOIN runtime filters sont devenus une fonctionnalité de niveau Production."}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "0"},{"label": "Nouveau paramètre permettant d'activer le filtrage de jointure à l'aide d'une analyse d’index dynamique"}]}, {"id": "row-3","items": [{"label": "26.10"},{"label": "1"},{"label": "Active l'élagage des granules du côté sonde (gauche) d'un JOIN à l'aide du runtime filter collecté du côté construction (droit)."}]}]} />
 
-Exécute une seconde passe d’analyse d’index (via use&#95;skip&#95;indexes&#95;on&#95;data&#95;read) afin d’élaguer les granules du côté gauche (LHS) d’une jointure.
+Élague les granules du côté sonde d&#39;un JOIN à l&#39;aide du runtime filter collecté du côté construction (voir `enable_join_runtime_filters`).
+N&#39;a d&#39;effet que si `use_skip_indexes_on_data_read = 1`.
+Seule une clé de jointure qui est une colonne de clé primaire du côté sonde, ou qui est couverte par un index de saut `minmax`, `set` ou `bloom_filter`, peut faire l&#39;objet d&#39;un élagage.
+Si le runtime filter a conservé les valeurs exactes des clés, le prédicat d&#39;élagage est un set `IN` de ces valeurs ; sinon, c&#39;est la plage minimum/maximum des clés qui est utilisée (l&#39;élagage est alors moins efficace).
 
-## enable_join_transitive_predicates
+Ne prend effet que lorsque le côté sonde de la jointure est lu localement. Les descripteurs qui pilotent l&#39;élagage sont attachés à l&#39;étape de lecture lors de l&#39;optimisation du plan de requête, mais ne sont pas conservés lorsque cette étape est reconstruite pour une exécution distante ; l&#39;élagage des granules n&#39;a donc pas lieu avec les répliques parallèles (`enable_parallel_replicas = 1`) ni avec un plan de requête distribué (`make_distributed_plan = 1`). Dans ces modes, le paramètre est sans effet : la requête renvoie le même résultat et le JOIN runtime filter lui-même se comporte exactement comme lorsque ce paramètre est désactivé ; seul l&#39;élagage des granules est perdu.
+
+L&#39;élagage des granules est également ignoré pour une lecture du côté sonde avec `FINAL` (l&#39;élagage n&#39;est pas implémenté pour les lectures `FINAL`, et `optimizeLazyFinal` reconstruit une telle lecture sans les descripteurs), ainsi que pour une table comportant des mutations de données ou `ALTER` en attente, ou des patch parts. Dans ces cas, le paramètre est également sans effet, au sens décrit ci-dessus.
+
+## enable_join_transitive_predicates {#enable_join_transitive_predicates}
 
 <BetaBadge />
 

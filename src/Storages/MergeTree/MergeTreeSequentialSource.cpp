@@ -378,6 +378,9 @@ Pipe createMergeTreeSequentialSource(
     /// No `SAMPLE` clause reaches this path, so the sample factor is 1 - the same value
     /// `ReadFromMergeTree` publishes for a query without `SAMPLE`.
     info->const_virtual_fields.emplace("_sample_factor", 1.0);
+    /// `_table` and `_database` are constant per table, the same way `ReadFromMergeTree` publishes them.
+    info->const_virtual_fields.emplace("_table", storage.getStorageID().getTableName());
+    info->const_virtual_fields.emplace("_database", storage.getStorageID().getDatabaseName());
 
     /// The part might have some rows masked by lightweight deletes
     bool has_lightweight_delete = info->data_part_info->hasLightweightDelete() || info->alter_conversions->hasLightweightDelete();
@@ -489,7 +492,6 @@ public:
             const auto & primary_key = storage_snapshot->metadata->getPrimaryKey();
             ActionsDAGWithInversionPushDown filter_dag(filter->getOutputs().front(), context, /* boolean_context */ true);
             KeyCondition key_condition(filter_dag, context, primary_key);
-            key_condition.relaxRangeAtomsOverNaNHidingTupleColumns(primary_key.data_types);
             LOG_DEBUG(log, "Key condition: {}", key_condition.toString());
 
             if (!key_condition.alwaysFalse())

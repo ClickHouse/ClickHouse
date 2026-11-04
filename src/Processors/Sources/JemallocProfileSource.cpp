@@ -1,3 +1,6 @@
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/ListWithMemoryTracking.h>
 #include <Processors/Sources/JemallocProfileSource.h>
 
 #if USE_JEMALLOC
@@ -7,7 +10,6 @@
 #    include <list>
 #    include <mutex>
 #    include <ranges>
-#    include <unordered_set>
 #    include <Columns/ColumnString.h>
 #    include <Core/Defines.h>
 #    include <DataTypes/DataTypeString.h>
@@ -18,7 +20,7 @@
 #    include <IO/WriteHelpers.h>
 #    include <Processors/Executors/PullingPipelineExecutor.h>
 #    include <QueryPipeline/QueryPipeline.h>
-#    include <base/hex.h>
+#    include <Common/Hex.h>
 #    include <Common/FramePointers.h>
 #    include <Common/MemoryTrackerSwitcher.h>
 #    include <Common/StackTrace.h>
@@ -67,16 +69,14 @@ std::optional<UInt64> parseHexAddress(std::string_view & src)
     return address;
 }
 
-}
-
-std::vector<UInt64> parseJemallocStackAddresses(std::string_view line, bool * fully_parsed)
+/// The addresses of a stack line as written by jemalloc, i.e. callers are return addresses.
+VectorWithMemoryTracking<UInt64> parseStackReturnAddresses(std::string_view line, bool * fully_parsed)
 {
-    std::vector<UInt64> result;
+    VectorWithMemoryTracking<UInt64> result;
     std::string_view sv = line;
     if (!sv.empty() && sv[0] == '@')
     {
         sv.remove_prefix(1);
-        bool first = true;
         while (!sv.empty())
         {
             trimLeft(sv);
@@ -85,12 +85,30 @@ std::vector<UInt64> parseJemallocStackAddresses(std::string_view line, bool * fu
             auto address = parseHexAddress(sv);
             if (!address.has_value())
                 break;
-            result.push_back(first ? *address : *address - 1);
-            first = false;
+            result.push_back(*address);
         }
     }
     if (fully_parsed)
         *fully_parsed = sv.empty();
+    return result;
+}
+
+}
+
+VectorWithMemoryTracking<UInt64> parseJemallocStackAddresses(std::string_view line, bool * fully_parsed)
+{
+    auto result = parseStackReturnAddresses(line, fully_parsed);
+    for (size_t i = 1; i < result.size(); ++i)
+        --result[i];
+    return result;
+}
+
+std::string sanitizeJemallocStackLine(std::string_view line)
+{
+    /// The output keeps the return addresses: `jeprof` subtracts 1 from the callers itself.
+    std::string result = "@";
+    for (UInt64 address : parseStackReturnAddresses(line, nullptr))
+        result += fmt::format(" {:#x}", StackTrace::resolveAddressForStorage(reinterpret_cast<const void *>(address)));
     return result;
 }
 
@@ -152,7 +170,7 @@ UInt64 applySamplingCorrection(UInt64 count, UInt64 bytes, UInt64 sampling_inter
 struct SymbolizationLRUCache
 {
     using Key = std::pair<UInt64, bool>;
-    using Value = std::shared_ptr<const std::vector<std::string>>;
+    using Value = std::shared_ptr<const VectorWithMemoryTracking<std::string>>;
 
     struct KeyHash
     {
@@ -165,7 +183,7 @@ struct SymbolizationLRUCache
         }
     };
 
-    using List = std::list<std::pair<Key, Value>>;
+    using List = ListWithMemoryTracking<std::pair<Key, Value>>;
 
     explicit SymbolizationLRUCache(size_t max_size_) : max_size(max_size_) {}
 
@@ -181,10 +199,11 @@ struct SymbolizationLRUCache
     }
 
     /// Inserts a new entry (or updates existing) and returns the stored shared_ptr.
-    Value put(const Key & key, std::vector<std::string> value)
+    Value put(const Key & key, VectorWithMemoryTracking<std::string> value)
     {
+        /// The cache is shared by all queries, so its entries are charged to the global tracker only.
         MemoryTrackerSwitcher switcher(&total_memory_tracker);
-        auto shared = std::make_shared<const std::vector<std::string>>(std::move(value));
+        auto shared = std::make_shared<const VectorWithMemoryTracking<std::string>>(std::move(value));
         std::lock_guard lock(mutex);
         auto it = index.find(key);
         if (it != index.end())
@@ -194,7 +213,16 @@ struct SymbolizationLRUCache
             return shared;
         }
         lru.emplace_front(key, shared);
-        index.emplace(key, lru.begin());
+        try
+        {
+            index.emplace(key, lru.begin());
+        }
+        catch (...)
+        {
+            /// Keep `lru` and `index` in step, otherwise the entry would stay in `lru` unreachable.
+            lru.pop_front();
+            throw;
+        }
         if (lru.size() > max_size)
         {
             index.erase(lru.back().first);
@@ -208,10 +236,27 @@ private:
 
     mutable std::mutex mutex;
     List lru TSA_GUARDED_BY(mutex);
-    std::unordered_map<Key, List::iterator, KeyHash> index TSA_GUARDED_BY(mutex);
+    UnorderedMapWithMemoryTracking<Key, List::iterator, KeyHash> index TSA_GUARDED_BY(mutex);
 };
 
 SymbolizationLRUCache symbolization_cache(/*max_size=*/ 100'000);
+
+/// Reads the next line of a heap profile in the form that can be published: stack addresses are converted by
+/// `sanitizeJemallocStackLine`, and the memory map (`MAPPED_LIBRARIES:` to the end) is never returned.
+/// Returns false at the end of the publishable part.
+bool readPublishableLine(ReadBuffer & in, std::string & line)
+{
+    if (in.eof())
+        return false;
+    line.clear();
+    readStringUntilNewlineInto(line, in);
+    in.tryIgnore(1);
+    if (line.starts_with("MAPPED_LIBRARIES:"))
+        return false;
+    if (line.starts_with('@'))
+        line = sanitizeJemallocStackLine(line);
+    return true;
+}
 
 /// Resolve a single address to its symbol names, using the global cache.
 /// Frames are stored in callback order (inline-first when enabled).
@@ -224,7 +269,7 @@ SymbolizationLRUCache::Value resolveAddress(UInt64 address, bool symbolize_with_
 
     FramePointers fp;
     fp[0] = reinterpret_cast<void *>(address);
-    std::vector<std::string> frame_symbols;
+    VectorWithMemoryTracking<std::string> frame_symbols;
     StackTrace::forEachFrame(
         fp, 0, 1,
         [&](const StackTrace::Frame & frame)
@@ -283,26 +328,20 @@ Chunk JemallocProfileSource::generateRaw()
     if (!file_input)
         file_input = std::make_unique<ReadBufferFromFile>(filename);
 
-    /// Stream directly from file
-    if (file_input->eof())
-    {
-        is_finished = true;
-        return {};
-    }
-
     auto column = ColumnString::create();
-
-    for (size_t rows = 0; rows < max_block_size && !file_input->eof(); ++rows)
+    std::string line;
+    while (column->size() < max_block_size)
     {
-        std::string line;
-        readStringUntilNewlineInto(line, *file_input);
-        file_input->tryIgnore(1);
-
+        if (!readPublishableLine(*file_input, line))
+        {
+            is_finished = true;
+            break;
+        }
         column->insertData(line.data(), line.size());
     }
 
-    if (file_input->eof())
-        is_finished = true;
+    if (column->empty())
+        return {};
 
     size_t num_rows = column->size();
     Columns columns;
@@ -360,13 +399,13 @@ Chunk JemallocProfileSource::generateSymbolized()
                     break;
                 }
 
-                UInt64 address = addresses[current_address_index++];
+                const auto [published_address, runtime_address] = addresses[current_address_index++];
 
-                auto symbols = resolveAddress(address, symbolize_with_inline);
+                auto symbols = resolveAddress(runtime_address, symbolize_with_inline);
 
                 std::string symbol_line;
                 WriteBufferFromString out(symbol_line);
-                writePointerHex(reinterpret_cast<const void *>(address), out);
+                writePointerHex(reinterpret_cast<const void *>(published_address), out);
 
                 std::string_view separator(" ");
                 for (const auto & symbol : std::ranges::reverse_view(*symbols))
@@ -417,18 +456,16 @@ Chunk JemallocProfileSource::generateSymbolized()
             if (!file_input)
                 file_input = std::make_unique<ReadBufferFromFile>(filename);
 
-            while (!file_input->eof() && column->size() < max_block_size)
+            std::string line;
+            while (column->size() < max_block_size)
             {
-                std::string line;
-                readStringUntilNewlineInto(line, *file_input);
-                file_input->tryIgnore(1);
+                if (!readPublishableLine(*file_input, line))
+                {
+                    symbolized_phase = SymbolizedPhase::Done;
+                    is_finished = true;
+                    break;
+                }
                 column->insertData(line.data(), line.size());
-            }
-
-            if (file_input->eof())
-            {
-                symbolized_phase = SymbolizedPhase::Done;
-                is_finished = true;
             }
 
             break; /// Chunk is full or done
@@ -458,7 +495,8 @@ void JemallocProfileSource::collectAddresses()
 {
     ReadBufferFromFile in(filename);
 
-    std::unordered_set<UInt64> unique_addresses;
+    /// The published address (as in the heap section) to a runtime address to symbolize.
+    UnorderedMapWithMemoryTracking<UInt64, UInt64> unique_addresses;
     std::string line;
 
     while (!in.eof())
@@ -474,10 +512,14 @@ void JemallocProfileSource::collectAddresses()
         in.tryIgnore(1);
 
         for (UInt64 addr : parseJemallocStackAddresses(line))
-            unique_addresses.insert(addr);
+        {
+            /// Frames outside the main binary are published as 0, which has no symbol.
+            if (UInt64 published = StackTrace::resolveAddressForStorage(reinterpret_cast<const void *>(addr)))
+                unique_addresses.emplace(published, addr);
+        }
     }
 
-    /// Convert set to sorted vector for deterministic output
+    /// Sorted for deterministic output
     addresses.assign(unique_addresses.begin(), unique_addresses.end());
     std::sort(addresses.begin(), addresses.end());
 }
@@ -492,7 +534,7 @@ Chunk JemallocProfileSource::generateCollapsed()
 
         ReadBufferFromFile in(filename);
         std::string line;
-        std::vector<UInt64> current_stack;
+        VectorWithMemoryTracking<UInt64> current_stack;
         bool has_stack = false;
         UInt64 sampling_interval = 0;
 

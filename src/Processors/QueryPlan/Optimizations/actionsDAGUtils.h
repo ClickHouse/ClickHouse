@@ -149,6 +149,11 @@ std::optional<std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Nod
     const std::unordered_set<const ActionsDAG::Node *> & allowed_inputs,
     const ActionsDAG::NodeRawConstPtrs & nodes);
 
+/// The arguments of a function node in the shape `IFunctionBase` methods expect: the result type of
+/// every child, and its constant column where the child has one. Whether a function is injective or
+/// monotonic can depend on them, so a caller that has a node has no reason to pass nothing.
+ColumnsWithTypeAndName getFunctionArgumentColumns(const ActionsDAG::Node & node);
+
 /// What each column of a header is to a DAG's inputs: one entry per header column, in header order,
 /// holding the position in `inputs` of the input reading it, or `passes_through` when no input reads it
 /// and the column goes past the DAG untouched.

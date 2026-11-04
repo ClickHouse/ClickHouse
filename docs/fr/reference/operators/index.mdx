@@ -106,6 +106,41 @@ Pour la soustraction de tuples : [tupleMinus](/fr/reference/functions/regular-f
 
 `a !~* b` – La fonction `notMatchCaseInsensitive(a, b)` (vérifie que `a` ne correspond pas à l’expression régulière `b`, sans distinction entre majuscules et minuscules).
 
+### Fonction similarTo {#similarto-function}
+
+`a SIMILAR TO b` – La fonction `similarTo(a, b)`.
+
+### Fonction notSimilarTo {#notsimilarto-function}
+
+`a NOT SIMILAR TO b` – La fonction `notSimilarTo(a, b)`.
+
+`SIMILAR TO` est le prédicat de correspondance de motifs défini par la norme SQL. Son motif combine les jokers de `LIKE`, `%` (un nombre quelconque de caractères arbitraires) et `_` (un seul caractère arbitraire), avec les métacaractères d&#39;expression régulière `|`, `*`, `+`, `?`, `{`, `}`, `(`, `)`, `[` et `]`. Les métacaractères `^`, `$` et `.` ne font **pas** partie de la grammaire de `SIMILAR TO` et désignent les caractères littéraux correspondants en dehors des expressions entre crochets. À l&#39;intérieur d&#39;une expression entre crochets, un `^` placé en tête conserve sa signification habituelle et sert à exclure les caractères de la classe : par exemple, `[^aeiou]` correspond à un seul caractère qui n&#39;est pas une voyelle. Le motif doit correspondre à l&#39;intégralité de l&#39;opérande de gauche, et non à une simple sous-chaîne de celui-ci. `\` permet d&#39;échapper n&#39;importe lequel des métacaractères, ainsi que lui-même.
+
+```sql title="Query"
+SELECT
+    'ClickHouse' SIMILAR TO 'Cl_ck[hH]ouse'    AS matches,
+    'ClickHouse' NOT SIMILAR TO 'Cl%ck[0-9]ouse' AS does_not_match;
+```
+
+```text title="Response"
+┌─matches─┬─does_not_match─┐
+│       1 │              1 │
+└─────────┴────────────────┘
+```
+
+### Clause ESCAPE {#escape-clause}
+
+`LIKE`, `ILIKE`, `NOT LIKE`, `NOT ILIKE`, `SIMILAR TO` et `NOT SIMILAR TO` acceptent une clause `ESCAPE 'c'` facultative placée en fin d&#39;expression, où `c` est un caractère ASCII unique. Ce caractère remplace l&#39;antislash, utilisé par défaut comme caractère d&#39;échappement, et l&#39;antislash perd alors sa signification particulière (il désigne un antislash littéral) :
+
+```sql
+SELECT 'a%b' SIMILAR TO 'a#%b' ESCAPE '#';  -- 1: `#%` is a literal `%`
+SELECT 'axb' SIMILAR TO 'a#%b' ESCAPE '#';  -- 0
+```
+
+Un caractère d&#39;échappement *personnalisé* doit être suivi d&#39;un caractère spécial du prédicat ou de lui-même ; tout autre caractère, y compris `^`, `$`, `.` et l&#39;antislash (caractères ordinaires dans `SIMILAR TO` en dehors des expressions entre crochets), provoque une erreur, car un échappement placé devant un caractère ordinaire n&#39;a aucun effet. Cette rigueur ne s&#39;applique qu&#39;aux caractères d&#39;échappement personnalisés : l&#39;antislash *par défaut* conserve le comportement legacy de `LIKE` et représente un antislash littéral lorsqu&#39;il précède un caractère ordinaire. Ainsi, `'\\mabc' SIMILAR TO '%\\mabc%'` renvoie `1`, tandis que `'mabc' SIMILAR TO '%#mabc%' ESCAPE '#'` est rejeté. À l&#39;intérieur d&#39;une expression entre crochets telle que `[...]`, le caractère d&#39;échappement perd son rôle spécial et se représente lui-même, conformément au comportement de POSIX et de PostgreSQL.
+
+La clause `ESCAPE` peut également être combinée avec le quantificateur de tableau `SOME` / `ALL` décrit [ci-dessous](#some-all-on-arrays), par exemple `'a%b' SIMILAR TO SOME(['a#%b', 'z%']) ESCAPE '#'`.
+
 ### Fonction BETWEEN {#between-function}
 
 `a BETWEEN b AND c` – Identique à `a >= b AND a <= c`.
@@ -157,7 +192,7 @@ SELECT
 
 ## Opérateurs pour manipuler des ensembles de données {#operators-for-working-with-data-sets}
 
-Voir les [opérateurs IN](/fr/reference/statements/in) et l’opérateur [EXISTS](/fr/reference/operators/exists).
+Voir les [opérateurs IN](/fr/reference/statements/in) et [`EXISTS`](/fr/reference/statements/exists).
 
 ### fonction IN {#in-function}
 
@@ -227,7 +262,7 @@ SELECT number AS a FROM numbers(10) WHERE a > ANY (SELECT number FROM numbers(3,
 
 ### `SOME` / `ALL` sur les tableaux {#some-all-on-arrays}
 
-En plus de la forme avec sous-requête décrite ci-dessus, le côté droit de `SOME` / `ALL` peut être une expression de tableau (un littéral de tableau, une colonne de type tableau ou toute expression renvoyant un tableau). Il s&#39;agit de la syntaxe de quantificateur de tableau de style PostgreSQL. Elle est reconnue lors de l&#39;analyse syntaxique et réécrite en fonctions de tableau, donc aucune réécriture manuelle n&#39;est nécessaire :
+En plus de la forme avec sous-requête décrite ci-dessus, le côté droit de `SOME` / `ALL` peut être une expression de tableau (un littéral de tableau, une colonne de type tableau ou toute expression renvoyant un tableau). Il s&#39;agit de la syntaxe de quantificateur de tableau de style PostgreSQL. Elle est reconnue lors de l&#39;analyse syntaxique et réécrite en fonctions de tableau, donc aucune réécriture manuelle n&#39;est nécessaire :
 
 | Syntaxe                                                   | Réécrit en                         |
 | --------------------------------------------------------- | ---------------------------------- |
@@ -236,16 +271,18 @@ En plus de la forme avec sous-requête décrite ci-dessus, le côté droit de `S
 | `expr OP SOME(arr)` (tout autre opérateur pris en charge) | `arrayExists(x -> expr OP x, arr)` |
 | `expr OP ALL(arr)` (tout autre opérateur pris en charge)  | `arrayAll(x -> expr OP x, arr)`    |
 
-`SOME` est le quantificateur existentiel (le synonyme SQL de `ANY`). `=` et `<>` sont traités à part et réécrits en `has` / `NOT has`, car ils disposent d&#39;une implémentation optimisée ; la forme générale s&#39;appuie sur les fonctions d&#39;ordre supérieur `arrayExists` / `arrayAll`.
+`SOME` est le quantificateur existentiel (le synonyme SQL de `ANY`). `=` et `<>` sont traités à part et réécrits en `has` / `NOT has`, car ils disposent d&#39;une implémentation optimisée ; la forme générale s&#39;appuie sur les fonctions d&#39;ordre supérieur `arrayExists` / `arrayAll`.
 
-La forme tableau est reconnue pour les opérateurs de comparaison `=`, `==`, `!=`, `<>`, `<=>`, `<`, `<=`, `>`, `>=`, les prédicats de comparaison à mot-clé `IS DISTINCT FROM` et `IS NOT DISTINCT FROM`, ainsi que les prédicats de recherche de chaînes `LIKE`, `ILIKE`, `NOT LIKE`, `NOT ILIKE` et `REGEXP`. Les prédicats de comparaison à mot-clé et les prédicats de recherche de chaînes ne sont reconnus que pour la forme tableau, pas pour la forme avec sous-requête (qui est ramenée à `IN`/`NOT IN`). Les opérateurs qui n&#39;ont pas de signification de quantificateur de tableau — par exemple `IN` lui-même — ne sont **pas** réécrits et conservent leur sens habituel.
+La forme tableau est reconnue pour les opérateurs de comparaison `=`, `==`, `!=`, `<>`, `<=>`, `<`, `<=`, `>`, `>=`, les prédicats de comparaison à mot-clé `IS DISTINCT FROM` et `IS NOT DISTINCT FROM`, ainsi que les prédicats de recherche de chaînes `LIKE`, `ILIKE`, `NOT LIKE`, `NOT ILIKE`, `REGEXP`, `SIMILAR TO` et `NOT SIMILAR TO`. Les prédicats de comparaison à mot-clé et les prédicats de recherche de chaînes ne sont reconnus que pour la forme tableau, pas pour la forme avec sous-requête (qui est ramenée à `IN`/`NOT IN`). Les opérateurs qui n&#39;ont pas de signification de quantificateur de tableau — par exemple `IN` lui-même — ne sont **pas** réécrits et conservent leur sens habituel.
 
-Les prédicats de recherche de chaînes fonctionnent parce que `MatchImpl` (l&#39;implémentation sous-jacente à `LIKE` / `ILIKE` / `REGEXP`) prend en charge un haystack constant avec une needle non constante. Par exemple, `'abc' LIKE SOME(['a%', 'b%'])` est réécrit en `arrayExists(x -> 'abc' LIKE x, ['a%', 'b%'])`, et `'abc' NOT LIKE ALL(['x%', 'y%'])` en `arrayAll(x -> 'abc' NOT LIKE x, ['x%', 'y%'])`. Cela permet de faire correspondre une chaîne à plusieurs patterns ; pour une correspondance en un seul passage combiné, vous pouvez toujours utiliser une fonction de recherche multi-pattern telle que `multiMatchAny` (expressions régulières) ou `multiSearchAny` (substrings).
+Les prédicats de recherche de chaînes fonctionnent parce que `MatchImpl` (l&#39;implémentation sous-jacente à `LIKE` / `ILIKE` / `REGEXP` / `SIMILAR TO`) prend en charge un haystack constant avec une needle non constante. Par exemple, `'abc' LIKE SOME(['a%', 'b%'])` est réécrit en `arrayExists(x -> 'abc' LIKE x, ['a%', 'b%'])`, et `'abc' NOT LIKE ALL(['x%', 'y%'])` en `arrayAll(x -> 'abc' NOT LIKE x, ['x%', 'y%'])`. Cela permet de faire correspondre une chaîne à plusieurs motifs ; pour une correspondance en un seul passage combiné, vous pouvez toujours utiliser une fonction de recherche multi-motif telle que `multiMatchAny` (expressions régulières) ou `multiSearchAny` (sous-chaînes).
+
+Les prédicats qui prennent en charge une [clause `ESCAPE`](#escape-clause) la conservent dans la forme tableau : un `ESCAPE 'c'` placé après le quantificateur s&#39;applique à chaque motif du tableau. Par exemple, `'a%b' SIMILAR TO SOME(['a#%b', 'z%']) ESCAPE '#'` est réécrit en `arrayExists(x -> similarTo('a%b', x, '#'), ['a#%b', 'z%'])`.
 
 <Info>
   **`ANY` n&#39;est pas pris en charge pour la forme tableau**
 
-  Seuls `SOME` et `ALL` acceptent un tableau à droite. `ANY` est exclu, car `any` est aussi une fonction d&#39;agrégation ; une expression de la forme `expr = any(x)` conserve donc son sens d&#39;appel de fonction. Utilisez `SOME` pour le quantificateur de tableau.
+  Seuls `SOME` et `ALL` acceptent un tableau à droite. `ANY` est exclu, car `any` est aussi une fonction d&#39;agrégation ; une expression de la forme `expr = any(x)` conserve donc son sens d&#39;appel de fonction. Utilisez `SOME` pour le quantificateur de tableau.
 </Info>
 
 ```sql title="Query"

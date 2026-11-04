@@ -1,0 +1,261 @@
+-- STEP 2, whole stream
+399	158802
+399	158802
+Expression (Project names)
+  Filling
+    GatherExchange
+      Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
+        Sorting
+          ReadFromMergeTree (ParallelRead default.t_cascades_fill)
+-- STEP 2, LIMIT
+0
+2
+4
+6
+8
+10
+0
+2
+4
+6
+8
+10
+Expression (Project names)
+  Limit
+    Filling
+      Limit (TopN merge Sorting for ORDER BY)
+        GatherExchange
+          Sorting
+            Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
+              ReadFromMergeTree (ParallelRead default.t_cascades_fill)
+-- FROM 2 TO 30 STEP 3
+0
+2
+4
+5
+8
+11
+12
+14
+16
+17
+20
+23
+26
+29
+0
+2
+4
+5
+8
+11
+12
+14
+16
+17
+20
+23
+26
+29
+-- DESC WITH FILL STALENESS
+796
+794
+792
+790
+788
+786
+784
+782
+780
+796
+794
+792
+790
+788
+786
+784
+782
+780
+-- INTERPOLATE
+0	0
+2	0
+4	1
+6	1
+8	2
+10	2
+0	0
+2	0
+4	1
+6	1
+8	2
+10	2
+Expression (Project names)
+  Filling
+    GatherExchange
+      Expression (Before INTERPOLATE)
+        Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
+          Sorting
+            ReadFromMergeTree (ParallelRead default.t_cascades_fill)
+-- DateTime WITH FILL STEP INTERVAL
+2020-01-01 00:00:00
+2020-01-01 00:00:01
+2020-01-01 00:00:02
+2020-01-01 00:00:03
+2020-01-01 00:00:04
+2020-01-01 00:00:05
+2020-01-01 00:00:06
+2020-01-01 00:00:07
+2020-01-01 00:00:08
+2020-01-01 00:00:00
+2020-01-01 00:00:01
+2020-01-01 00:00:02
+2020-01-01 00:00:03
+2020-01-01 00:00:04
+2020-01-01 00:00:05
+2020-01-01 00:00:06
+2020-01-01 00:00:07
+2020-01-01 00:00:08
+-- DateTime64 WITH FILL FROM/TO STEP INTERVAL 500 MILLISECOND
+28
+28
+-- GROUP BY, WITH FILL FROM 0 TO 64
+0	10
+1	0
+2	0
+3	10
+4	0
+5	0
+6	10
+7	0
+8	0
+9	10
+10	0
+11	0
+12	10
+13	0
+14	0
+15	10
+16	0
+17	0
+18	10
+19	0
+20	0
+21	10
+22	0
+23	0
+24	10
+25	0
+26	0
+27	10
+28	0
+29	0
+30	10
+31	0
+32	0
+33	10
+34	0
+35	0
+36	10
+37	0
+38	0
+39	10
+40	0
+41	0
+42	10
+43	0
+44	0
+45	10
+46	0
+47	0
+48	10
+49	0
+50	0
+51	10
+52	0
+53	0
+54	10
+55	0
+56	0
+57	10
+58	0
+59	0
+60	0
+61	0
+62	0
+63	0
+0	10
+1	0
+2	0
+3	10
+4	0
+5	0
+6	10
+7	0
+8	0
+9	10
+10	0
+11	0
+12	10
+13	0
+14	0
+15	10
+16	0
+17	0
+18	10
+19	0
+20	0
+21	10
+22	0
+23	0
+24	10
+25	0
+26	0
+27	10
+28	0
+29	0
+30	10
+31	0
+32	0
+33	10
+34	0
+35	0
+36	10
+37	0
+38	0
+39	10
+40	0
+41	0
+42	10
+43	0
+44	0
+45	10
+46	0
+47	0
+48	10
+49	0
+50	0
+51	10
+52	0
+53	0
+54	10
+55	0
+56	0
+57	10
+58	0
+59	0
+60	0
+61	0
+62	0
+63	0
+Expression (Project names)
+  Filling
+    Expression ((Before ORDER BY + Projection))
+      Sorting
+        MergingAggregated
+          GatherExchange
+            Aggregating
+              Expression ((Before GROUP BY + Change column names to column identifiers))
+                ReadFromMergeTree (ParallelRead default.t_cascades_fill)
+-- ORDER BY g, a WITH FILL by sorting prefix
+80	1980	7840
+80	1980	7840

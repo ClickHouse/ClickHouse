@@ -1,4 +1,5 @@
 #include <Storages/StorageAlias.h>
+#include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageTableProxy.h>
 #include <Storages/checkAndGetLiteralArgument.h>
@@ -20,6 +21,7 @@
 #include <Access/ContextAccess.h>
 #include <Common/assert_cast.h>
 #include <Common/Exception.h>
+#include <Common/quoteString.h>
 
 
 namespace DB
@@ -316,6 +318,26 @@ SinkToStoragePtr StorageAlias::write(
     return std::make_shared<AliasSink>(*this, local_context, target_metadata, async_insert);
 }
 
+void StorageAlias::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const
+{
+    /// `InterpreterAlterQuery` checks the export grants (`SELECT` on the table and its row policy) on the name in the query,
+    /// which is the alias, not the target. The refusal does not need the user, so it also holds on the hosts of `ON CLUSTER`.
+    for (const auto & command : commands)
+    {
+        if (command.type == AlterCommand::MODIFY_SETTING && !StorageFactory::instance().getExportAccessOfAnyEngine(command.settings_changes).empty())
+        {
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Changing the settings that send the data of a table elsewhere through an alias is not supported. "
+                "Execute the ALTER directly on the target table: {}.{}",
+                backQuoteIfNeed(target_database),
+                backQuoteIfNeed(target_table));
+        }
+    }
+
+    getTargetTable()->checkAlterIsPossible(commands, local_context);
+}
+
 void StorageAlias::alter(
     const AlterCommands & params,
     ContextPtr local_context,
@@ -497,7 +519,7 @@ CancellationCode StorageAlias::killPartMoveToShard(const UUID & task_uuid)
 
 void StorageAlias::updateExternalDynamicMetadataIfExists(ContextPtr local_context)
 {
-    getTargetTable()->updateExternalDynamicMetadataIfExists(local_context);
+    resolveStorageProxyLoading(getTargetTable())->updateExternalDynamicMetadataIfExists(local_context);
 }
 
 std::optional<QueryPipeline> StorageAlias::distributedWrite(const ASTInsertQuery & query, ContextPtr local_context)
@@ -672,6 +694,7 @@ void registerStorageAlias(StorageFactory & factory)
             target_database,
             target_table);
     },
+    SecretArgumentsSpec{},
     {
         .supports_schema_inference = true
     },
