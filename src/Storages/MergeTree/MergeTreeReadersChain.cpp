@@ -1076,12 +1076,10 @@ void MergeTreeReadersChain::evaluateMissingDefaults(
 void MergeTreeReadersChain::executePrewhereActions(
     MergeTreeRangeReader & reader, ReadResult & result, const Block & previous_header, bool is_last_reader, bool keep_additional_columns)
 {
-    /// The columns projected out are also needed to evaluate a `DEFAULT` column once more in
-    /// `applyPatchesAfterReader`, when patches may overwrite a column it reads. After the last step
-    /// the set of columns filled by defaults is final, so only then it can be checked.
-    if (!patch_readers.empty() && (!is_last_reader || !result.columns_filled_by_defaults.empty()))
-        keep_additional_columns = true;
-
+    /// The columns projected out are also needed to evaluate a `DEFAULT` column once more in `applyPatchesAfterReader`
+    /// when patches may overwrite a column it reads. A later reader that fills more such columns may evaluate defaults,
+    /// so the caller already keeps the columns for the steps before it.
+    keep_additional_columns = keep_additional_columns || (!patch_readers.empty() && !result.columns_filled_by_defaults.empty());
     reader.executePrewhereActionsAndFilterColumns(result, previous_header, keep_additional_columns);
     result.checkInternalConsistency();
     forgetColumnsOverwrittenByStep(result, reader);
