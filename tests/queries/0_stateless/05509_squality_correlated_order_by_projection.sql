@@ -1,5 +1,7 @@
 DROP TABLE IF EXISTS squality_correlated_order_by;
 
+SET empty_result_for_aggregation_by_empty_set = 0;
+
 CREATE TABLE squality_correlated_order_by (a Int32, b Int32) ENGINE = Memory;
 INSERT INTO squality_correlated_order_by VALUES (1, 2), (2, 1), (3, 3);
 
