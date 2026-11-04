@@ -1,5 +1,6 @@
 #include <Processors/Formats/Impl/ORC/Reader.h>
 
+#include <base/arithmeticOverflow.h>
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/Exception.h>
@@ -100,6 +101,22 @@ void Reader::readTail()
 
     schema = Type::fromProto(footer.types);
 
+    /// Validate the stripes once, so that the sums of their offsets and lengths cannot overflow later.
+    if (footer.stripes.size() > static_cast<size_t>(std::numeric_limits<Int32>::max()))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Too many stripes {} in ORC file {}", footer.stripes.size(), stream->getName());
+    for (size_t i = 0; i < footer.stripes.size(); ++i)
+    {
+        const auto & stripe = footer.stripes[i];
+        UInt64 stripe_end = 0;
+        if (common::addOverflow(stripe.offset, stripe.index_length, stripe_end)
+            || common::addOverflow(stripe_end, stripe.data_length, stripe_end)
+            || common::addOverflow(stripe_end, stripe.footer_length, stripe_end)
+            || stripe_end > file_size)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Malformed stripe information at stripe index {} in ORC file {}: offset={}, indexLength={}, dataLength={}, footerLength={}, fileLength={}",
+                i, stream->getName(), stripe.offset, stripe.index_length, stripe.data_length, stripe.footer_length, file_size);
+    }
+
     std::string_view metadata_data = std::string_view(tail).substr(
         tail_size - 1 - postscript_length - postscript.footer_length - postscript.metadata_length, postscript.metadata_length);
     if (!metadata_data.empty())
@@ -152,14 +169,14 @@ std::vector<std::pair<UInt64, UInt64>> Reader::getStripeRanges(
     const UInt64 data_end = stripe.offset + stripe.index_length + stripe.data_length;
     for (const auto & s : stripe_footer.streams)
     {
+        /// Every stream is checked: the offsets of the following streams depend on its length.
+        UInt64 stream_end = 0;
+        if (common::addOverflow(offset, s.length, stream_end) || stream_end > data_end)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Malformed stream at offset {} of length {} in stripe {} of ORC file {}", offset, s.length, stripe_index, stream->getName());
         if (s.kind && s.column < selected.size() && selected[s.column] && s.length)
-        {
-            if (offset + s.length > data_end || offset + s.length < offset)
-                throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "Malformed stream at offset {} of length {} in stripe {} of ORC file {}", offset, s.length, stripe_index, stream->getName());
             ranges.emplace_back(offset, s.length);
-        }
-        offset += s.length;
+        offset = stream_end;
     }
     return ranges;
 }
@@ -331,12 +348,14 @@ public:
 
         for (const auto & s : footer.streams)
         {
+            /// Every stream is checked: the offsets of the following streams depend on its length.
+            UInt64 stream_end = 0;
+            if (common::addOverflow(offset, s.length, stream_end) || stream_end > data_end)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Malformed stream meta in stripe {} of ORC file: streamOffset={}, streamLength={}, stripeOffset={}, stripeIndexLength={}, stripeDataLength={}",
+                    stripe_index, offset, s.length, stripe.offset, stripe.index_length, stripe.data_length);
             if (s.kind && s.column < selected_columns.size() && selected_columns[s.column])
             {
-                if (offset + s.length > data_end || offset + s.length < offset)
-                    throw Exception(ErrorCodes::INCORRECT_DATA,
-                        "Malformed stream meta in stripe {} of ORC file: streamOffset={}, streamLength={}, stripeOffset={}, stripeIndexLength={}, stripeDataLength={}",
-                        stripe_index, offset, s.length, stripe.offset, stripe.index_length, stripe.data_length);
                 /// Use the first stream if there are several of the same kind, as the reference implementation.
                 stream_ranges.try_emplace({static_cast<UInt64>(s.column), *s.kind}, offset, s.length);
             }
@@ -344,7 +363,7 @@ public:
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "Malformed stream meta in stripe {} of ORC file: column {} is out of range, the file has {} columns",
                     stripe_index, s.column, selected_columns.size());
-            offset += s.length;
+            offset = stream_end;
         }
     }
 
