@@ -1,7 +1,6 @@
 -- dphyp,dpsize algorithm combination: DPhyp succeeds on a connected graph
 -- so DPsize is never reached.  Result must match running dphyp alone.
 
-SET allow_experimental_analyzer = 1;
 SET use_statistics = 1;
 SET query_plan_join_swap_table = 'auto';
 SET enable_join_runtime_filters = 0;
