@@ -448,6 +448,43 @@ void ColumnString::fillFromRowStorePtrs(const DataTypePtr &, const RowStorePoint
         out_chars = unalignedLoad<UnhashedPackedStringRef>(row_at(i) + offset).copyTo(out_chars);
 }
 
+void ColumnString::gatherRangeIntoRows(char * rows, size_t row_length, size_t field_offset, size_t start, size_t count, char *& overflow_cursor, const UInt8 * null_map) const
+{
+    const char * src_chars = reinterpret_cast<const char *>(chars.data());
+    for (size_t row = 0; row < count; ++row)
+    {
+        char * dst = rows + row * row_length + field_offset;
+        const size_t source_row = start + row;
+        if (null_map)
+            *dst++ = static_cast<char>(null_map[source_row]);
+
+        const UInt64 begin = offsets[static_cast<ssize_t>(source_row) - 1];
+        const size_t value_size = offsets[source_row] - begin;
+        const char * value = src_chars + begin;
+        /// The store owns its bytes: a long value is copied to the overflow buffer and the ref points there.
+        if (value_size > UnhashedPackedStringRef::MAX_SMALL_LEN)
+        {
+            memcpy(overflow_cursor, value, value_size);
+            value = overflow_cursor;
+            overflow_cursor += value_size;
+        }
+
+        unalignedStore<UnhashedPackedStringRef>(dst, UnhashedPackedStringRef::build(value, value_size));
+    }
+}
+
+size_t ColumnString::rowStoreOverflowBytes(size_t start, size_t count) const
+{
+    size_t bytes = 0;
+    for (size_t row = start; row < start + count; ++row)
+    {
+        const size_t value_size = sizeAt(row);
+        if (value_size > UnhashedPackedStringRef::MAX_SMALL_LEN)
+            bytes += value_size;
+    }
+    return bytes;
+}
+
 ColumnPtr ColumnString::index(const IColumn & indexes, size_t limit) const
 {
     return selectIndexImpl(*this, indexes, limit);
