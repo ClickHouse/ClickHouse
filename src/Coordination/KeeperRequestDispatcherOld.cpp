@@ -713,9 +713,16 @@ bool KeeperRequestDispatcherOld::putRequest(const Coordination::ZooKeeperRequest
 
     request->spans.maybeInitialize(KeeperSpan::DispatcherRequestsQueue, request->tracing_context.get());
 
-    if (!requests_queue->tryPush(std::move(request_info), keeper_context->getCoordinationSettings()[CoordinationSetting::operation_timeout_ms].totalMilliseconds()))
+    const auto operation_timeout = keeper_context->getCoordinationSettings()[CoordinationSetting::operation_timeout_ms].totalMilliseconds();
+    if (!requests_queue->tryPush(std::move(request_info), operation_timeout))
     {
-        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Cannot push request to queue within operation timeout");
+        throw Exception(
+            ErrorCodes::TIMEOUT_EXCEEDED,
+            "Cannot push request to queue within operation timeout ({} ms). "
+            "The request queue may be full or keeper is overloaded: "
+            "consider increasing operation_timeout_ms in keeper_server.coordination_settings "
+            "or checking keeper load",
+            operation_timeout);
     }
     CurrentMetrics::add(CurrentMetrics::KeeperOutstandingRequests);
     return true;
