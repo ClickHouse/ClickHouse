@@ -17,6 +17,8 @@
 05452_unknown_streams_sparse_1	1
 05452_unknown_streams_sparse_2	1
 compact	1
+empty_array	1
+empty_string	1
 lowcardinality	1
 wide	1
 05452_skew_compact_prewhere	1

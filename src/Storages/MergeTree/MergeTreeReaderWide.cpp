@@ -1094,7 +1094,15 @@ void MergeTreeReaderWide::addGranuleServedFromColumnsCache(size_t mark, const st
     if (served_from_cache_without_known_streams)
         return;
 
-    for (size_t pos = 0; pos < columns_to_read.size(); ++pos)
+    auto is_quantized = [](const DataTypePtr & type)
+    {
+        const auto * custom_serialization = type->getCustomSerialization();
+        return custom_serialization && typeid(*custom_serialization) == typeid(SerializationQuantizedVector);
+    };
+
+    chassert(getColumns().size() == columns_to_read.size());
+    auto requested_column = getColumns().begin();
+    for (size_t pos = 0; pos < columns_to_read.size(); ++pos, ++requested_column)
     {
         if (isColumnSkipped(pos) || isColumnFilledAfterReading(pos) || from_disk[pos])
             continue;
@@ -1103,11 +1111,10 @@ void MergeTreeReaderWide::addGranuleServedFromColumnsCache(size_t mark, const st
         /// The streams are enumerated without a deserialization state, so those listed in the prefixes are missed: the
         /// structure of dynamic types, and the buckets of a `Map`, whose info stream is enumerated in their place.
         /// A `Quantized` column enumerates its codes and codebook, which reading the vectors skips, and the single value
-        /// of the codebook is read from the beginning of its file for any granule, not from the granule's mark.
+        /// of the codebook is read from the beginning of its file for any granule, not from the granule's mark. The
+        /// columns of a reloaded part lose its serialization, which is then taken from the requested column.
         const auto & type_in_storage = name_and_type.getTypeInStorage();
-        const auto * custom_serialization = type_in_storage->getCustomSerialization();
-        if (type_in_storage->hasDynamicStructure()
-            || (custom_serialization && typeid(*custom_serialization) == typeid(SerializationQuantizedVector)))
+        if (type_in_storage->hasDynamicStructure() || is_quantized(type_in_storage) || is_quantized(requested_column->getTypeInStorage()))
         {
             served_from_cache_without_known_streams = true;
             return;
@@ -1122,14 +1129,17 @@ void MergeTreeReaderWide::addGranuleServedFromColumnsCache(size_t mark, const st
                 served_from_cache_without_known_streams = true;
                 return;
             }
-            const auto & stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
+            const auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(
+                name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
             auto * stream = stream_name ? streams.find(*stream_name) : nullptr;
             if (!stream)
                 return;
 
             /// A block that holds the granule is counted once for the reader by `takeCompressedBytesRead`, also when it is read,
             /// or holds other granules or columns served from the cache.
-            stream->addRangeOfMark(mark, getRangesRead(*stream_name));
+            /// The granules that share a `LowCardinality` dictionary read it at the same mark.
+            const bool shared_with_next_granules = substream_path.back().type == ISerialization::Substream::DictionaryKeys;
+            stream->addRangeOfMark(mark, shared_with_next_granules, getRangesRead(*stream_name));
         });
     }
 }
