@@ -28,12 +28,13 @@
         SETTINGS ratio_of_defaults_for_sparse_serialization = 0.8
     </create_query>
 
+    <!-- Keep the payload short: growing long strings by reallocation costs a different amount in each server process. -->
     <fill_query>
         INSERT INTO sparse_column_index_runs_{run_length}
         SELECT
             number,
             number % 20 = 0 ? number : 0,
-            number % 20 = 0 ? repeat(toString(number), 64) : ''
+            number % 20 = 0 ? toString(number) : ''
         FROM numbers(intDiv(10000000, {run_length}))
     </fill_query>
 
