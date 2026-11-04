@@ -57,6 +57,15 @@ SELECT
     (SELECT estimateCompressionRatio('LZ4', 65536)(lc) FROM t_ecr_lc SETTINGS max_block_size = 65536)
     = (SELECT estimateCompressionRatio('LZ4', 65536)(lc) FROM t_ecr_lc SETTINGS max_block_size = 8192);
 
+-- A granule that a block leaves incomplete is completed with the rows of the next block.
+SELECT
+    (SELECT estimateCompressionRatio('LZ4', 65536)(lc) FROM t_ecr_lc SETTINGS max_block_size = 1000)
+    = (SELECT estimateCompressionRatio('LZ4', 65536)(lc) FROM t_ecr_lc SETTINGS max_block_size = 8192),
+    (SELECT estimateCompressionRatio('LZ4', 65536, 'LowCardinality(String)')(s) FROM t_ecr_lc SETTINGS max_block_size = 1000)
+    = (SELECT estimateCompressionRatio('LZ4', 65536, 'LowCardinality(String)')(s) FROM t_ecr_lc SETTINGS max_block_size = 8192),
+    (SELECT estimateCompressionRatio('LZ4', 65536)(toLowCardinality(toString(number % 16))) FROM numbers(10000) SETTINGS max_block_size = 1000)
+    = (SELECT estimateCompressionRatio('LZ4', 65536)(toLowCardinality(toString(number % 16))) FROM numbers(10000) SETTINGS max_block_size = 8192);
+
 SELECT 'Dynamic and JSON columns whose structure changes between blocks are written with the structure of the first block';
 
 SELECT estimateCompressionRatio('LZ4', 65536)(d) > 0

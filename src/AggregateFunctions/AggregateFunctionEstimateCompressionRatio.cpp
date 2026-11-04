@@ -165,8 +165,8 @@ struct AggregateFunctionEstimateCompressionRatioData
     UInt64 merged_compressed_size = 0;
     UInt64 merged_uncompressed_size = 0;
 
-    /// Pending work: rows added one at a time and the current run. Completed whenever the state is read, also through a const
-    /// pointer (`serialize`, `merge`), which does not change what the state stands for.
+    /// Pending work: rows that do not fill a granule yet and the current run. Completed whenever the state is read, also through
+    /// a const pointer (`serialize`, `merge`), which does not change what the state stands for.
     mutable MutableColumnPtr buffer;
     mutable std::unique_ptr<Run> run;
     /// The type of the column the rows of `buffer` come from. A state of a `LowCardinality(String)` column has the same type as
@@ -406,6 +406,45 @@ private:
         }
     }
 
+    IColumn & bufferFor(Data & data_ref) const
+    {
+        if (!data_ref.buffer)
+        {
+            data_ref.buffer = plain_type->createColumn();
+            data_ref.represented_type = represented_type;
+        }
+        return *data_ref.buffer;
+    }
+
+    /// Serializes rows in whole granules, as the writer does across the blocks it writes: the rows that do not fill one wait in
+    /// the buffer for the next rows. A sparse column is serialized as it is, since the buffer is not sparse.
+    void addRows(Data & data_ref, const IColumn & rows, size_t offset, size_t limit) const
+    {
+        if (rows.isSparse())
+        {
+            flushBuffer(data_ref);
+            serializeRows(data_ref, rows, offset, limit);
+            return;
+        }
+
+        const size_t granule_rows = granuleRows(rows);
+        if (data_ref.buffer && !data_ref.buffer->empty())
+        {
+            const size_t taken = std::min(limit, granule_rows - std::min(granule_rows, data_ref.buffer->size()));
+            data_ref.buffer->insertRangeFrom(rows, offset, taken);
+            offset += taken;
+            limit -= taken;
+            if (data_ref.buffer->size() < granule_rows)
+                return;
+            flushBuffer(data_ref);
+        }
+
+        const size_t whole_granules_rows = limit - limit % granule_rows;
+        serializeRows(data_ref, rows, offset, whole_granules_rows);
+        if (whole_granules_rows < limit)
+            bufferFor(data_ref).insertRangeFrom(rows, offset + whole_granules_rows, limit - whole_granules_rows);
+    }
+
     void flushBuffer(const Data & data_ref) const
     {
         if (!data_ref.buffer || data_ref.buffer->empty())
@@ -473,10 +512,7 @@ private:
             }
         }
 
-        const Data & data_ref = data(place);
-        /// Rows added one at a time go first, in their order.
-        flushBuffer(data_ref);
-        serializeRows(data_ref, *rows, offset, limit);
+        addRows(data(place), *rows, offset, limit);
     }
 
 public:
@@ -503,14 +539,10 @@ public:
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         Data & data_ref = data(place);
-        if (!data_ref.buffer)
-        {
-            data_ref.buffer = plain_type->createColumn();
-            data_ref.represented_type = represented_type;
-        }
-        data_ref.buffer->insertFrom(*columns[0], row_num);
+        IColumn & buffer = bufferFor(data_ref);
+        buffer.insertFrom(*columns[0], row_num);
 
-        if (data_ref.buffer->size() >= granuleRows(*data_ref.buffer))
+        if (buffer.size() >= granuleRows(buffer))
             flushBuffer(data_ref);
     }
 
@@ -676,7 +708,7 @@ void registerAggregateFunctionEstimateCompressionRatio(AggregateFunctionFactory 
     FunctionDocumentation::Description description = R"(
 Estimates the compression ratio of a given column without compressing it.
 
-The estimate follows the layout of a MergeTree wide part: every substream of the column (the dictionary and the indexes of a `LowCardinality` column, the null map of a `Nullable` column, the sizes of an `Array` column, ...) is compressed on its own, the codec applies to the data substreams while the structural substreams keep only its generic codecs, as `CODEC(...)` on a table column does, and the rows are serialized one granule at a time. A `LowCardinality` column is estimated with its dictionary encoding. The rows of each `GROUP BY` group and of each window frame are serialized as if they were a part of their own, so the result also depends on how the rows are split between groups, threads and frames.
+The estimate follows the layout of a MergeTree wide part: every substream of the column (the dictionary and the indexes of a `LowCardinality` column, the null map of a `Nullable` column, the sizes of an `Array` column, ...) is compressed on its own, the codec applies to the data substreams while the structural substreams keep only its generic codecs, as `CODEC(...)` on a table column does, and the rows are serialized one granule at a time, whatever the size of the blocks the query reads. A `LowCardinality` column is estimated with its dictionary encoding. The rows of each `GROUP BY` group and of each window frame are serialized as if they were a part of their own, so the result also depends on how the rows are split between groups, threads and frames.
 
 To estimate another representation of the data, either convert the argument, for example `toLowCardinality(s)` or `CAST(ip AS IPv6)`, which gives the ratio of that representation, or pass the type as the `target_type` parameter, which keeps the serialized size of the column as it is as the baseline, so that the ratios for different target types are directly comparable. The on-disk size of a representation is its serialized size divided by its ratio (for an existing column, `column_data_uncompressed_bytes` in `system.parts_columns`).
 
