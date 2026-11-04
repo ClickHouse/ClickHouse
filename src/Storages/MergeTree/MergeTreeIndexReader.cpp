@@ -134,33 +134,56 @@ void MergeTreeIndexReader::initStreamIfNeeded()
     auto index_format = index->getDeserializedFormat(*data_part_info, index->getFileName());
     auto index_name = index->getFileName();
 
-    /// The text index opens its dictionary, postings and positions streams itself during the analysis.
-    auto substream_it = std::ranges::find(index_format.substreams, MergeTreeIndexSubstream::Type::Regular, &MergeTreeIndexSubstream::type);
-    if (substream_it == index_format.substreams.end())
+    bool has_regular_substream = false;
+    for (const auto & substream : index_format.substreams)
+    {
+        using enum MergeTreeIndexSubstream::Type;
+
+        /// The text index opens its dictionary, postings and positions streams itself during the analysis.
+        if (substream.type == TextIndexDictionary || substream.type == TextIndexPostings || substream.type == TextIndexPositions)
+            continue;
+
+        has_regular_substream |= substream.type == Regular;
+
+        auto full_stream_name = index_name + substream.suffix;
+        auto stream_name_opt = DB::IMergeTreeDataPart::getStreamNameOrHash(full_stream_name, substream.extension, checksums);
+
+        /// If the stream doesn't exist (neither original nor hashed name), use the full name and
+        /// let the first read of its file report the missing path.
+        auto stream_name = stream_name_opt.value_or(full_stream_name);
+
+        auto stream_settings = settings;
+        size_t stream_marks_count = marks_count;
+        /// `JSON` value filters are read only at the offsets stored in the regular substream, in small pieces from
+        /// random places, so the substream is read as a whole file without its marks. Its file is opened by the first
+        /// read, which predicates that don't need large filters never do, and a larger buffer doesn't make sense.
+        if (substream.type == JSONBloomFilterValues)
+        {
+            stream_marks_count = 1;
+            stream_settings.read_settings.local_fs_settings.buffer_size = 16 * 1024;
+            stream_settings.read_settings.remote_fs_settings.buffer_size = 16 * 1024;
+        }
+
+        auto stream = makeIndexReaderStream(
+            stream_name,
+            substream.extension,
+            data_part_info,
+            stream_marks_count,
+            all_mark_ranges,
+            mark_cache,
+            uncompressed_cache,
+            std::move(stream_settings),
+            interruptible_marks_read);
+
+        streams[substream.type] = stream.get();
+        stream_holders.emplace_back(std::move(stream));
+    }
+
+    if (!has_regular_substream)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index {} has no regular substream", index_name);
 
-    auto full_stream_name = index_name + substream_it->suffix;
-    auto stream_name_opt = DB::IMergeTreeDataPart::getStreamNameOrHash(full_stream_name, substream_it->extension, checksums);
-
-    /// If the stream doesn't exist (neither original nor hashed name), use the full name and
-    /// let the first read of its file report the missing path.
-    auto stream_name = stream_name_opt.value_or(full_stream_name);
-
-    auto stream = makeIndexReaderStream(
-        stream_name,
-        substream_it->extension,
-        data_part_info,
-        marks_count,
-        all_mark_ranges,
-        mark_cache,
-        uncompressed_cache,
-        settings,
-        interruptible_marks_read);
-
-    streams[substream_it->type] = stream.get();
-    stream_holders.emplace_back(std::move(stream));
-
     version = index_format.version;
+    part_metadata = index->deserializePartMetadata(streams);
 }
 
 void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * condition, MergeTreeIndexGranulePtr & granule, const MarkRanges * readable_ranges)
@@ -171,12 +194,13 @@ void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * co
 
         if (stream_mark != mark)
         {
-            for (const auto & stream : stream_holders)
-                stream->seekToMark(mark);
+            for (const auto & [type, stream] : streams)
+                if (type != MergeTreeIndexSubstream::Type::JSONBloomFilterValues)
+                    stream->seekToMark(mark);
         }
 
         if (!res)
-            res = index->createIndexGranule();
+            res = index->createIndexGranule(part_metadata);
 
         MergeTreeIndexDeserializationState state
         {
@@ -238,8 +262,9 @@ void MergeTreeIndexReader::read(size_t mark, size_t current_granule_num, MergeTr
 
 void MergeTreeIndexReader::adjustRightMark(size_t right_mark)
 {
-    for (const auto & stream : stream_holders)
-        stream->adjustRightMark(right_mark);
+    for (const auto & [type, stream] : streams)
+        if (type != MergeTreeIndexSubstream::Type::JSONBloomFilterValues)
+            stream->adjustRightMark(right_mark);
 }
 
 }
