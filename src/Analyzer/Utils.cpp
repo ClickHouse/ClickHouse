@@ -1647,8 +1647,8 @@ bool isNodeLocalUserDefinedFunction(const String & function_name)
 
 /// A `DateTime` / `DateTime64` without an explicit time zone is interpreted in the default time zone
 /// of the server that evaluates the expression. The initiator and a remote node may have different
-/// default time zones, so a function that takes or returns such a value (`toHour(toDateTime(n))`,
-/// `dt >= '2024-01-01 00:00:00'`) may give a different result on the remote node.
+/// default time zones, so a function that takes or returns such a value (`dt >= '2024-01-01 00:00:00'`)
+/// may give a different result on the remote node.
 bool dependsOnImplicitTimeZone(const IDataType & type)
 {
     return anyInTypeTree(type, [](const IDataType & nested)
@@ -1658,45 +1658,53 @@ bool dependsOnImplicitTimeZone(const IDataType & type)
     });
 }
 
-/// True when `type` contains a value that a conversion to a date or a Unix timestamp reads in the
-/// default time zone of the server: a number (`toDate(1704124800)`) or a string
-/// (`toUnixTimestamp('2024-01-01 00:00:00')`). A `Date` / `Date32` also counts for
-/// `toUnixTimestamp`, which returns the start of that day in the default time zone.
-bool readsTimestampInImplicitTimeZone(const IDataType & type, bool include_dates)
+/// Many functions use the default time zone of the server even when their types contain no `DateTime`:
+/// `toDate(UInt64)`, `toUnixTimestamp(String)`, `toRelativeSecondNum(Date)`, `fromUnixTimestamp(UInt64, String)`
+/// and so on. Listing them one by one is error-prone, so only functions of the categories that do not
+/// use the default time zone may be copied to a remote node. This excludes the date and time functions,
+/// the type conversions, and every function without a category.
+bool isFunctionCategoryIndependentOfTimeZone(const String & function_name)
 {
-    return anyInTypeTree(type, [include_dates](const IDataType & nested)
-    {
-        return isNumber(nested) || isStringOrFixedString(nested) || (include_dates && isDateOrDate32(nested));
-    });
-}
+    const auto & factory = FunctionFactory::instance();
+    const String canonical_name = factory.getAliasToOrName(factory.getCanonicalNameIfAny(function_name));
+    if (!factory.has(canonical_name))
+        return false;
 
-bool isConversionToDate(const String & function_name)
-{
-    return function_name.starts_with("toDate") || function_name == "CAST" || function_name == "_CAST"
-        || function_name.starts_with("accurateCast");
+    using Category = FunctionDocumentation::Category;
+    switch (factory.getDocumentation(canonical_name).category)
+    {
+        case Category::Arithmetic:
+        case Category::Array:
+        case Category::Bit:
+        case Category::Comparison:
+        case Category::Conditional:
+        case Category::Logical:
+        case Category::Mathematical:
+        case Category::Null:
+        case Category::Rounding:
+        case Category::String:
+        case Category::StringReplacement:
+        case Category::StringSearch:
+        case Category::StringSplitting:
+        case Category::Tuple:
+        case Category::Map:
+        case Category::Hash:
+            return true;
+        default:
+            return false;
+    }
 }
 
 bool functionDependsOnImplicitTimeZone(const FunctionBasePtr & function_base)
 {
-    const auto & result_type = function_base->getResultType();
-    if (dependsOnImplicitTimeZone(*result_type))
+    if (!isFunctionCategoryIndependentOfTimeZone(function_base->getName()))
         return true;
-    const auto & argument_types = function_base->getArgumentTypes();
-    for (const auto & argument_type : argument_types)
+
+    if (dependsOnImplicitTimeZone(*function_base->getResultType()))
+        return true;
+    for (const auto & argument_type : function_base->getArgumentTypes())
         if (argument_type && dependsOnImplicitTimeZone(*argument_type))
             return true;
-
-    /// The types of these conversions contain no `DateTime`, but they still use the default time zone.
-    /// `toUnixTimestamp` takes an explicit time zone as its second argument. The second argument of
-    /// a conversion to a date may be something else (the default of `toDateOrDefault`, the target type
-    /// of `CAST`), so such conversions are kept on the initiator regardless of it.
-    if (argument_types.empty() || !argument_types[0])
-        return false;
-    const auto & function_name = function_base->getName();
-    if (isConversionToDate(function_name) && anyInTypeTree(*result_type, [](const IDataType & nested) { return isDateOrDate32(nested); }))
-        return readsTimestampInImplicitTimeZone(*argument_types[0], /*include_dates=*/ false);
-    if (function_name == "toUnixTimestamp" && argument_types.size() == 1)
-        return readsTimestampInImplicitTimeZone(*argument_types[0], /*include_dates=*/ true);
     return false;
 }
 
