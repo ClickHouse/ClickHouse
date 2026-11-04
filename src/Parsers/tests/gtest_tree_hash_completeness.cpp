@@ -822,3 +822,11 @@ TEST(TreeHashCompleteness, NormalizedDistinctUnionJSONRoundTripKeepsModes)
     ASSERT_TRUE(restored_union);
     EXPECT_TRUE(restored_union->hasNonDefaultUnionMode());
 }
+
+TEST(TreeHashCompleteness, IdentifierComponentBoundariesAreSignificant)
+{
+    /// Both identifiers have the same `full_name` `db.inner.t`, but refer to different tables.
+    EXPECT_NE(hashOf("SELECT x FROM db.`inner.t`"), hashOf("SELECT x FROM `db.inner`.t"));
+    EXPECT_NE(hashOf("SELECT `a.b`"), hashOf("SELECT a.b"));
+    EXPECT_EQ(hashOf("SELECT db.`inner.t`"), hashOf("SELECT db.`inner.t`"));
+}
