@@ -21,6 +21,8 @@ struct JSONExtractInsertSettings
     bool saturate_on_overflow = true;
     /// If false, a DateTime value with fractional seconds is rejected instead of truncated.
     bool truncate_fractional_seconds = true;
+    /// If false, a string is parsed as a `DateTime` or `DateTime64` value only if it would be inferred as a date or date time.
+    bool parse_any_string_as_date_time = true;
     /// If true, during insert into Dynamic column we first try to insert value into existing variants
     /// and only if failed we try to infer the new variant type.
     bool try_existing_variants_in_dynamic_first = true;
