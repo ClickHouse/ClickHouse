@@ -185,8 +185,8 @@ void ExecutorTasks::tryGetTask(ExecutionThreadContext & context)
         /// Enqueue thread into stack of waiting threads.
         threads_queue.push(context.thread_number);
 
-        /// No queued tasks are left for the requested threads.
-        if (threads_to_spawn.load(std::memory_order_relaxed))
+        /// No queued or asynchronous tasks are left for the requested threads.
+        if (async_task_queue.empty() && threads_to_spawn.load(std::memory_order_relaxed))
             threads_to_spawn.store(0, std::memory_order_relaxed);
     }
 

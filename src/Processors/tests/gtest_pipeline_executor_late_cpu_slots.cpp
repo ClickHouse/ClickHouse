@@ -13,6 +13,8 @@
 #include <set>
 #include <thread>
 
+#include <unistd.h>
+
 using namespace DB;
 using namespace DB::Runtime::V1;
 
@@ -186,3 +188,54 @@ TEST(PipelineExecutor, RequestedThreadsDroppedWhenThreadGoesIdle)
     tasks.finish();
     idle.join();
 }
+
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+namespace
+{
+
+/// Waits for a pipe that is never written to.
+class PendingAsyncProcessor : public IProcessor
+{
+public:
+    explicit PendingAsyncProcessor(int fd_) : fd(fd_) {}
+    String getName() const override { return "PendingAsyncProcessor"; }
+    Status prepare() override { return Status::Async; }
+    int schedule() override { return fd; }
+
+private:
+    int fd;
+};
+
+}
+
+/// Requested threads are kept while asynchronous tasks are pending: they can run the tasks once these are ready.
+TEST(PipelineExecutor, RequestedThreadsKeptWhileAsyncTasksPending)
+{
+    int fds[2];
+    ASSERT_EQ(pipe(fds), 0);
+    SCOPE_EXIT({
+        close(fds[0]);
+        close(fds[1]);
+    });
+    PendingAsyncProcessor processor(fds[0]);
+
+    ExecutorTasks tasks;
+    tasks.init(num_streams, 1, std::make_shared<GrantedAllocation>(num_streams), false, false, nullptr, nullptr, nullptr);
+    tasks.upscale(0);
+    tasks.upscale(1);
+
+    ExecutorTasks::Queue queue;
+    ExecutorTasks::Queue async_queue;
+    async_queue.push(&processor);
+    tasks.pushTasks(queue, async_queue, tasks.getThreadContext(0));
+    EXPECT_TRUE(tasks.hasThreadsToSpawn());
+
+    /// One of the two running threads waits for a task; only the asynchronous one is pending.
+    std::thread idle([&] { tasks.tryGetTask(tasks.getThreadContext(1)); });
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    EXPECT_TRUE(tasks.hasThreadsToSpawn());
+
+    tasks.finish();
+    idle.join();
+}
+#endif
