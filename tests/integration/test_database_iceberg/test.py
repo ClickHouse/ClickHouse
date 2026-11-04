@@ -1239,7 +1239,7 @@ def test_expire_snapshots_with_catalog(started_cluster):
     node.query(
         f"ALTER TABLE {table_ref} EXECUTE expire_snapshots("
         f"snapshot_ids = [{expired[0].snapshot_id}, {expired[1].snapshot_id}]);",
-        settings={"allow_insert_into_iceberg": 1, "allow_experimental_expire_snapshots": 1},
+        settings={"allow_insert_into_iceberg": 1, "allow_expire_snapshots": 1},
     )
 
     assert [snapshot.snapshot_id for snapshot in committed_snapshots()] == [retained.snapshot_id]
@@ -1255,7 +1255,7 @@ def test_expire_snapshots_with_catalog(started_cluster):
     assert len(committed_snapshots()) == 2
     node.query(
         f"ALTER TABLE {table_ref} EXECUTE expire_snapshots(retention_period = '1ms', retain_last = 1);",
-        settings={"allow_insert_into_iceberg": 1, "allow_experimental_expire_snapshots": 1},
+        settings={"allow_insert_into_iceberg": 1, "allow_expire_snapshots": 1},
     )
     snapshots = committed_snapshots()
     assert len(snapshots) == 1 and snapshots[0].snapshot_id != retained.snapshot_id, snapshots
@@ -1624,6 +1624,39 @@ def test_create_without_engine_arguments_storage_mismatch(started_cluster, names
         )
     assert "while its table engine writes to Local" in str(exc.value), str(exc.value)
     assert (root_namespace,) in catalog.list_namespaces()
+
+
+@pytest.mark.parametrize("explicit_location", [False, True])
+def test_create_registers_full_location(started_cluster, explicit_location):
+    # No `write_full_path_in_iceberg_metadata`: the catalog resolves the location with its own FileIO.
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_create_registers_full_location_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+
+    # The endpoint names no bucket, so a table placed by the catalog lands where the catalog puts it.
+    create_clickhouse_iceberg_database(
+        started_cluster, node, CATALOG_NAME, additional_settings={"storage_endpoint": "http://minio1:9001"}
+    )
+    engine = (
+        f" ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/{table_name}/', '{minio_access_key}', '{minio_secret_key}')"
+        if explicit_location
+        else ""
+    )
+    node.query(f"CREATE TABLE {table_ref} (x String){engine}", settings={"allow_database_iceberg": 1})
+    node.query(f"INSERT INTO {table_ref} VALUES ('AAPL');", settings={"allow_insert_into_iceberg": 1})
+    assert node.query(f"SELECT * FROM {table_ref}") == "AAPL\n"
+
+    table = load_catalog_impl(started_cluster).load_table(f"{root_namespace}.{table_name}")
+    location = table.metadata.location
+    assert location.startswith("s3://"), location
+    manifest_list = table.current_snapshot().manifest_list
+    assert manifest_list.startswith(location.rstrip("/") + "/metadata/"), manifest_list
+    bucket, key = manifest_list[len("s3://"):].split("/", 1)
+    prefix, name = key.rsplit("/", 1)
+    assert name in list_s3_objects(started_cluster.minio_client, bucket, prefix + "/")
 
 
 def test_create_without_engine_arguments_vended_credentials(started_cluster):

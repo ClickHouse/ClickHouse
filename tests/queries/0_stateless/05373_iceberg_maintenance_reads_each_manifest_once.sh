@@ -10,7 +10,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-CH="${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --allow_iceberg_remove_orphan_files=1 --allow_experimental_expire_snapshots=1"
+CH="${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --allow_iceberg_remove_orphan_files=1 --allow_expire_snapshots=1"
 
 # Ten single-row `INSERT`s: snapshot k lists the k manifests written so far.
 create_table()

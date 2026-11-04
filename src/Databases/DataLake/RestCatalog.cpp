@@ -213,20 +213,16 @@ std::string correctAPIURI(const std::string & uri)
     return std::filesystem::path(uri) / "v1";
 }
 
-/// Per Iceberg REST spec, `namespace` is a JSON array of segments. Split `ns.a.b` on dots.
-Poco::JSON::Array::Ptr namespaceToJSONArray(const String & namespace_name)
+Poco::JSON::Array::Ptr namespaceToJSON(const String & namespace_name)
 {
-    Poco::JSON::Array::Ptr segments = new Poco::JSON::Array;
-    size_t start = 0;
-    while (start <= namespace_name.size())
-    {
-        size_t dot = namespace_name.find('.', start);
-        if (dot == String::npos)
-            dot = namespace_name.size();
-        segments->add(namespace_name.substr(start, dot - start));
-        start = dot + 1;
-    }
-    return segments;
+    std::vector<String> levels;
+    /// TODO: a level that contains a dot cannot be expressed. The levels are joined with a dot
+    /// in `parseNamespaces`, so this split mirrors that join and `encodeNamespaceForURI`.
+    splitInto<'.'>(levels, namespace_name);
+    Poco::JSON::Array::Ptr result = new Poco::JSON::Array;
+    for (const auto & level : levels)
+        result->add(level);
+    return result;
 }
 
 /// A 404 status alone does not separate a namespace that is gone from an endpoint the catalog does
@@ -1941,16 +1937,7 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name) cons
     /// The request body takes the namespace as a list of levels, unlike the URL form above.
     /// No `location` property is sent. The catalog applies its warehouse default instead.
     Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
-    {
-        std::vector<String> levels;
-        /// TODO: a level that contains a dot cannot be expressed. The levels are joined with a dot
-        /// in `parseNamespaces`, so this split mirrors that join and `encodeNamespaceForURI`.
-        splitInto<'.'>(levels, namespace_name);
-        Poco::JSON::Array::Ptr namespaces = new Poco::JSON::Array;
-        for (const auto & level : levels)
-            namespaces->add(level);
-        request_body->set("namespace", namespaces);
-    }
+    request_body->set("namespace", namespaceToJSON(namespace_name));
 
     try
     {
@@ -2118,7 +2105,7 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
     {
         Poco::JSON::Object::Ptr identifier = new Poco::JSON::Object;
         identifier->set("name", decodeTableName(table_name));
-        identifier->set("namespace", namespaceToJSONArray(namespace_name));
+        identifier->set("namespace", namespaceToJSON(namespace_name));
 
         request_body->set("identifier", identifier);
     }
@@ -2203,9 +2190,7 @@ Poco::JSON::Object::Ptr RestCatalog::removeSnapshots(
     {
         Poco::JSON::Object::Ptr identifier = new Poco::JSON::Object;
         identifier->set("name", decodeTableName(table_name));
-        Poco::JSON::Array::Ptr namespaces = new Poco::JSON::Array;
-        namespaces->add(namespace_name);
-        identifier->set("namespace", namespaces);
+        identifier->set("namespace", namespaceToJSON(namespace_name));
 
         request_body->set("identifier", identifier);
     }
@@ -2322,7 +2307,7 @@ bool RestCatalog::updateSchema(
     {
         Poco::JSON::Object::Ptr identifier = new Poco::JSON::Object;
         identifier->set("name", decodeTableName(table_name));
-        identifier->set("namespace", namespaceToJSONArray(namespace_name));
+        identifier->set("namespace", namespaceToJSON(namespace_name));
 
         request_body->set("identifier", identifier);
     }
