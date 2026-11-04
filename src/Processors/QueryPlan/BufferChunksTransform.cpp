@@ -21,14 +21,16 @@ void ReadInOrderReadAheadTracker::setFirstRow(size_t input, const Chunk & chunk)
 {
     chassert(input < inputs.size());
     auto & state = inputs[input];
-    chassert(!state.has_first_row.load(std::memory_order_relaxed) && chunk.getNumRows() > 0);
+    chassert(state.first_row.empty() && chunk.getNumRows() > 0);
 
     const auto & columns = chunk.getColumns();
     state.first_row.reserve(sort_column_positions.size());
     for (size_t position : sort_column_positions)
         state.first_row.push_back(columns[position]->cut(0, 1)->convertToFullIfWrapped());
 
-    state.has_first_row.store(true, std::memory_order_release);
+    size_t slot = num_published.fetch_add(1, std::memory_order_relaxed);
+    if (slot < published.size())
+        published[slot].store(input + 1, std::memory_order_release);
 }
 
 void ReadInOrderReadAheadTracker::setProducedRows(size_t input, size_t rows)
@@ -49,22 +51,16 @@ int ReadInOrderReadAheadTracker::compareFirstRows(size_t lhs, size_t rhs) const
 
 size_t ReadInOrderReadAheadTracker::rowsProducedBefore(size_t input, InputsBefore & inputs_before) const
 {
-    chassert(inputs[input].has_first_row.load(std::memory_order_acquire));
+    chassert(!inputs[input].first_row.empty());
 
-    if (inputs_before.compared.empty())
+    for (; inputs_before.num_compared < published.size(); ++inputs_before.num_compared)
     {
-        inputs_before.compared.assign(inputs.size(), 0);
-        inputs_before.compared[input] = 1;
-    }
+        size_t entry = published[inputs_before.num_compared].load(std::memory_order_acquire);
+        if (entry == 0)
+            break;
 
-    for (size_t j = 0; j < inputs.size(); ++j)
-    {
-        if (inputs_before.compared[j] || !inputs[j].has_first_row.load(std::memory_order_acquire))
-            continue;
-
-        inputs_before.compared[j] = 1;
-        if (compareFirstRows(j, input) < 0)
-            inputs_before.inputs.push_back(j);
+        if (compareFirstRows(entry - 1, input) < 0)
+            inputs_before.inputs.push_back(entry - 1);
     }
 
     size_t rows = 0;

@@ -6,6 +6,7 @@
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
 
+#include <array>
 #include <atomic>
 #include <memory>
 #include <queue>
@@ -26,23 +27,25 @@ public:
     void setFirstRow(size_t input, const Chunk & chunk);
     void setProducedRows(size_t input, size_t rows);
 
-    /// Comparison results of `input` against the other inputs, owned by the transform of `input`.
+    /// Comparison results of `input` against the inputs in `published`, owned by the transform of `input`.
     struct InputsBefore
     {
-        VectorWithMemoryTracking<UInt8> compared;
+        size_t num_compared = 0;
         VectorWithMemoryTracking<size_t> inputs;
     };
 
-    /// Rows produced by the inputs whose first row is known and sorts strictly before the first row of `input`.
+    /// Rows produced by the inputs in `published` whose first row sorts strictly before the first row of `input`.
     /// Requires `setFirstRow(input, ...)`.
     size_t rowsProducedBefore(size_t input, InputsBefore & inputs_before) const;
 
 private:
+    /// Bounds the state and the work of each input of a merge with many inputs.
+    static constexpr size_t max_compared_inputs = 128;
+
     struct InputState
     {
         std::atomic<size_t> produced{0};
-        std::atomic<bool> has_first_row{false};
-        Columns first_row; /// One row per sort column; written before `has_first_row`, read-only afterwards.
+        Columns first_row; /// One row per sort column; written before the input enters `published`, read-only afterwards.
     };
 
     int compareFirstRows(size_t lhs, size_t rhs) const;
@@ -50,6 +53,9 @@ private:
     const SortDescription description;
     VectorWithMemoryTracking<size_t> sort_column_positions;
     VectorWithMemoryTracking<InputState> inputs; /// Sized in the constructor, never resized.
+    /// `input + 1` for the first inputs that called `setFirstRow`, in that order; 0 in a slot not written yet.
+    std::array<std::atomic<size_t>, max_compared_inputs> published{};
+    std::atomic<size_t> num_published{0};
 };
 
 /// Transform that buffers chunks from the input

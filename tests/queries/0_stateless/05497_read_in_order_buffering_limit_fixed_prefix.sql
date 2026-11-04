@@ -20,6 +20,7 @@ SET optimize_read_in_order = 1, read_in_order_use_buffering = 1, read_in_order_u
 DROP TABLE IF EXISTS tab_desc;
 DROP TABLE IF EXISTS tab_asc;
 DROP TABLE IF EXISTS tab_ovl;
+DROP TABLE IF EXISTS tab_many;
 
 -- Eight parts of 512 granules: seven sparse (1 matching row per 64), one dense, which is read first.
 CREATE TABLE tab_desc (k UInt8, x UInt64, v UInt8) ENGINE = MergeTree ORDER BY (k, x)
@@ -55,6 +56,11 @@ SYSTEM STOP MERGES tab_ovl;
 INSERT INTO tab_ovl SELECT 1, if(number = 0, 0, 100000 + number - 1), 1 FROM numbers(2001) SETTINGS max_block_size = 100000, max_insert_block_size = 100000, min_insert_block_size_rows = 100000, min_insert_block_size_bytes = 0, max_insert_threads = 1;
 INSERT INTO tab_ovl SELECT 1, 1 + number, 1 FROM numbers(4999) SETTINGS max_block_size = 100000, max_insert_block_size = 100000, min_insert_block_size_rows = 100000, min_insert_block_size_bytes = 0, max_insert_threads = 1;
 INSERT INTO tab_ovl SELECT 1, 500000 + number, number % 64 = 0 FROM numbers(32768) SETTINGS max_block_size = 100000, max_insert_block_size = 100000, min_insert_block_size_rows = 100000, min_insert_block_size_bytes = 0, max_insert_threads = 1;
+
+-- 200 one-granule parts, more inputs than the tracker compares with.
+CREATE TABLE tab_many (k UInt8, x UInt64, v UInt8) ENGINE = MergeTree PARTITION BY intDiv(x, 64) ORDER BY (k, x)
+SETTINGS index_granularity = 64, index_granularity_bytes = '10Mi';
+INSERT INTO tab_many SELECT 1, number, number % 7 = 0 FROM numbers(12800) SETTINGS max_partitions_per_insert_block = 200, max_block_size = 100000, max_insert_block_size = 100000, min_insert_block_size_rows = 100000, min_insert_block_size_bytes = 0, max_insert_threads = 1;
 
 -- T1, descending: the slow rows are the top 2048 rows of part 3.
 SELECT x FROM tab_desc WHERE k = 1 AND (x < 330720 OR x >= 332768 OR sleepEachRow(0.0005) = 0) AND v = 1
@@ -99,6 +105,12 @@ SELECT 'asc', sum(x), count() FROM (SELECT x FROM tab_asc WHERE k = 1 AND v = 1 
 SELECT 'ovl', sum(x), count() FROM (SELECT x FROM tab_ovl WHERE k = 1 AND (x < 500000 OR x >= 502048 OR sleepEachRow(0.0005) = 0) AND v = 1 ORDER BY x LIMIT 1000);
 SELECT 'ovl', sum(x), count() FROM (SELECT x FROM tab_ovl WHERE k = 1 AND v = 1 ORDER BY x LIMIT 1000) SETTINGS optimize_read_in_order = 0;
 
+-- T5: a merge with more than 128 inputs.
+SELECT 'many', toUInt32(extract(explain, 'BufferChunks × (\\d+)')) > 128 FROM (EXPLAIN PIPELINE SELECT x FROM tab_many WHERE k = 1 AND v = 1 ORDER BY x DESC LIMIT 100 SETTINGS max_threads = 1, read_in_order_two_level_merge_threshold = 1000) WHERE explain LIKE '%BufferChunks%';
+SELECT 'many', sum(x), count() FROM (SELECT x FROM tab_many WHERE k = 1 AND v = 1 ORDER BY x DESC LIMIT 100) SETTINGS max_threads = 1, read_in_order_two_level_merge_threshold = 1000;
+SELECT 'many', sum(x), count() FROM (SELECT x FROM tab_many WHERE k = 1 AND v = 1 ORDER BY x DESC LIMIT 100) SETTINGS optimize_read_in_order = 0;
+
 DROP TABLE tab_desc;
 DROP TABLE tab_asc;
 DROP TABLE tab_ovl;
+DROP TABLE tab_many;
