@@ -306,6 +306,8 @@ private:
     /// even when they are executed by the worker's threads or concurrently with `SYSTEM RESTORE DATABASE REPLICA`.
     mutable std::mutex ddl_worker_ptr_mutex;
     UInt32 max_log_ptr_at_creation = 0;
+    /// Serializes `restoreDatabaseInKeeper`. Taken before `ddl_worker_mutex`.
+    std::mutex restore_in_keeper_mutex;
 
     /// Usually operation with metadata are single-threaded because of the way replication works,
     /// but StorageReplicatedMergeTree may call alterTable outside from DatabaseReplicatedDDLWorker causing race conditions.

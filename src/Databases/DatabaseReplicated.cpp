@@ -2491,6 +2491,10 @@ void DatabaseReplicated::restoreDatabaseInKeeper(ContextPtr)
     auto component_guard = Coordination::setCurrentComponent("DatabaseReplicated::restoreDatabaseMetadataInKeeper");
     waitDatabaseStarted();
 
+    /// Concurrent restores of the same database would stop and re-create the DDL worker under each other
+    /// and race on the replication state that `initDatabaseReplica` rewrites (e.g. `max_log_ptr_at_creation`).
+    std::lock_guard restore_lock{restore_in_keeper_mutex};
+
     auto zookeeper = getZooKeeper();
     if (!zookeeper)
         throw Exception(ErrorCodes::NO_ZOOKEEPER, "No ZooKeeper");
