@@ -369,32 +369,6 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     return collection_copy;
 }
 
-MutableNamedCollectionPtr copyNamedCollectionWithDictionarySourceOverrides(
-    const NamedCollection & collection, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
-{
-    auto collection_copy = collection.duplicate();
-
-    Poco::Util::AbstractConfiguration::Keys keys;
-    config.keys(config_prefix, keys);
-    for (const auto & key : keys)
-    {
-        /// The 'name' key identifies the named collection itself and is not a data key to override.
-        if (key == "name")
-            continue;
-
-        checkNamedCollectionOverrideLock(collection, key);
-
-        /// The keys of a dictionary created with a DDL query come from the query, so mark them the
-        /// same way as the AST-based overload above: `StorageMySQL::getSSLParams` distinguishes a
-        /// credential supplied at the point of use from one defined in the collection itself.
-        /// Marked before the value is written so the mark remembers the replaced stored value.
-        collection_copy->markQueryOverridden(key);
-        collection_copy->setOrUpdate<String>(key, config.getString(config_prefix + '.' + key), {});
-    }
-
-    return collection_copy;
-}
-
 MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context)
 {
@@ -405,7 +379,25 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     context->checkAccess(AccessType::NAMED_COLLECTION, collection_name);
 
     const auto & collection = NamedCollectionFactory::instance().get(collection_name);
-    auto collection_copy = copyNamedCollectionWithDictionarySourceOverrides(*collection, config, config_prefix);
+    auto collection_copy = collection->duplicate();
+
+    Poco::Util::AbstractConfiguration::Keys keys;
+    config.keys(config_prefix, keys);
+    for (const auto & key : keys)
+    {
+        /// The 'name' key identifies the named collection itself and is not a data key to override.
+        if (key == "name")
+            continue;
+
+        checkNamedCollectionOverrideLock(*collection, key);
+
+        /// The keys of a dictionary created with a DDL query come from the query, so mark them the
+        /// same way as the AST-based overload above: `StorageMySQL::getSSLParams` distinguishes a
+        /// credential supplied at the point of use from one defined in the collection itself.
+        /// Marked before the value is written so the mark remembers the replaced stored value.
+        collection_copy->markQueryOverridden(key);
+        collection_copy->setOrUpdate<String>(key, config.getString(config_prefix + '.' + key), {});
+    }
 
     /// Register the dictionary that uses this named collection as a dependency,
     /// so that DROP NAMED COLLECTION is blocked while the dictionary exists.

@@ -1,5 +1,3 @@
-#include "config.h"
-
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
 #include <Storages/StorageDictionary.h>
@@ -27,12 +25,6 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Core/ServerSettings.h>
-
-#if USE_MONGODB
-#include <Common/StringUtils.h>
-#include <Interpreters/DDLTask.h>
-#include <Storages/StorageMongoDB.h>
-#endif
 
 
 namespace DB
@@ -404,19 +396,6 @@ void registerStorageDictionary(StorageFactory & factory)
             const auto & source_type = source_keys.front() == "settings" ? source_keys.back() : source_keys.front();
             checkNamedCollectionOverridesInDictionarySource(
                 *abstract_dictionary_configuration, "dictionary.source." + source_type, local_context);
-
-#if USE_MONGODB
-            /// The connection string of a MongoDB source is checked against `s3_allow_server_credentials_in_user_queries`
-            /// when the source is loaded, with the global context, so the settings of the session that defines the
-            /// dictionary are applied here. A stored definition is not checked again, so that loading it does not fail;
-            /// a definition restored from a backup is checked like a new one, except when another replica replays it.
-            if (equalsCaseInsensitive(source_type, "mongodb")
-                && (!isReplayedTableDefinition(args.mode, args.query, local_context)
-                    || (args.is_restore_from_backup && !isSecondaryDDLReplay(local_context))))
-                checkMongoDBDictionarySourceServerCredentials(
-                    *abstract_dictionary_configuration, "dictionary.source." + source_type, local_context);
-#endif
-
             auto result_storage = std::make_shared<StorageDictionary>(dictionary_id, abstract_dictionary_configuration, local_context);
 
             bool lazy_load = external_dictionaries_loader.getObjectLazyLoadOverride(*abstract_dictionary_configuration, "dictionary")

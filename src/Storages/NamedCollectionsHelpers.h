@@ -80,13 +80,6 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     const std::string & config_prefix,
     ContextPtr context);
 
-/// Returns a copy of `collection` with the keys of the dictionary source `config_prefix` that refers to it applied, as
-/// `tryGetNamedCollectionWithOverrides` above applies them: every key except `name` is checked with
-/// `checkNamedCollectionOverrideLock`, marked as overridden by the query and added or replaced.
-/// Checks no privileges and registers no dependency.
-MutableNamedCollectionPtr copyNamedCollectionWithDictionarySourceOverrides(
-    const NamedCollection & collection, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
-
 /// Parses the ast as a key-value pair.
 /// Throws an exception if the key cannot be parsed as a string literal.
 /// If the value cannot be parsed as a literal or interpreted as a constant expression,

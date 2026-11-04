@@ -24,11 +24,6 @@
 
 extern "C" void mongoc_cleanup(void);
 
-namespace Poco::Util
-{
-class AbstractConfiguration;
-}
-
 namespace DB
 {
 
@@ -96,33 +91,11 @@ struct MongoDBConfiguration
     /// its filesystem) while `context` restricts server credentials (see `Context::shouldRestrictUserQueryS3Credentials`).
     void checkServerCredentials(const ContextPtr & context) const;
 
-    /// Sets `uri` for a MongoDB dictionary source from the named collection it refers to, with the keys of the source
-    /// applied (see `copyNamedCollectionWithDictionarySourceOverrides`): from `uri`, or else from `host`, `port`, `db`,
-    /// `user`, `password` and `options`. The keys are not validated here. Throws if one of `host`, `db`, `user` and
-    /// `password` is needed but missing, and `mongocxx::logic_error` if the driver does not parse the connection string.
-    void setDictionarySourceURI(const NamedCollection & named_collection);
-
-    /// Sets `uri` for a MongoDB dictionary source without a named collection from the keys of its configuration
-    /// `config_prefix` (e.g. "dictionary.source.mongodb"): from `uri`, or else from `host`, `port`, `db`, `user`,
-    /// `password` and `options`. Throws `Poco::NotFoundException` if `host` or `db` is needed but missing, and
-    /// `mongocxx::logic_error` if the driver does not parse the connection string.
-    void setDictionarySourceURI(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
-
     bool isOidColumn(const std::string & name) const
     {
         return oid_fields.contains(name);
     }
 };
-
-/// Checks with `MongoDBConfiguration::checkServerCredentials` in `context` the connection string of the MongoDB source
-/// `config_prefix` ("<dict_root>.source.mongodb") of a dictionary defined with a DDL query, built as the source builds
-/// it. Used when the dictionary is created, attached with its full definition or restored from a backup: the source is
-/// created only when the dictionary is loaded, with the global context, so this applies the settings of the session
-/// that defines the dictionary. A named collection is resolved without checking privileges on it.
-/// Does nothing if the connection string cannot be built (the named collection does not exist, a key is missing, or
-/// the driver does not parse it): loading the source builds it again and reports the error.
-void checkMongoDBDictionarySourceServerCredentials(
-    const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const ContextPtr & context);
 
 /** Implements storage in the MongoDB database.
  *  Use ENGINE = MongoDB(host:port, database, collection, user, password[, options[, oid_columns]]);
