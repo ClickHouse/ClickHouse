@@ -1,0 +1,24 @@
+pending	1
+preview sampled	1	2
+preview plain	1	1
+preview sampled no outer sf	1
+preview off	0
+materialized sampled	1	2
+materialized plain	1	1
+pending	1
+delete preview sampled	100
+delete preview plain	100
+delete materialized sampled	100
+delete materialized plain	100
+pending	1
+delete inverse preview sampled	90
+delete inverse preview plain	90
+delete inverse materialized sampled	90
+delete inverse materialized plain	90
+pending	1
+shadow preview sampled	126	42
+shadow materialized sampled	126	42
+pending	1
+shadow mat preview sampled	5	15
+shadow mat preview plain	5	15
+shadow mat materialized sampled	5	15

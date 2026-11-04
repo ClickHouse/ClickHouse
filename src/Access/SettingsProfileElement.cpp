@@ -2,6 +2,7 @@
 #include <Access/SettingsConstraints.h>
 #include <Access/AccessControl.h>
 #include <Access/SettingsProfile.h>
+#include <Access/resolveSetting.h>
 #include <Core/Settings.h>
 #include <Common/SettingConstraintWritability.h>
 #include <Common/SettingsChanges.h>
@@ -88,6 +89,18 @@ void SettingsProfileElement::init(const ASTSettingsProfileElement & ast, const A
             max_value = Settings::castValueUtil(setting_name, *max_value);
         for (auto & allowed_value : disallowed_values)
             value = Settings::castValueUtil(setting_name, allowed_value);
+
+        /// `allow_experimental_analyzer` (`enable_analyzer`) is obsolete and frozen at `1`. A value that would
+        /// disable it is accepted for backward compatibility and stored as `1`, so that the access entity does not
+        /// keep the disabling value (e.g. in `SHOW CREATE` or `system.settings_profile_elements`).
+        if (Settings::resolveName(setting_name) == "allow_experimental_analyzer")
+        {
+            for (auto * bound : {&value, &min_value, &max_value})
+            {
+                if (*bound && !SettingFieldBool{**bound}.value)
+                    **bound = Field(true);
+            }
+        }
     }
 }
 
@@ -369,7 +382,8 @@ void SettingsProfileElements::normalize()
         for (auto it = settings_begin; it != settings_end; ++it)
         {
             auto & element = *it;
-            auto first = setting_name_to_first_encounter.emplace(element.setting_name, it).first->second;
+            /// Under whichever name: both names of a `MergeTree` setting are one setting.
+            auto first = setting_name_to_first_encounter.emplace(canonicalSettingName(element.setting_name), it).first->second;
             if (it != first)
             {
                 auto & first_element = *first;
@@ -476,7 +490,7 @@ void SettingsProfileElements::applyChanges(const AlterSettingsProfileElements & 
     {
         for (auto & element : *this)
         {
-            if (element.setting_name == setting_name)
+            if (canonicalSettingName(element.setting_name) == canonicalSettingName(setting_name))
                 element.setting_name.clear();
         }
     };

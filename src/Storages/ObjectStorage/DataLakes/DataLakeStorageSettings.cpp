@@ -40,9 +40,19 @@ Field DataLakeStorageSettings::get(const std::string & name)
     return impl->get(name);
 }
 
+bool DataLakeStorageSettings::isChanged(std::string_view name) const
+{
+    return impl->isChanged(name);
+}
+
 bool DataLakeStorageSettings::hasBuiltin(std::string_view name)
 {
     return DataLakeStorageSettingsImpl::hasBuiltin(name);
+}
+
+std::string_view DataLakeStorageSettings::resolveName(std::string_view name)
+{
+    return DataLakeStorageSettingsTraits::resolveName(name);
 }
 
 void DataLakeStorageSettings::loadFromSettingsChanges(const SettingsChanges & changes)

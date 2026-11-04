@@ -18,6 +18,7 @@ struct FactorialImpl
     using ResultType = UInt64;
     static const constexpr bool allow_decimal = false;
     static const constexpr bool allow_string_or_fixed_string = false;
+    static constexpr auto signature = "(NativeInteger) -> UInt64";
 
     static NO_SANITIZE_UNDEFINED ResultType apply(A a)
     {
@@ -108,7 +109,7 @@ The maximum positive value for the input argument is `20`, a value of `21` or gr
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the factorial of the input as UInt64. Returns 1 for input 0 or any negative value.", {"UInt64"}};
     FunctionDocumentation::Examples examples = {
-        {"Usage example", "factorial(10)", "3628800"}
+        {"Usage example", "SELECT factorial(10)", "3628800"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 11};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Mathematical;

@@ -69,7 +69,7 @@ find_os() {
 }
 
 download_seaweedfs() {
-  local seaweedfs_version=${SEAWEEDFS_VERSION:-4.42}
+  local seaweedfs_version=${SEAWEEDFS_VERSION:-4.48}
 
   wget "https://github.com/seaweedfs/seaweedfs/releases/download/${seaweedfs_version}/$(find_os)_$(find_arch).tar.gz" -O ./seaweedfs.tar.gz
   tar -xzf ./seaweedfs.tar.gz weed
@@ -117,10 +117,24 @@ start_seaweedfs() {
   # weed server also runs master/volume/filer services (each also binds a gRPC
   # port at +10000); keep them next to the S3 port, away from the ports used by
   # clickhouse-server, keeper, azurite and redpanda
-  nohup weed server -dir=./seaweedfs_data \
+  local data_dir=./seaweedfs_data
+  if [ -n "${SEAWEEDFS_PID_FILE:-}" ]; then
+    data_dir="$PWD/seaweedfs_data"
+  fi
+  local cache_flags=()
+  if [ "${SEAWEEDFS_DISABLE_CACHE:-0}" = 1 ]; then
+    cache_flags=(-s3.cacheCapacityMB=0 -filer.saveToFilerLimit=0)
+  fi
+  nohup weed server -dir="$data_dir" \
     -master.port=11112 -volume.port=11113 -filer.port=11114 \
     -s3 -s3.port=11111 -s3.config=./seaweedfs_s3.json \
+    "${cache_flags[@]}" \
     -master.volumeSizeLimitMB=1024 -volume.max=0 &
+  WEED_PID=$!
+  echo "weed server started with PID ${WEED_PID}"
+  if [ -n "${SEAWEEDFS_PID_FILE:-}" ]; then
+    printf '%s\n' "$WEED_PID" > "$SEAWEEDFS_PID_FILE"
+  fi
   wait_for_it
   lsof -i :11111
 }
@@ -134,6 +148,10 @@ setup_seaweedfs() {
   echo ready > ./.write_probe
   until curl --silent --show-error --fail --upload-file ./.write_probe "$FILER_ENDPOINT/buckets/test/.write_probe"
   do
+    if [ -n "${WEED_PID:-}" ] && ! kill -0 "${WEED_PID}" 2>/dev/null; then
+      echo "weed server ${WEED_PID} exited during startup"
+      exit 1
+    fi
     if [[ ${counter} == "${max_counter}" ]]; then
       echo "failed to wait for seaweedfs write readiness"
       exit 1
@@ -176,6 +194,11 @@ wait_for_it() {
   # and AccessDenied when there is none (stateful)
   while ! curl "${params[@]}" "${url}" 2>&1 | grep -E "ListAllMyBucketsResult|AccessDenied"
   do
+    # weed exits on any startup error, so a readiness poll must check liveness
+    if [ -n "${WEED_PID:-}" ] && ! kill -0 "${WEED_PID}" 2>/dev/null; then
+      echo "weed server ${WEED_PID} exited during startup"
+      exit 1
+    fi
     if [[ ${counter} == "${max_counter}" ]]; then
       echo "failed to setup seaweedfs"
       exit 1

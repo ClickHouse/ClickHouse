@@ -50,13 +50,9 @@ if __name__ == "__main__":
     days = int(sys.argv[1]) if len(sys.argv) > 1 else DAYS
 
     info = Info()
-    url_secret = info.get_secret(Settings.SECRET_CI_DB_URL)
-    user_secret = info.get_secret(Settings.SECRET_CI_DB_USER)
-    passwd_secret = info.get_secret(Settings.SECRET_CI_DB_PASSWORD)
-    url, user, pwd = (
-        url_secret.join_with(user_secret).join_with(passwd_secret).get_value()
+    cidb = CIDB.from_connection_secret(
+        info.get_secret(Settings.SECRET_CI_DB_CONNECTION).get_value()
     )
-    cidb = CIDB(url=url, user=user, passwd=pwd)
 
     results = []
     statistics = {}

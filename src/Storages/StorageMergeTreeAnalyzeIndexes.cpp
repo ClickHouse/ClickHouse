@@ -1,4 +1,5 @@
 #include <unordered_set>
+#include <Analyzer/Passes/DisableParallelReplicasPass.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <Analyzer/TableNode.h>
@@ -17,6 +18,7 @@
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageMergeTreeAnalyzeIndexes.h>
+#include <Storages/StorageProxy.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
@@ -128,7 +130,7 @@ protected:
         auto reader_settings = MergeTreeReaderSettings::createForQuery(context, *table_settings, query_info);
 
         const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
-        const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(storage.get());
+        const auto * merge_tree_data = castStorage<MergeTreeData>(storage, DeferredTable::Load).get();
         if (!merge_tree_data)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MergeTreeAnalyzeIndexes expected MergeTree table, got: {}", storage->getName());
 
@@ -145,6 +147,10 @@ protected:
 
             QueryAnalyzer analyzer(false);
             analyzer.resolveConstantExpression(expression, fake_table_expression, execution_context);
+
+            /// addQueryTreePasses does not run on this tree, so this pass has to be invoked
+            /// here: a correlated subquery must not be read with parallel replicas.
+            DisableParallelReplicasPass{}.run(expression, execution_context);
 
             GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
             auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
@@ -305,11 +311,11 @@ StorageMergeTreeAnalyzeIndexes::StorageMergeTreeAnalyzeIndexes(
     const ASTPtr & predicate_,
     const OptionalVectorSearchParameters & vector_search_parameters_)
     : StorageWithCommonVirtualColumns(table_id_)
-    , source_table(source_table_)
+    , source_table(resolveStorageProxyLoading(source_table_))
     , predicate(predicate_)
     , vector_search_parameters(vector_search_parameters_)
 {
-    const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(source_table.get());
+    const auto * merge_tree_data = castStorage<MergeTreeData>(source_table, DeferredTable::Load).get();
     if (!merge_tree_data)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MergeTreeAnalyzeIndexes expected MergeTree table, got: {}", source_table->getName());
 

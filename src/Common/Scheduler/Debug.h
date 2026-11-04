@@ -9,7 +9,7 @@
 
 #include <iostream>
 #include <base/getThreadId.h>
-#define SCHED_DBG(...) std::cout << fmt::format("\033[01;3{}m[{}] {} {} {}\033[00m {}:{}\n", 1 + getThreadId() % 8, getThreadId(), reinterpret_cast<void*>(this), fmt::format(__VA_ARGS__), __PRETTY_FUNCTION__, __FILE__, __LINE__)
+#define SCHED_DBG(...) std::cout << fmt::format("\033[01;3{}m[{}] {:#x} {} {}\033[00m {}:{}\n", 1 + getThreadId() % 8, getThreadId(), reinterpret_cast<uintptr_t>(this), fmt::format(__VA_ARGS__), __PRETTY_FUNCTION__, __FILE__, __LINE__)
 
 #elif defined(SCHEDULER_DEBUG_TRACE)
 
@@ -19,6 +19,9 @@
 #else
 
 #include <base/defines.h>
-#define SCHED_DBG(...) UNUSED(__VA_ARGS__)
+#include <tuple>
+// Disabled: type-check the arguments in an unevaluated context so nothing runs on the hot path
+// (e.g. getPath() is not built per dequeue), while `-Werror` still sees the arguments as used.
+#define SCHED_DBG(...) (void)sizeof(std::make_tuple(__VA_ARGS__))
 
 #endif

@@ -1,7 +1,6 @@
 {
   "group": "Rust",
   "icon": "/images/integrations/logos/rust.webp",
-  "pages": [
-    "ar/integrations/language-clients/rust/index"
-  ]
+  "pages": [],
+  "root": "ar/integrations/language-clients/rust/index"
 }

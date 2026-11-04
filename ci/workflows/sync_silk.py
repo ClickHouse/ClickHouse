@@ -4,13 +4,14 @@ from ci.defs.defs import BASE_BRANCH, SECRETS, RunnerLabels
 
 workflow = Workflow.Config(
     name="SyncSilk",
+    engine=Workflow.Engine.GH_ACTIONS,
     event=Workflow.Event.SCHEDULE,
     branches=[BASE_BRANCH],
     jobs=[
         Job.Config(
             name="Sync silk submodule",
             command="python3 ./ci/jobs/update_silk_submodule.py",
-            runs_on=RunnerLabels.STYLE_CHECK_ARM,
+            runs_on=RunnerLabels.ARM_TINY,
             enable_gh_auth=True,
         ),
     ],

@@ -173,13 +173,14 @@ void CSVFormatReader::skipRow()
             if (*pos == '\r')
             {
                 ++istr.position();
-                if (format_settings.csv.allow_cr_end_of_line)
-                    return;
-                if (!istr.eof() && *pos == '\n')
+                /// `\r\n` is a single line ending even if a bare `\r` is allowed, as in `skipEndOfLine`.
+                if (!istr.eof() && *istr.position() == '\n')
                 {
-                    ++pos;
+                    ++istr.position();
                     return;
                 }
+                if (format_settings.csv.allow_cr_end_of_line)
+                    return;
             }
         }
     }
@@ -355,22 +356,34 @@ bool CSVFormatReader::parseRowEndWithDiagnosticInfo(WriteBuffer & out)
     return true;
 }
 
+void CSVFormatReader::setDataTypes(const DataTypes & types)
+{
+    skip_whitespaces_before_field.resize(types.size());
+    for (size_t i = 0; i != types.size(); ++i)
+        skip_whitespaces_before_field[i]
+            = format_settings.csv.trim_whitespaces || !isStringOrFixedString(removeNullable(types[i]));
+}
+
 bool CSVFormatReader::readField(
     IColumn & column,
     const DataTypePtr & type,
     const SerializationPtr & serialization,
-    bool is_last_file_column,
-    const String & /*column_name*/)
+    bool /*is_last_file_column*/,
+    const String & /*column_name*/,
+    size_t column_index)
 {
-    if (format_settings.csv.trim_whitespaces || !isStringOrFixedString(removeNullable(type))) [[likely]]
+    chassert(column_index < skip_whitespaces_before_field.size());
+    if (skip_whitespaces_before_field[column_index]) [[likely]]
         skipWhitespacesAndTabs(*buf, format_settings.csv.allow_whitespace_or_tab_as_delimiter);
 
-    const bool at_delimiter = !buf->eof() && *buf->position() == format_settings.csv.delimiter;
-    const bool at_last_column_line_end = is_last_file_column && (buf->eof() || *buf->position() == '\n' || *buf->position() == '\r');
+    /// A field is empty if it is followed by the field delimiter or the end of the row.
+    /// The row can end before the last file column with `input_format_csv_allow_variable_number_of_columns`.
+    const bool is_empty_field = buf->eof() || *buf->position() == format_settings.csv.delimiter
+        || *buf->position() == '\n' || *buf->position() == '\r';
 
     /// Note: Tuples are serialized in CSV as separate columns, but with empty_as_default or null_as_default
     /// only one empty or NULL column will be expected
-    if (format_settings.csv.empty_as_default && (at_delimiter || at_last_column_line_end))
+    if (format_settings.csv.empty_as_default && is_empty_field)
     {
         /// Treat empty unquoted column value as default value, if
         /// specified in the settings. Tuple columns might seem
@@ -550,10 +563,10 @@ There are no other rules for escaping characters.
 $ clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FORMAT CSV" < data.csv
 ```
 
-:::note
+<Note>
 By default, the delimiter is `,` 
 See the [format_csv_delimiter](/reference/settings/formats/format-csv#format_csv_delimiter) setting for more information.
-:::
+</Note>
 
 When parsing, all values can be parsed either with or without quotes. Both double and single quotes are supported.
 
@@ -608,9 +621,9 @@ Also prints the header row with column names, similar to [TabSeparatedWithNames]
 
 ### Inserting data {#inserting-data}
 
-:::tip
+<Tip>
 Starting from [version](https://github.com/ClickHouse/ClickHouse/releases) 23.1, ClickHouse will automatically detect headers in CSV files when using the `CSV` format, so it is not necessary to use `CSVWithNames` or `CSVWithNamesAndTypes`.
-:::
+</Tip>
 
 Using the following CSV file, named as `football.csv`:
 
@@ -692,11 +705,11 @@ The output will be a CSV with a single header row:
 
 ## Format settings {#format-settings}
 
-:::note
+<Note>
 If setting [`input_format_with_names_use_header`](/reference/settings/formats/input-format#input_format_with_names_use_header) is set to `1`,
 the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/reference/settings/formats/input-format#input_format_skip_unknown_fields) is set to `1`.
 Otherwise, the first row will be skipped.
-:::
+</Note>
 )DOCS_MD"});
 
     factory.setDocumentation("CSVWithNamesAndTypes", Documentation{
@@ -713,9 +726,9 @@ Also prints two header rows with column names and types, similar to [TabSeparate
 
 ### Inserting data {#inserting-data}
 
-:::tip
+<Tip>
 Starting from [version](https://github.com/ClickHouse/ClickHouse/releases) 23.1, ClickHouse will automatically detect headers in CSV files when using the `CSV` format, so it is not necessary to use `CSVWithNames` or `CSVWithNamesAndTypes`.
-:::
+</Tip>
 
 Using the following CSV file, named as `football_types.csv`:
 
@@ -799,16 +812,16 @@ The output will be a CSV with a two header rows for column names and types:
 
 ## Format settings {#format-settings}
 
-:::note
+<Note>
 If setting [input_format_with_names_use_header](/reference/settings/formats/input-format#input_format_with_names_use_header) is set to `1`,
 the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/reference/settings/formats/input-format#input_format_skip_unknown_fields) is set to `1`.
 Otherwise, the first row will be skipped.
-:::
+</Note>
 
-:::note
+<Note>
 If setting [input_format_with_types_use_header](/reference/settings/formats/input-format#input_format_with_types_use_header) is set to `1`,
 the types from input data will be compared with the types of the corresponding columns from the table. Otherwise, the second row will be skipped.
-:::
+</Note>
 )DOCS_MD"});
 }
 

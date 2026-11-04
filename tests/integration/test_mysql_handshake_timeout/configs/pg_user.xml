@@ -1,0 +1,11 @@
+<clickhouse>
+    <users>
+        <!-- psycopg2 refuses to send an empty password, so the PostgreSQL case needs its own user. -->
+        <pg_user>
+            <password>123</password>
+            <profile>default</profile>
+            <quota>default</quota>
+            <networks><ip>::/0</ip></networks>
+        </pg_user>
+    </users>
+</clickhouse>

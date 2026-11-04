@@ -8,9 +8,12 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Rule.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Statistics.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/ImplementationStrategy.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
+#include <Processors/QueryPlan/LogicalExchangeStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Context_fwd.h>
@@ -35,6 +38,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int INVALID_SETTING_VALUE;
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
 }
@@ -84,6 +88,12 @@ static OptimizerContext buildContext(const ContextPtr & query_context, const Que
             "make_distributed_plan with enable_cascades_optimizer cannot determine how many nodes will "
             "run the query. Configure a stateless worker cluster, or set `distributed_plan_workers_num` "
             "(also required for `distributed_plan_execute_locally` without a configured cluster).");
+    /// The count sizes the read buckets and the exchange fan-out, so the read-bucket ceiling bounds it
+    /// too: above it a plan would scatter to more destinations than a bucketed read may have.
+    if (context.cluster_node_count > ReadFromMergeTree::max_distributed_read_buckets)
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+            "make_distributed_plan with enable_cascades_optimizer cannot plan for {} nodes, the maximum "
+            "is {}.", context.cluster_node_count, ReadFromMergeTree::max_distributed_read_buckets);
 
     /// If the cost-config override is set but invalid, let the error propagate instead of silently
     /// using the defaults, so a query that set it does not get a different cost model than it asked for.
@@ -93,6 +103,8 @@ static OptimizerContext buildContext(const ContextPtr & query_context, const Que
     context.distributed_plan_execute_locally = optimization_settings.distributed_plan_execute_locally;
     context.distributed_aggregation_memory_efficient = optimization_settings.distributed_aggregation_memory_efficient;
     context.distributed_plan_force_shuffle_aggregation = optimization_settings.distributed_plan_force_shuffle_aggregation;
+    context.distributed_plan_partial_aggregation_before_shuffle = optimization_settings.distributed_plan_partial_aggregation_before_shuffle;
+    context.cascades_aggregation_pushdown = optimization_settings.cascades_aggregation_pushdown;
     context.exact_rows_before_limit = optimization_settings.exact_rows_before_limit;
 
     return context;
@@ -112,7 +124,15 @@ CascadesOptimizer::CascadesOptimizer(QueryPlan & query_plan_, const QueryPlanOpt
     addRule(createDefaultImplementation());
     addRule(createDistributionPassthrough());
     addRule(createTwoStageAggregationTransformation());
+    /// Registered conditionally: the rule can never apply when the setting is off,
+    /// and the optimizer is built per query, so the gate belongs here.
+    /// `distributed_plan_force_shuffle_aggregation` does not disable the whole rule: it forbids
+    /// only the partial + merge split (variant A), which the rule skips itself.
+    if (memo.getContext().cascades_aggregation_pushdown)
+        addRule(createAggregationPushdown());
     addRule(createAggregationImplementation());
+    addRule(createDistinctImplementation());
+    addRule(createMergingAggregationImplementation());
     addRule(createLocalReadImplementation());
     addRule(createParallelReadImplementation());
     addRule(createReplicatedReadImplementation());
@@ -361,6 +381,17 @@ static QueryPlanStepPtr cloneStepForBestPlan(const GroupExpression & expression)
     return step;
 }
 
+/// The partial aggregation under a merge per bucket produces its result in bucket order only for the
+/// memory-efficient merge on one node, which shares its memo group: the shuffle between them does not
+/// keep any order, and with the order the partial aggregation would send its result from one stream.
+static void dropBucketOrderOfPartialAggregationBelow(QueryPlan::Node * node)
+{
+    while (node->children.size() == 1 && dynamic_cast<const LogicalExchangeStep *>(node->step.get()))
+        node = node->children.front();
+    if (auto * aggregating_step = typeid_cast<AggregatingStep *>(node->step.get()); aggregating_step && !aggregating_step->isFinal())
+        aggregating_step->setShouldProduceResultsInBucketOrder(false);
+}
+
 QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, ExpressionProperties required_properties)
 {
     const auto & cost_config = memo.getContext().cost_config;
@@ -447,6 +478,8 @@ QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, Exp
         else if (frame.expression->inputs.size() == 1)
         {
             result = std::move(frame.child_plans[0]);
+            if (frame.expression->strategy == strategySingleton<ShuffleMergeStrategy>())
+                dropBucketOrderOfPartialAggregationBelow(result->getRootNode());
             auto step = cloneStepForBestPlan(*frame.expression);
             addConvertingExpression(*result, step->getInputHeaders().at(0));
             result->addStep(std::move(step));

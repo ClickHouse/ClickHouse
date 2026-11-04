@@ -7,12 +7,12 @@ description: 'Comment scraper, sécuriser et exploiter les métriques et les poi
 doc_type: 'guide'
 ---
 
-L’opérateur expose des métriques compatibles avec Prometheus et des sondes de santé Kubernetes, afin que vous puissiez observer son activité de réconciliation, détecter les contrôleurs bloqués et déclencher des alertes en cas d’échec.
+L’opérateur expose des métriques compatibles avec Prometheus et des probes de santé Kubernetes, afin que vous puissiez observer son activité de réconciliation, détecter les controllers bloqués et déclencher des alertes en cas d’échec.
 
 Ce guide présente ce que l’opérateur expose, comment le scraper et quelles requêtes sont utiles au quotidien.
 
 <Note>
-  Ce guide porte sur le **processus de l’opérateur lui-même** (le controller-manager). Pour les métriques du ClickHouse server (requêtes, parts, retard de réplication), utilisez l’[point de terminaison Prometheus de ClickHouse](/fr/reference/settings/server-settings/settings/other#prometheus) pour le scraper séparément.
+  Ce guide porte sur le **processus de l’opérateur lui-même** (le controller-manager). Pour les métriques du ClickHouse server (requêtes, parts, retard de réplication), utilisez l’[point de terminaison Prometheus de ClickHouse](/fr/reference/settings/server-settings/settings#prometheus) pour le scraper séparément.
 </Note>
 
 <div id="endpoints">

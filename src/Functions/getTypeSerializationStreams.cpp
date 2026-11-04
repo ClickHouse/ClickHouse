@@ -36,9 +36,9 @@ public:
         return 1;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
+    String getSignatureString() const override
     {
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
+        return "(Any) -> Array(String)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -88,8 +88,8 @@ This function is intended for developmental use.
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns an array with all the serialization sub-stream paths.", {"Array(String)"}};
     FunctionDocumentation::Examples examples = {
-        {"tuple", "SELECT getTypeSerializationStreams(tuple('a', 1, 'b', 2))", "['{TupleElement(1), Regular}','{TupleElement(2), Regular}','{TupleElement(3), Regular}','{TupleElement(4), Regular}']"},
-        {"map", "SELECT getTypeSerializationStreams('Map(String, Int64)')", "['{ArraySizes}','{ArrayElements, TupleElement(keys), Regular}','{ArrayElements, TupleElement(values), Regular}']"}
+        {"tuple", "SELECT getTypeSerializationStreams(tuple('a', 1, 'b', 2))", "['{TupleElement(1), InlinedStringSizes()}','{TupleElement(1), Regular}','{TupleElement(2), Regular}','{TupleElement(3), InlinedStringSizes()}','{TupleElement(3), Regular}','{TupleElement(4), Regular}']"},
+        {"map", "SELECT getTypeSerializationStreams('Map(String, Int64)')", "['{ArraySizes}','{ArrayElements, TupleElement(keys), InlinedStringSizes()}','{ArrayElements, TupleElement(keys), Regular}','{ArrayElements, TupleElement(values), Regular}']"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;

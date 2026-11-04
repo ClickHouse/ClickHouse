@@ -1,0 +1,80 @@
+--- Log / file_checker_update_and_save_fail_reading_sizes
+failed insert was rejected: 1
+rows of the failed insert: 0
+rows: 140	365730
+rows the table reports: 140
+arrays readable: 10
+reload keeps the same data: 1
+rows of the failed insert after reload: 0
+--- Log / file_checker_update_and_save_fail_persisting
+failed insert was rejected: 1
+rows of the failed insert: 0
+rows: 140	365730
+rows the table reports: 140
+arrays readable: 10
+reload keeps the same data: 1
+rows of the failed insert after reload: 0
+--- TinyLog / file_checker_update_and_save_fail_reading_sizes
+failed insert was rejected: 1
+rows of the failed insert: 0
+rows: 140	365730
+rows the table reports: not counted
+arrays readable: 10
+reload keeps the same data: 1
+rows of the failed insert after reload: 0
+--- TinyLog / file_checker_update_and_save_fail_persisting
+failed insert was rejected: 1
+rows of the failed insert: 0
+rows: 140	365730
+rows the table reports: not counted
+arrays readable: 10
+reload keeps the same data: 1
+rows of the failed insert after reload: 0
+--- StripeLog / file_checker_update_and_save_fail_reading_sizes
+failed insert was rejected: 1
+rows of the failed insert: 0
+rows: 140	365730
+rows the table reports: 140
+arrays readable: 10
+reload keeps the same data: 1
+rows of the failed insert after reload: 0
+--- StripeLog / file_checker_update_and_save_fail_persisting
+failed insert was rejected: 1
+rows of the failed insert: 0
+rows: 140	365730
+rows the table reports: 140
+arrays readable: 10
+reload keeps the same data: 1
+rows of the failed insert after reload: 0
+--- restore Log / file_checker_update_and_save_fail_reading_sizes
+failed restore was rejected: 1
+restored rows: 0
+rows: 60	500970
+rows the table reports: 60
+arrays readable: 10
+reload keeps the same data: 1
+restored rows after reload: 0
+--- restore Log / file_checker_update_and_save_fail_persisting
+failed restore was rejected: 1
+restored rows: 0
+rows: 60	500970
+rows the table reports: 60
+arrays readable: 10
+reload keeps the same data: 1
+restored rows after reload: 0
+--- restore StripeLog / file_checker_update_and_save_fail_reading_sizes
+failed restore was rejected: 1
+restored rows: 0
+rows: 60	500970
+rows the table reports: 60
+arrays readable: 10
+reload keeps the same data: 1
+restored rows after reload: 0
+--- restore StripeLog / file_checker_update_and_save_fail_persisting
+failed restore was rejected: 1
+restored rows: 0
+rows: 60	500970
+rows the table reports: 60
+arrays readable: 10
+reload keeps the same data: 1
+restored rows after reload: 0

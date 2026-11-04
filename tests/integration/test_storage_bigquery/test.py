@@ -374,22 +374,14 @@ def test_no_referenced_columns():
     # A query that references no physical columns at all (a bare count(), a constant
     # projection): the planner requests the smallest column from the storage, so the
     # read path always parses at least one field and row counts stay correct.
-    for analyzer in (0, 1):
-        settings = {"enable_analyzer": analyzer}
-        mock_reset()
-        assert (
-            node.query(f"SELECT count() FROM {bq('test_paging')}", settings=settings)
-            == "10\n"
-        )
-        requests = mock_stats()["data_requests"]
-        # The mock caps pages at 4 rows, so counting 10 rows takes 3 requests.
-        assert len(requests) == 3
-        assert all(r["params"]["selectedFields"] == "i" for r in requests)
+    mock_reset()
+    assert node.query(f"SELECT count() FROM {bq('test_paging')}") == "10\n"
+    requests = mock_stats()["data_requests"]
+    # The mock caps pages at 4 rows, so counting 10 rows takes 3 requests.
+    assert len(requests) == 3
+    assert all(r["params"]["selectedFields"] == "i" for r in requests)
 
-        assert (
-            node.query(f"SELECT 1 FROM {bq('test_paging')}", settings=settings)
-            == "1\n" * 10
-        )
+    assert node.query(f"SELECT 1 FROM {bq('test_paging')}") == "1\n" * 10
 
 
 # Must match bigquery_mock_server.py::wide_column_name (the mock's `test_wide` table has 40 such columns
@@ -1071,6 +1063,37 @@ def test_geography_read_and_write():
     )
 
 
+@pytest.mark.parametrize(
+    "geometry_type,wkt",
+    [
+        ("Point", "POINT(139.699325900317 35.67639759983872)"),
+        (
+            "Polygon",
+            "POLYGON((139.6 35.69451,139.60001 35.69452,139.6 35.69453,139.6 35.69451))",
+        ),
+    ],
+)
+def test_geography_write_preserves_precision(geometry_type, wkt):
+    mock_reset()
+    geometry = f"readWKT{geometry_type}({sql_str(wkt)})::Geometry"
+    node.query(
+        f"INSERT INTO FUNCTION {bq('test_geo')} (i, g, garr) "
+        f"SELECT 11, {geometry}, [{geometry}]"
+    )
+
+    rows = [row for req in mock_stats()["insert_requests"] for row in req["raw_rows"]]
+    assert len(rows) == 1
+    assert rows[0]["g"] == wkt
+    assert rows[0]["garr"] == [wkt]
+    assert (
+        node.query(
+            f"SELECT wkt(g), arrayMap(x -> wkt(x), garr) "
+            f"FROM {bq('test_geo')} WHERE i = 11"
+        )
+        == f"{wkt}\t['{wkt}']\n"
+    )
+
+
 def test_geography_null_rejected_where_bigquery_forbids_it():
     # `Geometry` is a `Variant` that carries its own NULL, so a NULL value can reach the write path even
     # for a REQUIRED field and for an element of a REPEATED field, where BigQuery accepts no NULL. Such a
@@ -1282,24 +1305,50 @@ def test_table_engine():
     node.query("DROP TABLE bq_engine")
 
     # Writing through the engine. The `writable` table has a NULLABLE RECORD (`meta`), inferred as
-    # Nullable(Tuple(...)), so creating the table with an inferred structure needs the setting -
-    # without it, the CREATE is rejected instead of silently persisting a Nullable(Tuple) column.
+    # Nullable(Tuple(...)). With the Nullable(Tuple) type disabled, creating the table with an inferred
+    # structure is rejected instead of silently persisting a Nullable(Tuple) column.
     mock_reset()
     node.query("DROP TABLE IF EXISTS bq_writable")
     error = node.query_and_get_error(
         f"CREATE TABLE bq_writable ENGINE = BigQuery('{PROJECT}', '{DATASET}', 'writable', "
-        f"access_token = '{ACCESS_TOKEN}', base_url = '{BASE_URL}')"
+        f"access_token = '{ACCESS_TOKEN}', base_url = '{BASE_URL}')",
+        settings={"enable_nullable_tuple_type": 0},
     )
     assert "enable_nullable_tuple_type" in error
 
+    # With default settings (the type is generally available), the same CREATE succeeds, persists
+    # `meta` as Nullable(Tuple(...)), and the column round-trips through INSERT/SELECT, NULL included.
     node.query(
         f"CREATE TABLE bq_writable ENGINE = BigQuery('{PROJECT}', '{DATASET}', 'writable', "
-        f"access_token = '{ACCESS_TOKEN}', base_url = '{BASE_URL}')",
-        settings={"enable_nullable_tuple_type": 1},
+        f"access_token = '{ACCESS_TOKEN}', base_url = '{BASE_URL}')"
     )
-    node.query("INSERT INTO bq_writable (id, name) VALUES (42, 'x')")
-    assert node.query("SELECT id, name FROM bq_writable") == "42\tx\n"
+    create = node.query("SHOW CREATE TABLE bq_writable")
+    assert "`meta` Nullable(Tuple(a Nullable(Int64)))" in create, create
+    node.query(
+        "INSERT INTO bq_writable (id, name, meta) VALUES (42, 'x', NULL), (43, 'y', tuple(7))"
+    )
+    assert (
+        node.query("SELECT id, name, meta FROM bq_writable ORDER BY id FORMAT TSV")
+        == "42\tx\t\\N\n43\ty\t(7)\n"
+    )
     node.query("DROP TABLE bq_writable")
+
+
+def test_table_function_create_nullable_tuple_setting():
+    mock_reset()
+    node.query("DROP TABLE IF EXISTS bq_tf_nullable_tuple")
+    create_query = f"CREATE TABLE bq_tf_nullable_tuple AS {bq('writable')}"
+
+    error = node.query_and_get_error(
+        create_query, settings={"enable_nullable_tuple_type": 0}
+    )
+    assert "ILLEGAL_COLUMN" in error
+    assert "enable_nullable_tuple_type" in error
+
+    node.query(create_query)
+    create = node.query("SHOW CREATE TABLE bq_tf_nullable_tuple")
+    assert "`meta` Nullable(Tuple(a Nullable(Int64)))" in create, create
+    node.query("DROP TABLE bq_tf_nullable_tuple")
 
 
 def test_secret_masking_in_query_log():
@@ -1603,3 +1652,35 @@ def test_errors():
     unknown_arg = bq("test_paging", creds="unknown_arg = 'x'")
     error = node.query_and_get_error(f"SELECT * FROM {unknown_arg}")
     assert "Unknown BigQuery argument" in error
+
+
+def test_sync_remote_read_fans_out_to_max_distributed_connections():
+    # `BigQuery` is a remote storage that reads through the generic `IStorage::read`, which bounds the
+    # post-read resize by the number of threads that will consume its output. For a synchronous remote
+    # read (`async_socket_for_remote = 0`) a thread blocks on the socket instead of running, so
+    # `InterpreterSelectQuery` / `PlannerJoinTree` raise that budget from `max_threads` to
+    # `max_distributed_connections`; the resize must follow it there instead of stopping at `max_threads`.
+    # `EXPLAIN PIPELINE` builds the plan without reading any rows.
+    plan = node.query(
+        f"EXPLAIN PIPELINE SELECT * FROM {bq('test_types')}",
+        settings={
+            "async_socket_for_remote": 0,
+            "max_distributed_connections": 16,
+            "max_threads": 2,
+            "max_threads_min_free_memory_per_thread": 0,
+        },
+    )
+    assert "Resize 1 → 16" in plan, plan
+
+    # An asynchronous remote read does not block a thread on the socket, so its budget is `max_threads`
+    # and an absurd `max_streams_to_max_threads_ratio` must not widen the output past it.
+    plan = node.query(
+        f"EXPLAIN PIPELINE SELECT * FROM {bq('test_types')}",
+        settings={
+            "async_socket_for_remote": 1,
+            "max_threads": 2,
+            "max_streams_to_max_threads_ratio": 1000000,
+            "max_threads_min_free_memory_per_thread": 0,
+        },
+    )
+    assert "Resize 1 → 2" in plan, plan

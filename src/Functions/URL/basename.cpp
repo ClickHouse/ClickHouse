@@ -19,10 +19,9 @@ struct ExtractBasename
         res_data = data;
         res_size = size;
 
-        Pos pos = data;
-        Pos end = pos + size;
+        Pos end = data + size;
 
-        if ((pos = find_last_symbols_or_null<'/', '\\'>(pos, end)))
+        if (Pos pos = find_last_symbols_or_null<'/', '\\'>(data, end))
         {
             ++pos;
             res_data = pos;
@@ -52,9 +51,9 @@ This function is often used to extract the filename from a path.
 SELECT 'some/long/path/to/file' AS a, basename(a)
         )",
         R"(
-┌─a──────────────────────┬─basename('some/long/path/to/file')─┐
-│ some/long/path/to/file │ file                               │
-└────────────────────────┴────────────────────────────────────┘
+┌─a──────────────────────┬─basename(a)─┐
+│ some/long/path/to/file │ file        │
+└────────────────────────┴─────────────┘
         )"
     },
     {
@@ -63,9 +62,9 @@ SELECT 'some/long/path/to/file' AS a, basename(a)
 SELECT 'some\\long\\path\\to\\file' AS a, basename(a)
         )",
         R"(
-┌─a──────────────────────┬─basename('some\\long\\path\\to\\file')─┐
-│ some\long\path\to\file │ file                                   │
-└────────────────────────┴────────────────────────────────────────┘
+┌─a──────────────────────┬─basename(a)─┐
+│ some\long\path\to\file │ file        │
+└────────────────────────┴─────────────┘
         )"
     },
     {
@@ -74,9 +73,9 @@ SELECT 'some\\long\\path\\to\\file' AS a, basename(a)
 SELECT 'some-file-name' AS a, basename(a)
         )",
         R"(
-┌─a──────────────┬─basename('some-file-name')─┐
-│ some-file-name │ some-file-name             │
-└────────────────┴────────────────────────────┘
+┌─a──────────────┬─basename(a)────┐
+│ some-file-name │ some-file-name │
+└────────────────┴────────────────┘
         )"
     }
     };

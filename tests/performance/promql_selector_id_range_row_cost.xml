@@ -1,0 +1,41 @@
+<test>
+    <settings>
+        <allow_experimental_time_series_table>1</allow_experimental_time_series_table>
+        <max_insert_threads>8</max_insert_threads>
+    </settings>
+
+    <!--
+        Benchmarks reading every sample of one metric through PromQL selectors over the default layout
+        of a TimeSeries table (the id is Tuple(sipHash64(metric_name), hash of tags), so the series of
+        a metric are adjacent in the samples table).
+
+        promql_selector_pk_range.xml measures index analysis and is built for it (tiny granules and
+        a 5m lookback, so a query touches few rows). This one is the opposite shape: one metric,
+        default index granularity, and a window covering every sample, so nothing can be pruned and
+        every sample of the metric is read. The label-filtered selector reads one eighth of the
+        series and is the control: it must not regress.
+    -->
+
+    <create_query>CREATE TABLE promql_row_cost_ts ENGINE = TimeSeries</create_query>
+
+    <!-- 12800 series of one metric, 4096 samples each at 15s: 52.4M samples.
+         The samples share one 17-hour window, which keeps the default recent-samples target
+         (partitioned by 5-hour interval) under max_partitions_per_insert_block. -->
+    <fill_query>
+        INSERT INTO promql_row_cost_ts (metric_name, tags, samples)
+        SELECT
+            'rowcost_metric',
+            map('instance', toString(number), 'dc', toString(number % 8)),
+            arrayMap(step -> (toDateTime64(1000000 + step * 15, 3), toFloat64(step % 977)), range(4096))
+        FROM numbers_mt(12800)
+    </fill_query>
+
+    <!-- whole-metric selectors over the full window: every sample of the metric is read -->
+    <query>SELECT sum(value) FROM timeSeriesSelector('promql_row_cost_ts', 'rowcost_metric', 1000000, 1061440, 'timestamp_and_value') SETTINGS max_threads = 4 FORMAT Null</query>
+    <query>SELECT * FROM prometheusQueryRange('promql_row_cost_ts', 'sum(rowcost_metric)', 1000000, 1061440, 10000) SETTINGS max_threads = 4 FORMAT Null</query>
+
+    <!-- label-filtered selector: one eighth of the series (control) -->
+    <query>SELECT sum(value) FROM timeSeriesSelector('promql_row_cost_ts', 'rowcost_metric{{dc="0"}}', 1000000, 1061440, 'timestamp_and_value') SETTINGS max_threads = 4 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS promql_row_cost_ts</drop_query>
+</test>

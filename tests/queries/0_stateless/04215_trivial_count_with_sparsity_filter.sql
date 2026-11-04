@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: Not supported
-
 -- Regression test for `optimize_trivial_count_with_sparsity_filter`. The rewrite
 -- serves `count() WHERE col <op> const` from per-column `num_defaults` /
 -- `num_rows` in `serialization.json` when `<op> const` exactly partitions rows

@@ -40,7 +40,6 @@ TYPE_MAP = {
 # not for query execution — it causes Nullable(Array(...)) errors with groupArray.
 CLICKHOUSE_SETTINGS = [
     "allow_experimental_join_condition = 1",
-    "allow_experimental_analyzer = 1",
     "use_query_cache = 0",
     "union_default_mode = 'DISTINCT'",
     "join_use_nulls = 1",

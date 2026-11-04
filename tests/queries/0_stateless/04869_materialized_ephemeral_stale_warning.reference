@@ -1,0 +1,4 @@
+alter update warns: yes
+lightweight update warns: yes
+on-fly read warns: no
+on-fly read value: 20	17

@@ -452,8 +452,92 @@ def test_tracking_quota():
 
 
 def test_exceed_quota():
-    # Change quota, now the limits are tiny so we will exceed the quota.
-    copy_quota_xml("tiny_limits.xml")
+    try:
+        # Change quota, now the limits are tiny so we will exceed the quota.
+        copy_quota_xml("tiny_limits.xml")
+        check_system_quotas(
+            [
+                [
+                    "myQuota",
+                    "e651da9c-a748-8703-061a-7e5e5096dae7",
+                    "users_xml",
+                    "['user_name']",
+                    "[31556952]",
+                    0,
+                    "['default']",
+                    "[]",
+                ]
+            ]
+        )
+        system_quota_limits(
+            [["myQuota", 31556952, 0, 1, 1, 1, 1, 1, "\\N", 1, "\\N", "\\N", "\\N", "1"]]
+        )
+        system_quota_usage(
+            [
+                [
+                    "myQuota",
+                    "default",
+                    31556952,
+                    0,
+                    1,
+                    0,
+                    1,
+                    0,
+                    1,
+                    0,
+                    1,
+                    0,
+                    1,
+                    0,
+                    "\\N",
+                    0,
+                    1,
+                    0,
+                    "\\N",
+                    "\\N",
+                    "1",
+                ]
+            ]
+        )
+
+        assert re.search(
+            "Quota.*has been exceeded",
+            instance.query_and_get_error("SELECT * from test_table"),
+        )
+        # `read_rows` and `read_bytes` are accounted by the same call, and all the counters of one call
+        # are accounted before any of them is checked, so the 200 bytes of the 50 read rows are recorded
+        # even though it is the `read_rows` limit that rejects the query.
+        system_quota_usage(
+            [
+                [
+                    "myQuota",
+                    "default",
+                    31556952,
+                    1,
+                    1,
+                    1,
+                    1,
+                    0,
+                    1,
+                    1,
+                    1,
+                    0,
+                    1,
+                    0,
+                    "\\N",
+                    50,
+                    1,
+                    200,
+                    "\\N",
+                    "\\N",
+                    "1",
+                ]
+            ]
+        )
+    finally:
+        # Change quota, now the limits are enough to execute queries.
+        copy_quota_xml("normal_limits.xml")
+
     check_system_quotas(
         [
             [
@@ -469,85 +553,6 @@ def test_exceed_quota():
         ]
     )
     system_quota_limits(
-        [["myQuota", 31556952, 0, 1, 1, 1, 1, 1, "\\N", 1, "\\N", "\\N", "\\N", "1"]]
-    )
-    system_quota_usage(
-        [
-            [
-                "myQuota",
-                "default",
-                31556952,
-                0,
-                1,
-                0,
-                1,
-                0,
-                1,
-                0,
-                1,
-                0,
-                1,
-                0,
-                "\\N",
-                0,
-                1,
-                0,
-                "\\N",
-                "\\N",
-                "1",
-            ]
-        ]
-    )
-
-    assert re.search(
-        "Quota.*has been exceeded",
-        instance.query_and_get_error("SELECT * from test_table"),
-    )
-    system_quota_usage(
-        [
-            [
-                "myQuota",
-                "default",
-                31556952,
-                1,
-                1,
-                1,
-                1,
-                0,
-                1,
-                1,
-                1,
-                0,
-                1,
-                0,
-                "\\N",
-                50,
-                1,
-                0,
-                "\\N",
-                "\\N",
-                "1",
-            ]
-        ]
-    )
-
-    # Change quota, now the limits are enough to execute queries.
-    copy_quota_xml("normal_limits.xml")
-    check_system_quotas(
-        [
-            [
-                "myQuota",
-                "e651da9c-a748-8703-061a-7e5e5096dae7",
-                "users_xml",
-                "['user_name']",
-                "[31556952]",
-                0,
-                "['default']",
-                "[]",
-            ]
-        ]
-    )
-    system_quota_limits(
         [
             [
                 "myQuota",
@@ -587,7 +592,7 @@ def test_exceed_quota():
                 "\\N",
                 50,
                 1000,
-                0,
+                200,
                 "\\N",
                 "\\N",
                 "\\N",
@@ -616,7 +621,7 @@ def test_exceed_quota():
                 "\\N",
                 100,
                 1000,
-                200,
+                400,
                 "\\N",
                 "\\N",
                 "\\N",
@@ -1421,28 +1426,36 @@ def test_reload_users_xml_by_timer():
 
     time.sleep(1)  # The modification time of the 'quota.xml' file should be different,
     # because config files are reload by timer only when the modification time is changed.
-    copy_quota_xml("tiny_limits.xml", reload_immediately=False)
-    assert_eq_with_retry(
-        instance,
-        "SELECT name, id, storage, keys, durations, apply_to_all, apply_to_list, apply_to_except FROM system.quotas",
-        [
+    try:
+        copy_quota_xml("tiny_limits.xml", reload_immediately=False)
+        assert_eq_with_retry(
+            instance,
+            "SELECT name, id, storage, keys, durations, apply_to_all, apply_to_list, apply_to_except FROM system.quotas",
             [
-                "myQuota",
-                "e651da9c-a748-8703-061a-7e5e5096dae7",
-                "users_xml",
-                ["user_name"],
-                "[31556952]",
-                0,
-                "['default']",
-                "[]",
-            ]
-        ],
-    )
-    assert_eq_with_retry(
-        instance,
-        "SELECT quota_name, duration, is_randomized_interval, max_queries, max_query_selects, max_query_inserts, max_errors, max_result_rows, max_result_bytes, max_read_rows, max_read_bytes, max_execution_time, max_written_bytes, max_failed_sequential_authentications FROM system.quota_limits",
-        [["myQuota", 31556952, 0, 1, 1, 1, 1, 1, "\\N", 1, "\\N", "\\N", "\\N", "1"]],
-    )
+                [
+                    "myQuota",
+                    "e651da9c-a748-8703-061a-7e5e5096dae7",
+                    "users_xml",
+                    ["user_name"],
+                    "[31556952]",
+                    0,
+                    "['default']",
+                    "[]",
+                ]
+            ],
+            user="user_with_no_quota",
+        )
+        assert_eq_with_retry(
+            instance,
+            "SELECT quota_name, duration, is_randomized_interval, max_queries, max_query_selects, max_query_inserts, max_errors, max_result_rows, max_result_bytes, max_read_rows, max_read_bytes, max_execution_time, max_written_bytes, max_failed_sequential_authentications FROM system.quota_limits",
+            [["myQuota", 31556952, 0, 1, 1, 1, 1, 1, "\\N", 1, "\\N", "\\N", "\\N", "1"]],
+            user="user_with_no_quota",
+        )
+    finally:
+        # Restore a clean config so later periodic reloads do not fail.
+        copy_quota_xml("no_quotas.xml")
+
+    check_system_quotas("")
 
 
 def test_dcl_introspection():
@@ -1522,14 +1535,14 @@ def test_dcl_management():
         == "CREATE QUOTA qA FOR INTERVAL 5 quarter MAX queries = 123 TO default\n"
     )
     assert re.match(
-        "qA\\t\\t.*\\t39446190\\t0\\t123\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t.*\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\n",
+        "qA\\t\\t.*\\t39446190\\t0\\t123\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t.*\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\n",
         instance.query("SHOW QUOTA"),
     )
 
     instance.query("SELECT * from test_table")
     # Counters may be 0 if the quota interval boundary is crossed between SELECT and SHOW QUOTA.
     assert re.match(
-        "qA\\t\\t.*\\t39446190\\t\\d+\\t123\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t.*\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\n",
+        "qA\\t\\t.*\\t39446190\\t\\d+\\t123\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t.*\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\n",
         instance.query("SHOW QUOTA"),
     )
 
@@ -1541,16 +1554,16 @@ def test_dcl_management():
         == "CREATE QUOTA qA FOR INTERVAL 30 minute MAX execution_time = 0.5, FOR INTERVAL 5 quarter MAX queries = 321, errors = 10 TO default\n"
     )
     assert re.match(
-        "qA\\t\\t.*\\t1800\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t.*\\t0.5\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\n"
-        "qA\\t\\t.*\\t39446190\\t\\d+\\t321\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t10\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t.*\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\n",
+        "qA\\t\\t.*\\t1800\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t.*\\t0.5\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\n"
+        "qA\\t\\t.*\\t39446190\\t\\d+\\t321\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t10\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t.*\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\n",
         instance.query("SHOW QUOTA"),
     )
 
     instance.query("SELECT * from test_table")
     # Counters may be 0 if the quota interval boundary is crossed between SELECT and SHOW QUOTA.
     assert re.match(
-        "qA\\t\\t.*\\t1800\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t.*\\t0.5\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\n"
-        "qA\\t\\t.*\\t39446190\\t\\d+\\t321\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t10\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t.*\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\n",
+        "qA\\t\\t.*\\t1800\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t.*\\t0.5\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\n"
+        "qA\\t\\t.*\\t39446190\\t\\d+\\t321\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t10\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t.*\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\n",
         instance.query("SHOW QUOTA"),
     )
 
@@ -1558,14 +1571,14 @@ def test_dcl_management():
         "ALTER QUOTA qA FOR INTERVAL 15 MONTH NO LIMITS, FOR RANDOMIZED INTERVAL 16 MONTH TRACKING ONLY, FOR INTERVAL 1800 SECOND NO LIMITS"
     )
     assert re.match(
-        "qA\\t\\t.*\\t42075936\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t.*\\t\\\\N\\t0\\t\\\\N\n",
+        "qA\\t\\t.*\\t42075936\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t.*\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\n",
         instance.query("SHOW QUOTA"),
     )
 
     instance.query("SELECT * from test_table")
     # Counters may be 0 if the quota interval boundary is crossed between SELECT and SHOW QUOTA.
     assert re.match(
-        "qA\\t\\t.*\\t42075936\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t.*\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\n",
+        "qA\\t\\t.*\\t42075936\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t.*\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\n",
         instance.query("SHOW QUOTA"),
     )
 
@@ -1576,14 +1589,14 @@ def test_dcl_management():
     )
     # Counters may be 0 if the quota interval boundary is crossed between SELECT and SHOW QUOTA.
     assert re.match(
-        "qB\\t\\t.*\\t42075936\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t.*\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\n",
+        "qB\\t\\t.*\\t42075936\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t.*\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\n",
         instance.query("SHOW QUOTA"),
     )
 
     instance.query("SELECT * from test_table")
     # Counters may be 0 if the quota interval boundary is crossed between SELECT and SHOW QUOTA.
     assert re.match(
-        "qB\\t\\t.*\\t42075936\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t.*\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\n",
+        "qB\\t\\t.*\\t42075936\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t.*\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\n",
         instance.query("SHOW QUOTA"),
     )
 

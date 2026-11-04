@@ -23,6 +23,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # database to avoid collisions across concurrent runs. The arms detach PERMANENTLY so that a server
 # restart while the collection is missing still boots: startup skips a permanently detached table
 # without constructing its storage, while `ATTACH TABLE` still replays the on-disk definition.
+#
+# ast_fuzzer_any_query = 0: the AST fuzzer replays table DDL as a DETACH, or as a `__fuzz_N` clone that
+# inherits the collection reference and is not detached permanently, either of which leaves metadata
+# naming a collection these arms drop.
 NC_TF="nc_missing_tf_${CLICKHOUSE_DATABASE}"
 NC_SK="nc_missing_sk_${CLICKHOUSE_DATABASE}"
 NC_LIVE="nc_live_${CLICKHOUSE_DATABASE}"
@@ -52,7 +56,7 @@ CREATE NAMED COLLECTION ${NC_LIVE} AS host = '127.0.0.1', db = '${CLICKHOUSE_DAT
 ${CLICKHOUSE_CLIENT} --query "
 -- The arm needs the collection to be missing while the table's metadata still references it, which
 -- is the state the dependency guard exists to prevent, so this arm opts out of the guard.
-SET check_named_collection_dependencies = 0;
+SET check_named_collection_dependencies = 0, ast_fuzzer_any_query = 0;
 CREATE TABLE t_engine_tf ENGINE = Remote(${NC_TF}, database = merge(currentDatabase(), '^nc_target\$'));
 SELECT count() FROM t_engine_tf;
 DETACH TABLE t_engine_tf PERMANENTLY SYNC;
@@ -62,6 +66,7 @@ run_and_classify '(a) engine, database = merge(...):' "${NC_TF}" "ATTACH TABLE t
 # Recreating the collection makes the very same metadata attach and read, so the persisted
 # definition was always correct and only the missing collection made it unloadable.
 ${CLICKHOUSE_CLIENT} --query "
+SET ast_fuzzer_any_query = 0;
 CREATE NAMED COLLECTION ${NC_TF} AS host = '127.0.0.1';
 ATTACH TABLE t_engine_tf;
 SELECT count() FROM t_engine_tf;
@@ -72,7 +77,7 @@ DROP NAMED COLLECTION ${NC_TF};
 # (b) The same defect with a non-table-function override, which used to report a different
 #     unrelated error: the fix is the fall-through itself, not a `merge`-specific special case.
 ${CLICKHOUSE_CLIENT} --query "
-SET check_named_collection_dependencies = 0;
+SET check_named_collection_dependencies = 0, ast_fuzzer_any_query = 0;
 CREATE TABLE t_engine_sk ENGINE = Remote(${NC_SK}, sharding_key = rand());
 SELECT count() FROM t_engine_sk;
 DETACH TABLE t_engine_sk PERMANENTLY SYNC;
@@ -80,6 +85,7 @@ DROP NAMED COLLECTION ${NC_SK};
 "
 run_and_classify '(b) engine, sharding_key = rand():' "${NC_SK}" "ATTACH TABLE t_engine_sk"
 ${CLICKHOUSE_CLIENT} --query "
+SET ast_fuzzer_any_query = 0;
 CREATE NAMED COLLECTION ${NC_SK} AS host = '127.0.0.1', db = '${CLICKHOUSE_DATABASE}', \`table\` = 'nc_target';
 ATTACH TABLE t_engine_sk;
 DROP TABLE t_engine_sk;
@@ -106,6 +112,7 @@ run_and_classify '(g) unknown cluster, no override:' 'no_such_cluster' \
 
 # (h) A live collection is unaffected, and the definition still round-trips.
 ${CLICKHOUSE_CLIENT} --query "
+SET ast_fuzzer_any_query = 0;
 SELECT count() FROM remote(${NC_LIVE}, sharding_key = rand());
 CREATE TABLE t_live ENGINE = Remote(${NC_LIVE}, sharding_key = rand());
 SELECT count() FROM t_live;
@@ -113,6 +120,7 @@ SELECT count() FROM t_live;
 ${CLICKHOUSE_CLIENT} --query "SHOW CREATE TABLE t_live" | sed "s/${NC_LIVE}/NC_LIVE/g"
 
 ${CLICKHOUSE_CLIENT} --query "
+SET ast_fuzzer_any_query = 0;
 DROP TABLE t_live;
 DROP NAMED COLLECTION ${NC_LIVE};
 DROP TABLE nc_target;

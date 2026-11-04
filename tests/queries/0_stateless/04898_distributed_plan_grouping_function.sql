@@ -1,15 +1,16 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: make_distributed_plan requires the analyzer.
-
 -- `grouping` under `make_distributed_plan`. The analyzer resolves it into a specialization
 -- (`__groupingForRollup` etc.) whose parameters travel as trailing constant arguments, so a
 -- serialized plan can rebuild the function from its name and arguments alone. One of the
 -- constants bakes in `force_grouping_standard_compatibility`.
 
 DROP TABLE IF EXISTS t_grouping_dist;
--- Pin the granularity: the EXPLAIN below prints the granule count of the read.
+-- Pin the granularity: the EXPLAIN below prints the granule count of the read. `index_granularity`
+-- alone is not enough - a randomized `index_granularity_bytes` caps a granule by size and splits the
+-- single expected granule, so it has to be pinned as well. Keep it at the default value instead of
+-- disabling adaptive granularity: with `index_granularity_bytes = 0` the server writes a warning to
+-- stderr when a randomized `min_bytes_for_wide_part` is in effect.
 CREATE TABLE t_grouping_dist (k1 String, k2 UInt64, v UInt64) ENGINE = MergeTree ORDER BY tuple()
-SETTINGS index_granularity = 8192;
+SETTINGS index_granularity = 8192, index_granularity_bytes = 10485760;
 INSERT INTO t_grouping_dist SELECT 'k' || (number % 3)::String, number % 2, number FROM numbers(1000);
 
 -- Distributed aggregation cannot enforce a global max_rows_to_group_by, so pin it to 0.
@@ -25,25 +26,27 @@ SET make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_ex
 SELECT '-- grouping over rollup';
 SELECT k1, k2, grouping(k1) + grouping(k2) AS level, sum(v)
 FROM t_grouping_dist GROUP BY k1, k2 WITH ROLLUP ORDER BY ALL
-SETTINGS group_by_use_nulls = 0;
+SETTINGS group_by_use_nulls = 0, distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- grouping over rollup, group_by_use_nulls = 1';
 SELECT k1, k2, grouping(k1) + grouping(k2) AS level, sum(v)
 FROM t_grouping_dist GROUP BY k1, k2 WITH ROLLUP ORDER BY ALL
-SETTINGS group_by_use_nulls = 1;
+SETTINGS group_by_use_nulls = 1, distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- grouping over rollup, force_grouping_standard_compatibility = 0';
 SELECT k1, grouping(k1) AS g, sum(v)
 FROM t_grouping_dist GROUP BY k1 WITH ROLLUP ORDER BY ALL
-SETTINGS force_grouping_standard_compatibility = 0;
+SETTINGS force_grouping_standard_compatibility = 0, distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- grouping in HAVING';
 SELECT k1, sum(v)
-FROM t_grouping_dist GROUP BY k1 WITH ROLLUP HAVING grouping(k1) = 1 ORDER BY ALL;
+FROM t_grouping_dist GROUP BY k1 WITH ROLLUP HAVING grouping(k1) = 1 ORDER BY ALL
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- grouping over plain GROUP BY';
 SELECT k1, grouping(k1) AS g, sum(v)
-FROM t_grouping_dist GROUP BY k1 ORDER BY ALL;
+FROM t_grouping_dist GROUP BY k1 ORDER BY ALL
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- union of two rollups with different key counts';
 SELECT * FROM (
@@ -52,7 +55,8 @@ SELECT * FROM (
     UNION ALL
     SELECT 'b' AS src, k2, cityHash64(k1) % 2 AS kk, grouping(k2) + grouping(kk) AS g, sum(v) AS s
     FROM t_grouping_dist GROUP BY k2, kk WITH ROLLUP
-) ORDER BY ALL;
+) ORDER BY ALL
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- rollup over a rollup subquery; the outer grouping has another key count';
 -- The inner grouping call keeps its unused argument columns alive as DAG inputs; the rewrite must
@@ -63,7 +67,8 @@ FROM (
     FROM t_grouping_dist GROUP BY k1, k2 WITH ROLLUP
 )
 GROUP BY k2, g_inner WITH ROLLUP
-ORDER BY ALL;
+ORDER BY ALL
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- distributed plan shows the specialization with its constant arguments';
 -- Pin off: with memory-efficient merging the plan dump gains a `Mode` line.

@@ -15,7 +15,6 @@
 #include <Interpreters/FileCache/FileCache_fwd.h>
 #include <Interpreters/FileCache/FileSegment.h>
 #include <Interpreters/FileCache/Metadata.h>
-#include <Interpreters/FileCache/QueryLimit.h>
 #include <Interpreters/FileCache/FileCache_fwd_internal.h>
 #include <Interpreters/FileCache/FileCacheSettings.h>
 #include <Interpreters/FileCache/FileCacheOriginInfo.h>
@@ -70,6 +69,8 @@ struct FileCacheReserveStat
 
     Stat total_stat;
     std::array<Stat, magic_enum::enum_count<FileSegmentKind>()> stat_by_kind{};
+    /// Set if the reservation failed because the cache or the query limit had no room for it.
+    bool not_enough_space = false;
 
     Stat & getStatByKind(FileSegmentKind kind) { return stat_by_kind[static_cast<uint8_t>(kind)]; }
     const Stat & getStatByKind(FileSegmentKind kind) const { return stat_by_kind[static_cast<uint8_t>(kind)]; }
@@ -89,6 +90,7 @@ struct FileCacheReserveStat
         total_stat += other.total_stat;
         for (size_t i = 0; i < stat_by_kind.size(); ++i)
             stat_by_kind[i] += other.stat_by_kind[i];
+        not_enough_space |= other.not_enough_space;
         return *this;
     }
 };
@@ -99,10 +101,8 @@ class FileCache : private boost::noncopyable
 {
 public:
     using Key = DB::FileCacheKey;
-    using QueryLimit = DB::FileCacheQueryLimit;
     using Priority = IFileCachePriority;
     using PriorityEntry = IFileCachePriority::Entry;
-    using QueryContextHolder = FileCacheQueryLimit::QueryContextHolder;
     using OriginInfo = FileCacheOriginInfo;
     using UserID = FileCacheOriginInfo::UserID;
     using Type = FileSegmentKeyType;
@@ -127,7 +127,10 @@ public:
 
     static const OriginInfo & getInternalOrigin();
 
+    /// The common origin with a segment key type derived from the file extension or given explicitly.
+    /// Both return the common origin as is if the cache is not split (`use_split_cache`).
     OriginInfo getCommonOriginWithSegmentKeyType(const std::filesystem::path & filename) const;
+    OriginInfo getCommonOriginWithSegmentKeyType(FileSegmentKeyType segment_type) const;
 
     String getFileSegmentPath(const Key & key, size_t offset, FileSegmentKind segment_kind, const OriginInfo & origin, std::optional<size_t> size = std::nullopt) const;
 
@@ -235,11 +238,14 @@ public:
         size_t lock_wait_timeout_milliseconds,
         std::string & failure_reason);
 
-    bool tryIncreasePriority(FileSegment & file_segment);
+    bool tryIncreasePriority(Priority::Iterator & iterator, bool is_space_reservation_complete);
 
     std::vector<FileSegment::Info> getFileSegmentInfos(const UserID & user_id);
 
     std::vector<FileSegment::Info> getFileSegmentInfos(const Key & key, const UserID & user_id);
+
+    /// Same as above, but returns an empty vector if there is no such key.
+    std::vector<FileSegment::Info> tryGetFileSegmentInfos(const Key & key, const UserID & user_id);
 
     IFileCachePriority::PriorityDumpPtr dumpQueue();
 
@@ -250,12 +256,7 @@ public:
 
     void deactivateBackgroundOperations();
 
-    CachePriorityGuard::WriteLock lockCache() const;
-
     std::vector<FileSegment::Info> sync();
-
-    using QueryContextHolderPtr = std::unique_ptr<QueryContextHolder>;
-    QueryContextHolderPtr getQueryContextHolder(const String & query_id, const FilesystemCacheSettings & settings);
 
     using IterateFunc = std::function<void(const FileSegmentInfo &)>;
     void iterate(IterateFunc && func, const UserID & user_id);
@@ -277,9 +278,9 @@ public:
     const String & getName() const { return name; }
 
 private:
-    void onSegmentEvicted(const FileSegment & segment, const String & user_id) const;
+    void onSegmentEvicted(const FileSegment & segment, size_t disk_accounted_size, const String & user_id) const;
     IFileCachePriority::OnEvictCallback getOnBackgroundEvictCallback() const;
-    void onSegmentEvictedInTheBackground(const FileSegment & segment, const String & user_id) const;
+    void onSegmentEvictedInTheBackground(const FileSegment & segment, size_t disk_accounted_size, const String & user_id) const;
 
     using KeyAndOffset = FileCacheKeyAndOffset;
 
@@ -348,7 +349,13 @@ private:
     mutable std::mutex init_mutex;
     std::unique_ptr<StatusFile> status_file;
     std::atomic<bool> shutdown = false;
+    /// Taken exclusively (`try_lock_for`) by `doDynamicResize`, shared (`try_lock`) by
+    /// `tryReserve` and `tryIncreasePriority` - both skip it when the policy cannot resize.
+    /// This lock alone prevents growth while the resize path has the priority guards released.
     std::shared_timed_mutex dynamic_resize_lock;
+    /// Cached `main_priority->supportsDynamicResize`: non-resizable policies skip the
+    /// `dynamic_resize_lock` gate on every reservation and priority increase.
+    bool supports_dynamic_resize = false;
 
     std::atomic<size_t> cache_reserve_active_threads = 0;
 
@@ -359,8 +366,6 @@ private:
     /// Must be declared after main_priority: metadata holds iterators that reference
     /// the priority's internal state, so metadata must be destroyed first
     CacheMetadata metadata;
-    mutable CachePriorityGuard cache_guard;
-    mutable CachePriorityGuard queue_guard;
     mutable CacheStateGuard cache_state_guard;
 
     /// Random checks for cache correctness.
@@ -377,13 +382,6 @@ private:
         std::mutex mutex;
     };
     CheckCacheProbability check_cache_probability;
-
-    /**
-     * A QueryLimit allows to control cache write limit per query.
-     * E.g. if a query needs n bytes from cache, but it has only k bytes, where 0 <= k <= n
-     * then allowed loaded cache size is std::min(n - k, max_query_cache_size).
-     */
-    FileCacheQueryLimitPtr query_limit;
 
     void initializeImpl(bool load_metadata);
 
@@ -408,9 +406,9 @@ private:
         size_t file_segments_limit,
         bool ignore_bypass_threshold = false) const;
 
-    /// Split range into subranges by max_file_segment_size,
-    /// each subrange size must be less or equal to max_file_segment_size.
-    std::vector<FileSegment::Range> splitRange(size_t offset, size_t size, size_t aligned_size);
+    /// Split range into subranges by max_size,
+    /// each subrange size must be less or equal to max_size.
+    std::vector<FileSegment::Range> splitRange(size_t offset, size_t size, size_t aligned_size, size_t max_size);
 
     FileSegments createFileSegmentsFromRanges(
         LockedKey & locked_key,
@@ -426,7 +424,8 @@ private:
         size_t non_aligned_right_offset,
         size_t file_segments_limit,
         bool fill_with_detached_file_segments,
-        const CreateFileSegmentSettings & settings);
+        const CreateFileSegmentSettings & settings,
+        size_t max_size);
 
     KeyMetadata::iterator addFileSegment(
         LockedKey & locked_key,
@@ -442,11 +441,11 @@ private:
         double slru_size_ratio = 0;
     };
     SizeLimits doDynamicResize(const SizeLimits & prev_limits, const SizeLimits & desired_limits);
+    /// Takes `cache_state_guard` itself, in several short spans; the caller must not hold it.
     bool doDynamicResizeImpl(
         const SizeLimits & prev_limits,
         const SizeLimits & desired_limits,
-        SizeLimits & result_limits,
-        CacheStateGuard::Lock &) TSA_NO_THREAD_SAFETY_ANALYSIS;
+        SizeLimits & result_limits);
 
     bool doTryReserve(
         FileSegment & file_segment,
@@ -458,14 +457,10 @@ private:
 
     bool doEviction(
         EvictionInfo & main_eviction_info,
-        EvictionInfo * query_eviction_info,
-        FileSegment & file_segment,
         const OriginInfo & origin_info,
         const IFileCachePriority::IteratorPtr & main_priority_iterator,
         FileCacheReserveStat & reserve_stat,
         EvictionCandidates & eviction_candidates,
-        IFileCachePriority::InvalidatedEntriesInfos & invalidated_entries,
-        Priority * query_priority,
         std::string & failure_reason);
 
     /// How much still needs to be evicted to reach the desired free-space ratio, given the live

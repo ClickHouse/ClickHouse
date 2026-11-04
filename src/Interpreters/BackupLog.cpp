@@ -1,6 +1,7 @@
 #include <Interpreters/BackupLog.h>
 
 #include <base/getFQDNOrHostName.h>
+#include <Common/config_version.h>
 #include <Common/DateLUTImpl.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeDate.h>
@@ -42,6 +43,8 @@ ColumnsDescription BackupLogElement::getColumnsDescription()
     return ColumnsDescription
     {
         {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Hostname of the server executing the query."},
+        {"clickhouse_version", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Version of the ClickHouse server that produced the row."},
+        {"system_processor", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "CPU architecture of the ClickHouse server that produced the row."},
         {"event_date", std::make_shared<DataTypeDate>(), "Date of the entry."},
         {"event_time", std::make_shared<DataTypeDateTime>(), "Time of the entry."},
         {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "Time of the entry with microseconds precision."},
@@ -69,6 +72,8 @@ void BackupLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t i = 0;
     columns[i++]->insert(getFQDNOrHostName());
+    columns[i++]->insert(VERSION_STRING);
+    columns[i++]->insert(SYSTEM_PROCESSOR);
     columns[i++]->insert(DateLUT::instance().toDayNum(std::chrono::system_clock::to_time_t(event_time)).toUnderType());
     columns[i++]->insert(std::chrono::system_clock::to_time_t(event_time));
     columns[i++]->insert(event_time_usec);

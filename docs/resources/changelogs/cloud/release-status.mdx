@@ -40,20 +40,50 @@ The dates shown below indicate when ClickHouse **begins the rollout** to each re
 - Rollouts are automated and occur gradually over multiple weeks
 - Services with configured scheduled upgrade windows are upgraded during their scheduled window in the week after the channel rollout ends (starting on Monday 00:00 UTC)
 - Rollout completion may be delayed due to rollout pauses (e.g., holiday freezes) or health monitoring
+- An [EOL date](https://clickhouse.com/legal/support-services-policy) is no earlier than 60 days after the Slow channel rollout completes. For releases whose Slow channel end date is not yet scheduled, the EOL date is `TBD`.
 
 For advance testing before production upgrades, use the Fast or Regular channel for non-production services and the Slow channel for production services.
 </Warning>
 
 <ReleaseSchedule releases={[
     {
+     changelog_link: 'https://clickhouse.com/docs/changelogs/26.8',
+     version: '26.8',
+     fast_start_date: '2026-10-19',
+     fast_end_date: 'TBD',
+     regular_start_date: 'TBD',
+     regular_end_date: 'TBD',
+     slow_start_date: 'TBD',
+     slow_end_date: 'TBD',
+     eol_date: 'TBD',
+     fast_progress: 'green',
+     regular_progress: 'green',
+     slow_progress: 'green',
+    },
+    {
+     changelog_link: 'https://clickhouse.com/docs/changelogs/26.6',
+     version: '26.6',
+     fast_start_date: '2026-09-07',
+     fast_end_date: '2026-09-14',
+     regular_start_date: '2026-09-28',
+     regular_end_date: 'TBD',
+     slow_start_date: 'TBD',
+     slow_end_date: 'TBD',
+     eol_date: 'TBD',
+     fast_progress: 'green',
+     regular_progress: 'green',
+     slow_progress: 'green',
+    },
+    {
      changelog_link: 'https://clickhouse.com/docs/changelogs/26.4',
      version: '26.4',
      fast_start_date: '2026-06-22',
      fast_end_date: '2026-07-16',
      regular_start_date: '2026-08-03',
-     regular_end_date: 'TBD',
-     slow_start_date: 'TBD',
-     slow_end_date: 'TBD',
+     regular_end_date: '2026-09-21',
+     slow_start_date: '2026-09-28',
+     slow_end_date: '2026-09-28',
+     eol_date: '2026-11-27 (estimated)',
      fast_progress: 'green',
      regular_progress: 'green',
      slow_progress: 'green',
@@ -61,56 +91,40 @@ For advance testing before production upgrades, use the Fast or Regular channel 
     {
      changelog_link: 'https://clickhouse.com/docs/changelogs/26.2',
      version: '26.2',
-     fast_start_date: '2026-04-03',
-     fast_end_date: '2026-04-14',
-     regular_start_date: '2026-05-06',
-     regular_end_date: '2026-06-17',
-     slow_start_date: '2026-07-01',
-     slow_end_date: 'TBD',
-     fast_progress: 'green',
-     regular_progress: 'green',
-     slow_progress: 'green',
-     fast_delay_note: 'Services with upgrade windows will be upgraded starting 2026-04-15.',
-    },
-    {
-     changelog_link: 'https://clickhouse.com/docs/changelogs/25.12',
-     version: '25.12',
-     fast_start_date: '2026-02-10',
-     fast_end_date: '2026-02-11',
-     regular_start_date: '2026-03-09',
-     regular_end_date: '2026-03-18',
-     slow_start_date: '2026-04-07',
-     slow_end_date: '2026-04-09',
-     fast_progress: 'green',
-     regular_progress: 'green',
-     slow_progress: 'green',
-     regular_delay_note: 'Services with scheduled upgrade windows will receive 25.12 during their scheduled window in the week after Mar 23',
-     slow_delay_note: 'Services with scheduled upgrade windows will receive 25.12 during their scheduled window in the week after Apr 13',
-   },
-   {
-     changelog_link: 'https://clickhouse.com/docs/changelogs/25.10',
-     version: '25.10',
      fast_start_date: 'Completed',
      fast_end_date: 'Completed',
      regular_start_date: 'Completed',
      regular_end_date: 'Completed',
      slow_start_date: 'Completed',
      slow_end_date: 'Completed',
+     eol_date: '2026-10-04',
      fast_progress: 'green',
      regular_progress: 'green',
      slow_progress: 'green',
-   },
-   {
-    changelog_link: 'https://clickhouse.com/docs/changelogs/25.8',
-    version: '25.8',
-    fast_start_date: 'Completed',
-    fast_end_date: 'Completed',
-    regular_start_date: 'Completed',
-    regular_end_date: 'Completed',
-    slow_start_date: 'Completed',
-    slow_end_date: 'Completed',
-    fast_progress: 'green',
-    regular_progress: 'green',
-    slow_progress: 'green',
-  }
+    },
+    {
+     changelog_link: 'https://clickhouse.com/docs/changelogs/25.12',
+     version: '25.12',
+     fast_start_date: 'Completed',
+     fast_end_date: 'Completed',
+     regular_start_date: 'Completed',
+     regular_end_date: 'Completed',
+     slow_start_date: 'Completed',
+     slow_end_date: 'Completed',
+     eol_date: '2026-06-08',
+     fast_progress: 'green',
+     regular_progress: 'green',
+     slow_progress: 'green',
+    },
 ]} />
+
+## ClickHouse Private and ClickHouse Government end-of-life dates {#private-and-government-eol}
+
+The table below lists end-of-life (EOL) dates for the ClickHouse major versions shipped in ClickHouse Private and ClickHouse Government.
+
+| Version | Released | EOL date | Status |
+|---------|----------|----------|--------|
+| 26.4 | 2026-10-09 | 2026-11-27 (estimated) | Supported |
+| 26.2 | 2026-08-07 | 2026-10-04 | End of life |
+
+Older versions are end of life. EOL dates marked as estimated may change.

@@ -17,7 +17,7 @@ env:
 jobs:
 
   config_workflow:
-    runs-on: [self-hosted, style-checker-aarch64]
+    runs-on: [self-hosted, arm-tiny]
     needs: []
     name: "Config Workflow"
     outputs:
@@ -28,13 +28,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -51,7 +50,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Config Workflow' --workflow "NightlyJepsen" --ci --timestamp
 
   dockers_build_amd:
-    runs-on: [self-hosted, style-checker]
+    runs-on: [self-hosted, amd-tiny]
     needs:
     - config_workflow
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'RG9ja2VycyBCdWlsZCAoYW1kKQ==') }}
@@ -64,13 +63,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -87,7 +85,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Dockers Build (amd)' --workflow "NightlyJepsen" --ci --timestamp
 
   dockers_build_arm:
-    runs-on: [self-hosted, style-checker-aarch64]
+    runs-on: [self-hosted, arm-tiny]
     needs:
     - config_workflow
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'RG9ja2VycyBCdWlsZCAoYXJtKQ==') }}
@@ -100,13 +98,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -123,7 +120,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Dockers Build (arm)' --workflow "NightlyJepsen" --ci --timestamp
 
   build_amd_binary:
-    runs-on: [self-hosted, arm-large]
+    runs-on: [self-hosted, arm-medium-cpu]
     needs:
     - config_workflow
     - dockers_build_amd
@@ -138,13 +135,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -161,7 +157,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (amd_binary)' --workflow "NightlyJepsen" --ci --timestamp
 
   clickhouse_keeper_jepsen:
-    runs-on: [self-hosted, style-checker]
+    runs-on: [self-hosted, amd-tiny]
     needs:
     - build_amd_binary
     - config_workflow
@@ -177,13 +173,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -200,7 +195,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'ClickHouse Keeper Jepsen' --workflow "NightlyJepsen" --ci --timestamp
 
   clickhouse_server_jepsen:
-    runs-on: [self-hosted, style-checker]
+    runs-on: [self-hosted, amd-tiny]
     needs:
     - build_amd_binary
     - clickhouse_keeper_jepsen
@@ -217,13 +212,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -240,7 +234,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'ClickHouse Server Jepsen' --workflow "NightlyJepsen" --ci --timestamp
 
   finish_workflow:
-    runs-on: [self-hosted, style-checker-aarch64]
+    runs-on: [self-hosted, arm-tiny]
     needs:
     - build_amd_binary
     - clickhouse_keeper_jepsen
@@ -258,13 +252,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}

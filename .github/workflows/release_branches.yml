@@ -17,7 +17,7 @@ permissions: write-all
 jobs:
 
   config_workflow:
-    runs-on: [self-hosted, style-checker-aarch64]
+    runs-on: [self-hosted, arm-tiny]
     needs: []
     name: "Config Workflow"
     outputs:
@@ -28,13 +28,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -51,7 +50,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Config Workflow' --workflow "ReleaseBranchCI" --ci --timestamp
 
   dockers_build_amd:
-    runs-on: [self-hosted, style-checker]
+    runs-on: [self-hosted, amd-tiny]
     needs:
     - config_workflow
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'RG9ja2VycyBCdWlsZCAoYW1kKQ==') }}
@@ -64,13 +63,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -87,7 +85,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Dockers Build (amd)' --workflow "ReleaseBranchCI" --ci --timestamp
 
   dockers_build_arm:
-    runs-on: [self-hosted, style-checker-aarch64]
+    runs-on: [self-hosted, arm-tiny]
     needs:
     - config_workflow
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'RG9ja2VycyBCdWlsZCAoYXJtKQ==') }}
@@ -100,13 +98,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -123,7 +120,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Dockers Build (arm)' --workflow "ReleaseBranchCI" --ci --timestamp
 
   build_amd_debug:
-    runs-on: [self-hosted, arm-large]
+    runs-on: [self-hosted, arm-medium-cpu]
     needs:
     - config_workflow
     - dockers_build_amd
@@ -138,13 +135,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -161,7 +157,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (amd_debug)' --workflow "ReleaseBranchCI" --ci --timestamp
 
   build_amd_asan_ubsan:
-    runs-on: [self-hosted, arm-large]
+    runs-on: [self-hosted, arm-medium-cpu]
     needs:
     - config_workflow
     - dockers_build_amd
@@ -176,13 +172,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -199,7 +194,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (amd_asan_ubsan)' --workflow "ReleaseBranchCI" --ci --timestamp
 
   build_amd_tsan:
-    runs-on: [self-hosted, arm-large]
+    runs-on: [self-hosted, arm-medium-cpu]
     needs:
     - config_workflow
     - dockers_build_amd
@@ -214,13 +209,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -237,7 +231,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (amd_tsan)' --workflow "ReleaseBranchCI" --ci --timestamp
 
   build_amd_msan:
-    runs-on: [self-hosted, arm-large]
+    runs-on: [self-hosted, arm-medium-cpu]
     needs:
     - config_workflow
     - dockers_build_amd
@@ -252,13 +246,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -275,7 +268,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (amd_msan)' --workflow "ReleaseBranchCI" --ci --timestamp
 
   build_arm_debug:
-    runs-on: [self-hosted, arm-large]
+    runs-on: [self-hosted, arm-medium-cpu]
     needs:
     - config_workflow
     - dockers_build_amd
@@ -290,13 +283,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -313,7 +305,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (arm_debug)' --workflow "ReleaseBranchCI" --ci --timestamp
 
   build_arm_asan_ubsan:
-    runs-on: [self-hosted, arm-large]
+    runs-on: [self-hosted, arm-medium-cpu]
     needs:
     - config_workflow
     - dockers_build_amd
@@ -328,13 +320,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -351,7 +342,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (arm_asan_ubsan)' --workflow "ReleaseBranchCI" --ci --timestamp
 
   build_arm_tsan:
-    runs-on: [self-hosted, arm-large]
+    runs-on: [self-hosted, arm-medium-cpu]
     needs:
     - config_workflow
     - dockers_build_amd
@@ -366,13 +357,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -389,7 +379,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (arm_tsan)' --workflow "ReleaseBranchCI" --ci --timestamp
 
   build_arm_msan:
-    runs-on: [self-hosted, arm-large]
+    runs-on: [self-hosted, arm-medium-cpu]
     needs:
     - config_workflow
     - dockers_build_amd
@@ -404,13 +394,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -442,13 +431,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -480,13 +468,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -503,7 +490,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (arm_release)' --workflow "ReleaseBranchCI" --ci --timestamp
 
   build_amd_darwin:
-    runs-on: [self-hosted, amd-large]
+    runs-on: [self-hosted, amd-medium-cpu]
     needs:
     - config_workflow
     - dockers_build_amd
@@ -518,13 +505,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -541,7 +527,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (amd_darwin)' --workflow "ReleaseBranchCI" --ci --timestamp
 
   build_arm_darwin:
-    runs-on: [self-hosted, arm-large]
+    runs-on: [self-hosted, arm-medium-cpu]
     needs:
     - config_workflow
     - dockers_build_amd
@@ -556,13 +542,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -578,8 +563,45 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (arm_darwin)' --workflow "ReleaseBranchCI" --ci --timestamp
 
+  build_amd_illumos:
+    runs-on: [self-hosted, amd-medium-cpu]
+    needs:
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFtZF9pbGx1bW9zKQ==') }}
+    name: "Build (amd_illumos)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (amd_illumos)' --workflow "ReleaseBranchCI" --ci --timestamp
+
   sign_macos_binary_amd_darwin:
-    runs-on: [self-hosted, style-checker]
+    runs-on: [self-hosted, release-runner]
     needs:
     - build_amd_darwin
     - config_workflow
@@ -595,13 +617,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -618,7 +639,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Sign macOS binary (amd_darwin)' --workflow "ReleaseBranchCI" --ci --timestamp
 
   sign_macos_binary_arm_darwin:
-    runs-on: [self-hosted, style-checker]
+    runs-on: [self-hosted, release-runner]
     needs:
     - build_arm_darwin
     - config_workflow
@@ -634,13 +655,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -657,7 +677,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Sign macOS binary (arm_darwin)' --workflow "ReleaseBranchCI" --ci --timestamp
 
   docker_server_image:
-    runs-on: [self-hosted, style-checker]
+    runs-on: [self-hosted, amd-tiny]
     needs:
     - build_amd_release
     - build_arm_release
@@ -674,13 +694,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -697,7 +716,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Docker server image' --workflow "ReleaseBranchCI" --ci --timestamp
 
   docker_keeper_image:
-    runs-on: [self-hosted, style-checker]
+    runs-on: [self-hosted, amd-tiny]
     needs:
     - build_amd_release
     - build_arm_release
@@ -714,13 +733,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -736,15 +754,15 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Docker keeper image' --workflow "ReleaseBranchCI" --ci --timestamp
 
-  install_packages_amd_release:
-    runs-on: [self-hosted, style-checker]
+  install_packages_amd_release_deb:
+    runs-on: [self-hosted, amd-tiny]
     needs:
     - build_amd_release
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW5zdGFsbCBwYWNrYWdlcyAoYW1kX3JlbGVhc2Up') }}
-    name: "Install packages (amd_release)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW5zdGFsbCBwYWNrYWdlcyAoYW1kX3JlbGVhc2UsIGRlYik=') }}
+    name: "Install packages (amd_release, deb)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -753,13 +771,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -773,17 +790,93 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Install packages (amd_release)' --workflow "ReleaseBranchCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Install packages (amd_release, deb)' --workflow "ReleaseBranchCI" --ci --timestamp
 
-  install_packages_arm_release:
-    runs-on: [self-hosted, style-checker-aarch64]
+  install_packages_amd_release_rpm:
+    runs-on: [self-hosted, amd-tiny]
+    needs:
+    - build_amd_release
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW5zdGFsbCBwYWNrYWdlcyAoYW1kX3JlbGVhc2UsIHJwbSk=') }}
+    name: "Install packages (amd_release, rpm)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Install packages (amd_release, rpm)' --workflow "ReleaseBranchCI" --ci --timestamp
+
+  install_packages_amd_release_tgz:
+    runs-on: [self-hosted, amd-tiny]
+    needs:
+    - build_amd_release
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW5zdGFsbCBwYWNrYWdlcyAoYW1kX3JlbGVhc2UsIHRneik=') }}
+    name: "Install packages (amd_release, tgz)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Install packages (amd_release, tgz)' --workflow "ReleaseBranchCI" --ci --timestamp
+
+  install_packages_arm_release_deb:
+    runs-on: [self-hosted, arm-tiny]
     needs:
     - build_arm_release
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW5zdGFsbCBwYWNrYWdlcyAoYXJtX3JlbGVhc2Up') }}
-    name: "Install packages (arm_release)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW5zdGFsbCBwYWNrYWdlcyAoYXJtX3JlbGVhc2UsIGRlYik=') }}
+    name: "Install packages (arm_release, deb)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -792,13 +885,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -812,7 +904,83 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Install packages (arm_release)' --workflow "ReleaseBranchCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Install packages (arm_release, deb)' --workflow "ReleaseBranchCI" --ci --timestamp
+
+  install_packages_arm_release_rpm:
+    runs-on: [self-hosted, arm-tiny]
+    needs:
+    - build_arm_release
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW5zdGFsbCBwYWNrYWdlcyAoYXJtX3JlbGVhc2UsIHJwbSk=') }}
+    name: "Install packages (arm_release, rpm)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Install packages (arm_release, rpm)' --workflow "ReleaseBranchCI" --ci --timestamp
+
+  install_packages_arm_release_tgz:
+    runs-on: [self-hosted, arm-tiny]
+    needs:
+    - build_arm_release
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW5zdGFsbCBwYWNrYWdlcyAoYXJtX3JlbGVhc2UsIHRneik=') }}
+    name: "Install packages (arm_release, tgz)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Install packages (arm_release, tgz)' --workflow "ReleaseBranchCI" --ci --timestamp
 
   stateless_tests_amd_asan_ubsan_distributed_plan_parallel:
     runs-on: [self-hosted, amd-large]
@@ -831,13 +999,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -870,13 +1037,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -909,13 +1075,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -948,13 +1113,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -987,13 +1151,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -1026,13 +1189,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -1065,13 +1227,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -1087,15 +1248,15 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (msan)' --workflow "ReleaseBranchCI" --ci --timestamp
 
-  integration_tests_amd_asan_ubsan_db_disk_1_4:
+  integration_tests_amd_asan_ubsan_db_disk_1_8:
     runs-on: [self-hosted, amd-medium]
     needs:
     - build_amd_asan_ubsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuX3Vic2FuLCBkYiBkaXNrLCAxLzQp') }}
-    name: "Integration tests (amd_asan_ubsan, db disk, 1/4)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuX3Vic2FuLCBkYiBkaXNrLCAxLzgp') }}
+    name: "Integration tests (amd_asan_ubsan, db disk, 1/8)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -1104,13 +1265,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -1124,17 +1284,17 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan_ubsan, db disk, 1/4)' --workflow "ReleaseBranchCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan_ubsan, db disk, 1/8)' --workflow "ReleaseBranchCI" --ci --timestamp
 
-  integration_tests_amd_asan_ubsan_db_disk_2_4:
+  integration_tests_amd_asan_ubsan_db_disk_2_8:
     runs-on: [self-hosted, amd-medium]
     needs:
     - build_amd_asan_ubsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuX3Vic2FuLCBkYiBkaXNrLCAyLzQp') }}
-    name: "Integration tests (amd_asan_ubsan, db disk, 2/4)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuX3Vic2FuLCBkYiBkaXNrLCAyLzgp') }}
+    name: "Integration tests (amd_asan_ubsan, db disk, 2/8)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -1143,13 +1303,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -1163,17 +1322,17 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan_ubsan, db disk, 2/4)' --workflow "ReleaseBranchCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan_ubsan, db disk, 2/8)' --workflow "ReleaseBranchCI" --ci --timestamp
 
-  integration_tests_amd_asan_ubsan_db_disk_3_4:
+  integration_tests_amd_asan_ubsan_db_disk_3_8:
     runs-on: [self-hosted, amd-medium]
     needs:
     - build_amd_asan_ubsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuX3Vic2FuLCBkYiBkaXNrLCAzLzQp') }}
-    name: "Integration tests (amd_asan_ubsan, db disk, 3/4)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuX3Vic2FuLCBkYiBkaXNrLCAzLzgp') }}
+    name: "Integration tests (amd_asan_ubsan, db disk, 3/8)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -1182,13 +1341,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -1202,17 +1360,17 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan_ubsan, db disk, 3/4)' --workflow "ReleaseBranchCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan_ubsan, db disk, 3/8)' --workflow "ReleaseBranchCI" --ci --timestamp
 
-  integration_tests_amd_asan_ubsan_db_disk_4_4:
+  integration_tests_amd_asan_ubsan_db_disk_4_8:
     runs-on: [self-hosted, amd-medium]
     needs:
     - build_amd_asan_ubsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuX3Vic2FuLCBkYiBkaXNrLCA0LzQp') }}
-    name: "Integration tests (amd_asan_ubsan, db disk, 4/4)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuX3Vic2FuLCBkYiBkaXNrLCA0Lzgp') }}
+    name: "Integration tests (amd_asan_ubsan, db disk, 4/8)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -1221,13 +1379,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -1241,17 +1398,17 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan_ubsan, db disk, 4/4)' --workflow "ReleaseBranchCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan_ubsan, db disk, 4/8)' --workflow "ReleaseBranchCI" --ci --timestamp
 
-  integration_tests_amd_asan_ubsan_db_disk_old_analyzer_1_6:
+  integration_tests_amd_asan_ubsan_db_disk_5_8:
     runs-on: [self-hosted, amd-medium]
     needs:
     - build_amd_asan_ubsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuX3Vic2FuLCBkYiBkaXNrLCBvbGQgYW5hbHl6ZXIsIDEvNik=') }}
-    name: "Integration tests (amd_asan_ubsan, db disk, old analyzer, 1/6)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuX3Vic2FuLCBkYiBkaXNrLCA1Lzgp') }}
+    name: "Integration tests (amd_asan_ubsan, db disk, 5/8)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -1260,13 +1417,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -1280,17 +1436,17 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan_ubsan, db disk, old analyzer, 1/6)' --workflow "ReleaseBranchCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan_ubsan, db disk, 5/8)' --workflow "ReleaseBranchCI" --ci --timestamp
 
-  integration_tests_amd_asan_ubsan_db_disk_old_analyzer_2_6:
+  integration_tests_amd_asan_ubsan_db_disk_6_8:
     runs-on: [self-hosted, amd-medium]
     needs:
     - build_amd_asan_ubsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuX3Vic2FuLCBkYiBkaXNrLCBvbGQgYW5hbHl6ZXIsIDIvNik=') }}
-    name: "Integration tests (amd_asan_ubsan, db disk, old analyzer, 2/6)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuX3Vic2FuLCBkYiBkaXNrLCA2Lzgp') }}
+    name: "Integration tests (amd_asan_ubsan, db disk, 6/8)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -1299,13 +1455,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -1319,17 +1474,17 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan_ubsan, db disk, old analyzer, 2/6)' --workflow "ReleaseBranchCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan_ubsan, db disk, 6/8)' --workflow "ReleaseBranchCI" --ci --timestamp
 
-  integration_tests_amd_asan_ubsan_db_disk_old_analyzer_3_6:
+  integration_tests_amd_asan_ubsan_db_disk_7_8:
     runs-on: [self-hosted, amd-medium]
     needs:
     - build_amd_asan_ubsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuX3Vic2FuLCBkYiBkaXNrLCBvbGQgYW5hbHl6ZXIsIDMvNik=') }}
-    name: "Integration tests (amd_asan_ubsan, db disk, old analyzer, 3/6)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuX3Vic2FuLCBkYiBkaXNrLCA3Lzgp') }}
+    name: "Integration tests (amd_asan_ubsan, db disk, 7/8)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -1338,13 +1493,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -1358,17 +1512,17 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan_ubsan, db disk, old analyzer, 3/6)' --workflow "ReleaseBranchCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan_ubsan, db disk, 7/8)' --workflow "ReleaseBranchCI" --ci --timestamp
 
-  integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6:
+  integration_tests_amd_asan_ubsan_db_disk_8_8:
     runs-on: [self-hosted, amd-medium]
     needs:
     - build_amd_asan_ubsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuX3Vic2FuLCBkYiBkaXNrLCBvbGQgYW5hbHl6ZXIsIDQvNik=') }}
-    name: "Integration tests (amd_asan_ubsan, db disk, old analyzer, 4/6)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuX3Vic2FuLCBkYiBkaXNrLCA4Lzgp') }}
+    name: "Integration tests (amd_asan_ubsan, db disk, 8/8)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -1377,13 +1531,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -1397,95 +1550,17 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan_ubsan, db disk, old analyzer, 4/6)' --workflow "ReleaseBranchCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan_ubsan, db disk, 8/8)' --workflow "ReleaseBranchCI" --ci --timestamp
 
-  integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6:
-    runs-on: [self-hosted, amd-medium]
-    needs:
-    - build_amd_asan_ubsan
-    - config_workflow
-    - dockers_build_amd
-    - dockers_build_arm
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuX3Vic2FuLCBkYiBkaXNrLCBvbGQgYW5hbHl6ZXIsIDUvNik=') }}
-    name: "Integration tests (amd_asan_ubsan, db disk, old analyzer, 5/6)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan_ubsan, db disk, old analyzer, 5/6)' --workflow "ReleaseBranchCI" --ci --timestamp
-
-  integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6:
-    runs-on: [self-hosted, amd-medium]
-    needs:
-    - build_amd_asan_ubsan
-    - config_workflow
-    - dockers_build_amd
-    - dockers_build_arm
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuX3Vic2FuLCBkYiBkaXNrLCBvbGQgYW5hbHl6ZXIsIDYvNik=') }}
-    name: "Integration tests (amd_asan_ubsan, db disk, old analyzer, 6/6)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan_ubsan, db disk, old analyzer, 6/6)' --workflow "ReleaseBranchCI" --ci --timestamp
-
-  integration_tests_amd_tsan_1_6:
+  integration_tests_amd_tsan_1_8:
     runs-on: [self-hosted, amd-medium]
     needs:
     - build_amd_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCAxLzYp') }}
-    name: "Integration tests (amd_tsan, 1/6)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCAxLzgp') }}
+    name: "Integration tests (amd_tsan, 1/8)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -1494,13 +1569,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -1514,17 +1588,17 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 1/6)' --workflow "ReleaseBranchCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 1/8)' --workflow "ReleaseBranchCI" --ci --timestamp
 
-  integration_tests_amd_tsan_2_6:
+  integration_tests_amd_tsan_2_8:
     runs-on: [self-hosted, amd-medium]
     needs:
     - build_amd_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCAyLzYp') }}
-    name: "Integration tests (amd_tsan, 2/6)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCAyLzgp') }}
+    name: "Integration tests (amd_tsan, 2/8)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -1533,13 +1607,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -1553,17 +1626,17 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 2/6)' --workflow "ReleaseBranchCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 2/8)' --workflow "ReleaseBranchCI" --ci --timestamp
 
-  integration_tests_amd_tsan_3_6:
+  integration_tests_amd_tsan_3_8:
     runs-on: [self-hosted, amd-medium]
     needs:
     - build_amd_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCAzLzYp') }}
-    name: "Integration tests (amd_tsan, 3/6)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCAzLzgp') }}
+    name: "Integration tests (amd_tsan, 3/8)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -1572,13 +1645,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -1592,17 +1664,17 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 3/6)' --workflow "ReleaseBranchCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 3/8)' --workflow "ReleaseBranchCI" --ci --timestamp
 
-  integration_tests_amd_tsan_4_6:
+  integration_tests_amd_tsan_4_8:
     runs-on: [self-hosted, amd-medium]
     needs:
     - build_amd_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCA0LzYp') }}
-    name: "Integration tests (amd_tsan, 4/6)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCA0Lzgp') }}
+    name: "Integration tests (amd_tsan, 4/8)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -1611,13 +1683,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -1631,17 +1702,17 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 4/6)' --workflow "ReleaseBranchCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 4/8)' --workflow "ReleaseBranchCI" --ci --timestamp
 
-  integration_tests_amd_tsan_5_6:
+  integration_tests_amd_tsan_5_8:
     runs-on: [self-hosted, amd-medium]
     needs:
     - build_amd_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCA1LzYp') }}
-    name: "Integration tests (amd_tsan, 5/6)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCA1Lzgp') }}
+    name: "Integration tests (amd_tsan, 5/8)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -1650,13 +1721,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -1670,17 +1740,17 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 5/6)' --workflow "ReleaseBranchCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 5/8)' --workflow "ReleaseBranchCI" --ci --timestamp
 
-  integration_tests_amd_tsan_6_6:
+  integration_tests_amd_tsan_6_8:
     runs-on: [self-hosted, amd-medium]
     needs:
     - build_amd_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCA2LzYp') }}
-    name: "Integration tests (amd_tsan, 6/6)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCA2Lzgp') }}
+    name: "Integration tests (amd_tsan, 6/8)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -1689,13 +1759,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -1709,7 +1778,83 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 6/6)' --workflow "ReleaseBranchCI" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 6/8)' --workflow "ReleaseBranchCI" --ci --timestamp
+
+  integration_tests_amd_tsan_7_8:
+    runs-on: [self-hosted, amd-medium]
+    needs:
+    - build_amd_tsan
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCA3Lzgp') }}
+    name: "Integration tests (amd_tsan, 7/8)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 7/8)' --workflow "ReleaseBranchCI" --ci --timestamp
+
+  integration_tests_amd_tsan_8_8:
+    runs-on: [self-hosted, amd-medium]
+    needs:
+    - build_amd_tsan
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCA4Lzgp') }}
+    name: "Integration tests (amd_tsan, 8/8)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 8/8)' --workflow "ReleaseBranchCI" --ci --timestamp
 
   stress_test_amd_debug:
     runs-on: [self-hosted, amd-medium]
@@ -1728,13 +1873,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -1767,13 +1911,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -1806,13 +1949,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -1845,13 +1987,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -1884,13 +2025,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -1923,13 +2063,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -1962,13 +2101,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -2001,13 +2139,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -2040,13 +2177,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -2079,13 +2215,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -2102,11 +2237,12 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Stress test (arm_msan)' --workflow "ReleaseBranchCI" --ci --timestamp
 
   finish_workflow:
-    runs-on: [self-hosted, style-checker-aarch64]
+    runs-on: [self-hosted, arm-tiny]
     needs:
     - build_amd_asan_ubsan
     - build_amd_darwin
     - build_amd_debug
+    - build_amd_illumos
     - build_amd_msan
     - build_amd_release
     - build_amd_tsan
@@ -2121,24 +2257,28 @@ jobs:
     - docker_server_image
     - dockers_build_amd
     - dockers_build_arm
-    - install_packages_amd_release
-    - install_packages_arm_release
-    - integration_tests_amd_asan_ubsan_db_disk_1_4
-    - integration_tests_amd_asan_ubsan_db_disk_2_4
-    - integration_tests_amd_asan_ubsan_db_disk_3_4
-    - integration_tests_amd_asan_ubsan_db_disk_4_4
-    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_1_6
-    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_2_6
-    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_3_6
-    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
-    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
-    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - integration_tests_amd_tsan_1_6
-    - integration_tests_amd_tsan_2_6
-    - integration_tests_amd_tsan_3_6
-    - integration_tests_amd_tsan_4_6
-    - integration_tests_amd_tsan_5_6
-    - integration_tests_amd_tsan_6_6
+    - install_packages_amd_release_deb
+    - install_packages_amd_release_rpm
+    - install_packages_amd_release_tgz
+    - install_packages_arm_release_deb
+    - install_packages_arm_release_rpm
+    - install_packages_arm_release_tgz
+    - integration_tests_amd_asan_ubsan_db_disk_1_8
+    - integration_tests_amd_asan_ubsan_db_disk_2_8
+    - integration_tests_amd_asan_ubsan_db_disk_3_8
+    - integration_tests_amd_asan_ubsan_db_disk_4_8
+    - integration_tests_amd_asan_ubsan_db_disk_5_8
+    - integration_tests_amd_asan_ubsan_db_disk_6_8
+    - integration_tests_amd_asan_ubsan_db_disk_7_8
+    - integration_tests_amd_asan_ubsan_db_disk_8_8
+    - integration_tests_amd_tsan_1_8
+    - integration_tests_amd_tsan_2_8
+    - integration_tests_amd_tsan_3_8
+    - integration_tests_amd_tsan_4_8
+    - integration_tests_amd_tsan_5_8
+    - integration_tests_amd_tsan_6_8
+    - integration_tests_amd_tsan_7_8
+    - integration_tests_amd_tsan_8_8
     - sign_macos_binary_amd_darwin
     - sign_macos_binary_arm_darwin
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
@@ -2168,13 +2308,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}

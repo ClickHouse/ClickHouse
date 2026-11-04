@@ -24,12 +24,12 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 ```sql
 SELECT count()
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet', NOSIGN)
 ```
 
 ```response
 ┌────count()─┐
-│ 2039988137 │ -- 2.04 миллиарда
+│ 2039988137 │ -- 2.04 billion
 └────────────┘
 
 1 row in set. Elapsed: 32.726 sec. Processed 2.04 billion rows, 170.05 KB (62.34 million rows/s., 5.20 KB/s.)
@@ -41,7 +41,7 @@ Peak memory usage: 239.50 MiB.
 Мы предполагаем, что пользователь получает поток этих данных, например из Kafka или объектного хранилища, начиная с этой даты. Схема этих данных показана ниже:
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet', NOSIGN)
 FORMAT PrettyCompactNoEscapesMonoBlock
 SETTINGS describe_compact_output = 1
 ```
@@ -127,7 +127,7 @@ GROUP BY project
 
 ```sql
 INSERT INTO pypi SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{000..100}.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{000..100}.parquet', NOSIGN)
 ```
 
 ```response
@@ -141,7 +141,7 @@ SELECT count() FROM pypi
 
 ```response
 ┌──count()─┐
-│ 20612750 │ -- 20.61 миллиона
+│ 20612750 │ -- 20.61 million
 └──────────┘
 
 1 row in set. Elapsed: 0.004 sec.
@@ -154,7 +154,7 @@ FROM pypi_downloads
 
 ```response
 ┌─sum(count)─┐
-│   20612750 │ -- 20,61 миллиона
+│   20612750 │ -- 20.61 million
 └────────────┘
 
 1 row in set. Elapsed: 0.006 sec. Processed 96.15 thousand rows, 769.23 KB (16.53 million rows/s., 132.26 MB/s.)
@@ -180,11 +180,11 @@ FROM pypi_v2
 GROUP BY project
 ```
 
-Заполняем его вторым подмножеством приблизительно того же размера и подтверждаем успешную загрузку.
+Заполняем её вторым подмножеством примерно того же размера и подтверждаем успешную загрузку.
 
 ```sql
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet', NOSIGN)
 ```
 
 ```response
@@ -199,7 +199,7 @@ FROM pypi_v2
 
 ```response
 ┌──count()─┐
-│ 20400020 │ -- 20.40 миллиона
+│ 20400020 │ -- 20.40 million
 └──────────┘
 
 1 row in set. Elapsed: 0.004 sec.
@@ -212,7 +212,7 @@ FROM pypi_downloads_v2
 
 ```response
 ┌─sum(count)─┐
-│   20400020 │ -- 20,40 миллиона
+│   20400020 │ -- 20.40 million
 └────────────┘
 
 1 row in set. Elapsed: 0.006 sec. Processed 95.49 thousand rows, 763.90 KB (14.81 million rows/s., 118.45 MB/s.)
@@ -221,7 +221,7 @@ Peak memory usage: 688.77 KiB.
 
 Если бы на любом этапе этой второй загрузки произошёл сбой, мы могли бы просто [TRUNCATE](/ru/concepts/features/operations/delete/truncate) наши `pypi_v2` и `pypi_downloads_v2` и повторить загрузку данных.
 
-Теперь, когда загрузка данных завершена, мы можем переместить данные из наших таблиц-дубликатов в основные таблицы с помощью оператора [`ALTER TABLE MOVE PARTITION`](/ru/reference/statements/alter/partition#move-partition-to-table).
+Теперь, когда загрузка данных завершена, мы можем переместить данные из наших дублирующих таблиц в основные таблицы с помощью оператора [`ALTER TABLE MOVE PARTITION`](/ru/reference/statements/alter/partition#move-partition-to-table).
 
 ```sql
 ALTER TABLE pypi_v2 MOVE PARTITION () TO pypi
@@ -254,7 +254,7 @@ FROM pypi
 
 ```response
 ┌──count()─┐
-│ 41012770 │ -- 41,01 миллиона
+│ 41012770 │ -- 41.01 million
 └──────────┘
 
 1 row in set. Elapsed: 0.003 sec.
@@ -267,7 +267,7 @@ FROM pypi_downloads
 
 ```response
 ┌─sum(count)─┐
-│   41012770 │ -- 41,01 миллиона
+│   41012770 │ -- 41.01 million
 └────────────┘
 
 1 row in set. Elapsed: 0.007 sec. Processed 191.64 thousand rows, 1.53 MB (27.34 million rows/s., 218.74 MB/s.)
@@ -288,12 +288,12 @@ FROM pypi_v2
 
 ```sql
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet', NOSIGN)
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{201..300}.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{201..300}.parquet', NOSIGN)
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{301..400}.parquet')
---продолжается до загрузки всех файлов ИЛИ до выполнения вызова MOVE PARTITION
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{301..400}.parquet', NOSIGN)
+--continued to all files loaded OR MOVE PARTITION call is performed
 ```
 
 <Note>
@@ -312,7 +312,7 @@ FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-
 2. Создайте дубликаты основной таблицы и целевых таблиц для materialized views.
 3. Создайте копии всех materialized views, указывающих на целевые таблицы, созданные на шаге (2).
 4. Выполните вставку в дубликат основной таблицы, созданный на шаге (2).
-5. Переместите все партиции из таблиц-дубликатов в их исходные версии. Удалите таблицы-дубликаты.
+5. Переместите все партиции из дублирующих таблиц в их исходные версии. Удалите дублирующие таблицы.
 
 Например, предположим, что в данных PyPI у нас уже есть загруженные данные. Мы можем определить минимальную временную метку и, таким образом, нашу &quot;контрольную точку&quot;.
 
@@ -330,7 +330,7 @@ FROM pypi
 Peak memory usage: 227.84 MiB.
 ```
 
-Из сказанного выше следует, что нам нужно загрузить данные до `2024-12-17 09:00:00`. Используя описанный ранее процесс, мы создаем таблицы-дубликаты и представления и загружаем подмножество данных, применяя фильтр по временной метке.
+Из сказанного выше следует, что нам нужно загрузить данные до `2024-12-17 09:00:00`. Используя описанный ранее процесс, мы создаем дублирующие таблицы и представления и загружаем подмножество данных, применяя фильтр по временной метке.
 
 ```sql
 CREATE TABLE pypi_v2 AS pypi
@@ -343,7 +343,7 @@ FROM pypi_v2
 GROUP BY project
 
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-*.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-*.parquet', NOSIGN)
 WHERE timestamp < '2024-12-17 09:00:00'
 ```
 
@@ -368,7 +368,7 @@ ALTER TABLE pypi_downloads_v2 MOVE PARTITION () TO pypi_downloads
 <Info>
   **Просто используйте ClickPipes в ClickHouse Cloud**
 
-  Если вы используете ClickHouse Cloud, для восстановления исторических резервных копий следует использовать ClickPipes, если данные можно изолировать в отдельном бакете (и фильтр не требуется). Помимо сокращения времени загрузки за счет распараллеливания между несколькими воркерами, ClickPipes автоматизирует описанный выше процесс и создает таблицы-дубликаты как для основной таблицы, так и для materialized views.
+  Если вы используете ClickHouse Cloud, для восстановления исторических резервных копий следует использовать ClickPipes, если данные можно изолировать в отдельном бакете (и фильтр не требуется). Помимо сокращения времени загрузки за счет распараллеливания между несколькими воркерами, ClickPipes автоматизирует описанный выше процесс и создает дублирующие таблицы как для основной таблицы, так и для materialized views.
 </Info>
 
 <div id="scenario-2-adding-materialized-views-to-existing-tables">
@@ -526,10 +526,10 @@ Peak memory usage: 639.47 MiB.
   ##### Настройка производительности &amp; ресурсов
 </div>
 
-Производительность и ресурсы, задействованные в описанном сценарии, определяются рядом факторов. Прежде чем приступать к настройке, рекомендуем ознакомиться с механикой вставки, подробно описанной в разделе [Using Threads for Reads](/ru/integrations/connectors/data-ingestion/AWS/performance#using-threads-for-reads) руководства [Optimizing for S3 Insert and Read Performance guide](/ru/integrations/connectors/data-ingestion/AWS/performance). Вкратце:
+Производительность и ресурсы, задействованные в описанном сценарии, определяются рядом факторов. Прежде чем приступать к настройке, рекомендуем ознакомиться с механикой вставки, подробно описанной в разделе [Using Threads for Reads](/ru/integrations/connectors/data-ingestion/AWS/performance#using-threads-for-reads) руководства [Оптимизация производительности вставки и чтения для S3](/ru/integrations/connectors/data-ingestion/AWS/performance). Вкратце:
 
 * **Параллелизм чтения** — количество потоков, используемых для чтения. Управляется через [`max_threads`](/ru/reference/settings/session-settings/max-threads#max_threads). В ClickHouse Cloud это значение определяется размером инстанса и по умолчанию равно числу vCPU. Увеличение этого значения может повысить производительность чтения, но приведёт к большему использованию памяти.
-* **Параллелизм вставки** - Количество потоков вставки, используемых для выполнения вставки. Управляется через [`max_insert_threads`](/ru/reference/settings/session-settings/max-insert#max_insert_threads). **Примечание**: Это значение ограничивается `max_threads`, поэтому фактический параллелизм вставки равен `min(max_insert_threads, max_threads)`. В ClickHouse Cloud он определяется размером инстанса (от 2 до 4), а в OSS установлен в 1. Увеличение этого значения может повысить производительность ценой более высокого использования памяти.
+* **Параллелизм вставки** - Количество потоков вставки, используемых для выполнения вставки. Управляется через [`max_insert_threads`](/ru/reference/settings/session-settings/max-insert#max_insert_threads). Для положительных значений фактический параллелизм вставки равен `min(max_insert_threads, max_threads)`. Значение `0` автоматически устанавливается равным количеству ядер CPU и может быть уменьшено при нехватке памяти с помощью [`max_insert_threads_min_free_memory_per_thread`](/ru/reference/settings/session-settings/max-insert#max_insert_threads_min_free_memory_per_thread). В ClickHouse Cloud значение по умолчанию определяется размером инстанса: `1` для узлов с 8 GiB памяти, `2` для узлов с 16 GiB и `4` для более крупных узлов. В OSS, начиная с версии 26.8, значение по умолчанию равно `0`. Увеличение этого значения может повысить производительность ценой более высокого использования памяти.
 * **Размер блока вставки** - данные обрабатываются в цикле: их считывают, разбирают и формируют в находящиеся в памяти блоки вставки на основе [ключа партиционирования](/ru/reference/engines/table-engines/mergetree-family/custom-partitioning-key). Затем эти блоки сортируются, оптимизируются, сжимаются и записываются в хранилище как новые [части данных](/ru/concepts/core-concepts/parts). Размер блока вставки, задаваемый настройками [`min_insert_block_size_rows`](/ru/reference/settings/session-settings/min-insert#min_insert_block_size_rows) и [`min_insert_block_size_bytes`](/ru/reference/settings/session-settings/min-insert#min_insert_block_size_bytes) (в несжатом виде), влияет на использование памяти и дисковый ввод-вывод. Более крупные блоки требуют больше памяти, но создают меньше частей, снижая I/O и количество фоновых слияний. Эти настройки задают минимальные пороги (сброс происходит при достижении первого из них).
 * **Размер блока materialized view** — Помимо описанного выше механизма основной вставки, перед вставкой в materialized view блоки также укрупняются для более эффективной обработки. Размер этих блоков определяется настройками [`min_insert_block_size_bytes_for_materialized_views`](/ru/reference/settings/session-settings/min-insert#min_insert_block_size_bytes_for_materialized_views) и [`min_insert_block_size_rows_for_materialized_views`](/ru/reference/settings/session-settings/min-insert#min_insert_block_size_rows_for_materialized_views). Более крупные блоки обеспечивают более эффективную обработку, но ценой большего использования памяти. По умолчанию эти настройки принимают значения настроек исходной таблицы [`min_insert_block_size_rows`](/ru/reference/settings/session-settings/min-insert#min_insert_block_size_rows) и [`min_insert_block_size_bytes`](/ru/reference/settings/session-settings/min-insert#min_insert_block_size_bytes) соответственно.
 
