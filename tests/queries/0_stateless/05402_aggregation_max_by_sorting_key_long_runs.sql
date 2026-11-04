@@ -38,14 +38,14 @@ SELECT k, count(), min(m), max(m) FROM (SELECT k, m FROM t ORDER BY k, m LIMIT 2
 
 DROP TABLE t;
 
--- One run of 100000 granules. Counting the rows of the run once per granule would take minutes here. Only the plans are
--- checked: reading every granule of this table is slow, and the results are checked on the small table above.
--- A `Wide` part: a `Compact` part compresses every granule separately, which takes minutes for 100000 granules in
--- debug builds.
+-- One run of 10000 granules. Counting the rows of the run once per granule would take about 50 million comparisons
+-- here. It is not larger, because writing a part of one-row granules is slow in sanitizer builds on object storage.
+-- Only the plans are checked: reading every granule of this table is slow, and the results are checked on the small
+-- table above. A `Wide` part: a `Compact` part compresses every granule separately, which is slow in debug builds.
 DROP TABLE IF EXISTS t_long;
 CREATE TABLE t_long (k UInt8, m UInt32) ENGINE = MergeTree ORDER BY (k, m)
     SETTINGS index_granularity = 1, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
-INSERT INTO t_long SELECT 1, number FROM numbers(100000);
+INSERT INTO t_long SELECT 1, number FROM numbers(10000);
 
 SELECT '-- long run, LIMIT longer than the run, DESC and ASC';
 SELECT if(has(lines, 'MaxBySortingKey'), lines[indexOf(lines, 'MaxBySortingKey') + 3], 'not applied') AS granules
