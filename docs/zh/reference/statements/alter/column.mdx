@@ -19,6 +19,14 @@ ALTER [TEMPORARY] TABLE [db].name [ON CLUSTER cluster] ADD|DROP|RENAME|CLEAR|COM
 在查询中，指定一个由一个或多个以逗号分隔的操作组成的列表。
 每个操作都是对某一列执行的一项操作。
 
+例如，一条语句可以删除一列并添加另一列：
+
+```sql
+ALTER TABLE visits DROP COLUMN browser, ADD COLUMN referrer String;
+```
+
+此类查询是否会在对现有数据的处理完成之前返回，取决于 [`alter_sync`](/zh/reference/settings/session-settings/alter#alter_sync)。该设置同样适用于 `DROP COLUMN` 或 `MODIFY COLUMN` 类型更改所产生的变更；而 [`mutations_sync`](/zh/reference/settings/session-settings/mutations#mutations_sync) 则适用于经由变更路径执行的 [MATERIALIZE COLUMN](#materialize-column)。二者均在 [ALTER 查询的同步性](/zh/reference/statements/alter/index#synchronicity-of-alter-queries) 中有详细说明。
+
 支持以下操作：
 
 * [ADD COLUMN](#add-column) — 向表中添加新列。
@@ -34,9 +42,7 @@ ALTER [TEMPORARY] TABLE [db].name [ON CLUSTER cluster] ADD|DROP|RENAME|CLEAR|COM
 * [MATERIALIZE COLUMN](#materialize-column) — 在缺少该列的 parts 中将该列物化。
   下文将详细介绍这些操作。
 
-<div id="add-column">
-  ## ADD COLUMN
-</div>
+## ADD COLUMN {#add-column}
 
 ```sql
 ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [COMMENT 'comment for column'] [codec] [STATISTICS] [TTL] [settings] [AFTER name_after | FIRST]
@@ -72,9 +78,7 @@ ToDrop  UInt32
 Added3  UInt32
 ```
 
-<div id="drop-column">
-  ## DROP COLUMN
-</div>
+## DROP COLUMN {#drop-column}
 
 ```sql
 DROP COLUMN [IF EXISTS] name
@@ -94,9 +98,7 @@ DROP COLUMN [IF EXISTS] name
 ALTER TABLE visits DROP COLUMN browser
 ```
 
-<div id="rename-column">
-  ## RENAME COLUMN
-</div>
+## RENAME COLUMN {#rename-column}
 
 ```sql
 RENAME COLUMN [IF EXISTS] name to new_name
@@ -112,9 +114,7 @@ RENAME COLUMN [IF EXISTS] name to new_name
 ALTER TABLE visits RENAME COLUMN webBrowser TO browser
 ```
 
-<div id="clear-column">
-  ## CLEAR COLUMN
-</div>
+## CLEAR COLUMN {#clear-column}
 
 ```sql
 CLEAR COLUMN [IF EXISTS] name IN PARTITION partition_name
@@ -130,9 +130,7 @@ CLEAR COLUMN [IF EXISTS] name IN PARTITION partition_name
 ALTER TABLE visits CLEAR COLUMN browser IN PARTITION tuple()
 ```
 
-<div id="comment-column">
-  ## COMMENT COLUMN
-</div>
+## COMMENT COLUMN {#comment-column}
 
 ```sql
 COMMENT COLUMN [IF EXISTS] name 'Text comment'
@@ -150,9 +148,7 @@ COMMENT COLUMN [IF EXISTS] name 'Text comment'
 ALTER TABLE visits COMMENT COLUMN browser 'This column shows the browser used for accessing the site.'
 ```
 
-<div id="modify-column">
-  ## MODIFY COLUMN
-</div>
+## MODIFY COLUMN {#modify-column}
 
 ```sql
 MODIFY COLUMN [IF EXISTS] name
@@ -187,7 +183,7 @@ ALTER COLUMN [IF EXISTS] name
 
 如果指定了 `IF EXISTS` 子句，则当该列不存在时，查询不会报错。
 
-更改类型时，值会按对其应用 [toType](/zh/reference/functions/regular-functions/type-conversion-functions) 函数后的方式进行转换。如果仅更改默认表达式，查询不会执行任何复杂操作，几乎会立即完成。
+更改类型时，值会按对其应用 [toType](/zh/reference/functions/regular-functions/type-conversion-functions) 函数后的方式进行转换。如果仅更改默认表达式，该查询只会修改元数据。
 
 示例：
 
@@ -195,7 +191,9 @@ ALTER COLUMN [IF EXISTS] name
 ALTER TABLE visits MODIFY COLUMN browser Array(String)
 ```
 
-更改列类型是唯一较为复杂的操作——它会改动数据文件中的内容。对于大型表，这可能需要很长时间。
+某些类型更改仅涉及元数据，因为其磁盘上的存储表示保持不变。这类更改包括扩展枚举，以及 `Date` 与 `UInt16` 之间、`DateTime` 与 `UInt32` 之间的转换；同样的规则也递归适用于 `Array` 和 `Nullable` 类型内部。启用相应设置后，某些 JSON 类型提示的更改以及为命名元组新增元素，也可以避免立即重写数据。
+
+其他类型更改会创建一个 `READ_COLUMN` 变更，用于重写现有 parts 中受影响的列。等待行为由 [`alter_sync`](/zh/reference/settings/session-settings/alter#alter_sync) 控制：在 ClickHouse 中默认值为 `1`，在 ClickHouse Cloud 中默认值为 `0`。可在 [`system.mutations`](/zh/reference/system-tables/mutations) 中监控进度。
 
 该查询还可以使用 `FIRST | AFTER` 子句更改列的顺序，参见 [ADD COLUMN](#add-column) 的说明，但在这种情况下必须指定列类型。
 
@@ -239,9 +237,7 @@ DESCRIBE users;
   将 Nullable 列改为 Non-Nullable 时请务必小心。请确保该列中不含任何 `NULL` 值，否则读取时会出现问题。在这种情况下，可行的处理办法是终止该变更，并将该列改回 Nullable 类型。
 </Note>
 
-<div id="modify-column-remove">
-  ## MODIFY COLUMN REMOVE
-</div>
+## MODIFY COLUMN REMOVE {#modify-column-remove}
 
 移除以下列属性之一：`DEFAULT`、`ALIAS`、`MATERIALIZED`、`CODEC`、`COMMENT`、`TTL`、`SETTINGS`。
 
@@ -263,9 +259,7 @@ ALTER TABLE table_with_ttl MODIFY COLUMN column_ttl REMOVE TTL;
 
 * [REMOVE TTL](/zh/reference/statements/alter/ttl).
 
-<div id="modify-column-modify-setting">
-  ## MODIFY COLUMN MODIFY SETTING
-</div>
+## MODIFY COLUMN MODIFY SETTING {#modify-column-modify-setting}
 
 修改列的设置。
 
@@ -283,9 +277,7 @@ ALTER TABLE table_name MODIFY COLUMN column_name MODIFY SETTING name=value,...;
 ALTER TABLE table_name MODIFY COLUMN column_name MODIFY SETTING max_compress_block_size = 1048576;
 ```
 
-<div id="modify-column-reset-setting">
-  ## MODIFY COLUMN RESET SETTING
-</div>
+## MODIFY COLUMN RESET SETTING {#modify-column-reset-setting}
 
 重置列设置，同时也会移除该表 CREATE 查询中列表达式里的设置声明。
 
@@ -303,9 +295,7 @@ ALTER TABLE table_name MODIFY COLUMN column_name RESET SETTING name,...;
 ALTER TABLE table_name MODIFY COLUMN column_name RESET SETTING max_compress_block_size;
 ```
 
-<div id="modify-column-add-enum-values">
-  ## MODIFY COLUMN ADD ENUM VALUES
-</div>
+## MODIFY COLUMN ADD ENUM VALUES {#modify-column-add-enum-values}
 
 为类型为 `Enum`、`Enum8`、`Enum16`、`Nullable(Enum)`、`Nullable(Enum8)` 或 `Nullable(Enum16)` 的列添加新值
 
@@ -323,9 +313,7 @@ ALTER TABLE table_name MODIFY COLUMN enum_column_name ADD ENUM VALUES ('EnumName
 ALTER TABLE table_name MODIFY COLUMN enum_column_name ADD ENUM VALUES ('Hundred' = 100, 'HundredOne');
 ```
 
-<div id="materialize-column">
-  ## MATERIALIZE COLUMN
-</div>
+## MATERIALIZE COLUMN {#materialize-column}
 
 将具有 `DEFAULT` 或 `MATERIALIZED` 值表达式的列物化。使用 `ALTER TABLE table_name ADD COLUMN column_name MATERIALIZED` 添加物化列时，现有行中缺失的物化值不会自动补齐。添加或更新 `DEFAULT` 或 `MATERIALIZED` 表达式后，`MATERIALIZE COLUMN` 语句可用于重写现有列数据 (因为这类操作只会更新元数据，不会更改现有数据) 。请注意，对排序键中的列执行物化是无效操作，因为这可能会破坏排序顺序。
 其实现方式为 [变更](/zh/reference/statements/alter/index#mutations)。
@@ -396,9 +384,7 @@ SELECT groupArray(x), groupArray(s) FROM tmp;
 * [MATERIALIZED](/zh/reference/statements/create/view#materialized-view)。
 * [MATERIALIZE INDEX](/zh/reference/statements/alter/skipping-index#materialize-index)。
 
-<div id="limitations">
-  ## 限制
-</div>
+## 限制 {#limitations}
 
 `ALTER` 查询允许在嵌套数据结构中创建和删除单个元素 (列) ，但不支持创建或删除整个嵌套数据结构。要添加嵌套数据结构，可以添加名称类似 `name.nested_name`、类型为 `Array(T)` 的列。嵌套数据结构等价于多个数组列，这些列的名称在点号前具有相同的前缀。
 

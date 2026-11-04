@@ -48,6 +48,15 @@ TO S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/full/', 'ACCESS_KE
 SETTINGS experimental_lightweight_snapshot = true, id = 'full_snapshot_1'
 ```
 
+Backup table DDL without data (restores an empty table with the correct schema):
+
+```sql
+BACKUP TABLE mydb.events
+EXCEPT DATA FROM TABLE mydb.events
+TO S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/events_schema/', 'ACCESS_KEY_ID', 'SECRET_ACCESS_KEY')
+SETTINGS experimental_lightweight_snapshot = true, id = 'events_schema_snapshot'
+```
+
 The same commands work with Azure Blob Storage:
 
 ```sql

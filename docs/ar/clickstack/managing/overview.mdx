@@ -9,24 +9,21 @@ keywords: ['إدارة ClickStack', 'الأداء', 'العروض المُجسّ
 
 يشرح هذا القسم كيفية إدارة ClickStack.
 
-<div id="admin-guides">
-  ## أدلة المسؤول
-</div>
+## أدلة المسؤول {#admin-guides}
 
-| القسم                                                        | الوصف                                                                                                             |
-| ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
-| [الإدارة الأساسية](/ar/clickstack/managing/admin)               | مقدمة لتنفيذ المهام الإدارية الشائعة في ClickStack.                                                               |
-| [خيارات التهيئة](/ar/clickstack/managing/config)                | خيارات التهيئة المتاحة لكل مكوّن في ClickStack.                                                                   |
-| [تقدير الموارد](/ar/clickstack/managing/estimating-resources)   | إرشادات لتحديد حجم موارد الحوسبة في Managed ClickStack استنادًا إلى حجم البيانات المُدخلة.                        |
-| [الانتقال إلى بيئة الإنتاج](/ar/clickstack/managing/production) | الخطوات الموصى بها وأفضل الممارسات قبل تشغيل ClickStack في بيئة الإنتاج.                                          |
-| [العروض المُجسَّدة](/ar/clickstack/managing/materialized-views) | دليل مفصل لاستخدام العروض المُجسَّدة في ClickStack لتسريع أداء الاستعلامات.                                       |
-| [ضبط الأداء](/ar/clickstack/managing/performance-tuning)        | دليل شامل لضبط ClickStack لأحمال العمل واسعة النطاق.                                                              |
-| [RBAC](/ar/clickstack/managing/rbac)                            | تهيئة التحكم في الوصول المستند إلى الأدوار لإدارة أذونات الفريق للوحات المعلومات وعمليات البحث المحفوظة والمصادر. |
-| [إدارة TTL](/ar/clickstack/managing/ttl)                        | إدارة الاحتفاظ بالبيانات باستخدام TTL (time-to-live) في ClickStack.                                               |
+| القسم                                                             | الوصف                                                                                                             |
+| ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| [الإدارة الأساسية](/ar/clickstack/managing/admin)                    | مقدمة لتنفيذ المهام الإدارية الشائعة في ClickStack.                                                               |
+| [خيارات التهيئة](/ar/clickstack/managing/config)                     | خيارات التهيئة المتاحة لكل مكوّن في ClickStack.                                                                   |
+| [تقدير الموارد](/ar/clickstack/managing/estimating-resources)        | إرشادات لتحديد حجم موارد الحوسبة في Managed ClickStack استنادًا إلى حجم البيانات المُدخلة.                        |
+| [الانتقال إلى بيئة الإنتاج](/ar/clickstack/managing/production)      | الخطوات الموصى بها وأفضل الممارسات قبل تشغيل ClickStack في بيئة الإنتاج.                                          |
+| [عزل القراءة والكتابة](/ar/clickstack/managing/isolating-read-write) | فصل أعباء عمل الإدخال والاستعلام في ClickStack على موارد حوسبة مخصصة باستخدام warehouses في ClickHouse Cloud.     |
+| [العروض المُجسَّدة](/ar/clickstack/managing/materialized-views)      | دليل مفصل لاستخدام العروض المُجسَّدة في ClickStack لتسريع أداء الاستعلامات.                                       |
+| [ضبط الأداء](/ar/clickstack/managing/performance-tuning)             | دليل شامل لضبط ClickStack لأحمال العمل واسعة النطاق.                                                              |
+| [RBAC](/ar/clickstack/managing/rbac)                                 | تهيئة التحكم في الوصول المستند إلى الأدوار لإدارة أذونات الفريق للوحات المعلومات وعمليات البحث المحفوظة والمصادر. |
+| [إدارة TTL](/ar/clickstack/managing/ttl)                             | إدارة الاحتفاظ بالبيانات باستخدام TTL (time-to-live) في ClickStack.                                               |
 
-<div id="core-concepts">
-  ## مفاهيم ClickHouse الأساسية
-</div>
+## مفاهيم ClickHouse الأساسية {#core-concepts}
 
 تتطلب معظم مهام إدارة ClickStack الإلمام بقاعدة بيانات ClickHouse التي يستند إليها. نوصي بمراجعة مفاهيم ClickHouse الأساسية التالية الموضحة أدناه قبل تنفيذ العمليات الإدارية أو العمليات المتعلقة بالأداء.
 

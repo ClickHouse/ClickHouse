@@ -19,6 +19,9 @@ public:
 
     UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
 
+    /// The complete block `compress(source, source_size, dest)` writes, given the source with `completed_stages` stages already applied.
+    UInt32 compressRemainingStages(size_t completed_stages, const char * input, UInt32 input_size, UInt32 source_size, char * dest) const;
+
     static VectorWithMemoryTracking<uint8_t> getCodecsBytesFromData(const char * source);
 
     /// The pipeline stages, in application order (the generic-compression stage, if any, is among them).
@@ -39,6 +42,9 @@ protected:
     String getDescription() const override { return "Apply multiple codecs consecutively defined by user."; }
 
 private:
+    /// Writes what follows the 9-byte block header: the codec list (count + method bytes), then `input` compressed by all stages after `completed_stages`.
+    UInt32 compressBody(size_t completed_stages, const char * input, UInt32 input_size, UInt32 dest_size, char * dest) const;
+
     std::optional<Codecs> codecs;
 };
 

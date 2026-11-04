@@ -34,6 +34,7 @@
 #include <IO/S3/Client.h>
 #endif
 
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -495,11 +496,11 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
                 if (is_system)
                     ++total_number_of_tables_system;
 
-                const auto & table = iterator->table();
+                auto table = iterator->table();
                 if (!table)
                     continue;
 
-                if (MergeTreeData * table_merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
+                if (auto table_merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Skip))
                 {
                     calculateMax(max_part_count_for_partition, table_merge_tree->getMaxPartsCountAndSizeForPartition().first);
 
@@ -541,7 +542,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
                     }
                 }
 
-                if (StorageReplicatedMergeTree * table_replicated_merge_tree = typeid_cast<StorageReplicatedMergeTree *>(table.get()))
+                if (StorageReplicatedMergeTree * table_replicated_merge_tree = castStorage<StorageReplicatedMergeTree>(table, DeferredTable::Skip).get())
                 {
                     StorageReplicatedMergeTree::ReplicatedStatus status;
                     table_replicated_merge_tree->getStatus(status, false);
@@ -684,11 +685,7 @@ void ServerAsynchronousMetrics::updateMutationAndDetachedPartsStats()
 
         for (auto iterator = db.second->getTablesIterator(getContext(), {}, true); iterator->isValid(); iterator->next())
         {
-            const auto & table = iterator->table();
-            if (!table)
-                continue;
-
-            if (MergeTreeData * table_merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
+            if (auto table_merge_tree = castStorage<MergeTreeData>(iterator->table(), DeferredTable::Skip))
             {
                 for (const auto & detached_part: table_merge_tree->getDetachedParts())
                 {
@@ -1032,6 +1029,21 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
     new_values["NumberOfPendingMutationsOverExecutionTime"] = { mutation_stats.pending_mutations_over_execution_time, "The total number of mutations which have data part left to be mutated over the specified max_pending_mutations_execution_time_to_warn setting." };
 
 #if defined(OS_LINUX) || defined(OS_DARWIN)
+#define MEMORY_THREAD_STACKS_RESIDENT_DOCUMENTATION \
+    "Approximate resident set size of pthread stacks, summed from `Rss:` of /proc/self/smaps VMAs tagged with " \
+    "`[anon:clickhouse_stack]` via `prctl(PR_SET_VMA_ANON_NAME)`. Refreshed on the heavy-metrics cadence. Requires Linux 5.17 or " \
+    "newer; absent on older kernels (see the `MEMORY_THREAD_STACKS_METRIC_UNAVAILABLE` entry in `system.warnings`). On macOS, it " \
+    "is summed from the resident pages of the task's VM regions tagged `VM_MEMORY_STACK`, excluding inaccessible guard regions."
+#define MEMORY_THREAD_STACKS_VIRTUAL_DOCUMENTATION \
+    "Approximate virtual size of pthread stacks, summed from `Size:` of /proc/self/smaps VMAs tagged with " \
+    "`[anon:clickhouse_stack]`. Refreshed on the heavy-metrics cadence. Requires Linux 5.17 or newer; absent on older kernels (see " \
+    "the `MEMORY_THREAD_STACKS_METRIC_UNAVAILABLE` entry in `system.warnings`). On macOS, it is summed from the sizes of the " \
+    "task's VM regions tagged `VM_MEMORY_STACK`, excluding inaccessible guard regions."
+#define MEMORY_THREAD_STACKS_COUNT_DOCUMENTATION \
+    "Number of pthread stack VMAs tagged with `[anon:clickhouse_stack]` in /proc/self/smaps. Refreshed on the heavy-metrics " \
+    "cadence. Requires Linux 5.17 or newer; absent on older kernels (see the `MEMORY_THREAD_STACKS_METRIC_UNAVAILABLE` entry in " \
+    "`system.warnings`). On macOS, it counts the task's VM regions tagged `VM_MEMORY_STACK`, excluding inaccessible guard regions."
+
     /// Re-emit cached thread-stack stats on every scrape so the metrics stay
     /// present between heavy-cadence refreshes. They are emitted only after a
     /// successful sample; in environments where the source cannot be read, or
@@ -1043,42 +1055,24 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
     {
 #if defined(OS_LINUX)
         new_values["MemoryThreadStacksResident"] = { thread_stack_stats.resident_bytes,
-            "Approximate resident set size of pthread stacks, summed from `Rss:`"
-            " of /proc/self/smaps VMAs tagged with `[anon:clickhouse_stack]` via"
-            " `prctl(PR_SET_VMA_ANON_NAME)`. Refreshed on the heavy-metrics"
-            " cadence. Requires Linux 5.17 or newer; absent on older kernels"
-            " (see the `MEMORY_THREAD_STACKS_METRIC_UNAVAILABLE` entry in"
-            " `system.warnings`)." };
+            MEMORY_THREAD_STACKS_RESIDENT_DOCUMENTATION };
         new_values["MemoryThreadStacksVirtual"] = { thread_stack_stats.virtual_bytes,
-            "Approximate virtual size of pthread stacks, summed from `Size:` of"
-            " /proc/self/smaps VMAs tagged with `[anon:clickhouse_stack]`."
-            " Refreshed on the heavy-metrics cadence. Requires Linux 5.17 or"
-            " newer; absent on older kernels (see the"
-            " `MEMORY_THREAD_STACKS_METRIC_UNAVAILABLE` entry in"
-            " `system.warnings`)." };
+            MEMORY_THREAD_STACKS_VIRTUAL_DOCUMENTATION };
         new_values["MemoryThreadStacksCount"] = { thread_stack_stats.count,
-            "Number of pthread stack VMAs tagged with `[anon:clickhouse_stack]`"
-            " in /proc/self/smaps. Refreshed on the heavy-metrics cadence."
-            " Requires Linux 5.17 or newer; absent on older kernels (see the"
-            " `MEMORY_THREAD_STACKS_METRIC_UNAVAILABLE` entry in"
-            " `system.warnings`)." };
+            MEMORY_THREAD_STACKS_COUNT_DOCUMENTATION };
 #elif defined(OS_DARWIN)
         new_values["MemoryThreadStacksResident"] = { thread_stack_stats.resident_bytes,
-            "Approximate resident set size of pthread stacks, summed from the"
-            " resident pages of the task's VM regions tagged `VM_MEMORY_STACK`"
-            " (excluding the inaccessible guard regions). Refreshed on the"
-            " heavy-metrics cadence." };
+            MEMORY_THREAD_STACKS_RESIDENT_DOCUMENTATION };
         new_values["MemoryThreadStacksVirtual"] = { thread_stack_stats.virtual_bytes,
-            "Approximate virtual size of pthread stacks, summed from the sizes"
-            " of the task's VM regions tagged `VM_MEMORY_STACK` (excluding the"
-            " inaccessible guard regions). Refreshed on the heavy-metrics"
-            " cadence." };
+            MEMORY_THREAD_STACKS_VIRTUAL_DOCUMENTATION };
         new_values["MemoryThreadStacksCount"] = { thread_stack_stats.count,
-            "Number of the task's VM regions tagged `VM_MEMORY_STACK`"
-            " (excluding the inaccessible guard regions). Refreshed on the"
-            " heavy-metrics cadence." };
+            MEMORY_THREAD_STACKS_COUNT_DOCUMENTATION };
 #endif
     }
+
+#undef MEMORY_THREAD_STACKS_RESIDENT_DOCUMENTATION
+#undef MEMORY_THREAD_STACKS_VIRTUAL_DOCUMENTATION
+#undef MEMORY_THREAD_STACKS_COUNT_DOCUMENTATION
 #endif
 }
 

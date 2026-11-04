@@ -9,6 +9,7 @@
 #include <IO/ReadHelpers.h>
 #include <Parsers/Prometheus/parseTimeSeriesTypes.h>
 
+#include <algorithm>
 
 namespace DB
 {
@@ -21,10 +22,36 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
+
 namespace Setting
 {
     extern const SettingsBool enable_time_series_aggregate_functions;
     extern const SettingsBool enable_time_series_table;
+}
+
+namespace
+{
+    /// The grid has at least millisecond precision, so fractional parameters are not truncated to whole seconds
+    /// when the timestamps in the input columns have a coarser scale.
+    constexpr UInt32 MIN_PARAMETERS_SCALE = 3;
+}
+
+
+void checkTimeseriesAggregateFunctionsEnabled(const std::string & name, const Settings * settings)
+{
+    if (settings && (*settings)[Setting::enable_time_series_aggregate_functions] == 0 && (*settings)[Setting::enable_time_series_table] == 0)
+        throw Exception(
+            ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION,
+            "Aggregate function {} is in private preview and disabled by default. Enable it with setting enable_time_series_aggregate_functions",
+            name);
+}
+
+
+void assertTimeseriesParametersCount(const std::string & name, const Array & parameters, size_t expected_parameter_count, std::string_view parameter_names)
+{
+    if (parameters.size() != expected_parameter_count)
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Aggregate function {} requires {} parameters: {}", name, expected_parameter_count, parameter_names);
 }
 
 
@@ -42,6 +69,7 @@ DateTime64 extractTimeseriesTimestampParameter(const std::string & function_name
     }
 }
 
+
 /// Extracts a duration parameter value and converts it to decimal with the target scale (scale of the timestamp column)
 Decimal64 extractTimeseriesDurationParameter(const std::string & function_name, const std::string & parameter_name, const Field & parameter_field, UInt32 target_scale)
 {
@@ -56,49 +84,6 @@ Decimal64 extractTimeseriesDurationParameter(const std::string & function_name, 
     }
 }
 
-UInt64 extractTimeseriesIntParameter(const std::string & function_name, const std::string & parameter_name, const Field & parameter_field)
-{
-    if (parameter_field.getType() == Field::Types::Decimal64)
-    {
-        auto value = parameter_field.safeGet<DecimalField<Decimal64>>();
-        auto scale_multiplier = value.getScaleMultiplier();
-        auto raw_value = value.getValue();
-        if (scale_multiplier > 1 && raw_value % scale_multiplier != 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Cannot convert Decimal64 {} parameter to integer for aggregate function {}", parameter_name, function_name);
-        return raw_value / scale_multiplier;
-    }
-    else if (parameter_field.getType() == Field::Types::Decimal32)
-    {
-        auto value = parameter_field.safeGet<DecimalField<Decimal32>>();
-        auto scale_multiplier = value.getScaleMultiplier();
-        auto raw_value = value.getValue();
-        if (scale_multiplier > 1 && raw_value % scale_multiplier != 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Cannot convert Decimal32 {} parameter to integer for aggregate function {}", parameter_name, function_name);
-        return raw_value / scale_multiplier;
-    }
-    else if (UInt64 int_value = 0; parameter_field.tryGet(int_value))
-    {
-        return int_value;
-    }
-    else if (String string_value; parameter_field.tryGet(string_value))
-    {
-        UInt64 value{};
-        ReadBufferFromString buf(string_value);
-        if (tryReadIntText(value, buf))
-            return value;
-        else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Cannot parse {} parameter for aggregate function {}", parameter_name, function_name);
-    }
-    else
-    {
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "Illegal type {} of {} parameter for aggregate function {}",
-            parameter_field.getTypeName(), parameter_name, function_name);
-    }
-}
 
 Float64 extractTimeseriesFloatParameter(const std::string & function_name, const std::string & parameter_name, const Field & parameter_field)
 {
@@ -142,42 +127,32 @@ Float64 extractTimeseriesFloatParameter(const std::string & function_name, const
     }
 }
 
-/// Validates that the aggregate function got exactly the expected number of parameters.
-void assertTimeseriesParametersCount(const std::string & name, const Array & parameters, size_t required, std::string_view parameter_names)
-{
-    if (parameters.size() != required)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Aggregate function {} requires {} parameters: {}", name, required, parameter_names);
-}
 
-void checkTimeseriesAggregateFunctionsEnabled(const std::string & name, const Settings * settings)
+UInt32 getTimeseriesParametersScale(const Array & parameters)
 {
-    if (settings && (*settings)[Setting::enable_time_series_aggregate_functions] == 0 && (*settings)[Setting::enable_time_series_table] == 0)
-        throw Exception(
-            ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION,
-            "Aggregate function {} is in private preview and disabled by default. Enable it with setting enable_time_series_aggregate_functions",
-            name);
-}
-
-std::pair<DataTypePtr, DataTypePtr> getTimeseriesTimestampAndValueTypes(const std::string & name, const DataTypes & argument_types, bool has_grid_argument)
-{
-    DataTypes sample_types = argument_types;
-    if (has_grid_argument)
+    UInt32 scale = MIN_PARAMETERS_SCALE;
+    const size_t num_grid_parameters = std::min<size_t>(parameters.size(), 4);
+    for (size_t i = 0; i < num_grid_parameters; ++i)
     {
-        if (argument_types.size() != 2 && argument_types.size() != 3)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Aggregate function {} requires 2 or 3 arguments: the samples as (timestamp, value) or as a single array of tuples, followed by one more argument",
-                name);
-
-        const auto & grid_argument_type = argument_types.back();
-        const auto * array_type = typeid_cast<const DataTypeArray *>(grid_argument_type.get());
-        if (!isNativeNumber(array_type ? array_type->getNestedType() : grid_argument_type))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of the last argument for aggregate function {}, expected a number or an array of numbers",
-                grid_argument_type->getName(), name);
-
-        sample_types.pop_back();
+        const auto & parameter = parameters[i];
+        if (parameter.getType() == Field::Types::Decimal64)
+            scale = std::max(scale, parameter.safeGet<DecimalField<Decimal64>>().getScale());
+        else if (parameter.getType() == Field::Types::Decimal32)
+            scale = std::max(scale, parameter.safeGet<DecimalField<Decimal32>>().getScale());
     }
+    return scale;
+}
+
+
+std::pair<DataTypePtr, DataTypePtr> getTimeseriesTimestampAndValueTypes(const std::string & name, const DataTypes & argument_types, size_t num_extra_arguments)
+{
+    if (argument_types.size() != 1 + num_extra_arguments && argument_types.size() != 2 + num_extra_arguments)
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Aggregate function {} requires {} or {} arguments: the samples as (timestamp, value) or as a single array of tuples{}",
+            name, 1 + num_extra_arguments, 2 + num_extra_arguments,
+            num_extra_arguments ? fmt::format(", followed by {} more argument(s)", num_extra_arguments) : "");
+
+    DataTypes sample_types(argument_types.begin(), argument_types.end() - num_extra_arguments);
 
     if (sample_types.size() == 1)
     {

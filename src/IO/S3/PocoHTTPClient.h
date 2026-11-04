@@ -14,7 +14,7 @@
 #include <IO/HTTPCommon.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/HTTPRequestThrottler.h>
-#include <IO/SessionAwareIOStream.h>
+#include <IO/StdStreamFromReadBuffer.h>
 #include <IO/S3Defines.h>
 
 #include <aws/core/client/ClientConfiguration.h>
@@ -76,6 +76,7 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     const RemoteHostFilter & remote_host_filter;
     unsigned int s3_max_redirects = DEFAULT_MAX_REDIRECTS;
     RetryStrategy retry_strategy;
+    UInt64 expired_token_retry_timeout_ms = 0;
     bool s3_slow_all_threads_after_network_error;
     bool s3_slow_all_threads_after_retryable_error;
     bool enable_s3_requests_logging;
@@ -83,7 +84,7 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     std::optional<std::string> opt_disk_name;
     HTTPRequestThrottler request_throttler;
 
-    HTTPHeaderEntries extra_headers;
+    NormalizedHTTPHeaderEntries extra_headers;
     String http_client;
     String service_account;
     String metadata_service;
@@ -104,6 +105,22 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     std::function<void(const ProxyConfiguration &)> error_report;
 
     void updateSchemeAndRegion();
+
+    /// `remote_host_filter` is a reference, so it must not be bound to a temporary.
+    PocoHTTPClientConfiguration(
+        std::function<ProxyConfiguration()> per_request_configuration_,
+        const String & force_region_,
+        const RemoteHostFilter && remote_host_filter_,
+        unsigned int s3_max_redirects_,
+        RetryStrategy retry_strategy_,
+        bool s3_slow_all_threads_after_network_error_,
+        bool s3_slow_all_threads_after_retryable_error_,
+        bool enable_s3_requests_logging_,
+        bool for_disk_s3_,
+        std::optional<std::string> opt_disk_name_,
+        bool s3_use_adaptive_timeouts_,
+        const HTTPRequestThrottler & request_throttler_,
+        std::function<void(const ProxyConfiguration &)> error_report_) = delete;
 
 private:
     PocoHTTPClientConfiguration(
@@ -137,11 +154,14 @@ public:
     {
     }
 
-    void SetResponseBody(Aws::IStream & incoming_stream, SessionPtr & session_) /// NOLINT
+    /// Takes the body of the response as a ReadBuffer, which reads from the socket of the
+    /// session. The buffer keeps the session alive, and is reachable through the `rdbuf` of the
+    /// stream, so that ClickHouse can read the body through the buffer while the AWS SDK, which
+    /// only accepts an `std::iostream`, can still parse it as a stream.
+    void SetResponseBody(std::unique_ptr<ReadBuffer> body, size_t body_size) /// NOLINT
     {
         body_stream = Aws::Utils::Stream::ResponseStream(
-            Aws::New<SessionAwareIOStream<SessionPtr>>("http result streambuf", session_, incoming_stream.rdbuf())
-        );
+            Aws::New<StdStreamFromReadBuffer>("http result streambuf", std::move(body), body_size));
     }
 
     void SetResponseBody(std::string & response_body) /// NOLINT
@@ -244,7 +264,7 @@ protected:
 
     HTTPRequestThrottler request_throttler;
 
-    const HTTPHeaderEntries extra_headers;
+    const NormalizedHTTPHeaderEntries extra_headers;
 };
 
 class PocoHTTPClientGCPOAuth : public PocoHTTPClient

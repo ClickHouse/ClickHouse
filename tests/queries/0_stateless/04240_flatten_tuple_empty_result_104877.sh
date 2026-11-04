@@ -61,7 +61,7 @@ check_query --query "SELECT flattenTuple(CAST((tuple([[tuple()]])) AS Tuple(c0 A
 
 # `Nullable` wrappers around the same empty-result shapes reach the
 # same code path and must throw the same user-facing error.
-check_query --allow_experimental_nullable_tuple_type=1 \
+check_query --enable_nullable_tuple_type=1 \
             --query "SELECT flattenTuple(CAST((tuple([])) AS Nullable(Tuple(c0 Array(Tuple())))))"
-check_query --allow_experimental_nullable_tuple_type=1 \
+check_query --enable_nullable_tuple_type=1 \
             --query "SELECT flattenTuple(CAST(NULL AS Nullable(Tuple(c0 Array(Tuple())))))"

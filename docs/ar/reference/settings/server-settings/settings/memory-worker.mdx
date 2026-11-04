@@ -12,25 +12,25 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 تضبط هذه الإعدادات خادم ClickHouse، وهي مُولَّدة تلقائيًا من الشفرة المصدرية لـ ClickHouse.
 
-<div id="memory_worker_correct_memory_tracker">
-  ## memory_worker_correct_memory_tracker
-</div>
+## memory_worker_correct_memory_tracker {#memory_worker_correct_memory_tracker}
 
-<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
 
-ما إذا كان عامل الذاكرة في الخلفية سيصحّح متعقّب الذاكرة الداخلي استنادًا إلى معلومات من مصادر خارجية مثل jemalloc وcgroups
+يحدد ما إذا كان عامل الذاكرة في الخلفية يصحّح متعقّب الذاكرة العام عند كل tick، استنادًا إلى قياس خارجي للذاكرة التي تستخدمها العملية فعليًا: استخدام الذاكرة في cgroup عندما تكون cgroups متاحة (راجع `memory_worker_use_cgroup`)، وإلا فقيمة `stats.resident` من jemalloc.
 
-<div id="memory_worker_decay_adjustment_period_ms">
-  ## memory_worker_decay_adjustment_period_ms
-</div>
+متعقّب الذاكرة العام عدّادٌ تزيده عمليات التخصيص وتُنقصه عمليات التحرير. وأي خلل في هذا الحساب يظل عالقًا فيه طوال عمر العملية، إذ لا شيء آخر يُخفّضه، ولا يُستدرَك أي انحراف تصاعدي أبدًا، لأن الذاكرة التي يمثّلها قد حُرِّرت أصلًا. وما إن يتجاوز الانحراف وحده `max_server_memory_usage` حتى تفشل كل عمليات التخصيص، بما في ذلك الفحص بحجم صفر بايت في بداية الاتصال، فيرفض الخادم جميع الاستعلامات مع أنه لا يستخدم سوى جزء من حدّه. أما التصحيح استنادًا إلى القياس فيحصر عمر هذا الانحراف في tick واحدة من tickات العامل (`memory_worker_period_ms`، وقيمتها الافتراضية 50 مللي ثانية عند القراءة من cgroups و100 مللي ثانية عند القراءة من jemalloc).
+
+ولا يُخفي التصحيحُ الانحرافَ؛ إذ يحتفظ `MemoryTrackingUncorrected` بالقيمة التي كان المتعقّب سيبلغها لو لم يُطبَّق أي تصحيح (وهي لقطة من العدّاد الخام تُحدَّث عند كل tick من tickات العامل)، ومن ثَمّ يمثّل `MemoryTrackingUncorrected - MemoryTracking` الانحراف المتراكم حتى الآن.
+
+يؤدي ضبط هذا الإعداد على `0` إلى استعادة سلوك الإصدارات السابقة، حيث لا يُصحَّح المتعقّب إلا عند tick الأولى للعامل وكلما أصبحت قيمته سالبة.
+
+## memory_worker_decay_adjustment_period_ms {#memory_worker_decay_adjustment_period_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="5000" changeable_without_restart="No" />
 
 المدة، بالميلي ثانية، التي يجب أن تستمر خلالها حالة ضغط الذاكرة قبل إجراء ضبط ديناميكي للقيمة `dirty_decay_ms` في jemalloc. عندما يظل استخدام الذاكرة أعلى من عتبة التطهير طوال هذه المدة، يُعطَّل تلقائيًا اضمحلال الصفحات المتسخة (`dirty_decay_ms=0`) لاسترداد الذاكرة بشكل مكثف. وعندما يظل الاستخدام دون العتبة طوال هذه المدة، يُستعاد سلوك الاضمحلال الافتراضي. اضبطها على 0 لتعطيل الضبط الديناميكي واستخدام إعدادات الاضمحلال الافتراضية في jemalloc.
 
-<div id="memory_worker_dynamic_hard_limit">
-  ## memory_worker_dynamic_hard_limit
-</div>
+## memory_worker_dynamic_hard_limit {#memory_worker_dynamic_hard_limit}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
 
@@ -40,33 +40,25 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 لا يكون له أي تأثير عندما تكون قيمة `max_server_memory_usage_to_ram_ratio` هي `0`.
 
-<div id="memory_worker_period_ms">
-  ## memory_worker_period_ms
-</div>
+## memory_worker_period_ms {#memory_worker_period_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />
 
 فترة tick الخاصة بعامل الذاكرة في الخلفية، والذي يصحّح استهلاك الذاكرة الذي يسجّله متعقّب الذاكرة وينظّف الصفحات غير المستخدمة عند ارتفاع استهلاك الذاكرة. إذا ضُبطت على 0، فستُستخدم القيمة الافتراضية وفقًا لمصدر استهلاك الذاكرة
 
-<div id="memory_worker_purge_dirty_pages_threshold_ratio">
-  ## memory_worker_purge_dirty_pages_threshold_ratio
-</div>
+## memory_worker_purge_dirty_pages_threshold_ratio {#memory_worker_purge_dirty_pages_threshold_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.2" changeable_without_restart="No" />
 
 نسبة العتبة لصفحات jemalloc المتسخة مقارنةً بالذاكرة المتاحة لخادم ClickHouse. عندما يتجاوز حجم الصفحات المتسخة هذه النسبة، يقوم عامل الذاكرة في الخلفية بتطهير الصفحات المتسخة قسرًا. إذا ضُبطت على 0، فسيتم تعطيل التطهير القسري المستند إلى نسبة الصفحات المتسخة.
 
-<div id="memory_worker_purge_total_memory_threshold_ratio">
-  ## memory_worker_purge_total_memory_threshold_ratio
-</div>
+## memory_worker_purge_total_memory_threshold_ratio {#memory_worker_purge_total_memory_threshold_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.9" changeable_without_restart="No" />
 
 نسبة العتبة لتطهير `jemalloc` مقارنةً بالذاكرة المتاحة لخادم ClickHouse. عندما يتجاوز إجمالي استخدام الذاكرة هذه النسبة، يفرض عامل الذاكرة في الخلفية تطهير الصفحات المتسخة. وإذا ضُبطت على 0، يتم تعطيل التطهير القسري المستند إلى إجمالي الذاكرة.
 
-<div id="memory_worker_rss_speculative_reserve_ratio">
-  ## memory_worker_rss_speculative_reserve_ratio
-</div>
+## memory_worker_rss_speculative_reserve_ratio {#memory_worker_rss_speculative_reserve_ratio}
 
 <SettingsInfoBlock type="Double" default_value="1" changeable_without_restart="No" />
 
@@ -87,9 +79,7 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 الفجوة `resident - tracked` يغلب عليها الحمل الإضافي الناتج عن ذاكرة الظل / بيئة
 التشغيل الخاصة بأدوات التنقية، لا تأخر تسجيل الحسابات في المتتبّع.
 
-<div id="memory_worker_use_cgroup">
-  ## memory_worker_use_cgroup
-</div>
+## memory_worker_use_cgroup {#memory_worker_use_cgroup}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />استخدم معلومات استخدام الذاكرة الحالية في cgroup لتصحيح تتبع الذاكرة.
 

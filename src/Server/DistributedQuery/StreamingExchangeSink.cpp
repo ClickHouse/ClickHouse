@@ -10,6 +10,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <Common/Epoll.h>
+#include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <Poco/Net/NetException.h>
@@ -19,6 +20,7 @@
 
 namespace ProfileEvents
 {
+    extern const Event RuntimeFilterDeliveriesAbandoned;
     extern const Event StreamingExchangeSendBytes;
     extern const Event StreamingExchangePacketsSent;
     extern const Event StreamingExchangeSendQueueFullMicroseconds;
@@ -155,6 +157,12 @@ void StreamingExchangeSink::sendToSocket()
             tryReceiveControlPacket();
             if (no_more_data_needed)
                 return;
+            /// The receiver can do without an advisory stream.
+            if (advisory)
+            {
+                abandonDelivery("send failed: " + e.displayText());
+                return;
+            }
             StreamingExchangeProtocol::rethrowSocketException(*socket, "send data to exchange stream " + stream_name);
         }
     }
@@ -196,6 +204,9 @@ ISink::Status StreamingExchangeSink::prepare()
     {
         if (!connection_wait)
             connection_wait.emplace();
+        /// Let the producer push its only chunk before the receiver connects; it waits in the port.
+        if (advisory && !input.isFinished())
+            input.setNeeded();
         return Status::Async;
     }
 
@@ -210,7 +221,6 @@ ISink::Status StreamingExchangeSink::prepare()
     /// would keep computing data that nobody reads.
     if (no_more_data_needed)
     {
-        LOG_TRACE(log, "Closing input of exchange stream {}, no more data needed", stream_name);
         input.close();
         return Status::Finished;
     }
@@ -333,7 +343,7 @@ std::tuple<int, uint32_t, int64_t> StreamingExchangeSink::scheduleForEvent()
     /// readable once the connection is ready, so the wake is immediate even if the connection
     /// got ready before this call. Extracting the socket here instead would skip that wake and
     /// `prepare` would never run with the socket: the sink would sleep on a quiet socket
-    /// without ever marking its input as needed, and the fragment would never start.
+    /// without ever pulling its input, and a data fragment would never start.
     int fd = future_connection->getEventFd();
 
     LOG_TEST(log, "Schedule exchange stream sink {} waiting for connection, eventfd: {}", stream_name, fd);
@@ -397,7 +407,30 @@ bool StreamingExchangeSink::tryReadFromSocketNonBlocking(char * buffer, size_t b
     return true;
 }
 
+void StreamingExchangeSink::abandonDelivery(const String & reason)
+{
+    LOG_TRACE(log, "Abandoning delivery to exchange stream {}: {}", stream_name, reason);
+    ProfileEvents::increment(ProfileEvents::RuntimeFilterDeliveriesAbandoned);
+    markNoMoreDataNeeded();
+}
+
 void StreamingExchangeSink::tryReceiveControlPacket()
+{
+    try
+    {
+        receiveControlPacket();
+    }
+    catch (...)
+    {
+        if (!advisory)
+            throw;
+        /// Whatever went wrong on the peer's side of an advisory stream, the outcome is the
+        /// same: this destination gets nothing more, and that is not an error.
+        abandonDelivery(getCurrentExceptionMessage(/*with_stacktrace*/ false));
+    }
+}
+
+void StreamingExchangeSink::receiveControlPacket()
 {
     if (no_more_data_needed)
         return;
@@ -432,10 +465,19 @@ void StreamingExchangeSink::tryReceiveControlPacket()
         /// Normal end of the stream: after the sink sent the end-of-stream packet, the source reads it
         /// and closes without sending NoMoreDataNeeded. EOF is fine only with nothing left to send.
         if (!end_of_stream_added || send_queue_bytes > 0)
+        {
+            /// The receiver of an advisory stream may close it when it no longer needs the data. This is
+            /// expected, so no exception is made.
+            if (advisory)
+            {
+                abandonDelivery("the peer closed the stream");
+                return;
+            }
             throw Exception(ErrorCodes::EXCHANGE_PEER_DISCONNECTED,
                 "Peer half-closed exchange stream {} without sending NoMoreDataNeeded "
                 "(end_of_stream_added={}, unsent={})",
                 stream_name, end_of_stream_added, send_queue_bytes);
+        }
 
         LOG_TRACE(log, "Peer closed exchange stream {} after reading the end-of-stream packet", stream_name);
         markNoMoreDataNeeded();

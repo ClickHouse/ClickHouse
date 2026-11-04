@@ -29,25 +29,25 @@ StorageMetadataPtr extendMetadataWithStream(const StorageMetadataPtr & metadata,
     if (!stream_settings.watermark)
         return metadata;
 
-    const auto column = metadata->getColumns().tryGetColumn(GetColumnsOptions::AllPhysical, stream_settings.watermark->column);
-    if (!column)
+    const auto time_attribute_column = metadata->getColumns().tryGetColumn(GetColumnsOptions::AllPhysical, stream_settings.watermark->time_attribute_column);
+    if (!time_attribute_column)
         return metadata;
 
     VirtualColumnDescription time_attribute;
     time_attribute.name = TimeAttributeColumn::name;
-    time_attribute.type = column->type;
+    time_attribute.type = time_attribute_column->type;
     time_attribute.comment = "Event-time value of the current row.";
     time_attribute.kind = VirtualsKind::Ephemeral;
     time_attribute.place = VirtualsMaterializationPlace::Reader;
     time_attribute.default_desc.kind = ColumnDefaultKind::Default;
-    time_attribute.default_desc.expression = make_intrusive<ASTIdentifier>(column->name);
+    time_attribute.default_desc.expression = make_intrusive<ASTIdentifier>(time_attribute_column->name);
 
     auto extended = std::make_shared<StorageInMemoryMetadata>(*metadata);
     extended->virtuals.add(time_attribute);
 
     for (const auto & projection : metadata->projections)
     {
-        if (!projection.sample_block.has(column->name))
+        if (!projection.sample_block.has(time_attribute_column->name))
             continue;
 
         auto projection_metadata = std::make_shared<StorageInMemoryMetadata>(*projection.metadata);
@@ -107,6 +107,5 @@ Names collectWatermarkSourceColumns(
 
     return buildWatermarkActionsDAG(watermark_expression, header, context).getRequiredColumnsNames();
 }
-
 
 }

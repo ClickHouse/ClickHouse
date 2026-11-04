@@ -30,6 +30,7 @@ class InternalTextLogsQueue;
 
 class ThreadStatus;
 class ThreadGroup;
+class ResourceSchedulingContext;
 class MemoryPressureMonitor;
 using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
 using InternalProfileEventsQueue = ConcurrentBoundedQueue<Block>;
@@ -64,7 +65,6 @@ public:
     static ThreadGroupPtr getGroup();
 
     /// MemoryTracker for user that owns current thread if any
-    static MemoryTracker * getUserMemoryTracker();
 
     /// Adjust counters in MemoryTracker hierarchy if untracked_memory is not 0.
     static void flushUntrackedMemory();

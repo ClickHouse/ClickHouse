@@ -39,6 +39,13 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    /// Declarative signature — accepts one or more arrays of any element
+    /// type and returns an array of `UInt32` enumeration ranks.
+    String getSignatureString() const override
+    {
+        return "(Array, ...) -> Array(UInt32)";
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.empty())
@@ -118,7 +125,11 @@ private:
     bool executeString(const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values) const;
     bool executeFixedString(const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values) const;
     bool execute128bit(const ColumnArray::Offsets & offsets, const ColumnRawPtrs & columns, ColumnUInt32::Container & res_values) const;
-    void executeHashed(const ColumnArray::Offsets & offsets, const ColumnRawPtrs & columns, ColumnUInt32::Container & res_values) const;
+    void executeHashed(
+        const ColumnArray::Offsets & offsets,
+        const ColumnRawPtrs & columns,
+        const NullMap * null_map,
+        ColumnUInt32::Container & res_values) const;
 };
 
 
@@ -194,12 +205,12 @@ ColumnPtr FunctionArrayEnumerateExtended<Derived>::executeImpl(const ColumnsWith
             || executeNumber<Float64>(*offsets, *data_columns[0], null_map, res_values)
             || executeString(*offsets, *data_columns[0], null_map, res_values)
             || executeFixedString(*offsets, *data_columns[0], null_map, res_values)))
-            executeHashed(*offsets, data_columns, res_values);
+            executeHashed(*offsets, data_columns, null_map, res_values);
     }
     else
     {
         if (!execute128bit(*offsets, data_columns, res_values))
-            executeHashed(*offsets, data_columns, res_values);
+            executeHashed(*offsets, data_columns, nullptr, res_values);
     }
 
     return ColumnArray::create(std::move(res_nested), offsets_column);
@@ -329,7 +340,7 @@ template <typename Derived>
 bool FunctionArrayEnumerateExtended<Derived>::executeFixedString(
         const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values) const
 {
-    const auto * nested = checkAndGetColumn<ColumnString>(&data);
+    const auto * nested = checkAndGetColumn<ColumnFixedString>(&data);
     if (nested)
         executeMethod<MethodFixedString>(offsets, {nested}, {}, null_map, res_values);
 
@@ -365,9 +376,10 @@ template <typename Derived>
 void FunctionArrayEnumerateExtended<Derived>::executeHashed(
     const ColumnArray::Offsets & offsets,
     const ColumnRawPtrs & columns,
+    const NullMap * null_map,
     ColumnUInt32::Container & res_values) const
 {
-    executeMethod<MethodHashed>(offsets, columns, {}, nullptr, res_values);
+    executeMethod<MethodHashed>(offsets, columns, {}, null_map, res_values);
 }
 
 }

@@ -1,4 +1,4 @@
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_DARWIN)
 
 #include <Client/HedgedConnectionsFactory.h>
 #include <base/sort.h>

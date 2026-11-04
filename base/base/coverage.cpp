@@ -21,6 +21,7 @@ extern "C" void __llvm_profile_dump();  // NOLINT
 #if WITH_COVERAGE_DEPTH
 
 #include <algorithm>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -349,6 +350,16 @@ std::vector<IndirectCallEntry> getCurrentIndirectCalls()
 }
 
 
+namespace
+{
+    std::atomic<void (*)() noexcept> g_dump_hook = nullptr;
+}
+
+void setCoverageDumpHook(void (*hook)() noexcept)
+{
+    g_dump_hook.store(hook);
+}
+
 void registerCoverageFlushCallback(CoverageFlushCallback cb)
 {
     std::lock_guard lock(g_coverage_mutex);
@@ -440,6 +451,10 @@ void dumpCoverageReportIfPossible()
     /// coverage flakiness. Both call sites already invoke this function for exactly that
     /// reason; previously it was a no-op unless WITH_COVERAGE_DEPTH was set, so the
     /// regular coverage build (which produces the reports) never actually flushed here.
+#if WITH_COVERAGE_DEPTH
+    if (auto * hook = g_dump_hook.load())
+        hook();
+#endif
     static std::mutex mutex;
     std::lock_guard lock(mutex);
     __llvm_profile_dump(); // NOLINT
