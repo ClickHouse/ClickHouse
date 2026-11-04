@@ -49,6 +49,14 @@ Possible values:
 - 0 — always,
 - negative integer - never.
 
+## optimize_constant_columns_after_filter {#optimize_constant_columns_after_filter}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "New setting to replace filtered columns with `ColumnConst` when an equality predicate proves that all passed values are equal to a constant."}]}]}/>
+
+Replace filtered columns with `ColumnConst` when an equality predicate proves that all passed values are equal to a constant.
+
 ## optimize_count_from_files {#optimize_count_from_files}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
