@@ -39,7 +39,7 @@ expect_after {
 
 exec bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT -q 'SELECT 1 SETTINGS max_memory_usage_for_all_queries = 123' > /dev/null"
 
-spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \${CLICKHOUSE_CLIENT_EXPECT_OPT/--no-warnings} --allow_experimental_kusto_dialect 1 --dialect kusto --history_file=$history_file"
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \${CLICKHOUSE_CLIENT_EXPECT_OPT/--no-warnings} --enable_kusto_dialect 1 --dialect kusto --history_file=$history_file"
 
 expect "Warnings:"
 expect " * Queries or settings profiles changed obsolete settings"
@@ -60,7 +60,7 @@ send -- "DROP SETTINGS PROFILE IF EXISTS $profile\r"
 expect "Ok."
 expect ":) "
 
-send -- "CREATE SETTINGS PROFILE $profile SETTINGS dialect = 'kusto', allow_experimental_kusto_dialect = 1\r"
+send -- "CREATE SETTINGS PROFILE $profile SETTINGS dialect = 'kusto', enable_kusto_dialect = 1\r"
 expect "Ok."
 expect ":) "
 

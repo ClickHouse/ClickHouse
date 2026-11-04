@@ -159,6 +159,7 @@
 #include <Interpreters/StorageID.h>
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Analyzer/Utils.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
@@ -1537,7 +1538,7 @@ struct ContextSharedPart : boost::noncopyable
     void addOrUpdateWarningMessage(Context::WarningType warning, const PreformattedMessage & message) TSA_REQUIRES(mutex)
     {
         /// A warning goes both: into server's log; stored to be placed in `system.warnings` table.
-        LOG_WARNING(log, "{}", message.text);
+        LOG_WARNING(log, message);
         warnings[warning] = message;
     }
 
@@ -3554,22 +3555,25 @@ static bool findIdentifier(const ASTFunction * function)
 StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const ASTSelectQuery * select_query_hint)
 {
     ASTFunction * function = assert_cast<ASTFunction *>(table_expression.get());
-    String database_name = getCurrentDatabase();
-    String table_name = function->name;
+    /// Same split as the analyzer: a stored `` `db.view`(...) `` has no compound-name flag.
+    auto [database_name, table_name] = extractDatabaseAndTableNameForParameterizedView(function->name, shared_from_this());
 
-    if (function->isCompoundName())
+    auto is_parameterized_view = [](const StoragePtr & storage)
     {
-        std::vector<std::string> parts;
-        splitInto<'.'>(parts, function->name);
+        const auto * view = storage ? storage->as<StorageView>() : nullptr;
+        return view && view->isParameterizedView();
+    };
 
-        if (parts.size() == 2)
-        {
-            database_name = std::move(parts[0]);
-            table_name = std::move(parts[1]);
-        }
+    StoragePtr table;
+    if (!table_name.empty())
+        table = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, getQueryContext());
+    /// A view whose own name has a dot: `` `v.x`(...) ``.
+    if (!is_parameterized_view(table) && !function->isCompoundName() && table_name != function->name)
+    {
+        database_name = getCurrentDatabase();
+        table_name = function->name;
+        table = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, getQueryContext());
     }
-
-    StoragePtr table = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, getQueryContext());
     if (table)
     {
         if (table.get()->isView() && table->as<StorageView>() && table->as<StorageView>()->isParameterizedView())
@@ -6919,6 +6923,8 @@ void Context::setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker, const LoadTask
         getGoals(startup_after),
         TablesLoaderBackgroundStartupPoolId,
         "startup ddl worker",
+        /// A table that failed to load must not stop distributed DDL on the whole server.
+        ignoreDependencyFailure,
         [this] (AsyncLoader &, const LoadJobPtr &)
         {
             std::lock_guard lock2(shared->mutex);
