@@ -38,6 +38,8 @@
 #include <Storages/StorageView.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/Fragments/FragmentGraph.h>
+#include <Processors/QueryPlan/Fragments/FragmentGraphExplain.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -644,6 +646,8 @@ struct QueryPlanSettings
             {"json", json},
             {"sorting", query_plan_options.sorting},
             {"distributed", query_plan_options.distributed},
+            {"fragments", query_plan_options.fragments},
+            {"tree", query_plan_options.tree},
             {"keep_logical_steps", keep_logical_steps},
             {"input_headers", query_plan_options.input_headers},
             {"column_structure", query_plan_options.column_structure},
@@ -1198,6 +1202,28 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
             auto settings = checkAndGetSettings<QueryPlanSettings>(ast_settings, pretty_version);
 
+            if (settings.query_plan_options.tree)
+            {
+                if (settings.query_plan_options.fragments)
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Option 'tree' is not supported with option 'fragments'");
+                if (settings.json)
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Option 'tree' is not supported with option 'json'");
+                if (settings.query_plan_options.distributed)
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Option 'tree' is not supported with option 'distributed'");
+                if (!settings.optimize)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Option 'tree' requires option 'optimize'");
+            }
+
+            if (settings.query_plan_options.fragments)
+            {
+                if (settings.json)
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Option 'fragments' is not supported with option 'json'");
+                if (settings.query_plan_options.distributed)
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Option 'fragments' is not supported with option 'distributed'");
+                if (!settings.optimize)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Option 'fragments' requires option 'optimize'");
+            }
+
             QueryPlan plan;
 
             ContextPtr context;
@@ -1220,6 +1246,35 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 optimization_settings.is_explain = true;
                 optimization_settings.max_step_description_length = query_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
                 plan.optimize(optimization_settings);
+
+                if (settings.query_plan_options.fragments || settings.query_plan_options.tree)
+                {
+                    const size_t max_step_description_length = query_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
+                    const auto build_explain = [&](const FragmentGraph & graph)
+                    {
+                        if (settings.query_plan_options.tree)
+                            explainAsTree(graph, buf, settings.query_plan_options, max_step_description_length);
+                        else
+                            explainAsFragments(graph, buf, settings.query_plan_options, max_step_description_length);
+                    };
+                    if (plan.staysDistributed())
+                    {
+                        /// The distributed_plan_cut consumes the plan since `EXPLAIN` owns this plan and discards it after printing.
+                        /// `distributed_plan_cut` must outlive `graph`, whose fragments point to the plans of its stages.
+                        auto distributed_plan_cut = plan.cutIntoDistributedPlan(optimization_settings);
+                        auto query_plan_as_fragment_graph = buildFragmentGraph(distributed_plan_cut.distributed_plan);
+                        build_explain(query_plan_as_fragment_graph);
+                    }
+                    else
+                    {
+                        std::optional<String> fallback_reason;
+                        if (plan.didFallBackToLocal())
+                            fallback_reason = plan.getDistributedPlanFallbackReason();
+                        auto query_plan_as_fragment_graph = buildSingleFragmentGraph(plan, std::move(fallback_reason));
+                        build_explain(query_plan_as_fragment_graph);
+                    }
+                    break;
+                }
             }
 
             if (settings.json)
@@ -1304,6 +1359,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                     /* no_destination */ false,
                     /* async_insert */ false,
                     is_initial_insert);
+                insert.setExplainOnly(true);
                 auto io = insert.execute();
                 printPipeline(io.pipeline.getProcessors(), buf);
                 // we do not need it anymore, it would not be executed

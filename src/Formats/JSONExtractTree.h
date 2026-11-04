@@ -17,6 +17,10 @@ struct JSONExtractInsertSettings
     /// If false, JSON value will be inserted into column only if type of the value is
     /// the same as column type (no conversions like Integer -> String, Integer -> Float, etc).
     bool allow_type_conversion = true;
+    /// If false, a Date or DateTime value out of the range of its type is rejected instead of saturated.
+    bool saturate_on_overflow = true;
+    /// If false, a DateTime value with fractional seconds is rejected instead of truncated.
+    bool truncate_fractional_seconds = true;
     /// If true, during insert into Dynamic column we first try to insert value into existing variants
     /// and only if failed we try to infer the new variant type.
     bool try_existing_variants_in_dynamic_first = true;

@@ -39,7 +39,7 @@ class DeviceFixedColumnBuffer final : public IDeviceColumn
 public:
     explicit DeviceFixedColumnBuffer(GPUElementType element_type_);
 
-    DeviceFixedColumnBuffer(GPUElementType element_type_, rmm::cuda_stream_view stream_);
+    DeviceFixedColumnBuffer(GPUElementType element_type_, cuda::stream_ref stream_);
 
     void appendPlain(std::string_view host_values) { values.append(host_values); }
 
@@ -63,7 +63,7 @@ public:
 
 private:
     const GPUElementType element_type;
-    const rmm::cuda_stream_view stream;
+    const cuda::stream_ref stream;
     DeviceBuffer values;
     DeviceBuffer spare;
 };
@@ -75,7 +75,7 @@ private:
 class DeviceVariableColumnBuffer final : public IDeviceColumn
 {
 public:
-    explicit DeviceVariableColumnBuffer(rmm::cuda_stream_view stream_);
+    explicit DeviceVariableColumnBuffer(cuda::stream_ref stream_);
 
     void append(std::string_view host_row_ends, std::string_view host_chars);
 
@@ -109,7 +109,7 @@ private:
     void startOffsets();
     size_t sizedRows() const { return offsets.size() / sizeof(uint64_t) - 1; }
 
-    const rmm::cuda_stream_view stream;
+    const cuda::stream_ref stream;
     DeviceBuffer offsets;
     DeviceBuffer chars;
     DeviceBuffer pending_sizes;
@@ -148,7 +148,7 @@ public:
 
     ColumnUploadPipe(const IDataType & type, size_t stage_bytes_);
 
-    ColumnUploadPipe(const IDataType & type, size_t stage_bytes_, rmm::cuda_stream_view stream_);
+    ColumnUploadPipe(const IDataType & type, size_t stage_bytes_, cuda::stream_ref stream_);
 
     ~ColumnUploadPipe() override;
 
@@ -185,7 +185,7 @@ private:
 
     const GPUElementType column_type;
     const size_t stage_bytes;
-    const rmm::cuda_stream_view stream;
+    const cuda::stream_ref stream;
 
     PinnedBuffer staged_data;
     PinnedBuffer staged_offsets;
