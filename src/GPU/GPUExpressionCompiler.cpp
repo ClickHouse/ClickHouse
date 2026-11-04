@@ -6,14 +6,11 @@
 #    error "The GPU engine compiles its expressions with the embedded compiler"
 #endif
 
+#include <GPU/GPUDevice.h>
+#include <GPU/GPUKernelCache.h>
 #include <GPU/GPUTypeMapping.h>
 
 #include <Columns/ColumnConst.h>
-#include <Common/CacheBase.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/HashTable/Hash.h>
-#include <Common/logger_useful.h>
-#include <Core/Defines.h>
 #include <Common/Exception.h>
 #include <Common/Hex.h>
 #include <Common/SipHash.h>
@@ -42,8 +39,6 @@
 #include <llvm/Target/TargetOptions.h>
 #include <llvm/TargetParser/Triple.h>
 
-#include <boost/noncopyable.hpp>
-
 #include <memory>
 #include <mutex>
 #include <unordered_set>
@@ -52,12 +47,6 @@ extern "C" void LLVMInitializeNVPTXTargetInfo();
 extern "C" void LLVMInitializeNVPTXTarget();
 extern "C" void LLVMInitializeNVPTXTargetMC();
 extern "C" void LLVMInitializeNVPTXAsmPrinter();
-
-namespace CurrentMetrics
-{
-    extern const Metric GPUExpressionKernelCacheBytes;
-    extern const Metric GPUExpressionKernelCacheCount;
-}
 
 namespace DB::ErrorCodes
 {
@@ -68,107 +57,10 @@ namespace DB::ErrorCodes
 namespace DB::GPU
 {
 
-struct GPUKernel : private boost::noncopyable
-{
-    std::string name;
-    cudaLibrary_t library = nullptr;
-    cudaKernel_t kernel = nullptr;
-    uint32_t block_size = 0;
-    /// What the kernel weighs in the cache of the compiler.
-    size_t ptx_size = 0;
-
-    ~GPUKernel()
-    {
-        if (!library)
-            return;
-
-        /// Nothing keeps the kernel any longer, but a launch of it that a query queued may still be running.
-        cudaError_t status = cudaDeviceSynchronize();
-        if (status == cudaSuccess)
-            status = cudaLibraryUnload(library);
-        if (status != cudaSuccess)
-        {
-            cudaGetLastError();
-            LOG_ERROR(getLogger("GPUExpressionCompiler"), "Cannot unload kernel {}: {}", name, cudaGetErrorString(status));
-        }
-    }
-};
-
 namespace
 {
 
 constexpr const char * nvptx_triple = "nvptx64-nvidia-cuda";
-
-/// Of the PTX of the kernels that the cache keeps loaded, besides those that expressions in use keep.
-constexpr size_t max_kernel_cache_bytes = 256UL << 20;
-
-struct GPUKernelWeight
-{
-    size_t operator()(const GPUKernel & kernel) const { return kernel.ptx_size; }
-};
-
-using GPUKernelCache = CacheBase<UInt128, GPUKernel, UInt128Hash, GPUKernelWeight>;
-
-/// The kernels compiled so far, a bounded number of them, as `CompiledExpressionCache` bounds the CPU's. One that it
-/// evicts is unloaded once the last expression of it is gone.
-GPUKernelCache & kernelCache()
-{
-    /// Never destroyed: the unloading of the kernels at the exit of the process would come after CUDA is gone.
-    static auto * cache = new GPUKernelCache(
-        CurrentMetrics::GPUExpressionKernelCacheBytes,
-        CurrentMetrics::GPUExpressionKernelCacheCount,
-        max_kernel_cache_bytes,
-        DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_ENTRIES);
-    return *cache;
-}
-
-
-void checkLoading(cudaError_t status, const std::string & what)
-{
-    if (status == cudaSuccess)
-        return;
-    cudaGetLastError();
-    throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "Cannot {}: {}", what, cudaGetErrorString(status));
-}
-
-/// The threads of a block of `kernel` that keep the most threads of a multiprocessor busy, a whole number of warps, the
-/// fewest of them where several do: as `cudaOccupancyMaxPotentialBlockSize` chooses, which is a template of the CUDA
-/// headers for `nvcc`.
-uint32_t blockSizeOf(cudaKernel_t kernel, const std::string & name)
-{
-    const void * function = reinterpret_cast<const void *>(kernel);
-    cudaFuncAttributes attributes{};
-    checkLoading(cudaFuncGetAttributes(&attributes, function), "tell the attributes of kernel " + name);
-
-    uint32_t best_size = 0;
-    int best_threads = 0;
-    for (int size = 32; size <= attributes.maxThreadsPerBlock; size += 32)
-    {
-        int blocks = 0;
-        checkLoading(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&blocks, function, size, 0), "tell the occupancy of kernel " + name);
-        if (blocks * size > best_threads)
-        {
-            best_threads = blocks * size;
-            best_size = static_cast<uint32_t>(size);
-        }
-    }
-    if (best_size == 0)
-        throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "Kernel {} runs in no block of the device", name);
-    return best_size;
-}
-
-/// `name` of `ptx`, loaded on the device.
-std::shared_ptr<GPUKernel> loadKernel(const std::string & name, const std::string & ptx)
-{
-    auto kernel = std::make_shared<GPUKernel>();
-    kernel->name = name;
-    kernel->ptx_size = ptx.size();
-    checkLoading(
-        cudaLibraryLoadData(&kernel->library, ptx.c_str(), nullptr, nullptr, 0, nullptr, nullptr, 0), "load the PTX of kernel " + name);
-    checkLoading(cudaLibraryGetKernel(&kernel->kernel, kernel->library, name.c_str()), "find kernel " + name + " in its PTX");
-    kernel->block_size = blockSizeOf(kernel->kernel, name);
-    return kernel;
-}
 
 /// The `sm_XY` of the device that the server runs queries on, which the PTX is emitted for.
 const std::string & deviceArchitecture()
@@ -442,7 +334,8 @@ std::optional<CompiledGPUExpression> compile(const ActionsDAG & dag, const Strin
     const UInt128 key = hash.get128();
     const std::string name = "clickhouse_gpu_" + getHexUIntLowercase(key);
 
-    std::shared_ptr<const GPUKernel> kernel = kernelCache().get(key);
+    GPUKernelCache & kernels = GPUDevice::instance().kernelCache();
+    std::shared_ptr<const GPUKernel> kernel = kernels.get(key);
     if (!kernel)
     {
         auto machine = nvptxTargetMachine();
@@ -457,7 +350,7 @@ std::optional<CompiledGPUExpression> compile(const ActionsDAG & dag, const Strin
             return {};
 
         /// Loaded once, by the first query that compiles it, which another one compiling it waits for.
-        kernel = kernelCache().getOrSet(key, [&] { return loadKernel(name, *ptx); }).first;
+        kernel = kernels.getOrSet(key, [&] { return GPUKernel::load(name, *ptx); }).first;
     }
 
     CompiledGPUExpression compiled;

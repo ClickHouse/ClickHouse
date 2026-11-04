@@ -1,4 +1,5 @@
 #include <GPU/GPUDevice.h>
+#include <GPU/GPUKernelCache.h>
 
 #if USE_GPU
 
@@ -77,6 +78,7 @@ GPUDevice::GPUDevice(const GPUDeviceSettings & settings)
       }
     , upload_stream(createStream())
     , decompression_stream(createStream())
+    , kernel_cache(std::make_unique<GPUKernelCache>())
 {
     gpu_resources.upload = cuda::stream_ref{upload_stream.get()};
     gpu_resources.decompression = cuda::stream_ref{decompression_stream.get()};
