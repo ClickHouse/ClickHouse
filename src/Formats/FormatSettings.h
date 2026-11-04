@@ -2,13 +2,19 @@
 
 #include <Core/Defines.h>
 #include <Core/Names.h>
+#include <Core/ResultColumnOrigin.h>
 #include <base/types.h>
 #include <base/unit.h>
 
+#include <limits>
 #include <string_view>
 
 namespace DB
 {
+
+/// Arrow offsets its `Utf8`, `Binary` and `List` buffers with 32-bit integers, and the Apache Arrow
+/// builders additionally reject the last representable value.
+constexpr UInt64 MAX_ARROW_BUFFER_SIZE = std::numeric_limits<Int32>::max() - 1;
 
 /**
   * Various tweaks for input/output formats. Text serialization/deserialization
@@ -225,6 +231,8 @@ struct FormatSettings
         ArrowUnsupportedTypes output_unsupported_types = ArrowUnsupportedTypes::BINARY;
         UInt64 output_record_batch_rows = 0;
         UInt64 output_record_batch_bytes = 0;
+        /// Upper bound on one record batch, as opposed to the targets above, which combine small blocks.
+        UInt64 output_max_record_batch_bytes = MAX_ARROW_BUFFER_SIZE;
     } arrow{};
 
     struct AvroSchemaRegistryTimeouts
@@ -524,6 +532,8 @@ struct FormatSettings
          * By default, use Text ResultSet.
          */
         bool binary_protocol = false;
+        /// The table columns the result columns come from, reported in the column definitions. Not owned; may be null.
+        const ResultColumnOrigins * result_column_origins = nullptr;
     } mysql_wire{};
 
     struct
@@ -601,6 +611,12 @@ struct FormatSettings
         double output_dictionary_key_size_threshold = 0.0;
         UInt64 output_compression_block_size = 256 * 1024; /// 256 KiB
     } orc{};
+
+    struct
+    {
+        bool filter_push_down = true;
+        bool preserve_order = false;
+    } vortex{};
 
     /// For capnProto format we should determine how to
     /// compare ClickHouse Enum and Enum from schema.

@@ -466,7 +466,7 @@ Use query plan for lazy materialization optimization.
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "New setting to use lazy materialization for `ORDER BY ... LIMIT n` queries reading local Parquet files with the `file` table function and the `File` table engine."}]}]}/>
 
-Use lazy materialization optimization for reading local Parquet files with the `file` table function and the `File` table engine: for `ORDER BY ... LIMIT n` queries, the columns that are not needed for sorting and filtering are read only for the `n` rows that survive the `LIMIT`. Takes effect only if `query_plan_optimize_lazy_materialization` is enabled.
+Use lazy materialization optimization for reading local Parquet and Vortex files with the `file` table function and the `File` table engine: for `ORDER BY ... LIMIT n` queries, the columns that are not needed for sorting and filtering are read only for the `n` rows that survive the `LIMIT`. Takes effect only if `query_plan_optimize_lazy_materialization` is enabled.
 
 ## query_plan_optimize_lazy_materialization_for_object_storage {#query_plan_optimize_lazy_materialization_for_object_storage}
 
@@ -474,7 +474,7 @@ Use lazy materialization optimization for reading local Parquet files with the `
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "New setting to use lazy materialization for `ORDER BY ... LIMIT n` queries reading Parquet files from object storage (including Iceberg tables)."}]}]}/>
 
-Use lazy materialization optimization for reading Parquet files from object storage (including Iceberg tables): for `ORDER BY ... LIMIT n` queries, the columns that are not needed for sorting and filtering are read only for the `n` rows that survive the `LIMIT`. Takes effect only if `query_plan_optimize_lazy_materialization` is enabled.
+Use lazy materialization optimization for reading Parquet and Vortex files from object storage (including Iceberg tables): for `ORDER BY ... LIMIT n` queries, the columns that are not needed for sorting and filtering are read only for the `n` rows that survive the `LIMIT`. Takes effect only if `query_plan_optimize_lazy_materialization` is enabled.
 
 ## query_plan_propagate_predicate_across_join {#query_plan_propagate_predicate_across_join}
 
@@ -666,6 +666,20 @@ Possible values:
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "1"},{"label": "New setting"}]}]}/>
 
 Allow to add hint (additional predicate) for filtering built from the inverted text index in query plan.
+
+## query_plan_top_k_through_array_join {#query_plan_top_k_through_array_join}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "New setting to move bounded sorting below `ARRAY JOIN` when its keys do not depend on expanded columns; disabled by default."}]}]}/>
+
+Toggles a query-plan-level optimization which moves `ORDER BY ... LIMIT n` below an `ARRAY JOIN` when the sort key does not read a joined column. For an inner `ARRAY JOIN`, the optimization also adds a filter below the moved sort. This filter removes the rows whose arrays are all empty, because these rows give no output.
+Only takes effect if setting [query_plan_enable_optimizations](/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) is 1.
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
 
 ## query_plan_top_k_through_join {#query_plan_top_k_through_join}
 
