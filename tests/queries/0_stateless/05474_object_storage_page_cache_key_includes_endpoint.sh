@@ -43,7 +43,7 @@ ${CLICKHOUSE_LOCAL} --path "${work_dir}/db" --config-file "${work_dir}/config.ya
         SETTINGS use_page_cache_for_object_storage = 1, log_comment = '3_other_endpoint';
     SYSTEM FLUSH LOGS query_log;
     SELECT log_comment, ProfileEvents['PageCacheMisses'] > 0, ProfileEvents['PageCacheHits'] > 0 FROM system.query_log
-        WHERE type = 'QueryFinish' AND log_comment IN ('1_cold', '2_warm', '3_other_endpoint')
+        WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('1_cold', '2_warm', '3_other_endpoint')
         ORDER BY log_comment;"
 
 rm -rf "${work_dir}"
