@@ -14,6 +14,7 @@ SET session_timezone = 'UTC';
 
 DROP TABLE IF EXISTS tbl;
 DROP TABLE IF EXISTS t_force;
+DROP TABLE IF EXISTS t_memory;
 
 -- Both rows in one granule, so the primary key does not skip the bad row.
 CREATE TABLE tbl (a String, b String, usage_timestamp String) ENGINE = MergeTree ORDER BY (a, b, usage_timestamp)
@@ -26,6 +27,8 @@ SELECT b, usage_timestamp FROM cte WHERE (b, usage_timestamp) NOT IN ('1', '2025
 
 -- The same in one WHERE.
 SELECT b FROM tbl WHERE a = 'one' AND toDateTime64(usage_timestamp, 3) > '2020-01-01';
+SELECT count() FROM (EXPLAIN actions = 1 SELECT b FROM tbl WHERE a = 'one' AND toDateTime64(usage_timestamp, 3) > '2020-01-01')
+WHERE explain ILIKE '%Prewhere filter column: and(equals(%a%), greater(toDateTime64(%';
 
 -- The guard reads every queried column, so it stays in WHERE, and so does the throwing condition.
 SELECT a FROM tbl WHERE concat(a, usage_timestamp) LIKE 'one%' AND toDateTime64(usage_timestamp, 3) > '2020-01-01';
@@ -40,6 +43,16 @@ CREATE TABLE t_force (a String, s String) ENGINE = MergeTree ORDER BY a
 SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 INSERT INTO t_force VALUES ('one', '2025-05-16 07:20:20'), ('two', 'invaliddatetime');
 SELECT a FROM t_force WHERE a = 'one' AND timestamp(s) > '2020-01-01' SETTINGS short_circuit_function_evaluation = 'force_enable';
+-- Then the step with the guard filters its rows also when most of them pass.
+INSERT INTO t_force SELECT 'one', '2025-05-16 07:20:20' FROM numbers(8);
+OPTIMIZE TABLE t_force FINAL;
+SELECT count() FROM t_force WHERE a = 'one' AND timestamp(s) > '2020-01-01'
+SETTINGS short_circuit_function_evaluation = 'force_enable', query_plan_merge_filters = 0;
+
+-- Memory evaluates PREWHERE in one step when it has a non-deterministic condition.
+CREATE TABLE t_memory (a String, s String, x UInt64) ENGINE = Memory;
+INSERT INTO t_memory VALUES ('one', '2025-05-16 07:20:20', 1), ('two', 'invaliddatetime', 2);
+SELECT toDateTime64(s, 3), x FROM t_memory WHERE a = 'one' AND toDateTime64(s, 3) > '2020-01-01' AND rand(x) >= 0;
 
 -- A condition that cannot throw is still moved in front of the primary key guard.
 SELECT count() FROM (EXPLAIN actions = 1 SELECT b FROM tbl WHERE a = 'one' AND usage_timestamp != '')
@@ -69,3 +82,4 @@ WHERE explain ILIKE '%Prewhere filter column: and(equals(%a%), greater(toDateTim
 
 DROP TABLE tbl;
 DROP TABLE t_force;
+DROP TABLE t_memory;

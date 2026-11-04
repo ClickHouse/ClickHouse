@@ -238,9 +238,10 @@ MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::op
     where_optimizer_context.columns_read_before_filter = &storage_columns_read_before_filter;
 
     const auto & filter_node = filter_dag.findInOutputs(filter_column_name);
-    /// With one read step, PREWHERE computes the nodes that it passes on for all rows.
+    /// PREWHERE evaluated in one step computes the nodes it passes on for all rows. Besides the setting,
+    /// Memory evaluates it in one step when it has non-deterministic or stateful functions.
     std::unordered_set<const ActionsDAG::Node *> shared_nodes;
-    if (!settings[Setting::enable_multiple_prewhere_read_steps])
+    if (!settings[Setting::enable_multiple_prewhere_read_steps] || filter_dag.hasNonDeterministicOrStatefulFunctions())
         shared_nodes = findSharedNodes(filter_dag, filter_node);
     where_optimizer_context.shared_nodes = &shared_nodes;
 

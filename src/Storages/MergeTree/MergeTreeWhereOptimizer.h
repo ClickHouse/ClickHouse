@@ -105,7 +105,7 @@ private:
         /// It can throw or is not deterministic, so it is moved to PREWHERE only after the conditions in front of it.
         bool must_follow_preceding_conditions = false;
 
-        /// It also computes a node needed outside it, which one read step computes for all rows,
+        /// It also computes a node needed outside it, which PREWHERE evaluated in one step computes for all rows,
         /// so then it is moved only to an empty PREWHERE.
         bool must_be_first_in_prewhere = false;
 
