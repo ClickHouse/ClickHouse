@@ -1,0 +1,17 @@
+-- the renamed column is pushed down into both data files
+100
+2	0
+100
+-- the new column is pushed down only into the data file that has it
+1	1005
+1	1
+1	1005
+-- lazy materialization of the Vortex data files
+4999	val_4999
+4998	val_4998
+4997	val_4997
+1
+4999	val_4999
+4998	val_4998
+4997	val_4997
+0

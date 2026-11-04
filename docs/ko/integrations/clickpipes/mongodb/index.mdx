@@ -29,9 +29,7 @@ ClickPipes를 사용하면 MongoDB 데이터베이스의 데이터를 ClickHouse
 
 MongoDB ClickPipes는 ClickPipes UI를 사용해 수동으로 배포하고 관리할 수 있으며, [OpenAPI](/ko/integrations/clickpipes/programmatic-access/openapi)와 [Terraform](/ko/integrations/clickpipes/programmatic-access/terraform)을 사용해 프로그래밍 방식으로도 배포하고 관리할 수 있습니다.
 
-<div id="prerequisites">
-  ## 사전 요구사항
-</div>
+## 사전 요구사항 {#prerequisites}
 
 시작하기 전에 먼저 MongoDB 데이터베이스가 복제용으로 올바르게 구성되어 있는지 확인해야 합니다. 구성 단계는 MongoDB 배포 방식에 따라 달라지므로, 아래의 해당 가이드를 따르십시오.
 
@@ -43,11 +41,9 @@ MongoDB ClickPipes는 ClickPipes UI를 사용해 수동으로 배포하고 관�
 
 원본 MongoDB 데이터베이스 설정이 완료되면 ClickPipe 생성을 계속할 수 있습니다.
 
-<div id="create-your-clickpipe">
-  ## ClickPipe 만들기
-</div>
+## ClickPipe 만들기 {#create-your-clickpipe}
 
-ClickHouse Cloud 계정에 로그인되어 있는지 확인하십시오. 아직 계정이 없다면 [여기](https://cloud.clickhouse.com/)에서 가입할 수 있습니다.
+ClickHouse Cloud 계정에 로그인되어 있는지 확인하십시오. 아직 계정이 없다면 [여기](https://clickhouse.cloud/signUp?loc=docs-integrations-clickpipes-mongodb)에서 가입할 수 있습니다.
 
 1. ClickHouse Cloud 콘솔에서 ClickHouse Cloud 서비스로 이동합니다.
 
@@ -61,9 +57,7 @@ ClickHouse Cloud 계정에 로그인되어 있는지 확인하십시오. 아직 
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-tile.webp" alt="MongoDB 선택" size="lg" border />
 
-<div id="add-your-source-mongodb-database-connection">
-  ### 원본 MongoDB 데이터베이스 연결 추가
-</div>
+### 원본 MongoDB 데이터베이스 연결 추가 {#add-your-source-mongodb-database-connection}
 
 4. 사전 준비 단계에서 구성한 원본 MongoDB 데이터베이스의 연결 정보를 입력합니다.
 
@@ -74,15 +68,11 @@ ClickHouse Cloud 계정에 로그인되어 있는지 확인하십시오. 아직 
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-connection-details.webp" alt="연결 정보 입력" size="lg" border />
 
-<div id="optional-changing-tls-settings">
-  #### (선택 사항) TLS 설정 변경하기
-</div>
+#### (선택 사항) TLS 설정 변경하기 {#optional-changing-tls-settings}
 
 <ChangingTLSSettings />
 
-<div id="optional-set-up-ssh-tunneling">
-  #### (선택 사항) SSH 터널링 설정
-</div>
+#### (선택 사항) SSH 터널링 설정 {#optional-set-up-ssh-tunneling}
 
 원본 MongoDB 데이터베이스에 공개적으로 액세스할 수 없는 경우 SSH 터널링 정보를 지정할 수 있습니다.
 
@@ -102,9 +92,7 @@ ClickHouse Cloud 계정에 로그인되어 있는지 확인하십시오. 아직 
 
 연결 정보를 모두 입력한 후 `다음`을 클릭합니다.
 
-<div id="advanced-settings">
-  #### 고급 설정 구성
-</div>
+#### 고급 설정 구성 {#advanced-settings}
 
 필요한 경우 고급 설정을 구성할 수 있습니다. 각 설정에 대한 간단한 설명은 다음과 같습니다.
 
@@ -112,9 +100,7 @@ ClickHouse Cloud 계정에 로그인되어 있는지 확인하십시오. 아직 
 * **Pull batch size**: 단일 배치에서 가져올 행 수입니다. 이는 가능한 한 반영되는 설정이며, 모든 경우에 항상 적용되지는 않을 수 있습니다.
 * **Snapshot number of tables in parallel**: 초기 스냅샷 중 병렬로 가져올 테이블 수입니다. 테이블 수가 많은 경우, 병렬로 가져오는 테이블 수를 제어하는 데 유용합니다.
 
-<div id="configure-the-tables">
-  ### 테이블 구성
-</div>
+### 테이블 구성 {#configure-the-tables}
 
 5. 여기에서 ClickPipe의 대상 데이터베이스를 선택할 수 있습니다. 기존 데이터베이스를 선택하거나 새로 만들 수 있습니다.
 
@@ -122,23 +108,17 @@ ClickHouse Cloud 계정에 로그인되어 있는지 확인하십시오. 아직 
 
 6. 원본 MongoDB 데이터베이스에서 복제할 테이블을 선택할 수 있습니다. 테이블을 선택할 때 대상 ClickHouse 데이터베이스에서 테이블 이름을 변경할 수도 있습니다.
 
-<div id="review-permissions-and-start-the-clickpipe">
-  ### 권한을 검토하고 ClickPipe를 시작합니다
-</div>
+### 권한을 검토하고 ClickPipe를 시작합니다 {#review-permissions-and-start-the-clickpipe}
 
 7. 권한 드롭다운에서 &quot;Full access&quot; Role을 선택한 다음 &quot;Complete Setup&quot;을 클릭합니다.
 
    <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg" alt="권한 검토" size="lg" border />
 
-<div id="whats-next">
-  ## 다음 단계는?
-</div>
+## 다음 단계는? {#whats-next}
 
 MongoDB에서 ClickHouse Cloud로 데이터를 복제하도록 ClickPipe를 설정했다면, 이제 최적의 성능을 위해 데이터를 쿼리하고 모델링하는 방법에 집중할 수 있습니다.
 
-<div id="caveats">
-  ## 주의사항
-</div>
+## 주의사항 {#caveats}
 
 이 커넥터를 사용할 때 유의해야 할 몇 가지 사항은 다음과 같습니다:
 

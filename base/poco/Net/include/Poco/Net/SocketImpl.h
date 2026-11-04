@@ -391,6 +391,10 @@ namespace Net
         /// Returns true iff an external poller can drive this socket's
         /// readiness (the non-blocking / EAGAIN model).
 
+        virtual bool supportsNonBlocking() const;
+        /// Returns true iff setBlocking(false) is accepted. A socket that does
+        /// its own waiting rejects it and has to stay in blocking mode.
+
         virtual bool connectionOpen();
         /// Returns true iff the peer has not closed the connection,
         /// checked without consuming pending data or blocking.

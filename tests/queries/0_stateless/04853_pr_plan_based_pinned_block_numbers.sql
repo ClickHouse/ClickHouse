@@ -9,7 +9,6 @@
 -- rebuilds the read with max_block_numbers_to_read = nullptr, so a follower replica would silently
 -- read newer parts than the initiator's snapshot allows and return rows the quorum never confirmed.
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1;
 SET max_parallel_replicas = 3;
 SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';

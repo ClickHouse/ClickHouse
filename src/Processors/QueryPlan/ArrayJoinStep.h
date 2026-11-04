@@ -38,6 +38,9 @@ public:
     bool isLeft() const { return array_join.is_left; }
     bool isUnaligned() const { return is_unaligned; }
 
+    /// the step as arrayJoin(col), or arrayJoin(emptyArrayToSingle(col)) for LEFT, empty if it has no such form
+    std::optional<ActionsDAG> toActionsDAG() const;
+
     /// Attach an element-space filter (the fuse-filter pass sets this); the DAG references only joined columns
     void setElementFilter(ActionsDAG filter_dag, String filter_column_name, bool remove_filter_column);
     bool hasElementFilter() const { return element_filter.has_value(); }
@@ -52,8 +55,18 @@ public:
 
     QueryPlanStepPtr clone() const override;
 
+    /// Every column of the input is a column of the output at the same position, an array joined column with the type of
+    /// its elements. The step cannot drop a column, and the ones it reads are always needed: the array joined ones decide
+    /// how many rows there are, and the filter of the elements reads row columns as well.
+    bool canRemoveUnusedColumns() const override;
+    UnneededInputPositions getUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const override;
+    RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & unneeded_output_positions, const std::vector<PrunedInput> & inputs) override;
+
 private:
     void updateOutputHeader() override;
+
+    /// The columns of the input the step reads: the array joined ones, and the ones the filter of the elements reads.
+    NameSet getReadColumns() const;
 
     ArrayJoin array_join;
     bool is_unaligned = false;

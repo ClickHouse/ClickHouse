@@ -17,6 +17,7 @@ PipelineReadBuffer::PipelineReadBuffer(std::unique_ptr<ReaderExecutor> executor_
     , executor(std::move(executor_))
     , read_position(executor->getPosition())
 {
+    padded = false;
     LOG_DEBUG(log, "Created, total_size={}, read_position={}", executor->totalSize(), read_position);
 }
 
@@ -136,6 +137,11 @@ void PipelineReadBuffer::setReadUntilPosition(size_t position)
 void PipelineReadBuffer::setReadUntilEnd()
 {
     executor->setReadUntil(std::nullopt);
+}
+
+void PipelineReadBuffer::setRequestMap(ByteRangeSet ranges)
+{
+    executor->setRequestMap(std::move(ranges));
 }
 
 std::optional<size_t> PipelineReadBuffer::tryGetFileSize()

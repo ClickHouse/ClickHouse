@@ -1,0 +1,14 @@
+-- default bits per value: row groups without a filter, with a folded filter of c, total
+0	100	100
+-- default bits per value: probes for values of c that are present in exactly one row group
+row groups whose matching value was found: 10 of 10
+row groups read for present values: 10 of 10
+pruning still effective for present values
+-- default bits per value: probes for values of c that are absent everywhere
+absent values pruned
+-- 4 bits per value: row groups without a filter, with a folded filter of c, total
+0	100	100
+-- 4 bits per value: probes for values of c that are present in exactly one row group
+row groups whose matching value was found: 10 of 10
+row groups read for present values: 10 of 10
+pruning still effective for present values

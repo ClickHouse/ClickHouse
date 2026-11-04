@@ -2,1075 +2,798 @@
 sidebarTitle: '가이드'
 slug: /integrations/dbt/guides
 description: 'ClickHouse에서 dbt를 사용하기 위한 가이드'
-keywords: ['ClickHouse', 'dbt', '가이드']
+keywords: ['clickhouse', 'dbt', 'guides', 'jaffle shop']
 title: '가이드'
 doc_type: 'guide'
 ---
-
-import { Image } from "/snippets/ko/components/Image.jsx";
 
 import { ClickHouseSupportedBadge } from "/snippets/ko/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
 
-이 섹션에서는 dbt와 ClickHouse 어댑터를 설정하는 가이드와, 공개적으로 제공되는 IMDB 데이터셋을 사용해 ClickHouse에서 dbt를 사용하는 예시를 제공합니다. 이 예시에서는 다음 단계를 다룹니다:
+이 가이드는 dbt Labs의 대표적인 샘플 프로젝트를 ClickHouse로 이식한 [Jaffle Shop for ClickHouse](https://github.com/ClickHouse/jaffle-shop-clickhouse) 프로젝트를 사용해 dbt의 ClickHouse 관련 측면을 살펴봅니다. 이미 정상적으로 빌드되는 프로젝트를 출발점으로 삼아 다음 내용을 다룹니다.
 
-1. dbt 프로젝트를 생성하고 ClickHouse 어댑터를 설정합니다.
-2. 모델을 정의합니다.
-3. 모델을 업데이트합니다.
-4. 증분 모델을 생성합니다.
-5. 스냅샷 모델을 생성합니다.
-6. materialized view를 사용합니다.
+1. 프로젝트의 view와 테이블이 ClickHouse에 어떻게 생성되는지 이해합니다.
+2. seed로 데이터를 로드하고 ClickHouse 타입과 테이블 layout을 제어합니다.
+3. ClickHouse engine, sorting key, 파티셔닝을 사용해 테이블 model을 구성합니다.
+4. 테이블을 incremental model로 전환하고 incremental strategy를 선택합니다.
+5. snapshot을 생성합니다.
+6. ClickHouse materialized view를 사용합니다.
 
-이 가이드는 [문서](/ko/integrations/connectors/data-ingestion/etl-tools/dbt/index), [기능 및 구성](/ko/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations), [materializations 참고](/ko/integrations/connectors/data-ingestion/etl-tools/dbt/materializations)와 함께 사용할 수 있도록 작성되었습니다.
+이 가이드는 나머지 [문서](/ko/integrations/connectors/data-ingestion/etl-tools/dbt/index), [features and configurations](/ko/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations) 페이지, [materializations 참고](/ko/integrations/connectors/data-ingestion/etl-tools/dbt/materializations) 페이지와 함께 읽도록 구성되었습니다.
 
-<div id="setup">
-  ## 설정
-</div>
+## 시작하기 전에 {#before-you-start}
 
-환경을 준비하려면 [dbt 및 ClickHouse 어댑터 설정](/ko/integrations/connectors/data-ingestion/etl-tools/dbt/index) 섹션의 안내를 따르십시오.
+먼저 [ClickHouse/jaffle-shop-clickhouse](https://github.com/ClickHouse/jaffle-shop-clickhouse)의 README를 따르십시오. 이 문서에서는 dbt Core 1.x, dbt OSS, dbt v2 또는 dbt 플랫폼으로 프로젝트를 설정하는 방법, 로컬 ClickHouse(docker) 또는 ClickHouse Cloud를 가리키도록 지정하는 방법, `dbt seed`로 샘플 데이터를 로드하는 방법, 첫 `dbt build`를 실행하는 방법을 설명합니다. `dbt build`가 성공적으로 완료되면 ClickHouse 전용 예시와 구성을 확인하기 위해 이 페이지로 돌아오십시오.
 
-**중요: 아래 내용은 Python 3.9 환경에서 테스트되었습니다.**
+README의 단계를 마치면 ClickHouse에 다음 두 개의 데이터베이스가 생성되어 있어야 합니다:
 
-<div id="prepare-clickhouse">
-  ### ClickHouse 준비
-</div>
+* `raw`: `dbt seed`가 CSV 파일에서 로드한 6개의 원본 테이블(`raw_customers`, `raw_orders`, `raw_items`, `raw_products`, `raw_stores`, `raw_supplies`).
+* `jaffle_shop`(프로필의 `schema`): 6개의 스테이징 뷰(`stg_*`)와 7개의 마트 테이블(`customers`, `orders`, `order_items`, `products`, `locations`, `supplies`, `metricflow_time_spine`).
 
-dbt는 고도로 관계형인 데이터를 모델링하는 데 매우 적합합니다. 예시를 위해 아래와 같은 관계형 스키마를 가진 소규모 IMDB 데이터셋을 제공합니다. 이 데이터셋은 [관계형 데이터셋 리포지토리](https://relational.fit.cvut.cz/dataset/IMDb)에서 가져왔습니다. 이는 dbt와 함께 일반적으로 사용하는 스키마와 비교하면 매우 단순하지만, 다루기 쉬운 예시로는 적절합니다.
+프로필에서 다른 `schema`를 사용하는 경우, 아래 쿼리의 `jaffle_shop`을 해당 값으로 바꾸십시오.
 
-<Image img="/images/integrations/data-ingestion/etl-tools/dbt/dbt_01.webp" size="lg" alt="IMDB 테이블 스키마" />
+<Note>
+  **dbt Core 1.x, dbt OSS, dbt v2 및 dbt 플랫폼.** 이 가이드의 모든 명령어와 모델은 이들 모두에서 동일합니다. 예시는 `dbt-clickhouse` 1.10을 사용한 dbt Core 1.12와 dbt OSS 2.0으로 ClickHouse 26.8을 대상으로 테스트했으며, dbt v2는 동일한 어댑터로 동작하고 dbt 플랫폼은 dbt v2로 동작합니다. 여기에 표시된 콘솔 출력은 dbt Core 1.x의 것이며, 엔진별로 동작이 다른 몇 가지 부분은 별도로 언급합니다. v2 어댑터의 현재 상태는 [dbt OSS, dbt v2 및 dbt 플랫폼 페이지](/ko/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform)를 참조하고, dbt 플랫폼에서 시작하려면 dbt 문서의 [Connect ClickHouse](https://docs.getdbt.com/docs/platform/connect-data-platform/connect-clickhouse)를 참조하십시오.
+</Note>
 
-표시된 것처럼 이들 테이블의 부분 집합을 사용합니다.
+dbt 명령어가 아닌 모든 SQL 문은 ClickHouse에서 직접 실행하도록 작성되었습니다. 예를 들어 `clickhouse client`, ClickHouse Cloud SQL 콘솔 또는 원하는 SQL 클라이언트를 사용할 수 있습니다.
 
-다음 테이블을 생성하십시오:
+## 프로젝트가 머티리얼라이즈되는 방식 {#views-and-tables}
+
+Jaffle Shop은 `dbt_project.yml`에서 materializations를 구성하며, staging 모델은 view로, marts는 table로 생성됩니다.
+
+```yaml
+models:
+  jaffle_shop:
+    staging:
+      +materialized: view
+    marts:
+      +materialized: table
+```
+
+**view** 모델은 실행할 때마다 `CREATE OR REPLACE VIEW` 문으로 다시 생성됩니다. 데이터를 저장하지 않으므로 빌드 비용은 들지 않지만, 이 뷰를 조회하는 모든 쿼리는 모델의 SQL을 원본 테이블에 대해 실행합니다. ClickHouse는 모델의 컴파일된 SQL을 뷰 정의(view definition)에 보관합니다:
 
 ```sql
-CREATE DATABASE imdb;
+SHOW CREATE VIEW jaffle_shop.stg_orders;
+```
 
-CREATE TABLE imdb.actors
+```response
+CREATE VIEW jaffle_shop.stg_orders
 (
-    id         UInt32,
-    first_name String,
-    last_name  String,
-    gender     FixedString(1)
-) ENGINE = MergeTree ORDER BY (id, first_name, last_name, gender);
+    `order_id` String,
+    `location_id` String,
+    `customer_id` String,
+    ...
+    `ordered_at` DateTime
+)
+AS WITH
+    source AS
+    (
+        SELECT *
+        FROM raw.raw_orders
+    ),
+    renamed AS
+    (
+        SELECT
+            id AS order_id,
+            store_id AS location_id,
+            ...
+            dateTrunc('day', ordered_at) AS ordered_at
+        FROM source
+    )
+SELECT *
+FROM renamed
+```
 
-CREATE TABLE imdb.directors
-(
-    id         UInt32,
-    first_name String,
-    last_name  String
-) ENGINE = MergeTree ORDER BY (id, first_name, last_name);
+**table** model은 실행할 때마다 처음부터 다시 생성됩니다. 어댑터가 새 테이블을 생성한 뒤, model의 SQL로 `INSERT INTO ... SELECT`를 실행하고 이를 이전 버전과 원자적으로 교환합니다. 쿼리 성능은 view보다 훨씬 뛰어나지만, 저장 공간을 차지하고 매번 전체 테이블을 재구성해야 한다는 비용이 따릅니다. dbt가 `orders` 마트를 위해 생성한 테이블을 살펴보십시오.
 
-CREATE TABLE imdb.genres
-(
-    movie_id UInt32,
-    genre    String
-) ENGINE = MergeTree ORDER BY (movie_id, genre);
+```sql
+SHOW CREATE TABLE jaffle_shop.orders;
+```
 
-CREATE TABLE imdb.movie_directors
+```response
+CREATE TABLE jaffle_shop.orders
 (
-    director_id UInt32,
-    movie_id    UInt64
-) ENGINE = MergeTree ORDER BY (director_id, movie_id);
+    `order_id` String,
+    `location_id` String,
+    `customer_id` String,
+    ...
+    `customer_order_number` UInt64
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS replicated_deduplication_window = '0', index_granularity = 8192
+```
 
-CREATE TABLE imdb.movies
-(
-    id   UInt32,
-    name String,
-    year UInt32,
-    rank Float32 DEFAULT 0
-) ENGINE = MergeTree ORDER BY (id, name, year);
+여기서 ClickHouse에 특화된 부분은 두 가지입니다. 이 model은 테이블 엔진을 선언하지 않으므로 어댑터가 `MergeTree`를 사용하고, sorting key도 선언하지 않으므로 어댑터가 `ORDER BY tuple()`을 사용합니다. 즉, 데이터가 전혀 정렬되지 않습니다. 샘플 프로젝트에서는 문제가 없지만, 실제 table이라면 두 가지 모두 직접 지정하는 것이 좋으며, 다음 섹션에서 바로 그 작업을 진행합니다. 어댑터가 지원하는 모든 테이블 구성은 [materializations 페이지](/ko/integrations/connectors/data-ingestion/etl-tools/dbt/materializations)에서 확인할 수 있습니다.
 
-CREATE TABLE imdb.roles
-(
-    actor_id   UInt32,
-    movie_id   UInt32,
-    role       String,
-    created_at DateTime DEFAULT now()
-) ENGINE = MergeTree ORDER BY (actor_id, movie_id);
+## seed로 데이터 로드하기 {#seeds}
+
+Jaffle Shop은 dbt [seeds](https://docs.getdbt.com/docs/build/seeds)를 사용해 `seeds/jaffle-data`의 CSV 파일에서 원시 데이터를 로드합니다. seed는 작고 정적인 참조 데이터(코드 테이블, 매핑)를 위한 기능이며, warehouse를 채우는 용도가 아닙니다. 이 프로젝트는 별도의 수집 도구 없이도 바로 시작할 수 있도록 편의상 seed를 사용하며, 그래서 `--vars '{"load_source_data": true}'`를 전달하지 않으면 seed가 비활성화되어 있습니다.
+
+그럼에도 seed는 dbt가 ClickHouse 테이블을 어떻게 생성하는지 익히기에 좋은 출발점입니다. dbt는 각 CSV 컬럼의 컬럼 타입을 추론하며, 추론된 타입은 엔진에 따라 다릅니다:
+
+| CSV 값                 | dbt v1     | v2 엔진           |
+| --------------------- | ---------- | --------------- |
+| `700`                 | `Int32`    | `Int64`         |
+| `0.06`                | `Float32`  | `Float64`       |
+| `2024-09-01T15:01:00` | `DateTime` | `DateTime64(6)` |
+| `Philadelphia`        | `String`   | `String`        |
+
+타입이 중요하다면 `column_types`로 명시적으로 지정하십시오. 이 프로젝트에서는 이미 `dbt_project.yml`에서 `raw_stores` seed의 `opened_at` 컬럼에 이를 적용하고 있습니다:
+
+```yaml
+seeds:
+  jaffle_shop:
+    +schema: raw
+    jaffle-data:
+      +enabled: "{{ var('load_source_data', false) }}"
+      raw_stores:
+        +column_types:
+          opened_at: DateTime64(3)
+```
+
+seed는 ClickHouse 테이블 구성인 `engine`, `order_by`, `partition_by`도 지원합니다. 예를 들어 `raw_orders` seed를 주문 시각 기준으로 정렬하고 월별로 파티셔닝하려면, CSV 파일과 같은 위치에 속성 파일 `seeds/jaffle-data/_raw_orders.yml`을 추가하십시오:
+
+```yaml
+seeds:
+  - name: raw_orders
+    config:
+      order_by: (ordered_at, id)
+      partition_by: toYYYYMM(ordered_at)
 ```
 
 <Note>
-  테이블 `roles`의 `created_at` 컬럼 기본값은 `now()`입니다. 이는 나중에 모델의 증분 업데이트를 식별하는 데 사용합니다. 자세한 내용은 [증분 모델](#creating-an-incremental-materialization)을 참조하십시오.
+  이러한 ClickHouse seed 구성에는 `dbt_project.yml`의 `seeds:` 아래에 있는 `+order_by` 또는 `+engine` 키 대신 properties 파일을 사용하십시오. dbt Core 1.x는 두 형식 모두를 허용하지만, dbt v2는 properties 파일에서만 이를 인식하며 `dbt_project.yml`의 키는 `Unrecognized key ... Custom keys must go under +meta` 오류와 함께 거부합니다.
 </Note>
 
-데이터를 삽입하기 위해 `s3` 함수를 사용해 공개 엔드포인트에서 소스 데이터를 읽습니다. 테이블을 채우려면 다음 명령을 실행하세요:
+해당 seed를 다시 로드하고 생성된 테이블을 확인하십시오:
 
-```sql
-INSERT INTO imdb.actors
-SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/imdb/imdb_ijs_actors.tsv.gz', NOSIGN,
-'TSVWithNames');
-
-INSERT INTO imdb.directors
-SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/imdb/imdb_ijs_directors.tsv.gz', NOSIGN,
-'TSVWithNames');
-
-INSERT INTO imdb.genres
-SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/imdb/imdb_ijs_movies_genres.tsv.gz', NOSIGN,
-'TSVWithNames');
-
-INSERT INTO imdb.movie_directors
-SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/imdb/imdb_ijs_movies_directors.tsv.gz', NOSIGN,
-        'TSVWithNames');
-
-INSERT INTO imdb.movies
-SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/imdb/imdb_ijs_movies.tsv.gz', NOSIGN,
-'TSVWithNames');
-
-INSERT INTO imdb.roles(actor_id, movie_id, role)
-SELECT actor_id, movie_id, role
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/imdb/imdb_ijs_roles.tsv.gz', NOSIGN,
-'TSVWithNames');
+```bash
+dbt seed --select raw_orders --full-refresh --vars '{"load_source_data": true}'
 ```
 
-실행 시간은 사용 중인 대역폭에 따라 달라질 수 있지만, 각 작업은 완료까지 몇 초밖에 걸리지 않습니다. 다음 쿼리를 실행하여 영화 출연 횟수 순으로 각 배우의 요약을 계산하고, 데이터가 성공적으로 로드되었는지 확인하십시오:
-
 ```sql
-SELECT id,
-       any(actor_name)          AS name,
-       uniqExact(movie_id)    AS num_movies,
-       avg(rank)                AS avg_rank,
-       uniqExact(genre)         AS unique_genres,
-       uniqExact(director_name) AS uniq_directors,
-       max(created_at)          AS updated_at
-FROM (
-         SELECT imdb.actors.id  AS id,
-                concat(imdb.actors.first_name, ' ', imdb.actors.last_name)  AS actor_name,
-                imdb.movies.id AS movie_id,
-                imdb.movies.rank AS rank,
-                genre,
-                concat(imdb.directors.first_name, ' ', imdb.directors.last_name) AS director_name,
-                created_at
-         FROM imdb.actors
-                  JOIN imdb.roles ON imdb.roles.actor_id = imdb.actors.id
-                  LEFT OUTER JOIN imdb.movies ON imdb.movies.id = imdb.roles.movie_id
-                  LEFT OUTER JOIN imdb.genres ON imdb.genres.movie_id = imdb.movies.id
-                  LEFT OUTER JOIN imdb.movie_directors ON imdb.movie_directors.movie_id = imdb.movies.id
-                  LEFT OUTER JOIN imdb.directors ON imdb.directors.id = imdb.movie_directors.director_id
-         )
-GROUP BY id
-ORDER BY num_movies DESC
-LIMIT 5;
+SHOW CREATE TABLE raw.raw_orders;
 ```
-
-응답은 다음과 같아야 합니다:
 
 ```response
-+------+------------+----------+------------------+-------------+--------------+-------------------+
-|id    |name        |num_movies|avg_rank          |unique_genres|uniq_directors|updated_at         |
-+------+------------+----------+------------------+-------------+--------------+-------------------+
-|45332 |Mel Blanc   |832       |6.175853582979779 |18           |84            |2022-04-26 14:01:45|
-|621468|Bess Flowers|659       |5.57727638854796  |19           |293           |2022-04-26 14:01:46|
-|372839|Lee Phelps  |527       |5.032976449684617 |18           |261           |2022-04-26 14:01:46|
-|283127|Tom London  |525       |2.8721716524875673|17           |203           |2022-04-26 14:01:46|
-|356804|Bud Osborne |515       |2.0389507108727773|15           |149           |2022-04-26 14:01:46|
-+------+------------+----------+------------------+-------------+--------------+-------------------+
-```
-
-이후 가이드에서는 이 쿼리를 모델로 변환한 뒤, ClickHouse에서 dbt 뷰와 테이블로 구체화합니다.
-
-<div id="connecting-to-clickhouse">
-  ## ClickHouse에 연결하기
-</div>
-
-1. dbt 프로젝트를 생성합니다. 여기서는 `imdb` 소스의 이름을 따서 프로젝트 이름을 지정합니다. 프롬프트가 표시되면 데이터베이스 소스로 `clickhouse`를 선택합니다.
-
-   ```bash
-   clickhouse-user@clickhouse:~$ dbt init imdb
-
-   16:52:40  Running with dbt=1.1.0
-   Which database would you like to use?
-   [1] clickhouse
-
-   (Don't see the one you want? https://docs.getdbt.com/docs/available-adapters)
-
-   Enter a number: 1
-   16:53:21  No sample profile found for clickhouse.
-   16:53:21
-   Your new dbt project "imdb" was created!
-
-   For more information on how to configure the profiles.yml file,
-   please consult the dbt documentation here:
-
-   https://docs.getdbt.com/docs/configure-your-profile
-   ```
-
-2. 프로젝트 폴더로 이동합니다.
-
-   ```bash
-   cd imdb
-   ```
-
-3. 이제 원하는 텍스트 편집기가 필요합니다. 아래 예시에서는 널리 사용되는 VS Code를 사용합니다. IMDB 디렉터리를 열면 yml 파일과 sql 파일이 있는 것을 확인할 수 있습니다.
-
-   <Image img="/images/integrations/data-ingestion/etl-tools/dbt/dbt_02.webp" size="lg" alt="새 dbt 프로젝트" />
-
-4. `dbt_project.yml` 파일을 업데이트하여 첫 번째 model인 `actor_summary`를 지정하고, profile을 `clickhouse_imdb`로 설정합니다.
-
-   <Image img="/images/integrations/data-ingestion/etl-tools/dbt/dbt_03.webp" size="lg" alt="dbt 프로필" />
-
-   <Image img="/images/integrations/data-ingestion/etl-tools/dbt/dbt_04.webp" size="lg" alt="dbt 프로필" />
-
-5. 다음으로 dbt에 ClickHouse 인스턴스의 연결 정보를 제공해야 합니다. 아래 내용을 `~/.dbt/profiles.yml`에 추가합니다.
-
-   ```yml
-   clickhouse_imdb:
-     target: dev
-     outputs:
-       dev:
-         type: clickhouse
-         schema: imdb_dbt
-         host: localhost
-         port: 8123
-         user: default
-         password: ''
-         secure: False
-   ```
-
-   `user`와 `password`는 환경에 맞게 수정해야 합니다. 추가로 사용할 수 있는 설정은 [여기](https://github.com/silentsokolov/dbt-clickhouse#example-profile)에 문서화되어 있습니다.
-
-6. IMDB 디렉터리에서 `dbt debug` 명령을 실행하여 dbt가 ClickHouse에 연결할 수 있는지 확인합니다.
-
-   ```bash
-   clickhouse-user@clickhouse:~/imdb$ dbt debug
-   17:33:53  Running with dbt=1.1.0
-   dbt version: 1.1.0
-   python version: 3.10.1
-   python path: /home/dale/.pyenv/versions/3.10.1/bin/python3.10
-   os info: Linux-5.13.0-10039-tuxedo-x86_64-with-glibc2.31
-   Using profiles.yml file at /home/dale/.dbt/profiles.yml
-   Using dbt_project.yml file at /opt/dbt/imdb/dbt_project.yml
-
-   Configuration:
-   profiles.yml file [OK found and valid]
-   dbt_project.yml file [OK found and valid]
-
-   Required dependencies:
-   - git [OK found]
-
-   Connection:
-   host: localhost
-   port: 8123
-   user: default
-   schema: imdb_dbt
-   secure: False
-   verify: False
-   Connection test: [OK connection ok]
-
-   All checks passed!
-   ```
-
-   응답에 `Connection test: [OK connection ok]`가 포함되어 있는지 확인하십시오. 이는 연결이 성공했음을 의미합니다.
-
-<div id="creating-a-simple-view-materialization">
-  ## 간단한 뷰 머티리얼라이즈 만들기
-</div>
-
-뷰 머티리얼라이즈를 사용하면 모델은 실행할 때마다 ClickHouse의 `CREATE VIEW AS` 구문을 통해 뷰로 다시 생성됩니다. 이 방식은 데이터를 추가로 저장할 필요는 없지만, 테이블 머티리얼라이즈보다 쿼리 성능이 느립니다.
-
-1. `imdb` 폴더에서 `models/example` 디렉터리를 삭제하십시오:
-
-   ```bash
-   clickhouse-user@clickhouse:~/imdb$ rm -rf models/example
-   ```
-
-2. `models` 폴더의 `actors` 내에 새 파일을 만드세요. 여기서는 각 파일이 하나의 actor 모델을 나타내도록 생성합니다:
-
-   ```bash
-   clickhouse-user@clickhouse:~/imdb$ mkdir models/actors
-   ```
-
-3. `models/actors` 폴더에 `schema.yml`과 `actor_summary.sql` 파일을 생성하세요.
-
-   ```bash
-   clickhouse-user@clickhouse:~/imdb$ touch models/actors/actor_summary.sql
-   clickhouse-user@clickhouse:~/imdb$ touch models/actors/schema.yml
-   ```
-
-   파일 `schema.yml`에서 테이블을 정의합니다. 이렇게 정의한 테이블은 이후 매크로에서 사용할 수 있습니다. Edit
-   `models/actors/schema.yml` 파일을 편집하여 다음 내용을 포함하도록 하세요:
-
-   ```yml
-   version: 2
-
-   sources:
-   - name: imdb
-     tables:
-     - name: directors
-     - name: actors
-     - name: roles
-     - name: movies
-     - name: genres
-     - name: movie_directors
-   ```
-
-   `actors_summary.sql`은 실제 model을 정의합니다. config 함수에서는 이 model이 ClickHouse에서 뷰로 구체화되도록 요청한다는 점에 유의하십시오. 테이블은 `schema.yml` 파일에서 `source` 함수를 통해 참조합니다. 예를 들어 `source('imdb', 'movies')`는 `imdb` 데이터베이스의 `movies` 테이블을 가리킵니다. `models/actors/actors_summary.sql`을 편집하여 다음 내용을 포함하도록 하십시오:
-
-   ```sql
-   {{ config(materialized='view') }}
-
-   with actor_summary as (
-   SELECT id,
-       any(actor_name) as name,
-       uniqExact(movie_id)    as num_movies,
-       avg(rank)                as avg_rank,
-       uniqExact(genre)         as genres,
-       uniqExact(director_name) as directors,
-       max(created_at) as updated_at
-   FROM (
-           SELECT {{ source('imdb', 'actors') }}.id as id,
-                   concat({{ source('imdb', 'actors') }}.first_name, ' ', {{ source('imdb', 'actors') }}.last_name) as actor_name,
-                   {{ source('imdb', 'movies') }}.id as movie_id,
-                   {{ source('imdb', 'movies') }}.rank as rank,
-                   genre,
-                   concat({{ source('imdb', 'directors') }}.first_name, ' ', {{ source('imdb', 'directors') }}.last_name) as director_name,
-                   created_at
-           FROM {{ source('imdb', 'actors') }}
-                       JOIN {{ source('imdb', 'roles') }} ON {{ source('imdb', 'roles') }}.actor_id = {{ source('imdb', 'actors') }}.id
-                       LEFT OUTER JOIN {{ source('imdb', 'movies') }} ON {{ source('imdb', 'movies') }}.id = {{ source('imdb', 'roles') }}.movie_id
-                       LEFT OUTER JOIN {{ source('imdb', 'genres') }} ON {{ source('imdb', 'genres') }}.movie_id = {{ source('imdb', 'movies') }}.id
-                       LEFT OUTER JOIN {{ source('imdb', 'movie_directors') }} ON {{ source('imdb', 'movie_directors') }}.movie_id = {{ source('imdb', 'movies') }}.id
-                       LEFT OUTER JOIN {{ source('imdb', 'directors') }} ON {{ source('imdb', 'directors') }}.id = {{ source('imdb', 'movie_directors') }}.director_id
-           )
-   GROUP BY id
-   )
-
-   select *
-   from actor_summary
-   ```
-
-   최종 actor&#95;summary에 `updated_at` 컬럼을 포함했다는 점에 유의하십시오. 이는 이후 증분 머티리얼라이제이션에 사용됩니다.
-
-4. `imdb` 디렉터리에서 `dbt run` 명령을 실행하세요.
-
-   ```bash
-   clickhouse-user@clickhouse:~/imdb$ dbt run
-   15:05:35  Running with dbt=1.1.0
-   15:05:35  Found 1 model, 0 tests, 1 snapshot, 0 analyses, 181 macros, 0 operations, 0 seed files, 6 sources, 0 exposures, 0 metrics
-   15:05:35
-   15:05:36  Concurrency: 1 threads (target='dev')
-   15:05:36
-   15:05:36  1 of 1 START view model imdb_dbt.actor_summary.................................. [RUN]
-   15:05:37  1 of 1 OK created view model imdb_dbt.actor_summary............................. [OK in 1.00s]
-   15:05:37
-   15:05:37  Finished running 1 view model in 1.97s.
-   15:05:37
-   15:05:37  Completed successfully
-   15:05:37
-   15:05:37  Done. PASS=1 WARN=0 ERROR=0 SKIP=0 TOTAL=1
-   ```
-
-5. dbt는 요청한 대로 model을 ClickHouse의 뷰로 생성합니다. 이제 이 뷰에 직접 쿼리할 수 있습니다. 이 뷰는 `imdb_dbt` 데이터베이스에 생성되며, 이는 `clickhouse_imdb` profile 아래 `~/.dbt/profiles.yml` 파일의 스키마(schema) 매개변수로 결정됩니다.
-
-   ```sql
-   SHOW DATABASES;
-   ```
-
-   ```response
-   +------------------+
-   |name              |
-   +------------------+
-   |INFORMATION_SCHEMA|
-   |default           |
-   |imdb              |
-   |imdb_dbt          |  <---dbt로 생성됨!
-   |information_schema|
-   |system            |
-   +------------------+
-   ```
-
-   이 뷰를 쿼리하면 더 간단한 구문으로 앞서 실행한 쿼리의 결과를 재현할 수 있습니다:
-
-   ```sql
-   SELECT * FROM imdb_dbt.actor_summary ORDER BY num_movies DESC LIMIT 5;
-   ```
-
-   ```response
-   +------+------------+----------+------------------+------+---------+-------------------+
-   |id    |name        |num_movies|avg_rank          |genres|directors|updated_at         |
-   +------+------------+----------+------------------+------+---------+-------------------+
-   |45332 |Mel Blanc   |832       |6.175853582979779 |18    |84       |2022-04-26 15:26:55|
-   |621468|Bess Flowers|659       |5.57727638854796  |19    |293      |2022-04-26 15:26:57|
-   |372839|Lee Phelps  |527       |5.032976449684617 |18    |261      |2022-04-26 15:26:56|
-   |283127|Tom London  |525       |2.8721716524875673|17    |203      |2022-04-26 15:26:56|
-   |356804|Bud Osborne |515       |2.0389507108727773|15    |149      |2022-04-26 15:26:56|
-   +------+------------+----------+------------------+------+---------+-------------------+
-   ```
-
-<div id="creating-a-table-materialization">
-  ## 테이블 머티리얼라이즈 생성하기
-</div>
-
-이전 예시에서 모델은 뷰로 구체화되었습니다. 일부 쿼리에는 이것만으로도 충분한 성능을 제공할 수 있지만, 더 복잡한 SELECT 또는 자주 실행되는 쿼리는 테이블로 구체화하는 편이 더 적합할 수 있습니다. 이러한 머티리얼라이즈는 BI 도구에서 조회할 모델에 유용하며, 더 빠른 사용 경험을 제공하는 데 도움이 됩니다. 이는 사실상 쿼리 결과를 새로운 테이블로 저장하므로, 그에 따른 스토리지 오버헤드가 발생합니다. 즉, `INSERT TO SELECT`가 실행됩니다. 이 테이블은 매번 다시 생성되며, 다시 말해 증분 방식이 아닙니다. 따라서 큰 결과 집합은 실행 시간이 길어질 수 있습니다. 자세한 내용은 [dbt 제한 사항](/ko/integrations/connectors/data-ingestion/etl-tools/dbt/index#limitations)을 참조하십시오.
-
-1. `actors_summary.sql` 파일을 수정하여 `materialized` 매개변수를 `table`로 설정합니다. `ORDER BY`가 어떻게 정의되어 있는지와 `MergeTree` 테이블 엔진을 사용한다는 점에 주목하십시오:
-
-   ```sql
-   {{ config(order_by='(updated_at, id, name)', engine='MergeTree()', materialized='table') }}
-   ```
-
-2. `imdb` 디렉터리에서 `dbt run` 명령을 실행합니다. 이 작업은 완료까지 약간 더 오래 걸릴 수 있으며, 대부분의 환경에서 약 10초 정도 소요됩니다.
-
-   ```bash
-   clickhouse-user@clickhouse:~/imdb$ dbt run
-   15:13:27  Running with dbt=1.1.0
-   15:13:27  Found 1 model, 0 tests, 1 snapshot, 0 analyses, 181 macros, 0 operations, 0 seed files, 6 sources, 0 exposures, 0 metrics
-   15:13:27
-   15:13:28  Concurrency: 1 threads (target='dev')
-   15:13:28
-   15:13:28  1 of 1 START table model imdb_dbt.actor_summary................................. [RUN]
-   15:13:37  1 of 1 OK created table model imdb_dbt.actor_summary............................ [OK in 9.22s]
-   15:13:37
-   15:13:37  Finished running 1 table model in 10.20s.
-   15:13:37
-   15:13:37  Completed successfully
-   15:13:37
-   15:13:37  Done. PASS=1 WARN=0 ERROR=0 SKIP=0 TOTAL=1
-   ```
-
-3. `imdb_dbt.actor_summary` 테이블이 생성되었는지 확인합니다:
-
-   ```sql
-   SHOW CREATE TABLE imdb_dbt.actor_summary;
-   ```
-
-   적절한 데이터 타입으로 정의된 테이블이 표시되어야 합니다:
-
-   ```response
-   +----------------------------------------
-   |statement
-   +----------------------------------------
-   |CREATE TABLE imdb_dbt.actor_summary
-   |(
-   |`id` UInt32,
-   |`first_name` String,
-   |`last_name` String,
-   |`num_movies` UInt64,
-   |`updated_at` DateTime
-   |)
-   |ENGINE = MergeTree
-   |ORDER BY (id, first_name, last_name)
-   +----------------------------------------
-   ```
-
-4. 이 테이블의 결과가 이전 응답과 일치하는지 확인합니다. 이제 모델이 테이블로 구체화되었으므로 응답 시간이 눈에 띄게 개선된 것을 확인할 수 있습니다:
-
-   ```sql
-   SELECT * FROM imdb_dbt.actor_summary ORDER BY num_movies DESC LIMIT 5;
-   ```
-
-   ```response
-   +------+------------+----------+------------------+------+---------+-------------------+
-   |id    |name        |num_movies|avg_rank          |genres|directors|updated_at         |
-   +------+------------+----------+------------------+------+---------+-------------------+
-   |45332 |Mel Blanc   |832       |6.175853582979779 |18    |84       |2022-04-26 15:26:55|
-   |621468|Bess Flowers|659       |5.57727638854796  |19    |293      |2022-04-26 15:26:57|
-   |372839|Lee Phelps  |527       |5.032976449684617 |18    |261      |2022-04-26 15:26:56|
-   |283127|Tom London  |525       |2.8721716524875673|17    |203      |2022-04-26 15:26:56|
-   |356804|Bud Osborne |515       |2.0389507108727773|15    |149      |2022-04-26 15:26:56|
-   +------+------------+----------+------------------+------+---------+-------------------+
-   ```
-
-   이 모델에 대해 다른 쿼리도 자유롭게 실행해 보십시오. 예를 들어, 5편을 초과해 출연한 배우 중 평균 평점이 가장 높은 배우는 누구인지 확인할 수 있습니다.
-
-   ```sql
-   SELECT * FROM imdb_dbt.actor_summary WHERE num_movies > 5 ORDER BY avg_rank  DESC LIMIT 10;
-   ```
-
-<div id="creating-an-incremental-materialization">
-  ## 증분 머티리얼라이즈 생성하기
-</div>
-
-이전 예시에서는 모델을 머티리얼라이즈하기 위한 테이블을 생성했습니다. 이 테이블은 dbt를 실행할 때마다 다시 생성됩니다. 결과 집합이 크거나 변환이 복잡한 경우, 이 방식은 현실적이지 않거나 비용이 매우 많이 들 수 있습니다. 이러한 문제를 해결하고 빌드 시간을 줄이기 위해 dbt는 증분 머티리얼라이즈를 제공합니다. 이를 사용하면 마지막 실행 이후 변경된 레코드를 테이블에 삽입하거나 업데이트할 수 있으므로 이벤트성 데이터에 적합합니다. 내부적으로는 먼저 업데이트된 모든 레코드가 포함된 임시 테이블을 만든 다음, 변경되지 않은 레코드와 업데이트된 레코드를 모두 새 대상 테이블(target table)에 삽입합니다. 따라서 큰 결과 집합에서는 table 모델과 유사한 [제약 사항](/ko/integrations/connectors/data-ingestion/etl-tools/dbt/index#limitations)이 있습니다.
-
-큰 집합에서 이러한 제약을 극복하기 위해 어댑터는 &#39;inserts&#95;only&#39; 모드를 지원합니다. 이 모드에서는 임시 테이블을 만들지 않고 모든 업데이트를 대상 테이블에 삽입합니다(자세한 내용은 아래 참조).
-
-이 예시를 설명하기 위해 배우 &quot;Clicky McClickHouse&quot;를 추가하겠습니다. 그는 무려 910편의 영화에 출연하며, [Mel Blanc](https://en.wikipedia.org/wiki/Mel_Blanc)보다도 더 많은 영화에 출연한 인물이 됩니다.
-
-1. 먼저 model을 incremental 유형으로 변경합니다. 이를 추가하려면 다음이 필요합니다:
-
-   1. **unique&#95;key** - 어댑터가 행을 고유하게 식별할 수 있도록 unique&#95;key를 제공해야 합니다. 이 경우 쿼리의 `id` 필드면 충분합니다. 이렇게 하면 구체화된 테이블(Materialized Table)에 중복 행이 생기지 않습니다. 고유성 제약 조건에 관한 자세한 내용은 [여기](https://docs.getdbt.com/docs/building-a-dbt-project/building-models/configuring-incremental-models#defining-a-uniqueness-constraint-optional)를 참조하십시오.
-   2. **Incremental filter** - 또한 증분 실행 시 변경된 행을 dbt가 어떻게 식별할지 지정해야 합니다. 이는 델타 표현식을 제공해 구현합니다. 일반적으로 이벤트 데이터에는 타임스탬프를 사용하므로, 여기서는 updated&#95;at 타임스탬프 필드를 사용합니다. 이 컬럼은 행이 삽입될 때 기본값으로 now()를 사용하므로 새로운 역할을 식별할 수 있습니다. 또한 새 액터가 추가되는 경우도 식별해야 합니다. 기존 구체화된 테이블을 나타내는 `{{this}}` 변수를 사용하면 `where id > (select max(id) from {{ this }}) or updated_at > (select max(updated_at) from {{this}})`라는 표현식을 만들 수 있습니다. 이 표현식은 `{% if is_incremental() %}` 조건 안에 넣어 테이블을 처음 생성할 때가 아니라 증분 실행에서만 사용되도록 합니다. 증분 모델에서 행을 필터링하는 방법에 관한 자세한 내용은 [dbt 문서의 이 설명](https://docs.getdbt.com/docs/building-a-dbt-project/building-models/configuring-incremental-models#filtering-rows-on-an-incremental-run)을 참조하십시오.
-
-   `actor_summary.sql` 파일을 다음과 같이 수정하십시오:
-
-   ```sql
-   {{ config(order_by='(updated_at, id, name)', engine='MergeTree()', materialized='incremental', unique_key='id') }}
-   with actor_summary as (
-       SELECT id,
-           any(actor_name) as name,
-           uniqExact(movie_id)    as num_movies,
-           avg(rank)                as avg_rank,
-           uniqExact(genre)         as genres,
-           uniqExact(director_name) as directors,
-           max(created_at) as updated_at
-       FROM (
-           SELECT {{ source('imdb', 'actors') }}.id as id,
-               concat({{ source('imdb', 'actors') }}.first_name, ' ', {{ source('imdb', 'actors') }}.last_name) as actor_name,
-               {{ source('imdb', 'movies') }}.id as movie_id,
-               {{ source('imdb', 'movies') }}.rank as rank,
-               genre,
-               concat({{ source('imdb', 'directors') }}.first_name, ' ', {{ source('imdb', 'directors') }}.last_name) as director_name,
-               created_at
-       FROM {{ source('imdb', 'actors') }}
-           JOIN {{ source('imdb', 'roles') }} ON {{ source('imdb', 'roles') }}.actor_id = {{ source('imdb', 'actors') }}.id
-           LEFT OUTER JOIN {{ source('imdb', 'movies') }} ON {{ source('imdb', 'movies') }}.id = {{ source('imdb', 'roles') }}.movie_id
-           LEFT OUTER JOIN {{ source('imdb', 'genres') }} ON {{ source('imdb', 'genres') }}.movie_id = {{ source('imdb', 'movies') }}.id
-           LEFT OUTER JOIN {{ source('imdb', 'movie_directors') }} ON {{ source('imdb', 'movie_directors') }}.movie_id = {{ source('imdb', 'movies') }}.id
-           LEFT OUTER JOIN {{ source('imdb', 'directors') }} ON {{ source('imdb', 'directors') }}.id = {{ source('imdb', 'movie_directors') }}.director_id
-       )
-       GROUP BY id
-   )
-   select *
-   from actor_summary
-
-   {% if is_incremental() %}
-
-   -- 이 필터는 증분 실행 시에만 적용됩니다
-   where id > (select max(id) from {{ this }}) or updated_at > (select max(updated_at) from {{this}})
-
-   {% endif %}
-   ```
-
-   이 모델은 `roles` 및 `actors` 테이블의 업데이트와 추가에만 반응합니다. 모든 테이블에 반응하도록 하려면 이 모델을 여러 개의 하위 모델로 나누고, 각 하위 모델에 자체 증분 기준을 설정하는 것이 좋습니다. 이후 이러한 모델은 서로 참조하고 연결할 수 있습니다. 모델 간 교차 참조에 대한 자세한 내용은 [here](https://docs.getdbt.com/reference/dbt-jinja-functions/ref)를 참조하십시오.
-
-2. `dbt run`을 실행하고 생성된 테이블의 결과를 확인합니다:
-
-   ```response
-   clickhouse-user@clickhouse:~/imdb$  dbt run
-   15:33:34  Running with dbt=1.1.0
-   15:33:34  Found 1 model, 0 tests, 1 snapshot, 0 analyses, 181 macros, 0 operations, 0 seed files, 6 sources, 0 exposures, 0 metrics
-   15:33:34
-   15:33:35  Concurrency: 1 threads (target='dev')
-   15:33:35
-   15:33:35  1 of 1 START incremental model imdb_dbt.actor_summary........................... [RUN]
-   15:33:41  1 of 1 OK created incremental model imdb_dbt.actor_summary...................... [OK in 6.33s]
-   15:33:41
-   15:33:41  Finished running 1 incremental model in 7.30s.
-   15:33:41
-   15:33:41  Completed successfully
-   15:33:41
-   15:33:41  Done. PASS=1 WARN=0 ERROR=0 SKIP=0 TOTAL=1
-   ```
-
-   ```sql
-   SELECT * FROM imdb_dbt.actor_summary ORDER BY num_movies DESC LIMIT 5;
-   ```
-
-   ```response
-   +------+------------+----------+------------------+------+---------+-------------------+
-   |id    |name        |num_movies|avg_rank          |genres|directors|updated_at         |
-   +------+------------+----------+------------------+------+---------+-------------------+
-   |45332 |Mel Blanc   |832       |6.175853582979779 |18    |84       |2022-04-26 15:26:55|
-   |621468|Bess Flowers|659       |5.57727638854796  |19    |293      |2022-04-26 15:26:57|
-   |372839|Lee Phelps  |527       |5.032976449684617 |18    |261      |2022-04-26 15:26:56|
-   |283127|Tom London  |525       |2.8721716524875673|17    |203      |2022-04-26 15:26:56|
-   |356804|Bud Osborne |515       |2.0389507108727773|15    |149      |2022-04-26 15:26:56|
-   +------+------------+----------+------------------+------+---------+-------------------+
-   ```
-
-3. 이제 증분 업데이트를 보여주기 위해 모델에 데이터를 추가하겠습니다. `actors` 테이블에 배우 &quot;Clicky McClickHouse&quot;를 추가하세요:
-
-   ```sql
-   INSERT INTO imdb.actors VALUES (845466, 'Clicky', 'McClickHouse', 'M');
-   ```
-
-4. &quot;Clicky&quot;가 무작위로 선택된 영화 910편에 출연하게 해보겠습니다:
-
-   ```sql
-   INSERT INTO imdb.roles
-   SELECT now() as created_at, 845466 as actor_id, id as movie_id, 'Himself' as role
-   FROM imdb.movies
-   LIMIT 910 OFFSET 10000;
-   ```
-
-5. 기반이 되는 원본 테이블을 직접 쿼리해 dbt 모델을 거치지 않고, 이제 그가 실제로 가장 많이 출연한 배우인지 확인합니다:
-
-   ```sql
-   SELECT id,
-       any(actor_name)          as name,
-       uniqExact(movie_id)    as num_movies,
-       avg(rank)                as avg_rank,
-       uniqExact(genre)         as unique_genres,
-       uniqExact(director_name) as uniq_directors,
-       max(created_at)          as updated_at
-   FROM (
-           SELECT imdb.actors.id                                                   as id,
-                   concat(imdb.actors.first_name, ' ', imdb.actors.last_name)       as actor_name,
-                   imdb.movies.id as movie_id,
-                   imdb.movies.rank                                                 as rank,
-                   genre,
-                   concat(imdb.directors.first_name, ' ', imdb.directors.last_name) as director_name,
-                   created_at
-           FROM imdb.actors
-                   JOIN imdb.roles ON imdb.roles.actor_id = imdb.actors.id
-                   LEFT OUTER JOIN imdb.movies ON imdb.movies.id = imdb.roles.movie_id
-                   LEFT OUTER JOIN imdb.genres ON imdb.genres.movie_id = imdb.movies.id
-                   LEFT OUTER JOIN imdb.movie_directors ON imdb.movie_directors.movie_id = imdb.movies.id
-                   LEFT OUTER JOIN imdb.directors ON imdb.directors.id = imdb.movie_directors.director_id
-           )
-   GROUP BY id
-   ORDER BY num_movies DESC
-   LIMIT 2;
-   ```
-
-   ```response
-   +------+-------------------+----------+------------------+------+---------+-------------------+
-   |id    |name               |num_movies|avg_rank          |genres|directors|updated_at         |
-   +------+-------------------+----------+------------------+------+---------+-------------------+
-   |845466|Clicky McClickHouse|910       |1.4687938697032283|21    |662      |2022-04-26 16:20:36|
-   |45332 |Mel Blanc          |909       |5.7884792542982515|19    |148      |2022-04-26 16:17:42|
-   +------+-------------------+----------+------------------+------+---------+-------------------+
-   ```
-
-6. `dbt run`을 실행한 뒤 모델이 업데이트되어 위의 결과와 일치하는지 확인하세요:
-
-   ```response
-   clickhouse-user@clickhouse:~/imdb$  dbt run
-   16:12:16  Running with dbt=1.1.0
-   16:12:16  Found 1 model, 0 tests, 1 snapshot, 0 analyses, 181 macros, 0 operations, 0 seed files, 6 sources, 0 exposures, 0 metrics
-   16:12:16
-   16:12:17  Concurrency: 1 threads (target='dev')
-   16:12:17
-   16:12:17  1 of 1 START incremental model imdb_dbt.actor_summary........................... [RUN]
-   16:12:24  1 of 1 OK created incremental model imdb_dbt.actor_summary...................... [OK in 6.82s]
-   16:12:24
-   16:12:24  Finished running 1 incremental model in 7.79s.
-   16:12:24
-   16:12:24  Completed successfully
-   16:12:24
-   16:12:24  Done. PASS=1 WARN=0 ERROR=0 SKIP=0 TOTAL=1
-   ```
-
-   ```sql
-   SELECT * FROM imdb_dbt.actor_summary ORDER BY num_movies DESC LIMIT 2;
-   ```
-
-   ```response
-   +------+-------------------+----------+------------------+------+---------+-------------------+
-   |id    |name               |num_movies|avg_rank          |genres|directors|updated_at         |
-   +------+-------------------+----------+------------------+------+---------+-------------------+
-   |845466|Clicky McClickHouse|910       |1.4687938697032283|21    |662      |2022-04-26 16:20:36|
-   |45332 |Mel Blanc          |909       |5.7884792542982515|19    |148      |2022-04-26 16:17:42|
-   +------+-------------------+----------+------------------+------+---------+-------------------+
-   ```
-
-<div id="internals">
-  ### 내부 동작
-</div>
-
-위와 같은 증분 업데이트를 위해 실행된 SQL 문은 ClickHouse의 쿼리 로그를 조회하면 확인할 수 있습니다.
-
-```sql
-SELECT event_time, query  FROM system.query_log WHERE type='QueryStart' AND query LIKE '%dbt%'
-AND event_time > subtractMinutes(now(), 15) ORDER BY event_time LIMIT 100;
-```
-
-위 쿼리를 실행 기간에 맞게 조정하십시오. 결과 확인은 사용자가 직접 해야 하지만, 어댑터가 증분 업데이트를 수행할 때 사용하는 일반적인 전략은 다음과 같습니다.
-
-1. 어댑터는 임시 테이블 `actor_sumary__dbt_tmp`를 생성합니다. 변경된 행은 이 테이블로 스트리밍됩니다.
-2. 새 테이블 `actor_summary_new,`를 생성합니다. 그런 다음 이전 테이블의 행을 이전 테이블에서 새 테이블로 스트리밍하면서, 행 ID가 임시 테이블에 존재하지 않는지 확인합니다. 이렇게 하면 업데이트와 중복을 효과적으로 처리할 수 있습니다.
-3. 임시 테이블의 결과를 새 `actor_summary` 테이블로 스트리밍합니다:
-4. 마지막으로 `EXCHANGE TABLES` 구문을 통해 새 테이블을 이전 버전과 원자적으로 교환합니다. 이후 이전 테이블과 임시 테이블을 삭제합니다.
-
-이는 아래와 같이 시각화됩니다:
-
-<Image img="/images/integrations/data-ingestion/etl-tools/dbt/dbt_05.webp" size="lg" alt="dbt 증분 업데이트" />
-
-이 전략은 매우 큰 모델에서는 문제가 될 수 있습니다. 자세한 내용은 [제한 사항](/ko/integrations/connectors/data-ingestion/etl-tools/dbt/index#limitations)을 참조하십시오.
-
-<div id="append-strategy-inserts-only-mode">
-  ### Append Strategy (삽입 전용 모드)
-</div>
-
-증분 모델에서 대규모 데이터셋의 한계를 보완하기 위해 어댑터는 dbt 구성 매개변수 `incremental_strategy`를 사용합니다. 이 매개변수는 `append` 값으로 설정할 수 있습니다. 이렇게 설정하면 업데이트된 행이 대상 테이블(즉, `imdb_dbt.actor_summary`)에 직접 삽입되고, 임시 테이블은 생성되지 않습니다.
-참고: Append only 모드를 사용하려면 데이터가 불변이어야 하거나 중복이 허용되어야 합니다. 변경된 행을 지원하는 증분 테이블 모델이 필요하다면 이 모드를 사용하지 마십시오.
-
-이 모드를 설명하기 위해 새 배우를 한 명 더 추가한 다음, `incremental_strategy='append'`로 dbt run을 다시 실행하겠습니다.
-
-1. actor&#95;summary.sql에서 append only 모드를 구성합니다:
-
-   ```sql
-   {{ config(order_by='(updated_at, id, name)', engine='MergeTree()', materialized='incremental', unique_key='id', incremental_strategy='append') }}
-   ```
-
-2. 유명한 배우를 한 명 더 추가합니다. Danny DeBito입니다.
-
-   ```sql
-   INSERT INTO imdb.actors VALUES (845467, 'Danny', 'DeBito', 'M');
-   ```
-
-3. Danny를 무작위 영화 920편에 출연시킵니다.
-
-   ```sql
-   INSERT INTO imdb.roles
-   SELECT now() as created_at, 845467 as actor_id, id as movie_id, 'Himself' as role
-   FROM imdb.movies
-   LIMIT 920 OFFSET 10000;
-   ```
-
-4. dbt run을 실행하고 actor-summary 테이블에 Danny가 추가되었는지 확인합니다.
-
-   ```response
-   clickhouse-user@clickhouse:~/imdb$ dbt run
-   16:12:16  Running with dbt=1.1.0
-   16:12:16  Found 1 model, 0 tests, 1 snapshot, 0 analyses, 186 macros, 0 operations, 0 seed files, 6 sources, 0 exposures, 0 metrics
-   16:12:16
-   16:12:17  Concurrency: 1 threads (target='dev')
-   16:12:17
-   16:12:17  1 of 1 START incremental model imdb_dbt.actor_summary........................... [RUN]
-   16:12:24  1 of 1 OK created incremental model imdb_dbt.actor_summary...................... [OK in 0.17s]
-   16:12:24
-   16:12:24  Finished running 1 incremental model in 0.19s.
-   16:12:24
-   16:12:24  Completed successfully
-   16:12:24
-   16:12:24  Done. PASS=1 WARN=0 ERROR=0 SKIP=0 TOTAL=1
-   ```
-
-   ```sql
-   SELECT * FROM imdb_dbt.actor_summary ORDER BY num_movies DESC LIMIT 3;
-   ```
-
-   ```response
-   +------+-------------------+----------+------------------+------+---------+-------------------+
-   |id    |name               |num_movies|avg_rank          |genres|directors|updated_at         |
-   +------+-------------------+----------+------------------+------+---------+-------------------+
-   |845467|Danny DeBito       |920       |1.4768987303293204|21    |670      |2022-04-26 16:22:06|
-   |845466|Clicky McClickHouse|910       |1.4687938697032283|21    |662      |2022-04-26 16:20:36|
-   |45332 |Mel Blanc          |909       |5.7884792542982515|19    |148      |2022-04-26 16:17:42|
-   +------+-------------------+----------+------------------+------+---------+-------------------+
-   ```
-
-이 증분 실행이 &quot;Clicky&quot;를 삽입했을 때보다 얼마나 더 빨랐는지 확인해 보십시오.
-
-query&#95;log 테이블을 다시 확인하면 두 번의 증분 실행 간 차이를 확인할 수 있습니다:
-
-```sql
-INSERT INTO imdb_dbt.actor_summary ("id", "name", "num_movies", "avg_rank", "genres", "directors", "updated_at")
-WITH actor_summary AS (
-   SELECT id,
-      any(actor_name) AS name,
-      uniqExact(movie_id)    AS num_movies,
-      avg(rank)                AS avg_rank,
-      uniqExact(genre)         AS genres,
-      uniqExact(director_name) AS directors,
-      max(created_at) AS updated_at
-   FROM (
-      SELECT imdb.actors.id AS id,
-         concat(imdb.actors.first_name, ' ', imdb.actors.last_name) AS actor_name,
-         imdb.movies.id AS movie_id,
-         imdb.movies.rank AS rank,
-         genre,
-         concat(imdb.directors.first_name, ' ', imdb.directors.last_name) AS director_name,
-         created_at
-      FROM imdb.actors
-         JOIN imdb.roles ON imdb.roles.actor_id = imdb.actors.id
-         LEFT OUTER JOIN imdb.movies ON imdb.movies.id = imdb.roles.movie_id
-         LEFT OUTER JOIN imdb.genres ON imdb.genres.movie_id = imdb.movies.id
-         LEFT OUTER JOIN imdb.movie_directors ON imdb.movie_directors.movie_id = imdb.movies.id
-         LEFT OUTER JOIN imdb.directors ON imdb.directors.id = imdb.movie_directors.director_id
-   )
-   GROUP BY id
+CREATE TABLE raw.raw_orders
+(
+    `id` String,
+    `customer` String,
+    `ordered_at` DateTime,
+    `store_id` String,
+    `subtotal` Int32,
+    `tax_paid` Int32,
+    `order_total` Int32
 )
-
-SELECT *
-FROM actor_summary
--- 이 필터는 증분 실행 시에만 적용됩니다
-WHERE id > (SELECT max(id) FROM imdb_dbt.actor_summary) OR updated_at > (SELECT max(updated_at) FROM imdb_dbt.actor_summary)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(ordered_at)
+ORDER BY (ordered_at, id)
+SETTINGS index_granularity = 8192
 ```
 
-이번 실행에서는 새 행만 `imdb_dbt.actor_summary` 테이블에 바로 추가되고, 테이블은 생성되지 않습니다.
+`dbt seed --full-refresh`는 테이블을 삭제한 뒤 재생성하므로, 이 가이드 뒷부분의 materialized view처럼 해당 테이블 데이터에 직접 의존하는 객체를 빌드하기 전에 실행하십시오.
 
-<div id="deleteinsert-mode-experimental">
-  ### 삭제 및 삽입 모드(실험적)
-</div>
+## ClickHouse용 테이블 구성하기 {#table-configuration}
 
-ClickHouse는 그동안 비동기 [뮤테이션](/ko/reference/statements/alter/index) 형태로만 업데이트와 삭제를 제한적으로 지원해 왔습니다. 이는 IO 사용량이 매우 클 수 있으므로 일반적으로 피하는 것이 좋습니다.
-
-ClickHouse 22.8에서는 [경량한 삭제](/ko/reference/statements/delete)가 도입되었고, ClickHouse 25.7에서는 [경량 업데이트](/ko/reference/statements/update)가 도입되었습니다. 이러한 기능이 도입되면서 비동기적으로 구체화되더라도 단일 업데이트 쿼리로 인한 변경 사항은 사용자 관점에서 즉시 반영됩니다.
-
-이 모드는 모델에서 `incremental_strategy` 매개변수로 구성할 수 있습니다. 즉,
+`orders` 마트는 시작점으로 삼기에 가장 적합합니다. `customers` 마트와 프로젝트의 메트릭이 이 마트를 조회하며, timestamp를 가진 이벤트 형태의 테이블이기 때문입니다. `models/marts/orders.sql` 상단에 `config` 블록을 추가하여 engine, sorting key, 파티셔닝 방식을 지정하십시오:
 
 ```sql
-{{ config(order_by='(updated_at, id, name)', engine='MergeTree()', materialized='incremental', unique_key='id', incremental_strategy='delete+insert') }}
+{{
+    config(
+        materialized='table',
+        engine='MergeTree()',
+        order_by='(ordered_at, order_id)',
+        partition_by='toYYYYMM(ordered_at)'
+    )
+}}
+
+with
+
+orders as (
+
+    select * from {{ ref('stg_orders') }}
+
+),
+...
 ```
 
-이 전략은 대상 모델의 테이블에서 직접 수행되므로 작업 중 문제가 발생하면 증분 모델의 데이터가 유효하지 않은 상태가 될 가능성이 높습니다. atomic update가 없기 때문입니다.
+model의 나머지 부분은 그대로 둡니다. `materialized='table'`은 `dbt_project.yml`에 marts용으로 이미 지정된 내용을 다시 명시하는 것으로, 이후 이 model을 incremental로 전환할 때도 model이 self-describing 상태를 유지하게 해줍니다. 이 model만 재구성하십시오:
 
-요약하면, 이 접근 방식은 다음과 같습니다:
+```bash
+dbt run --select orders
+```
 
-1. 어댑터가 임시 테이블 `actor_sumary__dbt_tmp`를 생성합니다. 변경된 행은 이 테이블로 스트리밍됩니다.
-2. 현재 `actor_summary` 테이블에 `DELETE`를 실행합니다. `actor_sumary__dbt_tmp`의 id를 기준으로 행을 삭제합니다.
-3. `actor_sumary__dbt_tmp`의 행을 `INSERT INTO actor_summary SELECT * FROM actor_sumary__dbt_tmp`를 사용해 `actor_summary`에 삽입합니다.
+```response
+1 of 1 START sql table model `jaffle_shop`.`orders` ............................ [RUN]
+1 of 1 OK created sql table model `jaffle_shop`.`orders` ....................... [OK in 0.44s]
+```
 
-이 과정은 아래에 나와 있습니다:
-
-<Image img="/images/integrations/data-ingestion/etl-tools/dbt/dbt_06.webp" size="lg" alt="경량한 삭제 증분" />
-
-<div id="insert_overwrite-mode-experimental">
-  ### insert_overwrite 모드 (실험적)
-</div>
-
-다음 단계를 수행합니다:
-
-1. 증분 모델 릴레이션과 동일한 구조의 스테이징(임시) 테이블을 생성합니다: `CREATE TABLE {staging} AS {target}`.
-2. 새 레코드만(SELECT로 생성된 레코드) 스테이징 테이블에 삽입합니다.
-3. 새 파티션만(스테이징 테이블에 있는 파티션) 대상 테이블로 교체합니다.
-
-<br />
-
-이 접근 방식에는 다음과 같은 장점이 있습니다:
-
-* 전체 테이블을 복사하지 않으므로 기본 전략보다 더 빠릅니다.
-* INSERT 작업이 성공적으로 완료될 때까지 원본 테이블을 수정하지 않으므로 다른 전략보다 더 안전합니다. 중간에 실패하더라도 원본 테이블은 수정되지 않습니다.
-* 데이터 엔지니어링 모범 사례인 &quot;파티션 불변성&quot;을 구현합니다. 따라서 증분 및 병렬 데이터 처리, 롤백 등이 더 단순해집니다.
-
-<Image img="/images/integrations/data-ingestion/etl-tools/dbt/dbt_07.webp" size="lg" alt="insert overwrite incremental" />
-
-<div id="creating-a-snapshot">
-  ## 스냅샷 생성
-</div>
-
-dbt 스냅샷은 시간에 따라 변경되는 모델의 변경 이력을 기록할 수 있게 해줍니다. 이를 통해 모델에 대해 특정 시점 기준 쿼리를 수행할 수 있으며, 분석가는 모델의 이전 상태를 &quot;과거 시점으로 되돌아가&quot; 확인할 수 있습니다. 이는 행이 유효한 기간을 기록하는 시작일 및 종료일 컬럼을 사용하는 [type-2 Slowly Changing Dimensions](https://en.wikipedia.org/wiki/Slowly_changing_dimension#Type_2:_add_new_row) 방식으로 구현됩니다. 이 기능은 ClickHouse 어댑터에서 지원되며, 아래에서 예시를 보여줍니다.
-
-이 예시는 [Creating an Incremental Table Model](#creating-an-incremental-materialization)을 완료한 상태라고 가정합니다. actor&#95;summary.sql에서 `inserts_only=True`를 설정하지 마십시오. models/actor&#95;summary.sql은 다음과 같아야 합니다:
+이제 테이블에 적절한 정렬 키(sorting key)가 지정되었고, 월별로 파티션이 하나씩 생성됩니다:
 
 ```sql
-   {{ config(order_by='(updated_at, id, name)', engine='MergeTree()', materialized='incremental', unique_key='id') }}
-
-   with actor_summary as (
-       SELECT id,
-           any(actor_name) as name,
-           uniqExact(movie_id)    as num_movies,
-           avg(rank)                as avg_rank,
-           uniqExact(genre)         as genres,
-           uniqExact(director_name) as directors,
-           max(created_at) as updated_at
-       FROM (
-           SELECT {{ source('imdb', 'actors') }}.id as id,
-               concat({{ source('imdb', 'actors') }}.first_name, ' ', {{ source('imdb', 'actors') }}.last_name) as actor_name,
-               {{ source('imdb', 'movies') }}.id as movie_id,
-               {{ source('imdb', 'movies') }}.rank as rank,
-               genre,
-               concat({{ source('imdb', 'directors') }}.first_name, ' ', {{ source('imdb', 'directors') }}.last_name) as director_name,
-               created_at
-       FROM {{ source('imdb', 'actors') }}
-           JOIN {{ source('imdb', 'roles') }} ON {{ source('imdb', 'roles') }}.actor_id = {{ source('imdb', 'actors') }}.id
-           LEFT OUTER JOIN {{ source('imdb', 'movies') }} ON {{ source('imdb', 'movies') }}.id = {{ source('imdb', 'roles') }}.movie_id
-           LEFT OUTER JOIN {{ source('imdb', 'genres') }} ON {{ source('imdb', 'genres') }}.movie_id = {{ source('imdb', 'movies') }}.id
-           LEFT OUTER JOIN {{ source('imdb', 'movie_directors') }} ON {{ source('imdb', 'movie_directors') }}.movie_id = {{ source('imdb', 'movies') }}.id
-           LEFT OUTER JOIN {{ source('imdb', 'directors') }} ON {{ source('imdb', 'directors') }}.id = {{ source('imdb', 'movie_directors') }}.director_id
-       )
-       GROUP BY id
-   )
-   select *
-   from actor_summary
-
-   {% if is_incremental() %}
-
-   -- 이 필터는 증분 실행 시에만 적용됩니다
-   where id > (select max(id) from {{ this }}) or updated_at > (select max(updated_at) from {{this}})
-
-   {% endif %}
+SHOW CREATE TABLE jaffle_shop.orders;
 ```
 
-1. `snapshots` 디렉터리에 `actor_summary` 파일을 생성합니다.
+```response
+CREATE TABLE jaffle_shop.orders
+(
+    ...
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(ordered_at)
+ORDER BY (ordered_at, order_id)
+SETTINGS replicated_deduplication_window = '0', index_granularity = 8192
+```
 
-   ```bash
-    touch snapshots/actor_summary.sql
-   ```
+```sql
+SELECT partition, sum(rows) AS rows
+FROM system.parts
+WHERE database = 'jaffle_shop' AND table = 'orders' AND active
+GROUP BY partition
+ORDER BY partition;
+```
 
-2. actor&#95;summary.sql 파일의 내용을 다음과 같이 업데이트합니다.
-   ```sql
-   {% snapshot actor_summary_snapshot %}
+```response
+┌─partition─┬─rows─┐
+│ 202409    │ 1497 │
+│ 202410    │ 1698 │
+│ 202411    │ 2262 │
+...
+│ 202508    │ 9389 │
+└───────────┴──────┘
+```
 
-   {{
-   config(
-   target_schema='snapshots',
-   unique_key='id',
-   strategy='timestamp',
-   updated_at='updated_at',
-   )
-   }}
+`engine`, `order_by`, `partition_by` 외에도 table 모델은 `primary_key`, `ttl`, `settings`, `query_settings`, `projections`, `indexes`를 지원하며, 컬럼은 모델 컨트랙트를 통해 `codec`과 `ttl`을 지정할 수 있습니다. 이들 모두에 대한 자세한 설명은 [materializations 페이지](/ko/integrations/connectors/data-ingestion/etl-tools/dbt/materializations)에서 확인할 수 있습니다.
 
-   select * from {{ref('actor_summary')}}
+## incremental 모델 생성 {#incremental}
 
-   {% endsnapshot %}
-   ```
+62,000행 정도라면 매 실행마다 `orders`를 처음부터 다시 구축해도 괜찮지만, 하루에 수백만 행씩 늘어나는 테이블에서는 그렇지 않습니다. dbt의 [incremental materialization](https://docs.getdbt.com/docs/build/incremental-models)은 마지막 실행 이후 변경된 행만 처리합니다. `orders` 모델을 변환하려면 다음 두 가지를 추가해야 합니다.
 
-이 내용과 관련해 몇 가지 참고할 사항이 있습니다.
+1. **`unique_key`**: 행을 식별하는 컬럼으로, 여기서는 `order_id`입니다. 어댑터는 이 값을 사용해 다시 처리되는 행을 중복으로 쌓지 않고 대체합니다.
+2. **incremental 필터**: `{% if is_incremental() %}`로 감싼 `where` 절로, 처리할 행만 선택합니다. 이 필터는 incremental 실행에서만 적용되며, 테이블을 처음 구축할 때(또는 `--full-refresh`로 재구성할 때)는 적용되지 않습니다. 주문 데이터에는 timestamp가 있으므로, 필터는 `{{ this }}` 변수로 참조한 테이블에 이미 존재하는 최신 값과 `ordered_at`을 비교합니다.
 
-* select 쿼리는 시간에 따라 스냅샷으로 저장할 결과를 정의합니다. `ref` 함수는 앞서 생성한 actor&#95;summary 모델을 참조하는 데 사용됩니다.
-* 레코드 변경을 나타내려면 `timestamp` 컬럼이 필요합니다. 여기서는 updated&#95;at 컬럼([증분 테이블 모델 생성](#creating-an-incremental-materialization) 참고)을 사용할 수 있습니다. `strategy` 매개변수는 업데이트를 표시하는 데 `timestamp`를 사용함을 의미하며, `updated&#95;at` 매개변수는 사용할 컬럼을 지정합니다. 모델에 이 컬럼이 없다면 대신 [check strategy](https://docs.getdbt.com/docs/building-a-dbt-project/snapshots#check-strategy)를 사용할 수도 있습니다. 이 방법은 훨씬 비효율적이며, 비교할 컬럼 목록을 사용자가 직접 지정해야 합니다. dbt는 이 컬럼들의 현재 값과 과거 값을 비교해 변경 사항을 기록합니다(값이 같으면 아무 작업도 수행하지 않음).
+`config` 블록과 모델의 끝부분이 다음과 같이 되도록 `models/marts/orders.sql`을 수정하세요.
 
-3. `dbt snapshot` 명령을 실행합니다.
+```sql
+{{
+    config(
+        materialized='incremental',
+        unique_key='order_id',
+        engine='MergeTree()',
+        order_by='(ordered_at, order_id)',
+        partition_by='toYYYYMM(ordered_at)'
+    )
+}}
 
-   ```response
-   clickhouse-user@clickhouse:~/imdb$ dbt snapshot
-   13:26:23  Running with dbt=1.1.0
-   13:26:23  Found 1 model, 0 tests, 1 snapshot, 0 analyses, 181 macros, 0 operations, 0 seed files, 3 sources, 0 exposures, 0 metrics
-   13:26:23
-   13:26:25  Concurrency: 1 threads (target='dev')
-   13:26:25
-   13:26:25  1 of 1 START snapshot snapshots.actor_summary_snapshot...................... [RUN]
-   13:26:25  1 of 1 OK snapshotted snapshots.actor_summary_snapshot...................... [OK in 0.79s]
-   13:26:25
-   13:26:25  Finished running 1 snapshot in 2.11s.
-   13:26:25
-   13:26:25  Completed successfully
-   13:26:25
-   13:26:25  Done. PASS=1 WARN=0 ERROR=0 SKIP=0 TOTAL=1
-   ```
+with
 
-`actor_summary_snapshot` 테이블이 snapshots DB에 생성된 것을 확인할 수 있습니다. 이는 `target_schema` 매개변수로 결정됩니다.
+orders as (
 
-4. 이 데이터를 샘플링해 보면 dbt가 dbt&#95;valid&#95;from 및 dbt&#95;valid&#95;to 컬럼을 포함했음을 확인할 수 있습니다. 후자의 값은 NULL로 설정되어 있습니다. 이후 실행에서 이 값이 업데이트됩니다.
+    select * from {{ ref('stg_orders') }}
 
-   ```sql
-   SELECT id, name, num_movies, dbt_valid_from, dbt_valid_to FROM snapshots.actor_summary_snapshot ORDER BY num_movies DESC LIMIT 5;
-   ```
+),
 
-   ```response
-   +------+----------+------------+----------+-------------------+------------+
-   |id    |first_name|last_name   |num_movies|dbt_valid_from     |dbt_valid_to|
-   +------+----------+------------+----------+-------------------+------------+
-   |845467|Danny     |DeBito      |920       |2022-05-25 19:33:32|NULL        |
-   |845466|Clicky    |McClickHouse|910       |2022-05-25 19:32:34|NULL        |
-   |45332 |Mel       |Blanc       |909       |2022-05-25 19:31:47|NULL        |
-   |621468|Bess      |Flowers     |672       |2022-05-25 19:31:47|NULL        |
-   |283127|Tom       |London      |549       |2022-05-25 19:31:47|NULL        |
-   +------+----------+------------+----------+-------------------+------------+
-   ```
+...
 
-5. 가장 좋아하는 배우 Clicky McClickHouse가 영화 10편에 더 출연하도록 하세요.
+select * from customer_order_count
 
-   ```sql
-   INSERT INTO imdb.roles
-   SELECT now() as created_at, 845466 as actor_id, rand(number) % 412320 as movie_id, 'Himself' as role
-   FROM system.numbers
-   LIMIT 10;
-   ```
+{% if is_incremental() %}
 
-6. `imdb` 디렉터리에서 `dbt run` 명령을 다시 실행하세요. 그러면 증분 모델이 업데이트됩니다. 이 작업이 완료되면 변경 사항을 기록하기 위해 `dbt snapshot`을 실행하세요.
+-- this filter will only be applied on an incremental run
+where ordered_at >= (select max(ordered_at) from {{ this }})
 
-   ```response
-   clickhouse-user@clickhouse:~/imdb$ dbt run
-   13:46:14  Running with dbt=1.1.0
-   13:46:14  Found 1 model, 0 tests, 1 snapshot, 0 analyses, 181 macros, 0 operations, 0 seed files, 3 sources, 0 exposures, 0 metrics
-   13:46:14
-   13:46:15  Concurrency: 1 threads (target='dev')
-   13:46:15
-   13:46:15  1 of 1 START incremental model imdb_dbt.actor_summary....................... [RUN]
-   13:46:18  1 of 1 OK created incremental model imdb_dbt.actor_summary.................. [OK in 2.76s]
-   13:46:18
-   13:46:18  Finished running 1 incremental model in 3.73s.
-   13:46:18
-   13:46:18  Completed successfully
-   13:46:18
-   13:46:18  Done. PASS=1 WARN=0 ERROR=0 SKIP=0 TOTAL=1
+{% endif %}
+```
 
-   clickhouse-user@clickhouse:~/imdb$ dbt snapshot
-   13:46:26  Running with dbt=1.1.0
-   13:46:26  Found 1 model, 0 tests, 1 snapshot, 0 analyses, 181 macros, 0 operations, 0 seed files, 3 sources, 0 exposures, 0 metrics
-   13:46:26
-   13:46:27  Concurrency: 1 threads (target='dev')
-   13:46:27
-   13:46:27  1 of 1 START snapshot snapshots.actor_summary_snapshot...................... [RUN]
-   13:46:31  1 of 1 OK snapshotted snapshots.actor_summary_snapshot...................... [OK in 4.05s]
-   13:46:31
-   13:46:31  Finished running 1 snapshot in 5.02s.
-   13:46:31
-   13:46:31  Completed successfully
-   13:46:31
-   13:46:31  Done. PASS=1 WARN=0 ERROR=0 SKIP=0 TOTAL=1
-   ```
+`stg_orders`는 `ordered_at`을 일 단위로 잘라내므로 필터에 `>=`를 사용합니다. 실행할 때마다 가장 최근 하루 전체가 다시 처리되며, `unique_key` 덕분에 이미 로드된 행은 중복되지 않고 대체됩니다. 같은 날 뒤늦게 도착한 주문도 안전하게 처리할 수 있는 이유가 바로 이것입니다.
 
-7. 이제 스냅샷을 쿼리하면 Clicky McClickHouse에 대한 행이 2개 있는 것을 확인할 수 있습니다. 이전 항목에는 이제 dbt&#95;valid&#95;to 값이 설정되어 있습니다. 새 값은 dbt&#95;valid&#95;from 컬럼에 동일한 값으로 기록되고, dbt&#95;valid&#95;to 값은 null입니다. 새 행이 있었다면 이 역시 스냅샷에 추가되었을 것입니다.
+model을 실행하십시오. table이 이미 존재하므로 이 첫 실행부터 incremental 실행이 됩니다. 즉, 가장 최근 하루만 다시 처리됩니다.
 
-   ```sql
-   SELECT id, name, num_movies, dbt_valid_from, dbt_valid_to FROM snapshots.actor_summary_snapshot ORDER BY num_movies DESC LIMIT 5;
-   ```
+```bash
+dbt run --select orders
+```
 
-   ```response
-   +------+----------+------------+----------+-------------------+-------------------+
-   |id    |first_name|last_name   |num_movies|dbt_valid_from     |dbt_valid_to       |
-   +------+----------+------------+----------+-------------------+-------------------+
-   |845467|Danny     |DeBito      |920       |2022-05-25 19:33:32|NULL               |
-   |845466|Clicky    |McClickHouse|920       |2022-05-25 19:34:37|NULL               |
-   |845466|Clicky    |McClickHouse|910       |2022-05-25 19:32:34|2022-05-25 19:34:37|
-   |45332 |Mel       |Blanc       |909       |2022-05-25 19:31:47|NULL               |
-   |621468|Bess      |Flowers     |672       |2022-05-25 19:31:47|NULL               |
-   +------+----------+------------+----------+-------------------+-------------------+
-   ```
+```response
+1 of 1 START sql incremental model `jaffle_shop`.`orders` ...................... [RUN]
+1 of 1 OK created sql incremental model `jaffle_shop`.`orders` ................. [OK in 0.94s]
+```
 
-dbt 스냅샷에 대한 자세한 내용은 [여기](https://docs.getdbt.com/docs/building-a-dbt-project/snapshots)를 참조하십시오.
+이제 새로운 데이터를 추가해 보겠습니다. Jaffle Shop 데이터는 2025년 8월까지만 있으므로, 어제 재플을 주문한 신규 고객 Clicky McClickHouse를 추가합니다. raw 테이블에 고객, 주문, 그리고 해당 주문 항목을 삽입합니다:
 
-<div id="using-seeds">
-  ## seed 사용하기
-</div>
+```sql
+INSERT INTO raw.raw_customers VALUES ('clicky-0001', 'Clicky McClickHouse');
 
-dbt는 CSV 파일에서 데이터를 로드하는 기능을 제공합니다. 이 기능은 데이터베이스의 대규모 내보내기 데이터를 로드하는 데는 적합하지 않으며, 일반적으로 코드 테이블과 [dictionaries](/ko/concepts/features/dictionaries/index)에 사용하는 작은 파일에 더 적합합니다. 예를 들어 국가 코드를 국가 이름에 매핑할 때 사용할 수 있습니다. 간단한 예시로, seed 기능을 사용해 장르 코드 목록을 생성한 다음 업로드해 보겠습니다.
+INSERT INTO raw.raw_orders VALUES
+    ('clicky-order-0001', 'clicky-0001', now() - INTERVAL 1 DAY,
+     '4b6c2304-2b9e-41e4-942a-cf11a1819378', 1100, 66, 1166);
 
-1. 기존 데이터셋에서 장르 코드 목록을 생성합니다. dbt 디렉터리에서 `clickhouse-client`를 사용해 `seeds/genre_codes.csv` 파일을 만드십시오.
+INSERT INTO raw.raw_items VALUES ('clicky-item-0001', 'clicky-order-0001', 'JAF-001');
+```
 
-   ```bash
-   clickhouse-user@clickhouse:~/imdb$ clickhouse-client --password <password> --query
-   "SELECT genre, ucase(substring(genre, 1, 3)) as code FROM imdb.genres GROUP BY genre
-   LIMIT 100 FORMAT CSVWithNames" > seeds/genre_codes.csv
-   ```
+매장 ID는 Philadelphia이고, 항목은 `nutellaphone who dis?` 재플이며 가격은 11.00, 세금은 Philadelphia의 6%이므로 프로젝트의 데이터 테스트는 여전히 통과합니다. `orders`보다 먼저 staging 뷰와 `order_items` 테이블이 새 행을 인식하도록 프로젝트 전체를 실행하십시오:
 
-2. `dbt seed` 명령을 실행합니다. 그러면 데이터베이스 `imdb_dbt`에 새 테이블 `genre_codes`가 생성되고(이는 schema 구성에 정의되어 있음), CSV 파일의 행이 이 테이블에 로드됩니다.
+```bash
+dbt run
+```
 
-   ```bash
-   clickhouse-user@clickhouse:~/imdb$ dbt seed
-   17:03:23  Running with dbt=1.1.0
-   17:03:23  Found 1 model, 0 tests, 1 snapshot, 0 analyses, 181 macros, 0 operations, 1 seed file, 6 sources, 0 exposures, 0 metrics
-   17:03:23
-   17:03:24  Concurrency: 1 threads (target='dev')
-   17:03:24
-   17:03:24  1 of 1 START seed file imdb_dbt.genre_codes..................................... [RUN]
-   17:03:24  1 of 1 OK loaded seed file imdb_dbt.genre_codes................................. [INSERT 21 in 0.65s]
-   17:03:24
-   17:03:24  Finished running 1 seed in 1.62s.
-   17:03:24
-   17:03:24  Completed successfully
-   17:03:24
-   17:03:24  Done. PASS=1 WARN=0 ERROR=0 SKIP=0 TOTAL=1
-   ```
+```response
+...
+10 of 13 OK created sql table model `jaffle_shop`.`order_items` ................ [OK in 0.30s]
+...
+12 of 13 START sql incremental model `jaffle_shop`.`orders` .................... [RUN]
+12 of 13 OK created sql incremental model `jaffle_shop`.`orders` ............... [OK in 0.73s]
+13 of 13 START sql table model `jaffle_shop`.`customers` ....................... [RUN]
+13 of 13 OK created sql table model `jaffle_shop`.`customers` .................. [OK in 0.28s]
+```
 
-3. 데이터가 로드되었는지 확인합니다:
+새 주문이 incremental 테이블에 추가되었고, 이를 기반으로 다시 빌드된 `customers` 마트는 새 고객을 인식합니다:
 
-   ```sql
-   SELECT * FROM imdb_dbt.genre_codes LIMIT 10;
-   ```
+```sql
+SELECT order_id, customer_id, ordered_at, order_total, customer_order_number
+FROM jaffle_shop.orders
+WHERE customer_id = 'clicky-0001';
+```
 
-   ```response
-   +-------+----+
-   |genre  |code|
-   +-------+----+
-   |Drama  |DRA |
-   |Romance|ROM |
-   |Short  |SHO |
-   |Mystery|MYS |
-   |Adult  |ADU |
-   |Family |FAM |
+```response
+┌─order_id──────────┬─customer_id─┬──────────ordered_at─┬─order_total─┬─customer_order_number─┐
+│ clicky-order-0001 │ clicky-0001 │ 2026-09-14 00:00:00 │       11.66 │                     1 │
+└───────────────────┴─────────────┴─────────────────────┴─────────────┴───────────────────────┘
+```
 
-   |Action |ACT |
-   |Sci-Fi |SCI |
-   |Horror |HOR |
-   |War    |WAR |
-   +-------+----+=
-   ```
+```sql
+SELECT customer_name, count_lifetime_orders, lifetime_spend, customer_type
+FROM jaffle_shop.customers
+WHERE customer_id = 'clicky-0001';
+```
 
-<div id="further-information">
-  ## 추가 정보
-</div>
+```response
+┌─customer_name───────┬─count_lifetime_orders─┬─lifetime_spend─┬─customer_type─┐
+│ Clicky McClickHouse │                     1 │          11.66 │ new           │
+└─────────────────────┴───────────────────────┴────────────────┴───────────────┘
+```
 
-이전 가이드에서는 dbt 기능의 일부만 간략히 소개했습니다. 자세한 내용은 우수한 [dbt 문서](https://docs.getdbt.com/docs/introduction)를 참조하십시오.
+### Internals {#internals}
+
+ClickHouse의 query log를 보면 어댑터가 incremental UPDATE를 위해 실행한 SQL 문을 확인할 수 있습니다:
+
+```sql
+SELECT event_time, written_rows, tables
+FROM system.query_log
+WHERE query_kind = 'Insert' AND type = 'QueryFinish'
+  AND has(databases, 'jaffle_shop')
+  AND event_time > now() - INTERVAL 15 MINUTE
+ORDER BY event_time;
+```
+
+어댑터의 기본 incremental strategy는 다음과 같이 동작합니다. 이 섹션의 다이어그램에서 테이블에서 SQL 문으로 향하는 화살표는 해당 SQL 문이 그 테이블을 읽는다는 의미이고, SQL 문에서 테이블로 향하는 화살표는 해당 테이블에 쓰거나, 변경(mutate)하거나, 이름을 변경(rename)하거나, 삭제한다는 의미입니다:
+
+1. `orders__dbt_new_data` 테이블이 생성되고, incremental filter를 포함한 model의 SQL 결과가 이 테이블에 삽입됩니다. 위 실행에서는 378개의 행이 기록되었습니다. 이미 로드되어 있던 최신 날짜의 주문 377건과 새로 추가된 주문 1건입니다.
+2. `orders`와 동일한 구조(structure)의 `orders__dbt_tmp` 테이블이 생성되고, `order_id`가 `orders__dbt_new_data`에 없는 `orders`의 모든 행이 이 테이블로 복사됩니다.
+3. `orders__dbt_new_data`의 모든 행이 `orders__dbt_tmp`에 삽입됩니다. 최신 날짜의 행을 중복시키지 않고 대체하는 역할을 하는 것이 바로 2단계와 3단계입니다.
+4. `orders__dbt_new_data`가 삭제됩니다.
+5. `orders__dbt_tmp`는 원자적(atomic) `EXCHANGE TABLES` SQL 문을 통해 `orders`와 스왑됩니다(중간에 `orders__dbt_backup`으로 이름을 변경하는 과정을 거칩니다). 따라서 이제 `orders`가 새 버전을 담게 됩니다.
+6. 이전 버전은 삭제됩니다.
+
+```mermaid
+flowchart TB
+    stg[("stg_orders")]
+    items[("order_items")]
+    orders[("orders<br/>(current version)")]
+    new_data[("orders__dbt_new_data")]
+    tmp[("orders__dbt_tmp")]
+    new_orders[("orders<br/>(new version, was orders__dbt_tmp)")]
+    old_orders[("orders__dbt_tmp<br/>(old version, was orders)")]
+    q1["1. INSERT INTO orders__dbt_new_data<br/>SELECT ... model SQL ...<br/>WHERE ordered_at >= (SELECT max(ordered_at) FROM orders)"]
+    q2["2. INSERT INTO orders__dbt_tmp<br/>SELECT * FROM orders<br/>WHERE order_id NOT IN (SELECT order_id FROM orders__dbt_new_data)"]
+    q3["3. INSERT INTO orders__dbt_tmp<br/>SELECT * FROM orders__dbt_new_data"]
+    q4["4. DROP TABLE orders__dbt_new_data"]
+    q5["5. EXCHANGE TABLES orders__dbt_tmp AND orders"]
+    q6["6. DROP TABLE orders__dbt_tmp"]
+    stg -->|reads| q1
+    items -->|reads| q1
+    q1 -->|inserts the changed rows| new_data
+    orders -->|reads| q2
+    new_data -->|reads the keys| q2
+    new_data -->|reads| q3
+    q2 -->|"inserts the rows<br/>that did not change"| tmp
+    q3 -->|"inserts the<br/>changed rows"| tmp
+    q3 ~~~ q4
+    q4 -->|drops| new_data
+    tmp ~~~ q5
+    q5 -->|"swaps the names"| new_orders
+    q5 -->|"swaps the names"| old_orders
+    q5 ~~~ q6
+    q6 -->|drops| old_orders
+    classDef temp fill:#dbeafe,stroke:#1d4ed8;
+    classDef target fill:#fef3c7,stroke:#b45309;
+    classDef source fill:#dcfce7,stroke:#15803d;
+    classDef query fill:#f3f4f6,stroke:#6b7280;
+    class new_data,tmp,old_orders temp;
+    class orders,new_orders target;
+    class stg,items source;
+    class q1,q2,q3,q4,q5,q6 query;
+```
+
+2단계에서 전체 테이블을 복사하므로, 매우 큰 모델에서는 이 전략의 비용이 테이블을 재구성하는 것과 맞먹습니다. [제한 사항](/ko/integrations/connectors/data-ingestion/etl-tools/dbt/index#limitations)을 참조하십시오. 아래 전략들은 이러한 복사를 피합니다.
+
+### Append 전략 {#append-strategy}
+
+`append` 전략은 모델이 선택한 행을 대상 테이블(target table)에 곧바로 삽입합니다. 임시 테이블을 만들지도, 데이터를 복사하지도 않으므로 증분 실행 중에서는 비용이 가장 저렴합니다. 그 대가로 중복 제거 역시 전혀 이루어지지 않습니다. 증분 filter가 이미 테이블에 있는 행을 선택하면 그 행은 두 번 들어갑니다. 변경되지 않는 이벤트성 데이터에 사용하고, filter가 실제로 새로운 행만 선택하도록 반드시 확인하십시오.
+
+`ordered_at`을 일 단위로 자른 경우에는 filter를 `>`로 바꿔야 합니다. 모델을 다음과 같이 수정하십시오.
+
+```sql
+{{
+    config(
+        materialized='incremental',
+        incremental_strategy='append',
+        unique_key='order_id',
+        engine='MergeTree()',
+        order_by='(ordered_at, order_id)',
+        partition_by='toYYYYMM(ordered_at)'
+    )
+}}
+
+...
+
+{% if is_incremental() %}
+
+-- this filter will only be applied on an incremental run
+where ordered_at > (select max(ordered_at) from {{ this }})
+
+{% endif %}
+```
+
+두 번째 신규 고객인 Danny DeBito를 추가합니다. 이 고객은 오늘 Brooklyn(세율 4%)에서 jaffle 1개와 coffee 1개를 주문했습니다:
+
+```sql
+INSERT INTO raw.raw_customers VALUES ('danny-0001', 'Danny DeBito');
+
+INSERT INTO raw.raw_orders VALUES
+    ('danny-order-0001', 'danny-0001', now(),
+     '40e6ddd6-b8f6-4e17-8bd6-5e53966809d2', 1900, 76, 1976);
+
+INSERT INTO raw.raw_items VALUES
+    ('danny-item-0001', 'danny-order-0001', 'JAF-003'),
+    ('danny-item-0002', 'danny-order-0001', 'BEV-004');
+```
+
+```bash
+dbt run
+```
+
+```response
+...
+12 of 13 START sql incremental model `jaffle_shop`.`orders` .................... [RUN]
+12 of 13 OK created sql incremental model `jaffle_shop`.`orders` ............... [OK in 0.11s]
+...
+```
+
+incremental model은 이전 실행에 비해 훨씬 짧은 시간에 실행되었습니다. 두 신규 고객 모두 table에 주문이 정확히 하나씩 있습니다:
+
+```sql
+SELECT order_id, customer_id, ordered_at, order_total, is_food_order, is_drink_order
+FROM jaffle_shop.orders
+WHERE customer_id IN ('clicky-0001', 'danny-0001')
+ORDER BY ordered_at;
+```
+
+```response
+┌─order_id──────────┬─customer_id─┬──────────ordered_at─┬─order_total─┬─is_food_order─┬─is_drink_order─┐
+│ clicky-order-0001 │ clicky-0001 │ 2026-09-14 00:00:00 │       11.66 │             1 │              0 │
+│ danny-order-0001  │ danny-0001  │ 2026-09-15 00:00:00 │       19.76 │             1 │              1 │
+└───────────────────┴─────────────┴─────────────────────┴─────────────┴───────────────┴────────────────┘
+```
+
+query log을 보면 차이가 분명히 드러납니다. 이번에 `orders`를 건드리는 SQL 문은 model의 SQL과 incremental filter가 포함된 `INSERT INTO jaffle_shop.orders ... SELECT ...` 하나뿐이며, 1개의 행만 기록되었습니다.
+
+<Warning>
+  `>`와 일 단위로 truncated된 timestamp를 사용하면, 마지막으로 적재된 주문과 같은 날 그보다 늦게 도착한 주문은 전혀 반영되지 않습니다. 실제 프로젝트에서 `append` strategy를 사용할 때는 full precision timestamp 또는 단조 증가하는 수집 시각을 기준으로 filter하십시오.
+</Warning>
+
+### Delete and insert 전략 {#delete-insert-strategy}
+
+ClickHouse는 과거에 비동기 [뮤테이션](/ko/reference/statements/alter/index) 형태로만 업데이트와 삭제를 제한적으로 지원했습니다. 이 방식은 IO 부하가 매우 크므로 일반적으로 사용을 피해야 합니다. ClickHouse 22.8에서 [경량한 삭제](/ko/reference/statements/delete)가, ClickHouse 25.7에서 [경량 업데이트](/ko/reference/statements/update)가 도입되었습니다. 이를 통해 단일 삭제 또는 UPDATE SQL 문의 결과는 비동기적으로 구체화되더라도 사용자 관점에서는 즉시 반영된 것으로 확인됩니다.
+
+`delete+insert` 전략은 경량한 삭제를 기반으로 하며, `incremental_strategy` 매개변수를 통해 구성합니다:
+
+```sql
+{{
+    config(
+        materialized='incremental',
+        incremental_strategy='delete+insert',
+        unique_key='order_id',
+        engine='MergeTree()',
+        order_by='(ordered_at, order_id)',
+        partition_by='toYYYYMM(ordered_at)'
+    )
+}}
+```
+
+이 전략은 target table에 직접 작업을 수행하므로, 중간에 실패하면 incremental model의 데이터가 유효하지 않은 상태로 남을 가능성이 큽니다. 원자적 스왑이 없기 때문입니다. 요약하면 다음과 같습니다.
+
+1. temporary table(`orders__dbt_new_data_<run_id>`)을 생성하고, model이 선택한 rows를 여기에 삽입합니다.
+2. temporary table에 존재하는 모든 `order_id`에 대해 `orders`를 대상으로 `DELETE`를 실행합니다.
+3. temporary table의 rows를 `orders`에 삽입합니다.
+4. temporary table을 삭제합니다.
+
+```mermaid
+flowchart TB
+    stg[("stg_orders")]
+    items[("order_items")]
+    orders[("orders")]
+    new_data[("orders__dbt_new_data_#lt;run_id#gt;")]
+    q1["1. CREATE TABLE orders__dbt_new_data_#lt;run_id#gt; AS<br/>SELECT ... model SQL ...<br/>WHERE ordered_at >= (SELECT max(ordered_at) FROM orders)"]
+    q2["2. DELETE FROM orders<br/>WHERE order_id IN (SELECT order_id FROM orders__dbt_new_data_#lt;run_id#gt;)"]
+    q3["3. INSERT INTO orders<br/>SELECT * FROM orders__dbt_new_data_#lt;run_id#gt;"]
+    q4["4. DROP TABLE orders__dbt_new_data_#lt;run_id#gt;"]
+    stg -->|reads| q1
+    items -->|reads| q1
+    q1 -->|creates and fills with the changed rows| new_data
+    new_data -->|reads the keys| q2
+    q2 -->|deletes the matching rows| orders
+    new_data -->|reads| q3
+    q3 -->|inserts the changed rows| orders
+    q4 -->|drops| new_data
+    classDef temp fill:#dbeafe,stroke:#1d4ed8;
+    classDef target fill:#fef3c7,stroke:#b45309;
+    classDef source fill:#dcfce7,stroke:#15803d;
+    classDef query fill:#f3f4f6,stroke:#6b7280;
+    class new_data temp;
+    class orders target;
+    class stg,items source;
+    class q1,q2,q3,q4 query;
+```
+
+### Insert overwrite 전략 (실험적 기능) {#insert-overwrite-strategy}
+
+`insert_overwrite` 전략은 파티션 전체를 교체하므로, `orders`의 월별 파티션과 같은 `partition_by` 구성이 필요합니다. 이 전략은 다음 단계를 수행합니다:
+
+1. `orders`와 동일한 구조의 스테이징 테이블(`orders__dbt_new_data_<run_id>`)을 생성합니다.
+2. model이 선택한 행만 스테이징 테이블에 삽입합니다.
+3. `system.parts`에서 스테이징 테이블에 존재하는 파티션 목록을 조회합니다.
+4. `ALTER TABLE ... REPLACE PARTITION ... FROM`을 사용해 스테이징 테이블의 해당 파티션만 `orders`에 정확히 교체합니다.
+5. 스테이징 테이블을 삭제합니다.
+
+이 접근 방식의 장점은 다음과 같습니다:
+
+* 테이블 전체를 복사하지 않으므로 기본 전략보다 빠릅니다.
+* INSERT 작업이 성공적으로 완료되기 전까지 원본 테이블을 수정하지 않으므로 다른 전략보다 안전합니다. 중간에 실패가 발생해도 원본 테이블은 그대로 유지됩니다.
+* 「파티션 불변성(partition immutability)」이라는 데이터 엔지니어링 모범 사례를 구현하므로, 증분 및 병렬 데이터 처리, 롤백 등이 단순해집니다.
+
+```mermaid
+flowchart TB
+    stg[("stg_orders")]
+    items[("order_items")]
+    orders[("orders<br/>PARTITION BY toYYYYMM(ordered_at)")]
+    staging[("orders__dbt_new_data_#lt;run_id#gt;")]
+    parts[("system.parts")]
+    q1["1. CREATE TABLE orders__dbt_new_data_#lt;run_id#gt; AS orders"]
+    q2["2. INSERT INTO orders__dbt_new_data_#lt;run_id#gt;<br/>SELECT ... model SQL ...<br/>WHERE ordered_at >= (SELECT max(ordered_at) FROM orders)"]
+    q3["3. SELECT DISTINCT partition_id FROM system.parts<br/>WHERE table = 'orders__dbt_new_data_#lt;run_id#gt;' AND active"]
+    q4["4. ALTER TABLE orders<br/>REPLACE PARTITION ID '202509' FROM orders__dbt_new_data_#lt;run_id#gt;,<br/>REPLACE PARTITION ID ... (one per partition found in step 3)"]
+    q5["5. DROP TABLE orders__dbt_new_data_#lt;run_id#gt;"]
+    q1 -->|creates empty, same structure as orders| staging
+    stg -->|reads| q2
+    items -->|reads| q2
+    q2 -->|inserts the changed rows| staging
+    parts -->|reads the partitions of the staging table| q3
+    q3 -->|partition ids| q4
+    staging -->|reads| q4
+    q4 -->|replaces those partitions| orders
+    q5 -->|drops| staging
+    classDef temp fill:#dbeafe,stroke:#1d4ed8;
+    classDef target fill:#fef3c7,stroke:#b45309;
+    classDef source fill:#dcfce7,stroke:#15803d;
+    classDef query fill:#f3f4f6,stroke:#6b7280;
+    class staging temp;
+    class orders target;
+    class stg,items,parts source;
+    class q1,q2,q3,q4,q5 query;
+```
+
+[머티리얼라이즈 페이지](/ko/integrations/connectors/data-ingestion/etl-tools/dbt/materializations#materialization-incremental)에서는 `microbatch` 전략과 `on_schema_change`를 비롯해 incremental 머티리얼라이즈의 나머지 옵션을 다룹니다.
+
+## 스냅샷 생성 {#snapshot}
+
+dbt [스냅샷](https://docs.getdbt.com/docs/build/snapshots)은 변경 가능한 테이블의 행이 시간에 따라 어떻게 변화하는지를 기록하므로, 분석가는 과거 임의 시점의 데이터 상태를 되짚어 볼 수 있습니다. 스냅샷은 [type-2 느리게 변화하는 차원(slowly changing dimensions)](https://en.wikipedia.org/wiki/Slowly_changing_dimension#Type_2:_add_new_row)을 구현하며, 행의 각 버전은 그 버전이 유효했던 인터벌과 함께 저장됩니다.
+
+`customers` 마트가 좋은 후보입니다. 고객이 다시 주문할 때마다 `count_lifetime_orders`, `lifetime_spend`, `customer_type`이 모두 바뀌기 때문입니다. 계속 진행하기 전에 `orders` 모델을 [incremental 섹션](#incremental)의 기본 incremental strategy로 되돌리십시오(`incremental_strategy='append'`를 제거하고 필터를 다시 `>=`로 변경). 이렇게 하면 오늘 이후에 들어온 주문이 반영됩니다.
+
+dbt 1.9부터 스냅샷은 YAML로 정의합니다. `snapshots/customers_snapshot.yml` 파일을 생성하세요:
+
+```yaml
+snapshots:
+  - name: customers_snapshot
+    relation: ref('customers')
+    config:
+      unique_key: customer_id
+      strategy: check
+      check_cols:
+        - count_lifetime_orders
+        - lifetime_spend
+        - customer_type
+```
+
+`check` strategy는 실행할 때마다 current snapshot과 source 사이의 지정된 컬럼들을 비교하여, 그중 하나라도 변경되면 새로운 version을 기록합니다. model에 신뢰할 수 있는 &quot;최종 업데이트&quot; timestamp 컬럼이 있다면 `timestamp` strategy가 비용 면에서 더 유리합니다. 이때는 `strategy: timestamp`와 `updated_at: <column>`을 설정하십시오. Jaffle Shop의 `last_ordered_at`은 일 단위로 truncated되어 있어 같은 날 발생한 두 번째 주문을 감지하지 못하며, 이러한 이유로 이 예시에서는 `check`를 사용합니다.
+
+첫 번째 snapshot을 생성합니다:
+
+```bash
+dbt snapshot
+```
+
+```response
+1 of 1 START snapshot `jaffle_shop`.`customers_snapshot` ....................... [RUN]
+1 of 1 OK snapshotted `jaffle_shop`.`customers_snapshot` ....................... [OK in 0.17s]
+```
+
+snapshot table은 model과 같은 위치에 생성됩니다. 이 프로젝트의 `generate_schema_name` macro는 production이 아닌 target에서 모든 릴레이션을 target schema에 배치하므로, snapshot에 지정한 `schema` config는 `prod` target에서만 적용됩니다. 이 table에는 고객당 하나의 행이 저장되며, dbt 관리용 컬럼인 `dbt_valid_from`과 `dbt_valid_to`가 포함됩니다. 행의 현재 version에서는 후자가 `NULL`입니다:
+
+```sql
+SELECT customer_id, count_lifetime_orders, lifetime_spend, customer_type, dbt_valid_from, dbt_valid_to
+FROM jaffle_shop.customers_snapshot
+WHERE customer_id IN ('clicky-0001', 'danny-0001')
+ORDER BY customer_id, dbt_valid_from;
+```
+
+```response
+┌─customer_id─┬─count_lifetime_orders─┬─lifetime_spend─┬─customer_type─┬──────dbt_valid_from─┬─dbt_valid_to─┐
+│ clicky-0001 │                     1 │          11.66 │ new           │ 2026-09-15 01:15:32 │         ᴺᵁᴸᴸ │
+│ danny-0001  │                     1 │          19.76 │ new           │ 2026-09-15 01:15:32 │         ᴺᵁᴸᴸ │
+└─────────────┴───────────────────────┴────────────────┴───────────────┴─────────────────────┴──────────────┘
+```
+
+Clicky가 오늘 커피를 마시러 다시 찾아옵니다:
+
+```sql
+INSERT INTO raw.raw_orders VALUES
+    ('clicky-order-0002', 'clicky-0001', now(),
+     '4b6c2304-2b9e-41e4-942a-cf11a1819378', 600, 36, 636);
+
+INSERT INTO raw.raw_items VALUES ('clicky-item-0002', 'clicky-order-0002', 'BEV-001');
+```
+
+`orders`와 `customers`에 새 주문이 반영되도록 model을 실행한 뒤, 두 번째 snapshot을 생성합니다:
+
+```bash
+dbt run
+dbt snapshot
+```
+
+```response
+1 of 1 START snapshot `jaffle_shop`.`customers_snapshot` ....................... [RUN]
+1 of 1 OK snapshotted `jaffle_shop`.`customers_snapshot` ....................... [OK in 0.73s]
+```
+
+이제 snapshot에 Clicky의 행이 두 개 존재합니다. 첫 번째 버전은 `dbt_valid_to`가 설정되면서 닫혔고, 주문이 두 건인 `returning` 고객이 된 새 버전은 열려 있습니다. Danny는 변경되지 않았으므로 해당 행은 그대로 유지됩니다:
+
+```sql
+SELECT customer_id, count_lifetime_orders, lifetime_spend, customer_type, dbt_valid_from, dbt_valid_to
+FROM jaffle_shop.customers_snapshot
+WHERE customer_id IN ('clicky-0001', 'danny-0001')
+ORDER BY customer_id, dbt_valid_from;
+```
+
+```response
+┌─customer_id─┬─count_lifetime_orders─┬─lifetime_spend─┬─customer_type─┬──────dbt_valid_from─┬────────dbt_valid_to─┐
+│ clicky-0001 │                     1 │          11.66 │ new           │ 2026-09-15 01:15:32 │ 2026-09-15 01:16:16 │
+│ clicky-0001 │                     2 │          18.02 │ returning     │ 2026-09-15 01:16:16 │                ᴺᵁᴸᴸ │
+│ danny-0001  │                     1 │          19.76 │ new           │ 2026-09-15 01:15:32 │                ᴺᵁᴸᴸ │
+└─────────────┴───────────────────────┴────────────────┴───────────────┴─────────────────────┴─────────────────────┘
+```
+
+내부적으로 어댑터는 새 버전의 snapshot을 `customers_snapshot__snapshot_upsert` 테이블에 생성한 뒤 `EXCHANGE TABLES`로 스왑합니다(서버가 테이블 exchange를 지원하지 않으면 삭제 후 rename 방식을 사용합니다). 따라서 읽는 쪽에서는 이전 버전 또는 새 버전의 snapshot 중 하나만 보게 됩니다. 구성 관련 참고 정보는 [materializations 페이지의 snapshot 섹션](/ko/integrations/connectors/data-ingestion/etl-tools/dbt/materializations#snapshot)을 확인하십시오.
+
+## materialized view 사용하기 {#materialized-views}
+
+지금까지 다룬 방식은 모두 새로운 데이터를 모델에 반영하려면 `dbt run`을 실행해야 합니다. ClickHouse [materialized view](/ko/concepts/features/materialized-views/index)는 동작 방식이 다릅니다. materialized view는 일종의 insert trigger로, 원본 테이블에 삽입되는 모든 행 블록이 뷰의 `SELECT`를 거쳐 변환된 뒤 target table에 기록되며 별도의 스케줄링은 필요하지 않습니다. 어댑터는 `materialized_view` 머티리얼라이즈를 통해 이 기능을 제공합니다.
+
+원시 주문 테이블에서 직접 읽어 매장별, 일자별 주문 수와 매출을 계산하는 `models/marts/daily_store_revenue.sql`을 생성하십시오.
+
+```sql
+{{
+    config(
+        materialized='materialized_view',
+        engine='SummingMergeTree()',
+        order_by='(order_date, store_id)'
+    )
+}}
+
+select
+    toDate(ordered_at) as order_date,
+    store_id,
+    count() as orders,
+    sum(order_total) as revenue_cents
+from {{ source('ecom', 'raw_orders') }}
+group by order_date, store_id
+```
+
+`engine`과 `order_by`는 대상 테이블(target table)에 적용됩니다. `SummingMergeTree`는 파트를 머지할 때 동일한 정렬 키를 가진 행들의 숫자 컬럼 값을 합산하며, 이는 일별·매장별 집계에 꼭 필요한 동작입니다.
+
+```bash
+dbt run --select daily_store_revenue
+```
+
+```response
+1 of 1 START sql materialized_view model `jaffle_shop`.`daily_store_revenue` ... [RUN]
+1 of 1 OK created sql materialized_view model `jaffle_shop`.`daily_store_revenue`  [OK in 0.25s]
+```
+
+어댑터는 두 개의 객체를 생성했습니다. 하나는 model 이름을 그대로 사용한 target table이고, 다른 하나는 이름 뒤에 `_mv`가 붙은 materialized view 자체로, `TO` 절을 통해 target table을 가리킵니다. 기본 설정(`catchup=True`)에서는 target table에 기존 주문 데이터도 백필되었습니다:
+
+```sql
+SELECT name, engine
+FROM system.tables
+WHERE database = 'jaffle_shop' AND name LIKE 'daily_store_revenue%';
+```
+
+```response
+┌─name───────────────────┬─engine───────────┐
+│ daily_store_revenue    │ SummingMergeTree │
+│ daily_store_revenue_mv │ MaterializedView │
+└────────────────────────┴──────────────────┘
+```
+
+```sql
+SHOW CREATE TABLE jaffle_shop.daily_store_revenue_mv;
+```
+
+```response
+CREATE MATERIALIZED VIEW jaffle_shop.daily_store_revenue_mv TO jaffle_shop.daily_store_revenue
+(
+    `order_date` Date,
+    `store_id` String,
+    `orders` UInt64,
+    `revenue_cents` Int64
+)
+AS SELECT
+    toDate(ordered_at) AS order_date,
+    store_id,
+    count() AS orders,
+    sum(order_total) AS revenue_cents
+FROM raw.raw_orders
+GROUP BY
+    order_date,
+    store_id
+```
+
+이제 Danny의 원본 주문을 하나 더 삽입하되, 이후에 dbt를 실행하지는 않습니다:
+
+```sql
+INSERT INTO raw.raw_orders VALUES
+    ('danny-order-0002', 'danny-0001', now(),
+     '40e6ddd6-b8f6-4e17-8bd6-5e53966809d2', 1400, 56, 1456);
+
+INSERT INTO raw.raw_items VALUES ('danny-item-0003', 'danny-order-0002', 'JAF-004');
+```
+
+target table에는 이미 반영되어 있습니다. 이제 Brooklyn의 오늘 주문은 2건입니다:
+
+```sql
+SELECT order_date, store_id, sum(orders) AS orders, sum(revenue_cents) AS revenue_cents
+FROM jaffle_shop.daily_store_revenue
+WHERE order_date >= yesterday()
+GROUP BY order_date, store_id
+ORDER BY order_date, store_id;
+```
+
+```response
+┌─order_date─┬─store_id─────────────────────────────┬─orders─┬─revenue_cents─┐
+│ 2026-09-14 │ 4b6c2304-2b9e-41e4-942a-cf11a1819378 │      1 │          1166 │
+│ 2026-09-15 │ 40e6ddd6-b8f6-4e17-8bd6-5e53966809d2 │      2 │          3432 │
+│ 2026-09-15 │ 4b6c2304-2b9e-41e4-942a-cf11a1819378 │      1 │           636 │
+└────────────┴──────────────────────────────────────┴────────┴───────────────┘
+```
+
+이 쿼리는 의도적으로 `sum()`과 `GROUP BY`로 집계합니다. `SummingMergeTree`는 파트가 백그라운드에서 머지될 때에만 동일한 키의 행을 합치므로, 그 전까지 Brooklyn 주문 두 건은 테이블에서 두 개의 행으로 남아 있습니다. summing 및 aggregating 엔진을 사용할 때는 항상 읽기 시점에 집계하거나 `FINAL`을 사용하십시오. 한편 `orders` incremental 모델에는 다음 `dbt run`이 실행되기 전까지 Danny의 주문이 한 건만 존재합니다.
+
+이후 `dbt run`을 실행하면 target table과 그 데이터는 그대로 유지되고 view definition만 갱신되며, 변경 내용이 허용하는 경우에는 `ALTER TABLE ... MODIFY QUERY`가 사용됩니다. 따라서 해당 모델을 프로젝트에 그대로 두어도 안전합니다. `dbt run --full-refresh`는 target table을 재구성하고 다시 backfill합니다(`catchup`이 `False`인 경우는 제외). 나머지 내용은 [materialized views 페이지](/ko/integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view)에서 다룹니다. `on_schema_change`를 통한 schema changes, `catchup`으로 backfill 비활성화, 갱신 가능 구체화 뷰, 여러 view가 동일한 target에 데이터를 공급하는 구성, target table을 별도의 모델로 정의하는 방법 등입니다.
+
+## 추가 정보 {#further-information}
+
+이 가이드는 dbt의 기본적인 내용만 다룹니다. ClickHouse에 특화되지 않은 내용은 모두 [dbt 문서](https://docs.getdbt.com/docs/introduction)를 참고하십시오. 어댑터의 경우 profile 설정과 전역 기능은 [features and configurations](/ko/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations) 페이지를, 위에서 사용한 모든 구성은 [materializations 페이지](/ko/integrations/connectors/data-ingestion/etl-tools/dbt/materializations)를, dbt OSS, dbt v2 또는 dbt 플랫폼을 사용한다면 [dbt OSS, dbt v2 및 dbt 플랫폼 페이지](/ko/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform)를 확인하십시오. [Jaffle Shop for ClickHouse](https://github.com/ClickHouse/jaffle-shop-clickhouse)에 새로운 예시를 기여해 주시면 언제든 환영합니다.
