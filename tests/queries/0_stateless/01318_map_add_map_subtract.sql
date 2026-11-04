@@ -37,7 +37,6 @@ select mapAdd((key, val), (key, val)) as res, toTypeName(res) from values ('key 
 select mapAdd((key, val), (key, val)) as res, toTypeName(res) from values ('key Array(UUID), val Array(Int32)', (['00000000-89ab-cdef-0123-456789abcdef'], [1]), (['11111111-89ab-cdef-0123-456789abcdef'], [2]));
 
 -- mapSubtract, same rules as mapAdd
-select mapSubtract((['k', 'k'], [toInt64(10), toInt64(20)]), (['k'], [toInt64(0)])) as res;
 select mapSubtract(([toUInt8(1), 2], [1, 1]), ([toUInt8(1), 2], [1, 1])) as res, toTypeName(res);
 select mapSubtract(([toUInt8(1), 2], [1, 1]), ([toUInt8(1), 2], [2, 2])) as res, toTypeName(res); -- overflow
 select mapSubtract(([toUInt8(1), 2], [toInt32(1), 1]), ([toUInt8(1), 2], [toInt16(2), 2])) as res, toTypeName(res);

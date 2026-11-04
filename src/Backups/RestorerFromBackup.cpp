@@ -26,8 +26,6 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/IStorage.h>
-#include <Common/FailPoint.h>
-#include <Common/NamedCollections/NamedCollectionsBackup.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
@@ -61,11 +59,6 @@ namespace Setting
     extern const SettingsBool restore_replace_external_engines_to_null;
 }
 
-namespace FailPoints
-{
-    extern const char restore_pause_before_data_restore_tasks[];
-}
-
 namespace ErrorCodes
 {
     extern const int CANNOT_RESTORE_TABLE;
@@ -84,12 +77,6 @@ namespace
         if (table_name.database != DatabaseCatalog::SYSTEM_DATABASE)
             return false;
 
-#if CLICKHOUSE_CLOUD
-        /// `system.masking_policies` backs an access entity, so it belongs to this list.
-        if (table_name.table == "masking_policies")
-            return true;
-#endif
-
         return (table_name.table == "users") || (table_name.table == "roles") || (table_name.table == "settings_profiles")
             || (table_name.table == "row_policies") || (table_name.table == "quotas");
     }
@@ -99,25 +86,6 @@ namespace
     {
         return (table_name.database == DatabaseCatalog::SYSTEM_DATABASE) && (table_name.table == "functions");
     }
-
-    /// Whether a specified name corresponds to the table backuping named collections.
-    bool isSystemNamedCollectionsTableName(const QualifiedTableName & table_name)
-    {
-        return (table_name.database == DatabaseCatalog::SYSTEM_DATABASE) && (table_name.table == "named_collections");
-    }
-
-    /// Whether a specified name corresponds to the system table backing WORKLOAD entities.
-    bool isSystemWorkloadsTableName(const QualifiedTableName & table_name)
-    {
-        return (table_name.database == DatabaseCatalog::SYSTEM_DATABASE) && (table_name.table == "workloads");
-    }
-
-    /// Whether a specified name corresponds to the system table backing RESOURCE entities.
-    bool isSystemResourcesTableName(const QualifiedTableName & table_name)
-    {
-        return (table_name.database == DatabaseCatalog::SYSTEM_DATABASE) && (table_name.table == "resources");
-    }
-
  }
 
 
@@ -176,13 +144,6 @@ void RestorerFromBackup::run(Mode mode_)
     findDatabasesAndTablesInBackup();
     logNumberOfDatabasesAndTablesToRestore();
 
-    /// While still in the FINDING_TABLES_IN_BACKUP stage, tell the other hosts which directory of
-    /// the backup this host would restore the named collections from: with a shared (replicated)
-    /// named-collections storage the one host restoring it processes the directories of all the
-    /// hosts sharing it (see restoreNamedCollections below), and the stage barrier below makes
-    /// every registration visible to it before it reads them.
-    registerNamedCollectionsForRestore();
-
     /// Check access rights.
     setStage(Stage::CHECKING_ACCESS_RIGHTS);
     loadSystemAccessTables();
@@ -191,27 +152,8 @@ void RestorerFromBackup::run(Mode mode_)
     if (mode == Mode::CHECK_ACCESS_ONLY)
         return;
 
-    context->onQueryExecutionStarted();
-
-    /// Restore named collections before any database or table is created: database engines (e.g.
-    /// `Remote(collection)`, or `Replicated` with the `collection_name` setting) and table engines
-    /// resolve named collections inside CREATE. This runs at the end of the CHECKING_ACCESS_RIGHTS
-    /// stage rather than in a stage of its own, because stage names are synchronised across hosts
-    /// through the coordination, and a new stage would require every host to be on a version that
-    /// knows it.
-    restoreNamedCollections();
-
     /// Create databases using the create queries read from the backup.
     setStage(Stage::CREATING_DATABASES);
-
-    /// With a replicated named-collections storage only one host has written the restored
-    /// collections (see restoreNamedCollections above); the other hosts observe the write through
-    /// an asynchronous Keeper watch. The stage barrier above guarantees the writer has finished,
-    /// so make the collections visible on this host synchronously before a database or table
-    /// CREATE resolves one of them.
-    if (named_collections_restored)
-        reloadNamedCollectionsAfterRestore();
-
     createAndCheckDatabases();
 
     /// Create tables using the create queries read from the backup.
@@ -383,44 +325,6 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
                     /// CREATE_FUNCTION privilege is required to restore the "system.functions" table.
                     if (table_info.has_data && restore_settings.shouldRestoreFunctions())
                         required_access.emplace_back(AccessType::CREATE_FUNCTION);
-                }
-                else if (isSystemNamedCollectionsTableName(table_name))
-                {
-                    /// CREATE_NAMED_COLLECTION privilege is required to restore the "system.named_collections" table.
-                    if (table_info.has_data && restore_settings.shouldRestoreNamedCollections())
-                    {
-                        required_access.emplace_back(AccessType::CREATE_NAMED_COLLECTION);
-                        if (restore_settings.create_named_collection == RestoreNamedCollectionCreationMode::kReplace)
-                            required_access.emplace_back(AccessType::DROP_NAMED_COLLECTION);
-                    }
-                }
-                else if (isSystemWorkloadsTableName(table_name))
-                {
-                    /// CREATE_WORKLOAD privilege is required to restore WORKLOAD entities from the "system.workloads" table.
-                    /// (RESTORE creates them via storeEntity(), bypassing InterpreterCreateWorkloadQuery's own access check.)
-                    if (table_info.has_data && restore_settings.shouldRestoreTableData())
-                    {
-                        required_access.emplace_back(AccessType::CREATE_WORKLOAD);
-                        /// In 'replace' mode a restored entity can overwrite an existing one (storeEntity() with
-                        /// replace_if_exists), which is a DROP followed by a CREATE, so it also requires DROP_WORKLOAD
-                        /// -- mirroring the access required by CREATE OR REPLACE WORKLOAD.
-                        if (restore_settings.create_workloads_and_resources == RestoreWorkloadsAndResourcesCreationMode::kReplace)
-                            required_access.emplace_back(AccessType::DROP_WORKLOAD);
-                    }
-                }
-                else if (isSystemResourcesTableName(table_name))
-                {
-                    /// CREATE_RESOURCE privilege is required to restore RESOURCE entities from the "system.resources" table.
-                    /// (RESTORE creates them via storeEntity(), bypassing InterpreterCreateResourceQuery's own access check.)
-                    if (table_info.has_data && restore_settings.shouldRestoreTableData())
-                    {
-                        required_access.emplace_back(AccessType::CREATE_RESOURCE);
-                        /// In 'replace' mode a restored entity can overwrite an existing one (storeEntity() with
-                        /// replace_if_exists), which is a DROP followed by a CREATE, so it also requires DROP_RESOURCE
-                        /// -- mirroring the access required by CREATE OR REPLACE RESOURCE.
-                        if (restore_settings.create_workloads_and_resources == RestoreWorkloadsAndResourcesCreationMode::kReplace)
-                            required_access.emplace_back(AccessType::DROP_RESOURCE);
-                    }
                 }
                 /// Privileges required to restore ACL system tables are checked separately
                 /// (see access_restore_task->getRequiredAccess() below).
@@ -687,8 +591,6 @@ void RestorerFromBackup::createDatabase(const String & database_name) const
         /// Execute CREATE DATABASE query.
         InterpreterCreateQuery interpreter{create_database_query, create_query_context};
         interpreter.setInternal(true);
-        /// The `ON CLUSTER` path gets the same flag from `QueryFlags::distributed_backup_restore` in `DDLWorker`.
-        interpreter.setIsRestoreFromBackup(true);
         interpreter.execute();
     }
     catch (Exception & e)
@@ -743,51 +645,6 @@ void RestorerFromBackup::checkDatabase(const String & database_name)
         e.addMessage("While checking database {}", backQuoteIfNeed(database_name));
         throw;
     }
-}
-
-String RestorerFromBackup::findNamedCollectionsDataPathInBackup() const
-{
-    std::lock_guard lock{mutex};
-    for (const auto & [table_name, table_info] : table_infos)
-    {
-        if (isSystemNamedCollectionsTableName(table_name) && table_info.has_data)
-        {
-            if (table_info.partitions)
-                throw Exception(
-                    ErrorCodes::CANNOT_RESTORE_TABLE,
-                    "Cannot restore the `system.named_collections` table with a PARTITIONS clause: "
-                    "it doesn't support partitions");
-
-            return table_info.data_path_in_backup;
-        }
-    }
-    return {};
-}
-
-void RestorerFromBackup::registerNamedCollectionsForRestore()
-{
-    /// The initiating host of a RESTORE ON CLUSTER query checks access rights through a restorer
-    /// without a coordination (see BackupsWorker) and restores nothing, so it registers nothing.
-    if (!restore_coordination || !restore_settings.shouldRestoreNamedCollections())
-        return;
-
-    String data_path_in_backup = findNamedCollectionsDataPathInBackup();
-    if (data_path_in_backup.empty())
-        return;
-
-    DB::registerNamedCollectionsDirForRestore(*this, data_path_in_backup);
-}
-
-void RestorerFromBackup::restoreNamedCollections()
-{
-    if (!restore_settings.shouldRestoreNamedCollections())
-        return;
-
-    /// The data path is empty when this host's part of the backup holds no named collections, but
-    /// a host sharing a replicated storage with this one may still restore the collections of its
-    /// own part, and then this host has to reload them after the stage barrier; the return value
-    /// covers both.
-    named_collections_restored = DB::restoreNamedCollections(*this, findNamedCollectionsDataPathInBackup());
 }
 
 void RestorerFromBackup::applyCustomStoragePolicy(ASTPtr query_ptr)
@@ -1143,12 +1000,6 @@ void RestorerFromBackup::insertDataToTable(const QualifiedTableName & table_name
         if (!restore_settings.shouldRestoreFunctions())
             return;
     }
-    else if (isSystemNamedCollectionsTableName(table_name))
-    {
-        /// Named collections were already restored before the databases and tables were created
-        /// (see restoreNamedCollections), don't restore them twice.
-        return;
-    }
     else if (!restore_settings.shouldRestoreTableData())
     {
         return;
@@ -1255,10 +1106,6 @@ void RestorerFromBackup::addDataRestoreTask(DataRestoreTask && new_task)
 
 void RestorerFromBackup::runDataRestoreTasks()
 {
-    /// Every earlier stage has joined its own tasks, so this is the first point where a test can
-    /// arm a fail point and be sure the next task to reach it is one of several concurrent ones.
-    FailPointInjection::pauseFailPoint(FailPoints::restore_pause_before_data_restore_tasks);
-
     /// Iterations are required here because data restore tasks are allowed to call addDataRestoreTask() and add other data restore tasks.
     for (;;)
     {
