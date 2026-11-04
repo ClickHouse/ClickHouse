@@ -2698,6 +2698,12 @@ bool ReadFromFile::supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_
     return !info.columns_description.hasDefault(sort_column.name);
 }
 
+bool ReadFromFile::canSkipDataByFilterOn(const ColumnWithTypeAndName & column) const
+{
+    const auto settings = storage->format_settings ? *storage->format_settings : getFormatSettings(getContext());
+    return formatSkipsDataByStatistics(storage->format_name, settings) && info.canSkipDataByStatisticsOf(column);
+}
+
 bool ReadFromFile::supportsMinMaxFromStatistics() const
 {
     if (!boost::iequals(storage->format_name, "Parquet") || storage->archive_info || need_only_count)

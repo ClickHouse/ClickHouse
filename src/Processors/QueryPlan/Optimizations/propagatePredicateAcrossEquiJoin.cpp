@@ -1,7 +1,9 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
+#include <Core/Settings.h>
 #include <Functions/FunctionsComparison.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/Context.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
@@ -10,11 +12,20 @@
 #include <optional>
 #include <string>
 
+namespace DB
+{
+namespace Setting
+{
+    extern const SettingsBool use_primary_key;
+}
+}
+
 namespace DB::QueryPlanOptimizations
 {
 
-/// Copies filter conjuncts across equi-join keys so the other side can prune its primary key.
-/// Limited to `Expression`/`Filter` chains, see `isTransparentForPropagation`
+/// Copies filter conjuncts across equi-join keys so the other side can prune its primary key, or
+/// skip data of a source that prunes by statistics. Limited to `Expression`/`Filter` chains, see
+/// `isTransparentForPropagation`
 
 /// Defined in partialJoinFilterPushDown.cpp
 void addFilterOnTop(QueryPlan::Node & join_node, size_t child_idx, QueryPlan::Nodes & nodes, ActionsDAG filter_dag);
@@ -80,23 +91,38 @@ const FilterStep * findFilterBelow(const QueryPlan::Node * node)
     return found ? typeid_cast<const FilterStep *>(found->step.get()) : nullptr;
 }
 
-/// Primary key of the MergeTree the target reads from, empty when there is none
-NameSet getTargetPrimaryKeyColumns(const QueryPlan::Node * target_root)
+/// Columns of the read below the target that a filter can prune: the primary key of a MergeTree,
+/// or the columns another source can skip data by. Empty when there is none
+NameSet getTargetPrunableColumns(const QueryPlan::Node * target_root)
 {
     const auto * read = walkDown(target_root, [](const auto * n)
     {
-        return typeid_cast<const ReadFromMergeTree *>(n->step.get()) != nullptr;
+        return dynamic_cast<const SourceStepWithFilterBase *>(n->step.get()) != nullptr;
     });
     if (!read)
         return {};
-    const auto & primary_key = typeid_cast<const ReadFromMergeTree &>(*read->step).getStorageMetadata()->getPrimaryKey();
-    return NameSet(primary_key.column_names.begin(), primary_key.column_names.end());
+
+    if (const auto * merge_tree = typeid_cast<const ReadFromMergeTree *>(read->step.get()))
+    {
+        /// Without `use_primary_key` the copy would just be a full scan filter
+        if (!merge_tree->getContext()->getSettingsRef()[Setting::use_primary_key])
+            return {};
+        const auto & primary_key = merge_tree->getStorageMetadata()->getPrimaryKey();
+        return NameSet(primary_key.column_names.begin(), primary_key.column_names.end());
+    }
+
+    const auto & source = dynamic_cast<const SourceStepWithFilterBase &>(*read->step);
+    NameSet result;
+    for (const auto & column : *source.getOutputHeader())
+        if (source.canSkipDataByFilterOn(column))
+            result.insert(column.name);
+    return result;
 }
 
-/// Worth copying only when every substituted key is in the target's primary key
-bool atomCanUseTargetPrimaryKey(
+/// Worth copying only when every substituted key is a prunable column of the target
+bool atomCanPruneTarget(
     const QueryPlan::Node * target_root,
-    const NameSet & primary_key_columns,
+    const NameSet & prunable_columns,
     const ActionsDAG::Node * atom,
     const SubstitutionMap & substitution)
 {
@@ -108,7 +134,7 @@ bool atomCanUseTargetPrimaryKey(
         if (it == substitution.end())
             return false;
         const auto target_column = resolveDown(target_root, it->second.name, /*stop_at_filter=*/false);
-        if (!target_column || !primary_key_columns.contains(*target_column))
+        if (!target_column || !prunable_columns.contains(*target_column))
             return false;
     }
     return true;
@@ -220,9 +246,9 @@ size_t tryPropagateToSide(
     auto * target_root = join_node->children[target_idx];
     if (!source_filter)
         return 0;
-    /// Only helps when the target feeds a MergeTree primary key
-    const auto primary_key_columns = getTargetPrimaryKeyColumns(target_root);
-    if (primary_key_columns.empty())
+    /// Only helps when the target's read can prune by the copy
+    const auto prunable_columns = getTargetPrunableColumns(target_root);
+    if (prunable_columns.empty())
         return 0;
 
     SubstitutionMap filter_level_sub;
@@ -241,7 +267,7 @@ size_t tryPropagateToSide(
     for (const auto * atom : ActionsDAG::extractConjunctionAtoms(filter_root))
     {
         if (atomSafelySubstitutable(atom, filter_level_sub)
-            && atomCanUseTargetPrimaryKey(target_root, primary_key_columns, atom, filter_level_sub))
+            && atomCanPruneTarget(target_root, prunable_columns, atom, filter_level_sub))
             propagatable.push_back(atom);
     }
     if (propagatable.empty())

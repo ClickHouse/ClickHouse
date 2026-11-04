@@ -1,0 +1,27 @@
+file	2
+file result	1
+file pruned row groups	1
+file IN	2
+file IN result	2
+s3	2
+url	2
+csv	1
+filter push-down off	1
+use_primary_key = 0	2
+nan	1
+nan result	500
+default	1
+default result	500
+hive	1
+UInt8	2
+Date	2
+Date32	2
+Decimal	2
+Nullable(Int64)	2
+LowCardinality(Nullable(Int64))	2
+String	1
+DateTime	1
+UUID	1
+FixedString	1
+Nullable(Float32)	1
+iceberg	1
