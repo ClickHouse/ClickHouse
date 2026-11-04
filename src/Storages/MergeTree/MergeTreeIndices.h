@@ -81,6 +81,12 @@ class Block;
 struct MergeTreeWriterSettings;
 struct MergeTreeDataPartChecksums;
 
+/// Is a value written with @from decoded identically when read back as @to? Used for the skip index
+/// granules and the column statistics of a part that stores a column with a type different from the
+/// current metadata (e.g. after extending an `Enum`). Fail-closed: a conversion not known to keep the
+/// representation is treated as incompatible.
+bool isRepresentationPreservingConversion(const IDataType * from, const IDataType * to);
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
