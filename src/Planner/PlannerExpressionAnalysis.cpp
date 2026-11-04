@@ -574,7 +574,6 @@ SortAnalysisResult analyzeSort(
     actions_chain.addStep(std::move(actions_step_before_sort));
 
     ActionsAndProjectInputsFlagPtr before_interpolate_actions;
-    NameToNameMap interpolated_column_names;
     NameToNameMap interpolate_target_column_names;
 
     /// We add only INPUT columns necessary for INTERPOLATE expression in before ORDER BY actions DAG
@@ -619,7 +618,6 @@ SortAnalysisResult analyzeSort(
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Interpolate expression must return single column");
             const auto * node = nodes.front();
             const auto & target_name = interpolate_node_typed.getExpressionName();
-            interpolated_column_names.emplace(target_name, node->result_name);
 
             /// A target alias may be the name of another column, as in `count() AS c, n AS `count()``.
             String column_name = target_name;
@@ -641,7 +639,6 @@ SortAnalysisResult analyzeSort(
         std::move(before_sort_actions),
         has_with_fill,
         std::move(before_interpolate_actions),
-        std::move(interpolated_column_names),
         std::move(interpolate_target_column_names)};
 }
 
@@ -958,14 +955,34 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
             if (input->column && source_constants.contains(input->result_name))
                 keep_inputs.insert(input);
 
-    if (query_node.hasInterpolate() && sort_analysis_result_optional)
+    if (has_with_fill)
     {
+        /// A projection column linked to a sort key or an INTERPOLATE target reads its column, which has the values of
+        /// rows added by WITH FILL. INTERPOLATE goes last.
         auto project_names = projection_analysis_result.projection_column_names_with_display_aliases;
-        const auto & interpolated_column_names = sort_analysis_result_optional->interpolated_column_names;
-        /// A result column takes the interpolated values only if it is the column the target interpolates.
-        for (auto & [name, alias] : project_names)
-            if (auto it = interpolated_column_names.find(alias); it != interpolated_column_names.end() && it->second == name)
-                name = sort_analysis_result_optional->interpolate_target_column_names.at(alias);
+        for (const auto & sort_node : query_node.getOrderBy().getNodes())
+        {
+            const auto & sort_node_typed = sort_node->as<SortNode &>();
+            if (sort_node_typed.getProjectionColumnIndexes().empty())
+                continue;
+
+            auto sort_column_name = calculateActionNodeName(sort_node_typed.getExpression(), *planner_context);
+            for (size_t index : sort_node_typed.getProjectionColumnIndexes())
+                if (index < project_names.size())
+                    project_names[index].first = sort_column_name;
+        }
+
+        if (query_node.hasInterpolate())
+        {
+            for (const auto & interpolate_node : query_node.getInterpolate()->as<ListNode &>().getNodes())
+            {
+                const auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
+                for (size_t index : interpolate_node_typed.getProjectionColumnIndexes())
+                    if (index < project_names.size())
+                        project_names[index].first
+                            = sort_analysis_result_optional->interpolate_target_column_names.at(interpolate_node_typed.getExpressionName());
+            }
+        }
 
         project_names_actions->dag.project(project_names, keep_inputs);
     }

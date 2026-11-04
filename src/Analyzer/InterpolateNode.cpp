@@ -46,6 +46,7 @@ QueryTreeNodePtr InterpolateNode::cloneImpl() const
 {
     auto cloned = std::make_shared<InterpolateNode>(nullptr /*expression*/, nullptr /*interpolate_expression*/);
     cloned->expression_name = expression_name;
+    cloned->projection_column_indexes = projection_column_indexes;
     return cloned;
 }
 

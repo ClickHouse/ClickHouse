@@ -246,6 +246,54 @@ void removeAliasesRecursive(QueryTreeNodePtr & node)
         removeAliasesRecursive(child);
 }
 
+void linkFillColumnsWithProjection(QueryNode & query_node)
+{
+    if (!query_node.hasOrderBy())
+        return;
+
+    auto & sort_nodes = query_node.getOrderBy().getNodes();
+    if (std::none_of(sort_nodes.begin(), sort_nodes.end(), [](const QueryTreeNodePtr & sort_node) { return sort_node->as<SortNode &>().withFill(); }))
+        return;
+
+    const auto & projection_nodes = query_node.getProjection().getNodes();
+    const auto & projection_columns = query_node.getProjectionColumns();
+    if (projection_nodes.size() != projection_columns.size())
+        return;
+
+    auto find_indexes = [&](const QueryTreeNodePtr & node, const std::string * column_name)
+    {
+        std::vector<size_t> indexes;
+        for (size_t i = 0; i < projection_nodes.size(); ++i)
+            if ((!column_name || projection_columns[i].name == *column_name)
+                && projection_nodes[i]->isEqual(*node, IQueryTreeNode::CompareOptions{.compare_aliases = false}))
+                indexes.push_back(i);
+        return indexes;
+    };
+
+    for (auto & sort_node : sort_nodes)
+    {
+        auto & sort_node_typed = sort_node->as<SortNode &>();
+        const auto & expression = sort_node_typed.getExpression();
+
+        std::vector<std::vector<size_t>> arguments_indexes;
+        if (const auto * function_node = expression->as<FunctionNode>(); function_node && function_node->getFunctionName() == "tuple")
+            for (const auto & argument : function_node->getArguments().getNodes())
+                arguments_indexes.push_back(find_indexes(argument, nullptr));
+
+        sort_node_typed.setProjectionColumnIndexes(find_indexes(expression, nullptr), std::move(arguments_indexes));
+    }
+
+    if (query_node.hasInterpolate())
+    {
+        for (auto & interpolate_node : query_node.getInterpolate()->as<ListNode &>().getNodes())
+        {
+            auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
+            interpolate_node_typed.setProjectionColumnIndexes(
+                find_indexes(interpolate_node_typed.getExpression(), &interpolate_node_typed.getExpressionName()));
+        }
+    }
+}
+
 /// Hides lambda argument names in the scopes they belong to and restores them on destruction.
 struct HiddenExpressionArguments
 {
@@ -7967,6 +8015,10 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     }
 
     query_node_typed.resolveProjectionColumns(std::move(projection_columns));
+
+    /// The planner gives the values of rows added by WITH FILL to these projection columns. They are
+    /// recorded before passes run, because a pass may rewrite the projection copy of an expression only.
+    linkFillColumnsWithProjection(query_node_typed);
 }
 
 void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, IdentifierResolveScope & scope)
