@@ -10393,6 +10393,14 @@ independently of its size.
 )", 0, \
         {"26.9", 1024 * 1024 * 1024, 512 * 1024 * 1024, "Aligned with the documented default of the Iceberg table property `write.target-file-size-bytes` (512 MiB), see https://iceberg.apache.org/docs/1.5.2/configuration/."}, \
         {"25.9", 1_GiB, 1_GiB, "New setting."}) \
+    DECLARE(Bool, iceberg_insert_single_manifest_for_all_partitions, false, R"(
+An `INSERT` into a partitioned Iceberg table writes one manifest file for all the partitions it touches, like Spark
+and PyIceberg, instead of one manifest file per partition. This holds per insert stream: every stream commits its own
+snapshot with its own manifest, so an `INSERT` writes exactly one manifest only with `max_insert_threads = 1`.
+`OPTIMIZE TABLE ... MANIFEST` then also merges manifests of different partitions into one.
+`ALTER TABLE ... DROP PARTITION` cannot drop a partition whose manifest is shared with other partitions.
+)", 0, \
+        {"26.11", false, false, "New setting."}) \
     DECLARE(UInt64, iceberg_compaction_max_rows_in_data_file, std::numeric_limits<UInt64>::max(), R"(
 Max rows of an iceberg parquet data file produced by compaction. Defaults to the maximum, so the size limit
 `iceberg_compaction_max_bytes_in_data_file` alone decides how much data goes into an output file, the same way
@@ -10977,6 +10985,10 @@ Using the text index postings cache can significantly reduce latency and increas
 )", 0, \
         {"26.10", false, true, "Enabled the text index posting lists cache globally. Previously each query used a small private cache, which caused posting lists and phrase search results to be recomputed within a single query on large tables."}, \
         {"25.11", false, false, "New setting"}) \
+    DECLARE(Bool, use_page_cache_lookahead_for_text_index, false, R"(
+Text index files that are read out of file order (dictionary, postings, positions) are, by default, read through the userspace page cache with a lookahead of one block, so that the remote connection can be reused after each read. Enable this setting to make those files use `page_cache_lookahead_blocks` like other files instead.
+)", 0, \
+        {"26.11", false, false, "New setting"}) \
     DECLARE(TextIndexPostingListApplyMode, text_index_posting_list_apply_mode, TextIndexPostingListApplyMode::Lazy, R"(
 Controls how posting lists are applied during text index queries.
 'materialize' eagerly decodes posting lists into Roaring Bitmaps.
