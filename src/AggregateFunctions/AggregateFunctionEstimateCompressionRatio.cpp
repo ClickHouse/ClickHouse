@@ -12,7 +12,6 @@
 #include <Compression/ICompressionCodec.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
-#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
@@ -128,7 +127,7 @@ struct Run
     /// A handful of substreams: a linear search beats hashing.
     VectorWithMemoryTracking<Stream> streams;
 
-    /// With a target type: the rows in the argument type are serialized into a buffer that only counts bytes, the baseline.
+    /// With a target type: the rows in the type of the column are serialized into a buffer that only counts bytes, the numerator.
     std::optional<ColumnWriter> source_writer;
     std::unique_ptr<NullWriteBuffer> source_counter;
 
@@ -170,6 +169,19 @@ struct AggregateFunctionEstimateCompressionRatioData
     /// pointer (`serialize`, `merge`), which does not change what the state stands for.
     mutable MutableColumnPtr buffer;
     mutable std::unique_ptr<Run> run;
+    /// The type of the column the rows of `buffer` come from. A state of a `LowCardinality(String)` column has the same type as
+    /// a state of a `String` column, so the function that completes it may not be the one that produced it.
+    DataTypePtr represented_type;
+};
+
+/// The parameters of the function, and the settings the MergeTree writer takes from the query.
+struct EstimateCompressionRatioConfig
+{
+    std::optional<String> codec;
+    std::optional<UInt64> block_size_bytes;
+    DataTypePtr target_type;
+    size_t low_cardinality_max_dictionary_size = 8192;
+    bool low_cardinality_use_single_dictionary_for_part = false;
 };
 
 class AggregateFunctionEstimateCompressionRatio final
@@ -180,18 +192,22 @@ private:
     static constexpr size_t rows_per_granule = 8192;
     static constexpr size_t bytes_per_granule = 10 * 1024 * 1024;
 
-    const DataTypePtr argument_type;
-    /// The `target_type` parameter when it differs from the argument type: the rows are cast to it before they are serialized,
-    /// while the baseline of the ratio stays their size in the argument type.
+    const EstimateCompressionRatioConfig config;
+    /// The type of the column, `LowCardinality` included, which the function is created from (see
+    /// `AggregateFunctionProperties::created_with_low_cardinality_types`), and the type its rows arrive as.
+    const DataTypePtr represented_type;
+    const DataTypePtr plain_type;
+    /// The `target_type` parameter when it differs from the type of the column.
     const DataTypePtr target_type;
-    const ExecutableFunctionPtr cast_function;
+    /// The ratio is the serialized size of the rows in `represented_type` over their compressed size in `estimated_type`.
     const DataTypePtr estimated_type;
+    /// The conversions of the rows from `plain_type`, where it differs.
+    const ExecutableFunctionPtr to_represented;
+    const ExecutableFunctionPtr to_target;
     const CompressionCodecPtr default_codec;
     /// The `codec` parameter, or the default codec, as the `CODEC` clause of a column.
     const ASTPtr codec_description;
     const size_t block_size_bytes;
-    const size_t low_cardinality_max_dictionary_size;
-    const bool low_cardinality_use_single_dictionary_for_part;
     /// The layout of every substream of the default serialization of the estimated type; building it validates the codec against
     /// the type. A substream only a column reveals (sparse offsets, the variants of `Dynamic`) is resolved when a run starts.
     const StreamLayouts stream_layouts;
@@ -244,8 +260,8 @@ private:
     void setWriterSettings(ISerialization::SerializeBinaryBulkSettings & settings) const
     {
         settings.data_part_type = MergeTreeDataPartType::Wide;
-        settings.low_cardinality_max_dictionary_size = low_cardinality_max_dictionary_size;
-        settings.low_cardinality_use_single_dictionary_for_part = low_cardinality_use_single_dictionary_for_part;
+        settings.low_cardinality_max_dictionary_size = config.low_cardinality_max_dictionary_size;
+        settings.low_cardinality_use_single_dictionary_for_part = config.low_cardinality_use_single_dictionary_for_part;
         settings.write_statistics = ISerialization::SerializeBinaryBulkSettings::StatisticsMode::SUFFIX;
         settings.stream_mark_getter = [](const ISerialization::SubstreamPath &) { return MarkInCompressedFile(); };
     }
@@ -258,7 +274,8 @@ private:
         return std::clamp<size_t>(bytes_per_granule / bytes_per_row, 1, rows_per_granule);
     }
 
-    /// Starts a run for `column` (cast from `source` with a target type): its serialization, its streams and the prefix.
+    /// Starts a run for `column` (and for `source`, the same rows in the type of the column, with a target type): its
+    /// serialization, its streams and the prefix.
     std::unique_ptr<Run> startRun(const IColumn & column, const IColumn & source, ISerialization::KindStack kind_stack) const
     {
         auto run = std::make_unique<Run>();
@@ -284,12 +301,12 @@ private:
         run->writer.settings.getter = [raw](const ISerialization::SubstreamPath & path) { return raw->streamFor(path); };
         run->writer.writePrefix(column);
 
-        if (cast_function)
+        if (target_type)
         {
             run->source_counter = std::make_unique<NullWriteBuffer>();
             auto & source_writer = run->source_writer.emplace();
-            source_writer.type = argument_type;
-            source_writer.serialization = argument_type->getDefaultSerialization();
+            source_writer.type = represented_type;
+            source_writer.serialization = represented_type->getDefaultSerialization();
             setWriterSettings(source_writer.settings);
             source_writer.settings.getter
                 = [counter = run->source_counter.get()](const ISerialization::SubstreamPath &) -> WriteBuffer * { return counter; };
@@ -346,36 +363,46 @@ private:
         return *data_ref.run;
     }
 
-    ColumnPtr castRows(const IColumn & rows, size_t offset, size_t limit) const
+    /// `rows` of `plain_type` converted to `type`.
+    ColumnPtr convertRows(const ColumnPtr & rows, const ExecutableFunctionPtr & conversion, const DataTypePtr & type) const
     {
-        ColumnPtr column = (offset == 0 && limit == rows.size()) ? rows.getPtr() : rows.cut(offset, limit);
+        if (!conversion)
+            return rows;
+
         ColumnsWithTypeAndName arguments{
-            {column, argument_type, ""},
-            {DataTypeString().createColumnConst(limit, target_type->getName()), std::make_shared<DataTypeString>(), ""}};
-        return cast_function->execute(arguments, target_type, limit, /*dry_run=*/ false);
+            {rows, plain_type, ""},
+            {DataTypeString().createColumnConst(rows->size(), type->getName()), std::make_shared<DataTypeString>(), ""}};
+        return conversion->execute(arguments, type, rows->size(), /*dry_run=*/ false);
     }
 
     /// Serializes the rows of [offset, offset + limit) one granule at a time, as the writer serializes a block.
     void serializeRows(const Data & data_ref, const IColumn & rows, size_t offset, size_t limit) const
     {
-        /// The baseline of a target type is the dense serialization of the rows in the argument type.
-        const ColumnPtr dense = cast_function ? rows.convertToFullColumnIfSparse() : nullptr;
-        const IColumn & source = dense ? *dense : rows;
+        const size_t granule_rows = granuleRows(rows);
+        if (!to_represented && !target_type)
+        {
+            for (size_t end = offset + limit; offset < end; offset += granule_rows)
+                runFor(data_ref, rows, rows).writer.write(rows, offset, std::min(granule_rows, end - offset));
+            return;
+        }
 
-        const size_t granule_rows = granuleRows(source);
+        /// Converted rows are dense, as the conversion produces them.
+        const ColumnPtr dense = rows.convertToFullColumnIfSparse();
         for (size_t end = offset + limit; offset < end; offset += granule_rows)
         {
             const size_t rows_in_granule = std::min(granule_rows, end - offset);
-            if (!cast_function)
+            const ColumnPtr granule = (offset == 0 && rows_in_granule == dense->size()) ? dense : dense->cut(offset, rows_in_granule);
+            const ColumnPtr represented = convertRows(granule, to_represented, represented_type);
+            if (!target_type)
             {
-                runFor(data_ref, rows, rows).writer.write(rows, offset, rows_in_granule);
+                runFor(data_ref, *represented, *represented).writer.write(*represented, 0, rows_in_granule);
                 continue;
             }
 
-            ColumnPtr cast_rows = castRows(source, offset, rows_in_granule);
-            Run & run = runFor(data_ref, *cast_rows, source);
-            run.source_writer->write(source, offset, rows_in_granule);
-            run.writer.write(*cast_rows, 0, rows_in_granule);
+            const ColumnPtr target = convertRows(granule, to_target, target_type);
+            Run & run = runFor(data_ref, *target, *represented);
+            run.source_writer->write(*represented, 0, rows_in_granule);
+            run.writer.write(*target, 0, rows_in_granule);
         }
     }
 
@@ -384,8 +411,15 @@ private:
         if (!data_ref.buffer || data_ref.buffer->empty())
             return;
 
+        /// The rows come from a column of another type: they are measured as the function for that type measures them.
+        if (data_ref.represented_type != represented_type && !data_ref.represented_type->equals(*represented_type))
+        {
+            const AggregateFunctionEstimateCompressionRatio producer({data_ref.represented_type}, parameters, config);
+            producer.flushBuffer(data_ref);
+            return;
+        }
+
         serializeRows(data_ref, *data_ref.buffer, 0, data_ref.buffer->size());
-        /// A fresh column rather than `popBack`: a `LowCardinality` buffer keeps every key ever inserted.
         data_ref.buffer = data_ref.buffer->cloneEmpty();
     }
 
@@ -446,24 +480,18 @@ private:
     }
 
 public:
-    AggregateFunctionEstimateCompressionRatio(
-        const DataTypes & arguments,
-        const Array & params,
-        std::optional<String> codec,
-        std::optional<UInt64> block_size_bytes_,
-        DataTypePtr target_type_,
-        const Settings * settings)
-        : IAggregateFunctionDataHelper(arguments, params, std::make_shared<DataTypeFloat64>())
-        , argument_type(arguments[0])
-        , target_type(target_type_ && !target_type_->equals(*argument_type) ? std::move(target_type_) : nullptr)
-        , cast_function(target_type ? createCast(argument_type, target_type) : nullptr)
-        , estimated_type(target_type ? target_type : argument_type)
+    AggregateFunctionEstimateCompressionRatio(const DataTypes & arguments, const Array & params, EstimateCompressionRatioConfig config_)
+        : IAggregateFunctionDataHelper({recursiveRemoveLowCardinality(arguments[0])}, params, std::make_shared<DataTypeFloat64>())
+        , config(std::move(config_))
+        , represented_type(arguments[0])
+        , plain_type(argument_types[0])
+        , target_type(config.target_type && !config.target_type->equals(*represented_type) ? config.target_type : nullptr)
+        , estimated_type(target_type ? target_type : represented_type)
+        , to_represented(represented_type != plain_type ? createCast(plain_type, represented_type) : nullptr)
+        , to_target(target_type && !target_type->equals(*plain_type) ? createCast(plain_type, target_type) : nullptr)
         , default_codec(CompressionCodecFactory::instance().getDefaultCodec())
-        , codec_description(codec ? parseCodecDescription(*codec) : default_codec->getFullCodecDescription())
-        , block_size_bytes(block_size_bytes_.value_or(DBMS_DEFAULT_BUFFER_SIZE))
-        /// The settings the MergeTree writer takes from the query; their defaults when there is no query (a type being parsed).
-        , low_cardinality_max_dictionary_size(settings ? (*settings)[Setting::low_cardinality_max_dictionary_size] : 8192)
-        , low_cardinality_use_single_dictionary_for_part(settings && (*settings)[Setting::low_cardinality_use_single_dictionary_for_part])
+        , codec_description(config.codec ? parseCodecDescription(*config.codec) : default_codec->getFullCodecDescription())
+        , block_size_bytes(config.block_size_bytes.value_or(DBMS_DEFAULT_BUFFER_SIZE))
         , stream_layouts(buildStreamLayouts(estimated_type))
     {
     }
@@ -472,22 +500,14 @@ public:
 
     bool allocatesMemoryInArena() const override { return false; }
 
-    /// The state is two sizes whatever the argument type: a state produced from `LowCardinality(T)` is interchangeable with one
-    /// produced from `T`.
-    DataTypePtr getNormalizedStateType() const override
-    {
-        DataTypes normalized_argument_types;
-        normalized_argument_types.reserve(argument_types.size());
-        for (const auto & type : argument_types)
-            normalized_argument_types.push_back(recursiveRemoveLowCardinality(type)->getNormalizedType());
-        return std::make_shared<DataTypeAggregateFunction>(shared_from_this(), normalized_argument_types, parameters);
-    }
-
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         Data & data_ref = data(place);
         if (!data_ref.buffer)
-            data_ref.buffer = argument_type->createColumn();
+        {
+            data_ref.buffer = plain_type->createColumn();
+            data_ref.represented_type = represented_type;
+        }
         data_ref.buffer->insertFrom(*columns[0], row_num);
 
         if (data_ref.buffer->size() >= granuleRows(*data_ref.buffer))
@@ -574,9 +594,10 @@ static AggregateFunctionPtr createAggregateFunctionEstimateCompressionRatio(
         throw Exception(ErrorCodes::UNKNOWN_QUERY_PARAMETER, "Aggregate function {} accepts at most three parameters", name);
 
     const auto & type_factory = DataTypeFactory::instance();
-    std::optional<String> codec;
-    std::optional<UInt64> block_size_bytes;
-    DataTypePtr target_type;
+    EstimateCompressionRatioConfig config;
+    auto & codec = config.codec;
+    auto & block_size_bytes = config.block_size_bytes;
+    auto & target_type = config.target_type;
     for (const auto & param : parameters)
     {
         if (param.getType() == Field::Types::String)
@@ -639,7 +660,14 @@ static AggregateFunctionPtr createAggregateFunctionEstimateCompressionRatio(
         }
     }
 
-    return std::make_shared<AggregateFunctionEstimateCompressionRatio>(arguments, parameters, codec, block_size_bytes, target_type, settings);
+    /// Without a query (a type being parsed) the writer's defaults apply.
+    if (settings)
+    {
+        config.low_cardinality_max_dictionary_size = (*settings)[Setting::low_cardinality_max_dictionary_size];
+        config.low_cardinality_use_single_dictionary_for_part = (*settings)[Setting::low_cardinality_use_single_dictionary_for_part];
+    }
+
+    return std::make_shared<AggregateFunctionEstimateCompressionRatio>(arguments, parameters, std::move(config));
 }
 
 void registerAggregateFunctionEstimateCompressionRatio(AggregateFunctionFactory & factory);
@@ -651,6 +679,8 @@ Estimates the compression ratio of a given column without compressing it.
 The estimate follows the layout of a MergeTree wide part: every substream of the column (the dictionary and the indexes of a `LowCardinality` column, the null map of a `Nullable` column, the sizes of an `Array` column, ...) is compressed on its own, the codec applies to the data substreams while the structural substreams keep only its generic codecs, as `CODEC(...)` on a table column does, and the rows are serialized one granule at a time. A `LowCardinality` column is estimated with its dictionary encoding. The rows of each `GROUP BY` group and of each window frame are serialized as if they were a part of their own, so the result also depends on how the rows are split between groups, threads and frames.
 
 To estimate another representation of the data, either convert the argument, for example `toLowCardinality(s)` or `CAST(ip AS IPv6)`, which gives the ratio of that representation, or pass the type as the `target_type` parameter, which keeps the serialized size of the column as it is as the baseline, so that the ratios for different target types are directly comparable. The on-disk size of a representation is its serialized size divided by its ratio (for an existing column, `column_data_uncompressed_bytes` in `system.parts_columns`).
+
+The intermediate state records only sizes, not the type they were measured from: merging states computed from columns of different types, such as `LowCardinality(String)` and `String`, gives the ratio of both columns together.
 
 <Note>
 For the examples below, the result will differ based on the default compression codec of the server.
@@ -782,6 +812,6 @@ FROM (SELECT if(number % 10 = 0, NULL, toUInt32(number)) AS n FROM numbers(10000
         "estimateCompressionRatio",
         {createAggregateFunctionEstimateCompressionRatio,
          documentation,
-         {.is_order_dependent = true, .is_window_function = true, .accepts_low_cardinality_arguments = true}});
+         {.is_order_dependent = true, .is_window_function = true, .created_with_low_cardinality_types = true}});
 }
 }

@@ -34,7 +34,10 @@ public:
           * argument being blamed is a perfectly good argument of `sum`. Name what the argument is for and
           * what it has to be.
           */
-        if (!isUInt8(arguments.back()) && !arguments.back()->onlyNull())
+        /// The condition has `LowCardinality` only when the nested function is created from the types with it (see
+        /// `AggregateFunctionProperties::created_with_low_cardinality_types`); the combinator itself is created without it.
+        const DataTypePtr condition_type = removeLowCardinality(arguments.back());
+        if (!isUInt8(condition_type) && !condition_type->onlyNull())
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                             "Illegal type {} of the last argument of an aggregate function with the {} "
                             "suffix: the last argument is the condition and must be UInt8. If the condition "
@@ -42,17 +45,6 @@ public:
                             arguments.back()->getName(), getName());
 
         return DataTypes(arguments.begin(), std::prev(arguments.end()));
-    }
-
-    DataTypes removeLowCardinalityFromOwnArguments(const DataTypes & arguments) const override
-    {
-        /// The condition is read by the combinator itself. An empty list is reported by `transformArguments`.
-        if (arguments.empty())
-            return arguments;
-
-        DataTypes res = arguments;
-        res.back() = recursiveRemoveLowCardinality(res.back());
-        return res;
     }
 
     AggregateFunctionPtr transformAggregateFunction(

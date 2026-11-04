@@ -75,16 +75,6 @@ public:
         return arguments;
     }
 
-    /** Remove `LowCardinality` from the combinator's own arguments, which it reads itself (such as the `-If` condition or
-      * the `-Resample` key); the arguments it passes to the nested function are returned unchanged. Called before
-      * `transformArguments`, with `LowCardinality` types only when the nested function accepts them
-      * (see `AggregateFunctionProperties::accepts_low_cardinality_arguments`).
-      */
-    virtual DataTypes removeLowCardinalityFromOwnArguments(const DataTypes & arguments) const
-    {
-        return arguments;
-    }
-
     /** From the parameters for combined function,
       *  get the parameters for nested function.
       * If arguments are not suitable for combined function, throw an exception.

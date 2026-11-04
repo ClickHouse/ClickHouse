@@ -95,9 +95,6 @@ DataTypePtr removeLowCardinality(const DataTypePtr & type);
 /// Remove LowCardinality recursively from all nested types.
 DataTypePtr recursiveRemoveLowCardinality(const DataTypePtr & type);
 
-/// Whether the type is LowCardinality or contains it (inside Nullable, Array, Tuple, Map).
-bool containsLowCardinality(const DataTypePtr & type);
-
 /// Remove LowCardinality recursively from all nested columns.
 ColumnPtr recursiveRemoveLowCardinality(const ColumnPtr & column);
 

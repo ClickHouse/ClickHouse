@@ -256,8 +256,7 @@ private:
                                 "Argument {} for function {} must be an array but it has type {}.",
                                 i, getName(), arguments[i].type->getName());
 
-            /// The elements are passed without `LowCardinality` (see `executeImpl`), so the function is created without it too.
-            argument_types[i - 1] = recursiveRemoveLowCardinality(arg->getNestedType());
+            argument_types[i - 1] = arg->getNestedType();
         }
 
         String aggregate_function_name_with_params = aggregate_function_name_column->getValue<String>();

@@ -33,8 +33,6 @@ struct WindowFunctionWorkspace
     bool is_aggregate_function_state = false;
     size_t result_column = 0;
     VectorWithMemoryTracking<size_t> argument_column_indices;
-    /// Per argument: whether it is read from the column that keeps `LowCardinality`.
-    std::vector<bool> argument_keeps_low_cardinality;
     mutable AlignedBuffer aggregate_function_state;
     VectorWithMemoryTracking<const IColumn *> argument_columns;
     Int64 cached_block_number = -1;
@@ -97,8 +95,6 @@ private:
     /// The general functions with their states, and the aggregates; each names its output column.
     std::vector<GeneralWindowFunctionSlot> general_functions;
     std::vector<WindowFunctionWorkspace> workspaces;
-    /// The input columns some aggregate reads with `LowCardinality`; empty when none does.
-    std::vector<bool> keep_low_cardinality;
     Arena states_arena;
     WindowFunctionRequirements required;
 

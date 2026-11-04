@@ -1,6 +1,5 @@
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionResample.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 
 namespace DB
 {
@@ -29,17 +28,6 @@ public:
                     "Incorrect number of arguments for aggregate function with {} suffix", getName());
 
         return DataTypes(arguments.begin(), arguments.end() - 1);
-    }
-
-    DataTypes removeLowCardinalityFromOwnArguments(const DataTypes & arguments) const override
-    {
-        /// The resampling key is read by the combinator itself. An empty list is reported by `transformArguments`.
-        if (arguments.empty())
-            return arguments;
-
-        DataTypes res = arguments;
-        res.back() = recursiveRemoveLowCardinality(res.back());
-        return res;
     }
 
     Array transformParameters(const Array & params) const override

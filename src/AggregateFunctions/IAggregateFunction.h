@@ -1196,13 +1196,12 @@ struct AggregateFunctionProperties
     /// Indicates if it's actually window function.
     bool is_window_function = false;
 
-    /** The function receives `LowCardinality` arguments as they are instead of their dictionary types, and so do the
-      * combinators around it for the arguments they pass through; a combinator's own arguments, such as the `-If` condition,
-      * never carry `LowCardinality` (see `IAggregateFunctionCombinator::removeLowCardinalityFromOwnArguments`). The function
-      * must handle `LowCardinality(Nullable(T))` itself. Example: `estimateCompressionRatio`, whose result depends on the
-      * representation of the data.
+    /** The function is created from the argument types as they are written, `LowCardinality` included, so it knows how the
+      * column is stored. Like every aggregate function, it declares and receives its arguments without `LowCardinality`,
+      * and so do the combinators around it. Example: `estimateCompressionRatio`, whose result depends on how the data is
+      * stored.
       */
-    bool accepts_low_cardinality_arguments = false;
+    bool created_with_low_cardinality_types = false;
 };
 
 

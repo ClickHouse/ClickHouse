@@ -11,7 +11,6 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionHelpers.h>
@@ -614,17 +613,6 @@ public:
     String getName() const override { return "Map"; }
 
     bool transformsArgumentTypes() const override { return true; }
-
-    DataTypes removeLowCardinalityFromOwnArguments(const DataTypes & arguments) const override
-    {
-        /// The combinator dispatches on the key type and reads the key column itself, so neither the map nor the key may
-        /// carry `LowCardinality`; the values lose it along with them, and the nested function is created accordingly.
-        DataTypes res;
-        res.reserve(arguments.size());
-        for (const auto & argument : arguments)
-            res.push_back(recursiveRemoveLowCardinality(argument));
-        return res;
-    }
 
     DataTypes transformArguments(const DataTypes & arguments) const override
     {

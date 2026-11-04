@@ -3,13 +3,12 @@
 namespace DB
 {
 
-SlidingBlock & SlidingBlocks::add(Chunk chunk, Columns materialized_columns, Columns low_cardinality_columns, SlidingIndex index)
+SlidingBlock & SlidingBlocks::add(Chunk chunk, Columns materialized_columns, SlidingIndex index)
 {
     int64_t rows_count = chunk.getNumRows();
     Columns input_columns = chunk.detachColumns();
 
-    return blocks.emplace_back(
-        std::move(input_columns), std::move(materialized_columns), std::move(low_cardinality_columns), rows_count, next_block_number++, std::move(index));
+    return blocks.emplace_back(std::move(input_columns), std::move(materialized_columns), rows_count, next_block_number++, std::move(index));
 }
 
 void SlidingBlocks::pop()

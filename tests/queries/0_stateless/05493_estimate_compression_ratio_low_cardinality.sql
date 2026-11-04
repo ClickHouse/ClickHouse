@@ -1,8 +1,8 @@
 -- Tags: no-random-merge-tree-settings
 -- no-random-merge-tree-settings: the estimates are compared with the sizes of parts written with a fixed granularity and block size.
 
--- `estimateCompressionRatio` receives `LowCardinality` columns as they are and estimates their dictionary encoding,
--- with one compressed stream per substream, as MergeTree writes a wide part.
+-- `estimateCompressionRatio` knows that its argument is `LowCardinality` and estimates its dictionary encoding, with one
+-- compressed stream per substream, as MergeTree writes a wide part.
 
 SET max_threads = 1, max_block_size = 8192, max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0;
 
@@ -107,20 +107,53 @@ FROM t_ecr_lc;
 -- A LowCardinality condition is accepted as a plain one.
 SELECT estimateCompressionRatioIf('LZ4', 65536)(lc, toLowCardinality(k = 0)) = estimateCompressionRatioIf('LZ4', 65536)(lc, k = 0) FROM t_ecr_lc;
 
--- -State and -Merge round-trip; the state type keeps the argument type.
+-- -State and -Merge round-trip; the state type has the dictionary type, as for every aggregate function.
 SELECT estimateCompressionRatioMerge('LZ4', 65536)(st) = (SELECT estimateCompressionRatio('LZ4', 65536)(lc) FROM t_ecr_lc)
 FROM (SELECT estimateCompressionRatioState('LZ4', 65536)(lc) AS st FROM t_ecr_lc);
 
 SELECT toTypeName(estimateCompressionRatioState('LZ4', 65536)(lc)) FROM t_ecr_lc;
 
--- A state of a LowCardinality column merges into a state of the dictionary type.
-SELECT estimateCompressionRatioMerge('LZ4', 65536)(st) > 0
+-- States of a LowCardinality(String) and of a String column merge into the ratio of both columns together.
+SELECT toUInt64(round(sum(column_data_uncompressed_bytes) / any(ratio))) = sum(column_data_compressed_bytes)
+FROM system.parts_columns
+CROSS JOIN
+(
+    SELECT estimateCompressionRatioMerge('LZ4', 65536)(st) AS ratio
+    FROM
+    (
+        SELECT estimateCompressionRatioState('LZ4', 65536)(lc) AS st FROM t_ecr_lc GROUP BY k
+        UNION ALL
+        SELECT estimateCompressionRatioState('LZ4', 65536)(s) AS st FROM t_ecr_lc GROUP BY k
+    )
+) AS merged
+WHERE database = currentDatabase() AND table = 't_ecr_lc_parts' AND active AND column IN ('lc', 's');
+
+-- A grouped state keeps rows not estimated yet. Completed by a function created from the state type, which has no
+-- LowCardinality, they are still estimated as the column they come from.
+SELECT g, estimateCompressionRatioMerge('LZ4', 65536)(st) = any(r)
 FROM
 (
-    SELECT estimateCompressionRatioState('LZ4', 65536)(lc) AS st FROM t_ecr_lc
-    UNION ALL
-    SELECT estimateCompressionRatioState('LZ4', 65536)(s) AS st FROM t_ecr_lc
-);
+    SELECT
+        number % 2 AS g,
+        estimateCompressionRatioState('LZ4', 65536)(toLowCardinality(toString(number % 3))) AS st,
+        estimateCompressionRatio('LZ4', 65536)(toLowCardinality(toString(number % 3))) AS r
+    FROM numbers(10)
+    GROUP BY g
+)
+GROUP BY g
+ORDER BY g;
+
+SELECT g, finalizeAggregation(CAST(st, 'AggregateFunction(estimateCompressionRatio(\'LZ4\', 65536), String)')) = r
+FROM
+(
+    SELECT
+        number % 2 AS g,
+        estimateCompressionRatioState('LZ4', 65536)(toLowCardinality(toString(number % 3))) AS st,
+        estimateCompressionRatio('LZ4', 65536)(toLowCardinality(toString(number % 3))) AS r
+    FROM numbers(10)
+    GROUP BY g
+)
+ORDER BY g;
 
 -- -Array adds the elements one at a time: a single stream does not depend on how the rows are chunked.
 SELECT estimateCompressionRatioArray('LZ4', 65536)(arr) = (SELECT estimateCompressionRatio('LZ4', 65536)(arrayJoin(arr)) FROM (SELECT [s, s] AS arr FROM t_ecr_lc))
@@ -128,8 +161,25 @@ FROM (SELECT [s, s] AS arr FROM t_ecr_lc);
 
 SELECT estimateCompressionRatioArray('LZ4', 65536)(arr) > 0, toTypeName(arr) FROM (SELECT [lc, lc] AS arr FROM t_ecr_lc) GROUP BY toTypeName(arr);
 
--- arrayReduce passes the elements without LowCardinality and creates the function accordingly.
-SELECT arrayReduce('estimateCompressionRatio', [toLowCardinality('a'), toLowCardinality('b')]) = arrayReduce('estimateCompressionRatio', ['a', 'b']);
+-- arrayReduce estimates the elements as they are stored.
+SELECT arrayReduce('estimateCompressionRatio', [toLowCardinality('a'), toLowCardinality('b')])
+    = (SELECT estimateCompressionRatio(x) FROM (SELECT arrayJoin([toLowCardinality('a'), toLowCardinality('b')]) AS x));
+
+SELECT 'Stacked combinators read their own arguments without LowCardinality';
+
+-- The condition, a LowCardinality(UInt8) in an array, is false for every row: nothing is estimated.
+SELECT estimateCompressionRatioIfArray('LZ4', 65536)([lc], [lc = 'none']) FROM t_ecr_lc;
+SELECT max(r) FROM (SELECT estimateCompressionRatioIfArray('LZ4', 65536)([lc], [lc = 'none']) OVER () AS r FROM t_ecr_lc);
+
+-- Every row passes: the elements are estimated as the column is stored.
+SELECT estimateCompressionRatioIfArray('LZ4', 65536)([lc], [lc != 'none']) = (SELECT estimateCompressionRatio('LZ4', 65536)(lc) FROM t_ecr_lc)
+FROM t_ecr_lc;
+
+SELECT estimateCompressionRatioMapIf('LZ4', 65536)(map(k, lc), lc = 'none'), length(estimateCompressionRatioMapIf('LZ4', 65536)(map(k, lc), lc != 'none'))
+FROM t_ecr_lc;
+
+-- -Distinct compares the values of a nullable dictionary, NULL and the default value included.
+SELECT estimateCompressionRatioDistinct('NONE')(x) > 0 FROM (SELECT toLowCardinality(if(number = 0, NULL, '')) AS x FROM numbers(2));
 
 SELECT 'Window functions';
 

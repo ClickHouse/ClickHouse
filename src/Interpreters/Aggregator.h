@@ -676,9 +676,6 @@ private:
     const ColumnNumbers keys_positions;
     /// Positions of aggregate function argument columns in the header.
     const ColumnNumbersList aggregates_positions;
-    /// Per aggregate and argument: whether the function declares the argument with `LowCardinality` and so receives the
-    /// column as is (see `prepareAggregateInstructions`).
-    const std::vector<std::vector<bool>> aggregates_keep_low_cardinality;
     /// Types of key columns from the input header.
     const DataTypes key_types;
     /// Types of aggregate function states (DataTypeAggregateFunction), one per aggregate.
