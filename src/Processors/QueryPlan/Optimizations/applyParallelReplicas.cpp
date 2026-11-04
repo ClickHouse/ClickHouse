@@ -9,6 +9,7 @@
 #include <DataTypes/IDataType.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/StorageID.h>
@@ -110,6 +111,12 @@ bool mergeTreeReadCanBeShipped(const ReadFromMergeTree & read)
     /// and is safe to distribute.
     const auto & mergetree_data = read.getMergeTreeData();
     if (read.getContext()->getRefreshSet().tryGetTaskForInnerTable(mergetree_data.getStorageID()))
+        return false;
+
+    /// A temporary table exists only in the session of the initiator: a replica refuses a read of the temporary
+    /// database with `DATABASE_ACCESS_DENIED`. The query then fails whenever a replica gets to run its fragment
+    /// before the local replica finishes the read, so the read has to stay local.
+    if (mergetree_data.getStorageID().database_name == DatabaseCatalog::TEMPORARY_DATABASE)
         return false;
 
     /// Top-K filtering puts an internal `__topKFilter` function into the read's PREWHERE and shares a runtime
