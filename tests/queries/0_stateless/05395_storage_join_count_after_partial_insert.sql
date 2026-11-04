@@ -1,3 +1,6 @@
+-- Tags: no-random-detach
+-- no-random-detach: the keys kept from the failed insert are only in memory, not in the on-disk backup of the `Join` table, so they are lost on reattach.
+
 -- An insert into a `Join` table that throws partway through a block keeps the keys inserted before the throw.
 -- The row count that a trivial `count()` reads must still match a scan, also after a later insert.
 
