@@ -118,11 +118,16 @@ StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr conte
 
 String ITableFunction::getFunctionURINormalized() const
 {
+    return normalizeURIForAccessCheck(getFunctionURI());
+}
+
+String ITableFunction::normalizeURIForAccessCheck(const String & uri)
+{
     try
     {
-        Poco::URI uri(getFunctionURI());
-        uri.normalize();
-        return uri.toString();
+        Poco::URI parsed(uri);
+        parsed.normalize();
+        return parsed.toString();
     }
     catch (const Poco::Exception &)
     {

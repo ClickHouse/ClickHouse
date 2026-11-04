@@ -439,6 +439,50 @@ void Reader::ensureColumnChunks(const std::vector<size_t> & column_indices)
     }
 }
 
+std::optional<std::unordered_set<UInt64>> Reader::selectRowGroups(const RowGroupSelection & row_group_selection)
+{
+    if (!std::holds_alternative<RowGroupByteRange>(row_group_selection))
+        return selectRowGroups(*file_footer, row_group_selection, nullptr);
+    ensureColumnChunks({0});
+    return selectRowGroups(*file_footer, row_group_selection, column_chunks[0].get());
+}
+
+std::optional<std::unordered_set<UInt64>> Reader::selectRowGroups(
+    const FileFooter & footer, const RowGroupSelection & row_group_selection, const FileColumnChunks * first_column)
+{
+    if (std::holds_alternative<std::monostate>(row_group_selection))
+        return std::nullopt;
+    if (const auto * row_group_ids = std::get_if<std::unordered_set<UInt64>>(&row_group_selection))
+        return *row_group_ids;
+
+    std::vector<FileColumnChunks> parsed;
+    if (!first_column)
+    {
+        deserializeColumnChunks(footer.serialized.data(), footer.serialized.size(), footer.column_chunk_offsets, {0}, parsed);
+        const bool written_by_old_duckdb = footer.metadata.created_by == "DuckDB";
+        for (auto & column : parsed[0].chunks)
+            fixUpColumnChunk(column, written_by_old_duckdb);
+        first_column = parsed.data();
+    }
+
+    const auto [range_begin, range_size] = std::get<RowGroupByteRange>(row_group_selection);
+    std::unordered_set<UInt64> selected;
+    for (size_t row_group_idx = 0; row_group_idx < footer.metadata.row_groups.size(); ++row_group_idx)
+    {
+        if (footer.numColumnChunks(row_group_idx) == 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Row group has no column chunks");
+        const auto & column = first_column->chunks[row_group_idx].meta_data;
+        Int64 offset = column.data_page_offset;
+        if (column.__isset.dictionary_page_offset && column.dictionary_page_offset > 0 && column.dictionary_page_offset < offset)
+            offset = column.dictionary_page_offset;
+        if (offset < 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Negative column chunk offset in row group: {}", offset);
+        if (range_begin <= UInt64(offset) && UInt64(offset) - range_begin < range_size)
+            selected.insert(row_group_idx);
+    }
+    return selected;
+}
+
 void Reader::getHyperrectangleForRowGroup(size_t row_group_idx, Hyperrectangle & hyperrectangle, bool only_spatial_bbox) const
 {
     for (const PrimitiveColumnInfo & column_info : primitive_columns)
@@ -848,7 +892,7 @@ static size_t heapBytesOfField(const Field & field)
     return field.getType() == Field::Types::String ? field.safeGet<String>().size() : 0;
 }
 
-void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UInt64>> & row_groups_to_read)
+void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selection)
 {
     extended_sample_block = *sample_block;
     for (const auto & col : format_filter_info->additional_columns)
@@ -1079,6 +1123,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     total_primitive_columns_in_file = schemer.primitive_column_idx;
     output_columns = std::move(schemer.output_columns);
     parseColumnChunks();
+    const auto row_groups_to_read = selectRowGroups(row_group_selection);
 
     /// Precalculate some column index mappings.
 

@@ -1507,7 +1507,7 @@ public:
         const FormatSettings & format_settings,
         String & error) const override
     {
-        if (element.isNull() && format_settings.null_as_default)
+        if (element.isNull() && format_settings.null_as_default && insert_settings.null_as_default_in_complex_types)
         {
             column.insertDefault();
             return true;
@@ -1575,7 +1575,7 @@ public:
         const FormatSettings & format_settings,
         String & error) const override
     {
-        if (element.isNull() && format_settings.null_as_default)
+        if (element.isNull() && format_settings.null_as_default && insert_settings.null_as_default_in_complex_types)
         {
             column.insertDefault();
             return true;
@@ -1764,7 +1764,7 @@ public:
         const FormatSettings & format_settings,
         String & error) const override
     {
-        if (element.isNull() && format_settings.null_as_default)
+        if (element.isNull() && format_settings.null_as_default && insert_settings.null_as_default_in_complex_types)
         {
             column.insertDefault();
             return true;
@@ -1931,6 +1931,7 @@ public:
             insert_settings_with_no_type_conversion.insert_default_on_invalid_elements_in_complex_types = false;
             insert_settings_with_no_type_conversion.saturate_on_overflow = false;
             insert_settings_with_no_type_conversion.truncate_fractional_seconds = false;
+            insert_settings_with_no_type_conversion.null_as_default_in_complex_types = false;
 
             /// Check if we already have variants order for this Variant type in cache.
             auto variants_order_it = variants_order_cache.find(variant_info.variant_name);
@@ -2147,7 +2148,7 @@ public:
     {
         SerializationObject::updateMaxDynamicPathsLimitIfNeeded(column, format_settings);
 
-        if (element.isNull() && format_settings.null_as_default)
+        if (element.isNull() && format_settings.null_as_default && insert_settings.null_as_default_in_complex_types)
         {
             auto & column_object = assert_cast<ColumnObject &>(column);
             if (all_typed_paths_have_trivial_defaults)

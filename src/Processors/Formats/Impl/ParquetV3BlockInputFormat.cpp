@@ -18,6 +18,7 @@
 #include <IO/VarInt.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
+#include <Core/ProtocolDefines.h>
 #include <Processors/Formats/AggregateFunctionStatesFromValuesInputFormat.h>
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
 #include <Storages/MergeTree/ColumnsCache.h>
@@ -37,6 +38,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_PROTOCOL;
 }
 
 namespace Setting
@@ -263,7 +265,7 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
                 }
                 reader->reader.max_key_condition_column_ranges_bytes = kept_statistics.remainingBytes();
             }
-            reader->init(parser_shared_resources, buckets_to_read ? std::optional(buckets_to_read->row_group_ids) : std::nullopt);
+            reader->init(parser_shared_resources, rowGroupSelection());
             /// Not after the miss that inserted the cell: replacing it would move it to SLRU's protected queue.
             if (footer_cache_hit)
                 metadata_cache->addColumnChunks(*footer_cache_key, footer_cache_cell, reader->reader.getColumnChunks());
@@ -412,10 +414,30 @@ Chunk ParquetV3BlockInputFormat::read()
         temp_prefetcher.init(in, read_options, parser_shared_resources);
         auto footer = getFileFooter(temp_prefetcher);
 
+        size_t num_rows = size_t(footer->metadata.num_rows);
+        size_t first_row = 0;
+        if (const auto selected_row_groups = Parquet::Reader::selectRowGroups(*footer, rowGroupSelection(), nullptr))
+        {
+            num_rows = 0;
+            std::optional<size_t> first_selected_row;
+            size_t row = 0;
+            for (size_t row_group_idx = 0; row_group_idx < footer->metadata.row_groups.size(); ++row_group_idx)
+            {
+                const size_t row_group_rows = size_t(footer->metadata.row_groups[row_group_idx].num_rows);
+                if (selected_row_groups->contains(row_group_idx))
+                {
+                    if (!first_selected_row)
+                        first_selected_row = row;
+                    num_rows += row_group_rows;
+                }
+                row += row_group_rows;
+            }
+            first_row = first_selected_row.value_or(0);
+        }
 
-        auto chunk = getChunkForCount(size_t(footer->metadata.num_rows));
+        auto chunk = getChunkForCount(num_rows);
         if (format_filter_info && format_filter_info->need_row_numbers)
-            chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumbers>(0));
+            chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumbers>(first_row));
 
         reported_count = true;
         return chunk;
@@ -480,6 +502,19 @@ bool ParquetV3BlockInputFormat::isTopKFilterApplied() const
     /// The reader installs `__topKFilter` only for a file that stores the sort column.
     return reader && reader->reader.format_filter_info && reader->reader.format_filter_info->top_k_filter
         && reader->reader.format_filter_info->top_k_filter->filter_rows && reader->reader.top_k_column_is_read;
+}
+
+Parquet::RowGroupSelection ParquetV3BlockInputFormat::rowGroupSelection() const
+{
+    if (!buckets_to_read)
+        return std::monostate{};
+    if (buckets_to_read->byte_range)
+    {
+        if (!buckets_to_read->row_group_ids.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Parquet file bucket has both row group ids and a byte range");
+        return Parquet::RowGroupByteRange{buckets_to_read->byte_range->first, buckets_to_read->byte_range->second};
+    }
+    return std::unordered_set<UInt64>(buckets_to_read->row_group_ids.begin(), buckets_to_read->row_group_ids.end());
 }
 
 void ParquetV3BlockInputFormat::setBucketsToRead(const FileBucketInfoPtr & buckets_to_read_)
@@ -561,14 +596,32 @@ std::optional<size_t> NativeParquetSchemaReader::readNumberOrRows()
     return size_t(file_footer->metadata.num_rows);
 }
 
-void ParquetFileBucketInfo::serialize(WriteBuffer & buffer)
+void ParquetFileBucketInfo::serialize(WriteBuffer & buffer, size_t protocol_version) const
 {
+    if (byte_range.has_value() && protocol_version < DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_FILE_BUCKET_BYTE_RANGE)
+        throw Exception(
+            ErrorCodes::UNKNOWN_PROTOCOL,
+            "Byte range buckets of Parquet files are supported since cluster processing protocol version {}, got: {}. "
+            "Disable `cluster_table_function_split_by_split_offsets` until all servers of the cluster are upgraded",
+            DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_FILE_BUCKET_BYTE_RANGE,
+            protocol_version);
+
     writeVarUInt(row_group_ids.size(), buffer);
     for (auto chunk : row_group_ids)
         writeVarUInt(chunk, buffer);
+
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_FILE_BUCKET_BYTE_RANGE)
+    {
+        writeVarUInt(byte_range.has_value() ? 1 : 0, buffer);
+        if (byte_range.has_value())
+        {
+            writeVarUInt(byte_range->first, buffer);
+            writeVarUInt(byte_range->second, buffer);
+        }
+    }
 }
 
-void ParquetFileBucketInfo::deserialize(ReadBuffer & buffer)
+void ParquetFileBucketInfo::deserialize(ReadBuffer & buffer, size_t protocol_version)
 {
     size_t size_chunks = 0;
     readVarUInt(size_chunks, buffer);
@@ -580,6 +633,21 @@ void ParquetFileBucketInfo::deserialize(ReadBuffer & buffer)
         readVarUInt(bucket, buffer);
         row_group_ids[i] = bucket;
     }
+
+    byte_range.reset();
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_FILE_BUCKET_BYTE_RANGE)
+    {
+        UInt64 has_range = 0;
+        readVarUInt(has_range, buffer);
+        if (has_range)
+        {
+            UInt64 offset = 0;
+            UInt64 length = 0;
+            readVarUInt(offset, buffer);
+            readVarUInt(length, buffer);
+            byte_range.emplace(offset, length);
+        }
+    }
 }
 
 String ParquetFileBucketInfo::getIdentifier() const
@@ -587,6 +655,8 @@ String ParquetFileBucketInfo::getIdentifier() const
     String result;
     for (auto chunk : row_group_ids)
         result += "_" + std::to_string(chunk);
+    if (byte_range.has_value())
+        result += "_b" + std::to_string(byte_range->first) + "_" + std::to_string(byte_range->second);
     return result;
 }
 
@@ -595,8 +665,15 @@ ParquetFileBucketInfo::ParquetFileBucketInfo(const std::vector<size_t> & row_gro
 {
 }
 
+ParquetFileBucketInfo::ParquetFileBucketInfo(UInt64 offset, UInt64 length)
+    : byte_range(std::make_pair(offset, length))
+{
+}
+
 std::shared_ptr<FileBucketInfo> ParquetFileBucketInfo::filterByMatchingRowGroups(const std::vector<size_t> & matching_row_groups) const
 {
+    if (byte_range)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot filter a byte range bucket of a Parquet file by row groups");
     if (matching_row_groups.empty())
         return nullptr;
     if (row_group_ids.empty())
@@ -652,6 +729,29 @@ std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(size_t buck
     {
         result.push_back(std::make_shared<ParquetFileBucketInfo>(bucket));
     }
+    return result;
+}
+
+std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitByByteRanges(size_t bucket_size, size_t file_size, const std::vector<UInt64> & split_offsets_)
+{
+    std::vector<UInt64> split_offsets = split_offsets_;
+    std::sort(split_offsets.begin(), split_offsets.end());
+    split_offsets.erase(std::unique(split_offsets.begin(), split_offsets.end()), split_offsets.end());
+    if (file_size == 0 || split_offsets.empty() || split_offsets.back() >= file_size)
+        return {};
+
+    std::vector<FileBucketInfoPtr> result;
+    UInt64 bucket_begin = 0;
+    for (size_t i = 1; i < split_offsets.size(); ++i)
+    {
+        const UInt64 row_group_end = i + 1 < split_offsets.size() ? split_offsets[i + 1] : file_size;
+        if (row_group_end - bucket_begin > bucket_size)
+        {
+            result.push_back(std::make_shared<ParquetFileBucketInfo>(bucket_begin, split_offsets[i] - bucket_begin));
+            bucket_begin = split_offsets[i];
+        }
+    }
+    result.push_back(std::make_shared<ParquetFileBucketInfo>(bucket_begin, std::numeric_limits<UInt64>::max() - bucket_begin));
     return result;
 }
 
