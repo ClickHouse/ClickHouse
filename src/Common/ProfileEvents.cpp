@@ -2425,6 +2425,14 @@ void Counters::incrementNoTrace(Event event, Count amount)
     } while (current != nullptr);
 }
 
+void Counters::incrementNoTraceExceptGlobal(Event event, Count amount)
+{
+    const int32_t cpu = PerCPU::getCurrentCPU();
+    for (Counters * current = this; current != nullptr && current->level != VariableContext::Global;
+         current = current->parent.load(std::memory_order_acquire))
+        current->fetchAdd(event, amount, cpu);
+}
+
 void Counters::incrementSignalSafe(Event event, Count amount)
 {
     static_assert(std::atomic_ref<Count>::is_always_lock_free);
