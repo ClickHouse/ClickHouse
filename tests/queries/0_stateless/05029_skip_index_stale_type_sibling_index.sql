@@ -12,6 +12,9 @@ SET mutations_sync = 0, alter_sync = 0;
 -- Statistics part pruning is an independent mechanism that can drop a whole part before any index
 -- is read, which would make these assertions measure something other than the skip index.
 SET use_statistics_for_part_pruning = 0;
+-- A TTL merge drops a column whose every value has expired together with the skip indices that read
+-- it, without rewriting the part. These cases need the index files left behind, as `MATERIALIZE TTL`
+-- leaves them, so TTL merges are stopped on every table with a column TTL before the insert.
 
 SELECT '-- 28. a second index over the same absent column keeps the column absent';
 -- The column list is a property of the part, so every index on the part reads whatever type is
@@ -23,6 +26,7 @@ CREATE TABLE t_two_indices_absent (k UInt64, d DateTime, c String TTL d + INTERV
     INDEX idx_old c TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k
 SETTINGS index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SYSTEM STOP TTL MERGES t_two_indices_absent;
 INSERT INTO t_two_indices_absent SELECT number, '2000-01-01 00:00:00', toString(number * 3) FROM numbers(64);
 ALTER TABLE t_two_indices_absent MATERIALIZE TTL SETTINGS mutations_sync = 2, alter_sync = 2;
 SELECT count() = 0 FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_two_indices_absent' AND active AND column = 'c';
@@ -58,6 +62,7 @@ CREATE TABLE t_two_indices_dotted (k UInt64, d DateTime, a Bool, `a.b` Tuple(x U
     INDEX idx_old `a.b.x` TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k
 SETTINGS index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SYSTEM STOP TTL MERGES t_two_indices_dotted;
 INSERT INTO t_two_indices_dotted SELECT number, '2000-01-01 00:00:00', 1, tuple(number * 3) FROM numbers(64);
 ALTER TABLE t_two_indices_dotted MATERIALIZE TTL SETTINGS mutations_sync = 2, alter_sync = 2;
 SELECT count() = 0 FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_two_indices_dotted' AND active AND column = 'a.b';
@@ -84,6 +89,7 @@ CREATE TABLE t_sibling_rebuilt (k UInt64, d DateTime, c String TTL d + INTERVAL 
     INDEX idx_old (c, e) TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k
 SETTINGS index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SYSTEM STOP TTL MERGES t_sibling_rebuilt;
 INSERT INTO t_sibling_rebuilt SELECT number, '2000-01-01 00:00:00', toString(number * 3), number FROM numbers(64);
 ALTER TABLE t_sibling_rebuilt MATERIALIZE TTL SETTINGS mutations_sync = 2, alter_sync = 2;
 SELECT count() = 0 FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_sibling_rebuilt' AND active AND column = 'c';

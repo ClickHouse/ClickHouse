@@ -12,6 +12,9 @@ SET mutations_sync = 0, alter_sync = 0;
 -- Statistics part pruning is an independent mechanism that can drop a whole part before any index
 -- is read, which would make these assertions measure something other than the skip index.
 SET use_statistics_for_part_pruning = 0;
+-- A TTL merge drops a column whose every value has expired together with the skip indices that read
+-- it, without rewriting the part. These cases need the index files left behind, as `MATERIALIZE TTL`
+-- leaves them, so TTL merges are stopped on every table with a column TTL before the insert.
 
 SELECT '-- 30. a sibling index rebuilt through a TTL target it reads does not keep the column absent';
 -- Case 29 rebuilds idx_old through a column the UPDATE names. Here the UPDATE names only d, and the
@@ -24,6 +27,7 @@ CREATE TABLE t_sibling_ttl_rebuilt (k UInt64, d DateTime, c String TTL d + INTER
     g String TTL d + INTERVAL 100 YEAR, INDEX idx_old (c, g) TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k
 SETTINGS index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SYSTEM STOP TTL MERGES t_sibling_ttl_rebuilt;
 INSERT INTO t_sibling_ttl_rebuilt SELECT number, '2000-01-01 00:00:00', toString(number * 3), toString(number) FROM numbers(64);
 ALTER TABLE t_sibling_ttl_rebuilt MATERIALIZE TTL SETTINGS mutations_sync = 2, alter_sync = 2;
 SELECT count() = 0 FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_sibling_ttl_rebuilt' AND active AND column = 'c';
@@ -62,6 +66,7 @@ CREATE TABLE t_sibling_materialize_ttl_rebuilt (k UInt64, d DateTime, c String T
     g String TTL d + INTERVAL 100 YEAR, INDEX idx_old (c, g) TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k
 SETTINGS index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SYSTEM STOP TTL MERGES t_sibling_materialize_ttl_rebuilt;
 INSERT INTO t_sibling_materialize_ttl_rebuilt SELECT number, '2000-01-01 00:00:00', toString(number * 3), toString(number) FROM numbers(64);
 ALTER TABLE t_sibling_materialize_ttl_rebuilt MATERIALIZE TTL SETTINGS mutations_sync = 2, alter_sync = 2;
 SELECT count() = 0 FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_sibling_materialize_ttl_rebuilt' AND active AND column = 'c';
@@ -96,6 +101,7 @@ CREATE TABLE t_sibling_materialized_rebuilt (
     INDEX idx_old (c, m) TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k
 SETTINGS index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SYSTEM STOP TTL MERGES t_sibling_materialized_rebuilt;
 INSERT INTO t_sibling_materialized_rebuilt SELECT number, '2000-01-01 00:00:00', toString(number * 3), number FROM numbers(64);
 ALTER TABLE t_sibling_materialized_rebuilt MATERIALIZE TTL SETTINGS mutations_sync = 2, alter_sync = 2;
 SELECT count() = 0 FROM system.parts_columns WHERE database = currentDatabase()
@@ -134,6 +140,7 @@ CREATE TABLE t_sibling_materialized_alias_rebuilt (
     INDEX idx_old (c, m) TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k
 SETTINGS index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SYSTEM STOP TTL MERGES t_sibling_materialized_alias_rebuilt;
 INSERT INTO t_sibling_materialized_alias_rebuilt SELECT number, '2000-01-01 00:00:00', toString(number * 3), number FROM numbers(64);
 ALTER TABLE t_sibling_materialized_alias_rebuilt MATERIALIZE TTL SETTINGS mutations_sync = 2, alter_sync = 2;
 SELECT count() = 0 FROM system.parts_columns WHERE database = currentDatabase()
@@ -174,6 +181,7 @@ CREATE TABLE t_sibling_materialized_ttl_only (
     INDEX idx_old (c, m) TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k
 SETTINGS index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SYSTEM STOP TTL MERGES t_sibling_materialized_ttl_only;
 INSERT INTO t_sibling_materialized_ttl_only SELECT number, '2000-01-01 00:00:00', toString(number * 3), toString(number) FROM numbers(64);
 ALTER TABLE t_sibling_materialized_ttl_only MATERIALIZE TTL SETTINGS mutations_sync = 2, alter_sync = 2;
 SELECT count() = 0 FROM system.parts_columns WHERE database = currentDatabase()
@@ -222,6 +230,7 @@ CREATE TABLE t_sibling_materialized_cleared_rebuilt (
     INDEX idx_old (c, m) TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k
 SETTINGS index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SYSTEM STOP TTL MERGES t_sibling_materialized_cleared_rebuilt;
 INSERT INTO t_sibling_materialized_cleared_rebuilt SELECT number, '2000-01-01 00:00:00', toString(number * 3), number + 1 FROM numbers(64);
 ALTER TABLE t_sibling_materialized_cleared_rebuilt MATERIALIZE TTL SETTINGS mutations_sync = 2, alter_sync = 2;
 SELECT count() = 0 FROM system.parts_columns WHERE database = currentDatabase()

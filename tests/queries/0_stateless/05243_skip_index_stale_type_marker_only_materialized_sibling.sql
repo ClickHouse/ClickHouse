@@ -16,6 +16,9 @@ SET mutations_sync = 0, alter_sync = 0;
 -- Statistics part pruning is an independent mechanism that can drop a whole part before any index
 -- is read, which would make these assertions measure something other than the skip index.
 SET use_statistics_for_part_pruning = 0;
+-- A TTL merge drops a column whose every value has expired together with the skip indices that read
+-- it, without rewriting the part. These cases need the index files left behind, as `MATERIALIZE TTL`
+-- leaves them, so TTL merges are stopped on every table with a column TTL before the insert.
 
 SELECT '-- 32e. a sibling index rebuilt through a marker-only MATERIALIZED column does not keep the column absent';
 DROP TABLE IF EXISTS t_sibling_marker_materialized;
@@ -26,6 +29,7 @@ SETTINGS index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_p
     ratio_of_defaults_for_sparse_serialization = 1.0,
     skip_empty_columns_on_insert = 1, serialization_info_version = 'with_missing_columns';
 -- `m` is all type-default, so the part records it as a marker only.
+SYSTEM STOP TTL MERGES t_sibling_marker_materialized;
 INSERT INTO t_sibling_marker_materialized SELECT number, '2000-01-01 00:00:00', toString(number * 3), number + 1, 0 FROM numbers(64);
 SELECT count() = 0 FROM system.parts_columns WHERE database = currentDatabase()
     AND table = 't_sibling_marker_materialized' AND active AND column = 'm';
