@@ -1,8 +1,13 @@
 #pragma once
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Common/ColumnsHashing.h>
+#include <Common/HashTable/Prefetching.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnsNumber.h>
+
+#include <algorithm>
+#include <concepts>
+#include <span>
 
 
 namespace DB
@@ -180,6 +185,171 @@ struct LowCardinalityKeyGetterForJoin
             return FindResult(found, offset);
     }
 };
+
+/// A base of the join key getters that can build the keys of many rows in one call. `Derived` is the key getter. It has:
+/// - `UInt128 buildKey(size_t row) const`, the key of row `row`;
+/// - `void buildKeys(size_t begin, size_t end, UInt128 * keys, const UInt8 * skip)`, which sets `keys[i - begin]` to the
+///   key of row `i` for the rows [begin, end). `skip` is the skip bytes of the block: the keys of the rows `i` with
+///   `skip[i] != 0` may be left unset.
+/// `getKeyHolder` builds the key of a row, or reads keys built ahead:
+/// - after `buildAllKeys` or `usePrebuiltKeys`, the keys of the whole block. The slot scatter of a parallel build calls
+///   `buildAllKeys`, and the slot inserts pass the keys it built to `usePrebuiltKeys`;
+/// - after `prepareRows`, the keys of a continuous range of rows, built 256 rows at a time when a read goes past the
+///   built ones. Each join loop calls it for its first map. A prefetching loop also calls it for every other map that it
+///   prefetches for each row: then each key is built once for both the prefetch and the lookup. A loop that stops early
+///   at `max_joined_block_rows` pays only for the chunks it reached.
+///   The loop of an `OR` join with a condition in `ON` calls it for every map. For a list of rows in ascending order, it
+///   builds the keys of the listed rows at once.
+template <typename Derived>
+struct PreparedJoinKeys
+{
+    /// Keys built ahead of the lookups, those of the rows [ready_begin, ready_begin + ready_keys.size()). While
+    /// `ready_keys` is empty, each key is built where it is read.
+    size_t ready_begin = 0;
+    std::span<const UInt128> ready_keys;
+    /// After `prepareRows`: the buffer that `ready_keys` views, the end of the rows to prepare, and the skip bytes.
+    PaddedPODArray<UInt128> prepared_keys;
+    size_t prepare_end = 0;
+    const UInt8 * skip_rows = nullptr;
+    /// A caller can build the skip bytes for `prepareRows` here. They must stay valid while the key getter reads keys.
+    IColumn::Filter skip_buffer;
+    /// After `prepareAscendingRows`: the skip bytes of the rows that are not listed, or that `skip` marks.
+    IColumn::Filter unlisted_skip;
+    /// See `skipOrAllSelected`.
+    IColumn::Filter all_selected;
+    /// The rows of the block.
+    size_t num_rows;
+
+    explicit PreparedJoinKeys(size_t num_rows_)
+        : num_rows(num_rows_)
+    {
+    }
+
+    /// Returns `skip`, or if it is nullptr, skip bytes that mark no row of the block.
+    const UInt8 * skipOrAllSelected(const UInt8 * skip)
+    {
+        if (skip)
+            return skip;
+        all_selected.resize_fill(num_rows, 0);
+        return all_selected.data();
+    }
+
+    /// Builds the key of every row of the block into `keys`, and reads the keys from there.
+    void buildAllKeys(PaddedPODArray<UInt128> & keys)
+    {
+        keys.resize(num_rows);
+        /// The scatter routes every row by its key, including the rows that the slot inserts skip.
+        derived().buildKeys(0, num_rows, keys.data(), skipOrAllSelected(nullptr));
+        ready_begin = 0;
+        ready_keys = {keys.data(), keys.size()};
+    }
+
+    /// `keys` holds the key of every row of the block. The key of `check_row` is built again, to check that they are the
+    /// keys of this column.
+    void usePrebuiltKeys(std::span<const UInt128> keys, size_t check_row)
+    {
+        if (check_row >= keys.size() || keys[check_row] != derived().buildKey(check_row))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The join key built for row {} is not the key of that row", check_row);
+        ready_begin = 0;
+        ready_keys = keys;
+    }
+
+    /// Prepares the keys of the rows of `selector` if they are a continuous range, or if they are in ascending order;
+    /// otherwise each key is built where it is read. It builds the first chunk here, so that a prefetcher created after
+    /// this call times only the lookups when it calibrates its look-ahead. `skip` is the skip bytes of the block, as in
+    /// `buildKeys`. The caller must not read the key of a row that `skip` marks, not even to prefetch it.
+    template <typename Selector>
+    void prepareRows(const Selector & selector, const UInt8 * skip)
+    {
+        if constexpr (std::is_same_v<std::decay_t<Selector>, ScatteredBlock::Selector>)
+        {
+            if (selector.isContinuousRange())
+                prepareRange(selector.getRange(), skip);
+            else
+                prepareRows(selector.getIndexes(), skip);
+        }
+        else if constexpr (std::is_same_v<std::decay_t<Selector>, ScatteredBlock::Selector::Range>)
+            prepareRange(selector, skip);
+        else if constexpr (std::is_same_v<std::decay_t<Selector>, ScatteredBlock::Selector::Indexes>)
+            prepareAscendingRows(selector.getData(), skip);
+    }
+
+    void prepareAscendingRows(const PaddedPODArray<UInt64> & rows, const UInt8 * skip)
+    {
+        if (rows.empty() || !std::is_sorted(rows.begin(), rows.end()))
+            return;
+        ready_begin = rows.front();
+        prepare_end = rows.back() + 1;
+        unlisted_skip.assign(prepare_end, UInt8(1));
+        for (const auto row : rows)
+            unlisted_skip[row] = skip[row];
+        skip_rows = unlisted_skip.data();
+        /// All at once, not in chunks: the rows between the listed ones are left out, so the look-ahead of a
+        /// prefetching loop can span more rows than `buildNextKeys` keeps.
+        prepared_keys.resize(prepare_end - ready_begin);
+        derived().buildKeys(ready_begin, prepare_end, prepared_keys.data(), skip_rows);
+        ready_keys = {prepared_keys.data(), prepared_keys.size()};
+    }
+
+    /// Drops the keys prepared before. With an empty range, each key is built where it is read again.
+    void prepareRange(ScatteredBlock::Selector::Range range, const UInt8 * skip)
+    {
+        ready_begin = range.first;
+        prepare_end = range.second;
+        skip_rows = skip;
+        prepared_keys.clear();
+        ready_keys = {};
+        if (range.first < range.second)
+            buildNextKeys(range.first);
+    }
+
+    /// Builds the next chunk of the prepared keys, which ends after `row`. It runs once per chunk, so it is not inlined
+    /// into the join loops that call `getKeyHolder`.
+    NO_INLINE void buildNextKeys(size_t row)
+    {
+        /// The chunk size of `SipHashStrings`, so that a call usually hashes one whole chunk there.
+        static constexpr size_t chunk_rows = 256;
+        const size_t begin = ready_begin + prepared_keys.size();
+        if (row < begin || row >= prepare_end)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The join key of row {} was not prepared", row);
+
+        /// A join loop reads the rows in order, except that its lookups trail its prefetch reads by at most the look-ahead,
+        /// see `JoinPrefetcher`. So the buffer keeps only the last `kept_rows` keys built before.
+        static constexpr size_t kept_rows = PrefetchingHelper::getMaxLookAheadValue();
+        if (prepared_keys.size() > kept_rows)
+        {
+            const size_t dropped = prepared_keys.size() - kept_rows;
+            memmove(prepared_keys.data(), prepared_keys.data() + dropped, kept_rows * sizeof(UInt128));
+            prepared_keys.resize(kept_rows);
+            ready_begin += dropped;
+        }
+
+        /// After a run of `chunk_rows` or more skipped rows, the chunk grows to cover the whole run, up to `row`.
+        const size_t end = std::min(prepare_end, std::max(row + 1, begin + chunk_rows));
+        const size_t old_size = prepared_keys.size();
+        prepared_keys.resize(old_size + (end - begin));
+        derived().buildKeys(begin, end, prepared_keys.data() + old_size, skip_rows);
+        ready_keys = {prepared_keys.data(), prepared_keys.size()};
+    }
+
+    ALWAYS_INLINE UInt128 getKeyHolder(size_t row, Arena &)
+    {
+        /// `prepareRows` does not build the keys of skipped rows.
+        chassert(!skip_rows || !skip_rows[row]);
+        if (ready_keys.empty())
+            return derived().buildKey(row);
+
+        if (row - ready_begin >= ready_keys.size()) [[unlikely]]
+            buildNextKeys(row);
+        return ready_keys[row - ready_begin];
+    }
+
+private:
+    Derived & derived() { return static_cast<Derived &>(*this); }
+};
+
+template <typename KeyGetter>
+concept PreparedKeyGetter = std::derived_from<KeyGetter, PreparedJoinKeys<KeyGetter>>;
 
 template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::key8, Value, Mapped>
 {
