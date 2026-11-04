@@ -63,6 +63,7 @@ SELECT x FROM tab_asc WHERE k = 1 AND (x < 400000 OR x >= 402048 OR sleepEachRow
 ORDER BY x LIMIT 100 FORMAT Null SETTINGS log_comment = '05497_t2';
 
 SYSTEM FLUSH LOGS query_log, processors_profile_log;
+SET max_block_size = DEFAULT;
 
 -- Inputs, inputs with a virtual row (none: the key prefix is fixed), inputs that read at least the LIMIT (only the
 -- dense one).
@@ -82,6 +83,7 @@ FROM
     GROUP BY log_comment
 ) AS q
 ORDER BY log_comment;
+SET max_block_size = 128;
 
 -- T3: the results are unchanged, also through the preliminary merge.
 SELECT 'desc', sum(x), count() FROM (SELECT x FROM tab_desc WHERE k = 1 AND (x < 330720 OR x >= 332768 OR sleepEachRow(0.0005) = 0) AND v = 1 ORDER BY x DESC LIMIT 100);
