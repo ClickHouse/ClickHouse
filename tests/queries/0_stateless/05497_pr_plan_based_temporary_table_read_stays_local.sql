@@ -1,5 +1,5 @@
--- A temporary table exists only in the session of the initiator, so plan-based parallel replicas must not ship
--- a read of it: a replica refuses the temporary database with `DATABASE_ACCESS_DENIED`.
+-- A temporary table exists only in the session of the initiator, so plan-based parallel replicas keeps a query
+-- that reads one local: a replica refuses the temporary database with `DATABASE_ACCESS_DENIED`.
 
 DROP TABLE IF EXISTS t_pr_regular;
 
@@ -30,18 +30,15 @@ FROM (EXPLAIN description = 0 SELECT sum(v) FROM t_pr_tmp);
 SELECT sum(v) FROM t_pr_tmp;
 SELECT k, v FROM t_pr_tmp WHERE k IN (1, 500, 999) ORDER BY k;
 
--- `description = 0` does not print a shipped fragment, so a `Join` or `ReadFromMergeTree` step in the output runs
--- on the initiator. The legacy EXPLAIN format prints each step name alone on an indented line.
-SET explain_query_plan_default = 'legacy';
-SELECT 'join of regular tables is shipped: local Join steps';
-SELECT countIf(trimBoth(explain) = 'Join')
+SELECT 'join of regular tables is read by the replicas';
+SELECT countIf(explain LIKE '%ReadFromParallelReplicas%') > 0
 FROM (EXPLAIN description = 0 SELECT count() FROM t_pr_regular AS r INNER JOIN t_pr_regular AS t ON r.k = t.k);
 
-SELECT 'join with a temporary table runs locally: local Join steps, local reads';
-SELECT countIf(trimBoth(explain) = 'Join'), countIf(trimBoth(explain) = 'ReadFromMergeTree') > 0
+SELECT 'join with a temporary table is executed locally';
+SELECT countIf(explain LIKE '%ReadFromParallelReplicas%')
 FROM (EXPLAIN description = 0 SELECT count(), sum(r.v + t.v) FROM t_pr_regular AS r INNER JOIN t_pr_tmp AS t ON r.k = t.k);
 SELECT count(), sum(r.v + t.v) FROM t_pr_regular AS r INNER JOIN t_pr_tmp AS t ON r.k = t.k;
-SELECT countIf(trimBoth(explain) = 'Join'), countIf(trimBoth(explain) = 'ReadFromMergeTree') > 0
+SELECT countIf(explain LIKE '%ReadFromParallelReplicas%')
 FROM (EXPLAIN description = 0 SELECT count(), sum(t.v) FROM t_pr_tmp AS t INNER JOIN t_pr_regular AS r ON r.k = t.k WHERE r.v < 100);
 SELECT count(), sum(t.v) FROM t_pr_tmp AS t INNER JOIN t_pr_regular AS r ON r.k = t.k WHERE r.v < 100;
 

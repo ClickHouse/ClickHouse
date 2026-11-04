@@ -41,6 +41,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageMerge.h>
+#include <Storages/StorageSnapshot.h>
 #include <Common/logger_useful.h>
 
 #include <unordered_set>
@@ -111,12 +112,6 @@ bool mergeTreeReadCanBeShipped(const ReadFromMergeTree & read)
     /// and is safe to distribute.
     const auto & mergetree_data = read.getMergeTreeData();
     if (read.getContext()->getRefreshSet().tryGetTaskForInnerTable(mergetree_data.getStorageID()))
-        return false;
-
-    /// A temporary table exists only in the session of the initiator: a replica refuses a read of the temporary
-    /// database with `DATABASE_ACCESS_DENIED`. The query then fails whenever a replica gets to run its fragment
-    /// before the local replica finishes the read, so the read has to stay local.
-    if (mergetree_data.getStorageID().database_name == DatabaseCatalog::TEMPORARY_DATABASE)
         return false;
 
     /// Top-K filtering puts an internal `__topKFilter` function into the read's PREWHERE and shares a runtime
@@ -902,9 +897,31 @@ static void insertParallelReplicasSplit(QueryPlan & query_plan, QueryPlan::Nodes
 
 void applyParallelReplicas(QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings &);
 
+/// A temporary table exists only in the session of the initiator, so neither its read nor a step consuming it
+/// can run on a replica. Distributing only the other reads of such a query gains nothing, so it stays local.
+static bool readsTemporaryTable(QueryPlan::Node & root)
+{
+    bool found = false;
+    Stack stack;
+    traverseQueryPlan(
+        stack,
+        root,
+        [&](QueryPlan::Node & node)
+        {
+            const auto * source = dynamic_cast<const SourceStepWithFilter *>(node.step.get());
+            if (source && source->getStorageSnapshot()
+                && source->getStorageSnapshot()->storage.getStorageID().database_name == DatabaseCatalog::TEMPORARY_DATABASE)
+                found = true;
+        });
+    return found;
+}
+
 void applyParallelReplicas(QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & settings)
 {
     if (!settings.enable_parallel_replicas)
+        return;
+
+    if (auto * root = query_plan.getRootNode(); root && readsTemporaryTable(*root))
         return;
 
     insertParallelReplicasSplit(query_plan, nodes);
