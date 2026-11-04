@@ -30,6 +30,7 @@
 #include <Parsers/IAST.h>
 #include <Storages/MergeTree/HypotheticalProjection.h>
 
+#include <unordered_map>
 
 namespace DB
 {
@@ -715,6 +716,32 @@ UseProjectionsResult optimizeUseNormalProjections(
         }
     }
 
+    /// `analyzeProjectionCandidate` removes from the parent read the parts whose projection ranges are
+    /// empty, so a candidate analyzed earlier can still count such parts in `sum_marks` when it is not
+    /// materialized on them (`parent_parts`). The chosen projection reads only the surviving parent
+    /// parts (see `filterPartsByProjection` below), so recompute every candidate's parent contribution
+    /// from the surviving ranges before the candidates are compared with each other. Otherwise the
+    /// ranking depends on the declaration order of the projections.
+    auto refresh_candidate_costs = [&]
+    {
+        std::unordered_map<const IMergeTreeDataPart *, size_t> parent_marks_by_part;
+        for (const auto & part : parent_reading_select_result->parts_with_ranges)
+            parent_marks_by_part[part.data_part.get()] = part.getMarksCount();
+
+        for (auto & candidate : candidates)
+        {
+            if (!candidate.stat || candidate.parent_parts.empty())
+                continue;
+
+            candidate.sum_marks = candidate.merge_tree_projection_select_result_ptr->selected_marks;
+            for (const auto * part : candidate.parent_parts)
+            {
+                if (auto it = parent_marks_by_part.find(part); it != parent_marks_by_part.end())
+                    candidate.sum_marks += it->second;
+            }
+        }
+    };
+
     /// Phase 2: pick the candidate with the smallest sum_marks. Break ties by preferring a
     /// candidate whose sort order matches the query's ORDER BY.
     auto choose_best_candidate = [&]
@@ -732,6 +759,7 @@ UseProjectionsResult optimizeUseNormalProjections(
                 best_candidate = &candidate;
         }
     };
+    refresh_candidate_costs();
     choose_best_candidate();
 
     if (!best_candidate)
@@ -751,9 +779,22 @@ UseProjectionsResult optimizeUseNormalProjections(
     LOG_DEBUG(logger, "Best projection {} has marks {}, parent marks {}, ratio {}, projection condition {}",
         best_candidate->projection->name, best_candidate->sum_marks, parent_reading_marks, ratio, best_candidate->stat->condition);
 
+    /// Whether phase 4 accepts a candidate against the parent estimate, see the criteria there.
+    auto beats_parent = [&](const NormalProjectionCandidate & candidate)
+    {
+        return candidate.sum_marks < parent_reading_marks
+            || (candidate.sum_marks == parent_reading_marks && (parent_reading_marks == 0 || projection_sort_order_useful(candidate.projection)));
+    };
+
     /// The pass is driven only by the base table's deferred skip indexes and the ratio: a projection
     /// can win against the primary-key-only estimate because of its sort order or its granularity
     /// even when its own primary key does not help with the filter.
+    ///
+    /// The pass can only lower the parent estimate, so it is pointless for a candidate that the
+    /// primary-key-only estimate already rejects: it would only cost the index analysis at planning
+    /// time and a second evaluation of the skip indexes at data-read time. In particular, with
+    /// `optimize_projection_skip_index_ratio = 1` (the value `compatibility` with versions before 26.10
+    /// sets) the pass never runs and the decision is the primary-key-only comparison.
     ///
     /// The setting `use_skip_indexes_on_data_read` alone does not mean the parent deferred its skip
     /// indexes: `supportsSkipIndexesOnDataRead` turns the deferral off for JOINs, `max_rows_to_read`
@@ -761,6 +802,7 @@ UseProjectionsResult optimizeUseNormalProjections(
     /// the parent analysis has already applied the skip indexes. Check the flag the analysis recorded,
     /// so that such reads do not run the skip indexes a second time.
     if (!relax_projection_checks
+        && beats_parent(*best_candidate)
         && static_cast<double>(best_candidate->sum_marks) > static_cast<double>(parent_reading_marks) * ratio
         && query.filter_node != nullptr)
     {
@@ -843,22 +885,7 @@ UseProjectionsResult optimizeUseNormalProjections(
                 /// A partially materialized projection also reads the parts that lack it from the
                 /// parent, and its sum_marks counted them with the primary-key-only estimate.
                 /// Recompute these costs from the refined ranges and choose the best candidate again.
-                std::unordered_map<const IMergeTreeDataPart *, size_t> refined_parent_marks;
-                for (const auto & part : parent_reading_select_result->parts_with_ranges)
-                    refined_parent_marks[part.data_part.get()] = part.getMarksCount();
-
-                for (auto & candidate : candidates)
-                {
-                    if (!candidate.stat || candidate.parent_parts.empty())
-                        continue;
-
-                    candidate.sum_marks = candidate.merge_tree_projection_select_result_ptr->selected_marks;
-                    for (const auto * part : candidate.parent_parts)
-                    {
-                        if (auto it = refined_parent_marks.find(part); it != refined_parent_marks.end())
-                            candidate.sum_marks += it->second;
-                    }
-                }
+                refresh_candidate_costs();
                 choose_best_candidate();
             }
         }
