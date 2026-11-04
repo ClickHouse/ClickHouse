@@ -7232,7 +7232,8 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
 
             if (setting_name == "storage_policy")
             {
-                DiskFromAST::ensureStoragePolicyIsAllowed(new_value.safeGet<String>(), local_context);
+                if (new_value.safeGet<String>() != (*getSettings())[MergeTreeSetting::storage_policy].value)
+                    DiskFromAST::ensureStoragePolicyIsAllowed(new_value.safeGet<String>(), local_context);
                 checkStoragePolicy(local_context->getStoragePolicy(new_value.safeGet<String>()));
                 found_storage_policy_setting = true;
             }

@@ -483,25 +483,26 @@ std::string DiskFromAST::createCustomDisk(
     return assert_cast<const ASTLiteral &>(*ast).value.safeGet<String>();
 }
 
+void DiskFromAST::ensureDiskIsAllowed(const DiskPtr & disk, ContextPtr context)
+{
+    /// A custom disk can be named by another session than the one that created it.
+    if (disk->customDiskUsesServerCredentials() && context->shouldRestrictUserQueryS3Credentials())
+        throw Exception(
+            ErrorCodes::ACCESS_DENIED,
+            "The disk `{}` uses the server's own credentials, which may not be used from user SQL."
+#if !CLICKHOUSE_CLOUD
+            " Enable the setting `s3_allow_server_credentials_in_user_queries` to allow it."
+#endif
+            , disk->getName());
+}
+
 void DiskFromAST::ensureStoragePolicyIsAllowed(const std::string & storage_policy_name, ContextPtr context)
 {
-    if (!context->shouldRestrictUserQueryS3Credentials())
-        return;
-
-    /// `__<disk>` is the policy a table on a disk gets, so it can name a custom disk another session created.
-    const auto storage_policy = context->tryGetStoragePolicy(storage_policy_name);
-    if (!storage_policy)
-        return;
-    for (const auto & disk : storage_policy->getDisks())
+    /// `__<disk>` is the policy a table on a disk gets, so it names a custom disk as well.
+    if (const auto storage_policy = context->tryGetStoragePolicy(storage_policy_name))
     {
-        if (disk->customDiskUsesServerCredentials())
-            throw Exception(
-                ErrorCodes::ACCESS_DENIED,
-                "The storage policy `{}` has the disk `{}`, which uses the server's own credentials and may not be used from user SQL."
-#if !CLICKHOUSE_CLOUD
-                " Enable the setting `s3_allow_server_credentials_in_user_queries` to allow it."
-#endif
-                , storage_policy_name, disk->getName());
+        for (const auto & disk : storage_policy->getDisks())
+            ensureDiskIsAllowed(disk, context);
     }
 }
 
