@@ -6,9 +6,10 @@
 # A table created by `CREATE TABLE ... AS file(...)` reads the file without checking the grants of the user
 # who reads the table. So creating it requires `READ ON FILE` as well as `WRITE ON FILE`, however the
 # structure of the table is obtained, and also when the table is created by the hosts of an `ON CLUSTER`
-# query, which execute it without the user. A short `ATTACH` replays the stored definition, which was checked
-# when the table was created, so it does not require `READ ON FILE` again, but `RESTORE` brings a definition
-# from the backup and requires it.
+# query, which execute it without the user, unless those hosts replace the table function with `Null`, as
+# `restore_replace_external_table_functions_to_null` makes a local `CREATE` do. A short `ATTACH` replays the
+# stored definition, which was checked when the table was created, so it does not require `READ ON FILE` again,
+# but `RESTORE` brings a definition from the backup and requires it.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -64,6 +65,15 @@ missing_grant --distributed_ddl_entry_format_version 2 \
 echo '--- no table was created'
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables WHERE database = '${db}' AND startsWith(name, 't_')"
 
+echo '--- ON CLUSTER with the table function replaced by Null, if the entry format ships that setting to the hosts'
+${CLICKHOUSE_CLIENT} -q "GRANT TABLE ENGINE ON Null TO ${user}"
+missing_grant --distributed_ddl_entry_format_version 1 --restore_replace_external_table_functions_to_null 1 \
+    -q "CREATE TABLE ${db}.t_cluster_null ON CLUSTER test_shard_localhost (line String) AS ${file_function}"
+${CLICKHOUSE_CLIENT} --user "${user}" --distributed_ddl_output_mode throw \
+    --distributed_ddl_entry_format_version 2 --restore_replace_external_table_functions_to_null 1 \
+    -q "CREATE TABLE ${db}.t_cluster_null ON CLUSTER test_shard_localhost (line String) AS ${file_function}" > /dev/null
+${CLICKHOUSE_CLIENT} -q "SELECT engine FROM system.tables WHERE database = '${db}' AND name = 't_cluster_null'"
+
 echo '--- with READ ON FILE only, creating the table is refused too'
 ${CLICKHOUSE_CLIENT} -q "
 REVOKE WRITE ON FILE FROM ${user};
@@ -95,6 +105,7 @@ missing_grant -q "RESTORE TABLE ${db}.t_columns AS ${db}.t_restored FROM ${backu
 ${CLICKHOUSE_CLIENT} -q "
 DROP TABLE ${db}.t_columns;
 DROP TABLE ${db}.t_cluster;
+DROP TABLE ${db}.t_cluster_null;
 DROP TABLE ${db}.src;
 DROP USER ${user};
 "
