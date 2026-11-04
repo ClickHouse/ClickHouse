@@ -32,8 +32,22 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_CONVERT_TYPE;
+    extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_PROJECTION;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int NOT_IMPLEMENTED;
+    extern const int NO_SUCH_COLUMN_IN_TABLE;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int SUPPORT_IS_DISABLED;
+    extern const int THERE_IS_NO_COLUMN;
+    extern const int TYPE_MISMATCH;
+    extern const int UNKNOWN_FUNCTION;
+    extern const int UNKNOWN_IDENTIFIER;
 }
 
 namespace MergeTreeSetting
@@ -191,6 +205,29 @@ void checkHypotheticalObjectIsAddable(
     /// the eligibility check applies the commands, which requires prepare first
     commands.prepare(*metadata, (*merge_tree.getSettings())[MergeTreeSetting::share_nested_offsets]);
     merge_tree.checkAlterEligibility(commands, context);
+}
+
+bool isHypotheticalDefinitionError(int code)
+{
+    static const int codes[]
+    {
+        ErrorCodes::BAD_ARGUMENTS,
+        ErrorCodes::CANNOT_CONVERT_TYPE,
+        ErrorCodes::ILLEGAL_COLUMN,
+        ErrorCodes::ILLEGAL_PROJECTION,
+        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+        ErrorCodes::INCORRECT_QUERY,
+        ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
+        ErrorCodes::NOT_IMPLEMENTED,
+        ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
+        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+        ErrorCodes::SUPPORT_IS_DISABLED,
+        ErrorCodes::THERE_IS_NO_COLUMN,
+        ErrorCodes::TYPE_MISMATCH,
+        ErrorCodes::UNKNOWN_FUNCTION,
+        ErrorCodes::UNKNOWN_IDENTIFIER,
+    };
+    return std::ranges::contains(codes, code);
 }
 
 BlockIO InterpreterHypotheticalObjectQuery::execute()

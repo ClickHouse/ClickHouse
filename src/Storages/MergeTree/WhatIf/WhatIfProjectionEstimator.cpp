@@ -1317,8 +1317,10 @@ std::optional<ProjectionDescription> refreshHypotheticalProjection(
         fresh = ProjectionDescription::getProjectionFromAST(
             stored.definition_ast, metadata->getColumns(), &metadata->partition_key, context, LoadingStrictnessLevel::CREATE);
     }
-    catch (const Exception &)
+    catch (const Exception & e)
     {
+        if (!isHypotheticalDefinitionError(e.code()))
+            throw;
         reason = "Hypothetical projection can no longer be added to this table: " + getCurrentExceptionMessage(false);
         return std::nullopt;
     }

@@ -17,6 +17,10 @@ void checkHypotheticalObjectIsAddable(
     const ASTPtr & declaration,
     const ContextPtr & context);
 
+/// true when the error says that a stored definition no longer fits the table or the query;
+/// `EXPLAIN WHATIF` reports such a candidate as not applicable and lets every other error propagate
+bool isHypotheticalDefinitionError(int code);
+
 class InterpreterHypotheticalObjectQuery : public IInterpreter, WithContext
 {
 public:

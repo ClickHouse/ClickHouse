@@ -245,8 +245,10 @@ WhatIfCandidateResult evaluateIndex(
             context);
         index_helper = MergeTreeIndexFactory::instance().get(metadata, fresh_index_desc, *data.getSettings());
     }
-    catch (const Exception &)
+    catch (const Exception & e)
     {
+        if (!isHypotheticalDefinitionError(e.code()))
+            throw;
         result.status = WhatIfCandidateResult::NotApplicable;
         result.not_applicable_reason = "Hypothetical index can no longer be added to this table: " + getCurrentExceptionMessage(false);
         return result;
@@ -274,8 +276,10 @@ WhatIfCandidateResult evaluateIndex(
     {
         condition = index_helper->createIndexCondition(predicate, context);
     }
-    catch (const Exception &)
+    catch (const Exception & e)
     {
+        if (!isHypotheticalDefinitionError(e.code()))
+            throw;
         result.status = WhatIfCandidateResult::NotApplicable;
         result.not_applicable_reason = "Cannot build index condition: " + getCurrentExceptionMessage(false);
         return result;
