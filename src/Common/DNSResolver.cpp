@@ -248,6 +248,8 @@ struct DNSResolver::Impl
     /// If disabled, will not make cache lookups, will resolve addresses manually on each call
     std::atomic<bool> disable_cache{false};
 
+    std::atomic<UInt64> addresses_change_counter{0};
+
     /// `host_name` is populated lazily by `getHostName`. `host_addresses`
     /// (and a re-read of `host_name`) is populated by
     /// `updateHostNameAndAddresses`, which is called periodically by
@@ -426,11 +428,17 @@ void DNSResolver::dropCache()
     impl->new_addresses.clear();
     impl->host_name.reset();
     impl->host_addresses.reset();
+    ++impl->addresses_change_counter;
 }
 
 void DNSResolver::removeHostFromCache(const std::string & host)
 {
     impl->cache_host.remove(host);
+}
+
+UInt64 DNSResolver::getAddressesChangeCounter() const
+{
+    return impl->addresses_change_counter.load(std::memory_order_relaxed);
 }
 
 void DNSResolver::setDisableCacheFlag(bool is_disabled)
@@ -583,6 +591,8 @@ bool DNSResolver::updateHost(const String & host)
     auto new_value = getResolvedIPAddressesWithFiltering(host);
     const bool result = old_value != new_value;
     impl->cache_host.set(host, std::make_shared<DNSResolver::CacheEntry>(std::move(new_value), std::chrono::system_clock::now()));
+    if (result)
+        ++impl->addresses_change_counter;
     return result;
 }
 

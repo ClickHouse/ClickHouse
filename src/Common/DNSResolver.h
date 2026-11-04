@@ -74,6 +74,11 @@ public:
     /// Removes an entry from cache or does nothing
     void removeHostFromCache(const std::string & host);
 
+    /// Incremented each time the cached addresses of some host change (found by `updateCache`) or
+    /// the cache is dropped. A connection opened before the last change can compare its address
+    /// with the cached addresses of its host, see `Connection::forceConnected`.
+    UInt64 getAddressesChangeCounter() const;
+
     /// Updates all known hosts in cache.
     void updateCache(UInt32 max_consecutive_failures);
 
