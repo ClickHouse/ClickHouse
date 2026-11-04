@@ -140,6 +140,26 @@ namespace
     DECLARE(UInt64, dictionary_background_reconnect_interval, 1000, "Interval in milliseconds for reconnection attempts of failed MySQL and Postgres dictionaries having `background_reconnect` enabled.", 0) \
     DECLARE(Bool, show_addresses_in_stack_traces, true, R"(If it is set true will show addresses in stack traces)", 0) \
     DECLARE(Bool, shutdown_wait_unfinished_queries, false, R"(If set true ClickHouse will wait for running queries finish before shutdown.)", 0) \
+    DECLARE(Bool, totp_track_used_codes_in_keeper, false, R"(
+Enforces single use of time-based one-time password (TOTP) codes across all servers that share the same ZooKeeper or ClickHouse Keeper, instead of per server.
+
+The accepted codes are recorded in Keeper under the path set by `totp_used_codes_keeper_path`, one node per user named by the SHA-256 hash of the user name: a code accepted by one server is rejected by all the others, and the record survives server restarts. Keeper must be configured when this setting is enabled; while Keeper is unavailable, authentication with a one-time password fails.
+
+**Example**
+
+```xml
+<totp_track_used_codes_in_keeper>1</totp_track_used_codes_in_keeper>
+```
+)", 0) \
+    DECLARE(String, totp_used_codes_keeper_path, "/clickhouse/access/one_time_passwords", R"(
+The path in Keeper under which the accepted time-based one-time password codes are recorded when `totp_track_used_codes_in_keeper` is enabled. Clusters that share one Keeper without a chroot must use different paths, otherwise users with the same name on different clusters would share their records.
+
+**Example**
+
+```xml
+<totp_used_codes_keeper_path>/clickhouse/access/one_time_passwords</totp_used_codes_keeper_path>
+```
+)", 0) \
     DECLARE(UInt64, shutdown_wait_unfinished, 120, R"(Delay in seconds to wait for unfinished queries on shutdown. Also bounds the wait for running backups and restores when `shutdown_wait_backups_and_restores` is disabled.)", 0) \
     DECLARE(UInt64, max_thread_pool_size, 10000, R"(
 ClickHouse uses threads from the Global Thread pool to process queries. If there is no idle thread to process a query, then a new thread is created in the pool. `max_thread_pool_size` limits the maximum number of threads in the pool.
@@ -1541,6 +1561,17 @@ Maximum size of batch for MultiRead request to [Zoo]Keeper that support batching
     DECLARE(UInt64, drop_distributed_cache_queue_size, 1000, R"(The queue size of the threadpool used for dropping distributed cache.)", 0) \
     DECLARE(UInt64, distributed_cache_write_pool_size, 100, R"(The maximum number of distributed cache write requests that run on a background thread at the same time (across all queries). When the limit is reached, the write-through cache write is skipped (the data is still written to object storage), so it neither blocks waiting for a slot nor creates an unbounded number of threads. Writes of temporary data do not use background threads and are not affected by the limit.)", 0) \
     DECLARE(Bool, distributed_cache_apply_throttling_settings_from_client, true, R"(Whether cache server should apply throttling settings received from client.)", 0) \
+    DECLARE(UInt64, distributed_cache_temporary_data_max_files_per_server, 100000, R"(Maximum number of committed temporary files retained by one distributed cache server. The default is high because the limit is only a backstop that bounds the memory used to track the files; the capacity is mainly limited by `distributed_cache_temporary_data_max_bytes_per_server`. When the limit is reached, the server rejects publication of new committed temporary files. `0` means unlimited.)", 0) \
+    DECLARE(UInt64, distributed_cache_temporary_data_max_bytes_per_server, 1_TiB, R"(Maximum total size in bytes of committed temporary files retained by one distributed cache server. Committed temporary files are pinned in the file cache and cannot be evicted until they are released or expire, so this limit bounds how much of the cache they can occupy. The default is 1 TiB. When the limit is reached, the server rejects publication of new committed temporary files. `0` means unlimited.)", 0) \
+    DECLARE(NonZeroUInt64, distributed_cache_temporary_data_max_control_batch_ids, 1024, R"(Maximum committed temporary-data IDs sent by the client in one control request. Values above 65536 are limited to 65536 (the protocol limit).)", 0) \
+    DECLARE(NonZeroUInt64, distributed_cache_temporary_data_ttl_seconds, 3600, R"(Lifetime of a committed temporary file in seconds.)", 0) \
+    DECLARE(NonZeroUInt64, distributed_cache_temporary_data_renewal_period_seconds, 900, R"(Period between committed temporary-data ownership renewals in seconds.)", 0) \
+    DECLARE(NonZeroUInt64, distributed_cache_temporary_data_background_retry_delay_milliseconds, 30000, R"(Delay before a background committed temporary-data retry in milliseconds.)", 0) \
+    DECLARE(UInt64, distributed_cache_temporary_data_confirmation_retry_delay_milliseconds, 500, R"(Delay before retrying committed temporary-data publication confirmation in milliseconds.)", 0) \
+    DECLARE(NonZeroUInt64, distributed_cache_temporary_data_cleanup_period_milliseconds, 1000, R"(Period between committed temporary-data expiry cleanups in milliseconds.)", 0) \
+    DECLARE(DistributedCachePoolBehaviourOnLimit, distributed_cache_temporary_data_pool_behaviour_on_limit, DistributedCachePoolBehaviourOnLimit::ALLOCATE_NEW_BYPASSING_POOL, R"(Only has an effect in ClickHouse Cloud. Behaviour of the distributed cache connections for temporary data when the connection pool limit is reached. Temporary data has no object storage to fall back to, so by default it opens a connection that bypasses the pool instead of failing. It applies to the temporary files of queries and of background operations (merges, backups). The short committed temporary-data control exchanges (confirmation, renewal, release) always open a new connection and do not use this setting. With `wait` it waits for a pooled connection for `distributed_cache_wait_connection_from_pool_milliseconds` and then fails. Can be changed without a restart.)", 0) \
+    DECLARE(UInt64, distributed_cache_temporary_data_max_connections_bypassing_pool, 5000, R"(Only has an effect in ClickHouse Cloud. Maximum number of connections per distributed cache server that temporary files may open bypassing the connection pool. When the limit is reached, temporary data waits for a pooled connection for `distributed_cache_wait_connection_from_pool_milliseconds` and then fails. `0` means unlimited. The short committed temporary-data control exchanges (confirmation, renewal, release) always open a new connection and are not counted. Can be changed without a restart.)", 0) \
+    DECLARE(NonZeroUInt64, distributed_cache_temporary_data_control_hello_timeout_milliseconds, 2000, R"(A committed temporary-data control extends the lifetime of a file at most to the time of the control connection hello + this timeout + the TTL, in milliseconds. The client waits for the response for the same time after the hello. The client uses its own value, read when a committed file is created (for background renewals, at startup). A different value on the client and on the distributed cache server does not reduce the lifetime of a file below the hello + the TTL.)", 0) \
     DECLARE(Bool, enable_read_through_distributed_cache, false, R"(Only has an effect in ClickHouse Cloud. Allow reading from distributed cache. This is a server-level switch, applied without a restart, so that background operations which do not have a query profile of their own (merges, mutations, `Buffer` table flushes) follow it as well. Individual queries can deviate from it with the `force_read_through_distributed_cache` setting.)", 0) \
     DECLARE(NonZeroUInt64, distributed_cache_warmer_max_file_segment_size, 32_MiB, R"(Only has an effect in ClickHouse Cloud. The size of the ranges in which the cache warmer reads a fetched part into the distributed cache when the disk of the part has no local filesystem cache (with a local cache the warmer uses its `max_file_segment_size`).)", 0) \
     DECLARE(UInt64, distributed_cache_warmer_max_bytes_in_queue, 100_GiB, R"(Only has an effect in ClickHouse Cloud. The maximum total size of the ranges the cache warmer keeps queued for a disk without a local filesystem cache; the oldest ranges are discarded beyond it (with a local cache the warmer uses its `max_size`). Zero means unlimited.)", 0) \
@@ -3887,6 +3918,10 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
              {std::to_string(context->getKafkaLocksRefreshPolls()), ChangeableWithoutRestart::Yes}},
             {"enable_read_through_distributed_cache", {std::to_string(context->getReadThroughDistributedCache()), ChangeableWithoutRestart::Yes}},
             {"enable_write_through_distributed_cache", {std::to_string(context->getWriteThroughDistributedCache()), ChangeableWithoutRestart::Yes}},
+            {"distributed_cache_temporary_data_pool_behaviour_on_limit",
+             {SettingFieldDistributedCachePoolBehaviourOnLimit(context->getDistributedCacheTemporaryDataPoolBehaviourOnLimit()).toString(), ChangeableWithoutRestart::Yes}},
+            {"distributed_cache_temporary_data_max_connections_bypassing_pool",
+             {std::to_string(context->getDistributedCacheTemporaryDataMaxConnectionsBypassingPool()), ChangeableWithoutRestart::Yes}},
 
             /// The server-wide throttlers, not `getRemoteReadThrottler()` and friends: those compose the
             /// reading request's own per-query limit, and (for the remote pair and the distributed-cache
