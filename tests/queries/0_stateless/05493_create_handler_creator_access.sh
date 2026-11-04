@@ -17,12 +17,13 @@ U_SA1="u_sa1_${DB}"
 U_SA2="u_sa2_${DB}"
 U_SA3="u_sa3_${DB}"
 F="f_${DB}"
+NC="nc_${DB}"
 
 cleanup() {
     for h in $($CLICKHOUSE_CLIENT -q "SELECT name FROM system.handlers WHERE endsWith(name, '_${DB}')"); do
         $CLICKHOUSE_CLIENT -q "DROP HANDLER IF EXISTS \`$h\`"
     done
-    $CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS ${U}, ${U_ALL}, ${U_SA1}, ${U_SA2}, ${U_SA3}; DROP FUNCTION IF EXISTS ${F}; DROP DATABASE IF EXISTS ${DB_B}"
+    $CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS ${U}, ${U_ALL}, ${U_SA1}, ${U_SA2}, ${U_SA3}; DROP FUNCTION IF EXISTS ${F}; DROP DATABASE IF EXISTS ${DB_B}; DROP NAMED COLLECTION IF EXISTS ${NC}"
 }
 trap cleanup EXIT
 cleanup
@@ -199,3 +200,10 @@ reason "$U" "CREATE TEMPORARY TABLE t (id UInt32, v String); CREATE HANDLER h20d
 handlers "h20d_${DB}"
 reason default "CREATE TEMPORARY TABLE t (id UInt32, v String); CREATE HANDLER h20n_${DB} URL '/${DB}/h20n' SQL SECURITY NONE AS SELECT v FROM t"
 handlers "h20n_${DB}"
+
+echo "--- 21. full access for SQL SECURITY NONE needs the named collections"
+$CLICKHOUSE_CLIENT -q "CREATE NAMED COLLECTION ${NC} AS host = 'localhost', port = ${CLICKHOUSE_PORT_TCP}, database = 'system', table = 'one', user = 'default', password = ''"
+$CLICKHOUSE_CLIENT --user "${U_SA2}" -q "CREATE HANDLER h21_${DB} URL '/${DB}/h21' SQL SECURITY NONE AS SELECT * FROM remote(${NC})" 2>&1 \
+    | grep -o -m1 'grant NAMED COLLECTION' || echo OK
+handlers "h21_${DB}"
+as_user "${U_SA1}" "CREATE HANDLER h21b_${DB} URL '/${DB}/h21b' SQL SECURITY NONE AS SELECT * FROM remote(${NC})"

@@ -191,7 +191,9 @@ void validateHandlerQuery(ASTCreateHandlerQuery & handler, const ContextPtr & co
 
     const auto type = getSQLSecurityType(handler);
     const bool runs_as_definer = type != SQLSecurityType::INVOKER;
-    const bool full_access = hasFullAccess(context);
+    /// A NONE query runs with full access, named collections included.
+    const bool full_access = hasFullAccess(context)
+        && (type != SQLSecurityType::NONE || context->getAccess()->isGranted(AccessType::NAMED_COLLECTION));
     const bool self_definer = type == SQLSecurityType::DEFINER
         && isDefinerTheCurrentUser(handler.sql_security->as<const ASTSQLSecurity &>(), context);
 
@@ -322,7 +324,8 @@ BlockIO InterpreterCreateHandlerQuery::execute()
     /// The validation runs without the factory lock, so the result is stored only if the handler was not changed meanwhile.
     auto alter_ast = query.clone();
     auto & alter = alter_ast->as<ASTCreateHandlerQuery &>();
-    bool alter_sql_security_processed = false;
+    /// Made once, and kept apart from `alter`, so that every attempt validates the clause as written.
+    ASTPtr processed_sql_security;
     for (size_t attempt = 0; attempt < SQLDefinedHandlersFactory::max_replicated_write_attempts; ++attempt)
     {
         const String base = factory.prepareAlter(alter.handler_name);
@@ -334,11 +337,14 @@ BlockIO InterpreterCreateHandlerQuery::execute()
             checkAccessForStoredSQLSecurity(merged, current_context);
         validateHandlerQuery(merged, current_context);
 
-        if (alter.sql_security && !alter_sql_security_processed)
+        if (alter.sql_security)
         {
-            InterpreterCreateQuery::processSQLSecurityOption(current_context, alter.sql_security->as<ASTSQLSecurity &>());
-            alter_sql_security_processed = true;
-            replaceHandlerSQLSecurity(merged, alter.sql_security->clone());
+            if (!processed_sql_security)
+            {
+                processed_sql_security = alter.sql_security->clone();
+                InterpreterCreateQuery::processSQLSecurityOption(current_context, processed_sql_security->as<ASTSQLSecurity &>());
+            }
+            replaceHandlerSQLSecurity(merged, processed_sql_security->clone());
         }
 
         if (factory.updateFromSQL(alter, base, merged))

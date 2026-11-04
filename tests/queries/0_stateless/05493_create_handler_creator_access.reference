@@ -100,3 +100,7 @@ in a session with temporary tables
 0
 in a session with temporary tables
 0
+--- 21. full access for SQL SECURITY NONE needs the named collections
+grant NAMED COLLECTION
+0
+OK
