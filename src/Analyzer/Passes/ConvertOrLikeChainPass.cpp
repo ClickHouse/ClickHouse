@@ -278,14 +278,14 @@ public:
         return true;
     }
 
-    void enterImpl(QueryTreeNodePtr & node)
+    /// Rewrite bottom-up, so that a haystack shared through the identifier cache is final before any chain copies it.
+    void leaveImpl(QueryTreeNodePtr & node)
     {
         auto * function_node = node->as<FunctionNode>();
         if (!function_node || function_node->getFunctionName() != "or")
             return;
 
-        /// Prevent infinite recursion - don't process the same OR node twice
-        /// (this can happen when we wrap the transformed OR in an AND node)
+        /// A shared node, or the `or` copy inside the `and` it became, is reached again through another reference.
         if (processed_nodes.contains(function_node))
             return;
         processed_nodes.insert(function_node);
