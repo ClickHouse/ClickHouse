@@ -91,9 +91,7 @@ prewhere_subcolumns.xml                                  # JSON column
 projection_materialize.xml                               # ALTER ADD_PROJECTION, ALTER DROP_PROJECTION
 qbit_distance_transposed_micro.xml                       # QBit column
 qbit_insert_memory.xml                                   # QBit column
-qbit_l2_distance_bfloat16_memory.xml                     # QBit column
-qbit_l2_distance_float32_memory.xml                      # QBit column
-qbit_l2_distance_float64_memory.xml                      # QBit column
+qbit_l2_distance_memory.xml                              # QBit column
 qbit_one_bit_distance.xml                                # QBit column
 query_interpretation_join.xml                            # AggregateFunction column
 read_from_comp_parts.xml                                 # type UInt64 in CREATE ... AS SELECT

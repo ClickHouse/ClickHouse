@@ -2,7 +2,7 @@
     <!--
       Microbenchmark isolating the per-row cost of the QBit distance functions.
 
-      Unlike qbit_l2_distance_*_memory.xml (dim=100, ORDER BY ... LIMIT, multi-threaded), this test is deliberately shaped so that almost 
+      Unlike qbit_l2_distance_memory.xml (dim=100, ORDER BY ... LIMIT, multi-threaded), this test is deliberately shaped so that almost 
       all of the wall-clock time is spent inside the per-row distance kernel call, so changes to that call
     -->
     <settings>
