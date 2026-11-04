@@ -16,10 +16,11 @@ namespace DB
 /// A call is checked on two levels:
 /// - As written, before anything can rename or replace it: `QueryAnalyzer::resolveFunction` and the identifiers it
 ///   resolves as functions without parentheses; on the legacy path `TreeRewriter::normalize` and `ActionsVisitor`.
-///   Where a written name disappears before the analysis, it is checked there: in `normalizeDivision` and in
-///   `UserDefinedSQLFunctionVisitor`, which inlines SQL UDFs.
+///   Where a written name disappears before the analysis, it is checked there: in `normalizeDivision`,
+///   `replaceLegacyToTime` and `UserDefinedSQLFunctionVisitor`, which inlines SQL UDFs.
 /// - As executed, by the name of the implementation which runs: `QueryAnalyzer::resolveFunction` before the constant
-///   folding, `CheckFunctionAccessPass` after the optimizations of the query tree; on the legacy path `ActionsVisitor`.
+///   folding, `CheckFunctionAccessPass` after the optimizations of the query tree; on the legacy path `ActionsVisitor`;
+///   in a query plan received from a client, which skips the analysis, `ActionsDAG::deserialize`.
 ///
 /// Call these ONLY where an identifier is already committed to a real function call. They must never be called from
 /// `tryGet`-style helpers: analyzer code uses those as non-throwing capability probes while column and lambda aliases
