@@ -31,6 +31,26 @@ SELECT k, identity(d + s), identity(t - s), identity(d32 - n), identity(t + INTE
 SELECT k, identity(s + d32), identity(u + t), identity(n + d) FROM t_jit_add_interval ORDER BY k SETTINGS compile_expressions = 0;
 SELECT k, identity(s + d32), identity(u + t), identity(n + d) FROM t_jit_add_interval ORDER BY k SETTINGS compile_expressions = 1;
 
+-- The multiplication by the unit wraps in 64 bits for minutes, hours and weeks, as in the interpreter; `Date32` results out of
+-- range are compared as integers, as they are displayed clamped.
+SELECT 'multiplied units';
+DROP TABLE IF EXISTS t_jit_add_interval_wide;
+CREATE TABLE t_jit_add_interval_wide (k UInt8, t DateTime('UTC'), d Date, d32 Date32, n Int64) ENGINE = MergeTree ORDER BY k;
+INSERT INTO t_jit_add_interval_wide VALUES
+    (0, 1234567890, '2020-02-29', '1969-12-31', 9223372036854775807),
+    (1, 0, '1970-01-01', '1900-01-01', -9223372036854775808),
+    (2, 4294967295, '2149-06-06', '2299-12-31', 4611686018427387904),
+    (3, 86399, '2000-01-01', '1950-06-15', -1317624576693539401),
+    (4, 1700000000, '1999-12-31', '2100-01-01', 153722867280912931),
+    (5, 1, '2000-01-02', '2000-01-02', -2562047788015216);
+SELECT k, identity(addWeeks(d, n)), identity(subtractWeeks(d, n)), toInt32(identity(addWeeks(d32, n))), toInt32(identity(subtractWeeks(d32, n))), identity(addMinutes(t, n)), identity(addHours(t, n)), identity(subtractHours(t, n)) FROM t_jit_add_interval_wide ORDER BY k SETTINGS compile_expressions = 0;
+SELECT k, identity(addWeeks(d, n)), identity(subtractWeeks(d, n)), toInt32(identity(addWeeks(d32, n))), toInt32(identity(subtractWeeks(d32, n))), identity(addMinutes(t, n)), identity(addHours(t, n)), identity(subtractHours(t, n)) FROM t_jit_add_interval_wide ORDER BY k SETTINGS compile_expressions = 1;
+
+SELECT 'Nullable';
+SELECT k, identity(toNullable(d) + s), identity(t - toNullable(s)), identity(addDays(if(k = 2, NULL, d), n)) FROM t_jit_add_interval ORDER BY k SETTINGS compile_expressions = 0;
+SELECT k, identity(toNullable(d) + s), identity(t - toNullable(s)), identity(addDays(if(k = 2, NULL, d), n)) FROM t_jit_add_interval ORDER BY k SETTINGS compile_expressions = 1;
+DROP TABLE t_jit_add_interval_wide;
+
 -- The compiled queries ran compiled: five `identity` of a compiled function, 10 functions on 5 rows. `+`/`-` of an `INTERVAL`
 -- constant stays interpreted (an `Interval` is not a native value).
 SELECT identity(addSeconds(t, n)), identity(addDays(d, n)), identity(d + s), identity(s + d32), identity(t - s) FROM t_jit_add_interval
