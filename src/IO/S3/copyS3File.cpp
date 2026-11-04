@@ -831,8 +831,7 @@ namespace
                     outcome.GetError().GetExceptionName() == "AccessDenied" ||
                     S3::Client::RetryStrategy::useGCSRewrite(outcome.GetError()))
                 {
-                    /// The retry is an `UploadPartCopy` with a byte range: multipart copy must be allowed and the source
-                    /// must be one S3 accepts as a byte-range copy source (so never an empty one).
+                    /// The multipart retry sends byte-range `UploadPartCopy` requests (see MIN_SOURCE_SIZE_FOR_RANGE_COPY).
                     if (!supports_multipart_copy || !request_settings[S3RequestSetting::allow_multipart_copy]
                         || src_object_size <= MIN_SOURCE_SIZE_FOR_RANGE_COPY || outcome.GetError().GetExceptionName() == "AccessDenied")
                     {
