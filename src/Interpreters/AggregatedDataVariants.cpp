@@ -9,6 +9,9 @@
 #include <Common/MemoryTracker.h>
 #include <Common/logger_useful.h>
 
+#include <bit>
+#include <optional>
+
 namespace ProfileEvents
 {
     extern const Event AggregationPreallocatedElementsInHashTables;
@@ -265,6 +268,22 @@ bool AggregatedDataVariants::isConvertibleToTwoLevel(Type type_)
     #undef M
         default:
         return false;
+    }
+}
+
+bool AggregatedDataVariants::isKeysAndPackedString(Type type_)
+{
+    switch (type_)
+    {
+        case Type::keys32_packed_string:
+        case Type::keys64_packed_string:
+        case Type::keys128_packed_string:
+        case Type::keys32_packed_string_two_level:
+        case Type::keys64_packed_string_two_level:
+        case Type::keys128_packed_string_two_level:
+            return true;
+        default:
+            return false;
     }
 }
 
@@ -593,6 +612,34 @@ AggregatedDataVariants::Type AggregatedDataVariants::chooseMethod(
         if (has_low_cardinality)
             return Type::low_cardinality_key_string;
         return Type::key_packed_string;
+    }
+
+    /// If fixed-width keys of 1, 2, 4, 8 or 16 bytes and one string key - will use a hash table keyed by the
+    /// fixed-width values packed into 32, 64 or 128 bits and a packed reference to the string, which keeps strings
+    /// of up to 15 bytes inline after 32 bits and of up to 11 bytes otherwise (see `KeysAndPackedString`). The
+    /// string key is the one with value size 0. The Aggregator may remap this to `prealloc_serialized` (see
+    /// `Params::enable_fixed_and_packed_string_keys`).
+    if (keys_size > 1 && !has_low_cardinality && num_fixed_contiguous_keys + 1 == keys_size && keys_bytes <= 16)
+    {
+        std::optional<size_t> string_key;
+        bool fixed_sizes_are_powers_of_two = true;
+        for (size_t j = 0; j < keys_size; ++j)
+        {
+            if (isString(types_removed_nullable[j]))
+                string_key = j;
+            else
+                fixed_sizes_are_powers_of_two &= std::has_single_bit(out_key_sizes[j]);
+        }
+
+        if (string_key && fixed_sizes_are_powers_of_two)
+        {
+            out_key_sizes[*string_key] = 0;
+            if (keys_bytes <= 4)
+                return Type::keys32_packed_string;
+            if (keys_bytes <= 8)
+                return Type::keys64_packed_string;
+            return Type::keys128_packed_string;
+        }
     }
 
     if (keys_size > 1 && all_keys_are_numbers_or_strings)

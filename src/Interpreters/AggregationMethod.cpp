@@ -183,6 +183,37 @@ template struct AggregationMethodKeysFixed<AggregatedDataWithKeys128TwoLevel, fa
 template struct AggregationMethodKeysFixed<AggregatedDataWithKeys256TwoLevel, false, true>;
 
 
+template <typename TData>
+void AggregationMethodKeysAndPackedString<TData>::insertKeyIntoColumns(
+    const Key & key, std::vector<IColumn *> & key_columns, const Sizes & key_sizes, const IColumn::SerializationSettings *)
+{
+    /// The caller has already shuffled the columns into the order of the key's bytes (see
+    /// `shuffleKeyColumns`), so the fixed-width values map onto the columns sequentially; the `String` column
+    /// has no value size.
+    const char * fixed_values = reinterpret_cast<const char *>(&key.keys);
+    for (size_t i = 0; i < key_columns.size(); ++i)
+    {
+        if (key_sizes[i] == 0)
+        {
+            const auto str = static_cast<std::string_view>(key.str);
+            assert_cast<ColumnString &>(*key_columns[i]).insertData(str.data(), str.size());
+        }
+        else
+        {
+            key_columns[i]->insertData(fixed_values, key_sizes[i]);
+            fixed_values += key_sizes[i];
+        }
+    }
+}
+
+template struct AggregationMethodKeysAndPackedString<AggregatedDataWithKeys32AndPackedString>;
+template struct AggregationMethodKeysAndPackedString<AggregatedDataWithKeys64AndPackedString>;
+template struct AggregationMethodKeysAndPackedString<AggregatedDataWithKeys128AndPackedString>;
+template struct AggregationMethodKeysAndPackedString<AggregatedDataWithKeys32AndPackedStringTwoLevel>;
+template struct AggregationMethodKeysAndPackedString<AggregatedDataWithKeys64AndPackedStringTwoLevel>;
+template struct AggregationMethodKeysAndPackedString<AggregatedDataWithKeys128AndPackedStringTwoLevel>;
+
+
 template <typename TData, bool nullable, bool prealloc>
 void AggregationMethodSerialized<TData, nullable, prealloc>::insertKeyIntoColumns(
     std::string_view key, std::vector<IColumn *> & key_columns, const Sizes &, const IColumn::SerializationSettings * settings)

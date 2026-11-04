@@ -188,6 +188,43 @@ struct AggregationMethodPackedString
     }
 };
 
+/// For the case of fixed-width keys and one non-nullable `String` key, stored as `KeysAndPackedString`.
+template <typename TData>
+struct AggregationMethodKeysAndPackedString
+{
+    using Data = TData;
+    using Key = typename Data::key_type;
+    using Mapped = typename Data::mapped_type;
+
+    Data data;
+    TopKAggregationHeap<Key> top_k_heap;
+
+    AggregationMethodKeysAndPackedString() = default;
+
+    template <typename Other>
+    explicit AggregationMethodKeysAndPackedString(const Other & other) : data(other.data)
+    {
+    }
+
+    /// The state keeps no consecutive-keys cache, so both states are the same.
+    template <bool>
+    using StateImpl = ColumnsHashing::HashMethodKeysAndPackedString<typename Data::value_type, Mapped, decltype(Key::keys)>;
+
+    using State = StateImpl<true>;
+    using StateNoCache = StateImpl<false>;
+
+    static const bool low_cardinality_optimization = false;
+    static const bool one_key_nullable_optimization = false;
+
+    std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> & key_columns, const Sizes & key_sizes)
+    {
+        return State::shuffleKeyColumns(key_columns, key_sizes);
+    }
+
+    static void insertKeyIntoColumns(
+        const Key & key, std::vector<IColumn *> & key_columns, const Sizes & key_sizes, const IColumn::SerializationSettings * settings);
+};
+
 /// For the case where there is one fixed-length string key.
 template <typename TData>
 struct AggregationMethodFixedString

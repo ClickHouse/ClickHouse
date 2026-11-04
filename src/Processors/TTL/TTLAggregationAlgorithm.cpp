@@ -37,6 +37,7 @@ namespace Setting
     extern const SettingsFloat min_hit_rate_to_use_consecutive_keys_optimization;
     extern const SettingsBool optimize_group_by_constant_keys;
     extern const SettingsBool enable_packed_string_keys_in_aggregation;
+    extern const SettingsBool enable_fixed_and_packed_string_keys_in_aggregation;
     extern const SettingsBool enable_producing_buckets_out_of_order_in_aggregation;
     extern const SettingsBool serialize_string_in_memory_with_zero_byte;
 }
@@ -168,6 +169,7 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
         settings[Setting::serialize_string_in_memory_with_zero_byte],
         /*enable_parallel_single_level_merge_=*/false,
         settings[Setting::enable_packed_string_keys_in_aggregation],
+        settings[Setting::enable_fixed_and_packed_string_keys_in_aggregation],
         /* enable_adaptive_aggregator */ false,
         /* adaptive_aggregator_freeze_threshold */ 0,
         /* adaptive_aggregator_freeze_threshold_bytes */ 0,

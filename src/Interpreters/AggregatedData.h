@@ -5,6 +5,7 @@
 #include <Common/HashTable/FixedHashMap.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/HashTableTraits.h>
+#include <Common/HashTable/KeysAndPackedStringHashMap.h>
 #include <Common/HashTable/StringHashMap.h>
 #include <Common/HashTable/TwoLevelHashMap.h>
 #include <Common/HashTable/TwoLevelStringHashMap.h>
@@ -60,6 +61,12 @@ using AggregatedDataWithStringKeyVoid = HashSetWithSavedHash<std::string_view, D
 using AggregatedDataWithKeys128 = HashMap<UInt128, AggregateDataPtr, UInt128HashCRC32>;
 using AggregatedDataWithKeys256 = HashMap<UInt256, AggregateDataPtr, UInt256HashCRC32>;
 
+/// Fixed-width keys packed into 32, 64 or 128 bits and one `String` key; the fixed part of a key with an empty
+/// string is hashed like the `keys32`, `keys64` and `keys128` methods hash their keys.
+using AggregatedDataWithKeys32AndPackedString = KeysAndPackedStringHashMap<UInt32, AggregateDataPtr, HashCRC32<UInt32>>;
+using AggregatedDataWithKeys64AndPackedString = KeysAndPackedStringHashMap<UInt64, AggregateDataPtr, HashCRC32<UInt64>>;
+using AggregatedDataWithKeys128AndPackedString = KeysAndPackedStringHashMap<UInt128, AggregateDataPtr, UInt128HashCRC32>;
+
 using AggregatedDataWithKeys128Void = HashSet<UInt128, UInt128HashCRC32>;
 using AggregatedDataWithKeys256Void = HashSet<UInt256, UInt256HashCRC32>;
 
@@ -81,6 +88,10 @@ using AggregatedDataWithStringKeyVoidTwoLevel = TwoLevelHashSetWithSavedHash<std
 
 using AggregatedDataWithKeys128TwoLevel = TwoLevelHashMap<UInt128, AggregateDataPtr, UInt128HashCRC32>;
 using AggregatedDataWithKeys256TwoLevel = TwoLevelHashMap<UInt256, AggregateDataPtr, UInt256HashCRC32>;
+
+using AggregatedDataWithKeys32AndPackedStringTwoLevel = TwoLevelKeysAndPackedStringHashMap<UInt32, AggregateDataPtr, HashCRC32<UInt32>>;
+using AggregatedDataWithKeys64AndPackedStringTwoLevel = TwoLevelKeysAndPackedStringHashMap<UInt64, AggregateDataPtr, HashCRC32<UInt64>>;
+using AggregatedDataWithKeys128AndPackedStringTwoLevel = TwoLevelKeysAndPackedStringHashMap<UInt128, AggregateDataPtr, UInt128HashCRC32>;
 
 using AggregatedDataWithKeys128VoidTwoLevel = TwoLevelHashSet<UInt128, UInt128HashCRC32>;
 using AggregatedDataWithKeys256VoidTwoLevel = TwoLevelHashSet<UInt256, UInt256HashCRC32>;
