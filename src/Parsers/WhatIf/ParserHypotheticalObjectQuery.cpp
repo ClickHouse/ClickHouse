@@ -164,7 +164,7 @@ CREATE HYPOTHETICAL INDEX [IF NOT EXISTS] name
     ON [db.]table_name (expression) TYPE type[(args)] [GRANULARITY value]
 ```
 
-The syntax mirrors `ALTER TABLE ... ADD INDEX`, but no index is built or written — only the index description is stored, in the current session.
+The syntax mirrors `ALTER TABLE ... ADD INDEX`, but no index is built or written — only the index description is stored, in the current session. The definition passes the same checks as `ALTER TABLE ... ADD INDEX`, so `CREATE` fails with the same error when the real index cannot be added.
 
 - `name` — index name; must be unique within `(database, table)` for this session.
 - `expression` — the column or expression to index.
@@ -181,66 +181,13 @@ CREATE HYPOTHETICAL INDEX idx_b ON t (b) TYPE minmax GRANULARITY 1;
 
 ## Evaluating a hypothetical index with EXPLAIN WHATIF {#evaluating-a-hypothetical-index-with-explain-whatif}
 
-Defining a hypothetical index by itself does nothing — to see how it would affect a query, run [`EXPLAIN WHATIF`](/reference/statements/explain#explain-whatif) against a representative `SELECT`. The estimator reports each candidate index's applicability, the marks it would read, the resulting skip ratio, and how the estimate was produced (`empirical`, `statistical`, or `applicability_only`).
+A hypothetical index does nothing by itself. Run [`EXPLAIN WHATIF`](/reference/statements/explain#explain-whatif) on a representative `SELECT` to see how the index would change the read:
 
 ```sql
-CREATE TABLE t (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a
-SETTINGS index_granularity = 100;
-
-INSERT INTO t SELECT number, number FROM numbers(10000);
-
-CREATE HYPOTHETICAL INDEX idx_b ON t (b) TYPE minmax GRANULARITY 1;
-
 EXPLAIN WHATIF SELECT * FROM t WHERE b = 42;
 ```
 
-Result:
-
-```text
-Baseline (after PK + partition + existing indexes):
-  table:       default.t
-  parts:       1
-  marks:       100
-  est_bytes:   85.52 KiB
-
-With idx_b (minmax, hypothetical):
-  status:       applicable
-  marks:        1
-  est_bytes:    875.00 B
-  skip_ratio:   99.0%
-
-Estimation:
-  source:           empirical
-  empirical_status: ok
-  sampled_parts:    1 / 1
-  sampled_marks:    100 / 100
-  elapsed_us:       631
-```
-
-`est_bytes` is an estimate from the table's average row size, so the exact figure varies with storage and compression.
-
-To skip the in-memory empirical scan and estimate from [column statistics](/reference/engines/table-engines/mergetree-family/mergetree#column-statistics) instead, define them on the relevant columns first (they are off by default), wait for the materialize mutation to finish, then disable the empirical path:
-
-```sql
-ALTER TABLE t ADD STATISTICS b TYPE tdigest;
-ALTER TABLE t MATERIALIZE STATISTICS b SETTINGS mutations_sync = 1;
-
-EXPLAIN WHATIF empirical = 0 SELECT * FROM t WHERE b < 10;
-```
-
-```text
-With idx_b (minmax, hypothetical):
-  status:       applicable
-  marks:        1
-  est_bytes:    1.66 KiB
-  skip_ratio:   99.9%
-
-Estimation:
-  source:           statistical
-  empirical_status: disabled
-```
-
-See the [`EXPLAIN WHATIF`](/reference/statements/explain#explain-whatif) reference for the full output schema and settings.
+The [`EXPLAIN WHATIF`](/reference/statements/explain#explain-whatif) reference describes the output, the estimate sources and the settings.
 
 ## DROP HYPOTHETICAL INDEX {#drop-hypothetical-index}
 
@@ -268,7 +215,7 @@ Clears every hypothetical index defined in the current session, regardless of ta
 
 `text` and `vector_similarity` candidates are rejected at `CREATE HYPOTHETICAL INDEX` time, because their real validation depends on table-level settings the session-only store cannot replicate.
 
-`EXPLAIN WHATIF` reports `status: not_applicable` for queries with `FINAL` (skip-index pruning interacts with `PrimaryKeyExpand`), and errors with `NOT_IMPLEMENTED` when the query is served from a projection (a parent-table index is not materialized on projection parts).
+`EXPLAIN WHATIF` reports `status: not_applicable` for queries with `FINAL` (skip-index pruning interacts with `PrimaryKeyExpand`) and for queries served from a projection (a parent-table index is not read on projection parts).
 
 The empirical `skip_ratio` is an **upper bound**: it counts each surviving granule independently and does not model seek-gap coalescing (`merge_tree_min_rows_for_seek` / `merge_tree_min_bytes_for_seek`), nor the combination of a candidate with an existing skip index under a disjunctive (`OR`) predicate. A real materialized index may therefore read slightly more, or prune in cases the estimate does not.
 
