@@ -104,19 +104,6 @@ def test_has_shell_query(test_path):
     )
 
 
-def test_has_failpoint(test_path):
-    """Whether a test enables a server-wide failpoint, including via `<include>`."""
-    try:
-        root = ElementTree.parse(test_path).getroot()
-    except ElementTree.ParseError:
-        return False
-    source_dir = os.path.dirname(os.path.abspath(test_path))
-    return any(
-        e.get("action") == "enable"
-        for e in _iter_elements(root, source_dir, {os.path.realpath(test_path)}, "failpoint")
-    )
-
-
 # Tests that `perf.py --table-engine` cannot run, one name per line with the reason.
 ICEBERG_SKIP_LIST = "iceberg_skip_list.txt"
 
