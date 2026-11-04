@@ -32,6 +32,7 @@ constexpr size_t MAX_UPDATE_RETRIES = 10;
 constexpr size_t MAX_NAMESPACE_LEVELS = 16;
 constexpr size_t MAX_NAMESPACE_LEVEL_LENGTH = 256;
 constexpr size_t MAX_NAMESPACE_PROPERTIES_SIZE = 64_KiB;
+constexpr size_t MAX_TABLE_NAME_LENGTH = 256;
 
 void validateNamespace(const IcebergNamespaceName & name)
 {
@@ -49,6 +50,17 @@ void validateNamespace(const IcebergNamespaceName & name)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Namespace levels must not contain the unit separator 0x1F");
     }
 }
+
+}
+
+void validateTableName(const String & name)
+{
+    if (name.empty() || name.size() > MAX_TABLE_NAME_LENGTH)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table name must be non-empty and at most {} bytes", MAX_TABLE_NAME_LENGTH);
+}
+
+namespace
+{
 
 void checkPropertiesSize(const std::map<String, String> & properties)
 {
@@ -151,6 +163,8 @@ String KeeperIcebergRESTCatalogStore::tablesPath(const IcebergNamespaceName & na
 
 String KeeperIcebergRESTCatalogStore::tablePath(const IcebergNamespaceName & name, const String & table) const
 {
+    /// Every table method builds its path here, so this is the one place that checks the table name.
+    validateTableName(table);
     return tablesPath(name) + "/" + escapeForFileName(table);
 }
 
@@ -357,6 +371,53 @@ bool KeeperIcebergRESTCatalogStore::dropTable(const IcebergNamespaceName & ns, c
         return false;
     zkutil::KeeperMultiException::check(code, ops, responses);
     return true;
+}
+
+KeeperIcebergRESTCatalogStore::RenameTableResult KeeperIcebergRESTCatalogStore::renameTable(
+    const IcebergNamespaceName & source_ns, const String & source, const IcebergNamespaceName & dest_ns, const String & dest)
+{
+    auto component_guard = Coordination::setCurrentComponent("KeeperIcebergRESTCatalogStore::renameTable");
+    auto zookeeper = getZooKeeper();
+
+    for (size_t attempt = 0; attempt < MAX_UPDATE_RETRIES; ++attempt)
+    {
+        const auto pointer = getTable(source_ns, source);
+        if (!pointer)
+            return RenameTableResult::TableMissing;
+
+        /// The version check keeps a commit that lands between the read and the multi.
+        Coordination::Requests ops;
+        ops.emplace_back(zkutil::makeCheckRequest(tableUuidPath(source_ns, source, pointer->uuid), pointer->version.toInt32()));
+        ops.emplace_back(zkutil::makeRemoveRequest(tableUuidPath(source_ns, source, pointer->uuid), -1));
+        ops.emplace_back(zkutil::makeRemoveRequest(tablePath(source_ns, source), -1));
+        const size_t dest_table_op = ops.size();
+        ops.emplace_back(zkutil::makeCreateRequest(tablePath(dest_ns, dest), pointer->uuid, zkutil::CreateMode::Persistent));
+        ops.emplace_back(zkutil::makeCreateRequest(
+            tableUuidPath(dest_ns, dest, pointer->uuid), pointer->metadata_location, zkutil::CreateMode::Persistent));
+
+        Coordination::Responses responses;
+        const auto code = zookeeper->tryMulti(ops, responses);
+        if (code == Coordination::Error::ZOK)
+            return RenameTableResult::Renamed;
+        if (code == Coordination::Error::ZNODEEXISTS)
+            return RenameTableResult::TargetExists;
+        /// The `tables` node is created with the namespace, so a missing parent of the destination means a missing namespace.
+        if (code == Coordination::Error::ZNONODE)
+        {
+            if (zkutil::getFailedOpIndex(code, responses) == dest_table_op)
+                return RenameTableResult::NamespaceMissing;
+            return RenameTableResult::TableMissing;
+        }
+        if (code == Coordination::Error::ZBADVERSION)
+            continue;
+        zkutil::KeeperMultiException::check(code, ops, responses);
+    }
+
+    throw Exception(
+        ErrorCodes::ICEBERG_CATALOG_CONCURRENT_UPDATE,
+        "Cannot rename table {} at {}: too many concurrent updates",
+        source,
+        namespacePath(source_ns));
 }
 
 KeeperIcebergRESTCatalogStore::UpdateTableResult KeeperIcebergRESTCatalogStore::updateTable(

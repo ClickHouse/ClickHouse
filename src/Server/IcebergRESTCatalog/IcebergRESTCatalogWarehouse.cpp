@@ -121,6 +121,12 @@ bool IcebergRESTCatalogWarehouse::dropTable(const IcebergNamespaceName & ns, con
     return store->dropTable(ns, table);
 }
 
+IcebergRESTCatalogWarehouse::RenameTableResult IcebergRESTCatalogWarehouse::renameTable(
+    const IcebergNamespaceName & source_ns, const String & source, const IcebergNamespaceName & dest_ns, const String & dest) const
+{
+    return store->renameTable(source_ns, source, dest_ns, dest);
+}
+
 IcebergRESTCatalogWarehouse::UpdateTableResult IcebergRESTCatalogWarehouse::updateTable(
     const IcebergNamespaceName & ns, const String & table, const IcebergTablePointer & expected, const IcebergTablePointer & new_pointer) const
 {
