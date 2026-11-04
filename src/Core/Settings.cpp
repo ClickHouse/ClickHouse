@@ -4079,11 +4079,15 @@ expires. If the execution speed is high, the execution speed will be reduced.
     DECLARE(Seconds, timeout_before_checking_execution_speed, 10, R"(
 Checks that execution speed is not too slow (no less than `min_execution_speed`),
 after the specified time in seconds has expired.
+
+If set to `0`, the execution speed limits are checked from the start of the query,
+but [`max_estimated_execution_time`](/reference/settings/session-settings/max#max_estimated_execution_time)
+is not checked at all.
 )", 0) \
     DECLARE(Seconds, max_estimated_execution_time, 0, R"(
 Maximum query estimate execution time in seconds. Checked on every data block
 when [`timeout_before_checking_execution_speed`](/reference/settings/session-settings/other#timeout_before_checking_execution_speed)
-expires. It operates based on interpolation relative to the current query execution
+expires. It operates based on extrapolation relative to the current query execution
 speed. If you set `timeout_before_checking_execution_speed` to 0, then this setting
 will not be checked.
 )", 0, \
