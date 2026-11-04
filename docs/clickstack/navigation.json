@@ -264,8 +264,13 @@
             {
               "group": "Migration reference",
               "pages": [
-                "clickstack/self-configured/migration/elastic/concepts",
-                "clickstack/self-configured/migration/elastic/types"
+                {
+                  "group": "Elasticsearch",
+                  "pages": [
+                    "clickstack/self-configured/migration/elastic/concepts",
+                    "clickstack/self-configured/migration/elastic/types"
+                  ]
+                }
               ]
             }
           ]

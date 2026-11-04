@@ -9,7 +9,7 @@ doc_type: 'reference'
 ---
 
 <Note>
-This page covers **self-managed ClickHouse Observability**. For the recommended fully managed experience, see the documentation [here](/clickstack/observability/overview).
+This page covers **self-managed ClickHouse Observability**. Fully managed ClickHouse Observability, the recommended default experience, handles database schemas and type mappings for you. You don't need to configure these internals to migrate; follow the [Elasticsearch migration guide](/clickstack/observability/migration/elastic) to get started.
 </Note>
 
 Elasticsearch and ClickHouse support a wide variety of data types, but their underlying storage and query models are fundamentally different. This section maps commonly used Elasticsearch field types to their ClickHouse equivalents, where available, and provides context to help guide migrations. Where no equivalent exists, alternatives or notes are provided in the comments.

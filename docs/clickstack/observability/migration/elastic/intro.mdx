@@ -2,7 +2,7 @@
 slug: /clickstack/observability/migration/elastic/intro
 title: 'Migrating to ClickHouse Observability from Elastic'
 sidebarTitle: 'Introduction'
-description: 'Considerations for migrating from Elastic Stack to ClickHouse Observability.'
+description: 'Considerations for migrating from Elastic Stack to fully managed ClickHouse Observability.'
 show_related_blogs: true
 keywords: ['Elasticsearch']
 doc_type: 'guide'
@@ -10,7 +10,9 @@ doc_type: 'guide'
 
 ## Migrating to ClickHouse Observability from Elastic {#migrating-to-clickstack-from-elastic-self-configured}
 
-This guide is intended for users migrating from the Elastic Stack — specifically those using Kibana to monitor logs, traces, and metrics collected via Elastic Agent and stored in Elasticsearch. It outlines equivalent concepts and data types in ClickHouse Observability, explains how to translate Kibana Lucene-based queries to the observability UI search syntax, and provides guidance on migrating both data and agents for a smooth transition.
+This guide is intended for users migrating from the Elastic Stack — specifically those using Kibana to monitor logs, traces, and metrics collected via Elastic Agent and stored in Elasticsearch. It focuses on fully managed ClickHouse Observability and covers search queries, data collection, and application instrumentation. Self-managed instructions are included where the steps differ.
+
+Fully managed ClickHouse Observability handles schemas, storage, and scaling. You don't need to map Elasticsearch internals to ClickHouse to get started. For self-managed deployments, see [equivalent concepts](/clickstack/self-configured/migration/elastic/concepts) and [type mappings](/clickstack/self-configured/migration/elastic/types).
 
 Before beginning a migration, it's important to understand the tradeoffs between ClickHouse Observability and the Elastic Stack.
 

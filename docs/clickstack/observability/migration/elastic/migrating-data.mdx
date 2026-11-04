@@ -2,13 +2,17 @@
 slug: /clickstack/observability/migration/elastic/migrating-data
 title: 'Migrating data to ClickHouse Observability from Elastic'
 sidebarTitle: 'Migrating data'
-description: 'Plan parallel ingestion from Elastic, with retention and historical-data guidance for managed and self-managed deployments.'
+description: 'Plan parallel ingestion from Elastic to fully managed ClickHouse Observability, with separate guidance for self-managed historical-data migration.'
 show_related_blogs: true
 keywords: ['ClickHouse Observability']
 doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
+This guide focuses on migrating from Elastic to **fully managed ClickHouse Observability**, the default experience. ClickHouse manages the underlying schemas and storage; you don't need to configure these internals to follow the migration steps.
+
+For self-managed deployments, review the [equivalent Elasticsearch and ClickHouse concepts](/clickstack/self-configured/migration/elastic/concepts) and [type mappings](/clickstack/self-configured/migration/elastic/types). Self-managed data migration instructions are labeled separately below.
 
 ## Parallel operation strategy {#parallel-operation-strategy-self-configured}
 
