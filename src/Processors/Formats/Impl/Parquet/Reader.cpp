@@ -4649,8 +4649,7 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_grou
         /// Columns referenced only by this subgroup can then be filtered in place.
         block.clear();
 
-        /// Filter columns that were already read. When most rows pass, a column that only this subgroup holds
-        /// is filtered in place; a selective filter copies the few remaining rows.
+        /// Filter columns that were already read.
         const bool filter_in_place = rows_pass * 2 >= filter.size();
         for (auto & state : row_subgroup.output)
         {
