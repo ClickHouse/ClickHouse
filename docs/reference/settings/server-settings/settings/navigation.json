@@ -129,6 +129,7 @@
     "reference/settings/server-settings/settings/tmp",
     "reference/settings/server-settings/settings/top-level",
     "reference/settings/server-settings/settings/total-memory",
+    "reference/settings/server-settings/settings/totp",
     "reference/settings/server-settings/settings/uncompressed-cache",
     "reference/settings/server-settings/settings/unique-key",
     "reference/settings/server-settings/settings/use",
