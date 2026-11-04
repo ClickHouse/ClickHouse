@@ -126,6 +126,7 @@
 
 
 #include <Backups/BackupEntriesCollector.h>
+#include <Backups/BackupPathUtils.h>
 #include <Backups/IBackup.h>
 #include <Backups/IBackupCoordination.h>
 #include <Backups/IBackupEntry.h>
@@ -12525,11 +12526,9 @@ void StorageReplicatedMergeTree::backupData(
                                  &backup_entries_collector]()
     {
         auto local_component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::post_collecting_task");
+        /// Paths inside a backup are logical entry names, so they are joined as strings with
+        /// `joinBackupPath` rather than through `std::filesystem::path`.
         Strings data_paths = coordination->getReplicatedDataPaths(my_full_zookeeper_path);
-        std::vector<fs::path> data_paths_fs;
-        data_paths_fs.reserve(data_paths.size());
-        for (const auto & data_path : data_paths)
-            data_paths_fs.push_back(data_path);
 
         Strings part_names = coordination->getReplicatedPartNames(my_full_zookeeper_path, my_replica_name);
         std::unordered_set<std::string_view> part_names_set{part_names.begin(), part_names.end()};
@@ -12539,8 +12538,8 @@ void StorageReplicatedMergeTree::backupData(
             if (part_names_set.contains(part_backup_entries.part_name))
             {
                 for (const auto & [relative_path, backup_entry] : part_backup_entries.backup_entries)
-                    for (const auto & data_path : data_paths_fs)
-                        backup_entries_collector.addBackupEntry(pathToGenericString(data_path / relative_path), backup_entry);
+                    for (const auto & data_path : data_paths)
+                        backup_entries_collector.addBackupEntry(joinBackupPath(data_path, relative_path), backup_entry);
             }
         }
 
@@ -12548,8 +12547,8 @@ void StorageReplicatedMergeTree::backupData(
         for (const auto & mutation_info : mutation_infos)
         {
             auto backup_entry = ReplicatedMergeTreeMutationEntry::parse(mutation_info.entry, mutation_info.id).backup();
-            for (const auto & data_path : data_paths_fs)
-                backup_entries_collector.addBackupEntry(pathToGenericString(data_path / "mutations" / (mutation_info.id + ".txt")), backup_entry);
+            for (const auto & data_path : data_paths)
+                backup_entries_collector.addBackupEntry(joinBackupPath(data_path, "mutations", mutation_info.id + ".txt"), backup_entry);
         }
     };
 

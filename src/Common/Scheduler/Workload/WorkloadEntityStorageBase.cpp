@@ -1,4 +1,3 @@
-#include <base/pathToString.h>
 #include <Common/Scheduler/Workload/WorkloadEntityStorageBase.h>
 
 #include <Common/Scheduler/WorkloadSettings.h>
@@ -16,6 +15,7 @@
 #include <IO/WriteHelpers.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupEntryFromMemory.h>
+#include <Backups/BackupPathUtils.h>
 #include <Backups/IBackup.h>
 #include <Backups/IBackupCoordination.h>
 #include <Backups/IRestoreCoordination.h>
@@ -1108,9 +1108,8 @@ void WorkloadEntityStorageBase::backup(
 
     if (!isReplicated())
     {
-        fs::path data_path_in_backup_fs{data_path_in_backup};
         for (const auto & [file_name, entry] : backup_entries)
-            backup_entries_collector.addBackupEntry(pathToGenericString(data_path_in_backup_fs / file_name), entry);
+            backup_entries_collector.addBackupEntry(joinBackupPath(data_path_in_backup, file_name), entry);
         return;
     }
 
@@ -1132,9 +1131,8 @@ void WorkloadEntityStorageBase::backup(
 
             for (const auto & dir : dirs)
             {
-                fs::path dir_fs{dir};
                 for (const auto & [file_name, entry] : my_backup_entries)
-                    backup_entries_collector.addBackupEntry(pathToGenericString(dir_fs / file_name), entry);
+                    backup_entries_collector.addBackupEntry(joinBackupPath(dir, file_name), entry);
             }
         });
 }
@@ -1149,7 +1147,6 @@ void WorkloadEntityStorageBase::restore(
         return; /// Other replica is already restoring the workload entities.
 
     auto backup = restorer.getBackup();
-    fs::path data_path_in_backup_fs{data_path_in_backup};
 
     Strings filenames = backup->listFiles(data_path_in_backup, /*recursive*/ false);
     if (filenames.empty())
@@ -1161,13 +1158,13 @@ void WorkloadEntityStorageBase::restore(
             throw Exception(
                 ErrorCodes::CANNOT_RESTORE_TABLE,
                 "Cannot restore workload entities: File name {} doesn't have the extension .sql",
-                pathToGenericString(data_path_in_backup_fs / filename));
+                joinBackupPath(data_path_in_backup, filename));
     }
 
     std::vector<std::pair<String, ASTPtr>> parsed_entities;
     for (const auto & filename : filenames)
     {
-        String filepath = pathToGenericString(data_path_in_backup_fs / filename);
+        String filepath = joinBackupPath(data_path_in_backup, filename);
         auto in = backup->readFile(filepath);
         String statement_def;
         readStringUntilEOF(statement_def, *in);
@@ -1184,7 +1181,7 @@ void WorkloadEntityStorageBase::restore(
                     ErrorCodes::CANNOT_RESTORE_TABLE,
                     "Cannot restore workload entities: file {} defines an entity of a kind that does not match the "
                     "system table being restored",
-                    pathToGenericString(data_path_in_backup_fs / filename));
+                    joinBackupPath(data_path_in_backup, filename));
             parsed_entities.push_back(std::move(name_and_ast));
         }
     }
