@@ -602,6 +602,7 @@ size_t MergeTreeReaderTextIndex::readRows(
         if (!any_use_fallback && mark_requires_dynamic_fallback_reader)
         {
             MutableColumns fallback_cols(fallback_columns_list.size());
+            Columns fallback_shared_cols(fallback_columns_list.size());
             const size_t mark_start_row = index_granularity.getMarkStartingRow(from_mark);
             const size_t mark_offset = from_row - mark_start_row;
             const bool continue_fallback_reading = fallback_reader_next_row == from_row;
@@ -609,7 +610,9 @@ size_t MergeTreeReaderTextIndex::readRows(
             if (!continue_fallback_reading && mark_offset > 0)
             {
                 MutableColumns skipped_cols(fallback_columns_list.size());
-                const size_t skipped_rows = fallback_reader->readRows(from_mark, current_range_last_mark, false, mark_offset, skipped_cols);
+                Columns skipped_shared_cols(fallback_columns_list.size());
+                const size_t skipped_rows = fallback_reader->readRows(
+                    from_mark, current_range_last_mark, false, mark_offset, skipped_cols, skipped_shared_cols);
                 if (skipped_rows != mark_offset)
                 {
                     throw Exception(
@@ -625,7 +628,8 @@ size_t MergeTreeReaderTextIndex::readRows(
                 current_range_last_mark,
                 continue_fallback_reading || mark_offset > 0,
                 rows_to_read,
-                fallback_cols);
+                fallback_cols,
+                fallback_shared_cols);
             if (fallback_rows != rows_to_read)
             {
                 throw Exception(
@@ -638,7 +642,13 @@ size_t MergeTreeReaderTextIndex::readRows(
 
             size_t col_idx = 0;
             for (const auto & col_name_type : fallback_columns_list)
-                mark_fallback_block.insert({std::move(fallback_cols[col_idx++]), col_name_type.type, col_name_type.name});
+            {
+                if (fallback_cols[col_idx])
+                    mark_fallback_block.insert({std::move(fallback_cols[col_idx]), col_name_type.type, col_name_type.name});
+                else
+                    mark_fallback_block.insert({fallback_shared_cols[col_idx], col_name_type.type, col_name_type.name});
+                ++col_idx;
+            }
 
             current_fallback_block = &mark_fallback_block;
             current_fallback_offset = 0;
