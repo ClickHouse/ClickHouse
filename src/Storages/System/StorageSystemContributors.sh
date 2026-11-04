@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-echo "THIS IS HEAVILY DEPRECATED, USE tests/ci/version_helper.py:update_contributors()"
+echo "THIS IS HEAVILY DEPRECATED, USE ci/tools/version_helper.py:update_contributors()"
 set -x
 
 # doesn't actually cd to directory, but return absolute path

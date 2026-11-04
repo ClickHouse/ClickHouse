@@ -1,0 +1,10 @@
+IN, opposite sides
+0	1
+GLOBAL IN, opposite sides
+0	1
+GLOBAL IN, opposite sides reversed
+1	0
+GLOBAL IN, repeated and opposite
+1	0	1
+GLOBAL IN, opposite sides, DISTINCT rewrite
+0	1

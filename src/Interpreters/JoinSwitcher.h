@@ -21,16 +21,18 @@ public:
         std::shared_ptr<TableJoin> table_join_,
         SharedHeader right_sample_block_,
         bool any_take_last_row_,
-        const StatsCollectingParams & stats_collecting_params_ = {});
+        const HashJoinStatsCollectingParams & stats_collecting_params_ = {});
 
     std::string getName() const override { return "JoinSwitcher"; }
+
+    std::string getAlgorithm() const override { return join->getAlgorithm(); }
     const TableJoin & getTableJoin() const override { return *table_join; }
     bool anyTakeLastRow() const override { return join->anyTakeLastRow(); }
 
     /// Add block of data from right hand of JOIN into current join object.
     /// If join-in-memory memory limit exceeded switches to join-on-disk and continue with it.
     /// @returns false, if join-on-disk disk limit exceeded
-    bool addBlockToJoin(const Block & block, bool check_limits) override;
+    bool addBlockToJoin(const Block & block, size_t num_rows, JoinBuildContext context) override;
 
     void checkTypesOfKeys(const Block & block) const override
     {
@@ -93,7 +95,9 @@ public:
     /// conservative and never claim to preserve the left stream order. See issue #110662.
     bool preservesLeftBlockOrder() const override { return false; }
 
-    void onBuildPhaseFinish() override { join->onBuildPhaseFinish(); }
+    void onBuildPhaseFinish() override;
+
+    void onProbePhaseFinish(std::optional<size_t> matched_right_rows) override { join->onProbePhaseFinish(matched_right_rows); }
 
     bool hasPostBuildPhase() const override { return join->hasPostBuildPhase(); }
 
@@ -111,7 +115,7 @@ private:
 
     /// Change join-in-memory to join-on-disk moving right hand JOIN data from one to another.
     /// Throws an error if join-on-disk do not support JOIN kind or strictness.
-    bool switchJoin();
+    bool switchJoin(JoinBuildContext context);
 };
 
 }

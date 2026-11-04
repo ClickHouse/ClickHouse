@@ -107,7 +107,7 @@ Peak memory usage: 485.15 MiB.
   ### إنشاء جدول Iceberg
 </div>
 
-لكتابة البيانات في Iceberg، أنشئ جدولًا باستخدام [محرك الجدول `IcebergS3`](/ar/reference/engines/table-engines/integrations/iceberg).
+للقراءة المباشرة من جدول Iceberg موجود، نوصي باستخدام [دالة الجدول `icebergS3`](/ar/reference/functions/table-functions/iceberg). يوضّح هذا الدليل إنشاء جداول Iceberg مستقلة وتعبئتها، لذا يستخدم [محرك الجدول `IcebergS3`](/ar/reference/engines/table-engines/integrations/iceberg) مع مخطط صريح. تحتوي مواقع S3 الواردة في المثال بالفعل على الجداول المكتملة؛ ولتشغيل عبارتي `CREATE` و`INSERT`، استبدل كلا الموقعين ببادئات S3 فارغة قابلة للكتابة وبيانات اعتماد تتحكم بها.
 
 لاحظ أنه يجب تبسيط المخطط مقارنةً بجدول MergeTree المصدر. يدعم ClickHouse نظام أنواع أكثر ثراءً من Iceberg وملفات Parquet الأساسية، لذا فإن الأنواع مثل `Enum` و`LowCardinality` و`UInt8` غير مدعومة في Iceberg ويجب تحويلها إلى أنواع متوافقة.
 
@@ -138,8 +138,10 @@ ENGINE = IcebergS3('https://datasets-documentation.s3.amazonaws.com/lake_formats
 
 استخدم `INSERT INTO SELECT` لكتابة البيانات من جدول MergeTree إلى جدول Iceberg. في هذا المثال، نُدرِج معاملات لندن فقط:
 
+يتطلب هذا المثال [إعداد `allow_insert_into_iceberg`](/ar/reference/settings/session-settings/allow#allow_insert_into_iceberg). راجع [مصفوفة الدعم](/ar/guides/use-cases/data-warehousing/support-matrix) لمعرفة مستوى النضج والقيود الحالية.
+
 ```sql
-SET allow_experimental_insert_into_iceberg = 1;
+SET allow_insert_into_iceberg = 1;
 
 INSERT INTO uk.uk_iceberg SELECT *
 FROM uk.uk_price_paid

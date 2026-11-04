@@ -13,6 +13,15 @@
             d40 Decimal256(40)
         ) ENGINE = Memory
     </create_query>
+    <create_query>
+        CREATE TABLE div128
+        (
+            u UInt128,
+            i Int128,
+            small_u UInt128,
+            small_i Int128
+        ) ENGINE = Memory
+    </create_query>
     <fill_query>
         INSERT INTO div256 SELECT
             bitShiftLeft(toUInt256(cityHash64(number, 1)), 192) + bitShiftLeft(toUInt256(cityHash64(number, 2)), 128)
@@ -21,6 +30,14 @@
                 + bitShiftLeft(toUInt256(cityHash64(number, 7)), 64) + cityHash64(number, 8)),
             toUInt256(cityHash64(number, 9)),
             toDecimal256(number, 40) / 7
+        FROM numbers(2000000)
+    </fill_query>
+    <fill_query>
+        INSERT INTO div128 SELECT
+            bitShiftLeft(toUInt128(cityHash64(number, 1)), 64) + cityHash64(number, 2),
+            toInt128(bitShiftLeft(toUInt128(cityHash64(number, 3)), 63) + cityHash64(number, 4)),
+            toUInt128(cityHash64(number, 5)),
+            toInt128(intDiv(cityHash64(number, 6), 2))
         FROM numbers(2000000)
     </fill_query>
 
@@ -67,5 +84,20 @@
     <query>SELECT sum(divideDecimal(d40, toDecimal256(7, 1), 40)) FROM (SELECT d40 FROM div256 LIMIT 50000)</query>
     <query>SELECT sum(multiplyDecimal(d40, toDecimal256(7, 1), 40)) FROM (SELECT d40 FROM div256 LIMIT 50000)</query>
 
+    <!-- 128 bits is a separate implementation with two limbs, so the operands are either narrow or
+         full width and nothing in between. Narrow operands are what `Decimal128` arithmetic holds
+         in practice; `round_methods.xml` covers the rounding shape of that over `Decimal128`. -->
+    <query>SELECT sum(intDiv(small_u, 997)) FROM div128</query>
+    <query>SELECT sum(modulo(small_u, 997)) FROM div128</query>
+    <query>SELECT sum(intDiv(small_u, 1000000000000000000)) FROM div128</query>
+    <query>SELECT sum(intDiv(small_i, 997)) FROM div128</query>
+    <query>SELECT sum(intDiv(small_u, small_u + 1)) FROM div128</query>
+
+    <!-- Both operands full width, which keeps the two-limb path measured as well. -->
+    <query>SELECT sum(intDiv(u, toUInt128('100000000000000000000'))) FROM div128</query>
+    <query>SELECT sum(intDiv(u, small_u + 1)) FROM div128</query>
+    <query>SELECT sum(intDiv(u, i + 1)) FROM div128</query>
+
     <drop_query>DROP TABLE IF EXISTS div256</drop_query>
+    <drop_query>DROP TABLE IF EXISTS div128</drop_query>
 </test>

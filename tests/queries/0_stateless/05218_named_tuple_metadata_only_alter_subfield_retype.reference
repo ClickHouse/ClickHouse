@@ -1,0 +1,9 @@
+retype of kept subfields plus an addition:
+mutations:	0
+18262	a	x	\N
+18263	b	y	\N
+t (whole):	(18262,'a','x',NULL)
+t (whole):	(18263,'b','y',NULL)
+retype of a kept subfield without an addition:
+mutations:	1
+t (whole):	(18262,'x')

@@ -1,0 +1,9 @@
+column: hint first
+qualified column: hint first
+function: hint first
+window function: hint first
+table: hint first
+
+alias of another table: cannot be resolved from table with name item (an alias of store_sales)
+not an alias: 0
+materialized CTE: an alias of cte

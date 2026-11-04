@@ -26,14 +26,14 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool allow_experimental_eval_table_function;
+    extern const SettingsBool enable_eval_table_function;
     extern const SettingsBool enable_global_with_statement;
     extern const SettingsBool enforce_strict_identifier_format;
     extern const SettingsSetOperationMode except_default_mode;
     extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsUInt64 max_ast_depth;
     extern const SettingsUInt64 max_ast_elements;
+    extern const SettingsUInt64 max_expanded_ast_elements;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
@@ -44,7 +44,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NOT_IMPLEMENTED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int SUPPORT_IS_DISABLED;
 }
@@ -108,15 +107,10 @@ void TableFunctionEval::parseArguments(const ASTPtr & ast_function, ContextPtr c
 {
     const auto & settings = context->getSettingsRef();
 
-    if (!settings[Setting::allow_experimental_eval_table_function])
+    if (!settings[Setting::enable_eval_table_function])
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED,
-            "Table function `eval` is experimental. Set `allow_experimental_eval_table_function = 1` to enable it");
-
-    if (!settings[Setting::allow_experimental_analyzer])
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Table function `eval` is supported only with the analyzer. Set `enable_analyzer = 1` to use it");
+            "Table function `eval` is experimental. Set `enable_eval_table_function = 1` to enable it");
 
     /// The generated query can still reach `eval` indirectly, for example through the body
     /// of a SQL user defined function, so recursion is bounded by the stack size check.
@@ -153,9 +147,9 @@ void TableFunctionEval::parseArguments(const ASTPtr & ast_function, ContextPtr c
 
     checkNoEval(query);
 
-    /// The generated query cannot flip the `enable_analyzer` setting in a SETTINGS clause:
-    /// `eval` is analyzer-only, and the same validation rejects such a change for a usual query.
-    validateAnalyzerSettings(query, settings[Setting::allow_experimental_analyzer]);
+    /// The generated query cannot disable the analyzer in a SETTINGS clause, the same way a usual
+    /// query cannot: such a change is rewritten to `1`.
+    normalizeAnalyzerSettings(query);
 
     /// The generated query does not go through `executeQuery`, so materialize the construction
     /// settings a NON-last `UNION` arm carries in its own `SETTINGS` clause here, same as
@@ -179,7 +173,7 @@ void TableFunctionEval::parseArguments(const ASTPtr & ast_function, ContextPtr c
     /// Expand global `WITH` aliases ahead of the prechecks below, same as `executeQueryImpl` does, so
     /// they see the post-expansion AST that the analyzer will receive.
     if (inner_settings[Setting::enable_global_with_statement])
-        ApplyWithGlobalVisitor::visit(query);
+        ApplyWithGlobalVisitor::visit(query, inner_settings[Setting::max_expanded_ast_elements]);
 
     /// The generated query does not go through `executeQuery`, so resolve the INTERSECT/EXCEPT
     /// operator precedence and the implicit UNION mode here, same as `executeQueryImpl` does
@@ -258,7 +252,7 @@ void registerTableFunctionEval(TableFunctionFactory & factory)
         {
             .description = R"(Evaluates a constant expression to a query string and executes the resulting `SELECT` query.)",
             .category = FunctionDocumentation::Category::TableFunction,
-        },
+        }, SecretArgumentsSpec{},
         {.allow_readonly = true});
 }
 

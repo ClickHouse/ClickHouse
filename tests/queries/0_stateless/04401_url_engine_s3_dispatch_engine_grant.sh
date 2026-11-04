@@ -55,6 +55,8 @@ ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${USER}"
 ${CLICKHOUSE_CLIENT} -q "CREATE USER ${USER} IDENTIFIED WITH no_password"
 ${CLICKHOUSE_CLIENT} -q "GRANT CREATE TABLE, DROP TABLE ON ${CLICKHOUSE_DATABASE}.* TO ${USER}"
 ${CLICKHOUSE_CLIENT} -q "GRANT TABLE ENGINE ON URL TO ${USER}"
+# The RESTORE arms below read from a Disk(...) locator, which requires the DISK source grant.
+${CLICKHOUSE_CLIENT} -q "GRANT READ ON DISK TO ${USER}"
 
 echo "--- TABLE ENGINE ON URL grant alone: ENGINE = URL('http://...') is allowed (URL engine) ---"
 # Dropped as the admin, so the precondition holds whatever the test user's grants are at this point.

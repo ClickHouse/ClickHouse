@@ -1,8 +1,8 @@
 ---
 slug: /use-cases/AI_ML/AIChat
-sidebarTitle: '在 ClickHouse Cloud 中使用 ClickHouse Assistant 聊天'
-title: '在 ClickHouse Cloud 中使用 ClickHouse Assistant 聊天'
-description: '在 ClickHouse Cloud 控制台中启用并使用 AI Chat 功能的指南'
+sidebarTitle: 'ClickHouse Assistant'
+title: 'ClickHouse Cloud 中的 ClickHouse Assistant'
+description: '了解如何在 ClickHouse Cloud 控制台中启用和使用 ClickHouse Assistant'
 keywords: ['AI', 'ClickHouse Cloud', '聊天', 'SQL 控制台', 'Agent', 'Docs AI']
 show_related_blogs: true
 doc_type: 'guide'
@@ -10,7 +10,9 @@ doc_type: 'guide'
 
 import { Image } from "/snippets/zh/components/Image.jsx";
 
-> 本指南介绍如何在 ClickHouse Cloud 控制台中启用并使用 AI Chat 功能。
+ClickHouse Assistant 可让你使用自然语言分析 ClickHouse Cloud 服务中的数据。它可以结合活动选项卡、已保存的查询、schema 和仪表盘等上下文，生成查询、可视化内容和摘要。
+
+Assistant 还提供 Docs AI 模式，可用于提出基于 ClickHouse 文档的问题。使用本指南启用 Assistant，并在 ClickHouse Cloud 控制台中使用这两种模式。
 
 <Steps>
   <Step title="前置条件" id="prerequisites">
@@ -20,7 +22,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   <Step title="打开 AI Chat 面板" id="open-panel">
     1. 进入某个 ClickHouse Cloud 服务。
     2. 在左侧边栏中，点击标有“ClickHouse Assistant”的闪光图标。
-    3.  (快捷方式) 按 <kbd>⌘</kbd> + <kbd>&#39;</kbd> (macOS) 或 <kbd>Ctrl</kbd> + <kbd>&#39;</kbd> (Linux/Windows) 即可切换打开状态。
+    3. (快捷方式) 按 <kbd>⌘</kbd> + <kbd>&#39;</kbd> (macOS) 或 <kbd>Ctrl</kbd> + <kbd>&#39;</kbd> (Linux/Windows) 即可切换打开状态。
 
     <Image img="/images/use-cases/AI_ML/AIChat/1_open_chat.webp" alt="打开 AI Chat 弹出面板" size="md" />
   </Step>
@@ -72,7 +74,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
     * 检查其正确性。
     * 点击“Open in editor”将查询加载到新的 SQL 选项卡中。
-    * 在 Console 中修改并执行。
+    * 在控制台中修改并执行。
 
     <Image img="/images/use-cases/AI_ML/AIChat/6_result_actions.webp" alt="结果操作" size="md" />
 

@@ -32,4 +32,11 @@ bool createServer(
     CreateServerFunc && func,
     LoggerRawPtr log);
 
+/// Start the servers created by `createServer` with `start_server = false`.
+/// Protocols that bind their listening socket in `start` rather than at creation (gRPC, Arrow Flight,
+/// see `ProtocolServerAdapter::bindsOnStart`) can only report `EADDRINUSE` here, so `listen_try` has
+/// to be handled at this point as well: such a listener is dropped with a warning instead of
+/// preventing the whole server from starting up.
+void startServers(std::vector<ProtocolServerAdapter> & servers, bool listen_try, LoggerRawPtr log);
+
 }

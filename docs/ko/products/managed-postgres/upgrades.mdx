@@ -3,11 +3,13 @@ slug: /cloud/managed-postgres/upgrades
 sidebarTitle: '업그레이드'
 title: '업그레이드'
 description: 'ClickHouse Managed Postgres에서 PostgreSQL 버전 업그레이드가 이루어지는 방식'
-keywords: ['Managed Postgres 업그레이드', 'Postgres 버전', '마이너 업그레이드', '메이저 업그레이드', '유지 관리 기간']
+keywords: ['Managed Postgres 업그레이드', 'Postgres 버전', '마이너 업그레이드', '메이저 업그레이드', '유지 관리 기간', '예약된 업그레이드']
 doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+import { EnterprisePlanFeatureBadge } from "/snippets/ko/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+import { ScalePlanFeatureBadge } from "/snippets/ko/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.upgrades-beta" />
 
@@ -27,14 +29,107 @@ PostgreSQL 인스턴스의 정기 유지 관리에는 다음이 포함됩니다.
 
 [대기 인스턴스](/ko/products/managed-postgres/high-availability)가 활성화된 인스턴스의 경우, 가동 중단 시간을 최소화하기 위해 먼저 대기 인스턴스에 업그레이드를 적용한 후 failover를 수행합니다.
 
-<div id="maintenance-windows">
-  ## 유지 관리 기간
+<div id="scheduled-upgrades">
+  ## 예약 업그레이드
 </div>
 
-기본 유지 관리 기간은 일요일 14:00~16:00 UTC입니다.
-예상 중단 시간은 해당 기간 내 1분 미만입니다.
+<ScalePlanFeatureBadge feature="예약 업그레이드" linking_verb_are="true" />
 
-Enterprise Tier 조직에서는 ClickHouse Managed Postgres의 유지 관리 기간을 지원하므로, 업그레이드 및 기타 유지 관리 작업을 워크로드에 미치는 영향이 가장 적은 시간대에 예약할 수 있습니다. 유지 관리 기간 구성을 위한 UI 및 API 지원은 곧 제공될 예정입니다. 그전까지는 인스턴스의 유지 관리 기간을 설정하려면 [support](https://clickhouse.com/support/program)에 문의하십시오.
+기본적으로 새 릴리스가 준비되면 인스턴스에 유지 관리가 적용됩니다.
+**예약 업그레이드**를 사용하면 유지 관리가 적용될 수 있는 UTC 기준 2시간 윈도우를 선택할 수 있으므로,
+짧은 failover가 워크로드에 미치는 영향을 최소화하는 시간에 발생하도록 할 수 있습니다. 예상 가동 중단 시간은 해당 윈도우 내 1분 미만입니다.
+
+Enterprise 플랜에서는 업그레이드를 특정 [요일](#days-of-the-week)로 제한할 수도 있습니다.
+Scale 플랜에서는 시간 범위만 선택할 수 있으며, 해당 윈도우의 어느 요일에나 업그레이드가 적용될 수 있습니다.
+
+<div id="configure-a-schedule">
+  ### 일정 구성
+</div>
+
+<Steps>
+  <Step title="인스턴스 설정 열기" id="open-settings">
+    인스턴스를 선택한 다음 왼쪽 메뉴에서 **설정**을 선택하고
+    **구성** 섹션까지 스크롤합니다.
+  </Step>
+
+  <Step title="예약된 업그레이드 플라이아웃 열기" id="open-flyout">
+    **예약된 업그레이드** 하위 섹션에서 **일정 구성**을 선택합니다. 일정이
+    이미 설정되어 있으면 현재 일정이 표시되며 버튼은 **일정 편집**으로 표시됩니다.
+  </Step>
+
+  <Step title="시간 범위 선택" id="pick-time-period">
+    **시간 범위(UTC)** 목록에서 2시간 단위의 UTC 윈도우 12개 중 하나를 선택합니다. 시간
+    범위는 필수입니다.
+  </Step>
+
+  <Step title="선택적으로 요일 제한" id="pick-days">
+    Enterprise 플랜에서는 **요일**에서 하나 이상의 요일을 선택합니다. 시간 범위 내
+    어느 요일에나 업그레이드를 허용하려면 아무 요일도 선택하지 않은 상태로 둡니다.
+  </Step>
+
+  <Step title="저장" id="save">
+    **저장**을 선택합니다. 일정은 즉시 적용되며
+    **예약된 업그레이드** 하위 섹션에 표시됩니다. 예:
+    `Scheduled upgrades: Sat, Sun at 12:00 a.m. - 2:00 a.m. UTC`.
+  </Step>
+</Steps>
+
+일정을 변경하려면 인스턴스에 `control-plane:postgres-service:manage` 권한이 필요합니다. 인스턴스가 중지되었거나
+아직 프로비저닝 중이면 컨트롤도 비활성화됩니다.
+
+<div id="time-periods">
+  ### 시간 범위
+</div>
+
+각 윈도우는 2시간이며 항상 UTC로 표시됩니다. 현지 시간대는 선택할 수
+없습니다. 사용 가능한 윈도우는 다음과 같습니다.
+
+| 하루 전반부(UTC)         | 하루 후반부(UTC)         |
+| ------------------- | ------------------- |
+| 오전 12:00 - 오전 2:00  | 오후 12:00 - 오후 2:00  |
+| 오전 2:00 - 오전 4:00   | 오후 2:00 - 오후 4:00   |
+| 오전 4:00 - 오전 6:00   | 오후 4:00 - 오후 6:00   |
+| 오전 6:00 - 오전 8:00   | 오후 6:00 - 오후 8:00   |
+| 오전 8:00 - 오전 10:00  | 오후 8:00 - 오후 10:00  |
+| 오전 10:00 - 오후 12:00 | 오후 10:00 - 오전 12:00 |
+
+사용자 정의 시작 시간, 사용자 정의 윈도우 길이 및 인스턴스당 여러 윈도우는
+지원되지 않습니다.
+
+<div id="days-of-the-week">
+  ### 요일
+</div>
+
+<EnterprisePlanFeatureBadge feature="업그레이드를 특정 요일로 제한" />
+
+요일 제한은 선택 사항입니다.
+
+* **요일을 선택하지 않음** — 선택한 시간 범위 내의 어느 요일에나 업그레이드가 적용될 수 있습니다.
+* **하나 이상의 요일 선택** — 선택한 시간 범위 내에서 선택한 요일에만 업그레이드가 적용됩니다. 7일을 모두 선택하는 것은 요일을 선택하지 않는 것과 같습니다.
+
+<div id="schedule-scope">
+  ### 일정의 적용 대상
+</div>
+
+일정은 [유지 관리 업데이트](#maintenance-updates)에 설명된 마이너 버전 업그레이드, 관리형
+서비스 기능 업데이트, 운영 체제 패치 등 **플랫폼 유지 관리**에만 적용됩니다.
+
+직접 수행하는 변경 사항은 해당 윈도우까지 연기되지 않으며, 변경 즉시 적용됩니다. 여기에는 인스턴스 [스케일링](/ko/products/managed-postgres/scaling),
+스토리지 크기 조정, [구성 매개변수](/ko/products/managed-postgres/settings) 변경이 포함됩니다.
+
+<Note>
+  예약된 업그레이드는 최선의 노력으로 수행됩니다. 인스턴스의 상태 유지를 위해 필요한 경우(예: 디스크 사용량이 95%에 도달한 경우) 또는
+  중요한 보안 패치 및 취약점 수정이 필요한 경우에는 지정된 윈도우 외에 유지 관리가 적용될 수 있습니다. 이러한 예외 사항은 필요한 경우
+  알림을 받게 됩니다.
+</Note>
+
+<div id="read-replicas">
+  ### 읽기 레플리카
+</div>
+
+[읽기 레플리카](/ko/products/managed-postgres/read-replicas)는
+프라이머리 인스턴스의 일정을 따르고 자체 일정은 없으므로 **예약된 업그레이드**
+섹션이 표시되지 않습니다.
 
 <div id="major-version-upgrades">
   ## 메이저 버전 업그레이드

@@ -7,7 +7,6 @@ doc_type: 'reference'
 ---
 
 import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
-import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 import { VersionBadge } from "/snippets/zh/components/VersionBadge/VersionBadge.jsx";
 import { EnterprisePlanFeatureBadge } from "/snippets/zh/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
@@ -39,22 +38,16 @@ ClickHouse 可以使用 JSON Web Token (JWT) 对用户进行身份验证。与�
 
 提交给 ClickHouse 的每个 JWT 都必须包含以下声明：
 
-| 声明    | 说明                                          |
-| ----- | ------------------------------------------- |
-| `alg` | 签名算法 (请求头声明) 。支持的值：`HS256`、`RS256`、`ES256`。 |
-| `exp` | 过期时间。用于设置临时用户的 `valid_until`。               |
-| `iat` | 签发时间。用于防止同一身份的旧令牌被重放。                       |
-| `iss` | 签发方。会与提供商预期的签发方进行匹配。                        |
-| `sub` | 主体。会成为生成用户名的一部分。                            |
-| `aud` | 受众。会与提供商预期的受众进行匹配。                          |
+| 声明    | 说明                                                                         |
+| ----- | -------------------------------------------------------------------------- |
+| `alg` | 签名算法 (请求头声明) 。支持的值：`RS256`。从版本 26.8 起，还支持 EC 算法 `ES256`、`ES384` 和 `ES512`。 |
+| `exp` | 过期时间。用于设置临时用户的 `valid_until`。                                              |
+| `iat` | 签发时间。用于防止同一身份的旧标记被重放。                                                      |
+| `iss` | 签发方。会与提供商预期的签发方进行匹配。                                                       |
+| `sub` | 主体。会成为生成用户名的一部分。                                                           |
+| `aud` | 受众。会与提供商预期的受众进行匹配。                                                         |
 
 使用基于 JWKS 的密钥解析时，还必须提供 `kid` (密钥 ID) 请求头声明。
-
-<Info>
-  **JWKS 模式仅支持 RSA 密钥**
-
-  静态密钥提供商可以接受 `HS256`、`RS256` 或 `ES256` 中的任意一种，而基于 JWKS 的提供商只接受 `kty` 为 `RSA` 的 JWK (即使用 `RS256` 签名的令牌) 。使用 HMAC (`HS256`) 或 EC (`ES256`) 密钥签名的令牌无法通过 JWKS 端点验证，因此会被拒绝。
-</Info>
 
 <div id="other-recognized-claims">
   ### 其他已识别的声明
@@ -229,15 +222,36 @@ curl -H 'Authorization: Bearer <your_jwt_token>' \
   始终通过 HTTPS 发送 JWT。通过明文 HTTP 发送的 Bearer 令牌会暴露给网络路径上的任何人，这等同于泄露凭证。
 </Warning>
 
-<div id="oauth2-device-code-login">
-  ### OAuth2 设备代码登录
-</div>
+### OAuth2 设备码登录 {#oauth2-device-code-login}
 
-`clickhouse-client` 支持通过 `--login` 标志使用交互式 OAuth2 设备代码流程。对于 ClickHouse Cloud 端点，客户端会自动执行令牌交换，以获取 ClickHouse 专用 JWT。令牌会在会话期间自动刷新，整个过程对用户透明。获取到新令牌后，客户端会自动重新连接。
+`clickhouse-client` 支持通过 `--login` 标志使用交互式 OAuth 2.0 设备授权许可 ([RFC 8628](https://datatracker.ietf.org/doc/html/rfc8628)) 。
+
+对于 ClickHouse Cloud 端点，如果未传入任何 `--oauth-*` 选项，客户端会通过 ClickHouse Cloud IdP 登录，并自动执行标记交换，以获取 ClickHouse 特有的 JWT。会话期间，标记会在后台自动刷新，无需用户干预。获取新标记后，客户端会自动重新连接。
 
 ```bash
 clickhouse-client --host your-instance.clickhouse.cloud --login
 ```
+
+对于自定义 IdP，请通过 `--oauth-url` 传入 OIDC 签发方。只要传入任意 `--oauth-*` 选项，就会使用自定义 IdP 流程，ClickHouse Cloud 主机也不例外 (例如，服务已启用[使用自定义身份提供商的 JWT 身份验证](#enabling-jwt-authentication-for-your-service)时) 。客户端会从签发方的 `/.well-known/openid-configuration` (以及相关的 OAuth 元数据 URL) 中自动发现 `device_authorization_endpoint` 和 `token_endpoint`。如果存在 `grant_types_supported`，则其中必须包含 `urn:ietf:params:oauth:grant-type:device_code`。如果发现失败，客户端会报错；在元数据不可用时，请显式设置 `--oauth-device-uri` 和 `--oauth-token-uri`。
+
+登录期间，客户端会输出简短的 `verification_uri` 和 `user_code` (RFC 8628) 。如果 IdP 还返回了 `verification_uri_complete`，客户端会输出该快捷 URL 并在浏览器中打开；若 `qrencode` 工具可用，还会将其渲染为终端二维码。对于 ClickHouse Cloud IdP，仅输出 `verification_uri_complete` 和 `user_code`。机密客户端可以通过 `--oauth-client-secret` 配合 `--oauth-client-auth basic|post` 传入凭据。
+
+```bash
+# Microsoft Entra ID (issuer URL, not the device endpoint itself)
+clickhouse-client --host your-clickhouse-host --secure --login \
+  --oauth-client-id <app-client-id> \
+  --oauth-url https://login.microsoftonline.com/<TENANT_ID>/v2.0 \
+  --oauth-scope "openid profile offline_access api://<app-client-id>/.default"
+
+# Explicit endpoints when discovery is unavailable
+clickhouse-client --host your-clickhouse-host --secure --login \
+  --oauth-client-id <app-client-id> \
+  --oauth-device-uri https://login.microsoftonline.com/<TENANT_ID>/oauth2/v2.0/devicecode \
+  --oauth-token-uri https://login.microsoftonline.com/<TENANT_ID>/oauth2/v2.0/token \
+  --oauth-scope "openid profile offline_access api://<app-client-id>/.default"
+```
+
+生成的访问标记将以 JWT 的形式提交给 ClickHouse。角色和授权的映射仍取决于服务器端 JWT 身份验证器的配置 (例如 `clickhouse:roles` 声明) 。
 
 <div id="clickhouse-cloud-built-in">
   ## ClickHouse Cloud 内置 JWT 身份验证器
@@ -259,24 +273,19 @@ clickhouse-client --host your-instance.clickhouse.cloud --login
   ## 为服务启用 JWT 身份验证
 </div>
 
-<BetaBadge />
-
 <VersionBadge minVersion="26.4" />
 
-<EnterprisePlanFeatureBadge feature="通过自定义身份提供商进行 JWT 身份验证" support="true" />
+<EnterprisePlanFeatureBadge feature="通过自定义身份提供商进行 JWT 身份验证" />
 
-除内置身份验证器外，您还可以将 ClickHouse Cloud 服务配置为接受由自己的身份提供商 (例如 Microsoft Entra 或 Okta) 签发的 JWT。这是一项 Beta 功能，适用于运行 ClickHouse 26.4 或更高版本的 Enterprise 方案服务。要启用此功能，请创建[支持工单](https://clickhouse.com/support/program)，并提供以下配置信息：
+除内置身份验证器外，您还可以将 ClickHouse Cloud 服务配置为接受由自己的身份提供商 (例如 Microsoft Entra 或 Okta) 签发的 JWT。此功能适用于运行 ClickHouse 26.4 或更高版本的 Enterprise 计划服务。您可以在 Cloud 控制台的 **设置 → 安全 → JWT 身份验证** 中自行配置；有关分步说明，请参阅 [JWT 身份验证设置](/zh/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)。每个提供商由以下内容定义：
 
-| 参数       | 说明                                                                                                                                                                              |
-| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 服务 ID    | 要启用 JWT 身份验证的 ClickHouse Cloud 服务的 UUID。打开该服务后，可在 Cloud 控制台的 URL 中找到该 ID。                                                                                                       |
-| 签发方      | 身份提供商签发的标记中 `iss` 声明的值，通常为提供商的 URL (例如 `https://your-tenant.okta.com`) 。ClickHouse 会拒绝签发方与此值不匹配的标记。                                                                             |
-| 受众       | 身份提供商在为此服务签发的标记中设置的 `aud` 声明值。ClickHouse 会拒绝面向其他受众签发的标记。                                                                                                                        |
-| JWKS URL | 身份提供商发布 JSON Web Key Set 的 HTTPS 端点 (例如 `https://idp.example.com/.well-known/jwks.json`) 。ClickHouse 会从此端点拉取公钥以验证标记签名。如[必需声明](#required-claims)所述，JWKS 验证仅支持 RSA 密钥 (`RS256`) 。 |
-| 角色声明     | 包含临时用户 ClickHouse roles 的标记声明名称 (默认为 `clickhouse:roles`) 。该声明必须包含角色名称的 JSON 数组，例如 `["analyst", "reader"]`。                                                                      |
-| 授权声明     | 包含临时用户 SQL `GRANT` 片段的标记声明名称 (默认为 `clickhouse:grants`) 。该声明必须包含授权片段的 JSON 数组，例如 `["SELECT ON analytics.*", "INSERT ON analytics.events"]`。                                      |
-
-角色声明中指定的角色必须已在服务中存在 (使用 `CREATE ROLE` 创建) 。如[访问权限](#access-rights)中所述，权限上限会对角色声明和授权声明产生的有效访问权限设定上限。
+| 参数        | 说明                                                                                                                                                                                                                                                     |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 名称        | 服务中该提供商的唯一名称。                                                                                                                                                                                                                                          |
+| 签发方       | 身份提供商签发的标记中 `iss` 声明的值，通常为提供商的 URL (例如 `https://your-tenant.okta.com`) 。ClickHouse 会拒绝签发方与此值不匹配的标记。                                                                                                                                                    |
+| 受众        | 身份提供商在为此服务签发的标记中设置的 `aud` 声明值。ClickHouse 会拒绝面向其他受众签发的标记。                                                                                                                                                                                               |
+| JWKS URL  | 身份提供商发布 JSON Web Key Set 的 HTTPS 端点 (例如 `https://idp.example.com/.well-known/jwks.json`) 。ClickHouse 会从此端点拉取公钥以验证标记签名。如[必需声明](#required-claims)所述，JWKS 验证支持 RSA 密钥 (`RS256`)，并且从 26.8 版本起支持 P-256、P-384 和 P-521 曲线上的 EC 密钥 (`ES256`、`ES384`、`ES512`) 。 |
+| 角色声明 (可选) | 包含临时用户 ClickHouse 角色的标记声明名称。留空以使用默认声明名称 `clickhouse:roles`。该声明必须包含角色名称的 JSON 数组，例如 `["analyst", "reader"]`。                                                                                                                                            |
 
 <div id="interserver-communication">
   ## 服务器间通信

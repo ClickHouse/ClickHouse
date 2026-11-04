@@ -7,7 +7,49 @@
       "icon": "/images/menu-icon-lightning.svg",
       "pages": [
         "pt-BR/get-started/index",
-        "pt-BR/get-started/quickstarts/home",
+        {
+          "expandable": true,
+          "expanded": false,
+          "group": "Guias de início rápido",
+          "pages": [
+            "pt-BR/get-started/quickstarts/home",
+            {
+              "expanded": false,
+              "group": "Todos os casos de uso",
+              "pages": [
+                "pt-BR/get-started/setup/cloud",
+                "pt-BR/get-started/quickstarts/obtain-your-cloud-connection-details",
+                "pt-BR/get-started/quickstarts/insert-data-using-clickhouse-client",
+                "pt-BR/get-started/quickstarts/creating-tables",
+                "pt-BR/get-started/quickstarts/writing-queries",
+                "pt-BR/get-started/quickstarts/create-your-first-mergetree-table"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "Analytics em tempo real",
+              "pages": [
+                "pt-BR/get-started/quickstarts/create-your-first-materialized-view",
+                "pt-BR/get-started/quickstarts/create-your-first-projection"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "Armazenamento de dados",
+              "pages": [
+                "pt-BR/get-started/quickstarts/connect-your-iceberg-catalog",
+                "pt-BR/get-started/quickstarts/mutations"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "Observabilidade",
+              "pages": [
+                "pt-BR/get-started/quickstarts/working-with-the-map-type"
+              ]
+            }
+          ]
+        },
         {
           "expandable": true,
           "expanded": true,
@@ -23,6 +65,7 @@
           "group": "Casos de uso",
           "pages": [
             "pt-BR/get-started/use-cases/overview",
+            "pt-BR/get-started/use-cases/choosing-a-service",
             "pt-BR/get-started/use-cases/real-time-analytics",
             "pt-BR/get-started/use-cases/observability",
             "pt-BR/get-started/use-cases/data-warehousing",
@@ -34,7 +77,7 @@
     },
     {
       "expanded": true,
-      "group": "Setup",
+      "group": "Configuração",
       "icon": "/images/menu-icon-gear.svg",
       "pages": [
         "pt-BR/get-started/setup/install",
@@ -74,7 +117,7 @@
         "pt-BR/get-started/sample-datasets/index",
         "pt-BR/get-started/sample-datasets/playground",
         {
-          "group": "Benchmarks",
+          "group": "Testes de desempenho",
           "pages": [
             "pt-BR/get-started/sample-datasets/amplab-benchmark",
             "pt-BR/get-started/sample-datasets/brown-benchmark",
@@ -95,7 +138,7 @@
           ]
         },
         {
-          "group": "Analytics para web e redes sociais",
+          "group": "Analytics da web e de redes sociais",
           "pages": [
             "pt-BR/get-started/sample-datasets/amazon-reviews",
             "pt-BR/get-started/sample-datasets/anon-web-analytics-metrica",
@@ -107,7 +150,7 @@
           ]
         },
         {
-          "group": "Geo e localização",
+          "group": "Geoespacial e localização",
           "pages": [
             "pt-BR/get-started/sample-datasets/cell-towers",
             "pt-BR/get-started/sample-datasets/foursquare-os-places",
@@ -187,7 +230,7 @@
           ]
         },
         {
-          "group": "OSS para Cloud",
+          "group": "Do OSS para o Cloud",
           "pages": [
             "pt-BR/get-started/migrate/oss-to-cloud/clickhouse-to-cloud",
             "pt-BR/get-started/migrate/oss-to-cloud/oss-to-cloud-backup-restore"

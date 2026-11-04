@@ -1,0 +1,40 @@
+a ipv4 signed lt	1
+a ipv4 signed gt	1
+a ipv4 neg gt	1
+a ipv4 neg lt	1
+a ipv4 wide signed	1
+a ipv6 signed lt	1
+a ipv6 signed gt	1
+a ipv6 neg gt	1
+a ipv6 neg lt	1
+b i32 ip high bit	1
+b i32 ip low bit	1
+b i32 ipv6 const	1
+b u32 ip const	1
+b ipv4 key ip const	1
+b divide ip const	1
+b divide ipv6 const	1
+b1 single point	1
+c unsigned const	1
+c unsigned const prunes	1
+c one sided	1
+c one sided bound only	1
+c one sided prunes	1
+c ipv6 one sided	1
+c ipv6 one sided bound only	1
+c ipv6 one sided prunes	1
+c divide pos	1
+c divide neg	1
+c plus	1
+c minus	1
+c multiply	1
+c lc signed	1
+c lc unsigned prunes	1
+c nullable signed	1
+c nullable unsigned prunes	1
+d u32 signed lt	1
+d u32 signed gt	1
+d u128 signed lt	1
+d u128 signed gt	1
+d i32 signed	1
+d i32 unsigned flip	1

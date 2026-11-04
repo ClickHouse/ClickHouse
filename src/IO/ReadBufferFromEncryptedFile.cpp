@@ -218,6 +218,40 @@ bool ReadBufferFromEncryptedFile::nextImpl()
     return true;
 }
 
+size_t ReadBufferFromEncryptedFile::readBigAt(char * to, size_t n, size_t offset_, const std::function<bool(size_t)> & progress_callback) const
+{
+    /// A per-call encryptor: `setOffset` mutates it, while concurrent `readBigAt` calls are allowed.
+    FileEncryption::Encryptor local_encryptor = encryptor;
+
+    size_t decrypted = 0;
+    auto decrypt_up_to = [&](size_t m)
+    {
+        if (m > decrypted)
+        {
+            local_encryptor.setOffset(offset_ + decrypted);
+            local_encryptor.decrypt(to + decrypted, m - decrypted, to + decrypted);
+            decrypted = m;
+        }
+    };
+
+    std::function<bool(size_t)> wrapped_callback;
+    if (progress_callback)
+    {
+        wrapped_callback = [&](size_t m)
+        {
+            decrypt_up_to(m);
+            return progress_callback(m);
+        };
+    }
+
+    size_t bytes_read = in->readBigAt(to, n, offset_ + FileEncryption::Header::kSize, wrapped_callback);
+
+    /// Decrypt whatever the callback did not cover: it reports no progress when cancelled early,
+    /// and some inner buffers (e.g. plain `pread`) never invoke it at all.
+    decrypt_up_to(bytes_read);
+    return bytes_read;
+}
+
 void ReadBufferFromEncryptedFile::performSeekAndSetReadUntilPosition()
 {
     std::optional<off_t> in_position;

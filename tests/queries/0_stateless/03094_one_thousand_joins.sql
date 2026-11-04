@@ -2,7 +2,6 @@
 -- (no-tsan because it has a small maximum stack size and the test would fail with TOO_DEEP_RECURSION)
 
 SET join_algorithm = 'default'; -- for 'full_sorting_merge' the query is 10x slower
-SET enable_analyzer = 1; -- old analyzer returns TOO_DEEP_SUBQUERIES
 SET query_plan_join_swap_table = 'auto'; -- 'true' is slower
 SET max_threads = 8;
 SET query_plan_optimize_join_order_limit = 0; -- CI may inject dpsize algorithm; with 1000 joins dpsize is exponentially slow and causes timeout
