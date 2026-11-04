@@ -30,6 +30,7 @@ SET log_queries = 1;
 SET log_profile_events = 1;
 
 DROP VIEW IF EXISTS v_05481;
+DROP VIEW IF EXISTS v_05481_preallocated;
 DROP TABLE IF EXISTS t_05481_sorted;
 
 -- `a` and `d` are 0 for some rows with an empty string: the key with all bytes zero.
@@ -49,6 +50,11 @@ FROM numbers_mt(120000);
 CREATE TABLE t_05481_sorted (c UInt16, a UInt32, b UInt8, s String, d UInt64) ENGINE = MergeTree ORDER BY (c, a)
 SETTINGS index_granularity = 1024;
 INSERT INTO t_05481_sorted SELECT c, a, b, s, d FROM v_05481;
+
+-- 700 thousand keys, 200 thousand of them with an empty string, so that the hash table statistics give a size hint and
+-- both sub-tables of the hash table get a part of it.
+CREATE VIEW v_05481_preallocated AS
+SELECT toUInt32(intDiv(number, 2) % 200000) AS a, if(number % 2 = 0, '', toString(number)) AS s FROM numbers_mt(1000000);
 
 -- The method packs the fixed-width keys longest first and puts the string last, and the result restores the order of
 -- the columns.
@@ -89,6 +95,33 @@ SELECT 'keys32, partitioned single-level merge',
     = (SELECT count(), sum(cityHash64(*)) FROM (SELECT a, s, count(), uniqExact(d) FROM v_05481 GROUP BY a, s)
         SETTINGS enable_fixed_and_packed_string_keys_in_aggregation = 0)
 SETTINGS log_comment = '05481_keys32_partitioned_merge';
+
+-- Without the adaptive aggregator, a repeated query preallocates its tables by the hash table statistics of its earlier
+-- runs. The first query of each pair records the statistics that the second one preallocates by.
+SELECT count(), sum(cityHash64(*)) FROM (SELECT a, s, count() FROM v_05481_preallocated GROUP BY a, s)
+SETTINGS enable_fixed_and_packed_string_keys_in_aggregation = 1, collect_hash_table_stats_during_aggregation = 1
+FORMAT Null;
+
+SELECT 'keys32, preallocated',
+    (SELECT count(), sum(cityHash64(*)) FROM (SELECT a, s, count() FROM v_05481_preallocated GROUP BY a, s)
+        SETTINGS enable_fixed_and_packed_string_keys_in_aggregation = 1, collect_hash_table_stats_during_aggregation = 1)
+    = (SELECT count(), sum(cityHash64(*)) FROM (SELECT a, s, count() FROM v_05481_preallocated GROUP BY a, s)
+        SETTINGS enable_fixed_and_packed_string_keys_in_aggregation = 0)
+SETTINGS log_comment = '05481_keys32_preallocated';
+
+-- The statistics also show that the tables go two-level, so the second query starts with two-level tables.
+SELECT count(), sum(cityHash64(*)) FROM (SELECT a, s, count() FROM v_05481_preallocated GROUP BY a, s)
+SETTINGS enable_fixed_and_packed_string_keys_in_aggregation = 1, collect_hash_table_stats_during_aggregation = 1,
+    group_by_two_level_threshold = 100000
+FORMAT Null;
+
+SELECT 'keys32, preallocated two-level',
+    (SELECT count(), sum(cityHash64(*)) FROM (SELECT a, s, count() FROM v_05481_preallocated GROUP BY a, s)
+        SETTINGS enable_fixed_and_packed_string_keys_in_aggregation = 1, collect_hash_table_stats_during_aggregation = 1,
+            group_by_two_level_threshold = 100000)
+    = (SELECT count(), sum(cityHash64(*)) FROM (SELECT a, s, count() FROM v_05481_preallocated GROUP BY a, s)
+        SETTINGS enable_fixed_and_packed_string_keys_in_aggregation = 0)
+SETTINGS log_comment = '05481_keys32_preallocated_two_level';
 
 -- `ROLLUP` merges the aggregated blocks again with the serialized method.
 SELECT 'keys64, ROLLUP',
@@ -156,6 +189,13 @@ WHERE current_database = currentDatabase() AND is_initial_query AND type = 'Quer
     AND log_comment IN ('05481_keys32_two_level', '05481_keys128_two_level', '05481_keys32_external')
 ORDER BY log_comment;
 
+SELECT 'preallocated', log_comment, ProfileEvents['AggregationPreallocatedElementsInHashTables'] > 0,
+    ProfileEvents['AggregationHashTablesInitializedAsTwoLevel'] > 0
+FROM system.query_log
+WHERE current_database = currentDatabase() AND is_initial_query AND type = 'QueryFinish'
+    AND log_comment IN ('05481_keys32_preallocated', '05481_keys32_preallocated_two_level')
+ORDER BY log_comment;
+
 SELECT 'written to disk', log_comment, ProfileEvents['ExternalAggregationWritePart'] > 0
 FROM system.query_log
 WHERE current_database = currentDatabase() AND is_initial_query AND type = 'QueryFinish' AND log_comment = '05481_keys32_external';
@@ -169,4 +209,5 @@ FROM system.query_log
 WHERE current_database = currentDatabase() AND is_initial_query AND type = 'QueryFinish' AND log_comment = '05481_keys64_bucket_top_k';
 
 DROP VIEW v_05481;
+DROP VIEW v_05481_preallocated;
 DROP TABLE t_05481_sorted;
