@@ -1,0 +1,67 @@
+<?xml version="1.0"?>
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+    <create_query>
+        CREATE TABLE array_filter_uniform
+        (
+            id UInt64,
+            arr_uint Array(UInt64),
+            arr_str Array(String),
+            keep_all Array(UInt8),
+            keep_none Array(UInt8),
+            keep_half Array(UInt8),
+            keep_all_str Array(UInt8),
+            keep_none_str Array(UInt8),
+            keep_half_str Array(UInt8)
+        ) ENGINE = Memory
+    </create_query>
+    <fill_query>
+        INSERT INTO array_filter_uniform
+        SELECT
+            number,
+            arrayMap(x -&gt; number + x, range(32)),
+            arrayMap(x -&gt; concat(toString(number + x), repeat('x', 64)), range(16)),
+            arrayMap(x -&gt; toUInt8(1), range(32)),
+            arrayMap(x -&gt; toUInt8(0), range(32)),
+            arrayMap(x -&gt; toUInt8(x % 2), range(32)),
+            arrayMap(x -&gt; toUInt8(1), range(16)),
+            arrayMap(x -&gt; toUInt8(0), range(16)),
+            arrayMap(x -&gt; toUInt8(x % 2), range(16))
+        FROM numbers(200000)
+    </fill_query>
+    <query>
+        SELECT arrayFilter((x, keep) -&gt; keep, arr_uint, keep_all)
+        FROM array_filter_uniform
+        FORMAT Null
+    </query>
+    <query>
+        SELECT arrayFilter((x, keep) -&gt; keep, arr_uint, keep_none)
+        FROM array_filter_uniform
+        FORMAT Null
+    </query>
+    <query>
+        SELECT arrayFilter((x, keep) -&gt; keep, arr_uint, keep_half)
+        FROM array_filter_uniform
+        FORMAT Null
+    </query>
+    <query>
+        SELECT arrayFilter((x, keep) -&gt; keep, arr_str, keep_all_str)
+        FROM array_filter_uniform
+        FORMAT Null
+    </query>
+    <query>
+        SELECT arrayFilter((x, keep) -&gt; keep, arr_str, keep_none_str)
+        FROM array_filter_uniform
+        FORMAT Null
+    </query>
+    <query>
+        SELECT arrayFilter((x, keep) -&gt; keep, arr_str, keep_half_str)
+        FROM array_filter_uniform
+        FORMAT Null
+    </query>
+    <drop_query>
+        DROP TABLE array_filter_uniform
+    </drop_query>
+</test>

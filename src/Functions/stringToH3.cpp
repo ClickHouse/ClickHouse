@@ -44,14 +44,9 @@ public:
     bool canBeExecutedOnDefaultArguments() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        const auto * arg = arguments[0].get();
-        if (!WhichDataType(arg).isStringOrFixedString())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument {} of function {}. "
-                "Must be String or FixedString", arg->getName(), std::to_string(1), getName());
-
-        return std::make_shared<DataTypeUInt64>();
+        return "(StringOrFixedString) -> UInt64";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override

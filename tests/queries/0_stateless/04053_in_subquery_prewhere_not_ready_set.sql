@@ -4,7 +4,6 @@
 
 -- Pin the optimizer settings that trigger the rewrite this test exercises;
 -- otherwise randomized runs may disable PREWHERE move and skip the fixed path.
-SET query_plan_optimize_prewhere = 1;
 SET optimize_move_to_prewhere = 1;
 
 CREATE TABLE t_100318_log (v0 UInt32) ENGINE = Log;

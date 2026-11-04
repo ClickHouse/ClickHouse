@@ -6,24 +6,17 @@ doc_type: 'guide'
 keywords: ['clickstack', 'sdk', 'logs', 'integração', 'monitoramento de aplicações']
 ---
 
+import { ClickStackIntegrates } from '/snippets/pt-BR/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
 O ClickStack usa o padrão OpenTelemetry para coletar dados de telemetria (logs, métricas,
 traces e exceções). Os traces são gerados automaticamente por instrumentação automática, portanto
 não é necessário fazer instrumentação manual para aproveitar o tracing.
 
-Este guia integra:
+<ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
 
-* **Logs**
-* **Métricas**
-* **Traces**
-* **Exceções**
+## Primeiros passos {#getting-started}
 
-<div id="getting-started">
-  ## Primeiros passos
-</div>
-
-<div id="install-hyperdx-opentelemetry-instrumentation-package">
-  ### Instale o pacote de instrumentação OpenTelemetry da HyperDX
-</div>
+### Instale o pacote de instrumentação OpenTelemetry da HyperDX {#install-hyperdx-opentelemetry-instrumentation-package}
 
 Use o comando a seguir para instalar o [pacote OpenTelemetry do ClickStack](https://www.npmjs.com/package/@hyperdx/node-opentelemetry).
 
@@ -41,9 +34,7 @@ Use o comando a seguir para instalar o [pacote OpenTelemetry do ClickStack](http
   </Tab>
 </Tabs>
 
-<div id="initializin-the-sdk">
-  ### Inicializando o SDK
-</div>
+### Inicializando o SDK {#initializin-the-sdk}
 
 Para inicializar o SDK, você precisará chamar a função `init` no início do ponto de entrada da sua aplicação.
 
@@ -53,8 +44,8 @@ Para inicializar o SDK, você precisará chamar a função `init` no início do 
     const HyperDX = require('@hyperdx/node-opentelemetry');
 
     HyperDX.init({
-        url: 'http://your-otel-collector:4318',
-        apiKey: 'YOUR_INGESTION_API_KEY', // Omita no Managed ClickStack
+        url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
+        apiKey: '<YOUR_INGESTION_API_KEY>', // Omita no Managed ClickStack
         service: 'my-service'
     });
     ```
@@ -65,8 +56,8 @@ Para inicializar o SDK, você precisará chamar a função `init` no início do 
     import * as HyperDX from '@hyperdx/node-opentelemetry';
 
     HyperDX.init({
-        url: 'http://your-otel-collector:4318',
-        apiKey: 'YOUR_INGESTION_API_KEY', // Omita no Managed ClickStack
+        url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
+        apiKey: '<YOUR_INGESTION_API_KEY>', // Omita no Managed ClickStack
         service: 'my-service'
     });
     ```
@@ -75,9 +66,7 @@ Para inicializar o SDK, você precisará chamar a função `init` no início do 
 
 Isso capturará automaticamente tracing, métricas e logs da sua aplicação Node.js.
 
-<div id="setup-log-collection">
-  ### Configurar a coleta de logs
-</div>
+### Configurar a coleta de logs {#setup-log-collection}
 
 Por padrão, os logs de `console.*` são coletados. Se você estiver usando um logger
 como `winston` ou `pino`, precisará adicionar um transport ao logger para
@@ -137,9 +126,7 @@ integrações de plataforma, se aplicável (como [Kubernetes](/pt-BR/clickstack/
   </Tab>
 </Tabs>
 
-<div id="setup-error-collection">
-  ### Configurar a coleta de erros
-</div>
+### Configurar a coleta de erros {#setup-error-collection}
 
 O SDK do ClickStack pode capturar automaticamente exceções não tratadas e erros na sua aplicação com stack trace completo e contexto do código.
 
@@ -150,8 +137,8 @@ Para habilitar esse recurso, você precisará adicionar o código abaixo ao fina
     ```javascript
     const HyperDX = require('@hyperdx/node-opentelemetry');
     HyperDX.init({
-        url: 'http://your-otel-collector:4318',
-        apiKey: 'YOUR_INGESTION_API_KEY', // Omita para Managed ClickStack
+        url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
+        apiKey: '<YOUR_INGESTION_API_KEY>', // Omita para Managed ClickStack
         service: 'my-service'
     });
     const app = express();
@@ -172,8 +159,8 @@ Para habilitar esse recurso, você precisará adicionar o código abaixo ao fina
     const Router = require("@koa/router");
     const HyperDX = require('@hyperdx/node-opentelemetry');
     HyperDX.init({
-        url: 'http://your-otel-collector:4318',
-        apiKey: 'YOUR_INGESTION_API_KEY', // Omita para Managed ClickStack
+        url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
+        apiKey: '<YOUR_INGESTION_API_KEY>', // Omita para Managed ClickStack
         service: 'my-service'
     });
 
@@ -200,9 +187,7 @@ Para habilitar esse recurso, você precisará adicionar o código abaixo ao fina
   </Tab>
 </Tabs>
 
-<div id="troubleshooting">
-  ## Solução de problemas
-</div>
+## Solução de problemas {#troubleshooting}
 
 Se você estiver tendo problemas com o SDK, pode ativar o logging detalhado definindo
 a variável de ambiente `OTEL_LOG_LEVEL` como `debug`.
@@ -211,13 +196,9 @@ a variável de ambiente `OTEL_LOG_LEVEL` como `debug`.
 export OTEL_LOG_LEVEL=debug
 ```
 
-<div id="advanced-instrumentation-configuration">
-  ## Configuração avançada de instrumentação
-</div>
+## Configuração avançada de instrumentação {#advanced-instrumentation-configuration}
 
-<div id="capture-console-logs">
-  ### Capturar logs do console
-</div>
+### Capturar logs do console {#capture-console-logs}
 
 Por padrão, o SDK do ClickStack captura logs do console. Você pode desativar isso
 definindo a variável de ambiente `HDX_NODE_CONSOLE_CAPTURE` como 0.
@@ -226,9 +207,7 @@ definindo a variável de ambiente `HDX_NODE_CONSOLE_CAPTURE` como 0.
 export HDX_NODE_CONSOLE_CAPTURE=0
 ```
 
-<div id="attach-user-information-or-metadata">
-  ### Adicionar informações do usuário ou metadados
-</div>
+### Adicionar informações do usuário ou metadados {#attach-user-information-or-metadata}
 
 Para marcar facilmente todos os eventos relacionados a um determinado atributo ou identificador (ex.: ID do usuário
 ou e-mail), você pode chamar a função `setTraceAttributes`, que marcará cada
@@ -268,9 +247,7 @@ habilitar os atributos de trace.
 export HDX_NODE_BETA_MODE=1
 ```
 
-<div id="google-cloud-run">
-  ### Google Cloud Run
-</div>
+### Google Cloud Run {#google-cloud-run}
 
 Se você executa sua aplicação no Google Cloud Run, o Cloud Trace injeta
 automaticamente cabeçalhos de amostragem nas solicitações de entrada, o que
@@ -286,9 +263,7 @@ obter o mesmo resultado.
 Para saber mais e forçar o tracing de solicitações específicas, consulte a
 [documentação do Google Cloud Run](https://cloud.google.com/run/docs/trace).
 
-<div id="auto-instrumented-libraries">
-  ### Bibliotecas com instrumentação automática
-</div>
+### Bibliotecas com instrumentação automática {#auto-instrumented-libraries}
 
 As bibliotecas a seguir serão instrumentadas automaticamente para rastreamento pelo SDK:
 
@@ -310,13 +285,9 @@ As bibliotecas a seguir serão instrumentadas automaticamente para rastreamento 
 * [`redis`](https://www.npmjs.com/package/redis)
 * [`winston`](https://www.npmjs.com/package/winston)
 
-<div id="alternative-installation">
-  ## Instalação alternativa
-</div>
+## Instalação alternativa {#alternative-installation}
 
-<div id="run-the-application-with-cli">
-  ### Execute a aplicação com a CLI OpenTelemetry do ClickStack
-</div>
+### Execute a aplicação com a CLI OpenTelemetry do ClickStack {#run-the-application-with-cli}
 
 Como alternativa, você pode instrumentar automaticamente sua aplicação sem precisar alterar o código usando a CLI `opentelemetry-instrument` ou a flag `--require` do Node.js. A instalação da CLI oferece uma variedade maior de bibliotecas e frameworks com instrumentação automática.
 
@@ -329,7 +300,7 @@ Como alternativa, você pode instrumentar automaticamente sua aplicação sem pr
     </Info>
 
     ```shell
-    HYPERDX_API_KEY='<YOUR_INGESTION_KEY>' OTEL_SERVICE_NAME='<YOUR_APP_NAME>' npx opentelemetry-instrument index.js
+    HYPERDX_API_KEY='<YOUR_INGESTION_API_KEY>' OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' npx opentelemetry-instrument index.js
     ```
   </Tab>
 
@@ -341,7 +312,7 @@ Como alternativa, você pode instrumentar automaticamente sua aplicação sem pr
     </Info>
 
     ```shell
-    HYPERDX_API_KEY='<YOUR_INGESTION_KEY>' OTEL_SERVICE_NAME='<YOUR_APP_NAME>' ts-node -r '@hyperdx/node-opentelemetry/build/src/tracing' index.js
+    HYPERDX_API_KEY='<YOUR_INGESTION_API_KEY>' OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' ts-node -r '@hyperdx/node-opentelemetry/build/src/tracing' index.js
     ```
   </Tab>
 
@@ -361,9 +332,7 @@ Como alternativa, você pode instrumentar automaticamente sua aplicação sem pr
 
 *A variável de ambiente `OTEL_SERVICE_NAME` é usada para identificar seu serviço no HyperDX e pode ter qualquer nome que você quiser.*
 
-<div id="enabling-exception-capturing">
-  ### Habilitando a captura de exceções
-</div>
+### Habilitando a captura de exceções {#enabling-exception-capturing}
 
 Para habilitar a captura de exceções não tratadas, defina a variável de ambiente `HDX_NODE_EXPERIMENTAL_EXCEPTION_CAPTURE` como 1.
 
@@ -373,9 +342,7 @@ HDX_NODE_EXPERIMENTAL_EXCEPTION_CAPTURE=1
 
 Depois, para capturar automaticamente exceções do Express, do Koa ou capturá-las manualmente, siga as instruções na seção [Configurar a coleta de erros](#setup-error-collection) acima.
 
-<div id="auto-instrumented-libraries">
-  ### Bibliotecas com instrumentação automática
-</div>
+### Bibliotecas com instrumentação automática {#auto-instrumented-libraries-2}
 
 As bibliotecas a seguir serão instrumentadas automaticamente (com rastreamento) pelos métodos de instalação acima:
 
