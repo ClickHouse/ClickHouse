@@ -202,7 +202,9 @@ std::string_view getNullInFunctionName(std::string_view function_name);
 /// replica renames it while re-analyzing the shipped AST, and the two sides then disagree about what the
 /// node is called (issue #112032). This is the same divergence `foldConstantCast` above exists for.
 /// Returns `std::nullopt` when the renaming would not preserve the node's meaning, in which case the caller
-/// must keep the expression it was going to replace: only `in` takes the default implementation for NULLs
+/// must keep the expression it was going to replace. This also applies when `in_null_as_unknown` is enabled,
+/// because its nullable `IN` result would invalidate parent functions resolved before the pass. Only `in`
+/// takes the default implementation for NULLs
 /// (`src/Functions/in.cpp`), which is what makes it propagate a NULL argument instead of comparing it and
 /// what makes its result `Nullable`. That adaptor examines the top-level argument type, so the two names
 /// agree in value and in type exactly when the left argument cannot itself be NULL.

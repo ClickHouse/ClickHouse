@@ -79,6 +79,7 @@ namespace Setting
 {
     extern const SettingsDistributedProductMode distributed_product_mode;
     extern const SettingsBool extremes;
+    extern const SettingsBool in_null_as_unknown;
     extern const SettingsUInt64 max_result_bytes;
     extern const SettingsUInt64 max_result_rows;
     extern const SettingsBool prefer_global_in_and_join;
@@ -234,6 +235,11 @@ std::string_view getNullInFunctionName(std::string_view function_name)
 std::optional<String> getInFunctionNameForPassCreatedNode(
     const String & in_function_name, const DataTypePtr & left_argument_type, const ContextPtr & context)
 {
+    /// SQL three-valued semantics make the result of `IN` nullable. Passes run after parent
+    /// functions have been resolved, so replacing a non-nullable child would invalidate them.
+    if (context->getSettingsRef()[Setting::in_null_as_unknown])
+        return {};
+
     if (!context->getSettingsRef()[Setting::transform_null_in])
         return in_function_name;
 

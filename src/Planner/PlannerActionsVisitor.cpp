@@ -17,6 +17,7 @@
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/FieldToDataType.h>
 
 #include <Common/FieldVisitorToString.h>
@@ -47,7 +48,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool in_null_as_unknown;
     extern const SettingsBool enable_named_columns_in_function_tuple;
     extern const SettingsBool transform_null_in;
     extern const SettingsInt64 optimize_const_name_size;
@@ -1140,6 +1140,8 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
     const auto & function_node = node->as<FunctionNode &>();
     auto in_first_argument = function_node.getArguments().getNodes().at(0);
     auto in_second_argument = function_node.getArguments().getNodes().at(1);
+    const bool use_null_as_unknown = function_node.useNullAsUnknownSemanticsForIn()
+        || function_node.getFunctionOrThrow()->useNullAsUnknownSemanticsForIn();
 
     DataTypes set_element_types;
 
@@ -1161,7 +1163,9 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
     {
         auto set_element_type = in_first_argument->getResultType();
         const auto & settings = planner_context->getQueryContext()->getSettingsRef();
-        if (settings[Setting::in_null_as_unknown])
+        if (use_null_as_unknown && set_element_type->onlyNull())
+            set_element_type = makeNullable(std::make_shared<DataTypeUInt8>());
+        else if (use_null_as_unknown)
             set_element_type = makeNullableOrLowCardinalityNullableSafe(set_element_type);
 
         set_element_types = {std::move(set_element_type)};
@@ -1172,7 +1176,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
             set_element_types = left_tuple_type->getElements();
 
         set_element_types = Set::getElementTypes(
-            std::move(set_element_types), settings[Setting::transform_null_in] || settings[Setting::in_null_as_unknown]);
+            std::move(set_element_types), settings[Setting::transform_null_in] || use_null_as_unknown);
         set = planner_context->getPreparedSets().findTuple(set_key, set_element_types);
     }
     else

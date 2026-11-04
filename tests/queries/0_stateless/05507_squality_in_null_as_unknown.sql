@@ -7,6 +7,9 @@ SET allow_suspicious_low_cardinality_types = 1;
 
 SELECT toTypeName(84 IN (63, NULL)), 84 IN (63, NULL), 84 NOT IN (63, NULL);
 SELECT 63 IN (63, NULL), 63 NOT IN (63, NULL);
+SELECT groupArray(number) FROM numbers(3) WHERE number NOT IN (1);
+SELECT groupArray(NOT has([1], number)) FROM numbers(2);
+SELECT materialize(NULL) IN (1), materialize(NULL) NOT IN (1), materialize(NULL) IN (), materialize(NULL) NOT IN ();
 SELECT NULL IN (63), NULL NOT IN (63);
 SELECT NULL IN (), NULL NOT IN ();
 SELECT 84 IN (SELECT * FROM VALUES('value Nullable(Int64)', (63), (NULL)));

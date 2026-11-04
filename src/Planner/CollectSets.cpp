@@ -28,7 +28,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool in_null_as_unknown;
     extern const SettingsBool transform_null_in;
     extern const SettingsBool validate_enum_literals_in_operators;
 }
@@ -80,6 +79,8 @@ public:
         auto in_first_argument = function_node->getArguments().getNodes().at(0);
         auto in_second_argument = function_node->getArguments().getNodes().at(1);
         auto in_second_argument_node_type = in_second_argument->getNodeType();
+        const bool use_null_as_unknown = function_node->useNullAsUnknownSemanticsForIn()
+            || function_node->getFunctionOrThrow()->useNullAsUnknownSemanticsForIn();
 
         const auto & settings = planner_context.getQueryContext()->getSettingsRef();
         auto & sets = planner_context.getPreparedSets();
@@ -102,14 +103,14 @@ public:
         else if (const auto * constant_node = in_second_argument->as<ConstantNode>())
         {
             auto set_element_type = in_first_argument->getResultType();
-            if (settings[Setting::in_null_as_unknown])
+            if (use_null_as_unknown)
                 set_element_type = makeNullableOrLowCardinalityNullableSafe(set_element_type);
 
             auto set = getSetElementsForConstantValue(
                 set_element_type, constant_node->getColumn(), constant_node->getResultType(),
                 GetSetElementParams{
-                    .transform_null_in = settings[Setting::transform_null_in] || settings[Setting::in_null_as_unknown],
-                    .in_null_as_unknown = settings[Setting::in_null_as_unknown],
+                    .transform_null_in = settings[Setting::transform_null_in] || use_null_as_unknown,
+                    .in_null_as_unknown = use_null_as_unknown,
                     .forbid_unknown_enum_values = settings[Setting::validate_enum_literals_in_operators],
                 });
 
@@ -129,7 +130,7 @@ public:
                 set_element_types.push_back(elem.type);
 
             set_element_types = Set::getElementTypes(
-                std::move(set_element_types), settings[Setting::transform_null_in] || settings[Setting::in_null_as_unknown]);
+                std::move(set_element_types), settings[Setting::transform_null_in] || use_null_as_unknown);
             auto set_key = in_second_argument->getTreeHash({.ignore_cte = true});
 
             if (sets.findTuple(set_key, set_element_types))
