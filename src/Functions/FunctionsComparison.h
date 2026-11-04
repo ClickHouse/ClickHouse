@@ -2273,13 +2273,6 @@ public:
     }
 
 #if USE_EMBEDDED_COMPILER
-    /// `Date`, `Date32` and `DateTime`, which are the numbers of days or seconds they hold.
-    static bool isDateLike(const IDataType & type)
-    {
-        const WhichDataType which(type);
-        return which.isDateOrDate32() || which.isDateTime();
-    }
-
     template <typename F>
     static bool castType(const IDataType * type, F && f)
     {
@@ -2316,10 +2309,12 @@ public:
         if (!canBeNativeType(*arguments[0]) || !canBeNativeType(*arguments[1]) || !canBeNativeType(*result_type))
             return false;
 
-        /// A date is compared with a date of the same type, as the numbers that hold them. One of another type, of a
-        /// `DateTime` with a `Date` or of a date with a number, is converted first.
-        if (isDateLike(*arguments[0]) || isDateLike(*arguments[1]))
-            return Op<UInt32, UInt32>::compilable && arguments[0]->equals(*arguments[1]);
+        WhichDataType data_type_lhs(arguments[0]);
+        WhichDataType data_type_rhs(arguments[1]);
+        /// TODO support date/date32
+        if ((data_type_lhs.isDateOrDate32() || data_type_lhs.isDateTime()) ||
+            (data_type_rhs.isDateOrDate32() || data_type_rhs.isDateTime()))
+            return false;
 
         return castBothTypes(arguments[0].get(), arguments[1].get(), [&](const auto & left, const auto & right)
         {
@@ -2344,17 +2339,6 @@ public:
     llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr &) const override
     {
         chassert(2 == arguments.size());
-
-        if constexpr (Op<UInt32, UInt32>::compilable)
-        {
-            if (isDateLike(*arguments[0].type))
-            {
-                auto & b = static_cast<llvm::IRBuilder<> &>(builder);
-                const bool is_signed = WhichDataType(arguments[0].type).isDate32();
-                return b.CreateSelect(
-                    CompileOp<Op>::compile(b, arguments[0].value, arguments[1].value, is_signed), b.getInt8(1), b.getInt8(0));
-            }
-        }
 
         llvm::Value * result = nullptr;
         castBothTypes(arguments[0].type.get(), arguments[1].type.get(), [&](const auto & left, const auto & right)
