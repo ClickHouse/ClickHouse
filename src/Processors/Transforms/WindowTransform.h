@@ -4,6 +4,7 @@
 #include <Interpreters/WindowDescription.h>
 #include <WindowFunctions/Common/WindowArguments.h>
 #include <WindowFunctions/Common/WindowBounds.h>
+#include <WindowFunctions/Common/WindowFunctionRequirements.h>
 #include <WindowFunctions/IGeneralWindowFunction.h>
 
 #include <Processors/Transforms/Window/Frame.h>
@@ -20,6 +21,7 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block.h>
 
+#include <deque>
 #include <optional>
 
 namespace DB
@@ -63,8 +65,9 @@ class WindowTransform final : public IProcessor
 {
     void addInputBlock(Chunk chunk);
     void computeReadyRows();
-    void appendCurrentRow();
-    void flushBatch();
+    void recordCurrentRowBounds();
+    void evaluateRowsBatch();
+    void packReadyBlock();
     void updateAggregationState();
     void writeOutCurrentRow();
     void startNextPartition();
@@ -87,12 +90,14 @@ private:
     const WindowTransformParams params;
 
     std::optional<Chunk> pending_input;
+    std::deque<Chunk> pending_outputs;
     bool input_is_finished = false;
 
     /// The general functions with their states, and the aggregates; each names its output column.
     VectorWithMemoryTracking<GeneralWindowFunctionSlot> general_functions;
     VectorWithMemoryTracking<WindowFunctionWorkspace> workspaces;
     Arena states_arena;
+    WindowFunctionRequirements required;
 
     /// The batch being collected, starting at `batch_start`.
     WindowBounds bounds;
@@ -104,8 +109,6 @@ private:
 
     SlidingBlocks blocks;
     SlidingIndexes indexes;
-    /// The first stored block not yet passed to the consumer.
-    Int64 next_output_block_number = 0;
 
     Partition partition;
     Frame frame;
