@@ -247,6 +247,20 @@ struct SumMapValueColumnDesc
     bool is_nullable;       /// whether the source column is Nullable
 };
 
+/// The accumulator type for values of type `In`. It matches the generic path, which accumulates
+/// `Field`s of `NearestFieldType`:
+/// - Sums (with or without overflow) are kept wide, so that -WithOverflow wraps around only once,
+///   on output (`insertNarrowed`), and version-1 states keep the wide sum.
+/// - Min/max never leave the input range, so they keep the input type, except that floats are
+///   compared as `Float64`.
+/// - Decimals are never promoted.
+/// Both the block layout and the accumulation derive the accumulator type from this trait, so they
+/// cannot disagree, and only these input-to-accumulator pairs are instantiated.
+template <typename In, bool is_sum>
+using SumMapAccumulator = std::conditional_t<is_decimal<In>, In,
+    std::conditional_t<is_sum, NearestFieldType<In>,
+        std::conditional_t<is_floating_point<In>, Float64, In>>>;
+
 /// ---- State ----
 
 template <typename KeyType>
@@ -375,24 +389,22 @@ public:
             auto inner_type = removeNullable(type);
             desc.input_type_index = inner_type->getTypeId();
 
-            /// Determine the accumulator type, matching the generic path, which accumulates
-            /// `Field`s of `NearestFieldType`:
-            /// - Sums (with or without overflow) are kept wide, so that -WithOverflow wraps around
-            ///   only once, on output (`insertNarrowed`), and version-1 states keep the wide sum.
-            /// - Min/max never leave the input range, so they keep the input type, except that
-            ///   floats are compared as `Float64`.
-            /// - Decimals are never promoted.
-            if (WhichDataType(inner_type).isDecimal() || !inner_type->canBePromoted())
-                desc.acc_type_index = desc.input_type_index;
-            else if (op == SumMapOp::Sum)
-                desc.acc_type_index = inner_type->promoteNumericType()->getTypeId();
-            else if (desc.input_type_index == TypeIndex::Float32 || desc.input_type_index == TypeIndex::BFloat16)
-                desc.acc_type_index = TypeIndex::Float64;
-            else
-                desc.acc_type_index = desc.input_type_index;
+            size_t al = 1;
+            dispatchOnTypeIndex(desc.input_type_index, [&](auto input_tag)
+            {
+                using In = decltype(input_tag);
+                const auto set_accumulator = [&]<typename Acc>()
+                {
+                    desc.acc_type_index = TypeToTypeIndex<Acc>;
+                    desc.native_size = sizeof(Acc);
+                    al = alignof(Acc);
+                };
+                if (op == SumMapOp::Sum)
+                    set_accumulator.template operator()<SumMapAccumulator<In, true>>();
+                else
+                    set_accumulator.template operator()<SumMapAccumulator<In, false>>();
+            });
 
-            auto [sz, al] = nativeSizeAlignForTypeIndex(desc.acc_type_index);
-            desc.native_size = sz;
             /// Align offset to the natural alignment of the accumulator type
             offset = (offset + al - 1) / al * al;
             desc.offset = offset;
@@ -855,26 +867,8 @@ public:
     }
 
 private:
-    /// Get the native size and alignment for a TypeIndex used in accumulator blocks
-    struct SizeAlign { size_t size; size_t align; };
-
-    static SizeAlign nativeSizeAlignForTypeIndex(TypeIndex idx)
-    {
-        SizeAlign result{};
-        bool found = callOnBasicType<void, true, true, true, false>(idx, [&](auto tag)
-        {
-            using V = typename decltype(tag)::RightType;
-            result = {sizeof(V), alignof(V)};
-            return true;
-        });
-        if (!found)
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Unsupported TypeIndex {} in SumMapTyped accumulator", magic_enum::enum_name(idx));
-        return result;
-    }
-
     template <typename F>
-    void dispatchOnTypeIndex(TypeIndex idx, F && func) const
+    static void dispatchOnTypeIndex(TypeIndex idx, F && func)
     {
         bool found = callOnBasicType<void, true, true, true, false>(idx, [&](auto tag)
         {
@@ -897,48 +891,16 @@ private:
             return assert_cast<const ColumnVector<V> &>(col).getData()[offset];
     }
 
-    /// Extract value from column at input_type_index and widen to AccType.
-    /// Only valid conversions are: same type, or integer/float widening.
-    template <typename AccType>
-    AccType extractAndWiden(const IColumn & col, size_t offset, TypeIndex input_idx) const
+    /// Widen an input value to its accumulator type (see `SumMapAccumulator`).
+    template <typename Acc, typename In>
+    static Acc widen(In raw)
     {
-        AccType result{};
-        dispatchOnTypeIndex(input_idx, [&](auto input_tag)
-        {
-            using InputType = decltype(input_tag);
-            InputType raw = extractValueFromColumn<InputType>(col, offset);
-            if constexpr (std::is_same_v<InputType, AccType>)
-            {
-                result = raw;
-            }
-            else if constexpr (is_decimal<InputType> || is_decimal<AccType>)
-            {
-                /// Decimal types are not promoted, so input == acc type for decimals.
-                /// The is_same_v branch above handles that case; reaching here means
-                /// an inconsistent type setup.  Cannot use static_assert because
-                /// dispatchOnTypeIndex instantiates all type combinations.
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Unexpected decimal type mismatch in SumMapTyped extractAndWiden");
-            }
-            else if constexpr (std::is_same_v<InputType, BFloat16> && std::is_floating_point_v<AccType>)
-            {
-                result = AccType(Float32(raw));
-            }
-            else if constexpr (std::is_convertible_v<InputType, AccType>)
-            {
-                result = static_cast<AccType>(raw);
-            }
-            else
-            {
-                /// Instantiated at compile time for nonsensical type combinations
-                /// (e.g., UInt128 -> Float32) that type-promotion logic guarantees
-                /// will never be reached at runtime.  Cannot use static_assert
-                /// because dispatchOnTypeIndex instantiates all type combinations.
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Unexpected type combination in SumMapTyped extractAndWiden");
-            }
-        });
-        return result;
+        if constexpr (std::is_same_v<In, Acc>)
+            return raw;
+        else if constexpr (std::is_same_v<In, BFloat16>)
+            return Acc(Float32(raw));
+        else
+            return static_cast<Acc>(raw);
     }
 
     template <typename V>
@@ -995,25 +957,27 @@ private:
         const IColumn & data_col, size_t elem_idx,
         bool acc_is_null) const
     {
-        dispatchOnTypeIndex(desc.acc_type_index, [&](auto acc_tag)
+        dispatchOnTypeIndex(desc.input_type_index, [&](auto input_tag)
         {
-            using AccType = decltype(acc_tag);
-            /// Fast path: when input type matches accumulator type (min/max,
-            /// decimals, or same-type inputs), skip the inner type dispatch entirely.
-            AccType val = (desc.input_type_index == desc.acc_type_index)
-                ? extractValueFromColumn<AccType>(data_col, elem_idx)
-                : extractAndWiden<AccType>(data_col, elem_idx, desc.input_type_index);
-            AccType & acc = *reinterpret_cast<AccType *>(block + desc.offset);
-
-            if (acc_is_null)
+            using In = decltype(input_tag);
+            const In raw = extractValueFromColumn<In>(data_col, elem_idx);
+            const auto accumulate = [&]<typename Acc>()
             {
-                acc = val;
-                clearNullBit(null_bitmap, col);
-            }
+                Acc & acc = *reinterpret_cast<Acc *>(block + desc.offset);
+                if (acc_is_null)
+                {
+                    acc = widen<Acc>(raw);
+                    clearNullBit(null_bitmap, col);
+                }
+                else
+                {
+                    applyOp(acc, widen<Acc>(raw));
+                }
+            };
+            if (op == SumMapOp::Sum)
+                accumulate.template operator()<SumMapAccumulator<In, true>>();
             else
-            {
-                applyOp(acc, val);
-            }
+                accumulate.template operator()<SumMapAccumulator<In, false>>();
         });
     }
 
