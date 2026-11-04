@@ -711,8 +711,7 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
             for (const auto & name_and_type : table_columns)
                 if (!partition_columns.contains(name_and_type.name))
                     non_partition_columns.push_back(name_and_type);
-            /// When every column is a partition column, nothing is read from the data files and the format header stays
-            /// empty, as for a read of only partition columns.
+            /// Partition columns are not read from the data files, so with only partition columns the format header stays empty.
             columns_to_read.push_back(
                 ExpressionActions::getSmallestColumn(non_partition_columns.empty() ? table_columns : non_partition_columns).name);
         }
