@@ -456,6 +456,10 @@ The bigger this cache is, the fewer unnecessary loads will happen.
 The maximum cache size can be configured using server setting [vector_similarity_index_cache_size](/reference/settings/server-settings/settings/vector-similarity#vector_similarity_index_cache_size).
 By default, the cache can grow up to 5 GB in size.
 
+<Note>
+In ClickHouse Cloud, the cache size is derived from replica memory and follows vertical scaling, so it can be much smaller than 5 GB on small replicas. The setting can't be changed from SQL or the console; to use a different value, contact support. Like the other caches, the size is capped at `cache_size_to_ram_max_ratio` of replica memory.
+</Note>
+
 The following log messages (`system.text_log`) indicate that the vector similarity index is being loaded.
 If such messages appear repeatedly for different vector search queries, this indicates that the cache size is too low.
 
