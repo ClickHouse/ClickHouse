@@ -312,9 +312,9 @@ void WindowTransform::releaseUnusedBlocks()
 {
     const RowPoint & current = peers.current();
     const Int64 first_row = std::min({current.row_index_in_partition, frame.firstRowToRead(), first_row_read_by_functions});
-    const int64_t first_used_block = blocks.move(current.location, first_row - current.row_index_in_partition).block;
+    const Int64 first_row_position = blocks.positionOf(current.location) - (current.row_index_in_partition - first_row);
 
-    while (blocks.begin().block < first_used_block)
+    while (blocks.begin() != blocks.end() && blocks.front().end_position <= first_row_position)
     {
         blocks.pop();
         arguments.pop();
