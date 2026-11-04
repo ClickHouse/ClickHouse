@@ -469,6 +469,16 @@ void KeeperTCPHandler::runImpl()
             client_timeout = Poco::Timespan(Coordination::DEFAULT_SESSION_TIMEOUT_MS * Poco::Timespan::MILLISECONDS);
         session_timeout = std::max(client_timeout, min_session_timeout);
         session_timeout = std::min(session_timeout, max_session_timeout);
+        if (session_timeout != client_timeout)
+            LOG_INFO(
+                log,
+                "Client requested session timeout {} ms was adjusted to {} ms by keeper settings "
+                "(min_session_timeout_ms={}, session_timeout_ms={}). "
+                "If this is unintended, adjust keeper_server.coordination_settings on the server side",
+                client_timeout.totalMilliseconds(),
+                session_timeout.totalMilliseconds(),
+                min_session_timeout.totalMilliseconds(),
+                max_session_timeout.totalMilliseconds());
     }
     catch (const Exception & e) /// Typical for an incorrect username, password, or address.
     {
