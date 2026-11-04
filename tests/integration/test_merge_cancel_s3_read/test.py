@@ -633,7 +633,8 @@ def test_failed_merge_stops_its_other_s3_reads(cluster, broken_s3, runner, failu
     one part that fails on a read of `a` while another of its reads is in flight
     (`remote_filesystem_read_method = 'threadpool'`), and `mutation-probe` fails the same way in the
     query that counts the rows the mutation affects, in one of its streams while another of its
-    streams is blocked in a read.
+    streams is blocked in a read, and must report this failure rather than the cancellation of the
+    blocked stream.
     """
     node = cluster.instances["node"]
     via_optimize = runner in ("optimize", "dry-run")
@@ -832,6 +833,16 @@ def test_failed_merge_stops_its_other_s3_reads(cluster, broken_s3, runner, failu
                     f"AND exception LIKE '%{expected_error}%'"
                 )
             ), "no merge or mutation failed as injected, so the oracle above was vacuous"
+            if runner == "mutation-probe":
+                # The streams that the failure stopped throw `ABORTED`, which must not be reported instead.
+                other_errors = node.query(
+                    f"SELECT groupUniqArray(error) FROM system.part_log WHERE database = currentDatabase() "
+                    f"AND table = '{table}' AND {event} AND error != 0 "
+                    f"AND exception NOT LIKE '%{expected_error}%'"
+                ).strip()
+                assert (
+                    other_errors == "[]"
+                ), f"failed attempts of the mutation reported errors {other_errors} instead of the injected one"
 
         if via_optimize:
             _, error = optimize.get_answer_and_error()

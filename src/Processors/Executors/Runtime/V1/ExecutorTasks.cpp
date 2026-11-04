@@ -77,9 +77,14 @@ void ExecutorTasks::rethrowFirstThreadException(const LoggerPtr & log)
             if (getExceptionErrorCode(exception) == ErrorCodes::LOGICAL_ERROR)
                 tryLogException(exception, log);
 
-    /// Rethrow the first exception.
+    /// Rethrow the exception that was set first: it can cancel the other threads, whose exceptions are then caused by it.
+    ExecutionThreadContext * first = nullptr;
     for (auto & executor_context : executor_contexts)
-        executor_context->rethrowExceptionIfHas();
+        if (executor_context->getException() && (!first || executor_context->getExceptionOrder() < first->getExceptionOrder()))
+            first = executor_context.get();
+
+    if (first)
+        first->rethrowExceptionIfHas();
 }
 
 void ExecutorTasks::tryWakeUpAnyOtherThreadWithTasks(ExecutionThreadContext & self, std::unique_lock<std::mutex> & lock)

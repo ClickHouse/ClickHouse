@@ -34,6 +34,8 @@ private:
 
     /// Exception from executing thread itself.
     std::exception_ptr exception;
+    /// Orders the exceptions of all threads by the time they were set.
+    UInt64 exception_order = 0;
 
     /// Callback for read progress.
     ReadProgressCallback * read_progress_callback = nullptr;
@@ -77,6 +79,7 @@ public:
 
     void setException(std::exception_ptr exception_);
     std::exception_ptr getException();
+    UInt64 getExceptionOrder() const { return exception_order; }
     void rethrowExceptionIfHas();
 
     /// Hands the recorded intervals to the profiler; called once, after the thread finished.
