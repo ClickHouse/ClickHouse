@@ -29,9 +29,8 @@ public:
     /// pipeline executor would otherwise provide.
     using CancelCallback = std::function<bool()>;
 
-    /// Creates the format. A format that does not support `resetParser` is created anew for each input.
+    /// A format that does not support `resetParser` is created anew for each input.
     using FormatCreator = std::function<InputFormatPtr()>;
-    /// Creates the transform applied to the chunks of the given format.
     using TransformCreator = std::function<SimpleTransformPtr(IInputFormat &)>;
 
     StreamingFormatExecutor(
