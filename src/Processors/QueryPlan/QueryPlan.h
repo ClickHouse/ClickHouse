@@ -12,6 +12,7 @@
 #include <Processors/QueryPlan/ExchangeLookup.h>
 #include <Processors/QueryPlan/RuntimeFilterGeometry.h>
 #include <Parsers/IAST_fwd.h>
+#include <Common/ListWithMemoryTracking.h>
 
 #include <functional>
 #include <list>
@@ -254,7 +255,7 @@ public:
         std::optional<CostEstimationInfo> cost_estimation = std::nullopt;
     };
 
-    using Nodes = std::list<Node>;
+    using Nodes = ListWithMemoryTracking<Node>;
 
     /// Extract subplan from plan from the root node.
     /// The root node and all the children will be removed from the nodes.

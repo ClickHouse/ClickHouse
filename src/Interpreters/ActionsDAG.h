@@ -7,6 +7,7 @@
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Names.h>
+#include <Common/ListWithMemoryTracking.h>
 #include <Common/SipHash.h>
 #include <Interpreters/Context_fwd.h>
 
@@ -137,10 +138,10 @@ public:
             bool with_variable_size_constant_values = true) const;
     };
 
-    /// NOTE: std::list is an implementation detail.
+    /// NOTE: the list is an implementation detail.
     /// It allows to add and remove new nodes inplace without reallocation.
     /// Raw pointers to nodes remain valid.
-    using Nodes = std::list<Node>;
+    using Nodes = ListWithMemoryTracking<Node>;
 
 private:
     Nodes nodes;
