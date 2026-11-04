@@ -55,9 +55,10 @@ SELECT COUNT(*) FROM tab WHERE id2 > 'k3';
 SELECT trimLeft(explain) FROM (
     EXPLAIN SELECT COUNT(*) FROM tab WHERE id2 > 'k3' AND v1 <= 500 SETTINGS use_skip_indexes_on_data_read = 1
 ) WHERE explain ILIKE '%ReadFromMergeTree%';
--- The skip index must actually be applied to the base read (issue #100783): reading more than
--- 10 granules would mean the index was ignored and the whole table scanned.
-SELECT COUNT(*) FROM tab WHERE id2 > 'k3' AND v1 <= 500 SETTINGS max_rows_to_read = 640; -- 10 granules
+-- The number of rows read is checked in `system.query_log` below. `max_rows_to_read` cannot serve as
+-- the guard: with `read_overflow_mode = 'throw'` it disables the deferral of the skip indexes, and
+-- then the planner applies them up front and the projection is rejected even without this fix.
+SELECT COUNT(*) FROM tab WHERE id2 > 'k3' AND v1 <= 500 SETTINGS log_comment = '04049_base_table_read';
 
 SELECT COUNT(*) FROM tab WHERE id2 >= 'k9990';
 
@@ -67,6 +68,17 @@ SELECT COUNT(*) FROM tab WHERE id2 >= 'k9990';
 SELECT trimLeft(explain) FROM (
     EXPLAIN SELECT COUNT(*) FROM tab WHERE id2 >= 'k9990' AND v1 >= 5000 SETTINGS use_skip_indexes_on_data_read = 1
 ) WHERE explain ILIKE '%ReadFromMergeTree%';
-SELECT COUNT(*) FROM tab WHERE id2 >= 'k9990' AND v1 >= 5000 SETTINGS max_rows_to_read = 128; -- 2 granules
+SELECT COUNT(*) FROM tab WHERE id2 >= 'k9990' AND v1 >= 5000 SETTINGS log_comment = '04049_projection_read';
+
+SYSTEM FLUSH LOGS query_log;
+-- The skip index must actually be applied to the base read (issue #100783): more than 10 granules
+-- of 64 rows would mean the index was ignored and the whole table scanned.
+SELECT read_rows <= 640 FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '04049_base_table_read'
+ORDER BY event_time_microseconds DESC LIMIT 1;
+-- The projection read selects a single granule.
+SELECT read_rows <= 128 FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '04049_projection_read'
+ORDER BY event_time_microseconds DESC LIMIT 1;
 
 DROP TABLE tab;
