@@ -4,10 +4,12 @@ SELECT j.a FROM (SELECT CAST('{"a":["inf","-inf",1]}'::JSON(a Array(Float64)), '
 SELECT j.a, j.b FROM (SELECT CAST(map('a', inf, 'b', -inf), 'JSON(a Float64, b Float64)') AS j);
 SELECT j.a, j.b FROM (SELECT CAST(CAST((inf, nan), 'Tuple(a Float64, b Float64)'), 'JSON(a Float64, b Float64)') AS j);
 SELECT j.a, dynamicType(j.a) FROM (SELECT CAST('{"a":"inf"}'::JSON(a Float64), 'JSON') AS j);
+SELECT j.a FROM (SELECT CAST('{"a":"inf"}'::JSON(a Float64), 'JSON(a String)') AS j);
 SELECT CAST('{"a":"inf"}'::JSON(a Float64), 'JSON(a Int64)'); -- { serverError INCORRECT_DATA }
 SELECT accurateCastOrNull('{"a":"inf"}'::JSON(a Float64), 'JSON(a Int64)');
 SELECT CAST('{"a":"inf"}'::JSON(a Float64), 'JSON(a Decimal64(2))'); -- { serverError INCORRECT_DATA }
 SELECT accurateCastOrNull('{"a":"inf"}'::JSON(a Float64), 'JSON(a Decimal64(2))');
+SELECT CAST('{"a":"inf"}'::JSON(a Float64), 'JSON(a Array(Float64))'); -- { serverError INCORRECT_DATA }
 
 DROP TABLE IF EXISTS t_json_non_finite;
 CREATE TABLE t_json_non_finite (id UInt64, data JSON(a Float64)) ENGINE = MergeTree ORDER BY id;
