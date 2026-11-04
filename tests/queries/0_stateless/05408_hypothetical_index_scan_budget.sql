@@ -2,15 +2,17 @@
 -- the twin table with the materialized indexes gives the real granules, and the sampled span must hold them
 -- a full scan is exact, as the twin table shows. The later cases give the real granules of a full scan as constants that follow from their data
 
+-- the implicit minmax indices of add_minmax_index_for_numeric_columns would prune the baseline marks before the hypothetical
+-- indexes are estimated, so the tables opt out to keep the sampling cases this test checks
 DROP TABLE IF EXISTS t_budget;
 DROP TABLE IF EXISTS t_budget_real;
 
 -- b follows the table order, c has a random value in each granule
 CREATE TABLE t_budget (a UInt64, b UInt64, c UInt64) ENGINE = MergeTree ORDER BY a
-    SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+    SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
 CREATE TABLE t_budget_real (a UInt64, b UInt64, c UInt64, INDEX idx_b b TYPE minmax GRANULARITY 1, INDEX idx_c c TYPE minmax GRANULARITY 2)
     ENGINE = MergeTree ORDER BY a
-    SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+    SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_budget SELECT number, intDiv(number, 100), cityHash64(intDiv(number, 100)) % 3 FROM numbers(12000);
 INSERT INTO t_budget_real SELECT * FROM t_budget;
 
@@ -72,7 +74,7 @@ WHERE match(explain, '^With idx_[cd]|^ +(marks|empirical_status|empirical_reason
 SELECT '-- the window of a shorter last run stands for fewer windows, so the estimate holds the real granules';
 DROP TABLE IF EXISTS t_tail;
 CREATE TABLE t_tail (x UInt64) ENGINE = MergeTree ORDER BY tuple()
-    SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+    SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
 SYSTEM STOP MERGES t_tail;
 INSERT INTO t_tail SELECT number FROM numbers(10100);
 INSERT INTO t_tail SELECT number FROM numbers(10100);
@@ -95,7 +97,7 @@ DROP TABLE t_tail;
 SELECT '-- windows with different marks count with their marks, so the estimate holds the real granules';
 DROP TABLE IF EXISTS t_uneven;
 CREATE TABLE t_uneven (x UInt64) ENGINE = MergeTree ORDER BY tuple()
-    SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+    SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
 SYSTEM STOP MERGES t_uneven;
 -- 30 parts of 900 rows
 INSERT INTO t_uneven SELECT number % 900 FROM numbers(27000)
@@ -119,7 +121,7 @@ DROP TABLE t_uneven;
 SELECT '-- a window joins the sample with a chance in proportion to its baseline marks, so the span holds the real granules';
 DROP TABLE IF EXISTS t_mass;
 CREATE TABLE t_mass (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY (a, b)
-    SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+    SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_mass SELECT intDiv(number, 16) AS w, if(w % 20 = 5, 0, number % 16), if(w % 20 = 5, w, 1000 + w) FROM numbers(960);
 CREATE HYPOTHETICAL INDEX idx_v ON t_mass (v) TYPE minmax GRANULARITY 16;
 SELECT
@@ -163,7 +165,7 @@ SELECT '-- all parts take draws in proportion to their baseline marks, so the sp
 SET use_statistics_for_part_pruning = 0;
 DROP TABLE IF EXISTS t_weight;
 CREATE TABLE t_weight (a UInt64, b UInt64, v UInt8) ENGINE = MergeTree ORDER BY (a, b)
-    SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+    SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
 SYSTEM STOP MERGES t_weight;
 INSERT INTO t_weight SELECT intDiv(number, 32), 0, if(number >= 32, 2, 0) FROM numbers(64);
 INSERT INTO t_weight SELECT intDiv(number, 32), number % 32, number = 1600 FROM numbers(1856);
