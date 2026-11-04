@@ -16,7 +16,9 @@ CREATE TABLE sc_unused
     val UInt64 STATISTICS(basic)
 )
 ENGINE = MergeTree
-ORDER BY k;
+-- Pin to default: CI randomizes prewarm_statistics_cache on, which loads statistics on part load and
+-- breaks the LoadedStatisticsMicroseconds assertions below.
+ORDER BY k SETTINGS prewarm_statistics_cache = 0;
 
 INSERT INTO sc_unused
 SELECT number, number % 100
@@ -44,7 +46,7 @@ CREATE TABLE st_cm_lc
     cat LowCardinality(String) STATISTICS(CountMin)
 )
 ENGINE = MergeTree
-ORDER BY k;
+ORDER BY k SETTINGS prewarm_statistics_cache = 0;
 
 INSERT INTO st_cm_lc
 SELECT number,
@@ -70,11 +72,11 @@ DROP TABLE IF EXISTS sj_b SYNC;
 
 CREATE TABLE sj_a (id UInt32 STATISTICS(Uniq), p UInt8)
 ENGINE = MergeTree
-ORDER BY id;
+ORDER BY id SETTINGS prewarm_statistics_cache = 0;
 
 CREATE TABLE sj_b (id UInt32 STATISTICS(Uniq), t LowCardinality(String))
 ENGINE = MergeTree
-ORDER BY id;
+ORDER BY id SETTINGS prewarm_statistics_cache = 0;
 
 INSERT INTO sj_a SELECT number, number % 2 FROM numbers(60000);
 INSERT INTO sj_b SELECT number, if(number % 5 = 0, 'PROMO', 'OTHER') FROM numbers(60000);

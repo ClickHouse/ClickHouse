@@ -5,6 +5,9 @@ SET use_query_condition_cache = 0;
 SET use_skip_indexes_on_data_read = 0;
 SET use_skip_indexes = 1;
 SET use_skip_indexes_for_disjunctions = 1;
+-- Pin the disjunction RPN budget to its default: CI randomizes it as low as 1, dropping the
+-- skip-index evaluation this test asserts on.
+SET use_skip_indexes_for_disjunctions_max_rpn_elements = 128;
 
 -- An index that cannot evaluate an atom reports it as unknown, so the exclusion that another index found for the
 -- atom stays. `x_index` cannot evaluate `abs(x) = 100`, because `abs` is not monotonic over a granule that holds

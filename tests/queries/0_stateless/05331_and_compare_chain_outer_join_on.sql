@@ -1,6 +1,9 @@
 -- the compare chain must not add a preserved-side conjunct to outer join ON
 
 SET optimize_and_compare_chain = 1;
+-- Pin (randomized in CI): a small work budget stops the optimization before it derives the
+-- bounds that the EXPLAIN checks below count.
+SET optimize_and_compare_chain_max_hash_work = 0;
 SET join_algorithm = 'full_sorting_merge';
 
 SELECT 'left';

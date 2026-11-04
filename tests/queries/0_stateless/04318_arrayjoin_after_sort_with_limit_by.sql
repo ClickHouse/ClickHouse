@@ -26,16 +26,22 @@ INSERT INTO t VALUES (3, 1, []), (3, 2, [30]);
 INSERT INTO t VALUES (4, 1, [40]), (4, 2, []);
 
 -- Expected: 4 rows. Without the fix, ids whose empty-array row sorts first
--- (id=1 and id=3) lose the non-empty row to the per-stream limit.
+-- (id=1 and id=3) lose the non-empty row to the per-stream limit. Pin
+-- query_plan_push_limit_by_into_sort=1 on both regression queries: it triggers
+-- the buggy pushdown, and randomization may inject 0, which skips the
+-- optimization entirely and hides the bug (both queries return 4 rows either way).
 SELECT '-- LIMIT 1 BY id';
-SELECT id, arrayJoin(a) AS v FROM t ORDER BY id, pos LIMIT 1 BY id SETTINGS max_threads = 2;
+SELECT id, arrayJoin(a) AS v FROM t ORDER BY id, pos LIMIT 1 BY id SETTINGS max_threads = 2, query_plan_push_limit_by_into_sort = 1;
 
 SELECT '-- Old analyzer';
 
 -- The `LIMIT BY` pushdown is still applied when the expression above the
 -- sort does not contain `arrayJoin`. Verify the optimization still fires by
 -- looking for the "Per-stream LIMIT BY" marker on the `SortingStep`.
+-- Pin the optimization on: it is the feature under test, and settings
+-- randomization may inject query_plan_push_limit_by_into_sort=0, which removes
+-- the marker and makes this assertion spuriously return 0.
 SELECT '-- Plain expression: pushdown still applied';
-SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT id, pos + 1 AS s FROM t ORDER BY id, pos LIMIT 1 BY id) WHERE explain LIKE '%Per-stream LIMIT BY%';
+SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT id, pos + 1 AS s FROM t ORDER BY id, pos LIMIT 1 BY id SETTINGS query_plan_push_limit_by_into_sort = 1) WHERE explain LIKE '%Per-stream LIMIT BY%';
 
 DROP TABLE t;

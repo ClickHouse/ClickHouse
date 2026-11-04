@@ -8,6 +8,9 @@
 -- `LIMIT`, `OFFSET`, `NULL` and with the query condition cache. With two sort columns, and for `GROUP BY key LIMIT n`,
 -- the rows equal to the threshold must be kept.
 
+-- The query condition cache checks below need its top-K variant, which CI randomizes off.
+SET use_query_condition_cache_for_top_k = 1;
+
 DROP TABLE IF EXISTS t_topk_ties;
 DROP TABLE IF EXISTS t_topk_sparse;
 DROP TABLE IF EXISTS t_gb_topk_ties;

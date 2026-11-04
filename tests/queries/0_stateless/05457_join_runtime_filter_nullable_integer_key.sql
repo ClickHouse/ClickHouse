@@ -9,6 +9,8 @@ SET join_runtime_filter_from_fixed_hash_table = 0;
 SET enable_join_runtime_filters_index_analysis = 0;
 SET join_runtime_filter_exact_values_limit = 10000;
 SET join_runtime_bloom_filter_bytes = 524288;
+-- Pinned (randomized in CI): a threshold of 0 disables the filter after its first block, so the pass counts below drop.
+SET join_runtime_filter_pass_ratio_threshold_for_disabling = 0.7;
 
 DROP TABLE IF EXISTS probe;
 DROP TABLE IF EXISTS build;

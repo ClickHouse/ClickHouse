@@ -2,6 +2,8 @@
 # Tags: no-fasttest,no-parallel-replicas
 # no-parallel-replicas: the ProfileEvents with the expected values are reported on the replicas the query runs in,
 # and the coordinator does not collect all ProfileEvents values.
+# The queries come in pruned/unpruned pairs and assert EngineFileLikeReadFiles for each, so the
+# unpruned half pins use_paimon_partition_pruning=0 against the settings randomizer.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -52,7 +54,7 @@ f_timestamp_nn,
 f_timestamp2_nn,
 toTimeZone(f_timestamp3_nn, 'Asia/Shanghai'),
 f_array,
-f_map from paimonS3(s3_conn, filename='paimon_all_types') where f_boolean is not null order by f_int_nn
+f_map from paimonS3(s3_conn, filename='paimon_all_types') where f_boolean is not null order by f_int_nn settings use_paimon_partition_pruning=0
 "
 $CLICKHOUSE_CLIENT --query_id="test_03714_2_$CLICKHOUSE_TEST_UNIQUE_NAME" --enable_time_time64_type=1 --session_timezone="UTC" --query "
 select f_boolean,
@@ -146,7 +148,7 @@ f_timestamp_nn,
 f_timestamp2_nn,
 toTimeZone(f_timestamp3_nn, 'Asia/Shanghai'),
 f_array,
-f_map from paimonS3(s3_conn, filename='paimon_all_types') where f_date_nn >= '2023-01-01' and f_date_nn <= '2023-01-02' order by f_int_nn 
+f_map from paimonS3(s3_conn, filename='paimon_all_types') where f_date_nn >= '2023-01-01' and f_date_nn <= '2023-01-02' order by f_int_nn settings use_paimon_partition_pruning=0
 "
 $CLICKHOUSE_CLIENT --query_id="test_03714_4_$CLICKHOUSE_TEST_UNIQUE_NAME" --enable_time_time64_type=1 --session_timezone="UTC" --query "
 select f_boolean,
@@ -240,7 +242,7 @@ f_timestamp_nn,
 f_timestamp2_nn,
 toTimeZone(f_timestamp3_nn, 'Asia/Shanghai'),
 f_array,
-f_map from paimonS3(s3_conn, filename='paimon_all_types') where f_timestamp_nn >= '2025-01-01 00:00:00.001' and f_timestamp_nn <= '2025-01-03 02:02:02.001' order by f_int_nn 
+f_map from paimonS3(s3_conn, filename='paimon_all_types') where f_timestamp_nn >= '2025-01-01 00:00:00.001' and f_timestamp_nn <= '2025-01-03 02:02:02.001' order by f_int_nn settings use_paimon_partition_pruning=0
 "
 $CLICKHOUSE_CLIENT --query_id="test_03714_6_$CLICKHOUSE_TEST_UNIQUE_NAME" --enable_time_time64_type=1 --session_timezone="UTC" --query "
 select f_boolean,
@@ -334,7 +336,7 @@ f_timestamp_nn,
 f_timestamp2_nn,
 toTimeZone(f_timestamp3_nn, 'Asia/Shanghai'),
 f_array,
-f_map from paimonS3(s3_conn, filename='paimon_all_types') where f_date_nn >= '2023-01-01' and f_date_nn <= '2023-01-02' and f_boolean is not null and f_string = '中文String1' order by f_int_nn 
+f_map from paimonS3(s3_conn, filename='paimon_all_types') where f_date_nn >= '2023-01-01' and f_date_nn <= '2023-01-02' and f_boolean is not null and f_string = '中文String1' order by f_int_nn settings use_paimon_partition_pruning=0
 "
 $CLICKHOUSE_CLIENT --query_id="test_03714_8_$CLICKHOUSE_TEST_UNIQUE_NAME" --enable_time_time64_type=1 --session_timezone="UTC" --query "
 select f_boolean,

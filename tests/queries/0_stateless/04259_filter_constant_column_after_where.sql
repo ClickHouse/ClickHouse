@@ -1,3 +1,6 @@
+-- Pinned (randomized in CI): the checks below print the `Const` columns the optimization produces.
+SET optimize_constant_columns_after_filter = 1;
+
 DROP TABLE IF EXISTS 04259_filter_constant_column_after_where;
 
 CREATE TABLE 04259_filter_constant_column_after_where

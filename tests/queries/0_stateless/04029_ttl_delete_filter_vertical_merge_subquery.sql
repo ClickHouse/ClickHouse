@@ -26,6 +26,9 @@ SETTINGS
     max_bytes_to_merge_at_max_space_in_pool = 0,
     enable_block_number_column = 0,
     enable_block_offset_column = 0,
+    -- CI randomizes `enable_vertical_merge_algorithm` off, and the activation thresholds below
+    -- only pick between the algorithms once it is on.
+    enable_vertical_merge_algorithm = 1,
     vertical_merge_algorithm_min_rows_to_activate = 1,
     vertical_merge_algorithm_min_columns_to_activate = 1,
     vertical_merge_optimize_ttl_delete = 1,

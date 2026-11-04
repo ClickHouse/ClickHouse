@@ -3,6 +3,9 @@
 
 -- `count_distinct_optimization` would rewrite `uniqExact` to a `GROUP BY`.
 SET max_threads = 2, collect_hash_table_stats_during_aggregation = 0, optimize_uniq_exact_radix_partitioning = 1, count_distinct_optimization = 0;
+-- Pin to default: CI randomizes min_bytes_before_external_group_by up to 16 MiB, which raises the spill
+-- threshold above what these queries reach, so the keys are never written to disk as the test expects.
+SET min_bytes_before_external_group_by = 0;
 
 -- 20 million distinct keys take 160 MB.
 SELECT uniqExact(number) FROM numbers_mt(20000000)

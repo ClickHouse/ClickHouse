@@ -60,17 +60,20 @@ SET param__internal_join_table_stat_hints = '{"t_corr_left": {"cardinality": 100
 -- EXPLAIN output is pinned: variant A = the merge-only `Aggregating` above the join and the
 -- partial `Aggregating` below it, variant B = the whole aggregation below the join (nothing
 -- but its own distribution split above it). The runtime-filter and prewhere settings, randomized
--- by the harness, decide the `BuildRuntimeFilter`/`Filter` lines of the INNER shape, so they
+-- by the harness, decide the `BuildRuntimeFilter`/`Filter` lines of the INNER shape, and
+-- `cascades_aggregation_pushdown` is randomized off outright, which loses both pushed shapes. All
 -- are pinned in the EXPLAIN's SETTINGS clause only - a session-level `SET` would leak into the
 -- executed scenarios below.
 SELECT '-- canary: variant A (partial pushdown) fires for case 1''s query';
 EXPLAIN SELECT t1.k AS k, count() AS c, sum(t1.v) AS s FROM t_corr_left AS t1 INNER JOIN t_corr_right_multi AS t2 ON t1.k = t2.k GROUP BY t1.k ORDER BY k
 SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, explain_query_plan_default = 'legacy',
+    cascades_aggregation_pushdown = 1,
     enable_join_runtime_filters = 1, optimize_move_to_prewhere = 1;
 
 SELECT '-- canary: variant B (full pushdown) fires for case 13''s query (single Aggregating, below the join)';
 EXPLAIN SELECT t1.k AS k, count() AS c, sum(t1.v) AS s FROM t_corr_left AS t1 LEFT ANY JOIN t_corr_right_multi AS t2 ON t1.k = t2.k GROUP BY t1.k ORDER BY k
-SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, explain_query_plan_default = 'legacy';
+SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, explain_query_plan_default = 'legacy',
+    cascades_aggregation_pushdown = 1;
 
 SELECT '-- 1. INNER ALL with fan-out (variant A, push-left)';
 SELECT t1.k AS k, count() AS c, sum(t1.v) AS s FROM t_corr_left AS t1 INNER JOIN t_corr_right_multi AS t2 ON t1.k = t2.k GROUP BY t1.k ORDER BY k

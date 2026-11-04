@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-old-analyzer
+# Tags: no-old-analyzer, no-random-settings
+# no-random-settings: the test reads `changed`/`value` of `enable_group_by_top_k_optimization`
+# directly, so the CI randomizer injecting that setting on the client makes the control checks
+# that expect the session default (changed = 0) fail.
 
 # A nested `SETTINGS` change equal to the current value is applied and marks the setting as changed
 # in the subquery's context, as at the top level. That flag is what `compatibility` respects

@@ -4,6 +4,9 @@
 -- exceed the memory limit, so they must spill with `max_bytes_before_external_group_by` too.
 
 -- `count_distinct_optimization` would rewrite `uniqExact` to a `GROUP BY`.
+-- Pin to default: CI randomizes min_bytes_before_external_group_by up to 16 MiB, which raises the spill
+-- threshold above the memory limit below so the query exceeds it instead of spilling.
+SET min_bytes_before_external_group_by = 0;
 SELECT uniqExact(number) FROM numbers_mt(2000000)
 SETTINGS max_threads = 32, max_threads_min_free_memory_per_thread = 0, max_block_size = 4096, max_untracked_memory = 0,
     count_distinct_optimization = 0, collect_hash_table_stats_during_aggregation = 0, optimize_uniq_exact_radix_partitioning = 1,

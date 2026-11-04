@@ -13,6 +13,10 @@
 --   1 -> deferred pruning, correctness-safe (default; 26.3+ behavior)
 --   0 -> pre-26.3 pruning before FINAL, valid when same-PK rows cannot span partitions
 
+-- The "default-defer" queries below rely on the default; pin it so the randomizer's value
+-- does not leak in. The "opt-out" queries set it to 0 per-query, which still overrides this.
+SET defer_partition_pruning_after_final = 1;
+
 DROP TABLE IF EXISTS repro_104263 SYNC;
 
 CREATE TABLE repro_104263
@@ -50,6 +54,9 @@ FROM
     EXPLAIN indexes = 1
     SELECT count() FROM repro_104263 FINAL
     WHERE event_time >= '2026-03-01' AND event_time <= '2026-03-31'
+    -- query_plan_optimize_lazy_final rewrites the FINAL part-pruning plan and changes this
+    -- EXPLAIN's Parts counts; pin it so global settings randomization can't perturb the check.
+    SETTINGS query_plan_optimize_lazy_final = 0
 );
 
 SELECT 'opt-out partition pruning',
@@ -61,7 +68,7 @@ FROM
     EXPLAIN indexes = 1
     SELECT count() FROM repro_104263 FINAL
     WHERE event_time >= '2026-03-01' AND event_time <= '2026-03-31'
-    SETTINGS defer_partition_pruning_after_final = 0
+    SETTINGS defer_partition_pruning_after_final = 0, query_plan_optimize_lazy_final = 0
 );
 
 DROP TABLE repro_104263 SYNC;

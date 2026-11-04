@@ -5,6 +5,8 @@ SET use_query_condition_cache = 0;
 SET use_skip_indexes_on_data_read = 0;
 SET use_skip_indexes = 1;
 SET use_skip_indexes_for_disjunctions = 1;
+-- Pinned (randomized in CI) to the default until the parts below set their own limit.
+SET use_skip_indexes_for_disjunctions_max_rpn_elements = 128;
 SET explain_query_plan_default = 'legacy';
 -- Keep the equalities as separate atoms instead of folding them into `IN`.
 SET optimize_min_equality_disjunction_chain_length = 1000;

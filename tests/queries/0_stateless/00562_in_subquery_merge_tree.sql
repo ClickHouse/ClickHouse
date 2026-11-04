@@ -1,3 +1,7 @@
+-- Pin (randomized in CI): a spilled `IN` set keeps no explicit elements, so the index analysis
+-- and key lookups by the set that this test checks do not happen.
+SET max_bytes_before_external_set = 0;
+
 DROP TABLE IF EXISTS merge_tree_in_subqueries;
 CREATE TABLE merge_tree_in_subqueries (id UInt64, name String, num UInt64) ENGINE = MergeTree ORDER BY (id, name);
 INSERT INTO merge_tree_in_subqueries VALUES(1, 'test1', 42);

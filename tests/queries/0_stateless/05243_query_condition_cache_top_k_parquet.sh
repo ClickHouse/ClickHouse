@@ -16,6 +16,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# Pin (randomized in CI): the cache lookups below assume it is on; the `= 0` section overrides it per query.
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --use_query_condition_cache_for_top_k 1"
+
 DATA_DIR="${CLICKHOUSE_DATABASE}_05243"
 mkdir -p "${USER_FILES_PATH:?}/${DATA_DIR}"
 rm -f "${USER_FILES_PATH}/${DATA_DIR}"/*.parquet
