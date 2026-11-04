@@ -15,8 +15,8 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/PrometheusRemoteWriteProtocol.h>
-#include <Storages/TimeSeries/TimeSeriesColumnNames.h>
-#include <Storages/TimeSeries/TimeSeriesHistogramsColumnsView.h>
+#include <DataTypes/TimeSeries/TimeSeriesColumnNames.h>
+#include <DataTypes/TimeSeries/TimeSeriesHistogramsColumnsView.h>
 
 #include <limits>
 #include <type_traits>

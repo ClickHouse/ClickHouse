@@ -30,16 +30,15 @@ public:
     /// Whether the histogram sample `candidate` of `view` replaces the histogram sample `kept`: `compareHistograms(view, candidate, kept) > 0`.
     static bool histogramSampleWins(const TimeSeriesHistogramsColumnsView & view, size_t kept, size_t candidate);
 
-    /// An order over the payload (every element but `timestamp`) of the histogram samples `lhs` and `rhs` of `view`; the greater
-    /// sample is the preferred one. Returns a negative number, 0 or a positive number. The first differing key decides:
-    /// 1. the total count: `count_int` for integer histograms, `count_float` for float histograms, compared exactly across flavours;
+    /// An order over the payload (every element but `timestamp`) of the histogram samples `lhs` and `rhs` of `view`: the greater
+    /// sample is preferred. Returns a negative number, 0 or a positive number. The first differing key decides:
+    /// 1. the total count (`count_int` or `count_float` by flavour), compared exactly across flavours;
     /// 2. `sum`;
-    /// 3. the other elements in the stored order, each by the comparison of its column (`IColumn::compareAt`: arrays and tuples
-    ///    lexicographically, a proper prefix is less); counter reset hints compare only the gauge marker here;
-    /// 4. for otherwise identical payloads, the counter reset hint, preferring unknown over known hints.
-    /// Floats follow the comparison rules of ClickHouse (`CompareHelper`): a NaN is less than any number, two NaNs are equal, as are
-    /// `0.0` and `-0.0`. So 0 means equal payloads up to those, and only then the kept sample depends on the order of the samples
-    /// (the same limit as `floatSampleWins` has).
+    /// 3. the other elements in the stored order by `IColumn::compareAt` (arrays and tuples lexicographically); of the counter
+    ///    reset hint only the gauge marker;
+    /// 4. for otherwise identical payloads, the counter reset hint, unknown preferred over known hints.
+    /// Floats compare as in `CompareHelper`: a NaN is less than any number, two NaNs are equal, as are `0.0` and `-0.0`; only for
+    /// payloads equal up to those does the kept sample depend on the order of the samples (the limit of `floatSampleWins` too).
     static int compareHistograms(const TimeSeriesHistogramsColumnsView & view, size_t lhs, size_t rhs);
 };
 

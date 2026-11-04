@@ -1,11 +1,11 @@
-#include <Storages/TimeSeries/TimeSeriesHistogramsColumns.h>
+#include <DataTypes/TimeSeries/TimeSeriesHistogramsColumns.h>
 
 #include <Columns/IColumn.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <Storages/TimeSeries/TimeSeriesColumnNames.h>
+#include <DataTypes/TimeSeries/TimeSeriesColumnNames.h>
 #include <base/Decimal.h>
 
 #include <fmt/format.h>

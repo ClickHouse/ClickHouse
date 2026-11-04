@@ -23,8 +23,8 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageTimeSeries.h>
-#include <Storages/TimeSeries/TimeSeriesColumnNames.h>
-#include <Storages/TimeSeries/TimeSeriesHistogramsColumns.h>
+#include <DataTypes/TimeSeries/TimeSeriesColumnNames.h>
+#include <DataTypes/TimeSeries/TimeSeriesHistogramsColumns.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
 
@@ -335,11 +335,9 @@ namespace
     ///     FROM <samples>
     ///     GROUP BY id, bucket
     /// ) AS __samples
-    /// `samples` is selected when `samples_requested`, the columns of the `histograms` group (see TimeSeriesHistogramsColumns) when
-    /// requested. Without `FINAL` an outer column `histograms.<element>` is the subcolumn of the same name of the `histograms` column
-    /// (an `Array(Tuple(...))` column exposes each element as an `Array(<element type>)` subcolumn), so only the data stream of that
-    /// element is read and nothing is converted. With `FINAL` the merged array is computed once under the alias `__histograms` and
-    /// split with `tupleElement`.
+    /// `samples` is selected when `samples_requested`, and the requested columns of the `histograms` group (see TimeSeriesHistogramsColumns).
+    /// Without `FINAL` an outer column `histograms.<element>` is the subcolumn of that name of the `histograms` column, so only the data
+    /// stream of the element is read. With `FINAL` the merged array is computed once as `__histograms` and split with `tupleElement`.
     ASTPtr makeSamplesTableElement(
         const StorageID & samples_table_id, const NameAndTypePair & samples_outer_column_name_and_type, bool has_bucketed_samples, bool final,
         bool samples_requested, const Names & requested_histograms_columns)
@@ -549,7 +547,7 @@ namespace
     /// Builds a JOIN clause for the "metric families" table to join it to the "tags" table:
     /// FULL JOIN
     /// (
-    ///     SELECT *, concat(metric_family, arrayJoin(timeSeriesMetricTypeToSuffixes(type))) AS __metric_family_with_suffix
+    ///     SELECT *, concat(metric_family, arrayJoin(timeSeriesMetricTypeToSuffixes(type[, true]))) AS __metric_family_with_suffix
     ///     FROM
     ///     (
     ///         SELECT metric_family, type, unit, help
@@ -562,15 +560,20 @@ namespace
     ///
     /// The FULL JOIN keeps every "tags" row (its metadata columns are empty when no member matches) and also
     /// every "metric families" member row that no time series belongs to (its "tags"/"samples" columns are then empty).
-    ASTPtr makeMetricFamiliesFullJoinElement(const StorageID & metric_families_table_id, const char * metric_family_column_name)
+    /// For a table storing native histograms (`native_histograms`) the histogram types also get the empty suffix: a native
+    /// histogram is a series named like its family. Without it a classic histogram family would make a member row with no series.
+    ASTPtr makeMetricFamiliesFullJoinElement(const StorageID & metric_families_table_id, const char * metric_family_column_name, bool native_histograms)
     {
         auto expanded_list = make_intrusive<ASTExpressionList>();
         expanded_list->children.push_back(make_intrusive<ASTAsterisk>());
 
+        auto suffixes = makeASTFunction("timeSeriesMetricTypeToSuffixes", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Type));
+        if (native_histograms)
+            suffixes->arguments->children.push_back(make_intrusive<ASTLiteral>(true));
+
         auto metric_family_with_suffix = makeASTFunction("concat",
             make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricFamily),
-            makeASTFunction("arrayJoin",
-                makeASTFunction("timeSeriesMetricTypeToSuffixes", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Type))));
+            makeASTFunction("arrayJoin", std::move(suffixes)));
         metric_family_with_suffix->setAlias(metric_family_with_suffix_alias);
         expanded_list->children.push_back(std::move(metric_family_with_suffix));
 
@@ -725,24 +728,12 @@ namespace
     ///     FROM <samples>
     /// ) AS __samples
     /// INNER JOIN (SELECT * FROM <tags> LIMIT 1 BY id) AS __tags USING (id)
-    /// FULL JOIN
-    /// (
-    ///     SELECT *, concat(metric_family, arrayJoin(timeSeriesMetricTypeToSuffixes(type))) AS __metric_family_with_suffix
-    ///     FROM
-    ///     (
-    ///         SELECT metric_family, type, unit, help
-    ///         FROM <metric_families>
-    ///         WHERE notEmpty(metric_family)
-    ///         LIMIT 1 BY metric_family
-    ///     ) AS __metric_families
-    /// ) AS __metric_families_with_all_suffixes
+    /// FULL JOIN (<the metric families with their member names, see makeMetricFamiliesFullJoinElement>) AS __metric_families_with_all_suffixes
     /// ON toString(ifNull(metric_name, '')) = __metric_family_with_suffix
     ///
     /// The "samples" subquery, when read, anchors the query (the samples stream through the joins as the probe side);
-    /// when the "samples" table is not read the query anchors on the "tags" table. The subquery aggregates the rows
-    /// with `FINAL` and for the tables of the earlier versions (see makeSamplesTableElement).
-    /// The "tags" table is always read — it bridges "samples" (joined by id) and "metric families" (joined by matching
-    /// metric_name against the expanded member names).
+    /// otherwise the query anchors on the "tags" table, which is always read: it bridges "samples" (joined by id) and
+    /// "metric families" (joined by matching metric_name against the member names).
     ASTPtr buildSelectQueryFromMultipleTables(
         const StorageID & tags_table_id,
         const std::optional<StorageID> & samples_table_id,
@@ -754,6 +745,7 @@ namespace
         const NameAndTypePair & samples_outer_column_name_and_type,
         const Names & requested_histograms_columns,
         bool has_bucketed_samples,
+        bool native_histograms,
         bool final)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
@@ -774,7 +766,7 @@ namespace
             tables->children.push_back(makeTagsTableElement(tags_table_id, /* deduplicate_by_id= */ final));
         }
         if (metric_families_table_id)
-            tables->children.push_back(makeMetricFamiliesFullJoinElement(*metric_families_table_id, metric_family_column_name));
+            tables->children.push_back(makeMetricFamiliesFullJoinElement(*metric_families_table_id, metric_family_column_name, native_histograms));
         select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables);
 
         return makeSelectWithUnionQuery(std::move(select_query));
@@ -884,7 +876,7 @@ ASTPtr makeASTSelectFromTimeSeries(
     chassert(need_tags);
     return buildSelectQueryFromMultipleTables(*tags_table_id, samples_table_id, metric_families_table_id, metric_family_column_name,
                                               requested_columns, requested_tags, columns_by_tags, samples_outer_column_name_and_type,
-                                              requested_histograms_columns, has_bucketed_samples, final);
+                                              requested_histograms_columns, has_bucketed_samples, storage_settings->hasHistogramsInSamples(), final);
 }
 
 SettingsChanges getSettingsForSelectFromTimeSeries(const TimeSeriesSettings & storage_settings, bool final)

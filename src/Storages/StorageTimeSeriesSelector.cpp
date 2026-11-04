@@ -33,8 +33,8 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageTimeSeries.h>
-#include <Storages/TimeSeries/TimeSeriesColumnNames.h>
-#include <Storages/TimeSeries/TimeSeriesHistogramsColumns.h>
+#include <DataTypes/TimeSeries/TimeSeriesColumnNames.h>
+#include <DataTypes/TimeSeries/TimeSeriesHistogramsColumns.h>
 #include <Storages/TimeSeries/TimeSeriesIDGenerator.h>
 #include <Storages/TimeSeries/TimeSeriesIDRange.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
@@ -725,10 +725,9 @@ namespace
     /// A column of the samples table the selector reads in its inner query (see `readImpl`). For a table with buckets of samples
     /// a column is the array of one kind of samples (`samples`, `histograms`) cut to the time range: a requested kind is read whole and
     /// returned with the type this storage declares for it; a kind which isn't requested takes part in the row filter only, through
-    /// its `timestamp` subcolumn (an `Array` of the timestamps, see `makeSelectQuery`), so that a row with samples of either kind in
-    /// the range is returned whatever is requested (`SELECT count()` counts the rows of a histogram-only series) and no payload is
-    /// read for the filter alone. For a table storing one sample per row the columns are `timestamp` and `value`, read as is:
-    /// the time range conditions of the inner query filter such rows.
+    /// its `timestamp` subcolumn (see `makeSelectQuery`), so that a row with samples of either kind in the range is returned whatever
+    /// is requested (`SELECT count()` counts the rows of a histogram-only series) and no payload is read for the filter alone.
+    /// For a table storing one sample per row the columns are `timestamp` and `value`: the inner query's time range filters them.
     struct SamplesColumnToRead
     {
         /// The column of the samples table: `samples`, `histograms`, `histograms.timestamp`, ... or `timestamp`, `value`.
@@ -849,9 +848,8 @@ namespace
     /// WHERE (bucket >= <min_bucket>) AND (bucket <= <max_time>) AND (max_time >= <min_time>) AND (min_time <= <max_time>)
     ///       AND (id IN <select_query_from_tags_table>)
     ///
-    /// A row holds the float samples and the histogram samples of one series within one bucket, each array sorted by timestamp,
-    /// and `timeSeriesSliceSortedArray` cuts out the samples with timestamps in [min_time, max_time] of each read array. The samples
-    /// table supports subcolumns, so a kind read for the row filter only costs the data stream of its timestamps.
+    /// `timeSeriesSliceSortedArray` cuts each read array (sorted by timestamp) to [min_time, max_time]; a kind read for the row
+    /// filter only costs the data stream of its timestamps.
     ///
     /// For a table of an earlier version storing one sample per row (`bucket_step_seconds` is zero):
     ///
@@ -859,7 +857,7 @@ namespace
     /// FROM samples_table_id
     /// WHERE (timestamp >= <min_time>) AND (timestamp <= <max_time>) AND (id IN <select_query_from_tags_table>)
     ///
-    /// The bounds of `time_range_to_filter_samples` must have the scale of `table_timestamp_type`.
+    /// The bounds of `time_range_to_filter_samples` have the scale of `table_timestamp_type`.
     ASTPtr makeSelectQueryFromSamplesTable(const StorageID & samples_table_id,
                                            ASTPtr select_query_from_tags_table,
                                            const TableTimeRange & time_range_to_filter_samples,

@@ -177,7 +177,8 @@ def test_float_histogram():
 
 def test_custom_buckets_histogram():
     # Custom buckets (NHCB): `schema = -53`, the upper bounds in `custom_values`, the last bucket up to +Inf has no bound.
-    # No Prometheus version sends these over remote-write 1.0, but other senders (e.g. the OpenTelemetry Collector) do.
+    # Prometheus 3.7 and later don't send these over remote-write 1.0 (earlier versions send them without the bounds), but other
+    # senders (e.g. the OpenTelemetry Collector) do.
     histogram = types_pb2.Histogram(
         count_int=9,
         sum=4.2,
@@ -412,9 +413,10 @@ def test_remote_read_resolves_conflicting_samples():
 
 
 def test_remote_read_clears_hints_after_float_collisions():
-    # Drop the first histogram, two consecutive histograms, and a reset's predecessor. Only the first surviving
-    # counter hint after each gap becomes unknown; the following hint and the gauge markers must be preserved.
-    counts = [10, 11, 1, 2, 3, 4, 2, 3]
+    # Drop the first histogram, two consecutive histograms, and one in the middle. Only the first surviving counter hint
+    # after each gap becomes unknown; the following hint and the gauge markers must be preserved. The counts increase after
+    # the dropped reset, so an unknown hint can only come from the clearing (a stored reset is returned as unknown anyway).
+    counts = [10, 11, 1, 2, 3, 4, 5, 6]
     timestamps = [TIMESTAMP_MS + i * 1000 for i in range(len(counts))]
     floats = {timestamps[i]: STALE_NAN for i in (0, 2, 3, 5)}
     requests = []
@@ -443,6 +445,34 @@ def test_remote_read_clears_hints_after_float_collisions():
         types_pb2.Histogram.NO,
     ]
     assert [h.reset_hint for h in series[labels_key(__name__="gauge")].histograms] == [types_pb2.Histogram.GAUGE] * 4
+
+
+def test_remote_read_returns_stored_resets_as_unknown():
+    # Prometheus returns `GAUGE`, `NO` or `UNKNOWN` over remote read, never `YES`: a reset, explicit or detected, starts a new chunk
+    # whose first sample is returned with an unknown hint, and PromQL trusts `YES` without checking the data. A stored reset is
+    # returned as unknown the same way, whether it was sent explicitly or detected on insert; the other hints are returned as stored.
+    timestamps = [TIMESTAMP_MS + i * 1000 for i in range(3)]
+
+    def histogram(timestamp, count, hint):
+        return types_pb2.Histogram(timestamp=timestamp, count_int=count, zero_count_int=count, sum=float(count), reset_hint=hint)
+
+    explicit_hints = [types_pb2.Histogram.UNKNOWN, types_pb2.Histogram.YES, types_pb2.Histogram.NO]
+    explicit = [histogram(t, count, hint) for t, count, hint in zip(timestamps, [1, 2, 3], explicit_hints)]
+    detected = [histogram(t, count, types_pb2.Histogram.UNKNOWN) for t, count in zip(timestamps, [5, 2, 3])]
+    send(make_write_request(({"__name__": "explicit"}, explicit), ({"__name__": "detected"}, detected)))
+
+    # Stored: the explicit reset is kept, the decrease of the count is detected as a reset, the increases as no reset.
+    assert node.query(
+        "SELECT metric_name, histograms.counter_reset_hint FROM prometheus WHERE metric_name IN ('explicit', 'detected') ORDER BY metric_name"
+    ) == "detected\t[0,1,2]\nexplicit\t[0,1,2]\n"
+
+    series = remote_read(timestamps[0], timestamps[-1])
+    for name in ("explicit", "detected"):
+        assert [h.reset_hint for h in series[labels_key(__name__=name)].histograms] == [
+            types_pb2.Histogram.UNKNOWN,
+            types_pb2.Histogram.UNKNOWN,
+            types_pb2.Histogram.NO,
+        ]
 
 
 def test_fields_of_the_other_flavour_are_ignored():

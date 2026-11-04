@@ -1,5 +1,6 @@
 SET enable_time_series_table = 1;
 SET session_timezone = 'UTC';
+-- The hints are checked as the sink wrote them, before any merge by `timeSeriesGroupArrayHistograms` (05494 covers the merges).
 SET optimize_on_insert = 0;
 
 DROP TABLE IF EXISTS ts_reset_detection;
@@ -41,7 +42,8 @@ INSERT INTO histogram_reset_cases (name, zeros, negative, expected) VALUES
 INSERT INTO histogram_reset_cases (name, schemas, positive, bounds, expected) VALUES
     ('custom_bounds_change', [-53, -53], [[(0, 1)], [(0, 1)]], [[1], [2]], [0, 1]),
     ('custom_bounds_length_change', [-53, -53], [[(0, 1)], [(0, 1)]], [[1], [1, 2]], [0, 1]),
-    ('custom_bounds_signed_zero_change', [-53, -53], [[(0, 1)], [(0, 1)]], [[-0.0], [0.0]], [0, 1]);
+    -- The bounds are compared by value, as Prometheus does: -0.0 and 0.0 are the same bound.
+    ('custom_bounds_signed_zero_same', [-53, -53], [[(0, 1)], [(0, 1)]], [[-0.0], [0.0]], [0, 2]);
 INSERT INTO histogram_reset_cases (name, hints, zeros, expected) VALUES
     ('explicit_reset_without_decrease', [0, 1], [1, 2], [0, 1]);
 INSERT INTO histogram_reset_cases (name, hints, schemas, zeros, expected) VALUES
@@ -104,6 +106,18 @@ INSERT INTO histogram_reset_cases (name, timestamps, hints, zeros, expected) VAL
     ('unsorted_decrease', ['2026-01-01 00:01:41', '2026-01-01 00:01:40'], [2, 2], [1, 2], [2, 1]),
     ('moved_explicit_reset', ['2026-01-01 00:01:41', '2026-01-01 00:01:40'], [1, 2], [2, 1], [2, 2]),
     ('bucket_boundary', ['2026-01-01 00:01:59', '2026-01-01 00:02:00'], [0, 2], [2, 1], [0, 1]);
+
+-- An explicit reset is trusted only when its original predecessor survived the deduplication of equal timestamps (the sample with
+-- the greatest count wins): in the first case the reset describes a dropped predecessor, in the second one the kept predecessor.
+INSERT INTO histogram_reset_cases (name, timestamps, hints, schemas, thresholds, sums, zeros, positive, negative, bounds, expected) VALUES
+    ('explicit_reset_after_lost_duplicate', ['2026-01-01 00:01:40', '2026-01-01 00:01:40', '2026-01-01 00:01:41'],
+     [0, 0, 1], [0, 0, 0], [0, 0, 0], [1, 1, 1], [5, 1, 6], [[], [], []], [[], [], []], [[], [], []], [0, 2]),
+    ('explicit_reset_after_winning_duplicate', ['2026-01-01 00:01:40', '2026-01-01 00:01:40', '2026-01-01 00:01:41'],
+     [0, 0, 1], [0, 0, 0], [0, 0, 0], [1, 1, 1], [1, 5, 6], [[], [], []], [[], [], []], [[], [], []], [0, 1]);
+
+-- The first sample of a series keeps an explicit reset hint.
+INSERT INTO histogram_reset_cases (name, hints, zeros, expected) VALUES
+    ('first_sample_explicit_reset', [1, 2], [1, 2], [1, 2]);
 
 -- A ten-year TTL keeps the fixed timestamps alive. Different bucket sizes exercise both output writers.
 CREATE TABLE ts_reset_detection ENGINE = TimeSeries

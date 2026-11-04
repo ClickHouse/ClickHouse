@@ -84,6 +84,8 @@ FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN 
 
 SELECT '-- timestamp_and_value returns the float samples only';
 SELECT timestamp, value FROM timeSeriesSelector(ts, 'm_mixed', 0, 1000, 'timestamp_and_value');
+-- A histogram-only series makes no rows.
+SELECT count() FROM timeSeriesSelector(ts, 'm_hist', 0, 1000, 'timestamp_and_value');
 
 SELECT '-- the recent samples table returns the histograms too';
 -- TTL 10 days, the samples are inserted close to now(), so the background TTL cannot drop them during the test.

@@ -4,7 +4,7 @@
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
-#include <Storages/TimeSeries/TimeSeriesHistogramsColumns.h>
+#include <DataTypes/TimeSeries/TimeSeriesHistogramsColumns.h>
 
 
 namespace DB

@@ -2290,10 +2290,10 @@ class ClickHouseCluster:
         return self.base_prometheus_cmd
 
     def setup_prometheus_writer_native_histograms(self, env_variables):
-        # Prometheus 3.5 scrapes native histograms only with this feature flag (newer versions use the `scrape_native_histograms`
-        # scrape option instead); it then prefers the protobuf scrape format, so the classic `_bucket` series of a metric which
-        # also has a native histogram are no longer scraped. Native histograms with custom buckets are not sent by any
-        # Prometheus version over remote-write 1.0, so classic histograms are not converted to them here.
+        # Prometheus before 3.9 (the compose file pins 3.7.3) scrapes native histograms only with this feature flag, 3.9 and later
+        # use the `scrape_native_histograms` scrape option instead; it then prefers the protobuf scrape format, so the classic
+        # `_bucket` series of a metric which also has a native histogram are no longer scraped. Native histograms with custom
+        # buckets are not sent by Prometheus 3.7 and later over remote-write 1.0, so classic histograms are not converted to them here.
         self.prometheus_writer_native_histograms = True
         env_variables["PROMETHEUS_WRITER_EXTRA_FLAGS"] = "--enable-feature=native-histograms"
 

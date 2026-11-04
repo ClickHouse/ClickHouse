@@ -6,7 +6,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Common/assert_cast.h>
 #include <Core/DecimalFunctions.h>
-#include <Storages/TimeSeries/TimeSeriesHistogramsColumnsView.h>
+#include <DataTypes/TimeSeries/TimeSeriesHistogramsColumnsView.h>
 
 #include <type_traits>
 
@@ -99,6 +99,19 @@ namespace
         }
     }
 
+    /// The reset hint a Prometheus server returns over remote read is `GAUGE`, `NO` or `UNKNOWN`, never `YES`: a reset, explicit or
+    /// detected, starts a new chunk in its TSDB, and the first sample of a chunk is returned with an unknown hint because the previous
+    /// chunk may be gone (`counterResetHint` in `tsdb/chunkenc/histogram_meta.go`), so the readers detect resets from the data.
+    /// PromQL trusts `YES` without checking the data, so a stored reset is returned as unknown here too.
+    prometheus::Histogram_ResetHint toPrometheusResetHint(const UInt8 stored_hint)
+    {
+        if (stored_hint == TimeSeriesHistogramCounterResetHint::Gauge)
+            return prometheus::Histogram::GAUGE;
+        if (stored_hint == TimeSeriesHistogramCounterResetHint::NoReset)
+            return prometheus::Histogram::NO;
+        return prometheus::Histogram::UNKNOWN;
+    }
+
     void addHistogram(const ColumnsView & columns, const size_t row, const Int64 timestamp_ms, prometheus::Histogram & histogram)
     {
         if (columns.isFloatAt(row))
@@ -119,7 +132,7 @@ namespace
         histogram.set_sum(columns.sum.getData()[row]);
         histogram.set_schema(columns.schema.getData()[row]);
         histogram.set_zero_threshold(columns.zero_threshold.getData()[row]);
-        histogram.set_reset_hint(static_cast<prometheus::Histogram_ResetHint>(columns.counter_reset_hint.getData()[row]));
+        histogram.set_reset_hint(toPrometheusResetHint(columns.counter_reset_hint.getData()[row]));
         histogram.set_timestamp(timestamp_ms);
         for (const Float64 bound : ColumnsView::floatsAt(columns.custom_values, row))
             histogram.add_custom_values(bound);

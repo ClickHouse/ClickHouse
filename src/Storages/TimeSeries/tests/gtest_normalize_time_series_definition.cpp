@@ -12,7 +12,7 @@
 #include <Parsers/Prometheus/TimeSeriesVersion.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/ColumnsDescription.h>
-#include <Storages/TimeSeries/TimeSeriesHistogramsColumns.h>
+#include <DataTypes/TimeSeries/TimeSeriesHistogramsColumns.h>
 
 #include <gtest/gtest.h>
 

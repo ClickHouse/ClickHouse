@@ -1,7 +1,7 @@
 #include <Storages/TimeSeries/detectTimeSeriesHistogramResets.h>
 
 #include <Common/assert_cast.h>
-#include <Storages/TimeSeries/TimeSeriesHistogramsColumnsView.h>
+#include <DataTypes/TimeSeries/TimeSeriesHistogramsColumnsView.h>
 
 #include <algorithm>
 #include <bit>
@@ -60,13 +60,10 @@ namespace
             || columns.zero_threshold.getData()[current] != columns.zero_threshold.getData()[previous])
             return Hint::Unknown;
 
-        /// Exponential histograms have empty custom bounds. Compare bits, as Prometheus's `FloatBucketsMatch` does.
+        /// Exponential histograms have empty custom bounds. The bounds are compared by value, as Prometheus's `CustomBucketBoundsMatch`
+        /// does (NaN bounds are rejected on insert, so every bound compares equal to itself).
         const bool same_custom_bounds = std::ranges::equal(
-            View::floatsAt(columns.custom_values, previous), View::floatsAt(columns.custom_values, current),
-            [](Float64 lhs, Float64 rhs)
-            {
-                return std::bit_cast<UInt64>(lhs) == std::bit_cast<UInt64>(rhs);
-            });
+            View::floatsAt(columns.custom_values, previous), View::floatsAt(columns.custom_values, current));
         if (!same_custom_bounds)
             return Hint::Reset;
 

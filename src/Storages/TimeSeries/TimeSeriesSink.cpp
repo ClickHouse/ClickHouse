@@ -28,10 +28,10 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageTimeSeries.h>
-#include <Storages/TimeSeries/TimeSeriesColumnNames.h>
-#include <Storages/TimeSeries/TimeSeriesDuplicateTimestampRule.h>
-#include <Storages/TimeSeries/TimeSeriesHistogramsColumns.h>
-#include <Storages/TimeSeries/TimeSeriesHistogramsColumnsView.h>
+#include <DataTypes/TimeSeries/TimeSeriesColumnNames.h>
+#include <DataTypes/TimeSeries/TimeSeriesDuplicateTimestampRule.h>
+#include <DataTypes/TimeSeries/TimeSeriesHistogramsColumns.h>
+#include <DataTypes/TimeSeries/TimeSeriesHistogramsColumnsView.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/detectTimeSeriesHistogramResets.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>

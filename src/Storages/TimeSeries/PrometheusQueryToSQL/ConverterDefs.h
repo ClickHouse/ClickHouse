@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
-#include <Storages/TimeSeries/TimeSeriesColumnNames.h>
+#include <DataTypes/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
 
 

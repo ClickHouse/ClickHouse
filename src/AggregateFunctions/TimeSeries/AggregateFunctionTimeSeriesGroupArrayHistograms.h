@@ -15,9 +15,9 @@
 #include <Formats/FormatSettings.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Storages/TimeSeries/TimeSeriesDuplicateTimestampRule.h>
-#include <Storages/TimeSeries/TimeSeriesHistogramsColumns.h>
-#include <Storages/TimeSeries/TimeSeriesHistogramsColumnsView.h>
+#include <DataTypes/TimeSeries/TimeSeriesDuplicateTimestampRule.h>
+#include <DataTypes/TimeSeries/TimeSeriesHistogramsColumns.h>
+#include <DataTypes/TimeSeries/TimeSeriesHistogramsColumnsView.h>
 #include <base/sort.h>
 
 #include <algorithm>
@@ -345,8 +345,15 @@ private:
                 TimeSeriesHistogramCounterResetHint::clear(hints[permutation[i]]);
         }
 
-        const ColumnPtr merged = source.permute(permutation, num_unique);
-        tuple_to.insertRangeFrom(*merged, 0, num_unique);
+        /// Copy consecutive source rows together, directly into the result without materializing a permuted column.
+        for (size_t begin = 0; begin < num_unique;)
+        {
+            size_t end = begin + 1;
+            while (end < num_unique && permutation[end] == permutation[end - 1] + 1)
+                ++end;
+            tuple_to.insertRangeFrom(source, permutation[begin], end - begin);
+            begin = end;
+        }
     }
 
     const String name;

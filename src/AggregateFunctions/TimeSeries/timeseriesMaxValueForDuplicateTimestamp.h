@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Storages/TimeSeries/TimeSeriesDuplicateTimestampRule.h>
+#include <DataTypes/TimeSeries/TimeSeriesDuplicateTimestampRule.h>
 
 
 namespace DB

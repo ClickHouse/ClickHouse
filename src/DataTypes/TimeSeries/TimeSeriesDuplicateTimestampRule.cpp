@@ -1,7 +1,7 @@
-#include <Storages/TimeSeries/TimeSeriesDuplicateTimestampRule.h>
+#include <DataTypes/TimeSeries/TimeSeriesDuplicateTimestampRule.h>
 
 #include <Columns/IColumn.h>
-#include <Storages/TimeSeries/TimeSeriesHistogramsColumnsView.h>
+#include <DataTypes/TimeSeries/TimeSeriesHistogramsColumnsView.h>
 #include <base/DecomposedFloat.h>
 
 

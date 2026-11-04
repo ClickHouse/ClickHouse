@@ -1,5 +1,8 @@
+import hashlib
 import json
 import math
+import struct
+import time
 from pathlib import Path
 
 import pytest
@@ -17,7 +20,7 @@ from .prometheus_test_utils import (
 
 # A real Prometheus scrapes itself with native histograms enabled and sends them to ClickHouse over remote-write.
 # Prometheus exposes a native histogram about itself (`prometheus_http_request_duration_seconds`). Native histograms with
-# custom buckets never arrive this way: no Prometheus version sends them over remote-write 1.0 (see test_native_histograms.py
+# custom buckets never arrive this way: Prometheus 3.7 and later don't send them over remote-write 1.0 (see test_native_histograms.py
 # for hand-crafted ones). The histograms are stored in the `histograms` column of the samples table and are checked through
 # the inner tables, in their stored shape.
 
@@ -105,14 +108,17 @@ def test_histogram_matches_prometheus():
 
 
 def expand_buckets(spans, values, cumulative):
-    """The buckets of one side as {bucket index: count}, the spans expanded as Prometheus iterates them. The values of integer
-    buckets arrive as deltas (`cumulative`), the values of float buckets as counts."""
+    """The populated buckets of one side as {bucket index: count}, the spans expanded as Prometheus iterates them. The values of
+    integer buckets arrive as deltas (`cumulative`), the values of float buckets as counts. Empty buckets are dropped: the client pads
+    small gaps with them, and Prometheus inserts more into the samples of a chunk when a later sample brings new buckets, while
+    ClickHouse returns the buckets as sent."""
     buckets, index, position, count = {}, 0, 0, 0
     for bucket_span in spans:
         index += bucket_span.offset
         for _ in range(bucket_span.length):
             count = count + values[position] if cumulative else values[position]
-            buckets[index] = count
+            if count != 0:
+                buckets[index] = count
             index += 1
             position += 1
     return buckets
@@ -120,7 +126,7 @@ def expand_buckets(spans, values, cumulative):
 
 def canonical_histogram(histogram):
     """The content of a `prompb.Histogram` regardless of how its buckets are cut into spans and of the counter reset hint, which
-    Prometheus derives from its chunk boundaries."""
+    Prometheus derives from its chunk boundaries. The sum is taken as bits, so that a stale marker (a NaN) compares equal to itself."""
     is_float = histogram.HasField("count_float")
     if is_float:
         count, zero_count = histogram.count_float, histogram.zero_count_float
@@ -131,35 +137,62 @@ def canonical_histogram(histogram):
         positive = expand_buckets(histogram.positive_spans, histogram.positive_deltas, cumulative=True)
         negative = expand_buckets(histogram.negative_spans, histogram.negative_deltas, cumulative=True)
     return (
-        is_float, histogram.timestamp, count, zero_count, histogram.sum, histogram.schema, histogram.zero_threshold,
+        is_float, histogram.timestamp, count, zero_count, struct.pack("<d", histogram.sum), histogram.schema, histogram.zero_threshold,
         positive, negative, list(histogram.custom_values),
     )
 
 
-def remote_read_histogram(host, port, path, tags, timestamp_ms):
-    """The one histogram of the series with `tags` at `timestamp_ms`, read over the remote-read protocol."""
+def remote_read_all(host, port, path, end_timestamp_ms):
+    """Every time series with samples in [0, end_timestamp_ms] read over the remote-read protocol: {sorted labels: prompb.TimeSeries}."""
     read_request = remote_pb2.ReadRequest()
     query = read_request.queries.add()
-    query.start_timestamp_ms = timestamp_ms
-    query.end_timestamp_ms = timestamp_ms
-    for name, value in tags.items():
-        query.matchers.append(types_pb2.LabelMatcher(type=types_pb2.LabelMatcher.Type.EQ, name=name, value=value))
+    query.start_timestamp_ms = 0
+    query.end_timestamp_ms = end_timestamp_ms
+    query.matchers.append(types_pb2.LabelMatcher(type=types_pb2.LabelMatcher.Type.RE, name="__name__", value=".+"))
     response = extract_protobuf_from_remote_read_response(get_response_to_remote_read(host, port, path, read_request))
-    [series] = response.results[0].timeseries
-    [histogram] = series.histograms
-    return histogram
+    return {
+        tuple(sorted((label.name, label.value) for label in series.labels)): series for series in response.results[0].timeseries
+    }
 
 
-def test_histogram_matches_prometheus_remote_read():
-    # The whole histogram, not only its count and sum: what ClickHouse serves over remote read for a stored histogram is what
-    # Prometheus serves for the same sample of its own storage. Compared bucket by bucket, since Prometheus may cut the same
-    # buckets into other spans.
-    stored = get_last_stored_histogram("h.schema BETWEEN -4 AND 8")
-    from_prometheus = remote_read_histogram(
-        cluster.prometheus_ip["writer"], cluster.prometheus_port["writer"], "/api/v1/read", stored["tags"], stored["timestamp_ms"]
+def canonical_series(series, max_timestamp_ms):
+    """The samples of a `prompb.TimeSeries` up to `max_timestamp_ms` in a form comparable across systems: the float samples as
+    (timestamp, bits), so that NaN values compare, and the histograms as `canonical_histogram`."""
+    floats = [(sample.timestamp, struct.pack("<d", sample.value)) for sample in series.samples if sample.timestamp <= max_timestamp_ms]
+    histograms = [canonical_histogram(histogram) for histogram in series.histograms if histogram.timestamp <= max_timestamp_ms]
+    return floats, histograms
+
+
+def test_remote_read_matches_prometheus():
+    # The semantic digest of remote read against Prometheus: everything Prometheus scraped and sent is read back from both systems
+    # over the remote-read protocol and compared series by series and sample by sample after canonicalization, since the same
+    # buckets come back cut into other spans and with other counter reset hints, which each system derives from its storage.
+    # Prometheus keeps scraping while the test runs and sends every series in order, so what ClickHouse holds of a series is a
+    # prefix of what Prometheus holds: the comparison stops at the last timestamp ClickHouse has stored for the series, and
+    # ClickHouse is read first, so that Prometheus has everything ClickHouse has.
+    end_timestamp_ms = int(time.time() * 1000) + 3_600_000
+    from_clickhouse = remote_read_all(node.ip_address, 9093, "/read", end_timestamp_ms)
+    from_prometheus = remote_read_all(
+        cluster.prometheus_ip["writer"], cluster.prometheus_port["writer"], "/api/v1/read", end_timestamp_ms
     )
-    from_clickhouse = remote_read_histogram(node.ip_address, 9093, "/read", stored["tags"], stored["timestamp_ms"])
-    assert canonical_histogram(from_clickhouse) == canonical_histogram(from_prometheus)
+
+    only_in_clickhouse = sorted(set(from_clickhouse) - set(from_prometheus))
+    assert not only_in_clickhouse, f"Series unknown to Prometheus: {only_in_clickhouse[:5]}"
+
+    canonical = {}
+    for labels, series in from_clickhouse.items():
+        max_timestamp_ms = max([sample.timestamp for sample in series.samples] + [histogram.timestamp for histogram in series.histograms])
+        canonical[labels] = (canonical_series(series, max_timestamp_ms), canonical_series(from_prometheus[labels], max_timestamp_ms))
+
+    mismatches = {labels: pair for labels, pair in canonical.items() if pair[0] != pair[1]}
+    assert not mismatches, f"{len(mismatches)} of {len(canonical)} series differ, e.g. {next(iter(mismatches.items()))}"
+
+    # A digest of the compared data for the log; the counts make sure both kinds of samples took part.
+    digest = hashlib.sha256(repr(sorted((labels, clickhouse) for labels, (clickhouse, _) in canonical.items())).encode()).hexdigest()
+    num_floats = sum(len(floats) for (floats, _), _ in canonical.values())
+    num_histograms = sum(len(histograms) for (_, histograms), _ in canonical.values())
+    print(f"Remote-read digest {digest[:16]}: {len(canonical)} series, {num_floats} float samples, {num_histograms} histograms")
+    assert num_floats > 0 and num_histograms > 0
 
 
 def test_nothing_is_lost():

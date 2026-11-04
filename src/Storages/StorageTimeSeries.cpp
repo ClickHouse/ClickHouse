@@ -23,7 +23,7 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/TimeSeries/TimeSeriesDeduplicationCache.h>
-#include <Storages/TimeSeries/TimeSeriesHistogramsColumns.h>
+#include <DataTypes/TimeSeries/TimeSeriesHistogramsColumns.h>
 #include <Storages/TimeSeries/TimeSeriesSink.h>
 #include <Parsers/Prometheus/CreateQueryTimeSeriesSettings.h>
 #include <Parsers/Prometheus/TimeSeriesVersion.h>
@@ -939,17 +939,22 @@ std::shared_ptr<const StorageTimeSeries> storagePtrToTimeSeries(ConstStoragePtr 
 void registerStorageTimeSeries(StorageFactory & factory);
 void registerStorageTimeSeries(StorageFactory & factory)
 {
+    /// The version numbers in the documentation below come from the constants, so that a renumbering leaves no stale text behind
+    /// (the numbers of the earlier versions are history and stay literal).
+    const String latest_version = std::to_string(TimeSeriesVersion::LATEST);
+    const String histograms_version = std::to_string(TimeSeriesVersion::MIN_WITH_NATIVE_HISTOGRAMS);
+
     /// The documentation of the histogram columns is rendered from their registry, so that the names, the types, the codecs and
     /// the descriptions are written once; the fragments are spliced into the markdown below at the places where they are shown.
     const String histograms_type = TimeSeriesHistogramsColumns::describeArrayTypeForDocs("DateTime64(3)");
     const String histograms_outer_rows = TimeSeriesHistogramsColumns::describeOuterColumnsForDocs(
         "DateTime64(3)",
-        "The timestamps of the native histogram samples of a time series. The `histograms.*` columns are the flattened form of "
+        String{"The timestamps of the native histogram samples of a time series. The `histograms.*` columns are the flattened form of "
         "`histograms Nested(...)`: one array per element of the `histograms` column of the [samples](#samples-table) table, element k of every "
         "array being histogram sample k, so the arrays of a row must have the same length. A `SELECT` returns the stored histogram samples "
         "flattened the same way, one row per row of the [samples](#samples-table) table like `samples` (`SELECT ... FINAL` merges the rows of "
-        "the same bucket which are not merged yet with `timeSeriesGroupArrayHistograms`). Tables of [versions](#schema-versioning) before 12 "
-        "have no such columns");
+        "the same bucket which are not merged yet with `timeSeriesGroupArrayHistograms`). Tables of [versions](#schema-versioning) before "}
+        + histograms_version + " have no such columns");
     const String histograms_outer_create = TimeSeriesHistogramsColumns::describeOuterColumnsForCreateExample("DateTime64(3)");
     const String histograms_codecs_docs = TimeSeriesHistogramsColumns::describeInnerCodecsForDocs();
     const String histograms_codecs_create = TimeSeriesHistogramsColumns::describeInnerCodecsForCreateExample();
@@ -1117,7 +1122,7 @@ each bucket makes a row. The rows with the same `id` and `bucket` are merged in 
 using the aggregate function `timeSeriesGroupArray`, which keeps the array of samples sorted and deduplicated.
 Because of that, reading the table before a merge can return several rows for the same `id` and `bucket`.
 
-From [version](#schema-versioning) 12 a row also holds the native histogram samples of the time series within the bucket in the column
+From [version](#schema-versioning) )DOCS_MD" + histograms_version + R"DOCS_MD( a row also holds the native histogram samples of the time series within the bucket in the column
 `histograms`, an array of tuples sorted by timestamp and merged by the aggregate function `timeSeriesGroupArrayHistograms` (for histograms
 with the same timestamp the one with the greatest total count is kept, on ties the greatest sum, then the other elements decide).
 An integer histogram keeps its counts as `Int64` in the `*_int` elements, a float histogram as `Float64` in the `*_float` elements;
@@ -1125,7 +1130,9 @@ bit 0 of `flags` tells the flavour. The readers ignore the elements of the other
 and an `INSERT` isn't validated for them.
 The buckets of a side are pairs of the bucket index and the count sorted by index.
 A row of a float-only series has an empty `histograms` array, a row of a histogram-only series has an empty `samples` array.
-The Prometheus remote-read protocol returns both kinds of samples. PromQL queries evaluate the float samples only until the functions
+The Prometheus remote-read protocol returns both kinds of samples; a histogram with a reset hint of 1 (a counter reset) is returned with
+an unknown hint, as Prometheus itself returns the first sample of a chunk, so the reader detects the reset from the data instead of
+trusting the hint. PromQL queries evaluate the float samples only until the functions
 support native histograms: the histogram samples of the selected series are ignored, only their timestamps are read to find the
 rows with samples in the queried range.
 
@@ -1134,8 +1141,10 @@ the first one of each series is recomputed against its predecessor in the same `
 the same schema and zero threshold, so is a decrease of any bucket count, the disappearance of a populated bucket, or a change of the
 custom bucket bounds; a change of the schema or of the zero threshold leaves the hint unknown, unless an explicit reset hint whose
 original predecessor was kept already establishes a reset. The first sample of a series keeps the hint it was sent with: its predecessor
-is in an earlier insert, which is not consulted. Gauge markers are kept; a counter sample following a gauge sample, a stale sample and
-the sample following a stale one get an unknown hint.
+is in an earlier insert, which is not consulted. Gauge markers are kept. A stale sample gets an unknown hint. A counter sample following
+a gauge sample, the sample following a stale one, and a sample of the other flavour than its predecessor (an integer histogram after a
+float one or the reverse) get an unknown hint whatever their counts, unless an explicit reset hint whose original predecessor was kept
+establishes a reset.
 When rows are merged by `timeSeriesGroupArrayHistograms` (in background merges, in reads with `FINAL`, and when the aggregate is called
 directly), a hint is cleared to unknown wherever the sample's predecessor is no longer the one the hint was computed against: the first
 sample of every merged array but the first, and every sample whose neighbour changed by sorting or deduplication. Gauge markers are kept.
@@ -1146,7 +1155,7 @@ The _samples_ table must have columns:
 |---|---|---|---|---|
 | `id` | [x] | `Tuple(UInt64, LowCardinality(UUID))` | any | Identifies a combination of a metric names and tags |
 | `samples` | [x] | `SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3), value Float64)))` | `SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(X), value Float32 or Float64)))`, the elements must be named `timestamp` and `value` | The samples of a time series within the bucket sorted by timestamp |
-| `histograms` | [x] from version 12 | `SimpleAggregateFunction(timeSeriesGroupArrayHistograms, )DOCS_MD" + histograms_type + R"DOCS_MD()` | the same with `DateTime64(X)` as the type of the timestamps | The native histogram samples of a time series within the bucket sorted by timestamp (see above). The elements after `timestamp` are the ones of the [outer columns](#outer-columns) `histograms.*`; the bits of `flags` other than bit 0 are reserved and are 0 |
+| `histograms` | [x] from version )DOCS_MD" + histograms_version + R"DOCS_MD( | `SimpleAggregateFunction(timeSeriesGroupArrayHistograms, )DOCS_MD" + histograms_type + R"DOCS_MD()` | the same with `DateTime64(X)` as the type of the timestamps | The native histogram samples of a time series within the bucket sorted by timestamp (see above). The elements after `timestamp` are the ones of the [outer columns](#outer-columns) `histograms.*`; the bits of `flags` other than bit 0 are reserved and are 0 |
 | `bucket` | [x] | `DateTime64(3)` | the type of the timestamps | The start of the bucket: the timestamps of the samples rounded down to a multiple of the bucket length |
 | `min_time` | [x] | `SimpleAggregateFunction(min, DateTime64(3))` | `SimpleAggregateFunction(min, ...)` of the type of the timestamps | The minimum timestamp of the samples in the row |
 | `max_time` | [x] | `SimpleAggregateFunction(max, DateTime64(3))` | `SimpleAggregateFunction(max, ...)` of the type of the timestamps | The maximum timestamp of the samples in the row |
@@ -1262,7 +1271,7 @@ CREATE TABLE my_table
     `help` String
 )
 ENGINE = TimeSeries
-SETTINGS version = 12, recent_samples_ttl_seconds = 345600, samples_bucket_step_seconds = 3600, recent_samples_bucket_step_seconds = 900
+SETTINGS version = )DOCS_MD" + latest_version + R"DOCS_MD(, recent_samples_ttl_seconds = 345600, samples_bucket_step_seconds = 3600, recent_samples_bucket_step_seconds = 900
 SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
@@ -1570,7 +1579,7 @@ The following settings can be changed after `CREATE`:
 
 - `metric_families_deduplication_cache_size_bytes`, `metric_families_deduplication_cache_expiration_seconds`
 - `tags_deduplication_cache_size_bytes`, `tags_deduplication_cache_expiration_seconds`
-- `histograms_max_buckets` (tables of [version](#schema-versioning) 12 or later)
+- `histograms_max_buckets` (tables of [version](#schema-versioning) )DOCS_MD" + histograms_version + R"DOCS_MD( or later)
 
 ```sql
 ALTER TABLE my_table MODIFY SETTING metric_families_deduplication_cache_expiration_seconds = 600;
@@ -1598,7 +1607,7 @@ Here is a list of settings which can be specified while defining a `TimeSeries` 
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `version` | UInt64 | 12 | The version of the table: it identifies the set of the target tables and their structure. The version is pinned automatically when a table is created and can't be changed afterwards, normally it should be omitted in the `CREATE TABLE` query (see [Schema versioning](#schema-versioning)) |
+| `version` | UInt64 | )DOCS_MD" + latest_version + R"DOCS_MD( | The version of the table: it identifies the set of the target tables and their structure. The version is pinned automatically when a table is created and can't be changed afterwards, normally it should be omitted in the `CREATE TABLE` query (see [Schema versioning](#schema-versioning)) |
 | `tags_to_columns` | Map | {} | Map specifying which tags should be put to separate columns in the [tags](#tags-table) table. Syntax: `{'tag1': 'column1', 'tag2' : column2, ...}` |
 | `store_time_ranges` | Bool | true | If set to true then the table stores the time range of each time series in the [time ranges](#time-ranges-table) table and uses it to filter time series by time. Set to false to disable the time ranges table. Not applicable to tables of [version](#schema-versioning) 7 or earlier, they use `store_min_time_and_max_time` instead |
 | `samples_bucket_step_seconds` | UInt64 | 3600 | The length in seconds of the time buckets of the [samples](#samples-table) table: a row of the table contains the samples of one time series with timestamps in one bucket, and the `bucket` column contains the start of the bucket, i.e. the timestamp rounded down to a multiple of this setting. The default is 1 hour; the effective value is pinned into the table definition at CREATE time |
@@ -1635,7 +1644,7 @@ The following settings apply to tables of earlier [versions](#schema-versioning)
 The `TimeSeries` table engine and the PromQL execution layer are under active development:
 the set of the target tables and their structure can change between ClickHouse versions.
 To make such changes detectable, every `TimeSeries` table stores its version in the [version](#settings) setting.
-The version is pinned automatically into the `CREATE` query when a table is created - its value is the latest version known to the server (currently 12) -
+The version is pinned automatically into the `CREATE` query when a table is created - its value is the latest version known to the server (currently )DOCS_MD" + latest_version + R"DOCS_MD() -
 persists in the table metadata, and can't be changed by `ALTER`. Tables created before the setting was introduced are considered as version 0.
 Normally the setting should just be omitted in the `CREATE TABLE` query - then the table gets the latest version.
 An explicit `version` is accepted if the server supports that version; then the table is defined the way that version does it (see [Version history](#version-history)).
@@ -1668,7 +1677,7 @@ the `promql` dialect, and the Prometheus HTTP query API):
 | 9 | The default partition key of an inner [recent samples](#recent-samples-table) table names the timezone: `toStartOfInterval(toDateTime(timestamp, 'UTC'), toIntervalHour(5))`. Earlier versions generate it without one, and `toStartOfInterval` counts hours from local midnight, so a change of the server timezone moves the meaning of the partition values they have already written. Existing tables keep the key they were created with, which no `ALTER` can change |
 | 10 | External target tables are not supported for new tables: every target of a table of this version is an inner table. The settings `id_type` and `id_generator` are not supported either: the type of the `id` column and the expression generating identifiers are declared in `TAGS INNER COLUMNS` (see [The `id` column](#id-column)). Tables of earlier versions keep their external target tables and these settings. The stored data didn't change |
 | 11 | The [samples](#samples-table) and [recent samples](#recent-samples-table) tables store buckets of samples: a row keeps the samples of one time series within one time bucket (the columns `samples`, `bucket`, `min_time`, `max_time`) in an `AggregatingMergeTree` ordered by `(id, bucket)`. The settings [`samples_bucket_step_seconds`](#settings), [`samples_partition_by`](#settings), [`samples_index_granularity_bytes`](#settings), [`recent_samples_bucket_step_seconds`](#settings) and [`recent_samples_index_granularity_bytes`](#settings) were introduced, and the defaults of [`samples_index_granularity`](#settings) and [`recent_samples_index_granularity`](#settings) changed. Tables of earlier versions store one sample per row in the columns `timestamp` and `value`: they can still be read, written into and queried with PromQL, and the [timeSeriesSelector](/reference/functions/table-functions/timeSeriesSelector) table function reads them without a conversion when its argument `return_columns` is `'timestamp_and_value'` |
-| 12 | The [samples](#samples-table) and [recent samples](#recent-samples-table) tables store native histogram samples in the column `histograms` of the same rows as the float samples (integer and float histograms with their own count types, the buckets as pairs of the bucket index and the count), with counter reset hints updated as described [above](#samples-table), and merged by `timeSeriesGroupArrayHistograms`; the outer columns `histograms.*` and the setting [`histograms_max_buckets`](#settings) were introduced. Tables of earlier versions store no histograms: the Prometheus remote-write protocol drops the native histograms sent to them with a warning |
+| )DOCS_MD" + histograms_version + R"DOCS_MD( | The [samples](#samples-table) and [recent samples](#recent-samples-table) tables store native histogram samples in the column `histograms` of the same rows as the float samples (integer and float histograms with their own count types, the buckets as pairs of the bucket index and the count), with counter reset hints updated as described [above](#samples-table), and merged by `timeSeriesGroupArrayHistograms`; the outer columns `histograms.*` and the setting [`histograms_max_buckets`](#settings) were introduced. Tables of earlier versions store no histograms: the Prometheus remote-write protocol drops the native histograms sent to them with a warning |
 
 # Functions {#functions}
 
