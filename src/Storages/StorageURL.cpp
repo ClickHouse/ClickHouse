@@ -582,11 +582,6 @@ size_t StorageURLSource::DisclosedGlobIterator::sizeForStreams(size_t requested)
     return pimpl->sizeForStreams(requested);
 }
 
-void StorageURLSource::setCredentials(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & request_uri)
-{
-    setCredentialsFromURL(credentials, request_uri);
-}
-
 StorageURLSource::StorageURLSource(
     const ReadFromFormatInfo & info,
     std::shared_ptr<IteratorWrapper> uri_iterator_,
@@ -1258,10 +1253,9 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
         for (const auto & [param, value] : params)
             request_uri.addQueryParameter(param, value);
 
-        setCredentials(credentials, request_uri);
-        /// The credentials are sent in the `Authorization` header, which <http_forbid_headers> may forbid.
-        /// Checked outside of the `try` below: a forbidden option must fail the read, not fall through to the next one.
-        context_->getHTTPHeaderFilter().checkBasicCredentials(credentials);
+        /// Outside of the `try` below: an option whose credentials <http_forbid_headers> forbids must fail the read,
+        /// not fall through to the next one.
+        setCredentialsFromURL(credentials, request_uri, context_->getHTTPHeaderFilter());
 
         const auto & settings = context_->getSettingsRef();
 
@@ -3554,10 +3548,6 @@ void registerStorageURL(StorageFactory & factory)
 
             auto configuration = std::make_shared<StorageWebConfiguration>();
             configuration->is_replayed_definition = is_replayed_definition;
-            /// A stored definition (server startup, short `ATTACH`, `Replicated` database replay, replica recovery) is not
-            /// refused for a userinfo forbidden by <http_forbid_headers>, so that the table still loads. `RESTORE` brings
-            /// the definition from the backup, so it is checked like a fresh one.
-            configuration->check_userinfo = !is_replayed_definition || args.is_restore_from_backup;
             StorageObjectStorageConfiguration::initialize(*configuration, object_storage_args, context, /* with_table_structure */ false);
 
             /// Same contract as `createStorageObjectStorage`: only a user-issued `CREATE` applies the

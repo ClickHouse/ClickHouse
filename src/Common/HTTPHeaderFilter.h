@@ -27,7 +27,8 @@ public:
     /// `Authorization` header when <http_forbid_headers> forbids it. Credentials with an empty username
     /// send no header, see `ReadWriteBufferFromHTTP::prepareRequest`, so they are not checked.
     void checkBasicCredentials(const Poco::Net::HTTPBasicCredentials & credentials) const;
-    /// The same for the userinfo of a URL, which is sent as Basic credentials. Any non-empty userinfo is checked.
+    /// The same for a sender that turns any non-empty userinfo of a URL into Basic credentials, even without a username,
+    /// such as `ConfluentSchemaRegistry::applyAuth`. The userinfo of the other URLs goes through `setCredentialsFromURL`.
     void checkURIUserInfo(const Poco::URI & uri) const;
 
 private:

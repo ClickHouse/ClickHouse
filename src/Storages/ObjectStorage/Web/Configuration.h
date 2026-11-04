@@ -84,10 +84,6 @@ public:
 
     void check(ContextPtr context) override;
 
-    /// Whether `check` refuses a userinfo in the URL when <http_forbid_headers> forbids the `Authorization` header, in
-    /// which the userinfo is sent. Cleared for a stored definition of a `URL` table, see `registerStorageURL`.
-    bool check_userinfo = true;
-
     ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly, CredentialsConfigurationCallback refresh_credentials_callback) override;
 
     void addStructureAndFormatToArgsIfNeeded(

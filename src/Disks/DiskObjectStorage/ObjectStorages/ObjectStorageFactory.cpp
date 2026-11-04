@@ -298,25 +298,6 @@ static void registerAzureObjectStorage(ObjectStorageFactory & factory)
 }
 #endif
 
-std::string getWebObjectStorageEndpoint(
-    const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const ContextPtr & context)
-{
-    auto uri = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
-    if (!uri.ends_with('/'))
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, "URI must end with '/', but '{}' doesn't.", uri);
-    try
-    {
-        Poco::URI poco_uri(uri);
-    }
-    catch (const Poco::Exception & e)
-    {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, "Bad URI: `{}`. Error: {}", uri, e.what());
-    }
-    return uri;
-}
-
 static void registerWebObjectStorage(ObjectStorageFactory & factory)
 {
     factory.registerObjectStorageType("web", [](
@@ -328,8 +309,21 @@ static void registerWebObjectStorage(ObjectStorageFactory & factory)
         bool /* run_local_paths_check */,
         RemoteHostFilterCheck /* remote_host_filter_check */) -> ObjectStoragePtr
     {
-        /// The userinfo of the endpoint of a disk defined by a query is checked by `validateResolvedWebDiskEndpoints`.
-        return std::make_shared<WebObjectStorage>(getWebObjectStorageEndpoint(config, config_prefix, context), "", context);
+        auto uri = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
+        if (!uri.ends_with('/'))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "URI must end with '/', but '{}' doesn't.", uri);
+        try
+        {
+            Poco::URI poco_uri(uri);
+        }
+        catch (const Poco::Exception & e)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "Bad URI: `{}`. Error: {}", uri, e.what());
+        }
+
+        return std::make_shared<WebObjectStorage>(uri, "", context);
     });
 }
 

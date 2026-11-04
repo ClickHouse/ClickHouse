@@ -71,8 +71,6 @@ static std::string getOrCreateCustomDisk(
             validateResolvedS3DiskCredentials(*config, context, attach, s3_disk_info);
 
         validateResolvedAzureDiskCredentials(*config, context, attach, for_system_database);
-        /// Before `getOrCreateDisk`, which reuses an existing disk without creating it.
-        validateResolvedWebDiskEndpoints(*config, context, attach);
     }
 
     Poco::Util::AbstractConfiguration::Keys disk_settings_keys;

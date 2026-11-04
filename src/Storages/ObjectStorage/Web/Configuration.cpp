@@ -137,13 +137,7 @@ void StorageWebConfiguration::check(ContextPtr context)
     for (const auto & url_shard : url_shards)
     {
         for (const auto & url_option : url_shard)
-        {
-            const Poco::URI uri(url_option.base_url + url_option.query_fragment, false);
-            context->getGlobalContext()->getRemoteHostFilter().checkURL(uri);
-            /// The userinfo is sent in the `Authorization` header, see `setCredentialsFromURL`.
-            if (check_userinfo)
-                context->getGlobalContext()->getHTTPHeaderFilter().checkURIUserInfo(uri);
-        }
+            context->getGlobalContext()->getRemoteHostFilter().checkURL(Poco::URI(url_option.base_url + url_option.query_fragment, false));
     }
     context->getGlobalContext()->getHTTPHeaderFilter().checkHeaders(headers_from_ast);
 }
