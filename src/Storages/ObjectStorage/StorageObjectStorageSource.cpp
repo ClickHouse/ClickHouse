@@ -95,6 +95,15 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
 }
 
+namespace
+{
+    String getObjectStorageHash(const IObjectStorage & object_storage)
+    {
+        const String description = object_storage.getDescription();
+        return sipHash128String(description.substr(0, description.find('?')) + '\0' + object_storage.getObjectsNamespace());
+    }
+}
+
 StorageObjectStorageSource::StorageObjectStorageSource(
     String name_,
     ObjectStoragePtr object_storage_,
@@ -1099,6 +1108,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         else
         {
             SipHash hash;
+            hash.update(getObjectStorageHash(*object_storage));
             hash.update(object_info.getPath());
             hash.update(object_info.metadata->etag);
 
@@ -1147,7 +1157,9 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
 
     if (use_page_cache)
     {
-        PageCacheKey key = {.path = "s3:" + object_info.getPath(), .file_version = "etag:" + object_info.metadata->etag};
+        PageCacheKey key = {
+            .path = fmt::format("s3:{}:{}", getObjectStorageHash(*object_storage), object_info.getPath()),
+            .file_version = "etag:" + object_info.metadata->etag};
         impl = std::make_unique<CachedInMemoryReadBufferFromFile>(key, effective_read_settings.page_cache, std::move(impl), modified_read_settings);
     }
 
