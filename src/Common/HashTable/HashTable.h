@@ -3,6 +3,7 @@
 #include <Core/Defines.h>
 #include <base/types.h>
 #include <base/sanitizer_defs.h>
+#include <base/arithmeticOverflow.h>
 #include <Common/Exception.h>
 
 #include <IO/ReadBuffer.h>
@@ -702,7 +703,7 @@ protected:
         /// compiler assumes that moving a cell can change them, and would reload them for every cell.
         Cell * const cells = buf;
         const Grower local_grower = grower;
-        auto distance_from_optimal = [&](size_t pos) { return local_grower.place(pos - local_grower.place(cells[pos].getHash(*this))); };
+        auto distance_from_optimal = [&](size_t pos) { return local_grower.place(common::subIgnoreOverflow(pos, local_grower.place(cells[pos].getHash(*this)))); };
 
         for (size_t i = 1; i < buf_size; ++i)
         {
