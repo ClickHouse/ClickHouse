@@ -4,9 +4,9 @@
 -- is returned once per replica until https://github.com/ClickHouse/ClickHouse/pull/119350 is merged.
 
 -- `timeSeriesSelector` (and every PromQL selector evaluated through it) builds a SELECT over the
--- samples table. That inner SELECT must reference the bare `id` / `timestamp` / `value` columns
--- (no casts wrapping the columns in its SELECT list) and must put the selective timestamp range
--- condition before the `id IN <tags subquery>` condition. Wrapped primary-key columns are
+-- samples table. That inner SELECT must reference the bare `id` / `bucket` / `min_time` / `max_time` columns
+-- (no casts wrapping the columns in its SELECT list) and must put the selective time range
+-- conditions before the `id IN <tags subquery>` condition. Wrapped primary-key columns are
 -- re-evaluated over the whole primary index during index analysis, and they disable
 -- primary-key-based selectivity estimation - then the PREWHERE read steps are misordered and
 -- the expensive `in(id, set)` probe runs on all read rows. The casts to the declared types are
@@ -35,28 +35,33 @@ INSERT INTO FUNCTION timeSeriesTimeRanges({CLICKHOUSE_DATABASE:Identifier}.ts) (
     (102, toDateTime64(0, 3), toDateTime64(1000, 3)),
     (201, toDateTime64(0, 3), toDateTime64(1000, 3));
 
-INSERT INTO FUNCTION timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts) (id, timestamp, value) VALUES
-    (101, toDateTime64(100, 3), 1.), (101, toDateTime64(200, 3), 2.), (101, toDateTime64(300, 3), 3.),
-    (102, toDateTime64(150, 3), 10.), (102, toDateTime64(250, 3), 20.),
-    (201, toDateTime64(100, 3), 100.), (201, toDateTime64(300, 3), 300.);
+-- All the samples belong to the bucket starting at 0 (the default bucket step is 1 hour).
+INSERT INTO FUNCTION timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts) (id, samples, bucket, min_time, max_time) VALUES
+    (101, [(toDateTime64(100, 3), 1.), (toDateTime64(200, 3), 2.), (toDateTime64(300, 3), 3.)], toDateTime64(0, 3), toDateTime64(100, 3), toDateTime64(300, 3)),
+    (102, [(toDateTime64(150, 3), 10.), (toDateTime64(250, 3), 20.)], toDateTime64(0, 3), toDateTime64(150, 3), toDateTime64(250, 3)),
+    (201, [(toDateTime64(100, 3), 100.), (toDateTime64(300, 3), 300.)], toDateTime64(0, 3), toDateTime64(100, 3), toDateTime64(300, 3));
 
-SELECT '-- timeSeriesSelector returns the same rows as a direct filtered read of the samples table';
+SELECT '-- timeSeriesSelector returns the same samples as a direct filtered read of the samples table';
 
-SELECT id, timestamp, value FROM timeSeriesSelector(ts, 'foo', 100, 250) ORDER BY id, timestamp;
+SELECT id, sample.1 AS timestamp, sample.2 AS value
+FROM (SELECT id, arrayJoin(samples) AS sample FROM timeSeriesSelector(ts, 'foo', 100, 250, 'samples'))
+ORDER BY id, timestamp;
 
 SELECT '(direct read for comparison)';
 
-SELECT id, timestamp, value FROM timeSeriesSamples(ts)
-WHERE (timestamp >= toDateTime64(100, 3)) AND (timestamp <= toDateTime64(250, 3)) AND (id IN (101, 102))
+SELECT id, sample.1 AS timestamp, sample.2 AS value
+FROM (SELECT id, arrayJoin(samples) AS sample FROM timeSeriesSamples(ts) WHERE id IN (101, 102))
+WHERE (timestamp >= toDateTime64(100, 3)) AND (timestamp <= toDateTime64(250, 3))
 ORDER BY id, timestamp;
 
-SELECT '-- the SELECT over the samples table uses bare columns, timestamp range first';
+SELECT '-- the SELECT over the samples table uses bare columns, time range first';
 
--- The WHERE conditions must reference the bare `id` / `timestamp` columns in the generated order.
--- If aliased casts shadow the columns, the conditions render with the wrapped expressions
--- (e.g. `CAST(timestamp AS DateTime64(3)) >= ...`), and `position` returns 0 for both patterns.
+-- The WHERE conditions must reference the bare `id` / `bucket` / `max_time` columns in the generated order.
+-- If aliased casts shadow the columns, the conditions render with the wrapped expressions,
+-- and `position` returns 0 for both patterns.
 -- `optimize_move_to_prewhere = 0` keeps the generated condition order.
-SELECT position(plan, 'timestamp >=') BETWEEN 1 AND position(plan, 'id IN') AS bare_timestamp_condition_before_id_in
-FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN actions = 1 SELECT id, timestamp, value FROM timeSeriesSelector(ts, 'foo', 100, 250) SETTINGS optimize_move_to_prewhere = 0));
+SELECT position(plan, 'bucket >=') BETWEEN 1 AND position(plan, 'id IN') AS bare_bucket_condition_before_id_in,
+       position(plan, 'max_time >=') BETWEEN 1 AND position(plan, 'id IN') AS max_time_condition_before_id_in
+FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN actions = 1 SELECT id, samples FROM timeSeriesSelector(ts, 'foo', 100, 250, 'samples') SETTINGS optimize_move_to_prewhere = 0));
 
 DROP TABLE ts;
