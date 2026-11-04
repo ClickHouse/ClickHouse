@@ -169,10 +169,12 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
             return;
         for (auto * writers : {&delete_data_writers, &update_data_writers})
             for (auto & [_, writer] : *writers)
-                writer->cancel();
+                if (writer)
+                    writer->cancel();
         for (auto * buffers : {&delete_data_write_buffers, &update_data_write_buffers})
             for (auto & [_, buffer] : *buffers)
-                buffer->cancel();
+                if (buffer)
+                    buffer->cancel();
         for (const auto * files : {&delete_data_result, &update_data_result})
             for (const auto & [_, file] : *files)
             {
