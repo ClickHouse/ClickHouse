@@ -96,9 +96,10 @@ SerializationObject::SerializationObject(
 
 MutableColumnPtr SerializationObject::wrapColumnForDeserialization(MutableColumnPtr column) const
 {
-    auto & typed_paths = assert_cast<ColumnObject &>(*column).getTypedPaths();
-    for (auto & [path, path_column] : typed_paths)
+    auto & column_object = assert_cast<ColumnObject &>(*column);
+    for (auto & [path, path_column] : column_object.getTypedPaths())
         path_column = typed_paths_serializations.at(path)->wrapColumnForDeserialization(path_column->cloneEmpty());
+    column_object.rebuildSortedTypedPathColumns();
     return column;
 }
 
