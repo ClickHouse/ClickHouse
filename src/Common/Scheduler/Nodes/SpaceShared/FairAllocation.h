@@ -30,6 +30,8 @@ private:
     bool setIncrease(ISpaceSharedNode & from_child, IncreaseRequest * new_increase, bool detach_child);
     bool setDecrease(ISpaceSharedNode & from_child, DecreaseRequest * new_decrease, bool detach_child);
     void updateKey(ISpaceSharedNode & from_child, IncreaseRequest * new_increase, bool detach_child);
+    /// Selects the current `increase` (and `increase_child`) from the ordered sets of children
+    void selectIncrease();
     void syncReclaimableMembership(ISpaceSharedNode & from_child, bool detach_child);
 
     RunningSetByUsage running_children; /// Children with currently running allocations

@@ -5193,6 +5193,52 @@ TEST(SchedulerWorkloadResourceManager, QuerySlotAdmissionFollowsPrecedence)
     EXPECT_EQ(querySlotAdmissionOrder(/*query_slot_admission_uses_priority=*/ false), (std::vector<String>{"b", "a"}));
 }
 
+TEST(SchedulerWorkloadResourceManager, QuerySlotReleaseRefreshesFairAdmission)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE query (QUERY)");
+    t.query("CREATE WORKLOAD all SETTINGS max_concurrent_queries = 2");
+    t.query("CREATE WORKLOAD a IN all");
+    t.query("CREATE WORKLOAD b IN all");
+
+    ClassifierPtr c_a = t.manager->acquire("a");
+    ClassifierPtr c_b = t.manager->acquire("b");
+    ResourceLink a = c_a->get("query");
+    ResourceLink b = c_b->get("query");
+    auto wait_pending = [] (ResourceLink link)
+    {
+        while (static_cast<AllocationQueue *>(link.allocation_queue)->getQueueLengthAndSize().first == 0)
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    };
+
+    // Each workload runs one query and has one more waiting; `a` is the next to be admitted
+    auto holder_a = std::make_unique<QuerySlot>(a, std::chrono::steady_clock::time_point::max(), "holder_a");
+    auto holder_b = std::make_unique<QuerySlot>(b, std::chrono::steady_clock::time_point::max(), "holder_b");
+    std::atomic<bool> admitted_a = false;
+    std::atomic<bool> admitted_b = false;
+    std::unique_ptr<QuerySlot> slot_a;
+    std::unique_ptr<QuerySlot> slot_b;
+    // Workers capture the locals above, so they must finish before the locals are destroyed, including on exceptions
+    SCOPE_EXIT({
+        holder_a.reset();
+        holder_b.reset();
+        t.wait();
+    });
+    t.async([&] { slot_a = std::make_unique<QuerySlot>(a, std::chrono::steady_clock::time_point::max(), "waiter_a"); admitted_a = true; });
+    wait_pending(a);
+    t.async([&] { slot_b = std::make_unique<QuerySlot>(b, std::chrono::steady_clock::time_point::max(), "waiter_b"); admitted_b = true; });
+    wait_pending(b);
+
+    // The query of `b` finishes: `b` now runs fewer queries than `a`, so its waiting query takes the released slot
+    holder_b.reset();
+    while (!admitted_a.load() && !admitted_b.load())
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    EXPECT_TRUE(admitted_b.load());
+    EXPECT_FALSE(admitted_a.load());
+}
+
 TEST(SchedulerWorkloadResourceManager, QuerySlotMaxQueriesPerSecond)
 {
     ResourceTest t;
