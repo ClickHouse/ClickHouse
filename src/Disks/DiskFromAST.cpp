@@ -36,6 +36,7 @@ static std::string getOrCreateCustomDisk(
     const std::string & serialization,
     ContextPtr context,
     bool attach,
+    bool stored_definition,
     bool for_system_database)
 {
     const auto & server_config = context->getConfigRef();
@@ -132,7 +133,8 @@ static std::string getOrCreateCustomDisk(
                 disk_name);
 
     /// A reused disk was checked against an older `remote_url_allow_hosts` or only warned about on load.
-    if (!created && !attach && config->getString("object_storage_type", config->getString("type", "")) == "hdfs")
+    /// A short `ATTACH` reuses the disk of its own stored definition, which is exempt like loading at start.
+    if (!created && !attach && !stored_definition && config->getString("object_storage_type", config->getString("type", "")) == "hdfs")
         context->getGlobalContext()->getRemoteHostFilter().checkURL(
             Poco::URI(context->getMacros()->expand(config->getString("endpoint"))));
 
@@ -155,6 +157,7 @@ public:
     {
         ContextPtr context;
         bool attach;
+        bool stored_definition;
         bool for_system_database;
     };
 
@@ -166,7 +169,8 @@ public:
             const auto * function_args_expr = assert_cast<const ASTExpressionList *>(function->arguments.get());
             const auto & function_args = function_args_expr->children;
             auto disk_setting_string = function->formatWithSecretsOneLine();
-            auto disk_name = getOrCreateCustomDisk(function_args, disk_setting_string, data.context, data.attach, data.for_system_database);
+            auto disk_name = getOrCreateCustomDisk(
+                function_args, disk_setting_string, data.context, data.attach, data.stored_definition, data.for_system_database);
             ast = make_intrusive<ASTLiteral>(disk_name);
         }
     }
@@ -243,7 +247,8 @@ public:
 };
 
 
-std::string DiskFromAST::createCustomDisk(const ASTPtr & disk_function_ast, ContextPtr context, bool attach, bool for_system_database)
+std::string DiskFromAST::createCustomDisk(
+    const ASTPtr & disk_function_ast, ContextPtr context, bool attach, bool stored_definition, bool for_system_database)
 {
     if (!isDiskFunction(disk_function_ast))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a disk function");
@@ -262,7 +267,7 @@ std::string DiskFromAST::createCustomDisk(const ASTPtr & disk_function_ast, Cont
 
     auto ast = disk_function_ast->clone();
 
-    DiskConfigurationFlattener::Data data{context, attach, for_system_database};
+    DiskConfigurationFlattener::Data data{context, attach, stored_definition, for_system_database};
     visitBottomUp<DiskConfigurationFlattener>(ast, data);
 
     return assert_cast<const ASTLiteral &>(*ast).value.safeGet<String>();

@@ -21,12 +21,12 @@ DECLARE_SETTINGS_TRAITS(DatabaseMetadataDiskSettingsTraits, LIST_OF_DATABASE_MET
 
 struct DatabaseMetadataDiskSettingsImpl : public BaseSettings<DatabaseMetadataDiskSettingsTraits>
 {
-    void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata);
+    void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool stored_definition);
 };
 
 IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(DatabaseMetadataDiskSettingsTraits, LIST_OF_DATABASE_METADATA_DISK_SETTINGS, DatabaseMetadataDiskSettings, DatabaseMetadataDiskSetting)
 
-void DatabaseMetadataDiskSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata)
+void DatabaseMetadataDiskSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool stored_definition)
 {
     if (!storage_def.settings)
         return;
@@ -46,7 +46,7 @@ void DatabaseMetadataDiskSettingsImpl::loadFromQuery(ASTStorage & storage_def, C
 
     if (value_as_custom_ast && isDiskFunction(value_as_custom_ast))
     {
-        auto disk_name = DiskFromAST::createCustomDisk(value_as_custom_ast, context, is_loading_from_existing_metadata);
+        auto disk_name = DiskFromAST::createCustomDisk(value_as_custom_ast, context, is_loading_from_existing_metadata, stored_definition);
         *value = disk_name;
     }
     else
@@ -74,9 +74,9 @@ DatabaseMetadataDiskSettings::~DatabaseMetadataDiskSettings() = default;
 
 DATABASE_METADATA_SETTINGS_SUPPORTED_TYPES(DatabaseMetadataDiskSettings, IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR)
 
-void DatabaseMetadataDiskSettings::loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata)
+void DatabaseMetadataDiskSettings::loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool stored_definition)
 {
-    impl->loadFromQuery(storage_def, context, is_loading_from_existing_metadata);
+    impl->loadFromQuery(storage_def, context, is_loading_from_existing_metadata, stored_definition);
 }
 
 bool DatabaseMetadataDiskSettings::hasBuiltin(std::string_view name)

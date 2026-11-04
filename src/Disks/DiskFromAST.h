@@ -10,7 +10,9 @@ namespace DiskFromAST
 
 {
     void ensureDiskIsNotCustom(const std::string & name, ContextPtr context);
-    std::string createCustomDisk(const ASTPtr & disk_function, ContextPtr context, bool attach, bool for_system_database = false);
+    /// `stored_definition`: the definition comes from stored metadata through a user short `ATTACH`, not from the query.
+    std::string createCustomDisk(
+        const ASTPtr & disk_function, ContextPtr context, bool attach, bool stored_definition, bool for_system_database = false);
 }
 
 }
