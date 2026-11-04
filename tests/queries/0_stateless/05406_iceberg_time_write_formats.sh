@@ -22,53 +22,49 @@ for format in Parquet ORC Avro; do
         table="${PREFIX}_${format}_${RANDOM}"
         path="${USER_FILES_PATH}/${table}/"
 
-        ${CLICKHOUSE_CLIENT} --query "
+        # One insert per row, so that min/max pruning has files to skip.
+        # The queries are batched into a few client calls to keep the test fast.
+        ${CLICKHOUSE_CLIENT} ${WRITE} --query "
             CREATE TABLE ${table} (key ${type}, value ${type}, comment String)
             ENGINE = IcebergLocal('${path}', '${format}')
-            PARTITION BY key"
-        # One insert per row, so that min/max pruning has files to skip.
-        for row in "('12:00:00', '12:10:00', 'a')" "('13:00:00', '13:10:00.5', 'b')" "('14:00:00', '14:10:00', 'c')"; do
-            ${CLICKHOUSE_CLIENT} ${WRITE} --query "INSERT INTO ${table} VALUES ${row}"
-        done
+            PARTITION BY key;
+            INSERT INTO ${table} VALUES ('12:00:00', '12:10:00', 'a');
+            INSERT INTO ${table} VALUES ('13:00:00', '13:10:00.5', 'b');
+            INSERT INTO ${table} VALUES ('14:00:00', '14:10:00', 'c');"
 
-        ${CLICKHOUSE_CLIENT} --query "SELECT * FROM ${table} ORDER BY key"
+        queries="SELECT * FROM ${table} ORDER BY key;"
         for pruning in 0 1; do
-            ${CLICKHOUSE_CLIENT} --query "
-                SELECT comment FROM ${table} WHERE key = '13:00:00' SETTINGS use_iceberg_partition_pruning = ${pruning}"
-            ${CLICKHOUSE_CLIENT} --query "
+            queries+="
+                SELECT comment FROM ${table} WHERE key = '13:00:00' SETTINGS use_iceberg_partition_pruning = ${pruning};
                 SELECT groupArray(comment) FROM (SELECT comment FROM ${table} WHERE key >= '13:00:00' ORDER BY comment)
-                SETTINGS use_iceberg_partition_pruning = ${pruning}"
-            ${CLICKHOUSE_CLIENT} --query "
-                SELECT comment FROM ${table} WHERE value = '13:10:00.5' SETTINGS use_iceberg_partition_pruning = ${pruning}"
-            ${CLICKHOUSE_CLIENT} --query "
+                SETTINGS use_iceberg_partition_pruning = ${pruning};
+                SELECT comment FROM ${table} WHERE value = '13:10:00.5' SETTINGS use_iceberg_partition_pruning = ${pruning};
                 SELECT groupArray(comment) FROM (SELECT comment FROM ${table} WHERE value <= '13:10:00.5' ORDER BY comment)
-                SETTINGS use_iceberg_partition_pruning = ${pruning}"
+                SETTINGS use_iceberg_partition_pruning = ${pruning};"
         done
+        ${CLICKHOUSE_CLIENT} --query "${queries}"
 
         # One file of three is read: the others are skipped by the partition values and the column bounds.
-        ${CLICKHOUSE_CLIENT} --query_id "${table}_partition" --query "SELECT comment FROM ${table} WHERE key = '13:00:00' FORMAT Null"
-        ${CLICKHOUSE_CLIENT} --query_id "${table}_minmax" --query "SELECT comment FROM ${table} WHERE value = '13:10:00.5' FORMAT Null"
-        ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
         ${CLICKHOUSE_CLIENT} --query "
+            SELECT comment FROM ${table} WHERE key = '13:00:00' FORMAT Null SETTINGS log_comment = '${table}_partition';
+            SELECT comment FROM ${table} WHERE value = '13:10:00.5' FORMAT Null SETTINGS log_comment = '${table}_minmax';
+            SYSTEM FLUSH LOGS query_log;
             SELECT ProfileEvents['IcebergPartitionPrunedFiles'] + ProfileEvents['IcebergMinMaxIndexPrunedFiles'] FROM system.query_log
-            WHERE current_database = currentDatabase() AND query_id IN ('${table}_partition', '${table}_minmax') AND type = 'QueryFinish'
-            ORDER BY query_id DESC"
+            WHERE current_database = currentDatabase() AND log_comment IN ('${table}_partition', '${table}_minmax') AND type = 'QueryFinish'
+            ORDER BY log_comment DESC;"
 
         # The table function reads the schema of the metadata, where the column is `time`.
-        ${CLICKHOUSE_CLIENT} --query "
-            SELECT toTypeName(key), key, value FROM icebergLocal('${path}') WHERE key = '13:00:00'"
         # Iceberg `time` was read as `Int64` microseconds before; the setting brings it back.
         ${CLICKHOUSE_CLIENT} --query "
+            SELECT toTypeName(key), key, value FROM icebergLocal('${path}') WHERE key = '13:00:00';
             SELECT toTypeName(key), key, value FROM icebergLocal('${path}') WHERE key = 46800000000 ORDER BY key
-            SETTINGS iceberg_time_as_int64 = 1"
+            SETTINGS iceberg_time_as_int64 = 1;"
 
         ${CLICKHOUSE_CLIENT} ${WRITE} --query "INSERT INTO ${table} VALUES ('100:00:00', '12:00:00', 'x')" 2>&1 \
             | grep -o -m1 'VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE\|ICEBERG_SPECIFICATION_VIOLATION' | head -n1
         ${CLICKHOUSE_CLIENT} ${WRITE} --query "INSERT INTO ${table} VALUES ('12:00:00', '-01:00:00', 'x')" 2>&1 \
             | grep -o -m1 'VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE\|ICEBERG_SPECIFICATION_VIOLATION' | head -n1
-        ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${table}"
-
-        ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${table}"
+        ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${table}; DROP TABLE ${table};"
     done
 done
 
