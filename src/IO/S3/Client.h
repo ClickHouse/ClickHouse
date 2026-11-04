@@ -333,6 +333,8 @@ private:
 class ClientFactory
 {
 public:
+    static constexpr size_t AES256_KEY_BYTES = 32;
+
     ~ClientFactory();
 
     static ClientFactory & instance();
