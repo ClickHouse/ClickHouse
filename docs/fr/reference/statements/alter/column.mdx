@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 Ensemble de requêtes permettant de modifier la structure de la table.
 
-Syntaxe :
+Syntaxe :
 
 ```sql
 ALTER [TEMPORARY] TABLE [db].name [ON CLUSTER cluster] ADD|DROP|RENAME|CLEAR|COMMENT|{MODIFY|ALTER}|MATERIALIZE COLUMN ...
@@ -19,7 +19,15 @@ ALTER [TEMPORARY] TABLE [db].name [ON CLUSTER cluster] ADD|DROP|RENAME|CLEAR|COM
 Dans la requête, indiquez une liste d’une ou plusieurs actions séparées par des virgules.
 Chaque action correspond à une opération sur une colonne.
 
-Les actions suivantes sont prises en charge :
+Par exemple, un seul statement peut supprimer une colonne et en ajouter une autre :
+
+```sql
+ALTER TABLE visits DROP COLUMN browser, ADD COLUMN referrer String;
+```
+
+Le fait qu’une telle requête rende la main avant la fin de son traitement des données existantes est déterminé par [`alter_sync`](/fr/reference/settings/session-settings/alter#alter_sync), qui s’applique également à la mutation créée par `DROP COLUMN` ou par un changement de type via `MODIFY COLUMN`. [`mutations_sync`](/fr/reference/settings/session-settings/mutations#mutations_sync) s’applique quant à lui à [MATERIALIZE COLUMN](#materialize-column), qui s’exécute via le mécanisme des mutations. Ces deux paramètres sont décrits dans [Synchronicité des requêtes ALTER](/fr/reference/statements/alter/index#synchronicity-of-alter-queries).
+
+Les actions suivantes sont prises en charge :
 
 * [ADD COLUMN](#add-column) — Ajoute une nouvelle colonne à la table.
 * [DROP COLUMN](#drop-column) — Supprime la colonne.
@@ -34,9 +42,7 @@ Les actions suivantes sont prises en charge :
 * [MATERIALIZE COLUMN](#materialize-column) — Matérialise la colonne dans les parts où elle est absente.
   Ces actions sont décrites en détail ci-dessous.
 
-<div id="add-column">
-  ## ADD COLUMN
-</div>
+## ADD COLUMN {#add-column}
 
 ```sql
 ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [COMMENT 'comment for column'] [codec] [STATISTICS] [TTL] [settings] [AFTER name_after | FIRST]
@@ -72,9 +78,7 @@ ToDrop  UInt32
 Added3  UInt32
 ```
 
-<div id="drop-column">
-  ## DROP COLUMN
-</div>
+## DROP COLUMN {#drop-column}
 
 ```sql
 DROP COLUMN [IF EXISTS] name
@@ -94,9 +98,7 @@ Exemple :
 ALTER TABLE visits DROP COLUMN browser
 ```
 
-<div id="rename-column">
-  ## RENAME COLUMN
-</div>
+## RENAME COLUMN {#rename-column}
 
 ```sql
 RENAME COLUMN [IF EXISTS] name to new_name
@@ -112,9 +114,7 @@ Exemple :
 ALTER TABLE visits RENAME COLUMN webBrowser TO browser
 ```
 
-<div id="clear-column">
-  ## CLEAR COLUMN
-</div>
+## CLEAR COLUMN {#clear-column}
 
 ```sql
 CLEAR COLUMN [IF EXISTS] name IN PARTITION partition_name
@@ -130,9 +130,7 @@ Exemple :
 ALTER TABLE visits CLEAR COLUMN browser IN PARTITION tuple()
 ```
 
-<div id="comment-column">
-  ## COMMENT COLUMN
-</div>
+## COMMENT COLUMN {#comment-column}
 
 ```sql
 COMMENT COLUMN [IF EXISTS] name 'Text comment'
@@ -150,9 +148,7 @@ Exemple :
 ALTER TABLE visits COMMENT COLUMN browser 'This column shows the browser used for accessing the site.'
 ```
 
-<div id="modify-column">
-  ## MODIFY COLUMN
-</div>
+## MODIFY COLUMN {#modify-column}
 
 ```sql
 MODIFY COLUMN [IF EXISTS] name
@@ -163,9 +159,9 @@ ALTER COLUMN [IF EXISTS] name
     | ADD ENUM VALUES ( 'name' [= number] [, ...] )
 ```
 
-Les modificateurs qui suivent le type peuvent être écrits dans n’importe quel ordre et chacun ne peut apparaître qu’une seule fois ; voir [description de colonne](/fr/reference/statements/create/table#with-explicit-schema).
+Les modificateurs qui suivent le type peuvent être écrits dans n’importe quel ordre et chacun ne peut apparaître qu’une seule fois ; voir [description de colonne](/fr/reference/statements/create/table#with-explicit-schema).
 
-Cette requête modifie les propriétés de la colonne `name` :
+Cette requête modifie les propriétés de la colonne `name` :
 
 * Type
 
@@ -187,19 +183,21 @@ Pour des exemples de modification des paramètres au niveau des colonnes, consul
 
 Si la clause `IF EXISTS` est spécifiée, la requête ne renverra pas d’erreur si la colonne n’existe pas.
 
-Lors de la modification du type, les valeurs sont converties comme si les fonctions [toType](/fr/reference/functions/regular-functions/type-conversion-functions) leur étaient appliquées. Si seule l’expression par défaut est modifiée, la requête n’effectue aucune opération complexe et se termine presque instantanément.
+Lors de la modification du type, les valeurs sont converties comme si les fonctions [toType](/fr/reference/functions/regular-functions/type-conversion-functions) leur étaient appliquées. Si seule l’expression par défaut est modifiée, la requête ne modifie que les métadonnées.
 
-Exemple :
+Exemple :
 
 ```sql
 ALTER TABLE visits MODIFY COLUMN browser Array(String)
 ```
 
-La modification du type de colonne est la seule opération complexe : elle modifie le contenu des fichiers de données. Pour les grandes tables, cela peut prendre beaucoup de temps.
+Certaines modifications de type sont limitées aux métadonnées, car leur représentation sur disque reste inchangée. C’est le cas de l’extension d’un enum et des conversions entre `Date` et `UInt16` ou entre `DateTime` et `UInt32` ; la même règle s’applique de manière récursive à l’intérieur des types `Array` et `Nullable`. Certaines modifications des indications de type JSON et certains ajouts d’éléments à des tuples nommés permettent également d’éviter une réécriture immédiate lorsque les paramètres correspondants sont activés.
 
-La requête peut également modifier l’ordre des colonnes à l’aide de la clause `FIRST | AFTER` ; voir la description de [ADD COLUMN](#add-column), mais le type de colonne est obligatoire dans ce cas.
+Les autres modifications de type créent une mutation `READ_COLUMN` qui réécrit la colonne concernée dans les parts existantes. Le comportement d’attente est régi par [`alter_sync`](/fr/reference/settings/session-settings/alter#alter_sync) : sa valeur par défaut est `1` dans ClickHouse et `0` dans ClickHouse Cloud. Suivez la progression dans [`system.mutations`](/fr/reference/system-tables/mutations).
 
-Exemple :
+La requête peut également modifier l’ordre des colonnes à l’aide de la clause `FIRST | AFTER` ; voir la description de [ADD COLUMN](#add-column), mais le type de colonne est obligatoire dans ce cas.
+
+Exemple :
 
 ```sql
 CREATE TABLE users (
@@ -239,9 +237,7 @@ La requête `ALTER` de modification de colonnes est répliquée. Les instruction
   Soyez prudent lorsque vous modifiez une colonne Nullable en Non-Nullable. Assurez-vous qu&#39;elle ne contient aucune valeur NULL, sinon cela provoquera des problèmes à la lecture. Dans ce cas, la solution de contournement consiste à lancer Kill sur la mutation et à remettre la colonne en type Nullable.
 </Note>
 
-<div id="modify-column-remove">
-  ## MODIFY COLUMN REMOVE
-</div>
+## MODIFY COLUMN REMOVE {#modify-column-remove}
 
 Supprime l’une des propriétés de la colonne : `DEFAULT`, `ALIAS`, `MATERIALIZED`, `CODEC`, `COMMENT`, `TTL`, `SETTINGS`.
 
@@ -263,9 +259,7 @@ ALTER TABLE table_with_ttl MODIFY COLUMN column_ttl REMOVE TTL;
 
 * [REMOVE TTL](/fr/reference/statements/alter/ttl).
 
-<div id="modify-column-modify-setting">
-  ## MODIFY COLUMN MODIFY SETTING
-</div>
+## MODIFY COLUMN MODIFY SETTING {#modify-column-modify-setting}
 
 Modifie le paramètre d’une colonne.
 
@@ -283,9 +277,7 @@ Modifiez le paramètre `max_compress_block_size` de la colonne pour le définir 
 ALTER TABLE table_name MODIFY COLUMN column_name MODIFY SETTING max_compress_block_size = 1048576;
 ```
 
-<div id="modify-column-reset-setting">
-  ## MODIFY COLUMN RESET SETTING
-</div>
+## MODIFY COLUMN RESET SETTING {#modify-column-reset-setting}
 
 Réinitialise un paramètre de colonne et supprime également la déclaration de ce paramètre dans l’expression de colonne de la requête CREATE de la table.
 
@@ -303,9 +295,7 @@ Réinitialiser le paramètre de colonne `max_compress_block_size` à sa valeur p
 ALTER TABLE table_name MODIFY COLUMN column_name RESET SETTING max_compress_block_size;
 ```
 
-<div id="modify-column-add-enum-values">
-  ## MODIFY COLUMN ADD ENUM VALUES
-</div>
+## MODIFY COLUMN ADD ENUM VALUES {#modify-column-add-enum-values}
 
 Ajoute de nouvelles valeurs à une colonne de type `Enum`, `Enum8`, `Enum16`, `Nullable(Enum)`, `Nullable(Enum8)` ou `Nullable(Enum16)`
 
@@ -323,9 +313,7 @@ Ajoutez deux valeurs à la colonne `enum_column_name` :
 ALTER TABLE table_name MODIFY COLUMN enum_column_name ADD ENUM VALUES ('Hundred' = 100, 'HundredOne');
 ```
 
-<div id="materialize-column">
-  ## MATERIALIZE COLUMN
-</div>
+## MATERIALIZE COLUMN {#materialize-column}
 
 Matérialise une colonne avec une expression `DEFAULT` ou `MATERIALIZED`. Lors de l’ajout d’une colonne matérialisée à l’aide de `ALTER TABLE table_name ADD COLUMN column_name MATERIALIZED`, les lignes existantes sans valeur matérialisée ne sont pas remplies automatiquement. L’instruction `MATERIALIZE COLUMN` peut être utilisée pour réécrire les données de colonne existantes après l’ajout ou la mise à jour d’une expression `DEFAULT` ou `MATERIALIZED` (ce qui met uniquement à jour les métadonnées, sans modifier les données existantes). Notez que matérialiser une colonne dans la clé de tri est une opération non valide, car cela pourrait rompre l’ordre de tri.
 Implémentée sous forme de [mutation](/fr/reference/statements/alter/index#mutations).
@@ -396,9 +384,7 @@ SELECT groupArray(x), groupArray(s) FROM tmp;
 * [MATERIALIZED](/fr/reference/statements/create/view#materialized-view).
 * [MATERIALIZE INDEX](/fr/reference/statements/alter/skipping-index#materialize-index).
 
-<div id="limitations">
-  ## Limitations
-</div>
+## Limitations {#limitations}
 
 La requête `ALTER` vous permet de créer et de supprimer des éléments distincts (colonnes) dans des structures de données imbriquées, mais pas des structures de données imbriquées complètes. Pour ajouter une structure de données imbriquée, vous pouvez ajouter des colonnes portant un nom tel que `name.nested_name` et de type `Array(T)`. Une structure de données imbriquée équivaut à plusieurs colonnes Array dont le nom partage le même préfixe avant le point.
 

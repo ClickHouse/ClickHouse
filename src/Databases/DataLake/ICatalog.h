@@ -179,18 +179,21 @@ using CatalogTables = std::vector<CatalogTable>;
 /// by `DatabaseDataLake`) so the catalog can restrict which namespaces it lists.
 struct TableNameFilter
 {
-    /// Equals (`name = 'ns.table'`) and Like (`name LIKE 'ns.%'`) prune to specific
-    /// namespaces; All lists the whole catalog (fallback when we can't prune).
+    /// In (`name = 'ns.table'` or `name IN ('ns.a', 'other.b')`) and Like
+    /// (`name LIKE 'ns.%'`) prune to specific namespaces; All lists the whole catalog
+    /// (fallback when we can't prune).
     enum class Kind
     {
         All,
-        Equals,
+        In,
         Like,
     };
 
     Kind kind = Kind::All;
-    /// `Equals`: the literal value (e.g. `ns.table`). `Like`: the pattern (e.g. `ns.%`).
+    /// `Like`: the pattern (e.g. `ns.%`).
     std::string value;
+    /// `In`: the full table names the query can ask for (e.g. `ns.a`, `other.b`).
+    std::vector<std::string> values;
 };
 
 
@@ -262,6 +265,10 @@ public:
     /// E.g. one of S3, Azure, Local, HDFS.
     virtual std::optional<StorageType> getStorageType() const = 0;
 
+    virtual std::optional<std::string> getDefaultTableLocation(
+        const std::string & namespace_name,
+        const std::string & table_name) const;
+
     /// Creates new table in catalog. Callers must ensure the namespace exists before
     /// writing any table files to storage: a catalog that shares its storage view with
     /// the data refuses to create a namespace over a plain directory those files create.
@@ -271,6 +278,8 @@ public:
     virtual void createNamespaceIfNotExists(const String & namespace_name) const;
 
     virtual bool managesTableLocation() const { return false; }
+
+    virtual bool assignsLocationToNewNamespaces() const { return false; }
 
     /// True when the catalog writes the first metadata file itself on create. The client must not prewrite it.
     virtual bool writesInitialMetadata() const { return false; }

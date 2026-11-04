@@ -84,6 +84,25 @@ TEST(CoordinationSettingsValidation, RejectZeroBatchSizes)
              "</coordination_settings></keeper_server></clickhouse>"));
 }
 
+TEST(CoordinationSettingsValidation, RemoteDiskStreamingRequiresChunks)
+{
+    auto load = [](const std::string & chunk_size_setting)
+    {
+        std::istringstream stream( // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+            "<clickhouse><keeper_server><coordination_settings>"
+            "<snapshot_transfer_remote_disk_streaming>true</snapshot_transfer_remote_disk_streaming>"
+            + chunk_size_setting + "</coordination_settings></keeper_server></clickhouse>");
+        Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(stream);
+        DB::CoordinationSettings settings;
+        settings.loadFromConfig("keeper_server.coordination_settings", *config);
+    };
+
+    /// The default zero chunk size sends the whole snapshot as one object, so streaming would not bound memory.
+    EXPECT_THROW(load(""), DB::Exception);
+    EXPECT_THROW(load("<snapshot_transfer_chunk_size>0</snapshot_transfer_chunk_size>"), DB::Exception);
+    EXPECT_NO_THROW(load("<snapshot_transfer_chunk_size>4096</snapshot_transfer_chunk_size>"));
+}
+
 TEST(CoordinationSettingsValidation, CommitProfilerRequiresSamplingProfiler)
 {
     auto load = [](const std::string & xml)
@@ -467,6 +486,112 @@ TEST_P(CoordinationTest, PlainCreateWithContainerFlagRejected)
     auto request_read = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Create);
     DB::ReadBufferFromNuraftBuffer rbuf(wbuf.getBuffer());
     EXPECT_THROW(request_read->readImpl(rbuf), Coordination::Exception);
+}
+
+TEST_P(CoordinationTest, CreateRequestDoesNotPreallocateOversizedACLs)
+{
+    /// Invariant: memory must track bytes actually read, not the declared element count.
+    {
+        Coordination::ACLs acls;
+        acls.push_back(Coordination::ACL{Coordination::ACL::All, "world", "anyone"});
+        acls.push_back(Coordination::ACL{Coordination::ACL::Read, "digest", "user:hash"});
+
+        DB::WriteBufferFromNuraftBuffer wbuf;
+        Coordination::write(std::string{"/node"}, wbuf);
+        Coordination::write(std::string{"data"}, wbuf);
+        Coordination::write(acls, wbuf);
+        Coordination::write(static_cast<int32_t>(0), wbuf);
+
+        auto request_read = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Create);
+        DB::ReadBufferFromNuraftBuffer rbuf(wbuf.getBuffer());
+        request_read->readImpl(rbuf);
+        auto & create_read = dynamic_cast<Coordination::ZooKeeperCreateRequest &>(*request_read);
+        ASSERT_EQ(create_read.acls.size(), 2);
+        EXPECT_EQ(create_read.acls[0].permissions, Coordination::ACL::All);
+        EXPECT_EQ(create_read.acls[0].scheme, "world");
+        EXPECT_EQ(create_read.acls[0].id, "anyone");
+        EXPECT_EQ(create_read.acls[1].permissions, Coordination::ACL::Read);
+        EXPECT_EQ(create_read.acls[1].scheme, "digest");
+        EXPECT_EQ(create_read.acls[1].id, "user:hash");
+    }
+
+    {
+        /// Declared ACL count is above the pre-allocation bound, but no element bytes follow.
+        /// The reservation must stay bounded by the cap, not by the declared count.
+        DB::WriteBufferFromNuraftBuffer wbuf;
+        Coordination::write(std::string{"/node"}, wbuf);
+        Coordination::write(std::string{}, wbuf);
+        Coordination::write(static_cast<int32_t>(2 * Coordination::MAX_ARRAY_PREALLOCATION), wbuf);
+
+        auto request_read = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Create);
+        DB::ReadBufferFromNuraftBuffer rbuf(wbuf.getBuffer());
+        EXPECT_THROW(request_read->readImpl(rbuf), DB::Exception);
+        auto & create_read = dynamic_cast<Coordination::ZooKeeperCreateRequest &>(*request_read);
+        EXPECT_LE(create_read.acls.capacity(), static_cast<size_t>(Coordination::MAX_ARRAY_PREALLOCATION));
+    }
+}
+
+TEST(CoordinationSerialization, StringReadDoesNotPreallocateDeclaredSize)
+{
+    /// Invariant: memory must track bytes actually read, not the declared string length.
+    const size_t chunk = Coordination::MAX_STRING_PREALLOCATION;
+
+    auto expect_marshalling_error = [](DB::ReadBuffer & rbuf, std::string & s)
+    {
+        try
+        {
+            Coordination::read(s, rbuf);
+            FAIL() << "Expected ZMARSHALLINGERROR";
+        }
+        catch (const Coordination::Exception & e)
+        {
+            EXPECT_EQ(e.code, Coordination::Error::ZMARSHALLINGERROR);
+        }
+    };
+
+    {
+        /// The largest allowed length is declared, but no payload bytes follow.
+        DB::WriteBufferFromNuraftBuffer wbuf;
+        Coordination::write(Coordination::MAX_STRING_OR_ARRAY_SIZE, wbuf);
+
+        DB::ReadBufferFromNuraftBuffer rbuf(wbuf.getBuffer());
+        std::string s;
+        expect_marshalling_error(rbuf, s);
+        EXPECT_LE(s.capacity(), 2 * chunk);
+    }
+
+    {
+        /// The input ends after one complete chunk.
+        DB::WriteBufferFromNuraftBuffer wbuf;
+        Coordination::write(Coordination::MAX_STRING_OR_ARRAY_SIZE, wbuf);
+        const std::string first_chunk(chunk, 'x');
+        wbuf.write(first_chunk.data(), first_chunk.size());
+
+        DB::ReadBufferFromNuraftBuffer rbuf(wbuf.getBuffer());
+        std::string s;
+        expect_marshalling_error(rbuf, s);
+        EXPECT_LE(s.capacity(), 4 * chunk);
+    }
+
+    {
+        /// A string that needs more than one chunk is read completely, and the next field is aligned.
+        std::string expected(chunk + 1, '\0');
+        for (size_t i = 0; i < expected.size(); ++i)
+            expected[i] = static_cast<char>(i % 251);
+
+        DB::WriteBufferFromNuraftBuffer wbuf;
+        Coordination::write(expected, wbuf);
+        Coordination::write(static_cast<int32_t>(42), wbuf);
+
+        DB::ReadBufferFromNuraftBuffer rbuf(wbuf.getBuffer());
+        std::string s;
+        int32_t next = 0;
+        Coordination::read(s, rbuf);
+        Coordination::read(next, rbuf);
+        EXPECT_EQ(s, expected);
+        EXPECT_EQ(next, 42);
+        EXPECT_TRUE(rbuf.eof());
+    }
 }
 
 template <typename StateMachine>
@@ -1663,6 +1788,9 @@ public:
         return dispatcher.new_session_id_requests.count(internal_id);
     }
 
+    /// The internal id that getSessionID gives to its next request.
+    static int64_t nextInternalSessionID(KeeperDispatcher & dispatcher) { return dispatcher.internal_session_id_counter.load(); }
+
     static void interruptibleSleep(KeeperDispatcher & dispatcher, std::chrono::milliseconds period)
     {
         dispatcher.interruptibleSleep(period);
@@ -2120,6 +2248,47 @@ TEST(KeeperDispatcher, SessionIDErrorReachesRealWaiter)
     }
 
     EXPECT_EQ(DispatcherAccessor::sessionIDWaiterCount(keeper_dispatcher, internal_id), 0u) << "the waiter entry leaked";
+}
+
+/// After an unclean restart a server commits again the SessionID entries that its previous process
+/// wrote, while it already serves clients. Such an entry must not answer a request of the new process.
+TEST(KeeperDispatcher, SessionIDFromBeforeRestartDoesNotAnswerNewRequest)
+{
+    DispatcherFixture fixture;
+
+    DB::KeeperDispatcher before_restart;
+    DB::KeeperDispatcher after_restart;
+    fixture.dispatcher.reset();
+    DispatcherAccessor::setServer(after_restart, std::move(fixture.server));
+
+    const int64_t old_internal_id = DispatcherAccessor::nextInternalSessionID(before_restart);
+    const int64_t new_internal_id = DispatcherAccessor::nextInternalSessionID(after_restart);
+
+    auto waiter = DispatcherAccessor::registerSessionIDWaiter(after_restart, new_internal_id);
+    ASSERT_TRUE(waiter.has_value());
+    auto & future = *waiter;
+
+    auto router = DispatcherAccessor::router(after_restart);
+    /// Built the way KeeperStateMachine::commit builds the response of a committed SessionID entry.
+    auto commit_session_id = [&](int64_t internal_id, int64_t session_id)
+    {
+        auto request = makeSessionIDRequest(/*server_id=*/ 1, internal_id);
+        auto response = std::dynamic_pointer_cast<Coordination::ZooKeeperSessionIDResponse>(request.request->makeResponse());
+        response->session_id = session_id;
+        DB::KeeperResponseForSession response_for_session;
+        response_for_session.session_id = DB::keeper_internal_get_session_id;
+        response_for_session.response = response;
+        response_for_session.request = request.request;
+        ASSERT_TRUE(router(response_for_session));
+    };
+
+    commit_session_id(old_internal_id, /*session_id=*/ 8);
+    ASSERT_EQ(future.wait_for(std::chrono::seconds(0)), std::future_status::timeout)
+        << "a SessionID entry written before the restart answered a request made after it";
+
+    commit_session_id(new_internal_id, /*session_id=*/ 21);
+    ASSERT_EQ(future.wait_for(std::chrono::seconds(0)), std::future_status::ready);
+    EXPECT_EQ(future.get(), 21);
 }
 
 /// A request accepted before the shutdown flag was set is discarded without a response: the drains

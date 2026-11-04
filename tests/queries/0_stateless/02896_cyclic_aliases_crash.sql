@@ -9,7 +9,6 @@ SELECT
     val + 1 as prev,
     val + prev as val
 FROM ( SELECT 1 as val )
-SETTINGS enable_analyzer = 1
 ;
 
 -- Analyzer detects forward alias references in cyclic patterns

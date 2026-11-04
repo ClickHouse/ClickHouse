@@ -25,6 +25,8 @@ struct MergeTreePartInfo;
 struct MergeTreePartition;
 struct MergeTreeDataPartChecksums;
 struct MergeTreeIndexGranularityInfo;
+struct MergeTreePartMinMaxIndex;
+using MergeTreePartMinMaxIndexPtr = std::shared_ptr<MergeTreePartMinMaxIndex>;
 
 class ISerialization;
 using SerializationPtr = std::shared_ptr<const ISerialization>;
@@ -69,6 +71,9 @@ public:
     virtual Int64 getMaxDataVersion() const = 0;
 
     virtual IndexPtr getIndexPtr() const = 0;
+
+    /// Minmax index over the partition columns, or nullptr when the part does not carry it.
+    virtual MergeTreePartMinMaxIndexPtr getMinMaxIndex() const = 0;
 
     virtual DataPartStoragePtr getDataPartStorage() const = 0;
 
@@ -126,6 +131,12 @@ public:
     virtual const MergeTreeIndexGranularity & getIndexGranularity() const = 0;
 
     virtual SerializationPtr getSerialization(const NameAndTypePair & column) const = 0;
+
+    virtual SerializationPtr tryGetSerialization(const String & column_name) const = 0;
+
+    /// A static subcolumn's serialization from the part. Defaults to nothing, so an implementation that
+    /// does not provide it resolves subcolumns against the column's serialization instead.
+    virtual SerializationPtr tryGetSubcolumnSerialization(const String & /*column_name*/, const String & /*subcolumn_name*/) const { return nullptr; }
 
     virtual const SerializationInfoByName & getSerializationInfos() const = 0;
 
