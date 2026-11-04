@@ -24,6 +24,8 @@
             <function>divide</function>
             <!-- The factory gives it for `toTime` under `use_legacy_to_time`. -->
             <function>toTimeWithFixedDate</function>
+            <!-- Renamed to `toTimeWithFixedDate` by `ALTER` under `use_legacy_to_time`. -->
+            <function>toTime</function>
             <!-- A lambda keeps its parameters in `tuple(...)`, which is not a call of it. -->
             <function>tuple</function>
         </functions_requiring_grant>

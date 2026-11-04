@@ -311,6 +311,7 @@ def test_division_setting_does_not_bypass_grant():
 def test_factory_replacement_requires_grant():
     """Under `use_legacy_to_time`, the function factory gives `toTimeWithFixedDate` for `toTime`."""
     instance.query("CREATE USER A")
+    instance.query("GRANT FUNCTION ON toTime TO A")
 
     query = (
         "SELECT toTime(toDateTime('2026-01-01 12:00:00')) "
@@ -320,6 +321,25 @@ def test_factory_replacement_requires_grant():
 
     instance.query("GRANT FUNCTION ON toTimeWithFixedDate TO A")
     assert instance.query(query, user="A") == instance.query(query)
+
+
+def test_legacy_to_time_in_mutation_requires_grant():
+    """Under `use_legacy_to_time`, `ALTER` renames `toTime` to `toTimeWithFixedDate` before the
+    analysis, so the written `toTime` is checked where it is renamed."""
+    instance.query("CREATE TABLE t (k UInt8, d DateTime) ENGINE = MergeTree ORDER BY k")
+    instance.query("INSERT INTO t VALUES (1, '2026-01-01 12:00:00')")
+    instance.query("CREATE USER A")
+    instance.query("GRANT SELECT, ALTER UPDATE ON t TO A")
+    instance.query("GRANT FUNCTION ON toTimeWithFixedDate TO A")
+
+    query = "ALTER TABLE t UPDATE d = toTime(d) WHERE 1"
+    settings = {"use_legacy_to_time": 1, "mutations_sync": 2}
+    assert "Not enough privileges" in instance.query_and_get_error(
+        query, user="A", settings=settings
+    )
+
+    instance.query("GRANT FUNCTION ON toTime TO A")
+    instance.query(query, user="A", settings=settings)
 
 
 def test_optimized_call_requires_grant():

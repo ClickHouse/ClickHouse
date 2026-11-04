@@ -104,7 +104,7 @@ BlockIO InterpreterUpdateQuery::execute()
     /// database: the oldest DDL entry format carries no settings, so the replaying host would
     /// otherwise resolve `toTime` with its own default.
     if (settings[Setting::use_legacy_to_time])
-        replaceLegacyToTime(*query_ptr);
+        replaceLegacyToTime(*query_ptr, getContext());
 
     auto & update_query = query_ptr->as<ASTUpdateQuery &>();
 
