@@ -29,7 +29,9 @@ FROM
     SELECT * FROM tab WHERE match(str, ' Hello (ClickHouse|World) ') ORDER BY id
 )
 WHERE
-    explain LIKE '%Granules: %';
+    explain LIKE '%Granules: %'
+SETTINGS
+    enable_analyzer = 1;
 
 SELECT '---';
 
@@ -47,7 +49,9 @@ FROM
     SELECT * FROM tab WHERE match(str, '.* (ClickHouse|World) ') ORDER BY id
 )
 WHERE
-    explain LIKE '%Granules: %';
+    explain LIKE '%Granules: %'
+SETTINGS
+    enable_analyzer = 1;
 
 SELECT '---';
 
@@ -65,6 +69,8 @@ FROM
     SELECT * FROM tab WHERE match(str, ' OLAP (.*?)*') ORDER BY id
 )
 WHERE
-    explain LIKE '%Granules: %';
+    explain LIKE '%Granules: %'
+SETTINGS
+    enable_analyzer = 1;
 
 DROP TABLE tab;
