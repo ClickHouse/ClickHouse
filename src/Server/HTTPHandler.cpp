@@ -62,6 +62,7 @@
 #include <Server/HTTP/setReadOnlyIfHTTPMethodIdempotent.h>
 
 #include <Poco/Net/HTTPMessage.h>
+#include <Poco/Net/MessageHeader.h>
 #include <Poco/Util/LayeredConfiguration.h>
 
 #include <algorithm>
@@ -201,6 +202,24 @@ void processOptionsRequest(HTTPServerResponse & response, const Poco::Util::Laye
     response.setStatusAndReason(HTTPResponse::HTTP_NO_CONTENT);
     response.send();
 }
+
+/// Passes the name of the external table of every file part to `reject`, before its data is read.
+class RejectingPartHandler : public HTMLForm::PartHandler
+{
+public:
+    explicit RejectingPartHandler(std::function<void(const String &)> reject_) : reject(std::move(reject_)) {}
+
+    void handlePart(const Poco::Net::MessageHeader & header, ReadBuffer &) override
+    {
+        Poco::Net::NameValueCollection content;
+        std::string label;
+        Poco::Net::MessageHeader::splitParameters(header.get("Content-Disposition"), label, content);
+        reject(content.get("name", "_data"));
+    }
+
+private:
+    std::function<void(const String &)> reject;
+};
 }
 
 static std::chrono::steady_clock::duration parseSessionTimeout(
@@ -299,18 +318,9 @@ void HTTPHandler::processQuery(
     if (!authenticateUser(request, params, response))
         return; // '401 Unauthorized' response with 'Negotiate' has been sent at this point.
 
-    /// A DEFINER or NONE query does not run as the authenticated user: a request can only bind parameters and choose the format.
-    const bool runs_with_sql_security = sql_security_type && *sql_security_type != SQLSecurityType::INVOKER;
-    auto reject_request_input = [&](const String & input)
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Handler `{}` with SQL SECURITY {} does not accept `{}` in a request: its query does not run as the "
-            "requesting user, so a request can choose only the output format (`default_format`, `output_format` or the "
-            "`X-ClickHouse-Format` header) and query parameters",
-            introspection_handler_name, magic_enum::enum_name(*sql_security_type), input);
-    };
+    const bool runs_with_sql_security = runsWithSQLSecurity();
     if (runs_with_sql_security && params.has("session_id"))
-        reject_request_input("session_id");
+        rejectRequestInput("session_id");
 
     /// The user could specify session identifier and session timeout.
     /// It allows to modify settings, create temporary tables and reuse them in subsequent requests.
@@ -451,20 +461,20 @@ void HTTPHandler::processQuery(
     {
         for (const auto & change : settings_changes)
             if (change.name != "default_format" && change.name != "output_format")
-                reject_request_input(change.name);
+                rejectRequestInput(change.name);
         if (!url_filters_from_params.empty())
-            reject_request_input("filter");
+            rejectRequestInput("filter");
         if (!deferred_unrecognized_params.empty())
-            reject_request_input(deferred_unrecognized_params.front().first);
+            rejectRequestInput(deferred_unrecognized_params.front().first);
         if (params.has("role"))
-            reject_request_input("role");
+            rejectRequestInput("role");
         /// The query runs as the definer: these would choose its running query to replace and its quota key.
         for (const auto * name : {"query_id", "quota_key"})
             if (params.has(name))
-                reject_request_input(name);
+                rejectRequestInput(name);
         for (const auto * name : {"X-ClickHouse-Query-Id", "X-ClickHouse-Quota"})
             if (request.has(name))
-                reject_request_input(name);
+                rejectRequestInput(name);
     }
 
     ContextMutablePtr context;
@@ -1021,11 +1031,6 @@ void HTTPHandler::processQuery(
     /// because memory_profiler_sample_probability/memory_profiler_step are not applied yet,
     /// they will be applied in ProcessList::insert() from executeQuery() itself.
     const auto & raw_query = getQuery(request, params, context, *in_post_maybe_compressed);
-
-    /// External tables come with a multipart body, which only `getQuery` reads.
-    if (runs_with_sql_security)
-        if (const auto external_tables = context->getExternalTables(); !external_tables.empty())
-            reject_request_input(external_tables.begin()->first);
 
     /// Combine all HTTP filter sources into the `filter` setting. The query-construction settings
     /// (`select`/`filter`/`order`/`sort`/`page`) are applied by the engine in `executeQuery`, on the
@@ -1590,6 +1595,15 @@ void HTTPHandler::processQuery(
         http_continue_callback);
 }
 
+void HTTPHandler::rejectRequestInput(const String & input) const
+{
+    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+        "Handler `{}` with SQL SECURITY {} does not accept `{}` in a request: its query does not run as the "
+        "requesting user, so a request can choose only the output format (`default_format`, `output_format` or the "
+        "`X-ClickHouse-Format` header) and query parameters",
+        introspection_handler_name, magic_enum::enum_name(*sql_security_type), input);
+}
+
 ContextMutablePtr HTTPHandler::makeSQLSecurityQueryContext(const ContextPtr & caller_context) const
 {
     auto query_context = Context::createCopy(server.context()->getGlobalContext());
@@ -2095,7 +2109,10 @@ std::string PredefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLFo
     if (unlikely(startsWith(request.getContentType(), "multipart/form-data")))
     {
         /// Support for "external data for query processing".
-        ExternalTablesHandler handler(context, params);
+        ExternalTablesHandler external_tables_handler(context, params);
+        RejectingPartHandler rejecting_handler([this](const String & name) { rejectRequestInput(name); });
+        HTMLForm::PartHandler & handler = runsWithSQLSecurity()
+            ? static_cast<HTMLForm::PartHandler &>(rejecting_handler) : external_tables_handler;
         if (wants_request_body)
         {
             auto body_copy = preserve_raw_body();

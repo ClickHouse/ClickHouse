@@ -102,6 +102,10 @@ protected:
         sql_security_query_requires_mutating_method = query_requires_mutating_method_;
     }
 
+    /// A DEFINER or NONE query does not run as the authenticated user: a request can only bind parameters and choose the format.
+    bool runsWithSQLSecurity() const { return sql_security_type && *sql_security_type != SQLSecurityType::INVOKER; }
+    [[noreturn]] void rejectRequestInput(const String & input) const;
+
     /// The query text belongs to the server rather than to the HTTP request. Its parsing limits must therefore
     /// not be lowered by request settings.
     void setHasServerOwnedQuery() { has_server_owned_query = true; }

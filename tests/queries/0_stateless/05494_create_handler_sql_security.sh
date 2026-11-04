@@ -323,4 +323,6 @@ echo "--- 24. a request to it cannot attach external tables"
 as_default "CREATE HANDLER h24_${DB} URL '/${DB}/h24' METHODS (POST) DEFINER = ${U_DEF} SQL SECURITY DEFINER AS SELECT count() FROM ${DB}.t WHERE v = {p:String}"
 echo 'x' > "${CLICKHOUSE_TMP}/ext_${DB}.tsv"
 request -X POST -F "ext=@${CLICKHOUSE_TMP}/ext_${DB}.tsv" "${BASE}/${DB}/h24?ext_structure=v%20String&param_p=a"
+# Refused before its data is read: the data does not match the structure.
+request -X POST -F "ext=@${CLICKHOUSE_TMP}/ext_${DB}.tsv" "${BASE}/${DB}/h24?ext_structure=v%20UInt8&param_p=a"
 request -X POST -F "param_p=a" "${BASE}/${DB}/h24"
