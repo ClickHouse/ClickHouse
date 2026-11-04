@@ -10058,7 +10058,8 @@ When enabled, the analyzer mimics the legacy behavior of moving non-aggregate AN
 When enabled, a table name hidden by an alias in a subquery is resolved in an outer scope if that scope contains the same qualifier. This follows the SQL standard rule that an alias hides the original table name and allows expressions such as `SELECT (SELECT count() FROM t AS inner_t WHERE inner_t.x < t.x) FROM t` to correlate with the outer `t`.
 
 When disabled, ClickHouse continues to accept the original table name after an alias and resolves `t.x` to the inner table. This is the default for compatibility with existing queries.
-)", 0) \
+)", 0, \
+        {"26.11", false, false, "New setting to prefer an outer correlation name over a hidden inner table name."}) \
     DECLARE(Bool, analyzer_compatibility_prefer_alias_over_subcolumn, false, R"(
 When a multi-part identifier like `b.id` could refer to either the column `id` of a table aliased `b` or to a Tuple subcolumn `b.id` of some other column, prefer the alias-prefix interpretation (column `id` of `b`). By default the analyzer prefers the subcolumn. Enable to match the old analyzer's resolution.
 )", 0, \
