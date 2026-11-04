@@ -10,7 +10,9 @@
 # `use_uncompressed_cache = 0` away from those settings before it replays the query text, whose own
 # `SETTINGS enable_automatic_use_uncompressed_cache = 1` would then switch the automatic mode back on for the
 # local `MergeTree` read of a `CREATE ... AS SELECT`. The initiator therefore bakes the opt-out into the queued
-# query text (not into the queued settings, which an older worker would reject for an unknown setting name).
+# query text (not into the queued settings, which an older worker would reject for an unknown setting name), as
+# the trailing query-level `SETTINGS` clause of the `CREATE`, which covers every shape of the source query and is
+# not stored in the definition of a view.
 #
 # The worker runs the queued query under the `default` database, so the source table is qualified, and under
 # the `initial_query_id` of the `ON CLUSTER` query, which is set explicitly here to tell the rows of this test
@@ -40,6 +42,7 @@ AUTO_RUN_2="05241_auto_run_2_$(random_str 10)"
 OPT_OUT_RUN="05241_opt_out_run_$(random_str 10)"
 PACKET_AUTO_RUN="05241_packet_auto_run_$(random_str 10)"
 PACKET_OPT_OUT_RUN="05241_packet_opt_out_run_$(random_str 10)"
+SET_OPERATION_OPT_OUT_RUN="05241_set_operation_opt_out_run_$(random_str 10)"
 
 # Control: the automatic mode is enabled from the query text only, and the second run finds the cache warm.
 $CLICKHOUSE_CLIENT --query_id "$AUTO_RUN_1" --query "
@@ -76,17 +79,39 @@ SET use_uncompressed_cache = 0;
 CREATE TABLE t_uncompressed_cache_ddl_dst_5 ON CLUSTER test_shard_localhost ENGINE = MergeTree ORDER BY id
 AS SELECT * FROM ${CLICKHOUSE_DATABASE}.t_uncompressed_cache_ddl_src" > /dev/null
 
+# The opt-out must also reach the worker for a source query that is a set operation, which has no plain `SELECT`
+# as the last element of its top-level union.
+$CLICKHOUSE_CLIENT --query_id "$SET_OPERATION_OPT_OUT_RUN" --query "
+SET enable_automatic_use_uncompressed_cache = 1;
+SET max_threads = 1;
+SET use_uncompressed_cache = 0;
+CREATE TABLE t_uncompressed_cache_ddl_dst_6 ON CLUSTER test_shard_localhost ENGINE = MergeTree ORDER BY id
+AS SELECT * FROM ${CLICKHOUSE_DATABASE}.t_uncompressed_cache_ddl_src
+EXCEPT ALL
+SELECT * FROM ${CLICKHOUSE_DATABASE}.t_uncompressed_cache_ddl_src WHERE 0" > /dev/null
+
+# The opt-out of the session that creates a view is an execution-only setting: it must not become a part of the
+# stored definition of the view.
+$CLICKHOUSE_CLIENT --query "
+SET use_uncompressed_cache = 0;
+CREATE VIEW v_uncompressed_cache_ddl ON CLUSTER test_shard_localhost
+AS SELECT * FROM ${CLICKHOUSE_DATABASE}.t_uncompressed_cache_ddl_src" > /dev/null
+
 $CLICKHOUSE_CLIENT --query "
 SELECT count() FROM t_uncompressed_cache_ddl_dst_1;
 SELECT count() FROM t_uncompressed_cache_ddl_dst_2;
 SELECT count() FROM t_uncompressed_cache_ddl_dst_3;
 SELECT count() FROM t_uncompressed_cache_ddl_dst_4;
 SELECT count() FROM t_uncompressed_cache_ddl_dst_5;
+SELECT count() FROM t_uncompressed_cache_ddl_dst_6;
+SELECT position(create_table_query, 'use_uncompressed_cache') = 0 FROM system.tables
+WHERE database = currentDatabase() AND name = 'v_uncompressed_cache_ddl';
 
 SYSTEM FLUSH LOGS query_log;
 
--- The warm control run hits the cache on the worker.
-SELECT count() > 0, sum(ProfileEvents['UncompressedCacheHits']) > 0
+-- The control run uses the cache on the worker. It checks hits and misses together rather than hits alone, because the
+-- small test cache is shared with concurrent tests, which can evict the entries of the first run.
+SELECT count() > 0, sum(ProfileEvents['UncompressedCacheHits'] + ProfileEvents['UncompressedCacheMisses']) > 0
 FROM system.query_log
 WHERE event_date >= yesterday()
   AND event_time >= now() - INTERVAL 10 MINUTE
@@ -103,8 +128,10 @@ WHERE event_date >= yesterday()
   AND query_id != '${OPT_OUT_RUN}'
   AND initial_query_id IN (SELECT query_id FROM system.query_log WHERE event_date >= yesterday() AND current_database = currentDatabase() AND query_id = '${OPT_OUT_RUN}');
 
--- The warm control run with the automatic mode from the settings of the entry hits the cache on the worker.
-SELECT count() > 0, sum(ProfileEvents['UncompressedCacheHits']) > 0
+-- The control run with the automatic mode from the settings of the entry uses the cache on the worker. It
+-- checks hits and misses together rather than hits alone, because the small test cache is shared with
+-- concurrent tests, which can evict the entries of the first run.
+SELECT count() > 0, sum(ProfileEvents['UncompressedCacheHits'] + ProfileEvents['UncompressedCacheMisses']) > 0
 FROM system.query_log
 WHERE event_date >= yesterday()
   AND event_time >= now() - INTERVAL 10 MINUTE
@@ -121,10 +148,21 @@ WHERE event_date >= yesterday()
   AND query_id != '${PACKET_OPT_OUT_RUN}'
   AND initial_query_id IN (SELECT query_id FROM system.query_log WHERE event_date >= yesterday() AND current_database = currentDatabase() AND query_id = '${PACKET_OPT_OUT_RUN}');
 
+-- The opt-out run with a set operation as the source query does not touch the cache on the worker.
+SELECT count() > 0, sum(ProfileEvents['UncompressedCacheHits'] + ProfileEvents['UncompressedCacheMisses'])
+FROM system.query_log
+WHERE event_date >= yesterday()
+  AND event_time >= now() - INTERVAL 10 MINUTE
+  AND type = 'QueryFinish'
+  AND query_id != '${SET_OPERATION_OPT_OUT_RUN}'
+  AND initial_query_id IN (SELECT query_id FROM system.query_log WHERE event_date >= yesterday() AND current_database = currentDatabase() AND query_id = '${SET_OPERATION_OPT_OUT_RUN}');
+
 DROP TABLE t_uncompressed_cache_ddl_dst_1;
 DROP TABLE t_uncompressed_cache_ddl_dst_2;
 DROP TABLE t_uncompressed_cache_ddl_dst_3;
 DROP TABLE t_uncompressed_cache_ddl_dst_4;
 DROP TABLE t_uncompressed_cache_ddl_dst_5;
+DROP TABLE t_uncompressed_cache_ddl_dst_6;
+DROP VIEW v_uncompressed_cache_ddl;
 DROP TABLE t_uncompressed_cache_ddl_src;
 "

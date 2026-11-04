@@ -337,8 +337,10 @@ namespace
 ///    first, so it also covers the arms of an `INTERSECT` / `EXCEPT` chain, which `applySettingsFromSelectWithUnion`
 ///    does not look into;
 ///  - an `INSERT ... SELECT` carries the clause of the `INSERT` itself;
-///  - a `CREATE ... AS SELECT` (queued by `ON CLUSTER`) carries the clause of the last plain `SELECT` of its source
-///    query, which is the one `applySettingsFromQuery` applies for a `CREATE`.
+///  - a `CREATE ... AS SELECT` (queued by `ON CLUSTER`) gets the trailing clause of `ASTQueryWithOutput`, which the
+///    remote server applies before the settings of the source query, whatever its shape (a plain `SELECT`, a
+///    `UNION` or an `INTERSECT` / `EXCEPT` chain). That clause is execution-only: `InterpreterCreateQuery` resets
+///    it before the definition is stored, so it does not become a part of the stored body of a view.
 /// Returns nullptr for a query shape without such a clause.
 ASTSetQuery * getOrCreateForwardedQuerySettings(IAST & query)
 {
@@ -375,11 +377,9 @@ ASTSetQuery * getOrCreateForwardedQuerySettings(IAST & query)
         if (!create_query->select)
             return nullptr;
 
-        const auto & selects = create_query->select->as<ASTSelectWithUnionQuery &>().list_of_selects->children;
-        if (selects.empty() || !selects.back()->as<ASTSelectQuery>())
-            return nullptr;
-
-        return getOrCreateForwardedQuerySettings(*selects.back());
+        if (!create_query->settings_ast)
+            create_query->set(create_query->settings_ast, make_settings_clause());
+        return create_query->settings_ast->as<ASTSetQuery>();
     }
 
     return nullptr;
