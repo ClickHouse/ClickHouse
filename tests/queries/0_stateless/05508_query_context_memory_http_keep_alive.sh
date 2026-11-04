@@ -42,6 +42,9 @@ try:
         try:
             settings = dict(max_untracked_memory=batching)
             query = 'SELECT memory_usage FROM system.processes WHERE query_id=currentQueryID()'
+            # Warm the connection before measuring retained query memory.
+            status, output = request(connection, query, 'y' * 64, **settings)
+            assert status == 200, output
             status, output = request(connection, query, 'y' * 64, **settings)
             assert status == 200, output
             baseline = int(output)
