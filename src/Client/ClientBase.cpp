@@ -5805,9 +5805,10 @@ namespace
 /// cannot be found the way `formatForLogging` finds them (the credentials of an external engine or
 /// of a user, a presigned URL), but they are always string literals, so every string literal is
 /// hidden, and everything after a literal that is not closed. The structure of the query, where
-/// the syntax error is, survives. KQL quotes its string literals with double quotes, which are
-/// names in SQL, so `hide_double_quoted_identifiers` hides those as well.
-String hideStringLiteralsOfUnparsedQuery(std::string_view query, bool hide_double_quoted_identifiers, bool & hidden_parts)
+/// the syntax error is, survives. Other dialects quote their string literals with double quotes
+/// (KQL, PromQL, the JSON of `clickhouse_json`) or with backticks (LogsQL), which are names in SQL,
+/// so `hide_quoted_identifiers` hides those as well - see `dialectCanQuoteStringsAsNames`.
+String hideStringLiteralsOfUnparsedQuery(std::string_view query, bool hide_quoted_identifiers, bool & hidden_parts)
 {
     hidden_parts = false;
     String masked_query;
@@ -5826,15 +5827,26 @@ String hideStringLiteralsOfUnparsedQuery(std::string_view query, bool hide_doubl
             masked_query += "'[HIDDEN]'";
             hidden_parts = true;
         }
-        else if (hide_double_quoted_identifiers && token.type == TokenType::QuotedIdentifier && *token.begin == '"')
+        else if (hide_quoted_identifiers && token.type == TokenType::QuotedIdentifier)
         {
-            masked_query += "\"[HIDDEN]\"";
+            masked_query += *token.begin;
+            masked_query += "[HIDDEN]";
+            masked_query += *token.begin;
             hidden_parts = true;
         }
         else
             masked_query.append(token.begin, token.end);
     }
     return masked_query;
+}
+
+/// Whether a token that the SQL lexer takes for a quoted name can be a string literal in the
+/// dialect. Only the SQL dialects - `clickhouse` and `trino` - quote names and only names with
+/// double quotes and backticks; for every other dialect (`polyglot` included, whose source
+/// dialect can quote strings with double quotes) such a token is treated as a string literal.
+bool dialectCanQuoteStringsAsNames(Dialect dialect)
+{
+    return dialect != Dialect::clickhouse && dialect != Dialect::trino;
 }
 
 }
@@ -5844,8 +5856,10 @@ void ClientBase::recordParseErrorForAIContext(std::string_view query, const Stri
     if (!is_interactive || !ai_query_context)
         return;
 
+    /// The query is in the dialect of the session, which is not necessarily SQL.
+    const bool hide_quoted_identifiers = dialectCanQuoteStringsAsNames(client_context->getSettingsRef()[Setting::dialect]);
     bool hidden_parts = false;
-    const String masked_query = hideStringLiteralsOfUnparsedQuery(query, /*hide_double_quoted_identifiers=*/ false, hidden_parts);
+    const String masked_query = hideStringLiteralsOfUnparsedQuery(query, hide_quoted_identifiers, hidden_parts);
 
     /// The message of a parse error quotes the text around the position of the error, literals
     /// included, so it is not recorded when any were hidden. Otherwise it is formatted for the
@@ -5869,9 +5883,9 @@ void ClientBase::recordUnparsedErrorForAIContext(std::string_view input, const E
     /// The input is in the dialect of the session, which is not necessarily SQL: a KQL query that
     /// fails to parse is thrown from `parseKQLQuery`, and KQL quotes its string literals with
     /// double quotes.
-    const bool is_kusto = client_context->getSettingsRef()[Setting::dialect] == Dialect::kusto;
+    const bool hide_quoted_identifiers = dialectCanQuoteStringsAsNames(client_context->getSettingsRef()[Setting::dialect]);
     bool hidden_parts = false;
-    const String masked_input = hideStringLiteralsOfUnparsedQuery(input, /*hide_double_quoted_identifiers=*/ is_kusto, hidden_parts);
+    const String masked_input = hideStringLiteralsOfUnparsedQuery(input, hide_quoted_identifiers, hidden_parts);
 
     /// The message of the error can quote the input (a parse error quotes the text around its
     /// position), so it is not recorded when anything was hidden: the model gets the code of the
