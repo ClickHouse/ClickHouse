@@ -24,7 +24,7 @@ Because session replays are stored in ClickHouse alongside your logs, traces, an
 
 ClickHouse Observability is fully compatible with OpenTelemetry, so you can send browser telemetry (traces, exceptions) using the standard OpenTelemetry JavaScript SDK or any of the [language SDKs](/clickstack/observability/ingesting-data/sdks). However, **session replay requires the Browser SDK** (`@hyperdx/browser`), which extends the OpenTelemetry SDK with session recording, console capture, and network request capture. If you only need traces without session replay, any OTel-compatible browser SDK will work with the service.
 
-The examples below use the Browser SDK. In your ClickHouse Observability service, open **Team Settings → Managed Telemetry** and copy the **OTLP HTTP endpoint** and **API key**. Replace `YOUR_OTEL_ENDPOINT` and `YOUR_API_KEY` in the examples with these connection details.
+The examples below use the Browser SDK. In your ClickHouse Observability service, open **Team Settings → Data → Managed Telemetry** and copy the **OTLP HTTP endpoint** and **API key**. Replace `YOUR_OTEL_ENDPOINT` and `YOUR_API_KEY` in the examples with these connection details.
 
 <Image img="/images/clickstack/getting-started/observability-managed-telemetry.png" alt="Managed Telemetry showing the masked OTLP HTTP endpoint and API key" size="lg" />
 
@@ -107,7 +107,9 @@ The Browser SDK also supports [masking inputs and text](/clickstack/observabilit
 
 Self-managed ClickHouse Observability is fully compatible with OpenTelemetry, so you can send browser telemetry (traces, exceptions) using the standard OpenTelemetry JavaScript SDK or any of the [language SDKs](/clickstack/observability/ingesting-data/sdks). However, **session replay requires the Browser SDK** (`@hyperdx/browser`), which extends the OpenTelemetry SDK with session recording, console capture, and network request capture. If you only need traces without session replay, any OTel-compatible browser SDK will work with the service.
 
-The examples below use the Browser SDK. Adding session replay to your application takes just three steps: install the package, initialize the SDK, and all user interactions are captured automatically — no further code changes required.
+Before instrumenting your application, you need a running ClickStack OpenTelemetry collector connected to your ClickHouse Cloud service. Follow [Connect the collector to ClickHouse Cloud](/clickstack/observability/ingesting-data/opentelemetry#installing-otel-collector-managed-self-configured) to configure the connection, or the [deployment guide](/clickstack/self-configured/deployment/managed#start-a-collector-existing) to start a collector.
+
+Use the collector's browser-accessible OTLP HTTP endpoint in place of `http://your-otel-collector:4318` in the examples below. Then install and initialize the Browser SDK.
 
 <Tip>
 Initialize the SDK in a place that's guaranteed to load when your app starts. For example, in a Next.js application, this could be your root `layout.js`. This ensures session recording begins immediately and captures the full user experience.
@@ -178,6 +180,16 @@ The `tracePropagationTargets` option is key to connecting session replays with b
 
 The Browser SDK also supports [masking inputs and text](/clickstack/observability/ingesting-data/sdks/browser#options) for privacy-sensitive applications, and [attaching user information](/clickstack/observability/ingesting-data/sdks/browser#attach-user-information-or-metadata) so you can search and filter sessions by user in the UI.
 
+
+### How session data is stored {#data-storage}
+
+<Note>
+These storage details apply only to self-managed ClickHouse Observability. Fully managed services handle session replay storage and schemas for you.
+</Note>
+
+Session replay data is stored in a dedicated [`hyperdx_sessions`](/clickstack/self-configured/ingesting-data/schemas#sessions) table in ClickHouse, separate from logs and traces. Each session event is a row with a `Body` field containing the event payload and a `LogAttributes` map storing the event metadata. The `Body` and `LogAttributes` columns together hold the details of the actual session events that are used to reconstruct the replay.
+
+For the full table schema information, see [Tables and schemas](/clickstack/self-configured/ingesting-data/schemas).
 </Tab>
 </Tabs>
 
@@ -203,27 +215,6 @@ This works because the `tracePropagationTargets` configuration links browser spa
 The correlation works in the other direction too. When viewing a trace in the **Search** view, click on it to open the trace detail, then select the **Session replay** tab to see exactly what the user was experiencing at the time of that trace. This is especially useful when investigating errors or slow requests — you can start from the backend issue and immediately see the user's perspective.
 
 <Image img="/images/clickstack/session-replay/observability-trace-to-session.gif" alt="Session replay trace view" size="lg"/>
-
-## How session data is stored {#data-storage}
-
-<Tabs>
-<Tab title="Fully managed">
-
-<BetaBadge label="Beta offering" />
-
-Session replay data is stored in a dedicated [`hyperdx_sessions`](/clickstack/self-configured/ingesting-data/schemas#sessions) table in ClickHouse, separate from logs and traces. Each session event is a row with a `Body` field containing the event payload and a `LogAttributes` map storing the event metadata. The `Body` and `LogAttributes` columns together hold the details of the actual session events that are used to reconstruct the replay.
-
-For the full table schema information, see [Tables and schemas (Self-managed reference)](/clickstack/self-configured/ingesting-data/schemas).
-
-</Tab>
-<Tab title="Self-managed">
-
-Session replay data is stored in a dedicated [`hyperdx_sessions`](/clickstack/self-configured/ingesting-data/schemas#sessions) table in ClickHouse, separate from logs and traces. Each session event is a row with a `Body` field containing the event payload and a `LogAttributes` map storing the event metadata. The `Body` and `LogAttributes` columns together hold the details of the actual session events that are used to reconstruct the replay.
-
-For the full table schema information, see [Tables and schemas](/clickstack/self-configured/ingesting-data/schemas).
-
-</Tab>
-</Tabs>
 
 ## Try it out {#try-it-out}
 Follow the [session replay demo](/clickstack/observability/example-datasets/session-replay) to instrument an interactive application, send session data to your ClickHouse Observability service, and replay your interactions.
