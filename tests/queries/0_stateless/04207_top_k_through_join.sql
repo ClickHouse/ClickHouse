@@ -83,7 +83,7 @@ SELECT l.id, l.k, r.value
 FROM t_l AS l LEFT JOIN t_r AS r ON r.id = l.id
 ORDER BY l.k DESC
 LIMIT 10
-SETTINGS query_plan_top_k_through_join = 1, allow_experimental_analyzer = 1,
+SETTINGS query_plan_top_k_through_join = 1,
          enable_join_runtime_filters = 0, enable_lazy_columns_replication = 0,
          query_plan_optimize_lazy_materialization = 0,
          query_plan_join_swap_table = false,
@@ -96,7 +96,7 @@ SELECT l.id, l.k, r.value
 FROM t_l AS l LEFT JOIN t_r AS r ON r.id = l.id
 ORDER BY l.k DESC
 LIMIT 10
-SETTINGS query_plan_top_k_through_join = 0, allow_experimental_analyzer = 1,
+SETTINGS query_plan_top_k_through_join = 0,
          enable_join_runtime_filters = 0, enable_lazy_columns_replication = 0,
          query_plan_optimize_lazy_materialization = 0,
          query_plan_join_swap_table = false,

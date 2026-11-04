@@ -44,6 +44,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int OK;
     extern const int POCO_EXCEPTION;
     extern const int STD_EXCEPTION;
     extern const int AVRO_EXCEPTION;
@@ -483,6 +484,10 @@ PreformattedMessage getCurrentExceptionMessageAndPattern(
     bool with_extra_info /*= true*/,
     bool with_version /*= true*/)
 {
+    /// `throw;` without an exception being handled terminates, e.g. in a destructor during unwinding.
+    if (!std::current_exception())
+        return {};
+
     /// Explicitly block MEMORY_LIMIT_EXCEEDED
     LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
 
@@ -573,6 +578,9 @@ PreformattedMessage getCurrentExceptionMessageAndPattern(
 
 int getCurrentExceptionCode()
 {
+    if (!std::current_exception())
+        return ErrorCodes::OK;
+
     try
     {
         throw;

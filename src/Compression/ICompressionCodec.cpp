@@ -33,14 +33,19 @@ ASTPtr ICompressionCodec::makeCodecDescription(const String & name, const ASTs &
 {
     if (arguments.empty())
         return make_intrusive<ASTIdentifier>(name);
-    return makeASTFunction(name, arguments);
+    auto function = makeASTFunction(name, arguments);
+    /// A codec takes no secrets, so formatting its description needs no secret arguments finder.
+    function->setKind(ASTFunction::Kind::CODEC);
+    return function;
 }
 
 ASTPtr ICompressionCodec::getFullCodecDescription() const
 {
     if (const auto * multiple = typeid_cast<const CompressionCodecMultiple *>(this))
         return multiple->getFullCodecDescription();
-    return makeASTFunction("CODEC", getCodecDescription());
+    auto codec = makeASTFunction("CODEC", getCodecDescription());
+    codec->setKind(ASTFunction::Kind::CODEC);
+    return codec;
 }
 
 UInt64 ICompressionCodec::getHash() const
@@ -56,13 +61,17 @@ UInt32 ICompressionCodec::compress(const char * source, UInt32 source_size, char
 
     CurrentMetrics::Increment metric_increment(CurrentMetrics::Compressing);
 
+    const UInt32 body_size = doCompressData(source, source_size, &dest[getHeaderSize()]);
+    return writeHeader(dest, body_size, source_size);
+}
+
+UInt32 ICompressionCodec::writeHeader(char * dest, UInt32 body_size, UInt32 uncompressed_size) const
+{
+    const UInt32 block_size = getHeaderSize() + body_size;
     dest[0] = getMethodByte();
-    UInt8 header_size = getHeaderSize();
-    /// Write data from header_size
-    UInt32 compressed_bytes_written = doCompressData(source, source_size, &dest[header_size]);
-    unalignedStoreLittleEndian<UInt32>(&dest[1], compressed_bytes_written + header_size);
-    unalignedStoreLittleEndian<UInt32>(&dest[5], source_size);
-    return header_size + compressed_bytes_written;
+    unalignedStoreLittleEndian<UInt32>(&dest[1], block_size);
+    unalignedStoreLittleEndian<UInt32>(&dest[5], uncompressed_size);
+    return block_size;
 }
 
 UInt32 ICompressionCodec::decompress(const char * source, UInt32 source_size, char * dest) const

@@ -31,6 +31,9 @@ struct PrometheusQueryParsingUtil
                                       String * error_message = nullptr,
                                       size_t * error_pos = nullptr);
 
+    /// Quotes and escapes a string as a PromQL string literal.
+    static String quoteStringLiteral(std::string_view input);
+
     /// Parses a scalar which can be either an integer number or a floating-point number (e.g. 237e6), or Inf, or Nan,
     /// or a hexadecimal number (e.g. 0xA7CD), or a duration with time units, for example 1m30s.
     /// Also underscores (_) can be used in between decimal or hexadecimal digits and they don't mean anything.

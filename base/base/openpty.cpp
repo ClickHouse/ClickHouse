@@ -11,7 +11,7 @@
 
 int openPty(int & master_fd, int & slave_fd, const winsize & ws)
 {
-    int m = posix_openpt(O_RDWR | O_NOCTTY);
+    int m = posix_openpt(O_RDWR | O_NOCTTY | O_CLOEXEC);
     if (m < 0)
         return -1;
 
@@ -55,7 +55,7 @@ int openPty(int & master_fd, int & slave_fd, const winsize & ws)
     slave_name[i] = '\0';
 #endif
 
-    int s = open(slave_name, O_RDWR | O_NOCTTY);
+    int s = open(slave_name, O_RDWR | O_NOCTTY | O_CLOEXEC);
     if (s < 0)
     {
         close(m);

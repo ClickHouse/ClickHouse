@@ -272,14 +272,15 @@ COMPLIANCE_TEST_CASES = [
     ('label_replace(demo_num_cpus, "job", "value-$1", "instance", "non-matching-regex")', [], False),
     ('label_replace(demo_num_cpus, "job", "", "dst", ".*")', [], False),
     ('label_replace(demo_num_cpus, "job", "value-$1", "src", "(.*")', [], True),
-    ('label_replace(demo_num_cpus, "~invalid", "", "src", "(.*)")', [], True),
+    # Prometheus 3 accepts `~invalid` as a valid UTF-8 label name.
+    ('label_replace(demo_num_cpus, "~invalid", "", "src", "(.*)")', [], False),
     ('label_replace(demo_num_cpus, "instance", "", "", "")', [], True),
 
     # label_join
     ('label_join(demo_num_cpus, "new_label", "-", "instance", "job")', [], False),
     ('label_join(demo_num_cpus, "job", "-", "instance", "job")', [], False),
     ('label_join(demo_num_cpus, "job", "-", "instance")', [], False),
-    ('label_join(demo_num_cpus, "~invalid", "-", "instance")', [], True),
+    ('label_join(demo_num_cpus, "~invalid", "-", "instance")', [], False),
 
     # Date functions
     ("{{.dateFunc}}()", ["dateFunc"], False),

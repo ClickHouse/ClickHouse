@@ -1,11 +1,14 @@
 #include <Interpreters/InterpreterHypotheticalObjectQuery.h>
 
 #include <Access/Common/AccessFlags.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/HypotheticalObjectStore.h>
 #include <Interpreters/InterpreterFactory.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Parsers/ASTHypotheticalObjectQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
@@ -16,7 +19,9 @@
 #include <Storages/IStorage.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IndicesDescription.h>
+#include <Storages/KeyDescription.h>
 #include <Storages/ProjectionsDescription.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -44,7 +49,7 @@ namespace MergeTreeSetting
 
 namespace Setting
 {
-    extern const SettingsBool allow_suspicious_indices;
+    extern const SettingsBool allow_suspicious_indexes;
 }
 
 namespace
@@ -122,6 +127,36 @@ BlockIO createHypotheticalIndex(
     if (index_desc.expression)
         context->checkAccess(AccessType::SELECT, table_id, index_desc.expression->getRequiredColumns());
 
+    /// SQL UDFs are expanded first, as for `ALTER TABLE ... ADD INDEX`.
+    ASTPtr expanded_index_decl = query.index_decl->clone();
+    if (!UserDefinedSQLFunctionFactory::instance().empty())
+        UserDefinedSQLFunctionVisitor::visit(expanded_index_decl, context);
+
+    /// The alias checks also read ALIAS column definitions that constant folding removed from `index_desc.expression`.
+    const auto & columns = metadata->getColumns();
+    NameSet referenced_columns;
+    auto collect_columns = [&](this auto && self, const ASTPtr & ast) -> void
+    {
+        RequiredSourceColumnsVisitor::Data data;
+        RequiredSourceColumnsVisitor(data).visit(ast);
+        for (const auto & name : data.requiredColumns())
+        {
+            /// Access is granted per storage column; a name that is neither a column nor a subcolumn is an alias in the expression.
+            const auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name);
+            if (!column)
+                continue;
+            const String storage_name = column->getNameInStorage();
+            if (referenced_columns.insert(storage_name).second && columns.hasAlias(storage_name))
+                if (auto column_default = columns.getDefault(storage_name))
+                    self(column_default->expression);
+        }
+    };
+    collect_columns(expanded_index_decl->as<ASTIndexDeclaration &>().getExpression());
+    context->checkAccess(AccessType::SELECT, table_id, Names(referenced_columns.begin(), referenced_columns.end()));
+
+    KeyDescription::checkNoAlias(expanded_index_decl.get(), "INDEX");
+    KeyDescription::checkNoAlias(index_desc.expression_list_ast.get(), "INDEX " + index_desc.name);
+
     /// validate() must run before get(): index creators assume their arguments were already
     /// validated and read them unguarded (e.g. set/bloom_filter index.arguments->children[0]),
     /// so calling get() on an unvalidated user AST can dereference absent arguments.
@@ -166,7 +201,7 @@ BlockIO createHypotheticalIndex(
                 table_id.getTableName());
     }
 
-    if (!context->getSettingsRef()[Setting::allow_suspicious_indices])
+    if (!context->getSettingsRef()[Setting::allow_suspicious_indexes])
     {
         ASTPtr index_expression = index_ast.getExpression();
         if (const auto * index_function = index_expression ? index_expression->as<ASTFunction>() : nullptr)
@@ -229,8 +264,21 @@ BlockIO InterpreterHypotheticalObjectQuery::execute()
 
     auto table_id = context->resolveStorageID(StorageID(query.getDatabase(), query.getTable()));
     auto table = DatabaseCatalog::instance().getTable(table_id, context);
+    auto & store = context->getHypotheticalObjectStore();
 
-    const auto * merge_tree = dynamic_cast<const MergeTreeData *>(table.get());
+    /// Dropping only forgets a session entry, so it must not load a lazily loaded table.
+    if (query.kind == ASTHypotheticalObjectQuery::Drop)
+    {
+        auto object_name = query.object_name->as<ASTIdentifier &>().name();
+        if (is_projection)
+            store.removeProjection(table_id, object_name, query.if_exists);
+        else
+            store.remove(table_id, object_name, query.if_exists);
+        return {};
+    }
+
+    table = resolveStorageProxyLoading(table);
+    const auto * merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Load).get();
     if (!merge_tree)
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
@@ -247,18 +295,6 @@ BlockIO InterpreterHypotheticalObjectQuery::execute()
             object_kind_name,
             table_id.getDatabaseName(),
             table_id.getTableName());
-
-    auto & store = context->getHypotheticalObjectStore();
-
-    if (query.kind == ASTHypotheticalObjectQuery::Drop)
-    {
-        auto object_name = query.object_name->as<ASTIdentifier &>().name();
-        if (is_projection)
-            store.removeProjection(table_id, object_name, query.if_exists);
-        else
-            store.remove(table_id, object_name, query.if_exists);
-        return {};
-    }
 
     auto metadata = table->getInMemoryMetadataPtr(context, /* bypass_metadata_cache = */ false);
 

@@ -1,3 +1,5 @@
+-- Tags: no-parallel-replicas
+-- Tag no-parallel-replicas: the test only checks query plans, which parallel replicas change
 -- Tests delayed materialization of statistics in merge instead of during insert (setting 'materialize_statistics_on_insert = 0').
 -- (The concrete statistics type, column data type and predicate type don't matter)
 -- Checks by the predicate evaluation order in EXPLAIN. This is quite fragile, a better approach would be helpful (maybe 'send_logs_level'?)
@@ -8,10 +10,9 @@ DROP TABLE IF EXISTS tab;
 
 SET allow_statistics = 1;
 SET use_statistics = 1;
-SET enable_analyzer = 1;
 
 SET materialize_statistics_on_insert = 0;
-SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
+SET optimize_move_to_prewhere = 1;
 SET allow_reorder_prewhere_conditions = 1; -- CI may inject False; statistics-based reordering of prewhere conditions suppressed → b,a stays instead of being reordered to a,b after statistics are built
 
 CREATE TABLE tab

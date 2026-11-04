@@ -266,6 +266,9 @@ void registerInputFormatJSONCompactEachRow(FormatFactory & factory)
 
         registerWithNamesAndTypes(yield_strings ? "JSONCompactStringsEachRow" : "JSONCompactEachRow", register_func);
         markFormatWithNamesAndTypesSupportsSamplingColumns(yield_strings ? "JSONCompactStringsEachRow" : "JSONCompactEachRow", factory);
+        /// Data in these formats is commonly stored in `.json` files, but the `json` extension infers as `JSON`.
+        /// The `WithNames` flavours pick the extension up from the base format, see getFileExtensionsForFormat.
+        factory.registerFileExtension("json", yield_strings ? "JSONCompactStringsEachRow" : "JSONCompactEachRow", /*used_for_format_inference=*/ false);
     }
 
     factory.setDocumentation("JSONCompactEachRow", Documentation{

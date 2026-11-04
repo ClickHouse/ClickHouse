@@ -244,7 +244,6 @@
     M(AsynchronousRemoteReadWaitMicroseconds) \
     M(SynchronousRemoteReadWaitMicroseconds) \
 \
-    M(ExternalDataSourceLocalCacheReadBytes) \
 \
     M(MainConfigLoads) \
 \
@@ -282,6 +281,7 @@
     M(KeeperReadSnapshotObject) \
     M(KeeperReadSnapshotFailed) \
     M(KeeperReadSnapshotDeferred) \
+    M(KeeperReadSnapshotStreamingSeeks) \
     M(KeeperSaveSnapshotObject) \
     M(KeeperSaveSnapshotFailed) \
     M(KeeperSaveSnapshot) \
@@ -472,6 +472,7 @@ extern const std::vector<Event> keeper_profile_events
     M(AsynchronousReadWait) \
     M(S3Requests) \
     M(KeeperAliveConnections) \
+    M(KeeperRaftThreadsWaitingForLogsPreprocessing) \
     M(KeeperOutstandingRequests) \
     M(KeeperTTLNodes) \
     M(KeeperChangelogReadAheadThreads) \
