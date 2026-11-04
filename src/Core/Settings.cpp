@@ -135,9 +135,9 @@ Which dialect will be used to parse query.
 
 Supported values:
 - `clickhouse` (default) — standard ClickHouse SQL.
-- `kusto` — Kusto Query Language. Requires the beta setting `allow_experimental_kusto_dialect`.
-- `prql` — PRQL. Requires the experimental setting `allow_experimental_prql_dialect`.
-- `polyglot` — transpiles SQL from other dialects (MySQL, PostgreSQL, etc.) into ClickHouse SQL. Requires the experimental setting `allow_experimental_polyglot_dialect`.
+- `kusto` — Kusto Query Language. Requires the beta setting `enable_kusto_dialect`.
+- `prql` — PRQL. Requires the experimental setting `enable_prql_dialect`.
+- `polyglot` — transpiles SQL from other dialects (MySQL, PostgreSQL, etc.) into ClickHouse SQL. Requires the experimental setting `enable_polyglot_dialect`.
 - `promql` — PromQL (Prometheus Query Language) evaluated over a TimeSeries table, configured by the `promql_database`, `promql_table`, and `promql_evaluation_time` settings.
 - `clickhouse_json` — instead of SQL text, the query is interpreted as a JSON AST (the output of `parseQueryToJSON`). The `SET` query is still recognized in plain form so that the dialect can be switched back. Requires the experimental setting `enable_json_ast_dialect`.
 - `logsql` — LogsQL, the log query language of VictoriaLogs, translated into `SELECT` queries over the logs table configured by the `logsql_database` and `logsql_table` settings. Requires the experimental setting `enable_logsql_dialect`.
@@ -1410,7 +1410,7 @@ In CREATE TABLE statement allows creating columns of type FixedString(n) with n 
     DECLARE_WITH_ALIAS(Bool, allow_suspicious_indexes, false, R"(
 Reject primary/secondary indexes and sorting keys with identical expressions
 )", 0, allow_suspicious_indices, \
-        {"26.10", false, false, "Added an alias for setting `allow_suspicious_indices`."}, \
+        {"26.11", false, false, "Added an alias for setting `allow_suspicious_indices`."}, \
         {"23.4", true, false, "If true, index can defined with identical expressions"}) \
     DECLARE(Bool, allow_minmax_index_for_json, false, R"(
 Allow creating minmax skip indexes on JSON (Object) columns. Disabled by default because the minmax
@@ -6355,7 +6355,7 @@ Result:
 - [NULL Processing in IN Operators](/reference/statements/in#null-processing)
 )", 0) \
     DECLARE(Bool, allow_nondeterministic_mutations, false, R"(
-User-level setting that allows mutations on replicated tables to make use of non-deterministic functions such as `dictGet`.
+User-level setting that allows mutations on replicated tables to make use of non-deterministic functions such as `dictGet`, and of the virtual columns whose values may differ between replicas, such as `_table`, `_database` and `_disk_name`.
 
 Given that, for example, dictionaries, can be out of sync across nodes, mutations that pull values from them are disallowed on replicated tables by default. Enabling this setting allows this behavior, making it the user's responsibility to ensure that the data used is in sync across all nodes.
 
@@ -7911,7 +7911,7 @@ Possible values:
 - 1 - Enable
 )", 0, \
         {"26.5", false, true, "New setting to enable a query-plan-level optimization that pushes ORDER BY ... LIMIT n through a LEFT/RIGHT join when the sort key only references the preserved side."}) \
-    DECLARE(Bool, query_plan_top_k_through_array_join, false, R"(
+    DECLARE(Bool, query_plan_top_k_through_array_join, true, R"(
 Toggles a query-plan-level optimization which moves `ORDER BY ... LIMIT n` below an `ARRAY JOIN` when the sort key does not read a joined column. For an inner `ARRAY JOIN`, the optimization also adds a filter below the moved sort. This filter removes the rows whose arrays are all empty, because these rows give no output.
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
 
@@ -7920,7 +7920,7 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0, \
-        {"26.11", false, false, "New setting to move bounded sorting below `ARRAY JOIN` when its keys do not depend on expanded columns; disabled by default."}) \
+        {"26.11", false, true, "New setting to move bounded sorting below `ARRAY JOIN` when its keys do not depend on expanded columns."}) \
     DECLARE(Bool, query_plan_aggregation_bucket_top_k, true, R"(
 Toggles a query-plan-level optimization which, when a final aggregation feeds `ORDER BY` over the aggregation's outputs with `LIMIT n` and the plan proves the per-bucket selection exact, keeps only each two-level bucket's best n groups during the aggregation's final merge or conversion. The result is exact: a group outside its own bucket's best n has at least n groups ahead of it globally, so it cannot be in the global top n.
 
@@ -8711,7 +8711,7 @@ Prefer bigger buffer size if filesystem cache is enabled to avoid writing small 
 )", 0, \
         {"24.11", true, true, "New setting"}) \
     DECLARE(UInt64, filesystem_cache_boundary_alignment, 0, R"(
-Filesystem cache boundary alignment. For non-disk read (e.g. for cache of remote table engines / table functions) value 0 means no alignment. For disk read (e.g. for MergeTree tables on a disk with cache) value 0 means that `boundary_alignment` from the cache configuration is used.
+Filesystem cache boundary alignment. For non-disk read (e.g. for cache of remote table engines / table functions) value 0 means no alignment. For disk read (e.g. for MergeTree tables on a disk with cache) value 0 means that `boundary_alignment` from the cache configuration is used. The value is capped at `max_file_segment_size` of the cache.
 )", 0, \
         {"24.11", 0, 0, "New setting"}) \
     DECLARE(UInt64, temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds, (10 * 60 * 1000), R"(
@@ -9824,6 +9824,8 @@ Possible values:
 
 This options will produce different results depending on the settings used.
 
+With `parallel_replicas_mode` `sampling_key`, or a custom key mode on a cluster with more than one shard, each replica returns its own part of the result of the shard. The replicas of a shard are used together only when the initiator aggregates or fully sorts these parts itself (for example an aggregation without `GROUP BY` keys). Otherwise, for example for `GROUP BY` with `distributed_aggregation_memory_efficient` or for `ORDER BY`, the shard is read from one replica.
+
 ### Parallel processing using `SAMPLE` key
 
 A query may be processed faster if it is executed on several servers in parallel. But the query performance may degrade in the following cases:
@@ -10325,7 +10327,7 @@ Throw an exception instead of logging a warning when Hive-style partitioning det
 For an `INNER`, `LEFT`, `RIGHT` or `FULL` hash join, this threshold decides how the hash table is built.
 If the estimated number of rows in the right table is below the threshold, the join builds the hash table as one part, on one thread.
 At or above the threshold, and also when there is no estimate, the join splits the hash table into parts that up to `max_threads` threads fill at the same time (one thread with `max_threads = 1`).
-The largest value, `18446744073709551615`, always builds one part, also when there is no estimate. `0` always splits the hash table.
+`0` always splits the hash table.
 With `hash_join_layout` set to `serial` or `parallel`, this threshold is not used: the join builds one part or splits the hash table, whatever the estimate.
 The estimate comes from the query plan, or from the statistics of earlier runs of the same join (see `collect_hash_table_stats_during_joins`).
 The query plan estimates 0 rows for a right table known to be empty, such as a `MergeTree` table without data parts.
@@ -10336,7 +10338,7 @@ The query plan estimates 0 rows for a right table known to be empty, such as a `
         {"25.3", 0, 0, "New setting"}) \
     DECLARE(HashJoinLayout, hash_join_layout, HashJoinLayout::AUTO, R"(
 How an `INNER`, `LEFT`, `RIGHT` or `FULL` hash join builds its hash table.
-The setting is meant for testing and debugging. Leave it at `auto` to let the planner choose the layout with `parallel_hash_join_threshold`.
+`auto`, the default, lets the planner choose the layout with `parallel_hash_join_threshold`; set `serial` or `parallel` to force one.
 
 Possible values:
 
@@ -10352,7 +10354,7 @@ Some joins always build one part, whatever the value:
 - the hash join that `join_algorithm = 'auto'` starts with when the join cannot spill to disk (for example with `max_bytes_before_external_join` and `max_bytes_ratio_before_external_join` both `0`) and can switch to a partial merge join instead;
 - each per-shard join of `query_plan_join_shard_by_pk_ranges`.
 )", 0, \
-        {"26.11", "auto", "auto", "New setting to force the layout of a hash join for testing and debugging. `auto` keeps choosing it with `parallel_hash_join_threshold`."}) \
+        {"26.11", "auto", "auto", "New setting to force the layout of a hash join. `auto` keeps choosing it with `parallel_hash_join_threshold`."}) \
     DECLARE(Bool, apply_settings_from_server, true, R"(
 Whether the client should accept settings from server.
 
@@ -10391,6 +10393,14 @@ independently of its size.
 )", 0, \
         {"26.9", 1024 * 1024 * 1024, 512 * 1024 * 1024, "Aligned with the documented default of the Iceberg table property `write.target-file-size-bytes` (512 MiB), see https://iceberg.apache.org/docs/1.5.2/configuration/."}, \
         {"25.9", 1_GiB, 1_GiB, "New setting."}) \
+    DECLARE(Bool, iceberg_insert_single_manifest_for_all_partitions, false, R"(
+An `INSERT` into a partitioned Iceberg table writes one manifest file for all the partitions it touches, like Spark
+and PyIceberg, instead of one manifest file per partition. This holds per insert stream: every stream commits its own
+snapshot with its own manifest, so an `INSERT` writes exactly one manifest only with `max_insert_threads = 1`.
+`OPTIMIZE TABLE ... MANIFEST` then also merges manifests of different partitions into one.
+`ALTER TABLE ... DROP PARTITION` cannot drop a partition whose manifest is shared with other partitions.
+)", 0, \
+        {"26.11", false, false, "New setting."}) \
     DECLARE(UInt64, iceberg_compaction_max_rows_in_data_file, std::numeric_limits<UInt64>::max(), R"(
 Max rows of an iceberg parquet data file produced by compaction. Defaults to the maximum, so the size limit
 `iceberg_compaction_max_bytes_in_data_file` alone decides how much data goes into an output file, the same way
@@ -10829,10 +10839,6 @@ Enables the `Quantized` compression codec.
 Enables the `SZ3` compression codec.
 )", EXPERIMENTAL, \
         {"26.8", false, false, "New setting to enable the experimental `SZ3` compression codec individually, without the `allow_experimental_codecs`."}) \
-    DECLARE(Bool, enable_gdeflate_codec, false, R"(
-Enables the `GDeflate` compression codec.
-)", EXPERIMENTAL, \
-        {"26.11", false, false, "New setting to enable the experimental `GDeflate` compression codec."}) \
     DECLARE(Bool, enable_zxc_codec, false, R"(
 Enables the `ZXC` compression codec.
 )", EXPERIMENTAL, \
@@ -10979,6 +10985,10 @@ Using the text index postings cache can significantly reduce latency and increas
 )", 0, \
         {"26.10", false, true, "Enabled the text index posting lists cache globally. Previously each query used a small private cache, which caused posting lists and phrase search results to be recomputed within a single query on large tables."}, \
         {"25.11", false, false, "New setting"}) \
+    DECLARE(Bool, use_page_cache_lookahead_for_text_index, false, R"(
+Text index files that are read out of file order (dictionary, postings, positions) are, by default, read through the userspace page cache with a lookahead of one block, so that the remote connection can be reused after each read. Enable this setting to make those files use `page_cache_lookahead_blocks` like other files instead.
+)", 0, \
+        {"26.11", false, false, "New setting"}) \
     DECLARE(TextIndexPostingListApplyMode, text_index_posting_list_apply_mode, TextIndexPostingListApplyMode::Lazy, R"(
 Controls how posting lists are applied during text index queries.
 'materialize' eagerly decodes posting lists into Roaring Bitmaps.
@@ -11000,9 +11010,10 @@ Intersections of 256 or more tokens always use leapfrog.
 On server startup, prevent scheduling of refreshable materialized views, as if with SYSTEM STOP VIEWS. You can manually start them with `SYSTEM START VIEWS` or `SYSTEM START VIEW <name>` afterwards. Also applies to newly created views. Has no effect on non-refreshable materialized views.
 )", EXPERIMENTAL) \
     \
-    DECLARE(Bool, allow_experimental_database_materialized_postgresql, false, R"(
-Allow to create database with Engine=MaterializedPostgreSQL(...).
-)", EXPERIMENTAL) \
+    DECLARE_WITH_ALIAS(Bool, enable_database_materialized_postgresql, false, R"(
+Allow to create databases with `Engine = MaterializedPostgreSQL(...)`.
+)", EXPERIMENTAL, allow_experimental_database_materialized_postgresql, \
+        {"26.11", false, false, "Added an alias for setting `allow_experimental_database_materialized_postgresql`."}) \
     \
     DECLARE(Bool, allow_nullable_tuple_in_extracted_subcolumns, true, R"(
 Controls whether extracted subcolumns of type `Tuple(...)` can be typed as `Nullable(Tuple(...))`.
@@ -11020,22 +11031,26 @@ To change extracted subcolumn behavior, update `allow_nullable_tuple_in_extracte
         {"26.9", false, true, "`Nullable(Tuple)` is now GA: a `Tuple` subcolumn extracted from a `Tuple`, `Variant`, `Dynamic` or `JSON` column is `Nullable(Tuple)` and is NULL in the rows where the subcolumn is missing. The setting is read once at server startup, so `compatibility` restores the previous behavior only from the startup profile (for example, users.xml), not from a session-level `SET`."}, \
         {"26.3", false, false, "New setting controlling whether extracted Tuple subcolumns can be nullable."}) \
     \
-    DECLARE(Bool, allow_experimental_database_hms_catalog, false, R"(
-Allow experimental database engine DataLakeCatalog with catalog_type = 'hms'
-)", EXPERIMENTAL, \
+    DECLARE_WITH_ALIAS(Bool, enable_database_hms_catalog, false, R"(
+Allow database engine `DataLakeCatalog` with `catalog_type = 'hms'`
+)", EXPERIMENTAL, allow_experimental_database_hms_catalog, \
+        {"26.11", false, false, "Added an alias for setting `allow_experimental_database_hms_catalog`."}, \
         {"25.5", false, false, "Allow experimental database engine DataLakeCatalog with catalog_type = 'hive'"}) \
-    DECLARE(Bool, allow_experimental_kusto_dialect, false, R"(
+    DECLARE_WITH_ALIAS(Bool, enable_kusto_dialect, false, R"(
 Enable the Kusto Query Language (KQL) dialect - an alternative to SQL.
-)", BETA, \
+)", BETA, allow_experimental_kusto_dialect, \
+        {"26.11", false, false, "Added an alias for setting `allow_experimental_kusto_dialect`."}, \
         {"26.10", false, false, "The Kusto Query Language (KQL) dialect was moved to Beta."}, \
         {"25.1", true, false, "A new setting"}) \
-    DECLARE(Bool, allow_experimental_prql_dialect, false, R"(
+    DECLARE_WITH_ALIAS(Bool, enable_prql_dialect, false, R"(
 Enable PRQL - an alternative to SQL.
-)", EXPERIMENTAL, \
+)", EXPERIMENTAL, allow_experimental_prql_dialect, \
+        {"26.11", false, false, "Added an alias for setting `allow_experimental_prql_dialect`."}, \
         {"25.1", true, false, "A new setting"}) \
-    DECLARE(Bool, allow_experimental_polyglot_dialect, false, R"(
+    DECLARE_WITH_ALIAS(Bool, enable_polyglot_dialect, false, R"(
 Enable polyglot SQL transpiler - transpiles SQL from 30+ dialects (MySQL, PostgreSQL, SQLite, Snowflake, DuckDB, etc.) into ClickHouse SQL.
-)", EXPERIMENTAL, \
+)", EXPERIMENTAL, allow_experimental_polyglot_dialect, \
+        {"26.11", false, false, "Added an alias for setting `allow_experimental_polyglot_dialect`."}, \
         {"26.3", false, false, "New setting to enable the polyglot SQL transpiler dialect."}) \
     DECLARE(Bool, enable_json_ast_dialect, false, R"(
 Enable the `clickhouse_json` value of the `dialect` setting.
@@ -11134,13 +11149,14 @@ Allow to execute `insert` queries into iceberg.
 )", BETA, allow_experimental_insert_into_iceberg, \
         {"26.2", false, false, "Insert into iceberg was moved to Beta. This also applies to the alias `allow_experimental_insert_into_iceberg`."}, \
         {"25.7", false, false, "New setting."}) \
-    DECLARE(Bool, allow_experimental_cleanup_old_data_files_compaction, false, R"(
+    DECLARE_WITH_ALIAS(Bool, enable_cleanup_old_data_files_compaction, false, R"(
 Allow to clean up old data files during Iceberg compaction.
 
 The cleanup runs `iceberg_compaction_data_cleanup` after a compaction. It expires the snapshots the compaction made obsolete, the same
 way as `expire_snapshots`: removes them from the table metadata and deletes the files that no other snapshot references. For a table
 of the format version 1 or behind a transactional catalog it only deletes the files, and the snapshots stay in the metadata.
-)", EXPERIMENTAL, \
+)", EXPERIMENTAL, allow_experimental_cleanup_old_data_files_compaction, \
+        {"26.11", false, false, "Added an alias for setting `allow_experimental_cleanup_old_data_files_compaction`."}, \
         {"26.5", false, false, "New setting"}) \
     DECLARE(Bool, allow_experimental_iceberg_compaction, false, R"(
 Allow to explicitly use 'OPTIMIZE' for iceberg tables.
@@ -11168,9 +11184,10 @@ Default age threshold in seconds for orphan file removal in Iceberg tables. File
 Minimum age in seconds of the files that `ALTER TABLE ... EXECUTE remove_orphan_files` may delete from an Iceberg table. An `older_than` (given explicitly or derived from `iceberg_orphan_files_older_than_seconds`) that is closer to now than this is rejected: files of a write that has not committed yet are not referenced by the table metadata and would be deleted, which corrupts the table when the write commits. Keep it above the longest time a write to the table can take to commit. 0 disables the check.
 )", EXPERIMENTAL, \
         {"26.10", 0, 86400, "New setting. `remove_orphan_files` rejects an `older_than` less than this many seconds before now, so it keeps the files of a write that started less than this long ago and has not committed yet. `compatibility` with versions before 26.10 restores the previous behavior (no minimum)."}) \
-    DECLARE(Bool, allow_experimental_expire_snapshots, false, R"(
-Allow to execute experimental Iceberg command `ALTER TABLE ... EXECUTE expire_snapshots`.
-)", EXPERIMENTAL, \
+    DECLARE_WITH_ALIAS(Bool, allow_expire_snapshots, false, R"(
+Allow to execute the Iceberg command `ALTER TABLE ... EXECUTE expire_snapshots`.
+)", EXPERIMENTAL, allow_experimental_expire_snapshots, \
+        {"26.11", false, false, "Added an alias for setting `allow_experimental_expire_snapshots`."}, \
         {"26.3", false, false, "New setting."}) \
     DECLARE(Bool, write_full_path_in_iceberg_metadata, false, R"(
 Write full paths (including s3://) into iceberg metadata files. Tables created in a `DataLakeCatalog` database always get full paths.
@@ -11292,17 +11309,20 @@ With `make_distributed_plan`, send join runtime filters built in one stage to th
 When `send_logs_level` forwards stateless-worker task logs to the coordinator, each worker task buffers at most this many log lines between status polls. Lines beyond the bound are dropped and their count is reported to the client. `0` means unbounded (never drops, but a stalled status poll can grow the buffer without limit).
 )", EXPERIMENTAL, \
         {"26.10", 100000, 100000, "New setting bounding how many log lines a stateless-worker task buffers for forwarding to the coordinator between status polls; excess lines are dropped and counted. New feature, so the previous value equals the default."}) \
-    DECLARE(Bool, allow_experimental_ytsaurus_table_engine, false, R"(
-Experimental table engine for integration with YTsaurus.
-)", EXPERIMENTAL, \
+    DECLARE_WITH_ALIAS(Bool, enable_ytsaurus_table_engine, false, R"(
+Enable the `YTsaurus` table engine for integration with YTsaurus.
+)", EXPERIMENTAL, allow_experimental_ytsaurus_table_engine, \
+        {"26.11", false, false, "Added an alias for setting `allow_experimental_ytsaurus_table_engine`."}, \
         {"25.8", false, false, "New setting."}) \
-    DECLARE(Bool, allow_experimental_ytsaurus_table_function, false, R"(
-Experimental table engine for integration with YTsaurus.
-)", EXPERIMENTAL, \
+    DECLARE_WITH_ALIAS(Bool, enable_ytsaurus_table_function, false, R"(
+Enable the `ytsaurus` table function for integration with YTsaurus.
+)", EXPERIMENTAL, allow_experimental_ytsaurus_table_function, \
+        {"26.11", false, false, "Added an alias for setting `allow_experimental_ytsaurus_table_function`."}, \
         {"25.8", false, false, "New setting."}) \
-DECLARE(Bool, allow_experimental_ytsaurus_dictionary_source, false, R"(
-Experimental dictionary source for integration with YTsaurus.
-)", EXPERIMENTAL, \
+    DECLARE_WITH_ALIAS(Bool, enable_ytsaurus_dictionary_source, false, R"(
+Enable the `ytsaurus` dictionary source for integration with YTsaurus.
+)", EXPERIMENTAL, allow_experimental_ytsaurus_dictionary_source, \
+        {"26.11", false, false, "Added an alias for setting `allow_experimental_ytsaurus_dictionary_source`."}, \
         {"25.8", false, false, "New setting."}) \
     DECLARE(Bool, distributed_plan_force_shuffle_aggregation, false, R"(
 Use Shuffle aggregation strategy instead of PartialAggregation + Merge in distributed query plan.
@@ -11429,9 +11449,10 @@ A comparison without `bool` keeps the metric name, so matchers always go through
 A copied matcher turns a selector of a whole metric into a filtered one, which can be slower on a [TimeSeries](/reference/engines/table-engines/integrations/time-series) table with an `id` clustered by metric (the default) if the matcher keeps most series of the metric. Disable the setting for such queries.
 )", PRIVATE_PREVIEW, \
         {"26.10", false, true, "New setting to copy PromQL label matchers across binary operators."}) \
-    DECLARE(Bool, allow_experimental_paimon_storage_engine, false, R"(
-Allow to create tables with Paimon* table engines.
-)", EXPERIMENTAL, \
+    DECLARE_WITH_ALIAS(Bool, enable_paimon_storage_engine, false, R"(
+Allow to create tables with `Paimon*` table engines.
+)", EXPERIMENTAL, allow_experimental_paimon_storage_engine, \
+        {"26.11", false, false, "Added an alias for setting `allow_experimental_paimon_storage_engine`."}, \
         {"26.5", false, false, "New setting."}) \
     DECLARE(Int64, paimon_target_snapshot_id, -1, R"(
 Query-level targeted snapshot read for Paimon incremental mode. When >0, the reader will only fetch the delta
@@ -11447,9 +11468,10 @@ Maximum number of Paimon snapshots to consume per incremental read. 0 means no l
 Use Paimon partition pruning for Paimon table functions
 )", EXPERIMENTAL, \
         {"25.12", false, false, "New setting."}) \
-    DECLARE(Bool, allow_experimental_object_storage_queue_hive_partitioning, false, R"(
-Allow to use hive partitioning with S3Queue/AzureQueue engines
-)", EXPERIMENTAL, \
+    DECLARE_WITH_ALIAS(Bool, enable_object_storage_queue_hive_partitioning, false, R"(
+Allow to use hive partitioning with `S3Queue`/`AzureQueue` engines
+)", EXPERIMENTAL, allow_experimental_object_storage_queue_hive_partitioning, \
+        {"26.11", false, false, "Added an alias for setting `allow_experimental_object_storage_queue_hive_partitioning`."}, \
         {"26.1", false, false, "New setting."}) \
 DECLARE(JoinOrderAlgorithm, query_plan_optimize_join_order_algorithm, "dpsub,greedy", R"(
 Specifies which JOIN order algorithms to attempt during query plan optimization. The following algorithms are available:
@@ -11470,9 +11492,10 @@ decide which join reorderings are valid. The following values are available:
 )", BETA, \
         {"26.11", "", "c", "New setting selecting the conflict detector that decides join reordering validity in the DPsub join order algorithm: `a` for the (correct but incomplete) CD-A, `c` for the (correct and complete) CD-C, empty for none. It defaults to CD-C, together with the `dpsub` default of `query_plan_optimize_join_order_algorithm`, which also lets semi and anti joins take part in reordering."}, \
         {"26.9", "", "", "New setting selecting the conflict detector that decides join reordering validity in the DPsub join order algorithm: `a` for the (correct but incomplete) CD-A, `c` for the (correct and complete) CD-C, empty for none."}) \
-    DECLARE(Bool, allow_experimental_database_paimon_rest_catalog, false, R"(
-Allow experimental database engine DataLakeCatalog with catalog_type = 'paimon_rest'
-)", EXPERIMENTAL, \
+    DECLARE_WITH_ALIAS(Bool, enable_database_paimon_rest_catalog, false, R"(
+Allow database engine `DataLakeCatalog` with `catalog_type = 'paimon_rest'`
+)", EXPERIMENTAL, allow_experimental_database_paimon_rest_catalog, \
+        {"26.11", false, false, "Added an alias for setting `allow_experimental_database_paimon_rest_catalog`."}, \
         {"26.1", false, false, "New setting"}) \
     DECLARE(UInt64, webassembly_udf_max_fuel, 100'000, R"(
 Fuel limit per WebAssembly UDF instance execution. Each WebAssembly instruction consumes some amount of fuel. The value is scaled by 1024 before being passed to the runtime, so `webassembly_udf_max_fuel = 1` corresponds to approximately 1024 fuel units. Set to 0 for no finite limit. Applies only to functions whose per-function setting `webassembly_udf_enable_fuel` is true, which is the default.
@@ -11504,9 +11527,10 @@ Set to 0 to leave the input unsplit: the whole pipeline block is passed in one c
 Maximum number of WebAssembly UDF instances that can run in parallel per function.
 )", EXPERIMENTAL, \
         {"26.3", 32, 32, "New setting to limit the number of parallel WebAssembly UDF instances per function."}) \
-    DECLARE(Bool, allow_experimental_eval_table_function, false, R"(
-Enable experimental table function `eval`.
-)", EXPERIMENTAL, \
+    DECLARE_WITH_ALIAS(Bool, enable_eval_table_function, false, R"(
+Enable table function `eval`.
+)", EXPERIMENTAL, allow_experimental_eval_table_function, \
+        {"26.11", false, false, "Added an alias for setting `allow_experimental_eval_table_function`."}, \
         {"26.7", false, false, "New setting to enable the experimental table function `eval`."}) \
     \
     /* ####################################################### */ \
