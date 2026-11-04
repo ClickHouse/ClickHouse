@@ -56,8 +56,8 @@ ClickHouse предоставляет табличные функции для �
 
     ```response
     ┌─url────────────────────────────────────────────────┬─────cnt─┐
-    │ http://liver.ru/belgorod/page/1006.jки/доп_приборы │ 3288173 │ -- 3,29 миллиона
-    │ http://kinopoisk.ru                                │ 1625250 │ -- 1,63 миллиона
+    │ http://liver.ru/belgorod/page/1006.jки/доп_приборы │ 3288173 │ -- 3.29 million
+    │ http://kinopoisk.ru                                │ 1625250 │ -- 1.63 million
     │ http://bdsm_po_yers=0&with_video                   │  791465 │
     │ http://video.yandex                                │  582400 │
     │ http://smeshariki.ru/region                        │  514984 │
@@ -75,7 +75,7 @@ ClickHouse предоставляет табличные функции для �
 
     ```sql
     icebergS3Cluster(cluster_name, url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method])
-    -- icebergCluster является псевдонимом для icebergS3Cluster
+    -- icebergCluster is an alias for icebergS3Cluster
 
     icebergAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
     ```
@@ -97,7 +97,7 @@ ClickHouse предоставляет табличные функции для �
 
     ### Движок таблицы
 
-    В качестве альтернативы использованию табличной функции в каждом запросе можно создать постоянную таблицу с помощью [движка таблицы `Iceberg`](/ru/reference/engines/table-engines/integrations/iceberg). Данные по-прежнему хранятся в объектном хранилище и считываются по требованию — никакие данные не копируются в ClickHouse. Преимущество заключается в том, что определение таблицы хранится в ClickHouse и доступно всем пользователям в разных сеансах без необходимости каждый раз указывать путь к хранилищу и учётные данные. Для каждого типа backend-соединения предусмотрены варианты движка: `IcebergS3` (или псевдоним `Iceberg`), `IcebergAzure`, `IcebergHDFS` и `IcebergLocal`.
+    В качестве альтернативы использованию табличной функции в каждом запросе можно создать постоянную таблицу с помощью [движка таблиц `Iceberg`](/ru/reference/engines/table-engines/integrations/iceberg). Данные по-прежнему хранятся в объектном хранилище и считываются по требованию — никакие данные не копируются в ClickHouse. Преимущество заключается в том, что определение таблицы хранится в ClickHouse и доступно всем пользователям в разных сеансах без необходимости каждый раз указывать путь к хранилищу и учётные данные. Для каждого backend-хранилища предусмотрены варианты движка: `IcebergS3` (или псевдоним `Iceberg`), `IcebergAzure`, `IcebergHDFS` и `IcebergLocal`.
 
     И движок таблицы, и табличная функция поддерживают [кэширование данных](/ru/reference/engines/table-engines/integrations/iceberg#data-cache), используя тот же механизм кэширования, что и движки хранилища S3, AzureBlobStorage и HDFS. Кроме того, [кэш метаданных](/ru/reference/engines/table-engines/integrations/iceberg#metadata-cache) хранит в памяти информацию из файлов манифестов, сокращая повторные чтения метаданных Iceberg. Этот кэш включён по умолчанию через настройку `use_iceberg_metadata_files_cache`.
 
@@ -150,7 +150,7 @@ ClickHouse предоставляет табличные функции для �
     Peak memory usage: 10.53 GiB.
     ```
 
-    Список поддерживаемых возможностей, включая отсечение партиций, эволюцию схемы, перемещение во времени, кэширование и другое, см. в [матрице поддержки](/ru/guides/use-cases/data-warehousing/support-matrix#format-support). Полную справочную информацию см. в документации по [табличной функции `iceberg`](/ru/reference/functions/table-functions/iceberg) и [движку таблицы `Iceberg`](/ru/reference/engines/table-engines/integrations/iceberg).
+    Список поддерживаемых возможностей, включая отсечение партиций, эволюцию схемы, перемещение во времени, кэширование и другое, см. в [матрице поддержки](/ru/guides/use-cases/data-warehousing/support-matrix#format-support). Полную справочную информацию см. в документации по [табличной функции `iceberg`](/ru/reference/functions/table-functions/iceberg) и [движку таблиц `Iceberg`](/ru/reference/engines/table-engines/integrations/iceberg).
   </Tab>
 
   <Tab title="Delta Lake">
@@ -169,7 +169,7 @@ ClickHouse предоставляет табличные функции для �
     <Info>
       **Поддержка GCS**
 
-      Вариант функций для S3 можно использовать с Google Cloud Storage (GCS).
+      Для Google Cloud Storage (GCS) можно использовать вариант функций для S3.
     </Info>
 
     **Пример:**
@@ -186,8 +186,8 @@ ClickHouse предоставляет табличные функции для �
 
     ```response
     ┌─URL────────────────────────────────────────────────┬─────cnt─┐
-    │ http://liver.ru/belgorod/page/1006.jки/доп_приборы │ 3288173 │ -- 3,29 миллиона
-    │ http://kinopoisk.ru                                │ 1625250 │ -- 1,63 миллиона
+    │ http://liver.ru/belgorod/page/1006.jки/доп_приборы │ 3288173 │ -- 3.29 million
+    │ http://kinopoisk.ru                                │ 1625250 │ -- 1.63 million
     │ http://bdsm_po_yers=0&with_video                   │  791465 │
     │ http://video.yandex                                │  582400 │
     │ http://smeshariki.ru/region                        │  514984 │
@@ -197,7 +197,7 @@ ClickHouse предоставляет табличные функции для �
     Peak memory usage: 9.16 GiB.
     ```
 
-    ### Вариант с кластером
+    ### Кластерный вариант
 
     Функция [`deltaLakeCluster`](/ru/reference/functions/table-functions/deltalakeCluster) распределяет операции чтения между несколькими узлами кластера ClickHouse. Узел-инициатор динамически направляет файлы данных на воркер-узлы для параллельной обработки. `deltaLakeS3Cluster` — псевдоним для `deltaLakeCluster`. Также доступен вариант для Azure ([`deltaLakeAzureCluster`](/ru/reference/functions/table-functions/deltalakeCluster)).
 
@@ -205,7 +205,7 @@ ClickHouse предоставляет табличные функции для �
 
     ```sql
     deltaLakeCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
-    -- deltaLakeS3Cluster является псевдонимом для deltaLakeCluster
+    -- deltaLakeS3Cluster is an alias for deltaLakeCluster
 
     deltaLakeAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
     ```
@@ -213,7 +213,7 @@ ClickHouse предоставляет табличные функции для �
     <Info>
       **Поддержка GCS**
 
-      Вариант функций S3 можно использовать с Google Cloud Storage (GCS).
+      Для Google Cloud Storage (GCS) можно использовать вариант функций для S3.
     </Info>
 
     **Пример (ClickHouse Cloud):**
@@ -274,8 +274,8 @@ ClickHouse предоставляет табличные функции для �
     │ http://smeshariki.ru/region                        │  514984 │
     └────────────────────────────────────────────────────┴─────────┘
 
-    5 строк в наборе. Время выполнения: 3.608 с. Обработано 100.00 млн строк, 14.82 GB (27.72 млн строк/с., 4.11 GB/с.)
-    Пиковое потребление памяти: 9.27 GiB.
+    5 rows in set. Elapsed: 3.608 sec. Processed 100.00 million rows, 14.82 GB (27.72 million rows/s., 4.11 GB/s.)
+    Peak memory usage: 9.27 GiB.
     ```
 
     Список поддерживаемых возможностей, включая серверные хранилища данных, кэширование и другое, см. в [таблице совместимости](/ru/guides/use-cases/data-warehousing/support-matrix#format-support). Полную справочную информацию см. в документации по [табличной функции `deltaLake`](/ru/reference/functions/table-functions/deltalake) и [движку таблицы `DeltaLake`](/ru/reference/engines/table-engines/integrations/deltalake).
@@ -336,7 +336,7 @@ ClickHouse предоставляет табличные функции для �
 
     ```sql
     paimonS3Cluster(cluster_name, url [,access_key_id, secret_access_key] [,format] [,structure] [,compression])
-    -- paimonCluster — псевдоним для paimonS3Cluster
+    -- paimonCluster is an alias for paimonS3Cluster
 
     paimonAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
 
@@ -345,7 +345,7 @@ ClickHouse предоставляет табличные функции для �
 
     ### Движок таблицы
 
-    В настоящее время у Paimon нет отдельного движка таблицы в ClickHouse. Для запросов к таблицам Paimon используйте указанные выше табличные функции.
+    ClickHouse предоставляет экспериментальные [движки таблиц `PaimonS3`, `PaimonAzure`, `PaimonHDFS` и `PaimonLocal`](/ru/reference/engines/table-engines/integrations/paimon). Включите их с помощью `allow_experimental_paimon_storage_engine = 1`.
 
     Список поддерживаемых возможностей, включая бэкенды хранилища и другие, см. в [матрице поддержки](/ru/guides/use-cases/data-warehousing/support-matrix#format-support). Полное описание см. в документации по [табличной функции `paimon`](/ru/reference/functions/table-functions/paimon).
   </Tab>

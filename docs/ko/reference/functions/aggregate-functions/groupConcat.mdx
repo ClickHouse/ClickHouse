@@ -49,6 +49,9 @@ groupConcat[(delimiter [, limit])](expression)
 **구분자 없이 사용하는 기본 사용법**
 
 ```sql title=Query
+CREATE TABLE Employees (Name String) ENGINE = Memory;
+INSERT INTO Employees VALUES ('John'), ('Jane'), ('Bob');
+
 SELECT groupConcat(Name) FROM Employees;
 ```
 

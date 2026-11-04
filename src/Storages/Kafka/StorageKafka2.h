@@ -168,6 +168,10 @@ private:
     const size_t num_consumers; /// total number of consumers
     LoggerPtr log;
     const SettingsChanges settings_adjustments;
+
+    /// Partition affinity settings, enabled when both are > 0.
+    UInt64 partition_shard_num = 0;
+    UInt64 shard_count = 0;
     /// Can differ from num_consumers in case of exception in startup() (or if startup() hasn't been called).
     /// In this case we still need to be able to shutdown() properly.
     size_t num_created_consumers = 0; /// number of actually created consumers.
@@ -208,6 +212,8 @@ private:
     void activateAndReschedule();
     void partialShutdown();
 
+    void parsePartitionAffinitySettings();
+
     void assertActive() const;
     KafkaConsumer2Ptr createKafkaConsumer(size_t consumer_number);
     // Returns full consumer related configuration, also the configuration
@@ -222,6 +228,7 @@ private:
     size_t getPollMaxBatchSize() const;
     size_t getMaxBlockSize() const;
     size_t getPollTimeoutMillisecond() const;
+    UInt64 getLocksRefreshPolls() const;
     size_t getSchemaRegistrySkipBytes() const;
 
     enum class StallKind : uint8_t

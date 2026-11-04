@@ -12,6 +12,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Parsers/parseIntervalKind.h>
+#include <base/insertAtEnd.h>
 #include <base/range.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 
@@ -166,7 +167,7 @@ namespace
         if (type_info.output_denominator == 1)
             max_value = fieldToNumber<QuotaValue>(max_field);
         else
-            max_value = static_cast<QuotaValue>(fieldToNumber<double>(max_field) * static_cast<double>(type_info.output_denominator));
+            max_value = type_info.scaleToValue(fieldToNumber<double>(max_field));
         return true;
     }
 
@@ -263,7 +264,7 @@ namespace
         if (!ParserList::parseUtil(pos, expected, parse_interval_with_limits, false))
             return false;
 
-        all_limits = std::move(res_all_limits);
+        insertAtEnd(all_limits, std::move(res_all_limits));
         return true;
     }
 
@@ -405,4 +406,164 @@ bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
     return true;
 }
+
+std::map<String, Documentation> ParserCreateQuotaQuery::getDocumentation() const
+{
+    std::map<String, Documentation> documentation;
+
+    /// `parseQuotaType` accepts every `QuotaType`, and the documentation below has to list all of them:
+    /// it feeds `system.statements`, `system.documentation` and the generated reference pages, so a
+    /// missing resource tells the user that a valid one is unsupported. Generate the lists from the enum
+    /// metadata, so that adding a resource cannot leave them behind.
+    String resources;       /// `queries | query_selects | ...`, for the syntax blocks.
+    String resources_list;  /// `` `queries`, `query_selects`, ... ``, for the prose.
+    for (auto quota_type : collections::range(QuotaType::MAX))
+    {
+        const String & name = QuotaTypeInfo::get(quota_type).name;
+        if (!resources.empty())
+        {
+            resources += " | ";
+            resources_list += ", ";
+        }
+        resources += name;
+        resources_list += "`" + name + "`";
+    }
+
+    auto substitute = [&](String text)
+    {
+        replaceAll(text, "%RESOURCES%", resources);
+        replaceAll(text, "%RESOURCES_LIST%", resources_list);
+        return text;
+    };
+
+    documentation["CREATE QUOTA"] =
+    {
+        .description = substitute(R"DOCS_MD(
+Creates a [quota](/concepts/features/security/access-rights#quotas-management) that can be assigned to a user or a role.
+
+Syntax:
+
+```sql
+CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
+    [IN access_storage_type]
+    [KEYED BY {user_name | ip_address | forwarded_ip_address | client_key | client_key,user_name | client_key,ip_address | normalized_query_hash} | NOT KEYED]
+    [IPV4_PREFIX_BITS number]
+    [IPV6_PREFIX_BITS number]
+    [FOR [RANDOMIZED] INTERVAL number {second | minute | hour | day | week | month | quarter | year}
+        {MAX { {%RESOURCES%} = number } [,...] | NO LIMITS | TRACKING ONLY} [,...]]
+    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
+```
+
+Keys `user_name`, `ip_address`, `forwarded_ip_address`, `client_key`, `client_key, user_name`, `client_key, ip_address`, and `normalized_query_hash` correspond to the fields in the [system.quotas](/reference/system-tables/quotas) table.
+
+`IPV4_PREFIX_BITS` and `IPV6_PREFIX_BITS` options can only be used when `KEYED BY` is `ip_address` or `forwarded_ip_address`. They correspond to the field in the [system.quotas](/reference/system-tables/quotas) table.
+
+Parameters %RESOURCES_LIST% correspond to the fields in the [system.quotas_usage](/reference/system-tables/quotas_usage) table.
+
+`ON CLUSTER` clause allows creating quotas on a cluster, see [Distributed DDL](/reference/statements/distributed-ddl).
+
+`CREATE QUOTA` requires the [CREATE QUOTA](/reference/statements/grant#access-management) privilege. `OR REPLACE` throws away an existing quota of the same name, including which roles it applies to, so it additionally requires the [DROP QUOTA](/reference/statements/grant#access-management) privilege. The `DROP QUOTA` privilege is required whether or not the quota already exists, so the statement cannot be used to find out which quotas exist.
+
+**Examples**
+
+Limit the maximum number of queries for the current user with 123 queries in 15 months constraint:
+
+```sql
+CREATE QUOTA qA FOR INTERVAL 15 month MAX queries = 123 TO CURRENT_USER;
+```
+
+For the default user limit the maximum execution time with half a second in 30 minutes, and limit the maximum number of queries with 321 and the maximum number of errors with 10 in 5 quarters:
+
+```sql
+CREATE QUOTA qB FOR INTERVAL 30 minute MAX execution_time = 0.5, FOR INTERVAL 5 quarter MAX queries = 321, errors = 10 TO default;
+```
+
+Create a quota where each distinct normalized query pattern gets its own bucket, limited to 100 executions per hour:
+
+```sql
+CREATE QUOTA qC KEYED BY normalized_query_hash FOR INTERVAL 1 hour MAX queries = 100 TO default;
+```
+
+Limit any single normalized query pattern to at most 50 executions per hour (regardless of the quota key type):
+
+```sql
+CREATE QUOTA qD FOR INTERVAL 1 hour MAX queries_per_normalized_hash = 50 TO default;
+```
+
+Further examples, using the xml configuration (not supported in ClickHouse Cloud), can be found in the [Quotas guide](/concepts/features/configuration/server-config/quotas).
+
+## Related Content {#related-content}
+
+- Blog: [Building single page applications with ClickHouse](https://clickhouse.com/blog/building-single-page-applications-with-clickhouse-and-http)
+)DOCS_MD"),
+        .syntax = substitute(R"(
+CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
+    [IN access_storage_type]
+    [KEYED BY {user_name | ip_address | forwarded_ip_address | client_key | client_key,user_name | client_key,ip_address | normalized_query_hash} | NOT KEYED]
+    [IPV4_PREFIX_BITS number]
+    [IPV6_PREFIX_BITS number]
+    [FOR [RANDOMIZED] INTERVAL number {second | minute | hour | day | week | month | quarter | year}
+        {MAX { {%RESOURCES%} = number } [,...] | NO LIMITS | TRACKING ONLY} [,...]]
+    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
+)"),
+        .parent = "CREATE",
+        .related = {"ALTER QUOTA", "CREATE SETTINGS PROFILE", "CREATE USER", "DROP", "SHOW"},
+    };
+
+    documentation["ALTER QUOTA"] =
+    {
+        .description = substitute(R"DOCS_MD(
+Changes quotas.
+
+Syntax:
+
+```sql
+ALTER QUOTA [IF EXISTS] name [ON CLUSTER cluster_name]
+    [RENAME TO new_name]
+    [KEYED BY {user_name | ip_address | forwarded_ip_address | client_key | client_key,user_name | client_key,ip_address | normalized_query_hash} | NOT KEYED]
+    [IPV4_PREFIX_BITS number]
+    [IPV6_PREFIX_BITS number]
+    [FOR [RANDOMIZED] INTERVAL number {second | minute | hour | day | week | month | quarter | year}
+        {MAX { {%RESOURCES%} = number } [,...] | NO LIMITS | TRACKING ONLY} [,...]]
+    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
+```
+Keys `user_name`, `ip_address`, `forwarded_ip_address`, `client_key`, `client_key, user_name`, `client_key, ip_address`, and `normalized_query_hash` correspond to the fields in the [system.quotas](/reference/system-tables/quotas) table.
+
+`IPV4_PREFIX_BITS` and `IPV6_PREFIX_BITS` options can only be used when `KEYED BY` is `ip_address` or `forwarded_ip_address`. They correspond to the field in the [system.quotas](/reference/system-tables/quotas) table.
+
+Parameters %RESOURCES_LIST% correspond to the fields in the [system.quotas_usage](/reference/system-tables/quotas_usage) table.
+
+`ON CLUSTER` clause allows creating quotas on a cluster, see [Distributed DDL](/reference/statements/distributed-ddl).
+
+**Examples**
+
+Limit the maximum number of queries for the current user with 123 queries in 15 months constraint:
+
+```sql
+ALTER QUOTA IF EXISTS qA FOR INTERVAL 15 month MAX queries = 123 TO CURRENT_USER;
+```
+
+For the default user limit the maximum execution time with half a second in 30 minutes, and limit the maximum number of queries with 321 and the maximum number of errors with 10 in 5 quarters:
+
+```sql
+ALTER QUOTA IF EXISTS qB FOR INTERVAL 30 minute MAX execution_time = 0.5, FOR INTERVAL 5 quarter MAX queries = 321, errors = 10 TO default;
+```
+)DOCS_MD"),
+        .syntax = substitute(R"(
+ALTER QUOTA [IF EXISTS] name [ON CLUSTER cluster_name]
+    [RENAME TO new_name]
+    [KEYED BY {user_name | ip_address | forwarded_ip_address | client_key | client_key,user_name | client_key,ip_address | normalized_query_hash} | NOT KEYED]
+    [IPV4_PREFIX_BITS number]
+    [IPV6_PREFIX_BITS number]
+    [FOR [RANDOMIZED] INTERVAL number {second | minute | hour | day | week | month | quarter | year}
+        {MAX { {%RESOURCES%} = number } [,...] | NO LIMITS | TRACKING ONLY} [,...]]
+    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
+)"),
+        .parent = "ALTER",
+        .related = {"CREATE QUOTA", "ALTER", "SHOW"},
+    };
+
+    return documentation;
+}
+
 }

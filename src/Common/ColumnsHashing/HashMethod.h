@@ -2,10 +2,15 @@
 
 #include <Common/ColumnsHashingImpl.h>
 #include <Common/SipHash.h>
+#include <Common/typeid_cast.h>
+#include <algorithm>
 #include <bit>
+#include <limits>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsCommon.h>
 #include <Interpreters/AggregationCommon.h>
 #include <base/types.h>
 
@@ -30,6 +35,41 @@ static inline UInt128 ALWAYS_INLINE hash128( /// NOLINT
     return hash.get128();
 }
 
+/** Hash methods declare two independent prefetch predicates. They are not interchangeable, and the
+  * places that read them are disjoint.
+  *
+  * `has_cheap_key_holder` - read by `Aggregator::executeImpl`.
+  *
+  * Is it acceptable to call `getKeyHolder(row)` a second time for the same row purely to issue a
+  * software prefetch? The aggregation prefetch pipeline runs
+  *
+  *     auto && key_holder = state.getKeyHolder(i + look_ahead, pool);
+  *     data.prefetch(std::move(key_holder));
+  *
+  * ahead of the `emplaceKey`/`findKey` loop, so the look-ahead row's key holder is built once for
+  * the prefetch and once again when that row is actually processed. Hiding a cache miss is only a
+  * win when that duplicated work is cheaper than the miss.
+  *
+  * `true` means `getKeyHolder` reads the key in place: an unaligned load, a `packFixed`, or a
+  * `string_view` over the column's own memory. Rebuilding it costs a handful of instructions.
+  *
+  * `false` means `getKeyHolder` materializes the key - serializing every key column into the arena,
+  * or hashing every key column through virtual `IColumn` calls. For those methods building the key
+  * *is* the dominant cost of the aggregation, so paying it twice per row costs far more than the
+  * miss it hides.
+  *
+  * Note this is deliberately not "is the hash cheap". Hashing a string is not cheap, but a prefetch
+  * has to hash the key by definition, and `HashMethodString`/`HashMethodPackedString` still profit
+  * because building their key holder is free.
+  *
+  * `has_cheap_key_calculation` - read by the JOIN probe loop, via `join_prefetch_supported` in
+  * HashJoinMethodsImpl.h (the `KeyGetterForType` aliases in HashJoin/KeyGetter.h resolve to these
+  * same hash methods). It is the stricter "the whole key calculation, hashing included, is cheap",
+  * and is left as it was: the JOIN probe loop has its own cost balance, which this file's
+  * aggregation-side reasoning says nothing about. Only the aggregator reads
+  * `has_cheap_key_holder`.
+  */
+
 /// For the case when there is one numeric key.
 /// UInt8/16/32/64 for any type with corresponding bit width.
 template <typename Value, typename Mapped, typename FieldType, bool use_cache = true, bool need_offset = false, bool nullable = false>
@@ -45,12 +85,14 @@ struct HashMethodOneNumber : public columns_hashing_impl::HashMethodBase<
     using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset, nullable>;
 
     static constexpr bool has_cheap_key_calculation = true;
+    /// An unaligned load from the column's own memory.
+    static constexpr bool has_cheap_key_holder = true;
     static constexpr bool has_pre_computed_hashes = false;
 
     const char * vec;
 
     /// If the keys of a fixed length then key_sizes contains their lengths, empty otherwise.
-    HashMethodOneNumber(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &) : Base(key_columns[0])
+    HashMethodOneNumber(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &, RowRange /*rows*/ = {}) : Base(key_columns[0])
     {
         if constexpr (nullable)
         {
@@ -113,6 +155,8 @@ struct HashMethodOneNumberInRange : public columns_hashing_impl::HashMethodBase<
 
     static constexpr bool has_range_check = true;
     static constexpr bool has_cheap_key_calculation = true;
+    /// An unaligned load from the column's own memory.
+    static constexpr bool has_cheap_key_holder = true;
 
     const char * vec;
     FieldType min_key{};
@@ -176,12 +220,14 @@ struct HashMethodString : public columns_hashing_impl::HashMethodBase<
     using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset, nullable>;
 
     static constexpr bool has_cheap_key_calculation = false;
+    /// A `string_view` over the column's own chars; the arena copy only happens on persist.
+    static constexpr bool has_cheap_key_holder = true;
     static constexpr bool has_pre_computed_hashes = false;
 
     const IColumn::Offset * offsets;
     const UInt8 * chars;
 
-    HashMethodString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &) : Base(key_columns[0])
+    HashMethodString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &, RowRange /*rows*/ = {}) : Base(key_columns[0])
     {
         const IColumn * column = nullptr;
         if constexpr (nullable)
@@ -197,9 +243,16 @@ struct HashMethodString : public columns_hashing_impl::HashMethodBase<
         chars = column_string.getChars().data();
     }
 
+    /// Returns the row's bytes in the padded source column, without persisting the key. The view remains
+    /// valid for this block and permits reads up to 15 bytes past its end.
+    std::string_view getKeyBytes(ssize_t row) const
+    {
+        return {reinterpret_cast<const char *>(chars) + offsets[row - 1], offsets[row] - offsets[row - 1]};
+    }
+
     auto getKeyHolder(ssize_t row, [[maybe_unused]] Arena & pool) const
     {
-        std::string_view key(reinterpret_cast<const char *>(chars) + offsets[row - 1], offsets[row] - offsets[row - 1]);
+        const auto key = getKeyBytes(row);
 
         if constexpr (place_string_to_arena)
         {
@@ -231,11 +284,14 @@ struct HashMethodPackedString : public columns_hashing_impl::HashMethodBase<
     using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, false, false>;
 
     static constexpr bool has_cheap_key_calculation = false;
+    /// `PackedStringRef::build` reads the key in place; see the note on `Hash` below for why
+    /// rebuilding it (and its content hash) in the look-ahead is an accepted trade here.
+    static constexpr bool has_cheap_key_holder = true;
 
     const IColumn::Offset * offsets;
     const UInt8 * chars;
 
-    HashMethodPackedString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &)
+    HashMethodPackedString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &, RowRange /*rows*/ = {})
         : Base(key_columns[0])
     {
         const ColumnString & column_string = assert_cast<const ColumnString &>(*key_columns[0]);
@@ -251,10 +307,9 @@ struct HashMethodPackedString : public columns_hashing_impl::HashMethodBase<
     ///
     /// Computing the hash inside `build` keeps a single pass over the string data:
     /// a separate per-block hashing pass would read every key twice and allocate a
-    /// hash array per block. The flip side is that when the `Aggregator` prefetch
-    /// pipeline is active (hash table larger than L2), the look-ahead `getKeyHolder`
-    /// call rebuilds the key and hashes it a second time - the same behaviour as the
-    /// `StringHashTable` prefetch path this method replaces.
+    /// hash array per block. When the `Aggregator` prefetches (hash table larger than
+    /// L2) it builds a row's key ahead of the row; its plain `count()` loop keeps that
+    /// key, the other loops build and hash it again.
     ///
     /// A 32-bit hash is sufficient for in-memory aggregation hash tables; external
     /// aggregation derives a 64-bit hash via a dedicated conversion path.
@@ -303,11 +358,19 @@ struct HashMethodPackedString : public columns_hashing_impl::HashMethodBase<
     }
 #endif
 
-    ArenaPackedStringHolder getKeyHolder(ssize_t row, Arena & pool) const
+    /// Returns the row's bytes in the padded source column, without packing or persisting the key. The
+    /// view remains valid for this block and permits reads up to 15 bytes past its end.
+    std::string_view getKeyBytes(ssize_t row) const
     {
         const char * data = reinterpret_cast<const char *>(chars + offsets[row - 1]);
         const size_t size = offsets[row] - offsets[row - 1];
-        return ArenaPackedStringHolder{PackedStringRef::build(data, size, Hash{}), pool};
+        return {data, size};
+    }
+
+    ALWAYS_INLINE ArenaPackedStringHolder getKeyHolder(ssize_t row, Arena & pool) const
+    {
+        const auto key = getKeyBytes(row);
+        return ArenaPackedStringHolder{PackedStringRef::build(key.data(), key.size(), Hash{}), pool};
     }
 
 protected:
@@ -334,12 +397,14 @@ struct HashMethodFixedString : public columns_hashing_impl::HashMethodBase<
     using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset, nullable>;
 
     static constexpr bool has_cheap_key_calculation = false;
+    /// A `string_view` over the column's own chars; the arena copy only happens on persist.
+    static constexpr bool has_cheap_key_holder = true;
     static constexpr bool has_pre_computed_hashes = false;
 
     size_t n;
     const ColumnFixedString::Chars * chars;
 
-    HashMethodFixedString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &) : Base(key_columns[0])
+    HashMethodFixedString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &, RowRange /*rows*/ = {}) : Base(key_columns[0])
     {
         const IColumn * column = nullptr;
         if constexpr (nullable)
@@ -355,9 +420,16 @@ struct HashMethodFixedString : public columns_hashing_impl::HashMethodBase<
         chars = &column_string.getChars();
     }
 
+    /// Returns the row's bytes in the padded source column, without persisting the key. The view remains
+    /// valid for this block and permits reads up to 15 bytes past its end.
+    std::string_view getKeyBytes(size_t row) const
+    {
+        return {reinterpret_cast<const char *>(&(*chars)[row * n]), n};
+    }
+
     auto getKeyHolder(size_t row, [[maybe_unused]] Arena & pool) const
     {
-        std::string_view key(reinterpret_cast<const char *>(&(*chars)[row * n]), n);
+        const auto key = getKeyBytes(row);
         if constexpr (place_string_to_arena)
         {
             return ArenaKeyHolder{key, pool};
@@ -393,12 +465,14 @@ template <
     bool has_nullable_keys_ = false,
     bool has_low_cardinality_ = false,
     bool use_cache = true,
-    bool need_offset = false>
+    bool need_offset = false,
+    /// Built over a sub-range of the block (see `SubRangeState`), so it packs only the rows of the range.
+    bool for_sub_range = false>
 struct HashMethodKeysFixed
     : private columns_hashing_impl::BaseStateKeysFixed<Key, has_nullable_keys_>
-    , public columns_hashing_impl::HashMethodBase<HashMethodKeysFixed<Value, Key, Mapped, has_nullable_keys_, has_low_cardinality_, use_cache, need_offset>, Value, Mapped, use_cache, need_offset>
+    , public columns_hashing_impl::HashMethodBase<HashMethodKeysFixed<Value, Key, Mapped, has_nullable_keys_, has_low_cardinality_, use_cache, need_offset, for_sub_range>, Value, Mapped, use_cache, need_offset>
 {
-    using Self = HashMethodKeysFixed<Value, Key, Mapped, has_nullable_keys_, has_low_cardinality_, use_cache, need_offset>;
+    using Self = HashMethodKeysFixed<Value, Key, Mapped, has_nullable_keys_, has_low_cardinality_, use_cache, need_offset, for_sub_range>;
     using BaseHashed = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset>;
     using Base = columns_hashing_impl::BaseStateKeysFixed<Key, has_nullable_keys_>;
 
@@ -406,6 +480,8 @@ struct HashMethodKeysFixed
     static constexpr bool has_low_cardinality = has_low_cardinality_;
 
     static constexpr bool has_cheap_key_calculation = true;
+    /// `packFixed` copies a few fixed-width fields into the key; no allocation.
+    static constexpr bool has_cheap_key_holder = true;
     static constexpr bool has_pre_computed_hashes = false;
 
     LowCardinalityKeys<has_low_cardinality> low_cardinality_keys;
@@ -420,6 +496,16 @@ struct HashMethodKeysFixed
 
     PaddedPODArray<Key> prepared_keys;
 
+    /// Set when this state covers only a sub-range of the block. `prepared_keys` then holds that
+    /// sub-range, starting at `prepared_keys_begin`, or is empty; a row it does not hold is packed on
+    /// its own.
+    bool covers_sub_range = false;
+    size_t prepared_keys_begin = 0;
+
+    /// A sub-range shorter than this is packed per row: the array would cost more to allocate and fill
+    /// than the rows it saves packing.
+    static constexpr size_t min_rows_to_batch_pack_sub_range = 256;
+
     static bool usePreparedKeys(const Sizes & key_sizes)
     {
         if (has_low_cardinality || has_nullable_keys || sizeof(Key) > 16)
@@ -432,7 +518,38 @@ struct HashMethodKeysFixed
         return true;
     }
 
-    HashMethodKeysFixed(const ColumnRawPtrs & key_columns, const Sizes & key_sizes_, const HashMethodContextPtr &)
+    /// Nullable keys are batch-packed in clause order, the layout of the per-row nullable `packFixed`, so
+    /// `packedKeysOrder` stays empty for them.
+    static bool useOrderedPreparedKeys(const Sizes & key_sizes)
+    {
+        if constexpr (!has_nullable_keys || has_low_cardinality)
+            return false;
+        else
+        {
+            size_t packed_size = std::tuple_size_v<KeysNullMap<Key>>;
+            for (auto size : key_sizes)
+            {
+                if (size != 1 && size != 2 && size != 4 && size != 8 && size != 16)
+                    return false;
+                packed_size += size;
+            }
+            return packed_size <= sizeof(Key);
+        }
+    }
+
+    /// The batch buffer is resized before probing, even when every input key is already present.
+    /// Match the padding and capacity rounding of `PaddedPODArray::resize_fill` on an empty array.
+    static size_t estimatePreparedKeysMemory(size_t num_rows, const Sizes & key_sizes)
+    {
+        if (!num_rows || !(usePreparedKeys(key_sizes) || useOrderedPreparedKeys(key_sizes)))
+            return 0;
+
+        using Array = PaddedPODArray<Key>;
+        return roundUpToPowerOfTwoOrZero(PODArrayDetails::minimum_memory_for_elements(
+            num_rows, sizeof(Key), Array::pad_left, Array::pad_right));
+    }
+
+    HashMethodKeysFixed(const ColumnRawPtrs & key_columns, const Sizes & key_sizes_, const HashMethodContextPtr &, RowRange rows = {})
         : Base(key_columns), key_sizes(key_sizes_), keys_size(key_columns.size())
     {
         if constexpr (has_low_cardinality)
@@ -455,7 +572,25 @@ struct HashMethodKeysFixed
 
         if (usePreparedKeys(key_sizes))
         {
-            packFixedBatch(keys_size, Base::getActualColumns(), key_sizes, prepared_keys);
+            const RowRange packed = rowsToBatchPack(key_columns, rows);
+            if (!covers_sub_range)
+                packFixedBatch(keys_size, Base::getActualColumns(), key_sizes, prepared_keys);
+            else if (packed.end > packed.begin)
+                packFixedBatchRange(keys_size, Base::getActualColumns(), key_sizes, prepared_keys, packed.begin, packed.end);
+        }
+        else if constexpr (has_nullable_keys && !has_low_cardinality)
+        {
+            if (useOrderedPreparedKeys(key_sizes))
+            {
+                const RowRange packed = rowsToBatchPack(key_columns, rows);
+                if (packed.end > packed.begin)
+                {
+                    packFixedBatchOrdered<Key>(
+                        keys_size, Base::getActualColumns(), key_sizes, std::tuple_size_v<KeysNullMap<Key>>, prepared_keys,
+                        packed.begin, packed.end);
+                    repackRowsWithNulls(packed.begin, packed.end);
+                }
+            }
         }
 
 #if defined(__SSSE3__) && !defined(MEMORY_SANITIZER)
@@ -515,6 +650,20 @@ struct HashMethodKeysFixed
     {
         if constexpr (has_nullable_keys)
         {
+            if constexpr (for_sub_range)
+            {
+                if (covers_sub_range)
+                {
+                    const size_t index = row - prepared_keys_begin;
+                    if (index < prepared_keys.size())
+                        return prepared_keys[index];
+                    return packFixed<Key>(row, keys_size, Base::getActualColumns(), key_sizes, Base::createBitmap(row));
+                }
+            }
+
+            if (!prepared_keys.empty())
+                return prepared_keys[row];
+
             auto bitmap = Base::createBitmap(row);
             return packFixed<Key>(row, keys_size, Base::getActualColumns(), key_sizes, bitmap);
         }
@@ -523,6 +672,17 @@ struct HashMethodKeysFixed
             if constexpr (has_low_cardinality)
                 return packFixed<Key, true>(row, keys_size, low_cardinality_keys.nested_columns, key_sizes,
                                             &low_cardinality_keys.positions, &low_cardinality_keys.position_sizes);
+
+            if constexpr (for_sub_range)
+            {
+                if (covers_sub_range)
+                {
+                    const size_t index = row - prepared_keys_begin;
+                    if (index < prepared_keys.size())
+                        return prepared_keys[index];
+                    return packFixedLongestFirst<Key>(row, keys_size, Base::getActualColumns(), key_sizes);
+                }
+            }
 
             if (!prepared_keys.empty())
                 return prepared_keys[row];
@@ -538,39 +698,171 @@ struct HashMethodKeysFixed
         }
     }
 
-    static std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> & key_columns, const Sizes & key_sizes)
+    /// Returns the column order used to pack prepared keys: descending value size.
+    /// Returns `std::nullopt` when packing uses the original column order.
+    /// `unpackFixedKeyIntoColumns` uses the same order to recover key values.
+    static std::optional<std::vector<size_t>> packedKeysOrder(const Sizes & key_sizes)
     {
         if (!usePreparedKeys(key_sizes))
             return {};
 
+        std::vector<size_t> order;
+        order.reserve(key_sizes.size());
+        for (const size_t size : {16, 8, 4, 2, 1})
+            for (size_t i = 0; i < key_sizes.size(); ++i)
+                if (key_sizes[i] == size)
+                    order.push_back(i);
+        return order;
+    }
+
+    static std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> & key_columns, const Sizes & key_sizes)
+    {
+        const auto order = packedKeysOrder(key_sizes);
+        if (!order)
+            return {};
+
         std::vector<IColumn *> new_columns;
         new_columns.reserve(key_columns.size());
-
         Sizes new_sizes;
-        auto fill_size = [&](size_t size)
-        {
-            for (size_t i = 0; i < key_sizes.size(); ++i)
-            {
-                if (key_sizes[i] == size)
-                {
-                    new_columns.push_back(key_columns[i]);
-                    new_sizes.push_back(size);
-                }
-            }
-        };
+        new_sizes.reserve(key_sizes.size());
 
-        fill_size(16);
-        fill_size(8);
-        fill_size(4);
-        fill_size(2);
-        fill_size(1);
+        for (const size_t i : *order)
+        {
+            new_columns.push_back(key_columns[i]);
+            new_sizes.push_back(key_sizes[i]);
+        }
 
         key_columns.swap(new_columns);
         return new_sizes;
     }
+
+private:
+    /// The rows to batch-pack: the whole block, the state's sub-range if it is long enough, or none.
+    RowRange rowsToBatchPack(const ColumnRawPtrs & key_columns, RowRange rows)
+    {
+        const size_t block_rows = key_columns.empty() ? 0 : key_columns[0]->size();
+        if constexpr (for_sub_range)
+        {
+            /// Batch-packing costs one pass over the rows it packs, so a state that will be asked about
+            /// only a sub-range packs just that sub-range: one state per run of a sorted prefix would
+            /// otherwise pay for the whole block each time. Same trade as `Params::aggregation_in_order`.
+            const size_t rows_end = std::min(rows.end, block_rows);
+            if (rows.begin != 0 || rows_end < block_rows)
+            {
+                covers_sub_range = true;
+                if (rows_end > rows.begin && rows_end - rows.begin >= min_rows_to_batch_pack_sub_range)
+                {
+                    prepared_keys_begin = rows.begin;
+                    return {rows.begin, rows_end};
+                }
+                return {0, 0};
+            }
+        }
+        return {0, block_rows};
+    }
+
+    /// A row whose null-map bytes are all zero gets no bit from `createBitmap`, so only the other rows of
+    /// the batch-packed range need packing again.
+    void repackRowsWithNulls(size_t begin, size_t end)
+    {
+        std::array<const UInt8 *, sizeof(Key)> maps_with_nulls{};
+        size_t num_maps_with_nulls = 0;
+        for (const auto * null_map_column : Base::getNullMaps())
+        {
+            if (!null_map_column)
+                continue;
+            const UInt8 * null_map = assert_cast<const ColumnUInt8 &>(*null_map_column).getData().data();
+            if (!memoryIsZero(null_map, begin, end))
+            {
+                chassert(num_maps_with_nulls < maps_with_nulls.size());
+                maps_with_nulls[num_maps_with_nulls++] = null_map;
+            }
+        }
+
+        if (num_maps_with_nulls == 0)
+            return;
+
+        for (size_t row = begin; row < end; ++row)
+        {
+            UInt8 any_null = 0;
+            for (size_t k = 0; k < num_maps_with_nulls; ++k)
+                any_null |= maps_with_nulls[k][row];
+            if (any_null)
+                prepared_keys[row - begin] = packFixed<Key>(row, keys_size, Base::getActualColumns(), key_sizes, Base::createBitmap(row));
+        }
+    }
 };
 
-/// For the case when there is one string key.
+/// Only a state that can batch-pack its keys has a sub-range variant; the others would be identical copies.
+template <typename Value, typename Key, typename Mapped, bool has_nullable_keys, bool has_low_cardinality, bool use_cache, bool need_offset>
+struct SubRangeStateOf<HashMethodKeysFixed<Value, Key, Mapped, has_nullable_keys, has_low_cardinality, use_cache, need_offset, false>>
+{
+    using Type = HashMethodKeysFixed<Value, Key, Mapped, has_nullable_keys, has_low_cardinality, use_cache, need_offset,
+        !has_low_cardinality && (has_nullable_keys || sizeof(Key) <= 16)>;
+};
+
+/// Bitwise comparator of rows over fixed-width contiguous key columns, flattening tuples
+/// element-wise. Bitwise equality of all collected slices implies key equality; the converse
+/// does not hold (e.g. `-0.` and `0.` are equal values with different bytes), but a false
+/// negative only costs falling back to the full key calculation. Unusable (and empty) if some
+/// key column has no such raw representation.
+class FixedSizeKeySlices
+{
+public:
+    FixedSizeKeySlices() = default;
+
+    explicit FixedSizeKeySlices(const ColumnRawPtrs & key_columns)
+    {
+        for (const auto * column : key_columns)
+        {
+            if (!collect(*column))
+            {
+                slices.clear();
+                return;
+            }
+        }
+        usable = true;
+    }
+
+    bool isUsable() const { return usable; }
+
+    /// The comparator must be usable and both rows must be valid.
+    ALWAYS_INLINE bool rowsEqual(size_t row, size_t other_row) const
+    {
+        for (const auto & [data, size] : slices)
+        {
+            if (memcmp(data + row * size, data + other_row * size, size) != 0)
+                return false;
+        }
+        return true;
+    }
+
+private:
+    bool collect(const IColumn & column)
+    {
+        if (const auto * tuple = typeid_cast<const ColumnTuple *>(&column))
+        {
+            for (size_t i = 0; i < tuple->tupleSize(); ++i)
+            {
+                if (!collect(tuple->getColumn(i)))
+                    return false;
+            }
+            return true;
+        }
+        if (column.valuesHaveFixedSize() && column.isFixedAndContiguous())
+        {
+            slices.emplace_back(column.getRawData().data(), column.sizeOfValueIfFixed());
+            return true;
+        }
+        return false;
+    }
+
+    std::vector<std::pair<const char *, size_t>> slices;
+    bool usable = false;
+};
+
+/// For the case when the key is a 128-bit hash of all key columns (the fallback method for
+/// keys with no fixed-width packed representation, e.g. a `Tuple` column).
 template <typename Value, typename Mapped, bool use_cache = true, bool need_offset = false>
 struct HashMethodHashed
     : public columns_hashing_impl::HashMethodBase<HashMethodHashed<Value, Mapped, use_cache, need_offset>, Value, Mapped, use_cache, need_offset>
@@ -580,16 +872,58 @@ struct HashMethodHashed
     using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset>;
 
     static constexpr bool has_cheap_key_calculation = false;
+    /// `hash128` SipHashes every key column through a virtual `IColumn::updateHashWithValue`.
+    static constexpr bool has_cheap_key_holder = false;
     static constexpr bool has_pre_computed_hashes = false;
 
     ColumnRawPtrs key_columns;
 
-    HashMethodHashed(ColumnRawPtrs key_columns_, const Sizes &, const HashMethodContextPtr &)
-        : key_columns(std::move(key_columns_)) {}
+    /// The consecutive-keys cache alone cannot skip the key calculation for this method: its
+    /// check needs the key, and here the key is the hash itself. Clustered inputs (e.g. sorted
+    /// by a primary key prefix) arrive in runs of equal consecutive rows, so additionally
+    /// compare the raw key bytes with the last processed row and reuse the cached result on
+    /// equality, skipping the hashing entirely.
+    FixedSizeKeySlices key_slices;
+    static constexpr size_t no_last_row = std::numeric_limits<size_t>::max();
+    size_t last_row = no_last_row;
+
+    HashMethodHashed(ColumnRawPtrs key_columns_, const Sizes &, const HashMethodContextPtr &, RowRange /*rows*/ = {})
+        : key_columns(std::move(key_columns_))
+    {
+        if constexpr (use_cache)
+            key_slices = FixedSizeKeySlices(key_columns);
+    }
 
     ALWAYS_INLINE Key getKeyHolder(size_t row, Arena &) const
     {
         return hash128(row, key_columns.size(), key_columns);
+    }
+
+    template <typename Data>
+    ALWAYS_INLINE typename Base::EmplaceResult emplaceKey(Data & data, size_t row, Arena & pool)
+    {
+        if constexpr (use_cache)
+        {
+            /// An emplace can reuse the cache only when the key is known to be in the table.
+            if (last_row != no_last_row && this->cache.found && key_slices.rowsEqual(row, last_row))
+                return Base::getCachedEmplaceResult();
+            if (key_slices.isUsable())
+                last_row = row;
+        }
+        return Base::emplaceKey(data, row, pool);
+    }
+
+    template <typename Data>
+    ALWAYS_INLINE typename Base::FindResult findKey(Data & data, size_t row, Arena & pool)
+    {
+        if constexpr (use_cache)
+        {
+            if (last_row != no_last_row && !this->cache.empty && key_slices.rowsEqual(row, last_row))
+                return Base::getCachedFindResult();
+            if (key_slices.isUsable())
+                last_row = row;
+        }
+        return Base::findKey(data, row, pool);
     }
 };
 

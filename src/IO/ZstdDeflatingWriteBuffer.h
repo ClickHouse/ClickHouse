@@ -4,6 +4,7 @@
 #include <IO/CompressionMethod.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferDecorator.h>
+#include <IO/ZstdContext.h>
 
 #include <zstd.h>
 
@@ -28,8 +29,6 @@ public:
         initialize(compression_level, window_log);
     }
 
-    ~ZstdDeflatingWriteBuffer() override;
-
     void sync() override
     {
         out->sync();
@@ -48,7 +47,7 @@ private:
 
     void flush(ZSTD_EndDirective mode);
 
-    ZSTD_CCtx * cctx{};
+    ZstdCCtxPtr cctx;
     ZSTD_inBuffer input{};
     ZSTD_outBuffer output{};
 

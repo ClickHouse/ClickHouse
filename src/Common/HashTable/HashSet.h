@@ -3,6 +3,7 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/HashTable.h>
 #include <Common/HashTable/HashTableAllocator.h>
+#include <Common/HashTable/Prefetching.h>
 #include <Common/HashTable/TwoLevelHashTable.h>
 
 #include <IO/WriteBuffer.h>
@@ -28,7 +29,9 @@ template <
     typename Hash = DefaultHash<Key>,
     typename Grower = HashTableGrowerWithPrecalculation<>,
     typename Allocator = HashTableAllocator>
-class HashSetTable final : public HashTable<Key, TCell, Hash, Grower, Allocator>
+/// Not `final`: `AggregationDataWithNullKey` derives from it for nullable set-mode GROUP BY (mirrors how
+/// the non-final `HashMapTable` is wrapped by `HashTableWithNullKey`).
+class HashSetTable : public HashTable<Key, TCell, Hash, Grower, Allocator>
 {
 public:
     using Self = HashSetTable;
@@ -54,6 +57,27 @@ public:
         /// there are no duplicates (might use more memory than needed in case of many duplicates between the 2 tables).
         if (rhs.grower.bufSize() > Base::grower.bufSize())
             Base::resize(rhs.size() + Base::size());
+        else if constexpr (GrowerWithRobinHood<Grower>)
+        {
+            /// The cells of `rhs` are inserted in position order, so they sweep each `rhs.bufSize()`-cell segment of this table from left
+            /// to right, and the keys that outnumber the cells of a segment pile up right after the insertion point until the table grows.
+            if (Base::size() + rhs.size() > Base::grower.bufSize())
+            {
+                constexpr size_t max_cells_to_estimate_new_keys = 256;
+                size_t sampled = 0;
+                size_t new_keys = 0;
+                for (size_t i = 0; i < rhs.grower.bufSize() && sampled < max_cells_to_estimate_new_keys; ++i)
+                {
+                    if (rhs.buf[i].isZero(*this))
+                        continue;
+                    ++sampled;
+                    new_keys += !this->has(rhs.buf[i].getKey(), rhs.buf[i].getHash(*this));
+                }
+                const size_t expected_size = Base::size() + (sampled ? rhs.size() * new_keys / sampled : 0);
+                if (expected_size > Base::grower.bufSize())
+                    Base::resize(expected_size);
+            }
+        }
 
         if (!this->hasZero() && rhs.hasZero())
         {
@@ -65,6 +89,124 @@ public:
             if (!rhs.buf[i].isZero(*this))
                 this->insert(rhs.buf[i]);
     }
+
+    /// Call func(const Key &) for each set element. `HashMapTable::forEachValue` passes the mapped value
+    /// too; a set has none, so a caller that works over both takes it as a parameter pack.
+    template <typename Func>
+    void forEachValue(Func && func)
+    {
+        for (auto & cell : *this)
+            func(cell.getKey());
+    }
+
+    /// A set has no mapped values, so this visits nothing and `func` is never called. "Iterate the mapped
+    /// values" over a table that has none is an empty loop whatever the caller is doing, which is why this
+    /// one is safe to answer generically - the other mapped-value operations are not, and the methods that
+    /// need them are specialized on `SetAggregationMethod` instead.
+    template <typename Func>
+    void forEachMapped(Func &&)
+    {
+    }
+
+    /// Inserts the keys, which must fit without a resize. Prefetches the cell of the key `prefetch_distance` ahead, if
+    /// it is not zero. The fields are kept in local variables, because the stores into the cells could alias them.
+    template <size_t prefetch_distance>
+    void ALWAYS_INLINE insertManyWithoutResize(const Key * __restrict keys, size_t num_keys)
+    {
+        Cell * __restrict cells = this->buf;
+        const Grower local_grower = this->grower;
+        size_t local_size = this->m_size;
+        bool has_zero = this->hasZero();
+
+        for (size_t i = 0; i < num_keys; ++i)
+        {
+            if constexpr (prefetch_distance != 0)
+            {
+                if (i + prefetch_distance < num_keys)
+                    __builtin_prefetch(&cells[local_grower.place(this->hash(keys[i + prefetch_distance]))]);
+            }
+
+            const Key key = keys[i];
+            if (Cell::isZero(key, *this))
+            {
+                has_zero = true;
+                continue;
+            }
+
+            const size_t hash_value = this->hash(key);
+            size_t place = local_grower.place(hash_value);
+            while (true)
+            {
+                Cell & cell = cells[place];
+                if (cell.keyEquals(key, hash_value, *this))
+                    break;
+                if (cell.isZero(*this))
+                {
+                    new (&cell) Cell(key, *this);
+                    cell.setHash(hash_value);
+                    ++local_size;
+                    break;
+                }
+                place = local_grower.next(place);
+            }
+        }
+
+        if (has_zero && !this->hasZero())
+        {
+            this->setHasZero();
+            ++local_size;
+        }
+        this->m_size = local_size;
+    }
+
+    /// Merge every key of *this into `that`, growing `that` incrementally (with optional prefetch), reusing
+    /// each source cell's stored hash. Unlike `merge`, it does NOT preemptively resize to dst+src - that
+    /// over-allocates and triggers a full rehash for high-overlap aggregation merges. The set analogue of
+    /// HashMapTable::mergeToViaEmplace (there is simply no mapped value to combine).
+    template <bool prefetch = false>
+    void ALWAYS_INLINE mergeToViaEmplace(Self & that)
+    {
+        DB::PrefetchingHelper prefetching;
+        size_t prefetch_look_ahead = DB::PrefetchingHelper::getInitialLookAheadValue();
+
+        size_t i = 0;
+        auto prefetch_it = advanceIterator(this->begin(), prefetch_look_ahead);
+
+        for (auto it = this->begin(), end = this->end(); it != end; ++it, ++i)
+        {
+            if constexpr (prefetch)
+            {
+                if (i == DB::PrefetchingHelper::iterationsToMeasure())
+                {
+                    prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
+                    prefetch_it = advanceIterator(prefetch_it, prefetch_look_ahead - DB::PrefetchingHelper::getInitialLookAheadValue());
+                }
+
+                if (prefetch_it != end)
+                {
+                    that.prefetchByHash(prefetch_it.getHash());
+                    ++prefetch_it;
+                }
+            }
+
+            typename Self::LookupResult res_it;
+            bool inserted = false;
+            that.emplace(Cell::getKey(it->getValue()), res_it, inserted, it.getHash());
+        }
+    }
+
+private:
+    using Iterator = typename Base::iterator;
+    Iterator advanceIterator(Iterator it, size_t n)
+    {
+        size_t i = 0;
+        while (i < n && it != this->end())
+        {
+            ++i;
+            ++it;
+        }
+        return it;
+    }
 };
 
 
@@ -73,13 +215,14 @@ template <
     typename TCell, /// Supposed to have no state (HashTableNoState)
     typename Hash = DefaultHash<Key>,
     typename Grower = TwoLevelHashTableGrower<>,
-    typename Allocator = HashTableAllocator>
-class TwoLevelHashSetTable final
-    : public TwoLevelHashTable<Key, TCell, Hash, Grower, Allocator, HashSetTable<Key, TCell, Hash, Grower, Allocator>>
+    typename Allocator = HashTableAllocator,
+    size_t BITS_FOR_BUCKET = DEFAULT_BITS_FOR_BUCKET>
+class TwoLevelHashSetTable
+    : public TwoLevelHashTable<Key, TCell, Hash, Grower, Allocator, HashSetTable<Key, TCell, Hash, Grower, Allocator>, BITS_FOR_BUCKET>
 {
 public:
     using Self = TwoLevelHashSetTable;
-    using Base = TwoLevelHashTable<Key, TCell, Hash, Grower, Allocator, HashSetTable<Key, TCell, Hash, Grower, Allocator>>;
+    using Base = TwoLevelHashTable<Key, TCell, Hash, Grower, Allocator, HashSetTable<Key, TCell, Hash, Grower, Allocator>, BITS_FOR_BUCKET>;
 
     using Base::Base;
 
@@ -97,6 +240,12 @@ public:
 
         for (size_t i = 0; i < Base::NUM_BUCKETS; ++i)
             this->impls[i].merge(rhs.impls[i]);
+    }
+
+    /// A set has no mapped values - see `HashSetTable::forEachMapped`.
+    template <typename Func>
+    void forEachMapped(Func &&)
+    {
     }
 
     /// Writes its content in a way that it will be correctly read by HashSetTable.
@@ -154,8 +303,9 @@ template <
     typename Key,
     typename Hash = DefaultHash<Key>,
     typename Grower = TwoLevelHashTableGrower<>,
-    typename Allocator = HashTableAllocator>
-using TwoLevelHashSet = TwoLevelHashSetTable<Key, HashTableCell<Key, Hash>, Hash, Grower, Allocator>;
+    typename Allocator = HashTableAllocator,
+    size_t BITS_FOR_BUCKET = DEFAULT_BITS_FOR_BUCKET>
+using TwoLevelHashSet = TwoLevelHashSetTable<Key, HashTableCell<Key, Hash>, Hash, Grower, Allocator, BITS_FOR_BUCKET>;
 
 template <typename Key, typename Hash, size_t initial_size_degree>
 using HashSetWithStackMemory = HashSet<
@@ -177,8 +327,10 @@ template <
     typename Key,
     typename Hash = DefaultHash<Key>,
     typename Grower = TwoLevelHashTableGrower<>,
-    typename Allocator = HashTableAllocator>
-using TwoLevelHashSetWithSavedHash = TwoLevelHashSetTable<Key, HashSetCellWithSavedHash<Key, Hash>, Hash, Grower, Allocator>;
+    typename Allocator = HashTableAllocator,
+    size_t BITS_FOR_BUCKET = DEFAULT_BITS_FOR_BUCKET>
+using TwoLevelHashSetWithSavedHash
+    = TwoLevelHashSetTable<Key, HashSetCellWithSavedHash<Key, Hash>, Hash, Grower, Allocator, BITS_FOR_BUCKET>;
 
 template <typename Key, typename Hash, size_t initial_size_degree>
 using HashSetWithSavedHashWithStackMemory = HashSetWithSavedHash<

@@ -19,6 +19,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
@@ -281,6 +282,16 @@ namespace
                                                const std::vector<UUID> roles_to_grant,
                                                const RolesOrUsersSet & roles_to_revoke)
     {
+        /// A session whose access rights are limited by the GRANTS clause of an authentication method cannot
+        /// administer roles at all (the clause cannot express the admin option), so we deny it here following
+        /// the fail-close principle. The ON CLUSTER role path below authorizes role DDL through plain `ROLE_ADMIN`
+        /// checks, bypassing `ContextAccess::checkAdminOption` where the same guard lives, so it must be repeated here.
+        if (current_user_access.getParams().authentication_grants)
+            throw Exception(ErrorCodes::ACCESS_DENIED,
+                "Not enough privileges. "
+                "The current session is authenticated with a method which limits the access rights with the GRANTS clause, "
+                "and such sessions cannot administer roles");
+
         if (roles_to_revoke.all)
         {
             /// Revoking all the roles on cluster always requires ROLE_ADMIN privilege

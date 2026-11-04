@@ -1,0 +1,40 @@
+sorted unique baseline (rate, increase, delta, changes, resets, deriv, predict, resample):
+Row 1:
+──────
+rate:     [NULL,NULL,0.05,0.08777777777777777,0.13833333333333334,0.16000000000000003]
+increase: [NULL,NULL,5,8.777777777777779,13.833333333333334,16]
+delta:    [NULL,NULL,1.25,5.111111111111111,3.875,7.777777777777779]
+changes:  [NULL,0,2,3,4,6]
+resets:   [NULL,0,1,1,2,2]
+deriv:    [NULL,NULL,0.03333333333333333,0.07333333333333333,0.05333333333333333,0.06904761904761905]
+predict:  [NULL,NULL,4.5,9.166666666666666,8.333333333333334,11.392857142857142]
+resample: [NULL,1,2,5,4,8]
+shuffled input with duplicates equals the baseline (all 1):
+1	1	1	1	1	1	1	1
+duplicate timestamps keep the largest real value, a NaN loses to a real value (all 1):
+1	1	1	1	1	1	1	1	1	1	1	1
+a timestamp with only NaN samples stays NaN (delta [nan]):
+[nan]
+merging unsorted in-memory states equals the baseline (1):
+1
+merging states with non-overlapping ranges in either order equals the baseline (1 1):
+1	1
+AggregatingMergeTree roundtrip of an unsorted state equals the baseline (1):
+1
+deserializing samples in a different wire order gives the same result (grid, 1):
+[NULL,NULL,0.05,0.06,0.06,0.06]	1
+single-threaded scan over interleaved parts equals the sorted part (all 1):
+0	1
+1	1
+2	1
+3	1
+two-level parallel aggregation equals the sorted part (all 1):
+0	1
+1	1
+2	1
+3	1
+serialized-state merge over remote() equals the sorted part (all 1):
+0	1
+1	1
+2	1
+3	1

@@ -1,0 +1,152 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-08-21
+title: 'Demo days - 2026-08-21'
+sidebarTitle: '2026-08-21'
+description: 'ClickStack demo days for 2026-08-21'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## Metric formulas in the chart editor {#metric-formulas-in-the-chart-editor}
+
+*Demo by [@wrn14897](https://github.com/wrn14897)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/tSCoW-GGXTU" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+Metric charts can now do arithmetic. Until this week, two metrics on the same chart were just two lines, with no way to combine them.
+
+Series in a chart are labelled `A`, `B`, `C`, and so on. A formula row lets you build a derived series from those references. `A / (A + B + C) * 100` gives you a queue utilization rate. You can calculate saturation from a collector's received and sent counts in the same way.
+
+You can add several formulas to one chart, choose whether to show the operand series alongside the result or only the formula, and mix series from different metrics. Alerts work on formulas too.
+
+The arithmetic itself happens in ClickHouse. Each formula is compiled from a validated AST into the composed metric query, so ClickHouse calculates it as part of a single query rather than the app joining the results afterwards. Each series becomes a CTE, and the formula is evaluated over the joined result.
+
+Missing operands count as zero, so a group with no errors reads 0% rather than N/A. Every division denominator is wrapped in `nullif(..., 0)`, so a zero or missing denominator renders as a gap rather than a zero or an error.
+
+A follow-up moved `HAVING`, `ORDER BY`, and `LIMIT` onto the final join instead of applying them to each `UNION` branch. Previously, those clauses ran in a scope where the user-facing output names did not exist. That meant each series was filtered independently before the join, while the final row order remained nondeterministic.
+
+The input accepts letter references and simple arithmetic, not arbitrary SQL for now. Unknown series references, malformed expressions, and constant-only expressions appear live beneath the input. The same validation blocks save and run, so an invalid expression never reaches ClickHouse.
+
+Bitwise operators and ClickHouse functions are not supported yet. There is no deeper reason for that. It is simply where the first version stopped, and wider expression support is something we could add next.
+
+Two things came up in discussion that are not built. Formulas cannot reference other formulas, so you cannot chain `F1` into `F2`. Per-series show/hide controls would also be more useful than the chart-wide operand toggle. Hiding `A` and `B` while keeping them in the formula is the case people actually want.
+
+There was also a fair question about how far the joins can be pushed before they stop being useful. Anyone who has used PromQL division will know the failure mode: a join that does not match as expected and silently returns no data.
+
+**Related PRs:** [#2908](https://github.com/hyperdxio/hyperdx/pull/2908) render formulas in the composed metric query, [#2909](https://github.com/hyperdxio/hyperdx/pull/2909) chart editor UI for metric formulas, [#2946](https://github.com/hyperdxio/hyperdx/pull/2946) apply HAVING/ORDER BY/LIMIT to the composed metric join, not per-series branches, [#2952](https://github.com/hyperdxio/hyperdx/pull/2952) formula support across API surfaces, [#2953](https://github.com/hyperdxio/hyperdx/pull/2953) formula support for log/trace event sources
+
+## Dependent dashboard variables and macros {#dependent-dashboard-variables-and-macros}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Y0CaapNH1Vc" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+Two requests from last week's demo have landed.
+
+Filter definitions can now reference other variables in their `WHERE` clause, so one dropdown can scope another. A severity filter that references the service name filter starts empty. Once you pick a service, it offers only the severities that exist for that service.
+
+Options are still queried when a referenced variable has nothing selected. Use `$__filters` or `$__conditionalAll` if you want values to populate in that state. A bare `<expression> IN ($var)` returns nothing until `$var` has a selection. A tooltip now explains why, rather than leaving you with an empty list and no explanation. Autocomplete for variables and macros also works in the filter modal's `WHERE` input.
+
+You can create circular dependencies, but they do no real harm because variables are replaced by their selections rather than evaluated recursively.
+
+Macros now expand variables passed as arguments, so `$__timeFilter($TimeColumn)` works. Pick a timestamp column from a variable, and the macro expands into the full timestamp filter around it. Variables passed to `$__filter` and `$__conditionalAll` must now use the `$var` form. A bare `var` used to be accepted, which was lenient in a way that mostly caused confusion.
+
+Both the external API v2 and the MCP server understand variables, which means Terraform does too. An agent can build a dashboard with variable and broadcast filters, dependent dropdowns, and tiles that reference those variables directly or through a macro. The create, save, and patch tools warn when variables are used somewhere they will not work.
+
+The query tile tools also accept variable values, so an agent can check its own substitutions before handing the dashboard over.
+
+**Related PRs:** [#2923](https://github.com/hyperdxio/hyperdx/pull/2923) support dependent variable value queries, [#2937](https://github.com/hyperdxio/hyperdx/pull/2937) support nested macros and variable references in macros, [#2944](https://github.com/hyperdxio/hyperdx/pull/2944) add dashboard variables to external API, [#2951](https://github.com/hyperdxio/hyperdx/pull/2951) support dashboard variables in MCP server
+
+## MCP tool schemas that strict clients accept {#mcp-tool-schemas-that-strict-clients-accept}
+
+*Demo by [@teeohhem](https://github.com/teeohhem)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/W4dvgYj47ZM" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+A customer reported that they could not use our MCP server with their agent at all.
+
+Some agent frameworks list the available tools and validate every input schema before sending them to the model provider. If one schema is invalid, the framework rejects the entire tool list rather than just the offending tool, making the server appear completely broken.
+
+Plenty of agent harnesses are more forgiving, but some are not. For affected clients, detaching the server was the only way to get the agent working again.
+
+There is now a test asserting that every tool's input schema is valid JSON Schema draft 2020-12, so a new tool cannot break strict clients in the same way again.
+
+**Related PRs:** [#2925](https://github.com/hyperdxio/hyperdx/pull/2925) emit draft-2020-12-valid tool input schemas, [#2971](https://github.com/hyperdxio/hyperdx/pull/2971) advertise quantile level as a string enum
+
+## Rotatable personal API access keys {#rotatable-personal-api-access-keys}
+
+*Demo by [@teeohhem](https://github.com/teeohhem)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/tHQoaFaVPpY" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+Personal API access keys can now be rotated from Team Settings → API & Agents.
+
+The key is used as the bearer token for the external API v2 and the MCP server. Previously, it was generated once when the account was created and could never be changed. Dealing with a leaked key meant deleting the user.
+
+Rotation is immediate, with no grace period, and your browser session stays signed in. Take care here: the key belongs to the account rather than a team. If you belong to several teams, everything using that key across all of them needs to be updated.
+
+Enterprise shows a warning explaining this. There is nothing to warn about on a single-team open source installation, so the warning does not appear there.
+
+There are two deliberate limits. The `PATCH /me/accessKey` route accepts no user identifier because the ID comes from the session. It can only ever rotate the caller's own key.
+
+The route is also not exposed through the bearer-authenticated external API v2. A leaked key can already be used to read itself there. Allowing it to rotate as well would let someone lock the owner out of their own tooling.
+
+**Related PRs:** [#2926](https://github.com/hyperdxio/hyperdx/pull/2926) make personal API access keys rotatable
+
+## Alphabetical keys in the Column Values tab {#alphabetical-keys-in-the-column-values-tab}
+
+*Demo by [@teeohhem](https://github.com/teeohhem)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/9RfTL-dtZF0" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+Keys in the row side panel's Column Values tab are now sorted alphabetically at every nesting level, for both logs and traces.
+
+The JSON tree previously rendered keys in ClickHouse's physical storage order, which appeared effectively random. A `Map` column like `ProfileEvents`, with 125 keys, had no discoverable order, so finding one meant reading through the whole list.
+
+The less obvious half of the problem was that each level is capped at 50 rows, and the slice happened before sorting. The 50 keys you saw were an arbitrary subset, with "Expand 75 more properties" as the only route to the rest.
+
+Sorting now happens in `TreeNode` before the list is sliced. It is numeric-aware, so `key2` comes before `key10`.
+
+**Related PRs:** [#2943](https://github.com/hyperdxio/hyperdx/pull/2943) sort JSON viewer keys alphabetically
+
+## Storybook as a browsable design system {#storybook-as-a-browsable-design-system}
+
+*Demo by [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/mnHtrsuKsC8" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+Storybook is now a browsable design system rather than a component sandbox. The sidebar follows Guidelines → Brand → Icons → Design Tokens → Components.
+
+Guidelines renders the `agent_docs` Markdown directly, so code style, theming, page layout, and data visualization colors all live in one place. That is as much for agents as it is for people. Pointing an agent at the same document a new team member reads helps keep generated components consistent with everything already there.
+
+Brand and Icons contain the HyperDX and ClickStack logos and our custom icons, including `IconAiNotebook`. You can copy or download the SVGs, with guidance on when to use a Tabler-compatible outline icon and when to use a brand mark.
+
+This work started with the icons because slides were using whatever looked close enough. If you need a mark for a deck, take it from here.
+
+A Brand toolbar switches between HyperDX and ClickStack, while a Theme toolbar covers light and dark. New components can be checked in every combination before they ship. Component stories that were sitting uncategorized are now nested under `Components/`, with the chart card components exposed alongside them.
+
+Two things surfaced along the way. Storybook's font CSS variables now live on `<html>`, matching the app, so body text and portaled popovers no longer render in Times.
+
+We also are not using the Tabler icon set consistently. PromQL probably needs an icon of its own, while metrics and traces are currently represented by different icons in different places. Storybook is now the reference to follow.
+
+Run it locally with `yarn workspace @hyperdx/app storybook`.
+
+**Related PRs:** [#2935](https://github.com/hyperdxio/hyperdx/pull/2935) turn Storybook into a browsable design system
+
+## Categorical palette on histogram charts {#categorical-palette-on-histogram-charts}
+
+*Demo by [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/wybAadS6ms0" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+Histogram charts, including Request Latency on the Services dashboard, were hardcoded to `#50FA7B`. The neon green is not part of the chart palette and did not provide enough contrast. The tooltip also rendered "Number of events" in the same color.
+
+The chart now resolves `chart-blue` through `getColorFromCSSToken`. Its tooltip uses the shared `ChartTooltipContainer` and `ChartTooltipItem`, bringing both in line with the line, bar, and pie charts.
+
+The tooltip's **View events** link is gone. `generateSearchUrl` was accepted by the inner histogram and tooltip but never passed down from `DBHistogramChart`, so the link never appeared in production.
+
+The only caller has no search URL builder for a duration bucket, and filtering events to a latency range is a feature rather than a wiring fix.
+
+Small polish, but it adds up.
+
+**Related PRs:** [#2949](https://github.com/hyperdxio/hyperdx/pull/2949) use categorical palette on histogram charts

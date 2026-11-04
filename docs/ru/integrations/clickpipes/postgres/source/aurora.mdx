@@ -11,6 +11,7 @@ integration:
 ---
 
 import { Image } from "/snippets/ru/components/Image.jsx";
+import { IAMAuthentication } from "/snippets/ru/clickpipes/_iam_authentication.mdx";
 
 <div id="supported-postgres-versions">
   ## Поддерживаемые версии Postgres
@@ -103,14 +104,11 @@ postgres=> SHOW rds.logical_replication ;
   ### Использование аутентификации IAM (необязательно)
 </div>
 
-Вместо пароля можно использовать для пользователя ClickPipes аутентификацию через ролевой доступ AWS IAM. Для этого параметр `rds.iam_auth_for_replication` должен быть установлен в `1`. Создайте пользователя, как показано ниже, а затем назначьте ему те же привилегии на схему и репликацию, что указаны выше:
-
-```sql
-CREATE USER clickpipes_iam_user;
-GRANT rds_iam TO clickpipes_iam_user;
-```
-
-См. [AWS IAM DB authentication (RDS/Aurora)](/ru/integrations/clickpipes/postgres/auth), где описаны все шаги по настройке роли IAM и policy, необходимых ClickPipes для аутентификации таким способом.
+<IAMAuthentication engine="postgres" service="aurora">
+  <Note>
+    Для аутентификации IAM при репликации параметр `rds.iam_auth_for_replication` должен быть установлен в `1`.
+  </Note>
+</IAMAuthentication>
 
 <div id="configure-network-access">
   ## Настройка сетевого доступа
@@ -120,7 +118,7 @@ GRANT rds_iam TO clickpipes_iam_user;
   ### Управление доступом на основе IP
 </div>
 
-Если вы хотите ограничить трафик к своему кластеру Aurora, добавьте [задокументированные статические NAT IP-адреса](/ru/integrations/clickpipes/home#list-of-static-ips) в правила входящего трафика (`Inbound rules`) вашей группы безопасности Aurora.
+Если вы хотите ограничить трафик к своему кластеру Aurora, добавьте [задокументированные статические NAT IP-адреса](/ru/integrations/clickpipes/networking/static-ips) в правила входящего трафика (`Inbound rules`) вашей группы безопасности Aurora.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp" alt="Где найти группу безопасности в Aurora PostgreSQL?" size="lg" border />
 

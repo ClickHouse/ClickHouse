@@ -111,7 +111,7 @@ REGISTER_FUNCTION(ParseQueryToJSON)
     FunctionDocumentation::Description description = R"(
 Parses a SQL query string into its AST (Abstract Syntax Tree) and returns a JSON representation of that tree.
 The resulting JSON can be passed to `formatQueryFromJSON` to reconstruct the SQL query, or sent directly
-to the server using the `clickhouse_json` value of the `dialect` setting (gated by `allow_experimental_json_ast_dialect`).
+to the server using the `clickhouse_json` value of the `dialect` setting (gated by `enable_json_ast_dialect`).
 
 This is useful for tools that want to inspect or transform queries programmatically without going through
 the SQL grammar.

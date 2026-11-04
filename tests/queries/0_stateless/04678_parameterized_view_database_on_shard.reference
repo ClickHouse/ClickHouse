@@ -1,0 +1,32 @@
+-- non-GLOBAL IN through a Distributed table
+6
+-- JOIN ... ON
+18
+-- JOIN ... USING
+18
+-- remote()
+3
+-- a same-named view in the database the shard falls back to must not shadow it
+-- per-shard rows, one local replica
+1	3
+2	3
+-- per-shard rows, every replica remote
+1	3
+2	3
+-- per-shard rows without any view, the denominator
+1	3
+2	3
+-- CONTROL a regular table function keeps its unqualified name
+6
+-- CONTROL GLOBAL IN
+6
+-- CONTROL an ordinary view
+6
+-- CONTROL an already qualified call
+6
+-- CONTROL an unresolved parse renders unchanged
+SELECT *\nFROM pv(x = 1)
+-- a dotted database name still resolves locally
+3
+-- and is not qualified for the shard, so it keeps failing under its own name
+Unknown table function pvd.

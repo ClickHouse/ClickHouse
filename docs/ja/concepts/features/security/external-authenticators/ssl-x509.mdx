@@ -9,7 +9,7 @@ import SelfManaged from '/snippets/ja/_self_managed_only_no_roadmap.mdx';
 
 <SelfManaged />
 
-[SSL &#39;strict&#39; オプション](/ja/reference/settings/server-settings/settings#openssl)を有効にすると、受信接続に対する証明書の検証が必須になります。この場合、確立できるのは信頼された証明書を使用する connection のみです。信頼されていない証明書を使用する connection は拒否されます。したがって、証明書の検証により、受信 connection を一意に認証できます。接続中のユーザーの識別には、証明書の `Common Name` または `subjectAltName extension` フィールドが使用されます。`subjectAltName extension` では、サーバー設定内で 1 つのワイルドカード &#39;*&#39; を使用できます。これにより、複数の証明書を同じユーザーに関連付けることができます。さらに、証明書の再発行や失効を行っても、ClickHouse の設定には影響しません。
+[SSL &#39;strict&#39; オプション](/ja/reference/settings/server-settings/settings/other#openssl)を有効にすると、受信接続に対する証明書の検証が必須になります。この場合、確立できるのは信頼された証明書を使用する connection のみです。信頼されていない証明書を使用する connection は拒否されます。したがって、証明書の検証により、受信 connection を一意に認証できます。接続中のユーザーの識別には、証明書の `Common Name` または `subjectAltName extension` フィールドが使用されます。`subjectAltName extension` では、サーバー設定内で 1 つのワイルドカード &#39;*&#39; を使用できます。これにより、複数の証明書を同じユーザーに関連付けることができます。さらに、証明書の再発行や失効を行っても、ClickHouse の設定には影響しません。
 
 SSL 証明書認証を有効にするには、各 ClickHouse ユーザーについて、`Common Name` または `Subject Alt Name` の一覧を設定ファイル `users.xml ` に指定する必要があります。
 
@@ -36,7 +36,7 @@ SSL 証明書認証を有効にするには、各 ClickHouse ユーザーにつ�
         </user_name_2>
         <user_name_3>
             <ssl_certificates>
-                <!-- ワイルドカードのサポート -->
+                <!-- Wildcard support -->
                 <subject_alt_name>URI:spiffe://foo.com/*/bar</subject_alt_name>
             </ssl_certificates>
         </user_name_3>
@@ -44,4 +44,4 @@ SSL 証明書認証を有効にするには、各 ClickHouse ユーザーにつ�
 </clickhouse>
 ```
 
-SSL の [`chain of trust`](https://en.wikipedia.org/wiki/Chain_of_trust) を正しく機能させるには、[`caConfig`](/ja/reference/settings/server-settings/settings#openssl) パラメータが適切に設定されていることを確認することも重要です。
+SSL の [`chain of trust`](https://en.wikipedia.org/wiki/Chain_of_trust) を正しく機能させるには、[`caConfig`](/ja/reference/settings/server-settings/settings/other#openssl) パラメータが適切に設定されていることを確認することも重要です。

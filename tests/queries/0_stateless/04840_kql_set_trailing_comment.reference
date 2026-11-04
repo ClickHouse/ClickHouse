@@ -1,0 +1,12 @@
+-- a comment after the SET is not a second statement, with the gate on --
+OK
+OK
+OK
+-- and not with the gate off either, so the escape hatch still fires --
+OK
+OK
+-- a real second statement behind a comment is still rejected --
+1
+1
+-- a comment after an ordinary KQL statement is not a second statement either --
+1

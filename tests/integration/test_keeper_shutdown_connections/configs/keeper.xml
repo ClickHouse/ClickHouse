@@ -1,0 +1,39 @@
+<clickhouse>
+    <shutdown_wait_unfinished>60</shutdown_wait_unfinished>
+
+    <zookeeper>
+        <node index="1">
+            <host>node</host>
+            <port>9181</port>
+        </node>
+    </zookeeper>
+
+    <merge_tree>
+        <wait_for_unique_parts_send_before_shutdown_ms>1000</wait_for_unique_parts_send_before_shutdown_ms>
+    </merge_tree>
+
+    <keeper_server>
+        <tcp_port>9181</tcp_port>
+        <tcp_port_secure>9281</tcp_port_secure>
+        <http_control>
+            <port>9182</port>
+        </http_control>
+        <server_id>1</server_id>
+        <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+        <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+
+        <coordination_settings>
+            <operation_timeout_ms>5000</operation_timeout_ms>
+            <session_timeout_ms>60000</session_timeout_ms>
+            <min_session_timeout_ms>5000</min_session_timeout_ms>
+        </coordination_settings>
+
+        <raft_configuration>
+            <server>
+                <id>1</id>
+                <hostname>node</hostname>
+                <port>9234</port>
+            </server>
+        </raft_configuration>
+    </keeper_server>
+</clickhouse>

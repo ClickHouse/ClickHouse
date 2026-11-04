@@ -6,6 +6,7 @@
 #include <Processors/QueryPlan/ExtremesStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/StreamInQueryResultCacheStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
 
@@ -27,6 +28,11 @@ static bool isTransparentStep(IQueryPlanStep * step)
     /// limit past it would feed it a truncated prefix and produce wrong extremes.
     /// WindowStep preserves rows but is not supported by this optimization.
     if (typeid_cast<ExtremesStep *>(step) || typeid_cast<WindowStep *>(step))
+        return false;
+
+    /// The query result cache must store the complete result of the (sub)query below it. A limit hint installed
+    /// into an aggregation below this step would truncate the cached entry.
+    if (typeid_cast<StreamInQueryResultCacheStep *>(step))
         return false;
 
     auto * transforming = dynamic_cast<ITransformingStep *>(step);
@@ -122,6 +128,11 @@ void optimizeLimitForAggregationInOrder(QueryPlan::Node & root)
                     || aggregating_step->isGroupingSets())
                     break;
 
+                /// The sort description may be a strict prefix of the group-by sort description.
+                /// Each in-order stream then stops only at a boundary of that prefix (see
+                /// `AggregatingInOrderTransform`), so the groups it drops sort strictly after
+                /// at least `limit` complete groups and the final sort can never pick a group
+                /// with a partial aggregate value (issue #116849).
                 const auto & sort_desc = sorting_step->getSortDescription();
                 const auto & agg_sort_desc = aggregating_step->getGroupBySortDescription();
                 if (sort_desc.empty() || !agg_sort_desc.hasPrefix(sort_desc))
@@ -130,7 +141,7 @@ void optimizeLimitForAggregationInOrder(QueryPlan::Node & root)
                 /// Use the smallest limit if multiple LimitSteps point to the same AggregatingStep.
                 size_t current_hint = aggregating_step->getLimitHint();
                 if (!current_hint || limit < current_hint)
-                    aggregating_step->setLimitHint(limit);
+                    aggregating_step->setLimitHint(limit, sort_desc.size());
                 break;
             }
 

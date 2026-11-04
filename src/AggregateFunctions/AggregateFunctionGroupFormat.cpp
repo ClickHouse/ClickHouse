@@ -211,9 +211,9 @@ public:
         {
             const auto & type = argument_types[i];
             auto serialization = type->getDefaultSerialization();
-            ColumnPtr column = type->createColumn();
-            NativeReader::readData(*serialization, column, buf, nullptr, num_rows, nullptr, nullptr);
-            state.columns.emplace_back(column->assumeMutable());
+            auto column = type->createColumn();
+            NativeReader::readData(*serialization, *column, buf, nullptr, num_rows, nullptr, nullptr);
+            state.columns.emplace_back(std::move(column));
         }
     }
 
@@ -321,9 +321,7 @@ SELECT groupFormat('JSONEachRow')(number, toString(number))
 FROM numbers(3)
             )",
             R"(
-{"c1":0,"c2":"0"}
-{"c1":1,"c2":"1"}
-{"c1":2,"c2":"2"}
+{"c1":0,"c2":"0"}\n{"c1":1,"c2":"1"}\n{"c1":2,"c2":"2"}\n
             )"}};
     FunctionDocumentation::IntroducedIn introduced_in{};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;

@@ -1,7 +1,6 @@
 #include <Interpreters/WasmModuleManager.h>
 #include <Interpreters/WebAssembly/HostApi.h>
 #include <Interpreters/WebAssembly/WasmTimeRuntime.h>
-#include <Interpreters/WebAssembly/WasmEdgeRuntime.h>
 
 #include <Interpreters/Context.h>
 
@@ -16,6 +15,7 @@
 #include <Common/OpenSSLHelpers.h>
 #include <Common/StringUtils.h>
 #include <Common/escapeForFileName.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <Common/UniqueLock.h>
 #include <Common/SharedLockGuard.h>
@@ -29,7 +29,6 @@ namespace DB
 
 using WebAssembly::WasmModule;
 using WebAssembly::WasmTimeRuntime;
-using WebAssembly::WasmEdgeRuntime;
 using WebAssembly::FuelMode;
 
 namespace ErrorCodes
@@ -40,6 +39,11 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int INCORRECT_DATA;
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
+}
+
+namespace FailPoints
+{
+    extern const char wasm_module_manager_pause_after_compile[];
 }
 
 constexpr auto FILE_EXTENSION = ".wasm";
@@ -132,15 +136,19 @@ static std::expected<String, PreformattedMessage> validateModuleFile(const DiskP
     return module_name;
 }
 
-static std::unique_ptr<WebAssembly::IWasmEngine> createEngine(std::string_view engine_name)
+void WasmModuleManager::validateEngineName(std::string_view engine_name)
 {
     if (engine_name == "wasmtime")
-        return std::make_unique<WasmTimeRuntime>();
-    if (engine_name == "wasmedge")
-        return std::make_unique<WasmEdgeRuntime>();
+        return;
     throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG,
-        "Unknown WebAssembly engine '{}', available engines: 'wasmtime', 'wasmedge'",
+        "Unknown WebAssembly engine '{}', available engines: 'wasmtime'",
         engine_name);
+}
+
+static std::unique_ptr<WebAssembly::IWasmEngine> createEngine(std::string_view engine_name)
+{
+    WasmModuleManager::validateEngineName(engine_name);
+    return std::make_unique<WasmTimeRuntime>();
 }
 
 WasmModuleManager::WasmModuleManager(DiskPtr user_scripts_disk_, std::filesystem::path user_scripts_path_, std::string_view engine_name)
@@ -219,9 +227,9 @@ std::string WasmModuleManager::loadModuleImpl(std::string_view module_name)
 
 std::pair<std::shared_ptr<WasmModule>, UInt256> WasmModuleManager::getModule(std::string_view module_name, FuelMode fuel_mode)
 {
-    const bool requires_fuel_specialization = engine->requiresFuelSpecialization();
-    const size_t cache_idx = requires_fuel_specialization ? fuelModeIndex(fuel_mode) : 0;
+    const size_t cache_idx = fuelModeIndex(fuel_mode);
 
+    const auto module_path = getFilePath(module_name);
     {
         SharedLockGuard lock(modules_mutex);
 
@@ -231,24 +239,33 @@ std::pair<std::shared_ptr<WasmModule>, UInt256> WasmModuleManager::getModule(std
             if (auto module = it->second.ptrs[cache_idx].lock())
                 return {module, it->second.hash};
         }
+
+        if (!user_scripts_disk->existsFile(module_path))
+            throw Exception(ErrorCodes::RESOURCE_NOT_FOUND, "WebAssembly module '{}' not found", module_name);
+        if (auto res = validateModuleFile(user_scripts_disk, module_path); !res)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot load WebAssembly module '{}': {}", module_name, res.error().text);
     }
+
+    /// Reading and compiling a module can take seconds, so it is done without holding `modules_mutex`:
+    /// otherwise every other module operation, including saving and deleting unrelated modules, waits
+    /// for it. Concurrent first loads of the same module may compile it more than once; the result
+    /// published first is kept and the others are discarded.
+    auto wasm_code = loadModuleImpl(module_name);
+    UInt256 local_hash = calculateHash(wasm_code);
+
+    std::shared_ptr<WasmModule> local_module = engine->compileModule(module_name, wasm_code, fuel_mode);
+    linkHostFunctions(*local_module);
+
+    FailPointInjection::pauseFailPoint(FailPoints::wasm_module_manager_pause_after_compile);
 
     UniqueLock lock(modules_mutex);
     auto it = modules.find(module_name);
-    if (it != modules.end())
-    {
-        if (auto module = it->second.ptrs[cache_idx].lock())
-            return {module, it->second.hash};
-    }
 
-    auto module_path = getFilePath(module_name);
-    if (!user_scripts_disk->existsFile(module_path))
+    /// The module may have been deleted while it was being compiled, including a module whose file was
+    /// not registered yet when the load started; do not bring its entry back. Deletion removes the file
+    /// under `modules_mutex`, so checking the file here is reliable.
+    if (it == modules.end() && !user_scripts_disk->existsFile(module_path))
         throw Exception(ErrorCodes::RESOURCE_NOT_FOUND, "WebAssembly module '{}' not found", module_name);
-    if (auto res = validateModuleFile(user_scripts_disk, module_path); !res)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot load WebAssembly module '{}': {}", module_name, res.error().text);
-
-    auto wasm_code = loadModuleImpl(module_name);
-    UInt256 local_hash = calculateHash(wasm_code);
 
     if (it != modules.end())
     {
@@ -259,10 +276,10 @@ std::pair<std::shared_ptr<WasmModule>, UInt256> WasmModuleManager::getModule(std
                 module_name,
                 hashToHex(it->second.hash),
                 hashToHex(local_hash));
-    }
 
-    std::shared_ptr<WasmModule> local_module = engine->compileModule(module_name, wasm_code, fuel_mode);
-    linkHostFunctions(*local_module);
+        if (auto module = it->second.ptrs[cache_idx].lock())
+            return {module, it->second.hash};
+    }
 
     if (it == modules.end())
     {

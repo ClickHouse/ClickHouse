@@ -7,11 +7,10 @@
 -- full-precision data is stored verbatim, so the exact rescore is unaffected. Syntax:
 -- `Quantized('prefix', dimensions, leading_dimensions, 'int8'|'bf16')`.
 
-SET allow_experimental_codecs = 1;
+SET enable_quantized_codec = 1;
 SET vector_search_use_quantized_codes = 1;
 -- Lazy materialization (LazilyReadFromMergeTree) is an analyzer-only plan optimization, so the plan-shape assertion
 -- below needs the analyzer (the old-analyzer CI config does not produce the lazy read).
-SET enable_analyzer = 1;
 SET query_plan_optimize_lazy_materialization = 1;
 SET query_plan_max_limit_for_lazy_materialization = 1000000;
 

@@ -106,7 +106,7 @@ LIMIT 10;
 <Image img="/images/starter_guides/joins/outer_join.webp" alt="Outer Join" />
 
 <Note>
-  可以将 ClickHouse [配置为](/zh/reference/settings/session-settings#join_use_nulls)返回 [NULL](/zh/reference/syntax#null)，而不是默认值 (不过，出于[性能原因](/zh/reference/data-types/nullable#storage-features)，通常不建议这样做) 。
+  可以将 ClickHouse [配置为](/zh/reference/settings/session-settings/join#join_use_nulls)返回 [NULL](/zh/reference/syntax#null)，而不是默认值 (不过，出于[性能原因](/zh/reference/data-types/nullable#storage-features)，通常不建议这样做) 。
 </Note>
 
 此查询会找出所有没有类型的电影：它从 `movies` 表中查询所有在 `genres` 表里没有匹配项的行，因此这些行在查询时会在 `movie_id` 列中得到默认值 0：
@@ -231,7 +231,7 @@ LIMIT 10;
 └─────────────────────────────────────────────┘
 ```
 
-在经过语法优化的 `CROSS JOIN` 查询版本中，`INNER JOIN` 子句包含显式添加的 `ALL` 关键字，以确保即使将其重写为 `INNER JOIN`，仍能保留 `CROSS JOIN` 的笛卡尔积语义；而对于 `INNER JOIN`，笛卡尔积是可以被[禁用](/zh/reference/settings/session-settings#join_default_strictness)的。
+在经过语法优化的 `CROSS JOIN` 查询版本中，`INNER JOIN` 子句包含显式添加的 `ALL` 关键字，以确保即使将其重写为 `INNER JOIN`，仍能保留 `CROSS JOIN` 的笛卡尔积语义；而对于 `INNER JOIN`，笛卡尔积是可以被[禁用](/zh/reference/settings/session-settings/join#join_default_strictness)的。
 
 ```sql
 ALL

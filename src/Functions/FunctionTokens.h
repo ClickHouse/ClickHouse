@@ -85,6 +85,18 @@ public:
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return Generator::getArgumentsThatAreAlwaysConstant(); }
 
+    /// Per-Generator opt-in to declarative signatures: when the Generator defines a
+    /// `signature` static member the framework uses it for type checking and return-type
+    /// resolution; otherwise we fall back to the legacy `Generator::checkArguments` path
+    /// which always returns `Array(String)`.
+    String getSignatureString() const override
+    {
+        if constexpr (requires { Generator::signature; })
+            return Generator::signature;
+        else
+            return {};
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         Generator::checkArguments(*this, arguments);
@@ -106,13 +118,14 @@ public:
         const ColumnString * col_str = checkAndGetColumn<ColumnString>(array_argument.column.get());
         const ColumnConst * col_str_const = checkAndGetColumnConstStringOrFixedString(array_argument.column.get());
 
-        auto col_res = ColumnArray::create(ColumnString::create());
+        auto res_strings_column = ColumnString::create();
+        auto res_offsets_column = ColumnArray::ColumnOffsets::create();
 
-        ColumnString & res_strings = typeid_cast<ColumnString &>(col_res->getData());
+        ColumnString & res_strings = *res_strings_column;
         ColumnString::Chars & res_strings_chars = res_strings.getChars();
         ColumnString::Offsets & res_strings_offsets = res_strings.getOffsets();
 
-        ColumnArray::Offsets & res_offsets = col_res->getOffsets();
+        ColumnArray::Offsets & res_offsets = res_offsets_column->getData();
 
         if (col_str)
         {
@@ -155,7 +168,7 @@ public:
                 res_offsets.push_back(current_dst_offset);
             }
 
-            return col_res;
+            return ColumnArray::create(std::move(res_strings_column), std::move(res_offsets_column));
         }
         if (col_str_const)
         {

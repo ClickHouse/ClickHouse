@@ -1,0 +1,4 @@
+-- ordinary LIMIT: index usage expected
+Description: vector_similarity GRANULARITY 100000000
+-- overflowing LIMIT + OFFSET: index usage not expected
+11

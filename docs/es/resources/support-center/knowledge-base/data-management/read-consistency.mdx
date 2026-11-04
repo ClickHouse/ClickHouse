@@ -49,6 +49,6 @@ SETTINGS select_sequential_consistency = 1
 
 Ten en cuenta que, al usar ClickHouse Cloud y su motor de tabla [SharedMergeTree](/es/products/cloud/features/infrastructure/shared-merge-tree) predeterminado, no es necesario usar `insert_quorum_parallel`: todas las inserciones en SharedMergeTree son inserciones con quórum (por diseño).
 
-Usar [`SYSTEM SYNC REPLICAS`](/es/reference/statements/system#sync-replica) o [`select_sequential_consistency`](/es/reference/settings/session-settings#select_sequential_consistency) aumentará la carga en ClickHouse Keeper y puede reducir el rendimiento, según la carga del servicio.
+Usar [`SYSTEM SYNC REPLICAS`](/es/reference/statements/system#sync-replica) o [`select_sequential_consistency`](/es/reference/settings/session-settings/other#select_sequential_consistency) aumentará la carga en ClickHouse Keeper y puede reducir el rendimiento, según la carga del servicio.
 
 El enfoque recomendado es realizar la escritura y la lectura usando la misma sesión o el protocolo nativo (conexión persistente).

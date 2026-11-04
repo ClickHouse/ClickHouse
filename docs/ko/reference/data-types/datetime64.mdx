@@ -46,14 +46,14 @@ ENGINE = MergeTree;
 ```
 
 ```sql
--- DateTime 파싱
--- - 1970-01-01 이후 밀리초 수로 해석되는 정수 (precision 3이므로),
--- - 소수점 앞부분은 초 단위 Unix 타임스탬프, 소수점 뒷부분은 precision에 따라 처리되는 소수,
--- - 문자열.
+-- Parse DateTime64
+-- - from an integer interpreted as the number of seconds since 1970-01-01 (like DateTime),
+-- - from a decimal interpreted as the number of seconds, the fractional part giving sub-second precision,
+-- - from a string.
 
 INSERT INTO dt64
 VALUES
-(1546300800123, 1),
+(1546300800, 1),
 (1546300800.123, 2),
 ('2019-01-01 00:00:00', 3);
 
@@ -62,13 +62,13 @@ SELECT * FROM dt64;
 
 ```text
 ┌───────────────timestamp─┬─event_id─┐
-│ 2019-01-01 03:00:00.123 │        1 │
+│ 2019-01-01 03:00:00.000 │        1 │
 │ 2019-01-01 03:00:00.123 │        2 │
 │ 2019-01-01 00:00:00.000 │        3 │
 └─────────────────────────┴──────────┘
 ```
 
-* datetime를 정수로 삽입하면, 적절한 scale이 적용된 Unix timestamp(UTC)로 처리됩니다. `1546300800000`은 (정밀도가 3인 경우) UTC 기준 `'2019-01-01 00:00:00'`을 나타냅니다. 하지만 `timestamp` 컬럼에는 `Asia/Istanbul` (UTC+3) 시간대가 지정되어 있으므로, 문자열로 출력할 때 값은 `'2019-01-01 03:00:00'`으로 표시됩니다. datetime를 Decimal로 삽입하는 경우에도 정수와 비슷하게 처리되지만, decimal point 앞의 값은 초 단위까지 포함한 Unix timestamp로 처리되고, decimal point 뒤의 값은 정밀도로 처리됩니다.
+* datetime를 숫자로 삽입하면 `DateTime`과 마찬가지로 초 단위 Unix Timestamp(UTC)로 처리됩니다. `1546300800`은 UTC 기준 `'2019-01-01 00:00:00'`을 나타냅니다. 하지만 `timestamp` 컬럼에는 `Asia/Istanbul` (UTC+3) 시간대가 지정되어 있으므로, 문자열로 출력할 때 값은 `'2019-01-01 03:00:00'`으로 표시됩니다. 소수 부분이 있는 숫자를 삽입하는 경우에도 동일하게 처리됩니다. 소수점 앞부분은 초 단위 Unix Timestamp이고, 소수점 뒷부분은 컬럼의 정밀도에 따른 초 미만 정밀도를 제공합니다. (버전 26.8 이전에는 `JSON` 및 `Values`/`Quoted` 입력 경로에서 따옴표로 묶지 않은 정수(후자는 `Quoted` 이스케이프 규칙으로 필드를 파싱하는 모든 포맷, 즉 `Values`, `MySQLDump`, 그리고 `Quoted` 필드 이스케이프를 구성한 `Template`/`CustomSeparated`/`Regexp`를 포함함)가 컬럼 정밀도에 맞는 원시 내부 값으로 해석되었으므로, 정밀도 3에서 `1546300800000`은 `'2019-01-01 00:00:00'`을 의미했습니다. 이러한 경로에서 이전 동작을 복원하려면 `input_format_read_datetime_number_as_raw_value = 1`(또는 `SET compatibility = '26.7'`)을 설정하십시오. 이 설정은 `JSONExtract` 함수와 `JSON` 데이터 타입에도 영향을 줍니다. compatibility 설정은 따옴표로 묶지 않은 정수에만 적용됩니다. `Values` 포맷에서 legacy 스트리밍 파서가 거부하는 소수는 SQL 표현식 평가로 대체 처리되어 초 단위로 읽히며, 이는 26.8 이전 버전과 동일합니다. `JSONExtract` 및 `JSON` 데이터 타입에서 소수 값은 `Float64`를 통해 파싱되므로, `Float64`가 보존할 수 있는 자릿수보다 많은 타임스탬프는 원본 텍스트를 정확히 파싱하는 행 입력 포맷과 달리 인접한 값으로 반올림될 수 있습니다. 탭으로 구분된 형식, CSV 및 기타 이스케이프된 텍스트 입력 포맷은 이 설정의 적용을 받지 않으며, 따옴표로 묶지 않은 숫자에 대한 기존 해석을 유지합니다. 큰 값은 틱으로 읽힙니다.)
 * 문자열 값을 datetime로 삽입하면 컬럼의 시간대를 기준으로 처리됩니다. `'2019-01-01 00:00:00'`은 `Asia/Istanbul` 시간대로 간주되어 `1546290000000`으로 저장됩니다.
 
 2. `DateTime64` 값 필터링
@@ -96,10 +96,10 @@ SELECT * FROM dt64 WHERE timestamp = toDateTime64(1546300800.123, 3);
 └─────────────────────────┴──────────┘
 ```
 
-삽입할 때와는 달리, `toDateTime64` 함수는 모든 값을 Decimal 형식으로 처리하므로 정밀도는
-소수점 아래에 지정해야 합니다.
+숫자를 삽입할 때와 마찬가지로 `toDateTime64` 함수는 숫자 인수를 초 단위로 처리하므로, 초 미만의 정밀도는
+소수점 이하에 지정해야 합니다.
 
-3. `DateTime64` 유형 값의 시간대 가져오기:
+3. `DateTime64` 타입 값의 시간대 가져오기:
 
 ```sql
 SELECT toDateTime64(now(), 3, 'Asia/Istanbul') AS column, toTypeName(column) AS x;
@@ -132,10 +132,10 @@ FROM dt64;
 
 * [타입 변환 함수](/ko/reference/functions/regular-functions/type-conversion-functions)
 * [날짜 및 시간을 다루는 함수](/ko/reference/functions/regular-functions/date-time-functions)
-* [`date_time_input_format` 설정](/ko/reference/settings/formats#date_time_input_format)
-* [`date_time_output_format` 설정](/ko/reference/settings/formats#date_time_output_format)
-* [`timezone` 서버 구성 매개변수](/ko/reference/settings/server-settings/settings#timezone)
-* [`session_timezone` 설정](/ko/reference/settings/session-settings#session_timezone)
+* [`date_time_input_format` 설정](/ko/reference/settings/formats/date-time#date_time_input_format)
+* [`date_time_output_format` 설정](/ko/reference/settings/formats/date-time#date_time_output_format)
+* [`timezone` 서버 구성 매개변수](/ko/reference/settings/server-settings/settings/other#timezone)
+* [`session_timezone` 설정](/ko/reference/settings/session-settings/other#session_timezone)
 * [날짜 및 시간을 다루는 연산자](/ko/reference/operators/index#operators-for-working-with-dates-and-times)
 * [`Date` 데이터 타입](/ko/reference/data-types/date)
 * [`DateTime` 데이터 타입](/ko/reference/data-types/datetime)

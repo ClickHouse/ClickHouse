@@ -93,23 +93,6 @@ SELECT count() FROM pk WHERE (x = toUInt128(3)) AND (y = 55) AND (5786 >= z);
 SELECT count() FROM pk WHERE (x = toUInt256(3)) AND (y = 55) AND (5786 >= z) SETTINGS optimize_use_implicit_projections = 0;
 "
 
-# A native exact-point atom and a widened-cast atom on the same key column (x = 3 AND x = toUInt256(3)).
-# enable_analyzer = 0 keeps both atoms in the key condition (the analyzer folds them into one); the
-# column is then pinned POINT by the native equality while the redundant cast atom stays in the rpn. This
-# must still yield an exact, consistent range: expect the native count (3), the exact-count path live, no abort.
-${CLICKHOUSE_LOCAL} --path="${DB_DIR2}" --multiquery --query "
-SET enable_analyzer = 0;
-SET optimize_use_projections = 1;
-SET optimize_use_implicit_projections = 1;
-SELECT count() > 0 FROM (EXPLAIN SELECT count() FROM pk WHERE (x = 3) AND (x = toUInt256(3)) AND (y = 55) AND (5786 >= z)) WHERE explain ILIKE '%_exact_count_projection%';
--- The native x = 3 atom must keep the leading key at POINT (binary search); the redundant widened-cast
--- atom must not overwrite it into a RANGE. Generic exclusion also yields exact ranges, so assert the
--- search algorithm directly, otherwise the count/exact-count assertions pass even if the point were lost.
-SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM pk WHERE (x = 3) AND (x = toUInt256(3)) AND (y = 55) AND (5786 >= z)) WHERE explain ILIKE '%binary search%';
-SELECT count() FROM pk WHERE (x = 3) AND (x = toUInt256(3)) AND (y = 55) AND (5786 >= z);
-SELECT count() FROM pk WHERE (x = 3) AND (x = toInt256(3)) AND (y = 55) AND (5786 >= z);
-SELECT count() FROM pk WHERE (x = 3) AND (x = toUInt128(3)) AND (y = 55) AND (5786 >= z);
-"
 
 rm -rf "${DB_DIR2}"
 

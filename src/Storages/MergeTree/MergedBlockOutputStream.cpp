@@ -5,6 +5,8 @@
 #include <Core/UUID.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocMergeTreeArena.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/FailPoint.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/MergeTreeTransaction.h>
@@ -28,6 +30,11 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool enable_index_granularity_compression;
 }
 
+namespace FailPoints
+{
+    extern const char patch_part_index_write_empty[];
+}
+
 MergedBlockOutputStream::MergedBlockOutputStream(
     const MergeTreeMutableDataPartPtr & data_part,
     MergeTreeSettingsPtr data_settings,
@@ -42,7 +49,8 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     bool blocks_are_granules_size,
     const WriteSettings & write_settings_,
     WrittenOffsetSubstreams * written_offset_substreams,
-    bool try_adaptive_codec)
+    bool try_adaptive_codec,
+    StreamBaseManifestPtr stream_base_manifest)
     : IMergedBlockOutputStream(
           std::move(data_settings), data_part->getDataPartStoragePtr(), metadata_snapshot_, columns_list_, reset_columns_)
     , columns_list(columns_list_)
@@ -66,6 +74,8 @@ MergedBlockOutputStream::MergedBlockOutputStream(
         blocks_are_granules_size,
         try_adaptive_codec);
 
+    writer_settings.stream_base_manifest = std::move(stream_base_manifest);
+
     data_part_storage->createDirectories();
 
     /// NOTE do not pass context for writing to system.transactions_info_log,
@@ -75,7 +85,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     writer = createMergeTreeDataPartWriter(data_part->getType(),
         data_part->name,
         data_part->storage.getLogName(),
-        data_part->getSerializations(),
+        data_part->getSerializations().toSerializationByName(),
         data_part_storage,
         data_part->index_granularity_info,
         storage_settings,
@@ -250,6 +260,14 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
     new_part->rows_count = rows_count;
     new_part->modification_time = time(nullptr);
 
+    /// Everything assigned onto the part below (checksums, index granularity, primary index, TTL infos,
+    /// column sizes) lives as long as the part and is freed by a background thread, so it must not be
+    /// charged to the query writing it; see `IMergeTreeDataPart::setColumns` for why that would drift
+    /// onto the per-user tracker permanently. Reset before the finalizer, which is the query's own work.
+    /// Deliberately starts after `finalizePartOnDisk` above: the blocker is thread-wide and the block
+    /// write must stay accounted.
+    MemoryTrackerBlockerInThread not_charged_to_the_query;
+
     {
         /// The checksums map lives on the part for its whole lifetime: copy it into the part under the
         /// dedicated arena directly, rather than assigning and re-homing with a second copy later.
@@ -303,6 +321,8 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
         if (new_part->index_granularity)
             new_part->index_granularity = new_part->index_granularity->clone();
     }
+
+    not_charged_to_the_query.reset();
 
     auto finalizer = std::make_unique<Finalizer::Impl>(*writer, new_part, files_to_remove_after_sync, sync);
     finalizer->written_files = std::move(written_files);
@@ -365,13 +385,23 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "MinMax index was not initialized for new non-empty part {}", new_part->name);
             }
 
-            /// Every patch part must have `source_parts.dat` on disk: `loadSourcePartsSet`
+            /// Every patch part must have `source_parts.dat` on disk: `loadPatchPartIndex`
             /// throws `CORRUPTED_DATA` otherwise, including for empty covering parts.
             if (new_part->info.isPatch())
             {
-                write_hashed_file(SourcePartsSetForPatch::FILENAME, [&](auto & buffer)
+                /// Writes an index without source parts, which is the corruption shape the load path
+                /// rejects: a patch part that holds rows but names no part it patches. Only for tests.
+                bool write_empty_index = false;
+                fiu_do_on(FailPoints::patch_part_index_write_empty, { write_empty_index = true; });
+
+                write_hashed_file(PatchPartIndex::FILENAME, [&](auto & buffer)
                 {
-                    new_part->getSourcePartsSet().writeBinary(buffer);
+                    const auto & patch_part_index = new_part->getPatchPartIndex();
+
+                    if (write_empty_index)
+                        patch_part_index.cloneEmpty().writeBinary(buffer);
+                    else
+                        patch_part_index.writeBinary(buffer);
                 });
             }
         }
@@ -455,7 +485,10 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     {
         write_plain_file(IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME, [&](auto & buffer)
         {
-            writeText(default_codec->getFullCodecDesc()->formatWithSecretsOneLine(), buffer);
+            if (new_part->default_codec_is_approximate)
+                writeText(IMergeTreeDataPart::UNKNOWN_DEFAULT_COMPRESSION_CODEC, buffer);
+            else
+                writeText(default_codec->getFullCodecDescription()->formatWithSecretsOneLine(), buffer);
         });
     }
     else

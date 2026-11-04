@@ -1,0 +1,13 @@
+vertical	1	-1	101	201
+vertical	2	-1	102	202
+vertical	2	1	122	222
+vertical	3	-1	103	203
+vertical	3	1	123	223
+vertical	4	1	104	204
+horizontal	1	-1	101	201
+horizontal	2	-1	102	202
+horizontal	2	1	122	222
+horizontal	3	-1	103	203
+horizontal	3	1	123	223
+horizontal	4	1	104	204
+vertical marks	4
