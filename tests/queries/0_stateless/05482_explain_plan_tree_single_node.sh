@@ -18,9 +18,14 @@ $CLICKHOUSE_CLIENT -q "CREATE DATABASE $DB"
 $CLICKHOUSE_CLIENT --multiquery <<EOF | sed "s/$DB/$PLACEHOLDER/g"
 CREATE TABLE $DB.small(sid UInt64) ENGINE = MergeTree ORDER BY sid;
 CREATE TABLE $DB.big(bid UInt64) ENGINE = MergeTree ORDER BY bid;
+CREATE TABLE $DB.merge_a(x UInt64) ENGINE = MergeTree ORDER BY x;
+CREATE TABLE $DB.merge_b(x UInt64) ENGINE = MergeTree ORDER BY x;
 
 INSERT INTO $DB.small SELECT number FROM numbers(0, 1000);
 INSERT INTO $DB.big SELECT number FROM numbers(0, 100000);
+-- \`ReadFromMerge\` builds a nested plan only for a table with data.
+INSERT INTO $DB.merge_a SELECT number FROM numbers(0, 10);
+INSERT INTO $DB.merge_b SELECT number FROM numbers(0, 10);
 
 -- The test harness randomizes these, and they change the plan.
 SET query_plan_join_swap_table = 0, query_plan_optimize_join_order_randomize = 0, use_hash_table_stats_for_join_reordering = 0;
@@ -50,6 +55,12 @@ EXPLAIN tree = 1, description = 0
 SELECT bid % 10 AS k, sum(bid)
 FROM $DB.big
 GROUP BY k;
+
+-- The per-table plans of \`ReadFromMerge\` are nested plans: they are not drawn, and the box says so.
+SELECT '-- nested plans';
+EXPLAIN tree = 1
+SELECT x
+FROM merge('$DB', '^merge_');
 
 -- \`make_distributed_plan\` does not support \`WITH TOTALS\`: the query falls back to local execution, and the reason
 -- is printed under the drawing.

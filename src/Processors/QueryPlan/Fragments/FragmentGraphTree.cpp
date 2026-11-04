@@ -173,6 +173,10 @@ private:
             description = description.substr(0, max_step_description_length);
         if (options.description && !description.empty())
             text += fmt::format(" ({})", description);
+        /// Plain `EXPLAIN` prints the nested plans of a step (`QueryPlan::explainPlan`), the drawing does not: say so in
+        /// the box, otherwise the picture looks complete.
+        if (const size_t nested_plans = step.getChildPlans(/*for_explain=*/ true).size())
+            text += fmt::format(" (+{} nested plan{} not drawn)", nested_plans, nested_plans == 1 ? "" : "s");
         return text;
     }
 

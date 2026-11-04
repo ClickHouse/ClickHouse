@@ -82,6 +82,17 @@
 ┌─────────┴─────────┐
 │ ReadFromMergeTree │
 └───────────────────┘
+-- nested plans
+┌──────────────────────────────────────┐
+│ Expression ((Project names +         │
+│ (Projection + Change column names to │
+│ column identifiers)))                │
+└───────────────────▲──────────────────┘
+                    │
+ ┌──────────────────┴─────────────────┐
+ │ ReadFromMerge (+2 nested plans not │
+ │ drawn)                             │
+ └────────────────────────────────────┘
 -- fallback to local execution
     ┌──────────────────────────────┐
     │ Expression ((Project names + │
