@@ -42,3 +42,8 @@ SELECT * FROM (FROM system.one);
 SELECT 1 IN (FROM (SELECT 1));
 SELECT (FROM numbers(3) |> SELECT count());
 SELECT (FROM system.one |> SELECT 1);
+
+-- Nested parentheses over a column named `from` are examined once, not once per enclosing pair.
+SELECT (from + (from + (from + (from + (from + (from + (from + (from + (from + (from + (from + (from + (from + (from + (from + (from + (from + (from + (from + (from + (from + (from + (from + (from + (from + (from + (from + (from + (from + (from + (from + (from + (from + (from + (from + (from + (from + (from + (from + (from + 1)))))))))))))))))))))))))))))))))))))))) FROM (SELECT 1 AS `from`);
+SELECT (from AND (from AND (from AND (from AND (from AND (from AND (from AND (from AND (from AND (from AND (from AND (from AND (from AND (from AND (from AND (from AND (from AND (from AND (from AND (from AND (from AND (from AND (from AND (from AND (from AND (from AND (from AND (from AND (from AND (from AND (from AND (from AND (from AND (from AND (from AND (from AND (from AND (from AND (from AND (from AND 1)))))))))))))))))))))))))))))))))))))))) FROM (SELECT 1 AS `from`);
+SELECT (from IN ((from IN ((from IN ((from IN ((from IN ((from IN ((from IN ((from IN ((from IN ((from IN ((from IN ((from IN ((from IN ((from IN ((from IN ((from IN ((from IN ((from IN ((from IN ((from IN ((from IN ((from IN ((from IN ((from IN ((from IN ((from IN ((from IN ((from IN ((from IN ((from IN ((from IN ((from IN ((from IN ((from IN ((from IN ((from IN ((from IN ((from IN ((from IN ((from IN (1)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))) FROM (SELECT 1 AS `from`);
