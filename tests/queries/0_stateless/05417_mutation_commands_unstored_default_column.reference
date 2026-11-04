@@ -49,6 +49,9 @@ stored_input	3	100	4	40
 dotted	0	0	10	100
 dotted	1	1	11	-1
 dotted	2	100	12	120
+lambda_argument	0	0	10
+lambda_argument	1	1	-1
+lambda_argument	2	100	12
 no_match	0	0	0
 no_match	1	1	10
 no_match	2	2	20

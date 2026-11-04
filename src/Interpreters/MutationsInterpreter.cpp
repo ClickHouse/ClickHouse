@@ -799,6 +799,33 @@ static std::optional<std::vector<ASTPtr>> getExpressionsOfUpdatedNestedSubcolumn
     return res;
 }
 
+/// In `v -> v.a`, `v.a` is a field of the lambda argument, not a column: replace it by `v`, which RequiredSourceColumnsVisitor skips.
+static void replaceFieldsOfLambdaArguments(ASTPtr & ast, const NameSet & lambda_arguments)
+{
+    if (const auto * identifier = ast->as<ASTIdentifier>())
+    {
+        if (identifier->compound() && lambda_arguments.contains(identifier->name_parts.front()))
+        {
+            auto argument = make_intrusive<ASTIdentifier>(identifier->name_parts.front());
+            argument->setAlias(identifier->tryGetAlias());
+            ast = std::move(argument);
+        }
+        return;
+    }
+
+    if (const auto * function = ast->as<ASTFunction>(); function && function->name == "lambda")
+    {
+        NameSet body_lambda_arguments = lambda_arguments;
+        for (auto & name : RequiredSourceColumnsMatcher::extractNamesFromLambda(*function))
+            body_lambda_arguments.insert(std::move(name));
+        replaceFieldsOfLambdaArguments(function->arguments->children[1], body_lambda_arguments);
+        return;
+    }
+
+    for (auto & child : ast->children)
+        replaceFieldsOfLambdaArguments(child, lambda_arguments);
+}
+
 NameSet MutationsInterpreter::getColumnsReadByDefault(
     const ColumnsDescription & columns,
     const String & column_name,
@@ -824,6 +851,7 @@ NameSet MutationsInterpreter::getColumnsReadByDefault(
         Aliases aliases;
         MarkTableIdentifiersVisitor::Data identifiers_data{aliases};
         MarkTableIdentifiersVisitor(identifiers_data).visit(expression);
+        replaceFieldsOfLambdaArguments(expression, {});
         RequiredSourceColumnsVisitor(required_columns).visit(expression);
         for (const auto & required : required_columns.requiredColumns())
         {

@@ -131,6 +131,15 @@ ALTER TABLE t_dotted UPDATE d = -1 WHERE id = 1, UPDATE a = 100 WHERE id = 2, MA
 SELECT 'dotted', id, a, `a.b`, d FROM t_dotted ORDER BY id;
 DROP TABLE t_dotted;
 
+-- The DEFAULT reads a field of a lambda argument named like a column, which an UPDATE of that column does not change.
+DROP TABLE IF EXISTS t_lambda;
+CREATE TABLE t_lambda (id Int64, arr Array(Tuple(a Int64)), v Int64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_lambda SELECT number, [tuple(number + 10)], number FROM numbers(3);
+ALTER TABLE t_lambda ADD COLUMN d Int64 DEFAULT arrayMap(v -> v.a, arr)[1];
+ALTER TABLE t_lambda UPDATE d = -1 WHERE id = 1, UPDATE v = 100 WHERE id = 2, MATERIALIZE COLUMN d;
+SELECT 'lambda_argument', id, v, d FROM t_lambda ORDER BY id;
+DROP TABLE t_lambda;
+
 -- MATERIALIZE COLUMN after an UPDATE of the column that matches no row and an UPDATE of an input recomputes the column.
 DROP TABLE IF EXISTS t_no_match;
 CREATE TABLE t_no_match (id Int64, x Int64) ENGINE = MergeTree ORDER BY id;
