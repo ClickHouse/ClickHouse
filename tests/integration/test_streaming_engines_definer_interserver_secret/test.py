@@ -131,6 +131,8 @@ def started_cluster():
             db = database(user)
             # Send to the shard synchronously by default, so that a push either delivers the rows
             # or fails right away, without a background directory queue in between.
+            # With `table_engines_require_grant = false`, `TABLE ENGINE` on a source engine is
+            # revoked unless the user also has `READ` and `WRITE` on its source.
             node1.query(
                 f"""
                 CREATE USER {user} IDENTIFIED WITH plaintext_password BY '{CREDENTIALS[user]["password"]}'
@@ -138,6 +140,7 @@ def started_cluster():
                 CREATE DATABASE {db};
                 GRANT ALL ON {db}.* TO {user};
                 GRANT TABLE ENGINE ON Distributed, TABLE ENGINE ON Kafka, TABLE ENGINE ON RabbitMQ TO {user};
+                GRANT READ, WRITE ON REMOTE, READ, WRITE ON KAFKA, READ, WRITE ON RABBITMQ TO {user};
                 """
             )
             query_as(

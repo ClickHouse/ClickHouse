@@ -49,9 +49,9 @@ std::ostream & dump_datetime(std::ostream & ostr, const DateTime64WithScale & dt
 template <typename ValueType>
 struct DateTimeToStringParamTestCase
 {
-    const char * description{};
+    const char * description;
     const ValueType input;
-    const char * expected{};
+    const char * expected;
     const char * timezone = "UTC";
 };
 

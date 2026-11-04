@@ -2,7 +2,6 @@
 
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/Resolve/IdentifierLookup.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 
 namespace DB
 {
@@ -24,7 +23,7 @@ struct ScopeAliases
     /// Cloned resolved expressions with aliases that must be removed
     QueryTreeNodes node_to_remove_aliases;
 
-    UnorderedMapWithMemoryTracking<std::string, DataTypePtr> alias_name_to_expression_type;
+    std::unordered_map<std::string, DataTypePtr> alias_name_to_expression_type;
 
     std::unordered_map<std::string, QueryTreeNodePtr> & getAliasMap(IdentifierLookupContext lookup_context)
     {

@@ -1,5 +1,4 @@
 #include <Interpreters/Context.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -11,7 +10,6 @@
 #include <Poco/NumberParser.h>
 #include <Common/logger_useful.h>
 #include <base/find_symbols.h>
-#include <Common/DNSResolver.h>
 #include <Common/isLocalAddress.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/ReadBufferFromPocoSocket.h>
@@ -406,12 +404,12 @@ void StorageSystemZooKeeperInfo::fillData(MutableColumns & res_columns, ContextP
 
 std::expected<String,String> StorageSystemZooKeeperInfo::sendFourLetterCommand(const String & host, UInt16 port, std::string_view command) const
 {
+    Poco::Net::SocketAddress address(host, port);
     Poco::Net::StreamSocket socket;
 
     String response;
     try
     {
-        auto address = DNSResolver::instance().resolveAddress(host, port);
         socket = Poco::Net::StreamSocket();
         socket.connect(address);
         socket.setNoDelay(true);
@@ -431,10 +429,6 @@ std::expected<String,String> StorageSystemZooKeeperInfo::sendFourLetterCommand(c
     }
     catch (...)
     {
-        /// Remove this possibly stale entry from the DNS cache, so that the next read of this table
-        /// resolves the host again instead of retrying a dead address until the cache is refreshed.
-        DNSResolver::instance().removeHostFromCache(host);
-
         LOG_INFO(getLogger("StorageSystemZooKeeperInfo"), "Exception  {} ", getCurrentExceptionMessage(true));
         return getCurrentExceptionMessage(true);
     }
@@ -444,6 +438,3 @@ std::expected<String,String> StorageSystemZooKeeperInfo::sendFourLetterCommand(c
 
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemZooKeeperInfo) }
