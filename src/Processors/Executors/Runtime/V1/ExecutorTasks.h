@@ -85,11 +85,16 @@ class ExecutorTasks : public ISpillRequestListener
     /// Add to `threads_to_spawn`, up to `widthLeft`. Requires `mutex`.
     void addThreadsToSpawn(size_t threads);
 
-    /// Current `setMax` target of the CPU slots. Only grows.
+    /// Current `setMax` target of the CPU slots. Only grows. Changed under `mutex`.
     std::atomic<size_t> desired_threads = 1;
 
-    /// Raise the `setMax` target by `threads`, up to `num_threads`. Must not be called under `mutex`.
-    void growDesiredThreads(ISlotAllocation & slots, size_t threads);
+    /// Orders `setMax` calls. Not `mutex`: the allocation takes its own locks, and it calls `resume` under them.
+    std::mutex set_max_mutex;
+
+    /// Raise the `setMax` target by `threads`, up to `num_threads`. Returns whether it changed. Requires `mutex`.
+    bool growDesiredThreads(size_t threads);
+    /// Pass the current target to `setMax`. Must not be called under `mutex`.
+    void applyDesiredThreads(ISlotAllocation & slots);
 
 public:
     void notifySpillRequested() override;
