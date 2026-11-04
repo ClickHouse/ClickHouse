@@ -181,13 +181,11 @@ void WriteBufferFromS3::preFinalize()
 
     if (multipart_upload_id.empty() && detached_part_data.size() <= 1)
     {
-        if (detached_part_data.empty()
-            || detached_part_data.front().data_size <= request_settings[S3RequestSetting::max_single_part_upload_size]
-            || isGCSCreateIfAbsent())
+        if (detached_part_data.empty() || detached_part_data.front().data_size <= request_settings[S3RequestSetting::max_single_part_upload_size])
             do_single_part_upload = true;
     }
 
-    if (!do_single_part_upload && isGCSCreateIfAbsent())
+    if (!do_single_part_upload && client_ptr->isClientForGCS() && write_settings.object_storage_write_if_none_match == "*")
         throw S3Exception(
             Aws::S3::S3Errors::UNKNOWN,
             "GCS conditional create of {} must be a single PUT. CompleteMultipartUpload ignores preconditions.",
@@ -348,22 +346,16 @@ void WriteBufferFromS3::reallocateFirstBuffer()
     if (buffer_allocation_policy->getBufferNumber() > 1 || available() > 0)
         return;
 
-    const bool unlimited = isGCSCreateIfAbsent();
     const size_t max_first_buffer = buffer_allocation_policy->getBufferSize();
-    if (memory.size() >= max_first_buffer && !unlimited)
+    if (memory.size() == max_first_buffer)
         return;
 
-    size_t size = unlimited ? memory.size() * 2 : std::min(memory.size() * 2, max_first_buffer);
+    size_t size = std::min(memory.size() * 2, max_first_buffer);
     memory.resize(size);
 
     WriteBuffer::set(memory.data() + hidden_size, memory.size() - hidden_size);
 
     chassert(offset() == 0);
-}
-
-bool WriteBufferFromS3::isGCSCreateIfAbsent() const
-{
-    return client_ptr->isClientForGCS() && write_settings.object_storage_write_if_none_match == "*";
 }
 
 void WriteBufferFromS3::detachBuffer()
