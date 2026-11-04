@@ -284,6 +284,22 @@ void StatelessWorkerEndpoint::processQuery(const HTMLForm & params, ReadBufferPt
         /// Pass it to the runner to start execution
         task_runner->startTask(task_id, readTaskDescription(body), unique_temp_file_path, collectors);
     }
+    else if (operation == "create")
+    {
+        TaskCollectors collectors;
+        if (params.has("collect"))
+            collectors = TaskCollectors::parse(params.get("collect"));
+        body->eof();
+        body.reset();
+        task_runner->createTask(task_id, collectors);
+    }
+    else if (operation == "payload")
+    {
+        auto unique_temp_file_path = params.get("temp_path");
+        /// A forgotten task is not an error: the coordinator has given up on it.
+        if (task_runner->schedulePayload(task_id, readTaskDescription(body), unique_temp_file_path) == StatelessTaskExecutor::UnknownTaskId)
+            writeString("Unknown task\n", out);
+    }
     else if (operation == "get_status")
     {
         UInt64 wait_milliseconds = 0;

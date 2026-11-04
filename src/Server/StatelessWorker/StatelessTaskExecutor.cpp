@@ -33,6 +33,11 @@ namespace CurrentMetrics
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int QUERY_WAS_CANCELLED;
+}
+
 namespace FailPoints
 {
     extern const char distributed_plan_delay_root_cause_report[];
@@ -179,6 +184,59 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
     }
 
     scheduleTask(unique_task_id, std::move(task_state), std::move(task_promise), task_description, unique_temp_file_path, std::move(setup));
+    return Result::Ok;
+}
+
+StatelessTaskExecutor::Result StatelessTaskExecutor::createTask(const String & unique_task_id, const TaskCollectors & collectors)
+{
+    auto task_promise = std::make_shared<std::promise<std::optional<TaskFailure>>>();
+    auto task_state = std::make_shared<TaskState>();
+    task_state->completion_future = task_promise->get_future();
+    task_state->pending_promise = std::move(task_promise);
+    task_state->collectors = collectors;
+
+    std::lock_guard lock(tasks_mutex);
+    /// A repeated create is the same task, as a repeated start.
+    if (!tasks.try_emplace(unique_task_id, task_state).second)
+        LOG_WARNING(getLogger("StatelessTaskExecutor"), "Ignoring duplicate create for task {}", unique_task_id);
+    return Result::Ok;
+}
+
+StatelessTaskExecutor::Result StatelessTaskExecutor::schedulePayload(const String & unique_task_id, DistributedQueryTaskDescription task_description, const String & unique_temp_file_path)
+{
+    TaskStatePtr task_state;
+    TaskPromisePtr task_promise;
+    {
+        std::lock_guard lock(tasks_mutex);
+        auto it = tasks.find(unique_task_id);
+        if (it == tasks.end())
+            return Result::UnknownTaskId;
+        task_state = it->second;
+        /// Null once `cancelTask` has completed the task, and for a repeated description.
+        task_promise = std::move(task_state->pending_promise);
+    }
+    if (!task_promise)
+    {
+        LOG_WARNING(getLogger("StatelessTaskExecutor"), "Ignoring the description of task {}: it is cancelled or already scheduled", unique_task_id);
+        return Result::Ok;
+    }
+
+    TaskSetup setup;
+    try
+    {
+        setup = setupTask(unique_task_id, task_description, unique_temp_file_path, task_state->collectors);
+    }
+    catch (...)
+    {
+        task_promise->set_value(currentTaskFailure());
+        throw;
+    }
+    {
+        std::lock_guard lock(tasks_mutex);
+        task_state->logs_queue = setup.logs_queue;
+    }
+
+    scheduleTask(unique_task_id, std::move(task_state), std::move(task_promise), std::move(task_description), unique_temp_file_path, std::move(setup));
     return Result::Ok;
 }
 
@@ -351,13 +409,30 @@ StatelessTaskExecutor::TaskStatus StatelessTaskExecutor::getStatus(const String 
         return TaskStatus{Result::TaskFailed, failure->message, std::move(progress_delta), failure->code, std::move(logs), collectors};
 }
 
+namespace
+{
+
+StatelessTaskExecutor::TaskFailure cancelledBeforeDescription()
+{
+    return {ErrorCodes::QUERY_WAS_CANCELLED, "The task was cancelled before its description arrived"};
+}
+
+}
+
 StatelessTaskExecutor::Result StatelessTaskExecutor::cancelTask(const String & task_id)
 {
-    std::lock_guard lock(tasks_mutex);
-    auto it = tasks.find(task_id);
-    if (it == tasks.end())
-        return Result::UnknownTaskId;
-    *it->second->cancelled = true;
+    TaskPromisePtr pending_promise;
+    {
+        std::lock_guard lock(tasks_mutex);
+        auto it = tasks.find(task_id);
+        if (it == tasks.end())
+            return Result::UnknownTaskId;
+        *it->second->cancelled = true;
+        pending_promise = std::move(it->second->pending_promise);
+    }
+    /// No thread runs a task that waits for its description, so it ends here.
+    if (pending_promise)
+        pending_promise->set_value(cancelledBeforeDescription());
 
     return Result::Ok;
 }
@@ -377,7 +452,11 @@ void StatelessTaskExecutor::shutdown()
 {
     std::lock_guard lock(tasks_mutex);
     for (auto & [task_id, task_state] : tasks)
+    {
         *task_state->cancelled = true;
+        if (auto pending_promise = std::move(task_state->pending_promise))
+            pending_promise->set_value(cancelledBeforeDescription());
+    }
 
     for (auto & [task_id, task_state] : tasks)
         task_state->completion_future.wait();
