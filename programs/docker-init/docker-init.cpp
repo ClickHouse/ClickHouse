@@ -363,7 +363,7 @@ bool createDirectoryAndChown(const std::string & dir, uid_t uid, gid_t gid, bool
 
 /// Write the user management XML to `/etc/clickhouse-server/users.d/default-user.xml`.
 /// Returns false if a user-requested setup (CLICKHOUSE_USER/PASSWORD/ACCESS_MANAGEMENT)
-/// is invalid — caller should treat this as fatal.
+/// is invalid or the file cannot be written — caller should treat this as fatal.
 bool manageClickHouseUser(
     const std::string & config_file,
     const std::string & clickhouse_user,
@@ -475,8 +475,14 @@ bool manageClickHouseUser(
               << "    </" << clickhouse_user << ">\n"
               << "  </users>\n"
               << "</clickhouse>\n";
-            if (!f.good())
+            f.close();
+            if (!f)
+            {
+                /// Fail closed, like entrypoint.sh with `set -e`: starting without this file would leave
+                /// the shipped `default` user without the requested password or network restriction.
                 std::cerr << "docker-init: error: failed to write " << default_user_xml << "\n";
+                return false;
+            }
         }
     }
     else if (clickhouse_default_changed)
@@ -501,8 +507,14 @@ bool manageClickHouseUser(
               << "    </default>\n"
               << "  </users>\n"
               << "</clickhouse>\n";
-            if (!f.good())
+            f.close();
+            if (!f)
+            {
+                /// Fail closed, like entrypoint.sh with `set -e`: starting without this file would leave
+                /// the shipped `default` user without the requested password or network restriction.
                 std::cerr << "docker-init: error: failed to write " << default_user_xml << "\n";
+                return false;
+            }
         }
     }
     return true;
@@ -792,30 +804,30 @@ int mainEntryClickHouseDockerInit(int argc, char ** argv)
 
     bool keeper_mode = false;
     bool show_help = false;
-    bool separator_seen = false;
     std::vector<std::string> extra_args;
 
+    /// Our own options come first. The first other argument and everything after it are passed on unchanged:
+    /// a command to run with its own arguments (see the passthrough mode below), e.g. `clickhouse-client -h host`
+    /// or `clickhouse-local --help`, or the arguments of the server, including the `--` that separates
+    /// the configuration overrides, e.g. `-- --logger.level=warning`, exactly as entrypoint.sh passes "$@".
     for (int i = 1; i < argc; ++i)
     {
         std::string_view arg = argv[i];
 
-        /// The first argument that is not an option is a command to run (see the passthrough mode below),
-        /// and the arguments after it are its own, e.g. `clickhouse-client -h host` or `clickhouse-local --help`.
-        if (!separator_seen && extra_args.empty() && !arg.starts_with("-"))
-            separator_seen = true;
-
-        if (!separator_seen && (arg == "--help" || arg == "-h"))
+        if (extra_args.empty() && (arg == "--help" || arg == "-h"))
         {
             show_help = true;
             break;
         }
-        else if (!separator_seen && arg == "--keeper")
+        if (extra_args.empty() && arg == "--keeper")
             keeper_mode = true;
-        else if (!separator_seen && arg == "--")
-            separator_seen = true;
         else
             extra_args.emplace_back(arg);
     }
+
+    /// `-- <command> ...` runs the command, as `<command> ...` does.
+    if (extra_args.size() >= 2 && extra_args[0] == "--" && !extra_args[1].starts_with("-"))
+        extra_args.erase(extra_args.begin());
 
     if (show_help)
     {
