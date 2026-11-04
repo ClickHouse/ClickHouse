@@ -123,3 +123,11 @@ for entry in "${jobs[@]}"; do
         mkdir_and_run "$full_in" "$full_out"
     fi
 done
+
+# `x86_64cpuid.pl` and `s390xcpuid.pl` hook `OPENSSL_cpuid_setup` into the `.init` section. musl runs `.init`
+# before `.init_array` and ignores `.preinit_array`, so under a sanitizer the hook calls the instrumented
+# `OPENSSL_cpuid_setup` before the sanitizer runtime is initialized, and every binary dies at startup.
+# `OPENSSL_init_crypto` calls `OPENSSL_cpuid_setup` anyway (`ossl_init_base`), so drop the hook.
+for file in crypto/x86_64cpuid.s crypto/s390xcpuid.S; do
+    sed -i '/^\.section[[:space:]]*\.init$/{N;/\n[[:space:]]*\(call\|brasl[[:space:]]*%r14,\)[[:space:]]*OPENSSL_cpuid_setup$/d}' "$OPENSSL_BINARY_DIR/$file"
+done

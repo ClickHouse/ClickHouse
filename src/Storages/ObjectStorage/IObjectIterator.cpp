@@ -7,6 +7,7 @@
 #include <Interpreters/Context.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <IO/Archives/ArchiveEntryPositions.h>
 #include <Core/Settings.h>
 #include <Core/Defines.h>
 #include <Storages/ObjectStorage/Utils.h>
@@ -18,6 +19,8 @@ namespace ProfileEvents
 {
     extern const Event ObjectStorageListedObjects;
     extern const Event ObjectStoragePredicateFilteredObjects;
+    extern const Event ObjectStorageQueryConditionCacheSkippedFiles;
+    extern const Event ObjectStorageQueryConditionCacheSkippedRowGroups;
 }
 
 namespace DB
@@ -26,6 +29,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 cluster_table_function_buckets_batch_size;
+    extern const SettingsBool cluster_table_function_split_by_split_offsets;
 }
 
 static ExpressionActionsPtr getExpressionActions(
@@ -160,14 +164,29 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
                     for (size_t i = 0; i < marks.size(); ++i)
                         if (marks[i])
                             matching_row_groups.push_back(i);
+                    ProfileEvents::increment(
+                        ProfileEvents::ObjectStorageQueryConditionCacheSkippedRowGroups, marks.size() - matching_row_groups.size());
                     if (matching_row_groups.empty())
+                    {
+                        ProfileEvents::increment(ProfileEvents::ObjectStorageQueryConditionCacheSkippedFiles);
                         continue;
+                    }
                 }
             }
 
-            auto buffer = createReadBuffer(last_object_info->relative_path_with_metadata, object_storage, getContext(), log);
-            size_t bucket_size = getContext()->getSettingsRef()[Setting::cluster_table_function_buckets_batch_size];
-            auto file_bucket_infos = splitter->splitToBuckets(bucket_size, *buffer, format_settings);
+            const auto & settings = getContext()->getSettingsRef();
+            size_t bucket_size = settings[Setting::cluster_table_function_buckets_batch_size];
+            std::vector<FileBucketInfoPtr> file_bucket_infos;
+            if (settings[Setting::cluster_table_function_split_by_split_offsets] && !has_cache_entry)
+            {
+                if (auto file_size = last_object_info->getFileSizeHint())
+                    file_bucket_infos = splitter->splitByByteRanges(bucket_size, *file_size, last_object_info->getSplitOffsetsHint());
+            }
+            if (file_bucket_infos.empty())
+            {
+                auto buffer = createReadBuffer(last_object_info->relative_path_with_metadata, object_storage, getContext(), log);
+                file_bucket_infos = splitter->splitToBuckets(bucket_size, *buffer, format_settings);
+            }
             for (const auto & file_bucket : file_bucket_infos)
             {
                 auto copy_object_info = *last_object_info;
@@ -194,7 +213,7 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
 
 String ObjectInfo::getIdentifier(bool include_file_bucket_info) const
 {
-    return getIdentifierForPath(getPath(), include_file_bucket_info);
+    return getArchiveEntryKey(getIdentifierForPath(getPath(), include_file_bucket_info), archive_entry_index);
 }
 
 String ObjectInfo::getIdentifierForPath(const String & path, bool include_file_bucket_info) const

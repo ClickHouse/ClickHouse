@@ -1,4 +1,4 @@
--- Tags: no-random-settings
+-- Tags: no-random-settings, no-msan
 
 -- { echo }
 SET optimize_move_to_prewhere = 1;

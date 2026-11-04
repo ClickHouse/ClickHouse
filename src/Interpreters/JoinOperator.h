@@ -113,6 +113,7 @@ struct JoinSettings
     bool collect_hash_table_stats_during_joins;
     UInt64 max_size_to_preallocate_for_joins;
     UInt64 parallel_hash_join_threshold;
+    HashJoinLayout hash_join_layout;
     UInt64 join_output_by_rowlist_perkey_rows_threshold;
     bool allow_experimental_join_right_table_sorting;
     UInt64 join_to_sort_minimum_perkey_rows;
@@ -137,6 +138,10 @@ struct JoinSettings
     explicit JoinSettings(const Settings & query_settings, JoinAnalyzeMode join_analyze_mode_ = JoinAnalyzeMode::None);
     JoinSettings(const QueryPlanSerializationSettings & settings, UInt64 version);
 
+    /// Whether `join_algorithms` is the built-in default of `join_algorithm`, whose algorithm the join order optimizer may
+    /// choose per join. Any other list is a priority list the user chose, used as it is.
+    bool hasDefaultJoinAlgorithms() const;
+
     /// `join_operator` is the step the settings are serialized for: whether a downgraded plan can be
     /// handed to an older peer depends on which algorithm of the preference list that step reaches.
     void updatePlanSettings(QueryPlanSerializationSettings & settings, UInt64 version, const JoinOperator & join_operator) const;
@@ -158,6 +163,15 @@ struct JoinSettings
     /// combining the absolute `max_bytes_before_external_join` and the ratio `max_bytes_ratio_before_external_join`
     /// (the smaller of the two applies). Returns 0 if neither is set, meaning no automatic spilling.
     static UInt64 getMaxBytesBeforeExternalJoin(UInt64 max_bytes_before_external_join, double max_bytes_ratio_before_external_join);
+
+    /// Whether `grace_hash` in `join_algorithms` is an algorithm the join pickers run on every node rather than
+    /// pass over for the next entry of the preference list: in legacy mode, with an absolute spill threshold, or
+    /// listed alone (and then refused with a message if it has no threshold). A threshold given only by
+    /// `max_bytes_ratio_before_external_join` does not count: every server resolves it against its own memory
+    /// limits, and one without them resolves it to 0, so the answer here would depend on the node.
+    /// Neither does `grace_hash` on a server without temporary storage (`tmp_path` / `tmp_policy`): there the
+    /// join pickers refuse it instead of passing it over.
+    bool canRunGraceHash() const;
 
     /// Combines the stored raw absolute and ratio settings using local memory limits.
     /// Recomputed on every executor so distributed queries pick up per-node memory.

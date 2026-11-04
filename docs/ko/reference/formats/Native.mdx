@@ -15,9 +15,7 @@ doc_type: 'reference'
 | -- | -- | -- |
 | ✔  | ✔  |    |
 
-<div id="description">
-  ## 설명
-</div>
+## 설명 {#description}
 
 `Native` 형식의 전체 공식 명세는 [여기](/ko/resources/develop-contribute/native-protocol/format)에서 확인할 수 있으며, 이를 전달하는 TCP wire 프로토콜인 `Native` 프로토콜의 보완 명세는 [여기](/ko/resources/develop-contribute/native-protocol/protocol)에서 확인할 수 있습니다.
 
@@ -25,10 +23,11 @@ doc_type: 'reference'
   두 명세는 모두 ClickHouse 소스 코드를 바탕으로 LLM이 생성했습니다. 코드는 여전히 가장 중요한 기준입니다. 명세와 코드가 일치하지 않으면 코드가 올바릅니다.
 </Note>
 
-`Native` 형식은 컬럼을 행으로 변환하지 않는 진정한 &quot;열 지향&quot; 포맷이므로 ClickHouse에서 가장 효율적인 포맷입니다.
+`Native` 형식은 컬럼을 행으로 변환하지 않는 진정한 &quot;열 지향&quot; 포맷이므로
+ClickHouse에서 가장 효율적인 포맷입니다.
 
 이 포맷에서는 데이터가 바이너리 형식으로 [블록](/ko/resources/develop-contribute/introduction/architecture#block) 단위로 기록되고 읽힙니다.
-각 블록에는 행 수, 컬럼 수, 컬럼 이름과 타입, 그리고 블록 내 각 컬럼 데이터의 일부가 차례대로 기록됩니다.
+각 블록에는 행 수, 컬럼 수, 컬럼명과 타입, 그리고 블록 내 각 컬럼 데이터의 일부가 차례대로 기록됩니다.
 
 이 포맷은 서버 간 상호작용을 위한 네이티브 인터페이스, command-line client 사용, 그리고 C++ 클라이언트에서 사용됩니다.
 
@@ -37,9 +36,7 @@ doc_type: 'reference'
   다만 이 포맷을 직접 다루는 것은 실용적이지 않을 수 있습니다.
 </Tip>
 
-<div id="data-types-wire-format">
-  ## 데이터 타입 wire 형식
-</div>
+## 데이터 타입 wire 형식 {#data-types-wire-format}
 
 데이터는 wire 상에서 열 지향 포맷으로 전송되며, 이는 각 컬럼이 개별적으로 전송되고
 한 컬럼의 모든 값이 하나의 배열로 함께 전송된다는 뜻입니다.
@@ -52,9 +49,7 @@ doc_type: 'reference'
   프로토콜 버전이 없는 일반 HTTP 인터페이스를 사용하므로 `BlockInfo`는 생략됩니다.
 </Note>
 
-<div id="block-structure">
-  ### 블록 구조
-</div>
+### 블록 구조 {#block-structure}
 
 다음 쿼리는 `number`와 `str` 두 개의 컬럼과 3개의 행을 반환합니다:
 
@@ -96,9 +91,7 @@ const data = new Uint8Array([
 ])
 ```
 
-<div id="multiple-blocks">
-  ### 여러 블록
-</div>
+### 여러 블록 {#multiple-blocks}
 
 하지만 많은 경우 데이터가 단일 블록 하나에 담기지 않으므로, ClickHouse는 데이터를 여러 블록으로 나누어 전송합니다.
 다음 쿼리는 블록 크기를 줄여 데이터가 블록당 한 행씩 분할되도록 강제한 상태에서 2개의 행을 가져오는 예입니다:
@@ -152,9 +145,7 @@ const data = new Uint8Array([
 ]);
 ```
 
-<div id="simple-data-types">
-  ### 단순 데이터 타입
-</div>
+### 단순 데이터 타입 {#simple-data-types}
 
 보다 단순한 데이터 타입에 속하는 개별 값의 wire 형식은 `RowBinary`/`RowBinaryWithNamesAndTypes`와 유사합니다.
 이에 해당하는 전체 타입 목록은 다음과 같습니다.
@@ -174,9 +165,7 @@ const data = new Uint8Array([
 
 자세한 내용은 [&quot;RowBinary 데이터 타입의 wire 형식&quot;](/ko/reference/formats/RowBinary/RowBinary#data-types-wire-format)에 있는 각 타입 설명을 참조하십시오.
 
-<div id="complex-data-types">
-  ### 복합 데이터 타입
-</div>
+### 복합 데이터 타입 {#complex-data-types}
 
 다음 데이터 타입의 인코딩은 `RowBinary` 및 `RowBinaryWithNamesAndTypes`와 다릅니다.
 
@@ -188,9 +177,7 @@ const data = new Uint8Array([
 * Dynamic
 * JSON
 
-<div id="nullable">
-  #### 널 허용
-</div>
+#### 널 허용 {#nullable}
 
 `Native` 형식에서는 널 허용 컬럼의 실제 데이터 앞에 블록의 행 수와 동일한 바이트 수가 옵니다. 각 바이트는 해당 값이 `NULL`인지 여부를 나타냅니다. 예를 들어, 다음 쿼리에서는 각 홀수가 `NULL`이 됩니다:
 
@@ -310,9 +297,7 @@ const data = new Uint8Array([
 ])
 ```
 
-<div id="lowcardinality">
-  #### LowCardinality
-</div>
+#### LowCardinality {#lowcardinality}
 
 `LowCardinality`가 투명하게 처리되는 [RowBinary](/ko/reference/formats/RowBinary/RowBinary#lowcardinality)와 달리, Native 형식은 딕셔너리 기반의 열 지향 인코딩을 사용합니다. 컬럼은 버전 접두사로 시작하고, 이어서 고유 값 딕셔너리와 해당 딕셔너리를 참조하는 정수 인덱스 배열로 인코딩됩니다.
 
@@ -360,9 +345,7 @@ const data = new Uint8Array([
 02 00 02 00 02              // 인덱스 → "yes", NULL, "yes", NULL, "yes"
 ```
 
-<div id="array">
-  #### 배열
-</div>
+#### 배열 {#array}
 
 각 배열 앞에 LEB128 요소 개수가 붙는 [RowBinary](/ko/reference/formats/RowBinary/RowBinary#array)와 달리, Native 형식에서는 배열을 2개의 열 지향 하위 스트림으로 인코딩합니다:
 
@@ -401,9 +384,7 @@ const data = new Uint8Array([
 01 32                       // "2"
 ```
 
-<div id="map">
-  #### 맵
-</div>
+#### 맵 {#map}
 
 `Map(K, V)`는 `Array(Tuple(K, V))`로 인코딩됩니다. 즉, 배열 오프셋 다음에 모든 키가 나오고, 그 뒤에 모든 값이 나옵니다. 이는 각 항목마다 키와 값이 번갈아 저장되는 [RowBinary](/ko/reference/formats/RowBinary/RowBinary#map)와 다릅니다.
 
@@ -432,9 +413,7 @@ const data = new Uint8Array([
 0c 00 00 00 00 00 00 00    // 12
 ```
 
-<div id="variant">
-  #### Variant
-</div>
+#### Variant {#variant}
 
 각 행에 자체 판별자 바이트와 그 뒤의 값을 인라인으로 담는 [RowBinary](/ko/reference/formats/RowBinary/RowBinary#variant)와 달리, Native 형식은 판별자와 데이터를 분리합니다.
 
@@ -463,9 +442,7 @@ const data = new Uint8Array([
 03 00 00 00                 // 3
 ```
 
-<div id="dynamic">
-  #### Dynamic
-</div>
+#### Dynamic {#dynamic}
 
 각 값이 자체적으로 타입 정보를 포함하는(타입 접두사 + 값) [RowBinary](/ko/reference/formats/RowBinary/RowBinary#dynamic)와 달리, Native 형식에서는 `Dynamic`을 구조체 접두사 다음에 [Variant](#variant) 컬럼이 이어지는 형태로 직렬화합니다.
 
@@ -492,9 +469,7 @@ const data = new Uint8Array([
 03 00 00 00                 // UInt32: 3
 ```
 
-<div id="json">
-  #### JSON
-</div>
+#### JSON {#json}
 
 각 행에 경로 이름과 값이 함께 포함되어 자체적으로 기술되는 [RowBinary](/ko/reference/formats/RowBinary/RowBinary#json)와 달리, Native 형식은 `JSON`을 열 지향 구조로 직렬화합니다. 인코딩은 복잡하고 버전에 따라 달라집니다. 즉, 직렬화 버전, 동적 경로 이름, shared data 레이아웃을 포함하는 구조체 접두사로 구성되며, 그 뒤에 타입이 지정된 경로(각각 벌크 컬럼), 동적 경로(각각 [Dynamic](#dynamic) 컬럼), 그리고 오버플로우 경로용 shared data가 이어집니다.
 

@@ -39,6 +39,7 @@ SELECT toDayOfMonth(toDateTime('2023-04-21 10:20:30'))
     /// MySQL compatibility alias.
     factory.registerAlias("DAY", "toDayOfMonth", FunctionFactory::Case::Insensitive);
     factory.registerAlias("DAYOFMONTH", "toDayOfMonth", FunctionFactory::Case::Insensitive);
+    factory.registerAlias("DAY_OF_MONTH", "toDayOfMonth", FunctionFactory::Case::Insensitive);
 }
 
 }

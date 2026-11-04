@@ -49,7 +49,6 @@ for local_plan in 0 1; do
     $CLICKHOUSE_CLIENT --query_id "$query_id" --query "
     USE default;
 
-    SET enable_analyzer = 1;
     SET allow_experimental_parallel_reading_from_replicas = 2;
     SET max_parallel_replicas = 3;
     SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';

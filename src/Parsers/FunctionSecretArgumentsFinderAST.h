@@ -100,6 +100,7 @@ inline SecretArgumentsResult findSecretArguments(const ASTFunction & function)
     switch (function.getKind())
     {
         case ASTFunction::Kind::ORDINARY_FUNCTION:
+        case ASTFunction::Kind::TABLE_FUNCTION:
         case ASTFunction::Kind::TABLE_ENGINE:
         case ASTFunction::Kind::DATABASE_ENGINE:
         case ASTFunction::Kind::BACKUP_NAME:
