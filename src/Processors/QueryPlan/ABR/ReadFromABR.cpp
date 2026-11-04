@@ -276,7 +276,7 @@ void ReadFromABR::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
                 if (i + 1 == ls_tables.size())
                     e.addMessage("all candidate tables exhausted");
 
-                e.addMessage("while executing query on underlying table {}", storage_id.getNameForLogs());
+                e.addMessage("while executing query on source table {}", storage_id.getNameForLogs());
                 throw;
             }
         }

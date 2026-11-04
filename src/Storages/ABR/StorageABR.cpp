@@ -235,7 +235,7 @@ StorageABR::StorageABR(
 
         const auto table_metadata = merge_tree->getInMemoryMetadataPtr(context, false);
         if (columns.getAll() != table_metadata->getColumns().getAll())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not all underlying tables have the same column set (names and types)");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not all source tables have the same column set (names and types)");
 
         const auto & table_partition_key = table_metadata->getPartitionKey();
         const NamesAndTypesList table_minmax_columns = MergeTreeData::getMinMaxColumns(
@@ -245,13 +245,13 @@ StorageABR::StorageABR(
         else if (table_minmax_columns.getNames() != minmax_columns.getNames())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "All underlying tables must have partition keys over the same columns, but the partition key of table '{}' "
+                "All source tables must have partition keys over the same columns, but the partition key of table '{}' "
                 "uses ({}) and the one of table '{}' uses ({})",
                 first_table_name, fmt::join(minmax_columns.getNames(), ", "), name, fmt::join(table_minmax_columns.getNames(), ", "));
 
         check_retention_columns_are_direct(table_partition_key, name);
         source_table_ids.emplace_back(merge_tree->getStorageID());
-        LOG_DEBUG(logger, "Registered underlying table {}", name);
+        LOG_DEBUG(logger, "Registered source table {}", name);
     }
 
     const Names minmax_names = minmax_columns.getNames();
@@ -289,7 +289,7 @@ StorageABR::StorageABR(
 
     retention_key_expr = std::make_shared<ExpressionActions>(ActionsDAG(retention_cols_with_types), ExpressionActionsSettings(context));
 
-    LOG_DEBUG(logger, "Initialized: retention=({}), time_column='{}' (minmax_idx={}), {} underlying tables",
+    LOG_DEBUG(logger, "Initialized: retention=({}), time_column='{}' (minmax_idx={}), {} source tables",
         fmt::join(retention_expression, ", "),
         time_column,
         column_info_minmax.at(time_column).idx_in_minmax,
@@ -301,8 +301,8 @@ ASTPtr StorageABR::rewriteQueryForStorage(const SelectQueryInfo & query_info, co
     ASTPtr select_ast;
     if (query_info.query_tree)
     {
-        /// Replace the ABR table expression in the query tree with the underlying table and convert back to AST,
-        /// so that the query is analyzed again against the underlying table.
+        /// Replace the ABR table expression in the query tree with the source table and convert back to AST,
+        /// so that the query is analyzed again against the source table.
         auto replacement_table_expression = std::make_shared<TableNode>(target, context);
         replacement_table_expression->setAlias(query_info.table_expression->getAlias());
         if (query_info.table_expression_modifiers)
@@ -566,7 +566,7 @@ std::shared_ptr<StorageABR> StorageABR::creatorFunction(const StorageFactory::Ar
 
     const ContextPtr & context = args.getContext();
 
-    /// table_prefix -- the base prefix for all underlying tables
+    /// table_prefix -- the base prefix for all source tables
     String table_prefix = checkAndGetLiteralArgument<String>(
         evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], context),
         "table_prefix");
@@ -574,7 +574,7 @@ std::shared_ptr<StorageABR> StorageABR::creatorFunction(const StorageFactory::Ar
     if (table_prefix.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "table_prefix must not be empty");
 
-    /// sample_intervals -- a list of the sample intervals used for the underlying tables
+    /// sample_intervals -- a list of the sample intervals used for the source tables
     Array interval_array = checkAndGetLiteralArgument<Array>(
         evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], context),
         "sample_intervals");
@@ -597,7 +597,7 @@ std::shared_ptr<StorageABR> StorageABR::creatorFunction(const StorageFactory::Ar
     if (sample_intervals.front() == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "All sample intervals must be greater than 0");
 
-    /// The constructor reads the columns and keys of the underlying tables under the global context
+    /// The constructor reads the columns and keys of the source tables under the global context
     /// Check that the user is allowed to see them first
     if (!(isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax))
     {
@@ -663,7 +663,7 @@ std::optional<StorageABR::UnixTimePoint> StorageABR::getMinMergeTreeDate(
         const auto & hyperrectangle = minmax_idx->hyperrectangle;
 
         /// Defensive check: idx_in_minmax was computed at ABR construction time from the first
-        /// underlying table, and the constructor checks that all underlying tables share its minmax
+        /// source table, and the constructor checks that all source tables share its minmax
         /// layout, which cannot change since a partition key cannot be altered. Still, skip parts whose
         /// hyperrectangle is too small for the cached indices rather than risk an out-of-bounds read.
         const bool indices_in_range = std::ranges::all_of(
@@ -1001,8 +1001,8 @@ void StorageABR::read(
 {
     if (getEffectiveRowPolicyFilter(*this, context))
         throw Exception(ErrorCodes::ACCESS_DENIED,
-            "Row policies on table {} are not supported: the `ABR` engine executes the query on an underlying table, "
-            "where they cannot be applied. Define them on the underlying tables instead",
+            "Row policies on table {} are not supported: the `ABR` engine executes the query on a source table, "
+            "where they cannot be applied. Define them on the source tables instead",
             getStorageID().getNameForLogs());
 
     /// `ABR` runs the whole query on a source table. As the left table of a JOIN, it runs the whole query, which the planner expects.
@@ -1061,7 +1061,7 @@ void registerStorageABR(StorageFactory & factory)
         Documentation{
             .description = R"DOCS_MD(
 The `ABR` (Adaptive Bit Rate) engine is a read-only proxy that routes queries to the best of several `MergeTree`-family tables
-that store the same data at different sampling granularities. It picks the finest-grained underlying table whose retention covers
+that store the same data at different sampling granularities. It picks the finest-grained source table whose retention covers
 the query's time range, and on `TOO_MANY_ROWS` or `TIMEOUT_EXCEEDED` it transparently retries the query on the next coarser table.
 
 <Info>
@@ -1070,9 +1070,9 @@ tables with the setting `allow_experimental_abr`: `SET allow_experimental_abr = 
 `ABR` tables are loaded and can be queried regardless of this setting.
 </Info>
 
-The underlying tables are expected to follow a naming convention of `{table_prefix}_{sample_interval}`, where `sample_interval`
-distinguishes the granularity. The engine never writes; data must be ingested directly into the underlying tables. Creating
-an `ABR` table requires `SHOW COLUMNS` on all its underlying tables, and reading from it requires `SELECT` on them.
+The source tables are expected to follow a naming convention of `{table_prefix}_{sample_interval}`, where `sample_interval`
+distinguishes the granularity. The engine never writes; data must be ingested directly into the source tables. Creating
+an `ABR` table requires `SHOW COLUMNS` on all its source tables, and reading from it requires `SELECT` on them.
 
 The source tables are registered as dependencies of the `ABR` table: they are loaded and restored from a backup before it, and
 dropping or renaming one of them while the `ABR` table exists is refused, unless `check_table_dependencies` is disabled.
@@ -1084,7 +1084,7 @@ no UUID, the source tables are resolved by name.
 
 **Engine parameters**
 
-- `table_prefix` — A `String` literal giving the common prefix of the underlying tables. For each interval in `sample_intervals`,
+- `table_prefix` — A `String` literal giving the common prefix of the source tables. For each interval in `sample_intervals`,
   `ABR` discovers the table `{table_prefix}_{interval}`. All discovered tables must exist in the same database as the `ABR` table,
   be from the `MergeTree` family, and share an identical column set (names and types).
 - `sample_intervals` — A non-empty `Array(UInt64)` of granularity levels. Values are sorted ascending and deduplicated; `0` is not
@@ -1093,7 +1093,7 @@ no UUID, the source tables are resolved by name.
 - `retention_expression` — A `Tuple(String, ...)` (or a single `String`) of partition key column names that `ABR` uses for
   pruning. The first element must be the time column, of type `Date`, `Date32`, `DateTime` or `DateTime64` (optionally wrapped
   into `LowCardinality`, but not `Nullable`). All other columns must appear as direct, unmodified columns in the `PARTITION BY`
-  expression of the underlying tables. The time column is exempt, as it typically appears inside a function such as
+  expression of the source tables. The time column is exempt, as it typically appears inside a function such as
   `toStartOfMonth(ts)`.
 
 **How routing works**
@@ -1127,9 +1127,9 @@ whole, across all attempts. The candidate tables are the chosen table and the co
 
 **Limitations**
 
-- `ABR` is read-only. `INSERT`, `ALTER` and mutations must target the underlying tables directly.
-- All underlying tables must share an identical column set.
-- `ABR` does not support row policies directly. Define them on the underlying tables instead.
+- `ABR` is read-only. `INSERT`, `ALTER` and mutations must target the source tables directly.
+- All source tables must share an identical column set.
+- `ABR` does not support row policies directly. Define them on the source tables instead.
 - An `ABR` table can only be the leftmost table of a `JOIN`. To join it on another side, read it through a subquery with a
   condition on its time column: `JOIN (SELECT ... FROM abr_table WHERE ts >= ...)`.
 - An `ABR` table cannot be read from a serialized query plan, which does not carry the filters of the query. With

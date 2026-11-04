@@ -14,7 +14,7 @@ DROP TABLE IF EXISTS events_1;
 DROP TABLE IF EXISTS events_10;
 DROP TABLE IF EXISTS events_100;
 
--- Underlying MergeTree tables with different sample intervals (retention tiers)
+-- Source MergeTree tables with different sample intervals (retention tiers)
 CREATE TABLE events_1 (
     _sample_interval UInt64 DEFAULT 1,
     namespace UInt64,

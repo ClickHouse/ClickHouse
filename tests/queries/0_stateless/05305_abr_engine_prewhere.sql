@@ -90,23 +90,23 @@ SELECT abr_interval FROM system.query_log WHERE current_database = currentDataba
 
 -- Test 4: WHERE and PREWHERE both with time filters (PREWHERE tighter)
 -- WHERE ts >= Dec 22, PREWHERE ts >= Dec 26 → combined lower bound = Dec 26
--- abr_min_date should be 1766707200 (2025-12-26 00:00:00 UTC)
+-- abr_min_date should be 2025-12-26 00:00:00
 SELECT /* test 05305, query 4 */ count() FROM abr_pw
 PREWHERE ts >= toDateTime('2025-12-26 00:00:00')
 WHERE ts >= toDateTime('2025-12-22 00:00:00');
 
 SYSTEM FLUSH LOGS query_log;
-SELECT toUnixTimestamp(abr_min_date) as value FROM system.query_log WHERE current_database = currentDatabase() AND query LIKE '%SELECT /* test 05305, query 4 */%' AND type = 2 AND event_date >= yesterday() ORDER BY event_time DESC LIMIT 1;
+SELECT abr_min_date as value FROM system.query_log WHERE current_database = currentDatabase() AND query LIKE '%SELECT /* test 05305, query 4 */%' AND type = 2 AND event_date >= yesterday() ORDER BY event_time DESC LIMIT 1;
 
 -- Test 5: WHERE and PREWHERE both with time filters (WHERE tighter)
 -- WHERE ts >= Dec 26, PREWHERE ts >= Dec 22 → combined lower bound = Dec 26
--- abr_min_date should be 1766707200 (2025-12-26 00:00:00 UTC)
+-- abr_min_date should be 2025-12-26 00:00:00
 SELECT /* test 05305, query 5 */ count() FROM abr_pw
 PREWHERE ts >= toDateTime('2025-12-22 00:00:00')
 WHERE ts >= toDateTime('2025-12-26 00:00:00');
 
 SYSTEM FLUSH LOGS query_log;
-SELECT toUnixTimestamp(abr_min_date) as value FROM system.query_log WHERE current_database = currentDatabase() AND query LIKE '%SELECT /* test 05305, query 5 */%' AND type = 2 AND event_date >= yesterday() ORDER BY event_time DESC LIMIT 1;
+SELECT abr_min_date as value FROM system.query_log WHERE current_database = currentDatabase() AND query LIKE '%SELECT /* test 05305, query 5 */%' AND type = 2 AND event_date >= yesterday() ORDER BY event_time DESC LIMIT 1;
 
 DROP TABLE IF EXISTS abr_pw;
 DROP TABLE IF EXISTS pw_test_1;

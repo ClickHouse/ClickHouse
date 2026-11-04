@@ -1,5 +1,5 @@
--- Test: ABR engine predicate pushdown to underlying MergeTree tables
--- Verifies that WHERE clause predicates are correctly pushed down to underlying
+-- Test: ABR engine predicate pushdown to source MergeTree tables
+-- Verifies that WHERE clause predicates are correctly pushed down to source
 -- tables by using max_rows_to_read as a gate: if pushdown works, only the
 -- filtered partition is read and the query stays under max_rows_to_read.
 -- If pushdown is broken, a full scan triggers TOO_MANY_ROWS causing ABR to

@@ -10,7 +10,7 @@
 namespace DB
 {
 
-/// Query plan step that executes the ABR query on an underlying table and retries
+/// Query plan step that executes the ABR query on a source table and retries
 /// on the next coarser table if a fallback error (TOO_MANY_ROWS, TIMEOUT_EXCEEDED)
 /// is thrown. Results are buffered (memory → disk cascade) before being emitted so
 /// that a failed attempt's partial output is never visible to the client.

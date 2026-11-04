@@ -3764,14 +3764,14 @@ If enable, remove duplicated rows during FINAL by marking rows as deleted and fi
 Size in bytes of the in-memory buffer used by the `ABR` table engine to materialize each query attempt's results before they are
 replayed to the client. When the buffer is exhausted, additional output spills to temporary data on disk.
 
-Buffering is required because `ABR` may retry a query on a coarser underlying table after a fallback error
+Buffering is required because `ABR` may retry a query on a coarser source table after a fallback error
 (`TOO_MANY_ROWS`, `TIMEOUT_EXCEEDED`); rows produced by a failed attempt must never reach the client.
 
 Set to `0` to skip the in-memory buffer entirely and always spill to disk.
 )", 0, \
         {"26.11", 16 * 1024 * 1024, 16 * 1024 * 1024, "New setting for the `ABR` table engine."}) \
     DECLARE(UInt64, abr_first_table_suffix, 0, R"(
-Minimum sample interval (suffix) to consider when the `ABR` table engine chooses an underlying table. Tables with a smaller sample
+Minimum sample interval (suffix) to consider when the `ABR` table engine chooses a source table. Tables with a smaller sample
 interval are skipped even if their retention covers the query range.
 
 Useful when the finest-grained tables are known to be too expensive for a class of queries.
@@ -3780,7 +3780,7 @@ Useful when the finest-grained tables are known to be too expensive for a class 
 )", 0, \
         {"26.11", 0, 0, "New setting for the `ABR` table engine."}) \
     DECLARE(UInt64, abr_last_table_suffix, 0, R"(
-Maximum sample interval (suffix) to consider when the `ABR` table engine chooses an underlying table. Tables with a larger sample
+Maximum sample interval (suffix) to consider when the `ABR` table engine chooses a source table. Tables with a larger sample
 interval are excluded from selection.
 
 This setting overrides retention-based selection: if no table within `[abr_first_table_suffix, abr_last_table_suffix]` has enough

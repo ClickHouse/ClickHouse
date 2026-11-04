@@ -32,7 +32,7 @@ INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.events_1 (ts, value) VALUES
 INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.events_10 (ts, value) VALUES
     ('2025-12-01 00:00:00', 10), ('2026-01-01 00:00:00', 20);
 
--- The catalog now returns `StorageTableProxy` objects for the underlying tables.
+-- The catalog now returns `StorageTableProxy` objects for the source tables.
 DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 USE {CLICKHOUSE_DATABASE_1:Identifier};

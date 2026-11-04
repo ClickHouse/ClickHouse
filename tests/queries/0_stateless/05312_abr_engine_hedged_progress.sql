@@ -18,7 +18,7 @@ DROP TABLE IF EXISTS slow_1;
 DROP TABLE IF EXISTS slow_10;
 DROP TABLE IF EXISTS slow_100;
 
--- Underlying MergeTree tiers for the ABR table.
+-- Source MergeTree tiers for the ABR table.
 CREATE TABLE slow_1 (
     _sample_interval UInt64 DEFAULT 1,
     namespace UInt64,

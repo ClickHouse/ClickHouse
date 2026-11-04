@@ -6,51 +6,51 @@ SET allow_experimental_abr = 1;
 SET session_timezone = 'UTC';
 
 DROP TABLE IF EXISTS abr_table;
-DROP TABLE IF EXISTS underlying_table_1;
-DROP TABLE IF EXISTS underlying_table_10;
-DROP TABLE IF EXISTS underlying_table_100;
+DROP TABLE IF EXISTS source_table_1;
+DROP TABLE IF EXISTS source_table_10;
+DROP TABLE IF EXISTS source_table_100;
 
 -- Table at level 0 (sample_interval = 1): 1 week of data
-CREATE TABLE underlying_table_1 (
+CREATE TABLE source_table_1 (
     _sample_interval UInt64 DEFAULT 1,
     ts DateTime,
     value UInt64
-) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/underlying_table_1_minlvl', '1')
+) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/source_table_1_minlvl', '1')
 PARTITION BY toYYYYMM(ts)
 ORDER BY ts;
 
 -- Table at level 1 (sample_interval = 10): 1 month of data
-CREATE TABLE underlying_table_10 (
+CREATE TABLE source_table_10 (
     _sample_interval UInt64 DEFAULT 10,
     ts DateTime,
     value UInt64
-) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/underlying_table_10_minlvl', '1')
+) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/source_table_10_minlvl', '1')
 PARTITION BY toYYYYMM(ts)
 ORDER BY ts;
 
 -- Table at level 2 (sample_interval = 100): 1 year of data
-CREATE TABLE underlying_table_100 (
+CREATE TABLE source_table_100 (
     _sample_interval UInt64 DEFAULT 100,
     ts DateTime,
     value UInt64
-) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/underlying_table_100_minlvl', '1')
+) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/source_table_100_minlvl', '1')
 PARTITION BY toYYYYMM(ts)
 ORDER BY ts;
 
-INSERT INTO underlying_table_1
+INSERT INTO source_table_1
 SELECT 1, toDateTime('2026-01-01 12:00:00') - INTERVAL number HOUR, 1
 FROM system.numbers LIMIT (24 * 7) + 1;
 
-INSERT INTO underlying_table_10
+INSERT INTO source_table_10
 SELECT 10, toDateTime('2026-01-01 12:00:00') - INTERVAL number HOUR, 10
 FROM system.numbers LIMIT (24 * 31) + 1;
 
-INSERT INTO underlying_table_100
+INSERT INTO source_table_100
 SELECT 100, toDateTime('2026-01-01 12:00:00') - INTERVAL number HOUR, 100
 FROM system.numbers LIMIT (24 * 365) + 1;
 
 CREATE TABLE abr_table
-ENGINE = ABR('underlying_table', [1, 10, 100], ('ts'));
+ENGINE = ABR('source_table', [1, 10, 100], ('ts'));
 
 -- Test 1: Default abr_first_table_suffix = 0, query 3 days → should pick table_1 (value=1)
 SELECT 'test 1';
@@ -138,6 +138,6 @@ WHERE ts >= toDateTime('2026-01-01 12:00:00') - INTERVAL 3 DAY
 SETTINGS abr_first_table_suffix = 100, abr_last_table_suffix = 1; -- {serverError BAD_ARGUMENTS}
 
 DROP TABLE IF EXISTS abr_table;
-DROP TABLE IF EXISTS underlying_table_1;
-DROP TABLE IF EXISTS underlying_table_10;
-DROP TABLE IF EXISTS underlying_table_100;
+DROP TABLE IF EXISTS source_table_1;
+DROP TABLE IF EXISTS source_table_10;
+DROP TABLE IF EXISTS source_table_100;
