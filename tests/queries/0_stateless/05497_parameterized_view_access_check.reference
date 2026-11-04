@@ -24,6 +24,10 @@ denied
 2
 2
 ok
+-- a grant on a virtual column alone
+pv_definer
+ok
+secret_base
 -- SHOW COLUMNS also makes the structure visible, but reading is still denied
 ok
 ACCESS_DENIED

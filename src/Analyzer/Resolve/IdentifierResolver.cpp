@@ -427,12 +427,19 @@ void IdentifierResolver::checkAccessToTableMetadata(
     /// `SELECT` is checked in addition to `SHOW_COLUMNS` because the implicit `SELECT` on the
     /// `system` and `information_schema` databases is granted after implications are derived.
     const auto access_rights = context->getAccess()->getAccessRightsWithImplicit();
-    for (const auto & column : storage_snapshot->metadata->getColumns())
+    auto is_visible = [&](const String & column_name)
     {
-        if (access_rights->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name)
-            || access_rights->isGranted(AccessType::SHOW_COLUMNS, storage_id.database_name, storage_id.table_name, column.name))
+        return access_rights->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column_name)
+            || access_rights->isGranted(AccessType::SHOW_COLUMNS, storage_id.database_name, storage_id.table_name, column_name);
+    };
+    const auto & metadata = *storage_snapshot->metadata;
+    for (const auto & column : metadata.getColumns())
+        if (is_visible(column.name))
             return;
-    }
+    /// A grant on a virtual column alone is enough to read it.
+    for (const auto & column : metadata.virtuals)
+        if (is_visible(column.name))
+            return;
 
     /// Not a single column of the table is visible to the user. Report the denial through the
     /// standard check, so the message and the query log get the table-level requirement without
