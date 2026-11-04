@@ -391,11 +391,16 @@ private:
     ColumnPtr executeImplCommon(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
     {
         auto result = executeForArrays(removeFixedArrayFromArguments(arguments), dry_run);
-        if (const auto * fixed_array_type = typeid_cast<const DataTypeFixedArray *>(result_type.get()))
+
+        /// Only the functions that keep the size return `FixedArray` instead of `Array`. The result type of other
+        /// functions can also be `FixedArray`, e.g. `arrayLast` for `FixedArray(M, FixedArray(N, T))` returns an element,
+        /// and then the result column is already a `ColumnFixedArray`.
+        if (auto size = getSizeOfFixedArrayResult(arguments))
         {
+            chassert(typeid_cast<const DataTypeFixedArray *>(result_type.get()));
             const auto & result_array = assert_cast<const ColumnArray &>(*result);
             chassert(result_array.size() == input_rows_count);
-            return ColumnFixedArray::create(result_array.getDataPtr(), fixed_array_type->getArraySize());
+            return ColumnFixedArray::create(result_array.getDataPtr(), *size);
         }
         return result;
     }
