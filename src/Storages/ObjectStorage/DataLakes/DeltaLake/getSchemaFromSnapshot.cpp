@@ -543,9 +543,11 @@ DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(
             /// Compute full ancestor paths for this field so children at any
             /// depth use the complete logical/physical path as the map key/value.
             const std::string field_logical_path = appendToLogicalPath(parent_logical_path, field.name);
-            const std::string field_physical_path = (!field.physical_name.empty() && !parent_physical_path.empty())
-                ? parent_physical_path + "." + field.physical_name
-                : field.physical_name;
+            /// The `array_element`, `map_key` and `map_value` fields of delta-kernel have no physical name,
+            /// so the fields below them continue the physical path of the array or map.
+            const std::string field_physical_path = field.physical_name.empty()
+                ? parent_physical_path
+                : (parent_physical_path.empty() ? field.physical_name : parent_physical_path + "." + field.physical_name);
 
             if (which.isTuple())
             {
