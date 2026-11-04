@@ -5,6 +5,8 @@
 #include <lz4.h>
 #include <snappy.h>
 #include <zlib.h>
+/// For `ZSTD_decompressBound`, which is not in the stable ABI of zstd. It is safe, as zstd is linked statically from contrib.
+#define ZSTD_STATIC_LINKING_ONLY
 #include <zstd.h>
 
 
@@ -345,6 +347,42 @@ private:
 
 }
 
+
+size_t maxDecompressedSize(CompressionKind kind, const char * src, size_t src_size)
+{
+    /// The ratios are the theoretical maximums of the formats, rounded up, so that valid chunks are never rejected.
+    static constexpr size_t SLACK = 1024;
+    switch (kind)
+    {
+        case CompressionKind::NONE:
+            return src_size;
+        case CompressionKind::SNAPPY:
+        {
+            size_t uncompressed_size = 0;
+            if (!snappy::GetUncompressedLength(src, src_size, &uncompressed_size))
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed snappy-compressed data in ORC file");
+            return uncompressed_size;
+        }
+        case CompressionKind::ZSTD:
+        {
+            /// Sums the content sizes of all frames, or 128 KiB per block when a frame omits its size, as in `ArrowIPC/BufferCompression.cpp`.
+            unsigned long long bound = ZSTD_decompressBound(src, src_size);
+            if (bound == ZSTD_CONTENTSIZE_ERROR)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed zstd-compressed data in ORC file");
+            return bound;
+        }
+        /// A deflate match of 258 bytes takes at least 2 bits.
+        case CompressionKind::ZLIB:
+            return src_size * 1032 + SLACK;
+        /// Every byte of a match length extension adds at most 255 bytes.
+        case CompressionKind::LZ4:
+        case CompressionKind::LZO:
+            return src_size * 256 + SLACK;
+        default:
+            break;
+    }
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ORC compression {} is not supported", compressionKindToString(kind));
+}
 
 size_t decompressChunk(CompressionKind kind, const char * src, size_t src_size, char * dst, size_t dst_capacity)
 {

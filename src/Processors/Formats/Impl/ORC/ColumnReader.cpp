@@ -181,15 +181,14 @@ private:
     std::unique_ptr<InputByteStream> stream;
 };
 
-/// Converts the lengths in `offsets` into the end offsets (as in `ColumnString` and `ColumnArray`)
-/// and returns the total length. The lengths of the null values are zeros.
-UInt64 lengthsToEndOffsets(UInt64 * offsets, size_t num_values, UInt64 column_id)
+/// Converts the lengths in `offsets` into the end offsets (as in `ColumnString` and `ColumnArray`), starting
+/// from `total`, and returns the total length. The lengths of the null values are zeros.
+UInt64 lengthsToEndOffsets(UInt64 * offsets, size_t num_values, UInt64 column_id, UInt64 total = 0)
 {
-    UInt64 total = 0;
     for (size_t i = 0; i < num_values; ++i)
     {
         /// The lengths are non-negative, a negative one is huge as unsigned.
-        if (offsets[i] > static_cast<UInt64>(std::numeric_limits<Int64>::max()) || __builtin_add_overflow(total, offsets[i], &total)
+        if (offsets[i] > static_cast<UInt64>(std::numeric_limits<Int64>::max()) || common::addOverflow(total, offsets[i], total)
             || total > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid length {} in ORC column {}", static_cast<Int64>(offsets[i]), column_id);
         offsets[i] = total;
@@ -201,14 +200,28 @@ UInt64 lengthsToEndOffsets(UInt64 * offsets, size_t num_values, UInt64 column_id
 ColumnString::MutablePtr readStrings(
     IntRleDecoder & length_rle, InputByteStream & blob_stream, size_t num_values, const char * not_null, UInt64 column_id)
 {
+    /// The buffers grow as the data is decoded: a malformed count or length must not allocate memory
+    /// before the streams prove to contain the data.
+    static constexpr size_t MIN_STEP = 64 * 1024;
     auto column = ColumnString::create();
     auto & offsets = column->getOffsets();
-    offsets.resize(num_values);
-    length_rle.next(offsets.data(), num_values, not_null);
-    UInt64 total = lengthsToEndOffsets(offsets.data(), num_values, column_id);
+    UInt64 total = 0;
+    while (offsets.size() < num_values)
+    {
+        size_t done = offsets.size();
+        size_t step = std::min(num_values - done, std::max(MIN_STEP, done));
+        offsets.resize(done + step);
+        length_rle.next(offsets.data() + done, step, not_null ? not_null + done : nullptr);
+        total = lengthsToEndOffsets(offsets.data() + done, step, column_id, total);
+    }
     auto & chars = column->getChars();
-    chars.resize(total);
-    blob_stream.readBytes(reinterpret_cast<char *>(chars.data()), total);
+    while (chars.size() < total)
+    {
+        size_t done = chars.size();
+        size_t step = std::min<UInt64>(total - done, std::max(MIN_STEP, done));
+        chars.resize(done + step);
+        blob_stream.readBytes(reinterpret_cast<char *>(chars.data() + done), step);
+    }
     return column;
 }
 
