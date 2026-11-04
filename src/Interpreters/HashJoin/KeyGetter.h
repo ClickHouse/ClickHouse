@@ -417,7 +417,9 @@ struct HashMethodHashedJoinKey : public ColumnsHashing::columns_hashing_impl::Ha
                                      use_offset>,
                                  public PreparedJoinKeys<HashMethodHashedJoinKey<Value, Mapped>>
 {
-    static constexpr bool has_cheap_key_calculation = false;
+    /// Hashing a key is not cheap, but `true` lets the join loops prefetch: after `prepareRows`, they build each key
+    /// once.
+    static constexpr bool has_cheap_key_calculation = true;
 
     HashedJoinKey key;
 
