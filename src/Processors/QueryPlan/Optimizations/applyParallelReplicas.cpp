@@ -897,23 +897,65 @@ static void insertParallelReplicasSplit(QueryPlan & query_plan, QueryPlan::Nodes
 
 void applyParallelReplicas(QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings &);
 
+static bool isTemporaryTable(const StorageID & storage_id)
+{
+    return storage_id.database_name == DatabaseCatalog::TEMPORARY_DATABASE;
+}
+
+static bool readsTemporaryTable(const QueryPlan::Node * node);
+
+/// True if the DAG references an `IN` set backed by a temporary table: a temporary `Set` table, which is shipped
+/// by name, or a subquery reading one, whose plan every replica rebuilds.
+static bool dagReadsTemporaryTable(const ActionsDAG & dag)
+{
+    for (const auto & node : dag.getNodes())
+    {
+        if (!node.column || !WhichDataType(node.result_type).isSet())
+            continue;
+        const auto * column_set = typeid_cast<const ColumnSet *>(node.column->getDataColumnPtr().get());
+        if (!column_set)
+            continue;
+        const auto future_set = column_set->getData();
+        if (const auto * from_storage = typeid_cast<const FutureSetFromStorage *>(future_set.get()))
+        {
+            if (from_storage->getStorageID() && isTemporaryTable(*from_storage->getStorageID()))
+                return true;
+        }
+        else if (const auto * from_subquery = typeid_cast<const FutureSetFromSubquery *>(future_set.get()))
+        {
+            if (const auto * subquery_plan = from_subquery->getQueryPlan(); subquery_plan && readsTemporaryTable(subquery_plan->getRootNode()))
+                return true;
+        }
+    }
+    return false;
+}
+
+static bool sourceReadsTemporaryTable(const QueryPlan::Node * node)
+{
+    if (!node)
+        return false;
+
+    auto * step = node->step.get();
+    if (const auto * source = dynamic_cast<const SourceStepWithFilter *>(step);
+        source && source->getStorageSnapshot() && isTemporaryTable(source->getStorageSnapshot()->storage.getStorageID()))
+        return true;
+
+    for (const auto * child_plan : step->getChildPlans(/*for_explain=*/ false))
+        if (child_plan && sourceReadsTemporaryTable(child_plan->getRootNode()))
+            return true;
+
+    for (const auto * child : node->children)
+        if (sourceReadsTemporaryTable(child))
+            return true;
+    return false;
+}
+
 /// A temporary table exists only in the session of the initiator, so neither its read nor a step consuming it
 /// can run on a replica. Distributing only the other reads of such a query gains nothing, so it stays local.
-static bool readsTemporaryTable(QueryPlan::Node & root)
+/// The table can be read directly, or through an `IN` set.
+static bool readsTemporaryTable(const QueryPlan::Node * node)
 {
-    bool found = false;
-    Stack stack;
-    traverseQueryPlan(
-        stack,
-        root,
-        [&](QueryPlan::Node & node)
-        {
-            const auto * source = dynamic_cast<const SourceStepWithFilter *>(node.step.get());
-            if (source && source->getStorageSnapshot()
-                && source->getStorageSnapshot()->storage.getStorageID().database_name == DatabaseCatalog::TEMPORARY_DATABASE)
-                found = true;
-        });
-    return found;
+    return sourceReadsTemporaryTable(node) || checkQueryPlanActionDAGs(node, dagReadsTemporaryTable);
 }
 
 void applyParallelReplicas(QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & settings)
@@ -921,7 +963,7 @@ void applyParallelReplicas(QueryPlan & query_plan, QueryPlan::Nodes & nodes, con
     if (!settings.enable_parallel_replicas)
         return;
 
-    if (auto * root = query_plan.getRootNode(); root && readsTemporaryTable(*root))
+    if (auto * root = query_plan.getRootNode(); root && readsTemporaryTable(root))
         return;
 
     insertParallelReplicasSplit(query_plan, nodes);

@@ -9,6 +9,9 @@ INSERT INTO t_pr_regular SELECT number, number * 10 FROM numbers(1000);
 CREATE TEMPORARY TABLE t_pr_tmp (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
 INSERT INTO t_pr_tmp SELECT number, number * 2 FROM numbers(1000);
 
+CREATE TEMPORARY TABLE t_pr_tmp_set (k UInt64) ENGINE = Set;
+INSERT INTO t_pr_tmp_set SELECT number FROM numbers(10);
+
 SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1;
 SET parallel_replicas_plan_based = 1;
@@ -41,5 +44,15 @@ SELECT count(), sum(r.v + t.v) FROM t_pr_regular AS r INNER JOIN t_pr_tmp AS t O
 SELECT countIf(explain LIKE '%ReadFromParallelReplicas%')
 FROM (EXPLAIN description = 0 SELECT count(), sum(t.v) FROM t_pr_tmp AS t INNER JOIN t_pr_regular AS r ON r.k = t.k WHERE r.v < 100);
 SELECT count(), sum(t.v) FROM t_pr_tmp AS t INNER JOIN t_pr_regular AS r ON r.k = t.k WHERE r.v < 100;
+
+SELECT 'IN with a temporary table is executed locally';
+SELECT countIf(explain LIKE '%ReadFromParallelReplicas%')
+FROM (EXPLAIN description = 0 SELECT count() FROM t_pr_regular WHERE k IN (SELECT k FROM t_pr_tmp WHERE v < 20));
+SELECT count() FROM t_pr_regular WHERE k IN (SELECT k FROM t_pr_tmp WHERE v < 20);
+SELECT count() FROM t_pr_regular WHERE k IN (SELECT k FROM t_pr_tmp WHERE v < 20) SETTINGS use_index_for_in_with_subqueries = 0;
+SELECT count() FROM t_pr_regular WHERE k GLOBAL IN (SELECT k FROM t_pr_tmp WHERE v < 20);
+SELECT countIf(explain LIKE '%ReadFromParallelReplicas%')
+FROM (EXPLAIN description = 0 SELECT count() FROM t_pr_regular WHERE k IN t_pr_tmp_set);
+SELECT count() FROM t_pr_regular WHERE k IN t_pr_tmp_set;
 
 DROP TABLE t_pr_regular;

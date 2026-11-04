@@ -13,3 +13,10 @@ join with a temporary table is executed locally
 1000	5994000
 0
 10	90
+IN with a temporary table is executed locally
+0
+10
+10
+10
+0
+10
