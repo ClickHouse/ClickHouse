@@ -1,5 +1,5 @@
 -- Test: ABR engine fallback prefers finest table on equal retentions
--- When all underlying tables have effectively equal retention (within 1 day) and
+-- When all source tables have effectively equal retention (within 1 day) and
 -- the query's lower bound is older than all of them, chooseBestTable's fallback
 -- must route to the FINEST table (highest quality), not the coarsest. This
 -- simulates the "newly added shard" scenario where coarser tables have not yet
@@ -9,51 +9,51 @@ SET allow_experimental_abr = 1;
 SET session_timezone = 'UTC';
 
 DROP TABLE IF EXISTS abr_table;
-DROP TABLE IF EXISTS underlying_table_1;
-DROP TABLE IF EXISTS underlying_table_10;
-DROP TABLE IF EXISTS underlying_table_100;
+DROP TABLE IF EXISTS source_table_1;
+DROP TABLE IF EXISTS source_table_10;
+DROP TABLE IF EXISTS source_table_100;
 
-CREATE TABLE underlying_table_1 (
+CREATE TABLE source_table_1 (
     _sample_interval UInt64 DEFAULT 1,
     ts DateTime,
     value UInt64
-) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/underlying_table_1_eqret', '1')
+) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/source_table_1_eqret', '1')
 PARTITION BY toYYYYMM(ts)
 ORDER BY ts;
 
-CREATE TABLE underlying_table_10 (
+CREATE TABLE source_table_10 (
     _sample_interval UInt64 DEFAULT 10,
     ts DateTime,
     value UInt64
-) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/underlying_table_10_eqret', '1')
+) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/source_table_10_eqret', '1')
 PARTITION BY toYYYYMM(ts)
 ORDER BY ts;
 
-CREATE TABLE underlying_table_100 (
+CREATE TABLE source_table_100 (
     _sample_interval UInt64 DEFAULT 100,
     ts DateTime,
     value UInt64
-) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/underlying_table_100_eqret', '1')
+) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/source_table_100_eqret', '1')
 PARTITION BY toYYYYMM(ts)
 ORDER BY ts;
 
 -- Equal retentions: all three tables hold the exact same 2 days of hourly data.
 -- The `value` column doubles as a routing marker (1 / 10 / 100) so the SELECT's
--- max(value) reveals which underlying table answered the query.
-INSERT INTO underlying_table_1
+-- max(value) reveals which source table answered the query.
+INSERT INTO source_table_1
 SELECT 1, toDateTime('2026-01-01 12:00:00') - INTERVAL number HOUR, 1
 FROM system.numbers LIMIT (24 * 2) + 1;
 
-INSERT INTO underlying_table_10
+INSERT INTO source_table_10
 SELECT 10, toDateTime('2026-01-01 12:00:00') - INTERVAL number HOUR, 10
 FROM system.numbers LIMIT (24 * 2) + 1;
 
-INSERT INTO underlying_table_100
+INSERT INTO source_table_100
 SELECT 100, toDateTime('2026-01-01 12:00:00') - INTERVAL number HOUR, 100
 FROM system.numbers LIMIT (24 * 2) + 1;
 
 CREATE TABLE abr_table
-ENGINE = ABR('underlying_table', [1, 10, 100], ('ts'));
+ENGINE = ABR('source_table', [1, 10, 100], ('ts'));
 
 -- Q1: covered query (1 day back). All three tables cover; the cover loop wins
 -- and returns the finest. Sanity check that the patch does not disturb the
@@ -95,6 +95,6 @@ SYSTEM FLUSH LOGS query_log;
 SELECT abr_interval FROM system.query_log WHERE current_database = currentDatabase() AND query LIKE '%SELECT /* test 05311, query 4 */%' AND type = 2 AND event_date >= yesterday() ORDER BY event_time DESC LIMIT 1;
 
 DROP TABLE IF EXISTS abr_table;
-DROP TABLE IF EXISTS underlying_table_1;
-DROP TABLE IF EXISTS underlying_table_10;
-DROP TABLE IF EXISTS underlying_table_100;
+DROP TABLE IF EXISTS source_table_1;
+DROP TABLE IF EXISTS source_table_10;
+DROP TABLE IF EXISTS source_table_100;

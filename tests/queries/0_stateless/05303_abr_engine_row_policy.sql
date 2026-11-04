@@ -1,5 +1,5 @@
--- Test: ABR engine row policy enforcement on underlying tables
--- Verifies that row policies defined on underlying tables are correctly
+-- Test: ABR engine row policy enforcement on source tables
+-- Verifies that row policies defined on source tables are correctly
 -- applied when querying through the ABR engine.
 
 SET allow_experimental_abr = 1;
@@ -56,11 +56,11 @@ SELECT count() FROM abr WHERE ts >= toDateTime('2026-01-01 12:00:00') - INTERVAL
 SELECT count() FROM row_policy_test_1;
 
 -- Test 2: Row policy filtering on value column (value < 50)
--- Applied to BOTH underlying tables
+-- Applied to BOTH source tables
 CREATE ROW POLICY 03586_filter_value ON row_policy_test_1 USING value < 50 AS permissive TO ALL;
 CREATE ROW POLICY 03586_filter_value ON row_policy_test_10 USING value < 50 AS permissive TO ALL;
 
--- Direct query to underlying table
+-- Direct query to source table
 SELECT count() FROM row_policy_test_1;
 -- ABR query (should route to row_policy_test_1 and apply the same policy)
 SELECT count() FROM abr WHERE ts >= toDateTime('2026-01-01 12:00:00') - INTERVAL 99 HOUR;
@@ -100,7 +100,7 @@ SELECT count() FROM abr WHERE ts >= toDateTime('2026-01-01 12:00:00') - INTERVAL
 SELECT count() FROM row_policy_test_1;
 
 -- Test 6: A row policy on the ABR table itself is rejected, as it cannot be applied
--- to the query executed on the underlying table
+-- to the query executed on the source table
 CREATE ROW POLICY 03586_abr_filter ON abr USING account_id = 'acct_A' AS permissive TO ALL;
 SELECT count() FROM abr WHERE ts >= toDateTime('2026-01-01 12:00:00') - INTERVAL 99 HOUR SETTINGS enable_analyzer = 0; -- { serverError ACCESS_DENIED }
 SELECT count() FROM abr WHERE ts >= toDateTime('2026-01-01 12:00:00') - INTERVAL 99 HOUR SETTINGS enable_analyzer = 1; -- { serverError ACCESS_DENIED }

@@ -7,7 +7,7 @@
 --   (3) row-limit fallback from a finer to a coarser table records
 --       the failed interval as TOO_MANY_ROWS,
 --   (4) non-ABR queries (fields must stay at their defaults),
---   (5) all underlying tables have no parts: every interval must be recorded
+--   (5) all source tables have no parts: every interval must be recorded
 --       as NO_AVAILABLE_DATA (the genuine entry for the fallback table must
 --       NOT be erased).
 
@@ -156,7 +156,7 @@ WHERE current_database = currentDatabase()
   AND event_date >= yesterday()
 ORDER BY event_time DESC LIMIT 1;
 
--- (5) Both underlying tables are empty (no parts) -> getMinMergeTreeDate returns
+-- (5) Both source tables are empty (no parts) -> getMinMergeTreeDate returns
 -- nullopt for every table, so every interval is recorded as NO_AVAILABLE_DATA
 -- and pickFallbackTable defaults to the finest interval. That fallback table's
 -- genuine NO_AVAILABLE_DATA entry must NOT be erased.
@@ -180,7 +180,7 @@ SELECT /* test 05317, all-pruned */ count() FROM abr_query_log_empty
 WHERE ts >= toDateTime('2026-01-01 00:00:00');
 
 SYSTEM FLUSH LOGS query_log;
--- NOTE: abr_duration_ms is intentionally not asserted here. With both underlying
+-- NOTE: abr_duration_ms is intentionally not asserted here. With both source
 -- tables empty, chooseBestTable + pipeline initialization can complete in well
 -- under one millisecond, so the ms-precision counter legitimately rounds to 0.
 -- The other test cases above still verify that abr_duration_ms is recorded when

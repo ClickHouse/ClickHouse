@@ -17,7 +17,7 @@
 namespace DB
 {
 
-/// Read-only proxy engine that routes queries to the best underlying MergeTree table.
+/// Read-only proxy engine that routes queries to the best source MergeTree table.
 ///
 /// Given table_prefix='logs' and sample_intervals=[1,10,100], ABR discovers
 /// tables logs_1, logs_10, logs_100 and picks the finest-grained one whose
@@ -35,7 +35,7 @@ namespace DB
 class StorageABR final : public IStorage
 {
 public:
-    /// A query attempt against one of the underlying tables: an interpreter that is ready to
+    /// A query attempt against one of the source tables: an interpreter that is ready to
     /// execute and the header of the result it produces.
     struct Attempt
     {
@@ -43,7 +43,7 @@ public:
         SharedHeader header;
     };
 
-    /// Discovers underlying tables {prefix}_{interval}, validates schema consistency,
+    /// Discovers source tables {prefix}_{interval}, validates schema consistency,
     /// copies metadata from the first table, and builds retention pruning metadata.
     StorageABR(
         const StorageID & table_id,
@@ -90,7 +90,7 @@ public:
     /// This flag lets the merge machinery treat that state correctly without marking it remote
     bool producesMergeableState(const ContextPtr & /*query_context*/) const override { return true; }
 
-    /// The query is rewritten for the chosen underlying table, see `rewriteQueryForStorage`.
+    /// The query is rewritten for the chosen source table, see `rewriteQueryForStorage`.
     bool readRequiresAnalyzedQuery() const override { return true; }
 
     /// The table is chosen from the filters of the query, and the whole query is retried on another table.
@@ -115,7 +115,7 @@ public:
         size_t num_streams) override;
 
     /// Parses ENGINE = ABR(table_prefix, sample_intervals, retention_expression).
-    ///   table_prefix:          String          — common prefix of underlying tables
+    ///   table_prefix:          String          — common prefix of source tables
     ///   sample_intervals:      Array(UInt64)   — granularity levels (sorted ascending)
     ///   retention_expression:  Tuple or String — partition columns used for part pruning;
     ///                                            first element is the time column
@@ -188,14 +188,14 @@ private:
     /// Returns an empty vector if one of them does not exist anymore.
     std::vector<StoragePtr> tryGetSourceTables() const;
 
-    /// Resolves the fallback table when no underlying table covers the query lower bound
+    /// Resolves the fallback table when no source table covers the query lower bound
     /// Picks the smallest min_storage_date at day precision
     /// On ties prefers the finest sample interval (lowest index)
     size_t pickFallbackTable(
         const std::vector<std::optional<UnixTimePoint>> & min_storage_dates,
         size_t start) const;
 
-    /// Copies columns, primary key, partition key and sorting key from an underlying table.
+    /// Copies columns, primary key, partition key and sorting key from a source table.
     void copyTableMetadata(const StoragePtr & storage);
 
     std::vector<UInt64> sample_intervals;

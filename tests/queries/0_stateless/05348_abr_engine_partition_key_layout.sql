@@ -1,5 +1,5 @@
 -- The positions of the retention columns in the part minmax index are resolved once, from the first
--- underlying table, so all underlying tables must have partition keys over the same columns.
+-- source table, so all source tables must have partition keys over the same columns.
 -- The partition expressions themselves may differ.
 
 SET allow_experimental_abr = 1;

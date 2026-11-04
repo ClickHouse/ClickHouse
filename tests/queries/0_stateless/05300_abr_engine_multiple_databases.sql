@@ -1,5 +1,5 @@
 -- Test: ABR engine behavior with tables having the same name in different databases
--- This test verifies which tables become the underlying tables for ABR engine
+-- This test verifies which tables become the source tables for ABR engine
 -- when there are identically named tables across multiple databases
 
 SET allow_experimental_abr = 1;

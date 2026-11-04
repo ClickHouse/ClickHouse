@@ -14,7 +14,7 @@ DROP TABLE IF EXISTS minlvl_1;
 DROP TABLE IF EXISTS minlvl_10;
 DROP TABLE IF EXISTS minlvl_100;
 
--- Underlying MergeTree tables with different sample intervals
+-- Source MergeTree tables with different sample intervals
 CREATE TABLE minlvl_1 (
     _sample_interval UInt64 DEFAULT 1,
     ts DateTime,
