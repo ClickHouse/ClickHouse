@@ -589,7 +589,7 @@ struct integer<Bits, Signed>::_impl
 
     constexpr static void wide_integer_from_builtin(integer<Bits, Signed> & self, double rhs) noexcept
     {
-        /// Every `double` in (-2^63, 2^63) converts to `int64_t` exactly; NaN fails both comparisons.
+        /// Every `double` in (-2^63, 2^63) is in the range of `int64_t`; NaN fails both comparisons.
         if (rhs > -0x1p63 && rhs < 0x1p63)
         {
             self = static_cast<int64_t>(rhs);
