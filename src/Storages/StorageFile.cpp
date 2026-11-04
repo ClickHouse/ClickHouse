@@ -1282,46 +1282,6 @@ struct stat getFileStat(const String & current_path, bool use_table_fd, int tabl
     return file_stat;
 }
 
-/// Sub-second-precision version token for a file, folding in the inode and size so that an
-/// in-place rewrite which lands in the same timestamp tick as the previous write (see the
-/// settle-window comment at its call site) is still distinguishable from a rewrite that isn't.
-String computeFileCacheVersionToken(const struct stat & file_stat)
-{
-#if defined(OS_DARWIN)
-    const auto mtim_sec = file_stat.st_mtimespec.tv_sec;
-    const auto mtim_nsec = file_stat.st_mtimespec.tv_nsec;
-#else
-    const auto mtim_sec = file_stat.st_mtim.tv_sec;
-    const auto mtim_nsec = file_stat.st_mtim.tv_nsec;
-#endif
-    return fmt::format(
-        "{}.{:09}_{}_{}",
-        static_cast<Int64>(mtim_sec),
-        static_cast<Int64>(mtim_nsec),
-        static_cast<Int64>(file_stat.st_ino),
-        file_stat.st_size);
-}
-
-/// The version token proves a rewrite only after the file has settled. Filesystem timestamps
-/// are coarser than the wall clock (one clock tick of ~1-10 ms on most Linux filesystems, a
-/// full second on ext3, two seconds on FAT), so a rewrite that keeps the inode and the byte
-/// size and lands in the same timestamp tick as the previous write produces an identical
-/// token. Once the last modification is comfortably in the past, its tick is over and any
-/// further write is guaranteed to change the token. The query condition cache skips whole
-/// row groups based on this token, so for files modified more recently - or with an mtime
-/// in the future, e.g. due to clock skew on a network mount - it fails close and stays
-/// bypassed (see the gates at the call sites) rather than risking stale results.
-bool isFileCacheVersionTokenSettled(const struct stat & file_stat)
-{
-#if defined(OS_DARWIN)
-    const auto mtim_sec = file_stat.st_mtimespec.tv_sec;
-#else
-    const auto mtim_sec = file_stat.st_mtim.tv_sec;
-#endif
-    static constexpr Int64 file_version_settle_seconds = 3;
-    return static_cast<Int64>(mtim_sec) + file_version_settle_seconds <= static_cast<Int64>(time(nullptr));
-}
-
 /// Re-stats `path` and reports whether it still produces `expected_token`. Used to bracket a
 /// local-file read (once right after opening, once right before trusting the read for the Query
 /// Condition Cache) so a rewrite by another writer that lands strictly between the initial `stat`
@@ -5073,9 +5033,9 @@ When the [`user_files_policy`](/reference/settings/server-settings/settings/user
 
 ## PARTITION BY {#partition-by}
 
-`PARTITION BY` — Optional.  It is possible to create separate files by partitioning the data on a partition key. In most cases, you don't need a partition key, and if it is needed you generally don't need a partition key more granular than by month. Partitioning does not speed up queries (in contrast to the ORDER BY expression). You should never use too granular partitioning. Don't partition your data by client identifiers or names (instead, make client identifier or name the first column in the ORDER BY expression).
+`CREATE TABLE ... ENGINE = File` does not support `PARTITION BY`. To write separate files by a partition key, use `INSERT INTO FUNCTION file(...) PARTITION BY` with `{_partition_id}` in the file name. For example, `INSERT INTO FUNCTION file('out_{_partition_id}.csv', 'CSV', 'd Date, v String') PARTITION BY toYYYYMM(d) SELECT ...` writes one file per month, such as `out_202601.csv`. The placeholder is not expanded when reading, so read the files back with a glob, such as `file('out_*.csv')`.
 
-For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](/reference/data-types/date). The partition names here have the `"YYYYMM"` format.
+To read data stored in Hive-style `key=value/` directories, use the [`file`](/reference/functions/table-functions/file#hive-style-partitioning) table function with `use_hive_partitioning = 1`. A filter on a partition column then reads only the matching files.
 
 ## Virtual columns {#virtual-columns}
 

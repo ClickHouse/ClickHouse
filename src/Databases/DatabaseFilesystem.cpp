@@ -566,7 +566,7 @@ ASTPtr DatabaseFilesystem::getCreateDatabaseQueryImpl() const
             serialized_path = disk_relative_path;
     }
 
-    const String query = fmt::format("CREATE DATABASE {} ENGINE = Filesystem('{}')", backQuoteIfNeed(database_name), serialized_path);
+    const String query = fmt::format("CREATE DATABASE {} ENGINE = Filesystem({})", backQuoteIfNeed(database_name), quoteString(serialized_path));
 
     ParserCreateQuery parser;
     ASTPtr ast
