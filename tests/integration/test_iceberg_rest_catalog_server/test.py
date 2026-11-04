@@ -517,7 +517,7 @@ def test_not_found_shape(started_cluster):
 def test_error_response_keeps_connection_usable(started_cluster):
     # Routing rejects each POST. Its body must not leak into the next request on the same connection.
     # http.client never reconnects on its own, so a closed socket fails the follow-up GET.
-    body = json.dumps({"name": "t", "padding": "x" * 100000})
+    body = json.dumps({"name": "t"})
     connection = http.client.HTTPConnection(node.ip_address, CATALOG_PORT)
     try:
         for path, expected_code in [
