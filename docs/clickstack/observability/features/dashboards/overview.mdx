@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'dashboards', 'visualization', 'monitoring', 'observability']
 ---
 
-import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
-
 import { Image } from "/snippets/components/Image.jsx";
 
 ClickHouse Observability supports visualizing events, with built-in support for charting in the UI. These charts can be added to dashboards for sharing with other users.
@@ -449,41 +447,6 @@ This is useful for investigating specific spikes or anomalies spotted in a dashb
 ## Presets {#presets}
 
 The UI includes out-of-the-box dashboards.
-
-### ClickHouse dashboard {#clickhouse-dashboard}
-
-This dashboard provides visualizations for monitoring ClickHouse. To navigate to this dashboard, select it from the left menu.
-
-<Image img="/images/clickstack/observability-dashboard-clickhouse.png" alt="ClickHouse dashboard Infrastructure tab showing CPU usage, memory usage, disk activity, and S3 requests" size="lg"/>
-
-This dashboard uses the **Select**, **Inserts**, and **Infrastructure** tabs to organize monitoring views.
-
-<Tabs>
-<Tab title="Fully managed">
-
-<BetaBadge label="Beta offering" />
-
-For available source and query settings, see [Configuration options](/clickstack/observability/managing/config).
-
-</Tab>
-<Tab title="Self-managed">
-
-<Info>
-**Required system table access**
-
-This dashboard queries the ClickHouse [system tables](/reference/system-tables/overview) to expose key metrics. The following grants are required:
-
-`GRANT SHOW COLUMNS, SELECT(CurrentMetric_MemoryTracking, CurrentMetric_S3Requests, ProfileEvent_OSCPUVirtualTimeMicroseconds, ProfileEvent_OSReadChars, ProfileEvent_OSWriteChars, ProfileEvent_S3GetObject, ProfileEvent_S3ListObjects, ProfileEvent_S3PutObject, ProfileEvent_S3UploadPart, event_time) ON system.metric_log`
-
-`GRANT SHOW COLUMNS, SELECT(active, database, partition, rows, table) ON system.parts`
-
-`GRANT SHOW COLUMNS, SELECT(event_date, event_time, memory_usage, normalized_query_hash, query, query_duration_ms, query_kind, read_rows, tables, type, written_bytes, written_rows) ON system.query_log`
-
-`GRANT SHOW COLUMNS, SELECT(event_date, event_time, hostname, metric, value) ON system.transposed_metric_log`
-</Info>
-
-</Tab>
-</Tabs>
 
 ### Services dashboard {#services-dashboard}
 
