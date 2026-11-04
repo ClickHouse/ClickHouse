@@ -6,6 +6,7 @@
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/UnionNode.h>
+#include <Analyzer/createUniqueAliasesIfNecessary.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageFile.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
@@ -225,6 +226,11 @@ namespace
         if (body.query_tree)
         {
             auto query_tree = body.query_tree->clone();
+            /// The analysis pass of the enclosing query gives unique aliases to its table expressions, but query tree
+            /// visitors skip unresolved table function arguments, so the subquery inside the `body(...)` wrapper is left
+            /// without them. The planner needs them: the branches of a `UNION` share the column identifiers, and two
+            /// unaliased subqueries producing a column with the same name would clash. Do it here, as the analysis pass would.
+            createUniqueAliasesIfNecessary(query_tree, body_context);
             QueryTreePassManager pass_manager(body_context);
             addQueryTreePasses(pass_manager);
             /// Only name resolution has run on this subtree. Complete the remaining semantic and
