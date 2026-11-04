@@ -2980,8 +2980,7 @@ static LambdaShapeMatch combineLambdaShapeMatches(LambdaShapeMatch lhs, LambdaSh
     return LambdaShapeMatch::Equal;
 }
 
-/// Exact comparison (as in `nullable_group_by_keys`), except that the types of columns that are lambda arguments
-/// on both sides are not compared, and neither are the result types of functions computed from such columns.
+/// Exact comparison as in `nullable_group_by_keys`, except for the types `EqualUpToLambdaArgumentTypes` excludes.
 static LambdaShapeMatch matchUpToLambdaArgumentTypes(const QueryTreeNodePtr & node, const QueryTreeNodePtr & shape)
 {
     if (!node || !shape)
