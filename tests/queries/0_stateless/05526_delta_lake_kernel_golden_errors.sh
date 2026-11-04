@@ -12,35 +12,42 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 GOLDEN="$CUR_DIR/data_delta_lake/kernel_golden"
 
-# Prints the error code and, for errors from the Delta Lake kernel, the kind of the error.
-function expect_error()
-{
-    local table="$1"
-    local output
-    output=$($CLICKHOUSE_LOCAL -q "SELECT count() FROM deltaLakeLocal('$GOLDEN/$table/delta')" 2>&1)
-    echo "$table" \
-        "$(echo "$output" | grep -o -m1 -E 'kernel error [A-Za-z]+')" \
-        "$(echo "$output" | grep -o -m1 -E '\([A-Z_]+\)$')"
-}
+TABLES=(
+    # The protocol has reader features, but its minimum reader version is not 3.
+    deltalog-invalid-protocol-version
+    # The log or the checkpoint has no metadata or no protocol.
+    deltalog-state-reconstruction-from-checkpoint-missing-metadata
+    deltalog-state-reconstruction-from-checkpoint-missing-protocol
+    deltalog-state-reconstruction-without-metadata
+    deltalog-state-reconstruction-without-protocol
+    # Data files without `_delta_log`.
+    no-delta-log-folder
+    # A commit file is missing in the middle of the log.
+    versions-not-contiguous
+    # The log adds and then removes a file referred to by an absolute path outside of the table,
+    # spelled differently in the add and remove actions (e.g. `file:/some/path` and `/some/path`).
+    # The table is supposed to be empty, but the kernel does not canonicalize the paths and
+    # returns the file (delta-kernel-rs skips these tables for this reason).
+    # ClickHouse must refuse to read a file outside of the table directory.
+    canonicalized-paths-normal-a
+    canonicalized-paths-normal-b
+    canonicalized-paths-special-a
+    canonicalized-paths-special-b
+)
 
-# The protocol has reader features, but its minimum reader version is not 3.
-expect_error deltalog-invalid-protocol-version
-# The log or the checkpoint has no metadata or no protocol.
-expect_error deltalog-state-reconstruction-from-checkpoint-missing-metadata
-expect_error deltalog-state-reconstruction-from-checkpoint-missing-protocol
-expect_error deltalog-state-reconstruction-without-metadata
-expect_error deltalog-state-reconstruction-without-protocol
-# Data files without `_delta_log`.
-expect_error no-delta-log-folder
-# A commit file is missing in the middle of the log.
-expect_error versions-not-contiguous
+# All tables are read in one `clickhouse-local` process, because starting it is slow in sanitizer builds.
+# The name of each table is printed before its query, and the exception of the query follows it.
+# For each table, print the error code and, for errors from the Delta Lake kernel, the kind of the error.
+QUERIES=""
+for table in "${TABLES[@]}"
+do
+    QUERIES+="SELECT '@@ $table' FORMAT TSVRaw; SELECT count() FROM deltaLakeLocal('$GOLDEN/$table/delta') FORMAT Null;"
+done
 
-# The log adds and then removes a file referred to by an absolute path outside of the table,
-# spelled differently in the add and remove actions (e.g. `file:/some/path` and `/some/path`).
-# The table is supposed to be empty, but the kernel does not canonicalize the paths and
-# returns the file (delta-kernel-rs skips these tables for this reason).
-# ClickHouse must refuse to read a file outside of the table directory.
-expect_error canonicalized-paths-normal-a
-expect_error canonicalized-paths-normal-b
-expect_error canonicalized-paths-special-a
-expect_error canonicalized-paths-special-b
+$CLICKHOUSE_LOCAL --ignore-error -q "$QUERIES" 2>&1 | awk '
+    function flush() { if (table != "") print table, kind, code }
+    /^@@ / { flush(); table = substr($0, 4); kind = ""; code = ""; next }
+    kind == "" && match($0, /kernel error [A-Za-z]+/) { kind = substr($0, RSTART, RLENGTH) }
+    code == "" && match($0, /\([A-Z_]+\)$/) { code = substr($0, RSTART, RLENGTH) }
+    END { flush() }
+'
