@@ -50,7 +50,7 @@ void decompressMalformed(const CompressionCodecGDeflate & codec, const std::vect
 TEST(CompressionCodecGDeflate, MalformedPages)
 {
     const CompressionCodecGDeflate codec(CompressionCodecGDeflate::DEFAULT_LEVEL);
-    std::mt19937 rng(42);
+    std::mt19937 rng(42); /// NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp) deterministic seed, so a failure is reproducible
 
     for (UInt32 size : {1u, 100u, 1000u, 65536u})
     {
