@@ -184,6 +184,10 @@ void ExecutorTasks::tryGetTask(ExecutionThreadContext & context)
 
         /// Enqueue thread into stack of waiting threads.
         threads_queue.push(context.thread_number);
+
+        /// No queued tasks are left for the requested threads.
+        if (threads_to_spawn.load(std::memory_order_relaxed))
+            threads_to_spawn.store(0, std::memory_order_relaxed);
     }
 
     context.wait(finished);
@@ -320,12 +324,19 @@ size_t ExecutorTasks::upscale(size_t slot_id)
     if (const size_t requested = threads_to_spawn.load(std::memory_order_relaxed))
         threads_to_spawn.store(requested - 1, std::memory_order_relaxed);
 
-    // Remaining pipeline-width capacity. Callers spawn one at a time and re-call upscale.
+    if (num_threads <= total_slots)
+    {
+        if (threads_to_spawn.load(std::memory_order_relaxed))
+            threads_to_spawn.store(0, std::memory_order_relaxed);
+        return 0;
+    }
+
     // Too many idle threads can already cover incoming work — don't spawn more.
-    const size_t capacity = num_threads > total_slots && threads_queue.size() <= TOO_MANY_IDLE_THRESHOLD ? num_threads - total_slots : 0;
-    if (capacity == 0 && threads_to_spawn.load(std::memory_order_relaxed))
-        threads_to_spawn.store(0, std::memory_order_relaxed);
-    return capacity;
+    if (threads_queue.size() > TOO_MANY_IDLE_THRESHOLD)
+        return 0;
+
+    // Remaining pipeline-width capacity. Callers spawn one at a time and re-call upscale.
+    return num_threads - total_slots;
 }
 
 size_t ExecutorTasks::widthLeft() const

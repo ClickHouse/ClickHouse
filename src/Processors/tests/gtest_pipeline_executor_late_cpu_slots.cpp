@@ -164,3 +164,25 @@ TEST(PipelineExecutor, ThreadRequestedAfterDownscale)
     EXPECT_FALSE(tasks.hasThreadsToSpawn());
     tasks.finish();
 }
+
+/// A thread that finds no queued task to run drops the threads requested for queued tasks:
+/// none are left for them.
+TEST(PipelineExecutor, RequestedThreadsDroppedWhenThreadGoesIdle)
+{
+    ExecutorTasks tasks;
+    tasks.init(num_streams, 1, std::make_shared<GrantedAllocation>(num_streams), false, false, nullptr, nullptr, nullptr);
+    tasks.upscale(0);
+    tasks.upscale(1);
+    tasks.requestThreads(2);
+    EXPECT_TRUE(tasks.hasThreadsToSpawn());
+
+    /// One of the two running threads waits for a task; the queues are empty.
+    std::thread idle([&] { tasks.tryGetTask(tasks.getThreadContext(1)); });
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (tasks.hasThreadsToSpawn() && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    EXPECT_FALSE(tasks.hasThreadsToSpawn());
+
+    tasks.finish();
+    idle.join();
+}

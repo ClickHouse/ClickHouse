@@ -141,9 +141,9 @@ public:
     /// Upscale to include slot_id. Updates use_threads to max(use_threads, slot_id + 1).
     /// The new thread is one of `threads_to_spawn`.
     /// Returns the number of additional threads the caller may try to spawn next (0 means
-    /// "stop spawning": either pipeline width is saturated or enough idle threads can absorb
-    /// the work, so the rest of `threads_to_spawn` is dropped). Callers should still spawn
-    /// one at a time and re-call upscale after each.
+    /// "stop spawning": either pipeline width is saturated, and the rest of `threads_to_spawn` is dropped,
+    /// or enough idle threads can absorb the work). Callers should still spawn one at a time and
+    /// re-call upscale after each.
     size_t upscale(size_t slot_id);
 
     /// Downscale by removing slot_id from active slots. Updates use_threads to highest active slot + 1
