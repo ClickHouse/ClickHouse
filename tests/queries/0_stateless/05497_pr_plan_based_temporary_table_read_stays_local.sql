@@ -54,5 +54,11 @@ SELECT count() FROM t_pr_regular WHERE k GLOBAL IN (SELECT k FROM t_pr_tmp WHERE
 SELECT countIf(explain LIKE '%ReadFromParallelReplicas%')
 FROM (EXPLAIN description = 0 SELECT count() FROM t_pr_regular WHERE k IN t_pr_tmp_set);
 SELECT count() FROM t_pr_regular WHERE k IN t_pr_tmp_set;
+-- A lambda capturing the set is folded to a constant, which holds the set among its captured columns.
+SELECT countIf(explain LIKE '%ReadFromParallelReplicas%')
+FROM (EXPLAIN description = 0 SELECT count() FROM t_pr_regular WHERE arrayExists(x -> x IN t_pr_tmp_set, [k]));
+SELECT count() FROM t_pr_regular WHERE arrayExists(x -> x IN t_pr_tmp_set, [k]);
+SELECT count() FROM t_pr_regular WHERE arrayExists(x -> arrayExists(y -> y IN t_pr_tmp_set, [x]), [k]);
+SELECT count() FROM t_pr_regular WHERE arrayExists(x -> x IN (SELECT k FROM t_pr_tmp WHERE v < 20), [k]);
 
 DROP TABLE t_pr_regular;
