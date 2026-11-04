@@ -1,11 +1,13 @@
--- Random settings limits: query_plan_optimize_join_order_randomize=(0, 0); query_plan_optimize_join_order_limit=(10, None); use_statistics=(1, 1); use_hash_table_stats_for_join_reordering=(0, 0); enable_join_runtime_filters=(0, 0); max_bytes_ratio_before_external_join=(0, 0); use_query_condition_cache=(0, 0)
+-- Random settings limits: query_plan_optimize_join_order_randomize=(0, 0); query_plan_optimize_join_order_limit=(10, None); use_statistics=(1, 1); use_hash_table_stats_for_join_reordering=(0, 0); max_bytes_ratio_before_external_join=(0, 0); use_query_condition_cache=(0, 0)
 
 -- A filtered table without statistics has no row estimate. Its join graph keeps the written order
 -- of the joins instead of putting the large table on the build side.
 -- https://github.com/ClickHouse/ClickHouse/issues/129254
 
 -- Random estimates, the hash table statistics and the query condition cache would each give `nation` a row estimate.
+-- A join runtime filter would shrink the build side before `JoinBuildTableRowCount` counts it.
 SET collect_hash_table_stats_during_joins = 0;
+SET enable_join_runtime_filters = 0;
 SET enable_parallel_replicas = 0;
 SET query_plan_join_swap_table = 'auto';
 
