@@ -696,6 +696,14 @@ void ReplxxLineReader::vimWordMotion(int & pos, std::u32string & text, char moti
     /* `e` is inclusive: it selects the character under the cursor even when the cursor stays put,
      * e.g. on the last character of the input. */
     bool selected = pos != oldpos || (kind == 'e' && oldpos < static_cast<int>(text.length()));
+    /* Like vim, `ce` on an empty last line, or in an empty buffer, enters insert mode. */
+    if (kind == 'e' && op == OPERATOR_C && !selected && oldpos == static_cast<int>(text.length())
+        && (oldpos == 0 || text[oldpos - 1] == '\n'))
+    {
+        rx.set_editing_mode(MODE_INSERT);
+        resetVim();
+        return;
+    }
     if (op)
     {
         if (kind == 'w' && !inclusivity_flip && pos > oldpos && text[pos - 1] == '\n')
@@ -813,8 +821,12 @@ void ReplxxLineReader::vimWordObject(int & pos, std::u32string & text, bool bigw
         for (int rep = 1; rep < reps; rep++)
         {
             int chunk = extendChunk(text, end, bigword);
+            /* Like vim, the operation is canceled when there are fewer chunks than requested. */
             if (chunk == -1)
-                break;
+            {
+                resetVim(&pos, &text);
+                return;
+            }
             if (chunk == 0 || (end + 1 < length && chunkClass(text, end + 1, bigword) == 0))
                 extendChunk(text, end, bigword);
         }
@@ -828,9 +840,17 @@ void ReplxxLineReader::vimWordObject(int & pos, std::u32string & text, bool bigw
         {
             if (end + 2 < length && text[end + 1] == '\n' && text[end] != '\n')
                 end++;
+            /* Like vim, the operation is canceled when there are fewer chunks than requested. */
             if (extendChunk(text, end, bigword) == -1)
-                break;
+            {
+                resetVim(&pos, &text);
+                return;
+            }
         }
+        /* An empty line at the end of the selection is included as a position, not as its line
+         * break: like vim, the selection joins it with the previous line, and its line break stays. */
+        if (end > start && text[end] == '\n' && text[end - 1] == '\n')
+            end--;
     }
 
     text.erase(start, end - start + 1);
@@ -907,6 +927,13 @@ void ReplxxLineReader::vimCharwise(int & pos, std::u32string & text, int oldpos,
 
 void ReplxxLineReader::vimLinewise(int & pos, std::u32string & text, int oldpos)
 {
+    /* Like vim, `v` after the operator forces a linewise motion to be characterwise exclusive, e.g. `dvj`. */
+    if (op && inclusivity_flip)
+    {
+        inclusivity_flip = 0;
+        vimCharwise(pos, text, oldpos);
+        return;
+    }
     if (op)
     {
         /* Linewise: from the start of the first line of the range

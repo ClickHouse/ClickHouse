@@ -722,5 +722,74 @@ submit
 expect "6566"
 expect ":) "
 
+# `ce` and `cE` on an empty last line, and in an empty buffer, enter insert mode.
+send -- "SELECT 6700\r"
+escape
+send -- "ce+ 9"
+escape
+submit
+expect "6709"
+expect ":) "
+
+send -- "SELECT 6710\r"
+escape
+send -- "cE+ 9"
+escape
+submit
+expect "6719"
+expect ":) "
+
+escape
+send -- "ceSELECT 6720+1"
+escape
+submit
+expect "6721"
+expect ":) "
+
+# A counted word object with too few chunks cancels the operation.
+send -- "SELECT 6800 + 123"
+escape
+send -- "d2iw"
+submit
+expect "6923"
+expect ":) "
+
+send -- "SELECT 6810 + 123"
+escape
+send -- "d2aw"
+submit
+expect "6933"
+expect ":) "
+
+# A counted `iw` that ends on an empty line joins it with the previous line and keeps its line break.
+send -- "SELECT 6900 -- note\r\r+ 234"
+escape
+send -- "gg\$d2iw"
+submit
+expect "7134"
+expect ":) "
+
+send -- "SELECT 6910 -- note\r\r+ 234"
+escape
+send -- "gg\$d2iW"
+submit
+expect "7144"
+expect ":) "
+
+# `v` after the operator makes a linewise motion characterwise exclusive.
+send -- "SELECT 7000\r+ 123\r+ 234\r+ 345"
+escape
+send -- "ggj2ldvj"
+submit
+expect "7579"
+expect ":) "
+
+send -- "SELECT 7100\r+ 123\r+ 234\r345"
+escape
+send -- "ggj2ldvG"
+submit
+expect "7445"
+expect ":) "
+
 send -- "\4"
 expect eof
