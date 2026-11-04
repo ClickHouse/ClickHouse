@@ -5,12 +5,15 @@
 
 #include <fmt/format.h>
 
+#include <optional>
+
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_DATA;
+    extern const int INVALID_CONFIG_PARAMETER;
 }
 
 namespace
@@ -18,14 +21,18 @@ namespace
 
 constexpr std::string_view S3_SCHEME = "s3://";
 
-using S3Location = IcebergRESTCatalogWarehouse::S3Location;
-
 /// Splits `s3://<bucket>/<key>` into the bucket and the key. The key may be empty.
-S3Location parseS3Location(const String & location)
+struct S3Location
+{
+    String bucket;
+    String key;
+};
+
+std::optional<S3Location> parseS3Location(const String & location)
 {
     /// TODO: support s3a:// and s3n://
     if (!location.starts_with(S3_SCHEME))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Location {} is not an s3:// URI", location);
+        return std::nullopt;
     const auto slash = location.find('/', S3_SCHEME.size());
     if (slash == String::npos)
         return S3Location{.bucket = location.substr(S3_SCHEME.size()), .key = ""};
@@ -39,34 +46,27 @@ IcebergRESTCatalogWarehouse::IcebergRESTCatalogWarehouse(
     : name(std::move(name_)), base_location(std::move(base_location_)), store(std::move(store_)), object_storage(std::move(object_storage_))
 {
     /// The server has credentials for one bucket only, so the default table location must be in it.
-    validateLocation(base_location);
-}
-
-void IcebergRESTCatalogWarehouse::validateLocation(const String & location) const
-{
-    validateLocation(parseS3Location(location));
-}
-
-void IcebergRESTCatalogWarehouse::validateLocation(const S3Location & location) const
-{
-    if (location.bucket != object_storage->getObjectsNamespace())
+    if (!isInBucket(base_location))
         throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Location s3://{}/{} is outside bucket '{}' of warehouse {}",
-            location.bucket,
-            location.key,
-            object_storage->getObjectsNamespace(),
-            name);
-    /// `S3ObjectStorage` re-parses a key of the form `<scheme>://<bucket>/...` and writes to the embedded bucket.
-    if (location.key.contains("://"))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Location s3://{}/{} contains an embedded URI", location.bucket, location.key);
+            ErrorCodes::INVALID_CONFIG_PARAMETER,
+            "base_location {} of warehouse {} is not inside bucket '{}' of its object storage",
+            base_location,
+            name,
+            object_storage->getObjectsNamespace());
+}
+
+bool IcebergRESTCatalogWarehouse::isInBucket(const String & location) const
+{
+    const auto parsed = parseS3Location(location);
+    return parsed && parsed->bucket == object_storage->getObjectsNamespace();
 }
 
 String IcebergRESTCatalogWarehouse::objectKey(const String & location) const
 {
-    auto parsed = parseS3Location(location);
-    validateLocation(parsed);
-    return std::move(parsed.key);
+    const auto parsed = parseS3Location(location);
+    if (!parsed || parsed->bucket != object_storage->getObjectsNamespace())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Location {} is outside the bucket of warehouse {}", location, name);
+    return parsed->key;
 }
 
 String stripTrailingSlashes(String location)
@@ -74,6 +74,11 @@ String stripTrailingSlashes(String location)
     while (location.ends_with('/'))
         location.pop_back();
     return location;
+}
+
+bool hasS3Scheme(const String & location)
+{
+    return location.starts_with(S3_SCHEME);
 }
 
 }

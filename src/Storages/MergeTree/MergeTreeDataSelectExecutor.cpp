@@ -33,10 +33,6 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#if CLICKHOUSE_CLOUD
-#include <Access/ContextAccess.h>
-#include <Access/EnabledMaskingPolicies.h>
-#endif
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
@@ -70,7 +66,6 @@
 #include <Common/FailPoint.h>
 #include <Common/ThreadPool.h>
 #include <base/sleep.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeIndexVectorSimilarity.h>
 #include <Storages/MergeTree/ConditionTemplate.h>
@@ -109,7 +104,6 @@ namespace Setting
     extern const SettingsString force_data_skipping_indexes;
     extern const SettingsBool force_index_by_date;
     extern const SettingsUInt64 max_rows_to_read;
-    extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 max_threads_for_indexes;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsUInt64 merge_tree_coarse_index_granularity;
@@ -922,79 +916,52 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
         required_column_types.emplace_back(column_name, metadata_column ? metadata_column->type : nullptr);
     }
 
-    /// A part with a pending alter or metadata mutation is not pruned by statistics, so its statistics are not loaded.
-    std::vector<char> part_has_pending_mutations(parts.size());
-    for (size_t part_index = 0; part_index < parts.size(); ++part_index)
-        part_has_pending_mutations[part_index] = partHasPendingAlterOrMetadataMutations(parts[part_index].data_part, mutations_snapshot);
-
-    std::vector<Estimates> parts_estimates(parts.size());
-    MergeTreeData::loadStatisticsOfPartsInParallel(
-        parts.size(),
-        settings[Setting::max_threads],
-        [&](size_t part_index)
+    for (const auto & part : parts)
+    {
+        /// A part with a pending alter or metadata mutation is not pruned by statistics, so its statistics are not loaded.
+        if (partHasPendingAlterOrMetadataMutations(part.data_part, mutations_snapshot))
         {
-            if (part_has_pending_mutations[part_index])
-                return true;
-
-            auto estimates = parts[part_index].data_part->tryGetEstimatesFromMemory(required_columns);
-            if (!estimates)
-                return false;
-            parts_estimates[part_index] = std::move(*estimates);
-            return true;
-        },
-        [&](size_t part_index)
-        {
-            if (part_has_pending_mutations[part_index])
-                return;
-
-            parts_estimates[part_index] = parts[part_index].data_part->getEstimates(required_columns);
-        },
-        [&](size_t part_index)
-        {
-            const auto & part = parts[part_index];
-            if (part_has_pending_mutations[part_index])
-            {
-                res_parts.push_back(part);
-                return;
-            }
-
-            Estimates estimates = std::move(parts_estimates[part_index]);
-
-            /// The statistics describe the values as they are stored in the part. When the part stores a
-            /// column with a type different from the current metadata, a read converts the values to the
-            /// current type (`IMergeTreeReader::performRequiredConversions`), so the statistics do not
-            /// describe what the query sees, unless the conversion keeps the representation (e.g. an
-            /// extended `Enum`). This happens independently of the mutations snapshot: e.g. with
-            /// `apply_mutations_on_fly = 0` the pending `MODIFY COLUMN` is not in the snapshot, and after
-            /// `KILL MUTATION` it is gone, while the conversion on read still happens.
-            /// Only the required columns are checked: the estimates may hold every column of the part.
-            for (const auto & [column_name, metadata_type] : required_column_types)
-            {
-                auto it = estimates.find(column_name);
-                if (it == estimates.end())
-                    continue;
-
-                auto part_column = part.data_part->tryGetColumn(column_name);
-                if (!part_column || !metadata_type || !isRepresentationPreservingConversion(part_column->type.get(), metadata_type.get()))
-                    estimates.erase(it);
-            }
-
-            try
-            {
-                if (!statistics_pruner.checkPartCanMatch(estimates).can_be_true)
-                {
-                    LOG_TRACE(log, "Part {} pruned by statistics", part.data_part->name);
-                    return;
-                }
-            }
-            catch (const Exception &)
-            {
-                tryLogCurrentException(log, fmt::format(
-                    "Failed to apply statistics pruning for part {}, skipping statistics pruning for this part",
-                    part.data_part->name), LogsLevel::debug);
-            }
             res_parts.push_back(part);
-        });
+            continue;
+        }
+
+        auto estimates = part.data_part->getEstimates(required_columns);
+
+        /// The statistics describe the values as they are stored in the part. When the part stores a
+        /// column with a type different from the current metadata, a read converts the values to the
+        /// current type (`IMergeTreeReader::performRequiredConversions`), so the statistics do not
+        /// describe what the query sees, unless the conversion keeps the representation (e.g. an
+        /// extended `Enum`). This happens independently of the mutations snapshot: e.g. with
+        /// `apply_mutations_on_fly = 0` the pending `MODIFY COLUMN` is not in the snapshot, and after
+        /// `KILL MUTATION` it is gone, while the conversion on read still happens.
+        /// Only the required columns are checked: the estimates may hold every column of the part.
+        for (const auto & [column_name, metadata_type] : required_column_types)
+        {
+            auto it = estimates.find(column_name);
+            if (it == estimates.end())
+                continue;
+
+            auto part_column = part.data_part->tryGetColumn(column_name);
+            if (!part_column || !metadata_type || !isRepresentationPreservingConversion(part_column->type.get(), metadata_type.get()))
+                estimates.erase(it);
+        }
+
+        try
+        {
+            if (!statistics_pruner.checkPartCanMatch(estimates).can_be_true)
+            {
+                LOG_TRACE(log, "Part {} pruned by statistics", part.data_part->name);
+                continue;
+            }
+        }
+        catch (const Exception &)
+        {
+            tryLogCurrentException(log, fmt::format(
+                "Failed to apply statistics pruning for part {}, skipping statistics pruning for this part",
+                part.data_part->name), LogsLevel::debug);
+        }
+        res_parts.push_back(part);
+    }
 
     if (res_parts.size() < total_parts_before)
     {
@@ -1043,34 +1010,14 @@ static bool partHasStaleTopKIndex(
     if (part->hasLightweightDelete())
         return true;
 
-    /// A Cloud masking policy rewrites the indexed column on read but is not part of the mutation
-    /// snapshot: getAlterConversionsForPart appends it as an UPDATE command independently of the flags
-    /// checked below. A table with only a masking policy therefore has none of hasDataMutations,
-    /// hasAlterMutations or hasPatchParts set, so without this gate it would skip the canUseIndex check
-    /// and let top-k rank/prune by the unmasked minmax. Include enabled masking policies for this part's
-    /// table in the gate so such parts reach the overlap check.
-#if CLICKHOUSE_CLOUD
-    const auto enabled_masking_policies = context->getAccess()->getEnabledMaskingPolicies();
-    const auto & storage_id = part->storage.getStorageID();
-    const bool has_masking_policies = enabled_masking_policies
-        && !enabled_masking_policies->getPolicies(storage_id.database_name, storage_id.table_name).empty();
-#else
-    const bool has_masking_policies = false;
-#endif
-
     /// Pending on-the-fly mutations or patch parts not yet written into the part. hasAlterMutations()
     /// covers ALTER MODIFY COLUMN, which is a READ_COLUMN alter mutation (not a data mutation or patch);
     /// hasMetadataMutations() covers DROP COLUMN and RENAME COLUMN.
     if (mutations_snapshot
         && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations()
-            || mutations_snapshot->hasMetadataMutations() || mutations_snapshot->hasPatchParts()
-            || has_masking_policies))
+            || mutations_snapshot->hasMetadataMutations() || mutations_snapshot->hasPatchParts()))
     {
-        auto alter_conversions = MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, context
-#if CLICKHOUSE_CLOUD
-                    , enabled_masking_policies
-#endif
-                );
+        auto alter_conversions = MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, context);
 
         /// A pending delete hides rows of any value -> the index is stale. This covers both a
         /// lightweight DELETE (rewritten as an UPDATE of _row_exists) and an ordinary ALTER DELETE
@@ -1265,10 +1212,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     std::vector<std::vector<MergeTreeIndexBulkGranulesMinMax::MinMaxGranule>> parts_top_k_granules(
                     parts_with_ranges.size(), std::vector<MergeTreeIndexBulkGranulesMinMax::MinMaxGranule>());
 
-    /// Perform top-K optimization during index analysis itself? Not with sampling: its filter runs after the read and
-    /// can discard every row of the granules selected here.
-    const bool perform_top_k_optimization = top_k_filter_info && skip_indexes.skip_index_for_top_k_filtering
-        && !top_k_filter_info->where_clause && !result.sampling.use_sampling;
+    /// Perform top-K optimization during index analysis itself?
+    const bool perform_top_k_optimization = top_k_filter_info && skip_indexes.skip_index_for_top_k_filtering && !top_k_filter_info->where_clause;
     const bool top_k_handle_ties = perform_top_k_optimization && (top_k_filter_info->num_sort_columns > 1 || skip_indexes.skip_index_for_top_k_filtering->index.granularity > 1);
 
     size_t num_threads = std::min<size_t>(num_streams, parts_with_ranges.size());
@@ -1324,7 +1269,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         // These limits are checked per part so that we can fail very quickly
         // if we hit row limits on large datasets. Row counts use an atomic
         // counter as part processing typically uses multiple threads (max_threads)
-        auto [limits, leaf_limits] = filter_context.check_row_limits ? getRowLimits(*context, query_info) : RowLimits{};
+        auto [limits, leaf_limits] = filter_context.check_row_limits ? getRowLimits(settings, query_info) : RowLimits{};
         std::atomic<size_t> total_rows{0};
 
         /// Precompute the part-independent PK-position -> partition-minmax-slot mapping once for all parts.
@@ -1566,12 +1511,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             for (size_t job = 0; job < num_jobs; ++job)
             {
                 pool.scheduleOrThrowOnError(
-                    [&, thread_group = CurrentThread::getGroup(), component_name = Coordination::getCurrentComponent()]
+                    [&, thread_group = CurrentThread::getGroup()]
                     {
                         ThreadGroupSwitcher switcher(thread_group, ThreadName::MERGETREE_INDEX);
-                        /// ThreadGroupSwitcher does not carry the Keeper component, so propagate it
-                        /// explicitly: skip-index analysis below may read from a Keeper-backed disk.
-                        auto local_component_guard = Coordination::setCurrentComponent(component_name);
 
                         /// The pool is finished once a job has thrown or its destructor has started, then the other parts are abandoned.
                         while (!pool.isFinished())
@@ -1725,10 +1667,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 }
 
 MergeTreeDataSelectExecutor::RowLimits MergeTreeDataSelectExecutor::getRowLimits(
-    const Context & context,
+    const Settings & settings,
     const SelectQueryInfo & query_info)
 {
-    const auto & settings = context.getSettingsRef();
     RowLimits row_limits;
 
     /// Do not check number of read rows if we are
@@ -1742,8 +1683,7 @@ MergeTreeDataSelectExecutor::RowLimits MergeTreeDataSelectExecutor::getRowLimits
         && !query_info.input_order_info)
         row_limits.limits = SizeLimits(settings[Setting::max_rows_to_read], 0, settings[Setting::read_overflow_mode]);
 
-    if (context.getClientInfo().distributed_depth > 0
-        && settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW
+    if (settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW
         && settings[Setting::max_rows_to_read_leaf]
         && !query_info.input_order_info)
         row_limits.leaf_limits = SizeLimits(settings[Setting::max_rows_to_read_leaf], 0, settings[Setting::read_overflow_mode_leaf]);
@@ -2334,12 +2274,11 @@ size_t MergeTreeDataSelectExecutor::roundRowsOrBytesToMarks(
     size_t rows_granularity,
     size_t bytes_granularity)
 {
-    /// Round up without `x + granularity - 1`, which wraps around for a setting close to the maximum.
-    size_t res = rows_setting / rows_granularity + (rows_setting % rows_granularity != 0);
+    size_t res = (rows_setting + rows_granularity - 1) / rows_granularity;
 
     if (bytes_granularity == 0)
         return res;
-    return std::max(res, bytes_setting / bytes_granularity + (bytes_setting % bytes_granularity != 0));
+    return std::max(res, (bytes_setting + bytes_granularity - 1) / bytes_granularity);
 }
 
 /// Same as roundRowsOrBytesToMarks() but do not return more then max_marks
@@ -2425,7 +2364,6 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         exact_ranges = nullptr;
 
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
-    /// The columns are unnamed, because `KeyCondition` names the function results it caches in this block.
     auto index_columns = std::make_shared<ColumnsWithTypeAndName>();
 
     /// Which key columns are reverse-sorted.
@@ -2525,7 +2463,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         {
             chassert(i < index->size());
             chassert(index->at(i));
-            index_columns->emplace_back(index->at(i), primary_key.data_types[i], "");
+            index_columns->emplace_back(index->at(i), primary_key.data_types[i], primary_key.column_names[i]);
         }
 
         /// Keep used_key_indices entries that are loaded, plus unloaded ones covered by a partition-minmax bound.
@@ -2576,7 +2514,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             for (size_t i = 0; i < num_analyzed_key_columns; ++i)
             {
                 if (i < index->size())
-                    index_columns->emplace_back(index->at(i), primary_key.data_types[i], "");
+                    index_columns->emplace_back(index->at(i), primary_key.data_types[i], primary_key.column_names[i]);
                 else
                     /// The column of the primary key was not loaded in memory - we'll skip it.
                     index_columns->emplace_back();

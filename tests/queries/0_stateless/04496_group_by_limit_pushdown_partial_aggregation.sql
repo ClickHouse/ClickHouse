@@ -15,6 +15,7 @@ SET serialize_query_plan = 0;
 -- The partial pushdown is derived in the analyzer's Planner
 -- (`applyTopKPushdownToPartialAggregation`); the old analyzer plans through a
 -- different path that does not implement it, so pin the analyzer.
+SET enable_analyzer = 1;
 
 -- Correctness: identical results with the optimization on and off.  Two
 -- "shards" read the same data, so every count doubles.

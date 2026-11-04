@@ -119,14 +119,10 @@ protected:
         {
             const auto & meta = all_entries[current_index];
 
-            /// Look up database and table names from UUID. The entries of `Parquet` files read by
-            /// table functions have the nil UUID: they belong to no table.
+            /// Look up database and table names from UUID
             String database_name;
             String table_name;
-            DatabaseAndTable database_and_table;
-            if (meta.table_uuid != UUIDHelpers::Nil)
-                database_and_table = DatabaseCatalog::instance().tryGetByUUID(meta.table_uuid);
-            const auto & [database, table] = database_and_table;
+            auto [database, table] = DatabaseCatalog::instance().tryGetByUUID(meta.table_uuid);
             if (database && table)
             {
                 database_name = database->getDatabaseName();
@@ -138,27 +134,12 @@ protected:
             /// without SHOW TABLES / SHOW COLUMNS on another database could learn its table
             /// name, UUID, part names, column names, row ranges, and cached sizes once the
             /// cache is warmed.
-            if (meta.table_uuid == UUIDHelpers::Nil)
-            {
-                /// An entry of a file read by a table function (a file read by a table has the
-                /// UUID of the table, see `getColumnsCacheTableUUIDOfExternalFile`): its path is
-                /// visible only to a user who may read from its source (`FILE`, `S3`, ...) without
-                /// restrictions, besides holding `SHOW COLUMNS` globally.
-                if (!has_global_show_columns || !meta.source
-                    || !access->isGranted(AccessType::READ, toStringSource(*meta.source)))
-                {
-                    ++current_index;
-                    continue;
-                }
-            }
-            else if (!database || !table)
+            if (!database || !table)
             {
                 /// For unresolved or dropped UUIDs we cannot evaluate per-table access, so
                 /// fail closed: only the global SHOW COLUMNS privilege grants visibility of
-                /// those entries. An entry of a file read by a dropped table also requires the
-                /// unrestricted `READ` grant on its source, as for a table function.
-                if (!has_global_show_columns
-                    || (meta.source && !access->isGranted(AccessType::READ, toStringSource(*meta.source))))
+                /// those entries.
+                if (!has_global_show_columns)
                 {
                     ++current_index;
                     continue;
@@ -228,7 +209,7 @@ StorageSystemColumnsCache::StorageSystemColumnsCache(const StorageID & table_id_
         {"database", std::make_shared<DataTypeString>(), "Database name of the table the part belongs to."},
         {"table", std::make_shared<DataTypeString>(), "Table name."},
         {"table_uuid", std::make_shared<DataTypeUUID>(), "UUID of the table. Stable across renames."},
-        {"part", std::make_shared<DataTypeString>(), "Name of the data part. For a part of a projection, the name of the parent part and the name of the projection, as `parent_part:projection`."},
+        {"part", std::make_shared<DataTypeString>(), "Name of the data part."},
         {"column", std::make_shared<DataTypeString>(), "Name of the column."},
         {"row_begin", std::make_shared<DataTypeUInt64>(), "Starting row index of the cached range (inclusive)."},
         {"row_end", std::make_shared<DataTypeUInt64>(), "Ending row index of the cached range (exclusive)."},
