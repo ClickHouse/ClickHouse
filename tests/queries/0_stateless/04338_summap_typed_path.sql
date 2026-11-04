@@ -517,14 +517,29 @@ OPTIMIZE TABLE test_summap_amt_nullable FINAL;
 SELECT sumMapMerge(state) FROM test_summap_amt_nullable;
 DROP TABLE test_summap_amt_nullable;
 
--- Mixed-scale decimal keys in Dynamic columns
-SELECT 'Dynamic decimal mixed scale';
+-- Decimal keys in Dynamic columns keep their value and scale, also when they have trailing zeros
+SELECT 'Dynamic decimal keys keep their scale';
+SELECT sumMap(k, v) AS r, arrayMap(x -> dynamicType(x), r.1) FROM (SELECT [1.00, 2.50, 3.25]::Array(Decimal(10, 2))::Array(Dynamic) AS k, [1, 2, 3] AS v);
+SELECT minMap(k, v) FROM (SELECT [1.00, 2.50, 3.25]::Array(Decimal(10, 2))::Array(Dynamic) AS k, [1, 2, 3] AS v);
+SELECT maxMap(k, v) FROM (SELECT [1.00, 2.50, 3.25]::Array(Decimal(10, 2))::Array(Dynamic) AS k, [1, 2, 3] AS v);
+SELECT sumMap(k, v) AS r, arrayMap(x -> dynamicType(x), r.1) FROM (SELECT [1.50, 2.00]::Array(Decimal(10, 2))::Array(Dynamic) AS k, [1, 2] AS v);
+
+-- Equal decimal keys of different scales are merged into one key
+SELECT 'Dynamic decimal keys equal across scales';
 SELECT sumMap(k, v) FROM
 (
-    SELECT [toDecimal64(11, 1)]::Array(Dynamic) AS k, [toInt64(1)] AS v
+    SELECT [toDecimal64(1.1, 1)::Dynamic] AS k, [1] AS v
     UNION ALL
-    SELECT [toDecimal64(110, 2)]::Array(Dynamic) AS k, [toInt64(2)] AS v
+    SELECT [toDecimal64(1.10, 2)::Dynamic] AS k, [2] AS v
 );
+
+-- The state of Dynamic decimal keys survives serialization
+SELECT 'Dynamic decimal keys state round-trip';
+DROP TABLE IF EXISTS test_summap_dynamic_decimal;
+CREATE TABLE test_summap_dynamic_decimal (s AggregateFunction(sumMap, Array(Dynamic), Array(UInt64))) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO test_summap_dynamic_decimal SELECT sumMapState(k, v) FROM (SELECT [1.00, 2.50, 3.25]::Array(Decimal(10, 2))::Array(Dynamic) AS k, [1, 2, 3]::Array(UInt64) AS v);
+SELECT sumMapMerge(s) FROM test_summap_dynamic_decimal;
+DROP TABLE test_summap_dynamic_decimal;
 
 -- ===================== -WithOverflow keeps sums wide until output =====================
 
@@ -545,3 +560,17 @@ SELECT 'sumMapWithOverflow version-1 state keeps wide sum';
 SELECT hex(sumMapWithOverflowState([1, 1], [toUInt8(200), toUInt8(56)]));
 SELECT finalizeAggregation(CAST(unhex('01010001000000000000') AS AggregateFunction(sumMapWithOverflow, Array(UInt8), Array(UInt8))));
 SELECT finalizeAggregation(CAST(unhex('01010001000000000000') AS AggregateFunction(sumMapFilteredWithOverflow([1]), Array(UInt8), Array(UInt8))));
+
+-- ===================== Generic path: keys nested in tuples =====================
+
+-- Nested keys that are equal under `Field::operator==` must hash alike: ±0, NaNs, and decimals of different scales.
+SELECT 'Nested float and decimal keys';
+SELECT sumMap([tuple(0.), tuple(-0.)], [1, 2]);
+SELECT sumMap([tuple(nan), tuple(0. / 0.)], [1, 2]);
+SELECT sumMap(k, v) FROM values('k Array(Tuple(Float64)), v Array(Int64)', ([tuple(0.)], [1]), ([tuple(-0.)], [2]));
+SELECT sumMap(k, v) FROM
+(
+    SELECT [tuple(toDecimal64(11, 1)::Dynamic)] AS k, [1] AS v
+    UNION ALL
+    SELECT [tuple(toDecimal64(11, 2)::Dynamic)] AS k, [2] AS v
+);

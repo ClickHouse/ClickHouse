@@ -19,6 +19,7 @@
 #include <Common/NaNUtils.h>
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
+#include <Common/checkStackSize.h>
 #include <Common/SetWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 
@@ -38,27 +39,73 @@ namespace ErrorCodes
 namespace
 {
 
-template <typename T>
-void normalizeDecimalFieldImpl(Field & key)
+/// Hashes a `Field` consistently with `Field::operator==`, as `FieldHash` needs for map keys:
+/// all NaNs are equal, `-0.0` equals `+0.0`, and decimals that differ only in trailing zeros are equal.
+/// Keys are stored unchanged (rewriting a decimal key's scale would corrupt it on insertion into a
+/// `Dynamic` result column), so this applies to top-level keys as well as to those nested in arrays or tuples.
+/// This is not done in `FieldVisitorHash`, because AST hashes (query cache keys, column names of
+/// large literals) rely on it being bit-exact.
+class FieldVisitorNormalizedHash : public StaticVisitor<>
 {
-    auto df = key.safeGet<DecimalField<T>>();
-    auto v = df.getValue().value;
-    UInt32 s = df.getScale();
-    DecimalUtils::normalizeDecimalTrailingZeros(v, s);
-    key = DecimalField<T>(T(v), s);
-}
+public:
+    explicit FieldVisitorNormalizedHash(SipHash & hash_) : hash(hash_) {}
 
-void normalizeFieldDecimal(Field & key)
-{
-    switch (key.getType())
+    template <typename T>
+    void operator()(const T & x) const
     {
-        case Field::Types::Decimal32:  normalizeDecimalFieldImpl<Decimal32>(key);  break;
-        case Field::Types::Decimal64:  normalizeDecimalFieldImpl<Decimal64>(key);  break;
-        case Field::Types::Decimal128: normalizeDecimalFieldImpl<Decimal128>(key); break;
-        case Field::Types::Decimal256: normalizeDecimalFieldImpl<Decimal256>(key); break;
-        default: break;
+        FieldVisitorHash{hash}(x);
     }
-}
+
+    void operator()(const Float64 & x) const
+    {
+        hash.update(static_cast<UInt8>(Field::Types::Float64));
+        if (isNaN(x))
+            hash.update(std::numeric_limits<Float64>::quiet_NaN());
+        else if (x == 0.0)
+            hash.update(Float64(0.0));
+        else
+            hash.update(x);
+    }
+
+    template <typename T>
+    void operator()(const DecimalField<T> & x) const
+    {
+        hash.update(static_cast<UInt8>(Field::TypeToEnum<DecimalField<T>>::value));
+        auto value = x.getValue().value;
+        UInt32 scale = x.getScale();
+        DecimalUtils::normalizeDecimalTrailingZeros(value, scale);
+        hash.update(value);
+        hash.update(scale);
+    }
+
+    void operator()(const Array & x) const { hashElements(Field::Types::Array, x); }
+    void operator()(const Tuple & x) const { hashElements(Field::Types::Tuple, x); }
+    void operator()(const Map & x) const { hashElements(Field::Types::Map, x); }
+
+    void operator()(const Object & x) const
+    {
+        checkStackSize();
+        hash.update(static_cast<UInt8>(Field::Types::Object));
+        hash.update(x.size());
+        for (const auto & [key, value] : x)
+        {
+            hash.update(key);
+            applyVisitor(*this, value);
+        }
+    }
+
+private:
+    SipHash & hash;
+
+    void hashElements(Field::Types::Which type, const FieldVector & elements) const
+    {
+        checkStackSize();
+        hash.update(static_cast<UInt8>(type));
+        hash.update(elements.size());
+        for (const auto & elem : elements)
+            applyVisitor(*this, elem);
+    }
+};
 
 struct FieldHash
 {
@@ -105,9 +152,9 @@ struct FieldHash
                 return UInt256Hash()(std::bit_cast<UInt256>(x.safeGet<Int256>()));
             default:
             {
-                /// Decimals, compound types (Array, Tuple, Map, etc.) — use FieldVisitorHash.
+                /// Decimals and compound types (Array, Tuple, Map, etc.).
                 SipHash hash;
-                applyVisitor(FieldVisitorHash(hash), x);
+                applyVisitor(FieldVisitorNormalizedHash(hash), x);
                 return hash.get64();
             }
         }
@@ -171,7 +218,6 @@ private:
     DataTypes values_types;
     Serializations values_serializations;
     Serializations promoted_values_serializations;
-    bool normalize_decimal_keys = false;
 
 public:
     using Base = IAggregateFunctionDataHelper<AggregateFunctionMapData, Derived>;
@@ -182,7 +228,6 @@ public:
         , keys_type(keys_type_)
         , keys_serialization(keys_type->getDefaultSerialization())
         , values_types(values_types_)
-        , normalize_decimal_keys(keys_type_->getTypeId() == TypeIndex::Dynamic)
     {
         values_serializations.reserve(values_types.size());
         promoted_values_serializations.reserve(values_types.size());
@@ -286,8 +331,6 @@ public:
         for (size_t i = 0; i < keys_vec_size; ++i)
         {
             Field key = key_column[keys_vec_offset + i];
-            if (normalize_decimal_keys)
-                normalizeFieldDecimal(key);
 
             if (!keepKey(key))
                 continue;
@@ -495,8 +538,6 @@ public:
         {
             Field key;
             keys_serialization->deserializeBinary(key, buf, format_settings);
-            if (normalize_decimal_keys)
-                normalizeFieldDecimal(key);
 
             Array values;
             values.resize(values_types.size());
