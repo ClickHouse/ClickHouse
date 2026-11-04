@@ -76,7 +76,7 @@ append_case()
     # threshold is above the memory limit so spilling cannot conceal that growth.
     QUERIES+="
         SELECT '${name}';
-        SELECT /* case:${name} */ count(), min(c), max(c), min(s), max(s)
+        SELECT count(), min(c), max(c), min(s), max(s)
         FROM
         (
             SELECT ${key_expression} AS key, count() AS c, sum(value) AS s
@@ -120,7 +120,8 @@ append_case()
             log_profile_events = 1,
             log_queries_probability = 1,
             log_queries_min_query_duration_ms = 0,
-            log_queries_min_type = 'QUERY_FINISH';
+            log_queries_min_type = 'QUERY_FINISH',
+            log_comment = 'case:${name}';
     "
 }
 
@@ -131,14 +132,16 @@ append_case index_private k 32 1
 # a smaller shard count. Their overlapping partial groups must also be combined.
 append_case index_shared k 8 1
 
-# Inline labels distinguish the aggregation queries from other statements in the batch.
-# Filter by `query_id` before reading query text from the shared log.
+# `log_comment` labels distinguish the aggregation queries from other statements in the batch.
+# A comment in the query text would not work: the arguments of the parameterized view are
+# hidden in the logged query, so `query_log` stores the reformatted query without comments.
+# Filter by `query_id` before reading the labels from the shared log.
 ${CLICKHOUSE_CLIENT} --query_id="${QUERY_ID}" -q "
     ${QUERIES}
     SELECT 'query paths: name, finished, exception, all rows read, all parts selected, dictionary switches, two-level, spilled';
     SYSTEM FLUSH LOGS query_log;
     SELECT
-        extract(query, '/[*] case:([a-z_]+) [*]/') AS case_name,
+        extract(log_comment, '^case:([a-z_]+)$') AS case_name,
         type = 'QueryFinish',
         exception_code,
         read_rows = 65536,
