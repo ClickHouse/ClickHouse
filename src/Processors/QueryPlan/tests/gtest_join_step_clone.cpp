@@ -47,7 +47,7 @@ std::unique_ptr<JoinStep> makeJoinStep()
     table_join->setColumnsFromJoinedTable(right_header->getNamesAndTypesList(), {"lk"}, "", left_header->getNamesAndTypesList());
     table_join->setColumnsAddedByJoin(right_header->getNamesAndTypesList());
 
-    auto join = std::make_shared<HashJoin>(table_join, right_header);
+    auto join = HashJoin::create(table_join, right_header, HashJoinBuildLayout::oneBucket(1));
     return std::make_unique<JoinStep>(
         left_header,
         right_header,
@@ -57,7 +57,6 @@ std::unique_ptr<JoinStep> makeJoinStep()
         /*min_block_size_bytes_=*/0,
         /*max_streams_=*/1,
         NameSet{"lk", "rk"},
-        /*keep_left_read_in_order_=*/false,
         /*use_new_analyzer_=*/true);
 }
 

@@ -559,7 +559,7 @@ QueryPlanStepPtr JoinStep::clone() const
         std::make_shared<TableJoin>(join->getTableJoin()),
         left_sample_header,
         right_sample_header);
-    if (keep_left_read_in_order)
+    if (left_pipeline_order == LeftPipelineOrder::KeepOrder)
         cloned->join->keepLeftPipelineInOrder();
     cloned->join_algorithm_header.reset();
     cloned->updateOutputHeader();
