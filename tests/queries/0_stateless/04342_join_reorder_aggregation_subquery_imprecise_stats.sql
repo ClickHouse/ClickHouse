@@ -4,7 +4,6 @@ SET send_logs_level = 'fatal';
 
 SET explain_query_plan_default = 'legacy';
 SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on the estimate labels
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 SET allow_experimental_statistics = 1;
 SET materialize_statistics_on_insert = 1; -- pinned: the `t_agg_stats` side relies on materialized statistics

@@ -1,4 +1,4 @@
--- Tags: long
+-- Tags: long, no-msan
 
 -- Regression test for LOGICAL_ERROR 'Invalid partition key size' (STID 2677-496b).
 -- A normal projection has an empty partition key, but when the parent table uses

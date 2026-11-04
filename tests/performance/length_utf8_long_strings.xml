@@ -1,0 +1,11 @@
+<test>
+    <!-- Long strings, generated in small blocks so they are still in cache when `lengthUTF8` reads them:
+         a table this large would measure memory bandwidth instead. -->
+    <settings>
+        <max_block_size>1024</max_block_size>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <query>SELECT count() FROM numbers(600000) WHERE NOT ignore(lengthUTF8(repeat(toString(number % 10), 1000)))</query>
+    <query>SELECT count() FROM numbers(700000) WHERE NOT ignore(lengthUTF8(repeat(concat('привет ', toString(number % 10)), 70)))</query>
+</test>

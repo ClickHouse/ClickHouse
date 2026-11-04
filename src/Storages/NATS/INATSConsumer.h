@@ -23,6 +23,9 @@ namespace DB
 using NATSSubscriptionPtr = std::unique_ptr<natsSubscription, decltype(&natsSubscription_Destroy)>;
 using NatsMsgPtr = std::unique_ptr<natsMsg, decltype(&natsMsg_Destroy)>;
 
+/// Apart from the queue of received messages, which the NATS client thread fills, a consumer has a
+/// single owner at a time and needs no locking: the storage while it is in its pool, or the source
+/// that took it out with `popConsumer` until it gives it back with `pushConsumer`.
 class INATSConsumer
 {
 public:
@@ -45,56 +48,40 @@ public:
 
     bool isSubscribed() const;
 
-    /// True when the NATS client has closed a subscription we still hold: consuming has stopped
-    /// and only a re-subscribe resumes it. Base implementation always returns false, because
-    /// recovery parts with the buffered messages and only JetStream redelivers them.
+    /// True when the subscription stopped consuming and only a re-subscribe resumes it.
+    /// Only JetStream redelivers what a re-subscribe hands back, so the base class never asks for one.
     virtual bool needsResubscribe() const { return false; }
 
     void subscribe();
     void unsubscribe();
 
-    /// Stop buffering and hand back to the broker every message the client has delivered but
-    /// ClickHouse has not inserted yet, so JetStream redelivers it at once instead of after the
-    /// ACK deadline. Must run before the subscription those messages arrived on is destroyed: a
-    /// `natsMsg` keeps a plain pointer to it, and `natsMsg_Nak` follows that pointer to reach the
-    /// JetStream context and the connection.
-    /// A consumer that is not subscribed holds only leftovers of a subscription that is already
-    /// gone, which it can only destroy. That tells the two apart because nothing re-subscribes
-    /// without clearing the queue first, so a subscribed consumer never holds a message that
-    /// arrived on an older subscription.
-    ///
-    /// What happens to the messages `nats_skip_broken_messages` passed over is the caller's to
-    /// decide, because only the caller knows whether that skip is already final. `Acknowledge`
-    /// keeps it: a background streaming cycle never inserts such a message, so nothing is left to
-    /// commit for it. `ReturnToBroker` is what a direct `SELECT` needs, which consumes only what it
-    /// has committed - the redelivered message is skipped again by the query that gets it next, and
-    /// acknowledged with the rest of what that query reads once it commits.
+    /// What to do with the messages `nats_skip_broken_messages` passed over when they are resolved
+    /// before a commit: a streaming cycle never inserts them, so its skip is final (`Acknowledge`),
+    /// while a direct `SELECT` consumes nothing until it commits (`ReturnToBroker`).
     enum class SkippedMessages
     {
         Acknowledge,
         ReturnToBroker,
     };
 
+    /// Stop buffering and return to the broker every message that was delivered but not committed,
+    /// so it is redelivered at once instead of after the ACK deadline. Must run while the
+    /// subscription is alive: `natsMsg_Nak` reaches the connection through it.
     void finishAndReturnUnprocessed(SkippedMessages skipped_messages_action);
 
     void ackConsumed();
+    /// Release the handles of the consumed messages; they are redelivered after the ACK deadline.
     void dropConsumed();
+    /// Return the consumed messages to the broker, keeping the subscription and the local queue.
+    void returnConsumed();
 
-    /// Move the message `consume` returned last out of the set of messages that still owe rows:
-    /// it was parsed into none, which `nats_skip_broken_messages` makes an ordinary outcome rather
-    /// than an error. Such a message is never going to produce a row, so it does not hold back a
-    /// resubscribe of the subscription it arrived on - see `finishAndReturnUnprocessed` for what
-    /// happens to it there.
+    /// The message `consume` returned last yielded no rows: it no longer holds back a resubscribe.
     void markLastConsumedSkipped();
 
-    /// True while this consumer holds messages it has handed out and which may still turn into rows
-    /// nothing has acknowledged yet. A message enters this set as soon as `consume` returns it,
-    /// before it is parsed, and leaves it again through `markLastConsumedSkipped` once it turns out
-    /// to have yielded no rows.
+    /// True while a consumed message may still turn into rows that nothing has acknowledged yet.
     bool hasConsumedMessages() const { return !consumed_messages.empty(); }
 
-    /// Throw away leftovers of a subscription that is already gone, which is all that can be done
-    /// with them: acknowledging or returning a message needs the subscription it arrived on.
+    /// Throw away leftovers of a subscription that is already gone.
     void dropBuffered();
 
     size_t subjectsCount() { return subjects.size(); }
@@ -122,16 +109,13 @@ protected:
 
     void setSubscriptions(std::vector<NATSSubscriptionPtr> subscriptions_) { subscriptions = std::move(subscriptions_); }
 
-    /// True if the client has closed any subscription we hold. An empty vector reads as false:
-    /// nothing is subscribed, so there is nothing to recover.
+    /// True if the client has closed any subscription we hold.
     bool hasClosedSubscription() const;
 
-    /// True if the connection has been re-established since we subscribed. The subscriptions we hold
-    /// are still valid, but the broker kept nothing of what they were waiting for.
+    /// True if the connection has been re-established since we subscribed: the broker has lost the
+    /// pull requests of our subscriptions.
     bool hasConnectionReconnected() const;
 
-    /// True while the client holds an open connection to the broker, as opposed to being in the
-    /// middle of re-establishing one.
     bool isConnectionConnected() const;
 
     static void onMsg(natsConnection * nc, natsSubscription * sub, natsMsg * msg, void * consumer);
@@ -143,16 +127,16 @@ protected:
     virtual bool needsAck() const { return false; }
 
 private:
-    /// Acknowledge every message in `messages` and clear it.
+    /// Acknowledge or return every message in `messages` and clear it.
     void ackMessages(std::vector<NatsMsgPtr> & messages);
+    void nackMessages(std::vector<NatsMsgPtr> & messages);
 
     std::shared_ptr<ConcurrentBoundedQueue<MessageData>> loadReceived() const;
     void storeReceived(std::shared_ptr<ConcurrentBoundedQueue<MessageData>> queue);
 
     NATSConnectionPtr connection;
     std::vector<NATSSubscriptionPtr> subscriptions;
-    /// Reconnect count of the connection as of the moment we subscribed. Only ever touched under the
-    /// storage's consumers mutex, together with `subscriptions`.
+    /// Reconnect count of the connection as of the moment we subscribed.
     UInt64 connection_reconnect_count = 0;
     const std::vector<String> subjects;
     LoggerPtr log;
@@ -165,9 +149,7 @@ private:
     std::shared_ptr<ConcurrentBoundedQueue<MessageData>> received;
     MessageData current;
     std::vector<NatsMsgPtr> consumed_messages;
-    /// Messages that were consumed and parsed into no rows. They are acknowledged together with
-    /// `consumed_messages` when the query that read them commits; a resubscribe in the middle of a
-    /// query resolves them the way `finishAndReturnUnprocessed` was told to.
+    /// Consumed messages that yielded no rows, committed together with `consumed_messages`.
     std::vector<NatsMsgPtr> skipped_messages;
 };
 

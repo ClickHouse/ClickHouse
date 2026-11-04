@@ -31,6 +31,7 @@ docs_autogen_job = Job.Config(
 
 workflow = Workflow.Config(
     name="NightlyDocsAutogenerate",
+    engine=Workflow.Engine.GH_ACTIONS,
     event=Workflow.Event.SCHEDULE,
     branches=[BASE_BRANCH],
     jobs=[

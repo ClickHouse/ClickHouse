@@ -13,9 +13,9 @@ REGISTER_FUNCTION(ToStartOfHour)
     FunctionDocumentation::Description description = R"(
 Rounds down a date with time to the start of the hour.
 
-:::note
+<Note>
 The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax = R"(
 toStartOfHour(datetime)

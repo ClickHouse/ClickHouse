@@ -35,10 +35,30 @@ namespace ErrorCodes
 namespace
 {
 
+/// Orders exactly like `Field::operator<`, comparing integer keys without calling it.
+struct FieldLess
+{
+    bool operator()(const Field & lhs, const Field & rhs) const
+    {
+        UInt64 lhs_uint = 0;
+        UInt64 rhs_uint = 0;
+        if (lhs.tryGet(lhs_uint) && rhs.tryGet(rhs_uint))
+            return lhs_uint < rhs_uint;
+
+        Int64 lhs_int = 0;
+        Int64 rhs_int = 0;
+        if (lhs.tryGet(lhs_int) && rhs.tryGet(rhs_int))
+            return lhs_int < rhs_int;
+
+        return lhs < rhs;
+    }
+};
+
+template <typename Compare>
 struct AggregateFunctionMapData
 {
     // Map needs to be ordered to maintain function properties
-    MapWithMemoryTracking<Field, Array> merged_maps;
+    MapWithMemoryTracking<Field, Array, Compare> merged_maps;
 };
 
 /** Aggregate function, that takes at least two arguments: keys and values, and as a result, builds a tuple of at least 2 arrays -
@@ -62,9 +82,9 @@ struct AggregateFunctionMapData
   * NOTE: The implementation of these functions are "amateur grade" - not efficient and low quality.
   */
 
-template <typename Derived, typename Visitor, bool overflow, bool tuple_argument, bool compact>
+template <typename Derived, typename Visitor, bool overflow, bool tuple_argument, bool compact, typename Compare>
 class AggregateFunctionMapBase : public IAggregateFunctionDataHelper<
-    AggregateFunctionMapData, Derived>
+    AggregateFunctionMapData<Compare>, Derived>
 {
 private:
     static constexpr auto STATE_VERSION_1_MIN_REVISION = 54452;
@@ -76,7 +96,7 @@ private:
     Serializations promoted_values_serializations;
 
 public:
-    using Base = IAggregateFunctionDataHelper<AggregateFunctionMapData, Derived>;
+    using Base = IAggregateFunctionDataHelper<AggregateFunctionMapData<Compare>, Derived>;
 
     AggregateFunctionMapBase(const DataTypePtr & keys_type_,
             const DataTypes & values_types_, const DataTypes & argument_types_)
@@ -476,13 +496,13 @@ public:
     String getName() const override { return Derived::getNameImpl(); }
 };
 
-template <bool overflow, bool tuple_argument>
+template <bool overflow, bool tuple_argument, typename Compare>
 class AggregateFunctionSumMap final :
-    public AggregateFunctionMapBase<AggregateFunctionSumMap<overflow, tuple_argument>, FieldVisitorSum, overflow, tuple_argument, true>
+    public AggregateFunctionMapBase<AggregateFunctionSumMap<overflow, tuple_argument, Compare>, FieldVisitorSum, overflow, tuple_argument, true, Compare>
 {
 private:
-    using Self = AggregateFunctionSumMap<overflow, tuple_argument>;
-    using Base = AggregateFunctionMapBase<Self, FieldVisitorSum, overflow, tuple_argument, true>;
+    using Self = AggregateFunctionSumMap<overflow, tuple_argument, Compare>;
+    using Base = AggregateFunctionMapBase<Self, FieldVisitorSum, overflow, tuple_argument, true, Compare>;
 
 public:
     AggregateFunctionSumMap(const DataTypePtr & keys_type_,
@@ -511,20 +531,21 @@ public:
 };
 
 
-template <bool overflow, bool tuple_argument>
+template <bool overflow, bool tuple_argument, typename Compare>
 class AggregateFunctionSumMapFiltered final :
     public AggregateFunctionMapBase<
-        AggregateFunctionSumMapFiltered<overflow, tuple_argument>,
+        AggregateFunctionSumMapFiltered<overflow, tuple_argument, Compare>,
         FieldVisitorSum,
         overflow,
         tuple_argument,
-        true>
+        true,
+        Compare>
 {
 private:
-    using Self = AggregateFunctionSumMapFiltered<overflow, tuple_argument>;
-    using Base = AggregateFunctionMapBase<Self, FieldVisitorSum, overflow, tuple_argument, true>;
+    using Self = AggregateFunctionSumMapFiltered<overflow, tuple_argument, Compare>;
+    using Base = AggregateFunctionMapBase<Self, FieldVisitorSum, overflow, tuple_argument, true, Compare>;
 
-    using ContainerT = SetWithMemoryTracking<Field>;
+    using ContainerT = SetWithMemoryTracking<Field, Compare>;
     ContainerT keys_to_keep;
 
 public:
@@ -695,13 +716,13 @@ public:
 };
 
 
-template <bool tuple_argument>
+template <bool tuple_argument, typename Compare>
 class AggregateFunctionMinMap final :
-    public AggregateFunctionMapBase<AggregateFunctionMinMap<tuple_argument>, FieldVisitorMin, true, tuple_argument, false>
+    public AggregateFunctionMapBase<AggregateFunctionMinMap<tuple_argument, Compare>, FieldVisitorMin, true, tuple_argument, false, Compare>
 {
 private:
-    using Self = AggregateFunctionMinMap<tuple_argument>;
-    using Base = AggregateFunctionMapBase<Self, FieldVisitorMin, true, tuple_argument, false>;
+    using Self = AggregateFunctionMinMap<tuple_argument, Compare>;
+    using Base = AggregateFunctionMapBase<Self, FieldVisitorMin, true, tuple_argument, false, Compare>;
 
 public:
     AggregateFunctionMinMap(const DataTypePtr & keys_type_,
@@ -719,13 +740,13 @@ public:
     bool keepKey(const Field &) const { return true; }
 };
 
-template <bool tuple_argument>
+template <bool tuple_argument, typename Compare>
 class AggregateFunctionMaxMap final :
-    public AggregateFunctionMapBase<AggregateFunctionMaxMap<tuple_argument>, FieldVisitorMax, true, tuple_argument, false>
+    public AggregateFunctionMapBase<AggregateFunctionMaxMap<tuple_argument, Compare>, FieldVisitorMax, true, tuple_argument, false, Compare>
 {
 private:
-    using Self = AggregateFunctionMaxMap<tuple_argument>;
-    using Base = AggregateFunctionMapBase<Self, FieldVisitorMax, true, tuple_argument, false>;
+    using Self = AggregateFunctionMaxMap<tuple_argument, Compare>;
+    using Base = AggregateFunctionMapBase<Self, FieldVisitorMax, true, tuple_argument, false, Compare>;
 
 public:
     AggregateFunctionMaxMap(const DataTypePtr & keys_type_,
@@ -794,6 +815,15 @@ auto parseArguments(const std::string & name, const DataTypes & arguments)
     return std::tuple<DataTypePtr, DataTypes, bool>{std::move(keys_type), std::move(values_types), tuple_argument};
 }
 
+/// Integer-like keys are stored as `UInt64` or `Int64` fields, which `FieldLess` compares inline.
+template <typename CreateFunction>
+AggregateFunctionPtr createWithKeyCompare(const DataTypePtr & keys_type, CreateFunction && create)
+{
+    if (isNativeInteger(keys_type) || isEnum(keys_type) || isDateOrDate32(keys_type) || isDateTime(keys_type))
+        return create.template operator()<FieldLess>();
+    return create.template operator()<std::less<Field>>();
+}
+
 }
 
 void registerAggregateFunctionSumMap(AggregateFunctionFactory & factory);
@@ -805,10 +835,10 @@ void registerAggregateFunctionSumMap(AggregateFunctionFactory & factory)
     FunctionDocumentation::Description sumMappedArrays_description = R"(
 Totals one or more `value` arrays according to the keys specified in the `key` array. Returns a tuple of arrays: keys in sorted order, followed by values summed for the corresponding keys without overflow.
 
-:::note
+<Note>
 - Passing a tuple of keys and value arrays is identical to passing an array of keys and an array of values.
 - The number of elements in `key` and all `value` arrays must be the same for each row that is totaled.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax sumMappedArrays_syntax = R"(
 sumMappedArrays(key, value1 [, value2, ...])
@@ -889,18 +919,21 @@ FROM multi_metrics;
     factory.registerFunction("sumMappedArrays", {[](const std::string & name, const DataTypes & arguments, const Array & params, const Settings *) -> AggregateFunctionPtr
     {
         auto [keys_type, values_types, tuple_argument] = parseArguments(name, arguments);
-        if (tuple_argument)
-            return std::make_shared<AggregateFunctionSumMap<false, true>>(keys_type, values_types, arguments, params);
-        return std::make_shared<AggregateFunctionSumMap<false, false>>(keys_type, values_types, arguments, params);
+        return createWithKeyCompare(keys_type, [&]<typename Compare>() -> AggregateFunctionPtr
+        {
+            if (tuple_argument)
+                return std::make_shared<AggregateFunctionSumMap<false, true, Compare>>(keys_type, values_types, arguments, params);
+            return std::make_shared<AggregateFunctionSumMap<false, false, Compare>>(keys_type, values_types, arguments, params);
+        });
     }, sumMappedArrays_documentation});
 
     FunctionDocumentation::Description minMappedArrays_description = R"(
 Calculates the minimum from `value` array according to the keys specified in the `key` array.
 
-:::note
+<Note>
 - Passing a tuple of keys and value arrays is identical to passing an array of keys and an array of values.
 - The number of elements in `key` and `value` must be the same for each row that is totaled.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax minMappedArrays_syntax = R"(
 minMappedArrays(key, value)
@@ -932,18 +965,21 @@ FROM VALUES('a Array(Int32), b Array(Int64)', ([1, 2], [2, 2]), ([2, 3], [1, 1])
     factory.registerFunction("minMappedArrays", {[](const std::string & name, const DataTypes & arguments, const Array & params, const Settings *) -> AggregateFunctionPtr
     {
         auto [keys_type, values_types, tuple_argument] = parseArguments(name, arguments);
-        if (tuple_argument)
-            return std::make_shared<AggregateFunctionMinMap<true>>(keys_type, values_types, arguments, params);
-        return std::make_shared<AggregateFunctionMinMap<false>>(keys_type, values_types, arguments, params);
+        return createWithKeyCompare(keys_type, [&]<typename Compare>() -> AggregateFunctionPtr
+        {
+            if (tuple_argument)
+                return std::make_shared<AggregateFunctionMinMap<true, Compare>>(keys_type, values_types, arguments, params);
+            return std::make_shared<AggregateFunctionMinMap<false, Compare>>(keys_type, values_types, arguments, params);
+        });
     }, minMappedArrays_documentation, {}});
 
     FunctionDocumentation::Description maxMappedArrays_description = R"(
 Calculates the maximum from `value` array according to the keys specified in the `key` array.
 
-:::note
+<Note>
 - Passing a tuple of keys and value arrays is identical to passing an array of keys and an array of values.
 - The number of elements in `key` and `value` must be the same for each row that is totaled.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax maxMappedArrays_syntax = R"(
 maxMappedArrays(key, value)
@@ -975,9 +1011,12 @@ FROM VALUES('a Array(Char), b Array(Int64)', (['x', 'y'], [2, 2]), (['y', 'z'], 
     factory.registerFunction("maxMappedArrays", {[](const std::string & name, const DataTypes & arguments, const Array & params, const Settings *) -> AggregateFunctionPtr
     {
         auto [keys_type, values_types, tuple_argument] = parseArguments(name, arguments);
-        if (tuple_argument)
-            return std::make_shared<AggregateFunctionMaxMap<true>>(keys_type, values_types, arguments, params);
-        return std::make_shared<AggregateFunctionMaxMap<false>>(keys_type, values_types, arguments, params);
+        return createWithKeyCompare(keys_type, [&]<typename Compare>() -> AggregateFunctionPtr
+        {
+            if (tuple_argument)
+                return std::make_shared<AggregateFunctionMaxMap<true, Compare>>(keys_type, values_types, arguments, params);
+            return std::make_shared<AggregateFunctionMaxMap<false, Compare>>(keys_type, values_types, arguments, params);
+        });
     }, maxMappedArrays_documentation});
 
     // these functions could be renamed to *MappedArrays too, but it would
@@ -986,10 +1025,10 @@ FROM VALUES('a Array(Char), b Array(Int64)', (['x', 'y'], [2, 2]), (['y', 'z'], 
 Totals a `value` array according to the keys specified in the `key` array. Returns a tuple of two arrays: keys in sorted order, and values summed for the corresponding keys.
 It differs from the [`sumMap`](/reference/functions/aggregate-functions/sumMap) function in that it does summation with overflow - i.e. returns the same data type for the summation as the argument data type.
 
-:::note
+<Note>
 - Passing a tuple of key and value arrays is identical to passing an array of keys and an array of values.
 - The number of elements in `key` and `value` must be the same for each row that is totaled.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax sumMapWithOverflow_syntax = R"(
 sumMapWithOverflow(key, value)
@@ -1059,25 +1098,34 @@ GROUP BY timeslot;
     factory.registerFunction("sumMapWithOverflow", {[](const std::string & name, const DataTypes & arguments, const Array & params, const Settings *) -> AggregateFunctionPtr
     {
         auto [keys_type, values_types, tuple_argument] = parseArguments(name, arguments);
-        if (tuple_argument)
-            return std::make_shared<AggregateFunctionSumMap<true, true>>(keys_type, values_types, arguments, params);
-        return std::make_shared<AggregateFunctionSumMap<true, false>>(keys_type, values_types, arguments, params);
+        return createWithKeyCompare(keys_type, [&]<typename Compare>() -> AggregateFunctionPtr
+        {
+            if (tuple_argument)
+                return std::make_shared<AggregateFunctionSumMap<true, true, Compare>>(keys_type, values_types, arguments, params);
+            return std::make_shared<AggregateFunctionSumMap<true, false, Compare>>(keys_type, values_types, arguments, params);
+        });
     }, sumMapWithOverflow_documentation});
 
     factory.registerFunction("sumMapFiltered", {[](const std::string & name, const DataTypes & arguments, const Array & params, const Settings *) -> AggregateFunctionPtr
     {
         auto [keys_type, values_types, tuple_argument] = parseArguments(name, arguments);
-        if (tuple_argument)
-            return std::make_shared<AggregateFunctionSumMapFiltered<false, true>>(keys_type, values_types, arguments, params);
-        return std::make_shared<AggregateFunctionSumMapFiltered<false, false>>(keys_type, values_types, arguments, params);
+        return createWithKeyCompare(keys_type, [&]<typename Compare>() -> AggregateFunctionPtr
+        {
+            if (tuple_argument)
+                return std::make_shared<AggregateFunctionSumMapFiltered<false, true, Compare>>(keys_type, values_types, arguments, params);
+            return std::make_shared<AggregateFunctionSumMapFiltered<false, false, Compare>>(keys_type, values_types, arguments, params);
+        });
     }, {.description = R"DOC(Like sumMap, but sums the values only for the keys that are present in a given whitelist of keys.)DOC", .category = FunctionDocumentation::Category::AggregateFunction}});
 
     factory.registerFunction("sumMapFilteredWithOverflow", {[](const std::string & name, const DataTypes & arguments, const Array & params, const Settings *) -> AggregateFunctionPtr
     {
         auto [keys_type, values_types, tuple_argument] = parseArguments(name, arguments);
-        if (tuple_argument)
-            return std::make_shared<AggregateFunctionSumMapFiltered<true, true>>(keys_type, values_types, arguments, params);
-        return std::make_shared<AggregateFunctionSumMapFiltered<true, false>>(keys_type, values_types, arguments, params);
+        return createWithKeyCompare(keys_type, [&]<typename Compare>() -> AggregateFunctionPtr
+        {
+            if (tuple_argument)
+                return std::make_shared<AggregateFunctionSumMapFiltered<true, true, Compare>>(keys_type, values_types, arguments, params);
+            return std::make_shared<AggregateFunctionSumMapFiltered<true, false, Compare>>(keys_type, values_types, arguments, params);
+        });
     }, {.description = R"DOC(Like sumMapFiltered, but performs the summation without checking for numeric overflow (the result keeps the argument's value type).)DOC", .category = FunctionDocumentation::Category::AggregateFunction}});
 }
 

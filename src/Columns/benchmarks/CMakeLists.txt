@@ -3,10 +3,7 @@ clickhouse_add_microbenchmark(column_insert_many_from
     LIBRARIES dbms)
 
 clickhouse_add_microbenchmark(benchmark_column_merge_and_squashing
-    SOURCES
-        benchmark_column_merge_and_squashing.cpp
-        ../../AggregateFunctions/AggregateFunctionAny.cpp
-        ../../AggregateFunctions/SingleValueData.cpp
+    SOURCES benchmark_column_merge_and_squashing.cpp
     LIBRARIES dbms)
 
 clickhouse_add_microbenchmark(benchmark_compute_hash_into

@@ -1,0 +1,12 @@
+-- monotonic chain key
+1	1
+Condition: true
+Granules: 2/2
+-- non-monotonic deterministic key
+1	1
+Condition: true
+Granules: 2/2
+-- a constant index analysis can convert still prunes
+1	1
+Condition: (toYYYYMMDD(dt) in [20240102, 20240102])
+Granules: 1/2

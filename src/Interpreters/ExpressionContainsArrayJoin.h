@@ -14,6 +14,9 @@ namespace DB
 /// does not depend on `normalize_function_names` - or behind a SQL UDF that is inlined into the
 /// expression later, which is caught by descending into the UDF body. A call inside a nested
 /// subquery has its own scope and does not multiply the outer rows, so it is skipped.
+bool expressionContainsArrayJoin(const IAST & ast);
+
+/// A null AST contains nothing.
 bool expressionContainsArrayJoin(const ASTPtr & ast);
 
 }

@@ -1,6 +1,6 @@
 -- { echo }
 
-SET allow_experimental_nullable_tuple_type = 1;
+SET enable_nullable_tuple_type = 1;
 
 -- MergeTree Wide format
 DROP TABLE IF EXISTS t_wide;

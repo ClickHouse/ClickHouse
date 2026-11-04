@@ -12,6 +12,7 @@
 #include <Common/PODArray.h>
 #include <Common/SipHash.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -316,6 +317,9 @@ MutableColumnPtr ColumnObject::cloneResized(size_t size) const
 
 Field ColumnObject::operator[](size_t n) const
 {
+    /// Nesting is part of the value rather than of the query text, so no parser limit bounds it.
+    checkStackSize();
+
     Object object;
 
     for (const auto & [path, column] : typed_paths)
@@ -1348,7 +1352,7 @@ void ColumnObject::updateHashWithValue(size_t n, SipHash & hash) const
         auto type_name = value_type->getName();
         hash.update(type_name);
         auto tmp_column = value_type->createColumn();
-        getDataTypesCache().getSerialization(type_name)->deserializeBinary(*tmp_column, buf, getFormatSettings());
+        getDataTypesCache().getSerialization(type_name, value_type)->deserializeBinary(*tmp_column, buf, getFormatSettings());
         tmp_column->updateHashWithValue(0, hash);
     }
 
@@ -2178,6 +2182,34 @@ ColumnObject::StatisticsPtr ColumnObject::getOrCalculateStatistics() const
 void ColumnObject::takeOrCalculateStatisticsFrom(const ColumnsView & source_columns)
 {
     /// Assumes dynamic structure has already been set by `takeExactDynamicStructureFrom` or `chooseDynamicStructureForMerge`.
+
+    /// The writer of a part takes the statistics from its sample column for every block. When the statistics of the
+    /// only source already match our dynamic paths, the code below would build an exact copy of them, so share them.
+    if (std::optional<const IColumn *> single_source_column = source_columns.tryGetSingle(); single_source_column)
+    {
+        const auto & source_object = assert_cast<const ColumnObject &>(**single_source_column);
+        auto source_statistics = source_object.getOrCalculateStatistics();
+        bool can_share = source_statistics->shared_data_paths_statistics.size() <= Statistics::MAX_SHARED_DATA_STATISTICS_SIZE;
+        for (const auto & [path, _] : source_statistics->dynamic_paths_statistics)
+            can_share = can_share && dynamic_paths.contains(path);
+        for (const auto & [path, _] : dynamic_paths)
+            can_share = can_share && !source_statistics->shared_data_paths_statistics.contains(path);
+
+        if (can_share)
+        {
+            statistics = std::move(source_statistics);
+            for (auto & [path, column] : dynamic_paths)
+            {
+                auto it = source_object.dynamic_paths.find(path);
+                if (it != source_object.dynamic_paths.end())
+                    column->takeOrCalculateStatisticsFrom(it->second.get());
+            }
+            for (auto & [path, column] : typed_paths)
+                column->takeOrCalculateStatisticsFrom(source_object.typed_paths.at(path).get());
+            return;
+        }
+    }
+
     Statistics new_statistics;
     /// Collect total sizes for paths that are not in our dynamic_paths (candidates for shared data statistics).
     UnorderedMapWithMemoryTracking<String, size_t> shared_data_candidates;
@@ -2621,7 +2653,7 @@ void ColumnObject::repairDuplicatesInDynamicPathsAndSharedData(size_t offset)
                     auto type_from_dynamic_path = dynamic_paths_ptrs.find(path)->second->getTypeAt(i);
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
-                        "Path {} is present both in dynamic paths and shared data and has two non-null values at the row {}."
+                        "Path {} is present both in dynamic paths and shared data and has two non-null values at the row {}. "
                         "Value type in dynamic paths: {}. Value type in shared data: {}",
                         path,
                         i,

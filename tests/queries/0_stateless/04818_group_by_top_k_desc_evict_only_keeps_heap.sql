@@ -18,6 +18,13 @@ SET enable_group_by_top_k_optimization = 1;
 -- The default window; pinned so the freeze decision under test stays armed.
 SET group_by_top_k_optimization_observation_rows = 65536;
 SET optimize_trivial_group_by_limit_query = 0;
+-- CI randomizes `max_bytes_before_external_group_by`, and a threshold below the size
+-- of an empty two-level hash table puts the query into a spill-per-block loop: every
+-- flush reinitializes the table with a fresh arena and a fresh heap, so the cumulative
+-- counters below stop describing a single in-memory table. Pin the spill off - what is
+-- under test is the bound the in-memory heap maintains.
+SET max_bytes_before_external_group_by = 0;
+SET max_bytes_ratio_before_external_group_by = 0;
 -- One stream, so the assertions below describe a single heap.
 SET max_threads = 1;
 SET enable_parallel_replicas = 0;

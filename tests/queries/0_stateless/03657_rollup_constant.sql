@@ -22,7 +22,6 @@ INSERT INTO my_first_table (user_id, job_id, message, timestamp, metric) VALUES
     (102, 103,'Test5', today(),     4  ),
     (102, 103,'Test6', today(),     1  );
 
-SET enable_analyzer = 1;
 SELECT 1 AS constant, user_id, job_id, sum(metric)
 FROM my_first_table
 GROUP BY constant, user_id, job_id WITH ROLLUP
