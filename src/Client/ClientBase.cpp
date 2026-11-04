@@ -6282,8 +6282,12 @@ Block ClientBase::fetchInternalQueryResult(
         {
             case Protocol::Server::Data:
                 /// The first data block is the empty header; only blocks with rows carry results.
+                /// The blocks are concatenated below, and the server may send the same column in a
+                /// different representation in each block (constant, sparse, replicated), while
+                /// `concatenateBlocks` copies them with `insertRangeFrom` of the column of the first
+                /// one. So every block is converted to full columns first.
                 if (packet.block.rows() > 0)
-                    blocks.push_back(std::move(packet.block));
+                    blocks.push_back(materializeBlock(packet.block, /*remove_special_column_representations=*/ true));
                 continue;
 
             case Protocol::Server::EndOfStream:
