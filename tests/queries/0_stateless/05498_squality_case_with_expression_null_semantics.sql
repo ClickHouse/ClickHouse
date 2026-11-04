@@ -25,6 +25,13 @@ SELECT caseWithExpression(
     'match',
     'default');
 
+SET allow_experimental_variant_type = 1;
+
+SELECT CASE CAST(NULL AS Nullable(Int8)) WHEN CAST(NULL AS Variant(Int8, String)) THEN 'match' ELSE 'default' END;
+SELECT CASE CAST(NULL AS Nullable(Int8)) WHEN CAST(NULL AS Variant(Int8, String)) THEN materialize('match') ELSE 'default' END;
+SELECT CASE CAST(NULL AS Dynamic) WHEN CAST(NULL AS Dynamic) THEN 'match' ELSE 'default' END;
+SELECT CASE tuple(CAST(NULL AS Nullable(Int8))) WHEN tuple(CAST(NULL AS Nullable(Int8))) THEN 'match' ELSE 'default' END;
+
 SELECT CASE WHEN isNull(NULL) THEN 'match' ELSE 'default' END;
 
 SET case_with_expression_null_equals_null = true;

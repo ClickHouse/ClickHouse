@@ -226,6 +226,7 @@ public:
             auto dst_supertype = tryGetLeastSupertype(dst_array_types);
             auto expr_type = removeNullable(args.front().type);
             bool can_use_transform = src_supertype && dst_supertype
+                && null_equals_null
                 && !isNullableOrLowCardinalityNullable(src_supertype)
                 && !isDynamic(expr_type)
                 && !isVariant(expr_type);
