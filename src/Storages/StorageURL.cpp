@@ -2950,7 +2950,7 @@ AzureURLParts parseAzureURL(const String & url)
 void StorageURL::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const
 {
     TableFunctionURL::updateStructureAndFormatArgumentsIfNeeded(
-        args, "", format_name, context, /*with_structure=*/false, is_replayed_definition);
+        args, "", format_name, context, /*with_structure=*/false, is_replayed_definition, /*replace_not_overridable=*/true);
 
     /// Materialize the resolved URL into engine args so that DETACH/ATTACH and server restart
     /// reproduce the originally-resolved URL even if `url_base` is later changed or unset.
@@ -3224,7 +3224,7 @@ private:
             return;
 
         TableFunctionURL::updateStructureAndFormatArgumentsIfNeeded(
-            args, /*structure_=*/"", resolved_format, context, /*with_structure=*/false, is_replayed_definition);
+            args, /*structure_=*/"", resolved_format, context, /*with_structure=*/false, is_replayed_definition, /*replace_not_overridable=*/true);
     }
 
     StoragePtr nested;
