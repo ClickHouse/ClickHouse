@@ -452,7 +452,7 @@ The maximum size of the buffer to read from local filesystem. If set to 0 then m
     DECLARE(UInt64, max_read_buffer_size_remote_fs, 0, R"(
 The maximum size of the buffer to read from remote filesystem. If set to 0 then max_read_buffer_size will be used. Values above 256 MiB are clamped to 256 MiB, as a read buffer never needs to be larger.
 )", 0) \
-    DECLARE(UInt64, max_distributed_connections, 1024, R"(
+    DECLARE(NonZeroUInt64, max_distributed_connections, 1024, R"(
 The maximum number of simultaneous connections with remote servers for distributed processing of a single query to a single Distributed table. We recommend setting a value no less than the number of servers in the cluster.
 
 The following parameters are only used when creating Distributed tables (and when launching a server), so there is no reason to change them at runtime.
