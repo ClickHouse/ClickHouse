@@ -1,6 +1,3 @@
-SET optimize_group_by_constant_keys = 1;
-SET optimize_trivial_insert_select = 0;
-
 CREATE TABLE set_index_not__fuzz_0 (`name` String, `status` Enum8('alive' = 0, 'rip' = 1), INDEX idx_status status TYPE set(2) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY name
 SETTINGS index_granularity = 8192;
@@ -13,7 +10,8 @@ SELECT
 FROM set_index_not__fuzz_0
 GROUP BY
     toNullable(3),
-    concat(concat(NULLIF(1, 1), toNullable(toNullable(3))));
+    concat(concat(NULLIF(1, 1), toNullable(toNullable(3))))
+SETTINGS enable_analyzer = 1;
 
 -- WITH ROLLUP (note that result is different with the analyzer (analyzer is correct including all combinations)
 SELECT
@@ -23,4 +21,5 @@ FROM set_index_not__fuzz_0
 GROUP BY
     toNullable(3),
     concat(concat(NULLIF(1, 1), toNullable(toNullable(3))))
-WITH ROLLUP;
+WITH ROLLUP
+SETTINGS enable_analyzer = 1;

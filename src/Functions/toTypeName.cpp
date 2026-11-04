@@ -2,7 +2,6 @@
 #include <Functions/IFunction.h>
 #include <Core/Field.h>
 #include <Core/Settings.h>
-#include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
 
@@ -20,7 +19,7 @@ namespace
 /** toTypeName(x) - get the type name
   * Returns name of IDataType instance (name of data type).
   */
-class FunctionToTypeName final : public IFunction
+class FunctionToTypeName : public IFunction
 {
 public:
     explicit FunctionToTypeName(bool print_pretty_type_names_) : print_pretty_type_names(print_pretty_type_names_)
@@ -45,8 +44,6 @@ public:
 
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    /// The name of the type does not depend on the values.
-    std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
@@ -55,9 +52,9 @@ public:
         return 1;
     }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
-        return "(Any) -> String";
+        return std::make_shared<DataTypeString>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override

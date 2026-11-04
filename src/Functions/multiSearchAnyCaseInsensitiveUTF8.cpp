@@ -35,9 +35,9 @@ Like [multiSearchAnyUTF8](#multiSearchAnyUTF8) but ignores case.
         "Given a UTF-8 string 'Здравствуйте', check if character 'з' (lowercase) is present",
         "SELECT multiSearchAnyCaseInsensitiveUTF8('Здравствуйте',['з'])",
         R"(
-┌─multiSearchAnyCaseInsensitiveUTF8('Здравствуйте', ['з'])─┐
-│                                                        1 │
-└──────────────────────────────────────────────────────────┘
+┌─multiSearchA⋯те', ['з'])─┐
+│                        1 │
+└──────────────────────────┘
         )"
     }
     };

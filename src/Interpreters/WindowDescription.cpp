@@ -3,8 +3,6 @@
 #include <IO/Operators.h>
 #include <Interpreters/WindowDescription.h>
 #include <Parsers/ASTFunction.h>
-#include <WindowFunctions/IGeneralWindowFunction.h>
-#include <WindowFunctions/WindowFunction.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldAccurateComparison.h>
 
@@ -31,22 +29,6 @@ std::string WindowFunctionDescription::dump() const
     }
 
     return ss.str();
-}
-
-GeneralWindowFunctionPtr asGeneralWindowFunction(const AggregateFunctionPtr & aggregate_function)
-{
-    const auto * shell = dynamic_cast<const WindowFunction *>(aggregate_function.get());
-    return shell ? shell->getDefinition() : nullptr;
-}
-
-void validateWindowFunctions(const WindowDescription & window)
-{
-    for (const auto & function : window.window_functions)
-    {
-        const auto general = asGeneralWindowFunction(function.aggregate_function);
-        if (general && general->getRequirements(window).order_by && window.order_by.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Window function '{}' requires ORDER BY in its window definition", general->getName());
-    }
 }
 
 std::string WindowDescription::dump() const
@@ -138,8 +120,8 @@ void WindowFrame::checkValid() const
     // Check relative positioning of offsets.
     // UNBOUNDED PRECEDING end and UNBOUNDED FOLLOWING start should have been
     // forbidden at the parsing level.
-    chassert(!(begin_type == BoundaryType::Unbounded && !begin_preceding));
-    chassert(!(end_type == BoundaryType::Unbounded && end_preceding));
+    assert(!(begin_type == BoundaryType::Unbounded && !begin_preceding));
+    assert(!(end_type == BoundaryType::Unbounded && end_preceding));
 
     if (begin_type == BoundaryType::Unbounded
         || end_type == BoundaryType::Unbounded)
@@ -173,7 +155,7 @@ void WindowFrame::checkValid() const
         && begin_type == BoundaryType::Offset)
     {
         // Frame start offset must be less or equal that the frame end offset.
-        bool begin_less_equal_end = false;
+        bool begin_less_equal_end;
         if (begin_preceding && end_preceding)
         {
             /// we can't compare Fields using operator<= if fields have different types
