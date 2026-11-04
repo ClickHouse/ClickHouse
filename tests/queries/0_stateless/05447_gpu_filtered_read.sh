@@ -81,18 +81,18 @@ function plan_of()
     fi
 }
 
-# Dates against dates written as strings, as TPC-H writes them, and every column sent back.
-QUERY="SELECT count(), sum(k), round(sum(p), 3), sum(q), sum(cityHash64(m)), max(t) FROM gpu_filtered_read WHERE d >= date '1994-01-01' AND d < date '1994-01-01' + INTERVAL 1 YEAR"
+# A range of numbers, and every column sent back.
+QUERY="SELECT count(), sum(k), round(sum(p), 3), sum(q), sum(cityHash64(m)), max(t) FROM gpu_filtered_read WHERE p >= 30000 AND p < 45000"
 plan_of "$QUERY" device
 compare_with_cpu "$QUERY"
 
 # A string conjunct is left to the CPU; the others, which a filter above takes as columns, are true for the rows sent back.
-QUERY="SELECT m, count(), round(sum(p), 3) FROM gpu_filtered_read WHERE m IN ('MAIL', 'SHIP') AND c < r AND d < c AND r >= date '1994-01-01' AND r < date '1994-01-01' + INTERVAL 1 YEAR GROUP BY m ORDER BY m"
+QUERY="SELECT m, count(), round(sum(p), 3) FROM gpu_filtered_read WHERE m IN ('MAIL', 'SHIP') AND q < -95000 AND p >= 30000 AND p < 45000 GROUP BY m ORDER BY m"
 plan_of "$QUERY" "device and cpu"
 compare_with_cpu "$QUERY"
 
 # The string conjunct is over a column the read does not output otherwise.
-QUERY="SELECT round(sum(p), 3), count() FROM gpu_filtered_read WHERE d < date '1993-01-01' AND m = 'AIR'"
+QUERY="SELECT round(sum(p), 3), count() FROM gpu_filtered_read WHERE p < 20000 AND m = 'AIR'"
 plan_of "$QUERY" "device and cpu"
 compare_with_cpu "$QUERY"
 
