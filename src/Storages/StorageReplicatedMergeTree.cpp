@@ -10701,7 +10701,7 @@ bool StorageReplicatedMergeTree::waitForProcessingQueue(UInt64 max_wait_millisec
 
         const UInt64 elapsed_ms = watch.elapsedMilliseconds();
         const UInt64 remaining_ms = max_wait_milliseconds > elapsed_ms ? max_wait_milliseconds - elapsed_ms : 0;
-        if (target_entry_event.tryWait(static_cast<long>(std::min(remaining_ms, cancellation_check_period_ms))))
+        if (target_entry_event.tryWait(std::min(remaining_ms, cancellation_check_period_ms)))
             break;
         if (remaining_ms <= cancellation_check_period_ms)
             return false;
