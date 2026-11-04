@@ -219,6 +219,89 @@ def test_intent_replay_does_not_over_read(kafka_cluster):
             )
 
 
+def test_intent_survives_interrupted_replay(kafka_cluster):
+    # An insert can commit its rows but report a failure (e.g. a failed quorum check), leaving an
+    # intent behind. The intent must survive an interruption of its replay (SYSTEM STOP aborts or
+    # cancels whatever is in flight), otherwise a later batch could combine the already inserted
+    # messages with new ones into a block with a different hash, and deduplication could not drop
+    # the duplicates.
+    instance.rotate_logs()
+
+    topic_name = "topic_intent_interrupted_replay"
+
+    create_kafka_query = k.generate_new_create_table_query(
+        "kafka",
+        "a String",
+        topic_list=topic_name,
+        format="LineAsString",
+        settings={"kafka_flush_interval_ms": 2000},
+    )
+
+    k.kafka_produce(kafka_cluster, topic_name, [f"message_{i}" for i in range(1, 4)])
+
+    with k.existing_kafka_topic(k.get_admin_client(kafka_cluster), topic_name):
+        # See test_intent_replay_does_not_over_read for the explanation of the failpoints: the
+        # first insert reports `UNKNOWN_STATUS_OF_INSERT` while its data stays committed.
+        instance.query(
+            "SYSTEM ENABLE FAILPOINT replicated_merge_tree_commit_zk_fail_after_op"
+        )
+        instance.query(
+            "SYSTEM ENABLE FAILPOINT replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault"
+        )
+        try:
+            instance.query(
+                f"""
+                CREATE TABLE test.dst (
+                    a String,
+                )
+                ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/dst_intent_interrupted_replay', 'r1')
+                ORDER BY a;
+
+                {create_kafka_query};
+
+                CREATE MATERIALIZED VIEW test.kafka_mv TO test.dst AS
+                SELECT
+                    a
+                FROM test.kafka;
+                """
+            )
+
+            # The first batch seals with 3 messages, commits its rows, but reports a failure.
+            instance.wait_for_log_line(
+                f"Saving intent of 3 for topic-partition \\[{topic_name}:0\\]"
+            )
+            instance.wait_for_log_line("UNKNOWN_STATUS_OF_INSERT")
+
+            # Interrupt the replay of the intent: depending on the timing, the STOP lands before
+            # the replay starts, aborts it mid-poll, or cancels it after the batch was collected
+            # but before the insert started. In every case the intent must survive, so that the
+            # resumed replay consumes exactly the 3 intended messages and deduplication drops them;
+            # the messages produced while stopped must go into a later batch.
+            instance.query("SYSTEM STOP test.kafka")
+            k.kafka_produce(
+                kafka_cluster, topic_name, [f"message_{i}" for i in range(4, 11)]
+            )
+            instance.query("SYSTEM START test.kafka")
+
+            instance.query_with_retry(
+                "SELECT count() FROM test.dst",
+                retry_count=60,
+                sleep_time=1,
+                check_callback=lambda x: int(x) >= 10,
+            )
+
+            expected = sorted(f"message_{i}" for i in range(1, 11))
+            result = instance.query("SELECT a FROM test.dst ORDER BY a")
+            assert TSV(result) == TSV("\n".join(expected))
+        finally:
+            instance.query(
+                "SYSTEM DISABLE FAILPOINT replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault"
+            )
+            instance.query(
+                "SYSTEM DISABLE FAILPOINT replicated_merge_tree_commit_zk_fail_after_op"
+            )
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")

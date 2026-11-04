@@ -1565,9 +1565,11 @@ std::optional<size_t> StorageKafka2::streamFromConsumer(KeeperHandlingConsumer &
 
     if (isConsumeCancelRequested(cycle_epoch))
     {
-        /// The batch (if there is one) is abandoned before the insert started, so there is nothing
-        /// to deduplicate. Discard the intent along with the offsets, otherwise the next batch
-        /// would needlessly replay exactly the same messages.
+        /// The batch (if there is one) is abandoned before the insert started. If it is a fresh
+        /// batch, nobody tried to insert its messages, so there is nothing to deduplicate and its
+        /// intent is discarded; otherwise the next batch would needlessly replay exactly the same
+        /// messages. If the batch replays an existing intent, the intent is preserved, because the
+        /// insert of an earlier attempt may have committed the rows.
         if (maybe_blocks_and_guard.has_value())
             maybe_blocks_and_guard->guard.rollbackBeforeInsert();
         block_io.onCancelOrConnectionLoss();

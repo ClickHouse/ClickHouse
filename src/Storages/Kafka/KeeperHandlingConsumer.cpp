@@ -75,9 +75,11 @@ const cppkafka::Message::HeaderListType & KeeperHandlingConsumer::MessageInfo::c
     return kafka_consumer.currentHeaderList();
 }
 
-KeeperHandlingConsumer::OffsetGuard::OffsetGuard(KeeperHandlingConsumer & consumer_, const int64_t new_offset_)
+KeeperHandlingConsumer::OffsetGuard::OffsetGuard(
+    KeeperHandlingConsumer & consumer_, const int64_t new_offset_, const bool replays_existing_intent_)
     : consumer(&consumer_)
     , new_offset(new_offset_)
+    , replays_existing_intent(replays_existing_intent_)
 {
 }
 
@@ -85,6 +87,7 @@ KeeperHandlingConsumer::OffsetGuard::OffsetGuard(OffsetGuard && other) noexcept
     : needs_rollback(other.needs_rollback)
     , consumer(other.consumer)
     , new_offset(other.new_offset)
+    , replays_existing_intent(other.replays_existing_intent)
 {
     if (&other != this)
     {
@@ -110,7 +113,10 @@ void KeeperHandlingConsumer::OffsetGuard::commit()
 void KeeperHandlingConsumer::OffsetGuard::rollbackBeforeInsert()
 {
     chassert(needs_rollback && consumer);
-    consumer->discardIntentSizeNoThrow();
+    /// A replayed intent must survive the rollback: the insert of an earlier attempt may have
+    /// committed the rows of the batch, so deduplication still needs the exact replay.
+    if (!replays_existing_intent)
+        consumer->discardIntentSizeNoThrow();
     consumer->rollbackToCommittedOffsetsNoThrow();
     needs_rollback = false;
 }
@@ -803,7 +809,7 @@ std::optional<KeeperHandlingConsumer::OffsetGuard> KeeperHandlingConsumer::poll(
                 }
 
                 saveIntentSize(topic_partition, committed_offset, consumed_messages);
-                return OffsetGuard(*this, last_read_offset + 1);
+                return OffsetGuard(*this, last_read_offset + 1, /* replays_existing_intent = */ intent_size.has_value());
             }
         }
     }
