@@ -11,6 +11,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -49,9 +50,18 @@ public:
         return 0;
     }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(Number, Number, Number, [const Number]) -> String";
+        if (arguments.size() != 3 && arguments.size() != 4)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                    "Function {} requires from 3 or 4 parameters: value, min_value, max_value, [max_width_of_bar = 80]. "
+                    "Passed {}.", getName(), arguments.size());
+
+        if (!isNumber(arguments[0]) || !isNumber(arguments[1]) || !isNumber(arguments[2])
+            || (arguments.size() == 4 && !isNumber(arguments[3])))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "All arguments for function {} must be numeric.", getName());
+
+        return std::make_shared<DataTypeString>();
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override

@@ -6,7 +6,6 @@
 #include <thread>
 #include <atomic>
 #include <Poco/Net/StreamSocket.h>
-#include <Common/DNSResolver.h>
 #include <Common/Exception.h>
 #include <Common/ShellCommand.h>
 #include <IO/ReadHelpers.h>
@@ -53,7 +52,7 @@ try
 
                 try
                 {
-                    Poco::Net::SocketAddress address = DNSResolver::instance().resolveAddress(host, port);
+                    Poco::Net::SocketAddress address(host, port);
                     Poco::Net::StreamSocket socket;
                     //socket.setLinger(1, 0);
 
