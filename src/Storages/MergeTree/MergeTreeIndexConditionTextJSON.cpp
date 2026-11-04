@@ -836,7 +836,12 @@ bool MergeTreeIndexConditionText::traverseJSONPathValuesFunction(
 std::optional<MergeTreeIndexConditionText::JSONPathValuesNodeInfo>
 MergeTreeIndexConditionText::tryMatchJSONPathValuesNode(const RPNBuilderTreeNode & node) const
 {
-    if (!json_path_values_configuration || columns_shadowing_map_subcolumns.contains(node.getColumnName()))
+    if (!json_path_values_configuration)
+        return std::nullopt;
+
+    /// A column or subcolumn of the table claiming a Map key subcolumn name is not a path of the
+    /// indexed JSON column.
+    if (looksLikeMapSubcolumnName(node.getColumnName()) && is_column_shadowing_map_subcolumn(node.getColumnName()))
         return std::nullopt;
 
     const auto & object_type = assert_cast<const DataTypeObject &>(*json_path_values_configuration->json_type);
@@ -884,7 +889,7 @@ MergeTreeIndexConditionText::tryMatchJSONPathValuesNode(const RPNBuilderTreeNode
         }
     }
 
-    if (auto map_subcolumn = tryParseMapSubcolumnName(node.getColumnName(), columns_shadowing_map_subcolumns))
+    if (auto map_subcolumn = tryParseMapSubcolumnName(node.getColumnName(), is_column_shadowing_map_subcolumn))
     {
         auto & [map_column_name, serialized_key] = *map_subcolumn;
         if (auto info = make_map_element_info(map_column_name, std::move(serialized_key)))
