@@ -966,6 +966,10 @@ bool DatabaseReplicated::waitForReplicaToProcessAllEntries(UInt64 timeout_ms, Sy
         /// threshold above, re-reading max_log_ptr, which might have advanced while we waited.
         if (worker->waitForReplicaToProcessAllEntries(std::min(wait_step_ms, timeout_ms - elapsed_ms)))
             return true;
+
+        /// The worker was stopped (e.g. by `SYSTEM RESTORE DATABASE REPLICA` or `DROP DATABASE`), it will not make progress.
+        if (worker->isStopped())
+            return false;
     }
 }
 
@@ -1149,7 +1153,7 @@ void DatabaseReplicated::initDDLWorkerUnlocked()
     chassert(!is_probably_dropped.load());
     chassert(!ddl_worker_initialized.load());
 
-    ddl_worker = std::make_shared<DatabaseReplicatedDDLWorker>(this, getContext());
+    replaceDDLWorkerUnlocked(std::make_shared<DatabaseReplicatedDDLWorker>(this, getContext()));
     ddl_worker->startup();
     ddl_worker_initialized = true;
 }
@@ -1160,6 +1164,23 @@ std::shared_ptr<DatabaseReplicatedDDLWorker> DatabaseReplicated::tryGetDDLWorker
     if (!ddl_worker || is_probably_dropped)
         return nullptr;
     return ddl_worker;
+}
+
+std::shared_ptr<DatabaseReplicatedDDLWorker> DatabaseReplicated::replaceDDLWorkerUnlocked(std::shared_ptr<DatabaseReplicatedDDLWorker> new_worker)
+{
+    std::lock_guard lock{ddl_worker_ptr_mutex};
+    std::swap(ddl_worker, new_worker);
+    return new_worker;
+}
+
+bool DatabaseReplicated::isDDLWorkerCurrentlyActive() const
+{
+    std::shared_ptr<DatabaseReplicatedDDLWorker> worker;
+    {
+        std::lock_guard lock{ddl_worker_ptr_mutex};
+        worker = ddl_worker;
+    }
+    return worker && worker->isCurrentlyActive();
 }
 
 void DatabaseReplicated::restoreDatabaseNodesInKeeper(const ZooKeeperPtr & zookeeper)
@@ -1220,7 +1241,7 @@ void DatabaseReplicated::reinitializeDDLWorker()
         ddl_worker->shutdown();
         {
             ddl_worker_initialized = false;
-            ddl_worker = nullptr;
+            replaceDDLWorkerUnlocked(nullptr);
         }
     }
 
@@ -1450,7 +1471,7 @@ bool DatabaseReplicated::checkDigestValid(const ContextPtr & local_context) cons
     LOG_TEST(log, "Current in-memory metadata digest: {}", tables_metadata_digest);
 
     /// Database is probably being dropped
-    if (!local_context->getZooKeeperMetadataTransaction() && (!ddl_worker || !ddl_worker->isCurrentlyActive()))
+    if (!local_context->getZooKeeperMetadataTransaction() && !isDDLWorkerCurrentlyActive())
         return true;
 
     /// SYSTEM RESTART REPLICA temporarily removes a table from the in-memory tables map
@@ -2485,7 +2506,7 @@ void DatabaseReplicated::restoreDatabaseInKeeper(ContextPtr)
             LOG_TRACE(log, "Stopping DDL worker before restoring database metadata in Keeper.");
             ddl_worker->shutdown();
             ddl_worker_initialized = false;
-            ddl_worker = nullptr;
+            replaceDDLWorkerUnlocked(nullptr);
         }
     }
 
@@ -2617,7 +2638,7 @@ void DatabaseReplicated::shutdown()
     {
         std::lock_guard lock{ddl_worker_mutex};
         ddl_worker_initialized = false;
-        ddl_worker = nullptr;
+        replaceDDLWorkerUnlocked(nullptr);
     }
 
     DatabaseAtomic::shutdown();
@@ -2632,7 +2653,7 @@ void DatabaseReplicated::dropTable(ContextPtr local_context, const String & tabl
     waitDatabaseStarted();
 
     auto txn = local_context->getZooKeeperMetadataTransaction();
-    chassert(!ddl_worker || !ddl_worker->isCurrentlyActive() || txn || startsWith(table_name, ".inner_id.") || startsWith(table_name, ".tmp.inner_id."));
+    chassert(txn || !isDDLWorkerCurrentlyActive() || startsWith(table_name, ".inner_id.") || startsWith(table_name, ".tmp.inner_id."));
     if (txn && txn->isInitialQuery() && !txn->isCreateOrReplaceQuery())
     {
         String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_name);
@@ -2744,7 +2765,7 @@ void DatabaseReplicated::commitCreateTable(const ASTCreateQuery & query, const S
                        ContextPtr query_context)
 {
     auto txn = query_context->getZooKeeperMetadataTransaction();
-    chassert(!ddl_worker->isCurrentlyActive() || txn);
+    chassert(txn || !isDDLWorkerCurrentlyActive());
 
     String statement = getObjectDefinitionFromCreateQuery(query.clone());
 
@@ -2781,7 +2802,7 @@ void DatabaseReplicated::commitAlterTable(const StorageID & table_id,
                                           const String & statement, ContextPtr query_context)
 {
     auto txn = query_context->getZooKeeperMetadataTransaction();
-    chassert(!ddl_worker || !ddl_worker->isCurrentlyActive() || txn);
+    chassert(txn || !isDDLWorkerCurrentlyActive());
     if (txn && txn->isInitialQuery())
     {
         String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_id.table_name);
@@ -2821,7 +2842,7 @@ void DatabaseReplicated::detachTablePermanently(ContextPtr local_context, const 
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for DETACH TABLE PERMANENTLY is disabled");
 
     auto txn = local_context->getZooKeeperMetadataTransaction();
-    chassert(!ddl_worker->isCurrentlyActive() || txn);
+    chassert(txn || !isDDLWorkerCurrentlyActive());
     if (txn && txn->isInitialQuery())
     {
         /// We have to remove metadata from zookeeper, because we do not distinguish permanently detached tables
@@ -2846,7 +2867,7 @@ void DatabaseReplicated::removeDetachedPermanentlyFlag(ContextPtr local_context,
     waitDatabaseStarted();
 
     auto txn = local_context->getZooKeeperMetadataTransaction();
-    chassert(!ddl_worker->isCurrentlyActive() || txn);
+    chassert(txn || !isDDLWorkerCurrentlyActive());
     if (txn && txn->isInitialQuery() && attach)
     {
         String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_name);

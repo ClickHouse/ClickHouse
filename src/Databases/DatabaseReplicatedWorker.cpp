@@ -1,4 +1,5 @@
 #include <Databases/DatabaseReplicatedWorker.h>
+#include <base/scope_guard.h>
 #include <base/sleep.h>
 
 #include <filesystem>
@@ -207,6 +208,8 @@ void DatabaseReplicatedDDLWorker::shutdown()
     /// guarantees that each of them either sees the flag or receives the notification.
     {
         std::lock_guard lock{mutex};
+        for (const auto & event : log_ptr_waiters)
+            event->set();
     }
     wait_current_task_change.notify_all();
 }
@@ -413,19 +416,31 @@ bool DatabaseReplicatedDDLWorker::waitForReplicaToProcessAllEntries(UInt64 timeo
             return zookeeper->expired() || current_task >= max_log || stop_flag;
         });
 
-        if (!processed)
+        if (!processed || stop_flag)
             return false;
     }
 
-    /// Lets now wait for max_log_ptr to be processed
-    Coordination::Stat stat;
+    /// Lets now wait for max_log_ptr to be processed.
+    /// The event is set either by the watch or by `shutdown`, so a stopped worker does not wait for the whole timeout.
     auto event_ptr = std::make_shared<Poco::Event>();
+    {
+        std::lock_guard lock{mutex};
+        if (stop_flag)
+            return false;
+        log_ptr_waiters.insert(event_ptr);
+    }
+    SCOPE_EXIT({
+        std::lock_guard lock{mutex};
+        log_ptr_waiters.erase(event_ptr);
+    });
+
+    Coordination::Stat stat;
     auto new_log = zookeeper->get(our_log_ptr_path, &stat, event_ptr);
 
     if (new_log == toString(max_log_ptr))
         return true;
 
-    return event_ptr->tryWait(timeout_ms);
+    return event_ptr->tryWait(timeout_ms) && !stop_flag;
 }
 
 

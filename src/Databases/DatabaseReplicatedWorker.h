@@ -3,6 +3,9 @@
 #include <Interpreters/QueryFlags.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Core/QualifiedTableName.h>
+#include <Poco/Event.h>
+
+#include <unordered_set>
 
 namespace DB
 {
@@ -32,7 +35,11 @@ public:
 
     void shutdown() override;
 
+    /// Returns false on timeout or if the worker is stopped before or during the wait.
     bool waitForReplicaToProcessAllEntries(UInt64 timeout_ms);
+
+    /// The worker was shut down. A stopped worker is never restarted, the database replaces it with a new one.
+    bool isStopped() const { return stop_flag; }
 
     static String enqueueQueryImpl(const ZooKeeperPtr & zookeeper, DDLLogEntry & entry,
                                    DatabaseReplicated * const database, bool committed = false, Coordination::Requests additional_checks = {}); /// NOLINT
@@ -70,6 +77,9 @@ private:
     std::condition_variable wait_current_task_change;
 
     String current_task;
+    /// Events of `waitForReplicaToProcessAllEntries` waiting for our `log_ptr` in Keeper to change.
+    /// `shutdown` sets them, so that the waiters return without waiting for the timeout.
+    std::unordered_set<std::shared_ptr<Poco::Event>> log_ptr_waiters;
     std::atomic<UInt32> logs_to_keep = std::numeric_limits<UInt32>::max();
     std::atomic_bool unsynced_after_recovery = false;
 
