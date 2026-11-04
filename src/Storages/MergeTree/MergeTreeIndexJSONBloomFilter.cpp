@@ -2096,6 +2096,30 @@ std::optional<String> tryMatchJSONPresencePath(
     return std::move(match->logical_path);
 }
 
+/// `FunctionToSubcolumnsPass` rewrites `empty(s)`, and so `s = ''`, to `s.size = 0` for `String` and `Nullable(String)`.
+/// For `node` that reads `s.size` of a `JSON` string subcolumn, returns an input node that reads `s`.
+std::optional<ActionsDAG::Node> tryMakeJSONStringNodeFromSize(const RPNBuilderTreeNode & node, const Block & header)
+{
+    static constexpr std::string_view size_suffix = ".size";
+    if (node.isFunction() || node.isConstant())
+        return std::nullopt;
+    const String name = node.getColumnName();
+    /// A matching name is a path whose last key is `size`, not the size of its parent.
+    if (!name.ends_with(size_suffix) || tryMatchJSONSubcolumn(name, header))
+        return std::nullopt;
+
+    String string_name = name.substr(0, name.size() - size_suffix.size());
+    const auto match = tryMatchJSONSubcolumn(string_name, header);
+    if (!match || !isString(removeNullable(removeLowCardinality(match->type))))
+        return std::nullopt;
+
+    ActionsDAG::Node string_node;
+    string_node.type = ActionsDAG::ActionType::INPUT;
+    string_node.result_name = std::move(string_name);
+    string_node.result_type = match->type;
+    return string_node;
+}
+
 /// The name of the indexed `JSON` column when `node` is `JSONAllPaths(json)`.
 std::optional<String> tryMatchJSONAllPaths(const RPNBuilderTreeNode & node, const Block & header)
 {
@@ -3342,7 +3366,15 @@ bool MergeTreeIndexConditionJSONBloomFilter::extractAtomFromTree(const RPNBuilde
     }
 
     if (function_name == "equals")
+    {
+        if (constant == Field(UInt64(0)) || constant == Field(Int64(0)))
+        {
+            if (const auto string_node = tryMakeJSONStringNodeFromSize(*key_node, header))
+                return extract_equals(
+                    RPNBuilderTreeNode(&*string_node, key_node->getContext()), Field(String()), std::make_shared<DataTypeString>());
+        }
         return extract_equals(*key_node, constant, constant_type);
+    }
 
     auto path = tryMatchJSONPath(*key_node, header, is_column_shadowing_subcolumn);
     if (!path || !path_matcher->shouldIndex(path->logical_path))
