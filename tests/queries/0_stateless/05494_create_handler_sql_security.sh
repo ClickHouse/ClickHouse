@@ -128,10 +128,12 @@ done
 
 echo "--- 6. a request to it can choose only the output format and the query parameters"
 as_default "CREATE HANDLER h6_${DB} URL '/${DB}/h6' METHODS (POST) DEFINER = ${U_DEF} SQL SECURITY DEFINER AS INSERT INTO ${DB}.t3 SELECT 6"
-for param in "role=r_${DB}" "max_threads=1" "filter=1" "select=1" "profile=default" "database=${DB}" "session_id=s_${DB}" "foo=1"; do
+for param in "role=r_${DB}" "max_threads=1" "filter=1" "select=1" "profile=default" "database=${DB}" "session_id=s_${DB}" "query_id=q6_${DB}" "quota_key=k_${DB}" "foo=1"; do
     echo "${param%%=*}: $(request -X POST "${BASE}/${DB}/h6?${param}")"
 done
 echo "X-ClickHouse-Database: $(request -X POST -H "X-ClickHouse-Database: ${DB}" "${BASE}/${DB}/h6")"
+echo "X-ClickHouse-Query-Id: $(request -X POST -H "X-ClickHouse-Query-Id: q6_${DB}" "${BASE}/${DB}/h6")"
+echo "X-ClickHouse-Quota: $(request -X POST -H "X-ClickHouse-Quota: k_${DB}" "${BASE}/${DB}/h6")"
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM ${DB}.t3"
 request -X POST "${BASE}/${DB}/h6"
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM ${DB}.t3"
@@ -229,7 +231,8 @@ handler_query "h16_${DB}" url
 
 echo "--- 17. a Distributed table"
 as_default "CREATE HANDLER h17_${DB} URL '/${DB}/h17' DEFINER = ${U_DEF} SQL SECURITY DEFINER AS SELECT * FROM ${DB}.dist ORDER BY id SETTINGS prefer_localhost_replica = 0"
-request -u "${U_CALLER}:" "${BASE}/${DB}/h17?query_id=q17_${DB}"
+request -u "${U_CALLER}:" -D "${CLICKHOUSE_TMP}/h17_${DB}.headers" "${BASE}/${DB}/h17"
+q17=$(grep -i '^X-ClickHouse-Query-Id:' "${CLICKHOUSE_TMP}/h17_${DB}.headers" | tr -d '\r' | awk '{print $2}')
 # The query log entry can be written after the HTTP response is sent.
 # With serialize_query_plan the shard's entry has empty `databases`, so the initial query's entry is filtered.
 for _ in {1..60}; do
@@ -237,7 +240,7 @@ for _ in {1..60}; do
     SYSTEM FLUSH LOGS query_log;
     SELECT count() > 0, replaceAll(any(initial_user), '${DB}', 'DB') FROM system.query_log
     WHERE NOT is_initial_query AND type = 'QueryFinish' AND event_date >= yesterday()
-        AND initial_query_id IN (SELECT query_id FROM system.query_log WHERE query_id = 'q17_${DB}' AND is_initial_query
+        AND initial_query_id IN (SELECT query_id FROM system.query_log WHERE query_id = '${q17}' AND is_initial_query
             AND event_date >= yesterday() AND has(databases, currentDatabase()))")
     [[ "$res" == 1* ]] && break
     sleep 0.5

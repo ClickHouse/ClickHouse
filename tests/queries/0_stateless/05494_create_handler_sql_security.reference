@@ -53,8 +53,12 @@ select: (BAD_ARGUMENTS)
 profile: (BAD_ARGUMENTS)
 database: (BAD_ARGUMENTS)
 session_id: (BAD_ARGUMENTS)
+query_id: (BAD_ARGUMENTS)
+quota_key: (BAD_ARGUMENTS)
 foo: (BAD_ARGUMENTS)
 X-ClickHouse-Database: (BAD_ARGUMENTS)
+X-ClickHouse-Query-Id: (BAD_ARGUMENTS)
+X-ClickHouse-Quota: (BAD_ARGUMENTS)
 0
 
 1

@@ -458,6 +458,13 @@ void HTTPHandler::processQuery(
             reject_request_input(deferred_unrecognized_params.front().first);
         if (params.has("role"))
             reject_request_input("role");
+        /// The query runs as the definer: these would choose its running query to replace and its quota key.
+        for (const auto * name : {"query_id", "quota_key"})
+            if (params.has(name))
+                reject_request_input(name);
+        for (const auto * name : {"X-ClickHouse-Query-Id", "X-ClickHouse-Quota"})
+            if (request.has(name))
+                reject_request_input(name);
     }
 
     ContextMutablePtr context;
