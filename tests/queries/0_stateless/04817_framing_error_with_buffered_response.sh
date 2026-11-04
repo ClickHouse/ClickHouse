@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
+# Tags: no-parallel, no-fasttest
 # Tag no-parallel: enables the `framing_exception_packet_throw` fail point, which affects the whole
 # server. It fires on the next framed exception delivery anywhere on the server, so a concurrent
 # framing query from another test could consume the injected fault - making this test miss its own

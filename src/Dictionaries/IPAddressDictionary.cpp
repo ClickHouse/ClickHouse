@@ -1,3 +1,4 @@
+#include <Common/StackWithMemoryTracking.h>
 #include <Dictionaries/IPAddressDictionary.h>
 #include <Columns/ColumnFixedString.h>
 
@@ -573,7 +574,7 @@ void IPAddressDictionary::loadData()
     }
 
     parent_subnet.resize(ip_records.size());
-    std::stack<size_t> subnets_stack;
+    StackWithMemoryTracking<size_t> subnets_stack;
     for (const auto i : collections::range(0, ip_records.size()))
     {
         parent_subnet[i] = i;

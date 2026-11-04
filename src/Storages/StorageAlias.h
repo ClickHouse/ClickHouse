@@ -87,7 +87,7 @@ public:
     /// Distributed write to target table
     std::optional<QueryPipeline> distributedWrite(const ASTInsertQuery & query, ContextPtr local_context) override;
 
-    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override { getTargetTable()->checkAlterIsPossible(commands, local_context); }
+    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;
 
     /// Alter target table
     void alter(
@@ -198,6 +198,7 @@ public:
     bool prefersLargeBlocks() const override { return getTargetTable()->prefersLargeBlocks(); }
     bool areAsynchronousInsertsEnabled() const override { return getTargetTable()->areAsynchronousInsertsEnabled(); }
     bool isRemote() const override { return getTargetTable()->isRemote(); }
+    bool readRequiresAnalyzedQuery() const override { return getTargetTable()->readRequiresAnalyzedQuery(); }
     bool isSharedStorage() const override { return getTargetTable()->isSharedStorage(); }
     bool supportsReplication() const override
     {
