@@ -26,6 +26,7 @@
 namespace ProfileEvents
 {
 extern const Event RuntimeFilterBloomFilterBuildsSkipped;
+extern const Event RuntimeFilterDenseBitsetsBuilt;
 }
 
 namespace DB
@@ -167,17 +168,20 @@ TEST(RuntimeFilterLookup, ApproximateRuntimeFilterQueriesBloomFilter)
 
     EXPECT_EQ(filter.getFilterColumnTargetType(), type);
     filter.enableIndexAnalysis();
-    filter.insert(makeUInt64Column({1, 3}));
-    filter.insert(makeUInt64Column({5}));
+    const ProfileEvents::Count bitsets_before = ProfileEvents::global_counters[ProfileEvents::RuntimeFilterDenseBitsetsBuilt];
+    /// The key range is too wide for a dense bitset, so the keys go to a Bloom filter.
+    filter.insert(makeUInt64Column({1, 5'000'000'000}));
+    filter.insert(makeUInt64Column({3}));
     filter.finishInsert();
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::RuntimeFilterDenseBitsetsBuilt] - bitsets_before, 0);
 
     EXPECT_EQ(filter.getFilterColumnTargetType(), type);
     EXPECT_FALSE(filter.getRecordedKeyValues());
     auto range = filter.getRecordedKeyRanges();
     ASSERT_TRUE(range);
     EXPECT_EQ(range->left.safeGet<UInt64>(), 1);
-    EXPECT_EQ(range->right.safeGet<UInt64>(), 5);
-    expectMask(filter.find(makeUInt64ColumnWithType({1, 3, 5}, type)), {1, 1, 1});
+    EXPECT_EQ(range->right.safeGet<UInt64>(), 5'000'000'000);
+    expectMask(filter.find(makeUInt64ColumnWithType({1, 3, 5'000'000'000}, type)), {1, 1, 1});
     EXPECT_EQ(filter.getStats().rows_checked.load(), 3);
     EXPECT_EQ(filter.getStats().rows_passed.load(), 3);
 }

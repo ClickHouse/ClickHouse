@@ -241,8 +241,8 @@ private:
 ///
 /// While the keys take less memory as values than as bits for their range, for example the keys that
 /// one build stream sees of a wide range, they are kept as values. Their bits are set once that is no
-/// longer true, or when the build finishes. So a build stream holds at most the smaller of the two, and
-/// only the merged filter allocates the bits for the whole range.
+/// longer true, or when the build finishes. So a build stream never holds more than the bytes of the keys
+/// it received, and only the merged filter allocates the bits for the whole range.
 class DenseBitsetRuntimeFilter
 {
 public:

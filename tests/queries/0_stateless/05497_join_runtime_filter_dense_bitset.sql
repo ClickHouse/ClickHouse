@@ -27,6 +27,9 @@ INSERT INTO build SELECT number * 3 - 45000 FROM numbers(15000);
 SELECT 'dense inner', count(), sum(v) FROM probe AS p INNER JOIN build AS b ON p.k = b.k SETTINGS log_comment = '05497 dense inner', max_threads = 4;
 SELECT 'dense inner', count(), sum(v) FROM probe AS p INNER JOIN build AS b ON p.k = b.k SETTINGS enable_join_runtime_filters = 0;
 SELECT 'dense inner one thread', count(), sum(v) FROM probe AS p INNER JOIN build AS b ON p.k = b.k SETTINGS log_comment = '05497 dense inner one thread', max_threads = 1;
+-- 1 KiB of Bloom bits would be saturated by these keys and dropped; the bitset (16 x 1 KiB covers 131072 values) keeps checking rows.
+SELECT 'dense stays', count(), sum(v) FROM probe AS p INNER JOIN build AS b ON p.k = b.k SETTINGS log_comment = '05497 dense stays', join_runtime_bloom_filter_bytes = 1024, join_runtime_filter_size_from_hash_table_stats = 0, max_threads = 1, max_block_size = 8192;
+SELECT 'dense stays', count(), sum(v) FROM probe AS p INNER JOIN build AS b ON p.k = b.k SETTINGS enable_join_runtime_filters = 0;
 SELECT 'dense right', count(), sum(v) FROM probe AS p RIGHT JOIN build AS b ON p.k = b.k;
 SELECT 'dense right', count(), sum(v) FROM probe AS p RIGHT JOIN build AS b ON p.k = b.k SETTINGS enable_join_runtime_filters = 0;
 SELECT 'dense semi', count(), sum(v) FROM probe AS p LEFT SEMI JOIN build AS b ON p.k = b.k;
@@ -45,7 +48,8 @@ SELECT 'sparse', count(), sum(v) FROM probe AS p INNER JOIN (SELECT k * 10000 AS
 SELECT 'sparse', count(), sum(v) FROM probe AS p INNER JOIN (SELECT k * 10000 AS k FROM build) AS b ON p.k = b.k SETTINGS enable_join_runtime_filters = 0;
 -- 60M values need 7.5 MB: within the default allowance, beyond the allowance of a smaller Bloom filter setting.
 SELECT 'wide', count(), sum(v) FROM probe AS p INNER JOIN (SELECT k * 666 AS k FROM build) AS b ON p.k = b.k SETTINGS log_comment = '05497 wide';
-SELECT 'wide small allowance', count(), sum(v) FROM probe AS p INNER JOIN (SELECT k * 666 AS k FROM build) AS b ON p.k = b.k SETTINGS log_comment = '05497 wide small allowance', join_runtime_bloom_filter_bytes = 65536;
+-- One stream: with many streams, the short run of keys that one stream sees can fit a bitset before the merge moves them to a Bloom filter.
+SELECT 'wide small allowance', count(), sum(v) FROM probe AS p INNER JOIN (SELECT k * 666 AS k FROM build) AS b ON p.k = b.k SETTINGS log_comment = '05497 wide small allowance', join_runtime_bloom_filter_bytes = 65536, max_threads = 1, max_block_size = 8192;
 SELECT 'wide', count(), sum(v) FROM probe AS p INNER JOIN (SELECT k * 666 AS k FROM build) AS b ON p.k = b.k SETTINGS enable_join_runtime_filters = 0;
 
 -- A key far above the range arrives last, after the bitset was built: the keys move to a Bloom filter and none is lost.
@@ -68,6 +72,10 @@ SELECT log_comment, ProfileEvents['RuntimeFilterDenseBitsetsBuilt'] > 0
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE '05497 %'
 ORDER BY log_comment;
+
+SELECT log_comment, ProfileEvents['RuntimeFilterDenseBitsetsBuilt'] > 0, ProfileEvents['RuntimeFilterRowsChecked'] > 0, ProfileEvents['RuntimeFilterBloomFilterBuildsSkipped'] = 0
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05497 dense stays';
 
 DROP TABLE probe;
 DROP TABLE build;
