@@ -16,7 +16,8 @@ class SerializationMapKeyValue;
 struct MapBucketsLowCardinalityDictionary
 {
     ColumnPtr dictionary;
-    /// Shared dictionaries of the buckets `dictionary` is built from. Empty if it cannot be reused.
+    /// Dictionaries of the buckets `dictionary` is built from. Empty if it cannot be reused.
+    /// They are shared, except for the buckets that had no elements, which are not checked while they have none.
     std::vector<ColumnPtr> bucket_dictionaries;
     /// For every bucket, the positions in `dictionary` of the elements of the bucket dictionary.
     std::vector<ColumnPtr> bucket_positions;

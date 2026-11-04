@@ -1436,6 +1436,11 @@ void SerializationMap::collectLowCardinalityFromBucketsWithOrder(
     {
         bucket_columns[bucket] = &assert_cast<const ColumnLowCardinality &>(*buckets[bucket]);
         total_elements += bucket_columns[bucket]->size();
+        /// A bucket without elements in this read keeps the private dictionary of an empty column, because
+        /// `SerializationLowCardinality` attaches the shared dictionary only when it reads rows. No elements
+        /// are taken from such a bucket, so its dictionary neither invalidates nor prevents the reuse.
+        if (bucket_columns[bucket]->empty())
+            continue;
         all_shared = all_shared && bucket_columns[bucket]->isSharedDictionary();
         dictionaries_changed = dictionaries_changed
             || merged_dictionary.bucket_dictionaries[bucket].get() != bucket_columns[bucket]->getDictionaryPtr().get();
