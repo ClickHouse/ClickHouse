@@ -123,6 +123,22 @@ fi
 ${CLICKHOUSE_CLIENT} --query "SELECT count(), sum(v) FROM ${T}"
 ${CLICKHOUSE_CLIENT} --query "SELECT count(), sum(v) FROM ${T} SETTINGS iceberg_snapshot_id = $(metadata "${T}" snapshot 2)"
 
-for suffix in partitioned unpartitioned disabled min_count drop_partition optimize; do
+echo "--- full OPTIMIZE of a merged manifest spanning partitions"
+T="${PREFIX}_optimize_partitions"
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${T} (p Int32, v Int32) ENGINE = IcebergLocal('${USER_FILES_PATH}/${T}/', 'Parquet') PARTITION BY (p)"
+# Insert 3 merges the manifests of inserts 1 and 2 (partitions 1 and 2) into one manifest.
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --iceberg_manifest_min_count_to_compact=2 -m --query "$(inserts "${T}" 1 3)"
+# After the snapshots of inserts 1 and 2 expire, only the merged manifest lists their files.
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --allow_experimental_expire_snapshots=1 --query "ALTER TABLE ${T} EXECUTE expire_snapshots(snapshot_ids = [$(metadata "${T}" snapshot 1), $(metadata "${T}" snapshot 2)])" > /dev/null
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --mutations_sync=2 --query "ALTER TABLE ${T} DELETE WHERE v = 2"
+# The full compaction keeps the partition tuple of each data file of the merged manifest.
+if [[ "${IS_CLOUD}" != "1" ]]; then
+    ${CLICKHOUSE_CLIENT} --allow_experimental_iceberg_compaction=1 --query "OPTIMIZE TABLE ${T}"
+fi
+${CLICKHOUSE_CLIENT} --query "SELECT p, v FROM ${T} ORDER BY p"
+${CLICKHOUSE_CLIENT} --query "SELECT p, v FROM ${T} WHERE p = 1"
+${CLICKHOUSE_CLIENT} --query "SELECT p, v FROM ${T} WHERE p = 3"
+
+for suffix in partitioned unpartitioned disabled min_count drop_partition optimize optimize_partitions; do
     ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${PREFIX}_${suffix}"
 done

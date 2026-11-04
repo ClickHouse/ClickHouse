@@ -783,6 +783,11 @@ void generateManifestFile(
                 if (isBool(removeNullable(partition_types[i])))
                     return avro::GenericDatum(applyVisitor(FieldVisitorConvertToNumber<UInt64>(), file_partition_values[i]) != 0);
 
+                /// `Float32` values are carried in a `Float64` field, but an Avro `float` must be written as four bytes:
+                /// a `double` datum would be encoded as eight and shift all the following fields.
+                if (value_schema->type() == avro::AVRO_FLOAT)
+                    return avro::GenericDatum(static_cast<float>(applyVisitor(FieldVisitorConvertToNumber<Float64>(), file_partition_values[i])));
+
                 switch (file_partition_values[i].getType())
                 {
                     case Field::Types::Int64:
