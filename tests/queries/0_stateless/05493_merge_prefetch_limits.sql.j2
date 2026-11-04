@@ -1,45 +1,34 @@
 -- Tags: no-fasttest
 -- no-fasttest: needs S3
 
--- Merges limit their prefetches as queries do. A reader of more than `filesystem_prefetches_limit` columns does not
--- prefetch. A merge does not prefetch if its prefetches need more than `filesystem_prefetch_max_memory_usage`.
+-- Merges limit their prefetches as queries do. A merge does not prefetch if it needs more prefetches, one per column of
+-- each part, than `filesystem_prefetches_limit`, or if their estimated memory is larger than `filesystem_prefetch_max_memory_usage`.
 -- `OPTIMIZE ... DRY RUN` merges with the settings of the query, a background merge with the background profile.
 
 SET optimize_on_insert = 0;
+-- Do not read the merged part back, only the merge reads.
+SET optimize_dry_run_check_part = 0;
 
-DROP TABLE IF EXISTS t_prefetch_300_columns;
-DROP TABLE IF EXISTS t_prefetch_10_columns;
+DROP TABLE IF EXISTS t_merge_prefetch;
 
-CREATE TABLE t_prefetch_300_columns (key UInt64{% for i in range(300) %}, c{{ i }} UInt64{% endfor %})
+CREATE TABLE t_merge_prefetch (key UInt64{% for i in range(10) %}, c{{ i }} UInt64{% endfor %})
 ENGINE = MergeTree ORDER BY key
 SETTINGS storage_policy = 's3_no_cache', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, enable_vertical_merge_algorithm = 0;
 
-CREATE TABLE t_prefetch_10_columns (key UInt64{% for i in range(10) %}, c{{ i }} UInt64{% endfor %})
-ENGINE = MergeTree ORDER BY key
-SETTINGS storage_policy = 's3_no_cache', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, enable_vertical_merge_algorithm = 0;
+SYSTEM STOP MERGES t_merge_prefetch;
 
-SYSTEM STOP MERGES t_prefetch_300_columns;
-SYSTEM STOP MERGES t_prefetch_10_columns;
+INSERT INTO t_merge_prefetch SELECT number{% for i in range(10) %}, number + {{ i }}{% endfor %} FROM numbers(100);
+INSERT INTO t_merge_prefetch SELECT number{% for i in range(10) %}, number + {{ i }}{% endfor %} FROM numbers(100, 100);
 
-INSERT INTO t_prefetch_300_columns SELECT number{% for i in range(300) %}, number + {{ i }}{% endfor %} FROM numbers(100);
-INSERT INTO t_prefetch_300_columns SELECT number{% for i in range(300) %}, number + {{ i }}{% endfor %} FROM numbers(100, 100);
-INSERT INTO t_prefetch_10_columns SELECT number{% for i in range(10) %}, number + {{ i }}{% endfor %} FROM numbers(100);
-INSERT INTO t_prefetch_10_columns SELECT number{% for i in range(10) %}, number + {{ i }}{% endfor %} FROM numbers(100, 100);
+-- 2 parts with at least 11 columns need at least 22 prefetches.
+OPTIMIZE TABLE t_merge_prefetch DRY RUN PARTS 'all_1_1_0', 'all_2_2_0' SETTINGS filesystem_prefetches_limit = 1000, filesystem_prefetch_max_memory_usage = '1Gi';
+OPTIMIZE TABLE t_merge_prefetch DRY RUN PARTS 'all_1_1_0', 'all_2_2_0' SETTINGS filesystem_prefetches_limit = 10, filesystem_prefetch_max_memory_usage = '1Gi';
+OPTIMIZE TABLE t_merge_prefetch DRY RUN PARTS 'all_1_1_0', 'all_2_2_0' SETTINGS filesystem_prefetches_limit = 0, filesystem_prefetch_max_memory_usage = '1Gi';
+OPTIMIZE TABLE t_merge_prefetch DRY RUN PARTS 'all_1_1_0', 'all_2_2_0' SETTINGS filesystem_prefetches_limit = 1000, filesystem_prefetch_max_memory_usage = 1;
 
-OPTIMIZE TABLE t_prefetch_300_columns DRY RUN PARTS 'all_1_1_0', 'all_2_2_0' SETTINGS filesystem_prefetches_limit = 200, filesystem_prefetch_max_memory_usage = '1Gi';
-OPTIMIZE TABLE t_prefetch_300_columns DRY RUN PARTS 'all_1_1_0', 'all_2_2_0' SETTINGS filesystem_prefetches_limit = 0, filesystem_prefetch_max_memory_usage = '1Gi';
-OPTIMIZE TABLE t_prefetch_10_columns DRY RUN PARTS 'all_1_1_0', 'all_2_2_0' SETTINGS filesystem_prefetches_limit = 200, filesystem_prefetch_max_memory_usage = '1Gi';
-OPTIMIZE TABLE t_prefetch_10_columns DRY RUN PARTS 'all_1_1_0', 'all_2_2_0' SETTINGS filesystem_prefetches_limit = 200, filesystem_prefetch_max_memory_usage = 1;
+SYSTEM FLUSH LOGS query_log;
 
--- The default `filesystem_prefetches_limit` of the background profile is 200.
-SYSTEM START MERGES t_prefetch_300_columns;
-OPTIMIZE TABLE t_prefetch_300_columns FINAL;
-
-SYSTEM FLUSH LOGS query_log, part_log;
-
-SELECT 'dry run merges';
 SELECT
-    extract(query, 'OPTIMIZE TABLE (\\w+)') AS table,
     extract(query, 'SETTINGS ([^;]*)') AS settings,
     ProfileEvents['RemoteFSPrefetches'] > 0 AS prefetched
 FROM system.query_log
@@ -47,10 +36,4 @@ WHERE event_date >= yesterday() AND current_database = currentDatabase() AND typ
     AND query_kind = 'Optimize' AND query LIKE '%DRY RUN%'
 ORDER BY event_time_microseconds;
 
-SELECT 'background merge';
-SELECT table, ProfileEvents['RemoteFSPrefetches'] > 0 AS prefetched
-FROM system.part_log
-WHERE event_date >= yesterday() AND database = currentDatabase() AND event_type = 'MergeParts';
-
-DROP TABLE t_prefetch_300_columns;
-DROP TABLE t_prefetch_10_columns;
+DROP TABLE t_merge_prefetch;

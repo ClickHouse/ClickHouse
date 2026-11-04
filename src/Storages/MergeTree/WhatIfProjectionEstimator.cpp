@@ -172,8 +172,7 @@ Pipe makePartPipe(
         false,
         false,
         /*prefetch_begin_of_range=*/ false,
-        /*allow_remote_fs_prefetch=*/ true,
-        context);
+        /*allow_remote_fs_prefetch=*/ true);
 
     /// keep speed limits, the caller checks sizes
     if (auto query_limits = read_step->getQueryInfo().storage_limits)

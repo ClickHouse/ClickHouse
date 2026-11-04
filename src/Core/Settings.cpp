@@ -8801,7 +8801,7 @@ Cloud default value: 10% of total memory.
     DECLARE(UInt64, filesystem_prefetches_limit, 200, R"(
 Maximum number of prefetches. Zero means unlimited. A setting `filesystem_prefetches_max_memory_usage` is more recommended if you want to limit the number of prefetches
 
-It also applies to merges and mutations, which take it from the background profile (`background_profile`). A reader of a merge or mutation that reads more columns does not prefetch.
+It also applies to merges and mutations, which take it from the background profile (`background_profile`). A merge or mutation does not prefetch if it needs more prefetches, one per column of each part it reads.
 )", 0) \
     \
     DECLARE(Bool, allow_calculating_subcolumns_sizes_for_merge_tree_reading, true, R"(

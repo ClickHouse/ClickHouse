@@ -141,8 +141,7 @@ struct MergeTreeReaderSettings
     static MergeTreeReaderSettings createFromContext(const ContextPtr & context);
     /// Note storage_settings used only in private, do not remove
     static MergeTreeReaderSettings createForQuery(const ContextPtr & context, const MergeTreeSettings & storage_settings, const SelectQueryInfo & query_info);
-    /// `task_context` is the context of the merge or mutation task. Only `filesystem_prefetches_limit` comes from it.
-    static MergeTreeReaderSettings createForMergeMutation(ReadSettings read_settings, const ContextPtr & task_context);
+    static MergeTreeReaderSettings createForMergeMutation(ReadSettings read_settings);
     static MergeTreeReaderSettings createFromSettings(ReadSettings read_settings = {});
 
 private:

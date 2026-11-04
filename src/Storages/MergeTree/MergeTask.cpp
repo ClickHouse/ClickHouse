@@ -2774,7 +2774,7 @@ bool MergeTask::MergeTextIndexStage::prepare() const
     if (global_ctx->temporary_text_index_storage)
         global_ctx->temporary_text_index_storage->commitTransaction();
 
-    auto reader_settings = MergeTreeReaderSettings::createForMergeMutation(global_ctx->context->getReadSettings(), global_ctx->context);
+    auto reader_settings = MergeTreeReaderSettings::createForMergeMutation(global_ctx->context->getReadSettings());
 
     for (const auto & index : global_ctx->text_indexes_to_merge)
     {

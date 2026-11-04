@@ -276,8 +276,7 @@ bool tryEstimateEmpirical(
                 false,
                 false,
                 /*prefetch_begin_of_range=*/ false,
-                /*allow_remote_fs_prefetch=*/ true,
-                context);
+                /*allow_remote_fs_prefetch=*/ true);
 
             /// Apply the query's execution-speed limits here too (size is the explicit check below)
             if (auto query_limits = read_step->getQueryInfo().storage_limits)

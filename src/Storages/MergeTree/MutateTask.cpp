@@ -3378,7 +3378,7 @@ void PartMergerWriter::finalizeTempProjectionsAndIndexes()
     {
         build_text_index_transform->finalize();
         temporary_text_index_storage->commitTransaction();
-        auto reader_settings = MergeTreeReaderSettings::createForMergeMutation(ctx->context->getReadSettings(), ctx->context);
+        auto reader_settings = MergeTreeReaderSettings::createForMergeMutation(ctx->context->getReadSettings());
         const auto & indexes = build_text_index_transform->getIndexes();
 
         for (const auto & index : indexes)
