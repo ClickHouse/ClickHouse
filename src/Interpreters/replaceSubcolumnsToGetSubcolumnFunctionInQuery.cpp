@@ -6,6 +6,7 @@
 #include <DataTypes/NestedUtils.h>
 
 #include <unordered_map>
+#include <unordered_set>
 
 namespace DB
 {
@@ -98,14 +99,14 @@ void collectConflictingAliases(const IAST & ast, std::unordered_map<String, IAST
         collectConflictingAliases(*child, hashes, conflicting);
 }
 
-bool hasIdentifierOutside(const IAST & ast, const IAST & skip, const String & name)
+bool hasIdentifierOutside(const IAST & ast, const std::unordered_set<const IAST *> & scopes, const String & name)
 {
-    if (&ast == &skip)
+    if (scopes.contains(&ast))
         return false;
     if (const auto * identifier = ast.as<ASTIdentifier>(); identifier && identifier->getColumnName() == name)
         return true;
     for (const auto & child : ast.children)
-        if (hasIdentifierOutside(*child, skip, name))
+        if (hasIdentifierOutside(*child, scopes, name))
             return true;
     return false;
 }
@@ -119,18 +120,25 @@ void replaceSubcolumnsToGetSubcolumnFunctionInQuery(ASTPtr & ast, const NamesAnd
     replaceSubcolumns(ast, columns, /*is_root=*/ true, /*lambda=*/ nullptr, unnamed, aliased);
 
     /// The old analyzer has one alias scope for the whole expression, lambdas included, so an alias that a different
-    /// expression also has, an alias set in a lambda and read outside it, or a name used elsewhere, is left off.
+    /// expression also has, an alias set only in lambdas and read outside all of them, or a name used elsewhere, is left off.
     if (!aliased.empty())
     {
         std::unordered_map<String, IASTHash> hashes;
         NameSet conflicting;
         collectConflictingAliases(*ast, hashes, conflicting);
+
+        std::unordered_map<String, std::unordered_set<const IAST *>> scopes;
         for (const auto & [function, lambda] : aliased)
-        {
-            const String alias = function->tryGetAlias();
-            if (conflicting.contains(alias) || (lambda && hasIdentifierOutside(*ast, *lambda, alias)))
+            scopes[function->tryGetAlias()].insert(lambda);
+
+        NameSet dropped;
+        for (const auto & [alias, lambdas] : scopes)
+            if (conflicting.contains(alias) || (!lambdas.contains(nullptr) && hasIdentifierOutside(*ast, lambdas, alias)))
+                dropped.insert(alias);
+
+        for (const auto & [function, lambda] : aliased)
+            if (dropped.contains(function->tryGetAlias()))
                 function->setAlias("");
-        }
     }
 
     if (unnamed.empty())

@@ -129,6 +129,37 @@ ALTER TABLE t_lambda_inner UPDATE t = tuple(200) WHERE 1;
 SELECT t, m FROM t_lambda_inner;
 DROP TABLE t_lambda_inner;
 
+-- Two sibling lambdas each set and read the same alias; another reads an alias set only in a sibling lambda.
+DROP TABLE IF EXISTS t_lambda_sibling;
+CREATE TABLE t_lambda_sibling
+(
+    t Tuple(a UInt32),
+    z UInt32,
+    m_both String MATERIALIZED concat(arrayStringConcat(arrayMap(x -> concat(toString(t.a AS r), '-', toString(r)), [1])), '/', arrayStringConcat(arrayMap(y -> concat(toString(t.a AS r), '-', toString(r)), [1]))),
+    m_one String MATERIALIZED concat(arrayStringConcat(arrayMap(x -> toString(t.a AS z), [1])), '-', arrayStringConcat(arrayMap(y -> toString(z), [1])))
+)
+ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_lambda_sibling (t, z) VALUES (tuple(100), 5);
+SELECT t, z, m_both, m_one FROM t_lambda_sibling;
+ALTER TABLE t_lambda_sibling UPDATE z = 6 WHERE 1;
+SELECT t, z, m_both, m_one FROM t_lambda_sibling;
+ALTER TABLE t_lambda_sibling UPDATE t = tuple(200) WHERE 1;
+SELECT t, z, m_both, m_one FROM t_lambda_sibling;
+DROP TABLE t_lambda_sibling;
+
+DROP TABLE IF EXISTS t_ttl_lambda_sibling;
+CREATE TABLE t_ttl_lambda_sibling
+(
+    d DateTime,
+    t Tuple(a Int32) TTL d + INTERVAL 1 SECOND,
+    m String MATERIALIZED concat(arrayStringConcat(arrayMap(x -> concat(toString(t.a AS r), '-', toString(r)), [1])), '/', arrayStringConcat(arrayMap(y -> concat(toString(t.a AS r), '-', toString(r)), [1])))
+)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0;
+INSERT INTO t_ttl_lambda_sibling (d, t) VALUES ('2000-01-01 00:00:00', (7));
+OPTIMIZE TABLE t_ttl_lambda_sibling FINAL;
+SELECT t, m FROM t_ttl_lambda_sibling;
+DROP TABLE t_ttl_lambda_sibling;
+
 -- A lightweight UPDATE recomputes through the same expression.
 DROP TABLE IF EXISTS t_lwu;
 CREATE TABLE t_lwu (k UInt8, t Tuple(a UInt32), z UInt32, m String MATERIALIZED concat(toString(t.a AS z), '-', toString(z)), m_name String MATERIALIZED formatRowNoNewline('JSONEachRow', t.a)) ENGINE = MergeTree ORDER BY k SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
