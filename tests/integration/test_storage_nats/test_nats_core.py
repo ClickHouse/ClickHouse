@@ -1670,3 +1670,40 @@ def test_hiding_credentials(nats_cluster):
     message = instance.query(f"SELECT message FROM system.text_log WHERE message ILIKE '%CREATE TABLE test.{table_name}%'")
     assert "nats_password = \\'[HIDDEN]\\'" in  message
     assert "nats_credential_file = \\'[HIDDEN]\\'" in  message
+
+
+def test_nats_stream_error_mode_multirow_message(nats_cluster):
+    """One valid message with several rows used to break the chunk in `stream` error mode."""
+    instance.query(
+        """
+        CREATE TABLE test.nats (a UInt64, b String)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_subjects = 'stream_multirow',
+                     nats_format = 'JSONEachRow',
+                     nats_handle_error_mode = 'stream';
+        CREATE TABLE test.dst (a UInt64, b String, raw Nullable(String), err Nullable(String))
+            ENGINE = MergeTree ORDER BY a;
+        """
+    )
+    nats_helpers.wait_for_table_is_ready(instance, "test.nats")
+
+    instance.query(
+        """
+        CREATE MATERIALIZED VIEW test.mv TO test.dst AS
+            SELECT a, b, _raw_message AS raw, _error AS err FROM test.nats;
+        """
+    )
+    nats_helpers.wait_for_mv_attached_to_table(instance, "test.nats")
+
+    # Two good rows in a single message, then one broken message.
+    good = '{"a":1,"b":"x"}\n{"a":2,"b":"y"}\n'
+    bad = "this is not json"
+    asyncio.run(publish_messages(nats_cluster, "stream_multirow", [good, bad]))
+
+    nats_helpers.wait_query_result(instance, "SELECT count() FROM test.dst", 3)
+
+    # Good rows have no raw message and no error.
+    assert instance.query("SELECT count() FROM test.dst WHERE a > 0 AND raw IS NULL AND err IS NULL") == "2\n"
+    # The broken one keeps both.
+    assert instance.query("SELECT count() FROM test.dst WHERE a = 0 AND raw = 'this is not json' AND err IS NOT NULL") == "1\n"
