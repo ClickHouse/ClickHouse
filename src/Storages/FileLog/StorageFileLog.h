@@ -54,6 +54,8 @@ public:
 
     void startup() override;
     void shutdown(bool is_drop) override;
+    /// Stops reading, which is all that the shutdown does.
+    void flushAndPrepareForShutdown() override;
 
     void read(
         QueryPlan & query_plan,

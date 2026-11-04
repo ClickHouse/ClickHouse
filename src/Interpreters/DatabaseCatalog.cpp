@@ -366,7 +366,25 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
             return tables;
         };
 
+        auto prepare_for_shutdown = [&](const StoragePtr & table)
+        {
+            try
+            {
+                table->flushAndPrepareForShutdown();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, fmt::format("Failed to prepare to shut down table {}", table->getStorageID().getNameForLogs()));
+            }
+        };
+
         auto user_tables = list_user_tables();
+
+        /// Tables that push into views in the background stop first, so nothing writes into the tables drained below.
+        for (const auto & table : user_tables)
+            if (table && table->noPushingToViewsOnInserts())
+                prepare_for_shutdown(table);
+
         for (size_t pass = 0; pass <= user_tables.size(); ++pass)
         {
             size_t flushed = 0;
@@ -411,19 +429,8 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
         /// Prepare every user table before any of them shuts down. List again to include the tables that finished loading meanwhile.
         user_tables = list_user_tables();
         for (const auto & table : user_tables)
-        {
-            if (!table)
-                continue;
-
-            try
-            {
-                table->flushAndPrepareForShutdown();
-            }
-            catch (...)
-            {
-                tryLogCurrentException(log, fmt::format("Failed to prepare to shut down table {}", table->getStorageID().getNameForLogs()));
-            }
-        }
+            if (table)
+                prepare_for_shutdown(table);
     }
 
     /// A database shutdown() can throw (e.g. a table flushAndShutdown hitting a ZooKeeper timeout).

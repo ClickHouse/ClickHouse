@@ -91,6 +91,8 @@ public:
 
     void startup() override;
     void shutdown(bool is_drop) override;
+    /// Stops consuming but keeps `shutdown_called` unset, so inserts into the table still publish.
+    void flushAndPrepareForShutdown() override;
 
     void drop() override;
 
