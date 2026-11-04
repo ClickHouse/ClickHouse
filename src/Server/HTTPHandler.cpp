@@ -127,6 +127,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int NOT_IMPLEMENTED;
     extern const int FAULT_INJECTED;
+    extern const int READONLY;
 }
 
 namespace FailPoints
@@ -527,6 +528,14 @@ void HTTPHandler::processQuery(
         context,
         request.getMethod(),
         /*allow_mutating_idempotent_methods=*/ !introspection_handler_name.empty() || is_path_table_upload);
+
+    /// `ContextAccess` does not check `readonly` for a context without a user.
+    if (sql_security_type == SQLSecurityType::NONE && sql_security_query_requires_mutating_method
+        && context->getSettingsRef()[Setting::readonly])
+        throw Exception(ErrorCodes::READONLY,
+            "Cannot execute the query of handler `{}` in readonly mode: it modifies data. "
+            "For queries over HTTP, safe methods such as GET imply readonly",
+            introspection_handler_name);
 
     /// Set the query id supplied by the user, if any, and also update the OpenTelemetry fields.
     String query_id = params.get("query_id", request.get("X-ClickHouse-Query-Id", ""));
@@ -2143,7 +2152,7 @@ SQLDefinedQueryHandler::SQLDefinedQueryHandler(
     setIntrospectionHandlerName(handler.name);
     setConsumesRequestBody(handler.consumes_request_body);
     if (handler.sql_security_type)
-        setSQLSecurity(*handler.sql_security_type, handler.definer);
+        setSQLSecurity(*handler.sql_security_type, handler.definer, handler.requires_mutating_method);
 }
 
 std::string SQLDefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context, ReadBuffer & body)

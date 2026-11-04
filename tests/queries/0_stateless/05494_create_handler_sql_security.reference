@@ -143,3 +143,14 @@ OK
 1	a
 2	b
 1	u_def_DB
+--- 18. SQL SECURITY NONE keeps the readonly mode
+OK
+OK
+(READONLY)
+(READONLY)
+(READONLY)
+(READONLY)
+0
+
+
+[1,2,3]

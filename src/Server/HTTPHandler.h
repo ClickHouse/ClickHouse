@@ -95,10 +95,11 @@ protected:
     void setIntrospectionHandlerName(const String & name_) { introspection_handler_name = name_; }
 
     /// Set by SQL-defined handlers whose query runs as `definer_` (DEFINER) or with the global context (NONE).
-    void setSQLSecurity(SQLSecurityType type_, std::optional<String> definer_)
+    void setSQLSecurity(SQLSecurityType type_, std::optional<String> definer_, bool query_requires_mutating_method_)
     {
         sql_security_type = type_;
         sql_security_definer = std::move(definer_);
+        sql_security_query_requires_mutating_method = query_requires_mutating_method_;
     }
 
     /// The query text belongs to the server rather than to the HTTP request. Its parsing limits must therefore
@@ -122,6 +123,7 @@ private:
 
     std::optional<SQLSecurityType> sql_security_type;
     std::optional<String> sql_security_definer;
+    bool sql_security_query_requires_mutating_method = false;
 
     bool has_server_owned_query = false;
 

@@ -236,3 +236,17 @@ for _ in {1..60}; do
     sleep 0.5
 done
 echo "$res"
+
+echo "--- 18. SQL SECURITY NONE keeps the readonly mode"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE ${DB}.t5 (id UInt32) ENGINE = MergeTree ORDER BY id"
+as_default "CREATE HANDLER h18_${DB} URL '/${DB}/h18' METHODS (GET, POST) SQL SECURITY NONE AS INSERT INTO ${DB}.t5 SELECT 1"
+as_default "CREATE HANDLER h18p_${DB} URL '/${DB}/h18p' METHODS (GET, POST) SQL SECURITY NONE AS INSERT INTO ${DB}.t5 SELECT 2 PARALLEL WITH INSERT INTO ${DB}.t5 SELECT 3"
+request "${BASE}/${DB}/h18"
+${CLICKHOUSE_CURL} -sS -o /dev/null -I "${BASE}/${DB}/h18"
+request -u "${U_ROCALLER}:" -X POST "${BASE}/${DB}/h18"
+request "${BASE}/${DB}/h18p"
+request -u "${U_ROCALLER}:" -X POST "${BASE}/${DB}/h18p"
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM ${DB}.t5"
+request -X POST "${BASE}/${DB}/h18"
+request -X POST "${BASE}/${DB}/h18p"
+$CLICKHOUSE_CLIENT -q "SELECT groupArray(id) FROM (SELECT id FROM ${DB}.t5 ORDER BY id)"

@@ -414,7 +414,8 @@ SQLDefinedHandlerPtr makeSQLDefinedHandler(const ASTCreateHandlerQuery & create)
     /// A handler whose query modifies data must accept at least one mutating HTTP method. Otherwise, the HTTP
     /// execution path enables `readonly` for every allowed (safe) method, and the handler could never run its
     /// query - so reject it here with a clear error instead of silently creating a broken handler.
-    if (queryRequiresMutatingMethod(*create.query)
+    handler->requires_mutating_method = queryRequiresMutatingMethod(*create.query);
+    if (handler->requires_mutating_method
         && std::none_of(handler->methods.begin(), handler->methods.end(), isMutatingHTTPMethod))
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,

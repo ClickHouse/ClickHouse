@@ -58,6 +58,9 @@ struct SQLDefinedHandler
     std::optional<SQLSecurityType> sql_security_type;
     std::optional<String> definer;
 
+    /// Whether `readonly` rejects the query, so it can run only for a mutating HTTP method.
+    bool requires_mutating_method = false;
+
     /// Whether a request to this handler can consume the HTTP request body: an `INSERT` takes the body as its
     /// data, and a query using the `_request_body` parameter reads it explicitly. Only for such handlers must a
     /// non-chunked request declare `Content-Length` up front, otherwise the body would be read until EOF and a
