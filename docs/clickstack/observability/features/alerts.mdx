@@ -17,7 +17,7 @@ Alerting works seamlessly across your observability data, helping you track syst
 
 ## Types of alerts {#types-of-alerts}
 
-The service supports two complementary ways to create alerts: **Search alerts** and **Dashboard chart alerts**. Once the alert is created, it is attached to either the search or the chart.
+You can create alerts from a **saved search**, directly in **Chart Explorer**, or from a **chart on a saved dashboard**. Search alerts count matching events, while chart alerts evaluate the values calculated by a chart.
 
 ### Search alerts {#search-alerts}
 
@@ -54,6 +54,41 @@ Before saving, the interface visualizes the threshold condition so you can confi
 Note that multiple alerts can be added to a search. If the above process is repeated, you will see the current alerts as tabs at the top of the edit alert dialog, with each alert assigned a number.
 
 <Image img="/images/clickstack/observability-multiple-search-alerts.png" alt="New Alert tab beside an existing alert for a saved search" size="md"/>
+
+### Chart Explorer alerts {#chart-explorer-alerts}
+
+Create an alert directly in [Chart Explorer](/clickstack/observability/features/dashboards/overview#navigate-chart-explorer) to monitor a chart without adding it to a dashboard.
+
+<Steps>
+<Step title="Build the chart" id="build-explorer-alert-chart">
+
+Select **Chart explorer** in the sidebar and use the **Time Series** chart type. Choose a data source and configure the aggregation, filters, and grouping you want to monitor. For example, count error logs and group by `ServiceName` to evaluate each service separately.
+
+Select **Run** and check the results before configuring the alert.
+
+</Step>
+<Step title="Configure the alert" id="configure-explorer-alert">
+
+Select **Add alert**. For a **Static threshold** alert, configure:
+
+- **Trigger when value**: choose the comparison operator and threshold.
+- **over**: choose the evaluation time window, such as 5 minutes.
+- **Name**: give the alert a descriptive name.
+- **Send to**: choose an email or webhook destination. To create a webhook, see [Adding a webhook](#add-webhook).
+
+You can also add tags and a note to provide context for the alert.
+
+<Image img="/images/clickstack/observability-chart-explorer-alert.png" alt="Chart Explorer with a log count chart and the alert panel showing threshold, name, notification destination, and Create alert controls" size="lg"/>
+
+</Step>
+<Step title="Create and manage the alert" id="create-explorer-alert">
+
+Select **Create alert** to save it. You do not need to save a dashboard first.
+
+Open **Alerts** in the sidebar to find the alert and review its state and evaluation history. Select it to return to its chart and alert settings.
+
+</Step>
+</Steps>
 
 ### Dashboard chart alerts {#dashboard-alerts}
 
