@@ -47,6 +47,7 @@ SETTINGS join_algorithm = 'grace_hash', grace_hash_join_initial_buckets = 1, max
     enable_join_runtime_filters = 0, min_joined_block_size_rows = 10, min_joined_block_size_bytes = 0,
     max_joined_block_size_rows = 15, max_joined_block_size_bytes = 0;
 
+-- The subcolumn push-down would read only s.size through the join, so the 1 KB rows would not reach it.
 SELECT groupArray(b) FROM (
     SELECT blockSize() AS b, rowNumberInBlock() AS n, t_r3.s AS s FROM numbers(180) AS l JOIN t_r3 ON l.number = t_r3.k)
 WHERE n = 0 AND length(s) = 1000

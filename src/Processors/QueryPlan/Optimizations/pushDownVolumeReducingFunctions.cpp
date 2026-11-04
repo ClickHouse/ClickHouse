@@ -922,6 +922,20 @@ size_t tryPushDownSubcolumnsToReading(QueryPlan::Node * top_node, QueryPlan::Nod
     if (settings.make_distributed_plan || settings.serialize_query_plan || settings.enable_parallel_replicas)
         return 0;
 
+    const bool allow_function_forms = settings.optimize_functions_to_subcolumns;
+    const bool has_subcolumn_read = std::ranges::any_of(
+        tryGetStepActions(top_node->step.get())->getNodes(),
+        [&](const ActionsDAG::Node & node)
+        {
+            if (node.type != ActionsDAG::ActionType::FUNCTION || node.children.empty())
+                return false;
+            const auto * source = resolveAliases(node.children.front());
+            return source->type == ActionsDAG::ActionType::INPUT
+                && tryMatchSubcolumnRead(node, source->result_type, allow_function_forms).has_value();
+        });
+    if (!has_subcolumn_read)
+        return 0;
+
     auto * top_step = top_node->step.get();
     /// Copies: the rewrite replaces the headers of the step.
     const Block top_input_header = *top_step->getInputHeaders().front();
@@ -932,7 +946,6 @@ size_t tryPushDownSubcolumnsToReading(QueryPlan::Node * top_node, QueryPlan::Nod
     auto top_actions = tryGetStepActions(top_step)->clone();
     top_actions.removeUnusedActions(/*allow_remove_inputs=*/false, /*allow_constant_folding=*/false);
 
-    const bool allow_function_forms = settings.optimize_functions_to_subcolumns;
     auto top_reads = collectSubcolumnReads(top_actions, allow_function_forms);
     if (top_reads.empty())
         return 0;

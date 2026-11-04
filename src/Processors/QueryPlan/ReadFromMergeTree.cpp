@@ -4717,14 +4717,15 @@ const NameSet & ReadFromMergeTree::getColumnsUnsafeForSubcolumnReads() const
             return;
         }
 
-        for (const auto & part_column : part.getColumns())
+        for (const auto & column_name : read_storage_columns)
         {
-            if (!read_storage_columns.contains(part_column.name))
+            auto part_column = part.getColumnsDescription().tryGetPhysical(column_name);
+            if (!part_column)
                 continue;
 
-            auto metadata_column = metadata_columns.tryGetPhysical(part_column.name);
-            if (!metadata_column || !metadata_column->type->equals(*part_column.type))
-                unsafe.insert(part_column.name);
+            auto metadata_column = metadata_columns.tryGetPhysical(column_name);
+            if (!metadata_column || !metadata_column->type->equals(*part_column->type))
+                unsafe.insert(column_name);
         }
     };
 

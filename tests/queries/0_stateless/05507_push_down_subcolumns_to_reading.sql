@@ -711,7 +711,7 @@ SELECT count() FROM (SELECT s FROM tpf) WHERE length(s) > 98 SETTINGS force_opti
 
 SELECT tup.a AS x, count() FROM (SELECT * FROM k8) GROUP BY x ORDER BY ALL LIMIT 3 SETTINGS force_optimize_projection = 1, optimize_use_projections = 1;
 
-SELECT 'K1 K4 K5 indexes are used';
+SELECT 'K1 K3 K4 K5 indexes are used';
 
 SELECT count() FROM (SELECT * FROM k1m) WHERE m['k'] = 3 SETTINGS force_primary_key = 1;
 
@@ -728,6 +728,22 @@ SELECT count() FROM (SELECT * FROM k5) WHERE m['k'] = 1 SETTINGS force_data_skip
 SELECT count() FROM (SELECT * FROM k5) WHERE m['k'] = 1 SETTINGS force_data_skipping_indices = 'b_me';
 
 SELECT count() FROM (SELECT * FROM k5) WHERE tup.a = 2 SETTINGS force_data_skipping_indices = 'b_ta';
+
+SELECT count() FROM (SELECT * FROM k3) WHERE length(s) = 1 SETTINGS force_index_by_date = 1;
+
+SELECT count() FROM (SELECT * FROM k3) WHERE m['k'] = 1 SETTINGS force_index_by_date = 1;
+
+SELECT count() FROM (SELECT * FROM k3) WHERE tup.a = 1 SETTINGS force_index_by_date = 1;
+
+SELECT count() FROM (SELECT * FROM k3w) WHERE tup.a = 1 SETTINGS force_index_by_date = 1;
+
+SELECT count() FROM (SELECT * FROM k5s) WHERE m['k'] = 'needle hay' SETTINGS force_data_skipping_indices = 'x_set';
+
+SELECT count() FROM (SELECT * FROM k5s) WHERE hasAnyTokens(m['k'], ['needle']) SETTINGS force_data_skipping_indices = 'x_txt';
+
+SELECT count() FROM (SELECT * FROM k5w) WHERE tup.a = 2 SETTINGS force_data_skipping_indices = 'w_set';
+
+SELECT count() FROM (SELECT * FROM k5w) WHERE n.null = 1 SETTINGS force_data_skipping_indices = 'n_set';
 
 SELECT 'N-ADD2 columns added later with DEFAULT and MATERIALIZED expressions';
 
