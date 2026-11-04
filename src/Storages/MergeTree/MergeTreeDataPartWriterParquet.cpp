@@ -544,6 +544,11 @@ void MergeTreeDataPartWriterParquet::writeColumnChunks(size_t column_idx, const 
         type_in_file = std::make_shared<DataTypeString>();
     }
 
+    /// The uncompressed size of a column is its size in memory, but for a binary column it is the size of the serialized
+    /// values: the size in memory may not count the data at all, e.g. a `cut` of a column of aggregate states shares
+    /// the arena with the whole column, so its `byteSize` counts only the pointers to the states.
+    columns_to_write[column_idx].uncompressed_bytes += column_in_file->byteSize();
+
     size_t start = data_hashing->count();
     chassert(start == file_state.offset);
 
@@ -602,7 +607,6 @@ void MergeTreeDataPartWriterParquet::writeRowGroups(const Block & block, const G
             if (granule.start_row != 0 || granule.rows_to_write != column->size())
                 column = column->cut(granule.start_row, granule.rows_to_write);
 
-            columns_to_write[i].uncompressed_bytes += column->byteSize();
             writeColumnChunks(i, column, marks_out);
         }
 
