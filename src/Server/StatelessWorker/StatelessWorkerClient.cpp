@@ -117,6 +117,21 @@ String sendTask(const String & endpoint_uri, const String & unique_task_id, cons
     }
 }
 
+void createTask(const String & endpoint_uri, const String & unique_task_id, const TaskCollectors & collectors, const ContextPtr & context)
+{
+    doSendTask(endpoint_uri, "create", unique_task_id, /*task_serializer=*/ {}, /*unique_temp_file_path=*/ "", collectors, context);
+}
+
+void sendTaskPayload(const String & endpoint_uri, const String & unique_task_id, const DistributedQueryTaskDescription & stage_description,
+    const DistributedQueryTask & task, const ExchangeStreamSources & stream_sources, const String & unique_temp_file_path, const ContextPtr & context)
+{
+    auto task_serializer = [&] (WriteBuffer & buf)
+    {
+        serializeTask(stage_description, task, stream_sources, buf);
+    };
+    doSendTask(endpoint_uri, "payload", unique_task_id, task_serializer, unique_temp_file_path, /*collectors=*/ {}, context);
+}
+
 /// Get task status by its id.
 /// If wait_for_ms is set, the function will wait for the task to finish for the specified amount of time.
 DistributedQueryTaskStatus getTaskStatus(const String & endpoint_uri, const String & task_id, UInt32 wait_for_ms, const ContextPtr & context, bool for_cleanup)

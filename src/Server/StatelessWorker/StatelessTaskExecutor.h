@@ -66,6 +66,10 @@ public:
     };
 
     Result startTask(const String & unique_task_id, const DistributedQueryTaskDescription & task, const String & unique_temp_file_path, const TaskCollectors & collectors);
+    /// Registers a task whose description comes later with `schedulePayload`; until then `getStatus` reports it as running.
+    Result createTask(const String & unique_task_id, const TaskCollectors & collectors);
+    /// Schedules a task registered with `createTask`. Returns `UnknownTaskId` for a forgotten task, ignores a cancelled or already scheduled one.
+    Result schedulePayload(const String & unique_task_id, DistributedQueryTaskDescription task, const String & unique_temp_file_path);
     TaskStatus getStatus(const String & task_id, UInt64 wait_milliseconds);
     Result cancelTask(const String & task_id);
     Result forgetTask(const String & task_id);
@@ -95,6 +99,8 @@ private:
     {
         /// Fulfilled when the task ends: with nothing on success, with the failure otherwise.
         std::shared_future<std::optional<TaskFailure>> completion_future;
+        /// Set while a created task waits for its description; whoever takes it completes the task.
+        TaskPromisePtr pending_promise;
         std::shared_ptr<FailureSlot> failure = std::make_shared<FailureSlot>();
         std::shared_ptr<std::atomic<bool>> cancelled = std::make_shared<std::atomic<bool>>(false);
         std::shared_ptr<Progress> progress = std::make_shared<Progress>();
