@@ -1,0 +1,43 @@
+0	9999
+5001	9999
+0	1
+7	7
+0	9999
+5001	9999
+100	899
+100	899
+0	998
+1	998
+0	9999	-5000	4999	2020-01-01	2028-03-18	0	1428.428
+-6998	12996
+0	20099
+0	99
+0	9999	2020-01-01	2028-03-18
+0	9999	2020-01-01	2028-03-18
+0	20099
+0	9999
+0
+100
+10000
+05366-s3_string	0
+05366-s3_where	0
+05366-s3_virtual_column	0
+05366-s3_hive_partition_column	0
+05366-s3_disabled	0
+05366-url_where	0
+05366-s3_row_policy	0
+05366-url_row_policy	0
+05366-iceberg_deletes	0
+05366-iceberg_position_deletes	0
+05366-s3	1
+05366-s3_nullable	1
+05366-s3_glob	2
+05366-s3_hive_file_column	1
+05366-url	1
+05366-azure	1
+05366-s3_cluster	0
+05366-s3_cluster_bucket	0
+05366-s3_count	0
+05366-url_count	0
+2
+10
