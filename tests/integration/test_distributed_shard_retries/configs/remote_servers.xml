@@ -1,4 +1,6 @@
 <clickhouse>
+    <!-- Prevent background DNS refreshes from replacing pools during error-count assertions. -->
+    <disable_internal_dns_cache>true</disable_internal_dns_cache>
     <process_query_plan_packet>true</process_query_plan_packet>
     <logger>
         <level>trace</level>

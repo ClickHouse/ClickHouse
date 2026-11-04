@@ -258,7 +258,8 @@ def test_hedged_retry_releases_pool_entries(async_read):
     assert retries(query_id) == 1
 
 
-def test_hedged_retry_penalizes_packet_producer():
+@pytest.mark.parametrize("serialize_query_plan", [0, 1])
+def test_hedged_retry_penalizes_packet_producer(serialize_query_plan):
     # Start on a slow healthy replica, then hedge onto a replica that fails. The
     # retry must reach the third, healthy replica and charge the second pool.
     slow_config = "/etc/clickhouse-server/users.d/retry_slow_replica.xml"
@@ -281,6 +282,7 @@ def test_hedged_retry_penalizes_packet_producer():
                 "prefer_localhost_replica": 0,
                 "load_balancing": "in_order",
                 "receive_data_timeout_ms": 100,
+                "serialize_query_plan": serialize_query_plan,
             },
         ) == "499500\n"
         assert retries(query_id, node4) == 1
