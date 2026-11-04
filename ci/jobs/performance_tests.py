@@ -1552,7 +1552,7 @@ class CHServer:
                 --profile-seconds 10 \
                 --pr-number {pr_number} \
                 --stop-merges \
-                {f'--table-engine {table_engine} ' if table_engine else ''}{test_file}{' --long' if long else ''}",
+                {f'--table-engine {table_engine} ' if table_engine else ''}{test_file}{' --long --result-digest' if long else ''}",
             verbose=True,
             strip=False,
         )
