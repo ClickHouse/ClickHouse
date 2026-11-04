@@ -90,7 +90,7 @@ struct DeleteFileWriteResult
 using DataFileWriteResultByPartitionKey = std::unordered_map<ChunkPartitioner::PartitionKey, DeleteFileWriteResult, ChunkPartitioner::PartitionKeyHasher>;
 using DataFileStatisticsByPartitionKey = std::unordered_map<ChunkPartitioner::PartitionKey, DataFileStatistics, ChunkPartitioner::PartitionKeyHasher>;
 
-/// The files written into one partition, each with the statistics of its own rows.
+/// `statistics[i]` are the statistics of `files[i]`.
 struct PartitionFiles
 {
     std::vector<DeleteFileWriteResult> files;
@@ -99,11 +99,9 @@ struct PartitionFiles
 
 struct DataFileWriteResultWithStats
 {
-    /// All files of a partition go into one manifest.
     std::unordered_map<ChunkPartitioner::PartitionKey, PartitionFiles, ChunkPartitioner::PartitionKeyHasher> files_by_partition;
 };
 
-/// The positions deleted from each data file of a partition, by data file path.
 using DeletedPositionsByDataFile = std::map<String, roaring::Roaring64Map>;
 
 struct WriteDataFilesResult
@@ -157,10 +155,8 @@ getPartitionedChunks(const Chunk & chunk, std::optional<ChunkPartitioner> & chun
     return unpartitioned_result;
 }
 
-/// Writes the position delete file of one data file: its deleted positions in increasing order, as the
-/// specification requires. The `file_path` bounds of such a file are that data file, so readers apply
-/// the file only to it (Iceberg's `write.delete.granularity = file`, the default of Spark).
-/// Returns the pre-finalized write buffer: the caller finalizes it, so uploads to object storage overlap.
+/// Writes the position delete file of one data file, with positions in increasing order as the specification requires.
+/// Returns the pre-finalized write buffer, which the caller finalizes.
 static std::unique_ptr<WriteBuffer> writePositionDeleteFile(
     const String & data_file_path,
     const roaring::Roaring64Map & positions,
@@ -200,12 +196,8 @@ static std::unique_ptr<WriteBuffer> writePositionDeleteFile(
     const auto & file_path_column_description = delete_file_sample_block.getByPosition(0);
     const auto & position_column_description = delete_file_sample_block.getByPosition(1);
 
-    /// `_iceberg_metadata_file_path` already contains the correct metadata path format
-    /// (e.g. wasb://container@host/.../data/xxx.parquet or /iceberg/.../data/xxx.parquet)
-    /// so no transformation is needed.
     const UInt64 num_positions = positions.cardinality();
     UInt64 written_positions = 0;
-    /// All blocks except the last one have `max_block_size` rows, so they share one `file_path` column.
     ColumnPtr full_block_file_path_column;
     auto it = positions.begin();
     const auto end = positions.end();
@@ -221,6 +213,7 @@ static std::unique_ptr<WriteBuffer> writePositionDeleteFile(
         written_positions += rows;
         ColumnPtr position_column_ptr = std::move(position_column);
 
+        /// `data_file_path` comes from `_iceberg_metadata_file_path`, already in the metadata path format.
         /// The statistics of a constant column are computed without scanning it.
         ColumnPtr file_path_column = file_path_column_description.type->createColumnConst(rows, data_file_path);
         statistics.update(Chunk(Columns{file_path_column, position_column_ptr}, rows));
@@ -252,7 +245,6 @@ static std::unique_ptr<WriteBuffer> writePositionDeleteFile(
     return write_buffer;
 }
 
-/// A delete file whose upload has started but is not waited for yet.
 struct PendingDeleteFileUpload
 {
     PartitionFiles * partition_files;
@@ -285,7 +277,6 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
 {
     chassert(commands.size() == 1);
     DataFileWriteResultWithStats delete_files;
-    /// Best effort: a failed mutation does not leave the delete files it already wrote.
     bool keep_delete_files = false;
     SCOPE_EXIT({
         if (!keep_delete_files)
@@ -325,9 +316,7 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
 
         auto header = interpreter->getUpdatedHeader();
 
-        /// The deleted rows arrive in any order of data files and positions, so collect the positions
-        /// of each data file first (as Iceberg's `SortingPositionOnlyDeleteWriter` does) and then write
-        /// one position delete file per data file.
+        /// The deleted rows arrive in any order of data files and positions.
         std::unordered_map<ChunkPartitioner::PartitionKey, DeletedPositionsByDataFile, ChunkPartitioner::PartitionKeyHasher> deleted_positions;
         PaddedPODArray<UInt64> positions_buffer;
 
@@ -373,8 +362,7 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
                     positions = positions_buffer.data();
                 }
 
-                /// The rows of one data file come in runs. Find them by comparing dictionary indexes
-                /// instead of paths if possible, and add the positions of each run at once.
+                /// The rows of one data file come in runs.
                 const auto * low_cardinality_file_paths = typeid_cast<const ColumnLowCardinality *>(&file_paths);
                 auto & positions_by_data_file = deleted_positions[partition_key];
                 size_t run_begin = 0;
@@ -408,8 +396,6 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
         if (!has_any_rows)
             return std::nullopt;
 
-        /// A mutation may write a delete file for each data file. Wait for each upload only when
-        /// `max_pending_uploads` later files are written, so that on object storage they overlap.
         static constexpr size_t max_pending_uploads = 16;
         std::deque<PendingDeleteFileUpload> pending_uploads;
         try
