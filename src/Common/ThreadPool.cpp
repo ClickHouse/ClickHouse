@@ -1054,6 +1054,11 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
                     parent_pool.slot_freed.notify_all();
                     parent_pool.wakeUpAllIdleThreadsNoLock(); /// `finished` was set, wake up other threads so they can finish themselves.
                 }
+                else if (parent_pool.scheduled_jobs == 0)
+                {
+                    /// No job is left to wake a scheduler later, so wake all of them in case a `notify_one` was lost (glibc bug 25847).
+                    parent_pool.slot_freed.notify_all();
+                }
                 else
                     parent_pool.slot_freed.notify_one();
             }

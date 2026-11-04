@@ -24,6 +24,9 @@ TEST(ThreadPool, ManySchedulersOnFullPool)
     ThreadPool pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled,
         /* max_threads */ 2, /* max_free_threads */ 0, /* queue_size */ 2);
 
+    /// The global pool is created lazily without synchronization, so create it before the schedulers start threads in it.
+    GlobalThreadPool::instance();
+
     std::atomic<size_t> counter = 0;
     std::vector<std::thread> schedulers;
     for (size_t i = 0; i < num_schedulers; ++i)
