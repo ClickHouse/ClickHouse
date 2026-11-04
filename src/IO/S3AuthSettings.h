@@ -88,6 +88,9 @@ struct S3AuthSettings
     /// is explicit for a session restricted by `s3_allow_server_credentials_in_user_queries`. The value of a credential
     /// cannot tell its origin, so the origin is recorded when the settings are built and kept through every copy and
     /// client rebuild; merging the server config (`updateIfChanged`) never sets it.
+    /// It is not part of `serialize`: its callers ship `S3ObjectStorage::getS3SettingsForExternalClients`, which carries
+    /// only the credentials the client has already resolved (keys, or a GCS bearer token as a header), never a Google key
+    /// or ADC triple, so there is no Google credential whose origin would have to be restored.
     bool google_credentials_explicit = false;
 
     void serialize(WriteBuffer & out, ContextPtr context) const;

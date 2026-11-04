@@ -19,6 +19,8 @@ SA_CLIENT_EMAIL = "tester@example-project.iam.gserviceaccount.com"
 SA_TOKEN = "test-sa-token"
 
 STATS = {"assertions": [], "catalog_requests": []}
+# Lifetime of the issued tokens in seconds; `/__set_expires_in__?seconds=N` shortens it to test renewal.
+TOKEN = {"expires_in": 3600}
 
 
 def b64url_decode(data):
@@ -50,6 +52,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if parsed.path == "/__reset__":
             STATS["assertions"].clear()
             STATS["catalog_requests"].clear()
+            TOKEN["expires_in"] = 3600
+            self.send_json(200, {})
+            return
+        if parsed.path == "/__set_expires_in__":
+            TOKEN["expires_in"] = int(urllib.parse.parse_qs(parsed.query)["seconds"][0])
             self.send_json(200, {})
             return
 
@@ -105,7 +112,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return
 
         self.send_json(
-            200, {"access_token": SA_TOKEN, "token_type": "Bearer", "expires_in": 3600}
+            200,
+            {
+                "access_token": SA_TOKEN,
+                "token_type": "Bearer",
+                "expires_in": TOKEN["expires_in"],
+            },
         )
 
     def log_message(self, format, *args):

@@ -1,6 +1,7 @@
 import base64
 import json
 import os
+import time
 
 import pytest
 from cryptography.hazmat.primitives import hashes, serialization
@@ -131,6 +132,32 @@ def test_service_account_key_auth():
     assert SA_CLIENT_EMAIL not in create_query
 
     node.query("DROP DATABASE biglake_sa")
+
+
+def test_service_account_token_renewal():
+    """An expired token is renewed with a new assertion signed by the key, and catalog requests keep working."""
+    mock_ctl("/__reset__")
+    # ClickHouse renews a token after 9/10 of its lifetime, i.e. after one second here.
+    mock_ctl("/__set_expires_in__?seconds=2")
+    node.query("DROP DATABASE IF EXISTS biglake_sa_renewal")
+    _, error = create_database(node, "biglake_sa_renewal", service_account_key())
+    assert error == ""
+
+    deadline = time.monotonic() + 60
+    while len(json.loads(mock_ctl("/__stats__"))["assertions"]) < 2:
+        assert time.monotonic() < deadline, "the token was not renewed"
+        assert node.query("SHOW TABLES FROM biglake_sa_renewal") == ""
+        time.sleep(0.2)
+
+    stats = json.loads(mock_ctl("/__stats__"))
+    for assertion in stats["assertions"]:
+        claims = json.loads(b64url_decode(assertion.split(".")[1]))
+        assert claims["iss"] == SA_CLIENT_EMAIL
+    for request in stats["catalog_requests"]:
+        assert request["authorization"] == f"Bearer {SA_TOKEN}"
+
+    node.query("DROP DATABASE biglake_sa_renewal")
+    mock_ctl("/__reset__")
 
 
 def test_token_endpoint_rejects_assertion():
