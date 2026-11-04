@@ -87,8 +87,7 @@ public:
 
     static NamesAndTypesList getNamesAndTypes(const DictionaryStructure & dictionary_structure, bool validate_id_type);
 
-    /// Checks the access needed to read the dictionary with the given ID as a table. For backward compatibility reasons
-    /// either `SELECT` or `dictGet` is enough; if neither is granted, asks to grant `dictGet`.
+    /// Checks the access needed to read the dictionary with the given ID as a table.
     /// Must be called before the dictionary is loaded or its definition is read.
     static void checkDictionaryAccess(const StorageID & dictionary_id, const ContextPtr & local_context);
 

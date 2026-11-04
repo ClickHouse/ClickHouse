@@ -221,6 +221,10 @@ Pipe StorageDictionary::read(
 
 void StorageDictionary::checkDictionaryAccess(const StorageID & dictionary_id, const ContextPtr & local_context)
 {
+    /**
+     * For backward compatibility reasons we require either SELECT or dictGet permission to read directly from the dictionary.
+     * If none of these conditions are met - we ask to grant a dictGet.
+     */
     auto dictionary_database = IDictionary::getDatabaseOrNoDatabaseTag(dictionary_id);
     const auto & access = local_context->getAccess();
     if (!access->isGranted(AccessType::dictGet, dictionary_database, dictionary_id.getTableName())
