@@ -1,10 +1,10 @@
-ZSTD opt-in mixed frames, disabled default and compatibility passed
-LZ4 opt-in mixed frames, disabled default and compatibility passed
-LZ4HC opt-in mixed frames, disabled default and compatibility passed
+ZSTD default mixed frames and compatibility passed
+LZ4 default mixed frames and compatibility passed
+LZ4HC default mixed frames and compatibility passed
 compression disabled passed
 logs and ProfileEvents passed
 threshold boundary passed
-128-byte boundary with compressible and incompressible values passed
+default boundary with compressible and incompressible values passed
 client mixed frames passed
 mixed frames within a large block passed
 empty result passed

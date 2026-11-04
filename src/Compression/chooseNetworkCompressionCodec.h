@@ -7,8 +7,8 @@ namespace DB
 
 struct Settings;
 
-/// Bypassing compression of small `Native` frames is opt-in.
-inline constexpr size_t DEFAULT_NETWORK_COMPRESSION_MIN_BYTES = 0;
+/// Conservative default for skipping compression of tiny `Native` frames; the setting can override it.
+inline constexpr size_t DEFAULT_NETWORK_COMPRESSION_MIN_BYTES = 128;
 
 /// The codec for the compressed frames a peer originates over the network: the native protocol's
 /// compressed packets on both ends, and the response of an HTTP request made with `compress=1`.

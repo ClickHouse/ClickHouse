@@ -117,6 +117,22 @@ TEST(NetworkCompressionSettings, KeepsAnExplicitSmallFrameThreshold)
     }
 }
 
+TEST(NetworkCompressionSettings, CompatibilityDerivedSmallFrameThresholdIsNotSerialized)
+{
+    Settings settings;
+    settings.set("compatibility", "26.10");
+    ASSERT_TRUE(settings.isChanged("network_compression_min_bytes"));
+    ASSERT_EQ(settings.get("network_compression_min_bytes").safeGet<UInt64>(), 0u);
+
+    const Settings result = networkCompressionSettings(settings);
+
+    EXPECT_FALSE(result.isChanged("network_compression_min_bytes"));
+    EXPECT_EQ(result.get("network_compression_min_bytes").safeGet<UInt64>(), 0u);
+    EXPECT_TRUE(result.isChanged("compatibility"));
+    EXPECT_TRUE(result.isChanged("dialect"));
+    EXPECT_EQ(result.changes().size(), 2u);
+}
+
 TEST(NetworkCompressionSettings, ExplicitSmallFrameThresholdOverridesCompatibility)
 {
     Settings settings;
