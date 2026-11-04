@@ -12,13 +12,15 @@ CREATE TABLE t_basic
     m3 Map(String, LowCardinality(Nullable(String)))
 )
 ENGINE = MergeTree ORDER BY id
-SETTINGS index_granularity = 100, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS index_granularity = 100, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+    map_serialization_version = 'basic', map_serialization_version_for_zero_level_parts = 'basic';
 
 CREATE TABLE t_buckets AS t_basic
 ENGINE = MergeTree ORDER BY id
 SETTINGS index_granularity = 100, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
     map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets',
-    map_buckets_strategy = 'constant', max_buckets_in_map = 8, map_buckets_min_avg_size = 0;
+    map_buckets_strategy = 'constant', max_buckets_in_map = 8, map_buckets_min_avg_size = 0,
+    serialization_info_version = 'with_types';
 
 INSERT INTO t_basic
 SELECT
@@ -38,8 +40,9 @@ INSERT INTO t_buckets SELECT * FROM t_basic SETTINGS low_cardinality_max_diction
 SELECT 'full';
 SELECT (SELECT sum(cityHash64(id, toString(m1), toString(m2), toString(m3))) FROM t_basic)
      = (SELECT sum(cityHash64(id, toString(m1), toString(m2), toString(m3))) FROM t_buckets);
-SELECT (SELECT sum(cityHash64(id, toString(m1), toString(m2), toString(m3))) FROM t_basic)
-     = (SELECT sum(cityHash64(id, toString(m1), toString(m2), toString(m3))) FROM t_buckets SETTINGS max_block_size = 7);
+-- Small blocks read every bucket for every block, so they are limited to a few granules to keep the test fast.
+SELECT (SELECT sum(cityHash64(id, toString(m1), toString(m2), toString(m3))) FROM t_basic WHERE id < 500)
+     = (SELECT sum(cityHash64(id, toString(m1), toString(m2), toString(m3))) FROM t_buckets WHERE id < 500 SETTINGS max_block_size = 7);
 
 SELECT 'subcolumns';
 SELECT (SELECT sum(cityHash64(id, m1.keys, m1.values, m2.keys, m3.values)) FROM t_basic)
