@@ -18,7 +18,6 @@ namespace DB
 {
 
 class Context;
-struct StorageID;
 
 /** Interface for table functions.
   *
@@ -53,10 +52,6 @@ public:
     virtual bool hasStaticStructure() const { return false; }
     /// Returns false if storage returned by table function supports type conversion (e.g. StorageDistributed)
     virtual bool needStructureConversion() const { return true; }
-    /// Returns true if the storage created by this table function can store its own unreplicated data on disk.
-    /// Used to classify `CREATE TABLE ... AS table_function(...)` without executing the table function,
-    /// see `IStorage::hasUnreplicatedTableDataOnDisk`.
-    virtual bool hasUnreplicatedTableDataOnDisk() const { return false; }
 
     /** Return array of table function arguments indexes for which query tree analysis must be skipped.
       * It is important for table functions that take subqueries, because otherwise analyzer will resolve them.
@@ -64,23 +59,6 @@ public:
     virtual VectorWithMemoryTracking<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & /*query_node_table_function*/, ContextPtr /*context*/) const { return {}; }
 
     virtual void parseArguments(const ASTPtr & /*ast_function*/, ContextPtr /*context*/) {}
-
-    /** The identity of the source this call reads, if a parallel-replicas read can be coordinated over it.
-      * Each replica resolves the call itself, so the call must denote the same logical source on every
-      * replica, and evaluating it must have no effect beyond looking that source up. The identity names the
-      * read to the coordinator, so every replica must compute the same one: it must not depend on anything
-      * local to a server, such as the UUID of a hidden inner table, nor on the alias the call was written
-      * with, and calls that read different sources must get different ones. `timeSeriesSamples(db, ts)`
-      * reads the samples table of `db.ts`, and is identified as `timeSeriesSamples(db.ts)`.
-      *
-      * No value, the default, means the call cannot be the coordinated read: one that produces a storage of
-      * its own (`s3`, `numbers`, `view`, `merge`) is not the same table on any two replicas, even when that
-      * storage is a `MergeTree`. A value does not make the read eligible by itself - the storage it resolves
-      * to is checked as for a table. The identity is used only when the replicas are sent the query: a plan
-      * fragment names the storage the call resolved to on the initiator, and the read is coordinated under
-      * that storage's name.
-      */
-    virtual std::optional<String> getParallelReplicasReadID() const { return std::nullopt; }
 
     /// Returns actual table structure probably requested from remote server, may fail
     virtual ColumnsDescription getActualTableStructure(ContextPtr /*context*/, bool is_insert_query) const = 0;
@@ -111,10 +89,6 @@ public:
     /// the persisted definition is later resolved with no user or under the connection's
     /// credentials, so the branch that must depend on the reader's grants cannot be decided.
     virtual bool dependsOnCurrentUserGrants() const { return false; }
-
-    /// Whether two reads of the returned storage within one query may produce different rows
-    /// (e.g. `generateRandom`). Counterpart of `IFunction::isDeterministicInScopeOfQuery`.
-    virtual bool isDeterministicInScopeOfQuery() const { return true; }
 
     /// The name of the named collection the table function arguments were resolved from, or an empty
     /// string. When a permanent table is created from the table function (`CREATE TABLE ... AS f(...)`),
@@ -147,11 +121,6 @@ public:
     /// Check that the user has the required source access (e.g. READ ON MYSQL, WRITE ON S3).
     void checkSourceAccess(ContextPtr context, bool is_insert_query) const;
 
-    /// Check the access needed to read the metadata of the objects this function derives from, as
-    /// opposed to its source kind, which `checkSourceAccess` covers. Called from both base-class
-    /// seams: resolving a structure is a `DESCRIBE` and needs `SHOW COLUMNS`, naming needs `SHOW TABLES`.
-    virtual void checkSourceObjectAccess(const ContextPtr & /*context*/, bool /*for_structure*/) const {}
-
     /// The URI of the function for permission checking. Can be an empty string if not applicable.
     /// For example, for url('https://foo.bar') the URI would be 'https://foo.bar'.
     virtual const String & getFunctionURI() const
@@ -171,15 +140,6 @@ protected:
     /// Whether this is a `*Cluster` table function (e.g. `s3Cluster`, `urlCluster`). Overridden by
     /// `ITableFunctionCluster`. Protected so derived functions can branch on the cluster context.
     virtual bool isClusterFunction() const { return false; }
-
-    /// Check `access_type` on the name the function was given, before that name is resolved.
-    void checkSourceTableAccess(const ContextPtr & context, const StorageID & table_id, AccessType access_type) const;
-
-    /// Metadata of an `Alias` is its target's, so reading it also needs `access_type` on the target,
-    /// the way `DESCRIBE` of that name does. Takes the resolved storage so the check binds to the
-    /// object whose metadata is consumed.
-    void checkSourceStorageAccess(
-        const ContextPtr & context, const StoragePtr & storage, const StorageID & table_id, AccessType access_type) const;
 
 private:
     virtual StoragePtr executeImpl(

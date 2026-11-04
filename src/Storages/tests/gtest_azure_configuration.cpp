@@ -24,7 +24,6 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 
@@ -220,27 +219,6 @@ TEST(StorageAzureConfiguration, FromASTWithExtraCredentials)
     ASSERT_TRUE(std::holds_alternative<std::shared_ptr<Azure::Identity::WorkloadIdentityCredential>>(conf.getConnectionParams().auth_method));
 }
 
-/// The engine args are what gets persisted, so explicit IDs must survive parsing (detach/attach, restart).
-TEST(StorageAzureConfiguration, FromASTKeepsExtraCredentialsInEngineArgs)
-{
-    std::string query = "DESCRIBE TABLE azureBlobStorage('https://azurite1:10000/devstoreaccount1', 'test_container', 'test_blob.csv', extra_credentials(client_id='test_client_id', tenant_id='test_tenant_id'))";
-
-    ASTs engine_args = getEngineArgs(query);
-    StorageAzureConfigurationFriend conf;
-    conf.fromAST(engine_args, Context::getGlobalContextInstance(), false);
-
-    ASSERT_EQ(engine_args.size(), 4u);
-    const auto * credentials = engine_args.back()->as<ASTFunction>();
-    ASSERT_TRUE(credentials);
-    EXPECT_EQ(credentials->name, "extra_credentials");
-
-    /// Parsing the persisted args again still sees the explicit credentials.
-    StorageAzureConfigurationFriend reattached;
-    reattached.fromAST(engine_args, Context::getGlobalContextInstance(), false);
-    const auto & params = reattached.getConnectionParams();
-    ASSERT_TRUE(std::holds_alternative<std::shared_ptr<Azure::Identity::WorkloadIdentityCredential>>(params.auth_method));
-}
-
 TEST(StorageAzureConfiguration, FromASTWithAccount)
 {
     std::string query = "DESCRIBE TABLE azureBlobStorage('https://azurite1:10000/devstoreaccount1', 'test_container', 'test_blob.csv', 'account_name', 'account_key')";
@@ -352,7 +330,6 @@ TEST(StorageAzureConfiguration, AddStructureAndFormatKeepsKeyValueArgumentsAndEx
     ASSERT_TRUE(credentials);
     EXPECT_EQ(credentials->name, "extra_credentials");
 }
-
 }
 
 #endif

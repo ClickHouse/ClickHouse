@@ -1,11 +1,7 @@
 -- Obsolete server settings
-allow_experimental_cluster_discovery
 allow_experimental_webterminal
 allow_impersonate_user
 dictionaries_lib_path
-iceberg_manifest_decode_thread_pool_queue_size
-max_iceberg_manifest_decode_thread_pool_free_size
-max_iceberg_manifest_decode_thread_pool_size
 storage_metadata_write_full_object_key
 -- Obsolete general settings
 1

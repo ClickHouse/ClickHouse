@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-shared-merge-tree, no-parallel, no-replicated-database, no-fasttest
+# Tags: no-shared-merge-tree, no-parallel, no-replicated-database
 # no-shared-merge-tree -- SMT doesn't assign mutations when merges are stopped.
 # no-parallel -- uses server-wide failpoints that affect all RMT tables.
 # no-replicated-database -- SYSTEM ENABLE FAILPOINT is process-local, but the test cluster gives

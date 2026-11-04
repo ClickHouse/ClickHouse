@@ -1,4 +1,5 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/44153
+SET enable_analyzer=1;
 DROP TABLE IF EXISTS parent;
 DROP TABLE IF EXISTS join_table_1;
 DROP TABLE IF EXISTS join_table_2;
