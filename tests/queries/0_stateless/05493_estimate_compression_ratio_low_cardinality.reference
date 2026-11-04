@@ -1,0 +1,45 @@
+Estimate of a part
+lc	1
+s	1
+A converted argument is estimated as the target type
+1	1	1	1
+The rows of a block are serialized one granule at a time, whatever the block size
+1
+Dynamic and JSON columns whose structure changes between blocks are written with the structure of the first block
+1
+0	1
+1	1
+2	1
+GROUP BY: each group is estimated as the part it would be
+0	1
+1	1
+2	1
+0	1
+1	1
+2	1
+GROUP BY a LowCardinality key
+16	1
+Combinators
+1	1
+1
+1
+AggregateFunction(estimateCompressionRatio(\'LZ4\', 65536), LowCardinality(String))
+1
+1
+1	Array(LowCardinality(String))
+1
+Window functions
+0	0	1
+0
+Specialized codecs on the data substream
+arr	1
+lc	1
+n	1
+Target type: the baseline is the column as it is, the compressed size is that of the target type
+lc	1
+s	1
+1	1	1	1
+0	1
+1	1
+2	1
+1

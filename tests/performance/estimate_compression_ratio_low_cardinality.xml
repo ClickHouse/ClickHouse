@@ -1,0 +1,13 @@
+<test iceberg="0">
+    <create_query>CREATE TABLE t_ecr_lc_perf (k UInt32, s String, lc LowCardinality(String)) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0</create_query>
+
+    <fill_query>INSERT INTO t_ecr_lc_perf SELECT number % 1000, toString(number % 1000), toString(number % 1000) FROM numbers(10000000)</fill_query>
+
+    <query>SELECT estimateCompressionRatio('LZ4', 65536)(s) FROM t_ecr_lc_perf FORMAT Null</query>
+    <query>SELECT estimateCompressionRatio('LZ4', 65536)(lc) FROM t_ecr_lc_perf FORMAT Null</query>
+    <query>SELECT estimateCompressionRatio('ZSTD', 65536)(toLowCardinality(s)) FROM t_ecr_lc_perf FORMAT Null</query>
+    <query>SELECT k, estimateCompressionRatio('LZ4', 65536)(s) FROM t_ecr_lc_perf GROUP BY k FORMAT Null</query>
+    <query>SELECT k, estimateCompressionRatio('LZ4', 65536)(lc) FROM t_ecr_lc_perf GROUP BY k FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS t_ecr_lc_perf</drop_query>
+</test>
