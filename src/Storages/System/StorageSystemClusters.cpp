@@ -279,15 +279,16 @@ void StorageSystemClusters::fillData(MutableColumns & res_columns, ContextPtr co
             if (entry.replicated)
                 targets.push_back({.database = entry.replicated, .cluster = entry.cluster});
     }
-    std::vector<ReplicasInfo> replicas_info = DatabaseReplicated::tryGetReplicasInfoBatch(targets);
+    const std::vector<ReplicasInfo> replicas_info = DatabaseReplicated::tryGetReplicasInfoBatch(targets);
 
     /// `targets` follows `entries` with the same condition, so the results are consumed in the same order.
     size_t next_replicas_info = 0;
+    const ReplicasInfo no_replicas_info;
     for (const auto & entry : entries)
     {
         const bool has_replicas_info = with_replicas_info && entry.replicated;
         writeCluster(res_columns, columns_mask, entry.name, *entry.cluster,
-            has_replicas_info ? std::move(replicas_info[next_replicas_info++]) : ReplicasInfo{});
+            has_replicas_info ? replicas_info[next_replicas_info++] : no_replicas_info);
     }
 
 #if CLICKHOUSE_CLOUD
