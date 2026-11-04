@@ -48,7 +48,6 @@ def test_query_condition_cache(started_cluster_iceberg_with_spark, storage_type)
     select_query = f"SELECT * FROM {creation_expression} {filter_condition} ORDER BY id"
     settings = {
         "use_query_condition_cache": 1,
-        "allow_experimental_analyzer": 1,
     }
 
     query_id_first = f"{TABLE_NAME}_first"
@@ -159,7 +158,6 @@ def test_query_condition_cache_nondeterministic_functions(
     select_query = f"SELECT * FROM {TABLE_NAME} WHERE id = rand() FORMAT Null"
     settings = {
         "use_query_condition_cache": 1,
-        "allow_experimental_analyzer": 1,
     }
 
     instance.query(select_query, settings=settings)
