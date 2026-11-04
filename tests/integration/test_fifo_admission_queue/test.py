@@ -2777,17 +2777,27 @@ def test_native_cancel_before_external_tables_while_waiting_in_queue(started_clu
     waiter = None
     try:
         command = Client(node.ip_address, 9000, command=cluster.client_bin_path).command
-        waiter = subprocess.Popen(
-            command
-            + [
-                "--query_id", waiter_id,
-                "--queue_max_wait_ms", "30000",
-                "--external", "--file=/dev/null", "--name=ext", "--format=TSV", "--structure=x UInt8",
-                "-q", f"INSERT INTO default.{table} VALUES (1)",
-            ],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        # The data must come from stdin rather than be inlined in the query (`VALUES (1)`): only then
+        # the client goes through `processInsertQuery`, which sends the query before the external
+        # tables. With inlined data, it fails before anything is sent to the server.
+        data_read, data_write = os.pipe()
+        os.write(data_write, b"1\n")
+        os.close(data_write)
+        try:
+            waiter = subprocess.Popen(
+                command
+                + [
+                    "--query_id", waiter_id,
+                    "--queue_max_wait_ms", "30000",
+                    "--external", "--file=/dev/null", "--name=ext", "--format=TSV", "--structure=x UInt8",
+                    "-q", f"INSERT INTO default.{table} FORMAT TSV",
+                ],
+                stdin=data_read,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        finally:
+            os.close(data_read)
         # The client exits only after the server replies to `Cancel`.
         waiter.wait(timeout=DISCONNECT_DETECTION_TIMEOUT)
         assert_abandoned_waiter_was_cancelled(node, blocker_ids, waiter_id)
@@ -2949,6 +2959,38 @@ def test_mysql_kill_query_while_waiting_in_queue(started_cluster):
         victim.close()
         other.close()
         other_killer.close()
+        kill_blockers(blocker_ids)
+        pool.close()
+        pool.join()
+
+    assert_marker_query_never_started(marker)
+
+
+def test_mysql_disconnect_during_statement_prepare_while_waiting_in_queue(started_cluster):
+    """
+    `COM_STMT_PREPARE` builds the query to describe its result, so it waits for admission like
+    `COM_QUERY`. If the client disconnects meanwhile, the queued query must be cancelled while the
+    blockers are still running, instead of waiting for admission or the queue deadline.
+    """
+    import pymysql
+    from pymysql.constants import COMMAND
+
+    create_protocol_user("aq_mysql_prepare_user")
+    prefix = uuid.uuid4().hex[:8]
+    marker = f"mysql_prepare_marker_{prefix}"
+    pool = Pool(4)
+    blocker_ids = occupy_both_slots(pool, prefix)
+    conn = pymysql.connect(host=node.ip_address, port=9004, user="aq_mysql_prepare_user", password="pw")
+    try:
+        # Send `COM_STMT_PREPARE` without waiting for the reply: pymysql has no server-side prepared statements.
+        conn._execute_command(COMMAND.COM_STMT_PREPARE, f"SELECT '{marker}'")
+        wait_for_queue_length(node, 1)
+
+        conn._sock.shutdown(socket.SHUT_RDWR)
+        conn._sock.close()
+
+        assert_abandoned_waiter_was_cancelled(node, blocker_ids, marker)
+    finally:
         kill_blockers(blocker_ids)
         pool.close()
         pool.join()
