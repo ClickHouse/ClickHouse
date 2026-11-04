@@ -55,6 +55,13 @@ FROM
 )
 WHERE explain ILIKE '%Join: customer%⋈ nation%⋈ orders%⋈ n2%';
 
+-- `cn` is an `ASOF` join, optimized on its own; its filtered `nation` has no statistics, so the graph above it keeps the written order.
+SELECT avg(o_totalprice) FROM orders
+JOIN (SELECT * FROM nation ASOF JOIN customer ON n_nationkey = c_nationkey AND n_nationkey <= c_custkey WHERE n_name = 'FRANCE') AS cn
+    ON c_custkey = o_custkey
+JOIN nation AS n2 ON n2.n_nationkey = cn.c_nationkey
+FORMAT Null SETTINGS log_comment = '05498 asof';
+
 -- With statistics `nation` has a row estimate, and the joins are reordered.
 ALTER TABLE nation MATERIALIZE STATISTICS ALL SETTINGS mutations_sync = 2;
 

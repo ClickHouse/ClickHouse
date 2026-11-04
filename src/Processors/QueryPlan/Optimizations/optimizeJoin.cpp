@@ -1754,6 +1754,25 @@ static bool hasChildJoinToMerge(const QueryPlan::Node & node)
     return false;
 }
 
+/// Whether a table without statistics and without a row estimate is in this relation. A join optimized
+/// on its own does not record the source of its estimate, so its inputs are checked.
+static bool hasTableWithoutStatistics(QueryPlan::Node & node)
+{
+    auto * join_node = &node;
+    while (join_node->children.size() == 1)
+        join_node = join_node->children.front();
+
+    if (const auto * join_step = typeid_cast<const JoinStepLogical *>(join_node->step.get()))
+    {
+        if (join_step->isOptimized() && join_step->getResultRowsEstimation())
+            return false;
+        return std::ranges::any_of(join_node->children, [](QueryPlan::Node * child) { return hasTableWithoutStatistics(*child); });
+    }
+
+    auto stats = estimateReadRowsCount(node);
+    return !stats.estimated_rows && stats.source == RowEstimateSource::NoStatistics;
+}
+
 static bool joinGraphHasRelationWithoutStatistics(
     QueryGraphBuilder & query_graph_builder, QueryPlan::Node & node, QueryPlan::Nodes & nodes, int join_steps_limit)
 {
@@ -1762,16 +1781,16 @@ static bool joinGraphHasRelationWithoutStatistics(
     buildQueryGraph(relations, node, nodes, join_steps_limit);
     relations.context->estimate_relations_only = false;
 
-    return std::ranges::any_of(
-        relations.relation_stats,
-        [](const RelationStats & stats)
-        {
-            /// A join optimized on its own has no source, and its estimate is imprecise
-            /// when one of its tables had an imprecise estimate.
-            return !stats.estimated_rows
-                && (stats.source == RowEstimateSource::NoStatistics
-                    || (stats.source == RowEstimateSource::NoSource && stats.imprecise_estimate));
-        });
+    for (size_t i = 0; i < relations.relation_stats.size(); ++i)
+    {
+        const auto & stats = relations.relation_stats[i];
+        if (stats.estimated_rows)
+            continue;
+        if (stats.source == RowEstimateSource::NoStatistics
+            || (stats.source == RowEstimateSource::NoSource && hasTableWithoutStatistics(*relations.inputs[i])))
+            return true;
+    }
+    return false;
 }
 
 void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
