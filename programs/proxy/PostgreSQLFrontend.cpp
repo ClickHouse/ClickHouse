@@ -103,11 +103,11 @@ void handlePostgreSQL(FiberSocket & client, const FrontendContext & ctx)
     attributes.protocol = ListenerProtocol::PostgreSQL;
     attributes.peer_address = client.peerAddress().host().toString();
 
-    /// When a rule needs the user or the database, the proxy must read them from the cleartext
-    /// `StartupMessage`, so it declines a request to encrypt the connection: the client then either
-    /// continues in cleartext or, if it requires encryption, disconnects. Routing such a connection by
-    /// the default pool instead would silently ignore the rules.
-    const bool needs_credentials = ctx.router.needsCredentials(ListenerProtocol::PostgreSQL);
+    /// When a rule or a first-seen hook needs the user or the database, the proxy must read them from
+    /// the cleartext `StartupMessage`, so it declines a request to encrypt the connection: the client then
+    /// either continues in cleartext or, if it requires encryption, disconnects. Routing such a connection by
+    /// the default pool instead would silently ignore the rules, and never run the hooks.
+    const bool needs_credentials = ctx.router.needsCredentials(ListenerProtocol::PostgreSQL) || ctx.router.hasFirstSeenHooks();
 
     std::optional<RecordingReader> reader;
     try
@@ -162,7 +162,7 @@ void handlePostgreSQL(FiberSocket & client, const FrontendContext & ctx)
                     continue;
                 }
 
-                /// No rule needs the user or the database: route by peer address or the default pool
+                /// No rule or hook needs the user or the database: route by peer address or the default pool
                 /// and forward the bytes verbatim, so the backend negotiates encryption end to end.
                 /// The proxy cannot see an encrypted `CancelRequest` to broadcast it, so choose the backend
                 /// by the client address: the cancellation connection of an encrypted session, which

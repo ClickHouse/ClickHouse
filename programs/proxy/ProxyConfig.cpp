@@ -13,6 +13,7 @@
 #include <fmt/format.h>
 
 #include <algorithm>
+#include <array>
 #include <limits>
 #include <map>
 #include <set>
@@ -403,22 +404,29 @@ ProxyConfiguration ProxyConfiguration::load(const Poco::Util::AbstractConfigurat
 
     /// MySQL and PostgreSQL negotiate TLS in-band, after a plaintext preamble, and the proxy does not
     /// mediate that on the backend leg: a secure backend on these protocols can never be reached.
+    /// SSH is not layered over TLS at all: the proxy connects to an SSH backend with plain `ssh_connect`,
+    /// while its health check would probe a secure backend with TLS and always mark it down.
     /// Reject the configurations where it is visible statically; `connectToBackend` refuses the rest.
+    const auto no_tls_reason = [](ListenerProtocol protocol)
+    {
+        return protocol == ListenerProtocol::SSH ? "is not layered over TLS" : "negotiates TLS in-band";
+    };
     const auto check_no_secure_backends = [&](ListenerProtocol protocol, const PoolConfig & pool)
     {
         for (const auto & backend : pool.backends)
             if (backend.secure)
                 throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
-                    "Backend '{}' of pool '{}' is secure, but it is used for the '{}' protocol, which negotiates TLS "
-                    "in-band; the proxy does not support a TLS backend leg for it", backend.name, pool.name, toString(protocol));
+                    "Backend '{}' of pool '{}' is secure, but it is used for the '{}' protocol, which {}; "
+                    "the proxy does not support a TLS backend leg for it", backend.name, pool.name, toString(protocol),
+                    no_tls_reason(protocol));
     };
+    constexpr std::array no_tls_protocols{ListenerProtocol::MySQL, ListenerProtocol::PostgreSQL, ListenerProtocol::SSH};
     for (const auto & listener : res.listeners)
-        if ((listener.protocol == ListenerProtocol::MySQL || listener.protocol == ListenerProtocol::PostgreSQL)
-            && !listener.default_pool.empty())
+        if (std::ranges::find(no_tls_protocols, listener.protocol) != no_tls_protocols.end() && !listener.default_pool.empty())
             check_no_secure_backends(listener.protocol, res.pools.at(listener.default_pool));
     for (const auto & rule : res.rules)
     {
-        for (const auto protocol : {ListenerProtocol::MySQL, ListenerProtocol::PostgreSQL})
+        for (const auto protocol : no_tls_protocols)
         {
             if (!std::ranges::any_of(res.listeners, [&](const auto & l) { return l.protocol == protocol; }))
                 continue;
@@ -428,8 +436,8 @@ ProxyConfiguration ProxyConfiguration::load(const Poco::Util::AbstractConfigurat
                 check_no_secure_backends(protocol, res.pools.at(rule.pool));
             else if (rule.backend_template && rule.backend_template->secure)
                 throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
-                    "A routing rule for the '{}' protocol has a secure backend template, but this protocol negotiates "
-                    "TLS in-band; the proxy does not support a TLS backend leg for it", toString(protocol));
+                    "A routing rule for the '{}' protocol has a secure backend template, but this protocol {}; "
+                    "the proxy does not support a TLS backend leg for it", toString(protocol), no_tls_reason(protocol));
         }
     }
 

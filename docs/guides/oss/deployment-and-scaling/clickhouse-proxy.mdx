@@ -50,7 +50,8 @@ malformed parameter block is rejected, and an omitted or empty database stays un
 match the rules on `database`. A client that asks to
 encrypt the connection first (`SSLRequest` or `GSSENCRequest`) is handled in one of two ways:
 
-- When a routing rule needs the user or the database, the proxy declines encryption, so the client
+- When a routing rule or a first-seen hook (`on_first_seen_user`, `on_first_seen_database`) needs the
+  user or the database, the proxy declines encryption, so the client
   continues in cleartext (or disconnects, if it requires encryption) and its `StartupMessage` can be
   routed by the rules.
 - Otherwise the connection is routed by peer address or the listener's default pool, and the bytes are
@@ -65,8 +66,8 @@ session it cancels. Its key is a random secret, so the proxy delivers the reques
 the listener can route to (including the backends currently marked down, which may still serve
 sessions started before), and only the backend that issued the key acts on it.
 
-MySQL and PostgreSQL negotiate TLS in-band, and the proxy does not mediate that on the backend leg:
-a backend marked `<secure>1</secure>` cannot be used for these protocols. Such configurations are
+MySQL and PostgreSQL negotiate TLS in-band, and the proxy does not mediate that on the backend leg,
+while SSH is not layered over TLS at all: a backend marked `<secure>1</secure>` cannot be used for these protocols. Such configurations are
 rejected at startup when they are visible statically (a listener's default pool, a rule restricted
 to these protocols, a rule without `<protocol>` that can match these sessions), and such connections
 are refused otherwise.
@@ -143,7 +144,9 @@ SSH does not scale as cheaply as the byte-spliced protocols; it is intended for 
 command sessions rather than very high connection counts. These threads come from the fixed pool that
 the proxy uses for all blocking work (resolving backend host names, running hooks, reading files), so
 the number of concurrent SSH sessions is limited by `ssh.max_sessions` (by default, half of the CPUs
-available to the proxy, at least one) to keep threads for that work; further SSH connections are rejected. The key exchange is limited by
+available to the proxy, at least one) to keep threads for that work; further SSH connections are rejected.
+As at least one thread has to stay available, `ssh.max_sessions` can be at most the number of CPUs minus
+one, and an `ssh` listener needs at least two CPUs. The key exchange is limited by
 `handshake_timeout_ms` and the authentication by `ssh.auth_timeout_ms`. SSH connections are routed
 inside the authentication callback, so the hooks (see below) are not run for them.
 
@@ -238,9 +241,11 @@ Rules are checked in order; the first whose criteria all match wins. A rule can 
 As in the server, the query of an HTTP request is the first `query` URL parameter followed by the
 request body, so the proxy classifies them together. When the `query` parameter does not establish the
 type by itself (an `INSERT` does, so its data is relayed without waiting for it), the proxy reads the
-beginning of the body (the chunks of a chunked body as long as they are needed, up to 64 KiB in total).
+beginning of the body (the chunks of a chunked body as long as they are needed, up to 64 KiB in total),
+and routes the request as soon as the bytes received so far establish the type.
 The query is tokenized with the server's lexer, so comments are recognized as the server recognizes them.
-A `WITH` query is a `select` or an `insert` by the first `SELECT` or `INSERT` outside of brackets, and
+A `WITH` query is a `select` or an `insert` by the first `SELECT` or `INSERT` outside of brackets (it has
+no query type when that keyword may be a name in the `WITH` clause instead, such as an alias after `AS`), and
 a read query combined with other statements by `PARALLEL WITH` is `other`; as a read query may be
 followed by such statements, a read query whose text is not read completely has no query type. A body that is compressed
 (`Content-Encoding`, or the `decompress` URL parameter) is not inspected, so unless the `query`
@@ -259,9 +264,11 @@ Hostnames are matched case-insensitively, as DNS names are case-insensitive: the
 lowercased before matching, exact `host` values are compared after lowercasing, and a `host_regexp`
 is compiled as case-insensitive (regexp captures substituted into a `backend_template` are therefore
 lowercase). `user` and `database` are matched case-sensitively. The values of HTTP headers are
-decoded from RFC 2047 encoded words, as the server decodes them. An HTTP request without a `database`
-parameter or `X-ClickHouse-Database` header takes the database from a URL path like `/db/table.format`,
-as the server does with the default `http_allow_database_as_path` and `http_allow_table_as_file`.
+decoded from RFC 2047 encoded words, as the server decodes them (the decoded value is not trimmed, so
+encoded leading and trailing spaces are kept). An HTTP request takes the database from a URL path like
+`/db/table.format`, as the server does with the default `http_allow_database_as_path` and
+`http_allow_table_as_file`; a request whose `database` parameter or `X-ClickHouse-Database` header names
+another database is rejected with `400 Bad Request`, as the server rejects it.
 A server resolves an omitted or empty user name to its `default_session_user`, which the proxy does
 not know. So a connection with an omitted or empty user name is rejected (and the `on_unknown` hook
 runs) when it reaches a rule that matches on `user` and whose other criteria it matches, instead of

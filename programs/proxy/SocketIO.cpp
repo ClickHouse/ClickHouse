@@ -178,6 +178,17 @@ void FiberSocket::completeTLSHandshake()
     }
     if (rc <= 0)
         throw Exception(ErrorCodes::NETWORK_ERROR, "Connection closed during the TLS handshake");
+
+    /// Unlike the handshake run implicitly by the first read or write, `completeHandshake` does not verify
+    /// the peer certificate (`extendedVerification`), and a later read cannot do it, as the handshake is over.
+    try
+    {
+        impl->verifyPeerCertificate();
+    }
+    catch (const Poco::Exception & e)
+    {
+        throw Exception(ErrorCodes::NETWORK_ERROR, "TLS peer certificate verification failed: {}", e.displayText());
+    }
 #endif
 }
 
