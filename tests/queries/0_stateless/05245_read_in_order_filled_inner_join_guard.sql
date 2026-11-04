@@ -6,6 +6,8 @@
 -- cannot advance until every stream yields its first surviving row, so the in-order read must be
 -- declined. The guard used to track only `JoinStep` instances, and filled INNER joins bypassed it.
 
+-- Disable force_primary_key_reverse_order: the reference pins the read type in the sorting key direction
+SET force_primary_key_reverse_order = 0;
 SET explain_query_plan_default = 'legacy';
 SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
