@@ -990,7 +990,10 @@ void BackupsWorker::writeBackupEntries(
             }
         };
 
-        if (always_single_threaded)
+        /// An entry with nothing to write - the base backup has it, it is empty, or it is a reference - only updates
+        /// the counters, so it runs inline: the runner keeps every task until the end, and an incremental backup is
+        /// mostly such entries.
+        if (always_single_threaded || file_info.data_file_name.empty() || entry->isReference())
         {
             job();
             continue;
