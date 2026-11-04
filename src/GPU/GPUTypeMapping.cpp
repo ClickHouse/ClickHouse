@@ -368,8 +368,8 @@ bool canGroupByReduceOnDevice(
     const DataTypes & result_types,
     const std::vector<GPUAggregationKind> & aggregations)
 {
-    if (key_types.empty() || argument_types.empty() || argument_types.size() != result_types.size()
-        || argument_types.size() != aggregations.size())
+    /// Without keys, `CudfGroupBy` groups the rows by a key of its own, the same for every row.
+    if (argument_types.empty() || argument_types.size() != result_types.size() || argument_types.size() != aggregations.size())
         return false;
 
     /// `CudfGroupBy` takes keys of integers and strings.
@@ -383,13 +383,20 @@ bool canGroupByReduceOnDevice(
     }
 
     /// A `count` has no argument.
+    bool averages = false;
+    bool extremes_of_strings = false;
     for (size_t i = 0; i < argument_types.size(); ++i)
     {
         if (!canGroupByOnDevice(argument_types[i].get(), *result_types[i], aggregations[i]))
             return false;
+        averages |= aggregations[i] == GPUAggregationKind::Mean;
+        extremes_of_strings |= (aggregations[i] == GPUAggregationKind::Min || aggregations[i] == GPUAggregationKind::Max)
+            && columnTypeOf(*argument_types[i]) == GPUElementType::String;
     }
 
-    return true;
+    /// `CudfGroupBy` takes the `min` and the `max` of strings from partial results of the batches, which those of an
+    /// `avg` do not combine into.
+    return !(averages && extremes_of_strings);
 }
 }
 

@@ -106,6 +106,11 @@ struct CudfGroupBy::State
     /// a `sum`, a `min` and a `max` by the same one and those of a `count` by a `sum`, but not those of an `avg`.
     bool runs_combine = false;
 
+    /// Whether `streaming_groupby` takes the aggregates, which it does not of a `min` or a `max` of values of varying
+    /// width. Without it, each batch is reduced into partial results of its groups by a groupby of cuDF, which are
+    /// gathered and combined as the runs are.
+    bool streams = true;
+
     /// Set by the first batch: whether every batch is reduced over its runs of equal keys, which is so where the first
     /// has few runs per row, as the rows of a part sorted by the keys have. Then the runs are gathered as they are, not
     /// grouped through `streaming_groupby`, and combined into their groups at once by a groupby of cuDF: the rows of a
@@ -158,6 +163,11 @@ struct CudfGroupBy::State
             derived_values.emplace_back(0, stream_);
         runs_combine = std::all_of(
             aggregates.begin(), aggregates.end(), [](const GPUGroupByAggregate & aggregate) { return aggregate.aggregation != GPUAggregationKind::Mean; });
+        streams = std::none_of(aggregates.begin(), aggregates.end(), [&](const GPUGroupByAggregate & aggregate)
+        {
+            return (aggregate.aggregation == GPUAggregationKind::Min || aggregate.aggregation == GPUAggregationKind::Max)
+                && columnKindOf(values[aggregate.column]) == GPUColumnKind::Variable;
+        });
     }
 
     __host__ size_t numBatchValues() const { return values.size() - derived.size(); }
@@ -328,11 +338,12 @@ struct CudfGroupBy::State
 
     /// The keys of each run of equal keys of `columns`, the keys, the values and the derived values of a batch without
     /// nulls, and the aggregates over the run. cuDF's sort-based groupby, told the keys are sorted, starts a group
-    /// wherever a row's keys differ from the row's before, so that a key in several runs comes once for each.
-    __host__ std::unique_ptr<cudf::table> reduceRuns(const std::vector<cudf::column_view> & columns) const
+    /// wherever a row's keys differ from the row's before, so that a key in several runs comes once for each. Told they
+    /// are not, it groups them by a hash table, and a run is all the rows of a key in the batch, of a key that is not null.
+    __host__ std::unique_ptr<cudf::table> reduceRuns(const std::vector<cudf::column_view> & columns, cudf::sorted sorted = cudf::sorted::YES) const
     {
         const cudf::table_view batch_keys(std::vector<cudf::column_view>(columns.begin(), columns.begin() + numKeyColumns()));
-        cudf::groupby::groupby by_runs(batch_keys, cudf::null_policy::EXCLUDE, cudf::sorted::YES);
+        cudf::groupby::groupby by_runs(batch_keys, cudf::null_policy::EXCLUDE, sorted);
 
         std::vector<cudf::groupby::aggregation_request> requests(aggregates.size());
         for (size_t i = 0; i < aggregates.size(); ++i)
@@ -567,6 +578,12 @@ __host__ CudfGroupBy::CudfGroupBy(
         throwGPUError("a `GROUP BY` without aggregates");
 
     state = new State(keys, values, derived, aggregates, stream);
+    if (!state->streams && !state->runs_combine)
+    {
+        delete state;
+        state = nullptr;
+        throwGPUError("a `GROUP BY` with an `avg` and a `min` or a `max` of values of varying width, which combine from partial results that an `avg`'s do not");
+    }
 }
 
 __host__ CudfGroupBy::~CudfGroupBy()
@@ -645,7 +662,8 @@ __host__ void CudfGroupBy::addBatch(
     {
         std::unique_ptr<cudf::table> runs = state->reduceRuns(columns);
         state->reduce_runs = static_cast<double>(runs->num_rows()) <= max_runs_per_row_to_reduce * static_cast<double>(rows);
-        if (*state->reduce_runs)
+        /// Partial results either way, which are many of an unsorted batch, but only the first's.
+        if (*state->reduce_runs || !state->streams)
         {
             state->gatherRuns(std::move(runs));
             return;
@@ -658,6 +676,12 @@ __host__ void CudfGroupBy::addBatch(
     else if (*state->reduce_runs)
     {
         state->gatherRuns(state->reduceRuns(columns));
+        return;
+    }
+
+    if (!state->streams)
+    {
+        state->gatherRuns(state->reduceRuns(columns, cudf::sorted::NO));
         return;
     }
 

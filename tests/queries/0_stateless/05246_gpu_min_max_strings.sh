@@ -128,8 +128,9 @@ for mode in device host; do
     compare_with_cpu "SELECT k, max(s) FROM gpu_min_max_strings GROUP BY k ORDER BY k $SETTINGS, gpu_aggregation_batch_bytes = 65536"
 done
 
-# A read of strings with a `PREWHERE` is not aggregated from compressed blocks.
-device_step "SELECT min(s) FROM gpu_min_max_strings WHERE k = 3" blocks
+# A read of strings with a `PREWHERE`, which the device evaluates, is aggregated from compressed blocks too.
+device_step "SELECT min(s) FROM gpu_min_max_strings WHERE k = 3" compressed
+compare_with_cpu "SELECT min(s), max(t) FROM gpu_min_max_strings WHERE k = 3"
 
 # Without keys and with `device`, the strings' bytes and sizes are both expanded on the device, and the host
 # decompresses no block at all; with `host`, it decompresses them all.
