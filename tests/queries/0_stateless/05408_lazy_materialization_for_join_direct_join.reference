@@ -1,0 +1,14 @@
+-- INNER JOIN
+0	l0	r0
+2	l2	r2
+4	l4	r4
+0	l0	r0
+2	l2	r2
+4	l4	r4
+-- LEFT JOIN
+0	l0	r0
+1	l1	
+2	l2	r2
+0	l0	r0
+1	l1	
+2	l2	r2
