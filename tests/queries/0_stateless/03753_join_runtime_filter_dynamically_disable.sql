@@ -68,7 +68,7 @@ WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
    AND current_database = currentDatabase() AND event_time > now() - INTERVAL 30 MINUTE;
 
 
--- 3 rows in bloom filter
+-- 4 rows in bloom filter
 -- One key far from the others makes the key range wider than a dense bitset covers, so the runtime filter is a Bloom filter.
 SELECT count()
 FROM customer, (SELECT if(n_name = 'UNKNOWN', toInt32(2000000000), n_nationkey) AS n_nationkey, n_name FROM nation) AS nation
