@@ -1,6 +1,6 @@
 -- A filter fused into `ARRAY JOIN` is not shipped to the replicas: `ArrayJoinStep` writes its element filter
--- without a serialization version bump, so plan-based parallel replicas gives a shipped fragment the filter
--- back as a separate `Filter` step. Everything left on the initiator keeps the fusion.
+-- without a serialization version bump. Plan-based parallel replicas fuses only the steps left on the initiator,
+-- after deciding what is shipped, so a shipped fragment keeps the filter as a separate `Filter` step.
 
 -- Fusion is skipped for serialized plans; pin it so the plan-shape checks below hold in every suite.
 SET serialize_query_plan = 0;

@@ -14,8 +14,8 @@ namespace DB::QueryPlanOptimizations
 size_t tryFuseFilterIntoArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings & settings)
 {
     /// fused filter can't be read by older workers, and it's perf-only - skip if the plan may be shipped out.
-    /// Plan-based parallel replicas decides what is shipped later, and unfuses the filter in a shipped fragment.
-    if (settings.make_distributed_plan || settings.serialize_query_plan)
+    /// With parallel replicas the steps that stay on the initiator are fused after `applyParallelReplicas`.
+    if (settings.make_distributed_plan || settings.serialize_query_plan || settings.enable_parallel_replicas)
         return 0;
 
     auto & parent = parent_node->step;

@@ -486,6 +486,25 @@ void optimizeTreeSecondPass(
 
     applyParallelReplicas(query_plan, nodes, optimization_settings);
 
+    /// Filter fusion into `ARRAY JOIN` is skipped in the first pass with parallel replicas, because a fused
+    /// filter cannot be read by an older replica and the first pass runs before `applyParallelReplicas` decides
+    /// what is shipped. The shipped fragments are now inside `ReadFromParallelReplicas` steps, which the walk
+    /// below does not enter, so every step it visits runs on the initiator: fuse there. The local replica plan
+    /// is optimized on its own, without parallel replicas, so it is fused as well.
+    if (optimization_settings.enable_parallel_replicas && optimization_settings.fuse_filter_into_array_join
+        && !optimization_settings.make_distributed_plan && !optimization_settings.serialize_query_plan)
+    {
+        auto local_optimization_settings = optimization_settings;
+        local_optimization_settings.enable_parallel_replicas = false;
+        const auto local_extra_settings = makeExtraSettings(local_optimization_settings);
+        Stack local_stack;
+        traverseQueryPlan(local_stack, root,
+            [&](auto & frame_node)
+            {
+                tryFuseFilterIntoArrayJoin(&frame_node, nodes, local_extra_settings);
+            });
+    }
+
     /// Lazy materialization for plans with joins works on the join expressions, so it runs while the joins
     /// are still logical. That is after PREWHERE optimization, which needs a filter right above the read,
     /// and before reading in order, which would turn the full sorting it starts from into a partial one.
