@@ -1,0 +1,9 @@
+alias	2	1
+alias	3	10
+alias, old analyzer	2	1
+lazy abr	2	1
+lazy abr	3	10
+lazy abr, old analyzer	2	1
+lazy alias	2	1
+lazy alias	3	10
+lazy alias, old analyzer	2	1
