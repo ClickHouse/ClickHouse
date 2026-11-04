@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Field.h>
 #include <Parsers/IAST.h>
 #include <Parsers/IParserBase.h>
 

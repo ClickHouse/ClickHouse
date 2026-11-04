@@ -220,8 +220,6 @@ private:
     static unsigned long writeFileFunc(void * opaque, void *, const void * buf, unsigned long size) // NOLINT(google-runtime-int)
     {
         auto * stream_info = reinterpret_cast<StreamInfo *>(opaque);
-        if (stream_info->stored_exception)
-            return 0;
         try
         {
             stream_info->write_buffer->write(reinterpret_cast<const char *>(buf), size);
@@ -243,8 +241,6 @@ private:
     static ZPOS64_T tellFunc(void * opaque, void *)
     {
         auto * stream_info = reinterpret_cast<StreamInfo *>(opaque);
-        if (stream_info->stored_exception)
-            return static_cast<ZPOS64_T>(-1);
         try
         {
             auto pos = stream_info->write_buffer->count() - stream_info->start_offset;

@@ -5,7 +5,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 ch_format() {
-    $CLICKHOUSE_FORMAT --oneline --show_secrets
+    $CLICKHOUSE_FORMAT --oneline
 }
 
 format_query() {
@@ -58,13 +58,6 @@ format_query "ALTER TABLE \`t55\` (MODIFY ORDER BY ((\`c0\` AS \`a0\`)));"
 # Complex tuple expression with index
 format_query "select (tab.*).2 from tab;"
 format_query "with (((1,1),1),1) as t1 select t1.1.1.1;"
-
-# Aliased index of the tuple element access operator: the alias must stay inside the parens
-format_query "SELECT ((1,2) AS t).(1 AS a)"
-format_query "SELECT (1,2).(0 AS a)"
-format_query "select (tab.*).(2 AS a) from tab;"
-format_query "SELECT ((1,(2,3)) AS t).(2 AS a).(1 AS b)"
-format_query "SELECT 1 + ((1,2) AS t).(1 AS a)"
 
 # Array with tuple element access (should not add extra parens around array)
 format_query "SELECT [['hello']].1;"

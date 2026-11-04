@@ -40,7 +40,6 @@ public:
         UInt32 shard_count_,
         std::shared_ptr<const StorageLimitsList> storage_limits_,
         const String & cluster_name_,
-        const String & shard_scope_identity_,
         UnavailableShardTrackerPtr unavailable_shard_tracker_ = nullptr);
 
     String getName() const override { return "ReadFromRemote"; }
@@ -48,7 +47,6 @@ public:
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     void describeDistributedPlan(FormatSettings & settings, const ExplainPlanOptions & options) override;
-    void describeDistributedPipeline(FormatSettings & settings, bool distributed) override;
 
     void enableMemoryBoundMerging();
     void enforceAggregationInOrder(const SortDescription & sort_description);
@@ -67,32 +65,23 @@ private:
     std::shared_ptr<const StorageLimitsList> storage_limits;
     LoggerPtr log;
     UInt32 shard_count;
-    /// A resolvable cluster name, also assigned to `cluster_for_parallel_replicas`.
     const String cluster_name;
-    /// Identifies the shard numbering the shipped `_shard_num` belongs to; not necessarily a cluster name.
-    const String shard_scope_identity;
     UnavailableShardTrackerPtr unavailable_shard_tracker;
     std::optional<GetPriorityForLoadBalancing> priority_func_factory;
 
-    /// An EXPLAIN runs extra executors of its own, whose skips are not the query's: it passes no tracker.
-    Pipes addPipes(
-        const ClusterProxy::SelectStreamFactory::Shards & used_shards,
-        const SharedHeader & out_header,
-        const UnavailableShardTrackerPtr & tracker);
+    Pipes addPipes(const ClusterProxy::SelectStreamFactory::Shards & used_shards, const SharedHeader & out_header);
 
     void addLazyPipe(
         Pipes & pipes,
         const ClusterProxy::SelectStreamFactory::Shard & shard,
         const SharedHeader & out_header,
-        size_t parallel_marshalling_threads,
-        const UnavailableShardTrackerPtr & tracker);
+        size_t parallel_marshalling_threads);
 
     void addPipe(
         Pipes & pipes,
         const ClusterProxy::SelectStreamFactory::Shard & shard,
         const SharedHeader & out_header,
-        size_t parallel_marshalling_threads,
-        const UnavailableShardTrackerPtr & tracker);
+        size_t parallel_marshalling_threads);
 };
 
 
@@ -109,9 +98,6 @@ public:
         SharedHeader header_,
         QueryProcessingStage::Enum stage_,
         ContextMutablePtr context_,
-        /// Whose settings decide whether a pushed-down condition is spliced into the replicas' query:
-        /// the fragment's, which the initiator's copy of the fragment is optimized with too.
-        ContextPtr filter_rewrite_context_,
         ThrottlerPtr throttler_,
         Scalars scalars_,
         Tables external_tables_,
@@ -127,19 +113,12 @@ public:
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     void describeDistributedPlan(FormatSettings & settings, const ExplainPlanOptions & options) override;
-    void describeDistributedPipeline(FormatSettings & settings, bool distributed) override;
 
     void enableMemoryBoundMerging();
     void enforceAggregationInOrder(const SortDescription & sort_description);
 
     StorageID getStorageID() const { return storage_id; }
     ParallelReplicasReadingCoordinatorPtr getCoordinator() const { return coordinator; }
-
-    /// The connection pools (sized to the coordinator's replica count) and the local replica's index
-    /// within them. Captured before this step is dropped from the local INSERT SELECT plan so the
-    /// remote-pool pass can reuse the exact same replica set the coordinator was created with.
-    const std::vector<ConnectionPoolPtr> & getPools() const { return pools_to_use; }
-    std::optional<size_t> getExcludePoolIndex() const { return exclude_pool_index; }
 
 private:
     Pipes addPipes(ASTPtr ast, const SharedHeader & out_header);
@@ -155,7 +134,6 @@ private:
     ParallelReplicasReadingCoordinatorPtr coordinator;
     QueryProcessingStage::Enum stage;
     ContextMutablePtr context;
-    ContextPtr filter_rewrite_context;
     ThrottlerPtr throttler;
     Scalars scalars;
     Tables external_tables;
@@ -172,17 +150,6 @@ ASTPtr tryBuildAdditionalFilterAST(
     const std::unordered_set<std::string> & projection_names,
     const std::unordered_map<std::string, QueryTreeNodePtr> & execution_name_to_projection_query_tree,
     Tables * external_tables,
-    ContextMutablePtr & context,
-    /// The conjuncts the conversion leaves out of a positive `AND`, when asked.
-    std::vector<const ActionsDAG::Node *> * dropped_conjuncts = nullptr);
-
-/// The conjuncts of `condition` (`ActionsDAG::extractConjunctionAtoms`) the splice would leave out of the
-/// remote query - all of them where it does not run.
-ActionsDAG::NodeRawConstPtrs conjunctsLeftOutOfRemoteQuery(
-    const ActionsDAG::Node & condition,
-    const ASTPtr & query_ast,
-    const QueryTreeNodePtr & query_tree,
-    const PlannerContextPtr & planner_context,
-    const ContextPtr & rewrite_context);
+    ContextMutablePtr & context);
 
 }

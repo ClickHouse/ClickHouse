@@ -4,7 +4,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Core/ColumnNumbers.h>
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 
 
@@ -12,6 +11,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
 }
 
@@ -21,7 +21,7 @@ namespace
 /// Returns 1 if argument is zero or NULL.
 /// It can be used to negate filter in WHERE condition.
 /// "WHERE isZeroOrNull(expr)" will return exactly the same rows that "WHERE expr" will filter out.
-class FunctionIsZeroOrNull final : public IFunction
+class FunctionIsZeroOrNull : public IFunction
 {
 public:
     static constexpr auto name = "isZeroOrNull";
@@ -38,16 +38,17 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForNulls() const override { return false; }
-    /// A Nothing argument is handled explicitly (returns const UInt8), so the default
-    /// Nothing-dispatch must not rewrite the declared return type to Nothing.
-    bool useDefaultImplementationForNothing() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & types) const override
     {
-        return "(MaybeNullable(Number | IsNothing)) -> UInt8";
+        if (!isNumber(removeNullable(types.at(0))) && !isNothing(removeNullable(types.at(0))))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "The argument of function {} must have simple numeric type, possibly Nullable or Null", name);
+
+        return std::make_shared<DataTypeUInt8>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override

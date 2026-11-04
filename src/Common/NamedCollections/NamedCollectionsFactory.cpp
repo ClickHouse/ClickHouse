@@ -6,7 +6,6 @@
 #include <Common/NamedCollections/NamedCollectionsMetadataStorage.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Core/BackgroundSchedulePool.h>
-#include <Core/UUID.h>
 #include <Interpreters/Context.h>
 
 namespace CurrentMetrics
@@ -253,7 +252,7 @@ bool NamedCollectionFactory::loadIfNot(std::lock_guard<std::mutex> & lock)
 
     if (metadata_storage->isReplicated())
     {
-        update_task = context->getSchedulePool()->createTask(StorageID::createEmpty(), "NamedCollectionsMetadataStorage", [this]{ updateFunc(); });
+        update_task = context->getSchedulePool().createTask(StorageID::createEmpty(), "NamedCollectionsMetadataStorage", [this]{ updateFunc(); });
         update_task->activate();
         update_task->schedule();
     }
@@ -299,23 +298,13 @@ void NamedCollectionFactory::createFromSQL(const ASTCreateNamedCollectionQuery &
         if (query.if_not_exists)
             return;
 
-        if (!query.or_replace)
-            throw Exception(
-                ErrorCodes::NAMED_COLLECTION_ALREADY_EXISTS,
-                "A named collection `{}` already exists",
-                query.collection_name);
-
-        /// Throws NAMED_COLLECTION_IS_IMMUTABLE before the metadata write if the existing collection comes from the server config.
-        getMutable(query.collection_name, lock);
-
-        loaded_named_collections[query.collection_name] = metadata_storage->createOrReplace(query);
-        return;
+        throw Exception(
+            ErrorCodes::NAMED_COLLECTION_ALREADY_EXISTS,
+            "A named collection `{}` already exists",
+            query.collection_name);
     }
 
-    if (query.or_replace)
-        add(query.collection_name, metadata_storage->createOrReplace(query), lock);
-    else
-        add(query.collection_name, metadata_storage->create(query), lock);
+    add(query.collection_name, metadata_storage->create(query), lock);
 }
 
 void NamedCollectionFactory::removeFromSQL(const ASTDropNamedCollectionQuery & query)

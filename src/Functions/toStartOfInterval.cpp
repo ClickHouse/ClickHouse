@@ -7,21 +7,13 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeInterval.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <Functions/DateTimeTransforms.h>
-#include <base/arithmeticOverflow.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <Functions/IFunctionAdaptors.h>
-#include <Functions/toStartOfInterval.h>
 #include <IO/WriteHelpers.h>
 #include <algorithm>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
-
-#include <libdivide-config.h>
-#include <libdivide.h>
 
 namespace DB
 {
@@ -29,226 +21,220 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool enable_extended_results_for_datetime_functions;
-    extern const SettingsBool to_start_of_interval_preserves_argument_type;
 }
 
 namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int BAD_ARGUMENTS;
-    extern const int DECIMAL_OVERFLOW;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-namespace
-{
 
-enum class ToStartOfIntervalOverload
-{
-    Default,    /// toStartOfInterval(time, interval) or toStartOfInterval(time, interval, timezone)
-    Origin      /// toStartOfInterval(time, interval, origin) or toStartOfInterval(time, interval, origin, timezone)
-};
-
-/// Clamps a rounded timestamp into a narrowing result type instead of wrapping, so that the result stays
-/// monotonic over the whole argument range. DateTime64 arguments, and a Date floored to whole days, round
-/// outside DateTime; the out-of-range rounding of the other argument types is defined in DateLUTImpl.
-template <bool saturate, typename FieldType>
-FieldType saturatingResultCast(Int64 value)
-{
-    if constexpr (saturate && (std::is_same_v<FieldType, UInt16> || std::is_same_v<FieldType, UInt32>))
-        return static_cast<FieldType>(std::clamp<Int64>(value, 0, static_cast<Int64>(std::numeric_limits<FieldType>::max())));
-    else
-        return static_cast<FieldType>(value);
-}
-
-Int64 floorDivide(Int64 value, Int64 divisor)
-{
-    Int64 quotient = value / divisor;
-    if (value % divisor < 0)
-        --quotient;
-    return quotient;
-}
-
-Int64 multiplyToResultScale(Int64 value, Int64 multiplier)
-{
-    Int64 result = 0;
-    if (common::mulOverflow(value, multiplier, result))
-        throw Exception(ErrorCodes::DECIMAL_OVERFLOW,
-            "The result of function toStartOfInterval ({} multiplied by {}) does not fit into the DateTime64 result", value, multiplier);
-    return result;
-}
-
-/// The range [begin, end) of the values in the scale `scale_multiplier` whose whole seconds (rounded down) are in the
-/// range of the LUT, see `DateLUTImpl::isTimeInLUTRange`. Its bounds are private, so they are found by a binary search.
-/// The range is clamped to Int64 when its bounds in the scale do not fit.
-std::pair<Int64, Int64> lutRangeInScale(Int64 scale_multiplier)
-{
-    static const auto range_in_seconds = []
-    {
-        /// The first time in the range, searched below the epoch, and the first time after it, searched above.
-        constexpr Int64 search_limit = Int64(1) << 40;
-        Int64 low = -search_limit;
-        Int64 high = 0;
-        chassert(DateLUTImpl::isTimeInLUTRange(high) && !DateLUTImpl::isTimeInLUTRange(low));
-        while (high - low > 1)
-        {
-            const Int64 middle = low + (high - low) / 2;
-            (DateLUTImpl::isTimeInLUTRange(middle) ? high : low) = middle;
-        }
-        const Int64 begin = high;
-
-        low = 0;
-        high = search_limit;
-        chassert(DateLUTImpl::isTimeInLUTRange(low) && !DateLUTImpl::isTimeInLUTRange(high));
-        while (high - low > 1)
-        {
-            const Int64 middle = low + (high - low) / 2;
-            (DateLUTImpl::isTimeInLUTRange(middle) ? low : high) = middle;
-        }
-        return std::pair<Int64, Int64>{begin, high};
-    }();
-
-    Int64 begin = 0;
-    Int64 end = 0;
-    if (common::mulOverflow(range_in_seconds.first, scale_multiplier, begin))
-        begin = std::numeric_limits<Int64>::min();
-    if (common::mulOverflow(range_in_seconds.second, scale_multiplier, end))
-        end = std::numeric_limits<Int64>::max();
-    return {begin, end};
-}
-
-/// The number of ticks of a subsecond unit in a second, and 1 for the other units.
-template <IntervalKind::Kind unit>
-constexpr Int64 subsecondUnitScale()
-{
-    if constexpr (unit == IntervalKind::Kind::Nanosecond)
-        return 1'000'000'000;
-    else if constexpr (unit == IntervalKind::Kind::Microsecond)
-        return 1'000'000;
-    else if constexpr (unit == IntervalKind::Kind::Millisecond)
-        return 1'000;
-    else
-        return 1;
-}
-
-/// An upper bound of the length of `unit` in seconds, including the changes of the offset of a time zone, and 0 for
-/// the subsecond units.
-template <IntervalKind::Kind unit>
-constexpr Int64 maxUnitLengthInSeconds()
-{
-    constexpr Int64 max_day_length = 2 * 86400;
-    if constexpr (unit == IntervalKind::Kind::Second)
-        return 1;
-    else if constexpr (unit == IntervalKind::Kind::Minute)
-        return 60;
-    else if constexpr (unit == IntervalKind::Kind::Hour)
-        return 3600;
-    else if constexpr (unit == IntervalKind::Kind::Day)
-        return max_day_length;
-    else if constexpr (unit == IntervalKind::Kind::Week)
-        return 7 * max_day_length;
-    else if constexpr (unit == IntervalKind::Kind::Month)
-        return 31 * max_day_length;
-    else if constexpr (unit == IntervalKind::Kind::Quarter)
-        return 92 * max_day_length;
-    else if constexpr (unit == IntervalKind::Kind::Year)
-        return 366 * max_day_length;
-    else
-        return 0;
-}
-
-/// Whether the start of the interval of each value of a `DateTime` column is certainly not before the epoch: each value
-/// is later than the epoch by more than the length of the interval and two days for the offset of the time zone. The
-/// unsigned overload of `ToStartOfInterval<unit>`, which is faster than the signed one, gives the same results then, and
-/// they need no clamping.
-template <IntervalKind::Kind unit, typename Container>
-bool isFarFromEpoch(const Container & time_data, Int64 num_units)
-{
-    constexpr Int64 max_unit_length = maxUnitLengthInSeconds<unit>();
-    if constexpr (max_unit_length == 0)
-    {
-        return false;
-    }
-    else
-    {
-        Int64 min_time = 0;
-        if (common::mulOverflow(num_units, max_unit_length, min_time) || common::addOverflow(min_time, Int64(2 * 86400), min_time)
-            || min_time > std::numeric_limits<UInt32>::max())
-            return false;
-        const UInt32 min_time_unsigned = static_cast<UInt32>(min_time);
-        bool result = true;
-        for (const auto time : time_data)
-            result &= static_cast<UInt32>(time) >= min_time_unsigned;
-        return result;
-    }
-}
-
-/// `ToStartOfInterval<unit>` returns a day number for the units of a week and longer, ticks of the unit for the
-/// subsecond units, and seconds otherwise. Converts that value to the representation of the result type. They
-/// differ when the result has the type of the argument (`to_start_of_interval_preserves_argument_type`), e.g. for
-/// a `DateTime` rounded to weeks, a `Date` rounded to days, or a `DateTime64` rounded to anything but its own scale.
-/// `result_scale_multiplier` is the scale multiplier of a `DateTime64` result.
-template <IntervalKind::Kind unit, typename ResultDataType>
-Int64 convertToResultRepresentation(Int64 value, const DateLUTImpl & time_zone, Int64 result_scale_multiplier)
-{
-    constexpr bool is_days = unit == IntervalKind::Kind::Week || unit == IntervalKind::Kind::Month
-        || unit == IntervalKind::Kind::Quarter || unit == IntervalKind::Kind::Year;
-    constexpr Int64 unit_scale = subsecondUnitScale<unit>();
-
-    if constexpr (std::is_same_v<ResultDataType, DataTypeDate> || std::is_same_v<ResultDataType, DataTypeDate32>)
-    {
-        if constexpr (is_days)
-            return value;
-        else
-            return time_zone.toDayNum(floorDivide(value, unit_scale)).toUnderType();
-    }
-    else
-    {
-        if constexpr (is_days)
-            value = time_zone.fromDayNum(ExtendedDayNum(static_cast<ExtendedDayNum::UnderlyingType>(value)));
-
-        if constexpr (std::is_same_v<ResultDataType, DataTypeDateTime>)
-            return floorDivide(value, unit_scale);
-        else if (result_scale_multiplier >= unit_scale)
-            return multiplyToResultScale(value, result_scale_multiplier / unit_scale);
-        else
-            return floorDivide(value, unit_scale / result_scale_multiplier);
-    }
-}
-
-class FunctionToStartOfInterval final : public IFunction
+class FunctionToStartOfInterval : public IFunction
 {
 private:
-    ToStartOfIntervalOverload overload;
-    bool preserve_argument_type;
+    enum class Overload
+    {
+        Default,    /// toStartOfInterval(time, interval) or toStartOfInterval(time, interval, timezone)
+        Origin      /// toStartOfInterval(time, interval, origin) or toStartOfInterval(time, interval, origin, timezone)
+    };
+    mutable Overload overload;
+    const bool enable_extended_results_for_datetime_functions = false;
 
 public:
-    static constexpr auto name = "toStartOfInterval";
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionToStartOfInterval>(context_); }
 
-    FunctionToStartOfInterval(ToStartOfIntervalOverload overload_, bool preserve_argument_type_)
-        : overload(overload_)
-        , preserve_argument_type(preserve_argument_type_)
+    explicit FunctionToStartOfInterval(ContextPtr context_): enable_extended_results_for_datetime_functions(context_->getSettingsRef()[Setting::enable_extended_results_for_datetime_functions])
     {
     }
 
+    static constexpr auto name = "toStartOfInterval";
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2, 3}; }
-    /// The Origin overload checks that origin <= time_arg for every row. The LowCardinality
-    /// dictionary always contains a default value (epoch/0) which would violate this check.
-    bool canBeExecutedOnDefaultArguments() const override { return overload != ToStartOfIntervalOverload::Origin; }
     bool hasInformationAboutMonotonicity() const override { return true; }
     Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override { return { .is_monotonic = true, .is_always_monotonic = true }; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & /*arguments*/) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        /// Not called through the overload resolver path.
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} should only be used through the overload resolver", getName());
+        bool value_is_date = false;
+        auto check_first_argument = [&]
+        {
+            const DataTypePtr & type_arg1 = arguments[0].type;
+            if (!isDateOrDate32(type_arg1) && !isDateTime(type_arg1) && !isDateTime64(type_arg1))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of 1st argument of function {}, expected a Date, Date32, DateTime or DateTime64",
+                    type_arg1->getName(), getName());
+            value_is_date = isDate(type_arg1);
+        };
+
+        const DataTypeInterval * interval_type = nullptr;
+
+        enum class ResultType : uint8_t
+        {
+            Date,
+            Date32,
+            DateTime,
+            DateTime64
+        };
+
+        ResultType result_type;
+        auto check_second_argument = [&]
+        {
+            const DataTypePtr & type_arg2 = arguments[1].type;
+
+            interval_type = checkAndGetDataType<DataTypeInterval>(type_arg2.get());
+            if (!interval_type)
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of 2nd argument of function {}, expected a time interval",
+                    type_arg2->getName(), getName());
+
+            overload = Overload::Default;
+
+            /// Determine result type for default overload (no origin)
+            switch (interval_type->getKind()) // NOLINT(bugprone-switch-missing-default-case)
+            {
+                case IntervalKind::Kind::Nanosecond:
+                case IntervalKind::Kind::Microsecond:
+                case IntervalKind::Kind::Millisecond:
+                    result_type = ResultType::DateTime64;
+                    break;
+                case IntervalKind::Kind::Second:
+                case IntervalKind::Kind::Minute:
+                case IntervalKind::Kind::Hour:
+                case IntervalKind::Kind::Day: /// weird why Day leads to DateTime but too afraid to change it
+                    result_type = ResultType::DateTime;
+                    break;
+                case IntervalKind::Kind::Week:
+                case IntervalKind::Kind::Month:
+                case IntervalKind::Kind::Quarter:
+                case IntervalKind::Kind::Year:
+                    result_type = ResultType::Date;
+                    break;
+            }
+
+            if (enable_extended_results_for_datetime_functions)
+            {
+                if (result_type == ResultType::Date)
+                    result_type = ResultType::Date32;
+                else if (result_type == ResultType::DateTime)
+                    result_type = ResultType::DateTime64;
+            }
+        };
+
+        auto check_third_argument = [&]
+        {
+            const DataTypePtr & type_arg3 = arguments[2].type;
+            if (isString(type_arg3))
+            {
+                if (value_is_date && result_type == ResultType::Date)
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "A timezone argument of function {} with interval type {} is allowed only when the 1st argument has the type DateTime or DateTime64",
+                        getName(), interval_type->getKind().toString());
+            }
+            else if (isDateOrDate32OrDateTimeOrDateTime64(type_arg3))
+            {
+                overload = Overload::Origin;
+                const DataTypePtr & type_arg1 = arguments[0].type;
+                if (isDate(type_arg1) && isDate(type_arg3))
+                    result_type = ResultType::Date;
+                else if (isDate32(type_arg1) && isDate32(type_arg3))
+                    result_type = ResultType::Date32;
+                else if (isDateTime(type_arg1) && isDateTime(type_arg3))
+                    result_type = ResultType::DateTime;
+                else if (isDateTime64(type_arg1) && isDateTime64(type_arg3))
+                    result_type = ResultType::DateTime64;
+                else
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Datetime argument and origin argument for function {} must have the same type", getName());
+            }
+            else
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of 3rd argument of function {}. "
+                    "This argument is optional and must be a constant String with timezone name or a Date/Date32/DateTime/DateTime64 with a constant origin",
+                    type_arg3->getName(), getName());
+        };
+
+        auto check_fourth_argument = [&]
+        {
+            if (overload != Overload::Origin) /// sanity check
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of 3rd argument of function {}. "
+                    "The third argument must a Date/Date32/DateTime/DateTime64 with a constant origin",
+                    arguments[2].type->getName(), getName());
+
+            const DataTypePtr & type_arg4 = arguments[3].type;
+            if (!isString(type_arg4))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of 4th argument of function {}. "
+                    "This argument is optional and must be a constant String with timezone name",
+                    type_arg4->getName(), getName());
+            if (value_is_date && result_type == ResultType::Date)
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "A timezone argument of function {} with interval type {} is allowed only when the 1st argument has the type DateTime or DateTime64",
+                    getName(), interval_type->getKind().toString());
+        };
+
+        if (arguments.size() == 2)
+        {
+            check_first_argument();
+            check_second_argument();
+        }
+        else if (arguments.size() == 3)
+        {
+            check_first_argument();
+            check_second_argument();
+            check_third_argument();
+        }
+        else if (arguments.size() == 4)
+        {
+            check_first_argument();
+            check_second_argument();
+            check_third_argument();
+            check_fourth_argument();
+        }
+        else
+        {
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, must be 2, 3 or 4",
+                getName(), arguments.size());
+        }
+
+        switch (result_type)
+        {
+            case ResultType::Date:
+                return std::make_shared<DataTypeDate>();
+            case ResultType::Date32:
+                return std::make_shared<DataTypeDate32>();
+            case ResultType::DateTime:
+            {
+                const size_t time_zone_arg_num = (overload == Overload::Default) ? 2 : 3;
+                return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, time_zone_arg_num, 0, false));
+            }
+            case ResultType::DateTime64:
+            {
+                UInt32 scale = 0;
+                if (isDateTime64(arguments[0].type) && overload == Overload::Origin)
+                {
+                    scale = assert_cast<const DataTypeDateTime64 &>(*arguments[0].type.get()).getScale();
+                    if (assert_cast<const DataTypeDateTime64 &>(*arguments[2].type.get()).getScale() != scale)
+                        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Datetime argument and origin argument for function {} must have the same scale", getName());
+                }
+                if (interval_type->getKind() == IntervalKind::Kind::Nanosecond)
+                    scale = 9;
+                else if (interval_type->getKind() == IntervalKind::Kind::Microsecond)
+                    scale = 6;
+                else if (interval_type->getKind() == IntervalKind::Kind::Millisecond)
+                    scale = 3;
+
+                const size_t time_zone_arg_num = (overload == Overload::Default) ? 2 : 3;
+                return std::make_shared<DataTypeDateTime64>(scale, extractTimeZoneNameFromFunctionArguments(arguments, time_zone_arg_num, 0, false));
+            }
+        }
+
+        std::unreachable();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /* input_rows_count */) const override
@@ -257,23 +243,18 @@ public:
         const auto & interval_column = arguments[1];
 
         ColumnWithTypeAndName origin_column;
-        if (overload == ToStartOfIntervalOverload::Origin)
+        if (overload == Overload::Origin)
             origin_column = arguments[2];
 
-        const DateLUTImpl * time_zone_tmp = nullptr;
-        const size_t time_zone_arg_num = (overload == ToStartOfIntervalOverload::Default) ? 2 : 3;
+        const DateLUTImpl * time_zone_tmp;
 
         if (isDateTimeOrDateTime64(time_column.type) || isDateTimeOrDateTime64(result_type))
         {
+            const size_t time_zone_arg_num = (overload == Overload::Default) ? 2 : 3;
             time_zone_tmp = &extractTimeZoneFromFunctionArguments(arguments, time_zone_arg_num, 0);
         }
         else /// As we convert date to datetime and perform calculation, we don't need to take the timezone into account, so we set it to default
-        {
-            /// The time zone argument has no effect here, but it is still validated, so that a typo is not silently ignored.
-            if (arguments.size() == time_zone_arg_num + 1)
-                extractTimeZoneFromFunctionArguments(arguments, time_zone_arg_num, 0);
             time_zone_tmp = &DateLUT::instance("UTC");
-        }
 
         const DateLUTImpl & time_zone = *time_zone_tmp;
 
@@ -403,131 +384,6 @@ private:
         std::unreachable();
     }
 
-    /// Fast path for the interval kinds and time zones where the result is `roundDownToMultiple` of the unix
-    /// timestamp (see the `*IntervalModularDivisor` methods of `DateLUTImpl`). The generic loop pays a
-    /// hardware division by the run-time divisor for every row; a precomputed libdivide divider turns it
-    /// into multiplication and shifts and lets the DateTime loop vectorize (about 5 times faster).
-    /// `result_scale_multiplier` converts the rounded seconds of a DateTime64 argument to the scale of the result.
-    template <IntervalKind::Kind unit, typename TimeColumnType, bool saturate, typename ResultContainer>
-    static bool tryExecuteArithmeticRounding(
-        const typename TimeColumnType::Container & time_data,
-        ResultContainer & result_data,
-        Int64 num_units,
-        const DateLUTImpl & time_zone,
-        Int64 scale_multiplier,
-        Int64 result_scale_multiplier)
-    {
-        std::optional<DateLUTImpl::ModularDivisor> modular_divisor;
-        if constexpr (unit == IntervalKind::Kind::Minute)
-            modular_divisor = time_zone.minuteIntervalModularDivisor(static_cast<UInt64>(num_units));
-        else if constexpr (unit == IntervalKind::Kind::Second)
-            modular_divisor = time_zone.secondIntervalModularDivisor(static_cast<UInt64>(num_units));
-        else
-        {
-            static_assert(unit == IntervalKind::Kind::Hour);
-            modular_divisor = time_zone.hourIntervalModularDivisor(static_cast<UInt64>(num_units));
-        }
-        if (!modular_divisor)
-            return false;
-        const Int64 divisor = modular_divisor->divisor;
-        /// Below the epoch the offset of some zones has a sub-divisor component, and the rounding is not
-        /// modular there; such rows take the generic path one by one, the rest of the column keeps the fast
-        /// one. `DateTime` cannot represent a negative timestamp, so it is never concerned.
-        [[maybe_unused]] const bool valid_before_epoch = modular_divisor->valid_before_epoch;
-
-        const size_t size = time_data.size();
-        using ResultFieldType = typename ResultContainer::value_type;
-
-        if constexpr (std::is_same_v<TimeColumnType, ColumnDateTime>)
-        {
-            /// The scale multiplier does not apply to DateTime values, and they are never negative.
-            if (divisor > std::numeric_limits<UInt32>::max())
-            {
-                for (size_t i = 0; i != size; ++i)
-                    result_data[i] = static_cast<ResultFieldType>(0);
-            }
-            else
-            {
-                const UInt32 d = static_cast<UInt32>(divisor);
-                const libdivide::divider<UInt32, libdivide::BRANCHFULL> divider(d);
-                for (size_t i = 0; i != size; ++i)
-                    result_data[i] = static_cast<ResultFieldType>(time_data[i] / divider * d);
-            }
-        }
-        else
-        {
-            static_assert(std::is_same_v<TimeColumnType, ColumnDateTime64>);
-
-            /// A result in the scale of the argument (`to_start_of_interval_preserves_argument_type`): rounding the
-            /// whole seconds down to the divisor and scaling them back is rounding the value down to the divisor in
-            /// the scale of the argument, which needs one division per row instead of two and no overflow check.
-            Int64 divisor_in_scale = 0;
-            if (result_scale_multiplier == scale_multiplier && !common::mulOverflow(divisor, scale_multiplier, divisor_in_scale))
-            {
-                /// The values whose whole seconds are in the LUT range, see `lutRangeInScale`.
-                const auto [range_begin, range_end] = lutRangeInScale(scale_multiplier);
-                const libdivide::divider<Int64, libdivide::BRANCHFULL> divider(divisor_in_scale);
-                for (size_t i = 0; i != size; ++i)
-                {
-                    const Int64 value = static_cast<Int64>(time_data[i]);
-                    /// A one-second interval never consults the LUT, so it needs no range check. The whole seconds of
-                    /// a value are negative exactly when the value is.
-                    if (divisor != 1 && unlikely(value < range_begin || value >= range_end || (value < 0 && !valid_before_epoch)))
-                    {
-                        result_data[i] = saturatingResultCast<saturate, ResultFieldType>(multiplyToResultScale(
-                            ToStartOfInterval<unit>::execute(time_data[i], num_units, time_zone, scale_multiplier), result_scale_multiplier));
-                        continue;
-                    }
-                    Int64 res = value / divider * divisor_in_scale;
-                    /// Rounding a negative value down can step below the range of Int64, then it throws as the scaling does.
-                    if (value < 0 && res != value && unlikely(common::subOverflow(res, divisor_in_scale, res)))
-                        throw Exception(ErrorCodes::DECIMAL_OVERFLOW,
-                            "The result of function toStartOfInterval for {} does not fit into the DateTime64 result", value);
-                    /// A `DateTime64(0)` argument has equal scales even for the legacy `DateTime` result, which saturates.
-                    result_data[i] = saturatingResultCast<saturate, ResultFieldType>(res);
-                }
-                return true;
-            }
-
-            /// There is no 64-bit vector multiply-high instruction, so these loops stay scalar.
-            const libdivide::divider<Int64, libdivide::BRANCHFULL> scale_divider(scale_multiplier);
-            /// The whole seconds rounded towards negative infinity, see `wholeSecondsRoundedDown`.
-            auto whole_seconds = [&](Int64 value)
-            {
-                const Int64 whole = value / scale_divider;
-                return whole * scale_multiplier > value ? whole - 1 : whole;
-            };
-            if (divisor == 1)
-            {
-                /// A one-second interval never consults the LUT, so it needs no range check.
-#pragma clang loop vectorize(disable)
-                for (size_t i = 0; i != size; ++i)
-                    result_data[i] = saturatingResultCast<saturate, ResultFieldType>(
-                        multiplyToResultScale(whole_seconds(static_cast<Int64>(time_data[i])), result_scale_multiplier));
-                return true;
-            }
-            const libdivide::divider<Int64, libdivide::BRANCHFULL> divider(divisor);
-            for (size_t i = 0; i != size; ++i)
-            {
-                const Int64 t = whole_seconds(static_cast<Int64>(time_data[i]));
-                /// Out of the LUT range the offset is extrapolated and can have a sub-divisor component
-                /// (e.g. `Asia/Kolkata` is +5:53:28 before 1906), so the rounding is not modular there.
-                if (unlikely(!DateLUTImpl::isTimeInLUTRange(t) || (t < 0 && !valid_before_epoch)))
-                {
-                    result_data[i] = saturatingResultCast<saturate, ResultFieldType>(multiplyToResultScale(
-                        ToStartOfInterval<unit>::execute(time_data[i], num_units, time_zone, scale_multiplier), result_scale_multiplier));
-                    continue;
-                }
-                const Int64 rounded_towards_zero = t / divider * divisor;
-                const Int64 res = t >= 0
-                    ? rounded_towards_zero
-                    : DateLUTImpl::roundDownNegativeToMultiple(t, rounded_towards_zero, divisor);
-                result_data[i] = saturatingResultCast<saturate, ResultFieldType>(multiplyToResultScale(res, result_scale_multiplier));
-            }
-        }
-        return true;
-    }
-
     template <typename ResultDataType, typename TimeDataType, typename TimeColumnType, IntervalKind::Kind unit>
     ColumnPtr execute(const TimeDataType &, const TimeColumnType & time_column_type, Int64 num_units, const ColumnWithTypeAndName & origin_column, const DataTypePtr & result_type, const DateLUTImpl & time_zone, UInt16 scale) const
     {
@@ -543,31 +399,27 @@ private:
 
         Int64 scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64>(scale);
 
-        Int64 result_scale_multiplier = 1;
-        if constexpr (std::is_same_v<ResultDataType, DataTypeDateTime64>)
-            result_scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64>(assert_cast<const DataTypeDateTime64 &>(*result_type).getScale());
-
         if (origin_column.column) // Overload: Origin
         {
             const bool is_small_interval = (unit == IntervalKind::Kind::Nanosecond || unit == IntervalKind::Kind::Microsecond || unit == IntervalKind::Kind::Millisecond);
             const bool is_result_date = isDateOrDate32(result_type);
 
-            /// For large intervals the result scale equals the argument scale: seconds for the non-DateTime64
-            /// argument types and scale_multiplier for DateTime64 arguments.
-            const Int64 result_scale = (isDateTime64(result_type) && !is_small_interval) ? scale_multiplier : 1;
+            Int64 result_scale = scale_multiplier;
+            Int64 origin_scale = 1;
+
+            if (isDateTime64(result_type)) /// We have origin scale only in case if arguments are DateTime64.
+                origin_scale = assert_cast<const DataTypeDateTime64 &>(*origin_column.type).getScaleMultiplier();
+            else if (!is_small_interval) /// In case of large interval and arguments are not DateTime64, we should not have scale in result.
+                result_scale = 1;
+
+            if (is_small_interval)
+                result_scale = assert_cast<const DataTypeDateTime64 &>(*result_type).getScaleMultiplier();
+
+            /// In case if we have a difference between time arguments and Interval, we need to calculate the difference between them
+            /// to get the right precision for the result. In case of large intervals, we should not have scale difference.
+            Int64 scale_diff = is_small_interval ? std::max(result_scale / origin_scale, origin_scale / result_scale) : 1;
 
             static constexpr Int64 SECONDS_PER_DAY = 86'400;
-
-            /// A result of the argument scale (`to_start_of_interval_preserves_argument_type`) finer than a subsecond
-            /// unit: the grid anchored at the origin is computed in that scale, because the origin can have a part
-            /// finer than the unit, which the rounding in the scale of the unit would lose. The legacy behavior has
-            /// the scale of the unit in the result and keeps rounding in it, so that the setting restores the old results.
-            constexpr Int64 unit_scale = subsecondUnitScale<unit>();
-            const bool round_in_argument_scale = preserve_argument_type && is_small_interval && isDateTime64(result_type)
-                && result_scale_multiplier == scale_multiplier && scale_multiplier > unit_scale;
-            Int64 interval_in_argument_scale = 0;
-            if (round_in_argument_scale && common::mulOverflow(num_units, scale_multiplier / unit_scale, interval_in_argument_scale))
-                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "The interval of function {} does not fit into Int64 in the scale of the argument", getName());
 
             Int64 origin = origin_column.column->getInt(0);
             for (size_t i = 0; i != size; ++i)
@@ -576,39 +428,16 @@ private:
                 if (origin > time_arg)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "The origin must be before the end date / date with time");
 
-                if (round_in_argument_scale)
-                {
-                    result_data[i] = static_cast<typename ResultDataType::FieldType>(
-                        toStartOfSubsecondInterval(time_arg, interval_in_argument_scale, scale_multiplier, scale_multiplier, origin));
-                    continue;
-                }
-
-                if (is_small_interval)
-                {
-                    result_data[i] = static_cast<typename ResultDataType::FieldType>(convertToResultRepresentation<unit, ResultDataType>(
-                        ToStartOfInterval<unit>::execute(time_arg, num_units, time_zone, scale_multiplier, origin), time_zone, result_scale_multiplier));
-                    continue;
-                }
-
-                if (is_result_date) /// All internal calculations of ToStartOfInterval<...> expect arguments to be seconds.
+                if (is_result_date) /// All internal calculations of ToStartOfInterval<...> expect arguments to be seconds or milli-, micro-, nanoseconds.
                 {
                     time_arg *= SECONDS_PER_DAY;
                     origin *= SECONDS_PER_DAY;
                 }
 
-                /// The time and origin arguments have the same scale, so their difference is expressed in the
-                /// argument scale, which for large intervals equals result_scale. ToStartOfInterval returns
-                /// the offset as a whole number of interval units.
-                Int64 time_diff = 0;
-                if (common::subOverflow(time_arg, origin, time_diff))
-                    throw Exception(ErrorCodes::DECIMAL_OVERFLOW,
-                        "The difference between the time argument ({}) and the origin ({}) of function {} does not fit into Int64",
-                        time_arg, origin, getName());
+                Int64 offset = ToStartOfInterval<unit>::execute(time_arg - origin, num_units, time_zone, result_scale, origin);
 
-                Int64 offset = ToStartOfInterval<unit>::execute(time_diff, num_units, time_zone, result_scale, origin);
-
-                /// The offset is a whole number of seconds or days, convert it to the result scale.
-                offset *= result_scale;
+                /// In case if arguments are DateTime64 with large interval, we should apply scale on it.
+                offset *= (!is_small_interval) ? result_scale : 1;
 
                 if (is_result_date) /// Convert back to date after calculations.
                 {
@@ -616,384 +445,19 @@ private:
                     origin /= SECONDS_PER_DAY;
                 }
 
-                Int64 result = 0;
-                if (common::addOverflow(origin, offset, result))
-                    throw Exception(ErrorCodes::DECIMAL_OVERFLOW,
-                        "The result of function {} for the origin ({}) and the rounding offset ({}) does not fit into Int64",
-                        getName(), origin, offset);
-
-                result_data[i] = static_cast<ResultDataType::FieldType>(result);
-            }
+                result_data[i] = (result_scale < origin_scale) ? static_cast<ResultDataType::FieldType>((origin + offset) / scale_diff)
+                                                               : static_cast<ResultDataType::FieldType>((origin + offset) * scale_diff);
+        }
         }
         else // Overload: Default
         {
-            /// Flooring a `Date` to whole days yields seconds, and the top of the `Date` domain is past `UInt32`
-            /// seconds, so a narrowing `DateTime` result has to clamp here too. `Date32` is excluded: clamping its
-            /// pre-epoch values into an unsigned codomain would collapse distinct buckets.
-            constexpr bool legacy_saturate = std::is_same_v<TimeDataType, DataTypeDateTime64>
-                || (std::is_same_v<TimeDataType, DataTypeDate> && unit == IntervalKind::Kind::Day);
-
-            auto execute_default = [&]<bool saturate>()
-            {
-                /// The start of the interval of one value, in the representation of the result type.
-                auto execute_row = [&](auto time)
-                {
-                    /// A `DateTime` result that clamps (`to_start_of_interval_preserves_argument_type`) is computed with the
-                    /// signed overload: the unsigned one clamps a day before the epoch to the first day after it, which
-                    /// starts after the timestamp zero in a time zone with a negative offset, and the result would exceed
-                    /// the argument. The legacy behavior keeps the unsigned overload, so that the setting restores the old results.
-                    if constexpr (saturate && std::is_same_v<TimeColumnType, ColumnDateTime>)
-                        return convertToResultRepresentation<unit, ResultDataType>(
-                            ToStartOfInterval<unit>::execute(static_cast<Int64>(time), num_units, time_zone, 1), time_zone, result_scale_multiplier);
-                    else
-                        return convertToResultRepresentation<unit, ResultDataType>(
-                            ToStartOfInterval<unit>::execute(time, num_units, time_zone, scale_multiplier), time_zone, result_scale_multiplier);
-                };
-
-                if constexpr ((unit == IntervalKind::Kind::Second || unit == IntervalKind::Kind::Minute || unit == IntervalKind::Kind::Hour)
-                    && (std::is_same_v<TimeColumnType, ColumnDateTime> || std::is_same_v<TimeColumnType, ColumnDateTime64>))
-                {
-                    if (tryExecuteArithmeticRounding<unit, TimeColumnType, saturate>(
-                            time_data, result_data, num_units, time_zone, scale_multiplier, result_scale_multiplier))
-                        return;
-                }
-
-                /// Rounding a `DateTime` to a single week or month and returning a `DateTime`: take the time of the first
-                /// day directly, instead of going through the day number and converting it back with `fromDayNum`.
-                if constexpr ((unit == IntervalKind::Kind::Week || unit == IntervalKind::Kind::Month)
-                    && std::is_same_v<TimeColumnType, ColumnDateTime> && std::is_same_v<ResultDataType, DataTypeDateTime>)
-                {
-                    if (num_units == 1)
-                    {
-                        UInt32 min_time = std::numeric_limits<UInt32>::max();
-                        for (size_t i = 0; i != size; ++i)
-                        {
-                            const UInt32 t = time_data[i];
-                            min_time = std::min(min_time, t);
-                            Int64 res = 0;
-                            if constexpr (unit == IntervalKind::Kind::Week)
-                                res = time_zone.toFirstDayOfWeek(t);
-                            else
-                                res = time_zone.toFirstDayOfMonth(t);
-                            result_data[i] = saturatingResultCast<saturate, typename ResultDataType::FieldType>(res);
-                        }
-
-                        /// For an unsigned argument these functions move a first day that starts before the epoch to the
-                        /// first day that starts after it, while the generic path below clamps it to the epoch. Such a first
-                        /// day can only be the result for the first weeks after the epoch, so these are recomputed in the
-                        /// generic way.
-                        constexpr UInt32 min_time_with_first_day_after_epoch = 40 * 86400;
-                        if (unlikely(min_time < min_time_with_first_day_after_epoch))
-                        {
-                            for (size_t i = 0; i != size; ++i)
-                                if (time_data[i] < min_time_with_first_day_after_epoch)
-                                    result_data[i] = saturatingResultCast<saturate, typename ResultDataType::FieldType>(execute_row(time_data[i]));
-                        }
-                        return;
-                    }
-                }
-
-                for (size_t i = 0; i != size; ++i)
-                    result_data[i] = saturatingResultCast<saturate, typename ResultDataType::FieldType>(execute_row(time_data[i]));
-            };
-
-            /// A result of the argument type (`to_start_of_interval_preserves_argument_type`) clamps too: rounding the
-            /// first days of 1970 down to a week reaches before the epoch. The legacy behavior keeps wrapping such values,
-            /// so that the setting restores the old results exactly.
-            if constexpr (std::is_same_v<TimeDataType, ResultDataType> && !legacy_saturate)
-            {
-                bool saturate = preserve_argument_type;
-                if constexpr (std::is_same_v<TimeColumnType, ColumnDateTime>)
-                    saturate = saturate && !isFarFromEpoch<unit>(time_data, num_units);
-
-                if (saturate)
-                    execute_default.template operator()<true>();
-                else
-                    execute_default.template operator()<false>();
-            }
-            else
-                execute_default.template operator()<legacy_saturate>();
+            for (size_t i = 0; i != size; ++i)
+                result_data[i] = static_cast<typename ResultDataType::FieldType>(ToStartOfInterval<unit>::execute(time_data[i], num_units, time_zone, scale_multiplier));
         }
 
         return result_col;
     }
 };
-
-
-class FunctionToStartOfIntervalOverloadResolver final : public IFunctionOverloadResolver
-{
-public:
-    static constexpr auto name = "toStartOfInterval";
-
-    static FunctionOverloadResolverPtr create(ContextPtr context_) { return std::make_unique<FunctionToStartOfIntervalOverloadResolver>(context_); }
-
-    explicit FunctionToStartOfIntervalOverloadResolver(ContextPtr context_)
-        : FunctionToStartOfIntervalOverloadResolver(context_, context_->getSettingsRef()[Setting::to_start_of_interval_preserves_argument_type])
-    {
-    }
-
-    FunctionToStartOfIntervalOverloadResolver(ContextPtr context_, bool preserve_argument_type_)
-        : enable_extended_results_for_datetime_functions(context_->getSettingsRef()[Setting::enable_extended_results_for_datetime_functions])
-        , preserve_argument_type(preserve_argument_type_)
-    {
-    }
-
-    String getName() const override { return name; }
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2, 3}; }
-
-    /// Documentation-only — the result type depends on the input time's width and the interval kind:
-    /// nano/micro/milli/second/minute/hour produce DateTime/DateTime64 results,
-    /// day/week/month/quarter/year produce Date/Date32 results. The exact
-    /// scale and Date/DateTime variant comes from the interval kind and the
-    /// `enable_extended_results_for_datetime_functions` setting.
-    /// The optional third and fourth positions are two independent optional groups: the
-    /// third argument is either a constant `origin` value or a constant timezone `String`,
-    /// and the four-argument form takes both an `origin` and a timezone. The matcher
-    /// tries to skip an optional group first, so a `(value, interval, timezone)` call
-    /// binds the `String` to the timezone position without requiring an `origin`.
-    /// The interval, origin and timezone positions are all constant
-    /// (see `getArgumentsThatAreAlwaysConstant`).
-    String getSignatureString() const override
-    {
-        return "(DateOrDateTime, const Interval, [const DateOrDateTime], [const String]) -> DateOrDateTime";
-    }
-
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        bool value_is_date = false;
-        auto check_first_argument = [&]
-        {
-            const DataTypePtr & type_arg1 = arguments[0].type;
-            if (!isDateOrDate32(type_arg1) && !isDateTime(type_arg1) && !isDateTime64(type_arg1))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of 1st argument of function {}, expected a Date, Date32, DateTime or DateTime64",
-                    type_arg1->getName(), getName());
-            value_is_date = isDate(type_arg1);
-        };
-
-        const DataTypeInterval * interval_type = nullptr;
-
-        enum class ResultType : uint8_t
-        {
-            Date,
-            Date32,
-            DateTime,
-            DateTime64
-        };
-
-        ResultType result_type = ResultType::Date;
-        ToStartOfIntervalOverload overload = ToStartOfIntervalOverload::Default;
-        auto check_second_argument = [&]
-        {
-            const DataTypePtr & type_arg2 = arguments[1].type;
-
-            interval_type = checkAndGetDataType<DataTypeInterval>(type_arg2.get());
-            if (!interval_type)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of 2nd argument of function {}, expected a time interval",
-                    type_arg2->getName(), getName());
-
-            overload = ToStartOfIntervalOverload::Default;
-
-            /// Determine result type for default overload (no origin)
-            switch (interval_type->getKind()) // NOLINT(bugprone-switch-missing-default-case)
-            {
-                case IntervalKind::Kind::Nanosecond:
-                case IntervalKind::Kind::Microsecond:
-                case IntervalKind::Kind::Millisecond:
-                    result_type = ResultType::DateTime64;
-                    break;
-                case IntervalKind::Kind::Second:
-                case IntervalKind::Kind::Minute:
-                case IntervalKind::Kind::Hour:
-                case IntervalKind::Kind::Day: /// weird why Day leads to DateTime but too afraid to change it
-                    result_type = ResultType::DateTime;
-                    break;
-                case IntervalKind::Kind::Week:
-                case IntervalKind::Kind::Month:
-                case IntervalKind::Kind::Quarter:
-                case IntervalKind::Kind::Year:
-                    result_type = ResultType::Date;
-                    break;
-            }
-
-            const DataTypePtr & type_arg1 = arguments[0].type;
-            if (preserve_argument_type)
-            {
-                if (isDate(type_arg1))
-                    result_type = ResultType::Date;
-                else if (isDate32(type_arg1))
-                    result_type = ResultType::Date32;
-                else if (isDateTime(type_arg1))
-                    result_type = ResultType::DateTime;
-                else
-                    result_type = ResultType::DateTime64;
-            }
-            else if (enable_extended_results_for_datetime_functions && (isDate32(type_arg1) || isDateTime64(type_arg1)))
-            {
-                if (result_type == ResultType::Date)
-                    result_type = ResultType::Date32;
-                else if (result_type == ResultType::DateTime)
-                    result_type = ResultType::DateTime64;
-            }
-        };
-
-        auto check_third_argument = [&]
-        {
-            const DataTypePtr & type_arg3 = arguments[2].type;
-            if (isString(type_arg3))
-            {
-                /// A `Date` has no time zone. When the result keeps the argument type, the argument is accepted and has
-                /// no effect, as for `Date32`, so that a query which rounded a `Date` to days into a `DateTime` keeps working.
-                if (value_is_date && result_type == ResultType::Date && !preserve_argument_type)
-                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "A timezone argument of function {} with interval type {} is allowed only when the 1st argument has the type DateTime or DateTime64",
-                        getName(), interval_type->getKind().toString());
-            }
-            else if (isDateOrDate32OrDateTimeOrDateTime64(type_arg3))
-            {
-                overload = ToStartOfIntervalOverload::Origin;
-                const DataTypePtr & type_arg1 = arguments[0].type;
-                if (isDate(type_arg1) && isDate(type_arg3))
-                    result_type = ResultType::Date;
-                else if (isDate32(type_arg1) && isDate32(type_arg3))
-                    result_type = ResultType::Date32;
-                else if (isDateTime(type_arg1) && isDateTime(type_arg3))
-                    result_type = ResultType::DateTime;
-                else if (isDateTime64(type_arg1) && isDateTime64(type_arg3))
-                    result_type = ResultType::DateTime64;
-                else
-                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Datetime argument and origin argument for function {} must have the same type", getName());
-            }
-            else
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of 3rd argument of function {}. "
-                    "This argument is optional and must be a constant String with timezone name or a Date/Date32/DateTime/DateTime64 with a constant origin",
-                    type_arg3->getName(), getName());
-        };
-
-        auto check_fourth_argument = [&]
-        {
-            if (overload != ToStartOfIntervalOverload::Origin) /// sanity check
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of 3rd argument of function {}. "
-                    "The third argument must be a Date/Date32/DateTime/DateTime64 with a constant origin",
-                    arguments[2].type->getName(), getName());
-
-            const DataTypePtr & type_arg4 = arguments[3].type;
-            if (!isString(type_arg4))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of 4th argument of function {}. "
-                    "This argument is optional and must be a constant String with timezone name",
-                    type_arg4->getName(), getName());
-            if (value_is_date && result_type == ResultType::Date && !preserve_argument_type)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "A timezone argument of function {} with interval type {} is allowed only when the 1st argument has the type DateTime or DateTime64",
-                    getName(), interval_type->getKind().toString());
-        };
-
-        if (arguments.size() == 2)
-        {
-            check_first_argument();
-            check_second_argument();
-        }
-        else if (arguments.size() == 3)
-        {
-            check_first_argument();
-            check_second_argument();
-            check_third_argument();
-        }
-        else if (arguments.size() == 4)
-        {
-            check_first_argument();
-            check_second_argument();
-            check_third_argument();
-            check_fourth_argument();
-        }
-        else
-        {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, must be 2, 3 or 4",
-                getName(), arguments.size());
-        }
-
-        switch (result_type)
-        {
-            case ResultType::Date:
-                return std::make_shared<DataTypeDate>();
-            case ResultType::Date32:
-                return std::make_shared<DataTypeDate32>();
-            case ResultType::DateTime:
-            {
-                const size_t time_zone_arg_num = (overload == ToStartOfIntervalOverload::Default) ? 2 : 3;
-                return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, time_zone_arg_num, 0, false));
-            }
-            case ResultType::DateTime64:
-            {
-                UInt32 scale = 0;
-                if (isDateTime64(arguments[0].type) && overload == ToStartOfIntervalOverload::Origin)
-                {
-                    scale = assert_cast<const DataTypeDateTime64 &>(*arguments[0].type.get()).getScale();
-                    if (assert_cast<const DataTypeDateTime64 &>(*arguments[2].type.get()).getScale() != scale)
-                        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Datetime argument and origin argument for function {} must have the same scale", getName());
-                }
-                UInt32 unit_scale = 0;
-                if (interval_type->getKind() == IntervalKind::Kind::Nanosecond)
-                    unit_scale = 9;
-                else if (interval_type->getKind() == IntervalKind::Kind::Microsecond)
-                    unit_scale = 6;
-                else if (interval_type->getKind() == IntervalKind::Kind::Millisecond)
-                    unit_scale = 3;
-
-                /// A subsecond unit finer than the argument (e.g. `1500 MILLISECOND` for a `DateTime64(0)`) has bucket
-                /// boundaries that the scale of the argument cannot represent, so the result has the scale of the unit then.
-                if (preserve_argument_type && isDateTime64(arguments[0].type))
-                    scale = std::max(assert_cast<const DataTypeDateTime64 &>(*arguments[0].type.get()).getScale(), unit_scale);
-                else if (unit_scale != 0)
-                    scale = unit_scale;
-
-                const size_t time_zone_arg_num = (overload == ToStartOfIntervalOverload::Default) ? 2 : 3;
-                return std::make_shared<DataTypeDateTime64>(scale, extractTimeZoneNameFromFunctionArguments(arguments, time_zone_arg_num, 0, false));
-            }
-        }
-
-        std::unreachable();
-    }
-
-    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
-    {
-        /// buildImpl receives original arguments which may still have Nullable and/or LowCardinality
-        /// wrappers, because the framework only unwraps these for getReturnTypeImpl, not for buildImpl.
-        auto args = createBlockWithNestedColumns(arguments);
-        for (auto & arg : args)
-        {
-            arg.type = recursiveRemoveLowCardinality(arg.type);
-            arg.column = recursiveRemoveLowCardinality(arg.column);
-        }
-
-        ToStartOfIntervalOverload overload = ToStartOfIntervalOverload::Default;
-        if (args.size() >= 3 && isDateOrDate32OrDateTimeOrDateTime64(args[2].type))
-            overload = ToStartOfIntervalOverload::Origin;
-
-        auto function = std::make_shared<FunctionToStartOfInterval>(overload, preserve_argument_type);
-
-        DataTypes data_types(arguments.size());
-        for (size_t i = 0; i < arguments.size(); ++i)
-            data_types[i] = arguments[i].type;
-
-        return std::make_unique<FunctionToFunctionBaseAdaptor>(function, data_types, return_type);
-    }
-
-private:
-    const bool enable_extended_results_for_datetime_functions;
-    const bool preserve_argument_type;
-};
-
-}
-
-FunctionOverloadResolverPtr createLegacyToStartOfIntervalOverloadResolver(ContextPtr context)
-{
-    return std::make_unique<FunctionToStartOfIntervalOverloadResolver>(context, /* preserve_argument_type_ = */ false);
-}
 
 REGISTER_FUNCTION(ToStartOfInterval)
 {
@@ -1002,12 +466,10 @@ REGISTER_FUNCTION(ToStartOfInterval)
 This function generalizes other `toStartOf*()` functions with `toStartOfInterval(date_or_date_with_time, INTERVAL x unit [, time_zone])` syntax.
 
 For example,
-- `toStartOfInterval(t, INTERVAL 1 YEAR)` rounds to the same boundary as `toStartOfYear(t)`,
-- `toStartOfInterval(t, INTERVAL 1 MONTH)` rounds to the same boundary as `toStartOfMonth(t)`,
-- `toStartOfInterval(t, INTERVAL 1 DAY)` rounds to the same boundary as `toStartOfDay(t)`,
-- `toStartOfInterval(t, INTERVAL 15 MINUTE)` rounds to the same boundary as `toStartOfFifteenMinutes(t)`.
-
-The result type may differ from that of these functions (see below).
+- `toStartOfInterval(t, INTERVAL 1 YEAR)` returns the same as `toStartOfYear(t)`,
+- `toStartOfInterval(t, INTERVAL 1 MONTH)` returns the same as `toStartOfMonth(t)`,
+- `toStartOfInterval(t, INTERVAL 1 DAY)` returns the same as `toStartOfDay(t)`,
+- `toStartOfInterval(t, INTERVAL 15 MINUTE)` returns the same as `toStartOfFifteenMinutes(t)`.
 
 The calculation is performed relative to specific points in time:
 
@@ -1030,49 +492,42 @@ hour values between 1 and 23 are useful.
 If unit `WEEK` was specified, `toStartOfInterval` assumes that weeks start on Monday. Note that this behavior is different from that of function `toStartOfWeek` in which weeks start by default on Sunday.
 
 The second overload emulates TimescaleDB's `time_bucket()` function, respectively PostgreSQL's `date_bin()` function.
-
-The result has the same type as the `value` argument: `Date` for `Date`, `Date32` for `Date32`, `DateTime` for `DateTime`, and `DateTime64` of the same scale for `DateTime64`.
-The only exception is a subsecond unit finer than the scale of a `DateTime64` argument (for example, `INTERVAL 1500 MILLISECOND` for a `DateTime64(0)`): then the result has the scale of the unit, which can represent the bucket boundaries.
-A result that is below the range of `Date` or `DateTime` (for example, rounding `1970-01-01` down to a week) is clamped to its minimum value.
-With the setting [`to_start_of_interval_preserves_argument_type`](/reference/settings/session-settings#to_start_of_interval_preserves_argument_type) disabled, the result type depends on the interval unit instead,
-as in versions before 26.11: `Date` for `WEEK` and longer units, `DateTime` for `DAY` down to `SECOND`, and `DateTime64` of the unit's scale for the subsecond units.
-This applies to the overload without `origin`: the overload with `origin` keeps the type of the argument in this case too, except that for a `DateTime64` argument and a subsecond unit the result has the scale of the unit.
         )";
         FunctionDocumentation::Syntax syntax = R"(
 toStartOfInterval(value, INTERVAL x unit[, time_zone])
 toStartOfInterval(value, INTERVAL x unit[, origin[, time_zone]])
         )";
         FunctionDocumentation::Arguments arguments = {
-            {"value", "Date or date with time value to round down.", {"Date", "Date32", "DateTime", "DateTime64"}},
+            {"value", "Date or date with time value to round down.", {"Date", "DateTime", "DateTime64"}},
             {"x", "Interval length number."},
             {"unit", "Interval unit: YEAR, QUARTER, MONTH, WEEK, DAY, HOUR, MINUTE, SECOND, MILLISECOND, MICROSECOND, NANOSECOND."},
             {"time_zone", "Optional. Time zone name as a string."},
             {"origin", "Optional. Origin point for calculation (second overload only)."}
         };
-        FunctionDocumentation::ReturnedValue returned_value = {"Returns the start of the interval containing the input value, of the same type as the input value.", {"Date", "Date32", "DateTime", "DateTime64"}};
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns the start of the interval containing the input value.", {"DateTime"}};
         FunctionDocumentation::Examples examples = {
             {"Basic interval rounding", R"(
 SELECT toStartOfInterval(toDateTime('2023-01-15 14:30:00'), INTERVAL 1 MONTH)
             )",
             R"(
-┌─toStartOfInterval(toDateTime('2023-01-15 14:30:00'), toIntervalMonth(1))─┐
-│                                                      2023-01-01 00:00:00 │
-└──────────────────────────────────────────────────────────────────────────┘
+┌─toStartOfInt⋯alMonth(1))─┐
+│               2023-01-01 │
+└──────────────────────────┘
             )"},
             {"Using origin point", R"(
 SELECT toStartOfInterval(toDateTime('2023-01-01 14:45:00'), INTERVAL 1 MINUTE, toDateTime('2023-01-01 14:35:30'))
             )",
             R"(
-┌─toStartOfInterval(toDateTime('2023-01-01 14:45:00'), toIntervalMinute(1), toDateTime('2023-01-01 14:35:30'))─┐
-│                                                                                          2023-01-01 14:44:30 │
-└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─toStartOfInt⋯14:35:30'))─┐
+│      2023-01-01 14:44:30 │
+└──────────────────────────┘
             )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
         FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-        factory.registerFunction<FunctionToStartOfIntervalOverloadResolver>(documentation);
+        factory.registerFunction<FunctionToStartOfInterval>(documentation);
     }
     factory.registerAlias("time_bucket", "toStartOfInterval", FunctionFactory::Case::Insensitive);
     factory.registerAlias("date_bin", "toStartOfInterval", FunctionFactory::Case::Insensitive);
