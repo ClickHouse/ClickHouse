@@ -61,7 +61,7 @@ enum class CompressionMethodByte : uint8_t
     Quantized       = 0x9e,
     ZXC             = 0x9f,
     PCO             = 0xa0,
-    GDeflate        = 0xa1,
+    /// 0xa1 was assigned to `GDeflate`, which was reverted.
     Wallaby         = 0xa2,
 };
 
