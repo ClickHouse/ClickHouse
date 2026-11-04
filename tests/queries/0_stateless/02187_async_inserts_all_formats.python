@@ -207,6 +207,12 @@ insert_batch(
 )
 print("CustomSeparated", select("SELECT groupArray((id, s, arr)) FROM (SELECT * FROM t_custom ORDER BY id)"))
 
+# CSV escaping with a multi-character field delimiter.
+client.query("CREATE TABLE t_custom_csv (b Bool, s String) ENGINE = Memory")
+custom_csv_settings = {"format_custom_escaping_rule": "CSV", "format_custom_field_delimiter": ", "}
+insert_batch("t_custom_csv", "CustomSeparated", [b"true, a\n", b"false, b\n"], custom_csv_settings)
+print("CustomSeparated CSV", select("SELECT groupArray((b, s)) FROM (SELECT * FROM t_custom_csv ORDER BY s)"))
+
 # Unknown columns of different types.
 client.query("CREATE TABLE t_row_binary (id UInt64, s String) ENGINE = Memory")
 insert_batch(

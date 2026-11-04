@@ -105,6 +105,7 @@ private:
     PeekableReadBuffer * buf;
     bool ignore_spaces;
     size_t columns = 0;
+    const char default_csv_delimiter;
 };
 
 class CustomSeparatedSchemaReader final : public FormatWithNamesAndTypesSchemaReader

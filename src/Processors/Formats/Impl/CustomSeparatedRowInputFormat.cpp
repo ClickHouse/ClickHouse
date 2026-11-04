@@ -119,7 +119,7 @@ void CustomSeparatedRowInputFormat::resetReadBuffer()
 
 CustomSeparatedFormatReader::CustomSeparatedFormatReader(
     PeekableReadBuffer & buf_, bool ignore_spaces_, const FormatSettings & format_settings_)
-    : FormatWithNamesAndTypesReader(buf_, format_settings_), buf(&buf_), ignore_spaces(ignore_spaces_)
+    : FormatWithNamesAndTypesReader(buf_, format_settings_), buf(&buf_), ignore_spaces(ignore_spaces_), default_csv_delimiter(format_settings_.csv.delimiter)
 {
 }
 
@@ -399,6 +399,8 @@ void CustomSeparatedFormatReader::setReadBuffer(ReadBuffer & in_)
     buf = assert_cast<PeekableReadBuffer *>(&in_);
     FormatWithNamesAndTypesReader::setReadBuffer(*buf);
     columns = 0;
+    format_settings.csv.delimiter = default_csv_delimiter;
+    format_settings.csv.custom_delimiter.clear();
 }
 
 CustomSeparatedSchemaReader::CustomSeparatedSchemaReader(
