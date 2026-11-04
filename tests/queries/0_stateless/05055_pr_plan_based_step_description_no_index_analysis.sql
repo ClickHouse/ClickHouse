@@ -10,7 +10,6 @@ DROP TABLE IF EXISTS t_pr_step_description;
 CREATE TABLE t_pr_step_description (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
 INSERT INTO t_pr_step_description SELECT number, number % 10 FROM numbers(100000);
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1;
 SET parallel_replicas_for_non_replicated_merge_tree = 1;
 SET max_parallel_replicas = 3;
