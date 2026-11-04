@@ -472,3 +472,38 @@ SELECT 'local alias self', m_same, m_read, m_param,
     arrayMap(q -> concat((concat((a AS r), q) AS a), '-', (a AS s)), arr)
 FROM t_alias_capture_local_alias_self;
 DROP TABLE t_alias_capture_local_alias_self;
+
+-- The field of a parameter keeps its name for a function that reads argument names.
+DROP TABLE IF EXISTS t_alias_capture_field_name SYNC;
+CREATE TABLE t_alias_capture_field_name
+(
+    arr_t Array(Tuple(a UInt32)),
+    m Array(String) MATERIALIZED arrayMap(x -> formatRowNoNewline('JSONEachRow', x.a), arr_t)
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO t_alias_capture_field_name (arr_t) VALUES ([tuple(100)]);
+ALTER TABLE t_alias_capture_field_name UPDATE arr_t = [tuple(200)] WHERE 1;
+SELECT 'field name update', m, arrayMap(x -> formatRowNoNewline('JSONEachRow', x.a), arr_t) FROM t_alias_capture_field_name;
+SYSTEM STOP MERGES t_alias_capture_field_name;
+ALTER TABLE t_alias_capture_field_name UPDATE arr_t = [tuple(300)] WHERE 1 SETTINGS alter_sync = 0, mutations_sync = 0;
+SELECT 'field name on fly', m, arrayMap(x -> formatRowNoNewline('JSONEachRow', x.a), arr_t)
+FROM t_alias_capture_field_name SETTINGS apply_mutations_on_fly = 1;
+SYSTEM START MERGES t_alias_capture_field_name;
+DROP TABLE t_alias_capture_field_name SYNC;
+
+-- A parameter field named like a column the expression reads outside the lambda.
+DROP TABLE IF EXISTS t_alias_capture_field_column;
+CREATE TABLE t_alias_capture_field_column
+(
+    x Nested(a UInt32),
+    arr_t Array(Tuple(a UInt32)),
+    m String MATERIALIZED concat(toString(x.a), '-', toString(arrayMap(x -> x.a, arr_t)))
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO t_alias_capture_field_column (`x.a`, arr_t) VALUES ([1], [tuple(100)]);
+ALTER TABLE t_alias_capture_field_column UPDATE arr_t = [tuple(200)] WHERE 1;
+ALTER TABLE t_alias_capture_field_column UPDATE `x.a` = [2] WHERE 1;
+SELECT 'field column', m, concat(toString(x.a), '-', toString(arrayMap(x -> x.a, arr_t))) FROM t_alias_capture_field_column;
+DROP TABLE t_alias_capture_field_column;

@@ -31,3 +31,6 @@ local alias names on fly	[['q','a','B']]	[['q','a','Y']]	[['q','a']]	[['q','a','
 local alias nested	Z-3-U	Z-3-U	Z-3-U	Z-3-U
 local alias definition	Z-Qxy-w	['A-Qxy']	Z-Qxy-w	['A-Qxy']
 local alias self	Z-Qx-w	QxZ-QxZ-w	['QxA-QxA']	Z-Qx-w	QxZ-QxZ-w	['QxA-QxA']
+field name update	['{"x.a":200}']	['{"x.a":200}']
+field name on fly	['{"x.a":300}']	['{"x.a":300}']
+field column	[2]-[200]	[2]-[200]

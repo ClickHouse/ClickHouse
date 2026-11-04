@@ -66,7 +66,7 @@ MaterializedColumnDependencies::findNode(const String & column_name) const
 
     /// Both the read set and the recompute stage are keyed on top-level columns, so a default over a
     /// subcolumn must be reported as depending on `t`, not on `t.a`.
-    replaceSubcolumnsToGetSubcolumnFunctionInQuery(materialized.expression, source_columns_);
+    replaceSubcolumnsToGetSubcolumnFunctionInQuery(materialized.expression, source_columns_, /*name_lambda_parameter_fields=*/ true);
 
     /// `analyze` rewrites in place, so keep `materialized.expression` pristine for callers.
     auto query = materialized.expression->clone();
