@@ -89,6 +89,12 @@
 1	1	1
 1	\N	1
 \N	\N	2
+-- near misses are not the key
+0	0	0	0	0	1	1
+0	\N	0	0	0	1	1
+1	1	0	1	1	2	1
+1	\N	0	1	1	2	1
+\N	\N	0	0	0	1	2
 -- remote
 0	0	2
 0	\N	2

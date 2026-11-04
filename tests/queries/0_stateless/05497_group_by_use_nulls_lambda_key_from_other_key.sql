@@ -45,5 +45,8 @@ SELECT number, arrayCount(x -> x > 0, [number]) AS k, count() FROM numbers(3) GR
 SELECT '-- APPLY';
 SELECT number, * APPLY (x -> arrayCount(y -> y > 0, [x])), count() FROM numbers(2) GROUP BY ROLLUP(number, arrayCount(y -> y > 0, [number])) ORDER BY ALL;
 
+SELECT '-- near misses are not the key';
+SELECT number, arrayCount(x -> x > 0, [number]) AS k, arrayCount(x -> x > 1, [number]) AS other_constant, arrayCount(y -> y > 0, [number]) AS other_argument, arrayExists(x -> x > 0, [number]) AS other_function, arrayCount(x -> x > 0, [number, 1]) AS other_array, count() FROM numbers(2) GROUP BY ROLLUP(number, k) ORDER BY ALL;
+
 SELECT '-- remote';
 SELECT number, arrayCount(x -> x > 0, [number]) AS k, count() FROM remote('127.0.0.{1,2}', numbers(2)) GROUP BY ROLLUP(number, k) ORDER BY ALL;
