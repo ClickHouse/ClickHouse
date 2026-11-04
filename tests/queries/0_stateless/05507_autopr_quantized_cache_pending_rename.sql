@@ -25,10 +25,10 @@ SET automatic_parallel_replicas_min_bytes_per_replica = 0;
 
 SELECT vec_renamed FROM t_quantized_pending_rename FORMAT Null
 SETTINGS merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0,
-    use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05497_read_1';
+    use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05507_read_1';
 SELECT vec_renamed FROM t_quantized_pending_rename FORMAT Null
 SETTINGS merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0,
-    use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05497_read_2';
+    use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05507_read_2';
 
 SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
 
@@ -43,7 +43,7 @@ SELECT log_comment, if(ProfileEvents['ColumnsCacheHits'] = 0,
     ProfileEvents['RuntimeDataflowStatisticsInputBytes'] = 0) AS measured_only_without_cache_hits
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 15 MINUTE AND current_database = currentDatabase()
-    AND log_comment LIKE '05497\\_read\\_%' AND type = 'QueryFinish'
+    AND log_comment LIKE '05507\\_read\\_%' AND type = 'QueryFinish'
 ORDER BY log_comment;
 
 DROP TABLE t_quantized_pending_rename;
