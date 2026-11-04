@@ -9,7 +9,7 @@
 // And there was problems with feeding > INT_MAX to stringstream in libc++,
 // this is the regression test for it.
 //
-// Since that places in ClickHouse can operate on buffers > INT_MAX (i.e.
+// Since that places in Clickhouse can operate on buffers > INT_MAX (i.e.
 // WriteBufferFromS3), so it is better to have a test for this in ClickHouse
 // too.
 TEST(stringstream, INTMAX)

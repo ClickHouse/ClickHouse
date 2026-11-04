@@ -30,7 +30,7 @@ std::optional<uint64_t> getCgroupsV2MemoryLimit()
         std::ifstream setting_file(current_cgroup / "memory.max");
         if (setting_file.is_open())
         {
-            uint64_t value = {};
+            uint64_t value;
             if (setting_file >> value)
                 return {value};
             return {}; /// e.g. the cgroups default "max"
@@ -74,7 +74,7 @@ uint64_t getMemoryAmountOrZero()
         std::ifstream limit_file_v1("/sys/fs/cgroup/memory/memory.limit_in_bytes");
         if (limit_file_v1.is_open())
         {
-            uint64_t limit_v1 = {};
+            uint64_t limit_v1;
             if (limit_file_v1 >> limit_v1)
                 memory_amount = std::min(memory_amount, limit_v1);
         }
