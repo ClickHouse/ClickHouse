@@ -78,6 +78,9 @@ namespace CurrentMetrics
     extern const Metric TaskTrackerThreads;
     extern const Metric TaskTrackerThreadsActive;
     extern const Metric TaskTrackerThreadsScheduled;
+    extern const Metric DistributedPlanTaskDispatchThreads;
+    extern const Metric DistributedPlanTaskDispatchThreadsActive;
+    extern const Metric DistributedPlanTaskDispatchThreadsScheduled;
 }
 
 namespace ProfileEvents
@@ -97,6 +100,7 @@ static_assert(MAX_TRANSPORTED_RUNTIME_FILTER_STATE_BYTES == StreamingExchangePro
 
 namespace Setting
 {
+    extern const SettingsUInt64 distributed_plan_task_dispatch_threads;
     extern const SettingsBool distributed_plan_execute_locally;
     extern const SettingsBool enable_join_runtime_filters_index_analysis;
     extern const SettingsUInt64 distributed_plan_workers_num;
@@ -1483,6 +1487,9 @@ public:
         /// A null map belongs to an in-process plan, which createDistributedQueryExecutor routes to
         /// the local executor instead.
         chassert(task_to_host_map);
+        if (const UInt64 dispatch_threads = context->getSettingsRef()[Setting::distributed_plan_task_dispatch_threads])
+            payload_senders.emplace(CurrentMetrics::DistributedPlanTaskDispatchThreads, CurrentMetrics::DistributedPlanTaskDispatchThreadsActive,
+                CurrentMetrics::DistributedPlanTaskDispatchThreadsScheduled, dispatch_threads, dispatch_threads, /*queue_size=*/ 0);
         QueryStatusPtr query_status = context->getProcessListElement();
         Strings worker_hosts;
         for (const auto & worker : task_to_host_map->getWorkerAddresses())
@@ -2024,9 +2031,9 @@ protected:
         InternalTextLogsQueuePtr initiator_logs_queue = CurrentThread::getInternalTextLogsQueue();
     };
 
-    RunningTaskInfo buildTaskInfo(const DistributedQueryTaskDescription & task_description) const
+    RunningTaskInfo buildTaskInfo(const String & task_id) const
     {
-        const auto & worker = task_to_host_map->getTaskHosts().at(task_description.task.task_id);
+        const auto & worker = task_to_host_map->getTaskHosts().at(task_id);
         String stateless_worker_endpoint_uri;
         {
             String default_endpoint = context->getConfigRef().getString("stateless_worker_server.endpoint", "localhost");
@@ -2040,7 +2047,7 @@ protected:
             stateless_worker_endpoint_uri = stateless_worker_uri.toString();
         }
 
-        String unique_task_id = toString(unique_query_id) + "::" + task_description.task.task_id;
+        String unique_task_id = toString(unique_query_id) + "::" + task_id;
         return {stateless_worker_endpoint_uri, unique_task_id};
     }
 
@@ -2058,6 +2065,11 @@ protected:
         collectors.logs = running_tasks.receivesWorkerLogs();
 
         const String unique_temp_file_path = toString(unique_query_id);
+
+        /// Shared by the jobs that send the descriptions, so the plan is not copied per task.
+        std::shared_ptr<const DistributedQueryTaskDescription> stage_description;
+        if (payload_senders)
+            stage_description = std::make_shared<const DistributedQueryTaskDescription>(std::move(task_description));
 
         for (const auto & task : stage.tasks)
         {
@@ -2079,20 +2091,28 @@ protected:
 
             checkCancelled();
 
-            task_description.task = task;
-
             /// Add exchange destinations for output streams
-            task_description.exchange_stream_sources = {};
+            ExchangeStreamSources exchange_stream_sources;
             for (const auto & input_stream : task.input_exchange_streams)
             {
                 String input_stream_name = input_stream.toString();
-                task_description.exchange_stream_sources.stream_hosts[input_stream_name] = task_to_host_map->getExchangeStreamSourceHosts().at(input_stream_name);
+                exchange_stream_sources.stream_hosts[input_stream_name] = task_to_host_map->getExchangeStreamSourceHosts().at(input_stream_name);
             }
+            auto task_info = buildTaskInfo(task.task_id);
+
+            if (stage_description)
+            {
+                createTaskAndSendDescription(stage_name, task_info, stage_description, task, std::move(exchange_stream_sources),
+                    unique_temp_file_path, collectors);
+                continue;
+            }
+
+            task_description.task = task;
+            task_description.exchange_stream_sources = std::move(exchange_stream_sources);
             /// Send the task before registering it: status polling does not tolerate
             /// UnknownTaskId, so a tracker poll racing the start would abort the query.
             /// On send failure clean up directly in case the worker did accept the start;
             /// cancel/forget tolerate UnknownTaskId.
-            auto task_info = buildTaskInfo(task_description);
             LOG_DEBUG(logger, "Sending task {} to {}", task_info.task_id, task_info.endpoint_uri);
             try
             {
@@ -2108,6 +2128,59 @@ protected:
         }
     }
 
+    /// Registers the task on its worker and tracks it at once; `payload_senders` sends its description, so the next task
+    /// does not wait for it.
+    void createTaskAndSendDescription(
+        const String & stage_name,
+        const RunningTaskInfo & task_info,
+        const std::shared_ptr<const DistributedQueryTaskDescription> & stage_description,
+        const DistributedQueryTask & task,
+        ExchangeStreamSources stream_sources,
+        const String & unique_temp_file_path,
+        const TaskCollectors & collectors)
+    {
+        LOG_DEBUG(logger, "Creating task {} on {}", task_info.task_id, task_info.endpoint_uri);
+        try
+        {
+            createTask(task_info.endpoint_uri, task_info.task_id, collectors, context);
+        }
+        catch (...)
+        {
+            running_tasks.cancelAndForgetUntracked(task_info);
+            throw;
+        }
+        /// The worker knows the task now, so a status poll does not get `Unknown task`.
+        running_tasks.addTask(stage_name, task_info);
+        ProfileEvents::increment(ProfileEvents::DistributedPlanRemoteTasks);
+
+        try
+        {
+            payload_senders->scheduleOrThrow(
+                [task_info, stage_description, task, sources = std::move(stream_sources), unique_temp_file_path, query_context = context,
+                 query_cancellation = cancellation, task_logger = logger, thread_group = CurrentThread::getGroup()]
+                {
+                    ThreadGroupSwitcher switcher(thread_group, ThreadName::DISTRIBUTED_QUERY_TASK);
+                    try
+                    {
+                        /// A cancelled query cancels the task on the worker, which then needs no description.
+                        if (!query_cancellation->isCancelled())
+                            sendTaskPayload(task_info.endpoint_uri, task_info.task_id, *stage_description, task, sources, unique_temp_file_path, query_context);
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(task_logger, fmt::format("Cannot send the description of task {} to {}", task_info.task_id, task_info.endpoint_uri));
+                        query_cancellation->recordCurrentException();
+                    }
+                });
+        }
+        catch (...)
+        {
+            /// The task is tracked, so the teardown cancels it on the worker.
+            cancellation->recordCurrentException();
+            throw;
+        }
+    }
+
     bool waitForStage(const String & stage_name, std::optional<UInt64> timeout_ms) override
     {
         return running_tasks.waitForStage(stage_name, timeout_ms);
@@ -2115,6 +2188,9 @@ protected:
 
     TaskToHostMapPtr task_to_host_map;
     TaskTracker running_tasks;
+    /// Sends the descriptions of created tasks; set when `distributed_plan_task_dispatch_threads` is positive. Declared last,
+    /// so its jobs are joined before the other members are destroyed.
+    std::optional<ThreadPool> payload_senders;
 };
 
 

@@ -11284,6 +11284,14 @@ Maximum rows to use broadcast join instead of shuffle join in distributed query 
 A heuristic for the rule-based distributed planner. When the cost-based optimizer is enabled, the broadcast-vs-shuffle choice is made by estimated cost and this setting has no effect.
 )", EXPERIMENTAL, \
         {"25.7", 20000, 20000, "New experimental setting."}) \
+    DECLARE(UInt64, distributed_plan_task_dispatch_threads, 0, R"(
+Number of threads that send the descriptions of a distributed query's tasks to the stateless workers at the same time.
+
+`0` sends each task in one request and waits for the worker's reply before sending the next task. A positive value first
+registers each task on its worker with a request without a body, then sends the descriptions of the tasks, at most this
+many at a time. A worker of a version without this protocol rejects the registration and the query fails.
+)", EXPERIMENTAL, \
+        {"26.11", 0, 0, "New experimental setting."}) \
     DECLARE(Bool, distributed_plan_read_in_order, false, R"(
 Allow the read-in-order optimization for `ORDER BY` in a distributed query plan, so a sorted read of the
 table's sorting key can skip the sort and stop early instead of scanning and sorting.
