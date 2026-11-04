@@ -67,8 +67,9 @@ SETTINGS max_threads = 1, log_comment = '${OPT_OUT_RUN}';
 
 SYSTEM FLUSH LOGS query_log;
 
--- The warm control run hits the cache on the shard.
-SELECT ProfileEvents['UncompressedCacheHits'] > 0
+-- The control run uses the cache on the shard. It checks hits and misses together rather than hits alone, because the
+-- small test cache is shared with concurrent tests, which can evict the entries of the first run.
+SELECT ProfileEvents['UncompressedCacheHits'] + ProfileEvents['UncompressedCacheMisses'] > 0
 FROM system.query_log
 WHERE event_date >= yesterday()
   AND event_time >= now() - INTERVAL 10 MINUTE
