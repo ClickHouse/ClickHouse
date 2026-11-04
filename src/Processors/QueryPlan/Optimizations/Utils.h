@@ -87,6 +87,13 @@ enum class FilterResult
 /// by it still collapses. Shared with findGatherOverRead, which has to predict that rewrite.
 [[nodiscard]] bool canHoistGatherThroughStep(const IQueryPlanStep & step);
 
+/// The filter's result for one row whose inputs in `filter_input` have those values; every other input is unknown.
+[[nodiscard]] FilterResult filterResultForInputValues(
+    const ActionsDAG & filter_dag,
+    const String & filter_column_name,
+    ActionsDAG::IntermediateExecutionResult filter_input,
+    bool allow_unknown_function_arguments = false);
+
 [[nodiscard]] FilterResult filterResultForNotMatchedRows(
     const ActionsDAG & filter_dag,
     const String & filter_column_name,

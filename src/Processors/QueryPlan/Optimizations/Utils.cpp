@@ -150,12 +150,11 @@ bool isSensitiveToEvaluationCount(const ActionsDAG & dag)
     return false;
 }
 
-FilterResult filterResultForNotMatchedRows(
+FilterResult filterResultForInputValues(
     const ActionsDAG & filter_dag,
     const String & filter_column_name,
-    const Block & input_stream_header,
-    bool allow_unknown_function_arguments
-)
+    ActionsDAG::IntermediateExecutionResult filter_input,
+    bool allow_unknown_function_arguments)
 {
     /// `ActionsDAG::evaluatePartialResult` (called below) routes every function node through
     /// `IFunction::executeImplDryRun` with `input_rows_count=1`. For functions that are not
@@ -176,39 +175,11 @@ FilterResult filterResultForNotMatchedRows(
     if (dagContainsNonDeterministicFunction(filter_dag))
         return FilterResult::UNKNOWN;
 
-    ActionsDAG::IntermediateExecutionResult filter_input;
-
     /// A set that is not built yet is an unknown argument: `in` must never be dry-run on it (that yields a fake 0).
     for (const auto & node : filter_dag.getNodes())
     {
         if (isNotReadySetColumn(node))
             filter_input.emplace(&node, ColumnWithTypeAndName{nullptr, node.result_type, node.result_name});
-    }
-
-    /// Create constant columns with default values for inputs of the filter DAG
-    for (const auto * input : filter_dag.getInputs())
-    {
-        if (!input_stream_header.has(input->result_name))
-            continue;
-
-        if (input->column)
-        {
-            /// ActionsDAG::addColumn normalizes ColumnConst to size 0; expand to size 1
-            /// because evaluatePartialResult is called below with input_rows_count == 1.
-            ColumnPtr constant_column = ColumnConst::create(input->column->getDataColumnPtr(), 1);
-            auto constant_column_with_type_and_name = ColumnWithTypeAndName{constant_column, input->result_type, input->result_name};
-            filter_input.emplace(input, std::move(constant_column_with_type_and_name));
-            continue;
-        }
-
-        /// A not-matched row holds the column's own default (`Date32`: 1970-01-01, not `getDefault`'s
-        /// 1900-01-01), and where default insertion is not trivial no probe is guaranteed faithful.
-        if (!input->result_type->isDefaultInsertTrivial())
-            continue;
-
-        auto constant_column = createColumnConstWithDefaultValue(input->result_type->createColumn());
-        auto constant_column_with_type_and_name = ColumnWithTypeAndName{std::move(constant_column), input->result_type, input->result_name};
-        filter_input.emplace(input, std::move(constant_column_with_type_and_name));
     }
 
     const auto * filter_node = filter_dag.tryFindInOutputs(filter_column_name);
@@ -250,6 +221,44 @@ FilterResult filterResultForNotMatchedRows(
     }
 
     return FilterResult::UNKNOWN;
+}
+
+FilterResult filterResultForNotMatchedRows(
+    const ActionsDAG & filter_dag,
+    const String & filter_column_name,
+    const Block & input_stream_header,
+    bool allow_unknown_function_arguments
+)
+{
+    ActionsDAG::IntermediateExecutionResult filter_input;
+
+    /// Create constant columns with default values for inputs of the filter DAG
+    for (const auto * input : filter_dag.getInputs())
+    {
+        if (!input_stream_header.has(input->result_name))
+            continue;
+
+        if (input->column)
+        {
+            /// ActionsDAG::addColumn normalizes ColumnConst to size 0; expand to size 1
+            /// because evaluatePartialResult is called below with input_rows_count == 1.
+            ColumnPtr constant_column = ColumnConst::create(input->column->getDataColumnPtr(), 1);
+            auto constant_column_with_type_and_name = ColumnWithTypeAndName{constant_column, input->result_type, input->result_name};
+            filter_input.emplace(input, std::move(constant_column_with_type_and_name));
+            continue;
+        }
+
+        /// A not-matched row holds the column's own default (`Date32`: 1970-01-01, not `getDefault`'s
+        /// 1900-01-01), and where default insertion is not trivial no probe is guaranteed faithful.
+        if (!input->result_type->isDefaultInsertTrivial())
+            continue;
+
+        auto constant_column = createColumnConstWithDefaultValue(input->result_type->createColumn());
+        auto constant_column_with_type_and_name = ColumnWithTypeAndName{std::move(constant_column), input->result_type, input->result_name};
+        filter_input.emplace(input, std::move(constant_column_with_type_and_name));
+    }
+
+    return filterResultForInputValues(filter_dag, filter_column_name, std::move(filter_input), allow_unknown_function_arguments);
 }
 
 const ReadFromMergeTree * findMergeTreeRead(const QueryPlan::Node * node)
