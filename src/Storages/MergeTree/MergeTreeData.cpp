@@ -5955,15 +5955,6 @@ bool conversionKeepsSubcolumnValuesImpl(
     if (!std::ranges::equal(valueSelectingSteps(from_info->substreams_path), valueSelectingSteps(to_info->substreams_path), keeps_step))
         return false;
 
-    /// A subcolumn that neither nested type has is the wrapper's own (`null`, `size0`).
-    auto check_below = [&](const DataTypePtr & from_below, const DataTypePtr & to_below)
-    {
-        bool from_has = from_below->hasSubcolumn(subcolumn);
-        if (from_has != to_below->hasSubcolumn(subcolumn))
-            return false;
-        return !from_has || conversionKeepsSubcolumnValues(from_below, to_below, subcolumn, checked);
-    };
-
     bool from_nullable = isNullableOrLowCardinalityNullable(from);
     bool to_nullable = isNullableOrLowCardinalityNullable(to);
     if (from_nullable || to_nullable)
@@ -5971,7 +5962,14 @@ bool conversionKeepsSubcolumnValuesImpl(
         /// Only a Nullable level keeps a NULL; one that `to` adds holds no NULL yet.
         if (!to_nullable)
             return false;
-        return check_below(from_nullable ? removeLowCardinalityAndNullable(from) : from, removeLowCardinalityAndNullable(to));
+
+        /// A subcolumn that neither nested type has is the wrapper's own (`null`).
+        auto from_below = from_nullable ? removeLowCardinalityAndNullable(from) : from;
+        auto to_below = removeLowCardinalityAndNullable(to);
+        bool from_has = from_below->hasSubcolumn(subcolumn);
+        if (from_has != to_below->hasSubcolumn(subcolumn))
+            return false;
+        return !from_has || conversionKeepsSubcolumnValues(from_below, to_below, subcolumn, checked);
     }
 
     const auto * from_array = typeid_cast<const DataTypeArray *>(from.get());
@@ -5981,26 +5979,29 @@ bool conversionKeepsSubcolumnValuesImpl(
         if (!from_array || !to_array)
             return false;
 
-        /// `sizeN` is named by the array level, so a nested `JSON` or `Tuple` can have a subcolumn of the same name.
-        auto steps = valueSelectingSteps(from_info->substreams_path);
-        auto is_elements = [](const ISerialization::Substream & step) { return step.type == ISerialization::Substream::ArrayElements; };
-        bool reads_sizes = !steps.empty() && steps.back().type == ISerialization::Substream::ArraySizes
-            && std::all_of(steps.begin(), std::prev(steps.end()), is_elements);
-        if (!reads_sizes)
-            return check_below(from_array->getNestedType(), to_array->getNestedType());
-
         /// Converting an array keeps its sizes, but a geometry becomes a collection of one: `LineString` -> `MultiLineString`
         /// adds an array level.
-        for (size_t level = 0; level < steps.size(); ++level)
+        auto steps = valueSelectingSteps(from_info->substreams_path);
+        if (steps.size() == 1 && steps.front().type == ISerialization::Substream::ArraySizes)
+            return !(from_array->getCustomName() || to_array->getCustomName())
+                || from_array->getNumberOfDimensions() == to_array->getNumberOfDimensions();
+        if (steps.empty() || steps.front().type != ISerialization::Substream::ArrayElements)
+            return false;
+
+        /// `sizeN` counts the array levels from the root, so the nested type names the same sizes `size<N-1>`, and a nested
+        /// `JSON` or `Tuple` can have a subcolumn named `sizeN`.
+        String nested_subcolumn(subcolumn);
+        if (steps.back().type == ISerialization::Substream::ArraySizes)
         {
-            if (!from_array || !to_array
-                || ((from_array->getCustomName() || to_array->getCustomName())
-                    && from_array->getNumberOfDimensions() != to_array->getNumberOfDimensions()))
-                return false;
-            from_array = typeid_cast<const DataTypeArray *>(from_array->getNestedType().get());
-            to_array = typeid_cast<const DataTypeArray *>(to_array->getNestedType().get());
+            size_t dot = subcolumn.rfind('.');
+            nested_subcolumn = fmt::format(
+                "{}size{}", dot == std::string_view::npos ? "" : subcolumn.substr(0, dot + 1), ISerialization::getArrayLevel(steps) - 1);
         }
-        return true;
+        auto nested_info = from_array->getNestedType()->tryGetSubcolumnInfo(nested_subcolumn);
+        if (!nested_info
+            || !std::ranges::equal(valueSelectingSteps(nested_info->substreams_path), steps | std::views::drop(1), isSameSubstreamStep))
+            return false;
+        return conversionKeepsSubcolumnValues(from_array->getNestedType(), to_array->getNestedType(), nested_subcolumn, checked);
     }
 
     /// `key_<k>` of a `Map` finds its value by parsing `<k>` as the key type.
@@ -6027,12 +6028,12 @@ bool conversionKeepsSubcolumnValuesImpl(
             return false;
 
         /// The text is parsed with the type of `to`, so an integer type reads an `Enum` name as a number. Only these types read
-        /// every value back unchanged: `DateTime` text is local time, a `Date32` value out of range is clamped, and a custom
-        /// serialization (`Bool`) can write a value as another one.
+        /// every value back unchanged: `DateTime` text is local time, a `Date32` value out of range is clamped, RapidJSON
+        /// parses an integer wider than 64 bits as `Float64`, and a custom serialization (`Bool`) can write a value as another one.
         auto changes_on_reparse = [](const IDataType & type)
         {
             return type.getCustomSerialization() != nullptr
-                || !(isInteger(type) || isStringOrFixedString(type) || isEnum(type) || isUUID(type) || isIPv4(type) || isIPv6(type)
+                || !(isNativeInteger(type) || isStringOrFixedString(type) || isEnum(type) || isUUID(type) || isIPv4(type) || isIPv6(type)
                      || isDate(type) || isArray(type) || type.isNullable() || type.lowCardinality());
         };
 

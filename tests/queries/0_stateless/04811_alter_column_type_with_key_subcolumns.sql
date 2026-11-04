@@ -382,3 +382,25 @@ SELECT 'Array(LineString) outer sizes in the partition key, Array(LineString) ->
 ALTER TABLE t_alter_key_sub MODIFY COLUMN a Array(MultiLineString);
 SELECT 'key subcolumn values:', groupArray(k) FROM (SELECT a.size0 AS k FROM t_alter_key_sub ORDER BY id);
 DROP TABLE t_alter_key_sub;
+
+CREATE TABLE t_alter_key_sub (id UInt32, a Array(Tuple(arr Array(JSON(x Int64)), b UInt8))) ENGINE = MergeTree ORDER BY (a.arr.size1, id) SETTINGS index_granularity = 1;
+INSERT INTO t_alter_key_sub VALUES (0, [(['{"x" : 1}'], 1)]), (1, [([], 2)]), (2, [(['{"x" : 1}', '{"x" : 2}'], 3)]);
+SELECT 'Array(Tuple(arr Array(JSON))) inner sizes, the JSON changes -> allow:';
+ALTER TABLE t_alter_key_sub MODIFY COLUMN a Array(Tuple(arr Array(JSON(x Int64, y String)), b UInt8));
+SELECT 'key subcolumn values:', groupArray(k) FROM (SELECT a.arr.size1 AS k FROM t_alter_key_sub ORDER BY id);
+DROP TABLE t_alter_key_sub;
+
+CREATE TABLE t_alter_key_sub (id UInt32, a Array(Tuple(g LineString))) ENGINE = MergeTree PARTITION BY a.g.size1 ORDER BY id;
+INSERT INTO t_alter_key_sub VALUES (0, [tuple([(0, 0), (1, 1)])]), (1, [tuple([(0, 0), (1, 1), (2, 2)])]);
+SELECT 'Array(Tuple(g LineString)) inner sizes in the partition key, LineString -> MultiLineString -> reject:';
+ALTER TABLE t_alter_key_sub MODIFY COLUMN a Array(Tuple(g MultiLineString)); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+SELECT 'key subcolumn values:', groupArray(k) FROM (SELECT a.g.size1 AS k FROM t_alter_key_sub ORDER BY id);
+DROP TABLE t_alter_key_sub;
+
+-- RapidJSON (allow_simdjson = 0) parses an integer wider than 64 bits as Float64.
+CREATE TABLE t_alter_key_sub (id UInt32, data JSON(a UInt128)) ENGINE = MergeTree PARTITION BY data.a ORDER BY id;
+INSERT INTO t_alter_key_sub VALUES (0, '{"a" : "18446744073709551617"}'), (1, '{"a" : "18446744073709551618"}');
+SELECT 'typed UInt128 path in the partition key, other paths change -> reject:';
+ALTER TABLE t_alter_key_sub MODIFY COLUMN data JSON(a UInt128, c String); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+SELECT 'key subcolumn values:', groupArray(k) FROM (SELECT data.a AS k FROM t_alter_key_sub ORDER BY id);
+DROP TABLE t_alter_key_sub;

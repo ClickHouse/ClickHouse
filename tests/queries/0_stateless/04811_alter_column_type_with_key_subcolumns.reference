@@ -110,3 +110,9 @@ Array(LineString) inner sizes in the partition key, Array(LineString) -> Array(M
 key subcolumn values:	[[2],[3]]
 Array(LineString) outer sizes in the partition key, Array(LineString) -> Array(MultiLineString) -> allow:
 key subcolumn values:	[1,2]
+Array(Tuple(arr Array(JSON))) inner sizes, the JSON changes -> allow:
+key subcolumn values:	[[1],[0],[2]]
+Array(Tuple(g LineString)) inner sizes in the partition key, LineString -> MultiLineString -> reject:
+key subcolumn values:	[[2],[3]]
+typed UInt128 path in the partition key, other paths change -> reject:
+key subcolumn values:	[18446744073709551617,18446744073709551618]
