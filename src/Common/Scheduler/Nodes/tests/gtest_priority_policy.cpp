@@ -13,9 +13,9 @@ TEST(SchedulerPriorityPolicy, Priorities)
     ResourceTest t;
 
     t.add<PriorityPolicy>("/");
-    t.add<FifoQueue>("/A", SchedulerNodeInfo(1.0, Priority{3}));
-    t.add<FifoQueue>("/B", SchedulerNodeInfo(1.0, Priority{2}));
-    t.add<FifoQueue>("/C", SchedulerNodeInfo(1.0, Priority{1}));
+    t.add<RequestQueue>("/A", SchedulerNodeInfo(1.0, Priority{3}));
+    t.add<RequestQueue>("/B", SchedulerNodeInfo(1.0, Priority{2}));
+    t.add<RequestQueue>("/C", SchedulerNodeInfo(1.0, Priority{1}));
 
     t.enqueue("/A", {10, 10, 10});
     t.enqueue("/B", {10, 10, 10});
@@ -47,9 +47,9 @@ TEST(SchedulerPriorityPolicy, Activation)
     ResourceTest t;
 
     t.add<PriorityPolicy>("/");
-    t.add<FifoQueue>("/A", SchedulerNodeInfo(1.0, Priority{3}));
-    t.add<FifoQueue>("/B", SchedulerNodeInfo(1.0, Priority{2}));
-    t.add<FifoQueue>("/C", SchedulerNodeInfo(1.0, Priority{1}));
+    t.add<RequestQueue>("/A", SchedulerNodeInfo(1.0, Priority{3}));
+    t.add<RequestQueue>("/B", SchedulerNodeInfo(1.0, Priority{2}));
+    t.add<RequestQueue>("/C", SchedulerNodeInfo(1.0, Priority{1}));
 
     t.enqueue("/A", {10, 10, 10, 10, 10, 10});
     t.enqueue("/B", {10});
@@ -88,7 +88,7 @@ TEST(SchedulerPriorityPolicy, SinglePriority)
     ResourceTest t;
 
     t.add<PriorityPolicy>("/");
-    t.add<FifoQueue>("/A");
+    t.add<RequestQueue>("/A");
 
     for (int i = 0; i < 3; i++)
     {

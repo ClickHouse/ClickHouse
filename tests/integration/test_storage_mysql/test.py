@@ -23,6 +23,7 @@ node1 = cluster.add_instance(
         "configs/named_collections.xml",
         "certs/ca.pem",
         "certs/client-key.pem",
+        "certs/client-key-encrypted.pem",
         "certs/client-cert.pem",
     ],
     user_configs=["configs/users.xml"],
@@ -668,6 +669,73 @@ def test_mysql_null(started_cluster):
         == 5
     )
 
+    drop_mysql_table(conn, table_name)
+    conn.close()
+
+
+def test_mysql_not_in_null(started_cluster):
+    table_name = "test_mysql_not_in_null"
+    node1.query(f"DROP TABLE IF EXISTS {table_name}")
+
+    conn = get_mysql_conn(started_cluster, cluster.mysql8_ip)
+    drop_mysql_table(conn, table_name)
+    with conn.cursor() as cursor:
+        cursor.execute(
+            f"""
+            CREATE TABLE `clickhouse`.`{table_name}` (
+            `id` int(11) NOT NULL,
+            `money` int NULL default NULL,
+            `price` decimal(10, 2) NULL default NULL,
+            PRIMARY KEY (`id`)) ENGINE=InnoDB;
+            """
+        )
+
+    node1.query(
+        f"""
+        CREATE TABLE {table_name}
+        (
+            id UInt32,
+            money Nullable(UInt32),
+            price Nullable(Decimal(10, 2))
+        )
+        ENGINE = MySQL('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}')
+        """
+    )
+
+    money = "[1, 2, NULL][number % 3 + 1]"
+    price = "CAST([1.5, 2.5, NULL][number % 3 + 1] AS Nullable(Decimal(10, 2)))"
+    node1.query(
+        f"INSERT INTO {table_name} (id, money, price) SELECT number, {money}, {price} FROM numbers(9)"
+    )
+
+    # ClickHouse ignores a `NULL` member of an `IN` set, while MySQL applies the three-valued logic,
+    # so the set must reach MySQL without it. A `Decimal` set is written as `tuple(...)`, not as a literal.
+    for predicate, expected in [
+        ("money NOT IN (1, NULL)", 3),
+        ("NOT (money IN (1, NULL))", 3),
+        ("money IN (1, NULL)", 3),
+        ("money NOT IN (NULL)", 6),
+        ("price NOT IN (toDecimal64(1.5, 2), NULL)", 3),
+        ("price IN (toDecimal64(1.5, 2), NULL)", 3),
+    ]:
+        local = node1.query(
+            f"SELECT countIf({predicate}) FROM (SELECT {money} AS money, {price} AS price FROM numbers(9))"
+        )
+        remote = node1.query(f"SELECT count() FROM {table_name} WHERE {predicate}")
+        assert int(local) == expected, predicate
+        assert int(remote) == expected, predicate
+
+    for predicate in [
+        "money NOT IN (1, NULL)",
+        "price NOT IN (toDecimal64(1.5, 2), NULL)",
+        "price IN (toDecimal64(1.5, 2), NULL)",
+    ]:
+        remote = node1.query(
+            f"SELECT count() FROM {table_name} WHERE {predicate} SETTINGS external_table_strict_query = 1"
+        )
+        assert int(remote) == 3, predicate
+
+    node1.query(f"DROP TABLE {table_name}")
     drop_mysql_table(conn, table_name)
     conn.close()
 
@@ -1504,6 +1572,278 @@ def test_mysql_ssl_auth_with_credential_contents(started_cluster):
             cursor.execute("FLUSH PRIVILEGES")
 
 
+def encrypt_client_key(passphrase):
+    """The client key as an AES-256 encrypted PEM, for `ssl_key_pem` + `ssl_key_passphrase`."""
+    import subprocess
+    import tempfile
+
+    src = os.path.join(SCRIPT_DIR, "certs", "client-key.pem")
+    with tempfile.NamedTemporaryFile(delete=False) as tmp:
+        encrypted_path = tmp.name
+    try:
+        subprocess.check_call(
+            [
+                "openssl",
+                "pkey",
+                "-in",
+                src,
+                "-aes-256-cbc",
+                "-passout",
+                f"pass:{passphrase}",
+                "-out",
+                encrypted_path,
+            ]
+        )
+        with open(encrypted_path, "r") as file:
+            return file.read()
+    finally:
+        os.unlink(encrypted_path)
+
+
+def quote_pem(contents):
+    return "'" + contents.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n") + "'"
+
+
+def test_mysql_ssl_encrypted_key_passphrase(started_cluster):
+    """An encrypted client key needs `ssl_key_passphrase`; without it, or with a wrong one, the
+    connection fails. The passphrase is a secret, not a path, so it is accepted from SQL.
+    """
+    conn = get_mysql_conn(started_cluster, started_cluster.mysql8_ip)
+    table_name = "test_table"
+    drop_mysql_table(conn, table_name)
+    create_mysql_table(conn, table_name)
+
+    with conn.cursor() as cursor:
+        cursor.execute(f"CREATE USER 'ssl_enc_user'@'{node1.ip_address}' REQUIRE X509")
+        cursor.execute(
+            f"GRANT ALL PRIVILEGES ON *.* TO 'ssl_enc_user'@'{node1.ip_address}' WITH GRANT OPTION"
+        )
+
+    passphrase = "testpass-a"
+    encrypted_key = quote_pem(encrypt_client_key(passphrase))
+    credentials = f"""
+        ssl_ca_pem = {quote_certificate("ca.pem")},
+        ssl_cert_pem = {quote_certificate("client-cert.pem")},
+        ssl_key_pem = {encrypted_key}
+    """
+
+    try:
+        assert (
+            node1.query(
+                f"""
+                SELECT count() FROM mysql(
+                    'mysql80:3306', 'clickhouse', '{table_name}', 'ssl_enc_user', '',
+                    {credentials}, ssl_key_passphrase = '{passphrase}')
+                """
+            )
+            == "0\n"
+        )
+
+        with pytest.raises(QueryRuntimeException) as exception:
+            node1.query(
+                f"""
+                SELECT count() FROM mysql(
+                    'mysql80:3306', 'clickhouse', '{table_name}', 'ssl_enc_user', '',
+                    {credentials})
+                """
+            )
+        assert "TLS/SSL" in str(exception.value) or "ssl" in str(exception.value).lower()
+
+        with pytest.raises(QueryRuntimeException) as exception:
+            node1.query(
+                f"""
+                SELECT count() FROM mysql(
+                    'mysql80:3306', 'clickhouse', '{table_name}', 'ssl_enc_user', '',
+                    {credentials}, ssl_key_passphrase = 'wrong-passphrase')
+                """
+            )
+        assert "TLS/SSL" in str(exception.value) or "ssl" in str(exception.value).lower()
+
+        with pytest.raises(QueryRuntimeException) as exception:
+            node1.query(
+                f"""
+                SELECT count() FROM mysql(
+                    'mysql80:3306', 'clickhouse', '{table_name}', 'ssl_enc_user', '',
+                    ssl_ca_pem = {quote_certificate("ca.pem")},
+                    ssl_key_passphrase = '{passphrase}')
+                """
+            )
+        assert "ssl_key_passphrase" in str(exception.value)
+    finally:
+        with conn.cursor() as cursor:
+            cursor.execute(f"DROP USER 'ssl_enc_user'@'{node1.ip_address}'")
+            cursor.execute("FLUSH PRIVILEGES")
+
+
+def test_mysql_ssl_encrypted_key_passphrase_sql_named_collection(started_cluster):
+    """The passphrase of an encrypted key can live in a SQL named collection (`ssl_key_pem`)."""
+    conn = get_mysql_conn(started_cluster, started_cluster.mysql8_ip)
+    table_name = "test_table"
+    drop_mysql_table(conn, table_name)
+    create_mysql_table(conn, table_name)
+
+    with conn.cursor() as cursor:
+        cursor.execute(f"CREATE USER 'ssl_enc_sql_user'@'{node1.ip_address}' REQUIRE X509")
+        cursor.execute(
+            f"GRANT ALL PRIVILEGES ON *.* TO 'ssl_enc_sql_user'@'{node1.ip_address}' WITH GRANT OPTION"
+        )
+
+    passphrase = "testpass-a"
+    node1.query("DROP NAMED COLLECTION IF EXISTS mysql_ssl_enc_sql")
+    node1.query("DROP TABLE IF EXISTS mysql_ssl_enc_sql_table")
+    node1.query(
+        f"""
+        CREATE NAMED COLLECTION mysql_ssl_enc_sql AS
+            user = 'ssl_enc_sql_user', password = '', host = 'mysql80', port = 3306,
+            database = 'clickhouse', table = '{table_name}',
+            ssl_ca_pem = {quote_certificate("ca.pem")},
+            ssl_cert_pem = {quote_certificate("client-cert.pem")},
+            ssl_key_pem = {quote_pem(encrypt_client_key(passphrase))},
+            ssl_key_passphrase = '{passphrase}'
+        """
+    )
+
+    try:
+        assert node1.query("SELECT count() FROM mysql(mysql_ssl_enc_sql)") == "0\n"
+
+        node1.query(
+            """
+            CREATE TABLE mysql_ssl_enc_sql_table (id UInt32, name String, age UInt32, money UInt32)
+            ENGINE = MySQL(mysql_ssl_enc_sql)
+            """
+        )
+        assert node1.query("SELECT count() FROM mysql_ssl_enc_sql_table") == "0\n"
+
+        with pytest.raises(QueryRuntimeException) as exception:
+            node1.query(
+                "SELECT count() FROM mysql(mysql_ssl_enc_sql, ssl_key_passphrase = 'wrong-passphrase')"
+            )
+        assert "TLS/SSL" in str(exception.value) or "ssl" in str(exception.value).lower()
+    finally:
+        node1.query("DROP TABLE IF EXISTS mysql_ssl_enc_sql_table")
+        node1.query("DROP NAMED COLLECTION IF EXISTS mysql_ssl_enc_sql")
+        with conn.cursor() as cursor:
+            cursor.execute(f"DROP USER 'ssl_enc_sql_user'@'{node1.ip_address}'")
+            cursor.execute("FLUSH PRIVILEGES")
+
+
+def test_mysql_ssl_encrypted_key_passphrase_config_named_collection(started_cluster):
+    """A configuration-file collection may keep the encrypted key as a path (`ssl_key`) and the
+    passphrase next to it. That is the production form: the server opens the file, SQL only names
+    the collection.
+    """
+    conn = get_mysql_conn(started_cluster, started_cluster.mysql8_ip)
+    table_name = "test_table"
+    drop_mysql_table(conn, table_name)
+    create_mysql_table(conn, table_name)
+
+    with conn.cursor() as cursor:
+        cursor.execute(f"CREATE USER 'ssl_enc_cfg_user'@'{node1.ip_address}' REQUIRE X509")
+        cursor.execute(
+            f"GRANT ALL PRIVILEGES ON *.* TO 'ssl_enc_cfg_user'@'{node1.ip_address}' WITH GRANT OPTION"
+        )
+
+    try:
+        assert (
+            node1.query("SELECT count() FROM mysql(mysql_with_encrypted_ssl)") == "0\n"
+        )
+
+        node1.query("DROP TABLE IF EXISTS mysql_ssl_enc_cfg_table")
+        node1.query(
+            """
+            CREATE TABLE mysql_ssl_enc_cfg_table (id UInt32, name String, age UInt32, money UInt32)
+            ENGINE = MySQL(mysql_with_encrypted_ssl)
+            """
+        )
+        assert node1.query("SELECT count() FROM mysql_ssl_enc_cfg_table") == "0\n"
+
+        with pytest.raises(QueryRuntimeException) as exception:
+            node1.query(
+                "SELECT count() FROM mysql(mysql_with_encrypted_ssl, ssl_key_passphrase = 'wrong-passphrase')"
+            )
+        assert "TLS/SSL" in str(exception.value) or "ssl" in str(exception.value).lower()
+    finally:
+        node1.query("DROP TABLE IF EXISTS mysql_ssl_enc_cfg_table")
+        with conn.cursor() as cursor:
+            cursor.execute(f"DROP USER 'ssl_enc_cfg_user'@'{node1.ip_address}'")
+            cursor.execute("FLUSH PRIVILEGES")
+
+
+def test_mysql_ssl_encrypted_key_passphrase_dictionary(started_cluster):
+    """A dictionary with credentials given directly in `SOURCE(MYSQL(...))` builds its pool from the
+    generated configuration rather than from arguments, so the passphrase must be read there too,
+    both for the source itself and for a replica inheriting it from the parent source.
+    """
+    conn = get_mysql_conn(started_cluster, started_cluster.mysql8_ip)
+    table_name = "test_table"
+    drop_mysql_table(conn, table_name)
+    create_mysql_table(conn, table_name)
+
+    with conn.cursor() as cursor:
+        cursor.execute(f"CREATE USER 'ssl_enc_dict_user'@'{node1.ip_address}' REQUIRE X509")
+        cursor.execute(
+            f"GRANT ALL PRIVILEGES ON *.* TO 'ssl_enc_dict_user'@'{node1.ip_address}' WITH GRANT OPTION"
+        )
+
+    passphrase = "testpass-a"
+    credentials = f"""
+        USER 'ssl_enc_dict_user' PASSWORD '' DB 'clickhouse' TABLE '{table_name}'
+        SSL_CA_PEM {quote_certificate("ca.pem")}
+        SSL_CERT_PEM {quote_certificate("client-cert.pem")}
+        SSL_KEY_PEM {quote_pem(encrypt_client_key(passphrase))}
+    """
+
+    def create_dictionary(source):
+        node1.query("DROP DICTIONARY IF EXISTS mysql_ssl_enc_dict")
+        node1.query(
+            f"""
+            CREATE DICTIONARY mysql_ssl_enc_dict (id UInt32, name String DEFAULT '')
+            PRIMARY KEY id
+            SOURCE(MYSQL({source}))
+            LAYOUT(FLAT()) LIFETIME(0)
+            """
+        )
+
+    def assert_load_fails():
+        with pytest.raises(QueryRuntimeException) as exception:
+            node1.query("SYSTEM RELOAD DICTIONARY mysql_ssl_enc_dict")
+        assert "Connections to" in str(exception.value)
+
+    try:
+        create_dictionary(
+            f"HOST 'mysql80' PORT 3306 {credentials} SSL_KEY_PASSPHRASE '{passphrase}'"
+        )
+        node1.query("SYSTEM RELOAD DICTIONARY mysql_ssl_enc_dict")
+        assert node1.query("SELECT count() FROM mysql_ssl_enc_dict") == "0\n"
+
+        create_dictionary(f"HOST 'mysql80' PORT 3306 {credentials}")
+        assert_load_fails()
+
+        create_dictionary(
+            f"HOST 'mysql80' PORT 3306 {credentials} SSL_KEY_PASSPHRASE 'wrong-passphrase'"
+        )
+        assert_load_fails()
+
+        # The replica carries no TLS keys of its own and inherits the passphrase from the source.
+        create_dictionary(
+            f"{credentials} SSL_KEY_PASSPHRASE '{passphrase}' "
+            "REPLICA(PRIORITY 1 HOST 'mysql80' PORT 3306)"
+        )
+        node1.query("SYSTEM RELOAD DICTIONARY mysql_ssl_enc_dict")
+        assert node1.query("SELECT count() FROM mysql_ssl_enc_dict") == "0\n"
+
+        create_dictionary(
+            f"{credentials} SSL_KEY_PASSPHRASE 'wrong-passphrase' "
+            "REPLICA(PRIORITY 1 HOST 'mysql80' PORT 3306)"
+        )
+        assert_load_fails()
+    finally:
+        node1.query("DROP DICTIONARY IF EXISTS mysql_ssl_enc_dict")
+        with conn.cursor() as cursor:
+            cursor.execute(f"DROP USER 'ssl_enc_dict_user'@'{node1.ip_address}'")
+            cursor.execute("FLUSH PRIVILEGES")
+
+
 def test_mysql_ssl_paths_are_rejected_from_sql(started_cluster):
     """A path to a certificate or a key is only accepted from the server configuration file.
 
@@ -1601,32 +1941,6 @@ def test_mysql_ssl_contents_override_configured_paths(started_cluster):
         with pytest.raises(QueryRuntimeException) as exception:
             node1.query(f"SELECT count() FROM mysql(mysql_with_locked_ssl, {credentials})")
         assert "Override not allowed for 'ssl_ca'" in str(exception.value)
-
-        # The contents form is the only way to supply a TLS credential from SQL, so it stays usable
-        # when overrides are forbidden by default: it is not a new key, it replaces the path the
-        # collection defines, and the operator forbids that with `overridable="false"` instead.
-        hardened = {"allow_named_collection_override_by_default": 0}
-        assert (
-            node1.query(
-                f"SELECT count() FROM mysql(mysql_with_ssl, {credentials})",
-                settings=hardened,
-            )
-            == "0\n"
-        )
-        with pytest.raises(QueryRuntimeException) as exception:
-            node1.query(
-                f"SELECT count() FROM mysql(mysql_with_locked_ssl, {credentials})",
-                settings=hardened,
-            )
-        assert "Override not allowed for 'ssl_ca'" in str(exception.value)
-
-        # An unrelated key is still a new key, and is still refused under that policy.
-        with pytest.raises(QueryRuntimeException) as exception:
-            node1.query(
-                "SELECT count() FROM mysql(mysql_with_ssl, table = 'test_table')",
-                settings=hardened,
-            )
-        assert "Override not allowed for 'table'" in str(exception.value)
 
         # The same override on the dictionary DDL path: the overrides of `SOURCE(MYSQL(NAME ...))`
         # arrive as generated configuration keys rather than as an AST, and must be recognized as

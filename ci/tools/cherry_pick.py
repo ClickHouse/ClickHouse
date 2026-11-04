@@ -54,7 +54,6 @@ from cherry_pick_branches import (
     select_backport_branches,
 )
 from ci_buddy import CIBuddy
-from ci_utils import Shell
 from env_helper import (
     GITHUB_REPOSITORY,
     GITHUB_SERVER_URL,
@@ -79,6 +78,7 @@ from synchronizer_utils import SYNC_PR_PREFIX
 # The siblings above resolve through `sys.path[0]`, which is this script's own
 # directory; `ci.praktika` needs the repo root on the path as well.
 sys.path.append(str(Path(__file__).resolve().parents[2]))
+from ci.praktika.git import Git  # noqa: E402
 from ci.praktika.s3 import S3  # noqa: E402
 
 
@@ -218,9 +218,8 @@ close it.
         return f"backport/{name}/{pr_number}"
 
     def pre_check(self):
-        self._backported = Shell.check(
-            f"git merge-base --is-ancestor {self.pr.merge_commit_sha} {self.REMOTE}/{self.name}",
-            verbose=True,
+        self._backported = Git.is_ancestor(
+            self.pr.merge_commit_sha, f"{self.REMOTE}/{self.name}"
         )
         if self._backported:
             print(
@@ -285,6 +284,24 @@ close it.
             return
         assert self.cherrypick_pr, "Unable to create cherry-pick PR"
 
+        if self.cherrypick_pr.draft and self.cherrypick_pr.state != "closed":
+            logging.info(
+                "Cherry-pick PR #%s for PR #%s is draft, we don't allow it",
+                self.cherrypick_pr.number,
+                self.pr.number,
+            )
+            if dry_run:
+                logging.info(
+                    "DRY RUN: Would mark cherry-pick PR for #%s as ready and comment",
+                    self.pr.number,
+                )
+                return
+            self.cherrypick_pr.mark_ready_for_review()
+            self.cherrypick_pr.create_issue_comment(
+                "The cherry-pick PR shouldn't me marked as draft, it completely breaks "
+                "the processing. Please, avoid it."
+            )
+            self.cherrypick_pr.update()
         if self.cherrypick_pr.mergeable and self.cherrypick_pr.state != "closed":
             if dry_run:
                 logging.info(
@@ -527,10 +544,7 @@ close it.
                 self.cherrypick_pr.number,
             )
             return False
-        if not Shell.check(
-            f"git merge-base --is-ancestor {base_parents[0]} {remote_release}",
-            verbose=True,
-        ):
+        if not Git.is_ancestor(base_parents[0], remote_release):
             logging.info(
                 "Retry of cherry-pick PR #%s skipped: its base is not built on %s",
                 self.cherrypick_pr.number,

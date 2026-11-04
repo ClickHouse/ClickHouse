@@ -1,10 +1,18 @@
+#include <base/arithmeticOverflow.h>
 #include <Common/checkStackSize.h>
 #include <Common/typeid_cast.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Access/Common/RowPolicyDefs.h>
+#include <Access/EnabledRowPolicies.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Analyzer/TableNode.h>
 #include <Columns/ColumnConst.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -16,6 +24,7 @@
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteBufferFromString.h>
+#include <Storages/IStorage.h>
 #include <Storages/transformQueryForExternalDatabase.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/transformQueryForExternalDatabaseAnalyzer.h>
@@ -29,6 +38,8 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool external_table_strict_query;
+    extern const SettingsBool external_storage_push_down_limit;
+    extern const SettingsUInt64 parallel_replicas_count;
 }
 
 namespace ErrorCodes
@@ -55,7 +66,12 @@ public:
 
     static void visit(ASTPtr & node, Block & block_with_constants)
     {
-        if (!node->as<ASTFunction>())
+        const auto * function = node->as<ASTFunction>();
+        if (!function)
+            return;
+
+        /// A constant row value or `IN` list keeps its structure, its elements are folded one by one.
+        if (function->name == "tuple")
             return;
 
         std::string name = node->getColumnName();
@@ -68,6 +84,11 @@ public:
             if (result.column->isNullAt(0))
             {
                 node = make_intrusive<ASTLiteral>(Field());
+            }
+            else if (holdsEnumValue(assert_cast<const ColumnConst &>(*result.column).getDataColumnPtr(), result.type))
+            {
+                /// Left as is, so the condition is not pushed down: an `Enum` compares by name or by value depending on the other operand.
+                return;
             }
             else if (isNumber(result.type))
             {
@@ -277,6 +298,111 @@ bool fieldContainsArrayOrMap(const Field & field)
         default:
             return false;
     }
+}
+
+bool fieldContainsNull(const Field & field)
+{
+    checkStackSize();
+
+    if (field.isNull())
+        return true;
+    if (field.getType() == Field::Types::Tuple)
+        for (const auto & element : field.safeGet<Tuple>())
+            if (fieldContainsNull(element))
+                return true;
+    return false;
+}
+
+bool astContainsNullLiteral(const ASTPtr & node)
+{
+    checkStackSize();
+
+    if (const auto * literal = node->as<ASTLiteral>())
+        return fieldContainsNull(literal->value);
+    for (const auto & child : node->children)
+        if (astContainsNullLiteral(child))
+            return true;
+    return false;
+}
+
+/// The value of a literal or of a `tuple(...)` of literals at any depth.
+std::optional<Field> tryGetLiteralTupleValue(const ASTPtr & node)
+{
+    checkStackSize();
+
+    if (const auto * literal = node->as<ASTLiteral>())
+        return literal->value;
+
+    const auto * function = node->as<ASTFunction>();
+    if (!function || function->name != "tuple" || !function->arguments)
+        return {};
+
+    Tuple elements;
+    for (const auto & argument : function->arguments->children)
+    {
+        auto element = tryGetLiteralTupleValue(argument);
+        if (!element)
+            return {};
+        elements.push_back(std::move(*element));
+    }
+    return Field(std::move(elements));
+}
+
+/// ClickHouse leaves the `NULL` members of an `IN` set (and the rows with a `NULL` element of a multi-column set) out of
+/// the set, while the three-valued logic does not. Returns false if the set has no `NULL`-free form to push down.
+bool removeNullMembersFromINSet(ASTFunction & function)
+{
+    auto & arguments = function.arguments->children;
+    auto & rhs = arguments[1];
+
+    std::optional<Field> function_set;
+    const auto * rhs_literal = rhs->as<ASTLiteral>();
+    if (!rhs_literal && !(function_set = tryGetLiteralTupleValue(rhs)))
+        return !astContainsNullLiteral(rhs);
+    const Field & set = rhs_literal ? rhs_literal->value : *function_set;
+
+    if (!fieldContainsNull(set))
+        return true;
+
+    bool multi_column = false;
+    const auto * lhs_function = arguments[0]->as<ASTFunction>();
+    if (lhs_function && (lhs_function->name == "tuple" || lhs_function->name.empty()))
+    {
+        if (lhs_function->name.empty() || !lhs_function->arguments || lhs_function->arguments->children.size() < 2)
+            return false;
+        multi_column = true;
+    }
+
+    if (set.getType() != Field::Types::Tuple)
+        return false;
+
+    const auto & members = set.safeGet<Tuple>();
+    if (multi_column && !members.empty() && members[0].getType() != Field::Types::Tuple)
+        return false;
+
+    Tuple kept;
+    for (const auto & member : members)
+    {
+        bool skip = false;
+        if (!multi_column)
+            skip = member.isNull();
+        else if (member.getType() == Field::Types::Tuple)
+            for (const auto & element : member.safeGet<Tuple>())
+                skip |= element.isNull();
+
+        if (skip)
+            continue;
+        if (fieldContainsNull(member))
+            return false;
+        kept.push_back(member);
+    }
+
+    if (kept.empty())
+        return false;
+
+    Field new_set = kept.size() == 1 ? Field(kept.front()) : Field(std::move(kept));
+    rhs = make_intrusive<ASTLiteral>(std::move(new_set));
+    return true;
 }
 
 /// Returns true if the field can only be written back in ClickHouse-specific syntax that an
@@ -551,6 +677,9 @@ bool isCompatible(
             && (function->arguments->children.size() != 2 || function->arguments->children[1]->as<ASTTableIdentifier>()))
             return false;
 
+        if ((name == "in" || name == "notIn") && !removeNullMembersFromINSet(*function))
+            return false;
+
         auto & arguments = function->arguments->children;
         for (size_t i = 0; i < arguments.size(); ++i)
             if (!isCompatible(arguments[i], literal_escaping_style, available_columns,
@@ -766,6 +895,105 @@ RemoveUnknownSubexpressionsResult removeUnknownSubexpressionsFromWhere(ASTPtr & 
     return removeUnknownSubexpressions(node, known_names);
 }
 
+/// The SELECT list is evaluated locally, and the LIMIT of the original query is applied to its
+/// result, not to the rows read from the external table. So the push-down is only correct when
+/// every expression in the SELECT list maps one source row to one result row. Aggregate functions
+/// (`SELECT sum(column) FROM t LIMIT 1` reads the whole table and returns a single row), window
+/// functions (they are computed over a whole partition of the source rows) and `arrayJoin` (it
+/// multiplies the rows) all break this, so they disable the push-down. Note that a subquery in the
+/// SELECT list is scalar and could not change the number of rows, but it is traversed as well -
+/// rejecting such a query merely loses the optimization.
+bool isRowPreservingExpressionImpl(const IAST & node, UnorderedSetWithMemoryTracking<String> & visited_udfs)
+{
+    checkStackSize();
+
+    if (const auto * function = node.as<ASTFunction>())
+    {
+        if (function->isWindowFunction() || function->window_definition || !function->window_name.empty())
+            return false;
+
+        /// The name is compared after resolving the aliases of ordinary functions: `arrayJoin` can
+        /// also be spelled as its case-insensitive alias `unnest`. `TreeRewriter` normalizes the
+        /// names before this code runs, but not when `normalize_function_names` is disabled and not
+        /// for a secondary query of a distributed one, so the alias has to be resolved here as well.
+        if (getFunctionCanonicalNameIfAny(function->name) == "arrayJoin")
+            return false;
+
+        if (AggregateFunctionFactory::instance().isAggregateFunctionName(function->name))
+            return false;
+
+        /// A SQL UDF is inlined into the query before it is executed, so whatever its body does
+        /// to the number of rows, the query does as well. The verdict must not depend on whether
+        /// the inlining has already happened for the AST at hand, so the body is inspected here.
+        /// Each body is walked at most once, so that a cycle among them cannot recurse forever.
+        auto udf_body = UserDefinedSQLFunctionFactory::instance().tryGet(function->name);
+        if (udf_body && visited_udfs.insert(function->name).second
+            && !isRowPreservingExpressionImpl(*udf_body, visited_udfs))
+            return false;
+    }
+
+    for (const auto & child : node.children)
+    {
+        if (!isRowPreservingExpressionImpl(*child, visited_udfs))
+            return false;
+    }
+
+    return true;
+}
+
+/// Whether evaluating the expression keeps the number of rows: it contains no `arrayJoin` (under
+/// any spelling, and also not inside the body of a SQL UDF it calls), no aggregate function and
+/// no window function.
+bool isRowPreservingExpression(const ASTPtr & node)
+{
+    UnorderedSetWithMemoryTracking<String> visited_udfs;
+    return isRowPreservingExpressionImpl(*node, visited_udfs);
+}
+
+/// Returns the value of a `UInt64` literal, if the expression is one.
+std::optional<UInt64> getUInt64LiteralValue(const ASTPtr & node)
+{
+    const auto * literal = node->as<ASTLiteral>();
+    if (literal && literal->value.getType() == Field::Types::UInt64)
+        return literal->value.safeGet<UInt64>();
+    return {};
+}
+
+/// An explicit allow-list of query shapes for which the LIMIT can be pushed down to the
+/// external database: a plain single-table SELECT, optionally with a WHERE clause (which
+/// must additionally be copied to the external query without changes - checked separately),
+/// an OFFSET (the rows it skips are read remotely as well, so the pushed-down limit is
+/// `offset + length`) and a SETTINGS clause (it does not change the data). Everything else
+/// (DISTINCT, GROUP BY, ORDER BY, HAVING, LIMIT BY, WITH TIES, JOIN, ARRAY JOIN, SAMPLE,
+/// FINAL, ...) is applied locally after reading from the external table, so limiting the
+/// result remotely could change it. Note that some of these modifiers are flags on
+/// `ASTSelectQuery` rather than children, and some are hidden inside the TABLES child, so
+/// children alone are not a complete proxy and the flags and the table expression are
+/// checked explicitly.
+bool isLimitPushDownSafe(const ASTSelectQuery & query)
+{
+    if (query.distinct || query.group_by_all || query.group_by_with_totals || query.order_by_all
+        || query.limit_with_ties || query.limit_by_all)
+        return false;
+
+    if (query.hasJoin() || query.final() || query.sampleSize() || query.arrayJoinExpressionList().first)
+        return false;
+
+    for (const auto & child : query.children)
+    {
+        if (child != query.select() && child != query.tables() && child != query.where()
+            && child != query.limitLength() && child != query.limitOffset() && child != query.settings())
+            return false;
+    }
+
+    /// The SELECT list may also change the number of rows or aggregate them, even when the query
+    /// has no other clauses at all.
+    if (query.select() && !isRowPreservingExpression(query.select()))
+        return false;
+
+    return true;
+}
+
 bool containsSourceColumn(const ASTPtr & node, const SourceColumnNames & source_columns)
 {
     if (!node)
@@ -794,11 +1022,24 @@ String transformQueryForExternalDatabaseImpl(
     std::optional<size_t> limit,
     const NameSet & unsupported_functions,
     const NameSet & local_only_columns,
-    bool require_dialect_neutral_literals)
+    bool require_dialect_neutral_literals,
+    bool allow_limit_push_down)
 {
     bool strict = context->getSettingsRef()[Setting::external_table_strict_query];
+    bool push_down_limit = allow_limit_push_down && context->getSettingsRef()[Setting::external_storage_push_down_limit];
+
+    if (!push_down_limit)
+        limit.reset();
 
     auto select = make_intrusive<ASTSelectQuery>();
+
+    const auto & original_select = clone_query->as<ASTSelectQuery &>();
+
+    /// The LIMIT can be pushed down only if everything that is logically applied before it
+    /// is reproduced in the external query without changes: the query shape must pass the
+    /// allow-list, and the WHERE clause (if any) must be copied unchanged (checked below).
+    bool limit_push_down_allowed = push_down_limit && isLimitPushDownSafe(original_select);
+    bool where_fully_copied = true;
 
     select->replaceDatabaseAndTable(database, table);
 
@@ -814,10 +1055,18 @@ String transformQueryForExternalDatabaseImpl(
       * copy only compatible parts of it.
       */
 
-    const auto & original_select = clone_query->as<ASTSelectQuery &>();
     ASTPtr original_where = original_select.where();
     if (const auto & original_prewhere = original_select.prewhere())
         original_where = original_where ? makeASTOperator("and", original_where, original_prewhere) : original_prewhere;
+
+    /// Since WHERE subexpressions are removed "in-place" (keeping pointers to externally-known subexpressions),
+    /// we can check if the original WHERE is fully copied by comparing the ASTs' dumps.
+    std::string dumped_original_where;
+    if (limit_push_down_allowed && original_where)
+    {
+        dumped_original_where = original_where->dumpTree();
+        where_fully_copied = false;
+    }
 
     const auto source_columns = getSourceColumnNames(original_select, available_columns, source_storage_id, local_only_columns);
     const bool where_contains_source_column = containsSourceColumn(original_where, source_columns);
@@ -855,6 +1104,8 @@ String transformQueryForExternalDatabaseImpl(
         if (isCompatible(original_where, literal_escaping_style, pushdown_columns, RowValueContext::BooleanPredicate, unsupported_functions,
                          require_dialect_neutral_literals))
         {
+            if (limit_push_down_allowed && original_where->dumpTree() == dumped_original_where)
+                where_fully_copied = true;
             select->setExpression(ASTSelectQuery::Expression::WHERE, ASTPtr(original_where));
         }
         else if (strict)
@@ -909,6 +1160,33 @@ String transformQueryForExternalDatabaseImpl(
         select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(original_where));
     }
 
+    auto limit_len_expr = original_select.limitLength();
+    if (limit_push_down_allowed && where_fully_copied && limit_len_expr)
+    {
+        if (auto limit_len = getUInt64LiteralValue(limit_len_expr))
+        {
+            /// The OFFSET is applied locally, so the rows it skips have to be read from the external
+            /// table as well: the limit sent remotely is `offset + length`. An OFFSET that is not a
+            /// UInt64 literal (it is not known here) disables the push-down entirely.
+            bool limit_is_known = true;
+            UInt64 limit_with_offset = *limit_len;
+
+            if (auto limit_offset_expr = original_select.limitOffset())
+            {
+                auto limit_offset = getUInt64LiteralValue(limit_offset_expr);
+                limit_is_known = limit_offset && !common::addOverflow(limit_with_offset, *limit_offset, limit_with_offset);
+            }
+
+            if (limit_is_known)
+            {
+                if (limit.has_value())
+                    limit = std::min<size_t>(limit.value(), limit_with_offset);
+                else
+                    limit = limit_with_offset;
+            }
+        }
+    }
+
     if (limit)
         select->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, make_intrusive<ASTLiteral>(*limit));
 
@@ -928,6 +1206,46 @@ String transformQueryForExternalDatabaseImpl(
     return out.str();
 }
 
+/// The `LIMIT` of the query can be pushed down to the external database only if every filter that is
+/// logically applied before it is also sent to the external database. A filter that is applied locally,
+/// on top of the rows read from the external table, runs before the query's `LIMIT`, so truncating the
+/// remote result could discard rows that this filter would have kept, and the query would return fewer
+/// rows than it should. Not every such filter is a part of the query AST that is rewritten here:
+/// `additional_table_filters` and row policies are carried in `SelectQueryInfo` (or, with the analyzer,
+/// are added by the planner as a separate filter step) instead, so they are checked explicitly.
+bool hasLocalFilterAppliedBeforeLimit(const SelectQueryInfo & query_info, const ContextPtr & context)
+{
+    if (query_info.additional_filter_ast || !query_info.filter_asts.empty() || query_info.row_level_filter || query_info.prewhere_info)
+        return true;
+
+    /// The analyzer adds the custom-key parallel-replicas predicate as a planner filter step instead
+    /// of storing it in `SelectQueryInfo`. It is applied before `LIMIT`, so it cannot be combined
+    /// with a remote limit push-down.
+    if (context->canUseParallelReplicasCustomKey()
+        && context->getSettingsRef()[Setting::parallel_replicas_count] > 1)
+        return true;
+
+    /// With the analyzer, the row policy filter is resolved by the planner and is not reflected in `query_info`.
+    if (query_info.table_expression)
+    {
+        const auto * table_node = query_info.table_expression->as<TableNode>();
+        const auto & storage = table_node ? table_node->getStorage() : nullptr;
+        if (storage)
+        {
+            const auto storage_id = storage->getStorageID();
+            if (storage_id.hasDatabase())
+            {
+                auto row_policy_filter = context->getRowPolicyFilter(
+                    storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+                if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
+                    return true;
+            }
+        }
+    }
+
+    return false;
+}
+
 }
 
 String transformQueryForExternalDatabase(
@@ -943,8 +1261,11 @@ String transformQueryForExternalDatabase(
     std::optional<size_t> limit,
     const NameSet & unsupported_functions,
     const NameSet & local_only_columns,
-    bool require_dialect_neutral_literals)
+    bool require_dialect_neutral_literals,
+    bool allow_limit_push_down)
 {
+    allow_limit_push_down = allow_limit_push_down && !hasLocalFilterAppliedBeforeLimit(query_info, context);
+
     if (!query_info.syntax_analyzer_result)
     {
         if (!query_info.query_tree)
@@ -973,7 +1294,8 @@ String transformQueryForExternalDatabase(
             limit,
             unsupported_functions,
             local_only_columns,
-            require_dialect_neutral_literals);
+            require_dialect_neutral_literals,
+            allow_limit_push_down);
     }
 
     auto clone_query = query_info.query->clone();
@@ -990,7 +1312,8 @@ String transformQueryForExternalDatabase(
         limit,
         unsupported_functions,
         local_only_columns,
-        require_dialect_neutral_literals);
+        require_dialect_neutral_literals,
+        allow_limit_push_down);
 }
 
 void rejectOuterFilterForQueryBackedExternalSourceIfStrict(

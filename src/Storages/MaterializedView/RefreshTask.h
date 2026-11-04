@@ -112,7 +112,8 @@ public:
 
         std::chrono::sys_time<std::chrono::nanoseconds> last_success_end_time {};
 
-        /// State of views that this view DEPENDS ON, as of the start of last successful refresh.
+        /// State of views that this view DEPENDS ON, as of the start of last successful refresh,
+        /// or of the last attempt that used up all `refresh_retries`.
         /// Used for triggering dependent refresh: if the last_success_end_time stored here is less than
         /// the dependency's latest last_success_end_time, we should start a refresh.
         AllDependenciesInfo last_success_dependencies;
@@ -446,6 +447,8 @@ private:
     ///    e.g. on SYSTEM REFRESH VIEW.
     std::tuple<std::chrono::system_clock::time_point, bool /*waiting_for_dependencies*/, CoordinationZnode>
     determineNextRefreshTime(std::chrono::system_clock::time_point now, const AllDependenciesInfo & dependencies, const std::unique_lock<std::mutex> & lock);
+    /// Whether the attempt recorded in `znode` used up the last of `refresh_retries`.
+    bool retriesExhausted(const CoordinationZnode & znode) const;
 
     void readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeeper, std::unique_lock<std::mutex> & lock);
     /// Update the root znode and create/remove-if-exists the 'running' znode,
