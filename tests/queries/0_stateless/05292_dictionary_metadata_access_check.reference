@@ -24,3 +24,21 @@ SELECT dictGetKeys('d', 'no_such_attribute', 'a')
 has no attribute
 SELECT naiveBayesClassifier('d', 'good')
 NAIVE_BAYES layout
+--- missing dictionary, no grants
+SELECT dictGet('no_such_dictionary', 'value', toUInt64(1))
+ACCESS_DENIED
+SELECT dictGetKeys('no_such_dictionary', 'value', 'a')
+ACCESS_DENIED
+SELECT naiveBayesClassifier('no_such_dictionary', 'good')
+ACCESS_DENIED
+SELECT * FROM dictionary('no_such_dictionary')
+ACCESS_DENIED
+--- missing dictionary, dictGet
+SELECT dictGet('no_such_dictionary', 'value', toUInt64(1))
+not found
+SELECT dictGetKeys('no_such_dictionary', 'value', 'a')
+not found
+SELECT naiveBayesClassifier('no_such_dictionary', 'good')
+not found
+SELECT * FROM dictionary('no_such_dictionary')
+not found

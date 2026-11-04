@@ -210,6 +210,15 @@ DictionaryStructure ExternalDictionariesLoader::getDictionaryStructure(const std
 
 StorageID ExternalDictionariesLoader::getDictionaryID(const std::string & dictionary_name, ContextPtr query_context) const
 {
+    /// The lookup that follows the access check reports the missing dictionary to a user with access.
+    /// An empty name names no dictionary at all, so it fails in that lookup right away.
+    if (!dictionary_name.empty() && !has(dictionary_name))
+    {
+        auto resolved = resolveDictionaryNameFromDatabaseCatalog(dictionary_name, query_context->getCurrentDatabase());
+        if (!has(resolved.key))
+            return StorageID(resolved.qualified_name.database, resolved.qualified_name.table);
+    }
+
     std::string resolved_name = resolveDictionaryName(dictionary_name, query_context);
 
     auto load_result = getLoadResult(resolved_name);

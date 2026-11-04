@@ -53,6 +53,8 @@ public:
 
     /// The ID of the dictionary, taken from the loaded dictionary if there is one, otherwise from its configuration.
     /// Does not load the dictionary, so it can be used to check access rights before loading.
+    /// For a dictionary that does not exist, returns the ID it would have, so that a user without access gets
+    /// the access error and cannot tell a missing dictionary from an existing one.
     StorageID getDictionaryID(const std::string & dictionary_name, ContextPtr context) const;
 
     /// The layout type of the dictionary as written in its definition, e.g. "hashed" or "naive_bayes".
