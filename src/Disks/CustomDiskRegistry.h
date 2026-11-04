@@ -42,8 +42,9 @@ public:
     /// has been registered again in the meantime, and then the disk has to stay.
     bool canRelease(const String & name) const;
     /// Removes the registration of the disk `name`, after `canRelease`. Until `scheduleShutdown` is
-    /// done with the disk, `waitForShutdown` waits for it.
-    void release(const String & name);
+    /// done with the disk, `waitForShutdown` waits for it. `disk` (nullptr if there is no disk to release)
+    /// is retiring from here on, see `getRetiringDisks`, and has to be passed to `scheduleShutdown` then.
+    void release(const String & name, const DiskPtr & disk);
 
     /// Shuts down a released disk in the background, after the disks scheduled before it, once nothing
     /// else uses it. A disk wraps the disks nested in its definition, which are released after it, so
@@ -103,7 +104,7 @@ private:
     /// the same definition appears before that.
     std::map<String, DiskPtr> lingering_disks TSA_GUARDED_BY(mutex);
     std::set<UInt128> definitions_loaded_from_existing_metadata TSA_GUARDED_BY(mutex);
-    /// The disks passed to `scheduleShutdown`, see `getRetiringDisks`. A disk is destroyed only after it is shut
+    /// The disks passed to `release`, see `getRetiringDisks`. A disk is destroyed only after it is shut
     /// down, so it is retiring while its pointer has not expired.
     std::multimap<String, std::weak_ptr<IDisk>> retiring_disks TSA_GUARDED_BY(mutex);
     bool shutdown_called TSA_GUARDED_BY(mutex) = false;

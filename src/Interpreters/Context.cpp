@@ -8537,31 +8537,32 @@ DiskPtr Context::getDisk(const String & name) const
 }
 
 std::pair<DiskPtr, CustomDiskRegistrationPtr> Context::getOrCreateCustomDisk(
-    const String & name, UInt128 settings_hash, DiskCreator creator, CustomDiskRegistrations & nested, const String & wrapped_disk_name) const
+    const String & name, UInt128 settings_hash, DiskCreator creator, CustomDiskRegistrations & nested, const String & wrapped_disk_name,
+    bool may_create_plain_rewritable_metadata) const
 {
     bool need_wrapped_disk_registration = !wrapped_disk_name.empty() && !std::ranges::any_of(nested,
         [&](const auto & nested_registration) { return nested_registration->getDiskName() == wrapped_disk_name; });
 
-    /// A released disk with another name that works with the same storage as the disk created here, and is not
-    /// shut down yet, see below. The disk created here is discarded then, and destroyed without any lock held.
-    String overlapping_retiring_disk_name;
-    bool waited_for_overlapping_retiring_disk = false;
-    DiskPtr discarded_disk;
+    /// The released disks with other names that are writable `plain_rewritable` disks and are not shut down yet,
+    /// see below. Each of them is waited for once, without any lock held.
+    std::vector<String> retiring_plain_rewritable_disk_names;
+    std::set<String> waited_for_retiring_disk_names;
 
     while (true)
     {
-        discarded_disk.reset();
-
         /// A disk with this name may have just been released by the last table or database using it,
         /// and still be shutting down. A new disk with the same definition would work with the same
         /// metadata and data, so it is created only after the old one is shut down.
         shared->custom_disk_registry.waitForShutdown(name, settings_hash);
 
-        if (!overlapping_retiring_disk_name.empty())
+        if (!retiring_plain_rewritable_disk_names.empty())
         {
-            shared->custom_disk_registry.waitForShutdown(overlapping_retiring_disk_name, /* settings_hash = */ 0);
-            overlapping_retiring_disk_name.clear();
-            waited_for_overlapping_retiring_disk = true;
+            for (const auto & retiring_disk_name : retiring_plain_rewritable_disk_names)
+            {
+                shared->custom_disk_registry.waitForShutdown(retiring_disk_name, /* settings_hash = */ 0);
+                waited_for_retiring_disk_names.insert(retiring_disk_name);
+            }
+            retiring_plain_rewritable_disk_names.clear();
         }
 
         /// Declared before the lock, so that the references to the retiring disks are dropped after it is unlocked:
@@ -8595,33 +8596,47 @@ std::pair<DiskPtr, CustomDiskRegistrationPtr> Context::getOrCreateCustomDisk(
             disk = std::move(*released_disk);
             if (!disk)
             {
-                disk = creator(getDisksMap(lock));
-
                 /// `addToDiskMap` rejects a writable `plain_rewritable` disk over the same object storage prefix as
                 /// another disk of the selector. A released disk is not in the selector anymore, but it may still write
-                /// to that storage until it is shut down (e.g. its delayed metadata snapshot), and would overwrite the
-                /// metadata of the new disk. So the new disk is created after the old one is shut down, as for a disk
-                /// with the same name above.
+                /// to that storage until it is shut down (e.g. its delayed metadata snapshot, or the flush in its
+                /// `shutdown`), and would overwrite the metadata of the new disk. The new disk cannot be discarded
+                /// after it is created either: it loads its metadata in the constructor, which may already write to
+                /// the storage. Its storage is not known before it is created, so a new disk that may have
+                /// `plain_rewritable` metadata is created only after every released writable `plain_rewritable` disk
+                /// is shut down, as for a disk with the same name above. `releaseCustomDisk` makes a disk retiring
+                /// under `storage_policies_mutex`, so no disk becomes retiring between this check and `addToDiskMap`.
                 retiring_disks = shared->custom_disk_registry.getRetiringDisks();
+                if (may_create_plain_rewritable_metadata)
+                {
+                    for (const auto & [retiring_disk_name, retiring_disk] : retiring_disks)
+                    {
+                        if (!retiring_disk->isPlain() || retiring_disk->isReadOnly() || retiring_disk->isWriteOnce())
+                            continue;
+
+                        if (waited_for_retiring_disk_names.contains(retiring_disk_name))
+                            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Cannot create the disk '{}' yet: the plain-rewritable disk '{}' is not used by any table or "
+                                "database anymore, but it is still referenced and not shut down, and may work with the same "
+                                "object storage prefix",
+                                name, retiring_disk_name);
+
+                        retiring_plain_rewritable_disk_names.push_back(retiring_disk_name);
+                    }
+
+                    if (!retiring_plain_rewritable_disk_names.empty())
+                        continue;
+                }
+
+                disk = creator(getDisksMap(lock));
+
+                /// In case the new disk has `plain_rewritable` metadata although its definition did not suggest it.
                 for (const auto & [retiring_disk_name, retiring_disk] : retiring_disks)
                 {
-                    if (!DiskSelector::arePlainRewritableDisksOverlapping(disk, retiring_disk))
-                        continue;
-
-                    if (waited_for_overlapping_retiring_disk)
+                    if (DiskSelector::arePlainRewritableDisksOverlapping(disk, retiring_disk))
                         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "It is not possible to register multiple plain-rewritable disks with the same object storage prefix. "
                             "Disks '{}' and '{}' (it is not used by any table or database anymore, but it is not shut down yet)",
                             name, retiring_disk_name);
-
-                    overlapping_retiring_disk_name = retiring_disk_name;
-                    break;
-                }
-
-                if (!overlapping_retiring_disk_name.empty())
-                {
-                    discarded_disk = std::move(disk);
-                    continue;
                 }
             }
             const_cast<DiskSelector *>(disk_selector.get())->addToDiskMap(name, disk);
@@ -8721,7 +8736,9 @@ void Context::releaseCustomDisk(const String & name) const
             LOG_INFO(shared->log, "Unregistering custom disk {}, it is not used by any table or database anymore", backQuote(name));
 
         /// From here on, a new disk with this name is created only after `scheduleShutdown` is done with this one.
-        shared->custom_disk_registry.release(name);
+        /// The disk becomes retiring here, under `storage_policies_mutex`, together with its removal from the selector,
+        /// so that `getOrCreateCustomDisk` always sees it in one of them until it is shut down.
+        shared->custom_disk_registry.release(name, disk);
     }
 
     shared->custom_disk_registry.scheduleShutdown(name, std::move(disk));

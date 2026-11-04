@@ -2010,9 +2010,10 @@ public:
     /// `settings_hash` identifies the definition, see `IDisk::markDiskAsCustom`.
     /// `wrapped_disk_name` is the disk a wrapper disk refers to by name (`disk = '<name>'`), or empty. If it is a
     /// custom disk not in `nested`, its registration is added to `nested`.
+    /// `may_create_plain_rewritable_metadata` tells whether the disk created by `creator` may have `plain_rewritable` metadata.
     std::pair<DiskPtr, CustomDiskRegistrationPtr> getOrCreateCustomDisk(
         const String & name, UInt128 settings_hash, DiskCreator creator, CustomDiskRegistrations & nested,
-        const String & wrapped_disk_name) const;
+        const String & wrapped_disk_name, bool may_create_plain_rewritable_metadata) const;
     /// See `CustomDiskRegistry::rememberDefinitionLoadedFromExistingMetadata`.
     void rememberCustomDiskLoadedFromExistingMetadata(UInt128 settings_hash) const;
     bool isCustomDiskLoadedFromExistingMetadata(UInt128 settings_hash) const;

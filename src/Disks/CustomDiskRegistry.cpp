@@ -100,12 +100,14 @@ bool CustomDiskRegistry::canRelease(const String & name) const
     return it != registrations.end() && it->second.expired();
 }
 
-void CustomDiskRegistry::release(const String & name)
+void CustomDiskRegistry::release(const String & name, const DiskPtr & disk)
 {
     std::lock_guard lock(mutex);
 
     registrations.erase(name);
     names_pending_shutdown.insert(name);
+    if (disk)
+        retiring_disks.emplace(name, disk);
 }
 
 void CustomDiskRegistry::rememberDefinitionLoadedFromExistingMetadata(UInt128 settings_hash)
@@ -127,7 +129,6 @@ void CustomDiskRegistry::scheduleShutdown(const String & name, DiskPtr disk)
     if (disk_to_shutdown.disk)
     {
         std::lock_guard lock(mutex);
-        retiring_disks.emplace(name, disk_to_shutdown.disk);
         if (!shutdown_called)
         {
             try
