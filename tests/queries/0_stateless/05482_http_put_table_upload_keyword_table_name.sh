@@ -23,3 +23,8 @@ echo "-- inserted rows"
 ${CLICKHOUSE_CLIENT} -q "SELECT a FROM ${DB}.\`function\` ORDER BY a"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE ${DB}.\`function\`"
+
+echo "-- formatting round trip"
+${CLICKHOUSE_CLIENT} -q "SELECT formatQuery(formatQuery('INSERT INTO \`function\` SELECT 1'))"
+${CLICKHOUSE_CLIENT} -q "SELECT formatQuery(formatQuery('INSERT INTO \`function\`.t SELECT 1'))"
+${CLICKHOUSE_CLIENT} -q "SELECT formatQuery(formatQuery('INSERT INTO \`FuNcTiOn\`.\`function\` SELECT 1'))"
