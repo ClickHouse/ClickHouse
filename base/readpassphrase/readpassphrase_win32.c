@@ -52,16 +52,35 @@ size_t readpassphrase_read_line(void * handle, char * buf, size_t bufsiz)
 /* The original installs temporary signal handling so that an interrupt cannot leave the caller's
  * terminal with echo disabled. The console equivalent is a control handler that restores the mode
  * and then declines the event, so the application's own handler still runs. `SetConsoleCtrlHandler`
- * calls handlers in reverse registration order, so this one runs before the process-wide one. */
+ * calls handlers in reverse registration order, so this one runs before the process-wide one.
+ *
+ * Windows runs a control handler on a thread of its own, concurrently with the prompt, so every
+ * transition of the console mode happens under `restore_console_lock`, and so does every use of
+ * `restore_console_handle`:
+ * - `restore_console_armed` is set only while echo is disabled and the handle is open; whoever
+ *   clears it - the handler or the normal cleanup - restores the original mode.
+ * - `restore_console_interrupted` is set by the handler, so that a prompt which has registered the
+ *   handler but not yet disabled echo does not disable it after the handler has run: the
+ *   application's handler, which runs next, may be terminating the process.
+ * Because the handler returns only after it has done its part under the lock, the console is left
+ * in its original mode whichever order the two threads arrive in. */
+static SRWLOCK restore_console_lock = SRWLOCK_INIT;
 static HANDLE restore_console_handle = INVALID_HANDLE_VALUE;
 static DWORD restore_console_mode = 0;
-static volatile LONG restore_console_armed = 0;
+static int restore_console_armed = 0;
+static int restore_console_interrupted = 0;
 
 static BOOL WINAPI restoreConsoleModeHandler(DWORD type)
 {
     (void)type;
-    if (InterlockedCompareExchange(&restore_console_armed, 0, 1) == 1)
+    AcquireSRWLockExclusive(&restore_console_lock);
+    if (restore_console_armed)
+    {
         SetConsoleMode(restore_console_handle, restore_console_mode);
+        restore_console_armed = 0;
+    }
+    restore_console_interrupted = 1;
+    ReleaseSRWLockExclusive(&restore_console_lock);
     return FALSE;
 }
 
@@ -148,12 +167,24 @@ char * readpassphrase(const char * prompt, char * buf, size_t bufsiz, int flags)
     {
         DWORD mode = (DWORD)readpassphrase_console_mode(original_mode, flags);
 
+        AcquireSRWLockExclusive(&restore_console_lock);
         restore_console_handle = input;
         restore_console_mode = original_mode;
-        InterlockedExchange(&restore_console_armed, 1);
+        restore_console_armed = 0;
+        restore_console_interrupted = 0;
+        ReleaseSRWLockExclusive(&restore_console_lock);
+
+        /* Registered before echo is disabled, so that there is no moment at which echo is off and
+         * an interrupt would not restore it. */
         SetConsoleCtrlHandler(restoreConsoleModeHandler, TRUE);
 
-        SetConsoleMode(input, mode);
+        AcquireSRWLockExclusive(&restore_console_lock);
+        if (!restore_console_interrupted)
+        {
+            SetConsoleMode(input, mode);
+            restore_console_armed = 1;
+        }
+        ReleaseSRWLockExclusive(&restore_console_lock);
     }
 
     {
@@ -181,8 +212,16 @@ char * readpassphrase(const char * prompt, char * buf, size_t bufsiz, int flags)
 
     if (is_console)
     {
-        if (InterlockedCompareExchange(&restore_console_armed, 0, 1) == 1)
+        /* Disarmed under the lock before the handler is unregistered and before `own_input` is
+         * closed below, so a handler still running on its own thread never touches a closed handle. */
+        AcquireSRWLockExclusive(&restore_console_lock);
+        if (restore_console_armed)
+        {
             SetConsoleMode(input, original_mode);
+            restore_console_armed = 0;
+        }
+        restore_console_handle = INVALID_HANDLE_VALUE;
+        ReleaseSRWLockExclusive(&restore_console_lock);
         SetConsoleCtrlHandler(restoreConsoleModeHandler, FALSE);
 
         if (!(flags & RPP_ECHO_ON))
