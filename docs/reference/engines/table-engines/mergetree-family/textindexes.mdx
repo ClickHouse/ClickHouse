@@ -1629,9 +1629,7 @@ During a rolling upgrade, pin the format with the [`compatibility`](/reference/s
 
 The posting list codec is not controlled by `text_index_serialization_version`. Parts written with the `pfor` codec cannot be read by servers older than 26.10.
 
-The `frontcoding_v2` dictionary block encoding requires version `v3_with_dictionary_encoding` (26.11). With an older version, for example under `compatibility` older than 26.11, it is written as `frontcoding_v1`, so older servers can still read the parts.
-
-Since 26.11, `pfor` is the default for the [`text_index_posting_list_codec`](/reference/settings/merge-tree-settings/text-index#text_index_posting_list_codec) setting. During a rolling upgrade, set [`compatibility`](/reference/settings/session-settings/compatibility#compatibility) to a version older than 26.11 on the upgraded servers. The default then reverts to `none`, and they keep writing parts that older servers can read.
+Since 26.11, `pfor` is the default for the [`text_index_posting_list_codec`](/reference/settings/merge-tree-settings/text-index#text_index_posting_list_codec) setting, and `text_index_serialization_version` defaults to `v3_with_dictionary_encoding`, which is required for the `frontcoding_v2` dictionary block encoding. During a rolling upgrade, set [`compatibility`](/reference/settings/session-settings/compatibility#compatibility) to a version older than 26.11 on the upgraded servers: the posting list codec then reverts to `none` and `frontcoding_v2` is written as `frontcoding_v1`, so older servers can read the parts.
 
 ## Text Indexes vs Bloom-Filter-Based Indexes {#text-index-vs-bloom-filter-indexes}
 
