@@ -40,7 +40,7 @@ The standard ClickHouse Connect clients use the HTTP interface. This supports HT
 | aiohttp | 3.9 or later |
 | Platforms | Linux, macOS, and Windows on the wheel architectures published for each Python version |
 
-The package includes compiled wheels where available and falls back to a pure Python implementation when the Cython extensions cannot be built. PyArrow is supported on Python 3.10 through 3.15. Python 3.14 requires PyArrow 22 or later, and Python 3.15 requires PyArrow 26 or later. `lz4` does not publish CPython 3.15 or free-threaded wheels yet, so installing on Python 3.15 or free-threaded Python builds `lz4` from source and requires a C compiler.
+The package includes compiled wheels where available and falls back to a pure Python implementation when the Cython extensions cannot be built. PyArrow is supported on Python 3.10 through 3.15. Python 3.14 requires PyArrow 22 or later, and Python 3.15 requires PyArrow 26 or later. On Python 3.14 and later, `lz4` is an optional extra and the default compression uses the standard library zstd module. `lz4` does not publish CPython 3.15 or Python 3.14+ free-threaded wheels yet, so installing the `lz4` extra on those versions builds it from source and requires a C compiler.
 
 ## Installation {#installation}
 
@@ -62,6 +62,7 @@ pip install "clickhouse-connect[sqlalchemy-async]" # Async SQLAlchemy dialect
 pip install "clickhouse-connect[alembic]"    # SQLAlchemy and Alembic
 pip install "clickhouse-connect[chdb]"       # Embedded chDB backend
 pip install "clickhouse-connect[rust]"       # Experimental Rust codec
+pip install "clickhouse-connect[lz4]"        # lz4 compression on Python 3.14+
 pip install "clickhouse-connect[tzdata]"     # IANA time zones on minimal systems
 ```
 
