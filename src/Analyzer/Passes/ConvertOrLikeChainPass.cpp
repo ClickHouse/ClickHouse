@@ -278,7 +278,7 @@ public:
         return true;
     }
 
-    void enterImpl(QueryTreeNodePtr & node)
+    void leaveImpl(QueryTreeNodePtr & node)
     {
         auto * function_node = node->as<FunctionNode>();
         if (!function_node || function_node->getFunctionName() != "or")
@@ -589,7 +589,7 @@ public:
         rewrites.push_back({node, std::move(flattened), std::move(index_hint_node)});
     }
 
-    /// Copy every rewritten `or` in the same state, so that chains sharing a haystack get equal copies in any visit order.
+    /// `rewrites` is in post-order, so each chain is copied after the chains inside it are final.
     void applyRewrites()
     {
         for (auto & rewrite : rewrites)
@@ -599,17 +599,13 @@ public:
             function_node.resolveAsFunction(or_function_resolver);
         }
 
-        QueryTreeNodes rewritten_or_copies(rewrites.size());
-        for (size_t i = 0; i < rewrites.size(); ++i)
-            if (rewrites[i].index_hint)
-                rewritten_or_copies[i] = rewrites[i].node->clone();
-
-        for (size_t i = 0; i < rewrites.size(); ++i)
+        for (auto & rewrite : rewrites)
         {
-            if (!rewrites[i].index_hint)
+            if (!rewrite.index_hint)
                 continue;
-            auto & function_node = rewrites[i].node->as<FunctionNode &>();
-            function_node.getArguments().getNodes() = {std::move(rewritten_or_copies[i]), std::move(rewrites[i].index_hint)};
+            auto rewritten_or_copy = rewrite.node->clone();
+            auto & function_node = rewrite.node->as<FunctionNode &>();
+            function_node.getArguments().getNodes() = {std::move(rewritten_or_copy), std::move(rewrite.index_hint)};
             function_node.resolveAsFunction(and_function_resolver);
         }
     }
