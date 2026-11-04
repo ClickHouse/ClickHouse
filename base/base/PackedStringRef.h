@@ -356,7 +356,7 @@ public:
     static ALWAYS_INLINE PackedStringRefT buildLong(const char * ptr, size_t len)
         requires(HASH_BYTES == 0)
     {
-        PackedStringRefT r;
+        PackedStringRefT r{};
         r.buildLarge(ptr, len);
         return r;
     }
@@ -372,7 +372,7 @@ public:
         std::memcpy(words, ptr, sizeof(words));
         /// A table of masks instead of a branch on `len`.
         std::memcpy(mask, short_string_masks.bytes[len], sizeof(mask));
-        PackedStringRefT r;
+        PackedStringRefT r{};
         r.low = words[0] & mask[0];
         /// Setting byte 15 to 0xFF makes the AND keep byte 15 of the mask, which holds the size. Byte 15 is the highest
         /// byte of the second word on little-endian and the lowest on big-endian.
