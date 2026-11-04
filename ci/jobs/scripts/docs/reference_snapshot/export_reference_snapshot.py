@@ -61,7 +61,7 @@ def sha256_file(path: Path) -> str:
 
 def run_query(binary: Path, config_file: Path, query: str) -> str:
     result = subprocess.run(
-        [str(binary), "local", "--config-file", str(config_file), "--query", query],
+        [str(binary), "local", "--tmp", "--config-file", str(config_file), "--query", query],
         check=False,
         capture_output=True,
         text=True,
