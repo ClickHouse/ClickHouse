@@ -1,7 +1,11 @@
+#include <algorithm>
+
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/MemoryTrackerUtils.h>
+#include <Columns/ColumnCompressed.h>
 #include <Core/Names.h>
 #include <Core/Settings.h>
 
@@ -90,7 +94,16 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char backup_add_empty_memory_table[];
+    extern const char memory_sink_pause_before_commit[];
 }
+
+static Names storedColumnNames(const Block & block);
+static void applyStoredColumnIdentity(
+    Block & block,
+    const AlterCommands & commands,
+    const StorageInMemoryMetadata & metadata,
+    ContextPtr context,
+    bool compress);
 
 /// Enforces `max_temporary_table_memory_usage`, zero means no limit.
 static void checkTemporaryTableMemoryUsage(UInt64 total_bytes, UInt64 max_temporary_table_memory_usage)
@@ -107,10 +120,11 @@ public:
     MemorySink(
         StorageMemory & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
-        ContextPtr context)
+        ContextPtr context_)
         : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
         , storage(storage_)
-        , storage_snapshot(storage_.getStorageSnapshot(metadata_snapshot_, context))
+        , storage_snapshot(storage_.getStorageSnapshot(metadata_snapshot_, context_))
+        , context(std::move(context_))
     {
         if (storage.is_temporary_table)
             max_temporary_table_memory_usage = context->getSettingsRef()[Setting::max_temporary_table_memory_usage];
@@ -147,6 +161,25 @@ public:
 
     void onFinish() override
     {
+        FailPointInjection::pauseFailPoint(FailPoints::memory_sink_pause_before_commit);
+
+        std::lock_guard lock(storage.mutex);
+
+        if (!new_blocks.empty())
+        {
+            const bool compress = (*storage.getMemorySettings())[MemorySetting::compress];
+            Names current_names = storedColumnNames(new_blocks.front());
+            for (const auto & rewrite : storage.identity_rewrites)
+            {
+                if (rewrite.before_names != current_names)
+                    continue;
+
+                for (auto & block : new_blocks)
+                    applyStoredColumnIdentity(block, rewrite.commands, rewrite.metadata, context, compress);
+                current_names = storedColumnNames(new_blocks.front());
+            }
+        }
+
         size_t inserted_bytes = 0;
         size_t inserted_rows = 0;
 
@@ -155,8 +188,6 @@ public:
             inserted_bytes += block.allocatedBytes();
             inserted_rows += block.rows();
         }
-
-        std::lock_guard lock(storage.mutex);
 
         auto new_data = std::make_unique<StorageMemory::BlocksWithCounts>(*(storage.data.get()));
         new_data->rows += inserted_rows;
@@ -203,6 +234,7 @@ private:
     UInt64 max_temporary_table_memory_usage = 0;
     StorageMemory & storage;
     StorageSnapshotPtr storage_snapshot;
+    ContextPtr context;
 };
 
 
@@ -476,18 +508,14 @@ void StorageMemory::truncate(
     setData(std::make_unique<BlocksWithCounts>());
 }
 
-static void eraseStoredColumn(Block & block, const String & name)
+static Names storedColumnNames(const Block & block)
 {
-    if (block.findByName(name))
-        block.erase(name);
-
-    const String prefix = name + ".";
-    Names nested;
+    Names names;
+    names.reserve(block.columns());
     for (const auto & column : block)
-        if (column.name.starts_with(prefix))
-            nested.push_back(column.name);
-    for (const auto & nested_name : nested)
-        block.erase(nested_name);
+        names.push_back(column.name);
+    std::sort(names.begin(), names.end());
+    return names;
 }
 
 static void renameStoredColumn(Block & block, const String & from, const String & to)
@@ -501,8 +529,48 @@ static void renameStoredColumn(Block & block, const String & from, const String 
     block.insert(std::move(renamed));
 }
 
+/// An exact column wins over dotted names, matching `ColumnsDescription::remove`.
+static void eraseStoredColumn(Block & block, const String & name)
+{
+    if (block.findByName(name))
+    {
+        block.erase(name);
+        return;
+    }
+
+    const String prefix = name + ".";
+    Names nested;
+    for (const auto & column : block)
+        if (column.name.starts_with(prefix))
+            nested.push_back(column.name);
+    for (const auto & nested_name : nested)
+        block.erase(nested_name);
+}
+
+static void renameStoredColumnOrGroup(Block & block, const String & from, const String & to)
+{
+    if (block.findByName(from))
+    {
+        renameStoredColumn(block, from, to);
+        return;
+    }
+
+    const String prefix = from + ".";
+    Names nested;
+    for (const auto & column : block)
+        if (column.name.starts_with(prefix))
+            nested.push_back(column.name);
+    for (const auto & nested_name : nested)
+        renameStoredColumn(block, nested_name, to + nested_name.substr(from.size()));
+}
+
 /// Drop and rename retire stored values so a reused name reads its new default.
-static void applyStoredColumnIdentity(Block & block, const AlterCommands & commands, const StorageInMemoryMetadata & metadata, ContextPtr context)
+static void applyStoredColumnIdentity(
+    Block & block,
+    const AlterCommands & commands,
+    const StorageInMemoryMetadata & metadata,
+    ContextPtr context,
+    bool compress)
 {
     const size_t rows = block.rows();
     for (const auto & command : commands)
@@ -511,57 +579,67 @@ static void applyStoredColumnIdentity(Block & block, const AlterCommands & comma
             continue;
 
         if (command.type == AlterCommand::RENAME_COLUMN)
-        {
-            renameStoredColumn(block, command.column_name, command.rename_to);
-
-            const String prefix = command.column_name + ".";
-            Names nested;
-            for (const auto & column : block)
-                if (column.name.starts_with(prefix))
-                    nested.push_back(column.name);
-            for (const auto & nested_name : nested)
-                renameStoredColumn(block, nested_name, command.rename_to + nested_name.substr(command.column_name.size()));
-        }
+            renameStoredColumnOrGroup(block, command.column_name, command.rename_to);
         else if (command.type == AlterCommand::DROP_COLUMN)
         {
-            /// `IF EXISTS` drops only an exact name, so flattened `n.*` stays.
-            if (command.if_exists && !block.findByName(command.column_name))
+            /// `IF EXISTS` drops only an exact name. `CLEAR` still rewrites a flattened group.
+            if (command.if_exists && !command.clear && !block.findByName(command.column_name))
                 continue;
             eraseStoredColumn(block, command.column_name);
         }
     }
 
-    NamesAndTypesList missing;
-    for (const auto & column : metadata.columns)
-    {
-        if (!column.default_desc.expression)
-            continue;
-        if (column.default_desc.kind != ColumnDefaultKind::Default && column.default_desc.kind != ColumnDefaultKind::Materialized)
-            continue;
-        if (!block.has(column.name))
-            missing.emplace_back(column.name, column.type);
-    }
-    if (missing.empty() || rows == 0)
+    if (rows == 0)
         return;
 
-    const bool added_dummy = block.columns() == 0;
-    if (added_dummy)
+    NamesAndTypesList missing_defaults;
+    for (const auto & column : metadata.columns)
     {
-        block.insert(
-        {
-            ColumnConst::create(ColumnUInt8::create(1, static_cast<UInt8>(0)), rows),
-            std::make_shared<DataTypeUInt8>(),
-            "_dummy",
-        });
+        if (column.default_desc.kind == ColumnDefaultKind::Alias || column.default_desc.kind == ColumnDefaultKind::Ephemeral)
+            continue;
+        if (block.has(column.name))
+            continue;
+
+        const auto & desc = column.default_desc;
+        const bool has_expression = desc.expression
+            && (desc.kind == ColumnDefaultKind::Default || desc.kind == ColumnDefaultKind::Materialized);
+        if (has_expression)
+            missing_defaults.emplace_back(column.name, column.type);
+        else
+            block.insert({column.type->createColumnConst(rows, column.type->getDefault()), column.type, column.name});
     }
 
-    if (auto dag = evaluateMissingDefaults(block, missing, metadata.columns, context, false))
+    if (!missing_defaults.empty())
     {
-        auto actions = std::make_shared<ExpressionActions>(std::move(*dag), ExpressionActionsSettings(context->getSettingsRef()));
-        actions->execute(block);
+        const bool added_dummy = block.columns() == 0;
+        if (added_dummy)
+        {
+            block.insert(
+            {
+                ColumnConst::create(ColumnUInt8::create(1, static_cast<UInt8>(0)), rows),
+                std::make_shared<DataTypeUInt8>(),
+                "_dummy",
+            });
+        }
+
+        for (auto & column : block)
+            column.column = column.column->decompress();
+
+        if (auto dag = evaluateMissingDefaults(block, missing_defaults, metadata.columns, context, false))
+        {
+            auto actions = std::make_shared<ExpressionActions>(std::move(*dag), ExpressionActionsSettings(context->getSettingsRef()));
+            actions->execute(block);
+        }
+        if (added_dummy)
+            block.erase("_dummy");
     }
-    if (added_dummy)
-        block.erase("_dummy");
+
+    if (compress)
+    {
+        for (auto & column : block)
+            if (!typeid_cast<const ColumnCompressed *>(column.column.get()))
+                column.column = column.column->compress(true);
+    }
 }
 
 static bool changesStoredColumns(const AlterCommands & commands)
@@ -646,12 +724,27 @@ void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr conte
                 new_data->rows = data.get()->rows;
             }
 
-            for (auto & block : new_data->blocks)
-                applyStoredColumnIdentity(block, params, new_metadata, context);
+            StorageMemory::IdentityRewrite rewrite;
+            for (const auto & column : metadata_snapshot->getSampleBlock())
+                rewrite.before_names.push_back(column.name);
+            std::sort(rewrite.before_names.begin(), rewrite.before_names.end());
+            rewrite.commands = params;
+            rewrite.metadata = new_metadata;
+            identity_rewrites.push_back(std::move(rewrite));
 
+            const bool compress = changed_settings_ptr
+                ? (*changed_settings_ptr)[MemorySetting::compress]
+                : (*memory_settings.get())[MemorySetting::compress];
+            for (auto & block : new_data->blocks)
+                applyStoredColumnIdentity(block, params, new_metadata, context, compress);
+
+            new_data->rows = 0;
             new_data->bytes = 0;
             for (const auto & block : new_data->blocks)
+            {
+                new_data->rows += block.rows();
                 new_data->bytes += block.allocatedBytes();
+            }
         }
 
         if (new_data)

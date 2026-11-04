@@ -3,8 +3,11 @@
 #include <atomic>
 #include <optional>
 #include <mutex>
+#include <vector>
 
 #include <Core/Block_fwd.h>
+#include <Core/Names.h>
+#include <Storages/AlterCommands.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/MaterializedCTE.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
@@ -209,6 +212,15 @@ private:
     MaterializedCTEWeakPtr materialized_cte;
 
     MultiVersion<MemorySettings> memory_settings;
+
+    /// Rewrites for an in-flight `INSERT` that still has `before_names`.
+    struct IdentityRewrite
+    {
+        Names before_names;
+        AlterCommands commands;
+        StorageInMemoryMetadata metadata;
+    };
+    std::vector<IdentityRewrite> identity_rewrites;
 
     friend class ReadFromMemoryStorageStep;
 };
