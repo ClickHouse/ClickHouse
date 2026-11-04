@@ -32,3 +32,4 @@ SELECT count()\nFROM t\nWHERE (`from` IN (1))
 41
 1
 1
+1
