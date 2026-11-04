@@ -706,15 +706,15 @@ void MergeTreeReaderStreamMultipleColumns::addRangeOfPosition(size_t mark, size_
         end = next_mark.offset_in_compressed_file;
         if (next_mark.offset_in_decompressed_block != 0)
         {
-            end = file_size;
-            for (; mark < marks_count; next(mark, position))
+            /// The block goes on to the next later offset. Many marks can share it, so search instead of scanning them: the
+            /// offsets don't decrease up to the next stripe of several granules, which starts a block after this one.
+            const auto positions = std::views::iota(mark * num_positions + position, marks_count * num_positions);
+            const auto it = std::ranges::partition_point(positions, [&](size_t i)
             {
-                if (marks_getter->getMark(mark, position).offset_in_compressed_file > next_mark.offset_in_compressed_file)
-                {
-                    end = marks_getter->getMark(mark, position).offset_in_compressed_file;
-                    break;
-                }
-            }
+                return marks_getter->getMark(i / num_positions, i % num_positions).offset_in_compressed_file
+                    <= next_mark.offset_in_compressed_file;
+            });
+            end = it == positions.end() ? file_size : marks_getter->getMark(*it / num_positions, *it % num_positions).offset_in_compressed_file;
         }
     }
     ranges.emplace_back(begin, end);
