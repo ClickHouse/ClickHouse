@@ -15,6 +15,7 @@
 #include <base/unaligned.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
+#include <Common/HashTable/KeysAndPackedString.h>
 #include <Common/memory.h>
 #include <Core/Block_fwd.h>
 #include <Core/ColumnNumbers.h>
@@ -69,9 +70,11 @@ struct AdaptiveArgumentLayout
 /// String-like keys stage their bytes: a packed reference copied as a plain value would
 /// carry a pointer into the source block, which is released once the block is consumed. The
 /// staged form of both string kinds is the raw characters, and the drain rebuilds the table's
-/// key from them, pointing into the record.
+/// key from them, pointing into the record. A key of fixed-width values and a string stages the
+/// packed values followed by the characters of the string.
 template <typename Key>
-constexpr bool adaptive_key_stages_bytes = std::is_same_v<Key, std::string_view> || std::is_same_v<Key, PackedStringRef>;
+constexpr bool adaptive_key_stages_bytes
+    = std::is_same_v<Key, std::string_view> || std::is_same_v<Key, PackedStringRef> || is_keys_and_packed_string<Key>;
 
 /// Records retain the key holder's width. A numeric table may widen a key for its cell layout,
 /// but staging and rehashing need only the original value.
@@ -100,6 +103,18 @@ Key ALWAYS_INLINE readStagedKey(const char * key_pos, [[maybe_unused]] size_t ke
         /// re-hashing the key bytes; `build` consults the functor only for lengths that
         /// store a hash, which is exactly the range the staged hash was derived from.
         return PackedStringRef::build(key_pos, key_size, [routing_hash](const char *, size_t) { return static_cast<UInt32>(routing_hash); });
+    }
+    else if constexpr (is_keys_and_packed_string<Key>)
+    {
+        /// The packed values come first, then the string. For a non-empty string the staged routing hash is
+        /// the hash that the packed string stores (see `KeysAndPackedStringHashMap::hash`), so the rebuild
+        /// reuses it. `build` consults the functor only for the strings that store a hash (see
+        /// `KeysAndPackedString`).
+        using Keys = decltype(Key::keys);
+        return Key{
+            unalignedLoad<Keys>(key_pos),
+            Key::PackedString::build(
+                key_pos + sizeof(Keys), key_size - sizeof(Keys), [routing_hash](const char *, size_t) { return static_cast<UInt32>(routing_hash); })};
     }
     else
     {
@@ -187,7 +202,8 @@ struct StagedKeyRecord
     /// The size of the record of a key of `key_size` bytes.
     static size_t bytesForKey(size_t key_size) { return alignStagedRecord(key_offset + key_size); }
 
-    static void writeHeader(char * record, [[maybe_unused]] UInt64 routing_hash, UInt32 count, [[maybe_unused]] size_t key_size)
+    /// Writes the header of a record and returns the position of its key.
+    static char * writeHeader(char * record, [[maybe_unused]] UInt64 routing_hash, UInt32 count, [[maybe_unused]] size_t key_size)
     {
         if constexpr (variable_width)
         {
@@ -196,6 +212,7 @@ struct StagedKeyRecord
         }
         if constexpr (with_count)
             unalignedStore<UInt32>(record + count_offset, count);
+        return record + key_offset;
     }
 
     static size_t bytes(const char * record) { return bytesForKey(keySize(record)); }
@@ -221,6 +238,71 @@ private:
         else
             return sizeof(Key);
     }
+};
+
+/// Count and key-only records of a key of fixed-width values and a string (`KeysAndPackedString`):
+/// {UInt32 head, [UInt32 string size, UInt32 hash,] packed values, string}. The low bit of the head tells
+/// whether the string is non-empty. The other bits hold the count of a count record: a contribution within
+/// one block, as in the records of the other keys, which 31 bits hold. The flag takes the low bit so that a
+/// count past 31 bits could only lose its high bit, as a count past 32 bits does in the records of the
+/// other keys, and never turn the record into one with a string. The size and the hash follow only a
+/// non-empty string. A key with an empty string, the common case of a missing value, is hashed by its
+/// packed values alone (see `KeysAndPackedStringHashMap::hash`). The readers compute that hash again in a
+/// few instructions, so the record is as narrow as that of a fixed-width key. A non-empty string stages
+/// the 32-bit hash that its packed form stores (see `KeysAndPackedString`). The key's bytes, the packed
+/// values followed by the string, are contiguous for `readStagedKey`.
+template <typename Keys, bool with_count_>
+struct StagedKeyRecord<KeysAndPackedString<Keys>, with_count_>
+{
+    static constexpr bool with_count = with_count_;
+    static constexpr bool with_arguments = false;
+
+    /// The size of the record of a key of `key_size` bytes.
+    static size_t bytesForKey(size_t key_size) { return alignStagedRecord(headerBytes(key_size > sizeof(Keys)) + key_size); }
+
+    /// Writes the header of a record and returns the position of its key.
+    static char * writeHeader(char * record, UInt64 routing_hash, UInt32 count, size_t key_size)
+    {
+        chassert(count <= max_count);
+        const UInt32 head = with_count ? count << 1 : 0;
+        if (key_size == sizeof(Keys))
+        {
+            unalignedStore<UInt32>(record, head);
+            return record + headerBytes(false);
+        }
+        chassert(routing_hash <= std::numeric_limits<UInt32>::max());
+        unalignedStore<UInt32>(record, head | non_empty_string_bit);
+        unalignedStore<UInt32>(record + sizeof(UInt32), static_cast<UInt32>(key_size - sizeof(Keys)));
+        unalignedStore<UInt32>(record + 2 * sizeof(UInt32), static_cast<UInt32>(routing_hash));
+        return record + headerBytes(true);
+    }
+
+    static size_t bytes(const char * record) { return bytesForKey(key(record).second); }
+
+    static std::pair<const char *, size_t> key(const char * record)
+    {
+        if (!hasString(record))
+            return {record + headerBytes(false), sizeof(Keys)};
+        return {record + headerBytes(true), sizeof(Keys) + unalignedLoad<UInt32>(record + sizeof(UInt32))};
+    }
+
+    template <typename Table>
+    static UInt64 hash(const Table & table, const char * record)
+    {
+        if (hasString(record))
+            return unalignedLoad<UInt32>(record + 2 * sizeof(UInt32));
+        return table.hash(KeysAndPackedString<Keys>{unalignedLoad<Keys>(record + headerBytes(false)), {}});
+    }
+
+    static UInt32 count(const char * record) { return unalignedLoad<UInt32>(record) >> 1; }
+
+private:
+    static constexpr UInt32 non_empty_string_bit = 1;
+    static constexpr UInt32 max_count = std::numeric_limits<UInt32>::max() >> 1;
+
+    static constexpr size_t headerBytes(bool has_string) { return (has_string ? 3 : 1) * sizeof(UInt32); }
+
+    static bool hasString(const char * record) { return unalignedLoad<UInt32>(record) & non_empty_string_bit; }
 };
 
 /// General records with a fixed-width key and only fixed-size arguments: {key, arguments}, the arguments laid out

@@ -74,6 +74,8 @@ namespace
             return DB::ArenaKeyHolder{key, *arena};
         else if constexpr (copy_keys && std::is_same_v<Key, PackedStringRef>)
             return DB::ArenaPackedStringHolder{key, *arena};
+        else if constexpr (copy_keys && is_keys_and_packed_string<Key>)
+            return DB::ArenaKeysAndPackedStringHolder<decltype(Key::keys)>{key, *arena};
         else
             return key;
     }
@@ -105,7 +107,9 @@ namespace
     }
 
     /// Prefetches the table slot of a staged record ahead of its emplace: hash-organized tables
-    /// by the routing hash, string tables from the key bytes and the hash.
+    /// by the routing hash, string tables from the key bytes and the hash, and a table of fixed-width
+    /// values and a string by the hash and by whether the string is empty, which the size of the
+    /// staged key tells.
     template <typename Key, typename Table>
     void ALWAYS_INLINE prefetchStagedKey(Table & table, const char * key_pos, size_t key_size, size_t routing_hash)
     {
@@ -113,6 +117,8 @@ namespace
             table.prefetchByHash(routing_hash);
         else if constexpr (std::is_same_v<Key, std::string_view>)
             table.prefetch(std::string_view(key_pos, key_size), routing_hash);
+        else if constexpr (is_keys_and_packed_string<Key>)
+            table.prefetchByHash(routing_hash, /*empty_string=*/ key_size == sizeof(Key::keys));
     }
 
     /// Whether a walk over staged records prefetches the table slots of the records ahead: into a table that has outgrown
@@ -252,10 +258,11 @@ namespace
         return walk;
     }
 
-    /// Visits every cell of a map table with its key as the table stores it, its mapped value and its hash: from the
-    /// iterator, which reads a saved hash instead of rehashing, where the table has one, and through
-    /// `forEachValueWithHash` for the string table, whose sub-maps share no iterator, and which hands out the short
-    /// keys as views that only `emplaceIteratedKey` may read.
+    /// Visits every cell of a map table with its key as the table stores it, its mapped value and its
+    /// hash: from the iterator, which reads a saved hash instead of rehashing, where the table has one,
+    /// and through `forEachValueWithHash` for the tables whose sub-maps share no iterator. These are the
+    /// string table, which hands out the short keys as views that only `emplaceIteratedKey` may read,
+    /// and the table of fixed-width keys and a string.
     template <typename Table, typename Callback>
     void forEachMappedCellWithHash(Table & table, Callback && callback)
     {
