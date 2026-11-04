@@ -21,7 +21,11 @@ bool settingsAllocationIsServerOwned();
 /// Remember server-owned allocation scopes through the last shared-owner destruction.
 /// Query-local allocations retain the ordinary tracking used by other shared query values.
 /// Exclude embedded objects that account for their own bytes, also after allocator rebinding.
-template <typename T, SettingsAllocationKind kind = SettingsAllocationKind::SnapshotState, size_t separately_accounted_bytes = 0>
+template <
+    typename T,
+    SettingsAllocationKind kind = SettingsAllocationKind::SnapshotState,
+    size_t separately_accounted_bytes = 0,
+    bool block_nested_allocations = true>
 struct SettingsSnapshotAllocator
 {
     using value_type = T;
@@ -30,7 +34,7 @@ struct SettingsSnapshotAllocator
     template <typename U>
     struct rebind
     {
-        using other = SettingsSnapshotAllocator<U, kind, separately_accounted_bytes>;
+        using other = SettingsSnapshotAllocator<U, kind, separately_accounted_bytes, block_nested_allocations>;
     };
 
     bool server_owned;
@@ -41,7 +45,7 @@ struct SettingsSnapshotAllocator
     }
 
     template <typename U>
-    explicit SettingsSnapshotAllocator(const SettingsSnapshotAllocator<U, kind, separately_accounted_bytes> & other)
+    explicit SettingsSnapshotAllocator(const SettingsSnapshotAllocator<U, kind, separately_accounted_bytes, block_nested_allocations> & other)
         : server_owned(other.server_owned)
     {
     }
@@ -65,27 +69,27 @@ struct SettingsSnapshotAllocator
     template <typename U, typename... Args>
     void construct(U * pointer, Args &&... args)
     {
-        auto guard = blockServerMemory();
+        auto guard = blockServerMemory(block_nested_allocations);
         std::construct_at(pointer, std::forward<Args>(args)...);
     }
 
     template <typename U>
     void destroy(U * pointer)
     {
-        auto guard = blockServerMemory();
+        auto guard = blockServerMemory(block_nested_allocations);
         std::destroy_at(pointer);
     }
 
     template <typename U>
-    bool operator==(const SettingsSnapshotAllocator<U, kind, separately_accounted_bytes> & other) const
+    bool operator==(const SettingsSnapshotAllocator<U, kind, separately_accounted_bytes, block_nested_allocations> & other) const
     {
         return server_owned == other.server_owned;
     }
 
 private:
-    std::optional<MemoryTrackerBlockerInThread> blockServerMemory() const
+    std::optional<MemoryTrackerBlockerInThread> blockServerMemory(bool block = true) const
     {
-        if (server_owned)
+        if (server_owned && block)
             return std::make_optional<MemoryTrackerBlockerInThread>();
         return std::nullopt;
     }
@@ -222,11 +226,15 @@ class SettingsSnapshot
         }
     };
 
+    /// The table's own bytes belong to its allocator, but its chunks can belong to different queries.
+    /// Release their owners without a table-wide blocker; each chunk enforces its own allocation domain.
+    using StateAllocator = SettingsSnapshotAllocator<State, SettingsAllocationKind::SnapshotState, 0, false>;
+
     static const boost::shared_ptr<State> & defaultState()
     {
         /// Own a typed copy so the snapshot's values can outlive the accessor singleton.
         static const auto result = boost::allocate_shared<State>(
-            SettingsSnapshotAllocator<State>{true},
+            StateAllocator{true},
             std::allocate_shared<const Data>(SettingsSnapshotAllocator<Data, SettingsAllocationKind::DenseData>{true}));
         return result;
     }
@@ -255,7 +263,7 @@ public:
     {
         const bool server_owned = settingsAllocationIsServerOwned();
         if (state.use_count() != 1 || state->server_owned != server_owned)
-            state = boost::allocate_shared<State>(SettingsSnapshotAllocator<State>{server_owned}, *state, server_owned);
+            state = boost::allocate_shared<State>(StateAllocator{server_owned}, *state, server_owned);
 
         const size_t index = offset / chunk_size;
         auto & owner = state->values[index];

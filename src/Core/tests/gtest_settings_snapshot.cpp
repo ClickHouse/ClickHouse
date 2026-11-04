@@ -509,6 +509,24 @@ GTEST_TEST(SettingsSnapshot, CachedStorageAndQueryWritesUseSeparateMemoryDomains
             EXPECT_LT(std::abs(query_tracker.get() - before_cache), tolerance);
 
             {
+                Settings mixed;
+                {
+                    Settings child(*cached);
+                    child.set(Setting::log_comment, String(payload_size, 'm'));
+                    MemoryTrackerBlockerInThread guard;
+                    mixed = child;
+                    mixed.set(Setting::max_query_size, UInt64(100001));
+                    EXPECT_FALSE(mixed.hasServerOwnedStorage());
+                }
+                /// The server-owned table is now the last owner of the query-owned string chunk.
+                CurrentThread::flushUntrackedMemory();
+                EXPECT_GT(query_tracker.get() - before_cache, static_cast<Int64>(payload_size / 2));
+                mixed = Settings{};
+                CurrentThread::flushUntrackedMemory();
+                EXPECT_LT(std::abs(query_tracker.get() - before_cache), tolerance);
+            }
+
+            {
                 Settings child(*cached);
                 const auto before_write = query_tracker.get();
                 child.set(Setting::log_comment, "query-local");
