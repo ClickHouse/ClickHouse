@@ -2,13 +2,11 @@
 #include <memory>
 #include <optional>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnFunction.h>
 #include <Columns/ColumnSet.h>
 #include <Core/Joins.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
-#include <Functions/FunctionsMiscellaneous.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -904,62 +902,9 @@ static bool isTemporaryTable(const StorageID & storage_id)
     return storage_id.database_name == DatabaseCatalog::TEMPORARY_DATABASE;
 }
 
-static bool readsTemporaryTable(const QueryPlan::Node * node);
-
-static bool dagReadsTemporaryTable(const ActionsDAG & dag);
-
-/// True if the column is an `IN` set backed by a temporary table: a temporary `Set` table, which is shipped by name,
-/// or a subquery reading one, whose plan every replica rebuilds. A lambda folded to a constant (`ColumnFunction`)
-/// holds its body and captures instead of a value, and serialization ships the sets found there, so they are
-/// followed as well.
-static bool columnReadsTemporaryTable(const IColumn & column)
-{
-    const auto * data = &column;
-    if (const auto * column_const = typeid_cast<const ColumnConst *>(data))
-        data = &column_const->getDataColumn();
-
-    if (const auto * column_set = typeid_cast<const ColumnSet *>(data))
-    {
-        const auto future_set = column_set->getData();
-        if (const auto * from_storage = typeid_cast<const FutureSetFromStorage *>(future_set.get()))
-            return from_storage->getStorageID() && isTemporaryTable(*from_storage->getStorageID());
-        if (const auto * from_subquery = typeid_cast<const FutureSetFromSubquery *>(future_set.get()))
-        {
-            const auto * subquery_plan = from_subquery->getQueryPlan();
-            return subquery_plan && readsTemporaryTable(subquery_plan->getRootNode());
-        }
-        return false;
-    }
-
-    if (const auto * column_function = typeid_cast<const ColumnFunction *>(data))
-    {
-        const auto * expression = typeid_cast<const FunctionExpression *>(column_function->getFunction().get());
-        if (expression && dagReadsTemporaryTable(expression->getAcionsDAG()))
-            return true;
-        for (const auto & captured : column_function->getCapturedColumns())
-            if (captured.column && columnReadsTemporaryTable(*captured.column))
-                return true;
-    }
-
-    return false;
-}
-
-/// True if the DAG references an `IN` set backed by a temporary table, including one inside a lambda body.
-static bool dagReadsTemporaryTable(const ActionsDAG & dag)
-{
-    for (const auto & node : dag.getNodes())
-    {
-        if (node.column && columnReadsTemporaryTable(*node.column))
-            return true;
-        if (node.type == ActionsDAG::ActionType::FUNCTION)
-            if (const auto * capture = typeid_cast<const FunctionCapture *>(node.function_base.get());
-                capture && dagReadsTemporaryTable(capture->getAcionsDAG()))
-                return true;
-    }
-    return false;
-}
-
-static bool sourceReadsTemporaryTable(const QueryPlan::Node * node)
+/// A temporary table exists only in the session of the initiator, so neither its read nor a step consuming it
+/// can run on a replica. Distributing only the other reads of such a query gains nothing, so it stays local.
+static bool readsTemporaryTable(const QueryPlan::Node * node)
 {
     if (!node || !node->step)
         return false;
@@ -970,21 +915,13 @@ static bool sourceReadsTemporaryTable(const QueryPlan::Node * node)
         return true;
 
     for (const auto * child_plan : step->getChildPlans(/*for_explain=*/ false))
-        if (child_plan && sourceReadsTemporaryTable(child_plan->getRootNode()))
+        if (child_plan && readsTemporaryTable(child_plan->getRootNode()))
             return true;
 
     for (const auto * child : node->children)
-        if (sourceReadsTemporaryTable(child))
+        if (readsTemporaryTable(child))
             return true;
     return false;
-}
-
-/// A temporary table exists only in the session of the initiator, so neither its read nor a step consuming it
-/// can run on a replica. Distributing only the other reads of such a query gains nothing, so it stays local.
-/// The table can be read directly, or through an `IN` set.
-static bool readsTemporaryTable(const QueryPlan::Node * node)
-{
-    return sourceReadsTemporaryTable(node) || checkQueryPlanActionDAGs(node, dagReadsTemporaryTable);
 }
 
 void applyParallelReplicas(QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & settings)
