@@ -125,21 +125,22 @@ def replace_forbidden_header(old, new):
     node.query("SYSTEM RELOAD CONFIG")
 
 
-def test_web_disk_reused_after_authorization_is_forbidden():
-    # A disk created while `Authorization` is allowed is reused, without creating it
-    # again, for a later definition equal to its own.
-    disk_name = "url_userinfo_reused_web_disk"
-    create_table = (
-        "CREATE TABLE url_userinfo_reused_web_disk (x UInt64) "
-        f"ENGINE = MergeTree ORDER BY x SETTINGS disk = disk(name = '{disk_name}', "
-        f"type = web, endpoint = 'http://{USER}:{PASSWORD}@127.0.0.1:8123/')"
+def web_disk(disk_name):
+    return (
+        f"disk(name = '{disk_name}', type = web, "
+        f"endpoint = 'http://{USER}:{PASSWORD}@127.0.0.1:8123/')"
     )
 
+
+def create_web_disk_while_authorization_is_allowed(disk_name):
     replace_forbidden_header("Authorization", "X-Not-Forbidden")
     try:
         # `disk` and `storage_policy` together are rejected after the disk is created, so
         # the disk is created without a table, and no request is sent to its endpoint.
-        error = node.query_and_get_error(f"{create_table}, storage_policy = 'default'")
+        error = node.query_and_get_error(
+            f"CREATE TABLE {disk_name} (x UInt64) ENGINE = MergeTree ORDER BY x "
+            f"SETTINGS disk = {web_disk(disk_name)}, storage_policy = 'default'"
+        )
         assert "cannot be specified at the same time" in error, error
     finally:
         replace_forbidden_header("X-Not-Forbidden", "Authorization")
@@ -148,7 +149,39 @@ def test_web_disk_reused_after_authorization_is_forbidden():
         node.query(f"SELECT count() FROM system.disks WHERE name = '{disk_name}'")
         == "1\n"
     )
-    assert_forbidden_without_requests(create_table)
+
+
+def test_web_disk_reused_after_authorization_is_forbidden():
+    # A disk created while `Authorization` is allowed is reused, without creating it
+    # again, for a later definition equal to its own.
+    disk_name = "url_userinfo_reused_web_disk"
+    create_web_disk_while_authorization_is_allowed(disk_name)
+    assert_forbidden_without_requests(
+        f"CREATE TABLE {disk_name} (x UInt64) ENGINE = MergeTree ORDER BY x "
+        f"SETTINGS disk = {web_disk(disk_name)}"
+    )
+
+
+def test_cache_disk_over_web_disk_after_authorization_is_forbidden():
+    # A new `cache` disk wraps the object storage of the existing disk it names, so it
+    # would send the userinfo of the endpoint of that disk.
+    web_disk_name = "url_userinfo_cached_web_disk"
+    cache_disk_name = "url_userinfo_web_disk_cache"
+    create_web_disk_while_authorization_is_allowed(web_disk_name)
+
+    assert_forbidden_without_requests(
+        f"CREATE TABLE {cache_disk_name} (x UInt64) ENGINE = MergeTree ORDER BY x "
+        f"SETTINGS disk = disk(name = '{cache_disk_name}', type = cache, "
+        f"disk = '{web_disk_name}', path = '{cache_disk_name}', max_size = 1073741824)"
+    )
+    # A request of a disk is not a query, so `system.query_log` does not necessarily show
+    # it. The definition is refused before the `cache` disk, through which the table would
+    # send the requests, is created.
+    assert (
+        node.query(f"SELECT count() FROM system.disks WHERE name = '{cache_disk_name}'")
+        == "0\n"
+    )
+    assert node.query(f"EXISTS TABLE {cache_disk_name}") == "0\n"
 
 
 def test_url_engine_credentials_forbidden():
