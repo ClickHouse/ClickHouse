@@ -72,7 +72,7 @@ ai_position 'AI inside a lambda' "arrayExists(x -> aiFilter(x, 'matches', ${CHAT
 # out of the group, otherwise it would move ahead of `flag = 1` with `text LIKE`.
 ai_position 'AI and a cheap condition on the same column' "aiFilter(text, 'matches', ${CHAT}) AND text LIKE '%1%' AND flag = 1"
 
-# An `OR` is not split, so the whole disjunction is expensive and moved last.
+# An `OR` is not split, so the whole disjunction is expensive; the `LIKE` written after it waits behind it in WHERE.
 ai_position 'AI inside OR' "(flag = 1 OR aiFilter(text, 'matches', ${CHAT})) AND text LIKE '%1%'"
 
 # With no other condition the AI condition is still moved.
