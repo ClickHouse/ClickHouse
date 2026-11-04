@@ -55,6 +55,7 @@ namespace FailPoints
     extern const char database_replicated_delay_recovery[];
     extern const char database_replicated_delay_entry_execution[];
     extern const char database_replicated_stop_entry_execution[];
+    extern const char database_replicated_pause_before_initial_query_execution[];
 }
 
 namespace
@@ -212,6 +213,15 @@ void DatabaseReplicatedDDLWorker::shutdown()
             event->set();
     }
     wait_current_task_change.notify_all();
+}
+
+void DatabaseReplicatedDDLWorker::waitForForegroundTasks()
+{
+    chassert(stop_flag);
+    std::unique_lock lock{mutex};
+    if (foreground_tasks)
+        LOG_TRACE(log, "Waiting for {} initial queries executed by the stopped worker", foreground_tasks);
+    foreground_tasks_finished.wait(lock, [&] { return foreground_tasks == 0; });
 }
 
 void DatabaseReplicatedDDLWorker::initializeReplication()
@@ -565,7 +575,19 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
         if (!processed)
             throw Exception(ErrorCodes::UNFINISHED, "Timeout: Cannot enqueue query on this replica, "
                             "most likely because replica is busy with previous queue entries");
+
+        /// The predicate above has checked `stop_flag` under `mutex`, so `waitForForegroundTasks` will wait for this query.
+        ++foreground_tasks;
     }
+
+    SCOPE_EXIT({
+        std::lock_guard lock{mutex};
+        --foreground_tasks;
+        if (foreground_tasks == 0)
+            foreground_tasks_finished.notify_all();
+    });
+
+    FailPointInjection::pauseFailPoint(FailPoints::database_replicated_pause_before_initial_query_execution);
 
     if (entry.parent_table_uuid.has_value() && !checkParentTableExists(entry.parent_table_uuid.value()))
         throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Parent table doesn't exist");

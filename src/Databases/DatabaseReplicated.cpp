@@ -2503,6 +2503,7 @@ void DatabaseReplicated::restoreDatabaseInKeeper(ContextPtr)
     /// its recovery reads `max_log_ptr_at_creation` and compares the Keeper metadata with the
     /// local table set, which those calls rewrite, and a recovery running against a half-updated
     /// view detaches local tables into `<db>_broken_replicated_tables`.
+    std::shared_ptr<DatabaseReplicatedDDLWorker> old_worker;
     {
         std::lock_guard lock{ddl_worker_mutex};
         if (ddl_worker)
@@ -2510,8 +2511,19 @@ void DatabaseReplicated::restoreDatabaseInKeeper(ContextPtr)
             LOG_TRACE(log, "Stopping DDL worker before restoring database metadata in Keeper.");
             ddl_worker->shutdown();
             ddl_worker_initialized = false;
-            replaceDDLWorkerUnlocked(nullptr);
+            old_worker = replaceDDLWorkerUnlocked(nullptr);
         }
+    }
+
+    /// Initial queries that the old worker admitted before it was stopped still execute and commit on their own
+    /// threads. Wait for them before rewriting the replication state: otherwise a query could commit its metadata
+    /// while the recovery of the new worker compares the Keeper snapshot with the local tables, and the recovery
+    /// would move the just created table to `<db>_broken_replicated_tables` (or drop it).
+    /// Not under `ddl_worker_mutex`, because these queries may need it.
+    if (old_worker)
+    {
+        old_worker->waitForForegroundTasks();
+        old_worker.reset();
     }
 
     /// If the restore fails, reinitialize the DDL worker so the database remains functional.

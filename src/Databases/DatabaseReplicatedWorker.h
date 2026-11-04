@@ -41,6 +41,11 @@ public:
     /// The worker was shut down. A stopped worker is never restarted, the database replaces it with a new one.
     bool isStopped() const { return stop_flag; }
 
+    /// Waits until the initial queries that `tryEnqueueAndExecuteEntry` admitted for execution before
+    /// the worker was stopped finish. They execute and commit on the submitting threads, so `shutdown`
+    /// (which joins only the worker's own threads) does not wait for them. Requires the worker to be stopped.
+    void waitForForegroundTasks();
+
     static String enqueueQueryImpl(const ZooKeeperPtr & zookeeper, DDLLogEntry & entry,
                                    DatabaseReplicated * const database, bool committed = false, Coordination::Requests additional_checks = {}); /// NOLINT
 
@@ -77,6 +82,10 @@ private:
     std::condition_variable wait_current_task_change;
 
     String current_task;
+    /// The number of initial queries being executed by `tryEnqueueAndExecuteEntry` on the submitting threads.
+    /// Protected by `mutex`, see `waitForForegroundTasks`.
+    size_t foreground_tasks = 0;
+    std::condition_variable foreground_tasks_finished;
     /// Events of `waitForReplicaToProcessAllEntries` waiting for our `log_ptr` in Keeper to change.
     /// `shutdown` sets them, so that the waiters return without waiting for the timeout.
     std::unordered_set<std::shared_ptr<Poco::Event>> log_ptr_waiters;
