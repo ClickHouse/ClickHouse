@@ -24,8 +24,8 @@ def started_cluster():
         cluster.shutdown()
 
 
-def assert_forbidden_without_requests(query):
-    error = node.query_and_get_error(query)
+def assert_forbidden_without_requests(query, settings=None):
+    error = node.query_and_get_error(query, settings=settings)
     assert "BAD_ARGUMENTS" in error, error
     assert 'HTTP header "Authorization" is forbidden' in error, error
     node.query("SYSTEM FLUSH LOGS query_log")
@@ -90,11 +90,6 @@ def test_url_without_credentials():
             id="url_wildcard_from_index_pages",
         ),
         pytest.param(
-            f"SELECT * FROM url('http://{QUERY_URL}', LineAsString) SETTINGS "
-            f"format_avro_schema_registry_url = 'http://{USER}:{PASSWORD}@127.0.0.1:8123/'",
-            id="avro_schema_registry",
-        ),
-        pytest.param(
             "CREATE TABLE url_userinfo_web_disk (x UInt64) ENGINE = MergeTree ORDER BY x "
             "SETTINGS disk = disk(type = web, "
             f"endpoint = 'http://{USER}:{PASSWORD}@127.0.0.1:8123/')",
@@ -106,14 +101,23 @@ def test_url_credentials_forbidden(query):
     assert_forbidden_without_requests(query)
 
 
-def test_avro_schema_registry_url_without_authority():
-    # The URL has no authority, so it has neither a userinfo nor a host, but the schema
-    # with id 1 is requested from `http://USER:PASSWORD@127.0.0.1:8123/schemas/ids/1`,
-    # which its path resolves to. The data is the magic byte and the schema id 1.
+@pytest.mark.parametrize(
+    "url",
+    [
+        pytest.param(f"http://{USER}:{PASSWORD}@127.0.0.1:8123/", id="userinfo"),
+        # The URL has no authority, so it has neither a userinfo nor a host, but the schema
+        # with id 1 is requested from `http://USER:PASSWORD@127.0.0.1:8123/schemas/ids/1`,
+        # which its path resolves to.
+        pytest.param(
+            f"http:http://{USER}:{PASSWORD}@127.0.0.1:8123/", id="without_authority"
+        ),
+    ],
+)
+def test_avro_schema_registry_credentials_forbidden(url):
+    # The data is the magic byte and the schema id 1, so the schema is requested.
     error = assert_forbidden_without_requests(
         "SELECT * FROM format(AvroConfluent, 'a UInt8', '\\x00\\x00\\x00\\x00\\x01') "
-        "SETTINGS format_avro_schema_registry_url = "
-        f"'http:http://{USER}:{PASSWORD}@127.0.0.1:8123/'"
+        f"SETTINGS format_avro_schema_registry_url = '{url}'"
     )
     assert "while fetching schema id = 1" in error, error
 
@@ -193,6 +197,38 @@ def test_url_engine_credentials_forbidden():
         assert_forbidden_without_requests("SELECT * FROM url_userinfo_engine")
     finally:
         node.query("DROP TABLE url_userinfo_engine")
+
+
+def test_url_engine_wildcard_attached_after_authorization_is_forbidden():
+    # A `URL` table with a wildcard is served by the object storage over index pages. Its
+    # stored definition is not refused, so that the table still loads, but a fresh one is.
+    columns_and_engine = (
+        f"(x String) ENGINE = URL('http://{USER}:{PASSWORD}@127.0.0.1:8123/**', 'TSV')"
+    )
+    # Hive partitioning would list the index pages to sample a path.
+    settings = {"allow_url_wildcard_from_index_pages": 1, "use_hive_partitioning": 0}
+
+    replace_forbidden_header("Authorization", "X-Not-Forbidden")
+    try:
+        node.query(
+            f"CREATE TABLE url_userinfo_wildcard {columns_and_engine}",
+            settings=settings,
+        )
+    finally:
+        replace_forbidden_header("X-Not-Forbidden", "Authorization")
+
+    try:
+        node.query("DETACH TABLE url_userinfo_wildcard")
+        node.query(
+            "ATTACH TABLE url_userinfo_wildcard", settings={"use_hive_partitioning": 0}
+        )
+        assert_forbidden_without_requests(
+            f"CREATE TABLE url_userinfo_wildcard_fresh {columns_and_engine}",
+            settings=settings,
+        )
+    finally:
+        node.query("DROP TABLE IF EXISTS url_userinfo_wildcard")
+        node.query("DROP TABLE IF EXISTS url_userinfo_wildcard_fresh")
 
 
 def test_http_dictionary_credentials_forbidden():
