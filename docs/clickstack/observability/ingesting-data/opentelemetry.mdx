@@ -82,38 +82,53 @@ You can use **Send a Test Log** in Managed Telemetry to submit a sample log to t
 </Tab>
 <Tab title="Self-managed">
 
-All data is ingested into Self-managed ClickHouse Observability via an **OpenTelemetry (OTel) collector** instance, which acts as the primary entry point for logs, metrics, traces, and session data. We recommend using the official [ClickStack distribution](#installing-otel-collector-managed-self-configured) of the collector for this instance.
+For self-managed ClickHouse Observability, an **OpenTelemetry (OTel) collector** receives logs, metrics, traces, and session data and writes them to ClickHouse Cloud. We recommend the official [ClickStack distribution](#installing-otel-collector-managed-self-configured) of the collector.
 
-Users send data to this collector from [language SDKs](/clickstack/observability/ingesting-data/sdks) or through data collection agents collecting infrastructure metrics and logs (such OTel collectors in an [agent](/clickstack/self-configured/ingesting-data/collector#collector-roles-self-configured) role or other technologies e.g. [Fluentd](https://www.fluentd.org/) or [Vector](https://vector.dev/)). For teams that want a managed OpenTelemetry pipeline, [Bindplane](/clickstack/observability/integration-partners/bindplane) offers an OpenTelemetry-native solution with a native ClickStack destination, simplifying telemetry collection, processing, and routing.
+Send data to this collector from [language SDKs](/clickstack/observability/ingesting-data/sdks) or agents that collect infrastructure logs and metrics. These can include OpenTelemetry collectors in an [agent role](/clickstack/self-configured/ingesting-data/collector#collector-roles-self-configured), [Fluentd](https://www.fluentd.org/), or [Vector](https://vector.dev/). For centralized collector management, [Bindplane](/clickstack/observability/integration-partners/bindplane) provides a ClickHouse Observability destination and tools for collecting, processing, and routing telemetry.
 
 ## Sending OpenTelemetry data {#sending-otel-data-self-configured}
 
-### Installing ClickStack OpenTelemetry collector {#installing-otel-collector-managed-self-configured}
+### Connect the collector to ClickHouse Cloud {#installing-otel-collector-managed-self-configured}
 
-To send data to Self-managed ClickHouse Observability, an OTel collector should be deployed in a [gateway role](/clickstack/self-configured/ingesting-data/collector#collector-roles-self-configured). OTel compatible instrumentation will send events to this collector via OTLP over HTTP or gRPC.
+Configure your collector in a [gateway role](/clickstack/self-configured/ingesting-data/collector#collector-roles-self-configured) to receive OTLP over HTTP or gRPC and forward it to ClickHouse Cloud.
 
 <Info>
 **We recommend using the ClickStack OpenTelemetry collector**
 
-This allows you to benefit from standardized ingestion, enforced schemas, and out-of-the-box compatibility with the observability UI. Using the default schema enables automatic source detection and preconfigured column mappings.
+The ClickStack distribution provides processing and schemas compatible with ClickHouse Observability. The default schema enables automatic source detection and preconfigured column mappings.
 </Info>
 
-For further details see ["Deploying the collector"](/clickstack/self-configured/ingesting-data/collector).
+In ClickHouse Cloud, open your service and [get its connection details](/products/cloud/guides/sql-console/connection-details). Configure these environment variables in the runtime of the ClickStack distribution of the collector:
+
+```shell
+CLICKHOUSE_ENDPOINT="https://<host>:8443"
+CLICKHOUSE_USER="<ingestion-user>"
+CLICKHOUSE_PASSWORD="<ingestion-password>"
+```
+
+Use your service's HTTPS database endpoint for `CLICKHOUSE_ENDPOINT` and the credentials of a [dedicated ingestion user](/clickstack/self-configured/ingesting-data/collector#creating-an-ingestion-user-self-configured). Restart or redeploy the collector to apply the settings. It receives telemetry over OTLP and writes it to your ClickHouse Cloud service.
+
+If you use another collector distribution, configure its ClickHouse exporter with the same endpoint and credentials. See [Modifying configuration](/clickstack/self-configured/ingesting-data/collector#modifying-otel-collector-configuration-managed-self-configured) for an example.
+
+For installation instructions, see [Deploying the collector](/clickstack/self-configured/ingesting-data/collector#configuring-the-collector-self-configured). Before sending production traffic, [secure the collector](/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured). If you enable `OTLP_AUTH_TOKEN`, configure your SDKs and forwarding collectors to send that token in the `authorization` header.
 
 ### Sending data to the collector {#sending-data-to-collector-managed-self-configured}
 
-To send data to Self-managed ClickHouse Observability, point your OpenTelemetry instrumentation to the following endpoints made available by the OpenTelemetry collector:
+For a collector running locally with the default OTLP ports, point your OpenTelemetry instrumentation to the endpoints below. If your applications or agents run on another host or in another container, replace `localhost` with the collector hostname reachable from that environment:
 
 - **HTTP (OTLP):** `http://localhost:4318`
 - **gRPC (OTLP):** `localhost:4317`
 
-For [language SDKs](/clickstack/observability/ingesting-data/sdks) and telemetry libraries that support OpenTelemetry, you can simply set `OTEL_EXPORTER_OTLP_ENDPOINT` environment variable in your application:
+For [language SDKs](/clickstack/observability/ingesting-data/sdks) that support environment-variable configuration, set the endpoint and protocol before starting your instrumented application:
 
 ```shell
 export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 ```
 
-If deploying a [contrib distribution of the OTel collector](https://github.com/open-telemetry/opentelemetry-collector-contrib) in the agent role, can use the OTLP exporter to send to the ClickStack collector. An example agent config consuming this [structured log file](https://datasets-documentation.s3.eu-west-3.amazonaws.com/http_logs/access-structured.log.gz), is shown below.
+If the collector requires authentication, also set `OTEL_EXPORTER_OTLP_HEADERS="authorization=<collector-token>"`, replacing `<collector-token>` with its `OTLP_AUTH_TOKEN` value. Do not add the `Bearer` prefix used by fully managed endpoints. These settings configure export; the application still needs instrumentation to generate telemetry.
+
+An agent using the [contrib distribution of the OTel collector](https://github.com/open-telemetry/opentelemetry-collector-contrib) can forward logs over OTLP. The example below reads this [structured log file](https://datasets-documentation.s3.eu-west-3.amazonaws.com/http_logs/access-structured.log.gz). Download and decompress it to the path in `include` before starting the agent. If your gateway requires authentication, add an `authorization` header containing its token to the agent exporter.
 
 ```yaml
 # clickhouse-agent-config.yaml
