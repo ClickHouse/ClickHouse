@@ -1,4 +1,5 @@
 #include <Columns/ColumnsCommon.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/TextIndexAnalyzer.h>
@@ -444,12 +445,14 @@ void MergeTreeReaderTextIndex::initializePositionsStream()
     if (positions_substream == index_format.substreams.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index format V2 has no positions substream for index `{}`", index_read_task.index.index->index.name);
 
+    /// use_page_cache_lookahead: positions are read in token order, not in file order.
     positions_stream = makeTextIndexInputStream(
         *data_part_info_for_read,
         index_read_task.index.index->getFileName(),
         *positions_substream,
         settings,
-        /*expected_buffer_size=*/ std::nullopt);
+        /*expected_buffer_size=*/ std::nullopt,
+        /*use_page_cache_lookahead=*/ false);
 
     positions_stream->seekToStart();
 }
@@ -646,12 +649,15 @@ void MergeTreeReaderTextIndex::createEmptyColumns(MutableColumns & columns, size
 
 std::unique_ptr<MergeTreeReaderStream> MergeTreeReaderTextIndex::makePostingsStream(const TokenPostingsInfo & token_info) const
 {
+    /// use_page_cache_lookahead: a cursor can skip segments forward (`getPostingsStream`),
+    /// and a whole-list read drops the stream at the end of the list (`readAllPostingsForToken`).
     return makeTextIndexInputStream(
         *data_part_info_for_read,
         index_read_task.index.index->getFileName(),
         index_read_task.index.index->getSubstreams()[2],
         settings,
-        estimatePostingListBufferSize(token_info));
+        estimatePostingListBufferSize(token_info),
+        /*use_page_cache_lookahead=*/ false);
 }
 
 MergeTreeReaderStream & MergeTreeReaderTextIndex::getPostingsStream(std::string_view token, const TokenPostingsInfo & token_info)
@@ -1011,6 +1017,15 @@ namespace
 TextIndexBlockedPositionsCodec::Directory readPositionsDirectory(
     MergeTreeReaderStream & stream, const TokenPostingsInfo & token_info, UInt64 expected_num_docs)
 {
+    if (token_info.header & PostingsSerialization::Flags::EmbeddedPositions)
+    {
+        ReadBufferFromMemory in(token_info.embedded_positions.data(), token_info.position_bytes);
+        auto directory = TextIndexBlockedPositionsCodec::readDirectory(in, 0, expected_num_docs, token_info.position_bytes);
+        directory.embedded = token_info.embedded_positions;
+        directory.embedded_size = token_info.position_bytes;
+        return directory;
+    }
+
     /// Checked before seeking: an offset outside the stream would leave the buffer out of range.
     validateTokenPositions(token_info, stream.getFileSize());
     stream.seekToMark({token_info.position_offset, 0});
@@ -1115,13 +1130,22 @@ private:
 
             if (block_idx != parsed_blocks[u])
             {
-                if (previous_read == std::numeric_limits<size_t>::max() || block_idx != previous_read + 1)
-                    stream.seekToMark({dir.block_offsets[block_idx], 0});
-                TextIndexBlockedPositionsCodec::readBlock(data_buffer, dir, block_idx, scratches[u]);
+                const UInt64 block_bytes = dir.block_offsets[block_idx + 1] - dir.block_offsets[block_idx];
+                if (dir.embedded_size != 0)
+                {
+                    ReadBufferFromMemory in(dir.embedded.data() + dir.block_offsets[block_idx], block_bytes);
+                    TextIndexBlockedPositionsCodec::readBlock(in, dir, block_idx, scratches[u]);
+                }
+                else
+                {
+                    if (previous_read == std::numeric_limits<size_t>::max() || block_idx != previous_read + 1)
+                        stream.seekToMark({dir.block_offsets[block_idx], 0});
+                    TextIndexBlockedPositionsCodec::readBlock(data_buffer, dir, block_idx, scratches[u]);
+                    previous_read = block_idx;
+                    stats.bytes_read += block_bytes;
+                }
                 parsed_blocks[u] = block_idx;
-                previous_read = block_idx;
                 ++stats.blocks_read;
-                stats.bytes_read += dir.block_offsets[block_idx + 1] - dir.block_offsets[block_idx];
             }
             TextIndexBlockedPositionsCodec::emitRanks(scratches[u], local_ranks, token_offsets, token_positions);
         }

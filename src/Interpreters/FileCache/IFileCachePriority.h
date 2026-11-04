@@ -239,13 +239,17 @@ public:
     /// Check correctness of cache state.
     virtual void check(const CacheStateGuard::Lock &) const;
 
-    virtual EvictionInfoPtr collectEvictionInfo(
+    /// `reservee_queue_type` is the queue where the space is needed (for example `SLRU_Protected`),
+    /// when the caller cannot pass `reservee`, because the reservee belongs to another priority object.
+    /// `None` means that the queue follows from `reservee`.
+    virtual EvictionInfoPtr collectEvictionInfo( /// NOLINT
         size_t size,
         size_t elements,
         IFileCachePriority::Iterator * reservee,
         bool is_total_space_cleanup,
         const IFileCachePriority::OriginInfo & origin,
-        const CacheStateGuard::Lock &) = 0;
+        const CacheStateGuard::Lock &,
+        QueueEntryType reservee_queue_type = QueueEntryType::None) = 0;
 
     enum class IterationResult : uint8_t
     {
@@ -315,7 +319,8 @@ public:
 
     /// Collect eviction candidates sufficient to free `size` bytes
     /// and `elements` elements from cache.
-    virtual bool collectCandidatesForEviction(
+    /// Pass the same `reservee_queue_type` as to `collectEvictionInfo`: both must target the same queue.
+    virtual bool collectCandidatesForEviction( /// NOLINT
         EvictionInfo & eviction_info,
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
@@ -324,7 +329,8 @@ public:
         size_t max_candidates_size,
         bool is_total_space_cleanup,
         const OriginInfo & origin_info,
-        CacheStateGuard &) = 0;
+        CacheStateGuard &,
+        QueueEntryType reservee_queue_type = QueueEntryType::None) = 0;
 
     /// Collect eviction candidates sufficient to have `desired_size`
     /// and `desired_elements_num` as current cache state.

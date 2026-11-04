@@ -653,6 +653,9 @@ dolor_main_configs = [
 ]
 if server_settings is not None:
     dolor_main_configs.append(server_settings)
+# In-flush trace_log symbolization is too slow under sanitizers for the stop window.
+if os.environ.get("CLICKHOUSE_IS_SANITIZED") == "1":
+    dolor_main_configs.append("../config/config.d/trace_log_no_symbolize.xml")
 
 
 servers: list[ClickHouseInstance] = []

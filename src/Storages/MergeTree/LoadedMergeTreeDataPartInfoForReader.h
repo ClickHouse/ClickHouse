@@ -48,6 +48,8 @@ public:
 
     [[nodiscard]] IndexPtr getIndexPtr() const override { return data_part->getIndex(); }
 
+    [[nodiscard]] MergeTreePartMinMaxIndexPtr getMinMaxIndex() const override { return data_part->getMinMaxIndex(); }
+
     [[nodiscard]] DataPartStoragePtr getDataPartStorage() const override { return data_part->getDataPartStoragePtr(); }
 
     [[nodiscard]] const NamesAndTypesList & getColumns() const override { return data_part->getColumns(); }
