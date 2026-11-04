@@ -691,10 +691,13 @@ def test_vended_credentials_cache_capped_by_token_expiry(started_cluster):
 def test_namespace_writes(started_cluster, depth):
     node = started_cluster.instances["node1"]
     catalog = load_catalog_impl(started_cluster)
-    namespace = (f"writes_{uuid.uuid4().hex}", "raw")[:depth]
+    suffix = uuid.uuid4().hex
+    namespace = (f"writes_{suffix}", "raw")[:depth]
+    # The catalog reports the warehouse root as the location of every namespace, so table names must be unique.
+    table_name = f"events_{suffix}"
     db = "namespace_writes"
-    table = f"{db}.`{'.'.join(namespace)}.events`"
-    identifier = namespace + ("events",)
+    table = f"{db}.`{'.'.join(namespace)}.{table_name}`"
+    identifier = namespace + (table_name,)
     settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
 
     if depth > 1:
@@ -706,7 +709,7 @@ def test_namespace_writes(started_cluster, depth):
             settings=settings,
         )
         assert identifier in catalog.list_tables(namespace)
-        assert "events" in node.query(f"SHOW TABLES FROM {db}")
+        assert table_name in node.query(f"SHOW TABLES FROM {db}")
 
         node.query(f"INSERT INTO {table} VALUES (1)", settings=settings)
         node.query(
