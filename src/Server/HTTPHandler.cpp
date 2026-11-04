@@ -514,6 +514,8 @@ void HTTPHandler::processQuery(
     HTTPConnectionRegistration * connection_registration = request.getConnectionRegistration();
     if (connection_registration && (connection_registration->handle || ConnectionRegistry::instance().isEnabled()))
     {
+        /// Connection metadata survives the request and can be replaced by a later query.
+        MemoryTrackerSwitcher connection_memory_scope(&total_memory_tracker);
         /// Each request sets the client properties again.
         /// A reverse proxy can send the requests of different clients and users on one keep-alive connection.
         /// Use `current_address` for the address and for the port. Do not use `request.clientAddress`.
