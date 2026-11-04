@@ -1,4 +1,4 @@
--- Tags: atomic-database, no-parallel, no-fasttest
+-- Tags: atomic-database, no-parallel
 -- At-least-once for incremental refreshable MV: if a refresh appends its snapshot but fails before the
 -- advanced cursor is persisted, the next refresh replays from the old cursor and reprocesses the round
 -- (duplicating rows) rather than losing them. Driven by the refresh_mv_incremental_fail_after_append

@@ -32,7 +32,8 @@ SELECT 0 as a, x FROM t
 UNION ALL
 SELECT 5 as a, x FROM t
 ORDER BY a, x
-FORMAT Null;
+FORMAT Null
+SETTINGS enable_analyzer = 1;
 
 WITH t AS
     (
@@ -54,4 +55,5 @@ FROM
 )
 ORDER BY
     a ASC,
-    x ASC;
+    x ASC
+SETTINGS enable_analyzer = 1;

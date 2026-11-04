@@ -35,8 +35,6 @@ Example:
 > • If a fractional number of rows results from the calculation, it is rounded up to the next whole number.
 
 The `FETCH` specifies the maximum number of rows that can be in the result of a query.
-`FETCH ... ONLY` works without `ORDER BY`, like `LIMIT`, but the returned rows are not guaranteed to be deterministic.
-`FETCH ... WITH TIES` requires `ORDER BY` to identify rows tied with the last selected row.
 
 The `ONLY` option is used to return rows that immediately follow the rows omitted by the `OFFSET`. In this case the `FETCH` is an alternative to the [LIMIT](/reference/statements/select/limit) clause. For example, the following query
 
