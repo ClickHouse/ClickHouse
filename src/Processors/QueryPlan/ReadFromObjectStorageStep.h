@@ -40,9 +40,8 @@ public:
     StorageMetadataPtr getStorageMetadata() const { return storage_snapshot->metadata; }
     const StorageID & getStorageID() const { return storage_id; }
 
-    /// Rows of this read estimated from the data lake metadata, pruned by the step's filter. nullptr with
-    /// `use_iceberg_manifest_statistics` or `use_statistics` off, when the storage gives no estimate and with distributed
-    /// processing.
+    /// Rows of this read estimated from the data lake metadata, pruned by the step's filter. nullptr when the storage gives
+    /// no estimate and with distributed processing.
     std::shared_ptr<const DataLakeReadEstimate> getOrCreateDataLakeReadEstimate() const;
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
