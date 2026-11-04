@@ -873,11 +873,11 @@ In an `ASOF JOIN`, the closest-match column is compared by ordering, which is no
 When the JOIN keys of the left and the right table have different types, ClickHouse converts them to their least common supertype before it compares them. This applies to every JOIN type and strictness:
 
 - With `ON`, the conversion applies only to the comparison. The key columns keep their original types in the result.
-- With `USING`, the merged column has the common type in the result.
+- With `USING`, the merged column has the common type in the result. When `semi_join_include_columns_from_both_sides` or `anti_join_include_columns_from_both_sides` is disabled, the merged column of a `SEMI JOIN` or an `ANTI JOIN` keeps the type of the preserved table.
 
-If the key types have no common supertype, as is the case for `UInt64` and `Int64`, ClickHouse converts both keys to a type that holds the values that both key types have in common. For `UInt64` and `Int64`, this type is `UInt64`. A key value that this type cannot represent does not match any value. This conversion is used for the equality conditions in `ON`, except `isNotDistinctFrom`, and for `USING` in an `INNER JOIN` or a `SEMI JOIN`. It is not used for the closest-match condition of an `ASOF JOIN`, for the inequality conditions that `ie_join` executes, or for `USING` in other JOINs, because their result column must also hold the values without a match. This conversion is available since version 26.9.
+If the key types have no common supertype and both are integer types or tuples of integer types, as is the case for `UInt64` and `Int64`, ClickHouse converts both keys to a type that holds the values that both key types have in common. For `UInt64` and `Int64`, this type is `UInt64`. A key value that this type cannot represent does not match any value. This conversion is used for the equality conditions in `ON`, except `isNotDistinctFrom`, and for `USING` in an `INNER JOIN` or a `SEMI JOIN`. It is not used for the closest-match condition of an `ASOF JOIN`, for the inequality conditions that `ie_join` executes, or for `USING` in other JOINs, because their result column must also hold the values without a match. This conversion is available since version 26.9.
 
-If the key types have neither a common supertype nor common values, as is the case for `String` and `Int32`, the query fails with the `NO_COMMON_TYPE` error.
+If the key types have no common supertype and this conversion does not apply, as is the case for `String` and `Int32` or for `UInt64` and `Float64`, the query fails with an exception, such as `NO_COMMON_TYPE`.
 
 **Example**
 
