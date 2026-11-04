@@ -12,7 +12,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 $CLICKHOUSE_CLIENT -q "create table data_02491 (key Int) engine=MergeTree() order by tuple() settings old_parts_lifetime=600"
 $CLICKHOUSE_CLIENT -q "insert into data_02491 values (1)"
 $CLICKHOUSE_CLIENT -q "optimize table data_02491 final"
-$CLICKHOUSE_CLIENT -q "truncate table data_02491"
+# The RemovePart row of all_1_1_1 needs TRUNCATE to remove it without waiting for old_parts_lifetime.
+$CLICKHOUSE_CLIENT -q "truncate table data_02491 settings truncate_removes_parts_immediately = 1"
 
 # Part removal is asynchronous: whichever cleanup pass grabs the part writes the RemovePart row,
 # so it can land after TRUNCATE returns. START CLEANUP schedules a pass on every iteration, since
