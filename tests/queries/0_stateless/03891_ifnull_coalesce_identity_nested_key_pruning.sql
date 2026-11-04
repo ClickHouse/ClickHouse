@@ -72,8 +72,8 @@ DROP TABLE t_nullable_ident;
 -- Safety: ifNull/coalesce are NOT short-circuit, so a non-constant fallback is evaluated even
 -- when the first argument is non-Nullable. The wrapper must NOT be dropped when a discarded
 -- fallback has side effects, otherwise the exception would silently disappear.
-SELECT ifNull(materialize(1), throwIf(1)); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
-SELECT coalesce(materialize(1), throwIf(1)); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
+SELECT count() FROM numbers(1) WHERE ifNull(materialize(1), throwIf(1)); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
+SELECT count() FROM numbers(1) WHERE coalesce(materialize(1), throwIf(1)); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 
 -- Only `WHERE` and `PREWHERE` are rewritten: `x` and `ifNull(x, 0)` stay distinct grouping keys, and with
 -- `group_by_use_nulls` the rolled-up `ifNull(x, 0)` is still `NULL`.
