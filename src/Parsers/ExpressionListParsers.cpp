@@ -1564,6 +1564,10 @@ static void collectIdentifierNames(const IAST * node, std::unordered_set<String>
 {
     checkSubscriptsExpansionDepth(depth, max_depth);
 
+    /// An alias is a name in the scope of the lambda function as well, so the parameter must not clash with it.
+    if (auto alias = node->tryGetAlias(); !alias.empty())
+        names.insert(alias);
+
     if (const auto * identifier = node->as<ASTIdentifier>())
     {
         names.insert(identifier->name());
@@ -1627,12 +1631,16 @@ static void expandSubscripts(ASTPtr & node, size_t depth, size_t max_depth)
     }
 
     /// Collect the whole chain base[s1][s2]...[sn], so that an empty subscript can apply the rest of it to every element.
+    /// An intermediate element with an alias, like in `(arr[1] AS r)[]`, is a separate expression: it ends the chain
+    /// and becomes its base, so that the alias refers to the same value as without the subsequent subscripts.
     ASTs chain;
     bool has_marker = false;
     ASTPtr base = node;
     while (const auto * element = base->as<ASTFunction>())
     {
         if (element->name != "arrayElement" || !element->arguments || element->arguments->children.size() != 2)
+            break;
+        if (base != node && !base->tryGetAlias().empty())
             break;
 
         const auto & subscript = element->arguments->children[1];
