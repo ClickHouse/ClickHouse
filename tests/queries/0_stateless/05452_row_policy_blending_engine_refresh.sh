@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-replicated-database, no-ordinary-database
+# no-replicated-database, no-ordinary-database: these databases refuse a non-APPEND refreshable view with a non-replicated target
 # a refresh copies its merging target, so a database policy accepted once does not stop it
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
