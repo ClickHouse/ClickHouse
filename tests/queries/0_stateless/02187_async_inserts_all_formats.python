@@ -225,6 +225,25 @@ client.query("CREATE TABLE t_tsv (id UInt64, s String) ENGINE = Memory")
 insert_batch("t_tsv", "TSV", [b"1\ta\n", b"2\tb\r\n"], {"input_format_tsv_crlf_end_of_line": 0})
 print("TSV", select("SELECT groupArray((id, s)) FROM t_tsv"))
 
+# A CSV field of the prefix after an input whose last column is followed by another delimiter.
+template_files = {
+    "format_template_resultset": ("{}_resultset.tpl".format(os.environ["CLICKHOUSE_TEST_UNIQUE_NAME"]), "${:CSV},${data}"),
+    "format_template_row": ("{}_row.tpl".format(os.environ["CLICKHOUSE_TEST_UNIQUE_NAME"]), "${a:CSV}|${b:CSV};"),
+}
+for file_name, content in template_files.values():
+    with open(os.path.join(os.environ["CLICKHOUSE_SCHEMA_FILES"], file_name), "w") as f:
+        f.write(content)
+client.query("CREATE TABLE t_template (a UInt64, b UInt64) ENGINE = Memory")
+insert_batch(
+    "t_template",
+    "Template",
+    [b"hdr,1|2;\n3|4;", b"hdr,5|6;\n7|8;"],
+    {setting: file_name for setting, (file_name, _) in template_files.items()},
+)
+print("Template", select("SELECT groupArray((a, b)) FROM (SELECT * FROM t_template ORDER BY a)"))
+for file_name, _ in template_files.values():
+    os.remove(os.path.join(os.environ["CLICKHOUSE_SCHEMA_FILES"], file_name))
+
 # FileLog reads every line of a file as a separate input.
 file_log_dir = os.environ.get("CLICKHOUSE_USER_FILES_UNIQUE")
 os.makedirs(file_log_dir, exist_ok=True)

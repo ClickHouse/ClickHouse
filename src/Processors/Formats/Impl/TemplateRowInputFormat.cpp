@@ -295,6 +295,8 @@ void TemplateRowInputFormat::resetParser()
     RowInputFormatWithDiagnosticInfo::resetParser();
     end_of_stream = false;
     row_between_delimiter_already_skipped = false;
+    settings.csv.delimiter = default_csv_delimiter;
+    settings.csv.custom_delimiter.clear();
 }
 
 void TemplateRowInputFormat::setReadBuffer(ReadBuffer & in_)
