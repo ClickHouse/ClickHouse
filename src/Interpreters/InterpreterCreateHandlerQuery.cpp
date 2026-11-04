@@ -142,6 +142,8 @@ void qualifyStatement(ASTPtr & statement, const AddDefaultDatabaseVisitor & visi
             insert->setDatabase(database);
         if (insert->select)
             qualify_select(insert->select);
+        if (insert->returning)
+            qualify_select(insert->returning);
         return;
     }
     qualify_select(statement);

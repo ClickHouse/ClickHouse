@@ -23,7 +23,8 @@ U_RO="u_ro_${DB}"
 E="e_${DB}"
 EE="ee_${DB}"
 EE2="ee2_${DB}"
-USERS="${U_DEF}, ${U_DEF2}, ${U_DEF3}, ${U_LIM}, ${U_CALLER}, ${U_ROCALLER}, ${U_SD}, ${U_NONE}, ${U_RO}, ${E}, ${EE}, \`${EE}:definer\`, ${EE2}, \`${EE2}:definer\`"
+U_RET="u_ret_${DB}"
+USERS="${U_DEF}, ${U_DEF2}, ${U_DEF3}, ${U_LIM}, ${U_CALLER}, ${U_ROCALLER}, ${U_SD}, ${U_NONE}, ${U_RO}, ${E}, ${EE}, \`${EE}:definer\`, ${EE2}, \`${EE2}:definer\`, ${U_RET}"
 
 cleanup() {
     for h in $($CLICKHOUSE_CLIENT -q "SELECT name FROM system.handlers WHERE endsWith(name, '_${DB}')"); do
@@ -276,3 +277,9 @@ as_user "${EE2}" "CREATE HANDLER h20e_${DB} URL '/${DB}/h20e' DEFINER = CURRENT_
 $CLICKHOUSE_CLIENT --user "${EE2}" -q "ALTER HANDLER h20e_${DB} URL '/${DB}/h20f'" 2>&1 | grep -o -m1 'SET DEFINER'
 as_user "${EE2}" "ALTER HANDLER h20e_${DB} URL '/${DB}/h20f' DEFINER = CURRENT_USER SQL SECURITY DEFINER"
 handler_query "h20e_${DB}" url
+
+echo "--- 21. the RETURNING query of an INSERT is qualified"
+$CLICKHOUSE_CLIENT -q "CREATE USER ${U_RET} NOT IDENTIFIED DEFAULT DATABASE ${DB_B}; GRANT INSERT ON ${DB}.t5 TO ${U_RET}; GRANT SELECT ON ${DB}.t TO ${U_RET}; GRANT SELECT ON ${DB_B}.t TO ${U_RET}"
+as_default "CREATE HANDLER h21_${DB} URL '/${DB}/h21' METHODS (POST) DEFINER = ${U_RET} SQL SECURITY DEFINER AS INSERT INTO t5 RETURNING (SELECT v FROM t ORDER BY id LIMIT 1) SELECT 21"
+handler_query "h21_${DB}" create_query
+request -X POST "${BASE}/${DB}/h21"
