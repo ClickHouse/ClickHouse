@@ -2305,9 +2305,10 @@ Remove empty parts after they were pruned by TTL, mutation, or collapsing
 merge algorithm.
 )", 0) \
     DECLARE(Seconds, empty_parts_lifetime, 0, R"(
-Minimal age in seconds of an empty part before `remove_empty_parts` removes it. Until then the empty part stays
-active. The age is counted from the part's `modification_time`, so a merge or a mutation that produces a new empty
-part starts it again. 0 removes empty parts without waiting.
+Minimal age in seconds of an empty part before `remove_empty_parts` removes it. The age is counted from the part's
+`modification_time`, so a merge or a mutation that produces a new empty part starts it again. It does not delay
+other ways to replace the part: a merge that includes it, or a `TRUNCATE` or `DROP` that covers it, makes it outdated
+as for any other part. 0 removes empty parts without waiting.
 )", 0, \
         {"26.11", 0, 0, "New setting"}) \
     DECLARE(Bool, remove_unused_patch_parts, true, R"(
