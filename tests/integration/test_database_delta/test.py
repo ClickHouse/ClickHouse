@@ -511,6 +511,9 @@ def test_multiple_schemes_tables(started_cluster, use_v2):
         )
     )
     print(multi_schema_tables)
+    assert multi_schema_tables == [
+        f"test_schema{test_uuid}{i}.test_table{test_uuid}{i}" for i in range(10)
+    ]
 
     for i, table in enumerate(multi_schema_tables):
         assert node1.query(
