@@ -410,7 +410,8 @@ private:
 
 
 /// Materializes a table that a database with `lazy_load_tables` has not loaded yet, if the user holds
-/// the given right on it. Commands that read the passive system tables need this to observe keys and indices.
+/// the given right on it (on at least one of its columns, for a right that can be granted per column). Commands
+/// that read the passive system tables need this to observe keys and indices.
 void loadTableIfLazy(const StorageID & table_id, ContextPtr context, AccessType access);
 
 

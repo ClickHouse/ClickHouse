@@ -2773,11 +2773,33 @@ void loadTableIfLazy(const StorageID & table_id, ContextPtr context, AccessType 
     if (DatabaseCatalog::instance().isRemoteDatabase(table_id.database_name))
         return;
 
-    if (!context->getAccess()->isGranted(access, table_id.database_name, table_id.table_name))
+    auto table = DatabaseCatalog::instance().tryGetTable(table_id, context);
+    if (!table)
         return;
 
-    if (auto table = DatabaseCatalog::instance().tryGetTable(table_id, context))
-        resolveStorageProxyLoading(table);
+    const auto access_rights = context->getAccess();
+    if (!access_rights->isGranted(access, table_id.database_name, table_id.table_name))
+    {
+        /// A column-level right such as `SHOW_COLUMNS` can be granted for some columns only, and the user then
+        /// sees those columns, so one of them is enough. The stand-in knows the columns without being loaded.
+        if (!AccessFlags::allFlagsGrantableOnColumnLevel().contains(AccessFlags(access)))
+            return;
+
+        const auto metadata = table->getInMemoryMetadataPtr(context, false);
+        bool any_column_granted = false;
+        for (const auto & column : metadata->getColumns())
+        {
+            if (access_rights->isGranted(access, table_id.database_name, table_id.table_name, column.name))
+            {
+                any_column_granted = true;
+                break;
+            }
+        }
+        if (!any_column_granted)
+            return;
+    }
+
+    resolveStorageProxyLoading(table);
 }
 
 }
