@@ -204,6 +204,17 @@ protected:
     NamedCollectionDependencies dependencies;
     /// (collection name, database name, table name) of the dependencies of detached tables.
     std::set<std::tuple<String, String, String>> detached_dependencies;
+    /// The same entries as (database name, table name, collection name), so that removing the entries of
+    /// one table or one database visits only them instead of scanning every detached entry.
+    /// Both sets are modified only through `insertDetachedDependency` and `eraseDetachedDependency`.
+    std::set<std::tuple<String, String, String>> detached_dependencies_by_table;
+
+    bool insertDetachedDependency(const String & collection_name, const String & database_name, const String & table_name);
+    void eraseDetachedDependency(const String & collection_name, const String & database_name, const String & table_name);
+    /// The entries of the table, or of the whole database when `table_name` is `nullptr`.
+    std::vector<std::tuple<String, String, String>> findDetachedDependenciesByTable(
+        const String & database_name, const String * table_name) const;
+    void eraseDetachedDependenciesByTable(const String & database_name, const String * table_name);
 
     const LoggerPtr log = getLogger("NamedCollectionFactory");
 
