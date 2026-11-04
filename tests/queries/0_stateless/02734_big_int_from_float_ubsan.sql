@@ -1,9 +1,4 @@
-WITH
-    18 AS precision,
-    toUInt256(-1) AS int,
-    toUInt256(toFloat64(int)) AS converted,
-    toString(int) AS int_str,
-    toString(converted) AS converted_str
-SELECT
-    length(int_str) = length(converted_str) AS have_same_length,
-    substring(int_str, 1, precision) = substring(converted_str, 1, precision) AS have_same_prefix
+-- toFloat64 rounds UInt256 max up to 2^256, which is out of range and wraps to 0.
+SELECT toUInt256(toFloat64(toUInt256(-1)));
+-- The largest Float64 below 2^256 converts exactly.
+SELECT toUInt256(1.1579208923731618e77);

@@ -7,8 +7,8 @@ SELECT toInt128(1.7014118346046923e38);
 SELECT toInt128(-1.701411834604692e38);
 SELECT toInt128(1.701411834604692e38);
 
--- Test that LCM doesn't overflow on near-boundary values - output the actual LCM result
-SELECT lcm(toInt128(-1.7014118346046923e38), toInt128(-1.7014118346046923e38));
+-- -1.7014118346046923e38 is exactly the Int128 minimum, for which lcm throws
+SELECT lcm(toInt128(-1.7014118346046923e38), toInt128(-1.7014118346046923e38)); -- { serverError DECIMAL_OVERFLOW }
 
 -- Conversions of large values (double precision limits exact representation)
 SELECT toInt128(1.0e38);
@@ -60,3 +60,22 @@ SELECT toDecimal256(-1.23456789012345678901234567890e38, 10);
 -- Test that small fractional differences in double literals may produce same or different Int128 due to rounding
 SELECT toInt128(1.7014118346046922e38);
 SELECT toInt128(1.7014118346046923e38);
+
+-- Doubles at or above 2^63 convert to the exact value of the double.
+SELECT toInt128(1e20), toUInt128(1e20), toInt256(-1e20), toUInt256(1e30);
+SELECT toDecimal256(1e25, 0), toDecimal128(123.456, 20), toInt128(-1.7014118346046923e38), toUInt128(1.7014118346046923e38);
+SELECT toInt128(toFloat32(1e20)), accurateCastOrNull(1e20, 'Int128'), accurateCastOrNull(1e30, 'UInt256'), toInt128('100000000000000000000') IN (1e20);
+
+-- Rebuild |x| in [2^63, 2^203) from its bits as mantissa * 2^(exponent - 1075) and compare.
+SELECT
+    countIf(toInt256(x) != expected),
+    countIf(toUInt256(x) != toUInt256(expected)),
+    countIf(toInt128(x) != toInt128(expected) AND abs(x) < 1.7014118346046923e38)
+FROM
+(
+    SELECT
+        bitOr(bitOr(bitShiftLeft(toUInt64(number % 2), 63), bitShiftLeft(toUInt64(1086 + intDiv(number, 2) % 140), 52)), cityHash64(number) % 4503599627370496) AS bits,
+        reinterpretAsFloat64(bits) AS x,
+        if(x < 0, -1, 1) * bitShiftLeft(toInt256(bitOr(bits % 4503599627370496, 4503599627370496)), toUInt16(intDiv(bits, 4503599627370496) % 2048 - 1075)) AS expected
+    FROM numbers(100000)
+);
