@@ -5,7 +5,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # Resolving the structure of a table function (`DESCRIBE TABLE url(...)`, or a table function nested in
-# `remote`) must require the same `CREATE TEMPORARY TABLE` grant as reading from it, and must be refused
+# `cluster` or `viewIfPermitted`) must require the same `CREATE TEMPORARY TABLE` grant as reading from it, and must be refused
 # before the source is contacted. Otherwise a user who cannot run `url` (e.g. under `readonly = 1`) can make
 # the server request an arbitrary endpoint and read the response from the schema inference error.
 
@@ -37,7 +37,7 @@ function drop_users() {
 # to `url` is how the response is parsed, so `Values` fails to parse it and would echo the body in the error.
 function endpoint() {
     local marker="$1"
-    echo "http://127.0.0.1:${CLICKHOUSE_PORT_HTTP}/?database=${CLICKHOUSE_DATABASE}&query=SELECT+1+AS+x,+%27marker_${marker}%27+AS+m+FORMAT+JSONEachRow"
+    echo "${CLICKHOUSE_PORT_HTTP_PROTO}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/?database=${CLICKHOUSE_DATABASE}&query=SELECT+1+AS+x,+%27marker_${marker}%27+AS+m+FORMAT+JSONEachRow"
 }
 
 # Run a query as the given user and print `READONLY`, `ACCESS_DENIED`, `OK`, or the full unexpected error.
@@ -70,7 +70,10 @@ function check_user() {
     if [[ "${label}" != "readonly_2" ]]; then
         run "${user}" "DESCRIBE TABLE url('$(endpoint "${label}_values")', 'Values')"
     fi
-    run "${user}" "DESCRIBE TABLE remote('127.0.0.1:${CLICKHOUSE_PORT_TCP}', url('$(endpoint "${label}_remote")', 'JSONEachRow'))"
+    # `remote` is not allowed in readonly mode, so it is refused before the nested `url` is resolved.
+    run "${user}" "DESCRIBE TABLE remote('127.0.0.1', url('$(endpoint "${label}_remote")', 'JSONEachRow'))"
+    # `cluster` is allowed in readonly mode, but it resolves the structure of the nested `url` on the local shard.
+    run "${user}" "DESCRIBE TABLE cluster('test_shard_localhost', url('$(endpoint "${label}_cluster")', 'JSONEachRow'))"
     # `viewIfPermitted` is allowed in readonly mode, but it resolves the structure of its `ELSE` table function.
     run "${user}" "DESCRIBE TABLE viewIfPermitted(SELECT 1 ELSE url('$(endpoint "${label}_view_if_permitted")', 'JSONEachRow'))"
     # Table functions allowed in readonly mode stay available without the grant.
