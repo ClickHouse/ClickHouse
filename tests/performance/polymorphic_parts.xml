@@ -1,0 +1,55 @@
+<test>
+    <settings>
+        <!-- Write the parts in one thread: parallel writers make each run wait for the disk writes of the runs before it -->
+        <max_insert_threads>1</max_insert_threads>
+    </settings>
+
+    <!-- One set of tables per part size, so that the inserts of a size see only the parts of that size -->
+    <substitutions>
+        <substitution>
+            <name>size</name>
+            <values>
+                <value>s</value>
+                <value>m</value>
+                <value>l</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>
+        CREATE TABLE hits_wide_{size} AS hits_10m_single ENGINE = MergeTree()
+        PARTITION BY toYYYYMM(EventDate)
+        ORDER BY (CounterID, EventDate, intHash32(UserID))
+        SAMPLE BY intHash32(UserID)
+        SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0
+    </create_query>
+    <create_query>
+        CREATE TABLE hits_compact_{size} AS hits_10m_single ENGINE = MergeTree()
+        PARTITION BY toYYYYMM(EventDate)
+        ORDER BY (CounterID, EventDate, intHash32(UserID))
+        SAMPLE BY intHash32(UserID)
+        SETTINGS min_bytes_for_wide_part = '10M'
+    </create_query>
+    <create_query>
+        CREATE TABLE hits_buffer_{size} AS hits_10m_single
+        ENGINE = Buffer(default, hits_wide_{size}, 1, 0, 0, 10000, 10000, 0, 0)
+    </create_query>
+
+    <!-- Emulate writing many parts with 1, 100 and 1000 rows, because single insert query is too fast.
+         `async_insert = 0` keeps the 1 and 100 row inserts synchronous to measure insert itself without batching overhead -->
+    <query>INSERT INTO hits_wide_s(UserID)    SELECT rand() FROM numbers(50) SETTINGS max_block_size = 1, min_insert_block_size_rows = 1, async_insert = 0</query>
+    <query>INSERT INTO hits_compact_s(UserID) SELECT rand() FROM numbers(500) SETTINGS max_block_size = 1, min_insert_block_size_rows = 1, async_insert = 0</query>
+    <query>INSERT INTO hits_buffer_s(UserID)  SELECT rand() FROM numbers(50) SETTINGS max_block_size = 1, min_insert_block_size_rows = 1, async_insert = 0</query>
+
+    <query>INSERT INTO hits_wide_m(UserID)    SELECT rand() FROM numbers(10000) SETTINGS max_block_size = 100, min_insert_block_size_rows = 100, async_insert = 0</query>
+    <query>INSERT INTO hits_compact_m(UserID) SELECT rand() FROM numbers(10000) SETTINGS max_block_size = 100, min_insert_block_size_rows = 100, async_insert = 0</query>
+    <query>INSERT INTO hits_buffer_m(UserID)  SELECT rand() FROM numbers(10000) SETTINGS max_block_size = 100, min_insert_block_size_rows = 100, async_insert = 0</query>
+
+    <query>INSERT INTO hits_wide_l(UserID)    SELECT rand() FROM numbers(100000) SETTINGS max_block_size = 1000, min_insert_block_size_rows = 1000</query>
+    <query>INSERT INTO hits_compact_l(UserID) SELECT rand() FROM numbers(100000) SETTINGS max_block_size = 1000, min_insert_block_size_rows = 1000</query>
+    <query>INSERT INTO hits_buffer_l(UserID)  SELECT rand() FROM numbers(100000) SETTINGS max_block_size = 1000, min_insert_block_size_rows = 1000</query>
+
+    <drop_query>DROP TABLE IF EXISTS hits_wide_{size}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS hits_compact_{size}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS hits_buffer_{size}</drop_query>
+</test>
