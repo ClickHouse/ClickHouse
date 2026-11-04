@@ -28,6 +28,15 @@ DROP TABLE IF EXISTS t_aggregated_tuple;
 DROP TABLE IF EXISTS t_in_sorting_key_subcolumn;
 DROP TABLE IF EXISTS t_in_sorting_key_element;
 DROP TABLE IF EXISTS t_in_sorting_key_element_subcolumn;
+DROP TABLE IF EXISTS t_subcolumn_in_sorting_key;
+DROP TABLE IF EXISTS t_element_subcolumn_in_sorting_key;
+DROP TABLE IF EXISTS t_unused_default;
+DROP TABLE IF EXISTS t_unused_default_alter;
+DROP TABLE IF EXISTS t_unused_default_tuple;
+DROP TABLE IF EXISTS t_used_default;
+DROP TABLE IF EXISTS t_unused_default_subcolumn;
+DROP TABLE IF EXISTS t_unused_default_element;
+DROP TABLE IF EXISTS t_tuple_sorting_key;
 
 CREATE TABLE t_sorting (c0 SimpleAggregateFunction(sum, Int64)) ENGINE = AggregatingMergeTree ORDER BY intDiv(c0, 55); -- { serverError BAD_ARGUMENTS }
 CREATE TABLE t_partition (k UInt8, c0 SimpleAggregateFunction(sum, Int64)) ENGINE = AggregatingMergeTree PARTITION BY c0 % 2 ORDER BY k; -- { serverError BAD_ARGUMENTS }
@@ -163,6 +172,44 @@ CREATE TABLE t_selector_default_aggregated (x Tuple(a SimpleAggregateFunction(su
 ENGINE = AggregatingMergeTree PARTITION BY tupleElement(tupleElement(t, 'missing', x), 'a') % 2 ORDER BY k
 SETTINGS allow_tuple_element_aggregation = 1; -- { serverError BAD_ARGUMENTS }
 
+-- A subcolumn of an aggregated value in the sorting key does not stop merges from aggregating the value: they compare the name of
+-- the value itself with the sorting key.
+CREATE TABLE t_subcolumn_in_sorting_key (a SimpleAggregateFunction(groupArrayArray, Array(UInt64))) ENGINE = AggregatingMergeTree
+PARTITION BY a.size0 ORDER BY a.size0; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE t_subcolumn_in_sorting_key (a Array(UInt64)) ENGINE = AggregatingMergeTree PARTITION BY a.size0 ORDER BY a.size0;
+ALTER TABLE t_subcolumn_in_sorting_key MODIFY COLUMN a SimpleAggregateFunction(groupArrayArray, Array(UInt64)); -- { serverError BAD_ARGUMENTS }
+CREATE TABLE t_element_subcolumn_in_sorting_key (x Tuple(a SimpleAggregateFunction(groupArrayArray, Array(UInt64)), b UInt64))
+ENGINE = AggregatingMergeTree PARTITION BY x.a.size0 ORDER BY x.a.size0
+SETTINGS allow_tuple_element_aggregation = 1; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE t_element_subcolumn_in_sorting_key (x Tuple(a Array(UInt64), b UInt64)) ENGINE = AggregatingMergeTree
+PARTITION BY x.a.size0 ORDER BY x.a.size0 SETTINGS allow_tuple_element_aggregation = 1;
+ALTER TABLE t_element_subcolumn_in_sorting_key MODIFY COLUMN x Tuple(a SimpleAggregateFunction(groupArrayArray, Array(UInt64)), b UInt64); -- { serverError BAD_ARGUMENTS }
+
+-- An aggregated column that is only a default of `tupleElement` that `tupleElement` does not return is not read by the key, also
+-- without `allow_tuple_element_aggregation`, when an ALTER makes it aggregated, and for an aggregated value of a tuple type.
+CREATE TABLE t_unused_default (k UInt64, c SimpleAggregateFunction(sum, UInt64)) ENGINE = AggregatingMergeTree
+PARTITION BY tupleElement(tuple(k), 1, c) ORDER BY k;
+CREATE TABLE t_unused_default_alter (k UInt64, c UInt64) ENGINE = AggregatingMergeTree PARTITION BY tupleElement(tuple(k), 1, c) ORDER BY k;
+ALTER TABLE t_unused_default_alter MODIFY COLUMN c SimpleAggregateFunction(sum, UInt64);
+CREATE TABLE t_unused_default_tuple (k UInt64, s SimpleAggregateFunction(sumMap, Tuple(Array(UInt64), Array(UInt64))))
+ENGINE = AggregatingMergeTree PARTITION BY tupleElement(tuple(k), 1, s) ORDER BY k;
+INSERT INTO t_unused_default VALUES (1, 2);
+INSERT INTO t_unused_default VALUES (1, 3);
+OPTIMIZE TABLE t_unused_default FINAL;
+SELECT 'unused default', _partition_id, k, c FROM t_unused_default WHERE tupleElement(tuple(k), 1, c) = 1;
+CREATE TABLE t_used_default (k UInt64, c SimpleAggregateFunction(sum, UInt64)) ENGINE = AggregatingMergeTree
+PARTITION BY tupleElement(tuple(k), 2, c) ORDER BY k; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE t_unused_default_subcolumn (k UInt64, a SimpleAggregateFunction(groupArrayArray, Array(UInt64)))
+ENGINE = AggregatingMergeTree PARTITION BY tupleElement(tuple(k), 1, a.size0) ORDER BY k;
+CREATE TABLE t_unused_default_element (k UInt64, x Tuple(a SimpleAggregateFunction(groupArrayArray, Array(UInt64)), b UInt64))
+ENGINE = AggregatingMergeTree PARTITION BY tupleElement(tuple(k), 1, getSubcolumn(x, 'a.size0')) ORDER BY k
+SETTINGS allow_tuple_element_aggregation = 1;
+SELECT 'unused defaults created';
+
+-- A sorting key of a tuple type is not supported with `allow_tuple_element_aggregation`, and is reported as such.
+CREATE TABLE t_tuple_sorting_key (x Tuple(k UInt64, a SimpleAggregateFunction(sum, UInt64))) ENGINE = AggregatingMergeTree
+ORDER BY x SETTINGS allow_tuple_element_aggregation = 1; -- { serverError NOT_IMPLEMENTED }
+
 -- A plain MergeTree does not aggregate the column, so the key is fine there.
 CREATE TABLE t_plain (c0 SimpleAggregateFunction(sum, Int64)) ENGINE = MergeTree ORDER BY intDiv(c0, 55);
 SELECT 'plain created';
@@ -187,3 +234,10 @@ DROP TABLE t_selector_default_name;
 DROP TABLE t_selector_default_self;
 DROP TABLE t_selector_default_unused;
 DROP TABLE t_aggregated_tuple;
+DROP TABLE t_subcolumn_in_sorting_key;
+DROP TABLE t_element_subcolumn_in_sorting_key;
+DROP TABLE t_unused_default;
+DROP TABLE t_unused_default_alter;
+DROP TABLE t_unused_default_tuple;
+DROP TABLE t_unused_default_subcolumn;
+DROP TABLE t_unused_default_element;
