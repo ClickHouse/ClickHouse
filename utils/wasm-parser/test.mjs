@@ -712,6 +712,14 @@ if (hasAstJson) {
             [`${outer} SELECT 1 UNION ALL (SELECT 2 UNION ALL SELECT 3) UNION ALL (SELECT * FROM c WHERE`, ' 1)', `${union}.2`, true],
             [`${outer} (SELECT 1 UNION ALL SELECT * FROM c WHERE`, ' 1)', `${union}.1`, true],
             [`${outer} SELECT 1 UNION ALL ((SELECT 2 UNION ALL SELECT * FROM c WHERE`, ' 1))', `${union}.1.list_of_selects.children.1`, false],
+            /// A pipe operator generates the query that gets the `WITH`. What the operator holds is nested in
+            /// it, except the operands of a set operation.
+            [`${outer} FROM src |> SELECT (SELECT a FROM`, ' src)', `${union}.0.select.children.0.children.0.list_of_selects.children.0`, false],
+            [`${outer} FROM src |> WHERE x IN (SELECT a FROM`, ' src)',
+                `${union}.0.where.arguments.children.1.children.0.list_of_selects.children.0`, false],
+            [`${outer} FROM src |> UNION ALL (SELECT a FROM`, ' src)', `${union}.1`, true],
+            [`${outer} FROM src |> UNION ALL (SELECT 1), (SELECT a FROM`, ' src)', `${union}.2`, true],
+            [`${outer} FROM src |> UNION ALL (SELECT 1 UNION ALL SELECT a FROM`, ' src)', `${union}.1.list_of_selects.children.1`, false],
             [`${outer} SELECT * FROM (SELECT a FROM`, ' c)',
                 `${union}.0.tables.children.0.table_expression.subquery.children.0.list_of_selects.children.0`, false],
             [`${outer} SELECT * FROM c WHERE x IN (SELECT a FROM`, ' c)',

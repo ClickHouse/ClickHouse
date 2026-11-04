@@ -277,8 +277,8 @@ with wasi-sdk 33:
 
 | build | bytes | gzip -9 | brotli -q 11 | zstd --ultra -22 |
 | --- | ---: | ---: | ---: | ---: |
-| everything | 2167948 | 661957 | 486213 | 516564 |
-| `-DENABLE_DCL=OFF` | 1952109 | 592222 | 435408 | 462049 |
+| everything | 2168167 | 662084 | 485992 | 516615 |
+| `-DENABLE_DCL=OFF` | 1952328 | 592306 | 434975 | 462179 |
 | `-DENABLE_FORMATTING=OFF` | 1061899 | 351444 | 270185 | 289098 |
 | both off | 845233 | 273536 | 210715 | 225950 |
 
@@ -320,7 +320,7 @@ Sorted by brotli, which is what a browser negotiates:
 | **this, both off** | 845233 | 273536 | 210715 | 225950 |
 | [`sql.js`](https://github.com/sql-js/sql.js) 1.14.1, wasm | 659730 | 322193 | 278641 | 289690 |
 | `node-sql-parser` 5.4.0, all 20+ dialects, JS | 2609025 | 504010 | 333174 | 360819 |
-| **this, everything** | 2167948 | 661957 | 486213 | 516564 |
+| **this, everything** | 2168167 | 662084 | 485992 | 516615 |
 | [`@polyglot-sql/sdk`](https://github.com/tobilg/polyglot) 0.6.2, wasm | 21656938 | 4805067 | 2020675 | 2150089 |
 
 The row to measure against is **`libpg-query`**: the same idea, a production database's own parser

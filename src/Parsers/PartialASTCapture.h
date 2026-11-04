@@ -190,6 +190,14 @@ inline void countPartialASTUnionBranch(const Expected & expected)
         ++state->union_branches.back();
 }
 
+/// Called where a pipe set operation takes the query before it as the first branch of the union that it
+/// builds, and replaces the union being parsed by it, with capture on.
+inline void setPartialASTUnionBranches(const Expected & expected, size_t count)
+{
+    if (PartialASTState * state = partialASTState(expected); unlikely(state) && !state->union_branches.empty())
+        state->union_branches.back() = count;
+}
+
 /// Held by `ParserInsertQuery` while it parses its `SELECT`, with capture on. A capture of a `SELECT` of
 /// its union gets the `WITH` written before `INSERT`, which `ast` puts there. A `SELECT` nested in
 /// another `SELECT` does not.
