@@ -54,8 +54,7 @@ public:
     /// The query to be executed by the handler (the part after AS). Stored as a child.
     ASTPtr query;
 
-    /// Optional `DEFINER = ... SQL SECURITY ...` clause (an `ASTSQLSecurity`). Stored as a child.
-    /// Absent means `SQL SECURITY INVOKER`.
+    /// Optional `DEFINER = ... SQL SECURITY ...` clause (an `ASTSQLSecurity`), absent means INVOKER. Stored as a child.
     ASTPtr sql_security;
 
     String getID(char) const override { return "CreateHandlerQuery"; }

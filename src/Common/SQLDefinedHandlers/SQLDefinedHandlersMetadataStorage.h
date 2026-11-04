@@ -10,8 +10,7 @@ namespace DB
 
 class ASTCreateHandlerQuery;
 
-/// Parses a stored canonical CREATE HANDLER statement (an `ASTCreateHandlerQuery`) with unlimited parser depth and
-/// backtracks: it was validated when it was stored, possibly under raised parser limits.
+/// Parses a stored CREATE HANDLER statement (an `ASTCreateHandlerQuery`) with unlimited parser depth and backtracks.
 ASTPtr parseStoredHandlerStatement(const String & statement, const String & handler_location);
 
 /// Persistent storage for SQL-defined HTTP handlers.

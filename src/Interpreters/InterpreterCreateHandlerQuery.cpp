@@ -45,8 +45,7 @@ namespace ErrorCodes
 namespace
 {
 
-/// A user holding every privilege with the grant option can run any query a handler can run. The named collection
-/// privileges are not required: `users.xml` administrators do not get them by default.
+/// The named collection privileges are not required: `users.xml` administrators do not get them by default.
 bool hasFullAccess(const ContextPtr & context)
 {
     return context->getAccess()->hasGrantOption(AccessType::ALL - AccessType::NAMED_COLLECTION_ADMIN);
@@ -82,8 +81,7 @@ SQLSecurityType getSQLSecurityType(const ASTCreateHandlerQuery & handler)
     return SQLSecurityType::INVOKER;
 }
 
-/// The grants `processSQLSecurityOption` demands for the stored SQL SECURITY of a handler: changing a handler that
-/// runs as its definer takes the same authority as declaring that SQL SECURITY.
+/// Checks the grants `processSQLSecurityOption` demands for the SQL SECURITY a handler already has.
 void checkAccessForStoredSQLSecurity(const ASTCreateHandlerQuery & handler, const ContextPtr & context)
 {
     const auto type = getSQLSecurityType(handler);
@@ -142,8 +140,7 @@ String describeStatementKind(const IAST & statement)
     return Poco::toUpper(String(magic_enum::enum_name(statement.getQueryKind())));
 }
 
-/// Qualifies the names with the database of the user storing the handler, as `CREATE VIEW` does: otherwise they
-/// would resolve in the current database of the request.
+/// Qualifies the names with the current database of the user storing the handler, as `CREATE VIEW` does.
 void qualifyStatement(ASTPtr & statement, const AddDefaultDatabaseVisitor & visitor, const String & database, const ContextPtr & context)
 {
     const size_t max_expanded_ast_elements = context->getSettingsRef()[Setting::max_expanded_ast_elements];
@@ -166,7 +163,6 @@ void qualifyStatement(ASTPtr & statement, const AddDefaultDatabaseVisitor & visi
     qualify_select(statement);
 }
 
-/// The check `CREATE VIEW` does for its `SELECT`.
 void checkSelectAccess(const ASTPtr & statement, const ContextPtr & context)
 {
     InterpreterSelectQueryAnalyzer::getSampleBlock(statement->clone(), context, SelectQueryOptions{}.analyze().checkSubqueryTableAccess());
@@ -193,13 +189,8 @@ void replaceHandlerSQLSecurity(ASTCreateHandlerQuery & handler, ASTPtr sql_secur
         handler.set(handler.sql_security, std::move(sql_security));
 }
 
-/// Validates the query of `handler` (a CREATE HANDLER statement, or a stored one with an ALTER HANDLER merged onto
-/// it) against the user storing it, and rewrites the query into the form that is stored.
-///
-/// The query runs later as another user: the requesting one (SQL SECURITY INVOKER, the default), the definer, or
-/// nobody (NONE). The user storing it must be allowed to run it, which is proven either when it runs (the user has
-/// full access, or the handler runs as this user), or here by analysis, as for the SELECT of a view. An analysis
-/// proves only the query it analyzed, so it is accepted only for a SELECT without query parameters and SETTINGS.
+/// Checks that the user storing `handler` may run its query, and rewrites the query into the stored form. This is proven
+/// when the query runs (full access, or it runs as this user), or here by analysis of a SELECT without parameters or SETTINGS.
 void validateHandlerQuery(ASTCreateHandlerQuery & handler, const ContextPtr & context)
 {
     if (!handler.query)
@@ -228,8 +219,7 @@ void validateHandlerQuery(ASTCreateHandlerQuery & handler, const ContextPtr & co
         ASTPtr & statement = *statement_ptr;
         const bool is_select = isSelectShapedStatement(*statement);
 
-        /// A query running as the definer must not act on the session of the requesting user, and the objects it
-        /// reaches must not depend on the request.
+        /// A query running as the definer must not act on the requester's session or reach objects chosen by the request.
         if (runs_as_definer && !is_select && !isInsertIntoTableStatement(*statement))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Handler `{}` with SQL SECURITY {} runs a query of type {}. Only SELECT queries and INSERT queries into a table "
@@ -328,7 +318,6 @@ BlockIO InterpreterCreateHandlerQuery::execute()
 
     if (!query.is_alter)
     {
-        /// `CREATE HANDLER IF NOT EXISTS` of an existing handler is a no-op and does not validate the query.
         if (factory.prepareCreate(query.handler_name))
         {
             if (query.if_not_exists)
@@ -346,8 +335,7 @@ BlockIO InterpreterCreateHandlerQuery::execute()
         return {};
     }
 
-    /// The validation can read tables, so it runs without the lock of the factory, and the result is stored only if
-    /// the handler was not changed meanwhile.
+    /// The validation runs without the factory lock, so the result is stored only if the handler was not changed meanwhile.
     auto alter_ast = query.clone();
     auto & alter = alter_ast->as<ASTCreateHandlerQuery &>();
     bool alter_sql_security_processed = false;
@@ -358,7 +346,6 @@ BlockIO InterpreterCreateHandlerQuery::execute()
         auto & merged = merged_ast->as<ASTCreateHandlerQuery &>();
         mergeAlterIntoCreateHandler(merged, alter);
 
-        /// Every clause of a handler decides what its query does or who can run it.
         if (!alter.sql_security)
             checkAccessForStoredSQLSecurity(merged, current_context);
         validateHandlerQuery(merged, current_context);

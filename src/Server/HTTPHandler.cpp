@@ -298,9 +298,7 @@ void HTTPHandler::processQuery(
     if (!authenticateUser(request, params, response))
         return; // '401 Unauthorized' response with 'Negotiate' has been sent at this point.
 
-    /// The query of a handler with SQL SECURITY DEFINER or NONE does not run as the authenticated user, so nothing the
-    /// request chooses (except the output format) is applied to it: the settings, filters and roles of the request,
-    /// and the settings, temporary tables and transaction of an HTTP session.
+    /// A DEFINER or NONE query does not run as the authenticated user: a request can only bind parameters and choose the format.
     const bool runs_with_sql_security = sql_security_type && *sql_security_type != SQLSecurityType::INVOKER;
     auto reject_request_input = [&](const String & input)
     {

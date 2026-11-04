@@ -110,7 +110,6 @@ void SQLDefinedHandlersFactory::resyncAfterUncertainWrite(const std::string & ha
             "Could not re-read the handlers after an uncertain write of handler `{}`, dropping it from the local snapshot",
             handler_name));
         loaded_handlers.erase(handler_name);
-        /// The persistent state of the handler is unknown, so its definer stays registered.
         rebuildSnapshot(lock, /* reconcile_definers */ false);
     }
 }
@@ -356,7 +355,6 @@ void SQLDefinedHandlersFactory::removeReplicated(const ASTDropHandlerQuery & que
     /// to parse) this replica fail-closes and stops serving a handler the source of truth no longer has, rather
     /// than keeping it until the background watch eventually fires.
     loaded_handlers.erase(query.handler_name);
-    /// The rest of `loaded_handlers` may be stale here, so the definers are reconciled only by the full re-read below.
     rebuildSnapshot(lock, /* reconcile_definers */ false);
 
     /// Then rebuild the local snapshot from the now-current persistent state to also pick up any concurrent
@@ -396,7 +394,6 @@ bool SQLDefinedHandlersFactory::prepareCreate(const String & handler_name)
     if (!metadata_storage->isReplicated())
         return loaded_handlers.contains(handler_name);
 
-    /// The local snapshot may not have received a handler created on another replica yet.
     Int32 version = 0;
     loaded_handlers = metadata_storage->getAll(version);
     rebuildSnapshot(lock, /* reconcile_definers */ true);
@@ -481,8 +478,6 @@ bool SQLDefinedHandlersFactory::updateReplicated(
             throw Exception(ErrorCodes::HANDLER_DOESNT_EXIST, "Cannot alter handler `{}`, because it doesn't exist", alter_query.handler_name);
         }
 
-        /// The handler was changed after the ALTER was merged and validated: the caller re-merges onto the new
-        /// definition.
         if (it->second->create_statement != expected_base)
         {
             loaded_handlers = std::move(current);

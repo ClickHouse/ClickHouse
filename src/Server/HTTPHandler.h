@@ -94,8 +94,7 @@ protected:
     /// Set by SQL-defined handlers so that `currentHandler()` and the query_log can report the handler name.
     void setIntrospectionHandlerName(const String & name_) { introspection_handler_name = name_; }
 
-    /// Set by SQL-defined handlers with SQL SECURITY DEFINER or NONE: the query runs as `definer_` (DEFINER) or with the
-    /// global context (NONE) instead of as the authenticated user.
+    /// Set by SQL-defined handlers whose query runs as `definer_` (DEFINER) or with the global context (NONE).
     void setSQLSecurity(SQLSecurityType type_, std::optional<String> definer_)
     {
         sql_security_type = type_;
@@ -254,8 +253,7 @@ private:
 
     void releaseOrCloseSession(const String & session_id, bool close_session);
 
-    /// The query context of a request to a handler with SQL SECURITY DEFINER or NONE, made from the global context.
-    /// `caller_context` is the query context the authenticated user would get.
+    /// The query context for SQL SECURITY DEFINER or NONE, made from the global context; `caller_context` is the requester's.
     ContextMutablePtr makeSQLSecurityQueryContext(const ContextPtr & caller_context) const;
 
     static void pushDelayedResults(Output & used_output);

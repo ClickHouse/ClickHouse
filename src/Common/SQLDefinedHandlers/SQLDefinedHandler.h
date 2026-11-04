@@ -56,7 +56,6 @@ struct SQLDefinedHandler
 
     /// The `SQL SECURITY` of the query; not set means `INVOKER` (the query runs as the requesting user).
     std::optional<SQLSecurityType> sql_security_type;
-    /// The user the query runs as when `sql_security_type` is `DEFINER`.
     std::optional<String> definer;
 
     /// Whether a request to this handler can consume the HTTP request body: an `INSERT` takes the body as its
