@@ -400,6 +400,21 @@ namespace
     };
 }
 
+namespace
+{
+    /// The path of an encrypted disk on the local filesystem: the root of the wrapped disk followed by `disk_path`.
+    /// The root does not have to end with a separator (`metadata_path` of an object storage disk is taken as is),
+    /// so one is inserted between them when it is missing. Without a `disk_path`, the root is returned exactly as
+    /// the wrapped disk reports it: `MergeTreeData::loadDataParts` recognizes an encrypted disk that shares the
+    /// path of its delegate by comparing the two strings, so even an added trailing separator would break it.
+    String joinWrappedDiskPath(const String & wrapped_disk_path, const String & disk_path)
+    {
+        if (disk_path.empty() || wrapped_disk_path.empty() || wrapped_disk_path.ends_with('/'))
+            return wrapped_disk_path + disk_path;
+        return wrapped_disk_path + "/" + disk_path;
+    }
+}
+
 class DiskEncryptedReservation : public IReservation
 {
 public:
@@ -439,7 +454,7 @@ DiskEncrypted::DiskEncrypted(const String & name_, std::unique_ptr<const DiskEnc
     , delegate(settings_->wrapped_disk)
     , encrypted_name(name_)
     , disk_path(settings_->disk_path)
-    , disk_absolute_path((fs::path(settings_->wrapped_disk->getPath()) / settings_->disk_path).string())
+    , disk_absolute_path(joinWrappedDiskPath(settings_->wrapped_disk->getPath(), settings_->disk_path))
     , current_settings(std::move(settings_))
 {
     delegate->createDirectories(disk_path);
@@ -450,7 +465,7 @@ DiskEncrypted::DiskEncrypted(const String & name_, std::unique_ptr<const DiskEnc
     , delegate(settings_->wrapped_disk)
     , encrypted_name(name_)
     , disk_path(settings_->disk_path)
-    , disk_absolute_path((fs::path(settings_->wrapped_disk->getPath()) / settings_->disk_path).string())
+    , disk_absolute_path(joinWrappedDiskPath(settings_->wrapped_disk->getPath(), settings_->disk_path))
     , current_settings(std::move(settings_))
 {
     delegate->createDirectories(disk_path);

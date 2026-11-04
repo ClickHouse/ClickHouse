@@ -743,11 +743,14 @@ TEST_F(DiskEncryptedTest, ConfigurationAcceptsDelegateRootWithoutTrailingSeparat
     DisksMap disks{{"delegate_disk", delegate_disk}};
     std::shared_ptr<DiskEncrypted> encrypted1;
     ASSERT_NO_THROW(encrypted1 = makeConfiguredEncryptedDisk("encrypted1", *config, disks));
-    EXPECT_EQ(fs::path(encrypted1->getPath()), metadata_root / "encrypted/");
+    /// The separator is inserted between the root and the `path`, which is relative to the root.
+    EXPECT_EQ(encrypted1->getPath(), metadata_root.string() + "/encrypted/");
 
-    /// Without a `path`, the encrypted disk is the root of the wrapped disk, with or without the separator.
+    /// Without a `path`, the encrypted disk reports the root of the wrapped disk exactly, without an added separator:
+    /// `MergeTreeData::loadDataParts` compares the two strings to recognize the wrapped disk as part of the policy.
     disks.emplace("encrypted1", encrypted1);
     auto encrypted2 = makeConfiguredEncryptedDisk("encrypted2", *config, disks);
+    EXPECT_EQ(encrypted2->getPath(), delegate_disk->getPath());
     EXPECT_TRUE(haveSameStorageNamespace(encrypted2, delegate_disk));
     EXPECT_FALSE(haveSameStorageNamespace(encrypted1, delegate_disk));
 }
