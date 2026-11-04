@@ -1,4 +1,5 @@
--- Tags: no-parallel, no-flaky-check
+-- Tags: no-parallel, no-flaky-check, no-parallel-replicas
+-- Tag no-parallel-replicas: the test only checks query plans, which parallel replicas change
 -- CNF optimization uses QueryNodeHash to order conditions. We need fixed database.table.column identifier name to stabilize result
 SET min_marks_per_part_to_load_statistics = 0;
 SET explain_query_plan_default = 'legacy';

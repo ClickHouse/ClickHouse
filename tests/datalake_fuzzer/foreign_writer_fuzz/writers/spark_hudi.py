@@ -40,17 +40,6 @@ class SparkHudiWriter(Writer):
         options=_options,
     )
 
-    @staticmethod
-    def adjust_caps(caps, gates):
-        import dataclasses
-
-        if not gates.active("hudi_replacecommit"):
-            return caps
-        return dataclasses.replace(
-            caps,
-            op_weights={k: v for k, v in caps.op_weights.items() if k != "overwrite"},
-        )
-
     @property
     def spark(self):
         return self.ctx.spark
