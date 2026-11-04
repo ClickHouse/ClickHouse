@@ -2,6 +2,7 @@
 
 #include <Common/TerminalSize.h>
 #include <Common/UTF8Helpers.h>
+#include <Core/Block.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
 #include <IO/Operators.h>
@@ -54,9 +55,13 @@ bool QueryResultPreviewDisplay::setPreview(const Block & block, ContextPtr conte
     format_settings.pretty.max_rows = terminal_height - 7;
     format_settings.pretty.max_value_width = std::min<UInt64>(format_settings.pretty.max_value_width, terminal_width);
 
+    /// Interactive `clickhouse-local` delivers the preview columns as they are, e.g. `ColumnConst` for a
+    /// constant projection, while the output format expects full columns, as for the result in `ClientBase::onData`.
+    Block materialized = materializeBlock(block);
+
     WriteBufferFromOwnString out;
-    auto output_format = FormatFactory::instance().getOutputFormat("PrettyCompactNoEscapes", out, block.cloneEmpty(), context, format_settings);
-    output_format->write(block);
+    auto output_format = FormatFactory::instance().getOutputFormat("PrettyCompactNoEscapes", out, materialized.cloneEmpty(), context, format_settings);
+    output_format->write(materialized);
     output_format->finalize();
 
     std::vector<std::string> new_lines;
