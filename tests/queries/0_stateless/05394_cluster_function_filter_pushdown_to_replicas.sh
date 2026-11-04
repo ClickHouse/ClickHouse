@@ -33,7 +33,7 @@ ${CLICKHOUSE_CLIENT} --query "
 
 # A lambda conjunct is evaluated on the initiator only: its body is JIT-compiled while the initiator plans the query.
 # The replicas get only `t.id % 2 = 0`, so they return exactly the 15000 even ids.
-for LAMBDA in "x -> x > 1 AND x < 1000, [t.id]" "x -> x > 1 AND x < t.id, [1000, 2000]"; do
+for LAMBDA in "x -> x > 1 AND x < 1000, [t.id]" "x -> x > 1 AND x < t.id, [29000, 29500]"; do
     query_id="${CLICKHOUSE_TEST_UNIQUE_NAME}_lambda_${RANDOM}"
     ${CLICKHOUSE_CLIENT} --query_id="${query_id}" --query "
         SELECT count(), sum(t.id)
