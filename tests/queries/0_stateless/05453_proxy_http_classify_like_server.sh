@@ -120,11 +120,17 @@ echo "writes"
 status --data-binary 'WITH y AS (SELECT 1) INSERT INTO t_nonexistent SELECT * FROM y' "$URL"
 status --data-binary 'SELECT 1 PARALLEL WITH INSERT INTO t_nonexistent VALUES (1)' "$URL"
 status --data-binary 'WITH 1 AS y SELECT y' "$URL"
+# `select` is an alias here, not the statement: the query has no known type and matches no rule.
+status --data-binary 'WITH 1 AS select INSERT INTO t_nonexistent SELECT 1' "$URL"
 
 echo "database"
 status "${URL}${CLICKHOUSE_DATABASE}/t_path"
 ENCODED_DATABASE=$(python3 -c "import sys; print('=?UTF-8?Q?' + ''.join('=%02X' % b for b in sys.argv[1].encode()) + '?=')" "$CLICKHOUSE_DATABASE")
 status -H "X-ClickHouse-Database: ${ENCODED_DATABASE}" "${URL}?query=(SELECT%201)"
+# Encoded spaces are a part of the decoded value, as on the server: this is not the database of the rule.
+status -H "X-ClickHouse-Database: =?UTF-8?Q?_${CLICKHOUSE_DATABASE}_?=" --data-binary 'INSERT INTO t_nonexistent VALUES (1)' "$URL"
+# A database in the path that conflicts with the parameter is rejected, as the server rejects it.
+status "${URL}${CLICKHOUSE_DATABASE}/t_path?database=${CLICKHOUSE_DATABASE}_other"
 
 # A comment opener split between chunks: the proxy reads the next chunks to classify the query.
 python3 - "$PROXY_PORT" <<'EOF'
@@ -151,4 +157,11 @@ status(b"POST / HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\nCon
 # A query still within a comment after the inspected 64 KiB of the body has no query type.
 status(b"POST / HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n"
     b"1\r\n/\r\n" + b"10000\r\n" + b"*" + b" " * 65535 + b"\r\n")
+
+# A body whose beginning establishes the query type is routed without waiting for the rest of the body.
+print("slow body")
+status(b"POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: 100000\r\nConnection: close\r\n\r\n"
+    b"INSERT INTO t_nonexistent FORMAT TSV\n")
+status(b"POST / HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n"
+    b"10000\r\nINSERT INTO t_nonexistent FORMAT TSV\n")
 EOF

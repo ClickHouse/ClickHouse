@@ -74,6 +74,7 @@ String classifyQuery(std::string_view query, bool is_prefix)
     String result = is_with ? "" : "select";
     size_t depth = 0;
     bool after_parallel = false;
+    Token previous = first;
     while (true)
     {
         const Token token = next_significant();
@@ -94,12 +95,27 @@ String classifyQuery(std::string_view query, bool is_prefix)
         {
             if (after_parallel && is_keyword(token, "with"))
                 return "other";
-            if (result.empty() && is_keyword(token, "insert"))
-                return "insert";
-            if (result.empty() && is_keyword(token, "select"))
+            if (result.empty() && (is_keyword(token, "insert") || is_keyword(token, "select")))
+            {
+                /// Within the `WITH` clause, `select` and `insert` may also be bare names: an alias after `AS`
+                /// (`WITH 1 AS select INSERT ...`), or a name before it (`WITH select AS (...) ...`).
+                /// Without the grammar of the clause, such a query has no known type.
+                if (previous.type == TokenType::Comma || is_keyword(previous, "as") || is_keyword(previous, "with"))
+                    return "";
+                Lexer lookahead = lexer;
+                Token next = lookahead.nextToken();
+                while (!next.isSignificant())
+                    next = lookahead.nextToken();
+                if (is_cut(next) || is_keyword(next, "as"))
+                    return "";
+
+                if (is_keyword(token, "insert"))
+                    return "insert";
                 result = "select";
+            }
         }
         after_parallel = parallel;
+        previous = token;
     }
 
     /// The rest of a prefix may still turn the query into a write.

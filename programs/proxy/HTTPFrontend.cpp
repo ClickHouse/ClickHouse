@@ -73,6 +73,34 @@ struct HTTPBodyFraming
     bool expect_continue = false;       /// The client waits for `100 Continue` before sending the body.
 };
 
+/// Appends the next @p length bytes of the body to @p query as they arrive, and classifies the text so far
+/// each time it has grown to twice the size classified before (so the total work is linear), and once all
+/// @p length bytes are read. Stops as soon as the type is known: a slowly streamed `INSERT` is routed after
+/// its first bytes, not after the whole inspected window. @p ends_body is whether these bytes end the body.
+/// Returns `std::nullopt` if the stream ends before, and an empty string if the type is still not known.
+std::optional<String> readAndClassify(RecordingReader & reader, String & query, size_t length, bool ends_body, size_t & classified_size)
+{
+    size_t done = 0;
+    while (done < length)
+    {
+        if (reader.buffered() == 0 && !reader.ensure(1))
+            return std::nullopt;
+        const size_t portion = std::min(reader.buffered(), length - done);
+        query += reader.readFixed(portion);
+        done += portion;
+
+        const bool is_prefix = done < length || !ends_body;
+        if (done == length || query.size() >= 2 * classified_size)
+        {
+            classified_size = query.size();
+            String query_type = classifyQuery(query, is_prefix);
+            if (!query_type.empty() || done == length)
+                return query_type;
+        }
+    }
+    return classifyQuery(query, !ends_body);
+}
+
 /// Without a `query` parameter, the body of the request is the query. Reads the beginning of the body
 /// (the bytes stay in the reader's buffer and are forwarded to the backend unchanged) after @p query,
 /// the text from the URL, until the query type is established, the body ends, or 64 KiB of it are read.
@@ -97,14 +125,13 @@ String classifyQueryWithBody(FiberSocket & client, RecordingReader & reader, con
         client.sendAll(response.data(), response.size());
     }
 
+    size_t classified_size = query.size();
+
     if (!framing.chunked)
     {
         const UInt64 size = *framing.content_length;
         const size_t length = std::min<UInt64>(size, max_prefix_bytes);
-        if (!reader.ensure(length))
-            return "";
-        query += reader.readFixed(length);
-        return classifyQuery(query, /*is_prefix=*/ length < size);
+        return readAndClassify(reader, query, length, /*ends_body=*/ length == size, classified_size).value_or("");
     }
 
     /// The chunks are read as long as the beginning of the query is not enough, for example, to see past
@@ -123,16 +150,12 @@ String classifyQueryWithBody(FiberSocket & client, RecordingReader & reader, con
             return classifyQuery(query, /*is_prefix=*/ false);     /// The last chunk: the whole body is read.
 
         const size_t length = std::min<UInt64>(size, max_prefix_bytes - body_bytes);
-        if (!reader.ensure(length))
+        const std::optional<String> query_type = readAndClassify(reader, query, length, /*ends_body=*/ false, classified_size);
+        if (!query_type)
             return "";
-        query += reader.readFixed(length);
         body_bytes += length;
-        if (length < size)
-            return classifyQuery(query, /*is_prefix=*/ true);
-
-        String query_type = classifyQuery(query, /*is_prefix=*/ true);
-        if (!query_type.empty())
-            return query_type;
+        if (!query_type->empty() || length < size)
+            return *query_type;
 
         String chunk_end;
         if (!reader.readLine(chunk_end, 1024) || !chunk_end.empty())
@@ -277,7 +300,8 @@ void handleHTTP(FiberSocket & client, const FrontendContext & ctx)
         const String name = Poco::toLower(Poco::trim(header.substr(0, colon)));
         /// The server decodes RFC 2047 encoded words in every header value (`readHeaders`), so that
         /// `X-ClickHouse-User: =?UTF-8?Q?alice?=` authenticates as `alice`, and the proxy has to route by the same value.
-        const String value = Poco::trim(Poco::Net::MessageHeader::decodeWord(Poco::trim(header.substr(colon + 1))));
+        /// Like the server, it trims the raw value and does not trim the decoded one: `=?UTF-8?Q?_alice_?=` is ` alice `.
+        const String value = Poco::Net::MessageHeader::decodeWord(Poco::trim(header.substr(colon + 1)));
 
         if (name == "content-length")
         {
@@ -345,15 +369,16 @@ void handleHTTP(FiberSocket & client, const FrontendContext & ctx)
     /// With the default `http_allow_database_as_path` and `http_allow_table_as_file`, the server takes
     /// the database from a URL path such as `/db/table.format`, as `HTTPHandler::processQuery` does
     /// (the legacy query endpoints `/` and `/query` are not parsed). A database in both the path and
-    /// a parameter or header must be the same, or the server rejects the request.
-    if (attributes.database.empty())
+    /// a parameter or header must be the same, or the server rejects the request, so the proxy rejects it
+    /// too, instead of routing it (and running first-seen hooks) by a database the request will not use.
+    String path_database;
     {
         const String raw_path = target.substr(0, target.find('?'));
         if (!raw_path.empty() && raw_path != "/" && raw_path != "/query")
         {
             try
             {
-                attributes.database = parseHTTPPath(raw_path, /*allow_database=*/ true, /*allow_table=*/ true, /*allow_filters=*/ true).database;
+                path_database = parseHTTPPath(raw_path, /*allow_database=*/ true, /*allow_table=*/ true, /*allow_filters=*/ true).database;
             }
             catch (...)  // NOLINT(bugprone-empty-catch)
             {
@@ -361,6 +386,14 @@ void handleHTTP(FiberSocket & client, const FrontendContext & ctx)
                 /// and it is a path of another handler or the server rejects the request. Ok to ignore.
             }
         }
+    }
+    String database_conflict;
+    if (!path_database.empty())
+    {
+        if (!attributes.database.empty() && attributes.database != path_database)
+            database_conflict = "Conflicting database specification: '" + path_database + "' in URL path vs '"
+                + attributes.database + "' in `database` setting.\n";
+        attributes.database = path_database;
     }
     attributes.session_id = param_session_id.value_or("");
 
@@ -409,6 +442,12 @@ void handleHTTP(FiberSocket & client, const FrontendContext & ctx)
     if (const StaticPageConfig * page = findStaticPage(ctx.config.http, path))
     {
         serveStaticPage(client, *page);
+        return;
+    }
+
+    if (!database_conflict.empty())
+    {
+        sendResponse(client, 400, "Bad Request", "text/plain; charset=UTF-8", database_conflict);
         return;
     }
 
