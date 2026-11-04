@@ -18,6 +18,10 @@ CREATE TABLE t_identical (id UInt64, a UInt32, v UInt64)
 ENGINE = ReplacingMergeTree(v) ORDER BY id
 SETTINGS columns_identical_across_versions = 'a, v'; -- { serverError BAD_ARGUMENTS }
 
+CREATE TABLE t_identical (id UInt64, meta Tuple(ver UInt64))
+ENGINE = ReplacingMergeTree(meta.ver) ORDER BY id
+SETTINGS columns_identical_across_versions = 'meta'; -- { serverError BAD_ARGUMENTS }
+
 CREATE TABLE t_identical (id UInt64, f Float64)
 ENGINE = ReplacingMergeTree ORDER BY id
 SETTINGS columns_identical_across_versions = 'f'; -- { serverError BAD_ARGUMENTS }

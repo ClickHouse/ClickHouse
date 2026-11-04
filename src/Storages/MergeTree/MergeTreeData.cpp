@@ -2697,12 +2697,19 @@ bool supportsColumnsIdenticalAcrossVersions(MergeTreeData::MergingParams::Mode m
         || mode == MergeTreeData::MergingParams::VersionedCollapsing;
 }
 
-/// The version, sign and `is_deleted` columns differ between the versions of a row by design.
-bool isMergingParamsColumn(const MergeTreeData::MergingParams & merging_params, const String & column_name)
+/// The version, sign and `is_deleted` columns differ between the versions of a row by design. An engine argument can be
+/// a subcolumn (e.g. `ReplacingMergeTree(meta.ver)`), then its whole storage column (`meta`) differs.
+NameSet getMergingParamsStorageColumns(const MergeTreeData::MergingParams & merging_params, const ColumnsDescription & columns)
 {
-    return column_name == merging_params.version_column
-        || column_name == merging_params.sign_column
-        || column_name == merging_params.is_deleted_column;
+    NameSet names;
+    for (const auto * name : {&merging_params.version_column, &merging_params.sign_column, &merging_params.is_deleted_column})
+    {
+        if (name->empty())
+            continue;
+        auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, *name);
+        names.insert(column ? column->getNameInStorage() : *name);
+    }
+    return names;
 }
 
 }
@@ -2746,9 +2753,10 @@ NameSet MergeTreeData::getColumnsSafeBeforeFinal(const StorageInMemoryMetadata &
         return names;
 
     const auto & columns = metadata.getColumns();
+    const NameSet merging_params_columns = getMergingParamsStorageColumns(merging_params, columns);
     auto add_column = [&](const NameAndTypePair & column)
     {
-        if (isMergingParamsColumn(merging_params, column.name) || typeContainsFloat(*column.type))
+        if (merging_params_columns.contains(column.name) || typeContainsFloat(*column.type))
             return;
         names.insert(column.name);
         for (const auto & subcolumn : columns.getSubcolumns(column.name))
@@ -2770,9 +2778,7 @@ NameSet MergeTreeData::getColumnsSafeBeforeFinal(const StorageInMemoryMetadata &
 
         /// A column computed from a varying column varies as well. So does a column computed from the version, sign or
         /// `is_deleted` column, or from a float column (equal values like -0.0 and 0.0 can give different results).
-        for (const auto * name : {&merging_params.version_column, &merging_params.sign_column, &merging_params.is_deleted_column})
-            if (!name->empty())
-                varying.insert(*name);
+        varying.insert(merging_params_columns.begin(), merging_params_columns.end());
         for (const auto & column : columns.getAllPhysical())
             if (typeContainsFloat(*column.type))
                 varying.insert(column.name);
@@ -2828,6 +2834,7 @@ void MergeTreeData::checkColumnsIdenticalAcrossVersions(const MergeTreeSettings 
             setting_name, merging_params.getModeName());
 
     const auto & columns = metadata.getColumns();
+    const NameSet merging_params_columns = getMergingParamsStorageColumns(merging_params, columns);
     for (const auto & name : parseIdentifiersOrStringLiterals(identical_columns.empty() ? varying_columns : identical_columns, getContext()->getSettingsRef()))
     {
         auto column = columns.tryGetPhysical(name);
@@ -2840,10 +2847,10 @@ void MergeTreeData::checkColumnsIdenticalAcrossVersions(const MergeTreeSettings 
         if (identical_columns.empty())
             continue;
 
-        if (isMergingParamsColumn(merging_params, name))
+        if (merging_params_columns.contains(name))
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Column {} listed in the setting `columns_identical_across_versions` is the version, sign or is_deleted column "
-                "of the table, which differs between the versions of a row",
+                "Column {} listed in the setting `columns_identical_across_versions` is or contains the version, sign or is_deleted "
+                "column of the table, which differs between the versions of a row",
                 backQuoteIfNeed(name));
 
         if (typeContainsFloat(*column->type))

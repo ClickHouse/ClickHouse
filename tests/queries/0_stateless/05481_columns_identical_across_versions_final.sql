@@ -80,3 +80,12 @@ SELECT 'partition pruning', countIf(explain LIKE '%Parts: 2/6%') FROM (EXPLAIN i
 
 DROP TABLE t_plain;
 DROP TABLE t_identical;
+
+-- The version column is a subcolumn: the whole `meta` varies, and so does a column computed from its subcolumn.
+DROP TABLE IF EXISTS t_version_subcolumn;
+CREATE TABLE t_version_subcolumn (id UInt64, score UInt64, meta Tuple(ver UInt64), derived UInt64 MATERIALIZED meta.ver)
+ENGINE = ReplacingMergeTree(meta.ver) ORDER BY id
+SETTINGS columns_varying_across_versions = 'score';
+INSERT INTO t_version_subcolumn (id, score, meta) VALUES (1, 100, tuple(10));
+SELECT 'no prewhere for column computed from version subcolumn', countIf(explain LIKE '%Prewhere filter column%') FROM (EXPLAIN actions = 1 SELECT id FROM t_version_subcolumn FINAL WHERE derived = 10);
+DROP TABLE t_version_subcolumn;
