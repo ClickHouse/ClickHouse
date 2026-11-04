@@ -21,7 +21,7 @@ Il5X9f2rcCBtxEvM7JrQVPBfcE4QCwml35bTnqkD/zuGWuYToItZ4GotrVxjNWBkVXCsXvmfRKhX
 vfKy7e6g23uUpFl/70nPC6LJ+UXiJU930mRnNIj3Nt1pG+D2gm88+Yf8iv8AEHmofMoDAAA=
 EOF
 
-"${CLICKHOUSE_LOCAL}" --multiquery --query "
+${CLICKHOUSE_LOCAL} --multiquery --query "
 SET allow_experimental_dynamic_type = 1;
 SET enable_json_type = 1;
 SET input_format_parquet_use_native_reader_v3 = 1;

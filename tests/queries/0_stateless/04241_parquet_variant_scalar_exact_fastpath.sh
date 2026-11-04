@@ -10,7 +10,7 @@ FILE="${CLICKHOUSE_TMP}/04241_parquet_variant_scalar_exact_fastpath.parquet"
 
 rm -f "$FILE"
 
-"${CLICKHOUSE_LOCAL}" --multiquery --query "
+${CLICKHOUSE_LOCAL} --multiquery --query "
 SET allow_experimental_dynamic_type = 1;
 SET enable_time_time64_type = 1;
 SET output_format_parquet_use_custom_encoder = 1;

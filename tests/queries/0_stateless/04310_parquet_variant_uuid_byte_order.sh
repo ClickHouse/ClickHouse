@@ -23,7 +23,7 @@ qkoe8UtSx9O1AmUsnBY90jgkodQvjCf1pS9dykpN2Vq2TM5Pe/kiTrdKUh7+qnNdqt3K86PEP6Js/jAo
 zGW90mkV/fasCXUP9ETP7j+MnOFGs9fbsPv97jjhOv3BTfc+kc2mM+mMSBkAtKBBT1+mP/0X0q41ue4CAAA=
 EOF
 
-"${CLICKHOUSE_LOCAL}" --multiquery --query "
+${CLICKHOUSE_LOCAL} --multiquery --query "
 SET allow_experimental_dynamic_type = 1;
 SET input_format_parquet_use_native_reader_v3 = 1;
 

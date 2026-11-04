@@ -101,7 +101,7 @@ with open(f"{work}/bad_nested_wrapper.parquet", "wb") as out:
     out.write(b"PAR1" + metadata + struct.pack("<I", len(metadata)) + b"PAR1")
 PY
 
-out=$("${CLICKHOUSE_LOCAL}" --query "
+out=$(${CLICKHOUSE_LOCAL} --query "
     DESC file('${WORK_DIR}/bad_nested_wrapper.parquet', Parquet)
     SETTINGS
         enable_json_type = 1,
