@@ -29,7 +29,11 @@ check()
     n=$((n + 1))
     local query_id="${CLICKHOUSE_TEST_UNIQUE_NAME}_${n}"
     local result
+    # `optimize_empty_string_comparisons` is randomized in CI, so it is pinned to the default: it rewrites `p_str = ''`
+    # into `empty(p_str)`, which is not converted into a predicate of delta-kernel-rs, so the files are pruned by
+    # ClickHouse; without the rewrite, delta-kernel-rs prunes them itself.
     result=$(${CLICKHOUSE_CLIENT} --session_timezone UTC --query_id "$query_id" --use_query_condition_cache 0 \
+        --optimize_empty_string_comparisons 1 \
         --query "SELECT count(), sum(id) FROM deltaLakeLocal('$BASE/$table') WHERE $condition" | tr '\t' ' ')
     ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
     ${CLICKHOUSE_CLIENT} --param_condition "$condition" --param_result "$result" --query "
