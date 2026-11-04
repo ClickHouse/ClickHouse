@@ -52,10 +52,8 @@ namespace DB
         /// they are added after the format, and a column of the data file with the same name holds other values.
         std::shared_ptr<const ActionsDAG> getFormatFilter(
             const std::shared_ptr<const ActionsDAG> & filter_actions_dag, bool keep_row_lineage_columns = false) const;
-        /// Whether the format reads `column` from the file as it is, and its type has statistics that
-        /// cover every value: a default is computed after the format skipped data, float bounds leave
-        /// out NaN, `String` bounds of a fixed-length array keep the padding, and other types have no
-        /// statistics or bounds that a narrowing conversion can leave unset.
+        /// Whether the format reads `column` as stored and its bounds cover every value: a default is computed after
+        /// skipping, float bounds omit NaN, `String` bounds of a fixed-length array keep padding, other types may lack bounds.
         bool canSkipDataByStatisticsOf(const ColumnWithTypeAndName & column) const;
         /// A row-level filter (row policy) is not stored here and does not change the headers. The source
         /// applies it via `FormatFilterInfo` and keeps its input columns, because:
@@ -78,7 +76,6 @@ namespace DB
     /// entrypoint while working on another.
     bool formatNeedsEagerKeyConditionSets(const String & format_name);
 
-    /// Whether reading `format_name` skips data by the min/max statistics of the filtered columns.
     bool formatSkipsDataByStatistics(const String & format_name, const FormatSettings & format_settings);
 
     /// Eagerly materialise IN-subquery sets that a format-level KeyCondition can consume.

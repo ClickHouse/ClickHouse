@@ -23,9 +23,8 @@ namespace Setting
 namespace DB::QueryPlanOptimizations
 {
 
-/// Copies filter conjuncts across equi-join keys so the other side can prune its primary key, or
-/// skip data of a source that prunes by statistics. Limited to `Expression`/`Filter` chains, see
-/// `isTransparentForPropagation`
+/// Copies filter conjuncts across equi-join keys so the other side can prune its primary key or skip data by statistics.
+/// Limited to `Expression`/`Filter` chains, see `isTransparentForPropagation`
 
 /// Defined in partialJoinFilterPushDown.cpp
 void addFilterOnTop(QueryPlan::Node & join_node, size_t child_idx, QueryPlan::Nodes & nodes, ActionsDAG filter_dag);
@@ -91,8 +90,7 @@ const FilterStep * findFilterBelow(const QueryPlan::Node * node)
     return found ? typeid_cast<const FilterStep *>(found->step.get()) : nullptr;
 }
 
-/// Columns of the read below the target that a filter can prune: the primary key of a MergeTree,
-/// or, of the columns the join keys resolve to, those another source can skip data by. Empty when there is none
+/// Columns the target's read can prune by: a MergeTree primary key, or join keys the source skips data by
 NameSet getTargetPrunableColumns(const QueryPlan::Node * target_root, const SubstitutionMap & substitution)
 {
     const auto * read = walkDown(target_root, [](const auto * n)
@@ -252,7 +250,6 @@ size_t tryPropagateToSide(
     auto * target_root = join_node->children[target_idx];
     if (!source_filter)
         return 0;
-    /// Only helps when the target's read can prune by the copy
     const auto prunable_columns = getTargetPrunableColumns(target_root, substitution);
     if (prunable_columns.empty())
         return 0;
