@@ -900,7 +900,8 @@ def assert_authorization_forbidden(error, secret="user:pass"):
         ),
         # The first option is unreachable, so the read moves on to the second one.
         pytest.param(
-            "SELECT sum(x) FROM url('http://{127.0.0.1:1|user:pass@resolver:8087}/data/2025/part1.tsv', "
+            "SELECT sum(x) FROM url("
+            "'http://127.0.0.1:1/data/2025/part1.tsv|http://user:pass@resolver:8087/data/2025/part1.tsv', "
             "'TSV', 'x UInt64') SETTINGS http_max_tries = 1",
             id="failover",
         ),
