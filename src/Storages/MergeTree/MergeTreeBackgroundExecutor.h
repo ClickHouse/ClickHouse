@@ -3,8 +3,6 @@
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
-#include <optional>
-#include <shared_mutex>
 #include <utility>
 #include <variant>
 
@@ -302,21 +300,24 @@ public:
     class SchedulingPause
     {
     public:
-        SchedulingPause(SchedulingPause &&) = default;
+        SchedulingPause(SchedulingPause && other) noexcept
+            : executor(std::exchange(other.executor, nullptr))
+        {
+        }
+
+        ~SchedulingPause();
 
         bool waitForIdle(std::chrono::steady_clock::time_point deadline) TSA_NO_THREAD_SAFETY_ANALYSIS;
 
     private:
         friend class MergeTreeBackgroundExecutor;
 
-        SchedulingPause(MergeTreeBackgroundExecutor & executor_, std::unique_lock<std::shared_timed_mutex> && lock_)
-            : executor(executor_)
-            , lock(std::move(lock_))
+        explicit SchedulingPause(MergeTreeBackgroundExecutor & executor_)
+            : executor(&executor_)
         {
         }
 
-        MergeTreeBackgroundExecutor & executor;
-        std::unique_lock<std::shared_timed_mutex> lock;
+        MergeTreeBackgroundExecutor * executor;
     };
 
     MergeTreeBackgroundExecutor(
@@ -358,9 +359,8 @@ public:
     /// Prevent new tasks and foreground task-slot reservations from entering this executor.
     /// Already accepted work continues normally. The returned guard keeps scheduling paused until
     /// it is destroyed; use `SchedulingPause::waitForIdle` to wait for accepted work to release all
-    /// of its task slots. Returns an empty optional if the scheduling fence cannot be acquired by
-    /// `deadline`.
-    std::optional<SchedulingPause> pauseScheduling(std::chrono::steady_clock::time_point deadline);
+    /// of its task slots.
+    SchedulingPause pauseScheduling();
 
     /// Reserve up to `desired` free slots for merges that run outside this executor (e.g. the
     /// synchronous merges of OPTIMIZE FINAL). Returns the number of slots actually reserved, which
@@ -416,9 +416,11 @@ private:
     /// server would otherwise starve a waiting foreground reservation indefinitely.
     std::atomic<Int64> reserved_task_slots = 0;
 
-    /// Normal scheduling takes this mutex in shared mode. A stable-memory checkpoint takes it in
-    /// exclusive mode, drains already accepted work, and keeps it locked through the heap dump.
-    std::shared_timed_mutex scheduling_mutex;
+    /// Non-zero while stable-memory checkpoints reject new work. Guarded by `mutex`; a count makes
+    /// independently acquired pauses nest safely.
+    size_t scheduling_pause_count TSA_GUARDED_BY(mutex) = 0;
+
+    void resumeScheduling() noexcept;
 
     void routine(TaskRuntimeDataPtr item);
 

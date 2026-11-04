@@ -480,17 +480,13 @@ void withPausedBackgroundScheduling(const ContextMutablePtr & context, Callback 
     auto common_executor = context->getCommonExecutor();
 
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
-    auto merge_mutate_pause = merge_mutate_executor->pauseScheduling(deadline);
-    auto moves_pause = moves_executor->pauseScheduling(deadline);
-    auto fetches_pause = fetches_executor->pauseScheduling(deadline);
-    auto common_pause = common_executor->pauseScheduling(deadline);
+    auto merge_mutate_pause = merge_mutate_executor->pauseScheduling();
+    auto moves_pause = moves_executor->pauseScheduling();
+    auto fetches_pause = fetches_executor->pauseScheduling();
+    auto common_pause = common_executor->pauseScheduling();
 
-    if (!merge_mutate_pause || !moves_pause || !fetches_pause || !common_pause)
-        throw Exception(
-            ErrorCodes::TIMEOUT_EXCEEDED, "Background scheduling could not be paused in 30 seconds; cannot take a stable heap measurement");
-
-    if (!merge_mutate_pause->waitForIdle(deadline) || !moves_pause->waitForIdle(deadline) || !fetches_pause->waitForIdle(deadline)
-        || !common_pause->waitForIdle(deadline))
+    if (!merge_mutate_pause.waitForIdle(deadline) || !moves_pause.waitForIdle(deadline) || !fetches_pause.waitForIdle(deadline)
+        || !common_pause.waitForIdle(deadline))
         throw Exception(
             ErrorCodes::TIMEOUT_EXCEEDED, "Background tasks did not finish in 30 seconds; cannot take a stable heap measurement");
 

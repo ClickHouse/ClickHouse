@@ -250,8 +250,8 @@ TEST(Executor, SchedulingPauseWaitsForTaskDestruction)
         [&]
         {
             const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-            auto guard = executor->pauseScheduling(deadline);
-            if (!guard || !guard->waitForIdle(deadline))
+            auto guard = executor->pauseScheduling();
+            if (!guard.waitForIdle(deadline))
             {
                 scheduling_paused.count_down();
                 return false;
@@ -278,10 +278,10 @@ TEST(Executor, SchedulingPauseWaitsForTaskDestruction)
     ASSERT_TRUE(schedule_while_paused.get());
 
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-    auto final_pause = executor->pauseScheduling(deadline);
-    ASSERT_TRUE(final_pause);
-    ASSERT_TRUE(final_pause->waitForIdle(deadline));
-    final_pause.reset();
+    {
+        auto final_pause = executor->pauseScheduling();
+        ASSERT_TRUE(final_pause.waitForIdle(deadline));
+    }
     executor->wait();
 }
 
