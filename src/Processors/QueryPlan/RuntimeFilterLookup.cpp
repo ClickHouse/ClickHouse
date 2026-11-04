@@ -339,8 +339,6 @@ constexpr UInt64 BITSET_WORD_BITS = 64;
 using NativeIntDataTypes = TypeListMap<DataTypeNumber, TypeListNativeInt>;
 using NativeIntColumns = TypeListMap<ColumnVector, TypeListNativeInt>;
 
-/// Native integers map one to one onto bit indexes. `Nullable` and `LowCardinality` keys keep the
-/// exact set and the Bloom filter.
 bool isDenseBitsetKeyType(const DataTypePtr & type)
 {
     return castTypeToEither(NativeIntDataTypes{}, type.get(), [](const auto &) { return true; });
@@ -369,9 +367,8 @@ UInt64 bitsetWordsForRange(Int64 min_value, Int64 max_value)
     return (static_cast<UInt64>(max_value) - static_cast<UInt64>(alignDownToWord(min_value))) / BITSET_WORD_BITS + 1;
 }
 
-/// Range of a native integer column in Int64. Returns false for another column, an empty one, or an
-/// unsigned value above the Int64 range: bit indexes use modular arithmetic, but the range must be an
-/// ordered interval.
+/// Range of a native integer column in Int64. Returns false for another column, an empty one, or keys
+/// that do not form an ordered Int64 interval away from the Int64 bounds.
 bool getNativeIntColumnRange(const IColumn & column, Int64 & out_min, Int64 & out_max)
 {
     bool representable = true;
@@ -736,7 +733,6 @@ bool DenseBitsetRuntimeFilter::insert(const ColumnPtr & values, UInt64 max_bytes
     auto keys = IColumn::mutate(std::move(pending_keys));
     keys->insertRangeFrom(*block, 0, block->size());
     pending_keys = std::move(keys);
-    /// The bits are set once the values take more memory than the bits for the range of all keys.
     if (pending_keys->byteSize() >= bitsetWordsForRange(min_key, max_key) * sizeof(UInt64))
         setPendingBits();
     return true;
@@ -856,7 +852,6 @@ ColumnPtr DenseBitsetRuntimeFilter::find(const ColumnWithTypeAndName & values, s
     size_t passed = 0;
 
     /// A value outside the covered range maps to an index of at least `bits` and is a definite miss.
-    /// The index is clamped instead of branching, so that the load does not depend on a branch.
     const bool is_native_int = visitNativeIntColumnData(*probe, [&](const auto & data)
     {
         for (size_t row = 0; row < rows; ++row)
@@ -978,8 +973,7 @@ void AdaptiveSetRuntimeFilter::insert(ColumnPtr values, Filter & filter_)
         if (bitset_filter->insert(values, denseBitsetMaxBytes()))
             return;
 
-        /// The key range no longer fits the allowance. The recorded keys move from the bits to an
-        /// approximate set, and this block is inserted there too, so no key is lost.
+        /// The key range no longer fits: `switchToApproximateFilter` moves the recorded keys.
         if (auto * approximate_filter = switchToApproximateFilter(filter_))
             approximate_filter->insert(std::move(values));
         return;
@@ -1081,8 +1075,7 @@ void AdaptiveSetRuntimeFilter::mergeFrom(const AdaptiveSetRuntimeFilter & source
                     if (bitset_filter->mergeFrom(source_bitset_filter, denseBitsetMaxBytes()))
                         return;
                 }
-                /// Otherwise the keys take the ordinary insert path, which moves the keys of this filter to an
-                /// approximate set first if the range of all keys does not fit the allowance.
+                /// Otherwise the ordinary insert path switches to an approximate set if the range does not fit.
                 if (std::holds_alternative<KeySetDropped>(filter))
                     return;
                 source_bitset_filter.forEachValuesBatch(DEFAULT_BLOCK_SIZE, [&](ColumnPtr batch) { insert(std::move(batch), filter); });
@@ -1165,8 +1158,6 @@ ApproximateSetRuntimeFilter * AdaptiveSetRuntimeFilter::switchToApproximateFilte
 
 void AdaptiveSetRuntimeFilter::switchFromExactFilter(Filter & filter_)
 {
-    /// The dense bitset is tried first: it is exact, its probe is cheaper than the Bloom filter's, and
-    /// it is most useful exactly where the statistics predict a saturated Bloom filter, which is dropped.
     if (!trySwitchToDenseBitsetFilter(filter_))
         switchToApproximateFilter(filter_);
 }
@@ -1194,9 +1185,7 @@ bool AdaptiveSetRuntimeFilter::trySwitchToDenseBitsetFilter(Filter & filter_)
 
 UInt64 AdaptiveSetRuntimeFilter::denseBitsetMaxBytes() const
 {
-    /// The bitset may take more memory than the Bloom filter it replaces, because it saves per probe row. The
-    /// allowance follows `join_runtime_bloom_filter_bytes`, and is raised only by the distinct keys of the
-    /// statistics, never by the build rows, which count duplicate keys.
+    /// The allowance is raised only by the distinct keys of the statistics, never by the build rows, which count duplicates.
     static constexpr UInt64 MAX_DENSE_BITSET_BYTES = 32 * 1024 * 1024;
     static constexpr UInt64 DENSE_BITSET_BYTES_PER_BLOOM_FILTER_BYTE = 16;
     static constexpr UInt64 MAX_TRUSTED_DISTINCT_KEYS_HINT = 1'000'000'000;

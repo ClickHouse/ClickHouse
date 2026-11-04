@@ -234,15 +234,9 @@ private:
     BloomFilter bloom_filter;
 };
 
-/// Exact runtime filter for native integer keys: one bit per value of the key range. A probe is one
-/// shifted load, without hashing, and has no false positives, so the filter also passes fewer rows to
-/// the join than a Bloom filter with the same keys. Used instead of the Bloom filter when the key range
-/// fits the byte allowance of the bitset.
-///
-/// While the keys take less memory as values than as bits for their range, for example the keys that
-/// one build stream sees of a wide range, they are kept as values. Their bits are set once that is no
-/// longer true, or when the build finishes. So a build stream never holds more than the bytes of the keys
-/// it received, and only the merged filter allocates the bits for the whole range.
+/// Exact runtime filter for native integer keys: one bit per value of the key range.
+/// Keys are kept as values while they take less memory than the bits for their range, so a build stream never
+/// holds more than the bytes of the keys it received, and only the merged filter allocates the whole range.
 class DenseBitsetRuntimeFilter
 {
 public:
@@ -250,16 +244,15 @@ public:
 
     explicit DenseBitsetRuntimeFilter(const DataTypePtr & filter_column_target_type_);
 
-    /// Returns false, without recording `values`, if they are not native integers in the supported range
-    /// or if the bits for the range of all keys would take more than `max_bytes`. The caller then takes
-    /// the recorded keys from `forEachValuesBatch` and inserts them and `values` into another filter.
+    /// Returns false, without recording `values`, if they are not native integers in the supported range or the
+    /// bits for the range of all keys would exceed `max_bytes`; the caller then moves all keys to another filter.
     bool insert(const ColumnPtr & values, UInt64 max_bytes);
     /// Adds the keys of `source`, with the same contract as `insert`.
     bool mergeFrom(const DenseBitsetRuntimeFilter & source, UInt64 max_bytes);
     /// Sets the bits of the keys that are still kept as values. Call before `find`.
     void finishInsert();
 
-    /// Sets `rows_passed`: the probe counts the matches while filling the mask.
+    /// Sets `rows_passed`.
     ColumnPtr find(const ColumnWithTypeAndName & values, std::optional<size_t> & rows_passed) const;
 
     /// Calls `callback` with columns of at most `max_rows` recorded keys each, possibly with duplicates.
@@ -279,7 +272,6 @@ private:
     const DataTypePtr filter_column_target_type;
 
     bool has_keys = false;
-    /// Range of all recorded keys.
     Int64 min_key = 0;
     Int64 max_key = 0;
 
@@ -346,11 +338,8 @@ private:
     void insert(ColumnPtr values, Filter & filter);
     void dropKeySet(Filter & filter);
     ApproximateSetRuntimeFilter * switchToApproximateFilter(Filter & filter);
-    /// Leaves the full exact set for the dense bitset if the key range fits its allowance, and for the
-    /// approximate set otherwise.
     void switchFromExactFilter(Filter & filter);
     bool trySwitchToDenseBitsetFilter(Filter & filter);
-    /// Byte allowance of the dense bitset.
     UInt64 denseBitsetMaxBytes() const;
 
     /// Disables approximate filter if it is likely to have bad selectivity.
