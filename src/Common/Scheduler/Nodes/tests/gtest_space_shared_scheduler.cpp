@@ -2121,6 +2121,49 @@ TEST(SchedulerSpaceShared, NoKillWhenMinMaxAllocatedUpdatePublishesIncrease)
     testNoKillWhenSettingsUpdatePublishesIncrease([](AllocationQueue & queue) { queue.updateMinMaxAllocated(10000); });
 }
 
+/// A settings callback that runs before the activation admitting a zero-size allocation must not publish that
+/// allocation's grow: the limit would select a victim while the requester is not yet running. Here the
+/// high-score zero-reserve requester must fail its own grow; publishing the grow early evicts `peer` instead.
+static void testSettingsUpdateDoesNotPublishGrowBeforeAdmission(std::function<void(AllocationQueue &)> settings_update)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 100);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    ManualAllocation peer(queue, "peer", 50, /* eviction_score = */ 0);
+
+    // Park the scheduler, queue the settings callback first, then the admission and the grow.
+    std::promise<void> entered;
+    std::promise<void> release;
+    t.scheduler.event_queue.enqueue([&] { entered.set_value(); release.get_future().get(); });
+    entered.get_future().get();
+    t.scheduler.event_queue.enqueue([&] { settings_update(*queue); });
+
+    ManualAllocation requester(queue, "requester", 0, /* eviction_score = */ 100);
+    requester.increaseAsync(60); // 50 + 60 > 100
+
+    release.set_value();
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+    while (requester.killCount() == 0 && peer.killCount() == 0 && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::yield();
+    r.sync();
+    EXPECT_EQ(requester.killCount(), 1u);
+    EXPECT_EQ(peer.killCount(), 0u);
+}
+
+TEST(SchedulerSpaceShared, QueueLimitUpdateDoesNotPublishGrowBeforeAdmission)
+{
+    testSettingsUpdateDoesNotPublishGrowBeforeAdmission([](AllocationQueue & queue) { queue.updateQueueLimit(100); });
+}
+
+TEST(SchedulerSpaceShared, MinMaxAllocatedUpdateDoesNotPublishGrowBeforeAdmission)
+{
+    testSettingsUpdateDoesNotPublishGrowBeforeAdmission([](AllocationQueue & queue) { queue.updateMinMaxAllocated(100); });
+}
+
 
 /// `eviction_score` controls eviction order under memory pressure: the reservation with the highest
 /// `eviction_score` is evicted first, even when it is not the largest. Here `small_hi` is smaller than

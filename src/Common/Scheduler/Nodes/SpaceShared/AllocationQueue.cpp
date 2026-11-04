@@ -105,6 +105,12 @@ void AllocationQueue::increaseAllocation(ResourceAllocation & allocation, Resour
     // Every grow of a running (or soon-to-be-running) allocation is `Regular`; the only non-regular increase is
     // the first grow of a `Pending` allocation, set in `insertAllocation`.
     allocation.increase.prepare(increase_size, IncreaseRequest::Kind::Regular);
+
+    // The grow of an admitting allocation must not be published before its admission, so it is held back until
+    // `processActivation` promotes the allocation (that activation is already scheduled).
+    if (allocation.admitting_hook.is_linked())
+        return;
+
     increasing_allocations.insert(allocation);
     if (&allocation == &*increasing_allocations.begin())
         scheduleActivation();
@@ -539,7 +545,7 @@ void AllocationQueue::processActivation()
         // Done first so that any removal or request published below sees them as running, and so the invariant
         // "a member of `running_allocations` has been counted at the leaf and every ancestor" holds before any
         // victim can be selected against this queue. `apply(update)` below counts them at this leaf and
-        // `propagate` carries the count to every ancestor.
+        // `propagate` carries the count to every ancestor, in the same update as any grow they requested.
         size_t admitted_count = 0;
         while (!admitting_allocations.empty())
         {
@@ -548,7 +554,10 @@ void AllocationQueue::processActivation()
             chassert(allocation.allocated == 0);
             chassert(!allocation.pending_hook.is_linked());
             chassert(!allocation.running_hook.is_linked());
+            chassert(!allocation.increasing_hook.is_linked());
             running_allocations.insert(allocation);
+            if (allocation.increase.size > 0) // A grow requested before admission, see `increaseAllocation`
+                increasing_allocations.insert(allocation);
             ++admitted_count;
         }
         update.setAdmissions(admitted_count);
