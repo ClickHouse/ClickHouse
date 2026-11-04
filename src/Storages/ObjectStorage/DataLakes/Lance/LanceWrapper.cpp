@@ -13,6 +13,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Common/Stopwatch.h>
+#include <base/scope_guard.h>
 
 #include <arrow/c/abi.h>
 #include <arrow/c/bridge.h>
@@ -22,6 +23,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <memory>
 #include <utility>
 
 namespace ProfileEvents
@@ -319,7 +321,9 @@ DatasetHandle DatasetHandle::openEphemeral(const DatasetOptions & options, const
     Stopwatch open_watch;
     ch_lance_error error{};
     auto native_options = toNativeOptions(options, cancel ? cancel->raw() : nullptr);
-    auto * dataset = ch_lance_open_dataset(&native_options, &error);
+    /// Own the dataset immediately, so it is freed if anything below throws before `Impl` takes it over.
+    std::unique_ptr<ch_lance_dataset, decltype(&ch_lance_free_dataset)> dataset(
+        ch_lance_open_dataset(&native_options, &error), &ch_lance_free_dataset);
     if (!dataset)
         throwLanceError(error);
 
@@ -330,7 +334,9 @@ DatasetHandle DatasetHandle::openEphemeral(const DatasetOptions & options, const
     if (after_init > before_init)
         ProfileEvents::increment(ProfileEvents::LanceRuntimeInit, after_init - before_init);
 
-    return DatasetHandle(std::make_shared<Impl>(dataset, options));
+    auto impl = std::make_shared<Impl>(dataset.get(), options);
+    dataset.release();
+    return DatasetHandle(std::move(impl));
 }
 
 const DatasetOptions & DatasetHandle::options() const
@@ -481,6 +487,9 @@ std::vector<FragmentInfo> DatasetHandle::listFragments(const TableStateSnapshot 
     if (!ch_lance_list_fragments(raw(), &native_snapshot, &list, &size, cancel ? cancel->raw() : nullptr, &error))
         throwLanceError(error, fmt::format("Cannot list fragments for `Lance` dataset version {}", snapshot.version));
 
+    /// Free the native list on every exit, including when the allocations below throw.
+    SCOPE_EXIT(ch_lance_free_fragment_list(list, size));
+
     std::vector<FragmentInfo> result;
     result.reserve(size);
     for (size_t i = 0; i < size; ++i)
@@ -492,7 +501,6 @@ std::vector<FragmentInfo> DatasetHandle::listFragments(const TableStateSnapshot 
         info.size_bytes = list[i].size_bytes;
         result.push_back(std::move(info));
     }
-    ch_lance_free_fragment_list(list, size);
     return result;
 }
 
@@ -545,24 +553,27 @@ Scan::Scan(DatasetHandle dataset_, ch_lance_scan * scan_)
     : dataset(std::move(dataset_))
     , scan(scan_)
 {
-    ArrowSchema schema{};
-    ch_lance_error error{};
-    if (!ch_lance_export_scan_schema(scan, &schema, &error))
+    /// `ch_lance_plan_scan` has already spawned the producer. If this constructor exits with an exception
+    /// (including `MEMORY_LIMIT_EXCEEDED` or `std::bad_alloc` thrown by `arrow::ImportSchema`), the destructor
+    /// does not run, so free the scan here: `freeScan` cancels the producer and joins it.
+    try
     {
-        ch_lance_free_scan(scan);
-        scan = nullptr;
-        throwLanceError(error, "Cannot export planned `Lance` scan schema");
-    }
+        ArrowSchema schema{};
+        ch_lance_error error{};
+        if (!ch_lance_export_scan_schema(scan, &schema, &error))
+            throwLanceError(error, "Cannot export planned `Lance` scan schema");
 
-    auto imported_schema = arrow::ImportSchema(&schema);
-    if (!imported_schema.ok())
-    {
-        ch_lance_free_scan(scan);
-        scan = nullptr;
-        throw Exception(
-            ErrorCodes::INCORRECT_DATA, "Failed to import planned `Lance` Arrow schema: {}", imported_schema.status().ToString());
+        auto imported_schema = arrow::ImportSchema(&schema);
+        if (!imported_schema.ok())
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA, "Failed to import planned `Lance` Arrow schema: {}", imported_schema.status().ToString());
+        projected_schema = std::move(*imported_schema);
     }
-    projected_schema = std::move(*imported_schema);
+    catch (...)
+    {
+        freeScan(std::exchange(scan, nullptr));
+        throw;
+    }
 }
 
 Scan::Scan(Scan && other) noexcept
