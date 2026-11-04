@@ -120,6 +120,16 @@ inline llvm::Value * compileLUTIndexOfDateTime(llvm::IRBuilder<> & b, llvm::Valu
         b.CreateICmpSGE(t, guess_date), b.CreateSelect(b.CreateICmpSLT(t, next_date), guess, next), b.CreateSub(guess, b.getInt64(1)));
 }
 
+/// `DateLUTImpl::toDayNum` of a `DateTime` (an `i64` in `[0, 2^32)`) as a `Date`: the day index less the offset of the epoch,
+/// at least 0 (`saturateMinus`). A `DateTime` always ends before the last `Date`, so the result fits.
+inline llvm::Value * compileDateTimeToDayNum(llvm::IRBuilder<> & b, llvm::Value * value, const DateLUTImpl & time_zone)
+{
+    auto * lut = compileLUTPointer(b, time_zone);
+    auto * index = compileLUTIndexOfDateTime(b, lut, b.CreateZExt(value, b.getInt64Ty()));
+    auto * day_num = b.CreateSub(index, b.getInt64(DateLUTImpl::getDayNumOffsetEpoch()));
+    return b.CreateTrunc(b.CreateBinaryIntrinsic(llvm::Intrinsic::smax, day_num, b.getInt64(0)), b.getInt16Ty());
+}
+
 /// `DateLUTImpl::saturated`: the start of the first day that starts at or after the epoch.
 inline Int64 firstNonNegativeDate(const DateLUTImpl & time_zone)
 {

@@ -5,13 +5,14 @@
 # `toStartOfDay`, `toStartOfHour` and the minute intervals are compiled from the start of the day in the lookup table of
 # the time zone of their `DateTime` result. They run on edge values (the epoch, daylight saving changes, the end of the
 # range) in time zones whose offset is a whole number of hours, of half hours and of quarter hours, and with half-hour
-# daylight saving (Lord Howe), compiled and interpreted, in two session time zones one after the other.
+# daylight saving (Lord Howe), compiled and interpreted, in two session time zones one after the other. So do `toDate` and
+# `toUnixTimestamp` of a `DateTime`.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-FUNCTIONS=(toStartOfDay toStartOfHour toStartOfMinute toStartOfFiveMinutes toStartOfTenMinutes toStartOfFifteenMinutes)
+FUNCTIONS=(toStartOfDay toStartOfHour toStartOfMinute toStartOfFiveMinutes toStartOfTenMinutes toStartOfFifteenMinutes toDate toUnixTimestamp)
 COLUMNS=(t t_ny t_kolkata t_kathmandu t_lord_howe t_st_johns d)
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS jit_date_start_of"

@@ -61,6 +61,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsCodingIP.h>
+#include <Functions/compileDateTransform.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/TransformDateTime64.h>
 #include <Functions/TransformTime64.h>
@@ -3829,7 +3830,13 @@ public:
         return name;
     }
 
-    void updateHash(SipHash & hash) const override { settings.updateHash(hash); }
+    void updateHash(SipHash & hash) const override
+    {
+        settings.updateHash(hash);
+        /// A `DateTime` without a time zone of its own is converted to a `Date` in the session time zone.
+        if constexpr (std::is_same_v<Name, NameToDate>)
+            hash.update(DateLUT::instance().getTimeZone());
+    }
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -4139,13 +4146,36 @@ public:
     }
 
 #if USE_EMBEDDED_COMPILER
+    /// `toDate` of one `DateTime`: the day in the time zone of the argument (`ToDateImpl`, `extractTimeZoneFromFunctionArguments`).
+    /// `toUnixTimestamp` of one `DateTime`: the value itself.
+    static bool isCompilableDateTimeConversion(const DataTypes & types, const DataTypePtr & result_type)
+    {
+        if (types.size() != 1 || !isDateTime(types[0]))
+            return false;
+        if constexpr (std::is_same_v<Name, NameToDate>)
+            return isDate(result_type);
+        else if constexpr (std::is_same_v<Name, NameToUnixTimestamp>)
+            return WhichDataType(result_type).isUInt32();
+        else
+            return false;
+    }
+
     bool isCompilableImpl(const DataTypes & types, const DataTypePtr & result_type) const override
     {
-        return convertIsCompilableImpl(types, result_type);
+        return isCompilableDateTimeConversion(types, result_type) || convertIsCompilableImpl(types, result_type);
     }
 
     llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & result_type) const override
     {
+        if (isCompilableDateTimeConversion({arguments[0].type}, result_type))
+        {
+            if constexpr (std::is_same_v<Name, NameToDate>)
+            {
+                const auto & time_zone = assert_cast<const DataTypeDateTime &>(*arguments[0].type).getTimeZone();
+                return compileDateTimeToDayNum(static_cast<llvm::IRBuilder<> &>(builder), arguments[0].value, time_zone);
+            }
+            return arguments[0].value;
+        }
         return convertCompileImpl(builder, arguments, result_type);
     }
 #endif

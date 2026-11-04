@@ -31,5 +31,9 @@
     <query>SELECT countIf(toStartOfTenMinutes(t_kathmandu) = toStartOfFiveMinutes(t_kathmandu)) FROM jit_date_start_of SETTINGS compile_expressions = {compile}</query>
     <query>SELECT countIf(toStartOfDay(d) &lt; t) FROM jit_date_start_of SETTINGS compile_expressions = {compile}</query>
 
+    <!-- Conversions of DateTime: the day in the time zone of the argument, and the timestamp itself. -->
+    <query>SELECT countIf(toDate(t_ny) = d) FROM jit_date_start_of SETTINGS compile_expressions = {compile}</query>
+    <query>SELECT sum(toUnixTimestamp(t) % 1000 + 1) FROM jit_date_start_of SETTINGS compile_expressions = {compile}</query>
+
     <drop_query>DROP TABLE IF EXISTS jit_date_start_of</drop_query>
 </test>
