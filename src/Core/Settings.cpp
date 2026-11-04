@@ -3769,8 +3769,7 @@ Buffering is required because `ABR` may retry a query on a coarser underlying ta
 
 Set to `0` to skip the in-memory buffer entirely and always spill to disk.
 )", 0, \
-        {"26.11", 16 * 1024 * 1024, 16 * 1024 * 1024, "New setting for the `ABR` table engine."}, \
-        {"26.10", 16 * 1024 * 1024, 16 * 1024 * 1024, "New setting for the `ABR` table engine."}) \
+        {"26.11", 16 * 1024 * 1024, 16 * 1024 * 1024, "New setting for the `ABR` table engine."}) \
     DECLARE(UInt64, abr_first_table_suffix, 0, R"(
 Minimum sample interval (suffix) to consider when the `ABR` table engine chooses an underlying table. Tables with a smaller sample
 interval are skipped even if their retention covers the query range.
@@ -3779,8 +3778,7 @@ Useful when the finest-grained tables are known to be too expensive for a class 
 
 `0` means no minimum: the finest available resolution is eligible.
 )", 0, \
-        {"26.11", 0, 0, "New setting for the `ABR` table engine."}, \
-        {"26.10", 0, 0, "New setting for the `ABR` table engine."}) \
+        {"26.11", 0, 0, "New setting for the `ABR` table engine."}) \
     DECLARE(UInt64, abr_last_table_suffix, 0, R"(
 Maximum sample interval (suffix) to consider when the `ABR` table engine chooses an underlying table. Tables with a larger sample
 interval are excluded from selection.
@@ -3793,8 +3791,7 @@ only between the tables up to it.
 
 `0` means no maximum: the coarsest available table is eligible.
 )", 0, \
-        {"26.11", 0, 0, "New setting for the `ABR` table engine."}, \
-        {"26.10", 0, 0, "New setting for the `ABR` table engine."}) \
+        {"26.11", 0, 0, "New setting for the `ABR` table engine."}) \
     DECLARE(UInt64, max_rows_to_read, 0, R"(
 The maximum number of rows that can be read from a table when running a query.
 The restriction is checked for each processed chunk of data, applied only to the
@@ -11541,7 +11538,7 @@ Allow to create tables with `Paimon*` table engines.
 Allow to create tables with the experimental `ABR` table engine.
 It is only checked when a table is created: `ABR` tables are loaded and can be queried regardless of this setting.
 )", EXPERIMENTAL, \
-        {"26.10", false, false, "New setting for the experimental `ABR` table engine."}) \
+        {"26.11", false, false, "New setting for the experimental `ABR` table engine."}) \
     DECLARE(Int64, paimon_target_snapshot_id, -1, R"(
 Query-level targeted snapshot read for Paimon incremental mode. When >0, the reader will only fetch the delta
 for the specified snapshot_id without advancing the committed watermark.

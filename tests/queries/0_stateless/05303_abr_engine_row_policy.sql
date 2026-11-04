@@ -15,6 +15,7 @@ DROP ROW POLICY IF EXISTS 03586_filter_account ON row_policy_test_10;
 DROP ROW POLICY IF EXISTS 03586_abr_filter ON abr;
 DROP ROW POLICY IF EXISTS 03586_abr_always_true ON abr;
 DROP ROW POLICY IF EXISTS 03586_abr_other_role ON abr;
+DROP ROW POLICY IF EXISTS 03586_abr_others_always_true ON abr;
 DROP ROLE IF EXISTS r_05303_abr;
 
 -- Table 1: High resolution (sample_interval = 1)
@@ -111,12 +112,16 @@ SELECT count() FROM abr WHERE ts >= toDateTime('2026-01-01 12:00:00') - INTERVAL
 SELECT count() FROM abr WHERE ts >= toDateTime('2026-01-01 12:00:00') - INTERVAL 99 HOUR SETTINGS enable_analyzer = 1;
 DROP ROW POLICY 03586_abr_always_true ON abr;
 
--- Test 8: A row policy on the ABR table granted to another role does not affect the current user
+-- Test 8: A row policy on the ABR table granted to another role does not affect the current user.
+-- The current user gets an always-true policy, so that the read does not depend on the server setting
+-- `access_control_improvements.throw_on_unmatched_row_policies`.
 CREATE ROLE r_05303_abr;
 CREATE ROW POLICY 03586_abr_other_role ON abr USING account_id = 'acct_A' AS permissive TO r_05303_abr;
+CREATE ROW POLICY 03586_abr_others_always_true ON abr USING 1 AS permissive TO ALL EXCEPT r_05303_abr;
 SELECT count() FROM abr WHERE ts >= toDateTime('2026-01-01 12:00:00') - INTERVAL 99 HOUR SETTINGS enable_analyzer = 0;
 SELECT count() FROM abr WHERE ts >= toDateTime('2026-01-01 12:00:00') - INTERVAL 99 HOUR SETTINGS enable_analyzer = 1;
 DROP ROW POLICY 03586_abr_other_role ON abr;
+DROP ROW POLICY 03586_abr_others_always_true ON abr;
 DROP ROLE r_05303_abr;
 
 DROP TABLE IF EXISTS abr;
