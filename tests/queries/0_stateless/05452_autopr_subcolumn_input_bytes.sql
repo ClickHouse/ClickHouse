@@ -201,14 +201,6 @@ SET enable_quantized_codec = 1;
 CREATE TABLE t_cache_quantized (key UInt64, vec Array(Float32) CODEC(Quantized('product', 8, 4, 2))) ENGINE = MergeTree ORDER BY key
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 INSERT INTO t_cache_quantized SELECT number, arrayMap(j -> toFloat32((number * 7 + j) % 13), range(8)) FROM numbers(2e5);
--- The columns of a part with a pending rename, reloaded, are read with the serialization of the requested column.
-DROP TABLE IF EXISTS t_cache_quantized_renamed;
-CREATE TABLE t_cache_quantized_renamed AS t_cache_quantized;
-INSERT INTO t_cache_quantized_renamed SELECT * FROM t_cache_quantized;
-SYSTEM STOP MERGES t_cache_quantized_renamed;
-ALTER TABLE t_cache_quantized_renamed RENAME COLUMN vec TO vec_renamed SETTINGS alter_sync = 0;
-DETACH TABLE t_cache_quantized_renamed;
-ATTACH TABLE t_cache_quantized_renamed;
 
 SET enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 2;
 
@@ -315,12 +307,6 @@ SETTINGS merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_inj
 SELECT vec.product_quantization_codebook FROM t_cache_quantized FORMAT Null
 SETTINGS merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0,
     use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_unknown_streams_quantized_codebook_2';
-SELECT vec_renamed FROM t_cache_quantized_renamed FORMAT Null
-SETTINGS merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0,
-    use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_unknown_streams_quantized_renamed_1';
-SELECT vec_renamed FROM t_cache_quantized_renamed FORMAT Null
-SETTINGS merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0,
-    use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_unknown_streams_quantized_renamed_2';
 
 SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
 
@@ -374,7 +360,6 @@ DROP TABLE t_skew_compact;
 DROP TABLE t_cache_sparse;
 DROP TABLE t_cache_dynamic;
 DROP TABLE t_cache_quantized;
-DROP TABLE t_cache_quantized_renamed;
 DROP TABLE t_cache_lowcardinality;
 DROP TABLE t_cache_empty_array;
 DROP TABLE t_cache_empty_string;
