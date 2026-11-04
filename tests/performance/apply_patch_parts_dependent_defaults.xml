@@ -1,4 +1,5 @@
-<test>
+<test iceberg="0">
+    <!-- Lightweight `UPDATE` and patch parts exist only for `MergeTree`: the Iceberg configuration cannot run the test. -->
     <settings>
         <allow_experimental_lightweight_update>1</allow_experimental_lightweight_update>
     </settings>
