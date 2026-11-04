@@ -3849,8 +3849,11 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
         auto denull_right_type = removeNullable(arguments[1]);
         WhichDataType data_type_lhs(denull_left_type);
         WhichDataType data_type_rhs(denull_right_type);
-        if ((data_type_lhs.isDateOrDate32() || data_type_lhs.isDateTime() || data_type_lhs.isTime()) ||
-            (data_type_rhs.isDateOrDate32() || data_type_rhs.isDateTime() || data_type_rhs.isTime()))
+        /// `Date - Date` and `DateTime - DateTime` are the `Int32` difference of the stored numbers, wrapping, as for integers.
+        const bool is_date_difference = is_minus && data_type_lhs.idx == data_type_rhs.idx && (data_type_lhs.isDate() || data_type_lhs.isDateTime());
+        if (!is_date_difference
+            && ((data_type_lhs.isDateOrDate32() || data_type_lhs.isDateTime() || data_type_lhs.isTime())
+                || (data_type_rhs.isDateOrDate32() || data_type_rhs.isDateTime() || data_type_rhs.isTime())))
             return false;
 
         return castBothTypes(
