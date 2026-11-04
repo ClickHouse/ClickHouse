@@ -551,7 +551,9 @@ FROM <left_table>
 (ON <expr_list>)|(USING <column_list>) ...
 ```
 
-Expressions from the `ON` clause and columns from the `USING` clause are called "join keys". Unless otherwise stated, a `JOIN` produces a [Cartesian product](https://en.wikipedia.org/wiki/Cartesian_product) from rows with matching "join keys", which might produce results with many more rows than the source tables.
+Expressions from the `ON` clause and columns from the `USING` clause are called "JOIN keys". Unless otherwise stated, a `JOIN` produces a [Cartesian product](https://en.wikipedia.org/wiki/Cartesian_product) from rows with matching JOIN keys, which might produce results with many more rows than the source tables.
+
+This page describes the syntax and semantics of the `JOIN` clause and lists the settings that affect it. JOIN types and strictness are explained with diagrams in [Using JOINs in ClickHouse](/concepts/features/operations/select/joining-tables). Query planning and the execution of each algorithm are described in [How ClickHouse executes JOINs](/concepts/features/operations/select/join-execution) and [JOIN algorithms](/concepts/features/operations/select/join-algorithms). Memory limits and spilling to disk are described in [JOIN memory management and spilling](/concepts/features/operations/select/join-memory-management). Best practices are collected in [Minimize and optimize JOINs](/concepts/best-practices/minimize-optimize-joins).
 
 ## Supported types of JOIN {#supported-types-of-join}
 
@@ -559,30 +561,33 @@ All standard [SQL JOIN](https://en.wikipedia.org/wiki/Join_(SQL)) types are supp
 
 | Type              | Description                                                                   |
 |-------------------|-------------------------------------------------------------------------------|
-| `INNER JOIN`      | only matching rows are returned.                                              |
-| `LEFT OUTER JOIN` | non-matching rows from left table are returned in addition to matching rows.  |
-| `RIGHT OUTER JOIN`| non-matching rows from right table are returned in addition to matching rows. |
-| `FULL OUTER JOIN` | non-matching rows from both tables are returned in addition to matching rows. |
-| `CROSS JOIN`      | produces cartesian product of whole tables, "join keys" are **not** specified.|
-| `NATURAL JOIN`    | automatically joins on all columns with the same name in both tables; each common column appears once in the result. Supports `INNER` (default), `LEFT`, `RIGHT`, and `FULL` variants. Equivalent to `JOIN ... USING (col1, col2, ...)` where the column list is derived automatically. |
+| `INNER JOIN`      | Only matching rows are returned.                                              |
+| `LEFT OUTER JOIN` | Non-matching rows from the left table are returned in addition to matching rows.  |
+| `RIGHT OUTER JOIN`| Non-matching rows from the right table are returned in addition to matching rows. |
+| `FULL OUTER JOIN` | Non-matching rows from both tables are returned in addition to matching rows. |
+| `CROSS JOIN`      | Produces the Cartesian product of whole tables. JOIN keys are **not** specified.|
+| `NATURAL JOIN`    | Automatically joins on all columns with the same name in both tables. Each common column appears once in the result. Supports `INNER` (default), `LEFT`, `RIGHT`, and `FULL` variants. Equivalent to `JOIN ... USING (col1, col2, ...)` where the column list is derived automatically. |
 
 - `JOIN` without a type specified implies `INNER`.
-- The keyword `OUTER` can be safely omitted.
+- The keyword `OUTER` can be omitted.
 - An alternative syntax for `CROSS JOIN` is specifying multiple tables in the [`FROM` clause](/reference/statements/select/from) separated by commas.
 - If there are no matching columns for a `NATURAL JOIN`, it functions like a `CROSS JOIN`.
 
-Additional join types available in ClickHouse are:
+Additional JOIN types available in ClickHouse are:
 
 | Type                                        | Description                                                                                                                               |
 |---------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------|
-| `LEFT SEMI JOIN`, `RIGHT SEMI JOIN`         | An allowlist on "join keys", without producing a cartesian product.                                                                        |
-| `LEFT ANTI JOIN`, `RIGHT ANTI JOIN`         | A denylist on "join keys", without producing a cartesian product.                                                                        |
-| `LEFT ANY JOIN`, `RIGHT ANY JOIN`, `INNER ANY JOIN` | Partially (for opposite side of `LEFT` and `RIGHT`) or completely (for `INNER` and `FULL`) disables the cartesian product for standard `JOIN` types. |
-| `ASOF JOIN`, `LEFT ASOF JOIN`               | Joining sequences with a non-exact match. `ASOF JOIN` usage is described below.                                                           |
-| `PASTE JOIN`                                | Performs a horizontal concatenation of two tables.                                                                                          |
+| `LEFT SEMI JOIN`, `RIGHT SEMI JOIN`         | An allowlist on JOIN keys, without producing a Cartesian product.                                                                        |
+| `LEFT ANTI JOIN`, `RIGHT ANTI JOIN`         | A denylist on JOIN keys, without producing a Cartesian product.                                                                        |
+| `LEFT ANY JOIN`, `RIGHT ANY JOIN`, `INNER ANY JOIN` | Partially (for the opposite side of `LEFT` and `RIGHT`) or completely (for `INNER`) disables the Cartesian product for standard `JOIN` types. `ANY FULL JOIN` is not supported. |
+| `ASOF JOIN`, `LEFT ASOF JOIN`               | Joining sequences with a non-exact match. See [ASOF JOIN usage](#asof-join-usage).                                                           |
+| `PASTE JOIN`                                | Performs a horizontal concatenation of two tables. See [PASTE JOIN usage](#paste-join-usage).                                                                                          |
+| `INNER JOIN LATERAL`, `LEFT JOIN LATERAL`   | Joins a subquery that references columns of the tables on its left side. Experimental, requires [`enable_lateral_join`](/reference/settings/session-settings/enable#enable_lateral_join). See [LATERAL JOIN](#lateral-join). |
+
+Diagrams of each JOIN type and strictness are shown in [Using JOINs in ClickHouse](/concepts/features/operations/select/joining-tables#join-types-and-strictness).
 
 <Note>
-When using the analyzer, disabling the `semi_join_include_columns_from_both_sides` or `anti_join_include_columns_from_both_sides` setting makes the corresponding join expose only its preserved side to expressions resolved after the join result is formed.
+Disabling the `semi_join_include_columns_from_both_sides` or `anti_join_include_columns_from_both_sides` setting makes the corresponding join expose only its preserved side to expressions resolved after the join result is formed.
 
 - `LEFT SEMI JOIN` and `LEFT ANTI JOIN` expose only left-side columns.
 - `RIGHT SEMI JOIN` and `RIGHT ANTI JOIN` expose only right-side columns.
@@ -592,115 +597,32 @@ When using the analyzer, disabling the `semi_join_include_columns_from_both_side
 When these settings are enabled (the default), ClickHouse keeps the legacy behavior, where both sides remain accessible and `SELECT *` expands columns from both tables.
 </Note>
 
-<Note>
-When [join_algorithm](/reference/settings/session-settings/join#join_algorithm) is set to `partial_merge`, `RIGHT JOIN` and `FULL JOIN` are supported only with `ALL` strictness (`SEMI`, `ANTI`, `ANY`, and `ASOF` are not supported).
-</Note>
+Not every JOIN algorithm supports every combination of JOIN type and strictness. The supported combinations are listed in [Supported JOIN types per algorithm](/concepts/features/operations/select/join-algorithms#supported-join-types-per-algorithm).
 
-## LATERAL JOIN {#lateral-join}
+### Rewriting `CROSS JOIN` as `INNER JOIN` {#cross-join-rewrite}
 
-`JOIN LATERAL` lets the subquery on the right side of a join reference columns of the table
-expressions on its left side. The result is as if the subquery were evaluated for each distinct combination
-of the left-side column values it references, and its result were joined to every left row with that combination:
+When the `WHERE` clause of a query that uses a `CROSS JOIN` or a comma-separated list of tables contains equality conditions between the tables, ClickHouse can rewrite the JOIN as an `INNER JOIN` that uses these conditions as JOIN keys. The [`cross_to_inner_join_rewrite`](/reference/settings/session-settings/other#cross_to_inner_join_rewrite) setting controls this rewrite:
 
-```sql
-SELECT ...
-FROM <left_table>
-[INNER|LEFT] JOIN LATERAL (SELECT ... WHERE <expr referencing left_table>) AS <alias> ON true
-```
+- `0`: The rewrite is disabled.
+- `1`: A comma-separated list of tables or a `CROSS JOIN` is rewritten when the `WHERE` clause contains an equality condition between the tables. Otherwise, the JOIN is executed as a `CROSS JOIN`.
+- `2`: As with `1`, but a comma-separated list of tables that cannot be rewritten makes the query fail with the `INCORRECT_QUERY` error if the query has a `WHERE` clause. A JOIN written with the `CROSS JOIN` keywords that cannot be rewritten is executed as a `CROSS JOIN`.
 
-The `ON true` predicate is mandatory, as for any other `INNER` or `LEFT JOIN`; omitting it is a syntax error.
-
-It is experimental and disabled by default; enable it with the
-[`enable_lateral_join`](/reference/settings/session-settings/enable#enable_lateral_join) setting.
-
-The lateral subquery is not executed once per left row or once per distinct combination. Like other correlated
-subqueries, it is decorrelated into a single query over all left rows: the left-side columns it references are
-added to its `GROUP BY` keys if it aggregates, its `LIMIT` (if any) becomes `LIMIT ... BY` these columns, and its
-result is joined to the left rows on them. When the correlation is a simple equality, such as `orders.user_id = u.id`,
-the left-side column can be replaced by the equal column of the subquery
-(`correlated_subqueries_substitute_equivalent_expressions`, enabled by default), which can let the subquery avoid
-reading the left rows. This is not guaranteed: for example, an aggregate without `GROUP BY` (such as `count`) still
-reads the distinct left values to produce its result for left values with no matching rows. Whenever the distinct
-left values are passed to the subquery, with the default settings this goes through an in-memory buffer, and only
-when such a buffer is actually used the join is always a hash join. In all other cases, such as when the equality
-substitution avoids reading the left rows or the buffer is disabled
-(`correlated_subqueries_use_in_memory_buffer = 0` or `correlated_subqueries_default_join_kind = 'left'`), the
-algorithm is chosen by the `join_algorithm` setting. For example, `EXPLAIN` of a lateral subquery with `LIMIT`
-shows a `Join` step over a `LimitBy (LIMIT BY for decorrelated correlated subquery)` step; a subquery without
-`LIMIT` has no such step.
-
-Only the following subset is supported so far; anything else is rejected with an error:
-
-- `INNER JOIN LATERAL` and `LEFT JOIN LATERAL` only; `RIGHT`, `FULL`, `PASTE` and `NATURAL` joins are not supported, and `LATERAL` cannot be combined with a `CROSS` or comma join at all.
-- The default `ALL` strictness only; `ANY`, `SEMI`, `ANTI` and `ASOF` are not supported.
-- No join predicate other than `ON true` (`ON 1` is also accepted); `USING` is not supported, and the predicate
-  cannot be omitted. Put the filters that relate the two sides into the `WHERE` clause of the lateral subquery.
-- The `GLOBAL` and `LOCAL` join modifiers are not supported.
-- The lateral subquery must reference at least one column of the left side. Use a regular join for a
-  non-correlated subquery.
-- Because the lateral subquery is decorrelated rather than evaluated separately for each left value, it
-  must not contain functions that are non-deterministic within a query, such as
-  `rand` or `generateUUIDv4`, or table functions that generate random rows, such as `generateRandom`.
-  Functions that are constant within a query, such as `now`, are allowed.
-- Only a subquery is supported as the lateral table expression. The PostgreSQL table-source forms
-  `LATERAL unnest(...)` and `CROSS JOIN UNNEST(...)` are not supported - use the
-  [`ARRAY JOIN`](/reference/statements/select/array-join) clause instead.
-- The `GROUP BY` and `ORDER BY` of the lateral subquery run once for all left values together, so the
-  `max_rows_to_group_by`, `max_rows_to_sort` and `max_bytes_to_sort` limits count the rows for all left values,
-  not for one. They are only supported with the `throw` overflow mode; `any` and `break` are rejected.
-- The result of the decorrelated subquery is matched to the left rows by a single join. As for any hash join,
-  `max_rows_in_join` and `max_bytes_in_join` limit the side of this join that is kept in memory, and the
-  planner chooses that side: when the in-memory buffer described above is actually used, it is the left side
-  of `JOIN LATERAL`, because the left rows must be fully read before the lateral subquery is evaluated; otherwise it can be the result of the decorrelated subquery. The limits are always
-  enforced as if `join_overflow_mode` were `throw`: with `break`, the join would silently drop unrelated left rows.
-
-**Example**
-
-```sql
-SELECT u.id, o.total
-FROM users AS u
-LEFT JOIN LATERAL
-(
-    SELECT total
-    FROM orders
-    WHERE orders.user_id = u.id
-    ORDER BY total DESC
-    LIMIT 1
-) AS o ON true
-SETTINGS enable_lateral_join = 1;
-```
-
-## Settings {#settings}
-
-The default join type can be overridden using [`join_default_strictness`](/reference/settings/session-settings/join#join_default_strictness) setting.
-
-The behavior of the ClickHouse server for `ANY JOIN` operations depends on the [`any_join_distinct_right_table_keys`](/reference/settings/session-settings/other#any_join_distinct_right_table_keys) setting.
-
-**See also**
-
-- [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm)
-- [`join_any_take_last_row`](/reference/settings/session-settings/join#join_any_take_last_row)
-- [`join_use_nulls`](/reference/settings/session-settings/join#join_use_nulls)
-- [`partial_merge_join_rows_in_right_blocks`](/reference/settings/session-settings/partial-merge#partial_merge_join_rows_in_right_blocks)
-- [`join_on_disk_max_files_to_merge`](/reference/settings/session-settings/join#join_on_disk_max_files_to_merge)
-- [`any_join_distinct_right_table_keys`](/reference/settings/session-settings/other#any_join_distinct_right_table_keys)
-
-Use the `cross_to_inner_join_rewrite` setting to define the behavior when ClickHouse fails to rewrite a `CROSS JOIN` as an `INNER JOIN`. The default value is `1`, which  allows the join to continue but it will be slower. Set `cross_to_inner_join_rewrite` to `0` if you want an error to be thrown, and set it to `2` to not run the cross joins but instead force a rewrite of all comma/cross joins. If the rewriting fails when the value is `2`, you will receive an error message stating "Please, try to simplify `WHERE` section".
+With the value `0`, the query plan optimization controlled by [`query_plan_merge_filter_into_join_condition`](/reference/settings/session-settings/query-plan#query_plan_merge_filter_into_join_condition) can still merge an equality filter into the JOIN and execute it as an `INNER JOIN`.
 
 ## ON section conditions {#on-section-conditions}
 
-An `ON` section can contain several conditions combined using the `AND` and `OR` operators. Conditions specifying join keys must:
+An `ON` section can contain several conditions combined using the `AND` and `OR` operators. Conditions specifying JOIN keys must:
 - reference both left and right tables
 - use the equality operator
 
 Other conditions may use other operators and may reference either the left or the right table of a query, or both.
 
-Rows are joined if the whole complex condition is met. If the conditions are not met, rows may still be included in the result depending on the `JOIN` type. Note that if the same conditions are placed in a `WHERE` section and they are not met, then rows are always filtered out from the result.
+Rows are joined if the whole complex condition is met. If the conditions are not met, rows may still be included in the result depending on the `JOIN` type. If the same conditions are placed in a `WHERE` section and they are not met, then rows are always filtered out from the result.
 
-The `OR` operator inside the `ON` clause works using the hash join algorithm — for each `OR` argument with join keys for `JOIN`, a separate hash table is created, so memory consumption and query execution time grow linearly with an increase in the number of expressions `OR` of the `ON` clause.
+JOIN keys combined with `OR` are supported only by the [`hash`](/concepts/features/operations/select/join-algorithms#hash) algorithm, which builds a separate hash table for each `OR` argument that contains JOIN keys.
 
 <Note>
-Only the equality operator (`=`) makes a condition a join key. Other operators between columns of different tables are supported, but without any equality the join has to examine every pair of rows and is much slower; see [JOIN with an arbitrary ON condition](#join-with-an-arbitrary-on-condition).
+Only the equality operator (`=`) makes a condition a JOIN key. Other operators between columns of different tables are supported, but without any equality the JOIN has to examine every pair of rows; see [JOIN with an arbitrary ON condition](#join-with-an-arbitrary-on-condition).
 </Note>
 
 **Example**
@@ -715,14 +637,14 @@ Consider `table_1` and `table_2`:
 └────┴──────┘     └────┴────────────────┴────────┘
 ```
 
-Query with one join key condition and an additional condition for `table_2`:
+Query with one JOIN key condition and an additional condition for `table_2`:
 
 ```sql title="Query"
 SELECT name, text FROM table_1 LEFT OUTER JOIN table_2
     ON table_1.Id = table_2.Id AND startsWith(table_2.text, 'Text');
 ```
 
-Note that the result contains the row with the name `C` and the empty text column. It is included into the result because an `OUTER` type of a join is used.
+The result contains the row with the name `C` and the empty text column. It is included into the result because an `OUTER` type of a join is used.
 
 ```response title="Response"
 ┌─name─┬─text───┐
@@ -739,11 +661,12 @@ SELECT name, text, scores FROM table_1 INNER JOIN table_2
     ON table_1.Id = table_2.Id AND table_2.scores > 10 AND startsWith(table_2.text, 'Text');
 ```
 
-```sql title="Response"
+```response title="Response"
 ┌─name─┬─text───┬─scores─┐
 │ B    │ Text B │     15 │
 └──────┴────────┴────────┘
 ```
+
 Query with `INNER` type of a join and condition with `OR`:
 
 ```sql title="Query"
@@ -773,7 +696,7 @@ Query with `INNER` type of a join and conditions with `OR` and `AND`:
 <Note>
 
 A non-equal condition that uses columns from a single table, such as `t1.a = t2.key AND t1.b > 0 AND t2.b > t2.c`, is applied to that table alone: `t1.b > 0` uses columns only from `t1` and `t2.b > t2.c` uses columns only from `t2`.
-A non-equal condition that compares columns of different tables, such as `t1.a = t2.key AND t1.b > t2.key`, is also supported; check out the sections below for more details.
+A non-equal condition that compares columns of different tables, such as `t1.a = t2.key AND t1.b > t2.key`, is also supported; see the sections below.
 </Note>
 
 ```sql title="Query"
@@ -790,11 +713,11 @@ SELECT a, b, val FROM t1 INNER JOIN t2 ON t1.a = t2.key OR t1.b = t2.key AND t2.
 
 ## JOIN with inequality conditions for columns from different tables {#join-with-inequality-conditions-for-columns-from-different-tables}
 
-ClickHouse supports `ALL/ANY/SEMI/ANTI INNER/LEFT/RIGHT/FULL JOIN` with inequality conditions in addition to equality conditions.
+In addition to equality conditions, the `ON` section can contain conditions that compare columns of different tables with other operators. Such conditions are supported with `ALL`, `ANY`, `SEMI`, and `ANTI` strictness for every JOIN type that the strictness allows. They are not supported with `ASOF` strictness.
 
-When the `ON` section contains an equality between the two tables next to the inequality, the equality is the join key and the inequality is checked on the rows it matched. Such a mixed condition is executed only by the `hash`, `parallel_hash` and `grace_hash` join algorithms.
+When the `ON` section contains an equality between the two tables next to the inequality, the equality is the JOIN key and the inequality is checked on the rows it matched. Such a mixed condition is executed by the [`hash`](/concepts/features/operations/select/join-algorithms#hash), [`parallel_hash`](/concepts/features/operations/select/join-algorithms#parallel-hash), and [`grace_hash`](/concepts/features/operations/select/join-algorithms#grace-hash) algorithms. When [`ie_join`](/concepts/features/operations/select/join-algorithms#ie-join) is listed first in [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) and the `ON` section contains two inequality conditions, `ie_join` executes the JOIN and applies the equality as a filter.
 
-When the `ON` section contains no equality between the two tables, there is no join key to match on. Such a join is executed by [`ie_join`](/reference/settings/session-settings/join#join_algorithm) when the condition is a pair of inequalities, or otherwise as a [block nested loop join](#join-with-an-arbitrary-on-condition).
+When the `ON` section contains no equality between the two tables, there is no JOIN key to match on. Such a JOIN is executed by [`ie_join`](/concepts/features/operations/select/join-algorithms#ie-join) when the condition is a pair of inequalities, or otherwise as a [block nested loop join](#join-with-an-arbitrary-on-condition).
 
 A condition evaluated during the join may not contain `arrayJoin`, because it must preserve the number of rows; use `ARRAY JOIN` in a subquery instead.
 
@@ -846,9 +769,9 @@ key4    f    2    3    4            0    0    \N
 
 ## JOIN with an arbitrary ON condition {#join-with-an-arbitrary-on-condition}
 
-The `ON` section may be an arbitrary boolean expression over the columns of both tables, such as a range check, an arithmetic comparison, or a call to a scalar function. When it contains no equality between the two tables, there is no join key to match rows on. A pair of inequality conditions is executed by `ie_join` when that algorithm is listed in [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm), as it is by default. Any other condition is executed as a [block nested loop join](https://en.wikipedia.org/wiki/Nested_loop_join): the right table is materialized and the condition is evaluated on every pair of rows. An `ALL INNER JOIN` takes the equivalent form of a `CROSS JOIN` with the condition as a filter.
+The `ON` section may be an arbitrary boolean expression over the columns of both tables, such as a range check, an arithmetic comparison, or a call to a scalar function. When it contains no equality between the two tables, there is no JOIN key to match rows on. A pair of inequality conditions is executed by `ie_join` when that algorithm is listed in [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm), as it is by default. Any other condition is executed as a [block nested loop join](https://en.wikipedia.org/wiki/Nested_loop_join): the right table is materialized and the condition is evaluated on every pair of rows. An `ALL INNER JOIN` takes the equivalent form of a `CROSS JOIN` with the condition as a filter.
 
-The block nested loop join supports every join type and strictness except `ASOF JOIN`, `PASTE JOIN` and `ANY FULL JOIN`. It is not one of the `join_algorithm` values: it is the last resort, used only when no other algorithm can execute the condition. In `EXPLAIN` output it appears as a `BlockNestedLoopJoin` step. When [`allow_block_nested_loop_join`](/reference/settings/session-settings/allow#allow_block_nested_loop_join) is disabled, a query that would need it is rejected with `INVALID_JOIN_ON_EXPRESSION`.
+The block nested loop join supports every JOIN type and strictness except `ASOF JOIN`, `PASTE JOIN` and `ANY FULL JOIN`. It is not one of the `join_algorithm` values: it is the last resort, used only when no other algorithm can execute the condition. In `EXPLAIN` output it appears as a `BlockNestedLoopJoin` step. When [`allow_block_nested_loop_join`](/reference/settings/session-settings/allow#allow_block_nested_loop_join) is disabled, a query that would need it is rejected with `INVALID_JOIN_ON_EXPRESSION`.
 
 **Example**
 
@@ -873,23 +796,19 @@ ORDER BY o.id;
 └────┴────────┴─────┘
 ```
 
-The row that matched nothing is padded according to [`join_use_nulls`](/reference/settings/session-settings/join#join_use_nulls), as in any other join: with a default value above, and with `NULL` when the setting is enabled.
+The row that matched nothing is padded according to [`join_use_nulls`](/reference/settings/session-settings/join#join_use_nulls), as in any other JOIN: with a default value above, and with `NULL` when the setting is enabled.
 
 **Strictness**
 
-`ANY` and `SEMI` normally keep one row per group of rows that share a join key. There is no such group here, so they keep one row per row of the table that drives the join: `LEFT ANY` and `LEFT SEMI` emit each left row at most once, `RIGHT ANY` and `RIGHT SEMI` each right row at most once. `ANY INNER` limits both sides at once — each row of either table is used at most once, so the result has at most as many rows as the smaller table. Which pairs make up such a result is arbitrary, exactly as `ANY` implies, and it may differ between two runs of the same query. For `ANY INNER` this extends to the number of rows: pairing each row of both sides greedily, in whatever order the rows are examined, may leave a different number of rows unpaired, so the result of `count()` over an `ANY INNER` join with no join key is not reproducible and depends on the number of threads and on the physical order of the right table.
+`ANY` and `SEMI` normally keep one row per group of rows that share a JOIN key. There is no such group here, so they keep one row per row of the table that drives the JOIN: `LEFT ANY` and `LEFT SEMI` emit each left row at most once, `RIGHT ANY` and `RIGHT SEMI` each right row at most once. `ANY INNER` limits both sides at once: each row of either table is used at most once, so the result has at most as many rows as the smaller table. Which pairs make up such a result is arbitrary, exactly as `ANY` implies, and it may differ between two runs of the same query. For `ANY INNER` this extends to the number of rows: pairing each row of both sides greedily, in whatever order the rows are examined, may leave a different number of rows unpaired, so the result of `count()` over an `ANY INNER` JOIN with no JOIN key is not reproducible and depends on the number of threads and on the physical order of the right table.
 
 **Performance**
 
-Every pair of rows is examined, so the work grows with the *product* of the two tables' row counts rather than with their sum. A block nested loop join is therefore orders of magnitude more expensive than a hash join on the same data, and the gap widens as the tables grow. If a query can be written with at least one equality in its `ON` section, write it that way.
-
-`LEFT ANY`, `ANY INNER`, `LEFT SEMI` and `LEFT ANTI` joins stop scanning the right table at a left row's first matching row, which usually makes them cheaper than the corresponding `ALL` join. Their right-driven counterparts (`RIGHT ANY`, `RIGHT SEMI`, `RIGHT ANTI`) examine every pair, because the result depends on which right rows matched. [`join_any_take_last_row`](/reference/settings/session-settings/join#join_any_take_last_row) has no effect here: with no join key there is no group of matching rows to take the last one of.
-
-Memory is bounded by the materialized right table and does not grow with the size of the result. The right table is subject to the same settings as in other join algorithms, listed under [Memory limitations](#memory-limitations): [`max_rows_in_join`](/reference/settings/session-settings/max-rows#max_rows_in_join), [`max_bytes_in_join`](/reference/settings/session-settings/max-bytes#max_bytes_in_join) and [`join_overflow_mode`](/reference/settings/session-settings/join#join_overflow_mode) limit it, and [`max_bytes_before_external_join`](/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) makes it spill to disk.
+A block nested loop join examines every pair of rows, so its cost grows with the product of the row counts of both tables, as described in [Block nested loop fallback](/concepts/features/operations/select/join-algorithms#block-nested-loop-fallback). The materialized right table is subject to the hard limits and spill thresholds described in [JOIN memory management and spilling](/concepts/features/operations/select/join-memory-management).
 
 ## NULL and NaN values in JOIN keys {#null-values-in-join-keys}
 
-`NULL` is not equal to any value, including itself. This means that if a `JOIN` key has a `NULL` value in one table, it won't match a `NULL` value in the other table.
+`NULL` is not equal to any value, including itself. If a JOIN key has a `NULL` value in one table, it does not match a `NULL` value in the other table. If the JOIN keys are [Nullable](/reference/data-types/nullable) columns, a row in which at least one of the keys is [NULL](/reference/syntax#null) is not joined.
 
 **Example**
 
@@ -925,9 +844,11 @@ SELECT A.name, B.score FROM A LEFT JOIN B ON A.id = B.id
 └─────────┴───────┘
 ```
 
-Notice that the row with `Charlie` from table `A` and the row with score 88 from table `B` are not in the result because of the `NULL` value in the `JOIN` key.
+The row with `Charlie` from table `A` and the row with score 88 from table `B` are not matched because of the `NULL` value in the JOIN key.
 
-In case you want to match `NULL` values, use the `isNotDistinctFrom` function to compare the `JOIN` keys.
+The rows without a match get the value `0` in the `score` column, as described in [Processing of empty or NULL cells](#processing-of-empty-or-null-cells).
+
+To match `NULL` values, compare the JOIN keys with the `isNotDistinctFrom` function:
 
 ```sql
 SELECT A.name, B.score FROM A LEFT JOIN B ON isNotDistinctFrom(A.id, B.id)
@@ -941,22 +862,65 @@ SELECT A.name, B.score FROM A LEFT JOIN B ON isNotDistinctFrom(A.id, B.id)
 └─────────┴───────┘
 ```
 
-`NaN` values in float `JOIN` keys do not follow the `NULL` rule above.
-A scalar comparison of two `NaN` values (`NaN = NaN`) is `0`, however, `JOIN` keys are not compared using scalar semantics - `NaN` keys may match.
-Whether they actually do is an implementation detail and depends on the join algorithm, the key type, and the session settings.
-Do not rely on a specific behavior.
-If you require that `NaN` rows do not match, map them to `NULL` values: `ON if(isNaN(A.id), NULL, A.id) = B.id`.
-In an `ASOF JOIN`, the closest-match column is compared by ordering, which `NaN` does not support — filter such rows out on both sides.
+`NaN` values in float JOIN keys do not follow the `NULL` rule above.
+A scalar comparison of two `NaN` values (`NaN = NaN`) is `0`. However, JOIN keys are not compared using scalar semantics, and `NaN` keys may match.
+Whether they match is not specified: it depends on the JOIN algorithm, the key type, and the session settings.
+To exclude `NaN` keys from matching, map them to `NULL` values, for example `ON if(isNaN(A.id), NULL, A.id) = B.id`.
+In an `ASOF JOIN`, the closest-match column is compared by ordering, which is not defined for `NaN` values.
+
+## Implicit type conversion {#implicit-type-conversion}
+
+When the JOIN keys of the left and the right table have different types, ClickHouse converts them to their least common supertype before it compares them. This applies to every JOIN type and strictness:
+
+- With `ON`, the conversion applies only to the comparison. The key columns keep their original types in the result.
+- With `USING`, the merged column has the common type in the result.
+
+If the key types have no common supertype, as is the case for `UInt64` and `Int64`, ClickHouse converts both keys to a type that holds the values that both key types have in common. For `UInt64` and `Int64`, this type is `UInt64`. A key value that this type cannot represent does not match any value. This conversion is used for the equality conditions in `ON`, except `isNotDistinctFrom`, and for `USING` in an `INNER JOIN` or a `SEMI JOIN`. It is not used for the closest-match condition of an `ASOF JOIN`, for the inequality conditions that `ie_join` executes, or for `USING` in other JOINs, because their result column must also hold the values without a match. This conversion is available since version 26.9.
+
+If the key types have neither a common supertype nor common values, as is the case for `String` and `Int32`, the query fails with the `NO_COMMON_TYPE` error.
+
+**Example**
+
+Consider the table `t_1`:
+```response
+┌─a─┬─b─┬─toTypeName(a)─┬─toTypeName(b)─┐
+│ 1 │ 1 │ UInt16        │ UInt8         │
+│ 2 │ 2 │ UInt16        │ UInt8         │
+└───┴───┴───────────────┴───────────────┘
+```
+and the table `t_2`:
+```response
+┌──a─┬────b─┬─toTypeName(a)─┬─toTypeName(b)───┐
+│ -1 │    1 │ Int16         │ Nullable(Int64) │
+│  1 │   -1 │ Int16         │ Nullable(Int64) │
+│  1 │    1 │ Int16         │ Nullable(Int64) │
+└────┴──────┴───────────────┴─────────────────┘
+```
+
+The query
+```sql
+SELECT a, b, toTypeName(a), toTypeName(b) FROM t_1 FULL JOIN t_2 USING (a, b) ORDER BY ALL;
+```
+returns the set:
+```response
+┌──a─┬────b─┬─toTypeName(a)─┬─toTypeName(b)───┐
+│ -1 │    1 │ Int32         │ Nullable(Int64) │
+│  1 │   -1 │ Int32         │ Nullable(Int64) │
+│  1 │    1 │ Int32         │ Nullable(Int64) │
+│  2 │    2 │ Int32         │ Nullable(Int64) │
+└────┴──────┴───────────────┴─────────────────┘
+```
 
 ## ASOF JOIN usage {#asof-join-usage}
 
-`ASOF JOIN` is useful when you need to join records that have no exact match.
+`ASOF JOIN` joins records that have no exact match. `ASOF` is a JOIN strictness that is combined with an `INNER` or `LEFT` JOIN. It is not a JOIN algorithm.
 
-This JOIN algorithm requires a special column in tables. This column:
+An `ASOF JOIN` requires a closest-match column in both tables. This column:
 
-- Must contain an ordered sequence.
-- Can be one of the following types: [Int, UInt](/reference/data-types/int-uint), [Float](/reference/data-types/float), [Date](/reference/data-types/date), [DateTime](/reference/data-types/datetime), [Decimal](/reference/data-types/decimal).
-- For the `hash` join algorithm it can't be the only column in the `JOIN` clause.
+- Must have a type with a defined order.
+- With the [`hash`](/concepts/features/operations/select/join-algorithms#hash) algorithm, can be of the following types: [Int, UInt](/reference/data-types/int-uint), [Float](/reference/data-types/float), [Decimal](/reference/data-types/decimal), [Date](/reference/data-types/date), [Date32](/reference/data-types/date32), [DateTime](/reference/data-types/datetime), [DateTime64](/reference/data-types/datetime64), [Time](/reference/data-types/time), [Enum](/reference/data-types/enum), [Bool](/reference/data-types/boolean), and [Nullable](/reference/data-types/nullable) of these types. Other types, such as `String` and `Time64`, are rejected with the `BAD_TYPE_OF_FIELD` error.
+- With the [`full_sorting_merge`](/concepts/features/operations/select/join-algorithms#full-sorting-merge) algorithm, can also be of other comparable types, such as `String`.
+- With the `hash` algorithm, cannot be the only column in the `JOIN` clause. At least one equality condition is required. The `full_sorting_merge` algorithm does not have this requirement.
 
 Syntax `ASOF JOIN ... ON`:
 
@@ -998,8 +962,8 @@ For example, consider the following tables:
 `ASOF JOIN` can take the timestamp of a user event from `table_1` and find an event in `table_2` where the timestamp is closest to the timestamp of the event from `table_1` corresponding to the closest match condition. Equal timestamp values are the closest if available. Here, the `user_id` column can be used for joining on equality and the `ev_time` column can be used for joining on the closest match. In our example, `event_1_1` can be joined with `event_2_1` and `event_1_2` can be joined with `event_2_3`, but `event_2_2` can't be joined.
 
 <Note>
-`ASOF JOIN` is supported only by `hash` and `full_sorting_merge` join algorithms.
-It's **not** supported in the [Join](/reference/engines/table-engines/special/join) table engine.
+Of the JOIN algorithms, only [`hash`](/concepts/features/operations/select/join-algorithms#hash) and [`full_sorting_merge`](/concepts/features/operations/select/join-algorithms#full-sorting-merge) support `ASOF` strictness. See [Supported JOIN types per algorithm](/concepts/features/operations/select/join-algorithms#supported-join-types-per-algorithm).
+`ASOF` is **not** supported in the [Join](/reference/engines/table-engines/special/join) table engine.
 </Note>
 
 ## PASTE JOIN usage {#paste-join-usage}
@@ -1059,120 +1023,118 @@ SETTINGS max_block_size = 2;
 └───┴──────┘
 ```
 
+## LATERAL JOIN {#lateral-join}
+
+`JOIN LATERAL` lets the subquery on the right side of a join reference columns of the table
+expressions on its left side. The result is as if the subquery were evaluated for each distinct combination
+of the left-side column values it references, and its result were joined to every left row with that combination:
+
+```sql
+SELECT ...
+FROM <left_table>
+[INNER|LEFT] JOIN LATERAL (SELECT ... WHERE <expr referencing left_table>) AS <alias> ON true
+```
+
+The `ON true` predicate is mandatory, as for any other `INNER` or `LEFT JOIN`; omitting it is a syntax error.
+
+It is available since version 26.10. It is experimental and disabled by default; enable it with the
+[`enable_lateral_join`](/reference/settings/session-settings/enable#enable_lateral_join) setting.
+
+The lateral subquery is not executed once per left row or once per distinct combination. Like other correlated
+subqueries, it is decorrelated into a single query over all left rows: the left-side columns it references are
+added to its `GROUP BY` keys if it aggregates, its `LIMIT` (if any) becomes `LIMIT ... BY` these columns, and its
+result is joined to the left rows on them. When the correlation is a simple equality, such as `orders.user_id = u.id`,
+the left-side column can be replaced by the equal column of the subquery
+(`correlated_subqueries_substitute_equivalent_expressions`, enabled by default), which can let the subquery avoid
+reading the left rows. This is not guaranteed: for example, an aggregate without `GROUP BY` (such as `count`) still
+reads the distinct left values to produce its result for left values with no matching rows. Whenever the distinct
+left values are passed to the subquery, with the default settings this goes through an in-memory buffer, and only
+when such a buffer is actually used the join is always a hash join. In all other cases, such as when the equality
+substitution avoids reading the left rows or the buffer is disabled
+(`correlated_subqueries_use_in_memory_buffer = 0` or `correlated_subqueries_default_join_kind = 'left'`), the
+algorithm is chosen by the `join_algorithm` setting. For example, `EXPLAIN` of a lateral subquery with `LIMIT`
+shows a `Join` step over a `LimitBy (LIMIT BY for decorrelated correlated subquery)` step; a subquery without
+`LIMIT` has no such step.
+
+Only the following subset is supported so far; anything else is rejected with an error:
+
+- `INNER JOIN LATERAL` and `LEFT JOIN LATERAL` only; `RIGHT`, `FULL`, `PASTE` and `NATURAL` joins are not supported, and `LATERAL` cannot be combined with a `CROSS` or comma join at all.
+- The default `ALL` strictness only; `ANY`, `SEMI`, `ANTI` and `ASOF` are not supported.
+- No join predicate other than `ON true` (`ON 1` is also accepted); `USING` is not supported, and the predicate
+  cannot be omitted. Put the filters that relate the two sides into the `WHERE` clause of the lateral subquery.
+- The `GLOBAL` and `LOCAL` join modifiers are not supported.
+- The lateral subquery must reference at least one column of the left side. Use a regular join for a
+  non-correlated subquery.
+- Because the lateral subquery is decorrelated rather than evaluated separately for each left value, it
+  must not contain functions that are non-deterministic within a query, such as
+  `rand` or `generateUUIDv4`, or table functions that generate random rows, such as `generateRandom`.
+  Functions that are constant within a query, such as `now`, are allowed.
+- Only a subquery is supported as the lateral table expression. The PostgreSQL table-source forms
+  `LATERAL unnest(...)` and `CROSS JOIN UNNEST(...)` are not supported. Use the
+  [`ARRAY JOIN`](/reference/statements/select/array-join) clause instead.
+- The `GROUP BY` and `ORDER BY` of the lateral subquery run once for all left values together, so the
+  `max_rows_to_group_by`, `max_rows_to_sort` and `max_bytes_to_sort` limits count the rows for all left values,
+  not for one. They are only supported with the `throw` overflow mode; `any` and `break` are rejected.
+- The result of the decorrelated subquery is matched to the left rows by a single join. As for any hash join,
+  `max_rows_in_join` and `max_bytes_in_join` limit the side of this join that is kept in memory, and the
+  planner chooses that side: when the in-memory buffer described above is actually used, it is the left side
+  of `JOIN LATERAL`, because the left rows must be fully read before the lateral subquery is evaluated; otherwise it can be the result of the decorrelated subquery. The limits are always
+  enforced as if `join_overflow_mode` were `throw`: with `break`, the join would silently drop unrelated left rows.
+
+**Example**
+
+```sql
+SELECT u.id, o.total
+FROM users AS u
+LEFT JOIN LATERAL
+(
+    SELECT total
+    FROM orders
+    WHERE orders.user_id = u.id
+    ORDER BY total DESC
+    LIMIT 1
+) AS o ON true
+SETTINGS enable_lateral_join = 1;
+```
+
 ## Distributed JOIN {#distributed-join}
 
 There are two ways to execute a JOIN involving distributed tables:
 
 - When using a normal `JOIN`, the query is sent to remote servers. Subqueries are run on each of them in order to make the right table, and the join is performed with this table. In other words, the right table is formed on each server separately.
-- When using `GLOBAL ... JOIN`, first the requestor server runs a subquery to calculate one side of the join and collects the result into a temporary table. This temporary table is then passed to each remote server, and queries are run on them using the temporary data that was transmitted. For `LEFT` and `INNER` joins, the right table is calculated as the subquery. For `RIGHT` joins, the left table is calculated instead, since the right table is the one being preserved and should be read from shards.
+- When using `GLOBAL ... JOIN`, first the requestor server runs a subquery to calculate one side of the join and collects the result into a temporary table. This temporary table is then passed to each remote server, and queries are run on them using the temporary data that was transmitted. For `LEFT` and `INNER` joins, the right table is calculated as the subquery.
+
+For a `GLOBAL RIGHT JOIN` with `ALL`, `ANY`, `SEMI`, or `ANTI` strictness whose left table is a `Distributed` table with more than one shard, ClickHouse swaps the two sides and executes the JOIN as a `LEFT JOIN`, so that the rows of the preserved right table are returned once. The left table is then calculated as the subquery, and the right table is read from its shards if it is a `Distributed` table with several shards, or on the requestor server otherwise. A `GLOBAL RIGHT JOIN` or `GLOBAL FULL JOIN` that cannot be swapped this way is executed on the requestor server. This behavior applies since version 26.9.
 
 Be careful when using `GLOBAL`. For more information, see the [Distributed subqueries](/reference/statements/in#distributed-subqueries) section.
-
-## Implicit type conversion {#implicit-type-conversion}
-
-`INNER JOIN`, `LEFT JOIN`, `RIGHT JOIN`, and `FULL JOIN` queries support the implicit type conversion for "join keys". However the query can not be executed, if join keys from the left and the right tables cannot be converted to a single type (for example, there is no data type that can hold all values from both `UInt64` and `Int64`, or `String` and `Int32`).
-
-**Example**
-
-Consider the table `t_1`:
-```response
-┌─a─┬─b─┬─toTypeName(a)─┬─toTypeName(b)─┐
-│ 1 │ 1 │ UInt16        │ UInt8         │
-│ 2 │ 2 │ UInt16        │ UInt8         │
-└───┴───┴───────────────┴───────────────┘
-```
-and the table `t_2`:
-```response
-┌──a─┬────b─┬─toTypeName(a)─┬─toTypeName(b)───┐
-│ -1 │    1 │ Int16         │ Nullable(Int64) │
-│  1 │   -1 │ Int16         │ Nullable(Int64) │
-│  1 │    1 │ Int16         │ Nullable(Int64) │
-└────┴──────┴───────────────┴─────────────────┘
-```
-
-The query
-```sql
-SELECT a, b, toTypeName(a), toTypeName(b) FROM t_1 FULL JOIN t_2 USING (a, b);
-```
-returns the set:
-```response
-┌──a─┬────b─┬─toTypeName(a)─┬─toTypeName(b)───┐
-│  1 │    1 │ Int32         │ Nullable(Int64) │
-│  2 │    2 │ Int32         │ Nullable(Int64) │
-│ -1 │    1 │ Int32         │ Nullable(Int64) │
-│  1 │   -1 │ Int32         │ Nullable(Int64) │
-└────┴──────┴───────────────┴─────────────────┘
-```
 
 ## Usage recommendations {#usage-recommendations}
 
 ### Processing of empty or NULL cells {#processing-of-empty-or-null-cells}
 
-While joining tables, the empty cells may appear. The setting [join_use_nulls](/reference/settings/session-settings/join#join_use_nulls) define how ClickHouse fills these cells.
+In the result of an outer JOIN, the columns of the other table are empty for a row without a match. The [`join_use_nulls`](/reference/settings/session-settings/join#join_use_nulls) setting defines how ClickHouse fills these cells:
 
-If the `JOIN` keys are [Nullable](/reference/data-types/nullable) fields, the rows where at least one of the keys has the value [NULL](/reference/syntax#null) are not joined.
+- `0`: The cells are filled with the default value of the column type.
+- `1`: The cells are filled with `NULL`, and the types of these columns are converted to [Nullable](/reference/data-types/nullable). A column of a type that cannot be inside `Nullable`, such as `Array`, keeps its type and is filled with the default value. In a `FULL` JOIN, the merged `USING` column is also converted to `Nullable`.
+
+A row in which at least one of the JOIN keys is `NULL` is not joined, as described in [NULL and NaN values in JOIN keys](#null-values-in-join-keys).
 
 ### Syntax {#syntax}
 
-The columns specified in `USING` must have the same names in both subqueries, and the other columns must be named differently. You can use aliases to change the names of columns in subqueries.
+The `USING` clause specifies one or more columns to join on, and establishes the equality of these columns:
 
-The `USING` clause specifies one or more columns to join, which establishes the equality of these columns. The list of columns is set without brackets. More complex join conditions are not supported.
-
-### Syntax Limitations {#syntax-limitations}
-
-For multiple `JOIN` clauses in a single `SELECT` query:
-
-- Taking all the columns via `*` is available only if tables are joined, not subqueries.
-- The `PREWHERE` clause is not available.
-- The `USING` clause is not available.
-
-For `ON`, `WHERE`, and `GROUP BY` clauses:
-
-- Arbitrary expressions cannot be used in `ON`, `WHERE`, and `GROUP BY` clauses, but you can define an expression in a `SELECT` clause and then use it in these clauses via an alias.
-
-### Performance {#performance}
-
-When running a `JOIN`, there is no optimization of the order of execution in relation to other stages of the query. The join (a search in the right table) is run before filtering in `WHERE` and before aggregation.
-
-Each time a query is run with the same `JOIN`, the subquery is run again because the result is not cached. To avoid this, use the special [Join](/reference/engines/table-engines/special/join) table engine, which is a prepared array for joining that is always in RAM.
-
-In some cases, it is more efficient to use [IN](/reference/statements/in) instead of `JOIN`.
-
-If you need a `JOIN` for joining with dimension tables (these are relatively small tables that contain dimension properties, such as names for advertising campaigns), a `JOIN` might not be very convenient due to the fact that the right table is re-accessed for every query. For such cases, there is a "dictionaries" feature that you should use instead of `JOIN`. For more information, see the [Dictionaries](/reference/statements/create/dictionary) section.
-
-### Memory limitations {#memory-limitations}
-
-By default, ClickHouse uses the [hash join](https://en.wikipedia.org/wiki/Hash_join) algorithm. ClickHouse takes the right_table and creates a hash table for it in RAM. If `join_algorithm = 'auto'` is enabled, then after some threshold of memory consumption, ClickHouse falls back to [merge](https://en.wikipedia.org/wiki/Sort-merge_join) join algorithm. For `JOIN` algorithms description see the [join_algorithm](/reference/settings/session-settings/join#join_algorithm) setting.
-
-If you need to restrict `JOIN` operation memory consumption use the following settings:
-
-- [max_rows_in_join](/reference/settings/session-settings/max-rows#max_rows_in_join) — Limits number of rows in the hash table.
-- [max_bytes_in_join](/reference/settings/session-settings/max-bytes#max_bytes_in_join) — Limits size of the hash table.
-
-When any of these limits is reached, ClickHouse acts as the [join_overflow_mode](/reference/settings/session-settings/join#join_overflow_mode)
-setting instructs. These two are hard caps and never make a join spill to disk, so setting them at or
-below the spill threshold normally stops the query before it can spill. Two settings change that:
-`enable_adaptive_memory_spill_scheduler` can still spill a join that the threshold below made
-spill-capable, and
-`legacy_join_size_limits_trigger_spilling` turns the two caps back into spill triggers on disk.
-
-To let a join keep running by spilling the right side to disk instead of failing, use:
-
-- [max_bytes_before_external_join](/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) — Absolute spill threshold.
-- [max_bytes_ratio_before_external_join](/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) — Spill threshold as a ratio of available memory.
-
-These are the threshold-based spill trigger for every hash-based algorithm, including `grace_hash`; under memory
-pressure `enable_adaptive_memory_spill_scheduler` can spill earlier than they ask for — but only once one of
-them is non-zero, since a join with no threshold at all never spills. The `join_algorithm` you pick
-decides how a join spills — `grace_hash` partitions the right table from the first block, `hash` and `parallel_hash` collect
-it in memory and switch over when the threshold is crossed — not whether these settings apply. The one exception is
-`legacy_join_size_limits_trigger_spilling`: with it on, standalone `grace_hash` ignores both thresholds and spills on the two hard caps instead.
+- Each column must exist under the same name in both the left and the right table expression. Aliases in subqueries can give columns the same name.
+- The `USING` clause accepts only column names. Expressions are not supported.
+- The column list can be written with or without parentheses.
+- Each column of the `USING` clause appears once in the result. Its type is described in [Implicit type conversion](#implicit-type-conversion).
+- Other columns can have the same name in both tables. `SELECT *` qualifies the column of the right table with the table name or alias, and an unqualified name resolves to the column of the left table when [`single_join_prefer_left_table`](/reference/settings/session-settings/other#single_join_prefer_left_table) is enabled.
+- When [`analyzer_compatibility_join_using_top_level_identifier`](/reference/settings/session-settings/analyzer-compatibility#analyzer_compatibility_join_using_top_level_identifier) is enabled, a column name in `USING` is resolved from an alias of the same name in the query, such as an alias in the `SELECT` list.
 
 ## Examples {#examples}
 
-Example:
+The following query joins the number of hits per counter with the number of visits per counter. The `ANY LEFT JOIN` returns each row of the left subquery once, and a counter without visits gets the default value `0`:
 
-```sql
+```sql title="Query"
 SELECT
     CounterID,
     hits,
@@ -1182,37 +1144,177 @@ FROM
     SELECT
         CounterID,
         count() AS hits
-    FROM test.hits
+    FROM VALUES('CounterID UInt32', 1, 1, 1, 2, 2, 3)
     GROUP BY CounterID
-) ANY LEFT JOIN
+) AS h
+ANY LEFT JOIN
 (
     SELECT
         CounterID,
         sum(Sign) AS visits
-    FROM test.visits
+    FROM VALUES('CounterID UInt32, Sign Int8', (1, 1), (1, 1), (1, -1), (2, 1), (4, 1))
     GROUP BY CounterID
-) USING CounterID
-ORDER BY hits DESC
-LIMIT 10
+) AS v USING (CounterID)
+ORDER BY hits DESC;
 ```
 
-```text
-┌─CounterID─┬───hits─┬─visits─┐
-│   1143050 │ 523264 │  13665 │
-│    731962 │ 475698 │ 102716 │
-│    722545 │ 337212 │ 108187 │
-│    722889 │ 252197 │  10547 │
-│   2237260 │ 196036 │   9522 │
-│  23057320 │ 147211 │   7689 │
-│    722818 │  90109 │  17847 │
-│     48221 │  85379 │   4652 │
-│  19762435 │  77807 │   7026 │
-│    722884 │  77492 │  11056 │
-└───────────┴────────┴────────┘
+```response title="Response"
+┌─CounterID─┬─hits─┬─visits─┐
+│         1 │    3 │      1 │
+│         2 │    2 │      1 │
+│         3 │    1 │      0 │
+└───────────┴──────┴────────┘
 ```
+
+## Settings {#settings}
+
+The following session settings affect the semantics, planning, execution, and memory use of JOINs. The default value and the accepted values of each setting are listed on its reference page.
+
+### Semantics and syntax {#settings-semantics-and-syntax}
+
+| Setting | Description |
+|---|---|
+| [`join_default_strictness`](/reference/settings/session-settings/join#join_default_strictness) | Sets the strictness of a JOIN that is written without an explicit strictness. |
+| [`any_join_distinct_right_table_keys`](/reference/settings/session-settings/other#any_join_distinct_right_table_keys) | Enables the legacy behavior of `ANY INNER JOIN` and `ANY LEFT JOIN`, in which `t1 ANY LEFT JOIN t2` and `t2 ANY RIGHT JOIN t1` can return different results. |
+| [`join_any_take_last_row`](/reference/settings/session-settings/join#join_any_take_last_row) | Selects whether a JOIN with `ANY` strictness takes the first or the last matching row when the right table has several matching rows for a key. |
+| [`join_use_nulls`](/reference/settings/session-settings/join#join_use_nulls) | Controls whether the columns of rows without a match in an outer JOIN are filled with default values or with `NULL`. |
+| [`semi_join_include_columns_from_both_sides`](/reference/settings/session-settings/other#semi_join_include_columns_from_both_sides) | Controls whether the result of a `SEMI JOIN` exposes the columns of both tables or only the columns of the preserved table. |
+| [`anti_join_include_columns_from_both_sides`](/reference/settings/session-settings/other#anti_join_include_columns_from_both_sides) | Controls whether the result of an `ANTI JOIN` exposes the columns of both tables or only the columns of the preserved table. |
+| [`cross_to_inner_join_rewrite`](/reference/settings/session-settings/other#cross_to_inner_join_rewrite) | Controls whether a comma-separated list of tables or a `CROSS JOIN` with equality conditions in `WHERE` is rewritten as an `INNER JOIN`. |
+| [`allow_block_nested_loop_join`](/reference/settings/session-settings/allow#allow_block_nested_loop_join) | Allows executing a JOIN whose `ON` section contains no equality between the tables as a block nested loop JOIN. |
+| [`enable_lateral_join`](/reference/settings/session-settings/enable#enable_lateral_join) | Enables the experimental `LATERAL JOIN` syntax, in which a subquery on the right side of a JOIN can reference columns of the left side. |
+| [`single_join_prefer_left_table`](/reference/settings/session-settings/other#single_join_prefer_left_table) | Resolves an identifier that is ambiguous between the two tables of a single JOIN to the left table. |
+| [`joined_subquery_requires_alias`](/reference/settings/session-settings/joined#joined_subquery_requires_alias) | Requires subqueries and table functions in a JOIN to have aliases. |
+| [`allow_dynamic_type_in_join_keys`](/reference/settings/session-settings/allow#allow_dynamic_type_in_join_keys) | Allows JOIN keys of the `Dynamic` type. |
+| [`analyzer_compatibility_join_using_top_level_identifier`](/reference/settings/session-settings/analyzer-compatibility#analyzer_compatibility_join_using_top_level_identifier) | Resolves a column name in `USING` from an alias of the same name in the query, such as an alias in the `SELECT` list. |
+| [`analyzer_compatibility_multiple_joins_qualify_column_names`](/reference/settings/session-settings/analyzer-compatibility#analyzer_compatibility_multiple_joins_qualify_column_names) | Qualifies the names of result columns with table names or aliases in a query with two or more JOINs, as the old analyzer did. |
+| [`analyzer_compatibility_apply_final_to_all_joined_tables`](/reference/settings/session-settings/analyzer-compatibility#analyzer_compatibility_apply_final_to_all_joined_tables) | Applies a `FINAL` modifier on the leftmost table of a JOIN to all joined tables, as in versions before 26.6. |
+
+### Algorithm selection and tuning {#settings-algorithm-selection-and-tuning}
+
+| Setting | Description |
+|---|---|
+| [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) | Lists the JOIN algorithms that ClickHouse can use, in order of priority. |
+| [`parallel_hash_join_threshold`](/reference/settings/session-settings/parallel#parallel_hash_join_threshold) | Sets the estimated number of rows in the right table at which a hash JOIN splits its hash table into parts that several threads fill concurrently. |
+| [`hash_join_layout`](/reference/settings/session-settings/other#hash_join_layout) | Forces a hash JOIN to build either one hash table on one thread or a split hash table on several threads, for testing and debugging. |
+| [`max_threads`](/reference/settings/session-settings/max-threads#max_threads) | Sets the maximum number of query processing threads, which also limits the number of threads that fill a split hash table. |
+| [`grace_hash_join_initial_buckets`](/reference/settings/session-settings/grace-hash#grace_hash_join_initial_buckets) | Sets the initial number of buckets of a `grace_hash` JOIN. |
+| [`grace_hash_join_max_buckets`](/reference/settings/session-settings/grace-hash#grace_hash_join_max_buckets) | Limits the number of buckets of a `grace_hash` JOIN. |
+| [`partial_merge_join_rows_in_right_blocks`](/reference/settings/session-settings/partial-merge#partial_merge_join_rows_in_right_blocks) | Limits the number of rows in each sorted block of the right table in a `partial_merge` JOIN. |
+| [`partial_merge_join_left_table_buffer_bytes`](/reference/settings/session-settings/partial-merge#partial_merge_join_left_table_buffer_bytes) | Sets the size up to which a `partial_merge` JOIN groups blocks of the left table into larger blocks. |
+| [`join_on_disk_max_files_to_merge`](/reference/settings/session-settings/join#join_on_disk_max_files_to_merge) | Limits the number of files that are sorted in parallel when a merge JOIN runs on disk. |
+| [`max_rows_in_set_to_optimize_join`](/reference/settings/session-settings/max-rows#max_rows_in_set_to_optimize_join) | Sets the maximum size of the key set that is used to filter each input of a JOIN by the keys of the other input before joining. |
+| [`query_plan_join_shard_by_pk_ranges`](/reference/settings/session-settings/query-plan#query_plan_join_shard_by_pk_ranges) | Executes a JOIN of two `MergeTree` tables as independent JOINs over primary key ranges when the JOIN keys contain a prefix of the primary key of both tables. |
+| [`join_output_by_rowlist_perkey_rows_threshold`](/reference/settings/session-settings/join#join_output_by_rowlist_perkey_rows_threshold) | Sets the average number of rows per key in the right table at which a hash JOIN outputs matches by row list. |
+| [`allow_join_right_table_sorting`](/reference/settings/session-settings/allow#allow_join_right_table_sorting) | Allows reordering the right table by key in a `LEFT` or `INNER` hash JOIN when the conditions of `join_to_sort_minimum_perkey_rows` and `join_to_sort_maximum_table_rows` are met. |
+| [`join_to_sort_minimum_perkey_rows`](/reference/settings/session-settings/join-to#join_to_sort_minimum_perkey_rows) | Sets the minimum average number of rows per key in the right table for reordering the right table by key. |
+| [`join_to_sort_maximum_table_rows`](/reference/settings/session-settings/join-to#join_to_sort_maximum_table_rows) | Sets the maximum number of rows in the right table for reordering the right table by key. |
+| [`enable_hash_join_row_store`](/reference/settings/session-settings/enable#enable_hash_join_row_store) | Enables converting the payload of a hash JOIN to a row-major layout. |
+| [`min_rows_ratio_for_hash_join_row_store`](/reference/settings/session-settings/min#min_rows_ratio_for_hash_join_row_store) | Sets the minimum estimated ratio of output rows to build-side rows at which the payload of a hash JOIN is converted to a row-major layout. |
+| [`enable_join_fixed_hash_table_conversion`](/reference/settings/session-settings/enable-join#enable_join_fixed_hash_table_conversion) | Enables converting the hash table of a JOIN to a flat array when the key is a single integer with a small range of values. |
+| [`enable_join_key_only_hash_tables`](/reference/settings/session-settings/enable-join#enable_join_key_only_hash_tables) | Enables hash tables that store only the JOIN keys, for `LEFT ANTI` JOINs and for `LEFT SEMI` JOINs that select no column of the right table. |
+| [`enable_software_prefetch_in_join`](/reference/settings/session-settings/enable-software#enable_software_prefetch_in_join) | Enables software prefetching in the probe phase of a hash JOIN. |
+| [`collect_hash_table_stats_during_joins`](/reference/settings/session-settings/collect-hash#collect_hash_table_stats_during_joins) | Enables collecting hash table statistics that later runs of the same JOIN use to size their hash tables. |
+| [`max_size_to_preallocate_for_joins`](/reference/settings/session-settings/max-size#max_size_to_preallocate_for_joins) | Limits the total number of elements for which space is preallocated in the hash tables of a JOIN. |
+| [`max_joined_block_size_rows`](/reference/settings/session-settings/max-joined#max_joined_block_size_rows) | Limits the number of rows in a block of the JOIN result. |
+| [`max_joined_block_size_bytes`](/reference/settings/session-settings/max-joined#max_joined_block_size_bytes) | Limits the size in bytes of a block of the JOIN result. |
+| [`min_joined_block_size_rows`](/reference/settings/session-settings/min-joined#min_joined_block_size_rows) | Sets the number of rows below which input and output blocks of a JOIN are squashed into larger blocks. |
+| [`min_joined_block_size_bytes`](/reference/settings/session-settings/min-joined#min_joined_block_size_bytes) | Sets the size in bytes below which input and output blocks of a JOIN are squashed into larger blocks. |
+| [`joined_block_split_single_row`](/reference/settings/session-settings/joined#joined_block_split_single_row) | Allows splitting the hash JOIN result for one row of the left table with many matches into several blocks. |
+| [`parallel_non_joined_rows_processing`](/reference/settings/session-settings/parallel#parallel_non_joined_rows_processing) | Allows several threads to output the rows of the right table without a match in a `RIGHT` or `FULL` JOIN. |
+| [`enable_lazy_columns_replication`](/reference/settings/session-settings/enable#enable_lazy_columns_replication) | Enables lazy replication of columns in the result of a JOIN, which avoids copying the same rows several times in memory. |
+
+### Query planner {#settings-query-planner}
+
+| Setting | Description |
+|---|---|
+| [`query_plan_join_swap_table`](/reference/settings/session-settings/query-plan#query_plan_join_swap_table) | Controls which input of a JOIN the planner uses as the build side. |
+| [`query_plan_optimize_join_order_limit`](/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_limit) | Sets the maximum number of tables in one subquery for which the planner optimizes the JOIN order. |
+| [`query_plan_optimize_join_order_algorithm`](/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_algorithm) | Lists the JOIN order algorithms that the planner tries, in order. |
+| [`query_plan_optimize_join_order_conflict_detector`](/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_conflict_detector) | Selects the conflict detector that the `dpsub` JOIN order algorithm uses to decide which reorderings are valid. |
+| [`query_plan_optimize_join_order_max_searched_plans`](/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_max_searched_plans) | Limits the number of partial plans that the JOIN order optimizer enumerates before it falls back to the next algorithm. |
+| [`use_statistics`](/reference/settings/session-settings/use-statistics#use_statistics) | Allows the optimizer to use column statistics, including for the estimates that JOIN reordering and build-side selection use. |
+| [`allow_statistics`](/reference/settings/session-settings/allow-statistics#allow_statistics) | Allows defining columns with statistics and manipulating statistics. |
+| [`materialize_statistics_on_insert`](/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert) | Controls whether column statistics are built for newly inserted parts. |
+| [`use_hash_table_stats_for_join_reordering`](/reference/settings/session-settings/use#use_hash_table_stats_for_join_reordering) | Enables using collected hash table statistics for cardinality estimation during JOIN reordering. |
+| [`use_iceberg_manifest_statistics`](/reference/settings/session-settings/use-iceberg#use_iceberg_manifest_statistics) | Enables estimating an Iceberg read for JOIN reordering from the statistics in its manifest files. |
+| [`allow_general_join_planning`](/reference/settings/session-settings/allow#allow_general_join_planning) | Allows a more general JOIN planning algorithm that handles more complex conditions and applies only to hash JOINs. |
+| [`query_plan_filter_push_down`](/reference/settings/session-settings/query-plan#query_plan_filter_push_down) | Enables moving filters down in the query plan, including below a JOIN. |
+| [`query_plan_convert_outer_join_to_inner_join`](/reference/settings/session-settings/query-plan#query_plan_convert_outer_join_to_inner_join) | Allows converting an `OUTER JOIN` to an `INNER JOIN` when a filter after the JOIN always removes the default values of rows without a match. |
+| [`query_plan_convert_outer_join_to_inner_join_transitively`](/reference/settings/session-settings/query-plan#query_plan_convert_outer_join_to_inner_join_transitively) | Extends `query_plan_convert_outer_join_to_inner_join` to filters further up the plan and to conditions of an enclosing JOIN. |
+| [`query_plan_convert_any_join_to_semi_or_anti_join`](/reference/settings/session-settings/query-plan#query_plan_convert_any_join_to_semi_or_anti_join) | Allows converting an `ANY JOIN` to a `SEMI JOIN` or an `ANTI JOIN` when a filter after the JOIN always rejects either the rows without a match or the rows with a match. |
+| [`query_plan_convert_join_to_in`](/reference/settings/session-settings/query-plan#query_plan_convert_join_to_in) | Allows converting a JOIN to a subquery with `IN` when the output columns come only from the left table. |
+| [`rewrite_in_to_join`](/reference/settings/session-settings/rewrite#rewrite_in_to_join) | Rewrites expressions of the form `x IN subquery` as JOINs. |
+| [`query_plan_merge_filter_into_join_condition`](/reference/settings/session-settings/query-plan#query_plan_merge_filter_into_join_condition) | Allows merging a filter into the JOIN condition and converting a `CROSS JOIN` to an `INNER JOIN`. |
+| [`query_plan_merge_expression_into_join`](/reference/settings/session-settings/query-plan#query_plan_merge_expression_into_join) | Allows merging expressions into the JOIN step during JOIN reordering. |
+| [`query_plan_short_circuit_constant_false_join`](/reference/settings/session-settings/query-plan#query_plan_short_circuit_constant_false_join) | Replaces each input of a JOIN that cannot contribute rows with an empty source when the `ON` condition folds to a constant false. |
+| [`query_plan_read_in_order_through_join`](/reference/settings/session-settings/query-plan#query_plan_read_in_order_through_join) | Keeps reading the left table in order through a JOIN, so that later steps can use the order. |
+| [`query_plan_top_k_through_join`](/reference/settings/session-settings/query-plan#query_plan_top_k_through_join) | Pushes `ORDER BY ... LIMIT n` below a `LEFT` or `RIGHT` JOIN when the sort key references only columns of the preserved side. |
+| [`query_plan_propagate_predicate_across_join`](/reference/settings/session-settings/query-plan#query_plan_propagate_predicate_across_join) | Copies filter conditions from one side of an equality JOIN to the other side through the JOIN keys. |
+| [`enable_join_transitive_predicates`](/reference/settings/session-settings/enable-join#enable_join_transitive_predicates) | Infers transitive equality conditions from the existing JOIN conditions for the JOIN order optimizer. |
+| [`use_join_disjunctions_push_down`](/reference/settings/session-settings/use#use_join_disjunctions_push_down) | Enables pushing `OR`-connected parts of JOIN conditions down to the corresponding inputs. |
+| [`query_plan_lazy_materialization_for_join`](/reference/settings/session-settings/query-plan#query_plan_lazy_materialization_for_join) | Enables lazy materialization for `LIMIT n` queries over JOINs, so that columns are read only for the rows that remain after `LIMIT`. |
+| [`query_plan_max_limit_for_join_lazy_indexing`](/reference/settings/session-settings/query-plan#query_plan_max_limit_for_join_lazy_indexing) | Sets the maximum `LIMIT` value for which the lazy indexing optimization of a JOIN is used. |
+| [`query_plan_min_columns_for_join_lazy_indexing`](/reference/settings/session-settings/query-plan#query_plan_min_columns_for_join_lazy_indexing) | Sets the minimum number of payload columns from the left side for which the lazy indexing optimization of a JOIN is used. |
+| [`enable_join_runtime_filters`](/reference/settings/session-settings/enable-join#enable_join_runtime_filters) | Enables filtering the probe side of a JOIN by the set of JOIN keys collected from the build side at runtime. |
+| [`enable_join_runtime_filters_index_analysis`](/reference/settings/session-settings/enable-join#enable_join_runtime_filters_index_analysis) | Enables pruning granules on the probe side of a JOIN with the runtime filter. |
+| [`enable_join_seal_gated_reading`](/reference/settings/session-settings/enable-join#enable_join_seal_gated_reading) | Delays reading the probe side of a hash JOIN until the runtime filter of the build side is complete. |
+| [`join_runtime_filter_exact_values_limit`](/reference/settings/session-settings/join-runtime#join_runtime_filter_exact_values_limit) | Sets the maximum number of values that a JOIN runtime filter stores as a set before it switches to a bloom filter. |
+| [`join_runtime_bloom_filter_bytes`](/reference/settings/session-settings/join-runtime#join_runtime_bloom_filter_bytes) | Sets the size in bytes of a bloom filter used as a JOIN runtime filter. |
+| [`join_runtime_bloom_filter_hash_functions`](/reference/settings/session-settings/join-runtime#join_runtime_bloom_filter_hash_functions) | Sets the number of hash functions of a bloom filter used as a JOIN runtime filter. |
+| [`join_runtime_bloom_filter_max_ratio_of_set_bits`](/reference/settings/session-settings/join-runtime#join_runtime_bloom_filter_max_ratio_of_set_bits) | Sets the ratio of set bits above which a runtime bloom filter is disabled. |
+| [`join_runtime_filter_from_fixed_hash_table`](/reference/settings/session-settings/join-runtime#join_runtime_filter_from_fixed_hash_table) | Uses a hash table that was converted to a flat array directly as the JOIN runtime filter. |
+| [`join_runtime_filter_size_from_hash_table_stats`](/reference/settings/session-settings/join-runtime#join_runtime_filter_size_from_hash_table_stats) | Sizes the JOIN runtime filter from hash table statistics collected in previous executions. |
+| [`join_runtime_filter_min_probe_rows`](/reference/settings/session-settings/join-runtime#join_runtime_filter_min_probe_rows) | Sets the estimated number of probe-side rows at or below which no JOIN runtime filter is created. |
+| [`join_runtime_filter_pass_ratio_threshold_for_disabling`](/reference/settings/session-settings/join-runtime#join_runtime_filter_pass_ratio_threshold_for_disabling) | Sets the ratio of passed rows to checked rows above which a JOIN runtime filter is temporarily disabled. |
+| [`join_runtime_filter_blocks_to_skip_before_reenabling`](/reference/settings/session-settings/join-runtime#join_runtime_filter_blocks_to_skip_before_reenabling) | Sets the number of blocks after which a temporarily disabled JOIN runtime filter is tried again. |
+| [`correlated_subqueries_default_join_kind`](/reference/settings/session-settings/correlated-subqueries#correlated_subqueries_default_join_kind) | Controls whether the decorrelated plan of a correlated subquery, which includes a `LATERAL JOIN`, uses `LEFT` or `RIGHT` JOINs. |
+| [`correlated_subqueries_substitute_equivalent_expressions`](/reference/settings/session-settings/correlated-subqueries#correlated_subqueries_substitute_equivalent_expressions) | Allows substituting equivalent expressions derived from filters instead of creating a `CROSS JOIN` when a correlated subquery is decorrelated. |
+| [`correlated_subqueries_use_in_memory_buffer`](/reference/settings/session-settings/correlated-subqueries#correlated_subqueries_use_in_memory_buffer) | Uses an in-memory buffer for the input of a correlated subquery, which includes a `LATERAL JOIN`, to avoid evaluating the input repeatedly. |
+
+### Memory limits and spilling {#settings-memory-limits-and-spilling}
+
+| Setting | Description |
+|---|---|
+| [`max_rows_in_join`](/reference/settings/session-settings/max-rows#max_rows_in_join) | Limits the number of rows in the data structure of the right table of a JOIN. |
+| [`max_bytes_in_join`](/reference/settings/session-settings/max-bytes#max_bytes_in_join) | Limits the size in bytes of the data structure of the right table of a JOIN. |
+| [`join_overflow_mode`](/reference/settings/session-settings/join#join_overflow_mode) | Defines the action when a JOIN reaches `max_rows_in_join` or `max_bytes_in_join`. |
+| [`default_max_bytes_in_join`](/reference/settings/session-settings/default#default_max_bytes_in_join) | Sets the maximum size of the right table when a limit is required and `max_bytes_in_join` is not set. |
+| [`max_bytes_before_external_join`](/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) | Sets the size in bytes of the right table at which a hash-based JOIN spills to disk. |
+| [`max_bytes_ratio_before_external_join`](/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) | Sets the spill threshold of a hash-based JOIN as a ratio of the available memory. |
+| [`enable_adaptive_memory_spill_scheduler`](/reference/settings/session-settings/enable#enable_adaptive_memory_spill_scheduler) | Enables spilling eligible processors, including JOINs that can spill, to disk under query memory pressure. |
+| [`legacy_join_size_limits_trigger_spilling`](/reference/settings/session-settings/other#legacy_join_size_limits_trigger_spilling) | Restores the behavior in which `max_rows_in_join` and `max_bytes_in_join` make the on-disk part of a JOIN spill further instead of stopping the query. |
+| [`max_bytes_before_external_sort`](/reference/settings/session-settings/max-bytes#max_bytes_before_external_sort) | Sets the memory usage at which sorting, including the sort of a `full_sorting_merge` JOIN, spills to disk. |
+| [`max_bytes_ratio_before_external_sort`](/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_sort) | Sets the ratio of the available memory at which sorting, including the sort of a `full_sorting_merge` JOIN, spills to disk. |
+| [`cross_join_min_rows_to_compress`](/reference/settings/session-settings/cross-join#cross_join_min_rows_to_compress) | Sets the number of rows at which a block of a `CROSS JOIN` or of a block nested loop JOIN is compressed in memory. |
+| [`cross_join_min_bytes_to_compress`](/reference/settings/session-settings/cross-join#cross_join_min_bytes_to_compress) | Sets the size in bytes at which a block of a `CROSS JOIN` or of a block nested loop JOIN is compressed in memory. |
+| [`temporary_files_codec`](/reference/settings/session-settings/temporary-files#temporary_files_codec) | Sets the compression codec of the temporary files that sorting and JOIN operations write to disk. |
+
+### Distributed JOINs {#settings-distributed-joins}
+
+| Setting | Description |
+|---|---|
+| [`distributed_product_mode`](/reference/settings/session-settings/distributed#distributed_product_mode) | Controls how ClickHouse executes `IN` and JOIN subqueries over distributed tables inside a query over a distributed table. |
+| [`prefer_global_in_and_join`](/reference/settings/session-settings/prefer#prefer_global_in_and_join) | Enables replacing `IN` and JOIN with `GLOBAL IN` and `GLOBAL JOIN`. |
+| [`max_rows_to_transfer`](/reference/settings/session-settings/max-rows#max_rows_to_transfer) | Limits the number of rows that a `GLOBAL IN` or `GLOBAL JOIN` passes to remote servers or saves in a temporary table. |
+| [`max_bytes_to_transfer`](/reference/settings/session-settings/max-bytes#max_bytes_to_transfer) | Limits the number of uncompressed bytes that a `GLOBAL IN` or `GLOBAL JOIN` passes to remote servers or saves in a temporary table. |
+| [`transfer_overflow_mode`](/reference/settings/session-settings/other#transfer_overflow_mode) | Defines the action when `max_rows_to_transfer` or `max_bytes_to_transfer` is reached. |
+| [`parallel_replicas_for_queries_with_multiple_tables`](/reference/settings/session-settings/parallel-replicas#parallel_replicas_for_queries_with_multiple_tables) | Allows parallel replicas for queries with JOINs. |
+| [`parallel_replicas_prefer_local_join`](/reference/settings/session-settings/parallel-replicas#parallel_replicas_prefer_local_join) | Uses a local JOIN instead of a `GLOBAL JOIN` with parallel replicas when each replica can read the materialized side of the JOIN by itself. |
+| [`distributed_plan_default_shuffle_join_bucket_count`](/reference/settings/session-settings/distributed-plan#distributed_plan_default_shuffle_join_bucket_count) | Sets the default number of buckets of a shuffle hash JOIN in the rule-based distributed planner. |
+| [`distributed_plan_join_runtime_filters`](/reference/settings/session-settings/distributed-plan#distributed_plan_join_runtime_filters) | Sends JOIN runtime filters to the stages that read the probe side in a distributed query plan. |
+| [`distributed_plan_max_rows_to_broadcast`](/reference/settings/session-settings/distributed-plan#distributed_plan_max_rows_to_broadcast) | Sets the maximum number of rows for which the rule-based distributed planner uses a broadcast JOIN instead of a shuffle JOIN. |
 
 ## Related content {#related-content}
 
+- [Using JOINs in ClickHouse](/concepts/features/operations/select/joining-tables)
+- [How ClickHouse executes JOINs](/concepts/features/operations/select/join-execution)
+- [JOIN algorithms](/concepts/features/operations/select/join-algorithms)
+- [JOIN memory management and spilling](/concepts/features/operations/select/join-memory-management)
+- [Minimize and optimize JOINs](/concepts/best-practices/minimize-optimize-joins)
+- [`IN` operator](/reference/statements/in)
+- [Dictionaries](/concepts/features/dictionaries)
+- [`Join` table engine](/reference/engines/table-engines/special/join)
 - Blog: [ClickHouse: A Blazingly Fast DBMS with Full SQL Join Support - Part 1](https://clickhouse.com/blog/clickhouse-fully-supports-joins)
 - Blog: [ClickHouse: A Blazingly Fast DBMS with Full SQL Join Support - Under the Hood - Part 2](https://clickhouse.com/blog/clickhouse-fully-supports-joins-hash-joins-part2)
 - Blog: [ClickHouse: A Blazingly Fast DBMS with Full SQL Join Support - Under the Hood - Part 3](https://clickhouse.com/blog/clickhouse-fully-supports-joins-full-sort-partial-merge-part3)
