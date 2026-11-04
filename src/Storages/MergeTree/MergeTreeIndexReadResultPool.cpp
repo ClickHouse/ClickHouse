@@ -98,8 +98,8 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
     /// index analysis lists only the indexes that it applies itself
     auto add_used_index = [&](const String & index_name)
     {
-        if (context->hasQueryContext())
-            context->getQueryContext()->addUsedDataSkippingIndex(part_info->getDataPart()->storage.getStorageID(), index_name);
+        if (!storage_id.empty() && context->hasQueryContext())
+            context->getQueryContext()->addUsedDataSkippingIndex(storage_id, index_name);
     };
 
     IndexGranulesMap index_granules;

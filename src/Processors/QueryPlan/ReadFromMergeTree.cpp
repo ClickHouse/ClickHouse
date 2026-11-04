@@ -6046,6 +6046,9 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     if (skip_index_reader && top_k_primary_key_column_position)
         skip_index_reader->setTopKPrimaryKeyPruning(*top_k_primary_key_column_position, top_k_filter_info->threshold_tracker);
 
+    if (skip_index_reader)
+        skip_index_reader->setStorageID(getStorageID());
+
     /// Account SelectedRanges / SelectedMarks here, once all reader-creation paths above have
     /// run. When a read-time skip-index reader is installed (the use_skip_indexes_on_data_read
     /// path, the join runtime-filter fallback or the top-K primary key pruning), it increments these

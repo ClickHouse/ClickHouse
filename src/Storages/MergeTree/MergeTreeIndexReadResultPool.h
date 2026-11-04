@@ -83,6 +83,9 @@ public:
     /// `primary_key_column_position`.
     void setTopKPrimaryKeyPruning(size_t primary_key_column_position, TopKThresholdTrackerPtr tracker);
 
+    /// The table to list the applied indexes for in `system.query_log`, none if not set.
+    void setStorageID(StorageID storage_id_) { storage_id = std::move(storage_id_); }
+
     void cancel() noexcept { is_cancelled = true; }
 
 private:
@@ -101,6 +104,7 @@ private:
 
     std::optional<size_t> top_k_primary_key_column_position;
     TopKThresholdTrackerPtr top_k_threshold_tracker;
+    StorageID storage_id = StorageID::createEmpty();
     ContextPtr context;
     LoggerPtr log;
 
