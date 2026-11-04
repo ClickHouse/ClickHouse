@@ -230,7 +230,10 @@ public:
             /// right if the two are equal (`isHemisphere`). `S2::GetCentroid` is for the region on the left; the one for
             /// the region on the right is its negation.
             const bool interior_on_right = signed_area < 0 || isHemisphere(area, ringEdgeCount(ring, n));
-            sums.area_centroid += (interior_on_right != is_hole) ? -centroid : centroid;
+            if (interior_on_right != is_hole)
+                sums.area_centroid -= centroid;
+            else
+                sums.area_centroid += centroid;
             sums.area += is_hole ? -area : area;
             sums.area_magnitude += area;
             sums.area_error += S2::GetCurvatureMaxError(loop);
@@ -259,9 +262,10 @@ public:
     {
         /// `S2::GetCurvatureMaxError` bounds the error of the area; assume a similar error for the centroid.
         if (std::abs(sums.area) > sums.area_error)
-            return normalize(
-                sums.area < 0 ? -sums.area_centroid : sums.area_centroid,
-                sums.area_error + static_cast<double>(sums.rings + 4) * DBL_EPSILON * sums.area_magnitude);
+        {
+            const S2Point area_centroid = sums.area < 0 ? sums.area_centroid * -1.0 : sums.area_centroid;
+            return normalize(area_centroid, sums.area_error + static_cast<double>(sums.rings + 4) * DBL_EPSILON * sums.area_magnitude);
+        }
         if (sums.length > 0)
             return normalize(sums.line_centroid, static_cast<double>(sums.edges + 4) * DBL_EPSILON * sums.length);
         if (sums.points > 0)
