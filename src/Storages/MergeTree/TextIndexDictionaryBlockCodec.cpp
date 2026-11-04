@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/TextIndexTokensCodec.h>
+#include <Storages/MergeTree/TextIndexDictionaryBlockCodec.h>
 
 #include <Columns/ColumnString.h>
 #include <Common/BitHelpers.h>
@@ -19,7 +19,7 @@ namespace ErrorCodes
     extern const int CORRUPTED_DATA;
 }
 
-namespace TextIndexTokensCodec
+namespace TextIndexDictionaryBlockCodec
 {
 
 namespace

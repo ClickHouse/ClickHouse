@@ -16,7 +16,7 @@ class ReadBuffer;
 class WriteBuffer;
 
 /// Token layouts of a text index dictionary block, without the block header (format and number of tokens).
-namespace TextIndexTokensCodec
+namespace TextIndexDictionaryBlockCodec
 {
 
 void writeBitPacked(std::span<const UInt32> values, UInt8 bit_width, WriteBuffer & ostr);

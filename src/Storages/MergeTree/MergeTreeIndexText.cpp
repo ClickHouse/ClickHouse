@@ -44,7 +44,7 @@
 #include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
 #include <Storages/MergeTree/MergeTreeWriterStream.h>
 #include <Storages/MergeTree/TextIndexCache.h>
-#include <Storages/MergeTree/TextIndexTokensCodec.h>
+#include <Storages/MergeTree/TextIndexDictionaryBlockCodec.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 
@@ -1046,13 +1046,13 @@ void serializeTokensImpl(
     switch (encoding)
     {
         case TextIndexDictionaryBlockEncoding::None:
-            TextIndexTokensCodec::serializeRaw(token_getter, ostr, block_begin, block_end);
+            TextIndexDictionaryBlockCodec::serializeRaw(token_getter, ostr, block_begin, block_end);
             break;
         case TextIndexDictionaryBlockEncoding::FrontCodingV1:
-            TextIndexTokensCodec::serializeFrontCodingV1(token_getter, ostr, block_begin, block_end);
+            TextIndexDictionaryBlockCodec::serializeFrontCodingV1(token_getter, ostr, block_begin, block_end);
             break;
         case TextIndexDictionaryBlockEncoding::FrontCodingV2:
-            TextIndexTokensCodec::serializeFrontCodingV2(token_getter, ostr, block_begin, block_end);
+            TextIndexDictionaryBlockCodec::serializeFrontCodingV2(token_getter, ostr, block_begin, block_end);
             break;
     }
 }
@@ -1323,7 +1323,7 @@ TextIndexHeader TextIndexSerialization::deserializeHeader(ReadBuffer & istr)
     size_t num_sparse_index_tokens = 0;
     readVarUInt(num_sparse_index_tokens, istr);
 
-    auto tokens = TextIndexTokensCodec::deserializeRaw(istr, num_sparse_index_tokens);
+    auto tokens = TextIndexDictionaryBlockCodec::deserializeRaw(istr, num_sparse_index_tokens);
     auto offsets = ColumnUInt64::create();
 
     auto serialization_number = SerializationNumber<UInt64>::create();
@@ -1487,11 +1487,11 @@ std::pair<ColumnPtr, UInt64> TextIndexSerialization::deserializeTokens(ReadBuffe
     switch (tokens_format)
     {
         case static_cast<UInt64>(TextIndexDictionaryBlockEncoding::None):
-            return {TextIndexTokensCodec::deserializeRaw(istr, num_tokens), tokens_format};
+            return {TextIndexDictionaryBlockCodec::deserializeRaw(istr, num_tokens), tokens_format};
         case static_cast<UInt64>(TextIndexDictionaryBlockEncoding::FrontCodingV1):
-            return {TextIndexTokensCodec::deserializeFrontCodingV1(istr, num_tokens), tokens_format};
+            return {TextIndexDictionaryBlockCodec::deserializeFrontCodingV1(istr, num_tokens), tokens_format};
         case static_cast<UInt64>(TextIndexDictionaryBlockEncoding::FrontCodingV2):
-            return {TextIndexTokensCodec::deserializeFrontCodingV2(istr, num_tokens), tokens_format};
+            return {TextIndexDictionaryBlockCodec::deserializeFrontCodingV2(istr, num_tokens), tokens_format};
         default:
             throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown tokens serialization format ({}) in dictionary block", tokens_format);
     }
