@@ -200,6 +200,12 @@ pip3 install clickhouse_driver scipy
 produce performance measurements or change PR test selection. The regular
 performance comparison continues to use release binaries.
 
+The collector attaches the prebuilt dataset parts and renames `datasets.hits_v1`
+to `test.hits`, as the PGO collector does. It keeps the fixture rows without the
+timing job's bulk rewrite, which is too expensive with LLVM instrumentation.
+The manifest records `dataset_layout=prebuilt`; test-defined setup and writes
+still run under coverage.
+
 To collect just performance coverage on a PR branch, dispatch the existing
 workflow with `suite=performance` (the scheduled run still collects all suites):
 

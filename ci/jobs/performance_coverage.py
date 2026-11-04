@@ -286,7 +286,15 @@ def main():
         perf.create_iceberg_databases(
             server.port, perf.perf_right, needs_s3 and needs_s3_read
         )
-        perf.populate_data(server.port)
+        # Coverage uses the prebuilt parts, as the PGO collector does. The
+        # timing job rewrites them to exercise write-time defaults; doing that
+        # with LLVM counters made the 100M-row insert exceed its 30-minute
+        # budget in every shard, before any test could collect coverage.
+        # Keep the original rows and expose the fixture under the test name.
+        client.execute("CREATE DATABASE IF NOT EXISTS test")
+        client.execute("RENAME TABLE datasets.hits_v1 TO test.hits")
+        manifest["dataset_layout"] = "prebuilt"
+        save_manifest()
         user_files = Path(perf.perf_right) / "db/user_files"
         preserved = set(user_files.iterdir())
 
