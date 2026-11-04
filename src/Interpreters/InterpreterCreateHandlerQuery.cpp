@@ -115,12 +115,20 @@ bool hasSettingsClause(const IAST & ast)
     return false;
 }
 
+/// A settings profile can set `readonly` too.
 bool setsReadonly(const IAST & ast)
 {
+    auto is_readonly_or_profile = [](std::string_view name)
+    {
+        const auto resolved = Settings::resolveName(name);
+        return resolved == "readonly" || resolved == "profile";
+    };
     if (const auto * set = ast.as<ASTSetQuery>())
-        for (const auto & change : set->changes)
-            if (Settings::resolveName(change.name) == "readonly")
-                return true;
+    {
+        if (std::ranges::any_of(set->changes, [&](const auto & change) { return is_readonly_or_profile(change.name); })
+            || std::ranges::any_of(set->default_settings, is_readonly_or_profile))
+            return true;
+    }
     for (const auto & child : ast.children)
         if (child && setsReadonly(*child))
             return true;
@@ -230,14 +238,22 @@ void validateHandlerQuery(ASTCreateHandlerQuery & handler, const ContextPtr & co
 
         if (runs_as_definer && setsReadonly(*statement))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "Handler `{}` with SQL SECURITY {} sets `readonly` in its query. A handler with SQL SECURITY DEFINER or NONE "
-                "runs in the `readonly` mode of the request",
+                "Handler `{}` with SQL SECURITY {} changes `readonly` or the settings profile in its query. A handler with SQL SECURITY "
+                "DEFINER or NONE runs in the stricter `readonly` mode of the request and the definer",
                 handler.handler_name, magic_enum::enum_name(type));
 
         if (full_access || self_definer)
         {
             if (runs_as_definer)
+            {
+                if (!context->getExternalTables().empty())
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Handler `{}` with SQL SECURITY {} cannot be stored in a session with temporary tables: its query runs "
+                        "without them, and a temporary table can have the name of a table it reads. Store the handler from a "
+                        "session without temporary tables",
+                        handler.handler_name, magic_enum::enum_name(type));
                 qualifyStatement(statement, visitor, database, context);
+            }
             /// The privileges for a parameterized SELECT and for an INSERT are checked when the query runs as the definer.
             if (!full_access && is_select && analyzeReceiveQueryParams(statement).empty())
                 checkSelectAccess(statement, context);
@@ -253,8 +269,8 @@ void validateHandlerQuery(ASTCreateHandlerQuery & handler, const ContextPtr & co
             throw Exception(ErrorCodes::ACCESS_DENIED,
                 "Handler `{}` cannot be checked against the privileges of the user `{}` in a session with temporary tables: "
                 "a temporary table can have the name of a table the handler reads. Store the handler from a session "
-                "without temporary tables. {}",
-                handler.handler_name, context->getUserName(), way_out);
+                "without temporary tables",
+                handler.handler_name, context->getUserName());
 
         if (!is_select)
             throw Exception(ErrorCodes::ACCESS_DENIED,
