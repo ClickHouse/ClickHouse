@@ -3,6 +3,13 @@
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/Native.h>
+
+#include "config.h"
+
+#if USE_EMBEDDED_COMPILER
+#    include <llvm/IR/IRBuilder.h>
+#endif
 #include <Core/ColumnNumbers.h>
 #include <Columns/ColumnNullable.h>
 
@@ -42,6 +49,45 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     String getSignatureString() const override { return "(T, Any) -> Nullable(T)"; }
+
+#if USE_EMBEDDED_COMPILER
+    /// `if(equals(x, y), NULL, x)`, with the compiled `equals` that `executeImpl` would build.
+    FunctionBasePtr buildEquals(const DataTypes & types) const
+    {
+        return equals_resolver->build({{nullptr, types[0], ""}, {nullptr, types[1], ""}});
+    }
+
+    bool isCompilableImpl(const DataTypes & types, const DataTypePtr & result_type) const override
+    {
+        return canBeNativeType(*result_type) && canBeNativeType(*types[0]) && canBeNativeType(*types[1]) && buildEquals(types)->isCompilable();
+    }
+
+    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & result_type) const override
+    {
+        auto & b = static_cast<llvm::IRBuilder<> &>(builder);
+        auto equals = buildEquals({arguments[0].type, arguments[1].type});
+        auto * equal = equals->compile(builder, arguments);
+
+        /// A NULL comparison is a false condition of `if`.
+        llvm::Value * is_equal = nullptr;
+        if (equals->getResultType()->isNullable())
+            is_equal = b.CreateAnd(b.CreateNot(b.CreateExtractValue(equal, {1})), b.CreateICmpNE(b.CreateExtractValue(equal, {0}), b.getInt8(0)));
+        else
+            is_equal = b.CreateICmpNE(equal, b.getInt8(0));
+
+        llvm::Value * value = arguments[0].value;
+        llvm::Value * is_null = b.getFalse();
+        if (arguments[0].type->isNullable())
+        {
+            value = b.CreateExtractValue(arguments[0].value, {0});
+            is_null = b.CreateExtractValue(arguments[0].value, {1});
+        }
+
+        /// `if` with a NULL branch keeps the value of the other branch under the NULL (`executeForNullThenElse`).
+        auto * result = llvm::Constant::getNullValue(toNativeType(b, result_type));
+        return b.CreateInsertValue(b.CreateInsertValue(result, value, {0}), b.CreateOr(is_equal, is_null), {1});
+    }
+#endif
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {

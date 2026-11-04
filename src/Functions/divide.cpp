@@ -42,6 +42,18 @@ struct DivideFloatingOrNullImpl : DivideFloatingImpl<A, B>
 {
 #if USE_EMBEDDED_COMPILER
     static constexpr bool compilable = false;
+
+    /// NULL where the divisor is 0 (`divisionOrNullLeadsToNull`); the value is the quotient, as `apply` computes it.
+    static constexpr bool compilable_or_null = is_floating_point<typename DivideFloatingImpl<A, B>::ResultType>;
+
+    static llvm::Value * compileOrNull(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, llvm::Value *& is_null)
+    {
+        using ResultType = typename DivideFloatingImpl<A, B>::ResultType;
+        auto * float_type = std::is_same_v<ResultType, Float32> ? b.getFloatTy() : b.getDoubleTy();
+        is_null = is_floating_point<B> ? b.CreateFCmpOEQ(right, llvm::ConstantFP::get(right->getType(), 0.0))
+                                       : b.CreateICmpEQ(right, llvm::ConstantInt::get(right->getType(), 0));
+        return b.CreateFDiv(JITIntegerDivision::toFloat<A>(b, left, float_type), JITIntegerDivision::toFloat<B>(b, right, float_type));
+    }
 #endif
 };
 

@@ -11,6 +11,8 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Functions/compileFirstNonNull.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -107,6 +109,42 @@ public:
     /// `coalesce(non_nullable_int, incompatible_type)` previously type-checked (returning the
     /// int) but would otherwise fail during analysis. The `ColumnsWithTypeAndName` overload
     /// forwards to the `DataTypes` one so both analysis paths share this logic.
+#if USE_EMBEDDED_COMPILER
+    /// The arguments `executeImpl` keeps: no NULL literal, none after the first that cannot be NULL.
+    static VectorWithMemoryTracking<size_t> keptArguments(const DataTypes & types)
+    {
+        VectorWithMemoryTracking<size_t> kept;
+        for (size_t i = 0; i < types.size(); ++i)
+        {
+            if (types[i]->onlyNull())
+                continue;
+            kept.push_back(i);
+            if (!canContainNull(*types[i]))
+                break;
+        }
+        return kept;
+    }
+
+    bool isCompilableImpl(const DataTypes & types, const DataTypePtr & result_type) const override
+    {
+        DataTypes kept_types;
+        for (size_t i : keptArguments(types))
+            kept_types.push_back(types[i]);
+        return canCompileFirstNonNull(kept_types, result_type);
+    }
+
+    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & result_type) const override
+    {
+        DataTypes types;
+        for (const auto & argument : arguments)
+            types.push_back(argument.type);
+        ValuesWithType kept;
+        for (size_t i : keptArguments(types))
+            kept.push_back(arguments[i]);
+        return compileFirstNonNull(builder, kept, result_type);
+    }
+#endif
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         DataTypes types;

@@ -1,4 +1,5 @@
 #include <Functions/IFunction.h>
+#include <Functions/compileFirstNonNull.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -116,6 +117,25 @@ public:
     {
         return getReturnTypeImpl(DataTypes{arguments[0].type, arguments[1].type});
     }
+
+#if USE_EMBEDDED_COMPILER
+    /// `if(isNotNull(x), assumeNotNull(x), alt)`, or `x` itself when it cannot be NULL, as `executeImpl`.
+    bool isCompilableImpl(const DataTypes & types, const DataTypePtr & result_type) const override
+    {
+        if (types[0]->onlyNull())
+            return false;
+        if (!canContainNull(*types[0]))
+            return canCompileFirstNonNull({types[0]}, result_type);
+        return canCompileFirstNonNull(types, result_type);
+    }
+
+    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & result_type) const override
+    {
+        if (!canContainNull(*arguments[0].type))
+            return compileFirstNonNull(builder, {arguments[0]}, result_type);
+        return compileFirstNonNull(builder, arguments, result_type);
+    }
+#endif
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {

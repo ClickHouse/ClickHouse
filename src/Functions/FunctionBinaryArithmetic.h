@@ -3798,6 +3798,16 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             return false;
     }
 
+    /// The `*OrNull` operations: `compileOrNull` gives the value and the rows where the result is NULL instead of an error.
+    template <typename OpSpec>
+    static constexpr bool isCompilableOrNull()
+    {
+        if constexpr (is_division_or_null && requires { OpSpec::compilable_or_null; })
+            return OpSpec::compilable_or_null;
+        else
+            return false;
+    }
+
     bool isCompilableImpl(const DataTypes & arguments, const DataTypePtr & result_type) const override
     {
         if (2 != arguments.size())
@@ -3831,8 +3841,12 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                     if constexpr (
                         !std::is_same_v<ResultDataType, InvalidType> && !IsDataTypeDecimal<ResultDataType>
                         && !IsDataTypeDecimal<LeftDataType> && !IsDataTypeDecimal<RightDataType>
-                        && (OpSpec::compilable || isCompilableWithErrors<OpSpec>()))
+                        && (OpSpec::compilable || isCompilableWithErrors<OpSpec>() || isCompilableOrNull<OpSpec>()))
                     {
+                        /// With a `Nullable` divisor (`division_by_nullable`) the arguments keep `Nullable`, which only the
+                        /// paths with errors and with NULLs handle.
+                        if constexpr (!isCompilableWithErrors<OpSpec>() && !isCompilableOrNull<OpSpec>())
+                            return !division_by_nullable;
                         return true;
                     }
                 }
@@ -3863,6 +3877,13 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                     using OpSpec = Op<typename LeftDataType::FieldType, typename RightDataType::FieldType>;
                     if constexpr (
                         !std::is_same_v<ResultDataType, InvalidType> && !IsDataTypeDecimal<ResultDataType>
+                        && !IsDataTypeDecimal<LeftDataType> && !IsDataTypeDecimal<RightDataType> && isCompilableOrNull<OpSpec>())
+                    {
+                        result = compileOrNull<OpSpec>(builder, arguments, result_type);
+                        return true;
+                    }
+                    else if constexpr (
+                        !std::is_same_v<ResultDataType, InvalidType> && !IsDataTypeDecimal<ResultDataType>
                         && !IsDataTypeDecimal<LeftDataType> && !IsDataTypeDecimal<RightDataType> && isCompilableWithErrors<OpSpec>())
                     {
                         result = compileWithErrors<OpSpec>(builder, arguments, result_type);
@@ -3872,6 +3893,9 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                         !std::is_same_v<ResultDataType, InvalidType> && !IsDataTypeDecimal<ResultDataType>
                         && !IsDataTypeDecimal<LeftDataType> && !IsDataTypeDecimal<RightDataType> && OpSpec::compilable)
                     {
+                        if (division_by_nullable)
+                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Function {} with a Nullable divisor cannot be compiled without errors", getName());
+
                         auto & b = static_cast<llvm::IRBuilder<> &>(builder);
                         auto * lval = nativeCast(b, arguments[0], result_type);
                         auto * rval = nativeCast(b, arguments[1], result_type);
@@ -3883,6 +3907,40 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             });
 
         return result;
+    }
+
+    /// The `*OrNull` operations, from the original argument values (`Nullable` included, as they handle NULLs themselves):
+    /// NULL where an argument is NULL or where `divisionOrNullLeadsToNull`; the value 0 where the divisor is NULL, as
+    /// `processWithRightNullmapImpl`.
+    template <typename OpSpec>
+    llvm::Value * compileOrNull(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & result_type) const
+    {
+        auto & b = static_cast<llvm::IRBuilder<> &>(builder);
+
+        llvm::Value * values[2];
+        llvm::Value * result_is_null = b.getFalse();
+        llvm::Value * divisor_is_null = nullptr;
+        for (size_t i = 0; i < 2; ++i)
+        {
+            values[i] = arguments[i].value;
+            if (arguments[i].type->isNullable())
+            {
+                values[i] = b.CreateExtractValue(arguments[i].value, {0});
+                auto * is_null = b.CreateExtractValue(arguments[i].value, {1});
+                result_is_null = b.CreateOr(result_is_null, is_null);
+                if (i == 1)
+                    divisor_is_null = is_null;
+            }
+        }
+
+        llvm::Value * leads_to_null = nullptr;
+        auto * value = OpSpec::compileOrNull(b, values[0], values[1], leads_to_null);
+        if (divisor_is_null)
+            value = b.CreateSelect(divisor_is_null, llvm::Constant::getNullValue(value->getType()), value);
+        result_is_null = b.CreateOr(result_is_null, leads_to_null);
+
+        auto * nullable_result = llvm::Constant::getNullValue(toNativeType(b, result_type));
+        return b.CreateInsertValue(b.CreateInsertValue(nullable_result, value, {0}), result_is_null, {1});
     }
 
     template <typename OpSpec>

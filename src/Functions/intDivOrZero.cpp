@@ -31,7 +31,18 @@ struct DivideIntegralOrZeroImpl
     }
 
 #if USE_EMBEDDED_COMPILER
-    static constexpr bool compilable = false; /// TODO implement the checks
+    static constexpr bool compilable = false;
+
+    /// Integers up to 64 bits, from the original argument values like `intDiv` (see `FunctionBinaryArithmetic::compileWithErrors`):
+    /// the rows where `intDiv` fails give 0, so nothing is reported.
+    static constexpr bool compilable_with_errors = is_integer<A> && is_integer<B> && !is_big_int_v<A> && !is_big_int_v<B>;
+
+    static llvm::Value * compileWithErrors(llvm::IRBuilder<> & builder, llvm::Value * a, llvm::Value * divisor)
+    {
+        JITErrorValue error;
+        auto * quotient = JITIntegerDivision::compileDivision<A, B, ResultType>(builder, a, divisor, error);
+        return builder.CreateSelect(error.fails, llvm::Constant::getNullValue(quotient->getType()), quotient);
+    }
 #endif
 };
 

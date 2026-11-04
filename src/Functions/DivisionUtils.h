@@ -12,6 +12,7 @@
 #if USE_EMBEDDED_COMPILER
 #    include <Interpreters/JIT/JITError.h>
 #    include <llvm/IR/IRBuilder.h>
+#    include <llvm/IR/Intrinsics.h>
 #endif
 
 namespace DB
@@ -195,6 +196,25 @@ llvm::Value * compileDivision(llvm::IRBuilder<> & builder, llvm::Value * a, llvm
         auto * quotient = builder.CreateUDiv(builder.CreateIntCast(a, operation_type, false), builder.CreateIntCast(safe_divisor, operation_type, false));
         return builder.CreateIntCast(quotient, result_type, false);
     }
+}
+
+/// `T` converted to `float_type`, as `static_cast`.
+template <typename T>
+llvm::Value * toFloat(llvm::IRBuilder<> & builder, llvm::Value * value, llvm::Type * float_type)
+{
+    if constexpr (is_floating_point<T>)
+        return builder.CreateFPCast(value, float_type);
+    else if constexpr (is_signed_v<T>)
+        return builder.CreateSIToFP(value, float_type);
+    else
+        return builder.CreateUIToFP(value, float_type);
+}
+
+/// The float remainder of `ModuloImpl::apply`: `a - trunc(a / b) * b`, in the type of the operands.
+inline llvm::Value * compileFloatModulo(llvm::IRBuilder<> & builder, llvm::Value * a, llvm::Value * b)
+{
+    auto * quotient = builder.CreateUnaryIntrinsic(llvm::Intrinsic::trunc, builder.CreateFDiv(a, b));
+    return builder.CreateFSub(a, builder.CreateFMul(quotient, b));
 }
 
 /// `ModuloImpl::apply`.
@@ -386,6 +406,17 @@ struct DivideIntegralOrNullImpl : DivideIntegralImpl<A, B>
 
 #if USE_EMBEDDED_COMPILER
     static constexpr bool compilable_with_errors = false;
+
+    /// Integers up to 64 bits: NULL where `intDiv` fails (`integerDivisionLeadsToFPE`), with the value 0 as `apply`.
+    static constexpr bool compilable_or_null = is_integer<A> && is_integer<B> && !is_big_int_v<A> && !is_big_int_v<B>;
+
+    static llvm::Value * compileOrNull(llvm::IRBuilder<> & builder, llvm::Value * a, llvm::Value * divisor, llvm::Value *& is_null)
+    {
+        JITErrorValue error;
+        auto * quotient = JITIntegerDivision::compileDivision<A, B, ResultType>(builder, a, divisor, error);
+        is_null = error.fails;
+        return builder.CreateSelect(error.fails, llvm::Constant::getNullValue(quotient->getType()), quotient);
+    }
 #endif
 };
 
@@ -503,7 +534,13 @@ struct ModuloImpl
     }
 
 #if USE_EMBEDDED_COMPILER
-    static constexpr bool compilable = false;
+    /// Floats: the operands arrive converted to the result type, as `apply` converts them; the remainder cannot fail.
+    static constexpr bool compilable = is_floating_point<ResultType>;
+
+    static llvm::Value * compile(llvm::IRBuilder<> & builder, llvm::Value * left, llvm::Value * right, bool)
+    {
+        return JITIntegerDivision::compileFloatModulo(builder, left, right);
+    }
 
     /// Integers up to 64 bits are compiled with the errors reported to the caller, see `JITErrorSink`.
     static constexpr bool compilable_with_errors = is_integer<A> && is_integer<B> && !is_big_int_v<A> && !is_big_int_v<B>;
@@ -592,7 +629,32 @@ struct ModuloOrNullImpl : ModuloImpl<A, B>
     }
 
 #if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = false;
     static constexpr bool compilable_with_errors = false;
+
+    /// NULL where `moduloLeadsToFPE`, with the value 0 as `apply`: integers up to 64 bits, and floats.
+    static constexpr bool compilable_or_null
+        = is_floating_point<ResultType> || (is_integer<A> && is_integer<B> && !is_big_int_v<A> && !is_big_int_v<B>);
+
+    static llvm::Value * compileOrNull(llvm::IRBuilder<> & builder, llvm::Value * a, llvm::Value * divisor, llvm::Value *& is_null)
+    {
+        llvm::Value * remainder = nullptr;
+        if constexpr (is_floating_point<ResultType>)
+        {
+            auto * float_type = std::is_same_v<ResultType, Float32> ? builder.getFloatTy() : builder.getDoubleTy();
+            auto * float_divisor = JITIntegerDivision::toFloat<B>(builder, divisor, float_type);
+            is_null = is_floating_point<B> ? builder.CreateFCmpOEQ(divisor, llvm::ConstantFP::get(divisor->getType(), 0.0))
+                                           : builder.CreateICmpEQ(divisor, llvm::ConstantInt::get(divisor->getType(), 0));
+            remainder = JITIntegerDivision::compileFloatModulo(builder, JITIntegerDivision::toFloat<A>(builder, a, float_type), float_divisor);
+        }
+        else
+        {
+            JITErrorValue error;
+            remainder = JITIntegerDivision::compileModulo<A, B, ResultType>(builder, a, divisor, error);
+            is_null = error.fails;
+        }
+        return builder.CreateSelect(is_null, llvm::Constant::getNullValue(remainder->getType()), remainder);
+    }
 #endif
 };
 

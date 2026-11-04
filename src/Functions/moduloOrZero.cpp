@@ -37,7 +37,24 @@ struct ModuloOrZeroImpl
     }
 
 #if USE_EMBEDDED_COMPILER
-    static constexpr bool compilable = false; /// TODO implement the checks
+    /// Floats: the remainder of `ModuloImpl`, which cannot fail.
+    static constexpr bool compilable = is_floating_point<ResultType>;
+
+    static llvm::Value * compile(llvm::IRBuilder<> & builder, llvm::Value * left, llvm::Value * right, bool)
+    {
+        return JITIntegerDivision::compileFloatModulo(builder, left, right);
+    }
+
+    /// Integers up to 64 bits, from the original argument values like `modulo`: the rows where `divisionLeadsToFPE` give 0,
+    /// so nothing is reported.
+    static constexpr bool compilable_with_errors = is_integer<A> && is_integer<B> && !is_big_int_v<A> && !is_big_int_v<B>;
+
+    static llvm::Value * compileWithErrors(llvm::IRBuilder<> & builder, llvm::Value * a, llvm::Value * divisor)
+    {
+        JITErrorValue error;
+        auto * remainder = JITIntegerDivision::compileModulo<A, B, ResultType>(builder, a, divisor, error);
+        return builder.CreateSelect(error.fails, llvm::Constant::getNullValue(remainder->getType()), remainder);
+    }
 #endif
 };
 

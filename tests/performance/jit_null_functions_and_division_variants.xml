@@ -1,0 +1,36 @@
+<test>
+    <settings>
+        <min_count_to_compile_expression>0</min_count_to_compile_expression>
+    </settings>
+
+    <create_query>
+        CREATE TABLE jit_null_division (a Int64, b Int32, f Float64, n Nullable(Int32), x Nullable(Float64)) Engine = Memory
+    </create_query>
+
+    <fill_query>
+        INSERT INTO jit_null_division
+        SELECT toInt64(cityHash64(number)), if(number % 20 = 0, 0, toInt32(number % 1000) - 500), toFloat64(cityHash64(number, 1) % 100000) / 7,
+            if(number % 10 = 0, NULL, toInt32(cityHash64(number, 2))), if(number % 7 = 0, NULL, toFloat64(number % 300))
+        FROM numbers(50000000)
+    </fill_query>
+
+    <substitutions>
+        <substitution>
+            <name>compile</name>
+            <values>
+                <value>0</value>
+                <value>1</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <query>SELECT sum(coalesce(n, b) + 1) FROM jit_null_division SETTINGS compile_expressions = {compile}</query>
+    <query>SELECT sum(ifNull(x, f) * 2) FROM jit_null_division SETTINGS compile_expressions = {compile}</query>
+    <query>SELECT sum(nullIf(b, 0) + 1) FROM jit_null_division SETTINGS compile_expressions = {compile}</query>
+    <query>SELECT sum(intDivOrZero(a, b) + 1) FROM jit_null_division SETTINGS compile_expressions = {compile}</query>
+    <query>SELECT sum(moduloOrZero(a, b) + 1) FROM jit_null_division SETTINGS compile_expressions = {compile}</query>
+    <query>SELECT sum(intDivOrNull(a, b) + 1) FROM jit_null_division SETTINGS compile_expressions = {compile}</query>
+    <query>SELECT sum(modulo(f, 7.5) * 2) FROM jit_null_division SETTINGS compile_expressions = {compile}</query>
+
+    <drop_query>DROP TABLE IF EXISTS jit_null_division</drop_query>
+</test>
