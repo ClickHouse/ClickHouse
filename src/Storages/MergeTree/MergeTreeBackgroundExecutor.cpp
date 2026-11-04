@@ -191,6 +191,7 @@ size_t MergeTreeBackgroundExecutor<Queue>::getMaxTasksCount() const
 template <class Queue>
 bool MergeTreeBackgroundExecutor<Queue>::trySchedule(ExecutableTaskPtr task)
 {
+    std::shared_lock scheduling_lock(scheduling_mutex);
     LockGuardWithStopWatch lock(mutex, log, __PRETTY_FUNCTION__);
 
     if (shutdown)
@@ -207,10 +208,32 @@ bool MergeTreeBackgroundExecutor<Queue>::trySchedule(ExecutableTaskPtr task)
 }
 
 template <class Queue>
+std::optional<typename MergeTreeBackgroundExecutor<Queue>::SchedulingPause>
+MergeTreeBackgroundExecutor<Queue>::pauseScheduling(std::chrono::steady_clock::time_point deadline)
+{
+    std::unique_lock scheduling_lock(scheduling_mutex, std::defer_lock);
+    if (!scheduling_lock.try_lock_until(deadline))
+        return std::nullopt;
+
+    return SchedulingPause(*this, std::move(scheduling_lock));
+}
+
+template <class Queue>
+bool MergeTreeBackgroundExecutor<Queue>::SchedulingPause::waitForIdle(std::chrono::steady_clock::time_point deadline)
+    TSA_NO_THREAD_SAFETY_ANALYSIS
+{
+    std::unique_lock executor_lock(executor.mutex);
+    return executor.task_slots_available.wait_until(
+        executor_lock, deadline, [this] { return CurrentMetrics::values[executor.metric].load() == 0; });
+}
+
+template <class Queue>
 size_t MergeTreeBackgroundExecutor<Queue>::tryReserveTaskSlots(size_t desired)
 {
     if (desired == 0)
         return 0;
+
+    std::shared_lock scheduling_lock(scheduling_mutex);
 
     /// Same lock as trySchedule, so the check-and-increment of the task metric is atomic with
     /// scheduling and the metric never exceeds max_tasks_count (CompactionStatistics treats that
@@ -252,6 +275,7 @@ size_t MergeTreeBackgroundExecutor<Queue>::reserveTaskSlots(size_t desired) TSA_
     if (desired == 0)
         return 0;
 
+    std::shared_lock scheduling_lock(scheduling_mutex);
     std::unique_lock lock(mutex);
     auto & value = CurrentMetrics::values[metric];
     const auto get_fg_limit = [this] TSA_REQUIRES(mutex)
@@ -382,6 +406,8 @@ void MergeTreeBackgroundExecutor<Queue>::removeTasksCorrespondingToStorage(Stora
         item->wait();
         item.reset();
     }
+    if (!tasks_to_wait.empty())
+        task_slots_available.notify_all();
 }
 
 template <class Queue>

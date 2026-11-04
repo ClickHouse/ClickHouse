@@ -117,6 +117,37 @@ private:
     Priority priority;
 };
 
+class BlockingExecutableTask : public IExecutableTask
+{
+public:
+    BlockingExecutableTask(std::latch & started_, std::latch & finish_, std::latch & destroyed_)
+        : started(started_)
+        , finish(finish_)
+        , destroyed(destroyed_)
+    {
+    }
+
+    ~BlockingExecutableTask() override { destroyed.count_down(); }
+
+    bool executeStep() override
+    {
+        started.count_down();
+        finish.wait();
+        return false;
+    }
+
+    void cancel() noexcept override { }
+    StorageID getStorageID() const override { return {"test", "blocking"}; }
+    void onCompleted() override { }
+    Priority getPriority() const override { return {}; }
+    String getQueryId() const override { return "test::blocking"; }
+
+private:
+    std::latch & started;
+    std::latch & finish;
+    std::latch & destroyed;
+};
+
 
 TEST(Executor, Simple)
 {
@@ -187,6 +218,70 @@ TEST(Executor, ReserveTaskSlotsWaitsForAvailableSlot)
     executor->releaseTaskSlots(1);
     ASSERT_EQ(reserved_slot.get(), 1);
     executor->releaseTaskSlots(1);
+    executor->wait();
+}
+
+
+TEST(Executor, SchedulingPauseWaitsForTaskDestruction)
+{
+    auto executor = std::make_shared<DB::MergeTreeBackgroundExecutor<RoundRobinRuntimeQueue>>(
+        ThreadName::TEST_SCHEDULER,
+        1, // threads
+        1, // max_tasks
+        CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
+        CurrentMetrics::BackgroundMergesAndMutationsPoolSize,
+        ProfileEvents::CommonBackgroundExecutorTaskExecuteStepMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorTaskCancelMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorTaskResetMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorWaitMicroseconds);
+
+    std::latch task_started(1);
+    std::latch finish_task(1);
+    std::latch task_destroyed(1);
+    std::latch scheduling_paused(1);
+    std::latch release_pause(1);
+    std::atomic_bool pause_succeeded = false;
+
+    ASSERT_TRUE(executor->trySchedule(std::make_shared<BlockingExecutableTask>(task_started, finish_task, task_destroyed)));
+    task_started.wait();
+
+    auto pause = std::async(
+        std::launch::async,
+        [&]
+        {
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+            auto guard = executor->pauseScheduling(deadline);
+            if (!guard || !guard->waitForIdle(deadline))
+            {
+                scheduling_paused.count_down();
+                return false;
+            }
+
+            pause_succeeded = true;
+            scheduling_paused.count_down();
+            release_pause.wait();
+            return task_destroyed.try_wait();
+        });
+
+    ASSERT_EQ(pause.wait_for(std::chrono::milliseconds(100)), std::future_status::timeout);
+    finish_task.count_down();
+    scheduling_paused.wait();
+    if (!pause_succeeded)
+        ASSERT_TRUE(pause.get());
+
+    auto schedule_while_paused
+        = std::async(std::launch::async, [&] { return executor->trySchedule(std::make_shared<LambdaExecutableTask>("after_pause", 1)); });
+    ASSERT_EQ(schedule_while_paused.wait_for(std::chrono::milliseconds(100)), std::future_status::timeout);
+
+    release_pause.count_down();
+    ASSERT_TRUE(pause.get());
+    ASSERT_TRUE(schedule_while_paused.get());
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    auto final_pause = executor->pauseScheduling(deadline);
+    ASSERT_TRUE(final_pause);
+    ASSERT_TRUE(final_pause->waitForIdle(deadline));
+    final_pause.reset();
     executor->wait();
 }
 
