@@ -35,6 +35,10 @@ INSERT INTO 04095_data VALUES ('a', 1), ('b', 2), ('c', 3);
 INSERT INTO 04095_keys VALUES ('a'), ('x');
 
 SET use_index_for_in_with_subqueries = 1;
+-- Pin the initiator-local path: with `prefer_localhost_replica = 0` both shards are queried over TCP,
+-- and the failpoint would be consumed by a remote child after the initiator already shipped the set.
+SET prefer_localhost_replica = 1;
+SET enable_parallel_replicas = 0;
 
 SYSTEM ENABLE FAILPOINT prepared_sets_build_ordered_set_inplace_fail;
 SELECT enabled FROM system.fail_points WHERE name = 'prepared_sets_build_ordered_set_inplace_fail';
