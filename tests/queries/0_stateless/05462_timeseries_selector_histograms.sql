@@ -76,24 +76,28 @@ SELECT count(), sum(length(histograms)) FROM timeSeriesSelector(ts, 'm_float', 0
 SELECT count(), sum(length(samples)) FROM timeSeriesSelector(ts, 'm_float', 0, 1000, 'samples');
 SELECT histograms FROM timeSeriesSelector(ts, 'm_float', 0, 1000, 'samples');
 
--- The generated query reads `histograms` even when only `samples` is requested, so histogram-only rows are preserved.
-SELECT plan LIKE '%histograms%'
+-- A kind which isn't requested is read through its `timestamp` subcolumn for the row filter only, so histogram-only rows are
+-- preserved without reading the histogram payload (the type of the payload names `count_int`, the timestamps don't).
+SELECT plan LIKE '%histograms.timestamp%' AND plan NOT LIKE '%count_int%'
 FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN actions = 1 SELECT id, samples FROM timeSeriesSelector(ts, 'm_mixed', 0, 1000, 'samples')));
-SELECT plan LIKE '%histograms%'
+SELECT plan LIKE '%samples.timestamp%' AND plan LIKE '%count_int%'
 FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN actions = 1 SELECT id, histograms FROM timeSeriesSelector(ts, 'm_mixed', 0, 1000, 'samples')));
-SELECT plan LIKE '%histograms%' AND plan LIKE '%timeSeriesSliceSortedArray%'
+SELECT plan NOT LIKE '%.timestamp%' AND plan LIKE '%count_int%' AND plan LIKE '%timeSeriesSliceSortedArray%'
 FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN actions = 1 SELECT id, samples, histograms FROM timeSeriesSelector(ts, 'm_mixed', 0, 1000, 'samples')));
 
 SELECT '-- timestamp_and_value returns the float samples only';
 SELECT timestamp, value FROM timeSeriesSelector(ts, 'm_mixed', 0, 1000, 'timestamp_and_value');
 
-SELECT '-- PromQL evaluates the float samples and rejects a histogram sample in the evaluated range';
+SELECT '-- PromQL evaluates the float samples only and ignores the histogram samples';
 SELECT value FROM prometheusQuery(ts, 'm_float', 115);
--- The histogram sample at 110 is in the lookback window of the evaluation at 115, not of the one at 105.
-SELECT value FROM prometheusQuery(ts, 'm_mixed', 115); -- { serverError NOT_IMPLEMENTED }
+-- The histogram sample at 110 is in the lookback window of the evaluation at 115: it is ignored, the float sample at 100 is returned.
+SELECT value FROM prometheusQuery(ts, 'm_mixed', 115);
 SELECT value FROM prometheusQuery(ts, 'm_mixed', 105);
-SELECT value FROM prometheusQuery(ts, 'sum_over_time(m_mixed[20s])', 115); -- { serverError NOT_IMPLEMENTED }
+SELECT value FROM prometheusQuery(ts, 'sum_over_time(m_mixed[20s])', 115);
 SELECT value FROM prometheusQuery(ts, 'sum_over_time(m_mixed[10s])', 105);
+-- A histogram-only series has nothing for PromQL, the other series of the selector are evaluated.
+SELECT value FROM prometheusQuery(ts, 'm_hist', 115);
+SELECT value FROM prometheusQuery(ts, 'count({__name__=~"m_float|m_hist|m_mixed"})', 115);
 
 SELECT '-- the recent samples table returns the histograms too';
 -- TTL 10 days, the samples are inserted close to now(), so the background TTL cannot drop them during the test.

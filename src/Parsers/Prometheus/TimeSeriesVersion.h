@@ -95,35 +95,35 @@ namespace TimeSeriesVersion
 
     /// The first version storing the time range of a time series in the "time ranges" target table (see the version history above).
     /// The earlier versions store it in the columns `min_time` and `max_time` of the "tags" target table.
-    constexpr UInt64 MIN_WITH_TIME_RANGES_TARGET = MIN_WITH_DEDUPLICATION_CACHES + 1;
+    constexpr UInt64 MIN_WITH_TIME_RANGES_TARGET = 8;
 
     /// The first version whose default recent-samples partition key names a timezone. The earlier versions
     /// generate it without one, so their tables keep the partition grid they were written on.
-    constexpr UInt64 MIN_WITH_UTC_PARTITION_KEY = MIN_WITH_TIME_RANGES_TARGET + 1;
+    constexpr UInt64 MIN_WITH_UTC_PARTITION_KEY = 9;
 
     /// The first version whose target tables are all inner (see the version history above).
     /// A new table of this version or later can't refer to external target tables, tables of the earlier versions can.
-    constexpr UInt64 MIN_WITHOUT_EXTERNAL_TARGETS = MIN_WITH_UTC_PARTITION_KEY + 1;
+    constexpr UInt64 MIN_WITHOUT_EXTERNAL_TARGETS = 10;
 
     /// The first version declaring the type of the `id` column and the expression generating identifiers in the inner columns
     /// of the "tags" table only (see the version history above). The earlier versions could declare them in the settings
     /// `id_type` and `id_generator`, which a table of this version or later can't have.
-    constexpr UInt64 MIN_WITHOUT_ID_SETTINGS = MIN_WITHOUT_EXTERNAL_TARGETS;
+    constexpr UInt64 MIN_WITHOUT_ID_SETTINGS = 10;
 
     /// The first version storing buckets of samples in the "samples" and "recent samples" target tables (see the version history above).
     /// The earlier versions stored one sample per row.
-    constexpr UInt64 MIN_WITH_BUCKETED_SAMPLES = MIN_WITHOUT_EXTERNAL_TARGETS + 1;
+    constexpr UInt64 MIN_WITH_BUCKETED_SAMPLES = 11;
 
     /// The first version storing native histogram samples in the rows of the "samples" and "recent samples" target tables
     /// (see the version history above). The earlier versions store no histograms, and a table of an earlier version must not have
     /// the settings of the histograms: an older server wouldn't understand them.
-    constexpr UInt64 MIN_WITH_NATIVE_HISTOGRAMS = MIN_WITH_BUCKETED_SAMPLES + 1;
+    constexpr UInt64 MIN_WITH_NATIVE_HISTOGRAMS = 12;
 
     /// The latest version, new tables get it unless the CREATE query specifies another supported version.
     /// Bump it each time the schema of the target tables or the semantics of the stored data changes;
     /// every version in [MIN_SUPPORTED, LATEST] must stay supported, so either make the schema generation
     /// version-aware or bump MIN_SUPPORTED too.
-    constexpr UInt64 LATEST = MIN_WITH_NATIVE_HISTOGRAMS;
+    constexpr UInt64 LATEST = 12;
 
     static_assert(MIN_WITH_ID_TYPE_SETTING <= LATEST);
     static_assert(MIN_WITH_SAMPLES_OUTER_COLUMN <= LATEST);

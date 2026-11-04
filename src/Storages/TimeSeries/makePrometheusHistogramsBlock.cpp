@@ -8,6 +8,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
+#include <Core/AccurateComparison.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Parsers/Prometheus/TimeSeriesVersion.h>
@@ -151,17 +152,17 @@ namespace
             histogram.timestamp(), fmt::format(format, std::forward<Args>(args)...));
     }
 
-    /// The protobuf fields are wider than the columns (`sint32 schema`, and an open enum for `reset_hint`, so any int32 arrives).
-    /// A plain cast would wrap an out-of-range value into a valid one, e.g. -309 into -53.
-    template <typename To>
-    To narrow(Int32 value, const prometheus::Histogram & histogram, std::string_view field)
+    /// The protobuf fields are wider than the columns (`sint32 schema`, an open enum for `reset_hint`, so any int32 arrives, and
+    /// `uint64` counts). A plain cast would wrap an out-of-range value into a valid one, e.g. -309 into -53, or a huge count into a negative one.
+    template <typename To, typename From>
+    To narrow(From value, const prometheus::Histogram & histogram, std::string_view field)
     {
-        if ((value < std::numeric_limits<To>::min()) || (value > std::numeric_limits<To>::max()))
+        if (accurate::lessOp(value, std::numeric_limits<To>::min()) || accurate::greaterOp(value, std::numeric_limits<To>::max()))
             fail(histogram, "{} {} is out of the range {}..{}",
                 field,
                 value,
-                static_cast<Int32>(std::numeric_limits<To>::min()),
-                static_cast<Int32>(std::numeric_limits<To>::max()));
+                static_cast<Int64>(std::numeric_limits<To>::min()),
+                static_cast<Int64>(std::numeric_limits<To>::max()));
         return static_cast<To>(value);
     }
 
@@ -281,8 +282,8 @@ namespace
         }
         else
         {
-            view.count_int.insertValue(static_cast<Int64>(histogram.count_int()));
-            view.zero_count_int.insertValue(static_cast<Int64>(histogram.zero_count_int()));
+            view.count_int.insertValue(narrow<Int64>(histogram.count_int(), histogram, "count_int"));
+            view.zero_count_int.insertValue(narrow<Int64>(histogram.zero_count_int(), histogram, "zero_count_int"));
             view.count_float.insertValue(0);
             view.zero_count_float.insertValue(0);
             appendPairs(histogram.positive_spans(), histogram.positive_deltas(), columns.positive_int, histogram, "positive");

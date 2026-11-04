@@ -763,12 +763,18 @@ namespace
         /// The two kinds of samples: the float samples, and the `histograms` array of every row of a table storing histogram samples
         /// (the histogram samples of the INSERT if it has them, otherwise empty arrays: an absent kind). A table without the column
         /// (`histograms_array_type` is null) uses the first kind only.
+        std::vector<const IColumn *> histogram_columns;
+        if (histograms)
+        {
+            const auto stored_columns = histograms->getColumnsInStoredOrder();
+            histogram_columns.assign(stored_columns.begin(), stored_columns.end());
+        }
         std::array<SortedSamples<TimestampColumn>, 2> kinds{
             SortedSamples<TimestampColumn>{
                 &ts_timestamps, {&ts_timestamps, &ts_values}, TimeSeriesColumnNames::Samples, makeSamplesType(timestamp_type, value_type)},
             SortedSamples<TimestampColumn>{
                 histograms ? &getHistogramTimestamps<TimestampColumn>(*histograms) : nullptr,
-                histograms ? histograms->getColumnsInStoredOrder() : std::vector<const IColumn *>{},
+                std::move(histogram_columns),
                 TimeSeriesColumnNames::Histograms,
                 histograms_array_type}};
         kinds[0].sort(filter, ts_offsets, makeFloatSampleWins(ts_values), "samples");

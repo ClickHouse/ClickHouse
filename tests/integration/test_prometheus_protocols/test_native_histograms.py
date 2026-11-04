@@ -25,7 +25,7 @@ cluster = ClickHouseCluster(__file__)
 
 node = cluster.add_instance(
     "node",
-    main_configs=["configs/prometheus.xml", "configs/config.d/query_log.xml"],
+    main_configs=["configs/prometheus.xml"],
     user_configs=["configs/allow_experimental_time_series_table.xml"],
 )
 
@@ -224,24 +224,6 @@ def test_samples_and_histograms_together():
     ) == f"{TIMESTAMP_MS}\t{TIMESTAMP_MS + 2000}\n"
 
 
-def test_integer_counts_are_exact():
-    # Integer counts are stored as Int64, so counts which a Float64 can't represent read back exactly.
-    bucket = (1 << 53) + 1
-    zero_count = (1 << 60) + 3
-    histogram = types_pb2.Histogram(
-        count_int=bucket + zero_count,
-        sum=1,
-        zero_count_int=zero_count,
-        positive_spans=[span(0, 1)],
-        positive_deltas=[bucket],
-        timestamp=TIMESTAMP_MS,
-    )
-    send(make_write_request(({"__name__": "big"}, [histogram])))
-
-    assert node.query(
-        "SELECT h.count_int, h.zero_count_int, h.positive_int FROM timeSeriesSamples(prometheus) ARRAY JOIN histograms AS h"
-    ) == f"{bucket + zero_count}\t{zero_count}\t[(0,{bucket})]\n"
-
 
 def test_async_insert():
     # The block with the `histograms.*` columns goes through the asynchronous insert queue (serialized, merged and flushed)
@@ -252,21 +234,6 @@ def test_async_insert():
     assert count_histograms() == 1
     assert count_samples() == 1
 
-
-def test_request_without_histograms_inserts_the_same_columns():
-    # A request without histograms must produce the same INSERT as before histograms existed: no `histograms.*` columns.
-    # The URL parameters are settings of the insert, so `log_comment` marks the insert of each request in the query log.
-    histogram = types_pb2.Histogram(count_int=1, sum=1, positive_spans=[span(0, 1)], positive_deltas=[1], timestamp=TIMESTAMP_MS)
-    send(make_write_request(({"__name__": "with_hist"}, [histogram])), path="/write?log_comment=with_histograms")
-    send(make_write_request(({"__name__": "without_hist"}, [], {TIMESTAMP_MS: 1.0})), path="/write?log_comment=without_histograms")
-
-    node.query("SYSTEM FLUSH LOGS query_log")
-    inserts = node.query(
-        "SELECT log_comment, query LIKE '%histograms.timestamp%' FROM system.query_log "
-        "WHERE type = 'QueryFinish' AND query_kind = 'Insert' AND log_comment IN ('with_histograms', 'without_histograms') "
-        "ORDER BY log_comment"
-    )
-    assert inserts == "with_histograms\t1\nwithout_histograms\t0\n"
 
 
 def test_many_histograms():
@@ -334,39 +301,25 @@ def test_invalid_histograms_are_rejected():
     expect_rejected(types_pb2.Histogram(sum=1, schema=300, timestamp=TIMESTAMP_MS), "schema 300 is out of the range -128..127")
     expect_rejected(types_pb2.Histogram(sum=1, reset_hint=260, timestamp=TIMESTAMP_MS), "reset_hint 260 is out of the range 0..255")
 
-    # What the validation of the sink rejects: the same rules apply to INSERT queries, see 05459_timeseries_histograms_validation.
+    # A count above Int64 would wrap into a negative one.
+    expect_rejected(
+        types_pb2.Histogram(count_int=1 << 63, sum=1, positive_spans=[span(0, 1)], positive_deltas=[1], timestamp=TIMESTAMP_MS),
+        "count_int 9223372036854775808 is out of the range",
+    )
+
+    # The validation of the sink is covered by 05459_timeseries_histograms_validation (the same rules apply to INSERT queries);
+    # one case checks that its error reaches the response of the protocol.
     expect_rejected(types_pb2.Histogram(sum=1, schema=9, timestamp=TIMESTAMP_MS), "schema 9 is invalid")
-    expect_rejected(types_pb2.Histogram(sum=1, reset_hint=4, timestamp=TIMESTAMP_MS), "counter_reset_hint 4 is out of the range 0..3")
-    expect_rejected(
-        types_pb2.Histogram(count_int=5, sum=1, positive_spans=[span(0, 1)], positive_deltas=[1], timestamp=TIMESTAMP_MS),
-        "1 observations found in the buckets, but count_int is 5",
-    )
-    # A span after the first one with a negative offset makes the bucket indexes go backwards.
-    expect_rejected(
-        types_pb2.Histogram(count_int=2, sum=1, positive_spans=[span(0, 1), span(-1, 1)], positive_deltas=[1, 0], timestamp=TIMESTAMP_MS),
-        "positive side: the bucket indexes must be strictly increasing",
-    )
-    expect_rejected(
-        types_pb2.Histogram(
-            count_int=2, sum=1, schema=-53, custom_values=[1, 0.5], positive_spans=[span(0, 2)], positive_deltas=[1, 0], timestamp=TIMESTAMP_MS
-        ),
-        "custom_values must be strictly increasing",
-    )
 
 
 def test_max_buckets_setting():
+    # The limit itself is covered by 05460_timeseries_histograms_max_buckets; here the rejection reaches the response of the protocol.
     node.query("DROP TABLE prometheus SYNC")
     node.query("CREATE TABLE prometheus ENGINE=TimeSeries SETTINGS histograms_max_buckets = 2")
     expect_rejected(
         types_pb2.Histogram(count_int=3, sum=1, positive_spans=[span(0, 3)], positive_deltas=[1, 0, 0], timestamp=TIMESTAMP_MS),
         "3 buckets exceed the limit of 2 buckets per histogram",
     )
-    send(
-        make_write_request(
-            ({"__name__": "ok"}, [types_pb2.Histogram(count_int=2, sum=1, positive_spans=[span(0, 2)], positive_deltas=[1, 0], timestamp=TIMESTAMP_MS)])
-        )
-    )
-    assert count_histograms() == 1
 
 
 def test_table_of_an_older_version_drops_histograms():

@@ -114,8 +114,9 @@ public:
         {
             case TimeSeriesHistogramsColumn::Flags:
                 return {"flags", "UInt8", "CODEC(ZSTD(3))",
-                    "Bit 0: the histogram is a float histogram, its counts are in the `*_float` elements and the `*_int` elements are 0 and empty; "
-                    "an integer histogram has the bit clear and the opposite. The other bits are reserved and must be 0"};
+                    "Bit 0: the histogram is a float histogram and its counts are in the `*_float` elements; an integer histogram has the bit clear "
+                    "and its counts in the `*_int` elements. The readers ignore the elements of the other flavour, which remote write leaves 0 and "
+                    "empty. The other bits are reserved and must be 0"};
             case TimeSeriesHistogramsColumn::CounterResetHint:
                 return {"counter_reset_hint", "UInt8", "CODEC(ZSTD(3))",
                     "The counter reset hint: 0 - unknown, 1 - a counter reset happened, 2 - no counter reset, 3 - a gauge histogram"};

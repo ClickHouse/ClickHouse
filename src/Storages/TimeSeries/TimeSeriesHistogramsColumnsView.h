@@ -69,7 +69,8 @@ public:
 
     /// The columns of the view in the order of the elements of the stored tuple (see `TimeSeriesHistogramsColumns::getTimestampPosition`
     /// and `getTuplePosition`): `timestamps` first, then the payload elements. For building a tuple of the stored shape from the view.
-    std::vector<const IColumn *> getColumnsInStoredOrder() const;
+    using StoredColumns = std::array<const IColumn *, TimeSeriesHistogramsColumns::getAll().size() + 1>;
+    StoredColumns getColumnsInStoredOrder() const;
 
     /// Whether sample `row` is a float histogram (bit `IsFloat` of its flags), otherwise it is an integer one.
     bool isFloatAt(size_t row) const { return TimeSeriesHistogramFlags::isFloat(flags.getData()[row]); }

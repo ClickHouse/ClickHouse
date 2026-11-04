@@ -62,9 +62,6 @@ public:
 
     std::string getName() const override { return "TimeSeriesSelector"; }
 
-    bool supportsSubcolumns() const override { return true; }
-    bool supportsOptimizationToSubcolumns() const override { return false; }
-
     static VirtualColumnsDescription createVirtuals();
 
     /// Makes a SELECT query for the ids (`series_id`) of the series matching the matchers and optional time bounds,

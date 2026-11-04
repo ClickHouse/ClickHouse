@@ -146,7 +146,7 @@ TimeSeriesHistogramsColumnsView::TimeSeriesHistogramsColumnsView(const Block & b
 {
 }
 
-std::vector<const IColumn *> TimeSeriesHistogramsColumnsView::getColumnsInStoredOrder() const
+TimeSeriesHistogramsColumnsView::StoredColumns TimeSeriesHistogramsColumnsView::getColumnsInStoredOrder() const
 {
     const auto element = [this](Element element_) -> const IColumn &
     {
@@ -169,7 +169,7 @@ std::vector<const IColumn *> TimeSeriesHistogramsColumnsView::getColumnsInStored
         }
     };
 
-    std::vector<const IColumn *> result(Registry::getAll().size() + 1);
+    StoredColumns result;
     result[Registry::getTimestampPosition()] = &timestamps;
     for (const auto payload_element : Registry::getAll())
         result[Registry::getTuplePosition(payload_element)] = &element(payload_element);

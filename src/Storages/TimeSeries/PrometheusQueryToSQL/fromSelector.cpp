@@ -18,10 +18,6 @@ namespace
 {
     constexpr UInt64 STALE_NAN_BITS = 0x7ff0000000000002ULL;
 
-    /// The message of the exception thrown when a selected time series has native histogram samples in the evaluated range
-    /// (see fromRangeSelector): the PromQL functions evaluate float samples only until they support histograms.
-    constexpr std::string_view HISTOGRAMS_NOT_SUPPORTED_MESSAGE = "Native histogram samples are not supported by PromQL queries yet";
-
     ASTPtr isStaleMarker(ASTPtr value)
     {
         return makeASTFunction(
@@ -48,16 +44,13 @@ namespace
 
         /// SELECT timeSeriesIdToGroup(id) AS group, samples
         /// FROM timeSeriesSelector(<database>, <time_series_table>, <selector>, <min_time>, <max_time>, 'samples')
-        /// or, for a table storing native histogram samples (version MIN_WITH_NATIVE_HISTOGRAMS or later),
-        /// SELECT timeSeriesIdToGroup(id) AS group, timeSeriesThrowIfNotEmpty(samples, histograms.timestamp, '<message>') AS samples
-        /// FROM timeSeriesSelector(<database>, <time_series_table>, <selector>, <min_time>, <max_time>, 'samples')
         /// or
         /// SELECT timeSeriesIdToGroup(id) AS group, timestamp, value
         /// FROM timeSeriesSelector(<database>, <time_series_table>, <selector>, <min_time>, <max_time>, 'timestamp_and_value')
         ///
-        /// The histogram timestamps are cut to the same range. `timeSeriesThrowIfNotEmpty` rejects histogram samples once per block
-        /// until the PromQL functions support them; requesting only the timestamps avoids reading the histogram payload.
-        const bool table_has_histograms = (context.time_series_version >= TimeSeriesVersion::MIN_WITH_NATIVE_HISTOGRAMS);
+        /// The PromQL functions evaluate the float samples only: the `histograms` column of a table storing native histogram samples
+        /// (version MIN_WITH_NATIVE_HISTOGRAMS or later) isn't requested, so the table function doesn't read the histograms, and the
+        /// rows of a series with histograms only come with empty `samples` arrays, which the functions evaluate to nothing.
         SelectQueryBuilder builder;
 
         builder.select_list.push_back(makeASTFunction("timeSeriesIdToGroup", make_intrusive<ASTIdentifier>(ColumnNames::ID)));
@@ -69,18 +62,7 @@ namespace
         {
             ASTPtr samples = make_intrusive<ASTIdentifier>(ColumnNames::Samples);
 
-            /// `timeSeriesThrowIfNotEmpty(samples, histograms.timestamp, '<message>')`
-            if (table_has_histograms)
-            {
-                samples = makeASTFunction(
-                    "timeSeriesThrowIfNotEmpty",
-                    std::move(samples),
-                    make_intrusive<ASTIdentifier>("histograms.timestamp"),
-                    make_intrusive<ASTLiteral>(String{HISTOGRAMS_NOT_SUPPORTED_MESSAGE}));
-            }
-
-            /// arrayFilter(sample -> NOT <sample.2 is a stale marker>, samples)
-            /// The filter applies to the result of the guard above, so the guard throws the same message with and without it.
+            /// arrayFilter(sample -> NOT <sample.2 is a stale marker>, samples) AS samples
             if (filter_stale_markers)
             {
                 const String iterator_name = "sample";
@@ -91,12 +73,8 @@ namespace
                         makeASTFunction("tuple", make_intrusive<ASTIdentifier>(iterator_name)),
                         makeASTFunction("not", isStaleMarker(makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>(iterator_name), make_intrusive<ASTLiteral>(UInt64{2}))))),
                     std::move(samples));
-            }
-
-            /// The alias `samples` is set once, on the outermost expression: two nodes with the same alias (the guard inside the
-            /// filter) would be rejected by the analyzer (MULTIPLE_EXPRESSIONS_FOR_ALIAS). The plain column keeps its name.
-            if (table_has_histograms || filter_stale_markers)
                 samples->setAlias(ColumnNames::Samples);
+            }
 
             builder.select_list.push_back(std::move(samples));
         }

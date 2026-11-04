@@ -131,7 +131,7 @@ remote_write:
 
 A `TimeSeries` table stores them in the `histograms` column of its [samples table](/reference/engines/table-engines/integrations/time-series#samples-table), next to the float samples, as they were sent: integer and float histograms (each keeps its own count type), histograms with custom buckets, and stale markers. They can be read through the `histograms.*` columns of the table.
 
-PromQL queries don't support native histograms yet: a query fails if the time series it selects have histogram samples in the evaluated time range. Queries selecting only time series without histogram samples aren't affected.
+PromQL queries don't support native histograms yet: they evaluate the float samples of the selected time series only and ignore their histogram samples, without reading them. A query over a series with histogram samples only returns nothing for it.
 
 A histogram which Prometheus itself would reject, for example one whose bucket spans do not match its bucket counts, makes ClickHouse reject the whole request with HTTP status 400, and Prometheus drops the request without retrying, as it does with any 4xx status.
 
