@@ -13,6 +13,7 @@ from ci.jobs.scripts.workflow_hooks.new_tests_check import (
     has_new_functional_tests,
     has_new_integration_tests,
 )
+from ci.jobs.scripts.perf.test_discovery import changed_iceberg_tests, iceberg_code_changed
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
 from ci.jobs.scripts.workflow_hooks.review_threads import (
     KV_OVERRIDE,
@@ -167,6 +168,15 @@ def _has_keeper_stress_changes(changed_files):
     return False
 
 
+ICEBERG_PERFORMANCE_JOBS = [j.name for j in JobConfigs.performance_comparison_iceberg_jobs]
+
+def _has_iceberg_performance_changes(changed_files):
+    """True if the change touches the code the Iceberg configuration of the
+    performance comparison measures or its harness, or adds or changes a
+    performance test that the configuration runs (then only those tests run)."""
+    return iceberg_code_changed(changed_files) or bool(changed_iceberg_tests(changed_files, "./tests/performance"))
+
+
 def _has_build_digest_changes(changed_files):
     """True if any changed file may affect the compiled ClickHouse binary,
     per `build_digest_config.include_paths`/`exclude_paths` - the same paths
@@ -307,7 +317,7 @@ SMALL_PR_WORKFLOW = "PR"
 _STRESS_AND_FUZZER_JOB_PREFIXES = (
     JobNames.STRESS,
     JobNames.ASTFUZZER,
-    JobNames.BUZZHOUSE,
+    JobNames.LACASADELDOLOR,
     JobNames.SQL_LOGIC_TEST,
     JobNames.SQL_STORM_TEST,
 )
@@ -326,9 +336,12 @@ _COMMON_TEST_PATHS = ("tests/queries/0_stateless/",)
 # Machinery of these jobs that is not a digest input of theirs, but still decides
 # what they do or whether they run at all.
 _EXTRA_STRESS_AND_FUZZER_PATHS = (
-    # The fuzzers themselves live in the server code.
+    # The fuzzers themselves: BuzzHouse, the AST fuzzer's mutator, and the client
+    # that drives both loops (`programs/client/FuzzLoop.cpp` and the options in
+    # `Client.cpp`). The whole directory, changed in 0.3% of commits, not one file.
     "src/Client/BuzzHouse/",
     "src/Common/QueryFuzzer*",
+    "programs/client/",
     # This rule, and the pre-hook computing the line count it reads.
     "ci/jobs/scripts/workflow_hooks/filter_job.py",
     "ci/jobs/scripts/workflow_hooks/store_data.py",
@@ -355,7 +368,7 @@ def _stress_and_fuzzer_paths():
     for job in (
         *JobConfigs.stress_test_jobs,
         *JobConfigs.ast_fuzzer_jobs,
-        *JobConfigs.buzz_fuzzer_jobs,
+        *JobConfigs.lacasadeldolor_jobs,
         JobConfigs.sqllogic_test_master_job,
         JobConfigs.sqlstorm_test_job,
     ):
@@ -1010,6 +1023,10 @@ def should_skip_job(job_name):
             )
         return False, ""
 
+    # Not even with the `ci-performance` label: the configuration measures the Iceberg code.
+    if job_name in ICEBERG_PERFORMANCE_JOBS and not _has_iceberg_performance_changes(changed_files):
+        return True, "Skipped, no changes in the Iceberg, object storage or Parquet code or in a performance test it runs"
+
     small_pr_decision = _small_pr_skip_decision(job_name, changed_files)
     if small_pr_decision is not None:
         return small_pr_decision
@@ -1228,8 +1245,10 @@ def should_skip_merge_queue_job(job_name):
     """Config-time filter for the `MergeQueueCI` workflow.
 
     The merge queue runs a small, fixed set of jobs (style check, fast test, the
-    `amd_binary` build, the stateless flaky check, the docs examples, and the
-    limited clang-tidy check). Two of them are conditional. The limited
+    `amd_binary` build, the stateless flaky check, the stateless and integration
+    targeted checks, the docs examples, and the limited clang-tidy check). The
+    targeted checks select from CIDB and skip themselves when the selection is
+    empty. Two of the others are conditional here. The limited
     clang-tidy check has nothing to analyze when the change touches neither a C
     or C++ file, nor an input of a code generator producing C++, nor the
     clang-tidy configuration or the check's own logic, so a docs- or test-only
