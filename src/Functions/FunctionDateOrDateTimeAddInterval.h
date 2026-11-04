@@ -1059,6 +1059,10 @@ public:
             || (sub_second && isInt64(delta_type));
     }
 
+    /// For the same reason, execute only on values a row holds: not on a whole LowCardinality dictionary,
+    /// nor on the nested value behind a NULL.
+    bool canBeExecutedOnDefaultArguments() const override { return false; }
+
     /// Documentation-only — adds/subtracts the integer/float `delta` of the
     /// given interval unit (encoded in `Transform`) to/from a date or
     /// date-time value. The optional 3rd argument is a constant time-zone
