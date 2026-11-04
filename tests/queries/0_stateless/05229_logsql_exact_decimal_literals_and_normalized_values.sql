@@ -18,7 +18,7 @@ INSERT INTO logs_05229 VALUES
     ('2024-01-01 00:00:01', 'foobar', 9007199254740993, 'foo', NULL),
     ('2024-01-01 00:00:02', 'baz', 9007199254740994, 'baz', '');
 
-SET allow_experimental_logsql_dialect = 1;
+SET enable_logsql_dialect = 1;
 SET logsql_table = 'logs_05229';
 SET dialect = 'logsql';
 

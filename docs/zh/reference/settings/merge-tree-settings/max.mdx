@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置见于 [system.merge&#95;tree&#95;settings](/zh/reference/system-tables/merge_tree_settings)，并由 ClickHouse 源代码自动生成。
 
-## max_avg_part_size_for_too_many_parts
+## max_avg_part_size_for_too_many_parts {#max_avg_part_size_for_too_many_parts}
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" />
 
@@ -25,7 +25,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 server 上的单个表中存储数百 TB 的数据。这
 不会影响非活跃 parts 或总 parts 数的阈值。
 
-## max_buckets_in_map
+## max_buckets_in_map {#max_buckets_in_map}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="32" />
 
@@ -35,13 +35,13 @@ server 上的单个表中存储数百 TB 的数据。这
 实际桶数由 [map&#95;buckets&#95;strategy](/zh/reference/settings/merge-tree-settings/map-buckets#map_buckets_strategy) 决定。
 允许的最大值为 256。
 
-## max_cleanup_delay_period
+## max_cleanup_delay_period {#max_cleanup_delay_period}
 
 <SettingsInfoBlock type="UInt64" default_value="300" />
 
 用于清理旧队列日志、块哈希和 parts 的最大周期。
 
-## max_compress_block_size
+## max_compress_block_size {#max_compress_block_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -50,7 +50,9 @@ server 上的单个表中存储数百 TB 的数据。这
 设置) 。创建表时指定的值会覆盖此设置的全局
 值。
 
-## max_concurrent_queries
+对于由定长值组成的列，块大小会向下取整为单个值字节大小的整数倍，但至少为一个值的大小。
+
+## max_concurrent_queries {#max_concurrent_queries}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -70,7 +72,7 @@ server 上的单个表中存储数百 TB 的数据。这
 <max_concurrent_queries>50</max_concurrent_queries>
 ```
 
-## max_digestion_size_per_segment
+## max_digestion_size_per_segment {#max_digestion_size_per_segment}
 
 <SettingsInfoBlock type="UInt64" default_value="268435456" />
 
@@ -78,7 +80,7 @@ server 上的单个表中存储数百 TB 的数据。这
 
 已废弃设置，无任何作用。
 
-## max_file_name_length
+## max_file_name_length {#max_file_name_length}
 
 <SettingsInfoBlock type="UInt64" default_value="127" />
 
@@ -88,7 +90,7 @@ server 上的单个表中存储数百 TB 的数据。这
 建议将其设置得低于文件名最大长度 (通常为 255
 字节) ，并预留一定余量，以避免文件系统错误。
 
-## max_partitions_to_read
+## max_partitions_to_read {#max_partitions_to_read}
 
 <SettingsInfoBlock type="Int64" default_value="-1" />
 
@@ -103,13 +105,49 @@ server 上的单个表中存储数百 TB 的数据。这
 
 你也可以在查询 / 会话 / profile 级别指定查询复杂度设置 [max&#95;partitions&#95;to&#95;read](/zh/reference/settings/session-settings/max-partitions#max_partitions_to_read)。
 
-## max_projections
+## max_projections {#max_projections}
 
 <SettingsInfoBlock type="UInt64" default_value="25" />
 
 MergeTree 投影的数量上限。
 
-## max_table_size_bytes_compressed
+## max_row_mask_update_coalescing_ast_bytes {#max_row_mask_update_coalescing_ast_bytes}
+
+<SettingsInfoBlock type="UInt64" default_value="1048576" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1048576"},{"label": "新增设置"}]}]} />
+
+允许参与行掩码更新合并的原始命令的 `ast_text` 字节总数上限。当命令中包含较大的字面量时，仅靠命令数量限制无法控制该副本的大小。设置为 0 可禁用合并。
+
+## max_row_mask_update_coalescing_commands {#max_row_mask_update_coalescing_commands}
+
+<SettingsInfoBlock type="UInt64" default_value="4096" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "4096"},{"label": "新增设置"}]}]} />
+
+可参与行掩码更新合并的分片本地变更命令的最大数量。该设置用于限制此优化额外复制命令列表的开销；
+该值仅作为资源保护措施，而非语义层面的限制。值小于 2 时将禁用合并。
+
+## max_row_mask_update_coalescing_key_bytes {#max_row_mask_update_coalescing_key_bytes}
+
+<SettingsInfoBlock type="UInt64" default_value="65536" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "65536"},{"label": "新增设置"}]}]} />
+
+单次合并后的行掩码更新中，键字面量的总字节数上限。
+此设置用于限制所生成 `IN` 谓词的大小。设为 0 即可禁用合并。
+
+## max_row_mask_update_coalescing_keys {#max_row_mask_update_coalescing_keys}
+
+<SettingsInfoBlock type="UInt64" default_value="256" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "256"},{"label": "新增设置"}]}]} />
+
+单次合并的行掩码更新中最多可包含的键数量。实际生效的上限
+还受后台查询设置中 `max_rows_in_set` 的约束。取值小于
+2 时将禁用合并。
+
+## max_table_size_bytes_compressed {#max_table_size_bytes_compressed}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -132,7 +170,7 @@ MergeTree 投影的数量上限。
 
 该设置适用于多租户、临时和演示用途的 services。
 
-## max_table_size_bytes_uncompressed
+## max_table_size_bytes_uncompressed {#max_table_size_bytes_uncompressed}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -147,7 +185,7 @@ MergeTree 投影的数量上限。
 
 该设置适用于多租户、临时和演示类服务。
 
-## max_table_size_rows
+## max_table_size_rows {#max_table_size_rows}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -168,7 +206,7 @@ MergeTree 投影的数量上限。
 
 该设置适用于多租户、临时和演示用途的服务。
 
-## max_uncompressed_bytes_in_patches
+## max_uncompressed_bytes_in_patches {#max_uncompressed_bytes_in_patches}
 
 <SettingsInfoBlock type="UInt64" default_value="32212254720" />
 

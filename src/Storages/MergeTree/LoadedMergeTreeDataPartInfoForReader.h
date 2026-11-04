@@ -48,6 +48,8 @@ public:
 
     IndexPtr getIndexPtr() const override { return data_part->getIndex(); }
 
+    MergeTreePartMinMaxIndexPtr getMinMaxIndex() const override { return data_part->getMinMaxIndex(); }
+
     DataPartStoragePtr getDataPartStorage() const override { return data_part->getDataPartStoragePtr(); }
 
     const NamesAndTypesList & getColumns() const override { return data_part->getColumns(); }
@@ -98,7 +100,14 @@ public:
 
     const SerializationInfoByName & getSerializationInfos() const override { return data_part->getSerializationInfos(); }
 
-    SerializationPtr getSerialization(const NameAndTypePair & column) const override;
+    SerializationPtr getSerialization(const NameAndTypePair & column) const override { return data_part->getSerialization(column.name); }
+
+    SerializationPtr tryGetSerialization(const String & column_name) const override { return data_part->tryGetSerialization(column_name); }
+
+    SerializationPtr tryGetSubcolumnSerialization(const String & column_name, const String & subcolumn_name) const override
+    {
+        return data_part->tryGetSubcolumnSerialization(column_name, subcolumn_name);
+    }
 
     String getTableName() const override { return data_part->storage.getStorageID().getNameForLogs(); }
 
