@@ -35,14 +35,21 @@ PREDICATES=(
     "val BETWEEN -1 AND 1"
 )
 
+# The expected count is computed with `countIf` over all rows, because a filter on `file` can also skip
+# data by the statistics in the Parquet files.
+# The Delta table is read with the filter pushdown into the Parquet reader disabled, so that only data
+# skipping by the statistics in the Delta log is tested: the page filter of the Parquet reader drops rows
+# with NaN (e.g. `val != 0` over a page with the values 0 and NaN finds nothing), also when reading the
+# Parquet files directly.
 QUERY=""
 for TABLE in nan positive_infinity negative_infinity negative_zero infinity_nan negative_infinity_nan zero_infinity zero_nan zero_negative_infinity nan_multi_file
 do
     for PREDICATE in "${PREDICATES[@]}"
     do
         QUERY+="SELECT '$TABLE', '$PREDICATE',
-            (SELECT count() FROM deltaLakeLocal('$DATA/$TABLE') WHERE $PREDICATE),
-            (SELECT count() FROM file('$DATA/$TABLE/*.parquet', Parquet) WHERE $PREDICATE);
+            (SELECT count() FROM deltaLakeLocal('$DATA/$TABLE') WHERE $PREDICATE
+                SETTINGS input_format_parquet_filter_push_down = 0, input_format_parquet_page_filter_push_down = 0),
+            (SELECT countIf($PREDICATE) FROM file('$DATA/$TABLE/*.parquet', Parquet));
 "
     done
 done

@@ -76,7 +76,7 @@ infinity_nan	isInfinite(val)	1	1
 infinity_nan	val = inf	1	1
 infinity_nan	val = -inf	0	0
 infinity_nan	val IS NULL	0	0
-infinity_nan	NOT (val > 0)	0	0
+infinity_nan	NOT (val > 0)	1	1
 infinity_nan	val BETWEEN -1 AND 1	0	0
 negative_infinity_nan	val > 0	0	0
 negative_infinity_nan	val >= 0	0	0
@@ -115,7 +115,7 @@ zero_nan	val >= 0	1	1
 zero_nan	val < 0	0	0
 zero_nan	val <= 0	1	1
 zero_nan	val = 0	1	1
-zero_nan	val != 0	0	0
+zero_nan	val != 0	1	1
 zero_nan	val > 1	0	0
 zero_nan	val < -1	0	0
 zero_nan	isNaN(val)	1	1
