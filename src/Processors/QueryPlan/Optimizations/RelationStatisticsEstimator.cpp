@@ -79,9 +79,10 @@ RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_s
             *total_number_of_distinct_values *= static_cast<Float64>(key_number_of_distinct_values);
     }
 
+    /// Without keys the aggregation returns one row whatever the size of its input.
     if (total_number_of_distinct_values && input_stats.estimated_rows)
         total_number_of_distinct_values = std::min(*total_number_of_distinct_values, Float64(*input_stats.estimated_rows));
-    else
+    else if (!aggregator_params.keys.empty())
         total_number_of_distinct_values = input_stats.estimated_rows;
 
     if (total_number_of_distinct_values)
