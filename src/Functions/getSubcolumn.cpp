@@ -26,6 +26,7 @@ public:
     bool useDefaultImplementationForDynamic() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     bool useDefaultImplementationForNulls() const override { return false; }
+    bool isVolumeReducing() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     /// Declarative signature — looks up the named subcolumn's type on the

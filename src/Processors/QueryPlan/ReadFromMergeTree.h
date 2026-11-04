@@ -453,6 +453,14 @@ public:
     /// vector-search rewrite to additionally read the quantized-codes subcolumn of a vector column.
     void addReadColumn(const String & column);
 
+    /// Whether the step could stop reading `column` (a storage column, or a subcolumn of one, that it reads) in favour of
+    /// subcolumns of it with the same values. `function_forms`: some of them stand for a function of the column rather
+    /// than for `getSubcolumn`; `index_unsafe_function_forms`: some of those are not `arrayElement` of a `Map`.
+    bool canReadSubcolumnsOfColumn(const String & column, bool function_forms, bool index_unsafe_function_forms) const;
+    /// Reads `subcolumns` instead of `column`. Requires `canReadSubcolumnsOfColumn` and that storage resolves each of them
+    /// as a deeper subcolumn of the same storage column.
+    void readSubcolumnsInsteadOfColumn(const String & column, const Names & subcolumns);
+
     /// Returns true if the optimization is applicable (and applies it then).
     bool requestOutputEachPartitionThroughSeparatePortForAggregation();
     bool requestOutputEachPartitionThroughSeparatePortForLimitBy();
@@ -786,6 +794,11 @@ private:
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot;
 
     Names all_column_names;
+
+    /// The storage columns read here that some part, or projection part, stores with a type other than the metadata's,
+    /// for which a subcolumn read can differ from the subcolumn of the whole column. Computed on first use.
+    const NameSet & getColumnsUnsafeForSubcolumnReads() const;
+    mutable std::optional<NameSet> columns_unsafe_for_subcolumn_reads;
 
     const MergeTreeData & data;
     ExpressionActionsSettings actions_settings;

@@ -1,15 +1,36 @@
+#include <Analyzer/Passes/getSubcolumnOfFunction.h>
+#include <Columns/ColumnConst.h>
 #include <Core/Block.h>
 #include <Core/Names.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/Serializations/SerializationArray.h>
+#include <DataTypes/Serializations/SerializationMap.h>
+#include <DataTypes/Serializations/SerializationNullable.h>
+#include <DataTypes/Serializations/SerializationString.h>
+#include <DataTypes/Serializations/SerializationTuple.h>
+#include <DataTypes/Serializations/SerializationVariant.h>
+#include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/FilterTransform.h>
+#include <Storages/StorageSnapshot.h>
 
 #include <fmt/format.h>
 
@@ -200,8 +221,14 @@ struct PushedFunction
 
 }
 
+namespace
+{
+
+/// The functions of `actions` that `is_candidate` accepts, grouped by the column their first argument is (an input, or
+/// a chain of renames of one), restricted to columns nothing else in the DAG reads. Their other arguments are constants.
+template <typename IsCandidate>
 std::unordered_map<const ActionsDAG::Node *, ActionsDAG::NodeRawConstPtrs>
-collectVolumeReducingFunctionsReplacingTheirArgument(const ActionsDAG & actions)
+collectFunctionsReplacingTheirArgument(const ActionsDAG & actions, IsCandidate && is_candidate)
 {
     /// The column a node stands for, for inputs and for chains of renames of an input.
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> column_of_node;
@@ -217,21 +244,18 @@ collectVolumeReducingFunctionsReplacingTheirArgument(const ActionsDAG & actions)
     std::unordered_map<const ActionsDAG::Node *, ActionsDAG::NodeRawConstPtrs> result;
     for (const auto & node : actions.getNodes())
     {
-        if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base || !node.function_base->isVolumeReducing())
-            continue;
-
-        /// The function is going to be evaluated on a different set of rows.
-        if (!node.function_base->isDeterministic() || !node.function_base->isDeterministicInScopeOfQuery())
-            continue;
-
-        if (node.children.size() != 1)
+        if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base || node.children.empty())
             continue;
 
         auto it = column_of_node.find(node.children.front());
         if (it == column_of_node.end())
             continue;
 
-        if (!isSupportedArgumentType(node.function_base->getName(), it->second->result_type))
+        if (!std::all_of(node.children.begin() + 1, node.children.end(),
+                [](const auto * child) { return child->type == ActionsDAG::ActionType::COLUMN; }))
+            continue;
+
+        if (!is_candidate(node, *it->second))
             continue;
 
         result[it->second].push_back(&node);
@@ -280,6 +304,22 @@ collectVolumeReducingFunctionsReplacingTheirArgument(const ActionsDAG & actions)
     }
 
     return result;
+}
+
+}
+
+std::unordered_map<const ActionsDAG::Node *, ActionsDAG::NodeRawConstPtrs>
+collectVolumeReducingFunctionsReplacingTheirArgument(const ActionsDAG & actions)
+{
+    return collectFunctionsReplacingTheirArgument(
+        actions,
+        [](const ActionsDAG::Node & node, const ActionsDAG::Node & source)
+        {
+            /// The function is going to be evaluated on a different set of rows.
+            return node.function_base->isVolumeReducing() && node.function_base->isDeterministic()
+                && node.function_base->isDeterministicInScopeOfQuery() && node.children.size() == 1
+                && isSupportedArgumentType(node.function_base->getName(), source.result_type);
+        });
 }
 
 std::unordered_set<const ActionsDAG::Node *> collectVolumeReducingFunctionsToKeepBelow(
@@ -422,6 +462,739 @@ std::unordered_set<const ActionsDAG::Node *> collectVolumeReducingFunctionsToKee
     return split_nodes;
 }
 
+namespace
+{
+
+using SubcolumnPredicate = std::function<bool(const ISerialization::SubstreamPath &)>;
+
+/// A constant argument of a function of a subcolumn.
+struct ResidualArgument
+{
+    ColumnConstPtr column;
+    DataTypePtr type;
+    String name;
+};
+
+/// A function of a column that is a fixed expression of one of its subcolumns: `getSubcolumn(x, 'p')` itself, or one of
+/// the functions `FunctionToSubcolumnsPass` rewrites to subcolumns for a column read directly from a table.
+struct SubcolumnRead
+{
+    const ActionsDAG::Node * node = nullptr;
+    String subcolumn;
+    DataTypePtr subcolumn_type;
+    /// What the subcolumn has to be in storage. Empty for `getSubcolumn`, which means the subcolumn of that name.
+    SubcolumnPredicate is_expected_subcolumn;
+    /// The function of the subcolumn and of `residual_arguments` that gives the value. Empty: the subcolumn is the value.
+    String residual;
+    std::vector<ResidualArgument> residual_arguments;
+    bool is_function_form = false;
+    bool is_map_element = false;
+};
+
+std::optional<Field> tryGetConstant(const ActionsDAG::Node * node)
+{
+    if (node->type != ActionsDAG::ActionType::COLUMN || !node->column)
+        return {};
+
+    return node->column->getField();
+}
+
+ResidualArgument makeConstantArgument(const ActionsDAG::Node * node)
+{
+    return {node->column, node->result_type, node->result_name};
+}
+
+ResidualArgument makeZeroArgument()
+{
+    auto type = std::make_shared<DataTypeUInt64>();
+    return {ColumnConst::create(type->createColumnConst(1, static_cast<UInt64>(0))->convertToFullColumnIfConst(), 0), type, "0_UInt64"};
+}
+
+std::optional<SubcolumnRead> tryMatchSubcolumnReadImpl(const ActionsDAG::Node & node, const DataTypePtr & source_type, bool allow_function_forms)
+{
+    if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base || node.children.empty())
+        return {};
+
+    if (!node.function_base->isDeterministic() || !node.function_base->isDeterministicInScopeOfQuery())
+        return {};
+
+    const auto & name = node.function_base->getName();
+    const auto & result_type = node.result_type;
+    const size_t arguments = node.children.size();
+
+    SubcolumnRead read;
+    read.node = &node;
+
+    if (name == "getSubcolumn")
+    {
+        auto subcolumn = arguments == 2 ? tryGetConstant(node.children[1]) : std::nullopt;
+        if (!subcolumn || subcolumn->getType() != Field::Types::String)
+            return {};
+
+        read.subcolumn = subcolumn->safeGet<String>();
+        read.subcolumn_type = result_type;
+        return read;
+    }
+
+    if (!allow_function_forms)
+        return {};
+
+    read.is_function_form = true;
+    const auto source_type_id = source_type->getTypeId();
+    const auto nested_type = removeNullable(source_type);
+
+    auto set_subcolumn = [&](String subcolumn, DataTypePtr subcolumn_type, SubcolumnPredicate predicate)
+    {
+        read.subcolumn = std::move(subcolumn);
+        read.subcolumn_type = std::move(subcolumn_type);
+        read.is_expected_subcolumn = std::move(predicate);
+    };
+
+    if (name == "tupleElement" && arguments == 2 && isTuple(nested_type))
+    {
+        /// `tupleElement` fills defaults for outer NULLs when the element cannot represent NULL, while the subcolumn keeps
+        /// the values beneath the parent null map.
+        if (source_type->isNullable() && !canContainNull(*result_type))
+            return {};
+
+        auto value = tryGetConstant(node.children[1]);
+        if (!value)
+            return {};
+
+        const auto & tuple = assert_cast<const DataTypeTuple &>(*nested_type);
+        auto element = getElementSubcolumnName(*value, tuple);
+        if (!element || tupleElementNameIsAmbiguousWhenFlattened(tuple, *element))
+            return {};
+
+        set_subcolumn(*element, result_type, [element_name = *element](const auto & path) { return SerializationTuple::isElementSubcolumn(path, element_name); });
+        return read;
+    }
+
+    if (name == "variantElement" && arguments == 2 && source_type_id == TypeIndex::Variant)
+    {
+        auto value = tryGetConstant(node.children[1]);
+        if (!value)
+            return {};
+
+        auto element = getElementSubcolumnName(*value, assert_cast<const DataTypeVariant &>(*source_type));
+        if (!element)
+            return {};
+
+        set_subcolumn(*element, result_type, [element_name = *element](const auto & path) { return SerializationVariant::isElementSubcolumn(path, element_name); });
+        return read;
+    }
+
+    if (source_type_id == TypeIndex::Map)
+    {
+        const auto & map = assert_cast<const DataTypeMap &>(*source_type);
+        auto keys_type = std::make_shared<DataTypeArray>(map.getKeyType());
+        auto values_type = std::make_shared<DataTypeArray>(map.getValueType());
+
+        if ((name == "mapKeys" || name == "mapValues") && arguments == 1)
+        {
+            if (name == "mapKeys")
+                set_subcolumn("keys", keys_type, SerializationMap::isKeysSubcolumn);
+            else
+                set_subcolumn("values", values_type, SerializationMap::isValuesSubcolumn);
+            return read;
+        }
+
+        if ((name == "mapContainsKey" || name == "has" || name == "notHas" || name == "mapContainsValue") && arguments == 2)
+        {
+            /// The Map implementation removes LowCardinality before comparing keys, the keys subcolumn would not.
+            if (name != "mapContainsKey" && name != "mapContainsValue" && WhichDataType(map.getKeyType()).isLowCardinality())
+                return {};
+
+            if (name == "mapContainsValue")
+                set_subcolumn("values", values_type, SerializationMap::isValuesSubcolumn);
+            else
+                set_subcolumn("keys", keys_type, SerializationMap::isKeysSubcolumn);
+
+            read.residual = name == "notHas" ? "notHas" : "has";
+            read.residual_arguments = {makeConstantArgument(node.children[1])};
+            return read;
+        }
+
+        if (name == "arrayElement" && arguments == 2)
+        {
+            auto key = tryGetConstant(node.children[1]);
+            if (!key)
+                return {};
+
+            /// A shorter constant is padded, so that a missing key would match a key with trailing zero bytes.
+            if (const auto * fixed_string = typeid_cast<const DataTypeFixedString *>(map.getKeyType().get());
+                fixed_string && (key->getType() != Field::Types::String || key->safeGet<String>().size() != fixed_string->getN()))
+                return {};
+
+            auto subcolumn = tryGetMapKeySubcolumnName(map, *key);
+            if (!subcolumn)
+                return {};
+
+            set_subcolumn(*subcolumn, map.getValueType(), SerializationMap::isKeyValueSubcolumn);
+            read.is_map_element = true;
+            return read;
+        }
+    }
+
+    const bool is_array_or_map = source_type_id == TypeIndex::Array || source_type_id == TypeIndex::Map;
+    const bool is_string = isString(nested_type) && (source_type_id == TypeIndex::String || source_type_id == TypeIndex::Nullable);
+    if ((name == "length" || name == "empty" || name == "notEmpty") && arguments == 1 && (is_array_or_map || is_string))
+    {
+        if (is_array_or_map)
+            set_subcolumn("size0", std::make_shared<DataTypeUInt64>(), SerializationArray::isArraySizesSubcolumn);
+        else
+            set_subcolumn("size", getStringSizesSubcolumnType(source_type), SerializationString::isStringSizesSubcolumn);
+
+        if (name != "length")
+        {
+            read.residual = name == "empty" ? "equals" : "notEquals";
+            read.residual_arguments = {makeZeroArgument()};
+        }
+        return read;
+    }
+
+    if ((name == "isNull" || name == "isNotNull") && arguments == 1 && source_type_id == TypeIndex::Nullable)
+    {
+        set_subcolumn("null", std::make_shared<DataTypeUInt8>(), SerializationNullable::isNullMapSubcolumn);
+        /// A null map byte only has to be non-zero to mean NULL.
+        read.residual = name == "isNull" ? "notEquals" : "not";
+        if (name == "isNull")
+            read.residual_arguments = {makeZeroArgument()};
+        return read;
+    }
+
+    return {};
+}
+
+std::optional<SubcolumnRead> tryMatchSubcolumnRead(const ActionsDAG::Node & node, const DataTypePtr & source_type, bool allow_function_forms)
+{
+    auto read = tryMatchSubcolumnReadImpl(node, source_type, allow_function_forms);
+    /// The subcolumn stands for the node, so it has the node's type.
+    if (read && read->residual.empty() && !read->subcolumn_type->equals(*node.result_type))
+        return {};
+
+    return read;
+}
+
+/// Subcolumn reads of `actions` grouped by the input they read, for inputs nothing else in the DAG reads.
+std::unordered_map<const ActionsDAG::Node *, std::vector<SubcolumnRead>>
+collectSubcolumnReads(const ActionsDAG & actions, bool allow_function_forms)
+{
+    auto nodes_by_input = collectFunctionsReplacingTheirArgument(
+        actions,
+        [&](const ActionsDAG::Node & node, const ActionsDAG::Node & source)
+        { return tryMatchSubcolumnRead(node, source.result_type, allow_function_forms).has_value(); });
+
+    std::unordered_map<const ActionsDAG::Node *, std::vector<SubcolumnRead>> result;
+    for (const auto & [input, nodes] : nodes_by_input)
+        for (const auto * node : nodes)
+            result[input].push_back(*tryMatchSubcolumnRead(*node, input->result_type, allow_function_forms));
+
+    return result;
+}
+
+/// One step of the path from the top step down to the read, with what the rewrite does to it.
+struct SubcolumnsPathStep
+{
+    QueryPlan::Node * node = nullptr;
+    /// For `Expression` / `Filter`: a copy of the step's actions without the outputs that carry the column further up.
+    std::optional<ActionsDAG> actions;
+    /// Names of the inputs of `actions` that are the column.
+    NameSet inputs;
+    std::vector<SubcolumnRead> reads;
+    /// The rewritten actions.
+    std::optional<ActionsDAG> new_actions;
+};
+
+/// A column crossing the path instead of the read column.
+struct CarriedColumn
+{
+    String name;
+    String subcolumn;
+    DataTypePtr type;
+};
+
+const ActionsDAG::Node * tryFindInput(const ActionsDAG & actions, const String & name)
+{
+    for (const auto * input : actions.getInputs())
+        if (input->result_name == name)
+            return input;
+
+    return nullptr;
+}
+
+Block transformStepHeader(const IQueryPlanStep * step, const Block & input_header, const ActionsDAG & actions)
+{
+    if (const auto * filter = typeid_cast<const FilterStep *>(step))
+        return FilterTransform::transformHeader(input_header, &actions, filter->getFilterColumnName(), filter->removesFilterColumn());
+
+    return ExpressionTransform::transformHeader(input_header, actions);
+}
+
+/// Whether storage reads the subcolumn `column.subcolumn` with the values `read` means of `column` that `read_step` reads.
+bool storageResolvesSubcolumn(const ReadFromMergeTree & read_step, const String & column, const SubcolumnRead & read)
+{
+    const auto & storage_snapshot = read_step.getStorageSnapshot();
+    const auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
+    auto source = storage_snapshot->tryGetColumn(options, column);
+    auto resolved = storage_snapshot->tryGetColumn(options, column + "." + read.subcolumn);
+    if (!source || !resolved || !resolved->isSubcolumn() || resolved->getNameInStorage() != source->getNameInStorage()
+        || !resolved->type->equals(*read.subcolumn_type))
+        return false;
+
+    auto resolved_info = resolved->getTypeInStorage()->tryGetSubcolumnInfo(resolved->getSubcolumnName());
+    if (!resolved_info)
+        return false;
+
+    /// Subcolumn names are flat: `c.a.b` may name a sibling element called `a.b` instead of `b` of `a`.
+    if (source->isSubcolumn())
+    {
+        auto source_info = source->getTypeInStorage()->tryGetSubcolumnInfo(source->getSubcolumnName());
+        auto inner_info = source->type->tryGetSubcolumnInfo(read.subcolumn);
+        if (!source_info || !inner_info)
+            return false;
+
+        ISerialization::SubstreamPath expected_path = source_info->substreams_path;
+        expected_path.insert(expected_path.end(), inner_info->substreams_path.begin(), inner_info->substreams_path.end());
+        if (expected_path.size() != resolved_info->substreams_path.size()
+            || !std::equal(expected_path.begin(), expected_path.end(), resolved_info->substreams_path.begin(), isSameSubstream))
+            return false;
+    }
+    else if (resolved->getSubcolumnName() != read.subcolumn)
+        return false;
+
+    return !read.is_expected_subcolumn || read.is_expected_subcolumn(resolved_info->substreams_path);
+}
+
+/// The name the subcolumn of `read` crosses the path under.
+String getCarriedColumnName(const SubcolumnRead & read)
+{
+    if (read.residual.empty())
+        return read.node->result_name;
+
+    return resolveAliases(read.node->children.front())->result_name + "." + read.subcolumn;
+}
+
+/// Drops the inputs of the read column, which no longer reaches the step. A step must not declare more inputs than its
+/// input header has, and the other inputs stay so that the columns they match do not pass the step unmatched.
+void removeInputsOfReadColumn(ActionsDAG & actions, const NameSet & column_names)
+{
+    std::unordered_set<const ActionsDAG::Node *> kept_inputs;
+    for (const auto * input : actions.getInputs())
+        if (!column_names.contains(input->result_name))
+            kept_inputs.insert(input);
+
+    actions.removeUnusedActions(kept_inputs, /*allow_constant_folding=*/false);
+}
+
+/// `actions` with every read replaced: a plain read by an input of its name, a read with a residual function by that
+/// function of the carried subcolumn, computed in the same step.
+std::optional<ActionsDAG> replaceSubcolumnReads(
+    const ActionsDAG & actions, const std::vector<SubcolumnRead> & reads, const std::unordered_map<const ActionsDAG::Node *, FunctionBasePtr> & residuals)
+{
+    std::unordered_set<const ActionsDAG::Node *> split_nodes;
+    for (const auto & read : reads)
+        split_nodes.insert(read.node);
+
+    auto second = std::move(actions.split(split_nodes).second);
+    if (residuals.empty())
+        return second;
+
+    ActionsDAG prefix;
+    std::unordered_map<String, const ActionsDAG::Node *> carried_inputs;
+    for (const auto & read : reads)
+    {
+        if (read.residual.empty())
+            continue;
+
+        const auto carried_name = getCarriedColumnName(read);
+        auto [it, inserted] = carried_inputs.emplace(carried_name, nullptr);
+        if (inserted)
+            it->second = &prefix.addInput(carried_name, read.subcolumn_type);
+
+        ActionsDAG::NodeRawConstPtrs arguments{it->second};
+        for (const auto & argument : read.residual_arguments)
+            arguments.push_back(&prefix.addColumn(argument.column, argument.type, argument.name));
+
+        prefix.getOutputs().push_back(&prefix.addFunction(residuals.at(read.node), std::move(arguments), read.node->result_name));
+    }
+
+    auto merged = ActionsDAG::merge(std::move(prefix), std::move(second));
+    if (hasDuplicatedInputNames(merged))
+        return {};
+    return merged;
+}
+
+/// Reads subcolumns of a column that `ReadFromMergeTree` reads instead of the whole column, when the column reaches the top
+/// step only through steps that pass it unchanged and every use of it on the way is a subcolumn read:
+///
+///   Expression [getSubcolumn(tup, 'a')]          Expression [INPUT getSubcolumn(tup, 'a')]
+///     └── Sorting                                  └── Sorting        [carries tup.a, not tup]
+///           └── ReadFromMergeTree [tup]   →              └── Expression [tup.a AS getSubcolumn(tup, 'a')]
+///                                                              └── ReadFromMergeTree [tup.a]
+///
+/// The whole path is rewritten at once or not at all, and only subcolumn values move: a function of the subcolumn
+/// (`equals(arr.size0, 0)` for `empty(arr)`) stays in the step where the replaced function was.
+size_t tryPushDownSubcolumnsToReading(QueryPlan::Node * top_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
+{
+    /// The checks below read the parts of this server, while a receiver builds the read from its own.
+    if (settings.make_distributed_plan || settings.serialize_query_plan || settings.enable_parallel_replicas)
+        return 0;
+
+    auto * top_step = top_node->step.get();
+    /// Copies: the rewrite replaces the headers of the step.
+    const Block top_input_header = *top_step->getInputHeaders().front();
+    const Block top_output_header = *top_step->getOutputHeader();
+    if (hasDuplicatedNames(top_input_header) || hasDuplicatedNames(top_output_header))
+        return 0;
+
+    auto top_actions = tryGetStepActions(top_step)->clone();
+    top_actions.removeUnusedActions(/*allow_remove_inputs=*/false, /*allow_constant_folding=*/false);
+
+    const bool allow_function_forms = settings.optimize_functions_to_subcolumns;
+    auto top_reads = collectSubcolumnReads(top_actions, allow_function_forms);
+    if (top_reads.empty())
+        return 0;
+
+    for (const auto * candidate : top_actions.getInputs())
+    {
+        if (!top_reads.contains(candidate))
+            continue;
+
+        /// Down: the path of steps the column passes unchanged, and the read.
+        String name = candidate->result_name;
+        std::vector<QueryPlan::Node *> path;
+        QueryPlan::Node * node = top_node->children.front();
+        ReadFromMergeTree * read_step = nullptr;
+        while (true)
+        {
+            auto * step = node->step.get();
+            if (auto * read = typeid_cast<ReadFromMergeTree *>(step))
+            {
+                if (read->getOutputHeader()->has(name))
+                    read_step = read;
+                break;
+            }
+
+            if (node->children.size() != 1 || hasDuplicatedNames(*step->getInputHeaders().front())
+                || hasDuplicatedNames(*step->getOutputHeader()))
+                break;
+
+            if (auto * actions = tryGetStepActions(step))
+            {
+                if (actions->hasArrayJoin() || hasDuplicatedInputNames(*actions))
+                    break;
+
+                if (const auto * output = actions->tryFindInOutputs(name))
+                {
+                    const auto * source = resolveAliases(output);
+                    if (source->type != ActionsDAG::ActionType::INPUT || !source->result_type->equals(*output->result_type))
+                        break;
+                    name = source->result_name;
+                }
+                else
+                {
+                    /// The column passes the step unmatched.
+                    const auto & inputs = actions->getInputs();
+                    if (std::ranges::any_of(inputs, [&](const auto * input) { return input->result_name == name; })
+                        || !step->getInputHeaders().front()->has(name))
+                        break;
+                }
+            }
+            else if (const auto * sorting = typeid_cast<const SortingStep *>(step))
+            {
+                if (sorting->hasPartitions())
+                    break;
+            }
+            else if (const auto * limit = typeid_cast<const LimitStep *>(step))
+            {
+                if (limit->withTies())
+                    break;
+            }
+            else if (!typeid_cast<const OffsetStep *>(step))
+                break;
+
+            path.push_back(node);
+            node = node->children.front();
+        }
+
+        if (!read_step)
+            continue;
+
+        QueryPlan::Node * read_node = node;
+        const String column = name;
+
+        /// Up: every name the column has on the way, and its uses.
+        std::vector<SubcolumnsPathStep> steps;
+        NameSet names{column};
+        bool ok = true;
+        for (auto it = path.rbegin(); ok && it != path.rend(); ++it)
+        {
+            auto * step = (*it)->step.get();
+            SubcolumnsPathStep path_step;
+            path_step.node = *it;
+
+            if (auto * actions = tryGetStepActions(step))
+            {
+                auto copy = actions->clone();
+                copy.removeUnusedActions(/*allow_remove_inputs=*/false, /*allow_constant_folding=*/false);
+
+                std::unordered_set<const ActionsDAG::Node *> inputs;
+                for (const auto * input : copy.getInputs())
+                    if (names.contains(input->result_name))
+                    {
+                        inputs.insert(input);
+                        path_step.inputs.insert(input->result_name);
+                    }
+
+                NameSet names_above;
+                for (const auto & passing_name : names)
+                    if (!path_step.inputs.contains(passing_name))
+                        names_above.insert(passing_name);
+
+                const auto * filter = typeid_cast<const FilterStep *>(step);
+                NameSet outputs_to_remove;
+                for (const auto * output : copy.getOutputs())
+                {
+                    if (!inputs.contains(resolveAliases(output)))
+                        continue;
+
+                    if (filter && output->result_name == filter->getFilterColumnName())
+                        ok = false;
+                    names_above.insert(output->result_name);
+                    outputs_to_remove.insert(output->result_name);
+                }
+
+                if (!ok)
+                    break;
+
+                copy.removeFromOutputs(outputs_to_remove);
+                copy.removeUnusedActions(/*allow_remove_inputs=*/false, /*allow_constant_folding=*/false);
+
+                auto reads = collectSubcolumnReads(copy, allow_function_forms);
+                for (const auto * input : inputs)
+                {
+                    if (auto reads_it = reads.find(input); reads_it != reads.end())
+                    {
+                        path_step.reads.insert(path_step.reads.end(), reads_it->second.begin(), reads_it->second.end());
+                        continue;
+                    }
+
+                    /// Without subcolumn reads, nothing may read the column.
+                    for (const auto & copy_node : copy.getNodes())
+                        for (const auto * child : copy_node.children)
+                            if (resolveAliases(child) == input)
+                                ok = false;
+                }
+
+                path_step.actions = std::move(copy);
+                names = std::move(names_above);
+            }
+            else if (const auto * sorting = typeid_cast<const SortingStep *>(step))
+            {
+                for (const auto & sort_column : sorting->getSortDescription())
+                    if (names.contains(sort_column.column_name))
+                        ok = false;
+            }
+
+            steps.push_back(std::move(path_step));
+        }
+
+        if (!ok || !names.contains(candidate->result_name))
+            continue;
+
+        /// At the top, every name of the column is an input read only by subcolumn reads.
+        SubcolumnsPathStep top_path_step;
+        top_path_step.node = top_node;
+        for (const auto & top_name : names)
+        {
+            const auto * input = tryFindInput(top_actions, top_name);
+            auto reads_it = input ? top_reads.find(input) : top_reads.end();
+            if (reads_it == top_reads.end())
+            {
+                ok = false;
+                break;
+            }
+
+            top_path_step.inputs.insert(top_name);
+            top_path_step.reads.insert(top_path_step.reads.end(), reads_it->second.begin(), reads_it->second.end());
+        }
+
+        if (!ok)
+            continue;
+
+        /// `steps` is bottom-up. The read checks and the carried columns, top first.
+        bool function_forms = false;
+        bool index_unsafe_function_forms = false;
+        std::vector<CarriedColumn> carried;
+        std::unordered_map<String, size_t> carried_position;
+        auto add_reads = [&](const std::vector<SubcolumnRead> & reads)
+        {
+            for (const auto & read : reads)
+            {
+                function_forms |= read.is_function_form;
+                index_unsafe_function_forms |= read.is_function_form && !read.is_map_element;
+
+                CarriedColumn carried_column{getCarriedColumnName(read), read.subcolumn, read.subcolumn_type};
+                auto [position, inserted] = carried_position.emplace(carried_column.name, carried.size());
+                if (inserted)
+                    carried.push_back(std::move(carried_column));
+                else if (carried[position->second].subcolumn != carried_column.subcolumn
+                    || !carried[position->second].type->equals(*carried_column.type))
+                    ok = false;
+
+                if (!storageResolvesSubcolumn(*read_step, column, read))
+                    ok = false;
+            }
+        };
+
+        add_reads(top_path_step.reads);
+        for (auto it = steps.rbegin(); it != steps.rend(); ++it)
+            add_reads(it->reads);
+
+        if (!ok || !read_step->canReadSubcolumnsOfColumn(column, function_forms, index_unsafe_function_forms))
+            continue;
+
+        /// A carried column must not shadow a column that exists on the way.
+        auto shadows = [&](const Block & header)
+        {
+            return std::ranges::any_of(carried, [&](const auto & carried_column) { return header.has(carried_column.name); });
+        };
+        if (shadows(*read_step->getOutputHeader()) || shadows(top_input_header) || shadows(top_output_header))
+            continue;
+        for (const auto & path_step : steps)
+            if (shadows(*path_step.node->step->getInputHeaders().front()) || shadows(*path_step.node->step->getOutputHeader()))
+                ok = false;
+
+        if (!ok)
+            continue;
+
+        /// The functions of the subcolumns computed where the replaced reads were.
+        auto build_residuals = [&](const std::vector<SubcolumnRead> & reads)
+        {
+            std::unordered_map<const ActionsDAG::Node *, FunctionBasePtr> residuals;
+            for (const auto & read : reads)
+            {
+                if (read.residual.empty())
+                    continue;
+
+                ColumnsWithTypeAndName arguments{{nullptr, read.subcolumn_type, getCarriedColumnName(read)}};
+                for (const auto & argument : read.residual_arguments)
+                    arguments.push_back({ColumnConst::create(argument.column->getDataColumnPtr(), 1), argument.type, argument.name});
+                auto function = FunctionFactory::instance().get(read.residual, read_step->getContext())->build(arguments);
+                if (!function->getResultType()->equals(*read.node->result_type))
+                    ok = false;
+                residuals.emplace(read.node, std::move(function));
+            }
+            return residuals;
+        };
+
+        /// The new actions of the steps, from the bottom; the carried columns a step consumes and the ones it passes on.
+        NameSet carried_above;
+        for (const auto & read : top_path_step.reads)
+            carried_above.insert(getCarriedColumnName(read));
+
+        std::vector<NameSet> carried_above_step(steps.size());
+        for (size_t i = steps.size(); i > 0; --i)
+        {
+            carried_above_step[i - 1] = carried_above;
+            for (const auto & read : steps[i - 1].reads)
+                carried_above.insert(getCarriedColumnName(read));
+        }
+
+        for (size_t i = 0; ok && i < steps.size(); ++i)
+        {
+            auto & path_step = steps[i];
+            if (!path_step.actions)
+                continue;
+
+            auto residuals = build_residuals(path_step.reads);
+            path_step.new_actions = replaceSubcolumnReads(*path_step.actions, path_step.reads, residuals);
+            if (!ok || !path_step.new_actions)
+            {
+                ok = false;
+                break;
+            }
+
+            removeInputsOfReadColumn(*path_step.new_actions, path_step.inputs);
+            for (const auto * input : path_step.new_actions->getInputs())
+                if (carried_above_step[i].contains(input->result_name) && !path_step.new_actions->tryFindInOutputs(input->result_name))
+                    path_step.new_actions->getOutputs().push_back(input);
+        }
+
+        if (!ok)
+            continue;
+
+        auto top_residuals = build_residuals(top_path_step.reads);
+        if (!ok)
+            continue;
+        top_path_step.new_actions = replaceSubcolumnReads(top_actions, top_path_step.reads, top_residuals);
+        if (!top_path_step.new_actions)
+            continue;
+        removeInputsOfReadColumn(*top_path_step.new_actions, top_path_step.inputs);
+
+        /// The top step keeps its output header.
+        Block new_top_input_header;
+        for (const auto & column_with_type : top_input_header)
+            if (!top_path_step.inputs.contains(column_with_type.name))
+                new_top_input_header.insert(column_with_type);
+        for (const auto & carried_column : carried)
+            if (tryFindInput(*top_path_step.new_actions, carried_column.name))
+                new_top_input_header.insert({carried_column.type->createColumn(), carried_column.type, carried_column.name});
+
+        if (!blocksHaveEqualStructure(transformStepHeader(top_step, new_top_input_header, *top_path_step.new_actions), top_output_header))
+            continue;
+
+        /// All the bail-outs are behind us, the plan may be modified now.
+        const Block old_read_header = *read_step->getOutputHeader();
+        Names subcolumns;
+        for (const auto & carried_column : carried)
+            if (std::ranges::find(subcolumns, column + "." + carried_column.subcolumn) == subcolumns.end())
+                subcolumns.push_back(column + "." + carried_column.subcolumn);
+        read_step->readSubcolumnsInsteadOfColumn(column, subcolumns);
+
+        ActionsDAG read_subcolumns_actions;
+        std::unordered_map<String, const ActionsDAG::Node *> read_input_by_name;
+        for (const auto & column_with_type : *read_step->getOutputHeader())
+        {
+            const auto & input = read_subcolumns_actions.addInput(column_with_type);
+            read_input_by_name.emplace(input.result_name, &input);
+            if (old_read_header.has(column_with_type.name))
+                read_subcolumns_actions.getOutputs().push_back(&input);
+        }
+        for (const auto & carried_column : carried)
+        {
+            const auto * input = read_input_by_name.at(column + "." + carried_column.subcolumn);
+            read_subcolumns_actions.getOutputs().push_back(
+                input->result_name == carried_column.name ? input : &read_subcolumns_actions.addAlias(*input, carried_column.name));
+        }
+
+        QueryPlan::Node * read_parent = path.empty() ? top_node : path.back();
+        auto & read_subcolumns_node = nodes.emplace_back();
+        read_subcolumns_node.children = {read_node};
+        read_subcolumns_node.step = std::make_unique<ExpressionStep>(read_step->getOutputHeader(), std::move(read_subcolumns_actions));
+        read_subcolumns_node.step->setStepDescription("Read subcolumns", settings.max_step_description_length);
+        read_parent->children = {&read_subcolumns_node};
+
+        for (auto & path_step : steps)
+        {
+            if (path_step.new_actions)
+                *tryGetStepActions(path_step.node->step.get()) = std::move(*path_step.new_actions);
+            path_step.node->step->updateInputHeader(path_step.node->children.front()->step->getOutputHeader());
+        }
+
+        *tryGetStepActions(top_step) = std::move(*top_path_step.new_actions);
+        top_step->updateInputHeader(top_node->children.front()->step->getOutputHeader());
+        chassert(blocksHaveEqualStructure(*top_step->getOutputHeader(), top_output_header));
+
+        return path.size() + 3;
+    }
+
+    return 0;
+}
+
+}
+
 /// Pushes volume-reducing functions (`length`, `lengthUTF8`, `empty`, `notEmpty`) from an
 /// `Expression` / `Filter` step below its child step, so that the wide `String` / `FixedString` /
 /// `Array` / `Map` argument is replaced by the fixed-size result:
@@ -460,6 +1233,9 @@ size_t tryPushDownVolumeReducingFunction(QueryPlan::Node * parent_node, QueryPla
     /// The rewrite resolves columns by name, which is ambiguous with duplicated names.
     if (hasDuplicatedInputNames(*parent_actions))
         return 0;
+
+    if (size_t changed = tryPushDownSubcolumnsToReading(parent_node, nodes, settings))
+        return changed;
 
     auto functions_by_argument = collectVolumeReducingFunctionsReplacingTheirArgument(*parent_actions);
     if (functions_by_argument.empty())
