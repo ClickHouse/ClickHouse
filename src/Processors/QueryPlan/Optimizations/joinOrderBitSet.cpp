@@ -142,9 +142,21 @@ SelectivityEstimate computeSelectivity(
             max_ndv_upper_bound = std::max(max_ndv_upper_bound, ndv.upper_bound);
         }
         if (has_left && has_right)
+        {
             applyEquiKeyDistinctValues(estimate, max_ndv, max_ndv_upper_bound);
+            if (query_graph.equivalence_class_ndv_bound)
+                applyEquivalenceClassBound(estimate, query_graph.getClassMinSize(member));
+        }
     }
 
+    if (query_graph.equivalence_class_ndv_bound)
+    {
+        countUnclassifiedEquiKeys(query_graph, estimate, edges, [&](const JoinActionRef & edge)
+        {
+            const auto & sources = edge.getSourceRelations();
+            return areIntersecting(sources, left) && areIntersecting(sources, right);
+        });
+    }
     return estimate;
 }
 
