@@ -43,8 +43,9 @@ ${CLICKHOUSE_CLIENT} --query "
     SELECT _change_type, id, s FROM deltaLakeLocal('$BASE/change_data_feed_deletion_vectors')
     ORDER BY ALL SETTINGS delta_lake_snapshot_start_version = 5"
 
-echo "-- row tracking and in-commit timestamps: $(insert row_tracking_in_commit_timestamps "(100, 'new', 0), (101, 'new', 1)")"
 LOG="$BASE/row_tracking_in_commit_timestamps/_delta_log"
+PREVIOUS=$(find "$LOG" -maxdepth 1 -name '*.json' | sort | tail -n 1)
+echo "-- row tracking and in-commit timestamps: $(insert row_tracking_in_commit_timestamps "(100, 'new', 0), (101, 'new', 1)")"
 LAST=$(find "$LOG" -maxdepth 1 -name '*.json' | sort | tail -n 1)
 ${CLICKHOUSE_CLIENT} --query "
     SELECT count(), sum(id) FROM deltaLakeLocal('$BASE/row_tracking_in_commit_timestamps');
@@ -54,7 +55,12 @@ ${CLICKHOUSE_CLIENT} --query "
     FROM file('$LAST', LineAsString) WHERE JSONHas(line, 'add') ORDER BY ALL;
     SELECT JSONExtractUInt(line, 'commitInfo', 'inCommitTimestamp') > 1700000000000
     FROM file('$LAST', LineAsString) WHERE JSONHas(line, 'commitInfo');
-    -- The row ids of the new rows are consecutive and above the ids of the previous commits.
+    -- The row ids of the new rows are above the high water mark of the previous commit.
+    SELECT min(JSONExtractUInt(line, 'add', 'baseRowId'))
+          > (SELECT JSONExtractUInt(JSONExtractString(line, 'domainMetadata', 'configuration'), 'rowIdHighWaterMark')
+             FROM file('$PREVIOUS', LineAsString) WHERE JSONExtractString(line, 'domainMetadata', 'domain') = 'delta.rowTracking')
+    FROM file('$LAST', LineAsString) WHERE JSONHas(line, 'add');
+    -- The new high water mark is the last row id of the new rows.
     SELECT
         max(JSONExtractUInt(line, 'add', 'baseRowId') + JSONExtractUInt(JSONExtractString(line, 'add', 'stats'), 'numRecords')) - 1
           = (SELECT JSONExtractUInt(JSONExtractString(line, 'domainMetadata', 'configuration'), 'rowIdHighWaterMark')

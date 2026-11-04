@@ -11,6 +11,7 @@ insert	1000	new
 1	1
 1
 1
+1
 -- unsupported features
 type_widening: (DELTA_KERNEL_ERROR)
 liquid_clustering: (DELTA_KERNEL_ERROR)
