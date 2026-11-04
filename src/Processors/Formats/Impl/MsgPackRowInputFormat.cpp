@@ -59,7 +59,7 @@ MsgPackRowInputFormat::MsgPackRowInputFormat(SharedHeader header_, std::unique_p
 void MsgPackRowInputFormat::resetParser()
 {
     IRowInputFormat::resetParser();
-    visitor.reset();
+    parser.init();
 }
 
 void MsgPackRowInputFormat::setReadBuffer(ReadBuffer & in_)
@@ -83,7 +83,7 @@ void MsgPackVisitor::set_info(IColumn & column, DataTypePtr type, UInt8 & read) 
     info_stack.push(Info{column, type, false, std::nullopt, &read});
 }
 
-void MsgPackVisitor::reset()
+void MsgPackVisitor::init()
 {
     info_stack = {};
 }
