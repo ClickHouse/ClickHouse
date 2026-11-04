@@ -379,12 +379,13 @@ private:
     };
 
     /// A column whose `updateHashWithValue` hashes `size` bytes at `data + row * size`, or, when `offsets` is not
-    /// nullptr, a `String` column with these chars and offsets.
+    /// nullptr, a `String` column with these chars and offsets. With `null_map`, it is the nested column of a `Nullable`.
     struct Part
     {
         const UInt8 * data;
         size_t size;
         const IColumn::Offset * offsets;
+        const UInt8 * null_map = nullptr;
     };
 
     /// Appends the parts of `column`. Returns false if `buildRange` cannot copy the bytes that `hash128` hashes for it.

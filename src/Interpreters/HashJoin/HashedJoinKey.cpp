@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
@@ -122,6 +123,16 @@ bool HashedJoinKey::addParts(const IColumn & column, std::vector<Part> & parts)
                 return false;
         return true;
     }
+    /// `ColumnNullable::updateHashWithValue` hashes the null flag, then the value if it is not NULL. A part has one
+    /// flag, so the nested column must be one part without a flag of its own.
+    if (const auto * nullable = typeid_cast<const ColumnNullable *>(&column))
+    {
+        const size_t nested_part = parts.size();
+        if (!addParts(nullable->getNestedColumn(), parts) || parts.size() != nested_part + 1 || parts.back().null_map)
+            return false;
+        parts.back().null_map = nullable->getNullMapData().data();
+        return true;
+    }
     if (const auto * string = typeid_cast<const ColumnString *>(&column))
     {
         parts.push_back({string->getChars().data(), 0, string->getOffsets().data()});
@@ -157,7 +168,7 @@ HashedJoinKey::HashedJoinKey(const ColumnRawPtrs & key_columns_)
     bool all_fixed = true;
     for (const auto & part : parts)
     {
-        if (part.offsets)
+        if (part.offsets || part.null_map)
             all_fixed = false;
         else
             fixed_size += part.size;
@@ -248,12 +259,23 @@ void HashedJoinKey::buildFixedRows(RowAt row_at, size_t num_rows, UInt128 * __re
 template <typename RowAt>
 void HashedJoinKey::buildRows(RowAt row_at, size_t num_rows, UInt128 * __restrict keys)
 {
+    /// `fixed_size` has the fixed-width parts that are not `Nullable`.
     auto row_size = [&](size_t row)
     {
         size_t size = fixed_size;
         for (const auto & part : parts)
+        {
+            if (part.null_map)
+            {
+                size += 1;
+                if (part.null_map[row])
+                    continue;
+            }
             if (part.offsets)
                 size += sizeof(UInt64) + (part.offsets[row] - part.offsets[ssize_t(row) - 1]) + 1;
+            else if (part.null_map)
+                size += part.size;
+        }
         return size;
     };
 
@@ -261,6 +283,12 @@ void HashedJoinKey::buildRows(RowAt row_at, size_t num_rows, UInt128 * __restric
     {
         for (const auto & part : parts)
         {
+            if (part.null_map)
+            {
+                *pos++ = part.null_map[row];
+                if (part.null_map[row])
+                    continue;
+            }
             if (part.offsets)
             {
                 /// As `ColumnString::updateHashWithValue`: the size plus one, the chars and a zero byte.
