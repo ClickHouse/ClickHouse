@@ -2057,6 +2057,45 @@ bool VectorQueryParameters::replaceConstantsInQueryPlan(
         return current;
     };
 
+    /// Build the replacement constant column for one runtime value.
+    ///
+    /// The value has already been converted by the parameter-parse stage (AST literal
+    /// positions or plan bindings), so it must not be turned back into text and parsed
+    /// again just because its element Fields do not have the exact element type of the
+    /// target column. The fast path below lets the column narrow the value while
+    /// inserting it, which is exactly how the SQL CAST does it:
+    /// - Float64 element Fields are accepted by `ColumnVector<Float32>::insert` and
+    ///   truncated there, instead of running a conversion over ~768 elements;
+    /// - integer element Fields (a bare integer literal array becomes Array(UInt64)),
+    ///   which that insert path rejects with BAD_GET, are narrowed value-wise.
+    auto build_constant_column = [&](const Field & field, const DataTypePtr & type) -> ColumnConstPtr
+    {
+        try
+        {
+            return type->createColumnConst(1, field);
+        }
+        catch (...)
+        {
+            /// Value-wise narrowing; `strict = false` + `convert_inexact_floats`
+            /// keeps the same rounding as the SQL CAST.
+            Field narrowed = convertFieldToType(field, *type, nullptr, {}, false, true);
+            if (narrowed.getType() == Field::Types::Array)
+                return type->createColumnConst(1, narrowed);
+
+            /// Only arrays get the text fallback: strings were already decoded by
+            /// `stringParamToArrayColumn` above, and scalars keep their old behaviour.
+            if (!isArray(type))
+                throw;
+
+            Field from_text;
+            if (stringToNumericArrayField(applyVisitor(FieldVisitorToString(), field), type, from_text)
+                && from_text.getType() == Field::Types::Array)
+                return type->createColumnConst(1, from_text);
+
+            throw;
+        }
+    };
+
     /// Lambda to replace a single COLUMN node in an ActionsDAG with a new constant value.
     /// Handles type promotion via getType() and array string-to-field conversion.
     auto apply_bindings_to_dag = [&](ActionsDAG & dag, const UInt32 dag_node_index, const UInt32 parameter_index, DataTypePtr data_type_ptr)
@@ -2092,11 +2131,9 @@ bool VectorQueryParameters::replaceConstantsInQueryPlan(
                     return true;
                 }
             }
-            if (final_type->getTypeId() != static_cast<TypeIndex>(raw_value.getType()))
-                raw_value = convertFieldToType(raw_value, *final_type, nullptr, {}, false, true);
             // ActionsDAG constants are rewritten by replacing the const column payload
             // at the recorded node index with the parsed runtime Field value.
-            ColumnConstPtr new_column = final_type->createColumnConst(1, raw_value);
+            ColumnConstPtr new_column = build_constant_column(raw_value, final_type);
             const_cast<DataTypePtr &>(dag_node.result_type) = std::move(final_type);
             dag_node.column = std::move(new_column);
             return true;
@@ -2614,7 +2651,8 @@ std::vector<VectorQueryPlanCache::ASTLiteralPosition> VectorQueryParameters::col
 /// Returns an empty result if the AST contains unsupported patterns.
 VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizedAST(
     const ASTPtr & query_ast,
-    bool only_vector) const
+    bool only_vector,
+    bool collect_positions) const
 {
     NormalizedQueryResult query_result;
 
@@ -2717,40 +2755,46 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizedAS
                 return;
             }
             const auto type = literal_node->value.getType();
+            /// Resolving the target type (DataTypeFactory lookups) below is only needed
+            /// when literal positions are recorded. In constants-only mode the values
+            /// alone are enough to replace QueryPlan constants, so it is skipped.
             DataTypePtr target_type;
-            for (auto it = parent_list.rbegin(); it != parent_list.rend(); ++it)
+            if (collect_positions)
             {
-                if (!*it)
-                    continue;
-                const auto * cast_func = (*it)->as<ASTFunction>();
-                if (!cast_func)
-                    continue;
-                const auto func_name_lower = Poco::toLower(cast_func->name);
-                if (func_name_lower != CAST_FUNCTION_NAME && func_name_lower != "_cast")
-                    continue;
-                if (cast_func->arguments && cast_func->arguments->children.size() >= 2)
+                for (auto it = parent_list.rbegin(); it != parent_list.rend(); ++it)
                 {
-                    const auto & type_arg = cast_func->arguments->children[1];
-                    try
+                    if (!*it)
+                        continue;
+                    const auto * cast_func = (*it)->as<ASTFunction>();
+                    if (!cast_func)
+                        continue;
+                    const auto func_name_lower = Poco::toLower(cast_func->name);
+                    if (func_name_lower != CAST_FUNCTION_NAME && func_name_lower != "_cast")
+                        continue;
+                    if (cast_func->arguments && cast_func->arguments->children.size() >= 2)
                     {
-                        if (const auto * type_literal = type_arg->as<ASTLiteral>())
+                        const auto & type_arg = cast_func->arguments->children[1];
+                        try
                         {
-                            target_type = DataTypeFactory::instance().get(type_literal->value.safeGet<String>());
+                            if (const auto * type_literal = type_arg->as<ASTLiteral>())
+                            {
+                                target_type = DataTypeFactory::instance().get(type_literal->value.safeGet<String>());
+                            }
+                            else
+                            {
+                                target_type = DataTypeFactory::instance().get(type_arg);
+                            }
                         }
-                        else
+                        catch (...)
                         {
-                            target_type = DataTypeFactory::instance().get(type_arg);
+                            LOG_DEBUG(logger, "Failed to get target type from CAST AST: {}", getCurrentExceptionMessage(false));
                         }
                     }
-                    catch (...)
-                    {
-                        LOG_DEBUG(logger, "Failed to get target type from CAST AST: {}", getCurrentExceptionMessage(false));
-                    }
+                    break;
                 }
-                break;
+                if (!target_type)
+                    target_type = applyVisitor(FieldToDataType(), literal_node->value);
             }
-            if (!target_type)
-                target_type = applyVisitor(FieldToDataType(), literal_node->value);
             std::vector<String> ident_name_list;
             VectorQueryPlanCache::ASTLiteralPosition pos;
             pos.identifier_name = "";
@@ -3006,12 +3050,14 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizedAS
                 }
                 if (!ident_name_list.empty())
                 {
-                    ast_path_name += "Identifier-" + ident_name_list[0];
+                    if (collect_positions)
+                        ast_path_name += "Identifier-" + ident_name_list[0];
                     pos.identifier_name = ident_name_list[0];
                 }
                 else
                 {
-                    ast_path_name += "parameter-" + toString(path[path.size() - 1]);
+                    if (collect_positions)
+                        ast_path_name += "parameter-" + toString(path[path.size() - 1]);
                     pos.identifier_name = " ";
                 }
             }
@@ -3023,65 +3069,72 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizedAS
                 )
             {
                 vector_parameter_number++;
-                ast_path_name += "Identifier-" + ident_name_list[0];
+                if (collect_positions)
+                    ast_path_name += "Identifier-" + ident_name_list[0];
                 pos.identifier_name = ident_name_list[0];
             }
             if (!pos.identifier_name.empty())
             {
-                ast_path_name += "_Literal-" + dataTypePtrToString(target_type) + "-" + applyVisitor(FieldVisitorToString(), literal_node->value);
-                if (unique_strings.contains(ast_path_name))
+                /// Building the literal path name, checking its uniqueness and deriving
+                /// the step type are position-only work and can be expensive; they are
+                /// skipped in constants-only mode.
+                if (collect_positions)
                 {
-                    LOG_DEBUG(logger, "ast_path_name={} is exist", ast_path_name);
-                    can_cache = false;
-                    return;
-                }
-                unique_strings.insert(ast_path_name);
-                pos.step_type = -1;
-                // Determine step type from ast_path_name in a more robust way
-                if (ast_path_name.length() > static_cast<size_t>(Offset::StepType))
-                {
-                    char step_char = ast_path_name[static_cast<size_t>(Offset::StepType)];
-                    if (step_char == 'E')
+                    ast_path_name += "_Literal-" + dataTypePtrToString(target_type) + "-" + applyVisitor(FieldVisitorToString(), literal_node->value);
+                    if (unique_strings.contains(ast_path_name))
                     {
-                        if (isVectorDistanceFunctionName(last_function_name) || last_function_name == getFunctionName(FunctionNames::HASTOKEN) ||
-                            is_vector_argument_transform ||
-                            is_reinterpret_child_literal || is_reinterpret_unhex || is_reinterpret_raw_bytes
-                        )
-                            pos.step_type = 4;
-                        else
-                            pos.step_type = 1;
+                        LOG_DEBUG(logger, "ast_path_name={} is exist", ast_path_name);
+                        can_cache = false;
+                        return;
                     }
-                    if (step_char == 'F')
-                        pos.step_type = 2;
-                    if (step_char == 'T')
-                        pos.step_type = 3;
-                }
+                    unique_strings.insert(ast_path_name);
+                    pos.step_type = -1;
+                    // Determine step type from ast_path_name in a more robust way
+                    if (ast_path_name.length() > static_cast<size_t>(Offset::StepType))
+                    {
+                        char step_char = ast_path_name[static_cast<size_t>(Offset::StepType)];
+                        if (step_char == 'E')
+                        {
+                            if (isVectorDistanceFunctionName(last_function_name) || last_function_name == getFunctionName(FunctionNames::HASTOKEN) ||
+                                is_vector_argument_transform ||
+                                is_reinterpret_child_literal || is_reinterpret_unhex || is_reinterpret_raw_bytes
+                            )
+                                pos.step_type = 4;
+                            else
+                                pos.step_type = 1;
+                        }
+                        if (step_char == 'F')
+                            pos.step_type = 2;
+                        if (step_char == 'T')
+                            pos.step_type = 3;
+                    }
 
-                if (pos.step_type == 3)
-                {
-                    LOG_DEBUG(logger, "Join ... On found Literal");
-                    can_cache = false;
-                    return;
+                    if (pos.step_type == 3)
+                    {
+                        LOG_DEBUG(logger, "Join ... On found Literal");
+                        can_cache = false;
+                        return;
+                    }
+                    pos.path = path;
+                    pos.target_type = reinterpret_target_type ? reinterpret_target_type : target_type;
+                    pos.function_list = function_list;
+                    pos.ast_path_name = ast_path_name;
+                    pos.identifier_name = getFieldName(pos.identifier_name);
+                    positions.push_back(pos);
+                    // LOG_ERROR(logger, "normalizedAST: added position index={}, identifier_name={}, target_type={}, reinterpret_target_type={}, step_type={}, field_type={}, function_list={}",
+                    //     positions.size() - 1,
+                    //     pos.identifier_name,
+                    //     pos.target_type ? dataTypePtrToString(pos.target_type) : "null",
+                    //     reinterpret_target_type ? dataTypePtrToString(reinterpret_target_type) : "null",
+                    //     pos.step_type,
+                    //     static_cast<int>(pos.field_type),
+                    //     [&]() {
+                    //         String s;
+                    //         for (const auto & f : function_list) { if (!s.empty()) s += ","; s += f; }
+                    //         return s;
+                    //     }());
+                    // LOG_ERROR(logger, "normalizedAST: pos.target_type FINAL={}", dataTypePtrToString(pos.target_type));
                 }
-                pos.path = path;
-                pos.target_type = reinterpret_target_type ? reinterpret_target_type : target_type;
-                pos.function_list = function_list;
-                pos.ast_path_name = ast_path_name;
-                pos.identifier_name = getFieldName(pos.identifier_name);
-                positions.push_back(pos);
-                // LOG_ERROR(logger, "normalizedAST: added position index={}, identifier_name={}, target_type={}, reinterpret_target_type={}, step_type={}, field_type={}, function_list={}",
-                //     positions.size() - 1,
-                //     pos.identifier_name,
-                //     pos.target_type ? dataTypePtrToString(pos.target_type) : "null",
-                //     reinterpret_target_type ? dataTypePtrToString(reinterpret_target_type) : "null",
-                //     pos.step_type,
-                //     static_cast<int>(pos.field_type),
-                //     [&]() {
-                //         String s;
-                //         for (const auto & f : function_list) { if (!s.empty()) s += ","; s += f; }
-                //         return s;
-                //     }());
-                // LOG_ERROR(logger, "normalizedAST: pos.target_type FINAL={}", dataTypePtrToString(pos.target_type));
                 query_result.parsed_params.push_back(literal_node->value);
                 literal_node->value = (is_cast && static_cast<Int32>(type) == FieldRef::Types::String) ? converted_str_in_cast : converted;
             }
@@ -3125,7 +3178,7 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizedAS
                         if (child == func->parameters)
                         {
                             path.push_back(static_cast<UInt32>(i));
-                            collect(child, parent_list, depth + 1, path, function_list, ast_path_name + "_" + get_node_name(child));
+                            collect(child, parent_list, depth + 1, path, function_list, (collect_positions ? ast_path_name + "_" + get_node_name(child) : String{}));
                             path.pop_back();
                         }
                     }
@@ -3136,7 +3189,7 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizedAS
                     if (child == func->arguments)
                     {
                         path.push_back(static_cast<UInt32>(i));
-                        collect(child, parent_list, depth + 1, path, function_list, ast_path_name + "_" + get_node_name(child));
+                        collect(child, parent_list, depth + 1, path, function_list, (collect_positions ? ast_path_name + "_" + get_node_name(child) : String{}));
                         path.pop_back();
                     }
                 }
@@ -3148,7 +3201,7 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizedAS
                     if (should_skip_limit_child(ast, child))
                         continue;
                     path.push_back(static_cast<UInt32>(i));
-                    collect(child, parent_list, depth + 1, path, function_list, ast_path_name + "_" + get_node_name(child));
+                    collect(child, parent_list, depth + 1, path, function_list, (collect_positions ? ast_path_name + "_" + get_node_name(child) : String{}));
                     path.pop_back();
                 }
                 function_list.pop_back();
@@ -3165,7 +3218,7 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizedAS
             if (should_skip_limit_child(ast, child))
                 continue;
             path.push_back(static_cast<UInt32>(i));
-            collect(child, parent_list, depth + 1, path, function_list, ast_path_name + "_" + get_node_name(child));
+            collect(child, parent_list, depth + 1, path, function_list, (collect_positions ? ast_path_name + "_" + get_node_name(child) : String{}));
             path.pop_back();
         }
         parent_list.pop_back();
@@ -3182,7 +3235,8 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizedAS
         return query_result;
     }
     query_result.normalized_sql = ast_clone->formatForLogging();
-    query_result.ast_literal_position_list = std::move(positions);
+    if (collect_positions)
+        query_result.ast_literal_position_list = std::move(positions);
     return query_result;
 }
 

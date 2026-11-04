@@ -624,7 +624,7 @@ static VectorQueryPlanCacheRestoreResult tryRestoreFromQueryPlanCache(
             const bool vector_query_plan_cache_only_vector = settings[Setting::vector_query_plan_cache_only_vector];
             try
             {
-                auto ast_result = parameterizer.normalizedAST(ast, vector_query_plan_cache_only_vector);
+                auto ast_result = parameterizer.normalizedAST(ast, vector_query_plan_cache_only_vector, false);
                 VectorQueryPlanCache::Key key(
                     ast_result.normalized_sql,
                     context->getCurrentDatabase(),

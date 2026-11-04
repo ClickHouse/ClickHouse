@@ -135,10 +135,21 @@ public:
 
     /// Normalize an AST in-place: replace each collectable literal with a placeholder
     /// value ('__VEC_PLACEHOLDER__') and record the original value in `parsed_params`.
-    /// Returns the normalized SQL string, literal positions, and parsed parameter values.
+    /// Returns the normalized SQL string and the parsed parameter values.
+    /// This is used in the vector_only_cache_query_plan path where we need to generate a
+    /// cache key from the AST without going through the SQL-text normalization path.
+    ///
+    /// `collect_positions` controls whether AST literal positions are recorded as well:
+    /// - true: collect both the constants and their positions (needed by callers that
+    ///   restore literals back into an AST);
+    /// - false: collect only the constants, which is enough to replace the corresponding
+    ///   values inside a cached QueryPlan by positional order. All position-only work
+    ///   (target type resolution, path name formatting, uniqueness checks, step type
+    ///   derivation and AST path name construction) is skipped.
     VectorQueryParameters::NormalizedQueryResult normalizedAST(
         const ASTPtr & query_ast,
-        bool only_vector = false) const;
+        bool only_vector = false,
+        bool collect_positions = true) const;
 
     /// Rewrite bare vector array literals in the SQL text into explicit CAST expressions.
     /// For example, `[1.0, 2.0, 3.0]` becomes `CAST([1.0, 2.0, 3.0], 'Array(Float)')`.
