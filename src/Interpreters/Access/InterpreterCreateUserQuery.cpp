@@ -435,8 +435,8 @@ BlockIO InterpreterCreateUserQuery::execute()
         /// Hierarchical names are bound to the objects they denote here as well (see `resolveHierarchicalNamesForAccess`).
         for (auto & authentication_method_ast : cluster_query.authentication_methods)
         {
-            authentication_method_ast->grants.replaceEmptyDatabase(getContext()->getCurrentDatabase());
             resolveHierarchicalNamesForAccess(authentication_method_ast->grants, getContext());
+            authentication_method_ast->grants.replaceEmptyDatabase(getContext()->getCurrentDatabase());
         }
 
         auto rewrite_deadline = [](IAST & owner, ASTPtr & valid_until, bool & is_interval, time_t deadline)

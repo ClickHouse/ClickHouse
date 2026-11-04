@@ -552,8 +552,8 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
         /// name reads in a query, like in `GRANT`.
         if (context)
         {
-            grants.replaceEmptyDatabase(context->getCurrentDatabase());
             resolveHierarchicalNamesForAccess(grants, context);
+            grants.replaceEmptyDatabase(context->getCurrentDatabase());
         }
 
         /// Filtered source grants such as `READ ON S3('s3://bucket/.*')` are not supported here yet.

@@ -33,9 +33,9 @@ BlockIO InterpreterDropAccessEntityQuery::execute()
     /// the drop agree on the table, and the bound query is the one dispatched `ON CLUSTER`.
     {
         auto & original_query = query_ptr->as<ASTDropAccessEntityQuery &>();
-        original_query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
         if (original_query.row_policy_names)
             resolveHierarchicalNamesForAccess(*original_query.row_policy_names, getContext());
+        original_query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
     }
 
     const auto updated_query_ptr = removeOnClusterClauseIfNeeded(query_ptr, getContext());

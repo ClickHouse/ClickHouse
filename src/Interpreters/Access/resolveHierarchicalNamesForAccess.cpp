@@ -11,12 +11,15 @@ namespace DB
 
 void resolveHierarchicalNameForAccess(String & database, String & table, ContextPtr context)
 {
-    /// A name without a database, or a name of a whole database, is not an object name to resolve.
-    if (database.empty() || table.empty())
+    /// A name of a whole database is not an object name to resolve.
+    if (table.empty())
         return;
 
     /// Also a name without dots has other candidates: `sales.customers` inside `USE db` is `db`.`sales.customers`
-    /// when there is no database `sales`.
+    /// when there is no database `sales`. An unqualified name (an empty `database`) is resolved relative to the
+    /// current database once, the same as in a query (see `Context::resolveStorageID`): the callers must call this
+    /// before filling the empty databases with the current one, otherwise inside `USE a.b` the name `t` would also
+    /// be tried as the table `a.b.t` of the database `a.b`.
     StorageID resolved = DatabaseCatalog::instance().resolveHierarchicalName(StorageID(database, table), context);
     database = resolved.database_name;
     table = resolved.table_name;
@@ -27,7 +30,7 @@ void resolveHierarchicalNamesForAccess(AccessRightsElements & elements, ContextP
     for (auto & element : elements)
     {
         /// A wildcard (`GRANT SELECT ON db.tab*`) matches a prefix of a name, and a parameter is not a table.
-        if (element.wildcard || !element.parameter.empty())
+        if (element.wildcard || !element.parameter.empty() || element.anyDatabase())
             continue;
         resolveHierarchicalNameForAccess(element.database, element.table, context);
     }

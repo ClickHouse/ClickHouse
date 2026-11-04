@@ -59,9 +59,9 @@ BlockIO InterpreterCreateRowPolicyQuery::execute()
     /// the policy agree on the table, and the bound query is the one dispatched `ON CLUSTER`.
     {
         auto & original_query = query_ptr->as<ASTCreateRowPolicyQuery &>();
-        original_query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
         if (original_query.names)
             resolveHierarchicalNamesForAccess(*original_query.names, getContext());
+        original_query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
     }
 
     const auto updated_query_ptr = removeOnClusterClauseIfNeeded(query_ptr, getContext());
