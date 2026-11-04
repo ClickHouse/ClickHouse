@@ -120,6 +120,15 @@ OPTIMIZE TABLE t_ttl_lambda FINAL;
 SELECT t, z, m FROM t_ttl_lambda;
 DROP TABLE t_ttl_lambda;
 
+-- An alias of the subcolumn set and read inside a lambda.
+DROP TABLE IF EXISTS t_lambda_inner;
+CREATE TABLE t_lambda_inner (t Tuple(a UInt32), m String MATERIALIZED arrayStringConcat(arrayMap(x -> concat(toString(t.a AS r), '-', toString(r)), [1]))) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_lambda_inner (t) VALUES (tuple(100));
+SELECT t, m FROM t_lambda_inner;
+ALTER TABLE t_lambda_inner UPDATE t = tuple(200) WHERE 1;
+SELECT t, m FROM t_lambda_inner;
+DROP TABLE t_lambda_inner;
+
 -- A lightweight UPDATE recomputes through the same expression.
 DROP TABLE IF EXISTS t_lwu;
 CREATE TABLE t_lwu (k UInt8, t Tuple(a UInt32), z UInt32, m String MATERIALIZED concat(toString(t.a AS z), '-', toString(z)), m_name String MATERIALIZED formatRowNoNewline('JSONEachRow', t.a)) ENGINE = MergeTree ORDER BY k SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;

@@ -7,8 +7,8 @@
 namespace DB
 {
 
-/// Replace subcolumns to getSubcolumn() function, keeping the alias or the name of a replaced subcolumn below the root
-/// when no other part of the expression uses it.
+/// Replace subcolumns to getSubcolumn() function. A replaced subcolumn below the root keeps its alias, or takes its name as one,
+/// unless the old analyzer, which has one alias scope for the whole expression, would then resolve a name differently.
 void replaceSubcolumnsToGetSubcolumnFunctionInQuery(ASTPtr & ast, const NamesAndTypesList & columns);
 
 }
