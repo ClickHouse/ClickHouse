@@ -871,8 +871,7 @@ static const ActionsDAG::Node * tryRewriteCoalesceComparison(
     auto make_cmp = [&](const ActionsDAG::Node * lhs) -> const ActionsDAG::Node &
     {
         const auto & cmp_node = inverted_dag.addFunction(op_func, {lhs, &const_cloned}, "");
-        /// Run the whole boolean rewrite chain on the built comparison (a nested `coalesce`, a `nullIf` operand, ...), so a later pass,
-        /// like each skip index's `createIndexCondition`, keeps the template's RPN layout for `mergePartialResultsForDisjunctions`.
+        /// The built comparison goes through the whole rewrite chain too, so a later pass keeps the template's RPN layout.
         if (const auto * rewritten = tryRewriteBooleanCondition(cmp_node, canonical_op_str, inverted_dag, inputs_mapping, context))
             return *rewritten;
         return cmp_node;
@@ -1138,8 +1137,7 @@ static const ActionsDAG::Node * tryRewriteInTruthyCondition(
     if (!predicateIsBooleanResult(predicate, context->getSettingsRef()[Setting::allow_key_condition_coalesce_rewrite]))
         return nullptr;
 
-    /// Only a literal set. A subquery set is built between the index-analysis passes (a `set` index condition builds it),
-    /// so accepting it once built would rewrite it in some passes and not in others, and their RPN layouts would differ.
+    /// Only a literal set: a subquery set is built between index-analysis passes, which would then disagree on the rewrite.
     if (!typeid_cast<const FutureSetFromTuple *>(future_set.get()))
         return nullptr;
 
