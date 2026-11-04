@@ -12732,6 +12732,15 @@ void StorageReplicatedMergeTree::backupData(
 
 void StorageReplicatedMergeTree::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
 {
+    restoreDataFromBackup(restorer, data_path_in_backup, partitions, /* metadata_version= */ std::nullopt);
+}
+
+void StorageReplicatedMergeTree::restoreDataFromBackup(
+    RestorerFromBackup & restorer,
+    const String & data_path_in_backup,
+    const std::optional<ASTs> & partitions,
+    std::optional<Int32> metadata_version)
+{
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::restoreDataFromBackup");
     if (!restorer.getRestoreCoordination()->acquireInsertingDataIntoReplicatedTable(zookeeper_info.full_path))
     {
@@ -12756,6 +12765,9 @@ void StorageReplicatedMergeTree::restoreDataFromBackup(RestorerFromBackup & rest
         if (!empty && backup->hasFiles(data_path_in_backup))
             RestorerFromBackup::throwTableIsNotEmpty(getStorageID());
     }
+
+    if (metadata_version)
+        restoreMetadataVersionFromBackup(*metadata_version, restorer.getZooKeeperRetriesInfo());
 
     restorePartsFromBackup(restorer, data_path_in_backup, partitions);
 }

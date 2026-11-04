@@ -1145,7 +1145,7 @@ void RestorerFromBackup::checkTable(const QualifiedTableName & table_name)
             }
         }
 
-        /// When the table's data is restored, the metadata version is applied right after it (see
+        /// When the table's data is restored, the metadata version is applied together with it (see
         /// `insertDataToTableImpl`). Otherwise nothing else would apply it, so do it here. Note that
         /// `structure_only` is not the same condition: `restore_table_data` overrides it both ways.
         if (!restore_settings.shouldRestoreTableData())
@@ -1296,13 +1296,11 @@ void RestorerFromBackup::insertDataToTableImpl(
                 "Table engine {} doesn't support partitions",
                 storage->getName());
         }
-        storage->restoreDataFromBackup(*this, data_path_in_backup, partitions);
-
         if (auto replicated_storage = castStorage<StorageReplicatedMergeTree>(resolveStorageProxyLoading(storage), DeferredTable::Skip))
-        {
-            if (auto version = readMetadataVersionFromBackup(*backup, metadata_path_in_backup))
-                replicated_storage->restoreMetadataVersionFromBackup(*version, zookeeper_retries_info);
-        }
+            replicated_storage->restoreDataFromBackup(
+                *this, data_path_in_backup, partitions, readMetadataVersionFromBackup(*backup, metadata_path_in_backup));
+        else
+            storage->restoreDataFromBackup(*this, data_path_in_backup, partitions);
     }
     catch (Exception & e)
     {

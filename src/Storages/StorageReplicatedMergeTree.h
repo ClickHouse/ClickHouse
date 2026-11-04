@@ -252,6 +252,15 @@ public:
     /// Extract data from the backup and put it to the storage.
     void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
 
+    /// Same, and also applies `metadata_version` (see `restoreMetadataVersionFromBackup`) before the parts are restored.
+    /// Only the replica which restores the data and has passed the check that the table is empty applies it,
+    /// the other replicas get it through the ALTER_METADATA log entry it creates.
+    void restoreDataFromBackup(
+        RestorerFromBackup & restorer,
+        const String & data_path_in_backup,
+        const std::optional<ASTs> & partitions,
+        std::optional<Int32> metadata_version);
+
     /** Remove a specific replica from zookeeper.
      * returns true if there are no replicas left
      */
