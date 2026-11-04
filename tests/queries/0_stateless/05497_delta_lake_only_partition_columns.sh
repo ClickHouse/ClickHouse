@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-msan
-# Tag no-fasttest: delta-kernel pulls in extra dependencies.
+# Tag no-fasttest: delta-kernel pulls in extra dependencies, and MinIO is not in fast test.
 # Tag no-msan: delta-kernel-rs (Rust) is not built under MSan, so DeltaLakeLocal is absent.
 
 # Regression test for https://github.com/ClickHouse/ClickHouse/issues/129211
@@ -67,5 +67,22 @@ $CLICKHOUSE_LOCAL -q "SELECT count() FROM deltaLakeLocal('$DIR/t') SETTINGS opti
 
 echo '-- only virtual columns'
 $CLICKHOUSE_LOCAL -q "SELECT _file, count() FROM deltaLakeLocal('$DIR/t') GROUP BY _file ORDER BY _file"
+
+# The same table on S3.
+S3_DIR="${CLICKHOUSE_TEST_UNIQUE_NAME}/t"
+for file in "_delta_log/00000000000000000000.json" "$DATA_A" "$DATA_B"; do
+    $CLICKHOUSE_CLIENT -q "
+        INSERT INTO FUNCTION s3(s3_conn, filename = '$S3_DIR/$file', format = RawBLOB)
+        SETTINGS s3_truncate_on_insert = 1, use_hive_partitioning = 0 FORMAT RawBLOB" < "$DIR/t/$file"
+done
+
+echo '-- s3: only partition columns'
+$CLICKHOUSE_CLIENT -q "SELECT id, c2 FROM deltaLake(s3_conn, filename = '$S3_DIR/') ORDER BY id"
+
+echo '-- s3: count() without the trivial count optimization'
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM deltaLake(s3_conn, filename = '$S3_DIR/') SETTINGS optimize_trivial_count_query = 0"
+
+echo '-- s3: only virtual columns'
+$CLICKHOUSE_CLIENT -q "SELECT _file, count() FROM deltaLake(s3_conn, filename = '$S3_DIR/') GROUP BY _file ORDER BY _file"
 
 rm -rf "$DIR"
