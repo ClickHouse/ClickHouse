@@ -68,8 +68,8 @@ public:
         MergeTreeReadTaskInfoPtr read_task_info_,
         std::optional<MarkRanges> mark_ranges_,
         bool read_with_direct_io_,
-        bool prefetch,
-        bool allow_prefetch,
+        bool prefetch_begin_of_range,
+        bool allow_remote_fs_prefetch,
         const ContextPtr & task_context);
 
     ~MergeTreeSequentialSource() override;
@@ -119,8 +119,8 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     MergeTreeReadTaskInfoPtr read_task_info_,
     std::optional<MarkRanges> mark_ranges_,
     bool read_with_direct_io_,
-    bool prefetch,
-    bool allow_prefetch,
+    bool prefetch_begin_of_range,
+    bool allow_remote_fs_prefetch,
     const ContextPtr & task_context)
     : ISource(std::move(result_header))
     , storage(storage_)
@@ -171,7 +171,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     read_settings.distributed_cache_settings.read_if_exists_otherwise_bypass = read_if_exists_otherwise_bypass;
 #endif
 
-    if (!allow_prefetch)
+    if (!allow_remote_fs_prefetch)
         read_settings.remote_fs_settings.prefetch = false;
 
     /// It does not make sense to use pthread_threadpool for background merges/mutations
@@ -216,7 +216,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     if (!readers.prewhere.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Sequential source doesn't support PREWHERE");
 
-    if (prefetch && !data_part->isEmpty())
+    if (prefetch_begin_of_range && !data_part->isEmpty())
         readers.main->prefetchBeginOfRange(Priority{});
 
     auto counters = std::make_shared<ReadStepPerformanceCounters>();
@@ -360,8 +360,8 @@ Pipe createMergeTreeSequentialSource(
     std::shared_ptr<std::atomic<size_t>> filtered_rows_count,
     bool apply_deleted_mask,
     bool read_with_direct_io,
-    bool prefetch,
-    bool allow_prefetch,
+    bool prefetch_begin_of_range,
+    bool allow_remote_fs_prefetch,
     const ContextPtr & task_context)
 {
     auto info = std::make_shared<MergeTreeReadTaskInfo>();
@@ -419,8 +419,8 @@ Pipe createMergeTreeSequentialSource(
         std::move(info),
         std::move(mark_ranges),
         read_with_direct_io,
-        prefetch,
-        allow_prefetch,
+        prefetch_begin_of_range,
+        allow_remote_fs_prefetch,
         task_context);
 
     Pipe pipe(std::move(column_part_source));
@@ -458,8 +458,8 @@ public:
         bool apply_deleted_mask_,
         std::optional<ActionsDAG> filter_,
         bool read_with_direct_io_,
-        bool prefetch_,
-        bool allow_prefetch_,
+        bool prefetch_begin_of_range_,
+        bool allow_remote_fs_prefetch_,
         ContextPtr context_,
         LoggerPtr log_)
         : ISourceStep(std::make_shared<const Block>(storage_snapshot_->getSampleBlockForColumns(columns_to_read_)))
@@ -474,8 +474,8 @@ public:
         , apply_deleted_mask(apply_deleted_mask_)
         , filter(std::move(filter_))
         , read_with_direct_io(read_with_direct_io_)
-        , prefetch(prefetch_)
-        , allow_prefetch(allow_prefetch_)
+        , prefetch_begin_of_range(prefetch_begin_of_range_)
+        , allow_remote_fs_prefetch(allow_remote_fs_prefetch_)
         , context(std::move(context_))
         , log(log_)
     {
@@ -525,8 +525,8 @@ public:
             filtered_rows_count,
             apply_deleted_mask,
             read_with_direct_io,
-            prefetch,
-            allow_prefetch,
+            prefetch_begin_of_range,
+            allow_remote_fs_prefetch,
             context);
 
         pipeline.init(Pipe(std::move(source)));
@@ -546,8 +546,8 @@ public:
             apply_deleted_mask,
             filter.has_value() ? std::make_optional(filter->clone()) : std::nullopt,
             read_with_direct_io,
-            prefetch,
-            allow_prefetch,
+            prefetch_begin_of_range,
+            allow_remote_fs_prefetch,
             context,
             log);
     }
@@ -564,8 +564,8 @@ private:
     const bool apply_deleted_mask;
     const std::optional<ActionsDAG> filter;
     const bool read_with_direct_io;
-    const bool prefetch;
-    const bool allow_prefetch;
+    const bool prefetch_begin_of_range;
+    const bool allow_remote_fs_prefetch;
     const ContextPtr context;
     const LoggerPtr log;
 };
@@ -583,8 +583,8 @@ void createReadFromPartStep(
     bool apply_deleted_mask,
     std::optional<ActionsDAG> filter,
     bool read_with_direct_io,
-    bool prefetch,
-    bool allow_prefetch,
+    bool prefetch_begin_of_range,
+    bool allow_remote_fs_prefetch,
     ContextPtr context,
     LoggerPtr log)
 {
@@ -600,8 +600,8 @@ void createReadFromPartStep(
         apply_deleted_mask,
         std::move(filter),
         read_with_direct_io,
-        prefetch,
-        allow_prefetch,
+        prefetch_begin_of_range,
+        allow_remote_fs_prefetch,
         std::move(context),
         log);
 

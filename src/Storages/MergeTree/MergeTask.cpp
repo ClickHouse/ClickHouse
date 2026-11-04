@@ -2215,7 +2215,7 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
     BuildStatisticsTransformMap column_build_statistics_transforms;
 
     /// The sources of all parts read at the same time.
-    const bool allow_prefetch = canPrefetchInMergeOrMutation(*global_ctx->data, global_ctx->future_part->parts, Names{column_name}, global_ctx->context);
+    const bool allow_remote_fs_prefetch = canPrefetchInMergeOrMutation(*global_ctx->data, global_ctx->future_part->parts, Names{column_name}, global_ctx->context);
 
     for (size_t part_num = 0; part_num < global_ctx->future_part->parts.size(); ++part_num)
     {
@@ -2235,7 +2235,7 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
             /*filter=*/ std::nullopt,
             ctx->read_with_direct_io,
             ctx->use_prefetch,
-            allow_prefetch,
+            allow_remote_fs_prefetch,
             global_ctx->context,
             getLogger("VerticalMergeStage"));
 
@@ -3566,7 +3566,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
     }
 
     /// The sources of all parts read at the same time.
-    const bool allow_prefetch = canPrefetchInMergeOrMutation(*global_ctx->data, global_ctx->future_part->parts, merging_column_names, global_ctx->context);
+    const bool allow_remote_fs_prefetch = canPrefetchInMergeOrMutation(*global_ctx->data, global_ctx->future_part->parts, merging_column_names, global_ctx->context);
 
     /// Read from all parts
     std::vector<QueryPlanPtr> plans;
@@ -3592,8 +3592,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             apply_deleted_mask,
             /*filter=*/ std::nullopt,
             ctx->read_with_direct_io,
-            /*prefetch=*/ false,
-            allow_prefetch,
+            /*prefetch_begin_of_range=*/ false,
+            allow_remote_fs_prefetch,
             global_ctx->context,
             ctx->log);
 

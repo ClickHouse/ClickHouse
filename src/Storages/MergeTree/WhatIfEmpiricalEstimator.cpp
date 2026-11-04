@@ -275,8 +275,8 @@ bool tryEstimateEmpirical(
                 std::make_shared<std::atomic<size_t>>(0),
                 false,
                 false,
-                /*prefetch=*/ false,
-                /*allow_prefetch=*/ true,
+                /*prefetch_begin_of_range=*/ false,
+                /*allow_remote_fs_prefetch=*/ true,
                 context);
 
             /// Apply the query's execution-speed limits here too (size is the explicit check below)

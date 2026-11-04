@@ -19,7 +19,10 @@ enum MergeTreeSequentialSourceType
 
 /// Create stream for reading single part from MergeTree.
 /// If the part has lightweight delete mask then the deleted rows are filtered out.
-/// `prefetch` prefetches the beginning of the range. If `allow_prefetch` is false, the source does not prefetch at all.
+/// `prefetch_begin_of_range`: when the source is created, start prefetching the beginning of its range
+///     (`IMergeTreeReader::prefetchBeginOfRange`). The vertical merge uses it for the next column.
+/// `allow_remote_fs_prefetch`: if false, the readers of the source do not prefetch at all, also not
+///     the beginning of the range; it overrides `remote_filesystem_read_prefetch`.
 /// `task_context` is the context of the merge or mutation task. It gives `filesystem_prefetches_limit` of the readers.
 Pipe createMergeTreeSequentialSource(
     MergeTreeSequentialSourceType type,
@@ -33,8 +36,8 @@ Pipe createMergeTreeSequentialSource(
     std::shared_ptr<std::atomic<size_t>> filtered_rows_count,
     bool apply_deleted_mask,
     bool read_with_direct_io,
-    bool prefetch,
-    bool allow_prefetch,
+    bool prefetch_begin_of_range,
+    bool allow_remote_fs_prefetch,
     const ContextPtr & task_context);
 
 class QueryPlan;
@@ -52,8 +55,8 @@ void createReadFromPartStep(
     bool apply_deleted_mask,
     std::optional<ActionsDAG> filter,
     bool read_with_direct_io,
-    bool prefetch,
-    bool allow_prefetch,
+    bool prefetch_begin_of_range,
+    bool allow_remote_fs_prefetch,
     ContextPtr context,
     LoggerPtr log);
 
