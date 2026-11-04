@@ -81,12 +81,12 @@ def create_deterministic_archive(snapshot_dir: Path, archive_path: Path) -> None
             raise subprocess.CalledProcessError(compressor.returncode, compressor.args)
 
 
-def export_snapshot() -> bool:
+def export_reference_snapshot() -> bool:
     if not BINARY.is_file():
         raise FileNotFoundError(f"ClickHouse binary artifact is missing: {BINARY}")
     if not CONFIG_FILE.is_file():
         raise FileNotFoundError(f"Snapshot config is missing: {CONFIG_FILE}")
-    if SNAPSHOT_DIR.exists() or SNAPSHOT_ARCHIVE.exists():
+    if SNAPSHOT_DIR.exists():
         raise FileExistsError(
             "Reference snapshot output already exists; CI jobs must start with a clean ci/tmp directory"
         )
@@ -110,6 +110,15 @@ def export_snapshot() -> bool:
         ],
         check=True,
     )
+    return SNAPSHOT_DIR.is_dir()
+
+
+def export_snapshot() -> bool:
+    if SNAPSHOT_ARCHIVE.exists():
+        raise FileExistsError(
+            "Reference snapshot archive already exists; CI jobs must start with a clean ci/tmp directory"
+        )
+    export_reference_snapshot()
     create_deterministic_archive(SNAPSHOT_DIR, SNAPSHOT_ARCHIVE)
     return SNAPSHOT_ARCHIVE.is_file()
 
