@@ -30,7 +30,9 @@ WHERE trim(explain) = 'Granules: 0/8';
 
 -- A failed string conversion must keep the exception when the affected runtime type is present.
 SELECT count() FROM json_bf_dynamic_probes WHERE j.x = 'not-a-number' SETTINGS force_data_skipping_indices = 'bf'; -- { serverError TYPE_MISMATCH, CANNOT_PARSE_NUMBER, CANNOT_PARSE_TEXT }
-SELECT count() FROM json_bf_dynamic_probes WHERE j.x = '-42' SETTINGS force_data_skipping_indices = 'bf'; -- { serverError TYPE_MISMATCH, CANNOT_PARSE_NUMBER, CANNOT_PARSE_TEXT }
+SELECT count() FROM json_bf_dynamic_probes WHERE j.x = '42.5' SETTINGS force_data_skipping_indices = 'bf'; -- { serverError TYPE_MISMATCH, CANNOT_PARSE_NUMBER, CANNOT_PARSE_TEXT }
+-- An integer outside the range of a runtime type is compared in a wider type, so it matches no value of that type.
+SELECT 'out of range', count() FROM json_bf_dynamic_probes WHERE j.x = '-42' SETTINGS force_data_skipping_indices = 'bf';
 
 -- Keep the same probes correct when every path and runtime type is stored in shared data.
 CREATE TABLE json_bf_dynamic_shared (id UInt64, j JSON(max_dynamic_paths = 0, max_dynamic_types = 0), INDEX bf j TYPE jsonbf_v1() GRANULARITY 1)

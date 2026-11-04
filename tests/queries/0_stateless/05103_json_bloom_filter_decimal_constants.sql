@@ -37,11 +37,12 @@ INSERT INTO json_bf_decimal_constants
 SELECT * FROM format(RowBinary, 'id UInt64, j JSON', concat(
     formatRowNoNewline('RowBinary', toUInt64(1)), unhex('010178'), formatRowNoNewline('RowBinary', CAST(toDecimal32(42, 0) AS Dynamic)))) SETTINGS input_format_binary_read_json_as_string = 0;
 SELECT count() FROM json_bf_decimal_constants WHERE j.x = toUInt64(18446744073709551615) SETTINGS force_data_skipping_indices = 'bf'; -- { serverError DECIMAL_OVERFLOW }
--- A larger constant scale must not hide overflow while rescaling stored values.
+-- A larger constant scale rescales the stored values, which are compared exactly even when the rescaled value overflows.
 TRUNCATE TABLE json_bf_decimal_constants;
 INSERT INTO json_bf_decimal_constants
 SELECT * FROM format(RowBinary, 'id UInt64, j JSON', concat(
-    formatRowNoNewline('RowBinary', toUInt64(1)), unhex('010178'), formatRowNoNewline('RowBinary', CAST(toDecimal64('9999999999999999.99', 2) AS Dynamic)))) SETTINGS input_format_binary_read_json_as_string = 0;
-SELECT count() FROM json_bf_decimal_constants WHERE j.x = toDecimal64(1, 3) SETTINGS force_data_skipping_indices = 'bf'; -- { serverError DECIMAL_OVERFLOW }
-SELECT count() FROM json_bf_decimal_constants WHERE j.x = toDecimal128(1, 3) SETTINGS force_data_skipping_indices = 'bf';
+    formatRowNoNewline('RowBinary', toUInt64(1)), unhex('010178'), formatRowNoNewline('RowBinary', CAST(toDecimal64('9999999999999999.99', 2) AS Dynamic)),
+    formatRowNoNewline('RowBinary', toUInt64(2)), unhex('010178'), formatRowNoNewline('RowBinary', CAST(toDecimal64('1.00', 2) AS Dynamic)))) SETTINGS input_format_binary_read_json_as_string = 0;
+SELECT arraySort(groupArray(id)) FROM json_bf_decimal_constants WHERE j.x = toDecimal64(1, 3) SETTINGS force_data_skipping_indices = 'bf';
+SELECT arraySort(groupArray(id)) FROM json_bf_decimal_constants WHERE j.x = toDecimal128(1, 3) SETTINGS force_data_skipping_indices = 'bf';
 DROP TABLE json_bf_decimal_constants;

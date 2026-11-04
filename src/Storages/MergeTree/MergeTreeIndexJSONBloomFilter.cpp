@@ -2189,7 +2189,8 @@ bool comparisonUsesExactConversion(const IDataType & left, const IDataType & rig
     }
     if (WhichDataType(left).isDecimal() && WhichDataType(right).isDecimal() && getDecimalScale(right) > getDecimalScale(left))
     {
-        /// Rescaling the column must fit for its entire storage range, including the signed minimum.
+        /// With `decimal_check_overflow = 0`, execution rescales the column without the check, and a wrapped value can match.
+        /// Keep the type unless rescaling fits for its entire storage range, including the signed minimum.
         const UInt256 runtime_limit = UInt256(1) << (8 * left.getSizeOfValueInMemory() - 1);
         const UInt256 comparison_limit = UInt256(1) << (8 * std::max(left.getSizeOfValueInMemory(), right.getSizeOfValueInMemory()) - 1);
         const UInt256 multiplier = DecimalUtils::scaleMultiplier<Int256>(getDecimalScale(right) - getDecimalScale(left));

@@ -12,6 +12,7 @@ typed decimal	[4]
 cast	[1,2,3,4,5,6,7,8]
 absent	0
 Granules: 0/8
+out of range	0
 shared types	['Decimal(18, 2)','Decimal(38, 3)','Float32','Float64','Int32','Int64','String','UInt64']
 shared string	[1,2,3,4,5,6,7,8]
 shared absent	0
