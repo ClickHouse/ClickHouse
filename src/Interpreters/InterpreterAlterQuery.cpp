@@ -139,15 +139,11 @@ void checkAddedIndexPermissions(ASTAlterQuery & alter, const StoragePtr & table,
                     "Table {}.{} does not exist on this host. A text index with a preprocessor or a postprocessor "
                     "is authorized on the host the query is submitted to, so it must be run from a host that has the table",
                     backQuoteIfNeed(alter.getDatabase()), backQuoteIfNeed(alter.getTable()));
-
-            checkTextIndexPreAndPostProcessorPermissions(*declaration, columns, context);
         }
     }
 
-    /// The check above sees the schema before this statement, but a later command of the same
-    /// statement can change what an alias in a transform expands to, and the hosts that apply it
-    /// run without the user. `AlterCommands::apply` authorizes the declared indices against the
-    /// schema the whole statement produces, so run it here as the user on a copy of the metadata.
+    /// Authorize against the schema the whole statement produces, not the one before it: a command of
+    /// the same statement can change what an alias in a transform expands to, in either direction.
     /// Only for the transforms: other indices have nothing to authorize, and their statements must
     /// not be subjected to an analysis that the executor does not do.
     if (!adds_transform || !metadata)
