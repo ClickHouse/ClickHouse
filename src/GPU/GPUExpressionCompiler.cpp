@@ -14,17 +14,12 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/logger_useful.h>
 #include <Core/Defines.h>
-#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/Hex.h>
 #include <Common/SipHash.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/Native.h>
-#include <Functions/FunctionFactory.h>
-#include <Functions/FunctionsComparison.h>
-#include <Interpreters/castColumn.h>
 #include <Interpreters/JIT/CompileDAG.h>
-#include <Interpreters/convertFieldToType.h>
 
 #include <cuda_runtime_api.h>
 
@@ -222,23 +217,11 @@ std::unique_ptr<llvm::TargetMachine> nvptxTargetMachine()
     return machine;
 }
 
-bool isComparison(const String & name)
-{
-    return name == "equals" || name == "notEquals" || name == "less" || name == "lessOrEquals" || name == "greater"
-        || name == "greaterOrEquals";
-}
-
 const ActionsDAG::Node * withoutAliases(const ActionsDAG::Node * node)
 {
     while (node->type == ActionsDAG::ActionType::ALIAS)
         node = node->children.front();
     return node;
-}
-
-bool isConstantToConvert(const ActionsDAG::Node & node)
-{
-    return node.type == ActionsDAG::ActionType::COLUMN && node.column && isColumnConst(*node.column)
-        && (isString(node.result_type) || isDecimal(node.result_type));
 }
 
 /// The intrinsics that NVPTX lowers into instructions of the device. The code of a function that calls another, such as
@@ -265,75 +248,6 @@ bool deviceHasIntrinsic(llvm::StringRef name)
             return true;
     }
     return false;
-}
-
-/// The comparisons of `dag` with a string or `Decimal` constant, which do not compile, with the constant converted to the
-/// type of the column it is compared with, as the comparison converts it, which compile: `d < '1994-01-01'` of a `Date`
-/// is `d < 8766`. The nodes of `dag`, a copy that is not shared, are changed in place.
-void convertConstantsOfComparisons(ActionsDAG & dag)
-{
-    std::optional<ComparisonParams> params;
-    ContextPtr query_context;
-
-    for (const auto & const_node : dag.getNodes())
-    {
-        if (const_node.type != ActionsDAG::ActionType::FUNCTION || const_node.children.size() != 2
-            || !isComparison(const_node.function_base->getName()))
-            continue;
-
-        auto & node = const_cast<ActionsDAG::Node &>(const_node);
-        bool converted = false;
-        for (size_t i = 0; i < 2; ++i)
-        {
-            const ActionsDAG::Node & constant = *withoutAliases(node.children[i]);
-            const ActionsDAG::Node & other = *withoutAliases(node.children[1 - i]);
-            if (!isConstantToConvert(constant) || isConstantToConvert(other))
-                continue;
-
-            if (!params)
-            {
-                /// With the query's settings of comparisons, as the comparison of the plan is built.
-                query_context = CurrentThread::tryGetQueryContext();
-                if (!query_context)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "An expression for the GPU compiled outside of a query");
-                params.emplace(query_context);
-            }
-
-            /// Converted as `FunctionComparison` converts it: a string to the other's type, read as `cast_string_to_date_time_mode`
-            /// says, and a `Decimal` compared with a float, with the float, to a `Float64`.
-            const WhichDataType which(other.result_type);
-            DataTypePtr type;
-            Field value;
-            if (isString(constant.result_type)
-                && (which.isDateOrDate32() || which.isDateTime() || which.isNativeInt() || which.isNativeUInt() || which.isNativeFloat()))
-            {
-                type = other.result_type;
-                value = convertFieldToType((*constant.column)[0], *type, constant.result_type.get(), params->format_settings);
-            }
-            else if (isDecimal(constant.result_type) && which.isNativeFloat())
-            {
-                type = std::make_shared<DataTypeFloat64>();
-                value = (*castColumn({constant.column, constant.result_type, constant.result_name}, type))[0];
-            }
-
-            /// What does not convert is compared otherwise, and the comparison does not compile.
-            if (value.isNull())
-                continue;
-
-            node.children[i] = &dag.addColumn(type->createColumnConst(1, value), type, constant.result_name);
-            converted = true;
-        }
-
-        if (!converted)
-            continue;
-
-        ColumnsWithTypeAndName arguments;
-        for (const auto * child : node.children)
-            arguments.push_back({child->column, child->result_type, child->result_name});
-
-        node.function_base = FunctionFactory::instance().get(node.function_base->getName(), query_context)->build(arguments);
-        node.function = node.function_base->prepare(arguments);
-    }
 }
 
 /// The part of an expression that compiles, as the CPU's JIT takes it, and the columns it reads, which are its inputs.
@@ -500,7 +414,6 @@ std::optional<CompiledGPUExpression> compile(const ActionsDAG & dag, const Strin
 
     /// Without aliases, which `getCompilableDAG` takes as inputs, so that `(x + y AS s) > 0` compiles as `x + y > 0` does.
     ActionsDAG expression = ActionsDAG::cloneSubDAG({output_node}, true);
-    convertConstantsOfComparisons(expression);
     const ActionsDAG::Node * root = withoutAliases(expression.getOutputs().front());
 
     auto compiled_dag = deviceDAGOf(*root, refusal);

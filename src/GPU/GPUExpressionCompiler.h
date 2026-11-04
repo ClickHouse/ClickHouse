@@ -23,8 +23,6 @@ struct GPUKernel;
 /// does not evaluate it. A row is computed by the code that the functions of ClickHouse compile into for the CPU, see
 /// `IFunction::compileImpl` and `CompileDAG`, which LLVM emits as PTX instead: the device computes what ClickHouse
 /// computes, and an expression of a function that does not compile, or of a column that is `Nullable`, is refused.
-/// A string or `Decimal` constant compared with a column is converted to the column's type first, as the comparison
-/// converts it.
 struct CompiledGPUExpression
 {
     GPUExpression expression;
