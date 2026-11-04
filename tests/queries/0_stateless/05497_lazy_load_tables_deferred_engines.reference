@@ -1,0 +1,30 @@
+opted in	10
+background engines opted in	0
+al	Alias	1	0
+buf	Buffer	1	0
+dist	Distributed	1	1
+jn	Join	0	1
+km	KeeperMap	0	0
+kv	EmbeddedRocksDB	0	1
+lg	Log	0	1
+mem	Memory	1	0
+mrg	Merge	1	0
+nul	Null	1	0
+slg	StripeLog	0	1
+src	MergeTree	0	1
+st	Set	0	1
+tlg	TinyLog	0	1
+deferred after listing	8
+src	10
+lg	10
+km	10
+set	2
+join	one
+joinGet	one
+rocksdb	first
+loaded	['al','buf','dist','jn','km','kv','lg','mem','mrg','nul','src','st']
+direct join	first
+graphite	0
+graphite	0
+graphite retentions	1
+temporary	1

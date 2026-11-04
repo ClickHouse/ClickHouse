@@ -1,0 +1,88 @@
+--- MergeTree
+- mutations
+0
+19	0
+has TTL	1
+- create as
+0
+1	1	source comment
+VIOLATED_CONSTRAINT
+- system tables
+0	0	0
+0
+1000
+1	1000	1000	idx_v	1
+- show columns and indexes
+1
+1
+PRIMARY	id
+idx_v	
+1
+- system commands
+0
+1	20
+- table functions
+0
+1	1	1
+- nested columns
+0
+NOT_FOUND_COLUMN_IN_BLOCK
+NOT_FOUND_COLUMN_IN_BLOCK
+- async insert
+0
+1
+- planner
+1
+1
+- populate
+0
+100
+- backup
+0
+incremental	180
+partition	150
+database	180
+--- ReplicatedMergeTree
+- mutations
+0
+19	0
+has TTL	1
+- create as
+0
+1	1	source comment
+VIOLATED_CONSTRAINT
+- system tables
+0	0	0
+0
+1000
+1	1000	1000	idx_v	1
+- show columns and indexes
+1
+1
+PRIMARY	id
+idx_v	
+1
+- system commands
+0
+1	20
+- table functions
+0
+1	1	1
+- nested columns
+0
+NOT_FOUND_COLUMN_IN_BLOCK
+NOT_FOUND_COLUMN_IN_BLOCK
+- async insert
+0
+1
+- planner
+1
+1
+- populate
+0
+100
+- backup
+0
+incremental	180
+partition	150
+database	180
