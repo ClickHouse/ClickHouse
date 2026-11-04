@@ -1313,7 +1313,7 @@ std::optional<ProjectionDescription> refreshHypotheticalProjection(
     std::optional<ProjectionDescription> fresh;
     try
     {
-        checkHypotheticalProjectionIsAddable(data, metadata, stored.definition_ast, /* if_not_exists */ false, context);
+        checkHypotheticalObjectIsAddable(data, metadata, stored.definition_ast, context);
         fresh = ProjectionDescription::getProjectionFromAST(
             stored.definition_ast, metadata->getColumns(), &metadata->partition_key, context, LoadingStrictnessLevel::CREATE);
     }

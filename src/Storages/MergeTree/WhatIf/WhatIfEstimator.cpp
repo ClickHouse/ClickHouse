@@ -3,6 +3,7 @@
 #include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/WhatIf/HypotheticalObjectStore.h>
+#include <Interpreters/WhatIf/InterpreterHypotheticalObjectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/JoinedTables.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -228,38 +229,26 @@ WhatIfCandidateResult evaluateIndex(
         }
     }
 
-    /// Rebuild from current metadata, so a schema change since CREATE turns into not_applicable
+    /// rebuild from current metadata with the CREATE checks, so a schema change since CREATE turns into not_applicable;
+    /// `index_helper` keeps a reference to `fresh_index_desc`
     IndexDescription fresh_index_desc;
+    MergeTreeIndexPtr index_helper;
     try
     {
-        auto metadata = read_step->getStorageMetadata();
+        const auto & metadata = read_step->getStorageMetadata();
+        checkHypotheticalObjectIsAddable(data, metadata, index_desc.definition_ast, context);
         fresh_index_desc = IndexDescription::getIndexFromAST(
             index_desc.definition_ast,
             metadata->getColumns(),
             /* is_implicitly_created = */ false,
             /* escape_filenames = */ true,
             context);
+        index_helper = MergeTreeIndexFactory::instance().get(metadata, fresh_index_desc, *data.getSettings());
     }
     catch (const Exception &)
     {
         result.status = WhatIfCandidateResult::NotApplicable;
-        result.not_applicable_reason = "Hypothetical index no longer matches the current table schema: "
-            + getCurrentExceptionMessage(false);
-        return result;
-    }
-
-    MergeTreeIndexPtr index_helper;
-    try
-    {
-        /// validate before get, same as CREATE: creators read their arguments unguarded
-        const auto & merge_tree_settings = *data.getSettings();
-        MergeTreeIndexFactory::instance().validate(fresh_index_desc, /* attach = */ false, merge_tree_settings);
-        index_helper = MergeTreeIndexFactory::instance().get(read_step->getStorageMetadata(), fresh_index_desc, merge_tree_settings);
-    }
-    catch (const Exception &)
-    {
-        result.status = WhatIfCandidateResult::NotApplicable;
-        result.not_applicable_reason = "Failed to create index: " + getCurrentExceptionMessage(false);
+        result.not_applicable_reason = "Hypothetical index can no longer be added to this table: " + getCurrentExceptionMessage(false);
         return result;
     }
 

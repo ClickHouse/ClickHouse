@@ -14,18 +14,14 @@
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTProjectionDeclaration.h>
-#include <Core/Settings.h>
-#include <Parsers/ASTFunction.h>
 #include <Storages/IStorage.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IndicesDescription.h>
-#include <Storages/KeyDescription.h>
 #include <Storages/ProjectionsDescription.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Disks/IDisk.h>
 
 #include <fmt/ranges.h>
 
@@ -36,20 +32,13 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
-    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool share_nested_offsets;
-}
-
-namespace Setting
-{
-    extern const SettingsBool allow_suspicious_indexes;
 }
 
 namespace
@@ -83,9 +72,7 @@ BlockIO createHypotheticalProjection(
     auto projection_desc = ProjectionDescription::getProjectionFromAST(
         query.projection_decl, metadata->getColumns(), &metadata->partition_key, context, LoadingStrictnessLevel::CREATE);
 
-    /// run the engine's own ADD PROJECTION validation rather than copying its checks, so a
-    /// definition that could not be materialized is rejected here too
-    checkHypotheticalProjectionIsAddable(merge_tree, metadata, query.projection_decl, query.if_not_exists, context);
+    checkHypotheticalObjectIsAddable(merge_tree, metadata, query.projection_decl, context);
 
     store.addProjection(table_id, projection_desc, query.if_not_exists);
     return {};
@@ -154,13 +141,8 @@ BlockIO createHypotheticalIndex(
     collect_columns(expanded_index_decl->as<ASTIndexDeclaration &>().getExpression());
     context->checkAccess(AccessType::SELECT, table_id, Names(referenced_columns.begin(), referenced_columns.end()));
 
-    KeyDescription::checkNoAlias(expanded_index_decl.get(), "INDEX");
-    KeyDescription::checkNoAlias(index_desc.expression_list_ast.get(), "INDEX " + index_desc.name);
-
-    /// validate() must run before get(): index creators assume their arguments were already
-    /// validated and read them unguarded (e.g. set/bloom_filter index.arguments->children[0]),
-    /// so calling get() on an unvalidated user AST can dereference absent arguments.
-    MergeTreeIndexFactory::instance().validate(index_desc, /* attach = */ false, *merge_tree.getSettings());
+    /// validates the arguments, which get() below reads unguarded
+    checkHypotheticalObjectIsAddable(merge_tree, metadata, expanded_index_decl, context);
 
     /// fail closed, a newly registered index type is rejected until someone checks it
     static constexpr std::string_view supported_types[]
@@ -176,61 +158,33 @@ BlockIO createHypotheticalIndex(
     /// sparse_grams), so construct once here instead of failing later inside EXPLAIN WHATIF
     MergeTreeIndexFactory::instance().get(metadata, index_desc, *merge_tree.getSettings());
 
-    /// Mirror real ADD INDEX: the `auto_minmax_index_` prefix is reserved when
-    /// implicit minmax indexes are enabled.
-    const bool using_auto_minmax_index =
-           metadata->add_minmax_index_for_numeric_columns
-        || metadata->add_minmax_index_for_string_columns
-        || metadata->add_minmax_index_for_temporal_columns
-        || metadata->add_minmax_index_for_block_number_column
-        || metadata->add_minmax_index_for_block_offset_column;
-    if (using_auto_minmax_index && index_desc.name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX))
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Cannot add hypothetical index {} because it uses a reserved index name",
-            index_desc.name);
-
-    for (const auto & existing : metadata->getSecondaryIndices())
-    {
-        if (existing.name == index_desc.name)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Hypothetical index '{}' conflicts with an existing secondary index on {}.{}",
-                index_desc.name,
-                table_id.getDatabaseName(),
-                table_id.getTableName());
-    }
-
-    if (!context->getSettingsRef()[Setting::allow_suspicious_indexes])
-    {
-        ASTPtr index_expression = index_ast.getExpression();
-        if (const auto * index_function = index_expression ? index_expression->as<ASTFunction>() : nullptr)
-            checkSuspiciousIndices(index_function);
-    }
-
     store.add(table_id, index_desc, query.if_not_exists);
     return {};
 }
 
 }
 
-/// covers the merging-mode, UNIQUE KEY and projection-property checks (commit_order, block
-/// number/offset columns) by driving the engine's own ADD PROJECTION validation
-void checkHypotheticalProjectionIsAddable(
+void checkHypotheticalObjectIsAddable(
     const MergeTreeData & merge_tree,
     const StorageMetadataPtr & metadata,
-    const ASTPtr & projection_decl,
-    bool if_not_exists,
+    const ASTPtr & declaration,
     const ContextPtr & context)
 {
     auto command_ast = make_intrusive<ASTAlterCommand>();
-    command_ast->type = ASTAlterCommand::ADD_PROJECTION;
-    command_ast->set(command_ast->projection_decl, projection_decl->clone());
-    command_ast->if_not_exists = if_not_exists;
+    if (declaration->as<ASTIndexDeclaration>())
+    {
+        command_ast->type = ASTAlterCommand::ADD_INDEX;
+        command_ast->set(command_ast->index_decl, declaration->clone());
+    }
+    else
+    {
+        command_ast->type = ASTAlterCommand::ADD_PROJECTION;
+        command_ast->set(command_ast->projection_decl, declaration->clone());
+    }
 
     auto command = AlterCommand::parse(command_ast.get());
     if (!command)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ADD PROJECTION command was not parsed back into an alter command");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ADD command was not parsed back into an alter command");
 
     AlterCommands commands;
     commands.push_back(std::move(*command));
@@ -297,23 +251,6 @@ BlockIO InterpreterHypotheticalObjectQuery::execute()
             table_id.getTableName());
 
     auto metadata = table->getInMemoryMetadataPtr(context, /* bypass_metadata_cache = */ false);
-
-    /// Old-syntax MergeTree rejects `ALTER TABLE ... ADD INDEX` / `ADD PROJECTION`, so reject it here too.
-    if (!merge_tree->is_custom_partitioned)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Hypothetical {} are not supported for tables with the old MergeTree syntax",
-            object_kind_name);
-
-    /// Mirror `checkAlterIsPossible`: adding one is rejected on immutable (no-hard-link) disks,
-    /// so accepting it here would report a benefit the user could never materialize
-    for (const auto & disk : merge_tree->getDisks())
-        if (!disk->supportsHardLinks())
-            throw Exception(
-                ErrorCodes::SUPPORT_IS_DISABLED,
-                "Hypothetical {} are not supported on immutable disk '{}'",
-                object_kind_name,
-                disk->getName());
 
     if (is_projection)
         return createHypotheticalProjection(query, *merge_tree, metadata, table_id, store, context);

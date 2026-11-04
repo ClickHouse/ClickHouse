@@ -9,13 +9,12 @@ namespace DB
 class Context;
 class MergeTreeData;
 
-/// the real `ALTER TABLE ... ADD PROJECTION` validation, shared with `EXPLAIN WHATIF` so the two
-/// cannot drift apart
-void checkHypotheticalProjectionIsAddable(
+/// the real `ALTER TABLE ... ADD INDEX` or `ADD PROJECTION` validation, shared with `EXPLAIN WHATIF`
+/// so the two cannot drift apart
+void checkHypotheticalObjectIsAddable(
     const MergeTreeData & merge_tree,
     const StorageMetadataPtr & metadata,
-    const ASTPtr & projection_decl,
-    bool if_not_exists,
+    const ASTPtr & declaration,
     const ContextPtr & context);
 
 class InterpreterHypotheticalObjectQuery : public IInterpreter, WithContext
