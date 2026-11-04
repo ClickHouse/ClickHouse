@@ -285,7 +285,7 @@ try
                     if (num_rows)
                         read_buffer_iterator.setNumRowsToLastFile(*num_rows);
 
-                    /// A cache hit returns the cached description verbatim, so the cache must hold the same filtered structure this function returns.
+                    /// A cache hit skips the checks below, so the cache must hold the same filtered structure this function returns.
                     auto columns_to_cache = names_and_types;
                     removeColumnsWithEmptyNames(columns_to_cache);
                     if (!columns_to_cache.empty())
