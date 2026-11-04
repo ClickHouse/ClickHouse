@@ -22,7 +22,6 @@
 #include <Common/Exception.h>
 #include <Common/MemoryTracker.h>
 #include <Common/SipHash.h>
-#include <Common/HTTPHeaderFilter.h>
 #include <Common/KnownObjectNames.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/tryGetFileNameByFileDescriptor.h>
@@ -467,16 +466,12 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.allow_special_serialization_kinds = settings[Setting::allow_special_serialization_kinds_in_output_formats];
     format_settings.input_format_column_matching_case_sensitivity = settings[Setting::input_format_column_name_matching_mode];
 
-    /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context.
-    /// Its userinfo is sent in the `Authorization` header, so it is also subject to <http_forbid_headers>.
+    /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
     if (format_settings.schema.is_server)
     {
         const Poco::URI & avro_schema_registry_url = settings[Setting::format_avro_schema_registry_url];
         if (!avro_schema_registry_url.empty())
-        {
             context->getRemoteHostFilter().checkURL(avro_schema_registry_url);
-            context->getHTTPHeaderFilter().checkURIUserInfo(avro_schema_registry_url);
-        }
     }
 
     if (context->getClientInfo().interface == ClientInfo::Interface::HTTP

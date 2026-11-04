@@ -3554,6 +3554,10 @@ void registerStorageURL(StorageFactory & factory)
 
             auto configuration = std::make_shared<StorageWebConfiguration>();
             configuration->is_replayed_definition = is_replayed_definition;
+            /// A stored definition (server startup, short `ATTACH`, `Replicated` database replay, replica recovery) is not
+            /// refused for a userinfo forbidden by <http_forbid_headers>, so that the table still loads. `RESTORE` brings
+            /// the definition from the backup, so it is checked like a fresh one.
+            configuration->check_userinfo = !is_replayed_definition || args.is_restore_from_backup;
             StorageObjectStorageConfiguration::initialize(*configuration, object_storage_args, context, /* with_table_structure */ false);
 
             /// Same contract as `createStorageObjectStorage`: only a user-issued `CREATE` applies the

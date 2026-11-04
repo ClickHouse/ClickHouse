@@ -141,7 +141,8 @@ void StorageWebConfiguration::check(ContextPtr context)
             const Poco::URI uri(url_option.base_url + url_option.query_fragment, false);
             context->getGlobalContext()->getRemoteHostFilter().checkURL(uri);
             /// The userinfo is sent in the `Authorization` header, see `setCredentialsFromURL`.
-            context->getGlobalContext()->getHTTPHeaderFilter().checkURIUserInfo(uri);
+            if (check_userinfo)
+                context->getGlobalContext()->getHTTPHeaderFilter().checkURIUserInfo(uri);
         }
     }
     context->getGlobalContext()->getHTTPHeaderFilter().checkHeaders(headers_from_ast);
