@@ -48,6 +48,7 @@ public:
     void cancelReading() override;
     void setReadProgressCallback(ReadProgressCallbackPtr callback) override;
     void setStepProfiler(StepProfilerPtr step_profiler_) override;
+    void setExceptionCallback(std::function<void()> callback) override;
 
 private:
     ExecutingGraphPtr graph;
@@ -92,6 +93,7 @@ private:
 
     ReadProgressCallbackPtr read_progress_callback;
     StepProfilerPtr step_profiler;
+    std::function<void()> exception_callback;
 
     /// This queue can grow a lot and lead to OOM. That is why we use non-default
     /// allocator for container which throws exceptions in operator new

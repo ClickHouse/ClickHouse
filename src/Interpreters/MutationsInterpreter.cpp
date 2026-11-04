@@ -334,26 +334,18 @@ IsStorageTouched isStorageTouchedByMutations(
     io.pipeline.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
     /// It's actually not a progress callback, but a cancellation check.
     io.pipeline.setProgressCallback(check_operation_is_not_cancelled);
+    executor.setExceptionCallback(std::move(on_exception));
 
     Block block;
-    try
-    {
-        while (block.rows() == 0 && executor.pull(block));
+    while (block.rows() == 0 && executor.pull(block));
 
-        if (!block.rows())
-            return no_rows;
-        if (block.rows() != 1)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "count() expression returned {} rows, not 1", block.rows());
+    if (!block.rows())
+        return no_rows;
+    if (block.rows() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "count() expression returned {} rows, not 1", block.rows());
 
-        Block tmp_block;
-        while (executor.pull(tmp_block));
-    }
-    catch (...)
-    {
-        /// `executor` and `io` wait for the reads still in flight when they are destroyed.
-        on_exception();
-        throw;
-    }
+    Block tmp_block;
+    while (executor.pull(tmp_block));
 
     auto count = (*block.getByName("count()").column)[0].safeGet<UInt64>();
     ProfileEvents::increment(ProfileEvents::MutationAffectedRowsUpperBound, count);

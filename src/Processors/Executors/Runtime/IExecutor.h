@@ -3,6 +3,7 @@
 #include <Processors/IProcessor.h>
 
 #include <atomic>
+#include <functional>
 #include <memory>
 
 namespace DB
@@ -37,6 +38,9 @@ public:
 
     /// Set the profiler of EXPLAIN ANALYZE.
     virtual void setStepProfiler(StepProfilerPtr step_profiler) = 0;
+
+    /// Set a callback called from the thread whose exception cancels the execution, before the other threads are waited for.
+    virtual void setExceptionCallback(std::function<void()> callback) = 0;
 };
 
 using ExecutorPtr = std::shared_ptr<IExecutor>;

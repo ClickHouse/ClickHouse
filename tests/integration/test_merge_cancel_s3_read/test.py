@@ -632,7 +632,8 @@ def test_failed_merge_stops_its_other_s3_reads(cluster, broken_s3, runner, failu
     the second part, after the source of the first part was created. `mutation` is a mutation of
     one part that fails on a read of `a` while another of its reads is in flight
     (`remote_filesystem_read_method = 'threadpool'`), and `mutation-probe` fails the same way in the
-    query that counts the rows the mutation affects.
+    query that counts the rows the mutation affects, in one of its streams while another of its
+    streams is blocked in a read.
     """
     node = cluster.instances["node"]
     via_optimize = runner in ("optimize", "dry-run")
@@ -718,7 +719,14 @@ def test_failed_merge_stops_its_other_s3_reads(cluster, broken_s3, runner, failu
             else:
                 failing_key = a_keys[0]
                 in_flight_keys = b_keys
-            broken_s3.setup_at_object_get(action="no_such_upload", key=failing_key)
+            if runner == "mutation-probe":
+                # The count reads the part in several streams. All of them wait for the sizes of `a`
+                # until the reads of the sizes fail below.
+                broken_s3.setup_at_object_get(
+                    count=1000000, action="slow_down", key=failing_key
+                )
+            else:
+                broken_s3.setup_at_object_get(action="no_such_upload", key=failing_key)
             expected_error = "upload does not exist"
         elif failure == "next-column-setup":
             node.query(f"SYSTEM ENABLE FAILPOINT {SETUP_FAILPOINT}")
@@ -767,6 +775,12 @@ def test_failed_merge_stops_its_other_s3_reads(cluster, broken_s3, runner, failu
             attempts=120,
             sleep_time=1,
         ), "no other read of the merge reached S3, so the assertions below would be vacuous"
+        if runner == "mutation-probe":
+            # The first read of the sizes after this succeeds, and its stream goes on to the data of `a`,
+            # so it is blocked in that read when the next stream fails.
+            broken_s3.setup_at_object_get(
+                after=1, action="no_such_upload", key=failing_key
+            )
         if failure == "source-constructor":
             # Here the read that reached the mock is the one of `id`, held above.
             node.query(f"SYSTEM ENABLE FAILPOINT {SOURCE_FAILPOINT}")

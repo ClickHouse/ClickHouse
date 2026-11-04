@@ -165,6 +165,8 @@ void PipelineExecutor::cancel(IProcessor::CancelReason reason)
     /// The first reason wins.
     auto expected = IProcessor::CancelReason::NotCancelled;
     cancel_reason.compare_exchange_strong(expected, reason);
+    if (reason == IProcessor::CancelReason::Exception && exception_callback)
+        exception_callback();
     finish();
     graph->cancel(reason);
 }
@@ -247,6 +249,11 @@ void PipelineExecutor::setReadProgressCallback(ReadProgressCallbackPtr callback)
 void PipelineExecutor::setStepProfiler(StepProfilerPtr step_profiler_)
 {
     step_profiler = std::move(step_profiler_);
+}
+
+void PipelineExecutor::setExceptionCallback(std::function<void()> callback)
+{
+    exception_callback = std::move(callback);
 }
 
 void PipelineExecutor::finalizeExecution()
