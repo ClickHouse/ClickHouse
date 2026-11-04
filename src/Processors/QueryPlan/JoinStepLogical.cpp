@@ -2920,7 +2920,8 @@ static bool hasEqualityBetweenTables(const JoinOperator & join_operator)
 /// - `ie_join` listed first may claim the join; listed later, it is used only when the join has no
 ///   equality between the tables (otherwise the equalities are claimed as hash join keys);
 /// - `full_sorting_merge` and `parallel_full_sorting_merge` are never reached after `hash`,
-///   `parallel_hash`, `prefer_partial_merge`, `default` or `auto`, because those never decline the join;
+///   `parallel_hash` (parsed as `hash`), `prefer_partial_merge`, `default` or `auto`, because those never
+///   decline the join;
 /// - nor after a `grace_hash` that is sure to take the join (see below).
 /// Any other algorithm may decline, so it does not stop the walk and the check stays fail-closed.
 ///
@@ -2949,8 +2950,7 @@ static bool joinMayBuildFullSort(const JoinSettings & join_settings, const JoinO
             && full_sort_reachable)
             return true;
 
-        if (algorithm == JoinAlgorithm::HASH || algorithm == JoinAlgorithm::PARALLEL_HASH
-            || algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE || algorithm == JoinAlgorithm::DEFAULT
+        if (algorithm == JoinAlgorithm::HASH || algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE || algorithm == JoinAlgorithm::DEFAULT
             || algorithm == JoinAlgorithm::AUTO || (algorithm == JoinAlgorithm::GRACE_HASH && grace_hash_takes_join))
             full_sort_reachable = false;
 
