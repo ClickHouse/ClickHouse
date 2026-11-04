@@ -33,39 +33,6 @@ std::optional<int64_t> getNumber(zkutil::ZooKeeper & keeper, const fs::path & pa
 
     return DB::parse<int64_t>(result);
 }
-
-/// A batched read sends every path as part of a single request, and with tens of
-/// thousands of topic-partition locks such a request can exceed the configurable
-/// Keeper/client max_request_size: servers that enforce the limit without advertising
-/// it close the connection and kill the session, stalling every lock refresh - the
-/// very failure this code removes. Dispatch each read separately instead (one small
-/// request per path, as before), but asynchronously and pipelined: this is what
-/// ZooKeeper::multiRead does on clusters without the MultiRead feature, and it
-/// replaces the previously sequential synchronous round trips.
-struct LockReadResult
-{
-    Coordination::Error error = Coordination::Error::ZOK;
-    String data;
-};
-
-std::vector<LockReadResult> readLockNodes(zkutil::ZooKeeper & keeper, const Strings & lock_paths)
-{
-    std::vector<zkutil::ZooKeeper::FutureGet> futures;
-    futures.reserve(lock_paths.size());
-    for (const auto & path : lock_paths)
-        futures.push_back(keeper.asyncTryGetNoThrow(path));
-
-    std::vector<LockReadResult> responses;
-    responses.reserve(lock_paths.size());
-    /// NoThrow futures always resolve: on session loss the client finalizes every
-    /// pending request with an error response (see ZooKeeper::finalize).
-    for (auto & future : futures)
-    {
-        auto response = future.get();
-        responses.push_back(LockReadResult{response.error, std::move(response.data)});
-    }
-    return responses;
-}
 }
 
 KeeperHandlingConsumer::MessageInfo::MessageInfo(const KafkaConsumer2 & kafka_consumer_)
@@ -301,28 +268,16 @@ KeeperHandlingConsumer::getLockedTopicPartitions()
     auto lock_nodes = keeper->getChildren(keeper_path / "topic_partition_locks");
     std::unordered_set<String> replicas_with_lock;
 
-    Strings lock_paths;
-    lock_paths.reserve(lock_nodes.size());
     for (const auto & lock_name : lock_nodes)
-        lock_paths.push_back(keeper_path / "topic_partition_locks" / lock_name);
-
-    /// Locks are released and re-acquired as replicas rebalance. A lock listed by
-    /// getChildren() may already be gone by the time we read it; such a lock is held
-    /// by no one, so skip it instead of failing the whole polling round. The reads
-    /// are dispatched asynchronously and pipelined, replacing the previously
-    /// sequential synchronous round trips.
-    const auto lock_responses = readLockNodes(*keeper, lock_paths);
-
-    for (size_t i = 0; i < lock_nodes.size(); ++i)
     {
-        const auto & lock_response = lock_responses[i];
-        if (lock_response.error == Coordination::Error::ZNONODE)
+        String lock_owner;
+        /// Locks are released and re-acquired as replicas rebalance. A lock listed by
+        /// getChildren() may already be gone by the time we read it; such a lock is held
+        /// by no one, so skip it instead of failing the whole polling round.
+        if (!keeper->tryGet(keeper_path / "topic_partition_locks" / lock_name, lock_owner))
             continue;
-        if (lock_response.error != Coordination::Error::ZOK)
-            throw Coordination::Exception::fromPath(lock_response.error, lock_paths[i]);
-        replicas_with_lock.insert(lock_response.data);
+        replicas_with_lock.insert(lock_owner);
 
-        const auto & lock_name = lock_nodes[i];
         auto base = lock_name.substr(0, lock_name.size() - 5); // drop ".lock"
         auto sep = base.rfind('_');
         if (sep == String::npos)
