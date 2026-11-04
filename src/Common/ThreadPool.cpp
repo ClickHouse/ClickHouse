@@ -487,7 +487,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
             slot_freed.wait(lock, pred);
 
         /// A freed slot wakes only one scheduler, so pass the wakeup on while slots remain free.
-        /// This covers a scheduler that fails without taking the slot, and a wakeup lost by the libc.
+        /// This covers a scheduler that fails without taking the slot.
         SCOPE_EXIT(
             if (queue_size && scheduled_jobs < queue_size)
                 slot_freed.notify_one();
@@ -1053,11 +1053,6 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
                 {
                     parent_pool.slot_freed.notify_all();
                     parent_pool.wakeUpAllIdleThreadsNoLock(); /// `finished` was set, wake up other threads so they can finish themselves.
-                }
-                else if (parent_pool.scheduled_jobs == 0)
-                {
-                    /// No job is left to wake a scheduler later, so wake all of them in case a `notify_one` was lost (glibc bug 25847).
-                    parent_pool.slot_freed.notify_all();
                 }
                 else
                     parent_pool.slot_freed.notify_one();
