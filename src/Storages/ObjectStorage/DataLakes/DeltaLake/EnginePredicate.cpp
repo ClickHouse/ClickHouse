@@ -116,6 +116,7 @@ namespace
         const DB::ActionsDAG::Node * column;
         Int32 day;
         bool narrows_to_date;
+        bool strips_nullable;
         ComparisonVisitor visitor;
     };
 
@@ -152,10 +153,6 @@ namespace
             || !DB::isDateOrDate32(result_type->getTypeId()))
             return std::nullopt;
 
-        /// Removing nullability can throw; pruning must not hide those rows.
-        if (column->result_type->isNullable() && !conversion->result_type->isNullable())
-            return std::nullopt;
-
         /// Mixed temporal comparisons use a common type; a `Date`/`Date32` literal converts exactly or not at all (rejected below), anything else stays untranslated.
         const auto literal_type = getTypeOrNestedType(literal);
         if (!literal_type->equals(*result_type) && !isString(literal_type)
@@ -177,6 +174,7 @@ namespace
             column,
             static_cast<Int32>(value.safeGet<Int32>()),
             result_type->getTypeId() == DB::TypeIndex::Date,
+            column->result_type->isNullable() && !conversion->result_type->isNullable(),
             visitors.forOperands(swapped)};
     }
 }
@@ -470,19 +468,22 @@ struct ColumnPredicateBuilder
     uintptr_t compare(ComparisonVisitor visitor, Int32 day) const
     {
         /// Comparisons consume expression IDs, so register a fresh column and literal each time.
-        auto column_id = assertValid(
-            KernelUtils::unwrapResult(
-                ffi::visit_expression_column(
-                    visitor_state,
-                    KernelUtils::toDeltaString(column_node->result_name),
-                    &KernelUtils::allocateError),
-                "visit_expression_column"),
-            "column");
+        auto column_id = column();
         auto literal_id = assertValid(
             visitLiteralValue(
                 DB::Field(Int64(day)), column_type->getTypeId(), column_type, visitor_state),
             "date literal");
         return assertValid(visitor(visitor_state, column_id, literal_id), "date comparison");
+    }
+
+    uintptr_t isNull() const
+    {
+        return assertValid(ffi::visit_predicate_is_null(visitor_state, column()), "IS NULL");
+    }
+
+    uintptr_t isNotNull() const
+    {
+        return assertValid(ffi::visit_predicate_not(visitor_state, isNull()), "IS NOT NULL");
     }
 
     uintptr_t andOf(uintptr_t left, uintptr_t right) const
@@ -496,6 +497,18 @@ struct ColumnPredicateBuilder
     }
 
 private:
+    uintptr_t column() const
+    {
+        return assertValid(
+            KernelUtils::unwrapResult(
+                ffi::visit_expression_column(
+                    visitor_state,
+                    KernelUtils::toDeltaString(column_node->result_name),
+                    &KernelUtils::allocateError),
+                "visit_expression_column"),
+            "column");
+    }
+
     uintptr_t junction(
         Junction kind, uintptr_t left, uintptr_t right, std::string_view description) const
     {
@@ -525,21 +538,28 @@ uintptr_t EngineIterator::visitComparisonOverDateConversion(
         iterator_data.state, comparison.column, getTypeOrNestedType(comparison.column)};
 
     auto compared = predicates.compare(comparison.visitor, comparison.day);
-    if (!comparison.narrows_to_date)
+    if (comparison.narrows_to_date)
+    {
+        /// `Date32` -> `Date` can wrap, saturate, or throw outside the Date domain.
+        /// Preserve outside-domain rows: (inside AND comparison) OR (outside AND Unknown).
+        auto is_date_range = predicates.andOf(
+            predicates.compare(ffi::visit_predicate_ge, 0),
+            predicates.compare(ffi::visit_predicate_le, DATE_LUT_MAX_DAY_NUM));
+        auto outside_date_range = predicates.orOf(
+            predicates.compare(ffi::visit_predicate_lt, 0),
+            predicates.compare(ffi::visit_predicate_gt, DATE_LUT_MAX_DAY_NUM));
+        auto unknown_outside_range =
+            predicates.andOf(outside_date_range, visitUntranslated(iterator_data));
+        compared = predicates.orOf(
+            predicates.andOf(is_date_range, compared), unknown_outside_range);
+    }
+
+    if (!comparison.strips_nullable)
         return compared;
 
-    /// `Date32` -> `Date` can wrap, saturate, or throw outside the Date domain.
-    /// Preserve outside-domain rows: (inside AND comparison) OR (outside AND Unknown).
-    auto is_date_range = predicates.andOf(
-        predicates.compare(ffi::visit_predicate_ge, 0),
-        predicates.compare(ffi::visit_predicate_le, DATE_LUT_MAX_DAY_NUM));
-    auto outside_date_range = predicates.orOf(
-        predicates.compare(ffi::visit_predicate_lt, 0),
-        predicates.compare(ffi::visit_predicate_gt, DATE_LUT_MAX_DAY_NUM));
-    auto unknown_outside_range =
-        predicates.andOf(outside_date_range, visitUntranslated(iterator_data));
     return predicates.orOf(
-        predicates.andOf(is_date_range, compared), unknown_outside_range);
+        predicates.andOf(predicates.isNotNull(), compared),
+        predicates.andOf(predicates.isNull(), visitUntranslated(iterator_data)));
 }
 
 uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const DB::ActionsDAG::Node * node)
