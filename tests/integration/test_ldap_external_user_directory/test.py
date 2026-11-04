@@ -230,6 +230,90 @@ def test_push_role_to_other_nodes(ldap_cluster):
     delete_ldap_group(ldap_cluster, group_cn="clickhouse-role_read")
 
 
+def test_mapped_roles_survive_interserver_query(ldap_cluster):
+    """
+    A query forwarded with the cluster secret authenticates the initial user on the remote node
+    without a password, so the remote node cannot fetch the user's LDAP groups. It must keep the
+    roles mapped at the last password login instead of replacing them with only the common ones.
+    """
+    instance1.query("DROP TABLE IF EXISTS dist_one SYNC", user="common_user", password="qwerty")
+    instance1.query("DROP ROLE IF EXISTS role_read", user="common_user", password="qwerty")
+    instance2.query("DROP ROLE IF EXISTS role_read", user="common_user", password="qwerty")
+    try:
+        add_ldap_group(ldap_cluster, group_cn="clickhouse-role_read", member_cn="johndoe")
+        instance1.query("CREATE ROLE role_read", user="common_user", password="qwerty")
+        instance1.query("GRANT SELECT ON *.* TO role_read", user="common_user", password="qwerty")
+        instance2.query("CREATE ROLE role_read", user="common_user", password="qwerty")
+
+        # A password login on instance1 fetches the LDAP groups and maps role_read.
+        assert instance1.query(
+            "SELECT role_name FROM system.current_roles", user="johndoe", password="qwertz"
+        ) == TSV([["role_read"]])
+        assert instance1.query(
+            "SELECT granted_role_name FROM system.role_grants WHERE user_name = 'johndoe'",
+            user="common_user", password="qwerty",
+        ) == TSV([["role_read"]])
+
+        # Reach instance1 over the interserver protocol as johndoe: with prefer_localhost_replica = 0
+        # the shard that points at instance1 itself is also queried through a connection with the
+        # cluster secret, where the user is authenticated by name only.
+        instance1.query(
+            "CREATE TABLE dist_one AS system.one ENGINE = Distributed(test_ldap_cluster, system, one)",
+            user="common_user", password="qwerty",
+        )
+        assert instance1.query(
+            "SELECT count() FROM dist_one SETTINGS prefer_localhost_replica = 0",
+            user="johndoe", password="qwertz",
+        ) == TSV([["2"]])
+
+        # The mapped role must still be granted to the stored user on instance1.
+        assert instance1.query(
+            "SELECT granted_role_name FROM system.role_grants WHERE user_name = 'johndoe'",
+            user="common_user", password="qwerty",
+        ) == TSV([["role_read"]])
+    finally:
+        instance1.query("DROP TABLE IF EXISTS dist_one SYNC", user="common_user", password="qwerty")
+        instance1.query("DROP ROLE IF EXISTS role_read", user="common_user", password="qwerty")
+        instance2.query("DROP ROLE IF EXISTS role_read", user="common_user", password="qwerty")
+        delete_ldap_group(ldap_cluster, group_cn="clickhouse-role_read")
+
+
+def test_role_mapping_change_reaches_open_session(ldap_cluster):
+    """
+    A role dropped from the user's LDAP mapping must leave an already-open session as soon as a
+    login observes the change, not only after some later unrelated change of an access entity.
+    """
+    instance1.query("DROP ROLE IF EXISTS role_a", user="common_user", password="qwerty")
+    instance1.query("DROP ROLE IF EXISTS role_b", user="common_user", password="qwerty")
+    try:
+        instance1.query("CREATE ROLE role_a", user="common_user", password="qwerty")
+        instance1.query("CREATE ROLE role_b", user="common_user", password="qwerty")
+        add_ldap_group(ldap_cluster, group_cn="clickhouse-role_a", member_cn="johndoe")
+        add_ldap_group(ldap_cluster, group_cn="clickhouse-role_b", member_cn="johndoe")
+
+        # Open a session that maps both roles and keeps its access rights object.
+        session = {"session_id": "ldap_role_mapping_change", "session_timeout": "600"}
+        query = "SELECT role_name FROM system.current_roles ORDER BY role_name"
+        assert instance1.http_query(query, params=session, user="johndoe", password="qwertz") == "role_a\nrole_b\n"
+
+        delete_ldap_group(ldap_cluster, group_cn="clickhouse-role_b")
+        # A separate login observes the dropped group; a fresh login maps only role_a now.
+        assert instance1.query(
+            query, user="johndoe", password="qwertz"
+        ) == TSV([["role_a"]])
+
+        # The earlier session must see the drop too, without any unrelated access change in between.
+        assert instance1.http_query(query, params=session, user="johndoe", password="qwertz") == "role_a\n"
+    finally:
+        instance1.query("DROP ROLE IF EXISTS role_a", user="common_user", password="qwerty")
+        instance1.query("DROP ROLE IF EXISTS role_b", user="common_user", password="qwerty")
+        for group_cn in ("clickhouse-role_a", "clickhouse-role_b"):
+            ldap_cluster.ldap_container.exec_run(
+                ["ldapdelete", "-H", f"ldap://{ldap_cluster.ldap_host}:{ldap_cluster.ldap_port}",
+                 "-D", LDAP_ADMIN_BIND_DN, "-x", "-w", LDAP_ADMIN_PASSWORD, f"cn={group_cn},dc=example,dc=org"]
+            )
+
+
 def test_remote_query_user_does_not_exist_locally(ldap_cluster):
     """
     Check that even if user does not exist locally, using it to execute remote queries is still possible
