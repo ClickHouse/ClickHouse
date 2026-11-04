@@ -15,9 +15,11 @@ SELECT toDateTime(CAST(1e10 AS BFloat16), 'UTC');
 SELECT toDateTime32(CAST(-100 AS BFloat16), 'UTC');
 SELECT toDateTime(CAST(-100 AS BFloat16), 'UTC');
 
--- Numeric inputs saturate regardless of date_time_overflow_behavior.
-SELECT toDateTime32(CAST(1e10 AS BFloat16), 'UTC') SETTINGS date_time_overflow_behavior = 'throw';
-SELECT toDateTime32(CAST(-100 AS BFloat16), 'UTC') SETTINGS date_time_overflow_behavior = 'throw';
+-- Numeric inputs saturate in the default 'ignore' mode and raise an error in the 'throw' mode.
+SELECT toDateTime32(CAST(1e10 AS BFloat16), 'UTC') SETTINGS date_time_overflow_behavior = 'ignore';
+SELECT toDateTime32(CAST(-100 AS BFloat16), 'UTC') SETTINGS date_time_overflow_behavior = 'ignore';
+SELECT toDateTime32(CAST(1e10 AS BFloat16), 'UTC') SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT toDateTime32(CAST(-100 AS BFloat16), 'UTC') SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 
 -- Very large finite values, above the range of time_t after the cast to Float64,
 -- must also saturate instead of hitting an undefined float-to-integer cast.
@@ -41,7 +43,7 @@ SELECT toDate(CAST(1e10 AS BFloat16), 'UTC');
 SELECT toDate(CAST(1e38 AS BFloat16), 'UTC');
 SELECT toDate(CAST(1e300 AS Float64), 'UTC');
 SELECT toDate(CAST(-100 AS BFloat16), 'UTC');
-SELECT toDate(CAST(1e300 AS Float64), 'UTC') SETTINGS date_time_overflow_behavior = 'throw';
+SELECT toDate(CAST(1e300 AS Float64), 'UTC') SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 SELECT toDate(CAST('nan' AS BFloat16), 'UTC'); -- { serverError CANNOT_CONVERT_TYPE }
 SELECT toDate(CAST('inf' AS BFloat16), 'UTC'); -- { serverError CANNOT_CONVERT_TYPE }
 SELECT toDate(CAST('-inf' AS BFloat16), 'UTC'); -- { serverError CANNOT_CONVERT_TYPE }
@@ -63,7 +65,7 @@ SELECT toTime(CAST('-inf' AS BFloat16)); -- { serverError CANNOT_CONVERT_TYPE }
 SELECT toDateTime32(toUInt64(9223372036854775808), 'UTC');
 SELECT toDateTime32(toUInt64(18446744073709551615), 'UTC');
 SELECT toDateTime(toUInt64(9223372036854775808), 'UTC');
-SELECT toDateTime32(toUInt64(9223372036854775808), 'UTC') SETTINGS date_time_overflow_behavior = 'throw';
+SELECT toDateTime32(toUInt64(9223372036854775808), 'UTC') SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 SELECT toDate(toUInt64(9223372036854775808), 'UTC');
 SELECT toDate(toUInt64(18446744073709551615), 'UTC');
 SELECT toTime(toUInt64(9223372036854775808));

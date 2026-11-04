@@ -7,6 +7,7 @@
 #include <Interpreters/Context.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <IO/Archives/ArchiveEntryPositions.h>
 #include <Core/Settings.h>
 #include <Core/Defines.h>
 #include <Storages/ObjectStorage/Utils.h>
@@ -20,6 +21,8 @@ namespace ProfileEvents
 {
     extern const Event ObjectStorageListedObjects;
     extern const Event ObjectStoragePredicateFilteredObjects;
+    extern const Event ObjectStorageQueryConditionCacheSkippedFiles;
+    extern const Event ObjectStorageQueryConditionCacheSkippedRowGroups;
 }
 
 namespace DB
@@ -29,6 +32,7 @@ namespace Setting
 {
     extern const SettingsUInt64 cluster_table_function_buckets_batch_size;
     extern const SettingsMaxThreads max_threads;
+    extern const SettingsBool cluster_table_function_split_by_split_offsets;
 }
 
 static ExpressionActionsPtr getExpressionActions(
@@ -40,7 +44,7 @@ static ExpressionActionsPtr getExpressionActions(
     if (filter.has_value())
     {
         VirtualColumnUtils::buildSetsForDAG(*filter, context_);
-        return std::make_shared<ExpressionActions>(std::move(*filter));
+        return std::make_shared<ExpressionActions>(std::move(*filter), ExpressionActionsSettings(context_));
     }
     return nullptr;
 }
@@ -133,6 +137,7 @@ ObjectIteratorSplitByBuckets::ObjectIteratorSplitByBuckets(
     , storage_id(storage_id_)
     , format_filter_info(std::move(format_filter_info_))
     , bucket_size(context_->getSettingsRef()[Setting::cluster_table_function_buckets_batch_size])
+    , split_by_split_offsets(context_->getSettingsRef()[Setting::cluster_table_function_split_by_split_offsets])
     , min_buckets_per_file(std::max<size_t>(1, min_buckets_per_file_))
     , max_in_flight(std::clamp<size_t>(context_->getSettingsRef()[Setting::max_threads], 1, 32))
     , runner(threadPoolCallbackRunnerUnsafe<std::vector<ObjectInfoPtr>>(getIOThreadPool().get(), ThreadName::BUCKET_SPLITTER))
@@ -170,21 +175,28 @@ std::vector<ObjectInfoPtr> ObjectIteratorSplitByBuckets::split(const ObjectInfoP
             for (size_t i = 0; i < marks.size(); ++i)
                 if (marks[i])
                     matching_row_groups.push_back(i);
+            ProfileEvents::increment(
+                ProfileEvents::ObjectStorageQueryConditionCacheSkippedRowGroups, marks.size() - matching_row_groups.size());
             if (matching_row_groups.empty())
+            {
+                ProfileEvents::increment(ProfileEvents::ObjectStorageQueryConditionCacheSkippedFiles);
                 return {};
+            }
         }
     }
 
-    std::optional<size_t> file_size = object_info->getFileSizeHint();
-    if (!file_size.has_value())
-    {
-        if (auto metadata = object_info->getObjectMetadata(); metadata && metadata->is_fetched && metadata->is_size_known)
-            file_size = metadata->size_bytes;
-    }
-
     std::vector<FileBucketInfoPtr> buckets;
-    if (file_size.has_value())
-        buckets = splitter->splitByByteRanges(bucket_size, min_buckets_per_file, *file_size, object_info->getSplitOffsetsHint());
+    if (split_by_split_offsets && !has_cache_entry)
+    {
+        std::optional<size_t> file_size = object_info->getFileSizeHint();
+        if (!file_size.has_value())
+        {
+            if (auto metadata = object_info->getObjectMetadata(); metadata && metadata->is_fetched && metadata->is_size_known)
+                file_size = metadata->size_bytes;
+        }
+        if (file_size.has_value())
+            buckets = splitter->splitByByteRanges(bucket_size, min_buckets_per_file, *file_size, object_info->getSplitOffsetsHint());
+    }
 
     if (buckets.empty())
     {
@@ -263,7 +275,7 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
 
 String ObjectInfo::getIdentifier(bool include_file_bucket_info) const
 {
-    return getIdentifierForPath(getPath(), include_file_bucket_info);
+    return getArchiveEntryKey(getIdentifierForPath(getPath(), include_file_bucket_info), archive_entry_index);
 }
 
 String ObjectInfo::getIdentifierForPath(const String & path, bool include_file_bucket_info) const

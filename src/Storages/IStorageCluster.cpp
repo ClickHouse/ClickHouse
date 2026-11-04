@@ -1,6 +1,8 @@
 #include <Storages/IStorageCluster.h>
 
 #include <Common/Exception.h>
+#include <Client/ConnectionPoolWithFailover.h>
+#include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 #include <Core/QueryProcessingStage.h>
 #include <IO/ConnectionTimeouts.h>
@@ -8,6 +10,7 @@
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
+#include <Planner/Utils.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
@@ -18,10 +21,12 @@
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/IStorage.h>
+#include <Storages/removeGroupingFunctionSpecializations.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Interpreters/PreparedSets.h>
+#include <Interpreters/Set.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -81,7 +86,17 @@ bool isSerializableFilterNode(const ActionsDAG::Node & node, const std::unordere
     if (node.type == ActionsDAG::ActionType::COLUMN)
     {
         const auto * column_set = node.column ? checkAndGetColumn<ColumnSet>(&node.column->getDataColumn()) : nullptr;
-        return !column_set || typeid_cast<const FutureSetFromTuple *>(column_set->getData().get());
+        if (!column_set)
+            return true;
+        const auto & future_set = column_set->getData();
+        if (typeid_cast<const FutureSetFromTuple *>(future_set.get()))
+            return true;
+        if (typeid_cast<const FutureSetFromSubquery *>(future_set.get()))
+        {
+            auto set = future_set->get();
+            return set && set->hasExplicitSetElements() && !set->isTruncated();
+        }
+        return false;
     }
     for (const auto * child : node.children)
         if (!isSerializableFilterNode(*child, replica_columns))
@@ -120,7 +135,7 @@ void ReadFromCluster::applyFilters(ActionDAGNodes added_filter_nodes)
 
     pushed_down_filter.clear();
     const auto * select = query_to_send->as<ASTSelectQuery>();
-    if (filter_actions_dag && !filter_actions_dag->getOutputs().empty() && select && select->select())
+    if (storage->isObjectStorage() && filter_actions_dag && !filter_actions_dag->getOutputs().empty() && select && select->select())
     {
         const auto & header_columns = getOutputHeader()->getColumnsWithTypeAndName();
         const auto & select_expressions = select->select()->children;
@@ -176,12 +191,16 @@ void IStorageCluster::read(
     /// Calculate the header. This is significant, because some columns could be thrown away in some cases like query with count(*)
 
     SharedHeader sample_block;
-    ASTPtr query_to_send = query_info.query;
+    /// The replicas re-analyze this query, so it must not name CTEs or `grouping` specializations of the initiator's query tree.
+    auto query_tree_to_send = query_info.query_tree->clone();
+    removeGroupingFunctionSpecializations(query_tree_to_send);
+    ASTPtr query_to_send = queryNodeToDistributedSelectQuery(query_tree_to_send);
 
-    sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query_info.query, context, SelectQueryOptions(processed_stage));
+    sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(
+        query_to_send, context, SelectQueryOptions(processed_stage).positionalArgumentsAlreadyResolved());
 
     /// The nodes that will run the query are the nodes of this storage's own cluster.
-    updateQueryToSendIfNeeded(query_to_send, storage_snapshot, context, getClusterName());
+    updateQueryToSendIfNeeded(query_to_send, storage_snapshot, context, getClusterName(), /*add_structure_and_format=*/true);
 
     RestoreQualifiedNamesVisitor::Data data;
     data.distributed_table = DatabaseAndTableWithAlias(*getTableExpression(query_info.query->as<ASTSelectQuery &>(), 0));
@@ -235,6 +254,8 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
 
     ProfileEvents::increment(ProfileEvents::Shards, max_replicas_to_use);
 
+    const auto table_read_on_replicas = storage->getTableReadOnReplicas();
+
     for (const auto & shard_info : cluster->getShardsInfo())
     {
         if (pipes.size() >= max_replicas_to_use)
@@ -242,20 +263,43 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
 
         /// We're taking all replicas as shards,
         /// so each shard will have only one address to connect to.
-        auto try_results = shard_info.pool->getMany(
-            timeouts,
-            current_settings,
-            PoolMode::GET_ONE,
-            {},
-            /*skip_unavailable_endpoints=*/true);
+        IConnectionPool::Entry connection;
+        if (table_read_on_replicas)
+        {
+            /// A replica without the table is not used, and neither is an older one, which would read all of its files.
+            auto try_results = shard_info.pool->getManyChecked(
+                timeouts,
+                current_settings,
+                PoolMode::GET_ONE,
+                *table_read_on_replicas,
+                /*async_callback=*/ {},
+                /*skip_unavailable_endpoints=*/ true);
 
-        if (try_results.empty())
-            continue;
+            if (try_results.empty()
+                || try_results.front().entry->getWorkerClusterFunctionProtocolVersion() < DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_TABLE_READS)
+                continue;
+
+            connection = std::move(try_results.front().entry);
+        }
+        else
+        {
+            auto try_results = shard_info.pool->getMany(
+                timeouts,
+                current_settings,
+                PoolMode::GET_ONE,
+                {},
+                /*skip_unavailable_endpoints=*/true);
+
+            if (try_results.empty())
+                continue;
+
+            connection = std::move(try_results.front());
+        }
 
         IConnections::ReplicaInfo replica_info{.number_of_current_replica = replica_index++};
 
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-            std::vector<IConnectionPool::Entry>{try_results.front()},
+            std::vector<IConnectionPool::Entry>{std::move(connection)},
             query_to_send->formatWithSecretsOneLine(),
             getOutputHeader(),
             new_context,
@@ -279,6 +323,13 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
         pipe.addSimpleTransform([&](const SharedHeader & header) { return std::make_shared<UnmarshallBlocksTransform>(header); });
         pipes.emplace_back(std::move(pipe));
     }
+
+    if (pipes.empty() && table_read_on_replicas)
+        throw Exception(
+            ErrorCodes::ALL_CONNECTION_TRIES_FAILED,
+            "Cannot read table {} with parallel replicas: no replica of cluster {} is available, has the table and supports reading it",
+            table_read_on_replicas->getFullName(),
+            storage->getClusterName());
 
     if (pipes.empty())
         throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "Cannot connect to any replica for query execution");
@@ -320,6 +371,8 @@ ContextPtr ReadFromCluster::updateSettings(const Settings & settings)
 
     auto new_context = Context::createCopy(context);
     new_context->setSettings(new_settings);
+    /// The workers are leaves of a distributed read, like the shards of the `Distributed` fan-out.
+    new_context->increaseDistributedDepth();
     return new_context;
 }
 

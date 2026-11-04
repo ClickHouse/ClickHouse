@@ -1,0 +1,23 @@
+<test>
+    <!-- Analysis of a `bloom_filter` index on a part compressed with `ZSTD(3)`, which merges of 100 MB and more use
+         by default. The perf comparison pins the default codec to `LZ4`, so the table sets it explicitly. The indexed
+         column is not in the sorting key and has a distinct value in every row, so the index is checked on every granule. -->
+    <create_query>
+        CREATE TABLE bloom_filter_zstd
+        (
+            id UInt64,
+            user_id UInt64,
+            INDEX idx_user_id user_id TYPE bloom_filter(0.01) GRANULARITY 1
+        )
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS default_compression_codec = 'ZSTD(3)', index_granularity = 1024
+    </create_query>
+
+    <fill_query>INSERT INTO bloom_filter_zstd SELECT number, intHash64(number) FROM numbers(20000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE bloom_filter_zstd FINAL</fill_query>
+
+    <query>SELECT count() FROM bloom_filter_zstd WHERE user_id = intHash64(12345)</query>
+    <query>SELECT count() FROM bloom_filter_zstd WHERE user_id IN (SELECT intHash64(number * 1000) FROM numbers(10))</query>
+
+    <drop_query>DROP TABLE IF EXISTS bloom_filter_zstd</drop_query>
+</test>

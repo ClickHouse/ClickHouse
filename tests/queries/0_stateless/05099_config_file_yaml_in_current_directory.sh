@@ -23,14 +23,14 @@ echo "-- ./config.yaml"
 write_config "$TESTDIR/cwd/config.yaml" 1001
 (
     cd "$TESTDIR/cwd" || exit 1
-    HOME="$TESTDIR/home" "$CLICKHOUSE_LOCAL" --query "SELECT value FROM system.server_settings WHERE name = 'max_thread_pool_size'"
+    HOME="$TESTDIR/home" $CLICKHOUSE_LOCAL --query "SELECT value FROM system.server_settings WHERE name = 'max_thread_pool_size'"
 )
 
 echo "-- ./config.yml"
 mv "$TESTDIR/cwd/config.yaml" "$TESTDIR/cwd/config.yml"
 (
     cd "$TESTDIR/cwd" || exit 1
-    HOME="$TESTDIR/home" "$CLICKHOUSE_LOCAL" --query "SELECT value FROM system.server_settings WHERE name = 'max_thread_pool_size'"
+    HOME="$TESTDIR/home" $CLICKHOUSE_LOCAL --query "SELECT value FROM system.server_settings WHERE name = 'max_thread_pool_size'"
 )
 
 echo "-- ./config.xml wins over ./config.yaml"
@@ -43,13 +43,13 @@ cat > "$TESTDIR/cwd/config.xml" <<EOF
 EOF
 (
     cd "$TESTDIR/cwd" || exit 1
-    HOME="$TESTDIR/home" "$CLICKHOUSE_LOCAL" --query "SELECT value FROM system.server_settings WHERE name = 'max_thread_pool_size'"
+    HOME="$TESTDIR/home" $CLICKHOUSE_LOCAL --query "SELECT value FROM system.server_settings WHERE name = 'max_thread_pool_size'"
 )
 
 echo "-- --config-file wins over the current directory"
 (
     cd "$TESTDIR/cwd" || exit 1
-    HOME="$TESTDIR/home" "$CLICKHOUSE_LOCAL" --config-file "$TESTDIR/cwd/config.yaml" \
+    HOME="$TESTDIR/home" $CLICKHOUSE_LOCAL --config-file "$TESTDIR/cwd/config.yaml" \
         --query "SELECT value FROM system.server_settings WHERE name = 'max_thread_pool_size'"
 )
 rm -f "$TESTDIR/cwd/config.xml" "$TESTDIR/cwd/config.yaml"
@@ -59,5 +59,5 @@ mkdir -p "$TESTDIR/home/.clickhouse-local"
 write_config "$TESTDIR/home/.clickhouse-local/config.yaml" 1004
 (
     cd "$TESTDIR/cwd" || exit 1
-    HOME="$TESTDIR/home" "$CLICKHOUSE_LOCAL" --query "SELECT value FROM system.server_settings WHERE name = 'max_thread_pool_size'"
+    HOME="$TESTDIR/home" $CLICKHOUSE_LOCAL --query "SELECT value FROM system.server_settings WHERE name = 'max_thread_pool_size'"
 )

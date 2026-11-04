@@ -10,13 +10,13 @@ doc_type: 'reference'
 
 リモートの PostgreSQL サーバーに格納されているデータに対して、`SELECT` および `INSERT` クエリを実行できます。
 
-## 構文
+## 構文 {#syntax}
 
 ```sql
 postgresql({host:port, database, table, user, password[, schema, [, on_conflict]] | named_collection[, option=value [,..]]} [, SETTINGS name=value, ...])
 ```
 
-## 引数
+## 引数 {#arguments}
 
 | 引数            | 説明                                                                                   |
 | ------------- | ------------------------------------------------------------------------------------ |
@@ -32,7 +32,7 @@ postgresql({host:port, database, table, user, password[, schema, [, on_conflict]
 
 TLS/SSL パラメータは `libpq` に転送され、named collection のキーまたは末尾のキー・バリュー引数として指定できます。指定できるのは `sslmode` (`disable`、`allow`、`prefer`、`require`、`verify-ca`、`verify-full`。未設定の場合は `libpq` のデフォルトである `prefer` が適用されます) と、2 つの形式のいずれかで指定する証明書および秘密鍵です。`sslrootcert` (CA 証明書、または特別な値 `system`) 、`sslcert` (クライアント証明書) 、`sslkey` (クライアント秘密鍵) はサーバーローカルファイルへのパスであり、サーバー設定ファイルで定義された named collection でのみ指定できます。代わりに、`sslrootcert_pem`、`sslcert_pem`、`sslkey_pem` には対応するファイルの内容を直接指定できます。たとえば、`postgresql('host:port', 'database', 'table', 'user', 'password', sslmode = 'verify-full', sslrootcert_pem = '...')` のように指定します。これらはパスワードと同様に、ログおよび `SHOW` クエリではマスクされます。
 
-## 戻り値
+## 戻り値 {#returned-value}
 
 元の PostgreSQL テーブルと同じカラムを持つテーブルオブジェクト。
 
@@ -40,7 +40,7 @@ TLS/SSL パラメータは `libpq` に転送され、named collection のキー�
   テーブル関数 `postgresql(...)` を、カラム名リスト付きのテーブル名と区別するには、`INSERT` クエリでキーワード `FUNCTION` または `TABLE FUNCTION` を使用する必要があります。以下の例を参照してください。
 </Note>
 
-## 設定
+## 設定 {#settings}
 
 `postgresql` テーブル関数 (および[`PostgreSQL`](/ja/reference/engines/table-engines/integrations/postgresql)テーブルエンジン) で使用される接続プールは、末尾に `SETTINGS` 句を付けて設定できます。設定が指定されていない場合は、対応するクエリレベルの `postgresql_*` 設定の値がデフォルトで使用されます。`postgresql_connection_pool_*` および `postgresql_connection_attempt_timeout` の各設定とそのデフォルト値の一覧については、テーブルエンジンの[設定](/ja/reference/engines/table-engines/integrations/postgresql#settings)セクションを参照してください。
 
@@ -50,7 +50,7 @@ TLS/SSL パラメータは `libpq` に転送され、named collection のキー�
 SELECT * FROM postgresql('localhost:5432', 'test', 'test', 'postgresql_user', 'password', SETTINGS postgresql_connection_pool_size = 32);
 ```
 
-## 実装の詳細
+## 実装の詳細 {#implementation-details}
 
 PostgreSQL 側の `SELECT` クエリは、読み取り専用の PostgreSQL トランザクション内で `COPY (SELECT ...) TO STDOUT` として実行され、各 `SELECT` クエリの後にコミットされます。
 
@@ -58,13 +58,21 @@ PostgreSQL 側の `SELECT` クエリは、読み取り専用の PostgreSQL ト�
 
 すべての JOIN、集計、ソート、`IN [ array ]` 条件、および `LIMIT` サンプリング制約は、PostgreSQL へのクエリが完了した後にのみ ClickHouse で実行されます。
 
-## テーブル名の代わりにクエリを渡す
+## テーブル名の代わりにクエリを渡す {#passing-a-query}
 
 テーブル名の代わりに、第 3 引数には、そのまま PostgreSQL に渡される `SELECT` クエリを指定できます。生成されるテーブルの構造は、クエリ結果から推論されます。クエリは、サブクエリとして記述することも、`query` 関数でラップすることもできます。
 
 ```sql
 SELECT * FROM postgresql('localhost:5432', 'test', (SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0), 'user', 'password');
 SELECT * FROM postgresql('localhost:5432', 'test', query('SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0'), 'user', 'password');
+```
+
+クエリの受け渡しはバージョン 26.7 以降でサポートされています。ClickHouse はクエリを PostgreSQL に送信する前に `SELECT ... FROM (<query>)` でラップするため、クエリの末尾にセミコロンを付けないでください。`schema` 引数は渡されたクエリには適用されないため、代わりにクエリ内でテーブル名を修飾してください。
+
+[例](#examples)の `mypg` のような[名前付きコレクション](/ja/concepts/features/configuration/server-config/named-collections)を使用する場合は、`table` の代わりに `query` キーでクエリを渡します。クエリはコレクション自体に指定することも、キー・バリュー形式の引数として指定することもできます。`query` と `table` を同時に指定することはできません。
+
+```sql
+SELECT * FROM postgresql(mypg, query = 'SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0');
 ```
 
 これは、JOIN、集計、その他のあらゆる処理を PostgreSQL にプッシュダウンするのに役立ちます。このようなテーブルは読み取り専用で、これに対する `INSERT` は許可されていません。同じ構文は [`PostgreSQL`](/ja/reference/engines/table-engines/integrations/postgresql) テーブルエンジンでもサポートされています。
@@ -97,7 +105,7 @@ SELECT name FROM postgresql(`postgres1:5431|postgres2:5432`, 'postgres_database'
 
 PostgreSQL の Dictionary ソースで、レプリカの優先度をサポートしています。map 内の数値が大きいほど優先度は低くなります。最も高い優先度は `0` です。
 
-## 例
+## 例 {#examples}
 
 PostgreSQL のテーブル：
 
@@ -175,12 +183,12 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
         ENGINE PostgreSQL('localhost:5432', 'clickhouse', 'nice.table', 'postgrsql_user', 'password', 'nice.schema');
 ```
 
-## 関連
+## 関連 {#related}
 
 * [PostgreSQL テーブルエンジン](/ja/reference/engines/table-engines/integrations/postgresql)
 * [PostgreSQL を Dictionary ソースとして使用する](/ja/reference/statements/create/dictionary/sources/postgresql)
 
-### PeerDB を使用した Postgres データのレプリケーションまたは移行
+### PeerDB を使用した Postgres データのレプリケーションまたは移行 {#replicating-or-migrating-postgres-data-with-peerdb}
 
 > テーブル関数に加えて、ClickHouse の [PeerDB](https://docs.peerdb.io/introduction) を使って、Postgres から ClickHouse への継続的なデータパイプラインを構築することもできます。PeerDB は、CDC (変更データキャプチャ) を使用して Postgres から ClickHouse にデータをレプリケートするために専用設計されたツールです。
 
