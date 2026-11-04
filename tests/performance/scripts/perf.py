@@ -89,6 +89,7 @@ SAMPLED_SPLITS = 10000
 TIMEOUT_EXCEEDED = 159
 UNKNOWN_TABLE = 60
 UNKNOWN_DATABASE = 81
+COVERAGE_SETUP_MAX_QUERY_SECONDS = 30 * 60
 
 
 def stat_threshold(left_times, right_times):
@@ -979,6 +980,12 @@ servers = [
 ]
 # Setup statements like `OPTIMIZE ... FINAL` are silent for long; raise the 300 s default under `--long`.
 driver_options = {"send_receive_timeout": 30 * 60} if args.long else {}
+if args.coverage_output:
+    # LLVM instrumentation makes large fills slower. Wait past the server's
+    # setup or query limit so it can return its timeout exception.
+    driver_options["send_receive_timeout"] = max(
+        COVERAGE_SETUP_MAX_QUERY_SECONDS, args.prewarm_max_query_seconds
+    ) + 60
 # Force settings_is_important to fail queries on unknown settings.
 all_connections = [
     clickhouse_driver.Client(**server, settings_is_important=True, **driver_options) for server in servers
@@ -1352,7 +1359,11 @@ if not args.use_existing_tables:
     def do_create(connection, index, queries):
         for q, tolerate_on_reference in queries:
             try:
-                connection.execute(q)
+                if coverage:
+                    # Override the normal profile's 300 s limit for setup only.
+                    connection.execute(q, settings={"max_execution_time": COVERAGE_SETUP_MAX_QUERY_SECONDS})
+                else:
+                    connection.execute(q)
                 print(f"create\t{index}\t{connection.last_query.elapsed}\t{tsv_escape(q)}")
             except Exception:
                 # Failures on any server other than the reference (connection 0), or of setup queries without the opt-out, stay fatal.

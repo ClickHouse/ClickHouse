@@ -206,6 +206,12 @@ timing job's bulk rewrite, which is too expensive with LLVM instrumentation.
 The manifest records `dataset_layout=prebuilt`; test-defined setup and writes
 still run under coverage.
 
+Coverage setup and fill statements have a 30-minute execution limit. The client
+socket timeout is one minute longer than the larger of that limit and the query
+execution limit. The CI wrapper allows 10 minutes per query statement (unless
+the XML test specifies `max_query_seconds`), one hour per test, and six hours
+per shard, including a 20-minute export reserve.
+
 To collect just performance coverage on a PR branch, dispatch the existing
 workflow with `suite=performance` (the scheduled run still collects all suites):
 
