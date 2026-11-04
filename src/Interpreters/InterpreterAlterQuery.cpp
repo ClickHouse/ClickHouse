@@ -117,9 +117,6 @@ void checkAddedIndexPermissions(ASTAlterQuery & alter, const StoragePtr & table,
     if (table)
         metadata = table->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
 
-    static const ColumnsDescription no_columns;
-    const ColumnsDescription & columns = metadata ? metadata->getColumns() : no_columns;
-
     bool adds_transform = false;
     for (const auto & child : alter.command_list->children)
     {
