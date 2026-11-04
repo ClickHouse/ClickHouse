@@ -127,6 +127,7 @@ QueryTreeNodePtr SortNode::cloneImpl() const
     /// clone machinery does not reproduce it. The planner reads it (`PlannerSorting`) and it appears
     /// in `EXPLAIN`, so a clone must carry it explicitly.
     result->column_name = column_name;
+    result->projection_index = projection_index;
     return result;
 }
 

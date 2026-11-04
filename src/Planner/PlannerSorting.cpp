@@ -13,6 +13,7 @@
 #include <Interpreters/convertFieldToType.h>
 
 #include <Analyzer/ConstantNode.h>
+#include <Analyzer/ListNode.h>
 #include <Analyzer/SortNode.h>
 
 #include <Planner/PlannerActionsVisitor.h>
@@ -137,7 +138,10 @@ FillColumnDescription extractWithFillDescription(const SortNode & sort_node, con
 
 }
 
-SortDescription extractSortDescription(const QueryTreeNodePtr & order_by_node, const PlannerContext & planner_context)
+SortDescription extractSortDescription(
+    const QueryTreeNodePtr & order_by_node,
+    const PlannerContext & planner_context,
+    const QueryTreeNodePtr & projection_node)
 {
     auto & order_by_list_node = order_by_node->as<ListNode &>();
 
@@ -148,7 +152,15 @@ SortDescription extractSortDescription(const QueryTreeNodePtr & order_by_node, c
     {
         auto & sort_node_typed = sort_node->as<SortNode &>();
 
-        auto column_name = calculateActionNodeName(sort_node_typed.getExpression(), planner_context);
+        const auto * sort_expression = &sort_node_typed.getExpression();
+        if (projection_node && sort_node_typed.getProjectionIndex())
+        {
+            const auto & projection_nodes = projection_node->as<ListNode &>().getNodes();
+            chassert(*sort_node_typed.getProjectionIndex() < projection_nodes.size());
+            sort_expression = &projection_nodes[*sort_node_typed.getProjectionIndex()];
+        }
+
+        auto column_name = calculateActionNodeName(*sort_expression, planner_context);
         std::shared_ptr<Collator> collator = sort_node_typed.getCollator();
         int direction = sort_node_typed.getSortDirection() == SortDirection::ASCENDING ? 1 : -1;
         int nulls_direction = direction;

@@ -8,7 +8,10 @@ namespace DB
 {
 
 /// Extract sort description from order by node
-SortDescription extractSortDescription(const QueryTreeNodePtr & order_by_node, const PlannerContext & planner_context);
+SortDescription extractSortDescription(
+    const QueryTreeNodePtr & order_by_node,
+    const PlannerContext & planner_context,
+    const QueryTreeNodePtr & projection_node = {});
 
 }
 
