@@ -184,8 +184,9 @@ public:
     }
 
     /// Appends the range in the file, [begin, end), of the compressed blocks that hold the data at `position` in the granule
-    /// `mark`: from its mark to the next mark in the file. If that one starts inside a compressed block, which then holds
-    /// the end of this data too, up to the next mark at a later offset.
+    /// `mark`: from its mark to the mark of the next position in the file. If the next position starts inside a compressed
+    /// block, which then holds the end of this data too, up to the next mark at a later offset. In a stripe of several
+    /// granules, up to the bound that reading the column uses, see `getRightOffsetOneColumn`.
     void addRangeOfPosition(size_t mark, size_t position, CompressedBlockRanges & ranges);
 
 protected:
@@ -193,18 +194,6 @@ protected:
     std::optional<size_t> getLeftOffsetOneColumn(size_t mark, size_t column_position);
     std::pair<size_t, size_t> estimateMarkRangeBytesOneColumn(const MarkRanges & mark_ranges, size_t column_position);
     MarkInCompressedFile getStartOfNextStripeMark(size_t row_index, size_t column_position);
-
-private:
-    struct MarkInFile
-    {
-        MarkInCompressedFile mark;
-        size_t stripe;
-        size_t position;
-        size_t granule;
-        auto operator<=>(const MarkInFile &) const = default;
-    };
-    VectorWithMemoryTracking<MarkInFile> marks_in_file_order;
-    VectorWithMemoryTracking<size_t> stripe_of_granule;
 };
 
 /// Class for reading a single column from file that contains multiple columns

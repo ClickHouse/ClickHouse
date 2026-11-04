@@ -172,9 +172,16 @@ ParquetV3BlockInputFormat::ParquetV3BlockInputFormat(
         format_filter_info = std::make_shared<FormatFilterInfo>();
 }
 
-void ParquetV3BlockInputFormat::initializeIfNeeded()
+void ParquetV3BlockInputFormat::prefetch()
 {
-    if (!reader)
+    if (need_only_count)
+        return;
+    readFileFooterIfNeeded();
+}
+
+void ParquetV3BlockInputFormat::readFileFooterIfNeeded()
+{
+    if (!reader && !reader_with_footer)
     {
         format_filter_info->initKeyConditionOnce(getPort().getHeader());
         parser_shared_resources->initOnce([&]
@@ -195,7 +202,9 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
                 else
                     parser_shared_resources->parsing_runner.initThreadPool(
                         getFormatParsingThreadPool().get(), parser_shared_resources->max_parsing_threads, ThreadName::PARQUET_DECODER, CurrentThread::getGroup());
-
+            });
+        parser_shared_resources->initOpaqueOnce([&]
+            {
                 auto ext = std::make_shared<Parquet::SharedResourcesExt>();
 
                 ext->total_memory_low_watermark = format_settings.parquet.memory_low_watermark;
@@ -203,28 +212,39 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
                 parser_shared_resources->opaque = ext;
             });
 
+        auto new_reader = std::make_unique<Parquet::ReadManager>();
+        new_reader->reader.prefetcher.init(in, read_options, parser_shared_resources);
+        footer_cache_key = getMetadataCacheKey();
+        if (footer_cache_key)
+        {
+            std::tie(footer_cache_cell, footer_cache_hit) = metadata_cache->getOrSetMetadata(
+                *footer_cache_key, [&] { return readFileFooter(new_reader->reader.prefetcher); });
+            new_reader->reader.setFileFooter(footer_cache_cell->footer, footer_cache_cell->column_chunks);
+            if (footer_cache_hit && object_with_metadata->metadata->isEtagUsableAsCacheKey())
+            {
+                metadata_cache_cell = footer_cache_cell;
+                metadata_cache_key = *footer_cache_key;
+            }
+        }
+        else
+        {
+            new_reader->reader.setFileFooter(readFileFooter(new_reader->reader.prefetcher));
+        }
+
+        std::lock_guard lock(reader_mutex);
+        reader_with_footer = std::move(new_reader);
+    }
+}
+
+void ParquetV3BlockInputFormat::initializeIfNeeded()
+{
+    if (!reader)
+    {
+        readFileFooterIfNeeded();
+
         {
             std::lock_guard lock(reader_mutex);
-            reader.emplace();
-            reader->reader.prefetcher.init(in, read_options, parser_shared_resources);
-            auto cache_key = getMetadataCacheKey();
-            ParquetMetadataCache::MappedPtr cache_cell;
-            bool cache_hit = false;
-            if (cache_key)
-            {
-                std::tie(cache_cell, cache_hit) = metadata_cache->getOrSetMetadata(
-                    *cache_key, [&] { return readFileFooter(reader->reader.prefetcher); });
-                reader->reader.setFileFooter(cache_cell->footer, cache_cell->column_chunks);
-                if (cache_hit && object_with_metadata->metadata->isEtagUsableAsCacheKey())
-                {
-                    metadata_cache_cell = cache_cell;
-                    metadata_cache_key = *cache_key;
-                }
-            }
-            else
-            {
-                reader->reader.setFileFooter(readFileFooter(reader->reader.prefetcher));
-            }
+            reader = std::move(reader_with_footer);
             reader->reader.init(read_options, getPort().getHeader(), format_filter_info);
             if (metadata_cache_cell && format_filter_info->keep_filter_column_statistics && format_filter_info->key_condition)
             {
@@ -245,8 +265,9 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
             }
             reader->init(parser_shared_resources, buckets_to_read ? std::optional(buckets_to_read->row_group_ids) : std::nullopt);
             /// Not after the miss that inserted the cell: replacing it would move it to SLRU's protected queue.
-            if (cache_hit)
-                metadata_cache->addColumnChunks(*cache_key, cache_cell, reader->reader.getColumnChunks());
+            if (footer_cache_hit)
+                metadata_cache->addColumnChunks(*footer_cache_key, footer_cache_cell, reader->reader.getColumnChunks());
+            footer_cache_cell.reset();
         }
     }
 }
@@ -393,7 +414,8 @@ Chunk ParquetV3BlockInputFormat::read()
 
 
         auto chunk = getChunkForCount(size_t(footer->metadata.num_rows));
-        chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumbers>(0));
+        if (format_filter_info && format_filter_info->need_row_numbers)
+            chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumbers>(0));
 
         reported_count = true;
         return chunk;
@@ -418,6 +440,8 @@ std::optional<std::pair<std::vector<size_t>, size_t>> ParquetV3BlockInputFormat:
 {
     if (!reader || min_max_from_statistics)
         return std::nullopt;
+    /// A row group skipped by a statistics-only threshold was never checked against the filter, so it may match.
+    const bool top_k_statistics_only = format_filter_info->top_k_filter && !format_filter_info->top_k_filter->filter_rows;
     std::vector<size_t> matched;
     for (const auto & row_group : reader->reader.row_groups)
     {
@@ -434,7 +458,7 @@ std::optional<std::pair<std::vector<size_t>, size_t>> ParquetV3BlockInputFormat:
             }
         }
 
-        if (produced_rows)
+        if (produced_rows || (top_k_statistics_only && row_group.skipped_by_top_k.load()))
             matched.push_back(row_group.row_group_idx);
     }
     return std::make_pair(std::move(matched), reader->reader.file_metadata().row_groups.size());
@@ -455,7 +479,7 @@ bool ParquetV3BlockInputFormat::isTopKFilterApplied() const
 {
     /// The reader installs `__topKFilter` only for a file that stores the sort column.
     return reader && reader->reader.format_filter_info && reader->reader.format_filter_info->top_k_filter
-        && reader->reader.top_k_column_is_read;
+        && reader->reader.format_filter_info->top_k_filter->filter_rows && reader->reader.top_k_column_is_read;
 }
 
 void ParquetV3BlockInputFormat::setBucketsToRead(const FileBucketInfoPtr & buckets_to_read_)
@@ -486,6 +510,7 @@ void ParquetV3BlockInputFormat::resetReadBuffer()
         std::lock_guard lock(reader_mutex);
         if (reader)
             reader->shutdownTasks();
+        reader_with_footer.reset();
     }
     IInputFormat::resetReadBuffer();
 }
@@ -495,6 +520,10 @@ void ParquetV3BlockInputFormat::resetParser()
     {
         std::lock_guard lock(reader_mutex);
         reader.reset();
+        reader_with_footer.reset();
+        footer_cache_key.reset();
+        footer_cache_cell.reset();
+        footer_cache_hit = false;
         min_max_from_statistics = false;
         metadata_cache_cell.reset();
         metadata_cache_key.reset();
