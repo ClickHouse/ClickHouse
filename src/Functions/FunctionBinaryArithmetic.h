@@ -3912,6 +3912,32 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             return false;
     }
 
+    /// `plus`/`minus` of a date and an integer execute the prepared `add*`/`subtract*` function with the date first
+    /// (`executeDateTimeIntervalPlusMinus`); they compile as that function does. An `Interval` argument is not a native value
+    /// and stays interpreted. Returns the built function and the argument order, or nothing.
+    struct IntervalDelegate
+    {
+        FunctionBasePtr function;
+        bool swap = false;
+    };
+
+    IntervalDelegate getIntervalDelegate(const DataTypes & arguments) const
+    {
+        if (!prepared_interval_function || arguments.size() != 2)
+            return {};
+        auto left = removeNullable(arguments[0]);
+        auto right = removeNullable(arguments[1]);
+        const bool swap = !isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(left);
+        if (swap)
+            std::swap(left, right);
+        if (!isNativeInteger(right))
+            return {};
+        auto function = prepared_interval_function->build({{nullptr, left, ""}, {nullptr, right, ""}});
+        if (!function->isCompilable())
+            return {};
+        return {std::move(function), swap};
+    }
+
     bool isCompilableImpl(const DataTypes & arguments, const DataTypePtr & result_type) const override
     {
         if (2 != arguments.size())
@@ -3919,6 +3945,9 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
 
         if (!canBeNativeType(*arguments[0]) || !canBeNativeType(*arguments[1]) || !canBeNativeType(*result_type))
             return false;
+
+        if (prepared_interval_function)
+            return getIntervalDelegate(arguments).function != nullptr;
 
         auto denull_left_type = removeNullable(arguments[0]);
         auto denull_right_type = removeNullable(arguments[1]);
@@ -3967,6 +3996,16 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
     llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & result_type) const override
     {
         chassert(2 == arguments.size());
+
+        if (prepared_interval_function)
+        {
+            auto delegate = getIntervalDelegate({arguments[0].type, arguments[1].type});
+            chassert(delegate.function);
+            ValuesWithType delegate_arguments = arguments;
+            if (delegate.swap)
+                std::swap(delegate_arguments[0], delegate_arguments[1]);
+            return delegate.function->compile(builder, delegate_arguments);
+        }
 
         auto denull_left_type = removeNullable(arguments[0].type);
         auto denull_right_type = removeNullable(arguments[1].type);

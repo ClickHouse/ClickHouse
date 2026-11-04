@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeTime.h>
 #include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeNullable.h>
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -22,6 +23,13 @@
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/parseDateTimeBestEffort.h>
+
+#include "config.h"
+
+#if USE_EMBEDDED_COMPILER
+#    include <DataTypes/Native.h>
+#    include <llvm/IR/IRBuilder.h>
+#endif
 
 
 namespace DB
@@ -1267,6 +1275,70 @@ public:
             arguments[0].type->getName(),
             getName());
     }
+
+#if USE_EMBEDDED_COMPILER
+    /// The transforms that are wrap-around arithmetic on the stored number, without a time zone: `value + delta * unit` in
+    /// `UInt64`, truncated to the result (`AddSecondsImpl`, `AddMinutesImpl`, `AddHoursImpl` of a `DateTime`, `AddDaysImpl`,
+    /// `AddWeeksImpl` of a `Date` or a `Date32`); the `subtract*` transforms negate the delta first, wrapping
+    /// (`SubtractIntervalImpl::negate`). Returns the unit, 0 if the transform is not one of them, and whether it subtracts.
+    struct CompilableInterval
+    {
+        UInt64 unit = 0;
+        bool on_date = false;
+        bool subtract = false;
+    };
+
+    static constexpr CompilableInterval compilableInterval()
+    {
+        constexpr std::string_view transform_name = Transform::name;
+        constexpr bool subtract = transform_name.starts_with("subtract");
+        constexpr std::string_view unit_name = transform_name.substr(subtract ? 8 : 3);
+        if (unit_name == "Seconds")
+            return {1, false, subtract};
+        if (unit_name == "Minutes")
+            return {60, false, subtract};
+        if (unit_name == "Hours")
+            return {3600, false, subtract};
+        if (unit_name == "Days")
+            return {1, true, subtract};
+        if (unit_name == "Weeks")
+            return {7, true, subtract};
+        return {};
+    }
+
+    /// Two arguments (no time zone): a `DateTime` for the units of time, a `Date` or a `Date32` for days and weeks, and an integer
+    /// delta that converts to `Int64` without the `Numeric overflow` of `checkOverflow` (not `UInt64`, not a float).
+    bool isCompilableImpl(const DataTypes & types, const DataTypePtr & result_type) const override
+    {
+        constexpr auto interval = compilableInterval();
+        if constexpr (interval.unit == 0)
+            return false;
+        else
+        {
+            if (types.size() != 2 || !types[0]->equals(*removeNullable(result_type)))
+                return false;
+            const WhichDataType from(types[0]);
+            const WhichDataType delta(types[1]);
+            const bool from_is_compilable = interval.on_date ? (from.isDate() || from.isDate32()) : from.isDateTime();
+            return from_is_compilable && (delta.isNativeInt() || delta.isUInt8() || delta.isUInt16() || delta.isUInt32());
+        }
+    }
+
+    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr &) const override
+    {
+        constexpr auto interval = compilableInterval();
+        auto & b = static_cast<llvm::IRBuilder<> &>(builder);
+        auto * int64_type = b.getInt64Ty();
+        const bool from_is_signed = WhichDataType(arguments[0].type).isDate32();
+        auto * value = from_is_signed ? b.CreateSExt(arguments[0].value, int64_type) : b.CreateZExt(arguments[0].value, int64_type);
+        const bool delta_is_signed = WhichDataType(arguments[1].type).isNativeInt();
+        llvm::Value * delta = delta_is_signed ? b.CreateSExtOrTrunc(arguments[1].value, int64_type) : b.CreateZExtOrTrunc(arguments[1].value, int64_type);
+        if constexpr (interval.subtract)
+            delta = b.CreateSub(b.getInt64(0), delta);
+        auto * result = b.CreateAdd(value, b.CreateMul(delta, b.getInt64(interval.unit)));
+        return b.CreateTrunc(result, arguments[0].value->getType());
+    }
+#endif
 };
 
 }
