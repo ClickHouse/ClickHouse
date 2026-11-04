@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <array>
 #include <string_view>
+#include <Poco/Net/IPAddress.h>
 #include <Poco/Net/SSLManager.h>
 #include <Poco/String.h>
 #include <Poco/URI.h>
@@ -281,30 +282,53 @@ static String resolveGCSEndpoint(const String & endpoint_override)
 /// well. That one does not take precedence over a `RestEndpointOption`, so `getGCSClient` always sets the
 /// option to the value of `resolveGCSEndpoint`: the endpoint vetted by the host filter is then the one used.
 
-std::function<Poco::Net::HTTPClientSession::ProxyConfig()> makeGCSProxyConfigProvider(
+std::function<Poco::Net::HTTPClientSession::ProxyConfig(const Poco::URI &)> makeGCSProxyConfigProvider(
     const std::shared_ptr<ProxyConfigurationResolver> & resolver)
 {
     if (!resolver)
         return {};
 
-    return [resolver] { return proxyConfigurationToPocoProxyConfig(resolver->resolve()); };
+    return [resolver](const Poco::URI &) { return proxyConfigurationToPocoProxyConfig(resolver->resolve()); };
 }
 
-std::function<Poco::Net::HTTPClientSession::ProxyConfig()> makeGCSApplicationDefaultProxyConfigProvider(
-    const std::shared_ptr<ProxyConfigurationResolver> & resolver, const String & metadata_host)
+bool isGCSDirectOnlyMetadataHost(const String & host, const String & gce_metadata_host)
 {
-    if (!resolver)
+    if (Poco::icompare(host, gce_metadata_host) == 0)
+        return true;
+
+    /// A metadata service on a link-local address (169.254.169.254 of GCE, EC2, Azure, ..., and the
+    /// `fe80::/10` range) exists only on the instance's own link, so a proxy cannot reach it.
+    Poco::Net::IPAddress address;
+    if (!Poco::Net::IPAddress::tryParse(host, address))
+        return false;
+    if (address.isLinkLocal())
+        return true;
+
+    /// The IPv6 endpoint of the EC2 instance metadata service is a unique-local address, not a link-local one.
+    Poco::Net::IPAddress aws_imds_ipv6;
+    return Poco::Net::IPAddress::tryParse("fd00:ec2::254", aws_imds_ipv6) && address == aws_imds_ipv6;
+}
+
+std::function<Poco::Net::HTTPClientSession::ProxyConfig(const Poco::URI &)> makeGCSApplicationDefaultProxyConfigProvider(
+    const std::shared_ptr<ProxyConfigurationResolver> & https_resolver,
+    const std::shared_ptr<ProxyConfigurationResolver> & http_resolver,
+    const String & gce_metadata_host)
+{
+    if (!https_resolver && !http_resolver)
         return {};
 
-    /// The transport matches the pattern anchored at the start of the host; anchor the end as well, so
-    /// that only the metadata host itself is exempted, not every host it is a prefix of.
-    const String metadata_host_pattern = RE2::QuoteMeta(metadata_host) + "$";
-    return [resolver, metadata_host_pattern]
+    return [https_resolver, http_resolver, gce_metadata_host](const Poco::URI & uri) -> Poco::Net::HTTPClientSession::ProxyConfig
     {
-        auto proxy = proxyConfigurationToPocoProxyConfig(resolver->resolve());
-        if (!proxy.host.empty())
-            proxy.nonProxyHosts = proxy.nonProxyHosts.empty() ? metadata_host_pattern : proxy.nonProxyHosts + "|" + metadata_host_pattern;
-        return proxy;
+        if (isGCSDirectOnlyMetadataHost(uri.getHost(), gce_metadata_host))
+            return {};
+
+        /// The proxy of the scheme the request actually speaks, as for every other request: an AWS
+        /// `external_account` file, for one, talks plain HTTP to the instance metadata service and HTTPS
+        /// to the Google token endpoints.
+        const auto & resolver = Poco::icompare(uri.getScheme(), "http") == 0 ? http_resolver : https_resolver;
+        if (!resolver)
+            return {};
+        return proxyConfigurationToPocoProxyConfig(resolver->resolve());
     };
 }
 
@@ -810,17 +834,32 @@ std::unique_ptr<gcs::Client> getGCSClient(const GCSObjectStorageSettings & setti
     {
         /// The SDK builds the token REST client of an ADC file (`authorized_user`, `service_account`,
         /// `external_account`, ...) from these options, so without a proxy here a deployment whose
-        /// external connections must go through the proxy could not obtain a token at all. The token
-        /// endpoints of Google are HTTPS, and `google_adc_token_uri` cannot be set without the
-        /// refresh-token triple, so this is the resolver of the `https` scheme. The metadata server of
-        /// the Compute Engine credentials is exempted from the proxy and stays reached directly.
-        auto token_proxy_resolver = settings.token_proxy_resolver;
-        if (!token_proxy_resolver)
-            token_proxy_resolver = ProxyConfigurationResolverProvider::get(
-                gcsProxyProtocol(settings.google_adc_token_uri), context->getConfigRef());
+        /// external connections must go through the proxy could not obtain a token at all. Such a file
+        /// can send requests of either scheme (an AWS `external_account` file asks the EC2 instance
+        /// metadata service over plain HTTP before the Google token exchange over HTTPS), so the proxy
+        /// is chosen per request by its scheme, from the disk-local `<proxy>` of that scheme when the
+        /// disk has one. Metadata services (the GCE/GKE metadata server, or a link-local one such as
+        /// the EC2 instance metadata service) are reached directly.
+        const bool token_scheme_is_https = gcsProxyProtocol(settings.google_adc_token_uri) == ProxyConfiguration::Protocol::HTTPS;
+        auto https_resolver = token_scheme_is_https ? settings.token_proxy_resolver : settings.other_scheme_token_proxy_resolver;
+        auto http_resolver = token_scheme_is_https ? settings.other_scheme_token_proxy_resolver : settings.token_proxy_resolver;
+        if (!https_resolver)
+            https_resolver = ProxyConfigurationResolverProvider::get(ProxyConfiguration::Protocol::HTTPS, context->getConfigRef());
+        if (!http_resolver)
+            http_resolver = ProxyConfigurationResolverProvider::get(ProxyConfiguration::Protocol::HTTP, context->getConfigRef());
         token_request_options.set<::ClickHouse::PocoRestProxyConfigProviderOption>(
-            makeGCSApplicationDefaultProxyConfigProvider(token_proxy_resolver, gc::internal::GceMetadataHostname()));
-        token_request_options.set<::ClickHouse::PocoRestProxyErrorReportOption>(makeGCSProxyErrorReporter(token_proxy_resolver));
+            makeGCSApplicationDefaultProxyConfigProvider(https_resolver, http_resolver, gc::internal::GceMetadataHostname()));
+        /// A failure is reported to both resolvers: each one invalidates only a cached proxy it handed out itself.
+        auto report_https = makeGCSProxyErrorReporter(https_resolver);
+        auto report_http = http_resolver != https_resolver ? makeGCSProxyErrorReporter(http_resolver) : nullptr;
+        token_request_options.set<::ClickHouse::PocoRestProxyErrorReportOption>(
+            [report_https, report_http](const Poco::Net::HTTPClientSession::ProxyConfig & proxy)
+            {
+                if (report_https)
+                    report_https(proxy);
+                if (report_http)
+                    report_http(proxy);
+            });
     }
 
     options.set<gc::UnifiedCredentialsOption>(makeGCSCredentials(settings, service_account_key, std::move(token_request_options)));

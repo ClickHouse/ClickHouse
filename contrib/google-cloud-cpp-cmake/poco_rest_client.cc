@@ -614,7 +614,7 @@ AccountedSession MakeSession(
         options.get<::ClickHouse::PocoRestProxyConfigProviderOption>();
     if (provider) {
       proxy_from_provider = true;
-      provider_proxy = provider();
+      provider_proxy = provider(uri);
     }
   }
   // The proxy configuration the session ends up with, in the exact shape Poco

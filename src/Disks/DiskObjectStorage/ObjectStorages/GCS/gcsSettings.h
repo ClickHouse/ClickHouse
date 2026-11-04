@@ -243,16 +243,24 @@ void validateGCSRefreshTokenTriple(const GCSObjectStorageSettings & settings);
 /// for (`ClickHouse::PocoRestProxyConfigProviderOption`): every request resolves the proxy again, so
 /// a rotating proxy list or a remote resolver behaves the same way it does for S3 and HTTP. Returns
 /// an empty function for a null resolver, which the transport reads as "no proxy".
-std::function<Poco::Net::HTTPClientSession::ProxyConfig()> makeGCSProxyConfigProvider(
+std::function<Poco::Net::HTTPClientSession::ProxyConfig(const Poco::URI &)> makeGCSProxyConfigProvider(
     const std::shared_ptr<ProxyConfigurationResolver> & resolver);
 
-/// The same for the token requests of Application Default Credentials, which go to two kinds of
+/// Whether `host` is a metadata service that has to be reached directly rather than through a proxy: the
+/// GCE/GKE metadata server (`gce_metadata_host`), a link-local address (such as 169.254.169.254, the
+/// metadata service of GCE, EC2 and others), or the IPv6 endpoint of the EC2 instance metadata service.
+bool isGCSDirectOnlyMetadataHost(const String & host, const String & gce_metadata_host);
+
+/// The same for the token requests of Application Default Credentials, which go to several kinds of
 /// destinations: the token endpoints of an ADC file (e.g. the `token_uri` of an `authorized_user` file),
-/// which have to go through the configured proxy like every other external request, and the GCE/GKE
-/// metadata server, which is link-local and must keep being reached directly. So the host of the
-/// metadata server (`metadata_host`) is added to the no-proxy pattern of every resolved proxy.
-std::function<Poco::Net::HTTPClientSession::ProxyConfig()> makeGCSApplicationDefaultProxyConfigProvider(
-    const std::shared_ptr<ProxyConfigurationResolver> & resolver, const String & metadata_host);
+/// which have to go through the configured proxy like every other external request, and metadata
+/// services (`isGCSDirectOnlyMetadataHost`), which must keep being reached directly. The proxy of each
+/// request is resolved for its own scheme, by `https_resolver` or `http_resolver`: an AWS
+/// `external_account` file, for one, makes plain HTTP requests to the EC2 instance metadata service.
+std::function<Poco::Net::HTTPClientSession::ProxyConfig(const Poco::URI &)> makeGCSApplicationDefaultProxyConfigProvider(
+    const std::shared_ptr<ProxyConfigurationResolver> & https_resolver,
+    const std::shared_ptr<ProxyConfigurationResolver> & http_resolver,
+    const String & gce_metadata_host);
 
 /// The other half of that plumbing (`ClickHouse::PocoRestProxyErrorReportOption`): a failed request is
 /// reported back to the resolver that handed the proxy out, which is what makes

@@ -17,6 +17,7 @@
 #include <Poco/Net/Context.h>
 #include <Poco/Net/HTTPClientSession.h>
 #include <Poco/Net/HTTPRequest.h>
+#include <Poco/URI.h>
 
 namespace ClickHouse
 {
@@ -68,12 +69,14 @@ struct PocoRestSslContextProviderOption
 /// Proxy of a single REST request, in the form the Poco session takes it. Upstream's `ProxyOption`
 /// is a fixed value baked into the client, while ClickHouse resolves the proxy per request (the
 /// proxy list rotates, and the remote resolver can hand out a different proxy over time), so the
-/// transport asks for it once per session instead. The provider returns a default-constructed
-/// `ProxyConfig` (empty `host`) to mean "no proxy for this request"; an unset option, or an empty
-/// `std::function`, means the transport falls back to upstream's `ProxyOption`.
+/// transport asks for it once per session instead. The provider gets the URI of the request, so it
+/// can choose the proxy by the actual destination and scheme (a credential may send its requests to
+/// several hosts, e.g. a metadata service that must be reached directly). It returns a
+/// default-constructed `ProxyConfig` (empty `host`) to mean "no proxy for this request"; an unset
+/// option, or an empty `std::function`, means the transport falls back to upstream's `ProxyOption`.
 struct PocoRestProxyConfigProviderOption
 {
-    using Type = std::function<Poco::Net::HTTPClientSession::ProxyConfig()>;
+    using Type = std::function<Poco::Net::HTTPClientSession::ProxyConfig(const Poco::URI &)>;
 };
 
 /// Decides whether a pooled keep-alive session is stale and must not be handed out again. A socket
@@ -127,7 +130,7 @@ struct PocoRestProxyErrorReportOption
 /// resolver. Unset means the token requests use the storage options.
 struct PocoRestTokenProxyConfigProviderOption
 {
-    using Type = std::function<Poco::Net::HTTPClientSession::ProxyConfig()>;
+    using Type = std::function<Poco::Net::HTTPClientSession::ProxyConfig(const Poco::URI &)>;
 };
 
 struct PocoRestTokenProxyErrorReportOption

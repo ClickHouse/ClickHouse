@@ -4,10 +4,15 @@
 
 #include <Disks/DiskObjectStorage/ObjectStorages/GCS/gcsSettings.h>
 #include <Common/ProxyListConfigurationResolver.h>
-#include <Poco/RegularExpression.h>
+#include <Poco/URI.h>
 #include <gtest/gtest.h>
 
 using namespace DB;
+
+namespace
+{
+const Poco::URI storage_uri("https://storage.googleapis.com/storage/v1/b/bucket/o");
+}
 
 /// The native GCS client hands the Poco-based REST transport a callback instead of a fixed proxy, so
 /// that every request resolves the proxy again — a rotating list has to rotate, and a resolver that
@@ -28,7 +33,7 @@ TEST(GCSProxy, TranslatesTheResolvedConfiguration)
     auto provider = makeGCSProxyConfigProvider(resolver);
     ASSERT_TRUE(static_cast<bool>(provider));
 
-    const auto proxy = provider();
+    const auto proxy = provider(storage_uri);
     EXPECT_EQ(proxy.host, "proxy1");
     EXPECT_EQ(proxy.port, 3128);
     EXPECT_EQ(proxy.protocol, "http");
@@ -48,9 +53,9 @@ TEST(GCSProxy, ResolvesOnEveryCall)
     auto provider = makeGCSProxyConfigProvider(resolver);
     ASSERT_TRUE(static_cast<bool>(provider));
 
-    EXPECT_EQ(provider().host, "proxy1");
-    EXPECT_EQ(provider().host, "proxy2");
-    EXPECT_EQ(provider().host, "proxy1");
+    EXPECT_EQ(provider(storage_uri).host, "proxy1");
+    EXPECT_EQ(provider(storage_uri).host, "proxy2");
+    EXPECT_EQ(provider(storage_uri).host, "proxy1");
 }
 
 TEST(GCSProxy, EmptyListMeansDirectConnection)
@@ -62,42 +67,63 @@ TEST(GCSProxy, EmptyListMeansDirectConnection)
     ASSERT_TRUE(static_cast<bool>(provider));
 
     /// An empty host is what the transport reads as "no proxy for this request".
-    EXPECT_TRUE(provider().host.empty());
+    EXPECT_TRUE(provider(storage_uri).host.empty());
 }
 
-/// The token requests of Application Default Credentials go through the proxy, except those to the
-/// GCE/GKE metadata server, which has to be reached directly.
-TEST(GCSProxy, ApplicationDefaultExemptsTheMetadataServer)
+/// The token requests of Application Default Credentials go through the proxy of their own scheme, except
+/// those to a metadata service, which has to be reached directly.
+TEST(GCSProxy, ApplicationDefaultExemptsMetadataServices)
 {
-    EXPECT_FALSE(static_cast<bool>(makeGCSApplicationDefaultProxyConfigProvider(nullptr, "metadata.google.internal")));
+    EXPECT_FALSE(static_cast<bool>(makeGCSApplicationDefaultProxyConfigProvider(nullptr, nullptr, "metadata.google.internal")));
 
-    auto resolver = std::make_shared<ProxyListConfigurationResolver>(
-        std::vector<Poco::URI>{Poco::URI("http://proxy1:3128")},
-        ProxyConfiguration::Protocol::HTTPS,
-        R"(localhost)");
+    auto https_resolver = std::make_shared<ProxyListConfigurationResolver>(
+        std::vector<Poco::URI>{Poco::URI("http://https-proxy:3128")}, ProxyConfiguration::Protocol::HTTPS, "");
+    auto http_resolver = std::make_shared<ProxyListConfigurationResolver>(
+        std::vector<Poco::URI>{Poco::URI("http://http-proxy:3128")}, ProxyConfiguration::Protocol::HTTP, "");
 
-    auto provider = makeGCSApplicationDefaultProxyConfigProvider(resolver, "metadata.google.internal");
+    auto provider = makeGCSApplicationDefaultProxyConfigProvider(https_resolver, http_resolver, "metadata.google.internal");
     ASSERT_TRUE(static_cast<bool>(provider));
 
-    const auto proxy = provider();
-    EXPECT_EQ(proxy.host, "proxy1");
-    EXPECT_EQ(proxy.nonProxyHosts, R"(localhost|metadata\.google\.internal$)");
+    EXPECT_EQ(provider(Poco::URI("https://oauth2.googleapis.com/token")).host, "https-proxy");
+    EXPECT_EQ(provider(Poco::URI("http://token.example.com/token")).host, "http-proxy");
 
-    const auto match = [&](const std::string & host)
-    {
-        return Poco::RegularExpression::match(
-            host, proxy.nonProxyHosts, Poco::RegularExpression::RE_CASELESS | Poco::RegularExpression::RE_ANCHORED);
-    };
-    EXPECT_TRUE(match("metadata.google.internal"));
-    EXPECT_TRUE(match("localhost"));
-    EXPECT_FALSE(match("oauth2.googleapis.com"));
-    EXPECT_FALSE(match("metadata.google.internal.example.com"));
+    /// The GCE/GKE metadata server, and only the host itself.
+    EXPECT_TRUE(provider(Poco::URI("http://metadata.google.internal/computeMetadata/v1/")).host.empty());
+    EXPECT_TRUE(provider(Poco::URI("http://METADATA.google.internal/computeMetadata/v1/")).host.empty());
+    EXPECT_EQ(provider(Poco::URI("http://metadata.google.internal.example.com/")).host, "http-proxy");
 
-    /// No proxy configured: nothing to exempt from, the request goes out directly anyway.
+    /// The EC2 instance metadata service an AWS `external_account` file asks (IPv4 and IPv6), and any other
+    /// link-local address.
+    EXPECT_TRUE(provider(Poco::URI("http://169.254.169.254/latest/api/token")).host.empty());
+    EXPECT_TRUE(provider(Poco::URI("http://[fd00:ec2::254]/latest/meta-data/")).host.empty());
+    EXPECT_TRUE(provider(Poco::URI("http://169.254.170.2/v2/credentials")).host.empty());
+    EXPECT_TRUE(provider(Poco::URI("http://[fe80::1]/")).host.empty());
+    EXPECT_EQ(provider(Poco::URI("http://169.255.169.254/")).host, "http-proxy");
+}
+
+/// Only an `https_proxy` configured: a plain HTTP request has no proxy of its scheme and goes out directly,
+/// instead of taking the HTTPS one.
+TEST(GCSProxy, ApplicationDefaultUsesTheProxyOfTheRequestScheme)
+{
+    auto https_resolver = std::make_shared<ProxyListConfigurationResolver>(
+        std::vector<Poco::URI>{Poco::URI("http://https-proxy:3128")}, ProxyConfiguration::Protocol::HTTPS, "");
+    auto http_resolver = std::make_shared<ProxyListConfigurationResolver>(
+        std::vector<Poco::URI>{}, ProxyConfiguration::Protocol::HTTP, "");
+
+    auto provider = makeGCSApplicationDefaultProxyConfigProvider(https_resolver, http_resolver, "metadata.google.internal");
+    EXPECT_EQ(provider(Poco::URI("https://sts.googleapis.com/v1/token")).host, "https-proxy");
+    EXPECT_TRUE(provider(Poco::URI("http://imds.example.com/latest/meta-data/")).host.empty());
+
+    /// No resolver of a scheme at all means a direct connection for it as well.
+    auto https_only = makeGCSApplicationDefaultProxyConfigProvider(https_resolver, nullptr, "metadata.google.internal");
+    EXPECT_TRUE(https_only(Poco::URI("http://imds.example.com/")).host.empty());
+
+    /// No proxy configured for either scheme: everything goes out directly.
     auto direct = makeGCSApplicationDefaultProxyConfigProvider(
         std::make_shared<ProxyListConfigurationResolver>(std::vector<Poco::URI>{}, ProxyConfiguration::Protocol::HTTPS, ""),
+        nullptr,
         "metadata.google.internal");
-    EXPECT_TRUE(direct().host.empty());
+    EXPECT_TRUE(direct(Poco::URI("https://oauth2.googleapis.com/token")).host.empty());
 }
 
 /// Two storages that resolve their proxy differently must not share one client: the transport
