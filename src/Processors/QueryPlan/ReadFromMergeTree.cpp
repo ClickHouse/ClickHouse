@@ -3970,7 +3970,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                 vector_search_parameters,
                 top_k_filter_info,
                 allow_top_k_prewhere_query_condition_cache_,
-                result.sampling.use_sampling,
+                /*use_sampling=*/ result.sampling.use_sampling || result.sampling.use_bernoulli_sampling,
                 mutations_snapshot,
                 *indexes,
                 context_,
