@@ -83,7 +83,8 @@ private:
     /// A Keeper write can commit and only then fail to report success (for example, the connection is lost
     /// after the `multi` has been applied), so a thrown error does not prove that nothing changed. Called on
     /// that uncertain path to reconcile the local view with the source of truth before the error is rethrown.
-    void resyncAfterUncertainWrite(const std::string & handler_name, std::lock_guard<std::mutex> & lock);
+    void resyncAfterUncertainWrite(
+        const std::string & handler_name, const SQLDefinedHandlerPtr & written, std::lock_guard<std::mutex> & lock);
 
     void createReplicated(const ASTCreateHandlerQuery & query, std::lock_guard<std::mutex> & lock);
     bool updateReplicated(

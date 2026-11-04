@@ -36,7 +36,10 @@ public:
     bool hasDependencies(const String & definer) const;
 
     /// Replaces the definers of all SQL-defined HTTP handlers (handler name -> definer), releasing the unused ones.
-    void setHandlerDefiners(std::unordered_map<String, String> handler_to_definer_);
+    void setHandlerDefiners(const std::unordered_map<String, String> & handler_to_definer);
+
+    /// Adds a definer of a handler, keeping its other ones, until the next `setHandlerDefiners`.
+    void addHandlerDefiner(const String & handler, const String & definer);
 
     /// The names of the SQL-defined HTTP handlers defined by a specific definer.
     std::vector<String> getHandlersForDefiner(const String & definer) const;
@@ -56,8 +59,6 @@ private:
     std::unordered_map<UUID, String> object_to_definer;
 
     std::unordered_map<String, std::unordered_set<String>> definer_to_handlers;
-
-    std::unordered_map<String, String> handler_to_definer;
 
     mutable std::mutex mutex;
 

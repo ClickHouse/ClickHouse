@@ -85,11 +85,12 @@ void SQLDefinedHandlersFactory::rebuildSnapshot(std::lock_guard<std::mutex> &, b
         for (const auto & [name, handler] : loaded_handlers)
             if (handler->sql_security_type == SQLSecurityType::DEFINER && handler->definer)
                 handler_definers.emplace(name, *handler->definer);
-        DefinerDependencies::instance().setHandlerDefiners(std::move(handler_definers));
+        DefinerDependencies::instance().setHandlerDefiners(handler_definers);
     }
 }
 
-void SQLDefinedHandlersFactory::resyncAfterUncertainWrite(const std::string & handler_name, std::lock_guard<std::mutex> & lock)
+void SQLDefinedHandlersFactory::resyncAfterUncertainWrite(
+    const std::string & handler_name, const SQLDefinedHandlerPtr & written, std::lock_guard<std::mutex> & lock)
 {
     /// The write may well have committed before the error surfaced (a lost connection after the `multi` was
     /// applied reports an error for a change that is already durable), so the outcome is unknown and the local
@@ -111,6 +112,9 @@ void SQLDefinedHandlersFactory::resyncAfterUncertainWrite(const std::string & ha
             handler_name));
         loaded_handlers.erase(handler_name);
         rebuildSnapshot(lock, /* reconcile_definers */ false);
+        /// The write may be durable, so its definer cannot be dropped either.
+        if (written && written->sql_security_type == SQLSecurityType::DEFINER && written->definer)
+            DefinerDependencies::instance().addHandlerDefiner(handler_name, *written->definer);
     }
 }
 
@@ -278,7 +282,7 @@ void SQLDefinedHandlersFactory::createReplicated(const ASTCreateHandlerQuery & q
         {
             /// The new handler may already be durable - see `resyncAfterUncertainWrite` - in which case this
             /// replica would otherwise not serve an endpoint that already exists in the source of truth.
-            resyncAfterUncertainWrite(query.handler_name, lock);
+            resyncAfterUncertainWrite(query.handler_name, handler, lock);
             throw;
         }
 
@@ -337,7 +341,7 @@ void SQLDefinedHandlersFactory::removeReplicated(const ASTDropHandlerQuery & que
         /// The removal may already have committed - see `resyncAfterUncertainWrite`. Without this, a committed
         /// `DROP HANDLER` whose reply was lost would leave this replica serving the deleted endpoint until the
         /// background watch notices the root-version bump.
-        resyncAfterUncertainWrite(query.handler_name, lock);
+        resyncAfterUncertainWrite(query.handler_name, nullptr, lock);
         throw;
     }
 
@@ -511,7 +515,7 @@ bool SQLDefinedHandlersFactory::updateReplicated(
             /// The new definition may already be durable - see `resyncAfterUncertainWrite`. Without this, a
             /// committed `ALTER HANDLER` whose reply was lost would leave this replica routing requests with
             /// the old URL, methods and query until the background watch fires.
-            resyncAfterUncertainWrite(alter_query.handler_name, lock);
+            resyncAfterUncertainWrite(alter_query.handler_name, updated, lock);
             throw;
         }
 

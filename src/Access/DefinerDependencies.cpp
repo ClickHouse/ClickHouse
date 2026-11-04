@@ -78,25 +78,22 @@ void DefinerDependencies::releaseDefinerIfUnusedLocked(const String & definer)
         access_control.tryRemove(*uuid);
 }
 
-void DefinerDependencies::setHandlerDefiners(std::unordered_map<String, String> handler_to_definer_)
+void DefinerDependencies::setHandlerDefiners(const std::unordered_map<String, String> & handler_to_definer)
 {
     std::lock_guard lock(mutex);
 
-    std::unordered_set<String> released;
-    for (const auto & [handler, definer] : handler_to_definer)
-    {
-        auto it = handler_to_definer_.find(handler);
-        if (it == handler_to_definer_.end() || it->second != definer)
-            released.insert(definer);
-    }
-
-    handler_to_definer = std::move(handler_to_definer_);
-    definer_to_handlers.clear();
+    auto previous = std::exchange(definer_to_handlers, {});
     for (const auto & [handler, definer] : handler_to_definer)
         definer_to_handlers[definer].insert(handler);
 
-    for (const auto & definer : released)
+    for (const auto & [definer, _] : previous)
         releaseDefinerIfUnusedLocked(definer);
+}
+
+void DefinerDependencies::addHandlerDefiner(const String & handler, const String & definer)
+{
+    std::lock_guard lock(mutex);
+    definer_to_handlers[definer].insert(handler);
 }
 
 std::vector<String> DefinerDependencies::getHandlersForDefiner(const String & definer) const
