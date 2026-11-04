@@ -1162,13 +1162,43 @@ bool replaceIrreproducibleConstants(QueryTreeNodePtr & node, const QueryTreeNode
     return replaced;
 }
 
+/// Replaces each constant of `node` folded from a scalar subquery with its source expression, and returns whether `node`
+/// has a subquery. Each analysis of the filter on another node runs the subquery again, so `(SELECT rand())` gets another
+/// value, while one node reuses the first result. The constants folded inside the subquery stay.
+bool replaceScalarSubqueryResults(QueryTreeNodePtr & node)
+{
+    if (const auto * constant = node->as<ConstantNode>())
+    {
+        if (!constant->hasSourceExpression())
+            return false;
+
+        auto source = constant->getSourceExpression();
+        if (!replaceScalarSubqueryResults(source))
+            return false;
+
+        node = std::move(source);
+        return true;
+    }
+
+    bool has_subquery = node->getNodeType() == QueryTreeNodeType::QUERY || node->getNodeType() == QueryTreeNodeType::UNION;
+    for (auto & child : node->getChildren())
+        if (child)
+            has_subquery |= replaceScalarSubqueryResults(child);
+    return has_subquery;
+}
+
 /// Equal for two `additional_table_filters` entries only if they resolve to the same predicate, including the
 /// constants folded from settings. A constant that changes when the entry is analyzed again, such as `randConstant()`,
-/// is compared by its expression.
+/// or the result of a scalar subquery, is compared by its expression.
 std::pair<UInt64, UInt64> additionalFilterHash(
     const ASTPtr & filter_ast, const TableExpressionNodePtr & table_expression, const ContextPtr & query_context)
 {
-    auto analyze = [&] { return buildFilterQueryTree(filter_ast, table_expression, query_context, /*check_access_rights=*/ false); };
+    auto analyze = [&]
+    {
+        auto filter = buildFilterQueryTree(filter_ast, table_expression, query_context, /*check_access_rights=*/ false);
+        replaceScalarSubqueryResults(filter);
+        return filter;
+    };
     auto filter = analyze();
     if (hasNondeterministicConstant(filter))
         replaceIrreproducibleConstants(filter, analyze());
