@@ -1,0 +1,12 @@
+While the database file is reachable the generated column is MATERIALIZED, so SELECT * returns only the base column:
+a
+10
+After the first open the classification is repaired, so SELECT * again returns only the base column:
+a
+10
+Insert without a column list targets only the base column; SQLite computes the generated column:
+a	b
+5	6
+10	11
+Explicitly writing into the generated column is rejected:
+Cannot insert column b, because it is MATERIALIZED column

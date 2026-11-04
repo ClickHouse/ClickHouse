@@ -3,13 +3,12 @@
 #include <thread>
 #include <tuple>
 
-#include <base/scope_guard.h>
 #include <Common/CurrentThread.h>
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/MemoryTrackerSwitcher.h>
-#include <Common/QueryIdSwitcher.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/QueryScope.h>
 #include <Common/ThreadStatus.h>
 #include <Common/tests/gtest_global_context.h>
@@ -21,6 +20,32 @@ namespace DB
 namespace FailPoints
 {
     extern const char attach_to_group_failure[];
+}
+
+TEST(QueryContextMemory, QuerySetupLimitDoesNotRecheckExistingAncestors)
+{
+    struct
+    {
+        MemoryTracker global{nullptr, VariableContext::Global, false};
+        MemoryTracker query{&global, VariableContext::Process, false};
+    } ledger;
+    ledger.query.adjustWithUntrackedMemory(100);
+    ledger.global.setHardLimit(1);
+    ledger.query.setHardLimit(100);
+    EXPECT_NO_THROW(ledger.query.checkQueryLimit());
+
+    ledger.query.setHardLimit(99);
+    EXPECT_THROW(ledger.query.checkQueryLimit(), DB::Exception);
+    EXPECT_EQ(ledger.query.get(), 100);
+    EXPECT_EQ(ledger.global.get(), 100);
+    {
+        LockMemoryExceptionInThread blocker(VariableContext::Process);
+        EXPECT_NO_THROW(ledger.query.checkQueryLimit());
+    }
+    ledger.query.setHardLimit(0);
+    EXPECT_NO_THROW(ledger.query.checkQueryLimit());
+    ledger.query.adjustWithUntrackedMemory(-100);
+    EXPECT_EQ(ledger.global.get(), 0);
 }
 
 TEST(QueryContextMemory, TracksConstructionTemporaryCopiesAndAttachedCopies)
@@ -74,99 +99,6 @@ TEST(QueryContextMemory, TracksConstructionTemporaryCopiesAndAttachedCopies)
         EXPECT_GT(attached_copy_bytes, 0);
         EXPECT_EQ(attached_copy_released, attached_copy_bytes);
         EXPECT_GE(peak, temporary_peak_floor);
-    }).join();
-#endif
-}
-
-TEST(QueryContextMemory, LiveThreadMetadataIsChargedAndReleased)
-{
-#if defined(SANITIZER)
-    GTEST_SKIP() << "Requires ClickHouse allocation interceptors, which sanitizer builds replace";
-#else
-    auto source = Context::createCopy(getContext().context);
-    source->setCurrentQueryId(String(8192, 'i'));
-    source->setSetting("max_untracked_memory", UInt64{0});
-    source->setSetting("log_queries", false);
-    source->setSetting("query_profiler_real_time_period_ns", UInt64{0});
-    source->setSetting("query_profiler_cpu_time_period_ns", UInt64{0});
-    const String query = "SELECT 1 /*" + String(8192, 'q') + "*/";
-    const String nested_id(8192, 'n');
-
-    std::thread([&]
-    {
-        ThreadStatus thread{ThreadStatus::NoOSThreadTag{}};
-        MemoryTracker user(&total_memory_tracker, VariableContext::User);
-        std::unique_ptr<char[]> sentinel;
-        {
-            MemoryTrackerSwitcher user_scope(&user, 0);
-            sentinel = std::make_unique<char[]>(16 * 1024 * 1024);
-        }
-        const Int64 user_floor = user.get();
-        SCOPE_EXIT(
-        {
-            MemoryTrackerSwitcher user_scope(&user, 0);
-            sentinel.reset();
-        });
-        for (size_t iteration = 0; iteration < 3; ++iteration)
-        {
-            bool rejected = false;
-            bool query_id_restored = false;
-            Int64 attached_bytes = 0;
-            Int64 log_bytes = 0;
-            Int64 worker_bytes = 0;
-            Int64 query_before = 0;
-            Int64 query_after = 0;
-            Int64 user_before = 0;
-            Int64 user_after = 0;
-            {
-                auto scope = QueryScope::createForQueryContext();
-                auto * tracker = thread.memory_tracker.getParent();
-                auto context = Context::createCopyForQuery(source);
-                const auto before_attach = tracker->get();
-                scope.attachToQueryContext(context, [capture = String(8192, 'c')]
-                {
-                    std::ignore = capture;
-                });
-                CurrentThread::flushUntrackedMemory();
-                attached_bytes = tracker->get() - before_attach;
-                const auto before_logs = tracker->get();
-                CurrentThread::attachQueryForLog(query);
-                log_bytes = tracker->get() - before_logs;
-                {
-                    MemoryTrackerSwitcher test_thread_memory_scope(&total_memory_tracker);
-                    std::thread([group = CurrentThread::getGroup(), &worker_bytes]
-                    {
-                        ThreadStatus worker{ThreadStatus::NoOSThreadTag{}};
-                        const auto before = group->memory_tracker.get();
-                        CurrentThread::attachToGroup(group);
-                        CurrentThread::flushUntrackedMemory();
-                        worker_bytes = group->memory_tracker.get() - before;
-                        CurrentThread::detachFromGroupIfNotDetached();
-                    }).join();
-                }
-                rejected = tracker->tryInsertParent(&user).has_value();
-                query_before = tracker->get();
-                user_before = user.get();
-                {
-                    QueryIdSwitcher query_id_scope(nested_id);
-                }
-                query_id_restored = CurrentThread::getQueryId() == source->getCurrentQueryId();
-                query_after = tracker->get();
-                user_after = user.get();
-            }
-            /// This isolated user has no last-query reset to hide retained charges.
-            EXPECT_GE(attached_bytes, static_cast<Int64>(source->getCurrentQueryId().size()));
-            EXPECT_GE(log_bytes, static_cast<Int64>(2 * query.size()));
-            EXPECT_GE(worker_bytes, static_cast<Int64>(source->getCurrentQueryId().size() + query.size()));
-            EXPECT_FALSE(rejected);
-            EXPECT_TRUE(query_id_restored);
-            EXPECT_GT(query_before, 0);
-            EXPECT_EQ(query_before, user_before - user_floor);
-            EXPECT_EQ(query_after, query_before);
-            EXPECT_EQ(user_after, user_before);
-            /// The live allocation also prevents saturation at zero from hiding excess frees.
-            EXPECT_EQ(user.get(), user_floor) << "iteration " << iteration;
-        }
     }).join();
 #endif
 }

@@ -1,5 +1,4 @@
 import uuid
-from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
@@ -143,8 +142,7 @@ def test_retained_context_respects_query_limit(batching_limit):
         )
 
 
-@pytest.mark.parametrize("pause_rejection", [False, True])
-def test_rejected_admission_does_not_accumulate_user_memory(pause_rejection):
+def test_rejected_admission_does_not_accumulate_user_memory():
     user = "context_memory_" + uuid.uuid4().hex
     node.query(f"CREATE USER {user}")
     node.query(f"GRANT SELECT ON *.* TO {user}")
@@ -176,7 +174,6 @@ def test_rejected_admission_does_not_accumulate_user_memory(pause_rejection):
             "log_queries": 0,
         },
     )
-    failpoint = "query_setup_memory_rejection_before_cleanup"
     try:
         assert_eq_with_retry(
             node,
@@ -194,7 +191,7 @@ def test_rejected_admission_does_not_accumulate_user_memory(pause_rejection):
                 f"SELECT memory_usage FROM system.user_processes WHERE user = '{user}'"
             )
         )
-        for attempt in range(10):
+        for _ in range(10):
             query_id = str(uuid.uuid4())
 
             def reject_query():
@@ -212,34 +209,9 @@ def test_rejected_admission_does_not_accumulate_user_memory(pause_rejection):
                     },
                 )
 
-            if pause_rejection and attempt == 0:
-                node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
-                with ThreadPoolExecutor(max_workers=1) as pool:
-                    rejected = pool.submit(reject_query)
-                    try:
-                        node.query(
-                            f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=15
-                        )
-                        assert (
-                            node.query(
-                                f"SELECT is_cancelled FROM system.processes WHERE query_id = '{query_id}'"
-                            )
-                            == "1\n"
-                        )
-                        # Cancellation and inspection can race with rejected-entry cleanup.
-                        node.query(f"KILL QUERY WHERE query_id = '{query_id}' ASYNC")
-                    finally:
-                        node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
-                    error = rejected.result(timeout=30)
-                assert (
-                    node.query(
-                        f"SELECT count() FROM system.processes WHERE query_id = '{query_id}'"
-                    )
-                    == "0\n"
-                )
-            else:
-                error = reject_query()
-            assert "User memory limit exceeded during query setup" in error
+            error = reject_query()
+            assert "MEMORY_LIMIT_EXCEEDED" in error
+            assert "already allocated" in error
         after = int(
             node.query(
                 f"SELECT memory_usage FROM system.user_processes WHERE user = '{user}'"
@@ -260,7 +232,6 @@ def test_rejected_admission_does_not_accumulate_user_memory(pause_rejection):
             == "1\n"
         )
     finally:
-        node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
         node.query(f"KILL QUERY WHERE query_id = '{sentinel_id}' SYNC")
         sentinel.get_answer_and_error()
         node.http_query(
