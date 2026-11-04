@@ -54,13 +54,13 @@ FROM (EXPLAIN actions = 1, keep_logical_steps = 1
 WHERE explain ILIKE '%Join:%';
 
 -- A condition on an empty table keeps its estimate of 0 rows.
-SELECT 'empty table', countIf(explain ILIKE '%Join: mem_r%'), countIf(explain ILIKE '%Join: s%')
+SELECT 'empty table', countIf(explain ILIKE '%Join: mem_r%'), countIf(explain ILIKE '%Join: s%'), countIf(explain ILIKE '%s[0]%')
 FROM (EXPLAIN actions = 1, keep_logical_steps = 1
     SELECT count() FROM (SELECT id FROM mem_e WHERE v = 5) AS s INNER JOIN mem_r ON mem_r.id = s.id)
 WHERE explain ILIKE '%Join:%';
 
--- An aggregation without keys returns one row, so the build side is `s` even with a condition below it.
-SELECT 'keyless aggregate', countIf(explain ILIKE '%Join: mem_r%'), countIf(explain ILIKE '%Join: s%')
+-- An aggregation without keys returns one row, so it is estimated at one row and is the build side even with a condition below it.
+SELECT 'keyless aggregate', countIf(explain ILIKE '%Join: mem_r%'), countIf(explain ILIKE '%Join: s%'), countIf(explain ILIKE '%s[no_stats~1]%')
 FROM (EXPLAIN actions = 1, keep_logical_steps = 1
     SELECT count() FROM (SELECT count() AS id FROM mem_s WHERE v = 5) AS s INNER JOIN mem_r ON mem_r.id = s.id)
 WHERE explain ILIKE '%Join:%';
