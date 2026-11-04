@@ -534,11 +534,24 @@ NamesAndTypesList IMergeTreeReader::getMissingDefaultInputs(const NamesAndTypesL
 
         for (const auto & identifier : required->second)
         {
-            if (block.has(identifier) || !combined_columns.getDefault(identifier) || !visited.emplace(identifier).second)
+            if (block.has(identifier))
                 continue;
 
-            add_inputs(identifier);
-            result.emplace_back(identifier, combined_columns.get(identifier).type);
+            /// An expression may read a subcolumn of a missing column, e.g. `y DEFAULT b.x`. The subcolumn has
+            /// no `DEFAULT` of its own: it is taken from its parent, so the parent is the input.
+            String input = identifier;
+            if (!combined_columns.getDefault(input))
+            {
+                input = graph.getNameInStorage(identifier);
+                if (input == identifier || block.has(input))
+                    continue;
+            }
+
+            if (!combined_columns.getDefault(input) || !visited.emplace(input).second)
+                continue;
+
+            add_inputs(input);
+            result.emplace_back(input, combined_columns.get(input).type);
         }
     };
 
