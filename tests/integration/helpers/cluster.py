@@ -248,6 +248,10 @@ DOLOR_KEEPER_CORE_DIR = "/var/log/clickhouse-keeper/cores"
 # A backtrace is also taken on restarts in the middle of a run, so it is bounded.
 GDB_BACKTRACE_TIMEOUT_SECONDS = 300
 
+# A sanitizer keeps its `llvm-symbolizer` alive as long as the server, so waiting for a report
+# to finish must be bounded: a server hung after a report would make the wait endless.
+SANITIZER_REPORT_WAIT_SECONDS = 300
+
 # Minimum version we use in integration tests to check compatibility with old releases
 # Keep in mind that we only support upgrading between releases that are at most 1 year different.
 # This means that this minimum need to be, at least, 1 year older than the current release
@@ -6127,8 +6131,13 @@ class ClickHouseInstance:
                 else:
                     time.sleep(1)
 
-            # Some sanitizer report in progress?
-            while self.get_process_pid("llvm-symbolizer") is not None:
+            # Some sanitizer report in progress? Bounded, see `SANITIZER_REPORT_WAIT_SECONDS`.
+            report_deadline = time.time() + SANITIZER_REPORT_WAIT_SECONDS
+            while (
+                time.time() < report_deadline
+                and self.get_process_pid("llvm-symbolizer") is not None
+                and self.get_process_pid("clickhouse") is not None
+            ):
                 time.sleep(1)
 
             pid = self.get_process_pid("clickhouse")
