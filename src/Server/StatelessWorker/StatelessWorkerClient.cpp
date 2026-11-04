@@ -117,19 +117,58 @@ String sendTask(const String & endpoint_uri, const String & unique_task_id, cons
     }
 }
 
-void createTask(const String & endpoint_uri, const String & unique_task_id, const TaskCollectors & collectors, const ContextPtr & context)
+void createTask(const String & endpoint_uri, const String & unique_task_id, const DistributedQueryTask & task, const String & initial_query_id,
+    const TaskCollectors & collectors, const ContextPtr & context)
 {
-    doSendTask(endpoint_uri, "create", unique_task_id, /*task_serializer=*/ {}, /*unique_temp_file_path=*/ "", collectors, context);
+    const Poco::URI uri(endpoint_uri);
+    OpenTelemetry::SpanHolder span(
+        "StatelessWorkerClient::createTask",
+        OpenTelemetry::SpanKind::CLIENT,
+        {
+            {"clickhouse.distributed.task_id", task.task_id},
+            {"clickhouse.initial_query_id", initial_query_id},
+            {"clickhouse.target_host", fmt::format("{}:{}", uri.getHost(), uri.getPort())},
+        });
+
+    try
+    {
+        doSendTask(endpoint_uri, "create", unique_task_id, /*task_serializer=*/ {}, /*unique_temp_file_path=*/ "", collectors, context);
+    }
+    catch (...)
+    {
+        span.addAttribute(std::current_exception());
+        throw;
+    }
 }
 
 void sendTaskPayload(const String & endpoint_uri, const String & unique_task_id, const DistributedQueryTaskDescription & stage_description,
     const DistributedQueryTask & task, const ExchangeStreamSources & stream_sources, const String & unique_temp_file_path, const ContextPtr & context)
 {
+    /// The span of `start`: this request starts the task, so the worker's spans of the task hang under it.
+    const Poco::URI uri(endpoint_uri);
+    OpenTelemetry::SpanHolder span(
+        "StatelessWorkerClient::sendTask",
+        OpenTelemetry::SpanKind::CLIENT,
+        {
+            {"clickhouse.distributed.task_id", task.task_id},
+            {"clickhouse.initial_query_id", stage_description.initial_query_id},
+            {"clickhouse.target_host", fmt::format("{}:{}", uri.getHost(), uri.getPort())},
+        });
+
     auto task_serializer = [&] (WriteBuffer & buf)
     {
         serializeTask(stage_description, task, stream_sources, buf);
     };
-    doSendTask(endpoint_uri, "payload", unique_task_id, task_serializer, unique_temp_file_path, /*collectors=*/ {}, context);
+
+    try
+    {
+        doSendTask(endpoint_uri, "payload", unique_task_id, task_serializer, unique_temp_file_path, /*collectors=*/ {}, context);
+    }
+    catch (...)
+    {
+        span.addAttribute(std::current_exception());
+        throw;
+    }
 }
 
 /// Get task status by its id.
