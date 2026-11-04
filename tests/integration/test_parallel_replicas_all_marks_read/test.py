@@ -156,3 +156,55 @@ def test_number_of_marks_read(
     assert _get_number_of_marks_read_by_replicas(
         query_id
     ) == _get_expected_amount_of_marks_to_read(query)
+
+
+def test_query_condition_cache_of_each_replica(start_cluster):
+    # Each replica has its own query condition cache, but the coordinator assigns ranges from its own analysis,
+    # where only its own cache is consulted. A follower has to apply its cache to the ranges it is assigned,
+    # or it reads its share of the table again on every run.
+    table_name = f"tbl_query_condition_cache_{randint(0, 10**9)}"
+    _create_tables(table_name, 0, 8192)
+    nodes[0].query(
+        f"""
+        INSERT INTO {table_name}
+        SELECT number, if(number % 1000000 = 7, 'needle', toString(number)) FROM numbers_mt(10000000)
+        """
+    )
+    nodes[0].query(f"OPTIMIZE TABLE {table_name} FINAL", settings={"alter_sync": 2})
+    for node in nodes:
+        node.query(f"SYSTEM SYNC REPLICA {table_name} STRICT")
+        node.query("SYSTEM DROP QUERY CONDITION CACHE")
+
+    query = f"SELECT count() FROM {table_name} WHERE value LIKE '%needle%'"
+    settings = {
+        "enable_parallel_replicas": 1,
+        # Otherwise the second run may be switched to a single node.
+        "automatic_parallel_replicas_mode": 0,
+        "max_parallel_replicas": 2,
+        "cluster_for_parallel_replicas": "parallel_replicas_two_nodes",
+        "parallel_replicas_min_number_of_rows_per_replica": 0,
+        "use_query_condition_cache": 1,
+        "max_threads": 4,
+    }
+
+    query_ids = [f"{table_name}_{run}" for run in range(2)]
+    for query_id in query_ids:
+        assert nodes[0].query(query, settings={**settings, "query_id": query_id}) == "10\n"
+
+    for node in nodes[:2]:
+        node.query("SYSTEM FLUSH LOGS query_log")
+
+    def rows_read_by_follower(query_id):
+        return int(
+            nodes[1].query(
+                f"""
+                SELECT sum(read_rows) FROM system.query_log
+                WHERE initial_query_id = '{query_id}' AND NOT is_initial_query AND type = 'QueryFinish'
+                """
+            )
+        )
+
+    # The first run reads everything, so after it each granule is in the cache of the replica that read it.
+    assert rows_read_by_follower(query_ids[0]) > 0
+    # The second run reads only the granules with matches: at most the 10 granules of 8192 rows.
+    assert rows_read_by_follower(query_ids[1]) <= 10 * 8192
