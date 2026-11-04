@@ -8,7 +8,9 @@
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <Disks/DiskFactory.h>
+#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageFactory.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Web/WebObjectStorage.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
@@ -28,7 +30,6 @@
 #include <boost/algorithm/string/trim.hpp>
 
 #if USE_AZURE_BLOB_STORAGE
-#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #endif
 
@@ -603,12 +604,50 @@ void validateResolvedAzureDiskCredentials(
 #endif
 }
 
+/// The `web` object storage of a disk created from user SQL, possibly behind wrappers such as `encrypted` and `cache`.
+/// The endpoint of a disk from the server configuration is not user input, so the walk stops there, as in
+/// `getCustomDiskServerIdentity`.
+static std::shared_ptr<const WebObjectStorage> getCustomDiskWebObjectStorage(DiskPtr disk)
+{
+    for (; disk && disk->isCustomDisk(); disk = disk->getDelegateDiskIfExists())
+    {
+        auto * object_storage_disk = dynamic_cast<DiskObjectStorage *>(disk.get());
+        if (!object_storage_disk)
+            continue;
+
+        /// A `cache` disk wraps the object storage of the disk it caches. Only the object storage of the local location
+        /// is taken, as in `getCustomDiskServerIdentity`: the metadata storages of a `web` disk support a single
+        /// location, see `checkSingleLocation`.
+        auto object_storage = object_storage_disk->getObjectStorage();
+        while (auto underlying = object_storage->getUnderlying())
+            object_storage = std::move(underlying);
+        return std::dynamic_pointer_cast<const WebObjectStorage>(object_storage);
+    }
+    return nullptr;
+}
+
 void validateResolvedWebDiskEndpoints(
     const Poco::Util::AbstractConfiguration & config, ContextPtr context, bool is_loading_from_existing_metadata)
 {
     /// A disk loaded from existing metadata is not checked, so that it does not fail the table load.
     if (is_loading_from_existing_metadata)
         return;
+
+    /// A wrapper such as `encrypted` or `cache` may name an existing disk, which it uses as it is: created by another
+    /// definition, possibly before the header was forbidden, or loaded from existing metadata.
+    if (const String wrapped_disk = config.getString(".disk", ""); !wrapped_disk.empty())
+    {
+        const auto disks = context->getDisksMap();
+        if (auto it = disks.find(wrapped_disk); it != disks.end())
+        {
+            if (const auto web_object_storage = getCustomDiskWebObjectStorage(it->second))
+            {
+                for (const auto & url_options : web_object_storage->getURLShards())
+                    for (const auto & url_option : url_options)
+                        context->getHTTPHeaderFilter().checkURIUserInfo(Poco::URI(url_option.base_url));
+            }
+        }
+    }
 
     /// The same prefixes `registerDiskObjectStorage` passes to the object storage factory.
     std::vector<String> prefixes;
