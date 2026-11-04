@@ -70,14 +70,6 @@ lambda_capture_member	s3cluster	1	[9]
 lambda_capture_member	s3cluster	2	[100]
 lambda_capture_member	input	1	[9]
 lambda_capture_member	input	2	[100]
-lambda_capture_alias	direct	1	[9]
-lambda_capture_alias	direct	2	[100]
-lambda_capture_alias	file	1	[9]
-lambda_capture_alias	file	2	[100]
-lambda_capture_alias	s3cluster	1	[9]
-lambda_capture_alias	s3cluster	2	[100]
-lambda_capture_alias	input	1	[9]
-lambda_capture_alias	input	2	[100]
 expression_alias	direct	1	0	10
 expression_alias	direct	2	0	100
 expression_alias	file	1	0	10
@@ -94,22 +86,6 @@ expression_alias_in_lambda	s3cluster	1	0	11
 expression_alias_in_lambda	s3cluster	2	0	100
 expression_alias_in_lambda	input	1	0	11
 expression_alias_in_lambda	input	2	0	100
-expression_alias_of_lambda	direct	1	5	6
-expression_alias_of_lambda	direct	2	5	100
-expression_alias_of_lambda	file	1	5	6
-expression_alias_of_lambda	file	2	5	100
-expression_alias_of_lambda	s3cluster	1	5	6
-expression_alias_of_lambda	s3cluster	2	5	100
-expression_alias_of_lambda	input	1	5	6
-expression_alias_of_lambda	input	2	5	100
-expression_alias_of_read_column	direct	1	0	11
-expression_alias_of_read_column	direct	2	0	100
-expression_alias_of_read_column	file	1	0	11
-expression_alias_of_read_column	file	2	0	100
-expression_alias_of_read_column	s3cluster	1	0	11
-expression_alias_of_read_column	s3cluster	2	0	100
-expression_alias_of_read_column	input	1	0	11
-expression_alias_of_read_column	input	2	0	100
 expression_alias_of_unread_column	direct	1	0	1
 expression_alias_of_unread_column	direct	2	0	100
 expression_alias_of_unread_column	file	1	0	1
@@ -150,4 +126,7 @@ diamond	input	1	33
 diamond	input	2	100
 TOO_BIG_AST
 TOO_BIG_AST
+UNKNOWN_IDENTIFIER
+alias_of_other_default	1	0	8	14
+alias_of_other_default	2	0	100	14
 UNKNOWN_IDENTIFIER

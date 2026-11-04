@@ -278,29 +278,19 @@ bool isOtherScope(const IAST & ast)
     return ast.as<ASTSubquery>() || ast.as<ASTSelectQuery>() || ast.as<ASTSelectWithUnionQuery>() || ast.as<ASTTableExpression>();
 }
 
-void collectIdentifierHeadsAndAliases(const IAST & ast, NameSet & names)
+void collectIdentifierHeads(const IAST & ast, NameSet & heads)
 {
     checkStackSize();
     if (const auto * identifier = ast.as<ASTIdentifier>())
-        names.insert(identifier->name_parts.at(0));
-    if (auto alias = ast.tryGetAlias(); !alias.empty())
-        names.insert(std::move(alias));
+        heads.insert(identifier->name_parts.at(0));
     for (const auto & child : ast.children)
-        collectIdentifierHeadsAndAliases(*child, names);
+        collectIdentifierHeads(*child, heads);
 }
 
-/// Collects the aliases of the scope of `ast`, without those of the lambdas and subqueries in it.
-void collectAliases(const IAST & ast, NameSet & aliases)
+bool hasAlias(const IAST & ast)
 {
     checkStackSize();
-    if (isOtherScope(ast))
-        return;
-    if (auto alias = ast.tryGetAlias(); !alias.empty())
-        aliases.insert(std::move(alias));
-    if (const auto * function = ast.as<ASTFunction>(); function && function->name == "lambda")
-        return;
-    for (const auto & child : ast.children)
-        collectAliases(*child, aliases);
+    return !ast.tryGetAlias().empty() || std::ranges::any_of(ast.children, [](const ASTPtr & child) { return hasAlias(*child); });
 }
 
 bool hasNonDeterministicFunction(const IAST & ast, const ContextPtr & context)
@@ -363,29 +353,13 @@ public:
         , context(context_)
         , max_expanded_ast_elements(context->getSettingsRef()[Setting::max_expanded_ast_elements])
     {
-        /// The `DEFAULT`s evaluated with those of the hint, found as by `addDefaultRequiredExpressionsRecursively`.
-        ASTs evaluated;
-        for (const auto & column : structure_hint)
-            if (column.default_desc.expression)
-                evaluated.push_back(column.default_desc.expression);
-        NameSet reached;
-        for (size_t i = 0; i < evaluated.size(); ++i)
-        {
-            ASTPtr expression = evaluated[i];
-            collectAliases(*expression, aliases);
-            RequiredSourceColumnsVisitor::Data data;
-            RequiredSourceColumnsVisitor(data).visit(expression);
-            for (const auto & name : data.requiredColumns())
-            {
-                const auto * column = insertion_columns.tryGet(name);
-                if (column && column->default_desc.expression && !written.contains(name) && reached.insert(name).second)
-                    evaluated.push_back(column->default_desc.expression);
-            }
-        }
     }
 
-    /// Returns whether `ast` changed. Identifiers whose head is in `masked` are arguments or aliases of the lambdas around `ast`.
-    bool rewrite(ASTPtr & ast, ExpandedASTBudget & budget, const NameSet & masked)
+    /// Whether `rewrite` met a read of a column whose value defines an expression alias, and left it as it is.
+    bool metValueWithAlias() const { return met_value_with_alias; }
+
+    /// Returns whether `ast` changed. Identifiers whose head is in `lambda_arguments` are lambda arguments.
+    bool rewrite(ASTPtr & ast, ExpandedASTBudget & budget, const NameSet & lambda_arguments)
     {
         checkStackSize();
         if (isOtherScope(*ast))
@@ -393,11 +367,10 @@ public:
 
         if (const auto * identifier = ast->as<ASTIdentifier>())
         {
-            const auto & head = identifier->name_parts.at(0);
-            if (masked.contains(head) || aliases.contains(head))
+            if (lambda_arguments.contains(identifier->name_parts.at(0)))
                 return false;
             auto name = IdentifierSemantic::getColumnName(*identifier);
-            const ASTPtr * value = name && !aliases.contains(*name) ? getValue(*name) : nullptr;
+            const ASTPtr * value = name ? getValue(*name) : nullptr;
             if (!value)
                 return false;
             String alias = identifier->tryGetAlias();
@@ -411,15 +384,14 @@ public:
         {
             auto arguments = RequiredSourceColumnsMatcher::extractNamesFromLambda(*function);
             renameCapturingArguments(*function, arguments);
-            NameSet lambda_masked = masked;
-            lambda_masked.insert(arguments.begin(), arguments.end());
-            collectAliases(*function->arguments->children[1], lambda_masked);
-            return rewrite(function->arguments->children[1], budget, lambda_masked);
+            NameSet masked = lambda_arguments;
+            masked.insert(arguments.begin(), arguments.end());
+            return rewrite(function->arguments->children[1], budget, masked);
         }
 
         bool changed = false;
         for (auto & child : ast->children)
-            changed |= rewrite(child, budget, masked);
+            changed |= rewrite(child, budget, lambda_arguments);
         return changed;
     }
 
@@ -433,6 +405,12 @@ private:
         const auto * column = insertion_columns.tryGet(name);
         if (!column || written.contains(name))
             return nullptr;
+
+        if (column->default_desc.expression && hasAlias(*column->default_desc.expression))
+        {
+            met_value_with_alias = true;
+            return nullptr;
+        }
 
         /// A non-deterministic value would differ from the one the insertion table computes for its own columns.
         if (column->default_desc.expression && hasNonDeterministicFunction(*column->default_desc.expression, context))
@@ -465,7 +443,7 @@ private:
             capturable.emplace();
             for (const auto & column : insertion_columns)
                 if (column.default_desc.expression && !written.contains(column.name))
-                    collectIdentifierHeadsAndAliases(*column.default_desc.expression, *capturable);
+                    collectIdentifierHeads(*column.default_desc.expression, *capturable);
         }
 
         auto & formals = lambda.arguments->children[0]->as<ASTFunction &>().arguments->children;
@@ -475,7 +453,7 @@ private:
                 continue;
 
             NameSet used;
-            collectIdentifierHeadsAndAliases(lambda, used);
+            collectIdentifierHeads(lambda, used);
             auto is_used = [&](const String & name)
             {
                 return used.contains(name) || capturable->contains(name) || insertion_columns.has(name) || structure_hint.has(name);
@@ -495,15 +473,13 @@ private:
     const NameSet written;
     const ContextPtr context;
     const size_t max_expanded_ast_elements;
-    /// The evaluated `DEFAULT`s are resolved in one scope, so an identifier named like an alias of any of them outside
-    /// lambdas may read that alias.
-    NameSet aliases;
 
     std::unordered_map<String, ASTPtr> values;
     NameSet expanding;
-    /// The heads of the identifiers and the aliases that an inlined value may contain.
+    /// The heads of the identifiers that an inlined value may read.
     std::optional<NameSet> capturable;
     size_t next_argument_index = 0;
+    bool met_value_with_alias = false;
 };
 
 }
@@ -538,14 +514,21 @@ void inlineUnwrittenColumnsInStructureHint(
         }
     }
 
+    /// The `DEFAULT`s evaluated together resolve the expression aliases of each other and of the values they read.
+    if (hasAlias(*expressions))
+        return;
+
     UnwrittenColumnsInliner inliner(structure_hint, insertion_columns, written_columns, context);
     ExpandedASTBudget budget(context->getSettingsRef()[Setting::max_expanded_ast_elements], *expressions, unwritten_columns_expansion);
+    std::vector<size_t> changed;
     for (size_t i = 0; i < names.size(); ++i)
-    {
-        auto & expression = expressions->children[i];
-        if (inliner.rewrite(expression, budget, {}))
-            structure_hint.modify(names[i], [&](ColumnDescription & column) { column.default_desc.expression = expression; });
-    }
+        if (inliner.rewrite(expressions->children[i], budget, {}))
+            changed.push_back(i);
+
+    if (inliner.metValueWithAlias())
+        return;
+    for (size_t i : changed)
+        structure_hint.modify(names[i], [&](ColumnDescription & column) { column.default_desc.expression = expressions->children[i]; });
 }
 
 void removeMisboundDefaultsFromStructureHint(

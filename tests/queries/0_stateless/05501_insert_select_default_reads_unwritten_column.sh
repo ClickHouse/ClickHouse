@@ -25,6 +25,7 @@ declare -A INPUT=(
 {"id":2,"q":[100]}'
     [column_list_rows]='{"id":1}
 {"id":2,"q_od":100,"q_nd":200}'
+    [x_rows]='{"id":1,"x":100}'
 )
 
 SETUP="
@@ -79,20 +80,15 @@ check ephemeral rows "id UInt32, e UInt32 EPHEMERAL id + 100, q UInt32 DEFAULT e
 check lambda_body array_rows "id UInt32, al UInt32 ALIAS id + 1, q Array(UInt32) DEFAULT arrayMap(x -> x + al, [id])" "" "*"
 check lambda_parameter array_rows "id UInt32, al UInt32 ALIAS id + 1, q Array(UInt32) DEFAULT arrayMap(al -> al + 1, [id])" "" "*"
 
-# Lambda parameters that would capture a column read by the inlined value, or be named like an alias in it.
+# Lambda parameters that would capture a column read by the inlined value.
 check lambda_capture array_rows "id UInt32, al UInt32 ALIAS id + 1, q Array(UInt32) DEFAULT arrayMap(id -> id + al, [7])" "" "*"
 check lambda_capture_member array_rows "id UInt32, al UInt32 ALIAS id + 1,
     q Array(UInt32) DEFAULT arrayMap(id -> id.x + al, [CAST(tuple(7), 'Tuple(x UInt32)')])" "" "*"
-check lambda_capture_alias array_rows "id UInt32, al UInt32 ALIAS (id AS x) * 2, q Array(UInt32) DEFAULT arrayMap(x -> x + al, [7])" "" "*"
 
-# An identifier named like an expression alias reads the alias, not the unwritten column `a`. The alias of a lambda is
-# visible only inside it, that of another `DEFAULT` only when a direct insert evaluates that `DEFAULT`.
+# An identifier named like an expression alias reads the alias, not the unwritten column `a`, and an alias of a column that
+# no `DEFAULT` reads changes nothing.
 check expression_alias rows "id UInt32, a UInt32, q UInt32 DEFAULT (toUInt32(5) AS a) + a" "(id, q)" "id, q"
 check expression_alias_in_lambda rows "id UInt32, a UInt32, q UInt32 DEFAULT (toUInt32(5) AS a) + arrayMap(x -> x + a, [id])[1]" \
-    "(id, q)" "id, q"
-check expression_alias_of_lambda rows "id UInt32, a UInt32 DEFAULT 5, q UInt32 DEFAULT a + arrayMap(x -> (x AS a), [id])[1]" \
-    "(id, q)" "id, q"
-check expression_alias_of_read_column rows "id UInt32, a UInt32, v UInt32 ALIAS (toUInt32(5) AS a) + 1, q UInt32 DEFAULT v + a" \
     "(id, q)" "id, q"
 check expression_alias_of_unread_column rows "id UInt32, a UInt32, v UInt32 ALIAS (toUInt32(5) AS a) + 1, q UInt32 DEFAULT a + 1" \
     "(id, q)" "id, q"
@@ -137,5 +133,17 @@ done
 # read of `m` is not substituted.
 $CLICKHOUSE_CLIENT -q "CREATE TABLE volatile_default (id UInt32, m UInt32 MATERIALIZED rand(), q UInt32 DEFAULT m) ENGINE = MergeTree ORDER BY id"
 $CLICKHOUSE_CLIENT -q "INSERT INTO volatile_default SELECT * FROM file('${FILE_DIR}/rows.jsonl', 'JSONEachRow')" 2>&1 | grep -o -m1 'UNKNOWN_IDENTIFIER'
+
+# Nothing is substituted when the `DEFAULT`s or the values they read define an expression alias, which any of the `DEFAULT`s
+# evaluated together may read: `q` reads the alias `a` of `r`, and `al` is not substituted.
+$CLICKHOUSE_CLIENT -q "
+    CREATE TABLE alias_of_other_default (id UInt32, a UInt32, q UInt32 DEFAULT a + 1, r UInt32 DEFAULT (toUInt32(7) AS a) * 2)
+    ENGINE = MergeTree ORDER BY id;
+    INSERT INTO alias_of_other_default (id, q, r) SELECT id, q, r FROM file('${FILE_DIR}/rows.jsonl', 'JSONEachRow');
+    SELECT 'alias_of_other_default', * FROM alias_of_other_default ORDER BY ALL;
+    CREATE TABLE alias_in_value (id UInt32, x UInt32, al UInt32 ALIAS (id AS x) * 2, q UInt32 DEFAULT arrayMap(y -> al, [7])[1] + x)
+    ENGINE = MergeTree ORDER BY id;"
+$CLICKHOUSE_CLIENT -q "INSERT INTO alias_in_value SELECT * FROM file('${FILE_DIR}/x_rows.jsonl', 'JSONEachRow')" 2>&1 \
+    | grep -o -m1 'UNKNOWN_IDENTIFIER'
 
 rm -rf "${USER_FILES_PATH:?}/${FILE_DIR}"
