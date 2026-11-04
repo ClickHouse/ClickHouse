@@ -35,9 +35,9 @@ public:
         return 0;
     }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
-        return "() -> String";
+        return std::make_shared<DataTypeString>();
     }
 
     bool isDeterministic() const override { return false; }
@@ -65,9 +65,8 @@ Alias: authUser()
         .examples{
             {"Usage example",
             R"(
-CREATE USER u1;
-EXECUTE AS u1 SELECT currentUser(), authenticatedUser();
-DROP USER u1;
+            EXECUTE as u1;
+            SELECT currentUser(), authenticatedUser();
             )",
             R"(
 ┌─currentUser()─┬─authenticatedUser()─┐

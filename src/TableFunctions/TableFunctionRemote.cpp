@@ -80,7 +80,6 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, Con
             String{},
             distributed_settings,
             LoadingStrictnessLevel::CREATE,
-            /* is_fresh_definition = */ true,
             cluster,
             remote_table_function_ptr,
             !is_cluster_function);
@@ -131,7 +130,7 @@ remoteSecure(named_collection[, option=value [,..]][, SETTINGS name = value, ...
 
 | Argument       | Description                                                                                                                                                                                                                                                                                                                                                        |
 |----------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `addresses_expr` | A remote server address or an expression that generates multiple addresses of remote servers. Format: `host` or `host:port`.<br/><br/>    The `host` can be specified as a server name, or as an IPv4 or IPv6 address. An IPv6 address must be specified in `[]`.<br/><br/>    The `port` is the TCP port on the remote server. If the port is omitted, it uses [tcp_port](/reference/settings/server-settings/settings/tcp-port#tcp_port) from the server config file for table function `remote` (by default, 9000) and [tcp_port_secure](/reference/settings/server-settings/settings/tcp-port#tcp_port_secure) for table function `remoteSecure` (by default, 9440).<br/><br/>    For IPv6 addresses, a port is required.<br/><br/>    If only parameter `addresses_expr` is specified, `db` and `table` will use `system.one` by default.<br/><br/>    Type: [String](/reference/data-types/string). |
+| `addresses_expr` | A remote server address or an expression that generates multiple addresses of remote servers. Format: `host` or `host:port`.<br/><br/>    The `host` can be specified as a server name, or as a IPv4 or IPv6 address. An IPv6 address must be specified in `[]`.<br/><br/>    The `port` is the TCP port on the remote server. If the port is omitted, it uses [tcp_port](/reference/settings/server-settings/settings/tcp-port#tcp_port) from the server config file for table function `remote` (by default, 9000) and [tcp_port_secure](/reference/settings/server-settings/settings/tcp-port#tcp_port_secure) for table function `remoteSecure` (by default, 9440).<br/><br/>    For IPv6 addresses, a port is required.<br/><br/>    If only parameter `addresses_expr` is specified, `db` and `table` will use `system.one` by default.<br/><br/>    Type: [String](/reference/data-types/string). |
 | `db`           | Database name. Type: [String](/reference/data-types/string).                                                                                                                                                                                                                                                                                             |
 | `table`        | Table name. Type: [String](/reference/data-types/string).                                                                                                                                                                                                                                                                                               |
 | `user`         | User name. If not specified, `default` is used. Type: [String](/reference/data-types/string).                                                                                                                                                                                                                                                         |
@@ -280,8 +279,8 @@ The following pattern types are supported.
 
 The query will be sent to the first healthy replica. However, for `remote` the replicas are iterated in the order currently set in the [load_balancing](/reference/settings/session-settings/load-balancing#load_balancing) setting.
 The number of generated addresses is limited by [table_function_remote_max_addresses](/reference/settings/session-settings/table#table_function_remote_max_addresses) setting.
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, remoteSecretArguments()});
-    factory.registerFunction("remoteSecure", {[] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("remote", /* secure = */ true); }, {.description = R"DOC(Like the remote table function, but establishes a TLS-encrypted (secure) connection to the remote server.)DOC", .category = FunctionDocumentation::Category::TableFunction}, remoteSecretArguments()});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}});
+    factory.registerFunction("remoteSecure", {[] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("remote", /* secure = */ true); }, {.description = R"DOC(Like the remote table function, but establishes a TLS-encrypted (secure) connection to the remote server.)DOC", .category = FunctionDocumentation::Category::TableFunction}});
     factory.registerFunction("cluster", {[] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("cluster"); }, {.description = R"DOCS_MD(
 Allows accessing all shards (configured in the `remote_servers` section) of a cluster without creating a [Distributed](/reference/engines/table-engines/special/distributed) table. Only one replica of each shard is queried.
 
@@ -338,8 +337,8 @@ Connection settings like `host`, `port`, `user`, `password`, `compression`, `sec
 
 - [skip_unavailable_shards](/reference/settings/session-settings/skip-unavailable-shards#skip_unavailable_shards)
 - [load_balancing](/reference/settings/session-settings/load-balancing#load_balancing)
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{}, {.allow_readonly = true}});
-    factory.registerFunction("clusterAllReplicas", {[] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("clusterAllReplicas"); }, {.description = R"DOC(Like the cluster table function, but queries all replicas of every shard in the cluster instead of a single replica per shard.)DOC", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{}, {.allow_readonly = true}});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, {.allow_readonly = true}});
+    factory.registerFunction("clusterAllReplicas", {[] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("clusterAllReplicas"); }, {.description = R"DOC(Like the cluster table function, but queries all replicas of every shard in the cluster instead of a single replica per shard.)DOC", .category = FunctionDocumentation::Category::TableFunction}, {.allow_readonly = true}});
 }
 
 }

@@ -4,7 +4,6 @@
 
 #include <Common/HashTable/FixedHashMap.h>
 #include <Common/HashTable/HashSet.h>
-#include <Common/HashTable/HashTableTraits.h>
 #include <Common/HashTable/StringHashMap.h>
 #include <Common/HashTable/TwoLevelHashMap.h>
 #include <Common/HashTable/TwoLevelStringHashMap.h>
@@ -68,10 +67,6 @@ using AggregatedDataWithUInt64KeyTwoLevel = TwoLevelHashMap<UInt64, AggregateDat
 
 using AggregatedDataWithUInt32KeyVoidTwoLevel = TwoLevelHashSet<UInt32, HashCRC32<UInt32>>;
 using AggregatedDataWithUInt64KeyVoidTwoLevel = TwoLevelHashSet<UInt64, HashCRC32<UInt64>>;
-
-/// `AggregatedDataVariants::init` passes a size hint to a type when `HasConstructorOfNumberOfElements` accepts it.
-static_assert(HasConstructorOfNumberOfElements<AggregatedDataWithUInt64KeyTwoLevel>::value);
-static_assert(HasConstructorOfNumberOfElements<AggregatedDataWithUInt64KeyVoidTwoLevel>::value);
 
 using AggregatedDataWithShortStringKeyTwoLevel = TwoLevelStringHashMap<AggregateDataPtr>;
 using AggregatedDataWithPackedStringKeyTwoLevel = TwoLevelHashMap<PackedStringRef, AggregateDataPtr>;
@@ -141,12 +136,7 @@ struct AggregationDataWithNullKeyTwoLevel : public Base
 
     AggregationDataWithNullKeyTwoLevel() = default;
 
-    /// Constrained like the converting constructor of `TwoLevelHashTable`.
-    /// Overload resolution prefers the more constrained candidate.
-    /// Without this the inherited constructor would win.
-    /// Then `convertToTwoLevel` would copy the cells but drop the NULL key group.
     template <typename Other>
-    requires(!std::is_arithmetic_v<Other>)
     explicit AggregationDataWithNullKeyTwoLevel(const Other & other) : Base(other)
     {
         impls[0].hasNullKeyData() = other.hasNullKeyData();

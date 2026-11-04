@@ -186,96 +186,6 @@ stmt.getLocalSettings().logComment("some-comment");
 
 **Note:** this approach work for single threaded uses of statement because `localSettings` is shared between threads.
 
-### Custom HTTP Headers {#custom-http-headers}
-
-Custom HTTP headers are passed as client properties. Each header uses the `http_header_` prefix. `ClientConfigProperties.httpHeader(String)` (or `DriverProperties.httpHeader(String)`) builds that key. The V1 `custom_http_headers` property is not used in JDBC V2.
-
-```java showLineNumbers
-Properties properties = new Properties();
-properties.setProperty(ClientConfigProperties.httpHeader("X-ClickHouse-Quota"), "test");
-properties.setProperty(ClientConfigProperties.httpHeader("X-ClickHouse-Test"), "value1,value2");
-Connection conn = Driver.connect("jdbc:ch:https://localhost:8443/", properties);
-
-// URL equivalent:
-// jdbc:ch:https://localhost:8443?http_header_X-CLICKHOUSE-QUOTA=test&http_header_X-CLICKHOUSE-TEST=value1,value2
-```
-
-## ClickHouse Cloud Features {#clickhouse-cloud-features}
-
-Features that apply when connecting to [ClickHouse Cloud](https://clickhouse.com/cloud).
-
-### Replica-aware Routing (CLOUD) {#replica-aware-routing}
-
-ClickHouse Cloud can pin related HTTP requests to the same replica. Send the `X-ClickHouse-Replica-Tag` header so a Cloud proxy routes every request that shares the tag to one replica. Use this for session-scoped objects such as temporary tables, replica-local cache reuse, or read-after-write consistency.
-Read more: https://clickhouse.com/docs/products/cloud/features/infrastructure/replica-aware-routing.
-
-**What to set:** HTTP header `X-ClickHouse-Replica-Tag` (`com.clickhouse.client.api.http.ClickHouseHttpProto.HEADER_REPLICA_TAG`). Use the same tag value for all requests that should stay on one replica.
-
-```java showLineNumbers
-String replicaTag = "my-app-session-1";
-
-Properties properties = new Properties();
-properties.setProperty("user", user);
-properties.setProperty("password", password);
-properties.setProperty(
-        ClientConfigProperties.httpHeader(ClickHouseHttpProto.HEADER_REPLICA_TAG),
-        replicaTag);
-
-Connection conn = Driver.connect("jdbc:ch:https://your-service.clickhouse.cloud:8443", properties);
-
-// URL equivalent:
-// jdbc:ch:https://your-service.clickhouse.cloud:8443?http_header_X-CLICKHOUSE-REPLICA-TAG=my-app-session-1
-```
-
-### JWT Authentication (CLOUD) {#jwt-authentication}
-
-[JWT Authentication](/concepts/features/security/external-authenticators/jwt) allows authenticating with JSON Web Tokens (JWTs) in ClickHouse Cloud. ClickHouse dynamically creates **ephemeral users** derived from token claims.
-
-#### Initial Configuration
-
-To configure initial JWT authentication in JDBC, pass the `bearer_token` property in connection properties or directly in the JDBC URL:
-
-```java showLineNumbers
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.SQLException;
-import java.util.Properties;
-
-public Connection createJwtConnection(String jwtToken) throws SQLException {
-    Properties properties = new Properties();
-    properties.setProperty("bearer_token", jwtToken);
-
-    return DriverManager.getConnection("jdbc:ch:https://your-service.clickhouse.cloud:8443", properties);
-}
-```
-
-URL equivalent:
-```plaintext
-jdbc:ch:https://your-service.clickhouse.cloud:8443?bearer_token=<your_jwt_token>
-```
-
-#### Updating Token at Runtime
-
-Because JWTs have a limited validity period, new JWT tokens should be set **before** the current token expires so no operations fail.
-
-To update the JWT token on an active JDBC connection at runtime, unwrap the connection to access the underlying `com.clickhouse.client.api.Client` instance and call `updateBearerToken`:
-
-```java showLineNumbers
-import com.clickhouse.jdbc.ConnectionImpl;
-import java.sql.Connection;
-import java.sql.SQLException;
-
-public void refreshJwtToken(Connection connection, String newJwtToken) throws SQLException {
-    // Unwrap the connection to get the underlying Client instance
-    ConnectionImpl connImpl = connection.unwrap(ConnectionImpl.class);
-
-    // Set the new JWT before the current token expires
-    connImpl.getClient().updateBearerToken(newJwtToken);
-}
-```
-
-Subsequent statements executed on this JDBC connection will use the updated JWT token.
-
 ## Supported data types {#supported-data-types}
 
 JDBC driver supports the same data formats as the underlying [java client](/integrations/language-clients/java/index#supported-data-types).
@@ -760,62 +670,6 @@ try (PreparedStatement ps = conn.prepareStatement("INSERT INTO mytable VALUES (?
 }
 ```
 
-
-## Observability & Monitoring {#jdbc-v2-o11y}
-
-The ClickHouse JDBC driver (V2) supports metrics and distributed tracing by leveraging the underlying Client V2 engine and standard JDBC application instrumentation. For detailed metric definitions, span attributes, and OpenTelemetry semantic conventions, see the [Client V2 Observability Documentation](/integrations/language-clients/java/client#v2-o11y).
-
-### Distributed Tracing & Spans
-
-When executing JDBC statements (`executeQuery`, `executeUpdate`, `executeBatch`), distributed tracing operates across a parent-child span hierarchy:
-
-1. **Outer JDBC / Application Span**: Created automatically by the OpenTelemetry Java Agent or APM instrumentation when intercepting `java.sql` method calls (e.g., `PreparedStatement.executeBatch()`).
-2. **Client V2 Operation Span**: Created by the underlying Client V2 engine under the current active trace context (`Context.current()`). Carries ClickHouse-specific metadata such as `clickhouse.query_id`, statement text (`db.query.text`), and server execution statistics (`clickhouse.response.read_rows`, `clickhouse.response.written_rows`).
-3. **Transport Request Span**: Created per HTTP POST request attempt to the ClickHouse server, recording endpoint details (`server.address`, `server.port`), HTTP status codes (`http.response.status_code`), and retry attempts.
-
-```text
-Application HTTP Request Span
-  └── JDBC Statement Span (e.g., PreparedStatement.executeQuery)
-      └── Client V2 Operation Span (query default)
-          └── Transport Request Span (POST http://localhost:8123)
-```
-
-Because Client V2 inherits `Context.current()`, JDBC database spans automatically join the ambient trace of the surrounding HTTP or messaging context without manual context propagation.
-
-### JDBC Auto-Instrumentation
-
-Standard JDBC operations (`Connection`, `PreparedStatement`, `ResultSet`, `executeBatch`) are automatically tracked by Java application runtime frameworks and APM agents:
-
-- **OpenTelemetry Java Agent**: Automatically intercepts standard JDBC method invocations, creating trace spans for database executions (`SELECT`, `INSERT`, `TRUNCATE`) with `db.system=clickhouse`, statement text, and execution timings.
-- **Spring Boot & Micrometer**: Spring Data JPA repositories and `JdbcTemplate` automatically instrument database calls when Spring Boot's Micrometer Observation or Spring Actuator metrics are active.
-
-### Configuring Driver Metrics Recorders
-
-You can enable Client V2 operational metrics (durations, counts, retries) for JDBC connections using the `jdbc_metrics_recorder` connection property. The driver instantiates the specified class via its public no-argument constructor per connection.
-
-```java
-// Configure via JDBC URL parameter
-String url = "jdbc:clickhouse://localhost:8123/default?jdbc_metrics_recorder=com.clickhouse.client.api.observability.micrometer.MicrometerMetricsRecorder";
-
-// Or set via java.util.Properties
-Properties properties = new Properties();
-properties.setProperty("jdbc_metrics_recorder", "com.clickhouse.client.api.observability.micrometer.MicrometerMetricsRecorder");
-
-try (Connection conn = DriverManager.getConnection(url, properties)) {
-    // JDBC operations report operation metrics to Micrometer's globalRegistry
-}
-```
-
-*Note: `MicrometerMetricsRecorder` is shipped with the driver, but requires `io.micrometer:micrometer-core` to be available on the application's runtime classpath.*
-
-### Spring Boot Demo Reference
-
-For a complete sample demonstrating JDBC driver setup and telemetry in a Spring Boot service, see the `examples/demo-spring-service` module in this repository:
-
-- **JDBC Datasource Setup** (`src/main/resources/application.yml`): Configures `spring.datasource` with `com.clickhouse.jdbc.ClickHouseDriver` and driver properties (`jdbc_ignore_unsupported_values: true`).
-- **Spring Data JPA Integration** (`com.clickhouse.examples.repository.SignalRepository`): Shows repository-based entity persistence over ClickHouse JDBC.
-- **`JdbcTemplate` Utilities** (`com.clickhouse.examples.schema.ClickHouseSchemaInitializer`): Demonstrates executing DDL and exporting metric points using Spring `JdbcTemplate`.
-
 ## `HikariCP` {#hikaricp}
 
 ```java showLineNumbers
@@ -908,7 +762,6 @@ properties.setProperty("socket_keepalive", "true");
     - Streaming Data isn't supported in JDBC V2 because it isn't part of the JDBC spec and Java.
 - JDBC V2 expects explicit configuration. No failover defaults.
     - Protocol should be specified in the URL. No implicit protocol detection using port numbers.
-- Custom HTTP headers use one property per header (`http_header_*`). The V1 comma-separated `custom_http_headers` property is not accepted.
 
 ### Configuration Changes {#configuration-changes}
 
@@ -1166,42 +1019,6 @@ Since version `0.5.0`, we're using Apache HTTP Client that's packed the Client. 
 | `wrapperObject`            | `false` | Whether [`getObject()`](https://docs.oracle.com/javase/8/docs/api/java/sql/ResultSet.html#getObject-int-) should return java.sql.Array / java.sql.Struct for Array / Tuple.                                                                                                                                                                                                                                                  |
 
 Note: please refer to [JDBC specific configuration](https://github.com/ClickHouse/clickhouse-java/blob/main/clickhouse-jdbc/src/main/java/com/clickhouse/jdbc/JdbcConfig.java) for more.
-
-### Custom HTTP Headers {#v07-custom-http-headers}
-
-Extra request headers are set with `custom_http_headers`. Each header is `Name=Value`. Separate multiple headers with a comma. Escape a comma inside a value as `\,`. An `=` inside a value is kept as part of the value.
-
-```java
-properties.setProperty("custom_http_headers", "X-ClickHouse-Quota=test");
-properties.setProperty("custom_http_headers", "X-ClickHouse-Quota=test, X-ClickHouse-Test=test");
-
-// URL Equivalent
-// jdbc:ch:http://localhost:8123?custom_http_headers=X-ClickHouse-Quota%3Dtest,X-ClickHouse-Test%3Dtest
-```
-
-## ClickHouse Cloud Features {#v1-clickhouse-cloud-features}
-
-Features that apply when connecting to [ClickHouse Cloud](https://clickhouse.com/cloud).
-
-### Replica-aware Routing (CLOUD) {#v1-replica-aware-routing}
-
-ClickHouse Cloud can pin related HTTP requests to the same replica. Send the `X-ClickHouse-Replica-Tag` header so a Cloud proxy routes every request that shares the tag to one replica. Use this for session-scoped objects such as temporary tables, replica-local cache reuse, or read-after-write consistency.
-Read more: https://clickhouse.com/docs/products/cloud/features/infrastructure/replica-aware-routing.
-
-**What to set:** HTTP header `X-ClickHouse-Replica-Tag` (`com.clickhouse.client.http.config.ClickHouseHttpOption.HEADER_REPLICA_TAG`) via `custom_http_headers`. Use the same tag value for all requests that should stay on one replica.
-
-```java
-String replicaTag = "my-app-session-1";
-
-Properties properties = new Properties();
-properties.setProperty("custom_http_headers", "X-ClickHouse-Replica-Tag=" + replicaTag);
-
-ClickHouseDataSource dataSource = new ClickHouseDataSource(
-        "jdbc:clickhouse:https://your-service.clickhouse.cloud:8443", properties);
-try (Connection conn = dataSource.getConnection("default", "password")) {
-    // requests on this connection are pinned to the replica selected for replicaTag
-}
-```
 
 ## Supported data types {#v07-supported-data-types}
 

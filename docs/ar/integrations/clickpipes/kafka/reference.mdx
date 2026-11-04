@@ -13,7 +13,9 @@ integration:
 import { Image } from "/snippets/ar/components/Image.jsx";
 import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
-## مصادر البيانات المدعومة {#supported-data-sources}
+<div id="supported-data-sources">
+  ## مصادر البيانات المدعومة
+</div>
 
 | الاسم            | الشعار                                                                                               | النوع | الحالة | الوصف                                                                                |
 | ---------------- | ---------------------------------------------------------------------------------------------------- | ----- | ------ | ------------------------------------------------------------------------------------ |
@@ -24,7 +26,9 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 | Azure Event Hubs | <img src="/images/integrations/logos/azure_event_hubs.svg" alt="شعار Azure Event Hubs" width="32" /> | البث  | مستقر  | هيّئ ClickPipes وابدأ باستيعاب بيانات البث من Azure Event Hubs إلى ClickHouse Cloud. |
 | WarpStream       | <img src="/images/integrations/logos/warpstream.svg" alt="شعار WarpStream" width="32" />             | البث  | مستقر  | هيّئ ClickPipes وابدأ باستيعاب بيانات البث من WarpStream إلى ClickHouse Cloud.       |
 
-## مستوى العزل {#isolation-level}
+<div id="isolation-level">
+  ## مستوى العزل
+</div>
 
 يحدد مستوى عزل مستهلك Kafka ما إذا كان ClickPipe يقرأ ويُدرج الرسائل التي تم تثبيتها ضمن معاملات Kafka فقط. فعّل إعداد `kafka_read_committed` لاستخدام `read_committed` وتخطي الرسائل الناتجة عن معاملات Kafka المُجهضة. عطّله لاستخدام `read_uncommitted` وقراءة جميع الرسائل. يمكنك تهيئة هذا الإعداد ضمن **الإعدادات المتقدمة**.
 
@@ -67,7 +71,9 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 * Tuple و Array بعناصر تستخدم أيًا من الأنواع المذكورة أعلاه (بما في ذلك Nullable، وبعمق مستوى واحد فقط)
 * أنواع SimpleAggregateFunction (لوجهات AggregatingMergeTree أو SummingMergeTree)
 
-### دعم نوع Variant {#variant-type-support}
+<div id="variant-type-support">
+  ### دعم نوع Variant
+</div>
 
 يدعم ClickPipes نوع Variant في الحالات التالية:
 
@@ -97,7 +103,9 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 تدعم ClickPipes جميع أنواع Avro البدائية والمركبة، وجميع أنواع Avro المنطقية باستثناء `local-timestamp-millis` و`local_timestamp-micros`. تُحوَّل أنواع Avro `record` إلى Tuple، وأنواع `array` إلى Array، و`map` إلى Map (بمفاتيح نصية فقط). وبوجه عام، تتوفر التحويلات المذكورة [هنا](/ar/concepts/features/interfaces/schema-inference#avro). نوصي باستخدام المطابقة الدقيقة للأنواع الرقمية في Avro، لأن ClickPipes لا تتحقق من تجاوز السعة أو فقدان الدقة عند تحويل الأنواع. وبدلاً من ذلك، يمكن إدراج جميع أنواع Avro في عمود `String`، وستُمثَّل في هذه الحالة كسلسلة JSON صالحة.
 
-#### أنواع Nullable واتحاد في Avro {#nullable-types-and-avro-unions}
+<div id="nullable-types-and-avro-unions">
+  #### أنواع Nullable واتحاد في Avro
+</div>
 
 تُعرَّف أنواع Nullable في Avro باستخدام مخطط اتحاد بالشكل `(T, null)` أو `(null, T)`، حيث إن T هو نوع Avro الأساسي. أثناء استنتاج المخطط، تُربَط أنواع اتحاد هذه بعمود &quot;Nullable&quot; في ClickHouse. لاحظ أن ClickHouse لا يدعم الأنواع `Nullable(Array)` و`Nullable(Map)` و`Nullable(Tuple)`. ستُحوَّل اتحادات null في Avro لهذه الأنواع إلى إصدارات غير Nullable (وتُحوَّل أنواع Avro Record إلى Tuple مُسمّى في ClickHouse). وستُدرَج قيم Avro &quot;nulls&quot; لهذه الأنواع على النحو التالي:
 
@@ -109,7 +117,9 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
   ### Protobuf
 </div>
 
-#### أنواع بيانات Protobuf المدعومة {#supported-protobuf-data-types}
+<div id="supported-protobuf-data-types">
+  #### أنواع بيانات Protobuf المدعومة
+</div>
 
 يدعم ClickPipes جميع أنواع Protobuf 2 و3، باستثناء النوع `group` في proto 2، وهو نوع أُعلن عن إهماله منذ وقت طويل. وتستخدم تحويلات الأنواع الأساسية عمليات التحويل التالية:
 
@@ -164,9 +174,11 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 إذا كان مخطط Protobuf المعرّف لـ ClickPipe على المستوى الأعلى يحتوي على حقل متكرر واحد يكون بحد ذاته رسالة protobuf، فسيعتمد استنتاج المخطط وتعيين الأعمدة على حقل الرسالة &quot;المضمَّنة&quot;. وستُعالَج رسالة Kafka على أنها قائمة من هذه الرسائل، كما ستُفكَّك رسالة Kafka واحدة إلى عدة صفوف في ClickHouse.
 
-## الأعمدة الافتراضية في Kafka {#kafka-virtual-columns}
+<div id="kafka-virtual-columns">
+  ## الأعمدة الافتراضية في Kafka
+</div>
 
-الأعمدة الافتراضية التالية مدعومة لمصادر بيانات البث المتوافقة مع Kafka. عند إنشاء وجهة جديدة، يمكن إضافة الأعمدة الافتراضية إلى الجدول الهدف باستخدام الزر `Add Column`.
+الأعمدة الافتراضية التالية مدعومة لمصادر البيانات المتدفقة المتوافقة مع Kafka. عند إنشاء وجهة جديدة، يمكن إضافة الأعمدة الافتراضية إلى الجدول الهدف باستخدام الزر `Add Column`.
 
 | الاسم            | الوصف                                       | نوع البيانات الموصى به |
 | ---------------- | ------------------------------------------- | ---------------------- |
@@ -178,16 +190,14 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 | `_header_keys`   | مصفوفة موازية من المفاتيح في ترويسات السجل  | `Array(String)`        |
 | `_header_values` | مصفوفة موازية من الترويسات في ترويسات السجل | `Array(String)`        |
 | `_raw_message`   | رسالة Kafka الكاملة                         | `String`               |
-| `_is_deleted`    | ما إذا كان السجل علامة حذف مرن              | `Bool`                 |
 
 لاحظ أن العمود `_raw_message` يُوصى به فقط لبيانات JSON.
 وفي حالات الاستخدام التي تكون فيها سلسلة JSON فقط هي المطلوبة (مثل استخدام دوال ClickHouse [`JsonExtract*`](/ar/reference/functions/regular-functions/json-functions#jsonextract-functions) من أجل
 ملء عرض مادي لاحق)، قد يؤدي حذف جميع الأعمدة &quot;غير الافتراضية&quot; إلى تحسين أداء ClickPipes.
 
-يتوفر العمود `_is_deleted` عندما تُضبط معالجة علامات الحذف على الحذف المرن.
-تكون قيمته `true` لعلامات الحذف في Kafka و`false` للرسائل العادية.
-
-### مفاتيح الرسائل المهيكلة {#structured-message-keys}
+<div id="structured-message-keys">
+  ### مفاتيح الرسائل المهيكلة
+</div>
 
 تؤدي مطابقة `_key` بعمود `String` إلى تخزين مفتاح رسالة Kafka الأصلي. تتجاوز هذه المطابقة فك ترميز المفتاح والبحث عن المخطط. لاستخراج الحقول من مفتاح مهيكل، طابِق حقول المصدر التي تبدأ بـ `_key.`. على سبيل المثال، لمفتاح JSON ‏`{"customer":{"id":42}}`، طابِق `_key.customer.id` بعمود وجهة مثل `customer_id`.
 

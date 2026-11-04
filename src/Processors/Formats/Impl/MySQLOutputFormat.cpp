@@ -1,7 +1,6 @@
 #include <Processors/Formats/Impl/MySQLOutputFormat.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
-#include <Common/FailPoint.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Core/MySQL/PacketsGeneric.h>
@@ -27,11 +26,6 @@ namespace ErrorCodes
     extern const int QUERY_WAS_CANCELLED;
 }
 
-namespace FailPoints
-{
-extern const char mysql_output_format_cancel_mid_loop[];
-}
-
 MySQLOutputFormat::MySQLOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & settings_)
     : IOutputFormat(header_, out_)
     , client_capabilities(settings_.mysql_wire.client_capabilities)
@@ -43,7 +37,6 @@ MySQLOutputFormat::MySQLOutputFormat(WriteBuffer & out_, SharedHeader header_, c
     sequence_id = settings_.mysql_wire.sequence_id ? settings_.mysql_wire.sequence_id : &dummy_sequence_id;
     /// Switch between Text (COM_QUERY) and Binary (COM_EXECUTE_STMT) ResultSet
     use_binary_result_set = settings_.mysql_wire.binary_protocol;
-    result_column_origins = settings_.mysql_wire.result_column_origins;
 
     const auto & header = getPort(PortKind::Main).getHeader();
     data_types = header.getDataTypes();
@@ -68,15 +61,10 @@ void MySQLOutputFormat::writePrefix()
     {
         packet_endpoint->sendPacket(LengthEncodedNumber(header.columns()), false);
 
-        const ResultColumnOrigins * origins = result_column_origins;
-        if (origins && origins->size() != header.columns())
-            origins = nullptr;
-
         for (size_t i = 0; i < header.columns(); ++i)
         {
             const auto & column_name = header.getColumnsWithTypeAndName()[i].name;
-            const ResultColumnOrigin * origin = origins ? &(*origins)[i] : nullptr;
-            packet_endpoint->sendPacket(getColumnDefinition(column_name, data_types[i], origin), false);
+            packet_endpoint->sendPacket(getColumnDefinition(column_name, data_types[i]), false);
         }
 
         if (!(client_capabilities & Capability::CLIENT_DEPRECATE_EOF) && !use_binary_result_set)
@@ -99,17 +87,6 @@ void MySQLOutputFormat::consume(Chunk chunk)
         {
             if (isCancelled())
                 throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
-
-            if (row == 5)
-            {
-                /// This runs inside `IProcessor::work()`, which must only use CPU and never wait, so
-                /// the hook cancels the query the same way `KILL QUERY` does instead of blocking:
-                /// the check above then observes the cancellation on the next row.
-                fiu_do_on(FailPoints::mysql_output_format_cancel_mid_loop, {
-                    if (auto query_context = CurrentThread::tryGetQueryContext())
-                        query_context->killCurrentQuery();
-                });
-            }
 
             ProtocolText::ResultSetRow row_packet(serializations, data_types, chunk.getColumns(), row);
             packet_endpoint->sendPacket(row_packet, false);
