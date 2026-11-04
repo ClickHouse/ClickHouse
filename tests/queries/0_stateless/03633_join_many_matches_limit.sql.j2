@@ -18,6 +18,7 @@ ON t1.c0 = t2.c0
 SETTINGS joined_block_split_single_row = 1, max_joined_block_size_rows = 100, max_memory_usage = '1G';
 
 SET joined_block_split_single_row = 1;
+SET min_joined_block_size_rows = 0, min_joined_block_size_bytes = 0;
 
 SELECT
     if(max(blockSize()) > 9, 'Error: ' || toString(max(blockSize())), 'Ok'), count() as total_rows, sum(ignore(*)) as dummy
