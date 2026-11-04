@@ -88,6 +88,7 @@ def cluster():
         cluster.add_instance(
             "node",
             main_configs=["configs/config.d/storage_conf.xml"],
+            macros={"hdfs_host": "hdfs1"},
             with_hdfs=True,
             stay_alive=True,
         )
@@ -461,8 +462,8 @@ def test_sql_hdfs_disk_remote_host_filter(cluster):
     node = cluster.instances["node"]
     fs = HdfsClient(hosts=cluster.hdfs_ip, user_name="root")
 
-    def hdfs_disk(path):
-        return f"disk(type = 'hdfs', endpoint = 'hdfs://hdfs1:9000/sql_disk_filter/{path}/')"
+    def hdfs_disk(path, host="hdfs1"):
+        return f"disk(type = 'hdfs', endpoint = 'hdfs://{host}:9000/sql_disk_filter/{path}/')"
 
     # Created before the list excludes hdfs1: loaded from metadata on restart, so it is only reported.
     node.query(
@@ -470,14 +471,18 @@ def test_sql_hdfs_disk_remote_host_filter(cluster):
         f"SETTINGS disk = {hdfs_disk('filter_existing')}"
     )
     node.query("INSERT INTO t_existing_hdfs_disk VALUES (1)")
+    node.query(
+        "CREATE TABLE t_macro_hdfs_disk (x UInt32) ENGINE = MergeTree ORDER BY x "
+        f"SETTINGS disk = {hdfs_disk('filter_macro', host='{hdfs_host}')}"
+    )
 
     with ConfigManager() as cm:
         cm.add_main_config(node, "configs/remote_url_allow_hosts.xml")
 
-        def assert_rejected(table, path):
+        def assert_rejected(table, path, host="hdfs1"):
             error = node.query_and_get_error(
                 f"CREATE TABLE {table} (x UInt32) ENGINE = MergeTree ORDER BY x "
-                f"SETTINGS disk = {hdfs_disk(path)}"
+                f"SETTINGS disk = {hdfs_disk(path, host)}"
             )
             assert "UNACCEPTABLE_URL" in error, error
 
@@ -486,6 +491,13 @@ def test_sql_hdfs_disk_remote_host_filter(cluster):
         assert not fs.exists("/sql_disk_filter/filter_blocked")
         # The identical definition reuses the disk created before the list was tightened.
         assert_rejected("t_reused_hdfs_disk", "filter_existing")
+
+        # The macro now expands to an allowed host, but the reused disk still points at hdfs1.
+        cm.add_main_config(node, "configs/macros_override.xml")
+        assert node.query("SELECT getMacro('hdfs_host')") == "allowed.example.com\n"
+        assert_rejected("t_reused_macro_hdfs_disk", "filter_macro", host="{hdfs_host}")
+        # On restart the macro would point the table at a nonexistent host.
+        node.query("DROP TABLE t_macro_hdfs_disk SYNC")
 
         node.restart_clickhouse()
         assert node.query("SELECT x FROM t_existing_hdfs_disk") == "1\n"
