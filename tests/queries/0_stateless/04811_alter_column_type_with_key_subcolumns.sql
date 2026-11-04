@@ -184,3 +184,28 @@ ALTER TABLE t_alter_key_sub MODIFY COLUMN data Nullable(JSON(c String));
 SELECT 'type:', type FROM system.columns WHERE database = currentDatabase() AND table = 't_alter_key_sub' AND name = 'data';
 SELECT 'key lookup (data.b.:Int64 = 4):', count() FROM t_alter_key_sub WHERE data.b.:Int64 = 4;
 DROP TABLE t_alter_key_sub;
+
+-- A Map value read by its key: `key_1` is parsed as the key type.
+CREATE TABLE t_alter_key_sub (id UInt32, m Map(String, Int64)) ENGINE = MergeTree ORDER BY (m.key_1, id) SETTINGS index_granularity = 1;
+INSERT INTO t_alter_key_sub VALUES (0, map('1', 0)), (1, map('01', 3, '1', 1)), (2, map('1', 2));
+SELECT 'Map key type change, the key subcolumn reads another entry -> reject:';
+ALTER TABLE t_alter_key_sub MODIFY COLUMN m Map(Int64, Int64); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+SELECT 'key subcolumn values:', groupArray(k) FROM (SELECT m.key_1 AS k FROM t_alter_key_sub ORDER BY id);
+DROP TABLE t_alter_key_sub;
+
+CREATE TABLE t_alter_key_sub (id UInt32, m Map(String, Int64)) ENGINE = MergeTree ORDER BY (m.values, id) SETTINGS index_granularity = 1;
+INSERT INTO t_alter_key_sub VALUES (0, map('1', 0)), (1, map('2', 1)), (2, map('3', 2));
+SELECT 'Map key type change, the key subcolumn does not depend on it -> allowed:';
+ALTER TABLE t_alter_key_sub MODIFY COLUMN m Map(Int64, Int64);
+SELECT 'type:', type FROM system.columns WHERE database = currentDatabase() AND table = 't_alter_key_sub' AND name = 'm';
+SELECT 'key lookup (m.values = [1]):', count() FROM t_alter_key_sub WHERE m.values = [1];
+DROP TABLE t_alter_key_sub;
+
+-- A key on a Variant subcolumn.
+CREATE TABLE t_alter_key_sub (id UInt32, v Variant(Int64, String)) ENGINE = MergeTree ORDER BY (v.Int64, id) SETTINGS index_granularity = 1, allow_nullable_key = 1;
+INSERT INTO t_alter_key_sub VALUES (0, CAST(toInt64(0), 'Variant(Int64, String)')), (1, CAST('x', 'Variant(Int64, String)')), (2, CAST(toInt64(2), 'Variant(Int64, String)'));
+SELECT 'Variant to Dynamic, the key subcolumn keeps its values -> allowed:';
+ALTER TABLE t_alter_key_sub MODIFY COLUMN v Dynamic;
+SELECT 'type:', type FROM system.columns WHERE database = currentDatabase() AND table = 't_alter_key_sub' AND name = 'v';
+SELECT 'key lookup (v.Int64 = 2):', count() FROM t_alter_key_sub WHERE v.Int64 = 2;
+DROP TABLE t_alter_key_sub;

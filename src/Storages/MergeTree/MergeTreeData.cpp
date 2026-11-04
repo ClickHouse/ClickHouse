@@ -50,6 +50,7 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -5916,8 +5917,16 @@ bool conversionKeepsSubcolumnValues(const DataTypePtr & from, const DataTypePtr 
     /// of `j` answer `j.a`, with the same type.
     auto from_info = from->tryGetSubcolumnInfo(subcolumn);
     auto to_info = to->tryGetSubcolumnInfo(subcolumn);
-    if (!from_info || !to_info
-        || !std::ranges::equal(valueSelectingSteps(from_info->substreams_path), valueSelectingSteps(to_info->substreams_path), isSameSubstreamStep))
+    if (!from_info || !to_info)
+        return false;
+
+    /// `Variant` -> `Dynamic` keeps every variant as it is.
+    auto keeps_step = [](const ISerialization::Substream & from_step, const ISerialization::Substream & to_step)
+    {
+        return isSameSubstreamStep(from_step, to_step)
+            || (from_step.type == ISerialization::Substream::VariantElements && to_step.type == ISerialization::Substream::DynamicData);
+    };
+    if (!std::ranges::equal(valueSelectingSteps(from_info->substreams_path), valueSelectingSteps(to_info->substreams_path), keeps_step))
         return false;
 
     /// Continue below a wrapper. If neither type has the subcolumn below it, it is the wrapper's own (`null`, `size0`).
@@ -5943,6 +5952,15 @@ bool conversionKeepsSubcolumnValues(const DataTypePtr & from, const DataTypePtr 
     const auto * to_array = typeid_cast<const DataTypeArray *>(to.get());
     if (from_array || to_array)
         return from_array && to_array && check_below(from_array->getNestedType(), to_array->getNestedType());
+
+    /// `key_<k>` of a `Map` finds its value by parsing `<k>` as the key type.
+    if (!from_info->substreams_path.empty() && from_info->substreams_path.front().type == ISerialization::Substream::MapKeyValue)
+    {
+        const auto * from_map = typeid_cast<const DataTypeMap *>(from.get());
+        const auto * to_map = typeid_cast<const DataTypeMap *>(to.get());
+        if (!from_map || !to_map || !from_map->getKeyType()->equals(*to_map->getKeyType()))
+            return false;
+    }
 
     auto goes_through = [](const DataTypePtr & type, std::string_view name, const ISerialization::SubstreamPath & path)
     {
