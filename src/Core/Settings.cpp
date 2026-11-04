@@ -4063,18 +4063,6 @@ FORMAT Null;
     DECLARE(Seconds, max_execution_time, 0, R"(
 The maximum query execution time in seconds.
 
-The `max_execution_time` parameter can be a bit tricky to understand.
-It operates based on interpolation relative to the current query execution speed
-(this behaviour is controlled by [`timeout_before_checking_execution_speed`](/reference/settings/session-settings/other#timeout_before_checking_execution_speed)).
-
-ClickHouse will interrupt a query if the projected execution time exceeds the
-specified `max_execution_time`. By default, the `timeout_before_checking_execution_speed`
-is set to 10 seconds. This means that after 10 seconds of query execution, ClickHouse
-will begin estimating the total execution time. If, for example, `max_execution_time`
-is set to 3600 seconds (1 hour), ClickHouse will terminate the query if the estimated
-time exceeds this 3600-second limit. If you set `timeout_before_checking_execution_speed`
-to 0, ClickHouse will use the clock time as the basis for `max_execution_time`.
-
 If query runtime exceeds the specified number of seconds, the behavior will be
 determined by the 'timeout_overflow_mode', which by default is set to `throw`.
 
@@ -4158,11 +4146,17 @@ expires. If the execution speed is high, the execution speed will be reduced.
     DECLARE(Seconds, timeout_before_checking_execution_speed, 10, R"(
 Checks that execution speed is not too slow (no less than `min_execution_speed`),
 after the specified time in seconds has expired.
+
+If set to `0`, the execution speed limits are checked from the start of the query,
+but [`max_estimated_execution_time`](/reference/settings/session-settings/max#max_estimated_execution_time)
+is not checked at all.
 )", 0) \
     DECLARE(Seconds, max_estimated_execution_time, 0, R"(
 Maximum query estimate execution time in seconds. Checked on every data block
 when [`timeout_before_checking_execution_speed`](/reference/settings/session-settings/other#timeout_before_checking_execution_speed)
-expires.
+expires. It operates based on extrapolation relative to the current query execution
+speed. If you set `timeout_before_checking_execution_speed` to 0, then this setting
+will not be checked.
 )", 0, \
         {"24.1", 0, 0, "Separate max_execution_time and max_estimated_execution_time"}) \
     \
@@ -7911,7 +7905,7 @@ Possible values:
 - 1 - Enable
 )", 0, \
         {"26.5", false, true, "New setting to enable a query-plan-level optimization that pushes ORDER BY ... LIMIT n through a LEFT/RIGHT join when the sort key only references the preserved side."}) \
-    DECLARE(Bool, query_plan_top_k_through_array_join, false, R"(
+    DECLARE(Bool, query_plan_top_k_through_array_join, true, R"(
 Toggles a query-plan-level optimization which moves `ORDER BY ... LIMIT n` below an `ARRAY JOIN` when the sort key does not read a joined column. For an inner `ARRAY JOIN`, the optimization also adds a filter below the moved sort. This filter removes the rows whose arrays are all empty, because these rows give no output.
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
 
@@ -7920,7 +7914,7 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0, \
-        {"26.11", false, false, "New setting to move bounded sorting below `ARRAY JOIN` when its keys do not depend on expanded columns; disabled by default."}) \
+        {"26.11", false, true, "New setting to move bounded sorting below `ARRAY JOIN` when its keys do not depend on expanded columns."}) \
     DECLARE(Bool, query_plan_aggregation_bucket_top_k, true, R"(
 Toggles a query-plan-level optimization which, when a final aggregation feeds `ORDER BY` over the aggregation's outputs with `LIMIT n` and the plan proves the per-bucket selection exact, keeps only each two-level bucket's best n groups during the aggregation's final merge or conversion. The result is exact: a group outside its own bucket's best n has at least n groups ahead of it globally, so it cannot be in the global top n.
 
@@ -10298,6 +10292,12 @@ This is an internal setting that should not be used directly. The initiator of a
 Defines the approximate size of a batch (in bytes) used in distributed processing of tasks in cluster table functions with `bucket` split granularity. The system accumulates data until at least this amount is reached. The actual size may be slightly larger to align with data boundaries.
 )", 0, \
         {"25.11", 0, 0, "New setting."}) \
+    DECLARE(Bool, cluster_table_function_split_by_split_offsets, false, R"(
+With `bucket` split granularity, when the table metadata records the file size and the row group offsets (`split_offsets` in Iceberg), cut files into byte ranges on these offsets without reading them; each task reads the row groups that start in its range. Otherwise, and on a hit in the query condition cache, the initiator reads the footer of every file.
+
+Requires all servers of the cluster to support it: a task with a byte range cannot be sent to a server of an older version.
+)", 0, \
+        {"26.11", false, false, "New setting."}) \
     DECLARE(UInt64, merge_table_max_tables_to_look_for_schema_inference, 1000, R"(
 When creating a `Merge` table without an explicit schema or when using the `merge` table function, infer schema as a union of not more than the specified number of matching tables.
 If there is a larger number of tables, the schema will be inferred from the first specified number of tables.

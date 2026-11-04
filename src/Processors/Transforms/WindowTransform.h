@@ -2,7 +2,6 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Interpreters/WindowDescription.h>
-#include <WindowFunctions/Common/WindowArguments.h>
 #include <WindowFunctions/Common/WindowBounds.h>
 #include <WindowFunctions/Common/WindowFunctionRequirements.h>
 #include <WindowFunctions/IGeneralWindowFunction.h>
@@ -10,6 +9,7 @@
 #include <Processors/Transforms/Window/Frame.h>
 #include <Processors/Transforms/Window/Partition.h>
 #include <Processors/Transforms/Window/Peers.h>
+#include <Processors/Transforms/Window/SlidingArguments.h>
 #include <Processors/Transforms/Window/SlidingBlocks.h>
 #include <Processors/Transforms/Window/SlidingIndexes.h>
 #include <Processors/Transforms/Window/WindowTransformParams.h>
@@ -44,8 +44,7 @@ struct GeneralWindowFunctionSlot
 {
     GeneralWindowFunctionPtr function;
     char * state = nullptr;
-    size_t result_column = 0;
-    WindowArguments arguments;
+    size_t function_index = 0;
 };
 
 /* Computes several window functions that share one window. The input is sorted by PARTITION BY, then by
@@ -113,6 +112,7 @@ private:
 
     SlidingBlocks blocks;
     SlidingIndexes indexes;
+    SlidingArguments arguments;
 
     Partition partition;
     Frame frame;
