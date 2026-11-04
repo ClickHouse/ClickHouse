@@ -159,3 +159,28 @@ INSERT INTO t_alter_key_sub SELECT number, if(number < 6, toJSONString(map('a', 
 SELECT 'skip index, key subcolumn loses its Nullable under a kept Nullable level, lazy -> reject:';
 ALTER TABLE t_alter_key_sub MODIFY COLUMN data Nullable(JSON(a Int64)) SETTINGS enable_json_lazy_type_hints = 1; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 DROP TABLE t_alter_key_sub;
+
+-- Subcolumn names are flat: the element `j.a` and the path `a` of the element `j` both answer `c.j.a`.
+CREATE TABLE t_alter_key_sub (id UInt32, c Tuple(`j.a` Int64, j JSON(a Int64))) ENGINE = MergeTree ORDER BY (c.`j.a`, id) SETTINGS index_granularity = 2;
+INSERT INTO t_alter_key_sub VALUES (0, (0, '{"a" : 2}')), (1, (1, '{"a" : 1}')), (2, (2, '{"a" : 0}'));
+SELECT 'drop the key element, its name resolves to a sibling path -> reject:';
+ALTER TABLE t_alter_key_sub MODIFY COLUMN c Tuple(j JSON(a Int64)); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+DROP TABLE t_alter_key_sub;
+
+CREATE TABLE t_alter_key_sub (id UInt32, c Tuple(`j.a` Int64, j JSON(a Nullable(Int64)))) ENGINE = MergeTree ORDER BY (c.`j.a`, id) SETTINGS index_granularity = 2;
+INSERT INTO t_alter_key_sub VALUES (0, (0, '{"a" : 2}')), (1, (1, '{}')), (2, (2, '{"a" : 0}'));
+SELECT 'change the sibling path, the key element is kept -> allowed:';
+ALTER TABLE t_alter_key_sub MODIFY COLUMN c Tuple(`j.a` Int64, j JSON(a Int64));
+SELECT 'type:', type FROM system.columns WHERE database = currentDatabase() AND table = 't_alter_key_sub' AND name = 'c';
+SELECT 'key lookup (c.`j.a` = 1):', count() FROM t_alter_key_sub WHERE c.`j.a` = 1;
+DROP TABLE t_alter_key_sub;
+
+-- A key on a dynamic path read with a type hint.
+CREATE TABLE t_alter_key_sub (id UInt32, data JSON) ENGINE = MergeTree ORDER BY (data.b.:Int64, id) SETTINGS index_granularity = 2, allow_nullable_key = 1;
+INSERT INTO t_alter_key_sub SELECT number, toJSONString(map('b', number)) FROM numbers(6);
+SELECT 'dynamic path with a type hint, other paths change -> allowed:';
+ALTER TABLE t_alter_key_sub MODIFY COLUMN data JSON(c String);
+ALTER TABLE t_alter_key_sub MODIFY COLUMN data Nullable(JSON(c String));
+SELECT 'type:', type FROM system.columns WHERE database = currentDatabase() AND table = 't_alter_key_sub' AND name = 'data';
+SELECT 'key lookup (data.b.:Int64 = 4):', count() FROM t_alter_key_sub WHERE data.b.:Int64 = 4;
+DROP TABLE t_alter_key_sub;

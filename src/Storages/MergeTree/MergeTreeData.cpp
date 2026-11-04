@@ -5876,6 +5876,32 @@ bool isSafeForKeyConversion(const IDataType * from, const IDataType * to)
     return false;
 }
 
+/// Whether two substreams select the same value: the same kind of step into the same element. A JSON path is the
+/// same path whether it is typed, typed in the shared data or dynamic.
+bool isSameSubstreamStep(const ISerialization::Substream & lhs, const ISerialization::Substream & rhs)
+{
+    auto kind = [](ISerialization::Substream::Type type)
+    {
+        if (type == ISerialization::Substream::ObjectTypedSharedDataPath || type == ISerialization::Substream::ObjectDynamicPath)
+            return ISerialization::Substream::ObjectTypedPath;
+        return type;
+    };
+    return kind(lhs.type) == kind(rhs.type) && lhs.name_of_substream == rhs.name_of_substream
+        && lhs.variant_element_name == rhs.variant_element_name && lhs.object_path_name == rhs.object_path_name
+        && lhs.bucket == rhs.bucket;
+}
+
+/// The steps of a substreams path that choose which value is read. `Nullable` and `LowCardinality` levels only
+/// wrap it; they are checked by the caller.
+ISerialization::SubstreamPath valueSelectingSteps(const ISerialization::SubstreamPath & path)
+{
+    ISerialization::SubstreamPath steps;
+    for (const auto & step : path)
+        if (step.type != ISerialization::Substream::NullableElements && step.type != ISerialization::Substream::DictionaryKeys)
+            steps.push_back(step);
+    return steps;
+}
+
 /// Whether converting a column from `from` to `to` keeps the values of its subcolumn `subcolumn`.
 /// The subcolumn type alone does not tell: below a Nullable level a subcolumn is Nullable either way, so
 /// `JSON(a Nullable(Int64))` -> `Nullable(JSON(a Int64))` keeps `a` a `Nullable(Int64)` but turns its NULLs into 0.
@@ -5884,6 +5910,14 @@ bool conversionKeepsSubcolumnValues(const DataTypePtr & from, const DataTypePtr 
     auto from_subcolumn = from->tryGetSubcolumnType(subcolumn);
     auto to_subcolumn = to->tryGetSubcolumnType(subcolumn);
     if (!from_subcolumn || !to_subcolumn || !isSafeForKeyConversion(from_subcolumn.get(), to_subcolumn.get()))
+        return false;
+
+    /// Names are flat: dropping the element `j.a` of ``Tuple(`j.a` Int64, j JSON(a Int64))`` makes the path `a`
+    /// of `j` answer `j.a`, with the same type.
+    auto from_info = from->tryGetSubcolumnInfo(subcolumn);
+    auto to_info = to->tryGetSubcolumnInfo(subcolumn);
+    if (!from_info || !to_info
+        || !std::ranges::equal(valueSelectingSteps(from_info->substreams_path), valueSelectingSteps(to_info->substreams_path), isSameSubstreamStep))
         return false;
 
     /// Continue below a wrapper. If neither type has the subcolumn below it, it is the wrapper's own (`null`, `size0`).
@@ -5910,6 +5944,13 @@ bool conversionKeepsSubcolumnValues(const DataTypePtr & from, const DataTypePtr 
     if (from_array || to_array)
         return from_array && to_array && check_below(from_array->getNestedType(), to_array->getNestedType());
 
+    auto goes_through = [](const DataTypePtr & type, std::string_view name, const ISerialization::SubstreamPath & path)
+    {
+        auto prefix_info = type->tryGetSubcolumnInfo(name);
+        return prefix_info && prefix_info->substreams_path.size() < path.size()
+            && std::equal(prefix_info->substreams_path.begin(), prefix_info->substreams_path.end(), path.begin(), isSameSubstreamStep);
+    };
+
     /// The levels the name goes through, e.g. `j` of `j.a`.
     for (size_t dot = subcolumn.find('.'); dot != std::string_view::npos; dot = subcolumn.find('.', dot + 1))
     {
@@ -5917,8 +5958,8 @@ bool conversionKeepsSubcolumnValues(const DataTypePtr & from, const DataTypePtr 
         auto rest = subcolumn.substr(dot + 1);
         auto from_prefix = from->tryGetSubcolumnType(prefix);
         auto to_prefix = to->tryGetSubcolumnType(prefix);
-        bool from_through = from_prefix && from_prefix->hasSubcolumn(rest);
-        bool to_through = to_prefix && to_prefix->hasSubcolumn(rest);
+        bool from_through = from_prefix && from_prefix->hasSubcolumn(rest) && goes_through(from, prefix, from_info->substreams_path);
+        bool to_through = to_prefix && to_prefix->hasSubcolumn(rest) && goes_through(to, prefix, to_info->substreams_path);
         if (from_through != to_through)
             return false;
         if (from_through && !conversionKeepsSubcolumnValues(from_prefix, to_prefix, rest))

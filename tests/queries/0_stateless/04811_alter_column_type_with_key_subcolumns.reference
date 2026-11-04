@@ -48,3 +48,10 @@ type:	Tuple(j JSON(a Nullable(Int64)), b Int64)
 key subcolumn values (NULL, = 0, total):	6	1	12
 Array element gets a Nullable level, key subcolumn loses its Nullable -> reject:
 skip index, key subcolumn loses its Nullable under a kept Nullable level, lazy -> reject:
+drop the key element, its name resolves to a sibling path -> reject:
+change the sibling path, the key element is kept -> allowed:
+type:	Tuple(`j.a` Int64, j JSON(a Int64))
+key lookup (c.`j.a` = 1):	1
+dynamic path with a type hint, other paths change -> allowed:
+type:	Nullable(JSON(c String))
+key lookup (data.b.:Int64 = 4):	1
