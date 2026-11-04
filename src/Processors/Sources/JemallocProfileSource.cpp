@@ -1,3 +1,7 @@
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/ListWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Processors/Sources/JemallocProfileSource.h>
 
 #if USE_JEMALLOC
@@ -69,9 +73,9 @@ std::optional<UInt64> parseHexAddress(std::string_view & src)
 
 }
 
-std::vector<UInt64> parseJemallocStackAddresses(std::string_view line, bool * fully_parsed)
+VectorWithMemoryTracking<UInt64> parseJemallocStackAddresses(std::string_view line, bool * fully_parsed)
 {
-    std::vector<UInt64> result;
+    VectorWithMemoryTracking<UInt64> result;
     std::string_view sv = line;
     if (!sv.empty() && sv[0] == '@')
     {
@@ -152,7 +156,7 @@ UInt64 applySamplingCorrection(UInt64 count, UInt64 bytes, UInt64 sampling_inter
 struct SymbolizationLRUCache
 {
     using Key = std::pair<UInt64, bool>;
-    using Value = std::shared_ptr<const std::vector<std::string>>;
+    using Value = std::shared_ptr<const VectorWithMemoryTracking<std::string>>;
 
     struct KeyHash
     {
@@ -165,7 +169,7 @@ struct SymbolizationLRUCache
         }
     };
 
-    using List = std::list<std::pair<Key, Value>>;
+    using List = ListWithMemoryTracking<std::pair<Key, Value>>;
 
     explicit SymbolizationLRUCache(size_t max_size_) : max_size(max_size_) {}
 
@@ -181,10 +185,11 @@ struct SymbolizationLRUCache
     }
 
     /// Inserts a new entry (or updates existing) and returns the stored shared_ptr.
-    Value put(const Key & key, std::vector<std::string> value)
+    Value put(const Key & key, VectorWithMemoryTracking<std::string> value)
     {
+        /// The cache is shared by all queries, so its entries are charged to the global tracker only.
         MemoryTrackerSwitcher switcher(&total_memory_tracker);
-        auto shared = std::make_shared<const std::vector<std::string>>(std::move(value));
+        auto shared = std::make_shared<const VectorWithMemoryTracking<std::string>>(std::move(value));
         std::lock_guard lock(mutex);
         auto it = index.find(key);
         if (it != index.end())
@@ -194,7 +199,16 @@ struct SymbolizationLRUCache
             return shared;
         }
         lru.emplace_front(key, shared);
-        index.emplace(key, lru.begin());
+        try
+        {
+            index.emplace(key, lru.begin());
+        }
+        catch (...)
+        {
+            /// Keep `lru` and `index` in step, otherwise the entry would stay in `lru` unreachable.
+            lru.pop_front();
+            throw;
+        }
         if (lru.size() > max_size)
         {
             index.erase(lru.back().first);
@@ -208,7 +222,7 @@ private:
 
     mutable std::mutex mutex;
     List lru TSA_GUARDED_BY(mutex);
-    std::unordered_map<Key, List::iterator, KeyHash> index TSA_GUARDED_BY(mutex);
+    UnorderedMapWithMemoryTracking<Key, List::iterator, KeyHash> index TSA_GUARDED_BY(mutex);
 };
 
 SymbolizationLRUCache symbolization_cache(/*max_size=*/ 100'000);
@@ -224,7 +238,7 @@ SymbolizationLRUCache::Value resolveAddress(UInt64 address, bool symbolize_with_
 
     FramePointers fp;
     fp[0] = reinterpret_cast<void *>(address);
-    std::vector<std::string> frame_symbols;
+    VectorWithMemoryTracking<std::string> frame_symbols;
     StackTrace::forEachFrame(
         fp, 0, 1,
         [&](const StackTrace::Frame & frame)
@@ -458,7 +472,7 @@ void JemallocProfileSource::collectAddresses()
 {
     ReadBufferFromFile in(filename);
 
-    std::unordered_set<UInt64> unique_addresses;
+    UnorderedSetWithMemoryTracking<UInt64> unique_addresses;
     std::string line;
 
     while (!in.eof())
@@ -492,7 +506,7 @@ Chunk JemallocProfileSource::generateCollapsed()
 
         ReadBufferFromFile in(filename);
         std::string line;
-        std::vector<UInt64> current_stack;
+        VectorWithMemoryTracking<UInt64> current_stack;
         bool has_stack = false;
         UInt64 sampling_interval = 0;
 

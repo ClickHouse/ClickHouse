@@ -6,7 +6,6 @@
 -- of the kind, and is documented rather than pinned here; this only asserts that the numbers arrive and
 -- that they are the numbers of the join.
 
-SET enable_analyzer = 1;
 SET allow_block_nested_loop_join = 1;
 -- An `ALL INNER JOIN` whose `ON` section determines no join key becomes a cartesian product with a
 -- filter where the hash join is available, and reaches the operator only where it is not.

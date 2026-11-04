@@ -15,9 +15,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 [конечную точку Prometheus для ClickHouse Managed Postgres](/ru/products/managed-postgres/monitoring/prometheus).
 Сведения о настройке и аутентификации см. на странице [конечной точке Prometheus].
 
-<div id="common-labels">
-  ## Общие метки
-</div>
+## Общие метки {#common-labels}
 
 Каждая метрика имеет следующие метки:
 
@@ -31,9 +29,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 `mode` у метрик CPU, `state` у соединений, `database` у метрик размера
 базы данных). Они перечислены рядом с каждой метрикой.
 
-<div id="information-metric">
-  ## Информационная метрика
-</div>
+## Информационная метрика {#information-metric}
 
 `PostgresServiceInfo` — это метрика типа gauge, которая всегда равна `1` и содержит
 текущий статус и версию сервиса в своих метках. Используйте её, чтобы через JOIN
@@ -48,9 +44,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 (например, `running`, `creating`, `stopped`). `postgres_version`
 показывает основную версию Postgres (например, `17`, `18`).
 
-<div id="capacity">
-  ## Выделенные ресурсы
-</div>
+## Выделенные ресурсы {#capacity}
 
 Статические лимиты, выделенные для сервиса. Они изменяются только при
 изменении размера сервиса.
@@ -61,9 +55,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 | `PostgresServer_MemoryLimitBytes`  | gauge | bytes   | Объем памяти, выделенный сервису.    |
 | `PostgresServer_StorageLimitBytes` | gauge | bytes   | Объем хранилища, выделенный сервису. |
 
-<div id="resource-utilization">
-  ## Использование ресурсов
-</div>
+## Использование ресурсов {#resource-utilization}
 
 | Метрика                                | Тип     | Дополнительные метки | Описание                                                                                                                         |
 | -------------------------------------- | ------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
@@ -76,9 +68,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 `PostgresServer_CPUSeconds_Total` по интересующим вас режимам и
 разделите её на `PostgresServer_CPUCores`.
 
-<div id="io">
-  ## Дисковый и сетевой ввод-вывод
-</div>
+## Дисковый и сетевой ввод-вывод {#io}
 
 | Метрика                                     | Тип     | Единица | Описание                               |
 | ------------------------------------------- | ------- | ------- | -------------------------------------- |
@@ -87,9 +77,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 | `PostgresServer_NetworkReceiveBytes_Total`  | counter | bytes   | Количество байтов, полученных по сети. |
 | `PostgresServer_NetworkTransmitBytes_Total` | counter | bytes   | Количество байтов, переданных по сети. |
 
-<div id="database-activity">
-  ## Активность базы данных
-</div>
+## Активность базы данных {#database-activity}
 
 Накопительные счётчики с момента запуска сервиса. Используйте `rate()` или `irate()`,
 чтобы преобразовать их в значения в секунду.
@@ -104,9 +92,28 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 | `PostgresServer_TransactionsRolledBack_Total` | counter | Отменённые транзакции.            |
 | `PostgresServer_Deadlocks_Total`              | counter | Обнаруженные взаимные блокировки. |
 
-<div id="connections-cache-size">
-  ## Подключения, кэш и размер баз данных
-</div>
+## Производительность запросов {#query-performance}
+
+Counter-метрики по событиям, зарегистрированным Query Insights, без учёта операций `UTILITY`.
+
+| Метрика                                    | Тип     | Единица      | Описание                                                                                   |
+| ------------------------------------------ | ------- | ------------ | ------------------------------------------------------------------------------------------ |
+| `PostgresQuery_Calls_Total`                | counter | события      | Зарегистрированные события запросов.                                                       |
+| `PostgresQuery_DurationMicroseconds_Total` | counter | микросекунды | Суммарная длительность зарегистрированных запросов.                                        |
+| `PostgresQuery_ErrorEvents_Total`          | counter | события      | Зарегистрированные события с ненулевым уровнем серьёзности ошибки, включая предупреждения. |
+| `PostgresQuery_FailureEvents_Total`        | counter | события      | Зарегистрированные события с уровнем серьёзности `ERROR` или выше.                         |
+| `PostgresQuery_Rows_Total`                 | counter | строки       | Строки, возвращённые или затронутые зарегистрированными запросами.                         |
+| `PostgresQuery_SharedBlocksHit_Total`      | counter | блоки        | Общие блоки, найденные в кэше при выполнении зарегистрированных запросов.                  |
+| `PostgresQuery_SharedBlocksRead_Total`     | counter | блоки        | Общие блоки, прочитанные зарегистрированными запросами.                                    |
+| `PostgresQuery_WALBytes_Total`             | counter | байты        | Объём WAL в байтах, сгенерированный зарегистрированными запросами.                         |
+| `PostgresQuery_SelectCalls_Total`          | counter | события      | Зарегистрированные события `SELECT`.                                                       |
+| `PostgresQuery_InsertCalls_Total`          | counter | события      | Зарегистрированные события `INSERT`.                                                       |
+| `PostgresQuery_UpdateCalls_Total`          | counter | события      | Зарегистрированные события `UPDATE`.                                                       |
+| `PostgresQuery_DeleteCalls_Total`          | counter | события      | Зарегистрированные события `DELETE`.                                                       |
+| `PostgresQuery_MergeCalls_Total`           | counter | события      | Зарегистрированные события `MERGE`.                                                        |
+| `PostgresQuery_OtherCalls_Total`           | counter | события      | Зарегистрированные события, кроме `SELECT`, `INSERT`, `UPDATE`, `DELETE` и `MERGE`.        |
+
+## Подключения, кэш и размер баз данных {#connections-cache-size}
 
 | Метрика                            | Тип   | Дополнительные метки | Описание                                                                                                                       |
 | ---------------------------------- | ----- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
@@ -114,9 +121,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 | `PostgresServer_CacheHitRatio`     | gauge |                      | Коэффициент попаданий в буферный кэш: доля блоков, обслуженных из кэша, от общего числа просмотренных блоков, в процентах.     |
 | `PostgresServer_DatabaseSizeBytes` | gauge | `database`           | Размер каждой базы данных на диске в байтах. Включает базу `postgres` по умолчанию и все базы данных, созданные пользователем. |
 
-<div id="related">
-  ## Связанные страницы
-</div>
+## Связанные страницы {#related}
 
 * [Конечная точка Prometheus] — настройка, аутентификация и сбор метрик
 * [Панель мониторинга](/ru/products/managed-postgres/monitoring/dashboard) — встроенные диаграммы в Cloud Console

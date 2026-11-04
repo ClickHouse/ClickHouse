@@ -17,7 +17,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 ### تسجيل بيئتك {#registration}
 
-قبل الالتحاق، يسجّل فريق الحساب بيئتك ويفعّل الوضع المُدار لمؤسستك. زوّدهم بما يلي:
+قبل التسجيل، يسجّل فريق الحساب بيئتك ويفعّل الوضع المُدار لمؤسستك. زوّدهم بما يلي:
 
 * معرّف حساب AWS، والمنطقة، واسم عنقود EKS
 * ما إذا كان موصل يعمل على جهاز افتراضي يعمل بنظام Linux أم داخل العنقود
@@ -25,16 +25,16 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 * بادئة مساحة الأسماء للخدمات (القيمة الافتراضية `ns-`)
 * كيفية سحب عنقودك لصور ClickHouse: عبر وصول السجل الذي تهيّئه ClickHouse Cloud لحسابك، أو عبر مرآتك الخاصة
 
-بعدها تُصدر ClickHouse Cloud نقطة نهاية موصل الخاصة بك ورمز التسجيل يُستخدم لمرة واحدة. ويحدّد هذا الرمز بيئتك، لذا لا يحتاج الالتحاق إلى أي معرّف إضافي.
+بعدها تُصدر ClickHouse Cloud نقطة نهاية الموصّل الخاصة بك، ورمز تسجيل يُستخدم لمرة واحدة، ومعرّف ARN لمستودع ECR الذي يضم مخطط عنقود ClickHouse (وهو الإدخال `chart_repository_arn` في [جذور Terraform](/ar/products/bring-your-own-cloud/connector/terraform-aws)). وفي حالة التثبيت عبر Terraform، تتسلّم في هذه المرحلة أيضًا حزمة المنصة: ففي Helm يطبّقها الأمر `clicklink clctl init --managed --from-terraform --platform-bundle`، وعلى الجهاز الافتراضي يطبّقها الأمر `clicklink clctl platform approve --bundle` بعد التسجيل. أمّا أي تثبيت مُدار آخر فيتلقّى حزمته الأولى لاحقًا، إذ يجهّزها المنفّذ ثم تُطبَّق باستخدام `clicklink clctl platform approve` كما هو موضّح في [تحديثات المنصة](/ar/products/bring-your-own-cloud/connector/platform-updates)؛ أمّا التثبيت باستخدام `--no-managed` فلا يحتاج إلى أي حزمة. ويحدّد هذا الرمز بيئتك، لذا لا يحتاج التسجيل إلى أي معرّف إضافي.
 
 ### لكل عملية تثبيت {#prerequisites-every-install}
 
 * **الموصل بالإصدار v0.17.0 أو أحدث.** لا تحتوي الإصدارات الأقدم على الوضع المُدار ولا على أوامر `platform` ولا على `instances create`. ويقدّم المثبّت أحدث إصدار ما لم تمرّر `--version`.
 * **نقطة نهاية الموصل ورمز التسجيل الخاصان بك**، ويُقدَّمان أثناء [التسجيل](#registration).
-* **حركة الخروج (egress) على المنفذ 443** إلى `https://<subdomain>.<connector-domain>` و`https://<subdomain>.enroll.<connector-domain>`، إضافة إلى `releases.clicklink.clickhouse.com` وAmazon ECR Public وقت التثبيت. وفي الوضع المُدار يتصل executor أيضًا بـ Amazon ECR وSTS عندما تسحب مزامنة أو عملية إنشاء على مستوى المنصة مخططًا (مخطط) من ECR. وإذا تعذّر الوصول إلى أيٍّ من هذه الوجهات، راجع [عمليات التثبيت المعزولة شبكيًا والمنعكسة](#air-gapped-and-mirrored-installs).
-* **عنقود Amazon EKS** للوضع المُدار. يرفض `init` الوضع المُدار على أي عنقود آخر، ويشير إلى `--no-managed` للتثبيت من دون executor.
-* **صلاحيات admin على العنقود من أجل grant الخاص بـ executor.** ينشئ هذا الـ grant كلًّا من ClusterRole وClusterRoleBinding وValidatingAdmissionPolicy تحصر executor ضمن مساحات الأسماء الواقعة تحت prefix الخاص بك. على Kubernetes، يحتاج ملف kubeconfig الذي تشغّل به `init` إلى هذه الصلاحيات. وعلى جهاز افتراضي، يحتاجها ملف kubeconfig الخاص بالمضيف؛ وإذا لم يكن للمضيف صلاحيات admin، يطبع `init` الأمر الذي يجب تشغيله من مضيف يمتلكها.
-* **لا وجود لـ ClickHouse بعد.** يبدأ التثبيت المُدار من دون أي خدمات؛ أما الخدمات التي ينشئها executor فتسجّل نفسها تلقائيًا. وفي الوضع المُدار لا يسجّل `init` أي ClickHouse تشغّله بنفسك (وعلى Kubernetes يرفض `--instance` و`--instance-namespace`). ولمراقبة عنقود من هذا النوع، ثبّت نشرًا (deployment) منفصلًا للموصل باستخدام `--no-managed`. ويتيح `--ch-user-suffix` للنشرين مشاركة instance واحد من دون تعارض في مستخدمي الموصل. ويحتاج ذلك النشر إلى مستمع native يمكن الوصول إليه، المنفذ الآمن 9440 أو المنفذ بنص صريح 9000، ويُكتشف تلقائيًا على Kubernetes. كما يحتاج إلى وصول ClickHouse admin من أجل التجهيز: مستخدم `default` بلا كلمة مرور، أو كلمة مرور تُمرَّر عبر `--ch-admin-password-stdin` أو عند المطالبة بها، أو حقن CR للـ instances المُدارة بواسطة مشغّل.
+* **حركة الخروج (egress) على المنفذ 443** إلى `https://<subdomain>.<connector-domain>` و`https://<subdomain>.enroll.<connector-domain>`، إضافة إلى `releases.clicklink.clickhouse.com` وAmazon ECR Public وقت التثبيت. وفي الوضع المُدار يتصل المنفّذ أيضًا بـ Amazon ECR وSTS عندما تسحب مزامنة أو عملية إنشاء على مستوى المنصة مخططًا (مخطط) من ECR. وإذا تعذّر الوصول إلى أيٍّ من هذه الوجهات، راجع [عمليات التثبيت المعزولة شبكيًا والمنعكسة](#air-gapped-and-mirrored-installs).
+* **عنقود Amazon EKS** للوضع المُدار. يرفض `init` الوضع المُدار على أي عنقود آخر، ويشير إلى `--no-managed` للتثبيت من دون المنفّذ. ويوفّر [Terraform على AWS](/ar/products/bring-your-own-cloud/connector/terraform-aws) وحدات جذرية لعنقود جديد وأخرى لعنقود قائم تشغّله بالفعل، إضافة إلى الأمر `init` الذي يثبّت طبقة المنصة فوقها.
+* **صلاحيات admin على العنقود من أجل الأذونات الخاصة بالمنفّذ.** تنشئ هذه الأذونات كلًّا من ClusterRole وClusterRoleBinding وValidatingAdmissionPolicy تحصر المنفّذ ضمن مساحات الأسماء الواقعة تحت prefix الخاص بك. على Kubernetes، يحتاج ملف kubeconfig الذي تشغّل به `init` إلى هذه الصلاحيات. وعلى جهاز افتراضي، يحتاجها ملف kubeconfig الخاص بالمضيف؛ وإذا لم يكن للمضيف صلاحيات admin، يطبع `init` الأمر الذي يجب تشغيله من مضيف يمتلكها.
+* **لا وجود لـ ClickHouse بعد.** يبدأ التثبيت المُدار من دون أي خدمات؛ أما الخدمات التي ينشئها المنفّذ فتسجّل نفسها تلقائيًا. وفي الوضع المُدار لا يسجّل `init` أي ClickHouse تشغّله بنفسك (وعلى Kubernetes يرفض `--instance` و`--instance-namespace`). ولمراقبة عنقود من هذا النوع، ثبّت نشرًا (deployment) منفصلًا للموصل باستخدام `--no-managed`. ويتيح `--ch-user-suffix` للنشرين مشاركة instance واحد من دون تعارض في مستخدمي الموصل. ويحتاج ذلك النشر إلى مستمع native يمكن الوصول إليه، المنفذ الآمن 9440 أو المنفذ بنص صريح 9000، ويُكتشف تلقائيًا على Kubernetes. كما يحتاج إلى وصول ClickHouse admin من أجل التجهيز: مستخدم `default` بلا كلمة مرور، أو كلمة مرور تُمرَّر عبر `--ch-admin-password-stdin` أو عند المطالبة بها، أو حقن CR للـ instances المُدارة بواسطة مشغّل.
 * **cosign** في أي مكان تنزّل فيه ملفات الإصدار. يتحقق المثبّت دائمًا من قيمة التحقق SHA-256. وعند تثبيت cosign يتحقق أيضًا من توقيع الإصدار، ومع `CLICKLINK_REQUIRE_COSIGN=1` يرفض المتابعة من دون cosign.
 
 ### لعمليات التثبيت على Kubernetes (Helm) {#prerequisites-kubernetes}

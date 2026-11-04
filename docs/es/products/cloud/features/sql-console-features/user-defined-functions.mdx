@@ -2,9 +2,9 @@
 sidebarTitle: 'Funciones definidas por el usuario'
 slug: /cloud/features/user-defined-functions
 title: 'Funciones definidas por el usuario en Cloud'
-description: 'Añada sus propias funciones ejecutables en Python en Cloud'
+description: 'Añada sus propias funciones ejecutables a ClickHouse Cloud, en Python o como binarios compilados'
 doc_type: 'guide'
-keywords: ['user defined function', 'UDF']
+keywords: ['user defined function', 'UDF', 'executable UDF', 'Python UDF', 'Native runtime']
 ---
 
 import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
@@ -13,14 +13,14 @@ Las funciones definidas por el usuario (UDF) permiten ampliar el comportamiento 
 
 En ClickHouse Cloud, hay varias formas de crear y administrar funciones definidas por el usuario:
 
-1. Mediante SQL
-2. Mediante la UI y su propio código (beta pública)
+1. Mediante [SQL](#sql-udfs)
+2. Mediante la [consola y su propio código](#ui-udfs)
 3. Mediante la [Cloud API](#manage-udfs-with-the-cloud-api) (beta)
 4. Mediante [Terraform](#manage-udfs-with-terraform) (beta)
 
-<div id="sql-udfs">
-  ## Funciones definidas por el usuario en SQL
-</div>
+Las UDF ejecutables están disponibles en AWS, GCP y Azure. Están habilitadas en todas las organizaciones, sin necesidad de activar nada. No se facturan por separado: los procesos de las UDF se ejecutan dentro de los pods del servicio y consumen la CPU y la memoria del propio servicio.
+
+## Funciones definidas por el usuario en SQL {#sql-udfs}
 
 Las UDF de SQL se pueden crear con la sentencia [`CREATE FUNCTION`](/es/reference/statements/create/function) a partir de una expresión lambda.
 
@@ -66,20 +66,16 @@ Esto significa:
 * Las UDF no heredan la configuración del perfil de usuario
 * La configuración a nivel de consulta no se aplica durante la ejecución de las UDF
 
-<div id="ui-udfs">
-  ## Funciones definidas por el usuario creadas desde la UI
-</div>
+## Funciones ejecutables definidas por el usuario {#ui-udfs}
 
-<BetaBadge />
-
-ClickHouse Cloud permite crear funciones definidas por el usuario desde la UI.
+Las UDF ejecutables ejecutan su código en un proceso aislado (sandbox) junto a cada réplica de su servicio. Puede subir un script de Python, que se ejecuta en el tiempo de ejecución `python3.11`, o un binario precompilado, que se ejecuta en el [tiempo de ejecución Native](#native-runtime).
 
 En este ejemplo, crearemos la misma función ejecutable simple definida por el usuario `isBusinessHours`, que comprueba si una marca temporal determinada cae dentro del horario laboral habitual.
-Anteriormente la creamos mediante SQL, pero esta vez la crearemos con Python y la configuraremos desde la UI.
+Anteriormente la creamos mediante SQL, pero esta vez la crearemos con Python y la configuraremos desde la consola.
 
 <Steps>
-  <Step title="Crear el archivo de Python" id="create-python-file">
-    Crea un nuevo archivo `main.py` localmente:
+  <Step title="Cree el archivo de Python" id="create-python-file">
+    Cree localmente un nuevo archivo `main.py`:
 
     ```python
     cat > main.py << 'EOF'
@@ -94,7 +90,7 @@ Anteriormente la creamos mediante SQL, pero esta vez la crearemos con Python y l
     EOF
     ```
 
-    Si tu script de Python importa paquetes de terceros, inclúyelos en un archivo `requirements.txt` y ClickHouse Cloud los instalará por ti. También puedes empaquetar las dependencias directamente en el archivo ZIP, pero entonces debes incluir paquetes en caché para ambas arquitecturas de CPU, así que `requirements.txt` es más sencillo. Por ejemplo:
+    El entorno de tiempo de ejecución de Python es `python3.11`. Si su script de Python importa paquetes de terceros, enumérelos en un archivo `requirements.txt` y ClickHouse Cloud se encargará de instalarlos en las dos arquitecturas de CPU en las que se ejecuta ClickHouse Cloud (x86-64 y ARM64). También puede empaquetar las dependencias directamente en el ZIP, pero en ese caso deberá incluir paquetes almacenados en caché para ambas arquitecturas de CPU, por lo que usar `requirements.txt` resulta más sencillo. Por ejemplo:
 
     ```text
     requests>=2.28.0
@@ -102,19 +98,25 @@ Anteriormente la creamos mediante SQL, pero esta vez la crearemos con Python y l
     ```
 
     <Note>
-      ClickHouse Cloud espera encontrar `main.py` en el archivo zip que cargarás a través de la UI en el siguiente paso.
-      Si le das otro nombre al archivo, se producirá un error.
+      ClickHouse Cloud espera encontrar `main.py` en el archivo zip que subirá desde la consola en el siguiente paso.
+      Si le da otro nombre al archivo, se producirá un error.
     </Note>
   </Step>
 
   <Step title="Empaquetar dependencias y archivos locales" id="bundle-dependencies">
-    Para incluir los paquetes de dependencias y cualquier archivo local adicional (como archivos wheel, archivos de configuración o archivos de datos), colóquelos en el mismo directorio que `main.py` y `requirements.txt`. Al crear el archivo ZIP, incluya todos los archivos:
+    En este tutorial, que no tiene dependencias ni archivos adicionales, basta con incluir `main.py` en el archivo comprimido:
 
     ```bash
-    zip is_business_hours.zip main.py requirements.txt
+    zip is_business_hours.zip main.py
     ```
 
-    Puedes referenciar el directorio base de la ruta local incluida en tu código Python usando `os.path.dirname(os.path.abspath(__file__))`. Esto devuelve la ruta absoluta del directorio donde se encuentra tu `main.py` dentro del archivo ZIP, lo que te permite acceder a otros archivos incluidos:
+    Para incluir paquetes de dependencias y cualquier archivo local adicional (como `requirements.txt`, archivos wheel, archivos de configuración o archivos de datos), colóquelos en el mismo directorio que su `main.py` y, a continuación, ejecute `zip` desde ese directorio para que `main.py` quede en la raíz del archivo comprimido:
+
+    ```bash
+    zip -r ../is_business_hours.zip .
+    ```
+
+    Puede hacer referencia al directorio base de la ruta local empaquetada en su código Python mediante `os.path.dirname(os.path.abspath(__file__))`. Esta expresión devuelve la ruta absoluta del directorio donde se encuentra su `main.py` dentro del archivo ZIP, lo que le permite acceder a otros archivos empaquetados:
 
     ```python
     import os
@@ -124,53 +126,48 @@ Anteriormente la creamos mediante SQL, pero esta vez la crearemos con Python y l
     config_path = os.path.join(base_dir, 'config.json')
     ```
 
-    Esto es útil cuando necesitas:
+    Esto resulta útil cuando necesita:
 
-    * Acceder a los archivos de configuración incluidos con tu UDF
+    * Acceder a archivos de configuración incluidos con su UDF
     * Cargar paquetes wheel para dependencias personalizadas
-    * Incluir scripts adicionales o archivos de datos
-
-    Ahora comprime el archivo en un archivo ZIP:
-
-    ```bash
-    zip is_business_hours.zip main.py
-    ```
+    * Hacer referencia a scripts adicionales o archivos de datos
 
     <Warning>
       **No se permiten enlaces simbólicos**
 
-      ClickHouse Cloud rechaza los archivos comprimidos de UDF que contienen enlaces simbólicos. Asegúrate de que tu paquete ZIP contenga solo archivos y directorios normales; las cargas con enlaces simbólicos no pasarán la validación.
+      ClickHouse Cloud rechaza los archivos comprimidos de UDF que contengan enlaces simbólicos. Asegúrese de que su paquete ZIP contenga únicamente archivos y directorios normales: las cargas que incluyan enlaces simbólicos no superarán la validación.
     </Warning>
   </Step>
 
-  <Step title="Crear una UDF desde la UI" id="create-udf-via-ui">
-    1. En la página principal de Cloud Console, haz clic en el nombre de tu organización en el menú de la esquina inferior izquierda.
-    2. Selecciona **Funciones definidas por el usuario** en el menú.
-    3. En la página de funciones definidas por el usuario, haz clic en **Configurar una UDF**. Se abrirá un panel de configuración a la derecha de la pantalla.
-    4. Introduce un nombre para la función. Para este ejemplo, usa `isBusinessHours`.
-    5. Selecciona un tipo de función: **Executable pool** o **Executable**:
-       * **Executable pool**: Se mantiene un grupo de procesos persistentes y, para las lecturas, se toma un proceso del grupo.
-       * **Executable**: El script se ejecuta en cada consulta.
-    6. Para este ejemplo, usa la configuración predeterminada. Para ver la lista completa de parámetros de configuración, consulta [Funciones ejecutables definidas por el usuario](/es/reference/functions/regular-functions/udf#executable-user-defined-functions).
-    7. Haz clic en **Buscar archivo** para cargar el archivo `.zip` que creaste al inicio de este tutorial.
-    8. Añade un argumento nuevo. Para este ejemplo, añade un argumento `timestamp` de tipo `DateTime`.
-    9. Selecciona un tipo de retorno. Para este ejemplo, selecciona `Bool`.
-    10. Haz clic en **Crear UDF**. Un cuadro de diálogo mostrará el estado actual de la compilación.
-        * Si surge algún problema, el estado cambia a **error**.
-        * En caso contrario, el estado pasa de **building** a **provisioning**. Tu servicio debe estar activo para completar el aprovisionamiento. Si tu servicio está inactivo, haz clic en **Activar servicio** en el panel **Detalles de la UDF** junto al nombre del servicio.
-        * Cuando se complete, el estado cambia a **deployed**.
+  <Step title="Cree una UDF desde la consola" id="create-udf-via-ui">
+    1. Desde la página de inicio de la consola de ClickHouse Cloud, haga clic en el nombre de su organización en el menú inferior izquierdo.
+    2. Seleccione **User-defined functions** en el menú.
+    3. En la página de funciones definidas por el usuario, haga clic en **Set up a UDF**. Se abrirá un panel de configuración en el lado derecho de la pantalla.
+    4. Introduzca un nombre para la función. Para este ejemplo, use `isBusinessHours`.
+    5. Seleccione un tipo de función, **Executable pool** o **Executable**:
+       * **Executable pool**: se inicia una sola vez un grupo de procesos de larga duración, que se reutiliza entre bloques y consultas. Es la opción recomendada para prácticamente cualquier workload.
+       * **Executable**: se inicia un nuevo proceso por cada bloque de datos procesado. Úselo solo cuando el proceso no deba conservar el estado entre llamadas.
+    6. Seleccione un **Runtime type**. Para este ejemplo, mantenga `python3.11`. Si prefiere subir un binary precompilado, seleccione **Native**; consulte [Tiempo de ejecución nativo](#native-runtime).
+    7. Para este ejemplo, use la configuración predeterminada. Para ver la lista completa de parámetros de configuración y sus valores predeterminados en Cloud, consulte [Referencia de configuración](#configuration-reference).
+    8. Haga clic en **Browse File** para subir el archivo `.zip` que creó al inicio de este tutorial.
+    9. Añada un nuevo argumento. Para este ejemplo, añada el argumento `timestamp` de tipo `DateTime`.
+    10. Seleccione un tipo de retorno. Para este ejemplo, seleccione `Bool`.
+    11. Haga clic en **Create UDF**. Se abrirá un cuadro de diálogo con el estado actual del build.
+        * Si se produce algún problema, el estado cambia a **error**.
+        * En caso contrario, el estado pasa de **building** a **provisioning**. Su servicio debe estar activo para completar el aprovisionamiento. Si está inactivo, haga clic en **Wake Up Service** en el panel **UDF details**, junto al nombre del servicio.
+        * Cuando finalice el proceso, el estado cambiará a **deployed**.
   </Step>
 
-  <Step title="Prueba tu UDF" id="test-your-udf">
-    1. vuelve a la página de inicio de la SQL Console haciendo clic en **Settings - volver a la vista de tu servicio** en la esquina superior izquierda de la página
-    2. haz clic en **SQL Console** en el menú de la izquierda
-    3. escribe la siguiente consulta:
+  <Step title="Pruebe su UDF" id="test-your-udf">
+    1. vuelva a la página de inicio de la consola SQL haciendo clic en **Settings - return to your service view** en la esquina superior izquierda de la página
+    2. haga clic en **SQL Console** en el menú de la izquierda
+    3. escriba la siguiente consulta:
 
     ```sql
     SELECT isBusinessHours('2026-03-20 10:00:00'::DateTime), isBusinessHours('2026-03-20 23:00:00'::DateTime);
     ```
 
-    Deberías ver el siguiente resultado:
+    Debería ver el siguiente resultado:
 
     ```response
     true    false
@@ -178,25 +175,196 @@ Anteriormente la creamos mediante SQL, pero esta vez la crearemos con Python y l
   </Step>
 
   <Step title="Crear una nueva versión" id="create-new-version">
-    Para cambiar el código de una UDF, crea una nueva versión. El panel **Edit** solo gestiona a qué servicios está asignada una UDF; cargar un archivo allí no reemplazará el código desplegado.
+    Para cambiar el código o la configuración de una UDF, cree una nueva versión. Las versiones son inmutables. El panel **Edit** solo determina a qué servicios está asignada una UDF; subir un archivo desde allí no reemplaza el código desplegado.
 
-    1. En la página principal de Cloud Console, haz clic en el nombre de tu organización en el menú de la esquina inferior izquierda.
-    2. Selecciona **Funciones definidas por el usuario** en el menú.
-    3. En **Acciones**, selecciona los tres puntos de la UDF `isBusinessHours` y haz clic en **Crear nueva versión**
-    4. Sube un archivo ZIP con el código modificado o cambia la configuración y, a continuación, haz clic en **Crear nueva versión**
+    1. Desde la página de inicio de la consola de ClickHouse Cloud, haga clic en el nombre de su organización en el menú inferior izquierdo.
+    2. Seleccione **User-defined functions** en el menú.
+    3. Seleccione los tres puntos en la columna **Actions** de la UDF `isBusinessHours` y haga clic en **Create new version**
+    4. Suba un archivo zip con el código modificado o cambie la configuración, seleccione los servicios que deben recibir la nueva versión y, a continuación, haga clic en **Create new version**
 
-    Has añadido correctamente tu primera función definida por el usuario a través de la UI, has comprobado que funciona y has visto cómo crear una nueva versión si es necesario.
+    Una nueva versión no hereda las asignaciones a servicios de la versión anterior. El panel de nueva versión incluye un selector de servicios, de modo que puede probar una versión en un único servicio y luego avanzar o revertir servicio por servicio. Cada servicio solo puede tener una versión de una función a la vez.
+
+    En las UDF `executable_pool`, los procesos persistentes del grupo siguen ejecutando la versión anterior hasta que se recarga el grupo. Use la acción **Reload UDF**, situada junto al servicio en el panel de la UDF. Esta acción ejecuta `SYSTEM RELOAD FUNCTION ON CLUSTER default isBusinessHours` en ese servicio.
+
+    Ha añadido correctamente su primera función definida por el usuario desde la consola, ha comprobado que se ejecuta y ha visto cómo crear una nueva versión cuando sea necesario.
   </Step>
 </Steps>
 
-<div id="manage-udfs-with-the-cloud-api">
-  ## Administrar UDFs con la Cloud API
-</div>
+### Tiempo de ejecución nativo (binarios compilados) {#native-runtime}
+
+El tiempo de ejecución Native le permite subir un binario precompilado en lugar de un script de Python. Establezca **Runtime type** en **Native** al crear la UDF (`runtime: native` en la API). En el sandbox no se instala nada automáticamente; todo lo que necesite el binario debe ir compilado dentro de él.
+
+Lenguajes compatibles actualmente: Rust, Go, C++ y JavaScript compilado a binario con Bun. Bun se ha probado con las versiones 1.4.0 y 1.4.2; es posible que otras versiones no funcionen.
+
+El archivo comprimido debe contener un ejecutable por cada arquitectura de CPU, cada uno en su propia carpeta:
+
+```text
+my-udf.zip
+├── amd64/
+│   ├── main            # linux/amd64 executable
+│   └── my_data.json    # optional data files
+└── arm64/
+    ├── main            # linux/arm64 executable
+    └── my_data.json
+```
+
+Se requieren ambas arquitecturas porque los servicios de ClickHouse Cloud se ejecutan en las dos. El ejecutable debe llamarse exactamente `main` y se ejecuta sin argumentos; si necesita indicar un modo o subcomando, páselo como un argumento normal de la función.
+
+Se recomienda encarecidamente usar binarios enlazados estáticamente: no dependen de las bibliotecas del sistema del host, cuyas llamadas al sistema pueden variar entre versiones del servidor, y la política de llamadas al sistema del sandbox está optimizada para ellos. Los binarios enlazados dinámicamente solo funcionan si se enlazan exclusivamente con glibc y se compilaron con glibc 2.35 o una versión anterior. El código JavaScript compilado con Bun siempre se enlaza dinámicamente.
+
+<Warning>
+  **Resuelva los archivos de datos de forma relativa al ejecutable**
+
+  Los archivos de la carpeta de arquitectura se despliegan junto al binario, pero el proceso no se inicia en ese directorio. Resuélvalos de forma relativa a la ruta del propio ejecutable, nunca al directorio de trabajo: en Go, use `filepath.Dir(os.Args[0])` u `os.Executable()`; en Rust, use `std::env::current_exe()`. Si falta un archivo necesario, escriba un mensaje en stderr y termine con un código de salida distinto de cero en lugar de recurrir silenciosamente a una alternativa.
+</Warning>
+
+Las UDF nativas no pueden tener acceso a la red; el acceso de red saliente solo está disponible para el tiempo de ejecución de Python. Consulte [Acceso a la red](#network-access).
+
+Compile el binario para ambas arquitecturas. En Rust, añada ambos destinos una sola vez y, a continuación, compile cada uno:
+
+```bash
+rustup target add x86_64-unknown-linux-musl aarch64-unknown-linux-musl
+cargo build --release --target x86_64-unknown-linux-musl
+cargo build --release --target aarch64-unknown-linux-musl
+```
+
+En Go:
+
+```bash
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o amd64/main .
+CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o arm64/main .
+```
+
+Copie cada salida en `amd64/main` y `arm64/main` antes de comprimir las carpetas.
+
+El protocolo wire es idéntico al del tiempo de ejecución de Python: el proceso lee los argumentos desde stdin y escribe los resultados en stdout en el formato configurado. Consulte [Formatos y encabezados de fragmentos](#formats-and-chunk-headers). El repositorio [`llm-token-udf`](https://github.com/ClickHouse/llm-token-udf) contiene UDF nativas en Rust y Go, junto con scripts de build.
+
+### Referencia de configuración {#configuration-reference}
+
+La siguiente configuración está disponible en la consola y en la API. Los valores predeterminados son los de ClickHouse Cloud y, en algunos casos, difieren de los de la versión de código abierto.
+
+| Configuración                                  | Se aplica a                   | Predeterminado             | Notas                                                                                                                                                                                                                                                                                                                |
+| ---------------------------------------------- | ----------------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Tipo                                           | ambos                         | -                          | `executable_pool` o `executable`                                                                                                                                                                                                                                                                                     |
+| Tipo de tiempo de ejecución                    | ambos                         | -                          | `python3.11` o `Native`                                                                                                                                                                                                                                                                                              |
+| Formato                                        | ambos                         | `TabSeparated`             | Cualquier [formato de entrada/salida](/es/reference/formats/index) de ClickHouse. Los formatos `Native` y `JSONEachRow` también serializan los nombres de los argumentos y el nombre de retorno.                                                                                                                        |
+| Nombre de retorno                              | ambos                         | sin definir                | Nombre del valor devuelto (`returnName` en la API, `return_name` en Terraform). Con los formatos `Native` y `JSONEachRow`, el proceso debe etiquetar su columna de resultado con este nombre; si no se define, se aplica `result`, el valor predeterminado de la versión de código abierto.                          |
+| Tamaño del grupo                               | `executable_pool`             | 3                          | Número de procesos de larga duración por réplica. No aplicable a `executable`.                                                                                                                                                                                                                                       |
+| Tiempo máximo de ejecución del comando (s)     | `executable_pool`             | 10                         | Tiempo máximo para procesar un bloque de datos. También se acepta en `executable`, aunque no tiene ningún efecto.                                                                                                                                                                                                    |
+| Tiempo de espera de lectura del comando (ms)   | ambos                         | 10000                      | Tiempo de espera al leer de la salida estándar (stdout) del comando.                                                                                                                                                                                                                                                 |
+| Tiempo de espera de escritura del comando (ms) | ambos                         | 10000                      | Tiempo de espera al escribir en la entrada estándar (stdin) del comando.                                                                                                                                                                                                                                             |
+| Enviar encabezado de fragmento                 | ambos                         | false                      | Envía el número de filas antes de cada fragmento. Consulte [Formatos y encabezados de fragmento](#formats-and-chunk-headers).                                                                                                                                                                                        |
+| Determinista                                   | ambos                         | false                      | Permite que la caché de consultas almacene los resultados de las consultas que llaman a esta función. Consulte [Funciones deterministas y la caché de consultas](#deterministic-functions-and-the-query-cache).                                                                                                      |
+| Límite de memoria (MiB)                        | ambos                         | predeterminado del sandbox | Memoria máxima por proceso del sandbox. Consulte [Límite de memoria](#memory-limit).                                                                                                                                                                                                                                 |
+| Acceso a la red                                | tiempo de ejecución de Python | habilitado en la consola   | Conexiones salientes a endpoints públicos. Las UDF de Python creadas en la consola siempre se compilan con este acceso habilitado; en la API y en Terraform, `sandboxType` permite elegir entre `netenable` y `basic`. Las UDF nativas no pueden tener acceso a la red. Consulte [Acceso a la red](#network-access). |
+
+La siguiente configuración de la versión de código abierto la gestiona ClickHouse Cloud y no puede modificarse para cada UDF: `command_termination_timeout`, `lifetime`, `stderr_reaction`, `check_exit_code` y `execute_direct`. El valor predeterminado de `pool_size` en la versión de código abierto es 16, mientras que en Cloud es 3. La lista completa de la versión de código abierto se encuentra en [Funciones definidas por el usuario ejecutables](/es/reference/functions/regular-functions/udf#executable-user-defined-functions).
+
+Los nombres de las funciones deben coincidir con `^[A-Za-z][A-Za-z0-9_]*$`, deben ser únicos dentro de la organización y no pueden reutilizar el nombre de una función integrada de ClickHouse; la API rechaza los nombres reservados. Cada argumento debe tener un nombre que siga el mismo patrón; la API y Terraform lo exigen en todos los formatos. Se rechazan los archivos comprimidos que contengan enlaces simbólicos.
+
+### Formatos y encabezados de fragmento {#formats-and-chunk-headers}
+
+[`TabSeparated`](/es/reference/formats/TabSeparated/TabSeparated) es el formato predeterminado y el más sencillo. Requiere escapar las tabulaciones, los saltos de línea y las barras invertidas en ambos extremos. [`RowBinary`](/es/reference/formats/RowBinary/RowBinary) admite datos binarios de forma segura y evita el formateo y el análisis de texto del lado de ClickHouse; es la opción recomendada para cadenas grandes.
+
+Con **Send chunk header** activado, ClickHouse escribe el número de filas como texto decimal seguido de `\n` antes de cada fragmento y, a continuación, las filas en el formato configurado. El proceso debe leer exactamente ese número de filas, escribir el mismo número de resultados y realizar un único vaciado. Sin esta opción, un proceso que lee un formato orientado a filas como `TabSeparated`, `RowBinary` o `JSONEachRow` y almacena su salida en un búfer no tiene forma de saber cuándo termina un bloque, por lo que la consulta queda bloqueada hasta que se agota el tiempo de espera de lectura. Actívela en cualquier UDF de este tipo que no realice un vaciado después de cada fila. El formato `Native` ya incluye los límites de bloque, de modo que una UDF `Native` puede leer un bloque, escribir un bloque y realizar el vaciado sin necesidad del encabezado.
+
+### Acceso a la red {#network-access}
+
+El acceso a la red solo está disponible para el tiempo de ejecución de Python; las UDF nativas no pueden tener acceso a la red. Las UDF de Python creadas en la consola se compilan con el acceso a la red habilitado, y la consola no ofrece ninguna opción para modificarlo. En la API, `sandboxType` permite elegir entre `netenable`, que admite conexiones salientes, y `basic`, que no las admite; el Terraform provider ofrece la misma opción mediante `sandbox_type`.
+
+El acceso a la red permite conexiones salientes a endpoints de la internet pública. Se bloquean las conexiones a redes privadas, direcciones link-local y direcciones internas. El sandbox no tiene identidad en la nube: carece de rol de instancia, de endpoint de metadata y de variables de entorno heredadas, por lo que una UDF solo dispone de las credenciales que usted le proporcione. El acceso a la red se aplica al compilar una versión de la UDF, de modo que, si una versión existente se creó sin él, será necesario crear una nueva.
+
+Por ahora no existe un almacén de secretos para las UDF. Incluya un archivo de configuración en el zip y léalo mediante una ruta relativa a `__file__`; nunca incluya claves en SQL.
+
+### Memory limit {#memory-limit}
+
+**Memory limit** establece la cantidad máxima de memoria, en MiB, disponible para cada proceso del sandbox. Si no se configura, se aplica el valor predeterminado del sandbox, de 4 GiB.
+
+El límite se aplica al espacio de direcciones virtual, no a la memoria residente, por lo que los tiempos de ejecución que reservan rangos de direcciones amplios necesitan una holgura muy superior a su uso real. Go, por ejemplo, reserva bastante más de 1 GiB de espacio de direcciones durante el inicio. Cuando un proceso supera el límite, la asignación falla dentro del propio proceso: una UDF de Python termina con un traceback de `MemoryError` y la consulta falla con esa salida de stderr en el mensaje de error.
+
+### Funciones deterministas y la caché de consultas {#deterministic-functions-and-the-query-cache}
+
+De forma predeterminada, una UDF se considera no determinista. Una consulta que invoque una UDF con [`use_query_cache = 1`](/es/reference/settings/session-settings/use-query#use_query_cache) falla con `QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS`, a menos que se modifique [`query_cache_nondeterministic_function_handling`](/es/reference/settings/session-settings/query-cache#query_cache_nondeterministic_function_handling).
+
+Active **Deterministic** solo cuando la función devuelva siempre el mismo resultado para los mismos argumentos. Así, la [caché de consultas](/es/concepts/features/performance/caches/query-cache) podrá almacenar y servir los resultados de las consultas que la invoquen. Si la misma consulta contiene otras funciones no deterministas, como `now`, `today` o `rand`, estas seguirán impidiendo el almacenamiento en caché con el tratamiento predeterminado `throw`. Con `query_cache_nondeterministic_function_handling = 'save'`, dichas consultas se almacenan en caché igualmente, mientras que con `'ignore'` se ejecutan sin almacenarse en caché.
+
+### Reinicios del servicio {#service-restarts}
+
+<Warning>
+  **La primera vinculación reinicia el servicio**
+
+  Al vincular la primera UDF a un servicio, se añade un contenedor helper a los pods del servicio y se realiza un reinicio progresivo. Vincular más UDF no provoca nuevos reinicios. Al eliminar la última UDF de un servicio, se realiza otro reinicio progresivo. Tenga esto en cuenta al planificar la primera vinculación.
+</Warning>
+
+### Monitorización {#monitoring}
+
+ClickHouse 26.6 y versiones posteriores registran el uso de recursos de las UDF ejecutables en ocho contadores, todos con el prefijo `ExecutableUserDefinedFunction`. Por consulta, aparecen como entradas en la columna de tipo mapa `ProfileEvents` de [`system.query_log`](/es/reference/system-tables/query_log). A nivel de servidor, aparecen como filas de [`system.events`](/es/reference/system-tables/events), con valores acumulados desde el inicio del servidor, y como columnas `ProfileEvent_<name>` de [`system.metric_log`](/es/reference/system-tables/metric_log), muestreadas a lo largo del tiempo. Los sufijos de los contadores son:
+
+| Contador                                         | Significado                                                      |
+| ------------------------------------------------ | ---------------------------------------------------------------- |
+| `Invocations`                                    | Uno por cada fragmento enviado a un proceso de UDF               |
+| `ElapsedMicroseconds`                            | Tiempo real empleado en llamadas a UDF                           |
+| `PoolWaitMicroseconds`                           | Tiempo de espera hasta disponer de un proceso libre del grupo    |
+| `UserTimeMicroseconds`, `SystemTimeMicroseconds` | Tiempo de CPU de los procesos hijos                              |
+| `PeakMemoryByteSeconds`                          | Pico de memoria por proceso integrado a lo largo del tiempo real |
+| `InputBytes`, `OutputBytes`                      | Bytes escritos en la canalización y leídos de ella               |
+
+[`system.asynchronous_metrics`](/es/reference/system-tables/asynchronous_metrics) incluye `ExecutableUserDefinedFunctionProcesses` y `ExecutableUserDefinedFunctionMemoryResidentBytes`. Esta última es la suma de `VmRSS` de los procesos de UDF activos y representa un límite superior, ya que las páginas compartidas se contabilizan una vez por cada proceso.
+
+```sql
+SELECT
+    event_time,
+    query_duration_ms,
+    ProfileEvents['ExecutableUserDefinedFunctionInvocations']                              AS udf_invocations,
+    round(ProfileEvents['ExecutableUserDefinedFunctionElapsedMicroseconds'] / 1e6, 2)     AS udf_wall_s,
+    round(ProfileEvents['ExecutableUserDefinedFunctionPoolWaitMicroseconds'] / 1e6, 2)    AS udf_pool_wait_s,
+    round((ProfileEvents['ExecutableUserDefinedFunctionUserTimeMicroseconds']
+         + ProfileEvents['ExecutableUserDefinedFunctionSystemTimeMicroseconds']) / 1e6, 2) AS udf_cpu_s
+FROM system.query_log
+WHERE type = 'QueryFinish'
+  AND ProfileEvents['ExecutableUserDefinedFunctionInvocations'] > 0
+ORDER BY event_time DESC
+LIMIT 20;
+```
+
+<Note>
+  `system.query_log.memory_usage` solo contabiliza el proceso del servidor de ClickHouse y no incluye los procesos de las UDF.
+</Note>
+
+### Recomendaciones de rendimiento {#performance-guidance}
+
+Use `executable_pool`. Con `executable`, se inicia un proceso nuevo para cada bloque de datos, por lo que el coste de arranque se paga en cada bloque.
+
+Cada invocación tiene un coste fijo. Si `ExecutableUserDefinedFunctionInvocations` es muy alto en relación con el número de filas procesadas, aumente [`preferred_block_size_bytes`](/es/reference/settings/session-settings/preferred#preferred_block_size_bytes) para esa consulta, de modo que cada bloque contenga más filas.
+
+Una sola consulta utiliza como máximo [`max_threads`](/es/reference/settings/session-settings/max-threads#max_threads) procesos del grupo a la vez, por lo que un tamaño de grupo superior a `max_threads` no aporta ninguna mejora a esa consulta. Empiece con un tamaño pequeño y auméntelo cuando `ExecutableUserDefinedFunctionPoolWaitMicroseconds` deje de ser despreciable.
+
+Cada fila tiene que cruzar la frontera entre procesos. Las UDF están pensadas para lógica que no se puede expresar en SQL, no para operaciones triviales por fila que pueden resolverse con una función integrada o una UDF de SQL.
+
+### Solución de problemas {#troubleshooting}
+
+Si una UDF falla, la consulta falla con el código de error `754` (`UDF_EXECUTION_FAILED`). La salida stderr del proceso hijo se incluye en el mensaje, así que escriba allí los diagnósticos y termine con un código de salida distinto de cero:
+
+```text
+Code: 754. DB::Exception: User defined function 'isBusinessHours' failed. Command: '...', Arguments: [...]. Original error: ... Child process was exited with return code 1: Stderr: <...>
+```
+
+Casos comunes:
+
+* **La consulta se bloquea y luego falla por tiempo de espera agotado**: el proceso almacenó temporalmente su salida en el búfer en un formato orientado a filas sin **Send chunk header**. Actívelo y realice un vaciado una vez por fragmento, o una vez por bloque si usa el formato `Native`.
+* **Código de retorno 1 con un traceback de `MemoryError` (Python)**: se superó el memory limit. Aumente **Memory limit** o reduzca el consumo de memoria por proceso.
+* **Fallos intermitentes con el tipo `executable` bajo cargas elevadas**: cambie a `executable_pool`.
+* **El estado del build es error**: falta `main.py` (Python) o `amd64/main` y `arm64/main` (Native) en la raíz del zip, o el archivo comprimido contiene enlaces simbólicos.
+* **No se puede crear la función**: el nombre coincide con el de una función integrada.
+
+## Administrar UDFs con la Cloud API {#manage-udfs-with-the-cloud-api}
 
 <BetaBadge />
 
-Todo lo disponible en la UI también está disponible mediante programación a través de la [ClickHouse Cloud API](/es/products/cloud/features/admin-features/api/api-overview).
-Los endpoints de UDF permiten automatizar todo el ciclo de vida de una UDF: cargar archivos fuente, crear funciones y versiones, adjuntarlas a servicios y eliminarlas.
+{/* CONFIRMAR con @zach.naimon si PMM quiere eliminar las insignias beta de la Cloud API y Terraform y las notas que indican que "el contrato puede cambiar" al pasar a GA. */}
+
+Las operaciones del ciclo de vida de la consola también están disponibles mediante programación a través de la [ClickHouse Cloud API](/es/products/cloud/features/admin-features/api/api-overview).
+Los endpoints de UDF permiten automatizar la carga de archivos fuente, la creación de funciones y versiones, su vinculación a servicios y su desvinculación, así como la eliminación de versiones y funciones. La API no dispone de una operación de recarga: después de adjuntar una nueva versión de una UDF `executable_pool` a un servicio, ejecute `SYSTEM RELOAD FUNCTION ON CLUSTER default <name>` mediante SQL en ese servicio para que los procesos del grupo carguen la nueva versión.
 
 <Note>
   Estos endpoints están en beta y el contrato de la API puede cambiar.
@@ -207,6 +375,19 @@ El flujo de trabajo habitual para crear y desplegar una UDF mediante la API es:
 1. [Crear una URL de carga](/es/products/cloud/api-reference/udf/udf-upload-session-create) para obtener una URL prefirmada para cargar archivos `application/zip` y, a continuación, cargar en ella su archivo ZIP. Cada ID de carga solo puede utilizarse para un intento de creación o de versión; solicite una nueva URL de carga al reintentar.
 2. [Crear la UDF](/es/products/cloud/api-reference/udf/udf-create) a partir del archivo cargado, especificando el nombre de la función, el runtime, los argumentos y el tipo de retorno.
 3. [Adjuntar la UDF a un servicio](/es/products/cloud/api-reference/udf/udf-attach). Si se omite la versión, se adjunta la versión lista más reciente. El servicio debe estar en ejecución; primero se pueden activar los servicios inactivos.
+
+Los campos de la solicitud que seleccionan las capacidades descritas anteriormente son:
+
+| Campo de la solicitud                                                     | Valores                                                                                                                                                            | Selecciona                                                              |
+| ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------- |
+| [`runtime`](/es/products/cloud/api-reference/udf/udf-create)                 | `python3.11` o `native`                                                                                                                                            | [Tipo de tiempo de ejecución](#native-runtime)                          |
+| [`sandboxType`](/es/products/cloud/api-reference/udf/udf-create)             | `netenable` o `basic`. La API acepta el campo para ambos tiempos de ejecución, pero solo tiene efecto en `python3.11`; las UDF nativas no admiten acceso a la red. | [Acceso a la red](#network-access)                                      |
+| [`memoryLimitMib`](/es/products/cloud/api-reference/udf/udf-create)          | integer, o null para usar el valor predeterminado del sandbox                                                                                                      | [Límite de memoria](#memory-limit)                                      |
+| [`deterministic`](/es/products/cloud/api-reference/udf/udf-create)           | `true` o `false` (predeterminado)                                                                                                                                  | [Determinista](#deterministic-functions-and-the-query-cache)            |
+| [`sendChunkHeader`](/es/products/cloud/api-reference/udf/udf-create)         | `true` o `false` (predeterminado)                                                                                                                                  | [Encabezados de fragmento](#formats-and-chunk-headers)                  |
+| [`format`](/es/products/cloud/api-reference/udf/udf-create)                  | cualquier nombre de formato; `TabSeparated` de forma predeterminada                                                                                                | [Formatos](#formats-and-chunk-headers)                                  |
+| [`poolSize`](/es/products/cloud/api-reference/udf/udf-create)                | integer, 3 de forma predeterminada; para `executable` debe omitirse o ser `null`                                                                                   | Tamaño del grupo                                                        |
+| [`maxCommandExecutionTime`](/es/products/cloud/api-reference/udf/udf-create) | segundos, 10 de forma predeterminada                                                                                                                               | Tiempo máximo de ejecución del comando; no tiene efecto en `executable` |
 
 El conjunto completo de endpoints:
 
@@ -227,9 +408,7 @@ El conjunto completo de endpoints:
 
 Consulte la [referencia de la API de UDF](/es/products/cloud/api-reference/udf/udf-create) para ver los esquemas de solicitud y respuesta.
 
-<div id="manage-udfs-with-terraform">
-  ## Administrar UDFs con Terraform
-</div>
+## Administrar UDFs con Terraform {#manage-udfs-with-terraform}
 
 <BetaBadge />
 
@@ -266,4 +445,26 @@ resource "clickhouse_udf_attachment" "production" {
 }
 ```
 
-La vinculación solo se realiza correctamente para las versiones que están listas y puede tardar varios minutos; los servicios inactivos se reactivan automáticamente. Al eliminar un recurso `clickhouse_udf`, se eliminan todas las versiones de la función y se desvincula de todos los servicios.
+Además de los atributos obligatorios mostrados anteriormente, el recurso `clickhouse_udf` acepta `format`, `pool_size`, `max_command_execution_time`, `command_read_timeout`, `command_write_timeout`, `send_chunk_header`, `sandbox_type`, `sandbox_version`, `return_name` y `fail_on_build_error`; consulte la [documentación del recurso](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf.md) para ver el esquema completo.
+
+Para probar una nueva versión en un servicio de desarrollo antes de que llegue a producción, haga que una vinculación siga la versión más reciente y fije la otra mediante una variable. La vinculación de desarrollo adopta automáticamente cada nueva compilación, mientras que la vinculación de producción solo cambia cuando modifica `var.prod_udf_version`:
+
+```terraform
+resource "clickhouse_udf_attachment" "dev" {
+  function_name = clickhouse_udf.is_business_hours.function_name
+  service_id    = var.dev_service_id
+  version       = clickhouse_udf.is_business_hours.version
+}
+
+resource "clickhouse_udf_attachment" "prod" {
+  function_name = clickhouse_udf.is_business_hours.function_name
+  service_id    = var.prod_service_id
+  version       = var.prod_udf_version
+}
+```
+
+<Note>
+  El proveedor aún no expone `deterministic` ni el memory limit. Ambos se definen al crear una versión, por lo que las versiones publicadas por el proveedor no pueden incluirlos. Para usarlos, cree esas versiones desde la consola o mediante la API.
+</Note>
+
+La vinculación solo se realiza correctamente para las versiones que están listas y puede tardar varios minutos; los servicios inactivos se reactivan automáticamente. El proveedor tampoco recarga los grupos: para las UDFs `executable_pool`, ejecute `SYSTEM RELOAD FUNCTION ON CLUSTER default <name>` en el servicio cuando una vinculación cambie de versión. Al eliminar un recurso `clickhouse_udf`, se eliminan todas las versiones de la función y se desvincula de todos los servicios.
