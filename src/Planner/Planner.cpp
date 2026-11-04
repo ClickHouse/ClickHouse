@@ -60,7 +60,6 @@
 
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
-#include <Storages/ABR/StorageABR.h>
 #include <Storages/IStorageCluster.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/SelectQueryInfo.h>
@@ -288,9 +287,9 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
             return true;
         if (typeid_cast<const StorageView *>(raw))
             return true;
-        /// `ABR` routes the query by the bounds of the `WHERE` / `PREWHERE` on its time column, and executes
-        /// the full query on the chosen underlying table, so there is no `Filter` step above its read either.
-        if (typeid_cast<const StorageABR *>(raw))
+        /// A storage that needs the whole query executes the filter itself, so there is no `Filter` step above its read either.
+        /// Wrappers such as `Alias` and lazily loaded tables answer for the table they forward to.
+        if (storage_ptr->readRequiresFullQuery())
             return true;
         return false;
     };
