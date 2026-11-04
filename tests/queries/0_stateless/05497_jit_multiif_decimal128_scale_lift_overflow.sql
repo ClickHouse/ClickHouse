@@ -20,6 +20,8 @@ SELECT multiIf(number = 0, materialize(toDecimal64(-9223372036854775808, 0)), nu
 SELECT multiIf(number = 0, materialize(toDecimal32(-2147483648, 0)), number = 1, toDecimal32(1, 0), toDecimal128(1, 28)) FROM numbers(1);
 SELECT multiIf(number = 0, materialize(toDecimal64(1, 0)), number = 1, toDecimal64(1, 0), toDecimal128(1, 19)) FROM numbers(2)
     SETTINGS log_comment = '05497_d64_kept' FORMAT Null;
+SELECT multiIf(number = 0, materialize(toDecimal32(1, 0)), number = 1, toDecimal32(1, 0), toDecimal128(1, 28)) FROM numbers(2)
+    SETTINGS log_comment = '05497_d32_kept' FORMAT Null;
 SELECT multiIf(number = 0, materialize(toDecimal64(1, 0)), number = 1, toDecimal64(1, 0), toDecimal128(1, 20)) FROM numbers(2)
     SETTINGS log_comment = '05497_d64_declined' FORMAT Null;
 SELECT multiIf(number = 0, materialize(toDecimal32(1, 0)), number = 1, toDecimal32(1, 0), toDecimal128(1, 29)) FROM numbers(2)
@@ -43,6 +45,7 @@ WITH shapes AS
 -- Comparing with the control keeps the kept columns valid in a build without the embedded compiler.
 SELECT
     (SELECT compiled FROM shapes WHERE log_comment = '05497_d64_kept') = (SELECT compiled FROM shapes WHERE log_comment = '05497_control'),
+    (SELECT compiled FROM shapes WHERE log_comment = '05497_d32_kept') = (SELECT compiled FROM shapes WHERE log_comment = '05497_control'),
     (SELECT compiled FROM shapes WHERE log_comment = '05497_same_scale_kept') = (SELECT compiled FROM shapes WHERE log_comment = '05497_control'),
     (SELECT compiled FROM shapes WHERE log_comment = '05497_d64_declined') = 0,
     (SELECT compiled FROM shapes WHERE log_comment = '05497_d32_declined') = 0,
