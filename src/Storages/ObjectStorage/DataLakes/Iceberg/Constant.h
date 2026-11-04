@@ -84,6 +84,8 @@ DEFINE_ICEBERG_FIELD(partition);
 DEFINE_ICEBERG_FIELD(file_sequence_number);
 DEFINE_ICEBERG_FIELD(snapshot_id);
 DEFINE_ICEBERG_FIELD(statistics);
+DEFINE_ICEBERG_FIELD_ALIAS(blob_metadata, blob-metadata);
+DEFINE_ICEBERG_FIELD(ndv);
 DEFINE_ICEBERG_FIELD(properties);
 DEFINE_ICEBERG_FIELD(owner);
 DEFINE_ICEBERG_FIELD(column_sizes);
