@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 
 #include <cstring>
+#include <limits>
 #include <random>
 #include <vector>
 
@@ -89,4 +90,12 @@ TEST(CompressionCodecGDeflate, MalformedPages)
                 c = static_cast<char>(rng());
             decompressMalformed(codec, makeBlock(garbage.data(), size, 1000), 1000);
         }
+}
+
+/// The reserve for a block is the bound of every page of it, which exceeds 32 bits for the largest blocks.
+TEST(CompressionCodecGDeflate, CompressedReserveSizeFitsInUInt32)
+{
+    const CompressionCodecGDeflate codec(CompressionCodecGDeflate::DEFAULT_LEVEL);
+    EXPECT_GT(codec.getCompressedReserveSize(1u << 30), 1u << 30);
+    EXPECT_THROW(codec.getCompressedReserveSize(std::numeric_limits<UInt32>::max()), Exception);
 }
