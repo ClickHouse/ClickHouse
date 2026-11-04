@@ -176,7 +176,10 @@ void initDataVariantsWithSizeHint(
                     /*group_by_two_level_threshold_bytes*/ 0,
                     /*result_size_bytes*/ 0))
                 method_chosen = DB::convertToTwoLevelTypeIfPossible(method_chosen);
-            result.init(method_chosen, hint->median_size);
+            result.init(
+                method_chosen,
+                DB::AggregatedDataVariants::SizeHint{
+                    .keys = hint->median_size, .keys_with_empty_string = hint->medianSizeWithEmptyString()});
         }
     }
     else
@@ -204,6 +207,9 @@ void updateStatistics(
     const auto median_size = sizes.begin() + sizes.size() / 2; // not precisely though...
     ::nth_element(sizes.begin(), median_size, sizes.end());
     const auto sum_of_sizes = std::accumulate(sizes.begin(), sizes.end(), 0ull);
+    size_t sum_of_sizes_with_empty_string = 0;
+    for (const auto & variants : data_variants)
+        sum_of_sizes_with_empty_string += variants->sizeWithEmptyString();
 
     /// A run without a verdict of its own carries the stored one over, so that the runs the verdict keeps off the
     /// adaptive path do not erase it: a query marked repeat-dominated is not measured again until its entry is evicted.
@@ -213,7 +219,12 @@ void updateStatistics(
         const auto prev = stats.getSizeHint(params);
         repeat_dominated = prev && prev->adaptive_staging_repeat_dominated;
     }
-    stats.update({.sum_of_sizes = sum_of_sizes, .median_size = *median_size, .adaptive_staging_repeat_dominated = *repeat_dominated}, params);
+    stats.update(
+        {.sum_of_sizes = sum_of_sizes,
+         .median_size = *median_size,
+         .sum_of_sizes_with_empty_string = sum_of_sizes_with_empty_string,
+         .adaptive_staging_repeat_dominated = *repeat_dominated},
+        params);
 }
 
 DB::ColumnNumbers calculateKeysPositions(const DB::Block & header, const DB::Aggregator::Params & params)
@@ -3706,7 +3717,7 @@ Aggregator::AggregatedChunk Aggregator::mergeSingleLevelPartitionAndConvertToChu
 
     AggregatedDataVariants dst;
     dst.aggregator = this;
-    dst.init(first->type, max_source_table_size / num_partitions);
+    dst.init(first->type, AggregatedDataVariants::SizeHint{.keys = max_source_table_size / num_partitions});
     dst.keys_size = params.keys_size;
     dst.key_sizes = key_sizes;
     dst.aggregates_pools.insert(dst.aggregates_pools.end(), first->aggregates_pools.begin(), first->aggregates_pools.end());

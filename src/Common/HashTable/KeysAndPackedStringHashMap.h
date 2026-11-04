@@ -193,6 +193,14 @@ protected:
 public:
     KeysAndPackedStringHashMap() = default;
 
+    /// Preallocates the sub-tables for `size_hint` keys, `size_hint_with_empty_string` of them with an empty
+    /// string.
+    KeysAndPackedStringHashMap(size_t size_hint, size_t size_hint_with_empty_string)
+        : m0(size_hint_with_empty_string)
+        , m1(size_hint - size_hint_with_empty_string)
+    {
+    }
+
     KeysAndPackedStringHashMap(KeysAndPackedStringHashMap && rhs) noexcept
         : m0(std::move(rhs.m0))
         , m1(std::move(rhs.m1))
@@ -324,8 +332,18 @@ public:
     }
 
     size_t size() const { return m0.size() + m1.size(); }
+    /// The number of keys with an empty string.
+    size_t sizeWithEmptyString() const { return m0.size(); }
     bool empty() const { return m0.empty() && m1.empty(); }
     size_t getBufferSizeInBytes() const { return m0.getBufferSizeInBytes() + m1.getBufferSizeInBytes(); }
+
+    /// Grows the sub-tables to hold `size_hint` keys, `size_hint_with_empty_string` of them with an empty
+    /// string.
+    void reserve(size_t size_hint, size_t size_hint_with_empty_string)
+    {
+        m0.reserve(size_hint_with_empty_string);
+        m1.reserve(size_hint - size_hint_with_empty_string);
+    }
 
     /// Removes every element and keeps the buffers.
     void clear()
@@ -368,6 +386,14 @@ public:
     Impl impls[NUM_BUCKETS];
 
     TwoLevelKeysAndPackedStringHashMap() = default;
+
+    /// Preallocates the buckets for `size_hint` keys, `size_hint_with_empty_string` of them with an empty
+    /// string, spread evenly over the buckets.
+    TwoLevelKeysAndPackedStringHashMap(size_t size_hint, size_t size_hint_with_empty_string)
+    {
+        for (auto & impl : impls)
+            impl.reserve(size_hint / NUM_BUCKETS, size_hint_with_empty_string / NUM_BUCKETS);
+    }
 
     /// Copies the keys of a single-level table into the buckets of their hashes. The constraint keeps an
     /// integer argument from choosing this constructor.
@@ -461,6 +487,14 @@ public:
         size_t res = 0;
         for (const auto & impl : impls)
             res += impl.size();
+        return res;
+    }
+
+    size_t sizeWithEmptyString() const
+    {
+        size_t res = 0;
+        for (const auto & impl : impls)
+            res += impl.sizeWithEmptyString();
         return res;
     }
 

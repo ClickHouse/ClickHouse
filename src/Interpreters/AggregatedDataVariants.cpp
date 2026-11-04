@@ -47,18 +47,25 @@ AggregatedDataVariants::~AggregatedDataVariants()
 }
 
 template <typename Method>
-auto constructWithReserveIfPossible(size_t size_hint)
+auto constructWithReserveIfPossible(AggregatedDataVariants::SizeHint size_hint)
 {
     if constexpr (HasConstructorOfNumberOfElements<typename Method::Data>::value)
     {
-        ProfileEvents::increment(ProfileEvents::AggregationPreallocatedElementsInHashTables, size_hint);
-        return std::make_unique<Method>(size_hint);
+        ProfileEvents::increment(ProfileEvents::AggregationPreallocatedElementsInHashTables, size_hint.keys);
+        return std::make_unique<Method>(size_hint.keys);
+    }
+    else if constexpr (is_keys_and_packed_string<typename Method::Data::key_type>)
+    {
+        if (!size_hint.keys_with_empty_string)
+            return std::make_unique<Method>();
+        ProfileEvents::increment(ProfileEvents::AggregationPreallocatedElementsInHashTables, size_hint.keys);
+        return std::make_unique<Method>(size_hint.keys, *size_hint.keys_with_empty_string);
     }
     else
         return std::make_unique<Method>();
 }
 
-void AggregatedDataVariants::init(Type type_, std::optional<size_t> size_hint)
+void AggregatedDataVariants::init(Type type_, std::optional<SizeHint> size_hint)
 {
     /// `init` also reinitializes a table after an external-aggregation flush, so preserve
     /// whether the heap rejected anything before the old method is replaced.
@@ -96,6 +103,31 @@ size_t AggregatedDataVariants::size() const
     #define M(NAME, IS_TWO_LEVEL) \
         case Type::NAME: \
             return (NAME)->data.size() + (without_key != nullptr);
+        APPLY_FOR_AGGREGATED_VARIANTS(M)
+    #undef M
+    }
+}
+
+template <typename Method>
+size_t sizeWithEmptyStringOf(const Method & method)
+{
+    if constexpr (is_keys_and_packed_string<typename Method::Data::key_type>)
+        return method.data.sizeWithEmptyString();
+    else
+        return 0;
+}
+
+size_t AggregatedDataVariants::sizeWithEmptyString() const
+{
+    switch (type)
+    {
+        case Type::EMPTY:
+        case Type::without_key:
+            return 0;
+
+    #define M(NAME, IS_TWO_LEVEL) \
+        case Type::NAME: \
+            return sizeWithEmptyStringOf(*(NAME));
         APPLY_FOR_AGGREGATED_VARIANTS(M)
     #undef M
     }

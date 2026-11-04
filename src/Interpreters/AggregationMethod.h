@@ -201,6 +201,9 @@ struct AggregationMethodKeysAndPackedString
 
     AggregationMethodKeysAndPackedString() = default;
 
+    /// Preallocates the table for `size_hint` keys, `size_hint_with_empty_string` of them with an empty string.
+    AggregationMethodKeysAndPackedString(size_t size_hint, size_t size_hint_with_empty_string) : data(size_hint, size_hint_with_empty_string) { }
+
     template <typename Other>
     explicit AggregationMethodKeysAndPackedString(const Other & other) : data(other.data)
     {

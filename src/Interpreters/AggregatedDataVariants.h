@@ -514,9 +514,22 @@ struct AggregatedDataVariants : private boost::noncopyable
     /// the arenas and the overflow row, and leaves the variants empty, with no arena. Calling
     /// this while the variants still own live nontrivial states would leak them undestroyed.
     void resetAfterStateOwnershipTransfer();
-    void init(Type type_, std::optional<size_t> size_hint = std::nullopt);
+    /// The expected number of keys of a table, which `init` preallocates the table for.
+    struct SizeHint
+    {
+        size_t keys = 0;
+        /// The part of `keys` with an empty string, which a table of fixed-width keys and one `String` keeps
+        /// in a sub-table of its own (see `KeysAndPackedStringHashMap`). Such a table is preallocated only
+        /// when the hint tells this part.
+        std::optional<size_t> keys_with_empty_string = std::nullopt;
+    };
+
+    void init(Type type_, std::optional<SizeHint> size_hint = std::nullopt);
     /// Number of rows (different keys).
     size_t size() const;
+    /// The number of keys with an empty string in a table of fixed-width keys and one `String` (see
+    /// `SizeHint`), and 0 for the other methods.
+    size_t sizeWithEmptyString() const;
     size_t sizeWithoutOverflowRow() const;
     /// Memory held by the variants: the arenas (keys and states) plus the active method's
     /// hash-table buffer, which dominates for inline states over fixed keys.
