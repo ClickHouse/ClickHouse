@@ -29,14 +29,13 @@ $CLICKHOUSE_CLIENT -q "SYSTEM DROP DATABASE REPLICA 'r2' FROM SHARD 's1' FROM ZK
 $CLICKHOUSE_CLIENT -q "SELECT 'replicas left', count() FROM system.zookeeper WHERE path = '$ZK_PATH/replicas'"
 
 # A new replica that takes its columns from Keeper joins a table that exists already, so the check is not applied to it either.
-TABLE_ZK_PATH="/test/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/05468_table"
 $CLICKHOUSE_CLIENT -mn -q "
     DROP TABLE IF EXISTS t_replica_1 SYNC;
     DROP TABLE IF EXISTS t_replica_2 SYNC;
     CREATE TABLE t_replica_1 (c SimpleAggregateFunction(sum, UInt64))
-    ENGINE = ReplicatedAggregatingMergeTree('$TABLE_ZK_PATH', 'r1') ORDER BY intDiv(c, 55)
+    ENGINE = ReplicatedAggregatingMergeTree('/test/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/05468_table', 'r1') ORDER BY intDiv(c, 55)
     SETTINGS allow_aggregating_columns_in_partition_or_order_key = 1;
-    CREATE TABLE t_replica_2 ENGINE = ReplicatedAggregatingMergeTree('$TABLE_ZK_PATH', 'r2') ORDER BY intDiv(c, 55);
+    CREATE TABLE t_replica_2 ENGINE = ReplicatedAggregatingMergeTree('/test/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/05468_table', 'r2') ORDER BY intDiv(c, 55);
     SELECT 'replica added', count() FROM system.replicas WHERE database = currentDatabase() AND table LIKE 't_replica_%';
     DROP TABLE t_replica_1 SYNC;
     DROP TABLE t_replica_2 SYNC;"
