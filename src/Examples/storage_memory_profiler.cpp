@@ -17,6 +17,7 @@
 #include <atomic>
 #include <chrono>
 #include <iostream>
+#include <optional>
 #include <vector>
 #include <unistd.h>
 
@@ -479,14 +480,20 @@ void withPausedBackgroundScheduling(const ContextMutablePtr & context, Callback 
     auto fetches_executor = context->getFetchesExecutor();
     auto common_executor = context->getCommonExecutor();
 
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
-    auto merge_mutate_pause = merge_mutate_executor->pauseScheduling();
-    auto moves_pause = moves_executor->pauseScheduling();
-    auto fetches_pause = fetches_executor->pauseScheduling();
-    auto common_pause = common_executor->pauseScheduling();
+    /// The initial checkpoint can run before the first `MergeTree` table initializes these
+    /// executors. Do not initialize them just for the checkpoint: their threads and queues would
+    /// become part of the measured allocation baseline.
+    auto merge_mutate_pause
+        = merge_mutate_executor ? std::make_optional(merge_mutate_executor->pauseScheduling()) : std::nullopt;
+    auto moves_pause = moves_executor ? std::make_optional(moves_executor->pauseScheduling()) : std::nullopt;
+    auto fetches_pause = fetches_executor ? std::make_optional(fetches_executor->pauseScheduling()) : std::nullopt;
+    auto common_pause = common_executor ? std::make_optional(common_executor->pauseScheduling()) : std::nullopt;
 
-    if (!merge_mutate_pause.waitForIdle(deadline) || !moves_pause.waitForIdle(deadline) || !fetches_pause.waitForIdle(deadline)
-        || !common_pause.waitForIdle(deadline))
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+    const auto wait_for_idle = [deadline](auto & pause) { return !pause || pause->waitForIdle(deadline); };
+
+    if (!wait_for_idle(merge_mutate_pause) || !wait_for_idle(moves_pause) || !wait_for_idle(fetches_pause)
+        || !wait_for_idle(common_pause))
         throw Exception(
             ErrorCodes::TIMEOUT_EXCEEDED, "Background tasks did not finish in 30 seconds; cannot take a stable heap measurement");
 

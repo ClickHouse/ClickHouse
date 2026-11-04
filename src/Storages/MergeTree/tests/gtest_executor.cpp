@@ -263,19 +263,16 @@ TEST(Executor, SchedulingPauseWaitsForTaskDestruction)
             return task_destroyed.try_wait();
         });
 
-    ASSERT_EQ(pause.wait_for(std::chrono::milliseconds(100)), std::future_status::timeout);
+    EXPECT_EQ(pause.wait_for(std::chrono::milliseconds(100)), std::future_status::timeout);
     finish_task.count_down();
     scheduling_paused.wait();
-    if (!pause_succeeded)
-        ASSERT_TRUE(pause.get());
 
-    auto schedule_while_paused
-        = std::async(std::launch::async, [&] { return executor->trySchedule(std::make_shared<LambdaExecutableTask>("after_pause", 1)); });
-    ASSERT_EQ(schedule_while_paused.wait_for(std::chrono::milliseconds(100)), std::future_status::timeout);
+    EXPECT_TRUE(pause_succeeded);
+    EXPECT_FALSE(executor->trySchedule(std::make_shared<LambdaExecutableTask>("while_paused", 1)));
 
     release_pause.count_down();
-    ASSERT_TRUE(pause.get());
-    ASSERT_TRUE(schedule_while_paused.get());
+    EXPECT_TRUE(pause.get());
+    EXPECT_TRUE(executor->trySchedule(std::make_shared<LambdaExecutableTask>("after_pause", 1)));
 
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
     {
