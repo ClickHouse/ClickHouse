@@ -1,0 +1,5 @@
+<clickhouse>
+    <macros>
+        <hdfs_host>allowed.example.com</hdfs_host>
+    </macros>
+</clickhouse>
