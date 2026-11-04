@@ -5,6 +5,7 @@
 #if USE_GPU
 
 #include <GPU/GPUTypeMapping.h>
+#include <GPU/GPUExpression.cuh>
 #include <GPU/GPUTypes.cuh>
 #include <GPU/GPUUploadPipe.h>
 #include <GPU/CudfGroupBy.cuh>
@@ -154,7 +155,7 @@ public:
         bool compressed_ = false,
         size_t num_readers_ = 1,
         const DataTypes & filter_types = {},
-        std::optional<GPUFilterProgram> filter_ = {},
+        std::optional<GPUExpression> filter_ = {},
         std::vector<GPUDerivedValue> derived_ = {},
         std::function<void(MutableColumns)> on_collected_ = {},
         std::vector<std::optional<uint32_t>> filter_aliases_ = {});
@@ -191,9 +192,9 @@ public:
 
     size_t finalize();
 
-    /// After `finalize`: keeps the groups for which `program` holds over `columns`, the keys first and then the
+    /// After `finalize`: keeps the groups for which `expression` holds over `columns`, the keys first and then the
     /// aggregates. Returns how many are kept.
-    size_t filterGroups(const GPUFilterProgram & program, const std::vector<uint32_t> & columns);
+    size_t filterGroups(const GPUExpression & expression, const std::vector<uint32_t> & columns);
 
     /// Into a column of the keys each, and a column of the result of each aggregate.
     void copyGroupsTo(MutableColumns & key_columns, MutableColumns & aggregate_columns);
@@ -375,7 +376,7 @@ private:
     const std::vector<GPUGroupByAggregate> aggregates;
     const std::vector<size_t> variable_column_indices;
     const std::vector<GPUElementType> filter_element_types;
-    const std::optional<GPUFilterProgram> filter;
+    const std::optional<GPUExpression> filter;
     /// Of each column of the filter that is a key or a value as well: that column, among the keys and then the
     /// values, whose bytes it reads instead of bytes of its own.
     const std::vector<std::optional<uint32_t>> filter_aliases;

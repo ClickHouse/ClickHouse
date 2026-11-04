@@ -2,7 +2,6 @@ add_library (clickhouse_gpu_cudf STATIC
     Cudf.cu
     CudfReduction.cu
     CudfGroupBy.cu
-    GPUExpression.cu
     OffsetsKernels.cu
     BitUnpack.cu
     CudfHashJoin.cu

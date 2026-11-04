@@ -226,7 +226,7 @@ public:
               /*compressed=*/true,
               num_readers,
               typesOf(filterColumnsOf(*state)),
-              state->filter ? std::optional(state->filter->program) : std::nullopt,
+              state->filter ? std::optional(state->filter->expression) : std::nullopt,
               derivedValuesOf(state->derived),
               state->collect ? std::function<void(MutableColumns)>([this](MutableColumns columns) { pushCollected(std::move(columns)); })
                              : std::function<void(MutableColumns)>{},
@@ -271,7 +271,7 @@ protected:
             return Chunk(*state->result_over_no_rows, 1);
 
         if (num_groups != 0 && state->group_filter)
-            num_groups = accumulator.filterGroups(state->group_filter->program, state->group_filter->columns);
+            num_groups = accumulator.filterGroups(state->group_filter->expression, state->group_filter->columns);
         if (num_groups == 0)
             return {};
 
@@ -419,10 +419,10 @@ private:
         result.reserve(derived.size());
         for (const auto & column : derived)
         {
-            if (column.columns.size() > GPU::max_filter_columns)
+            if (column.columns.size() > GPU::max_expression_columns)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "A value the GPU derives from {} columns", column.columns.size());
             GPU::GPUDerivedValue value;
-            value.program = column.program;
+            value.expression = column.expression;
             for (size_t i = 0; i < column.columns.size(); ++i)
                 value.columns[i] = static_cast<uint32_t>(column.columns[i]);
             value.num_columns = static_cast<uint32_t>(column.columns.size());

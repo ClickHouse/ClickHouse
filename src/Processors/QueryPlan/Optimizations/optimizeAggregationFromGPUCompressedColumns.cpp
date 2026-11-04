@@ -22,7 +22,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <GPU/GPUDevice.h>
-#include <GPU/GPUFilterCompiler.h>
+#include <GPU/GPUExpressionCompiler.h>
 #include <GPU/GPUColumns.h>
 #include <GPU/GPUTypeMapping.h>
 #include <Interpreters/Context.h>
@@ -143,7 +143,7 @@ std::optional<String> passedThroughInputName(const ActionsDAG & dag, const Strin
 /// in its place: of the columns that `input_keys` name in `MatchedChain::read_names`.
 struct ComputedArgument
 {
-    GPU::CompiledGPUFilter expression;
+    GPU::CompiledGPUExpression compiled;
     Names input_keys;
 };
 
@@ -214,11 +214,11 @@ std::optional<MatchedChain> matchChain(QueryPlan::Node & aggregating_node, const
             if (!compiled)
                 GPU_COMPRESSED_REFUSE("an expression that computes an aggregated column the device does not: " + refusal);
 
-            ComputedArgument computed{.expression = std::move(*compiled), .input_keys = {}};
-            for (size_t i = 0; i < computed.expression.columns.size(); ++i)
+            ComputedArgument computed{.compiled = std::move(*compiled), .input_keys = {}};
+            for (size_t i = 0; i < computed.compiled.columns.size(); ++i)
             {
                 computed.input_keys.push_back(traced + "\n" + std::to_string(i));
-                inputs_of_computed.emplace_back(computed.input_keys.back(), computed.expression.columns[i].name);
+                inputs_of_computed.emplace_back(computed.input_keys.back(), computed.compiled.columns[i].name);
             }
             matched.computed.emplace(traced, std::move(computed));
             it = matched.read_names.erase(it);
@@ -334,7 +334,7 @@ std::optional<ReadColumns> matchReducedColumns(
                 GPU_COMPRESSED_REFUSE("an aggregate of a computed argument the device does not group by");
 
             ReadFromGPUCompressedColumns::DerivedColumn derived{
-                .program = computed_argument->second.expression.program,
+                .expression = computed_argument->second.compiled.expression,
                 .columns = {},
                 .description = aggregate.argument_names.front(),
             };
@@ -464,7 +464,7 @@ std::optional<ReadColumns> matchReducedColumns(
     return matched;
 }
 
-/// The `PREWHERE` of the read as a program for the device, when the read has one and the
+/// The `PREWHERE` of the read as an expression for the device, when the read has one and the
 /// device can evaluate it. The read's header is without the predicate's column, so the columns the
 /// predicate reads come along as a group of their own; `readIsOfWholeParts` still holds, since a
 /// `PREWHERE` filters rows, not parts.
@@ -519,7 +519,7 @@ std::optional<MatchedFilter> matchPrewhere(const ReadFromMergeTree & reading)
     }
 
     return MatchedFilter{ReadFromGPUCompressedColumns::DeviceFilter{
-        .program = compiled->program,
+        .expression = compiled->expression,
         .columns = std::move(compiled->columns),
         .description = prewhere->prewhere_column_name,
     }};
@@ -755,7 +755,7 @@ void pushGroupFilterToDevice(const FilterStep & filter, ReadFromGPUCompressedCol
     }
 
     const Block & header = *source.getOutputHeader();
-    ReadFromGPUCompressedColumns::GroupFilter group_filter{.program = compiled->program, .columns = {}, .description = filter.getFilterColumnName()};
+    ReadFromGPUCompressedColumns::GroupFilter group_filter{.expression = compiled->expression, .columns = {}, .description = filter.getFilterColumnName()};
     for (const auto & column : compiled->columns)
     {
         if (!header.has(column.name))
@@ -1031,7 +1031,7 @@ std::optional<SplitPrewhere> splitPrewhere(const ReadFromMergeTree & reading)
         GPU_FILTERED_READ_REFUSE("the conjuncts of a PREWHERE the device evaluates one at a time, but not together: " + refusal);
 
     split.device = {
-        .program = compiled->program,
+        .expression = compiled->expression,
         .columns = std::move(compiled->columns),
         .description = device_dag->getOutputs().front()->result_name,
     };

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <GPU/GPUExpression.cuh>
 #include <GPU/GPUTypes.cuh>
 
 #include <cuda/stream_ref>
@@ -41,7 +42,7 @@ public:
         GPUSpan<DeviceColumnView> keys,
         GPUSpan<DeviceColumnView> values,
         GPUSpan<DeviceFixedColumn> filter_columns = {},
-        const GPUFilterProgram * filter = nullptr);
+        const GPUExpression * filter = nullptr);
 
     __host__ size_t finalize();
 
@@ -50,9 +51,9 @@ public:
     __host__ size_t collectedRows() const;
     __host__ size_t takeCollected();
 
-    /// After `finalize`: keeps the groups for which `program` holds over the keys and the aggregates' results, each of a
+    /// After `finalize`: keeps the groups for which `expression` holds over the keys and the aggregates' results, each of a
     /// fixed width, that `columns` names, the keys first and then the aggregates. Returns the number of groups kept.
-    __host__ size_t filterGroups(const GPUFilterProgram & program, GPUSpan<uint32_t> columns);
+    __host__ size_t filterGroups(const GPUExpression & expression, GPUSpan<uint32_t> columns);
 
     __host__ DeviceColumnView key(size_t index) const;
     /// The result of aggregate `index`.

@@ -351,7 +351,7 @@ GroupByGPUAccumulator::GroupByGPUAccumulator(
     bool compressed_,
     size_t num_readers_,
     const DataTypes & filter_types,
-    std::optional<GPUFilterProgram> filter_,
+    std::optional<GPUExpression> filter_,
     std::vector<GPUDerivedValue> derived_,
     std::function<void(MutableColumns)> on_collected_,
     std::vector<std::optional<uint32_t>> filter_aliases_)
@@ -1522,13 +1522,13 @@ size_t GroupByGPUAccumulator::finalize()
     return groups;
 }
 
-size_t GroupByGPUAccumulator::filterGroups(const GPUFilterProgram & program, const std::vector<uint32_t> & columns)
+size_t GroupByGPUAccumulator::filterGroups(const GPUExpression & expression, const std::vector<uint32_t> & columns)
 {
     if (!num_groups)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The groups of a GPU aggregation were filtered before it was finalized");
 
     Stopwatch watch;
-    num_groups = group_by->filterGroups(program, columns);
+    num_groups = group_by->filterGroups(expression, columns);
     ProfileEvents::increment(ProfileEvents::GPUAggregationMicroseconds, watch.elapsedMicroseconds());
     return *num_groups;
 }

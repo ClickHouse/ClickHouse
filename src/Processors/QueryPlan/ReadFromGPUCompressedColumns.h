@@ -1,5 +1,6 @@
 #pragma once
 
+#include <GPU/GPUExpression.cuh>
 #include <GPU/GPUTypes.cuh>
 #include "config.h"
 
@@ -41,8 +42,8 @@ public:
     /// A `Float64` the device computes from `columns` before it groups the rows, the argument of an aggregate.
     struct DerivedColumn
     {
-        GPU::GPUFilterProgram program;
-        /// Of `columns`, what the program loads as its column `i`.
+        GPU::GPUExpression expression;
+        /// Of `columns`, what it loads as its column `i`.
         std::vector<size_t> columns;
         /// The expression as the plan names it.
         String description;
@@ -63,7 +64,7 @@ public:
     /// `columns`, the keys first and then the aggregates.
     struct GroupFilter
     {
-        GPU::GPUFilterProgram program;
+        GPU::GPUExpression expression;
         std::vector<uint32_t> columns;
         /// The predicate as the plan names it.
         String description;
@@ -80,7 +81,7 @@ public:
     /// keys and the values.
     struct DeviceFilter
     {
-        GPU::GPUFilterProgram program;
+        GPU::GPUExpression expression;
         std::vector<NameAndTypePair> columns;
         /// The predicate as the plan names it.
         String description;

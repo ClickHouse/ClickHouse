@@ -2,7 +2,6 @@
 
 #include <GPU/Cudf.cuh>
 #include <GPU/GPUExpression.cuh>
-#include <GPU/GPUFilter.cuh>
 
 #include <cudf/column/column.hpp>
 #include <cudf/column/column_view.hpp>
@@ -18,6 +17,7 @@
 #include <rmm/device_buffer.hpp>
 
 #include <algorithm>
+#include <type_traits>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -30,8 +30,6 @@ namespace DB::GPU
 
 namespace
 {
-
-constexpr int filter_threads_per_block = 256;
 
 /// `streaming_groupby` encodes a row of a batch as its capacity plus the row's index, in a `cudf::size_type`.
 constexpr size_t max_capacity = static_cast<size_t>(std::numeric_limits<cudf::size_type>::max());
@@ -54,23 +52,7 @@ constexpr double max_runs_per_row_to_reduce = 0.5;
 constexpr size_t min_bytes_to_combine_runs = 4UL << 30;
 constexpr size_t max_rows_to_combine_runs = 1UL << 30;
 
-/// Sets the bit of every row that passes `program`, a word of the null mask per 32 rows.
-__global__ void filterToNullMask(GPUFilterProgram program, Filtering::FilterLayouts filters, size_t rows, cudf::bitmask_type * mask)
-{
-    const size_t row = static_cast<size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
-    const bool passes = row < rows && Filtering::passesFilter(program, filters, row);
-    const unsigned word = __ballot_sync(0xffffffffu, passes);
-    if (row < rows && (threadIdx.x % 32) == 0)
-        mask[row / 32] = word;
-}
-
-/// Whether each row passes `program`, as a column of `BOOL8`.
-__global__ void filterToBooleans(GPUFilterProgram program, Filtering::FilterLayouts columns, size_t rows, bool * mask)
-{
-    const size_t row = static_cast<size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
-    if (row < rows)
-        mask[row] = Filtering::passesFilter(program, columns, row);
-}
+static_assert(std::is_same_v<cudf::bitmask_type, uint32_t>);
 
 __host__ std::unique_ptr<cudf::groupby_aggregation> groupByAggregationFor(GPUAggregationKind aggregation)
 {
@@ -293,36 +275,37 @@ struct CudfGroupBy::State
     }
 
     /// Sets the bits of `filter_mask` of the rows `filter` holds for, and returns how many of the rows it leaves out.
-    __host__ cudf::size_type evaluateFilter(size_t rows, GPUSpan<DeviceFixedColumn> filter_columns, const GPUFilterProgram & filter)
+    __host__ cudf::size_type evaluateFilter(size_t rows, GPUSpan<DeviceFixedColumn> filter_columns, const GPUExpression & filter)
     {
-        if (filter_columns.size() > max_filter_columns)
+        if (filter_columns.size() > max_expression_columns)
             throwGPUError(("a `WHERE` over " + std::to_string(filter_columns.size()) + " columns").c_str());
 
-        Filtering::FilterLayouts layouts;
-        layouts.present = true;
-        layouts.count = static_cast<uint32_t>(filter_columns.size());
+        GPUExpressionInputs inputs;
+        inputs.count = static_cast<uint32_t>(filter_columns.size());
         for (size_t i = 0; i < filter_columns.size(); ++i)
         {
             if (filter_columns[i].rows != rows)
                 throwGPUError(("a column of a `WHERE` of " + std::to_string(filter_columns[i].rows) + " rows in a batch of " + std::to_string(rows)).c_str());
-            layouts.columns[i] = {.data = filter_columns[i].data, .type = filter_columns[i].element_type};
+            inputs.columns[i] = {.data = filter_columns[i].data, .type = filter_columns[i].element_type};
         }
+        return evaluateFilter(rows, inputs, filter);
+    }
 
+    __host__ cudf::size_type evaluateFilter(size_t rows, const GPUExpressionInputs & inputs, const GPUExpression & filter)
+    {
         const auto num_rows = static_cast<cudf::size_type>(rows);
         filter_mask.resize(cudf::bitmask_allocation_size_bytes(num_rows), stream);
         auto * mask = static_cast<cudf::bitmask_type *>(filter_mask.data());
 
-        const auto blocks = static_cast<unsigned>((rows + filter_threads_per_block - 1) / filter_threads_per_block);
-        filterToNullMask<<<blocks, filter_threads_per_block, 0, stream.get()>>>(filter, layouts, rows, mask);
-        checkCuda(cudaGetLastError(), "Cannot evaluate a `WHERE` into a null mask");
+        evaluatePredicateToBitmask(filter, inputs, rows, mask, stream);
 
-        return guarded("counting the rows a `WHERE` leaves out", [&]
+        return guarded("counting the rows a filter leaves out", [&]
         {
             return cudf::null_count(mask, 0, num_rows, stream);
         });
     }
 
-    /// The rows of `columns` that the `WHERE` whose mask is in `filter_mask` keeps.
+    /// The rows of `columns` that the filter whose mask is in `filter_mask` keeps.
     __host__ std::unique_ptr<cudf::table> compact(const std::vector<cudf::column_view> & columns, size_t rows, cudf::size_type left_out)
     {
         if (all_true.size() < rows)
@@ -440,7 +423,7 @@ struct CudfGroupBy::State
     }
 
     /// Keeps the rows of a batch of `values` that `filter`, when given, holds for, as a table of its own.
-    __host__ void collectBatch(GPUSpan<DeviceColumnView> batch, GPUSpan<DeviceFixedColumn> filter_columns, const GPUFilterProgram * filter)
+    __host__ void collectBatch(GPUSpan<DeviceColumnView> batch, GPUSpan<DeviceFixedColumn> filter_columns, const GPUExpression * filter)
     {
         if (batch.size() != values.size())
             throwGPUError(("a batch of " + std::to_string(batch.size()) + " columns to collect, expected " + std::to_string(values.size())).c_str());
@@ -592,7 +575,7 @@ __host__ CudfGroupBy::~CudfGroupBy()
 }
 
 __host__ void CudfGroupBy::addBatch(
-    GPUSpan<DeviceColumnView> keys, GPUSpan<DeviceColumnView> values, GPUSpan<DeviceFixedColumn> filter_columns, const GPUFilterProgram * filter)
+    GPUSpan<DeviceColumnView> keys, GPUSpan<DeviceColumnView> values, GPUSpan<DeviceFixedColumn> filter_columns, const GPUExpression * filter)
 {
     if (state->finalized)
         throwGPUError("a batch after the groups were closed");
@@ -748,7 +731,7 @@ __host__ size_t CudfGroupBy::takeCollected()
     return state->groups ? static_cast<size_t>(state->groups->num_rows()) : 0;
 }
 
-__host__ size_t CudfGroupBy::filterGroups(const GPUFilterProgram & program, GPUSpan<uint32_t> columns)
+__host__ size_t CudfGroupBy::filterGroups(const GPUExpression & expression, GPUSpan<uint32_t> columns)
 {
     if (!state->finalized)
         throwGPUError("the groups were filtered before they were closed");
@@ -756,15 +739,14 @@ __host__ size_t CudfGroupBy::filterGroups(const GPUFilterProgram & program, GPUS
     if (!state->groups || state->groups->num_rows() == 0)
         return 0;
 
-    if (columns.size() > max_filter_columns)
+    if (columns.size() > max_expression_columns)
         throwGPUError(("a filter of the groups over " + std::to_string(columns.size()) + " columns").c_str());
 
     const cudf::table_view groups = state->groups->view();
     const auto rows = static_cast<size_t>(groups.num_rows());
 
-    Filtering::FilterLayouts layouts;
-    layouts.present = true;
-    layouts.count = static_cast<uint32_t>(columns.size());
+    GPUExpressionInputs inputs;
+    inputs.count = static_cast<uint32_t>(columns.size());
     for (size_t i = 0; i < columns.size(); ++i)
     {
         const uint32_t column = columns[i];
@@ -776,16 +758,13 @@ __host__ size_t CudfGroupBy::filterGroups(const GPUFilterProgram & program, GPUS
             throwGPUError(("a filter of the groups over column " + std::to_string(column) + ", which is not of a fixed width").c_str());
         const cudf::column_view view = groups.column(static_cast<cudf::size_type>(column));
         checkNoNulls(view);
-        layouts.columns[i] = {.data = view.head<char>(), .type = element_type};
+        inputs.columns[i] = {.data = view.head<char>(), .type = element_type};
     }
 
-    rmm::device_buffer mask(rows * sizeof(bool), state->stream);
-    const auto blocks = static_cast<unsigned>((rows + filter_threads_per_block - 1) / filter_threads_per_block);
-    filterToBooleans<<<blocks, filter_threads_per_block, 0, state->stream.get()>>>(program, layouts, rows, static_cast<bool *>(mask.data()));
-    checkCuda(cudaGetLastError(), "Cannot filter the groups on the device");
-
-    const cudf::column_view mask_view(cudf::data_type{cudf::type_id::BOOL8}, static_cast<cudf::size_type>(rows), mask.data(), nullptr, 0);
-    state->groups = guarded("filtering " + std::to_string(rows) + " groups", [&] { return cudf::apply_boolean_mask(groups, mask_view, state->stream); });
+    const cudf::size_type left_out = state->evaluateFilter(rows, inputs, expression);
+    if (left_out == 0)
+        return rows;
+    state->groups = state->compact(std::vector<cudf::column_view>(groups.begin(), groups.end()), rows, left_out);
     return static_cast<size_t>(state->groups->num_rows());
 }
 
