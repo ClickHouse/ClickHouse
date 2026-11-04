@@ -69,11 +69,12 @@ WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
 
 
 -- 3 rows in bloom filter
+-- One key far from the others makes the key range wider than a dense bitset covers, so the runtime filter is a Bloom filter.
 SELECT count()
-FROM customer, nation
+FROM customer, (SELECT if(n_name = 'UNKNOWN', toInt32(2000000000), n_nationkey) AS n_nationkey, n_name FROM nation) AS nation
 WHERE
     c_nationkey = n_nationkey
-    AND n_name IN ('FRANCE', 'GERMANY', 'ETHIOPIA')
+    AND n_name IN ('FRANCE', 'GERMANY', 'ETHIOPIA', 'UNKNOWN')
     AND c_nationkey_copy IN (6, 7, 5)
 SETTINGS join_runtime_filter_exact_values_limit=1, max_block_size=10, max_threads=1, log_comment='Q3';
 
@@ -82,7 +83,7 @@ SETTINGS join_runtime_filter_exact_values_limit=1, max_block_size=10, max_thread
 SYSTEM FLUSH LOGS query_log;
 SELECT
     log_comment,
-    ProfileEvents['RuntimeFilterBlocksSkipped'] > 10 * ProfileEvents['RuntimeFilterBlocksProcessed'] AS Passed,
+    ProfileEvents['RuntimeFilterBlocksSkipped'] > 10 * ProfileEvents['RuntimeFilterBlocksProcessed'] AND ProfileEvents['RuntimeFilterDenseBitsetsBuilt'] = 0 AS Passed,
     if (Passed, 'Ok', query_id || ' : ' || ProfileEvents::String)
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600 AND

@@ -265,40 +265,63 @@ TEST(RuntimeFilterLookup, DenseBitsetReplacesPredictedSaturatedBloomFilter)
 
 TEST(RuntimeFilterLookup, DenseBitsetMergesPartialFiltersInAnyRepresentation)
 {
-    /// Partial filters of several build streams: still exact, a bitset that keeps sparse keys as values,
-    /// and a bitset over dense keys. Every merge order gives the exact union.
+    /// Partial filters of several build streams: exact sets (one empty), bitsets that keep sparse keys as values, and
+    /// bitsets over dense keys at different words. In every merge order, with unfinished sources as in
+    /// `RuntimeFilterLookup::add` and with finished ones, the merged filter is one bitset with the exact union.
+    /// A Bloom filter would be dropped (at most 1e-6 of its bits may be set) and pass every row.
     const auto type = makeUInt64Type();
     const auto make_filter = [&](size_t filters_to_merge)
     {
+        /// 16 x 64 KiB of bits cover 8M values; at most 2 exact keys.
         return std::make_unique<RuntimeFilter>(
             filters_to_merge,
             makeRuntimeFilterConfig(),
-            RuntimeFilter::Adaptive(type, makeGeometry(1_KiB, 2, 3, 0.7), std::nullopt, false));
+            RuntimeFilter::Adaptive(type, makeGeometry(64_KiB, 2, 3, 0.000001), std::nullopt, false));
     };
-    const std::vector<std::vector<UInt64>> parts = {{7}, {1000, 100000, 300000}, {}, {64, 65, 66, 67, 68, 69, 70, 71, 72}};
-    for (size_t first = 0; first < parts.size(); ++first)
+    const auto make_column = [](const std::vector<UInt64> & values)
     {
-        auto destination = make_filter(parts.size() - 1);
         auto column = ColumnUInt64::create();
-        for (const auto value : parts[first])
+        for (const auto value : values)
             column->insertValue(value);
-        destination->insert(std::move(column));
-        for (size_t i = 0; i < parts.size(); ++i)
+        return column;
+    };
+    const std::vector<std::vector<UInt64>> parts = {
+        {7},
+        {1000, 100000, 8000000},
+        {},
+        {64, 65, 66, 67, 68, 69, 70, 71, 72},
+        {120005, 120006, 120007, 120008, 120009, 120010, 120011, 120012, 120013, 120014},
+        {5000000, 6000000, 7000000}};
+    for (const bool finish_sources : {false, true})
+    {
+        for (size_t first = 0; first < parts.size(); ++first)
         {
-            if (i == first)
-                continue;
-            auto source = make_filter(0);
-            auto source_column = ColumnUInt64::create();
-            for (const auto value : parts[i])
-                source_column->insertValue(value);
-            source->insert(std::move(source_column));
-            source->finishInsert();
-            destination->merge(*source);
+            SCOPED_TRACE(fmt::format("finish_sources {}, first {}", finish_sources, first));
+            const ProfileEvents::Count bitsets_before = ProfileEvents::global_counters[ProfileEvents::RuntimeFilterDenseBitsetsBuilt];
+            auto destination = make_filter(parts.size() - 1);
+            destination->insert(make_column(parts[first]));
+            for (size_t i = 0; i < parts.size(); ++i)
+            {
+                if (i == first)
+                    continue;
+                auto source = make_filter(0);
+                source->insert(make_column(parts[i]));
+                if (finish_sources)
+                    source->finishInsert();
+                destination->merge(*source);
+            }
+            destination->finishInsert();
+            /// The four parts with more than 2 keys switched to a bitset; the exact ones did not.
+            EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::RuntimeFilterDenseBitsetsBuilt] - bitsets_before, 4);
+            expectMask(
+                destination->find(makeUInt64ColumnWithType(
+                    {7, 8, 63, 64, 72, 73, 1000, 1001, 100000, 120004, 120005, 120014, 120015,
+                     5000000, 6000000, 7000000, 7000001, 7999999, 8000000, 8000001, 9000000, 5},
+                    type)),
+                {1, 0, 0, 1, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 1, 1, 0, 0, 1, 0, 0, 0});
+            EXPECT_EQ(destination->getStats().rows_checked.load(), 22);
+            EXPECT_EQ(destination->getStats().rows_passed.load(), 11);
         }
-        destination->finishInsert();
-        expectMask(
-            destination->find(makeUInt64ColumnWithType({7, 8, 63, 64, 72, 73, 1000, 1001, 100000, 300000, 299999, 5}, type)),
-            {1, 0, 0, 1, 1, 0, 1, 0, 1, 1, 0, 0});
     }
 }
 
