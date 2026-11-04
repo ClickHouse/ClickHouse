@@ -79,7 +79,7 @@ SELECT count() FROM t_ifnull_nullable WHERE NOT ifNull(equals(k, 0), 0);
 SELECT count() FROM t_ifnull_nullable WHERE NOT ifNull(equals(k, 0), 0) SETTINGS force_primary_key = 1; -- { serverError INDEX_NOT_USED }
 -- Truthy-fallback guard: over a `Nullable` inner the fallback is reachable on the `NULL` row, so
 -- `ifNull(X, 1)` is not the identity and must not be simplified. No `k` range is built (condition stays
--- `true`), and `k = 0`, `k = 1`, `k = NULL` are all kept (3 rows).
+-- `true`, all 3 granules are read), and `k = 0` and `k = NULL` match (2 rows).
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_ifnull_nullable WHERE ifNull(equals(k, 0), 1)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
 Condition: true
 Granules: 3/3

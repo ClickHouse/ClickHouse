@@ -3,9 +3,6 @@
 -- the bare column, even when nested inside another key function (e.g. sipHash64(ifNull(p, 0))).
 -- See ClickHouse/ClickHouse#109998 (follow-up from @clickgapai).
 
--- The simplification is a query tree pass, so it only runs with the analyzer.
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS t_nested_ident;
 
 CREATE TABLE t_nested_ident (p UInt8, k UInt32)
