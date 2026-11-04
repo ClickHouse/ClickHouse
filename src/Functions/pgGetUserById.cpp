@@ -74,9 +74,9 @@ ClickHouse does not track table ownership, so the function ignores the argument 
         "Usage example",
         "SELECT pg_get_userbyid(10)",
         R"(
-┌─pg_get_userbyid(10)─┐
-│ default             │
-└─────────────────────┘
+┌─pgGetUserById(10)─┐
+│ default           │
+└───────────────────┘
         )"
     }
     };

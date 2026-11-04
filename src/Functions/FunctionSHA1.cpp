@@ -12,6 +12,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Functions/PerformanceAdaptors.h>
 #include <base/IPv4andIPv6.h>
 #include <base/defines.h>
 #include <base/unaligned.h>
@@ -26,14 +27,13 @@
 #    include <openssl/evp.h>
 #endif
 
-#if USE_X86_64_MULTITARGET_CODE && (defined(__x86_64__) || defined(_M_X64))
+#if USE_MULTITARGET_CODE && (defined(__x86_64__) || defined(_M_X64))
 #    include <immintrin.h>
 #endif
 
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
-#include <memory>
 
 namespace
 {
@@ -119,14 +119,14 @@ public:
 /// ============================================================
 /// Multi-buffer SHA-1, templated on Ops.
 ///
-/// Template functions go inside DECLARE_X86_64_MULTITARGET_CODE so each
+/// Template functions go inside DECLARE_MULTITARGET_CODE so each
 /// target-specific copy is compiled with the correct ISA flags.
 /// The Ops struct (AVX512SHA1Ops) is in its own DECLARE block
 /// and found via same-namespace lookup.
 /// ============================================================
 
 /// One SHA-1 round step for a single group of N lanes.
-/// Defined outside DECLARE_X86_64_MULTITARGET_CODE because preprocessor
+/// Defined outside DECLARE_MULTITARGET_CODE because preprocessor
 /// directives inside macro arguments are undefined behavior.
 #define SHA1_STEP(func, a, b, c, d, e, wi, k) \
     { \
@@ -152,7 +152,7 @@ public:
     SHA1_EXPAND(w, i) \
     SHA1_STEP(func, a, b, c, d, e, w[(i) & 15], k)
 
-DECLARE_X86_64_MULTITARGET_CODE(
+DECLARE_MULTITARGET_CODE(
 
     template <typename Ops> struct SHA1State { typename Ops::Vec a, b, c, d, e; };
 
@@ -462,7 +462,7 @@ DECLARE_X86_64_MULTITARGET_CODE(
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function SHA1", arguments[0].column->getName());
     }
 
-    ) // DECLARE_X86_64_MULTITARGET_CODE
+    ) // DECLARE_MULTITARGET_CODE
 
 #undef SHA1_STEP
 #undef SHA1_EXPAND
@@ -774,37 +774,34 @@ public:
 
 #ifndef SHA1_GTEST_UNIT_TEST
 
-/// The implementation is picked once, from what the CPU supports. Everything except execution comes from
-/// the default implementation, which this class derives from.
+/// Runtime dispatch via ImplementationSelector.
 class FunctionSHA1 : public TargetSpecific::Default::FunctionSHA1Impl
 {
 public:
-    explicit FunctionSHA1([[maybe_unused]] ContextPtr context)
+    explicit FunctionSHA1(ContextPtr context)
+        : selector(context)
     {
 #    if USE_SSL
         if (OpenSSLInitializer::instance().isFIPSEnabled())
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Function {} is not available in FIPS mode", name);
 #    endif
 
-#    if USE_X86_64_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::x86_64_v4))
-        {
-            impl = std::make_unique<TargetSpecific::x86_64_v4::FunctionSHA1Impl>();
-            return;
-        }
+        selector.registerImplementation<TargetArch::Default, TargetSpecific::Default::FunctionSHA1Impl>();
+
+#    if USE_MULTITARGET_CODE
+        selector.registerImplementation<TargetArch::x86_64_v4, TargetSpecific::x86_64_v4::FunctionSHA1Impl>();
 #    endif
-        impl = std::make_unique<TargetSpecific::Default::FunctionSHA1Impl>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        return impl->executeImpl(arguments, result_type, input_rows_count);
+        return selector.selectAndExecute(arguments, result_type, input_rows_count);
     }
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionSHA1>(context); }
 
 private:
-    std::unique_ptr<IFunction> impl;
+    ImplementationSelector<IFunction> selector;
 };
 
 
@@ -823,7 +820,7 @@ Calculates the SHA1 hash of the given string.
 SELECT HEX(SHA1('abc'));
         )",
             R"(
-┌─HEX(SHA1('abc'))─────────────────────────┐
+┌─hex(SHA1('abc'))─────────────────────────┐
 │ A9993E364706816ABA3E25717850C26C9CD0D89D │
 └──────────────────────────────────────────┘
         )"}};

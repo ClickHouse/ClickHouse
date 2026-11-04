@@ -11,7 +11,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
-#include <Functions/toStartOfInterval.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
@@ -94,9 +93,7 @@ public:
     static constexpr auto name = "dateTrunc";
 
     explicit FunctionDateTruncOverloadResolver(ContextPtr context)
-        /// `dateTrunc` has its own result type, and its results must not depend on `to_start_of_interval_preserves_argument_type`,
-        /// which also changes how `toStartOfInterval` clamps values near the epoch.
-        : to_start_of_interval(createLegacyToStartOfIntervalOverloadResolver(context))
+        : to_start_of_interval(FunctionFactory::instance().get("toStartOfInterval", context))
         , function_date_trunc_return_type_behavior(context->getSettingsRef()[Setting::function_date_trunc_return_type_behavior])
     {
     }
@@ -108,20 +105,6 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 2}; }
-
-    /// Documentation-only, and intentionally so: like CAST, `dateTrunc` computes a result type that
-    /// is not a pure function of its argument types. `dateTrunc(unit, datetime[, timezone])` maps the
-    /// const `unit` string (year/quarter/month/week -> `Date`; day/hour/minute/second -> `DateTime`;
-    /// millisecond/microsecond/nanosecond -> `DateTime64` with scale 3/6/9) and then, when the source
-    /// is a negative-capable `Date32`/`DateTime64`, widens `Date` -> `Date32` and `DateTime` ->
-    /// `DateTime64` — but only under the `function_date_trunc_return_type_behavior` setting. That
-    /// widening depends on a query setting, which the declarative signature machinery (and its type
-    /// functions) cannot see, so the legacy `getReturnTypeImpl` below stays authoritative. The
-    /// signature string is purely descriptive; it is only rendered, never applied.
-    String getSignatureString() const override
-    {
-        return "(const unit String, DateOrDateTime, [const timezone String]) -> Date | Date32 | DateTime | DateTime64";
-    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -136,7 +119,7 @@ public:
         };
         ResultType result_type = {};
 
-        IntervalKind datepart_kind;
+        IntervalKind::Kind datepart_kind = IntervalKind::Kind::Second;
 
         String datepart_param;
         auto check_first_argument = [&] {
@@ -250,7 +233,7 @@ public:
                 "name of datepart", getName());
 
         String datepart_param = Poco::toLower(datepart_column->getValue<String>());
-        IntervalKind datepart_kind;
+        IntervalKind::Kind datepart_kind = IntervalKind::Kind::Second;
         if (!IntervalKind::tryParseString(datepart_param, datepart_kind))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} doesn't look like datepart name in {}", datepart_param, getName());
 
