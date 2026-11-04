@@ -2066,49 +2066,26 @@ protected:
 
         const String unique_temp_file_path = toString(unique_query_id);
 
-        /// Shared by the jobs that send the descriptions, so the plan is not copied per task.
-        std::shared_ptr<const DistributedQueryTaskDescription> stage_description;
         if (payload_senders)
-            stage_description = std::make_shared<const DistributedQueryTaskDescription>(std::move(task_description));
+        {
+            /// Shared by the jobs that send the descriptions, so the plan is not copied per task.
+            const auto stage_description = std::make_shared<const DistributedQueryTaskDescription>(std::move(task_description));
+            for (const auto & task : stage.tasks)
+            {
+                checkBeforeStartingTask();
+                createTaskAndSendDescription(stage_name, buildTaskInfo(task.task_id), stage_description, task,
+                    getExchangeStreamSources(task), unique_temp_file_path, collectors);
+            }
+            return;
+        }
 
         for (const auto & task : stage.tasks)
         {
-            /// Reproduce the ordering a failing worker task creates: a task fails and records its
-            /// exception while this loop is still dispatching the rest of the stage, so the next
-            /// `checkCancelled` observes the cancellation. It must report the recorded failure.
-            fiu_do_on(FailPoints::distributed_plan_record_failure_while_starting_tasks,
-            {
-                try
-                {
-                    throw Exception(ErrorCodes::CANNOT_SCHEDULE_TASK, "Injected task failure while starting tasks");
-                }
-                catch (...)
-                {
-                    /// `recordCurrentException` stores it as the query's first failure. Ok.
-                    cancellation->recordCurrentException();
-                }
-            });
-
-            checkCancelled();
-
-            /// Add exchange destinations for output streams
-            ExchangeStreamSources exchange_stream_sources;
-            for (const auto & input_stream : task.input_exchange_streams)
-            {
-                String input_stream_name = input_stream.toString();
-                exchange_stream_sources.stream_hosts[input_stream_name] = task_to_host_map->getExchangeStreamSourceHosts().at(input_stream_name);
-            }
-            auto task_info = buildTaskInfo(task.task_id);
-
-            if (stage_description)
-            {
-                createTaskAndSendDescription(stage_name, task_info, stage_description, task, std::move(exchange_stream_sources),
-                    unique_temp_file_path, collectors);
-                continue;
-            }
+            checkBeforeStartingTask();
 
             task_description.task = task;
-            task_description.exchange_stream_sources = std::move(exchange_stream_sources);
+            task_description.exchange_stream_sources = getExchangeStreamSources(task);
+            auto task_info = buildTaskInfo(task.task_id);
             /// Send the task before registering it: status polling does not tolerate
             /// UnknownTaskId, so a tracker poll racing the start would abort the query.
             /// On send failure clean up directly in case the worker did accept the start;
@@ -2126,6 +2103,39 @@ protected:
             running_tasks.addTask(stage_name, task_info);
             ProfileEvents::increment(ProfileEvents::DistributedPlanRemoteTasks);
         }
+    }
+
+    void checkBeforeStartingTask()
+    {
+        /// Reproduce the ordering a failing worker task creates: a task fails and records its
+        /// exception while this loop is still dispatching the rest of the stage, so the next
+        /// `checkCancelled` observes the cancellation. It must report the recorded failure.
+        fiu_do_on(FailPoints::distributed_plan_record_failure_while_starting_tasks,
+        {
+            try
+            {
+                throw Exception(ErrorCodes::CANNOT_SCHEDULE_TASK, "Injected task failure while starting tasks");
+            }
+            catch (...)
+            {
+                /// `recordCurrentException` stores it as the query's first failure. Ok.
+                cancellation->recordCurrentException();
+            }
+        });
+
+        checkCancelled();
+    }
+
+    /// The hosts that serve the input streams of `task`.
+    ExchangeStreamSources getExchangeStreamSources(const DistributedQueryTask & task) const
+    {
+        ExchangeStreamSources exchange_stream_sources;
+        for (const auto & input_stream : task.input_exchange_streams)
+        {
+            String input_stream_name = input_stream.toString();
+            exchange_stream_sources.stream_hosts[input_stream_name] = task_to_host_map->getExchangeStreamSourceHosts().at(input_stream_name);
+        }
+        return exchange_stream_sources;
     }
 
     /// Registers the task on its worker and tracks it at once; `payload_senders` sends its description, so the next task
