@@ -28,7 +28,7 @@ public:
     static void updateStructureAndFormatArgumentsIfNeeded(ASTFunction * table_function, const String & structure_, const String & format_, const ContextPtr & context)
     {
         auto * expression_list = table_function->arguments->as<ASTExpressionList>();
-        ASTs args = expression_list->children;
+        ASTs & args = expression_list->children;
 
         if (args.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected empty list of arguments for {}Cluster table function", Base::name);
