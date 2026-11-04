@@ -11,6 +11,8 @@
 #include <base/errnoToString.h>
 #include <base/getPageSize.h>
 
+#include <atomic>
+
 #include <Poco/Environment.h>
 #include <Poco/Logger.h>
 #include <sys/mman.h> /// MADV_POPULATE_WRITE
@@ -132,6 +134,8 @@ size_t roundUpToPageSize(size_t size)
     return (size + page_size - 1) / page_size * page_size;
 }
 
+std::atomic<size_t> directly_mapped_bytes = 0;
+
 /// The memory is zero-filled by the kernel.
 void * mmapWithHugePages(size_t size, size_t alignment)
 {
@@ -155,6 +159,7 @@ void * mmapWithHugePages(size_t size, size_t alignment)
 
     /// Only an advice: if it fails, the memory is still usable with regular pages.
     ::madvise(reinterpret_cast<void *>(aligned), length, MADV_HUGEPAGE);
+    directly_mapped_bytes.fetch_add(length, std::memory_order_relaxed);
     return reinterpret_cast<void *>(aligned);
 #else
     UNUSED(size, alignment);
@@ -164,8 +169,10 @@ void * mmapWithHugePages(size_t size, size_t alignment)
 
 void munmapWithHugePages(void * buf, size_t size)
 {
-    if (0 != ::munmap(buf, roundUpToPageSize(size)))
+    const size_t length = roundUpToPageSize(size);
+    if (0 != ::munmap(buf, length))
         DB::ErrnoException::throwWithErrno(DB::ErrorCodes::CANNOT_MUNMAP, errno, "Allocator: Cannot munmap {}.", ReadableSize(size));
+    directly_mapped_bytes.fetch_sub(length, std::memory_order_relaxed);
 }
 
 void prefaultPages([[maybe_unused]] void * buf_, [[maybe_unused]] size_t len_)
@@ -341,6 +348,11 @@ void * Allocator<clear_memory_, populate>::realloc(void * buf, size_t old_size, 
     return buf;
 }
 
+
+size_t getAllocatorDirectlyMappedBytes()
+{
+    return directly_mapped_bytes.load(std::memory_order_relaxed);
+}
 
 template class Allocator<false, false>;
 template class Allocator<true, false>;
