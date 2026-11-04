@@ -264,8 +264,11 @@ namespace ServerSetting
     extern const ServerSettingsString insert_deduplication_version;
     extern const ServerSettingsBool disable_internal_dns_cache;
     extern const ServerSettingsBool s3queue_disable_streaming;
+    extern const ServerSettingsUInt64 stream_kafka_locks_refresh_polls;
     extern const ServerSettingsBool enable_read_through_distributed_cache;
     extern const ServerSettingsBool enable_write_through_distributed_cache;
+    extern const ServerSettingsDistributedCachePoolBehaviourOnLimit distributed_cache_temporary_data_pool_behaviour_on_limit;
+    extern const ServerSettingsUInt64 distributed_cache_temporary_data_max_connections_bypassing_pool;
     extern const ServerSettingsUInt64 disk_connections_soft_limit;
     extern const ServerSettingsUInt64 disk_connections_store_limit;
     extern const ServerSettingsUInt64 disk_connections_hard_limit;
@@ -2846,8 +2849,13 @@ try
             global_context->allowSystemAllocateMemory(config().getBool("allow_system_allocate_memory", false));
 
             global_context->setS3QueueDisableStreaming(new_server_settings[ServerSetting::s3queue_disable_streaming]);
+            global_context->setKafkaLocksRefreshPolls(new_server_settings[ServerSetting::stream_kafka_locks_refresh_polls]);
             global_context->setReadThroughDistributedCache(new_server_settings[ServerSetting::enable_read_through_distributed_cache]);
             global_context->setWriteThroughDistributedCache(new_server_settings[ServerSetting::enable_write_through_distributed_cache]);
+            global_context->setDistributedCacheTemporaryDataPoolBehaviourOnLimit(
+                new_server_settings[ServerSetting::distributed_cache_temporary_data_pool_behaviour_on_limit]);
+            global_context->setDistributedCacheTemporaryDataMaxConnectionsBypassingPool(
+                new_server_settings[ServerSetting::distributed_cache_temporary_data_max_connections_bypassing_pool]);
 
             global_context->setOSCPUOverloadSettings(static_cast<double>(new_server_settings[ServerSetting::min_os_cpu_wait_time_ratio_to_drop_connection]), static_cast<double>(new_server_settings[ServerSetting::max_os_cpu_wait_time_ratio_to_drop_connection]));
 
