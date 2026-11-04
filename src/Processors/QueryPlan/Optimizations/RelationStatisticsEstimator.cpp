@@ -353,7 +353,14 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     {
         UInt64 estimated_rows = reading->getStorage()->totalRows({}).value_or(0);
         String table_display_name = reading->getStorage()->getName();
-        return RelationStats{.estimated_rows = estimated_rows, .table_name = table_display_name, .source = RowEstimateSource::Statistics};
+        RelationStats stats{.estimated_rows = estimated_rows, .table_name = table_display_name, .source = RowEstimateSource::Statistics};
+        /// As for MergeTree without column statistics, conditions on the rows leave the row count unknown unless it is 0.
+        if (estimated_rows != 0 && !getConditionsToEstimate(*reading, filter).empty())
+        {
+            stats.estimated_rows.reset();
+            stats.imprecise_estimate = true;
+        }
+        return stats;
     }
 
     /// We cannot do typeid_cast<const ReadFromSystemOneStep *>(step)
