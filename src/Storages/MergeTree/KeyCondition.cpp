@@ -871,14 +871,8 @@ static const ActionsDAG::Node * tryRewriteCoalesceComparison(
     auto make_cmp = [&](const ActionsDAG::Node * lhs) -> const ActionsDAG::Node &
     {
         const auto & cmp_node = inverted_dag.addFunction(op_func, {lhs, &const_cloned}, "");
-        /// If `lhs` is itself a `coalesce` or `ifNull` (nested coalesce), expand it recursively here.
-        /// Otherwise the inner `coalesce` would remain unexpanded after the first
-        /// `cloneDAGWithInversionPushDown` pass and a subsequent pass (e.g. when each skip index builds its
-        /// own `KeyCondition` via `createIndexCondition`) would expand it then, producing a `KeyCondition`
-        /// whose RPN no longer matches the template's RPN. The disjunction-tracking machinery in
-        /// `MergeTreeDataSelectExecutor::filterMarksUsingIndex` assumes both RPNs share the same length and
-        /// position layout; the mismatch puts partial results at the wrong positions of `partial_disjunction_result`,
-        /// which can skip granules that match the filter.
+        /// Run the whole boolean rewrite chain on the built comparison (a nested `coalesce`, a `nullIf` operand, ...), so a later pass,
+        /// like each skip index's `createIndexCondition`, keeps the template's RPN layout for `mergePartialResultsForDisjunctions`.
         if (const auto * rewritten = tryRewriteBooleanCondition(cmp_node, canonical_op_str, inverted_dag, inputs_mapping, context))
             return *rewritten;
         return cmp_node;
@@ -1099,8 +1093,7 @@ static const ActionsDAG::Node * tryRewriteIsTrueCondition(
 ///     (always-true for non-NULL boolean, declined), and a NULL element changes NULL handling.
 ///   - the `X` boolean-result gate is the same as `tryRewriteIsTrueCondition`: `k IN (true)` for a
 ///     non-boolean `k` means `k = 1`, not "k truthy".
-/// Only literal/constant sets whose elements are available at analysis time are handled; subquery
-/// sets that are not yet built decline (return nullptr) and fall back to the existing behavior.
+/// Only literal sets are handled; any other set declines (returns nullptr) and falls back to the existing behavior.
 /// Returns nullptr if the pattern does not match.
 static const ActionsDAG::Node * tryRewriteInTruthyCondition(
     const ActionsDAG::Node & node,
@@ -1145,14 +1138,9 @@ static const ActionsDAG::Node * tryRewriteInTruthyCondition(
     if (!predicateIsBooleanResult(predicate, context->getSettingsRef()[Setting::allow_key_condition_coalesce_rewrite]))
         return nullptr;
 
-    /// Only inspect a set that is ALREADY built. `get()` returns a non-null set for literal-tuple
-    /// (`IN (true)`) and storage sets, which are available at planning time, and nullptr for a
-    /// subquery set that has not run yet. We must NOT force-build here: this rewrite runs during
-    /// key-condition DAG cloning for every query, so forcing the set would execute the `IN` subquery
-    /// purely for analysis, e.g. `X IN (SELECT throwIf(1))` would throw even when no index is used
-    /// (see 02707_skip_index_with_in). buildOrderedSetInplace on an already-built set is then cheap
-    /// (no subquery) and just materializes its ordered elements.
-    if (!future_set->get())
+    /// Only a literal set. A subquery set is built between the index-analysis passes (a `set` index condition builds it),
+    /// so accepting it once built would rewrite it in some passes and not in others, and their RPN layouts would differ.
+    if (!typeid_cast<const FutureSetFromTuple *>(future_set.get()))
         return nullptr;
 
     auto prepared_set = future_set->buildOrderedSetInplace(context);

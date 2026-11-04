@@ -61,6 +61,25 @@ INSERT INTO t_set SELECT number, 1, 500, number FROM numbers(16);
 
 SELECT count() FROM t_set WHERE NOT (coalesce(c, b) > 10) OR x = 9;
 
+-- A subquery set must get the same rewrites in every pass, even after a set index condition has built it.
+DROP TABLE IF EXISTS t_ready;
+CREATE TABLE t_ready
+(
+    id UInt32,
+    b UInt32,
+    x UInt32,
+    INDEX i_ready (b < 10 OR b > 100) TYPE set(0) GRANULARITY 1,
+    INDEX i_b b TYPE minmax GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 4, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
+
+INSERT INTO t_ready SELECT number, 50, number FROM numbers(16);
+
+SELECT count() FROM t_ready WHERE (b < 10 OR b > 100) IN (SELECT true) OR x = 9;
+SELECT count() FROM t_ready WHERE NOT ((b < 10 OR b > 100) NOT IN (SELECT true)) OR x = 9;
+
 -- With the rewrite off, a negated ifNull range still reaches the monotonic chain over a Nullable partition key; both counts must match.
 DROP TABLE IF EXISTS t_chain_part;
 DROP TABLE IF EXISTS t_chain_flat;
@@ -73,5 +92,6 @@ SELECT (SELECT count() FROM t_chain_flat WHERE NOT (ifNull(c0, 0) >= 7) SETTINGS
 
 DROP TABLE t_minmax;
 DROP TABLE t_set;
+DROP TABLE t_ready;
 DROP TABLE t_chain_part;
 DROP TABLE t_chain_flat;
