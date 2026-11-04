@@ -706,12 +706,15 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
         /// Because format header cannot be empty.
         if (columns_to_read.empty())
         {
-            auto table_columns = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns());
+            auto table_columns = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::All));
             NamesAndTypesList non_partition_columns;
             for (const auto & name_and_type : table_columns)
                 if (!partition_columns.contains(name_and_type.name))
                     non_partition_columns.push_back(name_and_type);
-            columns_to_read.push_back(ExpressionActions::getSmallestColumn(non_partition_columns).name);
+            /// When every column is a partition column, nothing is read from the data files and the format header stays
+            /// empty, as for a read of only partition columns.
+            columns_to_read.push_back(
+                ExpressionActions::getSmallestColumn(non_partition_columns.empty() ? table_columns : non_partition_columns).name);
         }
 
         info.columns_description = storage_snapshot->getDescriptionForColumns(columns_to_read);
