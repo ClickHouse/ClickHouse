@@ -2,6 +2,7 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterExplainQuery.h>
 
+#include <Analyzer/Utils.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <QueryPipeline/BlockIO.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -180,24 +181,23 @@ namespace
             if (TableFunctionFactory::instance().isTableFunctionName(func->name))
                 return;
 
-            String database_name = query_context->getCurrentDatabase();
-            String table_name = func->name;
-            if (func->isCompoundName())
+            auto is_parameterized_view = [](const StoragePtr & candidate)
             {
-                std::vector<std::string> parts;
-                splitInto<'.'>(parts, func->name);
-                if (parts.size() != 2)
-                    return;
-                database_name = parts[0];
-                table_name = parts[1];
+                const auto * view = candidate ? candidate->as<StorageView>() : nullptr;
+                return view && view->isParameterizedView();
+            };
+
+            auto [database_name, table_name] = extractDatabaseAndTableNameForParameterizedView(func->name, query_context);
+            StoragePtr storage;
+            if (!table_name.empty())
+                storage = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, query_context);
+            /// A view whose own name has a dot: `` `v.x`(...) ``.
+            if (!is_parameterized_view(storage) && !func->isCompoundName() && table_name != func->name)
+            {
+                table_name = func->name;
+                storage = DatabaseCatalog::instance().tryGetTable({query_context->getCurrentDatabase(), table_name}, query_context);
             }
-
-            auto storage = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, query_context);
-            if (!storage)
-                return;
-
-            const auto * storage_view = storage->as<StorageView>();
-            if (!storage_view || !storage_view->isParameterizedView())
+            if (!is_parameterized_view(storage))
                 return;
 
             auto metadata = storage->getInMemoryMetadataPtr(query_context, false);
@@ -647,6 +647,7 @@ struct QueryPlanSettings
             {"sorting", query_plan_options.sorting},
             {"distributed", query_plan_options.distributed},
             {"fragments", query_plan_options.fragments},
+            {"tree", query_plan_options.tree},
             {"keep_logical_steps", keep_logical_steps},
             {"input_headers", query_plan_options.input_headers},
             {"column_structure", query_plan_options.column_structure},
@@ -1201,6 +1202,18 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
             auto settings = checkAndGetSettings<QueryPlanSettings>(ast_settings, pretty_version);
 
+            if (settings.query_plan_options.tree)
+            {
+                if (settings.query_plan_options.fragments)
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Option 'tree' is not supported with option 'fragments'");
+                if (settings.json)
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Option 'tree' is not supported with option 'json'");
+                if (settings.query_plan_options.distributed)
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Option 'tree' is not supported with option 'distributed'");
+                if (!settings.optimize)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Option 'tree' requires option 'optimize'");
+            }
+
             if (settings.query_plan_options.fragments)
             {
                 if (settings.json)
@@ -1234,25 +1247,31 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 optimization_settings.max_step_description_length = query_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
                 plan.optimize(optimization_settings);
 
-                if (settings.query_plan_options.fragments)
+                if (settings.query_plan_options.fragments || settings.query_plan_options.tree)
                 {
                     const size_t max_step_description_length = query_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
+                    const auto build_explain = [&](const FragmentGraph & graph)
+                    {
+                        if (settings.query_plan_options.tree)
+                            explainAsTree(graph, buf, settings.query_plan_options, max_step_description_length);
+                        else
+                            explainAsFragments(graph, buf, settings.query_plan_options, max_step_description_length);
+                    };
                     if (plan.staysDistributed())
                     {
-                        /// The cut consumes the plan. That is intended: `EXPLAIN` owns this plan and discards it
-                        /// after printing. The plan is not cloned, because not every step implements `clone`.
-                        /// `cut` must outlive `graph`, whose fragments point to the plans of its stages.
-                        auto cut = plan.cutIntoDistributedPlan(optimization_settings);
-                        auto graph = buildFragmentGraph(cut.distributed_plan);
-                        FragmentGraphExplain(graph, settings.query_plan_options, max_step_description_length).explain(buf);
+                        /// The distributed_plan_cut consumes the plan since `EXPLAIN` owns this plan and discards it after printing.
+                        /// `distributed_plan_cut` must outlive `graph`, whose fragments point to the plans of its stages.
+                        auto distributed_plan_cut = plan.cutIntoDistributedPlan(optimization_settings);
+                        auto query_plan_as_fragment_graph = buildFragmentGraph(distributed_plan_cut.distributed_plan);
+                        build_explain(query_plan_as_fragment_graph);
                     }
                     else
                     {
                         std::optional<String> fallback_reason;
                         if (plan.didFallBackToLocal())
                             fallback_reason = plan.getDistributedPlanFallbackReason();
-                        auto graph = buildSingleFragmentGraph(plan, std::move(fallback_reason));
-                        FragmentGraphExplain(graph, settings.query_plan_options, max_step_description_length).explain(buf);
+                        auto query_plan_as_fragment_graph = buildSingleFragmentGraph(plan, std::move(fallback_reason));
+                        build_explain(query_plan_as_fragment_graph);
                     }
                     break;
                 }
