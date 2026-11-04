@@ -85,20 +85,17 @@ StatelessTaskExecutor::StatelessTaskExecutor(size_t max_threads, size_t max_free
 {
 }
 
-StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & unique_task_id, const DistributedQueryTaskDescription & task_description, const String & unique_temp_file_path, const TaskCollectors & collectors)
+struct StatelessTaskExecutor::TaskSetup
 {
-    /// `unique_task_id` is unique per task, so a repeated start (e.g. a coordinator retry) is the same
-    /// task. Running it twice would double-write exchanges and temp files and orphan the original from
-    /// cancel/forget, so treat a duplicate start as a no-op.
-    {
-        std::lock_guard lock(tasks_mutex);
-        if (tasks.contains(unique_task_id))
-        {
-            LOG_WARNING(getLogger("StatelessTaskExecutor"), "Ignoring duplicate start for already running task {}", unique_task_id);
-            return Result::Ok;
-        }
-    }
+    ContextMutablePtr query_context;
+    ObjectStoragePtr object_storage;
+    String object_storage_path;
+    InternalTextLogsQueuePtr logs_queue;
+    LogsLevel client_logs_level = LogsLevel::none;
+};
 
+StatelessTaskExecutor::TaskSetup StatelessTaskExecutor::setupTask(const String & unique_task_id, const DistributedQueryTaskDescription & task_description, const String & unique_temp_file_path, const TaskCollectors & collectors)
+{
     ContextPtr global_context = Context::getGlobalContextInstance();
     ContextMutablePtr query_context = Context::createCopy(global_context);
     query_context->makeQueryContext();
@@ -129,26 +126,47 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
     if (const UInt64 worker_cores = getNumberOfCPUCoresToUse(); query_context->getSettingsRef()[Setting::max_threads] > worker_cores)
         query_context->setSetting("max_threads", worker_cores);
 
-    auto [object_storage, object_storage_path] = getObjectStorageForTemporaryFiles(unique_temp_file_path, query_context);
+    TaskSetup setup;
+    std::tie(setup.object_storage, setup.object_storage_path) = getObjectStorageForTemporaryFiles(unique_temp_file_path, query_context);
+
+    /// Collect logs only when the coordinator asked for them and `send_logs_level` is not `none`.
+    setup.client_logs_level = query_context->getSettingsRef()[Setting::send_logs_level];
+    if (collectors.logs && setup.client_logs_level != LogsLevel::none)
+    {
+        /// Bound the buffer so a stalled or slow status poll cannot grow it without limit; 0 means
+        /// unbounded (the default capacity is never reached in practice).
+        const UInt64 max_buffered_log_rows = query_context->getSettingsRef()[Setting::distributed_plan_max_buffered_log_rows];
+        setup.logs_queue = max_buffered_log_rows != 0
+            ? std::make_shared<InternalTextLogsQueue>(max_buffered_log_rows)
+            : std::make_shared<InternalTextLogsQueue>(); /// default capacity: effectively unbounded
+        setup.logs_queue->max_priority = Poco::Logger::parseLevel(query_context->getSettingsRef()[Setting::send_logs_level].toString());
+        setup.logs_queue->setSourceRegexp(query_context->getSettingsRef()[Setting::send_logs_source_regexp]);
+    }
+    setup.query_context = std::move(query_context);
+    return setup;
+}
+
+StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & unique_task_id, const DistributedQueryTaskDescription & task_description, const String & unique_temp_file_path, const TaskCollectors & collectors)
+{
+    /// `unique_task_id` is unique per task, so a repeated start (e.g. a coordinator retry) is the same
+    /// task. Running it twice would double-write exchanges and temp files and orphan the original from
+    /// cancel/forget, so treat a duplicate start as a no-op.
+    {
+        std::lock_guard lock(tasks_mutex);
+        if (tasks.contains(unique_task_id))
+        {
+            LOG_WARNING(getLogger("StatelessTaskExecutor"), "Ignoring duplicate start for already running task {}", unique_task_id);
+            return Result::Ok;
+        }
+    }
+
+    TaskSetup setup = setupTask(unique_task_id, task_description, unique_temp_file_path, collectors);
 
     auto task_promise = std::make_shared<std::promise<std::optional<TaskFailure>>>();
     auto task_state = std::make_shared<TaskState>();
     task_state->completion_future = task_promise->get_future();
     task_state->collectors = collectors;
-
-    /// Collect logs only when the coordinator asked for them and `send_logs_level` is not `none`.
-    const LogsLevel client_logs_level = query_context->getSettingsRef()[Setting::send_logs_level];
-    if (collectors.logs && client_logs_level != LogsLevel::none)
-    {
-        /// Bound the buffer so a stalled or slow status poll cannot grow it without limit; 0 means
-        /// unbounded (the default capacity is never reached in practice).
-        const UInt64 max_buffered_log_rows = query_context->getSettingsRef()[Setting::distributed_plan_max_buffered_log_rows];
-        task_state->logs_queue = max_buffered_log_rows != 0
-            ? std::make_shared<InternalTextLogsQueue>(max_buffered_log_rows)
-            : std::make_shared<InternalTextLogsQueue>(); /// default capacity: effectively unbounded
-        task_state->logs_queue->max_priority = Poco::Logger::parseLevel(query_context->getSettingsRef()[Setting::send_logs_level].toString());
-        task_state->logs_queue->setSourceRegexp(query_context->getSettingsRef()[Setting::send_logs_source_regexp]);
-    }
+    task_state->logs_queue = setup.logs_queue;
 
     {
         std::lock_guard lock(tasks_mutex);
@@ -160,6 +178,13 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
         }
     }
 
+    scheduleTask(unique_task_id, std::move(task_state), std::move(task_promise), task_description, unique_temp_file_path, std::move(setup));
+    return Result::Ok;
+}
+
+void StatelessTaskExecutor::scheduleTask(const String & unique_task_id, TaskStatePtr task_state, TaskPromisePtr task_promise,
+    DistributedQueryTaskDescription task_description_, const String & unique_temp_file_path, TaskSetup setup)
+{
     /// Callback for periodic cancellation check
     auto is_task_cancelled = [cancelled = task_state->cancelled]() -> bool
     {
@@ -183,8 +208,10 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
         failure_slot->set(std::move(failure));
     };
 
-    auto task_function = [task_description, object_storage, object_storage_path, distributed_query_id = unique_temp_file_path, query_context, task_promise, is_task_cancelled, update_progress,
-        report_failure, logs_queue = task_state->logs_queue, client_logs_level] mutable
+    auto task_function = [task_description = std::move(task_description_), object_storage = std::move(setup.object_storage),
+        object_storage_path = std::move(setup.object_storage_path), distributed_query_id = unique_temp_file_path,
+        query_context = std::move(setup.query_context), task_promise, is_task_cancelled, update_progress, report_failure,
+        logs_queue = std::move(setup.logs_queue), client_logs_level = setup.client_logs_level] mutable
     {
         /// The promise must be fulfilled strictly after the last log line of this task:
         /// `getStatus` treats a ready future as a terminal state
@@ -247,8 +274,6 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
         tasks.erase(unique_task_id);
         throw;
     }
-
-    return Result::Ok;
 }
 
 namespace

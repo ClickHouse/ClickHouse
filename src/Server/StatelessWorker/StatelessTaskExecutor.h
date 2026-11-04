@@ -89,6 +89,8 @@ private:
         std::optional<TaskFailure> failure TSA_GUARDED_BY(mutex);
     };
 
+    using TaskPromisePtr = std::shared_ptr<std::promise<std::optional<TaskFailure>>>;
+
     struct TaskState
     {
         /// Fulfilled when the task ends: with nothing on success, with the failure otherwise.
@@ -105,6 +107,16 @@ private:
     };
 
     using TaskStatePtr = std::shared_ptr<TaskState>;
+
+    /// The query context and the rest of what a task needs besides its description.
+    struct TaskSetup;
+
+    static TaskSetup setupTask(const String & unique_task_id, const DistributedQueryTaskDescription & task_description,
+        const String & unique_temp_file_path, const TaskCollectors & collectors);
+
+    /// Schedules a registered task in `thread_pool`.
+    void scheduleTask(const String & unique_task_id, TaskStatePtr task_state, TaskPromisePtr task_promise,
+        DistributedQueryTaskDescription task_description_, const String & unique_temp_file_path, TaskSetup setup);
 
     ThreadPool thread_pool;
 
