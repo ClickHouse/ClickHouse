@@ -642,8 +642,7 @@ void StorageBuffer::read(
 
         buffers_plan = plan_buffers(query_info.query, std::move(pipe_from_buffers), /*access_checked=*/ false);
 
-        /// A destination that ships the query (`Distributed`) plans it with `ALIAS` columns inlined,
-        /// so plan the buffers the same way when its header lacks the buffers' columns.
+        /// `Distributed` plans the query with `ALIAS` columns inlined, so its header may lack the buffers' columns.
         if (query_plan.isInitialized())
         {
             auto has_columns_of = [&](const QueryPlan & plan)
