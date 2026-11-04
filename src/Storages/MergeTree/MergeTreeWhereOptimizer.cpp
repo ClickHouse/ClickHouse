@@ -36,6 +36,7 @@ namespace Setting
     extern const SettingsBool allow_reorder_prewhere_conditions;
     extern const SettingsBool use_statistics;
     extern const SettingsBool apply_string_filters_during_scan;
+    extern const SettingsShortCircuitFunctionEvaluation short_circuit_function_evaluation;
 }
 
 namespace
@@ -187,6 +188,8 @@ MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::op
     where_optimizer_context.allow_reorder_prewhere_conditions = context->getSettingsRef()[Setting::allow_reorder_prewhere_conditions];
     where_optimizer_context.is_final = is_final;
     where_optimizer_context.use_statistics = context->getSettingsRef()[Setting::use_statistics] && estimator != nullptr;
+    where_optimizer_context.force_lazy_execution
+        = settings[Setting::short_circuit_function_evaluation] == ShortCircuitFunctionEvaluation::FORCE_ENABLE;
     /// The decision does not depend on the columns cache: whether a column is served from the cache, written to it
     /// or read as usual is known only to the reader. The reader does not apply the string filter to a column it writes
     /// to the cache (the cache must not keep the substituted values), but the condition is still worth moving to PREWHERE:
@@ -387,6 +390,55 @@ static bool isJoinRuntimeFilter(const RPNBuilderTreeNode & node)
     return false;
 }
 
+/// Does short-circuit `and` keep the condition behind the conditions before it? The same test as
+/// `findLazyExecutedNodes` and `canBeExecutedOnMoreRows` in ExpressionActions.cpp: some lazily executed
+/// function can throw, is stateful, has observable side effects or is not deterministic in the scope of the query.
+static bool mustFollowPrecedingConditions(const RPNBuilderTreeNode & node, bool force_lazy_execution)
+{
+    const auto * root = node.getDAGNode();
+    if (!root)
+        return true;
+
+    std::unordered_map<const ActionsDAG::Node *, bool> is_lazy;
+    bool result = false;
+
+    auto visit = [&](this auto && self, const ActionsDAG::Node * dag_node) -> bool
+    {
+        if (auto it = is_lazy.find(dag_node); it != is_lazy.end())
+            return it->second;
+
+        bool has_lazy_child = false;
+        for (const auto * child : dag_node->children)
+            has_lazy_child |= self(child);
+
+        bool lazy = false;
+        if (dag_node->type == ActionsDAG::ActionType::ALIAS)
+        {
+            lazy = has_lazy_child;
+        }
+        else if (dag_node->type == ActionsDAG::ActionType::FUNCTION)
+        {
+            DataTypesWithConstInfo arguments;
+            arguments.reserve(dag_node->children.size());
+            for (const auto * child : dag_node->children)
+                arguments.push_back({child->result_type, child->column != nullptr});
+
+            const auto & function = *dag_node->function_base;
+            lazy = force_lazy_execution || has_lazy_child || function.isSuitableForShortCircuitArgumentsExecution(arguments);
+            if (lazy && !dag_node->column
+                && (function.isStateful() || function.hasObservableSideEffects() || !function.isDeterministicInScopeOfQuery()
+                    || function.canThrow(arguments)))
+                result = true;
+        }
+
+        is_lazy.emplace(dag_node, lazy);
+        return lazy;
+    };
+
+    visit(root);
+    return result;
+}
+
 static void collectConjuncts(const RPNBuilderTreeNode & node, std::vector<RPNBuilderTreeNode> & conjuncts)
 {
     auto fn = node.toFunctionNodeOrNull();
@@ -428,6 +480,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
         bool may_use_primary_index = true;
         bool viable = false;
         bool expensive = false;
+        bool must_follow_preceding_conditions = false;
     };
 
     std::vector<ConjunctInfo> infos;
@@ -467,6 +520,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
                 || (where_optimizer_context.apply_string_filters_during_scan && isConditionSuitableForStringValueFilter(conjunct, where_optimizer_context)));
 
         info.expensive = isExpensiveExpression(conjunct);
+        info.must_follow_preceding_conditions = mustFollowPrecedingConditions(conjunct, where_optimizer_context.force_lazy_execution);
 
         infos.push_back(std::move(info));
     }
@@ -503,6 +557,18 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
         if (!infos[i].viable)
             continue;
         auto g = infos[i].expensive ? std::nullopt : find_group_idx(infos[i].storage_columns);
+        /// The group is emitted at its first conjunct, so do not join it across conjuncts that are not in it.
+        if (g.has_value() && infos[i].must_follow_preceding_conditions)
+        {
+            for (size_t j = groups[*g].indices.front() + 1; j < i; ++j)
+            {
+                if (!infos[j].viable || group_of[j] != *g)
+                {
+                    g.reset();
+                    break;
+                }
+            }
+        }
         if (!g.has_value())
         {
             group_of[i] = groups.size();
@@ -551,6 +617,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
             bool group_may_use_primary_index = true;
             bool group_good = false;
             bool group_is_runtime_filter = true;
+            bool group_must_follow_preceding_conditions = false;
 
             for (size_t idx : group.indices)
             {
@@ -560,6 +627,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
                 if (!where_optimizer_context.use_statistics && !where_optimizer_context.move_primary_key_columns_to_end_of_prewhere)
                     group_good = group_good || isConditionGood(infos[idx].node, table_columns);
                 group_is_runtime_filter = group_is_runtime_filter && isJoinRuntimeFilter(infos[idx].node);
+                group_must_follow_preceding_conditions = group_must_follow_preceding_conditions || infos[idx].must_follow_preceding_conditions;
             }
 
             Condition cond(std::move(group_nodes));
@@ -569,6 +637,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
             cond.good = group_good;
             cond.expensive = info.expensive;
             cond.is_runtime_filter = group_is_runtime_filter;
+            cond.must_follow_preceding_conditions = group_must_follow_preceding_conditions;
 
             if (where_optimizer_context.use_statistics)
             {
@@ -629,6 +698,7 @@ MergeTreeWhereOptimizer::Conditions MergeTreeWhereOptimizer::analyze(const RPNBu
             cond.columns_size = getColumnsSize(columns);
             cond.bytes_per_rejected_row = static_cast<double>(cond.columns_size);
             cond.is_runtime_filter = isJoinRuntimeFilter(conjunct);
+            cond.must_follow_preceding_conditions = mustFollowPrecedingConditions(conjunct, where_optimizer_context.force_lazy_execution);
             cond.viable =
                 !has_invalid_column
                 && !columns.empty()
@@ -707,8 +777,12 @@ std::optional<MergeTreeWhereOptimizer::OptimizeResult> MergeTreeWhereOptimizer::
     /// Move conditions unless the ratio of total_size_of_moved_conditions to the total_size_of_queried_columns is less than some threshold.
     while (!where_conditions.empty())
     {
-        /// Move the best condition to PREWHERE if it is viable.
-        auto it = std::min_element(where_conditions.begin(), where_conditions.end());
+        /// Move the best condition to PREWHERE if it is viable. A condition that must follow the conditions
+        /// before it is a candidate only when all of them are moved, i.e. when it is the first one left.
+        auto it = where_conditions.begin();
+        for (auto candidate = std::next(it); candidate != where_conditions.end(); ++candidate)
+            if (!candidate->must_follow_preceding_conditions && *candidate < *it)
+                it = candidate;
 
         if (!it->viable)
             break;

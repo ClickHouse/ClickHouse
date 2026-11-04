@@ -100,6 +100,10 @@ private:
         /// column in this condition because this condition have bigger chances to be already satisfied by PK analysis.
         Int64 min_position_in_primary_key = std::numeric_limits<Int64>::max() - 1;
 
+        /// Short-circuit `and` evaluates the condition only on the rows that the conditions before it pass,
+        /// and it can throw or is not deterministic, so it is moved to PREWHERE only after all of them.
+        bool must_follow_preceding_conditions = false;
+
         /// For debugging purposes
         String toString() const
         {
@@ -149,6 +153,7 @@ private:
         bool allow_reorder_prewhere_conditions = false;
         bool is_final = false;
         bool use_statistics = false;
+        bool force_lazy_execution = false;
         bool apply_string_filters_during_scan = false;
         const NameSet * columns_read_before_filter = nullptr;
     };
