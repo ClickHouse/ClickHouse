@@ -482,13 +482,13 @@ void HTTPHandler::processQuery(
 
         if (runs_with_sql_security)
         {
-            if (run_query_in_background)
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                    "Handler `{}` with SQL SECURITY {} does not support `run_query_in_background`",
-                    introspection_handler_name, magic_enum::enum_name(*sql_security_type));
             /// Made for every request: it checks that the credentials are still valid and records the login.
             caller_context = session->makeQueryContext();
             context = makeSQLSecurityQueryContext(caller_context);
+            if (run_query_in_background || context->getSettingsRef()[Setting::run_query_in_background])
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Handler `{}` with SQL SECURITY {} does not support `run_query_in_background`",
+                    introspection_handler_name, magic_enum::enum_name(*sql_security_type));
         }
         else
             context = run_query_in_background ? session->makeDetachedQueryContext() : session->makeQueryContext();

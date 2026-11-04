@@ -177,3 +177,9 @@ OK
 OK
 CREATE HANDLER h21_DB URL \'/DB/h21\' METHODS (POST) TYPE query DEFINER = u_ret_DB SQL SECURITY DEFINER AS INSERT INTO DB.t5 RETURNING (SELECT v FROM DB.t ORDER BY id ASC LIMIT 1) SELECT 21
 a
+--- 22. neither the definer's nor the requesting user's profile runs it in the background
+OK
+OK
+(NOT_IMPLEMENTED)
+(NOT_IMPLEMENTED)
+2

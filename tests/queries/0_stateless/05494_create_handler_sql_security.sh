@@ -24,13 +24,15 @@ E="e_${DB}"
 EE="ee_${DB}"
 EE2="ee2_${DB}"
 U_RET="u_ret_${DB}"
-USERS="${U_DEF}, ${U_DEF2}, ${U_DEF3}, ${U_LIM}, ${U_CALLER}, ${U_ROCALLER}, ${U_SD}, ${U_NONE}, ${U_RO}, ${E}, ${EE}, \`${EE}:definer\`, ${EE2}, \`${EE2}:definer\`, ${U_RET}"
+U_BG="u_bg_${DB}"
+U_BGCALLER="u_bgcaller_${DB}"
+USERS="${U_DEF}, ${U_DEF2}, ${U_DEF3}, ${U_LIM}, ${U_CALLER}, ${U_ROCALLER}, ${U_SD}, ${U_NONE}, ${U_RO}, ${E}, ${EE}, \`${EE}:definer\`, ${EE2}, \`${EE2}:definer\`, ${U_RET}, ${U_BG}, ${U_BGCALLER}"
 
 cleanup() {
     for h in $($CLICKHOUSE_CLIENT -q "SELECT name FROM system.handlers WHERE endsWith(name, '_${DB}')"); do
         $CLICKHOUSE_CLIENT -q "DROP HANDLER IF EXISTS \`$h\`"
     done
-    $CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS ${USERS}; DROP SETTINGS PROFILE IF EXISTS p_caller_${DB}, p_ro_${DB}, p_def_ro_${DB}, p_rw_${DB}; DROP DATABASE IF EXISTS ${DB_B}"
+    $CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS ${USERS}; DROP SETTINGS PROFILE IF EXISTS p_caller_${DB}, p_ro_${DB}, p_def_ro_${DB}, p_rw_${DB}, p_bg_${DB}; DROP DATABASE IF EXISTS ${DB_B}"
 }
 trap cleanup EXIT
 cleanup
@@ -283,3 +285,11 @@ $CLICKHOUSE_CLIENT -q "CREATE USER ${U_RET} NOT IDENTIFIED DEFAULT DATABASE ${DB
 as_default "CREATE HANDLER h21_${DB} URL '/${DB}/h21' METHODS (POST) DEFINER = ${U_RET} SQL SECURITY DEFINER AS INSERT INTO t5 RETURNING (SELECT v FROM t ORDER BY id LIMIT 1) SELECT 21"
 handler_query "h21_${DB}" create_query
 request -X POST "${BASE}/${DB}/h21"
+
+echo "--- 22. neither the definer's nor the requesting user's profile runs it in the background"
+$CLICKHOUSE_CLIENT -q "CREATE USER ${U_BG}, ${U_BGCALLER} NOT IDENTIFIED; GRANT SELECT ON ${DB}.t TO ${U_BG}; CREATE SETTINGS PROFILE p_bg_${DB} SETTINGS run_query_in_background = 1 TO ${U_BG}, ${U_BGCALLER}"
+as_default "CREATE HANDLER h22_${DB} URL '/${DB}/h22' DEFINER = ${U_BG} SQL SECURITY DEFINER AS SELECT count() FROM ${DB}.t"
+as_default "CREATE HANDLER h22c_${DB} URL '/${DB}/h22c' DEFINER = ${U_DEF} SQL SECURITY DEFINER AS SELECT count() FROM ${DB}.t"
+request "${BASE}/${DB}/h22"
+request -u "${U_BGCALLER}:" "${BASE}/${DB}/h22c"
+request "${BASE}/${DB}/h22c"
