@@ -1,5 +1,6 @@
 - stand-ins
 lake	0
+replica	0
 - after /replicas_status
 lake	0
 replica	1

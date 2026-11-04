@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database, no-shared-merge-tree, no-fasttest, no-msan, zookeeper
+# Tags: no-parallel, no-replicated-database, no-shared-merge-tree, no-fasttest, no-msan, zookeeper
+# no-parallel: `/replicas_status` loads every deferred replicated table on the server, which breaks the other tests
+# that check that their replicated tables are still stand-ins.
 # no-replicated-database: the database engine is replaced, which drops the `lazy_load_tables` setting.
 # no-shared-merge-tree: the table engine is replaced.
 # no-fasttest: delta-kernel-rs is not in the fast test.
@@ -48,9 +50,8 @@ $CLICKHOUSE_CLIENT -q "
     SET allow_experimental_delta_kernel_rs = 1, allow_delta_lake_writes = 1, allow_delta_lake_create_table = 1;
     CREATE TABLE \`$DB\`.lake (id Int32) ENGINE = DeltaLakeLocal('$LAKE_PATH', Parquet);"
 reload
-# Only the data lake table: a concurrent probe of `/replicas_status` may load the replica at any moment.
 echo "- stand-ins"
-$CLICKHOUSE_CLIENT -q "SELECT name, is_loaded FROM system.tables WHERE database = '$DB' AND name = 'lake'"
+loaded
 
 # The other tests on the server decide whether the answer is `Ok`, so only its effect is checked here.
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_PORT_HTTP_PROTO}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/replicas_status" > /dev/null

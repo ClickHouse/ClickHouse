@@ -127,7 +127,7 @@ for engine in MergeTree ReplicatedMergeTree; do
     query "SHOW COLUMNS FROM t" | grep -c 'PRI SOR'
     loaded t
     reload
-    query "SHOW INDEXES FROM t" | cut -f3,5 | sort
+    query "SHOW INDEXES FROM t" | cut -f3,5 | LC_ALL=C sort
     loaded t
     query "DROP TABLE t SYNC"
 
@@ -191,12 +191,13 @@ for engine in MergeTree ReplicatedMergeTree; do
         CREATE TABLE t (id UInt64, v UInt64) ENGINE = $engine_def ORDER BY id;
         INSERT INTO t SELECT number, number * 2 FROM numbers(1000);"
     reload
-    query "EXPLAIN SELECT count() FROM t" | grep -c 'Optimized trivial count'
+    query "EXPLAIN SELECT count() FROM t SETTINGS optimize_trivial_count_query = 1" | grep -c 'Optimized trivial count'
     reload
+    # `automatic_parallel_replicas_mode` would let the planner decide on its own and skip parallel replicas.
     query "EXPLAIN SELECT sum(v) FROM t SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3,
         cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
         parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_min_number_of_rows_per_replica = 0,
-        parallel_replicas_local_plan = 0" | grep -c -m1 'ParallelReplicas'
+        parallel_replicas_local_plan = 0, automatic_parallel_replicas_mode = 0" | grep -c -m1 'ParallelReplicas'
     query "DROP TABLE t SYNC"
 
     echo "- populate"
