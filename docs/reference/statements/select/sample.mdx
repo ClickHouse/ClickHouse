@@ -154,6 +154,8 @@ SET allow_experimental_bernoulli_sample = 1;
 - Both `SAMPLE k` (fraction) and `SAMPLE n` (target row count) are supported,
   and `_sample_factor` is populated as usual.
 - `SAMPLE k OFFSET m` is **not** supported and still raises `SAMPLING_NOT_SUPPORTED`.
+- `FINAL` is **not** supported and raises `SAMPLING_NOT_SUPPORTED`: the rows would be
+  sampled before the versions of a key are merged, so an obsolete version could be returned.
 - Composes with `PREWHERE`, skip indexes, multi-part tables, the `Merge`
   engine, and parallel replicas in the default `read_tasks` mode.
 - Non-`MergeTree` engines (for example `Memory`) still reject `SAMPLE`.

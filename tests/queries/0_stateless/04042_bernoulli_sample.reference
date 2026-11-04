@@ -65,9 +65,7 @@ projection disabled by bernoulli
 1
 0
 9913
-bernoulli survives FINAL merge-path reconstruction
-1
-1
+bernoulli is rejected with FINAL
 bernoulli survives read-in-order split across streams
 1
 1

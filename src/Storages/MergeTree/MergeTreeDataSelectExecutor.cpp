@@ -406,6 +406,12 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
                 throw Exception(ErrorCodes::SAMPLING_NOT_SUPPORTED,
                     "SAMPLE OFFSET is not supported for tables without a SAMPLE BY key");
 
+            /// The Bernoulli filter drops physical rows before `FINAL` merges the versions of a key, and the masks of
+            /// different versions are independent. So `FINAL` could return an obsolete version or resurrect a deleted key.
+            if (select_query_info.isFinal())
+                throw Exception(ErrorCodes::SAMPLING_NOT_SUPPORTED,
+                    "Bernoulli sampling (SAMPLE on a table without a SAMPLE BY key) is not supported with FINAL");
+
             Float64 probability = boost::rational_cast<Float64>(relative_sample_size);
             if (probability <= 0.0 || probability >= 1.0)
             {

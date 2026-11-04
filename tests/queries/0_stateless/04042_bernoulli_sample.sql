@@ -258,23 +258,15 @@ SELECT count() FROM (EXPLAIN SELECT sum(v) FROM t_bernoulli_proj SAMPLE 0.1) WHE
 -- A pre-aggregated projection result would have returned 100000 here.
 SELECT sum(v) FROM t_bernoulli_proj SAMPLE 0.1 SETTINGS bernoulli_sample_seed = 42;
 
-SELECT 'bernoulli survives FINAL merge-path reconstruction';
--- FINAL over overlapping parts routes through spreadMarkRangesAmongStreamsFinal and
--- splitPartsWithRangesByPrimaryKey, which rebuild RangesInDataPart objects. The per-part
--- Bernoulli filter must be carried through, otherwise FINAL SAMPLE silently bypasses the
--- filter and returns the full (unsampled) table.
+SELECT 'bernoulli is rejected with FINAL';
+-- The Bernoulli filter would drop rows before FINAL merges the versions of a key, so FINAL could
+-- return an obsolete version or resurrect a deleted key. It is rejected until that is supported.
 DROP TABLE IF EXISTS t_bernoulli_final;
 CREATE TABLE t_bernoulli_final (x UInt64) ENGINE = ReplacingMergeTree ORDER BY x;
 INSERT INTO t_bernoulli_final SELECT number FROM numbers(100000);
 INSERT INTO t_bernoulli_final SELECT number FROM numbers(100000);
--- 100000 unique rows after FINAL dedup; a 0.1 sample must be far below that (would be
--- 100000 if the filter were dropped during the merge-path reconstruction).
-SELECT count() < 40000 FROM t_bernoulli_final FINAL SAMPLE 0.1 SETTINGS bernoulli_sample_seed = 42;
--- Thread-count independence must hold through the merge path too.
-SELECT
-    (SELECT count() FROM t_bernoulli_final FINAL SAMPLE 0.1 SETTINGS bernoulli_sample_seed = 42, max_threads = 1)
-    =
-    (SELECT count() FROM t_bernoulli_final FINAL SAMPLE 0.1 SETTINGS bernoulli_sample_seed = 42, max_threads = 4);
+SELECT count() FROM t_bernoulli_final FINAL SAMPLE 0.1 SETTINGS bernoulli_sample_seed = 42; -- { serverError SAMPLING_NOT_SUPPORTED }
+SELECT count() FROM t_bernoulli_final SAMPLE 0.1 SETTINGS bernoulli_sample_seed = 42, final = 1; -- { serverError SAMPLING_NOT_SUPPORTED }
 DROP TABLE t_bernoulli_final;
 
 SELECT 'bernoulli survives read-in-order split across streams';
