@@ -118,9 +118,9 @@ DataTypePtr getDataType(NetCDFType type)
     return nullptr;
 }
 
-/// The `unsigned` attribute of the netCDF conventions changes the interpretation of the bits of
-/// the three signed integer types which classic NetCDF has. Its value is a `char` string, normally
-/// `true`.
+/// The `_Unsigned` attribute of the netCDF conventions changes the interpretation of the bits of
+/// the signed integer types: the three which classic NetCDF has and the 64-bit one of `CDF-5`. Its
+/// value is a `char` string, normally `true`.
 bool hasUnsignedAttribute(const NetCDFVariable & variable)
 {
     const auto * attribute = variable.tryGetAttribute("_Unsigned");
@@ -136,6 +136,7 @@ DataTypePtr getDataType(const NetCDFVariable & variable)
             case NetCDFType::Byte: return std::make_shared<DataTypeUInt8>();
             case NetCDFType::Short: return std::make_shared<DataTypeUInt16>();
             case NetCDFType::Int: return std::make_shared<DataTypeUInt32>();
+            case NetCDFType::Int64: return std::make_shared<DataTypeUInt64>();
             default: break;
         }
     }
@@ -910,7 +911,10 @@ void NetCDFBlockInputFormat::fillColumn(const ColumnState & state, IColumn & col
             insertNumbers<UInt32>(column, data, state.buffer_first_element, indexes, description.null_values);
             return;
         case NetCDFType::Int64:
-            insertNumbers<Int64>(column, data, state.buffer_first_element, indexes, description.null_values);
+            if (hasUnsignedAttribute(*description.variable))
+                insertNumbers<UInt64>(column, data, state.buffer_first_element, indexes, description.null_values);
+            else
+                insertNumbers<Int64>(column, data, state.buffer_first_element, indexes, description.null_values);
             return;
         case NetCDFType::UInt64:
             insertNumbers<UInt64>(column, data, state.buffer_first_element, indexes, description.null_values);
