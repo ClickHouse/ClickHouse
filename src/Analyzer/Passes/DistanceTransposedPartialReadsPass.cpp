@@ -88,11 +88,10 @@ public:
             || precision_node->getValue().getType() != Field::Types::UInt64)
             return;
 
-        /// A `GROUP BY` key is read from the aggregation result, so it is not rewritten into its subcolumns.
+        /// A `GROUP BY` key after aggregation and an outer column in a correlated subquery are read whole, not as subcolumns.
         if (isGroupByKeyAfterAggregation(function_arguments_nodes[0], group_by_keys_stack.back()))
             return;
 
-        /// A correlated subquery receives a column of an outer query whole, so it is not rewritten into its subcolumns.
         if (isCorrelatedColumn(*qbit_node))
             return;
 
@@ -328,7 +327,6 @@ private:
     /// The `GROUP BY` keys of each enclosing query; the first entry is for an expression outside of any query.
     std::vector<QueryTreeNodes> group_by_keys_stack{1};
 
-    /// The correlated columns of each enclosing query or union.
     std::vector<QueryTreeNodes> correlated_columns_stack;
 
     bool isCorrelatedColumn(const ColumnNode & column_node) const
