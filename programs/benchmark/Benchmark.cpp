@@ -373,6 +373,8 @@ private:
         double result_bytes = 0;
         /// CPU time of the queries on the server, from their `UserTimeMicroseconds` and `SystemTimeMicroseconds` profile events.
         double cpu_seconds = 0;
+        /// Queries for which the server sent profile events (it doesn't with `send_profile_events = 0`).
+        double cpu_queries = 0;
 
         using Sampler = ReservoirSampler<double>;
         Sampler sampler;
@@ -381,10 +383,14 @@ private:
             : sampler(sample_count)
         {}
 
-        void addWeighted(size_t read_rows_inc, size_t read_bytes_inc, size_t result_rows_inc, size_t result_bytes_inc, double cpu_seconds_inc, double weight)
+        void addWeighted(size_t read_rows_inc, size_t read_bytes_inc, size_t result_rows_inc, size_t result_bytes_inc, std::optional<double> cpu_seconds_inc, double weight)
         {
             queries += weight;
-            cpu_seconds += weight * cpu_seconds_inc;
+            if (cpu_seconds_inc)
+            {
+                cpu_seconds += weight * *cpu_seconds_inc;
+                cpu_queries += weight;
+            }
             read_rows += weight * static_cast<double>(read_rows_inc);
             read_bytes += weight * static_cast<double>(read_bytes_inc);
             result_rows += weight * static_cast<double>(result_rows_inc);
@@ -398,7 +404,7 @@ private:
             sampler.insert(duration);
         }
 
-        void add(double duration, size_t read_rows_inc, size_t read_bytes_inc, size_t result_rows_inc, size_t result_bytes_inc, double cpu_seconds_inc)
+        void add(double duration, size_t read_rows_inc, size_t read_bytes_inc, size_t result_rows_inc, size_t result_bytes_inc, std::optional<double> cpu_seconds_inc)
         {
             addWeighted(read_rows_inc, read_bytes_inc, result_rows_inc, result_bytes_inc, cpu_seconds_inc, 1.0);
             sample(duration);
@@ -481,6 +487,8 @@ private:
     size_t in_flight TSA_GUARDED_BY(interval_mutex) = 0;
     /// Queries that arrived and did not finish yet: the in-flight ones and the ones waiting in the queue.
     size_t arrived_not_finished TSA_GUARDED_BY(interval_mutex) = 0;
+    /// When the last query finished.
+    UInt64 last_query_end_ns TSA_GUARDED_BY(interval_mutex) = 0;
     /// All arrivals are pushed to the queue, the workers stop when it is empty.
     std::atomic<bool> arrivals_finished{false};
     /// Arrivals taken from the queue after the run stopped.
@@ -779,6 +787,7 @@ private:
         updateInFlightIntegral(now_ns);
         --in_flight;
         --arrived_not_finished;
+        last_query_end_ns = std::max(last_query_end_ns, now_ns);
     }
 
     void runBenchmark()
@@ -794,7 +803,7 @@ private:
         {
             if (i > 0)
                 resetStats();
-            if (!runOpenLoop(arrival_rates[i], i + 1 == arrival_rates.size(), interrupt_listener))
+            if (!runOpenLoop(arrival_rates[i], interrupt_listener))
                 break;
         }
     }
@@ -808,6 +817,7 @@ private:
             total_arrival_stats = {};
             in_flight = 0;
             arrived_not_finished = 0;
+            last_query_end_ns = 0;
         }
         {
             std::lock_guard lock(mutex);
@@ -826,7 +836,7 @@ private:
 
     /// Runs the open-loop benchmark at one arrival rate.
     /// Returns false if the whole benchmark should stop: on SIGINT.
-    bool runOpenLoop(double rate, bool last_run, InterruptListener & interrupt_listener)
+    bool runOpenLoop(double rate, InterruptListener & interrupt_listener)
     {
         arrival_rate = rate;
         pcg64 generator(seed);
@@ -901,9 +911,9 @@ private:
 
         /// The achieved arrival rate is computed over the actual duration of the arrival process,
         /// also in the reports made while the queries in flight finish.
+        const UInt64 arrivals_end_ns = clock_gettime_ns();
         {
             std::lock_guard lock(interval_mutex);
-            const UInt64 arrivals_end_ns = clock_gettime_ns();
             total_arrival_stats.arrival_seconds = static_cast<double>(arrivals_end_ns - start_ns) / 1e9;
             if (interval)
                 interval->arrival_stats.arrival_seconds = static_cast<double>(arrivals_end_ns - interval->start_ns) / 1e9;
@@ -915,11 +925,11 @@ private:
             shutdown = true;
         arrivals_finished = true;
 
-        /// Now we don't block the Ctrl+C signal and second signal will terminate the program without waiting.
-        if (interrupted || last_run)
+        /// After the first Ctrl+C we don't block the signal, so the second one terminates the program without waiting.
+        if (interrupted)
             interrupt_listener.unblock();
 
-        /// Wait for the workers, while handling SIGINT if it is still blocked (in a sweep) and reporting intervals.
+        /// Wait for the workers, while handling the first SIGINT and reporting intervals.
         while (!pool.waitUntil(std::chrono::steady_clock::now() + std::chrono::milliseconds(100)))
         {
             if (interrupt_listener.check())
@@ -937,15 +947,20 @@ private:
         pool.wait();
         total_watch.stop();
 
+        /// The run ends when the arrivals stop or the last query finishes, whichever is later,
+        /// not when the idle workers notice that there is no more work.
         ArrivalStats arrival_stats_snapshot;
+        double seconds;
         {
             std::lock_guard lock(interval_mutex);
-            updateInFlightIntegral(total_watch.getEnd());
+            const UInt64 end_ns = std::max(arrivals_end_ns, last_query_end_ns);
+            seconds = static_cast<double>(end_ns - start_ns) / 1e9;
+            updateInFlightIntegral(end_ns);
             total_arrival_stats.not_sent = queue.size() + not_sent;
             arrival_stats_snapshot = total_arrival_stats;
         }
-        report(total_stats, total_watch.elapsedSeconds(), 0, &arrival_stats_snapshot);
-        reportPerQuery(total_watch.elapsedSeconds());
+        report(total_stats, seconds, 0, &arrival_stats_snapshot);
+        reportPerQuery(seconds);
         return !interrupted;
     }
 
@@ -1173,8 +1188,8 @@ private:
         Progress progress;
         executor.setProgressCallback([&progress](const Progress & value) { progress.incrementPiecewiseAtomically(value); });
 
-        UInt64 cpu_microseconds = 0;
-        executor.setProfileEventsCallback([&cpu_microseconds](const Block & block) { cpu_microseconds += getCPUMicroseconds(block); });
+        std::optional<UInt64> cpu_microseconds;
+        executor.setProfileEventsCallback([&cpu_microseconds](const Block & block) { cpu_microseconds = cpu_microseconds.value_or(0) + getCPUMicroseconds(block); });
 
         executor.sendQuery(ClientInfo::QueryKind::INITIAL_QUERY);
 
@@ -1188,7 +1203,9 @@ private:
         double duration = (display_client_side_time || progress.elapsed_ns == 0)
             ? watch.elapsedSeconds()
             : static_cast<double>(progress.elapsed_ns) / 1e9;
-        const double cpu_seconds = static_cast<double>(cpu_microseconds) / 1e6;
+        std::optional<double> cpu_seconds;
+        if (cpu_microseconds)
+            cpu_seconds = static_cast<double>(*cpu_microseconds) / 1e6;
         size_t info_index = round_robin ? 0 : connection_index;
 
         if (precise && cur_interval)
@@ -1306,8 +1323,13 @@ private:
                 << "result MiB/s: " << fmt::format("{:.3f}", info->result_bytes / seconds / 1048576);
             /// With open-loop arrivals QPS follows the arrival rate, so the CPU usage shows the cost of the load.
             if (!arrival_rates.empty())
-                log << ", CPU: " << fmt::format("{:.3f}", info->cpu_seconds / seconds) << " cores"
-                    << ", CPU per query: " << fmt::format("{:.3f}", info->cpu_seconds / info->queries) << " sec";
+            {
+                if (info->cpu_queries > 0)
+                    log << ", CPU: " << fmt::format("{:.3f}", info->cpu_seconds / seconds) << " cores"
+                        << ", CPU per query: " << fmt::format("{:.3f}", info->cpu_seconds / info->cpu_queries) << " sec";
+                else
+                    log << ", CPU: not reported by the server";
+            }
             log << ".\n";
         }
         log << "\n";
@@ -1351,7 +1373,7 @@ private:
             for (double level : {0.5, 0.9, 0.99})
                 log << "\t" << (stats.finished_queries ? fmt::format("{:.3f}", stats.sampler.quantileNearest(level)) : "-");
             log << "\t" << (stats.finished_queries ? fmt::format("{:.3f}", stats.max_duration) : "-");
-            log << "\t" << (stats.finished_queries ? fmt::format("{:.3f}", stats.cpu_seconds / stats.queries) : "-");
+            log << "\t" << (stats.cpu_queries > 0 ? fmt::format("{:.3f}", stats.cpu_seconds / stats.cpu_queries) : "-");
             String query_text = queries[i].substr(0, 80);
             std::replace_if(query_text.begin(), query_text.end(), [](char c) { return c == '\n' || c == '\t'; }, ' ');
             log << "\t" << query_text << (queries[i].size() > 80 ? "..." : "") << "\n";
