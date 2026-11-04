@@ -19,6 +19,13 @@ using IcebergNamespaceName = std::vector<String>;
 /// Joins the levels of a namespace in a REST path. A level must not contain it.
 constexpr char NAMESPACE_LEVEL_SEPARATOR = '\x1F';
 
+/// What Keeper stores for a namespace. The uuid pins the identity across a drop and re-create under the same name.
+struct IcebergNamespaceState
+{
+    String uuid;
+    std::map<String, String> properties;
+};
+
 /// What Keeper stores for a table: the current `metadata.json` on object storage.
 struct IcebergTablePointer
 {
@@ -70,7 +77,7 @@ public:
 
     DropNamespaceResult dropNamespace(const IcebergNamespaceName & name);
 
-    std::optional<std::map<String, String>> getNamespaceProperties(const IcebergNamespaceName & name) const;
+    std::optional<IcebergNamespaceState> getNamespace(const IcebergNamespaceName & name) const;
 
     /// Applies `removals` first, then `updates`. nullopt if the namespace does not exist.
     std::optional<UpdateNamespacePropertiesResult> updateNamespaceProperties(
@@ -86,7 +93,8 @@ public:
         NamespaceMissing,
     };
 
-    CreateTableResult createTable(const IcebergNamespaceName & ns, const String & table, const IcebergTablePointer & pointer);
+    /// The table is registered only while the namespace still has `namespace_uuid`, the uuid its location came from.
+    CreateTableResult createTable(const IcebergNamespaceName & ns, const String & namespace_uuid, const String & table, const IcebergTablePointer & pointer);
 
     std::optional<IcebergTablePointer> getTable(const IcebergNamespaceName & ns, const String & table) const;
 

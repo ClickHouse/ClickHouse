@@ -234,19 +234,20 @@ KeeperIcebergRESTCatalogStore::DropNamespaceResult KeeperIcebergRESTCatalogStore
     return DropNamespaceResult::Dropped;
 }
 
-std::optional<std::map<String, String>> KeeperIcebergRESTCatalogStore::getNamespaceProperties(const IcebergNamespaceName & name) const
+std::optional<IcebergNamespaceState> KeeperIcebergRESTCatalogStore::getNamespace(const IcebergNamespaceName & name) const
 {
-    auto component_guard = Coordination::setCurrentComponent("KeeperIcebergRESTCatalogStore::getNamespaceProperties");
+    auto component_guard = Coordination::setCurrentComponent("KeeperIcebergRESTCatalogStore::getNamespace");
     auto zookeeper = getZooKeeper();
-    String uuid;
-    if (!zookeeper->tryGet(namespacePath(name), uuid))
+    IcebergNamespaceState state;
+    if (!zookeeper->tryGet(namespacePath(name), state.uuid))
         return std::nullopt;
     /// Missing here means the namespace was dropped between the two reads.
-    const auto path = namespaceUuidPath(name, uuid);
+    const auto path = namespaceUuidPath(name, state.uuid);
     String data;
     if (!zookeeper->tryGet(path, data))
         return std::nullopt;
-    return propertiesFromJSON(data, path);
+    state.properties = propertiesFromJSON(data, path);
+    return state;
 }
 
 std::optional<UpdateNamespacePropertiesResult> KeeperIcebergRESTCatalogStore::updateNamespaceProperties(
@@ -322,10 +323,13 @@ std::vector<IcebergNamespaceName> KeeperIcebergRESTCatalogStore::listNamespaces(
 }
 
 KeeperIcebergRESTCatalogStore::CreateTableResult
-KeeperIcebergRESTCatalogStore::createTable(const IcebergNamespaceName & ns, const String & table, const IcebergTablePointer & pointer)
+KeeperIcebergRESTCatalogStore::createTable(
+    const IcebergNamespaceName & ns, const String & namespace_uuid, const String & table, const IcebergTablePointer & pointer)
 {
     auto component_guard = Coordination::setCurrentComponent("KeeperIcebergRESTCatalogStore::createTable");
     Coordination::Requests ops;
+    /// The table location came from the properties of this namespace uuid. A namespace re-created under the same name must not take the table.
+    ops.emplace_back(zkutil::makeCheckRequest(namespaceUuidPath(ns, namespace_uuid), -1));
     ops.emplace_back(zkutil::makeCreateRequest(tablePath(ns, table), pointer.uuid, zkutil::CreateMode::Persistent));
     ops.emplace_back(zkutil::makeCreateRequest(
         tableUuidPath(ns, table, pointer.uuid), pointer.metadata_location, zkutil::CreateMode::Persistent));
@@ -333,7 +337,7 @@ KeeperIcebergRESTCatalogStore::createTable(const IcebergNamespaceName & ns, cons
     const auto code = getZooKeeper()->tryMulti(ops, responses);
     if (code == Coordination::Error::ZNODEEXISTS)
         return CreateTableResult::TableExists;
-    /// The `tables` node is created with the namespace, so a missing parent means a missing namespace.
+    /// A failed uuid check or a missing `tables` parent both mean the namespace the caller saw is gone.
     if (code == Coordination::Error::ZNONODE)
         return CreateTableResult::NamespaceMissing;
     zkutil::KeeperMultiException::check(code, ops, responses);

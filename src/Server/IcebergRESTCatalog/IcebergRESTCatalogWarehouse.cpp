@@ -84,9 +84,9 @@ IcebergRESTCatalogWarehouse::DropNamespaceResult IcebergRESTCatalogWarehouse::dr
     return store->dropNamespace(ns);
 }
 
-std::optional<std::map<String, String>> IcebergRESTCatalogWarehouse::getNamespaceProperties(const IcebergNamespaceName & ns) const
+std::optional<IcebergNamespaceState> IcebergRESTCatalogWarehouse::getNamespace(const IcebergNamespaceName & ns) const
 {
-    return store->getNamespaceProperties(ns);
+    return store->getNamespace(ns);
 }
 
 std::optional<UpdateNamespacePropertiesResult> IcebergRESTCatalogWarehouse::updateNamespaceProperties(
@@ -101,9 +101,10 @@ std::vector<IcebergNamespaceName> IcebergRESTCatalogWarehouse::listNamespaces(co
 }
 
 IcebergRESTCatalogWarehouse::CreateTableResult
-IcebergRESTCatalogWarehouse::createTable(const IcebergNamespaceName & ns, const String & table, const IcebergTablePointer & pointer) const
+IcebergRESTCatalogWarehouse::createTable(
+    const IcebergNamespaceName & ns, const String & namespace_uuid, const String & table, const IcebergTablePointer & pointer) const
 {
-    return store->createTable(ns, table, pointer);
+    return store->createTable(ns, namespace_uuid, table, pointer);
 }
 
 std::optional<IcebergTablePointer> IcebergRESTCatalogWarehouse::getTable(const IcebergNamespaceName & ns, const String & table) const
