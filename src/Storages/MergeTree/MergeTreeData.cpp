@@ -53,6 +53,7 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/NestedUtils.h>
@@ -180,6 +181,7 @@
 #include <Common/logger_useful.h>
 #include <Common/noexcept_scope.h>
 #include <Common/quoteString.h>
+#include <Common/re2.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/thread_local_rng.h>
 #include <Common/typeid_cast.h>
@@ -5903,6 +5905,29 @@ ISerialization::SubstreamPath valueSelectingSteps(const ISerialization::Substrea
     return steps;
 }
 
+/// Whether parsing data into `type` drops the path `path`: the parser tests the root and every prefix of a path,
+/// and matches a `SKIP REGEXP` partially by default (a full match is also a partial one).
+bool skipsJSONPath(const DataTypeObject & type, std::string_view path)
+{
+    std::vector<String> prefixes{""};
+    for (size_t dot = path.find('.'); dot != std::string_view::npos; dot = path.find('.', dot + 1))
+        prefixes.emplace_back(path.substr(0, dot));
+    prefixes.emplace_back(path);
+
+    for (const auto & prefix : prefixes)
+        if (type.getPathsToSkip().contains(prefix))
+            return true;
+
+    for (const auto & regexp : type.getPathRegexpsToSkip())
+    {
+        re2::RE2 compiled(regexp);
+        for (const auto & prefix : prefixes)
+            if (re2::RE2::PartialMatch(prefix, compiled))
+                return true;
+    }
+    return false;
+}
+
 /// Whether converting a column from `from` to `to` keeps the values of its subcolumn `subcolumn`.
 /// The subcolumn type alone does not tell: below a Nullable level a subcolumn is Nullable either way, so
 /// `JSON(a Nullable(Int64))` -> `Nullable(JSON(a Int64))` keeps `a` a `Nullable(Int64)` but turns its NULLs into 0.
@@ -5959,6 +5984,14 @@ bool conversionKeepsSubcolumnValues(const DataTypePtr & from, const DataTypePtr 
         const auto * from_map = typeid_cast<const DataTypeMap *>(from.get());
         const auto * to_map = typeid_cast<const DataTypeMap *>(to.get());
         if (!from_map || !to_map || !from_map->getKeyType()->equals(*to_map->getKeyType()))
+            return false;
+    }
+
+    /// A `JSON` -> `JSON` conversion parses the data again and drops what the `SKIP` rules of `to` match.
+    if (const auto * to_object = typeid_cast<const DataTypeObject *>(to.get()); to_object && !from->equals(*to))
+    {
+        const String path = to_info->substreams_path.empty() ? "" : to_info->substreams_path.front().object_path_name;
+        if (skipsJSONPath(*to_object, path))
             return false;
     }
 

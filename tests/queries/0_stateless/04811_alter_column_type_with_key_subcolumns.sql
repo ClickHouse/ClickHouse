@@ -209,3 +209,17 @@ ALTER TABLE t_alter_key_sub MODIFY COLUMN v Dynamic;
 SELECT 'type:', type FROM system.columns WHERE database = currentDatabase() AND table = 't_alter_key_sub' AND name = 'v';
 SELECT 'key lookup (v.Int64 = 2):', count() FROM t_alter_key_sub WHERE v.Int64 = 2;
 DROP TABLE t_alter_key_sub;
+
+-- A JSON -> JSON conversion parses the data again with the skip rules of the new type.
+CREATE TABLE t_alter_key_sub (id UInt32, data JSON) ENGINE = MergeTree ORDER BY (data.b.c.:Int64, id) SETTINGS index_granularity = 1, allow_nullable_key = 1;
+INSERT INTO t_alter_key_sub SELECT number, toJSONString(map('b', map('c', number))) FROM numbers(3);
+SELECT 'JSON skip rule for the key path or a prefix of it -> reject:';
+ALTER TABLE t_alter_key_sub MODIFY COLUMN data JSON(SKIP b.c); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE t_alter_key_sub MODIFY COLUMN data JSON(SKIP b); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE t_alter_key_sub MODIFY COLUMN data JSON(SKIP REGEXP '^b$'); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+SELECT 'key subcolumn values:', groupArray(k) FROM (SELECT data.b.c.:Int64 AS k FROM t_alter_key_sub ORDER BY id);
+SELECT 'JSON skip rule for another path -> allowed:';
+ALTER TABLE t_alter_key_sub MODIFY COLUMN data JSON(SKIP c);
+SELECT 'type:', type FROM system.columns WHERE database = currentDatabase() AND table = 't_alter_key_sub' AND name = 'data';
+SELECT 'key lookup (data.b.c.:Int64 = 1):', count() FROM t_alter_key_sub WHERE data.b.c.:Int64 = 1;
+DROP TABLE t_alter_key_sub;
