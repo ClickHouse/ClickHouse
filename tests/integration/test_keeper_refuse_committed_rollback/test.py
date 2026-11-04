@@ -17,6 +17,10 @@ completes, so the test restarts node3 (without wiping) to reach a higher
 term that does conflict. Recovery completes as soon as the peers answer
 heartbeats, even when they deny node3's log, so node3 being leader does not
 mean that no conflict occurred.
+
+node3 stays running afterwards. node1/node2 deny all its requests of that
+term, including heartbeats, so they must still elect a valid leader and
+accept new writes.
 """
 
 import os
@@ -52,6 +56,8 @@ ROLLBACK_ERROR_SIGNATURE = "Trying to rollback invalid ZXID"
 REJECTION_PROFILE_EVENT = "KeeperRejectedCommittedLogRollback"
 REJECTION_LOG_SIGNATURE = "which would have rolled back already committed logs"
 
+NEW_ZNODE = "/test_committed_rollback_after_rejection"
+
 TEST_ZNODES = [(f"/test_committed_rollback_{i}", f"data{i}".encode()) for i in range(10)]
 
 
@@ -66,6 +72,23 @@ def assert_healthy_nodes_running():
             f"to roll back already-committed log entries (the bug this test "
             f"guards against)"
         )
+
+
+def retry_until_success(action, nodename, timeout=120.0):
+    """Run `action(zk)` on a fresh client of `nodename` until it succeeds."""
+    deadline = time.time() + timeout
+    while True:
+        try:
+            zk = get_fake_zk(nodename)
+            try:
+                return action(zk)
+            finally:
+                zk.stop()
+                zk.close()
+        except Exception:
+            if time.time() > deadline:
+                raise
+            time.sleep(0.5)
 
 
 def get_rejecting_node():
@@ -146,28 +169,28 @@ def test_refuse_committed_log_rollback():
 
         assert_healthy_nodes_running()
 
-        # The operator fixes the mistake; node3 could otherwise keep
-        # disrupting leader election.
-        node3.stop_clickhouse()
-
-        # Previously written data must still be readable from both nodes.
-        for nodename in ("node1", "node2"):
-            zk = get_fake_zk(nodename)
+        # node3 keeps running and keeps sending requests from its invalid term.
+        # node1/node2 must deny all of them, so they time out, elect a valid
+        # leader and keep serving. Previously written data stays readable.
+        def read_test_znodes(zk):
             for path, data in TEST_ZNODES:
                 assert zk.get(path)[0] == data
-            zk.stop()
-            zk.close()
+
+        for nodename in ("node1", "node2"):
+            retry_until_success(read_test_znodes, nodename)
 
         # {node1, node2} must still form a quorum and accept new writes.
-        zk1 = get_fake_zk("node1")
-        zk1.create("/test_committed_rollback_after_rejection", b"still-alive")
-        zk1.stop()
-        zk1.close()
+        # A retry can follow a create that already went through.
+        retry_until_success(
+            lambda zk: zk.exists(NEW_ZNODE) or zk.create(NEW_ZNODE, b"still-alive"),
+            "node1",
+        )
+        assert (
+            retry_until_success(lambda zk: zk.get(NEW_ZNODE)[0], "node2")
+            == b"still-alive"
+        )
 
-        zk2 = get_fake_zk("node2")
-        assert zk2.get("/test_committed_rollback_after_rejection")[0] == b"still-alive"
-        zk2.stop()
-        zk2.close()
+        assert_healthy_nodes_running()
 
     finally:
         cluster.shutdown()
