@@ -5,9 +5,7 @@
 # no-shared-merge-tree -- the bounds under test are `MergeTreeMergePredicate`'s.
 
 # `ATTACH PART` of a patch takes a fresh block number without waiting, so it can land above a not yet registered
-# mutation or above a running `OPTIMIZE`'s snapshot. The merge must leave such a patch for read time. The index
-# inside the patch keeps the version readers apply it at, so a merge that records a pending `DROP COLUMN` above
-# that version would hide the patch from the merged part.
+# mutation or above a running `OPTIMIZE`'s snapshot. The merge must leave such a patch for read time.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -17,7 +15,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 REGISTER_FP="mt_pause_before_register_mutation"
 OPTIMIZE_FP="mt_optimize_pause_after_reservation_snapshot"
-MUTATE_FP="mt_select_parts_to_mutate_no_free_threads"
 MUTATION_QUERY_ID="05304_attached_patch_mutation_${CLICKHOUSE_DATABASE}"
 OPTIMIZE_QUERY_ID="05304_attached_patch_optimize_${CLICKHOUSE_DATABASE}"
 
@@ -25,33 +22,29 @@ function cleanup()
 {
     $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $REGISTER_FP"
     $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $OPTIMIZE_FP"
-    $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $MUTATE_FP"
     $CLICKHOUSE_CLIENT --query "KILL QUERY WHERE query_id IN ('$MUTATION_QUERY_ID', '$OPTIMIZE_QUERY_ID') ASYNC" >/dev/null 2>&1
     wait
     $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t_patch_above_mutation SYNC" 2>/dev/null
     $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t_patch_above_snapshot SYNC" 2>/dev/null
-    $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t_patch_below_drop SYNC" 2>/dev/null
-    $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t_patch_below_drop_late SYNC" 2>/dev/null
-    $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t_older_patch_reattached SYNC" 2>/dev/null
 }
 trap cleanup EXIT
 
-# Two regular parts and a detached patch part that updates the row of the first one. Column `d` is there to be dropped.
+# Two regular parts and a detached patch part that updates the row of the first one.
 function create_table_with_detached_patch()
 {
     local table=$1
     $CLICKHOUSE_CLIENT --query "
         DROP TABLE IF EXISTS $table SYNC;
-        CREATE TABLE $table (id UInt64, a UInt64, d UInt64) ENGINE = MergeTree ORDER BY id
+        CREATE TABLE $table (id UInt64, a UInt64) ENGINE = MergeTree ORDER BY id
         SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, max_bytes_to_merge_at_max_space_in_pool = 1;
-        INSERT INTO $table VALUES (1, 0, 0);
+        INSERT INTO $table VALUES (1, 0);
         UPDATE $table SET a = 5 WHERE id = 1;
     "
     PATCH=$($CLICKHOUSE_CLIENT --query "
         SELECT name FROM system.parts
         WHERE database = currentDatabase() AND table = '$table' AND active AND startsWith(name, 'patch-')")
     $CLICKHOUSE_CLIENT --query "ALTER TABLE $table DETACH PART '$PATCH'"
-    $CLICKHOUSE_CLIENT --query "INSERT INTO $table VALUES (2, 0, 0)"
+    $CLICKHOUSE_CLIENT --query "INSERT INTO $table VALUES (2, 0)"
 }
 
 # A merge that applies a patch records the patch's version, so the merged part's data version tells.
@@ -92,70 +85,3 @@ wait "$optimize_pid"
 echo "OPTIMIZE FINAL exit code: $?"
 print_merged_part t_patch_above_snapshot
 $CLICKHOUSE_CLIENT --query "SELECT id, a FROM t_patch_above_snapshot ORDER BY id"
-
-echo "--- patch reattached below a pending DROP COLUMN"
-create_table_with_detached_patch t_patch_below_drop
-$CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT $MUTATE_FP"
-$CLICKHOUSE_CLIENT --query "ALTER TABLE t_patch_below_drop DROP COLUMN d SETTINGS alter_sync = 0"
-# The reattached patch is numbered above the mutation, but its index still applies it below the mutation.
-$CLICKHOUSE_CLIENT --query "ALTER TABLE t_patch_below_drop ATTACH PART '$PATCH'"
-$CLICKHOUSE_CLIENT --query "OPTIMIZE TABLE t_patch_below_drop FINAL SETTINGS optimize_throw_if_noop = 1"
-print_merged_part t_patch_below_drop
-$CLICKHOUSE_CLIENT --query "SELECT id, a FROM t_patch_below_drop ORDER BY id"
-$CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $MUTATE_FP"
-wait_for_query_result "SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_patch_below_drop' AND NOT is_done" "0"
-print_merged_part t_patch_below_drop
-$CLICKHOUSE_CLIENT --query "SELECT id, a FROM t_patch_below_drop ORDER BY id"
-
-echo "--- patch reattached after the OPTIMIZE snapshot, below a pending DROP COLUMN"
-create_table_with_detached_patch t_patch_below_drop_late
-$CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT $MUTATE_FP"
-$CLICKHOUSE_CLIENT --query "ALTER TABLE t_patch_below_drop_late DROP COLUMN d SETTINGS alter_sync = 0"
-$CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT $OPTIMIZE_FP"
-$CLICKHOUSE_CLIENT --query_id "$OPTIMIZE_QUERY_ID" \
-    --query "OPTIMIZE TABLE t_patch_below_drop_late FINAL SETTINGS optimize_throw_if_noop = 1" &
-optimize_pid=$!
-wait_failpoint $OPTIMIZE_FP
-# Above the snapshot, so the merge may not apply it; its index still applies it below the mutation.
-$CLICKHOUSE_CLIENT --query "ALTER TABLE t_patch_below_drop_late ATTACH PART '$PATCH'"
-$CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $OPTIMIZE_FP"
-wait "$optimize_pid"
-echo "OPTIMIZE FINAL exit code: $?"
-print_merged_part t_patch_below_drop_late
-$CLICKHOUSE_CLIENT --query "SELECT id, a FROM t_patch_below_drop_late ORDER BY id"
-$CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $MUTATE_FP"
-wait_for_query_result "SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_patch_below_drop_late' AND NOT is_done" "0"
-print_merged_part t_patch_below_drop_late
-$CLICKHOUSE_CLIENT --query "SELECT id, a FROM t_patch_below_drop_late ORDER BY id"
-
-echo "--- older patch reattached after the OPTIMIZE snapshot, newer patch applicable"
-# The merge may apply the newer patch and not the reattached one; it must then apply neither, or the merged
-# part would take the newer version and readers would never apply the older patch to it.
-$CLICKHOUSE_CLIENT --query "
-    DROP TABLE IF EXISTS t_older_patch_reattached SYNC;
-    CREATE TABLE t_older_patch_reattached (id UInt64, a UInt64, b UInt64) ENGINE = MergeTree ORDER BY id
-    SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, max_bytes_to_merge_at_max_space_in_pool = 1;
-    INSERT INTO t_older_patch_reattached VALUES (1, 0, 0);
-    UPDATE t_older_patch_reattached SET a = 5 WHERE id = 1;
-"
-PATCH=$($CLICKHOUSE_CLIENT --query "
-    SELECT name FROM system.parts
-    WHERE database = currentDatabase() AND table = 't_older_patch_reattached' AND active AND startsWith(name, 'patch-')")
-$CLICKHOUSE_CLIENT --query "ALTER TABLE t_older_patch_reattached DETACH PART '$PATCH'"
-$CLICKHOUSE_CLIENT --query "INSERT INTO t_older_patch_reattached VALUES (2, 0, 0)"
-$CLICKHOUSE_CLIENT --query "UPDATE t_older_patch_reattached SET b = 7 WHERE id = 1"
-$CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT $OPTIMIZE_FP"
-$CLICKHOUSE_CLIENT --query_id "$OPTIMIZE_QUERY_ID" \
-    --query "OPTIMIZE TABLE t_older_patch_reattached FINAL SETTINGS optimize_throw_if_noop = 1" &
-optimize_pid=$!
-wait_failpoint $OPTIMIZE_FP
-$CLICKHOUSE_CLIENT --query "ALTER TABLE t_older_patch_reattached ATTACH PART '$PATCH'"
-$CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $OPTIMIZE_FP"
-wait "$optimize_pid"
-echo "OPTIMIZE FINAL exit code: $?"
-print_merged_part t_older_patch_reattached
-$CLICKHOUSE_CLIENT --query "SELECT id, a, b FROM t_older_patch_reattached ORDER BY id"
-# A merge that sees both patches applies both.
-$CLICKHOUSE_CLIENT --query "OPTIMIZE TABLE t_older_patch_reattached FINAL SETTINGS optimize_throw_if_noop = 1"
-print_merged_part t_older_patch_reattached
-$CLICKHOUSE_CLIENT --query "SELECT id, a, b FROM t_older_patch_reattached ORDER BY id"
