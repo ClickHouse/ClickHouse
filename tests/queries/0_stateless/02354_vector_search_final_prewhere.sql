@@ -14,8 +14,8 @@
 -- filter.
 
 SET enable_parallel_replicas = 0;
--- The control query below relies on the non-rescoring rewrite actually happening under `FINAL`, which requires
--- the vector index to be used. Pin the settings against randomization.
+-- The `FINAL` queries below must use the vector index, otherwise the checks that the vector column is kept pass
+-- vacuously. Pin the settings against randomization.
 SET use_skip_indexes_if_final = 1;
 SET use_skip_indexes_if_final_exact_mode = 0;
 
@@ -47,9 +47,16 @@ SELECT id FROM t_04839 FINAL PREWHERE length(vec) > 0 ORDER BY cosineDistance(ve
     SETTINGS vector_search_with_rescoring = 1, apply_prewhere_after_final = 1;
 
 -- The vector column must still be read: the rewrite to `_distance` must not happen. The control below runs the
--- same query without the `PREWHERE`, where the rewrite does happen, so that the check cannot pass vacuously.
-SELECT 'FINAL, no PREWHERE, no rescoring: the vector column is replaced (control)';
+-- same query without `PREWHERE` and `FINAL`, where the rewrite does happen, so that the check cannot pass vacuously.
+SELECT 'no FINAL, no PREWHERE, no rescoring: the vector column is replaced (control)';
 SELECT count() > 0 FROM (
+    EXPLAIN actions = 1
+    SELECT id FROM t_04839 ORDER BY cosineDistance(vec, [0., 1.]) LIMIT 1
+        SETTINGS vector_search_with_rescoring = 0)
+WHERE explain LIKE '%_distance%';
+
+SELECT 'FINAL, no PREWHERE, no rescoring: the vector column is kept';
+SELECT count() = 0 FROM (
     EXPLAIN actions = 1
     SELECT id FROM t_04839 FINAL ORDER BY cosineDistance(vec, [0., 1.]) LIMIT 1
         SETTINGS vector_search_with_rescoring = 0)
