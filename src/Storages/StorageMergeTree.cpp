@@ -2239,7 +2239,14 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
 
         bool output_may_be_on_remote_disk = false;
         bool output_may_be_on_local_disk = false;
-        std::vector<CompactionStatistics::DiskWriteBufferMemory> admission_write_buffer_memories;
+        /// Remote destinations are split by their buffer model: the ones that write through multipart
+        /// upload buffers (S3, Azure Blob Storage), and the ones with ordinary write buffers (HDFS, the
+        /// Azure ADLS Gen2 endpoint), whose zero ceiling makes the estimate open every file buffer at the
+        /// stream's full size. The estimate folds a set of disks into one model (the largest ceiling), so
+        /// mixing the two kinds in one set would price an ordinary-buffer destination with the capped
+        /// multipart file buffer. They are estimated separately below.
+        std::vector<CompactionStatistics::DiskWriteBufferMemory> admission_multipart_write_buffer_memories;
+        std::vector<CompactionStatistics::DiskWriteBufferMemory> admission_ordinary_write_buffer_memories;
         for (const auto & disk : candidate_destination_disks)
         {
             /// A read-only disk can never be the merge's destination: the disk-space reservation below
@@ -2257,7 +2264,10 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
             }
             output_may_be_on_remote_disk = true;
             const auto disk_write_buffer_memory = CompactionStatistics::getDiskWriteBufferMemory(disk, merge_write_settings);
-            admission_write_buffer_memories.push_back(disk_write_buffer_memory);
+            if (disk_write_buffer_memory.memory.ceiling != 0)
+                admission_multipart_write_buffer_memories.push_back(disk_write_buffer_memory);
+            else
+                admission_ordinary_write_buffer_memories.push_back(disk_write_buffer_memory);
         }
 
         /// Snapshot of the pending mutations for the source parts, built with the same parameters
@@ -2280,23 +2290,29 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
         };
         const auto mutations_snapshot = getMutationsSnapshotUnlocked(mutations_params, /*patch_parts=*/ {}, lock);
 
-        /// The admission must be an upper bound on the estimate for every destination the tagger can pick,
-        /// local ones included: the remote estimate is not always the larger one - a multipart writer caps
-        /// the eagerly allocated file buffer of a stream at DBMS_DEFAULT_BUFFER_SIZE, while a local disk
-        /// opens it at the stream's full max_compress_block_size. So when the reachable destinations mix
-        /// local and remote disks, take the maximum of both estimates.
         /// The codec of the result part is resolved once here, from the same frozen settings and clock the
         /// estimate uses, and the merge compresses with exactly it (see FutureMergedMutatedPart::merged_part_codec).
         future_part->merged_part_codec = CompactionStatistics::resolveMergedPartCodec(*future_part, metadata_snapshot, *data_settings, time_of_merge);
-        UInt64 needed_memory = CompactionStatistics::estimateNeededMemoryForMerge(
-            *future_part, metadata_snapshot, merge_context, *data_settings, mutations_snapshot, time_of_merge,
-            output_may_be_on_remote_disk, admission_write_buffer_memories, deduplicate, merge_with_cleanup);
-        if (output_may_be_on_remote_disk && output_may_be_on_local_disk)
-            needed_memory = std::max(
-                needed_memory,
-                CompactionStatistics::estimateNeededMemoryForMerge(
-                    *future_part, metadata_snapshot, merge_context, *data_settings, mutations_snapshot, time_of_merge,
-                    /*output_on_remote_disk=*/ false, /*remote_write_buffer_memories=*/ {}, deduplicate, merge_with_cleanup));
+        /// The admission must be an upper bound on the estimate for every destination the tagger can pick:
+        /// no single buffer model is always the most expensive one - a multipart writer caps the eagerly
+        /// allocated file buffer of a stream at DBMS_DEFAULT_BUFFER_SIZE, while a local disk or a remote disk
+        /// with ordinary write buffers opens it at the stream's full max_compress_block_size. So take the
+        /// maximum of the complete estimates over every buffer model among the reachable destinations: the
+        /// multipart remote disks, the ordinary-buffer remote disks (priced as remote, so that their remote
+        /// read-back and parallel-write properties are kept), and the local disks.
+        const auto estimate_for_destinations = [&](bool output_on_remote_disk, const std::vector<CompactionStatistics::DiskWriteBufferMemory> & write_buffer_memories)
+        {
+            return CompactionStatistics::estimateNeededMemoryForMerge(
+                *future_part, metadata_snapshot, merge_context, *data_settings, mutations_snapshot, time_of_merge,
+                output_on_remote_disk, write_buffer_memories, deduplicate, merge_with_cleanup);
+        };
+        UInt64 needed_memory = 0;
+        if (!admission_multipart_write_buffer_memories.empty())
+            needed_memory = std::max(needed_memory, estimate_for_destinations(/*output_on_remote_disk=*/ true, admission_multipart_write_buffer_memories));
+        if (!admission_ordinary_write_buffer_memories.empty())
+            needed_memory = std::max(needed_memory, estimate_for_destinations(/*output_on_remote_disk=*/ true, admission_ordinary_write_buffer_memories));
+        if (output_may_be_on_local_disk || !output_may_be_on_remote_disk)
+            needed_memory = std::max(needed_memory, estimate_for_destinations(/*output_on_remote_disk=*/ false, {}));
 
         std::optional<MergeMemoryReservation> memory_reservation;
         if (user_initiated)
@@ -2343,7 +2359,7 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
             /// absent: a remote disk like HDFS has no multipart upload buffers and gets the local
             /// per-stream estimate) or when the admission priced a possible remote destination the tagger
             /// did not pick (a local destination re-estimates at the local price). Since the admission
-            /// check already used the maximum over the local and the remote destinations this merge can be
+            /// check already used the maximum over the buffer models of all destinations this merge can be
             /// written to, this correction only keeps or lowers the reservation; the merge is already committed to run at this point,
             /// so reserve unconditionally (as the replicated path does) - the corrected reservation still
             /// throttles selection of further merges. The swap must be atomic (`replace`, not a fresh
