@@ -9,28 +9,52 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 DATA_FILE="${CLICKHOUSE_TMP}/avro_logical_time.avro"
 
+# The `avro` Python package is not available in CI, so the container file is encoded by hand.
 python3 - "$DATA_FILE" <<'PY'
-import datetime
+import json
 import sys
-from avro import schema, datafile, io
 
-path = sys.argv[1]
-schema_json = """{
-  "type": "record",
-  "name": "Row",
-  "fields": [
-    {"name": "t_millis", "type": {"type": "int", "logicalType": "time-millis"}},
-    {"name": "t_micros", "type": {"type": "long", "logicalType": "time-micros"}}
-  ]
-}"""
-parsed = schema.parse(schema_json)
-with open(path, "wb") as out:
-    writer = datafile.DataFileWriter(out, io.DatumWriter(), parsed)
+def zigzag(n):
+    n = (n << 1) ^ (n >> 63)
+    out = bytearray()
+    while True:
+        b = n & 0x7F
+        n >>= 7
+        if n:
+            out.append(b | 0x80)
+        else:
+            out.append(b)
+            return bytes(out)
+
+def avro_bytes(b):
+    return zigzag(len(b)) + b
+
+schema = json.dumps({
+    "type": "record",
+    "name": "Row",
+    "fields": [
+        {"name": "t_millis", "type": {"type": "int", "logicalType": "time-millis"}},
+        {"name": "t_micros", "type": {"type": "long", "logicalType": "time-micros"}},
+    ],
+}).encode()
+
+rows = [
     # 12:00:00
-    writer.append({"t_millis": datetime.time(12, 0, 0), "t_micros": datetime.time(12, 0, 0)})
+    (43200000, 43200000000),
     # 12:00:00.123000 / 12:00:00.123456
-    writer.append({"t_millis": datetime.time(12, 0, 0, 123000), "t_micros": datetime.time(12, 0, 0, 123456)})
-    writer.close()
+    (43200123, 43200123456),
+]
+
+sync = bytes(range(16))
+data = b"".join(zigzag(millis) + zigzag(micros) for millis, micros in rows)
+with open(sys.argv[1], "wb") as out:
+    out.write(b"Obj\x01")
+    out.write(zigzag(2))
+    out.write(avro_bytes(b"avro.schema") + avro_bytes(schema))
+    out.write(avro_bytes(b"avro.codec") + avro_bytes(b"null"))
+    out.write(zigzag(0))
+    out.write(sync)
+    out.write(zigzag(len(rows)) + zigzag(len(data)) + data + sync)
 PY
 
 # Matching Time64 scales: raw ticks already match physical Avro units.
