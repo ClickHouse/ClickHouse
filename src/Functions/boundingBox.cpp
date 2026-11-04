@@ -6,8 +6,12 @@
 
 #include <base/EnumReflection.h>
 
+#include <boost/geometry/algorithms/area.hpp>
+#include <boost/geometry/algorithms/correct_closure.hpp>
 #include <boost/geometry/algorithms/envelope.hpp>
 #include <boost/geometry/geometries/box.hpp>
+
+#include <algorithm>
 
 namespace DB
 {
@@ -127,16 +131,52 @@ private:
         return ring;
     }
 
+    /// On a sphere, the winding order decides which side of a ring is the interior: a ring around a pole wound the other
+    /// way encloses the rest of the sphere. `boost::geometry::envelope` takes the region on the right of an outer ring,
+    /// and on the left of a hole. This closes `ring` and reverses it if needed, so that this region is the smaller of
+    /// the two regions the ring bounds. It is `boost::geometry::correct`, except that a ring that splits the sphere
+    /// into two equal halves (`isHemisphere`) is not reversed, so its interior is the half on its right as in
+    /// `centroidSpherical`. `boost::geometry::correct` picks a half by the sign of a rounding error instead.
+    static void orientRing(Ring<Point> & ring, bool is_hole)
+    {
+        boost::geometry::correct_closure(ring);
+        const Float64 area = boost::geometry::area(ring);
+        const bool hemisphere = !ring.empty() && isHemisphere(area, ring.size() - 1);
+        /// `boost::geometry::area` is negative if the smaller region is on the left.
+        if (is_hole ? (hemisphere || area > 0) : (!hemisphere && area < 0))
+            std::reverse(ring.begin(), ring.end());
+    }
+
+    static void orientRings(Polygon<Point> & polygon)
+    {
+        orientRing(polygon.outer(), /* is_hole */ false);
+        for (auto & inner : polygon.inners())
+            orientRing(inner, /* is_hole */ true);
+    }
+
+    template <typename Geom>
+    static void orientRings(Geom & geom)
+    {
+        if constexpr (std::is_same_v<Geom, Ring<Point>>)
+        {
+            orientRing(geom, /* is_hole */ false);
+        }
+        else if constexpr (std::is_same_v<Geom, MultiPolygon<Point>>)
+        {
+            for (auto & polygon : geom)
+                orientRings(polygon);
+        }
+        /// Points and linestrings have no interior.
+    }
+
     template <typename Geom>
     static Ring<Point> computeEnvelope(Geom & geom)
     {
         if constexpr (std::is_same_v<Point, SphericalPoint>)
         {
             checkSphericalLatitudes(geom, name);
-            /// On a sphere, the winding order decides which side of a ring is the interior: a ring around a pole wound
-            /// the other way encloses the rest of the sphere. `boost::geometry::correct` fixes the orientation and
-            /// closes the rings; points and linestrings are left as is.
-            boost::geometry::correct(geom);
+            checkSphericalEdges(geom, name);
+            orientRings(geom);
         }
 
         boost::geometry::model::box<Point> box{};
@@ -239,9 +279,12 @@ the returned longitude values may exceed 180° (e.g., 181 represents -179°).
 This is the correct mathematical representation; normalizing to [-180, 180] would
 produce an incorrect box spanning ~358° instead of ~2°.
 
-The winding order of the rings does not matter: for example, the box of a ring around a pole includes the pole.
+The interior of a ring is the smaller of the two regions it bounds, so the winding order does not matter: for example,
+the box of a ring around a pole includes the pole. If the two regions are equal (for example, the ring is the equator),
+the interior is the one on the right of the ring, as in `centroidSpherical`.
 For an empty geometry, the result is an empty Ring `[]`.
-A latitude outside [−90, 90] throws an exception.
+A latitude outside [−90, 90] throws an exception, and so does an edge of a ring or a linestring between two antipodal
+points, because its path is undefined.
     )";
     FunctionDocumentation::Syntax syntax_spherical = "boundingBoxSpherical(geometry)";
     FunctionDocumentation::Arguments arguments_spherical

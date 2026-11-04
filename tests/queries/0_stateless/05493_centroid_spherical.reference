@@ -23,7 +23,7 @@ centroidSpherical Geometry Point
 centroidSpherical Geometry Polygon
 2	2.000402
 centroidSpherical globe-spanning polygon (triggers adaptive origin)
-90
+-90
 centroidSpherical empty polygon (degenerate)
 0	0
 centroidSpherical MultiPoint
@@ -56,3 +56,13 @@ centroidSpherical antipodal MultiPoint
 (nan,nan)
 centroidSpherical of empty geometries
 (nan,nan)	(nan,nan)	(nan,nan)	(nan,nan)
+centroidSpherical rings going back and forth along a great circle
+60	0
+0	0
+centroidSpherical and boundingBoxSpherical of rings splitting the sphere into two equal halves
+centrally symmetric	false	-48.346502	-90	45	1	1
+centrally symmetric	true	48.346502	-45	90	1	1
+equator	false	-90	-90	0	1	1
+equator	true	90	0	90	1	1
+tilted great circle	false	-45	-90	45	1	1
+tilted great circle	true	45	-45	90	1	1

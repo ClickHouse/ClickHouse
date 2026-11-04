@@ -91,3 +91,44 @@ SELECT centroidSpherical(CAST([], 'Ring')), centroidSpherical(CAST([], 'Polygon'
 SELECT centroidSpherical([(0., 0.), (0., 100.), (10., 0.), (0., 0.)]); -- { serverError BAD_ARGUMENTS }
 SELECT centroidSpherical((0., -91.)); -- { serverError BAD_ARGUMENTS }
 SELECT centroidSpherical(CAST(CAST([[(0., 0.), (nan, 1.), (1., 1.), (0., 0.)]], 'Polygon'), 'Geometry')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+-- Such rings used to fail an assertion in `S2::GetSignedArea`. They have zero area, so the result is the centroid of the boundary.
+SELECT 'centroidSpherical rings going back and forth along a great circle';
+SELECT round(c.1, 6), round(c.2, 6) FROM (SELECT centroidSpherical([(90., 0.), (45., 0.), (30., 0.), (60., 0.)]) AS c);
+SELECT round(c.1, 6), round(c.2, 6) FROM (SELECT centroidSpherical([(0., 45.), (0., -30.), (0., -45.), (0., 0.)]) AS c);
+
+-- The input found by the AST fuzzer: its edges join antipodal points, so their paths are undefined.
+SELECT centroidSpherical([(-90., 0.), (90., 0.), (180., 0.), (0., 0.), (0., 0.)]); -- { serverError BAD_ARGUMENTS }
+SELECT boundingBoxSpherical([(-90., 0.), (90., 0.), (180., 0.), (0., 0.), (0., 0.)]); -- { serverError BAD_ARGUMENTS }
+SELECT centroidSpherical(CAST([(0., -90.), (10., 90.)], 'LineString')); -- { serverError BAD_ARGUMENTS }
+SELECT centroidSpherical(CAST([[(0., 0.), (1., 1.)], [(-90., 0.), (450., 0.)]], 'MultiLineString')); -- { serverError BAD_ARGUMENTS }
+-- The closing edge of the unclosed hole.
+SELECT centroidSpherical([[(0., 0.), (0., 10.), (10., 10.), (10., 0.), (0., 0.)], [(1., 1.), (2., 2.), (-179., -1.)]]); -- { serverError BAD_ARGUMENTS }
+SELECT centroidSpherical(CAST(CAST([(0., 0.), (180., 0.)], 'LineString'), 'Geometry')); -- { serverError BAD_ARGUMENTS }
+
+-- Both halves have the same area, so whatever the winding, the interior is the half on the right of the ring, and the
+-- centroid is inside the bounding box. The polygon and the multipolygon of the ring are the same.
+SELECT 'centroidSpherical and boundingBoxSpherical of rings splitting the sphere into two equal halves';
+SELECT
+    name,
+    reversed,
+    round(c.2, 6),
+    round(b[1].2, 6),
+    round(b[3].2, 6),
+    c.2 BETWEEN b[1].2 AND b[3].2 AND positiveModulo(c.1 - b[1].1, 360.) <= b[2].1 - b[1].1,
+    centroidSpherical([ring]) = c AND centroidSpherical([[ring]]) = c
+        AND boundingBoxSpherical([ring]) = b AND boundingBoxSpherical([[ring]]) = b
+FROM
+(
+    SELECT name, reversed, ring, centroidSpherical(ring) AS c, boundingBoxSpherical(ring) AS b
+    FROM
+    (
+        SELECT name, reversed, if(reversed, arrayReverse(r), r) AS ring
+        FROM values('name String, r Array(Tuple(Float64, Float64))',
+            ('equator', [(0., 0.), (90., 0.), (180., 0.), (-90., 0.)]),
+            ('tilted great circle', [(0., 0.), (90., 45.), (180., 0.), (-90., -45.)]),
+            ('centrally symmetric', [(0., 0.), (45., 30.), (90., 45.), (135., 30.), (180., 0.), (-135., -30.), (-90., -45.), (-45., -30.)]))
+        ARRAY JOIN [false, true] AS reversed
+    )
+)
+ORDER BY name, reversed;

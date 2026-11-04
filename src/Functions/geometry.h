@@ -17,7 +17,11 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <Functions/FunctionHelpers.h>
 
+#include <cfloat>
+#include <cmath>
 #include <memory>
+#include <numbers>
+#include <string_view>
 
 namespace DB
 {
@@ -134,6 +138,84 @@ void checkSphericalLatitudes(const Geometry & geometry, std::string_view functio
                 latitude,
                 function_name);
     });
+}
+
+/// Whether `a` and `b` are antipodal. Both latitudes must be in [−90, 90].
+inline bool areAntipodal(const SphericalPoint & a, const SphericalPoint & b)
+{
+    const Float64 latitude = boost::geometry::get<1>(a);
+    if (latitude != -boost::geometry::get<1>(b))
+        return false;
+    if (std::abs(latitude) == 90)
+        return true;
+    /// Each longitude is reduced first, so that the difference of two large ones does not overflow.
+    const Float64 longitude_difference
+        = std::remainder(boost::geometry::get<0>(a), 360.0) - std::remainder(boost::geometry::get<0>(b), 360.0);
+    return std::abs(std::remainder(longitude_difference, 360.0)) == 180;
+}
+
+/// Throws if two consecutive vertices of `points` are antipodal. If `closed`, the last vertex and the first one are
+/// consecutive too.
+template <typename Points>
+void checkSphericalPathEdges(const Points & points, bool closed, std::string_view function_name)
+{
+    const size_t n = points.size();
+    const size_t edges = closed ? n : (n == 0 ? 0 : n - 1);
+    for (size_t i = 0; i < edges; ++i)
+    {
+        const SphericalPoint & from = points[i];
+        const SphericalPoint & to = points[i + 1 == n ? 0 : i + 1];
+        if (areAntipodal(from, to))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The edge from ({}, {}) to ({}, {}) in function {} joins antipodal points, so its path is undefined: every half "
+                "of a great circle through them is a shortest path. Add a vertex between them",
+                boost::geometry::get<0>(from),
+                boost::geometry::get<1>(from),
+                boost::geometry::get<0>(to),
+                boost::geometry::get<1>(to),
+                function_name);
+    }
+}
+
+/// Throws if an edge of a ring or a linestring in `geometry` joins two antipodal points. Otherwise the path of the edge
+/// would depend on the rounding errors of the coordinates.
+template <typename Geometry>
+void checkSphericalEdges(const Geometry & geometry, std::string_view function_name)
+{
+    using Tag = typename boost::geometry::tag<Geometry>::type;
+    if constexpr (std::is_same_v<Tag, boost::geometry::linestring_tag>)
+    {
+        checkSphericalPathEdges(geometry, /* closed */ false, function_name);
+    }
+    else if constexpr (std::is_same_v<Tag, boost::geometry::ring_tag>)
+    {
+        checkSphericalPathEdges(geometry, /* closed */ true, function_name);
+    }
+    else if constexpr (std::is_same_v<Tag, boost::geometry::polygon_tag>)
+    {
+        checkSphericalEdges(geometry.outer(), function_name);
+        for (const auto & inner : geometry.inners())
+            checkSphericalEdges(inner, function_name);
+    }
+    else if constexpr (std::is_same_v<Tag, boost::geometry::multi_linestring_tag> || std::is_same_v<Tag, boost::geometry::multi_polygon_tag>)
+    {
+        for (const auto & part : geometry)
+            checkSphericalEdges(part, function_name);
+    }
+    else
+    {
+        static_assert(std::is_same_v<Tag, boost::geometry::point_tag> || std::is_same_v<Tag, boost::geometry::multi_point_tag>);
+    }
+}
+
+/// Whether a ring of `vertices` vertices whose area, of either of the two regions it bounds, is `area` steradians splits
+/// the sphere into two equal halves up to rounding, as the equator does. Then the interior of the ring is the half on its
+/// right, as for the clockwise `Ring`. Otherwise it is the smaller region. The bound of the rounding error is the one of
+/// `S2::GetCurvatureMaxError`.
+inline bool isHemisphere(Float64 area, size_t vertices)
+{
+    return std::abs(2 * std::numbers::pi - std::abs(area)) <= 11.25 * DBL_EPSILON * static_cast<Float64>(vertices);
 }
 
 /// Must match the global discriminators of the Geometry Variant type.

@@ -11,6 +11,7 @@
 #include <cfloat>
 #include <cmath>
 #include <limits>
+#include <numbers>
 #include <utility>
 #include <vector>
 
@@ -19,6 +20,7 @@
 #pragma clang diagnostic ignored "-Wambiguous-reversed-operator"
 #include <s2/s2latlng.h>
 #include <s2/s2loop_measures.h>
+#include <s2/s2measures.h>
 #include <s2/s2point.h>
 #include <s2/s2point_span.h>
 #include <s2/s2polyline_measures.h>
@@ -213,13 +215,19 @@ public:
         if (n >= 3)
         {
             const S2PointLoopSpan loop(vertices.data(), n);
-            /// The interior is the smaller of the two regions the ring bounds, whatever the winding.
-            /// `S2::GetSignedArea` is negative if that region is on the right of the loop. `S2::GetCentroid` is for
-            /// the region on the left; the one for the region on the right is its negation.
-            const double signed_area = S2::GetSignedArea(loop);
+            /// The area of the region on the left of the loop, or minus the area of the region on its right, whichever is
+            /// smaller in magnitude. This is `S2::GetSignedArea` without its check of the sign for a loop of nearly zero
+            /// area. That check does not matter here, because the area and the centroid of such a loop are both nearly
+            /// zero. It also has an assertion that fails for a loop going back and forth along a great circle, for example
+            /// `[(90, 0), (45, 0), (30, 0), (60, 0)]`.
+            const double signed_area = std::remainder(S2::GetSurfaceIntegralKahan(loop, S2::SignedArea), 4 * std::numbers::pi);
             const S2Point centroid = S2::GetCentroid(loop);
             const double area = std::abs(signed_area);
-            sums.area_centroid += ((signed_area < 0) != is_hole) ? -centroid : centroid;
+            /// The interior is the smaller of the two regions the ring bounds, whatever the winding, or the region on its
+            /// right if the two are equal (`isHemisphere`). `S2::GetCentroid` is for the region on the left; the one for
+            /// the region on the right is its negation.
+            const bool interior_on_right = signed_area < 0 || isHemisphere(area, n);
+            sums.area_centroid += (interior_on_right != is_hole) ? -centroid : centroid;
             sums.area += is_hole ? -area : area;
             sums.area_magnitude += area;
             sums.area_error += S2::GetCurvatureMaxError(loop);
@@ -451,7 +459,10 @@ private:
     static Point computeCentroid(const Geometry & geometry, Accumulator & accumulator)
     {
         if constexpr (std::is_same_v<Point, SphericalPoint>)
+        {
             checkSphericalLatitudes(geometry, name);
+            checkSphericalEdges(geometry, name);
+        }
 
         if constexpr (std::is_same_v<Geometry, Point>)
         {
@@ -573,11 +584,14 @@ Takes any geometry type and returns a Point. Uses the true centroid (mass centro
 which correctly accounts for the curvature of the sphere.
 
 The interior of a ring is the smaller of the two regions it bounds, so the winding order does not matter.
+If the two regions are equal (for example, the ring is the equator), the interior is the one on the right of the ring,
+as in `boundingBoxSpherical`.
 As in `centroidCartesian`, polygons are weighted by area, linestrings by length, and points equally.
 If the polygons have zero area (for example, each ring lies on a great circle), the result is the centroid of their
 boundaries; if those have zero length too, the mean of the vertices.
 For an empty geometry, or when the centroid is undefined (for example, two antipodal points), the result is `(nan,nan)`.
-A latitude outside [−90, 90] throws an exception.
+A latitude outside [−90, 90] throws an exception, and so does an edge of a ring or a linestring between two antipodal
+points, because its path is undefined.
 
 The rounding error of the area is up to about 2.5·10⁻¹⁵ steradians per vertex, or about 0.1 m² per vertex on the Earth.
 A polygon with a smaller area is treated as having zero area, so the result is the centroid of its boundary, which can

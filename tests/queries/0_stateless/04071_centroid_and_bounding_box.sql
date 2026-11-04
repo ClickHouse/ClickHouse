@@ -230,3 +230,13 @@ SELECT boundingBoxSpherical(CAST([(0., -90.), (0., 90.)], 'MultiPoint'));
 SELECT boundingBoxSpherical([(0., 0.), (0., 100.), (10., 0.), (0., 0.)]); -- { serverError BAD_ARGUMENTS }
 SELECT boundingBoxSpherical((0., -90.5)); -- { serverError BAD_ARGUMENTS }
 SELECT boundingBoxSpherical(readWKT('LINESTRING(0 0, 10 91)')); -- { serverError BAD_ARGUMENTS }
+
+SELECT 'boundingBoxSpherical of an edge between antipodal points';
+SELECT boundingBoxSpherical(CAST([(0., 0.), (180., 0.)], 'LineString')); -- { serverError BAD_ARGUMENTS }
+SELECT boundingBoxSpherical([[(0., -90.), (10., 0.), (20., 90.)]]); -- { serverError BAD_ARGUMENTS }
+SELECT boundingBoxSpherical(CAST([(0., 0.), (179., 0.)], 'LineString'));
+
+-- The ring splits the sphere into two equal halves, so its interior is the half on its right whatever the winding.
+SELECT 'boundingBoxSpherical of a centrally symmetric ring, in both orientations';
+SELECT arrayMap(p -> (round(p.1, 6), round(p.2, 6)), boundingBoxSpherical([(0., 0.), (45., 30.), (90., 45.), (135., 30.), (180., 0.), (-135., -30.), (-90., -45.), (-45., -30.)]));
+SELECT arrayMap(p -> (round(p.1, 6), round(p.2, 6)), boundingBoxSpherical([(0., 0.), (-45., -30.), (-90., -45.), (-135., -30.), (180., 0.), (135., 30.), (90., 45.), (45., 30.)]));

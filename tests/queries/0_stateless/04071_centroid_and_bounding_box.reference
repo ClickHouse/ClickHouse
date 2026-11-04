@@ -151,3 +151,8 @@ boundingBoxSpherical ring around a pole, in both orientations
 [(-180,-90),(180,-90),(180,-80),(-180,-80),(-180,-90)]
 boundingBoxSpherical latitude at the limits
 [(0,-90),(0,-90),(0,90),(0,90),(0,-90)]
+boundingBoxSpherical of an edge between antipodal points
+[(0,0),(179,0),(179,0),(0,0),(0,0)]
+boundingBoxSpherical of a centrally symmetric ring, in both orientations
+[(-180,-90),(180,-90),(180,45),(-180,45),(-180,-90)]
+[(-180,-45),(180,-45),(180,90),(-180,90),(-180,-45)]
