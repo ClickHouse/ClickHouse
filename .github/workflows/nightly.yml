@@ -50,7 +50,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Config Workflow' --workflow "Nightly" --ci --timestamp
 
   build_arm_binary:
-    runs-on: [self-hosted, arm-large]
+    runs-on: [self-hosted, arm-medium-cpu]
     needs: [config_workflow]
     name: "Build (arm_binary)"
     continue-on-error: true
