@@ -131,7 +131,7 @@ remote_write:
 
 A `TimeSeries` table stores them in the `histograms` column of its [samples table](/reference/engines/table-engines/integrations/time-series#samples-table), next to the float samples, as they were sent: integer and float histograms (each keeps its own count type), histograms with custom buckets, and stale markers. They can be read through the `histograms.*` columns of the table.
 
-PromQL queries don't support native histograms yet: they evaluate the float samples of the selected time series only and ignore their histogram samples, without reading them. A query over a series with histogram samples only returns nothing for it.
+PromQL queries don't support native histograms yet: they evaluate the float samples of the selected time series only and ignore their histogram samples, reading only their timestamps. A query over a series with histogram samples only returns nothing for it.
 
 A histogram which Prometheus itself would reject, for example one whose bucket spans do not match its bucket counts, makes ClickHouse reject the whole request with HTTP status 400, and Prometheus drops the request without retrying, as it does with any 4xx status.
 
@@ -139,7 +139,7 @@ A histogram which Prometheus itself would reject, for example one whose bucket s
 Prometheus does not send native histograms with custom buckets (such as classic histograms converted with `convert_classic_histograms_to_nhcb`) over remote-write 1.0, which is the protocol version ClickHouse supports: Prometheus 3.10 and later drop them on the sending side with a warning, and earlier versions send them without their bucket bounds, which makes ClickHouse reject the request. Exponential native histograms are sent by every version. Other senders do send custom-bucket histograms over remote-write 1.0, for example the OpenTelemetry Collector with `convert_explicit_histograms_to_nhcb` enabled, and ClickHouse stores them.
 :::
 
-A table of an older [version](/reference/engines/table-engines/integrations/time-series#schema-versioning) stores no histograms. Such a table stores the float samples of a request and drops its native histograms: rejecting the request would make Prometheus drop the float samples too. Every drop is counted in the `PrometheusRemoteWriteDroppedHistograms` profile event and logged with a warning, at most once a minute. To store native histograms, create a table of the current version and move the data into it.
+A table of an older [version](/reference/engines/table-engines/integrations/time-series#schema-versioning) stores no histograms. Such a table stores the float samples of a request and drops its native histograms: rejecting the request would make Prometheus drop the float samples too. Every drop is counted in the `PrometheusRemoteWriteDroppedHistograms` profile event and logged with a warning, at most once a minute. To store native histograms, create a table of version 12 or later and move the data into it.
 
 ## Query with PromQL {#promql-query-support}
 

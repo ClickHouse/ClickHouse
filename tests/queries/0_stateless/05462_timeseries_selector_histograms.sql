@@ -1,10 +1,7 @@
--- Tags: no-fasttest
--- Tag no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
-
 -- `timeSeriesSelector` over a TimeSeries table storing native histogram samples returns them in the column `histograms` next to
 -- `samples` with `return_columns = 'samples'`: the stored tuples of a row of the samples table cut to the time range, one row per
 -- series and bucket. Both arrays are read, and a row is returned when either array has samples in the range, regardless of projection.
--- `'timestamp_and_value'` returns the float samples only. PromQL rejects histogram samples in the evaluated range until it supports them.
+-- `'timestamp_and_value'` returns the float samples only. PromQL over such a table is covered by 05493_timeseries_selector_histogram_presence.
 
 SET allow_experimental_time_series_table = 1;
 SET session_timezone = 'UTC';
@@ -87,17 +84,6 @@ FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN 
 
 SELECT '-- timestamp_and_value returns the float samples only';
 SELECT timestamp, value FROM timeSeriesSelector(ts, 'm_mixed', 0, 1000, 'timestamp_and_value');
-
-SELECT '-- PromQL evaluates the float samples only and ignores the histogram samples';
-SELECT value FROM prometheusQuery(ts, 'm_float', 115);
--- The histogram sample at 110 is in the lookback window of the evaluation at 115: it is ignored, the float sample at 100 is returned.
-SELECT value FROM prometheusQuery(ts, 'm_mixed', 115);
-SELECT value FROM prometheusQuery(ts, 'm_mixed', 105);
-SELECT value FROM prometheusQuery(ts, 'sum_over_time(m_mixed[20s])', 115);
-SELECT value FROM prometheusQuery(ts, 'sum_over_time(m_mixed[10s])', 105);
--- A histogram-only series has nothing for PromQL, the other series of the selector are evaluated.
-SELECT value FROM prometheusQuery(ts, 'm_hist', 115);
-SELECT value FROM prometheusQuery(ts, 'count({__name__=~"m_float|m_hist|m_mixed"})', 115);
 
 SELECT '-- the recent samples table returns the histograms too';
 -- TTL 10 days, the samples are inserted close to now(), so the background TTL cannot drop them during the test.

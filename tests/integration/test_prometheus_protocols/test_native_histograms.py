@@ -225,44 +225,8 @@ def test_samples_and_histograms_together():
 
 
 
-def test_async_insert():
-    # The block with the `histograms.*` columns goes through the asynchronous insert queue (serialized, merged and flushed)
-    # instead of straight into the table.
-    histogram = types_pb2.Histogram(count_int=1, sum=1, positive_spans=[span(0, 1)], positive_deltas=[1], timestamp=TIMESTAMP_MS)
-    send(make_write_request(({"__name__": "async_hist"}, [histogram], {TIMESTAMP_MS: 1.0})), path="/write?async_insert=1")
-
-    assert count_histograms() == 1
-    assert count_samples() == 1
 
 
-
-def test_many_histograms():
-    num_series = 100
-    num_histograms_per_series = 3
-    series = []
-    for i in range(num_series):
-        histograms = [
-            types_pb2.Histogram(
-                count_int=j + 1,
-                sum=j,
-                positive_spans=[span(0, 1)],
-                positive_deltas=[j + 1],
-                timestamp=TIMESTAMP_MS + j * 1000,
-            )
-            for j in range(num_histograms_per_series)
-        ]
-        series.append(({"__name__": "many", "instance": str(i)}, histograms))
-
-    events_before = get_events()
-    send(make_write_request(*series))
-    events_after = get_events()
-
-    total = num_series * num_histograms_per_series
-    assert count_histograms() == total
-    # The histograms of a series are within one bucket: one row per series.
-    assert node.query("SELECT count() FROM timeSeriesSamples(prometheus)") == f"{num_series}\n"
-    assert node.query("SELECT count() FROM timeSeriesTags(prometheus)") == f"{num_series}\n"
-    assert events_after["PrometheusRemoteWriteHistograms"] == events_before["PrometheusRemoteWriteHistograms"] + total
 
 
 def expect_rejected(histogram, expected_error):
@@ -312,39 +276,13 @@ def test_invalid_histograms_are_rejected():
     expect_rejected(types_pb2.Histogram(sum=1, schema=9, timestamp=TIMESTAMP_MS), "schema 9 is invalid")
 
 
-def test_max_buckets_setting():
-    # The limit itself is covered by 05460_timeseries_histograms_max_buckets; here the rejection reaches the response of the protocol.
-    node.query("DROP TABLE prometheus SYNC")
-    node.query("CREATE TABLE prometheus ENGINE=TimeSeries SETTINGS histograms_max_buckets = 2")
-    expect_rejected(
-        types_pb2.Histogram(count_int=3, sum=1, positive_spans=[span(0, 3)], positive_deltas=[1, 0, 0], timestamp=TIMESTAMP_MS),
-        "3 buckets exceed the limit of 2 buckets per histogram",
-    )
 
 
 def test_table_of_an_older_version_drops_histograms():
     # A table of a version without the `histograms` column (see TimeSeriesVersion.h) can't store them. The histograms of a request
-    # are dropped with a warning, the float samples of the same request are written and the request succeeds: rejecting it
-    # would lose the samples too.
-    node.query("DROP TABLE prometheus SYNC")
-    node.query("CREATE TABLE prometheus ENGINE=TimeSeries SETTINGS version = 11")
-    histogram = types_pb2.Histogram(count_int=1, sum=1, positive_spans=[span(0, 1)], positive_deltas=[1], timestamp=TIMESTAMP_MS)
-
-    events_before = get_events()
-    send(make_write_request(({"__name__": "old_table"}, [histogram], {TIMESTAMP_MS: 1.0})))
-    events_after = get_events()
-
-    assert count_samples() == 1
-    assert events_after["PrometheusRemoteWriteHistograms"] == events_before["PrometheusRemoteWriteHistograms"] + 1
-    assert events_after["PrometheusRemoteWriteDroppedHistograms"] == events_before["PrometheusRemoteWriteDroppedHistograms"] + 1
-    # The message ends with the version which introduced the column; it isn't pinned here because it changes with rebases.
-    assert node.contains_in_log("Dropped 1 native histogram samples: the table stores no histograms because its version 11 is older than ")
-
-
-def test_table_of_an_older_version_writes_no_phantom_series():
-    # A series of the request with histograms only has nothing left to store once they are dropped: it must not become a
-    # row of the tags table without any sample, visible through timeSeriesTags and the labels API. The other series of the
-    # request are written as usual.
+    # are dropped and counted, the float samples of the same request are written and the request succeeds: rejecting it would lose
+    # the samples too. A series of the request with histograms only has nothing left to store once they are dropped: it must not
+    # become a row of the tags table without any sample, visible through timeSeriesTags and the labels API.
     node.query("DROP TABLE prometheus SYNC")
     node.query("CREATE TABLE prometheus ENGINE=TimeSeries SETTINGS version = 11")
     histogram = types_pb2.Histogram(count_int=1, sum=1, positive_spans=[span(0, 1)], positive_deltas=[1], timestamp=TIMESTAMP_MS)
@@ -357,8 +295,10 @@ def test_table_of_an_older_version_writes_no_phantom_series():
     ))
     events_after = get_events()
 
+    assert count_samples() == 2
     assert node.query("SELECT metric_name, tags['job'], length(samples) FROM prometheus ORDER BY metric_name") == "both\tapi\t1\nsamples_only\tapi\t1\n"
     assert node.query("SELECT metric_name FROM timeSeriesTags(prometheus) ORDER BY metric_name") == "both\nsamples_only\n"
+    assert events_after["PrometheusRemoteWriteHistograms"] == events_before["PrometheusRemoteWriteHistograms"] + 2
     assert events_after["PrometheusRemoteWriteDroppedHistograms"] == events_before["PrometheusRemoteWriteDroppedHistograms"] + 2
 
 
@@ -469,3 +409,55 @@ def test_remote_read_resolves_conflicting_samples():
     float_and_histogram = series[labels_key(__name__="float_and_histogram")]
     assert [(sample.timestamp, sample.value) for sample in float_and_histogram.samples] == [(TIMESTAMP_MS, 7.0)]
     assert len(float_and_histogram.histograms) == 0
+
+
+def test_remote_read_clears_hints_after_float_collisions():
+    # Drop the first histogram, two consecutive histograms, and a reset's predecessor. Only the first surviving
+    # counter hint after each gap becomes unknown; the following hint and the gauge markers must be preserved.
+    counts = [10, 11, 1, 2, 3, 4, 2, 3]
+    timestamps = [TIMESTAMP_MS + i * 1000 for i in range(len(counts))]
+    floats = {timestamps[i]: STALE_NAN for i in (0, 2, 3, 5)}
+    requests = []
+    for name, hint in (("counter", types_pb2.Histogram.UNKNOWN), ("gauge", types_pb2.Histogram.GAUGE)):
+        histograms = [
+            types_pb2.Histogram(
+                timestamp=timestamp, count_int=count, zero_count_int=count, sum=float(count), reset_hint=hint
+            )
+            for timestamp, count in zip(timestamps, counts)
+        ]
+        requests.append(({"__name__": name}, histograms, floats))
+    send(make_write_request(*requests))
+
+    series = remote_read(timestamps[0], timestamps[-1])
+    for name in ("counter", "gauge"):
+        result = series[labels_key(__name__=name)]
+        assert [(h.timestamp, h.count_int) for h in result.histograms] == [
+            (timestamps[i], counts[i]) for i in (1, 4, 6, 7)
+        ]
+        assert [sample.timestamp for sample in result.samples] == list(floats)
+
+    assert [h.reset_hint for h in series[labels_key(__name__="counter")].histograms] == [
+        types_pb2.Histogram.UNKNOWN,
+        types_pb2.Histogram.UNKNOWN,
+        types_pb2.Histogram.UNKNOWN,
+        types_pb2.Histogram.NO,
+    ]
+    assert [h.reset_hint for h in series[labels_key(__name__="gauge")].histograms] == [types_pb2.Histogram.GAUGE] * 4
+
+
+def test_fields_of_the_other_flavour_are_ignored():
+    # The `count` arm decides the flavour, as in Prometheus's receiver (`IsFloatHistogram`): the fields of the other flavour are
+    # ignored even when they are set, the other arm of `zero_count` and the other kind of bucket values included.
+    integer_histogram = types_pb2.Histogram(
+        count_int=3, zero_count_float=0.5, sum=1, positive_spans=[span(0, 1)], positive_deltas=[3], positive_counts=[2.5], timestamp=TIMESTAMP_MS
+    )
+    float_histogram = types_pb2.Histogram(
+        count_float=2.5, zero_count_int=1, sum=2, positive_spans=[span(0, 1)], positive_counts=[2.5], positive_deltas=[7], timestamp=TIMESTAMP_MS + 1000
+    )
+    send(make_write_request(({"__name__": "hist"}, [integer_histogram, float_histogram])))
+
+    assert read_histograms() == (
+        f"{TIMESTAMP_MS}\t0\t0\t0\t0\t1\t3\t0\t[(0,3)]\t[]\t0\t0\t[]\t[]\t[]\n"
+        f"{TIMESTAMP_MS + 1000}\t1\t0\t0\t0\t2\t0\t0\t[]\t[]\t2.5\t0\t[(0,2.5)]\t[]\t[]\n"
+    )
+

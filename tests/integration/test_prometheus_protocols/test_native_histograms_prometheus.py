@@ -1,11 +1,18 @@
 import json
 import math
+from pathlib import Path
 
 import pytest
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry, wait_condition
-from .prometheus_test_utils import execute_query_via_http_api
+from .prometheus_test_utils import (
+    execute_query_via_http_api,
+    extract_protobuf_from_remote_read_response,
+    get_response_to_remote_read,
+    remote_pb2,
+    types_pb2,
+)
 
 
 # A real Prometheus scrapes itself with native histograms enabled and sends them to ClickHouse over remote-write.
@@ -18,7 +25,6 @@ cluster = ClickHouseCluster(__file__)
 
 node = cluster.add_instance(
     "node",
-    main_configs=["configs/prometheus.xml"],
     user_configs=["configs/allow_experimental_time_series_table.xml"],
     with_prometheus_writer=True,
     prometheus_writer_native_histograms=True,
@@ -31,6 +37,13 @@ def start_cluster():
     try:
         cluster.start()
         node.query("CREATE TABLE prometheus ENGINE=TimeSeries")
+        # Open the remote-write listener after its destination exists. Earlier connection failures are retryable;
+        # an `UNKNOWN_TABLE` response would permanently increment Prometheus's failed-histogram counter.
+        node.copy_file_to_container(
+            Path(__file__).parent / "configs" / "prometheus.xml",
+            "/etc/clickhouse-server/config.d/prometheus.xml",
+        )
+        node.query("SYSTEM RELOAD CONFIG")
         wait_for_histograms()
         yield cluster
     finally:
@@ -89,6 +102,64 @@ def test_histogram_matches_prometheus():
 
     assert get_scalar_from_prometheus_writer(f"histogram_count({selector})", timestamp) == stored["count"]
     assert math.isclose(get_scalar_from_prometheus_writer(f"histogram_sum({selector})", timestamp), stored["sum"], rel_tol=1e-12)
+
+
+def expand_buckets(spans, values, cumulative):
+    """The buckets of one side as {bucket index: count}, the spans expanded as Prometheus iterates them. The values of integer
+    buckets arrive as deltas (`cumulative`), the values of float buckets as counts."""
+    buckets, index, position, count = {}, 0, 0, 0
+    for bucket_span in spans:
+        index += bucket_span.offset
+        for _ in range(bucket_span.length):
+            count = count + values[position] if cumulative else values[position]
+            buckets[index] = count
+            index += 1
+            position += 1
+    return buckets
+
+
+def canonical_histogram(histogram):
+    """The content of a `prompb.Histogram` regardless of how its buckets are cut into spans and of the counter reset hint, which
+    Prometheus derives from its chunk boundaries."""
+    is_float = histogram.HasField("count_float")
+    if is_float:
+        count, zero_count = histogram.count_float, histogram.zero_count_float
+        positive = expand_buckets(histogram.positive_spans, histogram.positive_counts, cumulative=False)
+        negative = expand_buckets(histogram.negative_spans, histogram.negative_counts, cumulative=False)
+    else:
+        count, zero_count = histogram.count_int, histogram.zero_count_int
+        positive = expand_buckets(histogram.positive_spans, histogram.positive_deltas, cumulative=True)
+        negative = expand_buckets(histogram.negative_spans, histogram.negative_deltas, cumulative=True)
+    return (
+        is_float, histogram.timestamp, count, zero_count, histogram.sum, histogram.schema, histogram.zero_threshold,
+        positive, negative, list(histogram.custom_values),
+    )
+
+
+def remote_read_histogram(host, port, path, tags, timestamp_ms):
+    """The one histogram of the series with `tags` at `timestamp_ms`, read over the remote-read protocol."""
+    read_request = remote_pb2.ReadRequest()
+    query = read_request.queries.add()
+    query.start_timestamp_ms = timestamp_ms
+    query.end_timestamp_ms = timestamp_ms
+    for name, value in tags.items():
+        query.matchers.append(types_pb2.LabelMatcher(type=types_pb2.LabelMatcher.Type.EQ, name=name, value=value))
+    response = extract_protobuf_from_remote_read_response(get_response_to_remote_read(host, port, path, read_request))
+    [series] = response.results[0].timeseries
+    [histogram] = series.histograms
+    return histogram
+
+
+def test_histogram_matches_prometheus_remote_read():
+    # The whole histogram, not only its count and sum: what ClickHouse serves over remote read for a stored histogram is what
+    # Prometheus serves for the same sample of its own storage. Compared bucket by bucket, since Prometheus may cut the same
+    # buckets into other spans.
+    stored = get_last_stored_histogram("h.schema BETWEEN -4 AND 8")
+    from_prometheus = remote_read_histogram(
+        cluster.prometheus_ip["writer"], cluster.prometheus_port["writer"], "/api/v1/read", stored["tags"], stored["timestamp_ms"]
+    )
+    from_clickhouse = remote_read_histogram(node.ip_address, 9093, "/read", stored["tags"], stored["timestamp_ms"])
+    assert canonical_histogram(from_clickhouse) == canonical_histogram(from_prometheus)
 
 
 def test_nothing_is_lost():

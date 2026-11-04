@@ -98,11 +98,13 @@ namespace
     }
 
     /// Only the settings which don't affect the stored data can be altered
-    /// (`id_generator` and `filter_by_min_time_and_max_time` apply to tables of earlier versions, see checkTimeSeriesSettings).
+    /// (`id_generator` and `filter_by_min_time_and_max_time` apply to tables of earlier versions, `histograms_max_buckets` to tables
+    /// storing histogram samples, see checkTimeSeriesSettings).
     void checkSettingCanBeAltered(std::string_view setting_name, std::string_view storage_name)
     {
         if ((setting_name != "id_generator")
             && (setting_name != "filter_by_min_time_and_max_time")
+            && (setting_name != "histograms_max_buckets")
             && (setting_name != "metric_families_deduplication_cache_size_bytes")
             && (setting_name != "metric_families_deduplication_cache_expiration_seconds")
             && (setting_name != "tags_deduplication_cache_size_bytes")
@@ -1120,18 +1122,20 @@ From [version](#schema-versioning) 12 a row also holds the native histogram samp
 with the same timestamp the one with the greatest total count is kept, on ties the greatest sum, then the other elements decide).
 An integer histogram keeps its counts as `Int64` in the `*_int` elements, a float histogram as `Float64` in the `*_float` elements;
 bit 0 of `flags` tells the flavour. The readers ignore the elements of the other flavour: remote write leaves them 0 and empty,
-an `INSERT` may put anything there.
+and an `INSERT` isn't validated for them.
 The buckets of a side are pairs of the bucket index and the count sorted by index.
 A row of a float-only series has an empty `histograms` array, a row of a histogram-only series has an empty `samples` array.
 The Prometheus remote-read protocol returns both kinds of samples. PromQL queries evaluate the float samples only until the functions
-support native histograms: the histogram samples of the selected series are ignored, without being read.
+support native histograms: the histogram samples of the selected series are ignored, only their timestamps are read to find the
+rows with samples in the queried range.
 
 Counter reset hints are maintained in two places. On insert, after sorting and deduplication, the hint of every histogram sample but
 the first one of each series is recomputed against its predecessor in the same `INSERT`: a decrease of the total count is a reset; with
 the same schema and zero threshold, so is a decrease of any bucket count, the disappearance of a populated bucket, or a change of the
 custom bucket bounds; a change of the schema or of the zero threshold leaves the hint unknown, unless an explicit reset hint whose
 original predecessor was kept already establishes a reset. The first sample of a series keeps the hint it was sent with: its predecessor
-is in an earlier insert, which is not consulted. Gauge markers are kept, and stale samples always get an unknown hint.
+is in an earlier insert, which is not consulted. Gauge markers are kept; a counter sample following a gauge sample, a stale sample and
+the sample following a stale one get an unknown hint.
 When rows are merged by `timeSeriesGroupArrayHistograms` (in background merges, in reads with `FINAL`, and when the aggregate is called
 directly), a hint is cleared to unknown wherever the sample's predecessor is no longer the one the hint was computed against: the first
 sample of every merged array but the first, and every sample whose neighbour changed by sorting or deduplication. Gauge markers are kept.
@@ -1566,6 +1570,7 @@ The following settings can be changed after `CREATE`:
 
 - `metric_families_deduplication_cache_size_bytes`, `metric_families_deduplication_cache_expiration_seconds`
 - `tags_deduplication_cache_size_bytes`, `tags_deduplication_cache_expiration_seconds`
+- `histograms_max_buckets` (tables of [version](#schema-versioning) 12 or later)
 
 ```sql
 ALTER TABLE my_table MODIFY SETTING metric_families_deduplication_cache_expiration_seconds = 600;
@@ -1574,6 +1579,7 @@ ALTER TABLE my_table RESET SETTING metric_families_deduplication_cache_expiratio
 
 Changing a setting of a deduplication cache replaces the cache with an empty one, so the next insert writes all its rows again.
 Setting the size or the expiration to 0 disables the cache.
+Changing `histograms_max_buckets` applies to the inserts started after the change; the histograms already stored are not checked again.
 
 <Note>
 Tables of earlier [versions](#schema-versioning) can also change the settings of those versions which don't affect the stored data:
@@ -1608,7 +1614,7 @@ Here is a list of settings which can be specified while defining a `TimeSeries` 
 | `recent_samples_partition_by` | Expression | `toStartOfInterval(toDateTime(bucket, 'UTC'), toIntervalHour(5))` | Partition key of the inner [recent samples](#recent-samples-table) table, for example `toStartOfHour(toDateTime(bucket, 'UTC'))`. When set explicitly, it overrides the partition key from the engine declaration; if neither is set, one partition per 5 hours is used. Requires `recent_samples_ttl_seconds` to be non-zero |
 | `recent_samples_index_granularity` | UInt64 | 256 | Sets `index_granularity` of the inner [recent samples](#recent-samples-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for a non-MergeTree engine. The default is 8192 for tables of [version](#schema-versioning) 10 or earlier, which store one sample per row. Requires `recent_samples_ttl_seconds` to be non-zero |
 | `recent_samples_index_granularity_bytes` | UInt64 | 131072 | Sets `index_granularity_bytes` of the inner [recent samples](#recent-samples-table) table. When set explicitly, it overrides `index_granularity_bytes` from the engine declaration. Ignored for a non-MergeTree engine. Requires `recent_samples_ttl_seconds` to be non-zero |
-| `histograms_max_buckets` | UInt64 | 0 | The maximum number of buckets (positive and negative together) a single native histogram sample may have; an insert with a bigger histogram is rejected. 0 means no limit, like Prometheus without `native_histogram_bucket_limit`. Requires `version` to be at least 12 |
+| `histograms_max_buckets` | UInt64 | 0 | The maximum number of buckets (positive and negative together) a single native histogram sample may have; an insert with a bigger histogram is rejected. 0 means no limit, like Prometheus without `native_histogram_bucket_limit`. Requires `version` to be at least 12. Can be changed with `ALTER TABLE ... MODIFY SETTING` (see [Altering settings](#altering-settings)) |
 | `tags_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner [tags](#tags-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for a non-MergeTree engine |
 
 ### Settings of the earlier versions {#settings-of-earlier-versions}

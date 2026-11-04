@@ -10,7 +10,9 @@
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesHistogramsColumnsView.h>
 
+#include <algorithm>
 #include <cmath>
+#include <limits>
 #include <span>
 
 
@@ -33,29 +35,33 @@ namespace
 
     using ColumnsView = TimeSeriesHistogramsColumnsView;
 
-    /// Throws INCORRECT_DATA about the histogram sample in the specified row. The timestamps are the elements of the
-    /// `histograms.timestamp` arrays of the block, whose type gives their serialization.
+    /// Throws INCORRECT_DATA about a histogram sample: its number among the samples of the block, the row of the block it belongs
+    /// to (found from the offsets of the outer arrays) and its timestamp, serialized with the type of the `histograms.timestamp` column.
     class InvalidHistogramThrower
     {
     public:
-        InvalidHistogramThrower(const Block & block, const IColumn & timestamps_)
-            : timestamps(timestamps_)
+        InvalidHistogramThrower(const Block & block, const ColumnsView & columns)
+            : timestamps(columns.timestamps)
+            , offsets(*columns.outer_offsets)
             , timestamp_type(assert_cast<const DataTypeArray &>(
                 *block.getByName(TimeSeriesHistogramsColumns::getOuterColumnName(TimeSeriesColumnNames::Timestamp)).type).getNestedType())
         {
         }
 
         template <typename... Args>
-        [[noreturn]] void fail(size_t row, fmt::format_string<Args...> format, Args &&... args) const
+        [[noreturn]] void fail(size_t sample, fmt::format_string<Args...> format, Args &&... args) const
         {
             WriteBufferFromOwnString timestamp_text;
-            timestamp_type->getDefaultSerialization()->serializeText(timestamps, row, timestamp_text, {});
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid histogram sample #{} with timestamp {}: {}",
-                row, timestamp_text.str(), fmt::format(format, std::forward<Args>(args)...));
+            timestamp_type->getDefaultSerialization()->serializeText(timestamps, sample, timestamp_text, {});
+            /// `offsets[i]` is the end of the samples of row `i`, so the row of a sample is the first offset greater than its number.
+            const size_t row = std::upper_bound(offsets.begin(), offsets.end(), sample) - offsets.begin();
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid histogram sample #{} in row #{} with timestamp {}: {}",
+                sample, row, timestamp_text.str(), fmt::format(format, std::forward<Args>(args)...));
         }
 
     private:
         const IColumn & timestamps;
+        const ColumnArray::Offsets & offsets;
         const DataTypePtr timestamp_type;
     };
 
@@ -106,14 +112,22 @@ namespace
 
     /// The buckets of one side: the indexes increase strictly (so they are unique and the pairs are sorted) and no count is negative
     /// (Prometheus's `checkHistogramBuckets`). A count of 0 is allowed, as in Prometheus: the buckets are stored as sent.
+    /// Prometheus addresses the buckets with spans whose offset from the previous span is an `Int32`: a wider gap between two indexes
+    /// can't be returned over remote read, so it is rejected (remote write can't produce it, a direct INSERT can).
     template <typename Count, typename Fail>
     void checkBuckets(const ColumnsView::Pairs<Count> & buckets, std::string_view side, const Fail & fail)
     {
         for (size_t i = 0; i != buckets.size(); ++i)
         {
-            if ((i > 0) && (buckets.indexes[i] <= buckets.indexes[i - 1]))
-                fail("{} side: the bucket indexes must be strictly increasing, but bucket #{} has index {} after index {}",
-                    side, i, buckets.indexes[i], buckets.indexes[i - 1]);
+            if (i > 0)
+            {
+                if (buckets.indexes[i] <= buckets.indexes[i - 1])
+                    fail("{} side: the bucket indexes must be strictly increasing, but bucket #{} has index {} after index {}",
+                        side, i, buckets.indexes[i], buckets.indexes[i - 1]);
+                if (static_cast<Int64>(buckets.indexes[i]) - buckets.indexes[i - 1] - 1 > std::numeric_limits<Int32>::max())
+                    fail("{} side: the gap between the bucket indexes {} and {} is too wide for a span offset",
+                        side, buckets.indexes[i - 1], buckets.indexes[i]);
+            }
             if (buckets.counts[i] < 0)
                 fail("{} side: bucket #{} with index {} has a negative count {}", side, i, buckets.indexes[i], buckets.counts[i]);
         }
@@ -261,7 +275,7 @@ void validateTimeSeriesHistograms(const Block & histograms_block, UInt64 max_buc
         return;
 
     const ColumnsView columns{histograms_block};
-    const InvalidHistogramThrower thrower{histograms_block, columns.timestamps};
+    const InvalidHistogramThrower thrower{histograms_block, columns};
     const auto & schema = columns.schema.getData();
     const auto & zero_threshold = columns.zero_threshold.getData();
     const auto & sum = columns.sum.getData();

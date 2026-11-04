@@ -244,7 +244,8 @@ in the columns chosen by the argument `return_columns`:
   (see the [TimeSeries engine](/reference/engines/table-engines/integrations/time-series#samples-table)), sorted by timestamp and cut to
   the time range. A row has an empty `histograms` array when the series has no histogram samples in its bucket, and an empty `samples`
   array when it has no float samples there. Use the aggregate function `timeSeriesGroupArrayHistograms` to merge the rows of a time series.
-  Only the requested columns are read from the samples table.
+  Only the requested columns are read from the samples table, except the timestamps of a column which isn't requested: they tell the
+  rows with samples of either kind in the time range, so the rows returned don't depend on the requested columns.
 - `'timestamp_and_value'` - the columns `timestamp` and `value` with one float sample per row; the histogram samples are not returned.
 
 A `TimeSeries` table of version 11 or later stores buckets of samples as arrays, the tables of earlier versions store one sample per row.

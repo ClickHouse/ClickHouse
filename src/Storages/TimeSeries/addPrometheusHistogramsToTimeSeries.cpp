@@ -136,6 +136,7 @@ void addPrometheusHistogramsToTimeSeries(
     /// The float samples are sorted by timestamp, like the histogram samples.
     const auto & float_samples = time_series.samples();
     int float_index = 0;
+    bool previous_histogram_skipped = false;
 
     const size_t begin = histograms.getOffsets()[static_cast<ssize_t>(row) - 1];
     const size_t end = begin + histograms.getSize(row);
@@ -147,9 +148,17 @@ void addPrometheusHistogramsToTimeSeries(
         while ((float_index < float_samples.size()) && (float_samples[float_index].timestamp() < timestamp_ms))
             ++float_index;
         if ((float_index < float_samples.size()) && (float_samples[float_index].timestamp() == timestamp_ms))
+        {
+            previous_histogram_skipped = true;
             continue;
+        }
 
-        addHistogram(columns, i, timestamp_ms, *time_series.add_histograms());
+        auto & histogram = *time_series.add_histograms();
+        addHistogram(columns, i, timestamp_ms, histogram);
+        /// A counter hint describes the original predecessor; `GAUGE` describes the sample itself.
+        if (previous_histogram_skipped && histogram.reset_hint() != prometheus::Histogram::GAUGE)
+            histogram.set_reset_hint(prometheus::Histogram::UNKNOWN);
+        previous_histogram_skipped = false;
     }
 }
 

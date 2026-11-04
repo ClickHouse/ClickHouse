@@ -1,0 +1,26 @@
+-- the histograms columns take the type of the timestamps of the table
+histograms.count_int	Array(Int64)
+histograms.timestamp	Array(UInt32)
+samples	Array(Tuple(UInt32, Float32))
+SimpleAggregateFunction(timeSeriesGroupArrayHistograms, Array(Tuple(timestamp DateTime, flags UInt8, counter_reset_hint UInt8, schema Int8, zero_threshold Float64, sum Float64, count_int Int64, zero_count_int Int64, count_float Float64, zero_count_float Float64, positive_int Array(Tuple(index Int32, count Int64)), negative_int Array(Tuple(index Int32, count Int64)), positive_float Array(Tuple(index Int32, count Float64)), negative_float Array(Tuple(index Int32, count Float64)), custom_values Array(Float64))))
+SimpleAggregateFunction(timeSeriesGroupArrayHistograms, Array(Tuple(timestamp UInt32, flags UInt8, counter_reset_hint UInt8, schema Int8, zero_threshold Float64, sum Float64, count_int Int64, zero_count_int Int64, count_float Float64, zero_count_float Float64, positive_int Array(Tuple(index Int32, count Int64)), negative_int Array(Tuple(index Int32, count Int64)), positive_float Array(Tuple(index Int32, count Float64)), negative_float Array(Tuple(index Int32, count Float64)), custom_values Array(Float64))))
+histograms.timestamp	Array(DateTime)
+samples	Array(Tuple(DateTime, Float64))
+-- UInt32 timestamps: the histograms are sorted and split into the buckets with the float samples, the time range covers both kinds
+60	70	80	[(70,1.5)]	[80]	[1]	[0]
+120	125	130	[]	[125,130]	[2,3]	[2,2]
+-- the outer columns and the selector
+[80]	[1]
+[125,130]	[2,3]
+[]	[(80,1)]
+[]	[(125,2)]
+70	1.5
+-- the rows of a bucket are merged by timestamp
+[80]	[1]
+[125,130,140]	[2,3,4]
+[(80,1),(125,2),(130,3),(140,4)]
+-- DateTime timestamps
+1970-01-01 00:01:00	1970-01-01 00:01:10	1970-01-01 00:01:20	[('1970-01-01 00:01:10',1.5)]	['1970-01-01 00:01:20']	[1]
+1970-01-01 00:02:00	1970-01-01 00:02:10	1970-01-01 00:02:10	[]	['1970-01-01 00:02:10']	[2]
+[('1970-01-01 00:01:20',1)]
+[('1970-01-01 00:02:10',2)]

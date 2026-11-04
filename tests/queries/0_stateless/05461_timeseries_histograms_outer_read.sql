@@ -64,7 +64,9 @@ INSERT INTO ts (metric_name, tags, histograms.timestamp, histograms.count_int, h
 SELECT histograms.timestamp, histograms.count_int FROM ts WHERE metric_name = 'parts' ORDER BY ALL;
 SELECT histograms.timestamp, histograms.count_int, histograms.sum FROM ts FINAL WHERE metric_name = 'parts';
 SELECT samples, histograms.count_int FROM ts FINAL WHERE metric_name = 'mixed' ORDER BY ALL;
-SELECT count() FROM ts FINAL;
+-- The rows of the samples table: the two rows of `parts` are merged into one by FINAL (`count()` alone would count the tags rows).
+SELECT count(samples) FROM ts;
+SELECT count(samples) FROM ts FINAL;
 
 SELECT '-- merging an aggregate state preserves ordering and deduplication, including after serialization';
 SELECT arrayMap(h -> (toUnixTimestamp64Milli(h.timestamp), h.count_int), timeSeriesGroupArrayHistogramsMerge(state))

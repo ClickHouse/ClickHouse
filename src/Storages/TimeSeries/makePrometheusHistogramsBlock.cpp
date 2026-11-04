@@ -369,10 +369,11 @@ void dropPrometheusHistograms(
     LOG_WARNING(
         LogFrequencyLimiter(log, 60),
         "{}: Dropped {} native histogram samples: the table stores no histograms because its version {} is older than {}. "
-        "To store native histograms, create a table of the current version and move the data into it",
+        "To store native histograms, create a table of version {} or later and move the data into it",
         time_series_storage.getStorageID().getNameForLogs(),
         num_histograms,
         time_series_storage.getVersion(),
+        TimeSeriesVersion::MIN_WITH_NATIVE_HISTOGRAMS,
         TimeSeriesVersion::MIN_WITH_NATIVE_HISTOGRAMS);
 }
 

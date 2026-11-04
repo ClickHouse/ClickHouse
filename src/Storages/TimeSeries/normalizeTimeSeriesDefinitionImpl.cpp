@@ -238,7 +238,8 @@ namespace
                 setOrCheckDataType(timestamp_type, timestamp_src, samples_timestamp_type, "samples inner column `samples`", "timestamp", table_id);
                 setOrCheckDataType(value_type, value_src, samples_value_type, "samples inner column `samples`", "value", table_id);
             }
-            else if (column_declaration->name == TimeSeriesColumnNames::Histograms)
+            else if (column_declaration->name == TimeSeriesColumnNames::Histograms
+                && getTimeSeriesVersion(query) >= TimeSeriesVersion::MIN_WITH_NATIVE_HISTOGRAMS)
             {
                 auto histograms_timestamp_type = TimeSeriesHistogramsColumns::tryGetTimestampType(column_type);
                 if (!histograms_timestamp_type || !isTimeSeriesGroupArrayHistogramsSimpleAggregate(column_type))
@@ -911,7 +912,7 @@ namespace
             }
 
             /// The `histograms` column exists from the version storing histogram samples (see TimeSeriesVersion.h).
-            if (!new_settings.hasHistogramsInSamples())
+            if (old_settings.hasHistogramsInSamples() && !new_settings.hasHistogramsInSamples())
                 remove_column(TimeSeriesColumnNames::Histograms);
             return;
         }
