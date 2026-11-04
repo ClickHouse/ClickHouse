@@ -3,8 +3,6 @@
 
 -- Tests that the query condition cache rejects queries with FINAL keyword
 
-SET allow_experimental_analyzer = 1;
-
 DROP TABLE IF EXISTS tab;
 
 CREATE TABLE tab (a Int64, b Int64) ENGINE = ReplacingMergeTree ORDER BY a;

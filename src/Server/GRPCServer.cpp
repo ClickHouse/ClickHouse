@@ -1074,13 +1074,12 @@ namespace
         });
 
         /// Set callbacks to execute function input().
-        query_context->setInputInitializer([this] (ContextPtr context, const StoragePtr & input_storage)
+        query_context->setInputInitializer([this] (ContextPtr context, const ColumnsDescription &, const Block & header)
         {
             if (context != query_context)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected context in Input initializer");
             input_function_is_used = true;
-            auto metadata_snapshot = input_storage->getInMemoryMetadataPtr(context, false);
-            initializePipeline(metadata_snapshot->getSampleBlock());
+            initializePipeline(header);
         });
 
         query_context->setInputBlocksReaderCallback([this](ContextPtr context) -> Block
@@ -1532,7 +1531,8 @@ namespace
         /// because the client may decide to send another query with the same query ID or session ID
         /// immediately after it receives our final result, and it's prohibited to have
         /// two queries executed at the same time with the same query ID or session ID.
-        io.process_list_entries.clear();
+        /// `io` goes as a whole: its callbacks read the process list elements of their contexts.
+        io = {};
         if (query_context)
             query_context->setProcessListElement(nullptr);
         if (session)
@@ -1808,7 +1808,8 @@ namespace
             return;
 
         /// Copy output to `result.output`, with optional compressing.
-        if (write_buffer)
+        /// A canceled buffer holds incomplete output which can be neither finalized nor sent.
+        if (write_buffer && !write_buffer->isCanceled())
         {
             size_t output_size = 0;
             if (send_final_message)

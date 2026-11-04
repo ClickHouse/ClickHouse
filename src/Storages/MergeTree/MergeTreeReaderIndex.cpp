@@ -58,7 +58,7 @@ size_t MergeTreeReaderIndex::readRows(
     size_t /* current_range_last_mark */,
     bool continue_reading,
     size_t max_rows_to_read,
-    MutableColumns & res_columns)
+    MutableColumns & res_columns, Columns & /* shared_columns */)
 {
     if (res_columns.size() != 1)
     {
