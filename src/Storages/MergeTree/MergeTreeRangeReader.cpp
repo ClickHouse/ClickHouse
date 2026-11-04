@@ -1856,15 +1856,18 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
         block.insert({result.columns[pos], name_and_type->type, name_and_type->name});
 
     {
-        /// Columns might be projected out. We need to store them here so that default columns can be evaluated later.
-        Block additional_columns = block;
-
-        /// Carry over columns projected out at earlier steps: they may be needed
-        /// to evaluate defaults of columns missing in the part.
-        for (const auto & col : result.additional_columns)
+        /// Columns might be projected out. A later step may need them to evaluate defaults of columns missing in the part.
+        Block additional_columns;
+        if (keep_additional_columns)
         {
-            if (!additional_columns.has(col.name))
-                additional_columns.insert(col);
+            additional_columns = block;
+
+            /// Carry over columns projected out at earlier steps.
+            for (const auto & col : result.additional_columns)
+            {
+                if (!additional_columns.has(col.name))
+                    additional_columns.insert(col);
+            }
         }
 
         if (prewhere_info->actions)
