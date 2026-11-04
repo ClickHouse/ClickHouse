@@ -2842,7 +2842,20 @@ try
             updateLevels(config(), logger());
             /// File-only, so `remote_servers` ignores the command line: `Cluster` takes the server's own `tcp_port` from this configuration
             /// to find its local replicas, and with `-- --tcp_port` the replicas on the file's port would become remote.
-            global_context->setClustersConfig(loaded_config, has_zookeeper);
+            /// The exception is `port_offset`: `Cluster` shifts that `tcp_port` by it to get the port the listener bound, so it must
+            /// be the effective offset, including one passed as `-- --port_offset`. Otherwise a replica on the unshifted port would be
+            /// taken as local while another process may listen there. The offset cannot change on reload (checked above).
+            ConfigurationPtr clusters_config = loaded_config;
+            if (getPortOffsetFromConfig(*loaded_config) != startup_port_offset)
+            {
+                Poco::AutoPtr<Poco::Util::MapConfiguration> port_offset_override(new Poco::Util::MapConfiguration);
+                port_offset_override->setInt("port_offset", startup_port_offset);
+                Poco::AutoPtr<Poco::Util::LayeredConfiguration> file_with_port_offset(new Poco::Util::LayeredConfiguration);
+                file_with_port_offset->add(loaded_config, PRIO_DEFAULT);
+                file_with_port_offset->add(port_offset_override, PRIO_APPLICATION);
+                clusters_config = file_with_port_offset;
+            }
+            global_context->setClustersConfig(clusters_config, has_zookeeper);
             global_context->setMacros(std::make_unique<Macros>(config(), "macros", log));
             global_context->setExternalAuthenticatorsConfig(config());
 

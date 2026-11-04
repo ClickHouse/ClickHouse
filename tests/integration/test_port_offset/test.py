@@ -47,6 +47,17 @@ node_embedded_keeper = cluster.add_instance(
     macros={"shard": 1, "replica": 1},
 )
 
+# Node with port_offset=100 passed on the command line instead of the configuration file: the
+# static `remote_servers` clusters, built from the file alone, must still follow the effective offset.
+node_cmdline_offset = cluster.add_instance(
+    "node_cmdline_offset",
+    main_configs=[
+        "configs/config.d/ports_offset.xml",
+        "configs/config.d/remote_servers.xml",
+    ],
+    extra_args="--port_offset=100",
+)
+
 
 @pytest.fixture(scope="module")
 def start_cluster():
@@ -349,21 +360,23 @@ def test_port_offset_remote_servers_use_bound_port(start_cluster):
     A replica that omits `<port>` inherits the local `tcp_port`, which the offset shifts
     from `8900` to `9000`, and an explicit `<port>9000</port>` names the shifted listener,
     so in both cases the replica is the server itself: it is reported as local and queries
-    through the cluster reach it.
+    through the cluster reach it. The same holds when the offset comes from the command line
+    rather than from the configuration file.
     """
-    for name in ["implicit_port", "explicit_port"]:
-        assert (
-            node_offset.query(
-                f"SELECT port, is_local FROM system.clusters WHERE cluster = '{name}'"
-            ).strip()
-            == "9000\t1"
-        ), name
-        assert (
-            node_offset.query(
-                f"SELECT * FROM cluster('{name}', system.one) SETTINGS prefer_localhost_replica = 0"
-            ).strip()
-            == "0"
-        ), name
+    for node in [node_offset, node_cmdline_offset]:
+        for name in ["implicit_port", "explicit_port"]:
+            assert (
+                node.query(
+                    f"SELECT port, is_local FROM system.clusters WHERE cluster = '{name}'"
+                ).strip()
+                == "9000\t1"
+            ), (node.name, name)
+            assert (
+                node.query(
+                    f"SELECT * FROM cluster('{name}', system.one) SETTINGS prefer_localhost_replica = 0"
+                ).strip()
+                == "0"
+            ), (node.name, name)
 
 
 def test_port_offset_embedded_keeper_client_uses_shifted_port(start_cluster):
