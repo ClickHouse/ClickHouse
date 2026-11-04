@@ -1,10 +1,13 @@
 #pragma once
 
-/// Not built on Windows: this rests on `getrlimit` for the stack size and on mmap guard pages,
-/// and its only consumer, `AsyncTaskExecutor`, is not built there either. `boost::context` itself
-/// does support Windows - see the PE assembly variants selected in contrib/boost-cmake - so this
-/// is about the stack allocator, not about fibers being impossible.
-#if !defined(OS_WINDOWS)
+/// Not implemented on Windows (see `CoroutineStack.cpp`): it rests on `getrlimit` for the stack
+/// size and on mmap guard pages, and its only consumer, `AsyncTaskExecutor`, is not built there
+/// either. `boost::context` itself does support Windows - see the PE assembly variants selected in
+/// contrib/boost-cmake - so this is about the stack allocator, not about fibers being impossible.
+///
+/// The declaration stays visible on Windows, because `StackfulCoroutine` names it, and
+/// `StackfulCoroutine` is built everywhere: `checkStackSize` asks it for the current coroutine.
+/// Nothing constructs a `CoroutineStack` there.
 #include <boost/context/stack_context.hpp>
 
 /// This is an implementation of allocator for coroutine stack.
@@ -40,5 +43,3 @@ private:
     const size_t page_size;
     Bounds last_allocated_bounds;
 };
-
-#endif
