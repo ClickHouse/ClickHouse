@@ -38,7 +38,8 @@ HTTPHeaderEntries getTraceContextHeaders()
     return headers;
 }
 
-String doSendTask(const String & endpoint_uri, const String & task_id, std::function<void(WriteBuffer&)> task_serializer, const String & unique_temp_file_path, const TaskCollectors & collectors, const ContextPtr & context)
+/// An empty `task_serializer` sends no body, an empty `unique_temp_file_path` no `temp_path`.
+String doSendTask(const String & endpoint_uri, const String & operation, const String & task_id, std::function<void(WriteBuffer&)> task_serializer, const String & unique_temp_file_path, const TaskCollectors & collectors, const ContextPtr & context)
 {
     auto credentials = context->getInterserverCredentials();
     Poco::Net::HTTPBasicCredentials creds{};
@@ -59,18 +60,14 @@ String doSendTask(const String & endpoint_uri, const String & task_id, std::func
     read_settings.http_settings.retry_max_backoff_ms = 1000;
 
     Poco::URI uri(endpoint_uri);
-    uri.addQueryParameter("operation",   "start");
+    uri.addQueryParameter("operation",   operation);
     uri.addQueryParameter("compress",    "false");
     uri.addQueryParameter("task_id",     task_id);
-    uri.addQueryParameter("temp_path",   unique_temp_file_path);
+    if (!unique_temp_file_path.empty())
+        uri.addQueryParameter("temp_path",   unique_temp_file_path);
     /// Absent when nothing is collected, so an older worker sees the request it has always seen.
     if (collectors.any())
         uri.addQueryParameter("collect", collectors.toString());
-
-    auto write_body_callback = [&task_serializer] (WriteBuffer & out)
-    {
-        task_serializer(out);
-    };
 
     auto in = BuilderRWBufferFromHTTP(uri)
         .withConnectionGroup(HTTPConnectionGroupType::HTTP)
@@ -78,7 +75,7 @@ String doSendTask(const String & endpoint_uri, const String & task_id, std::func
         .withTimeouts(timeouts)
         .withSettings(read_settings)
         .withHeaders(getTraceContextHeaders())
-        .withOutCallback(write_body_callback)
+        .withOutCallback(std::move(task_serializer))
         .withDelayInit(false)
         .create(creds);
 
@@ -110,7 +107,7 @@ String sendTask(const String & endpoint_uri, const String & unique_task_id, cons
 
     try
     {
-        return doSendTask(endpoint_uri, unique_task_id, task_serializer, unique_temp_file_path, collectors, context);
+        return doSendTask(endpoint_uri, "start", unique_task_id, task_serializer, unique_temp_file_path, collectors, context);
     }
     catch (...)
     {

@@ -43,11 +43,15 @@ std::string StatelessWorkerEndpoint::getId(const std::string & path) const
 
 void serializeTask(const DistributedQueryTaskDescription & task_description, WriteBuffer & out)
 {
+    serializeTask(task_description, task_description.task, task_description.exchange_stream_sources, out);
+}
+
+void serializeTask(const DistributedQueryTaskDescription & task_description, const DistributedQueryTask & task,
+    const ExchangeStreamSources & stream_sources, WriteBuffer & out)
+{
     writeVarUInt(task_description.serialization_version, out);
 
     writeStringBinary(task_description.initial_query_id, out);
-
-    const auto & task = task_description.task;
 
     writeStringBinary(task.task_id, out);
     writeStringBinary(task_description.serialized_query_plan, out);
@@ -85,8 +89,8 @@ void serializeTask(const DistributedQueryTaskDescription & task_description, Wri
         writeVarUInt(exchange.destination_bucket_count, out);
     }
 
-    writeVarUInt(task_description.exchange_stream_sources.stream_hosts.size(), out);
-    for (const auto & [stream, address] : task_description.exchange_stream_sources.stream_hosts)
+    writeVarUInt(stream_sources.stream_hosts.size(), out);
+    for (const auto & [stream, address] : stream_sources.stream_hosts)
     {
         writeStringBinary(stream, out);
         writeStringBinary(address.host, out);
@@ -249,6 +253,21 @@ void deserializeTask(DistributedQueryTaskDescription & task_description, ReadBuf
     }
 }
 
+namespace
+{
+
+DistributedQueryTaskDescription readTaskDescription(ReadBufferPtr & body)
+{
+    DistributedQueryTaskDescription task_description;
+    deserializeTask(task_description, *body);
+    /// Read the rest of the body, otherwise the keep-alive connection is closed.
+    body->ignoreAll();
+    body.reset();
+    return task_description;
+}
+
+}
+
 void StatelessWorkerEndpoint::processQuery(const HTMLForm & params, ReadBufferPtr body, WriteBuffer & out, HTTPServerResponse & response)
 {
     auto operation = params.get("operation");
@@ -262,15 +281,8 @@ void StatelessWorkerEndpoint::processQuery(const HTMLForm & params, ReadBufferPt
         if (params.has("collect"))
             collectors = TaskCollectors::parse(params.get("collect"));
 
-        /// Deserialize task fields from the request body
-        DistributedQueryTaskDescription task_description;
-        deserializeTask(task_description, *body);
-        /// Read the rest of the body, otherwise the keep-alive connection is closed.
-        body->ignoreAll();
-        body.reset();
-
         /// Pass it to the runner to start execution
-        task_runner->startTask(task_id, task_description, unique_temp_file_path, collectors);
+        task_runner->startTask(task_id, readTaskDescription(body), unique_temp_file_path, collectors);
     }
     else if (operation == "get_status")
     {
