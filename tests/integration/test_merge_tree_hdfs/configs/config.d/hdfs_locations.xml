@@ -1,0 +1,13 @@
+<clickhouse>
+    <include_from>/etc/clickhouse-server/config.d/hdfs_locations.xml</include_from>
+    <hdfs_locations>
+        <locations>
+            <main>
+                <object_storage_type>hdfs</object_storage_type>
+                <endpoint>hdfs://hdfs1:9000/sql_disk_filter/filter_locations/</endpoint>
+                <local>1</local>
+                <enabled>1</enabled>
+            </main>
+        </locations>
+    </hdfs_locations>
+</clickhouse>

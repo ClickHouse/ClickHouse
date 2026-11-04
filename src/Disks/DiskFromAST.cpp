@@ -34,16 +34,20 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-/// Checks the endpoint the disk was built with: macros in its definition may expand to another host by now.
+/// Checks the endpoints the disk was built with, in every location: macros in its definition may expand
+/// to another host by now.
 static void checkCustomDiskRemoteHosts(const DiskPtr & disk, const ContextPtr & context)
 {
-    auto * object_disk = dynamic_cast<DiskObjectStorage *>(disk.get());
+    const auto * object_disk = dynamic_cast<const DiskObjectStorage *>(disk.get());
     if (!object_disk)
         return;
 
-    const auto storage = object_disk->getObjectStorage();
-    if (storage->getType() == ObjectStorageType::HDFS)
-        context->getGlobalContext()->getRemoteHostFilter().checkURL(Poco::URI(storage->getDescription()));
+    const auto & filter = context->getGlobalContext()->getRemoteHostFilter();
+    for (const auto & [_, storage] : object_disk->getObjectStorages())
+    {
+        if (storage->getType() == ObjectStorageType::HDFS)
+            filter.checkURL(Poco::URI(storage->getDescription()));
+    }
 }
 
 /// Resolve `include`, `from_env` and `from_zk` in a disk definition.
@@ -246,7 +250,7 @@ static std::vector<std::pair<size_t, std::string>> getOrCreateCustomDisk(
 
     /// A reused disk was checked against an older `remote_url_allow_hosts` or only warned about on load.
     /// A short `ATTACH` reuses the disk of its own stored definition, which is exempt like loading at start.
-    if (!created && !attach && !stored_definition && config->getString("object_storage_type", config->getString("type", "")) == "hdfs")
+    if (!created && !attach && !stored_definition && !config->has("disk"))
         checkCustomDiskRemoteHosts(disk, context);
 
     return matches;
