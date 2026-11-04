@@ -52,7 +52,7 @@ SELECT groupArray(b) FROM (
 WHERE n = 0 AND length(s) = 1000
 SETTINGS join_algorithm = 'grace_hash', grace_hash_join_initial_buckets = 1, max_threads = 1, max_block_size = 20,
     enable_join_runtime_filters = 0, min_joined_block_size_rows = 10, min_joined_block_size_bytes = 0,
-    max_joined_block_size_rows = 65409, max_joined_block_size_bytes = 16000;
+    max_joined_block_size_rows = 65409, max_joined_block_size_bytes = 16000, query_plan_push_down_volume_reducing_functions = 0;
 
 DROP TABLE t_l;
 DROP TABLE t_r;
