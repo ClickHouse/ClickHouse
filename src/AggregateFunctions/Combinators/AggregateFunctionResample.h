@@ -105,33 +105,38 @@ public:
         /// occupies at least one byte, so a legitimate nested chain like `countResampleIfResample(
         /// 0, 2048, 1, 0, 2048, 1)` (4M buckets of 8-byte count state = ~32 MiB) stays allowed.
         ///
-        /// The pathological case is a zero-byte nested state: `sizeOfData` is zero no matter how many
-        /// buckets, so the state-size cap passes vacuously, but every loop still iterates over `total`
-        /// no-op calls and nested -Resample combinators multiply those loops. For example
+        /// The pathological case is a zero-byte nested -Resample state: its `sizeOfData` is zero no
+        /// matter how many buckets, so the state-size cap passes vacuously, but every loop still
+        /// iterates over `total` no-op calls and nested -Resample combinators multiply those loops.
+        /// A wrapper such as -Distinct can add its own state bytes without eliminating those calls,
+        /// so inspect the full nested chain instead of only the immediate nested state. For example
         /// `nothingResampleIfResample(0, 1048576, 1, 0, 1048576, 1)` has a zero-sized state yet spins
         /// through 2^40 nested calls; before `(begin, begin, step)` was rejected up front, an empty
         /// innermost range made the entire nested state zero bytes and triggered the same explosion in
         /// `countResampleIfResampleIfResampleIfResample(0, 0, 1, 0, 1048576, 1, 0, 1048576, 1, 0, 1048576, 1)`.
-        /// Bound the number of nested states directly in that case; nonzero nested states remain bounded
-        /// by `sizeOfData` / `max_state_size` alone.
-        if (size_of_data == 0)
+        /// Bound the number of nested states directly in that case; chains without a zero-sized
+        /// -Resample state remain bounded by `sizeOfData` / `max_state_size` alone.
+        size_t nested_elements = total;
+        bool nested_elements_overflow = false;
+        bool has_zero_sized_nested_resample = size_of_data == 0;
+        for (auto nested = nested_function; nested; nested = nested->getNestedFunction())
         {
-            size_t nested_elements = total;
-            for (auto nested = nested_function; nested; nested = nested->getNestedFunction())
+            if (const auto * resample = dynamic_cast<const AggregateFunctionResample<UInt64> *>(nested.get()))
             {
-                size_t nested_total = 0;
-                if (const auto * resample = dynamic_cast<const AggregateFunctionResample<UInt64> *>(nested.get()))
-                    nested_total = resample->total;
-                else if (const auto * resample_signed = dynamic_cast<const AggregateFunctionResample<Int64> *>(nested.get()))
-                    nested_total = resample_signed->total;
-                else
-                    continue;
-                if (common::mulOverflow(nested_elements, nested_total, nested_elements) || nested_elements > max_elements)
-                    throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                        "The nested -Resample combinators of function {} would iterate over too many "
-                        "zero-sized nested states", getName());
+                has_zero_sized_nested_resample |= resample->size_of_data == 0;
+                nested_elements_overflow |= common::mulOverflow(nested_elements, resample->total, nested_elements);
+            }
+            else if (const auto * resample = dynamic_cast<const AggregateFunctionResample<Int64> *>(nested.get()))
+            {
+                has_zero_sized_nested_resample |= resample->size_of_data == 0;
+                nested_elements_overflow |= common::mulOverflow(nested_elements, resample->total, nested_elements);
             }
         }
+
+        if (has_zero_sized_nested_resample && (nested_elements_overflow || nested_elements > max_elements))
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                "The nested -Resample combinators of function {} would iterate over too many "
+                "zero-sized nested states", getName());
     }
 
     String getName() const override

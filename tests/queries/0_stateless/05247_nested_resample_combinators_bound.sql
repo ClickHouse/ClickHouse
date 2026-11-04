@@ -14,3 +14,5 @@ SELECT countResampleIfResample(0, 0, 1, 0, 1024, 1)(number, 1, number) FROM numb
 -- Zero-sized nested state: `sizeOfData` passes vacuously, but every create/destroy/merge loop still iterates over
 -- the product of the nested element counts, so the nested-element cap kicks in. `nothing` has a zero-sized state.
 SELECT nothingResampleIfResample(0, 2048, 1, 0, 2048, 1)(number, 1, number) FROM numbers(1); -- { serverError ARGUMENT_OUT_OF_BOUND }
+-- Wrappers that add their own state bytes must not hide a zero-sized nested -Resample state.
+SELECT nothingResampleDistinctResample(0, 1048576, 1, 0, 1048576, 1)(number, number) FROM numbers(1); -- { serverError ARGUMENT_OUT_OF_BOUND }
