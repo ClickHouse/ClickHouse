@@ -258,3 +258,36 @@ SELECT 'typed Dynamic path, other paths change -> reject:';
 ALTER TABLE t_alter_key_sub MODIFY COLUMN data JSON(a Dynamic, c String); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 SELECT 'key subcolumn values:', groupArray(k) FROM (SELECT data.a.:Float64 AS k FROM t_alter_key_sub ORDER BY id);
 DROP TABLE t_alter_key_sub;
+
+-- A typed path takes the whole object below it, also when the key path below it is typed.
+CREATE TABLE t_alter_key_sub (id UInt32, data JSON(b.c Int64)) ENGINE = MergeTree ORDER BY (data.b.c, id) SETTINGS index_granularity = 1;
+INSERT INTO t_alter_key_sub SELECT number, toJSONString(map('b', map('c', number))) FROM numbers(3);
+SELECT 'typed path above a typed key path is added -> reject:';
+ALTER TABLE t_alter_key_sub MODIFY COLUMN data JSON(b String, b.c Int64); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+SELECT 'key subcolumn values:', groupArray(k) FROM (SELECT data.b.c AS k FROM t_alter_key_sub ORDER BY id);
+DROP TABLE t_alter_key_sub;
+
+-- A typed Variant path: the variant is chosen again, so the String '1' comes back as Int64 1. A text INSERT already
+-- stores it as Int64, so the rows are read from RowBinary.
+CREATE TABLE t_alter_key_sub (id UInt32, data JSON(a Variant(Int64, String))) ENGINE = MergeTree ORDER BY (data.a.String, id) SETTINGS index_granularity = 1, allow_nullable_key = 1;
+INSERT INTO t_alter_key_sub SELECT * FROM format(RowBinary, 'id UInt32, data JSON(a Variant(Int64, String))', unhex('000000000101610000000000000000000100000001016101013102000000010161010178'));
+SELECT 'typed Variant path, other paths change -> reject:';
+ALTER TABLE t_alter_key_sub MODIFY COLUMN data JSON(a Variant(Int64, String), c String); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+SELECT 'key subcolumn values:', groupArray(k) FROM (SELECT data.a.String AS k FROM t_alter_key_sub ORDER BY id);
+DROP TABLE t_alter_key_sub;
+
+-- A typed Float64 path: inf and nan are written as null, which comes back as 0.
+CREATE TABLE t_alter_key_sub (id UInt32, data JSON(a Float64)) ENGINE = MergeTree ORDER BY (data.a, id) SETTINGS index_granularity = 1;
+INSERT INTO t_alter_key_sub VALUES (0, '{"a" : "-inf"}'), (1, '{"a" : 1}'), (2, '{"a" : "inf"}');
+SELECT 'typed Float64 path, other paths change -> reject:';
+ALTER TABLE t_alter_key_sub MODIFY COLUMN data JSON(a Float64, c String); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+SELECT 'key subcolumn values:', groupArray(k) FROM (SELECT data.a AS k FROM t_alter_key_sub ORDER BY id);
+DROP TABLE t_alter_key_sub;
+
+-- A typed Decimal path: a value with a fraction is written as a JSON number and parsed through Float64.
+CREATE TABLE t_alter_key_sub (id UInt32, data JSON(a Decimal(38, 2))) ENGINE = MergeTree ORDER BY (data.a, id) SETTINGS index_granularity = 1;
+INSERT INTO t_alter_key_sub VALUES (0, '{"a" : "12345678901234567.81"}'), (1, '{"a" : "12345678901234567.82"}'), (2, '{"a" : "12345678901234567.83"}');
+SELECT 'typed Decimal path, other paths change -> reject:';
+ALTER TABLE t_alter_key_sub MODIFY COLUMN data JSON(a Decimal(38, 2), c String); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+SELECT 'key subcolumn values:', groupArray(k) FROM (SELECT data.a AS k FROM t_alter_key_sub ORDER BY id);
+DROP TABLE t_alter_key_sub;

@@ -78,3 +78,11 @@ combined subcolumn in a key expression, JSON type change -> reject:
 key subcolumn values:	['0','1','2']
 typed Dynamic path, other paths change -> reject:
 key subcolumn values:	[0.5,1.5,2]
+typed path above a typed key path is added -> reject:
+key subcolumn values:	[0,1,2]
+typed Variant path, other paths change -> reject:
+key subcolumn values:	['1','x']
+typed Float64 path, other paths change -> reject:
+key subcolumn values:	[-inf,1,inf]
+typed Decimal path, other paths change -> reject:
+key subcolumn values:	[12345678901234567.81,12345678901234567.82,12345678901234567.83]

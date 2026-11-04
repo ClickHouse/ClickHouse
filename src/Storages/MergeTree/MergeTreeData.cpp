@@ -5987,9 +5987,9 @@ bool conversionKeepsSubcolumnValues(const DataTypePtr & from, const DataTypePtr 
             return false;
     }
 
-    /// A `JSON` -> `JSON` conversion parses the data again: it drops what the `SKIP` rules of `to` match, a typed path
-    /// takes the whole object below it, and `Dynamic` values get their types inferred again. So the key subcolumn must
-    /// read a typed path in both types, and in `to` that path's type must have no `Dynamic` or `JSON` inside.
+    /// A `JSON` -> `JSON` conversion writes the data as text and parses it again: the `SKIP` rules of `to` drop paths and
+    /// a typed path takes the whole object below it. So the key subcolumn must read a typed path in both types, with no
+    /// typed path above it, whose type in `to` reads back the same values.
     if (const auto * to_object = typeid_cast<const DataTypeObject *>(to.get()); to_object && !from->equals(*to))
     {
         auto is_typed_path = [](const ISerialization::SubstreamPath & path)
@@ -5998,14 +5998,29 @@ bool conversionKeepsSubcolumnValues(const DataTypePtr & from, const DataTypePtr 
                 && (path.front().type == ISerialization::Substream::ObjectTypedPath
                     || path.front().type == ISerialization::Substream::ObjectTypedSharedDataPath);
         };
-        if (!is_typed_path(from_info->substreams_path) || !is_typed_path(to_info->substreams_path))
+        const auto * from_object = typeid_cast<const DataTypeObject *>(from.get());
+        if (!from_object || !is_typed_path(from_info->substreams_path) || !is_typed_path(to_info->substreams_path))
             return false;
+
+        /// The type of a `Variant` or `Dynamic` value is chosen again, `inf` and `nan` are written as `null`, and a
+        /// `Decimal` with a fraction is parsed through `Float64`.
+        auto changes_on_reparse = [](const IDataType & type)
+        {
+            return isVariant(type) || isDynamic(type) || isObject(type) || isFloat(type) || isDecimal(type);
+        };
 
         const String & path = to_info->substreams_path.front().object_path_name;
         auto typed_path = to_object->getTypedPaths().find(path);
-        if (typed_path == to_object->getTypedPaths().end() || typed_path->second->hasDynamicStructure()
+        if (typed_path == to_object->getTypedPaths().end() || anyInTypeTree(*typed_path->second, changes_on_reparse)
             || skipsJSONPath(*to_object, path))
             return false;
+
+        for (size_t dot = path.find('.'); dot != String::npos; dot = path.find('.', dot + 1))
+        {
+            const String prefix = path.substr(0, dot);
+            if (to_object->getTypedPaths().contains(prefix) || from_object->getTypedPaths().contains(prefix))
+                return false;
+        }
     }
 
     auto goes_through = [](const DataTypePtr & type, std::string_view name, const ISerialization::SubstreamPath & path)
