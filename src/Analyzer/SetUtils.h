@@ -30,4 +30,8 @@ struct GetSetElementParams
 /// Array or Tuple). Values are read column-natively - no `Field` is materialized.
 ColumnsWithTypeAndName getSetElementsForConstantValue(const DataTypePtr & expression_type, const ColumnPtr & rhs_column, const DataTypePtr & rhs_type, GetSetElementParams params);
 
+/// Return whether a constant right-hand side denotes an empty collection before its elements are
+/// converted to the left operand type.
+bool isEmptySetForConstantValue(const ColumnPtr & rhs_column, const DataTypePtr & rhs_type);
+
 }

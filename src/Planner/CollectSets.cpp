@@ -142,7 +142,12 @@ public:
                 sets.addFromStorage(set_key, std::move(ast), static_cast<StorageSharedSet *>(storage_set)->getSet(planner_context.getQueryContext()), second_argument_table->getStorageID());
             else
 #endif
-            sets.addFromTuple(set_key, std::move(ast), std::move(set), settings);
+            sets.addFromTuple(
+                set_key,
+                std::move(ast),
+                std::move(set),
+                settings,
+                isEmptySetForConstantValue(constant_node->getColumn(), constant_node->getResultType()));
         }
         else if (in_second_argument_node_type == QueryTreeNodeType::QUERY ||
             in_second_argument_node_type == QueryTreeNodeType::UNION ||

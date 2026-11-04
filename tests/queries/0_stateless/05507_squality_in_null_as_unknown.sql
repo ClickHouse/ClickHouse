@@ -10,6 +10,10 @@ SELECT 63 IN (63, NULL), 63 NOT IN (63, NULL);
 SELECT groupArray(number) FROM numbers(3) WHERE number NOT IN (1);
 SELECT groupArray(NOT has([1], number)) FROM numbers(2);
 SELECT materialize(NULL) IN (1), materialize(NULL) NOT IN (1), materialize(NULL) IN (), materialize(NULL) NOT IN ();
+SELECT CAST(NULL AS Nullable(UInt8)) IN (256), CAST(NULL AS Nullable(UInt8)) NOT IN (256);
+SELECT value, value IN (256), value NOT IN (256)
+FROM VALUES('value Nullable(UInt8)', (NULL), (1))
+ORDER BY value NULLS FIRST;
 SELECT NULL IN (63), NULL NOT IN (63);
 SELECT NULL IN (), NULL NOT IN ();
 SELECT 84 IN (SELECT * FROM VALUES('value Nullable(Int64)', (63), (NULL)));
@@ -24,6 +28,9 @@ SELECT NULL IN (NULL), NULL NOT IN (NULL);
 
 SET allow_experimental_analyzer = 0;
 SELECT 84 IN (63, NULL), 84 NOT IN (63, NULL);
+SELECT value, value IN (256), value NOT IN (256)
+FROM VALUES('value Nullable(UInt8)', (NULL), (1))
+ORDER BY value NULLS FIRST;
 SELECT NULL IN (63), NULL NOT IN (63);
 SELECT NULL IN (), NULL NOT IN ();
 SELECT

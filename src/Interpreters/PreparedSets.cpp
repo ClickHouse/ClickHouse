@@ -138,8 +138,8 @@ SetPtr FutureSetFromStorage::buildOrderedSetInplace(const ContextPtr &)
 
 FutureSetFromTuple::FutureSetFromTuple(
     Hash hash_, ASTPtr ast_, ColumnsWithTypeAndName block,
-    bool transform_null_in, SizeLimits size_limits)
-    : hash(hash_), ast(std::move(ast_))
+    bool transform_null_in, SizeLimits size_limits, std::optional<bool> source_is_empty_)
+    : hash(hash_), ast(std::move(ast_)), source_is_empty(source_is_empty_.value_or(block.empty() || block.front().column->empty()))
 {
     ColumnsWithTypeAndName header = block;
     for (auto & elem : header)
@@ -784,12 +784,17 @@ String PreparedSets::toString(const PreparedSets::Hash & key, const DataTypes & 
     return buf.str();
 }
 
-FutureSetFromTuplePtr PreparedSets::addFromTuple(const Hash & key, ASTPtr ast, ColumnsWithTypeAndName block, const Settings & settings)
+FutureSetFromTuplePtr PreparedSets::addFromTuple(
+    const Hash & key,
+    ASTPtr ast,
+    ColumnsWithTypeAndName block,
+    const Settings & settings,
+    std::optional<bool> source_is_empty)
 {
     const FutureSetSettings set_settings(settings);
     auto from_tuple = std::make_shared<FutureSetFromTuple>(
         key, std::move(ast), std::move(block),
-        set_settings.transform_null_in, set_settings.size_limits);
+        set_settings.transform_null_in, set_settings.size_limits, source_is_empty);
 
     const auto & set_types = from_tuple->getTypes();
     auto & sets_by_hash = sets_from_tuple[key];

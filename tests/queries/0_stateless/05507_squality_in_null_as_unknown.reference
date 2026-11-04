@@ -5,6 +5,9 @@ Nullable(UInt8)	\N	\N
 [1,0]
 \N	\N	0	1
 \N	\N
+\N	\N	\N
+1	0	1
+\N	\N
 0	1
 \N
 \N
@@ -12,6 +15,8 @@ Nullable(UInt8)	\N	\N
 \N	\N
 \N	\N
 \N	\N
+\N	\N	\N
+1	0	1
 \N	\N
 0	1
 Nullable(UInt8)	0	\N

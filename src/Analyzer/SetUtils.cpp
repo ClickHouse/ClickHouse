@@ -645,6 +645,25 @@ bool columnCollectionHasTuple(const ColumnPtr & rhs_column, const DataTypePtr & 
 
 }
 
+bool isEmptySetForConstantValue(const ColumnPtr & rhs_column, const DataTypePtr & rhs_type)
+{
+    const WhichDataType rhs_which_type(rhs_type);
+    if (rhs_which_type.isArray())
+    {
+        const auto full_column = rhs_column->convertToFullColumnIfConst();
+        const auto & array = assert_cast<const ColumnArray &>(*full_column);
+        return array.getOffsets().empty() || array.getOffsets()[0] == 0;
+    }
+
+    if (rhs_which_type.isTuple())
+    {
+        const auto full_column = rhs_column->convertToFullColumnIfConst();
+        return assert_cast<const ColumnTuple &>(*full_column).tupleSize() == 0;
+    }
+
+    return false;
+}
+
 /// Format: lhs IN rhs
 /// Explanation of the setting: `transform_null_in`. First of all, it is only applicable if the lhs is nullable.
 /// Then if lhs is nullable and `transform_null_in` is true, then NULLs from rhs are inserted into the result set as well.

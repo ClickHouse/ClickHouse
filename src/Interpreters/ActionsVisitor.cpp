@@ -624,7 +624,11 @@ FutureSetPtr makeExplicitSet(
     if (auto set = prepared_sets.findTuple(set_key, set_element_keys))
         return set; /// Already prepared.
 
-    return prepared_sets.addFromTuple(set_key, right_arg_func, std::move(block), context->getSettingsRef());
+    const bool source_is_empty = right_arg_func
+        && (right_arg_func->name == "tuple" || right_arg_func->name == "array")
+        && right_arg_func->arguments->children.empty();
+    return prepared_sets.addFromTuple(
+        set_key, right_arg_func, std::move(block), context->getSettingsRef(), source_is_empty);
 }
 
 class ScopeStack::Index

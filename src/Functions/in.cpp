@@ -202,11 +202,19 @@ public:
         /// evaluation produces a `ColumnConst` detectable by `ConstantFilterDescription`.
         if (set->getTotalRowCount() == 0)
         {
-            if (canReportEmptySetAsConstant(*future_set))
-                return ColumnConst::create(createResultColumn(1, negative), input_rows_count);
+            /// Conversion to the left operand type can discard every literal even though the
+            /// source list is not empty. Such a set still depends on a `NULL` left operand under
+            /// SQL three-valued semantics, so do not apply the logically-empty-set shortcut.
+            const auto * tuple_set = typeid_cast<const FutureSetFromTuple *>(future_set.get());
+            const bool normalized_from_nonempty_tuple = in_null_as_unknown && tuple_set && !tuple_set->isSourceEmpty();
+            if (!normalized_from_nonempty_tuple)
+            {
+                if (canReportEmptySetAsConstant(*future_set))
+                    return ColumnConst::create(createResultColumn(1, negative), input_rows_count);
 
-            if (in_null_as_unknown)
-                return createResultColumn(input_rows_count, negative);
+                if (in_null_as_unknown)
+                    return createResultColumn(input_rows_count, negative);
+            }
         }
 
         /// Unwrap ColumnConst for the first argument if needed.
@@ -289,16 +297,18 @@ private:
     }
 
     /// Emptiness is a property of the plan only for a tuple set, which is finished in its constructor
-    /// and never mutated afterwards. A storage-backed set is the live set of an `ENGINE = Set` table
-    /// and grows on INSERT, and a subquery set is still consulted for index analysis.
-    static bool isImmutableEmptySet(const FutureSet & future_set)
+    /// and never mutated afterwards. Under standard semantics, use the original input size because
+    /// type conversion can discard values. A storage-backed set is the live set of an `ENGINE = Set`
+    /// table and grows on INSERT, and a subquery set is still consulted for index analysis.
+    bool isImmutableEmptySet(const FutureSet & future_set) const
     {
         const auto * tuple_set = typeid_cast<const FutureSetFromTuple *>(&future_set);
         if (!tuple_set)
             return false;
 
-        auto set = tuple_set->get();
-        return set && set->getTotalRowCount() == 0;
+        return in_null_as_unknown
+            ? tuple_set->isSourceEmpty()
+            : tuple_set->get()->getTotalRowCount() == 0;
     }
 
     /// A tuple set is reported as constant by the DAG node too, and a subquery set holds no value while
