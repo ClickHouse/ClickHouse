@@ -1,0 +1,36 @@
+-- LEFT
+7	7	Nullable(UInt64)
+5	5
+6	6
+-- RIGHT
+7	Nullable(UInt64)	7
+-- FULL
+7	7
+7	7
+-- different key types
+7	7	Nullable(UInt64)
+-- LowCardinality
+7	7	LowCardinality(Nullable(String))
+-- predicate below one input
+7	7
+7	7
+-- not inferred while the join keeps unmatched rows
+0	\N
+1	\N
+2	\N
+3	\N
+4	\N
+0	\N
+1	\N
+2	\N
+3	\N
+4	\N
+7	7
+0	\N
+1	\N
+2	\N
+3	\N
+4	\N
+7	7
+2	\N
+7	7
