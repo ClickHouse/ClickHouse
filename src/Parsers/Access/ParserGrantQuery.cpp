@@ -1036,6 +1036,11 @@ when a setting or an optimization replaces a call: `in` is executed as `nullIn` 
 `divide` as `divideExact` under `sql_compatible_division_for_integers`, and `x = 1 OR x = 2 OR x = 3` as
 `x IN (1, 2, 3)`, so such a chain requires the grant for `in` when `in` is listed.
 
+An `ON CLUSTER` query is analyzed by the hosts that execute it, so the grant is checked there, like the other
+privileges checked during the analysis of an expression. With the `distributed_ddl_use_initial_user_and_roles`
+server setting disabled, which is the default, the hosts execute such queries with their own rights; enable it to
+check the grant of the user who submitted the query.
+
 Names are matched after resolving aliases, so listing `hex` covers `HEX`, and listing either
 `isValidASCII` or its `isASCII` alias covers both spellings. The name in `GRANT FUNCTION ON <name>`
 is resolved the same way and stored as the registered name: `GRANT FUNCTION ON HEX` grants `hex`,
