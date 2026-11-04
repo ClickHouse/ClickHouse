@@ -15,7 +15,6 @@
 -- reading only the granules of the index candidates would read nothing but the deleted rows.
 -- Direct I/O is disabled because it reads every one-row granule separately and makes the test slow.
 
-SET enable_analyzer = 1;
 SET lightweight_deletes_sync = 2;
 SET mutations_sync = 2;
 SET parallel_replicas_local_plan = 1;
