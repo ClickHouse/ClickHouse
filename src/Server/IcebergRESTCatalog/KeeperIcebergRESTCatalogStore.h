@@ -8,6 +8,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <vector>
 
 namespace DB
@@ -15,6 +16,8 @@ namespace DB
 
 /// Support multi-level namespace names.
 using IcebergNamespaceName = std::vector<String>;
+/// Joins the levels of a namespace in a REST path. A level must not contain it.
+constexpr char NAMESPACE_LEVEL_SEPARATOR = '\x1F';
 
 /// What Keeper stores for a table: the current `metadata.json` on object storage.
 struct IcebergTablePointer
@@ -23,6 +26,14 @@ struct IcebergTablePointer
     String metadata_location;
     /// Znode version of the uuid node. Set by `getTable`, checked by `updateTable`.
     ZooKeeperNodeVersion version{};
+};
+
+struct UpdateNamespacePropertiesResult
+{
+    Strings updated;
+    Strings removed;
+    /// Keys from `removals` that were not present.
+    Strings missing;
 };
 
 /// Storage backend of the native Iceberg REST catalog (RFC: issue #114697), backed by Keeper.
@@ -47,6 +58,10 @@ public:
     bool namespaceExists(const IcebergNamespaceName & name) const;
 
     std::optional<std::map<String, String>> getNamespaceProperties(const IcebergNamespaceName & name) const;
+
+    /// Applies `removals` first, then `updates`. nullopt if the namespace does not exist.
+    std::optional<UpdateNamespacePropertiesResult> updateNamespaceProperties(
+        const IcebergNamespaceName & name, const std::map<String, String> & updates, const std::set<String> & removals);
 
     /// Lists direct children of `parent` or top-level namespaces when `parent` is empty.
     std::vector<IcebergNamespaceName> listNamespaces(const IcebergNamespaceName & parent) const;

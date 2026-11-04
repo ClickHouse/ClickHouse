@@ -563,6 +563,7 @@ set_property(SOURCE
     Columns/IColumn.cpp                        # hashjoin_with_large_output
     Processors/Transforms/WindowTransform.cpp                        # window functions
     Processors/Transforms/Window/SlidingBlocks.cpp                   # window functions
+    Processors/Transforms/Window/SlidingArguments.cpp                # window functions
     Processors/Transforms/Window/SlidingIndexes.cpp                  # window functions
     Processors/Transforms/Window/Partition.cpp                       # window functions
     Processors/Transforms/Window/Peers.cpp                           # window functions
@@ -592,6 +593,10 @@ add_object_library(clickhouse_processors_formats_impl_vortex Processors/Formats/
 
 if (USE_ARROW)
     add_object_library(clickhouse_processors_formats_impl_arrow_ipc Processors/Formats/Impl/ArrowIPC)
+endif()
+
+if (USE_ORC)
+    add_object_library(clickhouse_processors_formats_impl_orc Processors/Formats/Impl/ORC)
 endif()
 
 if (TARGET ch_contrib::nuraft)
@@ -662,7 +667,6 @@ target_link_libraries (clickhouse_compression
             clickhouse_parsers
         PRIVATE
             ch_contrib::lz4
-            ch_contrib::gdeflate
             ch_contrib::zxc
             ch_contrib::roaring
 )
@@ -933,11 +937,6 @@ if (TARGET ch_contrib::liburing)
 endif()
 
 target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::fast_float)
-
-if (USE_ORC)
-    target_link_libraries(dbms PUBLIC ${ORC_LIBRARIES})
-    target_include_directories(dbms SYSTEM BEFORE PUBLIC ${ORC_INCLUDE_DIR} "${PROJECT_BINARY_DIR}/contrib/orc/c++/include")
-endif ()
 
 if (TARGET ch_contrib::rocksdb)
     target_link_libraries(dbms PUBLIC ch_contrib::rocksdb)
