@@ -1,18 +1,29 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
+
 #include <Core/Block.h>
 #include <Core/ProtocolDefines.h>
 #include <Core/SettingsQuirks.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Disks/DiskLocal.h>
+#include <Disks/SingleDiskVolume.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/SetSerialization.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/Sources/NullSource.h>
+#include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/Exception.h>
 #include <Common/tests/gtest_global_context.h>
+
+#include <Poco/TemporaryFile.h>
 
 namespace DB
 {
@@ -77,23 +88,24 @@ DistinctStep makeStep(const SharedHeader & header, bool preserve_input_order, bo
 }
 
 /// Round-trips a step through its own `serialize` and `deserialize` at the given version, the way a peer
-/// at that version reads it.
-bool inputOrderFlagAfterRoundTrip(const DistinctStep & step, const SharedHeader & header, UInt64 version, UInt64 step_version)
+/// at that version reads it, with the plan settings that the step takes its own settings from.
+std::unique_ptr<DistinctStep> roundTrip(
+    const DistinctStep & step, const SharedHeader & header, UInt64 version, UInt64 step_version,
+    const QueryPlanSerializationSettings & settings = {})
 {
     const String bytes = serializeStep(step, version, step_version, /*for_cache_key=*/ false);
     ReadBufferFromString in(bytes);
     DeserializedSetsRegistry deserialized_sets;
     const SharedHeaders input_headers{header};
-    const QueryPlanSerializationSettings settings;
     IQueryPlanStep::Deserialization deserialization{
         in, deserialized_sets, {}, getContext().context, input_headers, header, settings,
         /*max_type_complexity=*/ 0, version, step_version, /*skipping=*/ false};
     QueryPlanStepRegistry registry;
     registerDistinctStep(registry);
     registry.checkVersionReadable(step.getSerializationName(), step_version);
-    const auto restored = registry.createStep(step.getSerializationName(), deserialization);
+    auto restored = registry.createStep(step.getSerializationName(), deserialization);
     EXPECT_TRUE(in.eof());
-    return dynamic_cast<const DistinctStep &>(*restored).preservesInputOrder();
+    return std::unique_ptr<DistinctStep>(static_cast<DistinctStep *>(restored.release()));
 }
 
 /// Checks whether the binary settings stream contains the given setting name.
@@ -190,7 +202,7 @@ TEST(ExternalDistinctPlanSetting, InputOrderFlagRoundTripsAtTheCurrentVersion)
         const auto step = makeStep(header, /*preserve_input_order=*/ true, preliminary);
         const auto step_version = registry.versionToWrite(step.getSerializationName(), current_version);
         EXPECT_EQ(step_version, 1);
-        EXPECT_TRUE(inputOrderFlagAfterRoundTrip(step, header, current_version, step_version));
+        EXPECT_TRUE(roundTrip(step, header, current_version, step_version)->preservesInputOrder());
     }
 }
 
@@ -206,7 +218,7 @@ TEST(ExternalDistinctPlanSetting, InputOrderFlagIsNotCarriedTowardsAnOlderPeer)
         const auto step = makeStep(header, /*preserve_input_order=*/ true, preliminary);
         const auto step_version = registry.versionToWrite(step.getSerializationName(), pre_setting_version);
         EXPECT_EQ(step_version, 0);
-        EXPECT_FALSE(inputOrderFlagAfterRoundTrip(step, header, pre_setting_version, step_version));
+        EXPECT_FALSE(roundTrip(step, header, pre_setting_version, step_version)->preservesInputOrder());
     }
 }
 
@@ -216,8 +228,43 @@ TEST(ExternalDistinctPlanSetting, VersionZeroIsReadableAtTheCurrentPlanVersion)
     /// carries no input-order flag, even when the global version supports external `DISTINCT`.
     const auto header = makeHeader();
     for (const bool preliminary : {false, true})
-        EXPECT_FALSE(inputOrderFlagAfterRoundTrip(
-            makeStep(header, /*preserve_input_order=*/ true, preliminary), header, current_version, /*step_version=*/ 0));
+        EXPECT_FALSE(roundTrip(
+            makeStep(header, /*preserve_input_order=*/ true, preliminary), header, current_version, /*step_version=*/ 0)
+            ->preservesInputOrder());
+}
+
+TEST(ExternalDistinctPlanSetting, StepWithoutInputOrderFlagKeepsInMemoryExecution)
+{
+    /// A release that predates the input-order flag writes the step at step version 0 and keeps its
+    /// input order by in-memory execution. The reader cannot tell whether the order matters, so it
+    /// executes the step in memory as well. Such a plan carries no spill thresholds, and only a memory
+    /// scheduler could make the step spill; the scheduler needs a running query, so a spill threshold
+    /// stands in for it here. The same step at step version 1 spills.
+    const auto header = makeHeader();
+    Poco::TemporaryFile directory;
+    directory.createDirectories();
+    auto disk = std::make_shared<DiskLocal>("external_distinct_plan_setting_tmp", directory.path() + "/");
+    BuildQueryPipelineSettings build_settings(getContext().context);
+    build_settings.temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(
+        TemporaryDataOnDiskSettings{}, std::make_shared<SingleDiskVolume>("external_distinct_plan_setting_tmp", disk, 0));
+
+    DistinctStep::Settings spill_settings;
+    spill_settings.max_bytes_before_external_distinct = 1;
+    const auto plan_settings = serializeDistinctStep(spill_settings, current_version);
+
+    for (const UInt64 step_version : {0, 1})
+    {
+        SCOPED_TRACE(step_version);
+        const UInt64 version = step_version == 0 ? pre_setting_version : current_version;
+        const auto step = roundTrip(makeStep(header, /*preserve_input_order=*/ false), header, version, step_version, plan_settings);
+
+        QueryPipelineBuilder pipeline;
+        pipeline.init(Pipe(std::make_shared<NullSource>(header)));
+        step->transformPipeline(pipeline, build_settings);
+        const bool spills = std::ranges::any_of(
+            pipeline.getProcessors(), [](const ProcessorPtr & processor) { return processor->getName() == "ExternalDistinctTransform"; });
+        EXPECT_EQ(spills, step_version == 1);
+    }
 }
 
 TEST(ExternalDistinctPlanSetting, UnknownStepVersionIsRejected)

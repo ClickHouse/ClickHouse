@@ -126,6 +126,9 @@ private:
     bool skip_stream_merging = false;
     bool parallel_distinct = false;
     bool preserve_input_order = false;
+    /// The step was read at step version 0, which predates `preserve_input_order`, so its unset flag does
+    /// not show that the order has no meaning. See `transformPipeline`.
+    bool input_order_unknown = false;
     bool coalesce_output = false;
 };
 

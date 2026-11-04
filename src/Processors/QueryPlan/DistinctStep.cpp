@@ -197,8 +197,11 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
         settings.max_bytes_before_external_distinct,
         settings.max_bytes_ratio_before_external_distinct,
         "max_bytes_ratio_before_external_distinct");
-    /// Constant keys produce at most one row and need no external storage.
-    const bool external = !pre_distinct && (external_threshold || build_settings.isSchedulerSpillingEnabled())
+    /// Constant keys produce at most one row and need no external storage. A step from a release that
+    /// predates the input-order flag may need its input order, which that release keeps by in-memory
+    /// execution. Such a step stays in memory, since a spill could lose the order.
+    const bool external = !pre_distinct && !input_order_unknown
+        && (external_threshold || build_settings.isSchedulerSpillingEnabled())
         && !calculateDistinctKeyColumnsPositions(*pipeline.getSharedHeader(), columns).empty();
 
     if (!pre_distinct && !skip_stream_merging)
@@ -389,6 +392,7 @@ QueryPlanStepPtr DistinctStep::deserialize(Deserialization & ctx, bool pre_disti
 
     auto step = std::make_unique<DistinctStep>(
         ctx.input_headers.front(), Settings(ctx.settings), 0, column_names, pre_distinct_);
+    step->input_order_unknown = ctx.step_version < 1;
     if (preserve_input_order)
         step->preserveInputOrder();
     return step;
