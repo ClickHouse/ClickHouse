@@ -10695,9 +10695,9 @@ bool StorageReplicatedMergeTree::waitForProcessingQueue(UInt64 max_wait_millisec
     Stopwatch watch;
     while (true)
     {
-        /// Throws QUERY_WAS_CANCELLED or TIMEOUT_EXCEEDED; returns false only for OverflowMode::BREAK.
-        if (process_list_element && !process_list_element->checkTimeLimit())
-            return false;
+        /// Throws with `timeout_overflow_mode = 'break'` too: returning false means `max_wait_milliseconds` elapsed.
+        if (process_list_element)
+            process_list_element->checkTimeLimit(OverflowMode::THROW);
 
         const UInt64 elapsed_ms = watch.elapsedMilliseconds();
         const UInt64 remaining_ms = max_wait_milliseconds > elapsed_ms ? max_wait_milliseconds - elapsed_ms : 0;

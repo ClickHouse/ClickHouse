@@ -60,6 +60,11 @@ wait_for_queries_to_finish 60
 wait
 grep -o -m1 'Code: 394' "$SYNC_OUT"
 
+# 4. With timeout_overflow_mode = 'break', max_execution_time also stops SYSTEM SYNC REPLICA, and the
+#    error is the max_execution_time one, not "command timed out. See the 'receive_timeout' setting".
+$CLICKHOUSE_CLIENT --receive_timeout 120 --max_execution_time 2 --timeout_overflow_mode break \
+    -q "SYSTEM SYNC REPLICA r2" 2>&1 | grep -o -m1 'Timeout exceeded: elapsed'
+
 $CLICKHOUSE_CLIENT -q "
     SYSTEM START REPLICATION QUEUES r2;
     DROP TABLE r1, r2;
