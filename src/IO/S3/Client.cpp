@@ -1388,8 +1388,7 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
         }
 
         /// SSE-C takes an AES-256 key; the round trip rejects anything but its canonical base64.
-        static constexpr size_t aes256_key_size = 256 / 8;
-        if (customer_key.size() != aes256_key_size || base64Encode(customer_key) != server_side_encryption_customer_key_base64)
+        if (customer_key.size() != AES256_KEY_BYTES || base64Encode(customer_key) != server_side_encryption_customer_key_base64)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "`server_side_encryption_customer_key_base64` must be a base64-encoded 256-bit key");
 
         /// See Client::GeneratePresignedUrlWithSSEC().
