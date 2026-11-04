@@ -1657,6 +1657,15 @@ static ColumnWithTypeAndName readColumnWithEncodedStringOrFixedStringData(
     size_t dict_size = orc_dict.size();
     if (dict_size == 0)
     {
+        /// Only nulls can be encoded with an empty dictionary.
+        for (size_t i = 0; i < rows; ++i)
+        {
+            if (!orc_str_column.hasNulls || orc_str_column.notNull[i])
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "ORC dictionary index {} at row {} is out of range [0, 0)",
+                    orc_str_column.index[i], i);
+        }
         auto result_column = internal_type->createColumn();
         result_column->insertManyDefaults(rows);
         return {std::move(result_column), internal_type, column_name};
