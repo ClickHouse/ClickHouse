@@ -156,7 +156,7 @@ struct NullableKeyColumns
 
     /// The per-row packer over the nested columns, with the bitmap computed from the null map.
     template <typename Key>
-    [[nodiscard]] [[nodiscard]] Key expected(size_t row) const
+    [[nodiscard]] Key expected(size_t row) const
     {
         KeysNullMap<Key> bitmap{};
         if (null_map[row] != 0)
