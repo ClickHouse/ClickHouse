@@ -62,6 +62,7 @@ public:
     const URLShards & getURLShards() const { return url_shards; }
     const HTTPHeaderEntries & getHeaders() const { return headers; }
     ContextPtr getRequestContext() const;
+    ObjectStoragePtr cloneImpl() const override;
     std::vector<String> buildURLs(const std::string & path) const;
     std::vector<String> buildURLs(const std::string & path, size_t shard_index) const;
 
@@ -94,7 +95,7 @@ public:
     ObjectMetadata getObjectMetadata(const RelativePathWithMetadata & path, bool with_tags) const override;
     std::optional<ObjectMetadata> tryGetObjectMetadata(const RelativePathWithMetadata & path, bool with_tags) const override;
 
-    String copyObject( /// NOLINT
+    void copyObject( /// NOLINT
         const StoredObject & object_from,
         const StoredObject & object_to,
         const ReadSettings & read_settings,

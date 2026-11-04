@@ -1,3 +1,5 @@
+-- Tags: no-async-insert
+-- no-async-insert: the queue flush logs a second, differently formatted `INSERT ... SELECT`.
 -- test that multiple refreshes of RMV with multiple subqueries do not leak memory or cause any other general issues with the instance 
 CREATE TABLE 03789_rmv_target (message String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test/03789_rmv_with_multiple_subqueries', 'r1') ORDER BY ();
 CREATE MATERIALIZED VIEW 03789_rmv_mv REFRESH EVERY 1 MONTH APPEND TO 03789_rmv_target AS WITH

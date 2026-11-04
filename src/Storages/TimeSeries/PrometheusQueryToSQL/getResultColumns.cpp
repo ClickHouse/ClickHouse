@@ -3,9 +3,11 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/TimeSeries/PrometheusQueryEvaluationSettings.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/getResultType.h>
+#include <Storages/TimeSeries/getPromQLResultTimestampType.h>
 
 
 namespace DB::PrometheusQueryToSQL
@@ -14,8 +16,8 @@ namespace DB::PrometheusQueryToSQL
 ColumnsDescription getResultColumns(const PrometheusQueryTree & promql_tree, const PrometheusQueryEvaluationSettings & settings)
 {
     auto result_type = getResultType(promql_tree, settings);
-    const auto & timestamp_data_type = settings.timestamp_data_type;
-    const auto & scalar_data_type = settings.scalar_data_type;
+    auto timestamp_type = getPromQLResultTimestampType(settings.time_scale, settings.time_zone);
+    auto value_type = std::make_shared<DataTypeFloat64>();
 
     ColumnsDescription columns;
 
@@ -23,14 +25,14 @@ ColumnsDescription getResultColumns(const PrometheusQueryTree & promql_tree, con
     {
         case ResultType::SCALAR:
         {
-            columns.add(ColumnDescription{ColumnNames::Timestamp, timestamp_data_type});
-            columns.add(ColumnDescription{ColumnNames::Value, scalar_data_type});
+            columns.add(ColumnDescription{ColumnNames::Timestamp, timestamp_type});
+            columns.add(ColumnDescription{ColumnNames::Value, value_type});
             return columns;
         }
 
         case ResultType::STRING:
         {
-            columns.add(ColumnDescription{ColumnNames::Timestamp, timestamp_data_type});
+            columns.add(ColumnDescription{ColumnNames::Timestamp, timestamp_type});
             columns.add(ColumnDescription{ColumnNames::Value, std::make_shared<DataTypeString>()});
             return columns;
         }
@@ -42,8 +44,8 @@ ColumnsDescription getResultColumns(const PrometheusQueryTree & promql_tree, con
                     ColumnNames::Tags,
                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(
                         DataTypes{std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()}))});
-            columns.add(ColumnDescription{ColumnNames::Timestamp, timestamp_data_type});
-            columns.add(ColumnDescription{ColumnNames::Value, scalar_data_type});
+            columns.add(ColumnDescription{ColumnNames::Timestamp, timestamp_type});
+            columns.add(ColumnDescription{ColumnNames::Value, value_type});
             return columns;
         }
 
@@ -57,7 +59,7 @@ ColumnsDescription getResultColumns(const PrometheusQueryTree & promql_tree, con
             columns.add(
                 ColumnDescription{
                     ColumnNames::getOuterSamples(settings.time_series_version),
-                    std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{timestamp_data_type, scalar_data_type}))});
+                    std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{timestamp_type, value_type}))});
             return columns;
         }
     }

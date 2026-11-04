@@ -1,4 +1,4 @@
-SET allow_experimental_nullable_tuple_type = 1;
+SET enable_nullable_tuple_type = 1;
 
 SELECT 'CTE Result';
 WITH

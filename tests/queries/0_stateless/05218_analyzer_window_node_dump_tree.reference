@@ -1,0 +1,25 @@
+QUERY id: 0
+  PROJECTION COLUMNS
+    sum(number) OVER (ORDER BY number ASC ROWS BETWEEN 1 PRECEDING AND 2 FOLLOWING) UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: sum, function_type: window, result_type: UInt64
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            COLUMN id: 4, column_name: number, result_type: UInt64, source_id: 5
+        WINDOW
+          WINDOW id: 6, frame_type: ROWS, frame_begin_type: offset preceding, frame_end_type: offset following
+            ORDER BY
+              LIST id: 7, nodes: 1
+                SORT id: 8, sort_direction: ASCENDING, with_fill: 0
+                  EXPRESSION number
+                    COLUMN id: 4, column_name: number, result_type: UInt64, source_id: 5
+            FRAME BEGIN OFFSET
+              CONSTANT id: 9, constant_value: UInt64_1, constant_value_type: UInt8
+            FRAME END OFFSET
+              CONSTANT id: 10, constant_value: UInt64_2, constant_value_type: UInt8
+  JOIN TREE
+    TABLE_FUNCTION id: 5, alias: __table1, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 11, nodes: 1
+          CONSTANT id: 12, constant_value: UInt64_5, constant_value_type: UInt8

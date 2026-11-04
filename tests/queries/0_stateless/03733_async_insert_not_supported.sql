@@ -3,7 +3,9 @@ set wait_for_async_insert = 0;
 set async_insert_deduplicate = 1;
 set deduplicate_blocks_in_dependent_materialized_views = 1;
 
-set async_insert_use_adaptive_busy_timeout=0, async_insert_busy_timeout_min_ms=1000, async_insert_busy_timeout_max_ms=5000;
+-- The busy timeout must outlast this test: a table-scoped flush waits only for the batches it takes
+-- from the queue itself, not for one the deadline timer already drained.
+set async_insert_use_adaptive_busy_timeout=0, async_insert_busy_timeout_min_ms=1000, async_insert_busy_timeout_max_ms=600000;
 
 create table src_table
 (
@@ -30,7 +32,7 @@ insert into table_join select 2 as id, toString(number) from numbers(10000);
 insert into table_join select 3 as id, toString(number) from numbers(10000);
 insert into table_join select 4 as id, toString(number) from numbers(10000);
 
-system flush async insert queue 03733_table_join;
+system flush async insert queue table_join;
 select 'chech table_join size';
 select count(*) from table_join;  -- Expecting 400000
 

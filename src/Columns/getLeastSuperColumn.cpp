@@ -4,6 +4,7 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnConst.h>
 #include <Common/assert_cast.h>
+#include <Core/Field.h>
 #include <DataTypes/getLeastSupertype.h>
 
 
@@ -35,6 +36,51 @@ static bool sameConstants(const IColumn & a, const IColumn & b)
         return false;
 
     return assert_cast<const ColumnConst &>(a).getField() == assert_cast<const ColumnConst &>(b).getField();
+}
+
+ColumnsWithTypeAndName reconcileConstness(
+    const ColumnsWithTypeAndName & reference,
+    size_t num_siblings,
+    const std::function<const ColumnWithTypeAndName *(size_t sibling, size_t position, const String & name)> & lookup,
+    bool * materialized)
+{
+    ColumnsWithTypeAndName common = reference;
+
+    for (size_t col = 0; col < common.size(); ++col)
+    {
+        if (!common[col].column || !isColumnConst(*common[col].column))
+            continue;
+
+        if (containsAggregateStateColumn(assert_cast<const ColumnConst &>(*common[col].column).getDataColumn()))
+        {
+            common[col].column = common[col].column->convertToFullColumnIfConst();
+            if (materialized)
+                *materialized = true;
+            continue;
+        }
+
+        const Field value = assert_cast<const ColumnConst &>(*common[col].column).getField();
+        bool keep_const = true;
+        for (size_t sibling = 0; sibling < num_siblings; ++sibling)
+        {
+            const auto * branch = lookup(sibling, col, common[col].name);
+            if (!branch || !branch->column || !isColumnConst(*branch->column)
+                || assert_cast<const ColumnConst &>(*branch->column).getField() != value)
+            {
+                keep_const = false;
+                break;
+            }
+        }
+
+        if (!keep_const)
+        {
+            common[col].column = common[col].column->convertToFullColumnIfConst();
+            if (materialized)
+                *materialized = true;
+        }
+    }
+
+    return common;
 }
 
 ColumnWithTypeAndName getLeastSuperColumn(const VectorWithMemoryTracking<const ColumnWithTypeAndName *> & columns, bool use_variant_as_common_type)

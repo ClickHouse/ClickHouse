@@ -65,7 +65,7 @@ public:
         const StoredObjects & objects,
         StoredObjects * successful_objects = nullptr) override;
 
-    String copyObject( /// NOLINT
+    void copyObject( /// NOLINT
         const StoredObject & object_from,
         const StoredObject & object_to,
         const ReadSettings & read_settings,
@@ -114,6 +114,8 @@ public:
 
     bool supportParallelWrite() const override { return object_storage->supportParallelWrite(); }
 
+    bool supportsAtomicWrite() const override { return object_storage->supportsAtomicWrite(); }
+
     bool supportsObjectGenerationComparison() const override { return object_storage->supportsObjectGenerationComparison(); }
 
     const FileCacheSettings & getCacheSettings() const { return cache_settings; }
@@ -129,7 +131,7 @@ public:
         return object_storage->getAzureBlobStorageAuthMethod();
     }
 
-    const AzureBlobStorage::ConnectionParams & getAzureBlobStorageConnectionParams() const override
+    std::shared_ptr<const AzureBlobStorage::ConnectionParams> getAzureBlobStorageConnectionParams() const override
     {
         return object_storage->getAzureBlobStorageConnectionParams();
     }
@@ -166,6 +168,8 @@ public:
 #endif
 
     ObjectStoragePtr getUnderlying() override { return object_storage; }
+
+    ObjectStoragePtr cloneImpl() const override;
 
 private:
     FileCacheKey getCacheKey(const std::string & path) const;

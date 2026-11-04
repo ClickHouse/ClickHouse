@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/FailPoint.h>
 #include <Common/LockGuardWithStopWatch.h>
 #include <Common/randomSeed.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -10,6 +11,16 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    extern const char mt_background_jobs_assignee_throw_after_task_created[];
+}
 
 BackgroundJobsAssignee::BackgroundJobsAssignee(IBackgroundOperation & data_, const StorageID & storage_id_, BackgroundJobsAssignee::Type type_, ContextPtr global_context_)
     : WithContext(global_context_)
@@ -113,29 +124,73 @@ String BackgroundJobsAssignee::toString(Type type)
     }
 }
 
-void BackgroundJobsAssignee::start()
+bool BackgroundJobsAssignee::createHolderIfNeeded(const StorageID & current_storage_id)
 {
-    std::lock_guard lock(holder_mutex);
-    if (!holder)
+    if (holder)
+        return false;
+
+    switch (type)
     {
-        switch (type)
-        {
-        case Type::DataProcessing:
-        case Type::Moving:
-            holder = getContext()->getSchedulePool()->createTask(storage_id, "BackgroundJobsAssignee:" + toString(type), [this]{ threadFunc(); });
-            break;
-        case Type::Streaming:
-            holder = getContext()->getStreamingSchedulePool()->createTask(storage_id, "BackgroundJobsAssignee:" + toString(type), [this]{ threadFunc(); });
-            break;
-        }
+    case Type::DataProcessing:
+    case Type::Moving:
+        holder = getContext()->getSchedulePool()->createTask(current_storage_id, "BackgroundJobsAssignee:" + toString(type), [this]{ threadFunc(); });
+        break;
+    case Type::Streaming:
+        holder = getContext()->getStreamingSchedulePool()->createTask(current_storage_id, "BackgroundJobsAssignee:" + toString(type), [this]{ threadFunc(); });
+        break;
     }
 
-    holder->activateAndSchedule();
+    return true;
+}
+
+bool BackgroundJobsAssignee::start()
+{
+    /// Either the task is created and activated, or the assignee is left exactly as it was: a holder
+    /// created by this call is destroyed again if activating it throws, so that a caller which rolls
+    /// back on the exception does not have to know whether the failure came before or after the
+    /// allocation. Declared before the lock so that it is destroyed after the lock is released, for
+    /// the same reason `finish` releases `holder_mutex` before `deactivate`: the lock order with the
+    /// task's own mutexes. Destroying the holder deactivates the task, which waits for a run of
+    /// `threadFunc` that may already have started; that run does not touch the storage because the
+    /// workers are disabled while a `table_readonly` toggle is in flight.
+    /// Read the cached id before taking holder_mutex so that the two locks are never nested.
+    const auto current_storage_id = getStorageID();
+
+    BackgroundSchedulePoolTaskHolder failed_holder;
+    bool created = false;
+    {
+        std::lock_guard lock(holder_mutex);
+        created = createHolderIfNeeded(current_storage_id);
+        try
+        {
+            holder->activateAndSchedule();
+
+            /// Models a scheduling failure after the task was allocated and is already live in the pool.
+            fiu_do_on(FailPoints::mt_background_jobs_assignee_throw_after_task_created,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure while activating a background jobs assignee task");
+            });
+        }
+        catch (...)
+        {
+            if (created)
+                failed_holder = std::move(holder);
+            throw;
+        }
+    }
+    return created;
 }
 
 void BackgroundJobsAssignee::updateStorageID(const StorageID & new_id)
 {
+    std::lock_guard lock(storage_id_mutex);
     storage_id = new_id;
+}
+
+StorageID BackgroundJobsAssignee::getStorageID() const
+{
+    std::lock_guard lock(storage_id_mutex);
+    return storage_id;
 }
 
 void BackgroundJobsAssignee::finish()
@@ -154,10 +209,11 @@ void BackgroundJobsAssignee::finish()
     {
         local_holder->deactivate();
 
-        getContext()->getMovesExecutor()->removeTasksCorrespondingToStorage(storage_id);
-        getContext()->getFetchesExecutor()->removeTasksCorrespondingToStorage(storage_id);
-        getContext()->getMergeMutateExecutor()->removeTasksCorrespondingToStorage(storage_id);
-        getContext()->getCommonExecutor()->removeTasksCorrespondingToStorage(storage_id);
+        const auto current_storage_id = getStorageID();
+        getContext()->getMovesExecutor()->removeTasksCorrespondingToStorage(current_storage_id);
+        getContext()->getFetchesExecutor()->removeTasksCorrespondingToStorage(current_storage_id);
+        getContext()->getMergeMutateExecutor()->removeTasksCorrespondingToStorage(current_storage_id);
+        getContext()->getCommonExecutor()->removeTasksCorrespondingToStorage(current_storage_id);
     }
 }
 

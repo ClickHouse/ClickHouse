@@ -20,6 +20,7 @@
 #include <Poco/Net/StreamSocket.h>
 
 #include <algorithm>
+#include <atomic>
 #include <climits>
 #include <cerrno>
 #include <cstddef>
@@ -37,6 +38,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int EXCHANGE_PEER_DISCONNECTED;
     extern const int NOT_IMPLEMENTED;
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
@@ -44,6 +46,12 @@ namespace ErrorCodes
 
 namespace StreamingExchangeProtocol
 {
+
+namespace
+{
+    std::atomic<UInt64> socket_sndbuf{0};
+    std::atomic<UInt64> socket_rcvbuf{0};
+}
 
 UInt64 SourceHelloBody::readVersion(ReadBuffer & in)
 {
@@ -87,7 +95,7 @@ namespace
     }
 }
 
-size_t writeDataPacket(const Chunk & chunk, const SharedHeader & header, WriteBuffer & out)
+size_t writeDataPacket(const Chunk & chunk, const SharedHeader & header, WriteBuffer & out, const CompressionCodecPtr & codec)
 {
     Stopwatch watch;
     const size_t packet_offset = out.count();
@@ -110,13 +118,8 @@ size_t writeDataPacket(const Chunk & chunk, const SharedHeader & header, WriteBu
 
     if (chunk.getNumColumns() > 0)
     {
-        /// The exchange stream uses the server default codec: `network_compression_method` is a
-        /// per-query setting and the sender has no query settings at hand. This is safe: each
-        /// compressed frame is self-describing (the receiver auto-detects the codec via
-        /// `CompressedReadBuffer`), and the exchange is a transient, same-version channel -
-        /// the handshake rejects peers on a different protocol version, so a stream is never read
-        /// back by a node expecting a different codec.
-        CompressedWriteBuffer compressed_buf(out);
+        /// Every compressed frame names its codec, so the receiver decodes whatever codec the sender chose.
+        CompressedWriteBuffer compressed_buf(out, codec);
         try
         {
             NativeWriter writer(compressed_buf, DBMS_TCP_PROTOCOL_VERSION, header);
@@ -358,6 +361,39 @@ void sendAll(Poco::Net::StreamSocket & socket, const char * buffer, size_t size,
             continue;
         throwSocketError(last_error, socket, "send " + description);
     }
+}
+
+void applySocketBufferSizes(Poco::Net::StreamSocket & socket)
+{
+    if (const UInt64 sndbuf = socket_sndbuf.load(std::memory_order_relaxed); sndbuf > 0)
+        socket.setSendBufferSize(static_cast<int>(sndbuf));
+    if (const UInt64 rcvbuf = socket_rcvbuf.load(std::memory_order_relaxed); rcvbuf > 0)
+        socket.setReceiveBufferSize(static_cast<int>(rcvbuf));
+}
+
+void validateSocketBufferSizes(UInt64 sndbuf, UInt64 rcvbuf)
+{
+    if (sndbuf > static_cast<UInt64>(INT_MAX) || rcvbuf > static_cast<UInt64>(INT_MAX))
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "`streaming_exchange_sndbuf` and `streaming_exchange_rcvbuf` must not exceed {}",
+            INT_MAX);
+    }
+}
+
+void setSocketBufferSizes(UInt64 sndbuf, UInt64 rcvbuf)
+{
+    socket_sndbuf.store(sndbuf, std::memory_order_relaxed);
+    socket_rcvbuf.store(rcvbuf, std::memory_order_relaxed);
+}
+
+SocketBufferSizes getSocketBufferSizes()
+{
+    SocketBufferSizes sizes;
+    sizes.sndbuf = socket_sndbuf.load(std::memory_order_relaxed);
+    sizes.rcvbuf = socket_rcvbuf.load(std::memory_order_relaxed);
+    return sizes;
 }
 
 }
