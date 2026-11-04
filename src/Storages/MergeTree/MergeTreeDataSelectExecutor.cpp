@@ -1655,6 +1655,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         for (auto [applied, index_and_condition] : std::views::zip(skip_index_applied, skip_indexes.useful_indices))
             if (applied)
                 add_used_index(index_and_condition.index);
+
         if (std::ranges::any_of(parts_top_k_granules, [](const auto & granules) { return !granules.empty(); }))
             add_used_index(skip_indexes.skip_index_for_top_k_filtering);
     }
