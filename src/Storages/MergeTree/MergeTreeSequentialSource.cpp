@@ -47,6 +47,8 @@ namespace Setting
 {
     extern const SettingsNonZeroUInt64 merge_tree_min_read_task_size;
     extern const SettingsNonZeroUInt64 apply_patch_parts_join_cache_buckets;
+    extern const SettingsNonZeroUInt64 filesystem_prefetch_max_memory_usage;
+    extern const SettingsUInt64 filesystem_prefetches_limit;
 }
 
 namespace MergeTreeSetting
@@ -70,7 +72,8 @@ public:
         StorageSnapshotPtr storage_snapshot_,
         MergeTreeReadTaskInfoPtr read_task_info_,
         std::optional<MarkRanges> mark_ranges_,
-        bool read_with_direct_io_);
+        bool read_with_direct_io_,
+        bool allow_remote_fs_prefetch);
 
     ~MergeTreeSequentialSource() override;
 
@@ -120,7 +123,8 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     StorageSnapshotPtr storage_snapshot_,
     MergeTreeReadTaskInfoPtr read_task_info_,
     std::optional<MarkRanges> mark_ranges_,
-    bool read_with_direct_io_)
+    bool read_with_direct_io_,
+    bool allow_remote_fs_prefetch)
     : ISource(std::move(result_header))
     , storage(storage_)
     , storage_snapshot(std::move(storage_snapshot_))
@@ -169,6 +173,9 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
 #if ENABLE_DISTRIBUTED_CACHE
     read_settings.distributed_cache_settings.read_if_exists_otherwise_bypass = read_if_exists_otherwise_bypass;
 #endif
+
+    if (!allow_remote_fs_prefetch)
+        read_settings.remote_fs_settings.prefetch = false;
 
     /// It does not make sense to use pthread_threadpool for background merges/mutations
     /// And also to preserve backward compatibility
@@ -365,7 +372,8 @@ Pipe createMergeTreeSequentialSource(
     std::optional<MarkRanges> mark_ranges,
     std::shared_ptr<std::atomic<size_t>> filtered_rows_count,
     bool apply_deleted_mask,
-    bool read_with_direct_io)
+    bool read_with_direct_io,
+    bool allow_remote_fs_prefetch)
 {
     auto info = std::make_shared<MergeTreeReadTaskInfo>();
     info->alter_conversions = std::move(alter_conversions);
@@ -424,7 +432,8 @@ Pipe createMergeTreeSequentialSource(
         storage_snapshot,
         std::move(info),
         std::move(mark_ranges),
-        read_with_direct_io);
+        read_with_direct_io,
+        allow_remote_fs_prefetch);
 
     Pipe pipe(std::move(column_part_source));
 
@@ -461,6 +470,7 @@ public:
         bool apply_deleted_mask_,
         std::optional<ActionsDAG> filter_,
         bool read_with_direct_io_,
+        bool allow_remote_fs_prefetch_,
         ContextPtr context_,
         LoggerPtr log_)
         : ISourceStep(std::make_shared<const Block>(storage_snapshot_->getSampleBlockForColumns(columns_to_read_)))
@@ -475,6 +485,7 @@ public:
         , apply_deleted_mask(apply_deleted_mask_)
         , filter(std::move(filter_))
         , read_with_direct_io(read_with_direct_io_)
+        , allow_remote_fs_prefetch(allow_remote_fs_prefetch_)
         , context(std::move(context_))
         , log(log_)
     {
@@ -523,7 +534,8 @@ public:
             std::move(mark_ranges),
             filtered_rows_count,
             apply_deleted_mask,
-            read_with_direct_io);
+            read_with_direct_io,
+            allow_remote_fs_prefetch);
 
         pipeline.init(Pipe(std::move(source)));
     }
@@ -542,6 +554,7 @@ public:
             apply_deleted_mask,
             filter.has_value() ? std::make_optional(filter->clone()) : std::nullopt,
             read_with_direct_io,
+            allow_remote_fs_prefetch,
             context,
             log);
     }
@@ -558,6 +571,7 @@ private:
     const bool apply_deleted_mask;
     const std::optional<ActionsDAG> filter;
     const bool read_with_direct_io;
+    const bool allow_remote_fs_prefetch;
     const ContextPtr context;
     const LoggerPtr log;
 };
@@ -575,6 +589,7 @@ void createReadFromPartStep(
     bool apply_deleted_mask,
     std::optional<ActionsDAG> filter,
     bool read_with_direct_io,
+    bool allow_remote_fs_prefetch,
     ContextPtr context,
     LoggerPtr log)
 {
@@ -590,6 +605,7 @@ void createReadFromPartStep(
         apply_deleted_mask,
         std::move(filter),
         read_with_direct_io,
+        allow_remote_fs_prefetch,
         std::move(context),
         log);
 
@@ -601,6 +617,33 @@ void prefetchMergeTreeSequentialSources(const QueryPipeline & pipeline)
     for (const auto & processor : pipeline.getProcessors())
         if (auto * source = typeid_cast<MergeTreeSequentialSource *>(processor.get()))
             source->prefetchBeginOfRange();
+}
+
+bool canPrefetchInMergeOrMutation(
+    const MergeTreeData & storage,
+    const MergeTreeData::DataPartsVector & parts,
+    const Names & columns_to_read,
+    const ContextPtr & task_context)
+{
+    const auto & settings = task_context->getSettingsRef();
+
+    const size_t prefetches_limit = settings[Setting::filesystem_prefetches_limit];
+    if (prefetches_limit && parts.size() * columns_to_read.size() > prefetches_limit)
+        return false;
+
+    const size_t buffer_size = storage.getContext()->getReadSettings().remote_fs_settings.buffer_size;
+    size_t estimated_memory = 0;
+    for (const auto & part : parts)
+    {
+        for (const auto & column : columns_to_read)
+        {
+            /// 0 if unknown, e.g. in a Compact part.
+            const size_t column_size = part->getColumnSize(column).data_compressed;
+            estimated_memory += 2 * (column_size ? std::min<size_t>(column_size, buffer_size) : buffer_size);
+        }
+    }
+
+    return estimated_memory <= settings[Setting::filesystem_prefetch_max_memory_usage];
 }
 
 }
