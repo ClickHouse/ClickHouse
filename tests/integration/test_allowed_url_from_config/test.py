@@ -154,7 +154,7 @@ def test_azure_host_filter_before_client_creation(start_cluster, query):
 
 
 @pytest.mark.parametrize(
-    "endpoint, write_url",
+    "endpoint, rejected_url",
     [
         (
             "storage_account_url = 'https://onelake.blob.fabric.microsoft.com', "
@@ -166,21 +166,26 @@ def test_azure_host_filter_before_client_creation(start_cluster, query):
             "DfsEndpoint=http://127.0.0.1:1;SharedAccessSignature=sv=2022&sig=c2FzY2FuYXJ5'",
             "http://127.0.0.1:1",
         ),
+        (
+            "endpoint = 'BlobEndpoint=http://host:80/account/container', "
+            "connection_string = 'BlobEndpoint=http://127.0.0.1:1'",
+            "http://127.0.0.1:1",
+        ),
     ],
 )
-def test_azure_disk_onelake_write_host(start_cluster, endpoint, write_url):
-    # node2 allows only the OneLake `.blob` host, while writes of such a disk go to another host.
+def test_azure_disk_client_host(start_cluster, endpoint, rejected_url):
+    # Each disk names a host that node2 allows, but sends requests to one that node2 does not allow.
     container_requests = (
         "SELECT sum(value) FROM system.events "
         "WHERE event IN ('AzureGetProperties', 'AzureCreateContainer')"
     )
     before = node2.query(container_requests)
     error = node2.query_and_get_error(
-        "CREATE TABLE azure_onelake_disk (x UInt8) ENGINE = MergeTree ORDER BY x "
+        "CREATE TABLE azure_client_host_disk (x UInt8) ENGINE = MergeTree ORDER BY x "
         f"SETTINGS disk = disk(type = azure_blob_storage, {endpoint}, container_name = 'container')",
         settings={"azure_sdk_max_retries": 0},
     )
-    assert f'URL "{write_url}" is not allowed' in error
+    assert f'URL "{rejected_url}" is not allowed' in error
     assert node2.query(container_requests) == before
 
 
