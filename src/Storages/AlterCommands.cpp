@@ -1852,6 +1852,33 @@ bool AlterCommands::hasVectorSimilarityIndex(const StorageInMemoryMetadata & met
     return false;
 }
 
+NameSet AlterCommands::getAddedIndexNames(const IndicesDescription & existing) const
+{
+    NameSet present;
+    for (const auto & index : existing)
+        present.insert(index.name);
+
+    NameSet added;
+    for (const AlterCommand & command : *this)
+    {
+        if (command.ignore)
+            continue;
+
+        if (command.type == AlterCommand::ADD_INDEX)
+        {
+            /// Otherwise `AlterCommand::apply` either skips it, with `IF NOT EXISTS`, or throws.
+            if (present.insert(command.index_name).second)
+                added.insert(command.index_name);
+        }
+        else if (command.type == AlterCommand::DROP_INDEX && !command.partition && !command.clear)
+        {
+            present.erase(command.index_name);
+            added.erase(command.index_name);
+        }
+    }
+    return added;
+}
+
 void AlterCommands::apply(
     StorageInMemoryMetadata & metadata,
     ContextPtr context,
@@ -1923,12 +1950,7 @@ void AlterCommands::apply(
     /// Only the indices this statement declares, and only now: the rebuild above resolves them against
     /// the schema every command produced, which is what gets stored, and a later command can change
     /// what an alias in a transform expands to. Existing indices stay unauthorised on purpose.
-    NameSet declared_indices;
-    for (const AlterCommand & command : *this)
-    {
-        if (!command.ignore && command.type == AlterCommand::ADD_INDEX)
-            declared_indices.insert(command.index_name);
-    }
+    const NameSet declared_indices = getAddedIndexNames(metadata.secondary_indices);
 
     for (const auto & index : metadata_copy.secondary_indices)
     {

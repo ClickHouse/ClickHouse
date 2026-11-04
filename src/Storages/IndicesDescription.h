@@ -98,6 +98,12 @@ void checkTextIndexPreAndPostProcessorPermissions(
 /// by their expressions.
 void expandTextIndexTransformAliases(const ASTPtr & arguments, const ColumnsDescription & columns);
 
+/// Replaces, in place, the `ALIAS` columns and the SQL UDFs in the `preprocessor` and `postprocessor` arguments of
+/// a text index by their definitions, then checks the result as `checkTextIndexPreAndPostProcessorPermissions`.
+/// For a query that is shipped to other hosts, which would otherwise expand these names by their own definitions.
+void bindTextIndexPreAndPostProcessors(
+    ASTIndexDeclaration & declaration, const ColumnsDescription & columns, const ContextPtr & context);
+
 /// Whether the declaration is a text index with a `preprocessor` or a `postprocessor` argument.
 bool hasTextIndexPreOrPostProcessor(const ASTIndexDeclaration & declaration);
 

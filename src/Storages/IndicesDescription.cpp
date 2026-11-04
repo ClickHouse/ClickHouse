@@ -50,6 +50,12 @@ void expandTextIndexTransformAliases(const ASTPtr & arguments, const ColumnsDesc
 namespace
 {
 
+void expandUserDefinedFunctions(ASTPtr & expression, const ContextPtr & context)
+{
+    if (!UserDefinedSQLFunctionFactory::instance().empty())
+        UserDefinedSQLFunctionVisitor::visit(expression, context);
+}
+
 void resolveFunctionsAsUser(const ASTPtr & ast, const ContextPtr & context)
 {
     if (const auto * func = ast->as<ASTFunction>())
@@ -73,8 +79,7 @@ void checkTransformPermissions(const ASTPtr & arguments, const ContextPtr & cont
 
         auto expression = func->arguments->children[1]->clone();
         /// Inlines SQL UDF bodies, as `TreeRewriter` does, so a function used only inside one is seen.
-        if (!UserDefinedSQLFunctionFactory::instance().empty())
-            UserDefinedSQLFunctionVisitor::visit(expression, context);
+        expandUserDefinedFunctions(expression, context);
 
         /// Resolving a name runs the function's `create`, where `checkAccess` lives. Names only:
         /// building the expression would report its type errors from here, not from the validator.
@@ -101,6 +106,28 @@ void checkTextIndexPreAndPostProcessorPermissions(
     auto arguments = type->arguments->clone();
     expandTextIndexTransformAliases(arguments, columns);
     checkTransformPermissions(arguments, context);
+}
+
+void bindTextIndexPreAndPostProcessors(
+    ASTIndexDeclaration & declaration, const ColumnsDescription & columns, const ContextPtr & context)
+{
+    auto * type = declaration.getType() ? declaration.getType()->as<ASTFunction>() : nullptr;
+    if (!type || Poco::toLower(type->name) != TEXT_INDEX_NAME || !type->arguments)
+        return;
+
+    expandTextIndexTransformAliases(type->arguments, columns);
+    for (const auto & child : type->arguments->children)
+    {
+        auto * func = child->as<ASTFunction>();
+        if (!func || func->name != "equals" || !func->arguments || func->arguments->children.size() != 2)
+            continue;
+
+        const auto * key = func->arguments->children[0]->as<ASTIdentifier>();
+        if (key && (key->name() == "preprocessor" || key->name() == "postprocessor"))
+            expandUserDefinedFunctions(func->arguments->children[1], context);
+    }
+
+    checkTextIndexPreAndPostProcessorPermissions(declaration, columns, context);
 }
 
 bool hasTextIndexPreOrPostProcessor(const ASTIndexDeclaration & declaration)

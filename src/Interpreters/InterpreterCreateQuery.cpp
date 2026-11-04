@@ -4094,7 +4094,8 @@ BlockIO InterpreterCreateQuery::execute()
             /// The normalized path does this in `getTablePropertiesAndNormalizeCreateQuery`. Indices
             /// inherited from `AS src` are not in this query, they are checked below. The columns of
             /// this query are built as the worker builds them, so that an `ALIAS` column used in a
-            /// transform is expanded here too.
+            /// transform is expanded here too. The transforms are bound in the shipped query: a worker
+            /// would otherwise expand a SQL UDF by its own definition, with no user.
             if (create.columns_list && create.columns_list->indices && !create.columns_list->indices->children.empty())
             {
                 ColumnsDescription columns;
@@ -4107,8 +4108,8 @@ BlockIO InterpreterCreateQuery::execute()
 
                 for (const auto & index : create.columns_list->indices->children)
                 {
-                    if (const auto * declaration = index->as<ASTIndexDeclaration>())
-                        checkTextIndexPreAndPostProcessorPermissions(*declaration, columns, getContext());
+                    if (auto * declaration = index->as<ASTIndexDeclaration>())
+                        bindTextIndexPreAndPostProcessors(*declaration, columns, getContext());
                 }
             }
 

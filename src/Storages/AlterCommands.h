@@ -267,6 +267,10 @@ public:
         bool share_nested_offsets = true,
         const MergeTreeSettings * settings_defaults = nullptr) const;
 
+    /// Names of the indices that applying the commands in order to an `existing` set of indices actually
+    /// adds: an `ADD INDEX IF NOT EXISTS` of an index that is already there at that point adds nothing.
+    NameSet getAddedIndexNames(const IndicesDescription & existing) const;
+
     /// At least one command modify settings or comments.
     bool hasNonReplicatedAlterCommand() const;
 

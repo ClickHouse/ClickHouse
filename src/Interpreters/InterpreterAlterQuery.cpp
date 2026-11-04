@@ -41,6 +41,7 @@
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IndicesDescription.h>
+#include <Storages/Statistics/Statistics.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/PartitionCommands.h>
@@ -149,10 +150,41 @@ void checkAddedIndexPermissions(ASTAlterQuery & alter, const StoragePtr & table,
         return;
 
     AlterCommands commands;
+    /// The number of runs of consecutive metadata commands: each run is a segment that
+    /// `runCommandSegments` commits on its own, see `parseAlterCommandSegments`.
+    size_t metadata_segments = 0;
+    bool previous_is_metadata = false;
     for (const auto & child : alter.command_list->children)
     {
-        if (auto command = AlterCommand::parse(child->as<ASTAlterCommand>()))
+        const auto * command_ast = child->as<ASTAlterCommand>();
+        std::optional<AlterCommand> command;
+        if (command_ast->type != ASTAlterCommand::EXECUTE_COMMAND)
+            command = AlterCommand::parse(command_ast);
+
+        if (command)
+        {
+            if (!previous_is_metadata)
+                ++metadata_segments;
             commands.emplace_back(std::move(*command));
+        }
+        previous_is_metadata = command.has_value();
+    }
+
+    /// The analysis below applies all metadata commands at once, while a host commits every segment
+    /// separately, and a later segment can fail after an earlier one installed an index. Only a
+    /// single segment is authorized exactly as it is installed.
+    if (bind_transforms && metadata_segments > 1)
+    {
+        for (const auto & child : alter.command_list->children)
+        {
+            const auto & command = child->as<const ASTAlterCommand &>();
+            if (command.type != ASTAlterCommand::ADD_INDEX || !command.index_decl)
+                continue;
+            if (const auto * declaration = command.index_decl->as<ASTIndexDeclaration>(); declaration && hasTextIndexPreOrPostProcessor(*declaration))
+                throw Exception(ErrorCodes::QUERY_IS_PROHIBITED,
+                    "`ALTER TABLE ... ON CLUSTER` that adds a text index with a preprocessor or a postprocessor "
+                    "must not interleave its metadata commands with mutation or partition commands. Run them as separate queries");
+        }
     }
 
     /// The same sequence as `runCommandSegments`: `apply` relies on the checks before it, e.g. that
@@ -166,20 +198,21 @@ void checkAddedIndexPermissions(ASTAlterQuery & alter, const StoragePtr & table,
     StorageInMemoryMetadata metadata_copy = *metadata;
     commands.prepare(metadata_copy, share_nested);
     table->checkAlterIsPossible(commands, context);
+    /// As the storages do before `apply`: an explicit `ADD STATISTICS` replaces an implicit one.
+    removeImplicitStatistics(metadata_copy.columns);
     commands.apply(metadata_copy, context, share_nested);
 
     if (!bind_transforms)
         return;
 
     /// The indices this statement installs, as `apply` built and authorized them against the final schema.
+    /// An index kept by `IF NOT EXISTS` is not one of them, even though `metadata_copy` has it.
+    const NameSet added_indices = commands.getAddedIndexNames(metadata->secondary_indices);
     std::unordered_map<String, ASTPtr> installed_arguments;
-    for (const AlterCommand & command : commands)
+    for (const auto & index : metadata_copy.secondary_indices)
     {
-        if (command.ignore || command.type != AlterCommand::ADD_INDEX)
-            continue;
-        for (const auto & index : metadata_copy.secondary_indices)
-            if (index.name == command.index_name && index.arguments)
-                installed_arguments[index.name] = index.arguments;
+        if (added_indices.contains(index.name) && index.arguments)
+            installed_arguments[index.name] = index.arguments;
     }
 
     for (const auto & child : alter.command_list->children)
