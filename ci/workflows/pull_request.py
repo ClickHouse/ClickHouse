@@ -90,6 +90,7 @@ workflow = Workflow.Config(
         JobConfigs.code_review.set_run_after(CODE_REVIEW_BLOCKING_JOBS),
         JobConfigs.docs_job_mintlify,
         JobConfigs.fast_test,
+        *JobConfigs.darwin_fast_test_jobs,
         *JobConfigs.tidy_build_arm_jobs,
         *[job.set_run_after(STYLE_AND_FAST_TESTS) for job in JobConfigs.build_jobs],
         *[
@@ -220,11 +221,16 @@ workflow = Workflow.Config(
         ],
         *[
             job.set_run_after(CORE_BLOCKING_JOB_NAMES)
-            for job in JobConfigs.buzz_fuzzer_jobs
+            for job in JobConfigs.lacasadeldolor_jobs
         ],
         *[
             job.set_run_after(CORE_BLOCKING_JOB_NAMES)
             for job in JobConfigs.performance_comparison_with_master_head_jobs
+        ],
+        # Only when the Iceberg code changes, see `_has_iceberg_performance_changes` in `filter_job.py`.
+        *[
+            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.performance_comparison_iceberg_jobs
         ],
         JobConfigs.parser_memory_check_job,
         JobConfigs.storage_memory_check_job,
