@@ -16,6 +16,7 @@ U_ALL="u_all_${DB}"
 U_SA1="u_sa1_${DB}"
 U_SA2="u_sa2_${DB}"
 U_SA3="u_sa3_${DB}"
+U_SA4="u_sa4_${DB}"
 F="f_${DB}"
 NC="nc_${DB}"
 
@@ -23,7 +24,7 @@ cleanup() {
     for h in $($CLICKHOUSE_CLIENT -q "SELECT name FROM system.handlers WHERE endsWith(name, '_${DB}')"); do
         $CLICKHOUSE_CLIENT -q "DROP HANDLER IF EXISTS \`$h\`"
     done
-    $CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS ${U}, ${U_ALL}, ${U_SA1}, ${U_SA2}, ${U_SA3}; DROP FUNCTION IF EXISTS ${F}; DROP DATABASE IF EXISTS ${DB_B}; DROP NAMED COLLECTION IF EXISTS ${NC}"
+    $CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS ${U}, ${U_ALL}, ${U_SA1}, ${U_SA2}, ${U_SA3}, ${U_SA4}; DROP FUNCTION IF EXISTS ${F}; DROP DATABASE IF EXISTS ${DB_B}; DROP NAMED COLLECTION IF EXISTS ${NC}"
 }
 trap cleanup EXIT
 cleanup
@@ -171,8 +172,11 @@ CREATE USER ${U_SA1}, ${U_SA2}, ${U_SA3} NOT IDENTIFIED;
 GRANT ALL ON *.* TO ${U_SA1}, ${U_SA2}, ${U_SA3} WITH GRANT OPTION;
 REVOKE SHOW NAMED COLLECTIONS SECRETS ON *.* FROM ${U_SA1};
 REVOKE NAMED COLLECTION ADMIN ON *.* FROM ${U_SA2};
-REVOKE ACCESS MANAGEMENT ON *.* FROM ${U_SA3};"
-for n in 1 2; do
+REVOKE ACCESS MANAGEMENT ON *.* FROM ${U_SA3};
+CREATE USER ${U_SA4} NOT IDENTIFIED;"
+# The grants of a stored user are reloaded from their SQL text.
+$CLICKHOUSE_CLIENT -q "SHOW GRANTS FOR ${U_SA1}" | sed "s/ TO ${U_SA1} / TO ${U_SA4} /; s/$/;/" | $CLICKHOUSE_CLIENT
+for n in 1 2 4; do
     u="u_sa${n}_${DB}"
     as_user "$u" "CREATE HANDLER h18a${n}_${DB} URL '/${DB}/h18a${n}' AS SELECT * FROM ${DB}.t WHERE id = {id:UInt32}"
     as_user "$u" "CREATE HANDLER h18b${n}_${DB} URL REGEXP '/${DB}/h18b${n}/(?P<id>\\\\d+)' AS SELECT {id:UInt32}"

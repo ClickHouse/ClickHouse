@@ -44,9 +44,18 @@ namespace
 {
 
 /// The named collection privileges are not required: `users.xml` administrators do not get them by default.
+/// Nor are the deprecated source privileges: only `ALL` grants them, a stored grant list is reloaded as `READ, WRITE ON <source>`.
 bool hasFullAccess(const ContextPtr & context)
 {
-    return context->getAccess()->hasGrantOption(AccessType::ALL - AccessType::NAMED_COLLECTION_ADMIN);
+    static const AccessFlags not_required = []
+    {
+        AccessFlags flags = AccessType::NAMED_COLLECTION_ADMIN | AccessType::SOURCES;
+#define ADD_DEPRECATED_SOURCE(name, alias) flags |= AccessType::name;
+        APPLY_FOR_SOURCE(ADD_DEPRECATED_SOURCE)
+#undef ADD_DEPRECATED_SOURCE
+        return flags;
+    }();
+    return context->getAccess()->hasGrantOption(AccessFlags::allFlags() - not_required);
 }
 
 /// A stored `<user>:definer`, the clone `processSQLSecurityOption` makes of an ephemeral `<user>`, is not `<user>`:
