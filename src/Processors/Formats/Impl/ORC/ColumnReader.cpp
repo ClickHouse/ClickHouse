@@ -1,6 +1,7 @@
 #include <Processors/Formats/Impl/ORC/ColumnReader.h>
 
 #include <Common/DateLUTImpl.h>
+#include <base/arithmeticOverflow.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
@@ -397,7 +398,7 @@ public:
                 for (UInt64 j = 0; j <= zeros; ++j)
                     nanos[i] *= 10;
 
-            Int64 writer_time = static_cast<Int64>(static_cast<UInt64>(seconds[i]) + static_cast<UInt64>(epoch_offset));
+            Int64 writer_time = static_cast<Int64>(common::addIgnoreOverflow(static_cast<UInt64>(seconds[i]), static_cast<UInt64>(epoch_offset)));
             if (writer_time < 0 && nanos[i] > 999999)
                 writer_time -= 1;
 
@@ -575,9 +576,9 @@ private:
     Int64 readInt64(Int32 current_scale)
     {
         UInt64 encoded = readVarint(*value_stream);
-        Int64 value = static_cast<Int64>((encoded >> 1) ^ (~(encoded & 1) + 1));
+        Int64 value = static_cast<Int64>(encoded >> 1) ^ -static_cast<Int64>(encoded & 1);
         if (scale > current_scale && static_cast<UInt64>(scale - current_scale) <= MAX_PRECISION_64)
-            value = static_cast<Int64>(static_cast<UInt64>(value) * static_cast<UInt64>(POWERS_OF_TEN[scale - current_scale]));
+            value = static_cast<Int64>(common::mulIgnoreOverflow(static_cast<UInt64>(value), static_cast<UInt64>(POWERS_OF_TEN[scale - current_scale])));
         else if (scale < current_scale && static_cast<UInt64>(current_scale - scale) <= MAX_PRECISION_64)
             value /= POWERS_OF_TEN[current_scale - scale];
         else if (scale != current_scale)
