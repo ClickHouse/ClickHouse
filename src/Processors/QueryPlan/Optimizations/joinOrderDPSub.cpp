@@ -6,6 +6,7 @@
 #include <Processors/QueryPlan/Optimizations/conflictDetector.h>
 
 #include <Interpreters/JoinOperator.h>
+#include <Common/Exception.h>
 
 #include <algorithm>
 #include <bit>
@@ -15,6 +16,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 namespace
 {
@@ -32,6 +38,30 @@ UInt32 toMask(const BitSet & bits)
         mask |= (static_cast<UInt32>(1) << bit);
     }
     return mask;
+}
+
+/// Whether the DP entries of a graph carry the real strictness of their joins. They do for an `ALL`
+/// graph. Otherwise the strictness is stamped on the joins later and the entries read `All`, except
+/// in a semi/anti graph flattened for the conflict detector, where each semi/anti join is an
+/// operator of its own and its entry carries its strictness.
+bool entriesCarryStrictness(const QueryGraph & query_graph)
+{
+    if (query_graph.join_strictness == JoinStrictness::All)
+        return true;
+    const bool is_semi_or_anti = query_graph.join_strictness == JoinStrictness::Semi
+        || query_graph.join_strictness == JoinStrictness::Anti;
+    return query_graph.semi_anti_flattened && is_semi_or_anti;
+}
+
+/// Whether a join may have its inputs swapped. Inner and cross joins commute, and an `ALL`
+/// outer join is mirrored through `reverseJoinKind` (`Left` <-> `Right`), the same equivalence the
+/// enumeration uses. Semi/anti joins keep their sides, and so do `ANY` joins: `ANY LEFT` keeps one
+/// match per left row, `ANY RIGHT` one per right row.
+bool canSwap(JoinKind kind, JoinStrictness strictness)
+{
+    if (isInner(kind) || isCrossOrComma(kind))
+        return true;
+    return strictness == JoinStrictness::All && (isLeft(kind) || isRight(kind) || isFull(kind));
 }
 
 class DPSubJoinOrderOptimizer
@@ -59,7 +89,7 @@ private:
     void initDPsubScratch();
     std::optional<JoinKind> isValidJoinOrderMask(UInt32 left_mask, UInt32 right_mask) const;
 
-    /// Conflict-detector variant: decide validity and the resulting (kind, strictness) using the
+    /// Conflict-detector (CD) variant: decide validity and the resulting (kind, strictness) using the
     /// per-operator descriptors in `dpsub_data.conflict_operators` (CD-A or CD-C), which support
     /// outer and semi/anti reordering. Returns nullopt to reject the split.
     std::optional<std::pair<JoinKind, JoinStrictness>> isValidJoinOrderMaskConflict(UInt32 left_mask, UInt32 right_mask) const;
@@ -68,6 +98,18 @@ private:
     /// a conflict detector (CD-A or CD-C) is enabled, otherwise to the per-relation
     /// `isValidJoinOrderMask` (with strictness fixed to All, its only supported case).
     std::optional<std::pair<JoinKind, JoinStrictness>> resolveJoinMask(UInt32 left_mask, UInt32 right_mask) const;
+
+    /// True when an inner-join condition joins the two sides here: all its tables are present and it
+    /// mentions both sides. Skips pinned conditions as those belong to an outer or semi/anti join's
+    bool hasInnerEdgeAcross(UInt32 left_mask, UInt32 right_mask) const;
+
+    /// The join kind as the query wrote it (`Left` or `Right`) of the semi/anti join step applied where
+    /// `left_mask` and `right_mask` are joined, if there is one.
+    std::optional<JoinKind> writtenSemiAntiKind(UInt32 left_mask, UInt32 right_mask, JoinStrictness strictness) const;
+
+    /// True when a column equivalence ties the two sides together: some equivalence class has a
+    /// member on each side. The mask counterpart of `QueryGraph::areTransitivelyConnected`.
+    bool areTransitivelyConnectedMask(UInt32 left_mask, UInt32 right_mask) const;
 
     bool useConflictDetector() const
     {
@@ -94,8 +136,6 @@ private:
     template <std::unsigned_integral TUInt>
     struct DPsubMaskData
     {
-        using EquivClassPtr = EquivalenceClasses<JoinActionRef>::ConstClassPtr;
-
         std::vector<TUInt> edge_source_mask;   /// per edge: source relations
         std::vector<TUInt> edge_pin_mask;      /// per edge: relations that must all be present (if pinned)
         std::vector<char> edge_pinned;         /// per edge: whether a pin applies
@@ -108,8 +148,17 @@ private:
         };
         std::vector<Restriction> restriction_by_rel; /// indexed by relation id
 
-        std::vector<EquivClassPtr> equiv_classes;        /// distinct equivalence classes
+        /// A member of an equivalence class, resolved once: its relation and the distinct values of
+        /// its column, which do not change during the search.
+        struct EquivMember
+        {
+            TUInt relation_bit = 0;
+            std::optional<UInt64> ndv;
+            UInt64 ndv_upper_bound = 0;
+        };
+        std::vector<std::vector<EquivMember>> equiv_classes; /// members of each distinct equivalence class
         std::vector<std::vector<TUInt>> rel_to_classes; /// relation id -> indices into equiv_classes
+        std::vector<TUInt> class_relations;             /// per equivalence class: relations of its members
 
         std::vector<UInt64> class_visited;        /// generation stamp per equivalence class
         UInt64 equiv_generation = 0;              /// bumped on each computeSelectivityMask call
@@ -125,6 +174,13 @@ private:
         /// these (per-operator required-set + conflict rules) instead of the per-relation
         /// `restriction_by_rel`, which lets non-commutative outer and semi/anti joins be reordered.
         std::vector<ConflictOperator> conflict_operators;
+
+        /// Per edge, with a conflict detector: the index in `conflict_operators` of the join step
+        /// whose ON clause it comes from, and, for an inner join's conjunct, its outstanding relations:
+        /// the relations besides its own that must be present before it may be placed. See
+        /// `initDPsubScratch`.
+        std::vector<size_t> edge_operator;
+        std::vector<TUInt> edge_outstanding_mask;
     };
     DPsubMaskData<UInt32> dpsub_data;
 
@@ -156,12 +212,12 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
         if (!edge)
             continue;
         dpsub_data.edge_source_mask[i] = toMask(edge.getSourceRelations());
-        /// ON-clause predicates of an outer join are pinned to the single null-supplying
-        /// relation; the pin becomes applicable exactly when that relation is joined.
+        /// ON-clause predicates of an outer join are pinned to its null-supplying side; the pin
+        /// becomes applicable exactly when that whole side is joined.
         if (auto pin_it = query_graph.outer_join_conditions.find(edge); pin_it != query_graph.outer_join_conditions.end())
         {
             dpsub_data.edge_pinned[i] = 1;
-            dpsub_data.edge_pin_mask[i] = static_cast<UInt32>(1) << pin_it->second;
+            dpsub_data.edge_pin_mask[i] = toMask(pin_it->second);
         }
     }
 
@@ -172,6 +228,8 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
     ///    `isValidJoinOrderMaskConflict`. Handles inner/outer *and* semi/anti joins, with orientation.
     dpsub_data.restriction_by_rel.assign(num_relations, {});
     dpsub_data.conflict_operators.clear();
+    dpsub_data.edge_operator.assign(n, 0);
+    dpsub_data.edge_outstanding_mask.assign(n, 0);
     if (useConflictDetector())
     {
         std::vector<ConflictOpMask> ops;
@@ -180,6 +238,67 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
             ops.push_back(ConflictOpMask{toMask(op.left), toMask(op.right), toMask(op.nel), toMask(op.nr_rels), op.kind, op.strictness});
 
         dpsub_data.conflict_operators = computeConflictOperators(ops, conflictDetectorKind(), log);
+
+        /// An inner join step does not fix the order of its inputs, and its ON clause is split into
+        /// conjuncts, filters placed each at the lowest join where it can be evaluated. Neither may
+        /// get ahead of a join nested under the step whose padded side it reads: below an outer,
+        /// semi or anti join, a filter may only go onto the preserved side, or it would remove rows
+        /// before that join pads or matches them. So such a nested join must have been applied first:
+        /// the relations locating it are outstanding relations of the step, and of each of its
+        /// conjuncts, which may only be applied once they are present.
+        ///
+        /// Exactly those, and not all relations of the nested join, keep a conjunct that reads two
+        /// relations spanning the join it is placed at: the last of its relations and its outstanding
+        /// relations to be joined is either one of its own, or one locating the nested join, which is
+        /// then applied at that same join and takes the conjunct as a filter after it. More outstanding
+        /// relations would place it higher, with both of its relations on one input, as a one-sided
+        /// condition of an inner join that some join algorithms (`full_sorting_merge`) cannot execute.
+        auto & operators = dpsub_data.conflict_operators;
+        auto outstanding_relations = [&](UInt32 reads, size_t step) -> UInt32
+        {
+            const UInt32 step_relations = operators[step].relations;
+            UInt32 outstanding = 0;
+            for (const auto & nested : operators)
+            {
+                const bool is_nested = (nested.relations & ~step_relations) == 0 && nested.relations != step_relations;
+                if (is_nested && (reads & nested.nullSupplying()))
+                    outstanding |= nested.locatedBy();
+            }
+            return outstanding;
+        };
+
+        /// The inner steps first, from the ON clauses as written: `nel` is where `isAppliedAt` puts them.
+        std::vector<UInt32> step_outstanding(operators.size(), 0);
+        for (size_t step = 0; step < operators.size(); ++step)
+            if (operators[step].freely_reorderable && !operators[step].degenerate)
+                step_outstanding[step] = outstanding_relations(operators[step].nel, step);
+        for (size_t step = 0; step < operators.size(); ++step)
+            operators[step].nel |= step_outstanding[step];
+
+        /// Where each condition is placed follows from the join step it comes from, see
+        /// `collectJoinEdgesMask`: an outer, semi or anti join's condition goes where that join is
+        /// applied, an inner join's conjunct as low as its relations and its outstanding relations allow.
+        if (query_graph.edge_conflict_ops.size() != edges.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Join graph has {} conditions, but join steps are recorded for {} of them",
+                edges.size(), query_graph.edge_conflict_ops.size());
+
+        for (size_t i = 0; i < edges.size(); ++i)
+        {
+            if (!edges[i])
+                continue;
+            const size_t op_index = query_graph.edge_conflict_ops[i];
+            if (op_index >= operators.size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Join condition {} refers to join step {}, but there are only {}",
+                    i, op_index, operators.size());
+            dpsub_data.edge_operator[i] = op_index;
+            if (dpsub_data.edge_pinned[i])
+                continue;
+            /// A constant conjunct reads no relation, but it filters the result of its own step: all
+            /// relations of the step are outstanding for it, so it is neither applied below a join
+            /// nested under the step nor to relations outside of it.
+            const UInt32 sources = dpsub_data.edge_source_mask[i];
+            dpsub_data.edge_outstanding_mask[i] = sources ? outstanding_relations(sources, op_index) : operators[op_index].relations;
+        }
         LOG_TRACE(log, "DPsub: using {} conflict detector over {} captured join operators",
                   toString(query_graph.conflict_detector), dpsub_data.conflict_operators.size());
     }
@@ -199,6 +318,7 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
     /// Column-equivalence classes: build a per-relation incidence list so selectivity only
     /// visits the classes touching the left side instead of rescanning the whole member map
     dpsub_data.equiv_classes.clear();
+    dpsub_data.class_relations.clear();
     dpsub_data.rel_to_classes.assign(num_relations, {});
     std::unordered_map<const EquivClass *, UInt32> class_index;
     for (const auto & [member, class_ptr] : query_graph.column_equivalences.getMemberToClassMap())
@@ -211,17 +331,29 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
 
         auto [it, inserted] = class_index.try_emplace(class_ptr.get(), static_cast<UInt32>(dpsub_data.equiv_classes.size()));
         if (inserted)
-            dpsub_data.equiv_classes.push_back(class_ptr);
+        {
+            auto & members = dpsub_data.equiv_classes.emplace_back();
+            auto & relations = dpsub_data.class_relations.emplace_back(0);
+            for (const auto & equiv_member : *class_ptr)
+            {
+                const auto & sources = equiv_member.getSourceRelations();
+                auto relation = sources.getSingleBit();
+                if (!relation || *relation >= num_relations)
+                    continue;
+                auto ndv = getColumnStats(query_graph, dp_table, sources, equiv_member.getColumnName());
+                members.push_back({static_cast<UInt32>(1) << *relation, ndv.ndv, ndv.upper_bound});
+                relations |= members.back().relation_bit;
+            }
+        }
         dpsub_data.rel_to_classes[*rel].push_back(it->second);
     }
     dpsub_data.class_visited.assign(dpsub_data.equiv_classes.size(), 0);
     dpsub_data.equiv_generation = 0;
 
-    /// Connectivity, over the links `initDPTable` seeds: every two-relation predicate, plus, with a
-    /// conflict detector, one per operator whose predicate does not span its two sides.
-    /// Cross products are left out - they join on nothing, so a graph they alone hold together is
-    /// disconnected. A query whose other predicates tie the same relations together still counts as
-    /// connected, which is what lets DPsub plan a cross product feeding an inner join.
+    /// Connectivity: every predicate over two or more relations, every cross product (it links its two
+    /// sides, see `QueryGraph::cross_product_links`), plus, with a conflict detector, one link per
+    /// operator whose predicate does not span its two sides. What is still disconnected after that
+    /// cannot be stitched together by DPsub.
     std::vector<size_t> component(num_relations);
     for (size_t i = 0; i < num_relations; ++i)
         component[i] = i;
@@ -245,24 +377,30 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
             component[rb] = ra;
     };
 
+    /// A condition over three or more tables (`a.x + b.x = c.x`) ties all of them together, just as a
+    /// two-table one ties its pair.
     for (const UInt32 sources : dpsub_data.edge_source_mask)
     {
-        if (std::popcount(sources) != 2)
+        if (std::popcount(sources) < 2)
             continue;
         const UInt32 lowest = sources & (~sources + 1);
-        unite(lowest, sources & ~lowest);
+        for (UInt32 rest = sources & ~lowest; rest; rest &= rest - 1)
+            unite(lowest, rest & (~rest + 1));
     }
 
-    /// `initDPTable` seeds an operator link only for a degenerate operator - one whose predicate does
-    /// not span its two sides. A spanning predicate is already linked by its binary edge above, and
-    /// uniting the operator's whole subtrees instead would attach a relation that only a nested cross
-    /// product holds on (`t1` in `t1 CROSS JOIN t2 JOIN t3 ON t2.k = t3.k`).
+    /// An operator counts here only when degenerate - its predicate does not span its two sides. A
+    /// spanning predicate is already linked by its edge above, and uniting the operator's whole
+    /// subtrees instead would attach a relation that only a nested cross product holds on (`t1` in
+    /// `t1 CROSS JOIN t2 JOIN t3 ON t2.k = t3.k`); that one is linked by its cross product below.
     for (const auto & op : dpsub_data.conflict_operators)
     {
         if (isCrossOrComma(op.kind) || !op.degenerate)
             continue;
         unite(op.left_relations, op.relations & ~op.left_relations);
     }
+
+    for (const auto & [left, right] : query_graph.cross_product_links)
+        unite(toMask(left), toMask(right));
 
     dpsub_data.disconnected_graph = false;
     for (size_t i = 1; i < num_relations; ++i)
@@ -334,20 +472,14 @@ DPSubJoinOrderOptimizer::isValidJoinOrderMaskConflict(UInt32 left_mask, UInt32 r
     JoinStrictness strictness = JoinStrictness::All;
     bool have_non_inner = false;
     bool any_involved = false;
+    /// Whether anything applied here actually ties the two sides together, as opposed to a cross
+    /// product, which is applied across the split while joining the sides on nothing.
+    bool have_connecting_op = false;
 
     for (const auto & op : dpsub_data.conflict_operators)
     {
-        /// The operator is applied here when its ON-clause relations (nel) span the split and are all
-        /// present: a predicate that still references a not-yet-joined relation belongs to a higher
-        /// node. A predicate-less operator falls back to its relation set straddling the split.
-        const bool within = subset_of(op.relations, combined);
-        const bool nel_within = subset_of(op.nel, combined);
-        const bool nel_crosses = (op.nel & left_mask) && (op.nel & right_mask);
-        const bool rel_crosses = (op.relations & left_mask) && (op.relations & right_mask);
-        /// A degenerate operator (one-sided or absent predicate) has no crossing predicate, so it is
-        /// located by its relation set crossing the split with all of its relations present.
-        const bool involved = (nel_within && nel_crosses) || (op.degenerate && rel_crosses && within);
-        if (!involved)
+        /// The same notion places the operator's ON condition, see `collectJoinEdgesMask`.
+        if (!op.isAppliedAt(left_mask, right_mask))
             continue;
         any_involved = true;
 
@@ -359,7 +491,7 @@ DPSubJoinOrderOptimizer::isValidJoinOrderMaskConflict(UInt32 left_mask, UInt32 r
                 return std::nullopt;
 
         /// Required-set containment. `forward` keeps the operator's (left, right) inputs aligned
-        /// with (left_mask, right_mask); `mirrored` swaps them -- a valid equivalence for any of our
+        /// with (left_mask, right_mask); `mirrored` swaps them: a valid equivalence for any of our
         /// operators via `reverseJoinKind` (Left<->Right, Full/Inner unchanged; for semi/anti it
         /// flips the preserved side). The two required sides are disjoint and, for a non-degenerate
         /// predicate, both non-empty, so at most one orientation can hold.
@@ -369,7 +501,7 @@ DPSubJoinOrderOptimizer::isValidJoinOrderMaskConflict(UInt32 left_mask, UInt32 r
         /// A one-sided/cross-product operator has an empty required side, so the containment above
         /// cannot orient it. Require each whole input subtree on its own side instead: this orients
         /// it and rejects a fragmented split that pulls part of a subtree across the outer-join
-        /// boundary (an invalid plan). Rare -- gated by the flag.
+        /// boundary (an invalid plan). This is a very rare condition.
         if (op.degenerate)
         {
             const UInt32 right_relations = op.relations & ~op.left_relations;
@@ -380,9 +512,16 @@ DPSubJoinOrderOptimizer::isValidJoinOrderMaskConflict(UInt32 left_mask, UInt32 r
         if (!forward && !mirrored)
             return std::nullopt;
 
-        /// Inner joins impose no join kind and are commutative; only their gate matters.
+        /// Inner joins impose no join kind and are commutative; only their gate matters. A cross
+        /// product is equally reorderable, but unlike an inner join its kind is worth keeping, so
+        /// note it and read it off below. It must not go through the kind-fixing path underneath:
+        /// that rejects a second such operator at one node, and two cross products there are legal.
         if (op.freely_reorderable)
+        {
+            if (!isCrossOrComma(op.kind))
+                have_connecting_op = true;
             continue;
+        }
 
         /// A non-inner operator fixes the kind. Two of them at one node -> impossible order.
         if (have_non_inner)
@@ -402,11 +541,66 @@ DPSubJoinOrderOptimizer::isValidJoinOrderMaskConflict(UInt32 left_mask, UInt32 r
     /// No operator is applied across this split. A real predicate always maps to an operator, so the
     /// only legitimate no-operator split is a transitive inner join (two sides tied by a column
     /// equivalence, no direct predicate). Anything else reaching here is the synthetic cross-product
-    /// connectivity with no operator spanning it -- reject rather than invent an inner join.
-    if (!any_involved && !query_graph.areTransitivelyConnected(BitSet::fromUInt(left_mask), BitSet::fromUInt(right_mask)))
+    /// connectivity with no operator spanning it, thus reject rather than invent an inner join.
+    if (!any_involved
+        && !hasInnerEdgeAcross(left_mask, right_mask)
+        && !areTransitivelyConnectedMask(left_mask, right_mask))
         return std::nullopt;
 
+    /// Only cross products were applied, and no operator fixed a kind, so the two sides are joined
+    /// on nothing. Report that rather than the `Inner` this started as: an unconditioned join is a
+    /// cross product, and `applyParallelReplicas` and `EXPLAIN` both go by the kind.
+    if (kind == JoinKind::Inner && any_involved && !have_non_inner && !have_connecting_op
+        && !hasInnerEdgeAcross(left_mask, right_mask)
+        && !areTransitivelyConnectedMask(left_mask, right_mask))
+        kind = JoinKind::Cross;
+
     return std::make_pair(kind, strictness);
+}
+
+bool DPSubJoinOrderOptimizer::hasInnerEdgeAcross(UInt32 left_mask, UInt32 right_mask) const
+{
+    const UInt32 combined = left_mask | right_mask;
+    for (size_t i = 0; i < dpsub_data.edge_source_mask.size(); ++i)
+    {
+        if (dpsub_data.edge_pinned[i])
+            continue;
+        const UInt32 sources = dpsub_data.edge_source_mask[i];
+        if ((sources | dpsub_data.edge_outstanding_mask[i]) & ~combined)
+            continue;
+        if (!(sources & left_mask) || !(sources & right_mask))
+            continue;
+        /// A conjunct joining the two sides applies part of its join step here, so the step's conflict
+        /// rules must hold for the joined relations, or the conjunct does not join them.
+        bool rule_violated = false;
+        for (const auto & rule : dpsub_data.conflict_operators[dpsub_data.edge_operator[i]].rules)
+            if ((rule.t1 & combined) && (rule.t2 & ~combined))
+                rule_violated = true;
+        if (!rule_violated)
+            return true;
+    }
+    return false;
+}
+
+std::optional<JoinKind> DPSubJoinOrderOptimizer::writtenSemiAntiKind(UInt32 left_mask, UInt32 right_mask, JoinStrictness strictness) const
+{
+    const auto & operators = dpsub_data.conflict_operators;
+    for (size_t i = 0; i < operators.size(); ++i)
+    {
+        if (operators[i].strictness == strictness && operators[i].isAppliedAt(left_mask, right_mask))
+            return query_graph.conflict_ops[i].kind;
+    }
+    return std::nullopt;
+}
+
+bool DPSubJoinOrderOptimizer::areTransitivelyConnectedMask(UInt32 left_mask, UInt32 right_mask) const
+{
+    for (const UInt32 relations : dpsub_data.class_relations)
+    {
+        if ((relations & left_mask) && (relations & right_mask))
+            return true;
+    }
+    return false;
 }
 
 std::optional<std::pair<JoinKind, JoinStrictness>>
@@ -427,6 +621,7 @@ const std::vector<JoinActionRef *> & DPSubJoinOrderOptimizer::collectJoinEdgesMa
 
     const UInt32 joined = left_mask | right_mask;
     const bool two_relations = std::popcount(joined) == 2;
+    const bool by_operator = useConflictDetector();
     auto & edges = query_graph.edges;
 
     for (size_t i = 0; i < edges.size(); ++i)
@@ -434,6 +629,16 @@ const std::vector<JoinActionRef *> & DPSubJoinOrderOptimizer::collectJoinEdgesMa
         auto & edge = edges[i];
         if (!edge)
             continue;
+
+        /// With a conflict detector, the ON condition of an outer, semi or anti join is placed exactly
+        /// where that join is applied, the join whose kind it fixes (see `isValidJoinOrderMaskConflict`),
+        /// and so it stays in that join's ON clause, whatever the search does around it.
+        if (by_operator && dpsub_data.edge_pinned[i])
+        {
+            if (dpsub_data.conflict_operators[dpsub_data.edge_operator[i]].isAppliedAt(left_mask, right_mask))
+                out.push_back(&edge);
+            continue;
+        }
 
         const UInt32 sources = dpsub_data.edge_source_mask[i];
         if (sources & ~joined) /// edge sources not proper subset of joined relations
@@ -449,8 +654,12 @@ const std::vector<JoinActionRef *> & DPSubJoinOrderOptimizer::collectJoinEdgesMa
         /// the join that brings in `t3`, not to `t2` as a base-table filter. Placing it by `sources`
         /// alone would push it below (or drop it from) that join, silently changing outer-join
         /// semantics, since `t2` may already have been NULL-extended (or default-filled) by an
-        /// earlier join.
-        const UInt32 pin = dpsub_data.edge_pinned[i] ? dpsub_data.edge_pin_mask[i] : 0;
+        /// earlier join. Without a conflict detector, a null-supplying side is a single relation, which
+        /// makes this placement exact. With one, the pin is unused, but an inner join's conjunct with
+        /// outstanding relations is placed the same way (see `initDPsubScratch`).
+        const UInt32 pin = dpsub_data.edge_pinned[i] ? dpsub_data.edge_pin_mask[i] : dpsub_data.edge_outstanding_mask[i];
+        if (pin & ~joined)
+            continue;
         const UInt32 applicable = sources | pin;
 
         if (std::popcount(applicable) <= 1)
@@ -497,21 +706,16 @@ SelectivityEstimate DPSubJoinOrderOptimizer::computeSelectivityMask(
             UInt64 max_ndv_upper_bound = 0;
             bool has_left = false;
             bool has_right = false;
-            for (const auto & equiv_member : *dpsub_data.equiv_classes[class_idx])
+            for (const auto & equiv_member : dpsub_data.equiv_classes[class_idx])
             {
-                auto relation = equiv_member.getSourceRelations().getSingleBit();
-                if (!relation)
-                    continue;
-                const UInt32 relation_bit = static_cast<UInt32>(1) << *relation;
-                if (left_mask & relation_bit)
+                if (left_mask & equiv_member.relation_bit)
                     has_left = true;
-                else if (right_mask & relation_bit)
+                else if (right_mask & equiv_member.relation_bit)
                     has_right = true;
                 else
                     continue;
-                auto ndv = getColumnStats(query_graph, dp_table, equiv_member.getSourceRelations(), equiv_member.getColumnName());
-                max_ndv = std::max(max_ndv, ndv.ndv.value_or(0));
-                max_ndv_upper_bound = std::max(max_ndv_upper_bound, ndv.upper_bound);
+                max_ndv = std::max(max_ndv, equiv_member.ndv.value_or(0));
+                max_ndv_upper_bound = std::max(max_ndv_upper_bound, equiv_member.ndv_upper_bound);
             }
             if (has_left && has_right)
                 applyEquiKeyDistinctValues(estimate, max_ndv, max_ndv_upper_bound);
@@ -547,19 +751,52 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::buildPhysicalPlan(const DP
 
     auto left = buildPhysicalPlan(dptable, entry.left);
     auto right = buildPhysicalPlan(dptable, entry.right);
+
+    /// A semi/anti join leaves the search in whichever orientation the enumeration reached first:
+    /// mirroring it changes neither its cost nor its result. Emit it the way the query wrote it, so the
+    /// join algorithms that execute the query as written also execute the reordered plan (partial merge
+    /// join runs `LEFT SEMI` but not `RIGHT SEMI`). Which reorderings are valid is decided by the conflict
+    /// detector alone; the orientation is a physical detail that must not make a query fail.
+    if (entry.strictness == JoinStrictness::Semi || entry.strictness == JoinStrictness::Anti)
+    {
+        if (auto written_kind = writtenSemiAntiKind(entry.left, entry.right, entry.strictness);
+            written_kind && *written_kind != join_operator.kind)
+        {
+            left.swap(right);
+            join_operator.kind = reverseJoinKind(join_operator.kind);
+        }
+    }
+
+    /// The search costs a join the same whichever way round its inputs go, so `entry.right` is just
+    /// the side the enumeration reached first. The right side builds the hash table, so give that
+    /// role to the smaller estimate.
+    ///
+    /// Leave the sides alone when the query pins `query_plan_join_swap_table`, and in a graph whose
+    /// entries do not carry the real strictness: the swap in `optimizeJoin` decides those later.
+    const bool can_swap = entriesCarryStrictness(query_graph) && canSwap(entry.kind, entry.strictness);
+    if (!query_graph.join_swap_table && can_swap)
+    {
+        const auto & left_rows = left->estimated_rows;
+        const auto & right_rows = right->estimated_rows;
+        /// On equal estimates, or when an input has none (e.g. a `UNION ALL` subquery), put the input
+        /// with more relations on the left: the enumeration reaches a lone relation against the rest
+        /// first, and would otherwise build the hash table from a whole subtree. Two single
+        /// relations without an estimate keep their sides.
+        const bool fewer_relations_left = std::popcount(entry.left) < std::popcount(entry.right);
+        const bool swap_sides = (left_rows && right_rows)
+            ? (*left_rows < *right_rows || (*left_rows == *right_rows && fewer_relations_left))
+            : fewer_relations_left;
+
+        if (swap_sides)
+        {
+            left.swap(right);
+            join_operator.kind = reverseJoinKind(join_operator.kind);
+        }
+    }
+
     return std::make_shared<DPJoinEntry>(left, right, entry.cost, entry.sel, entry.estimated_rows, std::move(join_operator));
 }
 
-/** Implements the `Dpsub` bottom-up dynamic programming algorithm for optimal bushy join tree generation.
-* This algorithm constructs optimal join trees by iterating over subsets of the relations in an ascending order
-* based on an integer bitmask (from 1 to 2^n - 2). This ordering ensures that for any relation subset S,
-* the best plans for all its proper sub-plans (subsets S1 ⊂ S) have already been computed, thereby adhering to
-* Bellman's optimality principle.
-* This methodical evaluation of all connected subsets results in the creation of the best plan for each.
-* The final answer is the optimal plan for the complete set of relations.
-* For more detailed information, see "Building Query Compilers":
-* (https://pi3.informatik.uni-mannheim.de/~moer/querycompiler.pdf)
-*/
 std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::solve()
 {
     /// DPsub uses the generic memo only for composite-expression statistics. Clear any
@@ -570,15 +807,16 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::solve()
 
     const size_t n = query_graph.relation_stats.size();
     using Bitvector = UInt32; // choose UInt64 or even UInt128 for larger sets
-    // A budget cap on nr. of connected components considered by DPsub to avoid excessive optimization time on large join graphs.
-    // This budget cap is obtained from empirical testing using different queries and join graphs.
-    static constexpr UInt32 max_nr_ccps = 50'000;
 
-    if (n >= std::numeric_limits<Bitvector>::digits)
+    /// Check the table count up front rather than stopping midway through: a half-finished search
+    /// throws away the time it already spent and still ends up handing the query to greedy.
+    static_assert(DPSUB_MAX_RELATIONS < std::numeric_limits<Bitvector>::digits);
+
+    if (n > DPSUB_MAX_RELATIONS)
     {
         LOG_TRACE(log,
-            "Number of relations {} exceeds the DP threshold {}, skipping DP optimization invoking greedy algorithm",
-            n, std::numeric_limits<Bitvector>::digits);
+            "Number of relations {} exceeds the DPsub threshold {}, skipping DPsub optimization and falling back to the next algorithm",
+            n, DPSUB_MAX_RELATIONS);
         return nullptr;
     }
 
@@ -605,23 +843,26 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::solve()
     /// and its subcomponents S1, S2
     initDPsubScratch();
 
-    /// Turn down a graph that only cross products hold together, before enumerating anything: DPsub
-    /// cannot stitch its components, so the next algorithm in the chain plans the query instead.
-    if (dpsub_data.disconnected_graph)
+    /// Turn down a disconnected graph before enumerating anything: DPsub cannot stitch its
+    /// components, so the next algorithm in the chain plans the query instead. Cross products do not
+    /// disconnect a graph: each one links its two sides (see `QueryGraph::cross_product_links`),
+    /// whatever the conflict detector, and the acceptor reports such a join as `Cross`. What is left
+    /// is a join whose condition does not span its sides without a conflict detector to link it.
+    /// A graph only DPsub may plan is never turned down.
+    if (dpsub_data.disconnected_graph && !query_graph.requires_conflict_detector)
     {
         LOG_TRACE(log, "Join graph is disconnected apart from cross products, leaving it to the next algorithm");
         return nullptr;
     }
 
     Checker checker(n, *this);
-    Enumerator enumerator(n, max_nr_ccps, log);
+    Enumerator enumerator(n, log);
     enumerator.enumerate(checker, query_graph);
 
     const Bitvector full_set = (static_cast<Bitvector>(1) << n) - 1;
     const auto & dptable = checker.getDPTable();
 
-    /// a. If the join graph is too complex we break early
-    /// b. The full set is assembled only if the join graph is connected. When it is not e.g.
+    /// The full set is assembled only if the join graph is connected. When it is not e.g.
     /// cross products, or predicates that reference a single relation or a constant and thus
     /// create no binary edge (`... LEFT JOIN t ON t.x = 5`): DPsub cannot stitch the
     /// disconnected components, so the full-set entry is missing (or was never given a join)
@@ -629,7 +870,7 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::solve()
                             && (dptable[full_set].left != 0 || dptable[full_set].right != 0);
     if (!full_built)
     {
-        LOG_TRACE(log, "DPsub: join graph is either too complex or disconnected!");
+        LOG_TRACE(log, "DPsub: join graph is disconnected");
         return nullptr;
     }
 
