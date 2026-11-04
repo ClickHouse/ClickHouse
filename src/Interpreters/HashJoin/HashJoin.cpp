@@ -348,7 +348,7 @@ DeferredBuildMapShape deferredBuildMapShape()
             using Bucket = typename Map::Impl;
             typename Bucket::grower_type grower;
             if (keys)
-                grower.set(keys);
+                grower.set(deferredReserveKeys<typename Bucket::grower_type>(keys));
             return grower.bufSize() * sizeof(typename Bucket::cell_type);
         };
     shape.keys_in_arena = std::is_same_v<typename Map::key_type, std::string_view>;

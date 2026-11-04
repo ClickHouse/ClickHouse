@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Interpreters/HashJoin/DeferredBuild.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Common/Arena.h>
 #include <Common/CacheLine.h>
@@ -118,7 +119,7 @@ public:
                 size_t keys = 0;
                 for (size_t bucket = slot; bucket < Map::NUM_BUCKETS; bucket += slots.size())
                 {
-                    map.impls[bucket].reserve(bucket_reserves[map_idx][bucket]);
+                    map.impls[bucket].reserve(deferredReserveKeys<typename Map::Impl::grower_type>(bucket_reserves[map_idx][bucket]));
                     reserved_cells[map_idx][bucket] = map.impls[bucket].getBufferSizeInCells();
                     keys += bucket_reserves[map_idx][bucket];
                 }

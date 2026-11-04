@@ -141,4 +141,26 @@ private:
 /// bucket gets more than its rows. A bucket that gets more keys grows as in a streaming build.
 std::vector<size_t> deferredBuildBucketReserves(size_t estimate, const std::vector<UInt64> & bucket_rows, size_t rows);
 
+/// The keys to reserve a table for, so that a small table gets the size that the streaming build grows it to for `keys`
+/// keys. `HashTable::reserve` makes a table at most half full, but the streaming build quadruples a small table when it
+/// is half full, so it ends up between an eighth and a half full. A lookup of a missing key in a small table walks to an
+/// empty cell, so the denser table is slower to probe. A table of more than 2^16 cells keeps the exact size.
+template <typename Grower>
+size_t deferredReserveKeys(size_t keys)
+{
+    static constexpr size_t max_small_table_cells = 1ULL << 16;
+
+    Grower streaming;
+    while (streaming.overflow(keys))
+        streaming.increaseSize();
+    Grower exact;
+    if (keys)
+        exact.set(keys);
+    const size_t cells = streaming.bufSize();
+    if (cells > max_small_table_cells || cells == exact.bufSize())
+        return keys;
+    /// `HashTable::reserve` sizes a table for keys that fill it up to half.
+    return cells / 2;
+}
+
 }
