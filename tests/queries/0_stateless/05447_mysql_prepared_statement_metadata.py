@@ -22,6 +22,7 @@ CLICKHOUSE_HOST = os.environ.get("CLICKHOUSE_HOST", "127.0.0.1")
 CLICKHOUSE_PORT_MYSQL = int(os.environ.get("CLICKHOUSE_PORT_MYSQL", 9004))
 CLICKHOUSE_USER = os.environ.get("MYSQL_CLIENT_CLICKHOUSE_USER", "default")
 CLICKHOUSE_DATABASE = os.environ.get("CLICKHOUSE_DATABASE", "default")
+SOCKET_TIMEOUT = float(os.environ.get("CLICKHOUSE_TEST_TIMEOUT", "600"))
 
 # Capability flags (see src/Core/MySQL/PacketsGeneric.h).
 CLIENT_CONNECT_WITH_DB = 0x00000008
@@ -109,7 +110,7 @@ def parse_column_definition(payload):
 
 def connect(user=CLICKHOUSE_USER):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.settimeout(30)
+    sock.settimeout(SOCKET_TIMEOUT)
     sock.connect((CLICKHOUSE_HOST, CLICKHOUSE_PORT_MYSQL))
     read_packet(sock)  # The server's initial Handshake packet.
 

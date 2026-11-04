@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 
 #include <algorithm>
+#include <iterator>
 #include <ranges>
 #include <utility>
 
@@ -114,6 +115,7 @@ WindowTransform::WindowTransform(
             const WindowFunctionDescription & function = functions[result_column];
             if (auto general = asGeneralWindowFunction(function.aggregate_function))
             {
+                required = unionOf(required, general->getRequirements(params.window_description));
                 general_functions.push_back(createSlot(params.input_header, function, std::move(general), result_column, states_arena));
             }
             else
@@ -230,7 +232,7 @@ void WindowTransform::computeReadyRows()
     while (!isCancelled())
     {
         if (bounds.rows != 0 && peers.current().location.block != batch_start.block)
-            flushBatch();
+            evaluateRowsBatch();
 
         if (peers.current().location == partition.bounds().end.location)
         {
@@ -238,7 +240,7 @@ void WindowTransform::computeReadyRows()
             if (!partition.bounds().fully_visible || input_is_finished)
                 break;
 
-            flushBatch();
+            evaluateRowsBatch();
             startNextPartition();
         }
 
@@ -249,38 +251,41 @@ void WindowTransform::computeReadyRows()
 
         updateAggregationState();
         writeOutCurrentRow();
-        appendCurrentRow();
+        recordCurrentRowBounds();
 
         prev_frame = frame.bounds();
         peers.advanceCurrentRow(blocks, partition.bounds());
     }
 
-    flushBatch();
+    evaluateRowsBatch();
 }
 
-void WindowTransform::appendCurrentRow()
+void WindowTransform::recordCurrentRowBounds()
 {
-    if (general_functions.empty())
-        return;
-
     const RowPoint & current = peers.current();
-    const FrameBounds & current_frame = frame.bounds();
-    const PeersBounds & current_peers = peers.bounds();
     if (bounds.rows == 0)
         batch_start = current.location;
 
     bounds.row.push_back(current.row_index_in_partition);
-    bounds.frame_start.push_back(current_frame.start.row_index_in_partition);
-    bounds.frame_end.push_back(current_frame.end.row_index_in_partition);
-    bounds.peers_start.push_back(current_peers.start.row_index_in_partition);
-    bounds.peers_end.push_back(current_peers.end.row_index_in_partition);
-    bounds.peer_group_index.push_back(current.peer_group_index_in_partition);
-    if (partition.bounds().fully_visible)
+    if (required.frame)
+    {
+        bounds.frame_start.push_back(frame.bounds().start.row_index_in_partition);
+        bounds.frame_end.push_back(frame.bounds().end.row_index_in_partition);
+    }
+    if (required.peers)
+    {
+        bounds.peers_start.push_back(peers.bounds().start.row_index_in_partition);
+        bounds.peers_end.push_back(peers.bounds().end.row_index_in_partition);
+        bounds.peer_group_index.push_back(current.peer_group_index_in_partition);
+    }
+    if (required.partition && partition.bounds().fully_visible)
+    {
         bounds.partition_end.push_back(partition.bounds().end.row_index_in_partition);
+    }
     ++bounds.rows;
 }
 
-void WindowTransform::flushBatch()
+void WindowTransform::evaluateRowsBatch()
 {
     if (bounds.rows == 0)
         return;
@@ -297,7 +302,22 @@ void WindowTransform::flushBatch()
     for (const auto & slot : general_functions)
         slot.function->evaluate(slot.state, bounds, slot.arguments, *block.result_columns[slot.result_column]);
 
+    const bool block_complete = batch_start.row + bounds.rows == block.rows_count;
+    if (block_complete)
+        packReadyBlock();
+
     clearBounds(bounds);
+}
+
+void WindowTransform::packReadyBlock()
+{
+    const SlidingBlock & block = blocks.blockAt(batch_start.block);
+    Columns columns = block.input_columns;
+    columns.insert(columns.end(), std::make_move_iterator(block.result_columns.begin()), std::make_move_iterator(block.result_columns.end()));
+
+    Chunk chunk;
+    chunk.setColumns(std::move(columns), block.rows_count);
+    pending_outputs.push_back(std::move(chunk));
 }
 
 void WindowTransform::startNextPartition()
@@ -306,8 +326,6 @@ void WindowTransform::startNextPartition()
     chassert(peers.current().location == partition_start);
 
     partition.beginAt(blocks, partition_start);
-    partition.advance(blocks);
-
     peers.enterPartition(partition_start);
     frame.enterPartition(partition_start);
     prev_frame = FrameBounds{.start = {.location = partition_start}, .end = {.location = partition_start}, .fully_visible = true};
@@ -338,46 +356,36 @@ IProcessor::Status WindowTransform::prepare()
         return Status::Finished;
     }
 
-    /// A block is ready once the current row has left it, because rows are computed in order.
-    if (next_output_block_number < peers.current().location.block)
+    if (!pending_outputs.empty())
     {
         if (output.canPush())
         {
-            const SlidingBlock & block = blocks.blockAt(next_output_block_number);
-            auto columns = block.input_columns;
-            for (auto & res : block.result_columns)
-                columns.push_back(std::move(res));
-
-            Chunk chunk;
-            chunk.setColumns(columns, block.rows_count);
-            ++next_output_block_number;
-            output.push(std::move(chunk));
+            output.push(std::move(pending_outputs.front()));
+            pending_outputs.pop_front();
         }
         return Status::PortFull;
     }
 
-    /// The input ended at the previous cycle and no output is ready, so everything is out.
+    /// The input ended at the previous cycle and no output is queued, so everything is out.
     if (input_is_finished)
     {
-        chassert(next_output_block_number == blocks.end().block);
-        chassert(peers.current().location == blocks.end());
         output.finish();
         return Status::Finished;
     }
 
-    /// Pulling with set_not_needed and an explicit setNeeded later makes the producer generate the next block in
-    /// this thread right before our work, so the data is still hot.
-    if (!pending_input && input.hasData())
+    if (pending_input)
+        return Status::Ready;
+
+    /// No more input: one more work closes the last partition.
+    if (input.isFinished())
     {
-        pending_input = input.pull(true /* set_not_needed */);
+        input_is_finished = true;
         return Status::Ready;
     }
 
-    /// No ready output and no more input: finalize once in work if the input is over, wait otherwise.
-    if (input.isFinished())
+    if (input.hasData())
     {
-        chassert(!input_is_finished);
-        input_is_finished = true;
+        pending_input = input.pull(/*set_not_needed=*/true);
         return Status::Ready;
     }
 
@@ -408,9 +416,7 @@ void WindowTransform::work()
 
 void WindowTransform::releaseUnusedBlocks()
 {
-    /// A block is dropped once it is output and both the previous frame start and the current row have left it.
-    /// The previous frame start is never after the current one, and the frame can start after the current row.
-    const auto first_used_block = std::min({next_output_block_number, prev_frame.start.location.block, peers.current().location.block});
+    const auto first_used_block = std::min(prev_frame.start.location.block, peers.current().location.block);
     while (blocks.begin().block < first_used_block)
         blocks.pop();
 }
