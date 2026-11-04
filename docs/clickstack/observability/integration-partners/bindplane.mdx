@@ -1,13 +1,14 @@
 ---
 slug: /clickstack/observability/integration-partners/bindplane
-title: 'Sending OpenTelemetry to ClickStack with Bindplane'
+title: 'Sending OpenTelemetry to ClickHouse Observability with Bindplane'
 sidebarTitle: 'Bindplane'
-description: 'Route telemetry to ClickStack using Bindplane for centralized collector management'
+description: 'Route telemetry to ClickHouse Observability using Bindplane for centralized collector management'
 doc_type: 'guide'
-keywords: ['Bindplane', 'OTEL', 'ClickStack', 'OpenTelemetry', 'collector management']
+keywords: ['Bindplane', 'OTEL', 'ClickHouse Observability', 'OpenTelemetry', 'collector management']
 ---
 
 import { Image } from "/snippets/components/Image.jsx";
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 import { PartnerBadge } from "/snippets/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge/>
@@ -15,14 +16,14 @@ import { PartnerBadge } from "/snippets/components/PartnerBadge/PartnerBadge.jsx
 <Info>
 **TL;DR**
 
-This guide shows you how to route telemetry to ClickStack using Bindplane's native ClickStack destination. You'll learn how to:
+This guide shows you how to route telemetry to ClickHouse Observability using Bindplane's native **ClickStack** destination. You'll learn how to:
 
-- Configure ClickStack as a destination in Bindplane
+- Configure ClickHouse Observability as a destination in Bindplane
 - Create a configuration to process and route telemetry
 - Remotely deploy configurations to OTel collectors and start collecting data
-- View telemetry in ClickStack
+- View telemetry in ClickHouse Observability
 
-This integration pairs ClickStack's high-performance ingestion with Bindplane's centralized collector management, making it easier to scale observability without operational overhead.
+Bindplane manages the collectors in your environment and forwards their telemetry to ClickHouse Observability.
 
 Time required: 10-15 minutes
 </Info>
@@ -31,77 +32,92 @@ Time required: 10-15 minutes
 
 Bindplane is an OpenTelemetry-native telemetry pipeline that provides centralized management for OpenTelemetry Collectors. It simplifies operating large collector fleets by offering visual configuration editing, safe rollouts, and pipeline intelligence.
 
-## Why Bindplane + ClickStack? {#why-bindplane-clickstack}
+## Why Bindplane + ClickHouse Observability? {#why-bindplane-clickstack}
 
-At scale, managing fleets of OpenTelemetry Collectors becomes the operational bottleneck. ClickStack has proven it can handle extreme ingestion volumes—customers are ingesting telemetry at gigabytes per second and storing hundreds of petabytes. The challenge shifts from query performance to reliably operating the collector infrastructure feeding ClickHouse.
+ClickHouse Observability provides telemetry storage, search, and investigation tools. Bindplane manages the OpenTelemetry Collectors that collect and forward data from your environment.
 
 Bindplane solves this by providing:
 
 - Centralized management for OpenTelemetry Collectors from thousands to over a million
 - Visual configuration editing with safe, one-click rollouts
-- Automatic resource detection and enrichment applied consistently before data reaches ClickStack
-- Fan-out routing, so the same telemetry streams can be sent to ClickStack and other destinations simultaneously
+- Automatic resource detection and enrichment applied consistently before data reaches ClickHouse Observability
+- Fan-out routing, so the same telemetry streams can be sent to ClickHouse Observability and other destinations simultaneously
 - Full pipeline visibility, including collector health, throughput, and end-to-end performance
 
 <Tip>
 **Key takeaways**
 
-- **ClickStack handles extreme ingestion volumes, storage, and fast analytical queries**
+- **ClickHouse Observability stores telemetry and supports investigation**
 - **Bindplane manages the ingestion pipeline and operational complexity of running collector fleets**
 </Tip>
 
 ## Prerequisites {#prerequisites}
 
-- ClickStack instance running (local, Server, or ClickHouse Cloud)
-- Bindplane account ([create an account at `app.bindplane.com`](https://app.bindplane.com))
-- Installed Bindplane OTel Collector (see [Install Your First Collector](https://docs.bindplane.com/readme/install-your-first-collector))
-- Network connectivity from Bindplane collectors to your ClickStack OTLP endpoint
-- ClickStack API Ingestion Key (found in ClickStack Team Settings > API Keys, [view docs here for reference](/clickstack/ingesting-data/opentelemetry#sending-otel-data))
-- Appropriate network ports open (`4318` for HTTP/s or `4317` for gRPC)
+- A [fully managed ClickHouse Observability service](/clickstack/observability/getting-started) or a [self-managed deployment](/clickstack/self-configured/getting-started/managed)
+- A Bindplane account ([create an account](https://app.bindplane.com))
+- An installed Bindplane OTel Collector (see [Install your first collector](https://docs.bindplane.com/readme/install-your-first-collector))
+- **Fully managed**: your OTLP HTTP endpoint and ingestion API key from **Team Settings → Data → Managed Telemetry**
+- **Self-managed**: a running [standalone collector](/clickstack/self-configured/ingesting-data/collector#configuring-the-collector-self-configured), its OTLP endpoint, and the [`OTLP_AUTH_TOKEN`](/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured) configured on it
+- Network connectivity from the Bindplane collectors to your OTLP endpoint
 
-## Integrate ClickStack with Bindplane {#integrate-bindplane-clickstack}
+## Integrate ClickHouse Observability with Bindplane {#integrate-bindplane-clickstack}
 
 <Steps>
-<Step title="Configure ClickStack as a destination" id="configure-destination">
+<Step title="Configure ClickHouse Observability as a destination" id="configure-destination">
 
-1. Log in to your Bindplane account
-2. Navigate to **Library**
-3. Click **Add Destination**
-4. Select **ClickStack** from the list of available destinations
-5. Configure the connection:
-   - **Protocol**: Choose HTTP or gRPC (default: HTTP on port `4318`)
-   - **Hostname**: Enter your ClickStack OTLP endpoint hostname or IP address
-   - **Port**: Enter the port (`4318` for HTTP, `4317` for gRPC)
-   - **API Ingestion Key**: Enter your ClickStack API Ingestion Key
-6. Give the destination a name (e.g., "ClickStack Production")
-7. Click **Save** to create the destination
+In Bindplane, open **Library → Add Destination** and select **ClickStack**. This is the name of Bindplane's destination for sending telemetry to ClickHouse Observability over OTLP.
 
-<Tip>
-**Key takeaways**
+<Tabs>
+<Tab title="Fully managed">
 
-The ClickStack destination supports both HTTP and gRPC protocols. For high-volume scenarios, gRPC with compression (gzip, zstd, or snappy) is recommended for better performance.
-</Tip>
+<BetaBadge label="Beta offering" />
+
+Send telemetry to your managed OTLP endpoint. ClickHouse handles ingestion, schemas, storage, and scaling.
+
+1. Set **Protocol** to **HTTP**.
+2. Set **Hostname** to the hostname from your managed OTLP endpoint, without `https://` or the port. For an endpoint such as `https://<service-id>.otel.<region>.aws.clickhouse.com:4318`, enter `<service-id>.otel.<region>.aws.clickhouse.com`.
+3. Set **Port** to `4318`.
+4. Set **API Ingestion Key** to `Bearer <YOUR_INGESTION_API_KEY>`, including the `Bearer` prefix. This field supplies the `authorization` header.
+5. Turn on **Enable TLS** and leave **Skip TLS Certificate Verification** off.
+
+Use the managed OTLP endpoint, not your ClickHouse database endpoint on port `8443`.
+
+</Tab>
+<Tab title="Self-managed">
+
+Send telemetry to the standalone collector connected to your ClickHouse Cloud service. This collector must already be running and [configured to authenticate requests](/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured).
+
+1. Set **Protocol** to **HTTP** or **gRPC**.
+2. Set **Hostname** to your standalone collector's hostname or IP address, without a URL scheme or port.
+3. Set **Port** to `4318` for HTTP or `4317` for gRPC, unless you configured a different port.
+4. Set **API Ingestion Key** to the collector's `OTLP_AUTH_TOKEN` value, without a `Bearer` prefix.
+5. Set **Enable TLS** to match your collector endpoint. For TLS endpoints, keep certificate verification enabled.
+
+</Tab>
+</Tabs>
+
+Give the destination a name, such as **Observability production**, then click **Save**. Keep the default gzip compression unless you have verified that your endpoint supports another algorithm.
 </Step>
 <Step title="Create a configuration" id="create-configuration">
 
-Once your ClickStack destination is configured, create a configuration to process and route telemetry:
+Once your destination is configured, create a configuration to process and route telemetry:
 
 1. Navigate to **Configurations** → **Create Configuration**
-2. Give the configuration a name (e.g., "ClickStack Pipeline")
+2. Give the configuration a name (e.g., "Observability pipeline")
 3. Select the **Collector Type** and **Platform** for your deployment
 4. Add sources:
    - Click **Add Source** to select from 80+ available sources
    - For testing, you can add a telemetry generator source to simulate traffic
    - For production, add sources for your actual telemetry (logs, metrics, traces)
-5. Add the ClickStack destination:
+5. Add your destination:
    - Click **Add Destination**
-   - Select the ClickStack destination you created in the previous step
+   - Select the destination you created in the previous step
    - Choose which telemetry types to send (Logs, Metrics, Traces, or all)
 
 <Tip>
 **Key takeaways**
 
-You can add processors for filtering, sampling, masking, enrichment, batching, and more to shape telemetry before it reaches ClickStack. This ensures consistent, structured data arrives in ClickHouse.
+You can add processors for filtering, sampling, masking, enrichment, batching, and more to shape telemetry before it reaches ClickHouse Observability. This ensures consistent, structured data arrives in ClickHouse.
 </Tip>
 </Step>
 <Step title="Add processors (optional)" id="add-processors">
@@ -114,18 +130,18 @@ Bindplane provides pipeline intelligence and processor recommendations. You can 
 - **Transform**: Modify telemetry structure or content
 - **Batch**: Optimize batch sizes for efficient transmission
 
-These processors are applied consistently across your collector fleet before data reaches ClickStack.
+These processors are applied consistently across your collector fleet before data reaches ClickHouse Observability.
 </Step>
 <Step title="Deploy collectors and start rollout" id="deploy-collectors">
 
 1. Add a collector (BDOT Collector) to your configuration:
-   - Navigate to **Agents** in Bindplane
+   - Navigate to **Collectors** in Bindplane
    - Install the Bindplane collector on your target systems [following Bindplane's installation instructions](https://docs.bindplane.com/readme/install-your-first-collector)
    - The collector will appear in your collector list once connected
 
 2. Assign the configuration to your collectors:
    - Select the collectors you want to use
-   - Assign your ClickStack configuration to them
+   - Assign your configuration to them
 
 3. Start a rollout:
    - Click **Start Rollout** to deploy the configuration
@@ -138,18 +154,18 @@ These processors are applied consistently across your collector fleet before dat
 Bindplane provides safe, one-click rollouts with validation. You can monitor collector health, throughput, and any errors in real-time through the Bindplane interface.
 </Tip>
 
-<Image img="/images/clickstack/bindplane/bindplane-configuration.webp" alt="Telemetry Signals in ClickStack via Bindplane" size="lg"/>
+<Image img="/images/clickstack/bindplane/bindplane-configuration.webp" alt="Telemetry in ClickHouse Observability via Bindplane" size="lg"/>
 </Step>
-<Step title="Verify telemetry in ClickStack" id="verify-telemetry">
+<Step title="Verify telemetry in ClickHouse Observability" id="verify-telemetry">
 
-Once the configuration is rolled out, telemetry starts flowing into ClickStack from your managed collector fleet:
+Once the configuration is rolled out, telemetry starts flowing into ClickHouse Observability from your managed collector fleet:
 
-1. Log into your ClickStack instance (ClickStack UI)
-2. Navigate to the **Logs**, **Metrics**, or **Traces** explorer
-3. You should see telemetry data appearing from your Bindplane-managed collectors
-4. Data arriving in ClickStack is already enriched and structured by Bindplane processors
+1. Open ClickHouse Observability for your service in the ClickHouse Cloud console
+2. Search for your services in the **Search** view and use **Chart Explorer** for metrics
+3. Confirm that the expected telemetry from your Bindplane-managed collectors has arrived
+4. If data is missing, check the Bindplane collector logs for connection or authentication errors
 
-<Image img="/images/clickstack/bindplane/bindplane-hyperdx.webp" alt="Telemetry Signals in ClickStack via Bindplane" size="lg"/>
+<Image img="/images/clickstack/bindplane/bindplane-hyperdx.webp" alt="Telemetry in ClickHouse Observability via Bindplane" size="lg"/>
 </Step>
 </Steps>
 
@@ -159,7 +175,7 @@ Once the configuration is rolled out, telemetry starts flowing into ClickStack f
 
 Bindplane supports fan-out routing, allowing you to send the same telemetry streams to multiple destinations simultaneously. You can:
 
-- Send logs, metrics, and traces to ClickStack for long-term storage and analysis
+- Send logs, metrics, and traces to ClickHouse Observability for long-term storage and analysis
 - Route the same data to other observability platforms for real-time alerting
 - Forward specific telemetry to SIEM platforms for security analysis
 
@@ -167,23 +183,17 @@ This is configured by adding multiple destinations to your Bindplane configurati
 
 ### Compression and performance {#compression}
 
-For high-volume scenarios, configure compression in your ClickStack destination:
-
-- **HTTP**: Supports gzip, deflate, snappy, zstd, or none (default: gzip)
-- **gRPC**: Supports gzip, snappy, zstd, or none (default: gzip)
-
-Compression reduces bandwidth usage when sending telemetry to ClickStack, especially important at scale.
+Keep gzip compression enabled to reduce bandwidth usage. Other compression algorithms depend on the protocol and must be supported by the receiving endpoint. For fully managed deployments, use gzip.
 
 ## Next steps {#next-steps}
 
-Now that you have telemetry flowing from Bindplane to ClickStack, you can:
+Now that you have telemetry flowing from Bindplane to ClickHouse Observability, you can:
 
-- **Build dashboards**: Create visualizations in ClickStack UI for logs, metrics, and traces
-- **Set up alerts**: Configure alerts in ClickStack for critical conditions
+- **Build dashboards**: Create visualizations in ClickHouse Observability for logs, metrics, and traces
+- **Set up alerts**: Configure alerts in ClickHouse Observability for critical conditions
 - **Scale your deployment**: Add more collectors and sources as your observability needs grow
 - **Optimize your pipeline**: Use Bindplane's pipeline intelligence to identify optimization opportunities
 
 ## Read more {#read-more}
 
-- [ClickStack Integration in the Bindplane Documentation](https://docs.bindplane.com/integrations/destinations/clickstack)
-{/* - ["Bindplane + ClickStack Integration: Send OpenTelemetry (OTel) to ClickStack" in the Bindplane Blog](tbd) -- add link once published */}
+- [ClickStack destination in the Bindplane documentation](https://docs.bindplane.com/integrations/destinations/clickstack)
