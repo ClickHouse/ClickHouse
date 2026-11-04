@@ -3534,11 +3534,17 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
     /// Same split as the analyzer: a stored `` `db.view`(...) `` has no compound-name flag.
     auto [database_name, table_name] = extractDatabaseAndTableNameForParameterizedView(function->name, shared_from_this());
 
+    auto is_parameterized_view = [](const StoragePtr & storage)
+    {
+        const auto * view = storage ? storage->as<StorageView>() : nullptr;
+        return view && view->isParameterizedView();
+    };
+
     StoragePtr table;
     if (!table_name.empty())
         table = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, getQueryContext());
     /// A view whose own name has a dot: `` `v.x`(...) ``.
-    if (!table && !function->isCompoundName() && table_name != function->name)
+    if (!is_parameterized_view(table) && !function->isCompoundName() && table_name != function->name)
     {
         database_name = getCurrentDatabase();
         table_name = function->name;

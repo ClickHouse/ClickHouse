@@ -23,5 +23,7 @@ the analyzer writes the stored spelling as two parts
 1
 a view whose own name has a dot
 1
+a view whose own name has a dot, when the split names a table that is not a parameterized view
+1
 an unquoted v.x(...) is the view x of database v, not the view v.x
 0

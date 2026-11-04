@@ -181,21 +181,23 @@ namespace
             if (TableFunctionFactory::instance().isTableFunctionName(func->name))
                 return;
 
+            auto is_parameterized_view = [](const StoragePtr & candidate)
+            {
+                const auto * view = candidate ? candidate->as<StorageView>() : nullptr;
+                return view && view->isParameterizedView();
+            };
+
             auto [database_name, table_name] = extractDatabaseAndTableNameForParameterizedView(func->name, query_context);
             StoragePtr storage;
             if (!table_name.empty())
                 storage = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, query_context);
             /// A view whose own name has a dot: `` `v.x`(...) ``.
-            if (!storage && !func->isCompoundName() && table_name != func->name)
+            if (!is_parameterized_view(storage) && !func->isCompoundName() && table_name != func->name)
             {
                 table_name = func->name;
                 storage = DatabaseCatalog::instance().tryGetTable({query_context->getCurrentDatabase(), table_name}, query_context);
             }
-            if (!storage)
-                return;
-
-            const auto * storage_view = storage->as<StorageView>();
-            if (!storage_view || !storage_view->isParameterizedView())
+            if (!is_parameterized_view(storage))
                 return;
 
             auto metadata = storage->getInMemoryMetadataPtr(query_context, false);

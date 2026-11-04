@@ -96,6 +96,12 @@ ${CLICKHOUSE_CLIENT} -q "
     SELECT countIf(explain LIKE '%FROM ${a}.src%') > 0 FROM (EXPLAIN SYNTAX SELECT * FROM \`v.x\`(p = 1));
 "
 
+echo 'a view whose own name has a dot, when the split names a table that is not a parameterized view'
+${CLICKHOUSE_CLIENT} -q "
+    CREATE VIEW \`${a}.src\` AS SELECT d FROM ${a}.src WHERE x = {p:UInt8};
+    SELECT countIf(explain LIKE '%FROM ${a}.src%') > 0 FROM (EXPLAIN SYNTAX SELECT * FROM \`${a}.src\`(p = 1));
+"
+
 echo 'an unquoted v.x(...) is the view x of database v, not the view v.x'
 ${CLICKHOUSE_CLIENT} -q "EXPLAIN SYNTAX SELECT * FROM v.x(p = 1)" | grep -c "FROM ${a}.src"
 
