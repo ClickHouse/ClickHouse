@@ -53,8 +53,7 @@ class ManifestColumnStatistics
 {
 public:
     /// Keeps the columns of `column_names` that are physical, not `Array`, `Map`, `Tuple` or `Variant`, and have a
-    /// field id in the schema with id `schema_id`, the schema the read uses. `table_distinct_values` maps field ids to
-    /// the numbers of distinct values from the table statistics.
+    /// field id in the schema with id `schema_id`, the schema the read uses.
     ManifestColumnStatistics(
         const Names & column_names,
         const ColumnsDescription & columns,
@@ -85,7 +84,6 @@ private:
         DataTypePtr storage_type;
         /// `storage_type` without `LowCardinality` and `Nullable`; bounds and partition values are converted to it.
         DataTypePtr nested_type;
-        /// From the table statistics, for rule 3.
         std::optional<UInt64> table_distinct_values;
     };
 

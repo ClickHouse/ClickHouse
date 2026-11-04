@@ -1669,8 +1669,7 @@ std::optional<Int64> tryGetInt64(const Poco::Dynamic::Var & value)
     return static_cast<Int64>(unsigned_value);
 }
 
-/// Field id -> number of distinct values: the `ndv` of the one-column theta sketches in the first statistics file of the
-/// snapshot `snapshot_id`, as Spark reads them. The statistics are optional, so a malformed entry is skipped.
+/// Field id -> `ndv` of the one-column theta sketches in the first statistics file of snapshot `snapshot_id`; skips malformed entries.
 std::unordered_map<Int32, UInt64> readTableStatisticsDistinctValues(const Poco::JSON::Array::Ptr & statistics, Int64 snapshot_id)
 {
     static constexpr auto theta_sketch_blob_type = "apache-datasketches-theta-v1";
