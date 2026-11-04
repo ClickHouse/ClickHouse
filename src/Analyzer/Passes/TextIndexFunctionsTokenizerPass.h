@@ -17,8 +17,9 @@ namespace DB
   * Only the tokenizer is forwarded. An index `preprocessor` or `postprocessor` still reaches a predicate
   * solely through `optimizeDirectReadFromTextIndex`, which rewrites haystack and needles in the plan and
   * cannot reach a stranded predicate, so those indexes keep diverging there. Out of reach for the same
-  * reason: a haystack behind a `StorageView` that `analyzer_inline_views` left opaque, and a `Distributed`
-  * haystack on an initiator that is not itself a shard. See `02346_text_index_bug115999`.
+  * reason: a haystack behind a `StorageView` that `analyzer_inline_views` left opaque, a `Distributed`
+  * haystack on an initiator that is not itself a shard, and a haystack this pass declines, where the plan
+  * may still tokenize the rows of a scan it reaches with the index. See `02346_text_index_bug115999`.
   */
 class TextIndexFunctionsTokenizerPass final : public IQueryTreePass
 {

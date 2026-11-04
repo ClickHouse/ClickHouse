@@ -604,6 +604,53 @@ SELECT hasAnyTokens(arrayMap(y -> concat(y, suffix), tags), ['alpha beta!']) FRO
 
 DROP TABLE t_115999_capture;
 
+-- Union arms are agreed one projection at a time, so two columns of one haystack say nothing about how
+-- they relate inside an arm. Whatever is forwarded must not depend on the order of the arms.
+SELECT 'a multi-column haystack above UNION ALL arms';
+CREATE TABLE t_115999_arms
+(
+    id UInt64,
+    a String,
+    b String,
+    INDEX idx_ab concat(a, b) TYPE text(tokenizer = ngrams(3))
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO t_115999_arms VALUES (1, 'hel', 'lo'), (2, 'wor', 'ld');
+
+-- Prints 1: the orderings agree. The count is not pinned, and is not uniform either - the plan still
+-- reaches the scan of the plain arm and tokenizes its rows with the index while the joined arm uses the
+-- default. That residual split is the tracked gap; what this pins is that arm order cannot change it.
+SELECT
+(
+    SELECT count() FROM
+    (
+        SELECT a AS x, b AS y FROM t_115999_arms ORDER BY id LIMIT 10
+        UNION ALL
+        SELECT t1.a AS x, t2.b AS y FROM t_115999_arms AS t1 CROSS JOIN t_115999_arms AS t2 ORDER BY t1.id LIMIT 10
+    )
+    WHERE hasAnyTokens(concat(x, y), ['ell'])
+) = (
+    SELECT count() FROM
+    (
+        SELECT t1.a AS x, t2.b AS y FROM t_115999_arms AS t1 CROSS JOIN t_115999_arms AS t2 ORDER BY t1.id LIMIT 10
+        UNION ALL
+        SELECT a AS x, b AS y FROM t_115999_arms ORDER BY id LIMIT 10
+    )
+    WHERE hasAnyTokens(concat(x, y), ['ell'])
+);
+-- One column through the union still forwards.
+SELECT count() FROM
+(
+    SELECT concat(a, b) AS z FROM t_115999_arms ORDER BY id LIMIT 10
+    UNION ALL
+    SELECT concat(a, b) AS z FROM t_115999_arms ORDER BY id LIMIT 10
+)
+WHERE hasAnyTokens(z, ['ell']);
+
+DROP TABLE t_115999_arms;
+
 -- A Distributed table carries no indexes of its own, so the initiator has to reach the shards' local
 -- table by name; otherwise a predicate it evaluates itself disagrees with the shard-local scans.
 SELECT 'a Distributed haystack, predicate on the initiator';

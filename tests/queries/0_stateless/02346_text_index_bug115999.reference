@@ -110,6 +110,9 @@ a lambda capture named like the indexed column
 [0]
 [0]
 1
+a multi-column haystack above UNION ALL arms
+1
+2
 a Distributed haystack, predicate on the initiator
 1
 1

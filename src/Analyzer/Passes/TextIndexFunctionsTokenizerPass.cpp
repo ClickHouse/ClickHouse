@@ -195,6 +195,9 @@ Resolution resolveToTableColumns(
     bool foreign_map_key = false;
     /// The lambdas the walk entered, whose parameters are therefore bound inside the haystack.
     std::vector<const IQueryTreeNode *> local_binders;
+    /// Columns read through a union. Each is agreed arm by arm on its own, which says nothing about how
+    /// two of them relate inside one arm, so a second one is refused rather than resolved to arm order.
+    size_t union_substitutions = 0;
 
     /// Returns `{substituted, failed}`. `substituted` is null when nothing below `current` changed, so
     /// an expression over plain table columns is resolved without copying anything; a substitution is
@@ -296,6 +299,9 @@ Resolution resolveToTableColumns(
         else
         {
             what_it_reads = findProjection(*source, column_node->getColumnName(), context, substitutions);
+
+            if (what_it_reads && source->as<UnionNode>() && ++union_substitutions > 1)
+                return {nullptr, true};
         }
 
         if (!what_it_reads || ++substitutions > max_substitutions)
