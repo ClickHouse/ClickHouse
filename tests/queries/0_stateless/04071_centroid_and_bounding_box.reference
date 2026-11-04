@@ -85,7 +85,7 @@ centroidCartesian large coordinates
 centroidCartesian degenerate ring (all same points)
 (5,5)
 centroidCartesian collinear points
-(0,0)
+(5,5)
 centroidCartesian WKT MultiPolygon
 (3.5,3.5)
 centroidCartesian Geometry Point
@@ -115,7 +115,7 @@ centroidCartesian Geometry MultiPoint
 centroidCartesian single-point MultiPoint (degenerate)
 (3,7)
 centroidCartesian empty MultiPoint (degenerate)
-(0,0)
+(nan,nan)
 centroidCartesian Polygon with off-center hole of the same winding as the outer ring
 (5.125,5.125)
 (5.125,5.125)
@@ -125,8 +125,29 @@ centroidCartesian MultiPolygon with mixed winding
 (3,3)
 (3,3)
 MultiLineString empty row followed by nonempty rows
-[]	(0,0)	[(1.7976931348623157e308,1.7976931348623157e308),(-1.7976931348623157e308,1.7976931348623157e308),(-1.7976931348623157e308,-1.7976931348623157e308),(1.7976931348623157e308,-1.7976931348623157e308),(1.7976931348623157e308,1.7976931348623157e308)]	[(1.7976931348623157e308,1.7976931348623157e308),(-1.7976931348623157e308,1.7976931348623157e308),(-1.7976931348623157e308,-1.7976931348623157e308),(1.7976931348623157e308,-1.7976931348623157e308),(1.7976931348623157e308,1.7976931348623157e308)]
+[]	(nan,nan)	[]	[]
 [[(10,10),(12,12)]]	(11,11)	[(10,10),(12,10),(12,12),(10,12),(10,10)]	[(10,10),(12,10),(12,12),(10,12),(10,10)]
 MultiPolygon empty row followed by nonempty rows
-[]	(0,0)	[(1.7976931348623157e308,1.7976931348623157e308),(-1.7976931348623157e308,1.7976931348623157e308),(-1.7976931348623157e308,-1.7976931348623157e308),(1.7976931348623157e308,-1.7976931348623157e308),(1.7976931348623157e308,1.7976931348623157e308)]	[(1.7976931348623157e308,1.7976931348623157e308),(-1.7976931348623157e308,1.7976931348623157e308),(-1.7976931348623157e308,-1.7976931348623157e308),(1.7976931348623157e308,-1.7976931348623157e308),(1.7976931348623157e308,1.7976931348623157e308)]	0
+[]	(nan,nan)	[]	[]	0
 [[[(0,0),(0,4),(4,4),(4,0),(0,0)]]]	(2,2)	[(0,0),(4,0),(4,4),(0,4),(0,0)]	[(0,0),(4,0),(4,4.00243025545129),(0,4.00243025545129),(0,0)]	16
+centroidCartesian collinear points, other starting vertices
+(5,5)	(5,5)
+centroidCartesian polygon with a hole equal to the outer ring (zero area)
+(2,2)
+centroidCartesian tiny square
+5e-10	5e-10
+centroidCartesian of empty geometries
+(nan,nan)	(nan,nan)	(nan,nan)	(nan,nan)
+boundingBoxCartesian of empty geometries
+[]	[]	[]	[]
+boundingBoxSpherical of empty geometries
+[]	[]	[]	[]
+NULL Geometry
+(nan,nan)	[]	[]
+boundingBoxSpherical ring around a pole, in both orientations
+[(-180,89),(180,89),(180,90),(-180,90),(-180,89)]
+[(-180,89),(180,89),(180,90),(-180,90),(-180,89)]
+[(-180,-90),(180,-90),(180,-80),(-180,-80),(-180,-90)]
+[(-180,-90),(180,-90),(180,-80),(-180,-80),(-180,-90)]
+boundingBoxSpherical latitude at the limits
+[(0,-90),(0,-90),(0,90),(0,90),(0,-90)]

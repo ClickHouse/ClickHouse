@@ -190,3 +190,43 @@ FROM (SELECT CAST(arrayJoin([[], [[(10., 10.), (12., 12.)]]]), 'MultiLineString'
 SELECT 'MultiPolygon empty row followed by nonempty rows';
 SELECT g, centroidCartesian(g), boundingBoxCartesian(g), boundingBoxSpherical(g), polygonAreaCartesian(g)
 FROM (SELECT CAST(arrayJoin([[], [[[(0., 0.), (0., 4.), (4., 4.), (4., 0.), (0., 0.)]]]]), 'MultiPolygon') AS g);
+
+-- A ring of zero area has the centroid of its boundary, which does not depend on the starting vertex.
+SELECT 'centroidCartesian collinear points, other starting vertices';
+SELECT centroidCartesian([(5., 5.), (10., 10.), (0., 0.), (5., 5.)]), centroidCartesian([(10., 10.), (0., 0.), (5., 5.), (10., 10.)]);
+
+SELECT 'centroidCartesian polygon with a hole equal to the outer ring (zero area)';
+SELECT centroidCartesian([[(0., 0.), (0., 4.), (4., 4.), (4., 0.), (0., 0.)], [(0., 0.), (0., 4.), (4., 4.), (4., 0.), (0., 0.)]]);
+
+SELECT 'centroidCartesian tiny square';
+SELECT round(c.1, 15), round(c.2, 15) FROM (SELECT centroidCartesian([(0., 0.), (0., 1e-9), (1e-9, 1e-9), (1e-9, 0.), (0., 0.)]) AS c);
+
+SELECT 'centroidCartesian of empty geometries';
+SELECT centroidCartesian(CAST([], 'Ring')), centroidCartesian(CAST([], 'Polygon')), centroidCartesian(CAST([], 'LineString')), centroidCartesian(CAST([], 'MultiPolygon'));
+
+SELECT 'boundingBoxCartesian of empty geometries';
+SELECT boundingBoxCartesian(CAST([], 'Ring')), boundingBoxCartesian(CAST([], 'Polygon')), boundingBoxCartesian(CAST([], 'MultiPoint')), boundingBoxCartesian(CAST([], 'LineString'));
+
+SELECT 'boundingBoxSpherical of empty geometries';
+SELECT boundingBoxSpherical(CAST([], 'Ring')), boundingBoxSpherical(CAST([], 'Polygon')), boundingBoxSpherical(CAST([], 'MultiPoint')), boundingBoxSpherical(CAST([], 'LineString'));
+
+SELECT 'NULL Geometry';
+SELECT centroidCartesian(CAST(NULL, 'Geometry')), boundingBoxCartesian(CAST(NULL, 'Geometry')), boundingBoxSpherical(CAST(NULL, 'Geometry'));
+
+-- Like typed columns, `Geometry` rejects NaN and infinite coordinates.
+SELECT centroidCartesian(CAST(CAST((nan, 1.), 'Point'), 'Geometry')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT centroidCartesian(CAST(CAST([[(0., 0.), (nan, 1.), (1., 1.), (0., 0.)]], 'Polygon'), 'Geometry')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT boundingBoxCartesian(CAST(CAST([(0., 0.), (inf, 1.)], 'LineString'), 'Geometry')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT boundingBoxSpherical(CAST(CAST([[(0., 0.), (1., nan), (1., 1.), (0., 0.)]], 'Polygon'), 'Geometry')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+SELECT 'boundingBoxSpherical ring around a pole, in both orientations';
+SELECT boundingBoxSpherical([(0., 89.), (120., 89.), (240., 89.), (0., 89.)]);
+SELECT boundingBoxSpherical([(0., 89.), (240., 89.), (120., 89.), (0., 89.)]);
+SELECT boundingBoxSpherical([[(0., -80.), (-120., -80.), (-240., -80.), (0., -80.)]]);
+SELECT boundingBoxSpherical([[(0., -80.), (-240., -80.), (-120., -80.), (0., -80.)]]);
+
+SELECT 'boundingBoxSpherical latitude at the limits';
+SELECT boundingBoxSpherical(CAST([(0., -90.), (0., 90.)], 'MultiPoint'));
+SELECT boundingBoxSpherical([(0., 0.), (0., 100.), (10., 0.), (0., 0.)]); -- { serverError BAD_ARGUMENTS }
+SELECT boundingBoxSpherical((0., -90.5)); -- { serverError BAD_ARGUMENTS }
+SELECT boundingBoxSpherical(readWKT('LINESTRING(0 0, 10 91)')); -- { serverError BAD_ARGUMENTS }

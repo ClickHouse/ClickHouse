@@ -103,6 +103,39 @@ MultiPolygon<Point> getMultiPolygonFromField(const Field & field)
     return polygon;
 }
 
+/// Throws if a coordinate in `geometry` is NaN or infinite. The column converters check this, but the `Field` getters
+/// above do not.
+template <typename Geometry>
+void checkPointsAreFinite(const Geometry & geometry)
+{
+    boost::geometry::for_each_point(geometry, [](const auto & point)
+    {
+        const Float64 first = boost::geometry::get<0>(point);
+        const Float64 second = boost::geometry::get<1>(point);
+        if (isNaN(first) || isNaN(second))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Point's component must not be NaN");
+        if (std::isinf(first) || std::isinf(second))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Point's component must not be infinite");
+    });
+}
+
+/// Throws if a latitude in `geometry` is outside [−90, 90] degrees. Longitudes wrap around, so any finite one is valid.
+template <typename Geometry>
+void checkSphericalLatitudes(const Geometry & geometry, std::string_view function_name)
+{
+    boost::geometry::for_each_point(geometry, [function_name](const SphericalPoint & point)
+    {
+        const Float64 latitude = boost::geometry::get<1>(point);
+        if (!(latitude >= -90 && latitude <= 90))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Point ({}, {}) is invalid in function {}. For a valid point, the latitude is between -90 and 90 degrees inclusive",
+                boost::geometry::get<0>(point),
+                latitude,
+                function_name);
+    });
+}
+
 /// Must match the global discriminators of the Geometry Variant type.
 enum class GeometryColumnType
 {

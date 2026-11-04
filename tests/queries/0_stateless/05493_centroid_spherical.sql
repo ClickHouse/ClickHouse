@@ -23,7 +23,8 @@ SELECT 'centroidSpherical date line crossing LineString';
 SELECT round(centroidSpherical(CAST([(179., 0.), (-179., 0.)], 'LineString')).1, 6), round(centroidSpherical(CAST([(179., 0.), (-179., 0.)], 'LineString')).2, 6);
 
 SELECT 'centroidSpherical near North Pole';
-SELECT round(centroidSpherical([(0., 89.), (120., 89.), (240., 89.), (0., 89.)]).1, 6), round(centroidSpherical([(0., 89.), (120., 89.), (240., 89.), (0., 89.)]).2, 6);
+-- The longitude of a point at the pole is arbitrary.
+SELECT round(centroidSpherical([(0., 89.), (120., 89.), (240., 89.), (0., 89.)]).2, 6);
 
 SELECT 'centroidSpherical Polygon with hole';
 SELECT round(centroidSpherical([[(0., 0.), (0., 10.), (10., 10.), (10., 0.), (0., 0.)], [(3., 3.), (3., 7.), (7., 7.), (7., 3.), (3., 3.)]]).1, 6), round(centroidSpherical([[(0., 0.), (0., 10.), (10., 10.), (10., 0.), (0., 0.)], [(3., 3.), (3., 7.), (7., 7.), (7., 3.), (3., 3.)]]).2, 6);
@@ -37,7 +38,7 @@ SELECT 'centroidSpherical Geometry Polygon';
 SELECT round(centroidSpherical(readWKT('POLYGON((0 0, 0 4, 4 4, 4 0, 0 0))')).1, 6), round(centroidSpherical(readWKT('POLYGON((0 0, 0 4, 4 4, 4 0, 0 0))')).2, 6);
 
 SELECT 'centroidSpherical globe-spanning polygon (triggers adaptive origin)';
-SELECT round(centroidSpherical([(0., 0.), (90., 0.), (180., 0.), (-90., 0.), (0., 0.)]).1, 6), round(centroidSpherical([(0., 0.), (90., 0.), (180., 0.), (-90., 0.), (0., 0.)]).2, 6);
+SELECT round(centroidSpherical([(0., 0.), (90., 0.), (180., 0.), (-90., 0.), (0., 0.)]).2, 6);
 
 SELECT centroidSpherical(42); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
@@ -69,3 +70,24 @@ FROM (SELECT g, centroidSpherical(g) AS c FROM (SELECT CAST(arrayJoin([[], [[(10
 SELECT 'centroidSpherical MultiPolygon empty row followed by nonempty rows';
 SELECT g, round(c.1, 6), round(c.2, 6)
 FROM (SELECT g, centroidSpherical(g) AS c FROM (SELECT CAST(arrayJoin([[], [[[(0., 0.), (0., 4.), (4., 4.), (4., 0.), (0., 0.)]]]]), 'MultiPolygon') AS g));
+
+-- A ring of zero area has the centroid of its boundary, which does not depend on the starting vertex.
+SELECT 'centroidSpherical zero-area rings along the equator and a meridian';
+SELECT round(c.1, 6), round(c.2, 6) FROM (SELECT centroidSpherical([(0., 0.), (5., 0.), (10., 0.), (0., 0.)]) AS c);
+SELECT round(c.1, 6), round(c.2, 6) FROM (SELECT centroidSpherical([(5., 0.), (10., 0.), (0., 0.), (5., 0.)]) AS c);
+SELECT round(c.1, 6), round(c.2, 6) FROM (SELECT centroidSpherical([(0., 0.), (0., 5.), (0., 10.), (0., 0.)]) AS c);
+
+SELECT 'centroidSpherical ring around a pole in the reverse orientation';
+SELECT round(centroidSpherical([(0., 89.), (240., 89.), (120., 89.), (0., 89.)]).2, 6);
+SELECT round(centroidSpherical([[(0., -80.), (-120., -80.), (-240., -80.), (0., -80.)]]).2, 6);
+SELECT round(centroidSpherical([[(0., -80.), (-240., -80.), (-120., -80.), (0., -80.)]]).2, 6);
+
+SELECT 'centroidSpherical antipodal MultiPoint';
+SELECT centroidSpherical(CAST([(0., 0.), (180., 0.)], 'MultiPoint'));
+
+SELECT 'centroidSpherical of empty geometries';
+SELECT centroidSpherical(CAST([], 'Ring')), centroidSpherical(CAST([], 'Polygon')), centroidSpherical(CAST([], 'LineString')), centroidSpherical(CAST(NULL, 'Geometry'));
+
+SELECT centroidSpherical([(0., 0.), (0., 100.), (10., 0.), (0., 0.)]); -- { serverError BAD_ARGUMENTS }
+SELECT centroidSpherical((0., -91.)); -- { serverError BAD_ARGUMENTS }
+SELECT centroidSpherical(CAST(CAST([[(0., 0.), (nan, 1.), (1., 1.), (0., 0.)]], 'Polygon'), 'Geometry')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

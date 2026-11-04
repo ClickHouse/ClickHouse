@@ -128,57 +128,59 @@ private:
     }
 
     template <typename Geom>
-    static Ring<Point> computeEnvelope(const Geom & geom)
+    static Ring<Point> computeEnvelope(Geom & geom)
     {
+        if constexpr (std::is_same_v<Point, SphericalPoint>)
+        {
+            checkSphericalLatitudes(geom, name);
+            /// On a sphere, the winding order decides which side of a ring is the interior: a ring around a pole wound
+            /// the other way encloses the rest of the sphere. `boost::geometry::correct` fixes the orientation and
+            /// closes the rings; points and linestrings are left as is.
+            boost::geometry::correct(geom);
+        }
+
         boost::geometry::model::box<Point> box{};
         boost::geometry::envelope(geom, box);
+        /// An empty geometry has no bounding box: `boost::geometry::envelope` leaves the box inverted.
+        if (box.min_corner().template get<0>() > box.max_corner().template get<0>())
+            return {};
         return boxToRing(box);
     }
 
     static void processField(const Field & field, GeometryColumnType type, RingSerializer<Point> & serializer)
     {
+        auto add = [&](auto geometry)
+        {
+            checkPointsAreFinite(geometry);
+            serializer.add(computeEnvelope(geometry));
+        };
+
         switch (type)
         {
-            case GeometryColumnType::Point: {
-                Point point = getPointFromField<Point>(field);
-                serializer.add(computeEnvelope(point));
+            case GeometryColumnType::Point:
+                add(getPointFromField<Point>(field));
                 break;
-            }
-            case GeometryColumnType::Linestring: {
-                LineString<Point> linestring = getLineStringFromField<Point>(field);
-                serializer.add(computeEnvelope(linestring));
+            case GeometryColumnType::Linestring:
+                add(getLineStringFromField<Point>(field));
                 break;
-            }
-            case GeometryColumnType::Ring: {
-                Ring<Point> ring = getRingFromField<Point>(field);
-                serializer.add(computeEnvelope(ring));
+            case GeometryColumnType::Ring:
+                add(getRingFromField<Point>(field));
                 break;
-            }
-            case GeometryColumnType::Polygon: {
-                Polygon<Point> polygon = getPolygonFromField<Point>(field);
-                serializer.add(computeEnvelope(polygon));
+            case GeometryColumnType::Polygon:
+                add(getPolygonFromField<Point>(field));
                 break;
-            }
-            case GeometryColumnType::MultiLinestring: {
-                MultiLineString<Point> multilinestring = getMultiLineStringFromField<Point>(field);
-                serializer.add(computeEnvelope(multilinestring));
+            case GeometryColumnType::MultiLinestring:
+                add(getMultiLineStringFromField<Point>(field));
                 break;
-            }
-            case GeometryColumnType::MultiPolygon: {
-                MultiPolygon<Point> multipolygon = getMultiPolygonFromField<Point>(field);
-                serializer.add(computeEnvelope(multipolygon));
+            case GeometryColumnType::MultiPolygon:
+                add(getMultiPolygonFromField<Point>(field));
                 break;
-            }
-            case GeometryColumnType::MultiPoint: {
-                MultiPoint<Point> multipoint = getMultiPointFromField<Point>(field);
-                serializer.add(computeEnvelope(multipoint));
+            case GeometryColumnType::MultiPoint:
+                add(getMultiPointFromField<Point>(field));
                 break;
-            }
-            case GeometryColumnType::Null: {
-                Ring<Point> empty_ring;
-                serializer.add(empty_ring);
+            case GeometryColumnType::Null:
+                serializer.add(Ring<Point>{});
                 break;
-            }
         }
     }
 };
@@ -202,6 +204,7 @@ REGISTER_FUNCTION(BoundingBox)
     FunctionDocumentation::Description description_cartesian = R"(
 Calculates the axis-aligned bounding box of a geometry in Cartesian coordinates.
 Returns a Ring (closed rectangle with sides parallel to the coordinate axes).
+For an empty geometry, the result is an empty Ring `[]`.
     )";
     FunctionDocumentation::Syntax syntax_cartesian = "boundingBoxCartesian(geometry)";
     FunctionDocumentation::Arguments arguments_cartesian
@@ -235,6 +238,10 @@ Returns a Ring (closed rectangle). For geometries crossing the date line (±180�
 the returned longitude values may exceed 180° (e.g., 181 represents -179°).
 This is the correct mathematical representation; normalizing to [-180, 180] would
 produce an incorrect box spanning ~358° instead of ~2°.
+
+The winding order of the rings does not matter: for example, the box of a ring around a pole includes the pole.
+For an empty geometry, the result is an empty Ring `[]`.
+A latitude outside [−90, 90] throws an exception.
     )";
     FunctionDocumentation::Syntax syntax_spherical = "boundingBoxSpherical(geometry)";
     FunctionDocumentation::Arguments arguments_spherical
