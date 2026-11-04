@@ -207,7 +207,7 @@ private:
     StorageID table_id;
     CompressionMethod metadata_compression_method;
     Iceberg::PersistentTableComponents persistent_table_components;
-    const DataLakeStorageSettingsPtr data_lake_settings;
+    const DataLakeStorageSettings & data_lake_settings;
     const String write_format;
 
 };

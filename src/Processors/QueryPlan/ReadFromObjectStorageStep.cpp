@@ -17,13 +17,9 @@
 #include <Formats/FormatParserSharedResources.h>
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/Cache/QueryConditionCache.h>
-#include <IO/WriteBufferFromString.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <boost/algorithm/string/predicate.hpp>
-#include <boost/functional/hash.hpp>
-#include <Common/SipHash.h>
 
 #include <algorithm>
 
@@ -42,13 +38,6 @@ namespace Setting
     extern const SettingsBool parallelize_output_from_storages;
     extern const SettingsBool s3_validate_etag_on_read;
     extern const SettingsBool azure_validate_etag_on_read;
-    extern const SettingsBool use_query_condition_cache;
-    extern const SettingsBool use_query_condition_cache_for_top_k;
-}
-
-namespace DataLakeStorageSetting
-{
-    extern const DataLakeStorageSettingsBool paimon_incremental_read;
 }
 
 
@@ -90,7 +79,6 @@ QueryPlanStepPtr ReadFromObjectStorageStep::clone() const
 void ReadFromObjectStorageStep::applyFilters(ActionDAGNodes added_filter_nodes)
 {
     SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
-    data_lake_read_estimate.reset();
     if (!filter_actions_dag)
         return;
 
@@ -146,18 +134,6 @@ void ReadFromObjectStorageStep::updatePrewhereInfo(const PrewhereInfoPtr & prewh
     info = updateFormatPrewhereInfo(info, prewhere_info_value);
     query_info.prewhere_info = prewhere_info_value;
     output_header = std::make_shared<const Block>(info.source_header);
-    data_lake_read_estimate.reset();
-}
-
-std::optional<DataLakeReadEstimate> ReadFromObjectStorageStep::estimateReadFromDataLakeMetadata() const
-{
-    /// The initiator assigns the files of this replica, so its own metadata may describe other files.
-    if (distributed_processing)
-        return std::nullopt;
-
-    if (!data_lake_read_estimate)
-        data_lake_read_estimate = configuration->estimateRead(storage_snapshot->metadata, filter_actions_dag.get(), getContext());
-    return data_lake_read_estimate;
 }
 
 void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & build_settings)
@@ -188,15 +164,6 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
         query_info.row_level_filter,
         query_info.prewhere_info);
     format_filter_info->top_k_filter = top_k_filter;
-    auto top_k_query_condition_cache_key = makeTopKQueryConditionCacheKey();
-    if (top_k_query_condition_cache_key)
-    {
-        /// The verdicts written under the key also cover row groups whose rows were all returned
-        /// before the threshold got tight enough to drop them.
-        auto top_k_filter_tracking_best_values = std::make_shared<FormatTopKFilterInfo>(*top_k_filter);
-        top_k_filter_tracking_best_values->track_row_group_best_values = true;
-        format_filter_info->top_k_filter = std::move(top_k_filter_tracking_best_values);
-    }
 
     for (size_t i = 0; i < num_streams; ++i)
     {
@@ -214,8 +181,7 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
             parser_shared_resources,
             format_filter_info,
             need_only_count,
-            lazy_row_index_registry,
-            top_k_query_condition_cache_key);
+            lazy_row_index_registry);
 
         pipes.emplace_back(std::move(source));
     }
@@ -253,96 +219,6 @@ void ReadFromObjectStorageStep::createIterator()
         configuration, configuration->getQuerySettings(context), object_storage, storage_snapshot->metadata, distributed_processing,
         context, predicate, filter_actions_dag.get(), virtual_columns, info.hive_partition_columns_to_read_from_file_path, nullptr, context->getFileProgressCallback(),
         /*ignore_archive_globs=*/ false, /*skip_object_metadata=*/ false, /*with_tags=*/ info.requested_virtual_columns.contains("_tags"));
-}
-
-ObjectStorageTopKQueryConditionCacheKeyPtr ReadFromObjectStorageStep::makeTopKQueryConditionCacheKey() const
-{
-    const auto & settings = getContext()->getSettingsRef();
-    if (!top_k_filter || !allow_top_k_query_condition_cache
-        || !settings[Setting::use_query_condition_cache] || !settings[Setting::use_query_condition_cache_for_top_k])
-        return {};
-
-    /// Only a table with a UUID has cache entries. With distributed processing each worker reads a
-    /// set of files that differs from run to run, and makes its own threshold from them.
-    if (storage_id.uuid == UUIDHelpers::Nil || distributed_processing)
-        return {};
-#if CLICKHOUSE_CLOUD
-    if (distributed_read_bucket_count)
-        return {};
-#endif
-
-    /// The threshold of the TopN filter comes from the rows of every file of the query, so the key
-    /// must identify the set of files and their contents. A data lake snapshot does: it lists the data
-    /// files (and the deletes applied to them), which are never modified in place, and the read
-    /// iterates exactly the snapshot pinned in the storage metadata (see `createFileIterator`). Plain
-    /// object storage has no such identity before the objects are listed.
-    if (!configuration->isDataLakeConfiguration())
-        return {};
-    const auto & datalake_table_state = storage_snapshot->metadata->datalake_table_state;
-    if (!datalake_table_state)
-        return {};
-
-    /// An incremental `Paimon` read iterates only the delta since the watermark committed in Keeper
-    /// (or of `paimon_target_snapshot_id`, bounded by `max_consume_snapshots`), so the same snapshot
-    /// yields different sets of files from query to query.
-    if ((*configuration->getDataLakeSettings())[DataLakeStorageSetting::paimon_incremental_read])
-        return {};
-
-    /// The rows the reader drops besides those of the TopN filter must be dropped by a condition the
-    /// key covers, and so must the rows the filter drops after the format, which do not make the threshold.
-    /// So the key covers the whole filter of the step and a PREWHERE collected with it, not only the part
-    /// pushed into the format (`condition_hash` of `format_filter_info` lacks the conjuncts on virtual
-    /// columns such as `_path`, which narrow down the set of files read).
-    /// Without any of them nothing else drops rows. A row policy is covered by neither.
-    /// With the whole filter in the key, the pruning of data files (by partitions or statistics, depending
-    /// on settings) does not matter: it only removes files without rows passing the filter, which do not
-    /// make the threshold either.
-    if (query_info.row_level_filter)
-        return {};
-
-    /// The metadata of an object (its modification time, ETag, tags) can change without a new snapshot,
-    /// and so can the name of the table (`_table`, by `RENAME TABLE` or `EXCHANGE TABLES`, which keep
-    /// the UUID), so a condition on them may let other files make the threshold on a rerun.
-    auto reads_mutable_virtual_columns = [&](const ActionsDAG & dag)
-    {
-        return std::ranges::any_of(dag.getInputs(), [&](const auto * input)
-        {
-            const auto & name = input->result_name;
-            return (name == "_time" || name == "_etag" || name == "_tags" || name == "_table") && virtual_columns.contains(name);
-        });
-    };
-    if ((filter_actions_dag && reads_mutable_virtual_columns(*filter_actions_dag))
-        || (query_info.prewhere_info && reads_mutable_virtual_columns(query_info.prewhere_info->prewhere_actions)))
-        return {};
-
-    auto key = std::make_shared<ObjectStorageTopKQueryConditionCacheKey>();
-    UInt64 condition_hash = 0;
-    if (filter_actions_dag)
-    {
-        auto filter_condition_hash = FormatFilterInfo::computeConditionHash(*filter_actions_dag, query_info.prewhere_info, getContext());
-        if (!filter_condition_hash)
-            return {};
-        condition_hash = *filter_condition_hash;
-        key->condition = filter_actions_dag->dumpNames() + ", ";
-    }
-    else if (!query_info.prewhere_info)
-        condition_hash = queryConditionCacheHash(0, queryConditionCacheSettingsSalt(settings));
-    else
-        return {};
-
-    key->condition += fmt::format("TopK by {}", top_k_filter->column_name);
-
-    WriteBufferFromOwnString table_state;
-    serializeDataLakeTableStateSnapshot(*datalake_table_state, table_state);
-    table_state.finalize();
-
-    SipHash hash;
-    hash.update(condition_hash);
-    hash.update(top_k_filter->plan_hash);
-    hash.update(table_state.str().size());
-    hash.update(table_state.str());
-    key->condition_hash = hash.get64();
-    return key;
 }
 
 static InputOrderInfoPtr convertSortingKeyToInputOrder(const KeyDescription & key_description)

@@ -24,7 +24,6 @@
 
 #include <Storages/IStorage.h>
 
-#include <Analyzer/Passes/DisableParallelReplicasPass.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/IdentifierNode.h>
@@ -412,23 +411,16 @@ static QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     auto query_tree = buildQueryTree(query, context);
 
     QueryTreePassManager query_tree_pass_manager(context);
-    addQueryTreePasses(
-        query_tree_pass_manager, select_query_options.only_analyze, select_query_options.positional_arguments_already_resolved);
+    addQueryTreePasses(query_tree_pass_manager, select_query_options.only_analyze);
 
     /// We should not apply any query tree level optimizations on shards
     /// because it can lead to a changed header.
     if (select_query_options.ignore_ast_optimizations
         || select_query_options.is_create_view
         || context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
-    {
         query_tree_pass_manager.runOnlyResolve(query_tree);
-        /// Not an optimization: a shard plans view bodies the initiator never analyzed, so this pass has not run on them.
-        DisableParallelReplicasPass{}.run(query_tree, context);
-    }
     else
-    {
         query_tree_pass_manager.run(query_tree);
-    }
 
     if (storage)
         replaceStorageInQueryTree(query_tree, context, storage);
@@ -498,7 +490,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
           // one carrying the query's own `SETTINGS` clause, which is what the eligibility check reads.
           [tree = query_tree_->clone(),
            ctx = Context::createCopy(context_),
-           select_options = SelectQueryOptions(select_query_options_).positionalArgumentsAlreadyResolved(),
+           select_options = select_query_options_,
            single_node_tree = query_tree](const BuiltSetsByHashPtr & built_sets, const LoggerPtr & logger)
           { return buildQueryPlanForAutomaticParallelReplicas(tree->toAST(), ctx, select_options, single_node_tree, built_sets, logger); })
 {

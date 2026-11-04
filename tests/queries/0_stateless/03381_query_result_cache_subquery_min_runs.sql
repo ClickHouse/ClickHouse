@@ -1,6 +1,8 @@
 -- Tags: no-parallel
 -- Tag no-parallel: Messes with internal cache
 
+SET enable_analyzer = 1;
+
 SYSTEM DROP QUERY CACHE;
 
 -- Test: query_cache_min_query_runs works for subqueries

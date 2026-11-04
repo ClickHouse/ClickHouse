@@ -9,7 +9,6 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
-#include <Parsers/ASTCreateQuery.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -176,11 +175,10 @@ ColumnsDescription parseColumnsListFromString(const std::string & structure, con
         settings[Setting::max_parser_depth],
         settings[Setting::max_parser_backtracks]);
 
-    if (!dynamic_cast<ASTExpressionList *>(columns_list_raw.get()))
+    auto * columns_list = dynamic_cast<ASTExpressionList *>(columns_list_raw.get());
+    if (!columns_list)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not cast AST to ASTExpressionList");
 
-    auto columns_list = make_intrusive<ASTColumns>();
-    columns_list->set(columns_list->columns, columns_list_raw);
     auto columns = InterpreterCreateQuery::getColumnsDescription(*columns_list, context, LoadingStrictnessLevel::CREATE);
     auto validation_settings = DataTypeValidationSettings(context->getSettingsRef());
     for (const auto & [name, type] : columns.getAll())
@@ -210,7 +208,8 @@ bool tryParseColumnsListFromString(const std::string & structure, ColumnsDescrip
     if (!columns_list_raw)
         return false;
 
-    if (!dynamic_cast<ASTExpressionList *>(columns_list_raw.get()))
+    auto * columns_list = dynamic_cast<ASTExpressionList *>(columns_list_raw.get());
+    if (!columns_list)
     {
         error = fmt::format("Invalid columns declaration list: \"{}\"", structure);
         return false;
@@ -218,8 +217,6 @@ bool tryParseColumnsListFromString(const std::string & structure, ColumnsDescrip
 
     try
     {
-        auto columns_list = make_intrusive<ASTColumns>();
-        columns_list->set(columns_list->columns, columns_list_raw);
         columns = InterpreterCreateQuery::getColumnsDescription(*columns_list, context, LoadingStrictnessLevel::CREATE);
         auto validation_settings = DataTypeValidationSettings(context->getSettingsRef());
         for (const auto & [name, type] : columns.getAll())
