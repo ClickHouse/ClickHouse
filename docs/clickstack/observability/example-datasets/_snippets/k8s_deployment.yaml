@@ -55,6 +55,9 @@ config:
       metrics:
         exporters:
           - otlp_http
+      traces:
+        exporters:
+          - otlp_http
 
 resources:
   requests:
