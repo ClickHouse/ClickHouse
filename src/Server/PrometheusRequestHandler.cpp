@@ -110,7 +110,7 @@ public:
 
     void beforeHandlingRequest(HTTPServerRequest & request) override
     {
-        LOG_INFO(log(), "Handling metrics request from {}", request.get("User-Agent"));
+        LOG_DEBUG(log(), "Handling metrics request from {}", request.get("User-Agent"));
         chassert(config().type == PrometheusRequestHandlerConfig::Type::Metrics);
     }
 
@@ -321,7 +321,7 @@ public:
 
     void beforeHandlingRequest(HTTPServerRequest & request) override
     {
-        LOG_INFO(log(), "Handling remote write request from {}", request.get("User-Agent", ""));
+        LOG_DEBUG(log(), "Handling remote write request from {}", request.get("User-Agent", ""));
         chassert(config().type == PrometheusRequestHandlerConfig::Type::Write
             || config().type == PrometheusRequestHandlerConfig::Type::APIv1);
     }
@@ -388,7 +388,7 @@ public:
 
     void beforeHandlingRequest(HTTPServerRequest & request) override
     {
-        LOG_INFO(log(), "Handling remote read request from {}", request.get("User-Agent", ""));
+        LOG_DEBUG(log(), "Handling remote read request from {}", request.get("User-Agent", ""));
         chassert(config().type == PrometheusRequestHandlerConfig::Type::Read
             || config().type == PrometheusRequestHandlerConfig::Type::APIv1);
     }
@@ -480,7 +480,7 @@ public:
 
     void beforeHandlingRequest(HTTPServerRequest & request) override
     {
-        LOG_INFO(log(), "Handling Prometheus HTTP API query request from {}", request.get("User-Agent", ""));
+        LOG_DEBUG(log(), "Handling Prometheus HTTP API query request from {}", request.get("User-Agent", ""));
         chassert(config().type == PrometheusRequestHandlerConfig::Type::Query
             || config().type == PrometheusRequestHandlerConfig::Type::APIv1);
     }
