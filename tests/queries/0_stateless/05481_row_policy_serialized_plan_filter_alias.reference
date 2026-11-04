@@ -1,0 +1,4 @@
+y < 5 sqp=0 10
+y < 5 sqp=1 10
+y IN (SELECT y FROM rp_fa_lookup) sqp=0 3
+y IN (SELECT y FROM rp_fa_lookup) sqp=1 3
