@@ -6,13 +6,17 @@ SET prefer_external_sort_block_bytes = 1048576;
 SET optimize_distinct_in_order = 0;
 SET max_untracked_memory = 0;
 
+-- A hinted `DISTINCT` holds at most the keys of its limit, and the spill threshold switches it to external
+-- mode only once its state exceeds the smaller of the threshold and about 16 MiB. Each limit therefore
+-- exceeds the keys that fill the state up to that floor.
+
 -- Wide surviving rows accumulate enough memory to remerge while retaining a small ordered prefix.
 SELECT count(), min(toUInt64(k)), max(toUInt64(k)),
     groupArray(toUInt64(k)) = arrayReverseSort(groupArray(toUInt64(k)))
 FROM
 (
     SELECT DISTINCT toFixedString(toString(number), 1024) AS k FROM numbers(65536)
-    ORDER BY toUInt64(k) DESC LIMIT 1000
+    ORDER BY toUInt64(k) DESC LIMIT 10000
 )
 SETTINGS log_comment = '05242_external_distinct_limit_remerge/small_limit', max_memory_usage = 536870912;
 
@@ -22,7 +26,7 @@ SELECT count(), min(toUInt64(k)), max(toUInt64(k)),
 FROM
 (
     SELECT DISTINCT toFixedString(toString(number % 65536), 512) AS k FROM numbers(131072)
-    ORDER BY toUInt64(k) DESC LIMIT 4096 OFFSET 1024
+    ORDER BY toUInt64(k) DESC LIMIT 16384 OFFSET 4096
 )
 SETTINGS log_comment = '05242_external_distinct_limit_remerge/offset', max_memory_usage = 536870912;
 

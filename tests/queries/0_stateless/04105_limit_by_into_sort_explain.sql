@@ -15,7 +15,7 @@ SET max_threads = 12;
 SET read_in_order_use_virtual_row = 0;
 
 -- `LIMIT BY` keys are not a prefix of the sort keys, so the optimization is not applied.
--- The pipeline keeps only the final `LimitByTransform` above the sort.
+-- The pipeline keeps only the final `ExternalLimitByTransform` above the sort.
 EXPLAIN PIPELINE
 SELECT number % 100 AS k, number AS v
 FROM numbers_mt(1000000)

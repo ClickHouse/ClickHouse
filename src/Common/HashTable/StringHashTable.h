@@ -701,6 +701,21 @@ public:
             + ms.getBufferSizeInBytes();
     }
 
+    /// Bounds the peak additional memory of inserting `additional_keys` new keys. Their size classes are
+    /// unknown, so every submap is assumed to receive all of them; the submap of the empty key never grows.
+    /// Saturates at the maximum of `size_t`.
+    size_t estimateGrowthMemory(size_t additional_keys) const noexcept
+    {
+        size_t total = 0;
+        for (const size_t growth : {m1.estimateGrowthMemory(additional_keys), m2.estimateGrowthMemory(additional_keys),
+                 m3.estimateGrowthMemory(additional_keys), ms.estimateGrowthMemory(additional_keys)})
+        {
+            if (common::addOverflow(total, growth, total))
+                return std::numeric_limits<size_t>::max();
+        }
+        return total;
+    }
+
     void clear()
     {
         m0.clearHasZero();

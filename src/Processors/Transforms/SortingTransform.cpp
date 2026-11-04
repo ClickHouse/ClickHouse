@@ -1,6 +1,7 @@
 #include <Processors/Transforms/SortingTransform.h>
 
 #include <algorithm>
+#include <limits>
 #include <type_traits>
 
 #include <Columns/ColumnReplicated.h>
@@ -20,13 +21,15 @@ namespace ErrorCodes
 
 MergeSorter::MergeSorter(
     SharedHeader header, Chunks chunks_, const SortDescription & description,
-    size_t max_merged_block_size_, UInt64 limit_, Mode mode_, size_t preferred_block_bytes)
+    size_t max_merged_block_size_, UInt64 limit_, Mode mode_, size_t preferred_block_bytes, size_t group_limit_)
     : chunks(std::move(chunks_))
     , max_merged_block_size(max_merged_block_size_)
     , limit(limit_)
     , mode(mode_)
+    , group_limit(group_limit_)
     , queue_variants(*header, description)
 {
+    chassert(group_limit > 0);
     Chunks nonempty_chunks;
     size_t chunks_size = chunks.size();
 
@@ -110,12 +113,60 @@ Chunk MergeSorter::read()
 
     Chunk result = queue_variants.callOnBatchVariant([&](auto & queue)
     {
-        if (mode == Mode::MergeUniqueChunks)
-            return mergeBatchImpl<Mode::MergeUniqueChunks>(queue);
+        if (mode == Mode::LimitGroupRows)
+            return mergeBatchImpl<Mode::LimitGroupRows>(queue);
         return mergeBatchImpl<Mode::PreserveRows>(queue);
     });
 
     return result;
+}
+
+
+template <typename Cursor>
+MergeSorter::GroupLimitedRows MergeSorter::insertRowsWithinGroupLimit(
+    Cursor & current, size_t first_row, size_t batch_size, size_t max_rows, MutableColumns & merged_columns)
+{
+    size_t inserted_rows = 0;
+    size_t range_start = first_row;
+    size_t range_length = 0;
+    auto flush_range = [&]
+    {
+        if (range_length == 0)
+            return;
+        for (size_t i = 0; i < merged_columns.size(); ++i)
+            merged_columns[i]->insertRangeFrom(*current->all_columns[i], range_start, range_length);
+        inserted_rows += range_length;
+        range_length = 0;
+    };
+
+    size_t row = first_row;
+    for (; row < first_row + batch_size && inserted_rows + range_length < max_rows; ++row)
+    {
+        /// Keys are nondecreasing, so a key that is not greater than the last consumed key is equal to it.
+        /// Chunk order chooses which rows come first but does not participate in key equality.
+        bool same_key = false;
+        if (last_key_cursor == current.impl)
+            same_key = !current.template greaterAt<false>(current, row, last_key_row);
+        else if (last_key_cursor)
+            same_key = !current.template greaterAt<false>(Cursor(last_key_cursor), row, last_key_row);
+
+        last_key_rows = same_key ? last_key_rows + 1 : 1;
+        last_key_cursor = current.impl;
+        last_key_row = row;
+
+        if (last_key_rows > group_limit)
+            flush_range();
+        else if (range_length == 0)
+        {
+            range_start = row;
+            range_length = 1;
+        }
+        else
+            ++range_length;
+    }
+    flush_range();
+
+    return {.consumed_rows = row - first_row, .inserted_rows = inserted_rows};
 }
 
 
@@ -140,44 +191,58 @@ Chunk MergeSorter::mergeBatchImpl(TSortingQueue & queue)
         const size_t first_row = current->getRow();
         batch_size = std::min(batch_size, max_merged_block_size - consumed_rows);
 
-        size_t skipped_rows = 0;
-        if constexpr (merge_mode == Mode::MergeUniqueChunks)
+        size_t rows_to_insert = 0;
+        if (merge_mode == Mode::LimitGroupRows && group_limit > 1)
         {
-            /// Only a different input chunk can repeat the last emitted key.
-            if (last_emitted_cursor && last_emitted_cursor != current.impl)
-            {
-                using Cursor = std::decay_t<decltype(current)>;
-                const Cursor previous(last_emitted_cursor);
-                /// Keys are nondecreasing, so a key that is not greater is equal. Source order chooses
-                /// the first payload but does not participate in key equality.
-                skipped_rows = !current.template greaterAt<false>(previous, first_row, last_emitted_row);
-            }
+            /// Several rows of a key can follow each other within a batch, so each row is compared with the
+            /// last consumed one.
+            const size_t max_rows = limit ? limit - total_merged_rows : std::numeric_limits<size_t>::max();
+            const auto rows = insertRowsWithinGroupLimit(current, first_row, batch_size, max_rows, merged_columns);
+            batch_size = rows.consumed_rows;
+            rows_to_insert = rows.inserted_rows;
+            limit_reached = limit && rows_to_insert == max_rows;
         }
-
-        size_t rows_to_insert = batch_size - skipped_rows;
-        if (limit && rows_to_insert >= limit - total_merged_rows)
+        else
         {
-            rows_to_insert = limit - total_merged_rows;
-            batch_size = rows_to_insert + skipped_rows;
-            limit_reached = true;
-        }
-
-        if (rows_to_insert)
-        {
-            /// Each input batch is internally unique in `MergeUniqueChunks` mode. Only its first row
-            /// can repeat the last emitted key, so the remaining rows form one contiguous range.
-            for (size_t i = 0; i < num_columns; ++i)
+            size_t skipped_rows = 0;
+            if constexpr (merge_mode == Mode::LimitGroupRows)
             {
-                if (rows_to_insert == 1)
-                    merged_columns[i]->insertFrom(*current->all_columns[i], first_row + skipped_rows);
-                else
-                    merged_columns[i]->insertRangeFrom(*current->all_columns[i], first_row + skipped_rows, rows_to_insert);
+                /// Only a different input chunk can repeat the last emitted key.
+                if (last_key_cursor && last_key_cursor != current.impl)
+                {
+                    using Cursor = std::decay_t<decltype(current)>;
+                    const Cursor previous(last_key_cursor);
+                    /// Keys are nondecreasing, so a key that is not greater is equal. Source order chooses
+                    /// the first payload but does not participate in key equality.
+                    skipped_rows = !current.template greaterAt<false>(previous, first_row, last_key_row);
+                }
             }
 
-            if constexpr (merge_mode == Mode::MergeUniqueChunks)
+            rows_to_insert = batch_size - skipped_rows;
+            if (limit && rows_to_insert >= limit - total_merged_rows)
             {
-                last_emitted_cursor = current.impl;
-                last_emitted_row = first_row + batch_size - 1;
+                rows_to_insert = limit - total_merged_rows;
+                batch_size = rows_to_insert + skipped_rows;
+                limit_reached = true;
+            }
+
+            if (rows_to_insert)
+            {
+                /// With a group limit of one, each input batch is internally unique. Only its first row can repeat
+                /// the last emitted key, so the remaining rows form one contiguous range.
+                for (size_t i = 0; i < num_columns; ++i)
+                {
+                    if (rows_to_insert == 1)
+                        merged_columns[i]->insertFrom(*current->all_columns[i], first_row + skipped_rows);
+                    else
+                        merged_columns[i]->insertRangeFrom(*current->all_columns[i], first_row + skipped_rows, rows_to_insert);
+                }
+
+                if constexpr (merge_mode == Mode::LimitGroupRows)
+                {
+                    last_key_cursor = current.impl;
+                    last_key_row = first_row + batch_size - 1;
+                }
             }
         }
 
@@ -197,7 +262,7 @@ Chunk MergeSorter::mergeBatchImpl(TSortingQueue & queue)
 
     if (limit_reached || !queue.isValid())
     {
-        last_emitted_cursor = nullptr;
+        last_key_cursor = nullptr;
         chunks.clear();
     }
 

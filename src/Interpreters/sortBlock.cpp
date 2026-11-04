@@ -409,8 +409,10 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit,
     block.setColumns(columns);
 }
 
-void sortBlockAndDeduplicate(Block & block, const SortDescription & description, IColumn::PermutationSortStability stability)
+void sortBlockAndLimitGroupRows(
+    Block & block, const SortDescription & description, size_t group_limit, IColumn::PermutationSortStability stability)
 {
+    chassert(group_limit > 0);
 #ifndef NDEBUG
     block.checkNumberOfRows();
 #endif
@@ -427,32 +429,31 @@ void sortBlockAndDeduplicate(Block & block, const SortDescription & description,
     /// No non-constant sort column: every row is equal to the first one.
     if (permutation.empty())
     {
-        if (block.rows() > 1)
+        if (block.rows() > group_limit)
         {
-            transformColumnsWithSharedIndex(columns, [](const ColumnPtr & col) { return col->cut(0, 1); });
+            transformColumnsWithSharedIndex(columns, [group_limit](const ColumnPtr & col) { return col->cut(0, group_limit); });
             block.setColumns(columns);
         }
         return;
     }
 
-    if (!equal_ranges.empty())
+    /// Keep the first `group_limit` positions of each equal range. The write position never passes the read
+    /// position, so retained entries can be compacted in the existing permutation.
+    size_t read_pos = 0;
+    size_t write_pos = 0;
+    for (const auto & range : equal_ranges)
     {
-        /// Keep the first position of each equal range. The write position never passes the read
-        /// position, so retained entries can be compacted in the existing permutation.
-        size_t read_pos = 0;
-        size_t write_pos = 0;
-        for (const auto & range : equal_ranges)
-        {
-            while (read_pos <= range.from)
-                permutation[write_pos++] = permutation[read_pos++];
-            read_pos = range.to;
-        }
-        while (read_pos < permutation.size())
+        const size_t kept_end = range.from + std::min<size_t>(range.to - range.from, group_limit);
+        while (read_pos < kept_end)
             permutation[write_pos++] = permutation[read_pos++];
-        permutation.resize(write_pos);
+        read_pos = range.to;
     }
-    else if (isIdentityPermutation(permutation, /*limit=*/ 0))
+    while (read_pos < permutation.size())
+        permutation[write_pos++] = permutation[read_pos++];
+
+    if (write_pos == permutation.size() && isIdentityPermutation(permutation, /*limit=*/ 0))
         return;
+    permutation.resize(write_pos);
 
     transformColumnsWithSharedIndex(columns, [&](const ColumnPtr & col) { return col->permute(permutation, permutation.size()); });
     block.setColumns(columns);

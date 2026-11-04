@@ -30,7 +30,7 @@ for ratio in 0 0.5; do
 done
 
 # A one-byte threshold starts spilling before the first chunk is inserted. The original rows
-# become an ordinary fingerprint run without a suppression run.
+# become an input fingerprint run without a seen run.
 ${CLICKHOUSE_LOCAL} --path "${LOCAL_DIR}" --query "
     SELECT count() FROM (SELECT DISTINCT [number] AS k FROM numbers(262144))
     SETTINGS max_threads = 1, max_block_size = 262144, max_untracked_memory = 0,

@@ -21,7 +21,7 @@ ${CLICKHOUSE_LOCAL} --path "${LOCAL_DIR}" --query "
         optimize_distinct_in_order = 0, allow_preliminary_distinct_abandoning = 0"
 
 # A one-byte threshold starts spilling before the first chunk is inserted, so the empty set is
-# released and that chunk becomes an ordinary spill run. All of its rows must reach the output.
+# released and that chunk becomes an input spill run. All of its rows must reach the output.
 ${CLICKHOUSE_LOCAL} --path "${LOCAL_DIR}" --query "
     SELECT count()
     FROM (SELECT DISTINCT toUInt64(number) AS k FROM numbers(262144))

@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/getEffectiveMaxThreads.h>
 
 namespace DB
@@ -10,6 +11,7 @@ namespace Setting
 {
     extern const SettingsBool query_plan_merge_filters;
     extern const SettingsBool allow_preliminary_distinct_abandoning;
+    extern const SettingsBool enable_adaptive_memory_spill_scheduler;
     extern const SettingsBool optimize_uniq_exact_radix_partitioning;
     extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
     extern const SettingsUInt64 min_outstreams_per_resize_after_split;
@@ -40,6 +42,13 @@ BuildQueryPipelineSettings::BuildQueryPipelineSettings(ContextPtr from)
     enable_multiple_filters_transforms_for_and_chain = settings[Setting::query_plan_merge_filters];
 
     block_marshalling_callback = from->getBlockMarshallingCallback();
+}
+
+bool BuildQueryPipelineSettings::isSchedulerSpillingEnabled() const
+{
+    return process_list_element && temp_data_on_disk
+        && (process_list_element->getMemoryReservation()
+            || process_list_element->getContext()->getSettingsRef()[Setting::enable_adaptive_memory_spill_scheduler]);
 }
 
 }

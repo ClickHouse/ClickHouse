@@ -9,7 +9,7 @@ EXPLAIN PIPELINE SELECT a FROM test_partition_eq_key LIMIT 2 BY a SETTINGS allow
 (Expression)
 ExpressionTransform × 8
   (LimitBy)
-  LimitByTransform × 8
+  ExternalLimitByTransform × 8
     (Expression)
     ExpressionTransform × 8
       (ReadFromMergeTree)
@@ -162,7 +162,7 @@ EXPLAIN PIPELINE SELECT a FROM test_few_partitions_many_threads LIMIT 2 BY a SET
 (Expression)
 ExpressionTransform × 2
   (LimitBy)
-  LimitByTransform × 2
+  ExternalLimitByTransform × 2
     (Expression)
     ExpressionTransform × 2
       (ReadFromMergeTree)

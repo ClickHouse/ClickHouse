@@ -121,6 +121,17 @@ size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes,
         return 0;
     }
 
+    if (auto * limit_by = typeid_cast<LimitByStep *>(child.get()))
+    {
+        /// As for `DISTINCT`. The `LIMIT BY` reads its whole input for a `WITH TOTALS` row even when the
+        /// `LIMIT` does not.
+        if (limit->alwaysReadTillEnd() || limit_by->alwaysReadTillEnd())
+            return 0;
+
+        limit_by->updateLimitHint(limit->getLimitForSorting());
+        return 0;
+    }
+
     if (typeid_cast<const SortingStep *>(child.get()))
         return 0;
 

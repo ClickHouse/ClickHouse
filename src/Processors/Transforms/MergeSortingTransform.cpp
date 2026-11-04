@@ -5,7 +5,7 @@
 #include <utility>
 
 #include <Processors/Transforms/BufferingFileTransforms.h>
-#include <Processors/Merges/DistinctSortedTransform.h>
+#include <Processors/Merges/GroupLimitSortedTransform.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Common/Exception.h>
 #include <Common/MemoryTrackerUtils.h>
@@ -206,12 +206,13 @@ std::shared_ptr<BufferingToFileSink> MergeSortingTransform::prepareSpill()
     {
         bool have_all_inputs = false;
 
-        if (merge_mode == MergeSorter::Mode::MergeUniqueChunks)
+        if (merge_mode == MergeSorter::Mode::LimitGroupRows)
         {
-            /// The merges in memory make each input unique, as `DistinctSortedTransform` requires.
-            external_merging_sorted = std::make_shared<DistinctSortedTransform>(
-                SharedHeaders{}, shared_header_without_constants, description,
-                /*already_emitted_flag_column=*/ std::nullopt, merge_sorter->getMaxMergedBlockSize(), have_all_inputs);
+            /// The merges in memory keep one row per key in each input, which the window `[0, 1)` requires.
+            external_merging_sorted = std::make_shared<GroupLimitSortedTransform>(
+                "DistinctSortedTransform", SharedHeaders{}, shared_header_without_constants, description,
+                /*seen_rows_column=*/ std::nullopt, /*group_offset=*/ 0, /*group_limit_end=*/ 1,
+                merge_sorter->getMaxMergedBlockSize(), have_all_inputs);
         }
         else
         {
@@ -254,7 +255,7 @@ void MergeSortingTransform::serialize()
     current_chunk = merge_sorter->read();
     if (!current_chunk)
         merge_sorter.reset();
-    /// A read of `MergeSorter::Mode::MergeUniqueChunks` that consumes only duplicates returns no rows. The
+    /// A read of `MergeSorter::Mode::LimitGroupRows` that consumes only duplicates returns no rows. The
     /// run gets no block for it, and the next call reads on.
     else if (!current_chunk.hasRows())
         current_chunk.clear();

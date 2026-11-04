@@ -13,7 +13,6 @@
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ProcessList.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
 #include <Common/CurrentMetrics.h>
@@ -43,7 +42,6 @@ namespace ErrorCodes
 
 namespace Setting
 {
-    extern const SettingsBool enable_adaptive_memory_spill_scheduler;
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode transfer_overflow_mode;
@@ -90,10 +88,7 @@ void CreatingSetStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     /// The transform applies these settings only when it builds the set itself.
     /// A set on disk is shared through the prepared sets cache like one in memory.
     SetSpillSettings spill_settings;
-    const auto & query_status = build_settings.process_list_element;
-    const bool scheduler_spilling = set_settings.allow_spilling && query_status && build_settings.temp_data_on_disk
-        && (query_status->getMemoryReservation()
-            || query_status->getContext()->getSettingsRef()[Setting::enable_adaptive_memory_spill_scheduler]);
+    const bool scheduler_spilling = set_settings.allow_spilling && build_settings.isSchedulerSpillingEnabled();
     if (max_bytes_before_external_set || scheduler_spilling)
     {
         if (!build_settings.temp_data_on_disk)

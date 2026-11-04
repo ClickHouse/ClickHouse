@@ -1,0 +1,18 @@
+65536	2147450880	1
+query_memory_growth	1	1
+131072
+fixed_table	0	0
+64	67108982	1
+arena_growth String	1	1
+64	67109888	1
+arena_growth FixedString(1048592)	1	1
+8192	3225084122667486914	1
+8192	3225084122667486914	1
+header_constants threshold=1099511627776	0	0
+header_constants threshold=1	1	1
+MEMORY_LIMIT_EXCEEDED
+65536	2147450880	1
+ratio 0.5	1	1
+0
+disk_quota	TOO_MANY_ROWS_OR_BYTES	1
+0

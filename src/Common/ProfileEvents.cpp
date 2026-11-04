@@ -528,6 +528,12 @@
     M(ExternalDistinctTailKeptRows, "Number of buffered rows retained in memory for the final external DISTINCT merge.", ValueType::Number) \
     M(ExternalDistinctCompressedBytes, "Number of compressed bytes written for DISTINCT in external memory.", ValueType::Bytes) \
     M(ExternalDistinctUncompressedBytes, "Amount of data (uncompressed, before compression) written for DISTINCT in external memory.", ValueType::Bytes) \
+    M(ExternalLimitByWritePart, "Number of times a temporary file was written to disk for LIMIT BY in external memory.", ValueType::Number) \
+    M(ExternalLimitByMerge, "Number of times temporary files were merged for LIMIT BY in external memory.", ValueType::Number) \
+    M(ExternalLimitByTailSpilledRows, "Number of buffered rows selected for spilling before the final external LIMIT BY merge.", ValueType::Number) \
+    M(ExternalLimitByTailKeptRows, "Number of buffered rows retained in memory for the final external LIMIT BY merge.", ValueType::Number) \
+    M(ExternalLimitByCompressedBytes, "Number of compressed bytes written for LIMIT BY in external memory.", ValueType::Bytes) \
+    M(ExternalLimitByUncompressedBytes, "Amount of data (uncompressed, before compression) written for LIMIT BY in external memory.", ValueType::Bytes) \
     M(ExternalSetWritePart, "Number of times a temporary file was written to disk for an `IN` set in external memory.", ValueType::Number) \
     M(ExternalSetMerge, "Number of times temporary files were merged for an `IN` set in external memory.", ValueType::Number) \
     M(ExternalSetTailSpilledKeys, "Number of keys in memory written to a temporary file before the final merge of an `IN` set in external memory, so that the merge fits within the spill threshold.", ValueType::Number) \

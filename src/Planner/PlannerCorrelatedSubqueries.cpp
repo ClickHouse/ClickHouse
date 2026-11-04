@@ -1223,6 +1223,7 @@ QueryPlan decorrelateQueryPlan(
 
         auto result_step = std::make_unique<LimitByStep>(
             input_header,
+            LimitByStep::Settings{},
             limit_step->getLimit(),
             limit_step->getOffset(),
             std::move(limit_by_columns),
@@ -1249,6 +1250,7 @@ QueryPlan decorrelateQueryPlan(
 
         auto result_step = std::make_unique<LimitByStep>(
             input_header,
+            LimitByStep::Settings{},
             std::numeric_limits<UInt64>::max(),
             offset_step->getOffset(),
             std::move(limit_by_columns));

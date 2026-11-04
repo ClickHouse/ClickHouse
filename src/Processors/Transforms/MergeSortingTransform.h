@@ -31,9 +31,9 @@ class MergeSortingTransform final : public SortingTransform
 public:
     /// limit - if not 0, allowed to return just first 'limit' rows in sorted order.
     /// merge_mode - the mode of the merges that form each spilled run and the output. With
-    /// `MergeUniqueChunks` the sort description has no collators, every input chunk must be unique on it, and
-    /// the output keeps one row per key; a merge step that consumes only duplicates yields a chunk without
-    /// rows. `limit` must be 0 in this mode, because the merge of spilled runs takes no limit.
+    /// `LimitGroupRows`, which keeps one row per key here, the sort description has no collators, every input chunk
+    /// must be unique on it, and the output keeps one row per key; a merge step that consumes only duplicates yields
+    /// a chunk without rows. `limit` must be 0 in this mode, because the merge of spilled runs takes no limit.
     /// external_merge_event - counts the final merges of spilled runs, for the operator that the sort serves.
     MergeSortingTransform(
         SharedHeader header,

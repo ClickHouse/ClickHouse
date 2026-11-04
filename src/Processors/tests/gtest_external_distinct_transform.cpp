@@ -24,7 +24,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/ISink.h>
-#include <Processors/Merges/DistinctSortedTransform.h>
+#include <Processors/Merges/GroupLimitSortedTransform.h>
 #include <Processors/Sources/SourceFromChunks.h>
 #include <Processors/Transforms/BufferingFileTransforms.h>
 #include <Processors/Transforms/DistinctLimitsCheckingTransform.h>
@@ -34,6 +34,7 @@
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/ThreadStatus.h>
@@ -115,7 +116,7 @@ struct ConnectedDistinct
     explicit ConnectedDistinct(
         TemporaryDataOnDiskScopePtr tmp_data, UInt64 limit_hint = 0, UInt64 threshold = default_spill_threshold,
         DistinctSetMemoryTracker::SharedCounter shared_set_bytes = nullptr)
-        : transform(header, SizeLimits{}, limit_hint, Names{}, threshold,
+        : transform(header, GroupLimitParams{.key_columns = Names{}, .limit_hint = limit_hint}, threshold,
             std::move(tmp_data), /*min_free_disk_space_=*/ 0, /*max_block_size_rows_=*/ 2,
             /*preferred_block_bytes_=*/ DEFAULT_BLOCK_SIZE * 256, /*preserve_input_order_=*/ false,
             std::move(shared_set_bytes))
@@ -194,6 +195,9 @@ class ExternalDistinctTransformTest : public testing::Test
 protected:
     void SetUp() override
     {
+        /// These tests switch states of a few keys to external mode to exercise the spill mechanics, which the
+        /// spill floor would keep hashing.
+        FailPointInjection::enableFailPoint("external_group_limit_skip_spill_floor");
         disk = createDisk("external_distinct");
         tmp_data = std::make_shared<TemporaryDataOnDiskScope>(
             TemporaryDataOnDiskSettings{}, std::make_shared<SingleDiskVolume>("temporary", disk));
@@ -203,6 +207,7 @@ protected:
     {
         tmp_data.reset();
         destroyDisk(disk);
+        FailPointInjection::disableFailPoint("external_group_limit_skip_spill_floor");
     }
 
     /// Track query allocations independently of the thread running the test suite.
@@ -273,41 +278,41 @@ TEST_F(ExternalDistinctTransformTest, SpillCompletionIsIndependentOfResultBackpr
         SCOPE_EXIT(std::ignore = CurrentMemoryTracker::free(ConnectedDistinct::default_spill_threshold / 2));
         transform.work();
         ASSERT_EQ(transform.prepare(), IProcessor::Status::UpdatePipeline);
-        auto suppression = connected.attachRun();
-        ASSERT_TRUE(suppression.sink);
-        ASSERT_TRUE(suppression.source);
-        auto & suppression_sink = *suppression.sink;
-        auto & suppression_source = *suppression.source;
-        ASSERT_EQ(suppression_sink.prepare(), IProcessor::Status::Ready);
-        suppression_sink.work();
-        ASSERT_EQ(suppression_sink.prepare(), IProcessor::Status::NeedData);
+        auto seen = connected.attachRun();
+        ASSERT_TRUE(seen.sink);
+        ASSERT_TRUE(seen.source);
+        auto & seen_sink = *seen.sink;
+        auto & seen_source = *seen.source;
+        ASSERT_EQ(seen_sink.prepare(), IProcessor::Status::Ready);
+        seen_sink.work();
+        ASSERT_EQ(seen_sink.prepare(), IProcessor::Status::NeedData);
 
-        /// The three two-row suppression chunks drain while result output is blocked.
+        /// The three two-row seen chunks drain while result output is blocked.
         for (size_t i = 0; i < 3; ++i)
         {
             ASSERT_EQ(transform.prepare(), IProcessor::Status::Ready);
             transform.work();
-            ASSERT_EQ(suppression_sink.prepare(), IProcessor::Status::Ready);
-            suppression_sink.work();
-            ASSERT_EQ(suppression_sink.prepare(), IProcessor::Status::NeedData);
+            ASSERT_EQ(seen_sink.prepare(), IProcessor::Status::Ready);
+            seen_sink.work();
+            ASSERT_EQ(seen_sink.prepare(), IProcessor::Status::NeedData);
             EXPECT_FALSE(downstream.hasData());
         }
 
         ASSERT_EQ(transform.prepare(), IProcessor::Status::NeedData);
-        ASSERT_EQ(suppression_sink.prepare(), IProcessor::Status::Ready);
-        EXPECT_EQ(suppression_source.prepare(), IProcessor::Status::NeedData);
+        ASSERT_EQ(seen_sink.prepare(), IProcessor::Status::Ready);
+        EXPECT_EQ(seen_source.prepare(), IProcessor::Status::NeedData);
         EXPECT_EQ(transform.prepare(), IProcessor::Status::NeedData);
 
-        /// Finalizing the file releases the suppression dependency, even with output still blocked.
-        suppression_sink.work();
-        ASSERT_EQ(suppression_sink.prepare(), IProcessor::Status::Finished);
+        /// Finalizing the file releases the seen-run dependency, even with output still blocked.
+        seen_sink.work();
+        ASSERT_EQ(seen_sink.prepare(), IProcessor::Status::Finished);
         ASSERT_EQ(transform.prepare(), IProcessor::Status::Ready);
-        EXPECT_TRUE(suppression_source.getCompletionPort().isFinished());
+        EXPECT_TRUE(seen_source.getCompletionPort().isFinished());
         transform.work();
         EXPECT_EQ(transform.prepare(), IProcessor::Status::PortFull);
 
         downstream.setNeeded();
-        /// The chunk rejected before insertion remains available after suppression extraction.
+        /// The chunk rejected before insertion remains available after the seen groups are extracted.
         ASSERT_EQ(transform.prepare(), IProcessor::Status::Ready);
         transform.work();
         EXPECT_EQ(transform.prepare(), IProcessor::Status::NeedData);
@@ -315,7 +320,7 @@ TEST_F(ExternalDistinctTransformTest, SpillCompletionIsIndependentOfResultBackpr
     });
 }
 
-TEST_F(ExternalDistinctTransformTest, OrdinaryInputResumesBeforeFileCompletion)
+TEST_F(ExternalDistinctTransformTest, InputCollectionResumesBeforeFileCompletion)
 {
     withQueryThread([&]
     {
@@ -325,7 +330,7 @@ TEST_F(ExternalDistinctTransformTest, OrdinaryInputResumesBeforeFileCompletion)
         connected.upstream.push(makeChunk({5, 7, 8, 9}));
         ASSERT_EQ(transform.prepare(), IProcessor::Status::Ready);
         transform.work();
-        /// An empty set needs no suppression run. The rejected chunk starts the first ordinary run.
+        /// An empty set needs no seen run. The rejected chunk starts the first input run.
         ASSERT_EQ(transform.prepare(), IProcessor::Status::Ready);
         transform.work();
         ASSERT_EQ(transform.prepare(), IProcessor::Status::UpdatePipeline);
@@ -346,7 +351,7 @@ TEST_F(ExternalDistinctTransformTest, OrdinaryInputResumesBeforeFileCompletion)
             ASSERT_EQ(input_sink.prepare(), IProcessor::Status::NeedData);
         }
 
-        /// Ordinary input resumes before its file finishes; only the reader waits for that sink.
+        /// Input collection resumes before its file finishes; only the reader waits for that sink.
         EXPECT_EQ(transform.prepare(), IProcessor::Status::NeedData);
         EXPECT_TRUE(connected.upstream.isNeeded());
         EXPECT_FALSE(input_source.getCompletionPort().isFinished());
@@ -408,7 +413,7 @@ TEST_F(ExternalDistinctTransformTest, DownstreamClosureTerminatesRunDependencies
             {
                 auto merger = std::ranges::find_if(connected.processors, [](const auto & processor)
                 {
-                    return typeid_cast<DistinctSortedTransform *>(processor.get());
+                    return typeid_cast<GroupLimitSortedTransform *>(processor.get());
                 });
                 ASSERT_NE(merger, connected.processors.end());
                 EXPECT_EQ((*merger)->prepare(), IProcessor::Status::Finished);
@@ -480,7 +485,7 @@ TEST_F(ExternalDistinctTransformTest, SpillsBeforeLowCardinalityBitmapAllocation
         column.reset();
         ASSERT_GE(assert_cast<const ColumnLowCardinality &>(*input).getDictionary().size(), dictionary_size);
         const UInt64 threshold = query.get() + 128 * 1024;
-        ExternalDistinctTransform transform(header, SizeLimits{}, /*limit_hint_=*/ 0, Names{},
+        ExternalDistinctTransform transform(header, GroupLimitParams{.key_columns = Names{}},
             threshold, tmp_data, /*min_free_disk_space_=*/ 0,
             /*max_block_size_rows_=*/ 3, /*preferred_block_bytes_=*/ DEFAULT_BLOCK_SIZE * 256,
             /*preserve_input_order_=*/ false);
@@ -499,7 +504,7 @@ TEST_F(ExternalDistinctTransformTest, SpillsBeforeLowCardinalityBitmapAllocation
         EXPECT_FALSE(downstream.hasData());
         EXPECT_EQ(transform.prepare(), IProcessor::Status::Ready);
 
-        /// The unconsumed input is collected into an ordinary run without constructing the LC bitmap.
+        /// The unconsumed input is collected into an input run without constructing the LC bitmap.
         ASSERT_NO_THROW(transform.work());
         EXPECT_EQ(transform.prepare(), IProcessor::Status::UpdatePipeline);
     }).join();
@@ -541,7 +546,7 @@ TEST_F(ExternalDistinctTransformTest, SpillsBeforeFilteringWithSpareTableCapacit
             }
             /// The table needs no growth, but filtering would copy most of the wide payload.
             const UInt64 threshold = query.get() + materialization_bytes + filtering_bytes / 4 + 65536;
-            ExternalDistinctTransform transform(header, SizeLimits{}, /*limit_hint_=*/ 0, Names{"k"},
+            ExternalDistinctTransform transform(header, GroupLimitParams{.key_columns = Names{"k"}},
                 threshold, tmp_data, /*min_free_disk_space_=*/ 0,
                 /*max_block_size_rows_=*/ 2, /*preferred_block_bytes_=*/ DEFAULT_BLOCK_SIZE * 256,
                 /*preserve_input_order_=*/ false);
@@ -557,7 +562,7 @@ TEST_F(ExternalDistinctTransformTest, SpillsBeforeFilteringWithSpareTableCapacit
             ASSERT_EQ(transform.prepare(), IProcessor::Status::Ready);
             EXPECT_FALSE(downstream.hasData());
 
-            /// The unconsumed input is collected into an ordinary run after switching to spilling.
+            /// The unconsumed input is collected into an input run after switching to spilling.
             ASSERT_NO_THROW(transform.work());
             EXPECT_EQ(transform.prepare(), IProcessor::Status::UpdatePipeline);
         }
@@ -583,7 +588,7 @@ TEST_F(ExternalDistinctTransformTest, SpillingReleasesOnlyItsOwnSetMemory)
         SCOPE_EXIT(std::ignore = CurrentMemoryTracker::free(ConnectedDistinct::default_spill_threshold / 2));
         first.transform.work();
         ASSERT_EQ(first.transform.prepare(), IProcessor::Status::UpdatePipeline);
-        /// Extracted suppression columns own the keys, so only the other stream's set remains counted.
+        /// Extracted seen-group columns own the keys, so only the other stream's set remains counted.
         EXPECT_EQ(shared_set_bytes->load(), second_bytes);
         auto run = first.attachRun();
         ASSERT_TRUE(run.sink);
@@ -615,7 +620,8 @@ TEST_F(ExternalDistinctTransformTest, GlobalLimitsCombineHashingAndSpilledStream
                     /// One stream spills immediately, while the other emits its keys during hashing.
                     const auto threshold = stream == 0 ? 1 : ConnectedDistinct::default_spill_threshold;
                     pipe.addTransform(std::make_shared<ExternalDistinctTransform>(
-                        header, SizeLimits{}, 0, Names{}, threshold, tmp_data, 0, 2, DEFAULT_BLOCK_SIZE * 256, false, shared_set_bytes));
+                        header, GroupLimitParams{.key_columns = Names{}}, threshold, tmp_data, 0, 2, DEFAULT_BLOCK_SIZE * 256, false,
+                        shared_set_bytes));
                     pipes.push_back(std::move(pipe));
                 }
                 auto pipe = Pipe::unitePipes(std::move(pipes));
@@ -655,7 +661,7 @@ TEST_F(ExternalDistinctTransformTest, GlobalLimitsCombineHashingAndSpilledStream
     });
 }
 
-TEST_F(ExternalDistinctTransformTest, ReservesSuppressionMemoryAlongsideFilteredOutput)
+TEST_F(ExternalDistinctTransformTest, ReservesSeenRunMemoryAlongsideFilteredOutput)
 {
     MemoryTracker query{&total_memory_tracker, VariableContext::Process, false};
     std::thread([&]
@@ -667,7 +673,7 @@ TEST_F(ExternalDistinctTransformTest, ReservesSuppressionMemoryAlongsideFiltered
             ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "k"),
             ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "payload")});
         constexpr UInt64 threshold = 256 << 20;
-        ExternalDistinctTransform transform(header, SizeLimits{}, /*limit_hint_=*/ 0, Names{"k"},
+        ExternalDistinctTransform transform(header, GroupLimitParams{.key_columns = Names{"k"}},
             threshold, tmp_data, /*min_free_disk_space_=*/ 0,
             /*max_block_size_rows_=*/ 8, /*preferred_block_bytes_=*/ DEFAULT_BLOCK_SIZE * 256,
             /*preserve_input_order_=*/ false);
@@ -677,7 +683,7 @@ TEST_F(ExternalDistinctTransformTest, ReservesSuppressionMemoryAlongsideFiltered
         connect(transform.getOutputs().front(), downstream);
         downstream.setNeeded();
 
-        /// Retain a key so switching to spilling must prepare a suppression run.
+        /// Retain a key so switching to spilling must prepare a seen run.
         ASSERT_EQ(transform.prepare(), IProcessor::Status::NeedData);
         auto first = makeChunk({0});
         auto first_payload = ColumnString::create();
@@ -702,8 +708,8 @@ TEST_F(ExternalDistinctTransformTest, ReservesSuppressionMemoryAlongsideFiltered
         upstream.push(std::move(input));
         ASSERT_EQ(transform.prepare(), IProcessor::Status::Ready);
 
-        /// Either the filtering copy or suppression workspace fits on its own, but the copy can stay
-        /// in the pending output while suppression starts. Reserve room for both before inserting.
+        /// Either the filtering copy or the seen-run workspace fits on its own, but the copy can stay
+        /// in the pending output while the seen run starts. Reserve room for both before inserting.
         const Int64 pressure = threshold - query.get() - static_cast<Int64>(input_bytes + (16 << 20));
         ASSERT_GT(pressure, 0);
         std::ignore = CurrentMemoryTracker::alloc(pressure);
@@ -740,8 +746,8 @@ TEST_F(ExternalDistinctTransformTest, CheckedInsertionSpillsUnprocessedSuffix)
             chunks.push_back(std::move(input));
             auto source = std::make_shared<SourceFromChunks>(header, std::move(chunks));
             constexpr UInt64 threshold = 256 << 20;
-            auto transform = std::make_shared<ExternalDistinctTransform>(header, SizeLimits{}, /*limit_hint_=*/ 0,
-                Names{"k"}, threshold, tmp_data, /*min_free_disk_space_=*/ 0, rows, DEFAULT_BLOCK_SIZE * 256, ordered);
+            auto transform = std::make_shared<ExternalDistinctTransform>(header, GroupLimitParams{.key_columns = Names{"k"}},
+                threshold, tmp_data, /*min_free_disk_space_=*/ 0, rows, DEFAULT_BLOCK_SIZE * 256, ordered);
             connect(source->getPort(), transform->getInputs().front());
             auto * output_port = &transform->getOutputs().front();
             auto processors = std::make_shared<Processors>();
@@ -751,7 +757,7 @@ TEST_F(ExternalDistinctTransformTest, CheckedInsertionSpillsUnprocessedSuffix)
             PullingPipelineExecutor executor(pipeline);
 
             /// The full-chunk growth cannot fit, but checked insertion can emit a prefix before the
-            /// next table growth forces its suffix into ordinary runs.
+            /// next table growth forces its suffix into input runs.
             const Int64 pressure = threshold - getCurrentQueryMemoryUsage() - (43 << 20);
             ASSERT_GT(pressure, 0);
             std::ignore = CurrentMemoryTracker::alloc(pressure);
@@ -808,9 +814,9 @@ TEST_F(ExternalDistinctTransformTest, OrderRestorationLimitsRowsAfterHashingPref
         chunks.push_back(std::move(input));
         auto source = std::make_shared<SourceFromChunks>(header, std::move(chunks));
         constexpr UInt64 threshold = 256 << 20;
-        auto transform = std::make_shared<ExternalDistinctTransform>(header, SizeLimits{}, limit_hint,
-            Names{"k"}, threshold, tmp_data, /*min_free_disk_space_=*/ 0, rows, DEFAULT_BLOCK_SIZE * 256,
-            /*preserve_input_order_=*/ true);
+        auto transform = std::make_shared<ExternalDistinctTransform>(header,
+            GroupLimitParams{.key_columns = Names{"k"}, .limit_hint = limit_hint}, threshold, tmp_data,
+            /*min_free_disk_space_=*/ 0, rows, DEFAULT_BLOCK_SIZE * 256, /*preserve_input_order_=*/ true);
         connect(source->getPort(), transform->getInputs().front());
         auto * output_port = &transform->getOutputs().front();
         auto processors = std::make_shared<Processors>();
@@ -849,11 +855,11 @@ TEST_F(ExternalDistinctTransformTest, SpillFilesUseByteSizedBlocks)
 {
     withQueryThread([&]
     {
-        for (const bool suppression : {false, true})
+        for (const bool seen : {false, true})
         for (const bool uneven : {false, true})
         for (const size_t preferred_bytes : {0, 65536})
         {
-            SCOPED_TRACE(::testing::Message() << "suppression=" << suppression << ", uneven=" << uneven
+            SCOPED_TRACE(::testing::Message() << "seen=" << seen << ", uneven=" << uneven
                 << ", preferred_bytes=" << preferred_bytes);
             const auto header = std::make_shared<const Block>(Block{
                 ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "k"),
@@ -872,8 +878,8 @@ TEST_F(ExternalDistinctTransformTest, SpillFilesUseByteSizedBlocks)
             std::ranges::sort(expected_keys);
             Chunk input(std::move(columns), rows);
             constexpr size_t hashing_threshold = 128 << 20;
-            ExternalDistinctTransform transform(header, SizeLimits{}, /*limit_hint_=*/ 0, Names{"k"},
-                suppression ? hashing_threshold : 1, tmp_data, /*min_free_disk_space_=*/ 0,
+            ExternalDistinctTransform transform(header, GroupLimitParams{.key_columns = Names{"k"}},
+                seen ? hashing_threshold : 1, tmp_data, /*min_free_disk_space_=*/ 0,
                 /*max_block_size_rows_=*/ rows, preferred_bytes, /*preserve_input_order_=*/ false);
             OutputPort upstream{header};
             InputPort downstream{header};
@@ -885,16 +891,16 @@ TEST_F(ExternalDistinctTransformTest, SpillFilesUseByteSizedBlocks)
             ASSERT_EQ(transform.prepare(), IProcessor::Status::Ready);
             transform.work();
 
-            /// Suppression runs contain keys already emitted during hashing. Memory used by another
+            /// Seen runs contain keys already emitted during hashing. Memory used by another
             /// operator forces the next chunk to spill while the retained keys still need extraction.
-            if (suppression)
+            if (seen)
             {
                 ASSERT_EQ(transform.prepare(), IProcessor::Status::NeedData);
                 ASSERT_TRUE(downstream.hasData());
                 ASSERT_EQ(downstream.pull().getNumRows(), rows);
                 upstream.push(input.clone());
             }
-            const Int64 pressure = suppression ? hashing_threshold : 0;
+            const Int64 pressure = seen ? hashing_threshold : 0;
             std::ignore = CurrentMemoryTracker::alloc(pressure);
             SCOPE_EXIT(std::ignore = CurrentMemoryTracker::free(pressure));
             ASSERT_EQ(transform.prepare(), IProcessor::Status::Ready);
@@ -933,6 +939,8 @@ TEST_F(ExternalDistinctTransformTest, CoalescedInputKeepsFirstPayload)
             SCOPED_TRACE(::testing::Message() << "type=" << type->getName() << ", ordered=" << ordered);
             const auto header = std::make_shared<const Block>(Block{
                 ColumnWithTypeAndName(type, "k"), ColumnWithTypeAndName(u64, "payload")});
+            /// Every 32nd `String` key is wide, so its sorting units reach their byte limit before their row
+            /// limit.
             const auto make_key = [&](UInt64 key) -> Field
             {
                 if (type->getTypeId() == TypeIndex::Array)
@@ -943,15 +951,26 @@ TEST_F(ExternalDistinctTransformTest, CoalescedInputKeepsFirstPayload)
                     return std::to_string(key) + String(key % 32 == 0 ? 8192 : 8, 'x');
                 return key;
             };
-            /// The wide source forces spilling while it retains most chunks, then releases enough
-            /// memory for later chunks to coalesce under the larger threshold.
-            const bool wide = type->getTypeId() == TypeIndex::String;
-            const size_t rows = wide ? 262143 : 131071;
-            const size_t threshold = wide ? 96 << 20 : 32 << 20;
+            constexpr size_t rows = 131071;
             constexpr size_t unique_keys = 4093;
             constexpr size_t input_rows = 127;
+            constexpr Int64 threshold = 256 << 20;
             size_t metadata_merge_calls = 0;
-            Chunks chunks;
+            auto transform = std::make_shared<ExternalDistinctTransform>(
+                header, GroupLimitParams{.key_columns = Names{"k"}}, threshold,
+                tmp_data, /*min_free_disk_space_=*/ 0, input_rows, /*preferred_block_bytes_=*/ 65536, ordered);
+            auto sink = std::make_shared<CollectingSink>(header);
+            connect(transform->getOutputs().front(), sink->getPort());
+            auto processors = std::make_shared<Processors>();
+            processors->emplace_back(transform);
+            processors->emplace_back(sink);
+            QueryPipeline pipeline(QueryPlanResourceHolder{}, processors, &transform->getInputs().front());
+            PushingPipelineExecutor executor(pipeline);
+            SCOPE_EXIT(executor.cancel());
+            const auto & events = CurrentThread::getProfileEvents();
+            const auto merges_before = events[ProfileEvents::ExternalDistinctMerge];
+            const auto tail_rows_before = events[ProfileEvents::ExternalDistinctTailKeptRows]
+                + events[ProfileEvents::ExternalDistinctTailSpilledRows];
             for (size_t begin = 0; begin < rows; begin += input_rows)
             {
                 auto columns = header->cloneEmptyColumns();
@@ -961,25 +980,23 @@ TEST_F(ExternalDistinctTransformTest, CoalescedInputKeepsFirstPayload)
                     columns[0]->insert(make_key(unique_keys - 1 - row % unique_keys));
                     columns[1]->insert(UInt64(row));
                 }
-                chunks.emplace_back(std::move(columns), count);
-                chunks.back().getChunkInfos().add(std::make_shared<MergeCountingChunkInfo>(metadata_merge_calls));
+                Chunk chunk(std::move(columns), count);
+                chunk.getChunkInfos().add(std::make_shared<MergeCountingChunkInfo>(metadata_merge_calls));
+
+                /// Another operator's memory forces the first chunk to spill. It is released afterwards,
+                /// so later chunks have room to coalesce into sorting units that span many chunks.
+                const Int64 pressure = begin == 0 ? threshold : 0;
+                std::ignore = CurrentMemoryTracker::alloc(pressure);
+                SCOPE_EXIT(std::ignore = CurrentMemoryTracker::free(pressure));
+                executor.push(std::move(chunk));
             }
-            auto source = std::make_shared<SourceFromChunks>(header, std::move(chunks));
-            auto transform = std::make_shared<ExternalDistinctTransform>(
-                header, SizeLimits{}, /*limit_hint_=*/ 0, Names{"k"}, threshold,
-                tmp_data, /*min_free_disk_space_=*/ 0, input_rows, /*preferred_block_bytes_=*/ 65536, ordered);
-            connect(source->getPort(), transform->getInputs().front());
-            auto * output_port = &transform->getOutputs().front();
-            auto processors = std::make_shared<Processors>();
-            processors->emplace_back(std::move(source));
-            processors->emplace_back(std::move(transform));
-            QueryPipeline pipeline(QueryPlanResourceHolder{}, processors, output_port);
-            PullingPipelineExecutor executor(pipeline);
-            Block block;
+            executor.finish();
+
             size_t output_rows = 0;
             std::vector<bool> seen(unique_keys);
-            while (executor.pull(block))
+            for (auto & chunk : sink->chunks)
             {
+                const auto block = header->cloneWithColumns(chunk.detachColumns());
                 for (size_t row = 0; row < block.rows(); ++row)
                 {
                     const auto payload = block.getByName("payload").column->getUInt(row);
@@ -994,17 +1011,26 @@ TEST_F(ExternalDistinctTransformTest, CoalescedInputKeepsFirstPayload)
             }
             EXPECT_EQ(output_rows, unique_keys);
             EXPECT_EQ(metadata_merge_calls, 0);
+            EXPECT_EQ(events[ProfileEvents::ExternalDistinctMerge] - merges_before, 1);
+
+            /// The threshold leaves room for every sorting unit, so no run follows the first one, and the
+            /// later chunks reach the end of the input as the tail. A chunk has no repeated keys, and a
+            /// sorting unit keeps one row per key, so the tail is smaller than these chunks only when its
+            /// sorting units span chunks.
+            const auto tail_rows = events[ProfileEvents::ExternalDistinctTailKeptRows]
+                + events[ProfileEvents::ExternalDistinctTailSpilledRows] - tail_rows_before;
+            EXPECT_LT(tail_rows, rows - input_rows);
         }
     });
 }
 
-TEST_F(ExternalDistinctTransformTest, SuppressionSortingKeepsSortEquivalentKeys)
+TEST_F(ExternalDistinctTransformTest, SeenRunSortingKeepsSortEquivalentKeys)
 {
     withQueryThread([&]
     {
         const auto header = std::make_shared<const Block>(Block{
             ColumnWithTypeAndName(std::make_shared<DataTypeFloat64>(), "k")});
-        /// Hashing retains distinct floating-point bit patterns. Sorting suppression keys must keep
+        /// Hashing retains distinct floating-point bit patterns. Sorting seen keys must keep
         /// every representation even when zeros or different NaNs compare equal in the sort order.
         std::vector<UInt64> expected{0, 0x8000000000000000ULL, 0x7ff8000000000000ULL, 0x7ff8000000000001ULL};
         auto keys = ColumnFloat64::create();
@@ -1012,7 +1038,7 @@ TEST_F(ExternalDistinctTransformTest, SuppressionSortingKeepsSortEquivalentKeys)
             keys->insertValue(std::bit_cast<Float64>(bits));
         Chunk input(Columns{std::move(keys)}, expected.size());
         constexpr size_t threshold = 64 << 20;
-        ExternalDistinctTransform transform(header, SizeLimits{}, /*limit_hint_=*/ 0, Names{}, threshold,
+        ExternalDistinctTransform transform(header, GroupLimitParams{.key_columns = Names{}}, threshold,
             tmp_data, /*min_free_disk_space_=*/ 0, /*max_block_size_rows_=*/ 1,
             /*preferred_block_bytes_=*/ 65536, /*preserve_input_order_=*/ false);
         OutputPort upstream{header};
@@ -1077,7 +1103,7 @@ TEST_F(ExternalDistinctTransformTest, TailBudgetPreservesFirstPayloadAndOrder)
             constexpr size_t block_rows = 1024;
             constexpr Int64 threshold = 128 << 20;
             auto transform = std::make_shared<ExternalDistinctTransform>(
-                header, SizeLimits{}, /*limit_hint_=*/ 0, Names{"k"}, threshold,
+                header, GroupLimitParams{.key_columns = Names{"k"}}, threshold,
                 tmp_data, /*min_free_disk_space_=*/ 0, block_rows, /*preferred_block_bytes_=*/ 65536, ordered);
             auto sink = std::make_shared<CollectingSink>(header);
             connect(transform->getOutputs().front(), sink->getPort());

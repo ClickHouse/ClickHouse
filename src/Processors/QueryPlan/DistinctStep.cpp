@@ -14,8 +14,6 @@
 #include <QueryPipeline/scatterByPartition.h>
 #include <IO/Operators.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/ProcessList.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/JSONBuilder.h>
 #include <Common/MemoryTrackerUtils.h>
@@ -49,7 +47,6 @@ namespace Setting
     extern const SettingsUInt64 min_free_disk_space_for_temporary_data;
     extern const SettingsString temporary_files_codec;
     extern const SettingsNonZeroUInt64 temporary_files_buffer_size;
-    extern const SettingsBool enable_adaptive_memory_spill_scheduler;
 }
 
 namespace QueryPlanSerializationSetting
@@ -200,12 +197,11 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
         settings.max_bytes_before_external_distinct,
         settings.max_bytes_ratio_before_external_distinct,
         "max_bytes_ratio_before_external_distinct");
-    const auto & query_status = build_settings.process_list_element;
-    const bool scheduler_spilling = query_status && build_settings.temp_data_on_disk
-        && (query_status->getMemoryReservation()
-            || query_status->getContext()->getSettingsRef()[Setting::enable_adaptive_memory_spill_scheduler]);
-    /// Constant keys produce at most one row and need no external storage.
-    const bool external = !pre_distinct && (external_threshold || scheduler_spilling)
+    /// Constant keys produce at most one row and need no external storage. A step from a release that
+    /// predates the input-order flag may need its input order, which that release keeps by in-memory
+    /// execution. Such a step stays in memory, since a spill could lose the order.
+    const bool external = !pre_distinct && !input_order_unknown
+        && (external_threshold || build_settings.isSchedulerSpillingEnabled())
         && !calculateDistinctKeyColumnsPositions(*pipeline.getSharedHeader(), columns).empty();
 
     if (!pre_distinct && !skip_stream_merging)
@@ -269,9 +265,11 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
 
                 return std::make_shared<ExternalDistinctTransform>(
                     header,
-                    local_limits,
-                    limit_hint,
-                    columns,
+                    GroupLimitParams{
+                        .key_columns = columns,
+                        .limit_hint = limit_hint,
+                        .size_limits = local_limits,
+                        .num_streams = pipeline.getNumStreams()},
                     external_threshold,
                     tmp_data_on_disk,
                     settings.min_free_disk_space,
@@ -394,6 +392,7 @@ QueryPlanStepPtr DistinctStep::deserialize(Deserialization & ctx, bool pre_disti
 
     auto step = std::make_unique<DistinctStep>(
         ctx.input_headers.front(), Settings(ctx.settings), 0, column_names, pre_distinct_);
+    step->input_order_unknown = ctx.step_version < 1;
     if (preserve_input_order)
         step->preserveInputOrder();
     return step;

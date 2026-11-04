@@ -5,6 +5,7 @@
 #include <DataTypes/IDataType.h>
 #include <Interpreters/SetVariants.h>
 #include <Processors/Chunk.h>
+#include <Processors/Transforms/SeenGroupExtractor.h>
 #include <QueryPipeline/SizeLimits.h>
 
 #include <functional>
@@ -94,13 +95,6 @@ private:
     LCOptimizationController lc_optimization_controller;
 };
 
-/// The comparison keys retained by a `DISTINCT` set and returned by its extractor.
-enum class DistinctKeyRepresentation
-{
-    Columns,
-    Hash128,
-};
-
 /// Owns hash-based `DISTINCT` state, including `LowCardinality` filtering and size-limit enforcement.
 /// `DistinctTransform` uses it for streaming deduplication; `ExternalDistinctTransform` also extracts
 /// its retained keys when spilling.
@@ -117,7 +111,7 @@ public:
         bool skip_null_keys_ = false);
 
     /// Returns the representation chosen from the materialized input columns. Requires an initialized set.
-    DistinctKeyRepresentation getKeyRepresentation() const;
+    SpillKeyRepresentation getKeyRepresentation() const;
 
     const ColumnNumbers & getKeyColumnsPositions() const { return key_columns_pos; }
     bool hasKeyColumns() const { return !key_columns_pos.empty(); }
@@ -132,28 +126,13 @@ public:
     /// The memory occupied by the set and by the `LowCardinality` fast path.
     size_t getTotalByteCount() const;
 
-    /// Reads owning comparison-key columns from a frozen set in hash-table iteration order.
-    class KeyExtractor
-    {
-    public:
-        virtual ~KeyExtractor() = default;
-
-        /// Returns at most `max_rows` keys, stopping after a complete key reaches `max_bytes` of
-        /// allocated column memory. The byte target is soft because a key or an allocation can exceed
-        /// it; zero disables it. `max_rows` must be positive. An empty vector marks exhaustion.
-        virtual MutableColumns next(size_t max_rows, size_t max_bytes) = 0;
-
-        /// Retained hash-table and arena memory, zero after the final key is extracted.
-        virtual size_t getTotalByteCount() const = 0;
-    };
-
-    /// Transfers the hash table, arena, and key metadata into an extractor. With `Columns`, the result
-    /// follows `getKeyColumnsPositions`; with `Hash128`, it contains one `UInt128` fingerprint column.
-    /// The returned columns own their values independently of the extractor. The table is released
+    /// Transfers the hash table, arena, and key metadata into an extractor. With `Columns`, the keys follow
+    /// `getKeyColumnsPositions`; with `Hash128`, they are one `UInt128` fingerprint column. Every key was seen
+    /// once. The returned columns own their values independently of the extractor. The table is released
     /// after its final key is materialized, or when the extractor is destroyed early.
     /// Requires at least one retained key and `skip_null_keys_ = false`: only external `DISTINCT` extracts
     /// keys, and it keeps `NULL` keys as values.
-    std::unique_ptr<KeyExtractor> extractKeys() &&;
+    std::unique_ptr<SeenGroupExtractor> extractSeenGroups() &&;
 
     /// Normalizes input columns and initializes the set on first use, without inserting keys.
     /// Header constants stay compact because they cannot distinguish rows. The prepared chunk exposes

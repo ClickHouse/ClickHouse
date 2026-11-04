@@ -31,6 +31,7 @@
 #include <Processors/Transforms/CreatingSetsTransform.h>
 #include <Processors/Transforms/DroppingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/ExternalLimitByTransform.h>
 #include <Processors/Transforms/LimitByTransform.h>
 #include <Processors/Transforms/LimitsCheckingTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
@@ -295,7 +296,8 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
             }
 
             /// Case 6.
-            if (typeid_cast<LimitByTransform *>(processor) || typeid_cast<LimitBySortedStreamTransform *>(processor))
+            if (typeid_cast<LimitByTransform *>(processor) || typeid_cast<LimitBySortedStreamTransform *>(processor)
+                || typeid_cast<ExternalLimitByTransform *>(processor))
             {
                 processors.emplace(processor);
                 mark_limit_input_as_counted(limit_being_counted, limit_input_port);

@@ -357,7 +357,10 @@ public:
         else
         {
             auto key_holder = static_cast<Derived &>(*this).getKeyHolder(row, pool);
-            return findKeyImpl(keyHolderGetKey(key_holder), data);
+            auto result = findKeyImpl(keyHolderGetKey(key_holder), data);
+            /// A lookup inserts nothing, so a key that the holder serialized into the arena is released at once.
+            keyHolderDiscardKey(key_holder);
+            return result;
         }
     }
 

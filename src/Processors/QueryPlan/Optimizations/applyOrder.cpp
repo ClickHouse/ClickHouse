@@ -255,6 +255,14 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
         if (prefix.size() == limit_by_step->getColumns().size())
             limit_by_step->applyOrder(prefix);
 
+        /// `LIMIT BY` never breaks global order: the steps above may rely on it, so a spilling `LIMIT BY` has to
+        /// restore the order after the spill (see `LimitByStep::preserveInputOrder`). An empty description
+        /// carries no order to preserve. An order that the planner recorded for the `ORDER BY` of the query
+        /// is kept: this description lacks the columns that the steps below drop, so restoring by it alone
+        /// could break the requested order, while restoring the recorded order also keeps this one.
+        if (!properties->sort_description.empty() && !limit_by_step->preservesInputOrder())
+            limit_by_step->preserveInputOrder(properties->sort_description);
+
         return std::move(*properties);
     }
 

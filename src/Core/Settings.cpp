@@ -3921,7 +3921,8 @@ If memory usage after remerge does not reduced by this ratio, remerge will be di
     \
     DECLARE(UInt64, max_bytes_before_external_distinct, 0, R"(
 Query memory threshold, in bytes, for spilling `DISTINCT` data to disk. Actual memory usage can exceed
-this threshold.
+this threshold. Spilling also waits until `DISTINCT` itself holds the smaller of the threshold and about
+16 MiB, since spilling less would free little memory.
 
 `0` disables this threshold. If `max_bytes_ratio_before_external_distinct` also provides a threshold,
 the smaller is used. Set both settings to `0` to disable spilling.
@@ -3940,6 +3941,28 @@ server or user memory limit, the ratio has no effect.
 use `max_bytes_before_external_distinct`, leaving room for additional memory usage.
 )", 0, \
         {"26.9", 0., 0.5, "New setting to enable spilling of `DISTINCT` to disk when memory usage exceeds the given ratio of available memory. If 0, only `max_bytes_before_external_distinct` applies."}) \
+    DECLARE(UInt64, max_bytes_before_external_limit_by, 0, R"(
+Query memory threshold, in bytes, for spilling `LIMIT BY` data to disk. Actual memory usage can exceed
+this threshold. Spilling also waits until `LIMIT BY` itself holds the smaller of the threshold and about
+16 MiB, since spilling less would free little memory. A negative limit or offset does not spill.
+
+`0` disables this threshold. If `max_bytes_ratio_before_external_limit_by` also provides a threshold,
+the smaller is used. Set both settings to `0` to disable spilling.
+
+See [LIMIT BY in external memory](/reference/statements/select/limit-by#limit-by-in-external-memory).
+)", 0, \
+        {"26.11", 0, 0, "New setting to enable spilling of `LIMIT BY` to disk when memory usage exceeds the given threshold in bytes. If 0, only `max_bytes_ratio_before_external_limit_by` applies."}) \
+    DECLARE(Double, max_bytes_ratio_before_external_limit_by, 0.5, R"(
+Fraction of available server or user memory used to calculate the external `LIMIT BY` threshold at
+the start of execution. For example, `0.5` uses half of the available memory.
+
+Values must be at least `0` and less than `1`. `0` disables this threshold. Without an applicable
+server or user memory limit, the ratio has no effect.
+
+`max_memory_usage` does not affect this calculation. To configure spilling relative to that limit,
+use `max_bytes_before_external_limit_by`, leaving room for additional memory usage.
+)", 0, \
+        {"26.11", 0., 0.5, "New setting to enable spilling of `LIMIT BY` to disk when memory usage exceeds the given ratio of available memory. If 0, only `max_bytes_before_external_limit_by` applies."}) \
     \
     DECLARE(UInt64, max_bytes_before_external_set, 0, R"(
 Query memory threshold, in bytes, for spilling the set of `IN` with a subquery to disk, while the set is
@@ -11131,7 +11154,7 @@ An explicit `SETTINGS` clause in the query still takes precedence.
         {"26.10", false, false, "The `trino` dialect was moved to Beta."}, \
         {"26.9", false, false, "New setting to enable the `trino` value of the `dialect` setting, which translates Trino SQL syntax and maps Trino function names to ClickHouse equivalents."}) \
     DECLARE(Bool, enable_adaptive_memory_spill_scheduler, false, R"(
-Adaptively spill eligible aggregation, sorting, `DISTINCT`, and hash-join processors to external storage under query memory pressure.
+Adaptively spill eligible aggregation, sorting, `DISTINCT`, `LIMIT BY`, and hash-join processors to external storage under query memory pressure.
 Supported hash joins include `grace_hash` and the adaptive `hash` / `parallel_hash` path.
 )", EXPERIMENTAL, \
         {"25.2", false, false, "New setting. Enable spill memory data into external storage adaptively."}) \

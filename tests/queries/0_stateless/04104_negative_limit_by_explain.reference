@@ -62,7 +62,7 @@ LimitBySortedStreamTransform
 (NegativeLimitBy)
 NegativeLimitBySortedStreamTransform
 SELECT DISTINCT trim(BOTH ' ' FROM explain) FROM (EXPLAIN PIPELINE SELECT g, x FROM test ORDER BY x LIMIT 2 OFFSET -3 BY g) WHERE explain ILIKE '%NegativeLimitBy%' OR explain ILIKE '%LimitBy%Transform%';
-LimitByTransform
+ExternalLimitByTransform
 (NegativeLimitBy)
 NegativeLimitByTransform
 DROP TABLE test;

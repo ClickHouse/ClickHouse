@@ -1655,12 +1655,23 @@ void addLimitByStep(
 
     const auto & column_names = limit_by_analysis_result.limit_by_column_names;
 
+    auto make_limit_by_step = [&](UInt64 length, UInt64 offset)
+    {
+        auto step = std::make_unique<LimitByStep>(
+            query_plan.getCurrentHeader(), LimitByStep::Settings(settings), length, offset, column_names, always_read_till_end);
+        /// `LIMIT BY` sits above the `ORDER BY` sorting in the plan: the sorted order has to survive it up to the result.
+        if (query_node.hasOrderBy())
+            step->preserveInputOrder(query_analysis_result.sort_description);
+        return step;
+    };
+
+    /// Only `LimitByStep` can spill to disk. `NegativeLimitByStep` keeps its rows in memory, so a negative
+    /// limit or offset never spills; a form that also has a positive limit or offset spills only in its
+    /// `LimitByStep`.
     if (!is_limit_negative && !is_offset_negative) [[likely]]
     {
         /// LIMIT N [OFFSET M] BY cols - standard positive case
-        auto step = std::make_unique<LimitByStep>(
-            query_plan.getCurrentHeader(), limit_by_length, limit_by_offset, column_names, always_read_till_end);
-        query_plan.addStep(std::move(step));
+        query_plan.addStep(make_limit_by_step(limit_by_length, limit_by_offset));
     }
     else if (is_limit_negative && is_offset_negative)
     {
@@ -1674,11 +1685,7 @@ void addLimitByStep(
         ///   1. LimitByStep(limit=MAX, offset=M) - skip first M per group (only if M > 0)
         ///   2. NegativeLimitByStep(limit=N, offset=0) - take last N from remainder
         if (limit_by_offset > 0)
-        {
-            auto step1 = std::make_unique<LimitByStep>(
-                query_plan.getCurrentHeader(), std::numeric_limits<UInt64>::max(), limit_by_offset, column_names, always_read_till_end);
-            query_plan.addStep(std::move(step1));
-        }
+            query_plan.addStep(make_limit_by_step(std::numeric_limits<UInt64>::max(), limit_by_offset));
         auto step2 = std::make_unique<NegativeLimitByStep>(query_plan.getCurrentHeader(), limit_by_length, 0, column_names);
         query_plan.addStep(std::move(step2));
     }
@@ -1691,9 +1698,7 @@ void addLimitByStep(
         auto step1 = std::make_unique<NegativeLimitByStep>(
             query_plan.getCurrentHeader(), std::numeric_limits<UInt64>::max(), limit_by_offset, column_names);
         query_plan.addStep(std::move(step1));
-        auto step2 = std::make_unique<LimitByStep>(
-            query_plan.getCurrentHeader(), limit_by_length, 0, column_names, always_read_till_end);
-        query_plan.addStep(std::move(step2));
+        query_plan.addStep(make_limit_by_step(limit_by_length, 0));
     }
 }
 

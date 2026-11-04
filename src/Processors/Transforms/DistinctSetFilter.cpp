@@ -1,5 +1,6 @@
 #include <Processors/Transforms/DistinctSetFilter.h>
 
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
@@ -367,7 +368,7 @@ namespace
 
 /// Keeps the set alive while its reader materializes owning columns one batch at a time.
 template <typename Method>
-class KeyExtractorImpl final : public DistinctSetFilter::KeyExtractor
+class KeyExtractorImpl final : public SeenGroupExtractor
 {
 public:
     KeyExtractorImpl(
@@ -377,7 +378,7 @@ public:
     {
     }
 
-    MutableColumns next(size_t max_rows, size_t max_bytes) override
+    SeenGroups next(size_t max_rows, size_t max_bytes) override
     {
         if (!data)
             return {};
@@ -388,7 +389,10 @@ public:
         if (reader.atEnd())
             data.reset();
 
-        return columns;
+        /// A set retains each key once; the merge sees every key as one row seen before spilling.
+        const size_t rows = columns.front()->size();
+        auto seen_rows = ColumnConst::create(ColumnUInt8::create(1, UInt8{1}), rows);
+        return {.keys = std::move(columns), .seen_rows = std::move(seen_rows)};
     }
 
     size_t getTotalByteCount() const override
@@ -403,21 +407,21 @@ private:
 
 }
 
-DistinctKeyRepresentation DistinctSetFilter::getKeyRepresentation() const
+SpillKeyRepresentation DistinctSetFilter::getKeyRepresentation() const
 {
     chassert(!data->empty());
-    return data->type == SetVariants::Type::hashed ? DistinctKeyRepresentation::Hash128 : DistinctKeyRepresentation::Columns;
+    return data->type == SetVariants::Type::hashed ? SpillKeyRepresentation::Hash128 : SpillKeyRepresentation::Columns;
 }
 
-std::unique_ptr<DistinctSetFilter::KeyExtractor> DistinctSetFilter::extractKeys() &&
+std::unique_ptr<SeenGroupExtractor> DistinctSetFilter::extractSeenGroups() &&
 {
     chassert(!skip_null_keys);
     chassert(getTotalRowCount() > 0);
 
-    if (getKeyRepresentation() == DistinctKeyRepresentation::Hash128)
+    if (getKeyRepresentation() == SpillKeyRepresentation::Hash128)
         key_types = {std::make_shared<DataTypeUInt128>()};
 
-    auto create_extractor = [this]<typename Method>(const Method & method) -> std::unique_ptr<KeyExtractor>
+    auto create_extractor = [this]<typename Method>(const Method & method) -> std::unique_ptr<SeenGroupExtractor>
     {
         return std::make_unique<KeyExtractorImpl<Method>>(
             method, std::move(data), std::move(key_types), std::move(key_sizes));

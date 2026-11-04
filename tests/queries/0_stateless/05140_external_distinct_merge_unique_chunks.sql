@@ -8,7 +8,7 @@ SET allow_preliminary_distinct_abandoning = 1;
 SET optimize_distinct_in_order = 0;
 
 -- The unique prefix starts spilling before the repeated keys arrive. Several locally unique chunks
--- accumulate in each ordinary run, and their overlapping keys must be merged into one occurrence.
+-- accumulate in each input run, and their overlapping keys must be merged into one occurrence.
 SELECT count(), uniqExact(k), sum(k)
 FROM
 (

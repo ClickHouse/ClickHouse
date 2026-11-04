@@ -71,7 +71,7 @@ void checkExtractionRoundTrip(
         if (filtered.hasRows())
         {
             emitted_count += filtered.getNumRows();
-            if (filter->getKeyRepresentation() == DistinctKeyRepresentation::Hash128)
+            if (filter->getKeyRepresentation() == SpillKeyRepresentation::Hash128)
             {
                 ColumnRawPtrs keys;
                 for (const auto & column : filtered.getColumns())
@@ -88,7 +88,7 @@ void checkExtractionRoundTrip(
     }
 
     const size_t expected_count = filter->getTotalRowCount();
-    auto extractor = std::move(*filter).extractKeys();
+    auto extractor = std::move(*filter).extractSeenGroups();
     filter.reset();
 
     std::vector<Columns> batches;
@@ -96,21 +96,26 @@ void checkExtractionRoundTrip(
     while (true)
     {
         auto batch = extractor->next(max_batch_rows, /*max_bytes=*/ 0);
-        if (batch.empty())
+        if (batch.keys.empty())
             break;
 
-        const size_t num_rows = batch.front()->size();
+        const size_t num_rows = batch.keys.front()->size();
         EXPECT_GT(num_rows, 0);
         EXPECT_LE(num_rows, max_batch_rows);
         extracted_count += num_rows;
 
+        /// Each `DISTINCT` key stands for the one row emitted for it.
+        ASSERT_EQ(batch.seen_rows->size(), num_rows);
+        for (size_t row = 0; row < num_rows; ++row)
+            EXPECT_EQ(batch.seen_rows->getUInt(row), 1);
+
         Columns columns;
-        for (auto & column : batch)
+        for (auto & column : batch.keys)
             columns.push_back(std::move(column));
         batches.push_back(std::move(columns));
     }
 
-    EXPECT_TRUE(extractor->next(max_batch_rows, /*max_bytes=*/ 0).empty());
+    EXPECT_TRUE(extractor->next(max_batch_rows, /*max_bytes=*/ 0).keys.empty());
     extractor.reset();
 
     /// The materialized values remain readable after the extractor and its table are released.
@@ -263,10 +268,10 @@ TEST(DistinctSetFilterExtraction, FloatBitPatternsSurviveExtraction)
     Chunk filtered = filter.filter(Chunk({column}, 4));
     ASSERT_EQ(filtered.getNumRows(), 2u);
 
-    auto extractor = std::move(filter).extractKeys();
-    auto batch = extractor->next(2, /*max_bytes=*/ 0);
+    auto extractor = std::move(filter).extractSeenGroups();
+    auto batch = extractor->next(2, /*max_bytes=*/ 0).keys;
     ASSERT_EQ(batch.size(), 1u);
-    EXPECT_TRUE(extractor->next(2, /*max_bytes=*/ 0).empty());
+    EXPECT_TRUE(extractor->next(2, /*max_bytes=*/ 0).keys.empty());
     const auto & extracted = assert_cast<const ColumnFloat64 &>(*batch[0]).getData();
     ASSERT_EQ(extracted.size(), 2u);
     EXPECT_NE(std::signbit(extracted[0]), std::signbit(extracted[1]));
@@ -652,14 +657,14 @@ TEST(DistinctSetFilterExtraction, ByteTargetSplitsVariableWidthKeys)
     const auto expected = collectRows({input}, values.size());
     DistinctSetFilter filter(header, {}, SizeLimits{});
     filter.filter(Chunk({std::move(input)}, values.size()));
-    auto extractor = std::move(filter).extractKeys();
+    auto extractor = std::move(filter).extractSeenGroups();
 
     RowsMultiset extracted;
     size_t batch_count = 0;
     while (true)
     {
         const size_t byte_target = batch_count % 2 == 0 ? 4096 : 8192;
-        auto batch = extractor->next(1000, byte_target);
+        auto batch = extractor->next(1000, byte_target).keys;
         if (batch.empty())
             break;
         ASSERT_EQ(batch.size(), 1);
@@ -686,13 +691,13 @@ TEST(DistinctSetFilterExtraction, KeyLargerThanByteTargetMakesProgress)
     const String value(16384, 'x');
     DistinctSetFilter filter(header, {}, SizeLimits{});
     filter.filter(Chunk({makeStringColumn({value})}, 1));
-    auto extractor = std::move(filter).extractKeys();
+    auto extractor = std::move(filter).extractSeenGroups();
 
-    auto batch = extractor->next(1000, /*max_bytes=*/ 1024);
+    auto batch = extractor->next(1000, /*max_bytes=*/ 1024).keys;
     ASSERT_EQ(batch.size(), 1);
     ASSERT_EQ(batch.front()->size(), 1);
     EXPECT_GT(batch.front()->allocatedBytes(), 1024);
-    EXPECT_TRUE(extractor->next(1000, /*max_bytes=*/ 1024).empty());
+    EXPECT_TRUE(extractor->next(1000, /*max_bytes=*/ 1024).keys.empty());
     extractor.reset();
     EXPECT_EQ((*batch.front())[0].safeGet<String>(), value);
 }
@@ -720,8 +725,8 @@ TEST(DistinctSetFilterExtraction, ReturnedColumnsSurviveEarlyExtractorDestructio
             expected_hashes.insert(ColumnsHashing::hash128(row, keys.size(), keys));
         DistinctSetFilter filter(header, {}, SizeLimits{});
         filter.filter(Chunk(std::move(columns), 3));
-        auto extractor = std::move(filter).extractKeys();
-        auto batch = extractor->next(1, /*max_bytes=*/ 0);
+        auto extractor = std::move(filter).extractSeenGroups();
+        auto batch = extractor->next(1, /*max_bytes=*/ 0).keys;
         ASSERT_EQ(batch.size(), 1);
         ASSERT_EQ(batch.front()->size(), 1);
         extractor.reset();
@@ -1063,13 +1068,13 @@ TEST(DistinctSetFilterSemantics, ExtractionRetainsMemoryUntilTheLastKey)
     filter.filter(Chunk({makeNumberColumn<ColumnUInt64>(std::vector<UInt64>{1, 2, 3})}, 3));
     const auto bytes = filter.getTotalByteCount();
     ASSERT_GT(bytes, 0);
-    auto keys = std::move(filter).extractKeys();
-    EXPECT_EQ(keys->getTotalByteCount(), bytes);
+    auto extractor = std::move(filter).extractSeenGroups();
+    EXPECT_EQ(extractor->getTotalByteCount(), bytes);
     for (size_t i = 0; i < 3; ++i)
     {
-        const auto columns = keys->next(1, 0);
-        ASSERT_EQ(columns.front()->size(), 1);
-        EXPECT_EQ(keys->getTotalByteCount(), i == 2 ? 0 : bytes);
+        const auto seen = extractor->next(1, 0);
+        ASSERT_EQ(seen.keys.front()->size(), 1);
+        EXPECT_EQ(extractor->getTotalByteCount(), i == 2 ? 0 : bytes);
     }
 }
 

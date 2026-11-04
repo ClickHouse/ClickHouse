@@ -544,6 +544,13 @@ public:
 
     size_t getBufferSizeInCells() const { return NUM_CELLS; }
 
+    /// Every cell is allocated when the table is constructed, so inserting keys needs no additional
+    /// table memory.
+    size_t estimateGrowthMemory(size_t /*additional_keys*/) const noexcept
+    {
+        return 0;
+    }
+
     /// Return offset for result in internal buffer.
     /// Result can have value up to `getBufferSizeInCells() + 1`
     /// because offset for zero value considered to be 0

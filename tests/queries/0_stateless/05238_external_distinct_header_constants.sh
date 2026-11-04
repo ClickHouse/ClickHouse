@@ -52,7 +52,7 @@ for payload_type in string array; do
 done
 
 # The set grows across chunks before spilling. Rows emitted during hashing and rows restored from
-# ordinary runs must carry the same constant, while suppression runs prevent duplicate output.
+# input runs must carry the same constant, while seen runs prevent duplicate output.
 ${CLICKHOUSE_LOCAL} --path "${LOCAL_DIR}" --query "
     SELECT count(), sum(cityHash64(k, payload))
     FROM

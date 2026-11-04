@@ -80,13 +80,11 @@ Chunk makeSortedGroupedChunk(UInt64 first_key, UInt64 num_groups, UInt64 group_s
 
 }
 
-/// Regression test for the AST fuzzer finding "Logical error: 'output_slices.empty()'"
-/// (STID 2508-2fed). `output_slices` is a member scratch buffer that was cleared only on
-/// the success path. When `transform` threw after populating it (for example
-/// MEMORY_LIMIT_EXCEEDED while the grouping hash table grows), `ISimpleTransform::work`
-/// kept the transform alive and could call `transform` again on the next chunk, where the
-/// stale slices corrupted the next result (and tripped a `chassert`). The fix clears the
-/// buffer at the start of `transform`.
+/// `output_slices` is a scratch buffer of `LimitByGroupFilter` reused across chunks. When filtering
+/// throws after populating it (for example MEMORY_LIMIT_EXCEEDED while the grouping hash table grows),
+/// `ISimpleTransform::work` keeps the transform alive and can call `transform` again on the next
+/// chunk, so filtering starts every chunk from an empty buffer; stale slices would corrupt the next
+/// result and trip a `chassert`.
 TEST(LimitByTransform, ClearsOutputSlicesWhenTransformThrows)
 {
     MainThreadStatus::getInstance();
@@ -127,9 +125,9 @@ TEST(LimitByTransform, ClearsOutputSlicesWhenTransformThrows)
     ASSERT_TRUE(threw) << "expected the first chunk to hit the memory limit mid-transform";
 
     /// Re-enter `transform` exactly as the pipeline executor would after catching the
-    /// exception. Before the fix the leaked slices from the first chunk corrupted this call
-    /// (out-of-range reuse, tripping a `chassert` in debug builds). Use keys outside the
-    /// first chunk's range so the result is independent of how far the first chunk got.
+    /// exception. Slices left from the first chunk would corrupt this call (out-of-range
+    /// reuse, tripping a `chassert` in debug builds). Use keys outside the first chunk's
+    /// range so the result is independent of how far the first chunk got.
     Chunk second_chunk = makeDistinctKeyChunk(/*first_key=*/ 1000000000, /*count=*/ 4);
     ASSERT_NO_THROW(runTransform(transform, second_chunk));
 

@@ -1,0 +1,27 @@
+2000	1	8111474677505955227
+{
+	"meta":
+	[
+		{
+			"name": "v",
+			"type": "UInt32"
+		}
+	],
+
+	"data":
+	[
+		[599998],
+		[599996],
+		[599994]
+	],
+
+	"rows": 3,
+
+	"rows_before_limit_at_least": 300000
+}
+in_memory	0	0
+negative_limit	1	1
+rows_before_limit_after_hashing	1	1
+spilled	1	1
+in_memory	[]	0	0	0
+spilled	['limit_by']	1	1	1

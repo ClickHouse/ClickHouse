@@ -7,7 +7,7 @@ SET max_threads = 16;
 
 -- Permuted keys, single in-order stream: LIMIT BY lists the sorting-key columns in reverse clause order
 -- (c, a) while the table is ORDER BY (a, c). The keys still fully cover the prefix, so every group is
--- contiguous and the streaming LimitBySortedStreamTransform is used (not the hash LimitByTransform).
+-- contiguous and the streaming `LimitBySortedStreamTransform` is used instead of the hash-based transform.
 DROP TABLE IF EXISTS test_permuted_single;
 CREATE TABLE test_permuted_single (a UInt32, c UInt32, v UInt32) ENGINE = MergeTree ORDER BY (a, c);
 SYSTEM STOP MERGES test_permuted_single;
@@ -72,7 +72,7 @@ SELECT count() = (SELECT uniqExact((a, c)) FROM test_permuted_monotonic) FROM (S
 DROP TABLE test_permuted_monotonic;
 
 -- Partial cover is NOT a permutation. A non-key column (b) sits between the LIMIT BY keys in
--- the sorting key (a, b, c), so the keys (a, c) are not contiguous: the hash LimitByTransform is kept.
+-- the sorting key (a, b, c), so the keys (a, c) are not contiguous: the hash-based transform is kept.
 DROP TABLE IF EXISTS test_partial_cover;
 CREATE TABLE test_partial_cover (a UInt32, b UInt32, c UInt32, v UInt32) ENGINE = MergeTree ORDER BY (a, b, c);
 SYSTEM STOP MERGES test_partial_cover;

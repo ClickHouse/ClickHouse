@@ -58,7 +58,7 @@ SortDescription ascending()
 
 }
 
-TEST(MergeSorter, UniqueChunksKeepFirstPayloadAcrossBatches)
+TEST(MergeSorter, LimitedGroupRowsKeepFirstPayloadAcrossBatches)
 {
     const auto numbers = std::make_shared<DataTypeUInt64>();
     const std::vector<std::pair<DataTypePtr, Array>> cases{
@@ -80,7 +80,7 @@ TEST(MergeSorter, UniqueChunksKeepFirstPayloadAcrossBatches)
                 chunks.push_back(makeChunk(*header, {}, 0));
                 chunks.push_back(makeChunk(*header, keys, 200));
                 chunks.push_back(makeChunk(*header, {keys[2], keys[4]}, 300));
-                MergeSorter sorter(header, std::move(chunks), ascending(), block_size, limit, MergeSorter::Mode::MergeUniqueChunks);
+                MergeSorter sorter(header, std::move(chunks), ascending(), block_size, limit, MergeSorter::Mode::LimitGroupRows);
                 std::vector<UInt64> expected{100, 201, 101, 203, 102};
                 if (limit && limit < expected.size())
                     expected.resize(limit);
@@ -98,7 +98,7 @@ TEST(MergeSorter, DuplicateBatchPrefixKeepsRemainingRange)
         Chunks chunks;
         chunks.push_back(makeChunk(*header, {1u, 5u}, 100));
         chunks.push_back(makeChunk(*header, {1u, 2u, 3u, 4u, 5u, 6u, 7u}, 200));
-        MergeSorter sorter(header, std::move(chunks), ascending(), block_size, 0, MergeSorter::Mode::MergeUniqueChunks);
+        MergeSorter sorter(header, std::move(chunks), ascending(), block_size, 0, MergeSorter::Mode::LimitGroupRows);
         EXPECT_EQ(readPayloads(sorter, block_size), (std::vector<UInt64>{100, 201, 202, 203, 101, 205, 206}));
     }
 }
@@ -110,7 +110,7 @@ TEST(MergeSorter, DuplicateOnlyReadsPreserveProgress)
     for (size_t index = 0; index < 9; ++index)
         chunks.push_back(makeChunk(*header, {1u}, index));
     chunks.push_back(makeChunk(*header, {2u}, 9));
-    MergeSorter sorter(header, std::move(chunks), ascending(), 2, 0, MergeSorter::Mode::MergeUniqueChunks);
+    MergeSorter sorter(header, std::move(chunks), ascending(), 2, 0, MergeSorter::Mode::LimitGroupRows);
 
     auto first = sorter.read();
     ASSERT_EQ(first.getNumRows(), 1);
@@ -134,7 +134,7 @@ TEST(MergeSorter, ExhaustedDuplicateTailFinishes)
     Chunks chunks;
     chunks.push_back(makeChunk(*header, {1u}, 100));
     chunks.push_back(makeChunk(*header, {1u}, 200));
-    MergeSorter sorter(header, std::move(chunks), ascending(), 1, 0, MergeSorter::Mode::MergeUniqueChunks);
+    MergeSorter sorter(header, std::move(chunks), ascending(), 1, 0, MergeSorter::Mode::LimitGroupRows);
     EXPECT_EQ(readPayloads(sorter, 1), (std::vector<UInt64>{100}));
 }
 
@@ -148,7 +148,7 @@ TEST(MergeSorter, CompositeKeysAndDescendingOrder)
     chunks.push_back(makeChunk(*header, {1u, 2u}, 100));
     chunks.push_back(makeChunk(*header, {1u, 2u}, 200));
     chunks.push_back(makeChunk(*header, {1u, 2u}, 100));
-    MergeSorter sorter(header, std::move(chunks), description, 2, 0, MergeSorter::Mode::MergeUniqueChunks);
+    MergeSorter sorter(header, std::move(chunks), description, 2, 0, MergeSorter::Mode::LimitGroupRows);
     EXPECT_EQ(readPayloads(sorter, 2), (std::vector<UInt64>{200, 100, 201, 101}));
 }
 
@@ -160,7 +160,7 @@ TEST(MergeSorter, CollationKeepsFirstRepresentation)
     Chunks chunks;
     chunks.push_back(makeChunk(*header, {"a", "C"}, 100));
     chunks.push_back(makeChunk(*header, {"A", "b", "c"}, 200));
-    MergeSorter sorter(header, std::move(chunks), description, 2, 0, MergeSorter::Mode::MergeUniqueChunks);
+    MergeSorter sorter(header, std::move(chunks), description, 2, 0, MergeSorter::Mode::LimitGroupRows);
     std::vector<String> keys;
     std::vector<UInt64> payloads;
     while (auto chunk = sorter.read())
@@ -183,7 +183,7 @@ TEST(MergeSorter, SortEqualFloatingPointKeysKeepFirstBits)
     Chunks chunks;
     chunks.push_back(makeChunk(*header, {-0., nan}, 100));
     chunks.push_back(makeChunk(*header, {0., other_nan}, 200));
-    MergeSorter sorter(header, std::move(chunks), ascending(), 1, 0, MergeSorter::Mode::MergeUniqueChunks);
+    MergeSorter sorter(header, std::move(chunks), ascending(), 1, 0, MergeSorter::Mode::LimitGroupRows);
     std::vector<UInt64> bits;
     while (auto chunk = sorter.read())
         for (size_t row = 0; row < chunk.getNumRows(); ++row)
@@ -194,7 +194,7 @@ TEST(MergeSorter, SortEqualFloatingPointKeysKeepFirstBits)
 TEST(MergeSorter, EmptyAndSingleChunkRespectBounds)
 {
     const auto header = makeHeader(std::make_shared<DataTypeUInt64>());
-    for (const auto mode : {MergeSorter::Mode::PreserveRows, MergeSorter::Mode::MergeUniqueChunks})
+    for (const auto mode : {MergeSorter::Mode::PreserveRows, MergeSorter::Mode::LimitGroupRows})
     {
         MergeSorter empty(header, {}, ascending(), 2, 0, mode);
         EXPECT_FALSE(empty.read());
@@ -235,7 +235,7 @@ TEST(MergeSorter, PreserveRowsKeepsDuplicates)
 TEST(MergeSorter, ConstantSparseAndReplicatedColumns)
 {
     const auto header = makeHeader(std::make_shared<DataTypeUInt64>());
-    for (const auto mode : {MergeSorter::Mode::PreserveRows, MergeSorter::Mode::MergeUniqueChunks})
+    for (const auto mode : {MergeSorter::Mode::PreserveRows, MergeSorter::Mode::LimitGroupRows})
     {
         Chunks chunks;
         chunks.emplace_back(Columns{
@@ -264,7 +264,7 @@ TEST(MergeSorter, PreferredBytesRespectTheRowLimit)
     const auto header = makeHeader(std::make_shared<DataTypeUInt64>());
     for (const size_t row_limit : {1, 64, 1024})
     for (const size_t byte_target : {0, 1, 4096})
-    for (const auto mode : {MergeSorter::Mode::PreserveRows, MergeSorter::Mode::MergeUniqueChunks})
+    for (const auto mode : {MergeSorter::Mode::PreserveRows, MergeSorter::Mode::LimitGroupRows})
     {
         SCOPED_TRACE(::testing::Message() << "row_limit=" << row_limit << ", byte_target=" << byte_target);
         Array keys;
