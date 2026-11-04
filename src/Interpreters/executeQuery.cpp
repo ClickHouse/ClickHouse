@@ -178,9 +178,9 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool enable_json_ast_dialect;
-    extern const SettingsBool allow_experimental_polyglot_dialect;
-    extern const SettingsBool allow_experimental_kusto_dialect;
-    extern const SettingsBool allow_experimental_prql_dialect;
+    extern const SettingsBool enable_polyglot_dialect;
+    extern const SettingsBool enable_kusto_dialect;
+    extern const SettingsBool enable_prql_dialect;
     extern const SettingsBool enable_trino_dialect;
     extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsBool ast_fuzzer_any_query;
@@ -2419,7 +2419,7 @@ static BlockIO executeQueryImpl(
         else if (settings[Setting::dialect] == Dialect::kusto && use_request_dialect)
         {
             const char * kql_pos = begin;
-            if (!settings[Setting::allow_experimental_kusto_dialect])
+            if (!settings[Setting::enable_kusto_dialect])
             {
                 /// A plain `SET` passes even when the gate is off, so a session that is
                 /// already in `dialect = 'kusto'` can run `SET dialect = 'clickhouse'`
@@ -2427,7 +2427,7 @@ static BlockIO executeQueryImpl(
                 out_ast = tryParseKQLSetStatement(
                     kql_pos, end, max_query_size_for_query_text, max_parser_depth_for_query_text, max_parser_backtracks_for_query_text);
                 if (!out_ast)
-                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for the Kusto Query Language (KQL) is disabled (turn on setting 'allow_experimental_kusto_dialect')");
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for the Kusto Query Language (KQL) is disabled (turn on setting 'enable_kusto_dialect')");
             }
             else
                 out_ast = parseKQLQuery(
@@ -2435,8 +2435,8 @@ static BlockIO executeQueryImpl(
         }
         else if (settings[Setting::dialect] == Dialect::prql && use_request_dialect)
         {
-            if (!settings[Setting::allow_experimental_prql_dialect])
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for PRQL is disabled (turn on setting 'allow_experimental_prql_dialect')");
+            if (!settings[Setting::enable_prql_dialect])
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for PRQL is disabled (turn on setting 'enable_prql_dialect')");
             ParserPRQLQuery parser(max_query_size_for_query_text, max_parser_depth_for_query_text, max_parser_backtracks_for_query_text);
             out_ast = parseQuery(parser, begin, end, "", max_query_size_for_query_text, max_parser_depth_for_query_text, max_parser_backtracks_for_query_text);
         }
@@ -2459,7 +2459,7 @@ static BlockIO executeQueryImpl(
                 max_parser_backtracks_for_query_text,
                 settings[Setting::polyglot_dialect],
                 end,
-                settings[Setting::allow_experimental_polyglot_dialect]);
+                settings[Setting::enable_polyglot_dialect]);
             out_ast = parseQuery(parser, begin, end, "", max_query_size_for_query_text, max_parser_depth_for_query_text, max_parser_backtracks_for_query_text);
         }
         else if (settings[Setting::dialect] == Dialect::trino && use_request_dialect)
@@ -3249,6 +3249,11 @@ static BlockIO executeQueryImpl(
                         result_details.query_cache_entry_created_at = reader->entryCreatedAt();
                         result_details.query_cache_entry_expires_at = reader->entryExpiresAt();
 
+                        /// The origins are stored with the cached result: analyzing the query again here would evaluate its scalar
+                        /// subqueries against the current data. Read them before `getSource` moves the source out of the reader.
+                        if (flags.collect_result_column_origins)
+                            result_details.result_column_origins = reader->entryResultColumnOrigins();
+
                         QueryPipeline pipeline;
                         pipeline.readFromQueryResultCache(reader->getSource(), reader->getSourceTotals(), reader->getSourceExtremes());
                         res.pipeline = std::move(pipeline);
@@ -3259,6 +3264,10 @@ static BlockIO executeQueryImpl(
                 }
                 return false;
             };
+
+            /// Where the result columns come from. Collected for `QueryFlags::collect_result_column_origins` and to be stored with
+            /// the result in the query result cache.
+            ResultColumnOrigins result_column_origins;
 
             if (!get_result_from_query_result_cache())
             {
@@ -3307,7 +3316,13 @@ static BlockIO executeQueryImpl(
                 // InterpreterSelectQueryAnalyzer does not build QueryPlan in the constructor.
                 // We need to force to build it here to check if we need to ignore quota.
                 if (auto * interpreter_with_analyzer = dynamic_cast<InterpreterSelectQueryAnalyzer *>(interpreter.get()))
+                {
                     interpreter_with_analyzer->getQueryPlan();
+
+                    result_column_origins = interpreter_with_analyzer->getResultColumnOrigins();
+                    if (flags.collect_result_column_origins)
+                        result_details.result_column_origins = result_column_origins;
+                }
 
                 if (!(interpreter && interpreter->ignoreQuota()) && !quota_checked)
                 {
@@ -3384,6 +3399,8 @@ static BlockIO executeQueryImpl(
                                 created_at, expires_at,
                                 settings[Setting::query_cache_compress_entries],
                                 /* is_subquery = */ false);
+                            if (result_column_origins.size() == key.header->columns())
+                                key.result_column_origins = result_column_origins;
 
                             const bool write_to_memory_cache = canWriteToQueryResultCacheInMemory(context);
                             QueryResultCacheOnDiskPtr write_to_on_disk_cache
@@ -3982,7 +3999,8 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     std::string_view query,
     ContextMutablePtr context,
     QueryFlags flags,
-    QueryProcessingStage::Enum stage)
+    QueryProcessingStage::Enum stage,
+    QueryResultDetails * result_details)
 {
     if (isCrashed())
         throw Exception(ErrorCodes::ABORTED, "The server is shutting down due to a fatal error");
@@ -3996,8 +4014,10 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     BlockIO res;
     auto implicit_tcl_executor = std::make_shared<ImplicitTransactionControlExecutor>();
     ReadBufferUniquePtr no_input_buffer;
-    QueryResultDetails result_details;
-    res = executeQueryImpl(query.data(), query.data() + query.size(), context, flags, stage, no_input_buffer, ast, implicit_tcl_executor, {}, result_details);
+    QueryResultDetails local_result_details;
+    if (!result_details)
+        result_details = &local_result_details;
+    res = executeQueryImpl(query.data(), query.data() + query.size(), context, flags, stage, no_input_buffer, ast, implicit_tcl_executor, {}, *result_details);
     if (const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
     {
         String format_name = resolveOutputFormatName(context, ast_query_with_output);
