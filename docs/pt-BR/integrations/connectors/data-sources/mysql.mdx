@@ -15,13 +15,15 @@ keywords: ['mysql', 'integração de banco de dados', 'tabela externa', 'fonte d
 import { CloudNotSupportedBadge } from "/snippets/pt-BR/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import { ExperimentalBadge } from "/snippets/pt-BR/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
-Esta página aborda o uso do motor de tabela `MySQL` para ler dados de uma tabela MySQL.
+Esta página aborda o uso do motor de tabela MySQL para ler dados de uma tabela MySQL.
 
 <Note>
-  No ClickHouse Cloud, você também pode usar o [ClickPipe do MySQL](/pt-BR/integrations/clickpipes/mysql/index) para mover dados das suas tabelas MySQL para o ClickHouse com facilidade.
+  No ClickHouse Cloud, você também pode usar o [ClickPipe do MySQL](/pt-BR/integrations/clickpipes/mysql/index) (atualmente em beta pública) para mover dados das suas tabelas MySQL para o ClickHouse com facilidade.
 </Note>
 
-## Conectando o ClickHouse ao MySQL usando o motor de tabela MySQL {#connecting-clickhouse-to-mysql-using-the-mysql-table-engine}
+<div id="connecting-clickhouse-to-mysql-using-the-mysql-table-engine">
+  ## Conectando o ClickHouse ao MySQL usando o motor de tabela MySQL
+</div>
 
 O motor de tabela `MySQL` permite conectar o ClickHouse ao MySQL. Instruções **SELECT** e **INSERT** podem ser executadas tanto no ClickHouse quanto na tabela do MySQL. Este artigo mostra os métodos básicos de uso do motor de tabela `MySQL`.
 
@@ -163,6 +165,8 @@ O motor de tabela `MySQL` permite conectar o ClickHouse ao MySQL. Instruções *
   </Step>
 </Steps>
 
-### Resumo {#summary}
+<div id="summary">
+  ### Resumo
+</div>
 
 O motor de tabela `MySQL` permite conectar o ClickHouse ao MySQL para trocar dados entre os dois sistemas. Para mais detalhes, consulte a página de documentação sobre o [motor de tabela MySQL](/pt-BR/reference/functions/table-functions/mysql).
