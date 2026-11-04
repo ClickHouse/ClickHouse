@@ -1,0 +1,31 @@
+<test>
+    <settings>
+        <min_count_to_compile_expression>0</min_count_to_compile_expression>
+    </settings>
+
+    <create_query>
+        CREATE TABLE jit_date_add_interval (t DateTime('UTC'), d Date, n Int32) Engine = Memory
+    </create_query>
+
+    <fill_query>
+        INSERT INTO jit_date_add_interval
+        SELECT toDateTime('2010-01-01 00:00:00', 'UTC') + cityHash64(number) % 500000000, toDate('2010-01-01') + cityHash64(number, 1) % 6000,
+            toInt32(cityHash64(number, 2) % 100000) - 50000
+        FROM numbers(50000000)
+    </fill_query>
+
+    <substitutions>
+        <substitution>
+            <name>compile</name>
+            <values>
+                <value>0</value>
+                <value>1</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <!-- Date arithmetic with a column delta fused with comparisons. -->
+    <query>SELECT countIf(addSeconds(t, n) > t AND addHours(t, n % 24) &lt; t + 86400) FROM jit_date_add_interval SETTINGS compile_expressions = {compile}</query>
+    <query>SELECT countIf(d + n % 30 > toDate('2020-01-01') OR d - n % 7 &lt; toDate('2012-01-01')) FROM jit_date_add_interval SETTINGS compile_expressions = {compile}</query>
+    <query>SELECT countIf(addDays(d, n % 365) = subtractWeeks(d, n % 52)) FROM jit_date_add_interval SETTINGS compile_expressions = {compile}</query>
+</test>
