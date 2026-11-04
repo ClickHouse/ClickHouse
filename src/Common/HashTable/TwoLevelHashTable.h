@@ -127,13 +127,15 @@ protected:
 
     bool isBucketInArena(size_t bucket) { return impls[bucket].getAllocator().inArena(); }
 
+    /// Whether one more element in `bucket` would make it grow.
+    bool ALWAYS_INLINE isBucketAtFillLimit(size_t bucket) const { return impls[bucket].grower.overflow(impls[bucket].m_size + 1); }
+
     /// Called before an insert into `bucket`. Grows all buckets at once, so that `bucket` does not grow on its own.
     void ALWAYS_INLINE prepareInsertIntoBucket(size_t bucket)
     {
         if constexpr (supports_grouped_growth)
         {
-            Impl & impl = impls[bucket];
-            if (grouped_growth && unlikely(impl.grower.overflow(impl.m_size + 1)))
+            if (grouped_growth && unlikely(isBucketAtFillLimit(bucket)))
                 growAllBuckets(bucket);
         }
     }
@@ -426,7 +428,21 @@ public:
                                   bool & inserted, size_t hash_value)
     {
         size_t buck = getBucketFromHash(hash_value);
-        prepareInsertIntoBucket(buck);
+        if constexpr (supports_grouped_growth)
+        {
+            if (grouped_growth && unlikely(isBucketAtFillLimit(buck)))
+            {
+                /// Grow all buckets only for a new key: an existing key does not need more space.
+                if (auto existing = impls[buck].find(keyHolderGetKey(key_holder), hash_value))
+                {
+                    keyHolderDiscardKey(key_holder);
+                    it = existing;
+                    inserted = false;
+                    return;
+                }
+                growAllBuckets(buck);
+            }
+        }
         impls[buck].emplace(key_holder, it, inserted, hash_value);
     }
 

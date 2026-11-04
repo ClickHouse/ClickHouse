@@ -32,6 +32,7 @@ struct Grouped : Base
     }
 
     bool bucketInArena(size_t bucket) { return this->isBucketInArena(bucket); }
+    bool bucketAtFillLimit(size_t bucket) const { return this->isBucketAtFillLimit(bucket); }
     static constexpr bool supports() { return Base::supports_grouped_growth; }
 };
 
@@ -179,4 +180,53 @@ TEST(TwoLevelHashTableGrouped, BucketsLeaveTheArena)
 
     for (auto it = other->impls[6].begin(); it != other->impls[6].end(); ++it)
         ASSERT_EQ(it->getMapped(), reference.at(it->getKey()));
+}
+
+TEST(TwoLevelHashTableGrouped, ExistingKeyAtFillLimitDoesNotGrow)
+{
+    auto map = std::make_unique<Map>();
+    auto & bucket = map->impls[3];
+
+    /// Fill bucket 3 exactly to the limit at which the next new key would grow all buckets.
+    std::vector<UInt64> bucket_keys;
+    for (UInt64 key = 1; !map->bucketAtFillLimit(3); ++key)
+    {
+        size_t hash_value = map->hash(key);
+        if (Map::getBucketFromHash(hash_value) != 3)
+            continue;
+        (*map)[key] = key;
+        bucket_keys.push_back(key);
+    }
+    ASSERT_FALSE(bucket_keys.empty());
+
+    const size_t cells = bucket.getBufferSizeInCells();
+    const auto * buf = bucket.begin().getPtr();
+
+    /// Inserting existing keys must neither reallocate nor grow any bucket.
+    for (int round = 0; round < 3; ++round)
+    {
+        for (UInt64 key : bucket_keys)
+        {
+            Map::LookupResult it = nullptr;
+            bool inserted = true;
+            map->emplace(key, it, inserted);
+            ASSERT_FALSE(inserted);
+            ASSERT_EQ(it->getMapped(), key);
+        }
+    }
+    ASSERT_EQ(bucket.getBufferSizeInCells(), cells);
+    ASSERT_EQ(bucket.begin().getPtr(), buf);
+    ASSERT_EQ(map->size(), bucket_keys.size());
+
+    /// A new key still grows all buckets together.
+    for (UInt64 key = (1ULL << 40);; ++key)
+    {
+        size_t hash_value = map->hash(key);
+        if (Map::getBucketFromHash(hash_value) != 3)
+            continue;
+        (*map)[key] = key;
+        break;
+    }
+    ASSERT_GT(bucket.getBufferSizeInCells(), cells);
+    checkSameBufferSize(*map);
 }
