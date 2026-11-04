@@ -12,7 +12,6 @@ ci/ imports; this module is deliberately the harness-side counterpart only.
 
 import os
 import re
-import sys
 from xml.etree import ElementTree
 
 
@@ -118,20 +117,6 @@ def test_has_failpoint(test_path):
     )
 
 
-def failpoint_tests_last(test_files, perf_dir=""):
-    """`test_files` in the same order, except that the tests that enable a failpoint go last.
-
-    The first enabled failpoint puts every failpoint check of the server on its slow path for the rest of the
-    process, also after `SYSTEM DISABLE FAILPOINT`, so a test measured after one on the same servers is slower.
-    """
-
-    def enables_failpoint(test_file):
-        path = os.path.join(perf_dir, test_file)
-        return os.path.isfile(path) and test_has_failpoint(path)
-
-    return sorted(test_files, key=enables_failpoint)
-
-
 # Tests that `perf.py --table-engine` cannot run, one name per line with the reason.
 ICEBERG_SKIP_LIST = "iceberg_skip_list.txt"
 
@@ -201,8 +186,3 @@ def changed_iceberg_tests(changed_files, perf_dir):
         if test_runs_with_table_engine(os.path.join(perf_dir, name), skip_list):
             tests.append(name)
     return sorted(set(tests))
-
-
-if __name__ == "__main__":
-    # For compare.sh: the test files given as arguments, in the order of `failpoint_tests_last`.
-    print("\n".join(failpoint_tests_last(sys.argv[1:])))
