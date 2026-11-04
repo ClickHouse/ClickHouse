@@ -18,14 +18,14 @@ import clickhouse_grpc_pb2
 import clickhouse_grpc_pb2_grpc
 
 settings = {"max_block_size": "1", "max_threads": "1", "output_format_pretty_squash_consecutive_ms": "1", "interactive_delay": "10000"}
-query = "SELECT number FROM numbers(4) WHERE sleepEachRow(0.05) = 0{} FORMAT PrettyCompactNoEscapes"
+query = "SELECT number FROM numbers(4) WHERE sleepEachRow(0.05) = 0 FORMAT PrettyCompactNoEscapes"
 
 def values(output):
     return " ".join(re.findall(r"│\s+(\d+)\s+│", output.decode()))
 
 with grpc.insecure_channel(f"localhost:{os.environ.get('CLICKHOUSE_PORT_GRPC', '9100')}") as channel:
     stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(channel)
-    query_info = clickhouse_grpc_pb2.QueryInfo(query=query.format(""), settings=settings)
+    query_info = clickhouse_grpc_pb2.QueryInfo(query=query, settings=settings)
     print(values(stub.ExecuteQuery(query_info, timeout=60).output))
     print(values(b"".join(result.output for result in stub.ExecuteQueryWithStreamOutput(query_info, timeout=60))))
     # The exception arrives while the writer may still hold a squashed chunk.

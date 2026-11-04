@@ -1965,6 +1965,7 @@ namespace
 
         {
             /// Until the output format is finalized, it can write to the buffer from another thread.
+            /// A final message is sent only after the format is finalized or destroyed, so it does not take the lock.
             std::unique_lock<std::mutex> writing_lock;
             if (!send_final_message && output_format_processor)
                 writing_lock = output_format_processor->lockWriting();
