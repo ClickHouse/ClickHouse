@@ -235,6 +235,29 @@ def test_parallel_replicas_do_not_retry_after_announcement():
     assert retries(query_id, node4) == 0
 
 
+@pytest.mark.parametrize("async_read", [0, 1])
+def test_hedged_retry_releases_pool_entries(async_read):
+    node1.query("SYSTEM ENABLE FAILPOINT remote_query_executor_cannot_open_file_once")
+    query_id = str(uuid.uuid4())
+    # Resolve the schema locally, then execute through a one-slot remote pool.
+    # The retry must release the failed attempt's entry before reconnecting.
+    assert node1.query(
+        "SELECT count(), sum(i) FROM remote('node1', default, local_table)",
+        query_id=query_id,
+        settings={
+            "distributed_shard_retry_count": 1,
+            "distributed_connections_pool_size": 1,
+            "connection_pool_max_wait_ms": 1000,
+            "use_hedged_requests": 1,
+            "prefer_localhost_replica": 0,
+            "async_socket_for_remote": async_read,
+            "async_query_sending_for_remote": async_read,
+        },
+        timeout=20,
+    ) == "1000\t499500\n"
+    assert retries(query_id) == 1
+
+
 def test_hedged_retry_penalizes_packet_producer():
     # Start on a slow healthy replica, then hedge onto a replica that fails. The
     # retry must reach the third, healthy replica and charge the second pool.

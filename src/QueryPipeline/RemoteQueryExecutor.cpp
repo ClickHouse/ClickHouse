@@ -965,6 +965,9 @@ void RemoteQueryExecutor::retryQuery()
     tryCancel("Cancelling attempt before shard retry");
     connections->disconnect();
     read_context.reset();
+    /// The read context must release its callbacks before destroying the connections.
+    /// Release the old pool entries before the next attempt acquires replacements.
+    connections.reset();
 
     sent_query = false;
     was_cancelled = false;
