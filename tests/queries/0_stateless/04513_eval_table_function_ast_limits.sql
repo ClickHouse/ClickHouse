@@ -24,7 +24,9 @@ SELECT count() FROM eval('SELECT arrayJoin([1, 1, 1, 2]) AS n EXCEPT SELECT arra
 -- The AST size limits `max_ast_elements` / `max_ast_depth` apply to the generated query, same as when
 -- it is executed directly, so a tiny outer query cannot smuggle a huge or deep AST past them.
 SELECT count() FROM eval('SELECT 1 + 2 + 3 + 4 + 5 + 6 + 7 + 8 + 9 + 10') SETTINGS max_ast_elements = 30; -- { serverError TOO_BIG_AST }
-SELECT count() FROM eval('SELECT (((((1)))))') SETTINGS max_ast_depth = 3; -- { serverError TOO_DEEP_AST }
+-- The outer query itself fits into `max_ast_depth = 15`, so only the deeper generated query is rejected.
+SELECT count() FROM eval('SELECT 1') SETTINGS max_ast_depth = 15;
+SELECT count() FROM eval('SELECT ((((((((((1 + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1) + 1)') SETTINGS max_ast_depth = 15; -- { serverError TOO_DEEP_AST }
 -- The limits are read after the generated query's own SETTINGS are applied, so an inner SETTINGS clause
 -- controls its own AST size limits, both to tighten and to relax them.
 SELECT count() FROM eval('SELECT 1 + 2 + 3 + 4 + 5 SETTINGS max_ast_elements = 5'); -- { serverError TOO_BIG_AST }
