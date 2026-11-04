@@ -501,8 +501,8 @@ def test_pause(started_cluster, cleanup):
         node2.query("system wait view re.a")
     except QueryRuntimeException as ex:
         # If the node1.restart_clickhouse() interrupted a refresh, the error message (with substring
-        # "cancelled") is written to keeper, then thrown by "system wait view". That's normal.
-        assert "cancelled" in str(ex)
+        # "shutdown") is written to keeper, then thrown by "system wait view". That's normal.
+        assert "shutdown" in str(ex)
     node2.query("truncate table re.src;" "insert into re.src values (2);")
     time.sleep(3)
     assert node1.query("select * from re.a") == "1\n"
