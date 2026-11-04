@@ -10,7 +10,10 @@ namespace ErrorCodes
 }
 
 void FutureMergedMutatedPart::assign(
-    MergeTreeData::DataPartsVector parts_, MergeTreeData::DataPartsVector patch_parts_, ProjectionDescriptionRawPtr projection)
+    MergeTreeData::DataPartsVector parts_,
+    MergeTreeData::DataPartsVector patch_parts_,
+    ProjectionDescriptionRawPtr projection,
+    const CompressionCodecPtr & inherited_codec)
 {
     if (parts_.empty())
         return;
@@ -30,7 +33,7 @@ void FutureMergedMutatedPart::assign(
         max_level = std::max(max_level, part->info.level);
     }
 
-    auto chosen_format = parts_.front()->storage.choosePartFormat(sum_bytes_uncompressed, sum_rows, max_level + 1, projection);
+    auto chosen_format = parts_.front()->storage.choosePartFormat(sum_bytes_uncompressed, sum_rows, max_level + 1, projection, inherited_codec);
     if (chosen_format.part_type == MergeTreeDataPartType::Parquet)
         future_part_type = chosen_format.part_type;
     else

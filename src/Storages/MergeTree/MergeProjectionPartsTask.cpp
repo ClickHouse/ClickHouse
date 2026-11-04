@@ -80,7 +80,8 @@ bool MergeProjectionPartsTask::executeStep()
         ++block_num;
         auto projection_future_part = std::make_shared<FutureMergedMutatedPart>();
         MergeTreeData::DataPartsVector const_selected_parts(selected_parts.begin(), selected_parts.end());
-        projection_future_part->assign(std::move(const_selected_parts), /*patch_parts_=*/ {}, &projection);
+        /// The merged projection part inherits the codec of its parent part, see `MergeTask`.
+        projection_future_part->assign(std::move(const_selected_parts), /*patch_parts_=*/ {}, &projection, new_data_part->default_codec);
         projection_future_part->name = fmt::format("{}_{}", projection.name, ++block_num);
         projection_future_part->part_info = {"all", 0, 0, 0};
 

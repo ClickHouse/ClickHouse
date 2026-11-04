@@ -7563,15 +7563,18 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
     }
 }
 
-bool MergeTreeData::canUseParquetPartFormat(const StorageInMemoryMetadata & table_metadata, ProjectionDescriptionRawPtr projection) const
+bool MergeTreeData::canUseParquetPartFormat(
+    const StorageInMemoryMetadata & table_metadata, ProjectionDescriptionRawPtr projection, const CompressionCodecPtr & inherited_codec) const
 {
     /// The Parquet file stores the data without the codecs of the columns. An encryption codec must not be
     /// dropped silently, so the parts of a table with encrypted columns are never created in Parquet format.
     /// The same for the `Quantized` codec, which provides subcolumns with the quantized values.
     /// The codecs of the columns without explicit codecs are resolved against all default codecs that
     /// may apply to the part: the `default_compression_codec` setting or any codec of the `<compression>`
-    /// section of the server config (whichever size of the part and its share in the table it is chosen for,
-    /// or inherited from the parent part of a projection), and the codecs of `RECOMPRESS` TTL rules.
+    /// section of the server config (whichever size of the part and its share in the table it is chosen for),
+    /// the codecs of `RECOMPRESS` TTL rules, and `inherited_codec`. The latter is the codec of the parent part
+    /// that a projection part inherits: it may come from the settings the parent part was written with, which
+    /// are not necessarily the current ones (e.g. after `ALTER TABLE ... MODIFY SETTING default_compression_codec`).
     const auto settings = getSettings(projection ? &projection->settings_changes : nullptr);
     const auto & columns = projection ? projection->metadata->getColumns() : table_metadata.getColumns();
     auto & codec_factory = CompressionCodecFactory::instance();
@@ -7583,6 +7586,8 @@ bool MergeTreeData::canUseParquetPartFormat(const StorageInMemoryMetadata & tabl
         default_codecs = getContext()->getAllCompressionCodecsFromConfig();
     for (const auto & ttl : table_metadata.getRecompressionTTLs())
         default_codecs.push_back(codec_factory.get(ttl.recompression_codec, {}));
+    if (inherited_codec)
+        default_codecs.push_back(inherited_codec);
 
     for (const auto & default_codec : default_codecs)
         if (default_codec->isEncryption())
@@ -7617,7 +7622,11 @@ bool MergeTreeData::canUseParquetPartFormat(const StorageInMemoryMetadata & tabl
 }
 
 MergeTreeDataPartFormat MergeTreeData::choosePartFormat(
-    size_t bytes_uncompressed, size_t rows_count, UInt32 part_level, ProjectionDescriptionRawPtr projection) const
+    size_t bytes_uncompressed,
+    size_t rows_count,
+    UInt32 part_level,
+    ProjectionDescriptionRawPtr projection,
+    const CompressionCodecPtr & inherited_codec) const
 {
     using PartType = MergeTreeDataPartType;
     using PartStorageType = MergeTreeDataPartStorageType;
@@ -7640,7 +7649,7 @@ MergeTreeDataPartFormat MergeTreeData::choosePartFormat(
         && !satisfies((*settings)[MergeTreeSetting::min_bytes_for_parquet_part], (*settings)[MergeTreeSetting::min_rows_for_parquet_part], (*settings)[MergeTreeSetting::min_level_for_parquet_part]))
     {
         auto table_metadata = getInMemoryMetadataPtr(getContext(), false);
-        if (canUseParquetPartFormat(*table_metadata, projection))
+        if (canUseParquetPartFormat(*table_metadata, projection, inherited_codec))
             part_type = PartType::Parquet;
     }
 

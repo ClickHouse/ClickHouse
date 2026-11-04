@@ -372,11 +372,21 @@ public:
     /// StorageMergeTree::movePartitionToTable to avoid lock ordering issues between two tables.
     OperationDataPartsLock lockOperationsWithParts() const { return OperationDataPartsLock(operation_with_data_parts_mutex); }
 
-    MergeTreeDataPartFormat
-    choosePartFormat(size_t bytes_uncompressed, size_t rows_count, UInt32 part_level, ProjectionDescriptionRawPtr projection) const;
+    /// `inherited_codec` is the default codec that the part will be written with when it does not come from the
+    /// current settings of the table, e.g. the codec of the parent part that a projection part inherits.
+    MergeTreeDataPartFormat choosePartFormat(
+        size_t bytes_uncompressed,
+        size_t rows_count,
+        UInt32 part_level,
+        ProjectionDescriptionRawPtr projection,
+        const CompressionCodecPtr & inherited_codec = nullptr) const;
 
     /// Whether the codecs of the table (or of the projection) allow to write its parts in `Parquet` format.
-    bool canUseParquetPartFormat(const StorageInMemoryMetadata & table_metadata, ProjectionDescriptionRawPtr projection) const;
+    /// `inherited_codec` is as in `choosePartFormat`.
+    bool canUseParquetPartFormat(
+        const StorageInMemoryMetadata & table_metadata,
+        ProjectionDescriptionRawPtr projection,
+        const CompressionCodecPtr & inherited_codec = nullptr) const;
 
     MergeTreeDataPartFormat choosePartFormatOnDisk(size_t bytes_uncompressed, size_t rows_count) const;
 
