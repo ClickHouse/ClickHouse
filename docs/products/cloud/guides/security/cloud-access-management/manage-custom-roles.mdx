@@ -80,6 +80,14 @@ When you add a `Data` policy to a custom role, ClickHouse Cloud creates a matchi
 Cloud-managed database roles replace manually assigned [`sql-console-role:<email>`](/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles) roles, which are not compatible with JWT sessions within the SQL console.
 </Warning>
 
+<Warning>
+A `Data` policy with `Custom` access replaces, rather than adds to, the database access a member gets from the built-in [SQL console admin or SQL console read only](/products/cloud/reference/security/console-roles#sql-console-roles) roles. When a member belongs to any custom role with `Custom` access on a service, their SQL console sessions on that service only have the privileges defined in their custom roles. This also applies to organization Admins. Privileges from several custom roles are combined.
+
+Include every privilege the members need in the policy. Don't add members who need write access to a custom role that only grants read access.
+</Warning>
+
+Cloud-managed database roles only carry privileges. [Settings profiles](/concepts/features/configuration/settings/settings-profiles), quotas, and row policies assigned to a `cloud:` role don't apply to SQL console sessions, which use the service's default settings. To limit resources for a single query, add a `SETTINGS` clause to the query, for example `SETTINGS max_memory_usage = 10000000000`.
+
 ### Prerequisites {#manage-database-roles-prerequisites}
 
 Custom database roles on a service depend on [JWT authentication](/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup) and are not applied while it is disabled. Before adding a `Data` policy to a role, navigate to the service, open `Settings`, and find the `JWT authentication` card in the `Security` section. Make sure the `SQL Console` toggle is enabled.
@@ -111,7 +119,9 @@ Select the service the policy applies to. Add more services to apply the same `R
 </Step>
 <Step title="Choose the access level" id="choose-data-access-level">
 
-Select `Read-only`, `Admin`, or `Custom` access. With `Custom` access, define specific data access permissions using ClickHouse [`GRANT` statements](/reference/statements/grant). `Custom` access can only be selected when the policy targets a single service; to define custom permissions for multiple services, add a separate `Data` policy for each service.
+Select `Read-only`, `Admin`, or `Custom` access. With `Custom` access, define specific data access permissions using ClickHouse [`GRANT` statements](/reference/statements/grant). `Custom` access can only be selected when the policy targets a single service; to define custom permissions for multiple services, add a separate `Data` policy for each service. For a service in a [warehouse](/products/cloud/features/infrastructure/warehouses), define `Custom` access on the warehouse primary. It applies to every service in the warehouse.
+
+`Custom` access only accepts privilege grants, such as `GRANT SELECT ON db.table`. Statements that grant a role, such as `GRANT my_role`, or that include a `TO` or `FROM` clause, are rejected.
 
 <Image img="/images/cloud/guides/control_plane/manage_custom_roles/create_role_data_permissions.webp" alt="Create new role dialog with data permissions defined by custom grant statements" size="md"/>
 </Step>
@@ -135,12 +145,14 @@ SELECT * FROM system.roles;
 └────────────────┴──────────────────────────────────────┴─────────┘
 ```
 
+To check the privileges your own SQL console session has, run `SHOW GRANTS` in the SQL console. The output lists the combined privileges of your custom roles. SQL console sessions don't hold the `cloud:` roles themselves, so `currentRoles` returns an empty array.
+
 ## Update custom roles {#update-custom-role}
 
 Custom roles may be updated after they're created. Users will lose any permissions removed from the role and will gain any permissions added.
 
 <Tip>
-User permissions are additive. If a user has permission to perform an operation as part of multiple roles, they may not immediately lose access if permission is removed from only one role.
+User permissions are additive. If a user has permission to perform an operation as part of multiple roles, they may not immediately lose access if permission is removed from only one role. One exception applies to database access: a `Data` policy with `Custom` access replaces the built-in SQL console database access. See [Manage database roles](#manage-database-roles).
 </Tip>
 
 1. Access organization settings and select `Users and roles`

@@ -86,9 +86,11 @@ namespace CoordinationSetting
     extern const CoordinationSettingsNonZeroUInt64 max_requests_batch_size;
     extern const CoordinationSettingsUInt64 max_read_batch_bytes_size;
     extern const CoordinationSettingsUInt64 max_read_batch_size;
+    extern const CoordinationSettingsMilliseconds min_session_timeout_ms;
     extern const CoordinationSettingsMilliseconds operation_timeout_ms;
     extern const CoordinationSettingsBool quorum_reads;
     extern const CoordinationSettingsMilliseconds session_shutdown_timeout;
+    extern const CoordinationSettingsMilliseconds session_timeout_ms;
     extern const CoordinationSettingsMilliseconds sleep_before_leader_change_ms;
     extern const CoordinationSettingsBool use_new_dispatcher;
 }
@@ -684,7 +686,14 @@ int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
             std::lock_guard lock(new_session_id_mutex);
             new_session_id_requests.erase(request->internal_id);
         }
-        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Cannot receive session id within session timeout");
+        throw Exception(
+            ErrorCodes::TIMEOUT_EXCEEDED,
+            "Cannot receive session id within session timeout ({} ms). "
+            "Effective session timeout is bounded by keeper_server.coordination_settings: "
+            "min_session_timeout_ms={}, session_timeout_ms={}",
+            session_timeout_ms,
+            keeper_context->getCoordinationSettings()[CoordinationSetting::min_session_timeout_ms].totalMilliseconds(),
+            keeper_context->getCoordinationSettings()[CoordinationSetting::session_timeout_ms].totalMilliseconds());
     }
 
     /// Forcefully wait for request execution because we cannot process any other

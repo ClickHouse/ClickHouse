@@ -77,6 +77,25 @@ bool hasDeletionVector(ffi::SharedDvInfo * dv_info_ptr)
     return dv_info_ptr && ffi::dv_info_has_vector(dv_info_ptr);
 }
 
+/// A data file with the size its `add` action records.
+struct DataObjectInfo : public DB::ObjectInfo
+{
+    DataObjectInfo(std::string path_, int64_t size_)
+        : DB::ObjectInfo(DB::RelativePathWithMetadata(std::move(path_)))
+        , size(size_)
+    {
+    }
+
+    std::optional<size_t> getFileSizeHint() const override
+    {
+        if (size > 0)
+            return static_cast<size_t>(size);
+        return std::nullopt;
+    }
+
+    const int64_t size;
+};
+
 }
 
 class TableSnapshot::Iterator final : public DB::IObjectIterator, private DB::WithContext
@@ -109,7 +128,6 @@ public:
         const TableSchema & table_schema_,
         const DB::NameToNameMap & physical_names_map_,
         const DB::Names & partition_columns_,
-        DB::ObjectStoragePtr object_storage_,
         const DB::ActionsDAG * filter_,
         DB::IDataLakeMetadata::FileProgressCallback callback_,
         size_t list_batch_size_,
@@ -126,7 +144,6 @@ public:
         , read_schema(read_schema_)
         , expression_schema(table_schema_)
         , partition_columns(partition_columns_)
-        , object_storage(object_storage_)
         , callback(callback_)
         , list_batch_size(list_batch_size_)
         , log(log_)
@@ -428,14 +445,9 @@ public:
             }
 
             parseDVHandle(*scan_item, object);
-            object->setObjectMetadata(
-                DB::getObjectMetadataForRead(*object_storage, DB::RelativePathWithMetadata(object->getPath()), /*with_tags=*/ false));
 
             if (callback)
-            {
-                chassert(object->getObjectMetadata());
-                callback(DB::FileProgress(0, object->getObjectMetadata()->size_bytes));
-            }
+                callback(DB::FileProgress(0, object->getFileSizeHint().value_or(0)));
             return object;
         }
     }
@@ -612,8 +624,10 @@ public:
 
         std::string full_path = DB::resolvePathInsideTable(
             context->getDataPath(), DB::unescapeForFileName(KernelUtils::fromDeltaString(path)));
-        auto object = std::make_shared<DB::ObjectInfo>(DB::RelativePathWithMetadata(std::move(full_path)));
+        auto object = std::make_shared<DataObjectInfo>(std::move(full_path), size);
         object->data_lake_metadata.emplace();
+        if (stats)
+            object->data_lake_metadata->num_rows = stats->num_records;
 
         LOG_TEST(
             context->log,
@@ -656,7 +670,6 @@ private:
     DB::NamesAndTypesList read_schema;
     DB::NamesAndTypesList expression_schema;
     DB::Names partition_columns;
-    const DB::ObjectStoragePtr object_storage;
     const DB::IDataLakeMetadata::FileProgressCallback callback;
     const size_t list_batch_size;
     const LoggerPtr log;
@@ -1011,7 +1024,6 @@ DB::ObjectIterator TableSnapshot::iterate(
         schema->table_schema,
         schema->physical_names_map,
         schema->partition_columns,
-        object_storage,
         filter_dag,
         callback,
         list_batch_size,

@@ -105,6 +105,11 @@ const std::unordered_set<String> & nonDeterministicFunctions()
         /// that moves or negates it (TLP partitions, NoREC `countIf`) changes
         /// the result legitimately.
         "indexHint",
+        /// These report whether a `JSON` path or a `Dynamic` value has its own subcolumn or sits in shared data,
+        /// which depends on the column holding the value (a join or a merge can change it), not on the value.
+        /// `byteSize` measures that representation, so it depends on it too.
+        "JSONDynamicPaths", "JSONDynamicPathsWithTypes", "JSONSharedDataPaths", "JSONSharedDataPathsWithTypes",
+        "isDynamicElementInSharedData", "byteSize",
         /// `viewExplain` (the table function behind `SELECT ... FROM (EXPLAIN ...)`)
         /// returns the query plan as rows. The plan text legitimately changes when
         /// DQP toggles an optimizer setting, so comparing such results is comparing
@@ -325,11 +330,14 @@ bool isOracleUnsafeFunctionName(String name)
     }
 }
 
-/// True if `name` resolves to a regular function or a user-defined function that is not deterministic.
+/// True if `name` resolves to a regular function that is not deterministic or that the backstop set lists,
+/// or to a user-defined function that is not deterministic.
 bool namesNonDeterministicRegularFunction(const String & name, const ContextPtr & context)
 {
     if (const auto resolver = FunctionFactory::instance().tryGet(name, context))
-        if (!resolver->isDeterministic())
+        if (!resolver->isDeterministic()
+            || nonDeterministicFunctionsLower().contains(Poco::toLower(name))
+            || nonDeterministicFunctionsLower().contains(Poco::toLower(resolver->getName())))
             return true;
     if (UserDefinedSQLFunctionFactory::instance().tryGet(name))
         /// SQL UDF determinism is not introspectable — treat as non-deterministic.

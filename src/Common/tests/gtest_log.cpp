@@ -206,6 +206,60 @@ TEST(Logger, ExceptionsFromPocoLoggerAreNotPropagated)
     EXPECT_EQ(oss.str(), "");
 }
 
+class StdExceptionThrowingChannel : public Poco::StreamChannel
+{
+public:
+    explicit StdExceptionThrowingChannel(std::ostream & str)
+        : Poco::StreamChannel(str)
+    {
+    }
+
+    void log(const Poco::Message &) override { throw std::runtime_error("std::runtime_error from StdExceptionThrowingChannel"); }
+};
+
+TEST(Logger, StdExceptionFromChannelIsWrittenToStderr)
+{
+    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    auto my_channel = Poco::AutoPtr<Poco::StreamChannel>(new StdExceptionThrowingChannel(oss));
+    auto log = createLogger("Logger", my_channel.get());
+    log->setLevel("trace");
+
+    testing::internal::CaptureStderr();
+    EXPECT_NO_THROW(LOG_TRACE(log, "my value is {}", 42));
+    const std::string captured = testing::internal::GetCapturedStderr();
+
+    EXPECT_NE(captured.find("Failed to write a log message: "), std::string::npos) << captured;
+    EXPECT_NE(captured.find("std::runtime_error from StdExceptionThrowingChannel"), std::string::npos) << captured;
+}
+
+class BadAllocWithMessage : public std::bad_alloc
+{
+public:
+    const char * what() const noexcept override { return "BadAllocWithMessage thrown while evaluating a log argument"; }
+};
+
+static int throwBadAllocIf(bool condition)
+{
+    if (condition)
+        throw BadAllocWithMessage();
+    return 0;
+}
+
+TEST(Logger, BadAllocFromArgumentsIsWrittenToStderr)
+{
+    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    auto my_channel = Poco::AutoPtr<Poco::StreamChannel>(new Poco::StreamChannel(oss));
+    auto log = createLogger("Logger", my_channel.get());
+    log->setLevel("trace");
+
+    testing::internal::CaptureStderr();
+    EXPECT_NO_THROW(LOG_TRACE(log, "my value is {}", throwBadAllocIf(true)));
+    const std::string captured = testing::internal::GetCapturedStderr();
+
+    EXPECT_NE(captured.find("Failed to write a log message: "), std::string::npos) << captured;
+    EXPECT_NE(captured.find("BadAllocWithMessage thrown while evaluating a log argument"), std::string::npos) << captured;
+}
+
 static std::vector<std::string> getLogFileNames(const std::string & log_dir)
 {
     std::vector<std::string> log_file_names;

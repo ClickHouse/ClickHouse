@@ -87,6 +87,7 @@ AsynchronousBoundedReadBuffer::AsynchronousBoundedReadBuffer(
     {
         use_page_cache = true;
         buffer_size = page_cache_block_size;
+        padded = false;
     }
     LOG_TEST(log, "Using buffer size {} while reading {}", buffer_size, file_name);
 

@@ -142,7 +142,15 @@ static inline void writeProbablyQuotedStringImpl(std::string_view s, WriteBuffer
         /// because the parser consumes them as clause-starting keywords.
         && !isCaseInsensitiveEqual(s, "from")
         && !isCaseInsensitiveEqual(s, "top")
-        && !isCaseInsensitiveEqual(s, "values"))
+        && !isCaseInsensitiveEqual(s, "values")
+        /// Parsed as unary NOT operator
+        && !isCaseInsensitiveEqual(s, "not")
+        /// `CAST(as AS T)` fails to parse
+        && !isCaseInsensitiveEqual(s, "as")
+        /// `interval AS DAY` parses as INTERVAL literal
+        && !isCaseInsensitiveEqual(s, "interval")
+        /// `EXCEPT strict` parses as EXCEPT STRICT modifier
+        && !isCaseInsensitiveEqual(s, "strict"))
     {
         writeString(s, buf);
     }

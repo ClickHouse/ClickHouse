@@ -636,7 +636,17 @@ protected:
         if (events_it == events_begin)
             ++events_it;
 
-        return action_it == action_end;
+        const bool matched = action_it == action_end;
+
+        /// `best_matched_events` holds the longest chain over all the attempts, which is only what to report
+        /// without a match: an abandoned attempt can be as long as the chain that matched.
+        if constexpr (remember_matched_events)
+        {
+            if (matched)
+                best_matched_events->assign(current_matched_events.begin(), current_matched_events.end());
+        }
+
+        return matched;
     }
 
     template <typename EventEntry>

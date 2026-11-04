@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
+# Random settings limits: index_granularity_bytes=(10485760, None)
+# Q6 compares per-reader total_selectivity: smaller granules leave a short last granule that skews one reader.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

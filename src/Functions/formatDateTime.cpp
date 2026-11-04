@@ -1334,7 +1334,7 @@ public:
                         break;
                     }
 
-                    // Month as a integer number:
+                    // Month as an integer number:
                     // - if formatdatetime_format_without_leading_zeros = true: prints without leading zero, i.e. 1-12
                     // - otherwise: print with leading zeros: i.e. 01-12
                     case 'c':
@@ -1507,7 +1507,7 @@ public:
                         break;
                     }
 
-                    // Month as a integer number (01-12)
+                    // Month as an integer number (01-12)
                     case 'm':
                     {
                         Instruction<T> instruction;
@@ -2122,7 +2122,7 @@ The example column in the table below shows formatting result for `2018-01-02 22
 | %T | ISO 8601 time format (HH:MM:SS), equivalent to %H:%i:%S | 22:33:44 |
 | %u | ISO 8601 weekday as number with Monday as 1 (1-7) | 2 |
 | %V | ISO 8601 week number (01-53) | 01 |
-| %w | weekday as a integer number with Sunday as 0 (0-6) | 2 |
+| %w | weekday as an integer number with Sunday as 0 (0-6) | 2 |
 | %W | full weekday name (Monday-Sunday) | Monday |
 | %y | Year, last two digits (00-99) | 18 |
 | %Y | Year | 2018 |

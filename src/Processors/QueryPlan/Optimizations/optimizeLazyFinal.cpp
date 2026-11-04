@@ -389,6 +389,10 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
     if (!reading_step->isQueryWithFinal())
         return;
 
+    /// The reads built below do not keep the bucket ranges of a distributed read, so every bucket would return all rows.
+    if (reading_step->getDistributedReadBucketCount() > 0)
+        return;
+
     /// Only ReplacingMergeTree is supported.
     const auto & data = reading_step->getMergeTreeData();
     if (data.merging_params.mode != MergeTreeData::MergingParams::Replacing)

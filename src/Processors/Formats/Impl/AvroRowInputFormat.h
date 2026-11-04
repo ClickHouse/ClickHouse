@@ -19,11 +19,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int INCORRECT_DATA;
-}
-
 class Block;
 
 /// Maximum nesting depth for Avro schemas. Passed to the Avro library to
@@ -72,6 +67,7 @@ private:
     using SkipFn = std::function<void(avro::Decoder & decoder)>;
     DeserializeFn createDeserializeFn(const avro::NodePtr & root_node, const DataTypePtr & target_type);
     SkipFn createSkipFn(const avro::NodePtr & root_node);
+    static size_t readUnionIndex(avro::Decoder & decoder, size_t num_branches);
 
     struct Action
     {
@@ -132,12 +128,7 @@ private:
                     deserializeNested(columns, decoder, ext);
                     break;
                 case Union:
-                    auto index = decoder.decodeUnionIndex();
-                    if (index >= actions.size())
-                    {
-                        throw Exception(ErrorCodes::INCORRECT_DATA, "Union index out of boundary");
-                    }
-                    actions[index].execute(columns, decoder, ext);
+                    actions[readUnionIndex(decoder, actions.size())].execute(columns, decoder, ext);
                     break;
             }
         }

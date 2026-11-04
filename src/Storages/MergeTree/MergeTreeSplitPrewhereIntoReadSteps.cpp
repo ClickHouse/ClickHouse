@@ -406,7 +406,7 @@ bool tryBuildPrewhereSteps(
     struct Step
     {
         ActionsDAGPtr actions;
-        /// Original condition, in case if we have only one condition, and it was not cast
+        /// Original condition if the step has one condition, null for an AND of several.
         const ActionsDAG::Node * original_node;
         /// Result condition node
         const ActionsDAG::Node * result_node;
@@ -444,6 +444,7 @@ bool tryBuildPrewhereSteps(
         else
         {
             result_node = new_condition_nodes.front();
+            original_node = condition_group.front();
         }
 
         step_dag->getOutputs().insert(step_dag->getOutputs().begin(), result_node);
@@ -496,9 +497,12 @@ bool tryBuildPrewhereSteps(
                 .type = PrewhereExprStep::Filter,
                 .actions = std::make_shared<ExpressionActions>(std::move(*step.actions), actions_settings),
                 .filter_column_name = step.result_node->result_name,
-                /// Don't remove if it's in the list of original outputs
-                .remove_filter_column =
-                    step.original_node && !all_outputs.contains(step.original_node) && node_to_step[step.original_node] <= step_index,
+                /// Don't remove a condition that is an original output or that a later step uses.
+                /// An AND of several conditions is a node the steps create, nothing else references it.
+                /// A stored column used as the condition stays: a later step may read it as the parent of a subcolumn.
+                .remove_filter_column = !step.original_node
+                    || (step.original_node->type != ActionsDAG::ActionType::INPUT && !all_outputs.contains(step.original_node)
+                        && node_to_step[step.original_node] <= step_index),
                 /// A step that precedes a may_throw condition must materialize its filter, so that
                 /// the throwing condition is not evaluated on the rows this step rejects.
                 .need_filter = force_short_circuit_execution || groups_requiring_filtered_input.contains(step_index + 1),

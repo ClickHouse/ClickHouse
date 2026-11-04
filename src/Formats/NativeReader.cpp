@@ -199,7 +199,7 @@ Block NativeReader::read()
         ColumnWithTypeAndName column;
 
         /// Name
-        readBinary(column.name, istr);
+        readStringBinaryGrowing(column.name, istr);
 
         /// Type
         String type_name;
@@ -210,7 +210,7 @@ Block NativeReader::read()
         }
         else
         {
-            readBinary(type_name, istr);
+            readStringBinaryGrowing(type_name, istr);
             column.type = data_type_factory.get(type_name);
         }
 

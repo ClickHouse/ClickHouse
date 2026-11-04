@@ -1531,7 +1531,8 @@ namespace
         /// because the client may decide to send another query with the same query ID or session ID
         /// immediately after it receives our final result, and it's prohibited to have
         /// two queries executed at the same time with the same query ID or session ID.
-        io.process_list_entries.clear();
+        /// `io` goes as a whole: its callbacks read the process list elements of their contexts.
+        io = {};
         if (query_context)
             query_context->setProcessListElement(nullptr);
         if (session)

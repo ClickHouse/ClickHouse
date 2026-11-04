@@ -763,6 +763,24 @@ void optimizeTreeSecondPass(
             /// forms with the outer plan under the same ones.
             if (local_optimization_settings.merge_expressions)
                 tryMergeExpressions(local_plan_node, nodes, makeExtraSettings(local_optimization_settings));
+
+            /// The merge after the join runtime filters ran while this plan was still opaque, so give it the
+            /// same merge, or it keeps steps the single-node plan has merged (e.g. the part of an expression
+            /// split off by pushing a runtime filter through it) and automatic parallel replicas cannot match
+            /// the two plans.
+            if (join_runtime_filters_were_added)
+            {
+                Stack local_stack;
+                const auto local_extra_settings = makeExtraSettings(local_optimization_settings);
+                traverseQueryPlan(local_stack, *local_plan_node,
+                    [&](auto & frame_node)
+                    {
+                        while (tryMergeExpressions(&frame_node, nodes, local_extra_settings)
+                               + tryMergeFilters(&frame_node, nodes, local_extra_settings))
+                        {
+                        }
+                    });
+            }
         }
         else if (auto * read_from_time_series = typeid_cast<ReadFromTimeSeriesStep *>(frame.node->step.get()))
         {
@@ -1017,13 +1035,17 @@ void optimizeTreeSecondPass(
             stack, root, [&](auto & frame_node) { tryPushHavingPrefilterIntoAggregation(&frame_node, nodes, extra_settings); });
     }
 
-    /// Runs last: the aggregation copies its input as the passes above left it. The copy does not serialize, and the
-    /// multi-pass top-K aggregation reads the table locally in every pass.
+    /// Runs after the passes above: the aggregation copies its input as they left it. The copy does not serialize, and
+    /// the multi-pass top-K aggregation reads the table locally in every pass. The pass below only marks remote reads,
+    /// which the strategy never copies.
     if (optimization_settings.adaptive_aggregator_top_k && !optimization_settings.make_distributed_plan
         && !optimization_settings.serialize_query_plan)
     {
         traverseQueryPlan(stack, root, [&](auto & frame_node) { tryEnableMultiPassTopKAggregation(frame_node); });
     }
+
+    /// Last: it reads the final consumers of every remote read.
+    allowReadingShardsFromSeveralReplicas(root);
 }
 
 void addStepsToBuildSets(

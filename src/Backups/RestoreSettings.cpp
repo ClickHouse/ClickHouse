@@ -166,6 +166,7 @@ namespace
     };
 
     using SettingFieldRestoreUDFCreationMode = SettingFieldRestoreAccessCreationMode;
+    using SettingFieldRestoreNamedCollectionCreationMode = SettingFieldRestoreAccessCreationMode;
     using SettingFieldRestoreWorkloadsAndResourcesCreationMode = SettingFieldRestoreAccessCreationMode;
 }
 
@@ -184,6 +185,7 @@ namespace
     M(OptionalBool, restore_table_data) \
     M(OptionalBool, restore_access_entities) \
     M(OptionalBool, restore_functions) \
+    M(OptionalBool, restore_named_collections) \
     M(RestoreTableCreationMode, create_table) \
     M(RestoreDatabaseCreationMode, create_database) \
     M(Bool, allow_different_table_def) \
@@ -199,6 +201,7 @@ namespace
     M(Bool, restore_access_entities_with_current_grants) \
     M(Bool, update_access_entities_dependents) \
     M(RestoreUDFCreationMode, create_function) \
+    M(RestoreNamedCollectionCreationMode, create_named_collection) \
     M(RestoreWorkloadsAndResourcesCreationMode, create_workloads_and_resources) \
     M(Bool, allow_azure_native_copy) \
     M(Bool, allow_s3_native_copy) \
@@ -326,6 +329,8 @@ std::map<String, String> RestoreSettings::getSerializedSettings() const
     res["restore_table_data"] = shouldRestoreTableData() ? "1" : "0";
     res["restore_access_entities"] = shouldRestoreAccessEntities() ? "1" : "0";
     res["restore_functions"] = shouldRestoreFunctions() ? "1" : "0";
+    /// Named collections default to being restored even under `structure_only`, log the effective value too.
+    res["restore_named_collections"] = shouldRestoreNamedCollections() ? "1" : "0";
 
     /// Never expose the password; drop purely internal fields that are not user-facing settings
     /// (`id` has its own column, the rest are internal plumbing for RESTORE ON CLUSTER).

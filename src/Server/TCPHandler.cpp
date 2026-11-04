@@ -797,24 +797,32 @@ void TCPHandler::runImpl()
                     if (context != query_state->query_context)
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected context in InputBlocksReader");
 
-                    std::lock_guard lock(*callback_mutex);
-
-                    checkIfQueryCanceled(*query_state);
-
                     try
                     {
-                        if (receivePacketsExpectData(*query_state))
-                            return query_state->block_for_input;
+                        std::lock_guard lock(*callback_mutex);
 
-                        query_state->block_in.reset();
-                        query_state->maybe_compressed_in.reset();
-                        query_state->received_all_data_for_input = true;
-                        return {};
+                        checkIfQueryCanceled(*query_state);
+
+                        try
+                        {
+                            if (receivePacketsExpectData(*query_state))
+                                return query_state->block_for_input;
+
+                            query_state->block_in.reset();
+                            query_state->maybe_compressed_in.reset();
+                            query_state->received_all_data_for_input = true;
+                            return {};
+                        }
+                        catch (...)
+                        {
+                            query_state->stop_query = true;
+                            query_state->received_all_data_for_input = true;
+                            throw;
+                        }
                     }
                     catch (...)
                     {
-                        query_state->stop_query = true;
-                        query_state->received_all_data_for_input = true;
+                        killQueryIfStoppedByClient(*query_state);
                         throw;
                     }
                 });
@@ -830,25 +838,33 @@ void TCPHandler::runImpl()
                     Stopwatch watch;
                     CurrentMetrics::Increment callback_metric_increment(CurrentMetrics::ReadTaskRequestsSent);
 
-                    std::lock_guard lock(*callback_mutex);
-
-                    checkIfQueryCanceled(*query_state);
-
                     try
                     {
-                        sendReadTaskRequest();
+                        std::lock_guard lock(*callback_mutex);
 
-                        ProfileEvents::increment(ProfileEvents::ReadTaskRequestsSent);
+                        checkIfQueryCanceled(*query_state);
 
-                        auto res = receiveClusterFunctionReadTaskResponse(*query_state);
+                        try
+                        {
+                            sendReadTaskRequest();
 
-                        ProfileEvents::increment(ProfileEvents::ReadTaskRequestsSentElapsedMicroseconds, watch.elapsedMicroseconds());
+                            ProfileEvents::increment(ProfileEvents::ReadTaskRequestsSent);
 
-                        return res;
+                            auto res = receiveClusterFunctionReadTaskResponse(*query_state);
+
+                            ProfileEvents::increment(ProfileEvents::ReadTaskRequestsSentElapsedMicroseconds, watch.elapsedMicroseconds());
+
+                            return res;
+                        }
+                        catch (...)
+                        {
+                            query_state->stop_query = true;
+                            throw;
+                        }
                     }
                     catch (...)
                     {
-                        query_state->stop_query = true;
+                        killQueryIfStoppedByClient(*query_state);
                         throw;
                     }
                 });
@@ -862,51 +878,59 @@ void TCPHandler::runImpl()
                         /// Stands in for a follower that is still planning while the initiator gives up on it.
                         fiu_do_on(FailPoints::parallel_replicas_delay_announcement, { sleepForMilliseconds(3000); });
 
-                        std::lock_guard lock(*callback_mutex);
-
-                        /// A `Cancel` during the announcement exchange must stop this replica, not turn into
-                        /// "return what you have": there is no partial result to return before the ranges have
-                        /// even been handed out, and `processCancel` would otherwise return without setting
-                        /// `stop_query`, letting the announcement go out to an initiator that has already
-                        /// disconnected (`Broken pipe`). Secondary queries inherit
-                        /// `partial_result_on_first_cancel` from the initiator, so this has to be turned off
-                        /// explicitly, the same way `readTemporaryTables` does it.
-                        auto off_setting_guard = TurnOffBoolSettingTemporary(query_state->allow_partial_result_on_first_cancel);
-
-                        /// The initiator may have given up on this replica while it was planning, and it
-                        /// stops waiting for this announcement when it does. Look for the `Cancel` packet
-                        /// now rather than at the next interactive-delay tick, so the announcement is not
-                        /// written into a socket nobody reads.
-                        receivePacketsExpectCancel(*query_state, /* force= */ true);
-                        checkIfQueryCanceled(*query_state);
-
                         try
                         {
-                            const auto announcement_mode = announcement.mode;
-                            const bool wants_analyzed_ranges = announcement.wants_analyzed_ranges;
-                            sendMergeTreeAllRangesAnnouncement(*query_state, std::move(announcement));
-                            ProfileEvents::increment(ProfileEvents::MergeTreeAllRangesAnnouncementsSent);
-                            ProfileEvents::increment(
-                                ProfileEvents::MergeTreeAllRangesAnnouncementsSentElapsedMicroseconds, watch.elapsedMicroseconds());
+                            std::lock_guard lock(*callback_mutex);
 
-                            /// Older initiators (protocol < ANNOUNCEMENT_RESPONSE) don't send a response.
-                            if (client_parallel_replicas_protocol_version < DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANNOUNCEMENT_RESPONSE)
-                                return std::nullopt;
+                            /// A `Cancel` during the announcement exchange must stop this replica, not turn into
+                            /// "return what you have": there is no partial result to return before the ranges have
+                            /// even been handed out, and `processCancel` would otherwise return without setting
+                            /// `stop_query`, letting the announcement go out to an initiator that has already
+                            /// disconnected (`Broken pipe`). Secondary queries inherit
+                            /// `partial_result_on_first_cancel` from the initiator, so this has to be turned off
+                            /// explicitly, the same way `readTemporaryTables` does it.
+                            auto off_setting_guard = TurnOffBoolSettingTemporary(query_state->allow_partial_result_on_first_cancel);
 
-                            /// In `Default` mode the initiator sends the response only when it was asked for the
-                            /// analyzed ranges (see `RemoteQueryExecutor::processMergeTreeInitialReadAnnouncement`),
-                            /// which an initiator older than this field cannot have been.
-                            /// Don't block on a packet that will never arrive.
-                            if (announcement_mode == CoordinationMode::Default
-                                && (!wants_analyzed_ranges
-                                    || client_parallel_replicas_protocol_version < DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANALYZED_RANGES_REQUEST))
-                                return std::nullopt;
+                            /// The initiator may have given up on this replica while it was planning, and it
+                            /// stops waiting for this announcement when it does. Look for the `Cancel` packet
+                            /// now rather than at the next interactive-delay tick, so the announcement is not
+                            /// written into a socket nobody reads.
+                            receivePacketsExpectCancel(*query_state, /* force= */ true);
+                            checkIfQueryCanceled(*query_state);
 
-                            return receiveAllRangesAnnouncementResponse(*query_state);
+                            try
+                            {
+                                const auto announcement_mode = announcement.mode;
+                                const bool wants_analyzed_ranges = announcement.wants_analyzed_ranges;
+                                sendMergeTreeAllRangesAnnouncement(*query_state, std::move(announcement));
+                                ProfileEvents::increment(ProfileEvents::MergeTreeAllRangesAnnouncementsSent);
+                                ProfileEvents::increment(
+                                    ProfileEvents::MergeTreeAllRangesAnnouncementsSentElapsedMicroseconds, watch.elapsedMicroseconds());
+
+                                /// Older initiators (protocol < ANNOUNCEMENT_RESPONSE) don't send a response.
+                                if (client_parallel_replicas_protocol_version < DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANNOUNCEMENT_RESPONSE)
+                                    return std::nullopt;
+
+                                /// In `Default` mode the initiator sends the response only when it was asked for the
+                                /// analyzed ranges (see `RemoteQueryExecutor::processMergeTreeInitialReadAnnouncement`),
+                                /// which an initiator older than this field cannot have been.
+                                /// Don't block on a packet that will never arrive.
+                                if (announcement_mode == CoordinationMode::Default
+                                    && (!wants_analyzed_ranges
+                                        || client_parallel_replicas_protocol_version < DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANALYZED_RANGES_REQUEST))
+                                    return std::nullopt;
+
+                                return receiveAllRangesAnnouncementResponse(*query_state);
+                            }
+                            catch (...)
+                            {
+                                query_state->stop_query = true;
+                                throw;
+                            }
                         }
                         catch (...)
                         {
-                            query_state->stop_query = true;
+                            killQueryIfStoppedByClient(*query_state);
                             throw;
                         }
                     });
@@ -917,27 +941,35 @@ void TCPHandler::runImpl()
                         Stopwatch watch;
                         CurrentMetrics::Increment callback_metric_increment(CurrentMetrics::MergeTreeReadTaskRequestsSent);
 
-                        std::lock_guard lock(*callback_mutex);
-
-                        checkIfQueryCanceled(*query_state);
-
                         try
                         {
-                            sendMergeTreeReadTaskRequest(std::move(request));
+                            std::lock_guard lock(*callback_mutex);
 
-                            fiu_do_on(FailPoints::parallel_replicas_reading_response_timeout, {
-                                throw NetException(
-                                    ErrorCodes::SOCKET_TIMEOUT, "Simulated network error on the first attempt to get a task from the coordinator");
-                            });
+                            checkIfQueryCanceled(*query_state);
 
-                            ProfileEvents::increment(ProfileEvents::MergeTreeReadTaskRequestsSent);
-                            auto res = receivePartitionMergeTreeReadTaskResponse(*query_state);
-                            ProfileEvents::increment(ProfileEvents::MergeTreeReadTaskRequestsSentElapsedMicroseconds, watch.elapsedMicroseconds());
-                            return res;
+                            try
+                            {
+                                sendMergeTreeReadTaskRequest(std::move(request));
+
+                                fiu_do_on(FailPoints::parallel_replicas_reading_response_timeout, {
+                                    throw NetException(
+                                        ErrorCodes::SOCKET_TIMEOUT, "Simulated network error on the first attempt to get a task from the coordinator");
+                                });
+
+                                ProfileEvents::increment(ProfileEvents::MergeTreeReadTaskRequestsSent);
+                                auto res = receivePartitionMergeTreeReadTaskResponse(*query_state);
+                                ProfileEvents::increment(ProfileEvents::MergeTreeReadTaskRequestsSentElapsedMicroseconds, watch.elapsedMicroseconds());
+                                return res;
+                            }
+                            catch (...)
+                            {
+                                query_state->stop_query = true;
+                                throw;
+                            }
                         }
                         catch (...)
                         {
-                            query_state->stop_query = true;
+                            killQueryIfStoppedByClient(*query_state);
                             throw;
                         }
                     });
@@ -957,16 +989,24 @@ void TCPHandler::runImpl()
                 query_state->query_context->setInteractiveCancelCallback(
                     [this, &query_state]()
                     {
-                        std::lock_guard lock(*callback_mutex);
+                        try
+                        {
+                            std::lock_guard lock(*callback_mutex);
 
-                        if (!query_state->need_receive_data_for_input && !query_state->need_receive_data_for_insert)
-                            receivePacketsExpectCancel(*query_state);
+                            if (!query_state->need_receive_data_for_input && !query_state->need_receive_data_for_insert)
+                                receivePacketsExpectCancel(*query_state);
 
-                        if (query_state->stop_read_return_partial_result)
-                            return true;
+                            if (query_state->stop_read_return_partial_result)
+                                return true;
 
-                        sendInteractiveUpdates(*query_state);
-                        return false;
+                            sendInteractiveUpdates(*query_state);
+                            return false;
+                        }
+                        catch (...)
+                        {
+                            killQueryIfStoppedByClient(*query_state);
+                            throw;
+                        }
                     });
             }
 
@@ -1352,7 +1392,15 @@ bool TCPHandler::receivePacketsExpectQuery(std::shared_ptr<QueryState> & state)
 bool TCPHandler::receivePacketsExpectDataConcurrentWithExecutor(QueryState & state)
 {
     std::lock_guard lock(*callback_mutex);
-    return receivePacketsExpectData(state);
+    try
+    {
+        return receivePacketsExpectData(state);
+    }
+    catch (...)
+    {
+        state.stop_query = true;
+        throw;
+    }
 }
 
 bool TCPHandler::receivePacketsExpectData(QueryState & state)
@@ -1593,6 +1641,7 @@ void TCPHandler::processInsertQuery(QueryState & state)
         }
         catch (...)
         {
+            killQueryIfStoppedByClient(state);
             executor.cancel();
             throw;
         }
@@ -1749,6 +1798,7 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
         }
         catch (...)
         {
+            killQueryIfStoppedByClient(state);
             executor.cancel();
             throw;
         }
@@ -3201,6 +3251,21 @@ void TCPHandler::processCancel(QueryState & state)
     state.stop_query = true;
 
     throw Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "Received 'Cancel' packet from the client, canceling the query.");
+}
+
+void TCPHandler::killQueryIfStoppedByClient(QueryState & state)
+{
+    {
+        std::lock_guard lock(*callback_mutex);
+        /// `out` is canceled when a write to the client fails.
+        if (!state.stop_query && !out->isCanceled())
+            return;
+    }
+
+    /// Cancelling the executor waits for its threads, and some code they run checks only the process list entry (e.g. `sleep`).
+    /// The client's exception is passed, so that it is the one the query fails with.
+    if (auto process_list_element = state.query_context->getProcessListElementSafe())
+        process_list_element->cancelQuery(CancelReason::CANCELLED_BY_USER, std::current_exception());
 }
 
 void TCPHandler::receivePacketsExpectCancel(QueryState & state, bool force)

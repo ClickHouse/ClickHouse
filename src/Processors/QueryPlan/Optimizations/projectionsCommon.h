@@ -43,6 +43,9 @@ struct QueryDAG
 {
     std::optional<ActionsDAG> dag;
     const ActionsDAG::Node * filter_node = nullptr;
+    /// The combined value of `optimize_constant_columns_after_filter` of the collected filters,
+    /// to be set on a `FilterStep` that replaces them.
+    std::optional<bool> optimize_constant_columns_after_filter;
 
     bool build(QueryPlan::Node & node);
 

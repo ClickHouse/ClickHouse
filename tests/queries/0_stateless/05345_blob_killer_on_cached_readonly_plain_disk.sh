@@ -47,6 +47,8 @@ SYSTEM WAIT BLOBS CLEANUP '05345_cache_${CLICKHOUSE_DATABASE}';
 
 SYSTEM FLUSH LOGS text_log;
 
+SET max_rows_to_read = 0; -- system.text_log can be really big
+
 SELECT 'cache layer, blob killer started', count() FROM system.text_log
 WHERE logger_name = '05345_cache_${CLICKHOUSE_DATABASE}::BlobKillerThread' AND message LIKE 'Execution started%';
 

@@ -582,6 +582,14 @@ if args.report == "main":
     skipped_tests_rows = tsvRows("analyze/skipped-tests.tsv")
     addSimpleTable("Skipped Tests", ["Test", "Reason"], skipped_tests_rows)
 
+    # perf.py compares the prewarm results of the servers (`result_digest`).
+    # Not an error: a pull request that fixes a result changes it.
+    addSimpleTable(
+        "Queries with Different Results",
+        ["Test", "#", "Rows on the old server", "Rows on the new server"],
+        tsvRows("analyze/result-mismatches.tsv"),
+    )
+
     addSimpleTable(
         "Test Performance Changes",
         [

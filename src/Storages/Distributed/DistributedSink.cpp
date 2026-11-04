@@ -981,16 +981,20 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
             /// `client_agent` is intentionally excluded from the embedded `ClientInfo` here and written
             /// as a trailing header field below, so that older binaries draining these queue files read
             /// the embedded `ClientInfo` in the old, append-compatible layout.
-            if (OpenTelemetry::CurrentContext().isTraceEnabled())
             {
-                // if the distributed tracing is enabled, use the trace context in current thread as parent of next span
                 auto client_info = context->getClientInfo();
-                client_info.client_trace_context = OpenTelemetry::CurrentContext();
+                // if the distributed tracing is enabled, use the trace context in current thread as parent of next span
+                if (OpenTelemetry::CurrentContext().isTraceEnabled())
+                    client_info.client_trace_context = OpenTelemetry::CurrentContext();
+                /// Background contexts (e.g. the ones of `Kafka` / `RabbitMQ` streaming into views) have
+                /// `query_kind = NO_QUERY`, for which `ClientInfo::write` stores nothing but the kind. The
+                /// replayed insert would then reach the shard with an empty `initial_user`, which a shard
+                /// accepting the interserver `<secret>` executes with full access, losing the identity
+                /// (e.g. the definer of a `SQL SECURITY DEFINER` view) that the query is bound to.
+                /// `RemoteInserter` sends the insert as a secondary query anyway, so persist it as such.
+                if (client_info.query_kind == ClientInfo::QueryKind::NO_QUERY)
+                    client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
                 client_info.write(header_buf, DBMS_TCP_PROTOCOL_VERSION, /*with_trailing_fields=*/ false);
-            }
-            else
-            {
-                context->getClientInfo().write(header_buf, DBMS_TCP_PROTOCOL_VERSION, /*with_trailing_fields=*/ false);
             }
 
             writeVarUInt(block.rows(), header_buf);

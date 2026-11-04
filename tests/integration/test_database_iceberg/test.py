@@ -1542,6 +1542,39 @@ def test_create_without_engine_arguments_storage_mismatch(started_cluster, names
     assert (root_namespace,) in catalog.list_namespaces()
 
 
+@pytest.mark.parametrize("explicit_location", [False, True])
+def test_create_registers_full_location(started_cluster, explicit_location):
+    # No `write_full_path_in_iceberg_metadata`: the catalog resolves the location with its own FileIO.
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_create_registers_full_location_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+
+    # The endpoint names no bucket, so a table placed by the catalog lands where the catalog puts it.
+    create_clickhouse_iceberg_database(
+        started_cluster, node, CATALOG_NAME, additional_settings={"storage_endpoint": "http://minio1:9001"}
+    )
+    engine = (
+        f" ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/{table_name}/', '{minio_access_key}', '{minio_secret_key}')"
+        if explicit_location
+        else ""
+    )
+    node.query(f"CREATE TABLE {table_ref} (x String){engine}", settings={"allow_database_iceberg": 1})
+    node.query(f"INSERT INTO {table_ref} VALUES ('AAPL');", settings={"allow_insert_into_iceberg": 1})
+    assert node.query(f"SELECT * FROM {table_ref}") == "AAPL\n"
+
+    table = load_catalog_impl(started_cluster).load_table(f"{root_namespace}.{table_name}")
+    location = table.metadata.location
+    assert location.startswith("s3://"), location
+    manifest_list = table.current_snapshot().manifest_list
+    assert manifest_list.startswith(location.rstrip("/") + "/metadata/"), manifest_list
+    bucket, key = manifest_list[len("s3://"):].split("/", 1)
+    prefix, name = key.rsplit("/", 1)
+    assert name in list_s3_objects(started_cluster.minio_client, bucket, prefix + "/")
+
+
 def test_create_without_engine_arguments_vended_credentials(started_cluster):
     node = started_cluster.instances["node1"]
 
@@ -1814,6 +1847,44 @@ ORDER BY (id, name)
     assert [field.source_id for field in sort_fields] == [1, 2], sort_fields
     assert all(isinstance(field.transform, IdentityTransform) for field in sort_fields), sort_fields
 
+
+def test_create_table_order_by_empty_tuple(started_cluster):
+    # `ORDER BY tuple()` is the unsorted order: Java Iceberg must accept it, through the catalog and from storage.
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_create_table_order_by_empty_tuple_{uuid.uuid4()}"
+    root_namespace = f"{test_ref}_namespace"
+    table_name = f"{test_ref}_table"
+    plain_table = f"{test_ref}_plain"
+
+    catalog = load_catalog_impl(started_cluster)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    node.query(
+        f"""
+CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (id Int64)
+ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/{table_name}/', '{minio_access_key}', '{minio_secret_key}')
+ORDER BY tuple()
+        """,
+        settings={"allow_database_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+    assert catalog.load_table(f"{root_namespace}.{table_name}").sort_order().is_unsorted
+
+    node.query(
+        f"""
+CREATE TABLE `{plain_table}` (id Int64)
+ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/{plain_table}/', '{minio_access_key}', '{minio_secret_key}')
+ORDER BY tuple()
+        """,
+        settings={"write_full_path_in_iceberg_metadata": 1},
+    )
+    registered = catalog.register_table(
+        f"{root_namespace}.{plain_table}", 
+        f"s3://warehouse-rest/{plain_table}/metadata/v1.metadata.json"
+    )
+    assert registered.sort_order().is_unsorted
+    node.query(f"DROP TABLE `{plain_table}`")
+    
 
 def test_table_with_slash(started_cluster):
     node = started_cluster.instances["node1"]

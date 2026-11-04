@@ -120,7 +120,7 @@ private:
     ActionMap respect_nulls;
     /// Same as above for `IGNORE NULLS` modifier
     ActionMap ignore_nulls;
-    std::optional<AggregateFunctionWithProperties> getAssociatedFunctionByNullsAction(const String & name, NullsAction action) const;
+    const AggregateFunctionWithProperties * getAssociatedFunctionByNullsAction(const String & name, NullsAction action) const;
     /// Name-only variant: the registered name that `name` resolves to under `action` (see the definition).
     String getAssociatedNameByNullsAction(const String & name, NullsAction action) const;
     /// Helper for the above: adjusts a name that still carries combinator suffixes (strip the suffix,

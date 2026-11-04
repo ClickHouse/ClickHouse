@@ -1399,6 +1399,7 @@ BlockIO InterpreterSystemQuery::execute()
         {
             auto context = getContext();
             context->checkAccess(AccessType::SYSTEM_JEMALLOC);
+            /// The dump keeps runtime addresses: it stays on the local disk, and only its path is returned.
             auto filename = std::string(Jemalloc::flushProfile("/tmp/jemalloc_clickhouse"));
             auto format = context->getSettingsRef()[Setting::jemalloc_profile_text_output_format];
             auto symbolize_with_inline = context->getSettingsRef()[Setting::jemalloc_profile_text_symbolize_with_inline];

@@ -103,6 +103,25 @@ public:
         const Settings & settings,
         LoggerPtr log);
 
+    /// Maps each primary-key column position to the slot of the matching column in a part's partition
+    /// minmax index (nullopt when the primary-key column is not a partition-minmax column).
+    static std::vector<std::optional<size_t>> buildPrimaryKeyToMinMaxSlotMapping(
+        const StorageMetadataPtr & metadata_snapshot, const MergeTreeSettingsPtr & data_settings);
+
+    /// Works on any part description, not only on an `IMergeTreeDataPart`.
+    static MarkRanges markRangesFromPKRange(
+        const IMergeTreeDataPartInfoForReader & part,
+        const MarkRanges & part_ranges,
+        size_t part_starting_offset_in_query,
+        const StorageMetadataPtr & metadata_snapshot,
+        const KeyCondition & key_condition,
+        const KeyCondition * part_offset_condition,
+        const KeyCondition * total_offset_condition,
+        MarkRanges * exact_ranges,
+        const std::vector<std::optional<size_t>> * pk_to_minmax_slot,
+        const Settings & settings,
+        LoggerPtr log);
+
     static MarkRanges markRangesFromPKRange(
         const RangesInDataPart & part_with_ranges,
         const StorageMetadataPtr & metadata_snapshot,
@@ -279,6 +298,9 @@ public:
     /// Filter parts using primary key and secondary indexes.
     /// For every part, select mark ranges to read.
     static RangesInDataParts filterPartsByPrimaryKeyAndSkipIndexes(IndexAnalysisContext & filter_context, RangesInDataParts parts_with_ranges, ReadFromMergeTree::IndexStats & index_stats);
+
+    /// Throws if an index in `force_data_skipping_indices` is not among the useful ones.
+    static void checkForcedSkipIndexes(const UsefulSkipIndexes & skip_indexes, const Settings & settings);
 
     /// Filter parts using query condition cache.
     static void filterPartsByQueryConditionCache(
