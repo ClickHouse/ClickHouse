@@ -1531,7 +1531,7 @@ struct ContextSharedPart : boost::noncopyable
     void addOrUpdateWarningMessage(Context::WarningType warning, const PreformattedMessage & message) TSA_REQUIRES(mutex)
     {
         /// A warning goes both: into server's log; stored to be placed in `system.warnings` table.
-        LOG_WARNING(log, "{}", message.text);
+        LOG_WARNING(log, message);
         warnings[warning] = message;
     }
 
@@ -6862,6 +6862,8 @@ void Context::setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker, const LoadTask
         getGoals(startup_after),
         TablesLoaderBackgroundStartupPoolId,
         "startup ddl worker",
+        /// A table that failed to load must not stop distributed DDL on the whole server.
+        ignoreDependencyFailure,
         [this] (AsyncLoader &, const LoadJobPtr &)
         {
             std::lock_guard lock2(shared->mutex);
