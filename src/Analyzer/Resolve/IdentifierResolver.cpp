@@ -48,6 +48,7 @@ namespace Setting
     extern const SettingsBool single_join_prefer_left_table;
     extern const SettingsBool analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested;
     extern const SettingsBool analyzer_compatibility_prefer_alias_over_subcolumn;
+    extern const SettingsBool prefer_outer_table_name_for_correlated_identifier;
     extern const SettingsBool semi_join_include_columns_from_both_sides;
     extern const SettingsBool anti_join_include_columns_from_both_sides;
 }
@@ -967,13 +968,14 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
         = table_expression_node->hasAlias() && path_start == table_expression_node->getAlias();
 
     /** ClickHouse allows the original table name to remain a qualifier after an alias is declared.
-      * Keep that extension unless the same qualifier is visible in a parent scope. In that case the
-      * correlation name hides the local table name and the identifier has to be resolved as a correlated
-      * reference.
+      * With `prefer_outer_table_name_for_correlated_identifier`, defer that extension if the same qualifier
+      * is visible in a parent scope. In that case the correlation name hides the local table name and the
+      * identifier has to be resolved as a correlated reference.
       * Example: `SELECT (SELECT count() FROM test AS inner_table WHERE inner_table.x < test.x) FROM test`;
       */
     bool table_name_qualifier_binds_in_parent_scope = false;
-    if (prefix_matches_table_name && table_expression_node->hasAlias() && !prefix_matches_alias)
+    if (scope.context->getSettingsRef()[Setting::prefer_outer_table_name_for_correlated_identifier]
+        && prefix_matches_table_name && table_expression_node->hasAlias() && !prefix_matches_alias)
     {
         for (const IdentifierResolveScope * parent_scope = scope.parent_scope;
              parent_scope && !table_name_qualifier_binds_in_parent_scope;

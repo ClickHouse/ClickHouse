@@ -9,6 +9,8 @@ FROM squality_alias_scope AS inner_table
 ORDER BY a;
 
 -- Resolve the hidden original name as a correlated reference when an outer table owns it.
+SET prefer_outer_table_name_for_correlated_identifier = true;
+
 SELECT a, coalesce(
     (SELECT count() FROM squality_alias_scope AS inner_table WHERE inner_table.b < squality_alias_scope.b), 0)
 FROM squality_alias_scope
