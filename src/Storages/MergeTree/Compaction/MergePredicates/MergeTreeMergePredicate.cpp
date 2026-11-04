@@ -251,7 +251,44 @@ PartsRange MergeTreeMergePredicate::getPatchesToApplyOnMerge(PartsRangeView rang
     if (auto reservation = reservations.firstReservationAfter(first_part.getDataVersion()))
         next_version = next_version == 0 ? reservation->number : std::min(next_version, reservation->number);
 
-    return DB::getPatchesToApplyOnMerge(it->second, range, next_version);
+    auto result = DB::getPatchesToApplyOnMerge(it->second, range, next_version);
+    if (result.empty())
+        return result;
+
+    /// Readers apply patches in index version order, so a merge applies a prefix of that order: the merged
+    /// part takes the version of the last patch it applied, and a patch left out below that version would
+    /// never apply to it. A patch is left out with its block above the snapshot or above the next mutation,
+    /// and a reattached patch has its block above both while its index keeps the version it applies at.
+    Int64 min_source_data_version = std::numeric_limits<Int64>::max();
+    for (const auto & part : range)
+        min_source_data_version = std::min(min_source_data_version, part.info.getDataVersion());
+
+    NameSet applied_names;
+    for (const auto & patch : result)
+        applied_names.insert(patch.name);
+
+    std::unordered_map<String, Int64> index_versions;
+    std::optional<Int64> first_left_out;
+    for (const auto & patch : patch_parts_by_partition.at(partition_id))
+    {
+        Int64 index_version = patch->getPatchPartIndex().getMinDataVersion();
+        index_versions.emplace(patch->name, index_version);
+        if (index_version > min_source_data_version && !applied_names.contains(patch->name)
+            && (!first_left_out || index_version < *first_left_out))
+            first_left_out = index_version;
+    }
+
+    if (!first_left_out)
+        return result;
+
+    PartsRange prefix;
+    for (auto & patch : result)
+    {
+        if (index_versions.at(patch.name) < *first_left_out)
+            prefix.push_back(std::move(patch));
+    }
+
+    return prefix;
 }
 
 std::optional<Int64> MergeTreeMergePredicate::firstPatchNotAppliedAfter(

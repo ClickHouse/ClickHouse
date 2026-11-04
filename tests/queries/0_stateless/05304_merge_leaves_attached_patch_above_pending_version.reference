@@ -22,3 +22,11 @@ merged part:	1	2	1
 merged part:	1	2	0
 1	5
 2	0
+--- older patch reattached after the OPTIMIZE snapshot, newer patch applicable
+OPTIMIZE FINAL exit code: 0
+merged part:	1	2	1
+1	5	7
+2	0	0
+merged part:	2	2	0
+1	5	7
+2	0	0
