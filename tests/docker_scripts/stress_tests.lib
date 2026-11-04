@@ -310,34 +310,47 @@ function stop_server()
     fi
 }
 
-function wait_server_port_free()
-{
-    local port=$1
-    local timeout=${2:-120}
-    local elapsed=0
-    while ss -tlnp | grep -q ":${port}\b" && [ "$elapsed" -lt "$timeout" ]; do
-        sleep 1
-        elapsed=$((elapsed + 1))
-    done
-    if [ "$elapsed" -ge "$timeout" ]; then
-        echo "Warning: port $port is still in use after ${timeout}s"
-    fi
-}
-
 function wait_server_ports_free()
 {
-    # Wait for all ClickHouse listen ports to become available.
+    # Wait for the previous server instance to release its listen ports.
     # In debug+ThreadFuzzer builds, shutdown is slow and the kernel
     # may still hold sockets from the previous server instance.
+    # Every TCP listener of a `clickhouse-server` process counts (`clickhouse-serv` is its
+    # 15-character process name, as for `pgrep` below), so ports of new configs need no list.
+    # `ss` reports the owner per listener and may not know it (another user's process, a socket
+    # being torn down), so a listener without an owner counts when its port is a known one:
     #   8123  HTTP               9010  TCP with proxy protocol
     #   8443  HTTPS              9022  SSH
-    #   9000  Native TCP         9100  gRPC
-    #   9004  MySQL compat       9181  Keeper
-    #   9005  PostgreSQL compat  9234  Keeper Raft
-    #   9009  Interserver HTTP   9440  Native TCP TLS
+    #   9000  Native TCP         9090  Arrow Flight
+    #   9004  MySQL compat       9100  gRPC
+    #   9005  PostgreSQL compat  9181  Keeper
+    #   9009  Interserver HTTP   9223  Streaming exchange (distributed query)
+    #                            9234  Keeper Raft
+    #                            9440  Native TCP TLS
     #                            9988  Prometheus
-    for port in 8123 8443 9000 9004 9005 9009 9010 9022 9100 9181 9234 9440 9988; do
-        wait_server_port_free "$port"
+    # The timeout bounds the whole wait.
+    local timeout=${1:-120}
+    local known_ports="8123|8443|9000|9004|9005|9009|9010|9022|9090|9100|9181|9223|9234|9440|9988"
+    local elapsed=0
+    local busy
+    while true; do
+        # The local address is the 4th column, e.g. `0.0.0.0:9000` or `[::]:9000`, the owner is in `users:((...))`
+        busy=$(ss -tlnp 2>/dev/null | awk -v known="^(${known_ports})\$" '
+            NR > 1 {
+                port = $4
+                sub(/.*:/, "", port)
+                if ($0 ~ /"clickhouse-serv"/ || ($0 !~ /users:\(\(/ && port ~ known))
+                    print port
+            }' | sort -nu | tr '\n' ' ' || true)
+        if [ -z "$busy" ]; then
+            return 0
+        fi
+        if [ "$elapsed" -ge "$timeout" ]; then
+            echo "Warning: ports ${busy}are still in use after ${timeout}s"
+            return 0
+        fi
+        sleep 1
+        elapsed=$((elapsed + 1))
     done
 }
 

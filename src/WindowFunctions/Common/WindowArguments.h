@@ -4,7 +4,7 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <base/types.h>
 
-#include <span>
+#include <Common/DevectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -30,27 +30,24 @@ private:
 
 class WindowArguments
 {
-    size_t findBlock(size_t argument, Int64 position) const;
-
 public:
     struct Block
     {
-        std::span<const ColumnPtr> columns;
-        Int64 first_position = 0;
+        ColumnRawPtrs columns;
+        Int64 begin_position = 0;
         Int64 end_position = 0;
     };
 
-    explicit WindowArguments(VectorWithMemoryTracking<size_t> column_indices_);
+    WindowArguments(const DevectorWithMemoryTracking<Block> & blocks_, Int64 first_row_position_, Int64 num_arguments_);
 
-    void setBlocks(const VectorWithMemoryTracking<Block> & blocks_);
-
-    size_t size() const;
-    ArgumentValue at(size_t argument, Int64 position) const;
+    Int64 size() const;
+    ArgumentValue at(size_t argument, Int64 row) const;
 
 private:
-    VectorWithMemoryTracking<size_t> column_indices;
-    VectorWithMemoryTracking<Block> blocks;
-    mutable VectorWithMemoryTracking<size_t> last_used_block_for_arg;
+    const DevectorWithMemoryTracking<Block> & blocks;
+    const Int64 first_row_position;
+    const Int64 num_arguments;
+    mutable VectorWithMemoryTracking<size_t> last_used_block;
 };
 
 }
