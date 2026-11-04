@@ -2217,6 +2217,7 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
     }
 
     auto access = query_context->getAccess();
+    QueryStatusPtr query_status = query_context->getProcessListElementSafe();
     for (const auto & iterator : database_table_iterators)
     {
         auto database = DatabaseCatalog::instance().tryGetDatabase(iterator->databaseName());
@@ -2259,6 +2260,12 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
                                 /// real column named `a.b` in another, and the check is against the child table.
                                 /// The read of this child uses this snapshot too (see `createChildrenPlans`), so a concurrent
                                 /// `ALTER` cannot change how a dotted name resolves between the access check and the read.
+                                /// Taking the snapshot may refresh a data lake child with remote metadata I/O, so honor
+                                /// `KILL QUERY` and `max_execution_time` before each child, as `createChildrenPlans` does.
+                                /// `checkTimeLimit` throws for `KILL QUERY` and `timeout_overflow_mode = 'throw'`; for
+                                /// `'break'` it returns false, and the tables selected so far are read.
+                                if (query_status && !query_status->checkTimeLimit())
+                                    return res;
                                 child_metadata_snapshot = getChildMetadataSnapshot(storage, query_context);
                                 access->checkAccess(
                                     AccessType::SELECT,
