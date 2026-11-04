@@ -2227,6 +2227,7 @@ Chunk StorageFileSource::generate()
             /// A row group may be skipped iff either verdict excludes it.
             /// A statistics-only TopN read (`filter_rows = false`) is a plain read for the cache.
             FileBucketInfoPtr buckets_to_read;
+            std::shared_ptr<const std::vector<bool>> row_blocks_to_read;
             std::optional<UInt64> plain_condition_hash;
             if (format_filter_info && format_filter_info->condition_hash
                 && (!format_filter_info->top_k_filter || !format_filter_info->top_k_filter->filter_rows
@@ -2256,9 +2257,14 @@ Chunk StorageFileSource::generate()
                         for (size_t i = 0; i < marks->size(); ++i)
                             (*matching_marks)[i] = (*matching_marks)[i] && (*marks)[i];
                 };
+                std::optional<QueryConditionCache::MatchingMarks> matching_row_blocks;
                 if (plain_condition_hash)
-                    merge_matching_marks(query_condition_cache->read(
-                        query_condition_cache_table_id, cache_file_key, *plain_condition_hash, /*increment_profile_events=*/false));
+                {
+                    auto file_marks = query_condition_cache->readFile(
+                        query_condition_cache_table_id, cache_file_key, *plain_condition_hash, /*increment_profile_events=*/false);
+                    merge_matching_marks(std::move(file_marks.buckets));
+                    matching_row_blocks = std::move(file_marks.row_blocks);
+                }
                 if (top_k_condition_hash)
                 {
                     auto marks = query_condition_cache->read(
@@ -2291,7 +2297,8 @@ Chunk StorageFileSource::generate()
                     }
                     merge_matching_marks(std::move(marks));
                 }
-                ProfileEvents::increment(matching_marks ? ProfileEvents::QueryConditionCacheHits : ProfileEvents::QueryConditionCacheMisses);
+                ProfileEvents::increment(
+                    matching_marks || matching_row_blocks ? ProfileEvents::QueryConditionCacheHits : ProfileEvents::QueryConditionCacheMisses);
 
                 if (matching_marks.has_value())
                 {
@@ -2325,6 +2332,27 @@ Chunk StorageFileSource::generate()
                             continue;
                         }
                     }
+                }
+
+                if (matching_row_blocks.has_value())
+                {
+                    size_t num_blocks = matching_row_blocks->size();
+                    size_t num_matching = static_cast<size_t>(std::count(matching_row_blocks->begin(), matching_row_blocks->end(), true));
+                    LOG_DEBUG(
+                        getLogger("StorageFile"),
+                        "Query condition cache has dropped {}/{} row blocks for condition {} in file {}.",
+                        num_blocks - num_matching,
+                        num_blocks,
+                        format_filter_info->filter_actions_dag->dumpNames(),
+                        current_path);
+
+                    if (num_matching == 0)
+                    {
+                        read_buf.reset();
+                        continue;
+                    }
+                    if (num_matching < num_blocks)
+                        row_blocks_to_read = std::make_shared<const std::vector<bool>>(std::move(*matching_row_blocks));
                 }
             }
 
@@ -2365,6 +2393,8 @@ Chunk StorageFileSource::generate()
             }
 
             input_format->setBucketsToRead(buckets_to_read);
+            if (row_blocks_to_read)
+                input_format->setRowBlocksToRead(row_blocks_to_read);
             input_format->setSerializationHints(serialization_hints);
 
             if (need_only_count)
@@ -2558,6 +2588,19 @@ Chunk StorageFileSource::generate()
                         buckets_opt->second,
                         std::unordered_set<size_t>(buckets_opt->first.begin(), buckets_opt->first.end()),
                         getContext());
+                }
+
+                if (format_filter_info->condition_hash && !format_filter_info->top_k_filter)
+                {
+                    auto row_blocks = input_format->getMatchedRowBlocks();
+                    auto query_condition_cache = getContext()->getQueryConditionCache();
+                    if (row_blocks && query_condition_cache)
+                        query_condition_cache->writeRowBlocks(
+                            query_condition_cache_table_id,
+                            cache_file_key,
+                            *format_filter_info->condition_hash,
+                            format_filter_info->filter_actions_dag->dumpNames(),
+                            *row_blocks);
                 }
 
                 if (getContext()->getSettingsRef()[Setting::use_parquet_metadata_cache])
