@@ -3559,7 +3559,8 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
         table_name = function->name;
         table = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, getQueryContext());
     }
-    if (table)
+    /// A registered table function takes precedence over a view of the same name, as in `QueryAnalyzer::resolveTableFunction`.
+    if (table && !TableFunctionFactory::instance().isTableFunctionName(function->name))
     {
         if (table.get()->isView() && table->as<StorageView>() && table->as<StorageView>()->isParameterizedView())
         {

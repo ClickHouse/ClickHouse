@@ -14,6 +14,7 @@ ${CLICKHOUSE_CLIENT} -m --query "
     DROP VIEW IF EXISTS pv_definer;
     DROP VIEW IF EXISTS pv_invoker;
     DROP VIEW IF EXISTS pv_sorted;
+    DROP VIEW IF EXISTS numbers;
     DROP TABLE IF EXISTS secret_base;
     DROP TABLE IF EXISTS sink_dist;
     DROP TABLE IF EXISTS sink_local;
@@ -23,6 +24,7 @@ ${CLICKHOUSE_CLIENT} -m --query "
     CREATE VIEW pv_definer SQL SECURITY DEFINER AS SELECT x AS secret_column_1, s AS secret_column_2 FROM secret_base WHERE x < {secret_param:UInt32};
     CREATE VIEW pv_invoker SQL SECURITY INVOKER AS SELECT x AS secret_column_1, s AS secret_column_2 FROM secret_base WHERE x < {secret_param:UInt32};
     CREATE VIEW pv_sorted SQL SECURITY INVOKER AS SELECT x AS secret_column_1, s AS secret_column_2 FROM secret_base WHERE x < {secret_param:UInt32} ORDER BY {secret_sort:Identifier};
+    CREATE VIEW numbers AS SELECT {n:UInt64} AS a, 'x' AS b;
     CREATE VIEW v_over_pv SQL SECURITY DEFINER AS SELECT * FROM pv_definer(secret_param = 3);
     CREATE TABLE sink_local (a UInt32, b String) ENGINE = MergeTree ORDER BY a;
     CREATE TABLE sink_dist AS sink_local ENGINE = Distributed(test_shard_localhost, currentDatabase(), sink_local);
@@ -77,10 +79,12 @@ expect_denied "SELECT * FROM pv_definer()"
 expect_denied "SELECT * FROM pv_invoker(secret_param = 3)"
 
 echo "-- INSERT SELECT into a Distributed table resolves the view before the analyzer"
-${CLICKHOUSE_CLIENT} --query "GRANT INSERT ON ${CLICKHOUSE_DATABASE}.sink_dist TO ${username}"
+${CLICKHOUSE_CLIENT} --query "GRANT INSERT ON ${CLICKHOUSE_DATABASE}.sink_dist, INSERT ON ${CLICKHOUSE_DATABASE}.sink_local TO ${username}"
 expect_denied "INSERT INTO sink_dist SETTINGS parallel_distributed_insert_select = 2 SELECT * FROM pv_definer()"
 expect_denied "INSERT INTO sink_dist SETTINGS parallel_distributed_insert_select = 2 SELECT * FROM pv_invoker(secret_param = 3)"
-${CLICKHOUSE_CLIENT} --query "REVOKE INSERT ON ${CLICKHOUSE_DATABASE}.sink_dist FROM ${username}"
+echo "-- a view named like a table function does not hide the table function"
+expect_ok "INSERT INTO sink_dist SETTINGS parallel_distributed_insert_select = 2, distributed_foreground_insert = 1 SELECT number, toString(number) FROM numbers(3)"
+${CLICKHOUSE_CLIENT} --query "REVOKE INSERT ON ${CLICKHOUSE_DATABASE}.sink_dist, INSERT ON ${CLICKHOUSE_DATABASE}.sink_local FROM ${username}"
 
 echo "-- SELECT on the table behind the view, no grant on the view"
 ${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.secret_base TO ${username}"
@@ -124,6 +128,7 @@ ${CLICKHOUSE_CLIENT} -m --query "
     DROP VIEW IF EXISTS pv_definer;
     DROP VIEW IF EXISTS pv_invoker;
     DROP VIEW IF EXISTS pv_sorted;
+    DROP VIEW IF EXISTS numbers;
     DROP TABLE IF EXISTS secret_base;
     DROP TABLE IF EXISTS sink_dist;
     DROP TABLE IF EXISTS sink_local;

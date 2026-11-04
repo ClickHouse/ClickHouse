@@ -10,6 +10,8 @@ denied
 -- INSERT SELECT into a Distributed table resolves the view before the analyzer
 denied
 denied
+-- a view named like a table function does not hide the table function
+ok
 -- SELECT on the table behind the view, no grant on the view
 denied
 -- an invalid Identifier parameter: the analysis error must not quote the definition
