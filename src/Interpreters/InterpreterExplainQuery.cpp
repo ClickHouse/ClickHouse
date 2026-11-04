@@ -34,7 +34,9 @@
 #include <Functions/FunctionFactory.h>
 #include <Parsers/parseQuery.h>
 
+#include <Access/Common/AccessFlags.h>
 #include <Access/Common/SQLSecurityDefs.h>
+#include <Access/ContextAccess.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/StorageView.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -209,6 +211,11 @@ namespace
             /// `EXPLAIN SYNTAX` would fail for users that can query the view but not its inner
             /// tables. Leave the original parameterized call intact in that case.
             if (metadata->sql_security_type && metadata->sql_security_type != SQLSecurityType::INVOKER)
+                return;
+
+            /// The inlined body is the view definition, which needs `SHOW COLUMNS` on the view, as `SHOW CREATE` does.
+            const auto view_id = storage->getStorageID();
+            if (!query_context->getAccess()->isGranted(AccessType::SHOW_COLUMNS, view_id.getDatabaseName(), view_id.getTableName()))
                 return;
 
             auto view_query = metadata->getSelectQuery().inner_query->clone();
