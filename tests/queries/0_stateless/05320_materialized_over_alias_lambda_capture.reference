@@ -34,3 +34,4 @@ local alias self	Z-Qx-w	QxZ-QxZ-w	['QxA-QxA']	Z-Qx-w	QxZ-QxZ-w	['QxA-QxA']
 field name update	['{"x.a":200}']	['{"x.a":200}']
 field name on fly	['{"x.a":300}']	['{"x.a":300}']
 field column	[2]-{"x.a":200}	[2]-{"x.a":200}
+fresh name	[212]	[212]

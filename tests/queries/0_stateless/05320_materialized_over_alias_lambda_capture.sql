@@ -507,3 +507,19 @@ ALTER TABLE t_alias_capture_field_column UPDATE arr_t = [tuple(200)] WHERE 1;
 ALTER TABLE t_alias_capture_field_column UPDATE `x.a` = [2] WHERE 1;
 SELECT 'field column', m, concat(toString(x.a), '-', arrayMap(x -> formatRowNoNewline('JSONEachRow', x.a), arr_t)[1]) FROM t_alias_capture_field_column;
 DROP TABLE t_alias_capture_field_column;
+
+-- The fresh name of a parameter is not an alias that an expanded definition declares.
+DROP TABLE IF EXISTS t_alias_capture_fresh_name;
+CREATE TABLE t_alias_capture_fresh_name
+(
+    k UInt32,
+    arr Array(UInt32),
+    d UInt32 ALIAS ((k + 1) AS k_1) + k_1,
+    m Array(UInt32) MATERIALIZED arrayMap(k -> k + d, arr)
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO t_alias_capture_fresh_name (k, arr) SELECT 5, [100];
+ALTER TABLE t_alias_capture_fresh_name UPDATE arr = [200] WHERE 1;
+SELECT 'fresh name', m, arrayMap(k -> k + d, arr) FROM t_alias_capture_fresh_name;
+DROP TABLE t_alias_capture_fresh_name;

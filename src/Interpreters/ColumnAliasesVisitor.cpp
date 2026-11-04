@@ -236,6 +236,9 @@ void renameCapturingParameters(ASTFunction & lambda, ColumnAliasesMatcher::Data 
 
     NameSet taken = capturable;
     collectNames(lambda, taken);
+    /// The aliases an expanded definition declares end up in the lambda body.
+    for (const auto & name : visited)
+        collectNames(*expandedDefinition(data.columns.get(name), data), taken);
 
     for (auto & parameter : lambda.arguments->children[0]->as<ASTFunction &>().arguments->children)
     {
