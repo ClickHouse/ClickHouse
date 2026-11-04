@@ -30,6 +30,23 @@ node = cluster.add_instance(
     with_remote_database_disk=False,
 )
 
+# The default `storage_policy` has a disk without append support, so `RESET SETTING storage_policy` switches to it.
+node_plain_rewritable_default = cluster.add_instance(
+    "node_plain_rewritable_default",
+    main_configs=[
+        "configs/config.d/storage_policy.xml",
+        "configs/config.d/merge_tree_default_policy.xml",
+    ],
+    with_minio=True,
+    with_zookeeper=True,
+    keeper_required_feature_flags=[
+        "filtered_list",
+        "multi_read",
+        "list_with_stat_and_data",
+        "check_stat",
+    ],
+)
+
 UK_SETTINGS = {"enable_unique_key": "1"}
 
 EXPECTED_ROWS = "10\ta\n20\tb\n30\tc\n"
@@ -211,6 +228,34 @@ def test_unique_key_switch_policy_to_plain_rewritable_is_rejected(started_cluste
     assert node.query("SELECT id, v FROM uk_local_pr ORDER BY id") == EXPECTED_ROWS
 
     node.query("DROP TABLE uk_local_pr SYNC")
+
+
+def test_unique_key_reset_policy_to_plain_rewritable_is_rejected(started_cluster):
+    n = node_plain_rewritable_default
+    n.query("DROP TABLE IF EXISTS uk_reset_pr SYNC")
+    n.query(
+        """
+        CREATE TABLE uk_reset_pr (id UInt64, v String)
+        ENGINE = MergeTree
+        UNIQUE KEY (id)
+        ORDER BY (id)
+        SETTINGS storage_policy = 'default'
+        """,
+        settings=UK_SETTINGS,
+    )
+    n.query(
+        "INSERT INTO uk_reset_pr VALUES (10, 'a'), (20, 'b'), (30, 'c')",
+        settings=UK_SETTINGS,
+    )
+
+    assert "SUPPORT_IS_DISABLED" in n.query_and_get_error(
+        "ALTER TABLE uk_reset_pr RESET SETTING storage_policy",
+        settings=UK_SETTINGS,
+    )
+
+    assert n.query("SELECT id, v FROM uk_reset_pr ORDER BY id") == EXPECTED_ROWS
+
+    n.query("DROP TABLE uk_reset_pr SYNC")
 
 
 def test_unique_key_sst_checksums(started_cluster):

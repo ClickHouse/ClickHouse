@@ -7108,18 +7108,19 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         alter_effective_settings = std::move(copy);
     }
 
-    if ((*settings_from_storage)[MergeTreeSetting::table_disk])
+    const auto & new_disk = (*alter_effective_settings)[MergeTreeSetting::disk];
+    const auto new_storage_policy = new_disk.changed
+        ? local_context->getStoragePolicyFromDisk(new_disk)
+        : local_context->getStoragePolicy((*alter_effective_settings)[MergeTreeSetting::storage_policy]);
+    if (new_storage_policy != getStoragePolicy())
     {
         /// The roots of a `table_disk` table are taken when it is created, so its disks are fixed.
-        const auto & new_disk = (*alter_effective_settings)[MergeTreeSetting::disk];
-        const auto new_storage_policy = new_disk.changed
-            ? local_context->getStoragePolicyFromDisk(new_disk)
-            : local_context->getStoragePolicy((*alter_effective_settings)[MergeTreeSetting::storage_policy]);
-        if (new_storage_policy != getStoragePolicy())
+        if ((*settings_from_storage)[MergeTreeSetting::table_disk])
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "The disk of table {} with `table_disk = true` cannot be changed",
                 getStorageID().getNameForLogs());
+        checkStoragePolicy(new_storage_policy);
     }
 
     /// A `Replicated` database runs the same ALTER again on every other replica. Only the first run of it,
