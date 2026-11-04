@@ -64,9 +64,20 @@ public:
 
     virtual bool customizeQueryParam(NameToNameMap & query_parameters, const std::string & key, const std::string & value) = 0;
 
+    /// Whether the value of this decoded URL parameter becomes part of the query: the query text or a bound query parameter.
+    virtual bool isQueryTextParameter(const std::string & name) const = 0;
+
     /// Only the dynamic query handler interprets arbitrary request paths as query inputs. Configured
     /// and SQL-defined handlers own their matched path and must execute their stored query unchanged.
     virtual bool parsesHTTPPath() const { return false; }
+
+    /// Idempotent HTTP methods are read-only by default. A handler may opt into mutating behavior for
+    /// a narrowly defined request shape, such as a PUT upload whose target table comes from the URL path.
+    virtual bool allowMutatingIdempotentMethods(
+        const HTTPServerRequest & /* request */, const HTMLForm & /* params */) const
+    {
+        return false;
+    }
 
     /// `body` is the request body wrapped in the transport decompression chain - the same object the query
     /// itself would read. Handlers must read the body only through it, never through `request.getStream()`
@@ -96,6 +107,8 @@ protected:
     }
 
 private:
+    String getURIForLogging(const HTTPServerRequest & request) const;
+
     String introspection_handler_name;
 
     bool has_server_owned_query = false;
@@ -243,6 +256,8 @@ class DynamicQueryHandler : public HTTPHandler
 private:
     std::string param_name;
     bool parse_http_path;
+    /// Only the built-in catch-all handler enables the path-table upload mutation exception.
+    bool allow_path_table_uploads = false;
 
 public:
     explicit DynamicQueryHandler(
@@ -252,16 +267,21 @@ public:
         const HTTPResponseHeaderSetup & http_response_headers_override_ = std::nullopt,
         const std::string & url_prefix_ = "",
         HTTPPathHintsPtr path_hints_ = nullptr,
-        bool parse_http_path_ = true);
+        bool parse_http_path_ = true,
+        bool allow_path_table_uploads_ = false);
 
     std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context, ReadBuffer & body) override;
 
     bool customizeQueryParam(NameToNameMap & query_parameters, const std::string &key, const std::string &value) override;
 
+    bool isQueryTextParameter(const std::string & name) const override;
+
     /// The catch-all query handler interprets the request path. A configured `dynamic_query_handler`
     /// rule owns the path it is matched by, so it interprets only the part below its `url_prefix`,
     /// and nothing at all when it has none.
     bool parsesHTTPPath() const override { return parse_http_path; }
+
+    bool allowMutatingIdempotentMethods(const HTTPServerRequest & request, const HTMLForm & params) const override;
 };
 
 class PredefinedQueryHandler : public HTTPHandler
@@ -287,6 +307,8 @@ public:
     std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context, ReadBuffer & body) override;
 
     bool customizeQueryParam(NameToNameMap & query_parameters, const std::string & key, const std::string & value) override;
+
+    bool isQueryTextParameter(const std::string & name) const override;
 };
 
 /// A handler defined from SQL via CREATE HANDLER. It executes a stored query, exactly like
