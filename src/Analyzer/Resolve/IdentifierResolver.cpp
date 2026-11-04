@@ -1,6 +1,9 @@
 #include <Analyzer/IQueryTreeNode.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/NestedUtils.h>
 
 #include <Functions/FunctionFactory.h>
@@ -659,19 +662,64 @@ std::optional<size_t> getCompoundIdentifierPrefixSize(const Identifier & identif
     return identifier_view.getPartsSize();
 }
 
-/// Returns true if `identifier_view` names a column or a subcolumn of a column of the table expression.
-bool tableExpressionDataCanReadIdentifier(const AnalysisTableExpressionData & table_expression_data, IdentifierView identifier_view)
+/// Whether a qualified matcher can expand an expression of this type, as `QueryAnalyzer::resolveQualifiedMatcher` does:
+/// a `Tuple`, possibly inside `Nullable`, `Array` or `Map`.
+bool qualifiedMatcherCanExpandType(DataTypePtr type)
 {
-    return table_expression_data.hasFullIdentifierName(identifier_view)
-        || table_expression_data.tryGetSubcolumnInfo(identifier_view.getFullName());
+    while (true)
+    {
+        if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
+            type = nullable_type->getNestedType();
+        else if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
+            type = array_type->getNestedType();
+        else if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
+            type = map_type->getNestedType();
+        else
+            break;
+    }
+
+    return typeid_cast<const DataTypeTuple *>(type.get()) != nullptr;
+}
+
+/// Whether an expression of type `type` read under the name `identifier` gives that identifier a reading:
+/// for a qualified column, any expression does; for the qualifier of a matcher, only one the matcher can expand.
+bool readingIsUsableForLookup(const DataTypePtr & type, const IdentifierLookup & identifier_lookup)
+{
+    return type && (identifier_lookup.isExpressionLookup() || qualifiedMatcherCanExpandType(type));
+}
+
+/// Returns true if `identifier_view` names a column or a subcolumn of a column of the table expression
+/// that gives the identifier of `identifier_lookup` a reading, see `readingIsUsableForLookup`.
+bool tableExpressionDataCanReadIdentifier(
+    const AnalysisTableExpressionData & table_expression_data, IdentifierView identifier_view, const IdentifierLookup & identifier_lookup)
+{
+    if (identifier_lookup.isExpressionLookup())
+        return table_expression_data.hasFullIdentifierName(identifier_view)
+            || table_expression_data.tryGetSubcolumnInfo(identifier_view.getFullName());
+
+    DataTypePtr type;
+    if (table_expression_data.hasFullIdentifierName(identifier_view))
+    {
+        if (auto column_node = table_expression_data.tryGetColumnNode(identifier_view.getFullName()))
+            type = column_node->getResultType();
+    }
+    else if (auto subcolumn_info = table_expression_data.tryGetSubcolumnInfo(identifier_view.getFullName()))
+    {
+        type = subcolumn_info->subcolumn_type;
+    }
+
+    return readingIsUsableForLookup(type, identifier_lookup);
 }
 
 }
 
-/// Returns true if a visible expression argument of `scope` (a lambda argument) can provide `identifier`,
-/// matched the same way `tryResolveIdentifierFromExpressionArguments` binds it.
-static bool expressionArgumentCanReadIdentifier(const Identifier & identifier, const IdentifierResolveScope & scope)
+/// Returns true if a visible expression argument of `scope` (a lambda argument) can provide the identifier of
+/// `identifier_lookup`, matched the same way `tryResolveIdentifierFromExpressionArguments` binds it,
+/// see `readingIsUsableForLookup`.
+static bool expressionArgumentCanReadIdentifier(const IdentifierLookup & identifier_lookup, const IdentifierResolveScope & scope)
 {
+    const auto & identifier = identifier_lookup.identifier;
+
     if (scope.expression_argument_name_to_node.empty())
         return false;
 
@@ -690,12 +738,15 @@ static bool expressionArgumentCanReadIdentifier(const Identifier & identifier, c
     if (!isExpressionNodeType(it->second->getNodeType()))
         return false;
 
-    if (full_identifier || !identifier.isCompound())
-        return true;
+    DataTypePtr type = it->second->getResultType();
+    if (!full_identifier && identifier.isCompound())
+    {
+        IdentifierView rest(identifier);
+        rest.popFirst();
+        type = type->tryGetSubcolumnType(rest.getFullName());
+    }
 
-    IdentifierView rest(identifier);
-    rest.popFirst();
-    return it->second->getResultType()->hasSubcolumn(rest.getFullName());
+    return readingIsUsableForLookup(type, identifier_lookup);
 }
 
 /// Returns true if `target` is `root` itself or is nested below `root` in a join tree.
@@ -779,6 +830,13 @@ static const JoinNode * findLateralJoinWithRightSideContaining(const IQueryTreeN
   * reading that resolves the identifier counts: an `ARRAY JOIN` output, a lambda argument, a constant alias or a
   * column without the named subcolumn does not hide the name.
   *
+  * The same carriers give the qualifier of a matcher a reading: `resolveQualifiedMatcher` resolves the qualifier
+  * as an expression first and expands an outer `Tuple` it finds, but with
+  * `analyzer_compatibility_prefer_alias_over_subcolumn` it prefers a table expression of that name, so the inner name
+  * must be hidden on the table expression lookup as well, or the matcher would expand the inner table instead.
+  * There a carrier counts only when the matcher can expand it, i.e. when it is a `Tuple`; a constant alias, a lambda
+  * argument, a column or an `ARRAY JOIN` output of another type does not hide the name.
+  *
   * The rule is about the qualifier, not about the shape of the lookup, so it applies to the qualifier of a
   * matcher (`t.*`, `t.COLUMNS(...)`, `db.t.*`) as well. That qualifier is resolved as an expression first
   * and as a table expression afterwards, and the whole identifier is the qualifier there, so a table
@@ -857,7 +915,7 @@ bool IdentifierResolver::tableNameIsHiddenByAlias(
             && !inner_scope->context->getSettingsRef()[Setting::enable_global_with_statement])
             outer_aliases_are_visible = false;
 
-        if (outer_aliases_are_visible && identifier_lookup.isExpressionLookup()
+        if (outer_aliases_are_visible
             && !outer_scope->expressions_in_resolve_process_stack.getExpressionWithAlias(identifier.front()))
         {
             auto alias_it = outer_scope->aliases.alias_name_to_expression_node.find(identifier.front());
@@ -869,7 +927,10 @@ bool IdentifierResolver::tableNameIsHiddenByAlias(
 
                 IdentifierView rest(identifier);
                 rest.popFirst();
-                if (constant_node->getResultType()->hasSubcolumn(rest.getFullName()))
+                DataTypePtr type = constant_node->getResultType();
+                if (!rest.empty())
+                    type = type->tryGetSubcolumnType(rest.getFullName());
+                if (readingIsUsableForLookup(type, identifier_lookup))
                     return true;
             }
         }
@@ -879,7 +940,7 @@ bool IdentifierResolver::tableNameIsHiddenByAlias(
           * and the rest of the identifier is a subcolumn of it. Arguments are resolved before the lambda body, so
           * their type is known. They are visible regardless of `enable_global_with_statement`.
           */
-        if (identifier_lookup.isExpressionLookup() && expressionArgumentCanReadIdentifier(identifier, *outer_scope))
+        if (expressionArgumentCanReadIdentifier(identifier_lookup, *outer_scope))
             return true;
 
         /** The join tree of this query is still being resolved, so we are inside one of its table
@@ -937,7 +998,7 @@ bool IdentifierResolver::tableNameIsHiddenByAlias(
             /// The whole identifier can name a column of the enclosing query, e.g. a `Tuple` column `t` with an
             /// element `val` gives `t.val` a reading there. Only a column the identifier can be read from
             /// counts, so an unrelated column with the same name as the table does not hide it.
-            if (identifier_lookup.isExpressionLookup() && tableExpressionDataCanReadIdentifier(outer_table_expression_data, identifier))
+            if (tableExpressionDataCanReadIdentifier(outer_table_expression_data, identifier, identifier_lookup))
                 return true;
 
             /// The name a table expression is addressed by in the enclosing query. The name of an aliased
@@ -973,11 +1034,11 @@ bool IdentifierResolver::tableNameIsHiddenByAlias(
 
             /// What looks like `database.table` in this scope can be `table.column` in the enclosing one, e.g.
             /// `FROM u AS default` with a `Tuple` column `t` gives `default.t.val` a reading there.
-            if (identifier_lookup.isExpressionLookup() && path_start_addresses_outer_table_expression)
+            if (path_start_addresses_outer_table_expression)
             {
                 IdentifierView rest(identifier);
                 rest.popFirst();
-                if (tableExpressionDataCanReadIdentifier(outer_table_expression_data, rest))
+                if (tableExpressionDataCanReadIdentifier(outer_table_expression_data, rest, identifier_lookup))
                     return true;
             }
         }
@@ -986,34 +1047,34 @@ bool IdentifierResolver::tableNameIsHiddenByAlias(
         /// name is a prefix of the identifier and the rest of the identifier is a subcolumn of it. The prefix
         /// is matched the same way `tryResolveIdentifierFromArrayJoin` does, so a compound alias such as
         /// `t.val` counts too.
-        if (identifier_lookup.isExpressionLookup())
+        for (const auto & outer_table_expression_node : outer_scope->registered_table_expression_nodes)
         {
-            for (const auto & outer_table_expression_node : outer_scope->registered_table_expression_nodes)
+            const auto * array_join_node = outer_table_expression_node->as<ArrayJoinNode>();
+            if (!array_join_node)
+                continue;
+            if (visible_join_subtree && !joinSubtreeContains(visible_join_subtree, array_join_node))
+                continue;
+            if (isTableExpressionHiddenBySemiAntiJoin(array_join_node, *outer_scope))
+                continue;
+
+            for (const auto & array_join_expression : array_join_node->getJoinExpressions())
             {
-                const auto * array_join_node = outer_table_expression_node->as<ArrayJoinNode>();
-                if (!array_join_node)
-                    continue;
-                if (visible_join_subtree && !joinSubtreeContains(visible_join_subtree, array_join_node))
-                    continue;
-                if (isTableExpressionHiddenBySemiAntiJoin(array_join_node, *outer_scope))
+                const auto * array_join_column = array_join_expression->as<ColumnNode>();
+                if (!array_join_column)
                     continue;
 
-                for (const auto & array_join_expression : array_join_node->getJoinExpressions())
-                {
-                    const auto * array_join_column = array_join_expression->as<ColumnNode>();
-                    if (!array_join_column)
-                        continue;
+                const auto & alias_or_name = array_join_column->hasAlias() ? array_join_column->getAlias() : array_join_column->getColumnName();
+                auto prefix_size = getCompoundIdentifierPrefixSize(identifier, alias_or_name);
+                if (!prefix_size)
+                    continue;
 
-                    const auto & alias_or_name = array_join_column->hasAlias() ? array_join_column->getAlias() : array_join_column->getColumnName();
-                    auto prefix_size = getCompoundIdentifierPrefixSize(identifier, alias_or_name);
-                    if (!prefix_size)
-                        continue;
-
-                    IdentifierView rest(identifier);
-                    rest.popFirst(*prefix_size);
-                    if (rest.empty() || array_join_column->getResultType()->tryGetSubcolumnType(rest.getFullName()))
-                        return true;
-                }
+                IdentifierView rest(identifier);
+                rest.popFirst(*prefix_size);
+                DataTypePtr type = array_join_column->getResultType();
+                if (!rest.empty())
+                    type = type->tryGetSubcolumnType(rest.getFullName());
+                if (readingIsUsableForLookup(type, identifier_lookup))
+                    return true;
             }
         }
     }
