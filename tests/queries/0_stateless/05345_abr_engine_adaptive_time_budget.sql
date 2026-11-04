@@ -1,5 +1,6 @@
--- Tags: no-random-settings
--- ^ the timing of the test depends on reading the parts one after another
+-- Tags: no-random-settings, no-sanitizers
+-- no-random-settings: the timing of the test depends on reading the parts one after another.
+-- no-sanitizers: the test compares wall-clock time budgets with sub-second margins, which sanitizer builds exceed.
 
 -- Test: the execution time of an attempt is the time the query has left, divided by the candidate tables left.
 --

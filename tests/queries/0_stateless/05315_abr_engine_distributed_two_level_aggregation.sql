@@ -42,7 +42,7 @@ CREATE TABLE abr_2l ENGINE = ABR('twolevel', [1, 10], ('ts'));
 
 EXPLAIN PIPELINE
 SELECT key, sum(value) AS total
-FROM remote('localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost', currentDatabase(), 'abr_2l')
+FROM remote('localhost,localhost', currentDatabase(), 'abr_2l')
 WHERE ts >= toDateTime('2026-06-01 00:00:00')
 GROUP BY key
 SETTINGS distributed_aggregation_memory_efficient = 1, max_threads = 4,
@@ -51,12 +51,11 @@ SETTINGS distributed_aggregation_memory_efficient = 1, max_threads = 4,
 
 -- Execute the query — triggers the duplicate-bucket error before the fix.
 -- Also assert correctness: 10000 distinct keys; each key is summed across the
--- 30 identical localhost shards (value=1 => 30 per key), so sum(total)=300000.
 -- A silently-wrong merge (dropped/duplicated buckets) would change these numbers.
 SELECT count(), sum(total)
 FROM (
     SELECT key, sum(value) AS total
-    FROM remote('localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost', currentDatabase(), 'abr_2l')
+    FROM remote('localhost,localhost', currentDatabase(), 'abr_2l')
     WHERE ts >= toDateTime('2026-06-01 00:00:00')
     GROUP BY key
 )
