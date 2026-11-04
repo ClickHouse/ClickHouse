@@ -14,18 +14,13 @@ import { Image } from "/snippets/components/Image.jsx";
 
 <BetaBadge label="Beta offering" />
 
-<Warning>
-This guide needs review for fully managed ClickHouse Observability. It has been carried over from the Self-managed guide. Verify the Cloud access prerequisites, built-in roles, permission scopes, and security policies for this offering.
-</Warning>
-
 ClickHouse Observability includes role-based access control (RBAC) so you can define custom roles with fine-grained permissions over [dashboards](/clickstack/observability/features/dashboards/overview), [saved searches](/clickstack/observability/features/search), sources, [alerts](/clickstack/observability/features/alerts), webhooks, and notebooks. Permissions work at two levels: resource-level access (no access, read, or manage per resource type) and optional fine-grained rules that restrict access to individual resources by name, tag, or ID. The service ships with three built-in roles, and you can create custom roles to match your team's needs.
 
 ## User access prerequisites {#user-access-prerequisites}
 
-The service authenticates through ClickHouse Cloud. Before you can assign observability roles, each user must:
+The service authenticates through ClickHouse Cloud. Users must belong to your ClickHouse Cloud organization and have access to the Observability service. See [Manage cloud users](/products/cloud/guides/security/cloud-access-management/manage-cloud-users) for organization membership.
 
-1. **Be invited to your ClickHouse Cloud organization.** An organization admin invites users from the Cloud console. See [Manage cloud users](/products/cloud/guides/security/cloud-access-management/manage-cloud-users) for details.
-2. **Have SQL Console access on the service.** Navigate to your service's **Settings** → **SQL Console Access** and set the appropriate permission level:
+The Cloud SQL Console access levels map to Observability access as follows:
 
 | Cloud SQL Console access | Observability access |
 |---|---|
@@ -33,16 +28,7 @@ The service authenticates through ClickHouse Cloud. Before you can assign observ
 | **SQL Console Read Only** (Read Only) | Can view observability data and create dashboards. |
 | **No access** | Can't access the service. |
 
-Once a user has Cloud access, they appear under **Team Settings** → **Members & Roles**. Select **Manage in Console** to manage organization membership in ClickHouse Cloud.
-
-<Tabs>
-<Tab title="Cloud Users and roles">
-<Image img="/images/clickstack/rbac/team-page-cloud.webp" alt="ClickHouse Cloud Users and roles page" size="lg"/>
-</Tab>
-<Tab title="Team Settings">
-<Image img="/images/clickstack/rbac/team-page-clickstack.webp" alt="Team Settings page showing team members and their roles" size="lg"/>
-</Tab>
-</Tabs>
+Open **Team Settings → Members & Roles** to view team members and their current Observability roles. Select **Manage in Console** to manage organization membership in ClickHouse Cloud.
 
 ## Built-in roles {#built-in-roles}
 
@@ -115,7 +101,7 @@ The resource types you can control are:
 
 In addition to resource permissions, each role includes two administrative settings:
 
-- **Users** (No Access · Read) — controls whether the role can view team members and their roles. Only Admins can invite, remove, or update users.
+- **Users** (No Access · Read) — controls whether the role can view team members and their roles. Manage organization membership through **Manage in Console**.
 - **Team** (Read · Manage) — controls whether the role can view or modify team-level settings such as security policies and RBAC configuration.
 
 ### Fine-grained access rules {#fine-grained-access-rules}
@@ -163,8 +149,6 @@ A dashboard that matches either rule is accessible.
 
 ## Security policies {#security-policies}
 
-The **Security Policies** section in **Team Settings** provides additional controls.
+Under **Team Settings → Members & Roles → Security Policies**, **Disable data exports** hides download and copy controls for log data, including row details, for everyone on the team. Users can still select text on screen, and the API and MCP server still return data. This setting does not prevent access to the underlying data.
 
-**Generative AI** lets you enable or disable LLM-powered features (such as natural language query generation) powered by Anthropic or Amazon Bedrock. When disabled, no data is sent to AI providers.
-
-<Image img="/images/clickstack/rbac/security-policies.webp" alt="Security policies" size="lg"/>
+Generative AI controls are under **Team Settings → API & Agents → Configure Generative AI**. See [Configure Generative AI](/clickstack/observability/managing/config#generative-ai) for details.
