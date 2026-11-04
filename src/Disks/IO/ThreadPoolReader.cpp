@@ -130,7 +130,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
                     continue;
                 }
 
-                ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
+                ProfileEvents::incrementNonAllocating(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
                 promise.set_exception(
                     std::make_exception_ptr(ErrnoException(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "Cannot read from file {}", fd)));
                 return future;
@@ -187,7 +187,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
 
             if (-1 == res && errno != EINTR)
             {
-                ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
+                ProfileEvents::incrementNonAllocating(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
                 throw ErrnoException(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "Cannot read from file {}", fd);
             }
 

@@ -152,8 +152,22 @@ KeeperRequestDispatcher::KeeperRequestDispatcher(KeeperServer * server_, KeeperS
     if (!special_response_router)
         throw Exception(DB::ErrorCodes::LOGICAL_ERROR, "KeeperRequestDispatcher requires a special response router");
 
-    /// Raft callbacks can publish this server metric from arbitrary threads during shutdown.
-    ProfileEvents::global_counters.preallocate(ProfileEvents::KeeperCommitsFailed);
+    /// These server metrics are also published by Raft callbacks and rejection paths.
+    /// Reserve globally before starting threads; first publication must not allocate under memory pressure.
+    for (const auto event :
+            {
+             ProfileEvents::KeeperCommitsFailed,
+             ProfileEvents::KeeperBatchMaxCount,
+             ProfileEvents::KeeperBatchMaxTotalSize,
+             ProfileEvents::KeeperBatchMaxReadCount,
+             ProfileEvents::KeeperBatchMaxReadTotalSize,
+             ProfileEvents::KeeperStaleRequestsSkipped,
+             ProfileEvents::KeeperRequestRejectedDueToSoftMemoryLimitCount,
+             ProfileEvents::KeeperWriteBatchCount,
+             ProfileEvents::KeeperWriteBatchTotalRequests,
+             ProfileEvents::KeeperReadBatchCount,
+             ProfileEvents::KeeperReadBatchTotalRequests})
+        ProfileEvents::global_counters.preallocate(event);
     const auto & coordination_settings = keeper_context->getCoordinationSettings();
     size_t max_request_queue_size = coordination_settings[CoordinationSetting::max_request_queue_size];
     requests_queue.init(max_request_queue_size);
@@ -781,22 +795,22 @@ void KeeperRequestDispatcher::dispatchThread()
                 {
                     if (batch_subrequests >= max_batch_size)
                     {
-                        ProfileEvents::increment(ProfileEvents::KeeperBatchMaxCount, 1);
+                        ProfileEvents::global_counters.incrementNonAllocating(ProfileEvents::KeeperBatchMaxCount, 1);
                         return false;
                     }
                     if (batch_bytes >= max_batch_bytes_size)
                     {
-                        ProfileEvents::increment(ProfileEvents::KeeperBatchMaxTotalSize, 1);
+                        ProfileEvents::global_counters.incrementNonAllocating(ProfileEvents::KeeperBatchMaxTotalSize, 1);
                         return false;
                     }
                     if (reads_subrequests >= max_read_batch_size)
                     {
-                        ProfileEvents::increment(ProfileEvents::KeeperBatchMaxReadCount, 1);
+                        ProfileEvents::global_counters.incrementNonAllocating(ProfileEvents::KeeperBatchMaxReadCount, 1);
                         return false;
                     }
                     if (reads_bytes >= max_read_batch_bytes_size)
                     {
-                        ProfileEvents::increment(ProfileEvents::KeeperBatchMaxReadTotalSize, 1);
+                        ProfileEvents::global_counters.incrementNonAllocating(ProfileEvents::KeeperBatchMaxReadTotalSize, 1);
                         return false;
                     }
                     return true;
@@ -813,7 +827,7 @@ void KeeperRequestDispatcher::dispatchThread()
                         auto it = sessions.find(request.session_id);
                         if (it == sessions.end() || it->second.dead.load())
                         {
-                            ProfileEvents::increment(ProfileEvents::KeeperStaleRequestsSkipped);
+                            ProfileEvents::global_counters.incrementNonAllocating(ProfileEvents::KeeperStaleRequestsSkipped);
                             continue;
                         }
                         session = &it->second;
@@ -828,7 +842,7 @@ void KeeperRequestDispatcher::dispatchThread()
 
                     if (is_exceeding_memory_soft_limit && checkIfRequestIncreaseMem(request.request))
                     {
-                        ProfileEvents::increment(ProfileEvents::KeeperRequestRejectedDueToSoftMemoryLimitCount);
+                        ProfileEvents::global_counters.incrementNonAllocating(ProfileEvents::KeeperRequestRejectedDueToSoftMemoryLimitCount);
                         LOG_WARNING(
                             log,
                             "Processing requests refused because of max_memory_usage_soft_limit {}, the total tracked memory is {}, RSS is {}, request type is {}",
@@ -925,8 +939,8 @@ void KeeperRequestDispatcher::dispatchThread()
             {
                 HistogramMetrics::observe(HistogramMetrics::KeeperCurrentBatchSizeElements, static_cast<HistogramMetrics::Value>(batch_subrequests));
                 HistogramMetrics::observe(HistogramMetrics::KeeperCurrentBatchSizeBytes, static_cast<HistogramMetrics::Value>(batch_bytes));
-                ProfileEvents::increment(ProfileEvents::KeeperWriteBatchCount);
-                ProfileEvents::increment(ProfileEvents::KeeperWriteBatchTotalRequests, requests.size());
+                ProfileEvents::global_counters.incrementNonAllocating(ProfileEvents::KeeperWriteBatchCount);
+                ProfileEvents::global_counters.incrementNonAllocating(ProfileEvents::KeeperWriteBatchTotalRequests, requests.size());
 
                 LOG_TEST(log, "Starting batch {}, {} bytes, {} writes, {} reads ({} of them are at the end of batch). First request: {}", batch_idx, batch_bytes, requests.size(), reads_requests, late_reads.size(), requests[0].request->toString());
 
@@ -1152,8 +1166,8 @@ void KeeperRequestDispatcher::onCommit(const KeeperRequestForSession & request_f
 
 void KeeperRequestDispatcher::executeReads(KeeperRequestsForSessions reads)
 {
-    ProfileEvents::increment(ProfileEvents::KeeperReadBatchCount);
-    ProfileEvents::increment(ProfileEvents::KeeperReadBatchTotalRequests, reads.size());
+    ProfileEvents::global_counters.incrementNonAllocating(ProfileEvents::KeeperReadBatchCount);
+    ProfileEvents::global_counters.incrementNonAllocating(ProfileEvents::KeeperReadBatchTotalRequests, reads.size());
 
     using namespace std::chrono;
     auto now_ms = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();

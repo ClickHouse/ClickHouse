@@ -80,6 +80,7 @@
     M(LocalThreadPoolShrinks) \
     M(JemallocFailedAllocationSampleTracking) \
     M(JemallocFailedDeallocationSampleTracking) \
+    M(ReadBufferFromFileDescriptorReadFailed) \
     M(WriteBufferFromFileDescriptorWrite) \
     M(WriteBufferFromFileDescriptorWriteFailed) \
     M(DiskWriteElapsedMicroseconds) \

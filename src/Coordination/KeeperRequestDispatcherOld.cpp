@@ -111,8 +111,19 @@ KeeperRequestDispatcherOld::KeeperRequestDispatcherOld(KeeperServer * server_, K
     if (!special_response_router)
         throw Exception(DB::ErrorCodes::LOGICAL_ERROR, "KeeperRequestDispatcherOld requires a special response router");
 
-    /// Raft callbacks can publish this server metric from arbitrary threads during shutdown.
-    ProfileEvents::global_counters.preallocate(ProfileEvents::KeeperCommitsFailed);
+    /// These server metrics are also published by Raft callbacks and rejection paths.
+    /// Reserve globally before starting threads; first publication must not allocate under memory pressure.
+    for (const auto event :
+            {
+             ProfileEvents::KeeperCommitsFailed,
+             ProfileEvents::KeeperStaleRequestsSkipped,
+             ProfileEvents::KeeperReadBatchCount,
+             ProfileEvents::KeeperReadBatchTotalRequests,
+             ProfileEvents::KeeperRequestRejectedDueToSoftMemoryLimitCount,
+             ProfileEvents::KeeperBatchMaxCount,
+             ProfileEvents::KeeperBatchMaxTotalSize,
+             ProfileEvents::KeeperCommitWaitElapsedMicroseconds})
+        ProfileEvents::global_counters.preallocate(event);
     requests_queue = std::make_unique<RequestsQueue>(keeper_context->getCoordinationSettings()[CoordinationSetting::max_request_queue_size]);
     request_thread = ThreadFromGlobalPool([this] { requestThread(); });
     responses_thread = ThreadFromGlobalPool([this] { responseThread(); });
@@ -161,7 +172,7 @@ void KeeperRequestDispatcherOld::onCommit(const KeeperRequestForSession & reques
             }
             if (!last_checked_session_live)
             {
-                ProfileEvents::increment(ProfileEvents::KeeperStaleRequestsSkipped);
+                ProfileEvents::global_counters.incrementNonAllocating(ProfileEvents::KeeperStaleRequestsSkipped);
                 read_request.request->spans.maybeFinalize(
                     KeeperSpan::ReadWaitForWrite,
                     [&]
@@ -200,8 +211,8 @@ void KeeperRequestDispatcherOld::onCommit(const KeeperRequestForSession & reques
 
         if (server->isLeaderAlive())
         {
-            ProfileEvents::increment(ProfileEvents::KeeperReadBatchCount);
-            ProfileEvents::increment(ProfileEvents::KeeperReadBatchTotalRequests, pending_reads.size());
+            ProfileEvents::global_counters.incrementNonAllocating(ProfileEvents::KeeperReadBatchCount);
+            ProfileEvents::global_counters.incrementNonAllocating(ProfileEvents::KeeperReadBatchTotalRequests, pending_reads.size());
 
             using namespace std::chrono;
             auto now_ms = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
@@ -324,7 +335,7 @@ void KeeperRequestDispatcherOld::requestThread()
                     }
                     if (!last_checked_session_live)
                     {
-                        ProfileEvents::increment(ProfileEvents::KeeperStaleRequestsSkipped);
+                        ProfileEvents::global_counters.incrementNonAllocating(ProfileEvents::KeeperStaleRequestsSkipped);
 
                         /// Finalize the dispatcher_requests_queue span that was initialized
                         /// when the request was enqueued. Without this the span leaks because
@@ -357,7 +368,7 @@ void KeeperRequestDispatcherOld::requestThread()
             Int64 mem_soft_limit = keeper_context->getKeeperMemorySoftLimit();
             if (server->isExceedingMemorySoftLimit() && checkIfRequestIncreaseMem(request.request))
             {
-                ProfileEvents::increment(ProfileEvents::KeeperRequestRejectedDueToSoftMemoryLimitCount, 1);
+                ProfileEvents::global_counters.incrementNonAllocating(ProfileEvents::KeeperRequestRejectedDueToSoftMemoryLimitCount, 1);
                 LOG_WARNING(
                     log,
                     "Processing requests refused because of max_memory_usage_soft_limit {}, the total tracked memory is {}, RSS is {}, request type "
@@ -493,9 +504,9 @@ void KeeperRequestDispatcherOld::requestThread()
             if (!current_batch.empty())
             {
                 if (current_batch.size() >= max_batch_size)
-                    ProfileEvents::increment(ProfileEvents::KeeperBatchMaxCount, 1);
+                    ProfileEvents::global_counters.incrementNonAllocating(ProfileEvents::KeeperBatchMaxCount, 1);
                 else if (current_batch_bytes_size >= max_batch_bytes_size)
-                    ProfileEvents::increment(ProfileEvents::KeeperBatchMaxTotalSize, 1);
+                    ProfileEvents::global_counters.incrementNonAllocating(ProfileEvents::KeeperBatchMaxTotalSize, 1);
 
                 LOG_TEST(log, "Processing requests batch, size: {}, bytes: {}", current_batch.size(), current_batch_bytes_size);
 
@@ -519,7 +530,7 @@ void KeeperRequestDispatcherOld::requestThread()
             if (execute_requests_after_write)
             {
                 Stopwatch watch;
-                SCOPE_EXIT(ProfileEvents::increment(ProfileEvents::KeeperCommitWaitElapsedMicroseconds, watch.elapsedMicroseconds()));
+                SCOPE_EXIT(ProfileEvents::global_counters.incrementNonAllocating(ProfileEvents::KeeperCommitWaitElapsedMicroseconds, watch.elapsedMicroseconds()));
                 if (prev_result)
                     result_buf = forceWaitAndProcessResult(
                         prev_result, prev_batch, /*clear_requests_on_success=*/!execute_requests_after_write);
@@ -570,8 +581,8 @@ void KeeperRequestDispatcherOld::requestThread()
             {
                 if (server->isLeaderAlive())
                 {
-                    ProfileEvents::increment(ProfileEvents::KeeperReadBatchCount);
-                    ProfileEvents::increment(ProfileEvents::KeeperReadBatchTotalRequests, read_batch.size());
+                    ProfileEvents::global_counters.incrementNonAllocating(ProfileEvents::KeeperReadBatchCount);
+                    ProfileEvents::global_counters.incrementNonAllocating(ProfileEvents::KeeperReadBatchTotalRequests, read_batch.size());
 
                     using namespace std::chrono;
                     auto now_ms = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
