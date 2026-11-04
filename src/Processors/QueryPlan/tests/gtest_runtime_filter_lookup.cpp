@@ -263,6 +263,51 @@ TEST(RuntimeFilterLookup, DenseBitsetReplacesPredictedSaturatedBloomFilter)
     EXPECT_EQ(destination.getStats().rows_passed.load(), 3);
 }
 
+TEST(RuntimeFilterLookup, DenseBitsetAllowanceGrowsOnlyWithStatisticsOfTheFilterKey)
+{
+    /// 16 x 1 KiB of bits cover 131072 values, too few for keys up to 1000000. Statistics of 100000 distinct values of
+    /// the filter key raise the allowance to 800000 bytes; statistics of another key do not; nothing exceeds 32 MiB.
+    const auto type = makeUInt64Type();
+    const auto make_filter = [&](std::optional<UInt64> distinct_keys_hint, bool distinct_keys_hint_matches_filter_key)
+    {
+        return std::make_unique<RuntimeFilter>(
+            /*filters_to_merge_=*/0,
+            makeRuntimeFilterConfig(),
+            RuntimeFilter::Adaptive(
+                type, makeGeometry(1_KiB, 1, 3, 0.05), distinct_keys_hint, distinct_keys_hint_matches_filter_key));
+    };
+
+    {
+        SCOPED_TRACE("statistics of the filter key");
+        const ProfileEvents::Count bitsets_before = ProfileEvents::global_counters[ProfileEvents::RuntimeFilterDenseBitsetsBuilt];
+        auto filter = make_filter(100'000, true);
+        filter->insert(makeUInt64Column({0, 1, 2, 1'000'000}));
+        filter->finishInsert();
+        EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::RuntimeFilterDenseBitsetsBuilt] - bitsets_before, 1);
+        expectMask(filter->find(makeUInt64ColumnWithType({0, 1, 2, 3, 999'999, 1'000'000, 1'000'001}, type)), {1, 1, 1, 0, 0, 1, 0});
+        EXPECT_EQ(filter->getStats().rows_checked.load(), 7);
+        EXPECT_EQ(filter->getStats().rows_passed.load(), 4);
+    }
+    {
+        SCOPED_TRACE("statistics of another key");
+        const ProfileEvents::Count bitsets_before = ProfileEvents::global_counters[ProfileEvents::RuntimeFilterDenseBitsetsBuilt];
+        auto filter = make_filter(100'000, false);
+        filter->insert(makeUInt64Column({0, 1, 2, 1'000'000}));
+        filter->finishInsert();
+        EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::RuntimeFilterDenseBitsetsBuilt] - bitsets_before, 0);
+        EXPECT_EQ(countRejectedRows(filter->find(makeUInt64ColumnWithType({0, 1, 2, 1'000'000}, type))), 0);
+    }
+    {
+        SCOPED_TRACE("statistics above the 32 MiB cap");
+        const ProfileEvents::Count bitsets_before = ProfileEvents::global_counters[ProfileEvents::RuntimeFilterDenseBitsetsBuilt];
+        auto filter = make_filter(100'000'000, true);
+        filter->insert(makeUInt64Column({0, 1, 2, 300'000'000}));
+        filter->finishInsert();
+        EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::RuntimeFilterDenseBitsetsBuilt] - bitsets_before, 0);
+        EXPECT_EQ(countRejectedRows(filter->find(makeUInt64ColumnWithType({0, 1, 2, 300'000'000}, type))), 0);
+    }
+}
+
 TEST(RuntimeFilterLookup, DenseBitsetMergesPartialFiltersInAnyRepresentation)
 {
     /// Partial filters of several build streams: exact sets (one empty), bitsets that keep sparse keys as values, and
