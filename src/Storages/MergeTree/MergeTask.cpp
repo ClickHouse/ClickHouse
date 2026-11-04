@@ -392,6 +392,16 @@ static bool dependsOnAnyColumn(const Names & required_columns, const NameSet & c
         required_columns, [&](const String & name) { return Nested::tryGetColumnNameInStorage(name, columns).has_value(); });
 }
 
+/// The skip indexes that `exclude_materialize_skip_indexes_on_merge` excludes from being built by a merge.
+static std::unordered_set<String> getSkipIndexesExcludedFromMerge(const MergeTreeSettings & settings, const ContextPtr & context)
+{
+    auto exclude_indexes_string = settings[MergeTreeSetting::exclude_materialize_skip_indexes_on_merge].toString();
+    if (exclude_indexes_string.empty())
+        return {};
+
+    return parseIdentifiersOrStringLiteralsToSet(exclude_indexes_string, context->getSettingsRef());
+}
+
 /// PK columns are sorted and merged, ordinary columns are gathered using info from merge step
 void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColumns(const std::unordered_set<String> & exclude_index_names) const
 {
@@ -988,11 +998,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     /// Get list of skip indexes to exclude from merge
     std::unordered_set<String> exclude_index_names;
     if ((*merge_tree_settings)[MergeTreeSetting::materialize_skip_indexes_on_merge])
-    {
-        auto exclude_indexes_string = (*merge_tree_settings)[MergeTreeSetting::exclude_materialize_skip_indexes_on_merge].toString();
-        if (!exclude_indexes_string.empty())
-            exclude_index_names = parseIdentifiersOrStringLiteralsToSet(exclude_indexes_string, global_ctx->context->getSettingsRef());
-    }
+        exclude_index_names = getSkipIndexesExcludedFromMerge(*merge_tree_settings, global_ctx->context);
 
     const bool has_block_columns = enabledBlockNumberColumn(global_ctx) && enabledBlockOffsetColumn(global_ctx);
     global_ctx->minmax_idx_columns = MergeTreeData::getMinMaxColumns(global_ctx->metadata_snapshot->getPartitionKey(), global_ctx->data_settings, has_block_columns ? MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET : MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY);
@@ -1297,7 +1303,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
     /// A column fully expired by TTL is not read, so a text index that depends on it can be neither built
     /// from its values nor taken from the source parts, which describe the values before they expired.
-    /// The new part is left without such an index, as a part cleared by `createTaskToClearExpiredColumns`.
+    /// The new part is left without such an index.
     if (!global_ctx->columns_fully_expired_by_ttl.empty())
     {
         auto depends_on_expired_column = [&](const IndexDescription & index)
@@ -4072,12 +4078,32 @@ MutateTaskPtr MergeTask::ExecuteAndFinalizeHorizontalPart::createTaskToClearExpi
     const auto & expired = global_ctx->columns_fully_expired_by_ttl;
     auto depends_on_expired_column = [&](const Names & required_columns) { return dependsOnAnyColumn(required_columns, expired); };
 
-    /// `CLEAR COLUMN` rebuilds everything that depends on the column from its default value, which reads the
-    /// column. Only a projection needs that. A skip index is cleared instead: a part without the index is
-    /// just not filtered by it. Otherwise the column is dropped from the part like by `DROP COLUMN`, which
+    /// A skip index that the merge would not build (see `materialize_skip_indexes_on_merge`) is cleared.
+    const bool merge_builds_indexes = (*global_ctx->data_settings)[MergeTreeSetting::materialize_skip_indexes_on_merge];
+    const auto indexes_excluded_from_merge = getSkipIndexesExcludedFromMerge(*global_ctx->data_settings, global_ctx->context);
+
+    /// `CLEAR COLUMN` rebuilds the projections and the skip indexes that depend on the column from its default
+    /// value without reading it, as the merge builds them. A skip index that also reads a column that is not
+    /// dropped, or reads only a subcolumn of the column (which `CLEAR COLUMN` does not rebuild), is left to the
+    /// regular merge. Without dependencies, the column is dropped from the part like by `DROP COLUMN`, which
     /// only removes its files, while the table keeps the column.
-    const bool rebuild_dependencies = std::ranges::any_of(
+    bool rebuild_dependencies = std::ranges::any_of(
         metadata_snapshot->getProjections(), [&](const auto & projection) { return depends_on_expired_column(projection.getRequiredColumns()); });
+
+    Names indexes_to_clear;
+    for (const auto & index : metadata_snapshot->getSecondaryIndices())
+    {
+        const auto & required_columns = index.expression->getRequiredColumns();
+        if (!depends_on_expired_column(required_columns))
+            continue;
+
+        if (!merge_builds_indexes || indexes_excluded_from_merge.contains(index.name))
+            indexes_to_clear.push_back(index.name);
+        else if (std::ranges::all_of(required_columns, [&](const String & name) { return expired.contains(name); }))
+            rebuild_dependencies = true;
+        else
+            return nullptr;
+    }
 
     auto commands = std::make_shared<MutationCommands>();
     for (const auto & column : expired)
@@ -4090,11 +4116,8 @@ MutateTaskPtr MergeTask::ExecuteAndFinalizeHorizontalPart::createTaskToClearExpi
     if (commands->empty() || commands->size() == part->getColumns().size())
         return nullptr;
 
-    for (const auto & index : metadata_snapshot->getSecondaryIndices())
-    {
-        if (depends_on_expired_column(index.expression->getRequiredColumns()))
-            commands->push_back(MutationCommand{.type = MutationCommand::DROP_INDEX, .column_name = index.name, .clear = true});
-    }
+    for (const auto & index_name : indexes_to_clear)
+        commands->push_back(MutationCommand{.type = MutationCommand::DROP_INDEX, .column_name = index_name, .clear = true});
 
     return global_ctx->mutator->mutatePartToTemporaryPart(
         future_part,

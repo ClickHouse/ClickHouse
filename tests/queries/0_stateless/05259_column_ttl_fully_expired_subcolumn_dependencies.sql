@@ -24,7 +24,8 @@ SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, ttl_o
     vertical_merge_algorithm_min_rows_to_activate = 1, vertical_merge_algorithm_min_columns_to_activate = 1,
     vertical_merge_algorithm_min_bytes_to_activate = 0;
 
--- A single part: the other columns are hardlinked.
+-- A single part: the other columns are not hardlinked, because an index on a subcolumn of the dropped column, or
+-- on the dropped column and another one, is built by a regular merge.
 INSERT INTO t_ttl_subcolumn_deps SELECT '2020-01-01', number, 'foo', '{"a" : 1}' FROM numbers(100);
 
 SELECT 'single part';

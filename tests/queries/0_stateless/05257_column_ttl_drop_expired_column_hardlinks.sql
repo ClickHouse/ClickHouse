@@ -1,5 +1,6 @@
 -- A column whose every value has expired by its TTL is dropped by a merge without reading it. When that is
--- all a merge of a single part has to do, the files of the other columns are hardlinked instead of rewritten.
+-- all a merge of a single part has to do, the files of the other columns are hardlinked instead of rewritten,
+-- and a skip index that reads only the dropped column is rebuilt from the default value of the column.
 -- With `ttl_only_drop_columns`, a column TTL is applied only by dropping such fully expired columns.
 -- Background TTL merges are disabled (`max_number_of_merges_with_ttl_in_pool = 0`), `OPTIMIZE` merges instead.
 
@@ -27,6 +28,7 @@ OPTIMIZE TABLE t_ttl_hardlink FINAL;
 SELECT count(), sum(key), countIf(props::String = '{}') FROM t_ttl_hardlink;
 SELECT count() FROM t_ttl_hardlink WHERE has(JSONAllPaths(props), 'a');
 SELECT count() FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_ttl_hardlink' AND active AND column = 'props';
+SELECT secondary_indices_uncompressed_bytes > 0 FROM system.parts WHERE database = currentDatabase() AND table = 't_ttl_hardlink' AND active;
 CHECK TABLE t_ttl_hardlink SETTINGS check_query_single_value_result = 1;
 
 SYSTEM FLUSH LOGS part_log;
