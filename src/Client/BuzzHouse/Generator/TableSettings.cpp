@@ -708,7 +708,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings choices = {"'v0_initial'", "'v1_with_codec'", "'v2_with_positions'"};
+             static const DB::Strings choices = {"'v0_initial'", "'v1_with_codec'", "'v2_with_positions'", "'v3_with_dictionary_encoding'"};
              return rg.pickRandomly(choices);
          },
          {},
