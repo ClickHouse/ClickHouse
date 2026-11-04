@@ -2,6 +2,7 @@
 
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Processors/Port.h>
 
@@ -25,8 +26,9 @@ void ReadInOrderReadAheadTracker::setFirstRow(size_t input, const Chunk & chunk)
 
     const auto & columns = chunk.getColumns();
     state.first_row.reserve(sort_column_positions.size());
+    /// Without `LowCardinality`, so that one row does not keep the whole dictionary alive.
     for (size_t position : sort_column_positions)
-        state.first_row.push_back(columns[position]->cut(0, 1)->convertToFullIfWrapped());
+        state.first_row.push_back(recursiveRemoveLowCardinality(columns[position]->cut(0, 1)->convertToFullIfWrapped()));
 
     size_t slot = num_published.fetch_add(1, std::memory_order_relaxed);
     if (slot < published.size())

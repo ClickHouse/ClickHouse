@@ -21,6 +21,9 @@ class Block;
 class ReadInOrderReadAheadTracker
 {
 public:
+    /// A paused input keeps its reader open, so only merges with at most this many inputs use a tracker.
+    static constexpr size_t max_inputs = 128;
+
     ReadInOrderReadAheadTracker(size_t num_inputs, const Block & header, const SortDescription & description_);
 
     /// Called once per input, with its first chunk that has rows.
@@ -39,9 +42,6 @@ public:
     size_t rowsProducedBefore(size_t input, InputsBefore & inputs_before) const;
 
 private:
-    /// Bounds the state and the work of each input of a merge with many inputs.
-    static constexpr size_t max_compared_inputs = 128;
-
     struct InputState
     {
         std::atomic<size_t> produced{0};
@@ -53,8 +53,8 @@ private:
     const SortDescription description;
     VectorWithMemoryTracking<size_t> sort_column_positions;
     VectorWithMemoryTracking<InputState> inputs; /// Sized in the constructor, never resized.
-    /// `input + 1` for the first inputs that called `setFirstRow`, in that order; 0 in a slot not written yet.
-    std::array<std::atomic<size_t>, max_compared_inputs> published{};
+    /// `input + 1` for the inputs that called `setFirstRow`, in that order; 0 in a slot not written yet.
+    std::array<std::atomic<size_t>, max_inputs> published{};
     std::atomic<size_t> num_published{0};
 };
 

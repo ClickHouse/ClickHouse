@@ -57,10 +57,10 @@ INSERT INTO tab_ovl SELECT 1, if(number = 0, 0, 100000 + number - 1), 1 FROM num
 INSERT INTO tab_ovl SELECT 1, 1 + number, 1 FROM numbers(4999) SETTINGS max_block_size = 100000, max_insert_block_size = 100000, min_insert_block_size_rows = 100000, min_insert_block_size_bytes = 0, max_insert_threads = 1;
 INSERT INTO tab_ovl SELECT 1, 500000 + number, number % 64 = 0 FROM numbers(32768) SETTINGS max_block_size = 100000, max_insert_block_size = 100000, min_insert_block_size_rows = 100000, min_insert_block_size_bytes = 0, max_insert_threads = 1;
 
--- 200 one-granule parts, more inputs than the tracker compares with.
-CREATE TABLE tab_many (k UInt8, x UInt64, v UInt8) ENGINE = MergeTree PARTITION BY intDiv(x, 64) ORDER BY (k, x)
+-- 200 parts of 16 granules, one matching row per 8.
+CREATE TABLE tab_many (k UInt8, x UInt64, v UInt8) ENGINE = MergeTree PARTITION BY intDiv(x, 1024) ORDER BY (k, x)
 SETTINGS index_granularity = 64, index_granularity_bytes = '10Mi';
-INSERT INTO tab_many SELECT 1, number, number % 7 = 0 FROM numbers(12800) SETTINGS max_partitions_per_insert_block = 200, max_block_size = 100000, max_insert_block_size = 100000, min_insert_block_size_rows = 100000, min_insert_block_size_bytes = 0, max_insert_threads = 1;
+INSERT INTO tab_many SELECT 1, number, number % 8 = 0 FROM numbers(204800) SETTINGS max_partitions_per_insert_block = 200, max_block_size = 1000000, max_insert_block_size = 1000000, min_insert_block_size_rows = 1000000, min_insert_block_size_bytes = 0, max_insert_threads = 1;
 
 -- T1, descending: the slow rows are the top 2048 rows of part 3.
 SELECT x FROM tab_desc WHERE k = 1 AND (x < 330720 OR x >= 332768 OR sleepEachRow(0.0005) = 0) AND v = 1
@@ -70,11 +70,15 @@ ORDER BY x DESC LIMIT 100 FORMAT Null SETTINGS max_threads = 1, log_comment = '0
 SELECT x FROM tab_asc WHERE k = 1 AND (x < 400000 OR x >= 402048 OR sleepEachRow(0.0005) = 0) AND v = 1
 ORDER BY x LIMIT 100 FORMAT Null SETTINGS max_threads = 1, log_comment = '05497_t2';
 
+-- T5: with more than 128 inputs nothing pauses, so every input reads to its own LIMIT.
+SELECT x FROM tab_many WHERE k = 1 AND v = 1 ORDER BY x DESC LIMIT 100 FORMAT Null
+SETTINGS max_threads = 1, read_in_order_two_level_merge_threshold = 1000, log_comment = '05497_t5';
+
 SYSTEM FLUSH LOGS query_log, processors_profile_log;
 SET max_block_size = DEFAULT;
 
--- Inputs, inputs with a virtual row (none: the key prefix is fixed), inputs that read at least the LIMIT (only the
--- dense one).
+-- Inputs, inputs with a virtual row (none: the key prefix is fixed), inputs that read at least the LIMIT (in T1 and
+-- T2 only the dense one).
 SELECT
     log_comment,
     (
@@ -86,7 +90,7 @@ FROM
 (
     SELECT log_comment, argMax(query_id, event_time_microseconds) AS query_id
     FROM system.query_log
-    WHERE current_database = currentDatabase() AND log_comment IN ('05497_t1', '05497_t2') AND type = 'QueryFinish'
+    WHERE current_database = currentDatabase() AND log_comment IN ('05497_t1', '05497_t2', '05497_t5') AND type = 'QueryFinish'
         AND event_date >= today() - 1
     GROUP BY log_comment
 ) AS q
@@ -95,18 +99,20 @@ SET max_block_size = 128;
 
 -- T3: the results are unchanged, also through the preliminary merge.
 SELECT 'desc', sum(x), count() FROM (SELECT x FROM tab_desc WHERE k = 1 AND (x < 330720 OR x >= 332768 OR sleepEachRow(0.0005) = 0) AND v = 1 ORDER BY x DESC LIMIT 100);
-SELECT 'desc', sum(x), count() FROM (SELECT x FROM tab_desc WHERE k = 1 AND (x < 330720 OR x >= 332768 OR sleepEachRow(0.0005) = 0) AND v = 1 ORDER BY x DESC LIMIT 100) SETTINGS read_in_order_two_level_merge_threshold = 0;
+SELECT 'desc', sum(x), count() FROM (SELECT x FROM tab_desc WHERE k = 1 AND (x < 330720 OR x >= 332768 OR sleepEachRow(0.0005) = 0) AND v = 1 ORDER BY x DESC LIMIT 100) SETTINGS read_in_order_two_level_merge_threshold = 0, max_threads = 2;
 SELECT 'desc', sum(x), count() FROM (SELECT x FROM tab_desc WHERE k = 1 AND v = 1 ORDER BY x DESC LIMIT 100) SETTINGS optimize_read_in_order = 0;
 SELECT 'asc', sum(x), count() FROM (SELECT x FROM tab_asc WHERE k = 1 AND (x < 400000 OR x >= 402048 OR sleepEachRow(0.0005) = 0) AND v = 1 ORDER BY x LIMIT 100);
-SELECT 'asc', sum(x), count() FROM (SELECT x FROM tab_asc WHERE k = 1 AND (x < 400000 OR x >= 402048 OR sleepEachRow(0.0005) = 0) AND v = 1 ORDER BY x LIMIT 100) SETTINGS read_in_order_two_level_merge_threshold = 0;
+SELECT 'asc', sum(x), count() FROM (SELECT x FROM tab_asc WHERE k = 1 AND (x < 400000 OR x >= 402048 OR sleepEachRow(0.0005) = 0) AND v = 1 ORDER BY x LIMIT 100) SETTINGS read_in_order_two_level_merge_threshold = 0, max_threads = 2;
 SELECT 'asc', sum(x), count() FROM (SELECT x FROM tab_asc WHERE k = 1 AND v = 1 ORDER BY x LIMIT 100) SETTINGS optimize_read_in_order = 0;
+SELECT 'premerge',
+    (SELECT countIf(explain LIKE '%MergingSortedTransform%') FROM (EXPLAIN PIPELINE SELECT x FROM tab_desc WHERE k = 1 AND v = 1 ORDER BY x DESC LIMIT 100 SETTINGS read_in_order_two_level_merge_threshold = 0, max_threads = 2)) > 1,
+    (SELECT countIf(explain LIKE '%MergingSortedTransform%') FROM (EXPLAIN PIPELINE SELECT x FROM tab_asc WHERE k = 1 AND v = 1 ORDER BY x LIMIT 100 SETTINGS read_in_order_two_level_merge_threshold = 0, max_threads = 2)) > 1;
 
 -- T4: a paused overlapping input resumes when the merge needs it.
 SELECT 'ovl', sum(x), count() FROM (SELECT x FROM tab_ovl WHERE k = 1 AND (x < 500000 OR x >= 502048 OR sleepEachRow(0.0005) = 0) AND v = 1 ORDER BY x LIMIT 1000);
 SELECT 'ovl', sum(x), count() FROM (SELECT x FROM tab_ovl WHERE k = 1 AND v = 1 ORDER BY x LIMIT 1000) SETTINGS optimize_read_in_order = 0;
 
--- T5: a merge with more than 128 inputs.
-SELECT 'many', toUInt32(extract(explain, 'BufferChunks × (\\d+)')) > 128 FROM (EXPLAIN PIPELINE SELECT x FROM tab_many WHERE k = 1 AND v = 1 ORDER BY x DESC LIMIT 100 SETTINGS max_threads = 1, read_in_order_two_level_merge_threshold = 1000) WHERE explain LIKE '%BufferChunks%';
+-- T5: the results are unchanged.
 SELECT 'many', sum(x), count() FROM (SELECT x FROM tab_many WHERE k = 1 AND v = 1 ORDER BY x DESC LIMIT 100) SETTINGS max_threads = 1, read_in_order_two_level_merge_threshold = 1000;
 SELECT 'many', sum(x), count() FROM (SELECT x FROM tab_many WHERE k = 1 AND v = 1 ORDER BY x DESC LIMIT 100) SETTINGS optimize_read_in_order = 0;
 
