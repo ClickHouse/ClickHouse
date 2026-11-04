@@ -146,6 +146,32 @@ def test_receiver_resolves_additional_table_filters_with_its_own_settings(
     assert select("SELECT count() FROM dist", serialize_query_plan, **filters) == "1\n"
 
 
+@pytest.fixture
+def lookup_table():
+    for node, value in ((initiator, 7), (receiver, 3)):
+        node.query("CREATE TABLE lim (v UInt32) ENGINE = MergeTree ORDER BY v")
+        node.query(f"INSERT INTO lim VALUES ({value})")
+        node.query("GRANT SELECT ON default.lim TO u")
+    yield
+    for node in (initiator, receiver):
+        node.query("DROP TABLE IF EXISTS lim")
+
+
+# A scalar subquery that reads a table gets the rows of the receiver there, so an entry of the query with the same text
+# does not replace the entry of the receiver.
+@pytest.mark.parametrize("serialize_query_plan", [0, 1])
+def test_receiver_evaluates_its_own_scalar_subquery_over_a_table(
+    receiver_profile, lookup_table, serialize_query_plan
+):
+    receiver_profile(
+        "additional_table_filters = '{\\'default.m\\': \\'x < (SELECT max(v) FROM default.lim)\\'}'"
+    )
+    filters = {
+        "additional_table_filters": "{'default.m': 'x < (SELECT max(v) FROM default.lim)'}"
+    }
+    assert select("SELECT count() FROM dist", serialize_query_plan, **filters) == "3\n"
+
+
 @pytest.mark.parametrize("serialize_query_plan", [0, 1])
 def test_receiver_checks_its_own_max_columns_to_read(
     receiver_profile, serialize_query_plan
