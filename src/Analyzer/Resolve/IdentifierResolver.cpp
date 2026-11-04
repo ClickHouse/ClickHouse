@@ -923,7 +923,8 @@ static bool isMatchedOnExactBoundaryByOtherTableExpression(
     return false;
 }
 
-/// A table name of several parts (`a.b` for the table `a.b`) is a qualifier only since table names are hierarchical (see
+/// A table name of several parts (`a.b` for the table `a.b`), or relative to the current database (`t` for the table
+/// `db`.`ns.t` inside `USE db.ns`), is a qualifier only since table names are hierarchical (see
 /// `DatabaseCatalog`), so it must not take precedence over the qualifiers that already denoted another table expression
 /// before: the explicit alias of another table expression equal to the first part (`a` in `... CROSS JOIN t AS a`), or the
 /// database and the table name of another table expression matched exactly (the table `b` of the database `a`).
@@ -950,6 +951,16 @@ static bool isQualifiedByOtherTableExpression(
             return true;
     }
     return false;
+}
+
+/// Whether the table name of the table expression matched `table_name_parts` parts of the identifier in the way that only
+/// hierarchical names allow: with several parts (`a.b` for the table `a.b`), or relative to the current database (`t` for
+/// the table `db`.`ns.t` inside `USE db.ns`). Such a match gives way to the qualifiers of the other table expressions, see
+/// `isQualifiedByOtherTableExpression`. A single part equal to the table name is a qualifier as before.
+static bool isHierarchicalTableNameMatch(
+    const Identifier & identifier, size_t table_name_parts, const AnalysisTableExpressionData & table_expression_data)
+{
+    return table_name_parts > 1 || (table_name_parts == 1 && identifier.getParts().front() != table_expression_data.table_name);
 }
 
 IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpression(const IdentifierLookup & identifier_lookup,
@@ -979,7 +990,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
         /// The whole identifier is the table name or the database and the table name. Both are hierarchical
         /// (`db.ns.t`, see `DatabaseCatalog`), so they can cover any number of parts.
         if (table_expression_data.matchTableName(identifier, scope.context) == parts_size
-            && !(parts_size > 1
+            && !(isHierarchicalTableNameMatch(identifier, parts_size, table_expression_data)
                  && isQualifiedByOtherTableExpression(
                      identifier, parts_size, false /*check_alias*/, table_expression_node, scope)))
             return { .resolved_identifier = table_expression_node, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
@@ -1022,7 +1033,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
         const bool prefix_matches_alias
             = table_expression_node->hasAlias() && path_start == table_expression_node->getAlias();
         /// A table name of several parts gives way to the qualifiers of the other table expressions, like below.
-        if (!prefix_matches_alias && table_name_parts_compat > 1
+        if (!prefix_matches_alias && isHierarchicalTableNameMatch(identifier, table_name_parts_compat, table_expression_data)
             && isQualifiedByOtherTableExpression(
                 identifier, table_name_parts_compat, true /*check_alias*/, table_expression_node, scope))
             table_name_parts_compat = 0;
@@ -1133,7 +1144,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
     /// hierarchical names, rather than the column `c` qualified with the longer table name.
     size_t table_name_parts = table_expression_data.matchTableName(identifier, scope.context);
     const bool alias_matches = table_expression_node->hasAlias() && path_start == table_expression_node->getAlias();
-    if (!alias_matches && table_name_parts > 1
+    if (!alias_matches && isHierarchicalTableNameMatch(identifier, table_name_parts, table_expression_data)
         && isQualifiedByOtherTableExpression(
             identifier, table_name_parts, true /*check_alias*/, table_expression_node, scope))
         table_name_parts = 0;
