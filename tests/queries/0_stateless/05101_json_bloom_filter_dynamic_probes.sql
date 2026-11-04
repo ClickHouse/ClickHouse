@@ -1,7 +1,7 @@
 SET allow_experimental_json_bloom_filter_index = 1;
 DROP TABLE IF EXISTS json_bf_dynamic_probes;
 CREATE TABLE json_bf_dynamic_probes (id UInt64, j JSON, INDEX bf j TYPE jsonbf_v1(false_positive_rate = 0.0001) GRANULARITY 1)
-ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1, index_granularity_bytes = 0;
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
 
 -- `RowBinary` preserves the runtime types; casting a map to `JSON` serializes and infers them again.
 INSERT INTO json_bf_dynamic_probes
@@ -36,7 +36,7 @@ SELECT 'out of range', count() FROM json_bf_dynamic_probes WHERE j.x = '-42' SET
 
 -- Keep the same probes correct when every path and runtime type is stored in shared data.
 CREATE TABLE json_bf_dynamic_shared (id UInt64, j JSON(max_dynamic_paths = 0, max_dynamic_types = 0), INDEX bf j TYPE jsonbf_v1() GRANULARITY 1)
-ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1, index_granularity_bytes = 0;
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
 INSERT INTO json_bf_dynamic_shared
 SELECT * FROM format(RowBinary, 'id UInt64, j JSON(max_dynamic_paths = 0, max_dynamic_types = 0)', concat(
     formatRowNoNewline('RowBinary', toUInt64(1)), unhex('010178'), formatRowNoNewline('RowBinary', (toInt64(42))::Dynamic),
@@ -55,7 +55,7 @@ DROP TABLE json_bf_dynamic_probes;
 
 -- Numeric equality must stay exact at integer/float boundaries and for signed zero.
 CREATE TABLE json_bf_numeric_boundaries (id UInt64, j JSON, INDEX bf j TYPE jsonbf_v1(false_positive_rate = 0.0001) GRANULARITY 1)
-ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1, index_granularity_bytes = 0;
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
 INSERT INTO json_bf_numeric_boundaries
 SELECT * FROM format(RowBinary, 'id UInt64, j JSON', concat(
     formatRowNoNewline('RowBinary', toUInt64(1)), unhex('010178'), formatRowNoNewline('RowBinary', CAST(toUInt64(9007199254740992) AS Dynamic)),
