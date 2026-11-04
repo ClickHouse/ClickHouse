@@ -1,3 +1,0 @@
-<clickhouse>
-    <include from_zk="/seccomp" merge="true"/>
-</clickhouse>

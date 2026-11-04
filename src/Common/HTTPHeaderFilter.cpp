@@ -5,6 +5,7 @@
 #include <Common/re2.h>
 #include <Poco/String.h>
 #include <algorithm>
+#include <cctype>
 
 namespace DB
 {
@@ -14,45 +15,42 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-void HTTPHeaderFilter::checkHeaders(HTTPHeaderEntries & entries) const
+void HTTPHeaderFilter::checkAndNormalizeHeaders(HTTPHeaderEntries & entries) const
 {
     std::lock_guard guard(mutex);
 
-    for (const auto & entry : entries)
+    for (auto & entry : entries)
     {
-        /// A header name must be an RFC 9110 token: non-empty and built only from tchar bytes
-        /// (letters, digits and "!#$%&'*+-.^_`|~"). A value must not contain CR or LF.
-        const auto is_tchar = [](char c)
-        {
-            return isAlphaNumericASCII(c)
-                || c == '!' || c == '#' || c == '$' || c == '%' || c == '&' || c == '\''
-                || c == '*' || c == '+' || c == '-' || c == '.' || c == '^' || c == '_'
-                || c == '`' || c == '|' || c == '~';
-        };
-        if (entry.name.empty() || !std::all_of(entry.name.begin(), entry.name.end(), is_tchar)
-            || entry.value.contains('\r') || entry.value.contains('\n'))
+        /// A bare CR or LF in a header name or value terminates the header line, so a header
+        /// carrying one could smuggle a second header into the request (request/response splitting).
+        if (entry.name.contains('\n') || entry.value.contains('\n')
+            || entry.name.contains('\r') || entry.value.contains('\r'))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP header \"{}\" has invalid character", entry.name);
+        /// Strip whitespace and control characters from header name for validation
+        std::string & normalized_name = entry.name;
+        normalized_name.erase(
+            std::remove_if(
+                normalized_name.begin(),
+                normalized_name.end(),
+                [](char c) { return std::iscntrl(static_cast<unsigned char>(c)) || std::isspace(static_cast<unsigned char>(c)); }),
+            normalized_name.end());
 
-        /// Header names are case-insensitive (RFC 9110 5.1); the forbidden set is stored lower-cased.
-        const std::string lower_name = Poco::toLower(entry.name);
+        /// HTTP header names are case-insensitive (RFC 7230 3.2). The exact-set
+        /// entries are stored lower-cased, so lower-case the name for that lookup.
+        const std::string lower_name = Poco::toLower(normalized_name);
 
         if (forbidden_headers.contains(lower_name))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP header \"{}\" is forbidden in configuration file, "
                                                     "see <http_forbid_headers>", entry.name);
 
-        /// Match against the original-case name so an inline (?-i) scope stays case-sensitive.
+        /// Match the regexp against the original-case name: patterns are compiled
+        /// case-insensitive by default, but an inline (?-i) scope must see the real
+        /// case (lower-casing here would stop existing (?-i) configs from matching).
         for (const auto & header_regex : forbidden_headers_regexp)
-            if (re2::RE2::FullMatch(entry.name, *header_regex))
+            if (re2::RE2::FullMatch(normalized_name, *header_regex))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP header \"{}\" is forbidden in configuration file, "
                                                         "see <http_forbid_headers>", entry.name);
     }
-}
-
-void HTTPHeaderFilter::checkHeaders(NormalizedHTTPHeaderEntries & entries) const
-{
-    /// The check only validates the entries; it does not modify them, so the container's
-    /// lower-case invariant is preserved.
-    checkHeaders(entries.entries);
 }
 
 void HTTPHeaderFilter::setValuesFromConfig(const Poco::Util::AbstractConfiguration & config)
@@ -92,7 +90,7 @@ void HTTPHeaderFilter::setValuesFromConfig(const Poco::Util::AbstractConfigurati
             }
             else if (startsWith(key, "header"))
             {
-                /// Stored lower-cased so the case-insensitive lookup in checkHeaders works.
+                /// Stored lower-cased so the case-insensitive lookup in checkAndNormalizeHeaders works.
                 forbidden_headers.insert(Poco::toLower(config.getString("http_forbid_headers." + key)));
             }
         }

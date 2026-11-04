@@ -96,7 +96,9 @@ ClickStack se integra de forma nativa con OpenTelemetry, y todos los datos se in
 
 ClickStack es completamente de código abierto y puede desplegarse en cualquier entorno. El esquema es flexible y puede modificarse según las necesidades del usuario, y la UI está diseñada para adaptarse a esquemas personalizados sin necesidad de cambios. Todos los componentes, incluidos los collectors, ClickHouse y la UI, pueden escalarse de forma independiente para satisfacer las necesidades de ingestión, consulta o almacenamiento.
 
-## Descripción general de la arquitectura {#architectural-overview}
+<div id="architectural-overview">
+  ## Descripción general de la arquitectura
+</div>
 
 La arquitectura de ClickStack varía según cómo se implemente. Existen diferencias arquitectónicas importantes entre **ClickStack Open Source**, donde todos los componentes son autogestionados, y **Managed ClickStack**, donde ClickHouse y la UI de HyperDX se alojan y operan en ClickHouse Cloud. Aunque los componentes principales siguen siendo los mismos en ambos modelos, la responsabilidad de alojar, escalar y proteger cada componente cambia.
 
@@ -123,7 +125,7 @@ La arquitectura de ClickStack varía según cómo se implemente. Existen diferen
 
     * **Escalado automático de cómputo independiente del almacenamiento**
     * **Retención de bajo coste y prácticamente ilimitada** respaldada por almacenamiento de objetos
-    * **[Aislamiento independiente de lectura y escritura](/es/clickstack/managing/isolating-read-write)** mediante ClickHouse Cloud Warehouses
+    * **Aislamiento independiente de lectura y escritura** mediante ClickHouse Cloud Warehouses
     * **Autenticación y control de acceso integrados**
     * **Copias de seguridad automatizadas**
     * **Funciones de seguridad y cumplimiento**
@@ -131,7 +133,7 @@ La arquitectura de ClickStack varía según cómo se implemente. Existen diferen
 
     Este modelo de implementación permite a los equipos centrarse por completo en los flujos de trabajo de observabilidad y la instrumentación, sin la sobrecarga de operar ClickHouse o la UI de ClickStack por su cuenta.
 
-    Para los usuarios que implementan ClickStack en producción, Managed ClickStack es la opción recomendada. Consulta la [guía de introducción](/es/clickstack/getting-started/managed) para ver instrucciones sobre cómo implementar ClickStack con ClickHouse Cloud.
+    Para los usuarios que implementan ClickStack en producción, Managed ClickStack es la opción recomendada. Consulta la [guía de primeros pasos](/es/clickstack/getting-started/managed) para ver instrucciones sobre cómo implementar ClickStack con ClickHouse Cloud.
 
     <br />
   </Tab>
