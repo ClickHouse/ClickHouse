@@ -113,15 +113,14 @@ MergeTreeMergePredicate::MergeTreeMergePredicate(
     /// checks their visibility later, so they are taken from the active parts that the transaction sees.
     /// A patch above the snapshot is an attached one (`updateLightweight` allocates its block under the
     /// same counter, `ATTACH PART` does not); it is left for read time, like a patch above a pending update.
+    /// Every visible patch bounds the version a merge may record, whether the merge may apply it or not.
     const Int64 max_patch_version = reservations.minUpdateBlock().value_or(reservations.lastAllocatedBlock() + 1);
     for (const auto & patch : getVisiblePatchParts(storage, tx_))
     {
+        const auto & partition_id = patch->info.getOriginalPartitionId();
+        patch_parts_by_partition[partition_id].push_back(patch);
         if (patch->info.getDataVersion() < max_patch_version)
-        {
-            const auto & partition_id = patch->info.getOriginalPartitionId();
             patches_by_partition[partition_id].push_back(patch->info);
-            patch_parts_by_partition[partition_id].push_back(patch);
-        }
     }
 }
 

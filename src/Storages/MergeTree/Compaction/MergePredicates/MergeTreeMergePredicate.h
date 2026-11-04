@@ -31,8 +31,9 @@ public:
 private:
     const StorageMergeTree & storage;
     std::unique_lock<std::mutex> & merge_mutate_lock;
+    /// The patch parts a merge may apply.
     PatchInfosByPartition patches_by_partition;
-    /// The same patch parts, for the versions their indexes hold.
+    /// Every visible patch part, for the versions their indexes hold.
     std::unordered_map<String, MergeTreeData::DataPartsVector> patch_parts_by_partition;
     /// Data versions of the regular parts. Filled only if there are patch parts in the table.
     /// Used to check that a merge of patch parts does not span the data version of an existing part.

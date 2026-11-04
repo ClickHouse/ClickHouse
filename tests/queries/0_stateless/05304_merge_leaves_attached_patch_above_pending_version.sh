@@ -31,6 +31,7 @@ function cleanup()
     $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t_patch_above_mutation SYNC" 2>/dev/null
     $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t_patch_above_snapshot SYNC" 2>/dev/null
     $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t_patch_below_drop SYNC" 2>/dev/null
+    $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t_patch_below_drop_late SYNC" 2>/dev/null
 }
 trap cleanup EXIT
 
@@ -104,3 +105,24 @@ $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $MUTATE_FP"
 wait_for_query_result "SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_patch_below_drop' AND NOT is_done" "0"
 print_merged_part t_patch_below_drop
 $CLICKHOUSE_CLIENT --query "SELECT id, a FROM t_patch_below_drop ORDER BY id"
+
+echo "--- patch reattached after the OPTIMIZE snapshot, below a pending DROP COLUMN"
+create_table_with_detached_patch t_patch_below_drop_late
+$CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT $MUTATE_FP"
+$CLICKHOUSE_CLIENT --query "ALTER TABLE t_patch_below_drop_late DROP COLUMN d SETTINGS alter_sync = 0"
+$CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT $OPTIMIZE_FP"
+$CLICKHOUSE_CLIENT --query_id "$OPTIMIZE_QUERY_ID" \
+    --query "OPTIMIZE TABLE t_patch_below_drop_late FINAL SETTINGS optimize_throw_if_noop = 1" &
+optimize_pid=$!
+wait_failpoint $OPTIMIZE_FP
+# Above the snapshot, so the merge may not apply it; its index still applies it below the mutation.
+$CLICKHOUSE_CLIENT --query "ALTER TABLE t_patch_below_drop_late ATTACH PART '$PATCH'"
+$CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $OPTIMIZE_FP"
+wait "$optimize_pid"
+echo "OPTIMIZE FINAL exit code: $?"
+print_merged_part t_patch_below_drop_late
+$CLICKHOUSE_CLIENT --query "SELECT id, a FROM t_patch_below_drop_late ORDER BY id"
+$CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $MUTATE_FP"
+wait_for_query_result "SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_patch_below_drop_late' AND NOT is_done" "0"
+print_merged_part t_patch_below_drop_late
+$CLICKHOUSE_CLIENT --query "SELECT id, a FROM t_patch_below_drop_late ORDER BY id"

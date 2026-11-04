@@ -14,3 +14,11 @@ merged part:	1	2	1
 merged part:	1	2	0
 1	5
 2	0
+--- patch reattached after the OPTIMIZE snapshot, below a pending DROP COLUMN
+OPTIMIZE FINAL exit code: 0
+merged part:	1	2	1
+1	5
+2	0
+merged part:	1	2	0
+1	5
+2	0
