@@ -72,12 +72,60 @@ enum class Output
     Float64,
 };
 
-/// The PTX of a kernel, which lives as long as the process, so that a `GPUExpression` can point into it.
+/// A kernel loaded on the device, which lives as long as the process, as the `GPUExpression`s of it do.
 struct Kernel
 {
     std::string name;
-    std::string ptx;
+    cudaLibrary_t library = nullptr;
+    cudaKernel_t kernel = nullptr;
+    uint32_t block_size = 0;
 };
+
+void checkLoading(cudaError_t status, const std::string & what)
+{
+    if (status == cudaSuccess)
+        return;
+    cudaGetLastError();
+    throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "Cannot {}: {}", what, cudaGetErrorString(status));
+}
+
+/// The threads of a block of `kernel` that keep the most threads of a multiprocessor busy, a whole number of warps, the
+/// fewest of them where several do: as `cudaOccupancyMaxPotentialBlockSize` chooses, which is a template of the CUDA
+/// headers for `nvcc`.
+uint32_t blockSizeOf(cudaKernel_t kernel, const std::string & name)
+{
+    const void * function = reinterpret_cast<const void *>(kernel);
+    cudaFuncAttributes attributes{};
+    checkLoading(cudaFuncGetAttributes(&attributes, function), "tell the attributes of kernel " + name);
+
+    uint32_t best_size = 0;
+    int best_threads = 0;
+    for (int size = 32; size <= attributes.maxThreadsPerBlock; size += 32)
+    {
+        int blocks = 0;
+        checkLoading(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&blocks, function, size, 0), "tell the occupancy of kernel " + name);
+        if (blocks * size > best_threads)
+        {
+            best_threads = blocks * size;
+            best_size = static_cast<uint32_t>(size);
+        }
+    }
+    if (best_size == 0)
+        throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "Kernel {} runs in no block of the device", name);
+    return best_size;
+}
+
+/// `name` of `ptx`, loaded on the device.
+std::unique_ptr<Kernel> loadKernel(const std::string & name, const std::string & ptx)
+{
+    auto kernel = std::make_unique<Kernel>();
+    kernel->name = name;
+    checkLoading(
+        cudaLibraryLoadData(&kernel->library, ptx.c_str(), nullptr, nullptr, 0, nullptr, nullptr, 0), "load the PTX of kernel " + name);
+    checkLoading(cudaLibraryGetKernel(&kernel->kernel, kernel->library, name.c_str()), "find kernel " + name + " in its PTX");
+    kernel->block_size = blockSizeOf(kernel->kernel, name);
+    return kernel;
+}
 
 /// The `sm_XY` of the device that the server runs queries on, which the PTX is emitted for.
 const std::string & deviceArchitecture()
@@ -438,16 +486,18 @@ std::optional<CompiledGPUExpression> compile(const ActionsDAG & dag, const Strin
         if (!ptx)
             return {};
 
+        /// Loaded once, by the first query that compiles it, which another one compiling it waits for.
         std::lock_guard lock(mutex);
-        auto & stored = kernels[name];
-        if (!stored)
-            stored = std::make_unique<Kernel>(Kernel{.name = name, .ptx = std::move(*ptx)});
-        kernel = stored.get();
+        auto it = kernels.find(name);
+        if (it == kernels.end())
+            it = kernels.emplace(name, loadKernel(name, *ptx)).first;
+        kernel = it->second.get();
     }
 
     CompiledGPUExpression compiled;
-    compiled.expression.ptx = kernel->ptx.c_str();
-    compiled.expression.kernel = kernel->name.c_str();
+    compiled.expression.kernel = kernel->kernel;
+    compiled.expression.block_size = kernel->block_size;
+    compiled.expression.name = kernel->name.c_str();
     compiled.expression.num_columns = static_cast<uint32_t>(device_dag.columns.size());
     for (size_t i = 0; i < device_dag.columns.size(); ++i)
         compiled.expression.column_types[i] = *filterElementTypeOf(*device_dag.columns[i].type);
