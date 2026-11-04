@@ -43,7 +43,6 @@ void collectScopeAliases(const IAST & ast, NameSet & aliases)
     if (auto alias = ast.tryGetAlias(); !alias.empty())
         aliases.insert(std::move(alias));
 
-    /// A nested lambda has its own scope.
     if (const auto * function = ast.as<ASTFunction>(); function && function->name == "lambda")
         return;
 
@@ -112,7 +111,7 @@ void collectFreeNames(const IAST & ast, const ColumnsDescription & columns, Name
 ASTPtr expandedDefinition(const ColumnDescription & column, const ColumnAliasesMatcher::Data & data)
 {
     auto definition = column.default_desc.expression->clone();
-    /// Only the fields of lambda parameters: with no table columns the rewrite leaves every other identifier.
+    /// With no table columns, only the fields of lambda parameters are rewritten.
     if (data.rename_lambda_parameters)
         replaceSubcolumnsToGetSubcolumnFunctionInQuery(definition, {});
     return addTypeConversionToAST(std::move(definition), column.type->getName(), data.columns.getAll(), data.context);
