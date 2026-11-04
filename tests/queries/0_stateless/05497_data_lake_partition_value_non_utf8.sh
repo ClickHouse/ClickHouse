@@ -44,11 +44,15 @@ bootstrap "${ROOT}/bin" "${SCHEMA_BIN}" '["p"]'
 ${CLICKHOUSE_LOCAL} --allow_delta_lake_writes=1 --query "INSERT INTO FUNCTION deltaLakeLocal('${ROOT}/bin') SELECT 1 AS id, unhex('FF') AS p" 2>&1 | grep -o -m1 'INCORRECT_DATA'
 echo "log versions: $(ls "${ROOT}/bin/_delta_log" | grep -c '\.json$')"
 
-echo "-- Iceberg: an INSERT or ALTER UPDATE that would write a non-UTF-8 partition value is rejected"
+echo "-- Iceberg: an INSERT or ALTER UPDATE that would write a non-UTF-8 partition value is rejected and leaves no files"
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE ice (id Int32, p String) ENGINE = IcebergLocal('${ROOT}/ice/') PARTITION BY p"
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "INSERT INTO ice VALUES (1, 'ok')"
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "INSERT INTO ice SELECT 2, unhex('FF')" 2>&1 | grep -o -m1 'INCORRECT_DATA'
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "ALTER TABLE ice UPDATE p = unhex('FF') WHERE id = 1" 2>&1 | grep -o -m1 'INCORRECT_DATA'
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "INSERT INTO ice VALUES (2, 'ok')"
+find "${ROOT}/ice" -type f | sort > "${ROOT}/ice_files_before"
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "INSERT INTO ice SELECT 3, unhex('FF')" 2>&1 | grep -o -m1 'INCORRECT_DATA'
+# Only row 2 gets the bad value, so the UPDATE fails after it has written files for row 1.
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "ALTER TABLE ice UPDATE p = if(id = 2, unhex('FF'), 'new') WHERE 1" 2>&1 | grep -o -m1 'INCORRECT_DATA'
+echo "new files: $(find "${ROOT}/ice" -type f | sort | comm -13 "${ROOT}/ice_files_before" - | wc -l)"
 echo "metadata versions: $(ls "${ROOT}/ice/metadata" | grep -c '\.metadata\.json$')"
 ${CLICKHOUSE_CLIENT} --query "SELECT id, p FROM ice ORDER BY id"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE ice"
