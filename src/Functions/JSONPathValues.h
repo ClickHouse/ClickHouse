@@ -97,6 +97,29 @@ public:
     const VectorWithMemoryTracking<String> & getSkipPaths() const { return skip_paths; }
     const VectorWithMemoryTracking<String> & getSkipPathRegexps() const { return skip_path_regexps; }
 
+    /// The DFA cache of a regexp grows lazily within `max_mem` and is not observable, so only its compiled program is counted.
+    size_t memoryUsageBytes() const
+    {
+        /// An upper bound of the size of a compiled RE2 instruction.
+        static constexpr size_t bytes_per_regexp_instruction = 16;
+
+        size_t bytes = sizeof(*this);
+        for (const auto * strings : {&include_paths, &include_path_regexps, &skip_paths, &skip_path_regexps})
+        {
+            bytes += strings->capacity() * sizeof(String);
+            for (const auto & string : *strings)
+                bytes += string.capacity();
+        }
+        for (const auto * regexps : {&include_regexps, &skip_regexps})
+        {
+            bytes += regexps->capacity() * sizeof(std::unique_ptr<re2::RE2>);
+            for (const auto & regexp : *regexps)
+                bytes += sizeof(re2::RE2) + regexp->pattern().capacity()
+                    + static_cast<size_t>(regexp->ProgramSize()) * bytes_per_regexp_instruction;
+        }
+        return bytes;
+    }
+
 private:
     using Regexps = VectorWithMemoryTracking<std::unique_ptr<re2::RE2>>;
 
@@ -232,6 +255,8 @@ struct IndexConfiguration
     UInt64 max_token_bytes;
     String source_type_name;
     std::shared_ptr<const PathMatcher> path_matcher;
+
+    size_t memoryUsageBytes() const { return source_type_name.capacity() + path_matcher->memoryUsageBytes(); }
 };
 
 /// `jsonPathValues` tokens are persisted as text-index dictionary keys. Path, type, and map-key
