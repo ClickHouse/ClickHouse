@@ -285,6 +285,10 @@ public:
     virtual bool writesInitialMetadata() const { return false; }
 
     /// Updates metadata in catalog.
+    /// Returns `true` on success and `false` only on a confirmed conflict that permits cleanup and retry.
+    /// Throws `ICEBERG_COMMIT_REJECTED` on a definite rejection that permits cleanup, or `ICEBERG_COMMIT_STATE_UNKNOWN`
+    /// when the outcome cannot be established. Other exceptions must also conservatively preserve the written files.
+    /// Internal retries must not turn an applied commit with a lost response into a reported conflict.
     virtual bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const;
 
     /// Commit a schema evolution (ADD/DROP/MODIFY/RENAME COLUMN) to the catalog.
