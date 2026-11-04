@@ -569,6 +569,27 @@ def test_dynamic_disk_credential_grant_is_scoped_to_the_resolved_backend(
     )
     node.query("DROP TABLE gcs_marker_local_include SYNC")
 
+    # Nor does a legacy `type = gcs` next to an `include` whose `object_storage_type` selects a local
+    # backend: `object_storage_type` takes precedence, so the disk is built on the local backend and never
+    # used server credentials. Were the grant persisted here, retargeting the include at a credential-less
+    # `gcs` backend later would let it inherit the authorization on reload.
+    node.query("DROP TABLE IF EXISTS gcs_marker_legacy_type_include SYNC")
+    node.query(
+        "CREATE TABLE gcs_marker_legacy_type_include (x UInt64) ENGINE = MergeTree ORDER BY tuple() "
+        "SETTINGS disk = disk("
+        "  name = 'gcs_marker_legacy_type_include_disk',"
+        "  type = gcs,"
+        "  include = 'gcs_included_local_object_storage'"
+        ")",
+        settings=opt_in,
+    )
+    node.query("INSERT INTO gcs_marker_legacy_type_include VALUES (1)")
+    assert node.query("SELECT x FROM gcs_marker_legacy_type_include") == "1\n"
+    assert not has_server_credentials_marker(
+        node.query("SHOW CREATE TABLE gcs_marker_legacy_type_include")
+    )
+    node.query("DROP TABLE gcs_marker_legacy_type_include SYNC")
+
 
 def test_iceberg_on_a_native_gcs_disk(started_cluster):
     """An Iceberg table can live on a native GCS disk.

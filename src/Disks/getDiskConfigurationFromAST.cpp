@@ -554,21 +554,34 @@ void forceAnonymousS3DiskConfigAtPrefix(Poco::Util::AbstractConfiguration & conf
 namespace
 {
 
-/// Every object-storage backend a resolved disk configuration describes: the disk root, plus one
-/// `locations.<name>.` prefix per child of a multi-location `DiskObjectStorage`. Each child is built
-/// independently, with its own type and credentials, so an `include` can hide a backend behind a root
-/// that proves something else -- every check that reasons about "the backend" has to visit all of them.
+/// Every object-storage backend a resolved disk configuration describes, exactly as `registerDiskObjectStorage`
+/// builds them: one `locations.<name>.` prefix per child of a multi-location `DiskObjectStorage`, or else the disk
+/// root. Each child is built independently, with its own type and credentials, so an `include` can hide a backend
+/// behind a root that proves something else -- every check that reasons about "the backend" has to visit all of
+/// them. When `locations` is present, the root is not built as an object storage at all, so it is not a backend:
+/// treating it as one would let a remote `type` on the root earn a `_server_credentials_allowed` marker that no
+/// backend of the disk actually needed.
 std::vector<String> collectResolvedBackendPrefixes(const Poco::Util::AbstractConfiguration & config)
 {
-    std::vector<String> prefixes{""};
-    if (config.has("locations"))
-    {
-        Poco::Util::AbstractConfiguration::Keys locations;
-        config.keys("locations", locations);
-        for (const auto & location : locations)
-            prefixes.push_back("locations." + location + ".");
-    }
+    if (!config.has("locations"))
+        return {""};
+
+    std::vector<String> prefixes;
+    Poco::Util::AbstractConfiguration::Keys locations;
+    config.keys("locations", locations);
+    for (const auto & location : locations)
+        prefixes.push_back("locations." + location + ".");
     return prefixes;
+}
+
+/// The object storage type of one resolved backend, with the precedence of `ObjectStorageFactory::create`: an
+/// `object_storage_type` wins over the legacy `type`. So `disk(type = gcs, include = 'foo')` where `foo` supplies
+/// `object_storage_type = local` is a local backend, not a GCS one.
+String resolvedObjectStorageType(const Poco::Util::AbstractConfiguration & config, const String & prefix)
+{
+    if (config.has(prefix + "object_storage_type"))
+        return config.getString(prefix + "object_storage_type");
+    return config.getString(prefix + "type", "");
 }
 
 /// Whether one resolved object-storage backend (the disk root, or a single `locations.<name>` child selected by
@@ -578,10 +591,8 @@ bool resolvedS3BackendIsRestricted(
     const Poco::Util::AbstractConfiguration & config, const String & prefix, bool is_root, const DynamicS3DiskCredentialInfo & info)
 {
     auto key = [&](const String & k) { return prefix + k; };
-    auto is_s3_type = [](const String & t) { return t == "s3" || t.starts_with("s3_"); };
-    const bool resolved_backend_is_s3
-        = is_s3_type(config.getString(key("type"), "")) || is_s3_type(config.getString(key("object_storage_type"), ""));
-    if (!resolved_backend_is_s3)
+    const String resolved_type = resolvedObjectStorageType(config, prefix);
+    if (resolved_type != "s3" && !resolved_type.starts_with("s3_"))
         return false;
 
     const bool resolved_wants_gcp_oauth = boost::iequals(config.getString(key("http_client"), ""), "gcp_oauth");
@@ -656,7 +667,7 @@ bool resolvedGCSBackendIsRestricted(
     const Poco::Util::AbstractConfiguration & config, const String & prefix, bool is_root, const DynamicS3DiskCredentialInfo & info)
 {
     auto key = [&](const String & k) { return prefix + k; };
-    if (config.getString(key("type"), "") != "gcs" && config.getString(key("object_storage_type"), "") != "gcs")
+    if (resolvedObjectStorageType(config, prefix) != "gcs")
         return false;
 
     /// A `from_env`/`from_zk` header on the root resolves on the server and can carry its auth material even next
@@ -765,13 +776,19 @@ static bool customDiskUsesGCSServerCredentials(DiskPtr disk)
         if (!object_storage_disk)
             continue;
 
-        const auto object_storage = object_storage_disk->getObjectStorage();
-        if (object_storage->getType() != ObjectStorageType::GCS)
-            return false;
+        /// Every location, not only the local one: a write goes to every enabled location of a multi-location
+        /// disk, so a GCS location next to a local S3 one is reached through the wrapper as well.
+        for (const auto & [_, object_storage] : object_storage_disk->getObjectStoragesByLocation())
+        {
+            if (object_storage->getType() != ObjectStorageType::GCS)
+                continue;
 
-        const auto settings = object_storage->getGCSObjectStorageSettings();
-        return settings->server_credentials_allowed
-            || chooseGCSCredentialSource(*settings) == GCSCredentialSource::ApplicationDefault;
+            const auto settings = object_storage->getGCSObjectStorageSettings();
+            if (settings->server_credentials_allowed
+                || chooseGCSCredentialSource(*settings) == GCSCredentialSource::ApplicationDefault)
+                return true;
+        }
+        return false;
     }
     return false;
 }
@@ -816,9 +833,7 @@ void validateResolvedGCSDiskCredentials(
     for (const auto & prefix : collectResolvedBackendPrefixes(config))
     {
         auto key = [&](const String & k) { return prefix + k; };
-        const bool resolved_backend_is_gcs
-            = config.getString(key("type"), "") == "gcs" || config.getString(key("object_storage_type"), "") == "gcs";
-        if (!resolved_backend_is_gcs)
+        if (resolvedObjectStorageType(config, prefix) != "gcs")
             continue;
 
         /// Resolve the experimental-feature gate after `include`, `from_env`, and `from_zk` are processed.
