@@ -889,8 +889,18 @@ static void splitAndModifyMutationCommands(
                     return std::ranges::any_of(entry.second, [&](const auto & input) { return changed.contains(input); });
                 });
                 for (const auto & name : assigned)
-                    if (is_ordinary(name))
-                        updated_ordinary_columns[name] = MutationsInterpreter::getColumnsReadByDefault(table_columns, name, part_stores);
+                {
+                    if (!is_ordinary(name))
+                        continue;
+                    auto inputs = MutationsInterpreter::getColumnsReadByDefault(table_columns, name, part_stores);
+                    auto is_flattened_nested = [&](const String & input) { return !table_columns.has(input) && table_columns.hasNested(input); };
+                    /// The part reader computes a DEFAULT over a flattened `Nested` column only if the columns of it are read too,
+                    /// which MATERIALIZE COLUMN makes the mutation do.
+                    if (std::ranges::any_of(inputs, is_flattened_nested))
+                        updated_ordinary_columns.erase(name);
+                    else
+                        updated_ordinary_columns[name] = std::move(inputs);
+                }
                 break;
             }
             case MutationCommand::Type::MATERIALIZE_COLUMN:

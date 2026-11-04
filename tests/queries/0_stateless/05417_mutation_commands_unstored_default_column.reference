@@ -24,6 +24,16 @@ nested	0	[]	0	0
 nested	1	[0]	1	1
 nested	2	[0,1]	2	2
 nested	3	[1,2,3,4,5]	5	5
+nested_prefix_read	0	[]	0	0
+nested_prefix_read	1	[1,2,3,4,5]	5	5
+nested_prefix_read	2	[0,1]	2	2
+nested_prefix	0	[]	0	0
+nested_prefix	1	[1,2,3,4,5]	5	5
+nested_prefix	2	[6]	2	1
+Wide
+nested_prefix_wide	0	[]	0
+nested_prefix_wide	1	[0]	1
+nested_prefix_wide	2	[0,1]	2
 subcolumn_read	0	0	0	0
 subcolumn_read	1	1	0	10
 subcolumn_read	2	2	22	20

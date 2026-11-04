@@ -65,6 +65,28 @@ ALTER TABLE t_nested UPDATE `n.e` = [1, 2, 3, 4, 5] WHERE id = 3, UPDATE y = a W
 SELECT 'nested', id, n.e, y, a FROM t_nested ORDER BY id;
 DROP TABLE t_nested;
 
+-- The DEFAULT reads a flattened Nested column, an element of which an UPDATE changes.
+DROP TABLE IF EXISTS t_nested_prefix;
+CREATE TABLE t_nested_prefix (id Int64, n Nested(e Int64), y Int64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_nested_prefix SELECT number, range(number), 0 FROM numbers(3);
+ALTER TABLE t_nested_prefix ADD COLUMN a UInt64 DEFAULT length(n);
+ALTER TABLE t_nested_prefix UPDATE `n.e` = [1, 2, 3, 4, 5] WHERE id = 1, UPDATE y = a WHERE 1;
+SELECT 'nested_prefix_read', id, n.e, y, a FROM t_nested_prefix ORDER BY id;
+ALTER TABLE t_nested_prefix UPDATE a = 999 WHERE id = 99, UPDATE `n.e` = [6] WHERE id = 2, MATERIALIZE COLUMN a;
+SELECT 'nested_prefix', id, n.e, y, a FROM t_nested_prefix ORDER BY id;
+DROP TABLE t_nested_prefix;
+
+-- Same with MATERIALIZE COLUMN after an UPDATE of the column that matches no row (wide part).
+DROP TABLE IF EXISTS t_nested_prefix_wide;
+CREATE TABLE t_nested_prefix_wide (id Int64, n Nested(e Int64)) ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_nested_prefix_wide SELECT number, range(number) FROM numbers(3);
+ALTER TABLE t_nested_prefix_wide ADD COLUMN a UInt64 DEFAULT length(n);
+ALTER TABLE t_nested_prefix_wide UPDATE a = 999 WHERE id = 99, MATERIALIZE COLUMN a;
+SELECT DISTINCT part_type FROM system.parts WHERE database = currentDatabase() AND table = 't_nested_prefix_wide' AND active;
+SELECT 'nested_prefix_wide', id, n.e, a FROM t_nested_prefix_wide ORDER BY id;
+DROP TABLE t_nested_prefix_wide;
+
 -- The commands also read the subcolumn the DEFAULT reads.
 DROP TABLE IF EXISTS t_subcolumn_read;
 CREATE TABLE t_subcolumn_read (id Int64, t Tuple(p Int64), y Int64) ENGINE = MergeTree ORDER BY id;

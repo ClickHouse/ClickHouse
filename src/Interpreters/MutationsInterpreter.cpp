@@ -861,6 +861,13 @@ NameSet MutationsInterpreter::getColumnsReadByDefault(
                 if (column->isSubcolumn())
                     reads.push_back(column->getNameInStorage());
             }
+            else if (columns.hasNested(required))
+            {
+                /// A flattened `Nested` column `n` is built from the columns `n.*`.
+                for (const auto & element : columns)
+                    if (element.name.starts_with(required + "."))
+                        reads.push_back(element.name);
+            }
             else
             {
                 /// An ALIAS column registers no subcolumns, so `p.q` reads the column `p` whose type has the subcolumn `q`.
