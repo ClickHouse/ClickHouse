@@ -7,6 +7,8 @@ INSERT INTO small SELECT number * 100, toString(number) FROM numbers(100);
 
 SET enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0, enable_parallel_replicas = 0;
 SET make_distributed_plan = 1, distributed_plan_execute_locally = 1, distributed_plan_max_rows_to_broadcast = 0;
+-- The checks of serialized partials count one per build task: pin the eight read tasks.
+SET distributed_plan_default_reader_bucket_count = 8;
 SET explain_query_plan_default = 'legacy', log_processors_profiles = 1;
 SET max_rows_to_group_by = 0, query_plan_join_swap_table = 0, query_plan_optimize_join_order_randomize = 0;
 
