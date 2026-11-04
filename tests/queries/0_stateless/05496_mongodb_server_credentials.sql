@@ -1,5 +1,5 @@
 -- Tags: no-fasttest
--- no-fasttest: the MongoDB table function, table engine and dictionary source need USE_MONGODB
+-- no-fasttest: the MongoDB table function and table engine need USE_MONGODB
 
 -- While `s3_allow_server_credentials_in_user_queries` is disabled, a MongoDB connection string may not make the server
 -- authenticate with credentials of the server process: an authentication mechanism that takes them from its
@@ -62,11 +62,4 @@ SET s3_allow_server_credentials_in_user_queries = 0;
 SELECT count() FROM t_05496_tf; -- { serverError ACCESS_DENIED }
 DROP TABLE t_05496_tf;
 
--- A dictionary is loaded by the server, so the setting of the session that creates or queries it does not apply.
-SET s3_allow_server_credentials_in_user_queries = 1;
-DROP DICTIONARY IF EXISTS d_05496;
-CREATE DICTIONARY d_05496 (_id String, v String) PRIMARY KEY _id
-SOURCE(MONGODB(URI 'mongodb://127.0.0.1:1/db?authMechanism=MONGODB-OIDC&authMechanismProperties=ENVIRONMENT:k8s' COLLECTION 'c'))
-LAYOUT(COMPLEX_KEY_DIRECT());
-SELECT dictGet('d_05496', 'v', tuple('k')); -- { serverError ACCESS_DENIED }
-DROP DICTIONARY d_05496;
+-- MongoDB dictionaries are covered by 05497_mongodb_dictionary_server_credentials.
