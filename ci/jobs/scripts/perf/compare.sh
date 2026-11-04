@@ -404,6 +404,12 @@ function restart # [static TLS surplus in bytes, for both servers]
     kill -0 $right_pid
 }
 
+# The test files given as arguments, the tests that enable a failpoint last (see test_discovery.py).
+function failpoint_tests_last # test file...
+{
+    python3 "$script_dir/test_discovery.py" "$@"
+}
+
 function run_tests
 {
     # Just check that the script runs at all
@@ -519,6 +525,11 @@ function run_tests
 
     # Randomize test order. BTW, it's not an array no more.
     test_files=$(for f in ${test_files[@]}; do echo "$f"; done | sort -R)
+    if ! test_files=$(failpoint_tests_last $test_files)
+    then
+        echo "Cannot order the tests: the tests that enable a failpoint must run last" >&2
+        exit 1
+    fi
 
     # Limit profiling time to 10 minutes, not to run for too long.
     profile_seconds_left=600
@@ -1007,6 +1018,15 @@ else
     test_prefix="$script_dir/../../../../tests/performance"
 fi
 
+local confirm_tests
+if ! confirm_tests=$(failpoint_tests_last $(cut -f1 ${confirm_dir}/flagged-queries.tsv | sort | uniq \
+        | awk -v prefix="$test_prefix" '{ print prefix "/" $0 ".xml" }'))
+then
+    echo "confirm_changes: cannot order the flagged tests, skipping confirmation"
+    return 0
+fi
+confirm_tests=$(echo "$confirm_tests" | xargs -r basename -a -s .xml)
+
 local perf_py="$script_dir/perf.py"
 if ! [ -e "$perf_py" ]
 then
@@ -1065,7 +1085,7 @@ do
     fi
     placements_done=$(( placement + 1 ))
 
-    for confirm_test in $(cut -f1 ${confirm_dir}/flagged-queries.tsv | sort | uniq)
+    for confirm_test in $confirm_tests
     do
         confirm_time_left=$(( confirm_deadline - SECONDS ))
         if [ "$confirm_time_left" -le 0 ]

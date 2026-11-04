@@ -3008,6 +3008,7 @@ def main():
         # Every measured host runs the yardstick first. Not in the Iceberg configuration: it
         # creates no table, so it would measure nothing of the configuration.
         test_files.insert(0, "calibration.xml")
+    test_files = test_discovery.failpoint_tests_last(test_files, "./tests/performance/")
     print(f"Job Batch: [{batch_num}/{total_batches}]")
     print(f"Test Files ({len(test_files)}): [{test_files}]")
     assert test_files
