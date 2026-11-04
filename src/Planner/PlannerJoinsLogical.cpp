@@ -369,6 +369,20 @@ static bool hasPreJoinCondition(const JoinCondition & condition, const JoinExpre
     });
 }
 
+/// An equality between an expression over the left table and an expression over the right table, which a join
+/// algorithm matches on. Unlike `hasEquiConditions`, an equality with a constant or within one table does not count.
+static bool hasJoinKeyCondition(const JoinCondition & condition, const JoinExpressionActions & expression_actions)
+{
+    return std::ranges::any_of(condition.conjuncts, [&](const ActionsDAG::Node * conjunct)
+    {
+        JoinActionRef action(conjunct, expression_actions);
+        auto [op, lhs, rhs] = action.asBinaryPredicate();
+        if (op != JoinConditionOperator::Equals && op != JoinConditionOperator::NullSafeEquals)
+            return false;
+        return (lhs.fromLeft() && rhs.fromRight()) || (lhs.fromRight() && rhs.fromLeft());
+    });
+}
+
 
 static JoinCondition concatConditions(const JoinCondition & lhs, const JoinCondition & rhs)
 {
@@ -458,7 +472,12 @@ static void buildDisjunctiveJoinConditionsGeneral(const QueryTreeNodePtr & join_
                 /// matching. If one clause has none, splitting cannot narrow what an ALL join matches.
                 /// An ALL INNER join is never split: every join algorithm evaluates the whole `OR` after matching on the keys of the enclosing `AND`, while splitting hides these keys inside one `or` predicate from join reordering.
                 /// An outer join is split if every clause has a condition evaluated before matching, because a single clause with a condition on both tables requires the `hash` or `grace_hash` algorithm.
-                if (with_key_expression == 0 && builder_context.join_operator.strictness == JoinStrictness::All)
+                /// `hasEquiConditions` also counts an equality with a constant, such as `t1.a = 1 OR t2.b = 2`, which is not a join key, so the rules below look for a join key between the two tables.
+                if (!plan_as_single_clause && builder_context.join_operator.strictness == JoinStrictness::All
+                    && std::ranges::none_of(result, [&](const JoinCondition & clause)
+                    {
+                        return hasJoinKeyCondition(clause, builder_context.expression_actions);
+                    }))
                 {
                     if (builder_context.join_operator.kind == JoinKind::Inner)
                         plan_as_single_clause = true;
