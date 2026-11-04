@@ -1772,9 +1772,16 @@ void MutationsInterpreter::prepare(bool dry_run)
             /// each target is reset consistently and lands in `changed_columns` (a skip index, a
             /// projection or a statistic reading it is then rebuilt instead of hardlinked), and treat
             /// it as a TTL target in the checks below.
+            ///
+            /// A column TTL resets an expired target to its declared `DEFAULT` expression, whose inputs
+            /// can differ from the TTL expression inputs (`y UInt64 DEFAULT u + 1 TTL c + INTERVAL ...`).
+            /// `TTLTransform` evaluates that expression over the mutation block, so its inputs are fed
+            /// as readonly columns too; otherwise, on a wide part, the reset fails with
+            /// `NOT_FOUND_COLUMN_IN_BLOCK`.
             NameSet column_ttl_targets;
             if (!ttl_target_columns.empty())
             {
+                const auto ttl_target_defaults = columns_desc.getDefaults();
                 for (const auto & [ttl_column_name, ttl_entry] : metadata_snapshot->getColumnTTLs())
                 {
                     column_ttl_targets.insert(ttl_column_name);
@@ -1783,6 +1790,38 @@ void MutationsInterpreter::prepare(bool dry_run)
                         dependencies.emplace(expression_column, ColumnDependency::TTL_EXPRESSION);
                     if (std::ranges::find(ttl_target_columns, ttl_column_name) == ttl_target_columns.end())
                         ttl_target_columns.push_back(ttl_column_name);
+
+                    auto default_it = ttl_target_defaults.find(ttl_column_name);
+                    if (default_it == ttl_target_defaults.end() || !default_it->second.expression)
+                        continue;
+
+                    auto default_ast = default_it->second.expression->clone();
+                    auto syntax_result = TreeRewriter(context).analyze(default_ast, columns_desc.getAll());
+                    for (const auto & required_column : syntax_result->requiredSourceColumns())
+                    {
+                        auto resolved = columns_desc.tryGetColumnOrSubcolumn(GetColumnsOptions::All, required_column);
+                        if (resolved && columns_desc.hasPhysical(resolved->getNameInStorage()))
+                            dependencies.emplace(resolved->getNameInStorage(), ColumnDependency::TTL_EXPRESSION);
+                    }
+                }
+
+                /// The full TTL pass also executes the table's row TTLs (`TTL ... [DELETE]`, rows-where
+                /// and group-by TTLs), even when no rewritten column feeds them. A row TTL deletes rows,
+                /// so it must see every physical column: otherwise the rows are filtered out of the
+                /// rewritten columns only, while the other columns are hardlinked with the original row
+                /// count and the new part is inconsistent. Promote the mutation to rewriting every
+                /// physical column, the same as `getColumnDependencies` does when a rewritten column
+                /// feeds a row TTL expression directly and as `MATERIALIZE TTL` does.
+                if (metadata_snapshot->hasRowsTTL()
+                    || metadata_snapshot->hasAnyRowsWhereTTL()
+                    || metadata_snapshot->hasAnyGroupByTTL())
+                {
+                    for (const auto & physical_column : columns_desc.getAllPhysical())
+                    {
+                        dependencies.emplace(physical_column.name, ColumnDependency::TTL_TARGET);
+                        if (std::ranges::find(ttl_target_columns, physical_column.name) == ttl_target_columns.end())
+                            ttl_target_columns.push_back(physical_column.name);
+                    }
                 }
             }
 
