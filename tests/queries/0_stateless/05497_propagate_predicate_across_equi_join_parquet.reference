@@ -30,6 +30,7 @@ DateTime	1
 UUID	1
 FixedString	1
 Nullable(Float32)	1
+Int128	1
 UInt8 result	1000
 Date result	1000
 Date32 result	1000

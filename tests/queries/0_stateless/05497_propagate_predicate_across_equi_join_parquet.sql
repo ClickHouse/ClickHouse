@@ -100,8 +100,8 @@ SELECT 'hive only', countIf(explain LIKE '%ilter column:%k = 9%' OR explain LIKE
 DROP TABLE IF EXISTS src_types;
 CREATE TABLE src_types (
     c_u8 UInt8, c_date Date, c_date32 Date32, c_dec Decimal(9, 2), c_ni64 Nullable(Int64), c_lcni64 LowCardinality(Nullable(Int64)),
-    c_str String, c_dt DateTime, c_uuid UUID, c_fs FixedString(8), c_nf32 Nullable(Float32)) ENGINE = Memory;
-INSERT INTO src_types VALUES (1, '2020-01-02', '2020-01-02', 1.5, 5, 5, 'abc', '2020-01-02 00:00:00', '00000000-0000-0000-0000-000000000001', 'abc', 1.5);
+    c_str String, c_dt DateTime, c_uuid UUID, c_fs FixedString(8), c_nf32 Nullable(Float32), c_i128 Int128) ENGINE = Memory;
+INSERT INTO src_types VALUES (1, '2020-01-02', '2020-01-02', 1.5, 5, 5, 'abc', '2020-01-02 00:00:00', '00000000-0000-0000-0000-000000000001', 'abc', 1.5, 5);
 INSERT INTO FUNCTION file(currentDatabase() || '_05497_types.parquet', Parquet) SELECT * FROM src_types;
 
 SELECT 'UInt8', countIf(explain LIKE '%ilter column:%c_u8%') FROM (EXPLAIN PLAN actions = 1
@@ -137,6 +137,9 @@ SELECT 'FixedString', countIf(explain LIKE '%ilter column:%c_fs%') FROM (EXPLAIN
 SELECT 'Nullable(Float32)', countIf(explain LIKE '%ilter column:%c_nf32%') FROM (EXPLAIN PLAN actions = 1
     SELECT count() FROM (SELECT * FROM src_types WHERE c_nf32 = toFloat32(1.5)) AS s
     INNER JOIN file(currentDatabase() || '_05497_types.parquet', Parquet, 'c_nf32 Nullable(Float32)') AS t ON s.c_nf32 = t.c_nf32);
+SELECT 'Int128', countIf(explain LIKE '%ilter column:%c_i128%') FROM (EXPLAIN PLAN actions = 1
+    SELECT count() FROM (SELECT * FROM src_types WHERE c_i128 = toInt128(5)) AS s
+    INNER JOIN file(currentDatabase() || '_05497_types.parquet', Parquet, 'c_i128 Int128') AS t ON s.c_i128 = t.c_i128);
 
 -- Each allowed type skips row groups by its statistics: row group i holds only the value i
 INSERT INTO FUNCTION file(currentDatabase() || '_05497_types_rg.parquet', Parquet,
