@@ -58,7 +58,7 @@ void serializeRaw(
 /*
  * The front coding implementation is based on the idea from following papers.
  * 1. https://doi.org/10.1109/Innovate-Data.2017.9
- * 2. https://doi.org/10.1145/3448016.345279
+ * 2. https://openproceedings.org/EDBT/2014/paper_25.pdf
  */
 template <typename TokenGetter>
 void serializeFrontCodingV1(
