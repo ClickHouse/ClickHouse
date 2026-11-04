@@ -29,7 +29,6 @@
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/MaterializedColumnDependencies.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Interpreters/MutationsInterpreter.h>
