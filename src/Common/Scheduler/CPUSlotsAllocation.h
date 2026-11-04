@@ -18,7 +18,6 @@ namespace DB
 {
 
 class CPUSlotsAllocation;
-class ThreadGroup;
 
 // Represents a resource request for a cpu slot for a single thread
 class CPUSlotRequest final : public ResourceRequest
@@ -91,8 +90,7 @@ private:
     // Grant a slot and enqueue another resource request if necessary
     void grant();
 
-    // Returns the link (and its queue) for the current request: master while `allocated < master_slots`, else worker.
-    const ResourceLink & getCurrentLink(const std::unique_lock<std::mutex> &) const;
+    // Returns the queue for the current request
     ISchedulerQueue * getCurrentQueue(const std::unique_lock<std::mutex> &) const;
 
     const SlotCount master_slots; // Max number of slots to allocate using master link
@@ -116,9 +114,6 @@ private:
     std::vector<CPUSlotRequest> requests; // Requests per every slot
     CPUSlotRequest * current_request;
     std::optional<CurrentMetrics::Increment> scheduled_slot_increment;
-    /// `wait_timer` may end on another thread after the creating one has exited, so it counts into the query's group, kept alive here.
-    std::shared_ptr<ThreadGroup> wait_thread_group;
-    ProfileEvents::Counters * wait_counters = &ProfileEvents::global_counters;
     std::optional<ProfileEvents::Timer> wait_timer;
 };
 

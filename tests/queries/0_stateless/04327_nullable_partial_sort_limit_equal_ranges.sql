@@ -46,4 +46,5 @@ neighbors AS
     FROM sorted
 )
 SELECT countIf(rn > 0 AND cur > prev) = 0 AS output_is_sorted
-FROM neighbors;
+FROM neighbors
+SETTINGS enable_analyzer = 1;

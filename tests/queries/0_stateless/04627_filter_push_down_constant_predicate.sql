@@ -11,6 +11,7 @@
 -- caps use 0 = unlimited so they never drop below the query's `LIMIT`. `no-parallel-replicas` (like the
 -- other lazy-materialization tests): parallel replicas rewrite the read before lazy materialization runs.
 
+SET enable_analyzer = 1;
 SET query_plan_filter_push_down = 1;
 SET query_plan_merge_expressions = 1;
 -- merged the pushed outer `cluster` predicate with the inner `ts` predicate into one filter node;
@@ -51,7 +52,7 @@ INSERT INTO traces_04627 VALUES ('cluster1', 1, 'trace007');
 --                              The match is form-agnostic (` AND 1` trailing, or ` 1 AND ` if
 --                              reordered) because the predicate prints in function form
 --                              (`equals(...) AND 1`) or operator form (`cluster = '...' AND 1`)
---                              depending on the randomized `optimize_move_to_prewhere`.
+--                              depending on the randomized `query_plan_optimize_prewhere`.
 WITH plan AS
 (
     SELECT rowNumberInAllBlocks() AS rn, explain

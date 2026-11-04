@@ -5,7 +5,6 @@
 #include <Functions/ColorConversion.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/ITupleFunction.h>
-#include <Common/sinCos.h>
 
 namespace DB
 {
@@ -34,11 +33,9 @@ public:
         Float64 chroma = oklch[1];
         Float64 hue_rad = oklch[2] * ColorConversion::deg2rad;
 
-        const auto [sin_hue, cos_hue] = sinCos(hue_rad);
-
         auto oklab = oklch;
-        oklab[1] = chroma * cos_hue;
-        oklab[2] = chroma * sin_hue;
+        oklab[1] = chroma * std::cos(hue_rad);
+        oklab[2] = chroma * std::sin(hue_rad);
 
         return ColorConversion::oklabToSrgb(oklab, gamma);
     }
@@ -52,11 +49,11 @@ Converts a colour from the **OKLCH** perceptual colour space to the familiar **s
 
 If `L` is outside the range `[0...1]`, `C` is negative, or `H` is outside the range `[0...360]`, the result is implementation-defined.
 
-<Note>
+:::note
 **OKLCH** is a cylindrical version of the OKLab colour space.
 It's three coordinates are `L` (the lightness in the range `[0...1]`), `C` (chroma `>= 0`) and `H` (hue in degrees  from `[0...360]`).
 OKLab/OKLCH is designed to be perceptually uniform while remaining cheap to compute.
-</Note>
+:::
 
 The conversion is the inverse of [`colorSRGBToOKLCH`](#colorSRGBToOKLCH):
 
