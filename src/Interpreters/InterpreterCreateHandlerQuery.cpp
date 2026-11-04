@@ -115,6 +115,18 @@ bool hasSettingsClause(const IAST & ast)
     return false;
 }
 
+bool setsReadonly(const IAST & ast)
+{
+    if (const auto * set = ast.as<ASTSetQuery>())
+        for (const auto & change : set->changes)
+            if (Settings::resolveName(change.name) == "readonly")
+                return true;
+    for (const auto & child : ast.children)
+        if (child && setsReadonly(*child))
+            return true;
+    return false;
+}
+
 String describeStatementKind(const IAST & statement)
 {
     if (statement.as<ASTExecuteAsQuery>())
@@ -216,6 +228,12 @@ void validateHandlerQuery(ASTCreateHandlerQuery & handler, const ContextPtr & co
                 "are supported for handlers with SQL SECURITY DEFINER or NONE",
                 handler.handler_name, magic_enum::enum_name(type), describeStatementKind(*statement));
 
+        if (runs_as_definer && setsReadonly(*statement))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Handler `{}` with SQL SECURITY {} sets `readonly` in its query. A handler with SQL SECURITY DEFINER or NONE "
+                "runs in the `readonly` mode of the request",
+                handler.handler_name, magic_enum::enum_name(type));
+
         if (full_access || self_definer)
         {
             if (runs_as_definer)
@@ -230,6 +248,13 @@ void validateHandlerQuery(ASTCreateHandlerQuery & handler, const ContextPtr & co
             ? "Use DEFINER = CURRENT_USER SQL SECURITY DEFINER to store a query that is checked against your privileges "
               "when it runs, or create the handler as a user with full access"
             : "Use DEFINER = CURRENT_USER, or create the handler as a user with full access";
+
+        if (!context->getExternalTables().empty())
+            throw Exception(ErrorCodes::ACCESS_DENIED,
+                "Handler `{}` cannot be checked against the privileges of the user `{}` in a session with temporary tables: "
+                "a temporary table can have the name of a table the handler reads. Store the handler from a session "
+                "without temporary tables. {}",
+                handler.handler_name, context->getUserName(), way_out);
 
         if (!is_select)
             throw Exception(ErrorCodes::ACCESS_DENIED,

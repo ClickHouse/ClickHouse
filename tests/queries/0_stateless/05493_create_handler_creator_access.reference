@@ -93,3 +93,6 @@ with query parameters
 OK
 SELECT joinGet(\'DB.j\', \'v\', toUInt32(1))
 mine
+--- 20. a temporary table of the session
+in a session with temporary tables
+0

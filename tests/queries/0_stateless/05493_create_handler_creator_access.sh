@@ -42,7 +42,7 @@ handlers() { $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.handlers WHERE na
 # Prints why a handler is refused to the user.
 reason() {
     $CLICKHOUSE_CLIENT --user "$1" -q "$2" 2>&1 \
-        | grep -o -m1 -E 'runs a query of type [A-Z ]+|with query parameters|with a SETTINGS clause|Not enough privileges' || echo OK
+        | grep -o -m1 -E 'runs a query of type [A-Z ]+|with query parameters|with a SETTINGS clause|Not enough privileges|in a session with temporary tables' || echo OK
 }
 handler_query() { $CLICKHOUSE_CLIENT -q "SELECT replaceAll($2, '${DB}', 'DB') FROM system.handlers WHERE name = '$1'"; }
 
@@ -190,3 +190,8 @@ GRANT SELECT ON ${DB}.j TO ${U}"
 as_user "$U" "CREATE HANDLER h19_${DB} URL '/${DB}/h19' AS SELECT joinGet('j', 'v', toUInt32(1))"
 handler_query "h19_${DB}" query
 ${CLICKHOUSE_CURL} -sS "${BASE}/${DB}/h19?database=${DB_B}"
+
+echo "--- 20. a temporary table of the session"
+$CLICKHOUSE_CLIENT -q "GRANT CREATE TEMPORARY TABLE ON *.* TO ${U}; GRANT TABLE ENGINE ON Memory TO ${U}; REVOKE SELECT ON ${DB}.t FROM ${U}"
+reason "$U" "CREATE TEMPORARY TABLE t (id UInt32, v String); CREATE HANDLER h20_${DB} URL '/${DB}/h20' AS SELECT v FROM t"
+handlers "h20_${DB}"
