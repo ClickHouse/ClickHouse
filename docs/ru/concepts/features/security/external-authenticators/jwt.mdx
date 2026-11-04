@@ -222,15 +222,36 @@ curl -H 'Authorization: Bearer <your_jwt_token>' \
   Всегда передавайте JWT только по HTTPS. Bearer-токен, отправленный по обычному HTTP, может быть перехвачен любым узлом на сетевом пути, что равносильно утечке учетных данных.
 </Warning>
 
-<div id="oauth2-device-code-login">
-  ### Вход по коду устройства OAuth2
-</div>
+### Вход через OAuth2 с кодом устройства {#oauth2-device-code-login}
 
-`clickhouse-client` поддерживает интерактивный OAuth2-поток Device Code через флаг `--login`. Для конечных точек ClickHouse Cloud клиент автоматически выполняет обмен токенов, чтобы получить JWT для ClickHouse. Токены прозрачно обновляются в течение сеанса. При получении нового токена клиент автоматически переподключается.
+`clickhouse-client` поддерживает интерактивную авторизацию OAuth 2.0 с кодом устройства (device authorization grant, [RFC 8628](https://datatracker.ietf.org/doc/html/rfc8628)) с помощью флага `--login`.
+
+Для конечных точек ClickHouse Cloud, если не передан ни один параметр `--oauth-*`, клиент выполняет вход через IdP ClickHouse Cloud и автоматически обменивает токен (token exchange) на JWT, специфичный для ClickHouse. В течение сеанса токены обновляются прозрачно для пользователя. При получении нового токена клиент автоматически переподключается.
 
 ```bash
 clickhouse-client --host your-instance.clickhouse.cloud --login
 ```
+
+Для собственного IdP передайте адрес издателя (issuer) OIDC в параметре `--oauth-url`. Указание любого параметра `--oauth-*` включает сценарий входа через собственный IdP, в том числе для хостов ClickHouse Cloud (например, когда для сервиса включена [JWT-аутентификация с собственным провайдером идентификации](#enabling-jwt-authentication-for-your-service)). Клиент определяет `device_authorization_endpoint` и `token_endpoint` по документу `/.well-known/openid-configuration` издателя (и связанным URL-адресам метаданных OAuth). Если присутствует поле `grant_types_supported`, оно должно содержать `urn:ietf:params:oauth:grant-type:device_code`. Если определить конечные точки не удаётся, клиент сообщает об ошибке; если метаданные недоступны, явно задайте оба параметра: `--oauth-device-uri` и `--oauth-token-uri`.
+
+При входе клиент выводит короткий `verification_uri` и `user_code` (RFC 8628). Если IdP также возвращает `verification_uri_complete`, клиент выводит эту ссылку для быстрого перехода, открывает её в браузере и, при наличии утилиты `qrencode`, отображает её в терминале в виде QR-кода. Для IdP ClickHouse Cloud выводятся только `verification_uri_complete` и `user_code`. Конфиденциальные клиенты могут передать `--oauth-client-secret` вместе с `--oauth-client-auth basic|post`.
+
+```bash
+# Microsoft Entra ID (issuer URL, not the device endpoint itself)
+clickhouse-client --host your-clickhouse-host --secure --login \
+  --oauth-client-id <app-client-id> \
+  --oauth-url https://login.microsoftonline.com/<TENANT_ID>/v2.0 \
+  --oauth-scope "openid profile offline_access api://<app-client-id>/.default"
+
+# Explicit endpoints when discovery is unavailable
+clickhouse-client --host your-clickhouse-host --secure --login \
+  --oauth-client-id <app-client-id> \
+  --oauth-device-uri https://login.microsoftonline.com/<TENANT_ID>/oauth2/v2.0/devicecode \
+  --oauth-token-uri https://login.microsoftonline.com/<TENANT_ID>/oauth2/v2.0/token \
+  --oauth-scope "openid profile offline_access api://<app-client-id>/.default"
+```
+
+Полученный токен доступа передаётся в ClickHouse в виде JWT. Сопоставление ролей и привилегий (grant) по-прежнему определяется конфигурацией JWT-аутентификатора на стороне сервера (например, утверждениями `clickhouse:roles`).
 
 <div id="clickhouse-cloud-built-in">
   ## Встроенный JWT-аутентификатор ClickHouse Cloud

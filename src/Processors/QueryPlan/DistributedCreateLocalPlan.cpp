@@ -27,6 +27,11 @@ std::unique_ptr<QueryPlan> createLocalPlan(
     auto query_plan = std::make_unique<QueryPlan>();
     auto new_context = Context::createCopy(context);
 
+    /// The local shard reads the table itself, like the remote shards do: the inserted block
+    /// of a materialized view (whose query contains this `remote` or `Distributed` read) must not
+    /// replace the source table here.
+    new_context->clearViewSource();
+
     if (build_logical_plan && !default_database.empty())
         new_context->setCurrentDatabase(default_database);
 
@@ -45,11 +50,8 @@ std::unique_ptr<QueryPlan> createLocalPlan(
     /// network, so it must keep marshalling. Only the plan executed in this process must skip it.
     select_query_options.is_local_plan_for_distributed_query = !build_logical_plan;
 
-    /// Positional arguments in the outer query were already resolved by the initiator.
-    /// Use a context flag instead of disabling enable_positional_arguments so that
-    /// view-inner queries on this node (which were never resolved by the initiator) are
-    /// still processed correctly. See https://github.com/ClickHouse/ClickHouse/issues/62289.
-    new_context->setPositionalArgumentsAlreadyResolved(true);
+    /// The query is printed from the initiator's resolved query tree.
+    select_query_options.positional_arguments_already_resolved = true;
     auto interpreter = InterpreterSelectQueryAnalyzer(query_ast, new_context, select_query_options);
     query_plan = std::make_unique<QueryPlan>(std::move(interpreter).extractQueryPlan());
 

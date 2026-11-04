@@ -585,6 +585,12 @@ static bool isSubcolumnOfAvailableColumn(
     return requested_columns.contains(parent_name) || additional_available_columns.contains(parent_name);
 }
 
+bool mayLeaveColumnToMissingDefaults(const StorageSnapshotPtr & storage_snapshot, const NameAndTypePair & column)
+{
+    /// A superset of the two cases in which `fillMissingColumns` leaves a column unfilled.
+    return hasDefault(storage_snapshot, column) || (storage_snapshot && column.isSubcolumn());
+}
+
 static String removeTupleElementsFromSubcolumn(String subcolumn_name, const Names & tuple_elements)
 {
     /// Add a dot to the end of name for convenience.
@@ -707,7 +713,7 @@ void fillMissingColumns(
                 if (subcolumn_name == requested_subcolumn_name
                     || requested_subcolumn_name.starts_with(subcolumn_name + "."))
                     tuple_elements.push_back(path.back().name_of_substream);
-            }, ISerialization::SubstreamData(serialization));
+            }, ISerialization::SubstreamData(serialization).withType(column_for_type.type));
 
             /// The number of dimensions that belongs to the array itself but not shared in Nested column.
             /// For example for column "n Nested(a UInt64, b Array(UInt64))" this value is 0 for `n.a` and 1 for `n.b`.

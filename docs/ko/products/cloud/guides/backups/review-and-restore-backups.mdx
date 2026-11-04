@@ -19,13 +19,15 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 ## Backup 상태 목록 {#backup-status-list}
 
-백업은 기본 일일 일정이든 사용자가 선택한 [사용자 지정 일정](/ko/products/cloud/guides/backups/configurable-backups)이든 서비스에 구성된 일정에 따라 실행됩니다. 사용 가능한 모든 백업은 서비스의 **Backups** 탭에서 확인할 수 있습니다. 여기에서 백업 상태, 소요 시간, 백업 크기를 확인할 수 있습니다. 또한 **Actions** 컬럼에서 특정 백업을 복원할 수 있습니다.
+Backup은 기본 일일 일정이든 사용자가 선택한 [사용자 지정 일정](/ko/products/cloud/guides/backups/configurable-backups)이든 서비스에 구성된 일정에 따라 실행됩니다. 사용 가능한 모든 복원 지점은 서비스의 **Backups** 탭에서 확인할 수 있습니다. 여기에서 Backup 상태, 소요 시간, Backup 크기를 확인할 수 있습니다. 또한 **Actions** 컬럼에서 특정 Backup을 복원할 수 있습니다.
 
-<Image img="/images/cloud/manage/backup-status-list.webp" size="md" alt="ClickHouse Cloud의 백업 상태 목록" border />
+<Image img="/images/cloud/manage/backup-status-list.webp" size="md" alt="ClickHouse Cloud의 Backup 상태 목록" border />
 
 ## Backup 비용 이해하기 {#understanding-backup-cost}
 
 다른 일정으로 구성하지 않는 한 서비스는 24시간마다 한 번 Backup되며, 각 Backup은 24시간 동안 보존됩니다. Backup 일정을 구성할 수 있는 기능은 서비스 및 플랜에 따라 다릅니다. 더 많은 데이터를 보존해야 하거나 Backup 빈도가 더 높아지는 일정을 선택하면 Backup 저장소에 대한 추가 요금이 발생할 수 있습니다.
+
+콘솔에 표시되는 복원 지점이 곧 청구 기준은 아닙니다. 하나의 복원 지점을 사용하려면 해당 체인에 속한 전체 Backup과 하나 이상의 증분 Backup이 필요할 수 있습니다. 따라서 Backup 저장소 사용량에는 별도의 복원 지점으로 표시되지 않더라도 함께 보존되는 이러한 의존성이 포함될 수 있습니다.
 
 Backup 비용을 파악하려면 사용량 화면에서 서비스별 Backup 비용을 확인할 수 있습니다(아래 그림 참조). 사용자 지정 일정으로 며칠 동안 Backup을 실행해 보면 비용 수준을 가늠할 수 있으며, 이를 바탕으로 월간 Backup 비용을 추정할 수 있습니다.
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
 #include <Core/SortDescription.h>
@@ -87,10 +88,10 @@ private:
 
     Inputs current_inputs;
 
-    std::vector<State> states;
-    std::vector<size_t> inputs_to_update;
+    VectorWithMemoryTracking<State> states;
+    VectorWithMemoryTracking<size_t> inputs_to_update;
 
-    std::vector<Chunk> chunks;
+    VectorWithMemoryTracking<Chunk> chunks;
     UInt64 chunk_num = 0;
     size_t accumulated_rows = 0;
     size_t accumulated_bytes = 0;

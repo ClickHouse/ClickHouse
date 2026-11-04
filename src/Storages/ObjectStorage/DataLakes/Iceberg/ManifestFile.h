@@ -4,6 +4,7 @@
 
 #if USE_AVRO
 
+#include <Common/Logger.h>
 #include <Core/Field.h>
 #include <Core/Range.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
@@ -11,10 +12,16 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
 #include <unordered_map>
 #include <vector>
 
 #include <boost/noncopyable.hpp>
+
+namespace DB
+{
+struct FormatSettings;
+}
 
 namespace DB::Iceberg
 {
@@ -70,10 +77,18 @@ struct PartitionFieldSummary
 
 using PartitionFieldSummaries = std::vector<PartitionFieldSummary>;
 
+/// The bytes of a manifest file, parsed by the first `getDeserializer` call.
 struct ManifestFileCacheableInfo
 {
-    std::shared_ptr<AvroForIcebergDeserializer> deserializer;
-    size_t file_bytes_size;
+    struct State;
+
+    static ManifestFileCacheableInfo fromBytes(String bytes, const IcebergPathFromMetadata & path, const FormatSettings & format_settings);
+
+    /// Thread-safe. Concurrent callers wait for one parse; if it throws, the next caller parses again.
+    std::shared_ptr<AvroForIcebergDeserializer> getDeserializer() const;
+
+    std::shared_ptr<State> state;
+    size_t file_bytes_size = 0;
 };
 
 /// Description of Data file in manifest file
@@ -170,6 +185,13 @@ struct ProcessedManifestFileEntry
     String manifest_file_path;
     std::optional<UInt64> first_row_id;
 
+    /// `parsed_entry->partition_key_value` as it is stored in the manifest, brought to the ClickHouse
+    /// types of the partition columns (see `normalizePartitionKeyValue`). A manifest may keep a decimal
+    /// as raw `fixed` bytes, and manifests written by old ClickHouse versions keep a `DateTime64` as a
+    /// plain `long`, so the raw tuple of two manifests of the same table can be incomparable. Everything
+    /// that compares, groups or shows partition values has to use this one.
+    DB::Row normalized_partition_key_value;
+
     String dumpDeletesMatchingInfo() const;
 };
 
@@ -179,6 +201,13 @@ bool operator<(const PartitionSpecification & lhs, const PartitionSpecification 
 bool operator<(const DB::Row & lhs, const DB::Row & rhs);
 
 std::weak_ordering operator<=>(const ProcessedManifestFileEntryPtr & lhs, const ProcessedManifestFileEntryPtr & rhs);
+
+/// Returns the delete files that apply to the data file by partition and sequence number; `deletes_objects` must be sorted.
+std::span<const ProcessedManifestFileEntryPtr> defineDeletesSpan(
+    ProcessedManifestFileEntryPtr data_object_,
+    const std::vector<ProcessedManifestFileEntryPtr> & deletes_objects,
+    bool is_equality_delete,
+    LoggerPtr logger);
 
 }
 
