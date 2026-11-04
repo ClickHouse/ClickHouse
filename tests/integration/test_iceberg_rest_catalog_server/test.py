@@ -53,7 +53,7 @@ DEFAULT_AUTH = ("default", "")
 CATALOG_PORT = 8182
 CATALOG_SECURE_PORT = 8183
 KEEPER_ROOT = "/clickhouse/iceberg_rest_catalog/my_warehouse"
-FORMAT_MARKER = b"IcebergRESTCatalog\nformat_version: 1"
+FORMAT_MARKER = b"IcebergRESTCatalog\nformat_version: 2"
 BUCKET = "warehouse"
 BASE_LOCATION = f"s3://{BUCKET}/my_warehouse"
 
@@ -741,8 +741,8 @@ def test_keeper_layout(started_cluster):
     table_uuid = result["metadata"]["table-uuid"]
     assert zk.get_children(f"{child_path}/tables") == ["my%2Etable"]
     assert zk.get(table_path)[0] == table_uuid.encode()
-    assert zk.get_children(table_path) == [table_uuid]
-    assert zk.get(f"{table_path}/{table_uuid}")[0] == result["metadata-location"].encode()
+    assert zk.get_children(table_path) == []
+    assert zk.get(f"{KEEPER_ROOT}/tables_by_uuid/{table_uuid}")[0] == result["metadata-location"].encode()
 
     assert list_namespaces(parent=ns) == [[ns, "eu-west"]]
     assert list_tables(f"{ns}\x1feu-west") == ["my.table"]
@@ -1021,6 +1021,28 @@ def test_rename_table(started_cluster):
     assert zk.get_children(f"{KEEPER_ROOT}/namespaces/{ns}/namespaces/other/tables") == ["c"]
 
 
+def test_rename_keeps_commit_version(started_cluster):
+    ns = f"rename_version_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns])
+    table_uuid = create_table(ns, "a").json()["metadata"]["table-uuid"]
+    commit_table(ns, "a", assert_main_at(None), append_updates(fake_snapshot(100, 1)))
+
+    # A writer that loaded the table before the rename holds Keeper version 1 of the uuid node.
+    zk = get_keeper()
+    uuid_path = f"{KEEPER_ROOT}/tables_by_uuid/{table_uuid}"
+    assert zk.get(uuid_path)[1].version == 1
+
+    # A rename round trip does not recreate the uuid node, so the stale version still fails a commit.
+    rename_table([ns], "a", [ns], "b")
+    rename_table([ns], "b", [ns], "a")
+    assert zk.get(uuid_path)[1].version == 1
+    assert zk.get(f"{KEEPER_ROOT}/namespaces/{ns}/tables/a")[0] == table_uuid.encode()
+
+    committed = commit_table(ns, "a", assert_main_at(100), append_updates(fake_snapshot(200, 2))).json()
+    assert committed["metadata"]["current-snapshot-id"] == 200
+    assert zk.get(uuid_path)[1].version == 2
+
+
 def test_report_metrics(started_cluster):
     ns = f"metrics_{uuid.uuid4().hex[:8]}"
     create_namespace([ns])
@@ -1199,9 +1221,8 @@ def test_commit_append(started_cluster):
     assert len(list_metadata_files(location)) == 3
 
     zk = get_keeper()
-    table_path = f"{KEEPER_ROOT}/namespaces/{ns}/tables/events"
-    table_uuid = zk.get(table_path)[0].decode()
-    assert zk.get(f"{table_path}/{table_uuid}")[0] == second["metadata-location"].encode()
+    table_uuid = zk.get(f"{KEEPER_ROOT}/namespaces/{ns}/tables/events")[0].decode()
+    assert zk.get(f"{KEEPER_ROOT}/tables_by_uuid/{table_uuid}")[0] == second["metadata-location"].encode()
 
 
 def test_commit_empty(started_cluster):

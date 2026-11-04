@@ -24,7 +24,7 @@ namespace
 {
 
 /// Data of the root node. Bump on any layout change so old data is refused, not misread.
-constexpr auto FORMAT_MARKER = "IcebergRESTCatalog\nformat_version: 1";
+constexpr auto FORMAT_MARKER = "IcebergRESTCatalog\nformat_version: 2";
 
 constexpr size_t MAX_UPDATE_RETRIES = 10;
 
@@ -124,6 +124,7 @@ void KeeperIcebergRESTCatalogStore::initRoot(const zkutil::ZooKeeperPtr & zookee
     Coordination::Requests ops;
     ops.emplace_back(zkutil::makeCreateRequest(root_path, FORMAT_MARKER, zkutil::CreateMode::Persistent));
     ops.emplace_back(zkutil::makeCreateRequest(root_path + "/namespaces", "", zkutil::CreateMode::Persistent));
+    ops.emplace_back(zkutil::makeCreateRequest(root_path + "/tables_by_uuid", "", zkutil::CreateMode::Persistent));
     Coordination::Responses responses;
     const auto code = zookeeper->tryMulti(ops, responses);
     if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNODEEXISTS)
@@ -168,9 +169,10 @@ String KeeperIcebergRESTCatalogStore::tablePath(const IcebergNamespaceName & nam
     return tablesPath(name) + "/" + escapeForFileName(table);
 }
 
-String KeeperIcebergRESTCatalogStore::tableUuidPath(const IcebergNamespaceName & name, const String & table, const String & uuid) const
+String KeeperIcebergRESTCatalogStore::tableUuidPath(const String & uuid) const
 {
-    return tablePath(name, table) + "/" + uuid;
+    /// The table name is not in this path, so a rename keeps the node and its version.
+    return root_path + "/tables_by_uuid/" + uuid;
 }
 
 bool KeeperIcebergRESTCatalogStore::createNamespace(const IcebergNamespaceName & name, const std::map<String, String> & properties)
@@ -298,8 +300,7 @@ KeeperIcebergRESTCatalogStore::createTable(const IcebergNamespaceName & ns, cons
     auto component_guard = Coordination::setCurrentComponent("KeeperIcebergRESTCatalogStore::createTable");
     Coordination::Requests ops;
     ops.emplace_back(zkutil::makeCreateRequest(tablePath(ns, table), pointer.uuid, zkutil::CreateMode::Persistent));
-    ops.emplace_back(zkutil::makeCreateRequest(
-        tableUuidPath(ns, table, pointer.uuid), pointer.metadata_location, zkutil::CreateMode::Persistent));
+    ops.emplace_back(zkutil::makeCreateRequest(tableUuidPath(pointer.uuid), pointer.metadata_location, zkutil::CreateMode::Persistent));
     Coordination::Responses responses;
     const auto code = getZooKeeper()->tryMulti(ops, responses);
     if (code == Coordination::Error::ZNODEEXISTS)
@@ -320,7 +321,7 @@ std::optional<IcebergTablePointer> KeeperIcebergRESTCatalogStore::getTable(const
         return std::nullopt;
     /// Missing here means the table was dropped between the two reads.
     Coordination::Stat stat;
-    if (!zookeeper->tryGet(tableUuidPath(ns, table, pointer.uuid), pointer.metadata_location, &stat))
+    if (!zookeeper->tryGet(tableUuidPath(pointer.uuid), pointer.metadata_location, &stat))
         return std::nullopt;
     pointer.version = ZooKeeperNodeVersion(stat.version);
     return pointer;
@@ -363,7 +364,7 @@ bool KeeperIcebergRESTCatalogStore::dropTable(const IcebergNamespaceName & ns, c
 
     /// Removing the uuid node first pins the table identity. A table re-created under the same name has another uuid.
     Coordination::Requests ops;
-    ops.emplace_back(zkutil::makeRemoveRequest(tableUuidPath(ns, table, uuid), -1));
+    ops.emplace_back(zkutil::makeRemoveRequest(tableUuidPath(uuid), -1));
     ops.emplace_back(zkutil::makeRemoveRequest(path, -1));
     Coordination::Responses responses;
     const auto code = zookeeper->tryMulti(ops, responses);
@@ -379,21 +380,21 @@ KeeperIcebergRESTCatalogStore::RenameTableResult KeeperIcebergRESTCatalogStore::
     auto component_guard = Coordination::setCurrentComponent("KeeperIcebergRESTCatalogStore::renameTable");
     auto zookeeper = getZooKeeper();
 
+    const auto source_path = tablePath(source_ns, source);
     for (size_t attempt = 0; attempt < MAX_UPDATE_RETRIES; ++attempt)
     {
-        const auto pointer = getTable(source_ns, source);
-        if (!pointer)
+        String uuid;
+        if (!zookeeper->tryGet(source_path, uuid))
             return RenameTableResult::TableMissing;
 
-        /// The version check keeps a commit that lands between the read and the multi.
+        /// Only the name node moves. The uuid node keeps its version, so a commit that read the table before the rename still conflicts.
+        /// The uuid node check pins the table identity. A drop removes it, so a table re-created under the same name is read again.
         Coordination::Requests ops;
-        ops.emplace_back(zkutil::makeCheckRequest(tableUuidPath(source_ns, source, pointer->uuid), pointer->version.toInt32()));
-        ops.emplace_back(zkutil::makeRemoveRequest(tableUuidPath(source_ns, source, pointer->uuid), -1));
-        ops.emplace_back(zkutil::makeRemoveRequest(tablePath(source_ns, source), -1));
+        const size_t uuid_check_op = ops.size();
+        ops.emplace_back(zkutil::makeCheckRequest(tableUuidPath(uuid), -1));
+        ops.emplace_back(zkutil::makeRemoveRequest(source_path, -1));
         const size_t dest_table_op = ops.size();
-        ops.emplace_back(zkutil::makeCreateRequest(tablePath(dest_ns, dest), pointer->uuid, zkutil::CreateMode::Persistent));
-        ops.emplace_back(zkutil::makeCreateRequest(
-            tableUuidPath(dest_ns, dest, pointer->uuid), pointer->metadata_location, zkutil::CreateMode::Persistent));
+        ops.emplace_back(zkutil::makeCreateRequest(tablePath(dest_ns, dest), uuid, zkutil::CreateMode::Persistent));
 
         Coordination::Responses responses;
         const auto code = zookeeper->tryMulti(ops, responses);
@@ -404,12 +405,13 @@ KeeperIcebergRESTCatalogStore::RenameTableResult KeeperIcebergRESTCatalogStore::
         /// The `tables` node is created with the namespace, so a missing parent of the destination means a missing namespace.
         if (code == Coordination::Error::ZNONODE)
         {
-            if (zkutil::getFailedOpIndex(code, responses) == dest_table_op)
+            const auto failed_op = zkutil::getFailedOpIndex(code, responses);
+            if (failed_op == dest_table_op)
                 return RenameTableResult::NamespaceMissing;
+            if (failed_op == uuid_check_op)
+                continue;
             return RenameTableResult::TableMissing;
         }
-        if (code == Coordination::Error::ZBADVERSION)
-            continue;
         zkutil::KeeperMultiException::check(code, ops, responses);
     }
 
@@ -426,7 +428,7 @@ KeeperIcebergRESTCatalogStore::UpdateTableResult KeeperIcebergRESTCatalogStore::
     auto component_guard = Coordination::setCurrentComponent("KeeperIcebergRESTCatalogStore::updateTable");
     /// The uuid node pins the table identity. A table re-created under the same name has another uuid, so the set misses it.
     auto zookeeper = getZooKeeper();
-    const auto path = tableUuidPath(ns, table, expected.uuid);
+    const auto path = tableUuidPath(expected.uuid);
     const auto code = zookeeper->trySet(path, new_pointer.metadata_location, expected.version.toInt32());
     if (code == Coordination::Error::ZBADVERSION)
         return UpdateTableResult::VersionMismatch;
