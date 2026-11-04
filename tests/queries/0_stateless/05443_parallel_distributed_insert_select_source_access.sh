@@ -40,21 +40,35 @@ $CLICKHOUSE_CLIENT -q "SELECT count() FROM copy_local"
 
 # A row policy on the source table cannot be applied by the optimized rewrite (it ships the query
 # to the shards, where the policy on the Distributed table never applies), so it must fall back to
-# the regular path, which rejects a row policy on a Distributed table.
+# the regular path. The regular path reads `src_dist` with a `SELECT` sent to the shard, while the
+# optimized rewrite sends only an `INSERT ... SELECT` there, so the fallback is detected by the
+# kind of the secondary queries in `system.query_log`. (The regular path of this branch does not
+# enforce a row policy on a Distributed table, so the result of the copy itself is not checked.)
 #
 # The two fallback cases below pin serialize_query_plan = 0: with plan serialization the initiator
 # plans the read of the underlying table itself and requires the caller's own SELECT on it, which
 # these cases do not grant.
 $CLICKHOUSE_CLIENT -q "CREATE ROW POLICY policy_05443 ON src_dist USING id != 1 TO $user"
-echo -n "row policy on source "
+query_id="05443_row_policy_${CLICKHOUSE_DATABASE}_$RANDOM"
 "${client[@]}" --parallel_distributed_insert_select 2 --enable_analyzer 1 --enable_parallel_replicas 0 \
-    --serialize_query_plan 0 \
-    -q "INSERT INTO dst_dist SELECT * FROM src_dist" |& grep -o -m1 'ILLEGAL_PREWHERE' || echo 'NOT REJECTED'
-$CLICKHOUSE_CLIENT -q "DROP ROW POLICY policy_05443 ON src_dist"
+    --serialize_query_plan 0 --query_id "$query_id" \
+    -q "INSERT INTO dst_dist SELECT * FROM src_dist"
+$CLICKHOUSE_CLIENT -q "
+    DROP ROW POLICY policy_05443 ON src_dist;
+    SYSTEM FLUSH DISTRIBUTED dst_dist;
+    TRUNCATE TABLE copy_local;
+    SYSTEM FLUSH LOGS query_log;
+    SELECT
+        'row policy on source',
+        if(countIf(query_kind = 'Select') > 0 AND countIf(query_kind = 'Insert' AND query ILIKE '%SELECT%') = 0,
+            'FALLBACK', 'OPTIMIZED')
+    FROM system.query_log
+    WHERE event_date >= yesterday() AND initial_query_id = '$query_id' AND NOT is_initial_query AND type = 'QueryFinish'
+"
 
 # additional_table_filters is keyed by the source table name, which the optimized rewrite would
 # drop, so it must fall back to the regular path, which applies the filter: the only row has
-# id = 1, nothing is copied and the count stays the same.
+# id = 1, nothing is copied and the destination stays empty.
 echo -n "additional_table_filters "
 "${client[@]}" --parallel_distributed_insert_select 2 --enable_parallel_replicas 0 --serialize_query_plan 0 \
     --additional_table_filters "{'src_dist' : 'id != 1'}" -q "INSERT INTO dst_dist SELECT * FROM src_dist"
