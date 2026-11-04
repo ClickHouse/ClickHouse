@@ -1465,8 +1465,8 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                     const auto & func_name = need_inversion ? it->second : it->first;
                     auto function_builder = FunctionFactory::instance().get(func_name, context);
                     res = &inverted_dag.addFunction(function_builder, children, "");
-                    /// The folded inverse is a non-inverted condition; rewrite it like one so a later pass does not change the RPN layout.
-                    if (need_inversion && boolean_context)
+                    /// `res` is a non-inverted condition over wrapper-free arguments; rewrite it so a later pass keeps the same RPN layout.
+                    if (boolean_context)
                         if (const auto * rewritten_inverse = try_rewrite_boolean_condition(*res, func_name))
                             res = rewritten_inverse;
                     handled_inversion = true;
@@ -1497,6 +1497,10 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                     {
                         res = &inverted_dag.addFunction(node.function_base, children, "");
                     }
+
+                    if (!need_inversion && boolean_context)
+                        if (const auto * rewritten_clone = try_rewrite_boolean_condition(*res, name))
+                            res = rewritten_clone;
                 }
             }
             break;

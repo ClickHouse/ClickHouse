@@ -35,6 +35,11 @@ SELECT count() FROM t_minmax WHERE NOT (coalesce(c, b) != 7) OR x = 9;
 SELECT count() FROM t_minmax WHERE NOT (ifNull(c < 10 OR b > 100, 0) = 0) OR x = 9;
 SELECT count() FROM t_minmax WHERE NOT ((c < 10 OR b > 100) NOT IN (true)) OR x = 9;
 SELECT count() FROM t_minmax WHERE NOT (nullIf(coalesce(c, b), toUInt32(0)) != toUInt32(7)) OR x = 9;
+-- A comparison whose coalesce operand is wrapped in a function the key analysis strips is not negated, but folds the same way.
+SELECT count() FROM t_minmax WHERE materialize(coalesce(c, b)) <= 10 OR x = 9;
+SELECT count() FROM t_minmax WHERE CAST(coalesce(c, b), 'UInt32') <= 10 OR x = 9;
+SELECT count() FROM t_minmax WHERE materialize(coalesce(c, b)) <=> 10 OR x = 9;
+SELECT count() FROM t_minmax WHERE ifNull(c < 10 OR b > 100, materialize(0)) OR x = 9;
 
 CREATE TABLE t_set
 (
@@ -53,5 +58,17 @@ INSERT INTO t_set SELECT number, 1, 500, number FROM numbers(16);
 
 SELECT count() FROM t_set WHERE NOT (coalesce(c, b) > 10) OR x = 9;
 
+-- With the rewrite off, a negated ifNull range still reaches the monotonic chain over a Nullable partition key; both counts must match.
+DROP TABLE IF EXISTS t_chain_part;
+DROP TABLE IF EXISTS t_chain_flat;
+CREATE TABLE t_chain_part (c0 Nullable(Int)) ENGINE = MergeTree PARTITION BY (c0) ORDER BY tuple() SETTINGS allow_nullable_key = 1;
+CREATE TABLE t_chain_flat (c0 Nullable(Int)) ENGINE = MergeTree PARTITION BY tuple() ORDER BY tuple() SETTINGS allow_nullable_key = 1;
+INSERT INTO t_chain_part VALUES (NULL), (0), (1), (5), (NULL);
+INSERT INTO t_chain_flat VALUES (NULL), (0), (1), (5), (NULL);
+SELECT (SELECT count() FROM t_chain_flat WHERE NOT (ifNull(c0, 0) >= 7) SETTINGS allow_key_condition_coalesce_rewrite = 0),
+       (SELECT count() FROM t_chain_part WHERE NOT (ifNull(c0, 0) >= 7) SETTINGS allow_key_condition_coalesce_rewrite = 0);
+
 DROP TABLE t_minmax;
 DROP TABLE t_set;
+DROP TABLE t_chain_part;
+DROP TABLE t_chain_flat;
