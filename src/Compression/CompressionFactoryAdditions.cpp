@@ -169,21 +169,19 @@ bool innerDataTypeIsFloat(const DataTypePtr & type)
     return false;
 }
 
+/// Whether a value of the type contains, or may contain, a `Map`. All the statically nested types are traversed
+/// (including the alternatives of a `Variant`), and a type with dynamic subcolumns (`Dynamic`, `JSON`) may hold a
+/// `Map` whose streams become known only at insertion time, after the metadata has been validated.
 bool typeContainsMap(const DataTypePtr & type)
 {
     if (typeid_cast<const DataTypeMap *>(type.get()))
         return true;
-    if (const DataTypeNullable * type_nullable = typeid_cast<const DataTypeNullable *>(type.get()))
-        return typeContainsMap(type_nullable->getNestedType());
-    if (const DataTypeArray * type_array = typeid_cast<const DataTypeArray *>(type.get()))
-        return typeContainsMap(type_array->getNestedType());
-    if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(type.get()))
-    {
-        for (const auto & subtype : type_tuple->getElements())
-            if (typeContainsMap(subtype))
-                return true;
-        return false;
-    }
+    if (type->hasDynamicSubcolumnsData())
+        return true;
+    const size_t num_children = type->getNumberOfChildren();
+    for (size_t i = 0; i < num_children; ++i)
+        if (typeContainsMap(type->getChild(i)))
+            return true;
     return false;
 }
 
@@ -275,7 +273,9 @@ void CompressionCodecFactory::validateCodecWithFirstApplicable(
         if (isFirstApplicableElement(element))
         {
             validateFirstApplicableAlternative(element, settings);
-            if (!column_type)
+            /// The streams of the dynamic subcolumns (of `Dynamic` or `JSON`) and their types become known only at
+            /// insertion time, after this validation, and may include a `Map` or a sorting key: the same as without a type.
+            if (!column_type || column_type->hasDynamicSubcolumns())
                 checkFirstApplicableHasNoLossyAlternative(element);
         }
     }
@@ -301,7 +301,7 @@ void CompressionCodecFactory::validateCodecWithFirstApplicable(
         /// See the same check in `validateCodecAndGetPreprocessedASTImpl`, which does not see the whole column here.
         if (typeContainsMap(column_type) && get(resolved, substream_type.get())->isLossyCompression())
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Codec {} selects a lossy codec, which cannot be applied to a column of type {} because it contains a Map, "
+                "Codec {} selects a lossy codec, which cannot be applied to a column of type {} because it contains (or may contain) a Map, "
                 "whose keys would be corrupted by lossy compression",
                 ast->formatForErrorMessage(), column_type->getName());
     };
@@ -434,7 +434,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
                 /// lossy codec) is documented for Float*/Array(Float*) columns only, so reject Map entirely.
                 if (result_codec->isLossyCompression() && column_type && typeContainsMap(column_type))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Codec {} is lossy and cannot be applied to a column of type {} because it contains a Map, "
+                        "Codec {} is lossy and cannot be applied to a column of type {} because it contains (or may contain) a Map, "
                         "whose keys would be corrupted by lossy compression",
                         codec_family_name, column_type->getName());
 

@@ -203,7 +203,7 @@ void CompressionCodecFactory::checkFirstApplicableHasNoLossyAlternative(const AS
     if (getImpl(name, arguments, nullptr)->isLossyCompression())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Codec {} is lossy and cannot be an alternative of {} where the data type is unknown, e.g. as a default or "
-            "TTL recompression codec: it would be selected for the type of every column, including the ones where lossy "
+            "TTL recompression codec, or for a column with dynamic subcolumns (Dynamic, JSON): it would be selected for the type of every column, including the ones where lossy "
             "compression is not allowed (a sorting key, the keys of a Map or a LowCardinality dictionary)",
             name, FIRST_APPLICABLE_CODEC_NAME);
 }
