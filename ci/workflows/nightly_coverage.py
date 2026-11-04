@@ -14,6 +14,7 @@ workflow = Workflow.Config(
         ],  # Per-test LLVM entry counters with randomized settings
         *JobConfigs.functional_tests_jobs_coverage,
         *JobConfigs.integration_test_per_test_coverage_jobs,
+        *JobConfigs.performance_coverage_jobs,
     ],
     dockers=DOCKERS,
     secrets=SECRETS,

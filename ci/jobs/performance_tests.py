@@ -30,6 +30,7 @@ from ci.defs.defs import (
 from ci.jobs.scripts import log_export
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
 from ci.jobs.scripts.dataset_download import (
+    PERFORMANCE_DATASETS,
     download_and_extract_datasets,
     iceberg_database_queries,
 )
@@ -1417,7 +1418,7 @@ class CHServer:
     # JemallocSample flamegraphs. Must match compare.sh.
     JEMALLOC_PROFILER_SAMPLING_RATE = 16
 
-    def __init__(self, is_left=False, nightly=False):
+    def __init__(self, is_left=False, nightly=False, readiness_timeout=60):
         if is_left:
             server_port = self.LEFT_SERVER_PORT
             keeper_port = self.LEFT_SERVER_KEEPER_PORT
@@ -1436,6 +1437,7 @@ class CHServer:
             log_file = f"{serever_path}/server.log"
 
         self.log_fd = None
+        self.readiness_timeout = readiness_timeout
         self.log_file = log_file
         self.port = server_port
         self.server_path = serever_path
@@ -1506,8 +1508,8 @@ class CHServer:
 
     def wait_ready(self):
         res, out, err = 0, "", ""
-        attempts = 30
         delay = 2
+        attempts = math.ceil(self.readiness_timeout / delay)
         for attempt in range(attempts):
             res, out, err = Shell.get_res_stdout_stderr(
                 f'clickhouse-client --port {self.port} --receive_timeout=5 --query "select 1"', verbose=True
@@ -3241,15 +3243,7 @@ def main():
         # Retry missing or partially extracted Iceberg fixtures in cached db0.
         if not db_done or (needs_iceberg_read_dataset and (not iceberg_dir.is_dir() or not iceberg_done.is_file())):
             Shell.check(f"mkdir -p {db_path}/data/default/", verbose=True)
-            dataset_paths = {
-                "hits10": "https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_10m_single.tar",
-                "hits100": "https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_100m_single.tar",
-                "hits1": "https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_v1.tar",
-                "values": "https://clickhouse-datasets.s3.amazonaws.com/values_with_expressions/partitions/test_values.tar",
-                "tpch10": "https://clickhouse-datasets.s3.amazonaws.com/h/10/tpch_sf10.tar",
-                "tpch_ice10": "https://clickhouse-datasets.s3.amazonaws.com/h-ice/10/tpch_ice_sf10.tar",
-                "tpcds1": "https://clickhouse-datasets.s3.amazonaws.com/ds/scale_1/tpcds.tar",
-            }
+            dataset_paths = PERFORMANCE_DATASETS
             if db_done:
                 dataset_paths = {"tpch_ice10": dataset_paths["tpch_ice10"]}
             stop_watch = Utils.Stopwatch()

@@ -192,3 +192,60 @@ TODO
 pip3 install clickhouse_driver scipy
 ../../tests/performance/scripts/perf.py --min-runs 1 --cap 1 --cap-fast 1 insert_parallel.xml
 ```
+
+### LLVM coverage collection
+
+`NightlyCoverage` runs eight separate performance coverage shards using
+`amd_llvm_coverage_per_test`. These runs collect source regions; they do not
+produce performance measurements or change PR test selection. The regular
+performance comparison continues to use release binaries.
+
+The collector reuses `perf.py` for parameter expansion, query groups, settings,
+setup and teardown. It runs every expanded SQL query in each non-`long` test,
+without random query sampling or the adaptive timing loop:
+
+* `first`: one execution after test setup. This is not guaranteed to be cold:
+  setup and earlier queries may have warmed OS, filesystem, or process caches.
+* `warm`: three additional executions, accumulated under one coverage identity.
+  This captures repeated-execution paths, without claiming that every cache or
+  compilation threshold in every test has been reached. `--coverage-warm-runs`
+  changes the count for standalone collection.
+* `setup` and `teardown`: separate test-wide coverage. A future selector must
+  associate these regions with the whole test, rather than one arbitrary query.
+
+A query group remains one query, matching the comparison report's query index.
+The coverage identity is `<test>.query<index>.<query-sha256-prefix>.<phase>`;
+the test-wide identities are `<test>.setup` and `<test>.teardown`.
+Collecting per query preserves the option to select either individual queries
+or whole tests later. Selection should use the union of `first` and `warm`;
+separate phases let us measure the coverage gained by repeated execution.
+
+`SYSTEM SET COVERAGE TEST` flushes LLVM counters to `system.coverage_log`, just
+as in stateless tests. Attribution is process-global, so queries run serially
+on one dedicated server; background work can still contribute to a phase.
+The collector must not use LLVM continuous profiling (`%c`). Each successful
+test exports the integration collector's six-column TSV format. The existing
+exporter aggregates it into `default.checks_coverage_lines`, using the job's
+start time and check name. Only completed test batches reach the coverage upload.
+
+Each shard attaches `performance_coverage.tar.gz` and a job manifest. Per-test
+manifests contain full expanded queries, hashes, settings, phase names and row
+counts. The job manifest records the workflow and binary commits, snapshot identity, completed tests,
+skips, failures and tests not reached before a timeout. A missing mapping is not
+evidence that a query is unaffected. Shell queries are explicitly skipped until
+their subprocesses can be instrumented too; `long` tests are outside this initial
+collection. Any future selector must account for these gaps and stale mappings.
+
+To collect one test against an already configured **dedicated** instrumented
+server, from the repository root:
+
+```bash
+python3 tests/performance/scripts/perf.py tests/performance/array_sort.xml \
+    --host localhost --port 9000 --coverage-output tmp/perf-coverage \
+    --coverage-warm-runs 3 --stop-merges --jemalloc-purge disabled
+```
+
+The mode requires `WITH_COVERAGE=ON` and `WITH_COVERAGE_DEPTH=ON` and clears
+`system.coverage_log` and `system.coverage_indirect_calls` on that server.
+Use a fresh output directory for each attempt. The CI wrapper is
+`ci/jobs/performance_coverage.py`; local runs retain artifacts without uploading.

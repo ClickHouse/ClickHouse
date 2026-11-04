@@ -135,6 +135,15 @@ def stat_threshold(left_times, right_times):
 
 
 parser = argparse.ArgumentParser(description="Run performance test.")
+parser.add_argument(
+    "--coverage-output",
+    help="Collect per-query LLVM coverage into this directory instead of timings. "
+    "Requires a single dedicated instrumented server; clears its coverage tables.",
+)
+parser.add_argument(
+    "--coverage-warm-runs", type=int, default=3,
+    help="Executions after the first execution in coverage mode (default 3).",
+)
 # Explicitly decode files as UTF-8 because sometimes we have Russian characters in queries, and LANG=C is set.
 parser.add_argument(
     "file",
@@ -330,6 +339,14 @@ parser.add_argument(
     "server. With the default 0 no failure is tolerated.",
 )
 args = parser.parse_args()
+
+if args.coverage_output:
+    if max(len(args.host), len(args.port)) != 1:
+        parser.error("Coverage collection requires exactly one dedicated server")
+    if args.coverage_warm_runs < 1:
+        parser.error("--coverage-warm-runs must be positive")
+    if args.max_queries or args.queries_to_run or args.keep_created_tables or args.use_existing_tables:
+        parser.error("Coverage collection requires all queries and their setup/teardown")
 
 if args.table_engine:
     # Imported only here: a `release_base` run replaces this directory with the
@@ -836,6 +853,11 @@ if args.table_engine and not root.findall("create_query"):
 # endpoint. (Done after the `--print-queries` / `--print-settings` early exits so
 # those read-only paths are unaffected.)
 has_shell_queries = any(q["kind"] == "shell" for q in test_queries)
+if has_shell_queries and args.coverage_output:
+    # A script can run `clickhouse-local` or several client processes. Arming
+    # only the server would silently miss those processes' coverage.
+    print("skipped\tShell queries require subprocess coverage collection")
+    sys.exit(0)
 if has_shell_queries and (args.user != "default" or args.password != "" or args.secure):
     raise Exception(
         'Shell-script queries (<query type="shell">) do not support the '
@@ -964,6 +986,22 @@ all_connections = [
 # Connection 0 is the reference only in a comparison: a single server is the tested one.
 reference = 0 if len(all_connections) > 1 else None
 
+coverage = None
+if args.coverage_output:
+    sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+    from perf_coverage import CoverageCollector
+
+    # A separate control connection keeps XML query settings (e.g. readonly,
+    # output formats, time limits) away from the collector and its exports.
+    coverage = CoverageCollector(
+        clickhouse_driver.Client(
+            **servers[0], send_receive_timeout=1800,
+            settings={"max_execution_time": 0, "max_result_rows": 0, "max_result_bytes": 0},
+        ),
+        args.coverage_output, test_name, test_queries, args.coverage_warm_runs,
+    )
+    coverage.start("setup")
+
 drop_query_templates = [q.text for q in root.findall("drop_query")] + extra_drop_queries
 # The connections that run the setup queries, and so the drop queries.
 setup_connections = []
@@ -992,6 +1030,8 @@ def teardown():
     if any(t.is_alive() for t in threads):
         print("teardown-skipped\tsetup workers active")
         return False
+    if coverage:
+        coverage.start("teardown")
     # A drop query that waits for a mutation would hang while merges are stopped.
     if stop_merges:
         for c in (all_connections[i] for i in setup_connections):
@@ -1010,6 +1050,8 @@ def teardown():
                 print(f"drop query failed on server {conn_index}: {q}\n{e}", file=sys.stderr)
                 clean = False
     teardown_clean_result = clean
+    if coverage:
+        coverage.stop()
     return clean
 
 
@@ -1358,6 +1400,9 @@ if not args.use_existing_tables:
 
     reportStageEnd("create")
 
+if coverage:
+    coverage.stop()
+
 # The servers hold the same data only when the setup generates it deterministically.
 compare_results = not any(nondeterministic_data(q or "") for q, _ in create_query_templates)
 
@@ -1438,6 +1483,18 @@ for query_index in queries_to_run:
         query_display_name = f"{query_display_name[:1000]}...({query_index})"
 
     print(f"display-name\t{query_index}\t{tsv_escape(query_display_name)}")
+
+    if coverage:
+        def execute_coverage_query(run):
+            execute_query_group(
+                all_connections[0], q_item["statements"],
+                f"{query_prefix}.coverage{run}",
+                {"max_execution_time": args.prewarm_max_query_seconds},
+            )
+
+        coverage.collect_query(query_index, execute_coverage_query)
+        print(f"coverage-query\t{query_index}\t{1 + args.coverage_warm_runs}")
+        continue
 
     if args.jemalloc_purge in ("before-each-query", "before-each-run"):
         purge_jemalloc_on_all_connections(f"before-query-{query_index}")
@@ -1854,7 +1911,7 @@ if stop_merges:
 
 # Run drop queries
 teardown_clean = True
-if not args.long and not args.keep_created_tables and not args.use_existing_tables:
+if (not args.long or coverage) and not args.keep_created_tables and not args.use_existing_tables:
     teardown_clean = teardown()
     reportStageEnd("drop-2")
 
@@ -1869,3 +1926,6 @@ if failed_queries:
     sys.exit(1)
 if not teardown_clean:
     sys.exit(1)
+
+if coverage:
+    coverage.finish(all_connections[0].settings)

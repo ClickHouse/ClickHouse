@@ -1942,6 +1942,25 @@ class JobConfigs:
             requires=[ArtifactNames.CH_AMD_MSAN],
         ),
     )
+    # Separate instrumented run: no timings, comparison, sampling, or PR gate.
+    # Use the same per-test LLVM build as the stateless and integration collectors.
+    performance_coverage_jobs = Job.Config(
+        name=JobNames.PERFORMANCE,
+        runs_on=RunnerLabels.FUNC_TESTER_AMD,
+        command='python3 ./ci/jobs/performance_coverage.py --test-options "{PARAMETER}"',
+        run_in_docker="clickhouse/performance-comparison+--security-opt seccomp=unconfined",
+        timeout=6 * 3600,
+        digest_config=None,
+    ).parametrize(
+        *[
+            Job.ParamSet(
+                parameter=f"{BuildTypes.PER_TEST_COVERAGE}, per_query_coverage, {batch}/8",
+                requires=[ArtifactNames.CH_AMD_PER_TEST_COVERAGE_BUILD],
+            )
+            for batch in range(1, 9)
+        ],
+    )
+
     performance_comparison_with_master_head_jobs = Job.Config(
         name=JobNames.PERFORMANCE,
         runs_on=["#from param"],
