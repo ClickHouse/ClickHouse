@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-random-settings
+# Tags: no-parallel, no-random-settings
+# Tag no-parallel: killing the `SELECT` does not stop its remote part (the follower, under parallel replicas),
+# which keeps sleeping until the hung check at the end of the run reports it. Remove once a query cancelled
+# by its client stops sleeping: https://github.com/ClickHouse/ClickHouse/pull/127149
 # Tag no-random-settings: relies on predictable per-row execution timing of `sleepEachRow`
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
