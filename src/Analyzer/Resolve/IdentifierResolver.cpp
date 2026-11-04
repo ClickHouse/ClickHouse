@@ -961,6 +961,36 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
         return {};
     }
 
+    const auto & table_name = table_expression_data.table_name;
+    const bool prefix_matches_table_name = !table_name.empty() && path_start == table_name;
+    const bool prefix_matches_alias
+        = table_expression_node->hasAlias() && path_start == table_expression_node->getAlias();
+
+    /** ClickHouse allows the original table name to remain a qualifier after an alias is declared.
+      * Keep that extension unless the same qualifier is visible in a parent scope. In that case the
+      * correlation name hides the local table name and the identifier has to be resolved as a correlated
+      * reference.
+      * Example: `SELECT (SELECT count() FROM test AS inner_table WHERE inner_table.x < test.x) FROM test`;
+      */
+    bool table_name_qualifier_binds_in_parent_scope = false;
+    if (prefix_matches_table_name && table_expression_node->hasAlias() && !prefix_matches_alias)
+    {
+        for (const IdentifierResolveScope * parent_scope = scope.parent_scope;
+             parent_scope && !table_name_qualifier_binds_in_parent_scope;
+             parent_scope = parent_scope->parent_scope)
+        {
+            for (const auto & [parent_table_expression, parent_table_expression_data] : parent_scope->table_expression_node_to_data)
+            {
+                if ((parent_table_expression->hasAlias() && path_start == parent_table_expression->getAlias())
+                    || (!parent_table_expression->hasAlias() && path_start == parent_table_expression_data.table_name))
+                {
+                    table_name_qualifier_binds_in_parent_scope = true;
+                    break;
+                }
+            }
+        }
+    }
+
     /** Compatibility setting: when enabled, multi-part identifiers prefer the alias-prefix
       * strip path over `hasFullIdentifierName` / subcolumn lookup. This restores the
       * old-analyzer convention where `b.id` against a table aliased `b` resolves to the
@@ -970,10 +1000,6 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
     if (scope.context->getSettingsRef()[Setting::analyzer_compatibility_prefer_alias_over_subcolumn]
         && identifier.getPartsSize() > 1)
     {
-        const auto & table_name_compat = table_expression_data.table_name;
-        const bool prefix_matches_table_name = !table_name_compat.empty() && path_start == table_name_compat;
-        const bool prefix_matches_alias
-            = table_expression_node->hasAlias() && path_start == table_expression_node->getAlias();
         /** A materialized CTE is stored under an internal temporary table name, so its `table_name` never
           * matches the qualifier the user wrote. Its visible CTE name is a qualifier carrier just like a
           * table name or an alias, and it has to take part in this compatibility path as well, otherwise
@@ -987,7 +1013,8 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
             prefix_matches_cte_name
                 = table_node->isMaterializedCTE() && path_start == table_node->getMaterializedCTE()->cte_name;
         }
-        if (prefix_matches_table_name || prefix_matches_alias || prefix_matches_cte_name)
+        if ((prefix_matches_table_name && !table_name_qualifier_binds_in_parent_scope)
+            || prefix_matches_alias || prefix_matches_cte_name)
         {
             auto alias_prefix_result = tryResolveIdentifierFromStorage(
                 identifier_lookup, table_expression_node, table_expression_data, scope,
@@ -1023,7 +1050,6 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
     if (identifier.getPartsSize() == 1)
         return {};
 
-    const auto & table_name = table_expression_data.table_name;
     const auto & database_name = table_expression_data.database_name;
 
     /** The identifier first part can match a table name or an alias of one table expression and at the same
@@ -1070,7 +1096,8 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
         return false;
     };
 
-    if ((!table_name.empty() && path_start == table_name) || (table_expression_node->hasAlias() && path_start == table_expression_node->getAlias()))
+    if ((prefix_matches_table_name && !table_name_qualifier_binds_in_parent_scope)
+        || prefix_matches_alias)
     {
         auto lookup_result = tryResolveIdentifierFromStorage(
             identifier_lookup,
