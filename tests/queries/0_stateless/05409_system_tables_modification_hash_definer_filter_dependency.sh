@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-parallel-replicas
+# no-parallel-replicas: the replicas of `cluster_for_parallel_replicas` in that configuration are not local, so the `MergeTree` modification hash is `NULL` by design.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -6,10 +8,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -u
 
-# The `modification_hash` of a `SQL SECURITY DEFINER` materialized view also covers the tables read by
-# the definer's `additional_table_filters` keyed by the view. In `system.tables` it must be `NULL` when
-# such a filter applies: its dependencies are checked against the definer's grants, so a caller who
-# can read the view and its whole target would otherwise observe the churn of a table it cannot read.
+# An `additional_table_filters` entry keyed by a `SQL SECURITY DEFINER` materialized view in the profile
+# of its definer is never applied: the entries keyed by the view are taken from the settings of the query
+# that reads it. So the `modification_hash` of the view does not cover the tables read by such a filter,
+# and a caller who can read the view and its whole target must not observe, through `system.tables`, the
+# churn of a table it cannot read: the hash stays the same when that table changes.
 
 user="user_05409_${CLICKHOUSE_DATABASE}"
 definer="definer_05409_${CLICKHOUSE_DATABASE}"
@@ -31,19 +34,25 @@ $CLICKHOUSE_CLIENT -q "
     GRANT SELECT ON ${CLICKHOUSE_DATABASE}.target_05409 TO ${user};
 "
 
-function show_hash()
+function get_hash()
 {
     $CLICKHOUSE_CLIENT --user "${user}" -q "
-        SELECT '$1', isNotNull(modification_hash) FROM system.tables
+        SELECT ifNull(toString(modification_hash), 'NULL') FROM system.tables
         WHERE database = '${CLICKHOUSE_DATABASE}' AND name = 'mv_05409'"
 }
 
-show_hash 'no filter'
+no_filter=$(get_hash)
+[ "${no_filter}" != 'NULL' ] && echo "no filter: not NULL" || echo "no filter: NULL"
 
 $CLICKHOUSE_CLIENT -q "
     CREATE SETTINGS PROFILE ${profile}
         SETTINGS additional_table_filters = '{\\'${CLICKHOUSE_DATABASE}.mv_05409\\': \\'x IN (SELECT x FROM ${CLICKHOUSE_DATABASE}.private_05409)\\'}'
         TO ${definer}"
-show_hash 'definer filter reading a private table'
+with_filter=$(get_hash)
+[ "${with_filter}" = "${no_filter}" ] && echo "definer filter reading a private table keeps the hash: yes" || echo "definer filter reading a private table keeps the hash: no"
+
+$CLICKHOUSE_CLIENT -q "INSERT INTO private_05409 VALUES (2, 0)"
+after_private_insert=$(get_hash)
+[ "${after_private_insert}" = "${no_filter}" ] && echo "a change of the private table keeps the hash: yes" || echo "a change of the private table keeps the hash: no"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE mv_05409 SYNC; DROP SETTINGS PROFILE ${profile}; DROP USER ${user}, ${definer}"

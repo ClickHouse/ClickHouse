@@ -1293,8 +1293,17 @@ std::optional<UInt128> StorageMaterializedView::getModificationHash(const Storag
         /// the names of the materialized view itself can apply (see `collectNamesMatchableByAdditionalTableFilters`).
         /// Such an entry can read other tables in its subqueries, which in turn can have entries of their
         /// own, so the dependencies of that whole closure are hashed as well.
+        /// Those entries are applied by the planner of the query that reads this view, from that query's
+        /// own settings (`parseAdditionalFilterAstIfNeeded`), so only when they are in the caller's settings.
+        /// `effective_context` carries the caller's settings only for a legacy or `INVOKER` view; under
+        /// `SQL SECURITY DEFINER` / `NONE` it carries the effective reader's profile, whose entries are
+        /// never applied to this read, so none of them is matchable then. See `StorageView::getModificationHash`.
         /// The bare name matches only when this view is in the current database of the reading query.
-        const NameSet own_names = getNamesMatchableByAdditionalTableFilters(getStorageID(), query_context);
+        const auto & sql_security_type = storage_snapshot->metadata->sql_security_type;
+        const bool read_runs_with_caller_settings = !sql_security_type || *sql_security_type == SQLSecurityType::INVOKER;
+        const NameSet own_names = read_runs_with_caller_settings
+            ? getNamesMatchableByAdditionalTableFilters(getStorageID(), query_context)
+            : NameSet{};
         NameSet additional_table_filters_matchable_names;
         auto filters_hash = computeAdditionalFiltersModificationHash(effective_context, own_names, additional_table_filters_matchable_names);
         if (!filters_hash)

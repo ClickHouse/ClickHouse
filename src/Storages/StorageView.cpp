@@ -872,12 +872,19 @@ std::optional<UInt128> StorageView::getModificationHash(const StorageSnapshotPtr
         InterpreterSetQuery::applySettingsFromQuery(inner_query->clone(), effective_context);
 
         /// An `additional_table_filters` entry keyed by the view itself applies to the rows it returns: the
-        /// planner folds it into the `WHERE` of the query that reads the view. Under `SQL SECURITY DEFINER`
-        /// / `NONE` such an entry can come from the effective reader's profile rather than from the
-        /// caller's settings, so it is not covered by the caller's own cache key. Treat the view's own
-        /// names as matchable, so that both the entry and the tables its filter reads are hashed.
-        /// The bare name matches only when this view is in the current database of the reading query.
-        const NameSet own_names = getNamesMatchableByAdditionalTableFilters(getStorageID(), query_context);
+        /// planner of the query that reads the view folds it into that query's `WHERE`, parsing it from
+        /// that query's own settings (`parseAdditionalFilterAstIfNeeded`). So the entry applies only when
+        /// it is in the caller's settings, which the caller's own hash covers already. `effective_context`
+        /// carries them only when the body runs with the caller's settings (a legacy or `INVOKER` view).
+        /// Under `SQL SECURITY DEFINER` / `NONE` it carries the effective reader's profile instead, whose
+        /// entries keyed by the view are never applied: hashing them would let a profile change that
+        /// returns the same rows move the hash. The bare name matches only when this view is in the
+        /// current database of the reading query.
+        const auto & sql_security_type = storage_snapshot->metadata->sql_security_type;
+        const bool body_runs_with_caller_settings = !sql_security_type || *sql_security_type == SQLSecurityType::INVOKER;
+        const NameSet own_names = body_runs_with_caller_settings
+            ? getNamesMatchableByAdditionalTableFilters(getStorageID(), query_context)
+            : NameSet{};
 
         auto referenced_tables_hash = computeQueryReferencedTablesModificationHash(inner_query, effective_context, &own_names);
         if (!referenced_tables_hash)
