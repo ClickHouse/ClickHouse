@@ -5879,8 +5879,7 @@ bool isSafeForKeyConversion(const IDataType * from, const IDataType * to)
     return false;
 }
 
-/// Whether two substreams select the same value: the same kind of step into the same element. A JSON path is the
-/// same path whether it is typed, typed in the shared data or dynamic.
+/// A JSON path is the same path whether it is typed, typed in the shared data or dynamic.
 bool isSameSubstreamStep(const ISerialization::Substream & lhs, const ISerialization::Substream & rhs)
 {
     auto kind = [](ISerialization::Substream::Type type)
@@ -5894,8 +5893,7 @@ bool isSameSubstreamStep(const ISerialization::Substream & lhs, const ISerializa
         && lhs.bucket == rhs.bucket;
 }
 
-/// The steps of a substreams path that choose which value is read. `Nullable` and `LowCardinality` levels only
-/// wrap it; they are checked by the caller.
+/// `Nullable` and `LowCardinality` steps only wrap a value; they do not choose which value is read.
 ISerialization::SubstreamPath valueSelectingSteps(const ISerialization::SubstreamPath & path)
 {
     ISerialization::SubstreamPath steps;
@@ -5905,8 +5903,7 @@ ISerialization::SubstreamPath valueSelectingSteps(const ISerialization::Substrea
     return steps;
 }
 
-/// Whether parsing data into `type` drops the path `path`: the parser tests the root and every prefix of a path,
-/// and matches a `SKIP REGEXP` partially by default (a full match is also a partial one).
+/// The JSON parser tests the root and every prefix of a path against `SKIP`, and matches a `SKIP REGEXP` partially.
 bool skipsJSONPath(const DataTypeObject & type, std::string_view path)
 {
     std::vector<String> prefixes{""};
@@ -5928,7 +5925,6 @@ bool skipsJSONPath(const DataTypeObject & type, std::string_view path)
     return false;
 }
 
-/// Whether converting a column from `from` to `to` keeps the values of its subcolumn `subcolumn`.
 /// The subcolumn type alone does not tell: below a Nullable level a subcolumn is Nullable either way, so
 /// `JSON(a Nullable(Int64))` -> `Nullable(JSON(a Int64))` keeps `a` a `Nullable(Int64)` but turns its NULLs into 0.
 bool conversionKeepsSubcolumnValues(const DataTypePtr & from, const DataTypePtr & to, std::string_view subcolumn)
@@ -5938,8 +5934,7 @@ bool conversionKeepsSubcolumnValues(const DataTypePtr & from, const DataTypePtr 
     if (!from_subcolumn || !to_subcolumn || !isSafeForKeyConversion(from_subcolumn.get(), to_subcolumn.get()))
         return false;
 
-    /// Names are flat: dropping the element `j.a` of ``Tuple(`j.a` Int64, j JSON(a Int64))`` makes the path `a`
-    /// of `j` answer `j.a`, with the same type.
+    /// Subcolumn names are flat: `j.a` can be a `Tuple` element or the path `a` of a `JSON` element `j`.
     auto from_info = from->tryGetSubcolumnInfo(subcolumn);
     auto to_info = to->tryGetSubcolumnInfo(subcolumn);
     if (!from_info || !to_info)
@@ -5954,7 +5949,7 @@ bool conversionKeepsSubcolumnValues(const DataTypePtr & from, const DataTypePtr 
     if (!std::ranges::equal(valueSelectingSteps(from_info->substreams_path), valueSelectingSteps(to_info->substreams_path), keeps_step))
         return false;
 
-    /// Continue below a wrapper. If neither type has the subcolumn below it, it is the wrapper's own (`null`, `size0`).
+    /// A subcolumn that neither nested type has is the wrapper's own (`null`, `size0`).
     auto check_below = [&](const DataTypePtr & from_below, const DataTypePtr & to_below)
     {
         bool from_has = from_below->hasSubcolumn(subcolumn);
@@ -5987,9 +5982,8 @@ bool conversionKeepsSubcolumnValues(const DataTypePtr & from, const DataTypePtr 
             return false;
     }
 
-    /// A `JSON` -> `JSON` conversion writes the data as text and parses it again: the `SKIP` rules of `to` drop paths and
-    /// a typed path takes the whole object below it. So the key subcolumn must read a typed path in both types, with no
-    /// typed path above it, whose type in `to` reads back the same values.
+    /// A `JSON` -> `JSON` conversion writes the data as text and parses it again: the `SKIP` rules of `to` drop paths,
+    /// and a typed path can take the object below it.
     if (const auto * to_object = typeid_cast<const DataTypeObject *>(to.get()); to_object && !from->equals(*to))
     {
         auto is_typed_path = [](const ISerialization::SubstreamPath & path)
@@ -6030,7 +6024,6 @@ bool conversionKeepsSubcolumnValues(const DataTypePtr & from, const DataTypePtr 
             && std::equal(prefix_info->substreams_path.begin(), prefix_info->substreams_path.end(), path.begin(), isSameSubstreamStep);
     };
 
-    /// The levels the name goes through, e.g. `j` of `j.a`.
     for (size_t dot = subcolumn.find('.'); dot != std::string_view::npos; dot = subcolumn.find('.', dot + 1))
     {
         auto prefix = subcolumn.substr(0, dot);
