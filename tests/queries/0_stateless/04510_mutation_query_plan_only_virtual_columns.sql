@@ -38,12 +38,12 @@ ALTER TABLE t_mut_shadow DELETE WHERE arrayExists(_sample_factor -> _sample_fact
 SELECT 'lambda parameter', count() FROM t_mut_shadow;
 DROP TABLE t_mut_shadow;
 
--- _table and _database come from the local storage id, which a replica cannot reproduce, so
--- a mutation still cannot materialize them and fails while the part is read.
+-- _table and _database come from the local storage id, and the per-part read path publishes them
+-- the same way a regular SELECT does. See issue #102331.
 DROP TABLE IF EXISTS t_mut_local;
 CREATE TABLE t_mut_local (c0 UInt32) ENGINE = MergeTree ORDER BY c0;
 INSERT INTO t_mut_local VALUES (1), (5);
-ALTER TABLE t_mut_local DELETE WHERE _table != '' AND c0 < 2; -- { serverError UNFINISHED }
+ALTER TABLE t_mut_local DELETE WHERE _table != '' AND c0 < 2;
 SELECT 'local storage id', count() FROM t_mut_local;
 DROP TABLE t_mut_local;
 
