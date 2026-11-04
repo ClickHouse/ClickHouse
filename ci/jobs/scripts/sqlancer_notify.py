@@ -49,7 +49,6 @@ CI_DB_NAME = "default"
 CI_DB_TABLE = "checks"
 
 try:
-    from ci.praktika.cidb import CIDB
     from ci.praktika.info import Info
     from ci.praktika.settings import Settings
 
@@ -95,7 +94,7 @@ def known_fingerprints(job_name):
         f"AND check_start_time > now() - INTERVAL {HISTORY_DAYS} DAY "
         f"AND test_name != ''"
     )
-    url = f"{CIDB.get_read_url(Info())}/?" + urllib.parse.urlencode(
+    url = f"{os.environ['CI_DB_READ_URL']}/?" + urllib.parse.urlencode(
         {"user": CI_DB_READ_USER, "default_format": "TSVRaw"}
     )
     status, body = http_post(url, query.encode("utf-8"))
