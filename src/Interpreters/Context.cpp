@@ -35,7 +35,6 @@
 #include <Common/SharedLockGuard.h>
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/GlobalMemoryAllocator.h>
-#include <Common/FailPoint.h>
 #include <Common/PageCache.h>
 #if USE_GPU
 #include <GPU/GPUDevice.h>
