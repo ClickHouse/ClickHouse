@@ -72,8 +72,6 @@ the query condition cache keeps no verdict over a default that changes between r
 05297_qcc_1	0	0
 05297_qcc_2	0	0
 05297_qcc_3	0	1
-0
-10000
 neither the top-K threshold nor the query condition cache skips rows before a default that depends on them
 1
 100
@@ -85,11 +83,8 @@ neither the top-K threshold nor the query condition cache skips rows before a de
 a default is checked against the settings of the ALTER that adds it, not of the read
 1	11
 2	12
-a default is evaluated in the context of the read
-1	1	1	1234
-2	1	1	1234
 a read resolves only the defaults it evaluates
-1	2	foo()!
-2	3	foo()!
-1	2	foo()!
-2	3	foo()!
+1	2	x!
+2	3	x!
+1	2	x!
+2	3	x!

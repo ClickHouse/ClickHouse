@@ -159,7 +159,7 @@ static Names getArraysOfRequestedNested(const NamesAndTypesList & physical_colum
 struct MemorySourceDefaults
 {
     StorageSnapshotPtr storage_snapshot;
-    ContextPtr query_context;
+    ContextPtr global_context;
 
     struct Evaluation
     {
@@ -194,7 +194,7 @@ struct MemorySourceDefaults
 
     void initialize() const TSA_REQUIRES(mutex);
 
-    /// Resolves the functions of the default of `column_name`, which checks the reader's access to them.
+    /// Resolves the functions of the default of `column_name`, which throws for a function the context does not allow.
     DefaultDependencies analyzeDefault(const String & column_name, const ContextPtr & default_context) const;
 };
 
@@ -203,7 +203,7 @@ void MemorySourceDefaults::initialize() const
     if (stored_inputs)
         return;
 
-    auto default_context = Context::createCopy(query_context);
+    auto default_context = Context::createCopy(global_context);
     /// A default was checked against the settings of the query that defined it, which the reader may not have.
     enableAllExperimentalSettings(default_context);
 
@@ -845,7 +845,7 @@ private:
 
         const size_t granule_rows = MemorySourceFilter::query_condition_cache_granule_rows;
         const size_t num_granules = (num_src_rows + granule_rows - 1) / granule_rows;
-        /// No verdict over a default: it is evaluated in the context of each read (e.g. `now64()`, `cast_keep_nullable`).
+        /// No verdict over an evaluated default: its value can change between reads (e.g. `now64()`, `dictGet`).
         const bool use_query_condition_cache = filter->query_condition_cache && num_granules && may_skip_rows
             && !lacksColumnWithDefault(src, filter->condition_columns);
         String query_condition_cache_part_name;
@@ -1775,7 +1775,8 @@ MemorySourceDefaultsPtr ReadFromMemoryStorageStep::makeSourceDefaults(const Name
 
     auto result = std::make_shared<MemorySourceDefaults>();
     result->storage_snapshot = storage_snapshot;
-    result->query_context = context;
+    /// As in MergeTree, defaults are evaluated in the global context, so the value of an old row does not depend on its reader.
+    result->global_context = context->getGlobalContext();
 
     return result;
 }

@@ -164,13 +164,6 @@ ORDER BY log_comment;
 DROP TABLE t_memory_add_default_qcc;
 DROP DICTIONARY d_memory_add_default_qcc;
 DROP TABLE t_memory_add_default_qcc_source;
-DROP TABLE IF EXISTS t_memory_add_default_qcc_settings;
-CREATE TABLE t_memory_add_default_qcc_settings (k Nullable(UInt64)) ENGINE = Memory;
-INSERT INTO t_memory_add_default_qcc_settings SELECT number FROM numbers(10000);
-ALTER TABLE t_memory_add_default_qcc_settings ADD COLUMN c String DEFAULT toTypeName(CAST(k, 'UInt64'));
-SELECT count() FROM t_memory_add_default_qcc_settings WHERE c = 'Nullable(UInt64)' SETTINGS use_query_condition_cache = 1, cast_keep_nullable = 0;
-SELECT count() FROM t_memory_add_default_qcc_settings WHERE c = 'Nullable(UInt64)' SETTINGS use_query_condition_cache = 1, cast_keep_nullable = 1;
-DROP TABLE t_memory_add_default_qcc_settings;
 
 SELECT 'neither the top-K threshold nor the query condition cache skips rows before a default that depends on them';
 SET max_threads = 1, optimize_move_to_prewhere = 0, query_plan_optimize_lazy_materialization = 0,
@@ -212,27 +205,16 @@ SET allow_suspicious_low_cardinality_types = 0;
 SELECT k, c FROM t_memory_add_default_gated ORDER BY k;
 DROP TABLE t_memory_add_default_gated;
 
-SELECT 'a default is evaluated in the context of the read';
-DROP TABLE IF EXISTS t_memory_add_default_context;
-CREATE TABLE t_memory_add_default_context (k UInt64) ENGINE = Memory;
-INSERT INTO t_memory_add_default_context VALUES (1), (2);
-ALTER TABLE t_memory_add_default_context ADD COLUMN db String DEFAULT currentDatabase();
-ALTER TABLE t_memory_add_default_context ADD COLUMN u String DEFAULT currentUser();
-ALTER TABLE t_memory_add_default_context ADD COLUMN b UInt64 DEFAULT getSetting('max_block_size');
-SELECT k, db = currentDatabase(), u = currentUser(), b FROM t_memory_add_default_context ORDER BY k SETTINGS max_block_size = 1234;
-DROP TABLE t_memory_add_default_context;
-
 SELECT 'a read resolves only the defaults it evaluates';
 DROP TABLE IF EXISTS t_memory_add_default_unread;
-SET allow_introspection_functions = 1;
-CREATE TABLE t_memory_add_default_unread (k UInt64, s String DEFAULT demangle('_Z3foov')) ENGINE = Memory;
+SET allow_get_client_http_header = 1;
+CREATE TABLE t_memory_add_default_unread (k UInt64, s String DEFAULT 'x' || getClientHTTPHeader('X-05297')) ENGINE = Memory;
 INSERT INTO t_memory_add_default_unread (k) VALUES (1), (2);
 ALTER TABLE t_memory_add_default_unread ADD COLUMN c UInt64 DEFAULT k + 1;
 ALTER TABLE t_memory_add_default_unread ADD COLUMN c2 String DEFAULT s || '!';
-ALTER TABLE t_memory_add_default_unread ADD COLUMN d String DEFAULT demangle('_Z3barv');
-SET allow_introspection_functions = 0;
+ALTER TABLE t_memory_add_default_unread ADD COLUMN d String DEFAULT getClientHTTPHeader('X-05297');
+SET allow_get_client_http_header = 0;
 SELECT k, c, c2 FROM t_memory_add_default_unread ORDER BY k;
 SELECT k, c, c2 FROM t_memory_add_default_unread PREWHERE k >= 1 ORDER BY k;
 SELECT k, d FROM t_memory_add_default_unread ORDER BY k; -- { serverError FUNCTION_NOT_ALLOWED }
-SET allow_introspection_functions = 1;
 DROP TABLE t_memory_add_default_unread;
