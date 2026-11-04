@@ -1,0 +1,138 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-10-22
+title: 'Demo days - 2026-10-22'
+sidebarTitle: '2026-10-22'
+description: 'ClickStack demo days for 2026-10-22'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## Click-to-filter on tables and time charts with ad hoc dashboard filters {#click-to-filter-tables-time-charts}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/kg0cIe4jgVE" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+Ad hoc dashboard filters now support click-to-filter on table tiles and time charts. Previously, you could only do this from search tiles. Now you can click values in tables, line charts, stacked bars, and stacked lines to add filter conditions, whether the query uses the builder, raw SQL, or PromQL.
+
+On a table, hover over a filterable cell and choose include or exclude, just as you would in the search table. Group-by columns are filterable; aggregated columns aren't, since other tiles are unlikely to use the same aggregation. Conditions also use the underlying expression rather than its alias, so they can apply across tiles.
+
+How we identify group-by columns depends on the query:
+
+- Builder tables use each column's position in the result metadata, because ClickHouse normalizes unaliased expressions.
+- Raw SQL queries have their macros and variables substituted before being parsed with `node-sql-parser`. A column is filterable if `GROUP BY` references it by alias, name, normalized expression, or position, such as `GROUP BY 2`.
+- PromQL tables treat non-numeric columns as labels, except for the time column.
+
+Note that Click-to-filter isn't yet supported for `DateTime`, `Map`, or `Array` columns - these will need custom logic.
+
+There are still a few rough edges with raw SQL charts. `node-sql-parser` doesn't support the full ClickHouse dialect, including parametric functions, `ARRAY JOIN`, and some join syntax. If parsing fails, or the query has no `GROUP BY`, uses `GROUP BY ALL`, or contains `SELECT *`, we fall back to treating `String` columns as filterable.
+
+That fallback isn't perfect. Some columns might not be clickable, and others might add a filter key that doesn't exist on other tiles. Columns from CTEs can have the same issue, since other tiles may not define them. You can remove the condition if that happens. We'd like to add a full ClickHouse SQL parser to improve this.
+
+For time charts, the series tooltip now lets you filter by all of a series' labels in one click. If a chart is grouped by service name and severity, clicking a series adds both conditions. **Exclude** is only available when there's a single label. Excluding `service = 'checkout'` and `severity = 'error'` separately, for example, would hide all checkout logs and all errors from every service, rather than just checkout errors. PromQL line charts use the labels returned by Prometheus, excluding `__name__`.
+
+**Related PRs:** [#3389](https://github.com/hyperdxio/hyperdx/pull/3389) Add click-to-adhoc-filter to table charts, [#3405](https://github.com/hyperdxio/hyperdx/pull/3405) Filter time chart series into adhoc dashboard filters
+
+## Line interpolation display setting {#line-interpolation-display-setting}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/kg0cIe4jgVE?start=149" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+You can now choose how line charts connect their points, with **Smooth**, **Linear**, and **Step** interpolation options in display settings. Previously, regular line charts always used smooth curves and stacked line charts used straight segments. Those remain the defaults, but you can now change them to suit your data or keep charts consistent.
+
+The setting is available in the chart editor, the external API, and MCP. We've also fixed a bug where switching to stacked bar or stacked line in the editor didn't update the saved tile's display type.
+
+**Related PRs:** [#3393](https://github.com/hyperdxio/hyperdx/pull/3393) Add a line interpolation display setting (smooth, linear, step)
+
+## Group by on the search page histogram {#search-page-histogram-group-by}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/kg0cIe4jgVE?start=194" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+The search histogram can now be grouped by any field. Previously, it was always split by severity or status code, depending on the source. Following [@elizabetdev](https://github.com/elizabetdev) design, the new **Group by** control lets you select multiple fields and map keys from the same list used by the filter sidebar.
+
+Choose your fields and apply them to regroup the histogram, with a legend showing each group. You can reset to the source's default or clear the grouping to see plain event counts. If a field isn't listed, or you want to group by a computed value, you can enter SQL directly.
+
+When you switch sources, compatible group-bys stay selected. For example, a `ServiceName` field or map key available in both sources carries over. Otherwise, the histogram resets to the new source's default, using the same logic that preserves compatible filters when switching sources.
+
+A follow-up from [@elizabetdev](https://github.com/elizabetdev) moves the control to a shared split button, with its label and selected value side by side.
+
+**Related PRs:** [#3407](https://github.com/hyperdxio/hyperdx/pull/3407) Add group-by to the search page histogram, [#3430](https://github.com/hyperdxio/hyperdx/pull/3430) Share the Group by split button
+
+## Descriptions on dashboard tiles {#descriptions-on-dashboard-tiles}
+
+*Demo by [@karl-power](https://github.com/karl-power)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/kg0cIe4jgVE?start=318" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+Dashboard tiles can now have a description, handy for explaining what a chart shows or how to read it. Hover over the info icon beside the tile name to see it. Tiles without a description look the same as before.
+
+Thanks to [@felipe-carvalho12](https://github.com/felipe-carvalho12) for adding description support to the external dashboards API, so you can set them when managing dashboards as code. We've also added a **Description** input next to **Chart Name** in the tile editor. Descriptions are limited to 1,024 characters.
+
+The follow-up moved the description into the tile's chart config alongside `name`, so the editor saves it with the rest of the configuration. It also fixed a bug where tiles submitted through the external API with `series` lost their descriptions.
+
+**Related PRs:** [#3352](https://github.com/hyperdxio/hyperdx/pull/3352) Show an optional tile description as a tooltip, [#3403](https://github.com/hyperdxio/hyperdx/pull/3403) Add a description field to the tile editor
+
+## Time zone selection in user preferences {#time-zone-selection}
+
+*Demo by [@karl-power](https://github.com/karl-power)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/kg0cIe4jgVE?start=358" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+ClickStack now lets you choose your time zone. Previously, the **Use UTC time** switch in user preferences limited you to UTC or your browser's local zone. It's now a searchable selector, with **Local** and **UTC** pinned at the top and all browser-supported zones below. Each shows its current offset with search supported e.g. type 'los angeles' to find `America/Los_Angeles`.
+
+Your selection applies to the search page and dashboards. The sidebar badge and timestamp column headers show a short name such as `PDT`, or a UTC offset such as `UTC+9` for zones without a US abbreviation. ClickStack stores the IANA name and falls back to local time if the browser doesn't recognize it.
+
+Switching zones through preferences is still a bit cumbersome if you only need it for one investigation. This lays the groundwork for per-search and per-dashboard overrides, so you could inspect a customer's data in their time zone while keeping your own default on local or UTC. Those overrides aren't built yet.
+
+**Related PRs:** [#3445](https://github.com/hyperdxio/hyperdx/pull/3445) Read time picker ranges in the display time zone, [#3447](https://github.com/hyperdxio/hyperdx/pull/3447) Store the time display setting as a time zone, [#3449](https://github.com/hyperdxio/hyperdx/pull/3449) Add a time zone selector to user preferences
+
+## MCP service health tool {#mcp-service-health-tool}
+
+*Demo by [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/kg0cIe4jgVE?start=463" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+The MCP server now has a `clickstack_service_health` tool. We noticed that much of the raw SQL agents were writing was for service health checks, so we built a tool for the job. Previously, agents had to piece together results from several `clickstack_table` and `clickstack_timeseries` calls, then work out which changes needed attention.
+
+For every service in a trace source, the tool returns throughput, error rate, p50/p95/p99 latency, and top error groups, compared with an earlier window. By default, that's the same period yesterday, but agents can choose another window, such as the preceding 15 minutes or the same period last week. Services needing the most attention appear first, with a `critical`, `degraded`, or `healthy` status and flags explaining why, such as `error_rate_up`, `latency_up`, or `traffic_drop`. Fixed thresholds keep routine fluctuations from being flagged as regressions.
+
+New or growing error groups appear first, with first and last seen times to help distinguish an ongoing issue from a burst that's already stopped. Operations with no traffic in the comparison window are marked as likely rollouts, and their errors aren't counted as new. The tool counts server spans by default; `spanKind: "all"` includes every span. If the comparison window has no data, perhaps because it's outside retention, the tool tries the previous period, then falls back to reporting without a comparison.
+
+**Related PRs:** [#3411](https://github.com/hyperdxio/hyperdx/pull/3411) Add clickstack_service_health tool
+
+## MCP quality score improvements {#mcp-quality-score-improvements}
+
+*Demo by [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/kg0cIe4jgVE?start=537" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+We've been using [Manufact](https://manufact.com)'s MCP Quality Score to check the ClickStack MCP server, and we'd recommend giving it a try if you run one. Three changes took our score from 80 to 94.
+
+The server now includes a title, description, website URL, and icon in `serverInfo`, alongside the existing `name` and `version`. The icon uses the app's logo SVG. It's omitted when `FRONTEND_URL` isn't set, since icon URLs must be absolute.
+
+Every tool now declares all four behavior hints: `readOnlyHint`, `destructiveHint`, `idempotentHint`, and `openWorldHint`. Previously, each declared only one. We use three presets for read-only tools, upsert tools, and idempotent destructive tools such as `delete_*` and `patch_dashboard`. Upserts aren't idempotent because calling them without an `id` creates a new object each time. `openWorldHint` is `false` throughout, since tools only access the team's own metadata and ClickHouse data. All four hints are now required by the registration type, so missing one causes a compile error.
+
+We've also cleaned up tool descriptions. Every input now has a description, and we shortened four tool descriptions that exceeded Claude Code's 2048-byte truncation limit. For example, `clickstack_event_deltas` went from 3318 to 1796 bytes. We removed text that simply repeated schema constraints, made ID fields say which tool provides the ID, and documented save-tool side effects. That includes `patch_dashboard` deleting a tile's alerts when the new configuration can't support them.
+
+The remaining six points are for `outputSchema`. Our tools currently return JSON as text rather than `structuredContent`, so we're leaving that for later.
+
+**Related PRs:** [#3394](https://github.com/hyperdxio/hyperdx/pull/3394) Advertise server title, description, website, and icon, [#3395](https://github.com/hyperdxio/hyperdx/pull/3395) Declare all four behavior hints on every tool, [#3396](https://github.com/hyperdxio/hyperdx/pull/3396) Tighten tool and input descriptions
+
+## Batch SQL queries in the MCP server {#mcp-batch-sql-queries}
+
+*Demo by [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/kg0cIe4jgVE?start=588" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+When an agent needs raw SQL, `clickstack_sql` can now run several queries in one call instead of making a separate round trip for each. Pass a single `sql` query as before, or a `queries` array with up to 10 entries. Each entry has its own `sql` and optional `id`, `connectionId`, and `sourceId`. All queries share `startTime` and `endTime`.
+
+Queries run five at a time, with a 60-second deadline for the whole batch. Anything still queued when time runs out is never sent to ClickHouse. Results come back in input order with an `ok`, `error`, or `timeout` status, so one bad query doesn't fail the batch. `isError` is set only if every query fails. The batch shares a 100k-character response budget, capped at 50k per query to match the existing single-query limit.
+
+Calls must include either `sql` or `queries`, but not both. Since `sql` is no longer always required, the handler checks this rather than the tool's required list.
+
+We considered MCP tasks but are holding off for now. The SDK API is experimental, and the `2026-07-28` spec moved tasks into a separate extension that the server SDK doesn't implement yet. This change hasn't merged yet.
+
+**Related PRs:** [#3421](https://github.com/hyperdxio/hyperdx/pull/3421) Run multiple clickstack_sql queries in parallel (open)

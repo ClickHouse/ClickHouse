@@ -1,6 +1,5 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterInsertQuery.h>
-#include <Interpreters/capInsertBlockSizeBytesToMemoryLimit.h>
 #include <Core/ProtocolDefines.h>
 #include <Interpreters/ClientInfo.h>
 #include <Storages/StorageInput.h>
@@ -592,7 +591,7 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(
         table, query_ptr, std::make_shared<const Block>(std::move(query_sample_block)),
         async_insert, /*skip_destination_table*/ no_destination,
         (dedup_single_stream || serial_hidden_views) ? 1 : max_insert_threads,
-        context, num_concurrent_copies, insert_start_gates);
+        context, insert_start_gates);
     returning_insert_views_serial = query.returning && insert_dependencies->getViewProcessingNumThreads() == 1;
 
     if (add_async_insert_queue_transform)
@@ -694,7 +693,8 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(
             {
                 size_t min_block_size_bytes = table->prefersLargeBlocks() ? context->getSettingsRef()[Setting::min_insert_block_size_bytes] : 0ULL;
                 /// On low-memory systems, cap squashing block size to avoid accumulating too much data.
-                min_block_size_bytes = capInsertBlockSizeBytesToMemoryLimit(min_block_size_bytes, insert_dependencies->getNumSquashesSharingRootBudget());
+                if (auto memory_limit = total_memory_tracker.getHardLimit(); memory_limit > 0)
+                    min_block_size_bytes = std::min<size_t>(min_block_size_bytes, static_cast<size_t>(static_cast<double>(memory_limit) * 0.9) / 8);
                 return std::make_shared<PlanSquashingTransform>(
                     in_header,
                     table->prefersLargeBlocks() ? settings[Setting::min_insert_block_size_rows] : settings[Setting::max_block_size],
@@ -790,8 +790,10 @@ void InterpreterInsertQuery::applyTrivialInsertSelectOptimization(ASTInsertQuery
                 new_settings[Setting::max_block_size] = settings[Setting::min_insert_block_size_rows];
             if (settings[Setting::min_insert_block_size_bytes])
             {
+                size_t block_size_bytes = settings[Setting::min_insert_block_size_bytes];
                 /// On low-memory systems, cap the input format block size.
-                size_t block_size_bytes = capInsertBlockSizeBytesToMemoryLimit(settings[Setting::min_insert_block_size_bytes], /*num_simultaneous_squashes=*/ 1);
+                if (auto memory_limit = total_memory_tracker.getHardLimit(); memory_limit > 0)
+                    block_size_bytes = std::min<size_t>(block_size_bytes, static_cast<size_t>(static_cast<double>(memory_limit) * 0.9) / 8);
                 new_settings[Setting::preferred_block_size_bytes] = block_size_bytes;
             }
         }
@@ -1069,7 +1071,6 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
         /*skip_destination_table*/ no_destination,
         insert_threads,
         context,
-        num_concurrent_copies,
         insert_start_gates);
     returning_insert_views_serial = query.returning && insert_dependencies->getViewProcessingNumThreads() == 1;
 
@@ -1168,10 +1169,10 @@ QueryPipeline InterpreterInsertQuery::buildPushPipelineFromDependencies(
     if (should_squash)
     {
         bool table_prefers_large_blocks = table->prefersLargeBlocks();
+        size_t min_block_size_bytes = table_prefers_large_blocks ? settings[Setting::min_insert_block_size_bytes] : 0ULL;
         /// On low-memory systems, cap squashing block size to avoid accumulating too much data.
-        size_t min_block_size_bytes = capInsertBlockSizeBytesToMemoryLimit(
-            table_prefers_large_blocks ? settings[Setting::min_insert_block_size_bytes] : 0ULL,
-            insert_dependencies->getNumSquashesSharingRootBudget());
+        if (auto memory_limit = total_memory_tracker.getHardLimit(); memory_limit > 0)
+            min_block_size_bytes = std::min<size_t>(min_block_size_bytes, static_cast<size_t>(static_cast<double>(memory_limit) * 0.9) / 8);
         add_head_transform(std::make_shared<PlanSquashingTransform>(
             insert_header,
             table_prefers_large_blocks ? settings[Setting::min_insert_block_size_rows] : settings[Setting::max_block_size],
