@@ -59,8 +59,8 @@ An investigation might start with a failed checkout, a slow screen load, an auth
 
 ## Prerequisites {#prerequisites}
 
-- **ClickStack** installed and reachable from your backend services, either self-managed or on ClickHouse Cloud. See [Getting started with open source ClickStack](/clickstack/getting-started/oss) or [Getting started with self-managed ClickHouse Observability](/clickstack/self-configured/getting-started/managed).
-- Your backend services instrumented with **OpenTelemetry** and sending traces to ClickStack. See [Ingesting with OpenTelemetry](/clickstack/ingesting-data/opentelemetry).
+- A **ClickHouse Observability** service receiving backend traces. See [Getting started with fully managed ClickHouse Observability](/clickstack/observability/getting-started), or follow the [self-managed getting started guide](/clickstack/self-configured/getting-started/managed) if you operate your own ingestion collector.
+- Your backend services instrumented with **OpenTelemetry** and sending traces to ClickStack. See [Ingesting with OpenTelemetry](/clickstack/observability/ingesting-data/opentelemetry).
 - The **bitdrift Capture SDK** integrated in your mobile app. See the [bitdrift SDK documentation](https://docs.bitdrift.io/) for install instructions.
 - A **bitdrift account**, with [Support](https://bitdrift.io/contact-us) available to enable tracing for your tenant (tracing is an experimental feature that bitdrift enables per tenant).
 
@@ -94,5 +94,5 @@ The integration works whether ClickStack is self-managed or run as a managed off
 ## Read more {#read-more}
 
 - [bitdrift documentation: ClickHouse integration](https://docs.bitdrift.io/product/integration-partners/clickhouse)
-- [Getting started with open source ClickStack](/clickstack/getting-started/oss)
-- [Ingesting with OpenTelemetry](/clickstack/ingesting-data/opentelemetry)
+- [Getting started with ClickHouse Observability](/clickstack/observability/getting-started)
+- [Ingesting with OpenTelemetry](/clickstack/observability/ingesting-data/opentelemetry)
