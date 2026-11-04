@@ -1926,6 +1926,19 @@ def test_local_embedded_rocksdb_pins_resolved_directory():
             ).strip()
             == "keep.txt"
         )
+
+        # A directory outside of the disk root is rejected the same way whether it is missing
+        # or is a symlink loop, so the error does not disclose the filesystem state outside.
+        node_local.exec_in_container(
+            ["bash", "-c", "ln -snf probe /tmp/rocksdb_outside/probe"]
+        )
+        for outside_dir in ["/tmp/rocksdb_outside/missing/db", "/tmp/rocksdb_outside/probe/db"]:
+            err = node_local.query_and_get_error(
+                "CREATE TABLE rocksdb_outside (k UInt64) "
+                f"ENGINE = EmbeddedRocksDB(0, '{outside_dir}') PRIMARY KEY(k)"
+            )
+            assert "Path must be inside user-files path" in err, err
+            assert "symbolic links" not in err, err
     finally:
         node_local.query("DROP TABLE IF EXISTS rocksdb_retarget SYNC")
         node_local.exec_in_container(

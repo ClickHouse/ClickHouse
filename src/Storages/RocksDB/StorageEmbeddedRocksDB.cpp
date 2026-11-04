@@ -328,14 +328,26 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(
 
         if (!is_local && getContext()->getUserFilesVolume())
         {
+            /// Reject a directory that is lexically outside of the user files directory before
+            /// touching the filesystem, so that the result of resolving it (a missing directory,
+            /// a symlink loop, a permission error) does not disclose anything outside.
+            const fs::path lexically_relative_dir = fs::path(rocksdb_dir).lexically_relative(fs::path(user_files_path).lexically_normal());
+            if (lexically_relative_dir.empty() || *lexically_relative_dir.begin() == "..")
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path must be inside user-files path");
+
             /// Pin the directory with every symlink resolved. The database, its temporary
             /// files of a bulk insert, and the files that RocksDB creates in the background all
             /// use `rocksdb_dir`, so a symlink on the way that is retargeted later must not
-            /// move them outside of the user files directory checked here.
+            /// move them outside of the user files directory checked here. A symlink inside may
+            /// still point outside, so a resolution failure is reported as the same boundary
+            /// rejection instead of exposing the error.
             std::error_code ec;
             const fs::path resolved_dir = canonicalPathFollowingDanglingSymlinks(rocksdb_dir, ec);
             if (ec)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot resolve the path of the RocksDB directory: {}", ec.message());
+            {
+                LOG_DEBUG(log, "Cannot resolve the path of the RocksDB directory {}: {}", rocksdb_dir, ec.message());
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path must be inside user-files path");
+            }
             rocksdb_dir = resolved_dir.string();
         }
 
