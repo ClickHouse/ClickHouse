@@ -7788,7 +7788,10 @@ void StorageReplicatedMergeTree::restoreMetadataVersionFromBackup(Int32 metadata
         assertNotStaticStorage();
         if (!is_readonly)
             return;
-        if (shutdown_prepared_called || (has_metadata_in_zookeeper.has_value() && !*has_metadata_in_zookeeper))
+        if (shutdown_prepared_called)
+            assertNotReadonly();
+        /// The attach thread sets `has_metadata_in_zookeeper` before `initialization_done`.
+        if (initialization_done && has_metadata_in_zookeeper.has_value() && !*has_metadata_in_zookeeper)
             assertNotReadonly();
         retries_ctl.setUserError(
             Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode (replica path: {})", replica_path));
