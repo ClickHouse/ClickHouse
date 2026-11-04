@@ -117,6 +117,7 @@
     "reference/settings/server-settings/settings/statistics-cache",
     "reference/settings/server-settings/settings/storage",
     "reference/settings/server-settings/settings/storage-connections",
+    "reference/settings/server-settings/settings/streaming-exchange",
     "reference/settings/server-settings/settings/tables-loader",
     "reference/settings/server-settings/settings/tcp-close",
     "reference/settings/server-settings/settings/tcp-port",
