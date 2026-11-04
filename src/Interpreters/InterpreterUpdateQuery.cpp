@@ -224,12 +224,16 @@ BlockIO InterpreterUpdateQuery::execute()
     if (update_query.predicate)
     {
         AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());
+        /// `x IN a.b` may be a subcolumn of the updated table, see `InterpreterAlterQuery::bindTableNamesInMutationExpressions`.
+        visitor.addExpressionSourceTable(table);
         ASTPtr predicate = update_query.predicate->ptr();
         visitor.visit(predicate);
     }
     if (update_query.assignments)
     {
         AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());
+        /// `x IN a.b` may be a subcolumn of the updated table, see `InterpreterAlterQuery::bindTableNamesInMutationExpressions`.
+        visitor.addExpressionSourceTable(table);
         ASTPtr assignments = update_query.assignments->ptr();
         visitor.visit(assignments);
     }

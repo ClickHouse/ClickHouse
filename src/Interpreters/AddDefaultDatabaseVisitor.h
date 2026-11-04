@@ -158,7 +158,7 @@ public:
     void visit(ASTColumns & columns) const
     {
         /// The expressions of the columns refer to the columns of the table, which are not known here.
-        expression_scopes.push_back(ExpressionScope{.names = {}, .unknown = true});
+        expression_scopes.push_back(ExpressionScope{.names = {}, .qualifiers = {}, .unknown = true});
         for (auto & child : columns.children)
             visit(child);
         expression_scopes.pop_back();
@@ -210,7 +210,13 @@ private:
     /// (`a` of a column `a.b`, or of a tuple `a`), and the names and aliases of its sources that qualify the columns.
     struct ExpressionScope
     {
+        /// The columns of the sources (and the first parts of the dotted column names), and the aliases of the sources.
         std::unordered_set<String> names;
+        /// The names of the table sources that may qualify a column, as parts: `t`, `db.t`, and with hierarchical names
+        /// `ns.t` and `db.ns.t` for the table `db`.`ns.t`. A compound identifier starting with a qualifier and continuing
+        /// with a column (`db.t.x`) may be an expression; one starting with only a part of a qualifier (`db.ns.keys` for
+        /// a source `db.src`) may not.
+        std::vector<std::vector<String>> qualifiers;
         /// A source whose columns are not known here (a subquery, a table function): any name may be a column.
         bool unknown = false;
         /// The select query whose sources give the names, collected on the first use (see `mayBeExpression`), so
@@ -251,7 +257,7 @@ private:
             for (const auto & child : select->children)
                 collectAliases(child);
 
-            expression_scopes.push_back(ExpressionScope{.names = {}, .unknown = false, .select = select});
+            expression_scopes.push_back(ExpressionScope{.names = {}, .qualifiers = {}, .unknown = false, .select = select});
             for (auto & child : select->children)
             {
                 if (child.get() == select->with().get())
@@ -332,7 +338,7 @@ private:
                     StorageID qualified = qualifyTableName(identifier->name());
                     arguments[0] = make_intrusive<ASTIdentifier>(std::vector<String>{qualified.database_name, qualified.table_name});
                 }
-                else
+                else if (!isNameArgumentExpression(arguments[0]))
                 {
                     bindQualifiedJoinGetArgument(arguments[0]);
                 }
@@ -369,7 +375,7 @@ private:
                     auto qualified_dictionary_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(identifier->name(), database_name);
                     arguments[0] = make_intrusive<ASTIdentifier>(qualified_dictionary_name.getParts());
                 }
-                else
+                else if (!isNameArgumentExpression(arguments[0]))
                 {
                     bindQualifiedDictGetArgument(arguments[0]);
                 }
@@ -441,7 +447,7 @@ private:
         for (const auto & child : select.children)
             collectAliases(child);
 
-        expression_scopes.push_back(ExpressionScope{.names = {}, .unknown = false, .select = &select});
+        expression_scopes.push_back(ExpressionScope{.names = {}, .qualifiers = {}, .unknown = false, .select = &select});
 
         if (select.tables())
             tryVisit<ASTTablesInSelectQuery>(select.refTables());
@@ -492,30 +498,48 @@ private:
                 continue;
             }
 
-            /// Any part of the name may qualify a column: `t.x`, `db.t.x`, and with hierarchical names `ns.t.x`. The name
+            /// Any suffix of the name may qualify a column: `t.x`, `db.t.x`, and with hierarchical names `ns.t.x`. The name
             /// may be bound already (`db`.`ns.t`), so the parts with dots are split as well.
-            for (const auto & part : table_identifier->name_parts)
-            {
-                scope.names.insert(part);
-                for (auto & subpart : DatabaseCatalog::splitHierarchicalName(part))
-                    scope.names.insert(std::move(subpart));
-            }
+            addQualifiers(scope, table_identifier->name_parts);
 
             StoragePtr table;
             if (table_identifier->compound())
             {
                 StorageID as_written = table_identifier->getTableId();
-                table = DatabaseCatalog::instance().tryGetTable(
-                    DatabaseCatalog::instance().resolveHierarchicalName(StorageID(as_written.database_name, as_written.table_name), database_name, context),
-                    context);
+                StorageID resolved = DatabaseCatalog::instance().resolveHierarchicalName(
+                    StorageID(as_written.database_name, as_written.table_name), database_name, context);
+                addQualifiers(scope, {resolved.database_name, resolved.table_name});
+                table = DatabaseCatalog::instance().tryGetTable(resolved, context);
             }
             else if (!external_tables.contains(table_identifier->name()) && !isWithAlias(table_identifier->name()))
             {
-                table = DatabaseCatalog::instance().tryGetTable(qualifyTableName(table_identifier->name()), context);
+                StorageID resolved = qualifyTableName(table_identifier->name());
+                addQualifiers(scope, {resolved.database_name, resolved.table_name});
+                table = DatabaseCatalog::instance().tryGetTable(resolved, context);
             }
 
             addColumnNames(scope, table);
         }
+    }
+
+    static std::vector<String> splitNameParts(const std::vector<String> & name_parts)
+    {
+        std::vector<String> parts;
+        for (const auto & part : name_parts)
+        {
+            if (part.empty())
+                continue;
+            for (auto & subpart : DatabaseCatalog::splitHierarchicalName(part))
+                parts.push_back(std::move(subpart));
+        }
+        return parts;
+    }
+
+    static void addQualifiers(ExpressionScope & scope, const std::vector<String> & name_parts)
+    {
+        std::vector<String> parts = splitNameParts(name_parts);
+        for (size_t i = 0; i < parts.size(); ++i)
+            scope.qualifiers.emplace_back(parts.begin() + i, parts.end());
     }
 
     void addColumnNames(ExpressionScope & scope, const StoragePtr & table) const
@@ -534,20 +558,38 @@ private:
         }
     }
 
-    /// Whether a compound identifier in the right argument of `IN` (`x IN a.b`) may be an expression rather than a table:
-    /// the analyzer resolves it as an expression first (the subcolumn `b` of a tuple column `a`), and only then as a table.
-    /// Such an identifier is left as written, not bound to a table of another split (`r`.`a.b` inside `USE r`).
-    bool mayBeExpression(const ASTIdentifier & identifier) const
+    /// Whether a compound identifier in the right argument of `IN` (`x IN a.b`), or in the first argument of `joinGet` or
+    /// `dictGet`, may be an expression rather than a table: the analyzer resolves it as an expression first (the subcolumn
+    /// `b` of a tuple column `a`, or of an alias `a`), and only then as a table. Such an identifier is left as written,
+    /// not bound to a table of another split (`r`.`a.b` inside `USE r`).
+    /// With `unknown_sources_may_be_expression`, any name may be a column of a source whose columns are not known here
+    /// (a subquery or a table function). The name arguments of `joinGet` and `dictGet` do not take that into account: they
+    /// are bound when no known name makes them an expression, so that the queries reading a table function (sent to the
+    /// shards by `remote`) still name the objects they read.
+    bool mayBeExpression(const ASTIdentifier & identifier, bool unknown_sources_may_be_expression = true) const
     {
         const String & first_part = identifier.name_parts.front();
         if (isExpressionAlias(first_part))
             return true;
+
+        std::vector<String> parts;
         for (auto & scope : expression_scopes)
         {
             if (scope.select)
                 collectExpressionScopeNames(scope);
-            if (scope.unknown || scope.names.contains(first_part))
+            if ((scope.unknown && unknown_sources_may_be_expression) || scope.names.contains(first_part))
                 return true;
+
+            if (scope.qualifiers.empty())
+                continue;
+            if (parts.empty())
+                parts = splitNameParts(identifier.name_parts);
+            for (const auto & qualifier : scope.qualifiers)
+            {
+                if (parts.size() > qualifier.size() && std::equal(qualifier.begin(), qualifier.end(), parts.begin())
+                    && scope.names.contains(parts[qualifier.size()]))
+                    return true;
+            }
         }
         return false;
     }
@@ -941,6 +983,16 @@ private:
         argument = literal;
     }
 
+    /// Whether the first argument of `joinGet` or `dictGet` is a compound identifier that may be an expression (see
+    /// `mayBeExpression`): the analyzer resolves it as an expression first (`joinGet(a.b, ...)` with an alias or a tuple
+    /// column `a`), so it is left as written.
+    bool isNameArgumentExpression(const ASTPtr & argument) const
+    {
+        const auto * identifier = argument->as<ASTIdentifier>();
+        return identifier && !identifier->as<ASTTableIdentifier>() && identifier->compound()
+            && mayBeExpression(*identifier, /* unknown_sources_may_be_expression = */ false);
+    }
+
     /// A qualified table name carried by the first argument of `joinGet` is bound like in `visitCompound`.
     void bindQualifiedJoinGetArgument(ASTPtr & argument) const
     {
@@ -1027,8 +1079,11 @@ private:
                         /// An unqualified name is left alone, but a qualified one is bound to the table it denotes now,
                         /// like a table reference (see `visitCompound`): the expressions of a mutation are executed
                         /// later, without a current database.
-                        if (child->children[i]->as<ASTIdentifier>() || child->children[i]->as<ASTLiteral>())
+                        if (child->children[i]->as<ASTLiteral>()
+                            || (child->children[i]->as<ASTIdentifier>() && !isNameArgumentExpression(child->children[i])))
                             bindQualifiedJoinGetArgument(child->children[i]);
+                        else if (child->children[i]->as<ASTIdentifier>())
+                            continue;
                         else
                             visit(child->children[i]);
                     }
@@ -1039,7 +1094,8 @@ private:
                             /// A qualified name is bound to the dictionary it denotes now (see `bindQualifiedDictGetArgument`).
                             if (identifier->compound())
                             {
-                                bindQualifiedDictGetArgument(child->children[i]);
+                                if (!isNameArgumentExpression(child->children[i]))
+                                    bindQualifiedDictGetArgument(child->children[i]);
                                 continue;
                             }
 

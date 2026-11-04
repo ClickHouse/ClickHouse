@@ -634,7 +634,8 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     /// `DatabaseCatalog::isBoundHierarchicalName`), so `db.ns.t` must already be the table `db`.`ns.t` it denotes here.
     /// This is the same expansion and qualification as below, which is idempotent; the table is qualified with the
     /// database of the altered table, as each host does.
-    /// The same holds for the table operands of the mutation expressions (`DELETE WHERE x IN db.ns.src`).
+    /// The same holds for the table operands of the mutation expressions (`DELETE WHERE x IN db.ns.src`) and for the
+    /// names in the expressions of the other commands (a column default `joinGet(db.ns.j, ...)`).
     if (table_id)
     {
         ExpandedASTBudget binding_budget(settings[Setting::max_expanded_ast_elements], *query_ptr);
@@ -645,20 +646,23 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
             ASTPtr modify_query_ptr = modify_query->ptr();
             binding_visitor.visit(modify_query_ptr);
         }
-        /// The mutation expressions refer to the columns of the altered table: `x IN a.b` may be a subcolumn.
+        /// The expressions of the commands refer to the columns of the altered table: `x IN a.b` may be a subcolumn.
         binding_visitor.addExpressionSourceTable(table);
         for (const auto & child : alter.command_list->children)
         {
             const auto * command = child->as<ASTAlterCommand>();
-            if (!command || (command->type != ASTAlterCommand::UPDATE && command->type != ASTAlterCommand::DELETE))
+            if (!command || command->type == ASTAlterCommand::MODIFY_QUERY)
                 continue;
 
-            for (IAST * expression : {command->predicate, command->update_assignments})
+            if (command->type == ASTAlterCommand::UPDATE || command->type == ASTAlterCommand::DELETE)
             {
-                if (!expression)
-                    continue;
-                ASTPtr expression_ptr = expression->ptr();
-                ApplyWithSubqueryVisitor::visit(expression_ptr, getContext(), binding_budget);
+                for (IAST * expression : {command->predicate, command->update_assignments})
+                {
+                    if (!expression)
+                        continue;
+                    ASTPtr expression_ptr = expression->ptr();
+                    ApplyWithSubqueryVisitor::visit(expression_ptr, getContext(), binding_budget);
+                }
             }
             ASTPtr command_ptr = child;
             binding_visitor.visit(command_ptr);
@@ -799,6 +803,9 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
     /// Add default database to table identifiers that we can encounter in e.g. default expressions, mutation expression, etc.
     AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());
+    /// The same source scope as the binding above: a compound right argument of `IN` that may be a subcolumn of the
+    /// altered table (`x IN a.b`) is left as written, not bound to a table now.
+    visitor.addExpressionSourceTable(table);
     ASTPtr command_list_ptr = alter.command_list->ptr();
     visitor.visit(command_list_ptr);
 
