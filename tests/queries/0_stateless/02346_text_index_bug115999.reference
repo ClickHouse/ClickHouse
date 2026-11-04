@@ -106,6 +106,10 @@ a Map element whose key comes from the joined table
 a nested Map whose inner key comes from the joined table
 0
 1
+a lambda capture named like the indexed column
+[0]
+[0]
+1
 a Distributed haystack, predicate on the initiator
 1
 1

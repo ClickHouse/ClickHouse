@@ -192,16 +192,21 @@ Resolution resolveToTableColumns(
     /// index on `concat(first_name, last_name)` while pairing values from two rows.
     const IQueryTreeNode * occurrence = nullptr;
 
+    bool foreign_map_key = false;
+    /// The lambdas the walk entered, whose parameters are therefore bound inside the haystack.
+    std::vector<const IQueryTreeNode *> local_binders;
+
     /// Returns `{substituted, failed}`. `substituted` is null when nothing below `current` changed, so
     /// an expression over plain table columns is resolved without copying anything; a substitution is
     /// only ever written into a copy.
-    bool foreign_map_key = false;
-
     auto substitute = [&](const QueryTreeNodePtr & current, auto & self) -> std::pair<QueryTreeNodePtr, bool>
     {
         const auto * column_node = current->as<ColumnNode>();
         if (!column_node)
         {
+            if (const auto * lambda = current->as<LambdaNode>())
+                local_binders.push_back(&lambda->getArguments());
+
             /// `m[k]` reads a value `mapValues(m)` indexes whatever the key is, so a key reading another
             /// table leaves the Map resolvable. Its own name then describes nothing, hence the flag.
             if (const auto * element = current->as<FunctionNode>();
@@ -263,9 +268,10 @@ Resolution resolveToTableColumns(
         if (!source)
             return {nullptr, true};
 
-        /// A lambda parameter is bound inside the expression, which is how an index names it too.
+        /// A parameter of a lambda inside the haystack is how an index expression names it too. One
+        /// captured from an enclosing lambda is not: there the index expression's identifier is a column.
         if (source->as<LambdaArgumentsNode>())
-            return {nullptr, false};
+            return {nullptr, std::ranges::find(local_binders, static_cast<const IQueryTreeNode *>(source.get())) == local_binders.end()};
 
         QueryTreeNodePtr what_it_reads;
 

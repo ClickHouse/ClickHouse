@@ -578,6 +578,32 @@ WHERE hasAnyTokens(t.mm[t.k]['x'], ['ell']) OR kk.k = 'zzz';
 DROP TABLE t_115999_nested_keys;
 DROP TABLE t_115999_nested;
 
+-- A lambda parameter is the indexed expression's own only when the lambda is inside the haystack. One
+-- captured from an enclosing lambda names something else, however it is spelled.
+SELECT 'a lambda capture named like the indexed column';
+CREATE TABLE t_115999_capture
+(
+    id UInt64,
+    suffix String,
+    tags Array(String),
+    INDEX idx_tags arrayMap(y -> concat(y, suffix), tags) TYPE text(tokenizer = 'array')
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO t_115999_capture VALUES (1, '!', ['alpha beta']);
+
+-- Both print [0]: the capture supplies '?', so neither reads the indexed `concat(y, suffix)`, and the
+-- answer cannot depend on what that parameter is called.
+SELECT arrayMap(suffix -> hasAnyTokens(arrayMap(y -> concat(y, suffix), tags), ['alpha beta?']), ['?'])
+FROM t_115999_capture;
+SELECT arrayMap(other -> hasAnyTokens(arrayMap(y -> concat(y, other), tags), ['alpha beta?']), ['?'])
+FROM t_115999_capture;
+-- The indexed expression itself still forwards its tokenizer.
+SELECT hasAnyTokens(arrayMap(y -> concat(y, suffix), tags), ['alpha beta!']) FROM t_115999_capture;
+
+DROP TABLE t_115999_capture;
+
 -- A Distributed table carries no indexes of its own, so the initiator has to reach the shards' local
 -- table by name; otherwise a predicate it evaluates itself disagrees with the shard-local scans.
 SELECT 'a Distributed haystack, predicate on the initiator';
