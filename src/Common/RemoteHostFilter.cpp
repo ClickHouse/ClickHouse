@@ -45,10 +45,9 @@ void RemoteHostFilter::checkHostAndPort(const std::string & host, const std::str
                                                       "see <remote_url_allow_hosts>", host, port);
 }
 
-std::string RemoteHostFilter::checkAndGetCanonicalHostAndPort(
-    const std::string & host_and_port, UInt16 default_port, const std::string & description) const
+static void checkHostCharacters(const std::string & value, const std::string & description)
 {
-    for (const char c : host_and_port)
+    for (const char c : value)
     {
         const bool is_visible_ascii = isPrintableASCII(c) && c != ' ';
         const bool is_url_separator = c == '/' || c == '@' || c == '\\';
@@ -56,8 +55,14 @@ std::string RemoteHostFilter::checkAndGetCanonicalHostAndPort(
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Unexpected character '{}' in {} '{}': expected host[:port]",
-                c, description, host_and_port);
+                c, description, value);
     }
+}
+
+std::string RemoteHostFilter::checkAndGetCanonicalHostAndPort(
+    const std::string & host_and_port, UInt16 default_port, const std::string & description) const
+{
+    checkHostCharacters(host_and_port, description);
 
     const auto [host, port] = parseAddress(host_and_port, default_port);
     if (host.empty())
@@ -66,6 +71,15 @@ std::string RemoteHostFilter::checkAndGetCanonicalHostAndPort(
     checkHostAndPort(host, toString(port));
 
     return host + ':' + toString(port);
+}
+
+void RemoteHostFilter::checkCanonicalHostAndPort(const std::string & host, UInt16 port, const std::string & description) const
+{
+    checkHostCharacters(host, description);
+    if (host.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty host in {}", description);
+
+    checkHostAndPort(host, toString(port));
 }
 
 void RemoteHostFilter::setValuesFromConfig(const Poco::Util::AbstractConfiguration & config)
@@ -120,6 +134,10 @@ bool RemoteHostFilter::checkForDirectEntry(const std::string & str) const
     if (!is_initialized)
         /// Allow everything by default.
         return true;
+
+    /// Connectors take the host as a C string and stop at the first NUL, so the checked string must not contain one.
+    if (str.find('\0') != std::string::npos)
+        return false;
 
     std::lock_guard guard(hosts_mutex);
 

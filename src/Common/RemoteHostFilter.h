@@ -38,6 +38,9 @@ public:
     /// `description` names the checked value in error messages, e.g. "Kafka broker".
     std::string checkAndGetCanonicalHostAndPort(const std::string & host_and_port, UInt16 default_port, const std::string & description) const;
 
+    /// Same checks for an already parsed host and port, which the caller then hands to the client library unchanged.
+    void checkCanonicalHostAndPort(const std::string & host, UInt16 port, const std::string & description) const;
+
 private:
     std::atomic_bool is_initialized = false;
 
