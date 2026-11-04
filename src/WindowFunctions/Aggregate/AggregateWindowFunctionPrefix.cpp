@@ -44,8 +44,8 @@ Int64 AggregateWindowFunctionPrefix::evaluate(const WindowBounds & bounds, const
         }
 
         state.insertResultInto(result);
-        if (to - from > 1)
-            result.insertManyFrom(result, result.size() - 1, to - from - 1);
+        for (Int64 row = from + 1; row < to; ++row)
+            result.insertRangeFrom(result, result.size() - 1, 1);
         from = to;
     }
 
