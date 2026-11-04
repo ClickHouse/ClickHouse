@@ -1160,7 +1160,9 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             create.set(create.comment, make_intrusive<ASTLiteral>(as_storage_metadata->comment));
 
         /// Retain source properties for `DataLakeCatalog` until its validation either rejects or explicitly omits them.
-        const auto target_database = DatabaseCatalog::instance().tryGetDatabase(getContext()->resolveDatabase(create.getDatabase()));
+        const auto target_database = create.isTemporary()
+            ? nullptr
+            : DatabaseCatalog::instance().tryGetDatabase(getContext()->resolveDatabase(create.getDatabase()));
         const bool is_datalake_catalog = target_database && target_database->isDatalakeCatalog();
         if (is_datalake_catalog || (create.storage && create.storage->engine && endsWith(create.storage->engine->name, "MergeTree")))
         {

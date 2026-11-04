@@ -3424,6 +3424,27 @@ def test_create_table_base_location_reopened_elsewhere_rejected(started_cluster,
     assert namespace not in {".".join(ns) for ns in catalog.list_namespaces()}
 
 
+def test_create_table_namespace_location_force_add_bucket_rejected(started_cluster):
+    # `force_add_bucket` puts the bucket in front of the location again on every reopening,
+    # so no location under the namespace names the objects the table is reopened at.
+    node = started_cluster.instances["node1"]
+
+    namespace = f"test_ns_location_force_add_bucket_{uuid.uuid4().hex[:8]}"
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace, properties={"location": f"s3://warehouse-rest/{namespace}"})
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME, {"force_add_bucket": 1})
+
+    error = node.query_and_get_error(
+        f"CREATE TABLE {CATALOG_NAME}.`{namespace}.t` (id Int64)",
+        settings={"allow_database_iceberg": 1},
+    )
+    assert "is reopened under `storage_endpoint`" in error, error
+    assert f"s3://warehouse-rest/warehouse-rest/warehouse-rest/{namespace}/t" in error, error
+
+    assert catalog.list_tables(namespace) == []
+
+
 def test_drop_table_purge_with_query_setting(started_cluster):
     node = started_cluster.instances["node1"]
 

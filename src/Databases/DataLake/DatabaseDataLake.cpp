@@ -984,6 +984,28 @@ String DatabaseDataLake::getNewTableLocation(
         return "s3://" + path;
     };
 
+    /// The catalog registers the location for other engines, so it has to name the same objects
+    /// the table is reopened at: reject placements where they differ.
+    auto check_reopened_at_same_location = [&](const String & location, std::string_view location_source) -> String
+    {
+        if (catalog->managesTableLocation())
+            return location;
+
+        auto without_scheme = [](const String & uri)
+        {
+            auto pos = uri.find("://");
+            return pos == String::npos ? uri : uri.substr(pos + 3);
+        };
+        String reopened_location = get_reopened_location(location);
+        if (without_scheme(reopened_location) != without_scheme(location))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Table location '{}' derived from {} is reopened under `storage_endpoint` ('{}') "
+                "as '{}', so the table would be unreadable immediately after creation. Make the location and `storage_endpoint` "
+                "address the same bucket or container, and check `force_add_bucket`",
+                location, location_source, settings[DatabaseDataLakeSetting::storage_endpoint].value, reopened_location);
+        return location;
+    };
+
     String base_location = catalog->getDefaultBaseLocation();
     if (base_location.empty())
         base_location = settings[DatabaseDataLakeSetting::default_base_location].value;
@@ -1000,26 +1022,8 @@ String DatabaseDataLake::getNewTableLocation(
 
         while (base_location.ends_with('/'))
             base_location.pop_back();
-        String location = fmt::format("{}/{}/{}", base_location, namespace_name, table_name);
-
-        /// The catalog registers this location for other engines, so it cannot be rewritten to the objects
-        /// the table is reopened at: reject placements where they differ.
-        if (!catalog->managesTableLocation())
-        {
-            auto without_scheme = [](const String & uri)
-            {
-                auto pos = uri.find("://");
-                return pos == String::npos ? uri : uri.substr(pos + 3);
-            };
-            String reopened_location = get_reopened_location(location);
-            if (without_scheme(reopened_location) != without_scheme(location))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Table location '{}' derived from the default base location is reopened under `storage_endpoint` ('{}') "
-                    "as '{}', so the table would be unreadable immediately after creation. Make the bucket or container of the "
-                    "default base location match `storage_endpoint`",
-                    location, settings[DatabaseDataLakeSetting::storage_endpoint].value, reopened_location);
-        }
-        return location;
+        return check_reopened_at_same_location(
+            fmt::format("{}/{}/{}", base_location, namespace_name, table_name), "the default base location");
     }
 
     auto namespace_table_location = catalog->getDefaultTableLocation(namespace_name, table_name);
@@ -1036,7 +1040,7 @@ String DatabaseDataLake::getNewTableLocation(
         LOG_DEBUG(log, "Location assigned by the catalog for new table {}.{}: {}", namespace_name, table_name, location);
 
         /// The location has to name the same objects the table is reopened at.
-        return get_reopened_location(location);
+        return check_reopened_at_same_location(get_reopened_location(location), "the namespace location");
     }
 
     const auto storage_endpoint = settings[DatabaseDataLakeSetting::storage_endpoint].value;
@@ -1049,9 +1053,11 @@ String DatabaseDataLake::getNewTableLocation(
             "This DataLakeCatalog assigns table locations itself, so `storage_endpoint` cannot be used "
             "to place a new table. Set `default_base_location` on the database instead");
 
-    return DataLake::constructTableLocation(
-        getLocationScheme(catalog), storage_endpoint, namespace_name, table_name,
-        settings[DatabaseDataLakeSetting::storage_uri_style]);
+    return check_reopened_at_same_location(
+        DataLake::constructTableLocation(
+            getLocationScheme(catalog), storage_endpoint, namespace_name, table_name,
+            settings[DatabaseDataLakeSetting::storage_uri_style]),
+        "`storage_endpoint`");
 }
 
 ASTs DatabaseDataLake::getEngineArgsForNewTable(const String & name, ObjectStorageType engine_storage_type) const
