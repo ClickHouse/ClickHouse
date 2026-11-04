@@ -282,9 +282,9 @@ SETTINGS filesystem_cache_name = 'cache_for_azure', enable_filesystem_cache = 1;
 
 ### PARTITION BY {#partition-by}
 
-`PARTITION BY` — Optional. In most cases you don't need a partition key, and if it is needed you generally don't need a partition key more granular than by month. Partitioning does not speed up queries (in contrast to the ORDER BY expression). You should never use too granular partitioning. Don't partition your data by client identifiers or names (instead, make client identifier or name the first column in the ORDER BY expression).
+`PARTITION BY` — Optional. In most cases you don't need a partition key, and if it is needed you generally don't need a partition key more granular than by month. Partitioning is primarily a data management technique: each partition is written to separate files. With the `hive` partition strategy, a query that filters on a partition column reads only the files of the matching partitions. You should never use too granular partitioning. Don't partition your data by client identifiers or names.
 
-For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](/reference/data-types/date). The partition names here have the `"YYYYMM"` format.
+With the `hive` partition strategy, the default set by `file_like_engine_default_partition_strategy`, the partition key must consist of table columns, for example `PARTITION BY (year, month)`. An expression such as `toYYYYMM(date_column)` requires the `wildcard` strategy, with `{_partition_id}` in the path. Tables that use the `wildcard` strategy can be written to but not read.
 
 #### Partition strategy {#partition-strategy}
 
@@ -408,9 +408,9 @@ There are two ways to define cache in configuration file.
 
 ### PARTITION BY {#partition-by}
 
-`PARTITION BY` — Optional. In most cases you don't need a partition key, and if it is needed you generally don't need a partition key more granular than by month. Partitioning does not speed up queries (in contrast to the ORDER BY expression). You should never use too granular partitioning. Don't partition your data by client identifiers or names (instead, make client identifier or name the first column in the ORDER BY expression).
+`PARTITION BY` — Optional. In most cases you don't need a partition key, and if it is needed you generally don't need a partition key more granular than by month. Partitioning is primarily a data management technique: each partition is written to separate files. With the `hive` partition strategy, a query that filters on a partition column reads only the files of the matching partitions. You should never use too granular partitioning. Don't partition your data by client identifiers or names.
 
-For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](/reference/data-types/date). The partition names here have the `"YYYYMM"` format.
+With the `hive` partition strategy, the default set by `file_like_engine_default_partition_strategy`, the partition key must consist of table columns, for example `PARTITION BY (year, month)`. An expression such as `toYYYYMM(date_column)` requires the `wildcard` strategy, with `{_partition_id}` in the path. Tables that use the `wildcard` strategy can be written to but not read.
 
 #### Partition strategy {#partition-strategy}
 
@@ -887,9 +887,9 @@ ENGINE = HDFS(URI, format)
 
 ### PARTITION BY {#partition-by}
 
-`PARTITION BY` — Optional. In most cases you don't need a partition key, and if it is needed you generally don't need a partition key more granular than by month. Partitioning does not speed up queries (in contrast to the ORDER BY expression). You should never use too granular partitioning. Don't partition your data by client identifiers or names (instead, make client identifier or name the first column in the ORDER BY expression).
+`PARTITION BY` — Optional. In most cases you don't need a partition key, and if it is needed you generally don't need a partition key more granular than by month. Partitioning is primarily a data management technique: each partition is written to separate files. With the `hive` partition strategy, a query that filters on a partition column reads only the files of the matching partitions. You should never use too granular partitioning. Don't partition your data by client identifiers or names.
 
-For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](/reference/data-types/date). The partition names here have the `"YYYYMM"` format.
+With the `hive` partition strategy, the default set by `file_like_engine_default_partition_strategy`, the partition key must consist of table columns, for example `PARTITION BY (year, month)`. An expression such as `toYYYYMM(date_column)` requires the `wildcard` strategy, with `{_partition_id}` in the path. Tables that use the `wildcard` strategy can be written to but not read.
 
 **Example:**
 
@@ -1325,7 +1325,7 @@ ClickHouse supports partition pruning during SELECT queries for Iceberg tables, 
 
 Enable `allow_insert_into_iceberg` to use this operation.
 
-The operation is supported only for Iceberg `format-version` 2 tables with a single, non-evolved partition spec. Each manifest containing the selected partition must contain no files from other partitions. If a manifest is shared by the selected partition and another partition, the operation fails without changing the table. The operation also rejects affected manifests containing equality-delete files.
+The operation is supported only for Iceberg `format-version` 2 tables with a single, non-evolved partition spec. Each manifest containing the selected partition must contain no files from other partitions. If a manifest is shared by the selected partition and another partition, the operation fails without changing the table. With `iceberg_insert_single_manifest_for_all_partitions` enabled, each insert stream of an `INSERT` writes the files of all partitions it received into one manifest (exactly one manifest per `INSERT` with `max_insert_threads = 1`), so a partition written by the same `INSERT` as other partitions cannot be dropped. The operation also rejects affected manifests containing equality-delete files.
 
 The partition value follows the same rules as for `MergeTree`. For a single-column partition, pass a scalar literal; for a multi-column partition, pass a tuple of values:
 
