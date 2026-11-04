@@ -1,6 +1,7 @@
 #include <Analyzer/InterpolateNode.h>
 
 #include <Common/SipHash.h>
+#include <Common/assert_cast.h>
 
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -31,15 +32,19 @@ void InterpolateNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_st
     getInterpolateExpression()->dumpTreeImpl(buffer, format_state, indent + 4);
 }
 
-bool InterpolateNode::isEqualImpl(const IQueryTreeNode &, CompareOptions) const
+bool InterpolateNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
 {
-    /// No state in interpolate node
-    return true;
+    return projection_column_indexes == assert_cast<const InterpolateNode &>(rhs).projection_column_indexes;
 }
 
-void InterpolateNode::updateTreeHashImpl(HashState &, CompareOptions) const
+void InterpolateNode::updateTreeHashImpl(HashState & hash_state, CompareOptions) const
 {
-    /// No state in interpolate node
+    if (projection_column_indexes.empty())
+        return;
+
+    hash_state.update(projection_column_indexes.size());
+    for (size_t index : projection_column_indexes)
+        hash_state.update(index);
 }
 
 QueryTreeNodePtr InterpolateNode::cloneImpl() const

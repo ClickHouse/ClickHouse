@@ -91,7 +91,9 @@ bool SortNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
     const auto & rhs_typed = assert_cast<const SortNode &>(rhs);
     if (sort_direction != rhs_typed.sort_direction ||
         nulls_sort_direction != rhs_typed.nulls_sort_direction ||
-        with_fill != rhs_typed.with_fill)
+        with_fill != rhs_typed.with_fill ||
+        projection_column_indexes != rhs_typed.projection_column_indexes ||
+        arguments_projection_column_indexes != rhs_typed.arguments_projection_column_indexes)
         return false;
 
     if (!collator && !rhs_typed.collator)
@@ -117,6 +119,22 @@ void SortNode::updateTreeHashImpl(HashState & hash_state, CompareOptions) const
 
         hash_state.update(locale.size());
         hash_state.update(locale);
+    }
+
+    /// Only a query with WITH FILL has them, so the hash of any other query does not change.
+    if (!projection_column_indexes.empty() || !arguments_projection_column_indexes.empty())
+    {
+        hash_state.update(projection_column_indexes.size());
+        for (size_t index : projection_column_indexes)
+            hash_state.update(index);
+
+        hash_state.update(arguments_projection_column_indexes.size());
+        for (const auto & argument_indexes : arguments_projection_column_indexes)
+        {
+            hash_state.update(argument_indexes.size());
+            for (size_t index : argument_indexes)
+                hash_state.update(index);
+        }
     }
 }
 

@@ -608,6 +608,18 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
     if (projection_expression_list_ast_children_size != getProjection().getNodes().size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query node invalid projection conversion to AST");
 
+    /// The planner gives a projection column linked to a sort key the key's values, so it is written as the key.
+    if (hasOrderBy())
+    {
+        for (const auto & sort_node : getOrderBy().getNodes())
+        {
+            const auto & sort_node_typed = sort_node->as<SortNode &>();
+            for (size_t index : sort_node_typed.getProjectionColumnIndexes())
+                if (index < projection_expression_list_ast_children_size)
+                    projection_expression_list_ast.children[index] = sort_node_typed.getExpression()->toAST(options);
+        }
+    }
+
     if (!projection_columns.empty())
     {
         for (size_t i = 0; i < projection_expression_list_ast_children_size; ++i)

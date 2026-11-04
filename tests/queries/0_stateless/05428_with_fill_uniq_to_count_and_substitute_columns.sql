@@ -55,6 +55,27 @@ SELECT t1.number AS x, t2.number AS y FROM numbers(2) AS t1, numbers(2) AS t2 OR
 SELECT (number, number * 2) IN (SELECT a, a * 2 AS b FROM values('a UInt64', (0), (1)) ORDER BY a WITH FILL) FROM numbers(2)
 SETTINGS rewrite_in_to_join = 1, allow_correlated_subqueries = 1;
 
+-- Subqueries that differ only in the columns that take the filled values are different sets, in either order.
+SELECT number, number IN (SELECT uniq(a) AS x FROM (SELECT number AS a FROM numbers(3) GROUP BY a) ORDER BY uniq(a) WITH FILL FROM 0 TO 5),
+    number IN (SELECT count() AS x FROM (SELECT number AS a FROM numbers(3) GROUP BY a) ORDER BY uniq(a) WITH FILL FROM 0 TO 5)
+FROM numbers(5) SETTINGS optimize_uniq_to_count = 1;
+SELECT number, number IN (SELECT count() AS x FROM (SELECT number AS a FROM numbers(3) GROUP BY a) ORDER BY uniq(a) WITH FILL FROM 0 TO 5),
+    number IN (SELECT uniq(a) AS x FROM (SELECT number AS a FROM numbers(3) GROUP BY a) ORDER BY uniq(a) WITH FILL FROM 0 TO 5)
+FROM numbers(5) SETTINGS optimize_uniq_to_count = 1;
+SELECT (9, 0) IN (SELECT number AS x, number AS y FROM numbers(2) ORDER BY number * 2 WITH FILL INTERPOLATE (x AS 9)),
+    (9, 0) IN (SELECT number AS x, number AS y FROM numbers(2) ORDER BY number * 2 WITH FILL INTERPOLATE (y AS 9));
+SELECT (9, 0) IN (SELECT number AS x, number AS y FROM numbers(2) ORDER BY number * 2 WITH FILL INTERPOLATE (y AS 9)),
+    (9, 0) IN (SELECT number AS x, number AS y FROM numbers(2) ORDER BY number * 2 WITH FILL INTERPOLATE (x AS 9));
+
+-- The subquery is sent to a shard.
+DROP TABLE IF EXISTS t_with_fill_remote;
+CREATE TABLE t_with_fill_remote (a UInt64) ENGINE = Memory;
+INSERT INTO t_with_fill_remote VALUES (0), (1), (2);
+SELECT a FROM remote('127.0.0.1', currentDatabase(), t_with_fill_remote)
+WHERE a IN (SELECT uniq(a) AS x FROM (SELECT a FROM t_with_fill_remote GROUP BY a) ORDER BY uniq(a) WITH FILL FROM 0 TO 5) ORDER BY a SETTINGS optimize_uniq_to_count = 1;
+SELECT a FROM remote('127.0.0.1', currentDatabase(), t_with_fill_remote)
+WHERE a IN (SELECT uniq(a) AS x FROM (SELECT a FROM t_with_fill_remote GROUP BY a) ORDER BY 1 WITH FILL FROM 0 TO 5) ORDER BY a SETTINGS optimize_uniq_to_count = 1;
+
 DROP TABLE IF EXISTS t_interpolate_substitute;
 CREATE TABLE t_interpolate_substitute (k UInt64, a UInt64, b UInt64, CONSTRAINT c ASSUME a = b) ENGINE = MergeTree ORDER BY b;
 INSERT INTO t_interpolate_substitute VALUES (0, 5, 5), (2, 7, 7);
@@ -66,4 +87,8 @@ SELECT a AS x, a AS y FROM t_interpolate_substitute WHERE k < 100 ORDER BY x WIT
 SELECT x FROM (SELECT k, a AS x FROM t_interpolate_substitute WHERE k < 100 ORDER BY x WITH FILL FROM 5 TO 8) SETTINGS convert_query_to_cnf = 1, optimize_substitute_columns = 1;
 SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT a AS x FROM t_interpolate_substitute WHERE k < 100 ORDER BY x WITH FILL FROM 5 TO 8) WHERE explain LIKE '%column_name: b,%' SETTINGS convert_query_to_cnf = 1, optimize_substitute_columns = 1;
 SELECT t1.k AS x, t2.k AS y FROM t_interpolate_substitute AS t1, t_interpolate_substitute AS t2 ORDER BY x WITH FILL, y;
+SELECT a FROM remote('127.0.0.1', currentDatabase(), t_with_fill_remote)
+WHERE a + 5 IN (SELECT a AS x FROM t_interpolate_substitute WHERE k < 100 ORDER BY x WITH FILL FROM 5 TO 8) ORDER BY a
+SETTINGS convert_query_to_cnf = 1, optimize_substitute_columns = 1;
 DROP TABLE t_interpolate_substitute;
+DROP TABLE t_with_fill_remote;
