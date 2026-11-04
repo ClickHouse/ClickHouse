@@ -220,7 +220,7 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
     /// server's: drop it, so that the `gcp_oauth` client is refused below as one asking for the server's credentials.
     if (credentials_configuration.forbid_implicit_credentials)
     {
-        const S3AuthSettings server_auth_settings(context->getConfigRef(), local_settings, "s3");
+        const S3::S3AuthSettings server_auth_settings(context->getConfigRef(), local_settings, "s3");
         const auto endpoint_settings = context->getStorageS3Settings().getSettings(url.uri.toString(), context->getUserName());
         auto is_server_credential = [&](const S3AuthSettingsString & setting, const String & value)
         {
