@@ -21,7 +21,9 @@ U_SD="u_sd_${DB}"
 U_NONE="u_none_${DB}"
 U_RO="u_ro_${DB}"
 E="e_${DB}"
-USERS="${U_DEF}, ${U_DEF2}, ${U_DEF3}, ${U_LIM}, ${U_CALLER}, ${U_ROCALLER}, ${U_SD}, ${U_NONE}, ${U_RO}, ${E}"
+EE="ee_${DB}"
+EE2="ee2_${DB}"
+USERS="${U_DEF}, ${U_DEF2}, ${U_DEF3}, ${U_LIM}, ${U_CALLER}, ${U_ROCALLER}, ${U_SD}, ${U_NONE}, ${U_RO}, ${E}, ${EE}, \`${EE}:definer\`, ${EE2}, \`${EE2}:definer\`"
 
 cleanup() {
     for h in $($CLICKHOUSE_CLIENT -q "SELECT name FROM system.handlers WHERE endsWith(name, '_${DB}')"); do
@@ -261,3 +263,14 @@ handler_query "h19_${DB}" create_query
 handler_query "h19n_${DB}" create_query
 as_user "${U_NONE}" "ALTER HANDLER h19n_${DB} URL '/${DB}/h19m'"
 handler_query "h19n_${DB}" url
+
+echo "--- 20. a definer named <user>:definer is not the ephemeral <user>"
+$CLICKHOUSE_CLIENT -q "CREATE USER ${EE}, ${EE2} NOT IDENTIFIED IN memory; CREATE USER \`${EE}:definer\` NOT IDENTIFIED; GRANT CREATE HANDLER, ALTER HANDLER ON *.* TO ${EE}, ${EE2}; GRANT INSERT ON ${DB}.t5 TO \`${EE}:definer\`"
+as_default "CREATE HANDLER h20_${DB} URL '/${DB}/h20' METHODS (POST) DEFINER = \`${EE}:definer\` SQL SECURITY DEFINER AS SELECT 1"
+$CLICKHOUSE_CLIENT --user "${EE}" -q "ALTER HANDLER h20_${DB} AS INSERT INTO ${DB}.t5 SELECT 20" 2>&1 | grep -o -m1 'SET DEFINER'
+$CLICKHOUSE_CLIENT --user "${EE}" -q "ALTER HANDLER h20_${DB} URL '/${DB}/h20b'" 2>&1 | grep -o -m1 'SET DEFINER'
+handler_query "h20_${DB}" create_query
+as_user "${EE2}" "CREATE HANDLER h20e_${DB} URL '/${DB}/h20e' DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT 1"
+$CLICKHOUSE_CLIENT --user "${EE2}" -q "ALTER HANDLER h20e_${DB} URL '/${DB}/h20f'" 2>&1 | grep -o -m1 'SET DEFINER'
+as_user "${EE2}" "ALTER HANDLER h20e_${DB} URL '/${DB}/h20f' DEFINER = CURRENT_USER SQL SECURITY DEFINER"
+handler_query "h20e_${DB}" url

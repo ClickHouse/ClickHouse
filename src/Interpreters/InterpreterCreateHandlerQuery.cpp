@@ -1,9 +1,7 @@
 #include <Interpreters/InterpreterCreateHandlerQuery.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Parsers/ASTCreateHandlerQuery.h>
-#include <Access/AccessControl.h>
 #include <Access/ContextAccess.h>
-#include <Access/User.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
@@ -51,26 +49,13 @@ bool hasFullAccess(const ContextPtr & context)
     return context->getAccess()->hasGrantOption(AccessType::ALL - AccessType::NAMED_COLLECTION_ADMIN);
 }
 
-/// `processSQLSecurityOption` stores an ephemeral definer as a clone named `<user>:definer`. A real user can have the
-/// same suffix, so the suffix belongs to `<user>` only when `<user>` is ephemeral.
-String getDefinerOwnerName(const String & definer, const ContextPtr & context)
-{
-    static constexpr std::string_view ephemeral_suffix = ":definer";
-    if (definer.ends_with(ephemeral_suffix))
-    {
-        String base_name = definer.substr(0, definer.size() - ephemeral_suffix.size());
-        const auto & access_control = context->getAccessControl();
-        if (auto base_id = access_control.find<User>(base_name); base_id && access_control.isEphemeral(*base_id))
-            return base_name;
-    }
-    return definer;
-}
-
+/// A stored `<user>:definer`, the clone `processSQLSecurityOption` makes of an ephemeral `<user>`, is not `<user>`:
+/// a real user can have that name, and a clone keeps grants `<user>` can lose.
 bool isDefinerTheCurrentUser(const ASTSQLSecurity & sql_security, const ContextPtr & context)
 {
     if (sql_security.is_definer_current_user)
         return true;
-    return sql_security.definer && getDefinerOwnerName(sql_security.definer->toString(), context) == context->getUserName();
+    return sql_security.definer && sql_security.definer->toString() == context->getUserName();
 }
 
 SQLSecurityType getSQLSecurityType(const ASTCreateHandlerQuery & handler)
@@ -98,9 +83,8 @@ void checkAccessForStoredSQLSecurity(const ASTCreateHandlerQuery & handler, cons
     if (!sql_security.definer)
         return;
 
-    const String definer = getDefinerOwnerName(sql_security.definer->toString(), context);
-    if (definer != context->getUserName())
-        context->checkAccess(AccessType::SET_DEFINER, definer);
+    if (!isDefinerTheCurrentUser(sql_security, context))
+        context->checkAccess(AccessType::SET_DEFINER, sql_security.definer->toString());
 }
 
 bool hasSettingsClause(const IAST & ast)
@@ -229,7 +213,7 @@ void validateHandlerQuery(ASTCreateHandlerQuery & handler, const ContextPtr & co
         if (runs_as_definer && setsReadonly(*statement))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Handler `{}` with SQL SECURITY {} changes `readonly` or the settings profile in its query. A handler with SQL SECURITY "
-                "DEFINER or NONE runs in the stricter `readonly` mode of the request and the definer",
+                "DEFINER or NONE runs in the stricter `readonly` mode of the request and of its definer, or of the server's `system_profile` for NONE",
                 handler.handler_name, magic_enum::enum_name(type));
 
         if (full_access || self_definer)
