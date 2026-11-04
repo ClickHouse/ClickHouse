@@ -30,6 +30,7 @@ namespace DB
         public:
             static constexpr auto name = "loop";
             std::string getName() const override { return name; }
+            void checkSourceAccess(ContextPtr context, bool is_insert_query) const override;
         private:
             StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const String & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
             const char * getStorageEngineName() const override { return "Loop"; }
@@ -106,6 +107,19 @@ namespace DB
         {
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function 'loop' must have 1 or 2 arguments.");
         }
+    }
+
+    void TableFunctionLoop::checkSourceAccess(ContextPtr context, bool is_insert_query) const
+    {
+        /// The `Loop` engine has no source of its own. Over a table there is no source to check, see `executeImpl`
+        /// for the grants on the table. Over a table function the storage reads the source of that function, so
+        /// check that source: otherwise, e.g., `CREATE TABLE ... AS loop(f(...))` with a column list would not
+        /// check it at all.
+        if (!inner_table_function_ast)
+            return;
+
+        auto inner_table_function = TableFunctionFactory::instance().get(inner_table_function_ast, context);
+        inner_table_function->checkSourceAccess(context, is_insert_query);
     }
 
     ColumnsDescription TableFunctionLoop::getActualTableStructure(ContextPtr context, bool is_insert_query) const

@@ -1013,8 +1013,9 @@ void throwIfTableFunctionCannotBeUsedToCreateTable(const ASTPtr & table_function
 /// matching engine (e.g. `File`) does. Both are checked under the user who issued the query, before the query is
 /// sent anywhere else: the hosts of an `ON CLUSTER` query and the replicas of a `Replicated` database may create
 /// the table without that user, and a definition with an explicit column list does not even read the source to
-/// infer the structure. A replayed definition, e.g. of a short `ATTACH`, is not checked again, see
-/// `getTablePropertiesAndNormalizeCreateQuery`.
+/// infer the structure. This check is skipped for a replayed definition, e.g. of a short `ATTACH`, see
+/// `getTablePropertiesAndNormalizeCreateQuery`, but `doCreateTable` still checks `WRITE` on the source under the
+/// context that replays it, when it executes the table function.
 void checkSourceAccessToCreateTableFromTableFunction(const ITableFunction & table_function, const ContextPtr & context)
 {
     table_function.checkSourceAccess(context, /*is_insert_query=*/ false);
@@ -1099,13 +1100,17 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     if (create.is_time_series_table && (mode <= LoadingStrictnessLevel::SECONDARY_CREATE))
         normalizeTimeSeriesDefinition(create, getContext(), mode, is_restore_from_backup);
 
-    /// The source of `CREATE TABLE ... AS f(...)` is checked for a definition that the user supplies now, see
-    /// `checkSourceAccessToCreateTableFromTableFunction`. A replayed definition (a short `ATTACH`, a replay on a
-    /// follower replica, a recovery from stored metadata, see `isReplayedTableDefinition`) was checked when the
-    /// table was created, under the user who created it, so it is not checked again under the context that replays
-    /// it. `RESTORE` runs under `SECONDARY_CREATE` as well, but its definition comes from the backup and it runs under
-    /// the user who restores it, so it is checked like a new one.
-    const bool check_table_function_source_access = !isReplayedTableDefinition(mode, create, getContext()) || is_restore_from_backup;
+    /// `READ` and `WRITE` on the source of `CREATE TABLE ... AS f(...)` are checked for a definition that the user
+    /// supplies now, see `checkSourceAccessToCreateTableFromTableFunction`. A replayed definition (a short `ATTACH`, a
+    /// replay on a follower replica, a recovery from stored metadata, see `isReplayedTableDefinition`) was checked
+    /// when the table was created, under the user who created it, so this check is skipped for it. `doCreateTable`
+    /// still checks `WRITE` on the source under the context that replays it, when it executes the table function, so
+    /// e.g. a short `ATTACH` by a user without `WRITE` on the source fails. `RESTORE` runs under `SECONDARY_CREATE` as
+    /// well, but its definition comes from the backup and it runs under the user who restores it, so it is checked
+    /// like a new one, except on the followers of a `Replicated` database, which replay a restore checked where it
+    /// was issued.
+    const bool check_table_function_source_access = !isReplayedTableDefinition(mode, create, getContext())
+        || (is_restore_from_backup && !isSecondaryDDLReplay(getContext()));
 
     TableProperties properties;
     TableLockHolder as_storage_lock;
