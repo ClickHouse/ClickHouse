@@ -3,6 +3,15 @@
 #include <Core/Settings.h>
 #include <Functions/IFunctionDateOrDateTime.h>
 #include <Interpreters/Context.h>
+#include <Common/SipHash.h>
+#include <Common/assert_cast.h>
+
+#include "config.h"
+
+#if USE_EMBEDDED_COMPILER
+#    include <DataTypes/Native.h>
+#    include <Functions/compileDateTransform.h>
+#endif
 
 namespace DB
 {
@@ -98,6 +107,44 @@ public:
             this->getName());
     }
 
+    /// The result depends on the session time zone when the argument has none.
+    void updateHash(SipHash & hash) const override
+    {
+        hash.update(enable_extended_results_for_datetime_functions);
+        hash.update(DateLUT::instance().getTimeZone());
+    }
+
+#if USE_EMBEDDED_COMPILER
+    /// `toStartOfDay`, `toStartOfHour` and the minute intervals of one `DateTime` (`toStartOfDay` also of a `Date`), with
+    /// the time zone of the `DateTime` result, as `DateTimeTransformImpl::execute`: see `compileStartOfTransform`.
+    bool isCompilableImpl(const DataTypes & types, const DataTypePtr & result_type) const override
+    {
+        if constexpr (jitStartOfDivisor<Transform>() < 0)
+            return false;
+        else
+        {
+            if (types.size() != 1 || !isDateTime(removeNullable(result_type)))
+                return false;
+            const WhichDataType from(types[0]);
+            return from.isDateTime() || (jitStartOfDivisor<Transform>() == 0 && from.isDate());
+        }
+    }
+
+    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & result_type) const override
+    {
+        if constexpr (jitStartOfDivisor<Transform>() < 0)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} is not compilable", this->getName());
+        else
+        {
+            const auto & time_zone = assert_cast<const DataTypeDateTime &>(*removeNullable(result_type)).getTimeZone();
+            if (WhichDataType(arguments[0].type).isDateTime())
+                return compileStartOfTransform<Transform, UInt32>(builder, arguments[0].value, time_zone);
+            if constexpr (jitStartOfDivisor<Transform>() == 0)
+                return compileStartOfTransform<Transform, UInt16>(builder, arguments[0].value, time_zone);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} cannot be compiled for {}", this->getName(), arguments[0].type->getName());
+        }
+    }
+#endif
 };
 
 }

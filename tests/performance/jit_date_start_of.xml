@@ -1,0 +1,35 @@
+<test>
+    <settings>
+        <min_count_to_compile_expression>0</min_count_to_compile_expression>
+    </settings>
+
+    <create_query>
+        CREATE TABLE jit_date_start_of (t DateTime('UTC'), t_ny DateTime('America/New_York'), t_kathmandu DateTime('Asia/Kathmandu'), d Date) Engine = Memory
+    </create_query>
+
+    <fill_query>
+        INSERT INTO jit_date_start_of
+        SELECT toDateTime('2010-01-01 00:00:00', 'UTC') + cityHash64(number) % 500000000, toDateTime('2010-01-01 00:00:00', 'UTC') + cityHash64(number, 1) % 500000000,
+            toDateTime('2010-01-01 00:00:00', 'UTC') + cityHash64(number, 2) % 500000000, toDate('2010-01-01') + cityHash64(number, 3) % 6000
+        FROM numbers(50000000)
+    </fill_query>
+
+    <substitutions>
+        <substitution>
+            <name>compile</name>
+            <values>
+                <value>0</value>
+                <value>1</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <!-- Rounding of DateTime fused with comparisons: compiled from the start of the day in the time-zone table. -->
+    <query>SELECT countIf(toStartOfMinute(t) = t OR toStartOfMinute(t) &lt; t - 30) FROM jit_date_start_of SETTINGS compile_expressions = {compile}</query>
+    <query>SELECT countIf(toStartOfDay(t_ny) > t_ny - 43200) FROM jit_date_start_of SETTINGS compile_expressions = {compile}</query>
+    <query>SELECT countIf(toStartOfHour(t) = toStartOfFifteenMinutes(t)) FROM jit_date_start_of SETTINGS compile_expressions = {compile}</query>
+    <query>SELECT countIf(toStartOfTenMinutes(t_kathmandu) = toStartOfFiveMinutes(t_kathmandu)) FROM jit_date_start_of SETTINGS compile_expressions = {compile}</query>
+    <query>SELECT countIf(toStartOfDay(d) &lt; t) FROM jit_date_start_of SETTINGS compile_expressions = {compile}</query>
+
+    <drop_query>DROP TABLE IF EXISTS jit_date_start_of</drop_query>
+</test>

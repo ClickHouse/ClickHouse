@@ -7,11 +7,13 @@
 #include <Common/DateLUTImpl.h>
 #include <base/types.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <string_view>
 #include <type_traits>
 
+#include <llvm/IR/Intrinsics.h>
 #include <llvm/IR/MDBuilder.h>
 
 #include <llvm/IR/IRBuilder.h>
@@ -89,6 +91,120 @@ constexpr JITDateValuesField jitDateValuesField()
     if (name == "toYYYYMMDD")
         return JITDateValuesField::YYYYMMDD;
     return JITDateValuesField::None;
+}
+
+/// The address of the lookup table of `time_zone`, as a constant of the compiled code.
+inline llvm::Value * compileLUTPointer(llvm::IRBuilder<> & b, const DateLUTImpl & time_zone)
+{
+    return b.CreateIntToPtr(b.getInt64(reinterpret_cast<uintptr_t>(time_zone.getLUT())), b.getPtrTy());
+}
+
+/// A pointer to the field at `offset` of the `Values` at `index` (an `i64`) of the table `lut`.
+inline llvm::Value * compileLUTFieldPointer(llvm::IRBuilder<> & b, llvm::Value * lut, llvm::Value * index, size_t offset)
+{
+    auto * byte_offset = b.CreateAdd(b.CreateMul(index, b.getInt64(sizeof(DateLUTImpl::Values))), b.getInt64(offset));
+    return b.CreateInBoundsGEP(b.getInt8Ty(), lut, byte_offset);
+}
+
+/// `DateLUTImpl::findIndex` of a timestamp `t` of a `DateTime` (an `i64` in `[0, 2^32)`): the day guessed from the timestamp,
+/// corrected by one day with the start of that day. The guess and the next day are always in the table.
+inline llvm::Value * compileLUTIndexOfDateTime(llvm::IRBuilder<> & b, llvm::Value * lut, llvm::Value * t)
+{
+    using Values = DateLUTImpl::Values;
+    auto * int64_type = b.getInt64Ty();
+    auto * guess = b.CreateAdd(b.CreateUDiv(t, b.getInt64(86400)), b.getInt64(DateLUTImpl::getDayNumOffsetEpoch()));
+    auto * next = b.CreateAdd(guess, b.getInt64(1));
+    auto * guess_date = b.CreateLoad(int64_type, compileLUTFieldPointer(b, lut, guess, offsetof(Values, date)));
+    auto * next_date = b.CreateLoad(int64_type, compileLUTFieldPointer(b, lut, next, offsetof(Values, date)));
+    return b.CreateSelect(
+        b.CreateICmpSGE(t, guess_date), b.CreateSelect(b.CreateICmpSLT(t, next_date), guess, next), b.CreateSub(guess, b.getInt64(1)));
+}
+
+/// `DateLUTImpl::saturated`: the start of the first day that starts at or after the epoch.
+inline Int64 firstNonNegativeDate(const DateLUTImpl & time_zone)
+{
+    const auto * lut = time_zone.getLUT();
+    return std::partition_point(lut, lut + DATE_LUT_SIZE, [](const DateLUTImpl::Values & values) { return values.date < 0; })->date;
+}
+
+/// `offset_is_whole_number_of_hours_during_epoch` (`multiple` 3600) and `offset_is_whole_number_of_minutes_during_epoch`
+/// (`multiple` 60) of `DateLUTImpl`: every day that starts after the epoch starts at a multiple of `multiple`. The constructor
+/// checks the days it computes; the rest of the table repeats the last of them.
+inline bool everyDayStartsAtMultipleOf(const DateLUTImpl & time_zone, Int64 multiple)
+{
+    const auto * lut = time_zone.getLUT();
+    return std::all_of(lut, lut + DATE_LUT_SIZE, [&](const DateLUTImpl::Values & values) { return values.date <= 0 || values.date % multiple == 0; });
+}
+
+/// The rounding transforms of `DateTime` that compiled code computes from the start of the day: `toStartOfDay`, and
+/// `toStartOfHour` and the minute intervals, whose divisor in seconds this returns (0 for `toStartOfDay`, -1 for others).
+template <typename Transform>
+constexpr Int64 jitStartOfDivisor()
+{
+    constexpr std::string_view name = Transform::name;
+    if (name == "toStartOfDay")
+        return 0;
+    if (name == "toStartOfHour")
+        return 3600;
+    if (name == "toStartOfMinute")
+        return 60;
+    if (name == "toStartOfFiveMinutes")
+        return 5 * 60;
+    if (name == "toStartOfTenMinutes")
+        return 10 * 60;
+    if (name == "toStartOfFifteenMinutes")
+        return 15 * 60;
+    return -1;
+}
+
+/** `Transform` (one of `jitStartOfDivisor`) on a `DateTime` (`UInt32`), or `toStartOfDay` on a `Date` (`UInt16`), returning
+  * a `DateTime`, as the transforms compute it:
+  * - `toStartOfDay`: `DateLUTImpl::toDate`, the start of the day, raised to `saturated`; for a `Date`, also limited to the
+  *   range of `UInt32` (`ToStartOfDayImpl::execute`);
+  * - `toStartOfHour` (`DateLUTImpl::roundDown`) and the minute intervals (`toStartOfMinuteInterval`): in a time zone whose
+  *   offset is a whole number of hours (of minutes, for the minute intervals) during the epoch, `t / divisor * divisor`,
+  *   rounded in UTC; in other time zones, `date + (t - date) / divisor * divisor` with `date` the start of the day, and 0
+  *   below 0. The choice is made when compiling, as the time zone is a constant.
+  */
+template <typename Transform, typename From>
+llvm::Value * compileStartOfTransform(llvm::IRBuilderBase & builder, llvm::Value * value, const DateLUTImpl & time_zone)
+{
+    using Values = DateLUTImpl::Values;
+    auto & b = static_cast<llvm::IRBuilder<> &>(builder);
+    auto * int64_type = b.getInt64Ty();
+    auto * lut = compileLUTPointer(b, time_zone);
+    constexpr Int64 divisor = jitStartOfDivisor<Transform>();
+    static_assert(divisor >= 0);
+
+    llvm::Value * result = nullptr;
+    if constexpr (std::is_same_v<From, UInt32>)
+    {
+        auto * t = b.CreateZExt(value, int64_type);
+        auto * date = b.CreateLoad(int64_type, compileLUTFieldPointer(b, lut, compileLUTIndexOfDateTime(b, lut, t), offsetof(Values, date)));
+        if constexpr (divisor == 0)
+        {
+            result = b.CreateBinaryIntrinsic(llvm::Intrinsic::smax, date, b.getInt64(firstNonNegativeDate(time_zone)));
+        }
+        else if (everyDayStartsAtMultipleOf(time_zone, divisor == 3600 ? 3600 : 60))
+        {
+            result = b.CreateMul(b.CreateUDiv(t, b.getInt64(divisor)), b.getInt64(divisor));
+        }
+        else
+        {
+            auto * rounded = b.CreateAdd(date, b.CreateMul(b.CreateUDiv(b.CreateSub(t, date), b.getInt64(divisor)), b.getInt64(divisor)));
+            result = b.CreateBinaryIntrinsic(llvm::Intrinsic::smax, rounded, b.getInt64(0));
+        }
+    }
+    else
+    {
+        static_assert(std::is_same_v<From, UInt16> && divisor == 0);
+        auto * index = b.CreateAdd(b.CreateZExt(value, int64_type), b.getInt64(DateLUTImpl::getDayNumOffsetEpoch()));
+        auto * date = b.CreateLoad(int64_type, compileLUTFieldPointer(b, lut, index, offsetof(Values, date)));
+        auto * saturated = b.CreateBinaryIntrinsic(llvm::Intrinsic::smax, date, b.getInt64(firstNonNegativeDate(time_zone)));
+        result = b.CreateBinaryIntrinsic(
+            llvm::Intrinsic::smin, b.CreateBinaryIntrinsic(llvm::Intrinsic::smax, saturated, b.getInt64(0)), b.getInt64(0xFFFFFFFFLL));
+    }
+    return b.CreateTrunc(result, b.getInt32Ty());
 }
 
 /** The transform `Transform` (one of `jitDateValuesField`) on `value`, a `DateTime` (`UInt32`), a `Date` (`UInt16`) or a
