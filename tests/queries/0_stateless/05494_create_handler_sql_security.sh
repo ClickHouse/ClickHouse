@@ -300,3 +300,9 @@ as_default "CREATE HANDLER h23_${DB} URL '/${DB}/h23' METHODS (POST) DEFINER = $
 handler_query "h23_${DB}" query
 request -X POST "${BASE}/${DB}/h23?param_db=${DB_B}"
 $CLICKHOUSE_CLIENT -q "SELECT groupArray(id) FROM ${DB_B}.t5"
+
+echo "--- 24. a request to it cannot attach external tables"
+as_default "CREATE HANDLER h24_${DB} URL '/${DB}/h24' METHODS (POST) DEFINER = ${U_DEF} SQL SECURITY DEFINER AS SELECT count() FROM ${DB}.t WHERE v = {p:String}"
+echo 'x' > "${CLICKHOUSE_TMP}/ext_${DB}.tsv"
+request -X POST -F "ext=@${CLICKHOUSE_TMP}/ext_${DB}.tsv" "${BASE}/${DB}/h24?ext_structure=v%20String&param_p=a"
+request -X POST -F "param_p=a" "${BASE}/${DB}/h24"

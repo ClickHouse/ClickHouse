@@ -188,3 +188,7 @@ OK
 INSERT INTO {db:Identifier}.t5 SELECT 23
 
 [23]
+--- 24. a request to it cannot attach external tables
+OK
+(BAD_ARGUMENTS)
+1

@@ -1015,6 +1015,11 @@ void HTTPHandler::processQuery(
     /// they will be applied in ProcessList::insert() from executeQuery() itself.
     const auto & raw_query = getQuery(request, params, context, *in_post_maybe_compressed);
 
+    /// External tables come with a multipart body, which only `getQuery` reads.
+    if (runs_with_sql_security)
+        if (const auto external_tables = context->getExternalTables(); !external_tables.empty())
+            reject_request_input(external_tables.begin()->first);
+
     /// Combine all HTTP filter sources into the `filter` setting. The query-construction settings
     /// (`select`/`filter`/`order`/`sort`/`page`) are applied by the engine in `executeQuery`, on the
     /// parsed AST — see `applyQueryConstructionSettings`. The HTTP interface only needs to assemble
