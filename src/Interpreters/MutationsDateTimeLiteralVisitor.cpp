@@ -109,21 +109,15 @@ using AliasTypes = std::unordered_map<String, DataTypePtr>;
 ///
 /// The mutation runs with the settings of the server or of the session, depending on the engine, which may differ from those of
 /// this query: with `prefer_column_name_to_alias` there, the identifier names the column with its name instead, if there is
-/// one, so then the type is known only if the column has the same type, which it has either way.
-std::optional<DataTypePtr> tryGetAliasType(const ASTIdentifier & identifier, const ColumnsDescription & columns, const AliasTypes & aliases)
+/// one. The callers check that what they derive from the type holds for the column too.
+std::optional<DataTypePtr> tryGetAliasType(const ASTIdentifier & identifier, const AliasTypes & aliases)
 {
     const auto it = aliases.find(identifier.name_parts.front());
     if (it == aliases.end())
         return std::nullopt;
     if (!it->second)
         return DataTypePtr{};
-    auto type = getTupleElementType(it->second, std::span(identifier.name_parts).subspan(1));
-    if (!type)
-        return DataTypePtr{};
-    const auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, identifier.name());
-    if (column && !column->type->equals(*type))
-        return DataTypePtr{};
-    return type;
+    return getTupleElementType(it->second, std::span(identifier.name_parts).subspan(1));
 }
 
 /// The same for an identifier, which may name a parameter of an enclosing lambda or an element of one, or an alias.
@@ -135,8 +129,19 @@ DataTypePtr getDateTimeColumnType(
 {
     if (const auto parameter_type = tryGetLambdaParameterType(identifier, lambda_parameters))
         return *parameter_type ? getZonelessDateTimeType(*parameter_type) : nullptr;
-    if (const auto alias_type = tryGetAliasType(identifier, columns, aliases))
-        return *alias_type ? getZonelessDateTimeType(*alias_type) : nullptr;
+    if (const auto alias_type = tryGetAliasType(identifier, aliases))
+    {
+        if (!*alias_type)
+            return nullptr;
+        auto datetime_type = getZonelessDateTimeType(*alias_type);
+        /// If the identifier can name a column instead, the literal converted in the time zone of the session is right for both
+        /// only if the column is a `DateTime` or `DateTime64` without a time zone too, such as `event` in `toNullable(event) AS
+        /// event` or `toDateTime64(event, 3) AS event`: it is compared with either of them as the session would compare the string.
+        const auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, identifier.name());
+        if (datetime_type && column && !getZonelessDateTimeType(column->type))
+            return nullptr;
+        return datetime_type;
+    }
     return getDateTimeColumnType(identifier.name(), columns);
 }
 
@@ -150,8 +155,15 @@ DataTypePtr getArgumentType(
         return nullptr;
     if (const auto parameter_type = tryGetLambdaParameterType(*identifier, lambda_parameters))
         return *parameter_type;
-    if (const auto alias_type = tryGetAliasType(*identifier, columns, aliases))
+    if (const auto alias_type = tryGetAliasType(*identifier, aliases))
+    {
+        /// The lambda parameters get their types from this type, so it must be the type of the column too if the identifier can
+        /// name one.
+        const auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, identifier->name());
+        if (*alias_type && column && !column->type->equals(**alias_type))
+            return nullptr;
         return *alias_type;
+    }
     const auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, identifier->name());
     return column ? column->type : nullptr;
 }

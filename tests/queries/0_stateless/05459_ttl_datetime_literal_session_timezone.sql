@@ -23,6 +23,7 @@ DROP TABLE IF EXISTS t_lambda_tuple;
 DROP TABLE IF EXISTS t_lambda_tuple_mutation;
 DROP TABLE IF EXISTS t_alias_mutation;
 DROP TABLE IF EXISTS t_alias_temporal;
+DROP TABLE IF EXISTS t_alias_temporal_changed;
 DROP TABLE IF EXISTS t_alias_prefer_column;
 DROP TABLE IF EXISTS t_alias_prefer_column_memory;
 DROP TABLE IF EXISTS t_alias_scoped_lambda;
@@ -167,6 +168,16 @@ ALTER TABLE t_alias_temporal DELETE WHERE isNotNull(identity(event) AS event) AN
 SELECT 'DELETE temporal alias', groupArray(id) FROM (SELECT id FROM t_alias_temporal ORDER BY id);
 SELECT extract(command, 'event = [^)]*\\)') FROM system.mutations WHERE database = currentDatabase() AND table = 't_alias_temporal';
 
+-- So is an alias that changes the nullability or the precision of the column with its name, which is a `DateTime` too.
+CREATE TABLE t_alias_temporal_changed (id UInt8, event DateTime, n Nullable(DateTime)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_alias_temporal_changed SELECT number + 1, toDateTime('2020-01-01 00:00:00') + intDiv(number, 2) * 86400 + number % 2 * 32400 AS event, event
+FROM numbers(6);
+ALTER TABLE t_alias_temporal_changed DELETE WHERE isNotNull(toNullable(event) AS event) AND event = '2020-01-01 00:00:00' SETTINGS mutations_sync = 2;
+ALTER TABLE t_alias_temporal_changed DELETE WHERE isNotNull(assumeNotNull(n) AS n) AND n = '2020-01-02 00:00:00' SETTINGS mutations_sync = 2;
+ALTER TABLE t_alias_temporal_changed DELETE WHERE isNotNull(toDateTime64(event, 3) AS event) AND event = '2020-01-03 00:00:00' SETTINGS mutations_sync = 2;
+SELECT 'DELETE changed temporal alias', groupArray(id) FROM (SELECT id FROM t_alias_temporal_changed ORDER BY id);
+SELECT extract(command, '(?:event|n) = .*') FROM system.mutations WHERE database = currentDatabase() AND table = 't_alias_temporal_changed' ORDER BY mutation_id;
+
 -- With `prefer_column_name_to_alias`, the identifier names the `DateTime` column rather than the `String` alias with its name,
 -- but the mutation runs with the settings of the server, where it names the alias, so the types of the aliases are not known:
 -- the comparison keeps its string and the mutation does not fail.
@@ -225,6 +236,7 @@ DROP TABLE t_lambda_tuple;
 DROP TABLE t_lambda_tuple_mutation;
 DROP TABLE t_alias_mutation;
 DROP TABLE t_alias_temporal;
+DROP TABLE t_alias_temporal_changed;
 DROP TABLE t_alias_prefer_column;
 DROP TABLE t_alias_prefer_column_memory;
 DROP TABLE t_alias_scoped_lambda;

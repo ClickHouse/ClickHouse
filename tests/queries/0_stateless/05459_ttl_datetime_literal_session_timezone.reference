@@ -21,6 +21,10 @@ DELETE lambda tuple	[2,4]
 DELETE alias	[3]
 DELETE temporal alias	[2]
 event = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\')
+DELETE changed temporal alias	[2,4,6]
+event = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\')))
+n = toDateTime(\'2020-01-02 00:00:00\', \'Asia/Tokyo\')))
+event = toDateTime64(\'2020-01-03 00:00:00\', 3, \'Asia/Tokyo\')))
 event = \'2020-01-01 00:00:00\')
 DELETE prefer column Memory	[2]
 DELETE lambda-scoped alias	[2]
