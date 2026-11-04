@@ -185,8 +185,11 @@ std::vector<Subcolumn> collectSubcolumns(const SubstreamData & data, size_t init
             return;
 
         auto prefix = copyPathPrefix(path, prefix_len);
+        add({prefix, name, {}});
+
         /// The names this element's type declares but resolves from the data, which no substream carries:
         /// the typed paths of a JSON and the names under them. Declared, so they outrank a generated name.
+        /// They follow the element, since a listing is read in the order the names are offered in.
         if (const auto & element_data = path[prefix_len - 1].data; element_data.type)
         {
             element_data.type->forEachKnownDynamicSubcolumnName([&](const String & known_name)
@@ -195,8 +198,6 @@ std::vector<Subcolumn> collectSubcolumns(const SubstreamData & data, size_t init
                     add({resolved->substreams_path, name + "." + known_name, resolved->data});
             }, initial_array_level + ISerialization::getArrayLevel(path, prefix_len));
         }
-
-        add({std::move(prefix), std::move(name), {}});
     };
 
     forEachSubcolumnCandidate(data, initial_array_level, collect, /*enumerate_dynamic_streams=*/ false);
