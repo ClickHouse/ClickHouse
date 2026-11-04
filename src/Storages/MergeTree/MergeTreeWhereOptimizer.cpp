@@ -37,6 +37,7 @@ namespace Setting
     extern const SettingsBool use_statistics;
     extern const SettingsBool apply_string_filters_during_scan;
     extern const SettingsShortCircuitFunctionEvaluation short_circuit_function_evaluation;
+    extern const SettingsBool enable_multiple_prewhere_read_steps;
 }
 
 namespace
@@ -172,11 +173,39 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
         total_rows = estimator->getTotalRows();
 }
 
+/// The nodes needed by more than one conjunct of the filter or by another output of the DAG.
+static std::unordered_set<const ActionsDAG::Node *> findSharedNodes(const ActionsDAG & dag, const ActionsDAG::Node & filter_node)
+{
+    auto roots = ActionsDAG::extractConjunctionAtoms(&filter_node);
+    for (const auto * output : dag.getOutputs())
+        if (output != &filter_node)
+            roots.push_back(output);
+
+    std::unordered_map<const ActionsDAG::Node *, size_t> root_of;
+    std::unordered_set<const ActionsDAG::Node *> shared;
+    for (size_t i = 0; i < roots.size(); ++i)
+    {
+        std::vector<const ActionsDAG::Node *> stack{roots[i]};
+        while (!stack.empty())
+        {
+            const auto * node = stack.back();
+            stack.pop_back();
+            auto [it, inserted] = root_of.emplace(node, i);
+            if (!inserted && (it->second == i || !shared.insert(node).second))
+                continue;
+            for (const auto * child : node->children)
+                stack.push_back(child);
+        }
+    }
+    return shared;
+}
+
 MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::optimize(const ActionsDAG & filter_dag,
     const std::string & filter_column_name,
     const ContextPtr & context,
     bool is_final,
-    const NameSet & columns_read_before_filter)
+    const NameSet & columns_read_before_filter,
+    bool has_existing_prewhere)
 {
     const auto & settings = context->getSettingsRef();
     WhereOptimizerContext where_optimizer_context;
@@ -188,8 +217,8 @@ MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::op
     where_optimizer_context.allow_reorder_prewhere_conditions = context->getSettingsRef()[Setting::allow_reorder_prewhere_conditions];
     where_optimizer_context.is_final = is_final;
     where_optimizer_context.use_statistics = context->getSettingsRef()[Setting::use_statistics] && estimator != nullptr;
-    where_optimizer_context.force_lazy_execution
-        = settings[Setting::short_circuit_function_evaluation] == ShortCircuitFunctionEvaluation::FORCE_ENABLE;
+    where_optimizer_context.short_circuit_function_evaluation = settings[Setting::short_circuit_function_evaluation];
+    where_optimizer_context.has_existing_prewhere = has_existing_prewhere;
     /// The decision does not depend on the columns cache: whether a column is served from the cache, written to it
     /// or read as usual is known only to the reader. The reader does not apply the string filter to a column it writes
     /// to the cache (the cache must not keep the substituted values), but the condition is still worth moving to PREWHERE:
@@ -208,7 +237,14 @@ MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::op
     }
     where_optimizer_context.columns_read_before_filter = &storage_columns_read_before_filter;
 
-    RPNBuilderTreeNode node(&filter_dag.findInOutputs(filter_column_name), context);
+    const auto & filter_node = filter_dag.findInOutputs(filter_column_name);
+    /// With one read step, PREWHERE computes the nodes that it passes on for all rows.
+    std::unordered_set<const ActionsDAG::Node *> shared_nodes;
+    if (!settings[Setting::enable_multiple_prewhere_read_steps])
+        shared_nodes = findSharedNodes(filter_dag, filter_node);
+    where_optimizer_context.shared_nodes = &shared_nodes;
+
+    RPNBuilderTreeNode node(&filter_node, context);
 
     auto optimize_result = optimizeImpl(node, where_optimizer_context);
     if (!optimize_result)
@@ -391,8 +427,12 @@ static bool isJoinRuntimeFilter(const RPNBuilderTreeNode & node)
 }
 
 /// Same test as `findLazyExecutedNodes` and `canBeExecutedOnMoreRows` in ExpressionActions.cpp.
-static bool mustFollowPrecedingConditions(const RPNBuilderTreeNode & node, bool force_lazy_execution)
+static bool mustFollowPrecedingConditions(const RPNBuilderTreeNode & node, ShortCircuitFunctionEvaluation short_circuit_function_evaluation)
 {
+    if (short_circuit_function_evaluation == ShortCircuitFunctionEvaluation::DISABLE)
+        return false;
+    const bool force_lazy_execution = short_circuit_function_evaluation == ShortCircuitFunctionEvaluation::FORCE_ENABLE;
+
     const auto * root = node.getDAGNode();
     if (!root)
         return true;
@@ -437,6 +477,31 @@ static bool mustFollowPrecedingConditions(const RPNBuilderTreeNode & node, bool 
     return result;
 }
 
+static bool computesSharedNode(const RPNBuilderTreeNode & node, const std::unordered_set<const ActionsDAG::Node *> * shared_nodes)
+{
+    if (!shared_nodes || shared_nodes->empty())
+        return false;
+
+    const auto * root = node.getDAGNode();
+    if (!root)
+        return true;
+
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    std::vector<const ActionsDAG::Node *> stack{root};
+    while (!stack.empty())
+    {
+        const auto * dag_node = stack.back();
+        stack.pop_back();
+        if (!visited.insert(dag_node).second)
+            continue;
+        if (dag_node->type == ActionsDAG::ActionType::FUNCTION && !dag_node->column && shared_nodes->contains(dag_node))
+            return true;
+        for (const auto * child : dag_node->children)
+            stack.push_back(child);
+    }
+    return false;
+}
+
 static void collectConjuncts(const RPNBuilderTreeNode & node, std::vector<RPNBuilderTreeNode> & conjuncts)
 {
     auto fn = node.toFunctionNodeOrNull();
@@ -479,6 +544,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
         bool viable = false;
         bool expensive = false;
         bool must_follow_preceding_conditions = false;
+        bool must_be_first_in_prewhere = false;
     };
 
     std::vector<ConjunctInfo> infos;
@@ -518,7 +584,9 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
                 || (where_optimizer_context.apply_string_filters_during_scan && isConditionSuitableForStringValueFilter(conjunct, where_optimizer_context)));
 
         info.expensive = isExpensiveExpression(conjunct);
-        info.must_follow_preceding_conditions = mustFollowPrecedingConditions(conjunct, where_optimizer_context.force_lazy_execution);
+        info.must_follow_preceding_conditions = mustFollowPrecedingConditions(conjunct, where_optimizer_context.short_circuit_function_evaluation);
+        info.must_be_first_in_prewhere
+            = info.must_follow_preceding_conditions && computesSharedNode(conjunct, where_optimizer_context.shared_nodes);
 
         infos.push_back(std::move(info));
     }
@@ -558,14 +626,11 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
         /// The group is emitted at its first conjunct, so do not join it across conjuncts that are not in it.
         if (g.has_value() && infos[i].must_follow_preceding_conditions)
         {
-            for (size_t j = groups[*g].indices.front() + 1; j < i; ++j)
-            {
-                if (!infos[j].viable || group_of[j] != *g)
-                {
-                    g.reset();
-                    break;
-                }
-            }
+            bool keep_apart = infos[i].must_be_first_in_prewhere;
+            for (size_t j = groups[*g].indices.front() + 1; j < i && !keep_apart; ++j)
+                keep_apart = !infos[j].viable || group_of[j] != *g;
+            if (keep_apart)
+                g.reset();
         }
         if (!g.has_value())
         {
@@ -636,6 +701,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
             cond.expensive = info.expensive;
             cond.is_runtime_filter = group_is_runtime_filter;
             cond.must_follow_preceding_conditions = group_must_follow_preceding_conditions;
+            cond.must_be_first_in_prewhere = info.must_be_first_in_prewhere;
 
             if (where_optimizer_context.use_statistics)
             {
@@ -696,7 +762,9 @@ MergeTreeWhereOptimizer::Conditions MergeTreeWhereOptimizer::analyze(const RPNBu
             cond.columns_size = getColumnsSize(columns);
             cond.bytes_per_rejected_row = static_cast<double>(cond.columns_size);
             cond.is_runtime_filter = isJoinRuntimeFilter(conjunct);
-            cond.must_follow_preceding_conditions = mustFollowPrecedingConditions(conjunct, where_optimizer_context.force_lazy_execution);
+            cond.must_follow_preceding_conditions = mustFollowPrecedingConditions(conjunct, where_optimizer_context.short_circuit_function_evaluation);
+            cond.must_be_first_in_prewhere
+                = cond.must_follow_preceding_conditions && computesSharedNode(conjunct, where_optimizer_context.shared_nodes);
             cond.viable =
                 !has_invalid_column
                 && !columns.empty()
@@ -776,12 +844,19 @@ std::optional<MergeTreeWhereOptimizer::OptimizeResult> MergeTreeWhereOptimizer::
     while (!where_conditions.empty())
     {
         /// Move the best condition to PREWHERE if it is viable; one that must follow the preceding ones only once it is first.
-        auto it = where_conditions.begin();
-        for (auto candidate = std::next(it); candidate != where_conditions.end(); ++candidate)
-            if (!candidate->must_follow_preceding_conditions && *candidate < *it)
+        const bool prewhere_is_empty = prewhere_conditions.empty() && !where_optimizer_context.has_existing_prewhere;
+        auto it = where_conditions.end();
+        for (auto candidate = where_conditions.begin(); candidate != where_conditions.end(); ++candidate)
+        {
+            if (candidate->must_follow_preceding_conditions && candidate != where_conditions.begin())
+                continue;
+            if (candidate->must_be_first_in_prewhere && !prewhere_is_empty)
+                continue;
+            if (it == where_conditions.end() || *candidate < *it)
                 it = candidate;
+        }
 
-        if (!it->viable)
+        if (it == where_conditions.end() || !it->viable)
             break;
 
         /// If any non-expensive conditions stay in WHERE then don't move expensive conditions to PREWHERE

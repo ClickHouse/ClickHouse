@@ -346,7 +346,8 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
         filter_step->getFilterColumnName(),
         source_step_with_filter->getContext(),
         is_final,
-        columns_read_before_filter);
+        columns_read_before_filter,
+        existing_prewhere_info != nullptr);
 
     if (optimize_result.prewhere_nodes.empty())
         return;
