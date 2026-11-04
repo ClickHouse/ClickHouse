@@ -2939,11 +2939,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     /// A left-hand side of type `Nullable(Nothing)`, such as `materialize(NULL)`,
                     /// is `NULL` in every row, so it follows the same rewrites as a literal `NULL`.
                     const bool left_is_null = isNullConstant(in_first_argument) || in_first_argument->getResultType()->onlyNull();
+                    const bool use_standard_null_semantics = scope.context->getSettingsRef()[Setting::in_null_as_unknown];
 
                     /// Preserve NULL result for NULL IN (tuple) when NULLs are not compared.
                     /// When NULLs are compared, fall through to the regular `has` rewrite
                     /// so tuple-valued RHS expressions are expanded before NULL matching.
-                    if (left_is_null && !compare_nulls)
+                    if (left_is_null && !use_standard_null_semantics && !compare_nulls)
                     {
                         auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
                         node = std::make_shared<ConstantNode>(Field{},
@@ -2951,7 +2952,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         return ProjectionNames{proj};
                     }
 
-                    if (left_is_null && compare_nulls && std::any_of(tuple_args.begin(), tuple_args.end(), isNullConstant))
+                    if (left_is_null
+                        && !use_standard_null_semantics
+                        && compare_nulls
+                        && std::any_of(tuple_args.begin(), tuple_args.end(), isNullConstant))
                     {
                         auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
                         node = std::make_shared<ConstantNode>(is_not_in ? Field{0u} : Field{1u}, std::make_shared<DataTypeUInt8>());
@@ -2963,7 +2967,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     /// element type. Mirror it row-wise as `or(isNull(e1), ..., isNull(en))` instead
                     /// of building an `array(...)` of the elements, which could fail with
                     /// `NO_COMMON_TYPE` for a heterogeneous RHS.
-                    if (left_is_null && compare_nulls)
+                    if (left_is_null && !use_standard_null_semantics && compare_nulls)
                     {
                         auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
 

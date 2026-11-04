@@ -25,6 +25,11 @@ SELECT value IN (1), value NOT IN (1);
 
 SET transform_null_in = 1;
 SELECT NULL IN (NULL), NULL NOT IN (NULL);
+SELECT NULL IN (number, NULL), NULL NOT IN (number, NULL) FROM numbers(1);
+
+SET transform_null_in = 0;
+SELECT NULL IN materialize(tuple()), NULL NOT IN materialize(tuple());
+SET transform_null_in = 1;
 
 SET allow_experimental_analyzer = 0;
 SELECT 84 IN (63, NULL), 84 NOT IN (63, NULL);
