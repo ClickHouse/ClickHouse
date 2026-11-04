@@ -47,28 +47,28 @@ CREATE TABLE abr_me ENGINE = ABR('twolevel_me', [1, 10], ('ts'));
 
 SELECT count() FROM (
     SELECT key, sum(value) AS total
-    FROM remote('localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost', currentDatabase(), 'abr_me')
+    FROM remote('localhost,localhost', currentDatabase(), 'abr_me')
     WHERE ts >= toDateTime('2026-06-01 00:00:00')
     GROUP BY key
 ) SETTINGS distributed_aggregation_memory_efficient = 0, max_threads = 4, enable_analyzer = 0;
 
 SELECT count() FROM (
     SELECT key, sum(value) AS total
-    FROM remote('localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost', currentDatabase(), 'abr_me')
+    FROM remote('localhost,localhost', currentDatabase(), 'abr_me')
     WHERE ts >= toDateTime('2026-06-01 00:00:00')
     GROUP BY key
 ) SETTINGS distributed_aggregation_memory_efficient = 0, max_threads = 4, enable_analyzer = 1;
 
 SELECT count() FROM (
     SELECT key, sum(value) AS total
-    FROM remote('localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost', currentDatabase(), 'abr_me')
+    FROM remote('localhost,localhost', currentDatabase(), 'abr_me')
     WHERE ts >= toDateTime('2026-06-01 00:00:00')
     GROUP BY key
 ) SETTINGS distributed_aggregation_memory_efficient = 1, max_threads = 4, enable_analyzer = 0;
 
 SELECT count() FROM (
     SELECT key, sum(value) AS total
-    FROM remote('localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost,localhost', currentDatabase(), 'abr_me')
+    FROM remote('localhost,localhost', currentDatabase(), 'abr_me')
     WHERE ts >= toDateTime('2026-06-01 00:00:00')
     GROUP BY key
 ) SETTINGS distributed_aggregation_memory_efficient = 1, max_threads = 4, enable_analyzer = 1;

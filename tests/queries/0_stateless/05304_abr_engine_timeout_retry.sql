@@ -1,4 +1,6 @@
--- Tags: no-random-settings
+-- Tags: no-random-settings, no-sanitizers
+-- no-sanitizers: the retry must fit in the time the first attempt leaves of `max_execution_time`, which sanitizer builds
+-- exceed.
 
 -- Test: ABR engine fallback when TIMEOUT_EXCEEDED occurs
 -- Verifies that ABR retries on the next table when max_execution_time
