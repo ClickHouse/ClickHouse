@@ -41,7 +41,7 @@ SELECT groupArray(x) FROM custom_key_alias_scope
 SETTINGS parallel_replicas_custom_key = 'x IN system.one', parallel_replicas_mode = 'custom_key_sampling'; -- { serverError BAD_ARGUMENTS }
 
 -- The alias column itself, unqualified, is an array.
-SELECT groupArray(x) FROM (SELECT x FROM custom_key_alias_scope ORDER BY x
+SELECT arraySort(groupArray(x)) FROM (SELECT x FROM custom_key_alias_scope
 SETTINGS parallel_replicas_custom_key = 'x IN one', parallel_replicas_mode = 'custom_key_sampling');
 
 -- A harmless chain inside a lambda that shadows its root keeps working.

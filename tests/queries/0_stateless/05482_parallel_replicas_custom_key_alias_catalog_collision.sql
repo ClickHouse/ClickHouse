@@ -38,7 +38,7 @@ SELECT count() FROM custom_key_alias_catalog_collision AS system
 SETTINGS parallel_replicas_custom_key = 'x IN system.one', parallel_replicas_mode = 'custom_key_sampling'; -- { serverError BAD_ARGUMENTS }
 
 -- A harmless alias keeps working.
-SELECT groupArray(x) FROM (SELECT x FROM custom_key_alias_catalog_collision AS system ORDER BY x
+SELECT arraySort(groupArray(x)) FROM (SELECT x FROM custom_key_alias_catalog_collision AS system
 SETTINGS parallel_replicas_custom_key = 'harmless', parallel_replicas_mode = 'custom_key_sampling');
 
 DROP TABLE custom_key_alias_catalog_collision;
