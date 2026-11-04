@@ -107,8 +107,9 @@ public:
     virtual ColumnSize getColumnSize(const String & column_name) const = 0;
     virtual std::shared_ptr<const std::unordered_map<String, ColumnSize>> getColumnSizes() const = 0;
     /// The on-disk size of all columns together. Unlike `getColumnSizes`, it is also known for compact
-    /// parts, which keep no per-column sizes. Zero when the part has no size information.
-    virtual ColumnSize getTotalColumnsSize() const = 0;
+    /// parts, which keep no per-column sizes. Zero when the part has no size information, as for a
+    /// borrowed part; the callers then fall back to the behaviour that needs no size.
+    virtual ColumnSize getTotalColumnsSize() const { return {}; }
     /// The codec the part was written with, before any per-column `CODEC` override.
     virtual CompressionCodecPtr getDefaultCompressionCodec() const = 0;
     virtual ColumnSize getSubcolumnSize(const String & subcolumn_name) const = 0;
