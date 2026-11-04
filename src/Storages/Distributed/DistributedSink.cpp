@@ -70,7 +70,7 @@ namespace Setting
     extern const SettingsBool insert_allow_materialized_columns;
     extern const SettingsBool insert_distributed_one_random_shard;
     extern const SettingsUInt64 insert_shard_id;
-    extern const SettingsUInt64 max_distributed_connections;
+    extern const SettingsNonZeroUInt64 max_distributed_connections;
     extern const SettingsUInt64 max_distributed_depth;
     extern const SettingsUInt64 max_network_bandwidth;
     extern const SettingsUInt64 max_network_bytes;
@@ -590,7 +590,7 @@ void DistributedSink::writeSync(const Block & block)
         initWritingJobs(block_to_send, start, end);
 
         size_t jobs_count = random_shard_insert ? 1 : (remote_jobs_count + local_jobs_count);
-        size_t max_threads = std::min<size_t>(std::max<UInt64>(settings[Setting::max_distributed_connections], 1), jobs_count);
+        size_t max_threads = std::min<size_t>(settings[Setting::max_distributed_connections], jobs_count);
         pool.emplace(
             CurrentMetrics::DistributedInsertThreads,
             CurrentMetrics::DistributedInsertThreadsActive,
