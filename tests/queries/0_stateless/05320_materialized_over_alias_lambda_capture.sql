@@ -492,18 +492,18 @@ FROM t_alias_capture_field_name SETTINGS apply_mutations_on_fly = 1;
 SYSTEM START MERGES t_alias_capture_field_name;
 DROP TABLE t_alias_capture_field_name SYNC;
 
--- A parameter field named like a column the expression reads outside the lambda.
+-- A parameter field named like a column the expression reads outside the lambda keeps its name.
 DROP TABLE IF EXISTS t_alias_capture_field_column;
 CREATE TABLE t_alias_capture_field_column
 (
     x Nested(a UInt32),
     arr_t Array(Tuple(a UInt32)),
-    m String MATERIALIZED concat(toString(x.a), '-', toString(arrayMap(x -> x.a, arr_t)))
+    m String MATERIALIZED concat(toString(x.a), '-', arrayMap(x -> formatRowNoNewline('JSONEachRow', x.a), arr_t)[1])
 )
 ENGINE = MergeTree ORDER BY tuple();
 
 INSERT INTO t_alias_capture_field_column (`x.a`, arr_t) VALUES ([1], [tuple(100)]);
 ALTER TABLE t_alias_capture_field_column UPDATE arr_t = [tuple(200)] WHERE 1;
 ALTER TABLE t_alias_capture_field_column UPDATE `x.a` = [2] WHERE 1;
-SELECT 'field column', m, concat(toString(x.a), '-', toString(arrayMap(x -> x.a, arr_t))) FROM t_alias_capture_field_column;
+SELECT 'field column', m, concat(toString(x.a), '-', arrayMap(x -> formatRowNoNewline('JSONEachRow', x.a), arr_t)[1]) FROM t_alias_capture_field_column;
 DROP TABLE t_alias_capture_field_column;
