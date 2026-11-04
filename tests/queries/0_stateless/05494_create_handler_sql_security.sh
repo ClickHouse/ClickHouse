@@ -250,3 +250,14 @@ $CLICKHOUSE_CLIENT -q "SELECT count() FROM ${DB}.t5"
 request -X POST "${BASE}/${DB}/h18"
 request -X POST "${BASE}/${DB}/h18p"
 $CLICKHOUSE_CLIENT -q "SELECT groupArray(id) FROM (SELECT id FROM ${DB}.t5 ORDER BY id)"
+
+echo "--- 19. ALTER HANDLER checks the DEFINER and SQL SECURITY it sets or keeps"
+as_default "CREATE HANDLER h19_${DB} URL '/${DB}/h19' AS SELECT 1"
+as_default "CREATE HANDLER h19n_${DB} URL '/${DB}/h19n' SQL SECURITY NONE AS SELECT 1"
+$CLICKHOUSE_CLIENT --user "${U_LIM}" -q "ALTER HANDLER h19_${DB} DEFINER = ${U_DEF} SQL SECURITY DEFINER" 2>&1 | grep -o -m1 'SET DEFINER'
+$CLICKHOUSE_CLIENT --user "${U_LIM}" -q "ALTER HANDLER h19_${DB} SQL SECURITY NONE" 2>&1 | grep -o -m1 'ALLOW SQL SECURITY NONE'
+$CLICKHOUSE_CLIENT --user "${U_LIM}" -q "ALTER HANDLER h19n_${DB} URL '/${DB}/h19m'" 2>&1 | grep -o -m1 'ALLOW SQL SECURITY NONE'
+handler_query "h19_${DB}" create_query
+handler_query "h19n_${DB}" create_query
+as_user "${U_NONE}" "ALTER HANDLER h19n_${DB} URL '/${DB}/h19m'"
+handler_query "h19n_${DB}" url

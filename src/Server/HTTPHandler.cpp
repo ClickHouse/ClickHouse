@@ -304,8 +304,8 @@ void HTTPHandler::processQuery(
     auto reject_request_input = [&](const String & input)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Handler `{}` with SQL SECURITY {} does not accept `{}` in a request: its query runs with the privileges of "
-            "its definer, so a request can choose only the output format (`default_format`, `output_format` or the "
+            "Handler `{}` with SQL SECURITY {} does not accept `{}` in a request: its query does not run as the "
+            "requesting user, so a request can choose only the output format (`default_format`, `output_format` or the "
             "`X-ClickHouse-Format` header) and query parameters",
             introspection_handler_name, magic_enum::enum_name(*sql_security_type), input);
     };
