@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/ColumnsHashingImpl.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
 #include <algorithm>
@@ -268,69 +269,37 @@ protected:
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset, nullable>;
 };
 
-/// For the case when there is one packed string key.
-/// Unlike `HashMethodString`, this method does not support nullable keys or key offsets,
-/// and the key is always persisted into the arena by `keyHolderPersistKey`.
-template <typename Value, typename Mapped, bool use_cache>
-struct HashMethodPackedString : public columns_hashing_impl::HashMethodBase<
-                              HashMethodPackedString<Value, Mapped, use_cache>,
-                              Value,
-                              Mapped,
-                              use_cache,
-                              /*need_offset=*/ false,
-                              /*nullable=*/ false>
+/// Content hash stored inside a packed string key. `PackedStringRef::build` invokes it
+/// only for lengths that store a hash (1..UInt32 max): the empty value hashes to
+/// zero by construction and oversized strings use the length as a hash surrogate,
+/// trading hash quality for a uniform cell layout (full string comparison remains
+/// the final equality check).
+///
+/// Computing the hash inside `build` keeps a single pass over the string data:
+/// a separate per-block hashing pass would read every key twice and allocate a
+/// hash array per block. When the `Aggregator` prefetches (hash table larger than
+/// L2) it builds a row's key ahead of the row; its plain `count()` loop keeps that
+/// key, the other loops build and hash it again.
+///
+/// A 32-bit hash is sufficient for in-memory aggregation hash tables; external
+/// aggregation derives a 64-bit hash via a dedicated conversion path.
+struct PackedStringHash
 {
-    using Self = HashMethodPackedString<Value, Mapped, use_cache>;
-    using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, false, false>;
-
-    static constexpr bool has_cheap_key_calculation = false;
-    /// `PackedStringRef::build` reads the key in place; see the note on `Hash` below for why
-    /// rebuilding it (and its content hash) in the look-ahead is an accepted trade here.
-    static constexpr bool has_cheap_key_holder = true;
-
-    const IColumn::Offset * offsets;
-    const UInt8 * chars;
-
-    HashMethodPackedString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &, RowRange /*rows*/ = {})
-        : Base(key_columns[0])
+    ALWAYS_INLINE UInt32 operator()(const char * data, size_t size) const
     {
-        const ColumnString & column_string = assert_cast<const ColumnString &>(*key_columns[0]);
-        offsets = column_string.getOffsets().data();
-        chars = column_string.getChars().data();
-    }
-
-    /// Content hash stored inside the packed key. `PackedStringRef::build` invokes it
-    /// only for lengths that store a hash (1..UInt32 max): the empty value hashes to
-    /// zero by construction and oversized strings use the length as a hash surrogate,
-    /// trading hash quality for a uniform cell layout (full string comparison remains
-    /// the final equality check).
-    ///
-    /// Computing the hash inside `build` keeps a single pass over the string data:
-    /// a separate per-block hashing pass would read every key twice and allocate a
-    /// hash array per block. When the `Aggregator` prefetches (hash table larger than
-    /// L2) it builds a row's key ahead of the row; its plain `count()` loop keeps that
-    /// key, the other loops build and hash it again.
-    ///
-    /// A 32-bit hash is sufficient for in-memory aggregation hash tables; external
-    /// aggregation derives a 64-bit hash via a dedicated conversion path.
-    struct Hash
-    {
-        ALWAYS_INLINE UInt32 operator()(const char * data, size_t size) const
-        {
 #if defined(CRC_INT)
-            /// Tiny keys (1..7 bytes) go through a single CRC instruction on the masked
-            /// word, exactly like `StringHashTableHash` for `StringKey8`. This avoids the
-            /// multiply-heavy `hashLessThan8` path inside `StringViewHash` for short strings,
-            /// which otherwise dominates low-cardinality short-string aggregation
-            /// (`group_by_sundy_li`, `if_transform_strings_to_enum`). Keys of 8 bytes or more
-            /// already use the cheap CRC loop in `StringViewHash` and are left unchanged, so
-            /// medium/large keys (e.g. URLs) keep the same hash and bucketing as before.
-            if (size < 8)
-                return hashTinyKey(data, size);
+        /// Tiny keys (1..7 bytes) go through a single CRC instruction on the masked
+        /// word, exactly like `StringHashTableHash` for `StringKey8`. This avoids the
+        /// multiply-heavy `hashLessThan8` path inside `StringViewHash` for short strings,
+        /// which otherwise dominates low-cardinality short-string aggregation
+        /// (`group_by_sundy_li`, `if_transform_strings_to_enum`). Keys of 8 bytes or more
+        /// already use the cheap CRC loop in `StringViewHash` and are left unchanged, so
+        /// medium/large keys (e.g. URLs) keep the same hash and bucketing as before.
+        if (size < 8)
+            return hashTinyKey(data, size);
 #endif
-            return static_cast<UInt32>(StringViewHash()(std::string_view(data, size)));
-        }
-    };
+        return static_cast<UInt32>(StringViewHash()(std::string_view(data, size)));
+    }
 
 #if defined(CRC_INT)
     /// Hash a 1..7 byte key with a single CRC instruction.
@@ -357,6 +326,42 @@ struct HashMethodPackedString : public columns_hashing_impl::HashMethodBase<
         return static_cast<UInt32>(res);
     }
 #endif
+};
+
+/// For the case when there is one packed string key.
+/// Unlike `HashMethodString`, this method does not support nullable keys or key offsets,
+/// and the key is always persisted into the arena by `keyHolderPersistKey`.
+template <typename Value, typename Mapped, bool use_cache>
+struct HashMethodPackedString : public columns_hashing_impl::HashMethodBase<
+                              HashMethodPackedString<Value, Mapped, use_cache>,
+                              Value,
+                              Mapped,
+                              use_cache,
+                              /*need_offset=*/ false,
+                              /*nullable=*/ false>
+{
+    using Self = HashMethodPackedString<Value, Mapped, use_cache>;
+    using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, false, false>;
+
+    static constexpr bool has_cheap_key_calculation = false;
+    /// `PackedStringRef::build` reads the key in place; see the note on `PackedStringHash` for why
+    /// rebuilding it (and its content hash) in the look-ahead is an accepted trade here.
+    static constexpr bool has_cheap_key_holder = true;
+
+    /// The content hash stored in the packed key. Callers that rebuild a key from its bytes to probe a table
+    /// use it.
+    using Hash = PackedStringHash;
+
+    const IColumn::Offset * offsets;
+    const UInt8 * chars;
+
+    HashMethodPackedString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &, RowRange /*rows*/ = {})
+        : Base(key_columns[0])
+    {
+        const ColumnString & column_string = assert_cast<const ColumnString &>(*key_columns[0]);
+        offsets = column_string.getOffsets().data();
+        chars = column_string.getChars().data();
+    }
 
     /// Returns the row's bytes in the padded source column, without packing or persisting the key. The
     /// view remains valid for this block and permits reads up to 15 bytes past its end.
@@ -375,6 +380,167 @@ struct HashMethodPackedString : public columns_hashing_impl::HashMethodBase<
 
 protected:
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, false, false>;
+};
+
+/// For the case of fixed-width keys and one non-nullable `String` key, stored as a
+/// `KeysAndPackedString<Keys>`: the fixed-width values packed into `Keys` longest first, and the string as a
+/// packed reference. Like `HashMethodPackedString`, it reads the key in place and persists the string only
+/// when the key is inserted. It keeps no consecutive-keys cache, because `KeysAndPackedStringHashMap` returns
+/// bare mapped pointers, not cells. With `for_sub_range`, it is the `SubRangeState` of the method.
+template <typename Value, typename Mapped, typename Keys, bool for_sub_range = false>
+struct HashMethodKeysAndPackedString : public columns_hashing_impl::HashMethodBase<
+                                           HashMethodKeysAndPackedString<Value, Mapped, Keys, for_sub_range>,
+                                           Value,
+                                           Mapped,
+                                           /*consecutive_keys_optimization=*/ false,
+                                           /*need_offset=*/ false,
+                                           /*nullable=*/ false>
+{
+    using Self = HashMethodKeysAndPackedString<Value, Mapped, Keys, for_sub_range>;
+
+    static constexpr bool has_cheap_key_calculation = false;
+    /// The fixed-width values are packed and the string is hashed in place, as by `HashMethodPackedString`.
+    static constexpr bool has_cheap_key_holder = true;
+
+    /// The hash stored in the packed string: the content hash of the string, continued with the fixed-width
+    /// values, so that it covers the whole key.
+    struct Hash
+    {
+        Keys keys;
+
+        ALWAYS_INLINE UInt32 operator()(const char * data, size_t size) const
+        {
+            return static_cast<UInt32>(intHashCRC32(keys, PackedStringHash{}(data, size)));
+        }
+    };
+
+    /// The fixed-width key columns and the sizes of their values (1, 2, 4, 8 or 16 bytes), in the order of
+    /// the key columns.
+    ColumnRawPtrs fixed_columns;
+    Sizes fixed_sizes;
+
+    /// The values of the only fixed-width key column when they are as wide as `Keys`: such values are their
+    /// own packed form, so they are read in place, without packing. Null otherwise.
+    const Keys * column_keys = nullptr;
+
+    /// The fixed-width values of the block, packed longest first (see `packFixedBatch`). A state built for a
+    /// sub-range of the block holds those of the sub-range, from row `prepared_keys_begin` on, and none for a
+    /// sub-range shorter than `min_rows_to_batch_pack_sub_range`, whose rows it packs one by one.
+    PaddedPODArray<Keys> prepared_keys;
+    size_t prepared_keys_begin = 0;
+
+    /// The buffers of the `String` key column.
+    const IColumn::Offset * string_offsets = nullptr;
+    const UInt8 * string_chars = nullptr;
+
+    /// The `String` key is the one column without a value size. A state built for a sub-range of the block
+    /// (`rows`) packs only that sub-range, so building a state per sub-range does not repeat whole-block
+    /// work; the other states ignore `rows`.
+    HashMethodKeysAndPackedString(const ColumnRawPtrs & key_columns, const Sizes & key_sizes, const HashMethodContextPtr &, RowRange rows = {})
+    {
+        for (size_t i = 0; i < key_columns.size(); ++i)
+        {
+            if (key_sizes[i] == 0)
+            {
+                const auto & column_string = assert_cast<const ColumnString &>(*key_columns[i]);
+                string_offsets = column_string.getOffsets().data();
+                string_chars = column_string.getChars().data();
+            }
+            else
+            {
+                fixed_columns.push_back(key_columns[i]);
+                fixed_sizes.push_back(key_sizes[i]);
+            }
+        }
+        chassert(fixed_columns.size() + 1 == key_columns.size());
+
+        const size_t block_rows = key_columns[0]->size();
+        const size_t rows_end = std::min(rows.end, block_rows);
+        const bool sub_range = for_sub_range && (rows.begin != 0 || rows_end < block_rows);
+        if (fixed_columns.size() == 1 && fixed_sizes[0] == sizeof(Keys))
+        {
+            column_keys = reinterpret_cast<const Keys *>(
+                static_cast<const ColumnFixedSizeHelper *>(fixed_columns[0])->getRawDataBegin<sizeof(Keys)>());
+        }
+        else if (!sub_range)
+        {
+            packFixedBatch(fixed_columns.size(), fixed_columns, fixed_sizes, prepared_keys);
+        }
+        else if (rows_end > rows.begin && rows_end - rows.begin >= min_rows_to_batch_pack_sub_range)
+        {
+            prepared_keys_begin = rows.begin;
+            packFixedBatchRange(fixed_columns.size(), fixed_columns, fixed_sizes, prepared_keys, rows.begin, rows_end);
+        }
+    }
+
+    /// Returns the packed fixed-width values of the row and its string in the padded source column, without
+    /// hashing or persisting the key. The view remains valid for this block and permits reads up to 15 bytes
+    /// past its end.
+    ALWAYS_INLINE std::pair<Keys, std::string_view> getKeyParts(ssize_t row) const
+    {
+        const char * data = reinterpret_cast<const char *>(string_chars + string_offsets[row - 1]);
+        return {getFixedKeys(row), std::string_view(data, string_offsets[row] - string_offsets[row - 1])};
+    }
+
+    ALWAYS_INLINE ArenaKeysAndPackedStringHolder<Keys> getKeyHolder(ssize_t row, Arena & pool) const
+    {
+        const auto [keys, str] = getKeyParts(row);
+        return {{keys, KeysAndPackedString<Keys>::PackedString::build(str.data(), str.size(), Hash{keys})}, pool};
+    }
+
+    /// Puts the key columns in the order of the key's bytes: the fixed-width values as `packFixedBatch` packs them,
+    /// and the `String` column, which has no value size, last.
+    static std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> & key_columns, const Sizes & key_sizes)
+    {
+        std::vector<size_t> order = packedFixedKeysOrder(key_sizes);
+        order.push_back(std::ranges::find(key_sizes, 0) - key_sizes.begin());
+        chassert(order.size() == key_columns.size());
+
+        std::vector<IColumn *> new_columns;
+        new_columns.reserve(key_columns.size());
+        Sizes new_sizes;
+        new_sizes.reserve(key_sizes.size());
+        for (const size_t i : order)
+        {
+            new_columns.push_back(key_columns[i]);
+            new_sizes.push_back(key_sizes[i]);
+        }
+
+        key_columns.swap(new_columns);
+        return new_sizes;
+    }
+
+protected:
+    friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, false, false, false>;
+
+private:
+    /// The packed fixed-width values of the row.
+    ALWAYS_INLINE Keys getFixedKeys(ssize_t row) const
+    {
+        if (column_keys)
+            return column_keys[row];
+        if constexpr (for_sub_range)
+        {
+            if (prepared_keys.empty())
+                return packFixedKeys(row);
+            return prepared_keys[row - prepared_keys_begin];
+        }
+        else
+            return prepared_keys[row];
+    }
+
+    /// Packs the fixed-width values of a row of a short sub-range, which has no prepared values. Out of line,
+    /// so the accessors stay small enough to inline into the per-row loops.
+    NO_INLINE Keys packFixedKeys(ssize_t row) const
+    {
+        return packFixedLongestFirst<Keys>(row, fixed_columns.size(), fixed_columns, fixed_sizes);
+    }
+};
+
+template <typename Value, typename Mapped, typename Keys>
+struct SubRangeStateOf<HashMethodKeysAndPackedString<Value, Mapped, Keys, false>>
+{
+    using Type = HashMethodKeysAndPackedString<Value, Mapped, Keys, true>;
 };
 
 /// For the case when there is one fixed-length string key.
