@@ -1,6 +1,8 @@
 -- A lambda argument named after a niladic function must be hidden from an aliased expression
 -- written outside of the lambda: the bare identifier resolves to the niladic function there.
 
+SET enable_analyzer = 1;
+
 WITH length(currentDatabase) AS n SELECT arrayMap(currentDatabase -> n, ['']) = [length(currentDatabase())];
 
 WITH concat(currentUser, '') AS u SELECT arrayMap(currentUser -> u, ['x']) = [currentUser()];
