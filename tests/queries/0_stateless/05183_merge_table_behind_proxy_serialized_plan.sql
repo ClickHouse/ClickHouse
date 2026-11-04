@@ -20,7 +20,7 @@ CREATE MATERIALIZED VIEW t_merge_proxy_mv TO t_merge_proxy_merge AS SELECT x FRO
 -- A table created `AS` a table function is a `StorageTableFunctionProxy`, so its read is routed by `StorageProxy` itself.
 CREATE TABLE t_merge_proxy_table_function AS merge(currentDatabase(), '^t_merge_proxy_src$');
 
-SET enable_analyzer = 1, serialize_query_plan = 1;
+SET serialize_query_plan = 1;
 
 SELECT 'alias', sum(x) FROM remote('127.0.0.2', currentDatabase(), t_merge_proxy_alias);
 SELECT 'buffer', sum(x) FROM remote('127.0.0.2', currentDatabase(), t_merge_proxy_buffer);

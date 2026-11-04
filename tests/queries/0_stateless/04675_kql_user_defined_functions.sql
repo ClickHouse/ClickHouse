@@ -10,7 +10,7 @@
 -- because one KQL statement is one ClickHouse query. That is also what keeps the binding from
 -- leaking between concurrent queries. A name needed by two statements is bound twice.
 
-SET allow_experimental_kusto_dialect = 1;
+SET enable_kusto_dialect = 1;
 SET dialect = 'kusto';
 
 print '-- scalar functions --';

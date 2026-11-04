@@ -114,9 +114,10 @@ namespace Setting
     extern const SettingsBool allow_database_iceberg;
     extern const SettingsBool allow_database_unity_catalog;
     extern const SettingsBool allow_database_glue_catalog;
-    extern const SettingsBool allow_experimental_database_hms_catalog;
-    extern const SettingsBool allow_experimental_database_paimon_rest_catalog;
+    extern const SettingsBool enable_database_hms_catalog;
+    extern const SettingsBool enable_database_paimon_rest_catalog;
     extern const SettingsBool use_hive_partitioning;
+    extern const SettingsBool iceberg_list_only_v_prefixed_metadata_files;
     extern const SettingsBool log_queries;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsBool database_datalake_require_metadata_access;
@@ -1196,6 +1197,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
     ContextMutablePtr context_copy = Context::createCopy(want_stateful ? Context::getGlobalContextInstance() : context_);
     Settings settings_copy = context_copy->getSettingsCopy();
     settings_copy[Setting::use_hive_partitioning] = false;
+    settings_copy[Setting::iceberg_list_only_v_prefixed_metadata_files] = false;
     context_copy->setSettings(settings_copy);
 
     applyCatalogSpecificConfiguration(*configuration);
@@ -1233,7 +1235,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
         return catalog->getCredentialsConfigurationCallback(storage_id, table_metadata);
     };
 
-    if (can_use_parallel_replicas && !is_secondary_query)
+    if (can_use_parallel_replicas && !is_secondary_query && !context_->isSQLSecurityOverriddenBody())
     {
         auto storage_id = StorageID(getDatabaseName(), name, table_uuid);
         auto storage_cluster = std::make_shared<StorageObjectStorageCluster>(
@@ -2008,11 +2010,11 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             case DatabaseDataLakeCatalogType::ICEBERG_HIVE:
             {
                 if (!args.create_query.attach
-                    && !args.context->getSettingsRef()[Setting::allow_experimental_database_hms_catalog])
+                    && !args.context->getSettingsRef()[Setting::enable_database_hms_catalog])
                 {
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                                     "DatabaseDataLake with Iceberg Hive catalog is experimental. "
-                                    "To allow its usage, enable setting allow_experimental_database_hms_catalog");
+                                    "To allow its usage, enable setting enable_database_hms_catalog");
                 }
 
                 break;
@@ -2020,11 +2022,11 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             case DatabaseDataLakeCatalogType::PAIMON_REST:
             {
                 if (!args.create_query.attach
-                    && !args.context->getSettingsRef()[Setting::allow_experimental_database_paimon_rest_catalog])
+                    && !args.context->getSettingsRef()[Setting::enable_database_paimon_rest_catalog])
                 {
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                                     "DatabaseDataLake with Paimon Rest catalog is experimental. "
-                                    "To allow its usage, enable setting allow_experimental_database_paimon_rest_catalog");
+                                    "To allow its usage, enable setting enable_database_paimon_rest_catalog");
                 }
 
                 break;
@@ -2108,8 +2110,8 @@ You will need to enable the relevant settings below to use the `DataLakeCatalog`
 SET allow_database_iceberg = 1;
 SET allow_database_unity_catalog = 1;
 SET allow_database_glue_catalog = 1;
-SET allow_experimental_database_hms_catalog = 1;
-SET allow_experimental_database_paimon_rest_catalog = 1;
+SET enable_database_hms_catalog = 1;
+SET enable_database_paimon_rest_catalog = 1;
 ```
 
 Databases with the `DataLakeCatalog` engine can be created using the following syntax:
