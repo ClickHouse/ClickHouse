@@ -7,6 +7,7 @@
 #include <Common/StringUtils.h>
 
 #include <span>
+#include <unordered_map>
 #include <unordered_set>
 
 
@@ -353,8 +354,21 @@ private:
         return std::make_shared<IdentifierNode>(Identifier{getValueName(elements.size() - 1)});
     }
 
-    /// The indices of the elements in the expression.
-    void collectIndices(const IQueryTreeNode & node, std::vector<bool> & used) const
+    /// The expressions with aliases in the body, so that a reference to an alias depends on the indices of its expression.
+    std::unordered_map<String, const IQueryTreeNode *> aliases;
+
+    void collectAliases(const IQueryTreeNode & node)
+    {
+        if (node.hasAlias())
+            aliases.emplace(node.getAlias(), &node);
+        for (const auto & child : node.getChildren())
+            if (child)
+                collectAliases(*child);
+    }
+
+    /// The indices of the elements in the expression, also through the references to aliases.
+    /// `visited_aliases` protects from the cycles of aliases.
+    void collectIndices(const IQueryTreeNode & node, std::vector<bool> & used, std::unordered_set<String> & visited_aliases) const
     {
         if (auto element = getValueNumber(node))
         {
@@ -362,15 +376,27 @@ private:
                 used[index] = true;
             return;
         }
+
+        if (const auto * identifier = node.as<IdentifierNode>(); identifier && identifier->getIdentifier().isShort())
+        {
+            const auto & name = identifier->getIdentifier().getFullName();
+            auto it = aliases.find(name);
+            if (it != aliases.end() && it->second != &node && visited_aliases.insert(name).second)
+                collectIndices(*it->second, used, visited_aliases);
+            return;
+        }
+
         for (const auto & child : node.getChildren())
             if (child)
-                collectIndices(*child, used);
+                collectIndices(*child, used, visited_aliases);
     }
 
     /// An index is a summation index if it is used in two or more factors of some product.
     void findSummationIndices(const QueryTreeNodePtr & body)
     {
         is_summation.assign(indices.size(), false);
+        aliases.clear();
+        collectAliases(*body);
         findSummationIndicesImpl(body);
     }
 
@@ -384,7 +410,8 @@ private:
             for (const auto & factor : factors)
             {
                 std::vector<bool> used(indices.size(), false);
-                collectIndices(*factor, used);
+                std::unordered_set<String> visited_aliases;
+                collectIndices(*factor, used, visited_aliases);
                 for (size_t index = 0; index < indices.size(); ++index)
                     number_of_factors[index] += used[index];
             }
