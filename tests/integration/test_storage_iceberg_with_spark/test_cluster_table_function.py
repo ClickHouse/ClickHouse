@@ -375,7 +375,7 @@ def test_cluster_table_function_bucket_split_by_split_offsets(started_cluster_ic
     )
     spark.range(200000).selectExpr("id", "cast(id AS STRING) AS s").coalesce(1).writeTo(TABLE_NAME).append()
 
-    split_offsets = spark.sql(f"SELECT split_offsets FROM default.{TABLE_NAME}.files").collect()
+    split_offsets = spark.sql(f"SELECT file_size_in_bytes, split_offsets FROM default.{TABLE_NAME}.files").collect()
     assert len(split_offsets) == 1
     assert len(split_offsets[0].split_offsets) > 1
 
