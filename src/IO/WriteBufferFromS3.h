@@ -66,6 +66,7 @@ private:
     std::optional<S3::RequestChecksum::Algorithm> getUploadChecksumAlgorithm() const;
     void hidePartialData();
     void reallocateFirstBuffer();
+    bool isGCSCreateIfAbsent() const;
     void detachBuffer();
     void allocateBuffer();
     void setFakeBufferWhenPreFinalized();

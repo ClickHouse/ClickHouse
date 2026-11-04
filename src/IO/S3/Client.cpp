@@ -5,6 +5,9 @@
 #include <algorithm>
 #include <ctime>
 #include <iterator>
+#include <boost/algorithm/string/case_conv.hpp>
+#include <boost/algorithm/string/trim.hpp>
+#include <Poco/URI.h>
 #include <aws/core/utils/crypto/Hash.h>
 #include <Poco/MD5Engine.h>
 #include <Common/CurrentThread.h>
@@ -12,6 +15,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
 #include <Common/Hex.h>
+#include <Common/MapWithMemoryTracking.h>
 #include <Common/SipHash.h>
 
 #include <aws/core/Aws.h>
@@ -664,7 +668,13 @@ Model::CopyObjectOutcome Client::CopyObject(CopyObjectRequest & request) const
 Model::PutObjectOutcome Client::PutObject(PutObjectRequest & request) const
 {
     auto outcome = doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
-        request, [this](Model::PutObjectRequest & req) { return PutObject(req); });
+        request,
+        [this](Model::PutObjectRequest & req)
+        {
+            if (isGCSCreateIfAbsentWithHMAC(req))
+                return putObjectWithGOOG4Signature(req);
+            return PutObject(req);
+        });
 
     /// A replayed conditional PUT fails its own condition; only the stamped id tells that from a lost race.
     if (!outcome.IsSuccess() && outcome.GetError().GetExceptionName() == "PreconditionFailed")
@@ -1482,50 +1492,97 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
     return config;
 }
 
-bool Client::tryGCSCreateIfAbsent(const String & bucket, const String & key, std::string_view body) const
+bool Client::isGCSCreateIfAbsentWithHMAC(const Model::PutObjectRequest & request) const
+{
+    return provider_type == ProviderType::GCS && api_mode == ApiMode::AWS && request.GetIfNoneMatch() == "*";
+}
+
+Model::PutObjectOutcome Client::putObjectWithGOOG4Signature(const Model::PutObjectRequest & request) const
+{
+    String body;
+    if (const auto & body_stream = request.GetBody())
+    {
+        body_stream->clear();
+        body_stream->seekg(0);
+        body.assign(std::istreambuf_iterator<char>(*body_stream), std::istreambuf_iterator<char>());
+    }
+
+    const auto & retry_strategy = client_configuration.retryStrategy;
+    for (long retries = 0;; ++retries) // NOLINT(google-runtime-int)
+    {
+        auto outcome = putObjectWithGOOG4SignatureOnce(request, body);
+        if (outcome.IsSuccess())
+            return outcome;
+
+        const Aws::Client::AWSError<Aws::Client::CoreErrors> error(outcome.GetError());
+        if (!retry_strategy->ShouldRetry(error, retries))
+            return outcome;
+
+        GetHttpClient()->RetryRequestSleep(std::chrono::milliseconds(retry_strategy->CalculateDelayBeforeNextRetry(error, retries)));
+    }
+}
+
+Model::PutObjectOutcome Client::putObjectWithGOOG4SignatureOnce(const Model::PutObjectRequest & request, const String & body) const
 {
     const auto credentials = getCredentials();
     const auto & secret = credentials.GetAWSSecretKey();
     const auto & access_key = credentials.GetAWSAccessKeyId();
     if (secret.empty() || access_key.empty())
-        return false;
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "GCS conditional create of {} requires HMAC credentials", request.GetKey());
 
     std::time_t now = std::time(nullptr);
     struct tm tm_buf{};
     if (!gmtime_r(&now, &tm_buf))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "gmtime_r failed while signing a GCS create");
 
-    char amz_date[32];
-    if (strftime(amz_date, sizeof(amz_date), "%Y%m%dT%H%M%SZ", &tm_buf) == 0)
+    char goog_date[32];
+    if (strftime(goog_date, sizeof(goog_date), "%Y%m%dT%H%M%SZ", &tm_buf) == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "strftime failed while signing a GCS create");
-    const String datestamp(amz_date, 8);
+    const String datestamp(goog_date, 8);
 
-    const char * payload_ptr = body.empty() ? "" : body.data();
-    const String payload_sha256 = encodeSHA256(payload_ptr, body.size());
+    const String payload_sha256 = encodeSHA256(body);
     const String payload_hash = hexString(payload_sha256.data(), payload_sha256.size());
-    const String canonical_uri = S3::encodeRequestPath("/" + bucket + "/" + key);
 
-    const String canonical_headers = fmt::format(
-        "host:storage.googleapis.com\n"
-        "x-goog-content-sha256:{}\n"
-        "x-goog-date:{}\n"
-        "x-goog-if-generation-match:0\n",
-        payload_hash,
-        amz_date);
-    static constexpr std::string_view signed_headers = "host;x-goog-content-sha256;x-goog-date;x-goog-if-generation-match";
+    const Poco::URI endpoint(initial_endpoint);
+    const String host = endpoint.getAuthority();
+    const String path = "/" + request.GetBucket() + "/" + request.GetKey();
+
+    Aws::Http::HeaderValueCollection request_headers = request.GetHeaders();
+    for (const auto & [name, value] : request.GetAdditionalCustomHeaders())
+        request_headers.emplace(name, value);
+
+    MapWithMemoryTracking<String, String> headers;
+    for (const auto & [name, value] : translateHeadersToGCS(std::move(request_headers)))
+        headers[boost::algorithm::to_lower_copy(name)] = boost::algorithm::trim_copy(value);
+
+    headers.erase("content-length");
+    headers["host"] = host;
+    headers["x-goog-content-sha256"] = payload_hash;
+    headers["x-goog-date"] = goog_date;
+
+    String canonical_headers;
+    String signed_headers;
+    for (const auto & [name, value] : headers)
+    {
+        canonical_headers += fmt::format("{}:{}\n", name, value);
+        if (!signed_headers.empty())
+            signed_headers += ';';
+        signed_headers += name;
+    }
+
     const String canonical_request = fmt::format(
         "PUT\n{}\n\n{}\n{}\n{}",
-        canonical_uri,
+        S3::encodeRequestPath(path),
         canonical_headers,
         signed_headers,
         payload_hash);
 
-    /// `auto` / `s3` / `goog4_request` is the scope GCS accepts for an HMAC key on storage.googleapis.com.
+    /// `auto` / `s3` / `goog4_request` is the scope GCS accepts for an HMAC key.
     const String scope = fmt::format("{}/auto/s3/goog4_request", datestamp);
     const String canonical_request_sha256 = encodeSHA256(canonical_request);
     const String string_to_sign = fmt::format(
         "GOOG4-HMAC-SHA256\n{}\n{}\n{}",
-        amz_date,
+        goog_date,
         scope,
         hexString(canonical_request_sha256.data(), canonical_request_sha256.size()));
 
@@ -1536,52 +1593,43 @@ bool Client::tryGCSCreateIfAbsent(const String & bucket, const String & key, std
     const auto service_key = hmacSHA256(region_key, "s3");
     const auto signing_key = hmacSHA256(service_key, "goog4_request");
     const auto signature_bytes = hmacSHA256(signing_key, string_to_sign);
-    const String signature_hex = hexString(signature_bytes.data(), signature_bytes.size());
 
     const String authorization = fmt::format(
         "GOOG4-HMAC-SHA256 Credential={}/{}, SignedHeaders={}, Signature={}",
         access_key,
         scope,
         signed_headers,
-        signature_hex);
+        hexString(signature_bytes.data(), signature_bytes.size()));
 
-    const String url = "https://storage.googleapis.com" + String("/") + bucket + "/" + key;
-    auto request = Aws::Http::CreateHttpRequest(
-        Aws::String(url),
+    auto http_request = Aws::Http::CreateHttpRequest(
+        Aws::String(endpoint.getScheme() + "://" + host + path),
         Aws::Http::HttpMethod::HTTP_PUT,
         Aws::Utils::Stream::DefaultResponseStreamFactoryMethod);
 
     auto payload = Aws::MakeShared<Aws::StringStream>("GCSCreateIfAbsent");
-    if (!body.empty())
-        payload->write(body.data(), static_cast<std::streamsize>(body.size()));
+    payload->write(body.data(), static_cast<std::streamsize>(body.size()));
     payload->seekg(0);
-    request->AddContentBody(payload);
-    request->SetContentLength(std::to_string(body.size()));
-    request->SetHeaderValue("x-goog-content-sha256", payload_hash);
-    request->SetHeaderValue("x-goog-date", amz_date);
-    request->SetHeaderValue("x-goog-if-generation-match", "0");
-    request->SetHeaderValue("Authorization", authorization);
+    http_request->AddContentBody(payload);
+    http_request->SetContentLength(std::to_string(body.size()));
+    for (const auto & [name, value] : headers)
+        if (name != "host")
+            http_request->SetHeaderValue(name, value);
+    http_request->SetHeaderValue("authorization", authorization);
 
-    auto response = GetHttpClient()->MakeRequest(request);
+    auto response = GetHttpClient()->MakeRequest(http_request);
     if (!response)
-        throw S3Exception(Aws::S3::S3Errors::NETWORK_CONNECTION, "GCS create of {} returned no response", key);
+        return Aws::S3::S3Error(Aws::Client::AWSError<Aws::Client::CoreErrors>(
+            Aws::Client::CoreErrors::NETWORK_CONNECTION, "", fmt::format("GCS create of {} returned no response", request.GetKey()), true));
 
-    const auto status = static_cast<int>(response->GetResponseCode());
-    if (status == 200)
-        return true;
-
-    String error_body;
-    if (response->GetResponseBody().good())
+    if (!response->HasClientError() && response->GetResponseCode() == Aws::Http::HttpResponseCode::OK)
     {
-        error_body.assign(std::istreambuf_iterator<char>(response->GetResponseBody()), std::istreambuf_iterator<char>());
-        if (error_body.size() > 400)
-            error_body.resize(400);
+        Model::PutObjectResult result;
+        if (response->HasHeader("etag"))
+            result.SetETag(response->GetHeader("etag"));
+        return result;
     }
 
-    if (status == 412)
-        throw S3Exception(Aws::S3::S3Errors::UNKNOWN, "PreconditionFailed: GCS object {} already exists. {}", key, error_body);
-
-    throw S3Exception(Aws::S3::S3Errors::UNKNOWN, "GCS create of {} failed with status {}. {}", key, status, error_body);
+    return Aws::S3::S3Error(GetErrorMarshaller()->BuildAWSError(response));
 }
 
 bool isS3ExpressEndpoint(const std::string & endpoint)

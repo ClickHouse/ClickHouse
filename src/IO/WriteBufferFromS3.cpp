@@ -177,21 +177,17 @@ void WriteBufferFromS3::preFinalize()
         detachBuffer();
     setFakeBufferWhenPreFinalized();
 
-    /// GCS CompleteMultipartUpload ignores preconditions, so a create-if-absent stays one PUT.
-    const bool gcs_create_if_absent = client_ptr->isClientForGCS()
-        && write_settings.object_storage_write_if_none_match == "*";
-
     bool do_single_part_upload = false;
 
     if (multipart_upload_id.empty() && detached_part_data.size() <= 1)
     {
         if (detached_part_data.empty()
             || detached_part_data.front().data_size <= request_settings[S3RequestSetting::max_single_part_upload_size]
-            || gcs_create_if_absent)
+            || isGCSCreateIfAbsent())
             do_single_part_upload = true;
     }
 
-    if (!do_single_part_upload && gcs_create_if_absent)
+    if (!do_single_part_upload && isGCSCreateIfAbsent())
         throw S3Exception(
             Aws::S3::S3Errors::UNKNOWN,
             "GCS conditional create of {} must be a single PUT. CompleteMultipartUpload ignores preconditions.",
@@ -352,16 +348,22 @@ void WriteBufferFromS3::reallocateFirstBuffer()
     if (buffer_allocation_policy->getBufferNumber() > 1 || available() > 0)
         return;
 
+    const bool unlimited = isGCSCreateIfAbsent();
     const size_t max_first_buffer = buffer_allocation_policy->getBufferSize();
-    if (memory.size() == max_first_buffer)
+    if (memory.size() >= max_first_buffer && !unlimited)
         return;
 
-    size_t size = std::min(memory.size() * 2, max_first_buffer);
+    size_t size = unlimited ? memory.size() * 2 : std::min(memory.size() * 2, max_first_buffer);
     memory.resize(size);
 
     WriteBuffer::set(memory.data() + hidden_size, memory.size() - hidden_size);
 
     chassert(offset() == 0);
+}
+
+bool WriteBufferFromS3::isGCSCreateIfAbsent() const
+{
+    return client_ptr->isClientForGCS() && write_settings.object_storage_write_if_none_match == "*";
 }
 
 void WriteBufferFromS3::detachBuffer()
@@ -800,19 +802,6 @@ void WriteBufferFromS3::makeSinglepartUpload(WriteBufferFromS3::PartData && data
     auto upload_worker = [&, worker_data] ()
     {
         LOG_TEST(limited_log, "writing single part upload started. {}", getShortLogDetails());
-
-        auto & part = std::get<1>(*worker_data);
-        if (client_ptr->isClientForGCS() && write_settings.object_storage_write_if_none_match == "*")
-        {
-            std::string_view bytes;
-            if (part.data_size > 0)
-                bytes = std::string_view(part.memory.data(), part.data_size);
-            if (client_ptr->tryGCSCreateIfAbsent(bucket, key, bytes))
-            {
-                LOG_TRACE(limited_log, "Single part upload has completed. {}, size {}", getShortLogDetails(), bytes.size());
-                return;
-            }
-        }
 
         auto & request = std::get<0>(*worker_data);
         size_t content_length = request.GetContentLength();

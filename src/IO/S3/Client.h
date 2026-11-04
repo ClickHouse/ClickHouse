@@ -242,13 +242,6 @@ public:
 
     bool isClientForGCS() const { return provider_type == ProviderType::GCS; }
 
-    /// GCS ignores `If-None-Match` on PUT, and an AWS4-signed request cannot also carry
-    /// `x-goog-if-generation-match` (GCS rejects the mix). HMAC creates use a GOOG4 signature
-    /// and generation 0, which succeeds only when the object does not exist.
-    /// Returns false when this client has no HMAC secret, so the caller can use another path.
-    /// Throws on 412 and on any other failed response.
-    bool tryGCSCreateIfAbsent(const String & bucket, const String & key, std::string_view body) const;
-
     std::string getGCSOAuthToken() const;
 
     ThrottlerPtr getPutRequestThrottler() const { return client_configuration.request_throttler.put_throttler; }
@@ -310,6 +303,13 @@ private:
     std::optional<Aws::S3::S3Error> updateURIForBucketForHead(const std::string & bucket) const;
 
     Model::HeadObjectOutcome headObjectInternal(HeadObjectRequest & request) const;
+
+    /// GCS ignores `If-None-Match` on PUT, and an AWS4-signed request cannot also carry
+    /// `x-goog-if-generation-match` (GCS rejects the mix). So an HMAC create-if-absent is
+    /// signed with GOOG4 instead, with generation 0, which succeeds only when the object does not exist.
+    bool isGCSCreateIfAbsentWithHMAC(const Model::PutObjectRequest & request) const;
+    Model::PutObjectOutcome putObjectWithGOOG4Signature(const Model::PutObjectRequest & request) const;
+    Model::PutObjectOutcome putObjectWithGOOG4SignatureOnce(const Model::PutObjectRequest & request, const String & body) const;
 
     /// True only if the object at `key` carries `idempotency_id`, i.e. whoever set it wrote the object.
     /// One HeadObject. Logs a failed proof, at warning level if asked.
