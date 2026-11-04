@@ -44,6 +44,8 @@ ALTER TABLE t_guard DELETE WHERE arrayExists(x -> (x AS today) > '2000-01-01', [
 ALTER TABLE t_guard DELETE WHERE d < (today AS today); -- { serverError BAD_ARGUMENTS }
 ALTER TABLE t_guard UPDATE v = toUnixTimestamp(CURRENT_TIMESTAMP) WHERE 1; -- { serverError BAD_ARGUMENTS }
 DELETE FROM t_guard WHERE d < today SETTINGS lightweight_deletes_sync = 0; -- { serverError BAD_ARGUMENTS }
+-- A call with parentheses is reported even when another command of the query cannot be analyzed.
+ALTER TABLE t_guard DELETE WHERE missing = 1, UPDATE v = toUnixTimestamp(now()) WHERE 1; -- { serverError BAD_ARGUMENTS }
 CREATE TABLE t_nested (d Date, k UInt64, today Nested(a UInt8), `now.x` UInt8, k1 UInt64 ALIAS k + 1)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_nested', 'r1') ORDER BY k;
 SYSTEM STOP REPLICATION QUEUES t_nested;

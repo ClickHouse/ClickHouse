@@ -2806,7 +2806,6 @@ void MutationsInterpreter::validateNonDeterministicMutationsForStorage(
     if (!startsWith(storage->getName(), "Replicated") || context->getSettingsRef()[Setting::allow_nondeterministic_mutations])
         return;
 
-    StorageSnapshotPtr storage_snapshot;
     for (const auto & command : commands)
     {
         const auto nondeterministic_func_data = findFirstNonDeterministicFunction(command, context);
@@ -2814,32 +2813,37 @@ void MutationsInterpreter::validateNonDeterministicMutationsForStorage(
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "ALTER UPDATE/ALTER DELETE statement with subquery may be nondeterministic, "
                                                        "see allow_nondeterministic_mutations setting");
 
-        auto function_name = nondeterministic_func_data.nondeterministic_function_name;
+        if (nondeterministic_func_data.nondeterministic_function_name)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "The source storage is replicated so ALTER UPDATE/ALTER DELETE statements must use only deterministic functions. "
+                "Function '{}' is non-deterministic", *nondeterministic_func_data.nondeterministic_function_name);
+    }
 
-        /// Only the analyzer knows whether `today` is a column or a function written without parentheses.
-        if (!function_name && (command.type == MutationCommand::UPDATE || command.type == MutationCommand::DELETE))
+    /// Only the analyzer knows whether `today` is a column or a function written without parentheses.
+    StorageSnapshotPtr storage_snapshot;
+    for (const auto & command : commands)
+    {
+        if (command.type != MutationCommand::UPDATE && command.type != MutationCommand::DELETE)
+            continue;
+
+        auto alter = command.ast();
+        auto expressions = make_intrusive<ASTExpressionList>();
+        if (alter->update_assignments)
+            for (const auto & assignment : alter->update_assignments->children)
+                expressions->children.push_back(assignment->as<ASTAssignment &>().expression());
+        if (alter->predicate)
+            expressions->children.push_back(alter->predicate->ptr());
+
+        if (!storage_snapshot)
         {
-            auto alter = command.ast();
-            auto expressions = make_intrusive<ASTExpressionList>();
-            if (alter->update_assignments)
-                for (const auto & assignment : alter->update_assignments->children)
-                    expressions->children.push_back(assignment->as<ASTAssignment &>().expression());
-            if (alter->predicate)
-                expressions->children.push_back(alter->predicate->ptr());
-
-            if (!storage_snapshot)
-            {
-                auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ true);
-                storage_snapshot = storage->getStorageSnapshot(metadata_snapshot, context);
-            }
-
-            auto expression = buildQueryTree(expressions, context);
-            QueryAnalyzer(/*only_analyze=*/ true).resolveConstantExpression(
-                expression, std::make_shared<TableNode>(storage, TableLockHolder{}, storage_snapshot), context);
-            function_name = findNonDeterministicFunction(expression);
+            auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ true);
+            storage_snapshot = storage->getStorageSnapshot(metadata_snapshot, context);
         }
 
-        if (function_name)
+        auto expression = buildQueryTree(expressions, context);
+        QueryAnalyzer(/*only_analyze=*/ true).resolveConstantExpression(
+            expression, std::make_shared<TableNode>(storage, TableLockHolder{}, storage_snapshot), context);
+        if (auto function_name = findNonDeterministicFunction(expression))
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "The source storage is replicated so ALTER UPDATE/ALTER DELETE statements must use only deterministic functions. "
                 "Function '{}' is non-deterministic", *function_name);
