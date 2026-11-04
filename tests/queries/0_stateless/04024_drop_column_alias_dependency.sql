@@ -1,6 +1,8 @@
 -- Test that we cannot drop a column that an ALIAS column's expression depends on.
 -- Dropping the ALIAS column itself is allowed; then the base column can be dropped.
 
+SET enable_analyzer=1;
+
 DROP TABLE IF EXISTS test_drop_column_alias_dep;
 
 CREATE TABLE test_drop_column_alias_dep

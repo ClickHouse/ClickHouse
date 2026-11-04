@@ -30,7 +30,6 @@ BlockIO InterpreterAlterNamedCollectionQuery::execute()
     return {};
 }
 
-void registerInterpreterAlterNamedCollectionQuery(InterpreterFactory & factory);
 void registerInterpreterAlterNamedCollectionQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)
