@@ -37,8 +37,7 @@ DESCRIBE file(currentDatabase() || '_05218_all_empty.csv'); -- { serverError CAN
 
 DESCRIBE file(currentDatabase() || '_05218_one_empty.csv');
 DESCRIBE file(currentDatabase() || '_05218_one_empty.csv') /* 05218 warm default */;
--- An empty column name reaching the analyzer aborts the server, so reading the cached structure back
--- is the strongest assertion in this file.
+-- An empty column name reaching the analyzer aborts a debug server, so read the cached structure back.
 SELECT * FROM file(currentDatabase() || '_05218_one_empty.csv');
 
 -- The reads above expect the same answer whether or not the cache was consulted, so they cannot tell a

@@ -185,7 +185,7 @@ try
 
                     if (mode == SchemaInferenceMode::DEFAULT)
                     {
-                        /// The schema is cached before the columns with empty names are removed from it.
+                        /// Both cache writers below already drop empty names, so normally there is nothing to remove here.
                         if (!iterator_data.cached_columns->has(""))
                             return {*iterator_data.cached_columns, *format_name};
 
