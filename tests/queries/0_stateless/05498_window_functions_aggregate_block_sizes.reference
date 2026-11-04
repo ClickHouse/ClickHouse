@@ -1,0 +1,78 @@
+rows from the partition start, block size 1: 9002995005696102304
+rows from the partition start, block size 2: 9002995005696102304
+rows from the partition start, block size 3: 9002995005696102304
+rows from the partition start, block size 5: 9002995005696102304
+rows from the partition start, block size 8: 9002995005696102304
+rows from the partition start, block size 65505: 9002995005696102304
+rows from the partition start to a preceding row, block size 1: 16849570056086356045
+rows from the partition start to a preceding row, block size 2: 16849570056086356045
+rows from the partition start to a preceding row, block size 3: 16849570056086356045
+rows from the partition start to a preceding row, block size 5: 16849570056086356045
+rows from the partition start to a preceding row, block size 8: 16849570056086356045
+rows from the partition start to a preceding row, block size 65505: 16849570056086356045
+rows sliding, block size 1: 14626028122678446506
+rows sliding, block size 2: 14626028122678446506
+rows sliding, block size 3: 14626028122678446506
+rows sliding, block size 5: 14626028122678446506
+rows sliding, block size 8: 14626028122678446506
+rows sliding, block size 65505: 14626028122678446506
+rows ahead of the current row, block size 1: 483653472672253095
+rows ahead of the current row, block size 2: 483653472672253095
+rows ahead of the current row, block size 3: 483653472672253095
+rows ahead of the current row, block size 5: 483653472672253095
+rows ahead of the current row, block size 8: 483653472672253095
+rows ahead of the current row, block size 65505: 483653472672253095
+rows behind the current row, block size 1: 7775342852376391000
+rows behind the current row, block size 2: 7775342852376391000
+rows behind the current row, block size 3: 7775342852376391000
+rows behind the current row, block size 5: 7775342852376391000
+rows behind the current row, block size 8: 7775342852376391000
+rows behind the current row, block size 65505: 7775342852376391000
+rows to the partition end, block size 1: 16155725325235826023
+rows to the partition end, block size 2: 16155725325235826023
+rows to the partition end, block size 3: 16155725325235826023
+rows to the partition end, block size 5: 16155725325235826023
+rows to the partition end, block size 8: 16155725325235826023
+rows to the partition end, block size 65505: 16155725325235826023
+range default frame, block size 1: 13912669405280390539
+range default frame, block size 2: 13912669405280390539
+range default frame, block size 3: 13912669405280390539
+range default frame, block size 5: 13912669405280390539
+range default frame, block size 8: 13912669405280390539
+range default frame, block size 65505: 13912669405280390539
+range offsets, block size 1: 6011930489621028281
+range offsets, block size 2: 6011930489621028281
+range offsets, block size 3: 6011930489621028281
+range offsets, block size 5: 6011930489621028281
+range offsets, block size 8: 6011930489621028281
+range offsets, block size 65505: 6011930489621028281
+range ahead of the current row, block size 1: 18292166762876271856
+range ahead of the current row, block size 2: 18292166762876271856
+range ahead of the current row, block size 3: 18292166762876271856
+range ahead of the current row, block size 5: 18292166762876271856
+range ahead of the current row, block size 8: 18292166762876271856
+range ahead of the current row, block size 65505: 18292166762876271856
+range to the partition end, block size 1: 18317439224332444262
+range to the partition end, block size 2: 18317439224332444262
+range to the partition end, block size 3: 18317439224332444262
+range to the partition end, block size 5: 18317439224332444262
+range to the partition end, block size 8: 18317439224332444262
+range to the partition end, block size 65505: 18317439224332444262
+groups sliding, block size 1: 15151899065459460845
+groups sliding, block size 2: 15151899065459460845
+groups sliding, block size 3: 15151899065459460845
+groups sliding, block size 5: 15151899065459460845
+groups sliding, block size 8: 15151899065459460845
+groups sliding, block size 65505: 15151899065459460845
+groups from the partition start to a preceding group, block size 1: 5833420822090940923
+groups from the partition start to a preceding group, block size 2: 5833420822090940923
+groups from the partition start to a preceding group, block size 3: 5833420822090940923
+groups from the partition start to a preceding group, block size 5: 5833420822090940923
+groups from the partition start to a preceding group, block size 8: 5833420822090940923
+groups from the partition start to a preceding group, block size 65505: 5833420822090940923
+whole partition, block size 1: 16940699017436066865
+whole partition, block size 2: 16940699017436066865
+whole partition, block size 3: 16940699017436066865
+whole partition, block size 5: 16940699017436066865
+whole partition, block size 8: 16940699017436066865
+whole partition, block size 65505: 16940699017436066865
