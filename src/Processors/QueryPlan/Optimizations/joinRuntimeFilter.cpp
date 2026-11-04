@@ -209,7 +209,6 @@ static bool supportsRuntimeFilter(JoinAlgorithm join_algorithm, bool can_run_gra
     /// runtime-filter target for one: keeping it would let this pass prune away the algorithms that could actually run the join.
     return
         join_algorithm == JoinAlgorithm::HASH ||
-        join_algorithm == JoinAlgorithm::PARALLEL_HASH ||
         (join_algorithm == JoinAlgorithm::GRACE_HASH && can_run_grace_hash && join_strictness != JoinStrictness::Asof);
 }
 
@@ -336,6 +335,25 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     /// be attached, and the algorithm list must not be pinned to hash-family ones below.
     if (isIEJoinPreferred(join_operator, join_step->getJoinSettings()))
         return false;
+
+    /// For `ASOF`, pruning `join_algorithms` below would force `hash` even if the user picked
+    /// `full_sorting_merge`: unlike other strictnesses, `HashJoin` can't run every `ASOF` join (narrower column
+    /// types, no spill). Skip the filter if pruning would change the algorithm actually chosen; the algorithms
+    /// excluded below never run `ASOF`, so they fall through regardless of list order.
+    if (join_operator.strictness == JoinStrictness::Asof)
+    {
+        const auto first_candidate = std::ranges::find_if(
+            join_algorithms,
+            [](JoinAlgorithm algorithm)
+            {
+                return algorithm != JoinAlgorithm::DIRECT && algorithm != JoinAlgorithm::IE_JOIN
+                    && algorithm != JoinAlgorithm::GRACE_HASH && algorithm != JoinAlgorithm::PARTIAL_MERGE
+                    && algorithm != JoinAlgorithm::PREFER_PARTIAL_MERGE && algorithm != JoinAlgorithm::DEFAULT;
+            });
+        if (first_candidate == join_algorithms.end()
+            || *first_candidate != JoinAlgorithm::HASH)
+            return false;
+    }
 
     /// Sometimes cross join can be represented by inner join without expressions
     if (join_operator.expression.empty())
