@@ -58,6 +58,14 @@ SELECT toDateTime64(usage_timestamp, 3) FROM tbl WHERE a = 'one' AND toDateTime6
 SELECT a, toDateTime64(usage_timestamp, 3) FROM tbl WHERE usage_timestamp != 'invaliddatetime' AND toDateTime64(usage_timestamp, 3) > '2020-01-01';
 SELECT b, toDateTime64(usage_timestamp, 3) FROM tbl PREWHERE a = 'one' WHERE toDateTime64(usage_timestamp, 3) > '2020-01-01'
 SETTINGS optimize_prewhere_after_pushdown = 1;
+-- The other conditions are still moved, and so is a conversion that is not passed on.
+SELECT count() FROM (EXPLAIN actions = 1 SELECT toDateTime64(usage_timestamp, 3) FROM tbl WHERE a = 'one' AND toDateTime64(usage_timestamp, 3) > '2020-01-01')
+WHERE explain ILIKE '%Prewhere filter column: equals(%a%';
+SELECT count() FROM (EXPLAIN actions = 1 SELECT toDateTime64(usage_timestamp, 3) FROM tbl PREWHERE a = 'one' WHERE b != '' AND toDateTime64(usage_timestamp, 3) > '2020-01-01'
+SETTINGS optimize_prewhere_after_pushdown = 1)
+WHERE explain ILIKE '%Prewhere filter column: and(equals(%a%), notEquals(%b%' AND explain NOT ILIKE '%toDateTime64%';
+SELECT count() FROM (EXPLAIN actions = 1 SELECT b FROM tbl WHERE a = 'one' AND toDateTime64(usage_timestamp, 3) > '2020-01-01')
+WHERE explain ILIKE '%Prewhere filter column: and(equals(%a%), greater(toDateTime64(%';
 
 DROP TABLE tbl;
 DROP TABLE t_force;
