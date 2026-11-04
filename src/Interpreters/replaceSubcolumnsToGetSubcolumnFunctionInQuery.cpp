@@ -47,7 +47,6 @@ void replaceSubcolumns(
             return;
 
         auto function = makeASTFunction("getSubcolumn", make_intrusive<ASTIdentifier>(column_name), make_intrusive<ASTLiteral>(subcolumn_name));
-        /// The replacement keeps what the expression calls the subcolumn: its alias, or its name, which `formatRow` reads.
         /// The root is named by the caller.
         if (!is_root)
         {
@@ -119,8 +118,7 @@ void replaceSubcolumnsToGetSubcolumnFunctionInQuery(ASTPtr & ast, const NamesAnd
     std::vector<AliasedSubcolumn> aliased;
     replaceSubcolumns(ast, columns, /*is_root=*/ true, /*lambda=*/ nullptr, unnamed, aliased);
 
-    /// The old analyzer has one alias scope for the whole expression, lambdas included, so an alias that a different
-    /// expression also has, an alias set only in lambdas and read outside all of them, or a name another expression uses, is left off.
+    /// The old analyzer has one alias scope for the whole expression, lambdas included.
     if (!aliased.empty())
     {
         std::unordered_map<String, IASTHash> hashes;
@@ -151,7 +149,6 @@ void replaceSubcolumnsToGetSubcolumnFunctionInQuery(ASTPtr & ast, const NamesAnd
     collectConflictingAliases(*ast, hashes, conflicting);
     for (const auto & [function, name] : unnamed)
     {
-        /// An alias of this same expression does not take the name.
         auto it = hashes.find(name);
         bool same_expression = it != hashes.end() && !conflicting.contains(name)
             && it->second == function->getTreeHash(/*ignore_aliases=*/ true);
