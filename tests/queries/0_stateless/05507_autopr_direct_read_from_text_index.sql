@@ -27,9 +27,24 @@ SET parallel_replicas_local_plan = 1;
 SET parallel_replicas_for_non_replicated_merge_tree = 1;
 SET max_parallel_replicas = 3;
 SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
+-- Let the cost model of mode 1 choose parallel replicas for this small table.
+SET max_threads = 1;
+SET automatic_parallel_replicas_min_bytes_per_replica = 0;
+SET merge_tree_min_bytes_per_task_for_remote_reading = 1024;
+SET parallel_replicas_min_number_of_rows_per_replica = 0;
 
 SELECT id % 10 AS k, count() FROM tab WHERE hasToken(str, 'rare') GROUP BY k ORDER BY k
 SETTINGS log_comment = '05507_direct_read';
+
+-- With the statistics collected above, mode 1 runs the plan with parallel replicas, whose reads use the
+-- virtual columns of direct read together with the index analysis taken over from the single-node plan.
+SELECT id % 10 AS k, count() FROM tab WHERE hasToken(str, 'rare') GROUP BY k ORDER BY k
+SETTINGS log_comment = '05507_applied', automatic_parallel_replicas_mode = 1;
+
+-- The single-node plan cannot answer this count from the text index, so the plan for automatic parallel replicas
+-- must not try either: that analyzed its read over the rewritten filter, where the index is of no use.
+SELECT count() FROM tab WHERE str ILIKE '%rare%'
+SETTINGS use_text_index_like_evaluation_by_dictionary_scan = 1, force_data_skipping_indices = 'idx_str';
 
 -- The plan for automatic parallel replicas must take the index conditions from the single-node plan rather
 -- than build them: building them runs the subquery of an `IN` it cannot adopt, here the set
@@ -64,6 +79,13 @@ WHERE type = 'QueryFinish' AND is_initial_query AND current_database = currentDa
   AND event_date >= yesterday() AND log_comment = '05507_direct_read'
 ORDER BY event_time_microseconds DESC
 LIMIT 1;
+
+SELECT
+    ProfileEvents['AutoParallelReplicasApplied'] > 0 AS applied,
+    ProfileEvents['ParallelReplicasUsedCount'] > 0 AS used_parallel_replicas
+FROM system.query_log
+WHERE type = 'QueryFinish' AND is_initial_query AND current_database = currentDatabase()
+  AND event_date >= yesterday() AND log_comment = '05507_applied';
 
 -- The set is built once, and the query reads as many rows as without parallel replicas.
 SELECT
