@@ -277,6 +277,8 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
                         path_resolver.resolve(delete_data_result[partition_key].path), /*with_tags=*/ false).size_bytes;
                 delete_data_result[partition_key].total_bytes = delete_bytes;
             }
+            delete_data_writers[partition_key].reset();
+            delete_data_write_buffers[partition_key].reset();
         }
     }
 
@@ -352,6 +354,8 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
                         path_resolver.resolve(update_data_result[partition_key].path), /*with_tags=*/ false).size_bytes;
                 update_data_result[partition_key].total_bytes = update_bytes;
             }
+            update_data_writers[partition_key].reset();
+            update_data_write_buffers[partition_key].reset();
         }
     }
 
@@ -429,7 +433,7 @@ static bool writeMetadataFiles(
     std::vector<Int64> manifest_entry_row_counts;
     std::vector<Int64> manifest_entry_file_counts;
     std::vector<Iceberg::FileContentType> per_entry_content_types;
-    std::vector<std::vector<std::pair<Field, DataTypePtr>>> entry_partition_summaries;
+    std::vector<ManifestPartitionSummary> entry_partition_summaries;
 
     auto hint_path = filename_generator.generateVersionHint();
     const bool use_version_hint = data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint];
@@ -466,14 +470,10 @@ static bool writeMetadataFiles(
             manifest_entry_row_counts.push_back(data_file.total_rows);
             manifest_entry_file_counts.push_back(1);
 
-            /// The manifest holds a single partition tuple, which becomes its manifest-list field summary.
             if (chunk_partitioner)
             {
-                const auto & partition_types = chunk_partitioner->getResultTypes();
-                std::vector<std::pair<Field, DataTypePtr>> partition_summary;
-                partition_summary.reserve(partition_key.size());
-                for (size_t i = 0; i < partition_key.size(); ++i)
-                    partition_summary.emplace_back(partition_key[i], partition_types[i]);
+                ManifestPartitionSummary partition_summary(chunk_partitioner->getResultTypes());
+                partition_summary.add(partition_key);
                 entry_partition_summaries.push_back(std::move(partition_summary));
             }
 
@@ -488,7 +488,7 @@ static bool writeMetadataFiles(
                 generateManifestFile(
                     metadata,
                     chunk_partitioner ? chunk_partitioner->getColumns() : std::vector<String>{},
-                    partition_key,
+                    {partition_key},
                     chunk_partitioner ? chunk_partitioner->getResultTypes() : DataTypes{},
                     {data_file.path},
                     {static_cast<UInt64>(data_file.total_rows)},

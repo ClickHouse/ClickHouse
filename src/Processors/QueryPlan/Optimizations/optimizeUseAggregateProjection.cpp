@@ -1167,10 +1167,11 @@ static Block makeBlockWithMinMaxFromStatistics(
     stat.selected_ranges = covered_ranges;
     stat.selected_rows = covered_rows;
     stat.filtered_parts = covered_parts;
-    stat.description = fmt::format(
+    auto message = PreformattedMessage::create(
         "Min/max aggregation from column statistics is applied: {} parts with {} rows are answered from statistics. Remaining parts to read: {}",
         covered_parts, covered_rows, parts_with_ranges.size());
-    LOG_DEBUG(logger, "{}", stat.description);
+    stat.description = message.text;
+    LOG_DEBUG(logger, message);
 
     Block block;
     for (size_t i = 0; i < stats_aggregates.size(); ++i)
@@ -1415,13 +1416,14 @@ UseProjectionsResult optimizeUseAggregateProjections(
             stat.filtered_parts
                 = std::erase_if(parent_parts_with_ranges, [&](const auto & part_with_ranges) { return part_with_ranges.ranges.empty(); });
 
-            stat.description = fmt::format(
+            auto message = PreformattedMessage::create(
                 "Exact count optimization is applied: {} ranges with exact row count {}. Filtered parts: {}",
                 stat.selected_ranges,
                 stat.selected_rows,
                 stat.filtered_parts);
+            stat.description = message.text;
 
-            LOG_DEBUG(logger, "{}", stat.description);
+            LOG_DEBUG(logger, message);
 
             inexact_ranges_select_result->selected_parts = parent_parts_with_ranges.size();
             /// The original result may have exceeded_row_limits set because the full table scan
@@ -1502,14 +1504,15 @@ UseProjectionsResult optimizeUseAggregateProjections(
                 size_t parent_reading_marks = parent_reading_select_result->selected_marks;
                 if (!relax_projection_checks && candidate.sum_marks > parent_reading_marks)
                 {
-                    stat.description = fmt::format(
+                    auto message = PreformattedMessage::create(
                         "Projection {} is usable but requires reading {} marks, which is not better than the original table with {} marks",
                         candidate.projection->name,
                         candidate.sum_marks,
                         parent_reading_marks);
+                    stat.description = message.text;
 
                     result.projection_reject_reasons.try_emplace(candidate.projection->name, stat.description);
-                    LOG_DEBUG(logger, "{}", stat.description);
+                    LOG_DEBUG(logger, message);
                     continue;
                 }
 
@@ -1538,23 +1541,25 @@ UseProjectionsResult optimizeUseAggregateProjections(
             {
                 chassert(candidate.stat);
                 chassert(candidate.stat->description.empty());
-                candidate.stat->description = fmt::format(
+                auto message = PreformattedMessage::create(
                     "Projection {} is selected as the best with {} marks to read, while the original table requires scanning {} marks",
                     candidate.projection->name,
                     candidate.sum_marks,
                     parent_reading_select_result->selected_marks);
-                LOG_DEBUG(logger, "{}", candidate.stat->description);
+                candidate.stat->description = message.text;
+                LOG_DEBUG(logger, message);
             }
             else if (candidate.stat && candidate.stat->description.empty())
             {
-                candidate.stat->description = fmt::format(
+                auto message = PreformattedMessage::create(
                     "Projection {} is usable but requires reading {} marks, which is less efficient than projection {} with {} marks",
                     candidate.projection->name,
                     candidate.sum_marks,
                     best_candidate->projection->name,
                     best_candidate->sum_marks);
+                candidate.stat->description = message.text;
                 result.projection_reject_reasons.try_emplace(candidate.projection->name, candidate.stat->description);
-                LOG_DEBUG(logger, "{}", candidate.stat->description);
+                LOG_DEBUG(logger, message);
             }
         }
     }
