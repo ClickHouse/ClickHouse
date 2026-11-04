@@ -47,9 +47,18 @@ std::optional<size_t> MergeTreeReaderCompactSingleBuffer::takeCompressedBytesRea
     if (!counted_compressed_blocks)
         return std::nullopt;
 
-    return counted_compressed_blocks->take(
-        data_part_info_for_read->getDataPartStorage()->getFullPath() + "/" + MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION,
-        ranges_read);
+    if (!counted_file)
+        counted_file = &counted_compressed_blocks->getFile(
+            data_part_info_for_read->getDataPartStorage()->getFullPath() + "/" + MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION);
+    return counted_compressed_blocks->take(*counted_file, ranges_read);
+}
+
+void MergeTreeReaderCompactSingleBuffer::countCompressedBytesRead(CountedCompressedBlocksPtr counted)
+{
+    /// A reader gets the same object for each of its tasks.
+    if (counted != counted_compressed_blocks)
+        counted_file = nullptr;
+    MergeTreeReaderCompact::countCompressedBytesRead(std::move(counted));
 }
 
 void MergeTreeReaderCompactSingleBuffer::addGranulesServedFromColumnsCache(size_t pos, size_t from_mark, size_t to_mark)
