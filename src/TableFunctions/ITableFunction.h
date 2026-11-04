@@ -144,8 +144,7 @@ public:
     ColumnsDescription getActualTableStructureWithAccess(ContextPtr context, bool is_insert_query) const;
 
     /// Check that the user has the required source access (e.g. READ ON MYSQL, WRITE ON S3).
-    /// A table function that wraps another one, e.g. `loop`, checks the source of the wrapped one.
-    virtual void checkSourceAccess(ContextPtr context, bool is_insert_query) const;
+    void checkSourceAccess(ContextPtr context, bool is_insert_query) const;
 
     /// The URI of the function for permission checking. Can be an empty string if not applicable.
     /// For example, for url('https://foo.bar') the URI would be 'https://foo.bar'.
@@ -177,10 +176,8 @@ private:
     virtual const char * getStorageEngineName() const = 0;
 
     /// Opt in only for engines exposing a server-side capability with no other access gate
-    /// (`Executable` runs a user-provided script). Source engines are gated by `checkSourceAccess`,
-    /// wrapper engines by the access to what they wrap: `Merge` and `Loop` over a table by the grants
-    /// on the tables, `Loop` over a table function by the source of that function, which the
-    /// `checkSourceAccess` of `loop` checks.
+    /// (`Executable` runs a user-provided script). Wrapper engines such as `Merge` or `Loop` are
+    /// gated by their delegated data access, source engines by `checkSourceAccess`.
     virtual bool requiresTableEngineGrant() const { return false; }
     /// The database storage name is used to check privileges.
     /// For example for s3Cluster the database storage name is S3Cluster, and we need to check

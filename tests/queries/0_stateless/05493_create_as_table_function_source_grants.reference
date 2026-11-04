@@ -6,7 +6,7 @@ grant READ ON FILE
 grant READ ON FILE
 --- with the structure and the table function copied from another table
 grant READ ON FILE
---- with the table function wrapped in loop
+--- with the table function wrapped in loop, the table is created, but reading it is refused
 grant READ ON FILE
 --- ON CLUSTER
 grant READ ON FILE
@@ -20,10 +20,12 @@ grant READ ON FILE
 Null
 --- with READ ON FILE only, creating the table is refused too
 grant WRITE ON FILE
+--- but a table wrapped in loop is created and reads the file
+canary
 --- with both, the table is created and reads the file
 canary
 canary
---- without READ ON FILE, the table is attached back from its stored definition
-t_columns
---- but not restored from a backup
+--- without READ ON FILE, the table is neither attached back from its stored definition
+grant READ ON FILE
+--- nor restored from a backup
 grant READ ON FILE
