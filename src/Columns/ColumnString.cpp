@@ -450,27 +450,53 @@ void ColumnString::fillFromRowStorePtrs(const DataTypePtr &, const RowStorePoint
 
 void ColumnString::gatherRangeIntoRows(char * rows, size_t row_length, size_t field_offset, size_t start, size_t count, char *& overflow_cursor, const UInt8 * null_map) const
 {
-    const char * src_chars = reinterpret_cast<const char *>(chars.data());
-    for (size_t row = 0; row < count; ++row)
+    const auto gather = [&]<bool has_null_map>
     {
-        char * dst = rows + row * row_length + field_offset;
-        const size_t source_row = start + row;
-        if (null_map)
-            *dst++ = static_cast<char>(null_map[source_row]);
-
-        const UInt64 begin = offsets[static_cast<ssize_t>(source_row) - 1];
-        const size_t value_size = offsets[source_row] - begin;
-        const char * value = src_chars + begin;
-        /// The store owns its bytes: a long value is copied to the overflow buffer and the ref points there.
-        if (value_size > UnhashedPackedStringRef::MAX_SMALL_LEN)
+        /// The ref of a value is written right after its null byte.
+        const size_t ref_offset = field_offset + has_null_map;
+        const char * src_chars = reinterpret_cast<const char *>(chars.data());
+        constexpr size_t chunk_rows = 256;
+        UInt32 long_rows[chunk_rows];
+        for (size_t chunk_begin = 0; chunk_begin < count; chunk_begin += chunk_rows)
         {
-            memcpy(overflow_cursor, value, value_size);
-            value = overflow_cursor;
-            overflow_cursor += value_size;
-        }
+            const size_t chunk_end = std::min(count, chunk_begin + chunk_rows);
+            size_t num_long = 0;
+            for (size_t row = chunk_begin; row < chunk_end; ++row)
+            {
+                char * dst = rows + row * row_length + field_offset;
+                const size_t source_row = start + row;
+                if constexpr (has_null_map)
+                    *dst = static_cast<char>(null_map[source_row]);
 
-        unalignedStore<UnhashedPackedStringRef>(dst, UnhashedPackedStringRef::build(value, value_size));
-    }
+                const UInt64 begin = offsets[static_cast<ssize_t>(source_row) - 1];
+                const size_t value_size = offsets[source_row] - begin;
+                /// Every row is written to the next place in `long_rows`, and `num_long` moves past the long rows only. So the
+                /// loop has no branch on the length: with mixed lengths such a branch would often be mispredicted.
+                long_rows[num_long] = static_cast<UInt32>(row);
+                num_long += value_size > UnhashedPackedStringRef::MAX_SMALL_LEN;
+                /// The loop below overwrites the refs of the long rows, so for them `% 16` only has to keep the index into
+                /// `short_string_masks` in range. `% 16` is one AND, while `std::min` would need a compare and a select.
+                unalignedStore<UnhashedPackedStringRef>(dst + has_null_map, UnhashedPackedStringRef::buildShort(src_chars + begin, value_size % 16));
+            }
+
+            /// The store owns its bytes: a long value is copied to the overflow buffer and the ref points there.
+            for (size_t i = 0; i < num_long; ++i)
+            {
+                const size_t row = long_rows[i];
+                const size_t source_row = start + row;
+                const UInt64 begin = offsets[static_cast<ssize_t>(source_row) - 1];
+                const size_t value_size = offsets[source_row] - begin;
+                memcpy(overflow_cursor, src_chars + begin, value_size);
+                unalignedStore<UnhashedPackedStringRef>(rows + row * row_length + ref_offset, UnhashedPackedStringRef::buildLong(overflow_cursor, value_size));
+                overflow_cursor += value_size;
+            }
+        }
+    };
+
+    if (null_map)
+        gather.template operator()<true>();
+    else
+        gather.template operator()<false>();
 }
 
 size_t ColumnString::rowStoreOverflowBytes(size_t start, size_t count) const
