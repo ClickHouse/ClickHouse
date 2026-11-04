@@ -636,9 +636,10 @@ bool buildScenarios(
         /// a `break` time limit or a cancelled query stops the read silently
         if (part_data.read_rows != part->index_granularity->getRowsCountInRanges(ranges))
         {
-            result.empirical_unsupported_reason = "The projection scan was cut short by a time limit in `break` mode or a cancelled query";
+            auto reason = PreformattedMessage::create("The projection scan was cut short by a time limit in `break` mode or a cancelled query");
+            result.empirical_unsupported_reason = reason.text;
             /// the limit also drops the output, so log the reason
-            LOG_DEBUG(log, "{}", result.empirical_unsupported_reason);
+            LOG_DEBUG(log, reason);
             return false;
         }
 
