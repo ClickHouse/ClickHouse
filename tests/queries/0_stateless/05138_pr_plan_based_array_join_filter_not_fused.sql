@@ -36,10 +36,12 @@ SELECT countIf(explain LIKE '%Element filter%') = 1 AS fused_with_parallel_repli
 FROM (EXPLAIN actions = 1 SELECT id FROM t_pr_fuse ARRAY JOIN arr AS elem WHERE elem = 'b');
 
 -- Here the ARRAY JOIN is shipped, on the broadcast side of the join: it appears in the local replica plan
--- and in the fragment, and only the local one has the filter fused.
+-- and in the fragment, and only the local one has the filter fused. The fragment is printed without actions,
+-- so its unfused filter is seen as a separate `Filter (WHERE)` step, which the fused local plan does not have.
 SELECT
     countIf(explain LIKE '%ArrayJoin%') = 2 AS array_join_shipped,
-    countIf(explain LIKE '%Element filter%') = 1 AS fused_only_locally
+    countIf(explain LIKE '%Element filter%') = 1 AS fused_only_locally,
+    countIf(explain LIKE '%Filter (WHERE)%') = 1 AS not_fused_in_fragment
 FROM (EXPLAIN actions = 1
     SELECT count() FROM t_pr_fuse AS l
     INNER JOIN (SELECT id FROM t_pr_fuse_small ARRAY JOIN arr AS elem WHERE elem = 'b') AS r ON l.id = r.id);
