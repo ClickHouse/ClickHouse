@@ -3,14 +3,14 @@
 # Tag no-fasttest: delta-kernel pulls in extra dependencies.
 # Tag no-msan: delta-kernel-rs (Rust) is not built under MSan, so DeltaLakeLocal is absent.
 
-# A non-UTF-8 value for a `string` or `binary` partition column is rejected before commit,
-# so the Delta log stays UTF-8 JSON and the table stays readable.
+# A non-UTF-8 partition value is rejected before commit: the Delta log is UTF-8 JSON, and an
+# Iceberg manifest stores a `string` partition value as an Avro string, which is UTF-8 too.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-ROOT="${USER_FILES_PATH}/${CLICKHOUSE_DATABASE}_delta_non_utf8"
+ROOT="${USER_FILES_PATH}/${CLICKHOUSE_DATABASE}_lake_non_utf8"
 trap 'rm -rf "${ROOT}" 2>/dev/null' EXIT
 rm -rf "${ROOT}"
 
@@ -43,3 +43,12 @@ echo "-- binary partition column: a non-UTF-8 value is rejected too"
 bootstrap "${ROOT}/bin" "${SCHEMA_BIN}" '["p"]'
 ${CLICKHOUSE_LOCAL} --allow_delta_lake_writes=1 --query "INSERT INTO FUNCTION deltaLakeLocal('${ROOT}/bin') SELECT 1 AS id, unhex('FF') AS p" 2>&1 | grep -o -m1 'INCORRECT_DATA'
 echo "log versions: $(ls "${ROOT}/bin/_delta_log" | grep -c '\.json$')"
+
+echo "-- Iceberg: an INSERT or ALTER UPDATE that would write a non-UTF-8 partition value is rejected"
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE ice (id Int32, p String) ENGINE = IcebergLocal('${ROOT}/ice/') PARTITION BY p"
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "INSERT INTO ice VALUES (1, 'ok')"
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "INSERT INTO ice SELECT 2, unhex('FF')" 2>&1 | grep -o -m1 'INCORRECT_DATA'
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "ALTER TABLE ice UPDATE p = unhex('FF') WHERE id = 1" 2>&1 | grep -o -m1 'INCORRECT_DATA'
+echo "metadata versions: $(ls "${ROOT}/ice/metadata" | grep -c '\.metadata\.json$')"
+${CLICKHOUSE_CLIENT} --query "SELECT id, p FROM ice ORDER BY id"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE ice"

@@ -6,3 +6,8 @@ data files: 1
 -- binary partition column: a non-UTF-8 value is rejected too
 INCORRECT_DATA
 log versions: 1
+-- Iceberg: an INSERT or ALTER UPDATE that would write a non-UTF-8 partition value is rejected
+INCORRECT_DATA
+INCORRECT_DATA
+metadata versions: 2
+1	ok
