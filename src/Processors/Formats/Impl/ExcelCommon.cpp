@@ -22,6 +22,7 @@
 #include <Common/intExp10.h>
 #include <Common/Hex.h>
 #include <Common/typeid_cast.h>
+#include <base/arithmeticOverflow.h>
 #include <DataTypes/DataTypeFactory.h>
 
 #include <cmath>
@@ -239,7 +240,13 @@ bool tryInsertSerialDate(IColumn & column, const IDataType & type, double serial
         UInt32 scale = date_time64_type.getScale();
         Int64 milliseconds = value.milliseconds_of_day % 1000;
         Int64 fraction = scale >= 3 ? milliseconds * intExp10(scale - 3) : milliseconds / intExp10(3 - scale);
-        assert_cast<ColumnDateTime64 &>(column).getData().push_back(DateTime64(time * intExp10(scale) + fraction));
+        /// The range of Excel dates is wider than the range of `DateTime64` with a high scale.
+        Int64 scaled = 0;
+        if (common::mulOverflow(time, static_cast<Int64>(intExp10(scale)), scaled) || common::addOverflow(scaled, fraction, scaled))
+            throw Exception(
+                ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED,
+                "The Excel date {} is out of the range of the `DateTime64({})` type", serial, scale);
+        assert_cast<ColumnDateTime64 &>(column).getData().push_back(DateTime64(scaled));
         return true;
     }
     return false;
