@@ -81,11 +81,14 @@ void MultipleFileWriter::startNewFile()
     /// the limit would be ignored for all smaller files.
     FormatSettings file_format_settings = format_settings ? *format_settings : getFormatSettings(context);
     file_format_settings.parquet.row_group_bytes = std::min(file_format_settings.parquet.row_group_bytes, max_data_file_num_bytes);
+    /// `consume` reads the size of the file between the blocks, so the format must write it in this thread: no parallel
+    /// formatting and no squashing thread of the Pretty formats.
+    file_format_settings.pretty.squash_consecutive_ms = 0;
 
     /// The ORC String/FixedString logical-type handling lives in ORCBlockOutputFormat, keyed on
     /// the column mapper, so it covers the compaction/mutation rewrite paths too.
     FormatFilterInfoPtr format_filter_info = std::make_shared<FormatFilterInfo>(nullptr, context, column_mapper, nullptr, nullptr);
-    output_format = FormatFactory::instance().getOutputFormatParallelIfPossible(
+    output_format = FormatFactory::instance().getOutputFormat(
         write_format, *buffer, *sample_block, context, file_format_settings, format_filter_info);
 }
 
