@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <deque>
+#include <functional>
 #include <limits>
 #include <vector>
 
@@ -619,4 +620,128 @@ TEST(MultipartUploadMemory, FirstBufferKeepsTheAllocationOfALargerInitialBuffer)
         EXPECT_EQ(getMultipartUploadMemoryCeilingForWrittenBytes(memory, 1000), DBMS_DEFAULT_BUFFER_SIZE);
         EXPECT_EQ(getMultipartUploadMemoryCeilingForWrittenBytes(memory, DBMS_DEFAULT_BUFFER_SIZE), DBMS_DEFAULT_BUFFER_SIZE + part_size);
     }
+}
+
+namespace
+{
+
+/// The exponential-policy branch of getMultipartUploadMemoryCeilingForWrittenBytes replayed buffer by buffer
+/// over the whole output, for output that fills at least the policy's first part: the reference the
+/// arithmetic shortcut of a converged policy must agree with.
+UInt64 replayEveryBuffer(const MultipartUploadMemory & memory, UInt64 bytes_written)
+{
+    auto policy = BufferAllocationPolicy::create(memory.allocation_settings);
+    policy->nextBuffer();
+    UInt64 buffer_size = policy->getBufferSize();
+    chassert(bytes_written >= buffer_size);
+
+    std::vector<UInt64> earlier;
+    UInt64 buffer_memory = std::max<UInt64>(buffer_size, memory.initial_buffer_size);
+    UInt64 peak = 0;
+    UInt64 written = 0;
+    while (true)
+    {
+        UInt64 live = buffer_memory;
+        for (auto size : earlier)
+            live += size;
+        peak = std::max(peak, live);
+
+        const UInt64 written_into_buffer = std::min(buffer_size, bytes_written - written);
+        written += written_into_buffer;
+        if (written_into_buffer < buffer_size)
+            break;
+
+        earlier.push_back(buffer_memory);
+        std::sort(earlier.begin(), earlier.end(), std::greater<>());
+        if (earlier.size() > memory.max_inflight_parts)
+            earlier.pop_back();
+
+        policy->nextBuffer();
+        buffer_size = policy->getBufferSize();
+        buffer_memory = buffer_size;
+    }
+    return std::min(memory.ceiling, peak);
+}
+
+}
+
+TEST(MultipartUploadMemory, ConvergedExponentialPolicyMatchesTheFullReplay)
+{
+    constexpr UInt64 kib = 1024;
+
+    struct Case
+    {
+        UInt64 max_single_size;
+        UInt64 min_size;
+        UInt64 max_size;
+        UInt64 multiply_factor;
+        UInt64 multiply_parts_count_threshold;
+    };
+    for (const auto & c : std::vector<Case>{
+             {64 * kib, 64 * kib, 64 * kib, 2, 500},
+             {2048 * kib, 64 * kib, 64 * kib, 2, 500},
+             {64 * kib, 128 * kib, 64 * kib, 1, 3},
+             {64 * kib, 16 * kib, 1024 * kib, 2, 3},
+             {512 * kib, 16 * kib, 1000 * kib, 3, 1},
+             {16 * kib, 16 * kib, 4096 * kib, 1, 2}})
+    {
+        BufferAllocationPolicy::Settings settings;
+        settings.max_single_size = c.max_single_size;
+        settings.min_size = c.min_size;
+        settings.max_size = c.max_size;
+        settings.multiply_factor = c.multiply_factor;
+        settings.multiply_parts_count_threshold = c.multiply_parts_count_threshold;
+
+        for (const UInt64 inflight : {UInt64{1}, UInt64{2}, UInt64{5}, UInt64{20}})
+        {
+            for (const UInt64 initial_buffer_size : {UInt64{1}, 256 * kib, UInt64{DBMS_DEFAULT_BUFFER_SIZE}})
+            {
+                auto memory = getMultipartUploadMemory(settings, inflight);
+                memory.initial_buffer_size = initial_buffer_size;
+                const UInt64 first_part = firstPolicyBufferSize(settings);
+                for (UInt64 bytes_written = first_part; bytes_written < first_part + 40 * 1024 * kib; bytes_written += 37 * kib + 1)
+                {
+                    EXPECT_EQ(getMultipartUploadMemoryCeilingForWrittenBytes(memory, bytes_written), replayEveryBuffer(memory, bytes_written))
+                        << "first_part = " << first_part << ", inflight = " << inflight
+                        << ", initial_buffer_size = " << initial_buffer_size << ", bytes_written = " << bytes_written;
+                }
+            }
+        }
+    }
+}
+
+TEST(MultipartUploadMemory, ConvergedExponentialPolicyDoesNotReplayEveryBuffer)
+{
+    /// Azure accepts min_size = max_size = max_single_size = 64 KiB without a strict part size. Pricing
+    /// terabytes of output written through such parts must not replay one buffer per 64 KiB: the estimate
+    /// runs under `currently_processing_in_background_mutex`. Each of these calls replays a handful of
+    /// buffers; a full replay would take seconds per call and time the test out.
+    constexpr UInt64 part_size = 64 * 1024;
+
+    BufferAllocationPolicy::Settings settings;
+    settings.max_single_size = part_size;
+    settings.min_size = part_size;
+    settings.max_size = part_size;
+
+    const auto memory = getMultipartUploadMemory(settings, 20);
+    for (int i = 0; i < 1000; ++i)
+    {
+        EXPECT_EQ(getMultipartUploadMemoryCeilingForWrittenBytes(memory, 1ULL << 40), memory.ceiling);
+        EXPECT_EQ(getMultipartUploadMemoryCeilingForWrittenBytes(memory, 10ULL << 40), memory.ceiling);
+    }
+
+    /// The same for a replay that never reaches the ceiling: the ceiling keeps the retained excess of an
+    /// initial buffer over the 64-KiB first part, but the 128-KiB first buffer here is smaller than the later
+    /// 256-KiB ones and drops out of the largest earlier buffers, so the replay cannot stop at the ceiling
+    /// and must finish arithmetically.
+    BufferAllocationPolicy::Settings growing;
+    growing.max_single_size = part_size;
+    growing.min_size = part_size;
+    growing.max_size = 4 * part_size;
+    growing.multiply_parts_count_threshold = 1;
+    auto growing_memory = getMultipartUploadMemory(growing, 20);
+    growing_memory.initial_buffer_size = 2 * part_size;
+    EXPECT_GT(growing_memory.ceiling, 21 * 4 * part_size);
+    for (int i = 0; i < 1000; ++i)
+        EXPECT_EQ(getMultipartUploadMemoryCeilingForWrittenBytes(growing_memory, 10ULL << 40), 21 * 4 * part_size);
 }

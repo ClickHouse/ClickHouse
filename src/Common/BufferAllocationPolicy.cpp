@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <queue>
 #include <vector>
@@ -215,6 +216,19 @@ namespace
 /// the last byte (`MergeTreeWriterStream::preFinalize` finalizes the hashing wrappers, and
 /// `HashingWriteBuffer::nextImpl` calls `next` of the file buffer), and `nextImpl` grows a full buffer even
 /// when nothing more is written into it.
+/// Whether `ExpBufferAllocationPolicy` hands out `buffer_size` for every buffer after the current one, the
+/// `buffer_number`-th: from the second buffer on, the policy only multiplies the current size and clamps it to
+/// `max_size`, so a size this step leaves unchanged stays forever.
+bool isBufferSizeStable(const BufferAllocationPolicy::Settings & settings, size_t buffer_number, UInt64 buffer_size)
+{
+    if (buffer_number < 2)
+        return false;
+    UInt64 next_size = 0;
+    if (__builtin_mul_overflow(buffer_size, static_cast<UInt64>(settings.multiply_factor), &next_size))
+        next_size = std::numeric_limits<UInt64>::max();
+    return std::min<UInt64>(next_size, settings.max_size) == buffer_size;
+}
+
 bool replayFirstBufferGrowth(UInt64 initial_buffer_size, UInt64 first_policy_buffer_size, UInt64 bytes_written, UInt64 & first_buffer_size)
 {
     /// An empty initial buffer cannot be doubled; start the replay from one byte, which still reaches the
@@ -314,6 +328,39 @@ UInt64 getMultipartUploadMemoryCeilingForWrittenBytes(const MultipartUploadMemor
             if (__builtin_add_overflow(earlier_memory, buffer_memory, &live_memory))
                 return MultipartUploadMemory::UNLIMITED;
             peak_live_memory = std::max(peak_live_memory, live_memory);
+
+            /// Nothing that follows can raise the result past the ceiling it is clamped to.
+            if (peak_live_memory >= memory.ceiling)
+                return memory.ceiling;
+
+            /// Once the policy hands out the same buffer size forever, the rest of the replay is arithmetic:
+            /// every further full buffer either takes a free slot among the earlier ones or replaces the
+            /// smallest earlier buffer if it is larger, and the live memory never decreases. Finish it
+            /// without replaying every buffer, so that an estimate for a merge writing terabytes through
+            /// small upload parts takes as long as one for a small merge (the estimate runs under
+            /// `currently_processing_in_background_mutex`).
+            if (isBufferSizeStable(settings, policy->getBufferNumber(), buffer_size))
+            {
+                /// The current buffer and every full one after it are detached, except for the last one.
+                UInt64 detached_buffers = (bytes_written - written) / buffer_size;
+                const UInt64 free_slots = max_earlier_buffers - largest_earlier_buffers.size();
+                const UInt64 filling_free_slots = std::min(detached_buffers, free_slots);
+                UInt64 added_memory = 0;
+                if (__builtin_mul_overflow(filling_free_slots, buffer_size, &added_memory)
+                    || __builtin_add_overflow(earlier_memory, added_memory, &earlier_memory))
+                    return MultipartUploadMemory::UNLIMITED;
+                detached_buffers -= filling_free_slots;
+                while (detached_buffers > 0 && !largest_earlier_buffers.empty() && largest_earlier_buffers.top() < buffer_size)
+                {
+                    earlier_memory += buffer_size - largest_earlier_buffers.top();
+                    largest_earlier_buffers.pop();
+                    --detached_buffers;
+                }
+                if (__builtin_add_overflow(earlier_memory, buffer_size, &live_memory))
+                    return MultipartUploadMemory::UNLIMITED;
+                peak_live_memory = std::max(peak_live_memory, live_memory);
+                break;
+            }
 
             const UInt64 written_into_buffer = std::min(buffer_size, bytes_written - written);
             written += written_into_buffer;
