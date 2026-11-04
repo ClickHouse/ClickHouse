@@ -19,6 +19,19 @@ SELECT NULL IN (), NULL NOT IN ();
 SELECT 84 IN (SELECT * FROM VALUES('value Nullable(Int64)', (63), (NULL)));
 SELECT 84 NOT IN (SELECT * FROM VALUES('value Nullable(Int64)', (63), (NULL)));
 SELECT 63 IN (SELECT * FROM VALUES('value Nullable(Int64)', (63), (NULL)));
+SET allow_experimental_variant_type = 1;
+SELECT
+    toUInt64(84) IN (SELECT value FROM VALUES('value Variant(UInt64, String)', (NULL))),
+    toUInt64(84) NOT IN (SELECT value FROM VALUES('value Variant(UInt64, String)', (NULL)));
+SELECT
+    toUInt64(84) IN (SELECT value FROM VALUES('value Dynamic', (NULL))),
+    toUInt64(84) NOT IN (SELECT value FROM VALUES('value Dynamic', (NULL)));
+SELECT
+    CAST(toUInt64(84), 'Variant(UInt64, String)') IN materialize([CAST(NULL, 'Variant(UInt64, String)')]),
+    CAST(toUInt64(84), 'Variant(UInt64, String)') NOT IN materialize([CAST(NULL, 'Variant(UInt64, String)')]);
+SELECT
+    CAST(toUInt64(84), 'Dynamic') IN materialize([CAST(NULL, 'Dynamic')]),
+    CAST(toUInt64(84), 'Dynamic') NOT IN materialize([CAST(NULL, 'Dynamic')]);
 
 WITH CAST(NULL AS LowCardinality(Nullable(Int64))) AS value
 SELECT value IN (1), value NOT IN (1);

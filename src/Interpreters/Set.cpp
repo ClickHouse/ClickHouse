@@ -936,7 +936,7 @@ bool Set::hasNull() const
     if (data_types.size() != 1)
         return false;
 
-    if (!data_types[0]->isNullable())
+    if (!canContainNull(*data_types[0]))
         return false;
 
     auto col = data_types[0]->createColumn();

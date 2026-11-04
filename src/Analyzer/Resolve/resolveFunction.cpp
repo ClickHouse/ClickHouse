@@ -1231,14 +1231,20 @@ ProjectionNames QueryAnalyzer::buildHasExpression(
 
         QueryTreeNodePtr no_match_result = std::make_shared<ConstantNode>(Field{0u});
         const auto * array_type = typeid_cast<const DataTypeArray *>(removeNullable(array_arg->getResultType()).get());
-        if (array_type && isNullableOrLowCardinalityNullable(array_type->getNestedType()))
+        if (array_type && canContainNull(*array_type->getNestedType()))
         {
-            auto has_null_fn = std::make_shared<FunctionNode>("has");
-            has_null_fn->getArguments().getNodes() = {
-                array_arg->clone(),
-                std::make_shared<ConstantNode>(
-                    Field{}, makeNullableOrLowCardinalityNullableSafe(array_type->getNestedType()))};
-            QueryTreeNodePtr has_null = has_null_fn;
+            const String lambda_argument_name = "__in_array_element";
+            auto is_null_fn = std::make_shared<FunctionNode>("isNull");
+            is_null_fn->getArguments().getNodes().push_back(
+                std::make_shared<IdentifierNode>(Identifier{lambda_argument_name}));
+
+            auto lambda_arguments = std::make_shared<LambdaArgumentsNode>(Names{lambda_argument_name});
+            auto is_null_lambda = std::make_shared<LambdaNode>(
+                std::move(lambda_arguments), std::move(is_null_fn), false /*is_operator*/);
+
+            auto has_null_fn = std::make_shared<FunctionNode>("arrayExists");
+            has_null_fn->getArguments().getNodes() = {std::move(is_null_lambda), array_arg->clone()};
+            QueryTreeNodePtr has_null = std::move(has_null_fn);
             resolveFunction(has_null, scope);
 
             auto null_result = std::make_shared<ConstantNode>(
@@ -1256,7 +1262,7 @@ ProjectionNames QueryAnalyzer::buildHasExpression(
         QueryTreeNodePtr result_node = match_if_present;
         resolveFunction(result_node, scope);
 
-        if (isNullableOrLowCardinalityNullable(element_arg->getResultType()))
+        if (canContainNull(*element_arg->getResultType()))
         {
             auto is_empty_fn = std::make_shared<FunctionNode>("empty");
             is_empty_fn->getArguments().getNodes().push_back(array_arg->clone());
@@ -1413,7 +1419,7 @@ QueryTreeNodePtr QueryAnalyzer::convertTupleToArray(
 
     bool rhs_has_null = std::any_of(array_elements.begin(), array_elements.end(),
         [](const auto & arg)
-        { return isNullConstant(arg) || isNullableOrLowCardinalityNullable(arg->getResultType()); });
+        { return isNullConstant(arg) || canContainNull(*arg->getResultType()); });
 
     DataTypePtr common_type = getLeastSupertypeForInArrayElements(array_elements, in_first_argument, left_is_null);
     /// If no supertype exists, keep the old behaviour for non-NULL left-hand side
@@ -3050,7 +3056,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         if (!is_number_comparison && !tryGetLeastSupertype(DataTypes{left_type, right_type}))
                         {
                             DataTypePtr cast_elements_to = left_type;
-                            if (isNullableOrLowCardinalityNullable(right_type) || !compare_nulls)
+                            if (canContainNull(*right_type) || !compare_nulls)
                                 cast_elements_to = makeNullableOrLowCardinalityNullableSafe(cast_elements_to);
                             right_argument = castNodeToType(right_argument, cast_elements_to, scope);
                         }
