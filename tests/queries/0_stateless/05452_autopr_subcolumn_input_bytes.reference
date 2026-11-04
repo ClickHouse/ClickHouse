@@ -1,0 +1,27 @@
+05452_compact	1
+05452_nested	1
+05452_nested_shared_stream	1
+05452_renamed	1
+05452_wide	1
+05452_wide_single_stream	1
+05452_wide_single_stream_full_and_size	1
+1
+1
+1
+05452_unknown_streams_dynamic_1	1
+05452_unknown_streams_dynamic_2	1
+05452_unknown_streams_quantized_1	1
+05452_unknown_streams_quantized_2	1
+05452_unknown_streams_quantized_codebook_1	1
+05452_unknown_streams_quantized_codebook_2	1
+05452_unknown_streams_sparse_1	1
+05452_unknown_streams_sparse_2	1
+compact	1
+lowcardinality	1
+wide	1
+05452_skew_compact_prewhere	1
+05452_skew_compact_primary_key	1
+05452_skew_wide_prewhere	1
+05452_skew_wide_primary_key	1
+05452_one_block_compact	1
+05452_one_block_wide	1

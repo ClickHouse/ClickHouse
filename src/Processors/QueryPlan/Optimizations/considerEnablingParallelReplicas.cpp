@@ -35,6 +35,7 @@
 #include <optional>
 #include <set>
 #include <tuple>
+#include <unordered_map>
 #include <unordered_set>
 
 using namespace DB::QueryPlanOptimizations;
@@ -598,26 +599,23 @@ std::vector<ReadFromMergeTree *> collectReadingSteps(QueryPlan::Node & root)
     return reading_steps;
 }
 
-/// A read's identity for pairing: which table it reads, and which of that table's occurrences it is.
-struct ReadIdentity
-{
-    const MergeTreeData * table;
-    String table_expression_name;
-
-    bool operator<(const ReadIdentity & other) const
-    {
-        return std::tie(table, table_expression_name) < std::tie(other.table, other.table_expression_name);
-    }
-};
-
 /// Hand every read in the parallel replicas plan the analysis the single-node plan already produced for
 /// the same read. Without this only the matched read gets an analysis and the rest scan everything - on
 /// TPC-H q03, 1045 marks against 614.
 ///
 /// An analysis carries the mark ranges selected for one read's predicates, so a pairing that lines the
-/// two plans up wrongly does not merely misestimate - it reads the wrong rows. The reads are therefore
-/// paired by the name the analyzer gave the table expression each one reads, which is stable across the
-/// two plans and distinguishes two reads of one table.
+/// two plans up wrongly does not merely misestimate - it reads the wrong rows. Reads are therefore paired
+/// by the table they read, and a table read once by each plan leaves only one possible pairing. Only a
+/// table read more than once needs telling its occurrences apart, and for that the name the analyzer gave
+/// the table expression is used.
+///
+/// That name cannot carry the pairing on its own: the two plans do not agree on it. The replicas plan's
+/// local plan is built from the tree `buildQueryTreeForShard` produces, which re-runs
+/// `createUniqueAliasesIfNecessary` and renumbers `__tableN` from 1 over a tree `inlineAliasColumns` and
+/// `rewriteJoinToGlobalJoin` have already rewritten. Where that rewrite changes the traversal order the
+/// numbers land on different tables than the initiator gave them - a three-table join with the big table
+/// written last is enough - and every read pairs wrongly or not at all. Position cannot be trusted
+/// either: the two plans are optimized differently and may order a join's sides differently.
 ///
 /// Returns whether every read was paired. A read left unpaired keeps no analysis of its own either - the
 /// replicas plan is built with `query_plan_optimize_primary_key` off - so it would read every mark, which
@@ -638,64 +636,90 @@ bool transplantAnalysisToAllReads(QueryPlan::Node & single_node_root, QueryPlan:
         return false;
     }
 
-    /// Identify a read by the table expression it reads rather than by where it sits in the plan. The
-    /// analyzer names every table expression (`__table1`, `__table2`, ...) while resolving the query, and
-    /// both plans are built from the same query, so the names agree across them and tell two reads of one
-    /// table apart - which the table alone cannot do, and which a self-join needs. Position cannot be
-    /// trusted for this: the two plans are optimized differently and may order a join's sides differently.
-    auto identify = [](const ReadFromMergeTree * read) -> std::optional<ReadIdentity>
+    /// The name the analyzer gave the table expression, used only to tell apart several reads of one
+    /// table. Empty when there is no table expression to take it from.
+    auto table_expression_name = [](const ReadFromMergeTree * read) -> String
     {
         const auto & table_expression = read->getQueryInfo().table_expression;
-        if (!table_expression || table_expression->getAlias().empty())
-            return {};
-        return ReadIdentity{&read->getMergeTreeData(), table_expression->getAlias()};
+        return table_expression ? table_expression->getAlias() : String{};
     };
 
-    std::map<ReadIdentity, ReadFromMergeTree *> single_node_by_identity;
+    std::map<const MergeTreeData *, std::vector<ReadFromMergeTree *>> single_node_reads_by_table;
     for (auto * read : single_node_reads)
+        single_node_reads_by_table[&read->getMergeTreeData()].push_back(read);
+
+    std::map<const MergeTreeData *, std::vector<ReadFromMergeTree *>> replicas_reads_by_table;
+    for (auto * read : replicas_reads)
+        replicas_reads_by_table[&read->getMergeTreeData()].push_back(read);
+
+    std::unordered_map<const ReadFromMergeTree *, ReadFromMergeTree *> paired_by_replicas_read;
+    for (const auto & [table, reads_of_table] : replicas_reads_by_table)
     {
-        auto identity = identify(read);
-        if (!identity || !single_node_by_identity.emplace(*identity, read).second)
+        auto single_node_it = single_node_reads_by_table.find(table);
+        /// The plans have equally many reads in total, so one table read a different number of times in
+        /// each of them means another table is too: they do not read the same things.
+        if (single_node_it == single_node_reads_by_table.end() || single_node_it->second.size() != reads_of_table.size())
         {
             LOG_TRACE(
                 getLogger("AutoParallelReplicas"),
-                "Read of {} in the single-node plan has no name to pair it by, or shares one with another read; "
+                "The replicas plan reads {} {} time(s) and the single-node plan {} time(s); "
                 "not transplanting index analysis. Skipping optimization",
-                read->getStorageID().getNameForLogs());
+                reads_of_table.front()->getStorageID().getNameForLogs(),
+                reads_of_table.size(),
+                single_node_it == single_node_reads_by_table.end() ? 0 : single_node_it->second.size());
             return false;
+        }
+
+        auto & single_node_reads_of_table = single_node_it->second;
+        /// Read once by each plan: only one pairing exists, and it needs no name.
+        if (reads_of_table.size() == 1)
+        {
+            paired_by_replicas_read.emplace(reads_of_table.front(), single_node_reads_of_table.front());
+            continue;
+        }
+
+        /// Several reads of one table. Tell them apart by the analyzer's name, which the two plans agree
+        /// on only when the shard rewrite preserved the numbering - pair one to one or not at all.
+        std::map<String, ReadFromMergeTree *> single_node_by_name;
+        for (auto * read : single_node_reads_of_table)
+        {
+            auto name = table_expression_name(read);
+            if (name.empty() || !single_node_by_name.emplace(name, read).second)
+            {
+                LOG_TRACE(
+                    getLogger("AutoParallelReplicas"),
+                    "The single-node plan reads {} {} times and read '{}' has no name to tell it apart, or shares "
+                    "one with another read; not transplanting index analysis. Skipping optimization",
+                    read->getStorageID().getNameForLogs(),
+                    single_node_reads_of_table.size(),
+                    name);
+                return false;
+            }
+        }
+
+        std::unordered_set<const ReadFromMergeTree *> claimed;
+        for (auto * read : reads_of_table)
+        {
+            auto name = table_expression_name(read);
+            auto it = single_node_by_name.find(name);
+            if (it == single_node_by_name.end() || !claimed.insert(it->second).second)
+            {
+                LOG_TRACE(
+                    getLogger("AutoParallelReplicas"),
+                    "The replicas plan reads {} {} times and read '{}' has no counterpart of that name left in the "
+                    "single-node plan; not transplanting index analysis. Skipping optimization",
+                    read->getStorageID().getNameForLogs(),
+                    reads_of_table.size(),
+                    name);
+                return false;
+            }
+            paired_by_replicas_read.emplace(read, it->second);
         }
     }
 
     std::vector<ReadFromMergeTree *> paired_single_node_reads(replicas_reads.size());
-    std::unordered_set<const ReadFromMergeTree *> claimed_single_node_reads;
     for (size_t i = 0; i < replicas_reads.size(); ++i)
-    {
-        auto identity = identify(replicas_reads[i]);
-        auto it = identity ? single_node_by_identity.find(*identity) : single_node_by_identity.end();
-        if (it == single_node_by_identity.end())
-        {
-            LOG_TRACE(
-                getLogger("AutoParallelReplicas"),
-                "Read of {} in the replicas plan has no counterpart of the same name in the single-node plan; "
-                "not transplanting index analysis. Skipping optimization",
-                replicas_reads[i]->getStorageID().getNameForLogs());
-            return false;
-        }
-        /// The names are unique on the single-node side because the map rejected a repeat, but two reads
-        /// of the candidate can still look up the same one - and the plans have equally many reads, so a
-        /// read claimed twice means another was not claimed at all, i.e. the plans do not read the same
-        /// things. Pair one to one or not at all.
-        if (!claimed_single_node_reads.insert(it->second).second)
-        {
-            LOG_TRACE(
-                getLogger("AutoParallelReplicas"),
-                "Two reads of {} in the replicas plan share one counterpart in the single-node plan; "
-                "not transplanting index analysis. Skipping optimization",
-                replicas_reads[i]->getStorageID().getNameForLogs());
-            return false;
-        }
-        paired_single_node_reads[i] = it->second;
-    }
+        paired_single_node_reads[i] = paired_by_replicas_read.at(replicas_reads[i]);
 
     for (size_t i = 0; i < replicas_reads.size(); ++i)
     {
@@ -1276,13 +1300,16 @@ static bool decideAtBoundary(
             /// Dividing `output_bytes` by `num_replicas` assumes the replicas partition the output
             /// between them, as they do for `Aggregating` or a plain `Sorting`. A boundary that keeps a
             /// bounded top-N per replica instead makes every replica ship the whole `output_bytes`:
-            /// `LIMIT n`, `LIMIT -n` (the last `n` rows) and a `Sorting` carrying a limit. Dividing
-            /// those underestimates the parallel-replicas plan by a factor of `num_replicas`.
+            /// `LIMIT n`, `LIMIT -n` (the last `n` rows), a `Sorting` carrying a limit and an
+            /// `Aggregating` with the `GROUP BY` top-K heap. Dividing those underestimates the
+            /// parallel-replicas plan by a factor of `num_replicas`.
             const auto * boundary_step = single_replica_plan_boundary->step.get();
             const auto * boundary_sorting_step = typeid_cast<const SortingStep *>(boundary_step);
+            const auto * boundary_aggregating_step = typeid_cast<const AggregatingStep *>(boundary_step);
             const bool output_is_replicated = typeid_cast<const LimitStep *>(boundary_step)
                 || typeid_cast<const NegativeLimitStep *>(boundary_step)
-                || (boundary_sorting_step && boundary_sorting_step->getLimit() != 0);
+                || (boundary_sorting_step && boundary_sorting_step->getLimit() != 0)
+                || (boundary_aggregating_step && boundary_aggregating_step->getParams().top_k.has_value());
             const size_t output_replicas_divisor = output_is_replicated ? 1 : num_replicas;
             const auto local_plan_cost_estimation = stats->input_bytes / std::min<size_t>(max_threads, effective_max_reading_threads);
             const auto replicas_plan_cost_estimation
@@ -1492,7 +1519,6 @@ static bool decideAtBoundary(
         if (reads->lazy_to_instrument)
             reads->lazy_to_instrument->setRuntimeDataflowStatisticsCacheUpdater(updater);
 
-        auto duplicated_reads_updater = std::make_shared<RuntimeDataflowStatisticsCacheUpdater>(statistics_block, /*duplicated=*/ true);
         for (auto * read_step : collectReadSteps(*single_replica_plan_boundary))
         {
             /// The coordinated read and its own lazy half are set up above, and their bytes are `input_bytes`.
@@ -1501,7 +1527,9 @@ static bool decideAtBoundary(
                 continue;
             if (!read_step->supportsDataflowStatisticsCollection())
                 continue;
-            read_step->setRuntimeDataflowStatisticsCacheUpdater(duplicated_reads_updater);
+            /// An updater for each read: the blocks are counted once by the updater, and two reads of a table load them twice.
+            read_step->setRuntimeDataflowStatisticsCacheUpdater(
+                std::make_shared<RuntimeDataflowStatisticsCacheUpdater>(statistics_block, /*duplicated=*/ true));
         }
     }
     return false;
