@@ -5275,7 +5275,18 @@ def test_oversized_lease_object_is_reclaimed(started_cluster):
             "node1 became writable again without a new leadership acquisition"
         )
 
-        node1.query(f"INSERT INTO {table} VALUES (7)")
+        # The regression is a table that stays read-only forever. With a 5-second session timeout
+        # a slow build (MSan) can miss a renewal right after the reclaim and briefly demote the
+        # node again, so a transient `TABLE_IS_READ_ONLY` is retried within a bounded deadline.
+        deadline = time.monotonic() + 60
+        while True:
+            try:
+                node1.query(f"INSERT INTO {table} VALUES (7)")
+                break
+            except Exception as e:
+                if "TABLE_IS_READ_ONLY" not in str(e) or time.monotonic() >= deadline:
+                    raise
+                time.sleep(1)
         assert node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip() == "1"
 
         # The corrupt object is gone: what is at the lease path is a lease again.
