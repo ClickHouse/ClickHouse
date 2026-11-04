@@ -76,6 +76,25 @@ public:
     /// Use the columns cache, see `Parquet::ColumnsCacheOptions`. Must be called before the first read.
     void setColumnsCacheOptions(std::shared_ptr<const Parquet::ColumnsCacheOptions> options) { read_options.columns_cache = std::move(options); }
 
+    struct TopKSortColumnBound
+    {
+        /// See `Parquet::Reader::getTopKSortColumnBound`, over the row groups left after the query filter.
+        std::optional<Field> value;
+        bool no_rows_to_read = false;
+        size_t metadata_bytes = 0;
+    };
+
+    /// Reads only the footer of the file, through `metadata_cache` under the key its reader uses.
+    static TopKSortColumnBound getTopKSortColumnBound(
+        ReadBuffer & buf,
+        const Block & header,
+        const FormatSettings & format_settings,
+        const FormatFilterInfoPtr & format_filter_info,
+        size_t min_bytes_for_seek,
+        ParquetMetadataCache & metadata_cache,
+        const String & path,
+        const String & etag);
+
 private:
     Chunk read() override;
 
