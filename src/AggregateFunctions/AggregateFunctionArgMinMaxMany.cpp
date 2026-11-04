@@ -192,10 +192,21 @@ class AggregateFunctionArgMinMaxMany final
             return valGreater(new_val, root_val);
     }
 
+    /// Every `args` column of a state owns its data. `ColumnAggregateFunction::insertFrom` into an
+    /// empty column would otherwise keep a reference to the whole source column (and its arena), so
+    /// an `AggregateFunction` `arg`, also nested in a `Tuple`/`Array`, would retain every input block
+    /// a selected row came from, including all the discarded states. `ensureOwnership` propagates
+    /// through composite columns and forces aggregate states to be copied instead.
+    static MutableColumnPtr createOwningColumn(MutableColumnPtr column)
+    {
+        column->ensureOwnership();
+        return column;
+    }
+
     IColumn & argsColumn(Data & data) const
     {
         if (!data.args)
-            data.args = data_type_arg->createColumn();
+            data.args = createOwningColumn(data_type_arg->createColumn());
         return *data.args;
     }
 
@@ -207,7 +218,7 @@ class AggregateFunctionArgMinMaxMany final
         if (data.args->size() <= 2 * max_elems)
             return;
 
-        auto compacted = data.args->cloneEmpty();
+        auto compacted = createOwningColumn(data.args->cloneEmpty());
         compacted->reserve(data.entries.size());
         for (auto & entry : data.entries)
         {
@@ -336,7 +347,7 @@ public:
         auto & data = this->data(place);
         data.entries.resize(size);
         data.is_heap = false;
-        data.args = data_type_arg->createColumn();
+        data.args = createOwningColumn(data_type_arg->createColumn());
         data.args->reserve(size);
 
         for (auto & entry : data.entries)

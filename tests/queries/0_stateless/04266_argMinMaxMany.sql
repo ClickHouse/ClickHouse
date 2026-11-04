@@ -208,3 +208,15 @@ SELECT argMaxManyMerge(1)(s) FROM
     UNION ALL
     SELECT argMaxManyState(1)(a, v) AS s FROM (SELECT 'one' AS a, tuple(CAST(1, 'Nullable(Int64)')) AS v)
 );
+
+-- An AggregateFunction arg (also nested in a Tuple) is copied into the state with its own
+-- ownership: the state keeps only the selected states, not the whole source columns, also after
+-- compaction (increasing val makes every row accepted, so the args column is compacted many times).
+SELECT key, arrayMap(s -> finalizeAggregation(s), argMaxMany(2)(st, number))
+FROM (SELECT number, number % 3 AS key, initializeAggregation('sumState', number) AS st FROM numbers(30000))
+GROUP BY key ORDER BY key SETTINGS max_block_size = 1000;
+SELECT key, arrayMap(t -> (t.1, finalizeAggregation(t.2)), argMinMany(2)(tuple(number, st), number))
+FROM (SELECT number, number % 3 AS key, initializeAggregation('groupArrayState', number) AS st FROM numbers(30000))
+GROUP BY key ORDER BY key SETTINGS max_block_size = 1000;
+SELECT finalizeAggregation(arrayJoin(argMaxManyMerge(1)(s)))
+FROM (SELECT argMaxManyState(1)(initializeAggregation('maxState', number), number) AS s FROM numbers(10000) GROUP BY number % 7);
