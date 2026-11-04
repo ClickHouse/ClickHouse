@@ -20,10 +20,8 @@ namespace DB::ErrorCodes
 namespace DB::GPU
 {
 
-namespace
-{
-
-void launch(const GPUExpression & expression, const GPUExpressionInputs & inputs, size_t rows, void * out, cuda::stream_ref stream)
+void evaluateGPUExpression(
+    const GPUExpression & expression, const GPUExpressionInputs & inputs, size_t rows, void * result, cuda::stream_ref stream)
 {
     if (rows == 0)
         return;
@@ -46,27 +44,13 @@ void launch(const GPUExpression & expression, const GPUExpressionInputs & inputs
         columns[i] = inputs.columns[i].data;
         arguments[i] = &columns[i];
     }
-    arguments[inputs.count] = &out;
+    arguments[inputs.count] = &result;
     arguments[inputs.count + 1] = &num_rows;
 
     const dim3 blocks(static_cast<unsigned>((rows + expression.block_size - 1) / expression.block_size));
     checkCuda(
         cudaLaunchKernel(reinterpret_cast<const void *>(expression.kernel), blocks, dim3(expression.block_size), arguments, 0, stream.get()),
         ("Cannot run kernel " + std::string(expression.name)).c_str());
-}
-
-}
-
-void evaluatePredicateToBitmask(
-    const GPUExpression & expression, const GPUExpressionInputs & inputs, size_t rows, uint32_t * mask, cuda::stream_ref stream)
-{
-    launch(expression, inputs, rows, mask, stream);
-}
-
-void evaluateExpressionToFloat64(
-    const GPUExpression & expression, const GPUExpressionInputs & inputs, size_t rows, double * out, cuda::stream_ref stream)
-{
-    launch(expression, inputs, rows, out, stream);
 }
 
 }
