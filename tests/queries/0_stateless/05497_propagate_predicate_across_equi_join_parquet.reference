@@ -7,6 +7,7 @@ s3 result	1
 url	2
 url result	1
 05497_file	1
+05497_file_in	1
 05497_s3	1
 05497_url	1
 csv	1
@@ -17,6 +18,7 @@ nan result	500
 default	1
 default result	500
 hive	1
+hive only	1
 UInt8	2
 Date	2
 Date32	2
@@ -28,4 +30,16 @@ DateTime	1
 UUID	1
 FixedString	1
 Nullable(Float32)	1
+UInt8 result	1000
+Date result	1000
+Date32 result	1000
+Decimal result	1000
+Nullable(Int64) result	1000
+LowCardinality(Nullable(Int64)) result	1000
+05497_t_date	1
+05497_t_date32	1
+05497_t_dec	1
+05497_t_lcni64	1
+05497_t_ni64	1
+05497_t_u8	1
 iceberg	1
