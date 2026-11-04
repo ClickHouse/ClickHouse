@@ -166,9 +166,8 @@ IProcessor::Status BufferChunksTransform::prepare()
         }
     }
 
-    /// Stop reading ahead while the merge has taken at most our first chunk and the rows produced
-    /// by the inputs before us and by us already cover the limit. Only while the output port is not
-    /// ready: taking our chunk or asking for data reschedules us.
+    /// Pausing is safe only while the output port is not ready: the merge taking our chunk
+    /// or asking for data reschedules us.
     if (read_ahead_tracker && first_row_published && !output.canPush() && chunks_taken_by_merge <= 1
         && read_ahead_tracker->rowsProducedBefore(input_index, inputs_before) + num_processed_rows >= limit)
     {
