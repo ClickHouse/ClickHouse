@@ -2,27 +2,41 @@
 slug: /clickstack/observability/faq
 title: 'ClickHouse Observability FAQ'
 sidebarTitle: 'FAQ'
-description: 'Frequently asked questions about fully managed ClickHouse Observability data collection, alerting, dashboards, and metrics discovery.'
+description: 'Frequently asked questions about fully managed and self-managed ClickHouse Observability, data collection, alerting, dashboards, and metrics discovery.'
 doc_type: 'guide'
 keywords: ['ClickHouse Observability', 'FAQ', 'alerting', 'dashboards', 'drill-downs', 'metrics discovery']
 ---
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
+This page explains the fully managed and self-managed modes of ClickHouse Observability and answers common questions about data collection, alerting, dashboards, and metrics discovery.
+
+## Deployment and data collection {#data-collection}
+
+<Accordion title="What is the difference between fully managed and self-managed ClickHouse Observability?">
+**Fully managed**
+
 <BetaBadge label="Beta offering" />
 
-This page answers frequently asked questions about ClickHouse Observability capabilities, including data collection, alerting, dashboards and drill-downs, and metrics discovery.
+[Fully managed ClickHouse Observability](/clickstack/observability/overview) is the recommended starting point. Send telemetry to the managed OpenTelemetry endpoint; ClickHouse handles the ingestion collector, schemas, infrastructure, and scaling.
 
-## Data collection {#data-collection}
+**Self-managed**
+
+[Self-managed ClickHouse Observability](/clickstack/self-configured/overview) gives you control over ingestion, schemas, retention, and database configuration. ClickHouse Cloud hosts ClickHouse and the ClickStack UI, while you operate the ingestion collector and manage database tuning and capacity. Self-managed is not a beta offering.
+</Accordion>
 
 <Accordion title="Do I need to run an OpenTelemetry collector?">
-ClickHouse Observability provides a managed OpenTelemetry ingestion collector. Applications and telemetry generators can send data directly to its endpoint.
+**Fully managed:** You do not need to deploy an ingestion collector. Applications and telemetry generators can send data directly to the managed OpenTelemetry endpoint.
 
 You may still need a collector in your own environment to read log files or gather host and Kubernetes metrics, then forward that data to the managed collector. See [Local logs and metrics](/clickstack/observability/example-datasets/local-data) and [Monitoring Kubernetes](/clickstack/observability/example-datasets/kubernetes) for examples.
+
+**Self-managed:** You need a running ingestion collector connected to your ClickHouse Cloud service. Applications and agents send telemetry to this collector, which writes it to ClickHouse. We recommend the ClickStack distribution. See [Ingesting with OpenTelemetry](/clickstack/observability/ingesting-data/opentelemetry#installing-otel-collector-managed-self-configured) for connection instructions and the [deployment guide](/clickstack/self-configured/deployment/managed#start-a-collector-existing) to start a collector.
 </Accordion>
 
 <Accordion title="Where do I find my telemetry endpoint and API key?">
-In your ClickHouse Observability service, open **Team Settings → Managed Telemetry** and copy the OTLP endpoint and API key. Use these connection details when configuring your SDK, collector, or telemetry generator.
+**Fully managed:** In your ClickHouse Observability service, open **Team Settings → Data → Managed Telemetry** and copy the OTLP endpoint and ingestion API key. Use these details when configuring your SDK, forwarding collector, or telemetry generator.
+
+**Self-managed:** Use the OTLP endpoint of the collector you operate and any authentication token configured on its receiver. For the ClickStack collector, if you enable `OTLP_AUTH_TOKEN`, send that token in the `authorization` header. These are separate from the ClickHouse Cloud database endpoint and credentials that the collector uses to write data. See [Ingesting with OpenTelemetry](/clickstack/observability/ingesting-data/opentelemetry#sending-data-to-collector-managed-self-configured) for examples.
 
 Follow the endpoint format required by the tool you are using. The [sample data and demos](/clickstack/observability/example-datasets) include configuration examples for each tool.
 </Accordion>
