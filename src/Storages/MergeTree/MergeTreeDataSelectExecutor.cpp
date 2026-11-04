@@ -1651,6 +1651,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         {
             context->getQueryContext()->addUsedDataSkippingIndex(parts_with_ranges.front().data_part->storage.getStorageID(), index->index.name);
         };
+
         for (auto [applied, index_and_condition] : std::views::zip(skip_index_applied, skip_indexes.useful_indices))
             if (applied)
                 add_used_index(index_and_condition.index);
