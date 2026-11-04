@@ -209,16 +209,25 @@ def test_values_expression_requires_grant():
     """Expressions in `VALUES` are evaluated by the legacy `ExpressionAnalyzer`, which handles
     `IN` and `indexHint` itself before the function is looked up, and whose `TreeRewriter`
     renames `in` to `nullIn` under `transform_null_in`. Sent over HTTP: `clickhouse-client`
-    would evaluate `VALUES` itself, without the server configuration."""
+    would evaluate `VALUES` itself, without the server configuration. Without `async_insert`:
+    an asynchronous insert evaluates `VALUES` on another path, which adds calls of its own.
+    """
     instance.query("CREATE TABLE t (x UInt8) ENGINE = Memory")
     instance.query("CREATE USER A")
     instance.query("GRANT INSERT ON t TO A")
 
     for query, functions in [
-        ("INSERT INTO t VALUES (1 IN [materialize(1)])", ["in"]),
-        ("INSERT INTO t VALUES (indexHint(1))", ["indexHint"]),
         (
-            "INSERT INTO t SETTINGS transform_null_in = 1 VALUES (1 IN [materialize(1)])",
+            "INSERT INTO t SETTINGS async_insert = 0 VALUES (1 IN [materialize(1)])",
+            ["in"],
+        ),
+        (
+            "INSERT INTO t SETTINGS async_insert = 0 VALUES (indexHint(1))",
+            ["indexHint"],
+        ),
+        (
+            "INSERT INTO t SETTINGS async_insert = 0, transform_null_in = 1 "
+            "VALUES (1 IN [materialize(1)])",
             ["nullIn", "in"],
         ),
     ]:
@@ -244,7 +253,7 @@ def test_values_expression_with_sql_udf_requires_grant():
     instance.query("GRANT FUNCTION ON nullIn TO A")
 
     query = (
-        "INSERT INTO t SETTINGS transform_null_in = 1 "
+        "INSERT INTO t SETTINGS async_insert = 0, transform_null_in = 1 "
         "VALUES (arrayMap(x -> wrap_in(x), [1]))"
     )
     assert "Not enough privileges" in instance.http_query_and_get_error(
@@ -267,8 +276,8 @@ def test_lambda_parameters_are_not_a_call():
     instance.query("GRANT INSERT ON t TO A")
 
     instance.http_query(
-        "INSERT INTO t SETTINGS input_format_values_interpret_expressions = 0 "
-        "VALUES (inc(1))",
+        "INSERT INTO t SETTINGS async_insert = 0, "
+        "input_format_values_interpret_expressions = 0 VALUES (inc(1))",
         method="POST",
         user="A",
     )
