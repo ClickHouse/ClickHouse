@@ -9,6 +9,8 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/Exception.h>
+#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ThreadStatus.h>
 
 #include <algorithm>
 
@@ -63,6 +65,13 @@ void shapeRows(Rows & rows, ResultShape shape)
         rows.erase(std::unique(rows.begin(), rows.end()), rows.end());
 }
 
+/// A sub-query runs on a thread group of its own context: code that takes the query context from the thread
+/// (e.g. distributed plan stage tasks) must see the oracle's settings, not the fuzzed query's.
+ThreadGroupSwitcher switchToThreadGroupOf(const ContextPtr & oracle_context)
+{
+    return ThreadGroupSwitcher(ThreadGroup::createForQuery(oracle_context), ThreadName::AST_FUZZER, /*allow_existing_group=*/ true);
+}
+
 }
 
 ContextMutablePtr OracleExec::makeOracleContext(const ContextMutablePtr & base_context)
@@ -94,6 +103,7 @@ std::optional<Rows> OracleExec::executeRows(
     oracle_context->setDefaultFormat("TabSeparated");
     for (const auto & [name, value] : overlay)
         oracle_context->setSetting(name, value);
+    auto thread_group_switcher = switchToThreadGroupOf(oracle_context);
 
     /// Use the ReadBuffer/WriteBuffer executeQuery API — crash-safe because ClickHouse handles all
     /// column serialization within the pipeline internally, writing formatted text to the buffer.
@@ -156,6 +166,7 @@ std::optional<Field> OracleExec::executeScalar(
     auto oracle_context = makeOracleContext(base_context);
     for (const auto & [name, value] : overlay)
         oracle_context->setSetting(name, value);
+    auto thread_group_switcher = switchToThreadGroupOf(oracle_context);
 
     auto result = executeQuery(sql, oracle_context, QueryFlags{.internal = true});
 
@@ -189,6 +200,7 @@ bool OracleExec::executeStatement(
         auto oracle_context = makeOracleContext(base_context);
         for (const auto & [name, value] : overlay)
             oracle_context->setSetting(name, value);
+        auto thread_group_switcher = switchToThreadGroupOf(oracle_context);
 
         ReadBufferFromString istr(sql);
         WriteBufferFromOwnString ostr;
