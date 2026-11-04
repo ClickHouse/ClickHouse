@@ -1,0 +1,10 @@
+no row fails: [1,2,3,10] 
+a row fails: Code 395: Value passed to 'throwIf' function is non-zero
+negative zero fails: Code 395: Value passed to 'throwIf' function is non-zero
+NaN fails: Code 395: Value passed to 'throwIf' function is non-zero
+zero does not fail: [1] 
+NULL rows do not fail: [2,10] 
+NULL rows do not fail, non-zero value: [] 
+guarded in if: [1,2,3,0] 
+in PREWHERE: Code 395: Value passed to 'throwIf' function is non-zero
+compiled	1

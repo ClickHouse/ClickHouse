@@ -20,6 +20,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int DECIMAL_OVERFLOW;
+    extern const int FUNCTION_THROW_IF_VALUE_IS_NON_ZERO;
     extern const int ILLEGAL_DIVISION;
     extern const int LOGICAL_ERROR;
 }
@@ -68,6 +69,10 @@ void throwJITError(const JITError & error, const JITErrorSite & site, const std:
                     siteParameter(site, 0), toString(operand), siteParameter(site, 1)),
                 function_description);
         }
+        case JITErrorCode::ThrowIfNonZero:
+            throwWithDescription(
+                Exception(ErrorCodes::FUNCTION_THROW_IF_VALUE_IS_NON_ZERO, "Value passed to '{}' function is non-zero", siteParameter(site, 0)),
+                function_description);
         case JITErrorCode::None:
             break;
     }

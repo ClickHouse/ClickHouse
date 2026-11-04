@@ -11,6 +11,13 @@
 #include <Interpreters/Context.h>
 #include <base/TypeLists.h>
 
+#include "config.h"
+
+#if USE_EMBEDDED_COMPILER
+#    include <Interpreters/JIT/JITError.h>
+#    include <llvm/IR/IRBuilder.h>
+#endif
+
 namespace DB
 {
 namespace Setting
@@ -102,6 +109,29 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
+
+#if USE_EMBEDDED_COMPILER
+    /// One argument of a native number: a row fails where its bytes are not all zero (`memoryIsZero`: `-0.0` and NaN fail
+    /// too), with the error `execute` throws without a custom message. NULL rows never fail (`IFunction::compile` masks
+    /// them, as the interpreter does not execute the function on them, see `canBeExecutedOnDefaultArguments`).
+    bool isCompilableImpl(const DataTypes & types, const DataTypePtr & result_type) const override
+    {
+        return types.size() == 1 && (WhichDataType(types[0]).isNativeInteger() || isNativeFloat(types[0]))
+            && WhichDataType(result_type).isUInt8();
+    }
+
+    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr &) const override
+    {
+        auto & b = static_cast<llvm::IRBuilder<> &>(builder);
+        llvm::Value * bits = arguments[0].value;
+        if (bits->getType()->isFloatingPointTy())
+            bits = b.CreateBitCast(bits, b.getIntNTy(static_cast<unsigned>(bits->getType()->getPrimitiveSizeInBits().getFixedValue())));
+        JITErrorValue error;
+        addJITError(b, error, b.CreateICmpNE(bits, llvm::ConstantInt::get(bits->getType(), 0)), JITErrorCode::ThrowIfNonZero);
+        reportJITError(b, error, {getName()});
+        return b.getInt8(0);
+    }
+#endif
 
     /// With a LowCardinality argument the default implementation would run throwIf on the whole
     /// dictionary, which always contains the reserved default value even if no row references it.

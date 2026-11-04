@@ -29,6 +29,8 @@ enum class JITErrorCode : uint16_t
     /// Lifting a `Decimal` to a larger scale overflows. The parameters of its site are the family name of the result and
     /// the multiplier, and its operand is the value being lifted.
     DecimalConvertOverflow,
+    /// `throwIf` got a value that is not zero. The parameter of its site is the name of the function.
+    ThrowIfNonZero,
 };
 
 /** The error of the function being compiled on the current row, built with `addJITError`: whether the row fails (an `i1`
