@@ -37,14 +37,14 @@ CREATE TABLE t_pr_merge_top_k (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k
 INSERT INTO t_pr_merge_top_k SELECT number % 1000, number FROM numbers(100000);
 
 -- The late top-K optimization pass must not annotate the initiator's merge step,
--- because the top-K heap runs only during partial aggregation. The local partial
--- aggregation gets the heap; the fragment shipped to the replicas does not.
-SELECT replaceRegexpOne(explain, '^[│└├─ ]+', '') FROM
+-- because the top-K heap runs only during partial aggregation. Without the
+-- descriptions, the only partial aggregation shown is the local one.
+SELECT replaceRegexpOne(explain, '^[│└├─ ]+', '') AS line FROM
 (
-    EXPLAIN actions = 1
+    EXPLAIN description = 0, actions = 1
     SELECT k, count() FROM t_pr_merge_top_k GROUP BY k ORDER BY k LIMIT 5
 )
-WHERE explain LIKE '%MergingAggregated%' OR explain LIKE '%Aggregating%' OR explain LIKE '%Top-K%';
+WHERE line IN ('MergingAggregated', 'Aggregating') OR line LIKE 'Top-K%';
 
 SELECT k, count() FROM t_pr_merge_top_k GROUP BY k ORDER BY k LIMIT 5;
 
