@@ -28,6 +28,10 @@ public:
     size_t allocatedBytes() const override;
 
 private:
+    /// Must be called after every change of the collector state: the cardinality can be estimated
+    /// before the statistics are complete (e.g. during a merge that rebuilds them).
+    void invalidateCachedCardinality() { cached_cardinality_plus_one = 0; }
+
     std::unique_ptr<Arena> arena;
     AggregateFunctionPtr collector;
     AggregateDataPtr data;
