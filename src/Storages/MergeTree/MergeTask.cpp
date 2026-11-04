@@ -2317,7 +2317,7 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
         ctx->prepared_pipeline.emplace(createPipelineForReadingOneColumn(column_name));
 
     /// From `ctx` to `ctx`, never through a local: if anything below throws, a pipeline with prefetches in flight
-    /// must be destroyed with the task, after `execute` publishes the cancellation.
+    /// must be destroyed with the task, after its runner cancels it.
     ctx->build_statistics_transforms = std::move(ctx->prepared_pipeline->build_statistics_transforms);
     ctx->column_parts_pipeline = std::move(ctx->prepared_pipeline->pipeline);
     MergeTreeIndices indexes_to_recalc = std::move(ctx->prepared_pipeline->indexes_to_recalc);
