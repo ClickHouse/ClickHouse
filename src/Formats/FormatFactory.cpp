@@ -295,14 +295,8 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
         size_t budget = static_cast<size_t>(static_cast<double>(memory_limit) * 0.9);
         format_settings.parquet.memory_high_watermark = std::min<size_t>(
             format_settings.parquet.memory_high_watermark, budget / 8);
-        /// The reader does not hold one block of `prefer_block_bytes` but a whole pipeline of them:
-        /// prefetched, decoded and ready-to-deliver row subgroups across the row groups it reads in
-        /// parallel, and downstream (for an `INSERT`) the blocks the squashing stage has accumulated
-        /// so far. Measured on a 105-column table, the default 16 MiB preferred block size costs about
-        /// 290 MiB of live reader memory, so the cap has to be a much smaller fraction of the budget
-        /// than the block size alone suggests.
         format_settings.parquet.prefer_block_bytes = std::min<size_t>(
-            format_settings.parquet.prefer_block_bytes, budget / 256);
+            format_settings.parquet.prefer_block_bytes, budget / 64);
     }
     format_settings.pretty.charset = settings[Setting::output_format_pretty_grid_charset].toString() == "ASCII" ? FormatSettings::Pretty::Charset::ASCII : FormatSettings::Pretty::Charset::UTF8;
     format_settings.pretty.color = settings[Setting::output_format_pretty_color].valueOr(2);
@@ -383,6 +377,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.arrow.output_unsupported_types = getArrowUnsupportedTypesMode(settings);
     format_settings.arrow.output_record_batch_rows = settings[Setting::output_format_arrow_record_batch_size];
     format_settings.arrow.output_record_batch_bytes = settings[Setting::output_format_arrow_record_batch_size_bytes];
+    format_settings.arrow.output_max_record_batch_bytes = settings[Setting::output_format_arrow_max_record_batch_size_bytes];
     format_settings.orc.allow_missing_columns = settings[Setting::input_format_orc_allow_missing_columns];
     format_settings.orc.row_batch_size = settings[Setting::input_format_orc_row_batch_size];
     format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference = settings[Setting::input_format_orc_skip_columns_with_unsupported_types_in_schema_inference];
@@ -688,6 +683,8 @@ InputFormatPtr FormatFactory::getInputImpl(
     else
     {
         format = creators.input_creator(buf, format_sample, row_input_format_params, format_settings);
+        if (format_filter_info && format_filter_info->column_mapper)
+            format->setColumnMapper(format_filter_info->column_mapper);
     }
 
     if (owned_buf)
