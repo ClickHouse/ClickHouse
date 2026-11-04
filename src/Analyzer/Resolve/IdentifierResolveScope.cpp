@@ -2,6 +2,7 @@
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
 
 #include <Analyzer/ColumnNode.h>
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
@@ -287,8 +288,9 @@ namespace
 {
 
 /** A hash of the parts of the node that `IQueryTreeNode::isEqual` compares, so that equal nodes have equal hashes.
-  * Unlike the tree hash, it does not include the types, and it does not go into the columns and the subqueries,
-  * so it is computed in the time proportional to the size of the expression, regardless of the sources of its columns.
+  * Unlike the tree hash, it does not include the types of the columns and the functions, and it does not go into the columns
+  * and the subqueries, so it is computed in the time proportional to the size of the expression, regardless of the sources
+  * of its columns.
   */
 UInt64 getNullableGroupByKeyShallowHash(const IQueryTreeNode & root)
 {
@@ -322,9 +324,15 @@ UInt64 getNullableGroupByKeyShallowHash(const IQueryTreeNode & root)
             hash_state.update(function_name.size());
             hash_state.update(function_name);
         }
+        else if (const auto * constant_node = node->as<ConstantNode>())
+        {
+            /// The same as `ConstantNode::updateTreeHashImpl`, so `max(t.k + 2)` is distinguished from `GROUP BY t.k + 1`.
+            constant_node->getColumn()->updateHashFast(hash_state);
+            constant_node->getResultType()->updateHash(hash_state);
+            continue;
+        }
         else if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION
-            || node_type == QueryTreeNodeType::TABLE || node_type == QueryTreeNodeType::TABLE_FUNCTION
-            || node_type == QueryTreeNodeType::CONSTANT)
+            || node_type == QueryTreeNodeType::TABLE || node_type == QueryTreeNodeType::TABLE_FUNCTION)
         {
             continue;
         }

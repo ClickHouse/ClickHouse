@@ -8514,13 +8514,28 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
                 return std::ranges::any_of(matcher_node.getColumnsIdentifiers(), [&](const Identifier & identifier)
                 {
-                    if (identifier.isCompound())
-                        return true;
-
                     for (const auto * current_scope = &scope; current_scope; current_scope = current_scope->parent_scope)
                     {
-                        if (current_scope->aliases.alias_name_to_expression_node.contains(identifier.getFullName())
-                            || current_scope->global_with_aliases.alias_name_to_expression_node.contains(identifier.getFullName()))
+                        if (current_scope->aliases.alias_name_to_expression_node.contains(identifier.front())
+                            || current_scope->global_with_aliases.alias_name_to_expression_node.contains(identifier.front()))
+                            return true;
+                    }
+
+                    if (!identifier.isCompound())
+                        return false;
+
+                    /** A compound identifier that does not start with an alias refers to a column, possibly qualified by
+                      * the names of a database and a table expression, as `t.c` or `db.t.c`, and the name of the column
+                      * is the rest of the identifier after the qualifier, as `c`, or `n.c` for a subcolumn.
+                      * With ARRAY JOIN it may refer to an element of an array joined under an alias.
+                      */
+                    if (has_array_join)
+                        return true;
+
+                    const auto & parts = identifier.getParts();
+                    for (size_t i = 0; i < parts.size(); ++i)
+                    {
+                        if (Identifier(std::vector<String>(parts.begin() + i, parts.end())).getFullName() == column_name)
                             return true;
                     }
 
@@ -8533,11 +8548,22 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
             std::unordered_set<const IQueryTreeNode *> dropped_matchers;
             /// The nodes with the flag whether they are inside a lambda.
             std::vector<std::pair<const IQueryTreeNode *, bool>> nodes_to_process{{query_node_typed.getProjectionNode().get(), false}};
-            /// The matchers of a named window are expanded together with the projection expressions that refer to it,
-            /// as `w` in `count() OVER w ... WINDOW w AS (PARTITION BY * REPLACE (1 AS c))`. All the named windows are
-            /// processed, including those that are not referred to, as an over-approximation.
-            if (query_node_typed.hasWindow())
-                nodes_to_process.emplace_back(query_node_typed.getWindowNode().get(), false);
+            /** The matchers of a named window are expanded together with the projection expressions that refer to it,
+              * as `w` in `count() OVER w ... WINDOW w AS (PARTITION BY * REPLACE (1 AS c))`, including the windows it inherits
+              * from, as `w` in `WINDOW w AS (...), w2 AS (w ORDER BY ...)`. The windows that are not referred to are not expanded
+              * with the projection, so their `REPLACE` transformers do not rewrite `GROUP BY`.
+              */
+            std::unordered_set<const IQueryTreeNode *> processed_named_windows;
+            auto process_named_window = [&](const String & window_name)
+            {
+                if (window_name.empty())
+                    return;
+
+                auto window_it = scope.window_name_to_window_node.find(window_name);
+                if (window_it != scope.window_name_to_window_node.end() && processed_named_windows.insert(window_it->second.get()).second)
+                    nodes_to_process.emplace_back(window_it->second.get(), false);
+            };
+
             while (!nodes_to_process.empty())
             {
                 const auto [node, is_inside_lambda] = nodes_to_process.back();
@@ -8547,8 +8573,17 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                 if (dropped_matchers.contains(node))
                     continue;
 
+                if (const auto * window_node = node->as<WindowNode>())
+                    process_named_window(window_node->getParentWindowName());
+
                 if (const auto * function_node = node->as<FunctionNode>())
                 {
+                    if (function_node->hasWindow())
+                    {
+                        if (const auto * window_identifier = function_node->getWindowNode()->as<IdentifierNode>())
+                            process_named_window(window_identifier->getIdentifier().getFullName());
+                    }
+
                     if (functionDropsUnqualifiedMatcherArgument(function_node->getFunctionName()) && !isLambdaCall(*function_node, scope))
                     {
                         for (const auto & argument : function_node->getArguments().getNodes())
