@@ -389,37 +389,47 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     /// The suppression flag records only the latest decision: a join re-visited because of it (see
     /// `optimizeTree`) that now gets its filter must not be visited again, or every later re-run would
     /// plant one more `BuildRuntimeFilterStep` per key with a fresh rendezvous key.
+    ///
+    /// A list without either sorted-merge variant keeps the runtime-filter policy it had before these
+    /// algorithms existed: e.g. `partial_merge,hash` still gets its filter, and the filter removes `partial_merge`.
     join_step->resetRuntimeFilterSuppressedForSortedMerge();
-    for (auto algorithm : join_algorithms)
+    const bool has_sorted_merge_algorithm = std::ranges::any_of(
+        join_algorithms,
+        [](JoinAlgorithm algorithm)
+        { return algorithm == JoinAlgorithm::SORTED_MERGE || algorithm == JoinAlgorithm::PARALLEL_SORTED_MERGE; });
+    if (has_sorted_merge_algorithm)
     {
-        if (supportsRuntimeFilterAndIsRunnable(algorithm, *join_step, can_run_grace_hash))
-            break;
-
-        /// `partial_merge` is a merge algorithm too. If it is supported and precedes
-        /// `sorted_merge` / `parallel_sorted_merge`, it wins algorithm selection and cannot use a
-        /// runtime filter.
-        if (algorithm == JoinAlgorithm::PARTIAL_MERGE
-            && join_step->isPartialMergeJoinSupported())
-            return false;
-
-        /// Unlike the sorted-merge algorithms below, these algorithms may be selected without
-        /// exploiting the input order. If one precedes `sorted_merge` / `parallel_sorted_merge`, it
-        /// wins algorithm selection, so the runtime filter must remain enabled for that join.
-        if (algorithm == JoinAlgorithm::DEFAULT
-            || algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE
-            || algorithm == JoinAlgorithm::AUTO
-            || algorithm == JoinAlgorithm::FULL_SORTING_MERGE
-            || algorithm == JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE)
-            break;
-
-        if ((algorithm == JoinAlgorithm::SORTED_MERGE || algorithm == JoinAlgorithm::PARALLEL_SORTED_MERGE)
-            && optimization_settings.read_in_order
-            && join_step->inputsCanBeReadInJoinKeyOrder(node))
+        for (auto algorithm : join_algorithms)
         {
-            /// `applyParallelReplicas` may later invalidate the eligibility; the pass is then re-run
-            /// for the joins skipped here, so the fall-through algorithm gets its filter back.
-            join_step->setRuntimeFilterSuppressedForSortedMerge();
-            return false;
+            if (supportsRuntimeFilterAndIsRunnable(algorithm, *join_step, can_run_grace_hash))
+                break;
+
+            /// `partial_merge` is a merge algorithm too. If it is supported and precedes
+            /// `sorted_merge` / `parallel_sorted_merge`, it wins algorithm selection and cannot use a
+            /// runtime filter.
+            if (algorithm == JoinAlgorithm::PARTIAL_MERGE
+                && join_step->isPartialMergeJoinSupported())
+                return false;
+
+            /// Unlike the sorted-merge algorithms below, these algorithms may be selected without
+            /// exploiting the input order. If one precedes `sorted_merge` / `parallel_sorted_merge`, it
+            /// wins algorithm selection, so the runtime filter must remain enabled for that join.
+            if (algorithm == JoinAlgorithm::DEFAULT
+                || algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE
+                || algorithm == JoinAlgorithm::AUTO
+                || algorithm == JoinAlgorithm::FULL_SORTING_MERGE
+                || algorithm == JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE)
+                break;
+
+            if ((algorithm == JoinAlgorithm::SORTED_MERGE || algorithm == JoinAlgorithm::PARALLEL_SORTED_MERGE)
+                && optimization_settings.read_in_order
+                && join_step->inputsCanBeReadInJoinKeyOrder(node))
+            {
+                /// `applyParallelReplicas` may later invalidate the eligibility; the pass is then re-run
+                /// for the joins skipped here, so the fall-through algorithm gets its filter back.
+                join_step->setRuntimeFilterSuppressedForSortedMerge();
+                return false;
+            }
         }
     }
 
