@@ -1,0 +1,27 @@
+--- a name relative to the current database does not take precedence over an alias
+2
+2
+2
+2
+2
+2
+2
+2
+--- a compound right argument of IN that may be a subcolumn stays an expression in a mutation
+1
+1
+--- a source database does not make an unrelated qualified name an expression
+1
+--- a column default of ALTER ON CLUSTER is bound before it is shipped
+1	42
+--- an unqualified name of an access statement gets the current database once
+GRANT SELECT ON `db_x.y`.t TO u_05498_db
+db_x.y	t
+--- a compound first argument of joinGet that may be an expression is not bound to a table
+one
+one
+--- the same name without such an alias is the table
+other
+--- COM_INIT_DB checks the access for the database a hierarchical name denotes
+db.ns
+ACCESS_DENIED
