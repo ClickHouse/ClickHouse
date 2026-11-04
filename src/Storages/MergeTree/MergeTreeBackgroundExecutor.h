@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <mutex>
 #include <condition_variable>
 #include <variant>
@@ -365,6 +366,11 @@ public:
     /// `pending` are cancelled and destroyed.
     void wait();
 
+    /// Wait through the last execution step and its cleanup, without cancelling tasks.
+    /// Foreground operations must have finished, and producers must remain paused until inspection ends.
+    /// Must not be called by an executor worker or while holding resources needed by its tasks.
+    void waitUntilIdle(std::chrono::steady_clock::time_point deadline) TSA_NO_THREAD_SAFETY_ANALYSIS;
+
     /// Update scheduling policy for pending tasks. It does nothing if `new_policy` is the same or unknown.
     void updateSchedulingPolicy(std::string_view new_policy)
     {
@@ -401,6 +407,7 @@ private:
     mutable std::mutex mutex;
     std::condition_variable has_tasks TSA_GUARDED_BY(mutex);
     std::condition_variable task_slots_available;
+    size_t idle_threads TSA_GUARDED_BY(mutex) = 0;
     bool shutdown TSA_GUARDED_BY(mutex) = false;
     std::unique_ptr<ThreadPool> pool;
     LoggerPtr log = getLogger("MergeTreeBackgroundExecutor");

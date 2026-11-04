@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <functional>
 #include <map>
@@ -80,7 +81,27 @@ public:
 
     std::vector<TaskInfoSnapshot> getTasks();
 
+    /// Stop dispatching callbacks and delayed tasks without cancelling or removing queued work.
+    /// The caller must not run on this pool or hold resources needed by its callbacks.
+    /// All running callbacks, including their temporary state, finish before construction returns.
+    class PauseGuard : private boost::noncopyable
+    {
+    public:
+        PauseGuard(BackgroundSchedulePool & pool_, std::chrono::steady_clock::time_point deadline);
+        ~PauseGuard();
+
+        /// Recheck after external producers finish enqueuing work; they may have spawned workers.
+        void waitUntilIdle(std::chrono::steady_clock::time_point deadline);
+
+    private:
+        BackgroundSchedulePool & pool;
+    };
+
 private:
+    void pauseExecution(std::chrono::steady_clock::time_point deadline);
+    void waitUntilPaused(std::chrono::steady_clock::time_point deadline);
+    void resumeExecution();
+
     using TaskInfoPtr = std::shared_ptr<TaskInfo>;
     /// These pool queues are deliberately kept as plain `std` containers, NOT the throwing
     /// `-WithMemoryTracking` aliases. Tasks are scheduled/cancelled (i.e. these containers are
@@ -136,6 +157,8 @@ private:
     Threads threads TSA_GUARDED_BY(tasks_mutex);
     /// Number of worker threads currently parked in tasks_cond_var.wait, available to take work without spawning.
     size_t idle_threads TSA_GUARDED_BY(tasks_mutex) = 0;
+    /// Updated while holding both queue mutexes; either mutex suffices for reading.
+    size_t pause_count = 0;
     /// Maximum number of worker threads this pool may grow to. Threads are spawned lazily up to this cap.
     size_t max_size TSA_GUARDED_BY(tasks_mutex);
     /// Tasks from tasks_groups are removed while executing, hold list of running tasks separately, for better introspection via system.background_schedule_pool.
@@ -149,6 +172,7 @@ private:
     std::unique_ptr<ThreadFromGlobalPoolNoTracingContextPropagation> delayed_thread;
     /// Tasks ordered by scheduled time.
     DelayedTasks delayed_tasks TSA_GUARDED_BY(delayed_tasks_mutex);
+    bool delayed_thread_parked TSA_GUARDED_BY(delayed_tasks_mutex) = false;
 
     CurrentMetrics::Metric tasks_metric;
     CurrentMetrics::Increment size_metric;
