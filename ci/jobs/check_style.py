@@ -1,4 +1,5 @@
 import argparse
+import html
 import json
 import math
 import multiprocessing
@@ -860,7 +861,7 @@ def check_no_failpoints_in_performance_tests(files):
         seen.add(test_case)
         try:
             with open(test_case, "r", encoding="utf-8", errors="replace") as f:
-                file_content = f.read()
+                file_content = html.unescape(f.read())
         except Exception as e:
             errors.append(f"Error checking {test_case}: {e}")
             continue
@@ -870,9 +871,7 @@ def check_no_failpoints_in_performance_tests(files):
             if os.path.isfile(path):
                 pending.append(path)
 
-        match = FAILPOINT_STATEMENT_RE.search(file_content) or re.search(
-            r"<failpoint\b", file_content, re.IGNORECASE
-        )
+        match = re.search(r"\bfailpoints?\b", file_content, re.IGNORECASE)
         if not match:
             continue
 
