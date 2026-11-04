@@ -5,45 +5,45 @@
 #include <mutex>
 #include <unordered_map>
 #include <base/types.h>
-#include <Common/ProcessorMemoryStats.h>
 
 namespace DB
 {
-class ISpillable;
+class IProcessor;
+struct ProcessorMemoryStats
+{
+    // The total spillable memory in the processor
+    Int64 spillable_memory_bytes = 0;
+    // To avoid this processor cause OOM, at least `reserved_memory_bytes` should be reserved.
+    // including auxiliary memory to finish the spilling process.
+    Int64 need_reserved_memory_bytes = 0;
+};
 
 // MemorySpillScheduler is bound to one thread group. It's a query-scoped manager to trigger processor spill.
 class MemorySpillScheduler
 {
 public:
+    using Ptr = std::shared_ptr<MemorySpillScheduler>;
+
     explicit MemorySpillScheduler(bool enable_ = false) : enable(enable_) {}
     ~MemorySpillScheduler() = default;
 
-    size_t checkAndSpill(ISpillable * processor);
-    void registerSpillable(ISpillable * spillable);
-    void unregisterSpillable(ISpillable * spillable);
+    void checkAndSpill(IProcessor * processor);
+    void remove(IProcessor * processor);
 
 private:
     bool enable = true;
     std::mutex mutex;
     // Only trace the spillable processors, this map is not expected to be too large.
-    struct Entry
-    {
-        ProcessorMemoryStats stats;
-        size_t owners = 0;
-    };
-    std::unordered_map<ISpillable *, Entry> processor_stats;
-    ISpillable * top_processor = nullptr;
+    std::unordered_map<IProcessor *, ProcessorMemoryStats> processor_stats;
+    IProcessor * top_processor = nullptr;
     Int64 max_reserved_memory_bytes = 0;
     std::atomic<Int64> hard_limit = -1;
 
     // When there is no need to spill, return nullptr. otherwise return top_processor;
-    ISpillable * selectSpilledProcessor(ISpillable * current_processor, const ProcessorMemoryStats & mem_stats);
+    IProcessor * selectSpilledProcessor(IProcessor * current_processor, const ProcessorMemoryStats & mem_stats);
 
     void updateTopProcessor();
 
     Int64 getHardLimit();
 };
-
-using MemorySpillSchedulerPtr = std::shared_ptr<MemorySpillScheduler>;
-
 }

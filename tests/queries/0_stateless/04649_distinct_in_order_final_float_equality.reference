@@ -1,6 +1,0 @@
--- hash DISTINCT keeps binary identity: all four rows survive
-4	[0,9221120237041090561,9221120237041090562,9223372036854775808]
--- a Float column keeps the sorted variant out of the plan: both distincts are hash ones
-['DistinctTransform','DistinctTransform']
--- the in-order plan keeps binary identity too: both zeros and both NaN payloads survive
-4	['nan','nan','zero','zero']

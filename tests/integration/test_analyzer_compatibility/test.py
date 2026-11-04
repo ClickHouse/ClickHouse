@@ -1,3 +1,4 @@
+import time
 import uuid
 
 import pytest
@@ -8,15 +9,16 @@ from helpers.test_tools import TSV
 CLICKHOUSE_MAX_VERSION_WITH_ANALYZER_DISABLED_BY_DEFAULT = "24.2"
 
 cluster = ClickHouseCluster(__file__)
+# Here analyzer is enabled by default
 current = cluster.add_instance(
     "current",
     main_configs=["configs/remote_servers.xml"],
 )
-# An old replica whose profile disables the analyzer.
+# Here analyzer is disabled by default
 backward = cluster.add_instance(
     "backward",
+    use_old_analyzer=True,
     main_configs=["configs/remote_servers.xml"],
-    user_configs=["configs/old_analyzer.xml"],
     image="clickhouse/clickhouse-server",
     tag=CLICKHOUSE_MAX_VERSION_WITH_ANALYZER_DISABLED_BY_DEFAULT,
     with_installed_binary=True,
@@ -32,23 +34,94 @@ def start_cluster():
         cluster.shutdown()
 
 
-def test_new_initiator_enables_analyzer_on_old_replica(start_cluster):
-    # The initiator marks `allow_experimental_analyzer = 1` as changed when it sends a query to a
-    # replica, so an old replica with the analyzer disabled in its profile analyzes the query the
-    # same way as the initiator.
+def test_two_new_versions(start_cluster):
+    # Two new versions (both know about the analyzer)
+    # One have it enabled by default, another one - disabled.
+
+    current.query("SYSTEM FLUSH LOGS")
+    backward.query("SYSTEM FLUSH LOGS")
+
     query_id = str(uuid.uuid4())
     current.query(
-        "SELECT name FROM clusterAllReplicas('test_cluster_mixed', system.tables) SETTINGS serialize_query_plan = 0",
+        "SELECT name FROM clusterAllReplicas('test_cluster_mixed', system.tables) settings serialize_query_plan=0;",
         query_id=query_id,
     )
 
     current.query("SYSTEM FLUSH LOGS")
     backward.query("SYSTEM FLUSH LOGS")
 
+    assert (
+        current.query(
+            """
+SELECT hostname() AS h, getSetting('allow_experimental_analyzer')
+FROM clusterAllReplicas('test_cluster_mixed', system.one)
+ORDER BY h settings serialize_query_plan=0;"""
+        )
+        == TSV([["backward", "true"], ["current", "true"]])
+    )
+
+    # Should be enabled explicitly on the old instance.
     analyzer_enabled = backward.query(
         f"""
-SELECT DISTINCT Settings['allow_experimental_analyzer']
+SELECT
+DISTINCT Settings['allow_experimental_analyzer']
 FROM system.query_log
-WHERE initial_query_id = '{query_id}'"""
+WHERE initial_query_id = '{query_id}';"""
     )
+
+    assert TSV(analyzer_enabled) == TSV("1")
+
+    query_id = str(uuid.uuid4())
+    backward.query(
+        "SELECT name FROM clusterAllReplicas('test_cluster_mixed', system.tables)",
+        query_id=query_id,
+    )
+
+    current.query("SYSTEM FLUSH LOGS")
+    backward.query("SYSTEM FLUSH LOGS")
+
+    # The old version doesn't know about the alias.
+    # For this we will ask about the old experimental name.
+    assert (
+        backward.query(
+            """
+SELECT hostname() AS h, getSetting('allow_experimental_analyzer')
+FROM clusterAllReplicas('test_cluster_mixed', system.one)
+ORDER BY h;"""
+        )
+        == TSV([["backward", "false"], ["current", "false"]])
+    )
+
+    # Should be disabled everywhere
+    analyzer_enabled = backward.query(
+        f"""
+SELECT
+DISTINCT Settings['allow_experimental_analyzer']
+FROM clusterAllReplicas('test_cluster_mixed', system.query_log)
+WHERE initial_query_id = '{query_id}';"""
+    )
+
+    assert TSV(analyzer_enabled) == TSV("0")
+
+    # Only new version knows about the alias
+    # and it will send the old setting `allow_experimental_analyzer`
+    # to the remote server.
+    query_id = str(uuid.uuid4())
+    current.query(
+        "SELECT name FROM clusterAllReplicas('test_cluster_mixed', system.tables) SETTINGS enable_analyzer = 1, serialize_query_plan=0;",
+        query_id=query_id,
+    )
+
+    current.query("SYSTEM FLUSH LOGS")
+    backward.query("SYSTEM FLUSH LOGS")
+
+    # Should be disabled explicitly everywhere.
+    analyzer_enabled = current.query(
+        f"""
+SELECT
+DISTINCT Settings['allow_experimental_analyzer']
+FROM system.query_log
+WHERE initial_query_id = '{query_id}';"""
+    )
+
     assert TSV(analyzer_enabled) == TSV("1")

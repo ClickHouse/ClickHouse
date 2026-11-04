@@ -3,23 +3,27 @@
 #include <Core/callOnTypeIndex.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/castColumn.h>
 
+#include "config.h"
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
 }
 
 
 template <typename Impl>
-class FunctionMathBinaryFloat64 final : public IFunction
+class FunctionMathBinaryFloat64 : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
@@ -34,9 +38,19 @@ private:
 
     size_t getNumberOfArguments() const override { return 2; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(NativeNumber | Decimal | BFloat16, NativeNumber | Decimal | BFloat16) -> Float64";
+        const auto check_argument_type = [this] (const IDataType * arg)
+        {
+            if (!isNativeNumber(arg) && !isDecimal(arg))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+                    arg->getName(), getName());
+        };
+
+        check_argument_type(arguments.front().get());
+        check_argument_type(arguments.back().get());
+
+        return std::make_shared<DataTypeFloat64>();
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -193,8 +207,7 @@ private:
 
             if (const auto left_arg_typed = checkAndGetColumn<Column>(left_arg))
             {
-                res = executeTyped<Type>(left_arg_typed, right_arg, input_rows_count);
-                if (res)
+                if ((res = executeTyped<Type>(left_arg_typed, right_arg, input_rows_count)))
                     return true;
 
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of second argument of function {}",
@@ -202,8 +215,7 @@ private:
             }
             if (const auto left_arg_typed = checkAndGetColumnConst<Column>(left_arg))
             {
-                res = executeTyped<Type>(left_arg_typed, right_arg, input_rows_count);
-                if (res)
+                if ((res = executeTyped<Type>(left_arg_typed, right_arg, input_rows_count)))
                     return true;
 
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of second argument of function {}",

@@ -33,10 +33,7 @@ $CLICKHOUSE_CLIENT -q "
     map_arr Map(UInt8, Array(UInt8)),
     map_map_arr Map(String, Map(String, Array(UInt8))))
   engine = MergeTree
-  order by (id)
-  -- Pin map serialization to 'basic' so Map key order is deterministic regardless
-  -- of randomized map_serialization_version / map_serialization_version_for_zero_level_parts
-  SETTINGS map_serialization_version = 'basic', map_serialization_version_for_zero_level_parts = 'basic'"
+  order by (id)"
 
 
 $CLICKHOUSE_CLIENT \
