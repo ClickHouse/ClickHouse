@@ -3408,6 +3408,8 @@ static BlockIO executeQueryImpl(
         {
             /// If it is a non-internal SELECT, and passive (read) use of the query result cache is enabled, and the cache knows the query,
             /// then set a pipeline with a source populated by the query result cache.
+            bool query_result_cache_miss_pending = false;
+            bool query_result_cache_miss_probed_on_disk = false;
             auto get_result_from_query_result_cache = [&]()
             {
                 if (out_ast && can_use_query_result_cache)
@@ -3419,31 +3421,49 @@ static BlockIO executeQueryImpl(
 
                     QueryResultCache::Key key(out_ast, context->getCurrentDatabase(), *settings_copy, context->getCurrentQueryId(), context->getUserID(), context->getCurrentRoles(), /* is_subquery = */ false);
 
+                    /// The probes do not record the cache profile events yet (`hasCacheEntryForKey(false)`): a query rejected by an
+                    /// exhausted quota over profile events must not consume another `QueryCacheHits` / `QueryCacheMisses` /
+                    /// `QueryCacheOnDisk*`. A hit is recorded below after the quota check, a miss after the quota check of the
+                    /// query that is executed instead (see `query_result_cache_miss_pending`).
                     std::optional<QueryResultCacheReader> reader;
+                    bool probed_on_disk = false;
                     if (read_from_memory_cache)
                     {
                         reader.emplace(query_result_cache->createReader(key));
-                        if (!reader->hasCacheEntryForKey())
+                        if (!reader->hasCacheEntryForKey(/* update_profile_events = */ false))
                             reader.reset();
                     }
                     /// If reads are enabled for both the in-memory and the on-disk cache, the (slower) on-disk cache is consulted
                     /// only on a miss in memory.
                     if (!reader && read_from_on_disk_cache)
                     {
+                        probed_on_disk = true;
                         reader.emplace(query_result_cache_on_disk->createReader(key));
-                        if (!reader->hasCacheEntryForKey())
+                        if (!reader->hasCacheEntryForKey(/* update_profile_events = */ false))
                             reader.reset();
                     }
 
-                    QueryResultCacheReader::recordProbeResult(reader.has_value());
-
-                    if (reader)
+                    if (!reader)
                     {
+                        query_result_cache_miss_pending = true;
+                        query_result_cache_miss_probed_on_disk = probed_on_disk;
+                    }
+                    else
+                    {
+                        /// A query exempt from quotas stays exempt when it is served from the cache (see
+                        /// `QueryResultCache::Key::ignore_quota`).
+                        quota_ignored = reader->entryIgnoresQuota();
+                        if (!quota_ignored)
+                            query_result_cache_hit_quota = context->getQuota();
+                        if (query_result_cache_hit_quota)
+                            query_result_cache_hit_quota->checkExceededProfileEvents(normalized_query_hash);
+
+                        /// Records `QueryCacheOnDiskHits` (for a hit on disk) and `QueryCacheAgeSeconds`.
+                        reader->hasCacheEntryForKey();
+                        QueryResultCacheReader::recordProbeResult(true);
+
                         result_details.query_cache_entry_created_at = reader->entryCreatedAt();
                         result_details.query_cache_entry_expires_at = reader->entryExpiresAt();
-                        /// Must be read before `getSource` moves the source out of the reader.
-                        quota_ignored = reader->entryIgnoresQuota();
-
                         /// The origins are stored with the cached result: analyzing the query again here would evaluate its scalar
                         /// subqueries against the current data. Read them before `getSource` moves the source out of the reader.
                         if (flags.collect_result_column_origins)
@@ -3464,15 +3484,7 @@ static BlockIO executeQueryImpl(
             /// the result in the query result cache.
             ResultColumnOrigins result_column_origins;
 
-            if (get_result_from_query_result_cache())
-            {
-                /// A query exempt from quotas stays exempt when it is served from the cache (see `QueryResultCache::Key::ignore_quota`).
-                if (!quota_ignored)
-                    query_result_cache_hit_quota = context->getQuota();
-                if (query_result_cache_hit_quota)
-                    query_result_cache_hit_quota->checkExceededProfileEvents(normalized_query_hash);
-            }
-            else
+            if (!get_result_from_query_result_cache())
             {
                 /// We need to start the (implicit) transaction before getting the interpreter as this will get links to the latest snapshots
                 if (!context->getCurrentTransaction() && settings[Setting::implicit_transaction] && !(out_ast && out_ast->as<ASTTransactionControl>()))
@@ -3563,6 +3575,11 @@ static BlockIO executeQueryImpl(
                         quota->usedPerNormalizedHash(normalized_query_hash);
                     }
                 }
+
+                /// The miss of the query result cache is recorded only now, after the quota checks: a query rejected by an
+                /// exhausted quota over profile events does not consume another `QueryCacheMisses` / `QueryCacheOnDiskMisses`.
+                if (query_result_cache_miss_pending)
+                    QueryResultCacheReader::recordMiss(query_result_cache_miss_probed_on_disk);
 
                 /// Invoke HTTP 100-Continue callback after quota checks are completed
                 if (http_continue_callback && !internal)

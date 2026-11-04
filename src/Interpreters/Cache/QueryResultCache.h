@@ -315,6 +315,11 @@ public:
     /// backend alone).
     static void recordProbeResult(bool has_entry);
 
+    /// Records a miss of the query result cache whose probes ran with `hasCacheEntryForKey(false)`: the per-backend
+    /// `QueryCacheOnDiskMisses` if the on-disk backend was probed, and `QueryCacheMisses` (via `recordProbeResult`). Lets the
+    /// caller record the probe only after it has decided that the query is allowed to run.
+    static void recordMiss(bool probed_on_disk);
+
     /// Must only be called if hasCacheEntryForKey is true
     std::chrono::time_point<std::chrono::system_clock> entryCreatedAt();
     std::chrono::time_point<std::chrono::system_clock> entryExpiresAt();

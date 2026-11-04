@@ -1155,6 +1155,13 @@ void QueryResultCacheReader::recordProbeResult(bool has_entry)
     ProfileEvents::increment(has_entry ? ProfileEvents::QueryCacheHits : ProfileEvents::QueryCacheMisses);
 }
 
+void QueryResultCacheReader::recordMiss(bool probed_on_disk)
+{
+    if (probed_on_disk)
+        ProfileEvents::increment(ProfileEvents::QueryCacheOnDiskMisses);
+    recordProbeResult(false);
+}
+
 
 std::chrono::time_point<std::chrono::system_clock> QueryResultCacheReader::entryCreatedAt()
 {
