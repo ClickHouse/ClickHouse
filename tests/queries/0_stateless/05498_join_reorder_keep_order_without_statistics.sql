@@ -43,6 +43,18 @@ FORMAT Null SETTINGS log_comment = '05498 q9_dpsize', query_plan_optimize_join_o
 SELECT count() FROM customer JOIN orders ON c_custkey = o_custkey JOIN nation ON c_nationkey = n_nationkey WHERE n_name = 'FRANCE'
 FORMAT Null SETTINGS log_comment = '05498 left_deep';
 
+-- Past the graph size limit, `customer JOIN nation` is optimized on its own and enters the graph above it
+-- as one relation without an estimate, so that graph keeps the written order too.
+SELECT 'graph_boundary', count()
+FROM
+(
+    EXPLAIN keep_logical_steps = 1
+    SELECT count() FROM customer JOIN nation ON c_nationkey = n_nationkey JOIN orders ON o_custkey = c_custkey
+    JOIN nation AS n2 ON n2.n_nationkey = c_nationkey WHERE nation.n_name = 'FRANCE'
+    SETTINGS query_plan_optimize_join_order_limit = 3
+)
+WHERE explain ILIKE '%Join: customer%⋈ nation%⋈ orders%⋈ n2%';
+
 -- With statistics `nation` has a row estimate, and the joins are reordered.
 ALTER TABLE nation MATERIALIZE STATISTICS ALL SETTINGS mutations_sync = 2;
 

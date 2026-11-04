@@ -1764,7 +1764,14 @@ static bool joinGraphHasRelationWithoutStatistics(
 
     return std::ranges::any_of(
         relations.relation_stats,
-        [](const RelationStats & stats) { return !stats.estimated_rows && stats.source == RowEstimateSource::NoStatistics; });
+        [](const RelationStats & stats)
+        {
+            /// A join optimized on its own has no source, and its estimate is imprecise
+            /// when one of its tables had an imprecise estimate.
+            return !stats.estimated_rows
+                && (stats.source == RowEstimateSource::NoStatistics
+                    || (stats.source == RowEstimateSource::NoSource && stats.imprecise_estimate));
+        });
 }
 
 void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
@@ -1844,7 +1851,7 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
     query_graph_builder.context->stats_hint = join_step->getTableStatsHint();
     query_graph_builder.context->allow_semi_anti_flattening = reorder_semi_anti;
 
-    /// A table without statistics has no row estimate, so its join graph keeps the written order of its joins.
+    /// A relation that has no row estimate for lack of statistics keeps the written order of the joins in its graph.
     if (query_graph_size_limit > 2 && hasChildJoinToMerge(node)
         && joinGraphHasRelationWithoutStatistics(query_graph_builder, node, nodes, query_graph_size_limit))
         query_graph_size_limit = 2;
