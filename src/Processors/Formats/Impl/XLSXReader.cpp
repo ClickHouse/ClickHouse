@@ -3,6 +3,9 @@
 #if USE_MINIZIP
 
 #include <IO/Archives/ZipArchiveReader.h>
+#include <IO/ConcatReadBuffer.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/readFloatText.h>
@@ -109,8 +112,125 @@ bool parseBoolAttribute(const String * value)
     return value && (*value == "1" || *value == "true");
 }
 
+/// Appends a code point to a UTF-8 string.
+void appendUTF8(UInt32 code, String & out)
+{
+    if (code < 0x80)
+    {
+        out += static_cast<char>(code);
+    }
+    else if (code < 0x800)
+    {
+        out += static_cast<char>(0xC0 | (code >> 6));
+        out += static_cast<char>(0x80 | (code & 0x3F));
+    }
+    else if (code < 0x10000)
+    {
+        out += static_cast<char>(0xE0 | (code >> 12));
+        out += static_cast<char>(0x80 | ((code >> 6) & 0x3F));
+        out += static_cast<char>(0x80 | (code & 0x3F));
+    }
+    else
+    {
+        out += static_cast<char>(0xF0 | (code >> 18));
+        out += static_cast<char>(0x80 | ((code >> 12) & 0x3F));
+        out += static_cast<char>(0x80 | ((code >> 6) & 0x3F));
+        out += static_cast<char>(0x80 | (code & 0x3F));
+    }
+}
+
+/// Converts UTF-16 to UTF-8. Unpaired surrogates and a trailing odd byte are replaced with U+FFFD.
+String utf16ToUTF8(std::string_view data, bool big_endian)
+{
+    static constexpr UInt32 replacement = 0xFFFD;
+    String result;
+    result.reserve(data.size());
+    auto unit_at = [&](size_t pos) -> UInt32
+    {
+        auto first = static_cast<UInt8>(data[pos]);
+        auto second = static_cast<UInt8>(data[pos + 1]);
+        return big_endian ? (first << 8 | second) : (second << 8 | first);
+    };
+    size_t pos = 0;
+    while (pos + 2 <= data.size())
+    {
+        UInt32 unit = unit_at(pos);
+        pos += 2;
+        if (unit >= 0xD800 && unit < 0xDC00)
+        {
+            if (pos + 2 <= data.size())
+            {
+                UInt32 low = unit_at(pos);
+                if (low >= 0xDC00 && low < 0xE000)
+                {
+                    pos += 2;
+                    appendUTF8(0x10000 + ((unit - 0xD800) << 10) + (low - 0xDC00), result);
+                    continue;
+                }
+            }
+            appendUTF8(replacement, result);
+        }
+        else if (unit >= 0xDC00 && unit < 0xE000)
+            appendUTF8(replacement, result);
+        else
+            appendUTF8(unit, result);
+    }
+    if (pos < data.size())
+        appendUTF8(replacement, result);
+    return result;
+}
+
+/// The parts of an Office Open XML package are encoded in UTF-8 or UTF-16 (ECMA-376 Part 2, section 6.2.5). `XMLPullParser` works
+/// with UTF-8, so a UTF-16 part is detected by its byte order mark or by its first character `<` (a NUL byte cannot appear in
+/// a UTF-8 XML document), and converted.
+/// The byte order mark of UTF-8 is removed.
+std::unique_ptr<ReadBuffer> decodeXMLPart(std::unique_ptr<ReadBuffer> in)
+{
+    String prefix(4, '\0');
+    prefix.resize(in->read(prefix.data(), prefix.size()));
+
+    bool utf16 = false;
+    bool big_endian = false;
+    size_t skip = 0;
+    if (prefix.starts_with("\xFF\xFE"))
+    {
+        utf16 = true;
+        skip = 2;
+    }
+    else if (prefix.starts_with("\xFE\xFF"))
+    {
+        utf16 = true;
+        big_endian = true;
+        skip = 2;
+    }
+    else if (prefix.starts_with(std::string_view("<\0", 2)))
+    {
+        utf16 = true;
+    }
+    else if (prefix.starts_with(std::string_view("\0<", 2)))
+    {
+        utf16 = true;
+        big_endian = true;
+    }
+    else if (prefix.starts_with("\xEF\xBB\xBF"))
+    {
+        skip = 3;
+    }
+
+    if (utf16)
+    {
+        String rest;
+        readStringUntilEOF(rest, *in);
+        String data = prefix.substr(skip) + rest;
+        return std::make_unique<ReadBufferFromOwnString>(utf16ToUTF8(data, big_endian));
+    }
+
+    return std::make_unique<ConcatReadBuffer>(std::make_unique<ReadBufferFromOwnString>(prefix.substr(skip)), std::move(in));
+}
+
 /// Reads the text of a rich text element (`<si>` of the shared strings or `<is>` of an inline string):
 /// the text of the `<t>` elements, including the ones in the rich text runs `<r>`, but not in the phonetic runs `<rPh>`.
+/// The runs are traversed iteratively (the loop simply descends into them), so that deep nesting cannot exhaust the stack.
 void readRichText(XMLPullParser & parser, String & out)
 {
     size_t target_depth = parser.depth() - 1;
@@ -124,7 +244,7 @@ void readRichText(XMLPullParser & parser, String & out)
         if (parser.name() == "t")
             parser.readElementText(out);
         else if (parser.name() == "r")
-            readRichText(parser, out);
+            continue; /// The children of the run are read by this loop.
         else
             parser.skipElement();
     }
@@ -183,7 +303,7 @@ public:
 private:
     std::unique_ptr<ReadBuffer> readPart(const String & path)
     {
-        return archive->readFile(path, /* throw_on_not_found= */ true);
+        return decodeXMLPart(archive->readFile(path, /* throw_on_not_found= */ true));
     }
 
     std::unordered_map<String, Relationship> readRelationships(const String & part);
