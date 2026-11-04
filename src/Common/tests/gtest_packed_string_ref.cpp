@@ -269,7 +269,7 @@ TEST(PackedStringRef20, HeapLayout)
         EXPECT_EQ(ref.getHeapPtr(), s.data()) << "len=" << len;
         EXPECT_EQ(static_cast<std::string_view>(ref), std::string_view(s)) << "len=" << len;
 
-        const std::string copy = s;
+        const std::string copy(s.data(), s.size());
         ref.setHeapPointer(copy.data());
         EXPECT_EQ(ref.getHeapPtr(), copy.data()) << "len=" << len;
         EXPECT_EQ(ref.heapSize(), len) << "len=" << len;
