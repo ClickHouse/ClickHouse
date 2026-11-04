@@ -27,9 +27,18 @@ trap cleanup EXIT
 $CLICKHOUSE_CLIENT --query "CREATE DATABASE ${DB1} ENGINE = Replicated('${ZK_PATH}/1', 'shard1', 'replica1')"
 $CLICKHOUSE_CLIENT --query "CREATE DATABASE ${DB2} ENGINE = Replicated('${ZK_PATH}/2', 'shard1', 'replica1')"
 
-# Make sure the clusters of both databases are already built and cached, so that the queries below
-# only read the replica state.
-$CLICKHOUSE_CLIENT --query "SELECT count() FROM system.clusters WHERE cluster IN ('${DB1}', '${DB2}')" > /dev/null
+# Wait until both replicas are active: `CREATE DATABASE` returns before the DDL worker creates the `active` node.
+# This also builds and caches the clusters of both databases, so that the queries below only read the replica state.
+# These queries have no `log_comment`, so they are not counted below.
+for _ in {1..120}; do
+    active=$($CLICKHOUSE_CLIENT --query "SELECT countIf(is_active) FROM system.clusters WHERE cluster IN ('${DB1}', '${DB2}')")
+    [ "$active" = "2" ] && break
+    sleep 0.5
+done
+if [ "$active" != "2" ]; then
+    echo "Replicas of ${DB1} and ${DB2} did not become active: ${active} active"
+    exit 1
+fi
 
 run_query() {
     local comment=$1
@@ -64,8 +73,8 @@ echo "-- Keeper read requests per query"
 $CLICKHOUSE_CLIENT --query "
     SELECT
         log_comment,
-        /* other tests may add Replicated databases on another [Zoo]Keeper: one more request per Keeper */
-        if(log_comment IN ('05244_all', '05244_not_pushed'), ProfileEvents['ZooKeeperMultiRead'] >= 1, ProfileEvents['ZooKeeperMultiRead'])
+        /* without a pushed-down filter both test databases are read, plus the databases of concurrent tests */
+        if(log_comment IN ('05244_all', '05244_not_pushed'), ProfileEvents['ZooKeeperMultiRead'] >= 2, ProfileEvents['ZooKeeperMultiRead'])
     FROM system.query_log
     WHERE current_database = currentDatabase()
         AND type = 'QueryFinish'
