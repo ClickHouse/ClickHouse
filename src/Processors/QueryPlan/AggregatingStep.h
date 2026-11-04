@@ -23,6 +23,12 @@ Block generateOutputHeader(const Block & input_header, const Names & keys, bool 
 /// the choice has to be communicated to a remote peer errs on the side of communicating it.
 bool aggregationCanUsePackedStringKeys(const Block & header, const Names & keys, const GroupingSetsParamsList & grouping_sets_params);
 
+/// The same for the methods of fixed-width keys and one `String` key (see
+/// `AggregatedDataVariants::isKeysAndPackedString`): whether `enable_fixed_and_packed_string_keys_in_aggregation` can
+/// affect the aggregation. See `Aggregator::Params::enable_fixed_and_packed_string_keys`.
+bool aggregationCanUseFixedAndPackedStringKeys(
+    const Block & header, const Names & keys, const GroupingSetsParamsList & grouping_sets_params);
+
 /// Whether `dag` forwards the column `name` unchanged (possibly through aliases). Guards the GROUP BY top-K
 /// optimization: the heap ranks the aggregation keys, so every expression between the aggregation and the sort
 /// must hand the sorted key through untouched. If such an expression computed a new value and published it under

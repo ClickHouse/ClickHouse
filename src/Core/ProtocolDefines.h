@@ -22,7 +22,10 @@ static constexpr auto DBMS_MIN_REVISION_WITH_SERVER_LOGS = 54406;
 /// 54489: the method for a single `String` key follows `enable_packed_string_keys_in_aggregation`.
 /// A peer below this revision always uses the packed method and does not know the setting, so it
 /// cannot follow a query that disables it.
-static constexpr auto DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD = 54489;
+/// 54496: fixed-width keys and one `String` key get the `keys32_packed_string`, `keys64_packed_string`
+/// and `keys128_packed_string` methods, which follow `enable_fixed_and_packed_string_keys_in_aggregation`.
+/// A peer below this revision always uses the serialized method for such keys.
+static constexpr auto DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD = 54496;
 static constexpr auto DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA = 54410;
 
 static constexpr auto DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE = 54405;
@@ -142,6 +145,10 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// Version 21 adds the `min_bytes_before_external_group_by` plan setting.
 /// Version 21 also registers the `adaptive_aggregator_disable_thaw` plan setting, written only towards a peer at this
 /// version or above. A peer below it thaws as it always did, which changes no result.
+/// Version 21 also registers the `enable_fixed_and_packed_string_keys_in_aggregation` plan setting.
+/// A peer at this version receives it whenever an aggregation step can choose the method. As with
+/// version 5, an older peer rejects the unknown name, so it gets the name only where its serialized
+/// method could corrupt two-level distributed merging.
 ///
 /// Rules for this version:
 /// - Bump it at most once per release: the first change in a release that needs it bumps it, later changes
@@ -196,6 +203,9 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ADAPTIVE_AG
 /// First query-plan serialization version that knows the `adaptive_aggregator_disable_thaw` plan setting
 /// name. Gates writing it in `AggregatingStep::serializeSettings`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ADAPTIVE_AGGREGATOR_DISABLE_THAW = 21;
+/// First query-plan serialization version that knows the `enable_fixed_and_packed_string_keys_in_aggregation`
+/// plan setting name. Gates writing it in the `serializeSettings` of the aggregation steps.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_FIXED_AND_PACKED_STRING_KEYS_SETTING = 21;
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_BLOBS_LIST_PARTS = 10;
 /// First query-plan serialization version that preserves plan-level `max_threads` and `concurrency_control`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS = 11;
@@ -372,5 +382,5 @@ static constexpr auto DBMS_MIN_REVISION_WITH_INSERT_RETURNING = 54495;
 /// NOTE: DBMS_TCP_PROTOCOL_VERSION has nothing common with VERSION_REVISION,
 /// later is just a number for server version (one number instead of commit SHA)
 /// for simplicity (sometimes it may be more convenient in some use cases).
-static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54495;
+static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54496;
 }

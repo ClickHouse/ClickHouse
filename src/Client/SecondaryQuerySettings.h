@@ -27,4 +27,12 @@ struct Settings;
 /// The demotion runs first, so the `dialect` override is marked changed afterwards.
 void prepareSecondaryQuerySettings(Settings & settings);
 
+/// Marks the settings that choose the method of an aggregation key as changed, with their effective values:
+/// `enable_packed_string_keys_in_aggregation` and `enable_fixed_and_packed_string_keys_in_aggregation`.
+/// For the senders of `SELECT` secondary queries, `MultiplexedConnections` and `HedgedConnections`.
+/// Two-level aggregation bucket numbers depend on the method, so all servers of a distributed query must
+/// agree on these values, even when they come only from the initiator's server or profile defaults. Such
+/// values are not marked changed, so `Connection::sendQuery` would not send them otherwise.
+void markAggregationMethodSettingsChanged(Settings & settings);
+
 }
