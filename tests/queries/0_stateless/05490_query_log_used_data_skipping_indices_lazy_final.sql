@@ -23,6 +23,8 @@ ORDER BY k
 SETTINGS index_granularity = 8, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
 
 CREATE TABLE t_lazy_final_split AS t_lazy_final;
+-- a merge would remove the intersecting part
+SYSTEM STOP MERGES t_lazy_final_split;
 
 -- two partitions of four granules, no part intersects another
 INSERT INTO t_lazy_final SELECT number, number FROM numbers(64);

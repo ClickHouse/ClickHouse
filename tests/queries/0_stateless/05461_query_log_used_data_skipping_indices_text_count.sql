@@ -21,6 +21,9 @@ ENGINE = MergeTree
 ORDER BY k
 SETTINGS index_granularity = 8, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
 
+-- a merge would materialize the index in both parts
+SYSTEM STOP MERGES t_skip_index_text_count;
+
 -- the first part has no index, the second part has it; eight granules each, one row matches in each part
 INSERT INTO t_skip_index_text_count SELECT number, if(number = 5, 'needle', 'hay') FROM numbers(64);
 ALTER TABLE t_skip_index_text_count ADD INDEX idx_s s TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 1;
@@ -32,6 +35,7 @@ SELECT count() FROM t_skip_index_text_count WHERE hasToken(s, 'needle') SETTINGS
 SELECT count() FROM t_skip_index_text_count WHERE hasToken(s, 'needle') SETTINGS query_plan_optimize_count_from_text_index = 1, use_skip_indexes_on_data_read = 1, log_comment = 'skip_index_text_count_5';
 
 -- the count step replaces the whole read
+SYSTEM START MERGES t_skip_index_text_count;
 ALTER TABLE t_skip_index_text_count MATERIALIZE INDEX idx_s SETTINGS mutations_sync = 2;
 SELECT count() FROM t_skip_index_text_count WHERE hasToken(s, 'needle') SETTINGS query_plan_optimize_count_from_text_index = 0, log_comment = 'skip_index_text_count_3';
 SELECT count() FROM t_skip_index_text_count WHERE hasToken(s, 'needle') SETTINGS query_plan_optimize_count_from_text_index = 1, log_comment = 'skip_index_text_count_4';
