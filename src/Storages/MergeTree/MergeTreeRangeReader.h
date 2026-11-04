@@ -318,6 +318,10 @@ public:
         /// rows_per_granule[i] == 0 reliably means the full granule was read and filtered.
         MarkRanges computeUnmatchedMarkRanges() const;
 
+        /// For each granule read from its first row: the mark and the number of its rows that passed all steps so far.
+        /// Like `computeUnmatchedMarkRanges`, valid only with use_query_condition_cache. Empty if a mark was skipped.
+        std::vector<std::pair<size_t, size_t>> computeMarkMatchCounts(const MergeTreeIndexGranularity & part_index_granularity) const;
+
     private:
         friend class MergeTreeRangeReader;
         friend class MergeTreeReadersChain;

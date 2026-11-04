@@ -510,6 +510,70 @@ void MergeTreeRangeReader::ReadResult::checkInternalConsistency() const
     }
 }
 
+std::vector<std::pair<size_t, size_t>> MergeTreeRangeReader::ReadResult::computeMarkMatchCounts(const MergeTreeIndexGranularity & part_index_granularity) const
+{
+    std::vector<std::pair<size_t, size_t>> result;
+
+    /// A skipped mark has an entry in `rows_per_granule` without a granule offset of its own.
+    if (rows_per_granule.empty() || debug_skipped_marks != 0 || granule_offsets.size() != rows_per_granule.size())
+        return result;
+
+    /// `final_filter` has a byte (or a sparse index) per row of `rows_per_granule`, i.e. the rows that passed all
+    /// steps so far. Without it, all those rows passed.
+    const UInt8 * filter_data = nullptr;
+    const UInt64 * sparse_begin = nullptr;
+    const UInt64 * sparse_end = nullptr;
+    bool all_filtered = false;
+    if (final_filter.present())
+    {
+        if (final_filter.size() != total_rows_per_granule)
+            return result;
+
+        if (final_filter.alwaysFalse())
+            all_filtered = true;
+        else if (final_filter.isSparse())
+        {
+            const auto & indices = final_filter.getSparseIndices()->getData();
+            sparse_begin = indices.data();
+            sparse_end = indices.data() + indices.size();
+        }
+        else if (!final_filter.alwaysTrue())
+            filter_data = final_filter.getData().data();
+    }
+
+    const size_t marks_count = part_index_granularity.getMarksCount();
+    result.reserve(rows_per_granule.size());
+
+    size_t granule_begin = 0;
+    for (size_t i = 0; i < rows_per_granule.size(); ++i)
+    {
+        const size_t rows = rows_per_granule[i];
+        const size_t granule_end = granule_begin + rows;
+        const size_t mark = granule_offsets[i].granule_offset;
+
+        size_t count = rows;
+        if (all_filtered)
+            count = 0;
+        else if (filter_data)
+            count = countBytesInFilter(filter_data, granule_begin, granule_end);
+        else if (sparse_begin)
+        {
+            const auto * first = std::lower_bound(sparse_begin, sparse_end, granule_begin);
+            const auto * last = std::lower_bound(first, sparse_end, granule_end);
+            count = last - first;
+        }
+        granule_begin = granule_end;
+
+        if (mark >= marks_count || granule_offsets[i].starting_offset != part_index_granularity.getMarkStartingRow(mark)
+            || count > part_index_granularity.getMarkRows(mark))
+            continue;
+
+        result.emplace_back(mark, count);
+    }
+
+    return result;
+}
+
 MarkRanges MergeTreeRangeReader::ReadResult::computeUnmatchedMarkRanges() const
 {
     if (rows_per_granule.empty())

@@ -135,6 +135,11 @@ using LazyMaterializingRowsPtr = std::shared_ptr<LazyMaterializingRows>;
 class MergeTreeSelectProcessor : private boost::noncopyable
 {
 public:
+    /// Whether reading `columns` returns what the part stores. Otherwise the values come from the table metadata or pending
+    /// mutations, which a metadata-only ALTER or a KILL MUTATION can change without renaming the part.
+    static bool partStoresColumnsAsRead(
+        const IMergeTreeDataPart & part, const AlterConversions * alter_conversions, const NamesAndTypesList & columns);
+
     MergeTreeSelectProcessor(
         MergeTreeReadPoolPtr pool_,
         MergeTreeSelectAlgorithmPtr algorithm_,
@@ -216,6 +221,10 @@ private:
     /// the current time (issue #115504), salted the same way as the consult side. Empty when none
     /// applies; then PREWHERE results are not cached.
     std::optional<std::pair<UInt64, String>> prewhere_condition_for_query_condition_cache;
+
+    /// Whether the exact per-mark counts of rows passing PREWHERE may be recorded: only under its own (not derived or salted) hash.
+    bool write_prewhere_match_counts_to_query_condition_cache = false;
+    NamesAndTypesList prewhere_columns_for_match_counts;
 
     /// Current task to read from.
     MergeTreeReadTaskPtr task;

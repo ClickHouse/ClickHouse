@@ -70,6 +70,7 @@
 #include <Storages/MergeTree/MergeTreeReadPoolParallelReplicas.h>
 #include <Storages/MergeTree/MergeTreeReadPoolParallelReplicasInOrder.h>
 #include <Storages/MergeTree/MergeTreeReadPoolProjectionIndex.h>
+#include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeSource.h>
 #include <Storages/MergeTree/RuntimeFilterReadRangesRefiner.h>
@@ -3708,6 +3709,62 @@ bool ReadFromMergeTree::filterDependsOnNonDeterministicVirtuals(const VirtualCol
     return false;
 }
 
+std::optional<UInt64> ReadFromMergeTree::getQueryConditionCacheKeyForMatchCounts() const
+{
+    if (!reader_settings.use_query_condition_cache || !reader_settings.apply_deleted_mask || !allow_query_condition_cache)
+        return {};
+
+    /// Must agree with `filterPartsByQueryConditionCache` and `MergeTreeSelectProcessor`: the counts are the rows the read returns.
+    if (top_k_filter_info || vector_search_parameters || query_info.isFinal() || isQueryWithSampling()
+        || isParallelReadingEnabled() || is_parallel_reading_from_replicas || hasLazilyReadColumns() || lazy_materializing_rows
+        || query_info.row_level_filter || deferred_row_level_filter || deferred_prewhere_info)
+        return {};
+
+    const auto & metadata = storage_snapshot->metadata;
+    if (metadata->hasUniqueKey() || filterDependsOnNonDeterministicVirtuals(metadata->virtuals, query_info))
+        return {};
+
+    /// Data mutations and patch parts applied on the fly change what the parts return without renaming them. Other pending
+    /// mutations are checked per part, see `canUseQueryConditionCacheMatchCountsOfPart`.
+    if (mutations_snapshot && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts()))
+        return {};
+
+    const auto & prewhere_info = query_info.prewhere_info;
+    if (!prewhere_info || !prewhere_info->need_filter)
+        return {};
+
+    for (const auto * output : prewhere_info->prewhere_actions.getOutputs())
+    {
+        if (output->result_name == prewhere_info->prewhere_column_name)
+        {
+            if (!VirtualColumnUtils::isDeterministic(output))
+                return {};
+            /// The same key as `MergeTreeSelectProcessor` writes the PREWHERE under.
+            return queryConditionCacheHash(output->getHash(), reader_settings.query_condition_cache_settings_salt);
+        }
+    }
+
+    return {};
+}
+
+bool ReadFromMergeTree::canUseQueryConditionCacheMatchCountsOfPart(const IMergeTreeDataPart & part) const
+{
+    if (!query_info.prewhere_info)
+        return false;
+
+    /// The same conversions as the read of the part gets (`MergeTreeReadPoolBase`), which records the counts.
+    AlterConversionsPtr alter_conversions;
+    if (mutations_snapshot)
+        alter_conversions = MergeTreeData::getAlterConversionsForPart(part.shared_from_this(), mutations_snapshot, context
+#if CLICKHOUSE_CLOUD
+            , context->getAccess()->getEnabledMaskingPolicies()
+#endif
+        );
+
+    return MergeTreeSelectProcessor::partStoresColumnsAsRead(
+        part, alter_conversions.get(), query_info.prewhere_info->prewhere_actions.getRequiredColumns());
+}
+
 using PartsRangesMap = std::unordered_map<std::string, const RangesInDataPart *>;
 /// Same as filterPartsByPrimaryKeyAndSkipIndexes(), but accept part names and parts map to transform parts names to parts
 /// Used for distributed index analysis
@@ -5729,6 +5786,11 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
 
     if (top_k_filter_info)
         reader_settings.top_k_filter_rows_equal_to_threshold_dropped = top_k_filter_info->rows_equal_to_threshold_dropped;
+
+    /// Checked again: the read may have changed since `optimizeUseAggregateProjections` enabled the match counts.
+    reader_settings.query_condition_cache_write_match_counts = write_query_condition_cache_match_counts
+        && reader_settings.use_query_condition_cache && !reader_settings.query_condition_cache_top_k_salt
+        && getQueryConditionCacheKeyForMatchCounts().has_value();
 
     /// Push down substring search conditions from PREWHERE into the column scan: the readers check
     /// every value of the corresponding String columns and read non-matching values as empty strings.

@@ -1,6 +1,8 @@
 #include <Interpreters/Cache/QueryConditionCache.h>
+#include <base/arithmeticOverflow.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/FailPoint.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 #include <Core/FormatFactorySettings.h>
@@ -24,6 +26,11 @@ namespace CurrentMetrics
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char query_condition_cache_pause_before_caching_match_counts[];
+}
 
 namespace Setting
 {
@@ -311,9 +318,33 @@ size_t QueryConditionCache::EntryWeight::operator()(const Entry & entry) const
     return memory;
 }
 
+size_t QueryConditionCache::CountsEntryWeight::forMarks(size_t marks_count)
+{
+    size_t bytes = 0;
+    if (common::mulOverflow(marks_count, sizeof(MatchCounts::value_type), bytes)
+        || common::addOverflow(bytes, sizeof(Key) + sizeof(CountsEntry), bytes))
+        return std::numeric_limits<size_t>::max();
+    return bytes;
+}
+
+size_t QueryConditionCache::CountsEntryWeight::operator()(const CountsEntry & entry) const
+{
+    return forMarks(entry.match_counts.capacity());
+}
+
 QueryConditionCache::QueryConditionCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)
     : cache(cache_policy, CurrentMetrics::QueryConditionCacheBytes, CurrentMetrics::QueryConditionCacheEntries, max_size_in_bytes, 0, size_ratio)
+    /// Always LRU: its size follows the free space of `cache`, which changes with every new entry of `cache`.
+    , counts_cache("LRU", CurrentMetrics::QueryConditionCacheBytes, CurrentMetrics::QueryConditionCacheEntries, max_size_in_bytes, 0, size_ratio)
 {
+}
+
+size_t QueryConditionCache::fitMatchCountsIntoFreeSpace()
+{
+    size_t max_size_in_bytes = cache.maxSizeInBytes();
+    size_t free_space = max_size_in_bytes - std::min(cache.sizeInBytes(), max_size_in_bytes);
+    counts_cache.setMaxSizeInBytes(free_space);
+    return free_space;
 }
 
 void QueryConditionCache::write(
@@ -332,6 +363,13 @@ void QueryConditionCache::write(
 #endif
 
     auto [entry, inserted] = cache.getOrSet(key, load_func);
+
+    /// Take the space back from the match counts. Skipping it when none are cached is safe: `writeMatchCounts` refits after inserting.
+    if (inserted && counts_cache.sizeInBytes() != 0)
+    {
+        std::lock_guard counts_size_lock(counts_size_mutex);
+        fitMatchCountsIntoFreeSpace();
+    }
 
     /// Try to avoid acquiring the RW lock below (*) by early-ing out. Matters for systems with lots of cores.
     {
@@ -420,6 +458,73 @@ std::optional<QueryConditionCache::MatchingMarks> QueryConditionCache::read(cons
 
 }
 
+void QueryConditionCache::writeMatchCounts(
+    const UUID & table_id, const String & part_name, UInt64 condition_hash, const String & condition,
+    const MarkMatchCounts & mark_match_counts, size_t marks_count, bool has_final_mark)
+{
+    if (table_id == UUIDHelpers::Nil || mark_match_counts.empty() || marks_count == 0)
+        return;
+
+    Key key = makeKey(table_id, part_name, condition_hash);
+    auto entry = counts_cache.get(key);
+    bool inserted = false;
+    if (!entry)
+    {
+        std::lock_guard counts_size_lock(counts_size_mutex);
+        /// Match counts are inserted only here, under `counts_size_mutex`: another writer may have inserted them meanwhile.
+        entry = counts_cache.get(key);
+        if (!entry)
+        {
+            if (CountsEntryWeight::forMarks(marks_count) > fitMatchCountsIntoFreeSpace())
+                return;
+            auto new_entry = std::make_shared<CountsEntry>(marks_count);
+            FailPointInjection::pauseFailPoint(FailPoints::query_condition_cache_pause_before_caching_match_counts);
+            std::tie(entry, inserted) = counts_cache.getOrSet(key, [&] { return new_entry; });
+            /// A `MatchingMarks` entry inserted meanwhile may have seen no match counts and skipped this (see `write`).
+            fitMatchCountsIntoFreeSpace();
+        }
+    }
+
+    {
+        std::lock_guard lock(entry->mutex);
+
+        if (entry->match_counts.size() != marks_count)
+            return;
+
+        for (const auto & [mark, count] : mark_match_counts)
+            if (mark < marks_count && count < UNKNOWN_MATCH_COUNT)
+                entry->match_counts[mark] = static_cast<UInt16>(count);
+
+        /// The final mark has no rows.
+        if (has_final_mark)
+            entry->match_counts[marks_count - 1] = 0;
+    }
+
+    LOG_TEST(
+        logger,
+        "{} match counts for table_id: {}, part_name: {}, condition_hash: {}, condition: {}, marks_count: {}, counted marks: {}",
+        inserted ? "Inserted" : "Updated",
+        table_id,
+        part_name,
+        condition_hash,
+        condition,
+        marks_count,
+        mark_match_counts.size());
+}
+
+std::optional<QueryConditionCache::MatchCounts> QueryConditionCache::readMatchCounts(const UUID & table_id, const String & part_name, UInt64 condition_hash)
+{
+    if (table_id == UUIDHelpers::Nil)
+        return {};
+
+    auto entry = counts_cache.get(makeKey(table_id, part_name, condition_hash));
+    if (!entry)
+        return {};
+
+    std::shared_lock lock(entry->mutex);
+    return entry->match_counts;
+}
+
 std::vector<QueryConditionCache::Cache::KeyMapped> QueryConditionCache::dump() const
 {
     return cache.dump();
@@ -428,11 +533,15 @@ std::vector<QueryConditionCache::Cache::KeyMapped> QueryConditionCache::dump() c
 void QueryConditionCache::clear()
 {
     cache.clear();
+    counts_cache.clear();
 }
 
 void QueryConditionCache::setMaxSizeInBytes(size_t max_size_in_bytes)
 {
     cache.setMaxSizeInBytes(max_size_in_bytes);
+
+    std::lock_guard counts_size_lock(counts_size_mutex);
+    fitMatchCountsIntoFreeSpace();
 }
 
 size_t QueryConditionCache::maxSizeInBytes() const
