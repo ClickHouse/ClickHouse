@@ -1,5 +1,11 @@
 atf on merge sqp=1 ONCE
 atf on merge sqp=0 ONCE
+constant atf on merge sqp=1 1
+constant atf on merge sqp=0 1
+two-valued constant atf on merge sqp=1 1
+two-valued constant atf on merge sqp=0 1
+constant atf on policy table sqp=1 1
+constant atf on policy table sqp=0 1
 policy on merge sqp=1 ONCE
 policy on merge sqp=0 ONCE
 max_columns_to_read sqp=1 10

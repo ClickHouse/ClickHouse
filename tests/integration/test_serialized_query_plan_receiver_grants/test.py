@@ -133,6 +133,12 @@ def test_receiver_resolves_additional_table_filters_with_its_own_settings(
     }
     assert select("SELECT count() FROM dist", serialize_query_plan, **filters) == "1\n"
 
+    # Also next to a constant that changes with each analysis of the entry.
+    filters["additional_table_filters"] = (
+        "{'default.m': 'x < getSetting(\\'max_threads\\') AND y != randConstant() + 10'}"
+    )
+    assert select("SELECT count() FROM dist", serialize_query_plan, **filters) == "1\n"
+
 
 @pytest.mark.parametrize("serialize_query_plan", [0, 1])
 def test_receiver_checks_its_own_max_columns_to_read(

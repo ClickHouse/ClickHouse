@@ -19,6 +19,7 @@ DROP TABLE IF EXISTS rp_mf_leaf;
 DROP TABLE IF EXISTS rp_mf_merge;
 DROP TABLE IF EXISTS rp_mf_dist;
 DROP TABLE IF EXISTS rp_mf_dist_secret;
+DROP TABLE IF EXISTS rp_mf_dist_leaf;
 CREATE TABLE rp_mf_leaf (x UInt32, y UInt32) ENGINE = MergeTree ORDER BY x;
 INSERT INTO rp_mf_leaf SELECT number, number FROM numbers(100000);
 CREATE TABLE rp_mf_merge AS rp_mf_leaf ENGINE = Merge(currentDatabase(), '^rp_mf_leaf\$');
@@ -34,6 +35,37 @@ for sqp in 1 0; do
     ${CLICKHOUSE_CLIENT} -q "SELECT ${classify} FROM rp_mf_dist SETTINGS ${SETTINGS}, serialize_query_plan = ${sqp},
         additional_table_filters = {'${CLICKHOUSE_DATABASE}.rp_mf_merge': 'rand64() % 2 = 0'}"
 done
+
+# `randConstant()` is folded when the filter is analyzed, so each analysis keeps another single row.
+for sqp in 1 0; do
+    echo -n "constant atf on merge sqp=${sqp} "
+    ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM rp_mf_dist SETTINGS ${SETTINGS}, serialize_query_plan = ${sqp},
+        additional_table_filters = {'${CLICKHOUSE_DATABASE}.rp_mf_merge': 'x = randConstant() % 100000'}"
+done
+
+# `randConstant() % 2` folds to the same value in two analyses half of the time, so the query runs 20 times.
+for sqp in 1 0; do
+    echo -n "two-valued constant atf on merge sqp=${sqp} "
+    ${CLICKHOUSE_CLIENT} -q "$(for _ in $(seq 20); do
+        echo "SELECT count() FROM rp_mf_dist SETTINGS ${SETTINGS}, serialize_query_plan = ${sqp},
+            additional_table_filters = {'${CLICKHOUSE_DATABASE}.rp_mf_merge': 'x = randConstant() % 2'};"
+    done)" | sort -u | paste -sd' '
+done
+
+# The executing node plans a read of a table with a row policy again, too.
+${CLICKHOUSE_CLIENT} -m -q "
+CREATE TABLE rp_mf_dist_leaf AS rp_mf_leaf ENGINE = Distributed(test_shard_localhost, currentDatabase(), rp_mf_leaf);
+CREATE ROW POLICY rp_mf_all ON rp_mf_leaf FOR SELECT USING y < 100000 TO ALL;
+"
+for sqp in 1 0; do
+    echo -n "constant atf on policy table sqp=${sqp} "
+    ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM rp_mf_dist_leaf SETTINGS ${SETTINGS}, serialize_query_plan = ${sqp},
+        additional_table_filters = {'${CLICKHOUSE_DATABASE}.rp_mf_leaf': 'y = randConstant() % 100000'}"
+done
+${CLICKHOUSE_CLIENT} -m -q "
+DROP ROW POLICY rp_mf_all ON rp_mf_leaf;
+DROP TABLE rp_mf_dist_leaf;
+"
 
 ${CLICKHOUSE_CLIENT} -q "CREATE ROW POLICY rp_mf_nd ON rp_mf_merge FOR SELECT USING rand64() % 2 = 0 TO ALL"
 for sqp in 1 0; do

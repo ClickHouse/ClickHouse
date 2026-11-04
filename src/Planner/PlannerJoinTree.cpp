@@ -1116,13 +1116,64 @@ std::optional<String> parseAdditionalFilterAstIfNeeded(const StoragePtr & storag
     return {};
 }
 
+bool hasNondeterministicConstant(const QueryTreeNodePtr & node)
+{
+    if (const auto * constant = node->as<ConstantNode>())
+        return !constant->isDeterministic();
+
+    for (const auto & child : node->getChildren())
+        if (child && hasNondeterministicConstant(child))
+            return true;
+    return false;
+}
+
+/// Replaces each constant of `node` folded from another value in `other`, the same filter analyzed again, with its source
+/// expression, and returns whether it replaced any. A part of different shape in `other` is left as is.
+bool replaceIrreproducibleConstants(QueryTreeNodePtr & node, const QueryTreeNodePtr & other)
+{
+    if (node->getNodeType() != other->getNodeType())
+        return false;
+
+    if (const auto * constant = node->as<ConstantNode>())
+    {
+        const auto & other_constant = other->as<ConstantNode &>();
+        if (!constant->hasSourceExpression() || !other_constant.hasSourceExpression())
+            return false;
+
+        /// `randConstant() % 2` has the same value in both with probability 1/2, its argument does not.
+        auto source = constant->getSourceExpression();
+        if (!replaceIrreproducibleConstants(source, other_constant.getSourceExpression())
+            && constant->isEqual(other_constant, {.compare_aliases = false}))
+            return false;
+
+        node = std::move(source);
+        return true;
+    }
+
+    auto & children = node->getChildren();
+    const auto & other_children = other->getChildren();
+    if (children.size() != other_children.size())
+        return false;
+
+    bool replaced = false;
+    for (size_t i = 0; i < children.size(); ++i)
+        if (children[i] && other_children[i])
+            replaced |= replaceIrreproducibleConstants(children[i], other_children[i]);
+    return replaced;
+}
+
 /// Equal for two `additional_table_filters` entries only if they resolve to the same predicate, including the
-/// constants folded from settings.
+/// constants folded from settings. A constant that changes when the entry is analyzed again, such as `randConstant()`,
+/// is compared by its expression.
 std::pair<UInt64, UInt64> additionalFilterHash(
     const ASTPtr & filter_ast, const TableExpressionNodePtr & table_expression, const ContextPtr & query_context)
 {
-    auto hash = buildFilterQueryTree(filter_ast, table_expression, query_context, /*check_access_rights=*/ false)
-                    ->getTreeHash({.compare_aliases = false});
+    auto analyze = [&] { return buildFilterQueryTree(filter_ast, table_expression, query_context, /*check_access_rights=*/ false); };
+    auto filter = analyze();
+    if (hasNondeterministicConstant(filter))
+        replaceIrreproducibleConstants(filter, analyze());
+
+    auto hash = filter->getTreeHash({.compare_aliases = false});
     return {hash.low64, hash.high64};
 }
 
