@@ -74,7 +74,7 @@ dg tuple key rollup	(12,'z')	12	1
 dg tuple key rollup	\N	\N	3
 qb	0	1
 qb	1	1
-qb	5.477225575051661	1
+qb	5.477226	1
 qb	\N	3
 qb cosine	0	1
 qb cosine	0.006004	1
@@ -83,20 +83,20 @@ qb other key	1	0	1
 qb other key	1	\N	1
 qb other key	2	1	1
 qb other key	2	\N	1
-qb other key	3	5.477225575051661	1
+qb other key	3	5.477226	1
 qb other key	3	\N	1
 qb other key	\N	\N	3
 qb nullable	0	1
-qb nullable	5.477225575051661	1
+qb nullable	5.477226	1
 qb nullable	\N	1
 qb nullable	\N	3
 qb column key	0	1
 qb column key	1	1
-qb column key	5.477225575051661	1
+qb column key	5.477226	1
 qb correlated	1	0
 qb correlated	2	1
-qb correlated	3	5.477225575051661
-qb correlated key	[0,0,0,0]	5.477225575051661	1
+qb correlated	3	5.477226
+qb correlated key	[0,0,0,0]	5.477226	1
 qb correlated key	[1,2,3,4]	0	1
 qb correlated key	[1,2,3,5]	1	1
 ac explain	2	1	0
