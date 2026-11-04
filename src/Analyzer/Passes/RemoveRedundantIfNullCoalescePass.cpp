@@ -3,6 +3,8 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/Utils.h>
 
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -18,17 +20,18 @@ namespace Setting
 namespace
 {
 
-class RemoveRedundantIfNullCoalesceVisitor : public InDepthQueryTreeVisitorWithContext<RemoveRedundantIfNullCoalesceVisitor>
+class RemoveRedundantIfNullCoalesceVisitor : public InDepthQueryTreeVisitor<RemoveRedundantIfNullCoalesceVisitor>
 {
 public:
-    using Base = InDepthQueryTreeVisitorWithContext<RemoveRedundantIfNullCoalesceVisitor>;
-    using Base::Base;
+    bool shouldTraverseTopToBottom() const { return false; }
 
-    void enterImpl(QueryTreeNodePtr & node)
+    static bool needChildVisit(QueryTreeNodePtr &, QueryTreeNodePtr & child)
     {
-        if (!getSettings()[Setting::allow_key_condition_coalesce_rewrite])
-            return;
+        return !isSubqueryNodeType(child->getNodeType());
+    }
 
+    static void visitImpl(QueryTreeNodePtr & node)
+    {
         auto * function_node = node->as<FunctionNode>();
         if (!function_node)
             return;
@@ -63,11 +66,32 @@ public:
     }
 };
 
+/// Only the filters: elsewhere two distinct grouping keys could become equal, or a key could stop matching
+/// its `group_by_use_nulls` copy in the projection.
+class QueryFiltersVisitor : public InDepthQueryTreeVisitorWithContext<QueryFiltersVisitor>
+{
+public:
+    using Base = InDepthQueryTreeVisitorWithContext<QueryFiltersVisitor>;
+    using Base::Base;
+
+    void enterImpl(QueryTreeNodePtr & node)
+    {
+        auto * query_node = node->as<QueryNode>();
+        if (!query_node || !getSettings()[Setting::allow_key_condition_coalesce_rewrite])
+            return;
+
+        if (query_node->hasPrewhere())
+            RemoveRedundantIfNullCoalesceVisitor().visit(query_node->getPrewhere());
+        if (query_node->hasWhere())
+            RemoveRedundantIfNullCoalesceVisitor().visit(query_node->getWhere());
+    }
+};
+
 }
 
 void RemoveRedundantIfNullCoalescePass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
-    RemoveRedundantIfNullCoalesceVisitor visitor(std::move(context));
+    QueryFiltersVisitor visitor(std::move(context));
     visitor.visit(query_tree_node);
 }
 

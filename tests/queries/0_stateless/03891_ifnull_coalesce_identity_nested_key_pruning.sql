@@ -27,6 +27,10 @@ SELECT count() > 0 AS coalesce_prunes
 FROM (EXPLAIN indexes = 1 SELECT sum(k) FROM t_nested_ident WHERE sipHash64(coalesce(p, 0)) = sipHash64(toUInt8(3)))
 WHERE explain ILIKE '%Parts: 1/8%';
 
+SELECT count() > 0 AS prewhere_prunes
+FROM (EXPLAIN indexes = 1 SELECT sum(k) FROM t_nested_ident PREWHERE sipHash64(ifNull(p, 0)) = sipHash64(toUInt8(3)))
+WHERE explain ILIKE '%Parts: 1/8%';
+
 -- Results must be identical with and without the wrapper.
 SELECT sum(k) FROM t_nested_ident WHERE sipHash64(p) = sipHash64(toUInt8(3));
 SELECT sum(k) FROM t_nested_ident WHERE sipHash64(ifNull(p, 0)) = sipHash64(toUInt8(3));
@@ -70,3 +74,14 @@ DROP TABLE t_nullable_ident;
 -- fallback has side effects, otherwise the exception would silently disappear.
 SELECT ifNull(materialize(1), throwIf(1)); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 SELECT coalesce(materialize(1), throwIf(1)); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
+
+-- Only `WHERE` and `PREWHERE` are rewritten: `x` and `ifNull(x, 0)` stay distinct grouping keys, and with
+-- `group_by_use_nulls` the rolled-up `ifNull(x, 0)` is still `NULL`.
+DROP TABLE IF EXISTS t_ident_grouping;
+CREATE TABLE t_ident_grouping (x UInt8) ENGINE = MergeTree ORDER BY x;
+INSERT INTO t_ident_grouping VALUES (1);
+SELECT x, ifNull(x, 0), count() FROM t_ident_grouping GROUP BY ROLLUP(x, ifNull(x, 0)) ORDER BY ALL;
+SELECT x, coalesce(x, 0), count() FROM t_ident_grouping GROUP BY CUBE(x, coalesce(x, 0)) ORDER BY ALL;
+SELECT x, ifNull(x, 0), count() FROM t_ident_grouping GROUP BY GROUPING SETS ((x), (ifNull(x, 0))) ORDER BY ALL;
+SELECT ifNull(x, 0), count() FROM t_ident_grouping GROUP BY ROLLUP(ifNull(x, 0)) ORDER BY ALL SETTINGS group_by_use_nulls = 1;
+DROP TABLE t_ident_grouping;
