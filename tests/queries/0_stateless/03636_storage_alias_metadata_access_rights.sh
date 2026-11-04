@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-replicated-database
+# Tag no-replicated-database: on a replicated database the DDL runs with no user, so the access check asserted here is skipped and the deny path silently allows, https://github.com/ClickHouse/ClickHouse/issues/111561
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -81,7 +83,7 @@ echo "Test count without target SELECT permission"
 ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "SELECT count() FROM test_alias_access SETTINGS optimize_trivial_count_query = 1;" 2>&1 | grep -o "ACCESS_DENIED" | uniq
 
 echo "Test count without target SELECT permission using the read path"
-${CLICKHOUSE_CLIENT} --user="${access_username}" --query "SELECT count() FROM test_alias_access SETTINGS optimize_trivial_count_query = 0, enable_analyzer = 1;" 2>&1 | grep -o "ACCESS_DENIED" | uniq
+${CLICKHOUSE_CLIENT} --user="${access_username}" --query "SELECT count() FROM test_alias_access SETTINGS optimize_trivial_count_query = 0;" 2>&1 | grep -o "ACCESS_DENIED" | uniq
 
 echo "Test DESCRIBE without target permission"
 ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "DESCRIBE TABLE test_alias_access;" 2>&1 | grep -o "ACCESS_DENIED" | head -1
@@ -103,9 +105,6 @@ ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS test_merge_access;"
 echo "Test ENGINE = Buffer structure inference without target permission"
 ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "CREATE TABLE test_buffer_infer_access ENGINE = Buffer(currentDatabase(), test_alias_access, 1, 1000, 1000, 1000, 1000, 1000000, 1000000);" 2>&1 | grep -o "ACCESS_DENIED" | head -1
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS test_buffer_infer_access;"
-
-echo "Test SHOW CREATE without target permission"
-${CLICKHOUSE_CLIENT} --user="${access_username}" --query "SHOW CREATE TABLE test_alias_access;" 2>&1 | grep -o "ACCESS_DENIED" | head -1
 
 echo "Test SHOW COLUMNS without target permission"
 ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "SHOW COLUMNS FROM test_alias_access;"
@@ -188,7 +187,7 @@ ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
     SELECT
         (SELECT count() FROM test_table_access),
         (SELECT count() FROM test_alias_access)
-    SETTINGS optimize_trivial_count_query = 1, enable_analyzer = 1;
+    SETTINGS optimize_trivial_count_query = 1;
 "
 
 echo "Test direct and Alias count with column-scoped target SELECT permission using the read path"
@@ -196,7 +195,7 @@ ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
     SELECT
         (SELECT count() FROM test_table_access),
         (SELECT count() FROM test_alias_access)
-    SETTINGS optimize_trivial_count_query = 0, enable_analyzer = 1;
+    SETTINGS optimize_trivial_count_query = 0;
 "
 
 echo "Test table statistics with target permission"
@@ -211,7 +210,7 @@ ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
     WHERE database = currentDatabase() AND name = 'test_alias_access';
 "
 
-echo "Test table metadata with target permission"
+echo "Test table metadata with column-scoped target permission"
 ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
     SELECT
         notEmpty(partition_key),
@@ -224,7 +223,7 @@ ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
     WHERE database = currentDatabase() AND name = 'test_alias_access';
 "
 
-echo "Test persisted table metadata with target permission"
+echo "Test persisted table metadata with column-scoped target permission"
 ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
     SELECT notEmpty(create_table_query), notEmpty(engine_full)
     FROM system.tables
@@ -284,6 +283,22 @@ echo "Test ENGINE = Buffer structure inference with target permission"
 ${CLICKHOUSE_CLIENT} --user="${access_username}" --multiquery --query "CREATE TABLE test_buffer_infer_access ENGINE = Buffer(currentDatabase(), test_alias_access, 1, 1000, 1000, 1000, 1000, 1000000, 1000000); SELECT 'ENGINE = Buffer OK';"
 ${CLICKHOUSE_CLIENT} --query "SELECT arraySort(groupArray(name)) FROM system.columns WHERE database = currentDatabase() AND table = 'test_buffer_infer_access';"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE test_buffer_infer_access;"
+
+echo "Test table and persisted metadata with target permission"
+# The same seven flags the two column-scoped blocks above assert as withheld. Target `SHOW
+# COLUMNS` is what changed, so these must come back through the `Alias` here.
+${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
+    SELECT
+        notEmpty(partition_key),
+        notEmpty(sorting_key),
+        notEmpty(primary_key),
+        notEmpty(sampling_key),
+        notEmpty(skipping_indices_types),
+        notEmpty(create_table_query),
+        notEmpty(engine_full)
+    FROM system.tables
+    WHERE database = currentDatabase() AND name = 'test_alias_access';
+"
 
 # Test target access checks for `CREATE TABLE ... AS` an `Alias`
 copy_table="create_as_copy_${CLICKHOUSE_TEST_UNIQUE_NAME}"

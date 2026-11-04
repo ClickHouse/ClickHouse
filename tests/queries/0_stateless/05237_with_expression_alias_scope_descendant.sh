@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-replicated-database
+# Tag no-replicated-database: the replay of a view definition from the DDL log reads a table instead of an alias declared inside a `WITH` expression, https://github.com/ClickHouse/ClickHouse/pull/124021
 # An expression alias of a `WITH` clause is inherited by the nested `SELECT`s at any depth of the
 # expression - `WITH tuple([7] AS nested) AS wrapper`, not only `WITH [7] AS nested` - because the
 # analyzer collects it through the whole expression. It stops at a lambda and at a nested query,

@@ -21,23 +21,19 @@ DateTime([timezone])
 
 分辨率：1 秒。
 
-<div id="speed">
-  ## 速度
-</div>
+## 速度 {#speed}
 
 在 *大多数* 情况下，`Date` 数据类型比 `DateTime` 更快。
 
 `Date` 类型占用 2 字节存储空间，而 `DateTime` 占用 4 字节。不过，在压缩时，`Date` 和 `DateTime` 之间的大小差异会更加明显。这是因为 `DateTime` 中的分钟和秒字段更难被压缩。相比过滤和聚合 `DateTime`，过滤和聚合 `Date` 也更快。
 
-<div id="usage-remarks">
-  ## 使用说明
-</div>
+## 使用说明 {#usage-remarks}
 
 时间点会保存为 [Unix 时间戳](https://en.wikipedia.org/wiki/Unix_time)，与时区或夏令时无关。时区会影响 `DateTime` 类型的值以文本格式显示的方式，以及以字符串形式指定的值 (`'2020-01-01 05:00:01'`) 的解析方式。
 
 表中存储的是与时区无关的 Unix 时间戳，而时区用于在数据导入/导出期间将其转换为文本格式或从文本格式转换回来，或者用于对这些值执行日历计算 (例如 `toDate`、`toHour` 等函数) 。时区不会存储在表的行中 (或结果集中) ，而是存储在列元数据中。
 
-支持的时区列表可在 [IANA Time Zone Database](https://www.iana.org/time-zones) 中找到，也可以通过 `SELECT * FROM system.time_zones` 查询。[该列表](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) 在 Wikipedia 上也可以查看。
+支持的时区名称与 `SELECT * FROM system.time_zones` 列出的名称完全一致，即随服务器一同提供的 [IANA Time Zone Database](https://www.iana.org/time-zones) 中的时区，因此结果不依赖于主机自身的时区数据库。[该列表](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) 在 Wikipedia 上也可以查看。此外，也支持相对于 UTC 的固定偏移量，写法为 `Fixed/UTC±HH:MM:SS`，例如 `Fixed/UTC+05:30:00`；读取使用固定偏移时区的 Arrow 或 ORC 时间戳列时，得到的正是此类名称。其他名称一律会被拒绝。
 
 创建表时，您可以为 `DateTime` 类型的列显式设置时区。例如：`DateTime('UTC')`。如果未设置时区，ClickHouse 会使用 ClickHouse server 启动时服务器设置中的 [timezone](/zh/reference/settings/server-settings/settings/other#timezone) 参数值，或者使用操作系统设置中的值。
 
@@ -47,9 +43,7 @@ ClickHouse 会根据 [date&#95;time&#95;output&#95;format](/zh/reference/setting
 
 向 ClickHouse 插入数据时，您可以根据 [date&#95;time&#95;input&#95;format](/zh/reference/settings/formats/date-time#date_time_input_format) 设置的值，使用不同格式的日期时间字符串。
 
-<div id="examples">
-  ## 示例
-</div>
+## 示例 {#examples}
 
 **1.** 创建一个带有 `DateTime` 类型列的表，并向其中插入数据：
 
@@ -135,9 +129,7 @@ FROM dt
 
 由于时区转换只会更改元数据，因此该操作不产生计算开销。
 
-<div id="limitations-on-time-zones-support">
-  ## 时区支持的限制
-</div>
+## 时区支持的限制 {#limitations-on-time-zones-support}
 
 某些时区可能无法得到完全支持，主要有以下几种情况：
 
@@ -151,9 +143,7 @@ FROM dt
 
 跨越多天的时间移位。一些太平洋岛屿将其相对 UTC 的时区偏移从 UTC+14 改为 UTC-12。这本身没有问题，但如果你使用这些时区对转换当日的历史时间点进行计算，仍可能出现一些不准确。
 
-<div id="handling-daylight-saving-time-dst">
-  ## 处理夏令时 (DST)
-</div>
+## 处理夏令时 (DST) {#handling-daylight-saving-time-dst}
 
 ClickHouse 的带时区 DateTime 类型在夏令时 (DST) 切换期间可能会出现异常行为，尤其是在以下情况下：
 
@@ -194,9 +184,7 @@ SELECT '2023-03-26 01:30:00'::DateTime('Europe/London') AS time, time + toInterv
 
 在这种情况下，ClickHouse 会将不存在的时间 `2023-03-26 01:30:00` 移回到 `2023-03-26 00:30:00`。
 
-<div id="see-also">
-  ## 另请参阅
-</div>
+## 另请参阅 {#see-also}
 
 * [类型转换函数](/zh/reference/functions/regular-functions/type-conversion-functions)
 * [用于处理日期和时间的函数](/zh/reference/functions/regular-functions/date-time-functions)

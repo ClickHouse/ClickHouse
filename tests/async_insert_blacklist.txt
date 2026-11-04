@@ -1,17 +1,11 @@
     Deduplication in dependent materialized view cannot work together with async inserts. Please disable either `deduplicate_blocks_in_dependent_materialized_views` or `async_insert` setting
 00633_materialized_view_and_too_many_parts_zookeeper
-02912_ingestion_mv_deduplication
-03008_deduplication_cases_from_docs
-03008_deduplication_insert_into_partitioned_table
 01927_query_views_log_matview_exceptions
 
     !!!insert deduplication doesn't work
 02124_insert_deduplication_token_multiple_blocks
 02124_insert_deduplication_token_multiple_blocks_replica
 03008_deduplication_random_setttings
-
-    Cannot insert column value, because it is MATERIALIZED column
-00952_insert_into_distributed_with_materialized_column
 
     !!!performance degradation (timeout)
 02046_low_cardinality_parallel_group_by

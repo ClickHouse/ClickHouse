@@ -1,0 +1,33 @@
+<clickhouse>
+    <profiles>
+        <!-- The profile of the DDL worker itself: it pins the parser depth much lower than the
+             profile of the user that issues the `ON CLUSTER` query. -->
+        <default>
+            <constraints>
+                <max_parser_depth>
+                    <max>10</max>
+                </max_parser_depth>
+            </constraints>
+        </default>
+        <deep_parser>
+            <max_parser_depth>500</max_parser_depth>
+            <constraints>
+                <max_parser_depth>
+                    <max>1000</max>
+                </max_parser_depth>
+            </constraints>
+        </deep_parser>
+    </profiles>
+    <users>
+        <!-- The user that issues the `ON CLUSTER` query. It is defined in the configuration so that it
+             exists on every host: with `distributed_ddl_use_initial_user_and_roles` the worker executes
+             the queue entry as this user. -->
+        <deep_user>
+            <no_password/>
+            <profile>deep_parser</profile>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+        </deep_user>
+    </users>
+</clickhouse>

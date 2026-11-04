@@ -51,8 +51,8 @@ def read_string(sock):
 
 def old_revision(sock):
     revision, _ = read_varuint(sock)
-    assert revision >= 54494
-    revision = 54493
+    assert revision >= 54496
+    revision = 54495
     data = bytearray()
     while revision >= 128:
         data.append((revision & 127) | 128)
@@ -62,7 +62,7 @@ def old_revision(sock):
 
 
 def old_hello(sock):
-    # Revision 54494 adds no fields. Lower both `Hello` revisions to exercise the compatibility gates.
+    # Revision 54496 adds no fields. Lower both `Hello` revisions to exercise the compatibility gates.
     packet, data = read_varuint(sock)
     assert packet == 0
     data += read_string(sock)
@@ -175,7 +175,7 @@ for codec, method in [('ZSTD', 0x90), ('LZ4', 0x82), ('LZ4HC', 0x82)]:
     assert any(value == 2 for value, _ in server_frames)
     assert any(value == method for value, _ in server_frames)
     assert all(value == (2 if size < 128 else method) for value, size in server_frames)
-    for legacy, extra in [(True, []), (False, ['--network_compression_min_bytes=0']), (False, ['--compatibility=26.9'])]:
+    for legacy, extra in [(True, []), (False, ['--network_compression_min_bytes=0']), (False, ['--compatibility=26.10'])]:
         output, streams = capture('SELECT 7', [f'--network_compression_method={codec}', *extra], legacy=legacy)
         assert output == b'7\n'
         assert all(value == method for stream in streams for value, _ in frames(stream))
