@@ -231,7 +231,7 @@ class Targeting:
         return sorted(referencing) if referencing else sorted(candidates)
 
     # Submodules with test data, the same as `test_data_submodules` in `ci/defs/job_configs.py`.
-    TEST_DATA_SUBMODULES = ("contrib/parquet-testing",)
+    TEST_DATA_SUBMODULES = ("contrib/arrow-testing", "contrib/parquet-testing")
 
     @classmethod
     def is_test_data_submodule(cls, fpath: str) -> bool:
@@ -568,7 +568,7 @@ class Targeting:
 
     # The merge queue reruns at most this many of the tests that `master` added
     # or changed after the PR's last CI run, per job type: the integration
-    # targeted job of the merge queue has a 20-minute budget and its modules are
+    # targeted job of the merge queue has a 30-minute budget and its modules are
     # much longer.
     MERGE_QUEUE_DRIFT_TESTS_LIMIT = {STATELESS_JOB_TYPE: 30, INTEGRATION_JOB_TYPE: 10}
 

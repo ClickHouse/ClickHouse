@@ -147,6 +147,9 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// join without in-memory compression.
 /// Version 21 also registers the `adaptive_aggregator_disable_thaw` plan setting, written only towards a peer at this
 /// version or above. A peer below it thaws as it always did, which changes no result.
+/// Version 21 also adds the `hash_join_layout` plan setting, written only towards a peer at this version or above.
+/// A peer below it picks the layout of a hash join itself. That can change only the speed, the memory use and the
+/// order of rows.
 ///
 /// Rules for this version:
 /// - Bump it at most once per release: the first change in a release that needs it bumps it, later changes
@@ -246,6 +249,9 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_GROUP_BY_TO
 /// join without in-memory compression, which changes only its memory usage, not the result.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_IN_MEMORY_COMPRESSION = 21;
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MIN_BYTES_BEFORE_EXTERNAL_GROUP_BY = 21;
+/// First query-plan serialization version that carries the `hash_join_layout` plan setting. Gates writing it in
+/// `JoinSettings::updatePlanSettings`.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_HASH_JOIN_LAYOUT = 21;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 /// Version 3 added the error code of a failed task to its status reply.

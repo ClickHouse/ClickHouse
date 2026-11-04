@@ -31,9 +31,8 @@ SETTINGS join_use_nulls = 1, max_bytes_in_join = '3Mi', join_overflow_mode = 'th
 DROP TABLE jimc_n_left;
 DROP TABLE jimc_n_right;
 
--- `parallel_hash` with few keys: only the slots that received right-side rows compress them, while the
--- other slots stay empty. The slots share one index of stored blocks, so every slot must read it as
--- possibly compressed, even one that did not compress anything itself.
+-- `parallel_hash` with few keys: only some hash table slots get right-side rows, while the blocks of every
+-- build stream are compressed, so the probe must read all stored blocks as possibly compressed.
 SELECT count(), sum(l.attr + r.attr)
 FROM (SELECT number % 2 AS id, sipHash64(number, 1) % 2 AS attr FROM numbers(2000)) AS l
 LEFT JOIN (SELECT number % 2 AS id, sipHash64(number, 2) % 2 AS attr FROM numbers(2000)) AS r

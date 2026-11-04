@@ -1,10 +1,10 @@
 -- Tags: no-random-settings
 -- (the `parallel_hash` case asserts that compression keeps the join under `max_bytes_in_join`; randomized
--- block-size / memory settings shift the per-slot footprint and make that threshold flaky)
+-- block-size / memory settings shift the footprint and make that threshold flaky)
 
 -- Regression tests for `enable_join_in_memory_compression` beyond plain `hash`: the setting must
--- compress the stored right-side blocks for `parallel_hash` (slots are merged into slot 0 via two-level
--- maps) and standalone `grace_hash` (the in-memory bucket). Each scenario checks the compressed result
+-- compress the stored right-side blocks for `parallel_hash` (several build streams, each compressing its
+-- own blocks) and standalone `grace_hash` (the in-memory bucket). Each scenario checks the compressed result
 -- equals the uncompressed one and, via the `JoinInMemoryCompressedColumns` profile event, that
 -- compression really happened.
 
@@ -20,8 +20,8 @@ CREATE TABLE jimc_c_right (k UInt64, rv UInt64, pad String) ENGINE = Memory;
 INSERT INTO jimc_c_left SELECT number, number FROM numbers(50000);
 INSERT INTO jimc_c_right SELECT number, number, repeat('x', 600) FROM numbers(50000);
 
--- 1. parallel_hash: each slot compresses independently, then the slots are merged into slot 0 (two-level
--- maps). Without propagating have_compressed into slot 0 the probe reads ColumnCompressed and throws.
+-- 1. parallel_hash: each build stream compresses its own blocks once the whole join passes the threshold,
+-- and the probe must decompress the blocks of every build stream.
 SELECT (SELECT sum(cityHash64(l.k, r.rv, r.pad)) FROM jimc_c_left AS l INNER JOIN jimc_c_right AS r ON l.k = r.k
             SETTINGS join_algorithm = 'parallel_hash', max_threads = 4, enable_join_in_memory_compression = 0)
      = (SELECT sum(cityHash64(l.k, r.rv, r.pad)) FROM jimc_c_left AS l INNER JOIN jimc_c_right AS r ON l.k = r.k
