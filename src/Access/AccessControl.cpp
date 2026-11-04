@@ -871,22 +871,25 @@ AuthResult AccessControl::authenticate(const Credentials & credentials, const Po
     // NOTE: In the case where the user has never been logged in using LDAP,
     // Then user_id is not generated, and the authentication quota will always be nullptr.
     auto authentication_quota = getAuthenticationQuota(credentials.getUserName(), address, client_info.getLastForwardedForHost());
-    if (authentication_quota)
-    {
-        /// Reserve a single try from the quota to check whether we have another authentication try.
-        /// This is required for correct behavior in this situation:
-        /// User has 1 login failures quota.
-        /// * At the first login with an invalid password: Increase the quota counter. 1 (used) > 1 (max) is false.
-        ///   Then try to authenticate the user and throw an AUTHENTICATION_FAILED error.
-        /// * In case of the second try: increase quota counter, 2 (used) > 1 (max), then throw QUOTA_EXCEED
-        ///   and don't let the user authenticate.
-        ///
-        /// The authentication failures counter will be reset after successful authentication.
-        authentication_quota->used(QuotaType::FAILED_SEQUENTIAL_AUTHENTICATIONS, 1);
-    }
 
     try
     {
+        if (authentication_quota)
+        {
+            /// Reserve a single try from the quota to check whether we have another authentication try.
+            /// This is required for correct behavior in this situation:
+            /// User has 1 login failures quota.
+            /// * At the first login with an invalid password: Increase the quota counter. 1 (used) > 1 (max) is false.
+            ///   Then try to authenticate the user and throw an AUTHENTICATION_FAILED error.
+            /// * In case of the second try: increase quota counter, 2 (used) > 1 (max), then throw QUOTA_EXCEED
+            ///   and don't let the user authenticate.
+            ///
+            /// The authentication failures counter will be reset after successful authentication.
+            /// Inside the try block, so that an exceeded quota is reported like any other authentication failure
+            /// and doesn't reveal whether the user exists.
+            authentication_quota->used(QuotaType::FAILED_SEQUENTIAL_AUTHENTICATIONS, 1);
+        }
+
         const auto auth_result = MultipleAccessStorage::authenticate(credentials, address, *external_authenticators, client_info,
                                                                      allow_no_password, allow_plaintext_password);
         if (authentication_quota)
