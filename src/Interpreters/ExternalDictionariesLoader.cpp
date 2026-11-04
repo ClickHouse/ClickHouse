@@ -390,6 +390,14 @@ std::string ExternalDictionariesLoader::resolveDictionaryNameFromDatabaseCatalog
 {
     String res = name.getFullName();
 
+    /// Only a database with its own tables can contain a DDL dictionary. Do not ask any other database for the table:
+    /// the name is resolved before access is checked, and e.g. a `PostgreSQL` database would query its remote server.
+    if (name.database.empty())
+        return res;
+    auto database = DatabaseCatalog::instance().tryGetDatabase(name.database);
+    if (!database || database->isExternal())
+        return res;
+
     auto [db, table] = DatabaseCatalog::instance().tryGetDatabaseAndTable(
         {name.database, name.table},
         const_pointer_cast<Context>(getContext()));
