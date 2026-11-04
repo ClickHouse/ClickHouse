@@ -41,7 +41,7 @@ struct PreparedFragmentGraph
 
     /// `hash(keys)`, `broadcast`, `gather`, `gather sorted by ...`, `any` or `set values`. With `pretty`, the keys and the
     /// sort columns are named as in the fragments.
-    String formatExchangeKind(const FragmentExchange & exchange) const;
+    [[nodiscard]] String formatExchangeKind(const FragmentExchange & exchange) const;
 
     /// `streaming` or `persisted`.
     static std::string_view formatExchangeMode(ExchangeDescription::Kind mode);
@@ -54,7 +54,7 @@ struct PreparedFragmentGraph
 
 private:
     /// Every receive step of a fragment with the plan of the fragment that sends to it.
-    FragmentInputs getFragmentInputs() const;
+    [[nodiscard]] FragmentInputs getFragmentInputs() const;
 };
 
 /// The plan of a single node as `EXPLAIN` without options prints it, followed by an empty line and

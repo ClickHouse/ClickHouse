@@ -167,10 +167,10 @@ public:
 
     /// See `GetExportAccessFn`. For the engine of the table and the inner engines of a materialized view or a `TimeSeries`
     /// table. An unknown engine needs nothing here: creating it fails later.
-    AccessRightsElements getExportAccess(const ASTCreateQuery & create) const;
+    [[nodiscard]] AccessRightsElements getExportAccess(const ASTCreateQuery & create) const;
     /// The grants of every engine for which `changes` send the data elsewhere. It does not depend on the engine of the table,
     /// so `ALTER ... ON CLUSTER` can be authorized on an initiator that does not have the table or has another engine.
-    AccessRightsElements getExportAccessOfAnyEngine(const SettingsChanges & changes) const;
+    [[nodiscard]] AccessRightsElements getExportAccessOfAnyEngine(const SettingsChanges & changes) const;
 
 private:
     Storages storages;

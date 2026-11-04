@@ -295,7 +295,7 @@ public:
         });
     }
 
-    bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
+    [[nodiscard]] bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
     {
         if (!this->haveSameDefinition(rhs))
             return false;

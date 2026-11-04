@@ -46,12 +46,12 @@ public:
     [[nodiscard]] virtual bool supportsNesting() const { return false; }
 
     /// Does the combined function return the nested function's state (an `AggregateFunction` value), like State?
-    virtual bool returnsNestedState() const { return false; }
+    [[nodiscard]] virtual bool returnsNestedState() const { return false; }
 
     /// Can the combined function work with `nested_function` for these arguments? `-Merge` cannot when
     /// `nested_function` cannot merge the states that `-Merge` reads, for example when it has the window
     /// layout and no support for merging ordinary states into it.
-    virtual bool acceptsNestedFunction(const IAggregateFunction & /*nested_function*/, const DataTypes & /*arguments*/) const
+    [[nodiscard]] virtual bool acceptsNestedFunction(const IAggregateFunction & /*nested_function*/, const DataTypes & /*arguments*/) const
     {
         return true;
     }

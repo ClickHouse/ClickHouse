@@ -175,7 +175,7 @@ public:
     UInt64 getOutputIdentity(const std::string & name, const Block * input_header = nullptr) const;
     /// Build-independent hash of what the outputs compute, in order: `ALIAS` nodes are looked through, and an `INPUT` is
     /// identified as `writeCacheKeyColumnName` identifies a column of `input_header`.
-    UInt64 getComputedOutputsHash(const Block & input_header) const;
+    [[nodiscard]] UInt64 getComputedOutputsHash(const Block & input_header) const;
     /// Output nodes can contain any column returned from DAG. You may manually change it if needed.
     NodeRawConstPtrs & getOutputs() { return outputs; }
 

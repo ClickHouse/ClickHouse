@@ -316,7 +316,7 @@ private:
         void addFilterTransform(QueryPlan &, ContextPtr) const;
 
         /// The policy AND-ed with `forwarded`, as the row-level filter of the `storage` read; null if it cannot evaluate it.
-        FilterDAGInfoPtr makeRowLevelFilter(const IStorage & storage, const FilterDAGInfoPtr & forwarded, ContextPtr) const;
+        [[nodiscard]] FilterDAGInfoPtr makeRowLevelFilter(const IStorage & storage, const FilterDAGInfoPtr & forwarded, ContextPtr) const;
 
         void addCreatingSetsStep(QueryPlan &, ContextPtr) const;
 
