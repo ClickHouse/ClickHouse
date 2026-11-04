@@ -25,7 +25,7 @@ WITH [0.0, 2.0] AS reference_vec
 SELECT id, vec, L2Distance(vec, reference_vec)
 FROM tab
 ORDER BY L2Distance(vec, reference_vec)
-LIMIT 3;
+LIMIT 3 SETTINGS enable_parallel_replicas = 0;
 
 DROP TABLE tab;
 
@@ -46,7 +46,7 @@ WITH [0.0, 2.0] AS reference_vec
 SELECT id, vec, L2Distance(vec, reference_vec)
 FROM tab
 ORDER BY L2Distance(vec, reference_vec)
-LIMIT 3;
+LIMIT 3 SETTINGS enable_parallel_replicas = 0;
 
 DROP TABLE tab;
 
@@ -68,7 +68,7 @@ WITH [0.0, 2.0] AS reference_vec
 SELECT id, vec, cosineDistance(vec, reference_vec)
 FROM tab
 ORDER BY cosineDistance(vec, reference_vec)
-LIMIT 3;
+LIMIT 3 SETTINGS enable_parallel_replicas = 0;
 
 SELECT '-- Setting "max_limit_for_vector_search_queries"';
 EXPLAIN indexes=1
@@ -77,7 +77,7 @@ SELECT id, vec, cosineDistance(vec, reference_vec)
 FROM tab
 ORDER BY cosineDistance(vec, reference_vec)
 LIMIT 3
-SETTINGS max_limit_for_vector_search_queries = 2, query_plan_max_limit_for_lazy_materialization = 10000; -- LIMIT 3 > 2 --> don't use the ann index; CI may inject query_plan_max_limit_for_lazy_materialization=1, disabling lazy mat
+SETTINGS max_limit_for_vector_search_queries = 2, query_plan_max_limit_for_lazy_materialization = 10000, enable_parallel_replicas = 0; -- LIMIT 3 > 2 --> don't use the ann index; CI may inject query_plan_max_limit_for_lazy_materialization=1, disabling lazy mat
 
 DROP TABLE tab;
 
@@ -142,7 +142,7 @@ WITH [0.0, 2.0] AS reference_vec
 SELECT id, vec, L2Distance(vec, reference_vec)
 FROM tab_l2_f64
 ORDER BY L2Distance(vec, reference_vec)
-LIMIT 3;
+LIMIT 3 SETTINGS enable_parallel_replicas = 0;
 
 WITH [0.0, 2.0] AS reference_vec
 SELECT id, vec, L2Distance(vec, reference_vec)
@@ -155,7 +155,7 @@ WITH [0.0, 2.0] AS reference_vec
 SELECT id, vec, L2Distance(vec, reference_vec)
 FROM tab_l2_f32
 ORDER BY L2Distance(vec, reference_vec)
-LIMIT 3;
+LIMIT 3 SETTINGS enable_parallel_replicas = 0;
 
 WITH [0.0, 2.0] AS reference_vec
 SELECT id, vec, L2Distance(vec, reference_vec)
@@ -168,7 +168,7 @@ WITH [0.0, 2.0] AS reference_vec
 SELECT id, vec, L2Distance(vec, reference_vec)
 FROM tab_l2_f16
 ORDER BY L2Distance(vec, reference_vec)
-LIMIT 3;
+LIMIT 3 SETTINGS enable_parallel_replicas = 0;
 
 WITH [0.0, 2.0] AS reference_vec
 SELECT id, vec, L2Distance(vec, reference_vec)
@@ -181,7 +181,7 @@ WITH [0.0, 2.0] AS reference_vec
 SELECT id, vec, L2Distance(vec, reference_vec)
 FROM tab_l2_bf16
 ORDER BY L2Distance(vec, reference_vec)
-LIMIT 3;
+LIMIT 3 SETTINGS enable_parallel_replicas = 0;
 
 WITH [0.0, 2.0] AS reference_vec
 SELECT id, vec, L2Distance(vec, reference_vec)
@@ -194,7 +194,7 @@ WITH [0.0, 2.0] AS reference_vec
 SELECT id, vec, L2Distance(vec, reference_vec)
 FROM tab_l2_i8
 ORDER BY L2Distance(vec, reference_vec)
-LIMIT 3;
+LIMIT 3 SETTINGS enable_parallel_replicas = 0;
 
 WITH [0.0, 2.0] AS reference_vec
 SELECT id, vec, cosineDistance(vec, reference_vec)
@@ -207,7 +207,7 @@ WITH [0.0, 2.0] AS reference_vec
 SELECT id, vec, cosineDistance(vec, reference_vec)
 FROM tab_cos_f64
 ORDER BY cosineDistance(vec, reference_vec)
-LIMIT 3;
+LIMIT 3 SETTINGS enable_parallel_replicas = 0;
 
 WITH [0.0, 2.0] AS reference_vec
 SELECT id, vec, cosineDistance(vec, reference_vec)
@@ -220,7 +220,7 @@ WITH [0.0, 2.0] AS reference_vec
 SELECT id, vec, cosineDistance(vec, reference_vec)
 FROM tab_cos_f32
 ORDER BY cosineDistance(vec, reference_vec)
-LIMIT 3;
+LIMIT 3 SETTINGS enable_parallel_replicas = 0;
 
 WITH [0.0, 2.0] AS reference_vec
 SELECT id, vec, cosineDistance(vec, reference_vec)
@@ -233,7 +233,7 @@ WITH [0.0, 2.0] AS reference_vec
 SELECT id, vec, cosineDistance(vec, reference_vec)
 FROM tab_cos_f16
 ORDER BY cosineDistance(vec, reference_vec)
-LIMIT 3;
+LIMIT 3 SETTINGS enable_parallel_replicas = 0;
 
 WITH [0.0, 2.0] AS reference_vec
 SELECT id, vec, cosineDistance(vec, reference_vec)
@@ -246,7 +246,7 @@ WITH [0.0, 2.0] AS reference_vec
 SELECT id, vec, cosineDistance(vec, reference_vec)
 FROM tab_cos_bf16
 ORDER BY cosineDistance(vec, reference_vec)
-LIMIT 3;
+LIMIT 3 SETTINGS enable_parallel_replicas = 0;
 
 WITH [0.0, 2.0] AS reference_vec
 SELECT id, vec, cosineDistance(vec, reference_vec)
@@ -259,7 +259,7 @@ WITH [0.0, 2.0] AS reference_vec
 SELECT id, vec, cosineDistance(vec, reference_vec)
 FROM tab_cos_i8
 ORDER BY cosineDistance(vec, reference_vec)
-LIMIT 3;
+LIMIT 3 SETTINGS enable_parallel_replicas = 0;
 
 WITH [0.0, 2.0] AS reference_vec
 SELECT id, vec, dotProduct(vec, reference_vec)
@@ -272,7 +272,7 @@ WITH [0.0, 2.0] AS reference_vec
 SELECT id, vec, dotProduct(vec, reference_vec)
 FROM tab_dot_f64
 ORDER BY dotProduct(vec, reference_vec) DESC
-LIMIT 3;
+LIMIT 3 SETTINGS enable_parallel_replicas = 0;
 
 WITH [0.0, 2.0] AS reference_vec
 SELECT id, vec, dotProduct(vec, reference_vec)
@@ -285,7 +285,7 @@ WITH [0.0, 2.0] AS reference_vec
 SELECT id, vec, dotProduct(vec, reference_vec)
 FROM tab_dot_f32
 ORDER BY dotProduct(vec, reference_vec) DESC
-LIMIT 3;
+LIMIT 3 SETTINGS enable_parallel_replicas = 0;
 
 WITH [0.0, 2.0] AS reference_vec
 SELECT id, vec, dotProduct(vec, reference_vec)
@@ -298,7 +298,7 @@ WITH [0.0, 2.0] AS reference_vec
 SELECT id, vec, dotProduct(vec, reference_vec)
 FROM tab_dot_f16
 ORDER BY dotProduct(vec, reference_vec) DESC
-LIMIT 3;
+LIMIT 3 SETTINGS enable_parallel_replicas = 0;
 
 WITH [0.0, 2.0] AS reference_vec
 SELECT id, vec, dotProduct(vec, reference_vec)
@@ -311,7 +311,7 @@ WITH [0.0, 2.0] AS reference_vec
 SELECT id, vec, dotProduct(vec, reference_vec)
 FROM tab_dot_bf16
 ORDER BY dotProduct(vec, reference_vec) DESC
-LIMIT 3;
+LIMIT 3 SETTINGS enable_parallel_replicas = 0;
 
 WITH [0.0, 2.0] AS reference_vec
 SELECT id, vec, dotProduct(vec, reference_vec)
@@ -324,7 +324,7 @@ WITH [0.0, 2.0] AS reference_vec
 SELECT id, vec, dotProduct(vec, reference_vec)
 FROM tab_dot_i8
 ORDER BY dotProduct(vec, reference_vec) DESC
-LIMIT 3;
+LIMIT 3 SETTINGS enable_parallel_replicas = 0;
 
 DROP TABLE tab_l2_f64;
 DROP TABLE tab_l2_f32;
@@ -381,7 +381,7 @@ WITH [0.0, 2.0] AS reference_vec
 SELECT id, vec, dotProduct(vec, reference_vec)
 FROM tab
 ORDER BY dotProduct(vec, reference_vec) DESC
-LIMIT 3;
+LIMIT 3 SETTINGS enable_parallel_replicas = 0;
 
 DROP TABLE tab;
 
@@ -394,7 +394,7 @@ WITH [0.0, 2.0] AS reference_vec
 SELECT id, vec, L2Distance(vec, reference_vec)
 FROM tab
 ORDER BY L2Distance(vec, reference_vec) DESC
-LIMIT 3;
+LIMIT 3 SETTINGS enable_parallel_replicas = 0;
 
 DROP TABLE tab;
 
@@ -407,7 +407,7 @@ WITH [0.0, 2.0] AS reference_vec
 SELECT id, vec, cosineDistance(vec, reference_vec)
 FROM tab
 ORDER BY cosineDistance(vec, reference_vec) DESC
-LIMIT 3;
+LIMIT 3 SETTINGS enable_parallel_replicas = 0;
 
 DROP TABLE tab;
 
@@ -420,6 +420,6 @@ WITH [0.0, 2.0] AS reference_vec
 SELECT id, vec, dotProduct(vec, reference_vec)
 FROM tab
 ORDER BY dotProduct(vec, reference_vec) ASC
-LIMIT 3;
+LIMIT 3 SETTINGS enable_parallel_replicas = 0;
 
 DROP TABLE tab;
