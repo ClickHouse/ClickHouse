@@ -1554,10 +1554,9 @@ HashJoin::StoredBlocksList::iterator HashJoin::storeBlock(BuildStreamData & buil
     stored_columns.block_no = data->stored_columns_index->add(&stored_columns);
     data->addBytes(data->allocated_size, stored_columns.allocatedBytes());
     data->rows_to_join.fetch_add(rows, std::memory_order_relaxed);
-    const auto stored = new_block.begin();
     build_stream.columns.splice(build_stream.columns.end(), new_block);
     doDebugAsserts();
-    return stored;
+    return std::prev(build_stream.columns.end());
 }
 
 void HashJoin::insertStoredBlock(

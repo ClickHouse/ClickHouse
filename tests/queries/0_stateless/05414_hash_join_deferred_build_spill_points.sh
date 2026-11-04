@@ -4,6 +4,8 @@
 # Before it stores a block, when the live projection of its size reaches `max_bytes_before_external_join`: here many
 # right blocks of keys alone, whose maps take far more than the blocks. Or once all blocks are stored, when the final
 # projection reaches it: here a single right block, which no check before a block can see.
+# The first case reads with one thread. Otherwise, the blocks of four streams can reach half the threshold, where the
+# join switches on its stored bytes, before one of the streams has checked the projection.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -27,7 +29,7 @@ run()
 
 run "during the build" \
     "SELECT count(), sum(cityHash64(l.k)) FROM ${LEFT} INNER JOIN (SELECT number AS k FROM numbers(1000000)) r ON l.k = r.k" \
-    "max_bytes_before_external_join = 8388608, max_block_size = 65536" \
+    "max_bytes_before_external_join = 8388608, max_block_size = 65536, max_threads = 1" \
     "reached the spill threshold while the right blocks arrive"
 
 run "at the end of the build" \
