@@ -64,6 +64,7 @@
 #include <Common/ThreadStatus.h>
 #include <Common/JemallocMergeTreeArena.h>
 #include <Common/Logger.h>
+#include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 
@@ -2384,6 +2385,7 @@ bool MergeTask::VerticalMergeStage::executeVerticalMergeForOneColumn() const
             ctx->column_parts_pipeline.setNumThreads(1);
             ctx->column_parts_pipeline.setConcurrencyControl(false);
             ctx->async_executor = std::make_unique<PullingAsyncPipelineExecutor>(ctx->column_parts_pipeline);
+            ctx->async_executor->setProfileCountersScope(&ctx->read_thread_profile_counters);
         }
         else
             ctx->executor = std::make_unique<PullingPipelineExecutor>(ctx->column_parts_pipeline);
@@ -2424,7 +2426,16 @@ void MergeTask::VerticalMergeStage::finalizeVerticalMergeForOneColumn() const
     global_ctx->checkOperationIsNotCanceled();
 
     ctx->executor.reset();
-    ctx->async_executor.reset();
+    if (ctx->async_executor)
+    {
+        /// Joins the thread.
+        ctx->async_executor.reset();
+
+        /// The events of the thread are already in the counters of the thread group of the merge, but not in the
+        /// `ProfileEventsScope` of the merge task, which `system.part_log` shows. So add them only to the scope.
+        CurrentThread::getProfileEvents().addWithoutParents(ctx->read_thread_profile_counters.getPartiallyAtomicSnapshot());
+        ctx->read_thread_profile_counters.reset();
+    }
     ctx->read_thread_slot.reset();
     mergeBuiltStatistics(std::move(ctx->build_statistics_transforms), global_ctx);
 

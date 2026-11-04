@@ -459,6 +459,8 @@ private:
         std::unique_ptr<PullingPipelineExecutor> executor;
         /// The thread of `async_executor`. Declared before it, so it is released after the thread is joined.
         MergeHelperThreads::SlotPtr read_thread_slot;
+        /// The profile events of the thread of `async_executor`. Declared before it, so it outlives the thread.
+        ProfileEvents::Counters read_thread_profile_counters;
         /// Reads and gathers the column in another thread, so it overlaps with writing.
         /// Used with `vertical_merge_read_in_separate_thread` instead of `executor`.
         std::unique_ptr<PullingAsyncPipelineExecutor> async_executor;

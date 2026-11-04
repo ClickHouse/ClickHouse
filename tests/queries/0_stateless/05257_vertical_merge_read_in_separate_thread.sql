@@ -51,6 +51,16 @@ SYSTEM FLUSH LOGS part_log;
 SELECT DISTINCT table, merge_algorithm FROM system.part_log
 WHERE database = currentDatabase() AND event_type = 'MergeParts' ORDER BY table;
 
+-- The events of the thread that reads the columns are in the events of the merge.
+SELECT uniqExact(merged_bytes), min(merged_bytes) > 0
+FROM
+(
+    SELECT table, sum(ProfileEvents['MergedUncompressedBytes']) AS merged_bytes
+    FROM system.part_log
+    WHERE database = currentDatabase() AND event_type = 'MergeParts'
+    GROUP BY table
+);
+
 SELECT count(), sum(id), groupBitXor(cityHash64(*)) FROM t_read_thread_on;
 SELECT count() FROM t_read_thread_on WHERE s0 = '42' SETTINGS force_data_skipping_indices = 'idx_bf';
 

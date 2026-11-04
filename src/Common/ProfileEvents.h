@@ -149,6 +149,10 @@ namespace ProfileEvents
         /// Every single value is fetched atomically, but not all values as a whole.
         Snapshot getPartiallyAtomicSnapshot() const;
 
+        /// Adds the values of `snapshot` to these counters, but not to their parents.
+        /// For the events of another thread, which are already in the common parents, such as the counters of the thread group.
+        void addWithoutParents(const Snapshot & snapshot);
+
         /// Reset all counters to zero and reset parent.
         void reset();
 

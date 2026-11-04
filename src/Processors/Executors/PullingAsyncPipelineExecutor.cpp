@@ -7,6 +7,7 @@
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Interpreters/ProcessList.h>
 #include <Common/CurrentThread.h>
+#include <Common/ProfileEventsScope.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/ThreadPool.h>
@@ -86,10 +87,19 @@ const Block & PullingAsyncPipelineExecutor::getHeader() const
 }
 
 static void threadFunction(
-    PullingAsyncPipelineExecutor::Data & data, ThreadGroupPtr thread_group, size_t num_threads, bool concurrency_control)
+    PullingAsyncPipelineExecutor::Data & data,
+    ThreadGroupPtr thread_group,
+    size_t num_threads,
+    bool concurrency_control,
+    ProfileEvents::Counters * profile_counters_scope)
 {
     try
     {
+        /// Before the switcher, so that the events counted when the thread detaches from the group are in the scope too.
+        std::optional<ProfileEventsScope> profile_events_scope;
+        if (profile_counters_scope)
+            profile_events_scope.emplace(profile_counters_scope);
+
         ThreadGroupSwitcher switcher(thread_group, ThreadName::PULLING_ASYNC_EXECUTOR);
 
         data.executor->execute(num_threads, concurrency_control);
@@ -125,7 +135,7 @@ bool PullingAsyncPipelineExecutor::pull(Chunk & chunk, uint64_t milliseconds)
 
         auto func = [&, thread_group = CurrentThread::getGroup()]()
         {
-            threadFunction(*data, thread_group, pipeline.getNumThreads(), pipeline.getConcurrencyControl());
+            threadFunction(*data, thread_group, pipeline.getNumThreads(), pipeline.getConcurrencyControl(), profile_counters_scope);
         };
 
         data->thread = ThreadFromGlobalPool(std::move(func));

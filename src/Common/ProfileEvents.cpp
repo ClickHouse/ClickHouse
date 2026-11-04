@@ -2242,6 +2242,14 @@ Counters::Snapshot Counters::getPartiallyAtomicSnapshot() const
     return res;
 }
 
+void Counters::addWithoutParents(const Snapshot & snapshot)
+{
+    const int32_t cpu = PerCPU::getCurrentCPU();
+    for (Event i = Event(0); i < num_counters; ++i)
+        if (Count amount = snapshot[i])
+            fetchAdd(i, amount, cpu);
+}
+
 static const std::array<std::string_view, END> names =
 {
 #define M(NAME, DOCUMENTATION, VALUE_TYPE) #NAME,
