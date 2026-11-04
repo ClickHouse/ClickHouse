@@ -1039,28 +1039,25 @@ public:
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
-    /// Execution throws for some row values when a String date is parsed, a `UInt64` or floating-point delta does not fit `Int64`,
-    /// or the delta is scaled to ticks with an overflow check: sub-second units and seconds on `DateTime64` / `Time64`, and
-    /// sub-second units with an `Int64` delta on `DateTime` (a narrower delta cannot overflow `UInt32 * 10^9`).
+    /// Throws for some row values: parsing a String date, a delta that does not fit `Int64`, or scaling the delta to ticks.
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
     {
-        /// A NULL or Nothing argument returns NULL before `getReturnTypeImpl` checks the arity, so a single argument can get here.
+        /// A NULL argument returns NULL before `getReturnTypeImpl` checks the arity.
         if (arguments.size() < 2)
             return false;
+
+        const auto from_type = removeLowCardinalityAndNullable(arguments[0].type);
+        const auto delta_type = removeLowCardinalityAndNullable(arguments[1].type);
+        if (isString(from_type) || isUInt64(delta_type) || isFloat(delta_type))
+            return true;
 
         constexpr bool sub_second = std::is_base_of_v<AddNanosecondsImpl, Transform> || std::is_base_of_v<AddMicrosecondsImpl, Transform>
             || std::is_base_of_v<AddMillisecondsImpl, Transform>;
         constexpr bool seconds = std::is_base_of_v<AddSecondsImpl, Transform>;
-
-        const auto from_type = removeLowCardinalityAndNullable(arguments[0].type);
-        const auto delta_type = removeLowCardinalityAndNullable(arguments[1].type);
-        return isString(from_type) || isUInt64(delta_type) || isFloat(delta_type)
-            || ((sub_second || seconds) && (isDateTime64(from_type) || isTime64(from_type)))
-            || (sub_second && isInt64(delta_type));
+        const bool from_ticks = isDateTime64(from_type) || isTime64(from_type);
+        return (sub_second && (from_ticks || isInt64(delta_type))) || (seconds && from_ticks);
     }
 
-    /// For the same reason, execute only on values a row holds: not on a whole LowCardinality dictionary,
-    /// nor on the nested value behind a NULL.
     bool canBeExecutedOnDefaultArguments() const override { return false; }
 
     /// Documentation-only — adds/subtracts the integer/float `delta` of the
