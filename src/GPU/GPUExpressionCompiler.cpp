@@ -16,6 +16,7 @@
 #include <Common/SipHash.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/Native.h>
+#include <Interpreters/JIT/CHJIT.h>
 #include <Interpreters/JIT/CompileDAG.h>
 
 #include <cuda_runtime_api.h>
@@ -40,16 +41,12 @@
 #include <llvm/TargetParser/Triple.h>
 
 #include <memory>
-#include <mutex>
 #include <unordered_set>
 
-extern "C" void LLVMInitializeNVPTXTargetInfo();
-extern "C" void LLVMInitializeNVPTXTarget();
-extern "C" void LLVMInitializeNVPTXTargetMC();
-extern "C" void LLVMInitializeNVPTXAsmPrinter();
 
 namespace DB::ErrorCodes
 {
+
     extern const int CANNOT_COMPILE_CODE;
     extern const int LOGICAL_ERROR;
 }
@@ -59,10 +56,8 @@ namespace DB::GPU
 
 namespace
 {
-
 constexpr const char * nvptx_triple = "nvptx64-nvidia-cuda";
 
-/// The `sm_XY` of the device that the server runs queries on, which the PTX is emitted for.
 const std::string & deviceArchitecture()
 {
     static const std::string architecture = []
@@ -84,14 +79,7 @@ const std::string & deviceArchitecture()
 
 std::unique_ptr<llvm::TargetMachine> nvptxTargetMachine()
 {
-    static std::once_flag initialized;
-    std::call_once(initialized, []
-    {
-        LLVMInitializeNVPTXTargetInfo();
-        LLVMInitializeNVPTXTarget();
-        LLVMInitializeNVPTXTargetMC();
-        LLVMInitializeNVPTXAsmPrinter();
-    });
+    initializeLLVMTargets();
 
     const llvm::Triple triple(nvptx_triple);
     std::string error;
@@ -116,9 +104,6 @@ const ActionsDAG::Node * withoutAliases(const ActionsDAG::Node * node)
     return node;
 }
 
-/// The intrinsics that NVPTX lowers into instructions of the device. The code of a function that calls another, such as
-/// a function of libm, is refused, as is one that calls an intrinsic the device has no instruction for, which LLVM
-/// cannot select an instruction for.
 bool deviceHasIntrinsic(llvm::StringRef name)
 {
     static const std::unordered_set<std::string_view> intrinsics = {
@@ -133,7 +118,6 @@ bool deviceHasIntrinsic(llvm::StringRef name)
         return false;
     if (name.starts_with("nvvm."))
         return true;
-    /// Without the suffix of the overloaded types, `llvm.smax.i32`.
     for (size_t dot = name.size(); dot != llvm::StringRef::npos; dot = name.substr(0, dot).rfind('.'))
     {
         if (intrinsics.contains(std::string_view(name.substr(0, dot))))
@@ -142,7 +126,6 @@ bool deviceHasIntrinsic(llvm::StringRef name)
     return false;
 }
 
-/// The part of an expression that compiles, as the CPU's JIT takes it, and the columns it reads, which are its inputs.
 struct DeviceDAG
 {
     CompileDAG dag;
@@ -173,7 +156,6 @@ std::optional<DeviceDAG> deviceDAGOf(const ActionsDAG::Node & root, String & ref
         return {};
     }
 
-    /// The code of a `Nullable` value is a pair of the value and a flag, which the device does not read.
     for (size_t i = 0; i < result.dag.getNodesCount(); ++i)
     {
         if (result.dag[i].result_type->isNullable())
@@ -185,7 +167,6 @@ std::optional<DeviceDAG> deviceDAGOf(const ActionsDAG::Node & root, String & ref
     return result;
 }
 
-/// The kernel of `dag`: `void name(ptr column_0, ..., ptr result, i64 rows)`, a thread for each row.
 void emitKernel(llvm::Module & module, const DeviceDAG & device_dag, const DataTypePtr & result_type, GPUExpressionResult output, const std::string & name)
 {
     llvm::LLVMContext & context = module.getContext();
@@ -232,7 +213,6 @@ void emitKernel(llvm::Module & module, const DeviceDAG & device_dag, const DataT
     llvm::BasicBlock * body_end = b.GetInsertBlock();
     b.CreateBr(done);
 
-    /// Every thread of a warp votes, those past the last row with false, and the first one writes the warp's word.
     b.SetInsertPoint(done);
     llvm::PHINode * passes = b.CreatePHI(b.getInt1Ty(), 2);
     passes->addIncoming(b.getFalse(), entry);
@@ -252,8 +232,6 @@ void emitKernel(llvm::Module & module, const DeviceDAG & device_dag, const DataT
     b.CreateRetVoid();
 }
 
-/// The PTX of `module`, optimized as the CPU's JIT optimizes its code, or nothing with `refusal` saying what the device
-/// does not run.
 std::optional<std::string> emitPTX(llvm::Module & module, llvm::TargetMachine & machine, String & refusal)
 {
     std::string errors;
@@ -304,7 +282,6 @@ std::optional<CompiledGPUExpression> compile(const ActionsDAG & dag, const Strin
         return {};
     }
 
-    /// Without aliases, which `getCompilableDAG` takes as inputs, so that `(x + y AS s) > 0` compiles as `x + y > 0` does.
     ActionsDAG expression = ActionsDAG::cloneSubDAG({output_node}, true);
     const ActionsDAG::Node * root = withoutAliases(expression.getOutputs().front());
 
@@ -349,7 +326,6 @@ std::optional<CompiledGPUExpression> compile(const ActionsDAG & dag, const Strin
         if (!ptx)
             return {};
 
-        /// Loaded once, by the first query that compiles it, which another one compiling it waits for.
         kernel = kernels.getOrSet(key, [&] { return GPUKernel::load(name, *ptx); }).first;
     }
 

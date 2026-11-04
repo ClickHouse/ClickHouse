@@ -14,6 +14,7 @@
 
 namespace DB::ErrorCodes
 {
+
     extern const int GPU_ERROR;
 }
 
