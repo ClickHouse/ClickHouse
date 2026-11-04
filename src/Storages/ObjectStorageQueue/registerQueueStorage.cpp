@@ -6,6 +6,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Formats/FormatFactory.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueMoveDestinationAccess.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
 #include <Storages/StorageFactory.h>
@@ -143,6 +144,7 @@ void registerStorageS3Queue(StorageFactory & factory)
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::S3,
             .has_builtin_setting_fn = ObjectStorageQueueSettings::hasBuiltin,
+            .get_export_access_fn = getS3QueueMoveDestinationAccess,
         });
 }
 #endif
@@ -161,6 +163,7 @@ void registerStorageAzureQueue(StorageFactory & factory)
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::AZURE,
             .has_builtin_setting_fn = ObjectStorageQueueSettings::hasBuiltin,
+            .get_export_access_fn = getAzureQueueMoveDestinationAccess,
         });
 }
 #endif
