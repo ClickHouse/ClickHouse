@@ -1,3 +1,5 @@
+-- Tags: no-parallel-replicas
+-- no-parallel-replicas: the replicas of `cluster_for_parallel_replicas` in that configuration are not local, so the `MergeTree` modification hash is `NULL` by design.
 -- Tests that a count-neutral change to the active-part set moves the MergeTree `modification_hash`.
 -- A single-part `REPLACE PARTITION FROM` commits one added and one covered part in a single
 -- transaction, so the net part-count delta is zero; the loop-free version folded into the hash must

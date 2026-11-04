@@ -1,3 +1,5 @@
+-- Tags: no-parallel-replicas
+-- no-parallel-replicas: the replicas of `cluster_for_parallel_replicas` in that configuration are not local, so the `MergeTree` modification hash is `NULL` by design.
 -- Tests that the modification_hash of a Distributed table folds the table's own UUID, so that a same-name
 -- DROP + CREATE (a new incarnation) is not mistaken for the same data state (issue #108713).
 --

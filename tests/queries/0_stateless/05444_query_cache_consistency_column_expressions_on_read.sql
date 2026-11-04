@@ -1,4 +1,5 @@
--- Tags: no-ordinary-database
+-- Tags: no-ordinary-database, no-parallel-replicas
+-- no-parallel-replicas: the replicas of `cluster_for_parallel_replicas` in that configuration are not local, so the `MergeTree` modification hash is `NULL` by design.
 -- A read evaluates the `DEFAULT` expression of a column that an old part does not store. When the
 -- expression reads a dictionary, the rows change with the dictionary while the table stays the same, so
 -- the table has no modification hash, and the consistent query cache returns the fresh value.

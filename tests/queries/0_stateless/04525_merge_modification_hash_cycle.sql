@@ -1,3 +1,5 @@
+-- Tags: no-parallel-replicas
+-- no-parallel-replicas: the replicas of `cluster_for_parallel_replicas` in that configuration are not local, so the `MergeTree` modification hash is `NULL` by design.
 -- Tests that StorageMerge::getModificationHash fails closed (returns NULL) on a cycle of mutually-referencing
 -- Merge tables instead of recursing until the stack is exhausted (issue #108713).
 --

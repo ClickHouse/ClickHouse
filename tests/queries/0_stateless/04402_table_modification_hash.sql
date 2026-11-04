@@ -1,3 +1,5 @@
+-- Tags: no-parallel-replicas
+-- no-parallel-replicas: the replicas of `cluster_for_parallel_replicas` in that configuration are not local, so the `MergeTree` modification hash is `NULL` by design.
 -- Tests for the modification_hash column of system.tables (issue #108713).
 -- modification_hash is a value that changes whenever the data behind the table changes.
 

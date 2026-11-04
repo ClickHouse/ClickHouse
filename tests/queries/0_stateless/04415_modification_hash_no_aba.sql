@@ -1,3 +1,5 @@
+-- Tags: no-parallel-replicas
+-- no-parallel-replicas: the replicas of `cluster_for_parallel_replicas` in that configuration are not local, so the `MergeTree` modification hash is `NULL` by design.
 -- Tests that a MergeTree modification_hash is loop-free: an A -> B -> A transition of the active-part
 -- set (INSERT then DROP PART/PARTITION returns the set to an identical value) must NOT return to the
 -- earlier hash. The query-cache (`query_cache_use_only_when_data_was_not_changed`) and

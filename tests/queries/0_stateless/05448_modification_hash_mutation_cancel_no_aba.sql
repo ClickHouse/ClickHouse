@@ -1,3 +1,5 @@
+-- Tags: no-parallel-replicas
+-- no-parallel-replicas: the replicas of `cluster_for_parallel_replicas` in that configuration are not local, so the `MergeTree` modification hash is `NULL` by design.
 -- A `MergeTree` modification hash must not return to its earlier value after a mutation is enqueued
 -- and then cancelled with `KILL MUTATION`. Such a mutation may be applied on the fly by a read that
 -- captured it in its mutations snapshot, while the parts, the metadata and the pending mutation counters

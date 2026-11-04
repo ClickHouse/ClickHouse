@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-parallel-replicas
+# no-parallel-replicas: the replicas of `cluster_for_parallel_replicas` in that configuration are not local, so the `MergeTree` modification hash is `NULL` by design.
 
 # The `modification_hash` of a `SQL SECURITY DEFINER` materialized view covers its whole target table,
 # which is read with the definer's grants. In `system.tables` it must be `NULL` for a caller who can

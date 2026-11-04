@@ -1,4 +1,5 @@
--- Tags: no-ordinary-database
+-- Tags: no-ordinary-database, no-parallel-replicas
+-- no-parallel-replicas: the replicas of `cluster_for_parallel_replicas` in that configuration are not local, so the `MergeTree` modification hash is `NULL` by design.
 -- `y` is an ordinary column of the `Distributed` table, but an `ALIAS` of the table behind it. The
 -- initiator analyzes only the schema of the `Distributed` table, and the shard that expands the alias has
 -- no consistency capture, so the probe of the table behind it must check the resolved alias: the overload

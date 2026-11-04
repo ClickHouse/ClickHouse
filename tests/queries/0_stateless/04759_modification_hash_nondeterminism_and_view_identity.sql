@@ -1,4 +1,5 @@
--- Tags: need-query-parameters
+-- Tags: need-query-parameters, no-parallel-replicas
+-- no-parallel-replicas: the replicas of `cluster_for_parallel_replicas` in that configuration are not local, so the `MergeTree` modification hash is `NULL` by design.
 
 -- Tests that the modification-hash consistency machinery (issue #108713) fails closed on constructs
 -- whose result can change without any referenced table changing (PR #108721 review):

@@ -1,3 +1,5 @@
+-- Tags: no-parallel-replicas
+-- no-parallel-replicas: the replicas of `cluster_for_parallel_replicas` in that configuration are not local, so the `MergeTree` modification hash is `NULL` by design.
 -- `query_cache_use_only_when_data_was_not_changed` must not cache a result that can change while every
 -- referenced table stays the same. A column added by `ALTER TABLE ... ADD COLUMN` is missing in the old
 -- part, so the read evaluates its `DEFAULT` expression. `arrayReduce('groupArraySample(1)', ...)` is not

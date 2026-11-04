@@ -1,4 +1,5 @@
--- Tags: need-query-parameters
+-- Tags: need-query-parameters, no-parallel-replicas
+-- no-parallel-replicas: the replicas of `cluster_for_parallel_replicas` in that configuration are not local, so the `MergeTree` modification hash is `NULL` by design.
 
 -- Tests that the consistent query cache (`query_cache_use_only_when_data_was_not_changed`) fails
 -- closed when a referenced table has an active row policy for the current user: an `ALTER ROW POLICY`

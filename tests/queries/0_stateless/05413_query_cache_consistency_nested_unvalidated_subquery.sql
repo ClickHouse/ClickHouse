@@ -1,3 +1,5 @@
+-- Tags: no-parallel-replicas
+-- no-parallel-replicas: the replicas of `cluster_for_parallel_replicas` in that configuration are not local, so the `MergeTree` modification hash is `NULL` by design.
 -- An outer query cached with `query_cache_use_only_when_data_was_not_changed = 1` certifies its result
 -- with the current hash of the tables it reads. A subquery that opts into the query cache without that
 -- setting must then not be served from its own, unvalidated entry: the outer query would store the

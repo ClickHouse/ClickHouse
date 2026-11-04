@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-parallel-replicas
+# no-parallel-replicas: the replicas of `cluster_for_parallel_replicas` in that configuration are not local, so the `MergeTree` modification hash is `NULL` by design.
 
 # `system.tables.modification_hash` covers the whole table, so it must be `NULL` for a caller who can
 # read only some of its columns: otherwise polling it would reveal changes to the columns the caller

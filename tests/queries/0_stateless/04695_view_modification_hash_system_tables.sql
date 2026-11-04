@@ -1,3 +1,5 @@
+-- Tags: no-parallel-replicas
+-- no-parallel-replicas: the replicas of `cluster_for_parallel_replicas` in that configuration are not local, so the `MergeTree` modification hash is `NULL` by design.
 -- Tests that the view transparency of `modification_hash` (issue #108713) lives in the storage-level
 -- `getModificationHash`, not only in the query-cache helper: `system.tables.modification_hash` must be
 -- non-NULL for a `View` and a `MaterializedView` over supported engines, must track the tables behind

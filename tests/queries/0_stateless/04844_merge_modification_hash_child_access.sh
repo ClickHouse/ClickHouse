@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-parallel-replicas
+# no-parallel-replicas: the replicas of `cluster_for_parallel_replicas` in that configuration are not local, so the `MergeTree` modification hash is `NULL` by design.
 
 # Regression test for `StorageMerge::getModificationHash` probing its source tables without checking
 # the current user's `SELECT` access to them (AI-review thread on PR #108721). An actual `Merge` read

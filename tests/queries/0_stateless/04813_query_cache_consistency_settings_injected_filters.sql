@@ -1,3 +1,5 @@
+-- Tags: no-parallel-replicas
+-- no-parallel-replicas: the replicas of `cluster_for_parallel_replicas` in that configuration are not local, so the `MergeTree` modification hash is `NULL` by design.
 -- Tests that query_cache_use_only_when_data_was_not_changed (issue #108713) tracks the filters
 -- injected from settings (`additional_table_filters`, `additional_result_filter`), which are applied
 -- by the planner only after the query AST is walked: a subquery inside such a filter must invalidate

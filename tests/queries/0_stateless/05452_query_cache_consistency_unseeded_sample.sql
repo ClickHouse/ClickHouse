@@ -1,3 +1,5 @@
+-- Tags: no-parallel-replicas
+-- no-parallel-replicas: the replicas of `cluster_for_parallel_replicas` in that configuration are not local, so the `MergeTree` modification hash is `NULL` by design.
 -- `query_cache_use_only_when_data_was_not_changed` must not cache a result that can change while every
 -- referenced table stays the same. `groupArraySample` without a seed is such a function, but it is known
 -- only after the aggregate function is resolved, also when it runs through `arrayReduce`. The seeded

@@ -1,3 +1,5 @@
+-- Tags: no-parallel-replicas
+-- no-parallel-replicas: the replicas of `cluster_for_parallel_replicas` in that configuration are not local, so the `MergeTree` modification hash is `NULL` by design.
 -- With `skip_unavailable_shards`, a read of a `Distributed` table can silently drop a shard that became unavailable
 -- only during the read, while the modification-hash probes before and after it reach every shard. No table
 -- changes, so the hash cannot tell a partial result from a full one: `modification_hash` must be NULL whenever
