@@ -475,6 +475,14 @@ def test_sql_hdfs_disk_remote_host_filter(cluster):
     existing_disk = hdfs_disk("filter_existing")
     macro_disk = hdfs_disk("filter_macro", host="{hdfs_host}")
     locations_disk = "disk(type = 'object_storage', include = 'hdfs_locations')"
+    named_disk = (
+        "disk(name = 'old_hdfs', type = 'hdfs', "
+        "endpoint = 'hdfs://hdfs1:9000/sql_disk_filter/filter_named/')"
+    )
+    wrapper_disks = [
+        "disk(type = 'encrypted', disk = 'old_hdfs', key = '0123456789abcdef', path = 'bypass/')",
+        "disk(type = 'cache', disk = 'old_hdfs', path = 'hdfs_bypass_cache/', max_size = '1Mi')",
+    ]
 
     def create(table, disk, settings=None):
         node.query(
@@ -493,10 +501,14 @@ def test_sql_hdfs_disk_remote_host_filter(cluster):
     def assert_reuse_rejected():
         assert_rejected(existing_disk)
         assert_rejected(locations_disk, settings=include_settings)
+        # A new wrapper takes the old custom disk by name, without building an HDFS object storage.
+        for wrapper in wrapper_disks:
+            assert_rejected(wrapper)
 
     # Created before the list excludes hdfs1: loaded from metadata on restart, so they are only reported.
     create("t_existing_hdfs_disk", existing_disk)
     create("t_locations_hdfs_disk", locations_disk, settings=include_settings)
+    create("t_named_hdfs_disk", named_disk)
     create("t_macro_hdfs_disk", macro_disk)
 
     with ConfigManager() as cm:
@@ -518,6 +530,7 @@ def test_sql_hdfs_disk_remote_host_filter(cluster):
         node.restart_clickhouse()
         assert node.query("SELECT x FROM t_existing_hdfs_disk") == "1\n"
         assert node.query("SELECT x FROM t_locations_hdfs_disk") == "1\n"
+        assert node.query("SELECT x FROM t_named_hdfs_disk") == "1\n"
         assert node.contains_in_log("is not allowed by `remote_url_allow_hosts`")
         # Identical definitions reuse the disks loaded from metadata with only a warning.
         assert_reuse_rejected()
@@ -527,5 +540,5 @@ def test_sql_hdfs_disk_remote_host_filter(cluster):
         node.query("ATTACH TABLE t_existing_hdfs_disk")
         assert node.query("SELECT x FROM t_existing_hdfs_disk") == "1\n"
 
-    for table in ["t_existing_hdfs_disk", "t_locations_hdfs_disk"]:
+    for table in ["t_existing_hdfs_disk", "t_locations_hdfs_disk", "t_named_hdfs_disk"]:
         node.query(f"DROP TABLE {table} SYNC")
