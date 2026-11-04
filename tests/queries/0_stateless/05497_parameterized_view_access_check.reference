@@ -12,6 +12,9 @@ denied
 denied
 -- SELECT on the table behind the view, no grant on the view
 denied
+-- an invalid Identifier parameter: the analysis error must not quote the definition
+denied
+denied
 -- SHOW TABLES on the view does not make its columns visible
 denied
 -- a grant on a single column makes the view structure visible

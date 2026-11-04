@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# A parameterized view must not expose its columns, parameters or the tables behind it to a user
+# A parameterized view must not expose its definition, columns, parameters or the tables behind it to a user
 # who cannot see the view, including through `EXPLAIN QUERY TREE` (https://github.com/ClickHouse/ClickHouse/issues/78938).
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -13,6 +13,7 @@ ${CLICKHOUSE_CLIENT} -m --query "
     DROP VIEW IF EXISTS v_over_pv;
     DROP VIEW IF EXISTS pv_definer;
     DROP VIEW IF EXISTS pv_invoker;
+    DROP VIEW IF EXISTS pv_sorted;
     DROP TABLE IF EXISTS secret_base;
     DROP TABLE IF EXISTS sink_dist;
     DROP TABLE IF EXISTS sink_local;
@@ -21,6 +22,7 @@ ${CLICKHOUSE_CLIENT} -m --query "
     INSERT INTO secret_base VALUES (1, 'a'), (2, 'b'), (5, 'c');
     CREATE VIEW pv_definer SQL SECURITY DEFINER AS SELECT x AS secret_column_1, s AS secret_column_2 FROM secret_base WHERE x < {secret_param:UInt32};
     CREATE VIEW pv_invoker SQL SECURITY INVOKER AS SELECT x AS secret_column_1, s AS secret_column_2 FROM secret_base WHERE x < {secret_param:UInt32};
+    CREATE VIEW pv_sorted SQL SECURITY INVOKER AS SELECT x AS secret_column_1, s AS secret_column_2 FROM secret_base WHERE x < {secret_param:UInt32} ORDER BY {secret_sort:Identifier};
     CREATE VIEW v_over_pv SQL SECURITY DEFINER AS SELECT * FROM pv_definer(secret_param = 3);
     CREATE TABLE sink_local (a UInt32, b String) ENGINE = MergeTree ORDER BY a;
     CREATE TABLE sink_dist AS sink_local ENGINE = Distributed(test_shard_localhost, currentDatabase(), sink_local);
@@ -83,6 +85,9 @@ ${CLICKHOUSE_CLIENT} --query "REVOKE INSERT ON ${CLICKHOUSE_DATABASE}.sink_dist 
 echo "-- SELECT on the table behind the view, no grant on the view"
 ${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.secret_base TO ${username}"
 expect_denied "EXPLAIN QUERY TREE SELECT * FROM pv_invoker(secret_param = 3)"
+echo "-- an invalid Identifier parameter: the analysis error must not quote the definition"
+expect_denied "EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM pv_sorted(secret_param = 3, secret_sort = 'missing')"
+expect_denied "EXPLAIN AST optimize = 1 SELECT * FROM pv_sorted(secret_param = 3, secret_sort = 'missing')"
 ${CLICKHOUSE_CLIENT} --query "REVOKE SELECT ON ${CLICKHOUSE_DATABASE}.secret_base FROM ${username}"
 
 echo "-- SHOW TABLES on the view does not make its columns visible"
@@ -118,6 +123,7 @@ ${CLICKHOUSE_CLIENT} -m --query "
     DROP VIEW IF EXISTS v_over_pv;
     DROP VIEW IF EXISTS pv_definer;
     DROP VIEW IF EXISTS pv_invoker;
+    DROP VIEW IF EXISTS pv_sorted;
     DROP TABLE IF EXISTS secret_base;
     DROP TABLE IF EXISTS sink_dist;
     DROP TABLE IF EXISTS sink_local;
