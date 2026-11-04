@@ -311,7 +311,11 @@ AlternativeKeyExpressionPtr computeAlternativeExpression(
         alternative_key->computed_names.insert(node.result_name);
         alternative_key->computed_names.insert(RPNBuilderTreeNode(&node, context).getColumnName());
     }
-    alternative_key->computed_names.insert(result.begin(), result.end());
+    /// Only the computed outputs: a plain column output (e.g. `id` of a key `(multiIf(...), id)`) is
+    /// a column of the table by definition, and its identity is checked as an input.
+    for (size_t i = 0; i < canonical_outputs.size(); ++i)
+        if (canonical_outputs[i]->type != ActionsDAG::ActionType::INPUT)
+            alternative_key->computed_names.insert(result[i]);
     alternative_key->column_names = std::move(result);
     /// The expression carries the rewritten form of the key expressions; it is only searched
     /// by index analysis, never executed.
