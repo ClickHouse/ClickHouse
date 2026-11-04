@@ -448,18 +448,6 @@ std::shared_ptr<const IBackup> BackupImpl::getBaseBackupUnlocked() const
         }
 
         base_backup_uuid = base_backup->getUUID();
-
-#if CLICKHOUSE_CLOUD
-        /// A lightweight snapshot backup does not store the data of its files - it only references object keys
-        /// in the original object storage. Using it as the base of an incremental backup would compute diffs
-        /// against data that is not present in the base, so forbid it when writing an incremental backup.
-        if ((open_mode == OpenMode::WRITE) && !base_backup->getOriginalEndpoint().empty())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Backup {}: A lightweight snapshot backup {} cannot be used as the base backup of an incremental backup",
-                backup_name_for_logging,
-                base_backup->getNameForLogging());
-#endif
     }
     return base_backup;
 }

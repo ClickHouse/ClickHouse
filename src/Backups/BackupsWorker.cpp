@@ -720,6 +720,19 @@ void BackupsWorker::doBackup(
         if (zookeeper->exists(fs::path(LIGHTWEIGHT_SNAPSHOT_COMMIT_PATH) / backup_id))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Backup ID {} has existed. Please unlock this backup or change another name", backup_id);
     }
+
+    /// Fail fast, before collecting backup entries and building file infos for the whole table: a lightweight
+    /// snapshot backup only references object keys in the original object storage and stores no data, so using
+    /// it as the base of an incremental backup would compute diffs against data that is not present in the base.
+    if (backup_settings.base_backup_info)
+    {
+        auto base_backup = backup->getBaseBackup();
+        if (base_backup && !base_backup->getOriginalEndpoint().empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "A lightweight snapshot backup {} cannot be used as the base backup of an incremental backup",
+                backup_settings.base_backup_info->toStringForLogging());
+    }
 #endif
 
     bool is_internal_backup = backup_settings.internal;
