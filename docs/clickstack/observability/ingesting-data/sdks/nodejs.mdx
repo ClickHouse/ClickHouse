@@ -7,6 +7,8 @@ doc_type: 'guide'
 keywords: ['ClickHouse Observability', 'SDK', 'Node.js', 'OpenTelemetry']
 ---
 
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
 import { ClickStackIntegrates } from '/snippets/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
 
 The ClickStack Node.js SDK builds on the upstream OpenTelemetry SDK and auto-instrumentations. It adds console capture, uncaught exception capture, and telemetry flushing during shutdown. Applications that already configure OpenTelemetry can continue using their existing SDK and [configure OTLP export](/clickstack/observability/ingesting-data/opentelemetry).
@@ -29,6 +31,8 @@ Set the environment variables before starting your application. Use a base OTLP 
 
 <Tabs>
 <Tab title="Fully managed">
+
+<BetaBadge /> — Fully managed ClickHouse Observability is in beta.
 
 Open **Team Settings → Data → Managed Telemetry** and copy the **OTLP HTTP endpoint** and **API key**. Use the exact HTTPS endpoint and port shown for your service:
 

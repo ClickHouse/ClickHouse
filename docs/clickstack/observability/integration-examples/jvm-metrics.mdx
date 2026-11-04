@@ -6,6 +6,8 @@ description: 'Collect JVM metrics with the OpenTelemetry Java agent and visualiz
 doc_type: 'guide'
 ---
 
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
 import { Image } from "/snippets/components/Image.jsx";
 import { TrackedLink } from "/snippets/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
@@ -21,6 +23,8 @@ Collect JVM metrics with the OpenTelemetry Java agent and send them to ClickHous
 
 <Tabs>
 <Tab title="Fully managed">
+
+<BetaBadge /> — Fully managed ClickHouse Observability is in beta.
 
 Open ClickHouse Observability and go to **Team Settings → Data → Managed Telemetry**. Copy your OTLP HTTP endpoint and API key. You can use **Copy connection details** to copy the configuration, or **Reveal key** to view the masked key.
 

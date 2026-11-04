@@ -7,6 +7,8 @@ doc_type: 'guide'
 keywords: ['Odigos', 'ClickStack', 'ClickHouse', 'OpenTelemetry', 'eBPF', 'auto-instrumentation']
 ---
 
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
 import { Image } from "/snippets/components/Image.jsx";
 
 import { PartnerBadge } from "/snippets/components/PartnerBadge/PartnerBadge.jsx";
@@ -127,6 +129,8 @@ If ClickHouse is reachable from your Kubernetes cluster, you can skip the OTLP c
 
 <Tabs>
 <Tab title="Fully managed">
+
+<BetaBadge /> — Fully managed ClickHouse Observability is in beta.
 
 ClickHouse Observability gives you an OTLP endpoint. ClickHouse handles ingestion, schemas, and compute. Point Odigos at that endpoint. You do not deploy a collector.
 

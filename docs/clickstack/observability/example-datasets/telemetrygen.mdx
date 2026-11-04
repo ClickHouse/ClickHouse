@@ -8,10 +8,14 @@ toc_max_heading_level: 2
 keywords: ['clickstack', 'telemetrygen', 'synthetic data', 'OpenTelemetry', 'test', 'logs', 'traces', 'metrics', 'observability']
 ---
 
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
 import { Image } from "/snippets/components/Image.jsx";
 
 <Tabs>
 <Tab title="Fully managed">
+
+<BetaBadge /> — Fully managed ClickHouse Observability is in beta.
 
 [`telemetrygen`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/cmd/telemetrygen) is the OpenTelemetry Collector Contrib data generator. It emits synthetic OTLP logs, traces and metrics, and exposes flags that let you shape the data: multiple services, log severities, span statuses and child spans, and different metric types. Use it to send test data to fully managed ClickHouse Observability and explore the results in Search and Chart Explorer.
 

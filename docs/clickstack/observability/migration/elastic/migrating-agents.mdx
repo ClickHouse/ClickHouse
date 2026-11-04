@@ -8,6 +8,8 @@ keywords: ['ClickHouse Observability']
 doc_type: 'guide'
 ---
 
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
 import { Image } from "/snippets/components/Image.jsx";
 
 ## Migrating agents from Elastic {#migrating-agents-from-elastic-self-configured}
@@ -36,6 +38,8 @@ Configure the destination before following the agent migration steps. The Vector
 
 <Tabs>
 <Tab title="Fully managed">
+
+<BetaBadge /> — Fully managed ClickHouse Observability is in beta.
 
 Copy your OTLP HTTP endpoint and API key from **Team Settings → Data → Managed Telemetry**. Set these variables in the environment where Vector or EDOT runs:
 

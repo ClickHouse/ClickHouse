@@ -7,6 +7,8 @@ keywords: ['ClickHouse Observability', 'SDK', 'instrumentation']
 sidebarTitle: 'Ruby on Rails'
 ---
 
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
 import { ClickStackIntegrates } from '/snippets/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
 
 Use the OpenTelemetry Ruby SDK to send traces to ClickHouse Observability.
@@ -23,6 +25,8 @@ Configure [OTLP export over HTTP](https://opentelemetry.io/docs/languages/ruby/e
 
 <Tabs>
 <Tab title="Fully managed">
+
+<BetaBadge /> — Fully managed ClickHouse Observability is in beta.
 
 Open **Team Settings → Data → Managed Telemetry** in your service and copy the **OTLP HTTP endpoint** and **API key**. Use the complete HTTPS endpoint, including its port:
 

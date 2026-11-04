@@ -8,6 +8,8 @@ keywords: ['ClickHouse Observability']
 doc_type: 'guide'
 ---
 
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
 ## Parallel operation strategy {#parallel-operation-strategy-self-configured}
 
 When migrating from Elastic to ClickHouse Observability for observability use cases, we recommend a **parallel operation** approach rather than attempting to migrate historical data. This strategy offers several advantages:
@@ -69,6 +71,8 @@ The migration timeline will depend on your data retention requirements:
 <Tabs>
 <Tab title="Fully managed">
 
+<BetaBadge /> — Fully managed ClickHouse Observability is in beta.
+
 Plan the transition around the retention configured for your managed service and Elastic. Keep Elastic available for historical searches until that data is no longer required.
 
 </Tab>
@@ -85,6 +89,8 @@ Align your table retention with your migration requirements. For examples, see [
 
 <Tabs>
 <Tab title="Fully managed">
+
+<BetaBadge /> — Fully managed ClickHouse Observability is in beta.
 
 Use parallel ingestion to send new telemetry to your managed service while retaining access to historical data in Elastic. See [Sending OpenTelemetry data](/clickstack/observability/ingesting-data/opentelemetry) for the managed endpoint and authentication settings.
 

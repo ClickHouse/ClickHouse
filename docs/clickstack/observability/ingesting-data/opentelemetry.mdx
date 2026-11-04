@@ -8,10 +8,14 @@ keywords: ['ClickHouse Observability', 'OpenTelemetry', 'OTLP', 'ingestion', 'au
 sidebarTitle: 'OpenTelemetry'
 ---
 
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
 import { Image } from "/snippets/components/Image.jsx";
 
 <Tabs>
 <Tab title="Fully managed">
+
+<BetaBadge /> — Fully managed ClickHouse Observability is in beta.
 
 Send logs, metrics, and traces to ClickHouse Observability using OpenTelemetry SDKs or a collector in your environment. The service includes a managed ingestion collector that receives telemetry over OTLP and writes it to ClickHouse Cloud.
 

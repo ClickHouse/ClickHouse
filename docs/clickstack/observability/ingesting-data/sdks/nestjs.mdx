@@ -7,6 +7,8 @@ keywords: ['ClickHouse Observability', 'SDK', 'instrumentation']
 sidebarTitle: 'NestJS'
 ---
 
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
 import { ClickStackIntegrates } from '/snippets/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
 
 Use OpenTelemetry Node.js instrumentation to send telemetry from your NestJS application to ClickHouse Observability.
@@ -25,6 +27,8 @@ Configure [OTLP export over HTTP](https://opentelemetry.io/docs/languages/js/exp
 
 <Tabs>
 <Tab title="Fully managed">
+
+<BetaBadge /> — Fully managed ClickHouse Observability is in beta.
 
 Open **Team Settings → Data → Managed Telemetry** in your service and copy the **OTLP HTTP endpoint** and **API key**. Use the complete HTTPS endpoint, including its port:
 

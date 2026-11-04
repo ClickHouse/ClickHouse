@@ -8,12 +8,16 @@ keywords: ['clickstack', 'vector', 'traces', 'observability', 'telemetry']
 sidebarTitle: 'Vector'
 ---
 
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
 import { Image } from "/snippets/components/Image.jsx";
 import InstallingVector from '/snippets/_installing_vector.mdx';
 import VectorSampleData from '/snippets/_vector_sample_data.mdx';
 
 <Tabs>
 <Tab title="Fully managed">
+
+<BetaBadge /> — Fully managed ClickHouse Observability is in beta.
 
 <Note>
 The ClickHouse Observability configuration for this guide is still being adapted. For the managed OTLP endpoint and authentication settings, see [Ingesting with OpenTelemetry](/clickstack/observability/ingesting-data/opentelemetry). The **Self-managed** tab contains the existing self-managed instructions.

@@ -7,6 +7,8 @@ keywords: ['ClickHouse Observability', 'SDK', 'browser', 'session replay']
 sidebarTitle: 'Browser JS'
 ---
 
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
 import { ClickStackIntegrates } from '/snippets/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
 
 The ClickStack browser SDK builds on OpenTelemetry to collect browser requests, errors, and session replay. Use it to investigate frontend events alongside your backend telemetry in ClickHouse Observability.
@@ -27,6 +29,8 @@ The package uses ES modules. npm installs its OpenTelemetry peer dependencies au
 
 <Tabs>
 <Tab title="Fully managed">
+
+<BetaBadge /> — Fully managed ClickHouse Observability is in beta.
 
 Open **Team Settings → Data → Managed Telemetry** in your service and copy the **OTLP HTTP endpoint** and **API key**. Use the complete HTTPS endpoint, including its port, without a signal path such as `/v1/traces`.
 

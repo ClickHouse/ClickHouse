@@ -7,6 +7,8 @@ slug: /clickstack/observability
 doc_type: 'guide'
 ---
 
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
 export function useDark() {
   const [dark, setDark] = useState(false);
   useEffect(() => {
@@ -132,6 +134,8 @@ export const DATABASES = [
 ];
 
 Unify logs, traces, metrics, and sessions with a fully managed observability service in ClickHouse Cloud.
+
+<BetaBadge /> — Fully managed ClickHouse Observability is in beta.
 
 <h2 noAnchor>What do you want to monitor?</h2>
 

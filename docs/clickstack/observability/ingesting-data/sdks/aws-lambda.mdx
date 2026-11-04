@@ -7,6 +7,8 @@ keywords: ['ClickHouse Observability', 'SDK', 'instrumentation']
 sidebarTitle: 'AWS Lambda'
 ---
 
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
 import { ClickStackIntegrates } from '/snippets/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
 
 Use OpenTelemetry Lambda layers to collect telemetry from your function and forward it to ClickHouse Observability.
@@ -25,6 +27,8 @@ Set `CLICKHOUSE_OTLP_ENDPOINT` and `CLICKHOUSE_INGESTION_API_KEY` in your Lambda
 
 <Tabs>
 <Tab title="Fully managed">
+
+<BetaBadge /> — Fully managed ClickHouse Observability is in beta.
 
 Open **Team Settings → Data → Managed Telemetry** in your service and copy the **OTLP HTTP endpoint** and **API key**. Set `CLICKHOUSE_OTLP_ENDPOINT` to the complete HTTPS endpoint, including its port, and `CLICKHOUSE_INGESTION_API_KEY` to the key.
 

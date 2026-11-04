@@ -7,10 +7,14 @@ doc_type: 'guide'
 keywords: ['ClickHouse Observability', 'ingestion', 'OpenTelemetry', 'OTLP', 'logs', 'metrics', 'traces']
 ---
 
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
 import { Image } from "/snippets/components/Image.jsx";
 
 <Tabs>
 <Tab title="Fully managed">
+
+<BetaBadge /> — Fully managed ClickHouse Observability is in beta.
 
 ClickHouse Observability includes a **managed OpenTelemetry (OTel) collector** that receives logs, metrics, traces, and session replay data and writes them to ClickHouse Cloud. ClickHouse Cloud operates the ingestion collector, database, and ClickStack UI. You instrument your applications and configure them or your data collection agents to send telemetry to the managed service.
 

@@ -7,6 +7,8 @@ doc_type: 'guide'
 keywords: ['AWS', 'Lambda', 'OTEL', 'ClickHouse Observability', 'logs', 'CloudWatch']
 ---
 
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
 import { Image } from "/snippets/components/Image.jsx";
 import { CommunityMaintainedBadge } from "/snippets/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
@@ -26,6 +28,8 @@ Collect function logs and extension logs with the Rotel Lambda Extension and sen
 
 <Tabs>
 <Tab title="Fully managed">
+
+<BetaBadge /> — Fully managed ClickHouse Observability is in beta.
 
 Open ClickHouse Observability and go to **Team Settings → Data → Managed Telemetry**. Copy your OTLP HTTP endpoint and API key.
 

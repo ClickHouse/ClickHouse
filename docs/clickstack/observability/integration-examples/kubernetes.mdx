@@ -7,6 +7,8 @@ keywords: ['kubernetes', 'logs', 'metrics', 'observability', 'container monitori
 sidebarTitle: 'Kubernetes'
 ---
 
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
 import { Image } from "/snippets/components/Image.jsx";
 
 Collect container logs, node and cluster metrics, and Kubernetes events with two OpenTelemetry collectors: a DaemonSet on each node and a single deployment for cluster-wide data.
@@ -24,6 +26,8 @@ These collectors gather infrastructure data. Instrument your applications separa
 
 <Tabs>
 <Tab title="Fully managed">
+
+<BetaBadge /> — Fully managed ClickHouse Observability is in beta.
 
 Open ClickHouse Observability and go to **Team Settings → Data → Managed Telemetry**. Copy the OTLP HTTP endpoint and API key.
 

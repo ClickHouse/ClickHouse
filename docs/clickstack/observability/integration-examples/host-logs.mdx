@@ -7,6 +7,8 @@ doc_type: 'guide'
 keywords: ['host logs', 'systemd', 'syslog', 'OTEL', 'ClickHouse Observability', 'system monitoring', 'server logs']
 ---
 
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
 import { Image } from "/snippets/components/Image.jsx";
 import { TrackedLink } from "/snippets/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
@@ -23,6 +25,8 @@ Collect host syslog files with an OpenTelemetry collector and send them to Click
 
 <Tabs>
 <Tab title="Fully managed">
+
+<BetaBadge /> — Fully managed ClickHouse Observability is in beta.
 
 Open ClickHouse Observability and go to **Team Settings → Data → Managed Telemetry**. Copy your OTLP HTTP endpoint and API key. You can use **Copy connection details** to copy the configuration, or **Reveal key** to view the masked key.
 

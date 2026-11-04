@@ -3,7 +3,7 @@
   "item": "ClickHouse Observability",
   "dropdowns": [
     {
-      "dropdown": "ClickHouse Observability (Beta)",
+      "dropdown": "ClickHouse Observability",
       "icon": "/images/icons/icon-clickstack.svg",
       "pages": [
         "clickstack/observability/index",

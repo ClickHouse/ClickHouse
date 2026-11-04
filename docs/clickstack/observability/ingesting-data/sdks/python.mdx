@@ -7,6 +7,8 @@ keywords: ['ClickHouse Observability', 'SDK', 'instrumentation']
 sidebarTitle: 'Python'
 ---
 
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
 import { ClickStackIntegrates } from '/snippets/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
 
 Use the ClickStack Python SDK to send logs and traces to ClickHouse Observability. The SDK is an OpenTelemetry distribution published as `hyperdx-opentelemetry` and automatically instruments supported Python libraries and frameworks.
@@ -28,6 +30,8 @@ The bootstrap command installs instrumentation for your application's installed 
 
 <Tabs>
 <Tab title="Fully managed">
+
+<BetaBadge /> — Fully managed ClickHouse Observability is in beta.
 
 Open **Team Settings → Data → Managed Telemetry** in your service and copy the **OTLP HTTP endpoint** and **API key**. Use the complete HTTPS endpoint, including its port:
 

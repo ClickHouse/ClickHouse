@@ -7,6 +7,8 @@ keywords: ['ClickHouse Observability', 'SDK', 'instrumentation']
 sidebarTitle: 'React Native'
 ---
 
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
 import { ClickStackIntegrates } from '/snippets/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
 
 Use OpenTelemetry to send traces from your React Native application's JavaScript layer to ClickHouse Observability.
@@ -25,6 +27,8 @@ Replace the demo's local exporter configuration with the destination below. Use 
 
 <Tabs>
 <Tab title="Fully managed">
+
+<BetaBadge /> — Fully managed ClickHouse Observability is in beta.
 
 Open **Team Settings → Data → Managed Telemetry** in your service and copy the **OTLP HTTP endpoint** and **API key**. Keep the complete HTTPS endpoint, including its port, and append `/v1/traces`:
 

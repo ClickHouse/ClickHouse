@@ -8,6 +8,8 @@ keywords: ['ClickHouse Observability']
 doc_type: 'guide'
 ---
 
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
 The Elastic Stack provides two types of language SDKs for instrumenting applications:
 
 1. **[Elastic Official APM agents](https://www.elastic.co/docs/reference/apm-agents/)** – These are built specifically for use with the Elastic Stack. For these agents, plan a transition to [OpenTelemetry instrumentation](https://opentelemetry.io/docs/languages/) for your language, including any custom spans and attributes used by your application.
@@ -35,6 +37,8 @@ To migrate, update the OTLP connection settings in your application's environmen
 
 <Tabs>
 <Tab title="Fully managed">
+
+<BetaBadge /> — Fully managed ClickHouse Observability is in beta.
 
 Copy the OTLP HTTP endpoint and API key from **Team Settings → Data → Managed Telemetry**:
 

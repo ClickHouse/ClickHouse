@@ -8,6 +8,8 @@ doc_type: 'guide'
 keywords: ['Datadog', 'Datadog agent', 'migration', 'ClickHouse Observability']
 ---
 
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
 import { Image } from "/snippets/components/Image.jsx";
 import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
@@ -25,6 +27,8 @@ Send logs, traces, and metrics from your existing Datadog agents to ClickHouse O
 
 <Tabs>
 <Tab title="Fully managed">
+
+<BetaBadge /> — Fully managed ClickHouse Observability is in beta.
 
 Open your service and navigate to **Team Settings → Data → Managed Telemetry**. Copy the **OTLP HTTP endpoint** and **API key**.
 
