@@ -1,28 +1,3 @@
-tuple	ie_join,hash	5	[(1,11),(1,12),(2,11),(2,12),(3,13)]
-tuple	hash,ie_join	5	[(1,11),(1,12),(2,11),(2,12),(3,13)]
-tuple	hash	5	[(1,11),(1,12),(2,11),(2,12),(3,13)]
-float	ie_join,hash	5	[(1,11),(1,12),(2,11),(2,12),(3,13)]
-float	hash,ie_join	5	[(1,11),(1,12),(2,11),(2,12),(3,13)]
-float	hash	5	[(1,11),(1,12),(2,11),(2,12),(3,13)]
-tuple	ie_join,parallel_hash	5	[(1,11),(1,12),(2,11),(2,12),(3,13)]
-float	ie_join,parallel_hash	5	[(1,11),(1,12),(2,11),(2,12),(3,13)]
-tuple	ie_join,grace_hash	5	[(1,11),(1,12),(2,11),(2,12),(3,13)]
-float	ie_join,grace_hash	5	[(1,11),(1,12),(2,11),(2,12),(3,13)]
-tuple	1
-float	1
-ordinary	1
-tuple-only-ie	1
-float-only-ie	1
-parallel-hash-no-ie	1
-grace-hash-no-ie	1
-grace-hash-unrunnable-ie	1
-outer-partial-merge-ie	3
-outer-auto-ie	3
-fsm-one-sided-ie	1
-dynamic-disallowed-ie	1
-nullsafe-no-supertype-ie	0
-outer	0	5	11431333502086094602
-outer	1	5	11431333502086094602
 R1	1	1
 R1	0	12	3550687193434307509
 R1	1	12	3550687193434307509
@@ -107,11 +82,9 @@ R15	1	1
 R15	0	14	5119309213880939653
 R15	1	14	5119309213880939653
 R16	1	1
-R16	1
 R16	0	1	18168654548352836813
 R16	1	1	18168654548352836813
 R16b	1	1
-R16b	1
 R16b	0	7	2467328941050086435
 R16b	1	7	2467328941050086435
 R17	1

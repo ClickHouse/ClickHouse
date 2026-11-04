@@ -7,90 +7,6 @@ SET enable_join_runtime_filters = 0;
 SET use_hash_table_stats_for_join_reordering = 0;
 SET join_overflow_mode = 'throw';
 
-CREATE TABLE ie_t_l (id UInt32, t Tuple(Nullable(Int64)), f Float64, k Int64, x Int32, y Int32) ENGINE = Memory;
-CREATE TABLE ie_t_r AS ie_t_l;
-INSERT INTO ie_t_l VALUES (1, tuple(NULL), nan, 1, 1, 30), (2, tuple(NULL), nan, 1, 1, 30), (3, tuple(3), 3, 3, 1, 30);
-INSERT INTO ie_t_r VALUES (11, tuple(NULL), nan, 1, 2, 20), (12, tuple(NULL), nan, 1, 2, 20), (13, tuple(3), 3, 3, 2, 20);
-
-SELECT 'tuple', 'ie_join,hash', count(), groupArraySorted(10)((l.id, r.id))
-FROM ie_t_l l ALL INNER JOIN ie_t_r r ON l.t = r.t AND l.x < r.x AND l.y > r.y
-SETTINGS join_algorithm = 'ie_join,hash', query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 0;
-SELECT 'tuple', 'hash,ie_join', count(), groupArraySorted(10)((l.id, r.id))
-FROM ie_t_l l ALL INNER JOIN ie_t_r r ON l.t = r.t AND l.x < r.x AND l.y > r.y
-SETTINGS join_algorithm = 'hash,ie_join', query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 0;
-SELECT 'tuple', 'hash', count(), groupArraySorted(10)((l.id, r.id))
-FROM ie_t_l l ALL INNER JOIN ie_t_r r ON l.t = r.t AND l.x < r.x AND l.y > r.y
-SETTINGS join_algorithm = 'hash', query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 0;
-
-SELECT 'float', 'ie_join,hash', count(), groupArraySorted(10)((l.id, r.id))
-FROM ie_t_l l ALL INNER JOIN ie_t_r r ON l.f = r.f AND l.x < r.x AND l.y > r.y
-SETTINGS join_algorithm = 'ie_join,hash', query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 0;
-SELECT 'float', 'hash,ie_join', count(), groupArraySorted(10)((l.id, r.id))
-FROM ie_t_l l ALL INNER JOIN ie_t_r r ON l.f = r.f AND l.x < r.x AND l.y > r.y
-SETTINGS join_algorithm = 'hash,ie_join', query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 0;
-SELECT 'float', 'hash', count(), groupArraySorted(10)((l.id, r.id))
-FROM ie_t_l l ALL INNER JOIN ie_t_r r ON l.f = r.f AND l.x < r.x AND l.y > r.y
-SETTINGS join_algorithm = 'hash', query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 0;
-SELECT 'tuple', 'ie_join,parallel_hash', count(), groupArraySorted(10)((l.id, r.id))
-FROM ie_t_l l ALL INNER JOIN ie_t_r r ON l.t = r.t AND l.x < r.x AND l.y > r.y
-SETTINGS join_algorithm = 'ie_join,parallel_hash', query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 0;
-SELECT 'float', 'ie_join,parallel_hash', count(), groupArraySorted(10)((l.id, r.id))
-FROM ie_t_l l ALL INNER JOIN ie_t_r r ON l.f = r.f AND l.x < r.x AND l.y > r.y
-SETTINGS join_algorithm = 'ie_join,parallel_hash', query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 0;
-SELECT 'tuple', 'ie_join,grace_hash', count(), groupArraySorted(10)((l.id, r.id))
-FROM ie_t_l l ALL INNER JOIN ie_t_r r ON l.t = r.t AND l.x < r.x AND l.y > r.y
-SETTINGS join_algorithm = 'ie_join,grace_hash', max_bytes_before_external_join = 10485760, query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 0;
-SELECT 'float', 'ie_join,grace_hash', count(), groupArraySorted(10)((l.id, r.id))
-FROM ie_t_l l ALL INNER JOIN ie_t_r r ON l.f = r.f AND l.x < r.x AND l.y > r.y
-SETTINGS join_algorithm = 'ie_join,grace_hash', max_bytes_before_external_join = 10485760, query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 0;
-
-SELECT 'tuple', countIf(explain LIKE '%IEJoin%') = 0
-FROM (EXPLAIN PLAN actions = 1 SELECT * FROM ie_t_l l ALL INNER JOIN ie_t_r r ON l.t = r.t AND l.x < r.x AND l.y > r.y
-SETTINGS join_algorithm = 'ie_join,hash', query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 0);
-SELECT 'float', countIf(explain LIKE '%IEJoin%') = 0
-FROM (EXPLAIN PLAN actions = 1 SELECT * FROM ie_t_l l ALL INNER JOIN ie_t_r r ON l.f = r.f AND l.x < r.x AND l.y > r.y
-SETTINGS join_algorithm = 'ie_join,hash', query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 0);
-SELECT 'ordinary', countIf(explain LIKE '%IEJoin%') > 0
-FROM (EXPLAIN PLAN actions = 1 SELECT * FROM ie_t_l l ALL INNER JOIN ie_t_r r ON l.k = r.k AND l.x < r.x AND l.y > r.y
-SETTINGS join_algorithm = 'ie_join,hash', query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 0);
-SELECT 'tuple-only-ie', countIf(explain LIKE '%IEJoin%') > 0
-FROM (EXPLAIN PLAN actions = 1 SELECT * FROM ie_t_l l ALL INNER JOIN ie_t_r r ON l.t = r.t AND l.x < r.x AND l.y > r.y
-SETTINGS join_algorithm = 'ie_join', query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 0);
-SELECT 'float-only-ie', countIf(explain LIKE '%IEJoin%') > 0
-FROM (EXPLAIN PLAN actions = 1 SELECT * FROM ie_t_l l ALL INNER JOIN ie_t_r r ON l.f = r.f AND l.x < r.x AND l.y > r.y
-SETTINGS join_algorithm = 'ie_join', query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 0);
-SELECT 'parallel-hash-no-ie', countIf(explain LIKE '%IEJoin%') = 0
-FROM (EXPLAIN PLAN actions = 1 SELECT * FROM ie_t_l l ALL INNER JOIN ie_t_r r ON l.t = r.t AND l.x < r.x AND l.y > r.y
-SETTINGS join_algorithm = 'ie_join,parallel_hash', query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 0);
-SELECT 'grace-hash-no-ie', countIf(explain LIKE '%IEJoin%') = 0
-FROM (EXPLAIN PLAN actions = 1 SELECT * FROM ie_t_l l ALL INNER JOIN ie_t_r r ON l.f = r.f AND l.x < r.x AND l.y > r.y
-SETTINGS join_algorithm = 'ie_join,grace_hash', max_bytes_before_external_join = 10485760, query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 0);
-SELECT 'grace-hash-unrunnable-ie', countIf(explain LIKE '%IEJoin%') > 0
-FROM (EXPLAIN PLAN actions = 1 SELECT * FROM ie_t_l l ALL INNER JOIN ie_t_r r ON l.f = r.f AND l.x < r.x AND l.y > r.y
-SETTINGS join_algorithm = 'ie_join,grace_hash', max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0, query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 0);
-SELECT 'outer-partial-merge-ie', count()
-FROM ie_t_l l LEFT JOIN ie_t_r r ON l.f = r.f AND l.x < r.x AND l.y > r.y
-SETTINGS join_algorithm = 'ie_join,partial_merge', query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 0;
-SELECT 'outer-auto-ie', count()
-FROM ie_t_l l LEFT JOIN ie_t_r r ON l.f = r.f AND l.x < r.x AND l.y > r.y
-SETTINGS join_algorithm = 'ie_join,auto', query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 0;
-SELECT 'fsm-one-sided-ie', count()
-FROM ie_t_l l ALL INNER JOIN ie_t_r r ON l.f = r.f AND l.x < r.x AND l.y > r.y AND l.x > 0
-SETTINGS join_algorithm = 'ie_join,full_sorting_merge', query_plan_split_filter = 0, query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 0;
-SELECT 'dynamic-disallowed-ie', count()
-FROM (SELECT CAST(1, 'Dynamic') AS d, f, x, y FROM ie_t_l) l ALL INNER JOIN (SELECT CAST(1, 'Dynamic') AS d, f, x, y FROM ie_t_r) r ON l.d = r.d AND l.f = r.f AND l.x < r.x AND l.y > r.y
-SETTINGS join_algorithm = 'ie_join,hash', allow_dynamic_type_in_join_keys = 0, query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 0;
-SELECT 'nullsafe-no-supertype-ie', count()
-FROM (SELECT toUInt64(id) AS u, f, x, y FROM ie_t_l) l ALL INNER JOIN (SELECT toInt64(id) AS i, f, x, y FROM ie_t_r) r ON isNotDistinctFrom(l.u, r.i) AND l.f = r.f AND l.x < r.x AND l.y > r.y
-SETTINGS join_algorithm = 'ie_join,hash', query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 0;
-
-SELECT 'outer', 0, count(), sum(cityHash64(lid, rid))
-FROM (SELECT l.id AS lid, r.id AS rid FROM ie_t_l l LEFT JOIN ie_t_r r ON l.f = r.f AND l.x < r.x AND l.y > r.y)
-SETTINGS join_algorithm = 'ie_join,hash', query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 0;
-SELECT 'outer', 1, count(), sum(cityHash64(lid, rid))
-FROM (SELECT l.id AS lid, r.id AS rid FROM ie_t_l l LEFT JOIN ie_t_r r ON l.f = r.f AND l.x < r.x AND l.y > r.y)
-SETTINGS join_algorithm = 'hash', query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 0;
-
 CREATE TABLE rf_l (id UInt32, k Int64, x Int64, y Int64, z Int64, u UInt32, n Nullable(Int64), f Float64, dt Date, n8 UInt8, arr Array(Int64), t Tuple(Nullable(Int64))) ENGINE = Memory;
 CREATE TABLE rf_r AS rf_l;
 CREATE TABLE rf_lj (k Int64, x Int64) ENGINE = Join(ALL, INNER, k);
@@ -200,14 +116,12 @@ SELECT 'R14b-values', countIf(n8 != 2) = 0 FROM (SELECT l.n8 AS n8 FROM rf_l l J
 SELECT 'R15', countIf(explain LIKE '%Expression: %or(%') = 0, countIf(explain LIKE '%Expression: %less(%') = 0 FROM (EXPLAIN PLAN keep_logical_steps = 1, actions = 1 SELECT * FROM rf_l l JOIN rf_r r ON l.k = r.k WHERE l.x < r.y OR l.z > r.z SETTINGS query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 1);
 SELECT 'R15', 0, count(), sum(cityHash64(lid, rid)) FROM (SELECT l.id AS lid, r.id AS rid FROM rf_l l JOIN rf_r r ON l.k = r.k WHERE l.x < r.y OR l.z > r.z) SETTINGS query_plan_merge_filter_into_join_condition = 0;
 SELECT 'R15', 1, count(), sum(cityHash64(lid, rid)) FROM (SELECT l.id AS lid, r.id AS rid FROM rf_l l JOIN rf_r r ON l.k = r.k WHERE l.x < r.y OR l.z > r.z) SETTINGS query_plan_merge_filter_into_join_condition = 1;
-SELECT 'R16', countIf(explain LIKE '%Expression: %less(%') > 0, countIf(explain LIKE '%Expression: %greater(%') > 0 FROM (EXPLAIN PLAN keep_logical_steps = 1, actions = 1 SELECT * FROM rf_l l JOIN rf_r r ON l.f = r.f WHERE l.x < r.y AND l.z > r.z SETTINGS join_algorithm = 'ie_join,hash', query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 1);
-SELECT 'R16', countIf(explain LIKE '%IEJoin%') = 0 FROM (EXPLAIN PLAN actions = 1 SELECT * FROM rf_l l JOIN rf_r r ON l.f = r.f WHERE l.x < r.y AND l.z > r.z SETTINGS join_algorithm = 'ie_join,hash', query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 1);
-SELECT 'R16', 0, count(), sum(cityHash64(lid, rid)) FROM (SELECT l.id AS lid, r.id AS rid FROM rf_l l JOIN rf_r r ON l.f = r.f WHERE l.x < r.y AND l.z > r.z) SETTINGS join_algorithm = 'ie_join,hash', query_plan_merge_filter_into_join_condition = 0;
-SELECT 'R16', 1, count(), sum(cityHash64(lid, rid)) FROM (SELECT l.id AS lid, r.id AS rid FROM rf_l l JOIN rf_r r ON l.f = r.f WHERE l.x < r.y AND l.z > r.z) SETTINGS join_algorithm = 'ie_join,hash', query_plan_merge_filter_into_join_condition = 1;
-SELECT 'R16b', countIf(explain LIKE '%Expression: %less(%') > 0, countIf(explain LIKE '%Expression: %greater(%') > 0 FROM (EXPLAIN PLAN keep_logical_steps = 1, actions = 1 SELECT * FROM rf_l l JOIN rf_r r ON l.t = r.t WHERE l.x < r.y AND l.z > r.z SETTINGS join_algorithm = 'ie_join,hash', query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 1);
-SELECT 'R16b', countIf(explain LIKE '%IEJoin%') = 0 FROM (EXPLAIN PLAN actions = 1 SELECT * FROM rf_l l JOIN rf_r r ON l.t = r.t WHERE l.x < r.y AND l.z > r.z SETTINGS join_algorithm = 'ie_join,hash', query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 1);
-SELECT 'R16b', 0, count(), sum(cityHash64(lid, rid)) FROM (SELECT l.id AS lid, r.id AS rid FROM rf_l l JOIN rf_r r ON l.t = r.t WHERE l.x < r.y AND l.z > r.z) SETTINGS join_algorithm = 'ie_join,hash', query_plan_merge_filter_into_join_condition = 0;
-SELECT 'R16b', 1, count(), sum(cityHash64(lid, rid)) FROM (SELECT l.id AS lid, r.id AS rid FROM rf_l l JOIN rf_r r ON l.t = r.t WHERE l.x < r.y AND l.z > r.z) SETTINGS join_algorithm = 'ie_join,hash', query_plan_merge_filter_into_join_condition = 1;
+SELECT 'R16', countIf(explain LIKE '%Expression: %less(%') > 0, countIf(explain LIKE '%Expression: %greater(%') > 0 FROM (EXPLAIN PLAN keep_logical_steps = 1, actions = 1 SELECT * FROM rf_l l JOIN rf_r r ON l.f = r.f WHERE l.x < r.y AND l.z > r.z SETTINGS join_algorithm = 'hash', query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 1);
+SELECT 'R16', 0, count(), sum(cityHash64(lid, rid)) FROM (SELECT l.id AS lid, r.id AS rid FROM rf_l l JOIN rf_r r ON l.f = r.f WHERE l.x < r.y AND l.z > r.z) SETTINGS join_algorithm = 'hash', query_plan_merge_filter_into_join_condition = 0;
+SELECT 'R16', 1, count(), sum(cityHash64(lid, rid)) FROM (SELECT l.id AS lid, r.id AS rid FROM rf_l l JOIN rf_r r ON l.f = r.f WHERE l.x < r.y AND l.z > r.z) SETTINGS join_algorithm = 'hash', query_plan_merge_filter_into_join_condition = 1;
+SELECT 'R16b', countIf(explain LIKE '%Expression: %less(%') > 0, countIf(explain LIKE '%Expression: %greater(%') > 0 FROM (EXPLAIN PLAN keep_logical_steps = 1, actions = 1 SELECT * FROM rf_l l JOIN rf_r r ON l.t = r.t WHERE l.x < r.y AND l.z > r.z SETTINGS join_algorithm = 'hash', query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 1);
+SELECT 'R16b', 0, count(), sum(cityHash64(lid, rid)) FROM (SELECT l.id AS lid, r.id AS rid FROM rf_l l JOIN rf_r r ON l.t = r.t WHERE l.x < r.y AND l.z > r.z) SETTINGS join_algorithm = 'hash', query_plan_merge_filter_into_join_condition = 0;
+SELECT 'R16b', 1, count(), sum(cityHash64(lid, rid)) FROM (SELECT l.id AS lid, r.id AS rid FROM rf_l l JOIN rf_r r ON l.t = r.t WHERE l.x < r.y AND l.z > r.z) SETTINGS join_algorithm = 'hash', query_plan_merge_filter_into_join_condition = 1;
 SELECT 'R17', countIf(explain LIKE '%IEJoin%') > 0 FROM (EXPLAIN PLAN actions = 1 SELECT * FROM rf_l l JOIN rf_r r ON l.k = r.k WHERE l.x < r.y AND l.z > r.z SETTINGS join_algorithm = 'ie_join,hash', query_plan_optimize_join_order_limit = 1, query_plan_merge_filter_into_join_condition = 1);
 SELECT 'R17', 0, count(), sum(cityHash64(lid, rid)) FROM (SELECT l.id AS lid, r.id AS rid FROM rf_l l JOIN rf_r r ON l.k = r.k WHERE l.x < r.y AND l.z > r.z) SETTINGS join_algorithm = 'ie_join,hash', query_plan_merge_filter_into_join_condition = 0;
 SELECT 'R17', 1, count(), sum(cityHash64(lid, rid)) FROM (SELECT l.id AS lid, r.id AS rid FROM rf_l l JOIN rf_r r ON l.k = r.k WHERE l.x < r.y AND l.z > r.z) SETTINGS join_algorithm = 'ie_join,hash', query_plan_merge_filter_into_join_condition = 1;
