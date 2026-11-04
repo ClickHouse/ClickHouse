@@ -366,7 +366,7 @@ size_t maxDecompressedSize(CompressionKind kind, const char * src, size_t src_si
         case CompressionKind::ZSTD:
         {
             /// Sums the content sizes of all frames, or 128 KiB per block when a frame omits its size, as in `ArrowIPC/BufferCompression.cpp`.
-            unsigned long long bound = ZSTD_decompressBound(src, src_size);
+            UInt64 bound = ZSTD_decompressBound(src, src_size);
             if (bound == ZSTD_CONTENTSIZE_ERROR)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed zstd-compressed data in ORC file");
             return bound;

@@ -413,7 +413,7 @@ public:
             if (nanos[i] < -999'999'999 || nanos[i] > 999'999'999)
                 throwInvalidTimestamp(seconds[i], encoded_nanos);
 
-            Int64 writer_time;
+            Int64 writer_time = 0;
             if (common::addOverflow(seconds[i], epoch_offset, writer_time))
                 throwInvalidTimestamp(seconds[i], encoded_nanos);
             if (writer_time < 0 && nanos[i] > 999999 && common::subOverflow(writer_time, Int64{1}, writer_time))
@@ -427,7 +427,7 @@ public:
                 if (writer_offset != reader_offset)
                 {
                     /// If the adjustment crosses a DST boundary, the offset has to be reevaluated.
-                    Int64 adjusted_time;
+                    Int64 adjusted_time = 0;
                     if (common::addOverflow(writer_time, writer_offset - reader_offset, adjusted_time))
                         throwInvalidTimestamp(seconds[i], encoded_nanos);
                     Int64 adjusted_reader_offset = reader_timezone.timezoneOffset(adjusted_time);
