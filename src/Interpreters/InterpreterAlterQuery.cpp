@@ -120,16 +120,18 @@ void checkAddedIndexPermissions(ASTAlterQuery & alter, const StoragePtr & table,
     static const ColumnsDescription no_columns;
     const ColumnsDescription & columns = metadata ? metadata->getColumns() : no_columns;
 
-    bool adds_index = false;
+    bool adds_transform = false;
     for (const auto & child : alter.command_list->children)
     {
         const auto & command = child->as<const ASTAlterCommand &>();
         if (command.type != ASTAlterCommand::ADD_INDEX || !command.index_decl)
             continue;
 
-        adds_index = true;
         if (const auto * declaration = command.index_decl->as<ASTIndexDeclaration>())
         {
+            if (hasTextIndexPreOrPostProcessor(*declaration))
+                adds_transform = true;
+
             /// Without the schema an `ALIAS` column in a transform stays unexpanded here, while the
             /// hosts that have the table expand it and resolve its functions with full access.
             if (!metadata && hasTextIndexPreOrPostProcessor(*declaration))
@@ -146,7 +148,9 @@ void checkAddedIndexPermissions(ASTAlterQuery & alter, const StoragePtr & table,
     /// statement can change what an alias in a transform expands to, and the hosts that apply it
     /// run without the user. `AlterCommands::apply` authorizes the declared indices against the
     /// schema the whole statement produces, so run it here as the user on a copy of the metadata.
-    if (!adds_index || !metadata)
+    /// Only for the transforms: other indices have nothing to authorize, and their statements must
+    /// not be subjected to an analysis that the executor does not do.
+    if (!adds_transform || !metadata)
         return;
 
     AlterCommands commands;
@@ -170,21 +174,20 @@ void checkAddedIndexPermissions(ASTAlterQuery & alter, const StoragePtr & table,
         previous_is_metadata = command.has_value();
     }
 
-    /// The analysis below applies all metadata commands at once, while a host commits every segment
-    /// separately, and a later segment can fail after an earlier one installed an index. Only a
-    /// single segment is authorized exactly as it is installed.
-    if (bind_transforms && metadata_segments > 1)
+    /// The analysis below applies all metadata commands at once, while the executor validates and commits
+    /// every segment separately, so for several segments it would reject statements the executor accepts,
+    /// e.g. a rename in each of two segments, and a later segment can fail after an earlier one installed
+    /// an index. Only a single segment is authorized exactly as it is installed. With several segments, the
+    /// local executor authorizes every segment as the user in `AlterCommands::apply`, and a `Replicated`
+    /// database rejects such a statement, see `validateReplicatedDatabaseSegments`, so only the hosts of
+    /// an `ON CLUSTER` query would install the transforms without the user.
+    if (metadata_segments > 1)
     {
-        for (const auto & child : alter.command_list->children)
-        {
-            const auto & command = child->as<const ASTAlterCommand &>();
-            if (command.type != ASTAlterCommand::ADD_INDEX || !command.index_decl)
-                continue;
-            if (const auto * declaration = command.index_decl->as<ASTIndexDeclaration>(); declaration && hasTextIndexPreOrPostProcessor(*declaration))
-                throw Exception(ErrorCodes::QUERY_IS_PROHIBITED,
-                    "`ALTER TABLE ... ON CLUSTER` that adds a text index with a preprocessor or a postprocessor "
-                    "must not interleave its metadata commands with mutation or partition commands. Run them as separate queries");
-        }
+        if (bind_transforms)
+            throw Exception(ErrorCodes::QUERY_IS_PROHIBITED,
+                "`ALTER TABLE ... ON CLUSTER` that adds a text index with a preprocessor or a postprocessor "
+                "must not interleave its metadata commands with mutation or partition commands. Run them as separate queries");
+        return;
     }
 
     /// The same sequence as `runCommandSegments`: `apply` relies on the checks before it, e.g. that
@@ -201,9 +204,6 @@ void checkAddedIndexPermissions(ASTAlterQuery & alter, const StoragePtr & table,
     /// As the storages do before `apply`: an explicit `ADD STATISTICS` replaces an implicit one.
     removeImplicitStatistics(metadata_copy.columns);
     commands.apply(metadata_copy, context, share_nested);
-
-    if (!bind_transforms)
-        return;
 
     /// The indices this statement installs, as `apply` built and authorized them against the final schema.
     /// An index kept by `IF NOT EXISTS` is not one of them, even though `metadata_copy` has it.
@@ -228,15 +228,21 @@ void checkAddedIndexPermissions(ASTAlterQuery & alter, const StoragePtr & table,
         auto type = declaration->getType();
         ASTPtr bound;
         if (auto it = installed_arguments.find(declaration->name); it != installed_arguments.end())
+        {
             bound = it->second->clone();
+        }
         else
         {
-            /// Skipped here by `IF NOT EXISTS`, but a host without the index installs it: bind it to
-            /// the expansion the first loop authorized against the current schema.
+            /// Skipped here by `IF NOT EXISTS`, but a host without the index installs the requested
+            /// definition against the schema the statement produces there, including its column changes.
+            /// So expand and authorize it against the final schema, not the one before the statement.
+            checkTextIndexPreAndPostProcessorPermissions(*declaration, metadata_copy.columns, context);
             bound = type->arguments->clone();
-            expandTextIndexTransformAliases(bound, columns);
+            expandTextIndexTransformAliases(bound, metadata_copy.columns);
         }
-        type->arguments->children = bound->children;
+
+        if (bind_transforms)
+            type->arguments->children = bound->children;
     }
 }
 
