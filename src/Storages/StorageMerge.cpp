@@ -1952,7 +1952,8 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
 
                 /// Such a name resolves through neither lookup above, and the analyzer turns it into
                 /// `getSubcolumn` over the alias expression, so the alias branch handles it.
-                bool is_subcolumn_of_alias = !resolved_pair && !is_alias && isSubcolumnOfAliasColumn(storage_columns, column);
+                /// The exception is a `Map` alias, whose subcolumn resolves as a dynamic one that the table cannot read either.
+                bool is_subcolumn_of_alias = (!resolved_pair || resolved_pair->isSubcolumn()) && !is_alias && isSubcolumnOfAliasColumn(storage_columns, column);
 
                 /// Skip columns that don't exist in this table. It may happen when we use merge over tables with different schemas.
                 if (!resolved_pair && !is_subcolumn_of_alias)

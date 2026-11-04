@@ -18,9 +18,10 @@ renamed	LowCardinality(String)
 widened	LowCardinality(String)					
 aliased	LowCardinality(String)	MATERIALIZED	1			
 renamed_number	Int8	MATERIALIZED	renamed			
-conflict_1	a	a	a	a	1
-conflict_1	b	a	b	a	1
-conflict_2	a	b	a	b	1
+aliased_map	Map(LowCardinality(String), UInt8)	MATERIALIZED	map(1, 1)			
+conflict_1	a	a	a	a	1	['a']	['a']
+conflict_1	b	a	b	a	1	['a']	['a']
+conflict_2	a	b	a	b	1	['b']	['b']
 1
 -- containers, Nullable and a NULL source
 arr	Array(LowCardinality(String))					
@@ -47,6 +48,7 @@ renamed	LowCardinality(String)
 widened	LowCardinality(String)					
 aliased	LowCardinality(String)	MATERIALIZED	1			
 renamed_number	Int8	MATERIALIZED	renamed			
+aliased_map	Map(LowCardinality(String), UInt8)	MATERIALIZED	map(1, 1)			
 -- merge_table_keep_enum_names
 extended	Int8					
 disjoint	Int8					
@@ -57,3 +59,4 @@ renamed	Int8
 widened	Int16					
 aliased	Int8	ALIAS	1			
 renamed_number	Int8	ALIAS	renamed			
+aliased_map	Map(Int8, UInt8)	ALIAS	map(1, 1)			

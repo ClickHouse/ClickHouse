@@ -10,6 +10,8 @@ tuple element	1	1
 string size	5	5
 nullable null	1	1
 nested element	4	4
+map size0	1	1
+map keys subcolumns on	['k']	['k']
 row policy	10	10
 materialized parent	3	3
 default parent	4	4
