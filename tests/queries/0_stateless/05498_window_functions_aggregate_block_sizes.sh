@@ -12,8 +12,8 @@ create_table
 # The same aggregates over every frame kind and bound kind, with Nullable and -State arguments among them.
 # The row order inside a peer group is not fixed, so frames over peer groups use only aggregates whose
 # result does not depend on the order of rows.
-aggregates="(sum(v) OVER w, sum(k) OVER w, round(avg(v) OVER w, 6), min(k) OVER w, max(v) OVER w, count() OVER w, count(k) OVER w, any(v) OVER w, anyLast(k) OVER w, argMax(id, v) OVER w, groupArray(v) OVER w, uniq(k) OVER w, finalizeAggregation(sumState(v) OVER w), finalizeAggregation(maxState(k) OVER w)) AS r"
-unordered_aggregates="(sum(v) OVER w, sum(k) OVER w, round(avg(v) OVER w, 6), min(k) OVER w, max(v) OVER w, count() OVER w, count(k) OVER w, min(v) OVER w, max(k) OVER w, argMax(v, id) OVER w, arraySort(groupArray(v) OVER w), uniq(k) OVER w, finalizeAggregation(sumState(v) OVER w), finalizeAggregation(maxState(k) OVER w)) AS r"
+aggregates="(sum(v) OVER w, sum(k) OVER w, toString(round(avg(v) OVER w, 6)), min(k) OVER w, max(v) OVER w, count() OVER w, count(k) OVER w, any(v) OVER w, anyLast(k) OVER w, argMax(id, v) OVER w, groupArray(v) OVER w, uniq(k) OVER w, finalizeAggregation(sumState(v) OVER w), finalizeAggregation(maxState(k) OVER w)) AS r"
+unordered_aggregates="(sum(v) OVER w, sum(k) OVER w, toString(round(avg(v) OVER w, 6)), min(k) OVER w, max(v) OVER w, count() OVER w, count(k) OVER w, min(v) OVER w, max(k) OVER w, argMax(v, id) OVER w, arraySort(groupArray(v) OVER w), uniq(k) OVER w, finalizeAggregation(sumState(v) OVER w), finalizeAggregation(maxState(k) OVER w)) AS r"
 
 {
 check 'rows from the partition start' "SELECT p, id, $aggregates FROM t WINDOW w AS (PARTITION BY p ORDER BY k, id ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)"
