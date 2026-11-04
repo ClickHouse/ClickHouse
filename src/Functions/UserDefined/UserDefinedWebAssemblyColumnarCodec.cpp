@@ -27,6 +27,7 @@
 #include <Common/Exception.h>
 #include <limits>
 #include <Common/assert_cast.h>
+#include <Common/HashTable/HashMap.h>
 
 namespace DB
 {
@@ -280,9 +281,59 @@ void withLowCardinalityIndexes(const ColumnLowCardinality & lc_col, F && f)
         f(assert_cast<const ColumnUInt64 &>(indexes).getData());
 }
 
-/// Every row of `values` becomes its own dictionary entry, copied byte for byte. Unlike
-/// `ColumnLowCardinality::insertRangeFromFullColumn`, this does not merge a value that compares
-/// equal to the default, such as `-0.0`, into the default slot.
+/// Appends the entries of `src` in `[from, from + count)` to `keys`, merging entries with the same bytes
+/// into one, and writes the dictionary index of every appended entry into `positions`. `ColumnUnique`
+/// requires distinct entries: equal values with different indexes break sorting and grouping, which
+/// rely on index identity. Comparing bytes rather than values keeps distinct encodings of equal
+/// floating-point values, such as `-0.0` and `+0.0`, apart, so the guest's answer is preserved.
+class LowCardinalityKeysBuilder
+{
+public:
+    /// `keys` starts with `num_special` reserved slots; the last one holds the default value, which a
+    /// non-NULL entry with the same bytes maps to.
+    LowCardinalityKeysBuilder(MutableColumnPtr keys_, size_t num_special)
+        : keys(std::move(keys_))
+        , default_bytes(keys->getDataAt(num_special - 1))
+    {
+        chassert(keys->size() == num_special);
+        /// The key references `default_bytes`, not `keys`, whose buffer moves as it grows.
+        bool inserted = false;
+        HashMap<std::string_view, UInt64, StringViewHash>::LookupResult it;
+        positions_by_bytes.emplace(std::string_view(default_bytes), it, inserted);
+        it->getMapped() = num_special - 1;
+    }
+
+    void append(const IColumn & src, size_t from, size_t count, PaddedPODArray<UInt64> & positions)
+    {
+        positions.resize(count);
+        for (size_t i = 0; i < count; ++i)
+        {
+            /// The key references the bytes of `src`, which must outlive the builder.
+            std::string_view bytes = src.getDataAt(from + i);
+            bool inserted = false;
+            HashMap<std::string_view, UInt64, StringViewHash>::LookupResult it;
+            positions_by_bytes.emplace(bytes, it, inserted);
+            if (inserted)
+            {
+                it->getMapped() = keys->size();
+                keys->insertFrom(src, from + i);
+            }
+            positions[i] = it->getMapped();
+        }
+    }
+
+    size_t size() const { return keys->size(); }
+    MutableColumnPtr finish() { return std::move(keys); }
+
+private:
+    MutableColumnPtr keys;
+    const std::string default_bytes;
+    HashMap<std::string_view, UInt64, StringViewHash> positions_by_bytes;
+};
+
+/// Builds a `LowCardinality` column whose dictionary holds the distinct values of `values`, compared
+/// byte for byte. Unlike `ColumnLowCardinality::insertRangeFromFullColumn`, this does not merge a
+/// value that compares equal to the default, such as `-0.0`, into the default slot.
 MutableColumnPtr lowCardinalityFromFullColumn(const IColumn & values, const DataTypeLowCardinality & lc_type)
 {
     const IDataType & dictionary_type = *lc_type.getDictionaryType();
@@ -295,55 +346,57 @@ MutableColumnPtr lowCardinalityFromFullColumn(const IColumn & values, const Data
         null_map = &nullable->getNullMapData();
     }
 
-    MutableColumnPtr keys = nested->cloneEmpty();
-    keys->insertManyDefaults(num_special);
-    keys->insertRangeFrom(*nested, 0, nested->size());
+    MutableColumnPtr special = nested->cloneEmpty();
+    special->insertManyDefaults(num_special);
+    LowCardinalityKeysBuilder builder(std::move(special), num_special);
+    PaddedPODArray<UInt64> positions;
+    builder.append(*nested, 0, nested->size(), positions);
 
-    MutableColumnPtr indexes = createLowCardinalityIndexes(keys->size(), [&]<typename T>(PaddedPODArray<T> & data)
+    MutableColumnPtr indexes = createLowCardinalityIndexes(builder.size(), [&]<typename T>(PaddedPODArray<T> & data)
     {
         data.resize(values.size());
         for (size_t i = 0; i < values.size(); ++i)
-            data[i] = (null_map && (*null_map)[i]) ? 0 : static_cast<T>(i + num_special);
+            data[i] = (null_map && (*null_map)[i]) ? 0 : static_cast<T>(positions[i]);
     });
-    MutableColumnPtr dictionary = DataTypeLowCardinality::createColumnUnique(dictionary_type, std::move(keys));
+    MutableColumnPtr dictionary = DataTypeLowCardinality::createColumnUnique(dictionary_type, builder.finish());
     return ColumnLowCardinality::create(std::move(dictionary), std::move(indexes), /*is_shared=*/false);
 }
 
-/// The dictionary is the special slots of the first part followed by the other entries of every
-/// part in turn, so no entry is reinserted by value.
+/// The dictionary is the special slots of the first part followed by the distinct other entries of
+/// every part in turn, compared byte for byte, so no entry is reinserted by value.
 MutableColumnPtr concatLowCardinality(const Columns & parts, const DataTypeLowCardinality & lc_type)
 {
     const auto & first = assert_cast<const ColumnLowCardinality &>(*parts.front());
     const size_t num_special = first.getDictionary().nestedColumnIsNullable() ? 2 : 1;
     const IColumn & first_keys = *first.getDictionary().getNestedNotNullableColumn();
-    MutableColumnPtr keys = first_keys.cloneEmpty();
-    keys->insertRangeFrom(first_keys, 0, num_special);
+    MutableColumnPtr special = first_keys.cloneEmpty();
+    special->insertRangeFrom(first_keys, 0, num_special);
+    LowCardinalityKeysBuilder builder(std::move(special), num_special);
 
-    VectorWithMemoryTracking<size_t> bases;
-    bases.reserve(parts.size());
+    /// New index of every entry of every part.
+    VectorWithMemoryTracking<PaddedPODArray<UInt64>> part_positions(parts.size());
     size_t rows = 0;
-    for (const auto & part : parts)
+    for (size_t p = 0; p < parts.size(); ++p)
     {
-        const IColumn & part_keys = *assert_cast<const ColumnLowCardinality &>(*part).getDictionary().getNestedNotNullableColumn();
-        bases.push_back(keys->size());
-        keys->insertRangeFrom(part_keys, num_special, part_keys.size() - num_special);
-        rows += part->size();
+        const IColumn & part_keys = *assert_cast<const ColumnLowCardinality &>(*parts[p]).getDictionary().getNestedNotNullableColumn();
+        builder.append(part_keys, num_special, part_keys.size() - num_special, part_positions[p]);
+        rows += parts[p]->size();
     }
 
-    MutableColumnPtr indexes = createLowCardinalityIndexes(keys->size(), [&]<typename T>(PaddedPODArray<T> & data)
+    MutableColumnPtr indexes = createLowCardinalityIndexes(builder.size(), [&]<typename T>(PaddedPODArray<T> & data)
     {
         data.reserve(rows);
         for (size_t p = 0; p < parts.size(); ++p)
         {
-            const UInt64 shift = bases[p] - num_special;
+            const auto & positions = part_positions[p];
             withLowCardinalityIndexes(assert_cast<const ColumnLowCardinality &>(*parts[p]), [&](const auto & src)
             {
                 for (const auto index : src)
-                    data.push_back(static_cast<T>(index < num_special ? index : index + shift));
+                    data.push_back(static_cast<T>(index < num_special ? index : positions[index - num_special]));
             });
         }
     });
-    MutableColumnPtr dictionary = DataTypeLowCardinality::createColumnUnique(*lc_type.getDictionaryType(), std::move(keys));
+    MutableColumnPtr dictionary = DataTypeLowCardinality::createColumnUnique(*lc_type.getDictionaryType(), builder.finish());
     return ColumnLowCardinality::create(std::move(dictionary), std::move(indexes), /*is_shared=*/false);
 }
 
@@ -351,6 +404,8 @@ bool containsLowCardinality(const DataTypePtr & type)
 {
     if (typeid_cast<const DataTypeLowCardinality *>(type.get()))
         return true;
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
+        return containsLowCardinality(nullable_type->getNestedType());
     if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
         return containsLowCardinality(array_type->getNestedType());
     if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
@@ -381,6 +436,19 @@ ColumnPtr concatColumnarResults(const Columns & parts, const DataTypePtr & type)
 
     if (const auto * lc_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
         return concatLowCardinality(parts, *lc_type);
+
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
+    {
+        Columns nested;
+        auto null_map = ColumnUInt8::create();
+        for (const auto & part : parts)
+        {
+            const auto & nullable = assert_cast<const ColumnNullable &>(*part);
+            nested.push_back(nullable.getNestedColumnPtr());
+            null_map->insertRangeFrom(nullable.getNullMapColumn(), 0, nullable.size());
+        }
+        return ColumnNullable::create(concatColumnarResults(nested, nullable_type->getNestedType()), std::move(null_map));
+    }
 
     if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
     {
@@ -1522,7 +1590,32 @@ MutableColumnPtr readColumnFromDesc(
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "COLUMNAR_V1: COL_LOWCARD dictionary of type {} has {} rows, but its reserved leading "
                 "slots require at least {}", dictionary_type.getName(), dict_row_count, num_special_values);
-        auto unique_col = DataTypeLowCardinality::createColumnUnique(dictionary_type, std::move(dict_col));
+
+        /// A guest dictionary may repeat entries, which `ColumnUnique` does not allow: merge entries
+        /// with the same bytes and point the indexes at the remaining ones.
+        MutableColumnPtr special = dict_col->cloneEmpty();
+        special->insertRangeFrom(*dict_col, 0, num_special_values);
+        LowCardinalityKeysBuilder builder(std::move(special), num_special_values);
+        PaddedPODArray<UInt64> positions;
+        builder.append(*dict_col, num_special_values, dict_row_count - num_special_values, positions);
+        if (builder.size() != dict_row_count)
+        {
+            auto remap = [&]<typename T>(ColumnVector<T> & column)
+            {
+                for (auto & index : column.getData())
+                    if (index >= num_special_values)
+                        index = static_cast<T>(positions[index - num_special_values]);
+            };
+            if (auto * u8 = typeid_cast<ColumnUInt8 *>(idx_col.get()))
+                remap(*u8);
+            else if (auto * u16 = typeid_cast<ColumnUInt16 *>(idx_col.get()))
+                remap(*u16);
+            else if (auto * u32 = typeid_cast<ColumnUInt32 *>(idx_col.get()))
+                remap(*u32);
+            else
+                remap(assert_cast<ColumnUInt64 &>(*idx_col));
+        }
+        auto unique_col = DataTypeLowCardinality::createColumnUnique(dictionary_type, builder.finish());
         col = ColumnLowCardinality::create(std::move(unique_col), std::move(idx_col), /* is_shared */ false);
     }
     else

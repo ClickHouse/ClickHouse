@@ -1146,6 +1146,88 @@ TEST(ColumnarWire, ConcatColumnarResultsKeepsNegativeZero)
     EXPECT_EQ(result_variant.offsetAt(3), 1u);
 }
 
+/// `Nullable(Tuple(LowCardinality(Float64)))`: concatenation descends through `Nullable` too.
+TEST(ColumnarWire, ConcatNullableTupleLowCardinalityKeepsNegativeZero)
+{
+    DataTypePtr lowcard_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeFloat64>());
+    DataTypePtr type = makeNullable(std::make_shared<DataTypeTuple>(DataTypes{lowcard_type}));
+    auto null_map = ColumnUInt8::create();
+    null_map->insertValue(0);
+    ColumnPtr part = ColumnNullable::create(ColumnTuple::create(Columns{makeNegativeZeroLowCardinality(false)}), std::move(null_map));
+    ColumnPtr result = concatColumnarResults({part, part}, type);
+    ASSERT_EQ(result->size(), 2u);
+    const auto & nullable = assert_cast<const ColumnNullable &>(*result);
+    const IColumn & element = assert_cast<const ColumnTuple &>(nullable.getNestedColumn()).getColumn(0);
+    for (size_t i = 0; i < 2; ++i)
+    {
+        EXPECT_FALSE(nullable.isNullAt(i));
+        EXPECT_TRUE(std::signbit(element.getFloat64(i))) << "row " << i;
+    }
+}
+
+/// `LowCardinality(UInt64)` with the given dictionary keys (slot 0 is the default) and indexes.
+/// `ColumnUnique` does not deduplicate keys passed this way, as a guest-built dictionary would not be.
+static ColumnPtr makeUInt64LowCardinality(const std::vector<UInt64> & keys, const std::vector<UInt8> & indexes)
+{
+    auto key_column = ColumnUInt64::create();
+    for (UInt64 key : keys)
+        key_column->insertValue(key);
+    MutableColumnPtr dictionary = DataTypeLowCardinality::createColumnUnique(DataTypeUInt64(), std::move(key_column));
+    auto index_column = ColumnUInt8::create();
+    for (UInt8 index : indexes)
+        index_column->insertValue(index);
+    MutableColumnPtr index_ptr = std::move(index_column);
+    return ColumnLowCardinality::create(std::move(dictionary), std::move(index_ptr), /*is_shared=*/false);
+}
+
+/// Equal values must share one dictionary index: sorting and grouping compare `LowCardinality` rows
+/// by index identity, so `ORDER BY k, secondary` would otherwise ignore `secondary` for equal `k`.
+static void expectDistinctDictionary(const IColumn & column, const std::vector<UInt64> & expected_values, size_t expected_dictionary_size)
+{
+    const auto & lc = assert_cast<const ColumnLowCardinality &>(column);
+    ASSERT_EQ(lc.size(), expected_values.size());
+    EXPECT_EQ(lc.getDictionary().size(), expected_dictionary_size);
+    for (size_t i = 0; i < expected_values.size(); ++i)
+    {
+        EXPECT_EQ(lc.getUInt(i), expected_values[i]) << "row " << i;
+        for (size_t j = 0; j < i; ++j)
+            if (expected_values[i] == expected_values[j])
+                EXPECT_EQ(lc.getIndexAt(i), lc.getIndexAt(j)) << "rows " << j << " and " << i;
+    }
+}
+
+TEST(ColumnarWire, NestedLowCardinalityResultDeduplicatesKeys)
+{
+    /// Tuple(LowCardinality(UInt64)) travels materialized in COL_COMPLEX.
+    DataTypePtr lowcard_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeUInt64>());
+    DataTypePtr tuple_type = std::make_shared<DataTypeTuple>(DataTypes{lowcard_type});
+    auto values = ColumnUInt64::create();
+    for (UInt64 value : {7, 7, 0, 0})
+        values->insertValue(value);
+    ColumnPtr tuple = ColumnTuple::create(Columns{std::move(values)});
+    auto buf = encodeCHColumn(tuple.get(), 4);
+    auto decoded = readColumnarOutput({buf.data(), buf.size()}, tuple_type, 4);
+    expectDistinctDictionary(assert_cast<const ColumnTuple &>(*decoded).getColumn(0), {7, 7, 0, 0}, 2);
+}
+
+TEST(ColumnarWire, ConcatColumnarResultsDeduplicatesKeys)
+{
+    DataTypePtr lowcard_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeUInt64>());
+    ColumnPtr part = makeUInt64LowCardinality({0, 7}, {1});
+    ColumnPtr result = concatColumnarResults({part, part}, lowcard_type);
+    expectDistinctDictionary(*result, {7, 7}, 2);
+}
+
+TEST(ColumnarWire, GuestLowCardinalityDictionaryDeduplicated)
+{
+    /// The guest repeats 7 and sends the default value 0 as a separate entry.
+    DataTypePtr lowcard_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeUInt64>());
+    ColumnPtr column = makeUInt64LowCardinality({0, 7, 7, 0}, {1, 2, 3, 0});
+    auto buf = encodeCHColumn(column.get(), 4);
+    auto decoded = readColumnarOutput({buf.data(), buf.size()}, lowcard_type, 4);
+    expectDistinctDictionary(*decoded, {7, 7, 0, 0}, 2);
+}
+
 // ── Bounds check: wrapped offset must not bypass the check via integer overflow ──
 //
 // A malformed frame can set an offset field close to UINT64_MAX. The naive check
