@@ -251,16 +251,17 @@ void applyQueryLevelSettings(
     set_query.changes.removeSetting("limit");
     set_query.changes.removeSetting("offset");
 
-    /// A nested `SETTINGS` clause (a subquery, a CTE, a view's inner query) used to be applied to
-    /// the per-node context unchecked, letting a user override `readonly`, `CONST` and `MIN`/`MAX`
-    /// constraints - e.g. `additional_table_filters`, which the Planner reads from this context.
-    /// Clamp it instead of throwing, as done for other settings crossing execution contexts
-    /// (`getSQLSecurityOverriddenContext`, secondary queries, DDL replay): violating changes are
-    /// dropped, out-of-bounds values are clamped, so a view whose inner clause violates the
-    /// reader's constraints keeps working. A top-level clause still throws
-    /// (`applySettingsFromQuery`). Clamp a copy: the node keeps the clause as written, so the tree's
-    /// AST and hash are unchanged, and every node executing the subquery clamps it against its own
-    /// constraints.
+    /// A nested `SETTINGS` clause (a subquery, a CTE, a view's inner query) is clamped to the session's
+    /// settings constraints, as done for other settings crossing execution contexts
+    /// (`getSQLSecurityOverriddenContext`, secondary queries, DDL replay): violating changes are dropped,
+    /// out-of-bounds values are clamped, so a view whose inner clause violates the reader's constraints
+    /// keeps working. A top-level clause still throws (`applySettingsFromQuery`). An unknown name or an
+    /// uncastable value throws as for a top-level clause, on every server that executes the query. The
+    /// node records the effective `changes`: the ones that survive, with their clamped values and the
+    /// literals as written, so `toAST`, the tree hash, the `Planner` and the shards receiving the
+    /// subquery see what was applied. The changes are clamped one at a time, so that each is clamped
+    /// against the context as the preceding changes left it - the last-wins reading the clause has
+    /// everywhere else.
     ///
     /// `SETTINGS x = DEFAULT` is parsed into `default_settings`, not `changes`. Those settings are reset
     /// in the subquery scope as well, so that the reset actually takes effect for the subquery (e.g. a
@@ -270,9 +271,12 @@ void applyQueryLevelSettings(
     /// `readonly`, `CONST` or `MIN` / `MAX` constraint that the same clause could not escape by writing
     /// the value out. The top-level path throws (`checkSettingsConstraintsForSettingsReset` in
     /// `InterpreterSetQuery`); here a forbidden reset is dropped, and a reset past a bound becomes an
-    /// assignment of the clamped value.
-    updated_context->applyNestedQuerySettingsClamped(set_query.changes, set_query.default_settings);
-    settings_changes.insert(settings_changes.end(), set_query.changes.begin(), set_query.changes.end());
+    /// assignment of the clamped value. The node keeps the resets as written.
+    ///
+    /// The sequence is shared with `ApplyWithSubqueryVisitor` and the query result cache check
+    /// (`Context::applyNestedQuerySettingsClamped`).
+    auto effective_changes = updated_context->applyNestedQuerySettingsClamped(set_query.changes, set_query.default_settings);
+    settings_changes.insert(settings_changes.end(), effective_changes.begin(), effective_changes.end());
     default_settings.insert(default_settings.end(), set_query.default_settings.begin(), set_query.default_settings.end());
 
     if (!set_query.query_parameters.empty())
@@ -288,6 +292,10 @@ void applyQueryLevelSettings(
             query_parameters_map.insert_or_assign(parameter_name, parameter_value);
         updated_context->addQueryParameters(query_parameters_map);
     }
+
+    /// The clause of a query inside the body of a `SQL SECURITY DEFINER` / `NONE` view must not turn parallel replicas back on.
+    if (updated_context->isSQLSecurityOverriddenBody())
+        updated_context->restrictParallelReplicasInSQLSecurityOverriddenBody();
 }
 
 QueryTreeNodePtr QueryTreeBuilder::buildSelectWithUnionExpression(
