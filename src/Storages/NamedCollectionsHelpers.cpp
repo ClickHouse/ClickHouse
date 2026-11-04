@@ -347,20 +347,11 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
         }
 
         const auto & [key, value] = *value_override;
-        const auto value_string = fieldToString(std::get<Field>(value));
         /// Marked before the value is written: the mark remembers the stored value the override
         /// replaces, so consumers can tell an override that drops a collection-provided value
         /// from one that never had anything to drop (see `StorageMySQL::getSSLParams`).
         collection_copy->markQueryOverridden(key);
-        collection_copy->setOrUpdate<String>(key, value_string, {});
-
-        /// The definition of a table keeps the value an expression had when the table was created.
-        if (dependent_table_id)
-        {
-            auto & value_ast = (*it)->as<ASTFunction &>().arguments->children[1];
-            if (!value_ast->as<ASTLiteral>() && !value_ast->as<ASTIdentifier>())
-                value_ast = make_intrusive<ASTLiteral>(value_string);
-        }
+        collection_copy->setOrUpdate<String>(key, fieldToString(std::get<Field>(value)), {});
     }
 
     if (dependent_table_id)

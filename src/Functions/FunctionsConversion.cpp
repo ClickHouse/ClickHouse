@@ -533,36 +533,6 @@ case FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE: \
 
                     return true;
                 }
-                /// IPv4/IPv6 are not DataTypeNumber, so without this arm the accurate casts fall through
-                /// below and never examine the value, unlike the plain CAST of the same pair.
-                else if constexpr (
-                    (std::is_same_v<RightDataType, DataTypeIPv4>
-                        && is_any_of<LeftDataType, DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64>)
-                    || (std::is_same_v<RightDataType, DataTypeIPv6> && std::is_same_v<LeftDataType, DataTypeUInt128>))
-                {
-                    if (cast_type == CastType::accurate)
-                    {
-                        result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(
-                            arguments,
-                            result_type,
-                            input_rows_count,
-                            BehaviourOnErrorFromString::ConvertDefaultBehaviorTag,
-                            settings,
-                            AccurateConvertStrategyAdditions());
-                    }
-                    else
-                    {
-                        result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(
-                            arguments,
-                            result_type,
-                            input_rows_count,
-                            BehaviourOnErrorFromString::ConvertDefaultBehaviorTag,
-                            settings,
-                            AccurateOrNullConvertStrategyAdditions());
-                    }
-
-                    return true;
-                }
             }
             else if constexpr (IsDataTypeStringOrFixedString<LeftDataType>)
             {
@@ -1989,6 +1959,11 @@ FunctionCast::WrapperType FunctionCast::createMapWrapper(const DataTypePtr & fro
 
 FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & from_type, const DataTypeObject * to_object, bool requested_result_is_nullable) const
 {
+    /// Types that differ only in SHARED marks of typed paths have identical columns, no conversion is needed.
+    if (const auto * from_object = checkAndGetDataType<DataTypeObject>(from_type.get());
+        from_object && from_object->equalsIgnoringSharedTypedPaths(*to_object))
+        return createIdentityWrapper(from_type);
+
     if (checkAndGetDataType<DataTypeString>(from_type.get()))
     {
         return [this, requested_result_is_nullable](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)

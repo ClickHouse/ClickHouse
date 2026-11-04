@@ -986,11 +986,6 @@ SerializationPtr IMergeTreeDataPart::tryGetSerialization(const String & column_n
     return serializations->tryGet(column_name);
 }
 
-SerializationPtr IMergeTreeDataPart::tryGetSubcolumnSerialization(const String & column_name, const String & subcolumn_name) const
-{
-    return serializations->tryGetSubcolumnSerialization(column_name, subcolumn_name);
-}
-
 bool IMergeTreeDataPart::isMovingPart() const
 {
     fs::path part_directory_path = getDataPartStorage().getRelativePath();
@@ -3767,9 +3762,18 @@ ColumnSize IMergeTreeDataPart::getSubcolumnSize(const String & subcolumn_name) c
         return *size;
 
     /// If not, calculate the size of the subcolumn on disk and put it to cache.
-    auto size = calculateSubcolumnSize(subcolumn_name);
+    auto size = calculateSubcolumnSizes(NamesAndTypesList{getColumn(subcolumn_name)}).front();
     subcolumns_sizes_cache.add(subcolumn_name, size);
     return size;
+}
+
+std::vector<ColumnSize> IMergeTreeDataPart::getSubcolumnSizes(const NamesAndTypesList & subcolumns) const
+{
+    auto sizes = calculateSubcolumnSizes(subcolumns);
+    size_t i = 0;
+    for (const auto & subcolumn : subcolumns)
+        subcolumns_sizes_cache.add(subcolumn.name, sizes[i++]);
+    return sizes;
 }
 
 ColumnSize IMergeTreeDataPart::getTotalColumnsSize() const
@@ -4034,11 +4038,6 @@ bool IMergeTreeDataPart::hasBrokenProjection(const String & projection_name) con
     if (it == projection_parts.end())
         return false;
     return it->second->is_broken;
-}
-
-bool IMergeTreeDataPart::hasUnloadedProjection(const String & projection_name) const
-{
-    return !hasProjection(projection_name) && checksums.has(projection_name + ".proj");
 }
 
 void IMergeTreeDataPart::setBrokenReason(const String & message, int code) const

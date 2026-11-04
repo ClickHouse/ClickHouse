@@ -434,6 +434,112 @@ TEST_P(CoordinationTest, PlainCreateWithContainerFlagRejected)
     EXPECT_THROW(request_read->readImpl(rbuf), Coordination::Exception);
 }
 
+TEST_P(CoordinationTest, CreateRequestDoesNotPreallocateOversizedACLs)
+{
+    /// Invariant: memory must track bytes actually read, not the declared element count.
+    {
+        Coordination::ACLs acls;
+        acls.push_back(Coordination::ACL{Coordination::ACL::All, "world", "anyone"});
+        acls.push_back(Coordination::ACL{Coordination::ACL::Read, "digest", "user:hash"});
+
+        DB::WriteBufferFromNuraftBuffer wbuf;
+        Coordination::write(std::string{"/node"}, wbuf);
+        Coordination::write(std::string{"data"}, wbuf);
+        Coordination::write(acls, wbuf);
+        Coordination::write(static_cast<int32_t>(0), wbuf);
+
+        auto request_read = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Create);
+        DB::ReadBufferFromNuraftBuffer rbuf(wbuf.getBuffer());
+        request_read->readImpl(rbuf);
+        auto & create_read = dynamic_cast<Coordination::ZooKeeperCreateRequest &>(*request_read);
+        ASSERT_EQ(create_read.acls.size(), 2);
+        EXPECT_EQ(create_read.acls[0].permissions, Coordination::ACL::All);
+        EXPECT_EQ(create_read.acls[0].scheme, "world");
+        EXPECT_EQ(create_read.acls[0].id, "anyone");
+        EXPECT_EQ(create_read.acls[1].permissions, Coordination::ACL::Read);
+        EXPECT_EQ(create_read.acls[1].scheme, "digest");
+        EXPECT_EQ(create_read.acls[1].id, "user:hash");
+    }
+
+    {
+        /// Declared ACL count is above the pre-allocation bound, but no element bytes follow.
+        /// The reservation must stay bounded by the cap, not by the declared count.
+        DB::WriteBufferFromNuraftBuffer wbuf;
+        Coordination::write(std::string{"/node"}, wbuf);
+        Coordination::write(std::string{}, wbuf);
+        Coordination::write(static_cast<int32_t>(2 * Coordination::MAX_ARRAY_PREALLOCATION), wbuf);
+
+        auto request_read = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Create);
+        DB::ReadBufferFromNuraftBuffer rbuf(wbuf.getBuffer());
+        EXPECT_THROW(request_read->readImpl(rbuf), DB::Exception);
+        auto & create_read = dynamic_cast<Coordination::ZooKeeperCreateRequest &>(*request_read);
+        EXPECT_LE(create_read.acls.capacity(), static_cast<size_t>(Coordination::MAX_ARRAY_PREALLOCATION));
+    }
+}
+
+TEST(CoordinationSerialization, StringReadDoesNotPreallocateDeclaredSize)
+{
+    /// Invariant: memory must track bytes actually read, not the declared string length.
+    const size_t chunk = Coordination::MAX_STRING_PREALLOCATION;
+
+    auto expect_marshalling_error = [](DB::ReadBuffer & rbuf, std::string & s)
+    {
+        try
+        {
+            Coordination::read(s, rbuf);
+            FAIL() << "Expected ZMARSHALLINGERROR";
+        }
+        catch (const Coordination::Exception & e)
+        {
+            EXPECT_EQ(e.code, Coordination::Error::ZMARSHALLINGERROR);
+        }
+    };
+
+    {
+        /// The largest allowed length is declared, but no payload bytes follow.
+        DB::WriteBufferFromNuraftBuffer wbuf;
+        Coordination::write(Coordination::MAX_STRING_OR_ARRAY_SIZE, wbuf);
+
+        DB::ReadBufferFromNuraftBuffer rbuf(wbuf.getBuffer());
+        std::string s;
+        expect_marshalling_error(rbuf, s);
+        EXPECT_LE(s.capacity(), 2 * chunk);
+    }
+
+    {
+        /// The input ends after one complete chunk.
+        DB::WriteBufferFromNuraftBuffer wbuf;
+        Coordination::write(Coordination::MAX_STRING_OR_ARRAY_SIZE, wbuf);
+        const std::string first_chunk(chunk, 'x');
+        wbuf.write(first_chunk.data(), first_chunk.size());
+
+        DB::ReadBufferFromNuraftBuffer rbuf(wbuf.getBuffer());
+        std::string s;
+        expect_marshalling_error(rbuf, s);
+        EXPECT_LE(s.capacity(), 4 * chunk);
+    }
+
+    {
+        /// A string that needs more than one chunk is read completely, and the next field is aligned.
+        std::string expected(chunk + 1, '\0');
+        for (size_t i = 0; i < expected.size(); ++i)
+            expected[i] = static_cast<char>(i % 251);
+
+        DB::WriteBufferFromNuraftBuffer wbuf;
+        Coordination::write(expected, wbuf);
+        Coordination::write(static_cast<int32_t>(42), wbuf);
+
+        DB::ReadBufferFromNuraftBuffer rbuf(wbuf.getBuffer());
+        std::string s;
+        int32_t next = 0;
+        Coordination::read(s, rbuf);
+        Coordination::read(next, rbuf);
+        EXPECT_EQ(s, expected);
+        EXPECT_EQ(next, 42);
+        EXPECT_TRUE(rbuf.eof());
+    }
+}
+
 template <typename StateMachine>
 struct SimpliestRaftServer
 {

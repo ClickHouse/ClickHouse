@@ -675,9 +675,10 @@ LimitByAnalysisResult analyzeLimitBy(const QueryNode & query_node,
 /** Construct LIMIT AFTER/UNTIL analysis result.
   * The boundary expressions may reference columns that are not in the SELECT list. `LimitRangeStep` runs
   * before "Project names" in the plan but is not part of the actions chain, so no chain step requires those
-  * columns and chain finalization would prune them. This adds an identity step over every current column:
+  * columns and chain finalization would prune them. This adds an identity step over every current value column:
   * all of its inputs are its outputs, so the whole stream, boundary columns included, stays alive up to the
   * range step, which builds its conditions from the resulting header.
+  * `IN` set and lambda `Function` placeholders are not values and are not kept: a boundary expression builds its own.
   */
 LimitRangeAnalysisResult analyzeLimitRange(const QueryNode & query_node,
     const ColumnsWithTypeAndName & input_columns,
@@ -689,8 +690,17 @@ LimitRangeAnalysisResult analyzeLimitRange(const QueryNode & query_node,
             throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION, "`arrayJoin` is not allowed in LIMIT AFTER/UNTIL expressions");
     }
 
+    ColumnsWithTypeAndName value_columns;
+    value_columns.reserve(input_columns.size());
+    for (const auto & column : input_columns)
+    {
+        const WhichDataType which_type(column.type);
+        if (!which_type.isSet() && !which_type.isFunction())
+            value_columns.push_back(column);
+    }
+
     auto before_limit_range_actions = std::make_shared<ActionsAndProjectInputsFlag>();
-    before_limit_range_actions->dag = ActionsDAG(input_columns);
+    before_limit_range_actions->dag = ActionsDAG(value_columns);
     actions_chain.addStep(std::make_unique<ActionsChainStep>(before_limit_range_actions));
 
     return LimitRangeAnalysisResult{std::move(before_limit_range_actions)};

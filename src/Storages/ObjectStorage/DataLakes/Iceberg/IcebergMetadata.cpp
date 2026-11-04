@@ -12,7 +12,6 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Core/UUID.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/TypeTree.h>
@@ -1554,6 +1553,31 @@ std::unique_ptr<StorageInMemoryMetadata> IcebergMetadata::buildStorageMetadataFr
     return result;
 }
 
+SettingsChanges IcebergMetadata::getSettingsToResolveState(const DataLakeTableStateSnapshot & state) const
+{
+    namespace fs = std::filesystem;
+    chassert(std::holds_alternative<Iceberg::TableStateSnapshot>(state));
+
+    /// A user-given path is forwarded with the other table function settings.
+    if (data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed)
+        return {};
+
+    const String & path = std::get<Iceberg::TableStateSnapshot>(state).metadata_file_path;
+    const String & table_path = persistent_components.table_path;
+
+    /// The other server reads `table_path / relative`.
+    const String base = table_path.empty() || table_path.ends_with('/') ? table_path : table_path + "/";
+    const fs::path relative = path.starts_with(base) ? path.substr(base.size()) : String{};
+    if (relative.empty() || relative.is_absolute()
+        || std::any_of(relative.begin(), relative.end(), [](const fs::path & part) { return part == "." || part == ".."; }))
+    {
+        LOG_DEBUG(log, "Metadata file {} is not addressable relative to table path {}", path, table_path);
+        return {};
+    }
+
+    return {SettingChange{"iceberg_metadata_file_path", relative.string()}};
+}
+
 bool IcebergMetadata::shouldReloadSchemaForConsistency(ContextPtr) const
 {
     return true;
@@ -1611,9 +1635,6 @@ void IcebergMetadata::addDeleteTransformers(
             }
             /// with equality ids, we can know which columns should be deleted, here we calculate the indexes.
             const std::vector<Int32> & equality_ids = *(delete_file.equality_ids);
-            /// Iceberg `time` keys are read as the stored microseconds, like the data columns.
-            ColumnMapperPtr delete_mapper = persistent_components.schema_processor->getColumnMapperById(delete_file.schema_id);
-            bool has_time_equality_column = false;
             Block block_for_set;
             std::vector<size_t> equality_indexes_delete_file;
             for (Int32 col_id : equality_ids)
@@ -1621,13 +1642,6 @@ void IcebergMetadata::addDeleteTransformers(
                 NameAndTypePair name_and_type
                     = persistent_components.schema_processor->getFieldCharacteristics(delete_file.schema_id, col_id);
                 size_t position_in_delete_file = delete_file_header.getPositionByName(name_and_type.name);
-                if (delete_mapper && delete_mapper->isIcebergTimeFieldId(col_id))
-                {
-                    auto & column = delete_file_header.getByPosition(position_in_delete_file);
-                    DataTypePtr key_type = removeNullable(name_and_type.type);
-                    column.type = column.type->isNullable() ? makeNullable(key_type) : key_type;
-                    has_time_equality_column = true;
-                }
                 /// Take the type from the delete file header rather than from the table schema:
                 /// the nullability of a column in the delete file may differ from its nullability
                 /// in the table schema, and the columns read below have exactly the header's types.
@@ -1646,9 +1660,7 @@ void IcebergMetadata::addDeleteTransformers(
                 local_context->getSettingsRef()[DB::Setting::max_block_size],
                 format_settings,
                 parser_shared_resources,
-                has_time_equality_column
-                    ? std::make_shared<FormatFilterInfo>(nullptr, local_context, delete_mapper, nullptr, nullptr)
-                    : nullptr,
+                nullptr,
                 true,
                 compression_method);
             /// only get the delete columns and construct a set by 'block_for_set'

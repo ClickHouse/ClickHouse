@@ -337,83 +337,20 @@ struct PlainFixedSizeDecoder : public PageDecoder
     void decode(size_t num_values, IColumn & col, const UInt8 * filter, size_t filter_offset) override
     {
         const char * from = data;
-        skip(num_values);
-        size_t pass_count = num_values;
-        if (filter)
+        if (!filter)
         {
-            filter += filter_offset;
-            pass_count = countBytesInFilter(filter, 0, num_values);
-            if (pass_count == 0)
-                return;
-        }
-        const size_t value_size = converter->input_size;
-        if (pass_count == num_values)
-        {
-            converter->convertColumn(std::span(from, num_values * value_size), num_values, col);
+            skip(num_values);
+            converter->convertColumn(std::span(from, num_values * converter->input_size), num_values, col);
             return;
         }
-
-        const bool direct = converter->isTrivial();
-        char * to = nullptr;
-        if (direct)
+        size_t value_size = converter->input_size;
+        for (size_t i = 0; i < num_values; ++i)
         {
-            auto to_span = col.insertRawUninitialized(pass_count);
-            chassert(to_span.size() == pass_count * value_size);
-            to = to_span.data();
+            requireRemainingBytes(value_size);
+            if (filter[filter_offset + i])
+                converter->convertColumn(std::span(from + i * value_size, value_size), 1, col);
+            data += value_size;
         }
-        else
-        {
-            temp_buffer.resize(pass_count * value_size);
-            to = temp_buffer.data();
-        }
-        char * to_end = nullptr;
-        switch (value_size)
-        {
-            case 1: to_end = copyPassingValues<1>(from, filter, num_values, value_size, to); break;
-            case 2: to_end = copyPassingValues<2>(from, filter, num_values, value_size, to); break;
-            case 4: to_end = copyPassingValues<4>(from, filter, num_values, value_size, to); break;
-            case 8: to_end = copyPassingValues<8>(from, filter, num_values, value_size, to); break;
-            case 16: to_end = copyPassingValues<16>(from, filter, num_values, value_size, to); break;
-            default: to_end = copyPassingValues<0>(from, filter, num_values, value_size, to); break;
-        }
-        chassert(to_end == to + pass_count * value_size);
-        if (!direct)
-            converter->convertColumn(std::span(to, pass_count * value_size), pass_count, col);
-    }
-
-private:
-    PaddedPODArray<char> temp_buffer;
-
-    /// Appends the passing values to `to` and returns the new end; `static_value_size` 0 means `value_size`.
-    template <size_t static_value_size>
-    static char * copyPassingValues(const char * from, const UInt8 * filter, size_t num_values, size_t value_size, char * to)
-    {
-        const size_t size = static_value_size ? static_value_size : value_size;
-        size_t i = 0;
-        for (; i + 64 <= num_values; i += 64)
-        {
-            UInt64 mask = bytes64MaskToBits64Mask(filter + i);
-            if (mask == ~UInt64(0))
-            {
-                memcpy(to, from + i * size, 64 * size);
-                to += 64 * size;
-                continue;
-            }
-            for (; mask; mask &= mask - 1)
-            {
-                memcpy(to, from + (i + std::countr_zero(mask)) * size, size);
-                to += size;
-            }
-        }
-        for (; i < num_values; ++i)
-        {
-            if (filter[i])
-            {
-                memcpy(to, from + i * size, size);
-                to += size;
-            }
-        }
-        return to;
     }
 };
 
@@ -899,16 +836,12 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
             int read_count = bit_reader.GetBatch(bits_per_delta, out_values, static_cast<int>(n));
             chassert(read_count == int(n));
 
-            /// Locals, because `out_values` may alias the members.
-            UInt64 value = current_value;
-            const UInt64 delta_base = min_delta;
             for (size_t i = 0; i < n; ++i)
             {
-                value += delta_base + UInt64(*out_values);
-                *out_values = func(T(value));
+                current_value += min_delta + UInt64(*out_values);
+                *out_values = func(T(current_value));
                 ++out_values;
             }
-            current_value = value;
         }
     }
 };
@@ -2479,6 +2412,8 @@ Int96Converter::Int96Converter()
 
 void Int96Converter::convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const
 {
+    const bool saturate = overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate;
+
     std::span<char> to_span = col.insertRawUninitialized(num_values);
     Int64 * to = reinterpret_cast<Int64 *>(to_span.data());
     for (size_t i = 0; i < num_values; ++i)
@@ -2503,16 +2438,17 @@ void Int96Converter::convertColumn(std::span<const char> data, size_t num_values
         /// This interpretation is consistent with the arrow reader code (DecodeInt96Timestamp in
         /// arrow/cpp/src/parquet/types.h) and with a test file written by spark
         /// (tests/queries/0_stateless/02998_native_parquet_reader.sh).
-        bool overflow = false;
-        Int64 x = 0;
-        overflow |= common::subOverflow(julian_day, static_cast<Int64>(2440588l), x); // unix day number
-        overflow |= common::mulOverflow(x, day_nanos, x); // unix nanoseconds
-        overflow |= common::addOverflow(x, nanos, x);
 
-        if (overflow)
-            throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "INT96 timestamp out of range: julian day {}, time of day {} ns", julian_day, nanos);
-
-        to[i] = x;
+        /// julian_day comes from Int32, so neither the subtraction nor the product can overflow Int128.
+        const Int128 total = Int128(julian_day - 2440588l) * day_nanos + nanos;
+        if (total < std::numeric_limits<Int64>::min() || total > std::numeric_limits<Int64>::max())
+        {
+            if (!saturate)
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "INT96 timestamp out of range: julian day {}, time of day {} ns", julian_day, nanos);
+            to[i] = julian_day < 2440588l ? std::numeric_limits<Int64>::min() : std::numeric_limits<Int64>::max();
+        }
+        else
+            to[i] = static_cast<Int64>(total);
     }
 }
 

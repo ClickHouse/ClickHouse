@@ -834,7 +834,7 @@ static void splitAndModifyMutationCommands(
         {
             if (projections_being_dropped.contains(projection.name))
                 continue;
-            if (!part->hasProjection(projection.name) && !part->hasUnloadedProjection(projection.name))
+            if (!part->hasProjection(projection.name))
                 continue;
             if (part->hasBrokenProjection(projection.name))
                 continue;
@@ -1510,7 +1510,7 @@ static std::set<ProjectionDescriptionRawPtr> getProjectionsToRecalculate(
         bool need_recalculate =
             materialized_projections.contains(projection.name)
             || (!is_full_part_storage
-                && (source_part->hasProjection(projection.name) || source_part->hasUnloadedProjection(projection.name))
+                && source_part->hasProjection(projection.name)
                 && !source_part->hasBrokenProjection(projection.name));
 
         if (need_recalculate)
@@ -1783,11 +1783,9 @@ static NameToNameVector collectFilesForRenames(
 
     auto remove_column_streams = [&](const String & column_name)
     {
-        ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
+        /// Delete files if they are no longer shared with another column.
+        auto remove_stream = [&](const std::optional<String> & stream_name)
         {
-            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column_name, substream_path, ".bin", source_part->checksums, source_part->storage.getSettings());
-
-            /// Delete files if they are no longer shared with another column.
             if (stream_name && --stream_counts[*stream_name] == 0)
             {
                 add_rename(*stream_name + ".bin", "");
@@ -1795,8 +1793,23 @@ static NameToNameVector collectFilesForRenames(
             }
         };
 
-        if (auto serialization = try_get_serialization_of_stored_column(column_name))
-            serialization->enumerateStreams(callback);
+        /// columns_substreams.txt is the ground truth of the streams on disk, as in getStreamCounts: a state-less
+        /// enumerateStreams misses the data-dependent streams of a column with dynamic subcolumns, which would stay
+        /// in the part.
+        const auto * substreams = source_part->getColumnsSubstreams().tryGetColumnSubstreams(column_name);
+        if (substreams && !(substreams->size() == 1 && (*substreams)[0] == NOT_YET_WRITTEN_COLUMN_SUBSTREAM_PLACEHOLDER))
+        {
+            for (const auto & substream : *substreams)
+                remove_stream(IMergeTreeDataPart::getStreamNameOrHash(substream, ".bin", source_part->checksums));
+        }
+        else if (auto serialization = try_get_serialization_of_stored_column(column_name))
+        {
+            serialization->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+            {
+                remove_stream(IMergeTreeDataPart::getStreamNameForColumn(
+                    column_name, substream_path, ".bin", source_part->checksums, source_part->storage.getSettings()));
+            });
+        }
     };
     NameSet columns_renamed_to_not_stored;
 
@@ -2199,6 +2212,10 @@ static void processStatisticsChanges(
         }
         else if (command.type == MutationCommand::Type::RENAME_COLUMN)
         {
+            /// A rename-map entry names the column by its name in the source part, and on a wide part it repeats
+            /// the mutation's own renames: it moves only a source-part entry that no command has taken yet.
+            if (command_index >= num_commands_from_mutation && !all_statistics.contains(command.column_name))
+                continue;
             process_rename(command.column_name, command.rename_to);
         }
         else if (command.type == MutationCommand::Type::READ_COLUMN)
@@ -3361,7 +3378,7 @@ private:
             bool need_recalculate =
                 (ctx->materialized_projections.contains(projection.name)
                 || (!is_full_part_storage
-                    && (ctx->source_part->hasProjection(projection.name) || ctx->source_part->hasUnloadedProjection(projection.name))
+                    && ctx->source_part->hasProjection(projection.name)
                     && !ctx->source_part->hasBrokenProjection(projection.name)))
                 && !lightweight_delete_drop;
 
@@ -4900,7 +4917,7 @@ bool MutateTask::prepare()
         {
             for (const auto & projection : ctx->metadata_snapshot->getProjections())
             {
-                if (!ctx->source_part->hasProjection(projection.name) && !ctx->source_part->hasUnloadedProjection(projection.name))
+                if (!ctx->source_part->hasProjection(projection.name))
                     continue;
 
                 ctx->materialized_projections.insert(projection.name);

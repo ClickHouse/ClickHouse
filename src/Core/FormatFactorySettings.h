@@ -773,7 +773,7 @@ Read data types in binary format instead of type names in Native input format
 )", 0, \
         {"24.7", false, false, "Added new setting to allow to read type names in binary format in Native output format"}) \
     DECLARE(UInt64, output_format_compression_level, 3, R"(
-Default compression level if query output is compressed. The setting is applied when `SELECT` query has `INTO OUTFILE` or when writing to table functions `file`, `url`, `hdfs`, `s3`, or `azureBlobStorage`. It is also applied to the compressed response to an HTTP request with a method other than `gzip` and `deflate`, for which [http_zlib_compression_level](/reference/settings/session-settings/http#http_zlib_compression_level) is used.
+Default compression level if query output is compressed. The setting is applied when `SELECT` query has `INTO OUTFILE` or when writing to table functions `file`, `url`, `hdfs`, `s3`, or `azureBlobStorage`. It is also applied to the compressed response to an HTTP request with a method other than `gzip` and `deflate`, for which [http_zlib_compression_level](#http_zlib_compression_level) is used.
 
 Possible values: from `1` to `22`
 )", 0, \
@@ -1737,6 +1737,14 @@ Buffering blocks can increase memory use and delay the first record batch until 
 `0` (the default) disables the byte target. Try `1048576` (1 MiB) as a starting value.
 )", 0, \
         {"26.9", 0, 0, "New setting to combine small blocks in `Arrow` and `ArrowStream` output using a target size in bytes of accumulated data. The default `0` preserves one record batch per block."}) \
+    DECLARE(UInt64, output_format_arrow_max_record_batch_size_bytes, 2147483646, R"(
+Upper bound on the `Utf8`, `Binary` and `List` buffers of a single record batch in the `Arrow` and `ArrowStream` output formats, and in the Arrow record batches the `Vortex` output format is written from. A block whose strings, binary values or list elements exceed this is written as several record batches.
+
+Unlike [output_format_arrow_record_batch_size_bytes](#output_format_arrow_record_batch_size_bytes), which is a target that combines small blocks, this is a limit that splits large ones. The default is the largest value Arrow can address, because it offsets those buffers with 32-bit integers; a larger value has no effect.
+
+Only the buffers named above are bounded: a column of a fixed-width type has no offsets to overflow and stays in one batch. A single row never splits either, so a row above the limit still produces a batch that exceeds it.
+)", 0, \
+        {"26.11", 2147483646, 2147483646, "New setting bounding the size of one record batch in `Arrow` and `ArrowStream` output. The default is Arrow's own addressing limit, so it does not change behavior."}) \
     \
     DECLARE(Bool, output_format_orc_string_as_string, true, R"(
 Use ORC String type instead of Binary for String columns

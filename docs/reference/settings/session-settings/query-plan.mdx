@@ -583,14 +583,6 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 
-## query_plan_replace_always_true_filter {#query_plan_replace_always_true_filter}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "New setting."}]}]}/>
-
-Replace a filter step with an expression step when the filter condition is always true and the query does not use the filter column. Such a filter step does not remove rows, but it stops join reordering.
-
 ## query_plan_reuse_storage_ordering_for_window_functions {#query_plan_reuse_storage_ordering_for_window_functions}
 
 **Aliases**: `optimize_read_in_window_order`

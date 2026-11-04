@@ -562,14 +562,6 @@ std::optional<NameAndTypePair> IMergeTreeReader::tryGetColumnInPart(const String
 
 SerializationPtr IMergeTreeReader::tryGetSerializationFromPart(const NameAndTypePair & column_in_part) const
 {
-    /// Take a static subcolumn's serialization from the part instead of composing it from the column's
-    /// serialization below (a walk over all the column's substreams).
-    if (column_in_part.isSubcolumn())
-    {
-        if (auto serialization = data_part_info_for_read->tryGetSubcolumnSerialization(column_in_part.getNameInStorage(), column_in_part.getSubcolumnName()))
-            return serialization->supportsPooling() ? serialization : nullptr;
-    }
-
     auto serialization_in_part = data_part_info_for_read->tryGetSerialization(column_in_part.getNameInStorage());
     if (!serialization_in_part)
         return nullptr;
@@ -648,11 +640,6 @@ SerializationPtr IMergeTreeReader::getSerializationInPart(const NameAndTypePair 
 
 bool IMergeTreeReader::hasSubcolumnInPart(const String & name_in_part, const IDataType & type_in_part, const String & subcolumn_name) const
 {
-    /// A hit means the subcolumn is present; a miss is inconclusive (a dynamic path is never in the
-    /// part's subcolumns), so fall back to resolving it against the column's serialization.
-    if (data_part_info_for_read->tryGetSubcolumnSerialization(name_in_part, subcolumn_name))
-        return true;
-
     /// Resolved against the serialization the part holds for the column, when there is one, instead of building one.
     if (auto serialization_in_part = data_part_info_for_read->tryGetSerialization(name_in_part))
         return type_in_part.tryGetSubcolumnType(subcolumn_name, serialization_in_part) != nullptr;

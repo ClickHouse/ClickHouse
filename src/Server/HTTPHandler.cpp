@@ -1061,13 +1061,11 @@ void HTTPHandler::processQuery(
 
     if (!settings[Setting::run_query_in_background] && settings[Setting::readonly] > 0 && settings[Setting::cancel_http_readonly_queries_on_client_close])
     {
-        /// Assume that at the point this method is called no one is reading data from the socket any more:
-        /// should be true for read-only queries.
-        auto client_connected = [&request] { return request.checkPeerConnected(); };
-        context->setClientConnectedCallback(client_connected);
-        append_callback([&context, client_connected](const Progress &)
+        append_callback([&context, &request](const Progress &)
         {
-            if (!client_connected())
+            /// Assume that at the point this method is called no one is reading data from the socket any more:
+            /// should be true for read-only queries.
+            if (!request.checkPeerConnected())
                 context->killCurrentQuery();
         });
     }

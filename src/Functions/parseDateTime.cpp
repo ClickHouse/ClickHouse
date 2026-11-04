@@ -524,15 +524,6 @@ namespace
             if (!yearIsInValidRange(week_year_))
                 RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Invalid week year {}", week_year_)
 
-            if (week_of_year_ == 53)
-            {
-                Int32 days_since_epoch_of_jan_first = 0;
-                ASSIGN_RESULT_OR_RETURN_ERROR(days_since_epoch_of_jan_first, (daysSinceEpochFromDate(week_year_, 1, 1)))
-                Int32 first_day_of_week_year = extractISODayOfTheWeek(days_since_epoch_of_jan_first);
-                if (first_day_of_week_year != 4 && !(isLeapYear(week_year_) && first_day_of_week_year == 3))
-                    RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Invalid week 53 for ISO week year {}", week_year_)
-            }
-
             Int32 days_since_epoch_of_jan_fourth = 0;
             ASSIGN_RESULT_OR_RETURN_ERROR(days_since_epoch_of_jan_fourth, (daysSinceEpochFromDate(week_year_, 1, 4)))
             Int32 first_day_of_week_year = extractISODayOfTheWeek(days_since_epoch_of_jan_fourth);
@@ -629,35 +620,6 @@ namespace
         ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
         bool isVariadic() const override { return true; }
         size_t getNumberOfArguments() const override { return 0; }
-
-        /// Documentation-only — the override below is authoritative (it computes
-        /// the DateTime64 scale from the number of `S` placeholders in the
-        /// format string, and attaches the timezone from the optional third arg).
-        String getSignatureString() const override
-        {
-            String result;
-            if constexpr (return_type == ReturnType::DateTime)
-                result = "DateTime";
-            else
-                result = "DateTime64";
-            if constexpr (error_handling == ErrorHandling::Null)
-                result = "Nullable(" + result + ")";
-            return "(String, [const String], [const String]) -> " + result;
-        }
-
-        /// There is no types-only answer: the result type depends on the *values* of the optional
-        /// arguments — the timezone comes from the third argument and, for the `DateTime64`
-        /// non-MySQL syntax, the scale is the number of `S` placeholders in the format string.
-        /// Decline this entry point instead of letting the documentation-only signature above
-        /// answer with a timezone-less `DateTime`/scale-0 `DateTime64`.
-        DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
-        {
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "getReturnType is not implemented for {}: the result type can only be derived "
-                "when the values of the format and timezone arguments are known",
-                getName());
-        }
 
         DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {

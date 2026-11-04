@@ -15,18 +15,9 @@ if (OS_FREEBSD)
     return()
 endif()
 
-# MSAN: Disabled to keep `unit_tests_dbms` linkable. Under sanitizers the crates are built with
-#   `opt-level = 0` and instrumented, so `prql` and `polyglot` add about 80 and 100 MiB of code,
-#   which pushed the binary past the 2 GiB range of `R_X86_64_PC32` relocations. `skim` is only
-#   the interactive fuzzy history search of the client.
-set (_ENABLE_RUST_CRATES_EXCEPT_MSAN ${ENABLE_LIBRARIES})
-if (SANITIZE STREQUAL "memory")
-    set (_ENABLE_RUST_CRATES_EXCEPT_MSAN OFF)
-endif ()
-
-option (ENABLE_PRQL "Enable prql" ${_ENABLE_RUST_CRATES_EXCEPT_MSAN})
-option (ENABLE_SKIM "Enable skim" ${_ENABLE_RUST_CRATES_EXCEPT_MSAN})
-option (ENABLE_POLYGLOT "Enable polyglot SQL transpiler" ${_ENABLE_RUST_CRATES_EXCEPT_MSAN})
+option (ENABLE_PRQL "Enable prql" ${ENABLE_LIBRARIES})
+option (ENABLE_SKIM "Enable skim" ${ENABLE_LIBRARIES})
+option (ENABLE_POLYGLOT "Enable polyglot SQL transpiler" ${ENABLE_LIBRARIES})
 option (ENABLE_PCO "Enable pco (pcodec) compression codec" ${ENABLE_LIBRARIES})
 
 if (NOT ENABLE_PRQL AND NOT ENABLE_SKIM AND NOT ENABLE_POLYGLOT AND NOT ENABLE_PCO)

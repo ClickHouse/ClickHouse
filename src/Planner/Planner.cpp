@@ -268,7 +268,8 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
 
         const auto & scope_context = scope_query ? scope_query->getContext() : scope_union->getContext();
         return scope_context->canUseParallelReplicasOnInitiator()
-            && scope_context->getSettingsRef()[Setting::parallel_replicas_min_number_of_rows_per_replica] > 0;
+            && scope_context->getSettingsRef()[Setting::parallel_replicas_min_number_of_rows_per_replica] > 0
+            && !scope_context->isAutomaticParallelReplicasProbe();
     });
 
     auto storage_requires_filter_collection = [parallel_replicas_estimation_enabled](const StoragePtr & storage_ptr)

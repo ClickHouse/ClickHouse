@@ -1266,14 +1266,6 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<int> & key_col_to_spa
 
     if (begin > end)
     {
-        /// No set element can lie in an empty input key range (e.g. the open interval between two adjacent integers).
-        for (const auto & mapping : indexes_mapping)
-        {
-            auto [is_key_col_present, sparse_pos] = get_sparse_info(mapping.key_index);
-            if (is_key_col_present && sparse_key_ranges[sparse_pos].empty())
-                return {false, true};
-        }
-
         /// TODO: Remove the #ifndef and always throw after
         ///       https://github.com/ClickHouse/ClickHouse/issues/90461 is fixed.
         ///       (What happens here is: the applyMonotonicFunctionsChainToRange call above applies
@@ -1410,13 +1402,6 @@ BoolMask MergeTreeSetIndex::checkInRange(const Ranges & key_ranges, const DataTy
 
     if (begin > end)
     {
-        /// No set element can lie in an empty input key range (e.g. the open interval between two adjacent integers).
-        for (const auto & mapping : indexes_mapping)
-        {
-            if (key_ranges[mapping.key_index].empty())
-                return {false, true};
-        }
-
         /// TODO: Remove the #ifndef and always throw after
         ///       https://github.com/ClickHouse/ClickHouse/issues/90461 is fixed.
         ///       (What happens here is: the applyMonotonicFunctionsChainToRange call above applies

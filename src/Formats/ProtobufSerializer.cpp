@@ -4225,6 +4225,9 @@ namespace
             if (!name_and_type)
                 return std::nullopt;
             const auto * tuple_type = assert_cast<const DataTypeTuple *>(name_and_type->type.get());
+            /// The key or the value of the map entry was skipped as unsupported, so the map is skipped as a whole.
+            if (tuple_type->getElements().size() != 2)
+                return std::nullopt;
             return NameAndTypePair{name_and_type->name, std::make_shared<DataTypeMap>(tuple_type->getElements())};
         }
 

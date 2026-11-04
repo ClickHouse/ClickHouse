@@ -56,17 +56,13 @@ UInt64 getCurrentTimeMs()
     return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 }
 
-void exportTable(
-    std::shared_ptr<arrow::Table> table,
+void exportRecordBatch(
+    const arrow::RecordBatch & batch,
     ffi::FFI_ArrowArray & array,
     ffi::FFI_ArrowSchema & schema)
 {
-    auto batch = table->CombineChunksToBatch();
-    if (!batch.ok())
-        DB::throwFromArrowStatus(batch.status(), DB::ErrorCodes::UNKNOWN_EXCEPTION, "Failed to create chunks batch");
-
     arrow::Status status = arrow::ExportRecordBatch(
-        **batch,
+        batch,
         reinterpret_cast<ArrowArray *>(&array),
         reinterpret_cast<ArrowSchema *>(&schema));
 
@@ -243,30 +239,59 @@ void WriteTransaction::commit(const std::vector<CommitFile> & files)
     LOG_TEST(log, "Will commit {} files", files.size());
     auto write_metadata = getWriteMetadata(files, log);
 
-    ffi::FFI_ArrowArray array{};
-    ffi::FFI_ArrowSchema schema{};
-    SCOPE_EXIT({
-        if (schema.release)
-            schema.release(&schema);
-    });
-    exportTable(write_metadata, array, schema);
-
-    KernelEngineData engine_data;
-    try
+    /// Metadata too large for one Arrow record batch comes back as several table chunks. Recombining them
+    /// would hit the same 32-bit offset limit, so each record batch is added to the transaction on its own.
+    /// `TableBatchReader` yields nothing for an empty table, which still has to reach the kernel as before.
+    arrow::RecordBatchVector batches;
+    if (write_metadata->num_rows() == 0)
     {
-        /// Takes ownership of `array` (but not`schema`) if successfully called.
-        engine_data = DeltaLake::KernelUtils::unwrapResult(
-            ffi::get_engine_data(array, &schema, &KernelUtils::allocateError),
-            "get_engine_data");
+        auto empty_batch = arrow::RecordBatch::MakeEmpty(write_metadata->schema());
+        if (!empty_batch.ok())
+            DB::throwFromArrowStatus(empty_batch.status(), DB::ErrorCodes::UNKNOWN_EXCEPTION, "Failed to create an empty record batch");
+        batches.push_back(*std::move(empty_batch));
     }
-    catch (...)
+    else
     {
-        if (array.release)
-            array.release(&array);
-        throw;
+        arrow::TableBatchReader batch_reader(*write_metadata);
+        while (true)
+        {
+            std::shared_ptr<arrow::RecordBatch> batch;
+            arrow::Status read_status = batch_reader.ReadNext(&batch);
+            if (!read_status.ok())
+                DB::throwFromArrowStatus(read_status, DB::ErrorCodes::UNKNOWN_EXCEPTION, "Failed to read a record batch");
+            if (!batch)
+                break;
+            batches.push_back(std::move(batch));
+        }
     }
 
-    ffi::add_files(transaction.get(), engine_data.release());
+    for (const auto & batch : batches)
+    {
+        ffi::FFI_ArrowArray array{};
+        ffi::FFI_ArrowSchema schema{};
+        SCOPE_EXIT({
+            if (schema.release)
+                schema.release(&schema);
+        });
+        exportRecordBatch(*batch, array, schema);
+
+        KernelEngineData engine_data;
+        try
+        {
+            /// Takes ownership of `array` (but not`schema`) if successfully called.
+            engine_data = DeltaLake::KernelUtils::unwrapResult(
+                ffi::get_engine_data(array, &schema, &KernelUtils::allocateError),
+                "get_engine_data");
+        }
+        catch (...)
+        {
+            if (array.release)
+                array.release(&array);
+            throw;
+        }
+
+        ffi::add_files(transaction.get(), engine_data.release());
+    }
 
     fiu_do_on(DB::FailPoints::delta_lake_commit_fail_before_log_write, {
         throw DB::Exception(DB::ErrorCodes::NETWORK_ERROR, "Failpoint for a commit failure before the log write enabled");

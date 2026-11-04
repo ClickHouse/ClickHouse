@@ -7,7 +7,6 @@
 #include <unordered_set>
 #include <vector>
 
-#include <Access/Common/AccessType.h>
 #include <Common/CacheBase.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/IMemoryReleasableCache.h>
@@ -19,7 +18,6 @@ namespace DB
 {
 
 class MergeTreeIndexGranularity;
-struct StorageID;
 
 /// Key of a cached deserialized column: one stripe of consecutive granules of one column of one
 /// data part.
@@ -71,14 +69,6 @@ struct ColumnsCacheKeyHash
 /// reads find their entries.
 UInt128 getColumnsCacheColumnIdentity(const UUID & table_uuid, const String & part_name, const String & column_name, UInt64 schema_identity);
 
-/// The table that owns the columns cache entries of an external file (such as a `Parquet` file
-/// in an object storage) read by the storage `storage_id`. `system.columns_cache` shows the entries
-/// of a table only to a user who may see the table, and the entries of a table function (the nil
-/// UUID) to a user who may read from its source. Returns `std::nullopt` for a table without a UUID
-/// (e.g. in an `Ordinary` database): the provenance of its entries cannot be kept, so it does not
-/// use the cache.
-std::optional<UUID> getColumnsCacheTableUUIDOfExternalFile(const StorageID & storage_id);
-
 /// How the marks of a part are cut into stripes: `stripe_marks` consecutive granules each, the
 /// last stripe shorter. The same for every reader of the part, since it depends only on the
 /// average size of a granule of the part.
@@ -112,10 +102,6 @@ struct ColumnsCacheEntry
     String part_name;
     String column_name;
     UInt64 schema_identity = 0;
-    /// For an entry of a file (not of a `MergeTree` part): the source whose `READ` grant is required
-    /// to see the entry in `system.columns_cache` when it belongs to no table, or when its table
-    /// cannot be resolved any more.
-    std::optional<AccessTypeObjects::Source> source;
 
     /// The granules the entry holds, [first_mark, end_mark), and their rows.
     size_t first_mark = 0;
@@ -304,7 +290,6 @@ public:
         UUID table_uuid;
         String part_name;
         String column_name;
-        std::optional<AccessTypeObjects::Source> source;
         size_t row_begin = 0;
         size_t rows = 0;
         size_t bytes = 0;

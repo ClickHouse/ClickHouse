@@ -899,12 +899,21 @@ Block ProjectionDescription::calculateByQuery(
     /// Now, projections do not support in on SELECT, and (with this change) should ignore on INSERT as well.
     mut_context->setSetting("aggregate_functions_null_for_empty", Field(0));
     mut_context->setSetting("transform_null_in", Field(0));
-    /// Building the metadata analyzes `query_ast` in place, which already replaces its positional arguments,
-    /// so resolving them again would re-interpret the integer literals they were replaced with.
-    mut_context->setSetting("enable_positional_arguments", false);
-    /// Analyze the projection query as an initial one, as its metadata is built, also when the data
-    /// comes from a remote `INSERT`, which is executed as a `SECONDARY_QUERY`.
+    const bool positional_arguments_for_projections = context->getSettingsRef()[Setting::enable_positional_arguments_for_projections];
+
+    /// Disable positional arguments. Positional references are unsafe/unsupported in this context (e.g., within
+    /// internal queries like those used for Projection definitions), as they rely on a fixed column order and alias
+    /// resolution that is neither guaranteed nor sensible here.
+    ///
+    /// Setting `enable_positional_arguments_for_projections` may enable positional arguments for projections.
+    /// It is needed for compatibility with existing projections that use positional arguments to allow successful cluster upgrade.
+    mut_context->setSetting("enable_positional_arguments", positional_arguments_for_projections);
+    /// The Analyzer does not resolve positional arguments in a `SECONDARY_QUERY` or in a context
+    /// where the initiator has already resolved them, because it expects that to be done by the
+    /// initiator. A projection query is never resolved by the initiator, and the data may come
+    /// from a remote `INSERT`, so the projection query is always analyzed as an initial one.
     mut_context->setQueryKindInitial();
+    mut_context->setPositionalArgumentsAlreadyResolved(false);
 
     ASTPtr query_ast_copy = nullptr;
 
