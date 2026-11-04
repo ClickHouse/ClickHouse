@@ -317,6 +317,10 @@ MutableSerializationInfoPtr DataTypeObject::createSerializationInfo(const Serial
         auto path_settings = settings;
         if (!settings.shouldCollectSerializationInfo(*type))
             path_settings.version = MergeTreeSerializationInfoVersion::WITH_TYPES;
+        /// A SHARED path is stored in the typed shared data of the part, whose reader decodes a path into a column
+        /// of the default layout, so a part never stores it with another kind.
+        if (shared_typed_paths.contains(path))
+            path_settings.choose_kind = false;
         paths.push_back(path);
         infos.push_back(type->createSerializationInfo(path_settings));
     }

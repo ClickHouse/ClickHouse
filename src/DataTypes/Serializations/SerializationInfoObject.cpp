@@ -46,12 +46,18 @@ MutableSerializationInfoPtr SerializationInfoObject::createWithType(
         auto path_settings = new_settings;
         if (!new_settings.shouldCollectSerializationInfo(*new_path_type))
             path_settings.version = MergeTreeSerializationInfoVersion::WITH_TYPES;
+        /// A SHARED path keeps the default kind, see `DataTypeObject::createSerializationInfo`, so the kind of a path
+        /// that was not SHARED in the old type is not carried over.
+        bool is_shared = new_object.isSharedTypedPath(path);
+        if (is_shared)
+            path_settings.choose_kind = false;
         auto new_info = new_path_type->createSerializationInfo(path_settings);
         auto old_type_it = old_object.getTypedPaths().find(path);
         auto old_info_it = name_to_elem.find(path);
         const auto * old_info = old_info_it != name_to_elem.end() ? old_info_it->second.get() : nullptr;
         const auto * new_info_ptr = new_info.get();
-        if (old_type_it != old_object.getTypedPaths().end()
+        if (!is_shared
+            && old_type_it != old_object.getTypedPaths().end()
             && old_info
             && canReuseSerializationInfoForTypeChange(*old_info, *new_info_ptr))
         {
