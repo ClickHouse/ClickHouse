@@ -831,8 +831,10 @@ namespace
                     outcome.GetError().GetExceptionName() == "AccessDenied" ||
                     S3::Client::RetryStrategy::useGCSRewrite(outcome.GetError()))
                 {
-                    /// A multipart upload cannot write an empty object.
-                    if (!supports_multipart_copy || !size || outcome.GetError().GetExceptionName() == "AccessDenied")
+                    /// The retry is an `UploadPartCopy` with a byte range: multipart copy must be allowed and the source
+                    /// must be one S3 accepts as a byte-range copy source (so never an empty one).
+                    if (!supports_multipart_copy || !request_settings[S3RequestSetting::allow_multipart_copy]
+                        || src_object_size <= MIN_SOURCE_SIZE_FOR_RANGE_COPY || outcome.GetError().GetExceptionName() == "AccessDenied")
                     {
                         LOG_INFO(
                             log,
