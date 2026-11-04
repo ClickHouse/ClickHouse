@@ -26,6 +26,7 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeCustomGeo.h>
 
 
 namespace DB
@@ -422,6 +423,59 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
 
         if (non_nothing_types.size() < types.size())
             return getLeastSupertype<on_error>(non_nothing_types);
+    }
+
+    /// For Geo types (Point, MultiPoint, LineString, MultiLineString, Ring, Polygon, MultiPolygon, Geometry).
+    /// The common supertype for distinct Geo types is Geometry.
+    {
+        bool have_geo = false;
+        bool all_geo = true;
+        bool have_nullable = false;
+        const IDataType * first_geo_unwrapped = nullptr;
+        bool all_same_geo_unwrapped = true;
+
+        for (const auto & type : types)
+        {
+            const IDataType * unwrapped = type.get();
+            if (const auto * lc = typeid_cast<const DataTypeLowCardinality *>(unwrapped))
+                unwrapped = lc->getDictionaryType().get();
+            if (const auto * nullable = typeid_cast<const DataTypeNullable *>(unwrapped))
+            {
+                have_nullable = true;
+                unwrapped = nullable->getNestedType().get();
+            }
+
+            if (isGeoDataType(*unwrapped))
+            {
+                have_geo = true;
+                if (!first_geo_unwrapped)
+                    first_geo_unwrapped = unwrapped;
+                else if (!unwrapped->equals(*first_geo_unwrapped))
+                    all_same_geo_unwrapped = false;
+            }
+            else
+            {
+                all_geo = false;
+            }
+        }
+
+        if (have_geo)
+        {
+            if (!all_geo)
+                return throwOrReturn<on_error>(types, "because some of them are Geometry and some of them are not", ErrorCodes::NO_COMMON_TYPE);
+
+            /// If all are the exact same Geo type (e.g. Point and Nullable(Point)), preserve the specific Geo type.
+            if (all_same_geo_unwrapped)
+            {
+                DataTypePtr result = DataTypeFactory::instance().get(first_geo_unwrapped->getName());
+                if (have_nullable && result->canBeInsideNullable())
+                    result = std::make_shared<DataTypeNullable>(result);
+                return result;
+            }
+
+            /// Distinct Geo types (or Geo type + Geometry) unify to Geometry.
+            return DataTypeFactory::instance().get("Geometry");
+        }
     }
 
     /// For Arrays

@@ -314,4 +314,22 @@ SELECT * FROM geo_dst;
 
 }
 
+bool isGeoDataTypeCustomName(std::string_view name)
+{
+    return name == "Point"
+        || name == "MultiPoint"
+        || name == "LineString"
+        || name == "MultiLineString"
+        || name == "Ring"
+        || name == "Polygon"
+        || name == "MultiPolygon"
+        || name == "Geometry";
+}
+
+bool isGeoDataType(const IDataType & type)
+{
+    const auto * custom_name = type.getCustomName();
+    return custom_name && isGeoDataTypeCustomName(custom_name->getName());
+}
+
 }
