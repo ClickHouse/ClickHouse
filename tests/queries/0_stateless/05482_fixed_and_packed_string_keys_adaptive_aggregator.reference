@@ -1,0 +1,16 @@
+keys32, count	1
+keys32, keys only	1
+keys128, arguments	1
+keys32, written to disk	1
+keys64, ORDER BY count() LIMIT	1
+keys32, ORDER BY count() LIMIT, counted first	1
+frozen	05482_keys128_arguments	1	1
+frozen	05482_keys32_count	1	1
+frozen	05482_keys32_count_first	1	1
+frozen	05482_keys32_external	1	1
+frozen	05482_keys32_keys_only	1	1
+frozen	05482_keys64_top_k	1	1
+written to disk	05482_keys32_external	1
+pruned	05482_keys32_count_first	1
+pruned	05482_keys64_top_k	1
+counted first	05482_keys32_count_first	1
