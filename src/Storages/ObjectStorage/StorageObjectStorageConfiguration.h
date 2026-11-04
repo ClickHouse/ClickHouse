@@ -20,7 +20,6 @@
 #include <Databases/DataLake/StorageCredentials.h>
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
 #include <Common/SharedMutex.h>
-#include <mutex>
 
 namespace DB
 {
@@ -130,13 +129,9 @@ public:
     /// Returned by value: a reference into the list would outlive the lock that protects it.
     Paths getPaths() const;
     void setPaths(const Paths & paths);
-
-    /// Appends the next file name for a write and returns the path to write to, atomically with
-    /// respect to concurrent writers: the name is derived from the list under `path_allocation_mutex`,
-    /// so two writers cannot derive the same one.
-    Path allocatePathForWrite(
-        const IObjectStorage & object_storage,
-        const StorageObjectStorageQuerySettings & settings);
+    /// Appends to the current list, not to a copy taken earlier, so a concurrent append is not lost.
+    /// A path that is already listed is not added again.
+    void addPath(const Path & path);
 
     virtual String getDataSourceDescription() const = 0;
     virtual String getNamespace() const = 0;
@@ -474,12 +469,6 @@ private:
     // Path used for reading, by default it is the same as `getRawPath`
     // When using `partition_strategy=hive`, a recursive reading pattern will be appended `'table_root/**.parquet'
     Path read_path;
-
-    /// Taken by writers only, around the whole allocate-derive-publish sequence. Acquired before
-    /// `paths_mutex`, which is the only ordering between the two.
-    std::mutex path_allocation_mutex;
-    /// The lowest sequence number no write has taken yet.
-    size_t next_write_sequence TSA_GUARDED_BY(path_allocation_mutex) = 0;
 };
 
 using StorageObjectStorageConfigurationPtr = std::shared_ptr<StorageObjectStorageConfiguration>;

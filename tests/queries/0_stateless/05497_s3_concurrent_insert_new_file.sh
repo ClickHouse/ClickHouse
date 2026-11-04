@@ -9,6 +9,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 set -e
 
 filename="test_05497_${CLICKHOUSE_DATABASE}_${RANDOM}"
+out="${CLICKHOUSE_TMP}/05497_${CLICKHOUSE_DATABASE}"
 writers=8
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_05497"
@@ -36,26 +37,89 @@ for _ in 1 2; do
     reader_pids+=("$!")
 done
 
+# Writers that derive the same name race for it, and the loser has to fail instead of overwriting
+# the winner. Each writer records whether its INSERT was acknowledged.
 writer_pids=()
 for i in $(seq 1 $((writers - 1))); do
-    $CLICKHOUSE_CLIENT --s3_create_new_file_on_insert 1 -q "INSERT INTO t_05497 SELECT $i" &
+    (
+        if $CLICKHOUSE_CLIENT --s3_create_new_file_on_insert 1 -q "INSERT INTO t_05497 SELECT $i" 2> "$out.$i.err"; then
+            echo "$i" > "$out.$i.ok"
+        fi
+    ) &
     writer_pids+=("$!")
 done
 
-# One writer goes through the asynchronous insert queue, which is the thread pairing this test is
-# about. VALUES, not SELECT: only an inlined payload is queued rather than run synchronously.
-# Exactly one such writer, because several would be batched into a single file and the
-# distinct-file count below would stop being deterministic.
-$CLICKHOUSE_CLIENT --s3_create_new_file_on_insert 1 --async_insert 1 --wait_for_async_insert 1 \
-    -q "INSERT INTO t_05497 VALUES ($writers)" &
+# One writer goes through the asynchronous insert queue: together with a direct INSERT, that is the
+# thread pairing of the data race on the path list. VALUES, not SELECT: only an inlined payload is
+# queued rather than run synchronously.
+(
+    if $CLICKHOUSE_CLIENT --s3_create_new_file_on_insert 1 --async_insert 1 --wait_for_async_insert 1 \
+        -q "INSERT INTO t_05497 VALUES ($writers)" 2> "$out.$writers.err"; then
+        echo "$writers" > "$out.$writers.ok"
+    fi
+) &
 writer_pids+=("$!")
 
 wait "${writer_pids[@]}"
 wait "${reader_pids[@]}" 2>/dev/null || true
 
-# Every writer must have landed in a file of its own: a name derived twice means one writer
-# overwrote another.
-$CLICKHOUSE_CLIENT -q "SELECT count() = $writers + 1, countDistinct(_file) = $writers + 1 FROM t_05497"
-$CLICKHOUSE_CLIENT -q "SELECT groupArray(a) = range(toUInt64($writers + 1)) FROM (SELECT a FROM t_05497 ORDER BY a)"
+# A rejected writer must have lost the race for its name; any other error fails the test.
+for i in $(seq 1 $writers); do
+    if [ ! -f "$out.$i.ok" ] && ! grep -q 'pre-conditions you specified did not hold' "$out.$i.err"; then
+        echo "writer $i failed unexpectedly:"
+        cat "$out.$i.err"
+    fi
+done
+
+acknowledged=$(cat "$out".*.ok 2>/dev/null | sort -n | tr '\n' ',')
+rm -f "$out".*.ok "$out".*.err
+[ -n "$acknowledged" ] || echo "no writer was acknowledged"
+
+# Every acknowledged INSERT is stored in an object of its own and is read back by the table.
+$CLICKHOUSE_CLIENT -q "
+    SELECT arraySort(groupArray(a)) = arrayConcat([0], [${acknowledged%,}]::Array(UInt64)), countDistinct(_file) = count()
+    FROM s3(s3_conn, filename='$filename*', format=Parquet, structure='a UInt64')"
+$CLICKHOUSE_CLIENT -q "
+    SELECT arraySort(groupArray(a)) = arrayConcat([0], [${acknowledged%,}]::Array(UInt64)) FROM t_05497"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_05497"
+
+# Two `s3()` queries do not share a path list, so both derive the name that follows the base object.
+# The slow writer derives it first and uploads last, after the fast one has created it: exactly one of
+# them may be acknowledged.
+conflict="test_05497_conflict_${CLICKHOUSE_DATABASE}_${RANDOM}"
+slow_query_id="05497_slow_${CLICKHOUSE_DATABASE}_${RANDOM}"
+$CLICKHOUSE_CLIENT --s3_truncate_on_insert 1 \
+    -q "INSERT INTO FUNCTION s3(s3_conn, filename='$conflict', format=Parquet, structure='a UInt64') SELECT 0"
+(
+    if $CLICKHOUSE_CLIENT --s3_create_new_file_on_insert 1 --max_block_size 1 --query_id "$slow_query_id" \
+        -q "INSERT INTO FUNCTION s3(s3_conn, filename='$conflict', format=Parquet, structure='a UInt64') SELECT 1 + sleepEachRow(0.9) FROM numbers(4)" \
+        2> "$out.slow.err"; then
+        echo 1 > "$out.slow.ok"
+    fi
+) &
+slow_pid=$!
+# Rows are read only once the pipeline runs, and so after the sink of the slow writer has derived its name.
+for _ in $(seq 1 300); do
+    [ "$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id = '$slow_query_id' AND read_rows > 0")" = 1 ] && break
+    sleep 0.1
+done
+if $CLICKHOUSE_CLIENT --s3_create_new_file_on_insert 1 \
+    -q "INSERT INTO FUNCTION s3(s3_conn, filename='$conflict', format=Parquet, structure='a UInt64') SELECT 2" \
+    2> "$out.fast.err"; then
+    echo 2 > "$out.fast.ok"
+fi
+wait "$slow_pid"
+
+for w in slow fast; do
+    if [ ! -f "$out.$w.ok" ] && ! grep -q 'pre-conditions you specified did not hold' "$out.$w.err"; then
+        echo "$w writer failed unexpectedly:"
+        cat "$out.$w.err"
+    fi
+done
+acknowledged=$(cat "$out".*.ok 2>/dev/null | sort -n | tr '\n' ',')
+rm -f "$out".*.ok "$out".*.err
+echo "acknowledged writers: $(echo -n "${acknowledged%,}" | tr ',' '\n' | grep -c .)"
+$CLICKHOUSE_CLIENT -q "
+    SELECT arraySort(groupUniqArray(a)) = arrayConcat([0], [${acknowledged%,}]::Array(UInt64))
+    FROM s3(s3_conn, filename='$conflict*', format=Parquet, structure='a UInt64')"

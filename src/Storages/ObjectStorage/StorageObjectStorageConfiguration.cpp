@@ -4,7 +4,6 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSink.h>
-#include <Storages/ObjectStorage/Utils.h>
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
 #include <Common/SharedLockGuard.h>
@@ -282,26 +281,14 @@ void StorageObjectStorageConfiguration::setPaths(const Paths & paths)
     setPathsImpl(paths);
 }
 
-StorageObjectStorageConfiguration::Path StorageObjectStorageConfiguration::allocatePathForWrite(
-    const IObjectStorage & object_storage,
-    const StorageObjectStorageQuerySettings & settings)
+void StorageObjectStorageConfiguration::addPath(const Path & path)
 {
-    std::lock_guard allocation_lock(path_allocation_mutex);
-
-    auto paths = getPaths();
-    /// By value: appending below would invalidate a reference into the list.
-    const String base_key = paths.front().path;
-    /// The probe walks past names that exist remotely without being listed here, so the list length
-    /// alone can hand the same name to the next writer. The cursor remembers where it stopped.
-    size_t sequence_number = std::max(paths.size(), next_write_sequence);
-    /// The probes below are remote requests, so `paths_mutex` must not be held across them.
-    if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(object_storage, *this, settings, base_key, sequence_number))
-    {
-        next_write_sequence = sequence_number;
-        paths.push_back({*new_key});
-        setPaths(paths);
-    }
-    return paths.back();
+    std::lock_guard lock(paths_mutex);
+    auto paths = getPathsImpl();
+    if (std::ranges::find(paths, path.path, &Path::path) != paths.end())
+        return;
+    paths.push_back(path);
+    setPathsImpl(paths);
 }
 
 void StorageObjectStorageConfiguration::setSchemaHash(const String & hash)

@@ -14,7 +14,7 @@ std::optional<std::string> checkAndGetNewFileOnInsertIfNeeded(
     const StorageObjectStorageConfiguration & configuration,
     const StorageObjectStorageQuerySettings & settings,
     const std::string & key,
-    size_t & sequence_number);
+    size_t sequence_number);
 
 void resolveSchemaAndFormat(
     ColumnsDescription & columns,
