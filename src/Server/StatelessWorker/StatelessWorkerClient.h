@@ -16,7 +16,8 @@ struct ExchangeStreamSources;
 String sendTask(const String & endpoint_uri, const String & unique_task_id, const DistributedQueryTaskDescription & task_description, const String & unique_temp_file_path, const TaskCollectors & collectors, const ContextPtr & context);
 
 /// Registers a task on the worker without its description: the worker replies at once and the task waits for `sendTaskPayload`.
-void createTask(const String & endpoint_uri, const String & unique_task_id, const TaskCollectors & collectors, const ContextPtr & context);
+void createTask(const String & endpoint_uri, const String & unique_task_id, const DistributedQueryTask & task, const String & initial_query_id,
+    const TaskCollectors & collectors, const ContextPtr & context);
 
 /// Sends the description of a task registered with `createTask`; the worker then schedules it. `stage_description` holds the
 /// fields shared by the tasks of a stage, `task` and `stream_sources` replace its own.

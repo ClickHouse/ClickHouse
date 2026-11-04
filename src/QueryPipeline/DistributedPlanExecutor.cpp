@@ -2142,7 +2142,7 @@ protected:
         LOG_DEBUG(logger, "Creating task {} on {}", task_info.task_id, task_info.endpoint_uri);
         try
         {
-            createTask(task_info.endpoint_uri, task_info.task_id, collectors, context);
+            createTask(task_info.endpoint_uri, task_info.task_id, task, stage_description->initial_query_id, collectors, context);
         }
         catch (...)
         {
