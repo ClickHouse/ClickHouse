@@ -84,6 +84,16 @@ ALTER TABLE t_alias_subcolumn UPDATE x = 100 WHERE id = 1, MATERIALIZE COLUMN a;
 SELECT 'alias_subcolumn', id, x, a FROM t_alias_subcolumn ORDER BY id;
 DROP TABLE t_alias_subcolumn;
 
+-- The DEFAULT reads an ALIAS column, which a later command also reads.
+DROP TABLE IF EXISTS t_alias;
+CREATE TABLE t_alias (id Int64, x Int64, y Int64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_alias SELECT number, number, 0 FROM numbers(3);
+ALTER TABLE t_alias ADD COLUMN b Int64 ALIAS x;
+ALTER TABLE t_alias ADD COLUMN a Int64 DEFAULT b * 10;
+ALTER TABLE t_alias UPDATE x = 100 WHERE id = 1, MATERIALIZE COLUMN a, UPDATE y = a + b WHERE 1;
+SELECT 'alias', id, x, y, a FROM t_alias ORDER BY id;
+DROP TABLE t_alias;
+
 -- The DEFAULT reads a subcolumn of another unstored DEFAULT column.
 DROP TABLE IF EXISTS t_default_subcolumn;
 CREATE TABLE t_default_subcolumn (id Int64, x Int64, y Int64) ENGINE = MergeTree ORDER BY id;

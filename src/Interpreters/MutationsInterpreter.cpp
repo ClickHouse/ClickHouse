@@ -862,7 +862,20 @@ NameSet MutationsInterpreter::getColumnsReadByDefault(
                     reads.push_back(column->getNameInStorage());
             }
             else
-                reads.push_back(Nested::splitName(required).first);
+            {
+                /// An ALIAS column registers no subcolumns, so `p.q` reads the column `p` whose type has the subcolumn `q`.
+                String prefix = Nested::splitName(required).first;
+                for (const auto & [name_in_storage, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(required))
+                {
+                    const auto * description = columns.tryGet(String(name_in_storage));
+                    if (description && description->type->tryGetSubcolumnType(subcolumn_name))
+                    {
+                        prefix = name_in_storage;
+                        break;
+                    }
+                }
+                reads.push_back(std::move(prefix));
+            }
 
             for (const auto & read : reads)
             {
@@ -2252,10 +2265,18 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
 
             if (!needed.empty())
             {
-                /// evaluateMissingDefaults computes only the columns missing from the header.
+                const auto & table_columns = metadata_snapshot->getColumns();
+                auto is_alias = [&](const String & name)
+                {
+                    const auto * column = table_columns.tryGet(name);
+                    return column && column->default_desc.kind == ColumnDefaultKind::Alias;
+                };
+
+                /// evaluateMissingDefaults computes only the columns missing from the header. An ALIAS column is not read
+                /// from the part either, so a default computes it from its expression.
                 std::erase_if(input_columns, [&](const auto & column)
                 {
-                    return stage.stale_defaults.contains(column.name) || subcolumn_names.contains(column.name);
+                    return stage.stale_defaults.contains(column.name) || subcolumn_names.contains(column.name) || is_alias(column.name);
                 });
 
                 NamesAndTypesList columns_to_compute;
@@ -2294,23 +2315,27 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
                 auto in_header = [&](const String & name) { return input_types.contains(name); };
                 NamesAndTypesList default_input_subcolumns;
                 NameSet default_input_subcolumn_names;
-                NameSet stale_parents;
+                NameSet computed_parents;
                 for (const auto & column : columns_to_compute)
                 {
                     for (const auto & name : getColumnsReadByDefault(default_columns, column.name, in_header))
                     {
                         auto subcolumn = storage_snapshot->tryGetColumn(col_options, name);
-                        /// An ALIAS column registers no subcolumns, so a subcolumn of one is found by the type of the header column.
+                        /// An ALIAS column registers no subcolumns, so a subcolumn of one is found by the type of the column.
                         if (!subcolumn)
                         {
                             for (const auto & [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(name))
                             {
-                                auto it = input_types.find(String(column_name));
-                                if (it == input_types.end())
+                                DataTypePtr type;
+                                if (auto it = input_types.find(String(column_name)); it != input_types.end())
+                                    type = it->second;
+                                else if (is_alias(String(column_name)))
+                                    type = table_columns.get(String(column_name)).type;
+                                else
                                     continue;
-                                if (auto subcolumn_type = it->second->tryGetSubcolumnType(subcolumn_name))
+                                if (auto subcolumn_type = type->tryGetSubcolumnType(subcolumn_name))
                                 {
-                                    subcolumn.emplace(it->first, String(subcolumn_name), it->second, subcolumn_type);
+                                    subcolumn.emplace(String(column_name), String(subcolumn_name), type, subcolumn_type);
                                     break;
                                 }
                             }
@@ -2323,14 +2348,14 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
                             if (default_input_subcolumn_names.insert(subcolumn->name).second)
                                 default_input_subcolumns.push_back(*subcolumn);
                         }
-                        /// A stale parent is computed together with the default, which then reads the subcolumn of it.
-                        else if (stage.stale_defaults.contains(parent) && !needed.contains(parent))
-                            stale_parents.insert(std::move(parent));
+                        /// A stale or ALIAS parent is computed together with the default, which then reads the subcolumn of it.
+                        else if ((stage.stale_defaults.contains(parent) || is_alias(parent)) && !needed.contains(parent))
+                            computed_parents.insert(std::move(parent));
                     }
                 }
-                for (const auto & column : all_columns)
-                    if (stale_parents.contains(column.name))
-                        columns_to_compute.push_back(column);
+                for (const auto & column : table_columns)
+                    if (computed_parents.contains(column.name))
+                        columns_to_compute.emplace_back(column.name, column.type);
                 std::erase_if(input_columns, [&](const auto & column) { return default_input_subcolumn_names.contains(column.name); });
 
                 Block header(input_columns);

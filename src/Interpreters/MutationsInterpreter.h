@@ -184,7 +184,8 @@ public:
 
     /// Columns the default expression of `column_name` reads, closed transitively through the default expressions
     /// of those columns, except that the expression of a column for which `is_stored` returns true is not looked into.
-    /// For a subcolumn it also returns the column that stores it (`n.e` for `n.e.size0`), and for a name `p.q` that is no column, `p`.
+    /// For a subcolumn it also returns the column that stores it (`n.e` for `n.e.size0`), and for a name `p.q` that is no column,
+    /// the column `p` whose type has the subcolumn `q`, or else the first part of the name.
     static NameSet getColumnsReadByDefault(
         const ColumnsDescription & columns,
         const String & column_name,
