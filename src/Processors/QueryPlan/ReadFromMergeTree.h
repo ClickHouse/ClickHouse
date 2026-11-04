@@ -455,8 +455,8 @@ public:
 
     /// Whether the step could stop reading `column` (a storage column, or a subcolumn of one, that it reads) in favour of
     /// subcolumns of it with the same values. `function_forms`: some of them stand for a function of the column rather
-    /// than for `getSubcolumn`; `index_unsafe_function_forms`: some of those are not `arrayElement` of a `Map`.
-    bool canReadSubcolumnsOfColumn(const String & column, bool function_forms, bool index_unsafe_function_forms) const;
+    /// than for `getSubcolumn`.
+    bool canReadSubcolumnsOfColumn(const String & column, bool function_forms) const;
     /// Reads `subcolumns` instead of `column`. Requires `canReadSubcolumnsOfColumn` and that storage resolves each of them
     /// as a deeper subcolumn of the same storage column.
     void readSubcolumnsInsteadOfColumn(const String & column, const Names & subcolumns);

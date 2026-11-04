@@ -4739,7 +4739,7 @@ const NameSet & ReadFromMergeTree::getColumnsUnsafeForSubcolumnReads() const
     return *columns_unsafe_for_subcolumn_reads;
 }
 
-bool ReadFromMergeTree::canReadSubcolumnsOfColumn(const String & column, bool function_forms, bool index_unsafe_function_forms) const
+bool ReadFromMergeTree::canReadSubcolumnsOfColumn(const String & column, bool function_forms) const
 {
     if (!output_header || !canRemoveUnusedColumns())
         return false;
@@ -4762,8 +4762,8 @@ bool ReadFromMergeTree::canReadSubcolumnsOfColumn(const String & column, bool fu
                 && data.merging_params.mode != MergeTreeData::MergingParams::Replacing)))
         return false;
 
-    if (mutations_snapshot
-        && (mutations_snapshot->hasMetadataMutations() || mutations_snapshot->getColumnsChangedOnFly().contains(storage_column)))
+    /// The on-fly reader also recomputes the columns that depend on a changed one, but only for a whole-column read.
+    if (mutations_snapshot && (mutations_snapshot->hasMetadataMutations() || !mutations_snapshot->getColumnsChangedOnFly().empty()))
         return false;
 
     if (data.hasEnabledMaskingPolicies(context))
@@ -4772,20 +4772,25 @@ bool ReadFromMergeTree::canReadSubcolumnsOfColumn(const String & column, bool fu
     if (getColumnsUnsafeForSubcolumnReads().contains(storage_column))
         return false;
 
-    /// Index analysis matches the key and index expressions, which a function form would hide, as in `FunctionToSubcolumnsPass`.
-    if (index_unsafe_function_forms)
+    /// Key, index and projection analysis match their own expressions, which a function form would hide. The partition key,
+    /// aggregate projections and `set` indexes also evaluate any function of the columns they require, so a subcolumn read
+    /// in place of `getSubcolumn` of such a column hides it too.
     {
         const auto & metadata = storage_snapshot->metadata;
         NameSet key_columns;
-        for (const auto & key_column : metadata->getColumnsRequiredForPrimaryKey())
-            key_columns.insert(key_column);
-        for (const auto & key_column : metadata->getColumnsRequiredForPartitionKey())
-            key_columns.insert(key_column);
-        for (const auto & index : metadata->getSecondaryIndices())
-            for (const auto & key_column : index.expression->getRequiredColumns())
-                key_columns.insert(key_column);
+        auto add_columns = [&](const Names & names) { key_columns.insert(names.begin(), names.end()); };
 
-        if (key_columns.contains(storage_column))
+        add_columns(metadata->getColumnsRequiredForPartitionKey());
+        if (function_forms)
+            add_columns(metadata->getColumnsRequiredForSortingKey());
+        for (const auto & projection : metadata->getProjections())
+            if (function_forms || projection.type == ProjectionDescription::Type::Aggregate)
+                add_columns(projection.getRequiredColumns());
+        for (const auto & index : metadata->getSecondaryIndices())
+            if (function_forms || index.type == "set")
+                add_columns(index.expression->getRequiredColumns());
+
+        if (key_columns.contains(storage_column) || key_columns.contains(column))
             return false;
     }
 

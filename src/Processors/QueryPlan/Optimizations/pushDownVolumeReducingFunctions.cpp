@@ -494,7 +494,6 @@ struct SubcolumnRead
     String residual;
     std::vector<ResidualArgument> residual_arguments;
     bool is_function_form = false;
-    bool is_map_element = false;
 };
 
 std::optional<Field> tryGetConstant(const ActionsDAG::Node * node)
@@ -637,7 +636,6 @@ std::optional<SubcolumnRead> tryMatchSubcolumnReadImpl(const ActionsDAG::Node & 
                 return {};
 
             set_subcolumn(*subcolumn, map.getValueType(), SerializationMap::isKeyValueSubcolumn);
-            read.is_map_element = true;
             return read;
         }
     }
@@ -1171,7 +1169,6 @@ size_t tryPushDownSubcolumnsToReading(QueryPlan::Node * top_node, QueryPlan::Nod
 
         /// `steps` is bottom-up. The read checks and the carried columns, top first.
         bool function_forms = false;
-        bool index_unsafe_function_forms = false;
         std::vector<CarriedColumn> carried;
         std::unordered_map<String, size_t> carried_position;
         auto add_reads = [&](const std::vector<SubcolumnRead> & reads)
@@ -1179,7 +1176,6 @@ size_t tryPushDownSubcolumnsToReading(QueryPlan::Node * top_node, QueryPlan::Nod
             for (const auto & read : reads)
             {
                 function_forms |= read.is_function_form;
-                index_unsafe_function_forms |= read.is_function_form && !read.is_map_element;
 
                 CarriedColumn carried_column{getCarriedColumnName(read), read.subcolumn, read.subcolumn_type};
                 auto [position, inserted] = carried_position.emplace(carried_column.name, carried.size());
@@ -1198,7 +1194,7 @@ size_t tryPushDownSubcolumnsToReading(QueryPlan::Node * top_node, QueryPlan::Nod
         for (auto it = steps.rbegin(); it != steps.rend(); ++it)
             add_reads(it->reads);
 
-        if (!ok || !read_step->canReadSubcolumnsOfColumn(column, function_forms, index_unsafe_function_forms))
+        if (!ok || !read_step->canReadSubcolumnsOfColumn(column, function_forms))
             continue;
 
         /// A carried column must not shadow a column that exists on the way, other than the result of a read it replaces.
