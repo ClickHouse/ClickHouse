@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-replicated-database, no-shared-merge-tree
+# Tags: no-parallel, no-fasttest, no-replicated-database, no-shared-merge-tree
 # no-parallel -- a server-wide failpoint pauses every plain `MergeTree` mutation task.
+# no-fasttest -- a test that enables a failpoint runs alone, and such tests are kept out of the fast test.
 # no-replicated-database -- the mutation task under pause is `MutatePlainMergeTreeTask`'s.
 # no-shared-merge-tree -- the wait and the retry under test are `StorageMergeTree::selectPartsToMerge`'s.
 
