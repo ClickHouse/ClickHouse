@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <optional>
 #include <numeric>
+#include <ranges>
 #include <DataTypes/DataTypeString.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadGroupSwitcher.h>
@@ -1277,7 +1278,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
     std::vector<size_t> skip_index_used_in_part(parts_with_ranges.size(), 0);
     std::vector<std::atomic<bool>> skip_index_applied(skip_indexes.useful_indices.size());
-    std::atomic<size_t> sum_marks_after_skip_indexes = 0;
 
     std::vector<std::vector<MergeTreeIndexBulkGranulesMinMax::MinMaxGranule>> parts_top_k_granules(
                     parts_with_ranges.size(), std::vector<MergeTreeIndexBulkGranulesMinMax::MinMaxGranule>());
@@ -1522,8 +1522,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
             }
 
-            sum_marks_after_skip_indexes.fetch_add(ranges.getMarksCount(), std::memory_order_relaxed);
-
             /// Optimize ORDER BY <col> LIMIT n - if <col> is scalar numeric / date / datetime and has a minmax index
             if (perform_top_k_optimization
                 && !partHasStaleTopKIndex(ranges.data_part, skip_indexes.skip_index_for_top_k_filtering, metadata_snapshot, mutations_snapshot, context))
@@ -1627,7 +1625,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     /// merge top-N results if optimization is done
     size_t sum_marks_after_top_k = 0;
     size_t sum_parts_after_top_k = 0;
-    bool top_k_index_applied = false;
     if (perform_top_k_optimization)
     {
         std::vector<MarkRanges> top_k_granules_result;
@@ -1637,10 +1634,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         for (size_t part_index = 0; part_index < parts_with_ranges.size(); ++part_index)
         {
             if (!parts_top_k_granules[part_index].empty())
-            {
                 parts_with_ranges[part_index].ranges = std::move(top_k_granules_result[part_index]);
-                top_k_index_applied = true;
-            }
             if (!parts_with_ranges[part_index].ranges.empty())
             {
                 sum_parts_after_top_k++;
@@ -1649,22 +1643,19 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         }
     }
 
-    /// the top-K step replaces the ranges after the loop
-    const size_t sum_marks_after_skip_indexes_and_top_k = perform_top_k_optimization ? sum_marks_after_top_k : sum_marks_after_skip_indexes.load();
-    ProfileEvents::increment(ProfileEvents::GranulesDroppedBySkipIndexes, sum_marks_pk.load() - sum_marks_after_skip_indexes_and_top_k);
+    ProfileEvents::increment(ProfileEvents::GranulesDroppedBySkipIndexes, sum_marks_pk.load() - parts_with_ranges.getMarksCountAllParts());
 
-    Names applied_skip_index_names;
-    for (size_t idx = 0; idx < skip_indexes.useful_indices.size(); ++idx)
-        if (skip_index_applied[idx])
-            applied_skip_index_names.push_back(skip_indexes.useful_indices[idx].index->index.name);
-    if (top_k_index_applied)
-        applied_skip_index_names.push_back(skip_indexes.skip_index_for_top_k_filtering->index.name);
-
-    if (!applied_skip_index_names.empty() && !query_info.is_internal && context->hasQueryContext())
+    if (!query_info.is_internal && context->hasQueryContext())
     {
-        const auto storage_id = parts_with_ranges.front().data_part->storage.getStorageID();
-        for (const auto & index_name : applied_skip_index_names)
-            context->getQueryContext()->addUsedDataSkippingIndex(storage_id, index_name);
+        auto add_used_index = [&](const auto & index)
+        {
+            context->getQueryContext()->addUsedDataSkippingIndex(parts_with_ranges.front().data_part->storage.getStorageID(), index->index.name);
+        };
+        for (auto [applied, index_and_condition] : std::views::zip(skip_index_applied, skip_indexes.useful_indices))
+            if (applied)
+                add_used_index(index_and_condition.index);
+        if (std::ranges::any_of(parts_top_k_granules, [](const auto & granules) { return !granules.empty(); }))
+            add_used_index(skip_indexes.skip_index_for_top_k_filtering);
     }
 
     if (metadata_snapshot->hasPrimaryKey())
