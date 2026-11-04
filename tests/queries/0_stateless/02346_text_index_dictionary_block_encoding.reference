@@ -47,6 +47,10 @@ all_1_2_1	front_coded_v2
 table settings precedence
 front_coded_v2
 raw
+serialization version
+all_1_1_0	front_coded
+all_2_2_0	front_coded_v2
+[0,1]
 errors
 size
 uncompressed size: none > frontcoding_v1 > frontcoding_v2

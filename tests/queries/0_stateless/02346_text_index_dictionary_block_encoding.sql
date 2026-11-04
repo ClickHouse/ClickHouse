@@ -120,6 +120,31 @@ SELECT DISTINCT dictionary_compression FROM mergeTreeTextIndex(currentDatabase()
 
 DROP TABLE tab;
 
+SELECT 'serialization version';
+
+-- Versions before `v3_with_dictionary_encoding` write `frontcoding_v2` as `frontcoding_v1`.
+CREATE TABLE tab
+(
+    id UInt32,
+    s String,
+    INDEX idx(s) TYPE text(tokenizer = 'splitByNonAlpha', dictionary_block_encoding = 'frontcoding_v2')
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS text_index_serialization_version = 'v2_with_positions';
+
+SYSTEM STOP MERGES tab;
+
+INSERT INTO tab VALUES (0, 'foo bar');
+ALTER TABLE tab MODIFY SETTING text_index_serialization_version = 'v3_with_dictionary_encoding';
+INSERT INTO tab VALUES (1, 'foo baz');
+
+SELECT DISTINCT part_name, dictionary_compression FROM mergeTreeTextIndex(currentDatabase(), tab, idx) ORDER BY part_name;
+
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasToken(s, 'foo') SETTINGS force_data_skipping_indices = 'idx';
+
+DROP TABLE tab;
+
 SELECT 'errors';
 
 -- The new and the deprecated arguments cannot be combined.
