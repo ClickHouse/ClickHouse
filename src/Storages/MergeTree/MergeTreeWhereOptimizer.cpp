@@ -390,9 +390,7 @@ static bool isJoinRuntimeFilter(const RPNBuilderTreeNode & node)
     return false;
 }
 
-/// Does short-circuit `and` keep the condition behind the conditions before it? The same test as
-/// `findLazyExecutedNodes` and `canBeExecutedOnMoreRows` in ExpressionActions.cpp: some lazily executed
-/// function can throw, is stateful, has observable side effects or is not deterministic in the scope of the query.
+/// Same test as `findLazyExecutedNodes` and `canBeExecutedOnMoreRows` in ExpressionActions.cpp.
 static bool mustFollowPrecedingConditions(const RPNBuilderTreeNode & node, bool force_lazy_execution)
 {
     const auto * root = node.getDAGNode();
@@ -777,8 +775,7 @@ std::optional<MergeTreeWhereOptimizer::OptimizeResult> MergeTreeWhereOptimizer::
     /// Move conditions unless the ratio of total_size_of_moved_conditions to the total_size_of_queried_columns is less than some threshold.
     while (!where_conditions.empty())
     {
-        /// Move the best condition to PREWHERE if it is viable. A condition that must follow the conditions
-        /// before it is a candidate only when all of them are moved, i.e. when it is the first one left.
+        /// Move the best condition to PREWHERE if it is viable; one that must follow the preceding ones only once it is first.
         auto it = where_conditions.begin();
         for (auto candidate = std::next(it); candidate != where_conditions.end(); ++candidate)
             if (!candidate->must_follow_preceding_conditions && *candidate < *it)
