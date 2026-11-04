@@ -15,6 +15,7 @@ SELECT uniq(a) AS x FROM (SELECT number AS a FROM numbers(3) GROUP BY a) ORDER B
 SELECT uniq(a) AS x FROM (SELECT number AS a FROM numbers(3) GROUP BY a) ORDER BY 1 WITH FILL FROM 0 TO 5 SETTINGS optimize_uniq_to_count = 1;
 SELECT uniq(a) AS x FROM (SELECT number AS a, any(number % 2) AS g FROM numbers(6) GROUP BY a) GROUP BY g ORDER BY x, g WITH FILL FROM 0 TO 3 SETTINGS optimize_uniq_to_count = 1;
 SELECT uniq(a) AS x FROM (SELECT number AS a, any(number % 2) AS g FROM numbers(6) GROUP BY a) GROUP BY g ORDER BY (x, 1), g WITH FILL FROM 0 TO 3 SETTINGS optimize_uniq_to_count = 1;
+SELECT tuple(a, b) AS t, a, b, g FROM values('a UInt64, b UInt64, g UInt64', (1, 2, 0), (1, 2, 2)) ORDER BY t, g WITH FILL;
 SELECT x FROM (SELECT uniq(a) AS u FROM (SELECT number AS a FROM numbers(3) GROUP BY a) ORDER BY u WITH FILL FROM 0 TO 5) AS s(x) SETTINGS optimize_uniq_to_count = 1;
 
 -- The WITH FILL level is still rewritten.
@@ -47,6 +48,13 @@ SETTINGS optimize_uniq_to_count = 1;
 -- Only the outputs equal to the key take its values, also when two outputs have the same name.
 SELECT a, * REPLACE (b AS a) FROM (SELECT number AS a, number * 2 AS b FROM numbers(2)) ORDER BY b WITH FILL;
 
+-- Same-named columns of a self-join are different outputs.
+SELECT t1.number AS x, t2.number AS y FROM numbers(2) AS t1, numbers(2) AS t2 ORDER BY x WITH FILL, y;
+
+-- The IN rewrite replaces the subquery's projection with one tuple.
+SELECT (number, number * 2) IN (SELECT a, a * 2 AS b FROM values('a UInt64', (0), (1)) ORDER BY a WITH FILL) FROM numbers(2)
+SETTINGS rewrite_in_to_join = 1, allow_correlated_subqueries = 1;
+
 DROP TABLE IF EXISTS t_interpolate_substitute;
 CREATE TABLE t_interpolate_substitute (k UInt64, a UInt64, b UInt64, CONSTRAINT c ASSUME a = b) ENGINE = MergeTree ORDER BY b;
 INSERT INTO t_interpolate_substitute VALUES (0, 5, 5), (2, 7, 7);
@@ -57,4 +65,5 @@ SETTINGS convert_query_to_cnf = 1, optimize_substitute_columns = 1;
 SELECT a AS x, a AS y FROM t_interpolate_substitute WHERE k < 100 ORDER BY x WITH FILL FROM 5 TO 8 SETTINGS convert_query_to_cnf = 1, optimize_substitute_columns = 1;
 SELECT x FROM (SELECT k, a AS x FROM t_interpolate_substitute WHERE k < 100 ORDER BY x WITH FILL FROM 5 TO 8) SETTINGS convert_query_to_cnf = 1, optimize_substitute_columns = 1;
 SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT a AS x FROM t_interpolate_substitute WHERE k < 100 ORDER BY x WITH FILL FROM 5 TO 8) WHERE explain LIKE '%column_name: b,%' SETTINGS convert_query_to_cnf = 1, optimize_substitute_columns = 1;
+SELECT t1.k AS x, t2.k AS y FROM t_interpolate_substitute AS t1, t_interpolate_substitute AS t2 ORDER BY x WITH FILL, y;
 DROP TABLE t_interpolate_substitute;

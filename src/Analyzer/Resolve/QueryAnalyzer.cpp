@@ -246,6 +246,30 @@ void removeAliasesRecursive(QueryTreeNodePtr & node)
         removeAliasesRecursive(child);
 }
 
+/// `isEqual` compares column sources structurally, so the same-named columns of a self-join are equal. Requires `isEqual`
+/// nodes. The arguments of a lambda and the columns of a subquery belong to the compared expressions.
+bool haveSameColumnSources(const IQueryTreeNode & lhs, const IQueryTreeNode & rhs)
+{
+    if (const auto * lhs_column = lhs.as<ColumnNode>())
+    {
+        auto lhs_source = lhs_column->getColumnSourceOrNull();
+        auto rhs_source = rhs.as<ColumnNode &>().getColumnSourceOrNull();
+        if (lhs_source != rhs_source && (!lhs_source || lhs_source->getNodeType() != QueryTreeNodeType::LAMBDA_ARGS))
+            return false;
+    }
+
+    if (lhs.getNodeType() == QueryTreeNodeType::QUERY || lhs.getNodeType() == QueryTreeNodeType::UNION)
+        return true;
+
+    const auto & lhs_children = lhs.getChildren();
+    const auto & rhs_children = rhs.getChildren();
+    for (size_t i = 0; i < lhs_children.size(); ++i)
+        if (lhs_children[i] && !haveSameColumnSources(*lhs_children[i], *rhs_children[i]))
+            return false;
+
+    return true;
+}
+
 void linkFillColumnsWithProjection(QueryNode & query_node)
 {
     if (!query_node.hasOrderBy())
@@ -265,7 +289,8 @@ void linkFillColumnsWithProjection(QueryNode & query_node)
         std::vector<size_t> indexes;
         for (size_t i = 0; i < projection_nodes.size(); ++i)
             if ((!column_name || projection_columns[i].name == *column_name)
-                && projection_nodes[i]->isEqual(*node, IQueryTreeNode::CompareOptions{.compare_aliases = false}))
+                && projection_nodes[i]->isEqual(*node, IQueryTreeNode::CompareOptions{.compare_aliases = false})
+                && haveSameColumnSources(*projection_nodes[i], *node))
                 indexes.push_back(i);
         return indexes;
     };

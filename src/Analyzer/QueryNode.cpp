@@ -145,6 +145,17 @@ void QueryNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> &
     }
 }
 
+void QueryNode::clearFillProjectionColumnIndexes()
+{
+    if (hasOrderBy())
+        for (auto & sort_node : getOrderBy().getNodes())
+            sort_node->as<SortNode &>().setProjectionColumnIndexes({});
+
+    if (hasInterpolate())
+        for (auto & interpolate_node : getInterpolate()->as<ListNode &>().getNodes())
+            interpolate_node->as<InterpolateNode &>().setProjectionColumnIndexes({});
+}
+
 ColumnNodePtrWithHashSet QueryNode::getCorrelatedColumnsSet() const
 {
     ColumnNodePtrWithHashSet result;
