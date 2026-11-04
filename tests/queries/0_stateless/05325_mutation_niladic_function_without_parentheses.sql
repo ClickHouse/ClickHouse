@@ -56,6 +56,11 @@ ALTER TABLE t_nested DELETE WHERE notEmpty(today);
 ALTER TABLE t_guard DELETE WHERE d < r; -- { serverError BAD_ARGUMENTS }
 ALTER TABLE t_guard UPDATE v = toUInt64(r) WHERE 1; -- { serverError BAD_ARGUMENTS }
 ALTER TABLE t_nested DELETE WHERE k1 = 0;
+-- Also with the name resolution of the background execution, where `t_tuple.r` is the element of the `ALIAS` column.
+CREATE TABLE t_tuple (k UInt64, r UInt64, v UInt64 DEFAULT 0, t_tuple Tuple(r Date) ALIAS tuple(today))
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_tuple', 'r1') ORDER BY k;
+SYSTEM STOP REPLICATION QUEUES t_tuple;
+ALTER TABLE t_tuple UPDATE v = toUInt64(t_tuple.r) WHERE 1 SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 1; -- { serverError BAD_ARGUMENTS }
 
 SELECT 'replaced with the value on the initiator when written with parentheses';
 SET mutations_execute_nondeterministic_on_initiator = 1;
@@ -94,3 +99,4 @@ DROP TABLE t_guard SYNC;
 DROP TABLE t_bound SYNC;
 DROP TABLE t_alter SYNC;
 DROP TABLE t_nested SYNC;
+DROP TABLE t_tuple SYNC;

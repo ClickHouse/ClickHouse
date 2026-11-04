@@ -85,6 +85,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_nondeterministic_mutations;
+    extern const SettingsBool analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested;
     extern const SettingsBool analyzer_compatibility_prefer_alias_over_subcolumn;
     extern const SettingsBool prefer_column_name_to_alias;
     extern const SettingsUInt64 interactive_delay;
@@ -2623,6 +2624,53 @@ std::optional<String> findNonDeterministicFunction(const QueryTreeNodePtr & node
     return {};
 }
 
+/// How an identifier is resolved depends on the settings of name resolution: a compound identifier such as
+/// `t._table` on `analyzer_compatibility_prefer_alias_over_subcolumn`, and a bare identifier that is both
+/// an alias and a column (`UPDATE value = ('safe' AS _table) WHERE _table != ''`) on
+/// `prefer_column_name_to_alias`, and the prefix of a column such as `now.a.b` on
+/// `analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested`. The mutation is validated with the
+/// settings of the query, but executed with the settings of the background context, which may be different, so
+/// the interpretations of both are checked. An interpretation which is not used by either of them is not required
+/// to be well-typed.
+std::vector<ContextPtr> getNameResolutionContexts(const ContextPtr & context)
+{
+    struct NameResolutionSettings
+    {
+        bool prefer_alias_over_subcolumn;
+        bool prefer_column_name_to_alias;
+        bool allow_compound_identifiers_in_unflatten_nested;
+
+        auto operator<=>(const NameResolutionSettings &) const = default;
+    };
+
+    auto get_name_resolution_settings = [](const ContextPtr & settings_context)
+    {
+        const auto & context_settings = settings_context->getSettingsRef();
+        return NameResolutionSettings{
+            .prefer_alias_over_subcolumn = context_settings[Setting::analyzer_compatibility_prefer_alias_over_subcolumn],
+            .prefer_column_name_to_alias = context_settings[Setting::prefer_column_name_to_alias],
+            .allow_compound_identifiers_in_unflatten_nested
+                = context_settings[Setting::analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested]};
+    };
+
+    std::set<NameResolutionSettings> name_resolution_settings_variants = {
+        get_name_resolution_settings(context),
+        get_name_resolution_settings(context->getBackgroundContext())};
+
+    std::vector<ContextPtr> analysis_contexts;
+    for (const auto & name_resolution_settings : name_resolution_settings_variants)
+    {
+        auto analysis_context = Context::createCopy(context);
+        analysis_context->setSetting("analyzer_compatibility_prefer_alias_over_subcolumn", name_resolution_settings.prefer_alias_over_subcolumn);
+        analysis_context->setSetting("prefer_column_name_to_alias", name_resolution_settings.prefer_column_name_to_alias);
+        analysis_context->setSetting(
+            "analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested",
+            name_resolution_settings.allow_compound_identifiers_in_unflatten_nested);
+        analysis_contexts.push_back(std::move(analysis_context));
+    }
+    return analysis_contexts;
+}
+
 }
 
 /// Virtual columns declared with `deterministic = false` (`_table`, `_database`, `_disk_name`, ...)
@@ -2720,32 +2768,7 @@ std::optional<String> MutationsInterpreter::findNonDeterministicVirtualColumn(
     }
 
     auto storage_snapshot = storage->getStorageSnapshot(metadata_snapshot, context);
-
-    /// How an identifier is resolved depends on the settings of name resolution: a compound identifier such as
-    /// `t._table` on `analyzer_compatibility_prefer_alias_over_subcolumn`, and a bare identifier that is both
-    /// an alias and a column (`UPDATE value = ('safe' AS _table) WHERE _table != ''`) on
-    /// `prefer_column_name_to_alias`. The mutation is validated with the settings of the query, but executed
-    /// with the settings of the background context, which may be different, so the interpretations of both
-    /// are checked. An interpretation which is not used by either of them is not required to be well-typed.
-    struct NameResolutionSettings
-    {
-        bool prefer_alias_over_subcolumn;
-        bool prefer_column_name_to_alias;
-
-        auto operator<=>(const NameResolutionSettings &) const = default;
-    };
-
-    auto get_name_resolution_settings = [](const ContextPtr & settings_context)
-    {
-        const auto & context_settings = settings_context->getSettingsRef();
-        return NameResolutionSettings{
-            .prefer_alias_over_subcolumn = context_settings[Setting::analyzer_compatibility_prefer_alias_over_subcolumn],
-            .prefer_column_name_to_alias = context_settings[Setting::prefer_column_name_to_alias]};
-    };
-
-    std::set<NameResolutionSettings> name_resolution_settings_variants = {
-        get_name_resolution_settings(context),
-        get_name_resolution_settings(context->getBackgroundContext())};
+    auto analysis_contexts = getNameResolutionContexts(context);
 
     /// `EPHEMERAL` columns are not expanded by the analyzer, but their definitions may read virtual columns
     /// as well (`e String EPHEMERAL _database`), so they are resolved in turn, each one in its own scope.
@@ -2757,12 +2780,8 @@ std::optional<String> MutationsInterpreter::findNonDeterministicVirtualColumn(
 
         for (const auto & expressions : scopes)
         {
-            for (const auto & name_resolution_settings : name_resolution_settings_variants)
+            for (const auto & analysis_context : analysis_contexts)
             {
-                auto analysis_context = Context::createCopy(context);
-                analysis_context->setSetting("analyzer_compatibility_prefer_alias_over_subcolumn", name_resolution_settings.prefer_alias_over_subcolumn);
-                analysis_context->setSetting("prefer_column_name_to_alias", name_resolution_settings.prefer_column_name_to_alias);
-
                 auto expression = buildQueryTree(expressions->clone(), analysis_context);
                 /// The expressions are only analyzed, nothing is read, so the table is not locked.
                 auto table_node = std::make_shared<TableNode>(storage, TableLockHolder{}, storage_snapshot);
@@ -2821,6 +2840,7 @@ void MutationsInterpreter::validateNonDeterministicMutationsForStorage(
 
     /// Only the analyzer knows whether `today` is a column or a function written without parentheses.
     StorageSnapshotPtr storage_snapshot;
+    std::vector<ContextPtr> analysis_contexts;
     for (const auto & command : commands)
     {
         if (command.type != MutationCommand::UPDATE && command.type != MutationCommand::DELETE)
@@ -2838,15 +2858,19 @@ void MutationsInterpreter::validateNonDeterministicMutationsForStorage(
         {
             auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ true);
             storage_snapshot = storage->getStorageSnapshot(metadata_snapshot, context);
+            analysis_contexts = getNameResolutionContexts(context);
         }
 
-        auto expression = buildQueryTree(expressions, context);
-        QueryAnalyzer(/*only_analyze=*/ true).resolveConstantExpression(
-            expression, std::make_shared<TableNode>(storage, TableLockHolder{}, storage_snapshot), context);
-        if (auto function_name = findNonDeterministicFunction(expression))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "The source storage is replicated so ALTER UPDATE/ALTER DELETE statements must use only deterministic functions. "
-                "Function '{}' is non-deterministic", *function_name);
+        for (const auto & analysis_context : analysis_contexts)
+        {
+            auto expression = buildQueryTree(expressions, analysis_context);
+            QueryAnalyzer(/*only_analyze=*/ true).resolveConstantExpression(
+                expression, std::make_shared<TableNode>(storage, TableLockHolder{}, storage_snapshot), analysis_context);
+            if (auto function_name = findNonDeterministicFunction(expression))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "The source storage is replicated so ALTER UPDATE/ALTER DELETE statements must use only deterministic functions. "
+                    "Function '{}' is non-deterministic", *function_name);
+        }
     }
 
     if (auto virtual_column_name = findNonDeterministicVirtualColumn(storage, commands, context))
