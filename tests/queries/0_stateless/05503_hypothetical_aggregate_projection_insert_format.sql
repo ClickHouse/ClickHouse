@@ -6,6 +6,10 @@ SET optimize_use_projections = 1, optimize_use_implicit_projections = 0, prefer_
     enable_parallel_replicas = 0, optimize_aggregation_in_order = 0;
 -- an insert that gets the states in more blocks copies them into memory of their own, as with two-level aggregation
 SET max_block_size = 65409, group_by_two_level_threshold = 100000, group_by_two_level_threshold_bytes = 50000000;
+-- The projection part format (Compact vs Wide) turns on whether the aggregation freezes/copies its states
+-- into their own memory, so pin the settings that decide it (CI randomizes them, which flips 8000 -> 12000 bytes).
+SET distributed_aggregation_memory_efficient = 1, enable_memory_bound_merging_of_aggregation_results = 1,
+    adaptive_aggregator_freeze_threshold = 16384, adaptive_aggregator_freeze_threshold_bytes = 4194304;
 
 CREATE TABLE f_est (b UInt64, v UInt8) ENGINE = MergeTree ORDER BY b
     SETTINGS index_granularity = 48, index_granularity_bytes = 1024, use_const_adaptive_granularity = 1, min_bytes_for_wide_part = 0,
