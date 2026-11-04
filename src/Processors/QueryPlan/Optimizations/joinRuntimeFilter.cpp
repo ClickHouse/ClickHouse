@@ -336,7 +336,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     if (isIEJoinPreferred(join_operator, join_step->getJoinSettings()))
         return false;
 
-    /// For `ASOF`, pruning `join_algorithms` below would force `hash`/`parallel_hash` even if the user picked
+    /// For `ASOF`, pruning `join_algorithms` below would force `hash` even if the user picked
     /// `full_sorting_merge`: unlike other strictnesses, `HashJoin` can't run every `ASOF` join (narrower column
     /// types, no spill). Skip the filter if pruning would change the algorithm actually chosen; the algorithms
     /// excluded below never run `ASOF`, so they fall through regardless of list order.
@@ -351,7 +351,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                     && algorithm != JoinAlgorithm::PREFER_PARTIAL_MERGE && algorithm != JoinAlgorithm::DEFAULT;
             });
         if (first_candidate == join_algorithms.end()
-            || (*first_candidate != JoinAlgorithm::HASH && *first_candidate != JoinAlgorithm::PARALLEL_HASH))
+            || *first_candidate != JoinAlgorithm::HASH)
             return false;
     }
 
