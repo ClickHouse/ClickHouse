@@ -34,7 +34,6 @@
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Squashing.h>
-#include <Interpreters/capInsertBlockSizeBytesToMemoryLimit.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
@@ -3084,14 +3083,6 @@ void PartMergerWriter::prepare()
 {
     const auto & settings = ctx->context->getSettingsRef();
 
-    /// The squash buffers below are the same kind of block-sized copies an `INSERT` pipeline holds, and a
-    /// mutation is background work running next to the queries the server is there for, so bound them by
-    /// the memory limit exactly like the insert path does.
-    /// The pre-calculate squash and one post-calculate squash per projection are alive at the same time.
-    const size_t num_simultaneous_squashes = ctx->projections_to_build.size() + 1;
-    const size_t min_block_size_bytes = capInsertBlockSizeBytesToMemoryLimit(
-        settings[Setting::min_insert_block_size_bytes], num_simultaneous_squashes);
-
     /// Pre-calculate squash: accumulate source blocks to produce larger blocks for
     /// projection calculation. Shared across all projections since they all consume
     /// the same source blocks. This drastically reduces the number of temporary
@@ -3104,7 +3095,7 @@ void PartMergerWriter::prepare()
         pre_calculate_squash.emplace(
             std::make_shared<const Block>(),
             settings[Setting::min_insert_block_size_rows],
-            min_block_size_bytes);
+            settings[Setting::min_insert_block_size_bytes]);
 
         /// Collect the union of columns required by all projections. Only these columns
         /// (plus `_row_exists` when present in the source block) are pushed into the
@@ -3121,7 +3112,7 @@ void PartMergerWriter::prepare()
         projection_squashes.emplace_back(
             std::make_shared<const Block>(ctx->updated_header),
             settings[Setting::min_insert_block_size_rows],
-            min_block_size_bytes);
+            settings[Setting::min_insert_block_size_bytes]);
     }
 
     {
@@ -4609,7 +4600,17 @@ MutateTask::MutateTask(
         partition_id = ctx->future_part->part_info.getPartitionId(),
         mutate_entry = ctx->mutate_entry]
     {
-        return merges_blocker->isCancelledForPartition(partition_id) || (*mutate_entry)->is_cancelled;
+        /// Latched, so that a blocker released between two polls does not resurrect a cancelled read.
+        if ((*mutate_entry)->is_cancelled.load(std::memory_order_relaxed))
+            return true;
+
+        if (merges_blocker->isCancelledForPartition(partition_id))
+        {
+            (*mutate_entry)->is_cancelled.store(true, std::memory_order_relaxed);
+            return true;
+        }
+
+        return false;
     };
     (*ctx->mutate_entry)->thread_group->setQueryCancellationPredicates(
         mutation_cancelled,
