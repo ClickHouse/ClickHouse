@@ -79,7 +79,7 @@ RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_s
             *total_number_of_distinct_values *= static_cast<Float64>(key_number_of_distinct_values);
     }
 
-    /// Without keys the aggregation returns one row whatever the size of its input.
+    /// A keyless aggregation returns at most one row, even when the size of its input is unknown.
     if (total_number_of_distinct_values && input_stats.estimated_rows)
         total_number_of_distinct_values = std::min(*total_number_of_distinct_values, Float64(*input_stats.estimated_rows));
     else if (!aggregator_params.keys.empty())
@@ -355,7 +355,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         UInt64 estimated_rows = reading->getStorage()->totalRows({}).value_or(0);
         String table_display_name = reading->getStorage()->getName();
         RelationStats stats{.estimated_rows = estimated_rows, .table_name = table_display_name, .source = RowEstimateSource::Statistics};
-        /// As for MergeTree without column statistics, conditions on the rows leave the row count unknown unless it is 0.
+        /// Without statistics a filter leaves the row count unknown; an empty table stays at 0 rows.
         if (estimated_rows != 0 && !getConditionsToEstimate(*reading, filter).empty())
         {
             stats.estimated_rows.reset();
