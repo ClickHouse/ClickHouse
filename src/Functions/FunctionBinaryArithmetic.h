@@ -3798,6 +3798,110 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             return false;
     }
 
+    /// `plus`, `minus`, `multiply` and `divide` of two `Decimal` values, compiled as `DecimalBinaryOperation` computes them on
+    /// the native integers of the result type (see `compileDecimal`).
+    static constexpr bool is_compilable_decimal_operation = is_plus || is_minus || is_multiply || IsOperation<Op>::div_floating;
+
+    template <typename LeftDataType, typename RightDataType>
+    bool isCompilableDecimal(const LeftDataType & left, const RightDataType & right) const
+    {
+        const auto type = decimalResultType<is_multiply, is_division>(left, right);
+        using NativeResultType = NativeType<typename decltype(type)::FieldType>;
+        /// A `Nullable` divisor keeps `Nullable` (`division_by_nullable`).
+        if (division_by_nullable)
+            return false;
+        if constexpr (sizeof(NativeResultType) > sizeof(Int64))
+        {
+            /// A checked multiplication of 128-bit integers lowers to a library function that compiled code cannot call, and
+            /// the division of them is left to the interpreter.
+            if constexpr (IsOperation<Op>::div_floating || sizeof(NativeResultType) > sizeof(Int128))
+                return false;
+            else if constexpr (is_multiply)
+                return !check_decimal_overflow;
+            else
+            {
+                using ResultType = typename decltype(type)::FieldType;
+                return !check_decimal_overflow
+                    || (type.scaleFactorFor(left, false) == ResultType(1) && type.scaleFactorFor(right, false) == ResultType(1));
+            }
+        }
+        else
+            return true;
+    }
+
+    /** `DecimalBinaryOperation`: both values widened to the native integer of the result. `plus`, `minus`: the value whose
+      * scale is less than the result's is multiplied by the scale factor first; `multiply` multiplies them; `divide`
+      * multiplies the dividend by the scale of the divisor, then divides as `intDiv` (`DivideIntegralImpl`), with its errors.
+      * With `decimal_check_overflow` the multiplications and the addition are checked and fail with `Decimal math overflow`;
+      * without it they wrap.
+      */
+    template <typename LeftDataType, typename RightDataType>
+    llvm::Value * compileDecimal(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const LeftDataType & left, const RightDataType & right) const
+    {
+        auto & b = static_cast<llvm::IRBuilder<> &>(builder);
+        const auto type = decimalResultType<is_multiply, is_division>(left, right);
+        using ResultType = typename decltype(type)::FieldType;
+        using NativeResultType = NativeType<ResultType>;
+        auto * native_type = b.getIntNTy(sizeof(NativeResultType) * 8);
+
+        auto constant = [&](const ResultType & value) -> llvm::Value *
+        {
+            if constexpr (sizeof(NativeResultType) <= sizeof(Int64))
+                return llvm::ConstantInt::get(native_type, static_cast<uint64_t>(static_cast<Int64>(value.value)), /*IsSigned=*/true);
+            else
+                return llvm::ConstantInt::get(b.getContext(), llvm::APInt(128, {value.value.items[0], value.value.items[1]}));
+        };
+
+        llvm::Value * x = b.CreateSExtOrTrunc(arguments[0].value, native_type);
+        llvm::Value * y = b.CreateSExtOrTrunc(arguments[1].value, native_type);
+        llvm::Value * overflow = b.getFalse();
+        auto checked = [&](llvm::Intrinsic::ID checked_operation, llvm::Value * lhs, llvm::Value * rhs, llvm::Value * unchecked) -> llvm::Value *
+        {
+            if (!check_decimal_overflow)
+                return unchecked;
+            auto * with_overflow = b.CreateBinaryIntrinsic(checked_operation, lhs, rhs);
+            overflow = b.CreateOr(overflow, b.CreateExtractValue(with_overflow, {1}));
+            return b.CreateExtractValue(with_overflow, {0});
+        };
+        auto multiply = [&](llvm::Value * lhs, llvm::Value * rhs)
+        {
+            return checked(llvm::Intrinsic::smul_with_overflow, lhs, rhs, check_decimal_overflow ? nullptr : b.CreateMul(lhs, rhs));
+        };
+
+        JITErrorValue error;
+        llvm::Value * result = nullptr;
+        if constexpr (IsOperation<Op>::div_floating)
+        {
+            x = multiply(x, constant(right.getScaleMultiplier()));
+            if (check_decimal_overflow)
+                addJITError(b, error, overflow, JITErrorCode::DecimalMathOverflow);
+            result = JITIntegerDivision::compileDivision<NativeResultType, NativeResultType, NativeResultType>(b, x, y, error);
+        }
+        else
+        {
+            if constexpr (is_plus || is_minus)
+            {
+                const ResultType scale_a = type.scaleFactorFor(left, false);
+                const ResultType scale_b = type.scaleFactorFor(right, false);
+                if (scale_a != ResultType(1))
+                    x = multiply(x, constant(scale_a));
+                else if (scale_b != ResultType(1))
+                    y = multiply(y, constant(scale_b));
+                if constexpr (is_plus)
+                    result = checked(llvm::Intrinsic::sadd_with_overflow, x, y, check_decimal_overflow ? nullptr : b.CreateAdd(x, y));
+                else
+                    result = checked(llvm::Intrinsic::ssub_with_overflow, x, y, check_decimal_overflow ? nullptr : b.CreateSub(x, y));
+            }
+            else
+                result = multiply(x, y);
+            if (check_decimal_overflow)
+                addJITError(b, error, overflow, JITErrorCode::DecimalMathOverflow);
+        }
+        if (error.fails)
+            reportJITError(b, error);
+        return result;
+    }
+
     /// The `*OrNull` operations: `compileOrNull` gives the value and the rows where the result is NULL instead of an error.
     template <typename OpSpec>
     static constexpr bool isCompilableOrNull()
@@ -3839,6 +3943,12 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                     using OpSpec = Op<typename LeftDataType::FieldType, typename RightDataType::FieldType>;
 
                     if constexpr (
+                        is_compilable_decimal_operation && IsDataTypeDecimal<LeftDataType> && IsDataTypeDecimal<RightDataType>
+                        && IsDataTypeDecimal<ResultDataType>)
+                    {
+                        return isCompilableDecimal(left, right);
+                    }
+                    else if constexpr (
                         !std::is_same_v<ResultDataType, InvalidType> && !IsDataTypeDecimal<ResultDataType>
                         && !IsDataTypeDecimal<LeftDataType> && !IsDataTypeDecimal<RightDataType>
                         && (OpSpec::compilable || isCompilableWithErrors<OpSpec>() || isCompilableOrNull<OpSpec>()))
@@ -3876,6 +3986,13 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                     using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
                     using OpSpec = Op<typename LeftDataType::FieldType, typename RightDataType::FieldType>;
                     if constexpr (
+                        is_compilable_decimal_operation && IsDataTypeDecimal<LeftDataType> && IsDataTypeDecimal<RightDataType>
+                        && IsDataTypeDecimal<ResultDataType>)
+                    {
+                        result = compileDecimal(builder, arguments, left, right);
+                        return true;
+                    }
+                    else if constexpr (
                         !std::is_same_v<ResultDataType, InvalidType> && !IsDataTypeDecimal<ResultDataType>
                         && !IsDataTypeDecimal<LeftDataType> && !IsDataTypeDecimal<RightDataType> && isCompilableOrNull<OpSpec>())
                     {

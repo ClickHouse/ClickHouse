@@ -31,6 +31,8 @@ enum class JITErrorCode : uint16_t
     DecimalConvertOverflow,
     /// `throwIf` got a value that is not zero. The parameter of its site is the name of the function.
     ThrowIfNonZero,
+    /// `Decimal` arithmetic overflows (`DecimalBinaryOperation` with `decimal_check_overflow`).
+    DecimalMathOverflow,
 };
 
 /** The error of the function being compiled on the current row, built with `addJITError`: whether the row fails (an `i1`

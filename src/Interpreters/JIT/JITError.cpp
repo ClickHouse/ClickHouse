@@ -73,6 +73,8 @@ void throwJITError(const JITError & error, const JITErrorSite & site, const std:
             throwWithDescription(
                 Exception(ErrorCodes::FUNCTION_THROW_IF_VALUE_IS_NON_ZERO, "Value passed to '{}' function is non-zero", siteParameter(site, 0)),
                 function_description);
+        case JITErrorCode::DecimalMathOverflow:
+            throwWithDescription(Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow"), function_description);
         case JITErrorCode::None:
             break;
     }

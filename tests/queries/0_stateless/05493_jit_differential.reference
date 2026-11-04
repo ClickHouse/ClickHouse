@@ -37,7 +37,7 @@ least	64	127
 less	93	180
 lessOrEquals	93	180
 midpoint	8	116
-minus	88	128
+minus	89	128
 modulo	38	66
 moduloOrNull	76	100
 moduloOrZero	76	100
@@ -48,7 +48,7 @@ not	8	8
 notEquals	93	180
 nullIf	93	180
 or	64	64
-plus	88	133
+plus	89	133
 positiveModulo	0	54
 sign	10	12
 sqr	10	11
