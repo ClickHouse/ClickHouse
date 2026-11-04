@@ -188,6 +188,17 @@ function init_clickhouse_db() {
             HTTP_PORT="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=http_port --try)"
             HTTPS_PORT="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=https_port --try)"
             NATIVE_PORT="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=tcp_port --try)"
+            PORT_OFFSET="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=port_offset --try)"
+
+            # The server shifts its listeners by port_offset (a zero or unset port is never shifted),
+            # so the readiness check and the initialization client must use the shifted ports.
+            if [ -n "$PORT_OFFSET" ] && [ "$PORT_OFFSET" != "0" ]; then
+                for port_var in HTTP_PORT HTTPS_PORT NATIVE_PORT; do
+                    if [ -n "${!port_var}" ] && [ "${!port_var}" != "0" ]; then
+                        printf -v "$port_var" '%s' "$(( ${!port_var} + PORT_OFFSET ))"
+                    fi
+                done
+            fi
 
             if [ -n "$HTTP_PORT" ]; then
                 URL="http://127.0.0.1:$HTTP_PORT/ping"

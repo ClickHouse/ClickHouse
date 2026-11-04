@@ -630,6 +630,35 @@ bool initClickHouseDB(
     if (native_port.empty())
         native_port = "9000";
 
+    /// The server shifts its listeners by `port_offset`, so the readiness check and the initialization
+    /// client must connect to the shifted port. A zero port is never shifted, like in the server.
+    if (std::string port_offset = extractConfigValue(config_file, "port_offset"); !port_offset.empty())
+    {
+        long long port = 0;
+        long long offset = 0;
+        try
+        {
+            port = std::stoll(native_port);
+            offset = std::stoll(port_offset);
+        }
+        catch (const std::exception &)
+        {
+            std::cerr << "docker-init: invalid tcp_port '" << native_port << "' or port_offset '" << port_offset << "'\n";
+            return false;
+        }
+        if (port != 0)
+        {
+            const long long effective_port = port + offset;
+            if (effective_port < 1 || effective_port > 65535)
+            {
+                std::cerr << "docker-init: tcp_port " << port << " with port_offset " << offset
+                          << " results in invalid port " << effective_port << "\n";
+                return false;
+            }
+            native_port = std::to_string(effective_port);
+        }
+    }
+
     std::string run_as = std::to_string(run_uid) + ":" + std::to_string(run_gid);
 
     /// Start a temporary server bound only to localhost.
