@@ -179,29 +179,41 @@ CompoundFile::CompoundFile(std::string_view data_) : data(data_)
     UInt32 num_difat_sectors = readU32(data, 72);
 
     /// The locations of the sectors of the file allocation table: 109 in the header, the rest in the chain of DIFAT sectors.
+    /// The counts and the links come from the file, so they are bounded by the number of physical sectors before following them.
+    const size_t max_sectors = data.size() / sector_size + 1;
+    if (num_difat_sectors > max_sectors)
+        throwCorrupted("too many DIFAT sectors");
+
     std::vector<UInt32> fat_sectors;
-    for (size_t i = 0; i < 109; ++i)
+    auto add_fat_sector = [&](UInt32 id)
     {
-        UInt32 id = readU32(data, 76 + i * 4);
-        if (id != FREE_SECTOR)
-            fat_sectors.push_back(id);
-    }
+        if (id == FREE_SECTOR)
+            return;
+        if (fat_sectors.size() >= max_sectors)
+            throwCorrupted("too many sectors in the file allocation table");
+        fat_sectors.push_back(id);
+    };
+
+    for (size_t i = 0; i < 109; ++i)
+        add_fat_sector(readU32(data, 76 + i * 4));
+
+    std::vector<bool> visited_difat_sectors(max_sectors);
     UInt32 difat_sector = first_difat_sector;
     for (UInt32 i = 0; i < num_difat_sectors && difat_sector != END_OF_CHAIN && difat_sector != FREE_SECTOR; ++i)
     {
+        if (difat_sector >= max_sectors)
+            throwCorrupted("a DIFAT sector is outside of the file");
+        if (visited_difat_sectors[difat_sector])
+            throwCorrupted("the chain of DIFAT sectors has a cycle");
+        visited_difat_sectors[difat_sector] = true;
+
         auto content = sector(difat_sector);
         size_t entries_per_sector = sector_size / 4 - 1;
         for (size_t j = 0; j < entries_per_sector; ++j)
-        {
-            UInt32 id = readU32(content, j * 4);
-            if (id != FREE_SECTOR)
-                fat_sectors.push_back(id);
-        }
+            add_fat_sector(readU32(content, j * 4));
         difat_sector = readU32(content, entries_per_sector * 4);
     }
 
-    if (fat_sectors.size() > data.size() / sector_size + 1)
-        throwCorrupted("too many sectors in the file allocation table");
     fat.reserve(fat_sectors.size() * sector_size / 4);
     for (UInt32 id : fat_sectors)
     {
