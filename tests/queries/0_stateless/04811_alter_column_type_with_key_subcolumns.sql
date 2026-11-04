@@ -175,14 +175,17 @@ SELECT 'type:', type FROM system.columns WHERE database = currentDatabase() AND 
 SELECT 'key lookup (c.`j.a` = 1):', count() FROM t_alter_key_sub WHERE c.`j.a` = 1;
 DROP TABLE t_alter_key_sub;
 
--- A key on a dynamic path read with a type hint.
-CREATE TABLE t_alter_key_sub (id UInt32, data JSON) ENGINE = MergeTree ORDER BY (data.b.:Int64, id) SETTINGS index_granularity = 2, allow_nullable_key = 1;
-INSERT INTO t_alter_key_sub SELECT number, toJSONString(map('b', number)) FROM numbers(6);
-SELECT 'dynamic path with a type hint, other paths change -> allowed:';
-ALTER TABLE t_alter_key_sub MODIFY COLUMN data JSON(c String);
-ALTER TABLE t_alter_key_sub MODIFY COLUMN data Nullable(JSON(c String));
+-- A key on a dynamic path read with a type hint. A JSON -> JSON conversion infers the types of its values again:
+-- 2.0 is written as 2 and comes back as Int64.
+CREATE TABLE t_alter_key_sub (id UInt32, data JSON) ENGINE = MergeTree ORDER BY (data.b.:Float64, id) SETTINGS index_granularity = 1, allow_nullable_key = 1;
+INSERT INTO t_alter_key_sub VALUES (0, '{"b" : 0.5}'), (1, '{"b" : 1.5}'), (2, '{"b" : 2.0}');
+SELECT 'dynamic path with a type hint, other paths change -> reject:';
+ALTER TABLE t_alter_key_sub MODIFY COLUMN data JSON(c String); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+SELECT 'key subcolumn values:', groupArray(k) FROM (SELECT data.b.:Float64 AS k FROM t_alter_key_sub ORDER BY id);
+SELECT 'dynamic path with a type hint, only a Nullable level is added -> allowed:';
+ALTER TABLE t_alter_key_sub MODIFY COLUMN data Nullable(JSON);
 SELECT 'type:', type FROM system.columns WHERE database = currentDatabase() AND table = 't_alter_key_sub' AND name = 'data';
-SELECT 'key lookup (data.b.:Int64 = 4):', count() FROM t_alter_key_sub WHERE data.b.:Int64 = 4;
+SELECT 'key lookup (data.b.:Float64 = 1.5):', count() FROM t_alter_key_sub WHERE data.b.:Float64 = 1.5;
 DROP TABLE t_alter_key_sub;
 
 -- A Map value read by its key: `key_1` is parsed as the key type.
@@ -210,16 +213,48 @@ SELECT 'type:', type FROM system.columns WHERE database = currentDatabase() AND 
 SELECT 'key lookup (v.Int64 = 2):', count() FROM t_alter_key_sub WHERE v.Int64 = 2;
 DROP TABLE t_alter_key_sub;
 
--- A JSON -> JSON conversion parses the data again with the skip rules of the new type.
+-- A JSON -> JSON conversion parses the data again with the skip rules of the new type. A typed path cannot be a SKIP
+-- path, but a SKIP REGEXP can match a prefix of it or a part of it.
+CREATE TABLE t_alter_key_sub (id UInt32, data JSON(b.c Int64)) ENGINE = MergeTree ORDER BY (data.b.c, id) SETTINGS index_granularity = 1;
+INSERT INTO t_alter_key_sub SELECT number, toJSONString(map('b', map('c', number))) FROM numbers(3);
+SELECT 'JSON skip rule for a prefix of the key path or a part of it -> reject:';
+ALTER TABLE t_alter_key_sub MODIFY COLUMN data JSON(b.c Int64, SKIP REGEXP '^b$'); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE t_alter_key_sub MODIFY COLUMN data JSON(b.c Int64, SKIP REGEXP 'c'); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+SELECT 'key subcolumn values:', groupArray(k) FROM (SELECT data.b.c AS k FROM t_alter_key_sub ORDER BY id);
+SELECT 'JSON skip rule for another path -> allowed:';
+ALTER TABLE t_alter_key_sub MODIFY COLUMN data JSON(b.c Int64, SKIP c);
+SELECT 'type:', type FROM system.columns WHERE database = currentDatabase() AND table = 't_alter_key_sub' AND name = 'data';
+SELECT 'key lookup (data.b.c = 1):', count() FROM t_alter_key_sub WHERE data.b.c = 1;
+DROP TABLE t_alter_key_sub;
+
+-- A typed path takes the whole object below it: a dynamic key path below it loses its values when the typed path is
+-- added and gets values when it is removed.
 CREATE TABLE t_alter_key_sub (id UInt32, data JSON) ENGINE = MergeTree ORDER BY (data.b.c.:Int64, id) SETTINGS index_granularity = 1, allow_nullable_key = 1;
 INSERT INTO t_alter_key_sub SELECT number, toJSONString(map('b', map('c', number))) FROM numbers(3);
-SELECT 'JSON skip rule for the key path or a prefix of it -> reject:';
-ALTER TABLE t_alter_key_sub MODIFY COLUMN data JSON(SKIP b.c); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
-ALTER TABLE t_alter_key_sub MODIFY COLUMN data JSON(SKIP b); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
-ALTER TABLE t_alter_key_sub MODIFY COLUMN data JSON(SKIP REGEXP '^b$'); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+SELECT 'typed path above a dynamic key path is added -> reject:';
+ALTER TABLE t_alter_key_sub MODIFY COLUMN data JSON(b String); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 SELECT 'key subcolumn values:', groupArray(k) FROM (SELECT data.b.c.:Int64 AS k FROM t_alter_key_sub ORDER BY id);
-SELECT 'JSON skip rule for another path -> allowed:';
-ALTER TABLE t_alter_key_sub MODIFY COLUMN data JSON(SKIP c);
-SELECT 'type:', type FROM system.columns WHERE database = currentDatabase() AND table = 't_alter_key_sub' AND name = 'data';
-SELECT 'key lookup (data.b.c.:Int64 = 1):', count() FROM t_alter_key_sub WHERE data.b.c.:Int64 = 1;
+DROP TABLE t_alter_key_sub;
+
+CREATE TABLE t_alter_key_sub (id UInt32, data JSON(b Map(String, Int64))) ENGINE = MergeTree ORDER BY (data.b.c.:Int64, id) SETTINGS index_granularity = 1, allow_nullable_key = 1;
+INSERT INTO t_alter_key_sub SELECT number, toJSONString(map('b', map('c', number))) FROM numbers(3);
+SELECT 'typed path above a dynamic key path is removed -> reject:';
+ALTER TABLE t_alter_key_sub MODIFY COLUMN data JSON; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+SELECT 'key subcolumn NULLs:', countIf(data.b.c.:Int64 IS NULL) FROM t_alter_key_sub;
+DROP TABLE t_alter_key_sub;
+
+-- A combined subcolumn (`@`) in a key expression reads a Dynamic value.
+CREATE TABLE t_alter_key_sub (id UInt32, data JSON) ENGINE = MergeTree ORDER BY (toString(data.@a), id) SETTINGS index_granularity = 1, allow_nullable_key = 1;
+INSERT INTO t_alter_key_sub VALUES (0, '{"a" : 0}'), (1, '{"a" : 1}'), (2, '{"a" : 2}');
+SELECT 'combined subcolumn in a key expression, JSON type change -> reject:';
+ALTER TABLE t_alter_key_sub MODIFY COLUMN data JSON(SKIP a); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+SELECT 'key subcolumn values:', groupArray(toString(k)) FROM (SELECT data.@a AS k FROM t_alter_key_sub ORDER BY id);
+DROP TABLE t_alter_key_sub;
+
+-- A typed path of type Dynamic: its values get their types inferred again.
+CREATE TABLE t_alter_key_sub (id UInt32, data JSON(a Dynamic)) ENGINE = MergeTree ORDER BY (data.a.:Float64, id) SETTINGS index_granularity = 1, allow_nullable_key = 1;
+INSERT INTO t_alter_key_sub VALUES (0, '{"a" : 0.5}'), (1, '{"a" : 1.5}'), (2, '{"a" : 2.0}');
+SELECT 'typed Dynamic path, other paths change -> reject:';
+ALTER TABLE t_alter_key_sub MODIFY COLUMN data JSON(a Dynamic, c String); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+SELECT 'key subcolumn values:', groupArray(k) FROM (SELECT data.a.:Float64 AS k FROM t_alter_key_sub ORDER BY id);
 DROP TABLE t_alter_key_sub;

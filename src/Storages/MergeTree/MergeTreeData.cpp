@@ -5987,11 +5987,24 @@ bool conversionKeepsSubcolumnValues(const DataTypePtr & from, const DataTypePtr 
             return false;
     }
 
-    /// A `JSON` -> `JSON` conversion parses the data again and drops what the `SKIP` rules of `to` match.
+    /// A `JSON` -> `JSON` conversion parses the data again: it drops what the `SKIP` rules of `to` match, a typed path
+    /// takes the whole object below it, and `Dynamic` values get their types inferred again. So the key subcolumn must
+    /// read a typed path in both types, and in `to` that path's type must have no `Dynamic` or `JSON` inside.
     if (const auto * to_object = typeid_cast<const DataTypeObject *>(to.get()); to_object && !from->equals(*to))
     {
-        const String path = to_info->substreams_path.empty() ? "" : to_info->substreams_path.front().object_path_name;
-        if (skipsJSONPath(*to_object, path))
+        auto is_typed_path = [](const ISerialization::SubstreamPath & path)
+        {
+            return !path.empty()
+                && (path.front().type == ISerialization::Substream::ObjectTypedPath
+                    || path.front().type == ISerialization::Substream::ObjectTypedSharedDataPath);
+        };
+        if (!is_typed_path(from_info->substreams_path) || !is_typed_path(to_info->substreams_path))
+            return false;
+
+        const String & path = to_info->substreams_path.front().object_path_name;
+        auto typed_path = to_object->getTypedPaths().find(path);
+        if (typed_path == to_object->getTypedPaths().end() || typed_path->second->hasDynamicStructure()
+            || skipsJSONPath(*to_object, path))
             return false;
     }
 
