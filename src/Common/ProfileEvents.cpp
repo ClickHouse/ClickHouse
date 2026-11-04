@@ -1847,6 +1847,8 @@ The server successfully detected this situation and will download merged part fr
     M(QueryPreempted, "How many times tasks are paused and waiting due to 'priority' setting", ValueType::Number) \
     M(IndexBinarySearchAlgorithm, "Number of times the binary search algorithm is used over the index marks", ValueType::Number) \
     M(IndexGenericExclusionSearchAlgorithm, "Number of times the generic exclusion search algorithm is used over the index marks", ValueType::Number) \
+    M(IndexGenericExclusionSearchSteps, "Number of steps (checks of a mark range against the condition) made by the generic exclusion search over the index marks", ValueType::Number) \
+    M(IndexGenericExclusionSearchRangesBelowSplitThreshold, "Number of mark ranges the generic exclusion search over the index marks accepted whole because they held less data than merge_tree_generic_exclusion_search_min_bytes_to_split", ValueType::Number) \
     M(IndexGenericExclusionSearchStepLimitReached, "Number of times the generic exclusion search over the index marks reached merge_tree_generic_exclusion_search_max_steps and accepted the remaining mark ranges without further splitting", ValueType::Number) \
     M(ParallelReplicasQueryCount, "Number of (sub)queries planned to be executed using parallel replicas during a query execution. Automatic parallel replicas also increments this for the plan it builds to make its decision, so a counted query may never have run with parallel replicas - see `AutoParallelReplicasApplied` and `ParallelReplicasUsedCount` for what was actually executed", ValueType::Number) \
     \

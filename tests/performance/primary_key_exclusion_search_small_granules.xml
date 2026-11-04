@@ -1,0 +1,32 @@
+<test>
+    <!-- Primary key analysis of a condition on a non-leading key column over a part with one-row granules
+         (https://github.com/ClickHouse/ClickHouse/issues/125812). The first key column changes every four rows,
+         so the exhaustive generic exclusion search descends to single marks and makes about two checks per row.
+         The analysis must stop at ranges that hold less data than the analysis of their split costs. -->
+    <settings>
+        <use_query_condition_cache>0</use_query_condition_cache>
+    </settings>
+
+    <create_query>
+        CREATE TABLE t_small_granules (c1 DateTime, c2 UInt8, c3 String)
+        ENGINE = MergeTree ORDER BY (c1, c2, c3)
+        SETTINGS index_granularity = 1
+    </create_query>
+
+    <!-- One block, so that one part is written without a merge of millions of one-row granules. -->
+    <fill_query>
+        INSERT INTO t_small_granules
+        SELECT toDateTime('2026-01-01 00:00:00') + intDiv(number, 4), (number % 4) >= 2, toString(number % 97)
+        FROM numbers(2000000)
+        SETTINGS max_insert_threads = 1, max_block_size = 2000000, min_insert_block_size_rows = 2000000, min_insert_block_size_bytes = 0
+    </fill_query>
+
+    <!-- `LIMIT 0` reads nothing, so the query time is the index analysis. -->
+    <query>SELECT c1, c3 FROM t_small_granules WHERE c2 LIMIT 0 FORMAT Null</query>
+    <query>SELECT c1, c3 FROM t_small_granules WHERE c2 = 1 LIMIT 0 FORMAT Null</query>
+    <query>SELECT c1, c3 FROM t_small_granules WHERE c2 LIMIT 0 SETTINGS compatibility = '25.12' FORMAT Null</query>
+    <!-- The full read: the fragments of a fine-grained analysis are slower to read than the whole part. -->
+    <query>SELECT sum(cityHash64(c1, c3)) FROM t_small_granules WHERE c2 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS t_small_granules</drop_query>
+</test>

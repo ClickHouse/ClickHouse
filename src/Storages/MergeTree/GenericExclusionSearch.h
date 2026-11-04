@@ -30,6 +30,14 @@ struct GenericExclusionSearchSettings
     /// at most `coarse_index_granularity`, and at least one check per initial range is always made.
     size_t max_steps = 0;
 
+    /// A range of fewer marks than this is accepted whole instead of being split, even though the
+    /// condition may be false for some of its rows. Splitting a range costs up to
+    /// `coarse_index_granularity` checks, and every subrange that survives has to be sought to and
+    /// read separately, so below some amount of data the analysis costs more than reading the range.
+    /// The caller derives the threshold from the data volume of a mark. Values of 0 and 1 disable it:
+    /// a single-mark range is never split anyway.
+    size_t min_marks_to_split = 0;
+
     /// Accepted ranges separated by a gap of at most this many marks are merged, because reading the
     /// gap sequentially is cheaper than seeking past it. Exact ranges are never merged across a gap.
     size_t min_marks_for_seek = 0;
@@ -47,6 +55,10 @@ struct GenericExclusionSearchResult
 
     /// The number of check invocations made.
     size_t num_steps = 0;
+
+    /// The number of ranges accepted whole because they had fewer marks than `min_marks_to_split`
+    /// while the condition could still be false for some of their rows.
+    size_t num_ranges_below_split_threshold = 0;
 
     /// Set when the step budget forced at least one range to be accepted whole instead of being
     /// split. Merely spending the whole budget on checks does not set it.

@@ -93,6 +93,8 @@ extern const Event FilteringMarksWithPrimaryKeyMicroseconds;
 extern const Event FilteringMarksWithSecondaryKeysMicroseconds;
 extern const Event IndexBinarySearchAlgorithm;
 extern const Event IndexGenericExclusionSearchAlgorithm;
+extern const Event IndexGenericExclusionSearchSteps;
+extern const Event IndexGenericExclusionSearchRangesBelowSplitThreshold;
 extern const Event IndexGenericExclusionSearchStepLimitReached;
 extern const Event TextIndexGenericExclusionSearchAlgorithm;
 extern const Event TextIndexGenericExclusionSearchStepLimitReached;
@@ -115,6 +117,7 @@ namespace Setting
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsUInt64 merge_tree_coarse_index_granularity;
     extern const SettingsUInt64 merge_tree_generic_exclusion_search_max_steps;
+    extern const SettingsUInt64 merge_tree_generic_exclusion_search_min_bytes_to_split;
     extern const SettingsUInt64 merge_tree_min_bytes_for_seek;
     extern const SettingsUInt64 merge_tree_min_rows_for_seek;
     extern const SettingsBool use_lightweight_primary_key_index_analysis;
@@ -2953,10 +2956,25 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             part.getIndexGranularityInfo().fixed_index_granularity,
             part.getIndexGranularityInfo().index_granularity_bytes);
 
+        /// Splitting a range costs up to `merge_tree_coarse_index_granularity` checks, and every subrange that
+        /// survives is sought to and read separately, so a range that holds less data than
+        /// `merge_tree_generic_exclusion_search_min_bytes_to_split` is cheaper to read whole than to analyze.
+        /// The threshold is converted to marks with the average data volume of a mark of this part. A part
+        /// without size information (zero bytes) keeps the exhaustive search.
+        size_t min_marks_to_split = 0;
+        if (const size_t min_bytes_to_split = settings[Setting::merge_tree_generic_exclusion_search_min_bytes_to_split])
+        {
+            const size_t marks_without_final = part.getIndexGranularity().getMarksCountWithoutFinal();
+            const size_t bytes_per_mark = marks_without_final ? part.getTotalColumnsSize().data_uncompressed / marks_without_final : 0;
+            if (bytes_per_mark)
+                min_marks_to_split = (min_bytes_to_split + bytes_per_mark - 1) / bytes_per_mark;
+        }
+
         GenericExclusionSearchSettings search_settings
         {
             .coarse_index_granularity = settings[Setting::merge_tree_coarse_index_granularity],
             .max_steps = settings[Setting::merge_tree_generic_exclusion_search_max_steps],
+            .min_marks_to_split = min_marks_to_split,
             .min_marks_for_seek = min_marks_for_seek,
         };
 
@@ -3005,14 +3023,19 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         res = std::move(search_result.ranges);
         res.search_algorithm = MarkRanges::SearchAlgorithm::GenericExclusionSearch;
         ProfileEvents::increment(ProfileEvents::IndexGenericExclusionSearchAlgorithm);
+        ProfileEvents::increment(ProfileEvents::IndexGenericExclusionSearchSteps, search_result.num_steps);
+        ProfileEvents::increment(ProfileEvents::IndexGenericExclusionSearchRangesBelowSplitThreshold, search_result.num_ranges_below_split_threshold);
         if (search_result.reached_step_limit)
             ProfileEvents::increment(ProfileEvents::IndexGenericExclusionSearchStepLimitReached);
         LOG_TRACE(
             log,
-            "Used generic exclusion search {}over index for part {} with {} steps{}",
+            "Used generic exclusion search {}over index for part {} with {} steps{}{}",
             exact_ranges ? "with exact ranges " : "",
             part_name,
             search_result.num_steps,
+            search_result.num_ranges_below_split_threshold
+                ? fmt::format(" ({} ranges of fewer than {} marks were accepted without splitting)", search_result.num_ranges_below_split_threshold, min_marks_to_split)
+                : "",
             search_result.reached_step_limit ? " (step limit reached, remaining ranges were accepted without further splitting)" : "");
     }
     else

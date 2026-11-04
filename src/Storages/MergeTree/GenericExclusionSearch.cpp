@@ -91,6 +91,12 @@ void searchUnlimited(
                 if (collect_exact_ranges && exact)
                     appendWithMaxGap(result.exact_ranges, range, 0);
             }
+            else if (range.end - range.begin < search_settings.min_marks_to_split)
+            {
+                /// Too little data to be worth the checks its split would cost: read it whole.
+                ++result.num_ranges_below_split_threshold;
+                appendWithMaxGap(result.ranges, range, search_settings.min_marks_for_seek);
+            }
             else
             {
                 splitRange(range, search_settings.coarse_index_granularity, [&](MarkRange subrange) { ranges_stack.push_back(subrange); });
@@ -148,6 +154,14 @@ void searchLimited(
             accepted.push_back(range);
             if (collect_exact_ranges && exact)
                 accepted_exact.push_back(range);
+            continue;
+        }
+
+        if (range.end - range.begin < search_settings.min_marks_to_split)
+        {
+            /// Too little data to be worth the checks its split would cost: read it whole.
+            ++result.num_ranges_below_split_threshold;
+            accepted.push_back(range);
             continue;
         }
 

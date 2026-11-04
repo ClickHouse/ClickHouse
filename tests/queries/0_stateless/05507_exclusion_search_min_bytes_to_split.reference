@@ -1,0 +1,20 @@
+parts	1
+small default	8192	11541948862947538143
+small exhaustive	8192	11541948862947538143
+small no primary key	8192	11541948862947538143
+small compatibility	8192	11541948862947538143
+small equals default	8192	11541948862947538143
+small equals exhaustive	8192	11541948862947538143
+wide default	2048	8388608
+wide exhaustive	2048	8388608
+default granularity default	404	40420200
+default granularity exhaustive	404	40420200
+05507 default granularity default	7	1	0	0
+05507 default granularity exhaustive	7	1	0	0
+05507 small compatibility	16384	1	0	1
+05507 small default	16384	1	0	1
+05507 small equals default	16384	1	0	1
+05507 small equals exhaustive	12288	0	1	0
+05507 small exhaustive	12288	0	1	0
+05507 wide default	2112	0	0	0
+05507 wide exhaustive	2112	0	0	0
