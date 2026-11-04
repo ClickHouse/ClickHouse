@@ -94,6 +94,32 @@ ALTER TABLE t_lambda_alias UPDATE z = 6 WHERE 1;
 SELECT t, z, m FROM t_lambda_alias;
 DROP TABLE t_lambda_alias;
 
+-- An alias of the subcolumn set inside a lambda has the name of a column read outside it.
+DROP TABLE IF EXISTS t_lambda_outer;
+CREATE TABLE t_lambda_outer (t Tuple(a UInt32), z UInt32, m String MATERIALIZED concat(arrayStringConcat(arrayMap(x -> toString(t.a AS z), [1])), '-', toString(z))) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_lambda_outer (t, z) VALUES (tuple(100), 5);
+SELECT t, z, m FROM t_lambda_outer;
+ALTER TABLE t_lambda_outer UPDATE z = 6 WHERE 1;
+SELECT t, z, m FROM t_lambda_outer;
+ALTER TABLE t_lambda_outer UPDATE t = tuple(200) WHERE 1;
+SELECT t, z, m FROM t_lambda_outer;
+DROP TABLE t_lambda_outer;
+
+-- The same, recomputed by a column TTL.
+DROP TABLE IF EXISTS t_ttl_lambda;
+CREATE TABLE t_ttl_lambda
+(
+    d DateTime,
+    t Tuple(a Int32) TTL d + INTERVAL 1 SECOND,
+    z Int32,
+    m String MATERIALIZED concat(arrayStringConcat(arrayMap(x -> toString(t.a AS z), [1])), '-', toString(z))
+)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0;
+INSERT INTO t_ttl_lambda (d, t, z) VALUES ('2000-01-01 00:00:00', (7), 5);
+OPTIMIZE TABLE t_ttl_lambda FINAL;
+SELECT t, z, m FROM t_ttl_lambda;
+DROP TABLE t_ttl_lambda;
+
 -- A lightweight UPDATE recomputes through the same expression.
 DROP TABLE IF EXISTS t_lwu;
 CREATE TABLE t_lwu (k UInt8, t Tuple(a UInt32), z UInt32, m String MATERIALIZED concat(toString(t.a AS z), '-', toString(z)), m_name String MATERIALIZED formatRowNoNewline('JSONEachRow', t.a)) ENGINE = MergeTree ORDER BY k SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;

@@ -20,12 +20,20 @@ struct UnnamedSubcolumn
     String name;
 };
 
+/// A subcolumn below the root replaced with its alias, and the innermost lambda around it, or null.
+struct AliasedSubcolumn
+{
+    boost::intrusive_ptr<ASTFunction> function;
+    const IAST * lambda;
+};
+
 void replaceSubcolumns(
     ASTPtr & ast,
     const NamesAndTypesList & columns,
     bool is_root,
+    const IAST * lambda,
     std::vector<UnnamedSubcolumn> & unnamed,
-    std::vector<boost::intrusive_ptr<ASTFunction>> & aliased)
+    std::vector<AliasedSubcolumn> & aliased)
 {
     if (auto * identifier = ast->as<ASTIdentifier>())
     {
@@ -45,7 +53,7 @@ void replaceSubcolumns(
             if (auto alias = identifier->tryGetAlias(); !alias.empty())
             {
                 function->setAlias(alias);
-                aliased.push_back(function);
+                aliased.push_back({function, lambda});
             }
             else
                 unnamed.push_back({function, identifier->getColumnName()});
@@ -57,13 +65,13 @@ void replaceSubcolumns(
         if (node->arguments)
         {
             for (auto & child : node->arguments->children)
-                replaceSubcolumns(child, columns, false, unnamed, aliased);
+                replaceSubcolumns(child, columns, false, node->name == "lambda" ? node : lambda, unnamed, aliased);
         }
     }
     else
     {
         for (auto & child : ast->children)
-            replaceSubcolumns(child, columns, false, unnamed, aliased);
+            replaceSubcolumns(child, columns, false, lambda, unnamed, aliased);
     }
 }
 
@@ -90,24 +98,39 @@ void collectConflictingAliases(const IAST & ast, std::unordered_map<String, IAST
         collectConflictingAliases(*child, hashes, conflicting);
 }
 
+bool hasIdentifierOutside(const IAST & ast, const IAST & skip, const String & name)
+{
+    if (&ast == &skip)
+        return false;
+    if (const auto * identifier = ast.as<ASTIdentifier>(); identifier && identifier->getColumnName() == name)
+        return true;
+    for (const auto & child : ast.children)
+        if (hasIdentifierOutside(*child, skip, name))
+            return true;
+    return false;
+}
+
 }
 
 void replaceSubcolumnsToGetSubcolumnFunctionInQuery(ASTPtr & ast, const NamesAndTypesList & columns)
 {
     std::vector<UnnamedSubcolumn> unnamed;
-    std::vector<boost::intrusive_ptr<ASTFunction>> aliased;
-    replaceSubcolumns(ast, columns, /*is_root=*/ true, unnamed, aliased);
+    std::vector<AliasedSubcolumn> aliased;
+    replaceSubcolumns(ast, columns, /*is_root=*/ true, /*lambda=*/ nullptr, unnamed, aliased);
 
-    /// The old analyzer has one alias scope for the whole expression, lambdas included,
-    /// so an alias that a different expression also has, or a name used elsewhere, is left off.
+    /// The old analyzer has one alias scope for the whole expression, lambdas included, so an alias that a different
+    /// expression also has, an alias set in a lambda and read outside it, or a name used elsewhere, is left off.
     if (!aliased.empty())
     {
         std::unordered_map<String, IASTHash> hashes;
         NameSet conflicting;
         collectConflictingAliases(*ast, hashes, conflicting);
-        for (const auto & function : aliased)
-            if (conflicting.contains(function->tryGetAlias()))
+        for (const auto & [function, lambda] : aliased)
+        {
+            const String alias = function->tryGetAlias();
+            if (conflicting.contains(alias) || (lambda && hasIdentifierOutside(*ast, *lambda, alias)))
                 function->setAlias("");
+        }
     }
 
     if (unnamed.empty())
