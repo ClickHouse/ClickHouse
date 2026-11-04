@@ -86,7 +86,6 @@ protected:
     virtual void authPluginSSL();
     virtual void finishHandshakeSSL(size_t packet_size, char * buf, size_t pos, std::function<void(size_t)> read_bytes, MySQLProtocol::ConnectionPhase::HandshakeResponse & packet);
 
-
     IServer & server;
     TCPServer & tcp_server;
     LoggerPtr log;

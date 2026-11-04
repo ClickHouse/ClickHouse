@@ -191,13 +191,13 @@ std::optional<Response> runRequest(const AIRequestPolicy & policy, AIQuotaTracke
 
 void runAttempt(IAIProvider & provider, const AIChatRequest & request, const ConnectionTimeouts & timeouts, AIResponse & response)
 {
-    provider.call(request, timeouts, response);
+    response = provider.call(request, timeouts);
     checkResponseIsComplete(response);
 }
 
 void runAttempt(IAIProvider & provider, const AIEmbeddingRequest & request, const ConnectionTimeouts & timeouts, AIEmbeddingResponse & response)
 {
-    provider.embed(request, timeouts, response);
+    response = provider.embed(request, timeouts);
 }
 
 template <typename Response, typename Request>
@@ -213,8 +213,7 @@ std::future<std::optional<Response>> submit(
         {
             Response response;
 
-            /// The provider fills the token counts before it validates the payload, so a request that
-            /// ends in an exception still reports the usage the provider billed for.
+            /// A response rejected by `checkResponseIsComplete` still reports the usage the provider billed for.
             SCOPE_EXIT({
                 my_quota->recordTokens(response.input_tokens, response.output_tokens);
                 ProfileEvents::increment(ProfileEvents::AIInputTokens, response.input_tokens);

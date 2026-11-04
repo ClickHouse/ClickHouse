@@ -10,8 +10,6 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/ObjectStorage/DataLakes/Common/AvroForIcebergDeserializer.h>
 #include <Storages/KeyDescription.h>
-#include <Core/Range.h>
-#include <DataTypes/IDataType.h>
 
 #include <atomic>
 #include <functional>
@@ -72,28 +70,19 @@ public:
 
         std::optional<Int64> getBytesCountInAllDataFilesExcludingDeleted() const;
 
-        /// nullptr if the partition spec has no usable field. Kept in the handle so files can be pruned after the iterator is gone.
-        const DB::KeyDescription * getPartitionKeyDescription() const { return partition_key.get(); }
-
     private:
         friend class ManifestFileIterator;
 
-        ManifestFileEntriesHandle(
-            FilesPtr data_files_,
-            FilesPtr position_delete_files_,
-            FilesPtr equality_delete_files_,
-            std::shared_ptr<const DB::KeyDescription> partition_key_)
+        ManifestFileEntriesHandle(FilesPtr data_files_, FilesPtr position_delete_files_, FilesPtr equality_delete_files_)
             : data_files(std::move(data_files_))
             , position_delete_files(std::move(position_delete_files_))
             , equality_delete_files(std::move(equality_delete_files_))
-            , partition_key(std::move(partition_key_))
         {
         }
 
         FilesPtr data_files;
         FilesPtr position_delete_files;
         FilesPtr equality_delete_files;
-        std::shared_ptr<const DB::KeyDescription> partition_key;
     };
 
     static std::shared_ptr<ManifestFileIterator> create(
@@ -103,7 +92,6 @@ public:
         IcebergSchemaProcessor & schema_processor,
         Int64 inherited_sequence_number,
         Int64 inherited_snapshot_id,
-        std::optional<UInt64> inherited_first_row_id,
         DB::ContextPtr context,
         std::shared_ptr<const ActionsDAG> filter_dag_,
         Int32 table_snapshot_schema_id_,
@@ -111,6 +99,8 @@ public:
 
     ManifestFileEntriesHandle getFilesWithoutDeletedHandle() const;
 
+    bool hasPartitionKey() const;
+    const DB::KeyDescription & getPartitionKeyDescription() const;
     /// Fields with rows count in manifest files are optional
     /// they can be absent.
     std::optional<Int64> getRowsCountInAllFilesExcludingDeleted(FileContentType content) const;
@@ -138,12 +128,10 @@ private:
         IcebergSchemaProcessor & schema_processor,
         Int64 inherited_sequence_number,
         Int64 inherited_snapshot_id,
-        std::optional<UInt64> inherited_first_row_id,
         DB::ContextPtr context,
         Int32 manifest_schema_id,
         std::shared_ptr<const PartitionSpecification> common_partition_specification,
         std::optional<DB::KeyDescription> partition_key_description,
-        size_t partition_spec_fields_count,
         size_t total_rows,
         std::shared_ptr<const ActionsDAG> filter_dag,
         Int32 table_snapshot_schema_id,
@@ -159,12 +147,10 @@ private:
     // always zero in case of format version 1
     const Int64 inherited_sequence_number;
     const Int64 inherited_snapshot_id;
-    std::vector<std::optional<UInt64>> entry_first_row_ids;
     const DB::ContextPtr context;
     const Int32 manifest_schema_id;
     const std::shared_ptr<const PartitionSpecification> common_partition_specification;
-    const std::shared_ptr<const DB::KeyDescription> partition_key_description;
-    const size_t partition_spec_fields_count;
+    const std::optional<DB::KeyDescription> partition_key_description;
     const Int32 table_snapshot_schema_id;
 
     /// Iteration state
@@ -193,13 +179,6 @@ private:
 };
 
 using ManifestIteratorPtr = std::shared_ptr<ManifestFileIterator>;
-
-/// Value ranges of a data file, decoded from its manifest bounds, for the columns of `column_types`
-/// (field id -> type in the file's schema), plus the row lineage columns. Empty for a delete file.
-std::unordered_map<Int32, DB::Range> getDataFileHyperrectangles(
-    const ProcessedManifestFileEntry & entry,
-    const std::unordered_map<Int32, DB::DataTypePtr> & column_types,
-    const IcebergPathFromMetadata & path_to_manifest_file);
 }
 
 #endif

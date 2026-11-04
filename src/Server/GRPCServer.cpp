@@ -36,12 +36,12 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <QueryPipeline/QueryPipeline.h>
 #include <Server/IServer.h>
 #include <Storages/IStorage.h>
 #include <Poco/FileStream.h>
@@ -346,9 +346,19 @@ namespace
     String getQueryDescription(const GRPCQueryInfo & query_info)
     {
         String str;
-        /// Not the text: it can contain secrets, and `executeQuery` logs it with them hidden.
         if (!query_info.query().empty())
-            str.append("query: ").append(std::to_string(query_info.query().size())).append(" bytes");
+        {
+            std::string_view query = query_info.query();
+            constexpr size_t max_query_length_to_log = 64;
+            if (query.length() > max_query_length_to_log)
+                query.remove_suffix(query.length() - max_query_length_to_log);
+            if (size_t format_pos = query.find(" FORMAT "); format_pos != String::npos)
+                query.remove_suffix(query.length() - format_pos - strlen(" FORMAT "));
+            str.append("\"").append(query);
+            if (query != query_info.query())
+                str.append("...");
+            str.append("\"");
+        }
         if (!query_info.query_id().empty())
             str.append(str.empty() ? "" : ", ").append("query_id: ").append(query_info.query_id());
         if (!query_info.input_data().empty())
@@ -666,7 +676,7 @@ namespace
     class ReadBufferFromCallback : public ReadBuffer
     {
     public:
-        explicit ReadBufferFromCallback(const std::function<std::pair<const void *, size_t>()> & callback_)
+        explicit ReadBufferFromCallback(const std::function<std::pair<const void *, size_t>(void)> & callback_)
             : ReadBuffer(nullptr, 0), callback(callback_) {}
 
     private:
@@ -681,7 +691,7 @@ namespace
             return true;
         }
 
-        std::function<std::pair<const void *, size_t>()> callback;
+        std::function<std::pair<const void *, size_t>(void)> callback;
     };
 
 
@@ -726,7 +736,7 @@ namespace
         Call(CallType call_type_, std::unique_ptr<BaseResponder> responder_, IServer & iserver_, LoggerRawPtr log_);
         ~Call();
 
-        void start(const std::function<void()> & on_finish_call_callback);
+        void start(const std::function<void(void)> & on_finish_call_callback);
 
     private:
         void run();
@@ -837,7 +847,7 @@ namespace
             call_thread.join();
     }
 
-    void Call::start(const std::function<void()> & on_finish_call_callback)
+    void Call::start(const std::function<void(void)> & on_finish_call_callback)
     {
         auto runner_function = [this, on_finish_call_callback]
         {
@@ -1074,12 +1084,13 @@ namespace
         });
 
         /// Set callbacks to execute function input().
-        query_context->setInputInitializer([this] (ContextPtr context, const ColumnsDescription &, const Block & header)
+        query_context->setInputInitializer([this] (ContextPtr context, const StoragePtr & input_storage)
         {
             if (context != query_context)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected context in Input initializer");
             input_function_is_used = true;
-            initializePipeline(header);
+            auto metadata_snapshot = input_storage->getInMemoryMetadataPtr(context, false);
+            initializePipeline(metadata_snapshot->getSampleBlock());
         });
 
         query_context->setInputBlocksReaderCallback([this](ContextPtr context) -> Block
@@ -1307,12 +1318,8 @@ namespace
                         return std::make_shared<EmptySink>(header);
                     });
 
-                    auto external_table_pipeline = QueryPipelineBuilder::getPipeline(std::move(cur_pipeline));
-                    external_table_pipeline.setNumThreads(1);
-                    external_table_pipeline.setConcurrencyControl(false);
-                    external_table_pipeline.disableReadProgress();
-                    CompletedPipelineExecutor executor(external_table_pipeline);
-                    executor.execute();
+                    auto executor = cur_pipeline.execute();
+                    executor->execute(1, false);
                 }
             }
 

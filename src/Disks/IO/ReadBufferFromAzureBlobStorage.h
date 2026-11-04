@@ -69,8 +69,6 @@ public:
 
     std::optional<RemoteFileMetadata> getRemoteFileMetadata() const override;
 
-    void setIOSchedulingSettings(const IOSchedulingSettings & io_scheduling) override { read_settings.io_scheduling = io_scheduling; }
-
     size_t readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & progress_callback) const override;
 
     bool supportsReadAt() override { return true; }
@@ -85,6 +83,9 @@ public:
 private:
     void initialize(size_t attempt);
     void setMetadataFromResponse(const Azure::Storage::Blobs::Models::DownloadBlobDetails & details, size_t blob_size) const;
+
+    /// Creates the client on first use. Thread-safe.
+    const AzureBlobStorage::BlobClient & getBlobClient() const;
 
     /// The offset just past the last byte that the current download is allowed to deliver.
     /// `reported_length` is the length of the response body as reported by the remote endpoint,
@@ -103,9 +104,6 @@ private:
     /// Turns the `412 Precondition Failed` that the `If-Match` condition produces into
     /// `AZURE_OBJECT_CHANGED_DURING_READ`, which is never retried.
     void rethrowIfGenerationChanged(const Azure::Core::RequestFailedException & e) const;
-
-    /// Creates the client on first use. Thread-safe.
-    const AzureBlobStorage::BlobClient & getBlobClient() const;
 
     std::unique_ptr<Azure::Core::IO::BodyStream> data_stream;
     ContainerClientPtr blob_container_client;
@@ -140,8 +138,6 @@ private:
 
     off_t offset = 0;
     size_t total_size{};
-    /// The size of the whole blob from the `Content-Range` of the last download response.
-    size_t blob_size_from_response = 0;
     bool initialized = false;
     char * data_ptr;
     size_t data_capacity;

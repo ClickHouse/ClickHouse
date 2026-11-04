@@ -44,9 +44,6 @@ struct TemporaryDataMetrics
     std::optional<ProfileEvents::Event> bytes_compressed = {};
     std::optional<ProfileEvents::Event> bytes_uncompressed = {};
     std::optional<ProfileEvents::Event> num_files = {};
-
-    /// Name of the operator that owns this temporary data
-    std::string_view spilled_to_disk_operator = {};
 };
 
 struct TemporaryDataOnDiskSettings
@@ -114,9 +111,6 @@ public:
 
     /// Currently used amount of temporary data on disk in bytes (compressed) for this scope.
     size_t currentCompressedSize() const { return stat.compressed_size.load(std::memory_order_relaxed); }
-
-    /// Cumulative compressed bytes written by this scope and its children, including deleted files.
-    size_t getSpilledBytes() const { return spilled_bytes.load(std::memory_order_relaxed); }
 protected:
     friend class TemporaryDataBuffer;
 
@@ -127,7 +121,6 @@ protected:
     TemporaryFileProvider file_provider;
 
     StatAtomic stat;
-    std::atomic<size_t> spilled_bytes{0};
     const TemporaryDataOnDiskSettings settings;
 };
 
@@ -231,13 +224,7 @@ public:
     void cancelImpl() noexcept override;
 
     std::unique_ptr<ReadBuffer> read();
-    std::unique_ptr<SeekableReadBuffer> readRaw(size_t buffer_size = DBMS_DEFAULT_BUFFER_SIZE);
-
-    /// Puts the data written so far into separate compressed blocks and returns the position
-    /// in the file from which the data written after this call can be read with `readFromPosition`.
-    size_t startNewBlock();
-    /// Reads the data from `position` returned by `startNewBlock`, finishes writing if needed.
-    std::unique_ptr<ReadBuffer> readFromPosition(size_t position);
+    std::unique_ptr<SeekableReadBuffer> readRaw();
 
     CompressedWriteBuffer & getCompressedWriteBuffer();
 
@@ -258,8 +245,6 @@ private:
 
     Stat stat;
     TemporaryDataMetrics metrics;
-
-    bool reported_spilled_to_disk = false;
 };
 
 

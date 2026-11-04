@@ -55,18 +55,6 @@ def get_local_base_path(catalog_name: str) -> str:
     return f"/var/lib/clickhouse/user_files/lakehouses/{catalog_name}"
 
 
-def get_warehouse_uri(cluster, catalog_name: str, storage: TableStorage) -> str:
-    """The `spark.sql.warehouse.dir` a session for this catalog and storage is given."""
-    if storage == TableStorage.S3:
-        return f"s3a://{cluster.minio_bucket}/{catalog_name}"
-    if storage == TableStorage.Azure:
-        return (
-            f"wasb://{cluster.azure_container_name}@{cluster.azurite_account}"
-            f".blob.core.windows.net/{catalog_name}"
-        )
-    return f"file://{get_local_base_path(catalog_name)}"
-
-
 spark_properties = {
     "spark.databricks.delta.checkLatestSchemaOnRead": true_false_lambda,
     "spark.databricks.delta.merge.optimizeInsertOnlyMerge.enabled": true_false_lambda,
@@ -499,7 +487,7 @@ logger.jetty.level = warn
 
                 builder.config(
                     f"spark.sql.catalog.{catalog_name}.uri",
-                    f"thrift://{cluster.get_instance_ip('hive')}:{cluster.hms_catalog_port}",
+                    f"thrift://0.0.0.0:{cluster.hms_catalog_port}",
                 )
                 if storage == TableStorage.S3:
                     builder.config(
@@ -687,10 +675,13 @@ logger.jetty.level = warn
                     )
 
                 if catalog == LakeCatalogs.NoCatalog:
-                    warehouse = get_warehouse_uri(cluster, catalog_name, storage)
-                    builder.config("spark.sql.warehouse.dir", warehouse)
                     builder.config(
-                        f"spark.sql.catalog.{catalog_name}.warehouse", warehouse
+                        "spark.sql.warehouse.dir",
+                        f"s3a://{cluster.minio_bucket}/{catalog_name}",
+                    )
+                    builder.config(
+                        f"spark.sql.catalog.{catalog_name}.warehouse",
+                        f"s3a://{cluster.minio_bucket}/{catalog_name}",
                     )
             elif storage == TableStorage.Azure:
                 # For Azurite local emulation
@@ -710,10 +701,13 @@ logger.jetty.level = warn
                 builder.config("spark.hadoop.fs.azure.always.use.https", "false")
                 builder.config("spark.hadoop.fs.azure.ssl.enabled", "false")
 
-                warehouse = get_warehouse_uri(cluster, catalog_name, storage)
-                builder.config("spark.sql.warehouse.dir", warehouse)
                 builder.config(
-                    f"spark.sql.catalog.{catalog_name}.warehouse", warehouse
+                    "spark.sql.warehouse.dir",
+                    f"wasb://{cluster.azure_container_name}@{cluster.azurite_account}.blob.core.windows.net/{catalog_name}",
+                )
+                builder.config(
+                    f"spark.sql.catalog.{catalog_name}.warehouse",
+                    f"wasb://{cluster.azure_container_name}@{cluster.azurite_account}.blob.core.windows.net/{catalog_name}",
                 )
             elif storage == TableStorage.Local:
                 os.makedirs(get_local_base_path(catalog_name), exist_ok=True)
@@ -721,10 +715,13 @@ logger.jetty.level = warn
                 builder.config(
                     "spark.hadoop.fs.file.impl", "org.apache.hadoop.fs.LocalFileSystem"
                 )
-                warehouse = get_warehouse_uri(cluster, catalog_name, storage)
-                builder.config("spark.sql.warehouse.dir", warehouse)
                 builder.config(
-                    f"spark.sql.catalog.{catalog_name}.warehouse", warehouse
+                    "spark.sql.warehouse.dir",
+                    f"file://{get_local_base_path(catalog_name)}",
+                )
+                builder.config(
+                    f"spark.sql.catalog.{catalog_name}.warehouse",
+                    f"file://{get_local_base_path(catalog_name)}",
                 )
             else:
                 raise Exception("Unknown storage")
@@ -837,7 +834,7 @@ logger.jetty.level = warn
                 params.update(
                     {
                         "type": "hive",
-                        "uri": f"thrift://{cluster.get_instance_ip('hive')}:{cluster.hms_catalog_port}",
+                        "uri": f"thrift://0.0.0.0:{cluster.hms_catalog_port}",
                         "client.region": "us-east-1",
                     }
                 )
@@ -868,7 +865,7 @@ logger.jetty.level = warn
                 params.update(
                     {
                         "type": "hive",
-                        "uri": f"thrift://{cluster.get_instance_ip('hive')}:{cluster.hms_catalog_port}",
+                        "uri": f"thrift://0.0.0.0:{cluster.hms_catalog_port}",
                     }
                 )
             else:
@@ -980,16 +977,6 @@ logger.jetty.level = warn
             catalog_impl = self.catalogs[catalog_name].catalog_impl
             self.catalogs_lock.release()
 
-        # No-catalog DeltaLake tables all share `spark_catalog`, whose `test` database is
-        # created once and whose Hive LOCATION then pins the first table's storage. Name the
-        # location explicitly so Spark writes where the ClickHouse engine points.
-        next_location = None
-        if catalog_type == LakeCatalogs.NoCatalog and next_lake == LakeFormat.DeltaLake:
-            next_location = (
-                f"{get_warehouse_uri(cluster, catalog_name, next_storage)}"
-                f"/test.db/{data['table_name']}"
-            )
-
         next_sql, next_table = next_table_generator.generate_create_table_ddl(
             catalog_name,
             data["database_name"],
@@ -999,7 +986,6 @@ logger.jetty.level = warn
             data["deterministic"] > 0,
             next_storage,
             catalog_type,
-            next_location,
         )
         with self.spark_lock:
             next_session = self.get_next_session(

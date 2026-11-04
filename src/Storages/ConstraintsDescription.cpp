@@ -1,6 +1,5 @@
 #include <Storages/ConstraintsDescription.h>
 
-#include <Common/quoteString.h>
 #include <Core/Block.h>
 #include <Interpreters/ComparisonGraph.h>
 #include <Interpreters/ExpressionActions.h>
@@ -15,7 +14,6 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSubquery.h>
-#include <Interpreters/ExpressionContainsArrayJoin.h>
 
 #include <Core/Defines.h>
 
@@ -31,7 +29,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int INCORRECT_QUERY;
 }
 
 String ConstraintsDescription::toString() const
@@ -87,23 +84,10 @@ ASTs ConstraintsDescription::filterConstraints(ConstraintType selection) const
     return res;
 }
 
-ASTs ConstraintsDescription::filterConstraintsForOptimization() const
-{
-    ASTs res;
-    for (const auto & constraint : filterConstraints(ConstraintsDescription::ConstraintType::ALWAYS_TRUE))
-    {
-        const auto & declaration = constraint->as<const ASTConstraintDeclaration &>();
-        if (declaration.expr && expressionContainsArrayJoin(*declaration.expr))
-            continue;
-        res.push_back(constraint);
-    }
-    return res;
-}
-
 std::vector<std::vector<CNFQueryAtomicFormula>> ConstraintsDescription::buildConstraintData() const
 {
     std::vector<std::vector<CNFQueryAtomicFormula>> constraint_data;
-    for (const auto & constraint : filterConstraintsForOptimization())
+    for (const auto & constraint : filterConstraints(ConstraintsDescription::ConstraintType::ALWAYS_TRUE))
     {
         const auto cnf = TreeCNFConverter::toCNF(constraint->as<ASTConstraintDeclaration>()->expr)
             .pullNotOutFunctions(); /// TODO: move prepare stage to ConstraintsDescription
@@ -117,7 +101,7 @@ std::vector<std::vector<CNFQueryAtomicFormula>> ConstraintsDescription::buildCon
 std::vector<CNFQueryAtomicFormula> ConstraintsDescription::getAtomicConstraintData() const
 {
     std::vector<CNFQueryAtomicFormula> constraint_data;
-    for (const auto & constraint : filterConstraintsForOptimization())
+    for (const auto & constraint : filterConstraints(ConstraintsDescription::ConstraintType::ALWAYS_TRUE))
     {
         const auto cnf = TreeCNFConverter::toCNF(constraint->as<ASTConstraintDeclaration>()->expr)
              .pullNotOutFunctions();
@@ -141,17 +125,12 @@ std::unique_ptr<ComparisonGraph<ASTPtr>> ConstraintsDescription::buildGraph() co
     {
         CNFQueryAtomicFormula atom{atomic_formula.negative, atomic_formula.ast->clone()};
         pushNotIn(atom);
-
-        /// `pushNotIn` does not always manage to remove the negation: `NOT (x < c)` is not `x >= c` when
-        /// `x` can be a `NaN`, so an ordered comparison keeps its `NOT`. The comparison graph stores plain
-        /// relations and has nowhere to put the negation, so such an atom is left out of it - taking it in
-        /// as if it were positive would state the opposite of what the constraint says.
-        if (atom.negative)
-            continue;
-
         auto * func = atom.ast->as<ASTFunction>();
         if (func && relations.contains(func->name))
+        {
+            chassert(!atom.negative);
             constraints_for_graph.push_back(atom.ast);
+        }
     }
 
     return std::make_unique<ComparisonGraph<ASTPtr>>(constraints_for_graph);
@@ -188,30 +167,6 @@ ConstraintsExpressions ConstraintsDescription::getExpressions(const DB::ContextP
         }
     }
     return res;
-}
-
-void ConstraintsDescription::checkExpressionsPreserveRowCount() const
-{
-    for (const auto & constraint : constraints)
-    {
-        const auto & declaration = constraint->as<const ASTConstraintDeclaration &>();
-        if (declaration.expr && expressionContainsArrayJoin(*declaration.expr))
-            throw Exception(ErrorCodes::INCORRECT_QUERY,
-                "Constraint {} cannot contain arrayJoin, because it changes the number of rows",
-                backQuote(declaration.name));
-    }
-}
-
-void ConstraintsDescription::checkNamesAreUnique() const
-{
-    NameSet names;
-    for (const auto & constraint : constraints)
-    {
-        const auto & declaration = constraint->as<const ASTConstraintDeclaration &>();
-        if (!names.insert(declaration.name).second)
-            throw Exception(ErrorCodes::INCORRECT_QUERY,
-                "Constraint {} is declared more than once", backQuote(declaration.name));
-    }
 }
 
 const ComparisonGraph<ASTPtr> & ConstraintsDescription::getGraph() const
@@ -253,7 +208,7 @@ ConstraintsDescription::QueryTreeData ConstraintsDescription::getQueryTreeData(c
 
     QueryAnalysisPass pass(table_node);
 
-    for (const auto & constraint : filterConstraintsForOptimization())
+    for (const auto & constraint : filterConstraints(ConstraintsDescription::ConstraintType::ALWAYS_TRUE))
     {
         auto expr = constraint->as<ASTConstraintDeclaration>()->expr->ptr();
         // Wrap the scalar expression with a function call "equals(SELECT..., 1)".
@@ -303,14 +258,12 @@ ConstraintsDescription::QueryTreeData ConstraintsDescription::getQueryTreeData(c
             Analyzer::CNFAtomicFormula atom{atomic_formula.negative, atomic_formula.node_with_hash.node->clone()};
             atom = Analyzer::CNF::pushNotIntoFunction(atom, context);
 
-            /// See the same check in `buildGraph`: an ordered comparison over an argument that can be a
-            /// `NaN` keeps its negation, which the comparison graph cannot represent.
-            if (atom.negative)
-                continue;
-
             auto * function_node = atom.node_with_hash.node->as<FunctionNode>();
             if (function_node && relations.contains(function_node->getFunctionName()))
+            {
+                chassert(!atom.negative);
                 constraints_for_graph.push_back(atom.node_with_hash.node);
+            }
         }
         data.graph = std::make_unique<ComparisonGraph<QueryTreeNodePtr>>(constraints_for_graph, context);
     }

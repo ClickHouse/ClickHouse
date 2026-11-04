@@ -8,7 +8,7 @@
       ]
     },
     {
-      "group": "Интеграции с языками программирования",
+      "group": "Интеграции для языков программирования",
       "pages": [
         "ru/chdb/install/index",
         "ru/chdb/install/python",

@@ -8,6 +8,7 @@
 -- only the matching key subcolumn, so the alias path was orders of magnitude slower.
 
 SET explain_query_plan_default = 'legacy';
+SET enable_analyzer = 1;
 SET optimize_functions_to_subcolumns = 1;
 
 DROP TABLE IF EXISTS t_alias_map;
@@ -231,7 +232,7 @@ ENGINE = MergeTree ORDER BY id;
 
 INSERT INTO t_alias_nullable (id, n) VALUES (1, 'a'), (2, NULL), (3, 'b');
 
-SELECT '-- isNull(n_alias) rewrites to not(not(n.null))';
+SELECT '-- isNull(n_alias) rewrites to n.null';
 SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT isNull(n_alias) FROM t_alias_nullable) WHERE explain LIKE '%n.null%';
 
 SELECT '-- isNotNull(n_chain) rewrites to not(n.null) through chain';

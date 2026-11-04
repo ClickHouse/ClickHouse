@@ -136,14 +136,9 @@ class ResilientSparkSession:
         The reset is conditional: a live gateway must be reused, otherwise the
         still-running JVM is orphaned and a needless one is launched.
         """
-        if SparkContext._gateway is not None:
-            if not _gateway_is_live():
-                logging.warning("Cached py4j gateway is dead, discarding it")
-                _reset_pyspark_class_state()
-            elif SparkContext._active_spark_context is None:
-                # Hadoop caches FileSystems JVM-wide by scheme and authority only, so a reused JVM
-                # would hand this session the previous session's `s3a://<bucket>` bound to its endpoint.
-                SparkContext._gateway.jvm.org.apache.hadoop.fs.FileSystem.closeAll()
+        if SparkContext._gateway is not None and not _gateway_is_live():
+            logging.warning("Cached py4j gateway is dead, discarding it")
+            _reset_pyspark_class_state()
         return self._create()
 
     def _restart(self):

@@ -157,39 +157,35 @@ void StorageMySQL::readImpl(
     size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names);
-    const auto local_only_columns = getLocalOnlyColumnNames(storage_snapshot->metadata);
     String query;
     if (remote_table_or_query.isQuery())
     {
         /// The user-provided query is passed to MySQL as is; no outer predicate is pushed down into it, so
         /// reject any outer filter under external_table_strict_query.
-        rejectOuterFilterForQueryBackedExternalSourceIfStrict(
-            query_info, storage_snapshot->metadata->getColumns().getAllPhysical(), context_, getStorageID(), local_only_columns);
+        rejectOuterFilterForQueryBackedExternalSourceIfStrict(query_info, context_);
         query = buildQueryForExternalDatabaseSubquery(remote_table_or_query.getQuery(), column_names, IdentifierQuotingStyle::BackticksMySQL);
     }
     else
-        /// All physical columns are pushdown-eligible: a `MATERIALIZED` column is a column of the remote table
-        /// (its value is written there on `INSERT` and read back from there), so a predicate over it is pushed
-        /// down like one over an ordinary column.
         query = transformQueryForExternalDatabase(
             query_info,
             column_names,
-            storage_snapshot->metadata->getColumns().getAllPhysical(),
+            storage_snapshot->metadata->getColumns().getOrdinary(),
             IdentifierQuotingStyle::BackticksMySQL,
             LiteralEscapingStyle::Regular,
             remote_database_name,
             remote_table_or_query.getTableName(),
-            getStorageID(),
-            context_,
-            {},
-            {},
-            local_only_columns);
+            context_);
     LOG_TRACE(log, "Query: {}", query);
 
     Block sample_block;
     for (const String & column_name : column_names)
     {
         auto column_data = storage_snapshot->metadata->getColumns().getPhysical(column_name);
+
+        WhichDataType which(column_data.type);
+        /// Convert enum to string.
+        if (which.isEnum())
+            column_data.type = std::make_shared<DataTypeString>();
         sample_block.insert({ column_data.type, column_data.name });
     }
 
@@ -207,31 +203,23 @@ class StorageMySQLSink final : public SinkToStorage
 {
 public:
     explicit StorageMySQLSink(
-        std::shared_ptr<const StorageMySQL> storage_,
+        const StorageMySQL & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         const std::string & remote_database_name_,
         const std::string & remote_table_name_,
         const mysqlxx::PoolWithFailover::Entry & entry_,
-        const size_t & mysql_max_rows_to_insert,
-        bool auto_close_)
+        const size_t & mysql_max_rows_to_insert)
         : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
-        , storage{std::move(storage_)}
+        , storage{storage_}
         , metadata_snapshot{metadata_snapshot_}
         , remote_database_name{remote_database_name_}
         , remote_table_name{remote_table_name_}
         , entry{entry_}
         , max_batch_rows{mysql_max_rows_to_insert}
-        , auto_close{auto_close_}
     {
     }
 
     String getName() const override { return "StorageMySQLSink"; }
-
-    void onFinish() override
-    {
-        if (auto_close)
-            entry.disconnect();
-    }
 
     void consume(Chunk & chunk) override
     {
@@ -256,17 +244,17 @@ public:
     void writeBlockData(const Block & block)
     {
         WriteBufferFromOwnString sqlbuf;
-        sqlbuf << (storage->replace_query ? "REPLACE" : "INSERT") << " INTO ";
+        sqlbuf << (storage.replace_query ? "REPLACE" : "INSERT") << " INTO ";
         if (!remote_database_name.empty())
             sqlbuf << backQuoteMySQL(remote_database_name) << ".";
         sqlbuf << backQuoteMySQL(remote_table_name);
         sqlbuf << " (" << dumpNamesWithBackQuote(block) << ") VALUES ";
 
-        auto writer = FormatFactory::instance().getOutputFormat("Values", sqlbuf, metadata_snapshot->getSampleBlock(), storage->getContext());
+        auto writer = FormatFactory::instance().getOutputFormat("Values", sqlbuf, metadata_snapshot->getSampleBlock(), storage.getContext());
         writer->write(block);
 
-        if (!storage->on_duplicate_clause.empty())
-            sqlbuf << " ON DUPLICATE KEY " << storage->on_duplicate_clause;
+        if (!storage.on_duplicate_clause.empty())
+            sqlbuf << " ON DUPLICATE KEY " << storage.on_duplicate_clause;
 
         sqlbuf << ";";
 
@@ -317,18 +305,12 @@ public:
     }
 
 private:
-    /// The sink owns a `mysqlxx::PoolWithFailover::Entry` pointing into the pool that the storage owns,
-    /// so it has to keep the storage alive: a pipeline can outlive its `QueryPipeline` resource holders
-    /// (`BlockIO::onException` releases the pipeline while the executor still owns the processors), and
-    /// the destruction order of the processors is not defined - the sink must not be destroyed after the
-    /// pool it borrows a connection from.
-    std::shared_ptr<const StorageMySQL> storage;
+    const StorageMySQL & storage;
     StorageMetadataPtr metadata_snapshot;
     std::string remote_database_name;
     std::string remote_table_name;
     mysqlxx::PoolWithFailover::Entry entry;
     size_t max_batch_rows;
-    bool auto_close;
 };
 
 
@@ -338,13 +320,12 @@ SinkToStoragePtr StorageMySQL::write(const ASTPtr & /*query*/, const StorageMeta
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot write into a MySQL table representing the result of a query");
 
     return std::make_shared<StorageMySQLSink>(
-        std::static_pointer_cast<const StorageMySQL>(shared_from_this()),
+        *this,
         metadata_snapshot,
         remote_database_name,
         remote_table_or_query.getTableName(),
         pool->get(),
-        local_context->getSettingsRef()[Setting::mysql_max_rows_to_insert],
-        (*mysql_settings)[MySQLSetting::connection_auto_close]);
+        local_context->getSettingsRef()[Setting::mysql_max_rows_to_insert]);
 }
 
 mysqlxx::SSLParams StorageMySQL::getSSLParams(const NamedCollection & named_collection)
@@ -572,8 +553,7 @@ StorageMySQL::Configuration StorageMySQL::getConfiguration(
 
         /// The 3rd argument is either a table name, or a query passed to MySQL as is - `(SELECT ...)` or `query('SELECT ...')`.
         auto maybe_query = tryGetExternalDatabaseQuery(
-            engine_args[2], context_, IdentifierQuotingStyle::BackticksMySQL, LiteralEscapingStyle::Regular,
-            IdentifierQuotingRule::Always);
+            engine_args[2], context_, IdentifierQuotingStyle::BackticksMySQL, LiteralEscapingStyle::Regular);
         for (size_t i = 0; i < engine_args.size(); ++i)
         {
             if (i == 2 && maybe_query)
@@ -662,7 +642,6 @@ void registerStorageMySQL(StorageFactory & factory)
             args.getContext(),
             mysql_settings);
     },
-    mysqlPostgreSQLSecretArguments(4),
     {
         .supports_settings = true,
         .supports_schema_inference = true,
@@ -717,7 +696,7 @@ Arguments also can be passed using [named collections](/concepts/features/config
 
 Simple `WHERE` clauses such as `=, !=, >, >=, <, <=` are executed on the MySQL server.
 
-The rest of the conditions are executed in ClickHouse after the query to MySQL finishes. The `LIMIT` sampling constraint is pushed to MySQL only when it is safe and [external_storage_push_down_limit](/reference/settings/session-settings/external-storage#external_storage_push_down_limit) is enabled; otherwise, it is executed in ClickHouse.
+The rest of the conditions and the `LIMIT` sampling constraint are executed in ClickHouse only after the query to MySQL finishes.
 
 ## TLS/SSL {#tls-ssl}
 
@@ -754,21 +733,13 @@ CREATE TABLE mysql_table ENGINE = MySQL('localhost:3306', 'test', (SELECT a, b F
 CREATE TABLE mysql_table ENGINE = MySQL('localhost:3306', 'test', query('SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0'), 'user', 'password');
 ```
 
-Passing a query is supported starting from version 26.7. ClickHouse wraps the query into `SELECT ... FROM (<query>)` before sending it to MySQL, so it must not end with a semicolon.
-
-With a named collection, pass the query in the `query` key instead of `table`, either in the collection itself or as a key-value argument. `query` and `table` cannot be specified together:
-
-```sql
-CREATE TABLE mysql_table ENGINE = MySQL(mysql_creds, database = 'test', query = 'SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0');
-```
-
 This is useful to push down joins, aggregations or any other processing to MySQL. Such a table is read-only: `INSERT` into it is not allowed. The same syntax is supported by the [`mysql`](/reference/functions/table-functions/mysql) table function.
 
-<Note>
+:::note
 The subquery form `(SELECT ...)` is parsed by ClickHouse and re-serialized in the MySQL dialect (backtick identifier quoting) before being sent to the server. It must therefore be valid ClickHouse SQL. To pass MySQL-specific syntax that ClickHouse does not parse, use the `query('...')` form, whose text is sent to MySQL verbatim.
 
-Any outer `WHERE`, `LIMIT`, aggregation, etc. of the surrounding ClickHouse query is **not** pushed down into the passed query — it is applied in ClickHouse after the full query result is fetched. To restrict the data read from MySQL, put the filter inside the passed query. With [`external_table_strict_query = 1`](/reference/settings/session-settings/external-table#external_table_strict_query) an outer filter on the columns of the table is rejected with an exception instead of being applied locally, because it cannot be pushed into the passed query. The check covers the top-level `WHERE` predicate and each conjunct of a top-level `AND`. A `PREWHERE` on the columns of this table is not a case for this setting: this table engine do not support `PREWHERE`, and such a query is rejected with `ILLEGAL_PREWHERE` regardless of the setting. The check runs only where a filter could be pushed down at all: when this table is the only table of the query, on either side of an `INNER JOIN`, or on the preserving side of an outer join (the left side of a `LEFT JOIN`, the right side of a `RIGHT JOIN`). On the non-preserving side of a `LEFT`/`RIGHT JOIN` and on either side of a `FULL JOIN` nothing is pushed down and nothing is checked, so a filter on the columns of this table is applied locally after the join even in strict mode. Where the check runs, a predicate that references other tables joined in the surrounding query is not pushed down and is excluded from the check, whether it references only the joined side or mixes it with this table inside one non-`AND` expression (for example an `OR`); such a predicate keeps its usual ClickHouse evaluation point (`WHERE` after the join, `PREWHERE` before it) and is not rejected.
-</Note>
+Any outer `WHERE`, `LIMIT`, aggregation, etc. of the surrounding ClickHouse query is **not** pushed down into the passed query — it is applied in ClickHouse after the full query result is fetched. To restrict the data read from MySQL, put the filter inside the passed query. With [`external_table_strict_query = 1`](/reference/settings/session-settings/external-table#external_table_strict_query) an outer filter that cannot be pushed down is rejected with an exception instead of being applied locally.
+:::
 
 Supports multiple replicas that must be listed by `|`. For example:
 
