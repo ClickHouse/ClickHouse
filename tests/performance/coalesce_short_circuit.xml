@@ -1,4 +1,5 @@
-<test>
+<test iceberg="0">
+    <!-- Not on Iceberg tables: `UInt64` widened to `Int64` makes `coalesce` of `Int64` and `UInt64` a `Variant`. -->
     <create_query>
         CREATE TABLE coalesce_short_circuit (n_10 Nullable(UInt64), n_50 Nullable(UInt64), n_100 Nullable(UInt64), s String) ENGINE = Memory
     </create_query>
