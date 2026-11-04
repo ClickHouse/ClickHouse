@@ -633,6 +633,24 @@ def test_wait_view_reports_manual_refresh_lost_with_its_replica(fn3_setup_tables
             node.start_clickhouse()
 
 
+def test_wait_view_reports_refresh_lost_to_clean_restart(fn3_setup_tables):
+    create_sql = CREATE_RMV.render(
+        table_name="test_rmv",
+        refresh_interval="EVERY 1 YEAR",
+        to_clause="tgt1",
+        select_query="SELECT now() + sleepEachRow(1) a FROM numbers(20) SETTINGS max_block_size = 1",
+        on_cluster="default",
+        empty=True,
+    )
+    node.query(create_sql)
+    node.query("SYSTEM REFRESH VIEW test_rmv")
+    get_rmv_info(node, "test_rmv", condition=lambda x: x["status"] == "Running")
+
+    wait = node2.get_query_request("SYSTEM WAIT VIEW test_rmv", timeout=120)
+    node.restart_clickhouse()
+    assert "Refresh failed (on replica 1): shutdown" in wait.get_error()
+
+
 def test_wait_view_on_stopped_replica_ignores_scheduled_failure(fn3_setup_tables):
     # A stopped replica's `SYSTEM WAIT VIEW` that ends on a success must not report the scheduled failure after it, carried
     # by the retry already running. node2's reads fail meanwhile, so that it sees the success and the retry at once.

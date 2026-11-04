@@ -340,7 +340,7 @@ private:
         bool stop_requested = false;
         /// Held back even from `SYSTEM REFRESH VIEW`: an uncoordinated restore until finalized or started, a shutdown for good.
         bool not_ready = false;
-        bool shutdown_requested = false;
+        std::atomic<bool> shutdown_requested = false;
         /// Refreshes are stopped because we got an unexpected error. Can be resumed with SYSTEM START VIEW.
         std::optional<String> unexpected_error;
 

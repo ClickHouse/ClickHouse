@@ -1671,7 +1671,9 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
                                     /*ast*/ nullptr, query_span, stopwatch.elapsedMilliseconds(), /*internal*/ internal, /*log_as_internal*/ internal);
         }
 
-        if (cancelled)
+        if (cancelled && (scheduling.shutdown_requested || view->getContext()->getRefreshSet().refreshesStopped()))
+            out_error_message = "shutdown";
+        else if (cancelled)
             out_error_message = "cancelled";
         else
             out_error_message = getCurrentExceptionMessage(true);
