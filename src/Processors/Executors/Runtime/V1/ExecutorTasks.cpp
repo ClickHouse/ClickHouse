@@ -193,7 +193,7 @@ void ExecutorTasks::tryGetTask(ExecutionThreadContext & context)
     context.wait(finished);
 }
 
-size_t ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, ExecutionThreadContext & context)
+void ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, ExecutionThreadContext & context)
 {
     /// Take local task from queue if has one.
     if (!queue.empty() && !has_fast_tasks.load(std::memory_order_relaxed)
@@ -209,13 +209,14 @@ size_t ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, ExecutionThr
         context.setTask(nullptr);
     }
 
-    if (!queue.empty() || !async_queue.empty())
+    if (queue.empty() && async_queue.empty())
+        return; // No new tasks -- no need for new threads
+
+    size_t requested = 0;
+    SlotAllocationPtr slots;
     {
         std::unique_lock lock(mutex);
 
-        /// Measure the parallelism of the push: how many threads could run the new tasks
-        /// concurrently. Used by `PipelineExecutor` to size the slot-allocation ceiling via
-        /// `ISlotAllocation::setMax` on the pipeline's `cpu_slots` handle.
         const size_t pushed = queue.size() + async_queue.size();
 
 #if defined(OS_LINUX) || defined(OS_DARWIN)
@@ -236,15 +237,60 @@ size_t ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, ExecutionThr
         /// A thread for every pushed task that idle threads can't cover, within the pipeline width.
         /// Computed before `tryWakeUpAnyOtherThreadWithTasks`, which may unlock the mutex.
         const size_t uncovered = pushed - std::min(pushed, threads_queue.size());
-        const size_t requested = std::min(uncovered, widthLeft());
+        requested = std::min(uncovered, widthLeft());
         addThreadsToSpawn(requested);
+        if (requested)
+            slots = cpu_slots;
 
         /// Wake up at least one thread that will wake up other threads if required
         tryWakeUpAnyOtherThreadWithTasks(context, lock);
-
-        return requested;
     }
-    return 0; // No new tasks -- no need for new threads
+
+    /// Not under `mutex`: the allocation takes its own locks.
+    if (slots)
+        growDesiredThreads(*slots, requested);
+}
+
+void ExecutorTasks::initDesiredThreads(bool lazy_allocation, size_t initial_parallel)
+{
+    /// The eager allocation already asks for all the threads.
+    if (!lazy_allocation)
+    {
+        desired_threads.store(num_threads, std::memory_order_relaxed);
+        return;
+    }
+
+    /// The initial tasks are not pushed by `pushTasks`, so ask for threads to run them in parallel here.
+    SlotAllocationPtr slots;
+    {
+        std::lock_guard lock(mutex);
+        slots = cpu_slots;
+    }
+    if (slots && initial_parallel > 1)
+        growDesiredThreads(*slots, initial_parallel - 1);
+}
+
+void ExecutorTasks::growDesiredThreads(ISlotAllocation & slots, size_t threads)
+{
+    size_t current = desired_threads.load(std::memory_order_relaxed);
+    size_t target = 0;
+    do
+    {
+        target = std::min(num_threads, current + threads);
+        if (target <= current)
+            return;
+    } while (!desired_threads.compare_exchange_weak(current, target, std::memory_order_relaxed));
+
+    /// Concurrent callers may reach `setMax` in any order. Repeat until no newer target appeared,
+    /// so the last `setMax` call is never below `desired_threads`.
+    while (true)
+    {
+        slots.setMax(target);
+        const size_t latest = desired_threads.load(std::memory_order_relaxed);
+        if (latest == target)
+            return;
+        target = latest;
+    }
 }
 
 void ExecutorTasks::init(size_t num_threads_, size_t use_threads_, const SlotAllocationPtr & cpu_slots_, bool profile_processors,

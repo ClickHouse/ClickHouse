@@ -58,12 +58,6 @@ private:
     AcquiredSlotPtr single_thread_cpu_slot; // cpu slot for single-thread mode to work using executeUntil()
     std::unique_ptr<ThreadPool> pool;
 
-    /// Pipeline's max thread count (captured from execute(num_threads)).
-    size_t max_pipeline_threads = 1;
-
-    /// Current `setMax` target. Only grows, see `growDesiredThreads`.
-    std::atomic<size_t> desired_threads = 1;
-
     /// Flag that checks that initializeExecution was called.
     bool is_execution_initialized = false;
     /// system.processors_profile_log
@@ -96,8 +90,6 @@ private:
 
     // Methods for CPU scheduling
     SlotAllocationPtr allocateCPU(size_t num_threads, bool concurrency_control, bool lazy_allocation);
-    /// Raise the `setMax` target by `threads`, up to `max_pipeline_threads`.
-    void growDesiredThreads(size_t threads);
     /// Start a thread for `slot` (if any) and for every other granted slot, until `tasks` has no capacity left.
     /// Lock-free: any thread calls it after a task while `tasks` has requested threads.
     void spawnThreads(AcquiredSlotPtr slot);

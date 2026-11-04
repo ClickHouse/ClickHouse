@@ -85,6 +85,12 @@ class ExecutorTasks : public ISpillRequestListener
     /// Add to `threads_to_spawn`, up to `widthLeft`. Requires `mutex`.
     void addThreadsToSpawn(size_t threads);
 
+    /// Current `setMax` target of the CPU slots. Only grows.
+    std::atomic<size_t> desired_threads = 1;
+
+    /// Raise the `setMax` target by `threads`, up to `num_threads`. Must not be called under `mutex`.
+    void growDesiredThreads(ISlotAllocation & slots, size_t threads);
+
 public:
     void notifySpillRequested() override;
     bool takeSpillNotification()
@@ -122,9 +128,13 @@ public:
     // Local task optimization: the first regular task could be placed directly into thread to be executed next.
     // For async tasks proessor->schedule() is called.
     // If non-local tasks were added, wake up one thread to process them.
-    // Returns the number of additional threads requested for the new tasks that idle threads can't cover,
-    // clamped to the pipeline width not taken by started threads. They are added to `threads_to_spawn`.
-    size_t pushTasks(Queue & queue, Queue & async_queue, ExecutionThreadContext & context);
+    // Requests a thread for every new task that idle threads can't cover, within the pipeline width not taken
+    // by started threads: adds them to `threads_to_spawn` and raises the `setMax` target of the CPU slots by as much.
+    void pushTasks(Queue & queue, Queue & async_queue, ExecutionThreadContext & context);
+
+    /// Set the initial `setMax` target: the pipeline width for the eager allocation,
+    /// enough threads for the `initial_parallel` initial tasks for the lazy one.
+    void initDesiredThreads(bool lazy_allocation, size_t initial_parallel);
 
     void init(size_t num_threads_, size_t use_threads_, const SlotAllocationPtr & cpu_slots_, bool profile_processors,
         bool trace_processors, ReadProgressCallback * callback, StepProfiler * step_profiler, QueryStatus * process_list_element);
