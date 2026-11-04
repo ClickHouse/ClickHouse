@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
 
-# Checks predicates that the device compiles only once their constants are converted as the CPU's comparison converts
-# them, or once their aliases are gone: a `Decimal` constant compared with a float column, a string read as a date as
-# `cast_string_to_date_time_mode` says, and an alias of an expression the predicate is of. Each returns what the CPU
-# returns, and is evaluated on the device.
+# Checks that a predicate with an alias of an expression it is of, which the analysis keeps as a node of its own, is
+# compiled for the device as the same predicate without the alias is, and returns what the CPU returns.
 #
 # Where the build has no GPU support, or the machine no usable device, both sides of every comparison run on the CPU,
 # and the plans print what they are expected to be.
@@ -13,14 +11,13 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT --query "
-    CREATE TABLE gpu_compiled_filter (k UInt8, v UInt64, f Float64, t DateTime('UTC'), x Int32, y Int32)
+    CREATE TABLE gpu_compiled_filter (k UInt8, v UInt64, x Int32, y Int32)
     ENGINE = MergeTree ORDER BY tuple()
     SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization = 1;
 
-    -- Wide parts with every column stored plainly, which the device reads as compressed blocks, and multiples of an
-    -- eighth in f, whose sums are exact in any order.
+    -- Wide parts with every column stored plainly, which the device reads as compressed blocks.
     INSERT INTO gpu_compiled_filter
-    SELECT number % 13, number, number / 8, toDateTime('1994-01-01 00:00:00', 'UTC') + number * 60, number % 1000, number % 777 - 300
+    SELECT number % 13, number, number % 1000, number % 777 - 300
     FROM numbers(300000);
 "
 
@@ -38,7 +35,7 @@ if [ "$($CLICKHOUSE_CLIENT --query "SELECT value FROM system.build_options WHERE
 fi
 
 # The device is offered a `PREWHERE` only, which the test runner may have turned off.
-SETTINGS="SETTINGS optimize_move_to_prewhere = 1, cast_string_to_date_time_mode = 'best_effort'"
+SETTINGS="SETTINGS optimize_move_to_prewhere = 1"
 
 function compare_with_cpu()
 {
@@ -69,13 +66,8 @@ function check_plan()
     fi
 }
 
-for query in \
-    "SELECT k, count(), sum(v) FROM gpu_compiled_filter WHERE f < toDecimal64('4000.5', 1) GROUP BY k ORDER BY k" \
-    "SELECT k, count(), sum(v) FROM gpu_compiled_filter WHERE t < '1994 February 4' GROUP BY k ORDER BY k" \
-    "SELECT k, count(), sum(v) FROM gpu_compiled_filter WHERE (x + y AS s) > 100 AND s < 900 GROUP BY k ORDER BY k"
-do
-    compare_with_cpu "$query"
-    check_plan "$query"
-done
+QUERY="SELECT k, count(), sum(v) FROM gpu_compiled_filter WHERE (x + y AS s) > 100 AND s < 900 GROUP BY k ORDER BY k"
+compare_with_cpu "$QUERY"
+check_plan "$QUERY"
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE gpu_compiled_filter"

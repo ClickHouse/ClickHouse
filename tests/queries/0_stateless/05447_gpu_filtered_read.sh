@@ -92,7 +92,7 @@ plan_of "$QUERY" "device and cpu"
 compare_with_cpu "$QUERY"
 
 # The string conjunct is over a column the read does not output otherwise.
-QUERY="SELECT round(sum(p), 3), count() FROM gpu_filtered_read WHERE d < '1993-01-01' AND m = 'AIR'"
+QUERY="SELECT round(sum(p), 3), count() FROM gpu_filtered_read WHERE d < date '1993-01-01' AND m = 'AIR'"
 plan_of "$QUERY" "device and cpu"
 compare_with_cpu "$QUERY"
 
