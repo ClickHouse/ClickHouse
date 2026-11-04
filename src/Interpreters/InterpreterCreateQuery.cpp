@@ -1008,6 +1008,10 @@ void applyForceReverseOrder(ASTStorage * storage)
         /// `tuple` function. Make the rewritten key look like the parsed one, otherwise it is formatted
         /// differently, and comparisons of key definitions (e.g. in `CLONE AS`) fail.
         func->setIsOperator(false);
+        /// A grouped key such as `ORDER BY ((a, b))` or `ORDER BY (tuple(a, b))` keeps the `parenthesized` flag on
+        /// the tuple, which would be formatted as `(tuple(a DESC, b DESC))`. `DESC` is not allowed inside such
+        /// an expression, so the stored metadata could not be parsed back.
+        func->setParenthesized(false);
     }
     else
     {
