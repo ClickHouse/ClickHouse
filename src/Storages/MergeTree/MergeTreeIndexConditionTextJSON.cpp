@@ -890,8 +890,9 @@ MergeTreeIndexConditionText::tryMatchJSONPathValuesNode(const RPNBuilderTreeNode
                 const auto result_type = removeNullable(node_dag->result_type);
                 const auto * low_cardinality_type
                     = typeid_cast<const DataTypeLowCardinality *>(source_type.get());
+                /// `equals` is too weak: `UInt8` equals `Bool`, but `CAST(2, 'Bool')` changes the value.
                 if (low_cardinality_type
-                    && low_cardinality_type->getDictionaryType()->equals(*result_type))
+                    && low_cardinality_type->getDictionaryType()->getName() == result_type->getName())
                     return tryMatchJSONPathValuesNode(argument);
             }
         }
