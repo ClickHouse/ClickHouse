@@ -332,6 +332,21 @@ def test_mysql_dictionary_host_filter(start_cluster):
     node5.query("DROP DICTIONARY IF EXISTS default.test_mysql_host_filter")
 
 
+def test_mysql_database_host_filter(start_cluster):
+    # node5 denies all hosts; the check runs before any connection attempt.
+    assert "not allowed" in node5.query_and_get_error(
+        "CREATE DATABASE test_mysql_db_filter ENGINE = MySQL('10.0.0.1:3306', 'db', 'u', 'p')"
+    )
+    node5.query(
+        "CREATE NAMED COLLECTION IF NOT EXISTS test_mysql_db_filter_nc AS "
+        "host = '10.0.0.1', port = 3306, database = 'db', user = 'u', password = 'p'"
+    )
+    assert "not allowed" in node5.query_and_get_error(
+        "CREATE DATABASE test_mysql_db_filter ENGINE = MySQL(test_mysql_db_filter_nc)"
+    )
+    node5.query("DROP NAMED COLLECTION test_mysql_db_filter_nc")
+
+
 def test_mysql_dictionary_replica_host_filter(start_cluster):
     """MySQL dictionary source with REPLICA(...) syntax should respect RemoteHostFilter."""
     # Covers the replica branch: if (config.has(settings_config_prefix + ".replica"))
