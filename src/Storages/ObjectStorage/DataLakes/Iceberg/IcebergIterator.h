@@ -72,6 +72,8 @@ private:
     /// Filled under `deletes_mutex` and never mutated after `deletes_ready`, so `next` may read them
     /// unguarded once it has gone through `ensureDeletesReady`.
     std::vector<Iceberg::ProcessedManifestFileEntryPtr> position_deletes_files;
+    /// `position_deletes_files` grouped by the data file path both bounds name.
+    Iceberg::PositionDeletesByDataFile position_deletes_by_data_file;
     std::vector<Iceberg::ProcessedManifestFileEntryPtr> equality_deletes_files;
     std::mutex deletes_mutex;
     std::condition_variable delete_manifest_parsed;

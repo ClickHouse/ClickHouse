@@ -206,6 +206,7 @@ void IcebergIterator::ensureDeletesReady()
             LOG_DEBUG(logger, "Taken {} position deletes file and {} equality deletes files in iceberg iterator", position_deletes_files.size(), equality_deletes_files.size());
             std::sort(equality_deletes_files.begin(), equality_deletes_files.end());
             std::sort(position_deletes_files.begin(), position_deletes_files.end());
+            position_deletes_by_data_file = Iceberg::groupPositionDeletesByDataFile(position_deletes_files);
             deletes_ready = true;
             delete_manifest_parsed.notify_all();
             break;
@@ -395,46 +396,65 @@ ObjectInfoPtr IcebergIterator::next(size_t)
                 persistent_components.path_resolver.resolve(manifest_file_entry->parsed_entry->file_path_key),
                 table_state_snapshot->schema_id,
                 Iceberg::getIdentityPartitionColumnValues(*manifest_file_entry, *persistent_components.schema_processor));
-        for (const auto & position_delete :
-             defineDeletesSpan(manifest_file_entry, position_deletes_files, /* is_equality_delete */ false, logger))
+        const auto & data_file_path = object_info->info.data_object_file_path_key;
+        const size_t suitable_position_deletes
+            = defineDeletesSpan(manifest_file_entry, position_deletes_files, /* is_equality_delete */ false, logger).size();
+        size_t applied_position_deletes = 0;
+        auto apply_position_delete = [&](const Iceberg::ProcessedManifestFileEntryPtr & position_delete)
         {
-            const auto & data_file_path = object_info->info.data_object_file_path_key;
             const auto & lower = position_delete->parsed_entry->lower_reference_data_file_path;
             const auto & upper = position_delete->parsed_entry->upper_reference_data_file_path;
-            bool can_contain_data_file_deletes
-                = (!lower.has_value() || *lower <= data_file_path)
-                && (!upper.has_value() || *upper >= data_file_path);
-            /// Skip position deletes that do not match the data file path.
-            if (!can_contain_data_file_deletes)
-            {
-                ProfileEvents::increment(ProfileEvents::IcebergMinMaxPrunedDeleteFiles);
-                LOG_TEST(
-                    logger,
-                    "Skipping position delete file `{}` for data file `{}` because position delete has out of bounds reference data file "
-                    "bounds: "
-                    "(lower bound: `{}`, upper bound: `{}`)",
-                    position_delete->parsed_entry->file_path_key,
-                    data_file_path,
-                    lower.has_value() ? lower->serialize() : "[no lower bound]",
-                    upper.has_value() ? upper->serialize() : "[no upper bound]");
-            }
+            LOG_TEST(
+                logger,
+                "Processing position delete file `{}` for data file `{}` with reference data file bounds: "
+                "(lower bound: `{}`, upper bound: `{}`)",
+                position_delete->parsed_entry->file_path_key,
+                data_file_path,
+                lower.has_value() ? lower->serialize() : "[no lower bound]",
+                upper.has_value() ? upper->serialize() : "[no upper bound]");
+            const auto resolved_delete_path = persistent_components.path_resolver.resolve(position_delete->parsed_entry->file_path_key);
+            if (position_delete->parsed_entry->isDeletionVector())
+                object_info->addDeletionVector(position_delete, resolved_delete_path);
             else
+                object_info->addPositionDeleteFile(position_delete, resolved_delete_path);
+            ++applied_position_deletes;
+        };
+        if (suitable_position_deletes != 0)
+        {
+            /// Both bounds are this data file path, so no bounds check is needed.
+            if (auto it = position_deletes_by_data_file.single_data_file.find(data_file_path);
+                it != position_deletes_by_data_file.single_data_file.end())
             {
-                ProfileEvents::increment(ProfileEvents::IcebergMinMaxNonPrunedDeleteFiles);
-                LOG_TEST(
-                    logger,
-                    "Processing position delete file `{}` for data file `{}` with reference data file bounds: "
-                    "(lower bound: `{}`, upper bound: `{}`)",
-                    position_delete->parsed_entry->file_path_key,
-                    data_file_path,
-                    lower.has_value() ? lower->serialize() : "[no lower bound]",
-                    upper.has_value() ? upper->serialize() : "[no upper bound]");
-                const auto resolved_delete_path = persistent_components.path_resolver.resolve(position_delete->parsed_entry->file_path_key);
-                if (position_delete->parsed_entry->isDeletionVector())
-                    object_info->addDeletionVector(position_delete, resolved_delete_path);
-                else
-                    object_info->addPositionDeleteFile(position_delete, resolved_delete_path);
+                for (const auto & position_delete : defineDeletesSpan(manifest_file_entry, it->second, /* is_equality_delete */ false, logger))
+                    apply_position_delete(position_delete);
             }
+            for (const auto & position_delete :
+                 defineDeletesSpan(manifest_file_entry, position_deletes_by_data_file.other, /* is_equality_delete */ false, logger))
+            {
+                const auto & lower = position_delete->parsed_entry->lower_reference_data_file_path;
+                const auto & upper = position_delete->parsed_entry->upper_reference_data_file_path;
+                bool can_contain_data_file_deletes
+                    = (!lower.has_value() || *lower <= data_file_path)
+                    && (!upper.has_value() || *upper >= data_file_path);
+                /// Skip position deletes that do not match the data file path.
+                if (!can_contain_data_file_deletes)
+                {
+                    LOG_TEST(
+                        logger,
+                        "Skipping position delete file `{}` for data file `{}` because position delete has out of bounds reference data file "
+                        "bounds: "
+                        "(lower bound: `{}`, upper bound: `{}`)",
+                        position_delete->parsed_entry->file_path_key,
+                        data_file_path,
+                        lower.has_value() ? lower->serialize() : "[no lower bound]",
+                        upper.has_value() ? upper->serialize() : "[no upper bound]");
+                    continue;
+                }
+                apply_position_delete(position_delete);
+            }
+            /// Includes the delete files of other data files, which the lookup never visits.
+            ProfileEvents::increment(ProfileEvents::IcebergMinMaxPrunedDeleteFiles, suitable_position_deletes - applied_position_deletes);
+            ProfileEvents::increment(ProfileEvents::IcebergMinMaxNonPrunedDeleteFiles, applied_position_deletes);
         }
 
         if (object_info->info.hasPositionDeletes())
