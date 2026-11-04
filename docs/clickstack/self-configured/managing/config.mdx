@@ -26,9 +26,9 @@ The UI relies on the user defining a source for each of the Observability data t
 - `Metrics`
 - `Sessions`
 
-This configuration can be performed inside the application from `Team Settings -> Sources`, as shown below for logs:
+Open **Team Settings → Data → Sources** to configure a source. Select **Configure Optional Fields** to access additional settings, as highlighted below for logs:
 
-<Image img="/images/use-cases/observability/hyperdx-25.webp" alt="ClickStack UI Source configuration" size="md"/>
+<Image img="/images/clickstack/source-settings-optional-fields.png" alt="Logs source settings with Configure Optional Fields highlighted" size="md"/>
 
 Each of these sources require at least one table specified on creation and a set of columns which allow the UI to query the data.
 
@@ -193,15 +193,15 @@ Each attribute is configured with the following settings:
 
 For example, this trace source has been configured with a Highlighted Attribute and a Highlighted Trace Attribute:
 
-<Image img="/images/use-cases/observability/hyperdx-highlighted-attributes-config.webp" alt="Highlighted Attributes configuration" size="md"/>
+<Image img="/images/clickstack/highlighted-attributes-config.png" alt="Highlighted Attributes and Highlighted Trace Attributes configuration" size="md"/>
 
 These attributes are displayed in the side panel after clicking on a log or span:
 
-<Image img="/images/use-cases/observability/hyperdx-highlighted-attributes.webp" alt="Highlighted Attributes" size="md"/>
+<Image img="/images/clickstack/highlighted-attributes-trace.png" alt="Trace view showing DB Latency on the selected span and the clickpy_link above the waterfall" size="lg"/>
 
 Clicking on an attribute provides options for using the attribute as a search value. If the optional Lucene expression is provided in the attribute configuration, then the Lucene expression will be used for the search instead of the SQL expression.
 
-<Image img="/images/use-cases/observability/hyperdx-highlighted-attributes-search.webp" alt="Highlighted Attributes Search" size="md"/>
+<Image img="/images/clickstack/highlighted-attributes-search.png" alt="DB Latency attribute menu showing Add to Search and Search This Value" size="md"/>
 
 ### Correlated sources {#correlated-sources}
 
@@ -216,7 +216,7 @@ Setting these correlations enables several features. For example, the UI can ren
 
 For example, below is the Logs source configured with correlated sources:
 
-<Image img="/images/use-cases/observability/hyperdx-26.webp" alt="ClickStack UI Source correlated" size="md"/>
+<Image img="/images/clickstack/correlated-sources.png" alt="Correlated metric and trace sources with TraceId and SpanId expressions" size="md"/>
 
 ## OpenTelemetry collector {#otel-collector}
 

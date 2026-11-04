@@ -12,7 +12,6 @@ import { Image } from "/snippets/components/Image.jsx";
 
 import { TrackedLink } from "/snippets/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
-import JSONSupport from '/snippets/_json_support.mdx';
 import ExampleOTelConfig from '/snippets/clickstack/_config_example_otel.mdx';
 
 import SetupManagedIngestion from '/snippets/clickstack/_setup_managed_ingestion.mdx';
@@ -31,7 +30,7 @@ As well as reducing infrastructure management, this deployment pattern ensures a
 
 - Automatic scaling of compute independent of storage
 - Low-cost and effectively unlimited retention based on object storage
-- The ability to [independently isolate read and write workloads](/clickstack/managing/isolating-read-write) with Warehouses.
+- The ability to [independently isolate read and write workloads](/clickstack/self-configured/managing/isolating-read-write) with Warehouses.
 - Integrated authentication
 - Automated backups
 - Security and compliance features
@@ -92,7 +91,7 @@ From the ClickHouse Cloud landing page, select the service for which you wish to
 <Warning>
 **Estimating resources**
 
-This guide assumes you have provisioned sufficient resources to handle the volume of observability data you plan to ingest and query with ClickStack. To estimate the required resources, refer to the [Estimating Resources](/clickstack/managing/estimating-resources) guide. 
+This guide assumes you have provisioned sufficient resources to handle the volume of observability data you plan to ingest and query with ClickStack. To estimate the required resources, refer to the [Estimating Resources](/clickstack/self-configured/managing/estimating-resources) guide.
 
 If your ClickHouse service already hosts existing workloads, such as real-time application analytics, we recommend creating a child service using [ClickHouse Cloud's warehouses feature](/products/cloud/features/infrastructure/warehouses) to isolate the observability workload. This ensures your existing applications aren't disrupted, while keeping the datasets accessible from both services.
 </Warning>
@@ -108,7 +107,7 @@ If any OpenTelemetry tables exist already in your service, these will be auto-de
 <Info>
 **Auto-detection of datasources**
 
-Auto-detection relies on the standard OpenTelemetry table schema provided by the ClickStack distribution of the OpenTelemetry collector. Sources are created for the database with the most complete set of tables. Additional tables can be added as [separate data sources](/clickstack/managing/config#datasource-settings) if needed.
+Auto-detection relies on the standard OpenTelemetry table schema provided by the ClickStack distribution of the OpenTelemetry collector. Sources are created for the database with the most complete set of tables. Additional tables can be added as [separate data sources](/clickstack/self-configured/managing/config#datasource-settings) if needed.
 </Info>
 
 If auto detection is successful, you should be directed to the search view where you can immediately begin exploring your data. 
@@ -155,7 +154,7 @@ To get started quickly, copy and run the Docker command shown.
 <Info>
 **Deploying to production**
 
-While this command uses the `default` user to connect Self-managed ClickHouse Observability, you should create a dedicated user when [going to production](/clickstack/managing/production#create-a-database-ingestion-user-managed) and modifying your configuration.
+While this command uses the `default` user to connect Self-managed ClickHouse Observability, you should create a dedicated user when [going to production](/clickstack/self-configured/managing/production#create-a-database-ingestion-user-managed) and modifying your configuration.
 </Info>
 
 Running this single command starts the ClickStack collector with OTLP endpoints exposed on ports 4317 (gRPC) and 4318 (HTTP). If you already have OpenTelemetry instrumentation and agents, you can immediately begin sending telemetry data to these endpoints. 
@@ -176,15 +175,15 @@ For this purpose, you're provided with an example OpenTelemetry Collector config
 
 <Image img="/images/clickstack/advanced-otel-collector-clickstack-ui.webp" size="lg" alt='Advanced OTel collector source'/>
 
-For further details on configuring OpenTelemetry collectors, see ["Ingesting with OpenTelemetry."](/clickstack/ingesting-data/opentelemetry)
+For further details on configuring OpenTelemetry collectors, see ["Ingesting with OpenTelemetry."](/clickstack/self-configured/ingesting-data/collector)
 
 ### Start ingestion (optional) {#start-ingestion-existing}
 
 If you have existing applications or infrastructure to instrument with OpenTelemetry, navigate to the relevant guides linked from "Connect an application". 
 
-To instrument your applications to collect traces and logs, use the [supported language SDKs](/clickstack/ingesting-data/sdks/index) which send data to your OpenTelemetry Collector acting as a gateway for ingestion into Self-managed ClickHouse Observability.
+To instrument your applications to collect traces and logs, follow the self-managed instructions in the [language SDK guides](/clickstack/observability/ingesting-data/sdks/index) which send data to your OpenTelemetry Collector acting as a gateway for ingestion into Self-managed ClickHouse Observability.
 
-Logs can be [collected using OpenTelemetry Collectors](/clickstack/integration-examples/host-logs) running in agent mode, forwarding data to the same collector. For Kubernetes monitoring, follow the [dedicated guide](/clickstack/integration-examples/kubernetes). For other integrations, see our [quickstart guides](/clickstack/integration-examples/index).
+Logs can be [collected using OpenTelemetry Collectors](/clickstack/observability/integration-examples/host-logs#self-managed) running in agent mode, forwarding data to the same collector. For Kubernetes monitoring, follow the [dedicated guide](/clickstack/observability/integration-examples/kubernetes#self-managed). For other integrations, see our [quickstart guides](/clickstack/observability/integration-examples/index).
 
 <br/>
 </Tab>
@@ -238,13 +237,13 @@ ORDER BY (toStartOfMinute(time_local), status, remote_addr);
 
 Your table must align with the output schema produced by Vector. Adjust the schema as needed for your data, following the recommended [schema best practices](/concepts/best-practices/select-data-type). 
 
-We strongly recommend understanding how [Primary keys](/concepts/core-concepts/primary-indexes) work in ClickHouse and choosing an ordering key based on your access patterns. See the [ClickStack-specific](/clickstack/managing/performance-tuning#choosing-a-primary-key) guidance on choosing a primary key.
+We strongly recommend understanding how [Primary keys](/concepts/core-concepts/primary-indexes) work in ClickHouse and choosing an ordering key based on your access patterns. See the [ClickStack-specific](/clickstack/self-configured/managing/performance-tuning#choosing-a-primary-key) guidance on choosing a primary key.
 
 Once the table exists, copy the configuration snippet shown. Adjust the input to consume your existing pipelines, as well as the target table and database if required. Credentials should be pre-populated.
 
 <Image img="/images/clickstack/vector-config-clickstack-ui.webp" size="lg" alt='Vector configuration'/>
 
-For more examples of ingesting data with Vector, see ["Ingesting with Vector"](/clickstack/ingesting-data/vector) or the [Vector ClickHouse sink documentation](https://vector.dev/docs/reference/configuration/sinks/clickhouse/) for advanced options.
+For more examples of ingesting data with Vector, see ["Ingesting with Vector"](/clickstack/observability/ingesting-data/vector#self-managed) or the [Vector ClickHouse sink documentation](https://vector.dev/docs/reference/configuration/sinks/clickhouse/) for advanced options.
 
 <br/>
 </Tab>
@@ -278,7 +277,7 @@ We also recommend updating the `Default SELECT` to explicitly define which colum
 
 In the example above, a `Body` column doesn't exist in the data. Instead, it is defined using a SQL expression that reconstructs an Nginx log line from the available fields.
 
-For other possible options, see the [configuration reference](/clickstack/managing/config#hyperdx).
+For other possible options, see the [configuration reference](/clickstack/self-configured/managing/config#hyperdx).
 
 Once the source is configured, click "Save" and begin exploring your data.
 
@@ -339,7 +338,7 @@ Once launched, ClickStack UI will automatically bind to this read-only service.
 
 Note that dashboards, saved searches, alerts and sources are scoped to the service ClickStack was launched from, so anything saved on another service in the warehouse isn't available here and has to be recreated. Sources using the standard OpenTelemetry schema are auto-detected, so search over that data works immediately - custom or manually configured sources aren't, and must be set up again.
 
-For the full topology - including where to point ingestion, which service to run DDL against, and how alerts behave - see ["Isolating read and write workloads"](/clickstack/managing/isolating-read-write).
+For the full topology - including where to point ingestion, which service to run DDL against, and how alerts behave - see ["Isolating read and write workloads"](/clickstack/self-configured/managing/isolating-read-write).
 
 ### Adding more data sources {#adding-data-sources}
 
@@ -349,28 +348,24 @@ The following describes how users can add additional data sources beyond those t
 
 #### Using OpenTelemetry schemas {#using-otel-schemas}
 
-If you're using an OTel collector to create the database and tables within ClickHouse, retain all default values within the create source model, completing the `Table` field with the value `otel_logs` - to create a logs source. All other settings should be auto-detected, allowing you to click `Save New Source`.
+ClickStack automatically detects tables that use the standard OpenTelemetry schema and creates the corresponding data sources for logs, traces, and metrics. No confirmation dialog or manual source creation is required.
 
-<Image img="/images/use-cases/observability/hyperdx_cloud_datasource.webp" alt="ClickHouse Cloud ClickStack UI Datasource" size="lg"/>
+To review or adjust an automatically created source, open **Team Settings → Data → Sources** and expand the source. The example below shows the logs source for the `otel_logs` table.
 
-To create sources for traces and OTel metrics, you can select `Create New Source` from the top menu.
-
-<Image img="/images/use-cases/observability/hyperdx_create_new_source.webp" alt="ClickStack create new source" size="lg"/>
-
-From here, select the required source type followed by the appropriate table e.g. for traces, select the table `otel_traces`. All settings should be auto-detected.
-
-<Image img="/images/use-cases/observability/hyperdx_create_trace_datasource.webp" alt="ClickStack create trace source" size="lg"/>
+<Image img="/images/clickstack/otel-logs-source-settings.png" alt="Automatically created OpenTelemetry logs source settings for the otel_logs table" size="lg"/>
 
 <Info>
 **Correlating sources**
 
-Note that different data sources in ClickStack—such as logs and traces—can be correlated with each other. To enable this, additional configuration is required on each source. For example, in the logs source, you can specify a corresponding trace source, and vice versa in the traces source. See ["Correlated sources"](/clickstack/managing/config#correlated-sources) for further details.
+Note that different data sources in ClickStack—such as logs and traces—can be correlated with each other. To enable this, additional configuration is required on each source. For example, in the logs source, you can specify a corresponding trace source, and vice versa in the traces source. See ["Correlated sources"](/clickstack/self-configured/managing/config#correlated-sources) for further details.
 </Info>
 
 #### Using custom schemas {#using-custom-schemas}
 
-Users looking to connect ClickStack to an existing service with data can complete the database and table settings as required. Settings will be auto-detected if tables conform to the OpenTelemetry schemas for ClickHouse. 
+For custom tables, configure a data source using the [data source settings reference](/clickstack/self-configured/managing/config#datasource-settings).
 
-If using your own schema, we recommend creating a Logs source ensuring the required fields are specified - see ["Log source settings"](/clickstack/managing/config#logs) for further details.
+## Schema choice: Map vs JSON {#schema-choice-map-vs-json}
 
-<JSONSupport/>
+ClickStack stores attributes as `Map(LowCardinality(String), String)` columns by default. This is the recommended schema for observability workloads. Combined with [bucketed map serialization](/reference/data-types/map#bucketed-map-serialization) and text indexes on map keys and values, it provides selective lookups without the per-key ingest overhead of dynamic JSON subcolumns.
+
+A `JSON`-typed schema is available in beta for evaluation on workloads with a small, stable attribute key-set. It is **not recommended** as the default. See [Map vs JSON type](/clickstack/self-configured/ingesting-data/schema/map-vs-json) for the full comparison and the env vars required to enable JSON support.
