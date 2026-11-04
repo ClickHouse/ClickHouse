@@ -150,9 +150,8 @@ private:
     UInt64 list_objects_batch_size TSA_GUARDED_BY(mutex);
     bool enable_hash_ring_filtering TSA_GUARDED_BY(mutex);
     CommitSettings commit_settings TSA_GUARDED_BY(mutex);
-    /// The after_processing action itself is handled the old way for compatibility:
-    /// it needs to be available in Keeper metadata for older server versions.
-    /// Therefore it is not in AfterProcessingSettings.
+    /// The `after_processing` action is also kept in the Keeper metadata for older server versions, but tables
+    /// sharing a `keeper_path` share that metadata, so a table applies its own action to the files it reads.
     AfterProcessingSettings after_processing_settings TSA_GUARDED_BY(mutex);
     bool commit_on_select TSA_GUARDED_BY(mutex);
     bool deduplication_v2 TSA_GUARDED_BY(mutex);
@@ -220,8 +219,7 @@ private:
     /// Apply after_processing action to successfully processed files.
     void postProcess(
         const StoredObjects & successful_objects,
-        UnorderedSetWithMemoryTracking<String> & post_processing_failed_paths,
-        const ObjectStorageQueueMetadata & metadata) const;
+        UnorderedSetWithMemoryTracking<String> & post_processing_failed_paths) const;
     /// Commit processed files to keeper as either successful or unsuccessful.
     void commit(
         bool insert_succeeded,

@@ -372,3 +372,70 @@ $CLICKHOUSE_CLIENT -q "
     DROP ROW POLICY IF EXISTS p_${db} ON ${db}.t;
     DROP USER IF EXISTS ${user_alter}, ${user_create};
 "
+
+# Tables that share a `keeper_path` share the Keeper metadata, but each table applies its own `after_processing`
+# to the objects it reads with its own credentials: an `ALTER` of one table must not change what another one does.
+shared_keeper_path="${keeper_path}_shared"
+shared_url="http://localhost:11111/test/${db}_shared"
+
+function shared_files()
+{
+    $CLICKHOUSE_CLIENT -q "SELECT arraySort(groupArray(_file)) FROM s3('${shared_url}_$1/*.csv', 'clickhouse', 'clickhouse', 'CSV', 'x UInt8')"
+}
+
+function shared_put()
+{
+    $CLICKHOUSE_CLIENT -q "INSERT INTO FUNCTION s3('${shared_url}_$1/$2.csv', 'clickhouse', 'clickhouse', 'CSV', 'x UInt8') SELECT $3"
+}
+
+function shared_actions()
+{
+    $CLICKHOUSE_CLIENT -q "
+        SELECT table, value FROM system.s3_queue_settings
+        WHERE database = '${db}' AND table IN ('shared_v', 'shared_o') AND name = 'after_processing' ORDER BY table
+    "
+}
+
+for t in v o; do
+    $CLICKHOUSE_CLIENT -q "
+        CREATE TABLE ${db}.shared_$t (x UInt8)
+        ENGINE = S3Queue('${shared_url}_$t/*.csv', 'clickhouse', 'clickhouse', 'CSV')
+        SETTINGS mode = 'unordered', keeper_path = '${shared_keeper_path}', after_processing = 'delete', commit_on_select = 1,
+            polling_max_timeout_ms = 500
+    "
+done
+
+$CLICKHOUSE_CLIENT -q "ALTER TABLE ${db}.shared_o MODIFY SETTING after_processing = 'keep'"
+shared_actions
+
+# A direct `SELECT` commits its files and applies the action of the table it reads.
+shared_put v 1 1
+shared_put o 1 2
+$CLICKHOUSE_CLIENT -q "SELECT x FROM ${db}.shared_v SETTINGS stream_like_engine_allow_direct_select = 1"
+$CLICKHOUSE_CLIENT -q "SELECT x FROM ${db}.shared_o SETTINGS stream_like_engine_allow_direct_select = 1"
+shared_files v
+shared_files o
+
+# A materialized view commits in the background, where the action is applied by the streaming task.
+$CLICKHOUSE_CLIENT -q "
+    CREATE TABLE ${db}.shared_dst (x UInt8) ENGINE = MergeTree ORDER BY x;
+    CREATE MATERIALIZED VIEW ${db}.shared_mv TO ${db}.shared_dst AS SELECT x FROM ${db}.shared_v;
+"
+shared_put v 2 3
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH OBJECT STORAGE QUEUE ${db}.shared_v PATH '${db}_shared_v/2.csv'"
+shared_files v
+
+$CLICKHOUSE_CLIENT -q "ALTER TABLE ${db}.shared_v RESET SETTING after_processing"
+$CLICKHOUSE_CLIENT -q "ALTER TABLE ${db}.shared_o MODIFY SETTING after_processing = 'delete'"
+shared_actions
+$CLICKHOUSE_CLIENT -q "SELECT JSONExtractString(value, 'after_processing') FROM system.zookeeper WHERE path = '${shared_keeper_path}' AND name = 'metadata'"
+shared_put v 3 4
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH OBJECT STORAGE QUEUE ${db}.shared_v PATH '${db}_shared_v/3.csv'"
+shared_files v
+
+$CLICKHOUSE_CLIENT -q "
+    DROP TABLE ${db}.shared_mv SYNC;
+    DROP TABLE ${db}.shared_dst SYNC;
+    DROP TABLE ${db}.shared_v SYNC;
+    DROP TABLE ${db}.shared_o SYNC;
+"
