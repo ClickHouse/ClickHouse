@@ -366,7 +366,7 @@ void TableZnodeInfo::checkPrefixForDropRecoverableFromPath(const StorageID & tab
             "DROP TABLE. Remove the {{database}} and {{table}} macros from the default_replica_path template, or "
             "move the table to an Atomic database before converting it",
             quoteString(full_path),
-            quoteString(String(context->getServerSettings()[ServerSetting::default_replica_path])),
+            quoteString(context->getServerSettings()[ServerSetting::default_replica_path].value),
             quoteString(path_prefix_for_drop));
     }
 
@@ -378,7 +378,7 @@ void TableZnodeInfo::checkPrefixForDropRecoverableFromPath(const StorageID & tab
         "DROP TABLE. Change the default_replica_path template, or move the table to an Atomic database "
         "before converting it",
         quoteString(full_path),
-        quoteString(String(context->getServerSettings()[ServerSetting::default_replica_path])),
+        quoteString(context->getServerSettings()[ServerSetting::default_replica_path].value),
         quoteString(path_prefix_for_drop));
 }
 
