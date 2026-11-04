@@ -598,6 +598,8 @@ def main():
         changed_files = info.get_changed_files()
         # The `arm_binary` jobs replacing the LLVM coverage jobs in pull requests must run in full
         # when a CI job script changes: `filter_job.py` lets them through for that very reason.
+        # The plan-based parallel replicas jobs too: a change to the job script can break how they
+        # install and start the server with the plan-based profile.
         is_coverage_replacement_with_ci_script_changes = False
         if info.pr_number > 0 and any(
             Targeting.is_ci_job_script(f) for f in changed_files or []
@@ -606,7 +608,9 @@ def main():
             from ci.defs.job_configs import JobConfigs
 
             is_coverage_replacement_with_ci_script_changes = info.job_name in [
-                j.name for j in JobConfigs.functional_tests_arm_binary_coverage_replacement_pr_jobs
+                j.name
+                for j in JobConfigs.functional_tests_arm_binary_coverage_replacement_pr_jobs
+                + JobConfigs.functional_tests_arm_binary_plan_based_parallel_replicas_jobs
             ]
         if changed_files:
             # A changed test data submodule is owned by the tests that read it:

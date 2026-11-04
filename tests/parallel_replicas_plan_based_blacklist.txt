@@ -61,22 +61,6 @@
     A replica throws `CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN` on `hasToken(CAST(s, 'String'), ...)`: the text index does not skip the NULL granule there
 05340_text_index_preprocessor_cast_drop_nullable
 
-    Plan-based also ships the subquery of a plain `IN`, so `system.query_log` lists one more query
-03622_explain_indexes_distributed_index_analysis_in
-
-    The `Dynamic` and `JSON` storage layout (shared variant, dynamic and shared data paths) differs after reading through replicas; the values are the same
-03151_dynamic_type_scale_max_types
-05020_json_max_dynamic_subcolumns_in_parsing_squashing
-
-    The CI profile enables the experimental `parallel_replicas_plan_based`, and the test lists experimental settings enabled by default
-03413_experimental_settings_cannot_be_enabled_by_default
-
-    `blockSize()` depends on how the replicas split the ranges
-00443_preferred_block_size_bytes
-
-    `groupArray` without `ORDER BY` depends on the order in which the replicas read
-01201_read_single_thread_in_order
-
     A replica throws `NOT_FOUND_COLUMN_IN_BLOCK` for `_parent_part_offset` when reading a projection
 03546_merge_tree_projection_shared_snapshot
 05427_projection_where_order_by_columns
@@ -89,21 +73,12 @@
 05175_time_series_table_functions_parallel_replicas
 05293_promql_constant_scalar_arithmetic
 
-    A window function over rows with equal `ORDER BY` keys depends on the order in which the replicas read
-02346_non_negative_derivative
-
     The test greps EXPLAIN, and ReadFromParallelReplicas prints the whole shipped fragment in its description
-02998_projection_after_attach_partition
-03460_projection_part_filtering_and_introspection
 05141_hypothetical_projection_verdict_rules
 05175_hypothetical_projection_part_offset
 
     The test checks EXPLAIN output, which parallel replicas wrap differently; the optimization itself still applies
 02725_agg_projection_respect_PK
-03275_subcolumns_in_primary_key.gen
-03277_json_subcolumns_in_primary_key.gen
-03278_json_subcolumns_in_skipping_indexes.gen
-03460_normal_projection_index
 03892_grouping_sets_force_aggregation_in_order
 05076_hypothetical_projection_estimate
 05176_hypothetical_projection_estimate_part_layout
@@ -111,15 +86,9 @@
     The test asserts read counters, ProfileEvents or query_log, which differ when the work is split differently
 01045_order_by_pk_special_storages
 01283_max_threads_simple_query_optimization
-01508_partition_pruning_long_1
-01508_partition_pruning_long_2
 01913_exact_rows_before_limit
-02151_hash_table_sizes_stats
 02465_limit_trivial_max_rows_to_read
 02784_parallel_replicas_automatic_decision_join
-02877_optimize_read_in_order_from_view
-03143_prewhere_profile_events
-03174_exact_rows_before_aggregation
 04340_autopr_input_bytes_estimation_join
 04836_merge_table_parallel_replicas_duplicate_announcement
 05175_autopr_lazy_read_statistics
