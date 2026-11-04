@@ -24,3 +24,6 @@ S9 hasAllTokens	[2]
 S9 hasPhrase	[2]
 S10 subcolumn	1
 S10 arrayElement	1
+S10 control prunes	1
+S10 subcolumn prunes	0
+S10 arrayElement prunes	0

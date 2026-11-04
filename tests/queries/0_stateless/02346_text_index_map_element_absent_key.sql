@@ -104,8 +104,12 @@ ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
 INSERT INTO t_cast VALUES (1, map('k', 'abcdef')), (2, map('k', 'hello'));
 
 -- S10: the cast throws on the NULL default, but every row holds the key, so the query must not fail.
+-- The index is not used for it, while the same pattern without the cast prunes.
 SELECT 'S10 subcolumn', count() FROM t_cast WHERE CAST(m['k'], 'String') LIKE '%hel%';
 SELECT 'S10 arrayElement', count() FROM t_cast WHERE CAST(m['k'], 'String') LIKE '%hel%' SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT 'S10 control prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_cast WHERE m['k'] LIKE '%hel%') WHERE explain LIKE '%Granules: 1/2%';
+SELECT 'S10 subcolumn prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_cast WHERE CAST(m['k'], 'String') LIKE '%hel%') WHERE explain LIKE '%Granules: 1/2%';
+SELECT 'S10 arrayElement prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_cast WHERE CAST(m['k'], 'String') LIKE '%hel%' SETTINGS optimize_functions_to_subcolumns = 0) WHERE explain LIKE '%Granules: 1/2%';
 
 DROP TABLE t_fs;
 DROP TABLE t_str;
