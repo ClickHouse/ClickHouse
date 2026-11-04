@@ -1,14 +1,56 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block_fwd.h>
+#include <Core/SortDescription.h>
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
 
+#include <atomic>
+#include <memory>
 #include <queue>
 
 namespace DB
 {
 class Block;
+
+/// Shared by the `BufferChunksTransform`s in front of one read-in-order merge with a limit.
+/// Inputs of such a merge usually do not overlap: when the first row of one input sorts before the first row of
+/// another, all its rows sort before all rows of the other.
+class ReadInOrderReadAheadTracker
+{
+public:
+    ReadInOrderReadAheadTracker(size_t num_inputs, const Block & header, const SortDescription & description_);
+
+    /// Called once per input, with its first chunk that has rows.
+    void setFirstRow(size_t input, const Chunk & chunk);
+    void setProducedRows(size_t input, size_t rows);
+
+    /// Comparison results of `input` against the other inputs, owned by the transform of `input`.
+    struct InputsBefore
+    {
+        VectorWithMemoryTracking<UInt8> compared;
+        VectorWithMemoryTracking<size_t> inputs;
+    };
+
+    /// Rows produced by the inputs whose first row is known and sorts strictly before the first row of `input`.
+    /// Requires `setFirstRow(input, ...)`.
+    size_t rowsProducedBefore(size_t input, InputsBefore & inputs_before) const;
+
+private:
+    struct InputState
+    {
+        std::atomic<size_t> produced{0};
+        std::atomic<bool> has_first_row{false};
+        Columns first_row; /// One row per sort column; written before `has_first_row`, read-only afterwards.
+    };
+
+    int compareFirstRows(size_t lhs, size_t rhs) const;
+
+    const SortDescription description;
+    VectorWithMemoryTracking<size_t> sort_column_positions;
+    VectorWithMemoryTracking<InputState> inputs; /// Sized in the constructor, never resized.
+};
 
 /// Transform that buffers chunks from the input
 /// up to the certain limit  and pushes chunks to
@@ -23,7 +65,9 @@ public:
         SharedHeader header_,
         size_t max_rows_to_buffer_,
         size_t max_bytes_to_buffer_,
-        size_t limit_);
+        size_t limit_,
+        std::shared_ptr<ReadInOrderReadAheadTracker> read_ahead_tracker_ = nullptr,
+        size_t input_index_ = 0);
 
     Status prepare() override;
     String getName() const override { return "BufferChunks"; }
@@ -53,6 +97,15 @@ private:
     /// `input.setNeeded()` of `prepare` is never reached. This flag makes the invariant
     /// explicit instead of relying on the wake-up pattern of the downstream processor.
     bool wait_for_demand_after_virtual_row = false;
+
+    std::shared_ptr<ReadInOrderReadAheadTracker> read_ahead_tracker;
+    size_t input_index = 0;
+    ReadInOrderReadAheadTracker::InputsBefore inputs_before;
+    bool first_row_published = false;
+    /// The output port holds a chunk the merge has not taken yet.
+    bool output_has_our_chunk = false;
+    /// Chunks the merge took and then asked for more.
+    size_t chunks_taken_by_merge = 0;
 };
 
 }
