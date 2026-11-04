@@ -19,9 +19,9 @@ public:
     std::expected<void, PreformattedMessage> canUsePartInMerges(const MergeTreeDataPartPtr & part) const;
     PartsRange getPatchesToApplyOnMerge(PartsRangeView range) const override;
 
-    /// The lowest data version above `data_version` of a patch part of `partition_id` that `applied`
-    /// does not contain, or `nullopt`. The merged part must record a version below it: at or above,
-    /// the patch would count as applied to rows it never reached.
+    /// The lowest version above `data_version` at which a patch part of `partition_id` that `applied`
+    /// does not contain applies, or `nullopt`. The merged part must record a version below it: at or
+    /// above, the patch would count as applied to rows it never reached.
     std::optional<Int64> firstPatchNotAppliedAfter(
         const String & partition_id, Int64 data_version, const MergeTreeData::DataPartsVector & applied) const;
 
@@ -32,6 +32,8 @@ private:
     const StorageMergeTree & storage;
     std::unique_lock<std::mutex> & merge_mutate_lock;
     PatchInfosByPartition patches_by_partition;
+    /// The same patch parts, for the versions their indexes hold.
+    std::unordered_map<String, MergeTreeData::DataPartsVector> patch_parts_by_partition;
     /// Data versions of the regular parts. Filled only if there are patch parts in the table.
     /// Used to check that a merge of patch parts does not span the data version of an existing part.
     DataVersionsByPartition data_versions_by_partition;

@@ -19,25 +19,25 @@ namespace FailPoints
     extern const char mt_optimize_pause_after_reservation_snapshot[];
 }
 
-static std::vector<MergeTreePartInfo> getPatchPartInfos(const StorageMergeTree & storage, const MergeTreeTransactionPtr & tx)
+static MergeTreeData::DataPartsVector getVisiblePatchParts(const StorageMergeTree & storage, const MergeTreeTransactionPtr & tx)
 {
     auto patches_vector = storage.getPatchPartsVectorForInternalUsage();
+    if (!tx)
+        return patches_vector;
 
-    std::vector<MergeTreePartInfo> patch_infos;
-    patch_infos.reserve(patches_vector.size());
+    MergeTreeData::DataPartsVector visible;
+    visible.reserve(patches_vector.size());
 
     for (const auto & patch : patches_vector)
     {
         /// A patch part of a transaction that has not committed yet is already active. Applying it
         /// on a merge would put an update that can still roll back into the merged part, so require
         /// the same visibility that 'MergeTreePartsCollector' requires of the parts being merged.
-        if (tx && !patch->version->isVisible(tx->getSnapshot(), Tx::EmptyTID))
-            continue;
-
-        patch_infos.push_back(patch->info);
+        if (patch->version->isVisible(tx->getSnapshot(), Tx::EmptyTID))
+            visible.push_back(patch);
     }
 
-    return patch_infos;
+    return visible;
 }
 
 /// The same set of parts that 'MergeTreePartsCollector::collectInitial' works with. Inside a transaction
@@ -114,7 +114,15 @@ MergeTreeMergePredicate::MergeTreeMergePredicate(
     /// A patch above the snapshot is an attached one (`updateLightweight` allocates its block under the
     /// same counter, `ATTACH PART` does not); it is left for read time, like a patch above a pending update.
     const Int64 max_patch_version = reservations.minUpdateBlock().value_or(reservations.lastAllocatedBlock() + 1);
-    patches_by_partition = getPatchPartsByPartition(getPatchPartInfos(storage, tx_), max_patch_version);
+    for (const auto & patch : getVisiblePatchParts(storage, tx_))
+    {
+        if (patch->info.getDataVersion() < max_patch_version)
+        {
+            const auto & partition_id = patch->info.getOriginalPartitionId();
+            patches_by_partition[partition_id].push_back(patch->info);
+            patch_parts_by_partition[partition_id].push_back(patch);
+        }
+    }
 }
 
 std::expected<void, PreformattedMessage>
@@ -250,18 +258,20 @@ PartsRange MergeTreeMergePredicate::getPatchesToApplyOnMerge(PartsRangeView rang
 std::optional<Int64> MergeTreeMergePredicate::firstPatchNotAppliedAfter(
     const String & partition_id, Int64 data_version, const MergeTreeData::DataPartsVector & applied) const
 {
-    auto it = patches_by_partition.find(partition_id);
-    if (it == patches_by_partition.end())
+    auto it = patch_parts_by_partition.find(partition_id);
+    if (it == patch_parts_by_partition.end())
         return std::nullopt;
 
     std::optional<Int64> result;
     for (const auto & patch : it->second)
     {
-        Int64 patch_version = patch.getDataVersion();
+        /// Readers apply a patch at the versions in its index, not at the one in its name: `ATTACH PART` gives
+        /// the part a fresh block number and drops the version from the name, while the index keeps it.
+        Int64 patch_version = patch->getPatchPartIndex().getMinDataVersion();
         if (patch_version <= data_version || (result && patch_version >= *result))
             continue;
 
-        bool is_applied = std::ranges::any_of(applied, [&](const auto & part) { return part->info.getDataVersion() == patch_version; });
+        bool is_applied = std::ranges::any_of(applied, [&](const auto & part) { return part->name == patch->name; });
         if (!is_applied)
             result = patch_version;
     }
