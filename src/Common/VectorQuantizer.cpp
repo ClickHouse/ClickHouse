@@ -136,6 +136,11 @@ void applyRandomProjection(const std::vector<float> & sign_flips, const T * x, s
                 HadamardTransform::kroneckerNeon(work, kron_blocks, kron_m, hm);
             else
                 HadamardTransform::kroneckerScalar<float>(work, kron_blocks, kron_m, hm);
+#elif defined(__AVX2__)
+            if (is_optimized)
+                HadamardTransform::kroneckerAvx2(work, kron_blocks, kron_m, hm);
+            else
+                HadamardTransform::kroneckerScalar<float>(work, kron_blocks, kron_m, hm);
 #else
             HadamardTransform::kroneckerScalar<float>(work, kron_blocks, kron_m, hm);
 #endif

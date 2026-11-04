@@ -134,6 +134,12 @@ ClickHouse 提供三种读取开放表格式的方式：表函数、表引擎，
     ```
 
     查询语法完全一致——只有 `FROM` 子句会发生变化。无论使用哪个数据源，所有 ClickHouse SQL 函数、JOIN 和聚合的用法都相同。
+
+    <Note>
+      **为符合条件的查询添加计算资源**
+
+      按需计算 (On-Demand Compute) 目前处于私有预览阶段，适用于针对受支持的 Apache Iceberg 和 Delta Lake 数据执行的符合条件的 `SELECT` 查询。它会通过你现有的 service 和端点临时分配额外的 ClickHouse 工作线程，而无需调整 service 规格。有关适用条件和限制，请参阅[按需计算文档](/zh/products/cloud/features/infrastructure/on-demand-compute)。
+    </Note>
   </Step>
 
   <Step title="将部分数据加载到 ClickHouse" id="load-data">
@@ -231,9 +237,7 @@ ClickHouse 提供三种读取开放表格式的方式：表函数、表引擎，
   </Step>
 </Steps>
 
-<div id="next-steps">
-  ## 后续步骤
-</div>
+## 后续步骤 {#next-steps}
 
 现在你已经了解了完整工作流程，接下来可以深入了解各个方面：
 

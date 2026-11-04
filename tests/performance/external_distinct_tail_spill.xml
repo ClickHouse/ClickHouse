@@ -1,0 +1,17 @@
+<test>
+    <!-- Explicit thresholds exercise tail spill budgeting with narrow keys, wide rows, and ordered output. -->
+    <settings>
+        <max_threads>16</max_threads>
+        <max_memory_usage>4294967296</max_memory_usage>
+        <max_bytes_ratio_before_external_distinct>0</max_bytes_ratio_before_external_distinct>
+        <optimize_distinct_in_order>0</optimize_distinct_in_order>
+        <allow_preliminary_distinct_abandoning>1</allow_preliminary_distinct_abandoning>
+        <prefer_external_sort_block_bytes>1048576</prefer_external_sort_block_bytes>
+    </settings>
+    <query>SELECT count() FROM (SELECT DISTINCT cityHash64(number) AS k FROM numbers(4000000)) SETTINGS max_block_size = 4096, max_bytes_before_external_distinct = 33554432</query>
+    <query>SELECT count() FROM (SELECT DISTINCT cityHash64(number) AS k FROM numbers(7000000)) SETTINGS max_block_size = 4096, max_bytes_before_external_distinct = 67108864</query>
+    <query>SELECT count(), sum(length(payload)) FROM (SELECT DISTINCT cityHash64(number) AS k, repeat('x', if(number % 8 = 0, 8192, 32)) AS payload FROM numbers(524288)) SETTINGS max_block_size = 65536, max_bytes_before_external_distinct = 67108864</query>
+    <query>SELECT count(), min(k), max(k) FROM (SELECT DISTINCT number AS k FROM numbers(4000000) ORDER BY k + 1 DESC LIMIT 100000) SETTINGS max_block_size = 65409, max_bytes_before_external_distinct = 33554432</query>
+    <query>SELECT count(), sum(length(payload)) FROM (SELECT DISTINCT cityHash64(number) AS k, repeat(toString(number % 10), 128) AS payload FROM numbers(2000000)) SETTINGS max_block_size = 4096, max_bytes_before_external_distinct = 33554432</query>
+    <query>SELECT count() FROM (SELECT DISTINCT cityHash64(number) AS k FROM numbers(4000000)) SETTINGS max_block_size = 4096, max_bytes_before_external_distinct = 100663296</query>
+</test>

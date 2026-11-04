@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-<div id="url_base">
-  ## url_base
-</div>
+## url_base {#url_base}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": ""},{"label": "新增设置，用于在 url 表函数和 URL 表引擎中指定解析相对 URL 时使用的 base URL。"}]}]} />
 
@@ -37,9 +35,9 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 * `/test/data.csv` 解析为 `https://example.com/test/data.csv`
 * `//other.com/test/data.csv` 解析为 `https://other.com/test/data.csv`
 
-<div id="url_wildcard_max_directories_to_read">
-  ## url_wildcard_max_directories_to_read
-</div>
+当相对 URL 来自[命名集合](/zh/concepts/features/configuration/server-config/named-collections)时，解析该 URL 将被视为覆盖该集合的 `url` 键，因此需要拥有该集合的 `SHOW NAMED COLLECTIONS SECRETS` 特权。
+
+## url_wildcard_max_directories_to_read {#url_wildcard_max_directories_to_read}
 
 <SettingsInfoBlock type="UInt64" default_value="100000" />
 

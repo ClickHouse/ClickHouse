@@ -1,0 +1,19 @@
+-- the second pass reads no column of the file, only the selected rows
+0	0
+2000000	0
+4000000	0
+1	0
+2000001	0
+4000001	0
+-- the second pass reads a column of the file at the selected rows
+0	0
+2000000	2000000
+4000000	4000000
+1	1
+2000001	2000001
+4000001	4000001
+-- a selective filter keeps rows that are far apart
+3	3
+4	4
+2500000	2500000
+4999999	4999999

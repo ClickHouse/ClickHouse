@@ -40,6 +40,22 @@ $CLICKHOUSE_CLIENT -q "
       SET v = 8 WHERE ${CLICKHOUSE_DATABASE}_udf_lwu_in_src(id);
   SELECT id, v FROM ${CLICKHOUSE_DATABASE_1}.t_lwu ORDER BY id;
 
+  -- The same two shapes for DELETE FROM. A fresh row per statement, because a statement that
+  -- deletes nothing is satisfied by whatever the one before it removed.
+  -- A local DELETE FROM re-enters the UPDATE or the ALTER interpreter, and each of those inlines
+  -- function bodies before filling in the database too, so these two rows hold whichever of the
+  -- three does the inlining. They pin the resolution, not the place it happens.
+  INSERT INTO ${CLICKHOUSE_DATABASE_1}.t_lwu VALUES (4, 0), (5, 0);
+  CREATE FUNCTION ${CLICKHOUSE_DATABASE}_udf_lwu_four AS () -> (SELECT max(id) + 1 FROM t_lwu_src);
+
+  DELETE FROM ${CLICKHOUSE_DATABASE_1}.t_lwu WHERE id = ${CLICKHOUSE_DATABASE}_udf_lwu_four();
+  SELECT id, v FROM ${CLICKHOUSE_DATABASE_1}.t_lwu ORDER BY id;
+
+  DELETE FROM ${CLICKHOUSE_DATABASE_1}.t_lwu
+      WHERE id IN (SELECT id + 2 FROM t_lwu_src WHERE id = ${CLICKHOUSE_DATABASE}_udf_lwu_src());
+  SELECT id, v FROM ${CLICKHOUSE_DATABASE_1}.t_lwu ORDER BY id;
+
+  DROP FUNCTION ${CLICKHOUSE_DATABASE}_udf_lwu_four;
   DROP FUNCTION ${CLICKHOUSE_DATABASE}_udf_lwu_src;
   DROP FUNCTION ${CLICKHOUSE_DATABASE}_udf_lwu_in_src;
 

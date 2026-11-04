@@ -12,25 +12,25 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 これらの設定はClickHouseサーバーを構成するもので、ClickHouseのソースコードから自動生成されています。
 
-<div id="memory_worker_correct_memory_tracker">
-  ## memory_worker_correct_memory_tracker
-</div>
+## memory_worker_correct_memory_tracker {#memory_worker_correct_memory_tracker}
 
-<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
 
-バックグラウンドメモリワーカーが、jemalloc や cgroups などの外部情報に基づいて内部のメモリトラッカーを補正するかどうか
+バックグララウンドメモリワーカーが、ティック ごとに、プロセスが実際に使用しているメモリの外部測定値に基づいてグローバルメモリトラッカーを補正するかどうかを指定します。外部測定値には、cgroups が利用可能な場合は cgroup のメモリ使用量 (`memory_worker_use_cgroup` を参照) 、それ以外の場合は jemalloc の `stats.resident` が使用されます。
 
-<div id="memory_worker_decay_adjustment_period_ms">
-  ## memory_worker_decay_adjustment_period_ms
-</div>
+グローバルメモリトラッカーはカウンターであり、割り当てによって加算され、解放によって減算されます。計上に非対称性があると、ほかにトラッカーの値を下げる仕組みがないため、その差分はプロセスが終了するまで残り続けます。特に上方向へのずれは決して解消されません。そのずれに相当するメモリはすでに解放済みだからです。ずれだけで `max_server_memory_usage` を超えると、接続開始時のゼロバイトのチェックに至るまで、あらゆる割り当てが失敗します。その結果、サーバーは上限のごく一部しか使用していないにもかかわらず、すべてのクエリを拒否するようになります。測定値に基づいて補正すれば、このようなずれが続く期間をワーカーの 1 ティック分 (`memory_worker_period_ms`。デフォルトでは cgroups から読み取る場合は 50 ms、jemalloc から読み取る場合は 100 ms) に抑えられます。
+
+補正によってずれが見えなくなるわけではありません。`MemoryTrackingUncorrected` には、補正を一切適用しなかった場合のトラッカーの値 (補正前のカウンターのスナップショットで、ワーカーのティックごとに更新されます) が保持されます。したがって、`MemoryTrackingUncorrected - MemoryTracking` がその時点までに蓄積したずれとなります。
+
+`0` に設定すると、以前のバージョンの動作に戻ります。この場合、トラッカーが補正されるのはワーカーの最初のティックと、値が負になったときだけです。
+
+## memory_worker_decay_adjustment_period_ms {#memory_worker_decay_adjustment_period_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="5000" changeable_without_restart="No" />
 
 メモリ逼迫が継続してから jemalloc の `dirty_decay_ms` を動的に調整するまでの期間 (Milliseconds) です。メモリ使用量がこの期間にわたって purge のしきい値を上回り続けると、メモリを積極的に回収するため、ダーティページの自動減衰は無効になります (`dirty_decay_ms=0`) 。一方、使用量がこの期間にわたってしきい値を下回り続けると、既定の減衰動作が復元されます。0 に設定すると、動的調整を無効にして jemalloc の既定の減衰設定を使用します。
 
-<div id="memory_worker_dynamic_hard_limit">
-  ## memory_worker_dynamic_hard_limit
-</div>
+## memory_worker_dynamic_hard_limit {#memory_worker_dynamic_hard_limit}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
 
@@ -40,33 +40,25 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 `max_server_memory_usage_to_ram_ratio` が `0` の場合、この設定は効果がありません。
 
-<div id="memory_worker_period_ms">
-  ## memory_worker_period_ms
-</div>
+## memory_worker_period_ms {#memory_worker_period_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />
 
 メモリ使用量が高いときに、メモリトラッカー が記録するメモリ使用量を補正し、未使用ページをクリーンアップするバックグラウンドメモリワーカーのティック間隔です。0 に設定すると、メモリ使用量の取得元に応じたデフォルト値が使用されます
 
-<div id="memory_worker_purge_dirty_pages_threshold_ratio">
-  ## memory_worker_purge_dirty_pages_threshold_ratio
-</div>
+## memory_worker_purge_dirty_pages_threshold_ratio {#memory_worker_purge_dirty_pages_threshold_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.2" changeable_without_restart="No" />
 
 ClickHouse サーバー で使用可能なメモリに対する jemalloc の ダーティページ のしきい値比率です。ダーティページ のサイズがこの比率を超えると、background memory worker が ダーティページ のパージを強制します。0 に設定すると、ダーティページ の比率に基づく強制パージは無効になります。
 
-<div id="memory_worker_purge_total_memory_threshold_ratio">
-  ## memory_worker_purge_total_memory_threshold_ratio
-</div>
+## memory_worker_purge_total_memory_threshold_ratio {#memory_worker_purge_total_memory_threshold_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.9" changeable_without_restart="No" />
 
 ClickHouse サーバー で使用可能なメモリに対して、jemalloc のパージを実行するしきい値の比率です。総メモリ使用量がこの比率を超えると、バックグラウンドメモリワーカーがダーティページのパージを強制的に実行します。0 に設定すると、総メモリに基づく強制パージは無効になります。
 
-<div id="memory_worker_rss_speculative_reserve_ratio">
-  ## memory_worker_rss_speculative_reserve_ratio
-</div>
+## memory_worker_rss_speculative_reserve_ratio {#memory_worker_rss_speculative_reserve_ratio}
 
 <SettingsInfoBlock type="Double" default_value="1" changeable_without_restart="No" />
 
@@ -83,9 +75,7 @@ ClickHouse サーバー で使用可能なメモリに対して、jemalloc の�
 です。これは、`resident - tracked` のギャップの大半が、トラッカーの計上の遅れではなく、サニタイザのシャドー領域やランタイム
 オーバーヘッドによるものだからです。
 
-<div id="memory_worker_use_cgroup">
-  ## memory_worker_use_cgroup
-</div>
+## memory_worker_use_cgroup {#memory_worker_use_cgroup}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />現在の cgroup のメモリ使用量情報を利用して、メモリトラッキングを補正します。
 

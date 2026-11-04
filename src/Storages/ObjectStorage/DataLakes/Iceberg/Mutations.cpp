@@ -267,14 +267,18 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
         {
             delete_data_writers[partition_key]->flush();
             delete_data_writers[partition_key]->finalize();
+            delete_data_statistics.at(partition_key).addColumnSizesOnDisk(
+                delete_data_writers[partition_key]->getColumnSizesOnDisk(), getPositionDeleteFileSampleBlock());
             delete_data_write_buffers[partition_key]->finalize();
             {
                 auto delete_bytes = delete_data_write_buffers[partition_key]->count();
                 if (delete_bytes == 0)
                     delete_bytes = object_storage->getObjectMetadata(
                         path_resolver.resolve(delete_data_result[partition_key].path), /*with_tags=*/ false).size_bytes;
-                delete_data_result[partition_key].total_bytes = static_cast<Int32>(delete_bytes);
+                delete_data_result[partition_key].total_bytes = delete_bytes;
             }
+            delete_data_writers[partition_key].reset();
+            delete_data_write_buffers[partition_key].reset();
         }
     }
 
@@ -289,6 +293,7 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
         PullingPipelineExecutor executor(pipeline);
 
         auto header = interpreter->getUpdatedHeader();
+        auto update_sample_block = getNonVirtualColumns(header, /*remove_low_cardinality=*/ true);
 
         Block block;
         while (executor.pull(block))
@@ -338,14 +343,18 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
         {
             update_data_writers[partition_key]->flush();
             update_data_writers[partition_key]->finalize();
+            update_data_statistics.at(partition_key).addColumnSizesOnDisk(
+                update_data_writers[partition_key]->getColumnSizesOnDisk(), update_sample_block);
             update_data_write_buffers[partition_key]->finalize();
             {
                 auto update_bytes = update_data_write_buffers[partition_key]->count();
                 if (update_bytes == 0)
                     update_bytes = object_storage->getObjectMetadata(
                         path_resolver.resolve(update_data_result[partition_key].path), /*with_tags=*/ false).size_bytes;
-                update_data_result[partition_key].total_bytes = static_cast<Int32>(update_bytes);
+                update_data_result[partition_key].total_bytes = update_bytes;
             }
+            update_data_writers[partition_key].reset();
+            update_data_write_buffers[partition_key].reset();
         }
     }
 
@@ -423,7 +432,7 @@ static bool writeMetadataFiles(
     std::vector<Int64> manifest_entry_row_counts;
     std::vector<Int64> manifest_entry_file_counts;
     std::vector<Iceberg::FileContentType> per_entry_content_types;
-    std::vector<std::vector<std::pair<Field, DataTypePtr>>> entry_partition_summaries;
+    std::vector<ManifestPartitionSummary> entry_partition_summaries;
 
     auto hint_path = filename_generator.generateVersionHint();
     const bool use_version_hint = data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint];
@@ -460,14 +469,10 @@ static bool writeMetadataFiles(
             manifest_entry_row_counts.push_back(data_file.total_rows);
             manifest_entry_file_counts.push_back(1);
 
-            /// The manifest holds a single partition tuple, which becomes its manifest-list field summary.
             if (chunk_partitioner)
             {
-                const auto & partition_types = chunk_partitioner->getResultTypes();
-                std::vector<std::pair<Field, DataTypePtr>> partition_summary;
-                partition_summary.reserve(partition_key.size());
-                for (size_t i = 0; i < partition_key.size(); ++i)
-                    partition_summary.emplace_back(partition_key[i], partition_types[i]);
+                ManifestPartitionSummary partition_summary(chunk_partitioner->getResultTypes());
+                partition_summary.add(partition_key);
                 entry_partition_summaries.push_back(std::move(partition_summary));
             }
 
@@ -482,7 +487,7 @@ static bool writeMetadataFiles(
                 generateManifestFile(
                     metadata,
                     chunk_partitioner ? chunk_partitioner->getColumns() : std::vector<String>{},
-                    partition_key,
+                    {partition_key},
                     chunk_partitioner ? chunk_partitioner->getResultTypes() : DataTypes{},
                     {data_file.path},
                     {static_cast<UInt64>(data_file.total_rows)},
@@ -712,7 +717,7 @@ void mutate(
         filename_generator.setVersion(last_version + 1);
         filename_generator.setCompressionMethod(compression_method);
 
-        auto metadata = getMetadataJSONObject(metadata_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid);
+        auto metadata = deepCopy(getMetadataJSONObject(metadata_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid));
 
         const auto format_version = metadata->getValue<Int32>(f_format_version);
         if (format_version < 2)
@@ -841,7 +846,7 @@ void alter(
         filename_generator.setVersion(last_version + 1);
         filename_generator.setCompressionMethod(compression_method);
 
-        auto metadata = getMetadataJSONObject(metadata_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid);
+        auto metadata = deepCopy(getMetadataJSONObject(metadata_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid));
 
         const auto previous_schema_id = metadata->getValue<Int32>(Iceberg::f_current_schema_id);
 
@@ -866,6 +871,7 @@ void alter(
             default:
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown type of alter {}", params[0].type);
         }
+        setFormatVersion1SchemaAndPartitionSpec(metadata);
 
         const auto new_schema_id = metadata->getValue<Int32>(Iceberg::f_current_schema_id);
         Poco::JSON::Object::Ptr new_schema;

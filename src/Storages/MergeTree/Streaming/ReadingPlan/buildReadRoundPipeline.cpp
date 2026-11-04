@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/Streaming/ReadingPlan/buildReadRoundPipeline.h>
 #include <Storages/MergeTree/Streaming/ReadingPlan/AlignStreams.h>
-#include <Storages/MergeTree/Streaming/ReadingPlan/StampPartitionWatermarks.h>
 #include <Storages/MergeTree/Streaming/ReadingPlan/StampPartitionCursors.h>
 #include <Storages/MergeTree/Streaming/PartitionsClassification.h>
 #include <Storages/MergeTree/Streaming/Cursors/CursorUtils.h>
@@ -22,7 +21,6 @@
 #include <QueryPipeline/printPipeline.h>
 
 #include <Processors/QueryPlan/Streaming/CalculateWatermarksStep.h>
-#include <Processors/QueryPlan/Streaming/RaiseWatermarksStep.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -49,8 +47,8 @@ Names metadataStreamColumns(const StreamSettings & stream_settings, const Storag
 {
     Names columns{PartitionIdColumn::name, BlockNumberColumn::name, BlockOffsetColumn::name};
 
-    if (!std::ranges::contains(columns, stream_settings.watermark->column))
-        columns.push_back(stream_settings.watermark->column);
+    if (!std::ranges::contains(columns, stream_settings.watermark->time_attribute_column))
+        columns.push_back(stream_settings.watermark->time_attribute_column);
 
     const auto source_columns = collectWatermarkSourceColumns(stream_settings.watermark->expression, metadata->getColumns().getAllPhysical(), context);
     for (const auto & source_column : source_columns)
@@ -134,18 +132,17 @@ Pipe buildPartitionReadingPipeline(
     if (const auto & filter = reading_context.prewhere_filter)
         plan->addStep(std::make_unique<FilterStep>(plan->getCurrentHeader(), filter->actions.clone(), filter->column_name, filter->do_remove_column));
 
+    plan->addStep(std::make_unique<StampPartitionCursorsStep>(plan->getCurrentHeader(), partition_id, stream_settings.unordered));
+
     /// The watermarks are computed on the unfiltered metadata stream and aligned with data stream.
     if (stream_settings.watermark)
     {
         const auto metadata_columns = metadataStreamColumns(stream_settings, storage_snapshot->metadata, context);
         auto metadata_plan = buildPartitionCommitOrderReadPlan(reading_context, state, partition_id, safe_block_number, storage_snapshot, metadata_columns);
-        chassert(metadata_plan);
+        metadata_plan->addStep(std::make_unique<StampPartitionCursorsStep>(metadata_plan->getCurrentHeader(), partition_id, stream_settings.unordered));
+        metadata_plan->addStep(std::make_unique<CalculateWatermarksStep>(metadata_plan->getCurrentHeader(), stream_settings.watermark, state.getPartitionWatermark(partition_id), context));
 
-        metadata_plan->addStep(std::make_unique<CalculateWatermarksStep>(metadata_plan->getCurrentHeader(), stream_settings.watermark, context));
-        metadata_plan->addStep(std::make_unique<RaiseWatermarksStep>(metadata_plan->getCurrentHeader(), state.getPartitionWatermark(partition_id)));
-        metadata_plan->addStep(std::make_unique<StampPartitionWatermarksStep>(metadata_plan->getCurrentHeader(), partition_id));
-
-        auto align_step = std::make_unique<AlignStreamsStep>(metadata_plan->getCurrentHeader(), plan->getCurrentHeader());
+        auto align_step = std::make_unique<AlignStreamsStep>(metadata_plan->getCurrentHeader(), plan->getCurrentHeader(), partition_id, state.getPartitionWatermark(partition_id));
 
         std::vector<QueryPlanPtr> plans;
         plans.push_back(std::move(metadata_plan));
@@ -154,9 +151,6 @@ Pipe buildPartitionReadingPipeline(
         plan = std::make_unique<QueryPlan>();
         plan->unitePlans(std::move(align_step), std::move(plans));
     }
-
-    /// Add cursor calculation step.
-    plan->addStep(std::make_unique<StampPartitionCursorsStep>(plan->getCurrentHeader(), stream_settings.unordered));
 
     /// Add projection to required header.
     auto convert = ActionsDAG::makeConvertingActions(
@@ -221,7 +215,7 @@ std::optional<ReadRoundPipeline> buildReadRoundPipeline(
     result.pipe = Pipe::unitePipes(std::move(pipes));
 
     if (stream_settings.watermark)
-        result.pipe.calibrateWatermarks(1);
+        result.pipe.calibrateWatermarks(1, state.getGlobalWatermark());
     else
         result.pipe.resize(1);
 

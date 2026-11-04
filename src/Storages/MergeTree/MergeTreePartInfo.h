@@ -76,6 +76,9 @@ public:
     auto operator<=>(const MergeTreePartInfo & rhs) const { return toTuple() <=> rhs.toTuple();}
     bool operator==(const MergeTreePartInfo & rhs) const { return toTuple() == rhs.toTuple(); }
 
+    /// Agrees with `operator==`, for use as a hash-table key.
+    UInt64 hash() const;
+
     /// Get block number that can be used to determine which mutations we still need to apply to this part
     /// (all mutations with version greater than this block number).
     Int64 getDataVersion() const { return mutation ? mutation : min_block; }
@@ -232,5 +235,15 @@ private:
 };
 
 using DetachedPartsInfo = std::vector<DetachedPartInfo>;
+
+}
+
+namespace std
+{
+
+template <> struct hash<DB::MergeTreePartInfo>
+{
+    size_t operator()(const DB::MergeTreePartInfo & part) const { return part.hash(); }
+};
 
 }

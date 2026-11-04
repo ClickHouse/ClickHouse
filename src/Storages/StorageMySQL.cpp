@@ -157,35 +157,39 @@ void StorageMySQL::readImpl(
     size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names);
+    const auto local_only_columns = getLocalOnlyColumnNames(storage_snapshot->metadata);
     String query;
     if (remote_table_or_query.isQuery())
     {
         /// The user-provided query is passed to MySQL as is; no outer predicate is pushed down into it, so
         /// reject any outer filter under external_table_strict_query.
-        rejectOuterFilterForQueryBackedExternalSourceIfStrict(query_info, context_);
+        rejectOuterFilterForQueryBackedExternalSourceIfStrict(
+            query_info, storage_snapshot->metadata->getColumns().getAllPhysical(), context_, getStorageID(), local_only_columns);
         query = buildQueryForExternalDatabaseSubquery(remote_table_or_query.getQuery(), column_names, IdentifierQuotingStyle::BackticksMySQL);
     }
     else
+        /// All physical columns are pushdown-eligible: a `MATERIALIZED` column is a column of the remote table
+        /// (its value is written there on `INSERT` and read back from there), so a predicate over it is pushed
+        /// down like one over an ordinary column.
         query = transformQueryForExternalDatabase(
             query_info,
             column_names,
-            storage_snapshot->metadata->getColumns().getOrdinary(),
+            storage_snapshot->metadata->getColumns().getAllPhysical(),
             IdentifierQuotingStyle::BackticksMySQL,
             LiteralEscapingStyle::Regular,
             remote_database_name,
             remote_table_or_query.getTableName(),
-            context_);
+            getStorageID(),
+            context_,
+            {},
+            {},
+            local_only_columns);
     LOG_TRACE(log, "Query: {}", query);
 
     Block sample_block;
     for (const String & column_name : column_names)
     {
         auto column_data = storage_snapshot->metadata->getColumns().getPhysical(column_name);
-
-        WhichDataType which(column_data.type);
-        /// Convert enum to string.
-        if (which.isEnum())
-            column_data.type = std::make_shared<DataTypeString>();
         sample_block.insert({ column_data.type, column_data.name });
     }
 
@@ -208,7 +212,8 @@ public:
         const std::string & remote_database_name_,
         const std::string & remote_table_name_,
         const mysqlxx::PoolWithFailover::Entry & entry_,
-        const size_t & mysql_max_rows_to_insert)
+        const size_t & mysql_max_rows_to_insert,
+        bool auto_close_)
         : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
         , storage{std::move(storage_)}
         , metadata_snapshot{metadata_snapshot_}
@@ -216,10 +221,17 @@ public:
         , remote_table_name{remote_table_name_}
         , entry{entry_}
         , max_batch_rows{mysql_max_rows_to_insert}
+        , auto_close{auto_close_}
     {
     }
 
     String getName() const override { return "StorageMySQLSink"; }
+
+    void onFinish() override
+    {
+        if (auto_close)
+            entry.disconnect();
+    }
 
     void consume(Chunk & chunk) override
     {
@@ -316,6 +328,7 @@ private:
     std::string remote_table_name;
     mysqlxx::PoolWithFailover::Entry entry;
     size_t max_batch_rows;
+    bool auto_close;
 };
 
 
@@ -330,7 +343,8 @@ SinkToStoragePtr StorageMySQL::write(const ASTPtr & /*query*/, const StorageMeta
         remote_database_name,
         remote_table_or_query.getTableName(),
         pool->get(),
-        local_context->getSettingsRef()[Setting::mysql_max_rows_to_insert]);
+        local_context->getSettingsRef()[Setting::mysql_max_rows_to_insert],
+        (*mysql_settings)[MySQLSetting::connection_auto_close]);
 }
 
 mysqlxx::SSLParams StorageMySQL::getSSLParams(const NamedCollection & named_collection)
@@ -416,6 +430,10 @@ mysqlxx::SSLParams StorageMySQL::getSSLParams(const NamedCollection & named_coll
     ssl_params.ca_pem = named_collection.getOrDefault<String>("ssl_ca_pem", "");
     ssl_params.cert_pem = named_collection.getOrDefault<String>("ssl_cert_pem", "");
     ssl_params.key_pem = named_collection.getOrDefault<String>("ssl_key_pem", "");
+    ssl_params.key_passphrase = named_collection.getOrDefault<String>("ssl_key_passphrase", "");
+    if (!ssl_params.key_passphrase.empty() && ssl_params.key_path.empty() && ssl_params.key_pem.empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "`ssl_key_passphrase` requires `ssl_key` or `ssl_key_pem`");
     return ssl_params;
 }
 
@@ -441,7 +459,7 @@ mysqlxx::SSLParams StorageMySQL::extractSSLParamsFromArguments(ASTs & arguments,
             break;
 
         const String key = identifier->name();
-        bool is_contents_key = false;
+        bool is_sql_key = key == "ssl_key_passphrase";
         for (const auto & [path_key, contents_key] : tls_keys)
         {
             if (key == path_key)
@@ -451,11 +469,11 @@ mysqlxx::SSLParams StorageMySQL::extractSSLParamsFromArguments(ASTs & arguments,
                     "Pass the contents of the file in `{}` instead",
                     path_key, contents_key);
             if (key == contents_key)
-                is_contents_key = true;
+                is_sql_key = true;
         }
 
         /// Anything else is left in place, so that it is reported as an unexpected argument.
-        if (!is_contents_key)
+        if (!is_sql_key)
             break;
 
         auto value = evaluateConstantExpressionOrIdentifierAsLiteral(function->arguments->children[1], context_);
@@ -477,6 +495,10 @@ mysqlxx::SSLParams StorageMySQL::extractSSLParamsFromArguments(ASTs & arguments,
     ssl_params.ca_pem = get("ssl_ca_pem");
     ssl_params.cert_pem = get("ssl_cert_pem");
     ssl_params.key_pem = get("ssl_key_pem");
+    ssl_params.key_passphrase = get("ssl_key_passphrase");
+    if (!ssl_params.key_passphrase.empty() && ssl_params.key_pem.empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "`ssl_key_passphrase` requires `ssl_key` or `ssl_key_pem`");
     return ssl_params;
 }
 
@@ -487,7 +509,8 @@ StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
 
     ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> optional_arguments
         = {"replace_query", "on_duplicate_clause", "addresses_expr", "host", "hostname", "port",
-           "ssl_ca", "ssl_cert", "ssl_key", "ssl_ca_pem", "ssl_cert_pem", "ssl_key_pem"};
+           "ssl_ca", "ssl_cert", "ssl_key", "ssl_ca_pem", "ssl_cert_pem", "ssl_key_pem",
+           "ssl_key_passphrase"};
     auto mysql_settings_names = storage_settings.getAllRegisteredNames();
     for (const auto & name : mysql_settings_names)
         optional_arguments.insert(name);
@@ -536,10 +559,13 @@ StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
     return configuration;
 }
 
-StorageMySQL::Configuration StorageMySQL::getConfiguration(ASTs engine_args, ContextPtr context_, MySQLSettings & storage_settings, const StorageID * table_id)
+StorageMySQL::Configuration StorageMySQL::getConfiguration(
+    ASTs engine_args, ContextPtr context_, MySQLSettings & storage_settings,
+    const StorageID * table_id, const ASTSetQuery * settings)
 {
     StorageMySQL::Configuration configuration;
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context_, true, nullptr, table_id))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(
+            engine_args, context_, /*throw_unknown_collection=*/ true, /*complex_args=*/ nullptr, table_id, settings))
     {
         configuration = StorageMySQL::processNamedCollectionResult(*named_collection, storage_settings, context_);
     }
@@ -551,11 +577,12 @@ StorageMySQL::Configuration StorageMySQL::getConfiguration(ASTs engine_args, Con
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Storage MySQL requires 5-7 parameters: "
                             "MySQL('host:port' (or 'addresses_pattern'), database, table (or query), "
                             "'user', 'password'[, replace_query, 'on_duplicate_clause']"
-                            "[, ssl_ca_pem = '...', ssl_cert_pem = '...', ssl_key_pem = '...']).");
+                            "[, ssl_ca_pem = '...', ssl_cert_pem = '...', ssl_key_pem = '...', ssl_key_passphrase = '...']).");
 
         /// The 3rd argument is either a table name, or a query passed to MySQL as is - `(SELECT ...)` or `query('SELECT ...')`.
         auto maybe_query = tryGetExternalDatabaseQuery(
-            engine_args[2], context_, IdentifierQuotingStyle::BackticksMySQL, LiteralEscapingStyle::Regular);
+            engine_args[2], context_, IdentifierQuotingStyle::BackticksMySQL, LiteralEscapingStyle::Regular,
+            IdentifierQuotingRule::Always);
         for (size_t i = 0; i < engine_args.size(); ++i)
         {
             if (i == 2 && maybe_query)
@@ -615,7 +642,8 @@ void registerStorageMySQL(StorageFactory & factory)
     factory.registerStorage("MySQL", [](const StorageFactory::Arguments & args)
     {
         MySQLSettings mysql_settings; /// TODO: move some arguments from the arguments to the SETTINGS.
-        auto configuration = StorageMySQL::getConfiguration(args.engine_args, args.getLocalContext(), mysql_settings, &args.table_id);
+        auto configuration = StorageMySQL::getConfiguration(
+            args.engine_args, args.getLocalContext(), mysql_settings, &args.table_id, args.storage_def->settings);
 
         /// Bridge the query-context value of `mysql_datatypes_support_level` into the engine settings
         /// (and freeze it into the table definition) so that it is honored during schema inference,
@@ -643,6 +671,7 @@ void registerStorageMySQL(StorageFactory & factory)
             args.getContext(),
             mysql_settings);
     },
+    mysqlPostgreSQLSecretArguments(4),
     {
         .supports_settings = true,
         .supports_schema_inference = true,
@@ -697,7 +726,7 @@ Arguments also can be passed using [named collections](/concepts/features/config
 
 Simple `WHERE` clauses such as `=, !=, >, >=, <, <=` are executed on the MySQL server.
 
-The rest of the conditions and the `LIMIT` sampling constraint are executed in ClickHouse only after the query to MySQL finishes.
+The rest of the conditions are executed in ClickHouse after the query to MySQL finishes. The `LIMIT` sampling constraint is pushed to MySQL only when it is safe and [external_storage_push_down_limit](/reference/settings/session-settings/external-storage#external_storage_push_down_limit) is enabled; otherwise, it is executed in ClickHouse.
 
 ## TLS/SSL {#tls-ssl}
 
@@ -708,8 +737,9 @@ The credentials of an encrypted connection to MySQL are passed as named collecti
 | `ssl_ca_pem` | Contents of the CA certificate that the MySQL server certificate is verified against. |
 | `ssl_cert_pem` | Contents of the client certificate, for certificate-based authentication. |
 | `ssl_key_pem` | Contents of the private key belonging to `ssl_cert_pem`. |
+| `ssl_key_passphrase` | Passphrase of an encrypted `ssl_key` / `ssl_key_pem`. Optional. |
 
-The values are the contents of the corresponding PEM files, which can be copied into a named collection or into a query. They are masked in logs and in `SHOW` queries, the same way passwords are.
+The values are the contents of the corresponding PEM files (and the key passphrase), which can be copied into a named collection or into a query. They are masked in logs and in `SHOW` queries, the same way passwords are.
 
 The same credentials can also be given as paths to files on the server, in `ssl_ca`, `ssl_cert` and `ssl_key` — but **only in a named collection defined in the server configuration file**, and such a value cannot be overridden in a query. The server opens those files with its own privileges, so accepting a path from SQL would let any user who is able to define a MySQL source probe the local filesystem, and authenticate with a certificate and key they are not allowed to read themselves.
 
@@ -732,6 +762,14 @@ Instead of a table name, the `table` argument can be a `SELECT` query that is pa
 ```sql
 CREATE TABLE mysql_table ENGINE = MySQL('localhost:3306', 'test', (SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0), 'user', 'password');
 CREATE TABLE mysql_table ENGINE = MySQL('localhost:3306', 'test', query('SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0'), 'user', 'password');
+```
+
+Passing a query is supported starting from version 26.7. ClickHouse wraps the query into `SELECT ... FROM (<query>)` before sending it to MySQL, so it must not end with a semicolon.
+
+With a named collection, pass the query in the `query` key instead of `table`, either in the collection itself or as a key-value argument. `query` and `table` cannot be specified together:
+
+```sql
+CREATE TABLE mysql_table ENGINE = MySQL(mysql_creds, database = 'test', query = 'SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0');
 ```
 
 This is useful to push down joins, aggregations or any other processing to MySQL. Such a table is read-only: `INSERT` into it is not allowed. The same syntax is supported by the [`mysql`](/reference/functions/table-functions/mysql) table function.

@@ -88,7 +88,14 @@ def setup():
         # Metrics target keeps one entry per family in each data part).
         node.query(
             "CREATE TABLE prometheus_multi ENGINE=TimeSeries "
-            "METRICS INNER ENGINE=MergeTree ORDER BY metric_family_name"
+            "METRICS INNER ENGINE=MergeTree ORDER BY metric_family"
+        )
+        # A table of version 5: its metric families target names the column `metric_family_name` (see TimeSeriesVersion.h).
+        node.query("CREATE TABLE prometheus_v5 ENGINE=TimeSeries SETTINGS version = 5")
+        node.query(
+            "INSERT INTO prometheus_v5 (metric_family, type, unit, help) VALUES "
+            "('cpu_usage', 'gauge', 'percent', 'CPU usage of the host'), "
+            "('http_requests_total', 'counter', '', 'Total number of HTTP requests')"
         )
         # Send/insert the same metadata twice to get duplicate rows (in separate data parts)
         # in the Metrics target tables: the endpoint must deduplicate them.
@@ -96,7 +103,7 @@ def setup():
             send_test_metadata()
             node.query(
                 "INSERT INTO TABLE FUNCTION timeSeriesMetricFamilies(prometheus_multi) "
-                "(metric_family_name, type, unit, help) VALUES "
+                "(metric_family, type, unit, help) VALUES "
                 "('multi_metric', 'counter', '', 'The first help text'), "
                 "('multi_metric', 'counter', '', 'The second help text')"
             )
@@ -190,3 +197,13 @@ def test_json_escaping():
 def test_empty_metrics_table():
     data = get_json_from_api("/empty/api/v1/metadata")["data"]
     assert data == {}
+
+
+def test_table_of_version_5():
+    data = get_json_from_api("/v5/api/v1/metadata")["data"]
+    assert data == {
+        "cpu_usage": ALL_METADATA["cpu_usage"],
+        "http_requests_total": ALL_METADATA["http_requests_total"],
+    }
+    data = get_json_from_api("/v5/api/v1/metadata?metric=cpu_usage")["data"]
+    assert data == {"cpu_usage": ALL_METADATA["cpu_usage"]}

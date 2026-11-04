@@ -30,17 +30,17 @@ timeSeriesSumToGrid(start_timestamp, end_timestamp, grid_step, staleness)(timest
 timeSeriesSumToGrid(start_timestamp, end_timestamp, grid_step, staleness)(samples)
     )";
     FunctionDocumentation::Parameters parameters_timeSeriesSumToGrid = {
-        {"start_timestamp", "Specifies start of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
-        {"end_timestamp", "Specifies end of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
-        {"grid_step", "Specifies step of the grid in seconds. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}},
-        {"staleness", "Specifies the maximum staleness in seconds of the considered samples. The staleness window is a left-open and right-closed interval. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}}
+        {"start_timestamp", "Specifies start of the grid. It can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
+        {"end_timestamp", "Specifies end of the grid. It can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
+        {"grid_step", "Specifies step of the grid in seconds. It can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}},
+        {"staleness", "Specifies the maximum staleness in seconds of the considered samples. The staleness window is a left-open and right-closed interval. It can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}}
     };
     FunctionDocumentation::Arguments arguments_timeSeriesSumToGrid = {
         {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "DateTime64", "Array(UInt32)", "Array(DateTime)", "Array(DateTime64)"}},
         {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {"Float*", "Array(Float*)"}},
         {"samples", "Samples of the time series passed as an array of tuples `(timestamp, value)`, where the tuple elements have the timestamp and value types listed above. An alternative to passing the timestamps and the values as two separate arguments.", {"Array(Tuple(T1, T2))"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_timeSeriesSumToGrid = {"Returns the sum of values on the specified grid, of the same type as `value`. The returned array contains one value for each time grid point. The value is NULL if there are no samples within the window for a particular grid point.", {"Array(Nullable(Float*))"}};
+    FunctionDocumentation::ReturnedValue returned_value_timeSeriesSumToGrid = {"Returns the sum of values on the specified grid. The returned array contains one value for each time grid point. The value is NULL if there are no samples within the window for a particular grid point.", {"Array(Nullable(Float64))"}};
     FunctionDocumentation::Examples examples_timeSeriesSumToGrid = {
     {
         "Basic usage with individual timestamp-value pairs",
@@ -98,9 +98,9 @@ SELECT timeSeriesSumToGrid(start_ts, end_ts, step_seconds, window_seconds)(times
         {[](const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings) -> AggregateFunctionPtr
         {
             assertTimeseriesParametersCount(name, parameters, 4, "start_timestamp, end_timestamp, step, window");
-            auto make_function = [&]<typename TimestampType, typename IntervalType, typename ValueType>(TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
+            auto make_function = [&]<typename TimestampType, typename ValueType>(DateTime64 start, DateTime64 end, Decimal64 step, Decimal64 window, UInt32 grid_scale, UInt32 column_timestamp_scale) -> AggregateFunctionPtr
             {
-                return std::make_shared<AggregateFunctionTimeseriesSumToGrid<TimestampType, IntervalType, ValueType>>(argument_types, parameters, start, end, step, window, scale);
+                return std::make_shared<AggregateFunctionTimeseriesSumToGrid<TimestampType, ValueType>>(argument_types, parameters, start, end, step, window, grid_scale, column_timestamp_scale);
             };
             return createAggregateFunctionTimeseries(name, argument_types, parameters, settings, make_function);
         },
@@ -126,17 +126,17 @@ timeSeriesAvgToGrid(start_timestamp, end_timestamp, grid_step, staleness)(timest
 timeSeriesAvgToGrid(start_timestamp, end_timestamp, grid_step, staleness)(samples)
     )";
     FunctionDocumentation::Parameters parameters_timeSeriesAvgToGrid = {
-        {"start_timestamp", "Specifies start of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
-        {"end_timestamp", "Specifies end of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
-        {"grid_step", "Specifies step of the grid in seconds. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}},
-        {"staleness", "Specifies the maximum staleness in seconds of the considered samples. The staleness window is a left-open and right-closed interval. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}}
+        {"start_timestamp", "Specifies start of the grid. It can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
+        {"end_timestamp", "Specifies end of the grid. It can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
+        {"grid_step", "Specifies step of the grid in seconds. It can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}},
+        {"staleness", "Specifies the maximum staleness in seconds of the considered samples. The staleness window is a left-open and right-closed interval. It can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}}
     };
     FunctionDocumentation::Arguments arguments_timeSeriesAvgToGrid = {
         {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "DateTime64", "Array(UInt32)", "Array(DateTime)", "Array(DateTime64)"}},
         {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {"Float*", "Array(Float*)"}},
         {"samples", "Samples of the time series passed as an array of tuples `(timestamp, value)`, where the tuple elements have the timestamp and value types listed above. An alternative to passing the timestamps and the values as two separate arguments.", {"Array(Tuple(T1, T2))"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_timeSeriesAvgToGrid = {"Returns the average of values on the specified grid, of the same type as `value`. The returned array contains one value for each time grid point. The value is NULL if there are no samples within the window for a particular grid point.", {"Array(Nullable(Float*))"}};
+    FunctionDocumentation::ReturnedValue returned_value_timeSeriesAvgToGrid = {"Returns the average of values on the specified grid. The returned array contains one value for each time grid point. The value is NULL if there are no samples within the window for a particular grid point.", {"Array(Nullable(Float64))"}};
     FunctionDocumentation::Examples examples_timeSeriesAvgToGrid = {
     {
         "Basic usage with individual timestamp-value pairs",
@@ -162,7 +162,7 @@ FROM
         )",
         R"(
 ┌─timeSeriesAvgToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)─┐
-│ [NULL,NULL,1,1.6666666,2.25,3.5,4,5,6]                                                │
+│ [NULL,NULL,1,1.6666666666666667,2.25,3.5,4,5,6]                                       │
 └───────────────────────────────────────────────────────────────────────────────────────┘
         )"
     },
@@ -181,7 +181,7 @@ SELECT timeSeriesAvgToGrid(start_ts, end_ts, step_seconds, window_seconds)(times
         )",
         R"(
 ┌─timeSeriesAvgToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values)─┐
-│ [NULL,NULL,1,1.6666666,2.25,3.5,4,5,6]                                                  │
+│ [NULL,NULL,1,1.6666666666666667,2.25,3.5,4,5,6]                                         │
 └─────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     }
@@ -194,9 +194,9 @@ SELECT timeSeriesAvgToGrid(start_ts, end_ts, step_seconds, window_seconds)(times
         {[](const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings) -> AggregateFunctionPtr
         {
             assertTimeseriesParametersCount(name, parameters, 4, "start_timestamp, end_timestamp, step, window");
-            auto make_function = [&]<typename TimestampType, typename IntervalType, typename ValueType>(TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
+            auto make_function = [&]<typename TimestampType, typename ValueType>(DateTime64 start, DateTime64 end, Decimal64 step, Decimal64 window, UInt32 grid_scale, UInt32 column_timestamp_scale) -> AggregateFunctionPtr
             {
-                return std::make_shared<AggregateFunctionTimeseriesAvgToGrid<TimestampType, IntervalType, ValueType>>(argument_types, parameters, start, end, step, window, scale);
+                return std::make_shared<AggregateFunctionTimeseriesAvgToGrid<TimestampType, ValueType>>(argument_types, parameters, start, end, step, window, grid_scale, column_timestamp_scale);
             };
             return createAggregateFunctionTimeseries(name, argument_types, parameters, settings, make_function);
         },

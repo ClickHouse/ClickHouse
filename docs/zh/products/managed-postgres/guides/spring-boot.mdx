@@ -1,0 +1,348 @@
+---
+slug: /cloud/managed-postgres/guides/spring-boot
+sidebarTitle: 'Spring Boot'
+title: '将 Spring Boot 与 ClickHouse Managed Postgres 搭配使用'
+description: '借助 Spring Data JPA、PostgreSQL JDBC 驱动、HikariCP 和 Flyway 迁移，通过经过验证的 TLS 将 Spring Boot 应用连接到 ClickHouse Managed Postgres'
+keywords: ['managed postgres', 'spring boot', 'spring', 'java', 'jdbc', 'pgjdbc', 'spring data jpa', 'hibernate', 'hikaricp', 'flyway', 'pgbouncer', 'migrations']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-spring-boot-beta" />
+
+[Spring Boot](https://spring.io/projects/spring-boot) 通过 PostgreSQL JDBC 驱动 (pgjdbc) 和 HikariCP 连接池连接 Postgres，并在应用启动时执行 [Flyway](https://documentation.red-gate.com/flyway) 迁移。在本指南中，您将通过 Flyway 迁移创建一个 `todos` 表，并使用 Spring Data JPA REST 控制器处理增、删、改、查请求。所有连接均使用 TLS，并启用完整的证书验证。
+
+## 前置条件 {#prerequisites}
+
+* JDK 17 或更高版本 (Spring Boot 4 的要求) 。本指南已在 Java 25、Spring Boot 4.1.1、pgjdbc 42.7.13、Hibernate 7.4.5、HikariCP 7.0.2 和 Flyway 12.4.0 环境下测试通过。
+* 一个 ClickHouse Cloud 账户
+* [`psql`](https://www.postgresql.org/download/)，用于创建数据库。也可以在 [SQL 控制台](/zh/integrations/connectors/sql-clients/sql-console) 中执行 `CREATE DATABASE` 语句。
+
+## 创建 ClickHouse Managed Postgres 服务 {#create-service}
+
+在 ClickHouse Cloud 控制台中，点击 **New service**，然后选择 **Postgres**。实例会在几分钟内准备就绪。完整操作步骤请参阅[快速入门](/zh/products/managed-postgres/quickstart)。
+
+## 获取连接信息 {#connection-details}
+
+在服务的左侧边栏中点击 **Connect**。弹出的对话框会显示您的用户名、密码、服务器和端口，并提供 **Directly** / **via PgBouncer** 切换开关。
+
+选中 **Directly**，开启 **Use SSL**，然后打开 **jdbc** 选项卡。此处会显示一个 JDBC URL，只需修改两处即可在 Spring Boot 中使用：数据库名称和 CA 证书文件名。具体修改步骤见[配置连接](#configure-connection)。
+
+```text
+jdbc:postgresql://your-instance.pg.clickhouse.cloud:5432/postgres?sslmode=verify-full&sslrootcert=<service-name>-ca-certificate.pem
+```
+
+JDBC URL 中不包含用户名和密码，Spring Boot 会从单独的属性中读取它们。
+
+本指南**直接**连接到端口 `5432` 上的 Postgres。Spring Boot 应用是长期运行的进程，会维护自己的 HikariCP 连接池 (默认 10 个连接) ，因此无需在 Postgres 前面再部署一个连接池器。请确保应用实例数与连接池大小的乘积低于服务的 `max_connections`。如果您运行的实例较多，请参阅[使用 PgBouncer](#pgbouncer)。
+
+在弹出的对话框中，点击 **Download CA certificate**。您也可以在 **Settings → CA Certificate** 中下载该证书。该证书是您的实例所独有的，因此驱动程序可以借此确认其连接的确实是您的服务器。
+
+## 创建项目 {#project-setup}
+
+使用 [Spring Initializr](https://start.spring.io/) 生成一个 Maven 项目，并添加 Spring Web、Spring Data JPA、Flyway Migration 和 PostgreSQL Driver 依赖项：
+
+```bash
+curl https://start.spring.io/starter.tgz \
+  -d type=maven-project \
+  -d dependencies=web,data-jpa,flyway,postgresql \
+  -d artifactId=todos -d name=todos -d baseDir=todos | tar -xzf -
+cd todos
+```
+
+<Tip>
+  **要集成到现有应用中？**
+
+  请跳过 `curl` 命令。在 `pom.xml` 中添加 `spring-boot-starter-data-jpa`、`spring-boot-starter-flyway` 和 `org.flywaydb:flyway-database-postgresql` 依赖项，并以 `runtime` scope 添加 `org.postgresql:postgresql`；如果应用使用了 H2，请移除 `com.h2database:h2`。然后继续执行[配置连接](#configure-connection)中的步骤。
+</Tip>
+
+## 配置连接 {#configure-connection}
+
+将下载的 CA 证书移动到项目目录中，并重命名为 `ca-certificate.pem`。
+
+为应用创建一个数据库。将 `<PASSWORD>` 和主机地址替换为 **Connect** 对话框中显示的值：
+
+```bash
+psql "postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/postgres?sslmode=verify-full&sslrootcert=ca-certificate.pem" -c "CREATE DATABASE guide_spring;"
+```
+
+```text
+CREATE DATABASE
+```
+
+将 `src/main/resources/application.properties` 的内容替换为以下内容。如果是现有应用，请添加 `spring.datasource` 和 `spring.jpa` 相关配置行，并删除其他所有 `spring.datasource` 设置 (例如 H2 URL) 。此处的 URL 取自 **jdbc** 选项卡，只是将数据库改为了 `guide_spring`，并将 `sslrootcert` 改为指向重命名后的文件：
+
+```properties title="src/main/resources/application.properties"
+spring.application.name=todos
+server.port=3113
+
+spring.datasource.url=jdbc:postgresql://your-instance.pg.clickhouse.cloud:5432/guide_spring?sslmode=verify-full&sslrootcert=ca-certificate.pem
+spring.datasource.username=postgres
+spring.datasource.password=${DATABASE_PASSWORD}
+
+spring.jpa.hibernate.ddl-auto=validate
+spring.jpa.open-in-view=false
+```
+
+pgjdbc 会从 URL 中读取 `sslmode=verify-full` 和 `sslrootcert`。它会加载 CA 文件中的所有证书，并同时校验证书链和主机名，因此无需编写任何额外的 TLS 代码。Spring Boot 从 `DATABASE_PASSWORD` 环境变量中读取密码，因此密码无需写入该文件。
+
+其他设置：
+
+* `ddl-auto=validate` 让 Hibernate 在启动时检查实体是否与 Flyway 创建的表一致。Hibernate 不会修改 schema。
+* `open-in-view=false` 会在事务结束时立即将连接归还到连接池，而不是一直占用到 HTTP 响应写入完成。
+
+<Note>
+  相对的 `sslrootcert` 路径会基于 JVM 的工作目录进行解析。`./mvnw spring-boot:run` 会在项目目录中启动应用，因此此时使用 `ca-certificate.pem` 即可正常工作。若在其他位置运行打包后的 JAR，请使用绝对路径。注意，pgjdbc 不会展开 `~`。
+
+  如果复制 URL 时关闭了 **Use SSL**，URL 中就不会包含 `sslmode`，此时 pgjdbc 会使用 `prefer` 模式：连接会被加密，但不会验证服务器。如果 CA 不正确，连接会失败并报错 `PKIX path building failed`；如果文件不存在，则会报错 `Could not open SSL root certificate file`；如果主机与证书不匹配 (例如通过 IP 地址连接) ，则会报错 `The hostname ... could not be verified by hostnameverifier PgjdbcHostnameVerifier`。
+</Note>
+
+## 使用 Flyway 创建表 {#migrations}
+
+应用启动时，Flyway 会在 Hibernate 校验 schema 之前，按版本顺序执行 `src/main/resources/db/migration` 目录下的 SQL 文件。创建 `src/main/resources/db/migration/V1__create_todos.sql` 文件：
+
+```sql title="src/main/resources/db/migration/V1__create_todos.sql"
+CREATE TABLE todos (
+    id         bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    title      text        NOT NULL,
+    done       boolean     NOT NULL DEFAULT false,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+```
+
+Flyway 会在 `flyway_schema_history` 表中记录每个已应用的文件，后续启动时只运行新文件。如需更改 schema，请添加一个新文件 (例如 `V2__add_due_date.sql`) ，而不要修改已运行过的文件。
+
+<Note>
+  使用 H2 的应用通常由 Hibernate 自动创建表，因为对于嵌入式数据库，`ddl-auto` 的默认值为 `create-drop`。而对于 Postgres，其默认值为 `none`，因此需要添加一个迁移脚本来创建现有的表。如果 `@Id` 仅使用普通的 `@GeneratedValue`，还需要一个以实体命名的序列 (例如 `Employee` 对应 `employee_seq`) ，且其步长为 `50`，即 Hibernate 的默认分配大小。否则，启动时会报错 `Schema validation: missing sequence [employee_seq]` 并失败；如果序列的步长为 `1`，则会报错 `The increment size of the [employee_seq] sequence is set to [50] in the entity mapping but the mapped database sequence increment size is [1]`：
+
+  ```sql
+  CREATE SEQUENCE employee_seq INCREMENT BY 50;
+  ```
+</Note>
+
+## 查询数据库 {#query}
+
+在 `src/main/java/com/example/todos/Todo.java` 中创建实体类。Spring Boot 会将 `createdAt` 字段映射到 `created_at` 列：
+
+```java title="src/main/java/com/example/todos/Todo.java"
+package com.example.todos;
+
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import java.time.Instant;
+
+@Entity
+@Table(name = "todos")
+public class Todo {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    private String title;
+
+    private boolean done;
+
+    private Instant createdAt = Instant.now();
+
+    protected Todo() {
+    }
+
+    public Todo(String title) {
+        this.title = title;
+    }
+
+    public Long getId() {
+        return id;
+    }
+
+    public String getTitle() {
+        return title;
+    }
+
+    public boolean isDone() {
+        return done;
+    }
+
+    public void setDone(boolean done) {
+        this.done = done;
+    }
+
+    public Instant getCreatedAt() {
+        return createdAt;
+    }
+}
+```
+
+在 `src/main/java/com/example/todos/TodoRepository.java` 中创建一个 Spring Data repository。Spring Data 会在运行时自动实现该接口：
+
+```java title="src/main/java/com/example/todos/TodoRepository.java"
+package com.example.todos;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+
+public interface TodoRepository extends JpaRepository<Todo, Long> {
+}
+```
+
+在 `src/main/java/com/example/todos/TodoController.java` 中创建一个 REST 控制器，每个路由调用一次 repository：
+
+```java title="src/main/java/com/example/todos/TodoController.java"
+package com.example.todos;
+
+import java.util.List;
+import org.springframework.data.domain.Sort;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
+
+@RestController
+@RequestMapping("/todos")
+public class TodoController {
+
+    record NewTodo(String title) {
+    }
+
+    private final TodoRepository todos;
+
+    public TodoController(TodoRepository todos) {
+        this.todos = todos;
+    }
+
+    // Read
+    @GetMapping
+    public List<Todo> list() {
+        return todos.findAll(Sort.by("id"));
+    }
+
+    // Create
+    @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
+    public Todo create(@RequestBody NewTodo body) {
+        return todos.save(new Todo(body.title()));
+    }
+
+    // Update: toggle the done flag
+    @PatchMapping("/{id}")
+    public Todo toggle(@PathVariable Long id) {
+        Todo todo = todos.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+        todo.setDone(!todo.isDone());
+        return todos.save(todo);
+    }
+
+    // Delete
+    @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void delete(@PathVariable Long id) {
+        todos.deleteById(id);
+    }
+}
+```
+
+每次 repository 调用都会从 HikariCP 连接池获取一个连接，并在独立的事务中运行。若要将多个调用合并到同一个事务中，请将它们放在一个带有 `@Transactional` 注解的方法中。
+
+## 运行并验证 {#verify}
+
+设置密码并启动应用：
+
+```bash
+export DATABASE_PASSWORD='<PASSWORD>'
+./mvnw spring-boot:run
+```
+
+首次启动时，Flyway 会在 Web 服务器启动前完成迁移。日志中会包含以下内容 (此处省略了时间戳和线程名称) ：
+
+```text
+o.f.core.internal.command.DbMigrate      : Migrating schema "public" to version "1 - create todos"
+o.f.core.internal.command.DbMigrate      : Successfully applied 1 migration to schema "public", now at version v1 (execution time 00:00.236s)
+org.hibernate.orm.core                   : HHH000001: Hibernate ORM core version 7.4.5.Final
+o.s.boot.tomcat.TomcatWebServer          : Tomcat started on port 3113 (http) with context path '/'
+com.example.todos.TodosApplication       : Started TodosApplication in 5.619 seconds (process running for 5.744)
+```
+
+在另一个终端中创建两个待办事项，将第一个标记为已完成，然后删除第二个：
+
+```bash
+curl -w '\n' -X POST localhost:3113/todos -H 'Content-Type: application/json' -d '{"title": "Try Spring Boot"}'
+curl -w '\n' -X POST localhost:3113/todos -H 'Content-Type: application/json' -d '{"title": "Write a Flyway migration"}'
+curl -w '\n' -X PATCH localhost:3113/todos/1
+curl -X DELETE localhost:3113/todos/2
+```
+
+`POST` 请求会返回新插入的行，`PATCH` 请求会返回更新后的行。`-w '\n'` 用于在每个响应后追加一个换行符：
+
+```json
+{"title":"Try Spring Boot","createdAt":"2026-10-01T14:49:40.595598759Z","done":false,"id":1}
+{"title":"Write a Flyway migration","createdAt":"2026-10-01T14:49:40.794631917Z","done":false,"id":2}
+{"title":"Try Spring Boot","createdAt":"2026-10-01T14:49:40.595599Z","done":true,"id":1}
+```
+
+在浏览器中打开 [http://localhost:3113/todos](http://localhost:3113/todos)，即可查看剩余的待办事项列表。响应内容如下所示：
+
+```json
+[{"title":"Try Spring Boot","createdAt":"2026-10-01T14:49:40.595599Z","done":true,"id":1}]
+```
+
+要确认应用的连接是否使用了 TLS，请在应用运行时查询 `pg_stat_ssl`：
+
+```bash
+psql "postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/guide_spring?sslmode=verify-full&sslrootcert=ca-certificate.pem" -c "SELECT ssl, version, count(*) AS connections FROM pg_stat_ssl JOIN pg_stat_activity USING (pid) WHERE datname = 'guide_spring' AND application_name = 'PostgreSQL JDBC Driver' GROUP BY ssl, version;"
+```
+
+```text
+ ssl | version | connections
+-----+---------+-------------
+ t   | TLSv1.3 |          10
+(1 row)
+```
+
+这 10 个连接来自 HikariCP 连接池。按 <kbd>Ctrl</kbd>+<kbd>C</kbd> 停止应用。
+
+要在控制台中查看数据，请在服务的左侧边栏中打开 **SQL 控制台**，依次展开 `guide_spring` 和 `public`，然后点击 `todos` 表。旁边的 `flyway_schema_history` 表记录了迁移历史。`todos` 表中只剩下这一行：
+
+| id | title           | done | created&#95;at                |
+| -- | --------------- | ---- | ----------------------------- |
+| 1  | Try Spring Boot | true | 2026-10-01 14:49:40.595599+00 |
+
+## 使用 PgBouncer {#pgbouncer}
+
+当大量应用实例的总连接数接近 Postgres 连接上限时，请让应用通过内置的 [PgBouncer](/zh/products/managed-postgres/connection#pgbouncer) (端口 `6432`) 进行连接，Flyway 则继续使用直接连接。在 `application.properties` 中，将 `spring.datasource.url` 中的端口改为 `6432`，并在其下方添加以下 `spring.flyway` 配置：
+
+```properties title="src/main/resources/application.properties"
+spring.datasource.url=jdbc:postgresql://your-instance.pg.clickhouse.cloud:6432/guide_spring?sslmode=verify-full&sslrootcert=ca-certificate.pem
+spring.flyway.url=jdbc:postgresql://your-instance.pg.clickhouse.cloud:5432/guide_spring?sslmode=verify-full&sslrootcert=ca-certificate.pem
+spring.flyway.user=postgres
+spring.flyway.password=${DATABASE_PASSWORD}
+```
+
+设置 `spring.flyway.url` 后，Flyway 会打开自己的连接，而不会使用 `spring.datasource` 的用户名和密码，因此还需设置 `spring.flyway.user` 和 `spring.flyway.password`。两个端口可以使用同一个 CA 证书。
+
+PgBouncer 运行在事务池化模式下，因此每个事务都可能在不同的 Postgres 连接上执行。在 Spring Boot 中需注意以下几点：
+
+* **预处理语句**在默认驱动程序设置下即可正常工作，无需设置 `prepareThreshold=0`。同一条语句在同一连接上执行到第五次时 (由 `prepareThreshold` 决定) ，pgjdbc 会开始使用具名的服务端预处理语句。pgjdbc 通过协议层的 `Close` 消息释放语句，而内置的 PgBouncer 能够处理该消息。
+* **需要 pgjdbc 42.7.5 或更高版本**。较旧版本会发送 `extra_float_digits` 启动参数，导致 PgBouncer 拒绝连接并报错 `FATAL: unsupported startup parameter: extra_float_digits`。Spring Boot 4 已自带较新的 pgjdbc。若使用较旧的 Spring Boot 版本，请在 `pom.xml` 的 `<properties>` 部分中设置 `<postgresql.version>42.7.13</postgresql.version>`。
+* **会话设置不会保留。** `SET` 语句以及 `Connection.setSchema` (HikariCP 的 `spring.datasource.hikari.schema` 属性依赖于它) 仅对执行它们的那个 Postgres 连接生效，并且可能泄漏给其他客户端。使用 `currentSchema` 和 `options` URL 参数会报错 `FATAL: unsupported startup parameter`。请使用带 schema 限定的表名，或在事务内使用 `SET LOCAL`。
+* **Flyway** 默认可以通过 PgBouncer 正常工作，因为它获取的是事务级咨询锁。如果迁移中包含 `CREATE INDEX CONCURRENTLY`，则需要设置 `spring.flyway.postgresql.transactional-lock=false`，这会让 Flyway 改用会话级锁。经由 PgBouncer 时，该锁会因 `Unable to release PostgreSQL advisory lock` 而失败，并一直被某个池化连接持有，因此请让 Flyway 使用直接连接。
+* **连接池大小**：每个 HikariCP 连接都只是一个到 PgBouncer 的低开销客户端连接。无论应用实例打开多少客户端连接，PgBouncer 为每个数据库和用户打开的 Postgres 连接数都受 `default_pool_size` 限制。超出该限制的事务会在 PgBouncer 中排队等待，最长可达 `query_wait_timeout` (默认 120 秒) ，而不会直接在 HikariCP 中失败。增大 HikariCP 连接池最多只能将并发度提升到该限制，因此每个实例默认的 10 个连接是不错的起点。请参阅 [PgBouncer 与 Postgres 连接数限制](/zh/products/managed-postgres/faq#pgbouncer-vs-pg-connections)。
+
+`pg_stat_ssl` 反映的是 PgBouncer 与 Postgres 之间的连接，因此 [运行并验证](#verify) 中的 TLS 查询不会显示应用经由 PgBouncer 建立的连接。但应用到 PgBouncer 的连接仍会经过验证：如果 CA 证书有误，连接同样会失败。
+
+## 后续步骤 {#next-steps}
+
+* [连接](/zh/products/managed-postgres/connection)：连接字符串、PgBouncer 和 TLS
+* [设置](/zh/products/managed-postgres/settings)：Postgres 和 PgBouncer 参数，例如 `max_connections`
+* [只读副本](/zh/products/managed-postgres/read-replicas)：将只读查询路由到副本
+* [安全](/zh/products/managed-postgres/security)：IP 访问列表和私有网络连接
