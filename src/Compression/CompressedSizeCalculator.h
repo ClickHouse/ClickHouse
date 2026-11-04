@@ -13,10 +13,11 @@ namespace DB
 /// A write buffer that reports the on-disk size its input would compress to, without writing anything.
 /// Uses `codec->tryGetCompressedSize` when codec can cheaply calculate size.
 /// Otherwise compresses into a scratch buffer, discarding the output.
+/// The buffer starts small and grows up to `block_size` as the input arrives, so a stream that sees little data costs little memory.
 class CompressedSizeCalculator : public BufferWithOwnMemory<WriteBuffer>
 {
 public:
-    explicit CompressedSizeCalculator(CompressionCodecPtr codec_ = nullptr, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);
+    explicit CompressedSizeCalculator(CompressionCodecPtr codec_ = nullptr, size_t block_size_ = DBMS_DEFAULT_BUFFER_SIZE);
 
     /// Total on-disk size of the streamed input (not a single block). Call `finalize` first.
     /// Per block: 16-byte checksum + block header + compressed payload.
@@ -31,8 +32,12 @@ public:
 
 private:
     void nextImpl() override;
+    void finalizeImpl() override;
 
     CompressionCodecPtr codec;
+    const size_t block_size;
+    /// Set while the last, partial block is compressed by `finalize`.
+    bool finalizing = false;
     PODArray<char> scratch;
     UInt64 compressed_total = 0;
 };
