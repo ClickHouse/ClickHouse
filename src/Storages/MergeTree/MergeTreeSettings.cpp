@@ -857,10 +857,10 @@ Obsolete, use `text_index_dictionary_block_encoding` instead. Used only if `text
     DECLARE(TextIndexDictionaryBlockEncoding, text_index_dictionary_block_encoding, TextIndexDictionaryBlockEncoding::FrontCodingV1, R"(
 Default token layout of text index dictionary blocks. One of `none`, `frontcoding_v1`, `frontcoding_v2`.
 `frontcoding_v2` stores the prefix and suffix lengths as bit-packed columns, which is smaller and faster to decode,
-but parts written with it cannot be read by versions before 26.10.
+but parts written with it cannot be read by versions before 26.11.
 Can be overridden by explicit `dictionary_block_encoding` index argument.
 )", 0, \
-        {"26.10", "frontcoding_v1", "frontcoding_v1", "New setting"}) \
+        {"26.11", "frontcoding_v1", "frontcoding_v1", "New setting"}) \
     DECLARE(NonZeroUInt64, text_index_posting_list_block_size, 1048576, R"(
 Default posting list block size for text indexes (rows).
 Can be overridden by explicit `posting_list_block_size` index argument.
