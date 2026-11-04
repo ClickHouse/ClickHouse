@@ -110,6 +110,9 @@ private:
         const NameAndTypePair & name_and_type,
         const SerializationPtr & serialization);
 
+    /// Only the part's own serialization tells a stream it lacks by design from a subcolumn its type lacks.
+    bool isReadWithTypeInPart(const NameAndTypePair & name_and_type) const;
+
     ReadBuffer * getStream(
         bool seek_to_start,
         const ISerialization::SubstreamPath & substream_path,
