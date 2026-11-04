@@ -13,6 +13,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSubquery.h>
@@ -474,54 +475,73 @@ bool changedNullabilityOneWay(const Block & src_block, const Block & dst_block)
     return false;
 }
 
+namespace
+{
+
+/// Returns the value of `array_join_use_nulls` in the scope of a query with the `SETTINGS` clause `settings_ast`,
+/// given its value `use_nulls` in the enclosing scope. Like `applyQueryLevelSettings`, the changes are applied first
+/// and then the resets: `SETTINGS array_join_use_nulls = DEFAULT` restores the declared default, which is `false`.
+bool applyArrayJoinUseNullsFromSettings(const ASTPtr & settings_ast, bool use_nulls)
+{
+    const auto * set_query = settings_ast ? settings_ast->as<ASTSetQuery>() : nullptr;
+    if (!set_query)
+        return use_nulls;
+
+    if (const Field * value = set_query->changes.tryGet("array_join_use_nulls"))
+        use_nulls = SettingFieldBool(*value).value;
+
+    if (std::ranges::find(set_query->default_settings, "array_join_use_nulls") != set_query->default_settings.end())
+        use_nulls = false;
+
+    return use_nulls;
+}
+
+}
+
 /// `LEFT ARRAY JOIN` changes the nullability of the joined columns under `array_join_use_nulls`,
 /// exactly like `JOIN` does under `join_use_nulls`. An inner `ARRAY JOIN` never does (an empty array
 /// simply produces no rows), so only the `LEFT` kind is relevant for the schema-mismatch guard.
 /// The whole query is searched, not only the top-level `SELECT`, because a `LEFT ARRAY JOIN` inside
 /// a table subquery, a CTE or a nested `UNION` propagates its `Nullable` columns to the view output too.
-bool hasLeftArrayJoin(const IAST & ast)
+/// The setting is tracked per scope, the same way the query tree builder applies the `SETTINGS` clauses:
+/// the clause of a `SELECT` applies to it and to its subqueries, and the query-level clause of a `UNION`,
+/// `INTERSECT` or `EXCEPT` (left on its last operand by the parser) applies to all its operands.
+bool hasLeftArrayJoinWithUseNulls(const IAST & ast, bool use_nulls)
 {
-    if (const auto * array_join = ast.as<ASTArrayJoin>(); array_join && array_join->kind == ASTArrayJoin::Kind::Left)
-        return true;
+    if (const auto * union_query = ast.as<ASTSelectWithUnionQuery>())
+    {
+        use_nulls = applyArrayJoinUseNullsFromSettings(union_query->settings_ast, use_nulls);
+        if (union_query->list_of_selects && union_query->list_of_selects->children.size() > 1)
+        {
+            if (const auto * last_select = union_query->list_of_selects->children.back()->as<ASTSelectQuery>())
+                use_nulls = applyArrayJoinUseNullsFromSettings(last_select->settings(), use_nulls);
+        }
+    }
+    else if (const auto * intersect_except = ast.as<ASTSelectIntersectExceptQuery>())
+    {
+        const auto selects = intersect_except->getListOfSelects();
+        if (!selects.empty())
+        {
+            if (const auto * last_select = selects.back()->as<ASTSelectQuery>())
+                use_nulls = applyArrayJoinUseNullsFromSettings(last_select->settings(), use_nulls);
+        }
+    }
+    else if (const auto * select = ast.as<ASTSelectQuery>())
+    {
+        use_nulls = applyArrayJoinUseNullsFromSettings(select->settings(), use_nulls);
+    }
+    else if (const auto * array_join = ast.as<ASTArrayJoin>(); array_join && array_join->kind == ASTArrayJoin::Kind::Left)
+    {
+        if (use_nulls)
+            return true;
+    }
 
     for (const auto & child : ast.children)
     {
-        if (child && hasLeftArrayJoin(*child))
+        if (child && hasLeftArrayJoinWithUseNulls(*child, use_nulls))
             return true;
     }
     return false;
-}
-
-namespace
-{
-
-void findArrayJoinUseNullsImpl(const IAST & ast, bool & enabled, bool & disabled)
-{
-    if (const auto * set_query = ast.as<ASTSetQuery>())
-    {
-        if (const Field * value = set_query->changes.tryGet("array_join_use_nulls"))
-            (SettingFieldBool(*value) ? enabled : disabled) = true;
-    }
-
-    for (const auto & child : ast.children)
-    {
-        if (child)
-            findArrayJoinUseNullsImpl(*child, enabled, disabled);
-    }
-}
-
-}
-
-std::optional<bool> findArrayJoinUseNulls(const IAST & ast)
-{
-    bool enabled = false;
-    bool disabled = false;
-    findArrayJoinUseNullsImpl(ast, enabled, disabled);
-    if (enabled)
-        return true;
-    if (disabled)
-        return false;
-    return std::nullopt;
 }
 
 VirtualColumnsDescription StorageView::createVirtuals()
@@ -821,8 +841,7 @@ void StorageView::readImpl(
         /// Only the nullability introduced by an enabled `array_join_use_nulls` is reported: with the setting
         /// disabled, a `Nullable` output of `LEFT ARRAY JOIN` comes from a `Nullable` element type, and the
         /// conversion below handles it as it always did.
-        if (hasLeftArrayJoin(*select_with_union)
-            && findArrayJoinUseNulls(*select_with_union).value_or(view_context->getSettingsRef()[Setting::array_join_use_nulls]))
+        if (hasLeftArrayJoinWithUseNulls(*select_with_union, view_context->getSettingsRef()[Setting::array_join_use_nulls]))
             throw DB::Exception(ErrorCodes::INCORRECT_QUERY,
                                 "Query from view {} returned Nullable column having not Nullable type in structure. "
                                 "If query from view has LEFT ARRAY JOIN, it may be caused by different values of 'array_join_use_nulls' setting. "

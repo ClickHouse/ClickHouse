@@ -659,8 +659,7 @@ private:
         /// `LEFT ARRAY JOIN` under `array_join_use_nulls` makes the joined columns `Nullable`, which cannot be
         /// stored into the non-`Nullable` columns of the target table. Report it explicitly, like `StorageView`
         /// does for ordinary views.
-        if (findArrayJoinUseNulls(*select_query).value_or(local_context->getSettingsRef()[Setting::array_join_use_nulls])
-            && hasLeftArrayJoin(*select_query)
+        if (hasLeftArrayJoinWithUseNulls(*select_query, local_context->getSettingsRef()[Setting::array_join_use_nulls])
             && changedNullabilityOneWay(pipeline.getHeader(), inner_metadata->getSampleBlock()))
         {
             throw Exception(ErrorCodes::INCORRECT_QUERY,

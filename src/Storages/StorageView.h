@@ -14,12 +14,10 @@ namespace DB
 /// Returns `true` if there is a `Nullable` column in `src_block` whose namesake in `dst_block` is not `Nullable`.
 bool changedNullabilityOneWay(const Block & src_block, const Block & dst_block);
 
-/// Returns `true` if the query contains `LEFT ARRAY JOIN` at any level of nesting.
-bool hasLeftArrayJoin(const IAST & ast);
-
-/// Returns the value of `array_join_use_nulls` set by the `SETTINGS` clauses of the query: `true` if any of them
-/// enables it, `false` if some disable it and none enables it, and `std::nullopt` if none mentions it.
-std::optional<bool> findArrayJoinUseNulls(const IAST & ast);
+/// Returns `true` if the query contains, at any level of nesting, a `LEFT ARRAY JOIN` executed with `array_join_use_nulls`
+/// enabled. `use_nulls` is the value of the setting outside the query; the `SETTINGS` clauses of the query and of its
+/// subqueries override it in their own scopes.
+bool hasLeftArrayJoinWithUseNulls(const IAST & ast, bool use_nulls);
 
 class StorageView final : public StorageWithCommonVirtualColumns
 {
