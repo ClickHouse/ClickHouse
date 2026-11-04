@@ -11,6 +11,10 @@ import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
 import { Image } from "/snippets/components/Image.jsx";
 
+<Note>
+The instrumentation examples below use `@clickhouse/clickstack-browser`. The demo repository still bundles the legacy browser SDK; its [SDK migration](https://github.com/ClickHouse/clickstack-session-replay-demo/pull/2) is pending. The clone-and-run workflow uses that bundled SDK until the repository is updated.
+</Note>
+
 <Tabs>
 <Tab title="Fully managed">
 
@@ -56,7 +60,7 @@ cd clickstack-session-replay-demo
 </Step>
 <Step title="Configure the managed connection" id="configure-managed-connection">
 
-In your ClickHouse Observability service, open **Team Settings → Managed Telemetry** and copy the **OTLP HTTP endpoint** and **API key**.
+In your ClickHouse Observability service, open **Team Settings → Data → Managed Telemetry** and copy the **OTLP HTTP endpoint** and **API key**.
 
 <Image img="/images/clickstack/getting-started/observability-managed-telemetry.png" alt="Managed Telemetry showing the masked OTLP HTTP endpoint and API key" size="lg" />
 
@@ -64,11 +68,11 @@ Set `CLICKSTACK_UI_URL` to your managed service’s UI URL. To open replays dire
 
 ```shell
 export CLICKSTACK_OTEL_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
-export CLICKSTACK_API_KEY='YOUR_API_KEY'
+export CLICKSTACK_API_KEY='Bearer YOUR_API_KEY'
 export CLICKSTACK_UI_URL='YOUR_OBSERVABILITY_UI_URL'
 ```
 
-Keep the `https://` prefix and omit signal paths such as `/v1/traces`. Use the API key as provided, without a `Bearer` prefix.
+Keep the `https://` prefix and omit signal paths such as `/v1/traces`. Include the `Bearer ` prefix for fully managed ingestion, as shown above.
 
 `CLICKSTACK_UI_URL` controls the demo’s **Open Observability** links; it is separate from the telemetry ingestion endpoint.
 
@@ -106,23 +110,22 @@ Switch between **Highlighted** and **All Events** modes to adjust the level of d
 
 ## The instrumentation {#instrumentation}
 
-The demo application shows how little code is needed to enable session replay. Two additions to the application are all it takes. The `main` branch already includes both:
+The demo application shows how little code is needed to enable session replay. Two additions to the application are all it takes. The examples below use the new ClickStack Browser SDK:
 
 **1. Include the SDK (`app/public/index.html`):**
 
 ```html
-<script src="https://unpkg.com/@hyperdx/browser@0.21.0/build/index.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@clickhouse/clickstack-browser@1.0.0/dist/clickstack.iife.js"></script>
 ```
 
 **2. Initialize the browser SDK (`app/public/js/app.js`):**
 
 ```javascript
-window.HyperDX.init({
-  url: window.CLICKSTACK_CONFIG.endpoint,
+window.ClickStack.init({
+  endpoint: window.CLICKSTACK_CONFIG.endpoint,
   apiKey: window.CLICKSTACK_CONFIG.apiKey,
-  service: 'clickhouse-session-replay-demo',
-  consoleCapture: true,
-  advancedNetworkCapture: true,
+  serviceName: 'clickhouse-session-replay-demo',
+  console: 'debug',
 });
 ```
 
@@ -158,9 +161,9 @@ Reload the demo in your browser and interact with it to generate a new session.
 
 The API key isn't set correctly. Make sure you:
 
-1. Exported it in your terminal: `export CLICKSTACK_API_KEY='your-key'`
+1. Exported it in your terminal: `export CLICKSTACK_API_KEY='Bearer your-key'`
 2. Started the demo app in the **same terminal** where you exported it
-3. Copied the API key from **Team Settings → Managed Telemetry** in the same service as your endpoint
+3. Copied the API key from **Team Settings → Data → Managed Telemetry** in the same service as your endpoint
 
 ## Cleanup {#cleanup}
 
@@ -280,22 +283,21 @@ The demo application shows how little code is needed to enable session replay. T
 **1. Include the SDK (`app/public/index.html`):**
 
 ```html
-<script src="https://unpkg.com/@hyperdx/browser@0.21.0/build/index.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@clickhouse/clickstack-browser@1.0.0/dist/clickstack.iife.js"></script>
 ```
 
-**2. Initialize ClickStack (`app/public/js/app.js`):**
+**2. Initialize the browser SDK (`app/public/js/app.js`):**
 
 ```javascript
-window.HyperDX.init({
-  url: 'http://localhost:4318',
+window.ClickStack.init({
+  endpoint: 'http://localhost:4318',
   apiKey: window.CLICKSTACK_API_KEY,
-  service: 'clickhouse-session-replay-demo',
-  consoleCapture: true,
-  advancedNetworkCapture: true,
+  serviceName: 'clickhouse-session-replay-demo',
+  console: 'debug',
 });
 ```
 
-Everything else is standard application code. The SDK automatically captures all user interactions, console logs, network requests, and errors — no additional instrumentation is needed.
+Text and input values are masked by default. See the [Browser SDK privacy controls](/clickstack/observability/ingesting-data/sdks/browser#session-replay-and-privacy) before changing masking settings. Everything else is standard application code. The SDK automatically captures all user interactions, console logs, network requests, and errors — no additional instrumentation is needed.
 
 ### Try it yourself {#try-it-yourself-self-configured}
 
