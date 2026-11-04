@@ -7,7 +7,10 @@
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
+#include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
+#include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
@@ -19,7 +22,11 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
+#include <Processors/QueryPlan/SaveSubqueryResultToBufferStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/StreamInQueryResultCacheStep.h>
+#include <Processors/QueryPlan/WindowStep.h>
+#include <QueryPipeline/StreamLocalLimits.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Common/logger_useful.h>
@@ -87,6 +94,12 @@ RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_s
     if (total_number_of_distinct_values)
         aggregation_stats.estimated_rows = toUInt64Saturating(*total_number_of_distinct_values);
 
+    /// Only a keyed aggregation with no row-adding mode is bounded by its input: a keyless one
+    /// emits a row even on empty input, grouping sets run one aggregation per set, and
+    /// `overflow_row` appends a row.
+    if (!aggregator_params.keys.empty() && !aggregating_step.isGroupingSets() && !aggregator_params.overflow_row)
+        aggregation_stats.estimated_rows_upper = input_stats.estimated_rows_upper;
+
     return aggregation_stats;
 }
 
@@ -111,6 +124,25 @@ void clearColumnValueRanges(std::unordered_map<String, ColumnStats> & column_sta
         stats.max_value.reset();
         stats.null_fraction.reset();
     }
+}
+
+/// A limit in `break` mode ends the stream early instead of throwing.
+bool stopsEarlyOnOverflow(const SizeLimits & limits)
+{
+    return limits.hasLimits() && limits.overflow_mode == OverflowMode::BREAK;
+}
+
+bool readCanStopEarly(const std::shared_ptr<const StorageLimitsList> & storage_limits)
+{
+    return storage_limits
+        && std::ranges::any_of(
+               *storage_limits,
+               [](const StorageLimits & limits)
+               {
+                   const auto & local = limits.local_limits;
+                   return stopsEarlyOnOverflow(local.size_limits) || stopsEarlyOnOverflow(limits.leaf_limits)
+                       || (local.speed_limits.max_execution_time != 0 && local.timeout_overflow_mode == OverflowMode::BREAK);
+               });
 }
 
 /// A runtime filter prunes nothing at plan time, so it must not count as a filter when estimating.
@@ -193,7 +225,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         /// analysis results can be placeholders for deferred work, so only propagate zero
         /// when `has_exact_ranges` is set.
         if (analyzed_result && analyzed_result->has_exact_ranges && analyzed_result->selected_rows == 0)
-            return RelationStats{.estimated_rows = 0, .table_name = table_display_name};
+            return RelationStats{.estimated_rows = 0, .estimated_rows_upper = 0, .table_name = table_display_name};
 
         /// `STREAM` defers range analysis until execution. Its placeholder result has zero
         /// selected rows but does not mean that the relation is empty.
@@ -278,17 +310,36 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
                 .imprecise_estimate = true,
                 .source = RowEstimateSource::NoStatistics};
 
+        /// `selected_rows` counts the rows the reader will scan (post-index ranges). Filters not
+        /// resolvable by the index only remove rows afterwards, so it bounds the result from above
+        /// even when it is too coarse to serve as a point estimate.
         /// If any conditions are pushed down to storage but not used in the index,
         /// we cannot precisely estimate the row count
         if (has_filter && !is_filtered_by_index)
             return RelationStats{
                 .estimated_rows = {},
+                .estimated_rows_upper = analyzed_result->selected_rows,
                 .table_name = table_display_name,
                 .imprecise_estimate = true,
                 .source = RowEstimateSource::NoStatistics};
 
+        /// `selected_rows` counts physical rows in the selected ranges, so it is the exact row count
+        /// only when nothing drops rows afterwards: no filter, SAMPLE or FINAL, no mutation applied
+        /// while reading (a lightweight delete or patch part filters at read time), no `UNIQUE KEY`
+        /// delete bitmap and no read or time limit in `break` mode.
+        const auto & mutations = reading->getMutationsSnapshot();
+        const bool mutations_can_remove_rows = mutations
+            && (mutations->hasLightweightDeletedMask() || mutations->hasDataMutations() || mutations->hasPatchParts());
+        /// A runtime-filter `PREWHERE` is not a plan-time filter (`has_filter`), but it still drops rows.
+        const bool no_row_removal_after_read = !has_filter && !reading->getPrewhereInfo() && !reading->getRowLevelFilter()
+            && !reading->getDeferredRowLevelFilter() && !reading->isQueryWithSampling()
+            && !reading->isQueryWithFinal() && !mutations_can_remove_rows
+            && !reading->getStorageMetadata()->hasUniqueKey() && !readCanStopEarly(reading->getQueryInfo().storage_limits);
+
         return RelationStats{
             .estimated_rows = analyzed_result->selected_rows,
+            .estimated_rows_upper = analyzed_result->selected_rows,
+            .estimated_rows_is_lower_bound = no_row_removal_after_read,
             .table_name = table_display_name,
             .imprecise_estimate = true,
             .source = RowEstimateSource::PrimaryIndex};
@@ -353,7 +404,12 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     {
         UInt64 estimated_rows = reading->getStorage()->totalRows({}).value_or(0);
         String table_display_name = reading->getStorage()->getName();
-        return RelationStats{.estimated_rows = estimated_rows, .table_name = table_display_name, .source = RowEstimateSource::Statistics};
+        /// `totalRows` is a live counter while the step reads a fixed snapshot, so a concurrent
+        /// insert can push it above the number of rows actually read: not a lower bound.
+        return RelationStats{
+            .estimated_rows = estimated_rows,
+            .table_name = table_display_name,
+            .source = RowEstimateSource::Statistics};
     }
 
     /// We cannot do typeid_cast<const ReadFromSystemOneStep *>(step)
@@ -362,7 +418,11 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     if (step->getName() == "ReadFromSystemOne")
     {
         /// system.one always produces exactly one row — used to implement constant SELECTs like `SELECT 1`.
-        return RelationStats{.estimated_rows = 1, .table_name = "system.one"};
+        return RelationStats{
+            .estimated_rows = 1,
+            .estimated_rows_upper = 1,
+            .estimated_rows_is_lower_bound = true,
+            .table_name = "system.one"};
     }
 
     /// Reads no rows, e.g. a `MergeTree` table without parts.
@@ -387,6 +447,8 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         /// a storage read with a filter it cannot use, the row count is then unknown.
         return RelationStats{
             .estimated_rows = filter ? std::nullopt : join_step->getResultRowsEstimation(),
+            /// A filter only removes rows, so the upper bound holds with or without it.
+            .estimated_rows_upper = join_step->getResultRowsUpperBound(),
             .column_stats = join_step->getResultColumnStats(),
             .table_name = join_step->getReadableRelationName(),
             .imprecise_estimate = filter != nullptr || join_step->hasImpreciseEstimate(),
@@ -400,8 +462,13 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     {
         auto estimated = estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport);
         auto limit = limit_step->getLimit();
+        /// Without OFFSET at least `min(input, limit)` rows come out, so a lower bound stays one.
+        estimated.estimated_rows_is_lower_bound = estimated.estimated_rows_is_lower_bound && limit_step->getOffset() == 0;
         if (!estimated.estimated_rows || estimated.estimated_rows > limit)
             estimated.estimated_rows = limit;
+        /// WITH TIES can emit more rows than `limit`, so only a plain LIMIT bounds the output by it.
+        if (!limit_step->withTies() && (!estimated.estimated_rows_upper || estimated.estimated_rows_upper > limit))
+            estimated.estimated_rows_upper = limit;
         clearColumnValueRanges(estimated.column_stats);
         return estimated;
     }
@@ -412,6 +479,9 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     {
         /// A filter above the array join can read its output, which the statistics of the input do not describe.
         auto stats = estimateReadRowsCount(*node.children.front(), nullptr, for_runtime_filter_transport);
+        /// An array join can add rows and drops the rows with empty arrays, so neither bound of the input holds.
+        stats.estimated_rows_upper.reset();
+        stats.estimated_rows_is_lower_bound = false;
         if (stats.estimated_rows && *stats.estimated_rows != 0)
         {
             /// Such a filter, like the element filter of the step, leaves the row count unknown unless the input is empty.
@@ -443,6 +513,11 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         const auto & dag = filter_step->getExpression();
         const auto * predicate = static_cast<const ActionsDAG::Node *>(dag.tryFindInOutputs(filter_step->getFilterColumnName()));
         auto stats = estimateReadRowsCount(*node.children.front(), predicate, for_runtime_filter_transport);
+        /// An ARRAY JOIN in the filter's actions multiplies rows, so the child's bound no longer holds.
+        if (dag.hasArrayJoin())
+            stats.estimated_rows_upper.reset();
+        /// A child that ignores the predicate still counts the rows this filter will drop.
+        stats.estimated_rows_is_lower_bound = false;
         remapColumnStats(stats.column_stats, filter_step->getExpression());
         return stats;
     }
@@ -457,6 +532,9 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     if (const auto * sorting_step = typeid_cast<const SortingStep *>(step))
     {
         auto stats = estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport);
+        /// A sort emits `min(input, limit)` rows, so a lower bound stays one unless a `break` sort limit stops it early.
+        if (stopsEarlyOnOverflow(sorting_step->getSettings().size_limits))
+            stats.estimated_rows_is_lower_bound = false;
         if (sorting_step->getLimit())
         {
             if (!stats.estimated_rows || stats.estimated_rows > sorting_step->getLimit())
@@ -474,9 +552,30 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     if (dynamic_cast<LogicalExchangeStep *>(step))
         return estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport);
 
+    /// These steps pass every input row through unchanged.
+    if (typeid_cast<const WindowStep *>(step) || typeid_cast<const BuildRuntimeFilterStep *>(step)
+        || typeid_cast<const SaveSubqueryResultToBufferStep *>(step) || typeid_cast<const StreamInQueryResultCacheStep *>(step)
+        || typeid_cast<const DelayedCreatingSetsStep *>(step))
+        return estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport);
+
+    /// `DISTINCT` only removes rows: the input's bound still holds, but its point estimate does not.
+    if (typeid_cast<const DistinctStep *>(step))
+    {
+        RelationStats stats;
+        stats.estimated_rows_upper = estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport).estimated_rows_upper;
+        return stats;
+    }
+
     if (const auto * transform = dynamic_cast<const ITransformingStep *>(step);
         transform && transform->getTransformTraits().preserves_number_of_rows)
-        return estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport);
+    {
+        auto stats = estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport);
+        /// `preserves_number_of_rows` does not mean "cannot add rows": `TotalsHavingStep` declares
+        /// it yet emits an extra row for WITH TOTALS. Only the step kinds above propagate the bound.
+        stats.estimated_rows_upper.reset();
+        stats.estimated_rows_is_lower_bound = false;
+        return stats;
+    }
 
     return {};
 }

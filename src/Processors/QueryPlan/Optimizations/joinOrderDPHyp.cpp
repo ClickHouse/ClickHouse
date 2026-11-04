@@ -526,7 +526,7 @@ std::shared_ptr<DPJoinEntry> DPHypJoinOrderOptimizer::solve()
     for (size_t i = 0; i < num_relations; ++i)
     {
         const auto & rel = query_graph.relation_stats[i];
-        auto entry = std::make_shared<DPJoinEntry>(i, rel.estimated_rows, rel.column_stats);
+        auto entry = std::make_shared<DPJoinEntry>(i, rel.estimated_rows, rel.column_stats, rel.estimated_rows_upper);
         dp_table[entry->relations] = entry;
     }
 
