@@ -24,10 +24,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 cache_name="cache_05457_${CLICKHOUSE_DATABASE}"
 table="t_part_check_cancel"
 
-# The check thread logs under the table name, which a repeated run in the same database shares with
-# the earlier runs, so the log query below is bounded to this run.
-started_at=$($CLICKHOUSE_CLIENT --query "SELECT toString(now64(6))")
-
 $CLICKHOUSE_CLIENT --query "
     DROP TABLE IF EXISTS $table SYNC;
     CREATE TABLE $table (a UInt64)
@@ -102,7 +98,8 @@ echo "$downloading"
 # itself is reported instead of blocking the test until its timeout.
 waiter_out="${CLICKHOUSE_TMP:-/tmp}/05457_waiter_${CLICKHOUSE_DATABASE}.out"
 rm -f "$waiter_out"
-$CLICKHOUSE_CLIENT --max_threads 1 \
+waiter_query_id="05457_waiter_$(random_str 10)"
+$CLICKHOUSE_CLIENT --query_id "$waiter_query_id" --max_threads 1 \
     --enable_filesystem_cache 1 \
     --read_from_filesystem_cache_if_exists_otherwise_bypass_cache 0 \
     --remote_filesystem_read_prefetch 0 \
@@ -137,20 +134,11 @@ else
     echo "FAIL: unexpected waiter result: $waiter_result"
 fi
 
-# The part is healthy, so a requested check ends with "looks good": the observable harm is that a
-# check was requested at all. The check thread logs `Checking part` when it picks the part up, which
-# is shortly after the request, so poll for a bounded time. With the fix the loop runs to its bound.
-checks=0
-for _ in {1..30}; do
-    $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS text_log"
-    checks=$($CLICKHOUSE_CLIENT --query "
-        SELECT count() FROM system.text_log
-        WHERE logger_name LIKE concat(currentDatabase(), '.$table%PartCheckThread%')
-          AND message LIKE 'Checking part %'
-          AND event_time_microseconds >= toDateTime64('$started_at', 6)")
-    [[ "$checks" != "0" ]] && break
-    sleep 0.1
-done
+$CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS text_log"
+checks=$($CLICKHOUSE_CLIENT --query "
+    SELECT count() FROM system.text_log
+    WHERE event_date >= yesterday() AND query_id = '$waiter_query_id'
+      AND message LIKE 'Enqueueing % for check after %'")
 echo "spurious part checks: $checks"
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE $table SYNC"
