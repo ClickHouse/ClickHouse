@@ -3117,7 +3117,7 @@ Only affects `LEFT ARRAY JOIN`; regular `ARRAY JOIN` drops rows with empty array
 Like `join_use_nulls`, this applies only to element types that can be placed inside `Nullable`.
 For an element type that cannot (`Array`, `Map`, `AggregateFunction`, ...) the column keeps
 its original type and the empty-array rows keep getting the default value of that type.
-)", 0, \
+)", IMPORTANT, \
         {"26.11", false, false, "New setting to control NULL handling in LEFT ARRAY JOIN."}) \
     \
     DECLARE(UInt64, join_output_by_rowlist_perkey_rows_threshold, 5, R"(
