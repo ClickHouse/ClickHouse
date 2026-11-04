@@ -3,6 +3,7 @@
 #include <cstring>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include <base/PackedStringRef.h>
 #include <base/defines.h>
@@ -203,4 +204,101 @@ TEST(PackedStringRef, EqualityMediumVersusLargeLowCollision)
     ASSERT_EQ(medium.low, large.low);
     EXPECT_FALSE(medium == large);
     EXPECT_FALSE(large == medium);
+}
+
+namespace
+{
+
+std::array<uint8_t, 20> rawBytesOf(PackedStringRef20 ref)
+{
+    std::array<uint8_t, 20> bytes{};
+    std::memcpy(bytes.data(), &ref, sizeof(ref));
+    return bytes;
+}
+
+}
+
+TEST(PackedStringRef20, EmptyIsAllZeros)
+{
+    const PackedStringRef20 ref = PackedStringRef20::build(nullptr, 0, FixedHash{0xFFFFFFFF});
+    EXPECT_EQ(rawBytesOf(ref), (std::array<uint8_t, 20>{}));
+    EXPECT_TRUE(ref.isEmpty());
+    EXPECT_EQ(ref.heapSize(), 0u);
+    EXPECT_EQ(static_cast<std::string_view>(ref), std::string_view{});
+}
+
+TEST(PackedStringRef20, SmallLayout)
+{
+    using namespace std::literals;
+    const uint32_t hash = 0xAABBCCDD;
+    /// Content zero bytes, trailing ones included, are inline too: the length is explicit.
+    std::vector<std::string_view> strings = {"\0"sv, "ab\0\0"sv, std::string_view("\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0", 15)};
+    const std::string_view alphabet = "abcdefghijklmno";
+    for (size_t len = 1; len <= PackedStringRef20::MAX_SMALL_LEN; ++len)
+        strings.push_back(alphabet.substr(0, len));
+
+    for (const std::string_view s : strings)
+    {
+        const PaddedString padded(s);
+        const PackedStringRef20 ref = PackedStringRef20::build(padded.data(), padded.size, FixedHash{hash});
+
+        std::array<uint8_t, 20> image{};
+        std::memcpy(image.data(), &hash, sizeof(hash));
+        std::memcpy(image.data() + 4, s.data(), s.size());
+        image[19] = static_cast<uint8_t>(s.size());
+
+        EXPECT_EQ(rawBytesOf(ref), image) << "len=" << s.size();
+        EXPECT_FALSE(ref.isEmpty()) << "len=" << s.size();
+        EXPECT_EQ(ref.heapSize(), 0u) << "len=" << s.size();
+        EXPECT_EQ(ref.getHash(), hash) << "len=" << s.size();
+        EXPECT_EQ(static_cast<std::string_view>(ref), s) << "len=" << s.size();
+    }
+}
+
+TEST(PackedStringRef20, HeapLayout)
+{
+    const uint32_t hash = 0x11223344;
+    for (size_t len : {16ul, 25ul, 1000ul})
+    {
+        const std::string s(len, 'x');
+        PackedStringRef20 ref = PackedStringRef20::build(s.data(), s.size(), FixedHash{hash});
+
+        EXPECT_FALSE(ref.isEmpty()) << "len=" << len;
+        EXPECT_EQ(ref.getHash(), hash) << "len=" << len;
+        EXPECT_EQ(ref.heapSize(), len) << "len=" << len;
+        EXPECT_EQ(ref.getHeapPtr(), s.data()) << "len=" << len;
+        EXPECT_EQ(static_cast<std::string_view>(ref), std::string_view(s)) << "len=" << len;
+
+        const std::string copy = s;
+        ref.setHeapPointer(copy.data());
+        EXPECT_EQ(ref.getHeapPtr(), copy.data()) << "len=" << len;
+        EXPECT_EQ(ref.heapSize(), len) << "len=" << len;
+    }
+}
+
+TEST(PackedStringRef20, Equality)
+{
+    const std::string fifteen(15, 'a');
+    const std::string sixteen(16, 'a');
+    const PaddedString p15(fifteen);
+    const PaddedString p15_other(std::string(14, 'a') + 'b');
+    const PaddedString p14(std::string(14, 'a'));
+
+    /// Small strings with the same (forced) hash: equal only with the same bytes and length.
+    const PackedStringRef20 r15 = PackedStringRef20::build(p15.data(), p15.size, FixedHash{7});
+    EXPECT_TRUE(r15 == PackedStringRef20::build(p15.data(), p15.size, FixedHash{7}));
+    EXPECT_FALSE(r15 == PackedStringRef20::build(p15_other.data(), p15_other.size, FixedHash{7}));
+    EXPECT_FALSE(r15 == PackedStringRef20::build(p14.data(), p14.size, FixedHash{7}));
+    EXPECT_FALSE(r15 == PackedStringRef20::build(sixteen.data(), sixteen.size(), FixedHash{7}));
+    EXPECT_FALSE(r15 == PackedStringRef20{});
+
+    /// Heap strings: the same buffer is decided by the words, a copy and a collision by the bytes.
+    const std::string content(25, 'y');
+    const std::string copy(content.data(), content.size());
+    const std::string other = std::string(24, 'y') + 'z';
+    const PackedStringRef20 heap = PackedStringRef20::build(content.data(), content.size(), FixedHash{42});
+    EXPECT_TRUE(heap == PackedStringRef20::build(content.data(), content.size(), FixedHash{42}));
+    EXPECT_TRUE(heap == PackedStringRef20::build(copy.data(), copy.size(), FixedHash{42}));
+    EXPECT_FALSE(heap == PackedStringRef20::build(other.data(), other.size(), FixedHash{42}));
+    EXPECT_FALSE(heap == PackedStringRef20::build(content.data(), content.size() - 1, FixedHash{42}));
 }
