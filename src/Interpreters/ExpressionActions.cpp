@@ -1671,12 +1671,17 @@ void AdaptiveExpressionActions::identifyNonBeneficialLazyActions() const
 
         if (!state.is_lazy_execution_efficient)
         {
+            /// Compare against the baseline of the previous rounds only. `total_profile` already includes the
+            /// current round, and an eager round executes the action on many more rows than the preceding lazy
+            /// rounds did, so its own cost would dominate the baseline and hide any increase of the cost.
             const auto & total_profile = state.total_profile;
-            if (!total_profile.executed_rows)
+            auto baseline_rows = total_profile.executed_rows - round_profile.executed_rows;
+            if (!baseline_rows)
                 continue;
 
-            auto execution_elapsed = total_profile.execution_elapsed - total_profile.lazy_executed_additional_elapsed;
-            auto per_row_elapsed = static_cast<double>(execution_elapsed) / static_cast<double>(total_profile.executed_rows);
+            auto baseline_execution_elapsed = (total_profile.execution_elapsed - round_profile.execution_elapsed)
+                - (total_profile.lazy_executed_additional_elapsed - round_profile.lazy_executed_additional_elapsed);
+            auto per_row_elapsed = static_cast<double>(baseline_execution_elapsed) / static_cast<double>(baseline_rows);
             /// If the execution time of this action increases significantly during the current round,
             /// mark it as eligible for lazy evaluation again.
             if (round_per_row_elapsed > per_row_elapsed * 1.5)
