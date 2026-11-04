@@ -2,6 +2,7 @@
 
 #if USE_EMBEDDED_COMPILER
 
+#include <optional>
 #include <stack>
 
 #include <Common/logger_useful.h>
@@ -9,6 +10,7 @@
 #include <Columns/ColumnConst.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/Native.h>
 
 #include <Interpreters/JIT/CHJIT.h>
@@ -388,6 +390,32 @@ static const ActionsDAG::Node * removeAliasIfNecessary(const ActionsDAG::Node * 
     return node_no_alias;
 }
 
+/// The short-circuit functions whose lazy arguments can be compiled: `getCompilableDAG` knows on which rows the interpreter
+/// evaluates each of their arguments (`shortCircuitGuardTerms`).
+static bool isShortCircuitFunctionWithGuards(const IFunctionBase & function)
+{
+    const auto & name = function.getName();
+    return name == "if" || name == "multiIf" || name == "and" || name == "or";
+}
+
+static bool isCompilableFunction(const ActionsDAG::Node & node, const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes);
+
+/// Whether every lazily executed node below `node`, through lazy nodes, is a compilable function, so that the compiled
+/// function computes them all and none becomes an input that the interpreter would evaluate on all rows.
+static bool isLazySubtreeCompilable(const ActionsDAG::Node & node, const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes)
+{
+    for (const auto & child : node.children)
+    {
+        const auto * child_no_alias = removeAliasIfNecessary(child);
+        if (!lazy_executed_nodes.contains(child_no_alias))
+            continue;
+        if (child_no_alias->type != ActionsDAG::ActionType::FUNCTION || !isCompilableFunction(*child_no_alias, lazy_executed_nodes)
+            || !isLazySubtreeCompilable(*child_no_alias, lazy_executed_nodes))
+            return false;
+    }
+    return true;
+}
+
 static bool isCompilableFunction(const ActionsDAG::Node & node, const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes)
 {
     if (node.type != ActionsDAG::ActionType::FUNCTION)
@@ -398,12 +426,31 @@ static bool isCompilableFunction(const ActionsDAG::Node & node, const std::unord
     IFunction::ShortCircuitSettings settings;
     if (function.isShortCircuit(settings, node.children.size()))
     {
+        bool has_lazy_child = false;
         for (const auto & child : node.children)
-        {
-            const ActionsDAG::Node * child_no_alias = removeAliasIfNecessary(child);
+            has_lazy_child |= lazy_executed_nodes.contains(removeAliasIfNecessary(child));
 
-            if (lazy_executed_nodes.contains(child_no_alias))
-                return false;
+        /// Lazy arguments are computed on every row, with their errors masked to the rows the interpreter evaluates them
+        /// on (see `getCompilableDAG`). Not with a `Decimal` result: the scale lifts of `FunctionIfBase` are checked on
+        /// every row of a branch, and a lazy branch holds defaults on the rows it does not take in the interpreter.
+        if (has_lazy_child
+            && (!isShortCircuitFunctionWithGuards(function) || isDecimal(removeNullable(function.getResultType()))
+                || !isLazySubtreeCompilable(node, lazy_executed_nodes)))
+            return false;
+
+        /// `and` and `or` may execute their eager arguments first (`short_circuit_function_evaluation_reorder_arguments`),
+        /// so that a lazy argument followed by an eager one is evaluated on fewer rows than its position says. When all
+        /// eager arguments come first, the order cannot change the rows on which an argument that can throw is evaluated.
+        if (has_lazy_child && settings.arguments_are_commutative)
+        {
+            bool seen_lazy = false;
+            for (const auto & child : node.children)
+            {
+                const bool is_lazy = lazy_executed_nodes.contains(removeAliasIfNecessary(child));
+                if (!is_lazy && seen_lazy)
+                    return false;
+                seen_lazy |= is_lazy;
+            }
         }
     }
 
@@ -437,16 +484,116 @@ static bool isCompilableFunction(const ActionsDAG::Node & node, const std::unord
     return function.isCompilable();
 }
 
+/// The guard terms of argument `argument` of the short-circuit function `node` of `dag`: on which rows the interpreter
+/// evaluates the argument when it is lazy (`executeShortCircuitArguments` of `if` and `multiIf`, `executeShortCircuit` of
+/// `and` and `or`). A NULL condition counts as false in `if` and `multiIf`, and decides nothing in `and` and `or`.
+static std::vector<CompileDAG::GuardTerm> shortCircuitGuardTerms(const CompileDAG::Node & node, size_t argument)
+{
+    using Kind = CompileDAG::GuardTerm::Kind;
+    std::vector<CompileDAG::GuardTerm> terms;
+    const auto & name = node.function->getName();
+    const auto & arguments = node.arguments;
+
+    if (name == "if")
+    {
+        if (argument == 1)
+            terms.push_back({.condition = arguments[0], .kind = Kind::True});
+        else if (argument == 2)
+            terms.push_back({.condition = arguments[0], .kind = Kind::NotTrue});
+    }
+    else if (name == "multiIf")
+    {
+        /// Conditions at even positions, their values at the next odd position; the last argument is the else branch.
+        const bool is_else = argument + 1 == arguments.size();
+        const bool is_value = argument % 2 == 1;
+        const size_t earlier_conditions_end = is_else ? argument : (is_value ? argument - 1 : argument);
+        for (size_t i = 0; i < earlier_conditions_end; i += 2)
+            terms.push_back({.condition = arguments[i], .kind = Kind::NotTrue});
+        if (is_value && !is_else)
+            terms.push_back({.condition = arguments[argument - 1], .kind = Kind::True});
+    }
+    else if (name == "and" || name == "or")
+    {
+        for (size_t i = 0; i < argument; ++i)
+            terms.push_back({.condition = arguments[i], .kind = name == "and" ? Kind::NotFalse : Kind::NotTrue});
+    }
+
+    return terms;
+}
+
+/** Sets the guards of the lazily executed nodes of `dag`, whose nodes come from `action_nodes`. The root is evaluated on all
+  * the rows it is given; a lazy argument of a short-circuit function on the rows the function needs it on; a lazy argument
+  * of another lazy function on the rows of that function. Other nodes are evaluated on all rows.
+  * Returns false if compiled code cannot match the interpreter: a node evaluated under two different guards (a common
+  * descendant of arguments evaluated on different rows), a guarded node that is an input of the compiled function (the
+  * interpreter would evaluate it on all rows), or a condition that is computed after the node it guards.
+  */
+static bool setGuards(
+    CompileDAG & dag,
+    const std::vector<const ActionsDAG::Node *> & action_nodes,
+    const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes)
+{
+    const size_t size = dag.getNodesCount();
+    std::vector<std::optional<std::vector<CompileDAG::GuardTerm>>> guards(size);
+    guards[size - 1].emplace();
+
+    /// Parents come after their children in the DAG.
+    for (size_t i = size; i > 0; --i)
+    {
+        const size_t index = i - 1;
+        const auto & node = dag[index];
+        if (node.type != CompileDAG::CompileType::FUNCTION)
+            continue;
+
+        const bool is_short_circuit = isShortCircuitFunctionWithGuards(*node.function);
+        const auto & action_node = *action_nodes[index];
+        for (size_t argument = 0; argument < node.arguments.size(); ++argument)
+        {
+            const size_t child = node.arguments[argument];
+            if (dag[child].type == CompileDAG::CompileType::CONSTANT)
+                continue;
+
+            std::vector<CompileDAG::GuardTerm> guard;
+            if (lazy_executed_nodes.contains(removeAliasIfNecessary(action_node.children[argument])))
+            {
+                guard = *guards[index];
+                if (is_short_circuit)
+                    for (const auto & term : shortCircuitGuardTerms(node, argument))
+                        guard.push_back(term);
+            }
+
+            for (const auto & term : guard)
+                if (term.condition >= child)
+                    return false;
+            if (!guard.empty() && dag[child].type == CompileDAG::CompileType::INPUT)
+                return false;
+
+            if (!guards[child])
+                guards[child] = std::move(guard);
+            else if (*guards[child] != guard)
+                return false;
+        }
+    }
+
+    for (size_t i = 0; i < size; ++i)
+        if (dag[i].type == CompileDAG::CompileType::FUNCTION && guards[i])
+            dag[i].guard = std::move(*guards[i]);
+    return true;
+}
+
 static CompileDAG getCompilableDAG(
     const ActionsDAG::Node * root,
     ActionsDAG::NodeRawConstPtrs & children,
-    const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes)
+    const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes,
+    bool & guards_match_interpreter)
 {
     /// Extract CompileDAG from root actions dag node.
 
     CompileDAG dag;
 
     std::unordered_map<const ActionsDAG::Node *, size_t> visited_node_to_compile_dag_position;
+    /// The `ActionsDAG` node of each node of `dag`.
+    std::vector<const ActionsDAG::Node *> action_nodes;
 
     struct Frame
     {
@@ -490,6 +637,7 @@ static CompileDAG getCompilableDAG(
             }
 
             visited_node_to_compile_dag_position[node] = dag.getNodesCount();
+            action_nodes.push_back(node);
             dag.addNode(std::move(compile_node));
             stack.pop();
             continue;
@@ -531,11 +679,13 @@ static CompileDAG getCompilableDAG(
             compile_node.arguments.push_back(visited_node_to_compile_dag_position[child]);
 
         visited_node_to_compile_dag_position[node] = dag.getNodesCount();
+        action_nodes.push_back(node);
 
         dag.addNode(std::move(compile_node));
         stack.pop();
     }
 
+    guards_match_interpreter = setGuards(dag, action_nodes, lazy_executed_nodes);
     return dag;
 }
 
@@ -671,9 +821,10 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression, const 
     for (auto & node : nodes_to_compile)
     {
         NodeRawConstPtrs new_children;
-        auto dag = getCompilableDAG(node, new_children, lazy_executed_nodes);
+        bool guards_match_interpreter = false;
+        auto dag = getCompilableDAG(node, new_children, lazy_executed_nodes, guards_match_interpreter);
 
-        if (dag.getInputNodesCount() == 0)
+        if (dag.getInputNodesCount() == 0 || !guards_match_interpreter)
             continue;
 
         if (auto fn = compile(dag, min_count_to_compile_expression))

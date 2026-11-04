@@ -40,6 +40,28 @@ public:
         FUNCTION = 2,
     };
 
+    /** A term of the guard of a node: a condition on the value of an earlier node of the DAG.
+      * When the interpreter evaluates a node lazily, only on the rows a short-circuit function needs it on, compiled code
+      * still computes it on every row, but its errors count only on the rows where all terms of its guard hold.
+      */
+    struct GuardTerm
+    {
+        enum class Kind : uint8_t
+        {
+            /// The condition is not NULL and not zero.
+            True,
+            /// The condition is NULL or zero.
+            NotTrue,
+            /// The condition is NULL or not zero.
+            NotFalse,
+        };
+
+        size_t condition = 0;
+        Kind kind = Kind::True;
+
+        bool operator==(const GuardTerm &) const = default;
+    };
+
     struct Node
     {
         CompileType type{};
@@ -53,6 +75,8 @@ public:
         /// For FUNCTION
         FunctionBasePtr function;
         std::vector<size_t> arguments;
+        /// The rows on which the errors of the function count, see `GuardTerm`; empty: all rows.
+        std::vector<GuardTerm> guard;
 
         /// The name of the node in the `ActionsDAG`, for error messages. Not part of the hash: expressions that
         /// differ only in column names share their compiled code.

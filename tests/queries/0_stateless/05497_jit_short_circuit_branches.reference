@@ -1,0 +1,52 @@
+if guards intDiv, enable: [4,1,5,1] 
+if guards intDiv, force_enable: [4,1,5,1] 
+if guards intDiv, disable: Code 153: Division by zero
+if else branch guarded, enable: [4,0,5,0] 
+if else branch guarded, force_enable: [4,0,5,0] 
+if else branch guarded, disable: Code 153: Division by zero
+if with Nullable condition, enable: Code 153: Division by zero
+if with Nullable condition, force_enable: Code 153: Division by zero
+if with Nullable condition, disable: Code 153: Division by zero
+if, minimal by minus one guarded, enable: [4,1,1,5,1] 
+if, minimal by minus one guarded, force_enable: [4,1,1,5,1] 
+if, minimal by minus one guarded, disable: Code 153: Division of minimal signed number by minus one
+if, guard does not cover, enable: Code 153: Division of minimal signed number by minus one
+if, guard does not cover, force_enable: Code 153: Division of minimal signed number by minus one
+if, guard does not cover, disable: Code 153: Division of minimal signed number by minus one
+multiIf, enable: [4,-2147483647,1,5,1] 
+multiIf, force_enable: [4,-2147483647,1,5,1] 
+multiIf, disable: Code 153: Division of minimal signed number by minus one
+multiIf, lazy condition, enable: [2,1,2,1] 
+multiIf, lazy condition, force_enable: [2,1,2,1] 
+multiIf, lazy condition, disable: Code 153: Division by zero
+multiIf, lazy condition fails, enable: Code 153: Division by zero
+multiIf, lazy condition fails, force_enable: Code 153: Division by zero
+multiIf, lazy condition fails, disable: Code 153: Division by zero
+multiIf, Nullable condition, enable: Code 153: Division by zero
+multiIf, Nullable condition, force_enable: Code 153: Division by zero
+multiIf, Nullable condition, disable: Code 153: Division of minimal signed number by minus one
+nested if, enable: [4,0,1,5,1] 
+nested if, force_enable: [4,0,1,5,1] 
+nested if, disable: Code 153: Division of minimal signed number by minus one
+and, enable: Code 153: Division of minimal signed number by minus one
+and, force_enable: Code 153: Division of minimal signed number by minus one
+and, disable: Code 153: Division of minimal signed number by minus one
+and, NULL does not decide, enable: [1,0,0,0] 
+and, NULL does not decide, force_enable: [1,0,0,0] 
+and, NULL does not decide, disable: Code 153: Division by zero
+or, enable: Code 153: Division of minimal signed number by minus one
+or, force_enable: Code 153: Division of minimal signed number by minus one
+or, disable: Code 153: Division of minimal signed number by minus one
+or, three arguments, enable: [1,1,1,1,1] 
+or, three arguments, force_enable: [1,1,1,1,1] 
+or, three arguments, disable: Code 153: Division of minimal signed number by minus one
+or, NULL does not decide, enable: [1,1,0,1] 
+or, NULL does not decide, force_enable: [1,1,0,1] 
+or, NULL does not decide, disable: Code 153: Division by zero
+if in and, enable: 2 
+if in and, force_enable: 2 
+if in and, disable: Code 153: Division of minimal signed number by minus one
+shared lazy node, enable: [7,1,9,1] 
+shared lazy node, force_enable: [7,1,9,1] 
+shared lazy node, disable: Code 153: Division by zero
+guarded division compiled	1

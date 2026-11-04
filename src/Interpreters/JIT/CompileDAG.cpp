@@ -2,6 +2,8 @@
 
 #if USE_EMBEDDED_COMPILER
 
+#include <optional>
+
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/Function.h>
 #include <llvm/IR/IRBuilder.h>
@@ -10,12 +12,52 @@
 #include <Common/FieldVisitorToString.h>
 #include <Columns/ColumnConst.h>
 #include <DataTypes/Native.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/JIT/JITError.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
 namespace DB
 {
+
+namespace
+{
+
+/// The rows where all terms of `guard` hold, as an `i1`.
+llvm::Value * compileGuard(llvm::IRBuilder<> & b, const std::vector<CompileDAG::GuardTerm> & guard, const ValuesWithType & values)
+{
+    llvm::Value * mask = b.getTrue();
+    for (const auto & term : guard)
+    {
+        const auto & condition = values[term.condition];
+        llvm::Value * is_null = b.getFalse();
+        ValueWithType nested = condition;
+        if (condition.type->isNullable())
+        {
+            is_null = b.CreateExtractValue(condition.value, {1});
+            nested = ValueWithType(b.CreateExtractValue(condition.value, {0}), removeNullable(condition.type));
+        }
+        auto * is_not_zero = nativeBoolCast(b, nested);
+
+        llvm::Value * holds = nullptr;
+        switch (term.kind)
+        {
+            case CompileDAG::GuardTerm::Kind::True:
+                holds = b.CreateAnd(b.CreateNot(is_null), is_not_zero);
+                break;
+            case CompileDAG::GuardTerm::Kind::NotTrue:
+                holds = b.CreateOr(is_null, b.CreateNot(is_not_zero));
+                break;
+            case CompileDAG::GuardTerm::Kind::NotFalse:
+                holds = b.CreateOr(is_null, is_not_zero);
+                break;
+        }
+        mask = b.CreateAnd(mask, holds);
+    }
+    return mask;
+}
+
+}
 
 ValueWithType CompileDAG::compile(llvm::IRBuilderBase & builder, const ValuesWithType & input_nodes_values) const
 {
@@ -48,6 +90,11 @@ ValueWithType CompileDAG::compile(llvm::IRBuilderBase & builder, const ValuesWit
                 /// Errors reported while this node is compiled are attributed to it.
                 if (auto * error_sink = JITErrorSink::current())
                     error_sink->setCurrentNode(i);
+
+                /// A lazily evaluated node is computed on every row, but its errors count only where it is needed.
+                std::optional<JITErrorMaskScope> guard_scope;
+                if (!node.guard.empty())
+                    guard_scope.emplace(compileGuard(b, node.guard, compiled_values));
 
                 ValuesWithType temporary_values;
                 temporary_values.reserve(node.arguments.size());
@@ -155,6 +202,13 @@ UInt128 CompileDAG::hash() const
 
                 for (size_t arg : node.arguments)
                     hash.update(arg);
+
+                hash.update(node.guard.size());
+                for (const auto & term : node.guard)
+                {
+                    hash.update(term.condition);
+                    hash.update(term.kind);
+                }
 
                 /// The settings the function captured, which can change its compiled code without changing its types
                 /// (see `IFunctionBase::updateHash`): expressions that differ in them must not share compiled code.
