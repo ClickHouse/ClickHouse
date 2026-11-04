@@ -562,6 +562,14 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
                     if (!resources.renewCPULease())
                     {
                         tasks.downscale(resources.getCPULeaseSlotId());
+                        {
+                            /// The query is no longer at full capacity, so slots granted later must be picked up
+                            /// by the remaining threads even without new demand from `pushTasks`.
+                            /// Store under `spawn_mutex`, so that a concurrent `spawnThreads` that observed
+                            /// the capacity before this downscale cannot overwrite the flag with `false` afterwards.
+                            std::lock_guard lock(spawn_mutex);
+                            slots_outstanding.store(true, std::memory_order_relaxed);
+                        }
                         break; // Downscaling. Unable to renew the lease - thread should stop (but could be rerun later).
                     }
                 }
