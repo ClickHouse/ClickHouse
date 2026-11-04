@@ -35,6 +35,7 @@
 #include <Interpreters/Context.h>
 
 #include <Common/assert_cast.h>
+#include <Common/Base64.h>
 #include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
@@ -85,6 +86,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int TOO_MANY_REDIRECTS;
 }
@@ -1375,6 +1377,11 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
 
     if (!server_side_encryption_customer_key_base64.empty())
     {
+        /// SSE-C takes a 256-bit key; the round trip rejects anything but its canonical base64.
+        String customer_key = base64Decode(server_side_encryption_customer_key_base64);
+        if (customer_key.size() != 32 || base64Encode(customer_key) != server_side_encryption_customer_key_base64)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "`server_side_encryption_customer_key_base64` must be a base64-encoded 256-bit key");
+
         /// See Client::GeneratePresignedUrlWithSSEC().
 
         headers.push_back({Aws::S3::SSEHeaders::SERVER_SIDE_ENCRYPTION_CUSTOMER_ALGORITHM,
@@ -1383,10 +1390,8 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
         headers.push_back({Aws::S3::SSEHeaders::SERVER_SIDE_ENCRYPTION_CUSTOMER_KEY,
             server_side_encryption_customer_key_base64});
 
-        Aws::Utils::ByteBuffer buffer = Aws::Utils::HashingUtils::Base64Decode(server_side_encryption_customer_key_base64);
-        String str_buffer(reinterpret_cast<char *>(buffer.GetUnderlyingData()), buffer.GetLength());
         headers.push_back({Aws::S3::SSEHeaders::SERVER_SIDE_ENCRYPTION_CUSTOMER_KEY_MD5,
-            Aws::Utils::HashingUtils::Base64Encode(Aws::Utils::HashingUtils::CalculateMD5(str_buffer))});
+            Aws::Utils::HashingUtils::Base64Encode(Aws::Utils::HashingUtils::CalculateMD5(customer_key))});
     }
 
     // These will be added after request signing
