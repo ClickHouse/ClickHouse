@@ -3,6 +3,16 @@
   // Regenerate with python3 docs/_site/scripts/update_clickstack_badges.py.
   // BEGIN PAGE MAP
   var pages = {
+  "/clickstack/api-reference": [
+    [
+      "Open Source",
+      "/clickstack/api-reference"
+    ],
+    [
+      "ClickHouse Observability",
+      "/clickstack/observability/api-reference"
+    ]
+  ],
   "/clickstack/architecture": [
     [
       "Open Source",
@@ -21,254 +31,6 @@
     [
       "ClickHouse Observability",
       "/clickstack/observability/demo-days"
-    ]
-  ],
-  "/clickstack/demo-days/2026/2026-04-03": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-04-03"
-    ],
-    [
-      "ClickHouse Observability",
-      "/clickstack/observability/demo-days/2026/2026-04-03"
-    ]
-  ],
-  "/clickstack/demo-days/2026/2026-04-10": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-04-10"
-    ],
-    [
-      "ClickHouse Observability",
-      "/clickstack/observability/demo-days/2026/2026-04-10"
-    ]
-  ],
-  "/clickstack/demo-days/2026/2026-04-17": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-04-17"
-    ],
-    [
-      "ClickHouse Observability",
-      "/clickstack/observability/demo-days/2026/2026-04-17"
-    ]
-  ],
-  "/clickstack/demo-days/2026/2026-05-08": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-05-08"
-    ],
-    [
-      "ClickHouse Observability",
-      "/clickstack/observability/demo-days/2026/2026-05-08"
-    ]
-  ],
-  "/clickstack/demo-days/2026/2026-05-15": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-05-15"
-    ],
-    [
-      "ClickHouse Observability",
-      "/clickstack/observability/demo-days/2026/2026-05-15"
-    ]
-  ],
-  "/clickstack/demo-days/2026/2026-05-22": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-05-22"
-    ],
-    [
-      "ClickHouse Observability",
-      "/clickstack/observability/demo-days/2026/2026-05-22"
-    ]
-  ],
-  "/clickstack/demo-days/2026/2026-05-29": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-05-29"
-    ],
-    [
-      "ClickHouse Observability",
-      "/clickstack/observability/demo-days/2026/2026-05-29"
-    ]
-  ],
-  "/clickstack/demo-days/2026/2026-06-05": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-06-05"
-    ],
-    [
-      "ClickHouse Observability",
-      "/clickstack/observability/demo-days/2026/2026-06-05"
-    ]
-  ],
-  "/clickstack/demo-days/2026/2026-06-12": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-06-12"
-    ],
-    [
-      "ClickHouse Observability",
-      "/clickstack/observability/demo-days/2026/2026-06-12"
-    ]
-  ],
-  "/clickstack/demo-days/2026/2026-06-18": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-06-18"
-    ],
-    [
-      "ClickHouse Observability",
-      "/clickstack/observability/demo-days/2026/2026-06-18"
-    ]
-  ],
-  "/clickstack/demo-days/2026/2026-06-26": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-06-26"
-    ],
-    [
-      "ClickHouse Observability",
-      "/clickstack/observability/demo-days/2026/2026-06-26"
-    ]
-  ],
-  "/clickstack/demo-days/2026/2026-07-02": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-07-02"
-    ],
-    [
-      "ClickHouse Observability",
-      "/clickstack/observability/demo-days/2026/2026-07-02"
-    ]
-  ],
-  "/clickstack/demo-days/2026/2026-07-10": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-07-10"
-    ],
-    [
-      "ClickHouse Observability",
-      "/clickstack/observability/demo-days/2026/2026-07-10"
-    ]
-  ],
-  "/clickstack/demo-days/2026/2026-07-17": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-07-17"
-    ],
-    [
-      "ClickHouse Observability",
-      "/clickstack/observability/demo-days/2026/2026-07-17"
-    ]
-  ],
-  "/clickstack/demo-days/2026/2026-07-24": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-07-24"
-    ],
-    [
-      "ClickHouse Observability",
-      "/clickstack/observability/demo-days/2026/2026-07-24"
-    ]
-  ],
-  "/clickstack/demo-days/2026/2026-07-31": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-07-31"
-    ],
-    [
-      "ClickHouse Observability",
-      "/clickstack/observability/demo-days/2026/2026-07-31"
-    ]
-  ],
-  "/clickstack/demo-days/2026/2026-08-07": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-08-07"
-    ],
-    [
-      "ClickHouse Observability",
-      "/clickstack/observability/demo-days/2026/2026-08-07"
-    ]
-  ],
-  "/clickstack/demo-days/2026/2026-08-15": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-08-15"
-    ],
-    [
-      "ClickHouse Observability",
-      "/clickstack/observability/demo-days/2026/2026-08-15"
-    ]
-  ],
-  "/clickstack/demo-days/2026/2026-08-21": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-08-21"
-    ],
-    [
-      "ClickHouse Observability",
-      "/clickstack/observability/demo-days/2026/2026-08-21"
-    ]
-  ],
-  "/clickstack/demo-days/2026/2026-08-28": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-08-28"
-    ],
-    [
-      "ClickHouse Observability",
-      "/clickstack/observability/demo-days/2026/2026-08-28"
-    ]
-  ],
-  "/clickstack/demo-days/2026/2026-09-04": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-09-04"
-    ],
-    [
-      "ClickHouse Observability",
-      "/clickstack/observability/demo-days/2026/2026-09-04"
-    ]
-  ],
-  "/clickstack/demo-days/2026/2026-09-10": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-09-10"
-    ],
-    [
-      "ClickHouse Observability",
-      "/clickstack/observability/demo-days/2026/2026-09-10"
-    ]
-  ],
-  "/clickstack/demo-days/2026/2026-09-17": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-09-17"
-    ],
-    [
-      "ClickHouse Observability",
-      "/clickstack/observability/demo-days/2026/2026-09-17"
-    ]
-  ],
-  "/clickstack/demo-days/2026/2026-09-24": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-09-24"
-    ]
-  ],
-  "/clickstack/demo-days/2026/2026-10-01": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-10-01"
-    ]
-  ],
-  "/clickstack/demo-days/2026/2026-10-08": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-10-08"
     ]
   ],
   "/clickstack/deployment/all-in-one": [
@@ -1321,6 +1083,10 @@
   ],
   "/clickstack/observability/api-reference": [
     [
+      "Open Source",
+      "/clickstack/api-reference"
+    ],
+    [
       "ClickHouse Observability",
       "/clickstack/observability/api-reference"
     ]
@@ -1343,236 +1109,6 @@
     [
       "ClickHouse Observability",
       "/clickstack/observability/demo-days"
-    ]
-  ],
-  "/clickstack/observability/demo-days/2026/2026-04-03": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-04-03"
-    ],
-    [
-      "ClickHouse Observability",
-      "/clickstack/observability/demo-days/2026/2026-04-03"
-    ]
-  ],
-  "/clickstack/observability/demo-days/2026/2026-04-10": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-04-10"
-    ],
-    [
-      "ClickHouse Observability",
-      "/clickstack/observability/demo-days/2026/2026-04-10"
-    ]
-  ],
-  "/clickstack/observability/demo-days/2026/2026-04-17": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-04-17"
-    ],
-    [
-      "ClickHouse Observability",
-      "/clickstack/observability/demo-days/2026/2026-04-17"
-    ]
-  ],
-  "/clickstack/observability/demo-days/2026/2026-05-08": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-05-08"
-    ],
-    [
-      "ClickHouse Observability",
-      "/clickstack/observability/demo-days/2026/2026-05-08"
-    ]
-  ],
-  "/clickstack/observability/demo-days/2026/2026-05-15": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-05-15"
-    ],
-    [
-      "ClickHouse Observability",
-      "/clickstack/observability/demo-days/2026/2026-05-15"
-    ]
-  ],
-  "/clickstack/observability/demo-days/2026/2026-05-22": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-05-22"
-    ],
-    [
-      "ClickHouse Observability",
-      "/clickstack/observability/demo-days/2026/2026-05-22"
-    ]
-  ],
-  "/clickstack/observability/demo-days/2026/2026-05-29": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-05-29"
-    ],
-    [
-      "ClickHouse Observability",
-      "/clickstack/observability/demo-days/2026/2026-05-29"
-    ]
-  ],
-  "/clickstack/observability/demo-days/2026/2026-06-05": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-06-05"
-    ],
-    [
-      "ClickHouse Observability",
-      "/clickstack/observability/demo-days/2026/2026-06-05"
-    ]
-  ],
-  "/clickstack/observability/demo-days/2026/2026-06-12": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-06-12"
-    ],
-    [
-      "ClickHouse Observability",
-      "/clickstack/observability/demo-days/2026/2026-06-12"
-    ]
-  ],
-  "/clickstack/observability/demo-days/2026/2026-06-18": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-06-18"
-    ],
-    [
-      "ClickHouse Observability",
-      "/clickstack/observability/demo-days/2026/2026-06-18"
-    ]
-  ],
-  "/clickstack/observability/demo-days/2026/2026-06-26": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-06-26"
-    ],
-    [
-      "ClickHouse Observability",
-      "/clickstack/observability/demo-days/2026/2026-06-26"
-    ]
-  ],
-  "/clickstack/observability/demo-days/2026/2026-07-02": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-07-02"
-    ],
-    [
-      "ClickHouse Observability",
-      "/clickstack/observability/demo-days/2026/2026-07-02"
-    ]
-  ],
-  "/clickstack/observability/demo-days/2026/2026-07-10": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-07-10"
-    ],
-    [
-      "ClickHouse Observability",
-      "/clickstack/observability/demo-days/2026/2026-07-10"
-    ]
-  ],
-  "/clickstack/observability/demo-days/2026/2026-07-17": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-07-17"
-    ],
-    [
-      "ClickHouse Observability",
-      "/clickstack/observability/demo-days/2026/2026-07-17"
-    ]
-  ],
-  "/clickstack/observability/demo-days/2026/2026-07-24": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-07-24"
-    ],
-    [
-      "ClickHouse Observability",
-      "/clickstack/observability/demo-days/2026/2026-07-24"
-    ]
-  ],
-  "/clickstack/observability/demo-days/2026/2026-07-31": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-07-31"
-    ],
-    [
-      "ClickHouse Observability",
-      "/clickstack/observability/demo-days/2026/2026-07-31"
-    ]
-  ],
-  "/clickstack/observability/demo-days/2026/2026-08-07": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-08-07"
-    ],
-    [
-      "ClickHouse Observability",
-      "/clickstack/observability/demo-days/2026/2026-08-07"
-    ]
-  ],
-  "/clickstack/observability/demo-days/2026/2026-08-15": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-08-15"
-    ],
-    [
-      "ClickHouse Observability",
-      "/clickstack/observability/demo-days/2026/2026-08-15"
-    ]
-  ],
-  "/clickstack/observability/demo-days/2026/2026-08-21": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-08-21"
-    ],
-    [
-      "ClickHouse Observability",
-      "/clickstack/observability/demo-days/2026/2026-08-21"
-    ]
-  ],
-  "/clickstack/observability/demo-days/2026/2026-08-28": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-08-28"
-    ],
-    [
-      "ClickHouse Observability",
-      "/clickstack/observability/demo-days/2026/2026-08-28"
-    ]
-  ],
-  "/clickstack/observability/demo-days/2026/2026-09-04": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-09-04"
-    ],
-    [
-      "ClickHouse Observability",
-      "/clickstack/observability/demo-days/2026/2026-09-04"
-    ]
-  ],
-  "/clickstack/observability/demo-days/2026/2026-09-10": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-09-10"
-    ],
-    [
-      "ClickHouse Observability",
-      "/clickstack/observability/demo-days/2026/2026-09-10"
-    ]
-  ],
-  "/clickstack/observability/demo-days/2026/2026-09-17": [
-    [
-      "Open Source",
-      "/clickstack/demo-days/2026/2026-09-17"
-    ],
-    [
-      "ClickHouse Observability",
-      "/clickstack/observability/demo-days/2026/2026-09-17"
     ]
   ],
   "/clickstack/observability/example-datasets": [
@@ -2678,31 +2214,762 @@
 };
   // END PAGE MAP
 
+  // BEGIN SECTION MAP
+  var sections = {
+  "/clickstack/demo-days/2026/2026-04-03": {
+    "observabilityOnly": [
+      "rbac-for-predefined-dashboards"
+    ],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-04-03"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-04-03"
+      ]
+    ]
+  },
+  "/clickstack/demo-days/2026/2026-04-10": {
+    "observabilityOnly": [
+      "waking-service-from-clickstack-cloud",
+      "consistent-enabling-of-ai-features"
+    ],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-04-10"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-04-10"
+      ]
+    ]
+  },
+  "/clickstack/demo-days/2026/2026-04-17": {
+    "observabilityOnly": [],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-04-17"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-04-17"
+      ]
+    ]
+  },
+  "/clickstack/demo-days/2026/2026-05-08": {
+    "observabilityOnly": [],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-05-08"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-05-08"
+      ]
+    ]
+  },
+  "/clickstack/demo-days/2026/2026-05-15": {
+    "observabilityOnly": [
+      "alerts-from-notebooks"
+    ],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-05-15"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-05-15"
+      ]
+    ]
+  },
+  "/clickstack/demo-days/2026/2026-05-22": {
+    "observabilityOnly": [],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-05-22"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-05-22"
+      ]
+    ]
+  },
+  "/clickstack/demo-days/2026/2026-05-29": {
+    "observabilityOnly": [],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-05-29"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-05-29"
+      ]
+    ]
+  },
+  "/clickstack/demo-days/2026/2026-06-05": {
+    "observabilityOnly": [
+      "anomaly-alerts",
+      "schema-migrations"
+    ],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-06-05"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-06-05"
+      ]
+    ]
+  },
+  "/clickstack/demo-days/2026/2026-06-12": {
+    "observabilityOnly": [
+      "schema-migration-tool",
+      "anomaly-alerts-with-group-by",
+      "all-notebook-tools-now-use-the-mcp"
+    ],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-06-12"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-06-12"
+      ]
+    ]
+  },
+  "/clickstack/demo-days/2026/2026-06-18": {
+    "observabilityOnly": [],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-06-18"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-06-18"
+      ]
+    ]
+  },
+  "/clickstack/demo-days/2026/2026-06-26": {
+    "observabilityOnly": [
+      "anomaly-detection-for-alerting-continues-with-bar-charts"
+    ],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-06-26"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-06-26"
+      ]
+    ]
+  },
+  "/clickstack/demo-days/2026/2026-07-02": {
+    "observabilityOnly": [
+      "notebook-citations"
+    ],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-07-02"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-07-02"
+      ]
+    ]
+  },
+  "/clickstack/demo-days/2026/2026-07-10": {
+    "observabilityOnly": [],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-07-10"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-07-10"
+      ]
+    ]
+  },
+  "/clickstack/demo-days/2026/2026-07-17": {
+    "observabilityOnly": [],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-07-17"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-07-17"
+      ]
+    ]
+  },
+  "/clickstack/demo-days/2026/2026-07-24": {
+    "observabilityOnly": [],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-07-24"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-07-24"
+      ]
+    ]
+  },
+  "/clickstack/demo-days/2026/2026-07-31": {
+    "observabilityOnly": [],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-07-31"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-07-31"
+      ]
+    ]
+  },
+  "/clickstack/demo-days/2026/2026-08-07": {
+    "observabilityOnly": [],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-08-07"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-08-07"
+      ]
+    ]
+  },
+  "/clickstack/demo-days/2026/2026-08-15": {
+    "observabilityOnly": [],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-08-15"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-08-15"
+      ]
+    ]
+  },
+  "/clickstack/demo-days/2026/2026-08-21": {
+    "observabilityOnly": [],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-08-21"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-08-21"
+      ]
+    ]
+  },
+  "/clickstack/demo-days/2026/2026-08-28": {
+    "observabilityOnly": [],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-08-28"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-08-28"
+      ]
+    ]
+  },
+  "/clickstack/demo-days/2026/2026-09-04": {
+    "observabilityOnly": [],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-09-04"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-09-04"
+      ]
+    ]
+  },
+  "/clickstack/demo-days/2026/2026-09-10": {
+    "observabilityOnly": [],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-09-10"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-09-10"
+      ]
+    ]
+  },
+  "/clickstack/demo-days/2026/2026-09-17": {
+    "observabilityOnly": [],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-09-17"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-09-17"
+      ]
+    ]
+  },
+  "/clickstack/demo-days/2026/2026-09-24": {
+    "observabilityOnly": [],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-09-24"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/demo-days/2026/2026-09-24"
+      ]
+    ]
+  },
+  "/clickstack/demo-days/2026/2026-10-01": {
+    "observabilityOnly": [],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-10-01"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/demo-days/2026/2026-10-01"
+      ]
+    ]
+  },
+  "/clickstack/demo-days/2026/2026-10-08": {
+    "observabilityOnly": [],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-10-08"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/demo-days/2026/2026-10-08"
+      ]
+    ]
+  },
+  "/clickstack/demo-days/2026/2026-10-15": {
+    "observabilityOnly": [],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-10-15"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/demo-days/2026/2026-10-15"
+      ]
+    ]
+  },
+  "/clickstack/demo-days/2026/2026-10-22": {
+    "observabilityOnly": [],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-10-22"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/demo-days/2026/2026-10-22"
+      ]
+    ]
+  },
+  "/clickstack/observability/demo-days/2026/2026-04-03": {
+    "observabilityOnly": [
+      "rbac-for-predefined-dashboards"
+    ],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-04-03"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-04-03"
+      ]
+    ]
+  },
+  "/clickstack/observability/demo-days/2026/2026-04-10": {
+    "observabilityOnly": [
+      "waking-service-from-clickstack-cloud",
+      "consistent-enabling-of-ai-features"
+    ],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-04-10"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-04-10"
+      ]
+    ]
+  },
+  "/clickstack/observability/demo-days/2026/2026-04-17": {
+    "observabilityOnly": [],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-04-17"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-04-17"
+      ]
+    ]
+  },
+  "/clickstack/observability/demo-days/2026/2026-05-08": {
+    "observabilityOnly": [],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-05-08"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-05-08"
+      ]
+    ]
+  },
+  "/clickstack/observability/demo-days/2026/2026-05-15": {
+    "observabilityOnly": [
+      "alerts-from-notebooks"
+    ],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-05-15"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-05-15"
+      ]
+    ]
+  },
+  "/clickstack/observability/demo-days/2026/2026-05-22": {
+    "observabilityOnly": [],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-05-22"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-05-22"
+      ]
+    ]
+  },
+  "/clickstack/observability/demo-days/2026/2026-05-29": {
+    "observabilityOnly": [],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-05-29"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-05-29"
+      ]
+    ]
+  },
+  "/clickstack/observability/demo-days/2026/2026-06-05": {
+    "observabilityOnly": [
+      "anomaly-alerts",
+      "schema-migrations"
+    ],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-06-05"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-06-05"
+      ]
+    ]
+  },
+  "/clickstack/observability/demo-days/2026/2026-06-12": {
+    "observabilityOnly": [
+      "schema-migration-tool",
+      "anomaly-alerts-with-group-by",
+      "all-notebook-tools-now-use-the-mcp"
+    ],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-06-12"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-06-12"
+      ]
+    ]
+  },
+  "/clickstack/observability/demo-days/2026/2026-06-18": {
+    "observabilityOnly": [],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-06-18"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-06-18"
+      ]
+    ]
+  },
+  "/clickstack/observability/demo-days/2026/2026-06-26": {
+    "observabilityOnly": [
+      "anomaly-detection-for-alerting-continues-with-bar-charts"
+    ],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-06-26"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-06-26"
+      ]
+    ]
+  },
+  "/clickstack/observability/demo-days/2026/2026-07-02": {
+    "observabilityOnly": [
+      "notebook-citations"
+    ],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-07-02"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-07-02"
+      ]
+    ]
+  },
+  "/clickstack/observability/demo-days/2026/2026-07-10": {
+    "observabilityOnly": [],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-07-10"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-07-10"
+      ]
+    ]
+  },
+  "/clickstack/observability/demo-days/2026/2026-07-17": {
+    "observabilityOnly": [],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-07-17"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-07-17"
+      ]
+    ]
+  },
+  "/clickstack/observability/demo-days/2026/2026-07-24": {
+    "observabilityOnly": [],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-07-24"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-07-24"
+      ]
+    ]
+  },
+  "/clickstack/observability/demo-days/2026/2026-07-31": {
+    "observabilityOnly": [],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-07-31"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-07-31"
+      ]
+    ]
+  },
+  "/clickstack/observability/demo-days/2026/2026-08-07": {
+    "observabilityOnly": [],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-08-07"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-08-07"
+      ]
+    ]
+  },
+  "/clickstack/observability/demo-days/2026/2026-08-15": {
+    "observabilityOnly": [],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-08-15"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-08-15"
+      ]
+    ]
+  },
+  "/clickstack/observability/demo-days/2026/2026-08-21": {
+    "observabilityOnly": [],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-08-21"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-08-21"
+      ]
+    ]
+  },
+  "/clickstack/observability/demo-days/2026/2026-08-28": {
+    "observabilityOnly": [],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-08-28"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-08-28"
+      ]
+    ]
+  },
+  "/clickstack/observability/demo-days/2026/2026-09-04": {
+    "observabilityOnly": [],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-09-04"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-09-04"
+      ]
+    ]
+  },
+  "/clickstack/observability/demo-days/2026/2026-09-10": {
+    "observabilityOnly": [],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-09-10"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-09-10"
+      ]
+    ]
+  },
+  "/clickstack/observability/demo-days/2026/2026-09-17": {
+    "observabilityOnly": [],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-09-17"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-09-17"
+      ]
+    ]
+  }
+};
+  // END SECTION MAP
+
+  function placePills(heading, variants, path, base, id) {
+    var existing = heading.nextElementSibling;
+    if (existing && existing.classList.contains('ch-product-availability')) {
+      if (existing.dataset.path === path) return;
+      existing.remove();
+    }
+    var row = document.createElement('nav');
+    row.className = 'ch-product-availability';
+    if (id) row.id = id;
+    row.dataset.path = path;
+    row.dataset.heading = heading.id;
+    row.setAttribute('aria-label', 'Available in');
+    variants.forEach(function (variant) {
+      var link = document.createElement('a');
+      link.textContent = variant[0];
+      link.href = base + variant[1];
+      if (variant[1].split('#')[0] === path) link.setAttribute('aria-current', 'page');
+      row.appendChild(link);
+    });
+    heading.after(row);
+  }
+
   function render() {
     var base = /^\/docs(?:\/|$)/.test(location.pathname) ? '/docs' : '';
     var path = location.pathname.slice(base.length).replace(/\/+$/, '');
-    var variants = pages[path];
     var existing = document.getElementById('ch-product-availability');
+    document.querySelectorAll('.ch-product-availability:not(#ch-product-availability)').forEach(function (row) {
+      var previous = row.previousElementSibling;
+      if (row.dataset.path !== path || !previous || previous.id !== row.dataset.heading) row.remove();
+    });
+    var features = sections[path];
+    if (features) {
+      if (existing) existing.remove();
+      document.querySelectorAll('#content h2[id]').forEach(function (heading) {
+        var variants = features.variants.filter(function (variant) {
+          return variant[0] !== 'Open Source' || features.observabilityOnly.indexOf(heading.id) === -1;
+        }).map(function (variant) {
+          return [variant[0], variant[1] + '#' + heading.id];
+        });
+        placePills(heading, variants, path, base);
+      });
+      return;
+    }
+    var variants = pages[path];
     var title = document.getElementById('page-title');
     if (!variants || !variants.length || !title) {
       if (existing) existing.remove();
       return;
     }
     var heading = title.closest('#ch-page-ask-row') || title;
-    if (existing && existing.dataset.path === path && existing.previousElementSibling === heading) return;
-    if (existing) existing.remove();
-    var row = document.createElement('nav');
-    row.id = 'ch-product-availability';
-    row.dataset.path = path;
-    row.setAttribute('aria-label', 'Available in');
-    variants.forEach(function (variant) {
-      var link = document.createElement('a');
-      link.textContent = variant[0];
-      link.href = base + variant[1];
-      if (variant[1] === path) link.setAttribute('aria-current', 'page');
-      row.appendChild(link);
-    });
-    heading.after(row);
+    if (existing && existing.previousElementSibling !== heading) existing.remove();
+    placePills(heading, variants, path, base, 'ch-product-availability');
   }
   function start() {
     render();

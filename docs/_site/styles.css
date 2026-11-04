@@ -147,8 +147,8 @@ html {
 }
 
 /* Override Mintlify prose link color rules for CTA buttons.
-   Light: html:not(.dark) .prose a:not(.card):not(.card *) — specificity (0,4,2)
-   Dark:  .dark .prose a:not(.card):not(.card *)           — specificity (0,4,1)
+   Light: html:not(.dark) .prose a:not(.card):not(.card *):not(.ch-product-availability *) — specificity (0,4,2)
+   Dark:  .dark .prose a:not(.card):not(.card *):not(.ch-product-availability *)           — specificity (0,4,1)
    We beat both by appending .ch-btn-* to the exact same selector → +1 class. */
 
 /* Primary — light: white text on black bg; dark: black text on yellow bg */
@@ -1840,26 +1840,26 @@ body.clickpipes_home .hero-text {
 
 /* Prose links: colored without underline by default, underline appears on hover.
    Light: #135be6 blue. Dark: ClickHouse yellow #FAFF69. */
-html:not(.dark) .prose a:not(.card):not(.card *) {
+html:not(.dark) .prose a:not(.card):not(.card *):not(.ch-product-availability *) {
     color: #135be6 !important;
     border-bottom: none !important;
     text-decoration: none !important;
     font-weight: normal !important;
 }
-html:not(.dark) .prose a:not(.card):not(.card *):hover {
+html:not(.dark) .prose a:not(.card):not(.card *):not(.ch-product-availability *):hover {
     color: #135be6 !important;
     text-decoration: underline !important;
 }
 
-.dark .prose a:not(.card):not(.card *),
-:is(.dark) .prose a:not(.card):not(.card *) {
+.dark .prose a:not(.card):not(.card *):not(.ch-product-availability *),
+:is(.dark) .prose a:not(.card):not(.card *):not(.ch-product-availability *) {
     color: #FAFF69 !important;
     border-bottom: none !important;
     text-decoration: none !important;
     font-weight: normal !important;
 }
-.dark .prose a:not(.card):not(.card *):hover,
-:is(.dark) .prose a:not(.card):not(.card *):hover {
+.dark .prose a:not(.card):not(.card *):not(.ch-product-availability *):hover,
+:is(.dark) .prose a:not(.card):not(.card *):not(.ch-product-availability *):hover {
     color: #FAFF69 !important;
     text-decoration: underline !important;
     opacity: 1;
@@ -3693,7 +3693,7 @@ div:has(> #ch-product-availability) > #ch-page-ask-row {
     width: 100%;
 }
 
-#ch-product-availability {
+:is(#ch-product-availability, .ch-product-availability) {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -3702,25 +3702,25 @@ div:has(> #ch-product-availability) > #ch-page-ask-row {
   font-size: 12px;
   line-height: 20px;
 }
-#ch-product-availability a {
+:is(#ch-product-availability, .ch-product-availability) a {
   border: 1px solid #d1d1d1;
   border-radius: 999px;
   padding: 3px 10px;
-  color: inherit;
+  color: inherit !important;
   text-decoration: none;
   font-weight: 500;
 }
-#ch-product-availability a:hover { text-decoration: underline; }
-#ch-product-availability a[aria-current="page"] {
+:is(#ch-product-availability, .ch-product-availability) a:hover { text-decoration: underline; }
+:is(#ch-product-availability, .ch-product-availability) a[aria-current="page"] {
   background: #f7f8d8;
   border-color: #999c4b;
-  color: #393c16;
+  color: #393c16 !important;
 }
-.dark #ch-product-availability a { border-color: #555; }
-.dark #ch-product-availability a[aria-current="page"] {
+.dark :is(#ch-product-availability, .ch-product-availability) a { border-color: #555; }
+.dark :is(#ch-product-availability, .ch-product-availability) a[aria-current="page"] {
   background: #292b1c;
   border-color: #60622e;
-  color: #fdff75;
+  color: #fdff75 !important;
 }
 
 /* Ask AI is a separate docs-assistant action rather than a second search
