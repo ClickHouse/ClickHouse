@@ -1,6 +1,7 @@
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 #include <AggregateFunctions/SingleValueData.h>
 #include <Common/memory.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/TypeTree.h>
 #include <DataTypes/getLeastSupertype.h>
 
@@ -335,6 +336,17 @@ public:
                 getName());
 
         return DataTypes(arguments.begin(), arguments.end() - 1);
+    }
+
+    DataTypes removeLowCardinalityFromOwnArguments(const DataTypes & arguments) const override
+    {
+        /// The key is read by the combinator itself. An empty list is reported by `transformArguments`.
+        if (arguments.empty())
+            return arguments;
+
+        DataTypes res = arguments;
+        res.back() = recursiveRemoveLowCardinality(res.back());
+        return res;
     }
 
     AggregateFunctionPtr transformAggregateFunction(

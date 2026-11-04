@@ -450,6 +450,12 @@ const char * AggregatingStep::adaptiveAggregatorRejectionReason(const QueryPipel
             return "an aggregate function needs the rows of each state in order";
     }
 
+    /// The staged records hold the arguments without `LowCardinality` (see `AdaptiveArgumentLayout`).
+    for (const auto & aggregate : params.aggregates)
+        for (const auto & type : aggregate.function->getArgumentTypes())
+            if (containsLowCardinality(type))
+                return "an aggregate function takes a LowCardinality argument as is";
+
     if (!sort_description_for_merging.empty())
         return "the aggregation is in order";
 

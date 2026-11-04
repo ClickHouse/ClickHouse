@@ -26,6 +26,12 @@ extern const int TYPE_MISMATCH;
 extern const int LOGICAL_ERROR;
 }
 
+bool containsLowCardinality(const DataTypePtr & type)
+{
+    /// recursiveRemoveLowCardinality returns the very same type when there is nothing to remove.
+    return recursiveRemoveLowCardinality(type).get() != type.get();
+}
+
 DataTypePtr recursiveRemoveLowCardinality(const DataTypePtr & type)
 {
     if (!type)

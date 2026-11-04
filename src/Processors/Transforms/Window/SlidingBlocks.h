@@ -31,6 +31,8 @@ struct SlidingBlock
     /// Inputs
     const Columns input_columns;
     const Columns materialized_columns;
+    /// Set only at the positions some aggregate function reads with `LowCardinality` (see `WindowTransformParams`).
+    const Columns low_cardinality_columns;
 
     /// Helper data
     const int64_t rows_count = 0;
@@ -44,7 +46,7 @@ struct SlidingBlock
 class SlidingBlocks
 {
 public:
-    SlidingBlock & add(Chunk chunk, Columns materialized_columns, SlidingIndex index);
+    SlidingBlock & add(Chunk chunk, Columns materialized_columns, Columns low_cardinality_columns, SlidingIndex index);
     const SlidingBlock & blockAt(int64_t block_number) const;
     void pop();
 

@@ -3,6 +3,7 @@
 #include <AggregateFunctions/Combinators/AggregateFunctionNull.h>
 
 #include <Common/VectorWithMemoryTracking.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeTuple.h>
 
 #include <absl/container/inlined_vector.h>
@@ -41,6 +42,17 @@ public:
                             arguments.back()->getName(), getName());
 
         return DataTypes(arguments.begin(), std::prev(arguments.end()));
+    }
+
+    DataTypes removeLowCardinalityFromOwnArguments(const DataTypes & arguments) const override
+    {
+        /// The condition is read by the combinator itself. An empty list is reported by `transformArguments`.
+        if (arguments.empty())
+            return arguments;
+
+        DataTypes res = arguments;
+        res.back() = recursiveRemoveLowCardinality(res.back());
+        return res;
     }
 
     AggregateFunctionPtr transformAggregateFunction(

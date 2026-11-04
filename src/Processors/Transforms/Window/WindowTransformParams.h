@@ -23,6 +23,8 @@ struct WindowTransformParams
     const std::vector<size_t> partition_by_indices;
     const std::vector<size_t> order_by_indices;
     const std::vector<bool> should_materialize;
+    /// Positions some aggregate function reads with `LowCardinality`; empty when there are none.
+    const std::vector<bool> keep_low_cardinality;
     const RangeOffsetComparator range_offset_comparator;
 
 public:

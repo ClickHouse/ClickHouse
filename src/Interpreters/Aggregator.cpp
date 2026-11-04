@@ -734,9 +734,26 @@ private:
 
 #endif
 
+/// Whether each aggregate argument is declared with `LowCardinality`, in which case the column is passed to the function as
+/// is (see `AggregateFunctionProperties::accepts_low_cardinality_arguments`).
+static std::vector<std::vector<bool>> calculateAggregatesKeepLowCardinality(const Aggregator::Params & params)
+{
+    std::vector<std::vector<bool>> res(params.aggregates_size);
+    for (size_t i = 0; i < params.aggregates_size; ++i)
+    {
+        const auto & aggregate = params.aggregates[i];
+        const auto & argument_types = aggregate.function->getArgumentTypes();
+        res[i].assign(aggregate.argument_names.size(), false);
+        for (size_t j = 0; j < res[i].size() && j < argument_types.size(); ++j)
+            res[i][j] = containsLowCardinality(argument_types[j]);
+    }
+    return res;
+}
+
 Aggregator::Aggregator(const Block & header_, const Params & params_)
     : keys_positions(calculateKeysPositions(header_, params_))
     , aggregates_positions(calculateAggregatesPositions(header_, params_))
+    , aggregates_keep_low_cardinality(calculateAggregatesKeepLowCardinality(params_))
     , key_types(calculateKeyTypes(header_, params_))
     , aggregate_state_types(calculateAggregateStateTypes(header_, params_))
     , params(params_)
@@ -923,6 +940,13 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
 
     if (params.enable_adaptive_aggregator && params.aggregates_size)
     {
+        /// The staged records hold the arguments without `LowCardinality` (see `AdaptiveArgumentLayout`);
+        /// `AggregatingStep::adaptiveAggregatorRejectionReason` keeps such queries away.
+        for (const auto & keep_low_cardinality : aggregates_keep_low_cardinality)
+            for (bool keep : keep_low_cardinality)
+                if (keep)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Adaptive aggregation cannot stage LowCardinality arguments");
+
         adaptive_argument_layout = AdaptiveArgumentLayout::build(header_, keys_positions, aggregates_positions);
         /// Distinct tuples of the arguments describe one set-valued aggregate. Multiple independent sets
         /// can have different reduction factors, so they cannot share this estimate. The fixed states of
@@ -2379,7 +2403,10 @@ void Aggregator::prepareAggregateInstructions(
                 ? aggregate_columns[i][j]->getPtr()
                 : recursiveRemoveSparse(aggregate_columns[i][j]->getPtr());
 
-            full_column = recursiveRemoveLowCardinality(full_column);
+            /// A function that declares the argument with `LowCardinality` receives the column as is; every other function
+            /// receives the dictionary values, as the factory removed `LowCardinality` from its argument types.
+            if (!aggregates_keep_low_cardinality[i][j])
+                full_column = recursiveRemoveLowCardinality(full_column);
             if (full_column.get() != aggregate_columns[i][j])
             {
                 materialized_columns.emplace_back(std::move(full_column));

@@ -31,6 +31,8 @@ struct WindowFunctionWorkspace
     bool is_aggregate_function_state = false;
     size_t result_column = 0;
     VectorWithMemoryTracking<size_t> argument_column_indices;
+    /// Per argument: whether it is read from the column that keeps `LowCardinality`.
+    std::vector<bool> argument_keeps_low_cardinality;
     mutable AlignedBuffer aggregate_function_state;
     VectorWithMemoryTracking<const IColumn *> argument_columns;
     Int64 cached_block_number = -1;

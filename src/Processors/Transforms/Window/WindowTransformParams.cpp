@@ -1,7 +1,10 @@
 #include <Processors/Transforms/Window/WindowTransformParams.h>
 
+#include <AggregateFunctions/IAggregateFunction.h>
+
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Interpreters/convertFieldToType.h>
 
@@ -184,6 +187,32 @@ std::vector<bool> markColumnsToMaterialize(
     return should_materialize;
 }
 
+/// The columns some function declares with `LowCardinality` and so reads with it
+/// (see `AggregateFunctionProperties::accepts_low_cardinality_arguments`). Empty when there are none.
+std::vector<bool> markColumnsToKeepLowCardinality(const Block & header, const std::vector<WindowFunctionDescription> & functions)
+{
+    std::vector<bool> keep_low_cardinality(header.columns(), false);
+    bool any = false;
+
+    for (const auto & f : functions)
+    {
+        if (!f.aggregate_function)
+            continue;
+
+        const auto & argument_types = f.aggregate_function->getArgumentTypes();
+        for (size_t i = 0; i < f.argument_names.size() && i < argument_types.size(); ++i)
+        {
+            if (containsLowCardinality(argument_types[i]))
+            {
+                keep_low_cardinality[header.getPositionByName(f.argument_names[i])] = true;
+                any = true;
+            }
+        }
+    }
+
+    return any ? keep_low_cardinality : std::vector<bool>{};
+}
+
 WindowFrame applyFunctionDefaultFrame(const WindowFrame & frame, const std::vector<WindowFunctionDescription> & functions)
 {
     if (!frame.is_default || functions.size() != 1)
@@ -245,6 +274,7 @@ WindowTransformParams WindowTransformParams::create(
     auto partition_by_indices = findPositions(header, window_description.partition_by);
     auto order_by_indices = findPositions(header, window_description.order_by);
     auto should_materialize = markColumnsToMaterialize(header, window_description.partition_by, window_description.order_by, functions);
+    auto keep_low_cardinality = markColumnsToKeepLowCardinality(header, functions);
     auto frame = applyFunctionDefaultFrame(window_description.frame, functions);
     auto range_offset_comparator = chooseRangeOffsetComparator(header, frame, window_description.order_by, order_by_indices);
     auto description = prepareDescriptionForExecution(header, window_description, frame, order_by_indices);
@@ -255,6 +285,7 @@ WindowTransformParams WindowTransformParams::create(
         std::move(partition_by_indices),
         std::move(order_by_indices),
         std::move(should_materialize),
+        std::move(keep_low_cardinality),
         std::move(range_offset_comparator),
     };
 }

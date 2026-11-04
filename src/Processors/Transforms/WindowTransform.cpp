@@ -21,6 +21,22 @@ Columns materializeColumns(Columns columns, const std::vector<bool> & should_mat
     return columns;
 }
 
+/// The unwrapped columns that keep `LowCardinality`, for the arguments some function declares with it
+/// (see `AggregateFunctionProperties::accepts_low_cardinality_arguments`). Empty when no function does.
+Columns keepLowCardinalityColumns(const Columns & columns, const std::vector<bool> & keep_low_cardinality)
+{
+    Columns res;
+    if (keep_low_cardinality.empty())
+        return res;
+
+    res.resize(columns.size());
+    for (auto && [column, keep, source] : std::views::zip(res, keep_low_cardinality, columns))
+        if (keep)
+            column = source->convertToFullIfWrapped();
+
+    return res;
+}
+
 std::vector<size_t> argumentColumnIndices(const Block & input_header, const WindowFunctionDescription & function)
 {
     return function.argument_names
@@ -39,6 +55,11 @@ WindowFunctionWorkspace createWorkspace(const Block & input_header, const Window
     for (const auto & argument_name : function.argument_names)
         workspace.argument_column_indices.push_back(input_header.getPositionByName(argument_name));
     workspace.argument_columns.assign(function.argument_names.size(), nullptr);
+
+    const auto & argument_types = aggregate_function->getArgumentTypes();
+    workspace.argument_keeps_low_cardinality.assign(function.argument_names.size(), false);
+    for (size_t i = 0; i < function.argument_names.size() && i < argument_types.size(); ++i)
+        workspace.argument_keeps_low_cardinality[i] = containsLowCardinality(argument_types[i]);
 
     workspace.is_aggregate_function_state = aggregate_function->isState();
     workspace.aggregate_function_state.reset(aggregate_function->sizeOfData(), aggregate_function->alignOfData());
@@ -161,7 +182,10 @@ void WindowTransform::updateAggregationState()
             if (ws.cached_block_number != block_number)
             {
                 for (size_t i = 0; i < ws.argument_column_indices.size(); ++i)
-                    ws.argument_columns[i] = block.materialized_columns[ws.argument_column_indices[i]].get();
+                {
+                    const Columns & columns = ws.argument_keeps_low_cardinality[i] ? block.low_cardinality_columns : block.materialized_columns;
+                    ws.argument_columns[i] = columns[ws.argument_column_indices[i]].get();
+                }
                 ws.cached_block_number = block_number;
             }
 
@@ -210,9 +234,10 @@ void WindowTransform::writeOutCurrentRow()
 void WindowTransform::addInputBlock(Chunk chunk)
 {
     auto rows_count = static_cast<int64_t>(chunk.getNumRows());
+    auto low_cardinality_columns = keepLowCardinalityColumns(chunk.getColumns(), params.keep_low_cardinality);
     auto materialized_columns = materializeColumns(chunk.getColumns(), params.should_materialize);
     auto index = indexes.calculate(materialized_columns, rows_count);
-    auto & block = blocks.add(std::move(chunk), std::move(materialized_columns), std::move(index));
+    auto & block = blocks.add(std::move(chunk), std::move(materialized_columns), std::move(low_cardinality_columns), std::move(index));
     partition.advance(blocks);
 
     block.result_columns.resize(general_functions.size() + workspaces.size());
