@@ -208,6 +208,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(keeper_map_delete_pause_before_multi) \
     PAUSEABLE_ONCE(paimon_incremental_read_pause_before_is_active_remove) \
     PAUSEABLE(smt_create_table_pause_before_replicas_check) \
+    PAUSEABLE(kafka_consumer_pause_mid_block) \
     PAUSEABLE(dummy_pausable_failpoint) \
     PAUSEABLE_ONCE(paimon_incremental_read_pause_before_processing_lock) \
     PAUSEABLE_ONCE(paimon_incremental_read_pause_before_watermark_commit) \

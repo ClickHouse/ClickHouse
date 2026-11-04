@@ -10,6 +10,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Storages/Kafka/KafkaConsumer.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <Common/saturatedDuration.h>
 
@@ -25,6 +26,11 @@ extern const Event KafkaRowsRejected;
 
 namespace DB
 {
+namespace FailPoints
+{
+extern const char kafka_consumer_pause_mid_block[];
+}
+
 namespace Setting
 {
 extern const SettingsMilliseconds kafka_max_wait_ms;
@@ -304,6 +310,9 @@ Chunk KafkaSource::generateImpl()
         else if (consumer->isStalled())
         {
             ++failed_poll_attempts;
+            /// Lets tests change the consumer group while the block holds every row read so far.
+            if (total_rows > 0)
+                FailPointInjection::pauseFailPoint(FailPoints::kafka_consumer_pause_mid_block);
         }
         else
         {

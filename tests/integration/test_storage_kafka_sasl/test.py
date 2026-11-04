@@ -1,12 +1,11 @@
 import logging
-import threading
 import time
 
 from kafka import KafkaProducer
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry
+from helpers.test_tools import assert_eq_with_retry, wait_condition
 
 from helpers.config_cluster import kafka_sasl_user, kafka_sasl_pass
 
@@ -258,51 +257,56 @@ def test_kafka_kip848_consumer_group_protocol(kafka_cluster):
 # A partial revocation drops the block being formed, including the rows already read from the partitions the
 # consumer keeps. Those partitions must be rewound, otherwise the rows are skipped and the next commit loses them.
 def test_kafka_kip848_partial_revocation_rewinds_unfinished_block(kafka_cluster):
-    kafka_cli(kafka_cluster, "kafka-topics", "--create", "--topic", "kip848_rewind", "--partitions", "6")
+    topic = "kip848_rewind"
+    failpoint = "kafka_consumer_pause_mid_block"
+    produced = 60
+    kafka_cli(kafka_cluster, "kafka-topics", "--create", "--topic", topic, "--partitions", "6")
     instance.query("CREATE TABLE test.messages (id UInt64) ENGINE = MergeTree ORDER BY id")
     instance.query("CREATE TABLE test.fail_inserts (x UInt8) ENGINE = Memory")
 
-    # Long blocks, so that the revocation arrives while one is being formed.
-    flush_interval_ms = 15000
-    create_kip848_table("kafka1", "kip848_rewind", flush_interval_ms)
-    wait_assigned_partitions("kafka1", "= 6")
-
-    # Produce all the time, so that every block has rows from every partition.
     producer = get_kafka_producer(kafka_cluster.kafka_sasl_port)
-    produced = 0
-    stop = threading.Event()
+    for i in range(produced):
+        producer.send(topic=topic, value=f'{{"id":{i}}}', partition=i % 6)
+    producer.flush()
+    producer.close()
 
-    def produce():
-        nonlocal produced
-        while not stop.is_set():
-            for _ in range(6):
-                producer.send(topic="kip848_rewind", value=f'{{"id":{produced}}}', partition=produced % 6)
-                produced += 1
-            producer.flush()
-            time.sleep(0.05)
+    def read_offsets():
+        return instance.query(
+            "SELECT sum(arraySum(assignments.current_offset)) FROM system.kafka_consumers WHERE table = 'kafka1'"
+        )
 
-    producer_thread = threading.Thread(target=produce)
-    producer_thread.start()
+    def member_partitions():
+        out = kafka_cli(kafka_cluster, "kafka-consumer-groups", "--describe", "--group", topic, "--members")
+        return [int(line.split()[-1]) for line in out.splitlines() if line.startswith(topic)]
+
+    rejected_query = "SELECT sum(value) FROM system.events WHERE name = 'KafkaRowsRejected'"
+    rejected = int(instance.query(rejected_query))
+
+    # The failpoint holds the block when a poll returns nothing; the long flush interval keeps it from ending meanwhile.
+    instance.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
     try:
-        # Join right after a block was committed: the revocation then arrives in the middle of the next block.
-        commits = int(instance.query("SELECT num_commits FROM system.kafka_consumers WHERE table = 'kafka1'"))
-        wait_kafka_consumer("kafka1", f"num_commits > {commits}")
-        rejected_query = "SELECT sum(value) FROM system.events WHERE name = 'KafkaRowsRejected'"
-        rejected = int(instance.query(rejected_query))
-        create_kip848_table("kafka2", "kip848_rewind", flush_interval_ms)
-        wait_assigned_partitions("kafka2", "> 0")
-        wait_assigned_partitions("kafka1", "> 0")
-        wait_kafka_consumer("kafka1", "num_rebalance_revocations > 0")
-        assert_eq_with_retry(instance, f"SELECT ({rejected_query}) > {rejected}", "1", retry_count=120, sleep_time=0.5)
-        # Commits after the rebalance must not skip the rewound rows.
-        commits = int(instance.query("SELECT num_commits FROM system.kafka_consumers WHERE table = 'kafka1'"))
-        wait_kafka_consumer("kafka1", f"num_commits > {commits}")
-    finally:
-        stop.set()
-        producer_thread.join()
-        producer.close()
+        create_kip848_table("kafka1", topic, 600000)
+        instance.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE")
+        # The block must hold the rows of all the partitions, so let it poll until it has read them all.
+        for _ in range(5):
+            if read_offsets() == f"{produced}\n":
+                break
+            instance.query(f"SYSTEM NOTIFY FAILPOINT {failpoint}")
+            instance.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE")
+        assert read_offsets() == f"{produced}\n"
 
+        # The broker tells the first member to revoke a part of its partitions, it keeps the rest, and the new one
+        # gets nothing until the first member revokes them while polling.
+        create_kip848_table("kafka2", topic, 500)
+        wait_condition(member_partitions, lambda p: len(p) == 2 and max(p) < 6, max_attempts=120, delay=0.5)
+    finally:
+        instance.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+    # The next poll of the first member revokes the partitions, and the block is dropped.
+    assert_eq_with_retry(
+        instance, f"SELECT ({rejected_query}) >= {rejected + produced}", "1", retry_count=120, sleep_time=0.5
+    )
     assert_eq_with_retry(
         instance, "SELECT uniqExact(id) FROM test.messages", str(produced), retry_count=120, sleep_time=0.5
     )
-    assert instance.query("SELECT min(id), max(id) FROM test.messages") == f"0\t{produced - 1}\n"
+    assert instance.query("SELECT count(), min(id), max(id) FROM test.messages") == f"{produced}\t0\t{produced - 1}\n"
