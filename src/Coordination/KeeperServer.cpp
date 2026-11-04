@@ -745,6 +745,9 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
             if (asio_listener)
                 asio_listeners.emplace_back(std::move(asio_listener));
         }
+
+        if (asio_listeners.empty())
+            throw Exception(ErrorCodes::RAFT_ERROR, "Cannot listen on any configured Raft host");
     }
 
     nuraft::ptr<nuraft::delayed_task_scheduler> scheduler = asio_service;
